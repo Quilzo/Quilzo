@@ -21,6 +21,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -908,6 +909,11 @@ func main() {
 	// tries `--version` and nothing else. `quilzo version` printed the same
 	// string and was unreachable to everything that looks for it.
 	case "version", "--version", "-V":
+		if w.JSON(map[string]any{"name": "quilzo", "version": version,
+			"go": runtime.Version(), "os": runtime.GOOS, "arch": runtime.GOARCH,
+			"license": "Apache-2.0"}) {
+			return
+		}
 		fmt.Printf("quilzo %s\n", version)
 		fmt.Println("Copyright (C) 2026 Rashik Adhikari")
 		fmt.Println("Licensed under the Apache License, Version 2.0 " +
@@ -1183,6 +1189,22 @@ func cmdDiff(root string) error {
 		return err
 	}
 	live, draft := s.GetRef(site.RefLive), s.GetRef(site.RefDraft)
+	if w.Mode == out.JSON {
+		doc := map[string]any{"live": live, "draft": draft, "changes": []any{}}
+		if draft != "" && live != draft {
+			changes, err := site.Diff(s, live, draft)
+			if err != nil {
+				return err
+			}
+			rows := make([]map[string]any, 0, len(changes))
+			for _, c := range changes {
+				rows = append(rows, map[string]any{"kind": c.Kind, "path": c.Path})
+			}
+			doc["changes"] = rows
+		}
+		w.JSON(doc)
+		return nil
+	}
 	if draft == "" {
 		fmt.Println("no draft")
 		return nil
@@ -1658,6 +1680,15 @@ func cmdLog(root string, args []string) error {
 	if err != nil {
 		return err
 	}
+	if w.Mode == out.JSON {
+		rows := make([]map[string]any, 0, len(hist))
+		for _, h := range hist {
+			rows = append(rows, map[string]any{"id": h.ID, "author": h.Commit.Author,
+				"message": h.Commit.Message, "live": h.ID == live})
+		}
+		w.JSON(map[string]any{"ref": *ref, "commits": rows})
+		return nil
+	}
 	for _, h := range hist {
 		mark := ""
 		if h.ID == live {
@@ -1760,6 +1791,7 @@ func cmdAudit(args []string) error {
 		dir = args[0]
 	}
 	total := 0
+	raw := []map[string]any{}
 	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() || filepath.Ext(path) != ".html" {
 			return nil
@@ -1770,9 +1802,12 @@ func cmdAudit(args []string) error {
 		}
 		sites := tmpl.RawSites(string(body))
 		if len(sites) > 0 {
-			fmt.Printf("  %s\n", path)
-			for _, s := range sites {
-				fmt.Printf("      %sraw%s %s\n", yellow, reset, s)
+			raw = append(raw, map[string]any{"template": path, "raw": sites})
+			if w.Mode != out.JSON {
+				fmt.Printf("  %s\n", path)
+				for _, s := range sites {
+					fmt.Printf("      %sraw%s %s\n", yellow, reset, s)
+				}
 			}
 			total += len(sites)
 		}
@@ -1780,6 +1815,9 @@ func cmdAudit(args []string) error {
 	})
 	if err != nil {
 		return err
+	}
+	if w.JSON(map[string]any{"templates": dir, "unescaped": raw, "total": total}) {
+		return nil
 	}
 	if total > 0 {
 		fmt.Printf("\n  %d place(s) where escaping is switched off. Each one is a "+

@@ -73,6 +73,13 @@ func brandList(root string) error {
 	if err != nil {
 		return err
 	}
+	terms := r.Terms
+	if terms == nil {
+		terms = []brand.Term{}
+	}
+	if w.JSON(map[string]any{"terms": terms}) {
+		return nil
+	}
 	if len(r.Terms) == 0 {
 		fmt.Printf("  %sno claim rules. `quilzo brand init` writes a starter "+
 			"set%s\n", dim, reset)
@@ -143,6 +150,9 @@ func brandCheck(root string, args []string) error {
 		return err
 	}
 	if len(r.Terms) == 0 {
+		if w.JSON(map[string]any{"ref": ref, "checked": 0, "findings": []brand.Finding{}, "rules": 0}) {
+			return nil
+		}
 		fmt.Printf("  %sno claim rules; nothing was checked%s\n", dim, reset)
 		return nil
 	}
@@ -159,6 +169,12 @@ func brandCheck(root string, args []string) error {
 	// store in it.
 	if strings.TrimSpace(*text) != "" {
 		findings := r.Check("this sentence", map[string]any{"text": *text})
+		if w.JSON(map[string]any{"checked": "this sentence", "findings": nonNilFindings(findings)}) {
+			if len(findings) > 0 {
+				return fmt.Errorf("%d claim(s) in that sentence need substantiation", len(findings))
+			}
+			return nil
+		}
 		if len(findings) == 0 {
 			fmt.Printf("%snothing in that sentence needs substantiating%s\n",
 				green, reset)
@@ -186,6 +202,12 @@ func brandCheck(root string, args []string) error {
 	if err != nil {
 		return err
 	}
+	if w.JSON(map[string]any{"ref": ref, "checked": checked, "findings": nonNilFindings(findings)}) {
+		if len(findings) > 0 {
+			return fmt.Errorf("%d claim(s) without substantiation", len(findings))
+		}
+		return nil
+	}
 	if len(findings) == 0 {
 		fmt.Printf("%s%d item(s) checked, nothing to answer for%s\n",
 			green, checked, reset)
@@ -193,6 +215,14 @@ func brandCheck(root string, args []string) error {
 	}
 	printBrand(findings)
 	return fmt.Errorf("%d claim(s) without substantiation", len(findings))
+}
+
+// nonNilFindings is findings as JSON reads it: [] for none, not null.
+func nonNilFindings(f []brand.Finding) []brand.Finding {
+	if f == nil {
+		return []brand.Finding{}
+	}
+	return f
 }
 
 func printBrand(findings []brand.Finding) {

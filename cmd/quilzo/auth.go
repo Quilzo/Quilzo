@@ -18,6 +18,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/dual"
+	"github.com/quilzo/quilzo/internal/out"
 )
 
 // Access lives beside the content rather than inside it. The object store is
@@ -204,6 +205,29 @@ you meant to narrow later.
 }
 
 func authRoles(root string) error {
+	if w.Mode == out.JSON {
+		doc := map[string]any{}
+		roles, actions, perms, feature := []map[string]any{}, []map[string]any{},
+			[]map[string]any{}, []map[string]any{}
+		for _, r := range auth.Roles {
+			roles = append(roles, map[string]any{"role": r, "can": r.Describe()})
+		}
+		for _, a := range auth.Actions() {
+			need, _ := auth.Needs(a)
+			actions = append(actions, map[string]any{"action": a, "needs": need})
+		}
+		for _, pm := range auth.Permissions {
+			perms = append(perms, map[string]any{"action": pm.Action, "summary": pm.Summary})
+		}
+		if declared, err := appRoles(root); err == nil {
+			for _, r := range declared {
+				feature = append(feature, map[string]any{"name": r.Name, "title": r.Title, "grants": r.Grants})
+			}
+		}
+		doc["roles"], doc["actions"], doc["permissions"], doc["feature_roles"] = roles, actions, perms, feature
+		w.JSON(doc)
+		return nil
+	}
 	fmt.Printf("%sroles%s\n", bold, reset)
 	for _, r := range auth.Roles {
 		fmt.Printf("  %-10s %s\n", r, r.Describe())
@@ -498,6 +522,22 @@ func authList(root string) error {
 	p, err := loadPolicy(root)
 	if err != nil {
 		return err
+	}
+	rows := make([]map[string]any, 0, len(p.Bindings))
+	for _, b := range p.Bindings {
+		row := map[string]any{"principal": b.Principal, "role": b.What(),
+			"resource": b.Resource, "deny": b.Deny, "granted_by": b.GrantedBy,
+			"note": b.Note, "expires": nil, "live": b.Live(time.Now())}
+		if b.Expires != 0 {
+			row["expires"] = time.Unix(b.Expires, 0).UTC().Format(time.RFC3339)
+		}
+		if r, ok := b.AppRoleOf(); ok {
+			row["app_role"] = r
+		}
+		rows = append(rows, row)
+	}
+	if w.JSON(map[string]any{"bindings": rows}) {
+		return nil
 	}
 	if len(p.Bindings) == 0 {
 		fmt.Println("no bindings; nobody has access")
@@ -981,11 +1021,26 @@ func tokenList(root string) error {
 	if err != nil {
 		return err
 	}
+	now := time.Now()
+	// What each token is, and never the hash it is checked against.
+	rows := make([]map[string]any, 0, len(ts.Tokens))
+	for _, t := range ts.Tokens {
+		row := map[string]any{"id": t.ID, "name": t.Name, "principal": t.Principal,
+			"role": t.Role, "resource": t.Resource,
+			"expires": time.Unix(t.ExpiresAt, 0).UTC().Format(time.RFC3339),
+			"revoked": t.Revoked, "expired": t.Expired(now), "last_used": nil}
+		if t.LastUsed > 0 {
+			row["last_used"] = time.Unix(t.LastUsed, 0).UTC().Format(time.RFC3339)
+		}
+		rows = append(rows, row)
+	}
+	if w.JSON(map[string]any{"tokens": rows}) {
+		return nil
+	}
 	if len(ts.Tokens) == 0 {
 		fmt.Println("no tokens")
 		return nil
 	}
-	now := time.Now()
 	fmt.Printf("  %-14s %-16s %-10s %-12s %s\n", "id", "name", "role", "expires", "last used")
 	for _, t := range ts.Tokens {
 		state := ""

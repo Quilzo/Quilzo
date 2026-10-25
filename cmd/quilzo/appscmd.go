@@ -14,6 +14,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/oauthas"
+	"github.com/quilzo/quilzo/internal/out"
 )
 
 // Apps connected to the agent interface, from the command line: the same as
@@ -166,9 +167,11 @@ func appsList(root string, oa *oauthas.Server) error {
 	if cfg.Bool("mcp.remote") {
 		on = "on at " + interfaceAddress(cfg)
 	}
-	fmt.Printf("agent interface: %s\n", on)
-	if cfg.Raw("admin.base_url") == "" {
-		fmt.Printf("  %sapps cannot sign in by themselves until admin.base_url is set; Quilzo's own tokens work%s\n", dim, reset)
+	if w.Mode != out.JSON {
+		fmt.Printf("agent interface: %s\n", on)
+		if cfg.Raw("admin.base_url") == "" {
+			fmt.Printf("  %sapps cannot sign in by themselves until admin.base_url is set; Quilzo's own tokens work%s\n", dim, reset)
+		}
 	}
 	grants, err := oa.Store.Grants()
 	if err != nil {
@@ -179,6 +182,35 @@ func appsList(root string, oa *oauthas.Server) error {
 		return err
 	}
 	now := time.Now()
+	if w.Mode == out.JSON {
+		connected := []map[string]any{}
+		for _, g := range grants {
+			if !g.Live(now) {
+				continue
+			}
+			row := map[string]any{"id": g.ID, "client": g.Client, "client_name": g.ClientName,
+				"principal": g.Principal, "scopes": g.Scopes, "resource": g.Resource,
+				"expires": g.Expires.UTC().Format(time.RFC3339), "last_used": nil}
+			if !g.LastUsed.IsZero() {
+				row["last_used"] = g.LastUsed.UTC().Format(time.RFC3339)
+			}
+			connected = append(connected, row)
+		}
+		registered := []map[string]any{}
+		for _, c := range clients {
+			registered = append(registered, map[string]any{"client_id": c.ID,
+				"client_name": c.Name, "redirect_uris": c.RedirectURIs})
+		}
+		allowed := append([]string{}, hosts...)
+		doc := map[string]any{"remote": cfg.Bool("mcp.remote"), "connected": connected,
+			"hosts": allowed, "registered": registered,
+			"base_url_set": cfg.Raw("admin.base_url") != ""}
+		if cfg.Bool("mcp.remote") {
+			doc["address"] = interfaceAddress(cfg)
+		}
+		w.JSON(doc)
+		return nil
+	}
 	fmt.Println("\nconnected:")
 	n := 0
 	for _, g := range grants {

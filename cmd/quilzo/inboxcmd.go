@@ -15,6 +15,7 @@ import (
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/handoff"
+	"github.com/quilzo/quilzo/internal/out"
 )
 
 // The inbox: conversations a site's chatbots handed to a person.
@@ -168,6 +169,22 @@ func cmdInbox(root string, args []string) error {
 		all, err := st.List()
 		if err != nil {
 			return err
+		}
+		if w.Mode == out.JSON {
+			rows := make([]map[string]any, 0, len(all))
+			for _, c := range all {
+				state := "answered"
+				switch {
+				case c.Waiting():
+					state = "waiting"
+				case c.Closed:
+					state = "ended"
+				}
+				rows = append(rows, map[string]any{"assistant": c.Assistant, "id": c.ID,
+					"state": state, "messages": len(c.Messages)})
+			}
+			w.JSON(map[string]any{"conversations": rows})
+			return nil
 		}
 		if len(all) == 0 {
 			fmt.Println("  no conversations")

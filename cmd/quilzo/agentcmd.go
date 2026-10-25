@@ -9,12 +9,14 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/quilzo/quilzo/internal/agentexec"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/agentexec"
+	"github.com/quilzo/quilzo/internal/out"
 
 	"github.com/quilzo/quilzo/internal/actioncache"
 	"github.com/quilzo/quilzo/internal/agent"
@@ -206,6 +208,29 @@ func agentTemplates(root string) error {
 	if terr != nil {
 		return terr
 	}
+	if w.Mode == out.JSON {
+		row := func(m agent.Manifest, summary, when string, own bool) map[string]any {
+			return map[string]any{"kind": m.Kind, "summary": summary, "when": when,
+				"capabilities": m.Capabilities, "autonomy": m.Autonomy, "own": own,
+				"budget": map[string]any{"steps": m.Budget.Steps, "tools": m.Budget.Tools,
+					"duration": m.Budget.Duration.String()}}
+		}
+		var rows []map[string]any
+		for _, t := range agent.Catalogue() {
+			rows = append(rows, row(t.Manifest, t.Summary, t.When, false))
+		}
+		var kinds []string
+		for k := range set {
+			kinds = append(kinds, string(k))
+		}
+		sort.Strings(kinds)
+		for _, k := range kinds {
+			t := set[agent.Kind(k)]
+			rows = append(rows, row(t.Manifest, t.Summary, t.When, true))
+		}
+		w.JSON(map[string]any{"templates": rows})
+		return nil
+	}
 	for _, t := range agent.Catalogue() {
 		m := t.Manifest
 		fmt.Printf("  %s%-12s%s %s\n", bold, m.Kind, reset, t.Summary)
@@ -350,6 +375,21 @@ func agentList(root string) error {
 	set, err := loadAgents(root)
 	if err != nil {
 		return err
+	}
+	if w.Mode == out.JSON {
+		names := make([]string, 0, len(set.Agents))
+		for n := range set.Agents {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		rows := make([]map[string]any, 0, len(names))
+		for _, n := range names {
+			m := set.Agents[n]
+			rows = append(rows, map[string]any{"name": n, "kind": m.Kind, "autonomy": m.Autonomy,
+				"capabilities": m.Capabilities, "human_approval": m.HumanApproval, "purpose": m.Purpose})
+		}
+		w.JSON(map[string]any{"agents": rows})
+		return nil
 	}
 	if len(set.Agents) == 0 {
 		fmt.Println("no agents are declared here")

@@ -15,6 +15,7 @@ import (
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/media"
 	"github.com/quilzo/quilzo/internal/medialib"
+	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 )
@@ -377,6 +378,22 @@ func cmdRights(root string, args []string) error {
 	rep, err := checkRights(s, lib, ref, at)
 	if err != nil {
 		return err
+	}
+	if w.Mode == out.JSON {
+		uses := func(us []*Use) []map[string]any {
+			rows := make([]map[string]any, 0, len(us))
+			for _, u := range us {
+				rows = append(rows, map[string]any{"file": u.File.ID, "name": u.File.Name, "used_by": u.Where})
+			}
+			return rows
+		}
+		w.JSON(map[string]any{"ref": ref, "checked": rep.Checked, "expired": uses(rep.Expired),
+			"lapsing": uses(rep.Lapsing), "undeclared": uses(rep.Undeclared),
+			"lapse_window_days": int(LapseWindow.Hours() / 24)})
+		if rep.Blocking() > 0 {
+			return fmt.Errorf("%d image(s) are published under permission that has ended", rep.Blocking())
+		}
+		return nil
 	}
 	if rep.Checked == 0 {
 		fmt.Printf("  %sno images are used by this content%s\n", dim, reset)

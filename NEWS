@@ -581,6 +581,15 @@ Unreleased
     to use; a program that called it by name moves to quilzo_publish, and
     an agent that finds its operations with quilzo_find is told.
 
+*** --json answers in JSON everywhere it lists something.  Nineteen
+    commands printed their prose instead: agent list and templates, apps
+    list, audit, auth list and roles, brand check and list, browser
+    status, diff, inbox list, integrations list, log, peer list, research
+    list, rights, secret list, token list and version.  Each now writes
+    one document (never a token's hash or a secret's value, and a refusal
+    still exits non-zero), and a test runs every one of them as a caller
+    would.
+
 *** Getting started's "Publish it" opens Review.  It linked to /publish,
     which only takes the publish form, so the one link on the first screen
     a new installation shows that matters most answered "POST only".

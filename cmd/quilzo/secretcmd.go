@@ -250,15 +250,26 @@ func secretList(root string) error {
 	if err != nil {
 		return err
 	}
-	if len(f.Sealed) == 0 {
-		fmt.Printf("  %sno credentials are kept; quilzo secret set NAME < file keeps one%s\n", dim, reset)
-		return nil
-	}
 	names := make([]string, 0, len(f.Sealed))
 	for n := range f.Sealed {
 		names = append(names, n)
 	}
 	sort.Strings(names)
+	// Which credentials exist and who set them; the sealed value never.
+	rows := make([]map[string]any, 0, len(names))
+	for _, n := range names {
+		s := f.Set[n]
+		rows = append(rows, map[string]any{"name": n, "set_by": s.By,
+			"set_at":                s.At.UTC().Format(time.RFC3339),
+			"environment_overrides": os.Getenv(secretEnvName(n)) != ""})
+	}
+	if w.JSON(map[string]any{"secrets": rows}) {
+		return nil
+	}
+	if len(f.Sealed) == 0 {
+		fmt.Printf("  %sno credentials are kept; quilzo secret set NAME < file keeps one%s\n", dim, reset)
+		return nil
+	}
 	for _, n := range names {
 		s := f.Set[n]
 		fmt.Printf("%s%s%s  sealed, set by %s on %s\n", bold, n, reset, onOneLine(s.By), s.At.Format("2 Jan 2006"))
