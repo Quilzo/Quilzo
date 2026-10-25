@@ -252,7 +252,7 @@ func (s *Server) hasPasskey(name string) bool {
 	if s.Passkeys == nil {
 		return false
 	}
-	for _, c := range s.Passkeys.Credentials {
+	for _, c := range s.Passkeys.list() {
 		if strings.EqualFold(c.Principal, name) {
 			return true
 		}

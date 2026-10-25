@@ -66,6 +66,97 @@ type Passkeys struct {
 
 	mu         sync.Mutex
 	challenges map[string]challenge
+
+	// credMu is held for every read of Credentials and for every change,
+	// with its save. Requests run at once: a removal cut the list at an
+	// index found before another removal shifted it, and a sign-in wrote
+	// its counter back through an index found before the signature was
+	// checked, so either could land on somebody else's passkey. And a save
+	// outside it could write an older list last, undoing a removal on disk.
+	credMu sync.Mutex
+}
+
+// errPasskeyExists is a credential registered twice.
+var errPasskeyExists = errors.New("this key is already registered")
+
+// errPasskeyGone is a credential removed while it was being used.
+var errPasskeyGone = errors.New("this passkey was removed")
+
+// list is a copy of the credentials, for reading.
+func (p *Passkeys) list() []StoredCredential {
+	p.credMu.Lock()
+	defer p.credMu.Unlock()
+	return append([]StoredCredential(nil), p.Credentials...)
+}
+
+// lookup is the credential with this id, copied.
+func (p *Passkeys) lookup(id []byte) (StoredCredential, bool) {
+	p.credMu.Lock()
+	defer p.credMu.Unlock()
+	if i, ok := p.find(id); ok {
+		return p.Credentials[i], true
+	}
+	return StoredCredential{}, false
+}
+
+// change applies fn to the credentials and saves the result, all under
+// credMu, so each change is made to the list as it stands and the file
+// holds the newest one.
+func (p *Passkeys) change(fn func(creds *[]StoredCredential) error) error {
+	p.credMu.Lock()
+	defer p.credMu.Unlock()
+	if err := fn(&p.Credentials); err != nil {
+		return err
+	}
+	if p.Save == nil {
+		return nil
+	}
+	return p.Save(p)
+}
+
+// add keeps a new credential, refusing one already kept.
+func (p *Passkeys) add(sc StoredCredential) error {
+	return p.change(func(creds *[]StoredCredential) error {
+		if _, ok := p.find(sc.ID); ok {
+			return errPasskeyExists
+		}
+		*creds = append(*creds, sc)
+		return nil
+	})
+}
+
+// remove takes away the credential with this id, if owner holds it, and
+// returns its label.
+func (p *Passkeys) remove(id []byte, owner string) (string, error) {
+	label := ""
+	err := p.change(func(creds *[]StoredCredential) error {
+		i, ok := p.find(id)
+		if !ok || (*creds)[i].Principal != owner {
+			return errPasskeyGone
+		}
+		label = (*creds)[i].Label
+		*creds = append((*creds)[:i], (*creds)[i+1:]...)
+		return nil
+	})
+	return label, err
+}
+
+// noteUse writes back what a sign-in learnt about the credential with this
+// id: its counter, which the clone check compares against, and its flags.
+func (p *Passkeys) noteUse(id []byte, used webauthn.Credential, at time.Time) error {
+	return p.change(func(creds *[]StoredCredential) error {
+		i, ok := p.find(id)
+		if !ok {
+			return errPasskeyGone
+		}
+		c := &(*creds)[i]
+		c.SignCount = used.SignCount
+		c.UserVerified = used.UserVerified
+		c.BackupEligible = used.BackupEligible
+		c.BackupState = used.BackupState
+		c.LastUsed = at.Unix()
+		return nil
+	})
 }
 
 // StoredCredential is a passkey plus what this program needs to know about it.
@@ -129,7 +220,7 @@ func (p *Passkeys) takeChallenge(v string, now time.Time) (challenge, bool) {
 	return c, true
 }
 
-// find returns the credential with this id.
+// find returns the index of the credential with this id. credMu is held.
 func (p *Passkeys) find(id []byte) (int, bool) {
 	for i, c := range p.Credentials {
 		if len(c.ID) == len(id) && string(c.ID) == string(id) {
@@ -237,7 +328,7 @@ func (s *Server) handlePasskeys(w http.ResponseWriter, r *http.Request) {
 	s.passkeyPolicy(w, n)
 
 	var mine []StoredCredential
-	for _, c := range s.Passkeys.Credentials {
+	for _, c := range s.Passkeys.list() {
 		if c.Principal == who.Name {
 			mine = append(mine, c)
 		}
@@ -395,7 +486,7 @@ func (s *Server) handlePasskeyChallenge(w http.ResponseWriter, r *http.Request) 
 			"id":   base64.RawURLEncoding.EncodeToString([]byte(who.Name)),
 			"name": who.Name, "displayName": who.Name,
 		},
-		"exclude": credentialIDs(s.Passkeys.Credentials, who.Name),
+		"exclude": credentialIDs(s.Passkeys.list(), who.Name),
 	})
 }
 
@@ -464,15 +555,12 @@ func (s *Server) handlePasskeyRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	cred.CreatedAt = time.Now().Unix()
 
-	if _, exists := s.Passkeys.find(cred.ID); exists {
-		writeJSONError(w, http.StatusConflict, fmt.Errorf(
-			"this key is already registered"))
-		return
-	}
-	s.Passkeys.Credentials = append(s.Passkeys.Credentials,
-		StoredCredential{Credential: cred, RelyingParty: party.ID})
-	if err := s.savePasskeys(); err != nil {
-		writeJSONError(w, http.StatusInternalServerError, err)
+	if err := s.Passkeys.add(StoredCredential{Credential: cred, RelyingParty: party.ID}); err != nil {
+		code := http.StatusInternalServerError
+		if errors.Is(err, errPasskeyExists) {
+			code = http.StatusConflict
+		}
+		writeJSONError(w, code, err)
 		return
 	}
 	// Recorded with the session that added it, so a key added from a
@@ -594,7 +682,7 @@ func (s *Server) handlePasskeyVerify(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	idx, found := s.Passkeys.find(id)
+	cred, found := s.Passkeys.lookup(id)
 	if !found {
 		// The same answer as a bad signature, and deliberately: telling a
 		// stranger that a credential is unknown is telling them which ones are
@@ -606,7 +694,6 @@ func (s *Server) handlePasskeyVerify(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusUnauthorized, errSignIn)
 		return
 	}
-	cred := s.Passkeys.Credentials[idx]
 	// A credential the store knows names its account, so its failures count
 	// against that account, from where they come (lockout.go).
 	if !s.lockoutCheck(w, r, cred.Principal) {
@@ -638,13 +725,14 @@ func (s *Server) handlePasskeyVerify(w http.ResponseWriter, r *http.Request) {
 	// The counter has to be written back, or the clone check compares against
 	// a number that never moves and stops meaning anything; the flags, so
 	// the record says whether the key is synced as of its last use.
-	stored := &s.Passkeys.Credentials[idx]
-	stored.SignCount = used.SignCount
-	stored.UserVerified = used.UserVerified
-	stored.BackupEligible = used.BackupEligible
-	stored.BackupState = used.BackupState
-	stored.LastUsed = time.Now().Unix()
-	if err := s.savePasskeys(); err != nil {
+	if err := s.Passkeys.noteUse(cred.ID, used, time.Now()); err != nil {
+		if errors.Is(err, errPasskeyGone) {
+			// Removed while this sign-in was being checked: it signs in
+			// nobody, as it would have a moment later.
+			failed()
+			writeJSONError(w, http.StatusUnauthorized, errSignIn)
+			return
+		}
 		writeJSONError(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -774,10 +862,10 @@ func (s *Server) handlePasskeyRemove(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "that is not a credential id", http.StatusBadRequest)
 		return
 	}
-	idx, found := s.Passkeys.find(id)
+	c, found := s.Passkeys.lookup(id)
 	// Somebody may only remove their own. Without this, anybody who can sign
 	// in can remove everybody else's second factor.
-	if !found || s.Passkeys.Credentials[idx].Principal != who.Name {
+	if !found || c.Principal != who.Name {
 		http.Error(w, "no such passkey", http.StatusNotFound)
 		return
 	}
@@ -788,22 +876,18 @@ func (s *Server) handlePasskeyRemove(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
-	label := s.Passkeys.Credentials[idx].Label
-	s.Passkeys.Credentials = append(s.Passkeys.Credentials[:idx],
-		s.Passkeys.Credentials[idx+1:]...)
-	if err := s.savePasskeys(); err != nil {
+	// Removed by id, as the list stands now, and only if it is still theirs.
+	label, err := s.Passkeys.remove(id, who.Name)
+	if errors.Is(err, errPasskeyGone) {
+		http.Error(w, "no such passkey", http.StatusNotFound)
+		return
+	}
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	s.audit("passkey.removed", "/", map[string]string{"by": who.Name, "session": who.TokenID, "label": label})
 	http.Redirect(w, r, "/passkeys", http.StatusSeeOther)
-}
-
-func (s *Server) savePasskeys() error {
-	if s.Passkeys == nil || s.Passkeys.Save == nil {
-		return nil
-	}
-	return s.Passkeys.Save(s.Passkeys)
 }
 
 // errNoPasskeyStore is what a build with no credential storage says. Not a

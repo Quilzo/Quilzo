@@ -137,7 +137,7 @@ func (s *Server) handleEnrolChallenge(w http.ResponseWriter, r *http.Request) {
 			"id":   base64.RawURLEncoding.EncodeToString([]byte(l.Principal)),
 			"name": l.Principal, "displayName": l.Principal,
 		},
-		"exclude": credentialIDs(s.Passkeys.Credentials, l.Principal),
+		"exclude": credentialIDs(s.Passkeys.list(), l.Principal),
 	})
 }
 
@@ -178,7 +178,7 @@ func (s *Server) handleEnrolRegister(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, err)
 		return
 	}
-	if _, exists := s.Passkeys.find(cred.ID); exists {
+	if _, exists := s.Passkeys.lookup(cred.ID); exists {
 		writeJSONError(w, http.StatusConflict, fmt.Errorf("this key is already registered"))
 		return
 	}
@@ -194,9 +194,12 @@ func (s *Server) handleEnrolRegister(w http.ResponseWriter, r *http.Request) {
 		cred.Label = "a passkey"
 	}
 	cred.CreatedAt = time.Now().Unix()
-	s.Passkeys.Credentials = append(s.Passkeys.Credentials, StoredCredential{Credential: cred, RelyingParty: party.ID})
-	if err := s.savePasskeys(); err != nil {
-		writeJSONError(w, http.StatusInternalServerError, err)
+	if err := s.Passkeys.add(StoredCredential{Credential: cred, RelyingParty: party.ID}); err != nil {
+		code := http.StatusInternalServerError
+		if errors.Is(err, errPasskeyExists) {
+			code = http.StatusConflict
+		}
+		writeJSONError(w, code, err)
 		return
 	}
 	// Who it was for, and who gave the link, so a key added through a link

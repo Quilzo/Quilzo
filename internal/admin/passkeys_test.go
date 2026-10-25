@@ -14,11 +14,16 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/webauthn"
 )
 
 // A passkey, exercised through the real routes.
@@ -462,5 +467,71 @@ func TestThePasskeyPolicyKeepsWhatTheShellNeeds(t *testing.T) {
 					"this screen and nowhere else: %s", path, need, csp)
 			}
 		}
+	}
+}
+
+// A change to a passkey lands on the key it is for.
+//
+// Requests run at once, and the list was changed by index: a sign-in found
+// its key, checked the signature and wrote the counter back at the index it
+// had found, and a removal in between shifted the list, so the counter that
+// detects a cloned key moved onto somebody else's. A removal cut at an index
+// found before another removal moved it, taking the wrong person's key.
+func TestAPasskeyChangeLandsOnTheKeyItIsFor(t *testing.T) {
+	cred := func(id, who string, n uint32) StoredCredential {
+		return StoredCredential{Credential: webauthn.Credential{ID: []byte(id), Principal: who, SignCount: n}}
+	}
+	p := &Passkeys{Credentials: []StoredCredential{cred("a", "ada", 1), cred("b", "bo", 5), cred("c", "cy", 9)}}
+	// Bo's sign-in finds the key; Ada removes hers before it writes back.
+	b, ok := p.lookup([]byte("b"))
+	if !ok {
+		t.Fatal("no key b")
+	}
+	if _, err := p.remove([]byte("a"), "ada"); err != nil {
+		t.Fatal(err)
+	}
+	used := b.Credential
+	used.SignCount = 6
+	if err := p.noteUse(b.ID, used, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]uint32{}
+	for _, c := range p.list() {
+		got[string(c.ID)] = c.SignCount
+	}
+	if got["b"] != 6 || got["c"] != 9 {
+		t.Fatalf("the counter landed on the wrong key: %v", got)
+	}
+	// Somebody else's key is not theirs to remove, and a removed key signs
+	// nobody in.
+	if _, err := p.remove([]byte("c"), "bo"); !errors.Is(err, errPasskeyGone) {
+		t.Fatalf("bo removed cy's key: %v", err)
+	}
+	if err := p.noteUse([]byte("a"), used, time.Now()); !errors.Is(err, errPasskeyGone) {
+		t.Fatalf("a removed key was written back: %v", err)
+	}
+	if err := p.add(cred("b", "bo", 0)); !errors.Is(err, errPasskeyExists) {
+		t.Fatalf("a key was kept twice: %v", err)
+	}
+
+	// And at once, which the race detector checks: what ends up kept is
+	// what was added and not removed.
+	var wg sync.WaitGroup
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			id := []byte(fmt.Sprintf("k%d", i))
+			_ = p.add(cred(string(id), "ivo", 0))
+			_ = p.noteUse(id, webauthn.Credential{ID: id, SignCount: 1}, time.Now())
+			if i%2 == 0 {
+				_, _ = p.remove(id, "ivo")
+			}
+			_ = p.list()
+		}(i)
+	}
+	wg.Wait()
+	if n := len(p.list()); n != 2+25 {
+		t.Fatalf("%d keys kept; 2 and 25 of 50 were left", n)
 	}
 }

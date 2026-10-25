@@ -571,6 +571,15 @@ Unreleased
 
 ** Fixed
 
+*** A passkey sign-in or removal lands on the key it is for.  The admin
+    changed its list of passkeys by position, with nothing to stop two
+    requests at once: a sign-in wrote the counter that detects a cloned key
+    back at the position it found before checking the signature, and a
+    removal cut at a position found before another removal moved the
+    list, so either could land on somebody else's passkey, and a save could
+    write an older list over a newer one.  Every change is now made by the
+    key's id, to the list as it stands, and saved before the next.
+
 *** A budget for a model cannot be refilled by a full disk.  The gateway
     wrote each call to model-usage.jsonl and threw the write's error away,
     so a ledger that could not be written kept counting in memory while
