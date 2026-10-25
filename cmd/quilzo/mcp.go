@@ -54,10 +54,13 @@ func cmdMCP(root string, args []string) error {
 			if op.Writes {
 				kind = "write"
 			}
-			fmt.Printf("  %-22s %-6s %s\n", op.Name, kind, op.Summary)
+			if op.Publishes {
+				kind = "publish"
+			}
+			fmt.Printf("  %-22s %-7s %s\n", op.Name, kind, op.Summary)
 		}
-		fmt.Printf("\n  %s%d operations behind 4 tools; an agent loads only what it "+
-			"searches for%s\n", dim, len(srv.Operations()), reset)
+		fmt.Printf("\n  %s%d operations behind %d tools; an agent loads only what it "+
+			"searches for%s\n", dim, len(srv.Operations()), len(srv.Tools()), reset)
 		return nil
 	}
 
@@ -415,7 +418,7 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		Name: "publish", Summary: "make the draft live",
 		Detail: "Runs the accessibility and provenance gates first and refuses if " +
 			"either fails. There is no override here; that is a human decision.",
-		Writes: true, NeedsRole: "publisher",
+		Writes: true, Publishes: true, NeedsRole: "publisher",
 		Keywords: []string{"publish", "live", "release", "deploy", "ship"},
 	}, func(map[string]any) (any, error) {
 		if err := authorise(root, caller, auth.ActPublish, "/"); err != nil {

@@ -127,7 +127,7 @@ func TestPublishingAsksAboutEachPageItWouldChange(t *testing.T) {
 		t.Errorf("an administrator could not publish: %v", err)
 	}
 	call := mcpAs(t, root, withRole("pat", auth.RolePublisher))
-	if got := call("quilzo_write", "publish", nil); !strings.Contains(got, "may not publish") {
+	if got := call("quilzo_publish", "publish", nil); !strings.Contains(got, "may not publish") {
 		t.Errorf("publish over MCP went round the deny: %s", got)
 	}
 }

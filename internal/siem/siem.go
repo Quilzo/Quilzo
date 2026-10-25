@@ -451,10 +451,11 @@ func categoryFor(e audit.Event) int {
 // activityFor maps to OCSF API Activity: 1 Create, 2 Read, 3 Update, 4 Delete.
 func activityFor(e audit.Event) int {
 	// A call through the agent interface is a read unless it went through
-	// the write tool: an agent's reading is most of what it does, and an
-	// export that called every one an update would bury the writes.
+	// the write tool or the publish tool: an agent's reading is most of what
+	// it does, and an export that called every one an update would bury the
+	// writes.
 	if e.Action == "mcp.call" {
-		if e.Detail["tool"] == "quilzo_write" {
+		if t := e.Detail["tool"]; t == "quilzo_write" || t == "quilzo_publish" {
 			return 3
 		}
 		return 2

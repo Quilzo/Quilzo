@@ -571,6 +571,16 @@ Unreleased
 
 ** Fixed
 
+*** Publishing over MCP is a tool of its own, quilzo_publish.  It was an
+    operation of quilzo_write, whose description says "Never publishes",
+    so a host that asked a person whether an agent might change the draft
+    was asking whether it might put the draft in front of readers too.
+    quilzo_publish tells a host it changes what readers see
+    (destructiveHint), so a host can let an agent draft and still ask
+    before it publishes.  quilzo_write refuses publish and says which tool
+    to use; a program that called it by name moves to quilzo_publish, and
+    an agent that finds its operations with quilzo_find is told.
+
 *** Getting started's "Publish it" opens Review.  It linked to /publish,
     which only takes the publish form, so the one link on the first screen
     a new installation shows that matters most answered "POST only".
