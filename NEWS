@@ -571,6 +571,22 @@ Unreleased
 
 ** Fixed
 
+*** A budget for a model cannot be refilled by a full disk.  The gateway
+    wrote each call to model-usage.jsonl and threw the write's error away,
+    so a ledger that could not be written kept counting in memory while
+    the file, which budgets are counted from after a restart, fell behind.
+    A call the file refuses is now kept and written first at the next
+    call; until then a caller with a budget is refused (one without has
+    nothing to forget), and the audit log says when it started
+    (gateway.ledger-failed) and when it ended (gateway.ledger-restored).
+    It is not reported to the shield as overspending.
+
+*** The audit stream's receiver checks the address its sender signed.
+    Behind a proxy that ends TLS it rebuilt the address from the request,
+    plain HTTP to an internal host, and refused every batch.  Its Origin
+    is the receiver's public address; Vaigil, which receives Quilzo's
+    stream, sets it from admin.base_url.
+
 *** Publishing over MCP is a tool of its own, quilzo_publish.  It was an
     operation of quilzo_write, whose description says "Never publishes",
     so a host that asked a person whether an agent might change the draft

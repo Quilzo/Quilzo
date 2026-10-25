@@ -339,9 +339,11 @@ type Gateway struct {
 	// resting after failures is (internal/shield). Nil cuts nothing.
 	Cut func(route string) bool
 	// OnTrouble is told what the shield should know: a caller that spent
-	// its budget ("spent", with the consumer), and a route the provider
+	// its budget ("spent", with the consumer), a route the provider
 	// refused for its spend cap or its key ("route-spent", "route-auth",
-	// with the route). Nil tells nobody.
+	// with the route), and the usage ledger's file refusing records
+	// ("ledger", with why) and taking them again ("ledger-written"). Nil
+	// tells nobody.
 	OnTrouble func(kind, subject string)
 	// OnMasked is told when personal data or a credential was taken out of
 	// a prompt: the caller, the route, and how many of each kind.
@@ -436,6 +438,32 @@ func (g *Gateway) TodaySpend(consumer string, now time.Time) Money {
 	return g.ledger.TodayCost(consumer, now)
 }
 
+// ErrUnwritable is a budget refused because the ledger's file cannot be
+// written. It is also ErrBudget, and it is not the caller having spent: it
+// is told to OnTrouble as the ledger's trouble, never as "spent".
+var ErrUnwritable = errors.New("the usage ledger cannot be written")
+
+// note records a call in the ledger and tells OnTrouble when the ledger's
+// file stops taking records ("ledger", with the reason) and when it takes
+// them again ("ledger-written").
+func (g *Gateway) note(u Usage) {
+	started, ended := g.ledger.record(u)
+	if g.OnTrouble == nil {
+		return
+	}
+	switch {
+	case started:
+		_, err := g.ledger.Unwritten()
+		why := "the file refused a record"
+		if err != nil {
+			why = err.Error()
+		}
+		g.OnTrouble("ledger", why)
+	case ended:
+		g.OnTrouble("ledger-written", g.ledger.path)
+	}
+}
+
 // admit checks a call against every budget it is charged to.
 func (g *Gateway) admit(consumers []string, chars int) error {
 	for _, c := range consumers {
@@ -450,6 +478,14 @@ func (g *Gateway) admitOne(consumer string, chars int) error {
 	b, ok := g.cfg.BudgetFor(consumer)
 	if !ok {
 		return nil
+	}
+	// A budget is counted from the ledger's file after a restart. While the
+	// file cannot be written, a call spends what a restart would forget, so
+	// a caller with a budget waits; one without has nothing to forget.
+	if n, err := g.ledger.Unwritten(); err != nil {
+		return fmt.Errorf("%w: %w (%v), and %d call(s) wait to be written down; "+
+			"%s has a budget, which a restart would refill",
+			ErrBudget, ErrUnwritable, err, n, consumer)
 	}
 	now := g.now()
 	if g.ledger != nil {
@@ -516,8 +552,8 @@ func (g *Gateway) complete(ctx context.Context, consumers []string, only, system
 	consumer, also := consumers[0], consumers[1:]
 	in := len(system) + len(user)
 	if err := g.admit(consumers, in); err != nil {
-		g.ledger.record(Usage{At: g.now(), Consumer: consumer, Also: also, In: in, Outcome: "over-budget"})
-		if g.OnTrouble != nil {
+		g.note(Usage{At: g.now(), Consumer: consumer, Also: also, In: in, Outcome: "over-budget"})
+		if g.OnTrouble != nil && !errors.Is(err, ErrUnwritable) {
 			g.OnTrouble("spent", consumer)
 		}
 		return "", assist.Usage{}, 0, err
@@ -568,7 +604,7 @@ func (g *Gateway) complete(ctx context.Context, consumers []string, only, system
 		took := g.now().Sub(start)
 		if err != nil {
 			kind := g.failure(ctx, r.Name, err)
-			g.ledger.record(Usage{At: start, Consumer: consumer, Also: also, Route: r.Name,
+			g.note(Usage{At: start, Consumer: consumer, Also: also, Route: r.Name,
 				Model: r.Model, In: in, Millis: took.Milliseconds(), Outcome: kind.outcome()})
 			if kind != unavailable {
 				return "", assist.Usage{}, 0, err
@@ -581,7 +617,7 @@ func (g *Gateway) complete(ctx context.Context, consumers []string, only, system
 		g.mu.Unlock()
 		pin, pout, _ := r.prices()
 		cost := costOf(pin, pout, used.In, used.Out)
-		g.ledger.record(Usage{At: start, Consumer: consumer, Also: also, Route: r.Name,
+		g.note(Usage{At: start, Consumer: consumer, Also: also, Route: r.Name,
 			Model: r.Model, In: in, Out: len(out), Millis: took.Milliseconds(),
 			TokensIn: used.In, TokensOut: used.Out, Estimated: !used.Reported, Cost: cost,
 			Masked: masked, Outcome: "ok"})
@@ -726,6 +762,12 @@ func (u Usage) payers() []string { return append([]string{u.Consumer}, u.Also...
 
 // Ledger records usage to a file and keeps today's and this month's
 // totals in memory.
+//
+// The file is what a budget is counted from after a restart, so a line that
+// cannot be written is not dropped: it waits in memory, every later call
+// tries it again first, and until it is written a caller with a budget is
+// refused (see Gateway.admitOne). The totals in memory were right all along;
+// what failed was the promise that a restart would not refill them.
 type Ledger struct {
 	path      string
 	mu        sync.Mutex
@@ -736,7 +778,18 @@ type Ledger struct {
 	cost      map[string]Money
 	monthCost map[string]Money
 	all       []Usage
+	// unwritten are lines the file refused, oldest first, and failed why.
+	unwritten [][]byte
+	failed    error
+	// told is whether the owner was last told the file was failing, so
+	// each change is reported once, whichever call wrote or failed.
+	told bool
 }
+
+// MaxUnwritten bounds the lines held while the file cannot be written. A
+// ledger that has refused this many is not going to recover by itself, and
+// callers with budgets have been refused since the first.
+const MaxUnwritten = 10_000
 
 // MaxKept is how many recent calls the ledger keeps in memory for display.
 const MaxKept = 500
@@ -785,9 +838,12 @@ func (l *Ledger) keep(u Usage) {
 	}
 }
 
-func (l *Ledger) record(u Usage) {
+// record counts a call and writes it down. It reports a change in whether
+// the file can be written: started is true on the call that found it could
+// not, ended on the call that found it could again.
+func (l *Ledger) record(u Usage) (started, ended bool) {
 	if l == nil {
-		return
+		return false, false
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -795,14 +851,52 @@ func (l *Ledger) record(u Usage) {
 	l.keep(u)
 	b, err := json.Marshal(u)
 	if err != nil || l.path == "" {
+		return false, false
+	}
+	if len(l.unwritten) < MaxUnwritten {
+		l.unwritten = append(l.unwritten, append(b, '\n'))
+	}
+	l.flushLocked()
+	failing := l.failed != nil
+	started, ended = failing && !l.told, !failing && l.told
+	l.told = failing
+	return started, ended
+}
+
+// flushLocked writes what is waiting, oldest first. l.mu is held.
+func (l *Ledger) flushLocked() {
+	if len(l.unwritten) == 0 || l.path == "" {
+		l.failed = nil
 		return
 	}
+	l.failed = l.writeLocked()
+}
+
+func (l *Ledger) writeLocked() error {
 	f, err := os.OpenFile(l.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
-		return
+		return err
 	}
-	_, _ = f.Write(append(b, '\n'))
-	_ = f.Close()
+	for len(l.unwritten) > 0 {
+		if _, err := f.Write(l.unwritten[0]); err != nil {
+			_ = f.Close()
+			return err
+		}
+		l.unwritten = l.unwritten[1:]
+	}
+	return f.Close()
+}
+
+// Unwritten is how many calls the file has not taken, and why, after one
+// more attempt to write them. Zero and nil is a ledger a restart can trust.
+func (l *Ledger) Unwritten() (int, error) {
+	if l == nil {
+		return 0, nil
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.flushLocked()
+	return len(l.unwritten), l.failed
 }
 
 func (l *Ledger) roll(now time.Time) {

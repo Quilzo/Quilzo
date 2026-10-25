@@ -115,6 +115,65 @@ func TestAPublicChatbotCannotSpendWithoutLimit(t *testing.T) {
 	}
 }
 
+// A ledger whose file will not take a record holds what it could not write,
+// refuses callers with a budget until it can, says so once each way, and
+// loses nothing: a restart afterwards counts every call.
+//
+// The record was written with its error thrown away, so a full disk or a
+// moved file let every budget refill at the next restart while the totals
+// in memory looked right.
+func TestAnUnwritableLedgerHoldsCallersWithABudget(t *testing.T) {
+	cfg := two
+	cfg.Budgets = []Budget{{Consumer: "chatbot:help", CharsPerDay: 1_000_000}}
+	local := &fake{name: "local"}
+	g, c, path := rig(t, cfg, map[string]*fake{"hosted": {name: "hosted", fail: true}, "local": local})
+	var trouble []string
+	g.OnTrouble = func(kind, subject string) { trouble = append(trouble, kind) }
+	m := g.For("chatbot:help")
+	if _, err := m.Complete(context.Background(), "s", "first"); err != nil {
+		t.Fatal(err)
+	}
+	// Where the file was, a directory: no write succeeds, root's included.
+	if err := os.Rename(path, path+".away"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.For("assist").Complete(context.Background(), "s", "unbudgeted"); err != nil {
+		t.Fatalf("a caller with no budget was refused: %v", err)
+	}
+	if _, err := m.Complete(context.Background(), "s", "second"); !errors.Is(err, ErrBudget) ||
+		!strings.Contains(err.Error(), "cannot be written") {
+		t.Fatalf("a caller with a budget spent what a restart would forget: %v", err)
+	}
+	if n, err := g.ledger.Unwritten(); n == 0 || err == nil {
+		t.Fatalf("unwritten %d, %v", n, err)
+	}
+	// The file comes back: what waited is written first, and the caller goes on.
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(path+".away", path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Complete(context.Background(), "s", "third"); err != nil {
+		t.Fatalf("the ledger was writable again and the caller still waited: %v", err)
+	}
+	if strings.Join(trouble, " ") != "ledger ledger-written" {
+		t.Errorf("trouble reported %v; want the failure once and the recovery once", trouble)
+	}
+	l2, err := OpenLedger(path, c.t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Every call was kept: the first went to the file before it moved; the
+	// unbudgeted one, the refused one and the third were held and written.
+	if got, want := len(l2.all), len(g.ledger.all); got != want || want < 4 {
+		t.Fatalf("a restart reads %d calls of the %d counted", got, want)
+	}
+}
+
 func TestCallsPerMinute(t *testing.T) {
 	cfg := two
 	cfg.Budgets = []Budget{{Consumer: "*", PerMinute: 3}}

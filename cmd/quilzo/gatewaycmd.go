@@ -101,6 +101,20 @@ func modelGateway(root string) (*gateway.Gateway, *gateway.Config, error) {
 		noteMasked(root, consumer, route, counts)
 	}
 	gw.OnTrouble = func(kind, subject string) {
+		switch kind {
+		case "ledger", "ledger-written":
+			// The ledger's file is what budgets are counted from after a
+			// restart. Its failing is a record in the audit log, where the
+			// stream carries it to whoever watches, and it is not a route's
+			// trouble: until it is written again, callers with budgets wait.
+			action, outcome, detail := "gateway.ledger-failed", audit.Failure, map[string]string{"error": onOneLine(subject)}
+			if kind == "ledger-written" {
+				action, outcome, detail = "gateway.ledger-restored", audit.Success, map[string]string{"path": filepath.Base(subject)}
+			}
+			record(root, audit.Record{Action: action, Resource: "/gateway", Outcome: outcome,
+				Principal: "gateway", Kind: audit.KindService, Verified: true, Detail: detail})
+			return
+		}
 		name := "route-trouble"
 		if kind == "spent" {
 			name = "model-spend"

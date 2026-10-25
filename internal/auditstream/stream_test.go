@@ -35,6 +35,9 @@ type rig struct {
 	took   []*Batch
 	// tamper changes a request's body before the receiver reads it.
 	tamper func([]byte) []byte
+	// proxied hands the request on as a TLS-ending proxy would: to an
+	// internal host, under another name.
+	proxied bool
 }
 
 func newRig(t *testing.T) *rig {
@@ -66,6 +69,9 @@ func newRig(t *testing.T) *rig {
 		body, _ := io.ReadAll(req.Body)
 		if r.tamper != nil {
 			body = r.tamper(body)
+		}
+		if r.proxied {
+			req.Host = "receiver.internal:8080"
 		}
 		r.mu.Lock()
 		defer r.mu.Unlock()
@@ -262,5 +268,21 @@ func TestABatchProvesItselfOrIsRefused(t *testing.T) {
 	}
 	if r.recv.Holds() != 0 {
 		t.Errorf("something was taken: %d", r.recv.Holds())
+	}
+}
+
+// Behind a proxy the receiver checks the address it was given, which is the
+// one the sender signed; rebuilt from the request it is an internal host,
+// and every batch was refused.
+func TestBehindAProxyTheSignedAddressIsTheConfiguredOne(t *testing.T) {
+	r := newRig(t)
+	r.proxied = true
+	r.write(t, 2)
+	if n, err := r.sender.Push(context.Background(), now); err == nil || n != 0 {
+		t.Fatalf("with no origin a proxied batch was taken: %d %v", n, err)
+	}
+	r.recv.Origin = r.srv.URL
+	if n, err := r.sender.Push(context.Background(), now); err != nil || n != 2 {
+		t.Fatalf("with the origin set: %d %v", n, err)
 	}
 }
