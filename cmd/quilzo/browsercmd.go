@@ -22,6 +22,7 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/browser"
 	"github.com/quilzo/quilzo/internal/fetch"
+	"github.com/quilzo/quilzo/internal/out"
 )
 
 // The browser an agent's browser runs: the pinned Chrome for Testing build,
@@ -61,6 +62,22 @@ func cmdBrowser(root string, args []string) error {
 	switch args[0] {
 	case "status":
 		path, from, err := browserPath(root)
+		if w.Mode == out.JSON {
+			doc := map[string]any{"browser": nil, "from": nil}
+			if err != nil {
+				doc["problem"] = err.Error()
+			} else {
+				doc["browser"], doc["from"] = path, from
+			}
+			n, nerr := programBackend(root, "native", "")
+			if nerr != nil {
+				return nerr
+			}
+			a := n.Check()
+			doc["agent_box"], doc["agent_box_why"] = a.OK, a.Why
+			w.JSON(doc)
+			return nil
+		}
 		if err != nil {
 			fmt.Printf("  %s%s%s\n", yellow, err.Error(), reset)
 		} else {

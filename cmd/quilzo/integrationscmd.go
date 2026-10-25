@@ -19,6 +19,7 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/mcpclient"
+	"github.com/quilzo/quilzo/internal/out"
 )
 
 // Declaring the outside systems this install may reach, and reaching them.
@@ -88,6 +89,17 @@ func integrationsList(root string) error {
 	set, err := loadIntegrations(root)
 	if err != nil {
 		return err
+	}
+	if w.Mode == out.JSON {
+		rows := make([]map[string]any, 0, len(set.Declared))
+		for _, in := range set.Declared {
+			rows = append(rows, map[string]any{"name": in.Name, "kind": in.Kind,
+				"enabled": in.Enabled, "purpose": in.Purpose, "reaches": in.Where(),
+				"inside_network": in.Reach, "uses": in.Uses, "writes": in.Writes,
+				"blocked_by_install": in.Enabled && in.Kind == agent.IntegrationProcess && !set.AllowProcess})
+		}
+		w.JSON(map[string]any{"integrations": rows, "process_integrations_allowed": set.AllowProcess})
+		return nil
 	}
 	if len(set.Declared) == 0 {
 		fmt.Printf("  %snothing declared, so this install reaches nothing "+

@@ -620,6 +620,9 @@ func TestAgentInterfaceCallsExportAsReadsAndWrites(t *testing.T) {
 		audit.Record{Action: "mcp.call", Resource: "/mcp", Outcome: audit.Denied, Principal: "app:qzc_1",
 			Kind: audit.KindAI, Model: "qzc_1", Verified: true,
 			Detail: map[string]string{"tool": "quilzo_write", "operation": "write_page", "on_behalf_of": "dana"}},
+		audit.Record{Action: "mcp.call", Resource: "/mcp", Outcome: audit.Success, Principal: "app:qzc_1",
+			Kind: audit.KindAI, Model: "qzc_1", Verified: true,
+			Detail: map[string]string{"tool": "quilzo_publish", "operation": "publish", "on_behalf_of": "dana"}},
 		audit.Record{Action: "oauth.disconnected", Resource: "/mcp", Outcome: audit.Success, Principal: "dana",
 			Kind: audit.KindHuman, Verified: true},
 	)
@@ -636,13 +639,13 @@ func TestAgentInterfaceCallsExportAsReadsAndWrites(t *testing.T) {
 		}
 		recs = append(recs, m)
 	}
-	if len(recs) != 3 {
+	if len(recs) != 4 {
 		t.Fatalf("%d records", len(recs))
 	}
 	want := []struct {
 		activity float64
 		op       string
-	}{{2, "list_pages"}, {3, "write_page"}, {4, "oauth.disconnected"}}
+	}{{2, "list_pages"}, {3, "write_page"}, {3, "publish"}, {4, "oauth.disconnected"}}
 	for i, w := range want {
 		api := recs[i]["api"].(map[string]any)
 		if recs[i]["activity_id"] != w.activity || api["operation"] != w.op || recs[i]["class_uid"] != float64(6003) {
@@ -653,7 +656,7 @@ func TestAgentInterfaceCallsExportAsReadsAndWrites(t *testing.T) {
 	if actor["app_name"] != "qzc_1" {
 		t.Errorf("the app is not the actor's application: %v", actor)
 	}
-	if _, ok := recs[2]["actor"].(map[string]any)["app_name"]; ok {
+	if _, ok := recs[3]["actor"].(map[string]any)["app_name"]; ok {
 		t.Error("a person's record names an application")
 	}
 }

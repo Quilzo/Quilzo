@@ -60,7 +60,7 @@ func programAgentMain() {
 		return fmt.Sprintf("status %d: %s", res.StatusCode, b)
 	}
 	listed := call(1, "quilzo_read", "list_pages")
-	published := call(2, "quilzo_write", "publish")
+	published := call(2, "quilzo_publish", "publish")
 	asked := call(3, "quilzo_read", "read_page")
 	mreq, _ := http.NewRequest("POST", os.Getenv("OPENAI_BASE_URL")+"/chat/completions",
 		strings.NewReader(`{"model":"x","messages":[{"role":"user","content":"hello"}]}`))

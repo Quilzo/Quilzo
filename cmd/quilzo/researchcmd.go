@@ -25,6 +25,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/fetch"
+	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/research"
 	"github.com/quilzo/quilzo/internal/shell"
@@ -377,6 +378,19 @@ func researchList(root string, caller *Caller) error {
 	all, err := researchStore(root).List()
 	if err != nil {
 		return err
+	}
+	if w.Mode == out.JSON {
+		rows := make([]map[string]any, 0, len(all))
+		for _, proj := range all {
+			row := map[string]any{"name": proj.Name, "question": proj.Question,
+				"registered": proj.Registered(), "claims": len(proj.Claims), "sources": len(proj.Sources)}
+			if proj.Registered() {
+				row["registered_at"] = proj.Plan.Registered.UTC().Format(time.RFC3339)
+			}
+			rows = append(rows, row)
+		}
+		w.JSON(map[string]any{"projects": rows})
+		return nil
 	}
 	if len(all) == 0 {
 		fmt.Println(`no research projects; start one with quilzo research new NAME --question "…"`)

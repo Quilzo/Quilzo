@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/replica"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
@@ -97,6 +98,9 @@ func peerList(root string) error {
 		return err
 	}
 	if len(f.Peers) == 0 {
+		if w.JSON(map[string]any{"peers": []any{}}) {
+			return nil
+		}
 		fmt.Printf("  %sno peers. `quilzo peer add NAME https://host --ref draft`%s\n",
 			dim, reset)
 		return nil
@@ -106,6 +110,16 @@ func peerList(root string) error {
 		return err
 	}
 	sort.Slice(f.Peers, func(i, j int) bool { return f.Peers[i].Name < f.Peers[j].Name })
+	if w.Mode == out.JSON {
+		rows := make([]map[string]any, 0, len(f.Peers))
+		for _, peer := range f.Peers {
+			rows = append(rows, map[string]any{"name": peer.Name, "url": peer.URL, "ref": peer.Ref,
+				"pulled_at":      s.GetRef(replica.QuarantineRef(peer.Name)),
+				"credential_set": os.Getenv(peer.tokenEnv()) != ""})
+		}
+		w.JSON(map[string]any{"peers": rows})
+		return nil
+	}
 	for _, p := range f.Peers {
 		fmt.Printf("%s%s%s  %s %s%s%s\n", bold, p.Name, reset, p.URL, dim, p.Ref, reset)
 		at := s.GetRef(replica.QuarantineRef(p.Name))

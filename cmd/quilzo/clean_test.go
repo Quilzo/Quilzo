@@ -58,6 +58,12 @@ func TestMain(m *testing.M) {
 		case "agentbox-program-calls":
 			programCallsMain(os.Args[2])
 			os.Exit(0)
+		case "quilzo-main":
+			// The command line itself, for a test that needs what a
+			// caller gets on stdout and nothing a function returns.
+			os.Args = append([]string{"quilzo"}, os.Args[2:]...)
+			main()
+			os.Exit(0)
 		}
 	}
 	before := looseEntries()

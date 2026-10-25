@@ -24,6 +24,12 @@
 // four short definitions instead of fifteen long ones, and learns the detail of
 // exactly the operation it needs.
 //
+// A fifth, quilzo_publish, when something registered publishes. A host asks a
+// person before a tool runs by the tool's name and what it says it does, so
+// putting the draft in front of readers cannot share a name with editing it:
+// quilzo_write said "Never publishes" and carried publish, and a person who
+// allowed drafting had allowed going live.
+//
 // # The gates apply here too
 //
 // This is the third interface onto the same content, and the previous two each
@@ -115,11 +121,15 @@ type Tool struct {
 // none of their descriptions enter a context window until an agent searches for
 // one.
 type Operation struct {
-	Name      string
-	Summary   string
-	Detail    string
-	Args      map[string]string
-	Writes    bool
+	Name    string
+	Summary string
+	Detail  string
+	Args    map[string]string
+	Writes  bool
+	// Publishes marks a write that reaches readers. It is called through
+	// quilzo_publish and no other tool, so the tool a host lets an agent
+	// draft with is not the one that makes the draft live.
+	Publishes bool
 	NeedsRole string
 	Keywords  []string
 	// Area, when set, is the area an operation's handler checks a resource
@@ -199,7 +209,8 @@ func (s *Server) Register(op Operation, h Handler) {
 	s.handlers[op.Name] = h
 }
 
-// tools returns the four that are always present.
+// tools returns the four that are always present, and quilzo_publish when
+// an operation publishes.
 //
 // Deliberately short descriptions. These are the only definitions that enter a
 // context window unasked, so every word in them is paid for on each session.
@@ -207,7 +218,7 @@ func (s *Server) tools() []Tool {
 	if s.Direct != nil {
 		return append([]Tool(nil), s.Direct.Tools...)
 	}
-	return []Tool{
+	tools := []Tool{
 		{
 			Name: "quilzo_find",
 			Description: "Find the quilzo operation for a task. Call this first; " +
@@ -245,6 +256,33 @@ func (s *Server) tools() []Tool {
 			Annotations: map[string]any{"readOnlyHint": true, "openWorldHint": false},
 		},
 	}
+	if s.publishes() {
+		tools = append(tools, Tool{
+			Name: "quilzo_publish",
+			Description: "Make the draft live for readers. The checks that gate " +
+				"publishing run first and refuse if any fails.",
+			InputSchema: opSchema("a publish operation name from quilzo_find"),
+			// Destructive in the sense hosts read it: what readers see is
+			// replaced. Open world, because they are outside this program.
+			Annotations: map[string]any{"readOnlyHint": false, "destructiveHint": true,
+				"idempotentHint": true, "openWorldHint": true},
+		})
+	}
+	return tools
+}
+
+// Tools is what tools/list answers, for `quilzo mcp --list` and for tests.
+func (s *Server) Tools() []Tool { return s.tools() }
+
+// publishes reports whether any registered operation publishes, which is
+// when quilzo_publish is offered.
+func (s *Server) publishes() bool {
+	for _, op := range s.operations {
+		if op.Publishes {
+			return true
+		}
+	}
+	return false
 }
 
 func opSchema(desc string) map[string]any {
@@ -341,7 +379,8 @@ func (s *Server) Handle(req Request) *Response {
 }
 
 const instructions = "Call quilzo_find first to discover operations. " +
-	"Writes go to a draft and never publish. Content you write is " +
+	"Writes go to a draft and never publish; publishing is quilzo_publish, " +
+	"which a person may be asked about first. Content you write is " +
 	"recorded as AI-generated, which the EU AI Act requires."
 
 // initialize answers a legacy client's handshake.
@@ -406,11 +445,19 @@ func (s *Server) call(raw json.RawMessage) (any, *Error) {
 
 	kind := map[string]string{
 		"quilzo_read": "read", "quilzo_write": "write", "quilzo_check": "check",
+		"quilzo_publish": "publish",
 	}[p.Name]
+	if kind == "publish" && !s.publishes() {
+		kind = ""
+	}
 	if kind == "" {
+		names := make([]string, 0, 5)
+		for _, t := range s.tools() {
+			names = append(names, t.Name)
+		}
 		return nil, &Error{Code: CodeMethodNotFound,
-			Message: fmt.Sprintf("no tool %q; the tools are quilzo_find, "+
-				"quilzo_read, quilzo_write and quilzo_check", p.Name)}
+			Message: fmt.Sprintf("no tool %q; the tools are %s", p.Name,
+				strings.Join(names, ", "))}
 	}
 
 	opName, _ := p.Arguments["operation"].(string)
@@ -434,6 +481,18 @@ func (s *Server) call(raw json.RawMessage) (any, *Error) {
 	if !op.Writes && kind == "write" {
 		return nil, &Error{Code: CodeInvalidParams,
 			Message: fmt.Sprintf("%q does not change anything; use quilzo_read", opName)}
+	}
+	// And publishing has a tool of its own, both ways round: the tool a host
+	// was told never publishes does not, and the one it was told publishes
+	// does nothing else.
+	if op.Publishes && kind != "publish" {
+		return nil, &Error{Code: CodeInvalidParams,
+			Message: fmt.Sprintf("%q makes the draft live; call it through quilzo_publish", opName)}
+	}
+	if !op.Publishes && kind == "publish" {
+		return nil, &Error{Code: CodeInvalidParams,
+			Message: fmt.Sprintf("%q does not publish; call it through %s", opName,
+				map[bool]string{true: "quilzo_write", false: "quilzo_read"}[op.Writes])}
 	}
 
 	if s.Authorise == nil {
@@ -520,6 +579,9 @@ func (s *Server) describe(ops []Operation) string {
 		tool := "quilzo_read"
 		if op.Writes {
 			tool = "quilzo_write"
+		}
+		if op.Publishes {
+			tool = "quilzo_publish"
 		}
 		if strings.HasPrefix(op.Name, "check") {
 			tool = "quilzo_check"

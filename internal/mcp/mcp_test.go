@@ -26,7 +26,7 @@ func testServer() *Server {
 	}, func(a map[string]any) (any, error) { return "saved", nil })
 
 	s.Register(Operation{
-		Name: "publish", Summary: "make the draft live", Writes: true,
+		Name: "publish", Summary: "make the draft live", Writes: true, Publishes: true,
 		NeedsRole: "publisher", Keywords: []string{"publish", "live", "release"},
 	}, func(a map[string]any) (any, error) {
 		return nil, &Refusal{Reason: "2 blocking accessibility failures"}
@@ -65,24 +65,74 @@ func text(t *testing.T, r *Response) string {
 	return content[0]["text"].(string)
 }
 
-// The whole point of the design: what an agent pays for unasked is four short
-// definitions, not one per command. A server that grew a tool per operation
-// would be the thing the measurements condemned.
-func TestOnlyFourToolsAreEverPreloaded(t *testing.T) {
+// The whole point of the design: what an agent pays for unasked is a handful
+// of short definitions, not one per command. A server that grew a tool per
+// operation would be the thing the measurements condemned. Four, and a fifth
+// for publishing when something publishes.
+func TestOnlyFiveToolsAreEverPreloaded(t *testing.T) {
 	s := testServer()
 	r := s.Handle(Request{JSONRPC: "2.0", Method: "tools/list"})
 	m := r.Result.(map[string]any)
 	tools := m["tools"].([]Tool)
 
-	if len(tools) != 4 {
-		t.Fatalf("expected 4 tools regardless of operation count, got %d", len(tools))
+	if len(tools) != 5 {
+		t.Fatalf("expected 5 tools regardless of operation count, got %d", len(tools))
 	}
 	// Adding operations must not add tools, or the property is accidental.
 	s.Register(Operation{Name: "extra", Summary: "another one"},
 		func(map[string]any) (any, error) { return "", nil })
+	s.Register(Operation{Name: "extra_publish", Summary: "another way live", Writes: true, Publishes: true},
+		func(map[string]any) (any, error) { return "", nil })
 	r = s.Handle(Request{JSONRPC: "2.0", Method: "tools/list"})
-	if got := len(r.Result.(map[string]any)["tools"].([]Tool)); got != 4 {
+	if got := len(r.Result.(map[string]any)["tools"].([]Tool)); got != 5 {
 		t.Errorf("registering an operation added a tool: %d", got)
+	}
+	// And a server where nothing publishes offers no publish tool.
+	bare := NewServer("t", "0")
+	bare.Register(Operation{Name: "list_pages", Summary: "list"},
+		func(map[string]any) (any, error) { return "", nil })
+	for _, tl := range bare.Tools() {
+		if tl.Name == "quilzo_publish" {
+			t.Error("quilzo_publish was offered by a server with nothing to publish")
+		}
+	}
+}
+
+// Publishing is its own tool, both ways round.
+//
+// A host asks a person before a tool runs by the tool's name and what it says
+// it does. quilzo_write said "Never publishes" and carried publish, so a
+// person who let an agent draft had let it put the draft in front of readers.
+func TestPublishingHasAToolOfItsOwn(t *testing.T) {
+	s := testServer()
+	r := call(t, s, "tools/call", callParams{
+		Name: "quilzo_write", Arguments: map[string]any{"operation": "publish"}})
+	if r.Error == nil || !strings.Contains(r.Error.Message, "quilzo_publish") {
+		t.Fatalf("the write tool, which says it never publishes, reached publish: %+v", r.Error)
+	}
+	r = call(t, s, "tools/call", callParams{
+		Name: "quilzo_publish", Arguments: map[string]any{"operation": "write_page"}})
+	if r.Error == nil || !strings.Contains(r.Error.Message, "quilzo_write") {
+		t.Fatalf("the publish tool reached an ordinary write: %+v", r.Error)
+	}
+	var write, publish Tool
+	for _, tl := range s.Tools() {
+		switch tl.Name {
+		case "quilzo_write":
+			write = tl
+		case "quilzo_publish":
+			publish = tl
+		}
+	}
+	if !strings.Contains(write.Description, "Never publishes") {
+		t.Errorf("quilzo_write no longer says it never publishes: %q", write.Description)
+	}
+	if publish.Annotations["destructiveHint"] != true || publish.Annotations["readOnlyHint"] != false {
+		t.Errorf("quilzo_publish does not tell a host it changes what readers see: %v", publish.Annotations)
+	}
+	if !strings.Contains(text(t, call(t, s, "tools/call", callParams{
+		Name: "quilzo_find", Arguments: map[string]any{"query": "publish"}})), "call: quilzo_publish") {
+		t.Error("quilzo_find does not send an agent to quilzo_publish")
 	}
 }
 
@@ -145,7 +195,7 @@ func TestAWriteToolCannotBeUsedForAReadOperation(t *testing.T) {
 func TestARefusalIsDistinguishableFromAFailure(t *testing.T) {
 	s := testServer()
 	r := call(t, s, "tools/call", callParams{
-		Name:      "quilzo_write",
+		Name:      "quilzo_publish",
 		Arguments: map[string]any{"operation": "publish"}})
 
 	if r.Error == nil {
