@@ -13,7 +13,80 @@ worth keeping.
 
 ---
 
+## Closed by the project's own models, 25 October 2026
+
+Every `go/reflected-xss` alert below, and every `go/cookie-secure-not-set`
+alert but #59, stopped being produced. Those two rules gave twenty-two alerts
+on `main`. With the changes below, the whole `security-extended` suite gives
+one. None was dismissed. What changed is what the analyser knows, in a file in
+this tree, and three small edits to the code. A model is a claim in the same
+sense a dismissal is: it removes findings because somebody said a function is
+safe. It is kept here, with what would make it wrong, for the same reason.
+
+What forced it is the same thing that froze four files in September. A pull
+request too large for the analyser to tell which lines it changed is judged
+on every alert in the files it touches. The split of the security team's
+tools into Vaigil touched 413 files, and the required check failed on alerts
+that `main` had carried, identically, for weeks.
+
+### The models: `.github/codeql/extensions/quilzo-go`
+
+Two barriers for `html-injection`, the kind the cross-site scripting queries
+read. The workflow passes the pack to the analysis by name, because the action
+does not load a model pack from the repository by itself.
+
+- **`tmpl.Render`'s result.** `internal/tmpl` escapes every interpolated value
+  for the place it lands, as `html/template` does, and the analyser models
+  `html/template` and not this. The case for it is #64 below, and it is tested
+  rather than argued there. Literal text in a template is markup its author
+  wrote, which is #32's case. With the barrier, every flow through a rendered
+  page stops at the render: the search box, the chatbot's question, the
+  assistant's proposal, the page name.
+- **`scim.reply`'s value.** A SCIM reply is JSON under
+  `application/scim+json`, and the admin sends `nosniff` on every response.
+  The analyser lost the content type at the wrappers the bytes pass through
+  and reported provisioning requests as cross-site scripting at `compress`.
+
+### The code
+
+- **The preview panel's escapers are functions with names.** `esc` was a local
+  variable holding `html.EscapeString`, which escapes exactly the same and
+  which the analyser cannot see through. The links used `url.QueryEscape` and
+  nothing else. They now go through `urlArg`, which query-escapes for the URL
+  and then escapes the result for the attribute it sits in. The second step
+  changes nothing the first produces. Each layer escaping for its own place is
+  also what the analyser can follow.
+- **`behindTLSProxy` has no `return false`.** The section on cookies below says
+  the rule "wants a constant". That was the wrong reading, and so was the fix
+  it describes as not working. The rule reports a cookie when a `false` written
+  in the source can reach `Secure`, or when no boolean reaches it at all. The
+  two early returns for "no settings" were such a `false`, and they reached
+  every cookie through the `||`. The function now answers
+  `cfg != nil && cfg.Bool(...)`, which is the same answer for every input. All
+  thirteen conditional cookies stopped being reported. Nothing about when
+  `Secure` is set has changed, and the argument below for why it stays
+  conditional still stands.
+
+### What would make these models wrong
+
+- **A second way to make a `tmpl.Markup`**, or `walk` writing a value
+  unescaped anywhere else. That would make `Render`'s output unsafe, and the
+  barrier would hide it. `TestWhatAVisitorTypesIsEscapedInTheOwnersOwnPageToo`
+  is what catches the first; the barrier makes it the only thing.
+- **A template rendered from a source that is not gated on `edit-draft`**:
+  the condition already written under #32.
+- **`scim.reply` writing anything but JSON**, or `nosniff` leaving the admin's
+  security headers.
+- **Any new entry in the pack without a paragraph here.** A barrier with no
+  reason is a dismissal with no record, which is what this file exists to
+  prevent.
+
+---
+
 ## `go/reflected-xss` — alerts #32, #33, #34, #40
+
+> **25 October 2026:** no longer produced. See *Closed by the project's own
+> models* above. The argument below is what the `tmpl.Render` barrier rests on.
 
 > **September 2026, later:** these were written up as dismissed and were still
 > open on GitHub. The repository requires a second person to approve a
@@ -138,6 +211,9 @@ convenience as the motive.
 
 ## `go/reflected-xss` — alerts #64, #65
 
+> **25 October 2026:** no longer produced, by the same barrier. The test
+> named below is now the check the barrier depends on.
+
 **Dismissed** 30 September 2026 as *false positive*.
 
 | alert | sink |
@@ -188,6 +264,9 @@ place to judge them, and each has its own alert or its own entry here.
 
 ## `go/reflected-xss` — alerts #60, #61
 
+> **25 October 2026:** no longer produced. Every flow that reached these
+> wrappers is stopped by a model or closed in the preview panel.
+
 **Dismissal requested** as *false positive*.
 
 | alert | sink |
@@ -208,6 +287,9 @@ an error page of its own that included part of the request, for instance.
 ---
 
 ## `go/cookie-secure-not-set` — alerts #42–#50, #59, #66
+
+> **25 October 2026:** all but #59 closed in code; see above. #59, the
+> studio's cookie, sets no `Secure` at all and stays as written here.
 
 **Dismissed** September 2026 as *won't fix*.
 

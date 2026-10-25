@@ -571,6 +571,31 @@ Unreleased
 
 ** Fixed
 
+*** Getting started's "Publish it" opens Review.  It linked to /publish,
+    which only takes the publish form, so the one link on the first screen
+    a new installation shows that matters most answered "POST only".
+
+*** Passkeys and Inventory fit a phone.  The passkey list was the one
+    table in the admin outside a scrolling frame, so its Remove buttons sat
+    off the right edge and the whole screen scrolled sideways; a sentence
+    naming a file by its whole path did the same on Inventory.  A test now
+    fails on a table outside the frame.
+
+*** A picture opened on its own is shown as a picture.  The admin's
+    style policy refused the styles the browser gives an image or a film
+    it displays by itself, with an error in the console for each, so the
+    picture sat in the corner of a white page.  Media shown in place now
+    has a policy of its own: the browser's styles, and nothing that runs.
+
+*** CodeQL reads this program's escaping.  Its cross-site scripting rule
+    reported every page the public site renders, and its cookie rule every
+    cookie the admin sets, and the required check failed any change large
+    enough to touch them.  A model pack in .github/codeql/extensions says
+    which functions escape and why, each claim recorded with what would
+    make it wrong in docs/codeql-dismissals.md, and three small changes let
+    the analyser follow the rest; twenty-one of twenty-two alerts are gone
+    without a dismissal.
+
 *** A fresh install gets its first token again.  `quilzo auth grant you
     admin` then `quilzo token issue laptop --principal you`, the way the
     manual says, waited for a second administrator nobody could be: the

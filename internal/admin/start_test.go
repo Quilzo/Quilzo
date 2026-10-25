@@ -107,3 +107,26 @@ func TestDismissingGettingStartedIsGuarded(t *testing.T) {
 		}
 	}
 }
+
+// Every step's link opens a screen. "Publish it" pointed at /publish, which
+// only takes a form's POST, so the one link on Getting started that matters
+// most answered 405 "POST only".
+func TestEveryStepOpensAScreen(t *testing.T) {
+	srv, token := setup(t)
+	p, err := srv.authenticate(func() *http.Request {
+		r := httptest.NewRequest(http.MethodGet, "/start", nil)
+		r.Header.Set("Authorization", "Bearer "+token)
+		return r
+	}())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 503 is a screen too: this test's server has no content types wired
+	// in, and Types says so rather than pretending there are none.
+	for _, st := range srv.startState(p) {
+		if w := get(t, srv, st.Where, token); w.Code != http.StatusOK &&
+			w.Code != http.StatusServiceUnavailable {
+			t.Errorf("%q links to %s, which answers %d", st.Title, st.Where, w.Code)
+		}
+	}
+}

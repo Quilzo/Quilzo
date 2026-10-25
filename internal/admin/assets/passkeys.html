@@ -37,6 +37,7 @@
 
 <h2>Yours</h2>
 {{if .Keys}}
+<div class="table-wrap">
 <table>
   <thead><tr><th scope="col">Name</th><th scope="col">Kind</th><th scope="col">Added</th><th scope="col">Last used</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
   <tbody>
@@ -66,6 +67,7 @@
   {{end}}
   </tbody>
 </table>
+</div>
 {{else}}
 <p class="help">You have none yet. The token you signed in with still works,
   and will keep working — a passkey is an additional way in, not a

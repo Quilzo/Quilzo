@@ -1,0 +1,25 @@
+extensions:
+  - addsTo:
+      pack: codeql/go-all
+      extensible: barrierModel
+    data:
+      # internal/tmpl is a context-aware autoescaping engine, as html/template
+      # is, and CodeQL models html/template and not this. Every value a
+      # template interpolates is escaped for the place it lands in — text,
+      # attribute, URL, script or style — and the one exception, Markup, can
+      # only be made by tmpl.Prose, which escapes what it is given before
+      # adding its fixed set of tags (see walk in internal/tmpl/tmpl.go and
+      # its escaping tests). What Render returns is therefore safe HTML in
+      # the sense CodeQL means: a template's own literal text is markup its
+      # author wrote, as a Go html/template's is.
+      #
+      # Without this, every page the public site renders was reported as
+      # reflected cross-site scripting, with the search box, the chatbot and
+      # the AI assistant as the sources, at each response writer it passed.
+      - ["github.com/quilzo/quilzo/internal/tmpl", "", False, "Render", "", "", "ReturnValue[0]", "html-injection", "manual"]
+      # A SCIM reply is JSON under application/scim+json, and the admin sends
+      # X-Content-Type-Options: nosniff on every response, so no browser
+      # reads it as HTML. CodeQL loses the content type at the wrappers the
+      # bytes pass through on the way out and reported provisioning
+      # requests as cross-site scripting.
+      - ["github.com/quilzo/quilzo/internal/scim", "", False, "reply", "", "", "Parameter[2]", "html-injection", "manual"]

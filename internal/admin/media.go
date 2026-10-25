@@ -362,6 +362,18 @@ func (s *Server) handleMediaFile(w http.ResponseWriter, r *http.Request) {
 	h.Set("X-Content-Type-Options", "nosniff")
 	if f.Inline() {
 		h.Set("Content-Disposition", "inline")
+		// Opened on its own, a picture or a film is a document the browser
+		// builds around it, and Chrome styles that document inline. Under
+		// the admin's style-src 'self' every one of those styles was
+		// refused: an error in the console for each, and the picture
+		// pinned to the corner of a white page instead of centred on a
+		// dark one. Nothing inline here is markup — the formats that are
+		// shown in place are pictures, sound, film and captions — so the
+		// browser's own styles may run, and sandbox keeps the document an
+		// origin of its own with nothing to execute.
+		h.Set("Content-Security-Policy", "default-src 'none'; img-src 'self'; "+
+			"media-src 'self'; style-src 'unsafe-inline'; frame-ancestors 'none'; "+
+			"base-uri 'none'; form-action 'none'; sandbox")
 	} else {
 		h.Set("Content-Disposition", `attachment; filename="`+f.DownloadName()+`"`)
 	}

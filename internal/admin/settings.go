@@ -263,15 +263,21 @@ func (s *Server) secureCookie(r *http.Request) bool {
 // report stops being read. Keeping the comparison at the call site and the
 // configuration behind a method costs one line each and leaves both readers
 // able to check it.
+//
+// And with no `return false` in it. The query reports a cookie when a false
+// written in the source can reach Secure, and the two early returns this had
+// for "no settings" did, through the || at every call site — so all thirteen
+// cookies were reported anyway, as setting Secure to false outright. The
+// answer is the same either way: no configuration, or one that cannot be
+// read, is not a deployment that said it is behind TLS.
 func (s *Server) behindTLSProxy() bool {
-	if s.Settings == nil || s.Settings.Load == nil {
-		return false
+	var cfg *config.Config
+	if s.Settings != nil && s.Settings.Load != nil {
+		if c, err := s.Settings.Load(); err == nil {
+			cfg = c
+		}
 	}
-	cfg, err := s.Settings.Load()
-	if err != nil || cfg == nil {
-		return false
-	}
-	return cfg.Bool("admin.behind_tls_proxy")
+	return cfg != nil && cfg.Bool("admin.behind_tls_proxy")
 }
 
 // sessionMax is how long a sign-in to the admin lasts (session.max), and
