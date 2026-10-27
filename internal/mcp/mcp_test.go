@@ -249,7 +249,7 @@ func TestInitializeAnnouncesTheConstraints(t *testing.T) {
 	r := s.Handle(Request{JSONRPC: "2.0", Method: "initialize"})
 	m := r.Result.(map[string]any)
 
-	if m["protocolVersion"] != Protocol {
+	if m["protocolVersion"] != Legacy[0] {
 		t.Errorf("wrong protocol version: %v", m["protocolVersion"])
 	}
 	instructions, _ := m["instructions"].(string)
@@ -281,3 +281,20 @@ func TestUnknownMethodIsNotFound(t *testing.T) {
 // found out: the refusal-semantics test above started failing the moment the
 // gate went in, reporting a refusal it had not asked for.
 func allowAll(Operation) error { return nil }
+
+// On standard input the client is answered in the revision it asked for,
+// when this speaks it, as over HTTP; asked for one it does not speak, the
+// newest with a handshake.
+func TestStandardInputAnswersTheRevisionAskedFor(t *testing.T) {
+	s := NewServer("quilzo", "test")
+	for asked, want := range map[string]string{
+		"2025-11-25": "2025-11-25", "2025-06-18": "2025-06-18", "2025-03-26": "2025-03-26",
+		"2024-11-05": "2025-11-25", "": "2025-11-25",
+	} {
+		r := call(t, s, "initialize", map[string]any{"protocolVersion": asked, "capabilities": map[string]any{},
+			"clientInfo": map[string]any{"name": "c", "version": "1"}})
+		if got := r.Result.(map[string]any)["protocolVersion"]; got != want {
+			t.Errorf("asked %q, answered %v", asked, got)
+		}
+	}
+}
