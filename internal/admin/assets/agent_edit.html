@@ -4,6 +4,7 @@
 {{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
 {{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
 {{if .New}}<p class="lead">Starting from <strong>{{.M.Kind}}</strong>: {{.Summary}}. {{.When}}</p>
+<p class="hint">Built it on another platform? <a href="/agents/import">Import it</a>, and its instructions, model and tools come with it.</p>
 {{else}}<p class="lead">{{.M.Purpose}}</p>{{end}}
 {{if and .Invalid (or (not .New) .M.Name)}}<p class="notice warn"><strong>As it stands this would be refused:</strong> {{.Invalid}}</p>{{end}}
 
@@ -55,6 +56,11 @@
   {{else}}<input type="hidden" name="name" value="{{.M.Name}}">{{end}}
   <p><label>What it is for <textarea name="purpose" rows="2" required maxlength="600">{{.M.Purpose}}</textarea></label>
     <span class="hint">A capability list nobody can check against an intention is one nobody reviews.</span></p>
+  <p><label>How it should work <textarea name="instructions" rows="5" maxlength="32768" spellcheck="true">{{.M.Instructions}}</textarea></label>
+    <span class="hint">Optional. Given to the model with every decision, as its system prompt was elsewhere. It says how
+    to work and what to aim for; what it may do is still only what is ticked below.</span></p>
+  <p><label>Model <input type="text" name="model" maxlength="200" value="{{.M.Model}}" placeholder="the gateway decides"></label>
+    <span class="hint">Optional. A run tries the gateway route serving this model first, and the others after it.</span></p>
 
   <fieldset><legend>How far it may go on its own</legend>
     <p><label><input type="radio" name="autonomy" value="propose"{{if eq (print .M.Autonomy) "propose"}} checked{{end}}> <strong>Propose</strong> <span class="hint">it suggests; a person does</span></label></p>
@@ -147,6 +153,7 @@
 {{end}}
 
 <h2>The declaration</h2>
+<p class="actions"><a class="btn btn-tonal" href="/agents/export/{{.M.Name}}">Take it to another platform</a></p>
 <p class="hint">This is the agent: one document, reviewable as text. The form
   above edits it and the map is drawn from it.</p>
 <form method="post" action="/agents/act">

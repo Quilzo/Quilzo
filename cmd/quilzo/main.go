@@ -416,6 +416,10 @@ agents and integrations
   quilzo agent new NAME --kind KIND         declare what an agent may do
   quilzo agent draft "what it is for" [-o F] a model drafts a declaration; the checker says what it could do; nothing is saved
   quilzo agent declare FILE                save a declaration written out, checked again on the way in
+  quilzo agent import FILE [--save]        bring an agent from OpenAI, Claude, ADK, Copilot, Bedrock, CrewAI, AutoGen,
+                                           Letta or Agent Spec; says what was kept, changed, left and is yours to decide
+  quilzo agent export NAME --to F          one declared here, in another platform's format
+  quilzo agent formats                     what import reads and export writes
   quilzo agent list | show NAME | check     what is declared, and whether it still validates
   quilzo agent sponsor NAME PERSON         who answers for it; it stops running when they can no longer act here
   quilzo agent renew NAME [--for 2160h]    another stretch before it has to be renewed

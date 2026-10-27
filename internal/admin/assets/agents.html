@@ -1,11 +1,14 @@
 {{template "head" .}}
 <h1>Agents</h1>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
 <p class="lead">AI agents that work in this site. Each can do only what its
 declaration lists, and nothing it reads can give it more.</p>
 <p class="help"><a href="/agents/runs">Runs</a> shows what each one did, step
 by step. <a href="/security/agents">Agent activity</a> flags one that keeps
 trying what it isn't allowed to.</p>
-<p class="actions"><a class="btn" href="/agents/new">{{icon "add"}}Declare an agent</a></p>
+<p class="actions"><a class="btn" href="/agents/new">{{icon "add"}}Declare an agent</a>
+  <a class="btn btn-tonal" href="/agents/import">Import one from another platform</a></p>
 
 {{if .Unavailable}}
 <div class="notice warn"><p>{{.Unavailable}}</p></div>

@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/google/adk-python/refs/heads/main/src/google/adk/agents/config_schemas/AgentConfig.json
+agent_class: LlmAgent
+name: travel_planner
+model: gemini-2.5-flash
+description: Plans trips and books nothing without asking.
+instruction: |
+  You are a travel planner. Ask where {user:home_city} people want to go,
+  then plan the trip day by day.
+generate_content_config:
+  temperature: 0.4
+tools:
+  - name: google_search
+  - name: my_tools.flights.search_flights
+sub_agents:
+  - config_path: hotel_agent.yaml
+  - code: my_agents.weather.weather_agent
+output_key: plan

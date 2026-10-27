@@ -500,6 +500,14 @@ func manifestFromForm(r *http.Request, base agent.Manifest) (agent.Manifest, err
 	m.Delegates = append([]string(nil), r.Form["delegate"]...)
 	sort.Strings(m.Delegates)
 	m.HumanApproval = r.FormValue("human_approval") != ""
+	// Kept as they were when the form has no field for them, so a form
+	// from before they were shown cannot clear them.
+	if _, ok := r.Form["instructions"]; ok {
+		m.Instructions = strings.TrimSpace(strings.ReplaceAll(r.FormValue("instructions"), "\r\n", "\n"))
+	}
+	if _, ok := r.Form["model"]; ok {
+		m.Model = strings.TrimSpace(r.FormValue("model"))
+	}
 	return m, nil
 }
 

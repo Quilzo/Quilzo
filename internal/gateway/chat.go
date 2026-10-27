@@ -39,7 +39,7 @@ var ErrPictureNotAllowed = errors.New("a picture cannot be checked for personal 
 // ChatCosted is Chat with what the call cost, in millionths of the
 // configuration's currency.
 func (b *bound) ChatCosted(ctx context.Context, req assist.ChatRequest) (assist.ChatReply, int64, error) {
-	r, cost, err := b.g.chat(ctx, b.consumers, b.only, req)
+	r, cost, err := b.g.chat(ctx, b.consumers, b.pick, req)
 	return r, int64(cost), err
 }
 
@@ -56,11 +56,11 @@ func (b *bound) TakesPictures() bool {
 }
 
 func (b *bound) Chat(ctx context.Context, req assist.ChatRequest) (assist.ChatReply, error) {
-	r, _, err := b.g.chat(ctx, b.consumers, b.only, req)
+	r, _, err := b.g.chat(ctx, b.consumers, b.pick, req)
 	return r, err
 }
 
-func (g *Gateway) chat(ctx context.Context, consumers []string, only string, req assist.ChatRequest) (assist.ChatReply, Money, error) {
+func (g *Gateway) chat(ctx context.Context, consumers []string, p pick, req assist.ChatRequest) (assist.ChatReply, Money, error) {
 	if err := req.Check(); err != nil {
 		return assist.ChatReply{}, 0, err
 	}
@@ -77,7 +77,7 @@ func (g *Gateway) chat(ctx context.Context, consumers []string, only string, req
 		return assist.ChatReply{}, 0, ErrNoRoute
 	}
 	var errs []string
-	for _, r := range g.routesFor(only) {
+	for _, r := range g.routesFor(p) {
 		g.mu.Lock()
 		down := g.now().Before(g.downTil[r.Name])
 		g.mu.Unlock()
@@ -136,8 +136,8 @@ func (g *Gateway) chat(ctx context.Context, consumers []string, only string, req
 			Cost: cost, Masked: masked, Outcome: "ok"})
 		return reply, cost, nil
 	}
-	if only != "" && len(errs) == 0 {
-		return assist.ChatReply{}, 0, fmt.Errorf("%w: the route %s is not declared", ErrNoRoute, only)
+	if p.only != "" && len(errs) == 0 {
+		return assist.ChatReply{}, 0, fmt.Errorf("%w: the route %s is not declared", ErrNoRoute, p.only)
 	}
 	return assist.ChatReply{}, 0, fmt.Errorf("%w: %s", ErrNoRoute, strings.Join(errs, "; "))
 }

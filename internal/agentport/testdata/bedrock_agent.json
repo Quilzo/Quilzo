@@ -1,0 +1,88 @@
+{
+  "agent": {
+    "agentId": "AG123",
+    "agentName": "Order support",
+    "agentArn": "arn:aws:bedrock:us-east-1:111:agent/AG123",
+    "agentVersion": "DRAFT",
+    "instruction": "You help customers with their orders. Never refund more than the order total.",
+    "agentStatus": "PREPARED",
+    "foundationModel": "anthropic.claude-3-5-sonnet-20240620-v1:0",
+    "description": "Answers order questions and issues refunds.",
+    "idleSessionTTLInSeconds": 600,
+    "agentResourceRoleArn": "arn:aws:iam::111:role/x",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z",
+    "guardrailConfiguration": {
+      "guardrailIdentifier": "gr-1",
+      "guardrailVersion": "1"
+    }
+  },
+  "actionGroups": [
+    {
+      "agentActionGroup": {
+        "agentId": "AG123",
+        "agentVersion": "DRAFT",
+        "actionGroupId": "AGG1",
+        "actionGroupName": "orders",
+        "actionGroupState": "ENABLED",
+        "actionGroupExecutor": {
+          "lambda": "arn:aws:lambda:us-east-1:111:function:orders"
+        },
+        "apiSchema": {
+          "payload": "{\"openapi\": \"3.0.0\", \"info\": {\"title\": \"Orders API\", \"version\": \"1\"}, \"servers\": [{\"url\": \"https://api.example-shop.com/v1\"}], \"paths\": {\"/orders/{id}\": {\"get\": {\"operationId\": \"getOrder\", \"summary\": \"Look up an order\", \"parameters\": [{\"name\": \"id\", \"in\": \"path\", \"required\": true, \"schema\": {\"type\": \"string\"}}], \"responses\": {\"200\": {\"description\": \"ok\"}}}}, \"/refunds\": {\"post\": {\"operationId\": \"createRefund\", \"summary\": \"Refund an order\", \"requestBody\": {\"content\": {\"application/json\": {\"schema\": {\"type\": \"object\", \"properties\": {\"order\": {\"type\": \"string\"}}}}}}, \"responses\": {\"200\": {\"description\": \"ok\"}}}}}}"
+        },
+        "createdAt": "x",
+        "updatedAt": "x"
+      }
+    },
+    {
+      "agentActionGroup": {
+        "agentId": "AG123",
+        "agentVersion": "DRAFT",
+        "actionGroupId": "AGG2",
+        "actionGroupName": "loyalty",
+        "actionGroupState": "ENABLED",
+        "actionGroupExecutor": {
+          "lambda": "arn:aws:lambda:us-east-1:111:function:loyalty"
+        },
+        "functionSchema": {
+          "functions": [
+            {
+              "name": "add_points",
+              "description": "Add loyalty points",
+              "parameters": {
+                "points": {
+                  "type": "integer",
+                  "required": true
+                }
+              },
+              "requireConfirmation": "ENABLED"
+            }
+          ]
+        },
+        "createdAt": "x",
+        "updatedAt": "x"
+      }
+    },
+    {
+      "agentActionGroup": {
+        "agentId": "AG123",
+        "agentVersion": "DRAFT",
+        "actionGroupId": "AGG3",
+        "actionGroupName": "UserInputAction",
+        "actionGroupState": "ENABLED",
+        "parentActionSignature": "AMAZON.UserInput",
+        "parentActionGroupSignature": "AMAZON.UserInput",
+        "createdAt": "x",
+        "updatedAt": "x"
+      }
+    }
+  ],
+  "knowledgeBases": [
+    {
+      "knowledgeBaseId": "KB9",
+      "description": "Return policy",
+      "knowledgeBaseState": "ENABLED"
+    }
+  ]
+}

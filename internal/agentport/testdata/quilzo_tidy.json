@@ -1,0 +1,12 @@
+{
+  "name": "tidy",
+  "kind": "task",
+  "purpose": "Tidy the notes folder and report what changed.",
+  "capabilities": ["file_list", "file_read", "file_write"],
+  "autonomy": "draft",
+  "retrieval": {"ref": "draft"},
+  "budget": {"steps": 10, "tool_calls": 5, "duration": "5m0s"},
+  "shell": {"programs": ["ls"]},
+  "instructions": "Keep file names lower-case.",
+  "model": "claude-sonnet-4-5"
+}

@@ -1,0 +1,13 @@
+{
+  "test-runner": {
+    "description": "Runs the tests and reports failures.",
+    "prompt": "You run the test suite and summarise every failure with its cause.",
+    "tools": ["Read", "Edit", "Bash"],
+    "model": "claude-sonnet-4-5"
+  },
+  "explainer": {
+    "description": "Explains code to newcomers.",
+    "prompt": "You explain code plainly.",
+    "tools": []
+  }
+}

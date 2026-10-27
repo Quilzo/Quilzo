@@ -1,0 +1,41 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Resources": {
+    "FaqAgent": {
+      "Type": "AWS::Bedrock::Agent",
+      "Properties": {
+        "AgentName": "faq-bot",
+        "Instruction": "Answer frequently asked questions about shipping.",
+        "FoundationModel": "amazon.nova-pro-v1:0",
+        "Description": "Shipping FAQ",
+        "IdleSessionTTLInSeconds": 300,
+        "ActionGroups": [
+          {
+            "ActionGroupName": "tracking",
+            "ActionGroupExecutor": {
+              "Lambda": "arn:aws:lambda:x"
+            },
+            "FunctionSchema": {
+              "Functions": [
+                {
+                  "Name": "track",
+                  "Description": "Track a parcel",
+                  "Parameters": {
+                    "id": {
+                      "Type": "string",
+                      "Required": true
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "Role": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {}
+    }
+  }
+}

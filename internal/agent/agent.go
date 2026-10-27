@@ -352,7 +352,25 @@ type Manifest struct {
 	// else happens to it, and the dialect widens nothing a manifest may
 	// hold. Empty means the model answers in this program's own shape.
 	Dialect string `json:"dialect,omitempty"`
+
+	// Instructions are how the agent is to work, in the words of whoever
+	// declared it: the system prompt another platform gave it, carried in
+	// when it was imported (internal/agentport), or written here. They go
+	// to the model with every decision, after the operations it may choose
+	// from: they say how and toward what, never what is possible, which the
+	// capabilities above and the gate decide.
+	Instructions string `json:"instructions,omitempty"`
+	// Model is the model the agent was written for, by the name its
+	// provider gives it ("gpt-4.1", "claude-sonnet-4-5") or a gateway
+	// route's own name. A run tries the route serving it first and the
+	// others after; a model no route serves changes nothing.
+	Model string `json:"model,omitempty"`
 }
+
+// MaxInstructions is how long an agent's instructions may be. They go to
+// the model with every decision, so a longer prompt is paid for on every
+// step of every run.
+const MaxInstructions = 32 << 10
 
 // writeOps are capabilities that change stored content.
 //
@@ -398,6 +416,13 @@ func (m *Manifest) ValidateWith(known map[string]bool, customKinds map[Kind]bool
 	if !m.Autonomy.Valid() {
 		return fmt.Errorf("%q is not an autonomy level; use propose, draft or publish",
 			m.Autonomy)
+	}
+	if len(m.Instructions) > MaxInstructions {
+		return fmt.Errorf("%s's instructions are %d bytes and at most %d are kept: they go to the "+
+			"model with every decision, and are paid for on every step", m.Name, len(m.Instructions), MaxInstructions)
+	}
+	if strings.ContainsFunc(m.Model, func(r rune) bool { return r < ' ' || r == 0x7f }) || len(m.Model) > 200 {
+		return fmt.Errorf("%q is not a model's name", m.Model)
 	}
 
 	// Capabilities have to exist. An operation name that no interface

@@ -1,0 +1,35 @@
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "asst_abc123",
+      "object": "assistant",
+      "created_at": 1698984975,
+      "name": "Math Tutor",
+      "description": "Helps students with algebra and geometry.",
+      "model": "gpt-4.1",
+      "instructions": "You are a personal math tutor. When asked a question, write and run Python code to answer the question.",
+      "tools": [{"type": "code_interpreter"}, {"type": "file_search"},
+        {"type": "function", "function": {"name": "get_grade", "description": "A student's grade", "parameters": {"type": "object", "properties": {"student": {"type": "string"}}}}}],
+      "tool_resources": {"file_search": {"vector_store_ids": ["vs_2"]}, "code_interpreter": {"file_ids": ["file-1"]}},
+      "metadata": {"team": "edu"},
+      "temperature": 0.2,
+      "top_p": 1.0,
+      "response_format": "auto"
+    },
+    {
+      "id": "asst_def456",
+      "object": "assistant",
+      "created_at": 1698984976,
+      "name": null,
+      "description": null,
+      "model": "gpt-4o-mini",
+      "instructions": "Answer customer questions politely.",
+      "tools": [],
+      "metadata": {}
+    }
+  ],
+  "first_id": "asst_abc123",
+  "last_id": "asst_def456",
+  "has_more": false
+}

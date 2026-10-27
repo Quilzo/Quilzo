@@ -1,0 +1,25 @@
+{
+  "component_type": "Agent",
+  "id": "a8d2",
+  "name": "Ops assistant",
+  "description": "Answers questions about the deployment and restarts services when asked.",
+  "metadata": {},
+  "inputs": [],
+  "outputs": [],
+  "llm_config": {"$component_ref": "llm-1"},
+  "system_prompt": "You are an operations assistant for {{team}}. Be brief.",
+  "tools": [
+    {"component_type": "RemoteTool", "id": "t1", "name": "restart_service", "description": "Restart a service",
+     "url": "https://ops.example.com/api/restart", "http_method": "POST", "requires_confirmation": true,
+     "inputs": [{"title": "service", "type": "string"}], "outputs": []},
+    {"component_type": "ServerTool", "id": "t2", "name": "read_logs", "description": "Read recent logs", "inputs": [], "outputs": []},
+    {"component_type": "MCPTool", "id": "t3", "name": "search_runbooks", "description": "Search runbooks",
+     "client_transport": {"component_type": "SSETransport", "name": "runbooks", "url": "https://mcp.example.com/sse"}}
+  ],
+  "human_in_the_loop": true,
+  "$referenced_components": {
+    "llm-1": {"component_type": "OpenAiCompatibleConfig", "id": "llm-1", "name": "llama", "model_id": "llama-3.3-70b",
+      "url": "http://10.0.0.5:8000", "default_generation_parameters": {"temperature": 0.1}}
+  },
+  "agentspec_version": "25.4.1"
+}
