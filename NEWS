@@ -571,6 +571,20 @@ Unreleased
 
 ** Fixed
 
+*** People are pseudonymous in every part of an audit record.  The log
+    pseudonymised a record's principal and the details that name a person,
+    and left the same people in clear in its sentences and its resource:
+    "make lee admin on /", "lee declined this", "rae is reader on /",
+    "dana is the only administrator", a grant's resource "/lee".  Those
+    went to the log and to every batch streamed from it.  A record's
+    writer now names everybody it mentions as a person (a grant's
+    subject, whom a token is for, who decided an agent's step or a held
+    call, an agent's sponsor, who gave an enrolment link, the people a
+    posture finding lists), and a keyed log gives them the same handle
+    wherever the record names them.  The Logs screen names the people the
+    store knows there too.  The test suites check every record they write
+    for a person in clear.
+
 *** Mapping an identity provider's group to admin takes two
     administrators.  A group mapped to admin, or to the analyst or
     compliance job, makes everybody the identity provider puts in it an

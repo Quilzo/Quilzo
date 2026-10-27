@@ -45,6 +45,8 @@ type driftItem struct {
 	Severity posture.Severity `json:"severity"`
 	Title    string           `json:"title"`
 	Since    time.Time        `json:"since"`
+	// People are who the resource names, for the record when it is fixed.
+	People []string `json:"people,omitempty"`
 }
 
 // driftState is every check failing at the last scan, by rule and resource.
@@ -103,7 +105,7 @@ func postureDrift(root string, state posture.State, now time.Time) (int, int, er
 			continue
 		}
 		st.Failing[key] = driftItem{Rule: f.Rule, Resource: f.Resource, Severity: f.Severity,
-			Title: f.Title, Since: now}
+			Title: f.Title, Since: now, People: f.People}
 		opened++
 		var refs []string
 		for _, r := range f.Refs {
@@ -112,7 +114,7 @@ func postureDrift(root string, state posture.State, now time.Time) (int, int, er
 		record(root, audit.Record{Action: "posture.drifted", Resource: "/security",
 			Outcome: audit.Success, Principal: "quilzo", Kind: audit.KindService, Verified: true,
 			Detail: map[string]string{"rule": f.Rule, "resource": f.Resource, "severity": string(f.Severity),
-				"title": f.Title, "detail": f.Detail + bearsOn(refs), "fix": f.Fix}})
+				"title": f.Title, "detail": f.Detail + bearsOn(refs), "fix": f.Fix}, People: f.People})
 		if f.Severity == posture.Critical || f.Severity == posture.High {
 			summary := fmt.Sprintf("%s: %s. %s", f.Title, f.Detail, f.Fix)
 			if f.Resource != "" {
@@ -134,7 +136,7 @@ func postureDrift(root string, state posture.State, now time.Time) (int, int, er
 		record(root, audit.Record{Action: "posture.restored", Resource: "/security",
 			Outcome: audit.Success, Principal: "quilzo", Kind: audit.KindService, Verified: true,
 			Detail: map[string]string{"rule": it.Rule, "resource": it.Resource, "severity": string(it.Severity),
-				"title": it.Title, "since": it.Since.UTC().Format(time.RFC3339)}})
+				"title": it.Title, "since": it.Since.UTC().Format(time.RFC3339)}, People: it.People})
 	}
 	if opened > 0 || fixed > 0 {
 		b, err := json.MarshalIndent(st, "", " ")

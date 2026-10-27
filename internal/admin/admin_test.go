@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -335,7 +336,18 @@ func stripCSSComments(css string) string {
 	}
 }
 
-func TestMain(m *testing.M) { os.Exit(m.Run()) }
+func TestMain(m *testing.M) {
+	code := m.Run()
+	if leaks := namesLeaked(); len(leaks) > 0 {
+		fmt.Fprintf(os.Stderr, "\naudit records name people where the log does not pseudonymise them:\n  %s\n"+
+			"Carry the person under a key in audit.IdentityKeys, not in a resource or a sentence.\n",
+			strings.Join(leaks, "\n  "))
+		if code == 0 {
+			code = 1
+		}
+	}
+	os.Exit(code)
+}
 
 func min(a, b int) int {
 	if a < b {

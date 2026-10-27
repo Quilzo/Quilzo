@@ -548,7 +548,7 @@ var rules = []Rule{
 				return nil
 			}
 			return []Finding{{
-				Resource: admins[0],
+				Resource: admins[0], People: admins[:1],
 				Detail: fmt.Sprintf("%s is the only administrator; there is no "+
 					"recovery path if that credential is lost", admins[0]),
 				Fix: "quilzo auth grant SOMEONE-ELSE admin",
@@ -672,13 +672,13 @@ var rules = []Rule{
 				if s.SSO.MFAFrom.Sub(s.Now) < 3*24*time.Hour {
 					sev = High
 				}
-				return []Finding{{Severity: sev, Resource: "people/second-factor",
+				return []Finding{{Severity: sev, Resource: "people/second-factor", People: s.SSO.NoSecondFactor,
 					Detail: fmt.Sprintf("two factors become compulsory on %s, and %d %s no passkey or single sign-on: %s",
 						s.SSO.MFAFrom.UTC().Format("2 Jan 2006"), len(s.SSO.NoSecondFactor),
 						plural(len(s.SSO.NoSecondFactor), "person has", "people have"), who),
 					Fix: "each adds a passkey under Passkeys in the admin before then"}}
 			}
-			return []Finding{{Resource: "people/second-factor",
+			return []Finding{{Resource: "people/second-factor", People: s.SSO.NoSecondFactor,
 				Detail: fmt.Sprintf("%d %s no passkey or single sign-on, so cannot sign in to the admin: %s",
 					len(s.SSO.NoSecondFactor), plural(len(s.SSO.NoSecondFactor), "person has", "people have"), who),
 				Fix: "quilzo auth enrol NAME  # a one-time link that adds their passkey"}}

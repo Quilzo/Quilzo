@@ -109,10 +109,14 @@ type Step struct {
 	Action  Action
 	Allowed bool
 	// Why is the refusal, when there was one.
-	Why    string
-	Result string
-	Err    string
-	At     time.Time
+	Why string
+	// DecidedBy is the person who decided the step, when one was asked:
+	// kept apart from Why, which names them for whoever reads the run, so
+	// the audit log holds them as a person (decided_by), pseudonymised.
+	DecidedBy string `json:",omitempty"`
+	Result    string
+	Err       string
+	At        time.Time
 	// Redirected records a tool call whose input named a different host from
 	// the one the tool declares.
 	//
@@ -290,9 +294,9 @@ func (r Runner) unearn(why string) {
 // process. It reports whether they approved it and, when not, why it is
 // refused. The run's record carries the question while it waits, marked
 // live, so the run's page and `quilzo agent approve` can answer it.
-func (r Runner) holdFor(ctx context.Context, t *Trace, s *Session, w Pending) (bool, string) {
-	_, ok, why := r.holdVerdict(ctx, t, s, w)
-	return ok, why
+func (r Runner) holdFor(ctx context.Context, t *Trace, s *Session, w Pending) (bool, string, string) {
+	v, ok, why := r.holdVerdict(ctx, t, s, w)
+	return ok, why, v.By
 }
 
 // holdVerdict is holdFor with the person's verdict, for a question whose
@@ -436,8 +440,8 @@ func (r Runner) run(ctx context.Context, s *Session, t Trace,
 					break
 				}
 				refused := Step{N: turn, Action: action, At: w.Since}
-				if ok, why := r.holdFor(ctx, &t, s, w); !ok {
-					refused.Why = why
+				if ok, why, by := r.holdFor(ctx, &t, s, w); !ok {
+					refused.Why, refused.DecidedBy = why, by
 					t.Steps = append(t.Steps, priced(refused))
 					seen = append(seen, Observation{From: "quilzo", Body: "refused: " + why, Trusted: true})
 					r.checkpoint(t, s)
@@ -488,7 +492,7 @@ func (r Runner) run(ctx context.Context, s *Session, t Trace,
 				approved = true
 			} else if !r.Pause {
 				w := Pending{N: turn, Action: action, Since: step.At, Why: strings.Join(why, "; and ")}
-				if approved, step.Why = r.holdFor(ctx, &t, s, w); !approved {
+				if approved, step.Why, step.DecidedBy = r.holdFor(ctx, &t, s, w); !approved {
 					t.Steps = append(t.Steps, priced(step))
 					seen = append(seen, Observation{From: "quilzo",
 						Body: "refused: " + step.Why, Trusted: true})
@@ -518,7 +522,7 @@ func (r Runner) run(ctx context.Context, s *Session, t Trace,
 				w := Pending{N: turn, Action: action, Since: step.At, Why: why}
 				if note := r.earnedFor(s, action, why); note != "" {
 					step.Earned, approved = note, true
-				} else if approved, step.Why = r.holdFor(ctx, &t, s, w); !approved {
+				} else if approved, step.Why, step.DecidedBy = r.holdFor(ctx, &t, s, w); !approved {
 					t.Steps = append(t.Steps, priced(step))
 					seen = append(seen, Observation{From: "quilzo",
 						Body: "refused: " + step.Why, Trusted: true})
@@ -536,7 +540,7 @@ func (r Runner) run(ctx context.Context, s *Session, t Trace,
 				r.unearn("the exfiltration breaker stopped " + from(action))
 				if !r.Pause {
 					w := Pending{N: turn, Action: action, Since: step.At, Why: why}
-					if approved, step.Why = r.holdFor(ctx, &t, s, w); !approved {
+					if approved, step.Why, step.DecidedBy = r.holdFor(ctx, &t, s, w); !approved {
 						t.Steps = append(t.Steps, priced(step))
 						seen = append(seen, Observation{From: "quilzo", Body: "refused: " + step.Why, Trusted: true})
 						r.checkpoint(t, s)
@@ -639,6 +643,7 @@ func (r Runner) run(ctx context.Context, s *Session, t Trace,
 				break
 			}
 			v, ok, why := r.holdVerdict(ctx, &t, s, w)
+			step.DecidedBy = v.By
 			text := ""
 			if ok {
 				if text, why = answered(w, v); text == "" {

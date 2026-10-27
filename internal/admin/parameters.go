@@ -338,7 +338,7 @@ func (s *Server) raiseToPolicy(by string) (int, error) {
 	}
 	for _, r := range raised {
 		s.audit("policy.enforced", "/settings", map[string]string{"by": by, "setting": r.Key, "from": r.From, "to": r.To,
-			"param": r.Param, "after": by})
+			"param": r.Param})
 	}
 	return len(raised), nil
 }

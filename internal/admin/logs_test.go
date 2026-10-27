@@ -289,3 +289,44 @@ func TestTheNavPositionToggleIsGone(t *testing.T) {
 		t.Error("a stale preference cookie still reaches the markup")
 	}
 }
+
+// A sentence in a pseudonymous log carries the handle of the person it
+// names, and the screen names them there as it does in the record's other
+// fields: known people by name, anybody else left as a handle.
+func TestAPersonInASentenceIsNamedForWhoeverReadsTheScreen(t *testing.T) {
+	dir := t.TempDir()
+	key, _ := audit.NewKey()
+	l, err := audit.New(audit.Options{Path: dir + "/a.jsonl", Key: key, Source: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.Append(audit.Record{Action: "dual.approved", Resource: "/pat", Outcome: audit.Success,
+		Principal: "lee", Kind: audit.KindHuman, Verified: true,
+		Detail: map[string]string{"subject": "pat", "what": "make pat admin on /", "why": "asked by kim"},
+		People: []string{"kim"}}); err != nil {
+		t.Fatal(err)
+	}
+	events, err := audit.Read(dir + "/a.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(events[0].Detail["what"], "pat") {
+		t.Fatalf("the log holds the name: %v", events[0].Detail)
+	}
+	s, tok := logServer(t, events, true)
+	s.ResolvePrincipal = func(p string) string {
+		for _, name := range []string{"lee", "pat"} {
+			if p == audit.Pseudonym(key, name) {
+				return name
+			}
+		}
+		return ""
+	}
+	body, _ := getLogs(t, s, tok, "")
+	if !strings.Contains(body, "make pat admin on /") || !strings.Contains(body, ">/pat<") {
+		t.Errorf("the sentence or the resource is not named for the reader:\n%s", body)
+	}
+	if !strings.Contains(body, "asked by "+audit.Pseudonym(key, "kim")) {
+		t.Error("somebody the store does not know was named, or dropped")
+	}
+}

@@ -58,8 +58,10 @@ func WithMemory(m Memory, s *agent.Session,
 			}
 			// What an agent remembers about somebody is theirs: the run now
 			// holds it, and the exfiltration breaker knows. Which memory it
-			// used goes on the receipt, by id.
-			s.HoldsPrivate("what " + s.Manifest().Name + " remembers about " + m.About)
+			// used goes on the receipt, by id. A run's memory is always of
+			// the person it acts for, whom the receipt names as a person;
+			// naming them here too put them in clear in the audit log.
+			s.HoldsPrivate("what " + s.Manifest().Name + " remembers about the person it acts for")
 			for _, e := range found {
 				s.UsedMemory(true, e.ID)
 			}

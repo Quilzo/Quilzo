@@ -420,13 +420,16 @@ func browserGrantCall(ctx context.Context, root string, g browserGrant, m agent.
 
 	grantSweep(now)
 	digest := argsDigest("browser/"+grant, op, args)
-	held := ""
+	held, decidedBy := "", ""
 	runID, stepN := "", 0
 	defer func() {
 		d := map[string]string{"grant": grant, "tool": op, "run": runID,
 			"on_behalf_of": tok.Principal, "args_digest": digest}
 		if tok.Grant != "" {
 			d["connection"] = tok.Grant
+		}
+		if decidedBy != "" {
+			d["decided_by"] = decidedBy
 		}
 		if held != "" {
 			d["held"] = held
@@ -522,9 +525,9 @@ func browserGrantCall(ctx context.Context, root string, g browserGrant, m agent.
 	// rule, same approval screen — because a call that waits for a person
 	// over MCP waits the way every other one does.
 	if why != "" {
-		id, ok, wwhy := decideHeld(st, "browser/"+grant, op, digest, tok,
+		id, ok, wwhy, by := decideHeld(st, "browser/"+grant, op, digest, tok,
 			map[string]any{"args": args, "why": why}, now)
-		held = id
+		held, decidedBy = id, by
 		if !ok {
 			if serr := saveGatewayState(root, st, now); serr != nil {
 				gatewayMu.Unlock()

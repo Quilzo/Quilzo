@@ -82,6 +82,14 @@ func TestMain(m *testing.M) {
 			code = 1
 		}
 	}
+	if leaks := namesLeaked(); len(leaks) > 0 {
+		fmt.Fprintf(os.Stderr, "\naudit records name people where the log does not pseudonymise them:\n  %s\n"+
+			"Carry the person under a key in audit.IdentityKeys, not in a resource or a sentence.\n",
+			strings.Join(leaks, "\n  "))
+		if code == 0 {
+			code = 1
+		}
+	}
 	os.Exit(code)
 }
 

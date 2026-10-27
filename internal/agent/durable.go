@@ -238,7 +238,7 @@ func (r Runner) Continue(ctx context.Context, s *Session, prior Trace,
 		if by == "" {
 			by = "a person"
 		}
-		st := Step{N: w.N, Action: w.Action, Allowed: true, At: now, Tokens: w.Tokens, Cost: w.Cost}
+		st := Step{N: w.N, Action: w.Action, Allowed: true, At: now, Tokens: w.Tokens, Cost: w.Cost, DecidedBy: v.By}
 		if v.Approve {
 			text, err := AnswerQuestions(w.Questions, v.Answers)
 			if err != nil {
@@ -260,7 +260,7 @@ func (r Runner) Continue(ctx context.Context, s *Session, prior Trace,
 			why = v.By + " declined this"
 		}
 		t.Steps = append(t.Steps, Step{N: prior.Waiting.N,
-			Action: prior.Waiting.Action, Why: why, At: now,
+			Action: prior.Waiting.Action, Why: why, DecidedBy: v.By, At: now,
 			Tokens: prior.Waiting.Tokens, Cost: prior.Waiting.Cost})
 		seen = append(seen, Observation{From: "quilzo",
 			Body: "refused: " + why, Trusted: true})

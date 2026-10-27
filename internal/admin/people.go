@@ -302,7 +302,7 @@ func (s *Server) handlePeopleGrant(w http.ResponseWriter, r *http.Request) {
 			s.peopleBack(w, r, err.Error())
 			return
 		}
-		s.audit("access.grant", "/"+who, map[string]string{"role": ar.Name, "resource": "its feature", "by": p.Name})
+		s.audit("access.grant", "/", map[string]string{"subject": who, "role": ar.Name, "resource": "its feature", "by": p.Name})
 		s.peopleBack(w, r, fmt.Sprintf("%s is now %s: %s", who, ar.Name, strings.Join(ar.Grants, "; ")))
 		return
 	}
@@ -350,8 +350,10 @@ func (s *Server) handlePeopleGrant(w http.ResponseWriter, r *http.Request) {
 		s.peopleBack(w, r, err.Error())
 		return
 	}
-	s.audit("access.grant", "/"+who, map[string]string{
-		"role": string(role), "resource": on, "by": p.Name,
+	// Who was granted it is the subject, which the log pseudonymises; as
+	// the record's resource, "/lee", they were written in clear.
+	s.audit("access.grant", "/", map[string]string{
+		"subject": who, "role": string(role), "resource": on, "by": p.Name,
 	})
 	s.peopleBack(w, r, fmt.Sprintf("%s is now %s on %s", who, role, on))
 }
@@ -469,8 +471,8 @@ func (s *Server) handlePeopleRevoke(w http.ResponseWriter, r *http.Request) {
 		s.peopleBack(w, r, err.Error())
 		return
 	}
-	s.audit("access.revoke", "/"+who, map[string]string{
-		"role": string(role), "resource": on, "by": p.Name,
+	s.audit("access.revoke", "/", map[string]string{
+		"subject": who, "role": string(role), "resource": on, "by": p.Name,
 		"removed": fmt.Sprintf("%d", n),
 	})
 	s.peopleBack(w, r, fmt.Sprintf(
@@ -614,7 +616,15 @@ func (s *Server) changePolicy(change func(*auth.Policy) error) error {
 	return nil
 }
 
+// auditSeen, when set, is shown each record the admin writes. The tests set
+// it to check that no record names a person anywhere the log does not
+// pseudonymise (auditnames_test.go); nothing else does.
+var auditSeen func(s *Server, action, resource string, detail map[string]string)
+
 func (s *Server) audit(action, resource string, detail map[string]string) {
+	if auditSeen != nil {
+		auditSeen(s, action, resource, detail)
+	}
 	if s.Audit != nil {
 		s.Audit(action, resource, detail)
 	}

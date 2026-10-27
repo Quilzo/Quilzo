@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"time"
 
@@ -34,6 +35,7 @@ func proposeSecond(root string, c *Caller, kind, what string, payload any, why s
 		return false, err
 	}
 	detail := map[string]string{"request": r.ID, "kind": kind, "what": what}
+	maps.Copy(detail, r.About())
 	if alone {
 		detail["alone"] = "true"
 		if err := recordE(root, c.auditRecord("dual.approved", "/", audit.Success, detail)); err != nil {
@@ -161,6 +163,7 @@ func cmdPending(root string, args []string) error {
 			}
 		}
 		detail := map[string]string{"request": r.ID, "kind": r.Kind, "what": r.What, "proposed_by": r.By}
+		maps.Copy(detail, r.About())
 		if r.Alone {
 			detail["alone"] = "true"
 		}

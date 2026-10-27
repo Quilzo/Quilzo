@@ -5,6 +5,7 @@ package admin
 
 import (
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -60,6 +61,19 @@ type logRow struct {
 }
 
 // handleLogs shows the audit log.
+// handles finds a person's handle in the log's text (audit.Pseudonym).
+var handles = regexp.MustCompile(`\bp_[0-9a-f]{32}\b`)
+
+// orHandle is resolve, keeping the handle when nobody known has it.
+func orHandle(resolve func(string) string) func(string) string {
+	return func(h string) string {
+		if name := resolve(h); name != "" {
+			return name
+		}
+		return h
+	}
+}
+
 func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	p, ok := s.requireAuth(w, r)
 	if !ok {
@@ -140,13 +154,20 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 			}
 			// Details naming a person are pseudonymised like the principal,
 			// and named here the same way: known people by name, anybody
-			// else left opaque.
+			// else left opaque. A sentence or a resource that names
+			// somebody the record names carries their handle too, and is
+			// named the same way.
 			var named map[string]string
 			for k, v := range e.Detail {
-				if !audit.IdentityKeys[k] {
-					continue
+				var name string
+				if audit.IdentityKeys[k] {
+					name = resolve(v)
+				} else if strings.Contains(v, "p_") {
+					if name = handles.ReplaceAllStringFunc(v, orHandle(resolve)); name == v {
+						name = ""
+					}
 				}
-				if name := resolve(v); name != "" {
+				if name != "" {
 					if named == nil {
 						named = make(map[string]string, len(e.Detail))
 						for k2, v2 := range e.Detail {
@@ -155,6 +176,9 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 					}
 					named[k] = name
 				}
+			}
+			if strings.Contains(row.Resource, "p_") {
+				row.Resource = handles.ReplaceAllStringFunc(row.Resource, orHandle(resolve))
 			}
 			if named != nil {
 				row.Detail = named

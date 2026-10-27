@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"strings"
 	"time"
@@ -55,6 +56,7 @@ func (s *Server) proposeSecond(p principal, kind, what string, payload any, why 
 		return false, "", err
 	}
 	detail := map[string]string{"by": p.Name, "request": r.ID, "kind": kind, "what": what}
+	maps.Copy(detail, r.About())
 	if alone {
 		detail["alone"] = "true"
 		s.audit("dual.approved", "/", detail)
@@ -173,6 +175,7 @@ func (s *Server) handlePeoplePending(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	detail := map[string]string{"by": p.Name, "request": req.ID, "kind": req.Kind, "what": req.What, "proposed_by": req.By}
+	maps.Copy(detail, req.About())
 	if req.Alone {
 		detail["alone"] = "true"
 	}
