@@ -45,12 +45,8 @@ var capAreaOf = map[string]string{
 	"site_analytics": "Checks and reports", "experiment_report": "Checks and reports",
 	"scan_content": "Checks and reports", "pipeline_status": "Checks and reports",
 
-	"detection_stats": "Security", "incident_status": "Security",
-	"list_findings": "Security", "read_finding": "Security",
-	"propose_finding_decision": "Security", "shield_status": "Security",
-	"vuln_plan": "Security", "policy_status": "Security",
+	"shield_status": "Security", "policy_status": "Security",
 	"control_implementation": "Security", "inventory": "Security",
-	"estate_summary": "Security",
 
 	"agent_activity": "Agents, decisions and memory", "ask_assistant": "Agents, decisions and memory",
 	"declare_assistant": "Agents, decisions and memory", "list_assistants": "Agents, decisions and memory",

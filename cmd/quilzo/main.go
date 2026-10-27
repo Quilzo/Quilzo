@@ -433,7 +433,7 @@ agents and integrations
   quilzo fleet [--days N]                  every agent, app, tool server and model route, and who called what
   quilzo fleet add CARD_URL [--name N]     register another vendor's agent by its A2A card; you answer for it
   quilzo fleet remove NAME | check         take one away, or read every card again and say which changed
-  quilzo fleet shadow [--days N]           AI services used directly, from collected events and agents' connections
+  quilzo fleet shadow [--days N]           AI services agents' own programs reached directly, around the gateway
   quilzo memory list [--agent A] [--held]  what agents remember about you (anybody, for an administrator)
   quilzo memory confirm|delete ID          let a held memory be recalled, or remove one
   quilzo memory edit ID TEXT               rewrite what is remembered about you, as you say it

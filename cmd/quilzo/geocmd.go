@@ -45,18 +45,32 @@ func loadGeo(root string) (*geo.Locator, string, error) {
 		return nil, "", err
 	}
 	l := &geo.Locator{Networks: c.Networks}
-	desc := fmt.Sprintf("Places come from the %d networks you declared", len(c.Networks))
-	if len(c.Networks) == 1 {
-		desc = "Places come from the 1 network you declared"
+	// Where places come from, said as a sentence for any number of
+	// networks: "the 0 networks you declared" is how a screen reads when
+	// it was written for the case somebody tested.
+	var from []string
+	switch n := len(c.Networks); n {
+	case 0:
+	case 1:
+		from = append(from, "the 1 network you declared")
+	default:
+		from = append(from, fmt.Sprintf("the %d networks you declared", n))
 	}
+	cityDB := false
 	if b, err := os.ReadFile(geoDBPath(root)); err == nil {
 		db, oerr := geo.Open(b)
 		if oerr != nil {
 			return nil, "", fmt.Errorf("%s: %w", geoDBPath(root), oerr)
 		}
 		l.DB = db
-		desc += " and " + db.Type + " (DB-IP, CC BY 4.0)"
-	} else {
+		cityDB = true
+		from = append(from, db.Type+" (DB-IP, CC BY 4.0)")
+	}
+	desc := "Places come from " + strings.Join(from, " and ")
+	if len(from) == 0 {
+		desc = "No office or VPN is named (quilzo geo network add)"
+	}
+	if !cityDB {
 		desc += "; with no city database, other addresses are not placed (quilzo geo help)"
 	}
 	if b, err := os.ReadFile(geoASNPath(root)); err == nil {
