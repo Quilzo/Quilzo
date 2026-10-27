@@ -571,6 +571,14 @@ Unreleased
 
 ** Fixed
 
+*** Smart lockout works for IPv6.  The admin hands the lockout a client's
+    source as internal/clientip writes it, which for IPv6 is the client's
+    /64 as a prefix, and the lockout read that as no address at all: an
+    IPv6 guesser was never locked out of anything, an IPv6 person never
+    had a familiar place, and a guesser could fail a hundred times in a
+    row and turn an account's passkeys off for its owner.  Every source is
+    placed now, and one that cannot be is treated as unfamiliar.
+
 *** A passkey sign-in or removal lands on the key it is for.  The admin
     changed its list of passkeys by position, with nothing to stop two
     requests at once: a sign-in wrote the counter that detects a cloned key

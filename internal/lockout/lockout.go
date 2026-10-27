@@ -107,12 +107,24 @@ const (
 )
 
 // PlaceOf is the network an address belongs to, or "" when it is not one.
+//
+// It reads an address as the request's source is written: a bare address,
+// one with a port, or, for IPv6, the /64 internal/clientip gives a client
+// (an IPv6 host can change the low half of its address at will, so one
+// network is one source). That last form was read as no address at all, so
+// every IPv6 client had no place: never locked out however often it failed,
+// never remembered as familiar, and free to run any account to the ceiling.
 func PlaceOf(addr string) string {
-	host := addr
-	if h, _, err := net.SplitHostPort(addr); err == nil {
+	host := strings.TrimSpace(addr)
+	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
 	}
-	ip := net.ParseIP(strings.TrimSpace(host))
+	ip := net.ParseIP(host)
+	if ip == nil {
+		if prefixed, _, err := net.ParseCIDR(host); err == nil {
+			ip = prefixed
+		}
+	}
 	if ip == nil {
 		return ""
 	}
@@ -136,7 +148,10 @@ func decide(a Account, place string, now time.Time) Decision {
 		return Decision{Disabled: true, Why: fmt.Sprintf("%d failed sign-ins in a row on this account, so signing in "+
 			"to it this way is off until you sign in another way or an administrator turns it back on", Ceiling)}
 	}
-	if place != "" && !a.familiar(place) && now.Before(a.LockedUntil) {
+	// A source that cannot be placed is not a place the account is used
+	// from: Fail counts its failures as strange, and it is locked out with
+	// the rest.
+	if !a.familiar(place) && now.Before(a.LockedUntil) {
 		wait := a.LockedUntil.Sub(now)
 		return Decision{RetryAfter: wait, Why: fmt.Sprintf("too many failed sign-ins on this account from places it "+
 			"is not used from, so they are locked out of it for %s", wait.Round(time.Minute))}
