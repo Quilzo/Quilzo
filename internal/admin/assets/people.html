@@ -42,8 +42,8 @@
         {{if .AppRoles}}<optgroup label="A role in an app, over what the app made">{{range .AppRoles}}<option value="app:{{.Name}}">{{.Name}}: {{.Title}}</option>{{end}}</optgroup>{{end}}
       </select>
       <p id="role-help" class="hint"><strong>A job</strong> is the access a kind of work needs and nothing more:
-        an <em>analyst</em> works in security operations, <em>compliance</em> in the
-        posture and frameworks, <em>support</em> in the inbox and members&rsquo;
+        an <em>analyst</em> watches the shield, sign-ins and the audit log, <em>compliance</em> the
+        posture and frameworks, <em>support</em> the inbox and members&rsquo;
         posts. None of them can grant access or open a page. <strong>A permission</strong>
         is one thing about agents, granted alone: approve on <code>/@agents/newsletter</code>
         decides what the newsletter agent waits for, and nothing else. <strong>A role in an app</strong>

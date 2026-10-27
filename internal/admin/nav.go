@@ -126,7 +126,7 @@ var destinations = []destination{
 	// findings, cases, vulnerabilities, the estate — is Vaigil's, which
 	// reads this program's audit log as it is written.
 	{"shield", "Shield", "/security/shield", "Protection", "shield", auth.ActGrant},
-	{"signins", "Sign-ins", "/security/signins", "Protection", "automations", auth.ActGrant},
+	{"signins", "Sign-ins", "/security/signins", "Protection", "signins", auth.ActGrant},
 
 	{"agents", "Agents", "/agents", "Administration", "agents", auth.ActManageAgents},
 	// Beside Agents: every agent, Quilzo's and other vendors', the apps and
@@ -197,11 +197,11 @@ const DocsBase = "https://quilzo.github.io/"
 // the documentation exists to correct.
 var docSections = map[string]bool{
 	// One page per screen, named by the destination table above.
-	"agent-interface": true, "agents": true, "api": true, "assistant": true, "automations": true,
+	"agent-interface": true, "agents": true, "api": true, "assistant": true,
 	"chatbots": true, "design": true, "fleet": true, "forms": true,
 	"growth": true, "integrations": true, "languages": true, "logging": true, "make": true, "media": true, "members": true,
 	"memory": true, "models": true, "pages": true, "passkeys": true, "people": true, "provenance": true,
-	"provisioning": true, "publishing": true, "research": true, "security": true, "settings": true, "shield": true, "sso": true,
+	"provisioning": true, "publishing": true, "research": true, "security": true, "settings": true, "shield": true, "signins": true, "sso": true,
 	"start": true, "structure": true, "today": true, "transfer": true, "types": true,
 
 	// Guides no screen owns, because they explain a concept or a surface

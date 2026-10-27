@@ -65,9 +65,6 @@ import (
 	"strings"
 )
 
-// Protocol is the revision this speaks.
-const Protocol = "2025-06-18"
-
 // Request is a JSON-RPC 2.0 request.
 type Request struct {
 	JSONRPC string          `json:"jsonrpc"`
@@ -357,7 +354,10 @@ func (s *Server) Handle(req Request) *Response {
 
 	switch req.Method {
 	case "initialize":
-		resp.Result = s.initialize(Protocol)
+		// The revision the client asked for, when it is one this speaks,
+		// as over HTTP: a client that opened with 2025-11-25 was answered
+		// 2025-06-18 on standard input, and went without what it added.
+		resp.Result = s.initialize(legacyVersion(req))
 
 	case "server/discover":
 		resp.Result = s.discover()
