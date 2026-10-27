@@ -110,6 +110,12 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 	if n := siteName(root); n != "" {
 		st.Name = n
 	}
+	// And its sentence, which `quilzo site --description` overrides.
+	if cfg, cerr := loadConfig(root); cerr == nil {
+		if d := strings.TrimSpace(cfg.Raw("site.description")); d != "" {
+			st.Description = d
+		}
+	}
 	// The flag when there is one, the configured value otherwise. A base URL
 	// belongs to the site — see the setting's own note — and a bundle is built
 	// long after anybody typed a flag.

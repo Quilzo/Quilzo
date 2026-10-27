@@ -206,6 +206,10 @@ func (p *Package) MakeCard() Card {
 	for _, m := range p.Menus {
 		c.Shows = append(c.Shows, Line{Text: fmt.Sprintf("A menu %q with %d entries", m.Name, len(m.Items))})
 	}
+	if p.Site != nil {
+		// First, because a package that is a whole site is read as one.
+		c.Shows = append([]Line{p.Site.siteLine()}, c.Shows...)
+	}
 
 	for _, h := range p.Webhooks {
 		what := "every event"

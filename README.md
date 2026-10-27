@@ -248,6 +248,7 @@ Help link opens its own.
 | Feature | What it does | How |
 |---|---|---|
 | **Features as packages** | One file declares the types, records, listings, forms, pages, menus, chatbots, agents and webhooks a piece of work needs, each checked by its own rules; pages go to the draft, never live. | `quilzo feature example`, `feature check FILE`; Make screen |
+| **A whole site as a package** | A package can also declare the site itself: its name, a sentence about it, its layouts and its look (a style, a colour the palette is generated from, any theme token), checked for contrast like any theme. One package owns the site; a site somebody set up by hand is taken over only when they say so, and put back if the package goes. | `"site"` in a package; `feature install FILE --take-site` |
 | **Permission card** | Worked out from the package: what it stores and whether that is about people, what it collects, shows and sends, what its agents may do. | `quilzo feature check FILE` |
 | **Two people when it matters** | Personal data, public forms, anything sent outside, or an agent acting without asking needs a second administrator; a feature only changes what it made. | `quilzo feature install`, `feature approve ID`; Approvals |
 | **Features from a repository** | Review a feature's package in a pull request with its card and plan as a comment, and install it from CI on merge with a token exchanged for the job; risky packages still wait for a second person. | POST /features/check, /features/install; `quilzo trust add` |

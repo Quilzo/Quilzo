@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -38,14 +39,14 @@ func wireFeatures(srv *Server) *featureCalls {
 				History: []feature.Version{{Version: "1.0.0"}}}}, nil
 		},
 		Pending: func() ([]feature.Pending, error) { return c.pending, nil },
-		Check: func(body []byte) (*feature.Package, feature.Card, feature.Plan, error) {
+		Check: func(body []byte, _ bool) (*feature.Package, feature.Card, feature.Plan, error) {
 			p, err := feature.Decode(bytes.NewReader(body))
 			if err != nil {
 				return nil, feature.Card{}, feature.Plan{}, err
 			}
 			return p, p.MakeCard(), p.MakePlan(feature.State{}, nil), nil
 		},
-		Install: func(body []byte, rows string, act Actor) (string, []string, error) {
+		Install: func(body []byte, rows string, _ bool, act Actor) (string, []string, error) {
 			by := act.Name
 			c.installed = append(c.installed, by)
 			c.rows = append(c.rows, rows)
@@ -195,7 +196,7 @@ func TestMakeIsForAdministrators(t *testing.T) {
 	if code != http.StatusForbidden || len(calls.removed) != 0 {
 		t.Errorf("an author removed a feature: %d %v", code, calls.removed)
 	}
-	srv.Features.Check = func([]byte) (*feature.Package, feature.Card, feature.Plan, error) {
+	srv.Features.Check = func([]byte, bool) (*feature.Package, feature.Card, feature.Plan, error) {
 		return nil, feature.Card{}, feature.Plan{}, errors.New("unused")
 	}
 }
@@ -256,5 +257,52 @@ func TestMakeFromASpreadsheetCarriesItsRowsToTheInstall(t *testing.T) {
 		"digest": {digest}, "rows": {"0123456789abcdef01234567"}})
 	if len(calls.rows) != 1 || calls.rows[0] != "0123456789abcdef01234567" {
 		t.Errorf("rows reached the install as %v", calls.rows)
+	}
+}
+
+// A site package over a site somebody set up by hand cannot be installed
+// as it stands; the screen offers to let it take the site over, checks it
+// again that way, and installs it that way.
+func TestASitePackageTakesOverAHandMadeSiteOnlyWhenAsked(t *testing.T) {
+	srv, token := setup(t)
+	wireFeatures(srv)
+	var tookOver []bool
+	srv.Features.Check = func(body []byte, takeSite bool) (*feature.Package, feature.Card, feature.Plan, error) {
+		p, err := feature.Decode(bytes.NewReader(body))
+		if err != nil {
+			return nil, feature.Card{}, feature.Plan{}, err
+		}
+		plan := feature.Plan{Steps: []feature.Step{{Ref: feature.SiteRef, Action: feature.Add}}}
+		if !takeSite {
+			plan = feature.Plan{Conflicts: []string{feature.SiteByHand + "; …"}}
+		}
+		return p, p.MakeCard(), plan, nil
+	}
+	srv.Features.Install = func(body []byte, rows string, takeSite bool, act Actor) (string, []string, error) {
+		tookOver = append(tookOver, takeSite)
+		return "", nil, nil
+	}
+	pkg := `{"format":1,"name":"bakery","version":"1.0","title":"Hart's Bakery","purpose":"The bakery's site.",` +
+		`"site":{"name":"Hart's Bakery","style":"soft"}}`
+
+	w := postForm(t, srv, "/make/check", token, url.Values{"text": {pkg}}.Encode())
+	body := w.Body.String()
+	whole(t, body)
+	if !strings.Contains(body, "Let it take over the site") || strings.Contains(body, `value="install"`) {
+		t.Fatalf("the conflict did not offer to take the site over:\n%s", body)
+	}
+	w = postForm(t, srv, "/make/check", token, url.Values{"text": {pkg}, "take_site": {"1"}}.Encode())
+	body = w.Body.String()
+	if !strings.Contains(body, `value="install"`) || !strings.Contains(body, `name="take_site" value="1"`) {
+		t.Fatalf("checked again to take over, it cannot be installed:\n%s", body)
+	}
+	digest := regexp.MustCompile(`name="digest" value="([0-9a-f]+)"`).FindStringSubmatch(body)
+	if digest == nil {
+		t.Fatal("no digest on the page")
+	}
+	postFormLoc(t, srv, token, "/make/act", url.Values{"do": {"install"}, "digest": {digest[1]}, "body": {pkg},
+		"take_site": {"1"}})
+	if len(tookOver) != 1 || !tookOver[0] {
+		t.Fatalf("the install did not take the site over: %v", tookOver)
 	}
 }

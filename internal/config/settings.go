@@ -365,6 +365,13 @@ var settings = []Setting{
 			"with the site; the flag still overrides it for one run.",
 	},
 	{
+		Key: "site.description", Kind: Text, Default: "",
+		Summary: "a sentence about this site, for search results and an installed copy of it",
+		Why: "Like the name, it belongs to the site and not to one run of " +
+			"`quilzo site`, so a site package can set it and every page that " +
+			"renders reads the same sentence; the flag still overrides it for one run.",
+	},
+	{
 		Key: "site.icon", Kind: Text, Default: "",
 		Summary: "the media library id of the picture used as this site's icon",
 		Why: "A published site had no icon: every page's request for " +

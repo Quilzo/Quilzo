@@ -33,13 +33,15 @@ type FeatureHooks struct {
 	Installed func() ([]feature.Installed, error)
 	Pending   func() ([]feature.Pending, error)
 	// Check reads a package: its card and its plan, changing nothing.
-	Check func(body []byte) (*feature.Package, feature.Card, feature.Plan, error)
+	Check func(body []byte, takeSite bool) (*feature.Package, feature.Card, feature.Plan, error)
 	// Install installs for a person, or leaves it waiting; the id is the
 	// waiting request's, empty when it went in at once. rows names records
 	// kept from a spreadsheet to import with it. Secrets are new webhooks'
 	// signing secrets, shown once on the response and never in a
 	// redirect, a log or a later page.
-	Install func(body []byte, rows string, by Actor) (string, []string, error)
+	// takeSite lets a site package take over a site somebody set up by
+	// hand, as `feature install --take-site` does.
+	Install func(body []byte, rows string, takeSite bool, by Actor) (string, []string, error)
 	// Draft asks a model for a package from a description; invalid says
 	// why the draft would not install yet.
 	Draft func(description string, by Actor) (body []byte, notes []string, invalid string, err error)
@@ -215,13 +217,18 @@ func (s *Server) renderCheck(w http.ResponseWriter, r *http.Request, p principal
 	data := map[string]any{"Title": "Check a feature", "Nav": "make", "Principal": p, "Notes": notes,
 		"Body": string(body), "Rows": rows, "RowCount": count, "Into": into}
 	if invalid == "" {
-		pkg, card, plan, err := s.Features.Check(body)
+		takeSite := r.FormValue("take_site") == "1"
+		pkg, card, plan, err := s.Features.Check(body, takeSite)
 		if err != nil {
 			invalid = err.Error()
 		} else {
 			digest, _ := pkg.Digest()
 			data["Package"], data["Card"], data["Plan"], data["Digest"] = pkg, card, plan, digest
 			data["Title"] = "Check " + pkg.Title
+			data["TakeSite"] = takeSite
+			// The one conflict a person can resolve here: a site package
+			// over a site they set up by hand, taken over when they say so.
+			data["SiteByHand"] = len(plan.Conflicts) == 1 && strings.HasPrefix(plan.Conflicts[0], feature.SiteByHand)
 		}
 	}
 	data["Invalid"] = invalid
@@ -264,7 +271,7 @@ func (s *Server) handleMakeAct(w http.ResponseWriter, r *http.Request) {
 			makeBack(w, r, "", errors.New("those records are not ones this screen kept"))
 			return
 		}
-		id, secrets, err := s.Features.Install(body, rows, p.actor())
+		id, secrets, err := s.Features.Install(body, rows, r.FormValue("take_site") == "1", p.actor())
 		switch {
 		case err != nil:
 			makeBack(w, r, "", err)
