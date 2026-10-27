@@ -257,6 +257,39 @@ else's host, because a page that fetches one has handed that host a request on
 every visit and the ability to stall the render — and the policy cannot help,
 because the page asked for it.
 
+## Building a whole site from a sentence
+
+A site is a declaration: pages made of sections this program renders, menus,
+forms, a question box and a look. So building one is writing a declaration, and
+a model can do that without writing any code:
+
+```bash
+quilzo site new "a bakery in Leeds: sourdough, rye, and a café upstairs" --install
+quilzo site fill                                   # what only you know
+quilzo site fill "your address=4 Mill Lane, Leeds"
+quilzo publish
+```
+
+The kind of site (business, product, restaurant, portfolio, community, event)
+picks the pages and sections; a model, when one is allowed, rewrites the words
+for the description. Its answer is held to the start it was given: links only
+to the site's own pages, sections of kinds that render, forms that pass their
+checks, a question box that sends nothing anywhere, and no agents, webhooks or
+hosts. The privacy page is not the model's: it is written from what the forms
+collect, why, on what basis and for how long.
+
+The builder never makes up a fact. A price, an address, opening hours or
+somebody's words that the description does not give are left as
+`[[what goes here]]`, and the publish gate refuses a page that still holds
+one. Filling one in fills it on every page it is on. Installed pages are
+marked for how they were written, by a model or by the builder's template, so
+the AI-content disclosure is right without anybody remembering to set it.
+
+The result is a package like any other: its card says what it collects and
+shows, a second administrator approves a site with a contact form (or the only
+administrator does, on the record), and removing it puts the site back as it
+was. The Make screen does the same under Build a whole site and Fill in.
+
 ## Bringing a template you already have
 
 Nobody's existing template works here, and being told to start again is the
@@ -1428,6 +1461,8 @@ not at the next restart.
 
 ```bash
 quilzo demo                              # a whole example application
+# or
+quilzo site new "what the site is for" --name "Its name" --install   # a whole site to fill in
 # or
 quilzo template use sections             # a layout, a theme and sample content
 quilzo add index=templates/sections.json -m "first page"

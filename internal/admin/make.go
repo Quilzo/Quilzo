@@ -10,11 +10,15 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/feature"
+	"github.com/quilzo/quilzo/internal/theme"
 )
 
 // Make: features as packages (internal/feature). A person drops in a
@@ -51,6 +55,18 @@ type FeatureHooks struct {
 	Decide   func(id string, approve bool, by Actor) error
 	Remove   func(name string, by Actor) error
 	Rollback func(name string, by Actor) (string, error)
+	// Site builds a whole site package from a brief; useModel asks a model
+	// to write its words. Nothing is installed.
+	Site func(b feature.SiteBrief, useModel bool, by Actor) (body []byte, notes []string, err error)
+	// Blanks is what the draft's pages still need filled in, and the pages
+	// each blank is on.
+	Blanks func() (whats []string, on map[string][]string, err error)
+	// Fill writes values in for blanks across the draft's pages; an empty
+	// value leaves its blank out.
+	Fill func(values map[string]string, by Actor) (filled int, pages []string, err error)
+	// OnlyAdmin reports whether a person is the only administrator, who
+	// approves alone what two would otherwise approve.
+	OnlyAdmin func(name string) bool
 }
 
 var (
@@ -90,7 +106,123 @@ func (s *Server) handleMake(w http.ResponseWriter, r *http.Request) {
 	if in, err := s.Features.Installed(); err == nil {
 		data["Installed"] = in
 	}
+	if s.Features.Blanks != nil {
+		if whats, _, err := s.Features.Blanks(); err == nil {
+			data["Blanks"] = len(whats)
+		}
+	}
+	data["Kinds"], data["Styles"] = feature.SiteKinds(), theme.Styles
+	data["CanSite"] = s.Features.Site != nil
 	s.render(w, r, "make.html", data)
+}
+
+// handleMakeSite builds a whole site from what somebody says it is for,
+// and shows it as any other package is shown, with what only they can
+// fill in.
+func (s *Server) handleMakeSite(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.requireAuth(w, r)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "post", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.can(w, r, p, auth.ActInstall, "/") {
+		return
+	}
+	if s.Features == nil || s.Features.Site == nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+	b := feature.SiteBrief{Description: r.FormValue("description"), Name: r.FormValue("name"),
+		Kind: r.FormValue("kind"), Colour: r.FormValue("colour"), Style: r.FormValue("style")}
+	body, notes, err := s.Features.Site(b, r.FormValue("use_model") == "1", p.actor())
+	if err != nil {
+		makeBack(w, r, "", err)
+		return
+	}
+	s.renderCheck(w, r, p, body, notes, "", "", 0, "")
+}
+
+// maxFill bounds one Fill in form: far past any site the builder makes.
+const maxFill = 500
+
+// handleMakeFill lists what the draft's pages still need filled in, and
+// writes in what somebody gives.
+func (s *Server) handleMakeFill(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.requireAuth(w, r)
+	if !ok {
+		return
+	}
+	if !s.can(w, r, p, auth.ActEditDraft, "/") {
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	if s.Features == nil || s.Features.Blanks == nil || s.Features.Fill == nil {
+		if r.Method == http.MethodPost {
+			http.NotFound(w, r)
+			return
+		}
+		s.render(w, r, "make_fill.html", map[string]any{"Title": "Fill in", "Nav": "make", "Principal": p,
+			"Unavailable": "This build was started without the feature store, so there is nothing here to fill in."})
+		return
+	}
+	if r.Method == http.MethodPost {
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+		if err := r.ParseForm(); err != nil {
+			http.Redirect(w, r, "/make/fill?e="+url.QueryEscape("that form could not be read"), http.StatusSeeOther)
+			return
+		}
+		whats := r.PostForm["what"]
+		if len(whats) > maxFill {
+			whats = whats[:maxFill]
+		}
+		values := map[string]string{}
+		for i, what := range whats {
+			idx := strconv.Itoa(i)
+			switch v := strings.TrimSpace(r.PostForm.Get("value" + idx)); {
+			case r.PostForm.Get("leave"+idx) == "1":
+				values[what] = ""
+			case v != "":
+				values[what] = v
+			}
+		}
+		if len(values) == 0 {
+			http.Redirect(w, r, "/make/fill?e="+url.QueryEscape("write in at least one, or tick Leave it out"), http.StatusSeeOther)
+			return
+		}
+		n, pages, err := s.Features.Fill(values, p.actor())
+		if err != nil {
+			http.Redirect(w, r, "/make/fill?e="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+			return
+		}
+		msg := fmt.Sprintf("Filled in %d %s on %s. The draft has them; publishing is the usual review.", n,
+			map[bool]string{true: "blank", false: "blanks"}[n == 1], strings.Join(pages, ", "))
+		http.Redirect(w, r, "/make/fill?m="+url.QueryEscape(msg), http.StatusSeeOther)
+		return
+	}
+	whats, on, err := s.Features.Blanks()
+	if err != nil {
+		s.render(w, r, "make_fill.html", map[string]any{"Title": "Fill in", "Nav": "make", "Principal": p, "Error": err.Error()})
+		return
+	}
+	type blank struct {
+		What, Label string
+		On          []string
+	}
+	var list []blank
+	for _, what := range whats {
+		label := what
+		if r, size := utf8.DecodeRuneInString(label); size > 0 {
+			label = string(unicode.ToUpper(r)) + label[size:]
+		}
+		list = append(list, blank{What: what, Label: label, On: on[what]})
+	}
+	s.render(w, r, "make_fill.html", map[string]any{"Title": "Fill in", "Nav": "make", "Principal": p,
+		"Blanks": list, "Message": r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e")})
 }
 
 // handleMakeCheck reads an uploaded package and shows its card and plan,
@@ -226,6 +358,8 @@ func (s *Server) renderCheck(w http.ResponseWriter, r *http.Request, p principal
 			data["Package"], data["Card"], data["Plan"], data["Digest"] = pkg, card, plan, digest
 			data["Title"] = "Check " + pkg.Title
 			data["TakeSite"] = takeSite
+			data["Fill"] = pkg.BlankWhats()
+			data["Alone"] = card.Approvers >= 2 && s.Features.OnlyAdmin != nil && s.Features.OnlyAdmin(p.Name)
 			// The one conflict a person can resolve here: a site package
 			// over a site they set up by hand, taken over when they say so.
 			data["SiteByHand"] = len(plan.Conflicts) == 1 && strings.HasPrefix(plan.Conflicts[0], feature.SiteByHand)

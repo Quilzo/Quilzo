@@ -41,6 +41,7 @@ type draftedJSON struct {
 	Pages       []Page                `json:"pages"`
 	Menus       []menu.Menu           `json:"menus"`
 	Chatbots    []assistant.Assistant `json:"chatbots"`
+	Site        *Site                 `json:"site"`
 }
 
 // DraftPrompt is the system prompt for drafting a package: the format, its
@@ -90,6 +91,12 @@ func draftExample() []byte {
 // draft may hold, and says what it left out. by and from are its
 // provenance: who asked, and what they asked for.
 func ReadDraft(answer string, sectionKinds map[string]bool, by, from, model string, now time.Time) (*Package, []string, error) {
+	return readDraft(answer, sectionKinds, by, from, model, now, false)
+}
+
+// readDraft reads a draft; withSite keeps a site block, which only the site
+// builder asks a model for.
+func readDraft(answer string, sectionKinds map[string]bool, by, from, model string, now time.Time, withSite bool) (*Package, []string, error) {
 	answer = strings.TrimSpace(answer)
 	// A model that wraps its JSON in a code fence is common enough to undo.
 	if strings.HasPrefix(answer, "```") {
@@ -113,7 +120,8 @@ func ReadDraft(answer string, sectionKinds map[string]bool, by, from, model stri
 		return nil, nil, fmt.Errorf("the model's answer is not a JSON object: %w", err)
 	}
 	allowed := map[string]bool{"name": true, "title": true, "purpose": true, "types": true, "collections": true,
-		"listings": true, "forms": true, "pages": true, "menus": true, "chatbots": true, "format": true, "version": true}
+		"listings": true, "forms": true, "pages": true, "menus": true, "chatbots": true, "format": true, "version": true,
+		"site": withSite}
 	var dropped []string
 	for k := range keys {
 		if !allowed[k] {
@@ -144,6 +152,9 @@ func ReadDraft(answer string, sectionKinds map[string]bool, by, from, model stri
 		Made:  &Made{By: by, From: clip(from, 600), At: now.UTC(), Model: model},
 		Types: d.Types, Collections: d.Collections, Listings: d.Listings, Forms: d.Forms,
 		Menus: d.Menus, Chatbots: d.Chatbots,
+	}
+	if withSite {
+		p.Site = d.Site
 	}
 	for _, pg := range d.Pages {
 		if pg.Body == nil {

@@ -237,6 +237,42 @@ func contentGates(root string, s *store.Store, ref string) gate.Set {
 			},
 		},
 
+		// Blanks. The site builder writes [[what goes here]] where a page
+		// needs a fact nobody gave it, rather than making one up, and a page
+		// is not published until somebody writes the fact in or takes the
+		// sentence out. Unwaivable, because there is no page that should go
+		// live saying "[[your opening hours]]". Only the blanks an installed
+		// package was built with count: a page about shell scripts says
+		// [[ -f file ]], and is not missing anything.
+		{
+			Name: "blanks",
+			Refusal: func(n int) string {
+				return fmt.Sprintf("%d blank(s) are still to be filled in.\n  "+
+					"Write in what goes there (`quilzo site fill`, or Fill in on "+
+					"the Make screen), or take the sentence out", n)
+			},
+			Run: func() (blocking, advisory []gate.Finding, err error) {
+				known, kerr := builderBlanks(root)
+				if kerr != nil {
+					return nil, nil, kerr
+				}
+				if len(known) == 0 {
+					return nil, nil, nil
+				}
+				pages, perr := pagesAt()
+				if perr != nil {
+					return nil, nil, perr
+				}
+				for _, name := range sortedNames(pages) {
+					for _, b := range unfilledOn(pages[name], known) {
+						blocking = append(blocking, gate.Finding{Page: name,
+							Detail: fmt.Sprintf("%s still says [[%s]]", b.Field, b.What)})
+					}
+				}
+				return blocking, nil, nil
+			},
+		},
+
 		// Claims. The rules live in a file that may not exist, which is the
 		// ordinary state and not a failure. A file that exists and does not
 		// parse IS a failure, because treating a broken rules file as "no

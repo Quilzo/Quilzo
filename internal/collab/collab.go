@@ -414,9 +414,14 @@ func (p Policy) Evaluate(prop Proposal, kindOf KindOf, now time.Time) Decision {
 		who = append(who, a.By)
 	}
 	sort.Strings(who)
+	reason := "approved by " + strings.Join(who, " and ")
+	if len(who) == 0 {
+		// Not "approved by" nobody: nothing was asked for.
+		reason = "no approval is required"
+	}
 	return Decision{
 		Allowed: true, Have: len(valid), Need: p.Required,
-		Reason: "approved by " + strings.Join(who, " and "),
+		Reason: reason,
 	}
 }
 

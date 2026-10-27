@@ -43,6 +43,16 @@ import (
 // the internet at. Running both on one port would mean one misconfiguration
 // exposes the editing interface.
 func cmdSite(root string, args []string) error {
+	if len(args) > 0 {
+		switch args[0] {
+		case "new":
+			return siteNewCmd(root, args[1:])
+		case "fill":
+			return siteFillCmd(root, args[1:])
+		case "kinds":
+			return siteKindsCmd()
+		}
+	}
 	fs := flag.NewFlagSet("site", flag.ContinueOnError)
 	addr := fs.String("addr", "127.0.0.1:8081", "listen address")
 	tplDir := fs.String("templates", "templates", "where page.html lives")

@@ -106,23 +106,28 @@ func (s *Site) validate(bad func(string, ...any)) {
 			bad("site: there is no starter called %q; one of %s", s.Starter, strings.Join(starter.Names(), ", "))
 		}
 	}
+	for _, r := range s.lookRefused() {
+		bad("site: %s", r)
+	}
+}
+
+// lookRefused is why the theme would refuse the look the site block asks
+// for, contrast included; nothing when it would not.
+func (s *Site) lookRefused() []string {
 	over, err := s.Look()
 	if err != nil {
-		bad("site: %v", err)
-		return
+		return []string{err.Error()}
 	}
 	th, findings := theme.New(over, nil)
 	findings = append(findings, th.Check()...)
 	var refused []string
 	for _, f := range findings {
 		if f.Blocking {
-			refused = append(refused, f.String())
+			refused = append(refused, "the look is refused: "+f.String())
 		}
 	}
 	sort.Strings(refused)
-	for _, r := range refused {
-		bad("site: the look is refused: %s", r)
-	}
+	return refused
 }
 
 // printable is text with no control characters in it.

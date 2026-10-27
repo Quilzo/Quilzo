@@ -230,6 +230,13 @@ languages
   quilzo lang check                        which translations are stale or missing
   quilzo lang translated PAGE LOCALE       record what it was translated from
 
+a whole site (one package: pages, menus, forms, a question box, a privacy page, the look)
+  quilzo site new "…" [--name N] [--install]   build it from a sentence; a model writes the words when one is allowed
+      --kind K --colour #rrggbb --style S     what kind of site, and how it looks (quilzo site kinds)
+      --no-model -o FILE --take-site          the builder's own start; where to write it; over a hand-made site
+  quilzo site kinds                        business, product, restaurant, portfolio, community, event
+  quilzo site fill ["WHAT=VALUE" …]        list the [[blanks]] only you can fill in, or fill them; none is published
+
 features (one package of blocks, installed as one decision)
   quilzo feature example > FILE.json       a complete package to edit: a lab sample tracker
   quilzo feature draft "…" [-o FILE]       a model drafts a package from a sentence; content blocks only

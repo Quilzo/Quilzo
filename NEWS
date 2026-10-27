@@ -61,6 +61,30 @@ Unreleased
 
 ** Added
 
+*** A whole site from a sentence.  `quilzo site new "a bakery in Leeds"
+    --install`, or Build a whole site on the Make screen, writes a site
+    package: pages and sections for the kind of site (business, product,
+    restaurant, portfolio, community or event; `quilzo site kinds`), main
+    and footer menus, a contact form, a question box that answers from
+    the site's own pages and sends nothing anywhere, a privacy page
+    written from what the forms collect, why, on what basis and for how
+    long, and a look checked for contrast.  A model rewrites the words for
+    the description when one is allowed, and what it answers is held to
+    the builder's start: links only to the site's own pages, sections this
+    program renders, forms that pass their checks, nothing that reaches
+    another server.  Nothing is made up: a price, an address, opening
+    hours or anybody's words that the description does not give are left
+    as [[blanks]], which `quilzo site fill` or the Fill in screen writes in
+    once for every page they are on.  A page with a blank in it does not
+    publish (the new blanks gate).  Installed, the pages are marked for
+    how they were written: by a model, which discloses, or by the builder's
+    template, and filling them in makes them the person's too.
+
+*** The only administrator installs a feature alone.  A package two
+    people would approve, such as one with a contact form, installed with
+    no second administrator to ask, as other changes that need two are,
+    and the record says it was approved alone.
+
 *** A package can be a whole site.  Beside its pages, menus, forms and
     chatbots, a package may declare the site itself: its name, a sentence
     about it (the new setting site.description, which quilzo site

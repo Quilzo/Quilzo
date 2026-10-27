@@ -369,7 +369,9 @@ pre {
 .hero .chip { background: color-mix(in srgb, currentColor 14%, transparent); color: inherit; }
 .hero.hero-center { align-items: center; text-align: center; }
 .hero.hero-center .lead { margin-inline: auto; }
-.hero.hero-plain { background: transparent; color: inherit; padding-inline: 0; border-radius: 0; }
+.hero.hero-plain { background: transparent; color: inherit; padding-inline: 0; border-radius: 0;
+  /* A plain hero is text on the page: no style draws a card around it. */
+  box-shadow: none; border: 0; }
 .hero.hero-bold { background: var(--primary); color: var(--on-primary); }
 .hero-split { display: grid; gap: var(--space-6); align-items: center; }
 .hero-media img { border-radius: var(--radius-lg); width: 100%; }
