@@ -6,7 +6,6 @@ package feature
 import (
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -1075,18 +1074,17 @@ func (p *Package) Blanks() map[string][]section.Blank {
 }
 
 // BlankWhats is every distinct thing still to fill in across a package's
-// pages, sorted.
+// pages, in the order its pages are read.
 func (p *Package) BlankWhats() []string {
 	seen := map[string]bool{}
 	var out []string
-	for _, bs := range p.Blanks() {
-		for _, b := range bs {
+	for _, pg := range p.Pages {
+		for _, b := range section.Unfilled(pg.Body) {
 			if !seen[b.What] {
 				seen[b.What] = true
 				out = append(out, b.What)
 			}
 		}
 	}
-	sort.Strings(out)
 	return out
 }

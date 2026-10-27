@@ -242,8 +242,8 @@ func TestADraftedSiteIsPutRight(t *testing.T) {
 	if strings.Join(main, ",") != "menu" {
 		t.Errorf("the main menu is %v", main)
 	}
-	if got := p.BlankWhats(); len(got) != 3 || got[0] != "the name of the person or organisation that runs this site" ||
-		got[1] != "the time you start baking" {
+	if got := p.BlankWhats(); len(got) != 3 || got[0] != "the time you start baking" ||
+		got[1] != "the name of the person or organisation that runs this site" {
 		t.Errorf("to fill in: %q", got)
 	}
 	joined := strings.Join(notes, "\n")

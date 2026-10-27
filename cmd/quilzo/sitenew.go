@@ -355,10 +355,12 @@ func unfilledOn(body any, known map[string]bool) []section.Blank {
 }
 
 // siteBlanks is what the draft's pages still need, by what goes there, and
-// the pages each appears on.
+// the pages each appears on: in reading order, the home page first.
 func siteBlanks(pages map[string]any, known map[string]bool) (whats []string, on map[string][]string) {
 	on = map[string][]string{}
-	for _, name := range sortedNames(pages) {
+	names := sortedNames(pages)
+	sort.SliceStable(names, func(i, j int) bool { return names[i] == "index" && names[j] != "index" })
+	for _, name := range names {
 		seen := map[string]bool{}
 		for _, b := range unfilledOn(pages[name], known) {
 			if seen[b.What] {
@@ -371,7 +373,6 @@ func siteBlanks(pages map[string]any, known map[string]bool) (whats []string, on
 			on[b.What] = append(on[b.What], name)
 		}
 	}
-	sort.Strings(whats)
 	return whats, on
 }
 

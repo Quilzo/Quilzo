@@ -59,3 +59,19 @@ func TestBlanksAreFoundFilledAndLeftOut(t *testing.T) {
 		t.Errorf("a value for no blank filled %d places", n)
 	}
 }
+
+// Blanks come in the order somebody reads the page: a card's title before
+// its body, a question before its answer.
+func TestBlanksComeInReadingOrder(t *testing.T) {
+	got := Unfilled(map[string]any{"items": []any{
+		map[string]any{"body": "[[what it is]]", "title": "[[its name]]"},
+		map[string]any{"a": "[[the answer]]", "q": "[[the question]]"},
+	}})
+	var whats []string
+	for _, b := range got {
+		whats = append(whats, b.What)
+	}
+	if want := []string{"its name", "what it is", "the question", "the answer"}; !reflect.DeepEqual(whats, want) {
+		t.Fatalf("read in the order %q", whats)
+	}
+}

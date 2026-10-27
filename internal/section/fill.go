@@ -39,7 +39,11 @@ type Blank struct {
 // Mark is the blank for what, as the builder writes it.
 func Mark(what string) string { return "[[" + what + "]]" }
 
-// Unfilled lists the blanks on a page, in the order of its fields.
+// first are the fields read before the rest of an entry: a card's title
+// comes before its body, a question before its answer.
+var first = map[string]int{"title": 1, "name": 2, "label": 3, "q": 4, "eyebrow": 5}
+
+// Unfilled lists the blanks on a page, in the order somebody reads it.
 func Unfilled(body any) []Blank {
 	var out []Blank
 	var walk func(path string, v any)
@@ -54,7 +58,16 @@ func Unfilled(body any) []Blank {
 			for k := range t {
 				keys = append(keys, k)
 			}
-			sort.Strings(keys)
+			sort.Slice(keys, func(i, j int) bool {
+				fi, fj := first[keys[i]], first[keys[j]]
+				switch {
+				case fi > 0 && fj > 0:
+					return fi < fj
+				case fi > 0 || fj > 0:
+					return fi > 0
+				}
+				return keys[i] < keys[j]
+			})
 			for _, k := range keys {
 				walk(join(path, k), t[k])
 			}
