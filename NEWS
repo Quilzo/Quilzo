@@ -61,6 +61,30 @@ Unreleased
 
 ** Added
 
+*** Agents come in from other platforms, and go back out.
+    `quilzo agent import FILE` reads OpenAI Assistants, Claude Code
+    subagents and Agent SDK agents, Google ADK agent configs, Microsoft
+    365 Copilot declarative agents, Open Agent Specification, Letta agent
+    files, Amazon Bedrock agents (get-agent or CloudFormation), CrewAI
+    agents.yaml and AutoGen AgentChat components, recognising the format
+    from the file.  Each agent becomes a declaration, with a report of
+    what was kept, what was changed to work here, what was left out and
+    what is yours to decide; --save declares it, a team's helpers first,
+    and -o DIR writes it out (with any OpenAPI document its actions came
+    with) to change before `quilzo agent declare`.  An imported agent
+    starts at propose, or draft if it writes.  `quilzo agent export NAME
+    --to F` writes one for Claude Code, the Agent SDK, ADK, Microsoft 365
+    Copilot, Agent Spec or CrewAI, and says what that format cannot hold;
+    `quilzo agent formats` lists them.  The admin has both: Agents, Import
+    one from another platform, and Take it to another platform on each
+    agent's page.
+
+*** A declaration carries an agent's instructions and model.  The
+    instructions go to the model with every decision, after the
+    operations and the rules, which still decide what can be done; the
+    model is tried first on the gateway route serving it (or the route of
+    that name), and the others after it.  Both are on the agent's page.
+
 *** The audit log streams to a SIEM as it is written.  Set
     siem.stream.url (https, or http to this machine) and quilzo serve
     pushes every fifteen seconds: OCSF batches that follow each other

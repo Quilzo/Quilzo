@@ -148,6 +148,8 @@ var commandNeeds = map[string]need{
 	"agent templates": {action: auth.ActView},
 	"agent list":      {action: auth.ActView},
 	"agent show":      {action: auth.ActView},
+	"agent export":    {action: auth.ActView},
+	"agent formats":   {action: auth.ActView},
 	"agent check":     {action: auth.ActView},
 	// Running one acts under the agent's manifest, and the least it can do is
 	// read the store. Author rather than view: a run writes an audit record

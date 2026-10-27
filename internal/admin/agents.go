@@ -155,6 +155,7 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 	data := map[string]any{
 		"Title": "Agents", "Principal": p, "Nav": "agents",
 		"Templates": agent.Catalogue(),
+		"Message":   r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"),
 	}
 
 	if s.Agents == nil || s.Agents.Load == nil {

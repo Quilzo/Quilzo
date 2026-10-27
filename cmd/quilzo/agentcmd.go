@@ -158,6 +158,12 @@ func cmdAgent(root string, args []string) error {
 		return agentDraft(root, args[1:])
 	case "declare":
 		return agentDeclareFile(root, args[1:])
+	case "import":
+		return agentImport(root, args[1:])
+	case "export":
+		return agentExport(root, args[1:])
+	case "formats":
+		return agentFormats()
 	case "program":
 		return agentProgramCmd(root, args[1:])
 	case "receipt":
@@ -177,6 +183,12 @@ func agentUsage() error {
   draft "WHAT IT IS FOR" a model drafts one; the checker says what it could do; nothing is saved
   declare FILE [--widen] save a declaration written out, checked again on the way in; an
                          amendment that widens what it may do is refused until --widen, with the list
+  import FILE [--save] [-o DIR] [--from F] [--name N]
+                         bring in an agent from another platform: OpenAI Assistants, Claude Code
+                         subagents, Google ADK, Microsoft 365 Copilot, Agent Spec, Letta, Bedrock,
+                         CrewAI, AutoGen; says what was kept, changed, left out and is yours to decide
+  export NAME [--to F] [-o PATH]  the declaration in another platform's format
+  formats                what import reads and export writes
   sponsor NAME PERSON    who answers for it; it stops when they can no longer act here
   renew NAME [--for D]   another stretch before it has to be renewed (90 days unless said)
   receipt RUN [-o FILE] [--bundle F]  what a run did, from the log, with proofs anybody can check;
@@ -781,7 +793,13 @@ func agentRunModel(root, name string, payers ...string) (assist.Model, string) {
 	}
 	if gw != nil {
 		// Charged to the agent, and to whoever started the run, each
-		// against its own budget.
+		// against its own budget. The route serving the model it was
+		// written for, when one does, is tried first.
+		if set, err := loadAgents(root); err == nil {
+			if m, ok := set.Agents[name]; ok && m.Model != "" {
+				return gw.ForModel(m.Model, "agent:"+name, payers...), ""
+			}
+		}
 		return gw.For("agent:"+name, payers...), ""
 	}
 	m, err := directModel(root)
@@ -1105,9 +1123,10 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 		}
 		out.Lessons = playbookIDs
 		decide, forgetBatch = agentmodel.Decider{
-			Playbook: playbook,
-			Model:    model,
-			Session:  sess,
+			Playbook:     playbook,
+			Instructions: m.Instructions,
+			Model:        model,
+			Session:      sess,
 			// The dialect the manifest names, when the model was taught to
 			// answer in its maker's computer-use words: translated onto the
 			// same closed vocabulary before anything else happens to it.

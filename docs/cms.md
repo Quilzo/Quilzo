@@ -280,6 +280,57 @@ become, and the layout is not written at all while any remain. An `{% else %}`
 dropped in silence renders the wrong branch of every conditional, and the person
 who ran the conversion has no reason to look.
 
+## Bringing an agent you already have
+
+The same goes for agents. One built on another platform is read into a
+declaration here, with a report of what was kept, what was changed to work
+here, what was left out and what is yours to decide:
+
+```bash
+quilzo agent import .claude/agents/code-reviewer.md          # read it, declare nothing
+quilzo agent import agents.yaml --save                       # declare what checks
+quilzo agent import bedrock-agent.json -o imported/          # write it out to change first
+quilzo agent export code-reviewer --to adk -o .              # and back out again
+```
+
+The admin does the same under Agents → Import one from another platform, and
+each agent's page has *Take it to another platform*.
+
+| Format | Import | Export | The file |
+| --- | --- | --- | --- |
+| OpenAI Assistants | yes | | an assistant object, or `GET /v1/assistants` |
+| Claude Code subagent | yes | yes | `.claude/agents/NAME.md` |
+| Claude Agent SDK | yes | yes | the agents given to `query` or `claude --agents`, as JSON |
+| Google ADK agent config | yes | yes | `root_agent.yaml` and its sub-agents |
+| Microsoft 365 Copilot declarative agent | yes | yes | `declarativeAgent.json`, schema 1.x |
+| Open Agent Specification | yes | yes | an `Agent` component, JSON or YAML |
+| Letta Agent File | yes | | an `.af` file |
+| Amazon Bedrock Agents | yes | | `get-agent` output with its action groups, or CloudFormation |
+| CrewAI | yes | yes | `agents.yaml` |
+| AutoGen AgentChat | yes | | an AutoGen Studio component, or a team |
+
+The format is recognised from the file; `--from` names it when it cannot be.
+The instructions, the model, helpers it hands work to and its step and time
+limits carry over as they were. Read, search and file tools become the
+capabilities that do the same here. An HTTP API it called through an OpenAPI
+schema becomes tools on that host, the operations that write asked about first,
+with the schema written out for `quilzo integrations import`.
+
+Some things do not carry, and the report says which. Code a platform ran for
+the agent (a Python tool, a Lambda, a code interpreter), a shell, MCP servers
+and other platforms' data sources become decisions: each needs an integration,
+a program, or a host it may read, because here nothing is reached that the
+declaration does not name. Whatever it was allowed elsewhere, an imported
+agent starts at **propose**, or **draft** if it writes: it publishes nothing
+until a person gives it more on its page. (A Quilzo declaration is carried
+whole, as it was written.) A model named by an alias, such as `sonnet`, is
+tried on a gateway route of that name. An agent another vendor runs, offered by
+an A2A card, is registered rather than imported: `quilzo fleet add CARD_URL`.
+
+Export writes what the other platform has words for, and lists what it does
+not. Budgets, autonomy, asking first and which site an agent reads are this
+program's, so they are always on that list.
+
 ## Deploying
 
 [deploy/](../deploy/) has what a stable address needs: a Caddyfile that renews its

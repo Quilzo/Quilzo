@@ -1,0 +1,21 @@
+{{template "head" .}}
+<p class="hint"><a href="/agents">Agents</a> · <a href="/agents/edit/{{.M.Name}}">{{.M.Name}}</a></p>
+<h1>Take {{.M.Name}} to another platform</h1>
+<p class="lead">Its declaration, written in another platform's format: its instructions, model, tools and
+helpers, as far as that platform has words for them. What it cannot hold is listed, so nothing is lost
+without your knowing.</p>
+
+<nav class="chips" aria-label="Format">
+  {{range .Formats}}<a href="/agents/export/{{$.M.Name}}?to={{.Name}}"{{if eq .Name $.To}} class="on" aria-current="true"{{end}}>{{.Title}}</a>{{end}}
+</nav>
+
+<h2>{{.Format.Title}}</h2>
+<p class="hint">{{.Format.What}}</p>
+{{range .Files}}
+<p class="actions"><a class="btn" href="/agents/export/{{$.M.Name}}?to={{$.To}}&amp;file={{.Name}}" download="{{.Name}}">Download {{.Name}}</a></p>
+<textarea class="code" rows="18" readonly spellcheck="false" aria-label="{{.Name}}">{{.Body}}</textarea>
+{{end}}
+{{if .Notes}}<h3>Not carried, or carried differently</h3>
+<ul class="import-notes">{{range .Notes}}<li>{{.}}</li>{{end}}</ul>{{end}}
+<p class="hint">From the command line: <code>quilzo agent export {{.M.Name}} --to {{.To}}</code>.</p>
+{{template "foot" .}}

@@ -1704,6 +1704,11 @@ td.actions > a.btn, th.actions > a.btn { display: inline-flex; }
 .findings li { margin: 0 0 0.6rem; padding-left: 0.9rem;
                border-left: 3px solid var(--outline-variant); }
 
+/* What an agent import or export kept, changed, left out or leaves to the
+   reader: read line by line, so each line stands apart. */
+.import-notes { margin: 0.25rem 0 0.9rem; padding-left: 1.2rem; }
+.import-notes li { margin: 0 0 0.35rem; line-height: 1.45; }
+
 /* -- getting started -------------------------------------------------------- */
 /*
    A checklist of real state, not a tour. Each step is a card that says what it

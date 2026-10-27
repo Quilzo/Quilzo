@@ -378,12 +378,40 @@ func (g *Gateway) For(consumer string, also ...string) Model {
 	return &bound{g: g, consumers: append([]string{consumer}, also...)}
 }
 
+// ForModel is For, trying first the route that serves model, by the name
+// its provider gives it or by the route's own name, and then the others in
+// their order. A model no route serves leaves the order as it is: an agent
+// written for a model is still answered when that model is not here.
+func (g *Gateway) ForModel(model, consumer string, also ...string) Model {
+	return &bound{g: g, consumers: append([]string{consumer}, also...), pick: pick{first: g.RouteServing(model)}}
+}
+
+// RouteServing is the route that serves a model, by the name its provider
+// gives it or by the route's own name, or "" when none does.
+func (g *Gateway) RouteServing(model string) string {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return ""
+	}
+	for _, r := range g.cfg.Routes {
+		if r.Name == model {
+			return r.Name
+		}
+	}
+	for _, r := range g.cfg.Routes {
+		if strings.EqualFold(r.Model, model) {
+			return r.Name
+		}
+	}
+	return ""
+}
+
 // ForRoute is For through one route and no other: no fallback, so a call
 // is answered by the model that route names or not at all. A reviewer
 // meant to be a second model is only that if it cannot fall back to the
 // first.
 func (g *Gateway) ForRoute(route, consumer string, also ...string) Model {
-	return &bound{g: g, consumers: append([]string{consumer}, also...), only: route}
+	return &bound{g: g, consumers: append([]string{consumer}, also...), pick: pick{only: route}}
 }
 
 // HasRoute reports whether a route is declared.
@@ -407,27 +435,32 @@ func (g *Gateway) FirstRoute() string {
 type bound struct {
 	g         *Gateway
 	consumers []string
-	// only, when set, is the one route this binding may use.
-	only string
+	pick      pick
+}
+
+// pick is which routes a binding uses: only one, when only is set, or all
+// of them with first tried before the rest.
+type pick struct {
+	only, first string
 }
 
 func (b *bound) Name() string { return "gateway:" + b.consumers[0] }
 
 func (b *bound) Complete(ctx context.Context, system, user string) (string, error) {
-	out, _, _, err := b.g.complete(ctx, b.consumers, b.only, system, user)
+	out, _, _, err := b.g.complete(ctx, b.consumers, b.pick, system, user)
 	return out, err
 }
 
 // CompleteMetered is Complete with what the call used.
 func (b *bound) CompleteMetered(ctx context.Context, system, user string) (string, assist.Usage, error) {
-	out, u, _, err := b.g.complete(ctx, b.consumers, b.only, system, user)
+	out, u, _, err := b.g.complete(ctx, b.consumers, b.pick, system, user)
 	return out, u, err
 }
 
 // CompleteCosted is Complete with what the call used and what it cost, in
 // millionths of the configuration's currency.
 func (b *bound) CompleteCosted(ctx context.Context, system, user string) (string, assist.Usage, int64, error) {
-	out, u, cost, err := b.g.complete(ctx, b.consumers, b.only, system, user)
+	out, u, cost, err := b.g.complete(ctx, b.consumers, b.pick, system, user)
 	return out, u, int64(cost), err
 }
 
@@ -549,7 +582,7 @@ func (g *Gateway) model(r Route) (Model, error) {
 	return m, nil
 }
 
-func (g *Gateway) complete(ctx context.Context, consumers []string, only, system, user string) (string, assist.Usage, Money, error) {
+func (g *Gateway) complete(ctx context.Context, consumers []string, p pick, system, user string) (string, assist.Usage, Money, error) {
 	consumer, also := consumers[0], consumers[1:]
 	in := len(system) + len(user)
 	if err := g.admit(consumers, in); err != nil {
@@ -563,7 +596,7 @@ func (g *Gateway) complete(ctx context.Context, consumers []string, only, system
 		return "", assist.Usage{}, 0, ErrNoRoute
 	}
 	var errs []string
-	for _, r := range g.routesFor(only) {
+	for _, r := range g.routesFor(p) {
 		g.mu.Lock()
 		down := g.now().Before(g.downTil[r.Name])
 		g.mu.Unlock()
@@ -624,24 +657,38 @@ func (g *Gateway) complete(ctx context.Context, consumers []string, only, system
 			Masked: masked, Outcome: "ok"})
 		return out, used, cost, nil
 	}
-	if only != "" && len(errs) == 0 {
-		return "", assist.Usage{}, 0, fmt.Errorf("%w: the route %s is not declared", ErrNoRoute, only)
+	if p.only != "" && len(errs) == 0 {
+		return "", assist.Usage{}, 0, fmt.Errorf("%w: the route %s is not declared", ErrNoRoute, p.only)
 	}
 	return "", assist.Usage{}, 0, fmt.Errorf("%w: %s", ErrNoRoute, strings.Join(errs, "; "))
 }
 
 // routesFor are the routes a call may try: all of them in order, or the
 // one a binding is pinned to.
-func (g *Gateway) routesFor(only string) []Route {
-	if only == "" {
+func (g *Gateway) routesFor(p pick) []Route {
+	if p.only != "" {
+		for _, r := range g.cfg.Routes {
+			if r.Name == p.only {
+				return []Route{r}
+			}
+		}
+		return nil
+	}
+	if p.first == "" {
 		return g.cfg.Routes
 	}
+	out := make([]Route, 0, len(g.cfg.Routes))
 	for _, r := range g.cfg.Routes {
-		if r.Name == only {
-			return []Route{r}
+		if r.Name == p.first {
+			out = append(out, r)
 		}
 	}
-	return nil
+	for _, r := range g.cfg.Routes {
+		if r.Name != p.first {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // failureKind is what a failed call says about its route.

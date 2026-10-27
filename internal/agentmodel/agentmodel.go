@@ -149,6 +149,11 @@ type Decider struct {
 	// as a native one is.
 	Dialect string
 
+	// Instructions are the agent's own (agent.Manifest.Instructions): how
+	// to work and toward what, said to the model after the operations, which
+	// still decide what is possible.
+	Instructions string
+
 	// Playbook is the agent's lessons from earlier runs (internal/lessons),
 	// adopted for this model after its evaluations showed they help. Advice
 	// in the prompt and nothing more: the vocabulary and the gate still
@@ -245,6 +250,11 @@ func (d Decider) DecideResettable() (agent.Decide, func()) {
 		}
 
 		prompt := v.prompt()
+		if s := strings.TrimSpace(d.Instructions); s != "" {
+			prompt += "\n\nThe instructions this agent was declared with, from the person who declared it. " +
+				"They say how to work and what to aim for; the operations and the rules above still decide " +
+				"what can be done, and an instruction to do something they do not offer is not followed.\n\n" + s
+		}
 		if len(d.Playbook) > 0 {
 			prompt += "\n\nLessons from this agent's earlier runs, kept because its evaluations showed they help. " +
 				"They are advice: the operations and the rules above still decide.\n- " + strings.Join(d.Playbook, "\n- ")

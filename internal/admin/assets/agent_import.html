@@ -1,0 +1,70 @@
+{{template "head" .}}
+<p class="hint"><a href="/agents">Agents</a></p>
+<h1>Import an agent</h1>
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+{{if .Unavailable}}<div class="notice warn"><p>{{.Unavailable}}</p></div>{{end}}
+<p class="lead">Bring an agent you built on another platform. Its instructions, model, tools and
+helpers are read into a declaration here, and you are told what was kept, what was changed,
+what was left out and what is yours to decide. Nothing is declared until you say so, and what
+is declared publishes nothing until you give it more.</p>
+
+{{with .Read}}
+<h2>{{.Format}}</h2>
+{{range .Notes}}<p class="hint">{{.}}</p>{{end}}
+<form method="post" action="/agents/import">
+<input type="hidden" name="do" value="declare">
+{{if $.Declarable}}<input type="hidden" name="agents" value="{{$.Declarable}}">{{end}}
+{{range .Agents}}
+<article class="card">
+  <h3>{{if .Declarable}}<label><input type="checkbox" name="pick" value="{{.M.Name}}" checked> {{.M.Name}}</label>{{else}}{{.M.Name}}{{end}}
+    <span class="tag">{{.M.Kind}}</span> <span class="tag">{{.M.Autonomy}}</span></h3>
+  <p>{{.M.Purpose}}</p>
+  <p class="hint">From {{.Source}}{{with .Model}} · model <code>{{.}}</code>{{end}}{{with .Delegates}} · hands work to {{.}}{{end}}</p>
+  {{if .Exists}}<p class="notice warn">An agent called {{.M.Name}} is declared already, so this one is not declared over it.
+    {{if not $.Read.Several}}Read the file again with another name below.{{end}}</p>{{end}}
+  {{with .Invalid}}<p class="notice warn"><strong>As it stands this would be refused:</strong> {{.}}</p>{{end}}
+  {{if .Decide}}<h4>Yours to decide</h4>
+  <ul class="import-notes">{{range .Decide}}<li>{{.}}</li>{{end}}</ul>{{end}}
+  {{if .Changed}}<h4>Changed to work here</h4>
+  <ul class="import-notes">{{range .Changed}}<li>{{.}}</li>{{end}}</ul>{{end}}
+  {{if .Kept}}<h4>Kept as it was</h4>
+  <ul class="import-notes">{{range .Kept}}<li>{{.}}</li>{{end}}</ul>{{end}}
+  {{if .Left}}<h4>Left out</h4>
+  <ul class="import-notes">{{range .Left}}<li>{{.}}</li>{{end}}</ul>{{end}}
+  {{with .Instructions}}<details><summary>Its instructions<span class="chev">{{icon "expand_more"}}</span></summary>
+    <pre class="code">{{.}}</pre></details>{{end}}
+  {{range .Files}}<details><summary>It came with {{.Name}}<span class="chev">{{icon "expand_more"}}</span></summary>
+    <p class="hint">Save it as <code>{{.Name}}</code> and register it with <code>quilzo integrations import {{.Name}}</code>.</p>
+    <textarea class="code" rows="10" readonly spellcheck="false" aria-label="{{.Name}}">{{.Body}}</textarea></details>{{end}}
+  <details><summary>The declaration<span class="chev">{{icon "expand_more"}}</span></summary>
+    <textarea class="code" rows="14" readonly spellcheck="false" aria-label="The declaration of {{.M.Name}}, as JSON">{{.Declaration}}</textarea></details>
+</article>
+{{end}}
+{{if $.Declarable}}<p class="actions"><button type="submit">Declare {{if .Several}}the ones ticked{{else}}it{{end}}</button></p>
+<p class="hint">Each is checked again as it is saved. You can change everything about it afterwards, on its page.</p>
+{{end}}
+</form>
+<h2>Read another file</h2>
+{{end}}
+
+<form method="post" action="/agents/import" enctype="multipart/form-data" class="param-form">
+  <label for="import-file">The file</label>
+  <input id="import-file" type="file" name="file" accept=".json,.yaml,.yml,.md,.af,application/json,text/yaml,text/markdown">
+  <label for="import-text">Or paste it</label>
+  <textarea id="import-text" name="text" rows="8" spellcheck="false" placeholder="---&#10;name: code-reviewer&#10;description: Reviews code…&#10;---"></textarea>
+  <label for="import-from">Its format</label>
+  <select id="import-from" name="from"><option value="">Recognise it</option>
+    {{range .Formats}}<option value="{{.Name}}"{{if eq $.From .Name}} selected{{end}}>{{.Title}}</option>{{end}}</select>
+  <label for="import-name">Call it</label>
+  <input id="import-name" name="name" maxlength="41" value="{{.Name}}" placeholder="The name it has">
+  {{with .ReadError}}<p class="notice bad" role="alert">{{.}}</p>{{end}}
+  <div class="auto-controls"><button type="submit" class="btn-tonal">Read it</button></div>
+</form>
+
+<h2>What it reads</h2>
+<ul>
+{{range .Formats}}<li><strong>{{.Title}}</strong>: {{.What}}</li>{{end}}
+</ul>
+<p class="hint">An agent another vendor runs, and offers by an A2A card, is registered rather than imported:
+  <code>quilzo fleet add CARD_URL</code>. From the command line: <code>quilzo agent import FILE</code>.</p>
+{{template "foot" .}}

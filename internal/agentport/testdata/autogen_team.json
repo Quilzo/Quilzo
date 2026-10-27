@@ -1,0 +1,78 @@
+{
+  "provider": "autogen_agentchat.teams.RoundRobinGroupChat",
+  "component_type": "team",
+  "version": 1,
+  "label": "Writing team",
+  "config": {
+    "participants": [
+      {
+        "provider": "autogen_agentchat.agents.AssistantAgent",
+        "component_type": "agent",
+        "version": 1,
+        "label": "writer",
+        "config": {
+          "name": "writer",
+          "description": "Writes the first draft.",
+          "system_message": "You write clear first drafts.",
+          "model_client": {
+            "provider": "autogen_ext.models.openai.OpenAIChatCompletionClient",
+            "component_type": "model",
+            "config": {
+              "model": "gpt-4o",
+              "temperature": 0.7
+            }
+          },
+          "tools": [
+            {
+              "provider": "autogen_core.tools.FunctionTool",
+              "component_type": "tool",
+              "config": {
+                "name": "word_count",
+                "description": "Count words",
+                "source_code": "def word_count(t): ..."
+              }
+            }
+          ],
+          "handoffs": [
+            "editor"
+          ],
+          "reflect_on_tool_use": false,
+          "tool_call_summary_format": "{result}",
+          "max_tool_iterations": 3
+        }
+      },
+      {
+        "provider": "autogen_agentchat.agents.AssistantAgent",
+        "component_type": "agent",
+        "version": 1,
+        "label": "editor",
+        "config": {
+          "name": "editor",
+          "description": "Edits drafts.",
+          "system_message": "You edit for clarity and length.",
+          "model_client": {
+            "provider": "autogen_ext.models.openai.OpenAIChatCompletionClient",
+            "component_type": "model",
+            "config": {
+              "model": "gpt-4o"
+            }
+          }
+        }
+      },
+      {
+        "provider": "autogen_agentchat.agents.UserProxyAgent",
+        "component_type": "agent",
+        "version": 1,
+        "config": {
+          "name": "user"
+        }
+      }
+    ],
+    "termination_condition": {
+      "provider": "autogen_agentchat.conditions.MaxMessageTermination",
+      "config": {
+        "max_messages": 10
+      }
+    }
+  }
+}
