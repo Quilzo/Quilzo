@@ -354,7 +354,7 @@ func TestAnUnreadableRecordIsSetAsideByRepair(t *testing.T) {
 	if _, err := Repair(root, t0); err == nil {
 		t.Fatal("repaired nothing")
 	}
-	os.WriteFile(Path(root), []byte("{"), 0o600)
+	writeShield(root, []byte("{"), 0o600)
 	rep, err := Repair(root, t0)
 	if err != nil {
 		t.Fatal(err)
@@ -492,7 +492,7 @@ func TestWatchingSaysWhatItWouldHaveDoneAndDidNot(t *testing.T) {
 func TestRepairKeepsWhatStillReadsWhole(t *testing.T) {
 	root := t.TempDir()
 	// The protections are damaged; the rest reads.
-	os.WriteFile(Path(root), []byte(`{"protections": [{"id": 5}], "trusted": ["198.51.100.0/24"],
+	writeShield(root, []byte(`{"protections": [{"id": 5}], "trusted": ["198.51.100.0/24"],
 		"vouched": [{"handle": "`+handle+`", "at": "2026-10-04T12:00:00Z"}], "decoys": [{"id": "sh-1", "hash": "x", "note": "CI"}]}`), 0o600)
 	rep, err := Repair(root, t0)
 	if err != nil {

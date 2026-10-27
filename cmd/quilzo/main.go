@@ -500,7 +500,7 @@ interface
                                              browser can install it as a
                                              desktop application
       /playground                            try the API against your own store
-  quilzo site  [--addr HOST:PORT]          the published site, PWA-installable
+  quilzo site  [--addr HOST:PORT]          the published site, PWA-installable, confined (--prepare for systemd)
   quilzo studio [--addr HOST:PORT]         record the screen into the library
       --api                                 content API at /api/v1, read-only
       --api-writable                        allow PUT; every write needs If-Match
@@ -626,6 +626,14 @@ func main() {
 	}
 
 	cmd, cmdArgs := rest[0], rest[1:]
+
+	// State the public site writes used to sit at the store's root, and is
+	// kept in directories of its own now so the site can be confined to them
+	// (sitestate.go). Moved by whichever command runs first; a move that
+	// fails is said, and the commands go on with what is where.
+	if err := moveSiteState(root); err != nil {
+		fmt.Fprintf(os.Stderr, "%s%v%s\n", yellow, err, reset)
+	}
 
 	// The network boundary, applied once for every command before any of them
 	// runs.

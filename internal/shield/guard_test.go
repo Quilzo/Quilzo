@@ -220,7 +220,7 @@ func TestAnUnreadableFileKeepsWhatWasLastRead(t *testing.T) {
 	if _, on := g.Frozen(t0); !on {
 		t.Fatal("not frozen")
 	}
-	os.WriteFile(Path(g.Root), []byte("{broken"), 0o600)
+	writeShield(g.Root, []byte("{broken"), 0o600)
 	g.Refresh()
 	if _, on := g.Frozen(t0); !on {
 		t.Fatal("a broken file lifted the freeze")

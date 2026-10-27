@@ -40,6 +40,12 @@ import (
 // TestMain runs after everything, which is the only place this can be checked
 // at all.
 func TestMain(m *testing.M) {
+	// The confined public site, executed again under Landlock by the site a
+	// test started (siteconfine.go): it is the command line, as it was.
+	if os.Getenv(siteConfinedEnv) != "" {
+		main()
+		os.Exit(0)
+	}
 	// This test binary is also an agent program's box, its shim, and the
 	// program in it: see agentprogram_test.go.
 	if len(os.Args) > 1 {

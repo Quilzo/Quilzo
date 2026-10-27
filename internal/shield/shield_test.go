@@ -6,6 +6,7 @@ package shield
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -199,7 +200,7 @@ func TestHistoryAndActiveAreBounded(t *testing.T) {
 		st.Ended = append(st.Ended, ok(Freeze, ""))
 	}
 	b, _ := json.Marshal(st)
-	if err := os.WriteFile(Path(root), b, 0o600); err != nil {
+	if err := writeShield(root, b, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := Apply(root, ok(Freeze, ""), t0); err == nil || !strings.Contains(err.Error(), "limit") {
@@ -217,7 +218,7 @@ func TestHistoryAndActiveAreBounded(t *testing.T) {
 
 func TestAnUnreadableShieldIsAnError(t *testing.T) {
 	root := t.TempDir()
-	os.WriteFile(Path(root), []byte("{"), 0o600)
+	writeShield(root, []byte("{"), 0o600)
 	if _, err := Load(root); err == nil {
 		t.Fatal("a broken file loaded")
 	}
@@ -246,4 +247,13 @@ func TestTheFileIsPrivate(t *testing.T) {
 	if fi, err := os.Stat(Path(root) + ".lock"); err != nil || fi.Size() != 0 || fi.Mode().Perm() != 0o600 {
 		t.Fatalf("the lock file: %v %v", fi, err)
 	}
+}
+
+// writeShield writes the shield's file as it lies, for a test of what is
+// read back: in its directory, which Change makes and a test must too.
+func writeShield(root string, b []byte, mode os.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(Path(root)), 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(Path(root), b, mode)
 }

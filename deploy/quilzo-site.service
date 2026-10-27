@@ -1,9 +1,12 @@
-# The published site: anonymous, read-only, the thing pointed at the internet.
+# The published site: anonymous, the thing pointed at the internet.
 #
 # Separate from the admin because they have different exposures and different
-# failure consequences. This one holds no credentials at all, which is why it
-# needs no EnvironmentFile and why its store path is read-only.
+# failure consequences. It holds no administrator's credential, which is why
+# it needs no EnvironmentFile. The store is read-only to it except the paths
+# below, which are its own state; on top of that it confines itself with
+# Landlock to the same paths (docs/cms.md, "The three processes").
 #
+#   sudo -u quilzo quilzo --root /srv/quilzo/.quilzo site --prepare
 #   sudo cp deploy/quilzo-site.service /etc/systemd/system/
 #   sudo systemctl enable --now quilzo-site
 
@@ -19,7 +22,9 @@ User=quilzo
 Group=quilzo
 WorkingDirectory=/srv/quilzo
 
-ExecStart=/usr/local/bin/quilzo site \
+# The store is /srv/quilzo/.quilzo and the templates /srv/quilzo/templates.
+ExecStart=/usr/local/bin/quilzo --root /srv/quilzo/.quilzo site \
+  --templates /srv/quilzo/templates \
   --addr 127.0.0.1:8081 \
   --base-url https://example.com
 
@@ -45,6 +50,14 @@ SystemCallArchitectures=native
 SystemCallFilter=@system-service
 SystemCallFilter=~@privileged @resources @obsolete
 
-# It appends form submissions to a store that is not the content store, and
-# that is its only write. The content store it serves is read-only to it.
-ReadWritePaths=/srv/quilzo/submissions
+# What the site writes, as `quilzo site --prepare` lists it: form submissions,
+# boards, members, chatbot handoffs, analytics, the shield's state, its
+# followers, the model ledger, webhook deliveries, its temporary directory,
+# and the audit log's two files. Nothing else in the store, and not the
+# store's root, where its policy, tokens and configuration are.
+ReadWritePaths=/srv/quilzo/.quilzo/submissions /srv/quilzo/.quilzo/boards
+ReadWritePaths=/srv/quilzo/.quilzo/members /srv/quilzo/.quilzo/handoff
+ReadWritePaths=/srv/quilzo/.quilzo/analytics /srv/quilzo/.quilzo/shield
+ReadWritePaths=/srv/quilzo/.quilzo/fediverse /srv/quilzo/.quilzo/usage
+ReadWritePaths=/srv/quilzo/.quilzo/webhook-deliveries /srv/quilzo/.quilzo/tmp
+ReadWritePaths=/srv/quilzo/.quilzo/audit.jsonl /srv/quilzo/.quilzo/audit.jsonl.lock

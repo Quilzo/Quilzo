@@ -12,7 +12,6 @@ Anything with 512 MB will do. This is one static binary and a directory.
 ```bash
 sudo useradd --system --home /srv/quilzo --shell /usr/sbin/nologin quilzo
 sudo install -d -o quilzo -g quilzo /srv/quilzo
-sudo install -d -o quilzo -g quilzo /srv/quilzo/submissions
 ```
 
 ### 2. The binary
@@ -28,11 +27,18 @@ alongside it.
 ### 3. The store
 
 Copy your `.quilzo` directory and your `templates` directory to
-`/srv/quilzo`, owned by `quilzo`. Then check it from the server:
+`/srv/quilzo`, owned by `quilzo`, so the store is `/srv/quilzo/.quilzo`. Then
+check it from the server, and make what the site writes:
 
 ```bash
-sudo -u quilzo quilzo --root /srv/quilzo theme check
+sudo -u quilzo quilzo theme check --dir /srv/quilzo/templates
+sudo -u quilzo quilzo --root /srv/quilzo/.quilzo site --prepare
 ```
+
+The unit makes the store read-only to the site except the paths `--prepare`
+lists, and the site confines itself to the same paths with Landlock: a flaw
+in the one process facing the internet cannot reach the store's policy,
+tokens or configuration.
 
 ### 4. DNS
 

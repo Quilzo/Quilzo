@@ -119,9 +119,9 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 			st.BaseURL = strings.TrimSpace(cfg.Raw("site.base_url"))
 		}
 	}
-	// The one write capability this process gets: append a submission to a
-	// store that is not the content store. It cannot read one back — that is
-	// the admin's job, behind authentication, in a different process.
+	// Submissions are appended to a store that is not the content store. The
+	// site cannot read one back: that is the admin's job, behind
+	// authentication, in a different process.
 	if fs, ferr := openSubmissions(root); ferr == nil {
 		st.Forms = &public.Forms{
 			Set:   func() (*form.Set, error) { return loadForms(root) },
@@ -578,7 +578,12 @@ func federationFrom(root string, cfg *config.Config, baseURL string) (
 			Published:    time.Now(),
 		},
 		Followers: followers,
-		Save:      func() error { return saveJSON(path, followers) },
+		Save: func() error {
+			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+				return err
+			}
+			return saveJSON(path, followers)
+		},
 
 		// Who this site will not hear from. Read per request rather than
 		// captured, so `quilzo fediverse block` takes effect without a
@@ -616,6 +621,9 @@ func federationFrom(root string, cfg *config.Config, baseURL string) (
 			return m.Commit
 		},
 		RecordAnnounced: func(commit string) error {
+			if err := os.MkdirAll(filepath.Dir(announcedPath), 0o700); err != nil {
+				return err
+			}
 			return saveJSON(announcedPath, struct {
 				Commit string `json:"commit"`
 			}{commit})
@@ -671,11 +679,11 @@ func fediverseKeyPath(root string) string {
 }
 
 func fediverseFollowersPath(root string) string {
-	return filepath.Join(root, "followers.json")
+	return filepath.Join(root, "fediverse", "followers.json")
 }
 
 func fediverseAnnouncedPath(root string) string {
-	return filepath.Join(root, "announced.json")
+	return filepath.Join(root, "fediverse", "announced.json")
 }
 
 // publicPEMFrom derives the published half of the signing key.
