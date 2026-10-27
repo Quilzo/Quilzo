@@ -115,6 +115,9 @@ last: x
 		// The line break ending the file ends its last line, and is not
 		// one more for a block kept with |+ to keep.
 		"a kept block ending the file": {"keep: |+\n  kept\n\n", `{"keep":"kept\n\n"}`},
+		// Octal and hexadecimal however long, as JSON would hold the number.
+		"numbers in other bases": {"oct: 0o17\nhex: 0x1F\nhuge: 0xFFFFFFFFFFFFFFFFFFFF\nlast: \"\\U0010FFFF\"\n",
+			`{"hex":31,"huge":1.2089258196146292e+24,"last":"\udbff\udfff","oct":15}`},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -134,24 +137,26 @@ last: x
 // agent with words nobody wrote.
 func TestWhatIsNotReadIsRefusedByLine(t *testing.T) {
 	for name, src := range map[string]string{
-		"an anchor":            "a: &x 1\nb: 2\n",
-		"an alias":             "a: 1\nb: *a\n",
-		"a tag":                "a: !!str 1\n",
-		"a merge key":          "base: {}\nchild:\n  <<: {}\n",
-		"a complex key":        "? a\n: b\n",
-		"a tab":                "a:\n\tb: 1\n",
-		"a key twice":          "a: 1\na: 2\n",
-		"two documents":        "a: 1\n---\nb: 2\n",
-		"a broken indentation": "a:\n  b: 1\n c: 2\n",
-		"an unclosed quote":    "a: \"never\n",
-		"an unclosed flow":     "a: [1, 2\n",
-		"a bad escape":         `a: "\q"` + "\n",
-		"a directive":          "%YAML 1.2\n---\na: 1\n",
+		"an anchor":               "a: &x 1\nb: 2\n",
+		"an alias":                "a: 1\nb: *a\n",
+		"a tag":                   "a: !!str 1\n",
+		"a merge key":             "base: {}\nchild:\n  <<: {}\n",
+		"a complex key":           "? a\n: b\n",
+		"a tab":                   "a:\n\tb: 1\n",
+		"a key twice":             "a: 1\na: 2\n",
+		"two documents":           "a: 1\n---\nb: 2\n",
+		"a broken indentation":    "a:\n  b: 1\n c: 2\n",
+		"an unclosed quote":       "a: \"never\n",
+		"an unclosed flow":        "a: [1, 2\n",
+		"a bad escape":            `a: "\q"` + "\n",
+		"past the last character": `a: "\U00110000"` + "\n",
+		"a directive":             "%YAML 1.2\n---\na: 1\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := Parse([]byte(src)); err == nil {
 				t.Errorf("read as if understood:\n%s", src)
-			} else if !strings.HasPrefix(err.Error(), "line ") && name != "a bad escape" && name != "an unclosed quote" {
+			} else if !strings.HasPrefix(err.Error(), "line ") && name != "a bad escape" && name != "an unclosed quote" &&
+				name != "past the last character" {
 				t.Logf("%v", err)
 			}
 		})

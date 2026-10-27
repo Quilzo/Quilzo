@@ -799,7 +799,7 @@ func bedrockAgent(a map[string]any, groups, kbs []any, src string) Agent {
 		b.unmapped("its orchestration is a Lambda of your own: what it decides is that code's, and is not carried")
 	}
 	if n, ok := num(a["idleSessionTTLInSeconds"]); ok {
-		b.left("its idle session time (%ds), which is Bedrock's", int(n))
+		b.left("its idle session time (%.0fs), which is Bedrock's", n)
 	}
 	return b.finish()
 }

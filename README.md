@@ -179,6 +179,7 @@ Help link opens its own.
 | **Delegation** | A supervisor hands stages to named agents; each runs as the intersection of both declarations, on what is left of the supervisor's budget. | `delegates` in the declaration |
 | **Watchdog** | Notices an agent or app that keeps trying what it was refused, and tells the shield. | `quilzo agents` |
 | **The gate as a service** | Ask whether an agent would be allowed to do something, JSON in and out. | `quilzo agent probe < question.json` |
+| **Agents from other platforms** | An agent from OpenAI Assistants, Claude Code or the Agent SDK, Google ADK, Microsoft 365 Copilot, Agent Spec, Letta, Bedrock, CrewAI or AutoGen becomes a declaration, with what was kept, changed, left out and is yours to decide; and back out to six of them. | `quilzo agent import FILE`, `agent export NAME --to F`; Agents › Import |
 
 <p align="center"><img src="docs/screenshots/draft.png" alt="Declaring an agent from a sentence: the model's draft, what it could do, and what was left out because a draft may not set it" width="860"></p>
 

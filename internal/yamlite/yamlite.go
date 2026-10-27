@@ -20,6 +20,7 @@ package yamlite
 import (
 	"fmt"
 	"math"
+	"math/big"
 	"regexp"
 	"sort"
 	"strconv"
@@ -609,6 +610,9 @@ func quoted(s string) (string, int, error) {
 			if err != nil {
 				return "", 0, fmt.Errorf("the escape \\%c%s is not hexadecimal", e, body[i+1:i+1+n])
 			}
+			if r > utf8.MaxRune {
+				return "", 0, fmt.Errorf("the escape \\%c%s is past the last character there is", e, body[i+1:i+1+n])
+			}
 			b.WriteRune(rune(r))
 			i += n
 		default:
@@ -676,19 +680,23 @@ func plain(s string) any {
 			return f
 		}
 	case reOct.MatchString(s):
-		if n, err := strconv.ParseInt(s[2:], 8, 64); err == nil {
-			return float64(n)
-		}
+		return radix(s[2:], 8)
 	case reHex.MatchString(s):
-		if n, err := strconv.ParseInt(s[2:], 16, 64); err == nil {
-			return float64(n)
-		}
+		return radix(s[2:], 16)
 	case reFloat.MatchString(s):
 		if f, err := strconv.ParseFloat(s, 64); err == nil {
 			return f
 		}
 	}
 	return s
+}
+
+// radix is digits in a base as a number, as near as a float64 comes to it
+// however many digits there are: a number is read as JSON reads one.
+func radix(digits string, base int) float64 {
+	n, _ := new(big.Int).SetString(digits, base)
+	f, _ := new(big.Float).SetInt(n).Float64()
+	return f
 }
 
 // flow reads a flow collection: [a, b] and {k: v}.
