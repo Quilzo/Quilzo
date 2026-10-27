@@ -27,7 +27,7 @@ import (
 // the admin's Models screen. See internal/gateway.
 
 func gatewayPath(root string) string { return filepath.Join(root, "gateway.json") }
-func usagePath(root string) string   { return filepath.Join(root, "model-usage.jsonl") }
+func usagePath(root string) string   { return filepath.Join(root, "usage", "models.jsonl") }
 
 // One gateway per process and root. Per-minute limits live in its memory, so
 // a gateway built per call would never limit anything.

@@ -236,8 +236,8 @@ type Site struct {
 	// because the manifests it describes can change without a restart, and a
 	// card that goes stale is a card that lies about what is enforced.
 	AgentCard func() (a2a.Card, error)
-	// Forms is the one write capability this server has: append a submission,
-	// to a store that is not the content store. Nil means /form/ 404s.
+	// Forms appends a submission, to a store that is not the content store,
+	// and cannot read one back. Nil means /form/ 404s.
 	Forms *Forms
 	// ToolsOff stops marking the site's forms as tools for visitors'
 	// browser agents (WebMCP); see webmcp.go. ToolsTrial is Chrome's origin

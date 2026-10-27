@@ -16,6 +16,7 @@ import (
 	"github.com/quilzo/quilzo/internal/vector"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -59,8 +60,47 @@ func cmdSite(root string, args []string) error {
 		"which environment to serve; production by default")
 	index := fs.String("index", "index",
 		"the page served at / — no need to rename yours")
+	confine := fs.Bool("confine", true,
+		"run confined: read the store, write only the site's own state (Linux, Landlock)")
+	prepare := fs.Bool("prepare", false,
+		"make what the confined site writes, list it, and exit: for a service manager that makes the store read-only")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if *prepare {
+		abs, err := filepath.Abs(root)
+		if err != nil {
+			return err
+		}
+		paths, err := prepareSite(abs)
+		if err != nil {
+			return err
+		}
+		if w.JSON(map[string]any{"writes": paths}) {
+			return nil
+		}
+		w.Human("the site writes only these; a service manager that makes the store read-only lets it write them:\n")
+		for _, p := range paths {
+			w.Human("  %s\n", p)
+		}
+		return nil
+	}
+	// The public site runs confined (siteconfine.go): re-executed under
+	// Landlock before it opens anything, and checked once it is.
+	switch {
+	case os.Getenv(siteConfinedEnv) != "":
+		if err := checkSiteConfined(root); err != nil {
+			return err
+		}
+		w.Human("%sconfined: writes only the site's own state, never the store's policy, "+
+			"tokens or configuration%s\n", dim, reset)
+	case *confine:
+		if err := confineSite(root); err != nil {
+			return err
+		}
+	default:
+		fmt.Fprintf(os.Stderr, "  %snot confined (--confine=false): the site can write anything "+
+			"the account running it can, the store's policy and tokens included%s\n", yellow, reset)
 	}
 
 	s, err := open(root)

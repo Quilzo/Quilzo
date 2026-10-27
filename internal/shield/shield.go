@@ -237,8 +237,10 @@ func (s *State) Active(now time.Time) []Protection {
 	return out
 }
 
-// Path is where the shield is kept for a store.
-func Path(root string) string { return filepath.Join(root, "shield.json") }
+// Path is where the shield is kept for a store: in a directory of its own,
+// because the public site writes it and is let write nowhere else in the
+// store (cmd/quilzo/siteconfine.go). It was shield.json at the root.
+func Path(root string) string { return filepath.Join(root, "shield", "state.json") }
 
 // Load reads the shield; a store that has never had one has an empty one.
 func Load(root string) (*State, error) {
@@ -251,7 +253,7 @@ func Load(root string) (*State, error) {
 	}
 	st := &State{}
 	if err := json.Unmarshal(b, st); err != nil {
-		return nil, fmt.Errorf("shield.json: %w", err)
+		return nil, fmt.Errorf("%s: %w", Path(root), err)
 	}
 	return st, nil
 }
@@ -259,6 +261,9 @@ func Load(root string) (*State, error) {
 // Change reads, changes and writes the shield under a lock, moving what
 // has ended into the history as it goes.
 func Change(root string, now time.Time, fn func(*State) error) error {
+	if err := os.MkdirAll(filepath.Dir(Path(root)), 0o700); err != nil {
+		return err
+	}
 	unlock, err := lock(Path(root) + ".lock")
 	if err != nil {
 		return err

@@ -57,9 +57,19 @@ func loadProfiles(root string) (map[string]admin.PersonDetails, error) {
 	return out, nil
 }
 
+// loadHooks is the endpoints and every delivery recorded, wherever it was
+// kept (sitestate.go).
 func loadHooks(root string) (*hookFile, error) {
 	f := &hookFile{}
-	return f, loadJSON(hooksPath(root), f)
+	if err := loadJSON(hooksPath(root), f); err != nil {
+		return f, err
+	}
+	d := &deliveryFile{}
+	if err := loadJSON(deliveriesPath(root), d); err != nil {
+		return f, err
+	}
+	f.Deliveries = append(f.Deliveries, d.Deliveries...)
+	return f, nil
 }
 
 // saveDraft writes pages the way every other write surface does.

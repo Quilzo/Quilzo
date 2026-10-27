@@ -296,10 +296,18 @@ quilzo studio     screen recording loopback, and the only one that runs scripts
 ```
 
 Separate binaries-in-one, separate ports, separate exposure. The public process
-holds no credentials and has exactly one write capability: appending a form
-submission to a store that is not the content store. It cannot read a submission
-back, cannot reach a ref, and cannot cause a commit. Reading the postbag happens
-in the admin, behind authentication.
+holds no administrator's credential, cannot reach a ref and cannot cause a
+commit. On Linux it confines itself with Landlock before it opens anything: it
+reads the store and writes only its own state, each kept in a directory of its
+own (form submissions, boards, members, chatbot handoffs, analytics, the
+shield's state, its followers, the model ledger, webhook deliveries, a
+temporary directory) and the audit log's two files. The store's policy, tokens
+and configuration, and its root, are out of its reach, and it checks that at
+start and refuses to run if they are not. `quilzo site --prepare` makes and
+lists those paths, for a service manager that makes the store read-only
+(see [deploy/](../deploy/)); `--confine=false` runs it unconfined and says so.
+It cannot read a submission back: reading the postbag happens in the admin,
+behind authentication.
 
 The studio is a separate process for the same reason, arriving from the
 opposite direction. The admin's policy is `default-src 'none'` and a test asserts its screens execute

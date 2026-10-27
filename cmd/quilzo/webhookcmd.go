@@ -22,7 +22,9 @@ import (
 func hooksPath(root string) string { return filepath.Join(root, "webhooks.json") }
 
 type hookFile struct {
-	Endpoints  []webhook.Endpoint `json:"endpoints"`
+	Endpoints []webhook.Endpoint `json:"endpoints"`
+	// Deliveries were kept here by older versions, and are kept apart now
+	// (sitestate.go): loadHooks reads them from there.
 	Deliveries []webhook.Delivery `json:"deliveries,omitempty"`
 }
 
@@ -302,15 +304,7 @@ func recordDeliveries(root string, sent []webhook.Delivery) {
 	if len(sent) == 0 {
 		return
 	}
-	_ = updateHooks(root, func(f *hookFile) error {
-		f.Deliveries = append(f.Deliveries, sent...)
-		// Keep the last hundred, so a failure is visible without the file
-		// growing without bound.
-		if n := len(f.Deliveries); n > 100 {
-			f.Deliveries = f.Deliveries[n-100:]
-		}
-		return nil
-	})
+	_ = keepDeliveries(root, sent)
 }
 
 var hooksMu sync.Mutex

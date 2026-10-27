@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -34,6 +35,7 @@ func TestTheFleetIsWhatHappenedNotOnlyWhatWasDeclared(t *testing.T) {
 	ai("agent.action", map[string]string{"agent": "tidy", "tool": "create_issue", "on_behalf_of": "dana"}, "m")
 	ai("agent.egress", map[string]string{"agent": "tidy", "host": "api.openai.com", "on_behalf_of": "dana"}, "m")
 	ai("mcp.call", map[string]string{"tool": "quilzo_read", "on_behalf_of": "sam"}, "https://app.example.com/meta")
+	_ = os.MkdirAll(filepath.Dir(usagePath(root)), 0o700)
 	if err := os.WriteFile(usagePath(root), []byte(`{"at":"`+now.UTC().Format(time.RFC3339)+`","consumer":"chatbot:help","route":"hosted","in":10,"outcome":"ok"}`+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}

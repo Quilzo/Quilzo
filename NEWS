@@ -571,6 +571,21 @@ Unreleased
 
 ** Fixed
 
+*** The public site is confined.  quilzo site re-executes itself under
+    Landlock before it opens anything: it reads the store and writes only
+    its own state, and the store's policy, tokens and configuration, and
+    its root, are out of its reach.  It checks that at start and refuses
+    to run if they are not.  What it writes moved out of the store's root
+    into directories of its own (shield/, fediverse/, usage/,
+    webhook-deliveries/, tmp/; webhook deliveries are kept apart from the
+    endpoints and their secrets), and the first command run after an
+    upgrade moves an existing store's across.  quilzo site --prepare
+    makes and lists those paths for a service manager; --confine=false
+    runs the site unconfined and says so.  The systemd unit in deploy/
+    named the wrong store and only the submissions directory, so a site
+    run by it could keep no shield state, audit record, analytics, board
+    or member; it lists every path the site writes now.
+
 *** People are pseudonymous in every part of an audit record.  The log
     pseudonymised a record's principal and the details that name a person,
     and left the same people in clear in its sentences and its resource:
