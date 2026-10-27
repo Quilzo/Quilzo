@@ -595,6 +595,17 @@ Unreleased
 
 ** Fixed
 
+*** quilzo mcp answers in the revision the client asked for.  On
+    standard input every client was answered in 2025-06-18, even one
+    asking for 2025-11-25; it negotiates as the HTTP transport does.
+
+*** The Sign-ins screen's Help opens the manual's Sign-ins guide, not
+    the automations guide that went with Vaigil.  Its first line no
+    longer says "the 0 networks you declared" on a new store.  The agent
+    form no longer lists security operations nothing offers, and quilzo
+    help says what shadow AI is now: what agents' own programs reached
+    around the gateway.
+
 *** The public site is confined.  quilzo site re-executes itself under
     Landlock before it opens anything: it reads the store and writes only
     its own state, and the store's policy, tokens and configuration, and
