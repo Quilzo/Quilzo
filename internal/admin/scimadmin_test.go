@@ -6,11 +6,14 @@ package admin
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/dual"
 	"github.com/quilzo/quilzo/internal/scim"
 )
 
@@ -112,5 +115,38 @@ func TestTheIdentityProviderReachesTheEndpointThroughTheAdmin(t *testing.T) {
 	}
 	if code := call(token, http.MethodGet, ""); code != http.StatusUnauthorized {
 		t.Errorf("an administrator's token reached provisioning: %d", code)
+	}
+}
+
+// On the Provisioning screen too, a group mapped to an administrator's role
+// waits for a second administrator, who sees it on People and approves it.
+func TestMappingAGroupToAdminOnTheScreenTakesTwo(t *testing.T) {
+	srv, editor := setup(t)
+	calls, _ := wireSCIM(t, srv)
+	if err := srv.Policy.Grant(auth.Binding{Principal: "lee", Role: auth.RoleAdmin, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	lee, _, err := srv.Tokens.IssueSession("lee", "lee", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := postForm(t, srv, "/provisioning/act", editor, "do=map&group=Ops&to=admin")
+	if loc, _ := url.QueryUnescape(w.Header().Get("Location")); !strings.Contains(loc, "waits for a second administrator") {
+		t.Fatalf("mapping: %d %s", w.Code, loc)
+	}
+	if calls.mapped != "" {
+		t.Fatalf("a group was made administrators on one administrator's word: %+v", calls)
+	}
+	postForm(t, srv, "/provisioning/act", editor, "do=map&group=Editors&to=publisher")
+	if calls.mapped != "Editors=publisher" {
+		t.Fatalf("a mapping to less waited: %+v", calls)
+	}
+	pend, _ := srv.Dual.Store.Pending(time.Now())
+	if len(pend) != 1 || pend[0].Kind != dual.Mapping {
+		t.Fatalf("pending: %+v", pend)
+	}
+	postForm(t, srv, "/people/pending", lee, url.Values{"id": {pend[0].ID}, "do": {"approve"}}.Encode())
+	if calls.mapped != "Ops=admin" || calls.by != "lee" {
+		t.Fatalf("approved, and provisioning was told %+v", calls)
 	}
 }

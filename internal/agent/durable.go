@@ -55,6 +55,11 @@ type Pending struct {
 	// to that process rather than continuing the run from its record, and
 	// a run whose process has gone can no longer be answered.
 	Live bool `json:",omitempty"`
+	// Asked is when a live question was put to the person, as the record
+	// offering it says. An answer handed to the waiting process names it,
+	// so one left for an earlier question, even at the same step, is not
+	// taken for this one.
+	Asked time.Time `json:",omitzero"`
 	// Tokens and Cost are what choosing this action cost before the run
 	// stopped to ask, kept so the step it becomes is priced whole.
 	Tokens int   `json:",omitempty"`

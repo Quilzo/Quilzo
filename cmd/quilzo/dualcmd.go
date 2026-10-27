@@ -95,6 +95,16 @@ func applyDual(root string, r dual.Request, by string) error {
 		record(root, resolveCaller(root, "").auditRecord("auditlog.dir", "/", audit.Success,
 			map[string]string{"from": auditDir(root), "to": ch.Dir, "request": r.ID, "approved_by": by}))
 		return setAuditDir(root, ch.Dir)
+	case dual.Mapping:
+		var ch dual.MappingChange
+		if err := json.Unmarshal(r.Payload, &ch); err != nil {
+			return err
+		}
+		if err := scimMap(root, ch.Group, ch.To); err != nil {
+			return err
+		}
+		return recordE(root, resolveCaller(root, "").auditRecord("scim.mapped", "/", audit.Success,
+			map[string]string{"group": ch.Group + " → " + ch.To, "request": r.ID}))
 	case dual.Token:
 		return nil
 	}

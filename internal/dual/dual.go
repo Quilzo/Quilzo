@@ -5,9 +5,10 @@
 // administrator (NIST SP 800-53 AC-5, CM-5(4) and AU-9(5): dual
 // authorisation).
 //
-// Making somebody an administrator, issuing an administrator's token,
-// weakening a setting, lowering how many approvals a change needs and
-// moving the audit log are each something one person, or whoever has their
+// Making somebody an administrator (by hand, or by mapping an identity
+// provider's group), issuing an administrator's token, weakening a setting,
+// lowering how many approvals a change needs and moving the audit log are
+// each something one person, or whoever has their
 // session, could do to take a store over or to hide that they had. So one
 // administrator proposes and another approves, and the request records
 // both. A store with one administrator is not left unable to change
@@ -47,6 +48,9 @@ const (
 	Setting = "setting"
 	// AuditLog is the audit log moved to another directory.
 	AuditLog = "auditlog"
+	// Mapping is an identity provider's group mapped to a role or a job
+	// that makes its members administrators.
+	Mapping = "mapping"
 )
 
 // GrantChange is a Grant request: bindings granted together.
@@ -70,6 +74,23 @@ type SettingChange struct {
 // AuditLogChange is an AuditLog request: the directory the log moves to.
 type AuditLogChange struct {
 	Dir string `json:"dir"`
+}
+
+// MappingChange is a Mapping request: what the group's members become.
+type MappingChange struct {
+	Group string `json:"group"`
+	To    string `json:"to"`
+}
+
+// MapsToAdministrator reports whether a group mapped to this, a role or a
+// job, makes its members administrators of anything, which is what a
+// Mapping request is for. Who is in the group is the identity provider's
+// to say from then on, so the mapping is the grant.
+func MapsToAdministrator(to string) bool {
+	if job, ok := auth.JobNamed(to); ok {
+		return Privileged(job.Bindings)
+	}
+	return auth.Role(to) == auth.RoleAdmin
 }
 
 // Privileged reports whether bindings make somebody an administrator of

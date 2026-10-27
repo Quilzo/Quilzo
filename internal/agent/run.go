@@ -305,7 +305,7 @@ func (r Runner) holdVerdict(ctx context.Context, t *Trace, s *Session, w Pending
 		}
 		return Verdict{}, false, fmt.Sprintf("%s asks a person first, and this run has nobody to ask", what)
 	}
-	w.Live = true
+	w.Live, w.Asked = true, time.Now().UTC()
 	t.Waiting = &w
 	r.checkpoint(*t, s)
 	// No longer than the run may last: the program is waiting on this call

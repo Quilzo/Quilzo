@@ -42,6 +42,8 @@ type heldAnswer struct {
 	By      string            `json:"by"`
 	At      time.Time         `json:"at"`
 	Answers map[string]string `json:"answers,omitempty"`
+	// Asked is the question's, as the record offered it (Pending.Asked).
+	Asked time.Time `json:"asked,omitzero"`
 }
 
 func heldAnswerPath(root, id string) string {
@@ -159,8 +161,12 @@ func programHold(root, id string, gone <-chan struct{}, said func(string), answe
 			return agent.Verdict{}, fmt.Errorf("%q is not a run", id)
 		}
 		path := heldAnswerPath(root, id)
-		// An answer left from an earlier question is not this one's.
-		_ = os.Remove(path)
+		// An answer left from an earlier question is not this one's, and
+		// is told apart by what it answers, below, not removed here: the
+		// record has already offered this question when this is called, so
+		// a quick answer may be in the file already, and removing it left
+		// the run waiting for one that had been given until its time ran
+		// out.
 		if said != nil {
 			what := w.Action.Op
 			if w.Action.Tool != "" {
@@ -199,7 +205,7 @@ func programHold(root, id string, gone <-chan struct{}, said func(string), answe
 			if err != nil || json.Unmarshal(b, &a) != nil {
 				continue
 			}
-			if a.N != w.N {
+			if a.N != w.N || !a.Asked.Equal(w.Asked) {
 				continue
 			}
 			if answered != nil {
@@ -227,7 +233,7 @@ func answerLive(root string, rec agent.Record, v agent.Verdict, by string, now t
 	if err := checkAnswers(w, v); err != nil {
 		return err
 	}
-	b, err := json.Marshal(heldAnswer{N: v.N, Approve: v.Approve, By: by, At: now, Answers: v.Answers})
+	b, err := json.Marshal(heldAnswer{N: v.N, Asked: w.Asked, Approve: v.Approve, By: by, At: now, Answers: v.Answers})
 	if err != nil {
 		return err
 	}
