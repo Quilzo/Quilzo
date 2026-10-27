@@ -61,6 +61,19 @@ Unreleased
 
 ** Added
 
+*** A package can be a whole site.  Beside its pages, menus, forms and
+    chatbots, a package may declare the site itself: its name, a sentence
+    about it (the new setting site.description, which quilzo site
+    --description still overrides), the layouts it renders through and
+    its look: one of the theme's styles, a colour the palette is
+    generated from, motion and any other token, refused when the result
+    is not readable.  Installed, it writes the look into the templates
+    directory (--templates, the same one quilzo site and quilzo serve
+    read), gives a site with no layouts the starter's, and sets the name.
+    One package owns the site.  A site whose name or look somebody set by
+    hand is a conflict until --take-site; what it was is kept, and
+    removing the package puts it back.  The layouts stay either way.
+
 *** Agents come in from other platforms, and go back out.
     `quilzo agent import FILE` reads OpenAI Assistants, Claude Code
     subagents and Agent SDK agents, Google ADK agent configs, Microsoft

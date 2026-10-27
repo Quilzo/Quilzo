@@ -236,6 +236,8 @@ features (one package of blocks, installed as one decision)
   quilzo feature from FILE.csv [-o FILE]   a package from a spreadsheet or JSON list, and its rows to import
   quilzo feature check FILE [--keys K]     what it would store, show, send and change; installs nothing
   quilzo feature install FILE [--keys K] [--rows R]   install it; personal data or sending waits for a second person
+                                           a package with a "site" block is a whole site: its name, layouts and look
+                                           (--templates DIR; --take-site over a site somebody set up by hand)
   quilzo feature approve | decline ID      the second person decides
   quilzo feature pending | list | show NAME   what is waiting, and what is installed
   quilzo feature remove | rollback NAME    take it back, or go back a version

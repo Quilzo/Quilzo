@@ -19,6 +19,10 @@ import (
 // otherwise removing the feature later would remove somebody else's work,
 // and an upgrade could quietly rewrite a block it never made.
 
+// SiteByHand begins the conflict a site package has with a site somebody
+// set up by hand, which it takes over only when told to.
+const SiteByHand = "the site's name or look was set by a person"
+
 // Actions in a plan.
 const (
 	Add    = "add"
@@ -111,6 +115,10 @@ func (p *Package) Block(r Ref) any {
 				return ro
 			}
 		}
+	case SiteRef.Kind:
+		if p.Site != nil && r == SiteRef {
+			return p.Site
+		}
 	}
 	return nil
 }
@@ -142,6 +150,12 @@ func (p *Package) MakePlan(st State, owned []Ref) Plan {
 		switch {
 		case !exists:
 			pl.Steps = append(pl.Steps, Step{r, Add})
+		case owner != p.Name && r == SiteRef && owner == "":
+			pl.Conflicts = append(pl.Conflicts, SiteByHand+"; a site package takes them over only when told to "+
+				"(--take-site, or Let it take over the site), keeps what they are now, and puts it back if it is removed")
+		case owner != p.Name && r == SiteRef:
+			pl.Conflicts = append(pl.Conflicts, fmt.Sprintf("the site belongs to the feature %s, and a site is one "+
+				"package's: remove that one first", owner))
 		case owner != p.Name:
 			who := "a person"
 			if owner != "" {
@@ -201,6 +215,9 @@ type Pending struct {
 	Plan        Plan      `json:"plan"`
 	// Rollback marks a request to go back to an earlier version.
 	Rollback bool `json:"rollback,omitempty"`
+	// TakeSite marks a site package asked to take over a site somebody set
+	// up by hand.
+	TakeSite bool `json:"take_site,omitempty"`
 	// Rows is how many records are imported into RowsCollection once it
 	// is approved, from a file kept beside the request.
 	Rows           int    `json:"rows,omitempty"`

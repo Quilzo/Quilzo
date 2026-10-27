@@ -23,8 +23,13 @@
   <tbody>{{range .Plan.Steps}}<tr><td>{{.Action}}</td><td>{{.Ref.Kind}}</td><td><code>{{.Ref.Name}}</code></td></tr>{{end}}</tbody>
 </table></div>
 {{if .Plan.Conflicts}}<div class="notice bad" role="alert"><p>It cannot be installed: a feature only changes what it made.</p><ul>{{range .Plan.Conflicts}}<li>{{.}}</li>{{end}}</ul></div>
+{{if .SiteByHand}}<form method="post" action="/make/check">
+  <input type="hidden" name="text" value="{{.Body}}"><input type="hidden" name="take_site" value="1">
+  <p class="hint">The site's name and look are yours. This package can take them over; what they are now is kept, and put back if the package is removed.</p>
+  <div class="confirmactions"><button type="submit" class="btn-tonal">Let it take over the site</button></div>
+</form>{{end}}
 {{else}}<form method="post" action="/make/act">
-  <input type="hidden" name="do" value="install"><input type="hidden" name="digest" value="{{.Digest}}"><input type="hidden" name="body" value="{{.Body}}">{{if .Rows}}<input type="hidden" name="rows" value="{{.Rows}}">{{end}}
+  <input type="hidden" name="do" value="install"><input type="hidden" name="digest" value="{{.Digest}}"><input type="hidden" name="body" value="{{.Body}}">{{if .Rows}}<input type="hidden" name="rows" value="{{.Rows}}">{{end}}{{if .TakeSite}}<input type="hidden" name="take_site" value="1">{{end}}
   <div class="confirmactions"><button type="submit">{{if eq .Card.Approvers 2}}Ask for it to be installed{{else}}Install it{{end}}</button><a href="/make">Cancel</a></div>
 </form>
 <p class="hint">Digest <code>{{.Digest}}</code>: what is installed is exactly what you read here.</p>{{end}}

@@ -113,6 +113,9 @@ func cmdServe(root string, args []string) error {
 	// The whole design, loaded the way the public server loads it. A preview
 	// built from a different loader is a preview of a different site, which is
 	// the failure internal/render exists to prevent.
+	// A site package installed from the admin writes its look and layouts
+	// where this server and the site read them.
+	featureDesignDir = *tplDir
 	design, derr := loadDesign(*tplDir)
 	if derr != nil {
 		design = &Design{}

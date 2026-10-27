@@ -82,6 +82,10 @@ type Package struct {
 	// person or a model wrote it.
 	Made *Made `json:"made,omitempty"`
 
+	// Site is the site itself, for a package that is a whole site (see
+	// site.go).
+	Site *Site `json:"site,omitempty"`
+
 	Types       []schema.Type         `json:"types,omitempty"`
 	Collections []Collection          `json:"collections,omitempty"`
 	Listings    []listing.Listing     `json:"listings,omitempty"`
@@ -306,6 +310,9 @@ func (p *Package) Validate(c Checks) error {
 		}
 	}
 	p.validateRoles(bad, unique)
+	if p.Site != nil {
+		p.Site.validate(bad)
+	}
 	if len(errs) > 0 {
 		sort.Strings(errs)
 		return fmt.Errorf("the package is not usable:\n  %s", strings.Join(errs, "\n  "))
@@ -315,8 +322,12 @@ func (p *Package) Validate(c Checks) error {
 
 // Blocks counts what the package declares.
 func (p *Package) Blocks() int {
-	return len(p.Types) + len(p.Collections) + len(p.Listings) + len(p.Forms) + len(p.Pages) +
+	n := len(p.Types) + len(p.Collections) + len(p.Listings) + len(p.Forms) + len(p.Pages) +
 		len(p.Menus) + len(p.Chatbots) + len(p.Agents) + len(p.Webhooks) + len(p.Roles)
+	if p.Site != nil {
+		n++
+	}
+	return n
 }
 
 // Digest is the SHA-256 of the package without its signature, as JSON in
@@ -380,6 +391,9 @@ func (p *Package) Refs() []Ref {
 	// recorded by that name and another feature may have a role of the same.
 	for _, r := range p.Roles {
 		add("role", p.FullName(r))
+	}
+	if p.Site != nil {
+		out = append(out, SiteRef)
 	}
 	return out
 }

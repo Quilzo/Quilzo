@@ -183,6 +183,12 @@ func verifyFeature(p *feature.Package, keysPath string) error {
 
 // featureState reads every existing block's definition and owner.
 func featureState(root string) (feature.State, map[string]*feature.Installed, error) {
+	return featureStateWith(root, false)
+}
+
+// featureStateWith is featureState, with a site made by hand left for a
+// site package to take over when takeSite is set.
+func featureStateWith(root string, takeSite bool) (feature.State, map[string]*feature.Installed, error) {
 	st := feature.State{Current: map[feature.Ref]json.RawMessage{}, Owner: map[feature.Ref]string{}}
 	put := func(kind, name string, v any) {
 		if b, err := json.Marshal(v); err == nil {
@@ -257,6 +263,9 @@ func featureState(root string) (feature.State, map[string]*feature.Installed, er
 			st.Owner[r] = name
 		}
 	}
+	if err := siteState(root, st, installed, takeSite); err != nil {
+		return st, nil, err
+	}
 	// A role lives in the package that declared it, so what it is now is
 	// read from the version installed.
 	for _, in := range installed {
@@ -312,17 +321,19 @@ func featureCheck(root string, args []string) error {
 	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("feature check", flag.ContinueOnError)
 	keys := fs.String("keys", "", "the publisher's head.pub.json, to check a signed package")
+	fs.StringVar(&featureDesignDir, "templates", featureDesignDir, "the site's templates directory, for a site package")
+	takeSite := fs.Bool("take-site", false, "as install would with --take-site")
 	if err := fs.Parse(flags); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
-		return errors.New("usage: quilzo feature check FILE [--keys head.pub.json]")
+		return errors.New("usage: quilzo feature check FILE [--keys head.pub.json] [--templates DIR] [--take-site]")
 	}
 	p, _, err := readFeature(root, pos[0], *keys)
 	if err != nil {
 		return err
 	}
-	st, installed, err := featureState(root)
+	st, installed, err := featureStateWith(root, *takeSite)
 	if err != nil {
 		return err
 	}
@@ -398,13 +409,15 @@ func featureInstall(root string, args []string) error {
 	fs := flag.NewFlagSet("feature install", flag.ContinueOnError)
 	keys := fs.String("keys", "", "the publisher's head.pub.json, to check a signed package")
 	rowsPath := fs.String("rows", "", "records to import into one of its collections, as quilzo feature from writes them")
+	fs.StringVar(&featureDesignDir, "templates", featureDesignDir, "where a site package writes its look and layouts: the site's templates directory")
+	takeSite := fs.Bool("take-site", false, "let a site package own a site whose name or look somebody set by hand; it is put back if the package is removed")
 	if err := fs.Parse(flags); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
-		return errors.New("usage: quilzo feature install FILE [--keys head.pub.json] [--rows ROWS.json]")
+		return errors.New("usage: quilzo feature install FILE [--keys head.pub.json] [--rows ROWS.json] [--templates DIR] [--take-site]")
 	}
-	return installFeatureFile(root, pos[0], *keys, *rowsPath, resolveCaller(root, flagToken))
+	return installFeatureFileWith(root, pos[0], *keys, *rowsPath, *takeSite, resolveCaller(root, flagToken))
 }
 
 // readRows reads a rows file: {"collection": NAME, "records": [...]}.
@@ -433,6 +446,12 @@ func readRows(path string) (*feature.Rows, error) {
 
 // installFeatureFile installs a package file for a person.
 func installFeatureFile(root, path, keys, rowsPath string, caller *Caller) error {
+	return installFeatureFileWith(root, path, keys, rowsPath, false, caller)
+}
+
+// installFeatureFileWith is installFeatureFile, with a site made by hand
+// left for a site package to take over when takeSite is set.
+func installFeatureFileWith(root, path, keys, rowsPath string, takeSite bool, caller *Caller) error {
 	if err := authorise(root, caller, auth.ActInstall, "/"); err != nil {
 		return fmt.Errorf("features are installed and changed by whoever may install them: %w", err)
 	}
@@ -447,7 +466,7 @@ func installFeatureFile(root, path, keys, rowsPath string, caller *Caller) error
 	if err != nil {
 		return err
 	}
-	o, err := requestFeature(root, p, body, caller, false, rows)
+	o, err := requestFeature(root, p, body, caller, false, takeSite, rows)
 	return printOutcome(p, o, err, caller)
 }
 
@@ -467,7 +486,7 @@ type featureOutcome struct {
 // requestFeature installs at once when one approval is enough, and otherwise
 // leaves the request for a second person. It prints nothing: the screen
 // calls it too, and a secret printed here would land in the server's log.
-func requestFeature(root string, p *feature.Package, body []byte, caller *Caller, rollback bool, rows *feature.Rows) (featureOutcome, error) {
+func requestFeature(root string, p *feature.Package, body []byte, caller *Caller, rollback, takeSite bool, rows *feature.Rows) (featureOutcome, error) {
 	var out featureOutcome
 	if err := featureNeeds(root, caller, p); err != nil {
 		return out, err
@@ -477,7 +496,7 @@ func requestFeature(root string, p *feature.Package, body []byte, caller *Caller
 			return out, err
 		}
 	}
-	st, installed, err := featureState(root)
+	st, installed, err := featureStateWith(root, takeSite)
 	if err != nil {
 		return out, err
 	}
@@ -509,7 +528,8 @@ func requestFeature(root string, p *feature.Package, body []byte, caller *Caller
 		return out, err
 	}
 	pend := feature.Pending{ID: hex.EncodeToString(id), Name: p.Name, Version: p.Version, Digest: digest,
-		RequestedBy: caller.Name, At: time.Now().UTC(), Card: out.Card, Plan: out.Plan, Rollback: rollback}
+		RequestedBy: caller.Name, At: time.Now().UTC(), Card: out.Card, Plan: out.Plan, Rollback: rollback,
+		TakeSite: takeSite}
 	if err := os.MkdirAll(filepath.Dir(featurePendingPath(root, pend.ID)), 0o700); err != nil {
 		return out, err
 	}
@@ -584,6 +604,10 @@ func featureDecide(root string, args []string, approve bool) error {
 	if !approve {
 		verb = "decline"
 	}
+	args, err := designFlag("feature "+verb, args)
+	if err != nil {
+		return err
+	}
 	if len(args) != 1 {
 		return fmt.Errorf("usage: quilzo feature %s ID", verb)
 	}
@@ -639,7 +663,7 @@ func decideFeature(root, id string, approve bool, caller *Caller) error {
 	if err := p.Validate(featureChecks(root)); err != nil {
 		return err
 	}
-	st, installed, err := featureState(root)
+	st, installed, err := featureStateWith(root, pend.TakeSite)
 	if err != nil {
 		return err
 	}
@@ -1000,6 +1024,18 @@ func applyFeature(root string, p *feature.Package, digest string, plan feature.P
 	if err := reassignRoles(root, p, act, removing("role"), caller); err != nil {
 		return nil, err
 	}
+	// The site itself, last: the pages its menus point at are in the draft
+	// by now, and a site that goes is put back as it was.
+	switch a := act[feature.SiteRef]; {
+	case p.Site != nil && (a == feature.Add || a == feature.Change):
+		if err := applySite(root, p, a, caller); err != nil {
+			return nil, err
+		}
+	case len(removing(feature.SiteRef.Kind)) > 0:
+		if err := releaseSite(root, p.Name, caller); err != nil {
+			return nil, err
+		}
+	}
 
 	now := time.Now().UTC()
 	in := &feature.Installed{Name: p.Name, Version: p.Version, Digest: digest, Title: p.Title, At: now, By: by, Owns: p.Refs()}
@@ -1181,6 +1217,10 @@ func featureShow(root string, args []string) error {
 // featureRemove takes back everything a feature made. Records people
 // entered stay: unbinding a collection leaves its records where they are.
 func featureRemove(root string, args []string) error {
+	args, err := designFlag("feature remove", args)
+	if err != nil {
+		return err
+	}
 	if len(args) != 1 {
 		return errors.New("usage: quilzo feature remove NAME")
 	}
@@ -1220,6 +1260,10 @@ func removeFeature(root, name string, caller *Caller) error {
 // featureRollback reinstalls the version before the current one, under the
 // same approval rule as installing it.
 func featureRollback(root string, args []string) error {
+	args, err := designFlag("feature rollback", args)
+	if err != nil {
+		return err
+	}
 	if len(args) != 1 {
 		return errors.New("usage: quilzo feature rollback NAME")
 	}
@@ -1256,7 +1300,7 @@ func rollbackFeature(root, name string, caller *Caller) (*feature.Package, featu
 	if err := p.Validate(featureChecks(root)); err != nil {
 		return nil, featureOutcome{}, fmt.Errorf("version %s no longer passes the checks: %w", p.Version, err)
 	}
-	o, err := requestFeature(root, p, body, caller, true, nil)
+	o, err := requestFeature(root, p, body, caller, true, false, nil)
 	return p, o, err
 }
 
@@ -1481,10 +1525,10 @@ func featureHooks(root string, signedIn func(admin.Actor) *Caller) *admin.Featur
 			return out, nil
 		},
 		Pending: func() ([]feature.Pending, error) { return pendingFeatures(root) },
-		Check: func(body []byte) (*feature.Package, feature.Card, feature.Plan, error) {
-			return checkFeature(root, body)
+		Check: func(body []byte, takeSite bool) (*feature.Package, feature.Card, feature.Plan, error) {
+			return checkFeatureWith(root, body, takeSite)
 		},
-		Install: func(body []byte, rowsID string, by admin.Actor) (string, []string, error) {
+		Install: func(body []byte, rowsID string, takeSite bool, by admin.Actor) (string, []string, error) {
 			caller := signedIn(by)
 			if err := authorise(root, caller, auth.ActInstall, "/"); err != nil {
 				return "", nil, err
@@ -1499,7 +1543,7 @@ func featureHooks(root string, signedIn func(admin.Actor) *Caller) *admin.Featur
 					return "", nil, fmt.Errorf("the spreadsheet's records are no longer here; read the file again: %w", err)
 				}
 			}
-			o, err := requestFeature(root, p, body, caller, false, rows)
+			o, err := requestFeature(root, p, body, caller, false, takeSite, rows)
 			if err == nil && rowsID != "" {
 				_ = os.Remove(featureDraftRowsPath(root, rowsID))
 			}
@@ -1549,11 +1593,17 @@ func featureHooks(root string, signedIn func(admin.Actor) *Caller) *admin.Featur
 // checkFeature reads a package and works out its card and its plan against
 // what is installed, changing nothing.
 func checkFeature(root string, body []byte) (*feature.Package, feature.Card, feature.Plan, error) {
+	return checkFeatureWith(root, body, false)
+}
+
+// checkFeatureWith is checkFeature, planned as a site package taking over a
+// site set up by hand would be when takeSite is set.
+func checkFeatureWith(root string, body []byte, takeSite bool) (*feature.Package, feature.Card, feature.Plan, error) {
 	p, _, err := readFeatureBytes(root, body, "")
 	if err != nil {
 		return nil, feature.Card{}, feature.Plan{}, err
 	}
-	st, installed, err := featureState(root)
+	st, installed, err := featureStateWith(root, takeSite)
 	if err != nil {
 		return nil, feature.Card{}, feature.Plan{}, err
 	}
@@ -1595,7 +1645,7 @@ func featureProgram(root string) *admin.FeatureProgram {
 			if err != nil {
 				return "", nil, err
 			}
-			o, err := requestFeature(root, p, body, caller, false, nil)
+			o, err := requestFeature(root, p, body, caller, false, false, nil)
 			if o.Waiting != nil {
 				return o.Waiting.ID, nil, err
 			}
