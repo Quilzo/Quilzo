@@ -4,9 +4,12 @@
 package lockout
 
 import (
+	"net/netip"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/clientip"
 )
 
 const (
@@ -113,5 +116,46 @@ func TestTheCeilingDisablesUntilUnlocked(t *testing.T) {
 	}
 	if PlaceOf("2001:db8:1:2::5") != "2001:db8:1::/48" || PlaceOf("not an address") != "" {
 		t.Errorf("places: %q %q", PlaceOf("2001:db8:1:2::5"), PlaceOf("not an address"))
+	}
+}
+
+// An IPv6 client is placed, as the admin hands it over.
+//
+// The admin passes the source internal/clientip makes, which for IPv6 is
+// the client's /64 written as a prefix. PlaceOf read that as no address, so
+// an IPv6 guesser was never locked out, an IPv6 person never had a
+// familiar place, and a guesser could run any account straight to the
+// ceiling that turns its passkeys off. The tests above used host:port, which
+// is not what arrives.
+func TestAnIPv6ClientHasAPlace(t *testing.T) {
+	src := func(s string) string { return clientip.Source(netip.MustParseAddr(s)) }
+	home6, away6 := src("2001:db8:1:2::5"), src("2001:db8:ffff:9::7")
+	if PlaceOf(home6) == "" || PlaceOf(home6) == PlaceOf(away6) {
+		t.Fatalf("places: %q %q", PlaceOf(home6), PlaceOf(away6))
+	}
+	if PlaceOf(src("2001:db8:1:77::1")) != PlaceOf(home6) {
+		t.Error("another /64 in the person's /48 was a stranger")
+	}
+	s := Store{Path: filepath.Join(t.TempDir(), "lockout.json")}
+	now := time.Date(2026, 10, 21, 9, 0, 0, 0, time.UTC)
+	if _, err := s.Succeed("dana", home6, now); err != nil {
+		t.Fatal(err)
+	}
+	var ev Event
+	for i := 0; i < Threshold; i++ {
+		_, ev, _ = s.Fail("dana", away6, now)
+	}
+	if ev != Locked {
+		t.Fatalf("ten failures from a strange IPv6 network locked nothing: %q", ev)
+	}
+	if d, _ := s.Check("dana", away6, now); d.Allowed {
+		t.Errorf("the strange IPv6 network was not locked out: %+v", d)
+	}
+	if d, _ := s.Check("dana", home6, now); !d.Allowed {
+		t.Errorf("the person's own IPv6 network was locked out: %+v", d)
+	}
+	// A source that cannot be placed at all is not familiar either.
+	if d, _ := s.Check("dana", "unknown", now); d.Allowed {
+		t.Errorf("an unplaceable source was let through a lockout: %+v", d)
 	}
 }
