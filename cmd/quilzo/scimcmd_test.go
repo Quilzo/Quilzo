@@ -43,17 +43,20 @@ func newSCIM(t *testing.T) (string, scimClient) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("QUILZO_TOKEN", "")
 	root := demoStore(t)
+	// Mapped as a store is set up, before it has an administrator: a group
+	// that makes administrators waits for a second one once there is a
+	// first (TestMappingAGroupToAdministratorTakesTwo).
+	for _, m := range [][2]string{{"Security team", "analyst"}, {"Editors", "publisher"}} {
+		if err := cmdSCIM(root, []string{"map", m[0], m[1]}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := cmdAuth(root, []string{"grant", "boss", "admin"}); err != nil {
 		t.Fatal(err)
 	}
 	token, _, err := newSCIMToken(root, scimTokenDays)
 	if err != nil {
 		t.Fatal(err)
-	}
-	for _, m := range [][2]string{{"Security team", "analyst"}, {"Editors", "publisher"}} {
-		if err := cmdSCIM(root, []string{"map", m[0], m[1]}); err != nil {
-			t.Fatal(err)
-		}
 	}
 	return root, scimClient{t: t, h: scimHandler(root), token: token}
 }

@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"sort"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/dual"
 	"github.com/quilzo/quilzo/internal/scim"
 )
 
@@ -138,8 +140,25 @@ func (s *Server) handleProvisioningAct(w http.ResponseWriter, r *http.Request) {
 			back("e", "Name the group, as the identity provider spells it.")
 			return
 		}
-		if err = s.SCIM.Map(group, r.FormValue("to"), p.Name); err == nil {
-			back("m", "Members of "+group+" are now "+r.FormValue("to")+" here.")
+		to := r.FormValue("to")
+		// A group mapped to an administrator's role or job makes whoever the
+		// identity provider puts in it an administrator, so it waits for a
+		// second administrator as making one by hand does.
+		if dual.MapsToAdministrator(to) {
+			apply, msg, perr := s.proposeSecond(p, dual.Mapping,
+				fmt.Sprintf("map the identity provider's group %q to %s, making its members administrators", group, to),
+				dual.MappingChange{Group: group, To: to}, "")
+			if perr != nil {
+				back("e", perr.Error())
+				return
+			}
+			if !apply {
+				back("m", msg)
+				return
+			}
+		}
+		if err = s.SCIM.Map(group, to, p.Name); err == nil {
+			back("m", "Members of "+group+" are now "+to+" here.")
 			return
 		}
 	case "unmap":

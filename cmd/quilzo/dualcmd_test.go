@@ -4,6 +4,7 @@
 package main
 
 import (
+	"maps"
 	"os"
 	"strings"
 	"testing"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/dual"
+	"github.com/quilzo/quilzo/internal/scim"
 	"github.com/quilzo/quilzo/internal/shield"
 )
 
@@ -230,4 +232,55 @@ func asOnly(t *testing.T, root, who string) {
 		t.Fatal(err)
 	}
 	t.Setenv("QUILZO_TOKEN", secret)
+}
+
+// A group mapped to admin, or to a job with admin in it, makes whoever the
+// identity provider puts in it an administrator, so the mapping waits for a
+// second administrator as a grant does. A group mapped to less is one
+// administrator's to map.
+func TestMappingAGroupToAdministratorTakesTwo(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root, dana, lee := twoAdmins(t)
+	mapped := func() map[string]string {
+		var m map[string]string
+		if err := scimStore(root).Read(func(st *scim.State) { m = maps.Clone(st.Mapping) }); err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+	t.Setenv("QUILZO_TOKEN", dana)
+	for _, to := range []string{"admin", "analyst", "compliance"} {
+		if err := cmdSCIM(root, []string{"map", "Ops " + to, to}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := cmdSCIM(root, []string{"map", "Editors", "publisher"}); err != nil {
+		t.Fatal(err)
+	}
+	if m := mapped(); len(m) != 1 || m["Editors"] != "publisher" {
+		t.Fatalf("a group that makes administrators was mapped on one administrator's word: %v", m)
+	}
+	pend, err := dualStore(root).Pending(time.Now())
+	if err != nil || len(pend) != 3 {
+		t.Fatalf("pending: %+v %v", pend, err)
+	}
+	if pend[0].Kind != dual.Mapping || !strings.Contains(pend[0].What, `"Ops admin"`) {
+		t.Fatalf("the request: %+v", pend[0])
+	}
+	if err := cmdPending(root, []string{"approve", pend[0].ID}); err == nil {
+		t.Fatal("dana approved her own mapping")
+	}
+	t.Setenv("QUILZO_TOKEN", lee)
+	if err := cmdPending(root, []string{"approve", pend[0].ID}); err != nil {
+		t.Fatal(err)
+	}
+	if m := mapped(); m["Ops admin"] != "admin" || len(m) != 2 {
+		t.Fatalf("approved, and the mapping is %v", m)
+	}
+	if err := cmdPending(root, []string{"decline", pend[1].ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := mapped()["Ops analyst"]; ok {
+		t.Fatal("a declined mapping was made")
+	}
 }

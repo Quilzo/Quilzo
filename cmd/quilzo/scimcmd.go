@@ -24,6 +24,7 @@ import (
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/dual"
 	"github.com/quilzo/quilzo/internal/oauthas"
 	"github.com/quilzo/quilzo/internal/scim"
 	"github.com/quilzo/quilzo/internal/throttle"
@@ -160,6 +161,26 @@ func validMapping(root, to string) error {
 	}
 	return fmt.Errorf("%q is not a role (reader, author, publisher, admin), a permission, a job (%s) "+
 		"or a role an installed feature declares (APP/ROLE)", to, strings.Join(jobs, ", "))
+}
+
+// scimMap makes a group mean something here, and brings everybody in it up
+// to date. Mapping to an administrator's role or job waits for a second
+// administrator first (dual.MapsToAdministrator), which is its callers'.
+func scimMap(root, group, to string) error {
+	if err := validMapping(root, to); err != nil {
+		return err
+	}
+	if err := scimStore(root).Update(func(st *scim.State) error { st.Mapping[group] = to; return nil }); err != nil {
+		return err
+	}
+	scimHandler(root).SyncAll()
+	return nil
+}
+
+// scimMappingWhat is a mapping that waits, in words, for the person
+// deciding it.
+func scimMappingWhat(group, to string) string {
+	return fmt.Sprintf("map the identity provider's group %q to %s, making its members administrators", group, to)
 }
 
 // scimSync makes a person's provisioned access match what provisioning
@@ -484,10 +505,16 @@ func cmdSCIM(root string, args []string) error {
 		if err := validMapping(root, args[2]); err != nil {
 			return err
 		}
-		if err := store.Update(func(st *scim.State) error { st.Mapping[args[1]] = args[2]; return nil }); err != nil {
+		if dual.MapsToAdministrator(args[2]) {
+			apply, err := proposeSecond(root, caller, dual.Mapping, scimMappingWhat(args[1], args[2]),
+				dual.MappingChange{Group: args[1], To: args[2]}, "")
+			if err != nil || !apply {
+				return err
+			}
+		}
+		if err := scimMap(root, args[1], args[2]); err != nil {
 			return err
 		}
-		scimHandler(root).SyncAll()
 		w.Human("members of %q are now %s here\n", args[1], args[2])
 		return note("scim.mapped", args[1]+" → "+args[2])
 	case "unmap":
@@ -520,13 +547,9 @@ func scimHooks(root string) *admin.SCIMAdmin {
 			return terr == nil, copyOf, err
 		},
 		Map: func(group, to, by string) error {
-			if err := validMapping(root, to); err != nil {
+			if err := scimMap(root, group, to); err != nil {
 				return err
 			}
-			if err := store.Update(func(st *scim.State) error { st.Mapping[group] = to; return nil }); err != nil {
-				return err
-			}
-			scimHandler(root).SyncAll()
 			return note("scim.mapped", by, group+" → "+to)
 		},
 		Unmap: func(group, by string) error {

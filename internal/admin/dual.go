@@ -96,6 +96,15 @@ func (s *Server) applyDual(r dual.Request, by string) error {
 			return err
 		}
 		return s.Settings.Save(cfg)
+	case dual.Mapping:
+		var ch dual.MappingChange
+		if err := json.Unmarshal(r.Payload, &ch); err != nil {
+			return err
+		}
+		if s.SCIM == nil || s.SCIM.Map == nil {
+			return errors.New("this server has no provisioning")
+		}
+		return s.SCIM.Map(ch.Group, ch.To, by)
 	case dual.Token:
 		// Issued to whoever asked, on the command line: quilzo pending redeem.
 		return nil

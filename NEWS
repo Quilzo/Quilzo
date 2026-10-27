@@ -571,6 +571,15 @@ Unreleased
 
 ** Fixed
 
+*** Mapping an identity provider's group to admin takes two
+    administrators.  A group mapped to admin, or to the analyst or
+    compliance job, makes everybody the identity provider puts in it an
+    administrator, and one administrator could map it from the
+    Provisioning screen or quilzo scim map, past the second administrator
+    that making one by hand waits for.  It waits now, on People and in
+    quilzo pending, and is made when another administrator approves it.
+    A group mapped to anything less is still one administrator's to map.
+
 *** Smart lockout works for IPv6.  The admin hands the lockout a client's
     source as internal/clientip writes it, which for IPv6 is the client's
     /64 as a prefix, and the lockout read that as no address at all: an
