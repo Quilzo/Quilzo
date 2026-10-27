@@ -67,8 +67,8 @@ func (g *Gateway) chat(ctx context.Context, consumers []string, only string, req
 	consumer, also := consumers[0], consumers[1:]
 	in := req.TextLen() + req.Images()*imageChars
 	if err := g.admit(consumers, in); err != nil {
-		g.ledger.record(Usage{At: g.now(), Consumer: consumer, Also: also, In: in, Outcome: "over-budget"})
-		if g.OnTrouble != nil {
+		g.note(Usage{At: g.now(), Consumer: consumer, Also: also, In: in, Outcome: "over-budget"})
+		if g.OnTrouble != nil && !errors.Is(err, ErrUnwritable) {
 			g.OnTrouble("spent", consumer)
 		}
 		return assist.ChatReply{}, 0, err
@@ -117,7 +117,7 @@ func (g *Gateway) chat(ctx context.Context, consumers []string, only string, req
 		took := g.now().Sub(start)
 		if err != nil {
 			kind := g.failure(ctx, r.Name, err)
-			g.ledger.record(Usage{At: start, Consumer: consumer, Also: also, Route: r.Name,
+			g.note(Usage{At: start, Consumer: consumer, Also: also, Route: r.Name,
 				Model: r.Model, In: in, Millis: took.Milliseconds(), Outcome: kind.outcome()})
 			if kind != unavailable {
 				return assist.ChatReply{}, 0, err
@@ -130,7 +130,7 @@ func (g *Gateway) chat(ctx context.Context, consumers []string, only string, req
 		g.mu.Unlock()
 		pin, pout, _ := r.prices()
 		cost := costOf(pin, pout, reply.Usage.In, reply.Usage.Out)
-		g.ledger.record(Usage{At: start, Consumer: consumer, Also: also, Route: r.Name,
+		g.note(Usage{At: start, Consumer: consumer, Also: also, Route: r.Name,
 			Model: r.Model, In: in, Out: len(reply.Message.Text()), Millis: took.Milliseconds(),
 			TokensIn: reply.Usage.In, TokensOut: reply.Usage.Out, Estimated: !reply.Usage.Reported,
 			Cost: cost, Masked: masked, Outcome: "ok"})
