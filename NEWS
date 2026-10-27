@@ -580,6 +580,14 @@ Unreleased
     quilzo pending, and is made when another administrator approves it.
     A group mapped to anything less is still one administrator's to map.
 
+*** A quick answer to a running agent's question is not lost.  The run's
+    page and quilzo agent approve can answer from the moment the question
+    is offered, and the process holding the run removed whatever answer it
+    found when it started to look, so an answer given in that moment was
+    thrown away and the run waited until its time ran out.  Each question
+    is stamped when it is asked, an answer names the question it is for,
+    and nothing is removed before it is read.
+
 *** Smart lockout works for IPv6.  The admin hands the lockout a client's
     source as internal/clientip writes it, which for IPv6 is the client's
     /64 as a prefix, and the lockout read that as no address at all: an

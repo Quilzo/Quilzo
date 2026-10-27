@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -118,5 +119,51 @@ func TestAPersonFileReplacedStartsOver(t *testing.T) {
 	}
 	if off == 1<<20 {
 		t.Error("the offset did not follow the new file")
+	}
+}
+
+// The record offers a live question before the process holding it starts
+// to look, so an answer can be there first. It is this question's, and is
+// taken: removing whatever was there left the run waiting, for an answer
+// that had been given, until its time ran out. One left for an earlier
+// question at the same step is still not taken for this one.
+func TestAQuickAnswerIsNotLost(t *testing.T) {
+	root := t.TempDir()
+	id := "run-20260101-00000001"
+	asked := time.Now().UTC()
+	w := agent.Pending{N: 3, Live: true, Asked: asked, Action: agent.Action{Op: "shell_run"}}
+	rec := agent.Record{ID: id, State: agent.Running, Beat: time.Now(), Trace: agent.Trace{Waiting: &w}}
+	if err := os.MkdirAll(agentRunsDir(root), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	hold := programHold(root, id, nil, nil, nil, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	// Answered between the record offering it and the hold looking.
+	if err := answerLive(root, rec, agent.Verdict{N: 3, Approve: false}, "lee", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	v, err := hold(ctx, w, func() {})
+	if err != nil || v.Approve || v.By != "lee" {
+		t.Fatalf("an answer given before the hold looked: %+v %v", v, err)
+	}
+
+	// An answer to the step's earlier question, left late, is not this
+	// one's: the hold waits on, and takes the answer that is.
+	earlier := rec
+	before := w
+	before.Asked = asked.Add(-time.Second)
+	earlier.Trace.Waiting = &before
+	if err := answerLive(root, earlier, agent.Verdict{N: 3, Approve: true}, "pat", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		time.Sleep(2 * holdPoll)
+		_ = answerLive(root, rec, agent.Verdict{N: 3, Approve: false}, "lee", time.Now())
+	}()
+	v, err = hold(ctx, w, func() {})
+	if err != nil || v.Approve || v.By != "lee" {
+		t.Fatalf("the earlier question's answer was taken for this one: %+v %v", v, err)
 	}
 }
