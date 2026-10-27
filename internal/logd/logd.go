@@ -85,6 +85,9 @@ type Submission struct {
 	Model     string            `json:"model,omitempty"`
 	Verified  bool              `json:"verified"`
 	Detail    map[string]string `json:"detail,omitempty"`
+	// People are named in the record's text without a detail of their own
+	// (audit.Record.People). A writer older than this field ignores it.
+	People []string `json:"people,omitempty"`
 }
 
 // Response is what the writer answers.
@@ -166,7 +169,7 @@ func (s *Server) handle(conn net.Conn) {
 		Action: sub.Action, Resource: sub.Resource,
 		Outcome:   audit.Outcome(sub.Outcome),
 		Principal: sub.Principal, Kind: audit.Kind(sub.Kind),
-		Model: sub.Model, Verified: sub.Verified, Detail: sub.Detail,
+		Model: sub.Model, Verified: sub.Verified, Detail: sub.Detail, People: sub.People,
 	})
 	s.mu.Unlock()
 

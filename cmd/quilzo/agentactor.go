@@ -164,6 +164,11 @@ func actionRecord(caller *Caller, m agent.Manifest, model assist.Model, run stri
 	if st.Redirected != "" {
 		d["redirected"] = clip(st.Redirected, 200)
 	}
+	// Whoever a person's decision was: Why names them, and the log
+	// pseudonymises them there as here.
+	if st.DecidedBy != "" {
+		d["decided_by"] = st.DecidedBy
+	}
 	r := actorRecord(caller, "agent.action", outcome, m, model, d)
 	// The page acted on, when the action names one: the resource of the
 	// record, so a page's history shows the agents that touched it.

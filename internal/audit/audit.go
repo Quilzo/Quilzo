@@ -65,6 +65,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -382,11 +384,44 @@ var IdentityKeys = map[string]bool{
 	// Who asked for a change a second administrator decided, and who
 	// approved it (internal/dual, the shield and the policy).
 	"proposed_by": true, "approved_by": true,
+	// Who gave somebody the link they added their first passkey with, an
+	// agent's sponsor, and the person who decided what an agent or a call
+	// through the gateway waited for.
+	"link_by": true, "sponsor": true, "decided_by": true,
 }
 
-// pseudonymDetail returns detail with identity values pseudonymised, leaving
-// the caller's map alone.
-func (l *Log) pseudonymDetail(d map[string]string) map[string]string {
+// people are the identifiers a record names as somebody: its principal,
+// when a person (or nobody knows who) acted, every value under an identity
+// key, and its People. Longest first, so a name inside a longer one is not
+// taken for it. The program's own name and its word for nobody named are
+// nobody's: it names itself in its own sentences ("quilzo pending
+// approve"), and writes "anonymous" where nobody was named.
+func (r Record) people() []string {
+	var out []string
+	add := func(v string) {
+		if v = strings.TrimSpace(v); v != "" && v != "quilzo" && v != "anonymous" && !slices.Contains(out, v) {
+			out = append(out, v)
+		}
+	}
+	if r.Kind == KindHuman || r.Kind == KindUnknown {
+		add(r.Principal)
+	}
+	for k, v := range r.Detail {
+		if IdentityKeys[k] {
+			add(v)
+		}
+	}
+	for _, v := range r.People {
+		add(v)
+	}
+	sort.Slice(out, func(i, j int) bool { return len(out[i]) > len(out[j]) })
+	return out
+}
+
+// pseudonymDetail returns detail with identity values pseudonymised, and
+// each of people pseudonymised where another detail names them too,
+// leaving the caller's map alone.
+func (l *Log) pseudonymDetail(d map[string]string, people []string) map[string]string {
 	if len(l.key) == 0 || len(d) == 0 {
 		return d
 	}
@@ -394,10 +429,78 @@ func (l *Log) pseudonymDetail(d map[string]string) map[string]string {
 	for k, v := range d {
 		if IdentityKeys[k] && v != "" {
 			v = l.pseudonym(v)
+		} else {
+			v = l.namedIn(v, people)
 		}
 		out[k] = v
 	}
 	return out
+}
+
+// namedIn is s with each of people, where it stands as a word, replaced by
+// their pseudonym.
+//
+// A record's identity fields were pseudonymised and the same person stood
+// in clear in its sentences ("make lee admin on /", "rae is reader on /",
+// "lee declined this") and its resource ("/lee"), in the log and in every
+// batch streamed from it. Only the people the record itself names are
+// replaced, each by the handle its identity field has, so the sentence
+// still reads and still matches the rest of the log; a writer mentioning
+// somebody it does not name under an identity key is what
+// cmd/quilzo/auditnames_test.go refuses.
+func (l *Log) namedIn(s string, people []string) string {
+	if len(l.key) == 0 || s == "" {
+		return s
+	}
+	for _, p := range people {
+		s = replaceWord(s, p, l.pseudonym(p))
+	}
+	return s
+}
+
+// replaceWord replaces each occurrence of word in s that is not part of a
+// longer word, address or path segment's name. A letter, digit, '_', '@'
+// or '-' on either side, a '.' before it, or anything not ASCII, joins it
+// to its neighbour; a '.' after it ends a sentence.
+func replaceWord(s, word, with string) string {
+	joins := func(c byte, before bool) bool {
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9',
+			c == '_', c == '@', c == '-', c >= 0x80:
+			return true
+		}
+		return before && c == '.'
+	}
+	var b strings.Builder
+	rest := s
+	for {
+		i := strings.Index(rest, word)
+		if i < 0 {
+			break
+		}
+		end := i + len(word)
+		if (i > 0 && joins(rest[i-1], true)) || (end < len(rest) && joins(rest[end], false)) {
+			b.WriteString(rest[:i+1])
+			rest = rest[i+1:]
+			continue
+		}
+		b.WriteString(rest[:i])
+		b.WriteString(with)
+		rest = rest[end:]
+	}
+	if b.Len() == 0 {
+		return s
+	}
+	b.WriteString(rest)
+	return b.String()
+}
+
+// AsWritten is a record's resource and details as a log kept with key
+// writes them: what anybody reading the log, or a stream of it, sees.
+func AsWritten(key []byte, r Record) (string, map[string]string) {
+	l := &Log{key: key}
+	people := r.people()
+	return l.namedIn(r.Resource, people), l.pseudonymDetail(r.Detail, people)
 }
 
 // pseudonym maps an identifier to a stable, non-reversible handle.
@@ -445,6 +548,11 @@ type Record struct {
 	// Defaulting to false means a caller that forgets records an honest
 	// "unverified" rather than an unearned claim.
 	Verified bool
+	// People are people the record names in its text without a detail of
+	// their own: everybody a posture finding lists, say. A keyed log
+	// pseudonymises them wherever the record names them, as it does the
+	// people under identity keys, and keeps nothing else of them.
+	People []string
 }
 
 // forbidden names Detail keys that must never appear. Content bodies and
@@ -553,11 +661,12 @@ func (l *Log) Append(r Record) (*Event, error) {
 	}
 
 	l.seq++
+	people := r.people()
 	e := &Event{
 		Seq: l.seq, At: time.Now().UTC().Format(time.RFC3339Nano),
-		Prev: l.last, Action: r.Action, Resource: r.Resource, Source: l.src,
+		Prev: l.last, Action: r.Action, Resource: l.namedIn(r.Resource, people), Source: l.src,
 		Outcome: r.Outcome, Principal: l.pseudonym(r.Principal), Kind: r.Kind,
-		Verified: r.Verified, Model: r.Model, Detail: l.pseudonymDetail(r.Detail),
+		Verified: r.Verified, Model: r.Model, Detail: l.pseudonymDetail(r.Detail, people),
 	}
 	h, err := e.computeHash()
 	if err != nil {

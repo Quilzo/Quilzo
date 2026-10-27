@@ -165,6 +165,39 @@ type Request struct {
 	Alone     bool      `json:"alone,omitempty"`
 }
 
+// About is who a request is about, under the identity keys an audit
+// record carries them by: the person a grant is for ("subject"), or the
+// one a token acts as ("for"). What, the sentence a person deciding reads,
+// names them; a record that copies it carries this beside it, and the log
+// pseudonymises them in both.
+func (r Request) About() map[string]string {
+	switch r.Kind {
+	case Grant:
+		var ch GrantChange
+		if json.Unmarshal(r.Payload, &ch) == nil && len(ch.Bindings) > 0 && ch.Bindings[0].Principal != "" {
+			return map[string]string{"subject": ch.Bindings[0].Principal}
+		}
+	case Token:
+		var ch TokenChange
+		if json.Unmarshal(r.Payload, &ch) != nil {
+			return nil
+		}
+		for i, a := range ch.Args {
+			name := strings.TrimLeft(a, "-")
+			if len(name) == len(a) {
+				continue
+			}
+			if v, ok := strings.CutPrefix(name, "principal="); ok {
+				return map[string]string{"for": v}
+			}
+			if name == "principal" && i+1 < len(ch.Args) {
+				return map[string]string{"for": ch.Args[i+1]}
+			}
+		}
+	}
+	return nil
+}
+
 // Open reports whether a request still waits for a decision at now.
 func (r Request) Open(now time.Time) bool {
 	return r.State == Waiting && now.Before(r.At.Add(Wait))

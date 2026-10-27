@@ -849,7 +849,7 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 		if bootstrapIssue(root, "token", append([]string{"issue"}, args...)) && onlyAdministrator(root, *principal) {
 			c := resolveCaller(root, "")
 			if err := recordE(root, c.auditRecord("dual.approved", "/", audit.Success, map[string]string{
-				"kind": string(dual.Token), "alone": "true", "bootstrap": "true",
+				"kind": string(dual.Token), "alone": "true", "bootstrap": "true", "for": *principal,
 				"what": fmt.Sprintf("the store's first token, for its only administrator %s", *principal)})); err != nil {
 				return err
 			}

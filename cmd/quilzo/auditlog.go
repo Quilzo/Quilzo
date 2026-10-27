@@ -274,7 +274,15 @@ func auditReady(root string) error {
 	return nil
 }
 
+// auditWritten, when set, is shown each record as it is written. The tests
+// set it to check that no record names a person anywhere the log does not
+// pseudonymise (auditnames_test.go); nothing else does.
+var auditWritten func(root string, r audit.Record)
+
 func writeRecord(root string, r audit.Record) error {
+	if auditWritten != nil {
+		auditWritten(root, r)
+	}
 	// A separate writer, if one is running. Its presence is the configuration:
 	// the socket existing means somebody set this up, and going around it would
 	// make the separation optional at exactly the moment it matters.
@@ -282,7 +290,7 @@ func writeRecord(root string, r audit.Record) error {
 		_, err := logd.Submit(sock, logd.Submission{
 			Action: r.Action, Resource: r.Resource, Outcome: string(r.Outcome),
 			Principal: r.Principal, Kind: string(r.Kind), Model: r.Model,
-			Verified: r.Verified, Detail: r.Detail,
+			Verified: r.Verified, Detail: r.Detail, People: r.People,
 		})
 		if err != nil {
 			// Deliberately no fallback to writing the file directly. Falling

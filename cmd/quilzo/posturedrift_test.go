@@ -4,6 +4,7 @@
 package main
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -80,4 +81,36 @@ func TestAComplianceCheckThatStartsFailingIsOnTheRecordAtOnce(t *testing.T) {
 		}
 	}
 	finishBackground(10 * time.Second)
+}
+
+// A check about people names them, and the record of it carries them as
+// people: the log pseudonymises them in its resource and its sentences
+// alike, as it does everybody a record names under an identity key.
+func TestADriftAboutPeopleDoesNotNameThemInClear(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("QUILZO_TOKEN", "")
+	root := demoStore(t)
+	if err := cmdAuth(root, []string{"grant", "dana", "admin"}); err != nil {
+		t.Fatal(err)
+	}
+	state := Observe(root, t.TempDir(), posture.ServerFacts{})
+	if _, _, err := postureDrift(root, state, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	l, err := openAudit(root)
+	if err != nil || !l.Pseudonymous() {
+		t.Fatalf("the store's log is not pseudonymous: %v", err)
+	}
+	dana := audit.Pseudonym(l.Key(), "dana")
+	for _, rule := range []string{"access.sole-admin", "mfa.no-second-factor"} {
+		drifted := driftRecords(t, root, "posture.drifted", rule)
+		if len(drifted) != 1 {
+			t.Fatalf("%s did not drift: %+v", rule, drifted)
+		}
+		e := drifted[0]
+		if text := e.Detail["resource"] + " " + e.Detail["detail"]; regexp.MustCompile(`\bdana\b`).MatchString(text) ||
+			!strings.Contains(text, dana) {
+			t.Errorf("%s names dana in clear, or not as their handle: %v", rule, e.Detail)
+		}
+	}
 }

@@ -205,9 +205,12 @@ func gatewayCall(ctx context.Context, root string, in agent.Integration, mc *mcp
 
 	g := *in.Gateway
 	digest := argsDigest(in.Name, tool, args)
-	held := ""
+	held, decidedBy := "", ""
 	defer func() {
 		d := map[string]string{"integration": in.Name, "tool": tool, "on_behalf_of": tok.Principal, "args_digest": digest}
+		if decidedBy != "" {
+			d["decided_by"] = decidedBy
+		}
 		if tok.Grant != "" {
 			d["grant"] = tok.Grant
 		}
@@ -269,8 +272,8 @@ func gatewayCall(ctx context.Context, root string, in agent.Integration, mc *mcp
 		return refuse(fmt.Sprintf("this caller has made %d calls to %s today, which is as many as a caller may", st.Days[day][key], in.Name))
 	}
 	if g.Asks(tool) {
-		id, ok, why := decideHeld(st, in.Name, tool, digest, tok, args, now)
-		held = id
+		id, ok, why, by := decideHeld(st, in.Name, tool, digest, tok, args, now)
+		held, decidedBy = id, by
 		if !ok {
 			err := saveGatewayState(root, st, now)
 			gatewayMu.Unlock()
@@ -297,8 +300,9 @@ func gatewayCall(ctx context.Context, root string, in agent.Integration, mc *mcp
 const heldNew = "new"
 
 // decideHeld finds what a person decided about exactly this call, or
-// holds it: ok says it may go ahead, and why says why not.
-func decideHeld(st *gatewayState, integration, tool, digest string, tok auth.Token, args map[string]any, now time.Time) (string, bool, string) {
+// holds it: ok says it may go ahead, why says why not, and by is who
+// decided, when somebody has.
+func decideHeld(st *gatewayState, integration, tool, digest string, tok auth.Token, args map[string]any, now time.Time) (string, bool, string, string) {
 	// Only the newest decision about exactly this call counts: one used,
 	// lapsed or long declined is asked again.
 newest:
@@ -309,12 +313,12 @@ newest:
 		}
 		switch {
 		case h.Decided.IsZero() && now.Sub(h.Asked) < heldWaits:
-			return h.ID, false, "still waiting for a person to decide about " + h.ID
+			return h.ID, false, "still waiting for a person to decide about " + h.ID, ""
 		case !h.Decided.IsZero() && !h.Approved && now.Sub(h.Decided) < heldWaits:
-			return h.ID, false, h.ID + " was declined by " + h.By
+			return h.ID, false, h.ID + " was declined by " + h.By, h.By
 		case h.Approved && !h.Used && now.Sub(h.Decided) < approvalLast:
 			h.Used = true
-			return h.ID, true, ""
+			return h.ID, true, "", h.By
 		}
 		break newest
 	}
@@ -322,7 +326,7 @@ newest:
 	id := "gq_" + randomHex(6)
 	st.Held = append(st.Held, heldCall{ID: id, Integration: integration, Tool: tool, Principal: tok.Principal,
 		Client: tok.Client, Digest: digest, Args: clip(string(b), 4000), Asked: now.UTC()})
-	return id, false, heldNew
+	return id, false, heldNew, ""
 }
 
 // tellHeld tells the security contact a call is waiting for them, in the

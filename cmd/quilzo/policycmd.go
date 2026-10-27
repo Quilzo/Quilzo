@@ -78,7 +78,7 @@ func enforcePolicy(root, by string) ([]string, error) {
 		keys = append(keys, r.Key)
 		record(root, audit.Record{Action: "policy.enforced", Resource: "/settings", Outcome: audit.Success,
 			Principal: "quilzo", Kind: audit.KindService, Verified: true,
-			Detail: map[string]string{"setting": r.Key, "from": r.From, "to": r.To, "param": r.Param, "after": by}})
+			Detail: map[string]string{"setting": r.Key, "from": r.From, "to": r.To, "param": r.Param, "by": by}})
 	}
 	return keys, nil
 }

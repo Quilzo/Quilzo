@@ -133,10 +133,10 @@ func TestAnAgentRemembersForThePersonAndOnlyOnceAPersonConfirms(t *testing.T) {
 	if !strings.Contains(out.Trace.Answer, "Dana prefers replies in Spanish") {
 		t.Fatalf("dana's run recalled %q", out.Trace.Answer)
 	}
-	if !strings.Contains(out.Trace.Answer, "lookup: refused") || !strings.Contains(out.Trace.Answer, "remembers about dana") {
+	if !strings.Contains(out.Trace.Answer, "lookup: refused") || !strings.Contains(out.Trace.Answer, "remembers about the person it acts for") {
 		t.Fatalf("a run holding dana's memory sent it out: %q", out.Trace.Answer)
 	}
-	if rc := out.Receipt; len(rc.Private) == 0 || !strings.Contains(strings.Join(rc.Private, ","), "remembers about dana") {
+	if rc := out.Receipt; len(rc.Private) == 0 || !strings.Contains(strings.Join(rc.Private, ","), "remembers about the person it acts for") {
 		t.Fatalf("the receipt does not say it held dana's memory: %v", rc.Private)
 	}
 

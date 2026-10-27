@@ -412,3 +412,67 @@ func TestIdentitiesInDetailArePseudonymisedToo(t *testing.T) {
 		t.Fatalf("the chain does not verify: %v", problems)
 	}
 }
+
+// A person a record names under an identity key, or as the person who
+// acted, is pseudonymised wherever else the record names them: in its
+// sentences and in its resource, with the same handle. Nobody it does not
+// name as a person is touched, nor a word that only contains a name.
+func TestAPersonIsPseudonymisedWhereverTheRecordNamesThem(t *testing.T) {
+	dir := t.TempDir()
+	key, err := NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	l, err := New(Options{Path: filepath.Join(dir, "audit.log"), Key: key, Source: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, err := l.Append(Record{Action: "dual.approved", Resource: "/lee", Outcome: Success,
+		Principal: "lee", Kind: KindHuman, Verified: true,
+		Detail: map[string]string{
+			"subject": "pat", "what": "make pat admin on /; lee approved it.",
+			"why":  "lee declined this, from leeds; mail lee@example.com or see /pat-notes",
+			"note": "quilzo pending approve",
+		}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lee, pat := Pseudonym(key, "lee"), Pseudonym(key, "pat")
+	if e.Resource != "/"+lee || e.Detail["subject"] != pat {
+		t.Errorf("resource %q, subject %q", e.Resource, e.Detail["subject"])
+	}
+	if want := "make " + pat + " admin on /; " + lee + " approved it."; e.Detail["what"] != want {
+		t.Errorf("what %q, want %q", e.Detail["what"], want)
+	}
+	if want := lee + " declined this, from leeds; mail lee@example.com or see /pat-notes"; e.Detail["why"] != want {
+		t.Errorf("why %q, want %q", e.Detail["why"], want)
+	}
+	if e.Detail["note"] != "quilzo pending approve" {
+		t.Errorf("note %q", e.Detail["note"])
+	}
+
+	// The program speaking for itself is nobody.
+	e, err = l.Append(Record{Action: "policy.enforced", Resource: "/settings", Outcome: Success,
+		Principal: "quilzo", Kind: KindService, Verified: true,
+		Detail: map[string]string{"why": "quilzo raised it", "by": "dana", "note": "after dana's change"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.Detail["why"] != "quilzo raised it" || e.Detail["note"] != "after "+Pseudonym(key, "dana")+"'s change" {
+		t.Errorf("a service record: %v", e.Detail)
+	}
+
+	// Without a key nothing is pseudonymised, here or anywhere.
+	plain, err := New(Options{Path: filepath.Join(dir, "plain.log"), Source: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, err = plain.Append(Record{Action: "x", Resource: "/lee", Outcome: Success, Principal: "lee",
+		Kind: KindHuman, Verified: true, Detail: map[string]string{"why": "lee declined this"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.Resource != "/lee" || e.Detail["why"] != "lee declined this" {
+		t.Errorf("an unkeyed log changed %q %v", e.Resource, e.Detail)
+	}
+}

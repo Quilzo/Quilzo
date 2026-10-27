@@ -100,6 +100,10 @@ type Finding struct {
 	// Fix is the command that resolves it. A finding without a remedy is a
 	// complaint, and people learn to scroll past complaints.
 	Fix string `json:"fix,omitempty"`
+	// People are the people the finding names, in its resource or its
+	// detail: a record of it declares them (audit.Record.People), so a
+	// pseudonymous audit log does not carry them in clear.
+	People []string `json:"people,omitempty"`
 	// Controls are the NIST SP 800-53 identifiers this maps to, which is what
 	// turns a finding into evidence for an assessor rather than an opinion.
 	Controls []string `json:"controls,omitempty"`
