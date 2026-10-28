@@ -425,6 +425,9 @@ var coverage = map[string]surfaces{
 	// How the list stands, and an issue proposed, are on MCP; the addresses
 	// are not, and sending to them is a person's, after reading a test.
 	"newsletter": {GUI: "/newsletter", MCP: []string{"newsletter_status", "propose_issue"}},
+	// Events are records, written and read where records are; setting them
+	// up is a package an agent proposes.
+	"events": {GUI: "/make", MCP: []string{"upcoming_events", "propose_feature"}},
 	"pay": {GUI: "/pay", NoMCP: "turns on taking money, which two administrators decide, and reads buyers' names and " +
 		"addresses from the provider; an agent that can do either can spend a shop's trust"},
 	"webhook": {GUI: "/integrations", NoMCP: "adds an outbound destination for content, which is exfiltration with a configuration screen"},

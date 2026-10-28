@@ -355,6 +355,9 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 		if name := cfg.Raw("site.catalogue"); name != "" {
 			st.Catalogue = name
 		}
+		// The site's events: a calendar at /events.ics, and Event data on
+		// each event's page.
+		st.Events = strings.TrimSpace(cfg.Raw("site.events"))
 		// Buy buttons, from the payment links the admin keeps. The site
 		// reads the book and holds no key (internal/pay).
 		buy := &payReader{root: root}

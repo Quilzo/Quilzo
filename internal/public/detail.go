@@ -146,6 +146,16 @@ func (st *Site) renderDetail(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	st.sources().WithRecord(ctx, map[string]any(row))
+	d, _ := detailOf(body)
+	event := st.Events != "" && d.Listing == st.Events
+	if event {
+		// When and where, as the page shows them and a calendar takes them.
+		if rec, ok := ctx["record"].(map[string]any); ok {
+			if v := st.eventView(row); v != nil {
+				rec["event"] = v
+			}
+		}
+	}
 
 	_, layout, lerr := st.Layouts.For(body)
 	if lerr != nil {
@@ -165,7 +175,13 @@ func (st *Site) renderDetail(w http.ResponseWriter, r *http.Request,
 	out = st.injectHead(out, name, "", body)
 	// The structured data, injected like the rest of the head so it cannot be
 	// missing from the one template nobody checked.
-	if ld := productLD(row, st.Name); ld != "" {
+	ld := productLD(row, st.Name)
+	if event {
+		// An event, not a product: a record with a name read through the
+		// events listing is somewhere to be, not something to buy.
+		ld = st.eventLD(row)
+	}
+	if ld != "" {
 		out = insertBeforeHead(out, ld)
 	}
 	// No ETag. The page's own hash does not describe this response — the

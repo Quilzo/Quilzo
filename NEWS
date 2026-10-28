@@ -61,6 +61,28 @@ Unreleased
 
 ** Added
 
+*** Events: what is on, a calendar to subscribe to, and when and where
+    for search engines.  quilzo events setup, or Ready to add on the Make
+    screen, installs events as one feature: an "event" type (title, date,
+    time, end_date, until, venue, location, online, summary, picture,
+    price, tickets, status), its collection, a listing of what is to come
+    and one of what has been, a What's on page and a page for each event.
+    An events section on any page lists what is still to come, with the
+    date as people say it, a link to the event's page and a calendar entry
+    to add; an event leaves the list when it is over, by the site's clock,
+    with nothing to publish.  /events.ics is the site's events as a
+    calendar visitors subscribe to (advertised in the head and llms.txt),
+    and each event's page carries schema.org Event data: start and end
+    with the site's offset, place or online location, status (cancelled,
+    postponed, moved online) and tickets.  Records gain a time-of-day
+    field, listings gain upcoming and past conditions (with a fallback
+    field, so a festival stays on until its last day), and a page listing
+    by the clock is never answered "not modified" with an event that is
+    over.  site.events names the events listing and site.timezone the
+    site's clock.  Over MCP, upcoming_events shows an agent what is on; a
+    package can carry an "events" block, so a site an agent proposes
+    arrives with its calendar.
+
 *** A newsletter, with every address asking for it first.  A newsletter
     section on any page takes sign-ups; the address is mailed one link,
     and nothing else is sent until the button on the page it opens is

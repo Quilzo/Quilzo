@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -70,6 +71,24 @@ func (s *Server) handleRecords(w http.ResponseWriter, r *http.Request) {
 	}
 
 	names, _ := collection.Names(s.Store, tree)
+	// And the collections a type is bound to that hold nothing yet: one set
+	// up a moment ago, such as events, is where the first record is written,
+	// and a screen listing only collections with records offered nowhere to
+	// write it.
+	if s.Types != nil && s.Types.Load != nil {
+		if st, err := s.Types.Load(); err == nil && st != nil {
+			have := map[string]bool{}
+			for _, n := range names {
+				have[n] = true
+			}
+			for n := range st.Collections {
+				if !have[n] && collection.ValidName(n) == nil {
+					names = append(names, n)
+				}
+			}
+			sort.Strings(names)
+		}
+	}
 	type collRow struct {
 		Name  string
 		Count int
@@ -122,14 +141,30 @@ func (s *Server) handleRecords(w http.ResponseWriter, r *http.Request) {
 
 	// A record opened for editing: its fields fill the form, and its id the
 	// id box, so changing one record is not retyping it.
+	var editing map[string]any
 	if id := strings.TrimSpace(r.URL.Query().Get("edit")); id != "" && selected != "" {
 		if rec, err := collection.Get(s.Store, tree, selected, id); err == nil && rec != nil {
 			if body, jerr := json.MarshalIndent(rec.Fields, "", "  "); jerr == nil {
 				data["Blank"] = string(body)
-				data["BlankType"] = ""
 				data["EditID"] = rec.ID
+				editing = rec.Fields
 			}
 		}
+	}
+	// A collection whose type is known is written with a form of that type's
+	// fields — a date as a date, a time as a time, a choice as its choices —
+	// rather than as JSON, which only somebody who writes JSON can use. JSON
+	// stays one link away for a field the form cannot say.
+	if t, ok := s.recordType(selected); ok && r.URL.Query().Get("raw") == "" {
+		body := map[string]any{}
+		for k, v := range t.Blank() {
+			body[k] = v
+		}
+		if editing != nil {
+			body = editing
+		}
+		data["Fields"] = typedFields(t, body, nil)
+		data["BlankType"] = t.Name
 	}
 
 	if selected != "" {
@@ -212,6 +247,22 @@ func columnsOf(recs []collection.Record) []string {
 	return out
 }
 
+// recordType is the type bound to a collection, when there is one.
+func (s *Server) recordType(coll string) (schema.Type, bool) {
+	if coll == "" || s.Types == nil || s.Types.Load == nil {
+		return schema.Type{}, false
+	}
+	st, err := s.Types.Load()
+	if err != nil || st == nil {
+		return schema.Type{}, false
+	}
+	name, bound := st.Collections[coll]
+	if !bound {
+		return schema.Type{}, false
+	}
+	return st.Registry.Get(name)
+}
+
 // handleRecordSave writes one record from the form.
 func (s *Server) handleRecordSave(w http.ResponseWriter, r *http.Request) {
 	p, ok := s.postFromData(w, r, auth.ActEditDraft)
@@ -230,16 +281,44 @@ func (s *Server) handleRecordSave(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimSpace(r.FormValue("id"))
 
 	var fields map[string]any
-	raw := strings.TrimSpace(r.FormValue("fields"))
-	if raw == "" {
-		s.recordsBack(w, r, coll, "a record with no fields is not a record")
-		return
-	}
-	if err := json.Unmarshal([]byte(raw), &fields); err != nil {
-		// The message names the position, because "invalid JSON" in a textarea
-		// somebody has been typing into for five minutes is not a fix.
-		s.recordsBack(w, r, coll, "that is not a JSON object: "+err.Error())
-		return
+	if r.FormValue("__typed") == "1" {
+		// The type's form: the record as it is, changed by what was typed,
+		// each value read as its field's kind.
+		t, ok := s.recordType(coll)
+		if !ok {
+			s.recordsBack(w, r, coll, "this collection has no type to read the form by")
+			return
+		}
+		fields = map[string]any{}
+		if id != "" {
+			if tree, err := s.Data.Tree(); err == nil {
+				if rec, err := collection.Get(s.Store, tree, coll, id); err == nil && rec != nil {
+					for k, v := range rec.Fields {
+						fields[k] = v
+					}
+				}
+			}
+		}
+		form := url.Values{}
+		for k, v := range r.Form {
+			if k != "collection" && k != "id" {
+				form[k] = v
+			}
+		}
+		coerceForm(t, form, fields)
+	} else {
+		raw := strings.TrimSpace(r.FormValue("fields"))
+		if raw == "" {
+			s.recordsBack(w, r, coll, "a record with no fields is not a record")
+			return
+		}
+		if err := json.Unmarshal([]byte(raw), &fields); err != nil {
+			// The message names the position, because "invalid JSON" in a
+			// textarea somebody has been typing into for five minutes is not
+			// a fix.
+			s.recordsBack(w, r, coll, "that is not a JSON object: "+err.Error())
+			return
+		}
 	}
 
 	err := s.Store.WithRefLock(func() error {

@@ -169,6 +169,9 @@ type Query struct {
 	Contains map[string]string
 	// Since and Until bound Updated, in unix seconds. Zero means unbounded.
 	Since, Until int64
+	// NotBefore and Before bound a date or date-and-time field by a moment
+	// on the site's clock: what is still to come, and what has been.
+	NotBefore, Before []Bound
 	// Sort names a field to order by. Empty means by id, which is stable and
 	// meaningless — deliberately, so nobody mistakes insertion order for
 	// something the store promises.
@@ -179,6 +182,25 @@ type Query struct {
 	// than everything: a query with no limit against a million records is a
 	// question somebody asked by accident.
 	Limit, Offset int
+}
+
+// Bound compares a date or date-and-time field with a moment on the site's
+// clock, as YYYY-MM-DDTHH:MM. Fields are read in order and the first a
+// record has is the one compared: when something ends, or when it starts if
+// it has no end. A date alone lasts the whole of that day. A record with
+// none of them, or one that is not a date, matches neither bound.
+type Bound struct {
+	Fields []string
+	At     string
+}
+
+func (b Bound) value(r Record) (string, bool) {
+	for _, f := range b.Fields {
+		if v, ok := r.Fields[f]; ok && v != nil && v != "" {
+			return wallClock(v)
+		}
+	}
+	return "", false
 }
 
 // DefaultLimit and MaxLimit bound a query.
@@ -203,6 +225,18 @@ func (q Query) Match(r Record) bool {
 			return false
 		}
 	}
+	for _, b := range q.NotBefore {
+		at, ok := b.value(r)
+		if !ok || at < b.At {
+			return false
+		}
+	}
+	for _, b := range q.Before {
+		at, ok := b.value(r)
+		if !ok || at >= b.At {
+			return false
+		}
+	}
 	if q.Since > 0 && r.Updated < q.Since {
 		return false
 	}
@@ -210,6 +244,23 @@ func (q Query) Match(r Record) bool {
 		return false
 	}
 	return true
+}
+
+// wallClock is a date or date-and-time value as YYYY-MM-DDTHH:MM, so two
+// compare as text. A date alone lasts until the end of that day: an event
+// with no time is on, not past, until the day is over.
+func wallClock(v any) (string, bool) {
+	s, ok := v.(string)
+	if !ok {
+		return "", false
+	}
+	switch {
+	case len(s) == len("2006-01-02") && s[4] == '-' && s[7] == '-':
+		return s + "T23:59", true
+	case len(s) == len("2006-01-02T15:04") && s[4] == '-' && s[10] == 'T' && s[13] == ':':
+		return s, true
+	}
+	return "", false
 }
 
 // equal compares two values the way JSON round-tripping leaves them.

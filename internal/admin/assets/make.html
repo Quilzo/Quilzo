@@ -46,6 +46,15 @@
 </form>
 <p class="hint">From Wix, Squarespace, Webflow, WordPress, dotCMS, Drupal or pages written by hand: its pages, its menus, its name and its colour, and redirects so its old addresses keep working. Read politely: robots.txt is obeyed, only that site is read, and its scripts and forms are left behind and named. You read it all before anything is installed.</p>
 </section>{{end}}
+{{if .Ready}}<section aria-labelledby="make-ready">
+<h2 id="make-ready">Ready to add</h2>
+{{range .Ready}}<form method="post" action="/make/check" class="param-form">
+  <input type="hidden" name="ready" value="{{.Name}}">
+  <p><strong>{{.Title}}.</strong> {{.About}}</p>
+  <div class="auto-controls"><button type="submit" class="btn-tonal">Check it<span class="visually-hidden">: {{.Title}}</span></button></div>
+</form>
+{{end}}<p class="hint">Checking installs nothing. You read what it adds before it is installed.</p>
+</section>{{end}}
 <section aria-labelledby="make-describe">
 <h2 id="make-describe">Describe a feature</h2>
 <form method="post" action="/make/draft" class="param-form">

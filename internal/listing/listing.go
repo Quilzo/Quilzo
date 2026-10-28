@@ -52,6 +52,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/collection"
 )
@@ -87,7 +89,59 @@ const (
 	Is Match = "is"
 	// Has is a case-insensitive substring, for a search box.
 	Has Match = "has"
+	// Upcoming keeps records whose date or date-and-time field is now or
+	// later, on the site's clock: events still to come, and today's all
+	// day when they have no time. It takes no value: now is the one it
+	// compares with, when the listing is read.
+	Upcoming Match = "upcoming"
+	// Past keeps records whose date or date-and-time field has gone by.
+	Past Match = "past"
 )
+
+// Now is the moment Upcoming and Past compare with, on the site's clock
+// (site.timezone), as YYYY-MM-DDTHH:MM. A variable so a test can fix it.
+var Now = func() string { return time.Now().In(zone()).Format("2006-01-02T15:04") }
+
+var (
+	zoneMu  sync.RWMutex
+	zoneFor = func() *time.Location { return time.UTC }
+)
+
+// SetZone sets where the site's clock comes from: site.timezone, read by
+// whoever knows the configuration, so a change to it is seen without a
+// restart. Nil is UTC.
+func SetZone(f func() *time.Location) {
+	zoneMu.Lock()
+	defer zoneMu.Unlock()
+	if f == nil {
+		f = func() *time.Location { return time.UTC }
+	}
+	zoneFor = f
+}
+
+// Zone is the site's clock.
+func Zone() *time.Location { return zone() }
+
+func zone() *time.Location {
+	zoneMu.RLock()
+	f := zoneFor
+	zoneMu.RUnlock()
+	if loc := f(); loc != nil {
+		return loc
+	}
+	return time.UTC
+}
+
+// Timed says whether what a listing shows changes with the clock, so a page
+// showing it is not "not modified" just because nothing was published.
+func (l *Listing) Timed() bool {
+	for _, c := range l.Where {
+		if c.Match == Upcoming || c.Match == Past {
+			return true
+		}
+	}
+	return false
+}
 
 // Condition is one filter.
 //
@@ -101,6 +155,9 @@ type Condition struct {
 	Value string `json:"value,omitempty"`
 	// Param names a declared parameter to take the value from.
 	Param string `json:"param,omitempty"`
+	// Else is the field upcoming and past read when a record has none of
+	// Field: an event's end, or its start when it has no end.
+	Else string `json:"else,omitempty"`
 }
 
 // Kind is what a parameter accepts.
@@ -284,9 +341,20 @@ func (l *Listing) Validate() error {
 		}
 		switch c.Match {
 		case Is, Has:
+		case Upcoming, Past:
+			if c.Value != "" || c.Param != "" {
+				return fmt.Errorf("%q keeps %q %s: that compares with now, and takes no value",
+					l.Name, c.Field, c.Match)
+			}
+			if c.Else != "" && !reField.MatchString(c.Else) {
+				return fmt.Errorf("%q falls back to %q, which is not a field name", l.Name, c.Else)
+			}
 		default:
-			return fmt.Errorf("%q compares %q with %q; a condition is is or has",
+			return fmt.Errorf("%q compares %q with %q; a condition is is, has, upcoming or past",
 				l.Name, c.Field, c.Match)
+		}
+		if c.Else != "" && c.Match != Upcoming && c.Match != Past {
+			return fmt.Errorf("%q falls back from %q to %q, which only upcoming and past do", l.Name, c.Field, c.Else)
 		}
 		if c.Value != "" && c.Param != "" {
 			return fmt.Errorf(
@@ -428,6 +496,10 @@ func (l *Listing) query(args map[string]string) (collection.Query, bool, error) 
 		Equals: map[string]any{}, Contains: map[string]string{},
 		Sort: l.Sort, Descending: l.Descending,
 	}
+	now := ""
+	if l.Timed() {
+		now = Now()
+	}
 	for _, c := range l.Where {
 		var v any = c.Value
 		if c.Param != "" {
@@ -438,6 +510,16 @@ func (l *Listing) query(args map[string]string) (collection.Query, bool, error) 
 			q.Equals[c.Field] = v
 		case Has:
 			q.Contains[c.Field] = fmt.Sprint(v)
+		case Upcoming, Past:
+			b := collection.Bound{Fields: []string{c.Field}, At: now}
+			if c.Else != "" {
+				b.Fields = append(b.Fields, c.Else)
+			}
+			if c.Match == Upcoming {
+				q.NotBefore = append(q.NotBefore, b)
+			} else {
+				q.Before = append(q.Before, b)
+			}
 		}
 	}
 

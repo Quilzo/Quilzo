@@ -60,7 +60,17 @@ which is what an application holds rather than what a page does.</p>
 {{end}}
 {{end}}
 
-{{if .CanWrite}}
+{{if and .CanWrite .Fields}}
+<h2 id="write">{{if .EditID}}Change this record{{else}}Write a record{{end}}</h2>
+<form method="post" action="/records/save">
+  <input type="hidden" name="collection" value="{{.Selected}}">
+  <input type="hidden" name="id" value="{{.EditID}}">
+  <input type="hidden" name="__typed" value="1">
+  {{range .Fields}}{{template "typedfield" .}}{{end}}
+  <p><button type="submit">Save</button>{{if .EditID}} <a href="/records?c={{.Selected}}#write">Start a new record instead</a>{{end}}</p>
+</form>
+<p class="hint">The fields the type <code>{{.BlankType}}</code> declares. <a href="/records?c={{.Selected}}&amp;raw=1{{if .EditID}}&amp;edit={{.EditID}}{{end}}#write">Write it as JSON instead</a></p>
+{{else if .CanWrite}}
 <h2 id="write">{{if .EditID}}Change this record{{else}}Write a record{{end}}</h2>
 <form method="post" action="/records/save" class="stack">
   <div class="row">

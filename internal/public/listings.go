@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"net/url"
 	"sort"
+	"strings"
 
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/site"
@@ -46,6 +47,22 @@ func (st *Site) dataTree() string {
 		return ""
 	}
 	return c.Tree
+}
+
+// timedTag adds the minute to a tag, for a page showing a listing by the
+// clock: what it shows changes as time passes, with nothing published, and a
+// page listing what is still to come must not be "not modified" with an
+// event that has gone.
+func (st *Site) timedTag(tag string, names []string) string {
+	if st.Listings == nil || st.Listings.Set == nil {
+		return tag
+	}
+	for _, n := range names {
+		if l, ok := st.Listings.Set.Get(n); ok && l.Timed() {
+			return strings.TrimSuffix(tag, `"`) + "-" + listing.Now() + `"`
+		}
+	}
+	return tag
 }
 
 // renderTag names everything a rendered page depended on.

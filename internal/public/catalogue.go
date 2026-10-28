@@ -93,8 +93,8 @@ func (st *Site) catalogue(w http.ResponseWriter, r *http.Request) {
 	// it is the same question: this listing, over this data, with these
 	// arguments. Mixing in only the arguments the listing declares is what
 	// stops a tracking parameter giving every request its own cache entry.
-	tag := `"` + renderTag(st.Catalogue, st.dataTree(),
-		[]string{l.Collection}, args) + `"`
+	tag := st.timedTag(`"`+renderTag(st.Catalogue, st.dataTree(),
+		[]string{l.Collection}, args)+`"`, []string{st.Catalogue})
 	h := w.Header()
 	h.Set("ETag", tag)
 	// Revalidated rather than held, like a page. The catalogue changes when a

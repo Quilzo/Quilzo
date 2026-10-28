@@ -277,6 +277,12 @@ func featureStateWith(root string, takeSite bool) (feature.State, map[string]*fe
 		setup.Feed = ""
 		put(feature.BookingsRef.Kind, feature.BookingsRef.Name, setup)
 	}
+	// Which listing is the site's events, as it is now.
+	if cfg, err := loadConfig(root); err == nil && cfg != nil {
+		if name := strings.TrimSpace(cfg.Raw("site.events")); name != "" {
+			put(feature.EventsRef.Kind, feature.EventsRef.Name, name)
+		}
+	}
 	// A role lives in the package that declared it, so what it is now is
 	// read from the version installed.
 	for _, in := range installed {
@@ -1075,6 +1081,18 @@ func applyFeature(root string, p *feature.Package, digest string, plan feature.P
 			return nil, err
 		}
 	}
+	// Which listing is the site's events. Taken away, the site has none:
+	// the records stay, and the calendar answers nothing.
+	switch a := act[feature.EventsRef]; {
+	case p.Events != "" && (a == feature.Add || a == feature.Change):
+		if err := setSiteEvents(root, p.Events, "feature "+p.Name, caller); err != nil {
+			return nil, err
+		}
+	case len(removing(feature.EventsRef.Kind)) > 0:
+		if err := setSiteEvents(root, "", "removed with feature "+p.Name, caller); err != nil {
+			return nil, err
+		}
+	}
 	// The site itself, last: the pages its menus point at are in the draft
 	// by now, and a site that goes is put back as it was.
 	switch a := act[feature.SiteRef]; {
@@ -1563,6 +1581,16 @@ func orderAgents(ms []agent.Manifest) []agent.Manifest {
 // featureHooks are the Make screen's reach into the feature store.
 func featureHooks(root string, signedIn func(admin.Actor) *Caller) *admin.FeatureHooks {
 	return &admin.FeatureHooks{
+		Ready: func() []admin.ReadyFeature {
+			body, err := json.Marshal(eventsPackage())
+			if err != nil {
+				return nil
+			}
+			return []admin.ReadyFeature{{Name: "events", Title: "Events",
+				About: "What is on: a page of events still to come, a page for each with when and where for " +
+					"search engines, and a calendar visitors subscribe to. Events leave the list when they are over.",
+				Body: body}}
+		},
 		Installed: func() ([]feature.Installed, error) {
 			m, err := loadInstalledFeatures(root)
 			if err != nil {

@@ -221,6 +221,9 @@ func (p *Package) MakeCard() Card {
 		}
 		c.Shows = append(c.Shows, Line{Text: fmt.Sprintf("A menu %q with %d %s", m.Name, len(m.Items), entries)})
 	}
+	if p.Events != "" {
+		c.Shows = append(c.Shows, eventsLine(p))
+	}
 	if p.Site != nil {
 		// First, because a package that is a whole site is read as one.
 		c.Shows = append([]Line{p.Site.siteLine()}, c.Shows...)

@@ -29,6 +29,7 @@ import (
 	"github.com/quilzo/quilzo/internal/compliance"
 	"github.com/quilzo/quilzo/internal/egress"
 	"github.com/quilzo/quilzo/internal/ext"
+	"github.com/quilzo/quilzo/internal/listing"
 
 	"github.com/quilzo/quilzo/internal/a11y"
 	"github.com/quilzo/quilzo/internal/audit"
@@ -255,6 +256,12 @@ bookings (appointments on the site: one calendar, its hours, its services; who b
   quilzo booking cancel ID [--erase]       cancel for the site; --erase forgets who booked as well
   quilzo booking pause | resume            stop and start taking new bookings
   quilzo booking feed [--off]              a calendar address for your phone: times and services, never names
+
+events (what is on: dates and times on the site's clock, site.timezone; gone from the list when over)
+  quilzo events [list]                     what is still to come, as the site lists it
+  quilzo events setup                      add events: a type, its records, an events page, a page for each,
+                                           and a calendar visitors subscribe to at /events.ics
+  quilzo events example                    that feature as a package, to edit and install
 
 newsletter (a mailing list: each address confirms by mail first, and leaves with one click; never read by the site)
   quilzo newsletter [status]               how many are subscribed, waiting and gone, and what stops sending
@@ -703,6 +710,9 @@ func main() {
 		}
 	}
 
+	// The site's clock, for what is upcoming and when an event's times are.
+	listing.SetZone(siteZone(root))
+
 	// Authorisation happens here, once, for every command. See privilege.go
 	// for why it is a table rather than a call at the top of each one.
 	if cmd != "help" && cmd != "-h" && cmd != "--help" {
@@ -950,6 +960,8 @@ func main() {
 		err = cmdBooking(root, cmdArgs)
 	case "newsletter":
 		err = cmdNewsletter(root, cmdArgs)
+	case "events":
+		err = cmdEvents(root, cmdArgs)
 	case "research":
 		err = cmdResearch(root, cmdArgs)
 	case "scan":

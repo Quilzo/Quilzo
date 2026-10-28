@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>{% if record.name %}{{ record.name }} — {% end %}{% if page.title %}{{ page.title }} — {% end %}{{ site.name }}</title>
+<title>{% if record.name %}{{ record.name }} — {% end %}{% if record.event %}{{ record.event.name }} — {% end %}{% if page.title %}{{ page.title }} — {% end %}{{ site.name }}</title>
 {% if page.description %}<meta name="description" content="{{ page.description }}">{% end %}
 <meta property="og:site_name" content="{{ site.name }}">
 <meta property="og:title" content="{{ page.title }}">
@@ -579,6 +579,36 @@
 </section>
 {% end %}
 
+{% if s.events %}
+<section class="section {{ s.events.tone }}" id="events">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>{{ s.events.title | default:What's on }}</h2>
+      {% if s.events.intro %}<p class="lead">{{ s.events.intro }}</p>{% end %}
+    </div>
+    {% if s.events.closed %}<p class="muted">No events are listed here yet.</p>{% end %}
+    {% if s.events.none %}<p class="muted">{{ s.events.empty | default:Nothing is planned just now. }}</p>{% end %}
+    {% if s.events.items %}
+    <ul class="event-list">
+      {% for e in s.events.items %}
+      <li class="event-item">
+        <p class="event-date" aria-hidden="true"><span class="event-day">{{ e.day }}</span><span class="event-month">{{ e.month }}</span></p>
+        <div class="event-body">
+          <h3 class="event-name">{% if e.href %}<a href="{{ e.href }}">{{ e.name }}</a>{% end %}{% if e.plain %}{{ e.name }}{% end %}</h3>
+          <p class="event-when">{{ e.when }}{% if e.place %} · {{ e.place }}{% end %}{% if e.online %} · online{% end %}{% if e.price %} · {{ e.price }}{% end %}</p>
+          {% if e.status %}<p class="event-status">{{ e.status }}</p>{% end %}
+          {% if e.summary %}<p>{{ e.summary }}</p>{% end %}
+          <p class="event-links">{% if e.tickets %}<a href="{{ e.tickets }}">Tickets<span class="visually-hidden"> for {{ e.name }}</span></a>{% end %}<a href="{{ e.ics }}">Add to calendar<span class="visually-hidden">: {{ e.name }}</span></a></p>
+        </div>
+      </li>
+      {% end %}
+    </ul>
+    {% end %}
+    {% if s.events.feed %}<p class="muted"><a href="{{ s.events.feed }}">Subscribe to these in your calendar</a></p>{% end %}
+  </div>
+</section>
+{% end %}
+
 {% if s.newsletter %}
 <section class="section {{ s.newsletter.tone }}" id="newsletter">
   <div class="wrap">
@@ -707,6 +737,29 @@
   </div>
 </section>
 {% end %}
+{% end %}
+
+{% if record.event %}
+<section class="section">
+  <div class="wrap">
+    <div class="section-head">
+      <h1>{{ record.event.name }}</h1>
+      <p class="lead">{{ record.event.when }}</p>
+    </div>
+    {% if record.image %}<img class="event-picture" src="/media/{{ record.image }}"{% if record.image_srcset %} srcset="{{ record.image_srcset }}" sizes="(min-width: 50rem) 48rem, 92vw"{% end %} alt="{{ record.alt }}" width="960" height="540">{% end %}
+    {% if record.event.status %}<p class="notice notice-caution" role="status">{{ record.event.status }}</p>{% end %}
+    <dl class="spec event-facts">
+      {% if record.event.place %}<dt>Where</dt><dd>{{ record.event.place }}{% if record.event.address %}, {{ record.event.address }}{% end %}</dd>{% end %}
+      {% if record.event.online %}<dt>Online</dt><dd><a href="{{ record.event.online }}">{{ record.event.online_label }}</a></dd>{% end %}
+      {% if record.event.price %}<dt>Price</dt><dd>{{ record.event.price }}</dd>{% end %}
+    </dl>
+    <div class="actions">
+      {% if record.event.tickets %}<a class="btn" href="{{ record.event.tickets }}">Tickets</a>{% end %}
+      <a class="btn btn-outlined" href="{{ record.event.ics }}">Add to your calendar</a>
+    </div>
+    {% if record.event.summary %}<div class="prose narrow event-about"><p>{{ record.event.summary }}</p></div>{% end %}
+  </div>
+</section>
 {% end %}
 
 {% if record.name %}

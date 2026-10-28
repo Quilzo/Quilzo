@@ -12,6 +12,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/booking"
 	"github.com/quilzo/quilzo/internal/feature"
+	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/mcp"
 	"github.com/quilzo/quilzo/internal/newsletter"
 	"github.com/quilzo/quilzo/internal/webimport"
@@ -221,6 +222,37 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 		}
 		b, err := json.Marshal(map[string]any{"bookings": true, "zone": setup.Zone, "paused": setup.Paused,
 			"services": out})
+		return string(b), err
+	})
+
+	srv.Register(mcp.Operation{
+		Name: "upcoming_events", NeedsRole: "reader",
+		Summary: "the site's events still to come, as its events page lists them",
+		Detail: "Each event's title, date, time, venue, price and status, from the listing site.events names, " +
+			"in date order. To add one, write a record to the events collection (write_record); to set events " +
+			"up on a site, propose the package `quilzo events example` prints (propose_feature).",
+		Keywords: []string{"events", "calendar", "whats", "on", "upcoming", "dates", "gigs", "classes"},
+	}, func(map[string]any) (any, error) {
+		rows, name, err := upcomingEvents(root)
+		if err != nil {
+			return refuse(err)
+		}
+		if name == "" {
+			return `{"events":false,"note":"this site has no events listing (site.events)"}`, nil
+		}
+		type event struct {
+			ID, Title, Date, Time, EndDate, Until, Venue, Online, Price, Status string `json:",omitempty"`
+		}
+		out := []event{}
+		for _, r := range rows {
+			str := func(k string) string { v, _ := r[k].(string); return v }
+			id, _ := r["id"].(string)
+			out = append(out, event{ID: id, Title: str("title"), Date: str("date"), Time: str("time"),
+				EndDate: str("end_date"), Until: str("until"), Venue: str("venue"), Online: str("online"),
+				Price: str("price"), Status: str("status")})
+		}
+		b, err := json.Marshal(map[string]any{"events": true, "listing": name, "zone": listing.Zone().String(),
+			"upcoming": out})
 		return string(b), err
 	})
 

@@ -84,11 +84,15 @@ const (
 	Number   Kind = "number"
 	Boolean  Kind = "boolean"
 	Date     Kind = "date" // YYYY-MM-DD
-	URL      Kind = "url"  // http or https only
-	Email    Kind = "email"
-	Slug     Kind = "slug"   // url-safe identifier
-	Choice   Kind = "choice" // one of a fixed list
-	List     Kind = "list"   // several short strings
+	// Time is a time of day, HH:MM on a 24-hour clock, on the site's own
+	// clock (site.timezone): when something starts on its date, as the
+	// people going to it say it.
+	Time   Kind = "time"
+	URL    Kind = "url" // http or https only
+	Email  Kind = "email"
+	Slug   Kind = "slug"   // url-safe identifier
+	Choice Kind = "choice" // one of a fixed list
+	List   Kind = "list"   // several short strings
 	// Reference names another page in this store. See referenceIsNotARef.
 	Reference Kind = "reference"
 )
@@ -124,7 +128,7 @@ func referenceIsNotARef() {}
 
 var kinds = map[Kind]bool{
 	Text: true, LongText: true, Number: true, Boolean: true, Date: true,
-	URL: true, Email: true, Slug: true, Choice: true, List: true,
+	Time: true, URL: true, Email: true, Slug: true, Choice: true, List: true,
 	Reference: true,
 }
 
@@ -190,6 +194,7 @@ var (
 	// have, for the reason the package comment gives about ReDoS.
 	rePageName = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*(?:/[a-z0-9]+(?:-[a-z0-9]+)*)*$`)
 	reDate     = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+	reTime     = regexp.MustCompile(`^([01]\d|2[0-3]):[0-5]\d$`)
 )
 
 // reserved names the fields every page may carry, whatever its type.
@@ -487,6 +492,10 @@ func checkString(f Field, s string) []Problem {
 		if !reDate.MatchString(s) || !plausibleDate(s) {
 			return []Problem{{f.Name, "must be a date as YYYY-MM-DD"}}
 		}
+	case Time:
+		if !reTime.MatchString(s) {
+			return []Problem{{f.Name, "must be a time as HH:MM on a 24-hour clock, such as 19:30"}}
+		}
 	case Email:
 		if !looksLikeEmail(s) {
 			return []Problem{{f.Name, "does not look like an email address"}}
@@ -630,7 +639,7 @@ func (r *Registry) Names() []string {
 func Kinds() []string {
 	return []string{
 		string(Text), string(LongText), string(Number), string(Boolean),
-		string(Date), string(URL), string(Email), string(Slug),
+		string(Date), string(Time), string(URL), string(Email), string(Slug),
 		string(Choice), string(List), string(Reference),
 	}
 }

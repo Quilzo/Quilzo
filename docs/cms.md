@@ -346,6 +346,39 @@ free times visitors see and nothing about who booked; on the page, a visitor's
 own browser agent is offered the booking form as a WebMCP tool, which the
 visitor still submits.
 
+## Listing what is on
+
+A venue, a club or a bakery with classes needs a page of what is coming up that
+does not need tidying every morning. Events are records like any others, and
+one feature sets them up:
+
+```bash
+quilzo events setup          # the type, its records, a What's on page, a page for each, the calendar
+quilzo records add events title="Rye night" slug=rye-night date=2026-11-14 time=19:30 until=21:00 venue="The bakery"
+quilzo publish               # events are content: published like the rest
+```
+
+An event has a date, and a time when it is not all day; a last day when it
+lasts several, and a time it finishes. They are on the site's clock,
+`site.timezone`, as the people going to it say them. The listing of what is to
+come keeps an event until its last day is over, comparing with now when it is
+read rather than when it was published, so nothing has to be taken down, and
+the page showing it carries the minute in its tag so a cache is never told it
+has not changed. An event with a time it finishes leaves at that time.
+
+`site.events` names the listing whose records are the site's events, which
+`events setup` sets. From it come an `events` section that any page can carry,
+the calendar at `/events.ics` that visitors subscribe to, a calendar entry for
+each event, and schema.org `Event` data on each event's page: start and end
+with the site's offset, the venue or the online address, whether it is
+cancelled, postponed or moved online, and where tickets are sold. All of it is
+read through the listing, so its field allow-list decides what the calendar
+and the structured data say exactly as it decides what the page says.
+
+`upcoming_events` shows an agent what is on over MCP; an agent adds an event
+by writing a record, and proposes events for a site that has none with a
+package carrying an `events` block.
+
 ## Keeping a newsletter
 
 A newsletter is a list of people who asked for one and the letters sent to

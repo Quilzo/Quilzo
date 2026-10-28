@@ -2370,6 +2370,8 @@ func typedFields(t schema.Type, body any, pages []string) []field {
 			}
 		case schema.Date:
 			e.Input = "date"
+		case schema.Time:
+			e.Input = "time"
 		case schema.URL:
 			e.Input = "url"
 		case schema.Email:
