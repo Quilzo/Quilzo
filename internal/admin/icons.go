@@ -25,7 +25,7 @@ import (
 // adds a screen and needs to fetch its icon.
 var iconSymbol = map[string]string{
 	"today": "today", "pages": "description", "records": "database", "types": "category",
-	"structure": "account_tree", "listings": "view_list", "forms": "assignment",
+	"structure": "account_tree", "listings": "view_list", "forms": "assignment", "bookings": "calendar_month",
 	"media": "photo_library", "design": "palette", "sections": "dashboard_customize",
 	"languages": "translate", "assist": "edit_note", "assistants": "smart_toy",
 	"inbox": "inbox", "approvals": "pending_actions", "make": "extension", "research": "biotech", "decisions": "rule", "notes": "sticky_note_2",

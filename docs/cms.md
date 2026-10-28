@@ -309,6 +309,35 @@ fill stays one, and keeps its page from being published. A page an agent filled
 in is marked as an agent's words, and a page in a package an agent wrote as a
 model's, so the AI-content disclosure is right either way.
 
+## Taking bookings
+
+A plumber, a salon or a clinic needs a page where somebody picks a time. Here
+that is a section, like any other:
+
+```bash
+quilzo booking example > bookings.json    # hours, closed dates, services
+quilzo booking setup bookings.json
+```
+
+and a `booking` section naming a service on any page. The free times are worked
+out when the page is asked for: within the hours, in the site's own time zone
+and by the clock on the wall on the day the clocks change, not on a closed
+date, not sooner than the notice, and clear of every booking and the time left
+after it. They are radio buttons drawn as chips, so there is no script. A
+visitor books one and is shown it on the same page, from an address only they
+were given, with a calendar file to add and a button to cancel. The time is
+checked again under a lock as it is booked, so two visitors cannot both get it.
+
+What the public process may touch is the point. A booking is two things kept
+apart: the calendar, which says when, for how long and for what, and is read
+by the site to offer free times; and who booked, which the site writes once and
+never reads. Names, addresses and telephone numbers are read on the Bookings
+screen and in `quilzo booking list`, and forgotten a set number of days after
+the appointment. `quilzo booking feed` makes a calendar address for the owner's
+phone that shows times and services, never names. It is one calendar, taking
+one booking at a time; staff with calendars of their own, deposits and
+recurring appointments are not here.
+
 ## Taking payments
 
 A shop needs a till as well as a catalogue, and a till is where a CMS usually

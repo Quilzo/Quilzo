@@ -176,6 +176,7 @@ var notAScreen = map[string]string{
 	"/signout":                     "clears the cookie and redirects; there is nothing to render",
 	"/session/alive":               "is posted to by admin.js and answers 204",
 	"/security/parameters/export":  "is a download of OSCAL JSON",
+	"/bookings/calendar.ics":       "is a download of a calendar file; Bookings explains a site that takes none",
 	"/security/controls/component": "is a download of OSCAL JSON",
 	"/security/controls/ssp":       "is a download of OSCAL JSON",
 	"/style.css":                   "is a stylesheet",

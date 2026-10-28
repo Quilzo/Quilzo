@@ -317,6 +317,23 @@ var hooksMu sync.Mutex
 // with nothing in the name to say which.
 func fireWebhooks(root, eventType, commit string, pages []string,
 	form ...string) {
+	ev := webhook.Event{Type: eventType, Commit: commit, Pages: pages}
+	if len(form) > 0 {
+		ev.Form = form[0]
+	}
+	sendWebhookEvent(root, ev)
+}
+
+// fireBookingWebhooks tells endpoints a service was booked, or had a
+// booking cancelled: the service, never when or who.
+func fireBookingWebhooks(root, eventType, service string) {
+	sendWebhookEvent(root, webhook.Event{Type: eventType, Service: service})
+}
+
+// sendWebhookEvent stamps an event and posts it to every endpoint that
+// wants it.
+func sendWebhookEvent(root string, ev webhook.Event) {
+	eventType := ev.Type
 	// One at a time: the admin tells from a goroutine per change, and two
 	// publishes reading and rewriting the deliveries at once would lose one.
 	hooksMu.Lock()
@@ -329,13 +346,7 @@ func fireWebhooks(root, eventType, commit string, pages []string,
 	if err != nil {
 		return
 	}
-	ev := webhook.Event{
-		ID: id, Type: eventType, Commit: commit, Pages: pages,
-		At: time.Now().UTC().Format(time.RFC3339),
-	}
-	if len(form) > 0 {
-		ev.Form = form[0]
-	}
+	ev.ID, ev.At = id, time.Now().UTC().Format(time.RFC3339)
 
 	s := sender{fetch.For("webhook")}
 	var sent []webhook.Delivery

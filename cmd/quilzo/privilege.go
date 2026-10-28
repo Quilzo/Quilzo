@@ -547,6 +547,18 @@ var commandNeeds = map[string]need{
 	// those is; reading what is installed or checking a package is not.
 	// Payments: turning them on is a grant-level decision two make, the
 	// sync follows publishing, and orders name buyers.
+	// Bookings: how they are taken changes what the site offers at once,
+	// as publishing does; who booked is read and cancelled by whoever reads
+	// what forms collect, which is narrower.
+	"booking":         {action: auth.ActPublish},
+	"booking list":    {action: auth.ActEditDraft},
+	"booking setup":   {action: auth.ActView},
+	"booking example": {action: auth.ActView},
+	"booking cancel":  {action: auth.ActEditDraft},
+	"booking pause":   {action: auth.ActPublish},
+	"booking resume":  {action: auth.ActPublish},
+	"booking feed":    {action: auth.ActPublish},
+
 	"pay":        {action: auth.ActGrant},
 	"pay status": {action: auth.ActView},
 	"pay sync":   {action: auth.ActPublish},

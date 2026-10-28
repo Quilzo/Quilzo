@@ -367,6 +367,10 @@ var templates = map[string]Template{
 					"title": "Comments", "board": "comments",
 					"intro": "What members write under this page. A site with accounts on shows a form to add to it.",
 				}},
+				map[string]any{"booking": map[string]any{
+					"title": "Book a time", "service": "consultation",
+					"intro": "Free times for one of the site's services. A site taking bookings shows them here to choose from.",
+				}},
 				map[string]any{"ask": map[string]any{
 					"title": "Ask this site", "assistant": "help",
 					"intro":       "The question opens the chatbot named here, already asked.",

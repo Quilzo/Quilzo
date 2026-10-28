@@ -61,6 +61,24 @@ Unreleased
 
 ** Added
 
+*** Bookings: appointments on the site.  A site says its hours each week
+    in its own time zone, the dates it is closed, how much notice it
+    needs and how far ahead it books, and the services it offers, each
+    with how long it takes and how long to leave after it (quilzo booking
+    setup FILE, or the Bookings screen).  A booking section on any page
+    offers the free times as buttons, with no script; a visitor books one,
+    is shown it on the same page with a calendar file to add, and can
+    cancel it from there.  The time is checked again under a lock as it
+    is booked, so two visitors cannot get it.  One calendar, one booking
+    at a time.  The public site keeps the calendar, which holds when and
+    for what and never who, and writes who booked once without being able
+    to read it back; names, email addresses and telephone numbers are read
+    on the Bookings screen and in quilzo booking list, and forgotten a set
+    number of days after the appointment.  quilzo booking feed makes a
+    calendar address for the owner's phone, showing times and services and
+    never names.  Webhooks can be told "booked" and "booking-cancelled",
+    with the service and nothing else.
+
 *** An agent can be the site crew, and a person still decides.  Over MCP,
     site_build makes a whole site from a description, site_import brings
     one in by its address, and propose_feature takes a package the agent

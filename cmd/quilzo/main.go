@@ -247,6 +247,15 @@ payments (the catalogue sold through the provider's own checkout; no card or ord
   quilzo pay orders [--limit N]            the latest paid checkouts, read from the provider and not kept
   quilzo pay disable                       off at once, and every link retired
 
+bookings (appointments on the site: one calendar, its hours, its services; who booked is never on the site)
+  quilzo booking example                   a setup to start from: time zone, weekly hours, closed dates, services
+  quilzo booking setup [FILE]              show how the site takes bookings, or set it; a page offers times with
+                                           a booking section naming a service
+  quilzo booking list [--days N] [--past N]   who booked what, when
+  quilzo booking cancel ID [--erase]       cancel for the site; --erase forgets who booked as well
+  quilzo booking pause | resume            stop and start taking new bookings
+  quilzo booking feed [--off]              a calendar address for your phone: times and services, never names
+
 features (one package of blocks, installed as one decision)
   quilzo feature example > FILE.json       a complete package to edit: a lab sample tracker
   quilzo feature draft "…" [-o FILE]       a model drafts a package from a sentence; content blocks only
@@ -924,6 +933,8 @@ func main() {
 		err = cmdFeature(root, cmdArgs)
 	case "pay":
 		err = cmdPay(root, cmdArgs)
+	case "booking":
+		err = cmdBooking(root, cmdArgs)
 	case "research":
 		err = cmdResearch(root, cmdArgs)
 	case "scan":

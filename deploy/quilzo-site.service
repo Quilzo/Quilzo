@@ -60,4 +60,5 @@ ReadWritePaths=/srv/quilzo/.quilzo/members /srv/quilzo/.quilzo/handoff
 ReadWritePaths=/srv/quilzo/.quilzo/analytics /srv/quilzo/.quilzo/shield
 ReadWritePaths=/srv/quilzo/.quilzo/fediverse /srv/quilzo/.quilzo/usage
 ReadWritePaths=/srv/quilzo/.quilzo/webhook-deliveries /srv/quilzo/.quilzo/tmp
+ReadWritePaths=/srv/quilzo/.quilzo/bookings
 ReadWritePaths=/srv/quilzo/.quilzo/audit.jsonl /srv/quilzo/.quilzo/audit.jsonl.lock
