@@ -5,6 +5,7 @@ package render
 
 import (
 	"github.com/quilzo/quilzo/internal/icons"
+	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/tmpl"
 	"regexp"
 	"sort"
@@ -272,6 +273,28 @@ func (s Sources) WithRecord(ctx map[string]any, row map[string]any) {
 		s.deriveBuy(m)
 	}
 	ctx["record"] = rec
+}
+
+// buyOn puts Buy links on every row of resolved listings.
+func (s Sources) buyOn(data map[string]any) {
+	if s.Buy == nil {
+		return
+	}
+	for _, v := range data {
+		resolved, ok := v.(map[string]any)
+		if !ok {
+			continue
+		}
+		rows, _ := resolved["rows"].([]any)
+		for _, row := range rows {
+			switch m := row.(type) {
+			case map[string]any:
+				s.deriveBuy(m)
+			case listing.Row:
+				s.deriveBuy(m)
+			}
+		}
+	}
 }
 
 // deriveBuy puts a row's Buy link beside it, as buy_href, and the price it

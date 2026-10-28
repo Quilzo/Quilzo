@@ -237,6 +237,28 @@ type payReader struct {
 func (r *payReader) Buy(row map[string]any) (string, string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.refresh()
+	if !r.on {
+		return "", ""
+	}
+	return r.book.Buy(row)
+}
+
+// Tag names the links as they stand, for a page's ETag; "" while nothing
+// is for sale, so a site without payments keeps the tags it had.
+func (r *payReader) Tag() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.refresh()
+	if !r.on {
+		return ""
+	}
+	return fmt.Sprintf("p%x%x", r.seen[0].UnixNano(), r.seen[1].UnixNano())
+}
+
+// refresh reads the state and the book again when they changed, looking at
+// most once a second. Called with mu held.
+func (r *payReader) refresh() {
 	if now := time.Now(); r.book == nil || now.Sub(r.checked) >= time.Second {
 		r.checked = now
 		var mods [2]time.Time
@@ -254,10 +276,6 @@ func (r *payReader) Buy(row map[string]any) (string, string) {
 			r.on, r.book, r.seen = st.Provider != "", book, mods
 		}
 	}
-	if !r.on {
-		return "", ""
-	}
-	return r.book.Buy(row)
 }
 
 // cmdPay is `quilzo pay [status] | enable stripe | disable | sync | orders`.

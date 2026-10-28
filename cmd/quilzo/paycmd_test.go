@@ -72,16 +72,29 @@ func shopStore(t *testing.T) (string, *shopProvider) {
 var buyRow = regexp.MustCompile(`<p>([^|<]*)\|([^|<]*)\|([^|<]*)\|([^<]*)</p>`)
 
 // shopPage is what the live shop page offers: each product's name, price
-// and where its Buy button goes.
+// and where its Buy button goes. Read by name, listings.catalogue.rows, as
+// a shop's own layout reads them; the arranged feeds carry the same.
 func shopPage(t *testing.T, root string) map[string][2]string {
 	t.Helper()
+	page, _ := shopPageTagged(t, root)
+	return page
+}
+
+func shopPageTagged(t *testing.T, root string) (map[string][2]string, string) {
+	t.Helper()
 	st, err := siteFor(root, &Design{Layouts: render.OneLayout(`<!doctype html><html lang="en"><head><title>{{ page.title }}</title></head><body>` +
-		`{% for feed in feeds %}{% for row in feed.rows %}<p>{{ row.slug }}|{{ row.price }}|{{ row.buy_href }}|{{ row.buy_price }}</p>{% end %}{% end %}</body></html>`)}, siteOpts{})
+		`{% for row in listings.catalogue.rows %}<p>{{ row.slug }}|{{ row.price }}|{{ row.buy_href }}|{{ row.buy_price }}</p>{% end %}` +
+		`{% for feed in feeds %}{% for row in feed.rows %}<i>{{ row.slug }}|{{ row.buy_href }}</i>{% end %}{% end %}</body></html>`)}, siteOpts{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	w := httptest.NewRecorder()
 	st.Handler().ServeHTTP(w, httptest.NewRequest("GET", "/shop", nil))
+	for _, m := range feedRow.FindAllStringSubmatch(w.Body.String(), -1) {
+		if !strings.Contains(w.Body.String(), "<p>"+m[1]+"|") || !strings.Contains(w.Body.String(), "|"+m[2]+"|") {
+			t.Errorf("the feed and the named listing disagree about %s", m[1])
+		}
+	}
 	out := map[string][2]string{}
 	for _, m := range buyRow.FindAllStringSubmatch(w.Body.String(), -1) {
 		out[m[1]] = [2]string{m[2], m[3]}
@@ -93,8 +106,10 @@ func shopPage(t *testing.T, root string) map[string][2]string {
 	if len(out) == 0 {
 		t.Fatalf("the shop page lists nothing: %d %s", w.Code, w.Body)
 	}
-	return out
+	return out, w.Header().Get("ETag")
 }
+
+var feedRow = regexp.MustCompile(`<i>([^|<]*)\|([^<]*)</i>`)
 
 // reprice changes a product's price in the draft.
 func reprice(t *testing.T, root, slug string, price int) {
@@ -234,14 +249,20 @@ func TestAShopSellsAtExactlyThePublishedPrice(t *testing.T) {
 		}
 	}
 
-	// Off: the buttons go at once and every link is retired.
+	// Off: the buttons go at once and every link is retired, and the page is
+	// not the one a cache holds.
+	_, onTag := shopPageTagged(t, root)
 	if err := payDisable(root, asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
-	for s, v := range shopPage(t, root) {
+	offPage, offTag := shopPageTagged(t, root)
+	for s, v := range offPage {
 		if v[1] != "" {
 			t.Fatalf("%s still has a Buy button with payments off", s)
 		}
+	}
+	if onTag == "" || onTag == offTag {
+		t.Fatalf("the shop page answers %s with payments on and off, so a cache keeps a Buy button", onTag)
 	}
 	book, _ := loadPayBook(root)
 	for _, l := range book.Links {

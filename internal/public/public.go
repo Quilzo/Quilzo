@@ -225,8 +225,11 @@ type Site struct {
 	// private.
 	Catalogue string
 	// Buy answers where a row's Buy button goes and what it charges
-	// (internal/pay); nil is a site that sells nothing.
-	Buy func(row map[string]any) (href, price string)
+	// (internal/pay); nil is a site that sells nothing. BuyTag names the
+	// payment links as they stand, for the ETag of a page with listings: a
+	// page whose Buy buttons changed is not the page a cache holds.
+	Buy    func(row map[string]any) (href, price string)
+	BuyTag func() string
 
 	// UCP serves the catalogue to shopping agents over the Universal
 	// Commerce Protocol, or is nil when the operator has not turned it on;
@@ -1009,6 +1012,11 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 	args := firstOf(r.URL.Query())
 	if names := listing.On(body); len(names) > 0 {
 		tag = `"` + renderTag(tree[served], st.dataTree(), names, args) + `"`
+	}
+	if st.BuyTag != nil && len(listing.On(body)) > 0 {
+		if bt := st.BuyTag(); bt != "" {
+			tag = strings.TrimSuffix(tag, `"`) + "-" + bt + `"`
+		}
 	}
 	tag = st.threadsTag(tag, name, commentsOn(body))
 	// The site's assistant, when it has a button on this page. In the tag

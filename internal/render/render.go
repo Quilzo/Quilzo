@@ -153,6 +153,12 @@ func (s Sources) For(name string, body any, args map[string]string) (map[string]
 			return nil, err
 		}
 		if data != nil {
+			// Buy links on the rows a layout reads by name, as well as on the
+			// arranged copies below: a layout that knows its listings reads
+			// listings.NAME.rows, and a shop's layout is exactly that kind.
+			// The rows are this request's own, projected afresh, so adding to
+			// them changes nothing anybody else reads.
+			s.buyOn(data)
 			ctx[listing.Data] = data
 			// The same rows, arranged as a list, so a layout that does not know
 			// what this site called its listings can still render them.
