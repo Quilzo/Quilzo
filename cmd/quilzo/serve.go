@@ -37,6 +37,7 @@ import (
 	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/booking"
 	"github.com/quilzo/quilzo/internal/browser"
 	"github.com/quilzo/quilzo/internal/codescan"
 	"github.com/quilzo/quilzo/internal/collab"
@@ -206,6 +207,7 @@ func cmdServe(root string, args []string) error {
 	srv.Memory = memoryAdmin(root)
 	srv.Features = featureHooks(root, signedIn)
 	srv.Pay = payHooks(root, signedIn)
+	srv.Bookings = bookingHooks(root, signedIn)
 	srv.FeatureProgram = featureProgram(root)
 	srv.AppRoles = func() ([]auth.AppRole, error) { return appRoles(root) }
 	// Sign-ins are judged as they are made, and the sign-in policy acts on
@@ -1249,6 +1251,19 @@ func retentionJob(root string) (upkeep.Job, bool) {
 			gone, herr := handoffStore(root).Expire(handoffKeep(root), now)
 			if herr != nil {
 				return gone, herr
+			}
+			// Who booked, a while after the appointment: the site's own
+			// period, or the default when it no longer takes bookings.
+			if book, berr := openBookings(root); berr == nil {
+				keep := (&booking.Setup{}).Keep()
+				if setup, _ := loadBookingSetup(root); setup != nil {
+					keep = setup.Keep()
+				}
+				n, err := book.Expire(keep, now)
+				gone += n
+				if err != nil {
+					return gone, err
+				}
 			}
 			set, lerr := loadForms(root)
 			if lerr != nil || set == nil || len(set.Forms) == 0 {

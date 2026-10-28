@@ -579,6 +579,68 @@
 </section>
 {% end %}
 
+{% if s.booking %}
+<section class="section {{ s.booking.tone }}" id="book">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>{{ s.booking.title | default:Book a time }}</h2>
+      {% if s.booking.intro %}<p class="lead">{{ s.booking.intro }}</p>{% end %}
+      {% if s.booking.service_title %}<p class="muted">{{ s.booking.service_title }}, {{ s.booking.minutes }} minutes{% if s.booking.price %} · {{ s.booking.price }}{% end %}{% if s.booking.about %}. {{ s.booking.about }}{% end %}</p>{% end %}
+    </div>
+    {% if s.booking.problem %}<p class="notice notice-critical" role="alert">{{ s.booking.problem }}</p>{% end %}
+    {% if s.booking.booked %}
+    <div class="notice notice-positive booked" role="status">
+      {% if s.booking.booked.upcoming %}
+      <p class="lead"><strong>You are booked</strong> for {{ s.booking.booked.when }}, {{ s.booking.zone }}.</p>
+      <p>Keep this page's address: it is how you see this booking again, or cancel it.</p>
+      <div class="actions">
+        <a class="btn" href="{{ s.booking.booked.ics }}">Add to your calendar</a>
+        <form method="post" action="/book/cancel">
+          <input type="hidden" name="page" value="{{ s.booking.page }}">
+          <input type="hidden" name="id" value="{{ s.booking.booked.id }}">
+          <input type="hidden" name="token" value="{{ s.booking.booked.token }}">
+          <button class="btn btn-outlined" type="submit">Cancel this booking</button>
+        </form>
+      </div>
+      {% end %}
+      {% if s.booking.booked.cancelled %}<p class="lead"><strong>Cancelled.</strong> {{ s.booking.booked.when }} is free again.</p>{% end %}
+    </div>
+    {% end %}
+    {% if s.booking.closed %}<p class="muted">Bookings are not taken here.</p>{% end %}
+    {% if s.booking.paused %}<p class="muted">Bookings are not being taken just now.</p>{% end %}
+    {% if s.booking.none %}<p class="muted">No times are free just now. Please look again soon.</p>{% end %}
+    {% if s.booking.open %}
+    <form class="booking-form" method="post" action="/book/{{ s.booking.service }}">
+      <input type="hidden" name="page" value="{{ s.booking.page }}">
+      <fieldset class="slots">
+        <legend>Choose a time ({{ s.booking.zone }})</legend>
+        {% for d in s.booking.days %}
+        <div class="slot-day">
+          <p class="slot-date">{{ d.label }}</p>
+          <div class="slot-times">{% for t in d.slots %}<input class="slot-input" type="radio" name="slot" id="slot-{{ t.id }}" value="{{ t.value }}" required><label class="slot" for="slot-{{ t.id }}">{{ t.label }}</label>{% end %}</div>
+        </div>
+        {% end %}
+      </fieldset>
+      {% if s.booking.later %}<p><a href="{{ s.booking.later }}">Later dates</a></p>{% end %}
+      <p class="field"><label for="book-name-{{ s.booking.service }}">Your name</label>
+        <input id="book-name-{{ s.booking.service }}" name="name" type="text" autocomplete="name" maxlength="100" required></p>
+      <p class="field"><label for="book-email-{{ s.booking.service }}">Your email</label>
+        <input id="book-email-{{ s.booking.service }}" name="email" type="email" autocomplete="email" maxlength="254" required></p>
+      <p class="field"><label for="book-phone-{{ s.booking.service }}">Telephone <span class="hint">(optional)</span></label>
+        <input id="book-phone-{{ s.booking.service }}" name="phone" type="tel" autocomplete="tel" maxlength="30"></p>
+      <p class="field"><label for="book-note-{{ s.booking.service }}">Anything we should know <span class="hint">(optional)</span></label>
+        <textarea id="book-note-{{ s.booking.service }}" name="note" rows="3" maxlength="1000"></textarea></p>
+      <p class="hp"><label for="book-website-{{ s.booking.service }}">Leave this empty</label>
+        <input id="book-website-{{ s.booking.service }}" name="website_url" type="text" tabindex="-1" autocomplete="off"></p>
+      <input type="hidden" name="form_started" value="{{ stamp }}">
+      <p><button class="btn" type="submit">{{ s.booking.button | default:Book }}</button></p>
+      <p class="muted">Your name and how to reach you are kept to look after this booking, and forgotten {{ s.booking.keep }} days after it.</p>
+    </form>
+    {% end %}
+  </div>
+</section>
+{% end %}
+
 {% if s.cta %}
 <section class="section {{ s.cta.tone | default:tone-primary }} reveal">
   <div class="wrap">

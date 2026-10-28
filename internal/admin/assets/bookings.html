@@ -1,0 +1,77 @@
+{{template "head" .}}
+<h1>Bookings</h1>
+<p class="lead">Appointments taken on the site: one calendar, its hours each week, the days it is closed, and the services it offers. A page offers the free times with a booking section naming a service. Who booked is read here and nowhere else.</p>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+{{if .FeedURL}}<section aria-labelledby="bookings-feed-new" class="card">
+<h2 id="bookings-feed-new">Your calendar address</h2>
+<p>Subscribe to this in your calendar app. It is shown once; making another ends this one.</p>
+<p><code>{{.FeedURL}}</code></p>
+<p class="hint">It shows when each booking is and for what, never who: that stays here.</p>
+</section>{{end}}
+
+{{if .Unset}}<p class="notice" role="status">This site takes no bookings yet. Set the hours and services below{{if not .CanSetup}}, which whoever may publish does{{end}}, then add a booking section to a page.</p>
+{{else}}
+<section aria-labelledby="bookings-ahead">
+<h2 id="bookings-ahead">Booked</h2>
+{{if .Setup.Paused}}<p class="notice" role="status">Paused: no new bookings are taken, and those made stand.</p>{{end}}
+{{if .Rows}}<div class="table-wrap"><table>
+<thead><tr><th scope="col">When</th><th scope="col">What</th><th scope="col">Who</th><th scope="col">Note</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+<tbody>{{range .Rows}}<tr{{if or .Cancelled .Past}} class="hint"{{end}}>
+<td><strong>{{.Day}}</strong><br>{{.When}}</td>
+<td>{{.Service}}{{if .Cancelled}}<br><span class="tag">cancelled by the {{.CancelledBy}}</span>{{end}}</td>
+<td>{{.Name}}<br><a href="mailto:{{.Email}}">{{.Email}}</a>{{if .Phone}}<br><a href="tel:{{.Phone}}">{{.Phone}}</a>{{end}}</td>
+<td>{{.Note}}</td>
+<td>{{if not .Cancelled}}{{if not .Past}}<details><summary>Cancel<span class="chev">{{icon "expand_more"}}</span></summary>
+<form method="post" action="/bookings/act"><input type="hidden" name="do" value="cancel"><input type="hidden" name="id" value="{{.ID}}">
+<p><label><input type="checkbox" name="erase" value="1"> Forget who booked it too</label></p>
+<button type="submit" class="btn-danger">Cancel this booking</button></form>
+<p class="hint">Tell {{.Name}} yourself; the site does not send mail.</p></details>{{end}}{{end}}</td>
+</tr>{{end}}</tbody></table></div>
+<p class="hint">{{.Upcoming}} to come in the next 60 days. Who booked is forgotten {{.Keep}} days after the appointment. <a href="/bookings/calendar.ics">Download them as a calendar file</a>.</p>
+{{else}}<p>Nothing booked in the next 60 days.</p>{{end}}
+{{if .CanSetup}}<div class="confirmactions">
+{{if .Setup.Paused}}<form method="post" action="/bookings/act"><input type="hidden" name="do" value="resume"><button type="submit" class="btn-tonal">Take bookings again</button></form>
+{{else}}<form method="post" action="/bookings/act"><input type="hidden" name="do" value="pause"><button type="submit" class="btn-tonal">Pause new bookings</button></form>{{end}}
+<form method="post" action="/bookings/act"><input type="hidden" name="do" value="feed"><button type="submit" class="btn-text">{{if .Setup.Feed}}Make a new calendar address{{else}}A calendar address for your phone{{end}}</button></form>
+{{if .Setup.Feed}}<form method="post" action="/bookings/act"><input type="hidden" name="do" value="feed-off"><button type="submit" class="btn-text">Turn the calendar address off</button></form>{{end}}
+</div>{{end}}
+</section>
+{{end}}
+
+{{if .CanSetup}}<section aria-labelledby="bookings-setup">
+<h2 id="bookings-setup">How the site takes bookings</h2>
+<form method="post" action="/bookings/act" class="param-form">
+<input type="hidden" name="do" value="setup">
+<label for="bk-zone">Time zone {{template "req"}}</label>
+<input id="bk-zone" name="zone" value="{{.Setup.Zone}}" required maxlength="64" placeholder="Europe/London">
+<p class="hint">A name such as Europe/London or America/New_York. Times are shown to visitors on this clock, and say so.</p>
+<fieldset><legend>Hours each week</legend>
+<p class="hint">Spans such as 09:00-12:30, 13:30-17:00. Leave a day empty when closed.</p>
+{{range .Week}}<label for="bk-week-{{.Key}}">{{.Label}}</label><input id="bk-week-{{.Key}}" name="week_{{.Key}}" value="{{.Spans}}" maxlength="80">
+{{end}}</fieldset>
+<label for="bk-closed">Closed on</label>
+<textarea id="bk-closed" name="closed" rows="3" placeholder="2026-12-25">{{.Closed}}</textarea>
+<p class="hint">One date a line, such as 2026-12-25.</p>
+<label for="bk-notice">Least notice, in hours</label><input id="bk-notice" name="notice" type="number" min="0" max="720" value="{{.Setup.NoticeHours}}">
+<label for="bk-ahead">Taken up to, in days ahead</label><input id="bk-ahead" name="ahead" type="number" min="1" max="365" value="{{.Ahead}}">
+<label for="bk-keep">Who booked is kept, in days after</label><input id="bk-keep" name="keep" type="number" min="1" max="3650" value="{{.Keep}}">
+<h3>Services</h3>
+<p class="hint">The name is how a booking section on a page names it: lower case letters, digits and dashes. Times are in minutes, in fives. A price is shown, never charged. A service with no name and no title is ignored.</p>
+{{range $i, $s := .Services}}<fieldset class="service-fields"><legend>{{if $s.Name}}{{$s.Title}}{{else}}A new service{{end}}</legend>
+<div class="service-grid">
+<p><label for="svc-name-{{$i}}">Name</label><input id="svc-name-{{$i}}" name="svc_name" value="{{$s.Name}}" maxlength="40" pattern="[a-z][a-z0-9\-]*" placeholder="haircut"></p>
+<p><label for="svc-title-{{$i}}">Title</label><input id="svc-title-{{$i}}" name="svc_title" value="{{$s.Title}}" maxlength="80" placeholder="Haircut"></p>
+<p><label for="svc-minutes-{{$i}}">Minutes</label><input id="svc-minutes-{{$i}}" name="svc_minutes" type="number" min="5" max="480" step="5" value="{{if $s.Minutes}}{{$s.Minutes}}{{end}}"></p>
+<p><label for="svc-buffer-{{$i}}">Then leave, in minutes</label><input id="svc-buffer-{{$i}}" name="svc_buffer" type="number" min="0" max="240" step="5" value="{{if $s.Buffer}}{{$s.Buffer}}{{end}}"></p>
+<p><label for="svc-price-{{$i}}">Price</label><input id="svc-price-{{$i}}" name="svc_price" value="{{$s.Price}}" maxlength="40" placeholder="£30"></p>
+<p class="service-about"><label for="svc-about-{{$i}}">About</label><input id="svc-about-{{$i}}" name="svc_about" value="{{$s.About}}" maxlength="300"></p>
+</div></fieldset>
+{{end}}
+<div class="auto-controls"><button type="submit">Save</button></div>
+</form>
+<p class="hint">Then add a <strong>booking</strong> section to a page, naming a service, under <a href="/sections">Sections</a> or in the page's editor. One calendar: every service shares the same hours, and one booking at a time.</p>
+</section>{{end}}
+{{end}}
+{{template "foot" .}}

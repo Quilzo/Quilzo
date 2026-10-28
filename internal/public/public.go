@@ -267,6 +267,9 @@ type Site struct {
 	Members *Members
 	// Boards is what members may write under pages. See boards.go.
 	Boards *Boards
+	// Bookings takes appointments on pages with a booking section. Nil
+	// means /book/ answers 404. See booking.go.
+	Bookings *Bookings
 
 	// Live update streams, counted per address and in all. See live.go.
 	liveMu sync.Mutex
@@ -356,6 +359,12 @@ func (st *Site) Handler() http.Handler {
 	mux.HandleFunc("/account/", st.account)
 	mux.HandleFunc("/account.js", st.accountScript)
 	mux.HandleFunc("/board/", st.post)
+	// Patterns rather than a subtree: a subtree at /book/ would send a page
+	// called "book", the name a booking page is most likely to have, to
+	// /book/ and away from itself.
+	mux.HandleFunc("POST /book/{service}", st.book)
+	mux.HandleFunc("GET /book/{file}", st.book)
+	mux.HandleFunc("GET /book/feed/{file}", st.book)
 	mux.HandleFunc("/live/board/", st.live)
 	mux.HandleFunc("/", st.page)
 	// The banner is innermost, so it wraps the handler's own output and
@@ -1037,7 +1046,17 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 		allowScript(w.Header(), agentHash)
 		allowFrameSelf(w.Header())
 	}
-	if forMembers {
+	// Free times change with every booking and every minute that passes,
+	// and a page showing one visitor's booking is theirs alone: neither is
+	// stored by anybody, and neither is answered "not modified".
+	booking := len(bookingsOnPage(body)) > 0 && st.bookingsOn()
+	if booking {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		if r.URL.Query().Get("booking") != "" {
+			w.Header().Set("X-Robots-Tag", "noindex")
+		}
+	} else if forMembers {
 		// One member's request, never a shared cache's. no-store rather
 		// than private: a browser back button on a shared computer should
 		// not show it after its member has signed out.
@@ -1051,7 +1070,7 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 	} else {
 		w.Header().Set("Cache-Control", "public, max-age=0, must-revalidate")
 	}
-	if etag.Matches(r.Header.Get("If-None-Match"), tag) {
+	if !booking && etag.Matches(r.Header.Get("If-None-Match"), tag) {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
@@ -1573,7 +1592,7 @@ func (st *Site) formData(name string) map[string]any {
 func (st *Site) sources() render.Sources {
 	src := render.Sources{Name: st.Name, IconStyle: st.IconStyle, Listings: st.Listings,
 		SrcSet: st.srcSet, Tracks: st.tracks, Poster: st.poster,
-		Form: st.formData, Thread: st.threadData, Buy: st.Buy}
+		Form: st.formData, Thread: st.threadData, Buy: st.Buy, Booking: st.bookingData}
 	if _, ok := st.iconFile(); ok {
 		src.Icon = "/media/" + st.Icon
 		src.IconInitial = st.IconInitial

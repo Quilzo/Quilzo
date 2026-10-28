@@ -252,6 +252,9 @@ type Server struct {
 	Features *FeatureHooks
 	// Pay is payments for what the catalogue sells; nil leaves them off.
 	Pay *PayHooks
+	// Bookings reach who booked and how the site takes bookings. Nil
+	// shows the screen saying so.
+	Bookings *BookingHooks
 	// Brief writes the few sentences at the top of Today (brief.go), and
 	// briefs keeps each person's for the day.
 	Brief  *Brief
@@ -1340,6 +1343,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/make/site", s.handleMakeSite)
 	mux.HandleFunc("/make/import", s.handleMakeImport)
 	mux.HandleFunc("/make/proposal", s.handleMakeProposal)
+	mux.HandleFunc("/bookings", s.handleBookings)
+	mux.HandleFunc("/bookings/act", s.handleBookingsAct)
+	mux.HandleFunc("/bookings/calendar.ics", s.handleBookingsCalendar)
 	mux.HandleFunc("/pay", s.handlePay)
 	mux.HandleFunc("/pay/act", s.handlePayAct)
 	mux.HandleFunc("/make/fill", s.handleMakeFill)

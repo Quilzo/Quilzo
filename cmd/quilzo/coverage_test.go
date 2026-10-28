@@ -418,6 +418,8 @@ var coverage = map[string]surfaces{
 	// An agent proposes a package; installing it stays a person's decision,
 	// one or two of them, made on the Make screen or the command line.
 	"feature": {GUI: "/make", MCP: []string{"propose_feature"}},
+	"booking": {GUI: "/bookings", NoMCP: "who booked is what a visitor told this site about themselves, read " +
+		"behind a sign-in; a visitor's own agent books through the page, as a person does"},
 	"pay": {GUI: "/pay", NoMCP: "turns on taking money, which two administrators decide, and reads buyers' names and " +
 		"addresses from the provider; an agent that can do either can spend a shop's trust"},
 	"webhook": {GUI: "/integrations", NoMCP: "adds an outbound destination for content, which is exfiltration with a configuration screen"},
@@ -859,6 +861,10 @@ func TestEveryRemovalFlagIsReachableFromTheInterface(t *testing.T) {
 				"erasure is requested by a person and performed against a " +
 				"named message rather than browsed to",
 		},
+		// Cancels a booking and forgets who made it: what somebody asking
+		// to be forgotten is owed.
+		"booking cancel.erase": {GUI: "/bookings", NoMCP: "who booked is read and forgotten by a person, " +
+			"behind a sign-in"},
 		"add.remove": {GUI: "/page/delete",
 			MCP:   []string{"write_page"},
 			NoMCP: ""},

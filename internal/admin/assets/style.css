@@ -2855,6 +2855,12 @@ dialog.idle-warn .btn-text { margin-left: 12px; }
 .param-form { display: grid; gap: 6px; max-width: 32rem; margin-top: 8px; }
 .param-form fieldset { border: 0; padding: 0; margin: 0 0 4px; display: grid; gap: 6px; }
 .param-form legend { font-weight: 500; margin-bottom: 4px; }
+/* A service is six fields: a grid two or three across, not a table whose
+   columns shrink to a character in a form this narrow. */
+.param-form .service-fields { border-top: 1px solid var(--outline-variant); padding-top: 8px; }
+.service-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 6px 12px; }
+.service-grid p { margin: 0; display: grid; gap: 4px; }
+.service-grid .service-about { grid-column: 1 / -1; }
 
 /* Review, 7 October: no word broken in two, and a status on one line.
 

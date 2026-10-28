@@ -463,6 +463,28 @@ pre {
 .post-by { margin: 0 0 var(--space-2); font-size: var(--text-sm); display: flex; flex-wrap: wrap; gap: var(--space-2); }
 /* Text as it was written, line breaks kept: a post is not markup. */
 .post-body { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* -- booking --------------------------------------------------------------- */
+
+/* Times are radio buttons drawn as chips: no script, a keyboard moves
+   between them, and the chosen one is the one sent. */
+.booking-form { display: grid; gap: var(--space-4); max-width: 40rem; }
+.booking-form .btn { justify-self: start; }
+.slots { border: 0; margin: 0; padding: 0; display: grid; gap: var(--space-4); min-width: 0; }
+.slots legend { font-weight: 700; margin-bottom: var(--space-2); }
+.slot-date { font-weight: 600; margin: 0 0 var(--space-2); }
+.slot-times { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.slot-input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; }
+.slot {
+  display: inline-block; min-width: 4.5rem; padding: .5rem .9rem; text-align: center;
+  border: 1px solid var(--outline); border-radius: var(--radius-pill); cursor: pointer;
+  font-variant-numeric: tabular-nums; background: var(--surface);
+}
+.slot:hover { background: var(--surface-container); }
+.slot-input:checked + .slot { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
+.slot-input:focus-visible + .slot { outline: 3px solid var(--focus-ring); outline-offset: 2px; }
+.booked .actions { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; }
+.booked form { margin: 0; }
+
 .post-form { display: grid; gap: var(--space-2); max-width: var(--measure); }
 .post-form .btn { justify-self: start; }
 

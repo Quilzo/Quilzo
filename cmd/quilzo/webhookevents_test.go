@@ -18,7 +18,7 @@ import (
 // heard nothing: the silent subscription the closed list was made to stop.
 func TestEveryWebhookEventIsSentFromSomewhere(t *testing.T) {
 	sent := map[string]bool{}
-	call := regexp.MustCompile(`(?:fireWebhooks\(root,\s*|Told\(|s\.tell\(|Type:\s*)"([a-z-]+)"`)
+	call := regexp.MustCompile(`(?:fire(?:Booking)?Webhooks\(root,\s*|Told\(|s\.tell\(|Type:\s*)"([a-z-]+)"`)
 	for _, dir := range []string{".", filepath.Join("..", "..", "internal", "admin")} {
 		files, _ := filepath.Glob(filepath.Join(dir, "*.go"))
 		for _, f := range files {

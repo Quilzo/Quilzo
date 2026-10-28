@@ -82,6 +82,10 @@ type Event struct {
 	// this says that something arrived and where to read it, exactly as the
 	// audit record for the same event does.
 	Form string `json:"form,omitempty"`
+	// Service is which service was booked, or had a booking cancelled, for
+	// a "booked" or "booking-cancelled" event. The service, never when or
+	// by whom: who booked is in the admin, behind a sign-in.
+	Service string `json:"service,omitempty"`
 	// By is who proposed a change, for a "proposed" event.
 	By string `json:"by,omitempty"`
 	// Machine says a model wrote the content being proposed.
@@ -113,7 +117,10 @@ var EventTypes = []string{"published", "rolled-back", "scheduled", "submitted",
 	// It carries who proposed and whether a machine wrote it. That second
 	// part is the one that decides whether a person has to read it, so it is
 	// the part worth putting in front of them rather than behind a click.
-	"proposed"}
+	"proposed",
+	// A visitor booked a time, or cancelled one: the moment a business
+	// taking bookings needs to hear about, as a form's "submitted" is.
+	"booked", "booking-cancelled"}
 
 // KnownType reports whether this program ever sends an event of this type.
 func KnownType(t string) bool {

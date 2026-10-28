@@ -320,6 +320,13 @@ var kinds = []Kind{
 		},
 	},
 	{
+		Name: "booking", Group: "closing", Summary: "Free times for one of the site's services, to book one. No script: the times are a choice of buttons.",
+		Stub: map[string]any{
+			"title": "Book a time", "service": "consultation",
+			"intro": "", "button": "Book",
+		},
+	},
+	{
 		Name: "notice", Group: "closing", Summary: "A short banner in one of four tones: plain, positive, caution, critical.",
 		Stub: map[string]any{
 			"tone": "caution", "title": "Something worth saying at the top",
