@@ -351,6 +351,11 @@ func (st *Site) Handler() http.Handler {
 	mux.HandleFunc("/favicon.ico", st.favicon)
 	mux.HandleFunc("/form/", st.submit)
 	mux.HandleFunc("/ask/", st.ask)
+	// NLWeb: the site asked in natural language by any agent, as data. See
+	// nlweb.go. Exact patterns, so they sit beside the chatbots at /ask/.
+	mux.HandleFunc("GET /ask", st.nlwebAsk)
+	mux.HandleFunc("POST /ask", st.nlwebAsk)
+	mux.HandleFunc("POST /mcp", st.nlwebMCP)
 	mux.HandleFunc("/ask.css", st.askStylesheet)
 	mux.HandleFunc("/agent.css", st.agentStylesheet)
 	mux.HandleFunc("/ask-live.js", st.askLiveScript)
@@ -1429,6 +1434,10 @@ func (st *Site) llms(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "# %s\n\n", st.Name)
 	if st.Description != "" {
 		fmt.Fprintf(w, "> %s\n\n", st.Description)
+	}
+	if st.searchIndex() != nil {
+		fmt.Fprintf(w, "## Ask\n\n- [Ask this site in plain words](/ask?query=&streaming=false): NLWeb; "+
+			"answers with the published pages that match, as schema.org objects. The same over MCP at /mcp.\n\n")
 	}
 	fmt.Fprintf(w, "## Pages\n\n")
 	for _, n := range names {

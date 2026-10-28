@@ -649,3 +649,26 @@ func TestAnFAQsQuestionFindsItsAnswer(t *testing.T) {
 			ans.Sources[0].ID, ans.Sources[0].HeadingRank)
 	}
 }
+
+// A booking section's service and a comments section's board name things,
+// and are not what the page says; a record's own field called service is.
+func TestASectionsNamesAreNotKnowledge(t *testing.T) {
+	pages := map[string]any{
+		"book": map[string]any{"title": "Book", "sections": []any{
+			map[string]any{"booking": map[string]any{"title": "Book a haircut", "service": "cut", "intro": "Choose a time that suits you."}},
+			map[string]any{"comments": map[string]any{"title": "What people said", "board": "talk"}},
+		}},
+		"plumber": map[string]any{"title": "Ann's plumbing", "service": "Boilers and leaks across Leeds"},
+	}
+	var all []string
+	for _, p := range Chunk(pages, nil) {
+		all = append(all, p.Text)
+	}
+	text := strings.Join(all, "\n")
+	if strings.Contains(text, "cut.") || strings.Contains(text, "talk.") {
+		t.Fatalf("a section's wiring was indexed:\n%s", text)
+	}
+	if !strings.Contains(text, "Choose a time") || !strings.Contains(text, "Boilers and leaks") {
+		t.Fatalf("words were left out:\n%s", text)
+	}
+}
