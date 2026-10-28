@@ -224,6 +224,9 @@ type Site struct {
 	// including the ones a page embeds behind a filter somebody assumed was
 	// private.
 	Catalogue string
+	// Buy answers where a row's Buy button goes and what it charges
+	// (internal/pay); nil is a site that sells nothing.
+	Buy func(row map[string]any) (href, price string)
 
 	// UCP serves the catalogue to shopping agents over the Universal
 	// Commerce Protocol, or is nil when the operator has not turned it on;
@@ -1562,7 +1565,7 @@ func (st *Site) formData(name string) map[string]any {
 func (st *Site) sources() render.Sources {
 	src := render.Sources{Name: st.Name, IconStyle: st.IconStyle, Listings: st.Listings,
 		SrcSet: st.srcSet, Tracks: st.tracks, Poster: st.poster,
-		Form: st.formData, Thread: st.threadData}
+		Form: st.formData, Thread: st.threadData, Buy: st.Buy}
 	if _, ok := st.iconFile(); ok {
 		src.Icon = "/media/" + st.Icon
 		src.IconInitial = st.IconInitial

@@ -267,7 +267,25 @@ func hasText(m map[string]any, key string) bool {
 // picture wanted its narrower copies, and then it needed them on the page where
 // the picture is largest.
 func (s Sources) WithRecord(ctx map[string]any, row map[string]any) {
-	ctx["record"] = decorate(row, 0, s.asks())
+	rec := decorate(row, 0, s.asks())
+	if m, ok := rec.(map[string]any); ok {
+		s.deriveBuy(m)
+	}
+	ctx["record"] = rec
+}
+
+// deriveBuy puts a row's Buy link beside it, as buy_href, and the price it
+// charges, as buy_price, when something sells exactly what the row says.
+// A row with a buy_href of its own keeps it, and gets no price this did not
+// check: content an author wrote wins over content this inferred, as
+// everywhere here.
+func (s Sources) deriveBuy(row map[string]any) {
+	if s.Buy == nil || hasText(row, "buy_href") {
+		return
+	}
+	if href, price := s.Buy(row); href != "" {
+		row["buy_href"], row["buy_price"] = href, price
+	}
 }
 
 // decoratePage decorates a page body and fills in the hero's inherited title.
@@ -357,6 +375,7 @@ func (s Sources) feeds(data map[string]any) []any {
 			derive(copied)
 			deriveSrcSets(copied, s.SrcSet)
 			deriveTracks(copied, s.Tracks)
+			s.deriveBuy(copied)
 			decorated = append(decorated, copied)
 		}
 		for i, item := range decorated {

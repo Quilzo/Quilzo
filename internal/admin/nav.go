@@ -113,6 +113,9 @@ var destinations = []destination{
 	{"analytics", "Analytics", "/analytics", "Release", "growth", auth.ActEditDraft},
 	{"experiments", "Experiments", "/experiments", "Release", "growth", auth.ActEditDraft},
 	{"personalise", "Personalisation", "/personalise", "Release", "growth", auth.ActEditDraft},
+	// Selling what the catalogue lists: turning it on, the links, and who
+	// bought what, read from the provider.
+	{"pay", "Payments", "/pay", "Release", "selling", auth.ActGrant},
 	{"transfer", "Transfer", "/transfer", "Release", "transfer", auth.ActView},
 	{"decentralised", "Permanent web", "/decentralised", "Release", "transfer", auth.ActView},
 
@@ -202,7 +205,7 @@ var docSections = map[string]bool{
 	"growth": true, "integrations": true, "languages": true, "logging": true, "make": true, "media": true, "members": true,
 	"memory": true, "models": true, "pages": true, "passkeys": true, "people": true, "provenance": true,
 	"provisioning": true, "publishing": true, "research": true, "security": true, "settings": true, "shield": true, "signins": true, "sso": true,
-	"start": true, "structure": true, "today": true, "transfer": true, "types": true,
+	"selling": true, "start": true, "structure": true, "today": true, "transfer": true, "types": true,
 
 	// Guides no screen owns, because they explain a concept or a surface
 	// rather than a destination. Named individually so that one quietly
@@ -547,6 +550,7 @@ func Screens() []find.Destination {
 		"publishing":    {"environment", "staging", "promote", "schedule", "deploy"},
 		"history":       {"commit", "log", "rollback", "revert", "version"},
 		"transfer":      {"export", "import", "backup", "migrate"},
+		"pay":           {"shop", "sell", "checkout", "stripe", "payment", "order", "buy", "price"},
 		"decentralised": {"ipfs", "permanent", "cid"},
 		"provenance":    {"ai", "source", "attribution", "c2pa", "credential"},
 		"security":      {"scan", "posture", "vulnerability", "hardening"},

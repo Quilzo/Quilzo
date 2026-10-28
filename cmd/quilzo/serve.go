@@ -205,6 +205,7 @@ func cmdServe(root string, args []string) error {
 	srv.SCIM = scimHooks(root)
 	srv.Memory = memoryAdmin(root)
 	srv.Features = featureHooks(root, signedIn)
+	srv.Pay = payHooks(root, signedIn)
 	srv.FeatureProgram = featureProgram(root)
 	srv.AppRoles = func() ([]auth.AppRole, error) { return appRoles(root) }
 	// Sign-ins are judged as they are made, and the sign-in policy acts on
@@ -773,7 +774,12 @@ func cmdServe(root string, args []string) error {
 	srv.Frozen = sh.frozen
 	srv.Reports = public.ReportsHandler(sh.violation)
 	srv.Version = version
-	srv.Told = func(event, commit string, pages []string) { fireWebhooks(root, event, commit, pages) }
+	srv.Told = func(event, commit string, pages []string) {
+		fireWebhooks(root, event, commit, pages)
+		if event == "published" || event == "rolled-back" {
+			_, _, _ = syncPay(root, resolveCaller(root, ""))
+		}
+	}
 	srv.KSI = func() (fedramp.Source, []fedramp.Result, error) {
 		return fedramp.Assess(failingByControl(root, *tplDir))
 	}

@@ -119,7 +119,9 @@ func confineSite(root string) error {
 // write it cannot: each file is opened for writing, which changes nothing,
 // and must be refused. A site that could is not started.
 func checkSiteConfined(root string) error {
-	for _, name := range []string{"policy.json", "tokens.json", "config.json"} {
+	// The payment links too: a site that could rewrite them could send every
+	// Buy button to somebody else's checkout.
+	for _, name := range []string{"policy.json", "tokens.json", "config.json", "pay/links.json", "pay/pay.json"} {
 		path := filepath.Join(root, name)
 		f, err := os.OpenFile(path, os.O_WRONLY, 0)
 		if err == nil {

@@ -512,6 +512,8 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 			changed = append(changed, c.Path)
 		}
 		fireWebhooks(root, "published", pub.Published, changed)
+		// Nothing printed: standard output may be this conversation.
+		go func() { _, _, _ = syncPay(root, caller) }()
 		return fmt.Sprintf("published; %d change(s) are live", len(pub.Changes)), nil
 	})
 

@@ -107,6 +107,17 @@ func applyDual(root string, r dual.Request, by string) error {
 		}
 		return recordE(root, resolveCaller(root, "").auditRecord("scim.mapped", "/", audit.Success,
 			map[string]string{"group": ch.Group + " → " + ch.To, "request": r.ID}))
+	case dual.Pay:
+		var ch dual.PayChange
+		if err := json.Unmarshal(r.Payload, &ch); err != nil {
+			return err
+		}
+		caller := resolveCaller(root, "")
+		if err := applyPay(root, ch, []string{r.By, by}, caller); err != nil {
+			return err
+		}
+		syncPayAfterLive(root, caller)
+		return nil
 	case dual.Token:
 		return nil
 	}

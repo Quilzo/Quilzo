@@ -237,6 +237,14 @@ a whole site (one package: pages, menus, forms, a question box, a privacy page, 
   quilzo site kinds                        business, product, restaurant, portfolio, community, event
   quilzo site fill ["WHAT=VALUE" …]        list the [[blanks]] only you can fill in, or fill them; none is published
 
+payments (the catalogue sold through the provider's own checkout; no card or order is kept here)
+  quilzo pay status                        on or off, products for sale, links selling, the last sync
+  quilzo pay enable stripe [--ship-to GB,IE] [--done "…"]   a second administrator approves it
+                                           the key: quilzo secret set stripe < key.txt (a restricted key)
+  quilzo pay sync                          a payment link for each published price; runs after every publish
+  quilzo pay orders [--limit N]            the latest paid checkouts, read from the provider and not kept
+  quilzo pay disable                       off at once, and every link retired
+
 features (one package of blocks, installed as one decision)
   quilzo feature example > FILE.json       a complete package to edit: a lab sample tracker
   quilzo feature draft "…" [-o FILE]       a model drafts a package from a sentence; content blocks only
@@ -911,6 +919,8 @@ func main() {
 		err = cmdExt(root, cmdArgs)
 	case "feature":
 		err = cmdFeature(root, cmdArgs)
+	case "pay":
+		err = cmdPay(root, cmdArgs)
 	case "research":
 		err = cmdResearch(root, cmdArgs)
 	case "scan":
@@ -1632,6 +1642,7 @@ func cmdPublish(root string, args []string) error {
 	}
 	fireWebhooks(root, "published", pub.Published, changed)
 	w.Human("live is now %s  (%d change(s))\n", onOneLine(short(pub.Published)), len(pub.Changes))
+	syncPayAfterLive(root, caller)
 	if pub.Previous != "" {
 		w.Human("  %sprevious %s is still stored; `quilzo rollback` moves the "+
 			"pointer back%s\n", dim, short(pub.Previous), reset)
@@ -1675,6 +1686,7 @@ func cmdRollback(root string, args []string) error {
 	fireWebhooks(root, "rolled-back", pub.Published, reverted)
 	fmt.Printf("live is now %s  (%d change(s) reverted)\n",
 		short(pub.Published), len(pub.Changes))
+	syncPayAfterLive(root, caller)
 	fmt.Printf("  %srolled back from %s, which is still stored and can be "+
 		"published again%s\n", dim, short(pub.Previous), reset)
 	return nil

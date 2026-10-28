@@ -290,6 +290,26 @@ shows, a second administrator approves a site with a contact form (or the only
 administrator does, on the record), and removing it puts the site back as it
 was. The Make screen does the same under Build a whole site and Fill in.
 
+## Taking payments
+
+A shop needs a till as well as a catalogue, and a till is where a CMS usually
+starts holding card numbers, orders and addresses it then has to protect. This
+one holds none of them. The provider's hosted checkout takes the card and the
+address; Quilzo makes a payment link for each published price and shows a Buy
+button only where the link charges exactly what the page says:
+
+```bash
+quilzo secret set stripe < key.txt          # a restricted key is enough
+quilzo pay enable stripe --ship-to GB,IE    # a second administrator approves
+quilzo pay                                  # products for sale, links selling
+quilzo pay orders                           # read from Stripe, not kept here
+```
+
+The links follow publishing. A new price gets a new link, and then the old one
+is retired. A price no link charges yet shows no button at all, so a page
+never offers a checkout at a price it does not show. The site process holds no
+key: the admin makes the links, and the site reads only the list of them.
+
 ## Bringing a template you already have
 
 Nobody's existing template works here, and being told to start again is the

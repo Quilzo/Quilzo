@@ -410,6 +410,7 @@
         <div class="foot price-line">
           {% if row.price_display %}<span class="amount">{{ row.price_display }}</span>{% end %}
           {% if row.availability_label %}<span class="state state-{{ row.state }}">{{ row.availability_label }}</span>{% end %}
+          {% if row.buy_href %}<a class="btn buy" href="{{ row.buy_href }}">Buy{% if row.buy_price %} for {{ row.buy_price }}{% end %}<span class="visually-hidden">: {{ row.name }}{{ row.title }}</span></a>{% end %}
         </div>
       </div>
       {% end %}
@@ -422,6 +423,7 @@
         <p class="name">{% if row.href %}<a href="{{ row.href }}">{{ row.name }}{{ row.title }}</a>{% end %}{% if row.unlinked %}{{ row.name }}{{ row.title }}{% end %}</p>
         {% if row.summary %}<p class="role">{{ row.summary }}</p>{% end %}
         {% if row.price_display %}<p class="amount">{{ row.price_display }}</p>{% end %}
+        {% if row.buy_href %}<p><a class="btn buy" href="{{ row.buy_href }}">Buy{% if row.buy_price %} for {{ row.buy_price }}{% end %}<span class="visually-hidden">: {{ row.name }}{{ row.title }}</span></a></p>{% end %}
       </li>
       {% end %}
     </ul>
@@ -608,6 +610,7 @@
         <div class="foot price-line">
           {% if row.price_display %}<span class="amount">{{ row.price_display }}</span>{% end %}
           {% if row.availability_label %}<span class="state state-{{ row.state }}">{{ row.availability_label }}</span>{% end %}
+          {% if row.buy_href %}<a class="btn buy" href="{{ row.buy_href }}">Buy{% if row.buy_price %} for {{ row.buy_price }}{% end %}<span class="visually-hidden">: {{ row.name }}{{ row.title }}</span></a>{% end %}
         </div>
       </div>
       {% end %}
@@ -628,6 +631,7 @@
           {% if record.price_display %}<span class="amount">{{ record.price_display }}</span>{% end %}
           {% if record.availability_label %}<span class="state state-{{ record.state }}">{{ record.availability_label }}</span>{% end %}
         </p>
+        {% if record.buy_href %}<div class="actions"><a class="btn btn-lg" href="{{ record.buy_href }}">Buy{% if record.buy_price %} for {{ record.buy_price }}{% end %}<span class="visually-hidden">: {{ record.name }}</span></a></div>{% end %}
         {% if record.description %}<p>{{ record.description }}</p>{% end %}
         {% if record.specs %}
         <dl class="spec">{% for sp in record.specs %}<dt>{{ sp.name }}</dt><dd>{{ sp.value }}</dd>{% end %}</dl>

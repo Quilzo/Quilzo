@@ -839,6 +839,8 @@ figure { margin: 0; }
 .spec dd { margin: 0; }
 .price-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-3); }
 .price-line .amount { font-family: var(--font-display); font-size: var(--text-xl); font-weight: 800; font-variant-numeric: tabular-nums; }
+/* Buy goes at the end of the line, at the provider's checkout. */
+.price-line .buy { margin-inline-start: auto; }
 
 /* -- motion ---------------------------------------------------------------- */
 

@@ -640,10 +640,10 @@ var settings = []Setting{
 			"shop and look products up. On, the site answers its catalog search, " +
 			"lookup and product operations over the listing site.catalogue names " +
 			"— the same products and prices as /catalogue.json, read the same " +
-			"way, so nothing becomes public that was not. Reads only: no carts, " +
-			"checkout or orders, which need a buyer, delivery and a payment " +
-			"provider this program does not have; an agent buys from the " +
-			"product's page. Off by default because publishing to agents is a " +
+			"way, so nothing becomes public that was not. Reads only: no carts " +
+			"or orders over UCP; an agent buys from the product's page, through " +
+			"the provider's checkout when payments are on (quilzo pay). Off by " +
+			"default because publishing to agents is a " +
 			"shop's decision. Needs site.base_url to be the site's https address.",
 	},
 	{

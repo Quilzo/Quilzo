@@ -1,0 +1,56 @@
+{{template "head" .}}
+<h1>Payments</h1>
+<p class="lead">Sell what the catalogue lists through the payment provider's own checkout. Quilzo makes a payment link for each published price, shows a Buy button only where the link charges exactly what the page says, and never sees a card or keeps an order.</p>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}{{with .Status}}
+{{if .Provider}}<section aria-labelledby="pay-on" class="card">
+<h2 id="pay-on">On, through Stripe {{if .LiveKey}}<span class="tag tag-bad">live: real money</span>{{else}}<span class="tag tag-ok">test mode</span>{{end}}</h2>
+<p>Turned on by {{range $i, $b := .By}}{{if $i}} and {{end}}{{$b}}{{end}} on {{.At.Format "2 January 2006"}}.{{if .Options.ShipTo}} The checkout asks for a delivery address in {{range $i, $c := .Options.ShipTo}}{{if $i}}, {{end}}{{$c}}{{end}}.{{else}} The checkout asks for no delivery address.{{end}}</p>
+{{if .Catalogue}}<p class="notice bad">{{.Catalogue}}</p>{{else}}
+<p><strong>{{.Offers}}</strong> {{if eq .Offers 1}}product is{{else}}products are{{end}} for sale, and <strong>{{.Live}}</strong> payment {{if eq .Live 1}}link sells{{else}}links sell{{end}} them.{{if or .ToMake .ToRetire}} {{.ToMake}} to make and {{.ToRetire}} to retire: until then, a changed price shows no Buy button.{{end}}</p>{{end}}
+{{if .Problem}}<p class="notice bad">The last sync stopped: {{.Problem}}</p>{{else if not .Synced.IsZero}}<p class="hint">The links last matched the live catalogue on {{.Synced.Format "2 Jan 2006 at 15:04"}}. They are brought up to date after every publish and rollback.</p>{{end}}
+<p class="hint">Say on the site's privacy page that payments are taken by Stripe, which collects the buyer's card, name, email address and any delivery address under its own privacy notice; Quilzo collects none of them.</p>
+<div class="confirmactions">
+  <form method="post" action="/pay/act"><input type="hidden" name="do" value="sync"><button type="submit" class="btn-tonal">Bring the links up to date</button></form>
+  <a href="/pay?orders=1">Show the latest orders</a>
+</div>
+<details><summary>Turn payments off<span class="chev">{{icon "expand_more"}}</span></summary>
+  <p>The Buy buttons go at once, and every payment link is retired at Stripe, so a link somebody copied stops selling too. Orders stay at Stripe.</p>
+  <form method="post" action="/pay/act"><input type="hidden" name="do" value="disable"><button type="submit" class="btn-danger">Turn payments off</button></form>
+</details>
+</section>
+{{else if .Waiting}}<p class="notice" role="status">Turning payments on waits for a second administrator, in <a href="/approvals">Approvals</a>.</p>
+{{else}}<section aria-labelledby="pay-off">
+<h2 id="pay-off">Payments are off</h2>
+<ol>
+  <li>{{if .Key}}A Stripe key is set{{if .LiveKey}}, and it takes real money{{else}}, in test mode{{end}}.{{else}}Set a Stripe key. A <strong>restricted key</strong> is best, allowed only to write Prices, Products and Payment Links and to read Checkout Sessions: on the machine, <code>quilzo secret set stripe &lt; key.txt</code>, or <code>QUILZO_SECRET_STRIPE</code> in the environment.{{end}}</li>
+  <li>{{if .Catalogue}}{{.Catalogue}}{{else}}The catalogue lists {{.Offers}} {{if eq .Offers 1}}product{{else}}products{{end}} with a price.{{end}}</li>
+  <li>Ask for payments to be turned on. A second administrator approves it, because from then on a price on a page is a price somebody pays.</li>
+</ol>
+{{if and .Key (not .Catalogue)}}<form method="post" action="/pay/act" class="param-form">
+  <input type="hidden" name="do" value="enable">
+  <label for="pay-ship">Countries to deliver to</label><input id="pay-ship" name="ship_to" maxlength="200" placeholder="GB, IE" aria-describedby="pay-ship-hint">
+  <span class="hint" id="pay-ship-hint">As two-letter codes. Left empty, the checkout asks for no address: for downloads, services and collection.</span>
+  <label for="pay-done">What the checkout says once somebody has paid</label><textarea id="pay-done" name="done" rows="2" maxlength="500" placeholder="Thank you. We bake to order and post within two days."></textarea>
+  <div class="auto-controls"><button type="submit">Ask to turn payments on</button></div>
+</form>{{end}}
+</section>{{end}}
+{{end}}
+{{if .ShowOrders}}<section aria-labelledby="pay-orders">
+<h2 id="pay-orders">Latest orders</h2>
+<p class="hint">Read from Stripe just now, and not kept here. Who looked is recorded; what they saw is not.</p>
+{{if .OrdersError}}<p class="notice bad">{{.OrdersError}}</p>{{else if .Orders}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">When</th><th scope="col">Total</th><th scope="col">Product</th><th scope="col">Buyer</th><th scope="col">Deliver to</th></tr></thead>
+  <tbody>{{range .Orders}}<tr>
+    <td class="when">{{.At.Format "2 Jan 15:04"}}</td>
+    <td>{{.Total}}{{if not .Paid}} <span class="tag tag-warn">not paid</span>{{end}}</td>
+    <td>{{if .Offer}}<code>{{.Offer}}</code>{{else}}<span class="hint">another link</span>{{end}}</td>
+    <td>{{.Name}}{{if .Email}}<div class="hint">{{.Email}}</div>{{end}}</td>
+    <td>{{.Ship}}</td>
+  </tr>{{end}}</tbody>
+</table></div>{{else}}<p>No completed checkouts yet.</p>{{end}}
+</section>{{end}}
+<p class="hint">On the machine: <code>quilzo pay</code>, <code>pay enable stripe --ship-to GB</code>, <code>pay sync</code>, <code>pay orders</code>, <code>pay disable</code>.</p>
+{{end}}
+{{template "foot" .}}

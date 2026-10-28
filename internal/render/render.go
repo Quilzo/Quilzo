@@ -102,6 +102,11 @@ type Sources struct {
 	// deployment had before renditions existed and is still correct for a site
 	// whose pictures are all small.
 	SrcSet func(id string) string
+	// Buy answers where a Buy button for a catalogue row goes and the price
+	// it charges, or nothing when nothing sells exactly what the row says
+	// (internal/pay). Nil means nothing is for sale here, which is every
+	// site that does not take payments.
+	Buy func(row map[string]any) (href, price string)
 }
 
 // For builds the context for one page.

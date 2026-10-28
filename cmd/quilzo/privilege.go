@@ -545,6 +545,13 @@ var commandNeeds = map[string]need{
 	// A feature is a set of blocks installed as one decision: types, pages,
 	// agents, webhooks. Installing one is an administrator's act, as each of
 	// those is; reading what is installed or checking a package is not.
+	// Payments: turning them on is a grant-level decision two make, the
+	// sync follows publishing, and orders name buyers.
+	"pay":        {action: auth.ActGrant},
+	"pay status": {action: auth.ActView},
+	"pay sync":   {action: auth.ActPublish},
+	"pay orders": {action: auth.ActGrant},
+
 	"feature":         {action: auth.ActInstall},
 	"feature example": {action: auth.ActView},
 	"feature check":   {action: auth.ActView},

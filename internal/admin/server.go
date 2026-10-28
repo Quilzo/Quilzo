@@ -250,6 +250,8 @@ type Server struct {
 	Approvals *Approvals
 	// Features reach the feature packages (internal/feature).
 	Features *FeatureHooks
+	// Pay is payments for what the catalogue sells; nil leaves them off.
+	Pay *PayHooks
 	// Brief writes the few sentences at the top of Today (brief.go), and
 	// briefs keeps each person's for the day.
 	Brief  *Brief
@@ -1336,6 +1338,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/make/check", s.handleMakeCheck)
 	mux.HandleFunc("/make/draft", s.handleMakeDraft)
 	mux.HandleFunc("/make/site", s.handleMakeSite)
+	mux.HandleFunc("/pay", s.handlePay)
+	mux.HandleFunc("/pay/act", s.handlePayAct)
 	mux.HandleFunc("/make/fill", s.handleMakeFill)
 	mux.HandleFunc("/make/from", s.handleMakeFrom)
 	mux.HandleFunc("/make/act", s.handleMakeAct)

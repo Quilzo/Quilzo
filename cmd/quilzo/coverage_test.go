@@ -417,6 +417,8 @@ var coverage = map[string]surfaces{
 		"research_cite", "research_run", "research_claim", "research_write", "research_ideas"}},
 	"feature": {GUI: "/make", NoMCP: "installing a feature is a person's decision, one or two of " +
 		"them; a model may draft a package, and checking one is the command line's and the screen's"},
+	"pay": {GUI: "/pay", NoMCP: "turns on taking money, which two administrators decide, and reads buyers' names and " +
+		"addresses from the provider; an agent that can do either can spend a shop's trust"},
 	"webhook": {GUI: "/integrations", NoMCP: "adds an outbound destination for content, which is exfiltration with a configuration screen"},
 	"vault":   {GUI: "/security/integrity", NoMCP: "handles key material"},
 	"browser": {Why: "a one-time download an operator makes, and a status line; which browser a run " +

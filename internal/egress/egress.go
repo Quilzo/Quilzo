@@ -211,6 +211,14 @@ var Purposes = []Purpose{
 			"and the model gateway inside their sandbox still work",
 	},
 	{
+		Name: "payments",
+		What: "making and retiring payment links at the provider a second " +
+			"administrator approved, after a price is published, and reading " +
+			"its latest orders when somebody asks",
+		Without: "no payment link is made or retired, so a new price shows no " +
+			"Buy button and orders are read at the provider's own dashboard",
+	},
+	{
 		Name: "import",
 		What: "fetching a page or an image the operator asked to import",
 		Without: "importing by URL is refused. Importing from a file is not " +
