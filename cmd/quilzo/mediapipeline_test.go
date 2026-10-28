@@ -32,8 +32,8 @@ import (
 func TestEveryImageEntranceRunsTheOptimiser(t *testing.T) {
 	// The function that stores an image, and what surface it is.
 	entrances := map[string]string{
-		"mediaAdd": "quilzo media add",
-		"mediaGet": "quilzo media get",
+		"mediaAdd":    "quilzo media add",
+		"keepFetched": "quilzo media get and quilzo site import",
 	}
 	found := map[string]bool{}
 

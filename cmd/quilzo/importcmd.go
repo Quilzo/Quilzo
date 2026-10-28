@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -704,60 +705,12 @@ func mediaGet(root string, args []string) error {
 	if err != nil {
 		return errBlocked{err}
 	}
-	f, err := media.Accept(res.FinalURL, res.Body, time.Now())
-	if err != nil {
-		return errBlocked{fmt.Errorf("%s was fetched but refused: %w", pos[0], err)}
-	}
-	if f.Kind == media.Image && strings.TrimSpace(*alt) == "" {
+	f, err := keepFetched(root, res, *alt)
+	if errors.Is(err, errNeedsAlt) {
 		return errBlocked{fmt.Errorf("this image needs a description: --alt \"...\"")}
 	}
-	f.Alt = strings.TrimSpace(*alt)
-	f.Source = res.FinalURL
-
-	// The same pipeline an uploaded image goes through.
-	//
-	// This ran no optimiser at all, which made it the one path that stored a
-	// photograph unresized with its EXIF intact — on the surface that fetches
-	// a file from somebody else's server, where the uploader is a stranger and
-	// the GPS tag is somebody else's home. Every other entrance did this and
-	// this one was written without it, which is what four copies of the
-	// settings buys you. See mediaOptions.
-	body := res.Body
-	if f.Kind == media.Image {
-		opt, oerr := media.Optimise(f.Format, body, mediaOptionsAt(root))
-		if oerr != nil {
-			// Reported, not fatal, the same as `media add`: the file has
-			// already been proved a valid image, and refusing it because the
-			// optimiser could not improve it would refuse something
-			// acceptable.
-			fmt.Fprintf(os.Stderr, "  %snot optimised: %v%s\n", dim, oerr, reset)
-		} else if len(opt.Did) > 0 {
-			body = opt.Body
-			for _, did := range opt.Did {
-				fmt.Fprintf(os.Stderr, "  %s%s%s\n", dim, did, reset)
-			}
-			// Re-accepted, because the id is the hash of the bytes and these
-			// are different bytes. Storing them under the original's hash
-			// would make every integrity check downstream verify a claim
-			// about a file that does not exist.
-			reaccepted, rerr := media.Accept(res.FinalURL, body, time.Now())
-			if rerr != nil {
-				return errBlocked{fmt.Errorf(
-					"the optimised image no longer validates, so it has not "+
-						"been stored: %w", rerr)}
-			}
-			reaccepted.Alt, reaccepted.Source = f.Alt, f.Source
-			f = reaccepted
-		}
-	}
-
-	// The same hole as `media add` had: fetched, validated, announced, dropped.
-	lib, err := openMedia(root)
 	if err != nil {
-		return fmt.Errorf("the media library could not be opened: %w", err)
-	}
-	if err := lib.Put(f, body); err != nil {
-		return fmt.Errorf("%s was fetched and could not be stored: %w", pos[0], err)
+		return errBlocked{fmt.Errorf("%s: %w", pos[0], err)}
 	}
 
 	if w.JSON(f) {
@@ -850,4 +803,76 @@ func importRecords(root string, s *store.Store, rep *importer.Report,
 		bold, len(written), reset, bold, rep.Collection, reset)
 	w.Human("\n  draft %s\n", short(cid))
 	return nil
+}
+
+// errNeedsAlt is a fetched picture that came with no description.
+var errNeedsAlt = errors.New("an image needs a description")
+
+// keepFetched checks a fetched file, makes a picture smaller where it can,
+// and keeps it in the media library with its description and where it came
+// from: `quilzo media get` and `quilzo site import` both come in here. A
+// picture with no description is refused: one somebody did not write is not
+// one this makes up.
+func keepFetched(root string, res *fetch.Result, alt string) (media.File, error) {
+	if res.Status != 0 && res.Status != 200 {
+		return media.File{}, fmt.Errorf("answered %d, not a file", res.Status)
+	}
+	if res.Truncated {
+		return media.File{}, fmt.Errorf("larger than the fetcher reads, so only part of it came")
+	}
+	f, err := media.Accept(res.FinalURL, res.Body, time.Now())
+	if err != nil {
+		return media.File{}, fmt.Errorf("fetched but refused: %w", err)
+	}
+	if f.Kind == media.Image && strings.TrimSpace(alt) == "" {
+		return media.File{}, errNeedsAlt
+	}
+	f.Alt = strings.TrimSpace(alt)
+	f.Source = res.FinalURL
+
+	// The same pipeline an uploaded image goes through.
+	//
+	// `media get` once ran no optimiser at all, which made it the one path
+	// that stored a photograph unresized with its EXIF intact — on the
+	// surface that fetches a file from somebody else's server, where the
+	// uploader is a stranger and the GPS tag is somebody else's home. See
+	// mediaOptions.
+	body := res.Body
+	if f.Kind == media.Image {
+		opt, oerr := media.Optimise(f.Format, body, mediaOptionsAt(root))
+		if oerr != nil {
+			// Reported, not fatal, the same as `media add`: the file has
+			// already been proved a valid image, and refusing it because the
+			// optimiser could not improve it would refuse something
+			// acceptable.
+			fmt.Fprintf(os.Stderr, "  %snot optimised: %v%s\n", dim, oerr, reset)
+		} else if len(opt.Did) > 0 {
+			body = opt.Body
+			for _, did := range opt.Did {
+				fmt.Fprintf(os.Stderr, "  %s%s%s\n", dim, did, reset)
+			}
+			// Re-accepted, because the id is the hash of the bytes and these
+			// are different bytes. Storing them under the original's hash
+			// would make every integrity check downstream verify a claim
+			// about a file that does not exist.
+			reaccepted, rerr := media.Accept(res.FinalURL, body, time.Now())
+			if rerr != nil {
+				return media.File{}, fmt.Errorf(
+					"the optimised image no longer validates, so it has not "+
+						"been stored: %w", rerr)
+			}
+			reaccepted.Alt, reaccepted.Source = f.Alt, f.Source
+			f = reaccepted
+		}
+	}
+
+	// The same hole as `media add` had: fetched, validated, announced, dropped.
+	lib, err := openMedia(root)
+	if err != nil {
+		return media.File{}, fmt.Errorf("the media library could not be opened: %w", err)
+	}
+	if err := lib.Put(f, body); err != nil {
+		return media.File{}, fmt.Errorf("fetched and could not be stored: %w", err)
+	}
+	return f, nil
 }

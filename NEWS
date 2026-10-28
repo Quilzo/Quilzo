@@ -61,6 +61,26 @@ Unreleased
 
 ** Added
 
+*** Bring your site by its address.  `quilzo site import
+    https://old.example --install`, or Bring your site on the Make screen,
+    reads a live site, whatever it was built with: robots.txt first, then
+    the site's map of itself or its links, that host only, through the
+    fetcher that refuses private addresses, at a polite pace and within a
+    page budget (--pages).  Each page's content, not its header, footer or
+    navigation, becomes a hero and sections; the site's own navigation
+    becomes its menus; its name and theme colour become its look, refused
+    when unreadable; the pictures it describes are kept in the media
+    library with those descriptions, and one with none is left out rather
+    than described by somebody who did not write it.  Scripts, frames and
+    forms are left behind and named.  It arrives as a site package, read
+    and approved as one decision, its pages marked as carried over by
+    software.  A site block can now carry redirects, only to the site's own
+    pages and never from one, installed into the site's own redirect map
+    (redirects.json in the store) and taken out with the package, so the
+    old addresses keep working.  quilzo site serves that map with any
+    --redirects file laid over it, a redirect that would hide a page the
+    site already has is left out, and quilzo export carries the map.
+
 *** Payments, through the provider's own checkout.  `quilzo pay enable
     stripe`, or the Payments screen, asks a second administrator to let
     the site take money; once they agree, a Stripe payment link is made for

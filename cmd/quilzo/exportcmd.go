@@ -124,17 +124,18 @@ func cmdExport(root string, args []string) error {
 			yellow, reset)
 	}
 
+	// The site's own redirect map, and the one `quilzo import` writes here,
+	// so the addresses that moved keep moving wherever the site goes next.
 	var redirects []export.Redirect
-	if rf, err := os.ReadFile("redirects.json"); err == nil {
-		var file struct {
-			Redirects []seo.Redirect `json:"redirects"`
-		}
-		if json.Unmarshal(rf, &file) == nil {
-			for _, r := range file.Redirects {
-				redirects = append(redirects, export.Redirect{
-					From: r.From, To: r.To, Permanent: r.Permanent, Note: r.Note})
-			}
-		}
+	held, err := siteRedirects(root, "redirects.json")
+	if err != nil {
+		w.Human("  %sredirects.json could not be read, so only the site's own redirects are kept: %v%s\n",
+			yellow, err, reset)
+		held, _ = siteRedirects(root)
+	}
+	for _, r := range held {
+		redirects = append(redirects, export.Redirect{
+			From: r.From, To: r.To, Permanent: r.Permanent, Note: r.Note})
 	}
 
 	// The deployment's marking, on every exported file. An export is the copy

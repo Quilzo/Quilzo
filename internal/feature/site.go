@@ -10,6 +10,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/quilzo/quilzo/internal/seo"
 	"github.com/quilzo/quilzo/internal/starter"
 	"github.com/quilzo/quilzo/internal/theme"
 )
@@ -45,6 +46,11 @@ type Site struct {
 	Motion string `json:"motion,omitempty"`
 	// Tokens are any other theme tokens, by name, applied after the rest.
 	Tokens map[string]string `json:"tokens,omitempty"`
+	// Redirects keep a site's old addresses working: a site brought from
+	// elsewhere had other paths, and links and search results point at
+	// them. Only to this site's own pages; installed into the site's
+	// redirect map, and taken out with the package.
+	Redirects []seo.Redirect `json:"redirects,omitempty"`
 }
 
 // SiteRef is the site block's ref: a site has one.
@@ -55,6 +61,7 @@ var SiteRef = Ref{Kind: "site", Name: "site"}
 const (
 	MaxSiteName        = 80
 	MaxSiteDescription = 300
+	MaxSiteRedirects   = 5000
 )
 
 // Look is the theme the site block asks for, as token overrides: the
@@ -109,10 +116,27 @@ func (s *Site) validate(bad func(string, ...any)) {
 	for _, r := range s.lookRefused() {
 		bad("site: %s", r)
 	}
+	if len(s.Redirects) > MaxSiteRedirects {
+		bad("site: %d redirects; at most %d", len(s.Redirects), MaxSiteRedirects)
+	} else if len(s.Redirects) > 0 {
+		for _, r := range s.Redirects {
+			// A package sends old addresses to its own pages and nowhere
+			// else: a redirect off the site is a link somebody else chose,
+			// under this site's name.
+			if !strings.HasPrefix(r.To, "/") || strings.HasPrefix(r.To, "//") || strings.Contains(r.To, "\\") {
+				bad("site: the redirect from %s goes to %q; a package redirects only to this site's own pages", r.From, r.To)
+			}
+		}
+		if _, err := seo.NewMap(s.Redirects); err != nil {
+			bad("site: redirects: %v", err)
+		}
+	}
 }
 
-// lookRefused is why the theme would refuse the look the site block asks
+// LookRefused is why the theme would refuse the look the site block asks
 // for, contrast included; nothing when it would not.
+func (s *Site) LookRefused() []string { return s.lookRefused() }
+
 func (s *Site) lookRefused() []string {
 	over, err := s.Look()
 	if err != nil {
@@ -161,6 +185,9 @@ func (s *Site) siteLine() Line {
 	}
 	if s.Starter != "" {
 		text += "; its layouts are the " + s.Starter + " starter's when it has none"
+	}
+	if n := len(s.Redirects); n > 0 {
+		text += fmt.Sprintf("; keeps %d old %s working", n, map[bool]string{true: "address", false: "addresses"}[n == 1])
 	}
 	return Line{Text: text}
 }

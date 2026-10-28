@@ -501,6 +501,18 @@ func helpBot(name string, suggestions []string) assistant.Assistant {
 	}
 }
 
+// QuestionBox is the question box a built or imported site has: answering
+// from the site's own pages, sending nothing anywhere, offering the contact
+// form when there is one.
+func QuestionBox(siteName string, suggestions []string, contact bool) assistant.Assistant {
+	a := helpBot(siteName, suggestions)
+	if !contact {
+		a.Actions = nil
+		a.Refusal = "This site does not say."
+	}
+	return a
+}
+
 // BuildSite writes a site package from a brief, without a model.
 func BuildSite(b SiteBrief, by string, now time.Time) (*Package, error) {
 	b.Description = strings.TrimSpace(b.Description)

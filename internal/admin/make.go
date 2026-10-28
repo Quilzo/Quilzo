@@ -58,6 +58,10 @@ type FeatureHooks struct {
 	// Site builds a whole site package from a brief; useModel asks a model
 	// to write its words. Nothing is installed.
 	Site func(b feature.SiteBrief, useModel bool, by Actor) (body []byte, notes []string, err error)
+	// Import reads a live site by its address and makes it a site package,
+	// keeping the pictures it describes when pictures is set. Nothing is
+	// installed.
+	Import func(address, name string, pages int, pictures bool, by Actor) (body []byte, notes []string, err error)
 	// Blanks is what the draft's pages still need filled in, and the pages
 	// each blank is on.
 	Blanks func() (whats []string, on map[string][]string, err error)
@@ -113,6 +117,7 @@ func (s *Server) handleMake(w http.ResponseWriter, r *http.Request) {
 	}
 	data["Kinds"], data["Styles"] = feature.SiteKinds(), theme.Styles
 	data["CanSite"] = s.Features.Site != nil
+	data["CanImport"] = s.Features.Import != nil
 	s.render(w, r, "make.html", data)
 }
 
@@ -140,6 +145,36 @@ func (s *Server) handleMakeSite(w http.ResponseWriter, r *http.Request) {
 	b := feature.SiteBrief{Description: r.FormValue("description"), Name: r.FormValue("name"),
 		Kind: r.FormValue("kind"), Colour: r.FormValue("colour"), Style: r.FormValue("style")}
 	body, notes, err := s.Features.Site(b, r.FormValue("use_model") == "1", p.actor())
+	if err != nil {
+		makeBack(w, r, "", err)
+		return
+	}
+	s.renderCheck(w, r, p, body, notes, "", "", 0, "")
+}
+
+// handleMakeImport brings a live site in by its address and shows it as
+// any package is shown, with what was left behind.
+func (s *Server) handleMakeImport(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.requireAuth(w, r)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "post", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.can(w, r, p, auth.ActInstall, "/") {
+		return
+	}
+	if s.Features == nil || s.Features.Import == nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+	pages, _ := strconv.Atoi(r.FormValue("pages"))
+	body, notes, err := s.Features.Import(strings.TrimSpace(r.FormValue("address")), r.FormValue("name"), pages,
+		r.FormValue("pictures") == "1", p.actor())
 	if err != nil {
 		makeBack(w, r, "", err)
 		return

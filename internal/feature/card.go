@@ -204,7 +204,11 @@ func (p *Package) MakeCard() Card {
 		c.Shows = append(c.Shows, Line{Text: text, Flag: flag})
 	}
 	for _, m := range p.Menus {
-		c.Shows = append(c.Shows, Line{Text: fmt.Sprintf("A menu %q with %d entries", m.Name, len(m.Items))})
+		entries := "entries"
+		if len(m.Items) == 1 {
+			entries = "entry"
+		}
+		c.Shows = append(c.Shows, Line{Text: fmt.Sprintf("A menu %q with %d %s", m.Name, len(m.Items), entries)})
 	}
 	if p.Site != nil {
 		// First, because a package that is a whole site is read as one.
