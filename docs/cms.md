@@ -338,6 +338,14 @@ phone that shows times and services, never names. It is one calendar, taking
 one booking at a time; staff with calendars of their own, deposits and
 recurring appointments are not here.
 
+A feature package can carry the setup as a `bookings` block beside its booking
+page, which is how an agent proposes a site that takes bookings: its card says
+what it collects, two people approve it, and an upgrade keeps the owner's
+calendar address and any pause. Over MCP, `booking_times` shows an agent the
+free times visitors see and nothing about who booked; on the page, a visitor's
+own browser agent is offered the booking form as a WebMCP tool, which the
+visitor still submits.
+
 ## Taking payments
 
 A shop needs a till as well as a catalogue, and a till is where a CMS usually

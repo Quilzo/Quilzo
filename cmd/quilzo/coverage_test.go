@@ -418,8 +418,10 @@ var coverage = map[string]surfaces{
 	// An agent proposes a package; installing it stays a person's decision,
 	// one or two of them, made on the Make screen or the command line.
 	"feature": {GUI: "/make", MCP: []string{"propose_feature"}},
-	"booking": {GUI: "/bookings", NoMCP: "who booked is what a visitor told this site about themselves, read " +
-		"behind a sign-in; a visitor's own agent books through the page, as a person does"},
+	// The free times are on MCP, as they are on the site; who booked is
+	// what a visitor told this site about themselves, read behind a
+	// sign-in, and a visitor's own agent books through the page.
+	"booking": {GUI: "/bookings", MCP: []string{"booking_times"}},
 	"pay": {GUI: "/pay", NoMCP: "turns on taking money, which two administrators decide, and reads buyers' names and " +
 		"addresses from the provider; an agent that can do either can spend a shop's trust"},
 	"webhook": {GUI: "/integrations", NoMCP: "adds an outbound destination for content, which is exfiltration with a configuration screen"},

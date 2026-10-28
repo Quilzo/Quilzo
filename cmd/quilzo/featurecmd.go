@@ -269,6 +269,14 @@ func featureStateWith(root string, takeSite bool) (feature.State, map[string]*fe
 	if err := siteState(root, st, installed, takeSite); err != nil {
 		return st, nil, err
 	}
+	// How the site takes bookings, as it is now: without the owner's feed,
+	// which no package carries.
+	if setup, err := loadBookingSetup(root); err != nil {
+		return st, nil, err
+	} else if setup != nil {
+		setup.Feed = ""
+		put(feature.BookingsRef.Kind, feature.BookingsRef.Name, setup)
+	}
 	// A role lives in the package that declared it, so what it is now is
 	// read from the version installed.
 	for _, in := range installed {
@@ -1054,6 +1062,18 @@ func applyFeature(root string, p *feature.Package, digest string, plan feature.P
 	// one the feature no longer declares is held by nobody.
 	if err := reassignRoles(root, p, act, removing("role"), caller); err != nil {
 		return nil, err
+	}
+	// How the site takes bookings: the setup the pages' booking sections
+	// book from. Taken away, it stops new bookings; those made stand.
+	switch a := act[feature.BookingsRef]; {
+	case p.Bookings != nil && (a == feature.Add || a == feature.Change):
+		if err := applyBookings(root, p, caller); err != nil {
+			return nil, err
+		}
+	case len(removing(feature.BookingsRef.Kind)) > 0:
+		if err := releaseBookings(root, p.Name, caller); err != nil {
+			return nil, err
+		}
 	}
 	// The site itself, last: the pages its menus point at are in the draft
 	// by now, and a site that goes is put back as it was.

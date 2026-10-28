@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/booking"
+	"github.com/quilzo/quilzo/internal/feature"
 )
 
 // A setup is set from a file and checked, the feed it had stays its own,
@@ -95,5 +96,100 @@ func TestBookingsFromTheCommandLine(t *testing.T) {
 	}
 	if _, err := book.ReadDetails(y.ID); !errors.Is(err, booking.ErrNotFound) {
 		t.Fatal("who booked outlived the site's keep")
+	}
+}
+
+// A package can bring its bookings: the card says what it collects and two
+// people approve it; it is the site's setup once installed; an upgrade
+// keeps the owner's calendar address and their pause; taking it away stops
+// new bookings; and a setup somebody made by hand is theirs.
+func TestAPackageBringsItsBookings(t *testing.T) {
+	root, _ := siteStore(t)
+	pkgWith := func(version string, edit func(*feature.Package)) string {
+		p := feature.Package{Format: feature.Format, Name: "salon-bookings", Version: version, Title: "Salon bookings",
+			Purpose: "Haircuts booked on the site.", Bookings: bookingExample(),
+			Pages: []feature.Page{{Name: "book", Body: map[string]any{"title": "Book", "sections": []any{
+				map[string]any{"booking": map[string]any{"title": "Book", "service": "consultation"}}}}}}}
+		if edit != nil {
+			edit(&p)
+		}
+		b, _ := json.Marshal(p)
+		path := filepath.Join(t.TempDir(), "pkg.json")
+		if err := os.WriteFile(path, b, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	p, _, err := readFeature(root, pkgWith("1.0", nil), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := p.MakeCard(); c.Approvers != 2 || len(c.Collects) != 1 || !strings.Contains(c.Collects[0].Text, "Takes bookings for Consultation (30 minutes)") {
+		t.Fatalf("the card: %+v", c)
+	}
+	if _, _, err := readFeature(root, pkgWith("1.0", func(p *feature.Package) {
+		p.Pages[0].Body["sections"] = []any{map[string]any{"booking": map[string]any{"service": "massage"}}}
+	}), ""); err == nil || !strings.Contains(err.Error(), "does not offer") {
+		t.Fatalf("a page booking a service the package does not offer: %v", err)
+	}
+	if _, _, err := readFeature(root, pkgWith("1.0", func(p *feature.Package) { p.Bookings.Feed = strings.Repeat("a", 64) }), ""); err == nil {
+		t.Fatal("a package carried a calendar address")
+	}
+
+	if err := installFeatureFile(root, pkgWith("1.0", nil), "", "", asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	approveWaiting(t, root, "sam")
+	s, err := loadBookingSetup(root)
+	if err != nil || s == nil || len(s.Services) != 2 {
+		t.Fatalf("installed, the setup is %+v %v", s, err)
+	}
+	s.Paused = true
+	if _, err := makeBookingFeed(root, s, false, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	feed := s.Feed
+	if err := installFeatureFile(root, pkgWith("1.1", func(p *feature.Package) { p.Bookings.NoticeHours = 24 }), "", "", asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	approveWaiting(t, root, "sam")
+	if s, _ = loadBookingSetup(root); s.NoticeHours != 24 || s.Feed != feed || !s.Paused {
+		t.Fatalf("upgraded, the setup is %+v", s)
+	}
+	if err := removeFeature(root, "salon-bookings", asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	if s, _ = loadBookingSetup(root); s != nil {
+		t.Fatal("removed, the package's setup stays")
+	}
+
+	// By hand first: the package does not take it over.
+	if err := saveBookingSetup(root, bookingExample(), asAdmin("dana"), "setup"); err != nil {
+		t.Fatal(err)
+	}
+	if err := installFeatureFile(root, pkgWith("2.0", nil), "", "", asAdmin("dana")); err == nil ||
+		!strings.Contains(err.Error(), "made by a person") {
+		t.Fatalf("over a setup made by hand: %v", err)
+	}
+}
+
+// The site crew sees the free times visitors see, and never who booked.
+func TestAnAgentSeesTheFreeTimes(t *testing.T) {
+	root, _ := siteStore(t)
+	call := siteCrew(t, root)
+	if got := call("quilzo_read", "booking_times", nil); got["bookings"] != false {
+		t.Fatalf("no setup: %v", got)
+	}
+	if err := saveBookingSetup(root, bookingExample(), asAdmin("dana"), "setup"); err != nil {
+		t.Fatal(err)
+	}
+	got := call("quilzo_read", "booking_times", map[string]any{"days": 14})
+	services, _ := got["services"].([]any)
+	if got["zone"] != "Europe/London" || len(services) != 2 {
+		t.Fatalf("the free times: %v", got)
+	}
+	first := services[0].(map[string]any)
+	if free, _ := first["free"].([]any); len(free) == 0 {
+		t.Fatalf("no free days in a fortnight: %v", first)
 	}
 }

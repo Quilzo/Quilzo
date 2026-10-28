@@ -133,6 +133,10 @@ func (st *Site) toolFor(attrs map[string]string, body string, forms *form.Set) (
 		return toolSpec{name: "ask-" + name, auto: true,
 			description: title + ": answers a question from this site's published pages only, and every sentence links to the page it came from.",
 			params:      map[string]string{"q": "The question, in plain words."}}, true
+	case strings.HasPrefix(action, "/book/") && method == "post" && action != "/book/cancel":
+		// A time with the business: the agent chooses and fills it in, and
+		// the visitor books it, as with a form.
+		return st.bookingTool(strings.Trim(strings.TrimPrefix(action, "/book/"), "/"))
 	case strings.HasPrefix(action, "/form/"):
 		name := strings.Trim(strings.TrimPrefix(action, "/form/"), "/")
 		if forms == nil {

@@ -248,3 +248,21 @@ func TestPausedBookingsTakeNone(t *testing.T) {
 		t.Fatalf("booking while paused: %d", res.Code)
 	}
 }
+
+// A visitor's browser agent is offered the booking form as a tool, said in
+// the setup's own words, which the visitor still submits; never the
+// cancel button, and nothing while bookings are paused.
+func TestABookingFormIsAToolForAVisitorsAgent(t *testing.T) {
+	st, _, _, _ := bookingSite(t)
+	body := getPage(st, "/book").Body.String()
+	if !strings.Contains(body, `toolname="book-cut"`) || strings.Contains(body, "toolautosubmit") ||
+		!strings.Contains(body, "Book Haircut, 45 minutes, £30") ||
+		!strings.Contains(body, `toolparamdescription="The time to book`) {
+		t.Fatalf("the booking form is not offered as a tool:\n%s", body)
+	}
+	setup, _ := st.Bookings.Setup()
+	setup.Paused = true
+	if strings.Contains(getPage(st, "/book").Body.String(), `toolname="book-cut"`) {
+		t.Fatal("a paused site offers a booking tool")
+	}
+}

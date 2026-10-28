@@ -52,6 +52,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/assistant"
+	"github.com/quilzo/quilzo/internal/booking"
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/form"
 	"github.com/quilzo/quilzo/internal/listing"
@@ -86,6 +87,8 @@ type Package struct {
 	// Site is the site itself, for a package that is a whole site (see
 	// site.go).
 	Site *Site `json:"site,omitempty"`
+	// Bookings is how the site takes appointments (see bookings.go).
+	Bookings *booking.Setup `json:"bookings,omitempty"`
 
 	Types       []schema.Type         `json:"types,omitempty"`
 	Collections []Collection          `json:"collections,omitempty"`
@@ -311,6 +314,7 @@ func (p *Package) Validate(c Checks) error {
 		}
 	}
 	p.validateRoles(bad, unique)
+	validateBookings(p, bad)
 	if p.Site != nil {
 		p.Site.validate(bad)
 		// Redirects are served before pages, so one from the package's own
@@ -344,6 +348,9 @@ func (p *Package) Blocks() int {
 	n := len(p.Types) + len(p.Collections) + len(p.Listings) + len(p.Forms) + len(p.Pages) +
 		len(p.Menus) + len(p.Chatbots) + len(p.Agents) + len(p.Webhooks) + len(p.Roles)
 	if p.Site != nil {
+		n++
+	}
+	if p.Bookings != nil {
 		n++
 	}
 	return n
@@ -413,6 +420,9 @@ func (p *Package) Refs() []Ref {
 	}
 	if p.Site != nil {
 		out = append(out, SiteRef)
+	}
+	if p.Bookings != nil {
+		out = append(out, BookingsRef)
 	}
 	return out
 }

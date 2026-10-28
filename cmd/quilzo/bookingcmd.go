@@ -20,6 +20,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/booking"
+	"github.com/quilzo/quilzo/internal/feature"
 	"github.com/quilzo/quilzo/internal/public"
 	"github.com/quilzo/quilzo/internal/throttle"
 )
@@ -446,4 +447,39 @@ func bookingCalendar(root string) ([]byte, error) {
 			Summary: title + ": " + b.Who.Name, Description: about, Cancelled: !b.When.Live()})
 	}
 	return booking.ICS(siteName(root)+" bookings", events, now), nil
+}
+
+// applyBookings writes a package's bookings setup. The owner's calendar
+// address stays theirs, and so does a pause they set: an upgrade does not
+// start taking bookings somebody stopped.
+func applyBookings(root string, pkg *feature.Package, caller *Caller) error {
+	s := *pkg.Bookings
+	s.Feed = ""
+	if prior, err := loadBookingSetup(root); err != nil {
+		return err
+	} else if prior != nil {
+		s.Feed, s.Paused = prior.Feed, s.Paused || prior.Paused
+	}
+	if err := s.Validate(); err != nil {
+		return err
+	}
+	body, err := json.MarshalIndent(&s, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := atomicfile.Write(bookingSetupPath(root), append(body, '\n'), 0o600); err != nil {
+		return err
+	}
+	return recordE(root, caller.auditRecord("booking.setup", "/", audit.Success, map[string]string{
+		"change": "feature", "feature": pkg.Name, "version": pkg.Version, "services": fmt.Sprint(len(s.Services))}))
+}
+
+// releaseBookings takes a package's bookings setup away: no new bookings
+// are taken, and those made stand, listed and kept for their time.
+func releaseBookings(root, pkg string, caller *Caller) error {
+	if err := os.Remove(bookingSetupPath(root)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return recordE(root, caller.auditRecord("booking.setup", "/", audit.Success, map[string]string{
+		"change": "removed with the feature", "feature": pkg}))
 }
