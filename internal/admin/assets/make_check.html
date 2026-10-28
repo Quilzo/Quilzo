@@ -4,6 +4,7 @@
 <h1>{{.Card.Title}} <span class="tag">{{.Card.Version}}</span></h1>
 <p class="lead">{{.Card.Purpose}}</p>
 {{if .Card.MadeBy}}<p class="hint">Made by {{.Card.MadeBy}}{{with .Package.Made}}{{if .From}}, from: “{{.From}}”{{end}}{{end}}. Read it before you install it.</p>{{end}}
+{{if .Proposed}}<p class="notice" role="status">{{.Proposed}}</p>{{end}}
 {{if .Notes}}<div class="notice"><p>Left out of the draft, or decided for it:</p><ul>{{range .Notes}}<li>{{.}}</li>{{end}}</ul></div>{{end}}
 <p><span class="tag {{if eq .Card.Risk "high"}}tag-bad{{else if eq .Card.Risk "medium"}}tag-warn{{else}}tag-ok{{end}}">risk {{.Card.Risk}}</span>
 {{if .Alone}} Two different people would approve it; you are the only administrator, so you approve it alone, and the record says so.{{else if eq .Card.Approvers 2}} Two different people approve it.{{else}} One administrator approves it.{{end}}</p>

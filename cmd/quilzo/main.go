@@ -257,6 +257,7 @@ features (one package of blocks, installed as one decision)
                                            (--templates DIR; --take-site over a site somebody set up by hand)
   quilzo feature approve | decline ID      the second person decides
   quilzo feature pending | list | show NAME   what is waiting, and what is installed
+  quilzo feature proposals [--dismiss ID]  what agents drafted for you to read and install (site_build, site_import)
   quilzo feature remove | rollback NAME    take it back, or go back a version
   quilzo feature export NAME [--sign]      the installed package, signed with the log's keys
   quilzo feature capture NAME --page P ... a package from blocks that already exist

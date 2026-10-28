@@ -61,6 +61,20 @@ Unreleased
 
 ** Added
 
+*** An agent can be the site crew, and a person still decides.  Over MCP,
+    site_build makes a whole site from a description, site_import brings
+    one in by its address, and propose_feature takes a package the agent
+    wrote.  None of them installs anything: each waits as a proposal, under
+    Proposed for you on the Make screen, on Approvals and in quilzo feature
+    proposals, until a person reads its card and installs it under the same
+    approvals as anything they bring.  A newer proposal of the same package
+    replaces the older one, at most twenty wait, and one nobody reads lapses
+    after two weeks.  site_blanks and site_fill then fill in what the person
+    told the agent; those pages are marked as an agent's words, and the
+    pages of a package an agent wrote as a model's.  Filling in blanks now
+    checks each page it changes, so a deny on a page holds against a fill as
+    it does against an edit.
+
 *** Bring your site by its address.  `quilzo site import
     https://old.example --install`, or Bring your site on the Make screen,
     reads a live site, whatever it was built with: robots.txt first, then

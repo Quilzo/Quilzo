@@ -415,8 +415,9 @@ var coverage = map[string]surfaces{
 	"ext":      {GUI: "/integrations", NoMCP: "registers a process this store executes. Arbitrary code execution, reached by asking"},
 	"research": {GUI: "/research", MCP: []string{"research_projects", "research_project", "research_search",
 		"research_cite", "research_run", "research_claim", "research_write", "research_ideas"}},
-	"feature": {GUI: "/make", NoMCP: "installing a feature is a person's decision, one or two of " +
-		"them; a model may draft a package, and checking one is the command line's and the screen's"},
+	// An agent proposes a package; installing it stays a person's decision,
+	// one or two of them, made on the Make screen or the command line.
+	"feature": {GUI: "/make", MCP: []string{"propose_feature"}},
 	"pay": {GUI: "/pay", NoMCP: "turns on taking money, which two administrators decide, and reads buyers' names and " +
 		"addresses from the provider; an agent that can do either can spend a shop's trust"},
 	"webhook": {GUI: "/integrations", NoMCP: "adds an outbound destination for content, which is exfiltration with a configuration screen"},
@@ -497,8 +498,10 @@ var coverage = map[string]surfaces{
 		NoMCP: "creates the store an agent would already have to be connected to"},
 	"serve": {Why: "starts the interface; a button inside it could not",
 		NoMCP: "starts a server"},
-	"site": {Why: "starts the public server, for the same reason",
-		NoMCP: "starts a server"},
+	// Serving starts a server, which no screen or agent does; building,
+	// bringing in and filling in a site are on Make, and an agent's build or
+	// import waits there as a proposal for a person to install.
+	"site": {GUI: "/make", MCP: []string{"site_build", "site_import", "site_blanks", "site_fill"}},
 	"studio": {Why: "starts the capture surface, which is its own server " +
 		"because it runs a script and the admin does not. A button in the " +
 		"admin could start it, and then the admin would have to know its " +

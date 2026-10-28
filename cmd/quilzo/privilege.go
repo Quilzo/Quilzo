@@ -556,8 +556,11 @@ var commandNeeds = map[string]need{
 	"feature example": {action: auth.ActView},
 	"feature check":   {action: auth.ActView},
 	"feature pending": {action: auth.ActView},
-	"feature list":    {action: auth.ActView},
-	"feature show":    {action: auth.ActView},
+	// What agents proposed is read by anybody who may look; setting one
+	// aside is checked again inside, for whoever may install features.
+	"feature proposals": {action: auth.ActView},
+	"feature list":      {action: auth.ActView},
+	"feature show":      {action: auth.ActView},
 	// Drafting asks a model, which costs what an author's drafting costs;
 	// reading a file into a package changes nothing here.
 	"feature draft": {action: auth.ActUseModels},

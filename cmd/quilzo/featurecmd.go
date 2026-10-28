@@ -85,6 +85,8 @@ func cmdFeature(root string, args []string) error {
 		return featureDecide(root, rest, false)
 	case "pending":
 		return featurePendingList(root)
+	case "proposals":
+		return featureProposalsCmd(root, rest)
 	case "list":
 		return featureList(root)
 	case "show":
@@ -103,7 +105,7 @@ func cmdFeature(root string, args []string) error {
 		return featureFromCmd(root, rest)
 	default:
 		return fmt.Errorf("unknown feature command %q; try example, draft, from, check, install, approve, decline, "+
-			"pending, list, show, remove, rollback, export or capture", args[0])
+			"pending, proposals, list, show, remove, rollback, export or capture", args[0])
 	}
 }
 
@@ -1632,6 +1634,28 @@ func featureHooks(root string, signedIn func(admin.Actor) *Caller) *admin.Featur
 			body, err := json.MarshalIndent(b.Package, "", "  ")
 			return body, b.Notes, err
 		},
+		Proposals: func() ([]admin.Proposal, error) {
+			list, err := proposals(root)
+			if err != nil {
+				return nil, err
+			}
+			out := make([]admin.Proposal, 0, len(list))
+			for _, pr := range list {
+				out = append(out, admin.Proposal{ID: pr.ID, Name: pr.Name, Version: pr.Version, Title: pr.Title,
+					What: pr.What, By: pr.By, For: pr.For, At: pr.At, Notes: len(pr.Notes)})
+			}
+			return out, nil
+		},
+		Proposal: func(id string) ([]byte, string, []string, error) {
+			body, pr, err := proposalBody(root, id)
+			if err != nil {
+				return nil, "", nil, err
+			}
+			from := fmt.Sprintf("Proposed by %s for %s: %s. Nothing is installed until you install it.",
+				pr.By, pr.For, pr.What)
+			return body, from, pr.Notes, nil
+		},
+		Dismiss: func(id string, by admin.Actor) error { return dismissProposal(root, id, signedIn(by)) },
 		Blanks: func() ([]string, map[string][]string, error) {
 			pages, err := draftPages(root)
 			if err != nil {
