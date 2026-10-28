@@ -170,6 +170,10 @@ func (p *Package) MakeCard() Card {
 		c.Collects = append(c.Collects, Line{Text: text, Flag: "personal"})
 		need("it collects what visitors type into a form")
 	}
+	if p.Bookings != nil {
+		c.Collects = append(c.Collects, bookingsLine(p.Bookings))
+		need("it takes bookings, keeping who booked")
+	}
 
 	listings := map[string]listing.Listing{}
 	for _, l := range p.Listings {

@@ -77,7 +77,14 @@ Unreleased
     number of days after the appointment.  quilzo booking feed makes a
     calendar address for the owner's phone, showing times and services and
     never names.  Webhooks can be told "booked" and "booking-cancelled",
-    with the service and nothing else.
+    with the service and nothing else.  A feature package can carry a
+    "bookings" block, so a site an agent proposes arrives taking bookings;
+    its card says what it collects and two people approve it, an upgrade
+    keeps the owner's calendar address and any pause, and a setup made by
+    hand is not taken over.  Over MCP, booking_times shows an agent the
+    free times visitors see, and never who booked; on the page, a visitor's
+    own browser agent is offered the booking form as a WebMCP tool, which
+    the visitor still submits.
 
 *** An agent can be the site crew, and a person still decides.  Over MCP,
     site_build makes a whole site from a description, site_import brings

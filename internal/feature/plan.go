@@ -119,6 +119,10 @@ func (p *Package) Block(r Ref) any {
 		if p.Site != nil && r == SiteRef {
 			return p.Site
 		}
+	case BookingsRef.Kind:
+		if p.Bookings != nil && r == BookingsRef {
+			return p.Bookings
+		}
 	}
 	return nil
 }

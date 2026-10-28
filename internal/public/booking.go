@@ -439,3 +439,35 @@ func (st *Site) calendarFile(w http.ResponseWriter, name string, body []byte) {
 	h.Set("X-Content-Type-Options", "nosniff")
 	_, _ = w.Write(body)
 }
+
+// bookingTool is a booking form as a tool a visitor's browser agent can
+// fill in (WebMCP; see webmcp.go). Everything it says comes from the
+// setup: the service's title, length and price, and the clock the times
+// are on.
+func (st *Site) bookingTool(service string) (toolSpec, bool) {
+	if !st.bookingsOn() {
+		return toolSpec{}, false
+	}
+	setup, err := st.Bookings.Setup()
+	if err != nil || setup == nil || setup.Paused {
+		return toolSpec{}, false
+	}
+	svc, ok := setup.Service(service)
+	if !ok {
+		return toolSpec{}, false
+	}
+	desc := fmt.Sprintf("Book %s, %d minutes", svc.Title, svc.Minutes)
+	if svc.Price != "" {
+		desc += ", " + svc.Price
+	}
+	desc += ", at one of the free times shown. The visitor reviews the booking and makes it themselves; " +
+		"it can be cancelled from the page shown afterwards."
+	return toolSpec{name: "book-" + svc.Name, description: desc, trap: form.Honeypot,
+		params: map[string]string{
+			"slot":  "The time to book: one of the free times offered, which are on " + zoneLabel(setup.Zone) + ". Required",
+			"name":  "The visitor's name. Required",
+			"email": "An email address the business can reach the visitor at. Required",
+			"phone": "A telephone number, if the visitor wants to give one",
+			"note":  "Anything the business should know, in the visitor's words",
+		}}, true
+}

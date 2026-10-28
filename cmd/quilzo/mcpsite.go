@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/booking"
 	"github.com/quilzo/quilzo/internal/feature"
 	"github.com/quilzo/quilzo/internal/mcp"
 	"github.com/quilzo/quilzo/internal/webimport"
@@ -128,7 +129,8 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 		Summary: "propose a feature package you wrote (types, forms, pages, menus, chatbots…) for a person to install",
 		Detail: "The package is checked as an install would check it, and kept for a person to read on the Make " +
 			"screen. Its pages are marked as a model's words when installed. `quilzo feature example` shows " +
-			"the format.",
+			"the format; a bookings block (as `quilzo booking example` prints) sets how the site takes " +
+			"appointments, for pages with a booking section.",
 		Args:     map[string]string{"package": "the package, as a JSON object"},
 		Keywords: []string{"feature", "package", "propose", "form", "booking", "directory", "install"},
 	}, func(a map[string]any) (any, error) {
@@ -154,6 +156,71 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 			return refuse(err)
 		}
 		return proposed(pr, p, nil)
+	})
+
+	srv.Register(mcp.Operation{
+		Name: "booking_times", NeedsRole: "reader",
+		Summary: "the site's bookable services and their free times, as visitors see them",
+		Detail: "What the public booking pages offer: each service with its length and price, and the free times " +
+			"in the site's time zone. Who booked is not here; a person reads that on the Bookings screen. To change " +
+			"the hours or services, propose a package with a bookings block (propose_feature).",
+		Args:     map[string]string{"days": "optional: how many days ahead, at most 31; 7 by default"},
+		Keywords: []string{"booking", "appointment", "availability", "free", "times", "calendar", "slots"},
+	}, func(a map[string]any) (any, error) {
+		setup, err := loadBookingSetup(root)
+		if err != nil {
+			return refuse(err)
+		}
+		if setup == nil {
+			return `{"bookings":false,"note":"this site takes no bookings"}`, nil
+		}
+		days := 7
+		if n, ok := a["days"].(float64); ok && n >= 1 && n <= 31 {
+			days = int(n)
+		}
+		book, err := openBookings(root)
+		if err != nil {
+			return nil, err
+		}
+		now := time.Now()
+		busy, err := book.Window(setup, now)
+		if err != nil {
+			return nil, err
+		}
+		type day struct {
+			Date  string   `json:"date"`
+			Times []string `json:"times"`
+		}
+		type service struct {
+			Name    string `json:"name"`
+			Title   string `json:"title"`
+			Minutes int    `json:"minutes"`
+			Price   string `json:"price,omitempty"`
+			Free    []day  `json:"free"`
+		}
+		var out []service
+		horizon := now.AddDate(0, 0, days).Format("2006-01-02")
+		for _, sv := range setup.Services {
+			free, err := booking.Free(setup, sv, busy, now)
+			if err != nil {
+				return refuse(err)
+			}
+			entry := service{Name: sv.Name, Title: sv.Title, Minutes: sv.Minutes, Price: sv.Price}
+			for _, d := range free {
+				if d.Date > horizon {
+					break
+				}
+				var times []string
+				for _, sl := range d.Slots {
+					times = append(times, sl.Label)
+				}
+				entry.Free = append(entry.Free, day{Date: d.Date, Times: times})
+			}
+			out = append(out, entry)
+		}
+		b, err := json.Marshal(map[string]any{"bookings": true, "zone": setup.Zone, "paused": setup.Paused,
+			"services": out})
+		return string(b), err
 	})
 
 	srv.Register(mcp.Operation{
