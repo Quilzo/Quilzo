@@ -3339,3 +3339,8 @@ td .duty-more { margin: 4px 0 0; }
 .view-bar { display: block; width: 200px; height: .75rem; }
 .view-bar rect { fill: var(--primary); }
 .view-kept { margin: 0 0 1.5rem; }
+
+/* Fill in: one blank per group, its answer full width beneath its name. */
+fieldset.fill-blank { display: grid; gap: 0.4rem; margin-block-end: 0.9rem; }
+fieldset.fill-blank textarea { inline-size: 100%; field-sizing: content; min-block-size: 2.6rem; }
+fieldset.fill-blank label.fill-leave { font-weight: 400; }

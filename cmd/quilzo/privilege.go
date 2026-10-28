@@ -583,6 +583,13 @@ var commandNeeds = map[string]need{
 	// request, but deciding to expose the store at all is an operator act.
 	"serve": {action: auth.ActPublish},
 	"site":  {action: auth.ActPublish},
+	// Building a site is authoring: it writes a package file. Asking a
+	// model to write it is checked when one is asked, so --no-model needs
+	// no model rights, and --install checks install authority itself.
+	// Filling in blanks edits pages in the draft.
+	"site new":   {action: auth.ActEditDraft},
+	"site kinds": {action: auth.ActView},
+	"site fill":  {action: auth.ActEditDraft},
 	// The capture surface enforces edit-draft per request, and it runs a
 	// script on a writable origin. Deciding to open that at all is the
 	// operator act, so it is held to the same bar as opening the admin.

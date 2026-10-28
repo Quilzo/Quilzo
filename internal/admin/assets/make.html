@@ -1,14 +1,35 @@
 {{template "head" .}}
 <h1>Make</h1>
-<p class="lead">A feature is one package: the types, records, listings, forms, pages, menus, chatbots, agents and webhooks it needs. Check what it would store, show, send and change, install it as one decision, and take it back as one.</p>
+<p class="lead">A feature is one package: the types, records, listings, forms, pages, menus, chatbots, agents and webhooks it needs. A whole site is one too. Check what it would store, show, send and change, install it as one decision, and take it back as one.</p>
 {{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
 {{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
 {{if .Secrets}}<section aria-labelledby="make-secrets" class="card"><h2 id="make-secrets">Webhook secrets</h2>
 <p>Each receiving server checks the signature with its secret. Copy them now; Quilzo shows them once.</p>
 <ul>{{range .Secrets}}<li><code>{{.}}</code></li>{{end}}</ul>
 <p><a href="/make">Done</a></p></section>{{else if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+{{if .Blanks}}<div class="notice" role="status"><p><strong>{{.Blanks}} {{if eq .Blanks 1}}thing{{else}}things{{end}} to fill in</strong> before the pages they are on can be published: facts only you know, which the site builder left blank rather than make up. <a href="/make/fill">Fill them in</a></p></div>{{end}}
+{{if .CanSite}}<section aria-labelledby="make-site">
+<h2 id="make-site">Build a whole site</h2>
+<form method="post" action="/make/site" class="param-form">
+  <label for="make-site-text">What is the site for? {{template "req"}}</label><textarea id="make-site-text" name="description" rows="3" maxlength="2000" required placeholder="A bakery in Leeds: sourdough and rye, open early, with a café upstairs"></textarea>
+  <label for="make-site-name">What is it called?</label><input id="make-site-name" name="name" maxlength="80" placeholder="Hart's Bakery">
+  <label for="make-site-kind">Kind of site</label><select id="make-site-kind" name="kind">
+    <option value="">Read it from the description</option>
+    {{range .Kinds}}<option value="{{.Name}}">{{.Title}}: {{.Summary}}</option>{{end}}
+  </select>
+  <label for="make-site-style">Style</label><select id="make-site-style" name="style">
+    <option value="">The kind of site's own</option>
+    {{range .Styles}}<option value="{{.}}">{{.}}</option>{{end}}
+  </select>
+  <label for="make-site-colour">Main colour</label><input id="make-site-colour" name="colour" maxlength="7" pattern="#[0-9a-fA-F]{6}" placeholder="#c2410c" aria-describedby="make-site-colour-hint">
+  <span class="hint" id="make-site-colour-hint">As #rrggbb. Left empty, the kind of site picks one; every palette is checked for contrast.</span>
+  <p><label><input type="checkbox" name="use_model" value="1" checked> A model writes the words, when one is allowed</label></p>
+  <div class="auto-controls"><button type="submit">Build it</button></div>
+</form>
+<p class="hint">You get pages, menus, a contact form, a privacy page written from what the forms collect, a question box that answers from the site's own pages, and a look. Nothing is made up: a price, an address or opening hours the description does not give is left as a blank for you to fill in. You read all of it before anything is installed. Without a model, the site needs a name.</p>
+</section>{{end}}
 <section aria-labelledby="make-describe">
-<h2 id="make-describe">Describe it</h2>
+<h2 id="make-describe">Describe a feature</h2>
 <form method="post" action="/make/draft" class="param-form">
   <label for="make-describe-text">What should it do? {{template "req"}}</label><textarea id="make-describe-text" name="description" rows="3" maxlength="2000" required placeholder="Track the lab's samples, who has each one, and show members which are available"></textarea>
   <div class="auto-controls"><button type="submit" class="btn-tonal">Draft it</button></div>

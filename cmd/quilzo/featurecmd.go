@@ -481,6 +481,9 @@ type featureOutcome struct {
 	Secrets []string
 	// Imported is how many records came in with it.
 	Imported int
+	// Alone is an install two people would approve, approved by the only
+	// administrator there is.
+	Alone bool
 }
 
 // requestFeature installs at once when one approval is enough, and otherwise
@@ -516,7 +519,18 @@ func requestFeature(root string, p *feature.Package, body []byte, caller *Caller
 	if err := keepFeaturePackage(root, p.Name, digest, body); err != nil {
 		return out, err
 	}
-	if out.Card.Approvers < 2 {
+	// One administrator approves alone, as everywhere else two are asked
+	// for: an install with one is not left unable to install a contact
+	// form, and the record says the decision was made alone.
+	out.Alone = out.Card.Approvers >= 2 && onlyAdministrator(root, caller.Name)
+	if out.Card.Approvers < 2 || out.Alone {
+		if out.Alone {
+			if err := recordE(root, caller.auditRecord("feature.approved", "/", audit.Success, map[string]string{
+				"feature": out.Card.Name, "version": p.Version, "digest": digest[:16], "risk": out.Card.Risk,
+				"alone": "true"})); err != nil {
+				return out, err
+			}
+		}
 		out.Secrets, err = applyFeature(root, p, digest, out.Plan, caller, []string{caller.Name})
 		if err == nil && rows != nil {
 			out.Imported, err = putCheckedRecords(root, rows.Collection, rows.Records, caller)
@@ -564,6 +578,10 @@ func printOutcome(p *feature.Package, o featureOutcome, err error, caller *Calle
 		w.Human("\n%s needs a second person: quilzo feature approve %s, by somebody other than %s\n",
 			p.Name, o.Waiting.ID, caller.Name)
 		return nil
+	}
+	if o.Alone {
+		w.Human("%syou are the only administrator, so this is approved as you make it; the record says so%s\n",
+			yellow, reset)
 	}
 	w.Human("installed %s %s; its pages are in the draft, and publishing them is the usual review\n", p.Name, p.Version)
 	if o.Imported > 0 {
@@ -995,6 +1013,16 @@ func applyFeature(root string, p *feature.Package, digest string, plan feature.P
 			return nil, err
 		}
 		if err := saveDraft(root, s, pages, "feature "+p.Name+" "+p.Version, caller.Name, ""); err != nil {
+			return nil, err
+		}
+		var written []string
+		for _, pg := range p.Pages {
+			if changes("page", pg.Name) {
+				written = append(written, pg.Name)
+			}
+		}
+		// The person who asked for the install answers for its pages.
+		if err := markFeaturePages(root, s, p, digest, written, by[0]); err != nil {
 			return nil, err
 		}
 	}
@@ -1579,7 +1607,36 @@ func featureHooks(root string, signedIn func(admin.Actor) *Caller) *admin.Featur
 		Decide: func(id string, approve bool, by admin.Actor) error {
 			return decideFeature(root, id, approve, signedIn(by))
 		},
-		Remove: func(name string, by admin.Actor) error { return removeFeature(root, name, signedIn(by)) },
+		Site: func(b feature.SiteBrief, useModel bool, by admin.Actor) ([]byte, []string, error) {
+			ctx, cancel := context.WithTimeout(context.Background(), featureDraftTimeout)
+			defer cancel()
+			built, err := buildSite(ctx, root, b, useModel, signedIn(by))
+			if err != nil {
+				return nil, nil, err
+			}
+			return built.Body, built.Notes, nil
+		},
+		Blanks: func() ([]string, map[string][]string, error) {
+			pages, err := draftPages(root)
+			if err != nil {
+				return nil, nil, err
+			}
+			known, err := builderBlanks(root)
+			if err != nil {
+				return nil, nil, err
+			}
+			whats, on := siteBlanks(pages, known)
+			return whats, on, nil
+		},
+		Fill: func(values map[string]string, by admin.Actor) (int, []string, error) {
+			caller := signedIn(by)
+			if err := authorise(root, caller, auth.ActEditDraft, "/"); err != nil {
+				return 0, nil, err
+			}
+			return fillSite(root, values, caller)
+		},
+		OnlyAdmin: func(name string) bool { return onlyAdministrator(root, name) },
+		Remove:    func(name string, by admin.Actor) error { return removeFeature(root, name, signedIn(by)) },
 		Rollback: func(name string, by admin.Actor) (string, error) {
 			_, o, err := rollbackFeature(root, name, signedIn(by))
 			if o.Waiting != nil {

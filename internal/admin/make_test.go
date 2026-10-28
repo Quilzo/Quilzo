@@ -5,6 +5,7 @@ package admin
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"mime/multipart"
 	"net/http"
@@ -304,5 +305,101 @@ func TestASitePackageTakesOverAHandMadeSiteOnlyWhenAsked(t *testing.T) {
 		"take_site": {"1"}})
 	if len(tookOver) != 1 || !tookOver[0] {
 		t.Fatalf("the install did not take the site over: %v", tookOver)
+	}
+}
+
+// A whole site is built from what somebody says it is for and shown as any
+// package is, with what they will have to fill in; the only administrator
+// is told they approve it alone.
+func TestMakeBuildsAWholeSiteAndListsWhatToFillIn(t *testing.T) {
+	srv, token := setup(t)
+	wireFeatures(srv)
+	var asked feature.SiteBrief
+	var model bool
+	srv.Features.Site = func(b feature.SiteBrief, useModel bool, _ Actor) ([]byte, []string, error) {
+		asked, model = b, useModel
+		p, err := feature.BuildSite(b, "dana", time.Now())
+		if err != nil {
+			return nil, nil, err
+		}
+		body, err := json.Marshal(p)
+		return body, nil, err
+	}
+	srv.Features.OnlyAdmin = func(string) bool { return true }
+
+	page := get(t, srv, "/make", token).Body.String()
+	if !strings.Contains(page, `action="/make/site"`) || !strings.Contains(page, "A café, restaurant or bar") {
+		t.Fatal("Make offers no way to build a whole site")
+	}
+	whole(t, page)
+
+	res := postForm(t, srv, "/make/site", token, url.Values{"description": {"A bakery in Leeds"},
+		"name": {"Hart's Bakery"}, "style": {"bold"}, "colour": {"#15803d"}}.Encode())
+	body := res.Body.String()
+	if res.Code != http.StatusOK || asked.Name != "Hart's Bakery" || asked.Style != "bold" || asked.Colour != "#15803d" || model {
+		t.Fatalf("built %d from %+v, model %v", res.Code, asked, model)
+	}
+	for _, want := range []string{`Names the site &#34;Hart&#39;s Bakery&#34;`, "To fill in", "your opening hours, in a sentence",
+		"you approve it alone", ">Install it<"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the check page does not say %q", want)
+		}
+	}
+	whole(t, body)
+
+	res = postForm(t, srv, "/make/site", token, url.Values{"description": {"A bakery"}}.Encode())
+	if loc := res.Header().Get("Location"); !strings.Contains(loc, "e=") {
+		t.Errorf("a site with no name and no model went to %q", loc)
+	}
+}
+
+// What only the owner knows is written in from one screen, once for every
+// page it is on, by somebody who may edit the draft.
+func TestFillInWritesTheBlanksIntoTheDraft(t *testing.T) {
+	srv, token := setup(t)
+	wireFeatures(srv)
+	var filled map[string]string
+	srv.Features.Blanks = func() ([]string, map[string][]string, error) {
+		return []string{"your address", "your opening hours"}, map[string][]string{
+			"your address": {"contact", "visit"}, "your opening hours": {"visit"}}, nil
+	}
+	srv.Features.Fill = func(v map[string]string, _ Actor) (int, []string, error) {
+		filled = v
+		return 3, []string{"contact", "visit"}, nil
+	}
+	if page := get(t, srv, "/make", token).Body.String(); !strings.Contains(page, "2 things to fill in") {
+		t.Error("Make does not say there are blanks to fill in")
+	}
+	page := get(t, srv, "/make/fill", token).Body.String()
+	if !strings.Contains(page, "Your address") || !strings.Contains(page, "<code>visit</code>") {
+		t.Fatal("the Fill in screen does not list the blanks")
+	}
+	whole(t, page)
+
+	code, loc := postFormLoc(t, srv, token, "/make/fill", url.Values{"what": {"your address", "your opening hours"},
+		"value0": {"4 Mill Lane, Leeds"}, "value1": {""}, "leave1": {"1"}})
+	if code != http.StatusSeeOther || !strings.Contains(loc, "Filled+in+3+blanks") {
+		t.Fatalf("filling went %d to %q", code, loc)
+	}
+	if filled["your address"] != "4 Mill Lane, Leeds" || filled["your opening hours"] != "" || len(filled) != 2 {
+		t.Fatalf("filled %v", filled)
+	}
+
+	// Nothing written in is a mistake to say, not a write.
+	filled = nil
+	if _, loc := postFormLoc(t, srv, token, "/make/fill", url.Values{"what": {"your address"}}); !strings.Contains(loc, "e=") || filled != nil {
+		t.Errorf("an empty form went to %q and filled %v", loc, filled)
+	}
+
+	// A reader may not fill anything in.
+	if err := srv.Policy.Grant(auth.Binding{Principal: "rae", Role: auth.RoleReader, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	rae, _, err := srv.Tokens.IssueSession("rae", "rae", auth.RoleReader, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := postFormLoc(t, srv, rae, "/make/fill", url.Values{"what": {"your address"}, "value0": {"x"}}); code != http.StatusForbidden || filled != nil {
+		t.Errorf("a reader filled in a blank: %d", code)
 	}
 }

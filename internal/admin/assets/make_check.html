@@ -6,7 +6,7 @@
 {{if .Card.MadeBy}}<p class="hint">Made by {{.Card.MadeBy}}{{with .Package.Made}}{{if .From}}, from: “{{.From}}”{{end}}{{end}}. Read it before you install it.</p>{{end}}
 {{if .Notes}}<div class="notice"><p>Left out of the draft, or decided for it:</p><ul>{{range .Notes}}<li>{{.}}</li>{{end}}</ul></div>{{end}}
 <p><span class="tag {{if eq .Card.Risk "high"}}tag-bad{{else if eq .Card.Risk "medium"}}tag-warn{{else}}tag-ok{{end}}">risk {{.Card.Risk}}</span>
-{{if eq .Card.Approvers 2}} Two different people approve it.{{else}} One administrator approves it.{{end}}</p>
+{{if .Alone}} Two different people would approve it; you are the only administrator, so you approve it alone, and the record says so.{{else if eq .Card.Approvers 2}} Two different people approve it.{{else}} One administrator approves it.{{end}}</p>
 {{if .Card.Because}}<ul>{{range .Card.Because}}<li>Two people, because {{.}}.</li>{{end}}</ul>{{end}}
 {{if .Card.Stores}}<h2>Stores</h2><ul>{{template "cardlines" .Card.Stores}}</ul>{{end}}
 {{if .RowCount}}<p>With it, <strong>{{.RowCount}}</strong> records from the file go into <code>{{.Into}}</code>, each checked against its type.</p>{{end}}
@@ -17,6 +17,9 @@
 {{if .Card.Chatbots}}<h2>Chatbots</h2><ul>{{template "cardlines" .Card.Chatbots}}</ul>{{end}}
 {{if .Card.Roles}}<h2>Roles for the people who work in it</h2><ul>{{template "cardlines" .Card.Roles}}</ul>
 <p class="hint">Nobody holds a role until somebody who grants access gives it to them, on People.</p>{{end}}
+{{if .Fill}}<h2>To fill in</h2>
+<p>Facts the description did not give, left blank rather than made up. After installing, <a href="/make/fill">Fill in</a> writes them into the pages; a page with a blank left is not published.</p>
+<ul class="import-notes">{{range .Fill}}<li>{{.}}</li>{{end}}</ul>{{end}}
 <h2>What it would change</h2>
 <div class="table-wrap"><table>
   <thead><tr><th scope="col">Change</th><th scope="col">Kind</th><th scope="col">Name</th></tr></thead>
@@ -30,7 +33,7 @@
 </form>{{end}}
 {{else}}<form method="post" action="/make/act">
   <input type="hidden" name="do" value="install"><input type="hidden" name="digest" value="{{.Digest}}"><input type="hidden" name="body" value="{{.Body}}">{{if .Rows}}<input type="hidden" name="rows" value="{{.Rows}}">{{end}}{{if .TakeSite}}<input type="hidden" name="take_site" value="1">{{end}}
-  <div class="confirmactions"><button type="submit">{{if eq .Card.Approvers 2}}Ask for it to be installed{{else}}Install it{{end}}</button><a href="/make">Cancel</a></div>
+  <div class="confirmactions"><button type="submit">{{if and (eq .Card.Approvers 2) (not .Alone)}}Ask for it to be installed{{else}}Install it{{end}}</button><a href="/make">Cancel</a></div>
 </form>
 <p class="hint">Digest <code>{{.Digest}}</code>: what is installed is exactly what you read here.</p>{{end}}
 {{else}}
