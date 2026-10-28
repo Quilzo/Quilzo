@@ -270,6 +270,9 @@ type Site struct {
 	// Bookings takes appointments on pages with a booking section. Nil
 	// means /book/ answers 404. See booking.go.
 	Bookings *Bookings
+	// Newsletter signs visitors up on pages with a newsletter section, and
+	// lets them leave. Nil means /newsletter/ answers 404. See newsletter.go.
+	Newsletter *Newsletter
 
 	// Live update streams, counted per address and in all. See live.go.
 	liveMu sync.Mutex
@@ -370,6 +373,11 @@ func (st *Site) Handler() http.Handler {
 	mux.HandleFunc("POST /book/{service}", st.book)
 	mux.HandleFunc("GET /book/{file}", st.book)
 	mux.HandleFunc("GET /book/feed/{file}", st.book)
+	mux.HandleFunc("POST /newsletter/subscribe", st.newsletterSubscribe)
+	mux.HandleFunc("GET /newsletter/confirm", st.newsletterConfirm)
+	mux.HandleFunc("POST /newsletter/confirm", st.newsletterConfirm)
+	mux.HandleFunc("GET /newsletter/leave", st.newsletterLeave)
+	mux.HandleFunc("POST /newsletter/leave", st.newsletterLeave)
 	mux.HandleFunc("/live/board/", st.live)
 	mux.HandleFunc("/", st.page)
 	// The banner is innermost, so it wraps the handler's own output and
@@ -1039,6 +1047,12 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 	if launch {
 		tag = strings.TrimSuffix(tag, `"`) + "-" + launcherTag(launcher, r.URL.Path) + `"`
 	}
+	// A sign-up's words are the page's, and whether it takes one is not: it
+	// opens when mail is set up, with no publish to change the tag.
+	_, signup := newsletterSection(body)
+	if signup {
+		tag = strings.TrimSuffix(tag, `"`) + map[bool]string{true: "-nl1", false: "-nl0"}[st.newsletterReady()] + `"`
+	}
 	w.Header().Set("ETag", tag)
 	// Before the conditional answer, not after: a 304 replaces the policy a
 	// cache stored with the page, and one without this hash would stop the
@@ -1055,7 +1069,12 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 	// and a page showing one visitor's booking is theirs alone: neither is
 	// stored by anybody, and neither is answered "not modified".
 	booking := len(bookingsOnPage(body)) > 0 && st.bookingsOn()
-	if booking {
+	// What a page says after a sign-up is said to the one who signed up.
+	signedUp := signup && (r.URL.Query().Get("newsletter") != "" || r.URL.Query().Get("newsletter_error") != "")
+	if signedUp {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("X-Robots-Tag", "noindex")
+	} else if booking {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		if r.URL.Query().Get("booking") != "" {
@@ -1075,7 +1094,7 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 	} else {
 		w.Header().Set("Cache-Control", "public, max-age=0, must-revalidate")
 	}
-	if !booking && etag.Matches(r.Header.Get("If-None-Match"), tag) {
+	if !booking && !signedUp && etag.Matches(r.Header.Get("If-None-Match"), tag) {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
@@ -1601,7 +1620,8 @@ func (st *Site) formData(name string) map[string]any {
 func (st *Site) sources() render.Sources {
 	src := render.Sources{Name: st.Name, IconStyle: st.IconStyle, Listings: st.Listings,
 		SrcSet: st.srcSet, Tracks: st.tracks, Poster: st.poster,
-		Form: st.formData, Thread: st.threadData, Buy: st.Buy, Booking: st.bookingData}
+		Form: st.formData, Thread: st.threadData, Buy: st.Buy, Booking: st.bookingData,
+		Newsletter: st.newsletterData}
 	if _, ok := st.iconFile(); ok {
 		src.Icon = "/media/" + st.Icon
 		src.IconInitial = st.IconInitial

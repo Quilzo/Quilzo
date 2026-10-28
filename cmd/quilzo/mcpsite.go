@@ -13,6 +13,7 @@ import (
 	"github.com/quilzo/quilzo/internal/booking"
 	"github.com/quilzo/quilzo/internal/feature"
 	"github.com/quilzo/quilzo/internal/mcp"
+	"github.com/quilzo/quilzo/internal/newsletter"
 	"github.com/quilzo/quilzo/internal/webimport"
 )
 
@@ -220,6 +221,69 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 		}
 		b, err := json.Marshal(map[string]any{"bookings": true, "zone": setup.Zone, "paused": setup.Paused,
 			"services": out})
+		return string(b), err
+	})
+
+	srv.Register(mcp.Operation{
+		Name: "newsletter_status", NeedsRole: "reader",
+		Summary: "how many have subscribed to the newsletter, the issues sent and proposed, and what stops sending",
+		Detail: "Counts and issues only: the addresses are not here, and are read by a person on the Newsletter " +
+			"screen. A page takes sign-ups with a newsletter section; to send one, write the issue as a page, " +
+			"publish it, and propose it with propose_issue.",
+		Keywords: []string{"newsletter", "mailing", "list", "subscribers", "issue", "email", "campaign"},
+	}, func(map[string]any) (any, error) {
+		list, err := openNewsletter(root)
+		if err != nil {
+			return refuse(err)
+		}
+		counts, err := list.Count()
+		if err != nil {
+			return nil, err
+		}
+		issues, err := list.Issues()
+		if err != nil {
+			return nil, err
+		}
+		type shown struct {
+			ID      string `json:"id"`
+			Page    string `json:"page"`
+			Subject string `json:"subject"`
+			State   string `json:"state"`
+			Sent    int    `json:"sent,omitempty"`
+			To      int    `json:"to,omitempty"`
+		}
+		out := []shown{}
+		for _, is := range issues {
+			if is.State == newsletter.Sending && !issueSending(is.ID) {
+				is.State = newsletter.Stopped
+			}
+			out = append(out, shown{ID: is.ID, Page: is.Page, Subject: is.Subject, State: is.State,
+				Sent: is.Sent, To: is.To})
+		}
+		b, err := json.Marshal(map[string]any{"subscribed": counts.Subscribed, "waiting": counts.Waiting,
+			"left": counts.Left, "issues": out, "problems": newsletterProblems(root)})
+		return string(b), err
+	})
+
+	srv.Register(mcp.Operation{
+		Name: "propose_issue", NeedsRole: "author", Writes: true,
+		Summary: "propose a published page as the next newsletter issue, for a person to send",
+		Detail: "The page must be published and readable by anybody. The issue waits on the Newsletter screen, " +
+			"where a person sends themselves a test and then sends it; mail to everybody on the list cannot be " +
+			"taken back, so an agent never sends it.",
+		Args: map[string]string{"page": "the published page's name", "subject": "optional: the subject; the page's " +
+			"title by default", "note": "optional: a line for the person deciding, such as why now"},
+		Keywords: []string{"newsletter", "issue", "propose", "send", "email", "campaign"},
+	}, func(a map[string]any) (any, error) {
+		page, _ := a["page"].(string)
+		subject, _ := a["subject"].(string)
+		note, _ := a["note"].(string)
+		is, err := proposeIssue(root, strings.TrimSpace(page), subject, note, caller)
+		if err != nil {
+			return refuse(err)
+		}
+		b, err := json.Marshal(map[string]any{"issue": is.ID, "subject": is.Subject, "state": is.State,
+			"next": "a person sends it from the Newsletter screen after reading a test"})
 		return string(b), err
 	})
 

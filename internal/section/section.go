@@ -327,6 +327,14 @@ var kinds = []Kind{
 		},
 	},
 	{
+		Name: "newsletter", Group: "closing", Summary: "A sign-up for the site's newsletter: an address, mailed a link to confirm before anything is sent.",
+		Stub: map[string]any{
+			"title": "Get our news", "intro": "",
+			"what":   "A short letter when there is something to say, at most once a month.",
+			"button": "Subscribe",
+		},
+	},
+	{
 		Name: "notice", Group: "closing", Summary: "A short banner in one of four tones: plain, positive, caution, critical.",
 		Stub: map[string]any{
 			"tone": "caution", "title": "Something worth saying at the top",

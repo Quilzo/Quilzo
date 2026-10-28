@@ -120,7 +120,10 @@ var EventTypes = []string{"published", "rolled-back", "scheduled", "submitted",
 	"proposed",
 	// A visitor booked a time, or cancelled one: the moment a business
 	// taking bookings needs to hear about, as a form's "submitted" is.
-	"booked", "booking-cancelled"}
+	"booked", "booking-cancelled",
+	// Somebody confirmed they want the newsletter, or left it: which, and
+	// never the address.
+	"subscribed", "unsubscribed"}
 
 // KnownType reports whether this program ever sends an event of this type.
 func KnownType(t string) bool {

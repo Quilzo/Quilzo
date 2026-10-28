@@ -21,6 +21,14 @@
 // subject ends that header and starts another, and the one an attacker
 // picks is Bcc.
 //
+// # A newsletter is still one message to one person
+//
+// An issue of a site's newsletter is sent the same way: one message to each
+// address, never a list in Bcc. What it adds are fields, not headers: the
+// sender's name, an HTML alternative to the text, the list it belongs to
+// (RFC 2919), and the address that ends a subscription in one step (RFC
+// 8058), each checked like every other value.
+//
 // # Accepted is not delivered
 //
 // An SMTP server accepting a message means it took responsibility for it,
@@ -35,6 +43,7 @@ import (
 	"fmt"
 	"mime"
 	"net"
+	netmail "net/mail"
 	"net/smtp"
 	"strings"
 	"time"
@@ -49,6 +58,17 @@ type Message struct {
 	Date    time.Time
 	// ID is the Message-ID, without angle brackets.
 	ID string
+	// FromName is the sender's name, shown beside its address.
+	FromName string
+	// HTML is the same message as a page, sent as the alternative to Body,
+	// which every reader can show.
+	HTML string
+	// ListID names the list a message was sent to (RFC 2919), such as
+	// "Bakery news <news.bakery.example>", so a reader can file and filter it.
+	ListID string
+	// Unsubscribe is the https address that ends the subscription with one
+	// POST (RFC 8058): List-Unsubscribe and List-Unsubscribe-Post.
+	Unsubscribe string
 }
 
 // headerSafe refuses a value that could inject a header.
@@ -67,6 +87,8 @@ func (m Message) Bytes() ([]byte, error) {
 	for _, f := range []struct{ name, value string }{
 		{"From address", m.From}, {"To address", m.To},
 		{"subject", m.Subject}, {"Message-ID", m.ID},
+		{"sender's name", m.FromName}, {"List-Id", m.ListID},
+		{"unsubscribe address", m.Unsubscribe},
 	} {
 		if err := headerSafe(f.name, f.value); err != nil {
 			return nil, err
@@ -74,7 +96,13 @@ func (m Message) Bytes() ([]byte, error) {
 	}
 	var b strings.Builder
 	write := func(k, v string) { fmt.Fprintf(&b, "%s: %s\r\n", k, v) }
-	write("From", m.From)
+	from := m.From
+	if m.FromName != "" {
+		// Quoted and encoded as the name needs: a comma or a non-ASCII
+		// letter in a business's name must not change what the header says.
+		from = (&netmail.Address{Name: m.FromName, Address: m.From}).String()
+	}
+	write("From", from)
 	write("To", m.To)
 	// Encoded, so a subject with a name or a currency symbol in it does not
 	// arrive as mojibake.
@@ -83,21 +111,58 @@ func (m Message) Bytes() ([]byte, error) {
 	write("Message-ID", "<"+m.ID+">")
 	// RFC 3834: machine-generated, so a vacation responder does not reply.
 	write("Auto-Submitted", "auto-generated")
+	if m.ListID != "" {
+		write("List-Id", m.ListID)
+	}
+	if m.Unsubscribe != "" {
+		if !strings.HasPrefix(m.Unsubscribe, "https://") {
+			return nil, fmt.Errorf("the unsubscribe address must be https (RFC 8058), not %q", m.Unsubscribe)
+		}
+		write("List-Unsubscribe", "<"+m.Unsubscribe+">")
+		// One click: a mail reader POSTs this to the address above, and
+		// the subscription ends without a page to find or a form to fill.
+		write("List-Unsubscribe-Post", "List-Unsubscribe=One-Click")
+	}
 	write("MIME-Version", "1.0")
-	write("Content-Type", "text/plain; charset=utf-8")
-	// Base64 rather than quoted-printable: the body is prose in any
-	// language, and a transfer encoding that mangles one is not worth the
-	// saved bytes.
-	write("Content-Transfer-Encoding", "base64")
+	if m.HTML == "" {
+		write("Content-Type", "text/plain; charset=utf-8")
+		// Base64 rather than quoted-printable: the body is prose in any
+		// language, and a transfer encoding that mangles one is not worth
+		// the saved bytes.
+		write("Content-Transfer-Encoding", "base64")
+		b.WriteString("\r\n")
+		writeBase64(&b, m.Body)
+		return []byte(b.String()), nil
+	}
+	// Text first and the page last: a reader shows the last part it can.
+	raw := make([]byte, 12)
+	if _, err := rand.Read(raw); err != nil {
+		return nil, err
+	}
+	boundary := "quilzo-" + hex.EncodeToString(raw)
+	write("Content-Type", `multipart/alternative; boundary="`+boundary+`"`)
 	b.WriteString("\r\n")
+	for _, part := range []struct{ kind, body string }{
+		{"text/plain", m.Body}, {"text/html", m.HTML},
+	} {
+		b.WriteString("--" + boundary + "\r\n")
+		write("Content-Type", part.kind+"; charset=utf-8")
+		write("Content-Transfer-Encoding", "base64")
+		b.WriteString("\r\n")
+		writeBase64(&b, part.body)
+	}
+	b.WriteString("--" + boundary + "--\r\n")
+	return []byte(b.String()), nil
+}
 
-	enc := base64.StdEncoding.EncodeToString([]byte(m.Body))
+// writeBase64 writes a body encoded, in lines of 76.
+func writeBase64(b *strings.Builder, body string) {
+	enc := base64.StdEncoding.EncodeToString([]byte(body))
 	for len(enc) > 76 {
 		b.WriteString(enc[:76] + "\r\n")
 		enc = enc[76:]
 	}
 	b.WriteString(enc + "\r\n")
-	return []byte(b.String()), nil
 }
 
 // Mailer sends over SMTP.
@@ -131,7 +196,14 @@ func (m Mailer) now() time.Time {
 // after it, exactly one recipient, headers checked for injection before
 // anything is dialled.
 func (m Mailer) Send(to, subject, body string) error {
-	if strings.TrimSpace(m.From) == "" || strings.TrimSpace(to) == "" {
+	return m.Deliver(Message{To: to, Subject: subject, Body: body})
+}
+
+// Deliver sends a message composed by the caller, from this relay's
+// address, dated and identified here: the same rules as Send, for a
+// message with a sender's name, an HTML part or a list's headers.
+func (m Mailer) Deliver(msg Message) error {
+	if strings.TrimSpace(m.From) == "" || strings.TrimSpace(msg.To) == "" {
 		return fmt.Errorf("mail needs a From and a To address")
 	}
 	raw := make([]byte, 12)
@@ -142,13 +214,12 @@ func (m Mailer) Send(to, subject, body string) error {
 	if _, d, ok := strings.Cut(m.From, "@"); ok && d != "" {
 		domain = d
 	}
-	msg := Message{From: m.From, To: to, Subject: subject, Body: body,
-		Date: m.now(), ID: hex.EncodeToString(raw) + "@" + domain}
+	msg.From, msg.Date, msg.ID = m.From, m.now(), hex.EncodeToString(raw)+"@"+domain
 	b, err := msg.Bytes()
 	if err != nil {
 		return err
 	}
-	return m.deliver(to, b)
+	return m.deliver(msg.To, b)
 }
 
 func (m Mailer) deliver(to string, body []byte) error {

@@ -1,0 +1,100 @@
+{{template "head" .}}
+<h1>Newsletter</h1>
+<p class="lead">The site's mailing list: who asked for its newsletter and said yes, and the issues sent to them. An issue is a published page, sent as mail. A page takes sign-ups with a newsletter section. The addresses are read here and nowhere else.</p>
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+{{range .Problems}}<p class="notice bad">{{.}}</p>{{end}}
+
+<dl class="stats-row">
+<div><dt>Subscribed</dt><dd>{{.Counts.Subscribed}}</dd></div>
+<div><dt>Waiting to confirm</dt><dd>{{.Counts.Waiting}}</dd></div>
+<div><dt>Left</dt><dd>{{.Counts.Left}}</dd></div>
+</dl>
+<p class="hint">Nobody is sent anything until they have pressed the button on the page their link opens. An address that never does is forgotten after a week. One that leaves is deleted, and kept from being imported back.</p>
+
+{{if .Proposed}}<section aria-labelledby="nl-proposed">
+<h2 id="nl-proposed">Proposed by agents</h2>
+<div class="table-wrap"><table>
+<thead><tr><th scope="col">Issue</th><th scope="col">From</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+<tbody>{{range .Proposed}}<tr>
+<td><strong>{{.Subject}}</strong><br>page <a href="/page/{{.Page}}">{{.Page}}</a>{{if .Note}}<br><span class="hint">{{.Note}}</span>{{end}}</td>
+<td>{{.By}}<br><span class="hint">{{.When}}</span></td>
+<td>{{if $.CanSend}}<a class="btn-text" href="/newsletter?page={{.Page}}#nl-send">Test and send</a>
+<form method="post" action="/newsletter/act"><input type="hidden" name="do" value="dismiss"><input type="hidden" name="issue" value="{{.ID}}"><button type="submit" class="btn-text">Dismiss</button></form>{{end}}</td>
+</tr>{{end}}</tbody></table></div>
+<p class="hint">An agent may propose an issue; a person sends it, after reading a test.</p>
+</section>{{end}}
+
+<section aria-labelledby="nl-send">
+<h2 id="nl-send">Send an issue</h2>
+{{if .Pages}}<form method="post" action="/newsletter/act" class="param-form">
+<label for="nl-page">Page {{template "req"}}</label>
+<select id="nl-page" name="page" required>{{range .Pages}}<option value="{{.}}"{{if eq . $.Pick}} selected{{end}}>{{.}}</option>{{end}}</select>
+<p class="hint">A published page anybody can read. The mail carries its words and pictures and links to it; what a mail cannot hold, such as a booking or a form, stays on the page.</p>
+<label for="nl-subject">Subject</label>
+<input id="nl-subject" name="subject" maxlength="200" placeholder="The page's title">
+<label for="nl-to">Send a test to</label>
+<input id="nl-to" name="to" type="email" maxlength="254" autocomplete="email">
+<div class="auto-controls"><button type="submit" name="do" value="test" class="btn-tonal">Send a test</button></div>
+{{if .CanSend}}<p><label><input type="checkbox" name="sure" value="1"> I have read a test. This goes to {{.Counts.Subscribed}} people and cannot be taken back.</label></p>
+{{range .Proposed}}{{if eq .Page $.Pick}}<input type="hidden" name="issue" value="{{.ID}}">{{end}}{{end}}
+<div class="auto-controls"><button type="submit" name="do" value="send">Send to {{.Counts.Subscribed}}</button></div>{{end}}
+</form>
+{{else}}<p>Nothing is published that an issue could be made from yet.</p>{{end}}
+</section>
+
+{{if .Sent}}<section aria-labelledby="nl-issues">
+<h2 id="nl-issues">Issues</h2>
+<div class="table-wrap"><table>
+<thead><tr><th scope="col">Started</th><th scope="col">Issue</th><th scope="col">Sent</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+<tbody>{{range .Sent}}<tr>
+<td>{{.When}}</td>
+<td><strong>{{.Subject}}</strong><br>page {{.Page}}{{if .SentBy}}, sent by {{.SentBy}}{{end}}</td>
+<td>{{.Sent}} of {{.To}}<br><span class="tag{{if eq .State "sent"}} tag-ok{{else if eq .State "stopped"}} tag-warn{{end}}">{{.State}}</span>{{if .Failed}}<br><span class="hint">{{.Failed}} refused; the last: {{.Problem}}</span>{{end}}</td>
+<td>{{if $.CanSend}}{{if eq .State "sending"}}<form method="post" action="/newsletter/act"><input type="hidden" name="do" value="stop"><input type="hidden" name="issue" value="{{.ID}}"><button type="submit" class="btn-text">Stop</button></form>
+{{else if eq .State "stopped"}}<form method="post" action="/newsletter/act"><input type="hidden" name="do" value="continue"><input type="hidden" name="issue" value="{{.ID}}"><button type="submit" class="btn-tonal">Carry on</button></form>
+{{else if .Failed}}<form method="post" action="/newsletter/act"><input type="hidden" name="do" value="continue"><input type="hidden" name="issue" value="{{.ID}}"><button type="submit" class="btn-text">Try the refused again</button></form>{{end}}{{end}}</td>
+</tr>{{end}}</tbody></table></div>
+<p class="hint">An issue reaches each address once. One that stopped carries on from where it stopped.</p>
+</section>{{end}}
+
+<section aria-labelledby="nl-list">
+<h2 id="nl-list">Who is on the list</h2>
+{{if .Rows}}<div class="table-wrap"><table>
+<thead><tr><th scope="col">Address</th><th scope="col">Since</th><th scope="col">How</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+<tbody>{{range .Rows}}<tr{{if .Waiting}} class="hint"{{end}}>
+<td><a href="mailto:{{.Email}}">{{.Email}}</a>{{if .Name}}<br>{{.Name}}{{end}}{{if .Waiting}}<br><span class="tag">waiting to confirm</span>{{end}}</td>
+<td>{{.Since}}</td>
+<td>{{.Source}}</td>
+<td><details><summary>Remove<span class="chev">{{icon "expand_more"}}</span></summary>
+<form method="post" action="/newsletter/act"><input type="hidden" name="do" value="remove"><input type="hidden" name="id" value="{{.ID}}">
+<button type="submit" class="btn-danger">Remove and delete</button></form>
+<p class="hint">It is kept from being imported back. Signing up again on the site is the way back.</p></details></td>
+</tr>{{end}}</tbody></table></div>
+{{if .More}}<p class="hint">And {{.More}} more: the export has them all.</p>{{end}}
+{{else}}<p>Nobody is on the list yet.</p>{{end}}
+<p><a href="/newsletter/export.csv">Download the list</a> <span class="hint">as a CSV file every newsletter service imports: address, name, when they joined and where they agreed.</span></p>
+
+<h3>Ask somebody</h3>
+<form method="post" action="/newsletter/act" class="param-form">
+<input type="hidden" name="do" value="add">
+<label for="nl-add">Email address {{template "req"}}</label>
+<input id="nl-add" name="email" type="email" maxlength="254" required>
+<div class="auto-controls"><button type="submit" class="btn-tonal">Ask them</button></div>
+</form>
+<p class="hint">They are mailed the same link a sign-up on the site gets, and join when they say yes.</p>
+
+{{if .CanSend}}<h3>Bring a list from another service</h3>
+<form method="post" action="/newsletter/act" enctype="multipart/form-data" class="param-form">
+<input type="hidden" name="do" value="import">
+<label for="nl-file">CSV file {{template "req"}}</label>
+<input id="nl-file" type="file" name="file" accept=".csv,text/csv" required>
+<label for="nl-agreed">Where they agreed {{template "req"}}</label>
+<input id="nl-agreed" name="agreed" maxlength="300" required placeholder="Signed up on our Mailchimp form">
+<div class="auto-controls"><button type="submit" class="btn-tonal">Import</button></div>
+</form>
+<p class="hint">An export from Mailchimp, Substack, Ghost, MailPoet, Buttondown and most others. They are added as having said yes, with where they agreed as the record of it. Anybody the file says unsubscribed, bounced or complained is kept as having left and never sent to, and anybody who left this list is not put back.</p>{{end}}
+</section>
+{{end}}
+{{template "foot" .}}
