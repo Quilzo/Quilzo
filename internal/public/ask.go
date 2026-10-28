@@ -752,6 +752,7 @@ const askCSS = `.qz-ask main{max-width:42rem;margin:0 auto;padding:1.5rem 1rem 3
 .qz-status:empty{display:none}
 .qz-account .qz-turn h2{font-size:1.2rem;margin:0 0 .5rem}
 .qz-account .qz-turn{padding:1.1rem 1.3rem}
+.qz-account .qz-turn p+form{margin-top:.75rem}
 .qz-account input:not([type=hidden]){width:100%;box-sizing:border-box;font:inherit;padding:.5rem .6rem;border-radius:8px;border:1px solid color-mix(in srgb,currentColor 35%,transparent);margin:.25rem 0 .6rem}
 .qz-codes{font-family:var(--font-mono,ui-monospace,monospace);columns:2 12rem;padding-left:1.6rem}
 .qz-keys{list-style:none;padding:0}.qz-keys li{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;padding:.4rem 0}
