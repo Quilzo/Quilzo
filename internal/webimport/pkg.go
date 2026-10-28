@@ -125,6 +125,17 @@ func Package(s *Site, name, by string, picture Picture, now time.Time) (*Brought
 			note("page %s was left out: it had no words to bring", pg.URL.Path)
 			continue
 		}
+		if n == "index" {
+			// The home page opens on a tinted hero, as a built site's does;
+			// the rest open on their words.
+			hero := body["hero"].(map[string]any)
+			hero["surface"] = "surface-wash"
+			if hero["image"] == nil {
+				hero["style"] = "center"
+			} else {
+				delete(hero, "style")
+			}
+		}
 		p.Pages = append(p.Pages, feature.Page{Name: n, Body: body})
 		// Only where the address changed: /about-us/ is /about-us already.
 		old, now := pg.URL.EscapedPath(), feature.PagePath(n)
@@ -134,7 +145,7 @@ func Package(s *Site, name, by string, picture Picture, now time.Time) (*Brought
 		}
 	}
 	if picture == nil {
-		note("pictures were left out; bring them with their descriptions by leaving out --no-pictures")
+		note("pictures were left out, as asked; import again with pictures to keep the ones the site describes")
 	}
 	if undescribed > 0 {
 		note("%d picture(s) had no description (alt text), so they were left out rather than given one nobody wrote; add them with quilzo media add FILE --alt", undescribed)
