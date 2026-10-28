@@ -61,6 +61,19 @@ Unreleased
 
 ** Added
 
+*** Agents can ask the site (NLWeb).  The public site answers a question in
+    plain words with the published pages that match, as schema.org
+    objects: GET or POST /ask with query, mode (list, summarize or
+    generate), query_id and decontextualized_query, streamed as
+    server-sent events unless streaming=false, and the same over MCP at
+    /mcp with one read-only tool, ask.  Summarize and generate add the
+    answer the site's own question box gives, with its sources, limits
+    and disclosure.  It answers only from what a visitor may read now,
+    never a members' page, writes nothing, and sits behind the site's
+    crawl licence like every page.  /llms.txt says where it is.  The
+    question box no longer reads the service a booking section books or
+    the board a comments section shows as something the page says.
+
 *** Bookings: appointments on the site.  A site says its hours each week
     in its own time zone, the dates it is closed, how much notice it
     needs and how far ahead it books, and the services it offers, each

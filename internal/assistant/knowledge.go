@@ -135,6 +135,31 @@ var skipField = map[string]bool{
 	"suggestions_label": true, "assistant": true,
 }
 
+// sectionWiring are the fields of one section kind that name something
+// rather than say it: the service a booking section books and the board a
+// comments section shows. Skipped only inside that kind, since a record
+// may well have a field called service that is words.
+var sectionWiring = map[string][]string{
+	"booking":  {"service"},
+	"comments": {"board"},
+}
+
+// withoutWiring is a section's fields less the ones that name things.
+func withoutWiring(kind string, v any) any {
+	m, ok := v.(map[string]any)
+	if !ok || len(sectionWiring[kind]) == 0 {
+		return v
+	}
+	out := make(map[string]any, len(m))
+	for k, x := range m {
+		out[k] = x
+	}
+	for _, k := range sectionWiring[kind] {
+		delete(out, k)
+	}
+	return out
+}
+
 // wiring reports whether a field holds wiring rather than content, by its
 // name: the list above, and any link, picture or source set by its suffix.
 func wiring(k string) bool {
@@ -266,7 +291,7 @@ func collect(v any, heading string, out *[]block, depth int) string {
 					}
 				}
 			}
-			heading = collect(t[k], heading, out, depth+1)
+			heading = collect(withoutWiring(k, t[k]), heading, out, depth+1)
 		}
 		if own != "" {
 			// A title with nothing under it is still something the page says.

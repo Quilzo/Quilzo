@@ -1211,6 +1211,19 @@ create is the vulnerability every CMS with open registration has had.
 
 ---
 
+## Agents asking the site
+
+A visitor's agent should not have to scrape pages built for people. The public
+site speaks NLWeb: `/ask?query=…` answers with the published pages that match as
+schema.org objects, streamed as server-sent events or, with `streaming=false`,
+as one JSON document; `mode=summarize` or `generate` adds the answer the site's
+question box gives, with its sources and the disclosure. The same is offered
+over MCP at `/mcp`, as one read-only tool called `ask`. It answers only from
+what a visitor may read now, writes nothing, and the crawl licence in front of
+the whole site decides who may ask, as it does for every page. On a page,
+WebMCP marks the forms an agent may fill in for its visitor: search, a
+question, a declared form, a booking.
+
 ## Three interfaces, and the same rules in all of them
 
 The browser, the command line and the agent interface are not three views of a
