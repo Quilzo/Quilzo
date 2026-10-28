@@ -428,6 +428,13 @@ func fillSite(root string, values map[string]string, caller *Caller) (int, []str
 	if total == 0 {
 		return 0, nil, nil
 	}
+	// Each page by its own path, as writing it would be: a deny on /legal
+	// holds against a fill as it does against an edit.
+	for _, name := range changed {
+		if err := authorise(root, caller, auth.ActEditDraft, pageResource(name)); err != nil {
+			return 0, nil, fmt.Errorf("the page %s has this blank, and is not yours to change: %w", name, err)
+		}
+	}
 	msg := fmt.Sprintf("fill in %d %s", total, map[bool]string{true: "blank", false: "blanks"}[total == 1])
 	if err := saveDraft(root, s, pages, msg, caller.Name, base); err != nil {
 		return 0, nil, err
@@ -461,14 +468,19 @@ func markFilled(root string, s *store.Store, pages []string, caller *Caller) err
 		if !ok {
 			continue
 		}
-		switch r.SourceType {
-		case provenance.TrainedAlgorithmicMedia, provenance.CompositeWithTrainedAlgorithmicMedia:
+		r.Note = "blanks filled in by " + caller.Name
+		switch {
+		case caller.Kind == audit.KindAI:
+			// An agent's words, in what the builder or a person wrote: a
+			// model's, even when the facts came from the person it acts for.
+			r.SourceType, r.Model = provenance.CompositeWithTrainedAlgorithmicMedia, caller.Model
+			r.Note = "blanks filled in by an agent for " + caller.Name
+		case r.SourceType == provenance.TrainedAlgorithmicMedia || r.SourceType == provenance.CompositeWithTrainedAlgorithmicMedia:
 			r.SourceType = provenance.CompositeWithTrainedAlgorithmicMedia
 		default:
 			r.SourceType, r.Model = provenance.HumanEdits, ""
 		}
 		r.ContentHash, r.Author, r.At = ids[name], caller.Name, time.Now().Unix()
-		r.Note = "blanks filled in by " + caller.Name
 		if err := idx.Set(name, r); err != nil {
 			return err
 		}

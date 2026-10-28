@@ -290,6 +290,25 @@ shows, a second administrator approves a site with a contact form (or the only
 administrator does, on the record), and removing it puts the site back as it
 was. The Make screen does the same under Build a whole site and Fill in.
 
+### An agent as the site crew
+
+An agent connected over MCP can do the building too: `site_build` from a
+description, `site_import` from an old site's address, or `propose_feature`
+with a package it wrote, such as a booking form or a directory. None of these
+installs anything. What the agent made waits as a proposal, under Proposed for
+you on the Make screen, on Approvals and in `quilzo feature proposals`, until a
+person reads its card and installs it as their own decision, with the same
+approvals as anything they bring. The agent counts as nobody: a site with a
+contact form still needs two people, or the only administrator on the record.
+A newer proposal of the same package replaces the older one, at most twenty
+wait, and a proposal nobody reads lapses after two weeks.
+
+Once it is installed, `site_blanks` lists what is left to fill in and
+`site_fill` fills it, with facts the person gave the agent; a blank it cannot
+fill stays one, and keeps its page from being published. A page an agent filled
+in is marked as an agent's words, and a page in a package an agent wrote as a
+model's, so the AI-content disclosure is right either way.
+
 ## Taking payments
 
 A shop needs a till as well as a catalogue, and a till is where a CMS usually

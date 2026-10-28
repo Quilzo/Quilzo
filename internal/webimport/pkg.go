@@ -21,6 +21,10 @@ import (
 	"github.com/quilzo/quilzo/internal/seo"
 )
 
+// NotePicturesLeftOut is the note for a site brought in without its
+// pictures.
+const NotePicturesLeftOut = "pictures were left out, as asked; import again with pictures to keep the ones the site describes"
+
 // Picture stores a picture a page shows, with the description the page gave
 // it, and answers the path a page refers to it by. Nil leaves pictures out.
 type Picture func(src *url.URL, alt string) (path string, err error)
@@ -145,7 +149,7 @@ func Package(s *Site, name, by string, picture Picture, now time.Time) (*Brought
 		}
 	}
 	if picture == nil {
-		note("pictures were left out, as asked; import again with pictures to keep the ones the site describes")
+		note(NotePicturesLeftOut)
 	}
 	if undescribed > 0 {
 		note("%d picture(s) had no description (alt text), so they were left out rather than given one nobody wrote; add them with quilzo media add FILE --alt", undescribed)

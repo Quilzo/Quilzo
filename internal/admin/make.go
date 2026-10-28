@@ -71,6 +71,22 @@ type FeatureHooks struct {
 	// OnlyAdmin reports whether a person is the only administrator, who
 	// approves alone what two would otherwise approve.
 	OnlyAdmin func(name string) bool
+	// Proposals are packages agents drafted for a person to read, newest
+	// first; Proposal is one, as its package and what was said about it;
+	// Dismiss sets one aside unread.
+	Proposals func() ([]Proposal, error)
+	Proposal  func(id string) (body []byte, from string, notes []string, err error)
+	Dismiss   func(id string, by Actor) error
+}
+
+// Proposal is a package an agent drafted, waiting for a person: an agent
+// may draft a package and may not install one.
+type Proposal struct {
+	ID, Name, Version, Title string
+	// What says what it is; By is the agent, For the person it acted for.
+	What, By, For string
+	At            time.Time
+	Notes         int
 }
 
 var (
@@ -113,6 +129,19 @@ func (s *Server) handleMake(w http.ResponseWriter, r *http.Request) {
 	if s.Features.Blanks != nil {
 		if whats, _, err := s.Features.Blanks(); err == nil {
 			data["Blanks"] = len(whats)
+		}
+	}
+	if s.Features.Proposals != nil {
+		type waitingProposal struct {
+			Proposal
+			When string
+		}
+		if list, err := s.Features.Proposals(); err == nil {
+			var out []waitingProposal
+			for _, pr := range list {
+				out = append(out, waitingProposal{pr, agoText(now.Sub(pr.At))})
+			}
+			data["Proposals"] = out
 		}
 	}
 	data["Kinds"], data["Styles"] = feature.SiteKinds(), theme.Styles
@@ -180,6 +209,50 @@ func (s *Server) handleMakeImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.renderCheck(w, r, p, body, notes, "", "", 0, "")
+}
+
+// handleMakeProposal shows a package an agent proposed, as any package is
+// shown, for a person to install as their own decision; a post sets it
+// aside unread.
+func (s *Server) handleMakeProposal(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.requireAuth(w, r)
+	if !ok {
+		return
+	}
+	if !s.can(w, r, p, auth.ActInstall, "/") {
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	if s.Features == nil || s.Features.Proposal == nil {
+		if r.Method != http.MethodGet {
+			http.NotFound(w, r)
+			return
+		}
+		s.renderCheck(w, r, p, nil, nil, "This build was started without the feature store, so nothing an agent "+
+			"proposed can be read here.", "", 0, "")
+		return
+	}
+	if r.Method == http.MethodPost {
+		r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
+		if r.FormValue("do") != "dismiss" || s.Features.Dismiss == nil {
+			http.Error(w, "unknown action", http.StatusBadRequest)
+			return
+		}
+		err := s.Features.Dismiss(r.FormValue("id"), p.actor())
+		makeBack(w, r, "Set aside; the agent's proposal is gone.", err)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "get or post", http.StatusMethodNotAllowed)
+		return
+	}
+	body, from, notes, err := s.Features.Proposal(r.URL.Query().Get("id"))
+	if err != nil {
+		s.renderCheck(w, r, p, nil, nil, err.Error()+". Make lists what agents have proposed, until it is "+
+			"installed, set aside or two weeks old.", "", 0, "")
+		return
+	}
+	s.renderCheck(w, r, p, body, notes, "", "", 0, "", from)
 }
 
 // maxFill bounds one Fill in form: far past any site the builder makes.
@@ -380,9 +453,9 @@ func filepathExt(name string) string {
 
 // renderCheck shows a package's card and plan, or why it cannot install.
 func (s *Server) renderCheck(w http.ResponseWriter, r *http.Request, p principal, body []byte, notes []string,
-	invalid, rows string, count int, into string) {
+	invalid, rows string, count int, into string, proposed ...string) {
 	data := map[string]any{"Title": "Check a feature", "Nav": "make", "Principal": p, "Notes": notes,
-		"Body": string(body), "Rows": rows, "RowCount": count, "Into": into}
+		"Body": string(body), "Rows": rows, "RowCount": count, "Into": into, "Proposed": strings.Join(proposed, " ")}
 	if invalid == "" {
 		takeSite := r.FormValue("take_site") == "1"
 		pkg, card, plan, err := s.Features.Check(body, takeSite)
@@ -524,6 +597,15 @@ func (s *Server) featureApprovals(p principal) []approvalItem {
 		out = append(out, approvalItem{Source: "feature", Agent: "feature " + pd.Name, Title: title,
 			Detail:  "risk " + pd.Card.Risk + ": " + strings.Join(pd.Card.Because, "; ") + "; asked by " + pd.RequestedBy,
 			Commits: "installs", Href: "/make", Since: pd.At})
+	}
+	if s.Features.Proposals != nil {
+		if list, err := s.Features.Proposals(); err == nil {
+			for _, pr := range list {
+				out = append(out, approvalItem{Source: "feature", Agent: pr.By, Title: "Read " + pr.Title + " " + pr.Version,
+					Detail:  pr.What + ", proposed by an agent for " + pr.For + "; nothing is installed until you install it",
+					Commits: "installs", Href: "/make/proposal?id=" + pr.ID, Since: pr.At})
+			}
+		}
 	}
 	return out
 }

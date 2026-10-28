@@ -435,3 +435,48 @@ func TestMakeBringsASiteInFromItsAddress(t *testing.T) {
 	}
 	whole(t, body)
 }
+
+// What an agent proposed is on Make and Approvals for a person: read as
+// any package is read, installed only by them, or set aside.
+func TestMakeShowsWhatAnAgentProposed(t *testing.T) {
+	srv, token := setup(t)
+	wireFeatures(srv)
+	p, err := feature.BuildSite(feature.SiteBrief{Name: "Hart's Bakery", Kind: "restaurant"}, "dana", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg, _ := json.Marshal(p)
+	waiting := []Proposal{{ID: "0123456789ab", Name: p.Name, Version: p.Version, Title: p.Title,
+		What: "a site built from a description", By: "mcp-client", For: "dana", At: time.Now().Add(-time.Hour), Notes: 1}}
+	var dismissed string
+	srv.Features.Proposals = func() ([]Proposal, error) { return waiting, nil }
+	srv.Features.Proposal = func(id string) ([]byte, string, []string, error) {
+		if id != waiting[0].ID {
+			return nil, "", nil, errors.New("no proposal " + id + " is waiting")
+		}
+		return pkg, "Proposed by mcp-client for dana", nil, nil
+	}
+	srv.Features.Dismiss = func(id string, _ Actor) error { dismissed = id; return nil }
+
+	page := get(t, srv, "/make", token).Body.String()
+	if !strings.Contains(page, "Proposed for you") || !strings.Contains(page, `href="/make/proposal?id=0123456789ab"`) {
+		t.Fatal("Make does not show what an agent proposed")
+	}
+	whole(t, page)
+	card := get(t, srv, "/make/proposal?id=0123456789ab", token)
+	if card.Code != http.StatusOK || !strings.Contains(card.Body.String(), "Proposed by mcp-client for dana") ||
+		!strings.Contains(card.Body.String(), `value="install"`) {
+		t.Fatalf("the proposal: %d", card.Code)
+	}
+	whole(t, card.Body.String())
+	if gone := get(t, srv, "/make/proposal?id=ffffffffffff", token); gone.Code != http.StatusOK ||
+		!strings.Contains(gone.Body.String(), "no proposal ffffffffffff is waiting") {
+		t.Fatalf("a proposal that is not there: %d", gone.Code)
+	}
+	if approvals := get(t, srv, "/approvals", token).Body.String(); !strings.Contains(approvals, "proposed by an agent for dana") {
+		t.Fatal("Approvals does not show what an agent proposed")
+	}
+	if code, _ := postFormLoc(t, srv, token, "/make/proposal", url.Values{"do": {"dismiss"}, "id": {"0123456789ab"}}); code != http.StatusSeeOther || dismissed != "0123456789ab" {
+		t.Fatalf("setting it aside: %d, %q", code, dismissed)
+	}
+}

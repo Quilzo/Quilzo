@@ -7,6 +7,13 @@
 <p>Each receiving server checks the signature with its secret. Copy them now; Quilzo shows them once.</p>
 <ul>{{range .Secrets}}<li><code>{{.}}</code></li>{{end}}</ul>
 <p><a href="/make">Done</a></p></section>{{else if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
+{{if .Proposals}}<section aria-labelledby="make-proposed">
+<h2 id="make-proposed">Proposed for you</h2>
+<p class="hint">An agent drafted these. Nothing is installed until you read one and install it yourself, with the same approvals as anything you bring.</p>
+<ul class="notelist">{{range .Proposals}}<li class="card"><p><strong>{{.Title}}</strong> {{.Version}}: {{.What}}, by {{.By}} for {{.For}}, {{.When}}{{if .Notes}}; {{.Notes}} {{if eq .Notes 1}}note{{else}}notes{{end}} on what was left behind{{end}}.</p>
+<div class="auto-controls"><a class="btn" href="/make/proposal?id={{.ID}}">Read it</a>
+<form method="post" action="/make/proposal"><input type="hidden" name="id" value="{{.ID}}"><input type="hidden" name="do" value="dismiss"><button type="submit" class="btn-text">Set aside</button></form></div></li>{{end}}</ul>
+</section>{{end}}
 {{if .Blanks}}<div class="notice" role="status"><p><strong>{{.Blanks}} {{if eq .Blanks 1}}thing{{else}}things{{end}} to fill in</strong> before the pages they are on can be published: facts only you know, which the site builder left blank rather than make up. <a href="/make/fill">Fill them in</a></p></div>{{end}}
 {{if .CanSite}}<section aria-labelledby="make-site">
 <h2 id="make-site">Build a whole site</h2>
