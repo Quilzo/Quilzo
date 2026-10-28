@@ -236,6 +236,8 @@ a whole site (one package: pages, menus, forms, a question box, a privacy page, 
       --no-model -o FILE --take-site          the builder's own start; where to write it; over a hand-made site
   quilzo site kinds                        business, product, restaurant, portfolio, community, event
   quilzo site fill ["WHAT=VALUE" …]        list the [[blanks]] only you can fill in, or fill them; none is published
+  quilzo site import https://… [--install] bring a live site in: its pages, menus, pictures and look, and redirects
+      --pages N --name N --no-pictures -o FILE   how much to read (robots.txt is obeyed); what to call it
 
 payments (the catalogue sold through the provider's own checkout; no card or order is kept here)
   quilzo pay status                        on or off, products for sale, links selling, the last sync

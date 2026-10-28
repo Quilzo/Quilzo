@@ -310,6 +310,29 @@ is retired. A price no link charges yet shows no button at all, so a page
 never offers a checkout at a price it does not show. The site process holds no
 key: the admin makes the links, and the site reads only the list of them.
 
+## Bringing a site you already have
+
+Most sites somebody wants to move have no export file. What every one has is
+its pages, so a site comes in by its address:
+
+```bash
+quilzo site import https://your-old-site.example --install
+```
+
+robots.txt is read first and obeyed; the site's map of itself is used when it
+publishes one, its links when it does not; only that host is read, through the
+fetcher that refuses private addresses, at a polite pace and within a page
+budget. Each page's content becomes a hero and sections, its navigation becomes
+the menus, and its name and colour become the look. Pictures come with the
+descriptions the site gave them, and a picture it never described is left out
+rather than described by somebody who did not write it. Scripts, frames and
+forms are left behind and named on the card. Old addresses that change are
+redirected, from the site's own redirect map, so links and search results keep
+working; `quilzo site` serves that map with any `--redirects` file laid over it,
+and `quilzo export` carries it, so they keep working wherever the site goes
+next. It is a site package like any other: read, approved, installed and
+taken back as one decision.
+
 ## Bringing a template you already have
 
 Nobody's existing template works here, and being told to start again is the

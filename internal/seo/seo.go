@@ -276,6 +276,10 @@ func (m *Map) Len() int {
 }
 
 // normalisePath makes a source path comparable.
+// Path is a redirect's old address as the map knows it, so two spellings of
+// one address can be told to be one.
+func Path(p string) (string, error) { return normalisePath(p) }
+
 func normalisePath(p string) (string, error) {
 	p = strings.TrimSpace(p)
 	if p == "" {

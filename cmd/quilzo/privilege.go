@@ -596,7 +596,10 @@ var commandNeeds = map[string]need{
 	// Filling in blanks edits pages in the draft.
 	"site new":   {action: auth.ActEditDraft},
 	"site kinds": {action: auth.ActView},
-	"site fill":  {action: auth.ActEditDraft},
+	// Bringing a site in reads the web for the operator, keeps pictures in
+	// the library and writes a package file: authoring, as building one is.
+	"site import": {action: auth.ActEditDraft},
+	"site fill":   {action: auth.ActEditDraft},
 	// The capture surface enforces edit-draft per request, and it runs a
 	// script on a writable origin. Deciding to open that at all is the
 	// operator act, so it is held to the same bar as opening the admin.

@@ -403,3 +403,35 @@ func TestFillInWritesTheBlanksIntoTheDraft(t *testing.T) {
 		t.Errorf("a reader filled in a blank: %d", code)
 	}
 }
+
+// An old site is brought in from its address and shown as any package is,
+// with what was left behind.
+func TestMakeBringsASiteInFromItsAddress(t *testing.T) {
+	srv, token := setup(t)
+	wireFeatures(srv)
+	var asked string
+	var pages int
+	var pictures bool
+	srv.Features.Import = func(address, name string, n int, pics bool, _ Actor) ([]byte, []string, error) {
+		asked, pages, pictures = address, n, pics
+		p, err := feature.BuildSite(feature.SiteBrief{Name: "Hart's Bakery", Kind: "restaurant"}, "dana", time.Now())
+		if err != nil {
+			return nil, nil, err
+		}
+		body, err := json.Marshal(p)
+		return body, []string{"1 form(s) were left behind"}, err
+	}
+	page := get(t, srv, "/make", token).Body.String()
+	if !strings.Contains(page, `action="/make/import"`) || !strings.Contains(page, "robots.txt is obeyed") {
+		t.Fatal("Make offers no way to bring a site in")
+	}
+	whole(t, page)
+	res := postForm(t, srv, "/make/import", token, url.Values{"address": {"https://hartsbakery.example"},
+		"pages": {"25"}, "pictures": {"1"}}.Encode())
+	body := res.Body.String()
+	if res.Code != http.StatusOK || asked != "https://hartsbakery.example" || pages != 25 || !pictures ||
+		!strings.Contains(body, "1 form(s) were left behind") {
+		t.Fatalf("bringing it in: %d, asked %q for %d pages", res.Code, asked, pages)
+	}
+	whole(t, body)
+}

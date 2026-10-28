@@ -14,6 +14,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/feature"
 	"github.com/quilzo/quilzo/internal/render"
+	"github.com/quilzo/quilzo/internal/seo"
 )
 
 // The site block of a package that is a whole site: its name, its
@@ -51,6 +52,93 @@ type sitePrior struct {
 	ThemeExisted   bool   `json:"theme_existed,omitempty"`
 	Theme          []byte `json:"theme,omitempty"`
 	LayoutsWritten bool   `json:"layouts_written,omitempty"`
+	// Redirects are the old addresses the package put in the site's
+	// redirect map, so that they, and only they, go with it.
+	Redirects []string `json:"redirects,omitempty"`
+}
+
+// storeRedirectsPath is the site's own redirect map, which `quilzo site`
+// serves when it is not given another.
+func storeRedirectsPath(root string) string { return filepath.Join(root, "redirects.json") }
+
+type redirectFile struct {
+	Redirects []seo.Redirect `json:"redirects"`
+}
+
+// putSiteRedirects replaces the redirects a package added before with the
+// ones it declares now. A redirect somebody set by hand for the same old
+// address is theirs and stays; the package's is the one left out. So is one
+// from a page the site has, since redirects are served before pages and it
+// would hide the page.
+func putSiteRedirects(root string, prior *sitePrior, want []seo.Redirect, pages []string) (left int, err error) {
+	var f redirectFile
+	if err := loadRedirectFile(storeRedirectsPath(root), &f); err != nil {
+		return 0, err
+	}
+	mine := map[string]bool{}
+	for _, from := range prior.Redirects {
+		mine[from] = true
+	}
+	taken := map[string]bool{}
+	for _, name := range pages {
+		taken[feature.PagePath(name)] = true
+	}
+	var next []seo.Redirect
+	for _, r := range f.Redirects {
+		if mine[r.From] {
+			continue
+		}
+		if from, err := seo.Path(r.From); err == nil {
+			taken[from] = true
+		}
+		next = append(next, r)
+	}
+	prior.Redirects = nil
+	for _, r := range want {
+		if from, err := seo.Path(r.From); err != nil || taken[from] {
+			left++
+			continue
+		}
+		next = append(next, r)
+		prior.Redirects = append(prior.Redirects, r.From)
+	}
+	if _, err := seo.NewMap(next); err != nil {
+		return 0, fmt.Errorf("the site's redirects would not hold together: %w", err)
+	}
+	if len(next) == 0 {
+		if err := os.Remove(storeRedirectsPath(root)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return 0, err
+		}
+		return left, nil
+	}
+	return left, saveJSON(storeRedirectsPath(root), redirectFile{Redirects: next})
+}
+
+// siteRedirects is the site's own redirect map with the files given laid
+// over it: a redirect a file names for the same old address wins.
+func siteRedirects(root string, files ...string) ([]seo.Redirect, error) {
+	var out []seo.Redirect
+	seen := map[string]bool{}
+	add := func(rs []seo.Redirect) {
+		for _, r := range rs {
+			from, err := seo.Path(r.From)
+			if err != nil {
+				from = r.From // left for the map to refuse, by name
+			}
+			if !seen[from] {
+				seen[from] = true
+				out = append(out, r)
+			}
+		}
+	}
+	for _, path := range append(files, storeRedirectsPath(root)) {
+		var f redirectFile
+		if err := loadRedirectFile(path, &f); err != nil {
+			return nil, err
+		}
+		add(f.Redirects)
+	}
+	return out, nil
 }
 
 func sitePriorPath(root string) string { return filepath.Join(featuresDir(root), "site-prior.json") }
@@ -135,6 +223,28 @@ func applySite(root string, pkg *feature.Package, action string, caller *Caller)
 	if err := writeThemeFile(featureDesignDir, look); err != nil {
 		return err
 	}
+	left := 0
+	if len(s.Redirects) > 0 || fileExists(sitePriorPath(root)) {
+		if err := keepSitePrior(root); err != nil {
+			return err
+		}
+		var prior sitePrior
+		if err := loadJSON(sitePriorPath(root), &prior); err != nil {
+			return err
+		}
+		var pages []string
+		if draft, err := draftPages(root); err == nil {
+			for name := range draft {
+				pages = append(pages, name)
+			}
+		}
+		if left, err = putSiteRedirects(root, &prior, s.Redirects, pages); err != nil {
+			return err
+		}
+		if err := saveJSON(sitePriorPath(root), prior); err != nil {
+			return err
+		}
+	}
 	cfg, err := loadConfig(root)
 	if err != nil {
 		return err
@@ -154,8 +264,12 @@ func applySite(root string, pkg *feature.Package, action string, caller *Caller)
 	if err := saveConfig(root, cfg); err != nil {
 		return err
 	}
-	return recordE(root, caller.auditRecord("site.declared", "/", audit.Success, map[string]string{
-		"feature": pkg.Name, "version": pkg.Version, "style": s.Style, "colour": s.Colour}))
+	details := map[string]string{"feature": pkg.Name, "version": pkg.Version, "style": s.Style, "colour": s.Colour}
+	if len(s.Redirects) > 0 {
+		details["redirects"] = fmt.Sprint(len(s.Redirects) - left)
+		details["redirects_left_out"] = fmt.Sprint(left)
+	}
+	return recordE(root, caller.auditRecord("site.declared", "/", audit.Success, details))
 }
 
 // keepSitePrior records the site as it is, once: the record stays until
@@ -202,6 +316,9 @@ func releaseSite(root string, pkg string, caller *Caller) error {
 		}
 	}
 	if err := saveConfig(root, cfg); err != nil {
+		return err
+	}
+	if _, err := putSiteRedirects(root, &prior, nil, nil); err != nil {
 		return err
 	}
 	themePath := filepath.Join(featureDesignDir, themeFile)

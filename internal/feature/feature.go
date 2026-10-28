@@ -57,6 +57,7 @@ import (
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/menu"
 	"github.com/quilzo/quilzo/internal/schema"
+	"github.com/quilzo/quilzo/internal/seo"
 )
 
 // Format is the package format this program reads and writes.
@@ -312,12 +313,30 @@ func (p *Package) Validate(c Checks) error {
 	p.validateRoles(bad, unique)
 	if p.Site != nil {
 		p.Site.validate(bad)
+		// Redirects are served before pages, so one from the package's own
+		// page would hide it.
+		if m, err := seo.NewMap(p.Site.Redirects); err == nil && m.Len() > 0 {
+			for _, pg := range p.Pages {
+				if _, ok := m.Lookup(PagePath(pg.Name)); ok {
+					bad("site: a redirect from %s would hide the package's own page %s", PagePath(pg.Name), pg.Name)
+				}
+			}
+		}
 	}
 	if len(errs) > 0 {
 		sort.Strings(errs)
 		return fmt.Errorf("the package is not usable:\n  %s", strings.Join(errs, "\n  "))
 	}
 	return nil
+}
+
+// PagePath is where a page is served: the index at the root, the rest by
+// name.
+func PagePath(name string) string {
+	if name == "index" {
+		return "/"
+	}
+	return "/" + name
 }
 
 // Blocks counts what the package declares.

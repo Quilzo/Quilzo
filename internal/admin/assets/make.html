@@ -28,6 +28,17 @@
 </form>
 <p class="hint">You get pages, menus, a contact form, a privacy page written from what the forms collect, a question box that answers from the site's own pages, and a look. Nothing is made up: a price, an address or opening hours the description does not give is left as a blank for you to fill in. You read all of it before anything is installed. Without a model, the site needs a name.</p>
 </section>{{end}}
+{{if .CanImport}}<section aria-labelledby="make-import">
+<h2 id="make-import">Bring your site</h2>
+<form method="post" action="/make/import" class="param-form">
+  <label for="make-import-address">Its address {{template "req"}}</label><input id="make-import-address" name="address" type="url" required maxlength="500" placeholder="https://your-old-site.example">
+  <label for="make-import-name">What is it called?</label><input id="make-import-name" name="name" maxlength="80" placeholder="What the site calls itself">
+  <label for="make-import-pages">How many pages to read</label><input id="make-import-pages" name="pages" type="number" min="1" max="400" value="40">
+  <p><label><input type="checkbox" name="pictures" value="1" checked> Keep the pictures it describes</label></p>
+  <div class="auto-controls"><button type="submit">Read it</button></div>
+</form>
+<p class="hint">From Wix, Squarespace, Webflow, WordPress, dotCMS, Drupal or pages written by hand: its pages, its menus, its name and its colour, and redirects so its old addresses keep working. Read politely: robots.txt is obeyed, only that site is read, and its scripts and forms are left behind and named. You read it all before anything is installed.</p>
+</section>{{end}}
 <section aria-labelledby="make-describe">
 <h2 id="make-describe">Describe a feature</h2>
 <form method="post" action="/make/draft" class="param-form">

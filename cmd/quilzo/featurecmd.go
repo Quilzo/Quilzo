@@ -35,6 +35,7 @@ import (
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/webhook"
+	"github.com/quilzo/quilzo/internal/webimport"
 )
 
 // Features: a set of Quilzo's own blocks declared in one package, installed
@@ -1615,6 +1616,21 @@ func featureHooks(root string, signedIn func(admin.Actor) *Caller) *admin.Featur
 				return nil, nil, err
 			}
 			return built.Body, built.Notes, nil
+		},
+		Import: func(address, name string, pages int, pictures bool, by admin.Actor) ([]byte, []string, error) {
+			// Bounded for a browser waiting on the answer; the command line
+			// reads more.
+			ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+			defer cancel()
+			if pages <= 0 || pages > webimport.MaxPages {
+				pages = 40
+			}
+			b, _, err := importSite(ctx, root, address, name, pages, pictures, signedIn(by))
+			if err != nil {
+				return nil, nil, err
+			}
+			body, err := json.MarshalIndent(b.Package, "", "  ")
+			return body, b.Notes, err
 		},
 		Blanks: func() ([]string, map[string][]string, error) {
 			pages, err := draftPages(root)

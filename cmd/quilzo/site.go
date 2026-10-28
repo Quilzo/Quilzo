@@ -51,6 +51,8 @@ func cmdSite(root string, args []string) error {
 			return siteFillCmd(root, args[1:])
 		case "kinds":
 			return siteKindsCmd()
+		case "import":
+			return siteImportCmd(root, args[1:])
 		}
 	}
 	fs := flag.NewFlagSet("site", flag.ContinueOnError)
@@ -63,7 +65,7 @@ func cmdSite(root string, args []string) error {
 	baseURL := fs.String("base-url", "",
 		"absolute origin, e.g. https://example.com — required for the sitemap")
 	redirectFile := fs.String("redirects", "",
-		"a redirect map, as written by quilzo import")
+		"a redirect map, as written by quilzo import, laid over the site's own")
 	name := fs.String("name", "", "site name, shown when installing")
 	desc := fs.String("description", "", "site description")
 	envName := fs.String("env", "",
@@ -248,27 +250,11 @@ func cmdSite(root string, args []string) error {
 		return seo.LastChanged(s, s.GetRef(site.RefLive), 5000)
 	}
 
-	if *redirectFile != "" {
-		var file struct {
-			Redirects []seo.Redirect `json:"redirects"`
-		}
-		// Strictly, because a field this does not know is a redirect that does
-		// something other than what the file says. `"status": 301` is what
-		// every other tool's redirect file looks like, and it was accepted and
-		// ignored: the entry served a 307 while the file said permanent, so
-		// nothing updated a bookmark or a search index. Found by writing one.
-		if err := loadRedirectFile(*redirectFile, &file); err != nil {
-			return err
-		}
-		m, err := seo.NewMap(file.Redirects)
-		if err != nil {
-			// Refused at startup rather than at request time. A redirect map
-			// with a loop in it should stop the server coming up, not send
-			// visitors round in circles.
-			return fmt.Errorf("%s: %w", *redirectFile, err)
-		}
-		st.Redirects = m
+	redirects, err := servedRedirects(root, *redirectFile)
+	if err != nil {
+		return err
 	}
+	st.Redirects = redirects
 	if *name != "" {
 		st.Name = *name
 	}
@@ -583,4 +569,34 @@ func crawlGate(cfg *config.Config) (*public.CrawlGate, error) {
 				"keys of the crawlers you mean to charge, or unset the price")
 	}
 	return &public.CrawlGate{Keys: keys, Price: price}, nil
+}
+
+// servedRedirects is the redirect map the site serves: its own, which a
+// site brought from elsewhere fills in, with the file given laid over it.
+//
+// Read strictly, because a field this does not know is a redirect that does
+// something other than what the file says. `"status": 301` is what every
+// other tool's redirect file looks like, and it was accepted and ignored: the
+// entry served a 307 while the file said permanent, so nothing updated a
+// bookmark or a search index. Found by writing one.
+func servedRedirects(root, file string) (*seo.Map, error) {
+	var files []string
+	if file != "" {
+		if !fileExists(file) {
+			return nil, fmt.Errorf("%s: no such redirect map", file)
+		}
+		files = append(files, file)
+	}
+	redirects, err := siteRedirects(root, files...)
+	if err != nil || len(redirects) == 0 {
+		return nil, err
+	}
+	m, err := seo.NewMap(redirects)
+	if err != nil {
+		// Refused at startup rather than at request time. A redirect map with
+		// a loop in it should stop the server coming up, not send visitors
+		// round in circles.
+		return nil, fmt.Errorf("the redirects: %w", err)
+	}
+	return m, nil
 }
