@@ -13,8 +13,12 @@ import (
 	"crypto/x509/pkix"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"math/big"
+	"mime"
+	"mime/multipart"
 	"net"
+	netmail "net/mail"
 	"strings"
 	"sync"
 	"testing"
@@ -292,5 +296,63 @@ func TestAMessageCannotInjectAHeader(t *testing.T) {
 	}
 	if dialled {
 		t.Error("the relay was dialled for a message that should have been refused")
+	}
+}
+
+// An issue of a newsletter: the sender's name, the list it is from, the
+// one-click unsubscribe of RFC 8058, and the same words as a page.
+func TestANewsletterCarriesItsListAndItsWayOut(t *testing.T) {
+	m := Message{From: "news@crumb.example", To: "ann@example.test", FromName: "Crumb, the bakery",
+		Subject: "October", Body: "Rye is back.", HTML: "<p>Rye is back.</p>",
+		ListID: "Crumb <newsletter.crumb.example>", Unsubscribe: "https://crumb.example/newsletter/leave?s=a&t=b",
+		Date: time.Now(), ID: "x@crumb.example"}
+	raw, err := m.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg, err := netmail.ReadMessage(strings.NewReader(string(raw)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := msg.Header
+	from, err := netmail.ParseAddress(h.Get("From"))
+	if err != nil || from.Name != "Crumb, the bakery" || from.Address != "news@crumb.example" {
+		t.Errorf("From: %q %v", h.Get("From"), err)
+	}
+	if h.Get("List-Unsubscribe") != "<https://crumb.example/newsletter/leave?s=a&t=b>" ||
+		h.Get("List-Unsubscribe-Post") != "List-Unsubscribe=One-Click" || h.Get("List-Id") != m.ListID {
+		t.Errorf("list headers: %v", h)
+	}
+	mt, params, err := mime.ParseMediaType(h.Get("Content-Type"))
+	if err != nil || mt != "multipart/alternative" {
+		t.Fatalf("content type %q: %v", h.Get("Content-Type"), err)
+	}
+	mr := multipart.NewReader(msg.Body, params["boundary"])
+	var kinds, bodies []string
+	for {
+		p, err := mr.NextPart()
+		if err != nil {
+			break
+		}
+		b, _ := io.ReadAll(base64.NewDecoder(base64.StdEncoding, p))
+		kinds = append(kinds, p.Header.Get("Content-Type"))
+		bodies = append(bodies, string(b))
+	}
+	if len(kinds) != 2 || !strings.HasPrefix(kinds[0], "text/plain") || !strings.HasPrefix(kinds[1], "text/html") ||
+		bodies[0] != m.Body || bodies[1] != m.HTML {
+		t.Fatalf("parts: %v %q", kinds, bodies)
+	}
+	m.Unsubscribe = "http://crumb.example/leave"
+	if _, err := m.Bytes(); err == nil {
+		t.Error("a one-click unsubscribe over plain http was accepted; RFC 8058 requires https")
+	}
+	for _, bad := range []Message{
+		{From: "a@b.example", To: "c@d.example", FromName: "Crumb\r\nBcc: everyone@example.test"},
+		{From: "a@b.example", To: "c@d.example", ListID: "x\nBcc: y@example.test"},
+		{From: "a@b.example", To: "c@d.example", Unsubscribe: "https://x.example/\r\nBcc: y@example.test"},
+	} {
+		if _, err := bad.Bytes(); err == nil {
+			t.Errorf("a header was injected through %+v", bad)
+		}
 	}
 }

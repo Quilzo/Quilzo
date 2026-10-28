@@ -6,11 +6,13 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"syscall"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/newsletter"
 	"github.com/quilzo/quilzo/internal/sandbox"
 	"github.com/quilzo/quilzo/internal/shield"
 )
@@ -24,7 +26,8 @@ import (
 // able to read everything it could before and to write only where its own
 // state is kept: form submissions, boards, members, handoffs, analytics, the
 // shield, its followers, the model ledger, webhook deliveries, bookings, the
-// audit log's two files, and a temporary directory of its own. The network is left alone:
+// newsletter's list, the audit log's two files, and a temporary directory of
+// its own. The network is left alone:
 // it serves, and it calls models, mail and webhooks.
 //
 // What the site writes was moved out of the store's root to make this
@@ -47,7 +50,7 @@ func siteWritable(root string) (dirs, files []string) {
 		submissionDir(root), postsDir(root), membersDir(root), handoffDir(root), analyticsDir(root),
 		filepath.Dir(shield.Path(root)), filepath.Dir(fediverseFollowersPath(root)),
 		filepath.Dir(usagePath(root)), filepath.Dir(deliveriesPath(root)), siteTempDir(root),
-		bookingsDir(root),
+		bookingsDir(root), newsletterDir(root),
 	}
 	// The audit log, unless a separate writer keeps it: then the site hands
 	// records to it over its socket and writes none itself.
@@ -59,19 +62,42 @@ func siteWritable(root string) (dirs, files []string) {
 
 // prepareSite makes what the confined site writes to and may not make
 // itself, because making it takes writing at the store's root: the audit
-// key, the provenance key, its directories and the audit log's files. It
-// returns the paths the site writes, for a service manager that makes the
-// store read-only to be told (`quilzo site --prepare`).
-func prepareSite(root string) ([]string, error) {
+// key, the provenance key, the newsletter's key, its directories and the
+// audit log's files. It returns the paths the site writes, for a service
+// manager that makes the store read-only to be told (`quilzo site
+// --prepare`).
+//
+// strict is for --prepare, run by the store's owner to make them. Starting
+// the site is not strict: in a store a service manager keeps read-only, a
+// directory an upgrade added cannot be made here, and the feature that
+// writes it is off, said so, until the owner runs --prepare, rather than
+// the whole site not starting.
+func prepareSite(root string, strict bool) ([]string, error) {
 	if _, err := openAudit(root); err != nil {
 		return nil, err
 	}
 	_, _, _ = provenanceSigner(root, siteName(root), time.Now())
+	// The newsletter's key, which its links are made with: read by the site,
+	// written by nobody once made.
+	if err := newsletter.MakeKey(newsletterKeyPath(root)); err != nil {
+		if strict {
+			return nil, fmt.Errorf("making the newsletter's key: %w", err)
+		}
+		fmt.Fprintf(os.Stderr, "  %sthe newsletter takes no sign-ups until its key is made: run quilzo site "+
+			"--prepare as the store's owner (%v)%s\n", yellow, err, reset)
+	}
 	dirs, files := siteWritable(root)
+	var made []string
 	for _, d := range dirs {
 		if err := os.MkdirAll(d, 0o700); err != nil {
+			if !strict && (errors.Is(err, fs.ErrPermission) || errors.Is(err, syscall.EROFS)) {
+				fmt.Fprintf(os.Stderr, "  %s%s cannot be made in a read-only store, so what is kept there is off "+
+					"until quilzo site --prepare is run as the store's owner%s\n", yellow, d, reset)
+				continue
+			}
 			return nil, fmt.Errorf("making %s for the confined site: %w", d, err)
 		}
+		made = append(made, d)
 	}
 	for _, f := range files {
 		h, err := os.OpenFile(f, os.O_CREATE|os.O_WRONLY, 0o600)
@@ -80,7 +106,7 @@ func prepareSite(root string) ([]string, error) {
 		}
 		_ = h.Close()
 	}
-	return append(dirs, files...), nil
+	return append(made, files...), nil
 }
 
 // confineSite re-executes the site confined, and returns only when it did
@@ -96,7 +122,7 @@ func confineSite(root string) error {
 		return err
 	}
 	// Made now, while this process may still make them.
-	writable, err := prepareSite(abs)
+	writable, err := prepareSite(abs, false)
 	if err != nil {
 		return err
 	}
@@ -124,8 +150,10 @@ func checkSiteConfined(root string) error {
 	// Buy button to somebody else's checkout.
 	// And how bookings are taken: a site that could rewrite its own hours
 	// or turn on a feed of its calendar would be answering to nobody.
+	// And the newsletter's key: a site that could replace it could make
+	// every link already mailed stop working.
 	for _, name := range []string{"policy.json", "tokens.json", "config.json", "pay/links.json", "pay/pay.json",
-		"bookings.json"} {
+		"bookings.json", "newsletter.key"} {
 		path := filepath.Join(root, name)
 		f, err := os.OpenFile(path, os.O_WRONLY, 0)
 		if err == nil {

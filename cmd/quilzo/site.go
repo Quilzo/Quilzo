@@ -84,7 +84,7 @@ func cmdSite(root string, args []string) error {
 		if err != nil {
 			return err
 		}
-		paths, err := prepareSite(abs)
+		paths, err := prepareSite(abs, true)
 		if err != nil {
 			return err
 		}

@@ -88,6 +88,8 @@ var destinations = []destination{
 	// Beside Forms, which also holds what visitors sent: who booked what,
 	// and how the site takes bookings.
 	{"bookings", "Bookings", "/bookings", "Content", "bookings", auth.ActEditDraft},
+	// And who asked for the newsletter, with the issues sent to them.
+	{"newsletter", "Newsletter", "/newsletter", "Content", "newsletter", auth.ActEditDraft},
 	{"media", "Media", "/media", "Content", "media", auth.ActView},
 	// Its own section rather than #templates. The template language and the
 	// theme are different things, and the screen an operator opens to change
@@ -208,7 +210,7 @@ var docSections = map[string]bool{
 	"growth": true, "integrations": true, "languages": true, "logging": true, "make": true, "media": true, "members": true,
 	"memory": true, "models": true, "pages": true, "passkeys": true, "people": true, "provenance": true,
 	"provisioning": true, "publishing": true, "research": true, "security": true, "settings": true, "shield": true, "signins": true, "sso": true,
-	"selling": true, "bookings": true, "start": true, "structure": true, "today": true, "transfer": true, "types": true,
+	"selling": true, "bookings": true, "newsletter": true, "start": true, "structure": true, "today": true, "transfer": true, "types": true,
 
 	// Guides no screen owns, because they explain a concept or a surface
 	// rather than a destination. Named individually so that one quietly

@@ -137,6 +137,10 @@ func (st *Site) toolFor(attrs map[string]string, body string, forms *form.Set) (
 		// A time with the business: the agent chooses and fills it in, and
 		// the visitor books it, as with a form.
 		return st.bookingTool(strings.Trim(strings.TrimPrefix(action, "/book/"), "/"))
+	case action == "/newsletter/subscribe" && method == "post":
+		// The agent fills in the address; the visitor signs up, and says
+		// yes from their own inbox.
+		return st.newsletterTool()
 	case strings.HasPrefix(action, "/form/"):
 		name := strings.Trim(strings.TrimPrefix(action, "/form/"), "/")
 		if forms == nil {

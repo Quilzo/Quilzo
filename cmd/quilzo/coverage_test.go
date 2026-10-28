@@ -422,6 +422,9 @@ var coverage = map[string]surfaces{
 	// what a visitor told this site about themselves, read behind a
 	// sign-in, and a visitor's own agent books through the page.
 	"booking": {GUI: "/bookings", MCP: []string{"booking_times"}},
+	// How the list stands, and an issue proposed, are on MCP; the addresses
+	// are not, and sending to them is a person's, after reading a test.
+	"newsletter": {GUI: "/newsletter", MCP: []string{"newsletter_status", "propose_issue"}},
 	"pay": {GUI: "/pay", NoMCP: "turns on taking money, which two administrators decide, and reads buyers' names and " +
 		"addresses from the provider; an agent that can do either can spend a shop's trust"},
 	"webhook": {GUI: "/integrations", NoMCP: "adds an outbound destination for content, which is exfiltration with a configuration screen"},

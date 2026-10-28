@@ -558,6 +558,20 @@ var commandNeeds = map[string]need{
 	"booking pause":   {action: auth.ActPublish},
 	"booking resume":  {action: auth.ActPublish},
 	"booking feed":    {action: auth.ActPublish},
+	// The newsletter: the addresses are read, asked and removed by whoever
+	// reads what forms collect; what decides who gets the next issue, or
+	// sends one, is publishing's.
+	"newsletter":         {action: auth.ActPublish},
+	"newsletter status":  {action: auth.ActView},
+	"newsletter issues":  {action: auth.ActView},
+	"newsletter list":    {action: auth.ActEditDraft},
+	"newsletter add":     {action: auth.ActEditDraft},
+	"newsletter remove":  {action: auth.ActEditDraft},
+	"newsletter export":  {action: auth.ActEditDraft},
+	"newsletter test":    {action: auth.ActEditDraft},
+	"newsletter import":  {action: auth.ActPublish},
+	"newsletter send":    {action: auth.ActPublish},
+	"newsletter dismiss": {action: auth.ActPublish},
 
 	"pay":        {action: auth.ActGrant},
 	"pay status": {action: auth.ActView},

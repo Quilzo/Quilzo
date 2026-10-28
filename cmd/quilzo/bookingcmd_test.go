@@ -83,7 +83,10 @@ func TestBookingsFromTheCommandLine(t *testing.T) {
 	}
 
 	// Housekeeping forgets who booked a while after the appointment.
-	y, _, err := book.Reserve(s, visit, days[0].Slots[1].Start, now, booking.Details{Name: "Bo", Email: "bo@example.com"})
+	// The last free time, which is another time whatever the hour the test
+	// runs: late in the day, today may have only one left.
+	last := days[len(days)-1]
+	y, _, err := book.Reserve(s, visit, last.Slots[len(last.Slots)-1].Start, now, booking.Details{Name: "Bo", Email: "bo@example.com"})
 	if err != nil {
 		t.Fatal(err)
 	}

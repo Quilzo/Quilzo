@@ -256,6 +256,19 @@ bookings (appointments on the site: one calendar, its hours, its services; who b
   quilzo booking pause | resume            stop and start taking new bookings
   quilzo booking feed [--off]              a calendar address for your phone: times and services, never names
 
+newsletter (a mailing list: each address confirms by mail first, and leaves with one click; never read by the site)
+  quilzo newsletter [status]               how many are subscribed, waiting and gone, and what stops sending
+  quilzo newsletter list [--all]           the confirmed addresses; --all adds those waiting to confirm
+  quilzo newsletter add ADDRESS            mail an address the link a sign-up gets; it joins when it says yes
+  quilzo newsletter remove ADDRESS|ID      take it off and delete it; it is kept from being imported back
+  quilzo newsletter import FILE --agreed "…"   a list exported from Mailchimp, Substack, Ghost and others
+  quilzo newsletter export [FILE]          the confirmed list as CSV, for any other newsletter service
+  quilzo newsletter test PAGE --to ADDRESS [--subject S]   one copy of a published page as an issue
+  quilzo newsletter send PAGE [--subject S] --yes   send it to every confirmed address, once each
+  quilzo newsletter send --issue ID --yes  send one an agent proposed, or carry on with one that stopped
+  quilzo newsletter issues                 what was sent, how far it got, and what agents propose
+  quilzo newsletter dismiss ISSUE          set aside an issue an agent proposed
+
 features (one package of blocks, installed as one decision)
   quilzo feature example > FILE.json       a complete package to edit: a lab sample tracker
   quilzo feature draft "…" [-o FILE]       a model drafts a package from a sentence; content blocks only
@@ -935,6 +948,8 @@ func main() {
 		err = cmdPay(root, cmdArgs)
 	case "booking":
 		err = cmdBooking(root, cmdArgs)
+	case "newsletter":
+		err = cmdNewsletter(root, cmdArgs)
 	case "research":
 		err = cmdResearch(root, cmdArgs)
 	case "scan":

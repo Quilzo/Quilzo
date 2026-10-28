@@ -141,7 +141,8 @@ func TestTheUnitLetsTheSiteWriteWhatItWrites(t *testing.T) {
 	for _, line := range strings.Split(string(b), "\n") {
 		if v, ok := strings.CutPrefix(line, "ReadWritePaths="); ok {
 			for _, p := range strings.Fields(v) {
-				unit[p] = true
+				// A leading - lets the unit start before the path is made.
+				unit[strings.TrimPrefix(p, "-")] = true
 			}
 		}
 	}
@@ -157,5 +158,45 @@ func TestTheUnitLetsTheSiteWriteWhatItWrites(t *testing.T) {
 		if !want[p] {
 			t.Errorf("the unit lets the site write %s, which it does not", p)
 		}
+	}
+}
+
+// A store a service manager keeps read-only, upgraded to a version whose
+// site writes somewhere new: the site starts, with that feature off and
+// saying so, rather than not starting; --prepare, run by the owner to make
+// it, says what it could not make.
+func TestAnUpgradeInAReadOnlyStoreStillStartsTheSite(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permissions do not bind the superuser")
+	}
+	root, _ := siteStore(t)
+	if _, err := prepareSite(root, true); err != nil {
+		t.Fatal(err)
+	}
+	// As a store prepared before the newsletter was.
+	if err := os.RemoveAll(newsletterDir(root)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(newsletterKeyPath(root)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(root, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(root, 0o700) })
+	paths, err := prepareSite(root, false)
+	if err != nil {
+		t.Fatalf("the site would not start: %v", err)
+	}
+	for _, p := range paths {
+		if p == newsletterDir(root) {
+			t.Fatal("a directory that could not be made was handed to the sandbox")
+		}
+	}
+	if publicNewsletter(root) != nil {
+		t.Fatal("the newsletter is on without its key")
+	}
+	if _, err := prepareSite(root, true); err == nil {
+		t.Fatal("--prepare said it made what it could not")
 	}
 }

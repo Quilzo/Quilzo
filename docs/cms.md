@@ -346,6 +346,52 @@ free times visitors see and nothing about who booked; on the page, a visitor's
 own browser agent is offered the booking form as a WebMCP tool, which the
 visitor still submits.
 
+## Keeping a newsletter
+
+A newsletter is a list of people who asked for one and the letters sent to
+them. Here the letter is a page: write it, publish it, and send it.
+
+```bash
+quilzo newsletter test october --to you@example.com   # one copy, to read first
+quilzo newsletter send october --yes                  # every confirmed address, once each
+```
+
+A `newsletter` section on any page takes sign-ups. Nothing is sent to an
+address until it says yes: signing up mails it one link, and the page that
+link opens has a button, because mail filters open links to look at them and a
+filter is not a person agreeing. An address that never presses it is forgotten
+after a week, and one address is mailed a link at most once an hour, so the
+form cannot be used to fill somebody's inbox. Every issue goes as its own
+message to one address, with a link to leave at the bottom and the
+`List-Unsubscribe` and `List-Unsubscribe-Post` headers (RFC 8058) that mail
+apps turn into their own unsubscribe button: one POST, no page, no redirect, and
+the address is deleted. It is kept afterwards only as a keyed hash, so an old
+list imported again cannot put it back.
+
+What the public process may do with the list is the same rule as bookings: it
+writes an address once when somebody signs up, writes that they confirmed, and
+deletes them when they leave, and never reads an address back. Ids and links
+are keyed hashes, made with a key at the store's root that the site can read
+and not write, so checking a link reads nothing either. The addresses are read
+on the Newsletter screen and in `quilzo newsletter list`.
+
+A list moves both ways. `quilzo newsletter import FILE --agreed "…"` reads an
+export from Mailchimp, Substack, Ghost, MailPoet, Buttondown and most others,
+finding the columns by name; anybody the file says unsubscribed, bounced or
+complained is kept as having left rather than added. `quilzo newsletter export`
+writes the confirmed list as the plain CSV every one of those imports.
+
+The page becomes mail by its words, in the order a visitor reads them: title,
+lead, picture, text, then each section's heading, paragraphs, items and
+buttons, as plain text and as one column of HTML with its styles inline. What a
+mail cannot hold, such as a booking or a question box, stays on the page, and
+the mail says so and links to it. Sending is paced, written down address by
+address, and goes on from where it stopped. An agent can propose an issue over
+MCP (`propose_issue`), and see how the list stands (`newsletter_status`, counts
+and no addresses); a person sends it, after sending themselves a test. Mail
+goes through the relay in `mail.json`, which should sign it with DKIM: that is
+what lets a mail app trust the one-click headers.
+
 ## Taking payments
 
 A shop needs a till as well as a catalogue, and a till is where a CMS usually
@@ -482,13 +528,15 @@ Separate binaries-in-one, separate ports, separate exposure. The public process
 holds no administrator's credential, cannot reach a ref and cannot cause a
 commit. On Linux it confines itself with Landlock before it opens anything: it
 reads the store and writes only its own state, each kept in a directory of its
-own (form submissions, boards, members, chatbot handoffs, analytics, the
-shield's state, its followers, the model ledger, webhook deliveries, a
-temporary directory) and the audit log's two files. The store's policy, tokens
+own (form submissions, boards, members, chatbot handoffs, analytics, bookings,
+the newsletter's list, the shield's state, its followers, the model ledger,
+webhook deliveries, a temporary directory) and the audit log's two files. The store's policy, tokens
 and configuration, and its root, are out of its reach, and it checks that at
 start and refuses to run if they are not. `quilzo site --prepare` makes and
 lists those paths, for a service manager that makes the store read-only
-(see [deploy/](../deploy/)); `--confine=false` runs it unconfined and says so.
+(see [deploy/](../deploy/)); run it again after an upgrade that adds one, or
+the site starts with that feature off and says which. `--confine=false` runs it
+unconfined and says so.
 It cannot read a submission back: reading the postbag happens in the admin,
 behind authentication.
 

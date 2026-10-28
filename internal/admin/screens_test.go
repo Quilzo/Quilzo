@@ -177,6 +177,7 @@ var notAScreen = map[string]string{
 	"/session/alive":               "is posted to by admin.js and answers 204",
 	"/security/parameters/export":  "is a download of OSCAL JSON",
 	"/bookings/calendar.ics":       "is a download of a calendar file; Bookings explains a site that takes none",
+	"/newsletter/export.csv":       "is a download of the list as CSV; Newsletter explains a site with none",
 	"/security/controls/component": "is a download of OSCAL JSON",
 	"/security/controls/ssp":       "is a download of OSCAL JSON",
 	"/style.css":                   "is a stylesheet",

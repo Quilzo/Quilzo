@@ -208,6 +208,7 @@ func cmdServe(root string, args []string) error {
 	srv.Features = featureHooks(root, signedIn)
 	srv.Pay = payHooks(root, signedIn)
 	srv.Bookings = bookingHooks(root, signedIn)
+	srv.Newsletter = newsletterHooks(root, signedIn)
 	srv.FeatureProgram = featureProgram(root)
 	srv.AppRoles = func() ([]auth.AppRole, error) { return appRoles(root) }
 	// Sign-ins are judged as they are made, and the sign-in policy acts on
@@ -1260,6 +1261,14 @@ func retentionJob(root string) (upkeep.Job, bool) {
 					keep = setup.Keep()
 				}
 				n, err := book.Expire(keep, now)
+				gone += n
+				if err != nil {
+					return gone, err
+				}
+			}
+			// Addresses that never said yes, a week after their last link.
+			if list, nerr := openNewsletter(root); nerr == nil {
+				n, err := list.Expire(now)
 				gone += n
 				if err != nil {
 					return gone, err

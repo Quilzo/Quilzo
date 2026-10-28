@@ -579,6 +579,33 @@
 </section>
 {% end %}
 
+{% if s.newsletter %}
+<section class="section {{ s.newsletter.tone }}" id="newsletter">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>{{ s.newsletter.title | default:Get our news }}</h2>
+      {% if s.newsletter.intro %}<p class="lead">{{ s.newsletter.intro }}</p>{% end %}
+    </div>
+    {% if s.newsletter.done %}<p class="notice notice-positive" role="status">{{ s.newsletter.done }}</p>{% end %}
+    {% if s.newsletter.problem %}<p class="notice notice-critical" role="alert">{{ s.newsletter.problem }}</p>{% end %}
+    {% if s.newsletter.closed %}<p class="muted">Sign-ups are not taken just now.</p>{% end %}
+    {% if s.newsletter.open %}
+    <form class="newsletter-form" method="post" action="/newsletter/subscribe">
+      <input type="hidden" name="page" value="{{ s.newsletter.page }}">
+      <p class="field"><label for="newsletter-email">Your email</label>
+        <span class="newsletter-row"><input id="newsletter-email" name="email" type="email" autocomplete="email" maxlength="254" required>
+        <button class="btn" type="submit">{{ s.newsletter.button | default:Subscribe }}</button></span></p>
+      <p class="hp"><label for="newsletter-website">Leave this empty</label>
+        <input id="newsletter-website" name="website_url" type="text" tabindex="-1" autocomplete="off"></p>
+      <input type="hidden" name="form_started" value="{{ stamp }}">
+      {% if s.newsletter.what %}<p class="muted">{{ s.newsletter.what }}</p>{% end %}
+      <p class="muted">We mail you a link to confirm first, and send nothing until you do. Every issue has a link to stop it.</p>
+    </form>
+    {% end %}
+  </div>
+</section>
+{% end %}
+
 {% if s.booking %}
 <section class="section {{ s.booking.tone }}" id="book">
   <div class="wrap">

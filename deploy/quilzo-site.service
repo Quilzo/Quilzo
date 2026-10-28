@@ -51,14 +51,18 @@ SystemCallFilter=@system-service
 SystemCallFilter=~@privileged @resources @obsolete
 
 # What the site writes, as `quilzo site --prepare` lists it: form submissions,
-# boards, members, chatbot handoffs, analytics, the shield's state, its
-# followers, the model ledger, webhook deliveries, its temporary directory,
-# and the audit log's two files. Nothing else in the store, and not the
-# store's root, where its policy, tokens and configuration are.
+# boards, members, chatbot handoffs, analytics, bookings, the newsletter's
+# list, the shield's state, its followers, the model ledger, webhook
+# deliveries, its temporary directory, and the audit log's two files. Nothing
+# else in the store, and not the store's root, where its policy, tokens and
+# configuration are.
 ReadWritePaths=/srv/quilzo/.quilzo/submissions /srv/quilzo/.quilzo/boards
 ReadWritePaths=/srv/quilzo/.quilzo/members /srv/quilzo/.quilzo/handoff
 ReadWritePaths=/srv/quilzo/.quilzo/analytics /srv/quilzo/.quilzo/shield
 ReadWritePaths=/srv/quilzo/.quilzo/fediverse /srv/quilzo/.quilzo/usage
 ReadWritePaths=/srv/quilzo/.quilzo/webhook-deliveries /srv/quilzo/.quilzo/tmp
-ReadWritePaths=/srv/quilzo/.quilzo/bookings
+# Added by upgrades, so marked with a leading -: until the store's owner runs
+# quilzo site --prepare to make them, the unit starts without them and the
+# site says what is off, rather than not starting at all.
+ReadWritePaths=-/srv/quilzo/.quilzo/bookings -/srv/quilzo/.quilzo/newsletter
 ReadWritePaths=/srv/quilzo/.quilzo/audit.jsonl /srv/quilzo/.quilzo/audit.jsonl.lock

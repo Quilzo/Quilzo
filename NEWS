@@ -61,6 +61,31 @@ Unreleased
 
 ** Added
 
+*** A newsletter, with every address asking for it first.  A newsletter
+    section on any page takes sign-ups; the address is mailed one link,
+    and nothing else is sent until the button on the page it opens is
+    pressed (a filter opening the link is not a yes).  An address that
+    never does is forgotten after a week, and one address is mailed a
+    link at most once an hour.  An issue is a published page: quilzo
+    newsletter test PAGE --to YOU, then quilzo newsletter send PAGE
+    --yes, or the Newsletter screen.  It goes as text and HTML, one
+    message to each confirmed address, paced, written down as it goes and
+    carried on from where it stopped, with a link to leave and the
+    List-Unsubscribe and List-Unsubscribe-Post headers of RFC 8058, which
+    end the subscription with one POST and delete the address.  The
+    public site writes sign-ups and never reads an address back; links
+    and ids are keyed hashes made with newsletter.key, which the site can
+    read and not write.  Lists import from Mailchimp, Substack, Ghost,
+    MailPoet, Buttondown and others (quilzo newsletter import FILE
+    --agreed "where they agreed"), keeping anybody who left there as
+    having left, and export as CSV.  Webhooks can be told "subscribed"
+    and "unsubscribed", with no address.  Over MCP an agent sees the
+    counts (newsletter_status) and proposes an issue (propose_issue); a
+    person sends it.  A store a service manager keeps read-only needs
+    quilzo site --prepare run once to make the newsletter's directory and
+    key; until then the site starts with sign-ups off and says so, as it
+    now does for bookings too.
+
 *** Agents can ask the site (NLWeb).  The public site answers a question in
     plain words with the published pages that match, as schema.org
     objects: GET or POST /ask with query, mode (list, summarize or

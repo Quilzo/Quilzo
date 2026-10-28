@@ -255,6 +255,9 @@ type Server struct {
 	// Bookings reach who booked and how the site takes bookings. Nil
 	// shows the screen saying so.
 	Bookings *BookingHooks
+	// Newsletter reaches the mailing list and its issues. Nil shows the
+	// screen saying so.
+	Newsletter *NewsletterHooks
 	// Brief writes the few sentences at the top of Today (brief.go), and
 	// briefs keeps each person's for the day.
 	Brief  *Brief
@@ -1346,6 +1349,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/bookings", s.handleBookings)
 	mux.HandleFunc("/bookings/act", s.handleBookingsAct)
 	mux.HandleFunc("/bookings/calendar.ics", s.handleBookingsCalendar)
+	mux.HandleFunc("/newsletter", s.handleNewsletter)
+	mux.HandleFunc("/newsletter/act", s.handleNewsletterAct)
+	mux.HandleFunc("/newsletter/export.csv", s.handleNewsletterExport)
 	mux.HandleFunc("/pay", s.handlePay)
 	mux.HandleFunc("/pay/act", s.handlePayAct)
 	mux.HandleFunc("/make/fill", s.handleMakeFill)

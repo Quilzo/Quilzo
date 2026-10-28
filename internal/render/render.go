@@ -88,6 +88,10 @@ type Sources struct {
 	// booked there, from the page's own query. Nil means a booking section
 	// says the site takes no bookings. See bookings.go.
 	Booking func(service, page string, args map[string]string) map[string]any
+	// Newsletter is what a newsletter section shows: whether sign-ups are
+	// taken, and what to say after one. Nil means it says they are not.
+	// See newsletter.go.
+	Newsletter func(page string, args map[string]string) map[string]any
 	// Tracks answers what caption files a video has, in the shape a template
 	// walks. Nil means no captions anywhere, which is what every deployment
 	// had before they could be attached — and is why a video with none is a
@@ -178,6 +182,7 @@ func (s Sources) For(name string, body any, args map[string]string) (map[string]
 	}
 	placeComments(ctx["page"], name, s.Thread)
 	placeBookings(ctx["page"], name, args, s.Booking)
+	placeNewsletters(ctx["page"], name, args, s.Newsletter)
 	return ctx, nil
 }
 

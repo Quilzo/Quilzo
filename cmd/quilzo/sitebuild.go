@@ -164,6 +164,8 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 	// Bookings: the setup read per request, the calendar written by the
 	// site, who booked written once and read only by the admin.
 	st.Bookings = publicBookings(root)
+	// The newsletter: sign-ups written by the site, never read back by it.
+	st.Newsletter = publicNewsletter(root)
 	// The declared assistants, served at /ask/NAME. Read per request, so one
 	// declared or withdrawn from the admin or the command line takes effect
 	// without a restart — withdrawing a public assistant has to be immediate.

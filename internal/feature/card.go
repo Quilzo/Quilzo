@@ -174,6 +174,13 @@ func (p *Package) MakeCard() Card {
 		c.Collects = append(c.Collects, bookingsLine(p.Bookings))
 		need("it takes bookings, keeping who booked")
 	}
+	for _, pg := range p.Pages {
+		if signsUp(pg.Body) {
+			c.Collects = append(c.Collects, Line{Text: fmt.Sprintf("Page %q signs visitors up for the newsletter: "+
+				"an email address, mailed a link to confirm before anything is sent", pg.Name), Flag: "personal"})
+			need("it keeps a mailing list")
+		}
+	}
 
 	listings := map[string]listing.Listing{}
 	for _, l := range p.Listings {
@@ -314,4 +321,15 @@ func agentLine(m agent.Manifest) (Line, []string, bool) {
 		line.Flag = "acts"
 	}
 	return line, sends, acts
+}
+
+// signsUp says whether a page has a newsletter section.
+func signsUp(body map[string]any) bool {
+	sections, _ := body["sections"].([]any)
+	for _, s := range sections {
+		if sec, _ := s.(map[string]any); sec["newsletter"] != nil {
+			return true
+		}
+	}
+	return false
 }
