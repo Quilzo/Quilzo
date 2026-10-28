@@ -30,7 +30,7 @@ var iconSymbol = map[string]string{
 	"languages": "translate", "assist": "edit_note", "assistants": "smart_toy",
 	"inbox": "inbox", "approvals": "pending_actions", "make": "extension", "research": "biotech", "decisions": "rule", "notes": "sticky_note_2",
 	"review": "rate_review", "publishing": "publish", "history": "history",
-	"analytics": "analytics", "experiments": "science", "personalise": "tune",
+	"analytics": "analytics", "experiments": "science", "personalise": "tune", "pay": "payments",
 	"transfer": "swap_horiz", "decentralised": "hub", "provenance": "verified",
 	"security": "shield", "logs": "receipt_long", "findings": "flag",
 	"risk": "warning", "cases": "cases", "events": "list_alt",

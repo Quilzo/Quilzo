@@ -63,6 +63,7 @@
         </div>
         {% end %}
 
+        {% if record.buy_href %}<div class="actions"><a class="btn btn-lg" href="{{ record.buy_href }}">Buy{% if record.buy_price %} for {{ record.buy_price }}{% end %}<span class="visually-hidden">: {{ record.name }}</span></a></div>{% end %}
         {% if record.cta_href %}<div class="actions"><a class="btn btn-lg" href="{{ record.cta_href }}">{{ record.cta_label }}</a></div>{% end %}
       </div>
     </div>
@@ -102,6 +103,7 @@
           <p class="price-line">
             {% if row.price_display %}<span class="amount">{{ row.price_display }}</span>{% end %}
             {% if row.availability_label %}<span class="state state-{{ row.state }}">{{ row.availability_label }}</span>{% end %}
+            {% if row.buy_href %}<a class="btn buy" href="{{ row.buy_href }}">Buy{% if row.buy_price %} for {{ row.buy_price }}{% end %}<span class="visually-hidden">: {{ row.name }}{{ row.title }}</span></a>{% end %}
           </p>
           {% if row.range %}<p class="muted">{{ row.range }} {{ row.material }}</p>{% end %}
         </li>

@@ -61,6 +61,22 @@ Unreleased
 
 ** Added
 
+*** Payments, through the provider's own checkout.  `quilzo pay enable
+    stripe`, or the Payments screen, asks a second administrator to let
+    the site take money; once they agree, a Stripe payment link is made for
+    every product the published catalogue sells at a price, and the site
+    shows a Buy button beside a product only when a live link charges
+    exactly what the page says: the same product, name, amount and
+    currency.  After every publish and rollback the links follow: a new
+    price gets a new link, then the old one is retired, and while the
+    provider cannot be reached a changed price shows no button rather than
+    the old price.  The key is a sealed secret the admin reads (`quilzo
+    secret set stripe`, a restricted key is enough); the site reads only
+    the links.  Quilzo never sees a card and keeps no order: `quilzo pay
+    orders` and the screen read the latest from Stripe, and the audit log
+    records that somebody looked, never who bought.  `quilzo pay disable`
+    takes the buttons down at once and retires every link.
+
 *** A whole site from a sentence.  `quilzo site new "a bakery in Leeds"
     --install`, or Build a whole site on the Make screen, writes a site
     package: pages and sections for the kind of site (business, product,

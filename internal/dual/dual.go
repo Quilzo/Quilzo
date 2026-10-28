@@ -51,7 +51,17 @@ const (
 	// Mapping is an identity provider's group mapped to a role or a job
 	// that makes its members administrators.
 	Mapping = "mapping"
+	// Pay is the site starting to take money, through a provider's hosted
+	// checkout: from then on a price on a page is a price somebody pays.
+	Pay = "pay"
 )
+
+// PayChange is a Pay request: the provider, and how its checkout behaves.
+type PayChange struct {
+	Provider string   `json:"provider"`
+	ShipTo   []string `json:"ship_to,omitempty"`
+	Done     string   `json:"done,omitempty"`
+}
 
 // GrantChange is a Grant request: bindings granted together.
 type GrantChange struct {

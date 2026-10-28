@@ -95,6 +95,9 @@ func sourcesFor(root string, s *store.Store, commit, siteName string,
 		src.Listings = &listing.Resolver{
 			Store: s, Index: collection.NewCache(), Tree: tree, Set: set}
 	}
+	// Buy buttons as the site shows them, so a preview and the gate see the
+	// page a visitor gets.
+	src.Buy = (&payReader{root: root}).Buy
 	return src
 }
 

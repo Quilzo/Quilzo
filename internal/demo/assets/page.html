@@ -38,6 +38,7 @@
         <p class="sum">{{ row.summary }}</p>
         <p class="price"><span class="amount">{{ row.price_display }}</span>
           <span class="avail avail-{{ row.availability }}">{{ row.availability_label }}</span></p>
+        {% if row.buy_href %}<p class="buy"><a class="buy-now" href="{{ row.buy_href }}">Buy for {{ row.buy_price }}<span class="hidden">: {{ row.name }}</span></a></p>{% end %}
         <p class="meta"><span class="range">{{ row.range }}</span> <span class="material">{{ row.material }}</span></p>
         {% if row.lead_time %}<p class="lead">{{ row.lead_time }}</p>{% end %}
       </div>
@@ -64,6 +65,7 @@
         <p class="sum">{{ row.summary }}</p>
         <p class="price"><span class="amount">{{ row.price_display }}</span>
           <span class="avail avail-{{ row.availability }}">{{ row.availability_label }}</span></p>
+        {% if row.buy_href %}<p class="buy"><a class="buy-now" href="{{ row.buy_href }}">Buy for {{ row.buy_price }}<span class="hidden">: {{ row.name }}</span></a></p>{% end %}
         <p class="meta"><span class="range">{{ row.range }}</span> <span class="material">{{ row.material }}</span></p>
         {% if row.lead_time %}<p class="lead">{{ row.lead_time }}</p>{% end %}
       </div>
@@ -81,6 +83,7 @@
         <p class="sum">{{ row.summary }}</p>
         <p class="price"><span class="amount">{{ row.price_display }}</span>
           <span class="avail avail-{{ row.availability }}">{{ row.availability_label }}</span></p>
+        {% if row.buy_href %}<p class="buy"><a class="buy-now" href="{{ row.buy_href }}">Buy for {{ row.buy_price }}<span class="hidden">: {{ row.name }}</span></a></p>{% end %}
         <p class="meta"><span class="range">{{ row.range }}</span> <span class="material">{{ row.material }}</span></p>
         {% if row.lead_time %}<p class="lead">{{ row.lead_time }}</p>{% end %}
       </div>
@@ -98,6 +101,7 @@
         <p class="sum">{{ row.summary }}</p>
         <p class="price"><span class="amount">{{ row.price_display }}</span>
           <span class="avail avail-{{ row.availability }}">{{ row.availability_label }}</span></p>
+        {% if row.buy_href %}<p class="buy"><a class="buy-now" href="{{ row.buy_href }}">Buy for {{ row.buy_price }}<span class="hidden">: {{ row.name }}</span></a></p>{% end %}
         <p class="meta"><span class="range">{{ row.range }}</span> <span class="material">{{ row.material }}</span></p>
         {% if row.lead_time %}<p class="lead">{{ row.lead_time }}</p>{% end %}
       </div>
@@ -153,6 +157,7 @@
       <p class="price"><span class="amount">{{ record.price_display }}</span>
         <span class="avail avail-{{ record.availability }}">{{ record.availability_label }}</span></p>
       {% if record.lead_time %}<p class="lead">{{ record.lead_time }}</p>{% end %}
+      {% if record.buy_href %}<p class="buy"><a class="buy-now" href="{{ record.buy_href }}">Buy for {{ record.buy_price }}</a></p>{% end %}
       <p class="buy"><a href="/stockists">Where to buy it</a></p>
       <p class="desc">{{ record.description }}</p>
       <dl class="spec">

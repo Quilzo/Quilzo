@@ -163,6 +163,12 @@ a { color: var(--accent); }
 
 /* The next step from a product, and from the home page's short list. */
 .buy { margin: 0 0 1rem; font-weight: 600; }
+/* Buy, at the payment provider's checkout: the one solid button a product has. */
+.buy-now { display: inline-block; margin-top: .4rem; padding: .55rem 1.1rem; border-radius: 999px;
+  background: var(--accent); color: var(--on-accent); text-decoration: none; font-weight: 600; }
+.buy-now:hover { text-decoration: underline; }
+.buy-now:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+.hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .more { margin: -1.5rem 0 3rem; font-weight: 600; }
 
 /* The product pictures are pale paper colours. On a dark page they are

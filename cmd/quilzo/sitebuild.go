@@ -350,6 +350,11 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 		if name := cfg.Raw("site.catalogue"); name != "" {
 			st.Catalogue = name
 		}
+		// Buy buttons, from the payment links the admin keeps. The site
+		// reads the book and holds no key (internal/pay).
+		buy := &payReader{root: root}
+		st.Buy = buy.Buy
+		st.BuyTag = buy.Tag
 		// The feed, when a listing is named for it.
 		if name := cfg.Raw("site.feed"); name != "" {
 			st.Feed = name
