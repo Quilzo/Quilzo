@@ -563,10 +563,15 @@ var commandNeeds = map[string]need{
 	// sends one, is publishing's.
 	// Events: setting them up is installing a feature; reading what is on
 	// is anybody's who may view.
-	"events":             {action: auth.ActInstall},
-	"events list":        {action: auth.ActView},
-	"events example":     {action: auth.ActView},
-	"events setup":       {action: auth.ActInstall},
+	"events":         {action: auth.ActInstall},
+	"events list":    {action: auth.ActView},
+	"events example": {action: auth.ActView},
+	"events setup":   {action: auth.ActInstall},
+	// The blog likewise: a feature to set up, posts anybody may view.
+	"blog":               {action: auth.ActInstall},
+	"blog list":          {action: auth.ActView},
+	"blog example":       {action: auth.ActView},
+	"blog setup":         {action: auth.ActInstall},
 	"newsletter":         {action: auth.ActPublish},
 	"newsletter status":  {action: auth.ActView},
 	"newsletter issues":  {action: auth.ActView},

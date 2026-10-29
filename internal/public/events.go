@@ -175,9 +175,12 @@ func (st *Site) eventRows(max int) ([]listing.Row, bool) {
 	return rows, true
 }
 
-// eventPage is the published page that is each event's own, when one
-// declares a detail route through the events listing: its name and key.
-func (st *Site) eventPage() (string, string, bool) {
+// pageFor is the published page that is each record's own, when one
+// declares a detail route through the listing: its name and key.
+func (st *Site) pageFor(listingName string) (string, string, bool) {
+	if listingName == "" {
+		return "", "", false
+	}
 	pages, _, err := st.pages()
 	if err != nil {
 		return "", "", false
@@ -188,25 +191,28 @@ func (st *Site) eventPage() (string, string, bool) {
 	}
 	sort.Strings(names)
 	for _, n := range names {
-		if d, ok := detailOf(pages[n]); ok && d.Declared() && d.Listing == st.Events {
+		if d, ok := detailOf(pages[n]); ok && d.Declared() && d.Listing == listingName {
 			return n, d.Key, true
 		}
 	}
 	return "", "", false
 }
 
-// eventLink is where each event's own page is: found once, for all of them.
-type eventLink struct{ page, key string }
+// recordLink is where each record's own page is: found once, for all of
+// them.
+type recordLink struct{ page, key string }
 
-func (st *Site) eventLinks() eventLink {
-	page, key, _ := st.eventPage()
-	return eventLink{page, key}
+func (st *Site) linksFor(listingName string) recordLink {
+	page, key, _ := st.pageFor(listingName)
+	return recordLink{page, key}
 }
+
+func (st *Site) eventLinks() recordLink { return st.linksFor(st.Events) }
 
 // eventHref is an event's own page, when there is one.
 func (st *Site) eventHref(row listing.Row) string { return st.eventLinks().href(row) }
 
-func (l eventLink) href(row listing.Row) string {
+func (l recordLink) href(row listing.Row) string {
 	page, key := l.page, l.key
 	if page == "" {
 		return ""
@@ -223,7 +229,7 @@ func (st *Site) eventView(row listing.Row) map[string]any {
 	return st.eventViewWith(row, st.eventLinks())
 }
 
-func (st *Site) eventViewWith(row listing.Row, links eventLink) map[string]any {
+func (st *Site) eventViewWith(row listing.Row, links recordLink) map[string]any {
 	t, ok := readEventTimes(row)
 	if !ok {
 		return nil

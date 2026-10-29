@@ -375,6 +375,10 @@ var templates = map[string]Template{
 					"title": "What's on",
 					"intro": "The site's events still to come. A site with events set up lists them here.",
 				}},
+				map[string]any{"posts": map[string]any{
+					"title": "Latest posts",
+					"intro": "The site's blog, newest first. A site with a blog set up lists its posts here.",
+				}},
 				map[string]any{"newsletter": map[string]any{
 					"title": "Get the newsletter",
 					"what":  "What changed on this site, once a month at most. A site with mail set up takes an address here.",

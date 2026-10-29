@@ -127,6 +127,10 @@ func (p *Package) Block(r Ref) any {
 		if p.Events != "" && r == EventsRef {
 			return p.Events
 		}
+	case BlogRef.Kind:
+		if p.Blog != "" && r == BlogRef {
+			return p.Blog
+		}
 	}
 	return nil
 }

@@ -409,6 +409,14 @@ func typed(v string) any {
 	if err := json.Unmarshal([]byte(v), &n); err == nil {
 		return n
 	}
+	// A list, written as JSON: tags='["rye","bread"]'. Only a whole, valid
+	// array is one, so a title like "[Draft] Rye" stays the words it is.
+	if strings.HasPrefix(v, "[") {
+		var list []any
+		if err := json.Unmarshal([]byte(v), &list); err == nil {
+			return list
+		}
+	}
 	return v
 }
 

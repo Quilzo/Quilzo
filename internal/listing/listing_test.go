@@ -537,3 +537,44 @@ func TestUpcomingAndPastAreByTheClockWhenRead(t *testing.T) {
 		t.Fatal("upcoming took a value, which makes it a second way to say is")
 	}
 }
+
+// A record has its page whether or not it is among the rows a page shows at
+// once: the listing's conditions and allow-list decide, its rows do not.
+func TestARecordPastTheRowsStillHasAPage(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var recs []collection.Record
+	for i := 0; i < 300; i++ {
+		recs = append(recs, collection.Record{Fields: map[string]any{
+			"slug": fmt.Sprintf("post-%03d", i), "published": fmt.Sprintf("2020-01-%02d", 1+i%28),
+			"state": map[bool]string{true: "draft", false: "live"}[i == 299], "secret": "kept back"}})
+	}
+	tree, _, err := collection.PutMany(st, "", "posts", recs, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx, err := collection.Build(st, tree, "posts", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := &Listing{Name: "latest", Collection: "posts", Rows: 10, Sort: "published", Descending: true,
+		Fields: []string{"slug", "published"}, Where: []Condition{{Field: "state", Match: Is, Value: "live"}}}
+	row, err := Find(l, idx, nil, "slug", "post-000")
+	if err != nil || row["slug"] != "post-000" {
+		t.Fatalf("an older post has no page: %v %v", row, err)
+	}
+	if _, ok := row["secret"]; ok {
+		t.Error("a field the listing does not name was shown")
+	}
+	if _, err := Find(l, idx, nil, "slug", "post-299"); err != ErrNoRecord {
+		t.Errorf("a record the listing leaves out was found: %v", err)
+	}
+	if _, err := Find(l, idx, nil, "slug", "nothing"); err != ErrNoRecord {
+		t.Errorf("a key nothing holds: %v", err)
+	}
+	if row, err := Find(l, idx, nil, "id", row["id"].(string)); err != nil || row["slug"] != "post-000" {
+		t.Errorf("by id: %v %v", row, err)
+	}
+}

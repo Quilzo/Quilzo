@@ -7,10 +7,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/render"
+	"github.com/quilzo/quilzo/internal/seo"
 	"github.com/quilzo/quilzo/internal/tmpl"
 )
 
@@ -148,11 +151,25 @@ func (st *Site) renderDetail(w http.ResponseWriter, r *http.Request,
 	st.sources().WithRecord(ctx, map[string]any(row))
 	d, _ := detailOf(body)
 	event := st.Events != "" && d.Listing == st.Events
-	if event {
-		// When and where, as the page shows them and a calendar takes them.
-		if rec, ok := ctx["record"].(map[string]any); ok {
+	post := !event && st.Blog != "" && d.Listing == st.Blog
+	if rec, ok := ctx["record"].(map[string]any); ok {
+		switch {
+		case event:
+			// When and where, as the page shows them and a calendar takes
+			// them.
 			if v := st.eventView(row); v != nil {
 				rec["event"] = v
+			}
+		case post:
+			// When it went out and who wrote it, as the page says them; and
+			// to whoever shares it, an article. The page is this request's
+			// own copy, so saying so changes nothing anybody else reads.
+			if v := postView(row, st.linksFor(st.Blog)); v != nil {
+				st.aroundPost(v, row)
+				rec["post"] = v
+				if pg, ok := ctx["page"].(map[string]any); ok && pg["og_type"] == nil {
+					pg["og_type"] = "article"
+				}
 			}
 		}
 	}
@@ -180,6 +197,8 @@ func (st *Site) renderDetail(w http.ResponseWriter, r *http.Request,
 		// An event, not a product: a record with a name read through the
 		// events listing is somewhere to be, not something to buy.
 		ld = st.eventLD(row)
+	} else if post {
+		ld = st.postLD(row)
 	}
 	if ld != "" {
 		out = insertBeforeHead(out, ld)
@@ -295,4 +314,40 @@ func numberOf(v any) (float64, bool) {
 		return float64(t), true
 	}
 	return 0, false
+}
+
+// recordEntries is a sitemap entry for each record a page stands for, at
+// its own address, up to max: every one its listing keeps, as the detail
+// route would serve it. The listing is returned so the caller knows whether
+// what it keeps depends on the clock.
+func (st *Site) recordEntries(base, name string, body any, max int) ([]seo.Entry, *listing.Listing) {
+	d, ok := detailOf(body)
+	if !ok || !d.Declared() || max <= 0 || st.Listings == nil || st.Listings.Set == nil {
+		return nil, nil
+	}
+	l, ok := st.Listings.Set.Get(d.Listing)
+	if !ok {
+		return nil, nil
+	}
+	idx, err := st.Listings.Index.For(st.Listings.Store, st.Listings.At(), l.Collection)
+	if err != nil {
+		return nil, l
+	}
+	rows, _, err := listing.Every(l, idx, nil, max)
+	if err != nil {
+		return nil, l
+	}
+	var out []seo.Entry
+	for _, row := range rows {
+		key, _ := row[d.Key].(string)
+		if key == "" || strings.ContainsAny(key, "/?#") {
+			continue
+		}
+		e := seo.Entry{Loc: base + "/" + name + "/" + url.PathEscape(key)}
+		if n, ok := row["updated"].(int64); ok && n > 0 {
+			e.LastMod = time.Unix(n, 0).UTC()
+		}
+		out = append(out, e)
+	}
+	return out, l
 }

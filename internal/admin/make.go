@@ -33,10 +33,13 @@ import (
 // was read.
 
 // ReadyFeature is a feature that comes with Quilzo, to check and install
-// as it is: the events feature.
+// as it is: the blog and events features.
 type ReadyFeature struct {
 	Name, Title, About string
 	Body               []byte
+	// Installed says it is already on this site, where it is managed with
+	// the rest of what is installed rather than added again.
+	Installed bool
 }
 
 // FeatureHooks reach the feature store, which the command line owns.
@@ -132,11 +135,19 @@ func (s *Server) handleMake(w http.ResponseWriter, r *http.Request) {
 		}
 		data["Pending"] = list
 	}
+	installed := map[string]bool{}
 	if in, err := s.Features.Installed(); err == nil {
 		data["Installed"] = in
+		for _, f := range in {
+			installed[f.Name] = true
+		}
 	}
 	if s.Features.Ready != nil {
-		data["Ready"] = s.Features.Ready()
+		ready := s.Features.Ready()
+		for i := range ready {
+			ready[i].Installed = installed[ready[i].Name]
+		}
+		data["Ready"] = ready
 	}
 	if s.Features.Blanks != nil {
 		if whats, _, err := s.Features.Blanks(); err == nil {

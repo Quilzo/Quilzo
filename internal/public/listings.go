@@ -65,6 +65,28 @@ func (st *Site) timedTag(tag string, names []string) string {
 	return tag
 }
 
+// readsListings is every listing what a page shows depends on: the ones
+// its listing sections name, and the site's events and posts when it has a
+// section showing them.
+func (st *Site) readsListings(body any) []string {
+	names := append([]string(nil), listing.On(body)...)
+	add := func(n string) {
+		for _, have := range names {
+			if have == n {
+				return
+			}
+		}
+		names = append(names, n)
+	}
+	if st.Events != "" && eventsSection(body) {
+		add(st.Events)
+	}
+	if st.Blog != "" && postsSection(body) {
+		add(st.Blog)
+	}
+	return names
+}
+
 // renderTag names everything a rendered page depended on.
 //
 // The page's own hash, the tree its listings read, and the arguments they were

@@ -61,6 +61,21 @@ Unreleased
 
 ** Added
 
+*** A blog: posts newest first, each on its own page, older ones a page
+    at a time.  quilzo blog setup, or Ready to add on the Make screen,
+    installs it as one feature: a "post" type (title, page link,
+    published, written by, summary, the post, picture, tags, last
+    changed), its collection, a listing of them newest first, a Blog page
+    and a page for each post.  A posts section on any page shows the
+    newest, with when each went out and who wrote it, and Older and Newer
+    posts lead back to the first.  Each post's page has its words with
+    headings, lists, bold, italic and links, its tags, the posts either
+    side, and schema.org BlogPosting data (headline, dates, author,
+    picture, keywords); it is an article to whoever shares it.
+    site.blog names the blog's listing, and a site with no feed gets the
+    blog as its feed at /feed.xml.  A package can carry a "blog" block,
+    so a site an agent proposes arrives with one.
+
 *** Events: what is on, a calendar to subscribe to, and when and where
     for search engines.  quilzo events setup, or Ready to add on the Make
     screen, installs events as one feature: an "event" type (title, date,
@@ -766,6 +781,36 @@ Unreleased
     No run may use a person's desktop.
 
 ** Fixed
+
+*** Every record has its page, not only those among a listing's first
+    rows.  A detail page found its record among the rows the listing shows
+    at once, so the 51st event, the 21st product of a catalogue listing
+    twenty, and every post but the newest answered "not found" at their
+    own addresses, linked from feeds and search results; a copy of the
+    site left their pages out too.  The listing's conditions and allow-list
+    decide, as before, and its number of rows does not.
+
+*** The sitemap lists the page of every record: each post, event and
+    product at its own address.  It listed pages only, so it named none
+    of them and named instead the page that stands for them all, which is
+    no address of its own.  A sitemap whose records depend on the clock
+    changes its validator with it.
+
+*** quilzo events setup and the Make screen's ready-made features put
+    pages in the draft marked as written by Quilzo, so they publish.  They
+    had no provenance, and publishing refused them until somebody said who
+    wrote a page they had not written.
+
+*** A picture field on a record's form offers the library's pictures by
+    what they show: type "rye" and choose, instead of pasting the hash of
+    a file.  The help under a picture's description names the picture by
+    its label ("Picture"), not by its field's key.
+
+*** quilzo records add takes a list as JSON: tags='["rye","bread"]'.
+    It was stored as the words, and a type wanting a list refused it.
+
+*** The Make screen says a ready-made feature is installed instead of
+    offering to add it again.
 
 *** quilzo mcp answers in the revision the client asked for.  On
     standard input every client was answered in 2025-06-18, even one

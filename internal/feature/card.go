@@ -224,6 +224,9 @@ func (p *Package) MakeCard() Card {
 	if p.Events != "" {
 		c.Shows = append(c.Shows, eventsLine(p))
 	}
+	if p.Blog != "" {
+		c.Shows = append(c.Shows, blogLine(p))
+	}
 	if p.Site != nil {
 		// First, because a package that is a whole site is read as one.
 		c.Shows = append([]Line{p.Site.siteLine()}, c.Shows...)

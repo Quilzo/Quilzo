@@ -37,9 +37,11 @@ func TestARecordIsWrittenWithItsTypesForm(t *testing.T) {
 	srv.Data = &Data{Tree: func() (string, error) { return tree, nil },
 		Commit: func(next, msg, by string) error { tree = next; return nil }}
 
+	id := withLibrary(t, srv)
 	page := get(t, srv, "/records?c=events", token).Body.String()
 	for _, want := range []string{`name="date" type="date"`, `name="time" type="time"`, `<select id="f-status" name="status"`,
-		`name="__typed" value="1"`, "Write it as JSON instead", "Describes <strong>Picture</strong>"} {
+		`name="__typed" value="1"`, "Write it as JSON instead", "Describes <strong>Picture</strong>",
+		`list="pictures-image"`, `<option value="` + id + `" label="a test photograph">`} {
 		if !strings.Contains(page, want) {
 			t.Errorf("the form lacks %s", want)
 		}

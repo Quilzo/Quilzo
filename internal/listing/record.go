@@ -3,7 +3,11 @@
 
 package listing
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/quilzo/quilzo/internal/collection"
+)
 
 // One record, found through a listing rather than beside it.
 //
@@ -42,11 +46,43 @@ func (r *Resolver) Record(name, field, key string, args map[string]string) (
 	if err != nil {
 		return nil, err
 	}
-	res, err := Resolve(l, idx, args)
+	return Find(l, idx, args, field, key)
+}
+
+// Find is the one record a listing keeps whose field holds key.
+//
+// Its conditions decide, and its number of rows does not. A listing's rows
+// are how many a page shows at once, not which records have a page: reading
+// only those, the fifty-first product in a shop and every post but the
+// newest fifty answered "not found" at their own addresses, linked from the
+// feed and from search results. So every record the conditions keep is
+// looked at, and the one with the key is shown through the listing's
+// allow-list, as it always was.
+func Find(l *Listing, idx *collection.Index, args map[string]string, field, key string) (Row, error) {
+	if err := l.Validate(); err != nil {
+		return nil, err
+	}
+	if idx == nil || idx.Collection != l.Collection {
+		return nil, fmt.Errorf("%q has no index of %q to read", l.Name, l.Collection)
+	}
+	q, ok, err := l.query(args)
 	if err != nil {
 		return nil, err
 	}
-	return MatchOne(res.Rows, field, key)
+	if !ok {
+		return nil, ErrNoRecord
+	}
+	var rows []Row
+	for _, rec := range idx.Matching(q) {
+		v, _ := rec.Fields[field].(string)
+		if field == "id" {
+			v = rec.ID
+		}
+		if v == key {
+			rows = append(rows, project(l, rec))
+		}
+	}
+	return MatchOne(rows, field, key)
 }
 
 // MatchOne finds the single row whose key field holds a value.

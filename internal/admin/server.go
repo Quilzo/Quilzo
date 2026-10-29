@@ -85,6 +85,7 @@ import (
 	"github.com/quilzo/quilzo/internal/collection"
 	publishgate "github.com/quilzo/quilzo/internal/gate"
 	"github.com/quilzo/quilzo/internal/listing"
+	"github.com/quilzo/quilzo/internal/media"
 	"github.com/quilzo/quilzo/internal/posture"
 	"github.com/quilzo/quilzo/internal/provenance"
 	"github.com/quilzo/quilzo/internal/public"
@@ -2232,7 +2233,7 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 	)
 	if s.TypeFor != nil {
 		if t, ok := s.TypeFor(name); ok {
-			fields, typeName = typedFields(t, body, s.pageNames()), t.Name
+			fields, typeName = s.withPictures(t, typedFields(t, body, s.pageNames())), t.Name
 		}
 	}
 	if fields == nil {
@@ -2313,9 +2314,55 @@ type field struct {
 	// constraining, and it needs no script, which is the only kind of widget
 	// available here.
 	Suggest []string
+	// Pictures are what a picture field offers: the library's pictures,
+	// each named by what it shows, so somebody types "rye" rather than the
+	// hash of a file. A datalist for the same reason as Suggest.
+	Pictures []pictureOption
 	// SuggestID ties the input to its list. Per field, because two inputs
 	// sharing one id is markup a browser resolves by picking the first.
 	SuggestID string
+}
+
+// pictureOption is one picture a field can name: its id, and what it shows.
+type pictureOption struct{ ID, Alt string }
+
+// withPictures offers the library's pictures to every field of a type that
+// another field describes (alt_for): the fields that hold a picture.
+func (s *Server) withPictures(t schema.Type, fields []field) []field {
+	holds := map[string]bool{}
+	for _, f := range t.Fields {
+		if f.AltFor != "" {
+			holds[f.AltFor] = true
+		}
+	}
+	if len(holds) == 0 || s.Media == nil || s.Media.Library == nil {
+		return fields
+	}
+	lib, err := s.Media.Library()
+	if err != nil {
+		return fields
+	}
+	files, err := lib.List()
+	if err != nil {
+		return fields
+	}
+	var pics []pictureOption
+	for _, f := range files {
+		if f.Kind == media.Image && f.RenditionOf == "" && strings.TrimSpace(f.Alt) != "" {
+			pics = append(pics, pictureOption{ID: f.ID, Alt: f.Alt})
+		}
+	}
+	if len(pics) == 0 {
+		return fields
+	}
+	sort.Slice(pics, func(i, j int) bool { return pics[i].Alt < pics[j].Alt })
+	for i := range fields {
+		if holds[fields[i].Key] {
+			fields[i].Pictures, fields[i].SuggestID = pics, "pictures-"+fields[i].Key
+			fields[i].Help = strings.TrimSpace(fields[i].Help + " Type a word from what it shows to choose one.")
+		}
+	}
+	return fields
 }
 
 // pageNames is the draft's pages, for a reference field to suggest.

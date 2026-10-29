@@ -4,9 +4,14 @@
 package render
 
 import (
+	"fmt"
 	"testing"
+	"time"
 
+	"github.com/quilzo/quilzo/internal/collection"
+	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/menu"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 // Half a detail declaration is noticed, and is not the same as none.
@@ -120,5 +125,32 @@ func TestAMenuHeadingPointsNowhere(t *testing.T) {
 		Target: "https://example.com/x"}}
 	if got := Href(away); got != "https://example.com/x" {
 		t.Errorf("an external entry points at %q", got)
+	}
+}
+
+// A copy of a site has a page for every record the listing keeps, not only
+// for the rows a page shows at once.
+func TestEveryRecordHasItsPageInACopyOfTheSite(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var recs []collection.Record
+	for i := 0; i < 120; i++ {
+		recs = append(recs, collection.Record{Fields: map[string]any{"slug": fmt.Sprintf("post-%03d", i)}})
+	}
+	tree, _, err := collection.PutMany(st, "", "posts", recs, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := &listing.Set{}
+	if err := set.Add(listing.Listing{Name: "latest", Collection: "posts", Rows: 10, Fields: []string{"slug"}}); err != nil {
+		t.Fatal(err)
+	}
+	src := Sources{Listings: &listing.Resolver{Store: st, Set: set, Live: func() string { return tree }}}
+	keys, _, err := DetailRows(src, "post", map[string]any{"detail": "latest", "detail_key": "slug"},
+		Detail{Listing: "latest", Key: "slug"})
+	if err != nil || len(keys) != 120 {
+		t.Fatalf("pages for %d of 120 posts: %v", len(keys), err)
 	}
 }
