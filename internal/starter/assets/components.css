@@ -496,7 +496,7 @@ pre {
 .event-when { color: var(--on-surface-variant); font-size: var(--text-sm); }
 .event-status { font-weight: 700; color: var(--critical); font-size: var(--text-sm); }
 .event-links { display: flex; flex-wrap: wrap; gap: var(--space-4); font-size: var(--text-sm); }
-.event-facts { margin: var(--space-4) 0 var(--space-5); }
+.spec.event-facts { margin: var(--space-4) 0 var(--space-5); }
 .event-list + .muted { margin-top: var(--space-6); }
 .event-picture { width: 100%; max-width: 48rem; height: auto; border-radius: var(--radius-lg); margin: 0 0 var(--space-4); }
 .event-about { margin-top: var(--space-6); }
