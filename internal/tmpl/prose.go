@@ -5,6 +5,7 @@ package tmpl
 
 import (
 	"html"
+	"regexp"
 	"strings"
 )
 
@@ -51,6 +52,10 @@ type Markup string
 //	*italic*        em
 //	`code`          code
 //	[text](url)     a link, http/https/mailto/tel only
+//	![what it shows](/media/ID)
+//	                a picture from this site's library, on a line of its
+//	                own, with what it shows; no other address, and none
+//	                without a description
 //
 // # What it deliberately does not do
 //
@@ -59,9 +64,14 @@ type Markup string
 // property this cannot have — the input is content, and content is written by
 // whoever can write content.
 //
-// No images. Media in this program goes through a library that will not store
-// a picture without a description and tracks the licence it was used under, so
-// an image syntax here would be a second way in that skips both.
+// No images from anywhere else. Media in this program goes through a library
+// that will not store a picture without a description and tracks the licence
+// it was used under, so an image syntax that took any address would be a
+// second way in that skips both. A picture already in the library is another
+// matter: it was described and checked on the way in, and a post with its
+// pictures among its words is what a blog brought from elsewhere is. So a
+// picture is the library's, by the hash it is stored under, with the words
+// saying what it shows, or it is not a picture.
 //
 // No tables, no footnotes, no reference links, no HTML entities. Each of those
 // is a parser with states, and the states are where the holes are.
@@ -102,10 +112,20 @@ func blocks(src string) [][]string {
 	return out
 }
 
+// rePicture is a picture from the library on a line of its own.
+var rePicture = regexp.MustCompile(`^!\[([^\]\n]{0,250}[^\s\]][^\]\n]{0,250})\]\(/media/([0-9a-f]{64})\)$`)
+
 func writeBlock(b *strings.Builder, lines []string) {
 	first := strings.TrimSpace(lines[0])
 
 	switch {
+	case rePicture.MatchString(first):
+		m := rePicture.FindStringSubmatch(first)
+		if alt := strings.TrimSpace(unescape(m[1])); alt != "" {
+			b.WriteString(`<figure class="prose-picture"><img src="/media/` + m[2] + `" alt="` + html.EscapeString(alt) +
+				`" loading="lazy" decoding="async"></figure>`)
+		}
+		writeBlock2(b, lines[1:])
 	case strings.HasPrefix(first, "#### "):
 		b.WriteString("<h4>" + inline(first[5:]) + "</h4>")
 		writeBlock2(b, lines[1:])
@@ -204,20 +224,29 @@ func inline(s string) string {
 	i := 0
 	for i < len(s) {
 		switch {
+		case escaped(s, i):
+			b.WriteByte(s[i+1])
+			i += 2
+			continue
+		case strings.HasPrefix(s[i:], `\&gt;`):
+			// A quotation's marker, escaped: it was a > before escaping.
+			b.WriteString("&gt;")
+			i += len(`\&gt;`)
+			continue
 		case strings.HasPrefix(s[i:], "**"):
-			if j := strings.Index(s[i+2:], "**"); j >= 0 {
+			if j := find(s[i+2:], "**"); j >= 0 {
 				b.WriteString("<strong>" + inlineRest(s[i+2:i+2+j]) + "</strong>")
 				i += 2 + j + 2
 				continue
 			}
 		case s[i] == '*':
-			if j := strings.IndexByte(s[i+1:], '*'); j >= 0 {
+			if j := find(s[i+1:], "*"); j >= 0 {
 				b.WriteString("<em>" + inlineRest(s[i+1:i+1+j]) + "</em>")
 				i += 1 + j + 1
 				continue
 			}
 		case s[i] == '`':
-			if j := strings.IndexByte(s[i+1:], '`'); j >= 0 {
+			if j := strings.IndexByte(s[i+1:min(len(s), i+1+maxSpan)], '`'); j >= 0 {
 				// No markers inside code. The point of it is that what is in
 				// there is what it says.
 				b.WriteString("<code>" + s[i+1:i+1+j] + "</code>")
@@ -243,14 +272,18 @@ func inlineRest(s string) string {
 	i := 0
 	for i < len(s) {
 		switch {
+		case escaped(s, i):
+			b.WriteByte(s[i+1])
+			i += 2
+			continue
 		case strings.HasPrefix(s[i:], "**"):
-			if j := strings.Index(s[i+2:], "**"); j >= 0 {
-				b.WriteString("<strong>" + s[i+2:i+2+j] + "</strong>")
+			if j := find(s[i+2:], "**"); j >= 0 {
+				b.WriteString("<strong>" + unescape(s[i+2:i+2+j]) + "</strong>")
 				i += 2 + j + 2
 				continue
 			}
 		case s[i] == '`':
-			if j := strings.IndexByte(s[i+1:], '`'); j >= 0 {
+			if j := strings.IndexByte(s[i+1:min(len(s), i+1+maxSpan)], '`'); j >= 0 {
 				b.WriteString("<code>" + s[i+1:i+1+j] + "</code>")
 				i += 1 + j + 1
 				continue
@@ -262,6 +295,74 @@ func inlineRest(s string) string {
 	return b.String()
 }
 
+// Backslash escapes, so text can say what a marker says without being one.
+//
+// Text brought from another site is full of them: "5 * 3", a footnote in
+// square brackets, a price with an asterisk. Without a way to write them,
+// whatever wrote this subset for somebody else's words had to choose between
+// losing the characters and having them read as markup. A backslash before
+// one of the markers, or before a backslash, is that character and nothing
+// more, as in every other Markdown.
+const escapable = "\\*`[]()#->_!+."
+
+// escaped says whether s[i] is a backslash escaping the character after it.
+func escaped(s string, i int) bool {
+	return s[i] == '\\' && i+1 < len(s) && strings.IndexByte(escapable, s[i+1]) >= 0
+}
+
+// Lookahead bounds. Each marker looks this far for its partner and no
+// further, so a page of nothing but [ or * is read in one pass rather than
+// one pass per character: without them, twenty thousand unclosed brackets
+// took a second and a half to render, on every request for the page.
+const (
+	maxSpan     = 4096 // bold, italic or code
+	maxLinkText = 1024
+	maxLinkURL  = 2048
+)
+
+// find is the first marker in s that is not escaped, within maxSpan, or -1.
+func find(s, marker string) int { return findWithin(s, marker, maxSpan) }
+
+// findWithin is the first marker in s that is not escaped, starting within
+// limit bytes, or -1.
+func findWithin(s, marker string, limit int) int {
+	if len(s) > limit+len(marker) {
+		s = s[:limit+len(marker)]
+	}
+	for from := 0; ; {
+		j := strings.Index(s[from:], marker)
+		if j < 0 {
+			return -1
+		}
+		j += from
+		// Escaped when an odd run of backslashes stands before it: each
+		// pair is one backslash, and one left over escapes the marker.
+		n := 0
+		for k := j - 1; k >= 0 && s[k] == '\\'; k-- {
+			n++
+		}
+		if n%2 == 0 {
+			return j
+		}
+		from = j + 1
+	}
+}
+
+// unescape is text with its escapes taken out, and no markers applied.
+func unescape(s string) string {
+	if !strings.Contains(s, "\\") {
+		return s
+	}
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if escaped(s, i) {
+			i++
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
+}
+
 // link reads [text](url) from the front of s.
 //
 // The scheme is checked the same way a URL in a template attribute is, by the
@@ -269,7 +370,7 @@ func inlineRest(s string) string {
 // there, and the two cannot drift apart into a link that is safe in one place
 // and not in the other.
 func link(s string) (text, href string, n int, ok bool) {
-	close := strings.IndexByte(s, ']')
+	close := findWithin(s, "]", maxLinkText)
 	if close < 0 || !strings.HasPrefix(s[close+1:], "(") {
 		return "", "", 0, false
 	}
@@ -277,7 +378,7 @@ func link(s string) (text, href string, n int, ok bool) {
 	// /wiki/Mercury_(planet) — and taking the first ) makes that link point at
 	// half an address with a stray bracket printed after it.
 	end, depth := -1, 0
-	for i := 0; i < len(s[close+2:]); i++ {
+	for i := 0; i < len(s[close+2:]) && i < maxLinkURL; i++ {
 		switch s[close+2+i] {
 		case '(':
 			depth++
@@ -297,11 +398,81 @@ func link(s string) (text, href string, n int, ok bool) {
 	}
 	text = s[1:close]
 	raw := s[close+2 : close+2+end]
-	if strings.ContainsAny(text, "[]") {
+	// A link with no words is one nobody can tell where it goes, least of
+	// all somebody listening to the page.
+	if find(text, "[") >= 0 || find(text, "]") >= 0 || strings.TrimSpace(text) == "" {
 		return "", "", 0, false
 	}
 	// The URL arrives already HTML-escaped, because inline escaped the whole
 	// string before scanning. escapeURL parses it, so it is unescaped for the
 	// scheme check and escaped again for the attribute.
 	return text, escapeURL(html.UnescapeString(raw)), close + 2 + end + 1, true
+}
+
+// EscapeProse is text written so Prose shows it as the words it is: every
+// marker character escaped, and a line that would begin a heading, a list or
+// a quotation escaped at its start. For whatever writes somebody else's words
+// into this subset, such as a site brought from elsewhere.
+func EscapeProse(text string) string {
+	var b strings.Builder
+	for i, line := range strings.Split(text, "\n") {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		trimmed := strings.TrimLeft(line, " \t")
+		lead := line[:len(line)-len(trimmed)]
+		b.WriteString(lead)
+		switch {
+		case strings.HasPrefix(trimmed, "#"), strings.HasPrefix(trimmed, "> "), strings.HasPrefix(trimmed, "- "),
+			strings.HasPrefix(trimmed, "+ "):
+			b.WriteByte('\\')
+		case isNumber(trimmed):
+			// "1. " is a list; "1\. " is a number and a full stop.
+			n := strings.Index(trimmed, ". ")
+			b.WriteString(escapeMarkers(trimmed[:n]) + "\\")
+			trimmed = trimmed[n:]
+		}
+		b.WriteString(escapeMarkers(trimmed))
+	}
+	return b.String()
+}
+
+// escapeMarkers escapes the inline markers and the backslash.
+func escapeMarkers(s string) string {
+	if !strings.ContainsAny(s, "\\*`[]") {
+		return s
+	}
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if strings.IndexByte("\\*`[]", s[i]) >= 0 {
+			b.WriteByte('\\')
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
+}
+
+// PlainProse is words in the subset as plain text: its markers and escapes
+// taken out, a link as its words. For a summary or a search result, where
+// markup would be shown as it is.
+func PlainProse(src string) string {
+	var b strings.Builder
+	for i := 0; i < len(src); i++ {
+		switch c := src[i]; {
+		case escaped(src, i):
+			i++
+			b.WriteByte(src[i])
+		case c == '*' || c == '`':
+		case c == '[':
+			if text, _, n, ok := link(src[i:]); ok {
+				b.WriteString(unescape(text))
+				i += n - 1
+				continue
+			}
+			b.WriteByte(c)
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
 }

@@ -1133,7 +1133,7 @@ func limitBody(next http.Handler) http.Handler {
 		// photograph larger than a paragraph of text would be refused with an
 		// error about the request body. The limit is not removed, it is moved
 		// to the handler that knows what is being sent.
-		if r.URL.Path == uploadPath {
+		if r.URL.Path == uploadPath || r.URL.Path == exportUploadPath {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -1149,6 +1149,10 @@ func limitBody(next http.Handler) http.Handler {
 // restore the 2 MiB cap on uploads, which is exactly the bug this constant
 // exists to prevent.
 const uploadPath = "/media/upload"
+
+// exportUploadPath is the other: the file a site's last home exported, to
+// bring it here (make.go).
+const exportUploadPath = "/make/import-file"
 
 // sameSiteOnly refuses cross-origin state changes.
 //
@@ -1346,6 +1350,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/make/draft", s.handleMakeDraft)
 	mux.HandleFunc("/make/site", s.handleMakeSite)
 	mux.HandleFunc("/make/import", s.handleMakeImport)
+	mux.HandleFunc(exportUploadPath, s.handleMakeImportFile)
 	mux.HandleFunc("/make/proposal", s.handleMakeProposal)
 	mux.HandleFunc("/bookings", s.handleBookings)
 	mux.HandleFunc("/bookings/act", s.handleBookingsAct)

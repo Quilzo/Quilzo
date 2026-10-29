@@ -74,6 +74,12 @@ type FeatureHooks struct {
 	// keeping the pictures it describes when pictures is set. Nothing is
 	// installed.
 	Import func(address, name string, pages int, pictures bool, by Actor) (body []byte, notes []string, err error)
+	// ImportFile reads the file a site's last home exported, a WordPress,
+	// Squarespace or Ghost export or a zip of its files, and makes it a site
+	// package, its posts staged for the install; where is the address the
+	// site was at. Nothing is installed.
+	ImportFile func(filename string, body []byte, where, name string, pictures bool, by Actor) (pkg []byte,
+		notes []string, err error)
 	// Blanks is what the draft's pages still need filled in, and the pages
 	// each blank is on.
 	Blanks func() (whats []string, on map[string][]string, err error)
@@ -170,6 +176,8 @@ func (s *Server) handleMake(w http.ResponseWriter, r *http.Request) {
 	data["Kinds"], data["Styles"] = feature.SiteKinds(), theme.Styles
 	data["CanSite"] = s.Features.Site != nil
 	data["CanImport"] = s.Features.Import != nil
+	data["CanImportFile"] = s.Features.ImportFile != nil
+	data["MaxExport"] = MaxExportUpload >> 20
 	s.render(w, r, "make.html", data)
 }
 
@@ -232,6 +240,61 @@ func (s *Server) handleMakeImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.renderCheck(w, r, p, body, notes, "", "", 0, "")
+}
+
+// MaxExportUpload bounds the export a browser sends: a large blog's
+// WordPress export, or a zip of a site's files with its pictures.
+const MaxExportUpload = 256 << 20
+
+// handleMakeImportFile brings a site in from the file its last home
+// exported and shows it as any package is shown, with what was left behind.
+func (s *Server) handleMakeImportFile(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.requireAuth(w, r)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "post", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.can(w, r, p, auth.ActInstall, "/") {
+		return
+	}
+	if s.Features == nil || s.Features.ImportFile == nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	// A file, not a form: its own limit, as an upload to the media library
+	// has (the middleware leaves this path to it).
+	r.Body = http.MaxBytesReader(w, r.Body, MaxExportUpload+1<<20)
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		makeBack(w, r, "", fmt.Errorf("that file could not be read: %v. The limit is %d MB", err, MaxExportUpload>>20))
+		return
+	}
+	defer func() { _ = r.MultipartForm.RemoveAll() }()
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		makeBack(w, r, "", errors.New("choose the file your old site exported"))
+		return
+	}
+	defer file.Close()
+	body, err := io.ReadAll(io.LimitReader(file, MaxExportUpload+1))
+	if err != nil {
+		makeBack(w, r, "", err)
+		return
+	}
+	if len(body) > MaxExportUpload {
+		makeBack(w, r, "", fmt.Errorf("the file is larger than %d MB", MaxExportUpload>>20))
+		return
+	}
+	pkg, notes, err := s.Features.ImportFile(header.Filename, body, strings.TrimSpace(r.FormValue("site")),
+		r.FormValue("name"), r.FormValue("pictures") == "1", p.actor())
+	if err != nil {
+		makeBack(w, r, "", err)
+		return
+	}
+	s.renderCheck(w, r, p, pkg, notes, "", "", 0, "")
 }
 
 // handleMakeProposal shows a package an agent proposed, as any package is

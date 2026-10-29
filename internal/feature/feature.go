@@ -93,6 +93,9 @@ type Package struct {
 	Events string `json:"events,omitempty"`
 	// Blog names the listing that is the site's posts (see blog.go).
 	Blog string `json:"blog,omitempty"`
+	// Records are rows it brings into its collections, by reference (see
+	// records.go).
+	Records []RecordSet `json:"records,omitempty"`
 
 	Types       []schema.Type         `json:"types,omitempty"`
 	Collections []Collection          `json:"collections,omitempty"`
@@ -321,6 +324,7 @@ func (p *Package) Validate(c Checks) error {
 	validateBookings(p, bad)
 	validateEvents(p, bad)
 	validateBlog(p, bad)
+	validateRecords(p, bad)
 	if p.Site != nil {
 		p.Site.validate(bad)
 		// Redirects are served before pages, so one from the package's own

@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -83,7 +84,7 @@ func importSite(ctx context.Context, root, address, name string, max int, pictur
 	return b, site, nil
 }
 
-// siteImportCmd is `quilzo site import https://… [--pages N] …`.
+// siteImportCmd is `quilzo site import https://…|FILE|FOLDER [--pages N] …`.
 func siteImportCmd(root string, args []string) error {
 	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("site import", flag.ContinueOnError)
@@ -93,12 +94,14 @@ func siteImportCmd(root string, args []string) error {
 	outPath := fs.String("o", "", "where to write the package; NAME.json by default")
 	install := fs.Bool("install", false, "install it as well, as `quilzo feature install` does")
 	takeSite := fs.Bool("take-site", false, "with --install: let it take over a site somebody set up by hand")
+	where := fs.String("site", "", "for an export: the address the site was at, which a Ghost export needs for its pictures")
 	fs.StringVar(&featureDesignDir, "templates", featureDesignDir, "the site's templates directory, for --install")
 	if err := fs.Parse(flags); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
-		return errors.New("usage: quilzo site import https://your-old-site.example [--pages N] [--name N] [--no-pictures] [-o FILE] [--install]")
+		return errors.New("usage: quilzo site import https://your-old-site.example | EXPORT.xml | EXPORT.json | FOLDER | FOLDER.zip " +
+			"[--pages N] [--name N] [--site https://…] [--no-pictures] [-o FILE] [--install]")
 	}
 	caller := resolveCaller(root, flagToken)
 	if *install {
@@ -108,8 +111,27 @@ func siteImportCmd(root string, args []string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), siteImportTimeout)
 	defer cancel()
-	w.Human("%sreading %s, politely: robots.txt first, then its map of itself or its links%s\n", dim, pos[0], reset)
-	b, site, err := importSite(ctx, root, pos[0], *name, *pages, !*noPictures, caller)
+	var (
+		b    *webimport.Brought
+		site *webimport.Site
+		err  error
+	)
+	if !strings.HasPrefix(pos[0], "http://") && !strings.HasPrefix(pos[0], "https://") {
+		// A file the old site exported, or a folder of its files.
+		if _, serr := os.Stat(pos[0]); serr != nil {
+			return fmt.Errorf("%s is not a file or folder here, nor an address beginning https://", pos[0])
+		}
+		src, done, oerr := openExport(pos[0])
+		if oerr != nil {
+			return oerr
+		}
+		defer done()
+		w.Human("%sreading %s%s\n", dim, pos[0], reset)
+		b, site, err = importExport(ctx, root, src, *name, *where, !*noPictures, caller)
+	} else {
+		w.Human("%sreading %s, politely: robots.txt first, then its map of itself or its links%s\n", dim, pos[0], reset)
+		b, site, err = importSite(ctx, root, pos[0], *name, *pages, !*noPictures, caller)
+	}
 	if err != nil {
 		return err
 	}
@@ -134,12 +156,17 @@ func siteImportCmd(root string, args []string) error {
 			return err
 		}
 	}
-	if w.JSON(map[string]any{"file": path, "redirects": redirects, "read": len(site.Pages), "from": site.From,
-		"notes": b.Notes, "card": b.Package.MakeCard()}) {
+	if w.JSON(map[string]any{"file": path, "redirects": redirects, "read": len(site.Pages), "posts": len(b.Posts),
+		"from": site.From, "notes": b.Notes, "card": b.Package.MakeCard()}) {
 		return nil
 	}
-	w.Human("read %d page(s) of %s, from its %s\n\n", len(site.Pages), site.Home.Host,
-		map[string]string{"sitemap": "map of itself", "links": "links"}[site.From])
+	switch site.From {
+	case "sitemap", "links":
+		w.Human("read %d page(s) of %s, from its %s\n\n", len(site.Pages), site.Home.Host,
+			map[string]string{"sitemap": "map of itself", "links": "links"}[site.From])
+	default:
+		w.Human("read %d page(s) and %d post(s) from %s\n\n", len(site.Pages), len(b.Posts), site.Origin)
+	}
 	printFeatureCard(b.Package.MakeCard())
 	for _, n := range b.Notes {
 		w.Human("  %s%s%s\n", dim, n, reset)

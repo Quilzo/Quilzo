@@ -499,6 +499,32 @@ and `quilzo export` carries it, so they keep working wherever the site goes
 next. It is a site package like any other: read, approved, installed and
 taken back as one decision.
 
+A site that can export itself comes in from the file instead, with what a
+crawl cannot see: which pages are posts, when each went out and who wrote it.
+
+```bash
+quilzo site import oldsite.WordPress.2026-10-29.xml --install    # WordPress, or Squarespace's export
+quilzo site import crumb.ghost.json --site https://crumb.example # Ghost, and where it was, for its pictures
+quilzo site import ./my-hugo-site                                # a folder of Markdown, or its .zip
+```
+
+A WordPress or Squarespace export (WXR), a Ghost export, or a folder or zip of
+a site's files: the Markdown that Hugo, Jekyll, Eleventy, Astro, Docusaurus or
+Gatsby build from, a Notion or Obsidian export, or the pages Webflow exports.
+Pages keep their words with their headings, lists, links, bold and italic, and
+their pictures; posts become the blog (see Keeping a blog), each with its
+picture, author, tags and dates, and the pictures among its words; the menu
+comes from the export's own, and every old address of a page or a post
+redirects to where it is now. Drafts, private posts and posts for members or
+paying subscribers stay behind and are counted on the card, as do comments and
+a generator's shortcodes. Nothing in the file is fetched while it is read, and
+a folder is read through a root that nothing outside it can be reached from;
+pictures come from the folder or through the fetcher that refuses private
+addresses. The posts travel as records named by the hash of a staged file, so
+the package stays one a person reads, and they are written once, when it is
+first installed. It is meant for a site that has none of its own yet: one with
+a blog or a home page already refuses it, and says which part.
+
 ## Bringing a template you already have
 
 Nobody's existing template works here, and being told to start again is the

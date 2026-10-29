@@ -239,6 +239,9 @@ a whole site (one package: pages, menus, forms, a question box, a privacy page, 
   quilzo site fill ["WHAT=VALUE" …]        list the [[blanks]] only you can fill in, or fill them; none is published
   quilzo site import https://… [--install] bring a live site in: its pages, menus, pictures and look, and redirects
       --pages N --name N --no-pictures -o FILE   how much to read (robots.txt is obeyed); what to call it
+  quilzo site import EXPORT [--install]    or from what it exported: WordPress or Squarespace .xml, Ghost .json,
+                                           or a folder or .zip of Markdown or pages; its posts become the blog
+      --site https://…                     where it was, which a Ghost export needs for its pictures
 
 payments (the catalogue sold through the provider's own checkout; no card or order is kept here)
   quilzo pay status                        on or off, products for sale, links selling, the last sync

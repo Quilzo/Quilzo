@@ -36,6 +36,7 @@ package section
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -56,6 +57,9 @@ type Kind struct {
 	Group string
 	// Stub is the content written when this kind is added.
 	Stub map[string]any
+	// Optional are fields a kind reads that a new one does not start with,
+	// so a section carrying one is not told it may be a typo.
+	Optional []string
 }
 
 // kinds is the catalogue, in the order somebody building a page reads it.
@@ -116,6 +120,10 @@ var kinds = []Kind{
 				"It is a list of paragraphs rather than one rich-text field, so nothing here needs unescaped output.",
 			},
 		},
+		// body is words in the prose subset (internal/tmpl): headings, lists,
+		// bold, italic and links, after or instead of the paragraphs. It is
+		// what a site brought from elsewhere arrives as.
+		Optional: []string{"body"},
 	},
 	{
 		Name: "faq", Group: "telling", Summary: "Questions that open and close. No script: it is details and summary.",
@@ -770,7 +778,7 @@ func unknownFields(at int, kind Kind, inner map[string]any) []Problem {
 		if _, inStub := stub[k]; inStub {
 			continue
 		}
-		if allowedAnywhere[k] {
+		if allowedAnywhere[k] || slices.Contains(kind.Optional, k) {
 			continue
 		}
 		unknown = append(unknown, k)

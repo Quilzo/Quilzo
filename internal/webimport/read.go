@@ -24,6 +24,8 @@ import (
 	"net/url"
 	"strings"
 	"unicode"
+
+	"github.com/quilzo/quilzo/internal/tmpl"
 )
 
 // Page is what one page of a site says, read as a person reads it.
@@ -51,10 +53,15 @@ type Page struct {
 
 // Block is one piece of content.
 type Block struct {
-	// Kind is h1 to h6, p, li, quote, pre or img.
+	// Kind is h1 to h6, p, li (an item of a list), ol (an item of a
+	// numbered one), quote, pre or img.
 	Kind string
 	// Text is its words; for a picture, its description (alt).
 	Text string
+	// MD is the same words in the prose subset (internal/tmpl), keeping
+	// what the page linked and what it made bold, italic or code; empty
+	// for a picture and for code, which keep their words as they are.
+	MD string
 	// Src is a picture's address.
 	Src *url.URL
 }
@@ -86,7 +93,8 @@ var chrome = map[string]bool{"header": true, "nav": true, "footer": true, "aside
 var blockTags = map[string]string{
 	"h1": "h1", "h2": "h2", "h3": "h3", "h4": "h4", "h5": "h5", "h6": "h6",
 	"p": "p", "li": "li", "blockquote": "quote", "pre": "pre", "dd": "p", "dt": "p",
-	"figcaption": "p", "td": "p", "th": "p", "caption": "p", "summary": "p",
+	// A table's row is one block, its cells between dots.
+	"figcaption": "p", "tr": "p", "caption": "p", "summary": "p",
 	"div": "p", "section": "p", "article": "p", "main": "p", "address": "p", "br": "",
 }
 
@@ -117,10 +125,13 @@ type reader struct {
 	// skipping is the element whose content is being left behind.
 	skipping string
 	// text is the block being written, and kind what it is; prose says some
-	// of it is not a link's text.
+	// of it is not a link's text. md is the same in the prose subset, and
+	// marks its links and emphasis still open.
 	text  strings.Builder
 	kind  string
 	prose bool
+	md    []byte
+	marks []mark
 	// region counts, for each block, whether it is in chrome, main, article.
 	blocks []regionBlock
 	// head text being read: the title.
@@ -135,6 +146,18 @@ type reader struct {
 	hasArt   bool
 	baseSet  bool
 }
+
+// mark is an inline element open in md: where its opener was written, and
+// for a link, where it goes.
+type mark struct {
+	name, opener string
+	at           int
+	href         string
+}
+
+// inlineMarks are the elements kept in the prose subset, by what opens and
+// closes them.
+var inlineMarks = map[string]string{"strong": "**", "b": "**", "em": "*", "i": "*", "code": "`"}
 
 type regionBlock struct {
 	Block
@@ -221,6 +244,71 @@ func (r *reader) textRun(t string) {
 		r.prose = true
 	}
 	r.text.WriteString(t)
+	words := html.UnescapeString(t)
+	if r.inCode() {
+		// Code is what it says, with no escapes: the subset takes none
+		// inside it. A backtick would end it, so it is the one thing left out.
+		r.md = append(r.md, strings.ReplaceAll(words, "`", "")...)
+		return
+	}
+	r.md = append(r.md, tmpl.EscapeProse(words)...)
+}
+
+// cellGap is what stands between a table row's cells.
+const cellGap = " · "
+
+// innerList is the list being written in, ol or ul, or "".
+func (r *reader) innerList() string {
+	for i := len(r.open) - 1; i >= 0; i-- {
+		if r.open[i] == "ol" || r.open[i] == "ul" {
+			return r.open[i]
+		}
+	}
+	return ""
+}
+
+// inCode says whether md is inside a code span.
+func (r *reader) inCode() bool {
+	for _, m := range r.marks {
+		if m.name == "code" {
+			return true
+		}
+	}
+	return false
+}
+
+// mark writes an inline element's opener into md.
+func (r *reader) mark(m mark) {
+	m.at = len(r.md)
+	r.md = append(r.md, m.opener...)
+	r.marks = append(r.marks, m)
+}
+
+// shut closes the innermost open element of this name: with its closer
+// when it held words, and by taking its opener back when it held none.
+func (r *reader) shut(name string) {
+	for i := len(r.marks) - 1; i >= 0; i-- {
+		m := r.marks[i]
+		if m.name != name {
+			continue
+		}
+		r.marks = r.marks[:i]
+		inner := strings.TrimSpace(string(r.md[m.at+len(m.opener):]))
+		if inner == "" {
+			r.md = r.md[:m.at]
+			return
+		}
+		switch name {
+		case "a":
+			r.md = append(r.md, "]("+m.href+")"...)
+		default:
+			// Emphasis ends on the word, not on the space after it.
+			trail := len(r.md) - len(strings.TrimRight(string(r.md), " \t\n"))
+			end := string(r.md[len(r.md)-trail:])
+			r.md = append(r.md[:len(r.md)-trail], m.opener+end...)
+		}
+		return
+	}
 }
 
 func (r *reader) tag(raw string) {
@@ -298,6 +386,13 @@ func (r *reader) tag(raw string) {
 			r.page.Links = append(r.page.Links, u)
 			r.link = &Link{URL: u}
 			r.linkText.Reset()
+			if r.nav == nil {
+				r.mark(mark{name: "a", opener: "[", href: u.String()})
+			}
+		}
+	case "strong", "b", "em", "i", "code":
+		if !r.in("pre") {
+			r.mark(mark{name: name, opener: inlineMarks[name]})
 		}
 	case "nav":
 		if r.nav == nil {
@@ -330,6 +425,12 @@ func (r *reader) close(name string) {
 			}
 			r.link = nil
 		}
+		r.shut("a")
+	case "strong", "b", "em", "i", "code":
+		r.shut(name)
+	case "td", "th":
+		r.text.WriteString(cellGap)
+		r.md = append(r.md, cellGap...)
 	}
 	if _, ok := blockTags[name]; ok {
 		r.flush()
@@ -354,10 +455,27 @@ func (r *reader) flush() {
 	t := clean(r.text.String())
 	prose := r.prose
 	r.text.Reset()
+	// An element still open when its block ends did not close inside it:
+	// its opener is taken back, innermost first, and it marks nothing.
+	for i := len(r.marks) - 1; i >= 0; i-- {
+		m := r.marks[i]
+		r.md = append(r.md[:m.at], r.md[m.at+len(m.opener):]...)
+	}
+	md := strings.Join(strings.Fields(string(r.md)), " ")
+	r.md, r.marks = r.md[:0], r.marks[:0]
+	t, md = strings.TrimSuffix(t, strings.TrimSpace(cellGap)), strings.TrimSuffix(md, strings.TrimSpace(cellGap))
+	t, md = strings.TrimSpace(t), strings.TrimSpace(md)
 	kind := r.kind
 	r.kind, r.prose = "", false
 	if t == "" {
 		return
+	}
+	switch {
+	case (kind == "p" || kind == "") && r.in("blockquote"):
+		// A quotation's paragraphs are the quotation.
+		kind = "quote"
+	case kind == "li" && r.innerList() == "ol":
+		kind = "ol"
 	}
 	if kind == "" {
 		kind = "p"
@@ -367,7 +485,11 @@ func (r *reader) flush() {
 	if kind == "p" && !prose && len(strings.Fields(t)) <= 8 {
 		return
 	}
-	r.add(Block{Kind: kind, Text: t})
+	b := Block{Kind: kind, Text: t}
+	if kind != "pre" {
+		b.MD = md
+	}
+	r.add(b)
 }
 
 func (r *reader) add(b Block) {

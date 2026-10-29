@@ -4,6 +4,7 @@
 package tmpl
 
 import (
+	"html"
 	"strings"
 	"testing"
 )
@@ -260,4 +261,75 @@ func hrefsOf(s string) []string {
 		}
 	}
 	return out
+}
+
+// A backslash makes a marker the character it is, so words brought from
+// somewhere else can say "5 * 3" or "[sic]" without becoming markup.
+func TestABackslashMakesAMarkerItsCharacter(t *testing.T) {
+	for src, want := range map[string]string{
+		`5 \* 3 \* 2`:                      "<p>5 * 3 * 2</p>",
+		`\*not italic\*`:                   "<p>*not italic*</p>",
+		`*one \* two*`:                     "<p><em>one * two</em></p>",
+		`**bold \*star**`:                  "<p><strong>bold *star</strong></p>",
+		`\[sic\]`:                          "<p>[sic]</p>",
+		`[a \[b\] c](https://e.test/)`:     `<p><a href="https://e.test/">a [b] c</a></p>`,
+		"\\- not a list":                   "<p>- not a list</p>",
+		"\\## not a heading":               "<p>## not a heading</p>",
+		"\\> not a quote":                  "<p>&gt; not a quote</p>",
+		"1\\. not a list":                  "<p>1. not a list</p>",
+		`a \\ backslash`:                   `<p>a \ backslash</p>`,
+		`\` + "`" + `not code` + `\` + "`": "<p>`not code`</p>",
+		`C:\Users stays`:                   `<p>C:\Users stays</p>`,
+	} {
+		if got := string(Prose(src)); got != want {
+			t.Errorf("Prose(%q)\n  got  %s\n  want %s", src, got, want)
+		}
+	}
+}
+
+// Whatever EscapeProse writes, Prose shows as the words they were.
+func TestEscapedWordsAreShownAsTheyWere(t *testing.T) {
+	for _, words := range []string{"5 * 3 = 15", "[sic] *really*", "# not a heading", "- not a list", "> not a quote",
+		"1. not a list", "C:\\Users\\me", "`not code`", "**not bold**", "a_b_c & <d>"} {
+		got := string(Prose(EscapeProse(words)))
+		want := "<p>" + html.EscapeString(words) + "</p>"
+		if got != want {
+			t.Errorf("%q\n  got  %s\n  want %s", words, got, want)
+		}
+	}
+}
+
+// A picture is the library's, by its id, with what it shows, on a line of
+// its own; any other address, or one with no description, is not one.
+func TestAPictureIsTheLibrarysAndDescribed(t *testing.T) {
+	id := strings.Repeat("ab", 32)
+	for src, want := range map[string]string{
+		"![Three rye loaves](/media/" + id + ")": `<figure class="prose-picture"><img src="/media/` + id +
+			`" alt="Three rye loaves" loading="lazy" decoding="async"></figure>`,
+		"![\"quoted\" <b>](/media/" + id + ")": `<figure class="prose-picture"><img src="/media/` + id +
+			`" alt="&#34;quoted&#34; &lt;b&gt;" loading="lazy" decoding="async"></figure>`,
+		"![](/media/" + id + ")":                 "<p>![](/media/" + id + ")</p>",
+		"![ ](/media/" + id + ")":                "<p>![ ](/media/" + id + ")</p>",
+		"![x](https://evil.example/x.png)":       "<p>!<a href=\"https://evil.example/x.png\">x</a></p>",
+		"![x](/media/../../etc/passwd)":          "<p>!<a href=\"/media/../../etc/passwd\">x</a></p>",
+		"text ![x](/media/" + id + ") in a line": "<p>text !<a href=\"/media/" + id + "\">x</a> in a line</p>",
+	} {
+		if got := string(Prose(src)); got != want {
+			t.Errorf("Prose(%q)\n  got  %s\n  want %s", src, got, want)
+		}
+	}
+}
+
+// Prose as plain text is its words: no markers, a link as what it says.
+func TestPlainProseIsTheWords(t *testing.T) {
+	for src, want := range map[string]string{
+		"A **bold** and *quiet* `word`":        "A bold and quiet word",
+		"See [the flour](https://e.test/) now": "See the flour now",
+		`5 \* 3 \[sic\]`:                       "5 * 3 [sic]",
+		"[unclosed":                            "[unclosed",
+	} {
+		if got := PlainProse(src); got != want {
+			t.Errorf("PlainProse(%q) = %q, want %q", src, got, want)
+		}
+	}
 }

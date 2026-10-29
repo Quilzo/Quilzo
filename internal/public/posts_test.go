@@ -193,3 +193,16 @@ func TestTheSitemapListsEveryPostsPage(t *testing.T) {
 		t.Errorf("%d post pages listed, of 25", n)
 	}
 }
+
+// A post with no summary is listed by the start of its words, and its own
+// page does not repeat them as a summary nobody wrote.
+func TestAPostWithNoSummaryIsListedByItsFirstWords(t *testing.T) {
+	v := postView(listing.Row{"title": "Rye", "published": "2026-10-27",
+		"body": "## What changed\n\n- a list\n\nThe rye took **three** tries, see [the flour](https://e.test/).\n\nMore."}, recordLink{})
+	if v["excerpt"] != "The rye took three tries, see the flour." || v["summary"] != nil {
+		t.Fatalf("excerpt %q, summary %v", v["excerpt"], v["summary"])
+	}
+	if v := postView(listing.Row{"title": "Rye", "summary": "Written.", "body": "Words."}, recordLink{}); v["excerpt"] != "Written." {
+		t.Fatalf("a written summary is not the excerpt: %v", v["excerpt"])
+	}
+}

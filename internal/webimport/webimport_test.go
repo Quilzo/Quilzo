@@ -204,8 +204,9 @@ func TestASiteBecomesAPackage(t *testing.T) {
 	}
 	secs := index["sections"].([]any)
 	prose := secs[0].(map[string]any)["prose"].(map[string]any)
-	if prose["title"] != "What we bake" || len(prose["paragraphs"].([]any)) != 3 || prose["paragraphs"].([]any)[0] != "• Country sourdough" {
-		t.Fatalf("the first section is %v", prose)
+	if prose["title"] != "What we bake" ||
+		prose["body"] != "- Country sourdough\n- Seeded rye\n\nEverything is & always has been made by hand." {
+		t.Fatalf("the first section is %q", prose)
 	}
 	if strings.Join(stored, ",") != "/img/loaf.jpg=A sourdough loaf on a board" {
 		t.Fatalf("pictures stored: %v", stored)
@@ -336,5 +337,50 @@ func TestAnOldAddressNeverHidesANewPage(t *testing.T) {
 	}
 	if len(b.Package.Pages) < 3 {
 		t.Fatalf("pages %v", b.Package.Pages)
+	}
+}
+
+// What a page links and emphasises is kept in the prose subset, and words
+// that look like markers stay words.
+func TestAPagesWordsKeepTheirLinksAndEmphasis(t *testing.T) {
+	base, _ := url.Parse("https://hartsbakery.example/blog/")
+	p := Read([]byte(`<main><p>Our <strong>rye</strong> is <em>slow</em>: see <a href="/menu/">the menu</a> or `+
+		`<a href="https://flour.example/">the <b>mill</b></a>. 5 * 3 [sic]</p><p><a href="/x"><img src="/i.jpg" alt="A loaf"></a></p>`+
+		`<p>An <strong> </strong>empty mark, and <code>a*b</code>.</p><pre>keep *this*</pre></main>`), base)
+	var mds []string
+	for _, b := range p.Blocks {
+		mds = append(mds, b.Kind+":"+b.MD)
+	}
+	want := []string{
+		"p:Our **rye** is *slow*: see [the menu](https://hartsbakery.example/menu/) or [the **mill**](https://flour.example/). 5 \\* 3 \\[sic\\]",
+		"img:",
+		"p:An empty mark, and `a*b`.",
+		"pre:",
+	}
+	if strings.Join(mds, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("the words are\n%s\nnot\n%s", strings.Join(mds, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// A quotation's paragraphs are a quotation, a table's row reads as one line,
+// and a numbered list stays numbered.
+func TestQuotationsTablesAndNumberedListsKeepTheirShape(t *testing.T) {
+	base, _ := url.Parse("https://hartsbakery.example/")
+	p := Read([]byte(`<main><blockquote><p>Stay hungry.</p></blockquote>`+
+		`<table><tr><th>Bread</th><th>Price</th></tr><tr><td>Rye</td><td>£4.60</td></tr></table>`+
+		`<ol><li>Mix</li><li>Prove</li></ol><ul><li>Rye</li></ul></main>`), base)
+	var got []string
+	for _, b := range p.Blocks {
+		got = append(got, b.Kind+":"+b.Text)
+	}
+	want := "quote:Stay hungry.|p:Bread · Price|p:Rye · £4.60|ol:Mix|ol:Prove|li:Rye"
+	if strings.Join(got, "|") != want {
+		t.Fatalf("read %s, not %s", strings.Join(got, "|"), want)
+	}
+	body, _ := pageBody(Page{URL: base, Title: "Bread", Blocks: append([]Block{{Kind: "p", Text: "x", MD: "[x](/y)"}}, p.Blocks...)},
+		"Hart's", func(*url.URL, string) string { return "" }, nil)
+	words := body["sections"].([]any)[0].(map[string]any)["prose"].(map[string]any)["body"].(string)
+	if !strings.Contains(words, "> Stay hungry.") || !strings.Contains(words, "1. Mix\n1. Prove\n\n- Rye") {
+		t.Fatalf("the words: %q", words)
 	}
 }

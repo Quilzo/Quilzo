@@ -227,6 +227,9 @@ func (p *Package) MakeCard() Card {
 	if p.Blog != "" {
 		c.Shows = append(c.Shows, blogLine(p))
 	}
+	for _, r := range p.Records {
+		c.Shows = append(c.Shows, recordsLine(r))
+	}
 	if p.Site != nil {
 		// First, because a package that is a whole site is read as one.
 		c.Shows = append([]Line{p.Site.siteLine()}, c.Shows...)

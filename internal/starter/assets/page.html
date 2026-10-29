@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="light dark">
 <title>{% if record.name %}{{ record.name }} — {% end %}{% if record.event %}{{ record.event.name }} — {% end %}{% if record.post %}{{ record.post.title }} — {% end %}{% if page.title %}{{ page.title }} — {% end %}{{ site.name }}</title>
 {% if page.description %}<meta name="description" content="{{ page.description }}">{% end %}
-{% if record.post.summary %}<meta name="description" content="{{ record.post.summary }}">{% end %}
+{% if record.post.excerpt %}<meta name="description" content="{{ record.post.excerpt }}">{% end %}
 <meta property="og:site_name" content="{{ site.name }}">
 <meta property="og:title" content="{{ page.title }}{{ record.post.title }}{{ record.event.name }}">
 <meta property="og:type" content="{{ page.og_type | default:website }}">
@@ -455,7 +455,7 @@
 <section class="section {{ s.prose.tone }}">
   <div class="wrap">
     {% if s.prose.title %}<div class="section-head"><h2>{{ s.prose.title }}</h2></div>{% end %}
-    <div class="prose narrow">{% for p in s.prose.paragraphs %}<p>{{ p }}</p>{% end %}</div>
+    <div class="prose narrow">{% for p in s.prose.paragraphs %}<p>{{ p }}</p>{% end %}{% if s.prose.body %}{{ s.prose.body | prose }}{% end %}</div>
   </div>
 </section>
 {% end %}
@@ -627,7 +627,7 @@
         <div class="blog-text">
           <h3 class="blog-name">{% if p.href %}<a href="{{ p.href }}">{{ p.title }}</a>{% end %}{% if p.plain %}{{ p.title }}{% end %}</h3>
           <p class="blog-meta">{% if p.when %}<time datetime="{{ p.date }}">{{ p.when }}</time>{% end %}{% if p.byline %}<span class="blog-by">{{ p.byline }}</span>{% end %}</p>
-          {% if p.summary %}<p>{{ p.summary }}</p>{% end %}
+          {% if p.excerpt %}<p>{{ p.excerpt }}</p>{% end %}
         </div>
         {% if p.image %}<img class="blog-thumb" src="/media/{{ p.image }}"{% if p.image_srcset %} srcset="{{ p.image_srcset }}" sizes="(min-width: 46rem) 12rem, 92vw"{% end %} alt="{{ p.alt }}" width="480" height="320" loading="lazy">{% end %}
       </li>
