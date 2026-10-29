@@ -428,6 +428,9 @@ var coverage = map[string]surfaces{
 	// Events are records, written and read where records are; setting them
 	// up is a package an agent proposes.
 	"events": {GUI: "/make", MCP: []string{"upcoming_events", "propose_feature"}},
+	// Posts are records too, read through their listing; a blog is a
+	// package an agent proposes.
+	"blog": {GUI: "/make", MCP: []string{"run_listing", "propose_feature"}},
 	"pay": {GUI: "/pay", NoMCP: "turns on taking money, which two administrators decide, and reads buyers' names and " +
 		"addresses from the provider; an agent that can do either can spend a shop's trust"},
 	"webhook": {GUI: "/integrations", NoMCP: "adds an outbound destination for content, which is exfiltration with a configuration screen"},

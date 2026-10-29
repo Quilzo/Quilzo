@@ -168,11 +168,14 @@ func DetailRows(src Sources, name string, body any, d Detail) (
 	if err != nil {
 		return nil, nil, fmt.Errorf("%s: %w", name, err)
 	}
-	res, err := listing.Resolve(l, idx, nil)
+	// Every record the listing keeps, not the rows a page shows at once: a
+	// copy of the site that had only those would be missing every older
+	// post's and every later product's page, and the server has them all.
+	all, _, err := listing.Every(l, idx, nil, len(idx.Records)+1)
 	if err != nil {
 		return nil, nil, fmt.Errorf("%s: %w", name, err)
 	}
-	for _, row := range res.Rows {
+	for _, row := range all {
 		key, _ := row[d.Key].(string)
 		if key == "" {
 			// A record with no key has no address, so it cannot have a page.

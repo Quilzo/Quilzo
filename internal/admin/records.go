@@ -163,7 +163,7 @@ func (s *Server) handleRecords(w http.ResponseWriter, r *http.Request) {
 		if editing != nil {
 			body = editing
 		}
-		data["Fields"] = typedFields(t, body, nil)
+		data["Fields"] = s.withPictures(t, typedFields(t, body, nil))
 		data["BlankType"] = t.Name
 	}
 

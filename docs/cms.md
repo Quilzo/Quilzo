@@ -379,6 +379,37 @@ and the structured data say exactly as it decides what the page says.
 by writing a record, and proposes events for a site that has none with a
 package carrying an `events` block.
 
+## Keeping a blog
+
+A blog is posts, newest first, each with its own address that keeps working
+however many come after it. Posts are records like any others, and one
+feature sets them up:
+
+```bash
+quilzo blog setup            # the type, its records, a Blog page, a page for each post, the feed
+quilzo records add posts title="Rye, at last" slug=rye published=2026-11-14 byline="Sam" body="The rye took three tries."
+quilzo publish               # posts are content: published like the rest
+```
+
+A post has a title, the end of its page's address, the day it went out, and
+what it says, in the same small Markdown a page's body takes: headings,
+lists, bold, italic and links. A summary is what the list of posts, the feed
+and a search result show; tags, a picture with what it shows, and the day it
+was last changed are there when they help.
+
+`site.blog` names the listing whose records are the site's posts, which
+`blog setup` sets, and `site.feed` too when the site has no feed. From it
+come a `posts` section that any page can carry, showing the newest with when
+each went out and who wrote it, and Older and Newer posts a page at a time
+(`?page=2`) back to the first; each post's page, with the posts either side
+of it; and schema.org `BlogPosting` data on that page. Every post has its
+page, however far back: a record's page is found among everything its
+listing's conditions keep, not among the rows a page shows at once.
+
+An agent reads the posts through the listing (`run_listing`), writes one as
+a record, and proposes a blog for a site that has none with a package
+carrying a `blog` block.
+
 ## Keeping a newsletter
 
 A newsletter is a list of people who asked for one and the letters sent to

@@ -257,6 +257,12 @@ bookings (appointments on the site: one calendar, its hours, its services; who b
   quilzo booking pause | resume            stop and start taking new bookings
   quilzo booking feed [--off]              a calendar address for your phone: times and services, never names
 
+blog (posts newest first, each on its own page; site.blog names the listing, and the feed follows it)
+  quilzo blog [list]                       the newest posts, as the site lists them
+  quilzo blog setup                        add a blog: a type, its posts, a blog page, a page for each post,
+                                           and the site's feed at /feed.xml when it has none
+  quilzo blog example                      that feature as a package, to edit and install
+
 events (what is on: dates and times on the site's clock, site.timezone; gone from the list when over)
   quilzo events [list]                     what is still to come, as the site lists it
   quilzo events setup                      add events: a type, its records, an events page, a page for each,
@@ -962,6 +968,8 @@ func main() {
 		err = cmdNewsletter(root, cmdArgs)
 	case "events":
 		err = cmdEvents(root, cmdArgs)
+	case "blog":
+		err = cmdBlog(root, cmdArgs)
 	case "research":
 		err = cmdResearch(root, cmdArgs)
 	case "scan":

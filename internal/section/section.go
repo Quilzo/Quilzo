@@ -334,6 +334,13 @@ var kinds = []Kind{
 		},
 	},
 	{
+		Name: "posts", Group: "data", Summary: "The site's blog: its posts, newest first, each with when it went out and who wrote it, a link to each and older ones a page at a time.",
+		Stub: map[string]any{
+			"title": "Latest posts", "intro": "", "rows": float64(10),
+			"empty": "Nothing has been written here yet.",
+		},
+	},
+	{
 		Name: "newsletter", Group: "closing", Summary: "A sign-up for the site's newsletter: an address, mailed a link to confirm before anything is sent.",
 		Stub: map[string]any{
 			"title": "Get our news", "intro": "",

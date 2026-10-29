@@ -81,6 +81,17 @@ func rememberBuilt(root string, p *feature.Package, model string) error {
 	return saveJSON(builtPath(root), f)
 }
 
+// readyPackage is one of the features that come with Quilzo, as the bytes
+// installed: remembered as this installation's own making, so the pages it
+// puts in the draft are marked as written by software, as a site the
+// builder makes without a model is, and can be published.
+func readyPackage(root string, p *feature.Package) ([]byte, error) {
+	if err := rememberBuilt(root, p, ""); err != nil {
+		return nil, err
+	}
+	return json.Marshal(p)
+}
+
 // pagesWrittenBy is how a package's pages came to be, for their provenance:
 // by this installation's builder, with a model or without one; by a model,
 // as the package says; or unknown, which leaves them for a person to say.

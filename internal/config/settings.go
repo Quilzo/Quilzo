@@ -645,6 +645,18 @@ var settings = []Setting{
 			"one and sets this. Empty means no calendar is served.",
 	},
 	{
+		Key: "site.blog", Kind: Text, Default: "",
+		Summary: "the listing that is the site's blog: posts newest first, a page for each, and an article's data on it",
+		Why: "A journal was a listing like any other, so nothing knew its " +
+			"records were posts: a page showed the newest few and every older " +
+			"one had no way to be reached from it, and nothing told a search " +
+			"engine when a post went out or who wrote it. Naming the listing, " +
+			"as site.feed and site.events do, because which records are the " +
+			"site's posts is a decision, and the listing already says which " +
+			"fields are public. `quilzo blog setup` makes one and sets this, " +
+			"and site.feed when the site has no feed. Empty means no blog.",
+	},
+	{
 		Key: "site.timezone", Kind: Text, Default: "",
 		Summary: "the site's clock, as a zone name such as Europe/London: what upcoming means, and when an event's times are",
 		Why: "A date and time on a record is said as people say it, on the clock " +

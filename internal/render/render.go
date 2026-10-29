@@ -95,6 +95,10 @@ type Sources struct {
 	// Events is the site's events an events section shows, up to rows of
 	// them. Nil means the section says there are none. See events.go.
 	Events func(rows int) map[string]any
+	// Posts is the site's blog a posts section shows on a page: rows posts,
+	// at the page of them the request's own query asks for. Nil means the
+	// section says there are none. See posts.go.
+	Posts func(page string, rows int, args map[string]string) map[string]any
 	// Tracks answers what caption files a video has, in the shape a template
 	// walks. Nil means no captions anywhere, which is what every deployment
 	// had before they could be attached — and is why a video with none is a
@@ -187,6 +191,7 @@ func (s Sources) For(name string, body any, args map[string]string) (map[string]
 	placeBookings(ctx["page"], name, args, s.Booking)
 	placeNewsletters(ctx["page"], name, args, s.Newsletter)
 	placeEvents(ctx["page"], s.Events)
+	placePosts(ctx["page"], name, args, s.Posts, s.asks())
 	return ctx, nil
 }
 

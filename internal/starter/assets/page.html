@@ -4,10 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>{% if record.name %}{{ record.name }} — {% end %}{% if record.event %}{{ record.event.name }} — {% end %}{% if page.title %}{{ page.title }} — {% end %}{{ site.name }}</title>
+<title>{% if record.name %}{{ record.name }} — {% end %}{% if record.event %}{{ record.event.name }} — {% end %}{% if record.post %}{{ record.post.title }} — {% end %}{% if page.title %}{{ page.title }} — {% end %}{{ site.name }}</title>
 {% if page.description %}<meta name="description" content="{{ page.description }}">{% end %}
+{% if record.post.summary %}<meta name="description" content="{{ record.post.summary }}">{% end %}
 <meta property="og:site_name" content="{{ site.name }}">
-<meta property="og:title" content="{{ page.title }}">
+<meta property="og:title" content="{{ page.title }}{{ record.post.title }}{{ record.event.name }}">
 <meta property="og:type" content="{{ page.og_type | default:website }}">
 {% if page.description %}<meta property="og:description" content="{{ page.description }}">{% end %}
 {% if page.share_image %}<meta property="og:image" content="{{ page.share_image }}">
@@ -609,6 +610,36 @@
 </section>
 {% end %}
 
+{% if s.posts %}
+<section class="section {{ s.posts.tone }}" id="posts">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>{{ s.posts.title | default:Latest posts }}</h2>
+      {% if s.posts.intro %}<p class="lead">{{ s.posts.intro }}</p>{% end %}
+    </div>
+    {% if s.posts.closed %}<p class="muted">No posts are listed here yet.</p>{% end %}
+    {% if s.posts.none %}<p class="muted">{{ s.posts.empty | default:Nothing has been written here yet. }}</p>{% end %}
+    {% if s.posts.far %}<p class="muted">There are no posts this far back.</p>{% end %}
+    {% if s.posts.items %}
+    <ul class="blog-list">
+      {% for p in s.posts.items %}
+      <li class="blog-item">
+        <div class="blog-text">
+          <h3 class="blog-name">{% if p.href %}<a href="{{ p.href }}">{{ p.title }}</a>{% end %}{% if p.plain %}{{ p.title }}{% end %}</h3>
+          <p class="blog-meta">{% if p.when %}<time datetime="{{ p.date }}">{{ p.when }}</time>{% end %}{% if p.byline %}<span class="blog-by">{{ p.byline }}</span>{% end %}</p>
+          {% if p.summary %}<p>{{ p.summary }}</p>{% end %}
+        </div>
+        {% if p.image %}<img class="blog-thumb" src="/media/{{ p.image }}"{% if p.image_srcset %} srcset="{{ p.image_srcset }}" sizes="(min-width: 46rem) 12rem, 92vw"{% end %} alt="{{ p.alt }}" width="480" height="320" loading="lazy">{% end %}
+      </li>
+      {% end %}
+    </ul>
+    {% end %}
+    {% if s.posts.pager %}<nav class="pager" aria-label="More posts">{% if s.posts.newer %}<a href="{{ s.posts.newer }}" rel="prev">Newer posts</a>{% end %}{% if s.posts.older %}<a class="pager-older" href="{{ s.posts.older }}" rel="next">Older posts</a>{% end %}</nav>{% end %}
+    {% if s.posts.feed %}<p class="muted"><a href="{{ s.posts.feed }}">Follow these in a feed reader</a></p>{% end %}
+  </div>
+</section>
+{% end %}
+
 {% if s.newsletter %}
 <section class="section {{ s.newsletter.tone }}" id="newsletter">
   <div class="wrap">
@@ -760,6 +791,24 @@
     {% if record.event.summary %}<div class="prose narrow event-about"><p>{{ record.event.summary }}</p></div>{% end %}
   </div>
 </section>
+{% end %}
+
+{% if record.post %}
+<article class="section">
+  <div class="wrap">
+    <header class="section-head blog-head">
+      <h1>{{ record.post.title }}</h1>
+      <p class="blog-meta">{% if record.post.when %}<time datetime="{{ record.post.date }}">{{ record.post.when }}</time>{% end %}{% if record.post.byline %}<span class="blog-by">{{ record.post.byline }}</span>{% end %}</p>
+      {% if record.post.summary %}<p class="lead">{{ record.post.summary }}</p>{% end %}
+    </header>
+    {% if record.image %}<img class="blog-picture" src="/media/{{ record.image }}"{% if record.image_srcset %} srcset="{{ record.image_srcset }}" sizes="(min-width: 50rem) 48rem, 92vw"{% end %} alt="{{ record.alt }}" width="960" height="540">{% end %}
+    {% if record.body %}<div class="prose narrow blog-words">{{ record.body | prose }}</div>{% end %}
+    {% if record.post.tags %}<ul class="blog-tags" aria-label="Tags">{% for t in record.post.tags %}<li>{{ t }}</li>{% end %}</ul>{% end %}
+    {% if record.post.revised_when %}<p class="muted">Updated <time datetime="{{ record.post.revised }}">{{ record.post.revised_when }}</time></p>{% end %}
+    {% if record.post.around %}<nav class="pager blog-around" aria-label="More posts">{% if record.post.newer %}<a href="{{ record.post.newer.href }}" rel="prev"><span class="pager-label">Newer</span> {{ record.post.newer.title }}</a>{% end %}{% if record.post.older %}<a class="pager-older" href="{{ record.post.older.href }}" rel="next"><span class="pager-label">Older</span> {{ record.post.older.title }}</a>{% end %}</nav>{% end %}
+    {% if record.post.blog_href %}<p><a href="{{ record.post.blog_href }}">All posts</a></p>{% end %}
+  </div>
+</article>
 {% end %}
 
 {% if record.name %}

@@ -480,3 +480,21 @@ func TestMakeShowsWhatAnAgentProposed(t *testing.T) {
 		t.Fatalf("setting it aside: %d, %q", code, dismissed)
 	}
 }
+
+// A feature that comes with Quilzo is offered until it is installed, and
+// then said to be there rather than offered again.
+func TestMakeSaysAReadyFeatureIsAlreadyInstalled(t *testing.T) {
+	srv, token := setup(t)
+	wireFeatures(srv)
+	srv.Features.Ready = func() []ReadyFeature {
+		return []ReadyFeature{{Name: "lab-samples", Title: "Samples", About: "Track them."},
+			{Name: "blog", Title: "Blog", About: "Posts, newest first."}}
+	}
+	body := get(t, srv, "/make", token).Body.String()
+	if !strings.Contains(body, `name="ready" value="blog"`) {
+		t.Error("a feature that is not installed is not offered")
+	}
+	if strings.Contains(body, `name="ready" value="lab-samples"`) || !strings.Contains(body, "Installed on this site") {
+		t.Error("an installed feature is offered again")
+	}
+}

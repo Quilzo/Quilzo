@@ -358,6 +358,9 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 		// The site's events: a calendar at /events.ics, and Event data on
 		// each event's page.
 		st.Events = strings.TrimSpace(cfg.Raw("site.events"))
+		// The site's blog: posts newest first, older ones a page at a time,
+		// and an article's data on each post's page.
+		st.Blog = strings.TrimSpace(cfg.Raw("site.blog"))
 		// Buy buttons, from the payment links the admin keeps. The site
 		// reads the book and holds no key (internal/pay).
 		buy := &payReader{root: root}

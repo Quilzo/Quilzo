@@ -282,6 +282,9 @@ func featureStateWith(root string, takeSite bool) (feature.State, map[string]*fe
 		if name := strings.TrimSpace(cfg.Raw("site.events")); name != "" {
 			put(feature.EventsRef.Kind, feature.EventsRef.Name, name)
 		}
+		if name := strings.TrimSpace(cfg.Raw("site.blog")); name != "" {
+			put(feature.BlogRef.Kind, feature.BlogRef.Name, name)
+		}
 	}
 	// A role lives in the package that declared it, so what it is now is
 	// read from the version installed.
@@ -1093,6 +1096,18 @@ func applyFeature(root string, p *feature.Package, digest string, plan feature.P
 			return nil, err
 		}
 	}
+	// Which listing is the site's blog. Taken away, the site has none: the
+	// posts stay, and their pages and the feed go with the listing.
+	switch a := act[feature.BlogRef]; {
+	case p.Blog != "" && (a == feature.Add || a == feature.Change):
+		if err := setSiteBlog(root, p.Blog, "feature "+p.Name, caller); err != nil {
+			return nil, err
+		}
+	case len(removing(feature.BlogRef.Kind)) > 0:
+		if err := setSiteBlog(root, "", "removed with feature "+p.Name, caller); err != nil {
+			return nil, err
+		}
+	}
 	// The site itself, last: the pages its menus point at are in the draft
 	// by now, and a site that goes is put back as it was.
 	switch a := act[feature.SiteRef]; {
@@ -1582,14 +1597,24 @@ func orderAgents(ms []agent.Manifest) []agent.Manifest {
 func featureHooks(root string, signedIn func(admin.Actor) *Caller) *admin.FeatureHooks {
 	return &admin.FeatureHooks{
 		Ready: func() []admin.ReadyFeature {
-			body, err := json.Marshal(eventsPackage())
-			if err != nil {
-				return nil
+			var out []admin.ReadyFeature
+			for _, r := range []struct {
+				p            *feature.Package
+				title, about string
+			}{
+				{blogPackage(), "Blog", "Posts, newest first: a page for each, older ones a page at a time, a feed " +
+					"readers follow, and when each went out and who wrote it for search engines."},
+				{eventsPackage(), "Events", "What is on: a page of events still to come, a page for each with when " +
+					"and where for search engines, and a calendar visitors subscribe to. Events leave the list " +
+					"when they are over."},
+			} {
+				body, err := readyPackage(root, r.p)
+				if err != nil {
+					return nil
+				}
+				out = append(out, admin.ReadyFeature{Name: r.p.Name, Title: r.title, About: r.about, Body: body})
 			}
-			return []admin.ReadyFeature{{Name: "events", Title: "Events",
-				About: "What is on: a page of events still to come, a page for each with when and where for " +
-					"search engines, and a calendar visitors subscribe to. Events leave the list when they are over.",
-				Body: body}}
+			return out
 		},
 		Installed: func() ([]feature.Installed, error) {
 			m, err := loadInstalledFeatures(root)

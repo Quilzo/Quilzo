@@ -143,7 +143,7 @@ func eventsSetup(root string, caller *Caller) error {
 	if caller.Kind == audit.KindAI {
 		return errors.New("a feature is installed by a person. A model may propose one; it may not install one")
 	}
-	body, err := json.Marshal(eventsPackage())
+	body, err := readyPackage(root, eventsPackage())
 	if err != nil {
 		return err
 	}

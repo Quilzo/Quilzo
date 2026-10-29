@@ -383,7 +383,7 @@
                {{if .Help}}aria-describedby="h-{{.Key}}"{{end}}>
         {{if .SuggestID}}
         <datalist id="{{.SuggestID}}">
-          {{range .Suggest}}<option value="{{.}}"></option>{{end}}
+          {{range .Suggest}}<option value="{{.}}"></option>{{end}}{{range .Pictures}}<option value="{{.ID}}" label="{{.Alt}}"></option>{{end}}
         </datalist>
         {{end}}
       {{end}}

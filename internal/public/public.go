@@ -228,6 +228,10 @@ type Site struct {
 	// calendar at /events.ics, each event's Event data, and what an events
 	// section shows. Empty means none. See events.go.
 	Events string
+	// Blog names the listing whose records are the site's posts: what a
+	// posts section shows, a page at a time, and each post's article data.
+	// Empty means none. See posts.go.
+	Blog string
 	// Buy answers where a row's Buy button goes and what it charges
 	// (internal/pay); nil is a site that sells nothing. BuyTag names the
 	// payment links as they stand, for the ETag of a page with listings: a
@@ -546,7 +550,16 @@ func (st *Site) sitemap(w http.ResponseWriter, r *http.Request) {
 	}
 
 	entries := make([]seo.Entry, 0, len(names))
+	var standsFor []string
 	for _, name := range names {
+		// A page that stands for records is no address of its own: each
+		// record's page is, and is listed below.
+		if d, ok := detailOf(pages[name]); ok {
+			if d.Declared() {
+				standsFor = append(standsFor, name)
+			}
+			continue
+		}
 		loc := base + "/" + name
 		if name == st.Index {
 			loc = base + "/"
@@ -571,6 +584,14 @@ func (st *Site) sitemap(w http.ResponseWriter, r *http.Request) {
 		}
 		entries = append(entries, e)
 	}
+	var timed []string
+	for _, name := range standsFor {
+		more, l := st.recordEntries(base, name, pages[name], seo.MaxURLsPerSitemap-len(entries))
+		entries = append(entries, more...)
+		if l != nil && l.Timed() {
+			timed = append(timed, l.Name)
+		}
+	}
 
 	out, err := seo.Sitemap(entries)
 	if err != nil {
@@ -589,7 +610,9 @@ func (st *Site) sitemap(w http.ResponseWriter, r *http.Request) {
 	// from one commit is the same bytes every time. Revalidated rather than
 	// held, like a page, because a new page should be crawlable now and not
 	// in an hour.
-	if tag := st.contentTag("sitemap"); tag != "" {
+	// And the minute, when what it lists depends on the clock: an event's
+	// page goes when the event is over, with nothing published.
+	if tag := st.timedTag(st.contentTag("sitemap"), timed); tag != "" {
 		h.Set("ETag", tag)
 		h.Set("Cache-Control", "public, max-age=0, must-revalidate")
 		if etag.Matches(r.Header.Get("If-None-Match"), tag) {
@@ -1037,13 +1060,8 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 	// belong in the name of it.
 	tag := `"` + tree[served] + `"`
 	args := firstOf(r.URL.Query())
-	if names := listing.On(body); len(names) > 0 {
+	if names := st.readsListings(body); len(names) > 0 {
 		tag = st.timedTag(`"`+renderTag(tree[served], st.dataTree(), names, args)+`"`, names)
-	} else if st.Events != "" && eventsSection(body) {
-		// What is on is the events listing's, by the clock: the records it
-		// reads and the minute are what was rendered.
-		events := []string{st.Events}
-		tag = st.timedTag(`"`+renderTag(tree[served], st.dataTree(), events, nil)+`"`, events)
 	}
 	if st.BuyTag != nil && len(listing.On(body)) > 0 {
 		if bt := st.BuyTag(); bt != "" {
@@ -1640,7 +1658,7 @@ func (st *Site) sources() render.Sources {
 	src := render.Sources{Name: st.Name, IconStyle: st.IconStyle, Listings: st.Listings,
 		SrcSet: st.srcSet, Tracks: st.tracks, Poster: st.poster,
 		Form: st.formData, Thread: st.threadData, Buy: st.Buy, Booking: st.bookingData,
-		Newsletter: st.newsletterData, Events: st.eventsData}
+		Newsletter: st.newsletterData, Events: st.eventsData, Posts: st.postsData}
 	if _, ok := st.iconFile(); ok {
 		src.Icon = "/media/" + st.Icon
 		src.IconInitial = st.IconInitial
