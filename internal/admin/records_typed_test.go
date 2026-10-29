@@ -26,6 +26,8 @@ func TestARecordIsWrittenWithItsTypesForm(t *testing.T) {
 		{Name: "seats", Kind: schema.Number, Label: "Seats"},
 		{Name: "status", Kind: schema.Choice, Label: "Status", Choices: []string{"cancelled", "postponed"}},
 		{Name: "venue", Kind: schema.Text, Label: "Venue"},
+		{Name: "image", Kind: schema.Text, Label: "Picture"},
+		{Name: "alt", Kind: schema.Text, Label: "What the picture shows", AltFor: "image"},
 	}}); err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +39,7 @@ func TestARecordIsWrittenWithItsTypesForm(t *testing.T) {
 
 	page := get(t, srv, "/records?c=events", token).Body.String()
 	for _, want := range []string{`name="date" type="date"`, `name="time" type="time"`, `<select id="f-status" name="status"`,
-		`name="__typed" value="1"`, "Write it as JSON instead"} {
+		`name="__typed" value="1"`, "Write it as JSON instead", "Describes <strong>Picture</strong>"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("the form lacks %s", want)
 		}

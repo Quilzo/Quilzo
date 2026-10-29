@@ -2346,16 +2346,23 @@ func typedFields(t schema.Type, body any, pages []string) []field {
 
 	out := make([]field, 0, len(t.Fields)+4)
 	declared := map[string]bool{}
+	labels := map[string]string{}
+	for _, f := range t.Fields {
+		labels[f.Name] = f.Label
+		if f.Label == "" {
+			labels[f.Name] = f.Name
+		}
+	}
 	for _, f := range t.Fields {
 		declared[f.Name] = true
 
-		label := f.Label
-		if label == "" {
-			label = f.Name
-		}
 		e := field{
-			Key: f.Name, Label: label, Help: f.Help, Required: f.Required,
+			Key: f.Name, Label: labels[f.Name], Help: f.Help, Required: f.Required,
 			MaxLen: f.MaxLen, AltFor: f.AltFor, Input: "text",
+		}
+		// The field described, as the author knows it: by its label.
+		if l, ok := labels[f.AltFor]; ok {
+			e.AltFor = l
 		}
 		switch f.Kind {
 		case schema.LongText:
