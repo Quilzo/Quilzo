@@ -319,3 +319,17 @@ func TestAPictureIsTheLibrarysAndDescribed(t *testing.T) {
 		}
 	}
 }
+
+// Prose as plain text is its words: no markers, a link as what it says.
+func TestPlainProseIsTheWords(t *testing.T) {
+	for src, want := range map[string]string{
+		"A **bold** and *quiet* `word`":        "A bold and quiet word",
+		"See [the flour](https://e.test/) now": "See the flour now",
+		`5 \* 3 \[sic\]`:                       "5 * 3 [sic]",
+		"[unclosed":                            "[unclosed",
+	} {
+		if got := PlainProse(src); got != want {
+			t.Errorf("PlainProse(%q) = %q, want %q", src, got, want)
+		}
+	}
+}

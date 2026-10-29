@@ -58,7 +58,7 @@ func postRows(s *Site, picture func(*url.URL, string) string, link func(string) 
 		}
 		img, alt := pst.Image, pst.Alt
 		var words []string
-		listing := false
+		listing := ""
 		for _, b := range pst.Blocks {
 			md := linksIn(b.MD, link)
 			if md == "" {
@@ -68,10 +68,10 @@ func postRows(s *Site, picture func(*url.URL, string) string, link func(string) 
 			switch {
 			case len(words) == 0:
 				sep = ""
-			case b.Kind == "li" && listing:
+			case (b.Kind == "li" || b.Kind == "ol") && b.Kind == listing:
 				sep = "\n"
 			}
-			listing = b.Kind == "li"
+			listing = b.Kind
 			switch b.Kind {
 			case "h1":
 				if strings.EqualFold(strings.TrimSpace(b.Text), strings.TrimSpace(pst.Title)) {
@@ -99,6 +99,8 @@ func postRows(s *Site, picture func(*url.URL, string) string, link func(string) 
 				}
 			case "li":
 				words = append(words, sep, "- "+md)
+			case "ol":
+				words = append(words, sep, "1. "+md)
 			case "quote":
 				words = append(words, sep, "> "+md)
 			case "pre":
@@ -109,14 +111,6 @@ func postRows(s *Site, picture func(*url.URL, string) string, link func(string) 
 		}
 		if body := strings.TrimSpace(strings.Join(words, "")); body != "" {
 			f["body"] = body
-		}
-		if f["summary"] == nil {
-			for _, b := range pst.Blocks {
-				if b.Kind == "p" && b.Text != "" {
-					f["summary"] = clip(b.Text, 280)
-					break
-				}
-			}
 		}
 		if img != nil {
 			if path := picture(img, alt); path != "" {
@@ -202,6 +196,21 @@ func addBlog(p *feature.Package) {
 	p.Listings = append(p.Listings, bp.Listings...)
 	p.Blog = bp.Blog
 	posts := map[string]any{"posts": map[string]any{"title": "Latest posts", "rows": float64(10), "intro": ""}}
+	// The home page shows the newest few, as a blog's does, unless it
+	// already lists them.
+	if i := pageIndex(p, "index"); i >= 0 {
+		secs, _ := p.Pages[i].Body["sections"].([]any)
+		listed := false
+		for _, sec := range secs {
+			if m, ok := sec.(map[string]any); ok && m["posts"] != nil {
+				listed = true
+			}
+		}
+		if !listed {
+			p.Pages[i].Body["sections"] = append(secs, map[string]any{"posts": map[string]any{
+				"title": "Latest posts", "rows": float64(5), "intro": ""}})
+		}
+	}
 	for _, pg := range bp.Pages {
 		if pg.Name != "blog" {
 			p.Pages = append(p.Pages, pg)

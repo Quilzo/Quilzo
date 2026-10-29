@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/listing"
+	"github.com/quilzo/quilzo/internal/tmpl"
 )
 
 // The site's blog.
@@ -81,6 +82,12 @@ func postView(row listing.Row, links recordLink) map[string]any {
 		if v := str(k); v != "" {
 			out[k] = v
 		}
+	}
+	// What a list of posts and a search result say of it: its summary, or
+	// the start of its words when it has none. Its own page shows only a
+	// summary somebody wrote, never its first paragraph twice.
+	if ex := postExcerpt(row); ex != "" {
+		out["excerpt"] = ex
 	}
 	published, dated := postDay(row, "published")
 	if dated {
@@ -190,7 +197,7 @@ func (st *Site) postLD(row listing.Row) string {
 	if by := str("byline"); by != "" {
 		doc["author"] = map[string]any{"@type": "Person", "name": by}
 	}
-	if d := str("summary"); d != "" {
+	if d := postExcerpt(row); d != "" {
 		doc["description"] = d
 	}
 	if img := str("image"); img != "" && !strings.ContainsAny(img, "/:") {
@@ -293,4 +300,42 @@ func (st *Site) aroundPost(view map[string]any, row listing.Row) {
 		break
 	}
 	view["around"] = view["newer"] != nil || view["older"] != nil
+}
+
+// postExcerpt is a post's summary, or the start of its words: its first
+// paragraph without the prose subset's markers, cut at a word.
+func postExcerpt(row listing.Row) string {
+	if s, _ := row["summary"].(string); strings.TrimSpace(s) != "" {
+		return strings.TrimSpace(s)
+	}
+	body, _ := row["body"].(string)
+	for _, para := range strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n\n") {
+		para = strings.TrimSpace(para)
+		if para == "" || strings.ContainsAny(para[:1], "#->!|") || startsNumbered(para) {
+			continue
+		}
+		words := strings.Fields(tmpl.PlainProse(para))
+		var b strings.Builder
+		for _, w := range words {
+			if b.Len()+len(w) > 240 {
+				b.WriteString("…")
+				break
+			}
+			if b.Len() > 0 {
+				b.WriteByte(' ')
+			}
+			b.WriteString(w)
+		}
+		return b.String()
+	}
+	return ""
+}
+
+// startsNumbered says whether a paragraph is a numbered list.
+func startsNumbered(s string) bool {
+	i := 0
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		i++
+	}
+	return i > 0 && strings.HasPrefix(s[i:], ". ")
 }

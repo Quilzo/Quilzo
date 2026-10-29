@@ -61,6 +61,33 @@ Unreleased
 
 ** Added
 
+*** Bring a site from the file it exported.  quilzo site import, and
+    Make › Bring your site, take a WordPress or Squarespace export (.xml),
+    a Ghost export (.json, with --site for where it was, for its
+    pictures), or a folder or zip of a site's files: the Markdown of Hugo,
+    Jekyll, Eleventy, Astro, Docusaurus or Gatsby, a Notion or Obsidian
+    export, or the pages Webflow exports.  Pages keep their headings,
+    lists, numbered lists, quotations, links, bold, italic and pictures;
+    posts become the blog, each with its picture, author, tags, dates and
+    the pictures among its words; links between them go to where they are
+    now; the menu is the export's; every old address redirects.  Drafts,
+    private posts and posts for members or paying subscribers stay behind
+    and are counted on the card, as are comments and shortcodes.  A
+    package can bring records, named by the hash of a staged file and
+    written once, when it is first installed.
+
+*** A site brought by its address keeps its links, bold, italic and
+    lists: prose sections take a body in the prose subset, and a table's
+    row reads as one line.
+
+*** The prose subset takes a picture from the library, on a line of its
+    own with what it shows (![Three rye loaves](/media/ID)), and backslash
+    escapes (\*, \[).  A link with no words is not one, and a quotation
+    looks like one.
+
+*** A post with no summary is listed, and described to search engines,
+    by the start of its words.
+
 *** A blog: posts newest first, each on its own page, older ones a page
     at a time.  quilzo blog setup, or Ready to add on the Make screen,
     installs it as one feature: a "post" type (title, page link,
@@ -781,6 +808,11 @@ Unreleased
     No run may use a person's desktop.
 
 ** Fixed
+
+*** A page of nothing but unclosed brackets or links rendered in time
+    that grew with the square of its length: twenty thousand took a second
+    and a half, on every request.  Each marker now looks a bounded way for
+    its partner.
 
 *** Every record has its page, not only those among a listing's first
     rows.  A detail page found its record among the rows the listing shows

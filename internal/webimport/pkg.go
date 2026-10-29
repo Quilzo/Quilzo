@@ -383,7 +383,7 @@ func pageBody(pg Page, siteName string, picture func(*url.URL, string) string, l
 	var words []string
 	var gallery []any
 	total := 0
-	listing := false
+	listing := ""
 	flush := func() {
 		if len(words) > 0 {
 			cur["body"] = strings.Join(words, "")
@@ -392,20 +392,20 @@ func pageBody(pg Page, siteName string, picture func(*url.URL, string) string, l
 		if len(gallery) > 0 {
 			sections = append(sections, map[string]any{"gallery": map[string]any{"title": "", "shape": "", "items": gallery}})
 		}
-		cur, words, gallery, listing = map[string]any{"title": ""}, nil, nil, false
+		cur, words, gallery, listing = map[string]any{"title": ""}, nil, nil, ""
 	}
 	// add writes one block of words, a blank line from the last unless both
-	// are items of one list.
-	add := func(text string, item bool) {
+	// are items of one list; list is the kind of list it is an item of.
+	add := func(text, list string) {
 		switch {
 		case len(words) == 0:
-		case item && listing:
+		case list != "" && list == listing:
 			words = append(words, "\n")
 		default:
 			words = append(words, "\n\n")
 		}
 		words = append(words, text)
-		listing = item
+		listing = list
 	}
 	cur["title"] = ""
 	leadTaken := false
@@ -432,13 +432,16 @@ func pageBody(pg Page, siteName string, picture func(*url.URL, string) string, l
 			}
 			gallery = append(gallery, map[string]any{"image": path, "alt": b.Text, "caption": ""})
 		case "li":
-			add("- "+md, true)
+			add("- "+md, "li")
+			total++
+		case "ol":
+			add("1. "+md, "ol")
 			total++
 		case "quote":
-			add("> "+md, false)
+			add("> "+md, "")
 			total++
 		case "pre":
-			add(tmpl.EscapeProse(b.Text), false)
+			add(tmpl.EscapeProse(b.Text), "")
 			total++
 		default:
 			// The lead is words alone: a paragraph that links somewhere keeps
@@ -449,7 +452,7 @@ func pageBody(pg Page, siteName string, picture func(*url.URL, string) string, l
 				leadTaken = true
 				continue
 			}
-			add(md, false)
+			add(md, "")
 			total++
 		}
 	}

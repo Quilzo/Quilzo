@@ -451,3 +451,28 @@ func escapeMarkers(s string) string {
 	}
 	return b.String()
 }
+
+// PlainProse is words in the subset as plain text: its markers and escapes
+// taken out, a link as its words. For a summary or a search result, where
+// markup would be shown as it is.
+func PlainProse(src string) string {
+	var b strings.Builder
+	for i := 0; i < len(src); i++ {
+		switch c := src[i]; {
+		case escaped(src, i):
+			i++
+			b.WriteByte(src[i])
+		case c == '*' || c == '`':
+		case c == '[':
+			if text, _, n, ok := link(src[i:]); ok {
+				b.WriteString(unescape(text))
+				i += n - 1
+				continue
+			}
+			b.WriteByte(c)
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
+}

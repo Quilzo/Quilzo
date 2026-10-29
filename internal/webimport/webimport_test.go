@@ -361,3 +361,26 @@ func TestAPagesWordsKeepTheirLinksAndEmphasis(t *testing.T) {
 		t.Fatalf("the words are\n%s\nnot\n%s", strings.Join(mds, "\n"), strings.Join(want, "\n"))
 	}
 }
+
+// A quotation's paragraphs are a quotation, a table's row reads as one line,
+// and a numbered list stays numbered.
+func TestQuotationsTablesAndNumberedListsKeepTheirShape(t *testing.T) {
+	base, _ := url.Parse("https://hartsbakery.example/")
+	p := Read([]byte(`<main><blockquote><p>Stay hungry.</p></blockquote>`+
+		`<table><tr><th>Bread</th><th>Price</th></tr><tr><td>Rye</td><td>£4.60</td></tr></table>`+
+		`<ol><li>Mix</li><li>Prove</li></ol><ul><li>Rye</li></ul></main>`), base)
+	var got []string
+	for _, b := range p.Blocks {
+		got = append(got, b.Kind+":"+b.Text)
+	}
+	want := "quote:Stay hungry.|p:Bread · Price|p:Rye · £4.60|ol:Mix|ol:Prove|li:Rye"
+	if strings.Join(got, "|") != want {
+		t.Fatalf("read %s, not %s", strings.Join(got, "|"), want)
+	}
+	body, _ := pageBody(Page{URL: base, Title: "Bread", Blocks: append([]Block{{Kind: "p", Text: "x", MD: "[x](/y)"}}, p.Blocks...)},
+		"Hart's", func(*url.URL, string) string { return "" }, nil)
+	words := body["sections"].([]any)[0].(map[string]any)["prose"].(map[string]any)["body"].(string)
+	if !strings.Contains(words, "> Stay hungry.") || !strings.Contains(words, "1. Mix\n1. Prove\n\n- Rye") {
+		t.Fatalf("the words: %q", words)
+	}
+}

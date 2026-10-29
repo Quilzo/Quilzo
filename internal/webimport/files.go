@@ -435,12 +435,23 @@ func (f *folder) markdown(s *Site, files []string) error {
 			}
 			base = m[4]
 		}
-		listPage := base == "index" || base == "_index" || strings.EqualFold(base, "readme")
+		// A section's own page lists what is in it (Hugo's _index); a
+		// folder's index, or its README, is a page at the folder's address,
+		// and in Hugo a post with its pictures beside it.
+		listPage := base == "_index"
+		bundle := base == "index" || strings.EqualFold(base, "readme")
+		if listPage && isPost {
+			// The posts' own list: the blog lists them now.
+			continue
+		}
+		if bundle && dir != "." && dir != "" {
+			base = path.Base(dir)
+		}
 		// Where it was: what the file said, or where its path put it.
 		where := text(fm, "permalink", "url")
 		if where == "" || !strings.HasPrefix(where, "/") {
 			where = path.Join("/", dir)
-			if !listPage {
+			if !listPage && !bundle {
 				where = path.Join(where, base)
 			}
 			if jekyll && isPost && date != "" {
@@ -463,7 +474,7 @@ func (f *folder) markdown(s *Site, files []string) error {
 			title = strings.TrimSpace(strings.NewReplacer("-", " ", "_", " ").Replace(base))
 		}
 		summary := text(fm, "description", "summary", "excerpt", "subtitle")
-		if isPost && !listPage {
+		if isPost {
 			if date == "" {
 				s.Notes = append(s.Notes, "the post "+p+" has no date, so it was brought as a page")
 			} else {
@@ -490,7 +501,7 @@ func (f *folder) markdown(s *Site, files []string) error {
 			blocks = append([]Block{{Kind: "h1", Text: title}}, blocks...)
 		}
 		pg := Page{URL: link, Title: title, Description: clip(summary, 300), Blocks: blocks}
-		if listPage && (dir == "." || dir == "") {
+		if (listPage || bundle) && (dir == "." || dir == "") {
 			pg.URL = s.Home
 			front = &pg
 			continue

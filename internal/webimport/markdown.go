@@ -114,6 +114,9 @@ func mdBlocks(src string, resolve func(string, bool) *url.URL) []Block {
 		case reBullet.MatchString(line):
 			flush()
 			kind = "li"
+			if t := strings.TrimSpace(line); t[0] >= '0' && t[0] <= '9' {
+				kind = "ol"
+			}
 			para = append(para, reBullet.FindStringSubmatch(line)[1])
 		case strings.HasPrefix(trimmed, "|"):
 			flush()
@@ -137,7 +140,7 @@ func mdBlocks(src string, resolve func(string, bool) *url.URL) []Block {
 			}
 			out = append(out, r.html(strings.Join(chunk, "\n"))...)
 		default:
-			if kind == "li" && strings.HasPrefix(line, "  ") {
+			if (kind == "li" || kind == "ol") && strings.HasPrefix(line, "  ") {
 				// A wrapped list item goes on.
 				para = append(para, trimmed)
 				continue

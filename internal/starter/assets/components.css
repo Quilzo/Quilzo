@@ -159,7 +159,8 @@ pre {
 .prose li + li { margin-top: var(--space-2); }
 .prose li::marker { color: var(--primary); }
 .prose img { border-radius: var(--radius-md); }
-.prose blockquote { margin: 0; }
+.prose blockquote { margin: var(--space-4) 0; padding-left: var(--space-4); border-left: 3px solid var(--primary);
+  color: var(--on-surface-variant); }
 
 /* -- header and footer ----------------------------------------------------- */
 

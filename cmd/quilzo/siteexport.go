@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/url"
 	"os"
@@ -134,7 +135,7 @@ func importExport(ctx context.Context, root string, src *exportSource, name, whe
 				if src.fsys == nil {
 					return "", errors.New("there is no folder to read it from")
 				}
-				body, err := fs.ReadFile(src.fsys, strings.TrimPrefix(u.Path, "/"))
+				body, err := readFromFS(src.fsys, strings.TrimPrefix(u.Path, "/"), maxExportPicture)
 				if err != nil {
 					return "", err
 				}
@@ -174,6 +175,29 @@ func importExport(ctx context.Context, root string, src *exportSource, name, whe
 		"from": src.kind, "pages": fmt.Sprint(len(b.Package.Pages)), "posts": fmt.Sprint(len(b.Posts)),
 		"redirects": fmt.Sprint(len(b.Redirects))}))
 	return b, site, nil
+}
+
+// maxExportPicture bounds one picture read from a folder or zip: above any
+// picture the library keeps, and far below what a zip entry could claim to
+// grow into when it is read.
+const maxExportPicture = 32 << 20
+
+// readFromFS reads a file of the folder, refusing one larger than max
+// rather than reading it all to find out.
+func readFromFS(fsys fs.FS, name string, max int64) ([]byte, error) {
+	f, err := fsys.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	body, err := io.ReadAll(io.LimitReader(f, max+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(body)) > max {
+		return nil, fmt.Errorf("%s is larger than a picture is kept at", name)
+	}
+	return body, nil
 }
 
 // -- Records a package brings ----------------------------------------------------

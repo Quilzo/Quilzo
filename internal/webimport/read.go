@@ -53,7 +53,8 @@ type Page struct {
 
 // Block is one piece of content.
 type Block struct {
-	// Kind is h1 to h6, p, li, quote, pre or img.
+	// Kind is h1 to h6, p, li (an item of a list), ol (an item of a
+	// numbered one), quote, pre or img.
 	Kind string
 	// Text is its words; for a picture, its description (alt).
 	Text string
@@ -92,7 +93,8 @@ var chrome = map[string]bool{"header": true, "nav": true, "footer": true, "aside
 var blockTags = map[string]string{
 	"h1": "h1", "h2": "h2", "h3": "h3", "h4": "h4", "h5": "h5", "h6": "h6",
 	"p": "p", "li": "li", "blockquote": "quote", "pre": "pre", "dd": "p", "dt": "p",
-	"figcaption": "p", "td": "p", "th": "p", "caption": "p", "summary": "p",
+	// A table's row is one block, its cells between dots.
+	"figcaption": "p", "tr": "p", "caption": "p", "summary": "p",
 	"div": "p", "section": "p", "article": "p", "main": "p", "address": "p", "br": "",
 }
 
@@ -250,6 +252,19 @@ func (r *reader) textRun(t string) {
 		return
 	}
 	r.md = append(r.md, tmpl.EscapeProse(words)...)
+}
+
+// cellGap is what stands between a table row's cells.
+const cellGap = " · "
+
+// innerList is the list being written in, ol or ul, or "".
+func (r *reader) innerList() string {
+	for i := len(r.open) - 1; i >= 0; i-- {
+		if r.open[i] == "ol" || r.open[i] == "ul" {
+			return r.open[i]
+		}
+	}
+	return ""
 }
 
 // inCode says whether md is inside a code span.
@@ -413,6 +428,9 @@ func (r *reader) close(name string) {
 		r.shut("a")
 	case "strong", "b", "em", "i", "code":
 		r.shut(name)
+	case "td", "th":
+		r.text.WriteString(cellGap)
+		r.md = append(r.md, cellGap...)
 	}
 	if _, ok := blockTags[name]; ok {
 		r.flush()
@@ -445,10 +463,19 @@ func (r *reader) flush() {
 	}
 	md := strings.Join(strings.Fields(string(r.md)), " ")
 	r.md, r.marks = r.md[:0], r.marks[:0]
+	t, md = strings.TrimSuffix(t, strings.TrimSpace(cellGap)), strings.TrimSuffix(md, strings.TrimSpace(cellGap))
+	t, md = strings.TrimSpace(t), strings.TrimSpace(md)
 	kind := r.kind
 	r.kind, r.prose = "", false
 	if t == "" {
 		return
+	}
+	switch {
+	case (kind == "p" || kind == "") && r.in("blockquote"):
+		// A quotation's paragraphs are the quotation.
+		kind = "quote"
+	case kind == "li" && r.innerList() == "ol":
+		kind = "ol"
 	}
 	if kind == "" {
 		kind = "p"
