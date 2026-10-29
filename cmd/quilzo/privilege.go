@@ -561,6 +561,12 @@ var commandNeeds = map[string]need{
 	// The newsletter: the addresses are read, asked and removed by whoever
 	// reads what forms collect; what decides who gets the next issue, or
 	// sends one, is publishing's.
+	// Events: setting them up is installing a feature; reading what is on
+	// is anybody's who may view.
+	"events":             {action: auth.ActInstall},
+	"events list":        {action: auth.ActView},
+	"events example":     {action: auth.ActView},
+	"events setup":       {action: auth.ActInstall},
 	"newsletter":         {action: auth.ActPublish},
 	"newsletter status":  {action: auth.ActView},
 	"newsletter issues":  {action: auth.ActView},

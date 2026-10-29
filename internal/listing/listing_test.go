@@ -479,3 +479,61 @@ func TestEveryReadsTheWholeListingInOrder(t *testing.T) {
 		t.Errorf("capped at 30: %d rows, total %d, %v", len(rows), total, err)
 	}
 }
+
+// What is still to come, by the site's clock when the listing is read: an
+// event that ended a minute ago has gone, one with only a date is on all
+// that day, one lasting days is on till its end, and one with no date is in
+// neither.
+func TestUpcomingAndPastAreByTheClockWhenRead(t *testing.T) {
+	s, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	recs := []collection.Record{
+		{Fields: map[string]any{"title": "Gone a minute", "starts": "2026-11-14T19:29"}},
+		{Fields: map[string]any{"title": "Now", "starts": "2026-11-14T19:30"}},
+		{Fields: map[string]any{"title": "Today, all day", "starts": "2026-11-14"}},
+		{Fields: map[string]any{"title": "Next week", "starts": "2026-11-21T10:00"}},
+		{Fields: map[string]any{"title": "Yesterday", "starts": "2026-11-13"}},
+		{Fields: map[string]any{"title": "No date"}},
+		{Fields: map[string]any{"title": "Festival, on till Sunday", "starts": "2026-11-12", "ends": "2026-11-16"}},
+	}
+	tree, _, err := collection.PutMany(s, "", "events", recs, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx, err := collection.Build(s, tree, "events", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := Now
+	Now = func() string { return "2026-11-14T19:30" }
+	t.Cleanup(func() { Now = old })
+	titles := func(m Match) []string {
+		l := &Listing{Name: "events", Collection: "events", Fields: []string{"title", "starts"}, Sort: "starts",
+			Where: []Condition{{Field: "ends", Else: "starts", Match: m}}}
+		if !l.Timed() {
+			t.Fatal("a listing by the clock does not say so")
+		}
+		res, err := Resolve(l, idx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, r := range res.Rows {
+			out = append(out, r["title"].(string))
+		}
+		return out
+	}
+	if got := strings.Join(titles(Upcoming), ", "); got != "Festival, on till Sunday, Today, all day, Now, Next week" {
+		t.Fatalf("upcoming: %s", got)
+	}
+	if got := strings.Join(titles(Past), ", "); got != "Yesterday, Gone a minute" {
+		t.Fatalf("past: %s", got)
+	}
+	bad := &Listing{Name: "x", Collection: "events", Fields: []string{"title"},
+		Where: []Condition{{Field: "starts", Match: Upcoming, Value: "2020-01-01"}}}
+	if bad.Validate() == nil {
+		t.Fatal("upcoming took a value, which makes it a second way to say is")
+	}
+}

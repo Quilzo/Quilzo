@@ -89,6 +89,8 @@ type Package struct {
 	Site *Site `json:"site,omitempty"`
 	// Bookings is how the site takes appointments (see bookings.go).
 	Bookings *booking.Setup `json:"bookings,omitempty"`
+	// Events names the listing that is the site's events (see events.go).
+	Events string `json:"events,omitempty"`
 
 	Types       []schema.Type         `json:"types,omitempty"`
 	Collections []Collection          `json:"collections,omitempty"`
@@ -315,6 +317,7 @@ func (p *Package) Validate(c Checks) error {
 	}
 	p.validateRoles(bad, unique)
 	validateBookings(p, bad)
+	validateEvents(p, bad)
 	if p.Site != nil {
 		p.Site.validate(bad)
 		// Redirects are served before pages, so one from the package's own
@@ -351,6 +354,9 @@ func (p *Package) Blocks() int {
 		n++
 	}
 	if p.Bookings != nil {
+		n++
+	}
+	if p.Events != "" {
 		n++
 	}
 	return n
@@ -423,6 +429,9 @@ func (p *Package) Refs() []Ref {
 	}
 	if p.Bookings != nil {
 		out = append(out, BookingsRef)
+	}
+	if p.Events != "" {
+		out = append(out, EventsRef)
 	}
 	return out
 }

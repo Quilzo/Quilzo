@@ -92,6 +92,9 @@ type Sources struct {
 	// taken, and what to say after one. Nil means it says they are not.
 	// See newsletter.go.
 	Newsletter func(page string, args map[string]string) map[string]any
+	// Events is the site's events an events section shows, up to rows of
+	// them. Nil means the section says there are none. See events.go.
+	Events func(rows int) map[string]any
 	// Tracks answers what caption files a video has, in the shape a template
 	// walks. Nil means no captions anywhere, which is what every deployment
 	// had before they could be attached — and is why a video with none is a
@@ -183,6 +186,7 @@ func (s Sources) For(name string, body any, args map[string]string) (map[string]
 	placeComments(ctx["page"], name, s.Thread)
 	placeBookings(ctx["page"], name, args, s.Booking)
 	placeNewsletters(ctx["page"], name, args, s.Newsletter)
+	placeEvents(ctx["page"], s.Events)
 	return ctx, nil
 }
 

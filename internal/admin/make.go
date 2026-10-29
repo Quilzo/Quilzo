@@ -32,8 +32,17 @@ import (
 // is not the one the person was shown: what is installed is exactly what
 // was read.
 
+// ReadyFeature is a feature that comes with Quilzo, to check and install
+// as it is: the events feature.
+type ReadyFeature struct {
+	Name, Title, About string
+	Body               []byte
+}
+
 // FeatureHooks reach the feature store, which the command line owns.
 type FeatureHooks struct {
+	// Ready are the features that come with Quilzo.
+	Ready     func() []ReadyFeature
 	Installed func() ([]feature.Installed, error)
 	Pending   func() ([]feature.Pending, error)
 	// Check reads a package: its card and its plan, changing nothing.
@@ -125,6 +134,9 @@ func (s *Server) handleMake(w http.ResponseWriter, r *http.Request) {
 	}
 	if in, err := s.Features.Installed(); err == nil {
 		data["Installed"] = in
+	}
+	if s.Features.Ready != nil {
+		data["Ready"] = s.Features.Ready()
 	}
 	if s.Features.Blanks != nil {
 		if whats, _, err := s.Features.Blanks(); err == nil {
@@ -362,6 +374,14 @@ func (s *Server) handleMakeCheck(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(body) == 0 {
 		body = []byte(r.FormValue("text"))
+	}
+	// One of the features that come with Quilzo, named.
+	if name := r.FormValue("ready"); name != "" && s.Features.Ready != nil {
+		for _, f := range s.Features.Ready() {
+			if f.Name == name {
+				body = f.Body
+			}
+		}
 	}
 	if len(strings.TrimSpace(string(body))) == 0 {
 		makeBack(w, r, "", errors.New("choose a package file, or paste one"))

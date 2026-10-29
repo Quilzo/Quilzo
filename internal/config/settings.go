@@ -633,6 +633,27 @@ var settings = []Setting{
 			"one on purpose.",
 	},
 	{
+		Key: "site.events", Kind: Text, Default: "",
+		Summary: "the listing that is the site's events: a calendar at /events.ics and Event data on each event's page",
+		Why: "An events page was a listing like any other, so nothing knew its " +
+			"records were events: no calendar a visitor could subscribe to, and " +
+			"no structured data saying when and where, which is how an event " +
+			"reaches a search engine's events and an assistant's answer. Naming " +
+			"the listing, as site.feed and site.catalogue do, because which " +
+			"records are the site's events is a decision, and the listing " +
+			"already says which fields are public. `quilzo events setup` makes " +
+			"one and sets this. Empty means no calendar is served.",
+	},
+	{
+		Key: "site.timezone", Kind: Text, Default: "",
+		Summary: "the site's clock, as a zone name such as Europe/London: what upcoming means, and when an event's times are",
+		Why: "A date and time on a record is said as people say it, on the clock " +
+			"where the site is: 19:30 is half past seven there. Which clock that " +
+			"is has to be written down once, or upcoming would mean upcoming in " +
+			"UTC, and an event's calendar entry would be an hour out for half " +
+			"the year. Empty is UTC.",
+	},
+	{
 		Key: "ucp.catalogue", Kind: Bool, Default: "false",
 		Summary: "serve the catalogue listing to shopping agents over UCP, at " +
 			"/.well-known/ucp and /ucp/catalog/",
@@ -1529,6 +1550,11 @@ func (s Setting) Validate(v string) error {
 				return fmt.Errorf(
 					"%q ends in a slash, and every path is appended to it, "+
 						"which would produce https://example.com//about", v)
+			}
+		}
+		if s.Key == "site.timezone" && v != "" {
+			if _, err := time.LoadLocation(v); err != nil || v == "Local" {
+				return fmt.Errorf("%q is not a time zone name; give one like Europe/London or America/New_York", v)
 			}
 		}
 		if s.Key == "site.csp.mode" {

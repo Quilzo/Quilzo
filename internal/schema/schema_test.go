@@ -94,7 +94,7 @@ func TestATypeCannotReferenceAnythingRemote(t *testing.T) {
 func TestTypesCannotNestAndSoCannotRecurse(t *testing.T) {
 	for k := range kinds {
 		switch k {
-		case Text, LongText, Number, Boolean, Date, URL, Email, Slug, Choice,
+		case Text, LongText, Number, Boolean, Date, Time, URL, Email, Slug, Choice,
 			List, Reference:
 		default:
 			t.Errorf("kind %q is outside the flat set and may permit nesting", k)
@@ -473,6 +473,22 @@ func TestKindsListsEveryKind(t *testing.T) {
 		if !listed[string(k)] {
 			t.Errorf("%q is a valid kind and Kinds() does not name it, so the "+
 				"editor cannot offer it and the CLI cannot list it", k)
+		}
+	}
+}
+
+// A time is a time of day on a 24-hour clock, as people say when something
+// starts.
+func TestATimeIsATimeOfDay(t *testing.T) {
+	f := Field{Name: "time", Kind: Time}
+	for _, ok := range []string{"19:30", "00:00", "23:59", "09:05"} {
+		if p := checkField(f, ok); len(p) != 0 {
+			t.Errorf("%q refused: %v", ok, p)
+		}
+	}
+	for _, bad := range []string{"24:00", "7:30", "19:30:00", "7pm", "19.30", "2026-11-14T19:30"} {
+		if p := checkField(f, bad); len(p) == 0 {
+			t.Errorf("%q accepted as a time", bad)
 		}
 	}
 }

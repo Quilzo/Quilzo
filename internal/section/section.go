@@ -327,6 +327,13 @@ var kinds = []Kind{
 		},
 	},
 	{
+		Name: "events", Group: "data", Summary: "What is on: the site's events still to come, with when and where, a link to each and a calendar to subscribe to.",
+		Stub: map[string]any{
+			"title": "What's on", "intro": "", "rows": float64(6),
+			"empty": "Nothing is planned just now.",
+		},
+	},
+	{
 		Name: "newsletter", Group: "closing", Summary: "A sign-up for the site's newsletter: an address, mailed a link to confirm before anything is sent.",
 		Stub: map[string]any{
 			"title": "Get our news", "intro": "",

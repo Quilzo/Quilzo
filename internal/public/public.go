@@ -224,6 +224,10 @@ type Site struct {
 	// including the ones a page embeds behind a filter somebody assumed was
 	// private.
 	Catalogue string
+	// Events names the listing whose records are the site's events: its
+	// calendar at /events.ics, each event's Event data, and what an events
+	// section shows. Empty means none. See events.go.
+	Events string
 	// Buy answers where a row's Buy button goes and what it charges
 	// (internal/pay); nil is a site that sells nothing. BuyTag names the
 	// payment links as they stand, for the ETag of a page with listings: a
@@ -373,6 +377,7 @@ func (st *Site) Handler() http.Handler {
 	mux.HandleFunc("POST /book/{service}", st.book)
 	mux.HandleFunc("GET /book/{file}", st.book)
 	mux.HandleFunc("GET /book/feed/{file}", st.book)
+	mux.HandleFunc("GET /events.ics", st.eventsCalendar)
 	mux.HandleFunc("POST /newsletter/subscribe", st.newsletterSubscribe)
 	mux.HandleFunc("GET /newsletter/confirm", st.newsletterConfirm)
 	mux.HandleFunc("POST /newsletter/confirm", st.newsletterConfirm)
@@ -1033,7 +1038,12 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 	tag := `"` + tree[served] + `"`
 	args := firstOf(r.URL.Query())
 	if names := listing.On(body); len(names) > 0 {
-		tag = `"` + renderTag(tree[served], st.dataTree(), names, args) + `"`
+		tag = st.timedTag(`"`+renderTag(tree[served], st.dataTree(), names, args)+`"`, names)
+	} else if st.Events != "" && eventsSection(body) {
+		// What is on is the events listing's, by the clock: the records it
+		// reads and the minute are what was rendered.
+		events := []string{st.Events}
+		tag = st.timedTag(`"`+renderTag(tree[served], st.dataTree(), events, nil)+`"`, events)
 	}
 	if st.BuyTag != nil && len(listing.On(body)) > 0 {
 		if bt := st.BuyTag(); bt != "" {
@@ -1177,6 +1187,11 @@ func (st *Site) injectHead(html, page, hash string, body any) string {
 	if st.Catalogue != "" {
 		b.WriteString(`<link rel="alternate" type="application/json" ` +
 			`href="/catalogue.json" title="Product catalogue">` + "\n")
+	}
+	// The site's events, as a calendar to subscribe to.
+	if st.Events != "" {
+		b.WriteString(`<link rel="alternate" type="text/calendar" ` +
+			`href="/events.ics" title="Events">` + "\n")
 	}
 	// The feed, for the same reason and in the same place. A reader's software
 	// looks for this link in the head; a feed at an address nobody advertises
@@ -1458,6 +1473,10 @@ func (st *Site) llms(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "## Ask\n\n- [Ask this site in plain words](/ask?query=&streaming=false): NLWeb; "+
 			"answers with the published pages that match, as schema.org objects. The same over MCP at /mcp.\n\n")
 	}
+	if _, ok := st.eventsListing(); ok {
+		fmt.Fprintf(w, "## Events\n\n- [Every event still to come](/events.ics): an iCalendar file; "+
+			"each event's own page carries schema.org Event data.\n\n")
+	}
 	fmt.Fprintf(w, "## Pages\n\n")
 	for _, n := range names {
 		title := n
@@ -1621,7 +1640,7 @@ func (st *Site) sources() render.Sources {
 	src := render.Sources{Name: st.Name, IconStyle: st.IconStyle, Listings: st.Listings,
 		SrcSet: st.srcSet, Tracks: st.tracks, Poster: st.poster,
 		Form: st.formData, Thread: st.threadData, Buy: st.Buy, Booking: st.bookingData,
-		Newsletter: st.newsletterData}
+		Newsletter: st.newsletterData, Events: st.eventsData}
 	if _, ok := st.iconFile(); ok {
 		src.Icon = "/media/" + st.Icon
 		src.IconInitial = st.IconInitial
