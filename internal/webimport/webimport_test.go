@@ -204,8 +204,9 @@ func TestASiteBecomesAPackage(t *testing.T) {
 	}
 	secs := index["sections"].([]any)
 	prose := secs[0].(map[string]any)["prose"].(map[string]any)
-	if prose["title"] != "What we bake" || len(prose["paragraphs"].([]any)) != 3 || prose["paragraphs"].([]any)[0] != "• Country sourdough" {
-		t.Fatalf("the first section is %v", prose)
+	if prose["title"] != "What we bake" ||
+		prose["body"] != "- Country sourdough\n- Seeded rye\n\nEverything is & always has been made by hand." {
+		t.Fatalf("the first section is %q", prose)
 	}
 	if strings.Join(stored, ",") != "/img/loaf.jpg=A sourdough loaf on a board" {
 		t.Fatalf("pictures stored: %v", stored)
@@ -336,5 +337,27 @@ func TestAnOldAddressNeverHidesANewPage(t *testing.T) {
 	}
 	if len(b.Package.Pages) < 3 {
 		t.Fatalf("pages %v", b.Package.Pages)
+	}
+}
+
+// What a page links and emphasises is kept in the prose subset, and words
+// that look like markers stay words.
+func TestAPagesWordsKeepTheirLinksAndEmphasis(t *testing.T) {
+	base, _ := url.Parse("https://hartsbakery.example/blog/")
+	p := Read([]byte(`<main><p>Our <strong>rye</strong> is <em>slow</em>: see <a href="/menu/">the menu</a> or `+
+		`<a href="https://flour.example/">the <b>mill</b></a>. 5 * 3 [sic]</p><p><a href="/x"><img src="/i.jpg" alt="A loaf"></a></p>`+
+		`<p>An <strong> </strong>empty mark, and <code>a*b</code>.</p><pre>keep *this*</pre></main>`), base)
+	var mds []string
+	for _, b := range p.Blocks {
+		mds = append(mds, b.Kind+":"+b.MD)
+	}
+	want := []string{
+		"p:Our **rye** is *slow*: see [the menu](https://hartsbakery.example/menu/) or [the **mill**](https://flour.example/). 5 \\* 3 \\[sic\\]",
+		"img:",
+		"p:An empty mark, and `a*b`.",
+		"pre:",
+	}
+	if strings.Join(mds, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("the words are\n%s\nnot\n%s", strings.Join(mds, "\n"), strings.Join(want, "\n"))
 	}
 }

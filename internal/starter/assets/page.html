@@ -455,7 +455,7 @@
 <section class="section {{ s.prose.tone }}">
   <div class="wrap">
     {% if s.prose.title %}<div class="section-head"><h2>{{ s.prose.title }}</h2></div>{% end %}
-    <div class="prose narrow">{% for p in s.prose.paragraphs %}<p>{{ p }}</p>{% end %}</div>
+    <div class="prose narrow">{% for p in s.prose.paragraphs %}<p>{{ p }}</p>{% end %}{% if s.prose.body %}{{ s.prose.body | prose }}{% end %}</div>
   </div>
 </section>
 {% end %}

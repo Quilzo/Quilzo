@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"path"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -19,6 +21,7 @@ import (
 	"github.com/quilzo/quilzo/internal/menu"
 	"github.com/quilzo/quilzo/internal/section"
 	"github.com/quilzo/quilzo/internal/seo"
+	"github.com/quilzo/quilzo/internal/tmpl"
 )
 
 // NotePicturesLeftOut is the note for a site brought in without its
@@ -35,6 +38,9 @@ type Brought struct {
 	// Redirects take every old address that changed to its new one, so
 	// links and search results keep working.
 	Redirects []seo.Redirect
+	// Posts are the blog's posts, as records of the package's posts
+	// collection, for the caller to stage (feature.RecordSet).
+	Posts []Row
 	// Notes say what was left behind or decided, for the card.
 	Notes []string
 }
@@ -61,17 +67,27 @@ func Package(s *Site, name, by string, picture Picture, now time.Time) (*Brought
 
 	siteName := strings.TrimSpace(name)
 	if siteName == "" {
+		siteName = strings.TrimSpace(s.Name)
+	}
+	if siteName == "" {
 		siteName = nameOf(s)
 	}
 	if len([]rune(siteName)) > feature.MaxSiteName {
 		siteName = string([]rune(siteName)[:feature.MaxSiteName])
 	}
 	desc := home.Description
+	if d := strings.TrimSpace(s.Description); d != "" {
+		desc = d
+	}
 	if len([]rune(desc)) > feature.MaxSiteDescription {
 		desc = ""
 	}
 	site := &feature.Site{Name: siteName, Description: desc, Starter: "sections"}
-	if c := colour(home.ThemeColour); c != "" {
+	themeColour := home.ThemeColour
+	if s.Colour != "" {
+		themeColour = s.Colour
+	}
+	if c := colour(themeColour); c != "" {
 		site.Colour = c
 		if len(site.LookRefused()) > 0 {
 			note("the site's own colour %s is hard to read on its background here, so the starter's palette is used", c)
@@ -79,17 +95,27 @@ func Package(s *Site, name, by string, picture Picture, now time.Time) (*Brought
 		}
 	}
 
+	from, origin := s.Home.Host, s.Home.String()
+	if s.Origin != "" {
+		from, origin = s.Origin, s.Origin
+	}
+	brings := "its pages, its menus and its look"
+	if len(s.Posts) > 0 {
+		brings = "its pages, its posts, its menus and its look"
+	}
 	p := &feature.Package{
 		Format: feature.Format, Name: feature.PackageName(siteName), Version: "1.0.0",
 		Title:   clip(siteName, 120),
-		Purpose: clip("The website of "+siteName+", brought from "+s.Home.Host+": its pages, its menus and its look.", 600),
-		Made:    &feature.Made{By: by, From: s.Home.String(), At: now.UTC()},
+		Purpose: clip("The website of "+siteName+", brought from "+from+": "+brings+".", 600),
+		Made:    &feature.Made{By: by, From: origin, At: now.UTC()},
 		Site:    site,
 	}
+	out.Notes = append(out.Notes, s.Notes...)
 
 	// Each page gets a name from its address, and keeps it if it can.
 	names := map[string]string{}
-	taken := map[string]bool{}
+	// Each post's page is the blog's, by this name.
+	taken := map[string]bool{postPage: len(s.Posts) > 0}
 	for i, pg := range s.Pages {
 		n := pageName(pg.URL)
 		if i == 0 {
@@ -103,7 +129,37 @@ func Package(s *Site, name, by string, picture Picture, now time.Time) (*Brought
 		names[keyOf(pg.URL)] = n
 	}
 
-	pictures, undescribed, failed := 0, 0, 0
+	// A link to one of the site's own pages or posts goes to where it is
+	// now; one into a folder that names nothing there, to its path.
+	posts := map[string]string{}
+	for i, slug := range postSlugs(s.Posts) {
+		if slug != "" && s.Posts[i].URL != nil {
+			posts[keyOf(s.Posts[i].URL)] = feature.PagePath(postPage) + "/" + slug
+			// The folder the posts were in listed them, as the blog does.
+			up := *s.Posts[i].URL
+			up.Path = path.Dir(strings.TrimSuffix(up.Path, "/"))
+			if k := keyOf(&up); posts[k] == "" && up.Path != "/" && names[k] == "" {
+				posts[k] = feature.PagePath("blog")
+			}
+		}
+	}
+	link := func(raw string) string {
+		u, err := url.Parse(raw)
+		if err != nil {
+			return raw
+		}
+		if n, ok := names[keyOf(u)]; ok {
+			return feature.PagePath(n)
+		}
+		if p, ok := posts[keyOf(u)]; ok {
+			return p
+		}
+		if u.Host == LocalHost {
+			return u.EscapedPath()
+		}
+		return raw
+	}
+	pictures, undescribed, failed, undescribedPosts := 0, 0, 0, 0
 	for _, pg := range s.Pages {
 		n := names[keyOf(pg.URL)]
 		body, empty := pageBody(pg, siteName, func(src *url.URL, alt string) string {
@@ -124,7 +180,17 @@ func Package(s *Site, name, by string, picture Picture, now time.Time) (*Brought
 			}
 			pictures++
 			return path
-		})
+		}, link)
+		if empty && n == "index" && len(s.Posts) > 0 {
+			// A blog whose front page was its newest posts.
+			body, empty = map[string]any{"title": siteName,
+				"hero": map[string]any{"title": siteName, "lead": desc},
+				"sections": []any{map[string]any{"posts": map[string]any{"title": "Latest posts", "rows": float64(10),
+					"intro": ""}}}}, false
+			if desc != "" {
+				body["description"] = desc
+			}
+		}
 		if empty {
 			note("page %s was left out: it had no words to bring", pg.URL.Path)
 			continue
@@ -147,15 +213,6 @@ func Package(s *Site, name, by string, picture Picture, now time.Time) (*Brought
 			len(out.Redirects) < feature.MaxSiteRedirects {
 			out.Redirects = append(out.Redirects, seo.Redirect{From: old, To: now, Permanent: true})
 		}
-	}
-	if picture == nil {
-		note(NotePicturesLeftOut)
-	}
-	if undescribed > 0 {
-		note("%d picture(s) had no description (alt text), so they were left out rather than given one nobody wrote; add them with quilzo media add FILE --alt", undescribed)
-	}
-	if failed > 0 {
-		note("%d picture(s) could not be fetched or are not a format this keeps", failed)
 	}
 
 	exists := map[string]bool{}
@@ -230,6 +287,46 @@ func Package(s *Site, name, by string, picture Picture, now time.Time) (*Brought
 			p.Menus[i].Items = kept
 		}
 	}
+	// The blog, last, so trimming the pages above never takes it.
+	if len(s.Posts) > 0 {
+		var rds []seo.Redirect
+		out.Posts, rds = postRows(s, func(src *url.URL, alt string) string {
+			if picture == nil || alt == "" || pictures >= maxPictures {
+				if picture != nil && alt == "" {
+					undescribedPosts++
+				}
+				return ""
+			}
+			path, err := picture(src, alt)
+			if err != nil {
+				failed++
+				return ""
+			}
+			pictures++
+			return path
+		}, link, note)
+		if len(out.Posts) > 0 {
+			addBlog(p)
+			out.Redirects = append(out.Redirects, rds...)
+			for i := range p.Menus {
+				if p.Menus[i].Name == "main" && len(p.Menus[i].Items) < 12 &&
+					!slices.ContainsFunc(p.Menus[i].Items, func(it menu.Item) bool { return it.Target == "blog" }) {
+					p.Menus[i].Items = append(p.Menus[i].Items, menu.Item{ID: "blog", Label: "Blog", Kind: menu.Page,
+						Target: "blog", Order: (len(p.Menus[i].Items) + 1) * 10})
+				}
+			}
+		}
+	}
+	if picture == nil {
+		note(NotePicturesLeftOut)
+	}
+	if undescribed += undescribedPosts; undescribed > 0 {
+		note("%d picture(s) had no description (alt text), so they were left out rather than given one nobody wrote; add them with quilzo media add FILE --alt", undescribed)
+	}
+	if failed > 0 {
+		note("%d picture(s) could not be fetched or are not a format this keeps", failed)
+	}
+
 	// Redirects only to pages the package still holds, and none from one of
 	// them: redirects are served first, so it would hide the page.
 	own := map[string]bool{}
@@ -242,7 +339,8 @@ func Package(s *Site, name, by string, picture Picture, now time.Time) (*Brought
 		if err != nil || own[from] {
 			continue
 		}
-		if name := strings.TrimPrefix(r.To, "/"); name == "" || hasPage(p, name) {
+		name := strings.TrimPrefix(r.To, "/")
+		if name == "" || hasPage(p, name) || (p.Blog != "" && strings.HasPrefix(name, postPage+"/")) {
 			kept = append(kept, r)
 		}
 	}
@@ -263,7 +361,7 @@ func hasPage(p *feature.Package, name string) bool {
 
 // pageBody turns a page's content into a hero and sections. empty says
 // there were no words.
-func pageBody(pg Page, siteName string, picture func(*url.URL, string) string) (map[string]any, bool) {
+func pageBody(pg Page, siteName string, picture func(*url.URL, string) string, link func(string) string) (map[string]any, bool) {
 	title := strings.TrimSpace(trimSiteName(pg.Title, siteName))
 	blocks := pg.Blocks
 	hero := map[string]any{"style": "plain"}
@@ -280,24 +378,44 @@ func pageBody(pg Page, siteName string, picture func(*url.URL, string) string) (
 	}
 	var sections []any
 	cur := map[string]any{}
-	var paras []any
+	// words is the section's text in the prose subset, a paragraph or a
+	// list at a time: its links, lists, bold and italic kept.
+	var words []string
 	var gallery []any
 	total := 0
+	listing := false
 	flush := func() {
-		if len(paras) > 0 {
-			cur["paragraphs"] = paras
+		if len(words) > 0 {
+			cur["body"] = strings.Join(words, "")
 			sections = append(sections, map[string]any{"prose": cur})
 		}
 		if len(gallery) > 0 {
 			sections = append(sections, map[string]any{"gallery": map[string]any{"title": "", "shape": "", "items": gallery}})
 		}
-		cur, paras, gallery = map[string]any{"title": ""}, nil, nil
+		cur, words, gallery, listing = map[string]any{"title": ""}, nil, nil, false
+	}
+	// add writes one block of words, a blank line from the last unless both
+	// are items of one list.
+	add := func(text string, item bool) {
+		switch {
+		case len(words) == 0:
+		case item && listing:
+			words = append(words, "\n")
+		default:
+			words = append(words, "\n\n")
+		}
+		words = append(words, text)
+		listing = item
 	}
 	cur["title"] = ""
 	leadTaken := false
 	for _, b := range blocks {
 		if total >= maxParagraphs || len(sections) >= section.MaxSections-2 {
 			break
+		}
+		md := linksIn(b.MD, link)
+		if md == "" {
+			md = tmpl.EscapeProse(b.Text)
 		}
 		switch b.Kind {
 		case "h2", "h3", "h4", "h5", "h6":
@@ -308,22 +426,30 @@ func pageBody(pg Page, siteName string, picture func(*url.URL, string) string) (
 			if path == "" {
 				continue
 			}
-			if _, ok := hero["image"]; !ok && len(sections) == 0 && len(paras) == 0 {
+			if _, ok := hero["image"]; !ok && len(sections) == 0 && len(words) == 0 {
 				hero["image"], hero["alt"] = path, b.Text
 				continue
 			}
 			gallery = append(gallery, map[string]any{"image": path, "alt": b.Text, "caption": ""})
+		case "li":
+			add("- "+md, true)
+			total++
+		case "quote":
+			add("> "+md, false)
+			total++
+		case "pre":
+			add(tmpl.EscapeProse(b.Text), false)
+			total++
 		default:
-			text := b.Text
-			if b.Kind == "li" {
-				text = "• " + text
-			}
-			if !leadTaken && len(sections) == 0 && len(paras) == 0 && b.Kind == "p" && utf8.RuneCountInString(text) <= maxLeadRunes {
-				hero["lead"] = text
+			// The lead is words alone: a paragraph that links somewhere keeps
+			// its link in the page's words instead.
+			if !leadTaken && len(sections) == 0 && len(words) == 0 && b.Kind == "p" &&
+				utf8.RuneCountInString(b.Text) <= maxLeadRunes && !strings.Contains(md, "](") {
+				hero["lead"] = b.Text
 				leadTaken = true
 				continue
 			}
-			paras = append(paras, text)
+			add(md, false)
 			total++
 		}
 	}
@@ -336,6 +462,43 @@ func pageBody(pg Page, siteName string, picture func(*url.URL, string) string) (
 		body["description"] = clip(d, 300)
 	}
 	return body, false
+}
+
+// linksIn rewrites where the links in words in the prose subset go: to a
+// page's new address when they went to one of the site's old ones.
+func linksIn(md string, link func(string) string) string {
+	if link == nil || !strings.Contains(md, "](") {
+		return md
+	}
+	var b strings.Builder
+	for {
+		i := strings.Index(md, "](")
+		if i < 0 {
+			b.WriteString(md)
+			return b.String()
+		}
+		b.WriteString(md[:i+2])
+		md = md[i+2:]
+		end, depth := -1, 0
+		for j := 0; j < len(md) && end < 0; j++ {
+			switch md[j] {
+			case '(':
+				depth++
+			case ')':
+				if depth == 0 {
+					end = j
+				} else {
+					depth--
+				}
+			}
+		}
+		if end < 0 {
+			b.WriteString(md)
+			return b.String()
+		}
+		b.WriteString(link(md[:end]))
+		md = md[end:]
+	}
 }
 
 func menuOf(nav Nav, names map[string]string, exists map[string]bool) menu.Menu {

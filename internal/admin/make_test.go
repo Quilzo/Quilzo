@@ -498,3 +498,44 @@ func TestMakeSaysAReadyFeatureIsAlreadyInstalled(t *testing.T) {
 		t.Error("an installed feature is offered again")
 	}
 }
+
+// A site is brought in from the file it exported, larger than any form,
+// and shown as any package is, with what was left behind.
+func TestMakeBringsASiteInFromItsExport(t *testing.T) {
+	srv, token := setup(t)
+	wireFeatures(srv)
+	var gotName, gotWhere string
+	var gotSize int
+	srv.Features.ImportFile = func(filename string, body []byte, where, name string, pics bool, _ Actor) ([]byte, []string, error) {
+		gotName, gotWhere, gotSize = filename, where, len(body)
+		p, err := feature.BuildSite(feature.SiteBrief{Name: "Crumb", Kind: "restaurant"}, "dana", time.Now())
+		if err != nil {
+			return nil, nil, err
+		}
+		pkg, err := json.Marshal(p)
+		return pkg, []string{"2 post(s) for members or paying subscribers were not brought"}, err
+	}
+	page := get(t, srv, "/make", token).Body.String()
+	if !strings.Contains(page, `action="/make/import-file" enctype="multipart/form-data"`) {
+		t.Fatal("Make offers no way to bring a site in from its export")
+	}
+	whole(t, page)
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, _ := mw.CreateFormFile("file", "crumb.ghost.json")
+	fw.Write(bytes.Repeat([]byte("x"), 3<<20))
+	mw.WriteField("site", "https://crumb.example")
+	mw.WriteField("pictures", "1")
+	mw.Close()
+	req := httptest.NewRequest(http.MethodPost, "/make/import-file", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer "+token)
+	res := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, req)
+	body := res.Body.String()
+	if res.Code != http.StatusOK || gotName != "crumb.ghost.json" || gotWhere != "https://crumb.example" ||
+		gotSize != 3<<20 || !strings.Contains(body, "for members or paying subscribers") {
+		t.Fatalf("bringing it in: %d, %q from %q, %d bytes: %.300s", res.Code, gotName, gotWhere, gotSize, body)
+	}
+	whole(t, body)
+}

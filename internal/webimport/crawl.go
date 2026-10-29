@@ -62,6 +62,33 @@ type Site struct {
 	Refused, Failed []string
 	// Capped says there were more pages than the budget.
 	Capped bool
+
+	// What an export file says, which a crawl leaves empty. Origin is what
+	// it was read from, a file's name; Name, Description and Colour are the
+	// site's own, when the export says them; Posts are its blog; Notes are
+	// what reading it left behind, for the card.
+	Origin                    string
+	Name, Description, Colour string
+	Posts                     []Post
+	Notes                     []string
+}
+
+// Post is one post of a blog an export carries.
+type Post struct {
+	// URL is where it was, for the redirect that keeps its links working.
+	URL *url.URL
+	// Title, Slug and Published (YYYY-MM-DD) every post has; the rest when
+	// the export says them.
+	Title, Slug, Published, Revised string
+	Byline, Summary                 string
+	// Blocks are its words, as a page's are.
+	Blocks []Block
+	// Image is its main picture, and Alt what it shows.
+	Image *url.URL
+	Alt   string
+	Tags  []string
+	// Aliases are other addresses it was at, each redirected to it.
+	Aliases []string
 }
 
 // Crawl reads a site from its home page.

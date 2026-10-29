@@ -1046,6 +1046,11 @@ func applyFeature(root string, p *feature.Package, digest string, plan feature.P
 			return nil, err
 		}
 	}
+	// The records it brings, into the collections just bound to their
+	// types, once (siteexport.go).
+	if err := applyRecords(root, p, prev == nil, caller); err != nil {
+		return nil, err
+	}
 	// Agents last among additions: a declaration is checked against what
 	// exists, and an agent's sponsor is the person who approved it. One that
 	// hands work to another goes after it.
@@ -1701,6 +1706,20 @@ func featureHooks(root string, signedIn func(admin.Actor) *Caller) *admin.Featur
 				pages = 40
 			}
 			b, _, err := importSite(ctx, root, address, name, pages, pictures, signedIn(by))
+			if err != nil {
+				return nil, nil, err
+			}
+			body, err := json.MarshalIndent(b.Package, "", "  ")
+			return body, b.Notes, err
+		},
+		ImportFile: func(filename string, data []byte, where, name string, pictures bool, by admin.Actor) ([]byte, []string, error) {
+			ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+			defer cancel()
+			src, err := exportOf(filepath.Base(filename), data)
+			if err != nil {
+				return nil, nil, err
+			}
+			b, _, err := importExport(ctx, root, src, name, where, pictures, signedIn(by))
 			if err != nil {
 				return nil, nil, err
 			}

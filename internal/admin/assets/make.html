@@ -35,16 +35,26 @@
 </form>
 <p class="hint">You get pages, menus, a contact form, a privacy page written from what the forms collect, a question box that answers from the site's own pages, and a look. Nothing is made up: a price, an address or opening hours the description does not give is left as a blank for you to fill in. You read all of it before anything is installed. Without a model, the site needs a name.</p>
 </section>{{end}}
-{{if .CanImport}}<section aria-labelledby="make-import">
+{{if or .CanImport .CanImportFile}}<section aria-labelledby="make-import">
 <h2 id="make-import">Bring your site</h2>
-<form method="post" action="/make/import" class="param-form">
+{{if .CanImport}}<form method="post" action="/make/import" class="param-form">
   <label for="make-import-address">Its address {{template "req"}}</label><input id="make-import-address" name="address" type="url" required maxlength="500" placeholder="https://your-old-site.example">
   <label for="make-import-name">What is it called?</label><input id="make-import-name" name="name" maxlength="80" placeholder="What the site calls itself">
   <label for="make-import-pages">How many pages to read</label><input id="make-import-pages" name="pages" type="number" min="1" max="400" value="40">
   <p><label><input type="checkbox" name="pictures" value="1" checked> Keep the pictures it describes</label></p>
   <div class="auto-controls"><button type="submit">Read it</button></div>
 </form>
-<p class="hint">From Wix, Squarespace, Webflow, WordPress, dotCMS, Drupal or pages written by hand: its pages, its menus, its name and its colour, and redirects so its old addresses keep working. Read politely: robots.txt is obeyed, only that site is read, and its scripts and forms are left behind and named. You read it all before anything is installed.</p>
+<p class="hint">From Wix, Squarespace, Webflow, WordPress, dotCMS, Drupal or pages written by hand: its pages, its menus, its name and its colour, and redirects so its old addresses keep working. Read politely: robots.txt is obeyed, only that site is read, and its scripts and forms are left behind and named. You read it all before anything is installed.</p>{{end}}
+{{if .CanImportFile}}<h3 id="make-import-file">Or the file it exported</h3>
+<form method="post" action="/make/import-file" enctype="multipart/form-data" class="param-form">
+  <label for="make-import-file-file">The export {{template "req"}}</label><input id="make-import-file-file" name="file" type="file" required accept=".xml,.json,.zip" aria-describedby="make-import-file-hint">
+  <label for="make-import-file-site">Where it was</label><input id="make-import-file-site" name="site" type="url" maxlength="500" placeholder="https://your-old-site.example" aria-describedby="make-import-file-site-hint">
+  <p id="make-import-file-site-hint" class="hint">A Ghost export needs it to bring its pictures; the others say it themselves.</p>
+  <label for="make-import-file-name">What is it called?</label><input id="make-import-file-name" name="name" maxlength="80" placeholder="What the export calls it">
+  <p><label><input type="checkbox" name="pictures" value="1" checked> Keep the pictures it describes</label></p>
+  <div class="auto-controls"><button type="submit">Read it</button></div>
+</form>
+<p id="make-import-file-hint" class="hint">A WordPress or Squarespace export (.xml), a Ghost export (.json), or a zip of a site's files: the Markdown of Hugo, Jekyll, Eleventy, Astro, Docusaurus, Notion or Obsidian, or the pages Webflow exports. Its pages, and its posts as a blog with a page each, their pictures, its menu, and redirects from where each was. Drafts and posts for members stay behind. Up to {{.MaxExport}} MB.</p>{{end}}
 </section>{{end}}
 {{if .Ready}}<section aria-labelledby="make-ready">
 <h2 id="make-ready">Ready to add</h2>
