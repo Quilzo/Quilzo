@@ -22,8 +22,15 @@ updates:
       prefix: ci
     labels:
       - dependencies
+    # CodeQL's init and analyze steps must run the same version, or the
+    # analysis refuses the configuration init wrote. Bumped one at a time,
+    # each pull request fails; grouped, they move together.
+    groups:
+      codeql:
+        patterns:
+          - "github/codeql-action*"
 
-  # The build stage's base image. FROM golang:1.26-bookworm resolves to a
+  # The build stage's base image. FROM golang:1.27-bookworm resolves to a
   # moving tag, so this is what notices when the pin should move.
   - package-ecosystem: docker
     directory: /
