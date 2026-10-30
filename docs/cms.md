@@ -1362,6 +1362,16 @@ the whole site decides who may ask, as it does for every page. On a page,
 WebMCP marks the forms an agent may fill in for its visitor: search, a
 question, a declared form, a booking.
 
+A record with a page of its own, such as a product, an event or a post, is
+among what site search, NLWeb and the chatbots answer from, read the way that
+page shows it: the words inside its `<main>`, drawn through its layout, and
+nothing inside a tag, a script, a form or a hidden element. So a field the
+listing hands the layout and the layout does not print is never an answer, and
+neither is a record a visitor cannot open: one its listing leaves out, one only
+in the draft, one behind a page for members or outside its publish window, or
+one whose address a redirect or another route answers. A chatbot's Pages and
+Exclude apply to a record's address as to a page's.
+
 ## Three interfaces, and the same rules in all of them
 
 The browser, the command line and the agent interface are not three views of a

@@ -145,6 +145,15 @@ type Site struct {
 	// otherwise never find it.
 	IndexLive bool
 	searchMu  sync.Mutex
+	// searchKey names what Search was built from when IndexLive keeps it:
+	// the published commit, and the records a visitor can open now, so a
+	// record that leaves its listing leaves search too.
+	searchKey string
+	// recordMu and records keep the records a visitor can open, read the
+	// way their pages show them, for the chatbots and search. See
+	// records.go.
+	recordMu sync.Mutex
+	records  *recordSet
 	// Licence declares terms for automated crawlers under Really Simple
 	// Licensing. Empty means no terms are declared, which is not the same as
 	// permitting everything — it is saying nothing, and saying nothing is the
@@ -324,6 +333,24 @@ func New(s *store.Store, layouts render.Layouts) *Site {
 
 // Handler routes the public surface.
 func (st *Site) Handler() http.Handler {
+	mux := st.routes()
+	// The banner is innermost, so it wraps the handler's own output and
+	// nothing else: the headers and the crawl gate go outside it, where a
+	// refusal is not a page and has nothing to mark.
+	//
+	// Compression is outermost, so what it compresses is what is actually
+	// going to be sent — after the banner has rewritten the body and after
+	// the gate has decided whether there is one. See internal/compress for
+	// why gzip only, why the ETag comes back weak, and why this is applied
+	// here and not to the admin.
+	return compress.Responses(st.securityHeaders(st.crawlGate(st.marked(st.counted(mux)))))
+}
+
+// routes is which handler answers which address. Its own function, so
+// what a chatbot and search read about records can ask it whether a
+// record's address reaches the record's page or a route of its own
+// (records.go).
+func (st *Site) routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/manifest.webmanifest", st.manifest)
 	mux.HandleFunc("/sw.js", st.serviceWorker)
@@ -389,16 +416,7 @@ func (st *Site) Handler() http.Handler {
 	mux.HandleFunc("POST /newsletter/leave", st.newsletterLeave)
 	mux.HandleFunc("/live/board/", st.live)
 	mux.HandleFunc("/", st.page)
-	// The banner is innermost, so it wraps the handler's own output and
-	// nothing else: the headers and the crawl gate go outside it, where a
-	// refusal is not a page and has nothing to mark.
-	//
-	// Compression is outermost, so what it compresses is what is actually
-	// going to be sent — after the banner has rewritten the body and after
-	// the gate has decided whether there is one. See internal/compress for
-	// why gzip only, why the ETag comes back weak, and why this is applied
-	// here and not to the admin.
-	return compress.Responses(st.securityHeaders(st.crawlGate(st.marked(st.counted(mux)))))
+	return mux
 }
 
 // CrawlGate enforces the published licence against identified crawlers.
@@ -780,7 +798,7 @@ func (st *Site) searchAPI(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "nothing is published", http.StatusServiceUnavailable)
 		return
 	}
-	results := st.searchVisible(q, visible, 20)
+	results := st.searchVisible(q, st.withRecords(visible), 20)
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	// No caching. A results page cached by a proxy is a results page served to
@@ -801,6 +819,10 @@ func (st *Site) searchAPI(w http.ResponseWriter, r *http.Request) {
 // those pages — title and address — to anybody who searched for a word in
 // them. Asked for more than it returns, so the filtering does not leave a
 // page of results short when hidden pages ranked high.
+//
+// visible is what a visitor can open now: the pages, and the records'
+// pages (withRecords), which are in the index only while they can be
+// opened and are filtered here all the same.
 func (st *Site) searchVisible(q string, visible map[string]any, n int) []search.Result {
 	out := []search.Result{}
 	idx := st.searchIndex()
@@ -827,16 +849,35 @@ func (st *Site) searchIndex() *search.Index {
 		return st.Search
 	}
 	live := st.Store.GetRef(st.ref())
+	// And the records a visitor can open now, read the way their pages
+	// show them (records.go): the index holds no other record, so one
+	// outside its listing, its page's window or the published set is not
+	// in it to be filtered out later. Read outside the lock, which is the
+	// index's: the set is shared with the chatbots and drawn once for both.
+	var records map[string]any
+	key := live
+	if live != "" {
+		if visible, _, err := st.pages(); err == nil {
+			var rkey string
+			if records, rkey = st.recordPages(visible); rkey != "" {
+				key += "\x00" + rkey
+			}
+		}
+	}
 	st.searchMu.Lock()
 	defer st.searchMu.Unlock()
-	if live == "" || (st.Search != nil && st.Search.Commit == live) {
+	// An index built at start-up, before anything kept a key, is current
+	// when it is of the commit and there are no records to add to it.
+	if live == "" || (st.Search != nil && (st.searchKey == key ||
+		st.searchKey == "" && st.Search.Commit == key)) {
 		return st.Search
 	}
 	pages, err := site.PagesAt(st.Store, live)
 	if err != nil {
 		return st.Search
 	}
-	st.Search = search.Build(live, pages)
+	st.Search = search.Build(live, readable(pages, records))
+	st.searchKey = key
 	return st.Search
 }
 

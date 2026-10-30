@@ -105,6 +105,8 @@ func (st *Site) nlwebAnswer(r *http.Request, q nlwebQuery) map[string]any {
 	if err != nil {
 		visible = map[string]any{}
 	}
+	// A record's page answers as a page does, from what it shows.
+	visible = st.withRecords(visible)
 	results := []any{}
 	for _, res := range st.searchVisible(q.Query, visible, nlwebResults) {
 		body, _ := visible[res.Page].(map[string]any)

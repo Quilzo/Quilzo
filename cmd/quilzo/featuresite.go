@@ -29,7 +29,8 @@ import (
 
 // featureDesignDir is the templates directory a site package writes its
 // look and layouts into. Commands set it from --templates and the admin
-// from its own, so both write where the site reads.
+// from its own, so both write where the site reads. A chatbot's knowledge
+// reads records through the layouts here, as the site shows them.
 var featureDesignDir = "templates"
 
 // designFlag reads --templates from a command's arguments into

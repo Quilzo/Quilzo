@@ -61,6 +61,18 @@ Unreleased
 
 ** Added
 
+*** Chatbots and site search answer about records.  A product, an event
+    or a post with a page of its own is read the way that page shows it,
+    so a shop's chatbot says what the brass pen costs and links to the
+    pen's page, and searching the site, or asking it over NLWeb (/ask),
+    finds that page.  Only what a visitor can open is read: not a record
+    its listing leaves out or that is only in the draft, not one behind a
+    page for members or outside its publish window, and not a field the
+    page's layout does not show.  quilzo assistant ask, the admin's
+    Chatbots screen and MCP read records through the layouts in the
+    site's templates directory.  Up to a thousand records are read, in
+    each listing's own order.
+
 *** Bring a site from the file it exported.  quilzo site import, and
     Make › Bring your site, take a WordPress or Squarespace export (.xml),
     a Ghost export (.json, with --site for where it was, for its

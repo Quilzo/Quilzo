@@ -283,6 +283,13 @@ func (st *Site) assistantIndex(a assistant.Assistant) (*assistant.Index, error) 
 	for _, n := range names {
 		h.Write([]byte(n + "\x00" + hashes[n] + "\x00"))
 	}
+	// And the records a visitor can open, each read the way its page shows
+	// it, by what they were read from: a changed price, a record added and
+	// one that has left its listing are each a different index. Read
+	// outside this lock: the set is shared with search and every other
+	// chatbot, and drawn once for all of them (records.go).
+	records, recordsKey := st.recordPages(pages)
+	h.Write([]byte("records\x00" + recordsKey))
 	key := hex.EncodeToString(h.Sum(nil))
 
 	as := st.Assistants
@@ -291,7 +298,9 @@ func (st *Site) assistantIndex(a assistant.Assistant) (*assistant.Index, error) 
 	if c, ok := as.cache[a.Name]; ok && c.key == key {
 		return c.idx, nil
 	}
-	passages := assistant.Chunk(pages, a.Reads)
+	// A record's page is read under the chatbot's own Pages and Exclude,
+	// at its own address, as any page is.
+	passages := assistant.Chunk(readable(pages, records), a.Reads)
 	if as.Document != nil {
 		for _, id := range a.Documents {
 			name, format, body, derr := as.Document(id)
