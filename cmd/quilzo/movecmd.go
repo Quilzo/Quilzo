@@ -184,7 +184,7 @@ func cmdMove(root string, args []string) error {
 			if serr := saveJSON(menuPath(root), set); serr != nil {
 				return fmt.Errorf(
 					"the pages moved and the menus did not: %w\n"+
-						"  quilzo structure — the entries still name the old "+
+						"  quilzo menu check — the entries still name the old "+
 						"place", serr)
 			}
 		}

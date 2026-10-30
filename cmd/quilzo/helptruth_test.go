@@ -7,6 +7,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -163,6 +164,107 @@ var notInHelp = map[string]bool{
 	"locks": true, "stamp": true, "help": true, "-h": true, "notes": true,
 	"environments": true, "extensions": true, "record": true,
 	"sections": true, "templates": true, "types": true,
+}
+
+// Every command the program tells somebody to run is one it has.
+//
+// The help is not the only place a command is named. An error says "try
+// this", a hint after a result says what to run next, and a screen in the
+// console shows the command that does the same from a terminal. Each of
+// those is a promise, and the help test never reads them: a hint naming a
+// command that was renamed, or never existed in this program, survives every
+// other test and fails the one person who follows it.
+//
+// So every string in the program and every page of the console is read for
+// `quilzo WORD`, and WORD must be a command main.go dispatches. Comments are
+// not read; they explain the code to whoever is changing it.
+func TestEveryCommandTheProgramNamesExists(t *testing.T) {
+	dispatched := map[string]bool{}
+	for _, c := range dispatchedCommands(t) {
+		dispatched[c] = true
+	}
+	for c := range notInHelp {
+		if !dispatched[c] {
+			t.Errorf("notInHelp excuses `quilzo %s`, which is not a command", c)
+		}
+	}
+
+	// A word followed by a colon is a message's prefix ("quilzo box: needs
+	// Linux"), not a command somebody is told to run.
+	named := regexp.MustCompile("(?:^|[\\s\"'`(>])quilzo ([a-z][a-z0-9-]*)([^a-z0-9-]|$)")
+	found := map[string][]string{}
+	note := func(where, text string) {
+		for _, m := range named.FindAllStringSubmatch(text, -1) {
+			if m[2] == ":" || notCommands[m[1]] {
+				continue
+			}
+			found[m[1]] = append(found[m[1]], where)
+		}
+	}
+	for _, top := range []string{".", "../../internal"} {
+		err := filepath.WalkDir(top, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				if d.Name() == "testdata" {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			rel := strings.TrimPrefix(filepath.ToSlash(path), "../../")
+			switch {
+			case strings.HasSuffix(path, "_test.go"):
+			case strings.HasSuffix(path, ".go"):
+				f, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+				if err != nil {
+					return err
+				}
+				ast.Inspect(f, func(n ast.Node) bool {
+					if lit, ok := n.(*ast.BasicLit); ok && lit.Kind == token.STRING {
+						note(rel, lit.Value)
+					}
+					return true
+				})
+			case strings.HasSuffix(path, ".html"):
+				body, err := os.ReadFile(path)
+				if err != nil {
+					return err
+				}
+				note(rel, string(body))
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(found) < 20 {
+		t.Fatalf("found %d commands named in the program; the scan is wrong "+
+			"and a test that reads nothing passes", len(found))
+	}
+	words := make([]string, 0, len(found))
+	for w := range found {
+		words = append(words, w)
+	}
+	sort.Strings(words)
+	for _, w := range words {
+		if !dispatched[w] {
+			t.Errorf("%s tells somebody to run `quilzo %s`, and there is no "+
+				"such command", strings.Join(found[w], ", "), w)
+		}
+	}
+}
+
+// notCommands are "quilzo WORD" in the program's text that are not a
+// command somebody is told to run, each with why.
+var notCommands = map[string]bool{
+	// The realm of the sandbox's proxy, which a program's HTTP client shows.
+	"run": true,
+	// A domain separator inside a hash, never shown to anybody.
+	"handoff": true,
+	// The comment at the top of the service worker the public site serves.
+	"service": true,
 }
 
 // helpText returns the usage string as the program prints it.

@@ -196,9 +196,9 @@ func Inventory() []Algorithm {
 		},
 		{
 			Name: "TLS 1.2+", Package: "crypto/tls",
-			Purpose: "encrypting the SMTP submission of a notice before it " +
-				"leaves this machine",
-			Where: "notify", Use: Generated, Quantum: Broken,
+			Purpose: "encrypting the SMTP submission of the shield's and " +
+				"posture's mail before it leaves this machine",
+			Where: "mail", Use: Generated, Quantum: Broken,
 			Note: "The key agreement in a TLS 1.2 or 1.3 handshake is " +
 				"classical ECDHE unless both ends negotiate a hybrid group, " +
 				"which is a property of the relay and not of this program. " +

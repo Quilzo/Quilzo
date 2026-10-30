@@ -538,7 +538,7 @@ agents and integrations
   quilzo brand init                        claim rules: what needs substantiating
   quilzo brand list | check                what this shop may not say unbacked
   quilzo brand check --text "..."          check a sentence you have not saved
-  quilzo peer add NAME https://host        replicate from another quilzo store
+  quilzo peer add NAME https://host        replicate from another Quilzo store
   quilzo peer pull NAME                    fetch its objects; lands in quarantine
   quilzo peer list | adopt NAME | remove   what is paired, and making it the draft
   quilzo webhook add https://...           tell another system when you

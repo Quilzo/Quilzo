@@ -218,7 +218,7 @@ func (s *Server) tools() []Tool {
 	tools := []Tool{
 		{
 			Name: "quilzo_find",
-			Description: "Find the quilzo operation for a task. Call this first; " +
+			Description: "Find the Quilzo operation for a task. Call this first; " +
 				"it returns the exact arguments for the operation you need.",
 			InputSchema: map[string]any{
 				"type": "object",
