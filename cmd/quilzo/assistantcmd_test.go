@@ -9,9 +9,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/collection"
+	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/mcp"
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/site"
@@ -161,5 +164,111 @@ func TestAChatbotsOwnerIsToldWhatItWillNotRead(t *testing.T) {
 	kept, said = screenKnowledge(assistant.Assistant{Name: "help", KeepInstructions: true}, ps)
 	if len(kept) != 2 || said != nil {
 		t.Fatalf("a chatbot that keeps them lost some: kept %v, said %q", kept, said)
+	}
+}
+
+// A chatbot tried from the command line, the admin or over MCP knows a
+// product's price as the product's page shows it, cites that page, and
+// knows nothing the page does not show.
+func TestAChatbotTriedHereKnowsProductsAsTheirPagesShowThem(t *testing.T) {
+	if w == nil {
+		w = out.New(false)
+	}
+	root := t.TempDir()
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages := map[string]any{
+		"index":   map[string]any{"title": "Marginalia", "intro": "Paper, made in small runs."},
+		"product": map[string]any{"detail": "catalogue", "detail_key": "slug"},
+	}
+	if _, err := site.SaveDraft(s, pages, "shop", "test"); err != nil {
+		t.Fatal(err)
+	}
+	tree, err := draftTree(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, _, err = collection.PutMany(s, tree, "products", []collection.Record{
+		{ID: "0123456789abcdef0123456789abcdef", Fields: map[string]any{
+			"slug": "brass-pen", "name": "Brass pen", "price_display": "£24.00",
+			"cost_note": "Bought in from Acme.", "sku": "MG-PN-BRS"}},
+	}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := commitTree(root, s, tree, "records", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Publish(s, ""); err != nil {
+		t.Fatal(err)
+	}
+	set := &listing.Set{}
+	if err := set.Add(listing.Listing{Name: "catalogue", Collection: "products", Sort: "slug", Rows: 50,
+		Fields: []string{"slug", "name", "price_display", "cost_note"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveJSON(listingPath(root), set); err != nil {
+		t.Fatal(err)
+	}
+	// The site's layout shows a product's name and price, and not what it
+	// costs the shop.
+	design := t.TempDir()
+	if err := os.WriteFile(filepath.Join(design, "page.html"), []byte(`<!doctype html><html lang="en">
+<head><title>{{ site.name }}</title></head><body><main>{% if record %}<h1>{{ record.name }}</h1>
+<p>The {{ record.name }} costs {{ record.price_display }}.</p>{% end %}{% if page.title %}<h1>{{ page.title }}</h1>
+<p>{{ page.intro }}</p>{% end %}</main></body></html>`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	was := featureDesignDir
+	featureDesignDir = design
+	t.Cleanup(func() { featureDesignDir = was })
+
+	if err := cmdAssistant(root, []string{"add", "help", "--title", "Ask the shop"}); err != nil {
+		t.Fatal(err)
+	}
+	a, err := loadAssistant(root, "help")
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx, warnings, err := assistantKnowledge(root, a)
+	if err != nil || len(warnings) != 0 {
+		t.Fatalf("%v %q", err, warnings)
+	}
+	read := false
+	for _, p := range idx.Passages {
+		if strings.Contains(p.Text, "Acme") || strings.Contains(p.Text, "MG-PN-BRS") {
+			t.Fatalf("the chatbot reads what the page does not show: %+v", p)
+		}
+		read = read || p.Page == "product/brass-pen" && strings.Contains(p.Text, "£24.00")
+	}
+	if !read {
+		t.Fatalf("the product's page is not read: %+v", idx.Passages)
+	}
+
+	// Over MCP, the same answer, citing the product's page.
+	text, merr := callTool(t, assistantMCP(t, root), "quilzo_read", "ask_assistant", map[string]any{
+		"name": "help", "question": "How much is the brass pen?"})
+	if merr != nil {
+		t.Fatal(merr.Message)
+	}
+	if !strings.Contains(text, "£24.00") || !strings.Contains(text, `"Page":"product/brass-pen"`) {
+		t.Fatalf("over MCP: %s", text)
+	}
+
+	// With no layout to show a record, none is read, and the owner is told.
+	featureDesignDir = t.TempDir()
+	idx, warnings, err = assistantKnowledge(root, a)
+	if err != nil || len(warnings) != 1 || !strings.HasPrefix(warnings[0], "records: not read") {
+		t.Fatalf("%v %q", err, warnings)
+	}
+	for _, p := range idx.Passages {
+		if strings.HasPrefix(p.Page, "product/") {
+			t.Fatalf("a record was read with nothing to show it: %+v", p)
+		}
 	}
 }

@@ -5,6 +5,7 @@ package public
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -133,25 +134,74 @@ func (st *Site) detailRoute(w http.ResponseWriter, r *http.Request,
 	return true
 }
 
-// renderDetail draws a detail page with the record in scope.
+// renderDetail sends a detail page with the record in scope.
+func (st *Site) renderDetail(w http.ResponseWriter, r *http.Request,
+	name string, body any, row listing.Row) {
+
+	out, err := st.detailBody(st.sources(), name, body, row, firstOf(r.URL.Query()))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// The same head injection every page gets, so a detail page carries the
+	// manifest link, the catalogue pointer and the provenance marking. A
+	// legal marking present on the shop page and missing from the product
+	// page is a marking that is missing where the product actually is.
+	out = st.injectHead(out, name, "", body)
+	// The structured data, injected like the rest of the head so it cannot be
+	// missing from the one template nobody checked.
+	ld := productLD(row, st.Name)
+	if event, post := st.detailKind(body); event {
+		// An event, not a product: a record with a name read through the
+		// events listing is somewhere to be, not something to buy.
+		ld = st.eventLD(row)
+	} else if post {
+		ld = st.postLD(row)
+	}
+	if ld != "" {
+		out = insertBeforeHead(out, ld)
+	}
+	// No ETag. The page's own hash does not describe this response — the
+	// record does — and a hash of both is a cache key nothing invalidates
+	// when the record changes. Serving it uncached is slower and correct;
+	// serving the page's hash would mean an edited product never updates.
+	h := w.Header()
+	h.Set("Content-Type", "text/html; charset=utf-8")
+	h.Set("Cache-Control", "no-cache")
+	_, _ = w.Write([]byte(out))
+}
+
+// detailKind says whether a detail page stands for the site's events or for
+// its posts, which is what decides what is drawn beside the record and what
+// its structured data says it is.
+func (st *Site) detailKind(body any) (event, post bool) {
+	d, _ := detailOf(body)
+	event = st.Events != "" && d.Listing == st.Events
+	post = !event && st.Blog != "" && d.Listing == st.Blog
+	return event, post
+}
+
+// detailBody draws a detail page through its layout, with the record in
+// scope: everything a visitor reads on it, before the head is added.
 //
 // The record lands under "record", beside "page". Merging it into the page's
 // own fields was the alternative and is worse: a record with a "title" would
 // silently replace the page's, and which one a template got would depend on
 // what somebody named a product field. Two names, no collision, and a template
 // says which it means.
-func (st *Site) renderDetail(w http.ResponseWriter, r *http.Request,
-	name string, body any, row listing.Row) {
+//
+// One function for the route and for what the chatbots and site search know
+// about a record (records.go), so the two cannot disagree about what the page
+// shows. The errors are what the route tells a visitor.
+func (st *Site) detailBody(src render.Sources, name string, body any,
+	row listing.Row, args map[string]string) (string, error) {
 
-	ctx, err := st.sources().For(name, body, firstOf(r.URL.Query()))
+	ctx, err := src.For(name, body, args)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return "", err
 	}
-	st.sources().WithRecord(ctx, map[string]any(row))
-	d, _ := detailOf(body)
-	event := st.Events != "" && d.Listing == st.Events
-	post := !event && st.Blog != "" && d.Listing == st.Blog
+	src.WithRecord(ctx, map[string]any(row))
+	event, post := st.detailKind(body)
 	if rec, ok := ctx["record"].(map[string]any); ok {
 		switch {
 		case event:
@@ -176,41 +226,13 @@ func (st *Site) renderDetail(w http.ResponseWriter, r *http.Request,
 
 	_, layout, lerr := st.Layouts.For(body)
 	if lerr != nil {
-		http.Error(w, "this page could not be assembled",
-			http.StatusInternalServerError)
-		return
+		return "", errors.New("this page could not be assembled")
 	}
 	out, err := tmpl.Render(layout, ctx)
 	if err != nil {
-		http.Error(w, "template error", http.StatusInternalServerError)
-		return
+		return "", errors.New("template error")
 	}
-	// The same head injection every page gets, so a detail page carries the
-	// manifest link, the catalogue pointer and the provenance marking. A
-	// legal marking present on the shop page and missing from the product
-	// page is a marking that is missing where the product actually is.
-	out = st.injectHead(out, name, "", body)
-	// The structured data, injected like the rest of the head so it cannot be
-	// missing from the one template nobody checked.
-	ld := productLD(row, st.Name)
-	if event {
-		// An event, not a product: a record with a name read through the
-		// events listing is somewhere to be, not something to buy.
-		ld = st.eventLD(row)
-	} else if post {
-		ld = st.postLD(row)
-	}
-	if ld != "" {
-		out = insertBeforeHead(out, ld)
-	}
-	// No ETag. The page's own hash does not describe this response — the
-	// record does — and a hash of both is a cache key nothing invalidates
-	// when the record changes. Serving it uncached is slower and correct;
-	// serving the page's hash would mean an edited product never updates.
-	h := w.Header()
-	h.Set("Content-Type", "text/html; charset=utf-8")
-	h.Set("Cache-Control", "no-cache")
-	_, _ = w.Write([]byte(out))
+	return out, nil
 }
 
 // productLD renders a record as schema.org structured data.

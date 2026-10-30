@@ -18,6 +18,7 @@ import (
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 )
@@ -275,8 +276,15 @@ func assistantKnowledge(root string, a assistant.Assistant) (*assistant.Index, [
 		return nil, nil, fmt.Errorf("nothing is published yet, so there is "+
 			"nothing to answer from: %w", err)
 	}
+	// And every record a visitor can open at its own address, read the way
+	// its page shows it, under the chatbot's Pages and Exclude like a page.
+	// A record is only read where it is what a visitor opens at its address,
+	// so it takes that address from a page nobody opens there.
+	records, warnings := recordKnowledge(root, pages)
+	for name, body := range records {
+		pages[name] = body
+	}
 	passages := assistant.Chunk(pages, a.Reads)
-	var warnings []string
 	for _, id := range a.Documents {
 		name, format, body, derr := assistantDocument(root, id)
 		if derr != nil {
@@ -293,6 +301,40 @@ func assistantKnowledge(root string, a assistant.Assistant) (*assistant.Index, [
 	passages, held := screenKnowledge(a, passages)
 	warnings = append(warnings, held...)
 	return assistant.NewIndex(passages), warnings, nil
+}
+
+// recordKnowledge is every record a visitor can open at its own address,
+// read the way its page shows it, by the site built as `quilzo site` builds
+// it (public.Site.RecordPages): so a chatbot tried from here, from the
+// admin or over MCP knows what it knows answering a visitor, and nothing a
+// visitor cannot open. A record is read through the layout that shows it,
+// from the site's templates directory; without one nothing can show a
+// record, so none is read, and the owner is told why.
+func recordKnowledge(root string, pages map[string]any) (map[string]any, []string) {
+	stands := false
+	for _, body := range pages {
+		if d, ok := render.DetailOf(body); ok && d.Declared() {
+			stands = true
+			break
+		}
+	}
+	if !stands {
+		return nil, nil
+	}
+	design, err := loadDesign(featureDesignDir)
+	if err != nil {
+		return nil, []string{"records: not read, because the layouts that " +
+			"show them could not be loaded: " + err.Error()}
+	}
+	st, err := siteFor(root, design, siteOpts{})
+	if err != nil {
+		return nil, []string{"records: not read: " + err.Error()}
+	}
+	records, err := st.RecordPages()
+	if err != nil {
+		return nil, []string{"records: not read: " + err.Error()}
+	}
+	return records, nil
 }
 
 // screenKnowledge leaves out of what an assistant reads the passages that
