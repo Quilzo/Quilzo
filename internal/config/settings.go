@@ -405,31 +405,43 @@ var settings = []Setting{
 	},
 	{
 		Key: "site.trusted_proxy", Kind: Bool, Default: "false",
-		Summary: "the public site is behind a proxy on this machine or a private network",
+		Summary: "the public site is behind a proxy on this machine",
 		Why: "Who a visitor is, for every limit, the audit log and the " +
 			"shield. Behind a reverse proxy the connection is the proxy's for " +
 			"everybody, so a limit keyed on it is one bucket for the whole " +
 			"internet and a block of it blocks the site.\n\n" +
 			"With this on and network.trusted_proxies empty, a forwarded " +
-			"address is believed from a connection on the inside -- " +
-			"loopback, a private network, carrier-grade NAT -- which is " +
-			"where a reverse proxy usually is and where nobody on the " +
-			"internet can connect from. Name the proxies in " +
-			"network.trusted_proxies instead to believe only them.\n\n" +
+			"address is believed from this machine only -- loopback, " +
+			"127.0.0.0/8 and ::1 -- where a reverse proxy such as Caddy in " +
+			"front of the site usually is. It is used for limits and the " +
+			"audit log; the shield counts it but does not block on it alone, " +
+			"since any program on the machine could have written it. A proxy " +
+			"anywhere else -- a private network, a container bridge, " +
+			"carrier-grade NAT -- is believed only when it is named in " +
+			"network.trusted_proxies: an address there says where a machine " +
+			"is, not that it is the proxy, and anything else there can write " +
+			"the header too. When a machine there forwards an address that " +
+			"is not believed, the site says so once, with the command that " +
+			"names it. Naming 127.0.0.1 in network.trusted_proxies has " +
+			"the shield act on what a proxy on this machine forwards too.\n\n" +
 			"Off by default, because X-Forwarded-For is a header anybody can " +
 			"write: believed from anybody, it lets every caller choose their " +
 			"own address, which is every limit and every block switched off.",
 	},
 	{
 		Key: "admin.trusted_proxy", Kind: Bool, Default: "false",
-		Summary: "the admin is behind a proxy on this machine or a private network",
+		Summary: "the admin is behind a proxy on this machine",
 		Why: "Who is signing in, and from where: for the rate limits, for " +
 			"placing a sign-in, and for the shield. Behind a reverse proxy " +
 			"the connection is the proxy's for everybody.\n\n" +
 			"With this on and network.trusted_proxies empty, a forwarded " +
-			"address is believed from a connection on the inside (loopback, " +
-			"a private network); name the proxies in network.trusted_proxies " +
-			"to believe only them. Off by default: X-Forwarded-For is a " +
+			"address is believed from this machine only (loopback, " +
+			"127.0.0.0/8 and ::1), and the shield does not block on it alone. " +
+			"A proxy on a private network, a container bridge or " +
+			"carrier-grade NAT is believed only when it is named in " +
+			"network.trusted_proxies; when one forwards an address that is " +
+			"not believed, the admin says so once, with the command that " +
+			"names it. Off by default: X-Forwarded-For is a " +
 			"header anybody can write, and believed from anybody it lets a " +
 			"sign-in say where it is.",
 	},
@@ -443,9 +455,11 @@ var settings = []Setting{
 			"proxy is the client. Anything unreadable before that point is " +
 			"an unknown client, never a guess.\n\n" +
 			"Name what is actually in front: 10.0.0.5, or 10.0.0.0/8 for a " +
-			"cluster, or a CDN's published ranges. Empty means no proxy, " +
-			"unless site.trusted_proxy or admin.trusted_proxy says it is on " +
-			"the inside.",
+			"cluster, or a CDN's published ranges. A request a proxy makes " +
+			"itself, with no X-Forwarded-For, is the proxy's own, and is " +
+			"counted, limited and blocked like anybody's. Empty means no " +
+			"proxy, unless site.trusted_proxy or admin.trusted_proxy says " +
+			"one is on this machine, and then only loopback is believed.",
 		Weaker: func(v string) (bool, string) {
 			for _, p := range strings.Split(v, ",") {
 				pfx, err := clientip.ParseProxy(strings.TrimSpace(p))
