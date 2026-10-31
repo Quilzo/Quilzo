@@ -62,6 +62,12 @@ type siteOpts struct {
 	// Note receives the diagnostics a person watching a server start wants to
 	// see. Nil for callers that are not starting a server.
 	Note func(format string, a ...any)
+	// Reading is a site built to be read rather than served: what a chatbot
+	// tried from the command line, the admin or MCP knows of its records,
+	// built for every question. Nothing is written for it, and what only a
+	// browser is sent, the pictures' focus rules and the content policy, is
+	// not worked out, since neither is something a page says.
+	Reading bool
 }
 
 func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
@@ -88,7 +94,7 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 	//
 	// Appended last so an operator's own stylesheet still wins on specificity
 	// ties, and empty for a site where nobody has placed a point.
-	if lib, lerr := openMedia(root); lerr == nil {
+	if lib, lerr := openMedia(root); lerr == nil && !opt.Reading {
 		if files, ferr := lib.List(); ferr == nil {
 			st.Stylesheet += medialib.FocusCSS(files, "/media")
 		}
@@ -300,7 +306,7 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 	if cfg, cerr := loadConfig(root); cerr == nil {
 		st.HSTS = cfg.Dur("site.hsts")
 		st.Icon = strings.TrimSpace(cfg.Raw("site.icon"))
-		st.Members = siteMembers(root, cfg, st.BaseURL)
+		st.Members = siteMembers(root, cfg, st.BaseURL, !opt.Reading)
 		st.Boards = siteBoards(root)
 		st.IconInitial = cfg.Bool("site.icon_initial")
 		st.ToolsOff = !cfg.Bool("site.webmcp")
@@ -494,7 +500,7 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 				return card, nil
 			}
 		}
-		if live := s.GetRef(site.RefLive); live != "" {
+		if live := s.GetRef(site.RefLive); live != "" && !opt.Reading {
 			if pages, perr := site.PagesAt(s, live); perr == nil {
 				policy := buildCSP(cfg, pages)
 				value := policy.Build()

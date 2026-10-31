@@ -27,7 +27,9 @@ import (
 // person on the Chatbots screen. Least agency: the agent gets the building,
 // not the launching.
 
-func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
+// design is the site's templates directory, whose layouts show its records
+// to a chatbot as they show them to visitors (quilzo mcp --templates).
+func registerAssistantOps(srv *mcp.Server, root string, caller *Caller, design string) {
 	srv.Register(mcp.Operation{
 		Name: "list_assistants", NeedsRole: "reader",
 		Summary:  "the site's chatbots, whether each is public, and what it may offer",
@@ -48,8 +50,11 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 		Name: "ask_assistant", NeedsRole: "reader",
 		Summary: "ask a chatbot a question and see its answer, sources and removals",
 		Detail: "Works on private chatbots too, so you can test one before a " +
-			"person makes it public. The answer is from published pages only; " +
-			"removed sentences are ones the pages did not support.",
+			"person makes it public. The answer is from what a visitor can open " +
+			"on the published site: its pages, and its records as their pages " +
+			"show them through the layouts quilzo mcp was given with " +
+			"--templates. Removed sentences are ones the pages did not " +
+			"support; not_read says what could not be read, and why.",
 		Args: map[string]string{
 			"name":     "the chatbot",
 			"question": "what a visitor would ask",
@@ -65,7 +70,7 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 		if err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
-		idx, err := assistantIndex(root, bot)
+		idx, notRead, err := assistantKnowledge(root, design, bot)
 		if err != nil {
 			return nil, err
 		}
@@ -87,6 +92,11 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 			srcs = append(srcs, src{i + 1, h.Page, h.Header()})
 		}
 		out["sources"] = srcs
+		// What it could not read, and why, so an agent trying it is told
+		// as a person on the Chatbots screen is.
+		if len(notRead) > 0 {
+			out["not_read"] = notRead
+		}
 		b, err := json.Marshal(out)
 		return string(b), err
 	})

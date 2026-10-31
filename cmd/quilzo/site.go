@@ -371,13 +371,13 @@ func cmdSite(root string, args []string) error {
 			},
 		}
 		apiHandler := apiSrv.Handler()
-		public := handler
+		siteHandler := handler
 		handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if strings.HasPrefix(r.URL.Path, "/api/") {
+			if strings.HasPrefix(r.URL.Path, public.APIPrefix) {
 				apiHandler.ServeHTTP(w, r)
 				return
 			}
-			public.ServeHTTP(w, r)
+			siteHandler.ServeHTTP(w, r)
 		})
 
 		mode := "read-only"

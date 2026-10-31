@@ -119,6 +119,13 @@ func (st *Site) detailRoute(w http.ResponseWriter, r *http.Request,
 	}
 
 	row, err := st.findRecord(d, key, firstOf(r.URL.Query()))
+	// Asked by what the chatbots and search read (records.go): which record
+	// a visitor is shown here, past every check made on the way. Not drawn
+	// here: they draw it without what visitors wrote under it.
+	if p, asked := probing(r); asked {
+		p.row, p.found = row, err == nil
+		return true
+	}
 	if err != nil {
 		if err == errNoRecord {
 			st.notFound(w, r)

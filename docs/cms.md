@@ -1365,12 +1365,27 @@ question, a declared form, a booking.
 A record with a page of its own, such as a product, an event or a post, is
 among what site search, NLWeb and the chatbots answer from, read the way that
 page shows it: the words inside its `<main>`, drawn through its layout, and
-nothing inside a tag, a script, a form or a hidden element. So a field the
-listing hands the layout and the layout does not print is never an answer, and
-neither is a record a visitor cannot open: one its listing leaves out, one only
-in the draft, one behind a page for members or outside its publish window, or
-one whose address a redirect or another route answers. A chatbot's Pages and
-Exclude apply to a record's address as to a page's.
+nothing inside a tag, a script, a form, or an element with the `hidden`
+attribute, `aria-hidden="true"` or a `style` of `display: none` or
+`visibility: hidden`. An element hidden only by a class in the stylesheet is
+read. So a field the listing hands the layout and the layout does not print is
+never an answer, and neither is a record a visitor cannot open: one its listing
+leaves out, one only in the draft, a key two records share, one behind a page
+for members or outside its publish window, or one whose address a redirect, a
+page of the same name or another route answers. Which record is at an address
+is asked of the site's own page handler, as a visitor with no account asks it.
+A record is linked at the address the sitemap gives it, and a chatbot's Pages
+and Exclude apply to that address as to a page's. A page saying nothing but
+its heading is found by that heading. Up to a thousand records are read.
+
+A chatbot tried with `quilzo assistant ask` or `quilzo assistant eval`, on the
+admin's Chatbots screen or over MCP (`ask_assistant`) reads what the site's
+own chatbot reads: the pages a visitor can open now, and the records through
+the site's layouts, which are the templates directory `quilzo serve` was
+started with for the admin and `--templates DIR` for the commands and for
+`quilzo mcp`. With no layout to show a record, none is read, and each of them
+says so. A redirect file given only to `quilzo site --redirects` is not known
+to them; the site's own chatbot follows it.
 
 ## Three interfaces, and the same rules in all of them
 

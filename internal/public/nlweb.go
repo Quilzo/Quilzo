@@ -106,9 +106,9 @@ func (st *Site) nlwebAnswer(r *http.Request, q nlwebQuery) map[string]any {
 		visible = map[string]any{}
 	}
 	// A record's page answers as a page does, from what it shows.
-	visible = st.withRecords(visible)
+	found, visible := st.searchVisible(q.Query, visible, nlwebResults)
 	results := []any{}
-	for _, res := range st.searchVisible(q.Query, visible, nlwebResults) {
+	for _, res := range found {
 		body, _ := visible[res.Page].(map[string]any)
 		href := st.absoluteURL(st.pagePath(res.Page))
 		name := res.Title

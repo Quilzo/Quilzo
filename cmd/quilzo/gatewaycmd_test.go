@@ -52,7 +52,7 @@ func TestAChatbotFallsBackAcrossRoutesAndStopsAtItsBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 	a, _ := loadAssistant(root, "help")
-	idx, err := assistantIndex(root, a)
+	idx, _, err := assistantKnowledge(root, featureDesignDir, a)
 	if err != nil {
 		t.Fatal(err)
 	}

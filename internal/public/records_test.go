@@ -4,6 +4,7 @@
 package public
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/listing"
+	"github.com/quilzo/quilzo/internal/member"
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/seo"
 	"github.com/quilzo/quilzo/internal/site"
@@ -39,8 +41,11 @@ const recordsLayout = `<!doctype html><html lang="en"><head><title>{{ site.name 
 // and around them every record a visitor cannot open: one the listing keeps
 // out, one only in the draft, one behind a page for members, one behind a
 // page whose publish window has not opened, an event that is over, one
-// whose address redirects, and every one at an address another route
-// answers; and a page not open yet at the address of a product that is.
+// whose address redirects, two sharing a key, one at the address of a page
+// for anybody and one at a page for members, one whose key is not an
+// address in its plain form, and every one at an address another route, a
+// page with no record route or the API answers; and a page not open yet at
+// the address of a product that is, and one whose key needs escaping.
 func recordsShop(t *testing.T) (*Site, *store.Store) {
 	t.Helper()
 	s, err := store.Open(t.TempDir())
@@ -61,6 +66,20 @@ func recordsShop(t *testing.T) (*Site, *store.Store) {
 		// is what that address shows.
 		"product/brass-pen": map[string]any{"title": "Embargoed launch", "body": "Not yet.",
 			site.Starts: "2099-01-01"},
+		// Pages at products' addresses, for anybody and for members: each
+		// is what its address shows, and the product there is not.
+		"product/ink-well": map[string]any{"title": "Ink wells", "intro": "All about glassware."},
+		"product/gold-cap": map[string]any{"title": "The members' cap", "intro": "For members.",
+			MembersOnlyField: true},
+		// A record route is one segment after its page, so these records'
+		// pages are nowhere.
+		"shop/pens": map[string]any{"detail": "catalogue", "detail_key": "slug"},
+		// Its records' addresses are the API's when the site is served with
+		// it.
+		"api": map[string]any{"detail": "catalogue", "detail_key": "slug"},
+		// A page with no record route, at an address only the admin has
+		// on its own server.
+		"settings/team": map[string]any{"detail": "catalogue", "detail_key": "slug"},
 	}
 	if _, err := site.SaveDraft(s, pages, "shop", "test"); err != nil {
 		t.Fatal(err)
@@ -80,6 +99,24 @@ func recordsShop(t *testing.T) (*Site, *store.Store) {
 		{ID: "77777777777777777777777777777777", Fields: map[string]any{
 			"slug": "oak-ruler", "name": "Oak ruler", "price_display": "£8.00",
 			"description": "Moved to the rulers page.", "status": "live"}},
+		{ID: "88888888888888888888888888888881", Fields: map[string]any{
+			"slug": "twin-pen", "name": "Twin pen", "price_display": "£15.00",
+			"description": "One of a pair.", "status": "live"}},
+		{ID: "88888888888888888888888888888882", Fields: map[string]any{
+			"slug": "twin-pen", "name": "Twin pen", "price_display": "£16.00",
+			"description": "The other of a pair.", "status": "live"}},
+		{ID: "99999999999999999999999999999991", Fields: map[string]any{
+			"slug": "ink-well", "name": "Ink well", "price_display": "£5.00",
+			"description": "Recordwell glass.", "status": "live"}},
+		{ID: "99999999999999999999999999999992", Fields: map[string]any{
+			"slug": "gold-cap", "name": "Gold cap", "price_display": "£40.00",
+			"description": "Capstone gilt.", "status": "live"}},
+		{ID: "99999999999999999999999999999993", Fields: map[string]any{
+			"slug": "..", "name": "Dot pen", "price_display": "£2.00",
+			"description": "Twofold dots.", "status": "live"}},
+		{ID: "99999999999999999999999999999994", Fields: map[string]any{
+			"slug": "100%-wool", "name": "Wool wrap", "price_display": "£30.00",
+			"description": "Spun from undyed wool.", "status": "live"}},
 	})
 	putRecords(t, s, "club", []collection.Record{
 		{ID: "33333333333333333333333333333333", Fields: map[string]any{
@@ -127,6 +164,11 @@ func recordsShop(t *testing.T) (*Site, *store.Store) {
 	}
 	st.Redirects = moved
 	st.Name, st.BaseURL, st.IndexLive = "Marginalia", "https://example.org", true
+	accounts, err := member.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Members = &Members{Store: accounts, Mode: "open"}
 	st.Listings = &listing.Resolver{Store: s, Index: collection.NewCache(), Set: set,
 		Live: func() string {
 			c, err := s.GetCommit(s.GetRef(site.RefLive))
@@ -182,6 +224,15 @@ func TestAChatbotAnswersAboutAProductFromItsPage(t *testing.T) {
 	if !strings.Contains(body, `href="/product/brass-pen"`) {
 		t.Fatalf("the answer does not cite the product's page:\n%s", body)
 	}
+	// A product whose key needs escaping is cited at the address the
+	// sitemap gives it, which is the address that opens it.
+	body = askPost(st, "help", "How much is the wool wrap?").Body.String()
+	if !strings.Contains(body, "£30.00") || !strings.Contains(body, `href="/product/100%25-wool"`) {
+		t.Fatalf("the wool wrap is not answered at its own address:\n%s", body)
+	}
+	if w := get(st, "/product/100%25-wool", nil); w.Code != 200 || !strings.Contains(w.Body.String(), "Wool wrap") {
+		t.Fatalf("the address cited does not open the wool wrap: %d", w.Code)
+	}
 	// A chatbot told not to read the shop does not read its products.
 	idx, err := st.assistantIndex(assistant.Assistant{Name: "returns", Public: true, Exclude: []string{"product"}})
 	if err != nil {
@@ -228,9 +279,12 @@ func TestSearchFindsAProductAtItsOwnPage(t *testing.T) {
 // Nothing a visitor cannot open reaches a chatbot or search: a record the
 // listing keeps out, one only in the draft, one behind a page for members,
 // one behind a page not open yet, an event that is over, one whose address
-// redirects or is another route's, a field the listing never hands out,
-// one the layout does not show and one it only puts inside a tag; nor a
-// page not open yet at a product's address.
+// redirects or is another route's, two sharing a key, one at the address
+// of a page for anybody or for members, one at an address that is not in
+// its plain form, one under a page with no record route or under the API,
+// a field the listing never hands out, one the layout does not show and
+// one it only puts inside a tag; nor a page not open yet at a product's
+// address.
 func TestNoIndexHoldsARecordAVisitorCannotOpen(t *testing.T) {
 	st, _ := recordsShop(t)
 	bot := assistant.Assistant{Name: "help", Public: true}
@@ -247,7 +301,8 @@ func TestNoIndexHoldsARecordAVisitorCannotOpen(t *testing.T) {
 		terms[term] = true
 	}
 	for _, never := range []string{"copper", "steel", "gold", "silver", "rye", "acme", "b7731", "brs",
-		"embargoed", "oak", "book/"} {
+		"embargoed", "oak", "book/", "twin", "recordwell", "capstone", "twofold", "shop/", "api/", "settings/",
+		"members' cap"} {
 		if strings.Contains(said.String(), never) {
 			t.Errorf("the chatbot reads %q:\n%s", never, said.String())
 		}
@@ -257,7 +312,7 @@ func TestNoIndexHoldsARecordAVisitorCannotOpen(t *testing.T) {
 	}
 	// What a visitor can open is there, and what is around every page's
 	// content is not.
-	for _, want := range []string{"brass", "ink"} {
+	for _, want := range []string{"brass", "ink", "glassware", "wool"} {
 		if !strings.Contains(said.String(), want) || !terms[want] {
 			t.Errorf("%q is missing: the index holds %d passages", want, len(idx.Passages))
 		}
@@ -268,10 +323,28 @@ func TestNoIndexHoldsARecordAVisitorCannotOpen(t *testing.T) {
 	// And the routes agree: each of those records is not a page anybody
 	// opens.
 	for _, path := range []string{"/product/copper-pen", "/product/steel-pen", "/club/gold-nib",
-		"/sale/silver-pen", "/event/rye-night", "/book/brass-pen"} {
+		"/sale/silver-pen", "/event/rye-night", "/book/brass-pen", "/shop/pens/brass-pen"} {
 		if w := get(st, path, nil); w.Code != http.StatusNotFound {
 			t.Errorf("%s answered %d", path, w.Code)
 		}
+	}
+	if w := get(st, "/product/twin-pen", nil); w.Code == 200 {
+		t.Errorf("a key two records share opened one of them")
+	}
+	if w := get(st, "/product/gold-cap", nil); w.Code != http.StatusForbidden || strings.Contains(w.Body.String(), "Capstone") {
+		t.Errorf("the members' page at the gold cap's address answered %d", w.Code)
+	}
+	if w := get(st, "/product/ink-well", nil); !strings.Contains(w.Body.String(), "All about glassware") ||
+		strings.Contains(w.Body.String(), "Recordwell") {
+		t.Errorf("the page at the ink well's address is not what it shows")
+	}
+	if w := get(st, "/product/..", nil); w.Code/100 != 3 {
+		t.Errorf("the address with a dot segment answered %d", w.Code)
+	}
+	// And an event with no price shows no price, and is not read as if the
+	// words after the empty one were its price.
+	if strings.Contains(said.String(), "price: twelve") {
+		t.Errorf("an empty value took the next paragraph as its own:\n%s", said.String())
 	}
 	if w := get(st, "/product/oak-ruler", nil); w.Code != http.StatusPermanentRedirect &&
 		w.Code != http.StatusTemporaryRedirect {
@@ -313,6 +386,129 @@ func TestAChangedRecordChangesTheChatbotsAnswer(t *testing.T) {
 	}
 }
 
+// The minute passing on a site with events, with nothing any page says
+// changed, is not a chatbot read again, nor its knowledge sent to the
+// guardrail again, nor search built again; and a record a chatbot does not
+// read saying something else is not that chatbot read again either.
+func TestAChatbotIsReadAgainOnlyWhenWhatItReadsChanges(t *testing.T) {
+	st, s := recordsShop(t)
+	now := "2026-11-14T19:30"
+	was := listing.Now
+	listing.Now = func() string { return now }
+	t.Cleanup(func() { listing.Now = was })
+	screened := 0
+	st.Assistants.Guardrail = func(_ context.Context, texts []string) ([]bool, int) {
+		screened++
+		return make([]bool, len(texts)), 0
+	}
+	shop := assistant.Assistant{Name: "help", Public: true}
+	front := assistant.Assistant{Name: "returns", Public: true,
+		Exclude: []string{"product", "event", "shop", "api", "book", "sale", "club"}}
+	shopIdx, err := st.assistantIndex(shop)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frontIdx, err := st.assistantIndex(front)
+	if err != nil {
+		t.Fatal(err)
+	}
+	searchIdx := st.searchIndex()
+	if screened != 2 {
+		t.Fatalf("the guardrail was asked %d times for two chatbots", screened)
+	}
+
+	now = "2026-11-14T19:31"
+	if idx, _ := st.assistantIndex(shop); idx != shopIdx {
+		t.Error("a minute passing read the shop's chatbot again")
+	}
+	if idx, _ := st.assistantIndex(front); idx != frontIdx {
+		t.Error("a minute passing read a chatbot that reads no record again")
+	}
+	if st.searchIndex() != searchIdx {
+		t.Error("a minute passing built search again")
+	}
+	if screened != 2 {
+		t.Errorf("a minute passing sent the chatbots' knowledge to the guardrail again: %d", screened)
+	}
+
+	putRecords(t, s, "products", []collection.Record{
+		{ID: "0123456789abcdef0123456789abcdef", Fields: map[string]any{
+			"slug": "brass-pen", "name": "Brass pen", "price_display": "£26.00",
+			"description": "Turned from solid brass, and heavier than it looks.",
+			"status":      "live"}},
+	})
+	if _, err := site.Publish(s, ""); err != nil {
+		t.Fatal(err)
+	}
+	if idx, _ := st.assistantIndex(shop); idx == shopIdx {
+		t.Error("the shop's chatbot was not read again for a changed price")
+	}
+	if idx, _ := st.assistantIndex(front); idx != frontIdx {
+		t.Error("a chatbot was read again for a record it does not read")
+	}
+	if st.searchIndex() == searchIdx {
+		t.Error("search was not built again for a changed price")
+	}
+	if screened != 3 {
+		t.Errorf("the guardrail was asked %d times; once more was for the changed price", screened)
+	}
+}
+
+// Asking what is at each record's address is the site asking itself, and
+// not somebody hunting for the admin, however the address looks.
+func TestReadingRecordsIsNotASignal(t *testing.T) {
+	st, _ := recordsShop(t)
+	signals := 0
+	st.OnSignal = func(string, string, *http.Request) { signals++ }
+	if _, err := st.assistantIndex(assistant.Assistant{Name: "help", Public: true}); err != nil {
+		t.Fatal(err)
+	}
+	st.searchIndex()
+	if signals != 0 {
+		t.Fatalf("reading the records signalled %d times", signals)
+	}
+	// A visitor asking for one of the same addresses is a signal.
+	get(st, "/settings/team/brass-pen", nil)
+	if signals != 1 {
+		t.Fatalf("a visitor at an admin address signalled %d times", signals)
+	}
+}
+
+// A record's page that says nothing but the record's name, with its price
+// on a button, is still found by that name, and the price is not read.
+func TestARecordWhosePageIsOnlyItsHeadingIsFoundByName(t *testing.T) {
+	st, _ := recordsShop(t)
+	st.Layouts = render.OneLayout(`<!doctype html><html lang="en"><head><title>{{ site.name }}</title></head><body><main>
+{% if record %}<h1>{{ record.name }}</h1><img src="/media/pen.jpg" alt="{{ record.name }}"><button>Buy for {{ record.price_display }}</button>{% end %}
+{% if page.title %}<h1>{{ page.title }}</h1>{% end %}</main></body></html>`)
+
+	var api struct {
+		Results []struct{ Page string } `json:"results"`
+	}
+	if err := json.Unmarshal(get(st, "/search.json?q=brass+pen", nil).Body.Bytes(), &api); err != nil {
+		t.Fatal(err)
+	}
+	if len(api.Results) != 1 || api.Results[0].Page != "product/brass-pen" {
+		t.Fatalf("search does not find the brass pen by name: %+v", api.Results)
+	}
+	idx, err := st.assistantIndex(assistant.Assistant{Name: "help", Public: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, p := range idx.Passages {
+		if p.Page == "product/brass-pen" {
+			found = strings.Contains(p.Header()+" "+p.Text, "Brass pen")
+			if strings.Contains(p.Text, "£24.00") {
+				t.Errorf("a price on a button was read: %q", p.Text)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("the chatbot does not know the brass pen by name: %+v", idx.Passages)
+	}
+}
+
 // A page is read as a visitor reads it: what is inside <main>, a term with
 // what it means, and nothing from inside a tag or an element nobody sees.
 func TestAPageIsReadAsAVisitorReadsIt(t *testing.T) {
@@ -322,12 +518,13 @@ func TestAPageIsReadAsAVisitorReadsIt(t *testing.T) {
 <p data-sku="MG-PN-BRS">Turned <a href="/brass">from brass</a></p>
 <p hidden>A note for later.</p><div aria-hidden="true">Decoration</div>
 <script>var secret = "<p>no</p>";</script><form><label>Email <input name="e"></label></form>
-<h2>Care</h2><table><tr><td>Size</td><td>A5</td></tr></table></main>
+<h2>Care</h2><table><tr><td>Size</td><td>A5</td></tr></table>
+<dl><dt>Ink</dt><dd></dd></dl><p>Warranty</p></main>
 <footer>Copyright</footer></body></html>`)
 	if title != "Brass pen" {
 		t.Errorf("title %q", title)
 	}
-	want := "Price: £24.00.\n\nTurned from brass.\n\n## Care\n\nSize · A5."
+	want := "Price: £24.00.\n\nTurned from brass.\n\n## Care\n\nSize · A5.\n\nWarranty."
 	if text != want {
 		t.Errorf("read\n%q\nwant\n%q", text, want)
 	}
@@ -338,6 +535,15 @@ func TestAPageIsReadAsAVisitorReadsIt(t *testing.T) {
 		`<p>Words.</p><aside>Elsewhere</aside><footer>Foot</footer></body></html>`)
 	if title != "A & B" || text != "Words." {
 		t.Errorf("without main: %q %q", title, text)
+	}
+
+	// What a style takes off the page is not read, nor what is inside a
+	// hidden element or a script whose tag ends in a slash, which closes
+	// neither in a browser; a drawing's does close it.
+	_, text = readPage(`<main><p style="display: none">Gone</p><p style="Visibility : Hidden">Unseen</p>` +
+		`<div hidden/>Behind</div><script/>var x = "Code";</script><svg/><p>Shown.</p></main>`)
+	if text != "Shown." {
+		t.Errorf("read %q", text)
 	}
 
 	// Letters whose lower case is a different length leave the tags where
