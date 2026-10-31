@@ -466,10 +466,10 @@ var settings = []Setting{
 			"forward, so name the smallest range that holds only proxies.\n\n" +
 			"Only X-Forwarded-For is read. A request a proxy sends without " +
 			"it is the proxy's own, and is counted, limited and blocked like " +
-			"anybody's, on a private address as anywhere else; only this " +
-			"machine is never blocked. quilzo shield lift on this machine " +
-			"ends a block, and quilzo shield trust add keeps a network from " +
-			"being blocked at all.\n\n" +
+			"anybody's, on a private address as anywhere else. Only this " +
+			"machine, and the networks added with quilzo shield trust add, " +
+			"are never blocked; quilzo shield lift on this machine ends a " +
+			"block.\n\n" +
 			"Empty means no proxy, unless site.trusted_proxy or " +
 			"admin.trusted_proxy says one is on this machine, and then only " +
 			"loopback is believed. The list is the site's and the admin's " +
