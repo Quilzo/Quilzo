@@ -681,10 +681,13 @@ listings it embeds; the template receives data, never a callable.
 **Structure.** Closed-by-default vocabularies with synonyms and hierarchy, so a
 misspelled tag cannot invent a new one. Menus that refuse to save while pointing
 at a page that does not exist, and refuse to publish while pointing at one that
-is not going live.
+is not going live. A question box that refuses to publish while it opens a
+chatbot that does not exist or is not public, naming the page and the section;
+the editor offers the site's chatbots, public ones first.
 
 **Publishing.** Draft and live refs, diff, instant rollback, staged environments
-with promotion, scheduled publication, and content that carries its own publish
+with promotion (into production, after the same checks about the content as a
+publish), scheduled publication, and content that carries its own publish
 window — checked when the page is served, so an embargo cannot lift because a
 cron job was wedged.
 
@@ -1716,6 +1719,7 @@ quilzo site new "what the site is for" --name "Its name" --install   # a whole s
 # or
 quilzo template use sections             # a layout, a theme and sample content
 quilzo add index=templates/sections.json -m "first page"
+quilzo assistant add help --title "Ask this site" --public   # its question box opens it
 quilzo publish
 ```
 

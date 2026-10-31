@@ -12,6 +12,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/form"
 )
 
 type fakeAssistants struct {
@@ -43,7 +44,13 @@ func (f *fakeAssistants) wire() *Assistants {
 			return []DocumentChoice{{ID: strings.Repeat("a", 64), Name: "care.pdf", Format: "pdf"}}, nil
 		},
 		Model: func(assistant.Assistant) (assistant.Model, string) { return f.model, "" },
-		Forms: func() ([]string, error) { return []string{"returns_form"}, nil },
+		Forms: func() (*form.Set, error) {
+			return &form.Set{Forms: []form.Form{{Name: "returns_form", Notice: "To process the return.",
+				Fields: []form.Field{
+					{Name: "order", Label: "Order", Kind: form.Line},
+					{Name: "card", Label: "Card for the refund", Kind: form.Line, Sensitive: true},
+				}}}}, nil
+		},
 	}
 }
 

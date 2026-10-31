@@ -61,6 +61,21 @@ Unreleased
 
 ** Added
 
+*** A question box cannot silently open nothing.  Publishing, on every
+    surface and from a schedule, refuses a page whose ask section names a
+    chatbot that does not exist or is not public, and says which page and
+    which section; so do installing a package and promoting to the
+    production environment, which now asks the checks about the content
+    that publishing asks.  The section's chatbot field offers the site's
+    chatbots, public ones first.  The actions panel, quilzo assistant
+    action and the agent's declare_assistant say when actions will never
+    be offered: only a chatbot answering with a model offers one.  An
+    action filling in a form is refused if the form does not exist or a
+    field is not one of its fields, and a field marked sensitive is said
+    to be never filled.  A built site's question box no longer declares a
+    contact action it could not offer, and quilzo template use names the
+    chatbot its sample's question box needs before it can be published.
+
 *** Bring a site from the file it exported.  quilzo site import, and
     Make › Bring your site, take a WordPress or Squarespace export (.xml),
     a Ghost export (.json, with --site for where it was, for its

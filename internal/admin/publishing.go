@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -137,7 +138,25 @@ func (s *Server) handlePromote(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	prom, err := site.Promote(s.Store, envs, from, to, skip)
+	// Promoting to production is publishing, so the commit that moves is
+	// asked the same checks about the content the Review screen asks, and
+	// refused the same way: not clearable here, and not wired is not
+	// passed. It was asked none, which made this button the way round
+	// every one of them.
+	prom, err := site.PromoteChecked(s.Store, envs, from, to, skip, func(commit string) error {
+		if s.ContentGates == nil {
+			return errors.New("the content checks are not wired up in this " +
+				"build, so promoting to production would claim checks that did not happen")
+		}
+		refused, _, gerr := s.ContentGates(commit)
+		if gerr != nil {
+			return gerr
+		}
+		if refused != nil {
+			return refused
+		}
+		return nil
+	})
 	if err != nil {
 		s.auditPub(p, "env.promote", "/", map[string]string{
 			"from": from, "to": to, "outcome": "denied", "reason": err.Error()})

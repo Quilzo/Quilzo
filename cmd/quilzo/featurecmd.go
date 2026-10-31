@@ -418,7 +418,8 @@ func printFeaturePlan(p feature.Plan) {
 		w.Human("  %s✗ %s%s\n", red, c, reset)
 	}
 	if len(p.Conflicts) > 0 {
-		w.Human("  %sa feature only changes what it made; rename the block in the package, or remove the existing one%s\n",
+		w.Human("  %sa feature only changes what it made, and installs nothing that would not work: rename the block "+
+			"in the package or remove the existing one, and point a question box or an action at something that is there%s\n",
 			dim, reset)
 	}
 }

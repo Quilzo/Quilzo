@@ -17,18 +17,20 @@
 </p>
 
 {{/*
-  The listings this site has, offered to the one field that must name one.
-  A datalist and nothing else: the admin serves script-src 'none', and this is
-  a suggestion rather than a constraint, so a name typed before the listing
-  exists still saves.
+  What this site has, offered to the one field that must name it: the
+  listings for a listing section, the chatbots, public ones first, for a
+  question box. A datalist and nothing else: the admin serves script-src
+  'none', and this is a suggestion rather than a constraint, so a name typed
+  before the thing it names exists still saves. Publishing is where a name
+  that matches nothing is refused.
 */}}
 {{/* The icons a page may name, for any field called icon. */}}
 <datalist id="icon-names">
   {{range iconNames}}<option value="{{.}}"></option>{{end}}
 </datalist>
-{{if .ListingNames}}
-<datalist id="listing-names">
-  {{range .ListingNames}}<option value="{{.}}"></option>{{end}}
+{{with .Suggestions}}
+<datalist id="{{.List}}">
+  {{range .Options}}<option value="{{.Value}}">{{.Note}}</option>{{end}}
 </datalist>
 {{end}}
 
@@ -187,7 +189,7 @@
   {{else}}
   <input id="f-{{.Path}}" name="v.{{.Path}}" value="{{.Value}}"
     {{if .Number}}inputmode="numeric"{{end}}
-    {{if .Suggest}}list="listing-names"{{end}}{{if .Icon}}list="icon-names" aria-describedby="h-{{.Path}}"{{end}}
+    {{if .Suggest}}list="{{.Suggest}}"{{end}}{{if .Icon}}list="icon-names" aria-describedby="h-{{.Path}}"{{end}}
     spellcheck="false">
   {{end}}
   {{if .Icon}}<span class="hint" id="h-{{.Path}}">A name from the site's icon set, such as bolt, shield or schedule; drawn in the theme's icon style. Empty for none.</span>{{end}}

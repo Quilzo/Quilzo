@@ -486,6 +486,16 @@ func contactForm() form.Form {
 // published pages only, without a model, so nothing a visitor asks leaves
 // the site; the privacy page says so, and an owner who turns a model on
 // later decides what to tell visitors about it.
+//
+// It declares no actions. Only a model offers one (see internal/assistant,
+// WhyNoOffers), so a contact action here was a row on the Chatbots screen
+// no visitor was ever shown. Turning the model on whenever a route exists
+// would make it fire, and would break the privacy page's promise on the day
+// somebody adds a route for something else, without anybody deciding to: a
+// package is the same file on every installation, and whether this one has
+// a model is not something it can know. So the refusal points at the
+// contact page instead, which works without one, and an owner who turns a
+// model on adds the action with it, on purpose.
 func helpBot(name string, suggestions []string) assistant.Assistant {
 	if len(suggestions) > assistant.MaxSuggestions {
 		suggestions = suggestions[:assistant.MaxSuggestions]
@@ -495,19 +505,16 @@ func helpBot(name string, suggestions []string) assistant.Assistant {
 		Greeting: "Ask a question. The answer comes from this site's own pages.",
 		Refusal:  "This site does not say. The contact page is the way to ask a person.",
 		Public:   true,
-		Actions: []assistant.Action{{Name: "contact", Kind: assistant.Form, Target: "contact",
-			Description: "Send a message to the people who run this site", Fields: []string{"message"}}},
 		Launcher: &assistant.Launcher{Style: "pill", Label: "Ask", Suggestions: suggestions},
 	}
 }
 
 // QuestionBox is the question box a built or imported site has: answering
-// from the site's own pages, sending nothing anywhere, offering the contact
-// form when there is one.
+// from the site's own pages, sending nothing anywhere, and pointing at the
+// contact page when there is one.
 func QuestionBox(siteName string, suggestions []string, contact bool) assistant.Assistant {
 	a := helpBot(siteName, suggestions)
 	if !contact {
-		a.Actions = nil
 		a.Refusal = "This site does not say."
 	}
 	return a
@@ -891,6 +898,8 @@ func RepairSite(p *Package, b SiteBrief, start *Package) []string {
 	def := helpBot(s.Name, nil)
 	help.Public, help.UseModel, help.Handoff, help.Static, help.Embed, help.Documents = true, false, false, false, nil, nil
 	help.Pages, help.Exclude, help.KeepInstructions = nil, nil, false
+	// Nothing the model wrote decides what the question box offers to do:
+	// it answers without a model, and so offers what helpBot does, nothing.
 	help.Actions = def.Actions
 	if help.Launcher == nil {
 		help.Launcher = def.Launcher

@@ -4,6 +4,7 @@
 package site
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -237,3 +238,58 @@ func TestAnUnknownEnvironmentIsRefusedRatherThanTreatedAsARef(t *testing.T) {
 }
 
 var _ = store.Store{}
+
+// The check is asked about the commit that moves, before it moves, and only
+// where the public would see it: production, or any environment holding the
+// live ref whatever it is marked. A refusal leaves the ref where it was, and
+// a promotion that moves nothing is not asked.
+func TestPromotingWhereThePublicSeesItIsChecked(t *testing.T) {
+	s := newStore(t)
+	e := envs(t)
+	if _, err := SaveDraft(s, map[string]any{"index": page("Home")}, "first", "dana"); err != nil {
+		t.Fatal(err)
+	}
+	draft := s.GetRef(RefDraft)
+	var asked []string
+	refuse := func(commit string) error {
+		asked = append(asked, commit)
+		return errRefused
+	}
+
+	if _, err := PromoteChecked(s, e, "draft", "staging", false, refuse); err != nil || len(asked) != 0 {
+		t.Fatalf("promoting to staging was checked: %v, asked %v", err, asked)
+	}
+	if _, err := PromoteChecked(s, e, "staging", "production", false, refuse); err != errRefused {
+		t.Fatalf("a refused commit was promoted to production: %v", err)
+	}
+	if len(asked) != 1 || asked[0] != draft {
+		t.Errorf("asked about %v, want the commit that moves, %s", asked, draft)
+	}
+	if live := s.GetRef(RefLive); live != "" {
+		t.Fatalf("production moved to %s although the check refused", live)
+	}
+
+	pass := func(string) error { return nil }
+	if _, err := PromoteChecked(s, e, "staging", "production", false, pass); err != nil {
+		t.Fatal(err)
+	}
+	asked = nil
+	if p, err := PromoteChecked(s, e, "staging", "production", false, refuse); err != nil || !p.Identical || len(asked) != 0 {
+		t.Errorf("promoting what is already live was checked: %v %+v, asked %v", err, p, asked)
+	}
+
+	// The live ref, held by an environment not marked production.
+	odd := &Envs{Environments: []Env{
+		{Name: "public", Ref: RefLive, Order: 10},
+		{Name: "archive", Ref: "env-archive", Order: 100, Production: true},
+	}}
+	if _, err := SaveDraft(s, map[string]any{"index": page("Home, again")}, "second", "dana"); err != nil {
+		t.Fatal(err)
+	}
+	asked = nil
+	if _, err := PromoteChecked(s, odd, "draft", "public", false, refuse); err != errRefused || len(asked) != 1 {
+		t.Errorf("moving the live ref under another name was not checked: %v, asked %v", err, asked)
+	}
+}
+
+var errRefused = errors.New("refused")

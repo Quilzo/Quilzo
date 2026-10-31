@@ -219,7 +219,7 @@ Help link opens its own.
 | **Evaluations** | Cases with expected sources and questions it must refuse. | `quilzo assistant eval NAME CASES.jsonl` |
 | **Voice and languages** | On-device speech and translation where the browser has them; the answer stays the site's own. | `assistant add … --voice --translate` |
 | **Talk to a person** | A visitor hands the conversation to a person, who replies from the Inbox. | `quilzo inbox list`, `inbox reply` |
-| **On every page** | A launcher, a widget for other sites, static copies, and actions it may offer (a link or a form). | `assistant action NAME ACTION` |
+| **On every page** | A launcher, a widget for other sites, static copies, and actions it may offer when it answers with a model (a link, or a form it fills in with fields that form asks for). A question box on a page opens a chatbot by name; publishing refuses one naming a chatbot that does not exist or is not public, and says which page and section. | `assistant action NAME ACTION`; the ask section |
 | **Typed decisions** | A model answers a fixed question with a confidence; below the threshold a person decides. | `quilzo decide set\|ask\|eval` |
 
 ### Apps, tools and other vendors' agents

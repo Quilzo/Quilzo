@@ -269,7 +269,26 @@ func envPromote(root string, args []string) error {
 		return err
 	}
 
-	p, err := site.Promote(s, e, rest[0], rest[1], skip)
+	// Promoting to production is publishing, so the commit that moves is
+	// asked every check about the content that `quilzo publish` asks. It
+	// was asked none, which made `env promote draft production` the way to
+	// put up a draft the publish command refuses.
+	p, err := site.PromoteChecked(s, e, rest[0], rest[1], skip, func(commit string) error {
+		refused, advice, gerr := contentGates(root, s, commit).Run()
+		for _, f := range advice {
+			w.Human("  %s%s%s\n", dim, f.String(), reset)
+		}
+		if gerr != nil {
+			return errBlocked{gerr}
+		}
+		if refused != nil {
+			for _, f := range refused.Findings {
+				w.Human("  %s%s%s\n", yellow, f.String(), reset)
+			}
+			return errBlocked{fmt.Errorf("%s", refused.Check.Refusal(len(refused.Findings)))}
+		}
+		return nil
+	})
 	if err != nil {
 		record(root, caller.auditRecord("env.promote", "/", audit.Denied,
 			map[string]string{"from": rest[0], "to": rest[1],

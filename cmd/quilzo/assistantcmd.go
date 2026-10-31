@@ -18,6 +18,7 @@ import (
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/form"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 )
@@ -216,7 +217,9 @@ func assistantAction(root string, args []string) error {
 		return fmt.Errorf("usage: quilzo assistant action ASSISTANT ACTION --kind link|form --target T --description D [--fields a,b]")
 	}
 	caller := resolveCaller(root, flagToken)
-	return saveAssistant(root, caller, "action", pos[0], func(s *assistant.Set) error {
+	var saved assistant.Assistant
+	var notes []string
+	err := saveAssistant(root, caller, "action", pos[0], func(s *assistant.Set) error {
 		a, ok := s.Get(pos[0])
 		if !ok {
 			return fmt.Errorf("no assistant called %s", pos[0])
@@ -228,15 +231,56 @@ func assistantAction(root string, args []string) error {
 			}
 		}
 		if !*remove {
-			kept = append(kept, assistant.Action{
+			ac := assistant.Action{
 				Name: pos[1], Kind: assistant.ActionKind(*kind),
 				Target: *target, Description: *description,
 				Fields: splitList(*fields),
-			})
+			}
+			// Checked against the form it fills in, as the Chatbots screen
+			// checks it. Forms that cannot be read refuse the action rather
+			// than save it unchecked.
+			if ac.Kind == assistant.Form {
+				forms, ferr := loadForms(root)
+				if ferr != nil {
+					return fmt.Errorf("the site's forms could not be read, so "+
+						"%s cannot be checked: %w", ac.Name, ferr)
+				}
+				sensitive, cerr := ac.CheckForm(forms)
+				if cerr != nil {
+					return cerr
+				}
+				if n := assistant.SensitiveNote(ac, sensitive); n != "" {
+					notes = append(notes, n)
+				}
+			}
+			kept = append(kept, ac)
 		}
 		a.Actions = kept
+		saved = a
 		return s.Put(a)
 	})
+	if err != nil {
+		return err
+	}
+	if len(saved.Actions) > 0 {
+		m, why := assistantModelAt(root, saved)
+		if n := assistant.WhyNoOffers(saved, m, why); n != "" {
+			notes = append(notes, n)
+		}
+	}
+	verb := "may now offer"
+	if *remove {
+		verb = "no longer offers"
+	}
+	if w.JSON(map[string]any{"assistant": saved.Name, "action": pos[1],
+		"removed": *remove, "actions": len(saved.Actions), "notes": notes}) {
+		return nil
+	}
+	w.Human("%s %s %s\n", saved.Name, verb, pos[1])
+	for _, n := range notes {
+		w.Human("  %s%s%s\n", yellow, n, reset)
+	}
+	return nil
 }
 
 func assistantRemove(root string, args []string) error {
@@ -347,6 +391,13 @@ func assistantModelAt(root string, a assistant.Assistant) (assistant.Model, stri
 		gw, _, err := modelGateway(root)
 		if err != nil {
 			return nil, "the model gateway could not be read: " + err.Error()
+		}
+		// A gateway with no route answers every call with "no route", so
+		// it is said here rather than discovered a call at a time: the
+		// answer is the extractive one either way, and the owner's screen
+		// can say why its actions are not offered.
+		if gw != nil && gw.FirstRoute() == "" {
+			return nil, "the model gateway declares no route"
 		}
 		if gw != nil {
 			return gw.For("chatbot:" + a.Name), ""
@@ -538,12 +589,6 @@ func assistantsCapability(root string) *admin.Assistants {
 		Model: func(a assistant.Assistant) (assistant.Model, string) {
 			return assistantModelAt(root, a)
 		},
-		Forms: func() ([]string, error) {
-			set, err := loadForms(root)
-			if err != nil {
-				return nil, err
-			}
-			return set.Names(), nil
-		},
+		Forms: func() (*form.Set, error) { return loadForms(root) },
 	}
 }

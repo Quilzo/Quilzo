@@ -201,6 +201,21 @@ type Promotion struct {
 // somebody in a hurry.
 func Promote(s *store.Store, envs *Envs, from, to string, allowSkip bool) (
 	Promotion, error) {
+	return PromoteChecked(s, envs, from, to, allowSkip, nil)
+}
+
+// PromoteChecked is Promote, with a check asked about the commit before it
+// moves to the production environment.
+//
+// Promoting to production is publishing: what the public sees changes. So
+// it is asked what publishing is asked, and about the commit that moves
+// rather than about whatever the source holds a moment earlier or later:
+// the commit is read once, checked, and that commit is what the ref is set
+// to. Other environments are not asked, because a staging site is where a
+// draft that is not ready yet is looked at, and refusing it there would
+// refuse the looking.
+func PromoteChecked(s *store.Store, envs *Envs, from, to string, allowSkip bool,
+	check func(commit string) error) (Promotion, error) {
 
 	src, ok := envs.Lookup(from)
 	if !ok && from != RefDraft && from != "draft" {
@@ -239,6 +254,16 @@ func Promote(s *store.Store, envs *Envs, from, to string, allowSkip bool) (
 	commit := s.GetRef(srcRef)
 	if commit == "" {
 		return Promotion{}, fmt.Errorf("%s holds nothing to promote", srcName)
+	}
+	// Not asked when nothing would move: the commit is already what the
+	// public sees, and promoting twice is a thing pipelines do. Asked of an
+	// environment holding the live ref whatever it is marked, because the
+	// live ref is what the public site serves.
+	public := dst.Production || dst.Ref == RefLive
+	if check != nil && public && s.GetRef(dst.Ref) != commit {
+		if err := check(commit); err != nil {
+			return Promotion{}, err
+		}
 	}
 
 	var out Promotion

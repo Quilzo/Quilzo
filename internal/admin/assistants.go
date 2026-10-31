@@ -13,6 +13,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/form"
 )
 
 // Building a site's chatbots, and seeing exactly why they answer as they do.
@@ -43,8 +44,9 @@ type Assistants struct {
 	Documents func() ([]DocumentChoice, error)
 	// Model is the configured model, or nil with the reason there is none.
 	Model func(assistant.Assistant) (assistant.Model, string)
-	// Forms names the site's forms, for the action picker.
-	Forms func() ([]string, error)
+	// Forms are the site's forms: their names for the action picker, and
+	// their fields for checking a form action before it is saved.
+	Forms func() (*form.Set, error)
 }
 
 func (s *Server) assistantsReady(w http.ResponseWriter, r *http.Request) (principal, bool) {
@@ -137,10 +139,23 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request) {
 	data["LNudgePages"] = strings.Join(l.NudgePages, ", ")
 	data["LSuggestions"] = strings.Join(l.Suggestions, "\n")
 	if s.Assistants.Forms != nil {
-		if names, ferr := s.Assistants.Forms(); ferr == nil {
-			data["FormNames"] = names
+		if forms, ferr := s.Assistants.Forms(); ferr == nil && forms != nil {
+			data["FormNames"] = forms.Names()
 		}
 	}
+	// Whether anything on the actions panel can ever reach a visitor. Only
+	// a model chooses an action, so on a chatbot that answers without one
+	// the panel is a list of offers nobody is made, and the owner adding
+	// to it is told so above it rather than left to wonder.
+	var m assistant.Model
+	why := "extractive by declaration"
+	if a.UseModel {
+		why = "this build was started without a model"
+		if s.Assistants.Model != nil {
+			m, why = s.Assistants.Model(a)
+		}
+	}
+	data["NoOffers"] = assistant.WhyNoOffers(a, m, why)
 
 	// The test console.
 	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" && s.Assistants.Index != nil {
@@ -255,6 +270,7 @@ func (s *Server) handleAssistantAction(w http.ResponseWriter, r *http.Request) {
 	action := strings.TrimSpace(r.FormValue("action"))
 	back := "/assistants/" + url.PathEscape(name)
 	remove := r.FormValue("remove") == "1"
+	note := ""
 	change := "action"
 	if remove {
 		change = "action.remove"
@@ -271,12 +287,18 @@ func (s *Server) handleAssistantAction(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if !remove {
-			kept = append(kept, assistant.Action{
+			ac := assistant.Action{
 				Name: action, Kind: assistant.ActionKind(r.FormValue("kind")),
 				Target:      strings.TrimSpace(r.FormValue("target")),
 				Description: strings.TrimSpace(r.FormValue("description")),
 				Fields:      splitCSV(r.FormValue("fields")),
-			})
+			}
+			sensitive, ferr := s.checkActionForm(ac)
+			if ferr != nil {
+				return ferr
+			}
+			note = assistant.SensitiveNote(ac, sensitive)
+			kept = append(kept, ac)
 		}
 		a.Actions = kept
 		return set.Put(a)
@@ -288,8 +310,29 @@ func (s *Server) handleAssistantAction(w http.ResponseWriter, r *http.Request) {
 	msg := "Action added."
 	if remove {
 		msg = "Action removed."
+	} else if note != "" {
+		msg += " " + note + "."
 	}
 	http.Redirect(w, r, back+"?m="+url.QueryEscape(msg), http.StatusSeeOther)
+}
+
+// checkActionForm checks a form action against the form it fills in, as
+// the command line does. The forms not being readable is a refusal rather
+// than a pass: an action saved unchecked is the silent failure this exists
+// to stop.
+func (s *Server) checkActionForm(ac assistant.Action) ([]string, error) {
+	if ac.Kind != assistant.Form {
+		return nil, nil
+	}
+	if s.Assistants.Forms == nil {
+		return nil, assistantError("this build cannot read the site's forms, " +
+			"so an action filling one in cannot be checked")
+	}
+	forms, err := s.Assistants.Forms()
+	if err != nil {
+		return nil, err
+	}
+	return ac.CheckForm(forms)
 }
 
 // handleAssistantRemove deletes an assistant.

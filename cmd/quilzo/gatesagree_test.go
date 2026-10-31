@@ -26,9 +26,10 @@ import (
 func TestEveryPublishSurfaceRunsTheContentGates(t *testing.T) {
 	// Where the set is built, and what each one is.
 	surfaces := map[string]string{
-		"main.go":  "quilzo publish",
-		"serve.go": "the browser, through srv.ContentGates",
-		"mcp.go":   "the agent interface",
+		"main.go":   "quilzo publish, and through it a scheduled publish",
+		"serve.go":  "the browser, through srv.ContentGates",
+		"mcp.go":    "the agent interface",
+		"envcmd.go": "quilzo env promote, to production",
 	}
 	var missing []string
 	for file, what := range surfaces {

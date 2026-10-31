@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/media"
@@ -395,7 +396,8 @@ func (s *Server) handleSectionFields(w http.ResponseWriter, r *http.Request) {
 	var own []fieldView
 	var blocks []block
 	index := map[string]int{}
-	for _, f := range viewsOf(fields, name, at, s.listingNames(kind) != nil) {
+	names := s.namesFor(kind)
+	for _, f := range viewsOf(fields, name, at, names) {
 		if f.Group == "" {
 			own = append(own, f)
 			continue
@@ -435,18 +437,19 @@ func (s *Server) handleSectionFields(w http.ResponseWriter, r *http.Request) {
 		"NotesOn": s.Notes != nil && s.Notes.Store != nil,
 		"Notes":   notes,
 		"Kind":    kind,
-		// The listings this site has, for the one field whose value must name
-		// one of them. Typing it blind is how a page gets a listing name with
+		// What this site has, for the one field on a section whose value
+		// must name something declared elsewhere: a listing, or the chatbot a
+		// question box opens. Typing it blind is how a page gets a name with
 		// a typo in it, and that page then refuses to publish — which is the
 		// right refusal arriving at the wrong moment, after the editing is
 		// done. A datalist is plain HTML and needs no script.
-		"ListingNames": s.listingNames(kind),
-		"Own":          own,
-		"Blocks":       blocks,
-		"Lists":        section.Lists(body, at),
-		"Base":         s.Store.GetRef(site.RefDraft),
-		"Message":      r.URL.Query().Get("m"),
-		"Error":        r.URL.Query().Get("e"),
+		"Suggestions": names,
+		"Own":         own,
+		"Blocks":      blocks,
+		"Lists":       section.Lists(body, at),
+		"Base":        s.Store.GetRef(site.RefDraft),
+		"Message":     r.URL.Query().Get("m"),
+		"Error":       r.URL.Query().Get("e"),
 	})
 }
 
@@ -564,21 +567,72 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-// listingNames is what a listing section's name field may be set to.
+// suggestions is what one field of a section may be set to: the names of
+// something the site declares, offered as a datalist.
+type suggestions struct {
+	// Field is the field's path in the section.
+	Field string
+	// List is the datalist's id.
+	List string
+	// Options are the names, in the order offered.
+	Options []suggestion
+}
+
+// suggestion is one name, and a word on it when there is something to say.
+type suggestion struct {
+	Value string
+	// Note is shown beside the name by the browser. A chatbot that is not
+	// public is offered with the reason a box naming it will not publish,
+	// rather than left out: somebody building a page before making its
+	// chatbot public should see the name, and see why it does not work yet.
+	Note string
+}
+
+// namesFor is what a section kind's reference field may be set to, or nil.
 //
-// Empty for every other kind, so the markup asks once and the screen carries
-// nothing it does not use. Empty too when the listings are unwired or
-// unreadable: a suggestion list that cannot be built is not an error, it is a
-// field without suggestions, which is what this screen has always been.
-func (s *Server) listingNames(kind string) []string {
-	if kind != listing.SectionKind || s.Listings == nil || s.Listings.Load == nil {
-		return nil
+// Nil for every kind without one, so the markup asks once and the screen
+// carries nothing it does not use. Nil too when what it reads is unwired or
+// unreadable: a suggestion list that cannot be built is not an error, it is
+// a field without suggestions, which is what this screen has always been.
+func (s *Server) namesFor(kind string) *suggestions {
+	switch kind {
+	case listing.SectionKind:
+		if s.Listings == nil || s.Listings.Load == nil {
+			return nil
+		}
+		set, err := s.Listings.Load()
+		if err != nil || set == nil || len(set.Names()) == 0 {
+			return nil
+		}
+		out := &suggestions{Field: "name", List: "listing-names"}
+		for _, n := range set.Names() {
+			out.Options = append(out.Options, suggestion{Value: n})
+		}
+		return out
+	case assistant.SectionKind:
+		if s.Assistants == nil || s.Assistants.Load == nil {
+			return nil
+		}
+		set, err := s.Assistants.Load()
+		if err != nil || set == nil || len(set.Assistants) == 0 {
+			return nil
+		}
+		// Public first: those are the ones a box can open, and the first
+		// name a browser offers is the one somebody takes.
+		out := &suggestions{Field: assistant.BoxField, List: "chatbot-names"}
+		var private []suggestion
+		for _, a := range set.Assistants {
+			if a.Public {
+				out.Options = append(out.Options, suggestion{Value: a.Name, Note: a.Title})
+				continue
+			}
+			private = append(private, suggestion{Value: a.Name,
+				Note: "not public yet: publishing refuses a box that opens it"})
+		}
+		out.Options = append(out.Options, private...)
+		return out
 	}
-	set, err := s.Listings.Load()
-	if err != nil || set == nil {
-		return nil
-	}
-	return set.Names()
+	return nil
 }
 
 // fieldView is one editable value plus what the screen needs to draw it.
@@ -604,14 +658,16 @@ type fieldView struct {
 	// and not the screen.
 	Page string
 	At   int
-	// Suggest says this field offers the screen's datalist of listing names.
-	Suggest bool
+	// Suggest is the id of the screen's datalist this field offers, when it
+	// is the one field on its section that names something declared
+	// elsewhere. See namesFor.
+	Suggest string
 	// Icon says this field names an icon, and offers the set's names.
 	Icon bool
 }
 
 // viewsOf decorates the editable fields for the screen.
-func viewsOf(fields []section.Editable, page string, at int, suggest bool) []fieldView {
+func viewsOf(fields []section.Editable, page string, at int, names *suggestions) []fieldView {
 	out := make([]fieldView, 0, len(fields))
 	for _, f := range fields {
 		v := fieldView{Editable: f, Page: page, At: at}
@@ -620,9 +676,11 @@ func viewsOf(fields []section.Editable, page string, at int, suggest bool) []fie
 			v.Noun = nounFor(kind)
 			v.Asset = assetIDOf(f.Value)
 		}
-		// The listing section's name field is the one value on any section
-		// that has to match something declared elsewhere. See listingNames.
-		v.Suggest = suggest && f.Path == "name"
+		// A listing's name and a question box's chatbot are the values on a
+		// section that have to match something declared elsewhere.
+		if names != nil && f.Path == names.Field {
+			v.Suggest = names.List
+		}
 		v.Icon = f.Path == "icon" || strings.HasSuffix(f.Path, ".icon")
 		out = append(out, v)
 	}

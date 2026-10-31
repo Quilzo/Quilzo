@@ -349,7 +349,7 @@ working together
 publishing
   quilzo env list                          what is where, and what is waiting
   quilzo env add staging --before production
-  quilzo env promote staging production    a pointer move; the same bytes
+  quilzo env promote staging production    a pointer move; production is checked first
   quilzo env diff staging production       what would change
   quilzo env remove NAME                   take one out of the pipeline
   quilzo publish [COMMIT]                  move live to the draft
@@ -361,7 +361,7 @@ publishing
 the assistant
   quilzo assist "..." --author WHO         propose changes; marks what it writes
   quilzo assistant add NAME --title T      declare a chatbot that answers from the site
-  quilzo assistant action NAME ACTION      what it may offer to do: a link or a form
+  quilzo assistant action NAME ACTION      what it may offer, with a model: a link or a form
   quilzo assistant ask NAME "question"     try it, with its sources and what was removed
   quilzo assistant eval NAME CASES.jsonl   measure it, including what it should refuse
   quilzo assistant list | remove NAME

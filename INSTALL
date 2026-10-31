@@ -116,6 +116,7 @@ A first site
      quilzo init
      quilzo template use sections
      quilzo add index=templates/sections.json -m "first page"
+     quilzo assistant add help --title "Ask this site" --public
      quilzo publish
      quilzo site --addr 127.0.0.1:8081
 

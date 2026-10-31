@@ -9,6 +9,9 @@ import (
 	"fmt"
 	"sort"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/assistant"
+	"github.com/quilzo/quilzo/internal/form"
 )
 
 // What installing a package would change, worked out against what the
@@ -185,8 +188,73 @@ func (p *Package) MakePlan(st State, owned []Ref) Plan {
 			pl.Steps = append(pl.Steps, Step{r, Remove})
 		}
 	}
+	pl.Conflicts = append(pl.Conflicts, p.placements(st, declared)...)
 	sort.Strings(pl.Conflicts)
 	return pl
+}
+
+// placements is what the package's pages and chatbots name that will not
+// be there to answer once it is installed: a question box opening a
+// chatbot that neither the package nor the site has, or one that is not
+// public, and an action filling in a form, or a field of one, that does
+// not exist.
+//
+// The same checks publishing makes of a question box and the Chatbots
+// screen makes of an action, asked here as well because an install is the
+// other way both arrive. Its chatbots are live the moment it is installed,
+// and a broken page waiting in the draft is a refusal somebody meets later
+// with no idea where it came from.
+//
+// A name is the package's own block first, and then the site's, unless the
+// site's is one this package made and no longer declares, which the
+// install removes.
+func (p *Package) placements(st State, declared map[Ref]bool) []string {
+	existing := func(kind, name string, into any) bool {
+		r := Ref{kind, name}
+		cur, ok := st.Current[r]
+		if !ok || (st.Owner[r] == p.Name && !declared[r]) {
+			return false
+		}
+		return json.Unmarshal(cur, into) == nil
+	}
+	find := func(name string) (assistant.Assistant, bool) {
+		if a, ok := p.Block(Ref{"chatbot", name}).(assistant.Assistant); ok {
+			return a, true
+		}
+		var a assistant.Assistant
+		return a, existing("chatbot", name, &a)
+	}
+	pages := make(map[string]any, len(p.Pages))
+	for _, pg := range p.Pages {
+		pages[pg.Name] = pg.Body
+	}
+	var out []string
+	for _, b := range assistant.Boxes(pages, find) {
+		out = append(out, fmt.Sprintf("page %s, %s", b.Page, b))
+	}
+
+	if len(p.Chatbots) == 0 {
+		return out
+	}
+	forms := &form.Set{Forms: append([]form.Form(nil), p.Forms...)}
+	for r := range st.Current {
+		if r.Kind != "form" {
+			continue
+		}
+		if _, ours := forms.Get(r.Name); ours {
+			continue
+		}
+		var f form.Form
+		if existing("form", r.Name, &f) {
+			forms.Forms = append(forms.Forms, f)
+		}
+	}
+	for _, a := range p.Chatbots {
+		if err := a.CheckForms(forms); err != nil {
+			out = append(out, "chatbot "+err.Error())
+		}
+	}
+	return out
 }
 
 // Installed is the record of a feature on this installation.

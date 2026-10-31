@@ -26,7 +26,7 @@
   <thead><tr><th scope="col">Change</th><th scope="col">Kind</th><th scope="col">Name</th></tr></thead>
   <tbody>{{range .Plan.Steps}}<tr><td>{{.Action}}</td><td>{{.Ref.Kind}}</td><td><code>{{.Ref.Name}}</code></td></tr>{{end}}</tbody>
 </table></div>
-{{if .Plan.Conflicts}}<div class="notice bad" role="alert"><p>It cannot be installed: a feature only changes what it made.</p><ul>{{range .Plan.Conflicts}}<li>{{.}}</li>{{end}}</ul></div>
+{{if .Plan.Conflicts}}<div class="notice bad" role="alert"><p>It cannot be installed: a feature only changes what it made, and installs nothing that would not work.</p><ul>{{range .Plan.Conflicts}}<li>{{.}}</li>{{end}}</ul></div>
 {{if .SiteByHand}}<form method="post" action="/make/check">
   <input type="hidden" name="text" value="{{.Body}}"><input type="hidden" name="take_site" value="1">
   <p class="hint">The site's name and look are yours. This package can take them over; what they are now is kept, and put back if the package is removed.</p>

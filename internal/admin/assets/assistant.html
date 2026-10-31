@@ -207,6 +207,10 @@
 {{end}}
 
 <h2>What it can offer to do</h2>
+{{if .NoOffers}}<p class="notice warn" role="note">{{.NoOffers}}. A model
+  chooses which action fits a question; an answer quoted from your pages has
+  nothing to choose with, so nothing below is offered to a visitor until
+  “Write answers with the configured model” is on and a model can be used.</p>{{end}}
 <p>A chatbot never acts on its own. It can offer a link, or fill in one of
   your forms for the visitor to check and send themselves.</p>
 {{if .A.Actions}}
@@ -246,8 +250,9 @@
     <input id="description" name="description" required placeholder="Start a return for an order"></div>
   <div class="field"><label for="fields">Form fields it may fill in</label>
     <input id="fields" name="fields" placeholder="order, reason" aria-describedby="fields-help">
-    <p id="fields-help" class="help">Only for a form. Fields marked sensitive
-      in the form are never filled in, whatever is listed here.</p></div>
+    <p id="fields-help" class="help">Only for a form, and only fields that form
+      asks for: anything else is refused when you add the action. Fields marked
+      sensitive in the form are never filled in, whatever is listed here.</p></div>
   <button type="submit">Add action</button>
 </form>
 

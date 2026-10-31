@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/codescan"
 	"github.com/quilzo/quilzo/internal/gate"
 	"github.com/quilzo/quilzo/internal/pii"
@@ -234,6 +235,53 @@ func contentGates(root string, s *store.Store, ref string) gate.Set {
 					}
 				}
 				return blocking, advisory, nil
+			},
+		},
+
+		// A question box opens a chatbot by name, and the page renders
+		// whatever name it carries. One naming a chatbot that does not exist,
+		// or one that is not public, is a box every visitor can type into and
+		// every visitor is told "not found" from — the public site gives one
+		// answer for both on purpose. The arrangement gate above passes it,
+		// because the kind is right; this is the half it cannot see.
+		//
+		// The chatbots are read only when a page has a box that names one,
+		// and a file that cannot be read is a gate that could not run: a site
+		// with no question boxes is not refused because of a file it does
+		// not use.
+		{
+			Name: "question boxes",
+			Refusal: func(n int) string {
+				return fmt.Sprintf("%d question box(es) open a chatbot visitors "+
+					"cannot reach, so every question asked in one is answered "+
+					"\"not found\".\n  Name one of the site's public chatbots "+
+					"(`quilzo assistant list`), make the one named public, or "+
+					"take the section out", n)
+			},
+			Run: func() (blocking, advisory []gate.Finding, err error) {
+				pages, perr := pagesAt()
+				if perr != nil {
+					return nil, nil, perr
+				}
+				var bots *assistant.Set
+				var lerr error
+				find := func(name string) (assistant.Assistant, bool) {
+					if bots == nil && lerr == nil {
+						bots, lerr = assistant.Load(assistantsPath(root))
+					}
+					if lerr != nil {
+						return assistant.Assistant{}, false
+					}
+					return bots.Get(name)
+				}
+				boxes := assistant.Boxes(pages, find)
+				if lerr != nil {
+					return nil, nil, lerr
+				}
+				for _, b := range boxes {
+					blocking = append(blocking, gate.Finding{Page: b.Page, Detail: b.String()})
+				}
+				return blocking, nil, nil
 			},
 		},
 

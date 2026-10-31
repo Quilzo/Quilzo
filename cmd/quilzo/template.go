@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/foreign"
 	"github.com/quilzo/quilzo/internal/render"
@@ -275,11 +276,55 @@ func templateUse(root string, args []string) error {
 
 	w.Human("\n  %snext:%s\n", dim, reset)
 	w.Human("    quilzo add %s=%s\n", *page, sample)
+	for _, step := range sampleChatbotSteps(root, *page, body) {
+		w.Human("    %s\n", step)
+	}
 	w.Human("    quilzo publish\n")
 	w.Human("    quilzo site --open\n")
 	w.Human("\n  %sthe stylesheet is generated from the theme and served at "+
 		"/site.css%s\n", dim, reset)
 	return nil
+}
+
+// sampleChatbotSteps is what has to happen before a sample's question boxes
+// can be published: a chatbot declared for each one that opens a chatbot
+// this site does not have, and anything else about a box said as the
+// publish gate says it.
+//
+// The sections sample has a question box, because it shows every kind of
+// section, and publishing refuses a box that opens a chatbot visitors
+// cannot reach. Printing "quilzo publish" as the next step without this was
+// a next step that is refused. Worked out against the site's chatbots
+// rather than written into the hint, so a site that already has a public
+// help chatbot is not told to declare it again.
+//
+// A hint and not a check: chatbots that cannot be read leave it unsaid, and
+// the publish gate says why when it is run.
+func sampleChatbotSteps(root, page string, sample map[string]any) []string {
+	set, err := assistant.Load(assistantsPath(root))
+	if err != nil {
+		return nil
+	}
+	var steps []string
+	declared := map[string]bool{}
+	for _, b := range set.Boxes(map[string]any{page: sample}) {
+		title := strings.TrimSpace(b.Title)
+		if title == "" {
+			title = "Ask this site"
+		}
+		_, exists := set.Get(b.Names)
+		bot := assistant.Assistant{Name: b.Names, Title: title}
+		if !exists && bot.Validate() == nil {
+			if !declared[b.Names] {
+				declared[b.Names] = true
+				steps = append(steps, fmt.Sprintf("quilzo assistant add %s --title %q --public   %sthe sample's question box opens it%s",
+					b.Names, title, dim, reset))
+			}
+			continue
+		}
+		steps = append(steps, fmt.Sprintf("%s%s: %s%s", dim, page, b, reset))
+	}
+	return steps
 }
 
 // withLayout returns a copy of a sample carrying its layout declaration.

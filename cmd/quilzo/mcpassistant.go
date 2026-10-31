@@ -97,7 +97,10 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 		Detail: "Never public from here. A person makes a chatbot public, " +
 			"decides whether static copies of the site carry it, and decides " +
 			"what it may offer to do, on the Chatbots screen. A chatbot that " +
-			"is already public cannot be changed from here.",
+			"is already public cannot be changed from here. When it has " +
+			"actions, the result says whether they can be offered: only " +
+			"when it answers with a model, and only to forms and fields " +
+			"the site has.",
 		Args: map[string]string{
 			"name": "lower-case, digits and hyphens", "title": "what visitors see",
 			"greeting": "optional", "instructions": "optional tone and focus",
@@ -141,7 +144,46 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 		}); err != nil {
 			return nil, err
 		}
-		return fmt.Sprintf("declared %s, private. Try it with ask_assistant; "+
-			"a person makes it public at /assistants/%s", name, name), nil
+		msg := fmt.Sprintf("declared %s, private. Try it with ask_assistant; "+
+			"a person makes it public at /assistants/%s", name, name)
+		for _, n := range offerNotes(root, bot) {
+			msg += ". " + n
+		}
+		return msg, nil
 	})
+}
+
+// offerNotes is what an agent declaring a chatbot is told about the actions
+// a person gave it: whether any can be offered, and any that fills in a
+// form that is not there or a field that form does not ask for.
+//
+// Told rather than refused. Actions are not on this surface, so an agent
+// cannot fix what is wrong with one, and refusing would leave it unable to
+// change a chatbot's tone over something only a person may change; and a
+// chatbot changed from here is private, so nothing it offers reaches a
+// visitor. The words are the ones the command line and the Chatbots screen
+// use, so all three are recognisably saying one thing.
+func offerNotes(root string, a assistant.Assistant) []string {
+	if len(a.Actions) == 0 {
+		return nil
+	}
+	var notes []string
+	m, why := assistantModelAt(root, a)
+	if n := assistant.WhyNoOffers(a, m, why); n != "" {
+		notes = append(notes, n)
+	}
+	forms, err := loadForms(root)
+	if err != nil {
+		return append(notes, "the site's forms could not be read, so its form actions were not checked: "+err.Error())
+	}
+	for _, ac := range a.Actions {
+		sensitive, cerr := ac.CheckForm(forms)
+		switch {
+		case cerr != nil:
+			notes = append(notes, cerr.Error()+"; a person changes its actions on the Chatbots screen")
+		case len(sensitive) > 0:
+			notes = append(notes, assistant.SensitiveNote(ac, sensitive))
+		}
+	}
+	return notes
 }
