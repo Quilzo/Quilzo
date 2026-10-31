@@ -1794,7 +1794,11 @@ itself, or a network added with `quilzo shield trust add`; a machine on a
 private network is blocked like any other. A load balancer that does not say
 who it carries makes every visitor its address, so add it with
 `quilzo shield trust add`, or a block on one visitor is a block on all of
-them. `quilzo shield lift ID`, on this machine, ends any block.
+them. The same holds for a container's published port: Docker's own proxy
+hands the container a connection from this machine as one from the bridge
+gateway, such as 172.17.0.1, so a browser on the host is that address and can
+be blocked like any other. `quilzo shield lift ID`, on this machine, ends any
+block.
 
 ## Why you might choose this, and when you should not
 
