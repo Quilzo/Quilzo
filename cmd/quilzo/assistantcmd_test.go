@@ -402,3 +402,66 @@ func TestAChatbotTriedHereReadsRecordsThroughTheTemplatesGiven(t *testing.T) {
 		t.Fatalf("quilzo assistant ask did not say why no record was read: %q", told.String())
 	}
 }
+
+// On a site with no records, what a chatbot tried here knows is still only
+// what a visitor can open: a page for members and one whose publish window
+// has not opened are published and not read, and an ordinary published page
+// is.
+func TestAChatbotTriedHereOnASiteWithNoRecordsReadsOnlyWhatAVisitorCanOpen(t *testing.T) {
+	if w == nil {
+		w = out.New(false)
+	}
+	root := t.TempDir()
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages := map[string]any{
+		"index":   map[string]any{"title": "Marginalia", "intro": "Paper, made in small runs."},
+		"returns": map[string]any{"title": "Returns", "body": "Opened ink bottles cannot be returned."},
+		"club": map[string]any{"title": "The club", "body": "The members' handshake is two taps.",
+			public.MembersOnlyField: true},
+		"launch": map[string]any{"title": "Launch", "body": "The embargoed fountain pen.",
+			site.Starts: "2099-01-01"},
+	}
+	if _, err := site.SaveDraft(s, pages, "shop", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Publish(s, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdAssistant(root, []string{"add", "help", "--title", "Ask the shop"}); err != nil {
+		t.Fatal(err)
+	}
+	a, err := loadAssistant(root, "help")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// No page stands for records, so no layout is needed and none is given.
+	idx, warnings, err := assistantKnowledge(root, t.TempDir(), a)
+	if err != nil || len(warnings) != 0 {
+		t.Fatalf("%v %q", err, warnings)
+	}
+	read := map[string]bool{}
+	var said strings.Builder
+	for _, p := range idx.Passages {
+		read[p.Page] = true
+		said.WriteString(p.Page + " " + p.Header() + " " + p.Text + "\n")
+	}
+	for _, never := range []string{"club", "launch"} {
+		if read[never] {
+			t.Errorf("the chatbot reads %s:\n%s", never, said.String())
+		}
+	}
+	for _, never := range []string{"handshake", "embargoed"} {
+		if strings.Contains(said.String(), never) {
+			t.Errorf("the chatbot reads %q:\n%s", never, said.String())
+		}
+	}
+	if !read["returns"] || !strings.Contains(said.String(), "cannot be returned") {
+		t.Errorf("an ordinary published page is not read:\n%s", said.String())
+	}
+}
