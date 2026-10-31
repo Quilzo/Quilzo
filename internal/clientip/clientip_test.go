@@ -32,7 +32,7 @@ func from(r *Resolver, remote string, xff ...string) Client {
 func TestWithNoProxyTheConnectionIsTheClient(t *testing.T) {
 	r := resolver(t)
 	c := from(r, "203.0.113.9:4000", "127.0.0.1")
-	if c.Addr.String() != "203.0.113.9" || c.Via != Connection || c.Internal {
+	if c.Addr.String() != "203.0.113.9" || c.Via != Connection {
 		t.Fatalf("%+v", c)
 	}
 	// A nil resolver is the same: nothing is believed.
@@ -73,7 +73,7 @@ func TestTheRightmostAddressThatIsNotAProxyIsTheClient(t *testing.T) {
 	}
 	for _, tc := range cases {
 		c := from(r, "10.0.0.2:80", tc.xff...)
-		if c.Addr.String() != tc.want || c.Via != Forwarded || c.Internal {
+		if c.Addr.String() != tc.want || c.Via != Forwarded || c.Unverified {
 			t.Errorf("%s: got %+v, want %s", tc.name, c, tc.want)
 		}
 		if c.Peer.String() != "10.0.0.2" {
@@ -94,7 +94,7 @@ func TestWhatDoesNotParseIsUnknownNotGuessed(t *testing.T) {
 		{"203.0.113.9, " + strings.Repeat("1", maxEntry+1)},
 	} {
 		c := from(r, "10.0.0.2:80", xff...)
-		if c.Known() || c.Via != Forwarded || c.Internal {
+		if c.Known() || c.Via != Forwarded {
 			t.Errorf("%q: %+v", xff, c)
 		}
 	}
@@ -104,17 +104,33 @@ func TestWhatDoesNotParseIsUnknownNotGuessed(t *testing.T) {
 	}
 }
 
-func TestAChainOfOnlyProxiesIsFromInside(t *testing.T) {
-	r := resolver(t, "10.0.0.0/8")
-	if c := from(r, "10.0.0.2:80"); !c.Internal || c.Addr.String() != "10.0.0.2" {
-		t.Fatalf("no header: %+v", c)
+func TestARequestANamedProxyMakesItselfIsItsOwn(t *testing.T) {
+	// Being named is being believed about somebody else, and nothing more:
+	// with nobody forwarded, the proxy is the client, known and blockable,
+	// not a request from inside that nothing may touch.
+	r := resolver(t, "10.0.0.0/8", "192.0.2.0/24")
+	for _, remote := range []string{"10.0.0.2:80", "192.0.2.10:443"} {
+		c := from(r, remote)
+		want, _ := Parse(remote)
+		if c.Addr != want || c.Via != Connection || c.Unverified {
+			t.Fatalf("no header from %s: %+v", remote, c)
+		}
 	}
-	if c := from(r, "10.0.0.2:80", "10.9.9.9, 10.0.0.3"); !c.Internal || c.Addr.String() != "10.9.9.9" {
+	// Every hop a proxy: the earliest made the request, and is the client.
+	if c := from(r, "10.0.0.2:80", "10.9.9.9, 10.0.0.3"); c.Addr.String() != "10.9.9.9" || c.Via != Forwarded || c.Unverified {
 		t.Fatalf("all proxies: %+v", c)
 	}
 	long := strings.TrimSuffix(strings.Repeat("10.0.0.1,", maxHops+1), ",")
-	if c := from(r, "10.0.0.2:80", long); c.Known() || c.Internal {
+	if c := from(r, "10.0.0.2:80", long); c.Known() {
 		t.Fatalf("past the hop limit: %+v", c)
+	}
+	// A named proxy that says who it forwards in another header is
+	// everybody it forwards: known, and not to be blocked on that alone.
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "192.0.2.10:443"
+	req.Header.Set("Forwarded", "for=203.0.113.9")
+	if c := r.From(req); c.Addr.String() != "192.0.2.10" || !c.Unverified {
+		t.Fatalf("another header: %+v", c)
 	}
 }
 
@@ -271,13 +287,38 @@ func TestAForwardedAddressTheShieldCannotTrustIsMarked(t *testing.T) {
 	if c := from(none, "104.16.1.1:443"); c.Unverified {
 		t.Fatal("a plain connection was marked")
 	}
-	// Proxies assumed from "on the inside", not named.
-	assumed := &Resolver{Proxies: Inside(), Assumed: true}
-	if c := from(assumed, "10.0.0.2:80", "203.0.113.9"); !c.Unverified || c.Addr.String() != "203.0.113.9" {
+	// A proxy assumed to be on this machine, not named.
+	assumed := &Resolver{Proxies: Loopback(), Assumed: true}
+	if c := from(assumed, "127.0.0.1:80", "203.0.113.9"); !c.Unverified || c.Addr.String() != "203.0.113.9" {
 		t.Fatalf("assumed: %+v", c)
 	}
 	named := resolver(t, "10.0.0.2")
 	if c := from(named, "10.0.0.2:80", "203.0.113.9"); c.Unverified {
 		t.Fatalf("named: %+v", c)
+	}
+}
+
+func TestAProxyAssumedRatherThanNamedIsOnThisMachine(t *testing.T) {
+	assumed := &Resolver{Proxies: Loopback(), Assumed: true}
+	// A reverse proxy on this machine is believed, over IPv4 or IPv6.
+	for _, remote := range []string{"127.0.0.1:80", "127.0.1.1:80", "[::1]:80", "[::ffff:127.0.0.1]:80"} {
+		if c := from(assumed, remote, "203.0.113.9"); c.Addr.String() != "203.0.113.9" || c.Via != Forwarded {
+			t.Errorf("%s was not believed: %+v", remote, c)
+		}
+	}
+	// Anywhere else on the inside is a place, not a proxy: whatever is on
+	// a private network, a container bridge or carrier-grade NAT keeps its
+	// own address, whatever it writes.
+	for _, remote := range []string{"10.0.0.2:80", "172.17.0.1:80", "192.168.1.5:80",
+		"100.64.0.1:80", "169.254.1.1:80", "[fd00::1]:80", "[fe80::1]:80"} {
+		c := from(assumed, remote, "203.0.113.9")
+		want, _ := Parse(remote)
+		if c.Addr != want || c.Via != Connection {
+			t.Errorf("%s chose its address: %+v", remote, c)
+		}
+	}
+	// Named, the same machine is believed.
+	if c := from(resolver(t, "172.17.0.1"), "172.17.0.1:80", "203.0.113.9"); c.Addr.String() != "203.0.113.9" {
+		t.Fatalf("a named proxy was not believed: %+v", c)
 	}
 }

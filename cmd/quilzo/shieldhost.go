@@ -180,13 +180,14 @@ func canSignInStrongly(root string) bool {
 	return false
 }
 
-// signal tells the engine something a request did. A request that only
-// passed through named proxies has no source to count; one whose address
-// cannot be trusted enough to block is counted and marked so.
+// signal tells the engine something a request did. A request whose client
+// could not be told has no source to count; one whose address cannot be
+// trusted enough to block is counted and marked so. One a named proxy made
+// itself counts against the proxy, as anybody's would.
 func (h *shieldHost) signal(name, subject string, r *http.Request) {
 	c := clientip.FromRequest(r)
 	s := shield.Signal{Name: name, Subject: subject, Unverified: c.Unverified, Where: h.where}
-	if c.Known() && !c.Internal {
+	if c.Known() {
 		s.Source = c.Addr.String()
 	}
 	h.engine.Observe(s)

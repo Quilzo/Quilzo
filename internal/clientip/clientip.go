@@ -61,14 +61,13 @@ type Client struct {
 	Peer netip.Addr
 	// Via says whether Addr is the connection's or a proxy's report of it.
 	Via string
-	// Internal marks a request every hop of which was a named proxy: one
-	// from inside, which nothing should block.
-	Internal bool
 	// Unverified marks a client the shield must not act on by its address
 	// alone: a connection carrying a forwarded address from a peer that
-	// was not named as a proxy (it may be a CDN edge everybody shares), or
-	// an address forwarded by a proxy only assumed to be one because it is
-	// on the inside (any machine there could have written it).
+	// was not named as a proxy (it may be a CDN edge everybody shares), a
+	// named proxy forwarding somebody in a header other than
+	// X-Forwarded-For (its address is everybody's it forwards), or an
+	// address forwarded by a proxy only assumed to be one because it is on
+	// this machine (any program there could have written it).
 	Unverified bool
 }
 
@@ -84,9 +83,9 @@ type Resolver struct {
 	// Proxies are the peers whose forwarded addresses are believed. Empty
 	// means none: the connection is the client.
 	Proxies []netip.Prefix
-	// Assumed says Proxies were not named but taken to be anything on the
-	// inside, so a forwarded address is believed for limits and placing,
-	// and is Unverified for the shield.
+	// Assumed says Proxies were not named but taken to be this machine's
+	// own addresses (Loopback), so a forwarded address is believed for
+	// limits and placing, and is Unverified for the shield.
 	Assumed bool
 }
 
@@ -107,15 +106,22 @@ func (r *Resolver) trusted(a netip.Addr) bool {
 }
 
 // From decides who a request came from.
+//
+// A named proxy is believed about somebody else; that is all being named
+// gives it. A request it makes itself, with no X-Forwarded-For (a health
+// check, say), is its own, and it is the client: counted, limited and
+// blocked like anybody's. Nothing is exempt for where it connects from.
 func (r *Resolver) From(req *http.Request) Client {
 	peer, _ := Parse(req.RemoteAddr)
 	c := Client{Addr: peer, Peer: peer, Via: Connection}
-	if !peer.IsValid() || !r.trusted(peer) {
+	lines := req.Header.Values("X-Forwarded-For")
+	if !peer.IsValid() || !r.trusted(peer) || len(lines) == 0 {
 		// The connection is the client. If it brought a forwarded address
-		// anyway, it is either a proxy nobody named (a CDN edge, shared by
-		// everybody behind it) or somebody writing their own header; the
-		// first must not be blocked as one visitor, so the shield is told
-		// not to act on it alone.
+		// anyway, it is a proxy nobody named (a CDN edge, shared by
+		// everybody behind it), a named one saying who it forwards in a
+		// header this does not read, or somebody writing their own header;
+		// the first two must not be blocked as one visitor, so the shield
+		// is told not to act on it alone.
 		if peer.IsValid() {
 			for _, h := range forwardingHeaders {
 				if req.Header.Get(h) != "" {
@@ -124,13 +130,6 @@ func (r *Resolver) From(req *http.Request) Client {
 				}
 			}
 		}
-		return c
-	}
-	lines := req.Header.Values("X-Forwarded-For")
-	if len(lines) == 0 {
-		// A request a proxy made itself: a health check, or something on
-		// the inside.
-		c.Internal = true
 		return c
 	}
 	c.Via, c.Addr, c.Unverified = Forwarded, netip.Addr{}, r.Assumed
@@ -166,7 +165,9 @@ func (r *Resolver) From(req *http.Request) Client {
 			line = line[:cut]
 		}
 	}
-	c.Addr, c.Internal = last, true
+	// Every entry was a named proxy: the earliest of them made the request,
+	// and is its client.
+	c.Addr = last
 	return c
 }
 
@@ -351,9 +352,17 @@ func Local(a netip.Addr) bool {
 	return false
 }
 
-// Inside are the ranges Local covers, as prefixes: what a deployment that
-// says "the proxy is on this machine or my network" trusts.
+// Inside are the ranges Local covers, as prefixes.
 func Inside() []netip.Prefix { return append([]netip.Prefix(nil), local...) }
+
+// Loopback are this machine's own addresses, 127.0.0.0/8 and ::1: the only
+// proxy a deployment that says "the proxy is on this machine" trusts
+// without naming it. A private address says where a machine is, not that
+// it is the proxy; anything on that network could write the header, so a
+// proxy there is believed only when it is named.
+func Loopback() []netip.Prefix {
+	return []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8"), netip.MustParsePrefix("::1/128")}
+}
 
 // ParseProxies reads a list of proxies as an operator writes them: CIDR
 // ranges or single addresses, comma-separated.

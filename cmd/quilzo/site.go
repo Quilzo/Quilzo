@@ -8,7 +8,6 @@ import (
 	"flag"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/analytics"
-	"github.com/quilzo/quilzo/internal/clientip"
 	"github.com/quilzo/quilzo/internal/experiment"
 	"github.com/quilzo/quilzo/internal/listen"
 	"github.com/quilzo/quilzo/internal/personalise"
@@ -394,8 +393,7 @@ func cmdSite(root string, args []string) error {
 	// Who each request came from is decided once, at the edge, for the
 	// site, the API and everything else on this listener (internal/clientip).
 	// Then the shield's guard, so a blocked source reaches nothing.
-	handler = clientip.Middleware(proxies(root, "site.trusted_proxy"),
-		sh.guard.Wrap(shield.Site, handler))
+	handler = edge(root, "site.trusted_proxy", sh.guard.Wrap(shield.Site, handler))
 
 	srv := &http.Server{Addr: *addr, Handler: handler}
 
@@ -433,6 +431,9 @@ func cmdSite(root string, args []string) error {
 	}
 
 	fmt.Printf("site on http://%s\n", *addr)
+	if line := assumedProxy(root, "site.trusted_proxy"); line != "" {
+		fmt.Printf("  %s%s%s\n", dim, line, reset)
+	}
 	fmt.Printf("  %sserving the %s environment; drafts are not public%s\n", dim, serving.Name, reset)
 	fmt.Printf("  %sinstallable: /manifest.webmanifest · offline: /sw.js%s\n", dim, reset)
 	if fp := st.Fingerprint(); fp != "" {

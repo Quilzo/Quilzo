@@ -63,10 +63,11 @@ func TestWrapRefusesBlockedSourcesFirst(t *testing.T) {
 	if w := get("10.0.0.2:4000", "203.0.113.9", h); w.Code != http.StatusTooManyRequests {
 		t.Fatal("the forwarded address was not judged")
 	}
-	// A request from inside, or whose client cannot be told, is not
-	// refused: refusing it is refusing whoever shares the proxy.
+	// The proxy's own request is judged by its own address, which nobody
+	// blocked. One whose client cannot be told is not refused: refusing it
+	// is refusing whoever shares the proxy.
 	if w := get("10.0.0.2:4000", "", h); w.Code != http.StatusOK {
-		t.Fatal("the proxy itself was refused")
+		t.Fatal("the proxy was refused for a block on somebody else")
 	}
 	if w := get("10.0.0.2:4000", "garbage", h); w.Code != http.StatusOK {
 		t.Fatal("an unknown client was refused")
@@ -75,8 +76,10 @@ func TestWrapRefusesBlockedSourcesFirst(t *testing.T) {
 	if w := get("203.0.113.9:4000", "198.51.100.1", h); w.Code != http.StatusTooManyRequests {
 		t.Fatal("a blocked source escaped by writing a header")
 	}
-	// A request from a named proxy itself (a CDN's health check), even one
-	// on a network somebody blocked, is from inside, and passes.
+	// Being named as a proxy is not a pass. A request a named proxy makes
+	// itself (a health check, or anybody's code running at a CDN's edge)
+	// is the proxy's, and a block on its network holds; what it forwards
+	// is judged by the address forwarded, so the block is not everybody's.
 	cdn := &clientip.Resolver{Proxies: []netip.Prefix{netip.MustParsePrefix("192.0.2.0/24")}}
 	b := ok(Block, "net:192.0.2.0/24")
 	b.Until, b.Where = time.Now().Add(time.Hour), Site
@@ -86,8 +89,14 @@ func TestWrapRefusesBlockedSourcesFirst(t *testing.T) {
 	g.Refresh()
 	viaCDN := clientip.Middleware(func() *clientip.Resolver { return cdn },
 		g.Wrap(Site, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})))
-	if w := get("192.0.2.10:443", "", viaCDN); w.Code != http.StatusOK {
-		t.Fatal("the proxy's own request was refused")
+	if w := get("192.0.2.10:443", "", viaCDN); w.Code != http.StatusTooManyRequests {
+		t.Fatal("a named proxy's own request passed a block on its network")
+	}
+	if w := get("192.0.2.10:443", "192.0.2.11", viaCDN); w.Code != http.StatusTooManyRequests {
+		t.Fatal("a request through nothing but named proxies passed a block on them")
+	}
+	if w := get("192.0.2.10:443", "203.0.113.10", viaCDN); w.Code != http.StatusOK {
+		t.Fatal("a client was refused for the block on the proxy it came through")
 	}
 	if w := get("192.0.2.10:443", "203.0.113.9", viaCDN); w.Code != http.StatusTooManyRequests {
 		t.Fatal("a blocked client came through the proxy")
@@ -95,6 +104,38 @@ func TestWrapRefusesBlockedSourcesFirst(t *testing.T) {
 	// The admin is a different surface.
 	if w := get("203.0.113.9:4000", "", edge(g.Wrap(Admin, http.NotFoundHandler()))); w.Code != http.StatusNotFound {
 		t.Fatal("a site block reached the admin")
+	}
+}
+
+func TestANamedProxysOwnRequestIsSlowedLikeAnybodys(t *testing.T) {
+	g := guard(t)
+	p := ok(Slow, "source:"+audit.Pseudonym(testKey, "192.0.2.10"))
+	p.Until, p.Where = time.Now().Add(time.Hour), Site
+	if _, _, err := Apply(g.Root, p, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	g.Refresh()
+	named := &clientip.Resolver{Proxies: []netip.Prefix{netip.MustParsePrefix("192.0.2.0/24")}}
+	h := clientip.Middleware(func() *clientip.Resolver { return named },
+		g.Wrap(Site, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})))
+	// A prefetch from a slowed source is refused at once, so one request
+	// says whether the slowing held.
+	prefetch := func(xff string) int {
+		r := httptest.NewRequest("GET", "/", nil)
+		r.RemoteAddr = "192.0.2.10:443"
+		r.Header.Set("Sec-Purpose", "prefetch")
+		if xff != "" {
+			r.Header.Set("X-Forwarded-For", xff)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code
+	}
+	if code := prefetch(""); code != http.StatusServiceUnavailable {
+		t.Fatalf("a named proxy's own request was not slowed: %d", code)
+	}
+	if code := prefetch("203.0.113.10"); code != http.StatusOK {
+		t.Fatalf("a client was slowed for the proxy it came through: %d", code)
 	}
 }
 

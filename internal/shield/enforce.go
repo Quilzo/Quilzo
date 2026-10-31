@@ -18,13 +18,14 @@ import (
 
 // Wrap refuses requests from blocked sources before anything else sees
 // them. The client is the one the edge decided (internal/clientip), so it
-// sits behind clientip.Middleware. A request whose client could not be told,
-// or that came from inside, is never refused here: blocking the unknown is
-// blocking whoever shares the proxy.
+// sits behind clientip.Middleware. A request whose client could not be told
+// is never refused here: blocking the unknown is blocking whoever shares
+// the proxy. One a named proxy made itself is the proxy's, and is refused
+// like anybody's; being named as a proxy is not a pass.
 func (g *Guard) Wrap(where string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c := clientip.FromRequest(r)
-		if c.Known() && !c.Internal {
+		if c.Known() {
 			now := time.Now()
 			if p, blocked := g.Blocked(c.Addr.String(), where, now); blocked {
 				Refuse(w, r, p, now)
