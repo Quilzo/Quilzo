@@ -71,6 +71,13 @@ here rather than nginx: there is no cron job to have forgotten.
 For a permanent install, `caddy add-package` / a `caddy.service` unit — the Caddy
 documentation covers that better than this file would.
 
+Caddy connects to the site from 127.0.0.1, so to the site every visitor is
+Caddy until it is told Caddy is a proxy. Turn on `site.trusted_proxy` to
+believe the address Caddy forwards; a proxy on this machine is believed
+without being named, and only there. Leave `network.trusted_proxies` empty:
+it is the admin's list as well as the site's, and naming 127.0.0.1 in it
+would let any program on this machine choose its address on both.
+
 ### 7. Check it from outside
 
 ```bash

@@ -156,11 +156,15 @@ func (g *Guard) Handles(a netip.Addr) []string {
 	return out
 }
 
-// trusted reports addresses that are never blocked: anything on the inside
-// (this machine, private networks, carrier-grade NAT) and the declared
-// networks.
+// trusted reports addresses that are never blocked: this machine's own,
+// where somebody at the command line can always undo what the shield did,
+// and the networks declared with `quilzo shield trust add`. A private
+// network, a container bridge or carrier-grade NAT is not among them: an
+// address there says where a machine is, not whose it is, so a machine
+// there is counted, slowed and blocked like anybody's unless its network
+// is declared.
 func trusted(st *State, a netip.Addr) bool {
-	if clientip.Local(a) {
+	if clientip.ThisMachine(a) {
 		return true
 	}
 	for _, t := range st.Trusted {

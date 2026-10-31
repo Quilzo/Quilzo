@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/api"
-	"github.com/quilzo/quilzo/internal/clientip"
 	"github.com/quilzo/quilzo/internal/config"
 	"github.com/quilzo/quilzo/internal/controls"
 	"github.com/quilzo/quilzo/internal/dual"
@@ -1169,10 +1168,12 @@ func cmdServe(root string, args []string) error {
 	// Then the shield's guard, before anything else sees the request: a
 	// blocked source is refused at the door.
 	httpSrv := &http.Server{Addr: *addr,
-		Handler: clientip.Middleware(proxies(root, "admin.trusted_proxy"),
-			sh.guard.Wrap(shield.Admin, srv.Handler()))}
+		Handler: edge(root, "admin.trusted_proxy", sh.guard.Wrap(shield.Admin, srv.Handler()))}
 
 	fmt.Printf("admin on http://%s\n", *addr)
+	if line := assumedProxy(root, "admin.trusted_proxy"); line != "" {
+		fmt.Printf("  %s%s%s\n", dim, line, reset)
+	}
 	// A passkey belongs to a name, and a browser refuses an address as one,
 	// so the loopback default is opened as localhost.
 	if host, port, err := net.SplitHostPort(*addr); err == nil && (host == "127.0.0.1" || host == "::1") {

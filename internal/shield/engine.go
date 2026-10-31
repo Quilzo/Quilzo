@@ -33,9 +33,10 @@ type Signal struct {
 	Subject string
 	At      time.Time
 	// Unverified says the source's address cannot be trusted enough to
-	// block it: it came forwarded by a proxy nobody named, or from one only
-	// assumed to be a proxy (clientip.Client.Unverified). It is counted,
-	// and a person is told; it is not blocked or slowed.
+	// block it: it came forwarded by a proxy nobody named, or by one only
+	// assumed to be a proxy because it is on this machine
+	// (clientip.Client.Unverified). It is counted, and a person is told; it
+	// is not blocked or slowed.
 	Unverified bool
 	// Where is the surface it came from, Admin or Site, when known.
 	Where string
@@ -433,7 +434,7 @@ func (e *Engine) step(pb Playbook, stage int, step Step, mode, key string, addr 
 	note := ""
 	if strings.HasPrefix(step.Action, "block-") || strings.HasPrefix(step.Action, "slow-") {
 		if addr.IsValid() && trusted(st, addr) {
-			return "did not block or slow: the source is on the inside or on a trusted network", "", false
+			return "did not block or slow: the source is this machine or on a trusted network", "", false
 		}
 		if s.Unverified {
 			return "did not block or slow: its address came through a proxy that is not named in network.trusted_proxies, so it may be everybody's", "", true

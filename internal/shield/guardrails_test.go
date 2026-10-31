@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/clientip"
 )
 
 func TestAnAutomaticProtectionNeverRunsPastADayFromItsStart(t *testing.T) {
@@ -79,19 +80,41 @@ func TestARecordWrittenToLastForeverEnds(t *testing.T) {
 	}
 }
 
-func TestNothingOnTheInsideIsBlocked(t *testing.T) {
-	for _, n := range []string{"10.0.0.0/16", "172.16.0.0/16", "192.168.1.0/24", "100.64.0.0/16", "127.0.0.0/16", "fd00::/48", "fe80::/48"} {
-		if err := ok(Block, "net:"+n).Validate(t0); err == nil || !strings.Contains(err.Error(), "on the inside") {
+func TestOnlyThisMachineIsNeverBlocked(t *testing.T) {
+	// This machine is where the command line is, the way out of anything
+	// the shield does, so nothing blocks it.
+	for _, n := range []string{"127.0.0.0/16", "::1/128"} {
+		if err := ok(Block, "net:"+n).Validate(t0); err == nil || !strings.Contains(err.Error(), "this machine") {
 			t.Errorf("%s: %v", n, err)
 		}
 	}
 	g := guard(t)
-	for _, a := range []string{"10.1.2.3", "100.64.1.1", "fd00::5"} {
-		put(t, g, ok(Block, "source:"+audit.Pseudonym(testKey, a)))
+	for _, a := range []string{"127.0.0.1", "127.1.2.3", "::1"} {
+		put(t, g, ok(Block, "source:"+audit.Pseudonym(testKey, clientip.SourceOf(a))))
 		g.Refresh()
 		if _, blocked := g.Blocked(a, Site, t0); blocked {
 			t.Errorf("%s was blocked", a)
 		}
+	}
+	// A private network, a container bridge or carrier-grade NAT is a
+	// place, not a pass: a machine there is blocked like anybody's, by its
+	// address or its network.
+	for _, n := range []string{"10.0.0.0/16", "172.16.0.0/16", "192.168.1.0/24", "100.64.0.0/16", "fd00::/48", "fe80::/48"} {
+		if err := ok(Block, "net:"+n).Validate(t0); err != nil {
+			t.Errorf("%s: %v", n, err)
+		}
+	}
+	for _, a := range []string{"10.1.2.3", "172.17.0.1", "192.168.1.5", "100.64.1.1", "fd00::5"} {
+		put(t, g, ok(Block, "source:"+audit.Pseudonym(testKey, clientip.SourceOf(a))))
+		g.Refresh()
+		if _, blocked := g.Blocked(a, Site, t0); !blocked {
+			t.Errorf("%s was not blocked", a)
+		}
+	}
+	put(t, g, ok(Block, "net:10.9.0.0/16"))
+	g.Refresh()
+	if _, blocked := g.Blocked("10.9.8.7", Site, t0); !blocked {
+		t.Error("a block on a private network did not hold")
 	}
 }
 

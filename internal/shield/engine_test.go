@@ -334,12 +334,12 @@ func TestThisMachineAndTrustedNetworksAreNotBlockedByPlaybooks(t *testing.T) {
 	r := newRig(t, decoy, lock)
 	Trust(r.Root, "198.51.100.0/24", true, t0)
 	r.Guard.Refresh()
-	for _, a := range []string{"127.0.0.1", "10.1.2.3", "100.64.0.9", "fd00::1", "198.51.100.7"} {
+	for _, a := range []string{"127.0.0.1", "::1", "198.51.100.7"} {
 		got := r.see("decoy", a, "")
 		if len(got) != 2 || !strings.HasPrefix(got[0].Did[0], "did not block") {
 			t.Fatalf("%s: %+v", a, got)
 		}
-		// Somebody inside with a stolen token still locks the admin.
+		// Somebody here with a stolen token still locks the admin.
 		if !strings.HasPrefix(got[1].Did[0], "locked the admin") {
 			t.Fatalf("%s: %q", a, got[1].Did)
 		}
@@ -348,6 +348,38 @@ func TestThisMachineAndTrustedNetworksAreNotBlockedByPlaybooks(t *testing.T) {
 	for _, p := range r.state(t).Protections {
 		if p.Kind == Block {
 			t.Fatalf("blocked %s", p.Target)
+		}
+	}
+}
+
+func TestAPrivateAddressIsBlockedAfterTheThresholdAndThisMachineIsNot(t *testing.T) {
+	// A private network is a place, not a pass: whatever is on it crosses
+	// a playbook's threshold and is blocked like anybody. This machine is
+	// the way back, and is never blocked.
+	for _, a := range []string{"10.0.0.5", "172.17.0.2", "192.168.1.5", "100.64.0.9", "fd00::5"} {
+		r := newRig(t, injection())
+		var got []Response
+		for i := 0; i < 3; i++ {
+			got = r.see("chatbot-injection", a, "help")
+		}
+		if len(got) != 1 || !strings.HasPrefix(got[0].Did[0], "blocked the source") {
+			t.Fatalf("%s: %+v", a, got)
+		}
+		if _, blocked := r.Guard.Blocked(a, Site, r.clock); !blocked {
+			t.Fatalf("%s crossed the threshold and was not blocked", a)
+		}
+	}
+	for _, a := range []string{"127.0.0.1", "::1"} {
+		r := newRig(t, injection())
+		var got []Response
+		for i := 0; i < 3; i++ {
+			got = r.see("chatbot-injection", a, "help")
+		}
+		if len(got) != 1 || !strings.HasPrefix(got[0].Did[0], "did not block or slow: the source is this machine") {
+			t.Fatalf("%s: %+v", a, got)
+		}
+		if len(r.state(t).Protections) != 0 {
+			t.Fatalf("%s: this machine was blocked", a)
 		}
 	}
 }

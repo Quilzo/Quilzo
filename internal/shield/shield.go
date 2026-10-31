@@ -24,12 +24,13 @@
 //     (seven days). An attack that outlasts a protection meets a new one,
 //     with its own start, from the playbook's next stage; nothing is
 //     quietly renewed past its limit.
-//   - Addresses on the inside (loopback, private networks, carrier-grade
-//     NAT; clientip.Local) and the networks the operator declared trusted
-//     are never blocked, so the machine, the office and the proxy in front
-//     are always a way in; and the command line on the machine never goes
-//     through any of this, so `quilzo shield lift all` there is the way
-//     out of anything.
+//   - This machine's own addresses (loopback; clientip.ThisMachine) and
+//     the networks the operator declared trusted are never blocked, so the
+//     machine, and the office or proxy somebody declared, are always a way
+//     in; and the command line on the machine never goes through any of
+//     this, so `quilzo shield lift all` there is the way out of anything.
+//     A private network is a place, not a pass: a machine on one is
+//     blocked like anybody's unless its network is declared.
 //   - A source an administrator signed in from with a passkey or single
 //     sign-on in the last thirty days is not blocked from the admin by a
 //     playbook: that is the security contact's call, and they are told.
@@ -361,9 +362,9 @@ func (p Protection) Validate(now time.Time) error {
 			if (pfx.Addr().Is4() && pfx.Bits() < 16) || (pfx.Addr().Is6() && pfx.Bits() < 48) {
 				return errors.New("a network wider than /16 (or /48) is blocked by its provider instead")
 			}
-			for _, in := range clientip.Inside() {
+			for _, in := range clientip.Loopback() {
 				if pfx.Overlaps(in) {
-					return fmt.Errorf("%s is on the inside (%s): this machine, its network and the proxy in front are never blocked", pfx, in)
+					return fmt.Errorf("%s is this machine (%s), which is never blocked", pfx, in)
 				}
 			}
 		case "asn":

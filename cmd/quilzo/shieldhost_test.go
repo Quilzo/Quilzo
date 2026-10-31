@@ -17,6 +17,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/clientip"
+	"github.com/quilzo/quilzo/internal/config"
 	"github.com/quilzo/quilzo/internal/evals"
 	"github.com/quilzo/quilzo/internal/shield"
 )
@@ -64,6 +65,63 @@ func TestADecoyPresentedShutsItsHolderOutAndSaysWhereItWasPlanted(t *testing.T) 
 	if !strings.HasPrefix(sum, "Shield: A decoy was touched (stage 1). Blocked") ||
 		!strings.Contains(sum, "planted in the deploy job's variables") {
 		t.Fatalf("%q", sum)
+	}
+}
+
+func TestANamedProxysOwnRequestIsCountedAndBlocked(t *testing.T) {
+	// Being named as a proxy is being believed about the people it
+	// forwards. A request it makes itself, with nobody forwarded, is its
+	// own: a decoy presented that way blocks the proxy's address, as it
+	// would anybody's, on a private network as on the internet, and what
+	// the proxy forwards is still judged by the address forwarded.
+	for _, tc := range []struct{ named, proxy string }{
+		{"192.0.2.0/24", "192.0.2.10"},
+		{"10.0.0.5", "10.0.0.5"},
+	} {
+		root := shieldRoot(t)
+		cfg := config.New()
+		if err := cfg.Set("network.trusted_proxies", tc.named, "", "test"); err != nil {
+			t.Fatal(err)
+		}
+		if err := saveConfig(root, cfg); err != nil {
+			t.Fatal(err)
+		}
+		secret, _, err := shield.AddDecoy(root, "the deploy job's variables", "dana", time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		h := newShieldHost(root)
+		reached := 0
+		srv := edge(root, "admin.trusted_proxy", h.guard.Wrap(shield.Admin,
+			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				reached++
+				if r.Header.Get("Authorization") != "" {
+					h.badToken(r, secret, errors.New("no such token"))
+				}
+			})))
+		send := func(xff string, token bool) int {
+			r := httptest.NewRequest(http.MethodGet, "/api/v1/pages", nil)
+			r.RemoteAddr = tc.proxy + ":443"
+			if xff != "" {
+				r.Header.Set("X-Forwarded-For", xff)
+			}
+			if token {
+				r.Header.Set("Authorization", "Bearer "+secret)
+			}
+			w := httptest.NewRecorder()
+			srv.ServeHTTP(w, r)
+			return w.Code
+		}
+		if code := send("", true); code != http.StatusOK || reached != 1 {
+			t.Fatalf("%s, the first request: %d", tc.proxy, code)
+		}
+		h.guard.Refresh()
+		if code := send("", false); code != http.StatusTooManyRequests || reached != 1 {
+			t.Fatalf("the proxy at %s that presented a decoy still reaches the admin: %d", tc.proxy, code)
+		}
+		if code := send("203.0.113.10", false); code != http.StatusOK || reached != 2 {
+			t.Fatalf("somebody %s forwards was refused for it: %d", tc.proxy, code)
+		}
 	}
 }
 

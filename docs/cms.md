@@ -1764,6 +1764,42 @@ docker run --rm -p 8081:8081 -v "$PWD/store:/store" quilzo \
   site --addr 0.0.0.0:8081 --base-url https://example.org
 ```
 
+Behind a reverse proxy every connection is the proxy's, so name it in
+`network.trusted_proxies` by its own address — the proxy, a cluster's ingress
+or load balancers, or a CDN's published ranges — and the address it forwards
+in X-Forwarded-For is the visitor's for every limit, the audit log and the
+shield. A range believes every machine in it, so name the smallest that holds
+only proxies. `site.trusted_proxy` and `admin.trusted_proxy` believe a proxy
+on this machine without naming it, and only there: loopback, 127.0.0.0/8 and
+::1. The shield counts what such a proxy forwards but does not block on it
+alone. A proxy on a private network, a container bridge or carrier-grade NAT
+is believed only when it is named, because anything else on that network can
+write X-Forwarded-For as well as the proxy can. Each surface says at start,
+with the rest of what it prints, when it believes a proxy on this machine.
+With either setting on and no proxy named, the first time a machine on the
+network forwards an address that is not believed, the site or the admin says
+on standard error which machine it was and the command that names it.
+
+The list is the site's and the admin's both, and naming any proxy in it ends
+the assumption for both: a proxy on this machine, in front of either, is then
+believed only if it is named too. Naming 127.0.0.1 lets any program on this
+machine choose its address on the admin as well as the site, so for Caddy on
+this machine in front of the site, turn on `site.trusted_proxy` and name
+nothing.
+
+Being named is being believed about somebody else, and nothing more: a
+request a proxy sends without X-Forwarded-For is the proxy's, and is counted,
+limited and blocked like anybody's. The shield never blocks this machine
+itself, or a network added with `quilzo shield trust add`; a machine on a
+private network is blocked like any other. A load balancer that does not say
+who it carries makes every visitor its address, so add it with
+`quilzo shield trust add`, or a block on one visitor is a block on all of
+them. The same holds for a container's published port: Docker's own proxy
+hands the container a connection from this machine as one from the bridge
+gateway, such as 172.17.0.1, so a browser on the host is that address and can
+be blocked like any other. `quilzo shield lift ID`, on this machine, ends any
+block.
+
 ## Why you might choose this, and when you should not
 
 The honest version, because a comparison that only flatters is a comparison

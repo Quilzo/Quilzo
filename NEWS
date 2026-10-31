@@ -809,6 +809,20 @@ Unreleased
 
 ** Fixed
 
+*** A forwarded address is believed only from a proxy that is named or one
+    on this machine, and the shield exempts this machine, not every private
+    address.  With site.trusted_proxy or admin.trusted_proxy on and no proxy
+    named, X-Forwarded-For was believed from any private network, container
+    bridge, link-local or carrier-grade NAT address, so anything there could
+    choose its own address for every limit and the audit log; now only
+    loopback is, and the site and the admin say once which other machine
+    forwarded an address that was not believed, with the command that names
+    it.  The shield never blocked or slowed an address on a private network
+    or carrier-grade NAT, or a request a named proxy made itself; both are
+    now counted, slowed and blocked like anybody's, and only this machine
+    and the networks added with `quilzo shield trust add` are never blocked.
+    `quilzo shield lift` on this machine ends a block.
+
 *** A page of nothing but unclosed brackets or links rendered in time
     that grew with the square of its length: twenty thousand took a second
     and a half, on every request.  Each marker now looks a bounded way for

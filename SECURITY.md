@@ -84,8 +84,9 @@ vulnerability:
   it, or forgotten memory is recalled at all.
 - **Personal data stays out of prompts.** Any way a value the privacy guard masks
   reaches a model route that may not receive it.
-- **The shield cannot be turned on the inside.** Any way a playbook blocks an
-  internal network, locks every administrator out, or protects without ending.
+- **The shield cannot be turned on this machine.** Any way a playbook blocks
+  loopback or a network declared with `quilzo shield trust add`, locks every
+  administrator out, or protects without ending.
 - **A browser reaches only what it declares.** Any request an agent's browser
   makes to a host its declaration does not name, any press or typing that acts
   on a host it may only read, or any password it types reaching a page, a
