@@ -249,6 +249,7 @@ func gatewayRoute(root string, args []string) error {
 	if len(args) < 2 || (args[0] != "add" && args[0] != "remove") {
 		return fmt.Errorf("usage: quilzo gateway route add NAME --url U --model M [--key-env VAR] [--personal]\n" +
 			"         [--max-tokens-field max_completion_tokens] [--temperature T] [--top-p P] [--timeout 300s] [--auto-tool-choice]\n" +
+			"         [--structured-output] [--reasoning-effort]\n" +
 			"       quilzo gateway route remove NAME")
 	}
 	verb, name := args[0], args[1]
@@ -265,13 +266,22 @@ func gatewayRoute(root string, args []string) error {
 	topP := fs.String("top-p", "", "a top_p sent on every call; empty sends none")
 	timeout := fs.String("timeout", "", "how long one call may take, such as 300s for a model that reasons at length")
 	autoTool := fs.Bool("auto-tool-choice", false, "send auto where a caller forces a tool, for a model that refuses a forced choice")
+	structured := fs.Bool("structured-output", false, "its model honours response_format: an answer as JSON, or as JSON to a schema")
+	reasoning := fs.Bool("reasoning-effort", false, "its model takes reasoning_effort, how hard it thinks")
 	if err := fs.Parse(args[2:]); err != nil {
 		return err
+	}
+	// A word left over is a value given to a flag that takes none, as in
+	// --reasoning-effort high, and every flag after it went unread.
+	if fs.NArg() > 0 {
+		return fmt.Errorf("%q is not read here, nor anything after it: --first, --personal, --auto-tool-choice, "+
+			"--structured-output and --reasoning-effort take no value", fs.Arg(0))
 	}
 	params, err := routeParams(*maxField, *temperature, *topP, *timeout, *autoTool)
 	if err != nil {
 		return err
 	}
+	params.StructuredOutput, params.ReasoningEffort = *structured, *reasoning
 	return changeGateway(root, "route."+verb, name, func(c *gateway.Config) error {
 		var kept []gateway.Route
 		for _, r := range c.Routes {

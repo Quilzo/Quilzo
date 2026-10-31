@@ -59,3 +59,68 @@ func TestABodyFitsItsSchemaOrSaysWhereNot(t *testing.T) {
 		t.Errorf("an open object refused a field: %v", err)
 	}
 }
+
+// A reference is followed within the schema, as the schemas libraries
+// write for structured output put each nested shape in $defs; without it
+// a nested shape would take anything. A recursive schema is followed as
+// far as the value goes.
+func TestAReferenceIsFollowedWithinTheSchema(t *testing.T) {
+	const order = `{"type":"object","required":["to","lines"],"additionalProperties":false,
+	  "properties":{"to":{"$ref":"#/$defs/address"},"lines":{"type":"array","items":{"$ref":"#/$defs/line"}},
+	    "note":{"$ref":"#/$defs/a~1b"},"elsewhere":{"$ref":"https://example.com/schema.json"}},
+	  "$defs":{"address":{"type":"object","required":["city"],"additionalProperties":false,
+	      "properties":{"city":{"type":"string"}}},
+	    "line":{"type":"object","properties":{"sku":{"type":"string"},"parts":{"type":"array","items":{"$ref":"#/$defs/line"}}}},
+	    "a/b":{"type":"string","maxLength":3}}}`
+	ok := []string{
+		`{"to":{"city":"Paris"},"lines":[{"sku":"a"}]}`,
+		`{"to":{"city":"Paris"},"lines":[{"sku":"a","parts":[{"sku":"b","parts":[]}]}],"note":"hi","elsewhere":7}`,
+	}
+	bad := map[string]string{
+		`{"to":{},"lines":[]}`:                                                "body.to needs city",
+		`{"to":{"city":"Paris","role":"admin"},"lines":[]}`:                   "not a property it takes",
+		`{"to":{"city":"Paris"},"lines":[{"sku":7}]}`:                         "body.lines[0].sku is a number",
+		`{"to":{"city":"Paris"},"lines":[{"parts":[{"parts":[{"sku":1}]}]}]}`: "body.lines[0].parts[0].parts[0].sku",
+		`{"to":{"city":"Paris"},"lines":[],"note":"far too long"}`:            "longer than 3",
+	}
+	for _, s := range ok {
+		var v any
+		_ = json.Unmarshal([]byte(s), &v)
+		if err := Check(json.RawMessage(order), v); err != nil {
+			t.Errorf("%s was refused: %v", s, err)
+		}
+	}
+	for s, want := range bad {
+		var v any
+		_ = json.Unmarshal([]byte(s), &v)
+		if err := Check(json.RawMessage(order), v); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: %v, want %q", s, err, want)
+		}
+	}
+}
+
+// A schema that refers to itself is bounded: one that only ever points
+// at itself, and one small enough to write in a line that would double
+// the work at every level, are both refused rather than followed.
+func TestASchemaThatRefersToItselfIsBounded(t *testing.T) {
+	if err := Check(json.RawMessage(`{"$ref":"#"}`), "x"); err == nil || !strings.Contains(err.Error(), "deeper") {
+		t.Errorf("a schema that is only a reference to itself: %v", err)
+	}
+	refs := strings.Repeat(`{"$ref":"#"},`, 9) + `{"$ref":"#"}`
+	for _, combine := range []string{"anyOf", "oneOf"} {
+		err := Check(json.RawMessage(`{"`+combine+`":[`+refs+`]}`), "x")
+		if err == nil || !strings.Contains(err.Error(), "steps") {
+			t.Errorf("%s of ten references to itself: %v", combine, err)
+		}
+	}
+	// Ten nested lists, each item checked ten times over: ten to the
+	// tenth checks, unbounded.
+	var nested any = []any{}
+	for i := 0; i < 10; i++ {
+		nested = []any{nested}
+	}
+	err := Check(json.RawMessage(`{"type":"array","items":{"allOf":[`+refs+`]}}`), nested)
+	if err == nil || !strings.Contains(err.Error(), "steps") {
+		t.Errorf("allOf of ten references to itself, over ten nested lists: %v", err)
+	}
+}

@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+
+	"github.com/quilzo/quilzo/internal/jsonschema"
 )
 
 // A whole conversation, as OpenAI's chat completions take one.
@@ -74,6 +76,11 @@ type ChatMessage struct {
 	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string     `json:"tool_call_id,omitempty"`
 	Name       string     `json:"name,omitempty"`
+	// Refusal is a model declining to answer, which OpenAI's models say
+	// apart from their text, most often when asked for an answer to a
+	// schema. It is written back in the caller's shape as a refusal, and
+	// sent on in a later turn as what the model said.
+	Refusal string `json:"-"`
 }
 
 // Text is the message's text parts, joined.
@@ -111,6 +118,8 @@ func (m ChatMessage) MarshalJSON() ([]byte, error) {
 		out.Content = m.Content
 	case len(m.Content) == 0 && len(m.ToolCalls) > 0:
 		out.Content = nil
+	case m.Text() == "" && m.Refusal != "":
+		out.Content = m.Refusal
 	default:
 		out.Content = m.Text()
 	}
@@ -123,12 +132,16 @@ func (m *ChatMessage) UnmarshalJSON(b []byte) error {
 	var in struct {
 		plain
 		Content json.RawMessage `json:"content"`
+		Refusal *string         `json:"refusal"`
 	}
 	if err := json.Unmarshal(b, &in); err != nil {
 		return err
 	}
 	*m = ChatMessage(in.plain)
 	m.Content = nil
+	if in.Refusal != nil {
+		m.Refusal = *in.Refusal
+	}
 	raw := bytes.TrimSpace(in.Content)
 	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
 		return nil
@@ -157,6 +170,169 @@ type ChatRequest struct {
 	ToolChoice     string
 	ToolChoiceName string
 	MaxTokens      int
+
+	// What a caller asked of the answer beyond the conversation. Each is
+	// sent to the model, held to on what comes back (Honour), or refused
+	// where no model here could honour it; none is ever dropped, because
+	// an answer that ignored one is an answer to a question nobody asked.
+
+	// ResponseFormat, when set, is the shape the answer must take.
+	ResponseFormat *ResponseFormat
+	// Stop are sequences the answer ends before, at most MaxStop.
+	Stop []string
+	// Temperature and TopP are the caller's, sent in place of a route's.
+	Temperature *float64
+	TopP        *float64
+	// ReasoningEffort is how hard a model that reasons is asked to think:
+	// none, minimal, low, medium, high or xhigh. Empty leaves it to the
+	// model.
+	ReasoningEffort string
+	// OneToolCall asks for at most one tool call in the turn.
+	OneToolCall bool
+}
+
+// ResponseFormat is the shape a model's answer must take: a JSON object,
+// or JSON that fits a schema.
+type ResponseFormat struct {
+	// Type is "json_object" or "json_schema".
+	Type        string
+	Name        string
+	Description string
+	Schema      json.RawMessage
+	// Strict, with a schema, is the promise that the answer fits it, which
+	// is checked on the answer (Honour) rather than taken on trust.
+	Strict bool
+}
+
+// MaxStop is how many stop sequences a request may carry: what OpenAI's
+// chat completions take, which is the shape every route is sent.
+const MaxStop = 4
+
+var reFormatName = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+
+func (f ResponseFormat) check() error {
+	switch f.Type {
+	case "json_object":
+		if len(f.Schema) > 0 {
+			return errors.New("an answer as a JSON object takes no schema; json_schema does")
+		}
+	case "json_schema":
+		var s map[string]any
+		if json.Unmarshal(f.Schema, &s) != nil {
+			return errors.New("an answer to a schema needs the schema, as a JSON object")
+		}
+		if f.Name != "" && !reFormatName.MatchString(f.Name) {
+			return fmt.Errorf("a schema's name is letters, digits, _ and -, at most 64, not %q", f.Name)
+		}
+	default:
+		return fmt.Errorf("an answer's format is json_object or json_schema, not %q", f.Type)
+	}
+	return nil
+}
+
+// wire is the format as chat completions take it.
+func (f ResponseFormat) wire() map[string]any {
+	if f.Type != "json_schema" {
+		return map[string]any{"type": f.Type}
+	}
+	// OpenAI requires a name, which Anthropic's shape does not have.
+	name := f.Name
+	if name == "" {
+		name = "answer"
+	}
+	s := map[string]any{"name": name, "schema": f.Schema, "strict": f.Strict}
+	if f.Description != "" {
+		s["description"] = f.Description
+	}
+	return map[string]any{"type": "json_schema", "json_schema": s}
+}
+
+// ErrCannotHonour is a request asking for something no model here is
+// declared able to do: an answer to a schema, say, where no route says it
+// takes one. The caller can change the request; nothing is sent.
+var ErrCannotHonour = errors.New("no model here can honour what the request asks for")
+
+// ErrNotHonoured is a model's answer that is not what its request asked
+// for. The model answered, so it is not resting; the answer goes back as
+// this error rather than as an answer the caller would take for the one
+// it asked for.
+var ErrNotHonoured = errors.New("the model's answer is not what the request asked for")
+
+// Honour holds a model's turn to what its request asked of it.
+//
+// A stop sequence the model wrote past is cut at, as the provider does
+// when it honours one: the text ends there, and so does the turn, so a
+// tool call after it goes too. Anything else asked for and not given is
+// ErrNotHonoured: a tool the request required, or named, that the model
+// did not call; a call where the request allowed none, or more than one
+// where it asked for one; text that is not JSON where JSON was asked for,
+// or JSON that does not fit a schema it was promised to fit.
+//
+// It is checked here rather than trusted to have been sent, because not
+// every model honours what it is sent: a route that refuses a forced tool
+// is sent "auto" (Params.AutoToolChoice), and some servers take a forced
+// choice or a format and silently do as they please. An answer cut short
+// by its limit is not held to a format, since its finish says so; nor is
+// a refusal, which is an answer in every shape.
+func (r ChatRequest) Honour(reply ChatReply) (ChatReply, error) {
+	if len(r.Stop) > 0 {
+		reply = cutAtStop(reply, r.Stop)
+	}
+	m := reply.Message
+	if m.Refusal != "" {
+		return reply, nil
+	}
+	calls := m.ToolCalls
+	switch {
+	case r.ToolChoice == "none" && len(calls) > 0:
+		return reply, fmt.Errorf("%w: it called %s, and the request allowed no tool", ErrNotHonoured, calls[0].Function.Name)
+	case r.ToolChoice == "required" && len(calls) == 0:
+		return reply, fmt.Errorf("%w: the request required a tool call, and the model answered without one", ErrNotHonoured)
+	case r.OneToolCall && len(calls) > 1:
+		return reply, fmt.Errorf("%w: it made %d tool calls, and the request asked for one at most", ErrNotHonoured, len(calls))
+	}
+	if r.ToolChoiceName != "" {
+		for _, c := range calls {
+			if c.Function.Name != r.ToolChoiceName {
+				return reply, fmt.Errorf("%w: it called %s, and the request named %s", ErrNotHonoured, c.Function.Name, r.ToolChoiceName)
+			}
+		}
+	}
+	f := r.ResponseFormat
+	if f == nil || len(calls) > 0 || reply.Finish == "length" {
+		return reply, nil
+	}
+	var v any
+	if err := json.Unmarshal([]byte(m.Text()), &v); err != nil {
+		return reply, fmt.Errorf("%w: the answer is not JSON (%v)", ErrNotHonoured, err)
+	}
+	if _, object := v.(map[string]any); f.Type == "json_object" && !object {
+		return reply, fmt.Errorf("%w: the answer is JSON, and not an object", ErrNotHonoured)
+	}
+	if f.Type == "json_schema" && f.Strict {
+		if err := jsonschema.Check(f.Schema, v); err != nil {
+			return reply, fmt.Errorf("%w: the answer does not fit its schema: %v", ErrNotHonoured, err)
+		}
+	}
+	return reply, nil
+}
+
+// cutAtStop ends a turn's text before the first stop sequence in it.
+func cutAtStop(reply ChatReply, stop []string) ChatReply {
+	text := reply.Message.Text()
+	at := -1
+	for _, s := range stop {
+		if i := strings.Index(text, s); i >= 0 && (at < 0 || i < at) {
+			at = i
+		}
+	}
+	if at < 0 {
+		return reply
+	}
+	reply.Message.Content = []Part{{Type: "text", Text: text[:at]}}
+	reply.Message.ToolCalls = nil
+	reply.Finish = "stop"
+	return reply
 }
 
 // ChatReply is the model's turn.
@@ -208,6 +384,35 @@ func (r ChatRequest) Check() error {
 		if r.ToolChoice != "required" || !named {
 			return fmt.Errorf("the tool a request names as its choice, %q, is one of the tools it offers", r.ToolChoiceName)
 		}
+	}
+	if r.ToolChoice == "required" && len(r.Tools) == 0 {
+		return errors.New("a request that requires a tool call offers a tool to call")
+	}
+	if f := r.ResponseFormat; f != nil {
+		if err := f.check(); err != nil {
+			return err
+		}
+	}
+	if len(r.Stop) > MaxStop {
+		return fmt.Errorf("a request carries at most %d stop sequences", MaxStop)
+	}
+	for _, s := range r.Stop {
+		if s == "" {
+			return errors.New("a stop sequence is not empty")
+		}
+	}
+	// Written so that NaN, which compares false with everything, is refused
+	// too: it could not be sent as JSON.
+	if r.Temperature != nil && !(*r.Temperature >= 0 && *r.Temperature <= 2) {
+		return errors.New("temperature is between 0 and 2")
+	}
+	if r.TopP != nil && !(*r.TopP > 0 && *r.TopP <= 1) {
+		return errors.New("top_p is more than 0 and at most 1")
+	}
+	switch r.ReasoningEffort {
+	case "", "none", "minimal", "low", "medium", "high", "xhigh":
+	default:
+		return fmt.Errorf("a reasoning effort is none, minimal, low, medium, high or xhigh, not %q", r.ReasoningEffort)
 	}
 	images := 0
 	for _, m := range r.Messages {
@@ -292,6 +497,28 @@ func (h *HTTPModel) Chat(ctx context.Context, req ChatRequest) (ChatReply, error
 		}
 	}
 	h.Params.apply(payload, req.MaxTokens)
+	// What the caller asked for is sent as it asked: its temperature in
+	// place of the route's, which is only what the route sends when nobody
+	// says otherwise. A model that refuses one answers 400, which goes back
+	// to the caller as its own to fix.
+	if req.Temperature != nil {
+		payload["temperature"] = *req.Temperature
+	}
+	if req.TopP != nil {
+		payload["top_p"] = *req.TopP
+	}
+	if len(req.Stop) > 0 {
+		payload["stop"] = req.Stop
+	}
+	if req.ReasoningEffort != "" {
+		payload["reasoning_effort"] = req.ReasoningEffort
+	}
+	if req.OneToolCall && len(req.Tools) > 0 {
+		payload["parallel_tool_calls"] = false
+	}
+	if req.ResponseFormat != nil {
+		payload["response_format"] = req.ResponseFormat.wire()
+	}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return ChatReply{}, err

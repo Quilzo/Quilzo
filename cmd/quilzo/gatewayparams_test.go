@@ -63,14 +63,17 @@ func (c *capturing) last() map[string]any {
 }
 
 // A route added with no fields sends nothing beyond the conversation; one
-// added with them sends them, under the names given, and says so.
+// added with them sends them, under the names given, and says so. A
+// request asking for a format or an effort goes only to a route declared
+// to honour it.
 func TestARouteSendsWhatItIsToldAndNothingElse(t *testing.T) {
 	root := publishedShop(t)
-	plain, reasoner := &capturing{}, &capturing{}
+	plain, reasoner, shaper := &capturing{}, &capturing{}, &capturing{}
 	for _, args := range [][]string{
 		{"route", "add", "plain", "--url", plain.serve(t), "--model", "claude-opus-5-5"},
 		{"route", "add", "reasoner", "--url", reasoner.serve(t), "--model", "o-big",
 			"--max-tokens-field", "max_completion_tokens", "--temperature", "1", "--timeout", "300s", "--auto-tool-choice"},
+		{"route", "add", "shaper", "--url", shaper.serve(t), "--model", "gpt-shape", "--structured-output", "--reasoning-effort"},
 	} {
 		if err := cmdGateway(root, args); err != nil {
 			t.Fatalf("%v: %v", args, err)
@@ -81,6 +84,7 @@ func TestARouteSendsWhatItIsToldAndNothingElse(t *testing.T) {
 		{"route", "add", "x", "--url", "https://api.example/v1", "--model", "m", "--top-p", "0"},
 		{"route", "add", "x", "--url", "https://api.example/v1", "--model", "m", "--max-tokens-field", "max_output"},
 		{"route", "add", "x", "--url", "https://api.example/v1", "--model", "m", "--timeout", "1ms"},
+		{"route", "add", "x", "--url", "https://api.example/v1", "--model", "m", "--reasoning-effort", "high", "--personal"},
 	} {
 		if err := cmdGateway(root, bad); err == nil {
 			t.Errorf("%v was accepted", bad[6:])
@@ -90,7 +94,8 @@ func TestARouteSendsWhatItIsToldAndNothingElse(t *testing.T) {
 	if err != nil || gw == nil {
 		t.Fatal(err)
 	}
-	if len(cfg.Routes) != 2 || cfg.Routes[1].Params.Timeout != "300s" {
+	if len(cfg.Routes) != 3 || cfg.Routes[1].Params.Timeout != "300s" || cfg.Routes[1].Params.StructuredOutput ||
+		!cfg.Routes[2].Params.StructuredOutput || !cfg.Routes[2].Params.ReasoningEffort {
 		t.Fatalf("%+v", cfg.Routes)
 	}
 	if _, err := gw.For("assist").Complete(context.Background(), "s", "u"); err != nil {
@@ -105,13 +110,32 @@ func TestARouteSendsWhatItIsToldAndNothingElse(t *testing.T) {
 	_, err = chat.Chat(context.Background(), assist.ChatRequest{MaxTokens: 50, ToolChoice: "required",
 		Messages: []assist.ChatMessage{{Role: "user", Content: []assist.Part{{Type: "text", Text: "go"}}}},
 		Tools:    []assist.ChatTool{{Type: "function", Function: assist.ToolFunction{Name: "click", Parameters: json.RawMessage(`{"type":"object"}`)}}}})
-	if err != nil {
-		t.Fatal(err)
+	// The reasoner was sent auto, and answered without the call the
+	// caller forced, so its answer goes back as not what was asked for.
+	if !errors.Is(err, assist.ErrNotHonoured) {
+		t.Fatalf("an answer without the forced call came back as %v", err)
 	}
 	got := reasoner.last()
 	if got["max_completion_tokens"] != float64(50) || got["max_tokens"] != nil || got["temperature"] != float64(1) ||
 		got["tool_choice"] != "auto" {
 		t.Errorf("the reasoner was sent %v", got)
+	}
+
+	shaped := assist.ChatRequest{MaxTokens: 50, ReasoningEffort: "low", ResponseFormat: &assist.ResponseFormat{Type: "json_object"},
+		Messages: []assist.ChatMessage{{Role: "user", Content: []assist.Part{{Type: "text", Text: "allow?"}}}}}
+	if _, err := gw.For("agent:x").(assist.Chatter).Chat(context.Background(), shaped); err != nil {
+		t.Fatal(err)
+	}
+	if plain.calls() != 1 || reasoner.calls() != 1 || shaper.calls() != 1 {
+		t.Fatalf("a format went to plain %d, reasoner %d, shaper %d", plain.calls()-1, reasoner.calls()-1, shaper.calls())
+	}
+	if f, _ := json.Marshal(shaper.last()["response_format"]); string(f) != `{"type":"json_object"}` ||
+		shaper.last()["reasoning_effort"] != "low" {
+		t.Errorf("the shaper was sent %v", shaper.last())
+	}
+	_, err = gw.ForRoute("plain", "agent:x").(assist.Chatter).Chat(context.Background(), shaped)
+	if !errors.Is(err, assist.ErrCannotHonour) || plain.calls() != 1 {
+		t.Errorf("a format for a route that cannot honour one: %v", err)
 	}
 }
 

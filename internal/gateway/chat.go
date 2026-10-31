@@ -77,7 +77,16 @@ func (g *Gateway) chat(ctx context.Context, consumers []string, p pick, req assi
 		return assist.ChatReply{}, 0, ErrNoRoute
 	}
 	var errs []string
+	able := 0
 	for _, r := range g.routesFor(p) {
+		// A route that cannot honour what the request asks is passed over,
+		// and is not tried as a last resort: its answer would ignore what
+		// the caller asked for.
+		if why := r.Params.cannot(req); why != "" {
+			errs = append(errs, r.Name+": "+why)
+			continue
+		}
+		able++
 		g.mu.Lock()
 		down := g.now().Before(g.downTil[r.Name])
 		g.mu.Unlock()
@@ -130,14 +139,28 @@ func (g *Gateway) chat(ctx context.Context, consumers []string, p pick, req assi
 		g.mu.Unlock()
 		pin, pout, _ := r.prices()
 		cost := costOf(pin, pout, reply.Usage.In, reply.Usage.Out)
+		// The route answered, so it is not rested; an answer that is not
+		// what the request asked for goes back as an error, and is not
+		// asked again of the next route at the caller's expense.
+		reply, err = req.Honour(reply)
+		outcome := "ok"
+		if err != nil {
+			outcome = "failed"
+		}
 		g.note(Usage{At: start, Consumer: consumer, Also: also, Route: r.Name,
 			Model: r.Model, In: in, Out: len(reply.Message.Text()), Millis: took.Milliseconds(),
 			TokensIn: reply.Usage.In, TokensOut: reply.Usage.Out, Estimated: !reply.Usage.Reported,
-			Cost: cost, Masked: masked, Outcome: "ok"})
+			Cost: cost, Masked: masked, Outcome: outcome})
+		if err != nil {
+			return assist.ChatReply{}, cost, err
+		}
 		return reply, cost, nil
 	}
 	if p.only != "" && len(errs) == 0 {
 		return assist.ChatReply{}, 0, fmt.Errorf("%w: the route %s is not declared", ErrNoRoute, p.only)
+	}
+	if able == 0 {
+		return assist.ChatReply{}, 0, fmt.Errorf("%w: %s", assist.ErrCannotHonour, strings.Join(errs, "; "))
 	}
 	return assist.ChatReply{}, 0, fmt.Errorf("%w: %s", ErrNoRoute, strings.Join(errs, "; "))
 }
@@ -163,6 +186,9 @@ func maskChat(req assist.ChatRequest, mask *pii.Masker, personal bool) (assist.C
 			}
 			c.Content[j] = p
 		}
+		if m.Refusal != "" {
+			c.Refusal = clean(m.Refusal)
+		}
 		c.ToolCalls = make([]assist.ToolCall, len(m.ToolCalls))
 		for j, tc := range m.ToolCalls {
 			tc.Function.Arguments = clean(tc.Function.Arguments)
@@ -176,8 +202,8 @@ func maskChat(req assist.ChatRequest, mask *pii.Masker, personal bool) (assist.C
 	return out, hidden
 }
 
-// restoreChat puts back what was masked, in what the model said and in the
-// arguments of the tools it chose.
+// restoreChat puts back what was masked, in what the model said, or
+// declined to say, and in the arguments of the tools it chose.
 func restoreChat(r assist.ChatReply, mask *pii.Masker) assist.ChatReply {
 	parts := make([]assist.Part, len(r.Message.Content))
 	for i, p := range r.Message.Content {
@@ -187,6 +213,7 @@ func restoreChat(r assist.ChatReply, mask *pii.Masker) assist.ChatReply {
 		parts[i] = p
 	}
 	r.Message.Content = parts
+	r.Message.Refusal = mask.Restore(r.Message.Refusal)
 	if len(r.Message.ToolCalls) > 0 {
 		calls := make([]assist.ToolCall, len(r.Message.ToolCalls))
 		for i, tc := range r.Message.ToolCalls {
@@ -199,10 +226,16 @@ func restoreChat(r assist.ChatReply, mask *pii.Masker) assist.ChatReply {
 }
 
 // Chat is a conversation through the guard, for the single model an install
-// configures without the gateway's routes.
+// configures without the gateway's routes. That model has nobody to say
+// what it can honour, as a route's administrator does, so a request that
+// needs a route to say so is refused here.
 func (g Guarded) Chat(ctx context.Context, req assist.ChatRequest) (assist.ChatReply, error) {
 	if err := req.Check(); err != nil {
 		return assist.ChatReply{}, err
+	}
+	if why := (RouteParams{}).cannot(req); why != "" {
+		return assist.ChatReply{}, fmt.Errorf("%w: the model configured without the gateway: %s; "+
+			"declare it as a gateway route that does", assist.ErrCannotHonour, why)
 	}
 	if req.Images() > 0 && !g.Personal {
 		return assist.ChatReply{}, ErrPictureNotAllowed
@@ -221,5 +254,9 @@ func (g Guarded) Chat(ctx context.Context, req assist.ChatRequest) (assist.ChatR
 	if len(counts) > 0 && g.OnMasked != nil {
 		g.OnMasked(counts)
 	}
-	return restoreChat(reply, mask), err
+	reply = restoreChat(reply, mask)
+	if err != nil {
+		return reply, err
+	}
+	return req.Honour(reply)
 }

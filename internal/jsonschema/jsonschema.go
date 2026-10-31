@@ -3,8 +3,10 @@
 
 // Package jsonschema checks a value against the part of JSON Schema that
 // API descriptions use for request bodies: types, properties and which are
-// required, items, enumerations, lengths, bounds, and allOf, anyOf and
-// oneOf. A keyword it does not know constrains nothing.
+// required, items, enumerations, lengths, bounds, allOf, anyOf and oneOf,
+// and references to another part of the same schema ($ref, as $defs and
+// recursive schemas are written). A keyword it does not know, or a
+// reference to anywhere else, constrains nothing.
 //
 // One rule is stricter than the standard. An object schema that lists its
 // properties takes only those, unless additionalProperties says otherwise:
@@ -21,12 +23,28 @@ import (
 	"math"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
 
 // maxDepth bounds how far into a value, or a schema, a check goes.
 const maxDepth = 32
+
+// maxSteps bounds the work of one check, to under a second. A schema
+// that refers to itself can be a few bytes and still ask for more work
+// than there is time for: two references to itself under anyOf double the
+// work at every level, and a schema can come from whoever is calling. A
+// value that fits a schema written in good faith takes a few steps for
+// each of its parts, so only one of megabytes would come near it.
+const maxSteps = 1000000
+
+// checker is one check: the schema it began with, which a reference
+// points into, and the work done so far.
+type checker struct {
+	root  any
+	steps int
+}
 
 // Check reports the first way v does not fit schema, or nil. v is a value
 // as encoding/json decodes into any: maps, slices, strings, float64,
@@ -48,12 +66,16 @@ func Check(schema json.RawMessage, v any) error {
 	if err := json.Unmarshal(b, &norm); err != nil {
 		return err
 	}
-	return check(s, norm, "body", 0)
+	c := &checker{root: s}
+	return c.check(s, norm, "body", 0)
 }
 
-func check(schema any, v any, at string, depth int) error {
+func (c *checker) check(schema any, v any, at string, depth int) error {
 	if depth > maxDepth {
 		return fmt.Errorf("%s is nested deeper than %d", at, maxDepth)
+	}
+	if c.steps++; c.steps > maxSteps {
+		return c.tooMuch(at)
 	}
 	s, ok := schema.(map[string]any)
 	if !ok {
@@ -118,27 +140,40 @@ func check(schema any, v any, at string, depth int) error {
 		}
 		if items, ok := s["items"]; ok {
 			for i, item := range x {
-				if err := check(items, item, fmt.Sprintf("%s[%d]", at, i), depth+1); err != nil {
+				if err := c.check(items, item, fmt.Sprintf("%s[%d]", at, i), depth+1); err != nil {
 					return err
 				}
 			}
 		}
 	case map[string]any:
-		if err := checkObject(s, x, at, depth); err != nil {
+		if err := c.checkObject(s, x, at, depth); err != nil {
 			return err
 		}
 	}
-	if all, ok := s["allOf"].([]any); ok {
-		for _, sub := range all {
-			if err := check(sub, v, at, depth+1); err != nil {
+	if ref, ok := s["$ref"].(string); ok {
+		if target, found := c.resolve(ref); found {
+			if err := c.check(target, v, at, depth+1); err != nil {
 				return err
 			}
 		}
 	}
+	if all, ok := s["allOf"].([]any); ok {
+		for _, sub := range all {
+			if err := c.check(sub, v, at, depth+1); err != nil {
+				return err
+			}
+		}
+	}
+	// A shape that does not fit is not an error here, so running out of
+	// steps is looked for apart: otherwise a check cut short would read as
+	// a value that fits none of its shapes, or fits one.
 	if anyOf, ok := s["anyOf"].([]any); ok && len(anyOf) > 0 {
 		fits := false
 		for _, sub := range anyOf {
-			fits = fits || check(sub, v, at, depth+1) == nil
+			fits = fits || c.check(sub, v, at, depth+1) == nil
+		}
+		if c.steps > maxSteps {
+			return c.tooMuch(at)
 		}
 		if !fits {
 			return fmt.Errorf("%s fits none of the shapes it may take", at)
@@ -147,9 +182,12 @@ func check(schema any, v any, at string, depth int) error {
 	if oneOf, ok := s["oneOf"].([]any); ok && len(oneOf) > 0 {
 		n := 0
 		for _, sub := range oneOf {
-			if check(sub, v, at, depth+1) == nil {
+			if c.check(sub, v, at, depth+1) == nil {
 				n++
 			}
+		}
+		if c.steps > maxSteps {
+			return c.tooMuch(at)
 		}
 		if n != 1 {
 			return fmt.Errorf("%s fits %d of the shapes it may take, and must fit exactly one", at, n)
@@ -158,7 +196,45 @@ func check(schema any, v any, at string, depth int) error {
 	return nil
 }
 
-func checkObject(s map[string]any, x map[string]any, at string, depth int) error {
+func (c *checker) tooMuch(at string) error {
+	return fmt.Errorf("%s takes more than %d steps to check against its schema", at, maxSteps)
+}
+
+// resolve finds what a reference points to in the schema the check began
+// with: the whole of it ("#"), or a part by its JSON pointer
+// ("#/$defs/address").
+func (c *checker) resolve(ref string) (any, bool) {
+	if ref == "#" {
+		return c.root, true
+	}
+	path, ok := strings.CutPrefix(ref, "#/")
+	if !ok {
+		return nil, false
+	}
+	at := c.root
+	for _, tok := range strings.Split(path, "/") {
+		tok = strings.ReplaceAll(strings.ReplaceAll(tok, "~1", "/"), "~0", "~")
+		switch x := at.(type) {
+		case map[string]any:
+			next, ok := x[tok]
+			if !ok {
+				return nil, false
+			}
+			at = next
+		case []any:
+			i, err := strconv.Atoi(tok)
+			if err != nil || i < 0 || i >= len(x) {
+				return nil, false
+			}
+			at = x[i]
+		default:
+			return nil, false
+		}
+	}
+	return at, true
+}
+
+func (c *checker) checkObject(s map[string]any, x map[string]any, at string, depth int) error {
 	props, _ := s["properties"].(map[string]any)
 	if req, ok := s["required"].([]any); ok {
 		for _, r := range req {
@@ -181,14 +257,17 @@ func checkObject(s map[string]any, x map[string]any, at string, depth int) error
 	for _, k := range keys {
 		where := at + "." + k
 		if p, ok := props[k]; ok {
-			if err := check(p, x[k], where, depth+1); err != nil {
+			if err := c.check(p, x[k], where, depth+1); err != nil {
 				return err
 			}
 			continue
 		}
 		switch {
 		case hasExtra:
-			if err := check(extra, x[k], where, depth+1); err != nil {
+			if err := c.check(extra, x[k], where, depth+1); err != nil {
+				if c.steps > maxSteps {
+					return err
+				}
 				return errors.New(where + " is not a property it takes")
 			}
 		case props != nil:

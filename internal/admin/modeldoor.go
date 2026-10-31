@@ -62,7 +62,7 @@ func doorStatus(err error) int {
 		return http.StatusTooManyRequests
 	case errors.Is(err, gateway.ErrNoRoute):
 		return http.StatusServiceUnavailable
-	case errors.Is(err, gateway.ErrPictureNotAllowed):
+	case errors.Is(err, gateway.ErrPictureNotAllowed), errors.Is(err, assist.ErrCannotHonour):
 		return http.StatusBadRequest
 	}
 	// A request the provider refused as malformed comes back unwrapped

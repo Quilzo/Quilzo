@@ -94,8 +94,35 @@ type RouteParams struct {
 	// that reasons at length; empty is the default of two minutes.
 	Timeout string `json:"timeout,omitempty"`
 	// AutoToolChoice sends "auto" where a caller forces a tool, for a model
-	// that answers a forced choice with an error.
+	// that answers a forced choice with an error. What the model calls is
+	// then checked against what the caller forced (assist.ChatRequest.Honour).
 	AutoToolChoice bool `json:"auto_tool_choice,omitempty"`
+
+	// What a route can honour, which only its administrator can say. A
+	// server that cannot honour these takes them without a word and
+	// answers as it pleases (Anthropic's OpenAI-compatible endpoint, and
+	// many a local server, accept response_format and ignore it), so a
+	// request asking for one goes only to a route that says it can, and is
+	// refused when none does.
+
+	// StructuredOutput says the model honours response_format: an answer
+	// as a JSON object, or as JSON to a schema.
+	StructuredOutput bool `json:"structured_output,omitempty"`
+	// ReasoningEffort says the model takes reasoning_effort, how hard it
+	// thinks.
+	ReasoningEffort bool `json:"reasoning_effort,omitempty"`
+}
+
+// cannot says why a route cannot honour what a request asks of it, or ""
+// when it can, naming what an administrator would declare if it can.
+func (p RouteParams) cannot(req assist.ChatRequest) string {
+	switch {
+	case req.ResponseFormat != nil && !p.StructuredOutput:
+		return "it is not declared to honour a response format (structured output, --structured-output)"
+	case req.ReasoningEffort != "" && !p.ReasoningEffort:
+		return "it is not declared to take a reasoning effort (--reasoning-effort)"
+	}
+	return ""
 }
 
 // Check refuses parameters that could not be sent.
@@ -122,8 +149,9 @@ func (p RouteParams) Check() error {
 	return nil
 }
 
-// String says what the route sends beyond the conversation, for the pages
-// and commands that list routes; empty when it sends nothing more.
+// String says what the route sends beyond the conversation, and what it
+// can honour, for the pages and commands that list routes; empty when it
+// sends nothing more.
 func (p RouteParams) String() string {
 	var parts []string
 	if p.MaxTokens != "" {
@@ -140,6 +168,12 @@ func (p RouteParams) String() string {
 	}
 	if p.AutoToolChoice {
 		parts = append(parts, "auto tool choice")
+	}
+	if p.StructuredOutput {
+		parts = append(parts, "structured output")
+	}
+	if p.ReasoningEffort {
+		parts = append(parts, "reasoning effort")
 	}
 	return strings.Join(parts, ", ")
 }

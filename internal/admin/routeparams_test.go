@@ -23,17 +23,22 @@ func TestARoutesFieldsAreSetOnTheScreen(t *testing.T) {
 	srv.Models = m
 	decideForm(t, srv, "/models/change", token, url.Values{"op": {"route-add"}, "name": {"reasoner"},
 		"url": {"https://api.example/v1"}, "model": {"o-big"}, "max_tokens_field": {"max_completion_tokens"},
-		"temperature": {"1"}, "timeout": {"300s"}, "auto_tool_choice": {"yes"}})
+		"temperature": {"1"}, "timeout": {"300s"}, "auto_tool_choice": {"yes"}, "structured_output": {"yes"},
+		"reasoning_effort": {"yes"}})
 	if len(cfg.Routes) != 1 {
 		t.Fatalf("%+v", cfg.Routes)
 	}
 	p := cfg.Routes[0].Params
 	if p.MaxTokens != "max_completion_tokens" || p.Temperature == nil || *p.Temperature != 1 || p.TopP != nil ||
-		p.Timeout != "300s" || !p.AutoToolChoice {
+		p.Timeout != "300s" || !p.AutoToolChoice || !p.StructuredOutput || !p.ReasoningEffort {
 		t.Fatalf("%+v", p)
 	}
-	if body := get(t, srv, "/models", token).Body.String(); !strings.Contains(body, "max_completion_tokens, temperature 1") {
-		t.Error("the list of routes does not say what the route sends")
+	body := get(t, srv, "/models", token).Body.String()
+	if !strings.Contains(body, "max_completion_tokens, temperature 1") || !strings.Contains(body, "structured output, reasoning effort") {
+		t.Error("the list of routes does not say what the route sends and honours")
+	}
+	if !strings.Contains(body, `name="structured_output"`) || !strings.Contains(body, `name="reasoning_effort"`) {
+		t.Error("the form does not ask what a route honours")
 	}
 	for _, bad := range []url.Values{{"temperature": {"warm"}}, {"temperature": {"9"}}, {"top_p": {"0"}},
 		{"timeout": {"forever"}}, {"max_tokens_field": {"max_output"}}} {
@@ -62,5 +67,13 @@ func TestARefusedRequestIsTheCallersToFix(t *testing.T) {
 	}
 	if got := doorStatus(errors.New("something else")); got != http.StatusBadGateway {
 		t.Errorf("an unknown failure became %d", got)
+	}
+	// A request no route can honour is the caller's to change; an answer
+	// that was not what it asked for is the model's failing.
+	if got := doorStatus(fmt.Errorf("%w: hosted: no format", assist.ErrCannotHonour)); got != http.StatusBadRequest {
+		t.Errorf("a request nothing can honour became %d", got)
+	}
+	if got := doorStatus(fmt.Errorf("%w: not JSON", assist.ErrNotHonoured)); got != http.StatusBadGateway {
+		t.Errorf("an answer not as asked became %d", got)
 	}
 }

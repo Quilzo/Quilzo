@@ -167,11 +167,13 @@ func TestARoutesFieldsAreChecked(t *testing.T) {
 			t.Errorf("accepted %+v", bad)
 		}
 	}
-	good := RouteParams{MaxTokens: "max_completion_tokens", Temperature: f(0), TopP: f(1), Timeout: "300s", AutoToolChoice: true}
+	good := RouteParams{MaxTokens: "max_completion_tokens", Temperature: f(0), TopP: f(1), Timeout: "300s", AutoToolChoice: true,
+		StructuredOutput: true, ReasoningEffort: true}
 	if err := good.Check(); err != nil {
 		t.Fatal(err)
 	}
-	if got := good.String(); got != "max_completion_tokens, temperature 0, top_p 1, 300s a call, auto tool choice" {
+	if got := good.String(); got != "max_completion_tokens, temperature 0, top_p 1, 300s a call, auto tool choice, "+
+		"structured output, reasoning effort" {
 		t.Errorf("String() = %q", got)
 	}
 	if (RouteParams{}).String() != "" {

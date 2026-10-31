@@ -100,9 +100,11 @@ type Models struct {
 }
 
 // whole reports whether a conversation needs to go as it is: it carries a
-// picture, offers a tool, or continues one.
+// picture, offers a tool, continues one, or asks something of the answer
+// (a format, a stop sequence, a temperature) that text alone cannot carry.
 func whole(r assist.ChatRequest) bool {
-	if len(r.Tools) > 0 {
+	if len(r.Tools) > 0 || r.ToolChoice != "" || r.ResponseFormat != nil || len(r.Stop) > 0 ||
+		r.Temperature != nil || r.TopP != nil || r.ReasoningEffort != "" || r.OneToolCall {
 		return true
 	}
 	for _, m := range r.Messages {
@@ -139,11 +141,19 @@ func (h *Models) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var reply assist.ChatReply
 	if whole(req.Chat) {
 		if h.Chat == nil {
-			writeError(w, http.StatusBadRequest, "this run's model takes text only: pictures and tools are not passed on")
+			writeError(w, http.StatusBadRequest, "this run's model takes text only: pictures, tools and "+
+				"what a request asks of the answer are not passed on")
 			return
 		}
 		if reply, err = h.Chat(r.Context(), req.Chat); err != nil {
-			writeError(w, http.StatusTooManyRequests, err.Error())
+			code := http.StatusTooManyRequests
+			switch {
+			case errors.Is(err, assist.ErrCannotHonour):
+				code = http.StatusBadRequest
+			case errors.Is(err, assist.ErrNotHonoured):
+				code = http.StatusBadGateway
+			}
+			writeError(w, code, err.Error())
 			return
 		}
 	} else {

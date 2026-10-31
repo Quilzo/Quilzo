@@ -741,6 +741,19 @@ dead, and the live risk is a server redefining a tool after the day somebody
 trusted it. Credentials are named in the declaration and read from the
 environment, never stored, because an object in this store cannot be deleted.
 
+**Models, for agents built anywhere.** At `/v1` the admin answers OpenAI's
+chat completions and responses and Anthropic's messages through the model
+gateway, so an agent made with any framework uses a Quilzo token as its key and
+each call is budgeted, masked and recorded. Every field of a request is read or
+refused by name. What changes the answer reaches the model: a format or a
+schema, stop sequences, a temperature, how hard to think, one tool call at a
+time. What nothing here could honour, a seed or several answers, is refused
+rather than dropped. A format or an effort goes only to a route declared to
+honour it (`quilzo gateway route add --structured-output --reasoning-effort`),
+because a model that cannot takes them without a word; an answer to a strict
+schema is checked against it, and one that does not fit, or that calls a tool
+the caller did not name, comes back as an error rather than as an answer.
+
 **Federation.** The site is followable from the fediverse — WebFinger, an actor
 at `/@`, an outbox — and a published page is delivered to every follower, signed,
 with bounded retries. The inbox verifies each activity against the sending

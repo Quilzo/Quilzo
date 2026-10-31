@@ -108,7 +108,8 @@ func (s *Server) handleModelsChange(w http.ResponseWriter, r *http.Request) {
 		switch op {
 		case "route-add":
 			params := gateway.RouteParams{MaxTokens: strings.TrimSpace(r.FormValue("max_tokens_field")),
-				Timeout: strings.TrimSpace(r.FormValue("timeout")), AutoToolChoice: r.FormValue("auto_tool_choice") == "yes"}
+				Timeout: strings.TrimSpace(r.FormValue("timeout")), AutoToolChoice: r.FormValue("auto_tool_choice") == "yes",
+				StructuredOutput: r.FormValue("structured_output") == "yes", ReasoningEffort: r.FormValue("reasoning_effort") == "yes"}
 			for _, f := range []struct {
 				field string
 				into  **float64

@@ -142,3 +142,31 @@ func TestTheModelDoorSaysWhyInEachShape(t *testing.T) {
 		t.Errorf("an empty conversation: %d %s", w.Code, w.Body)
 	}
 }
+
+// A field the door does not read is refused in the caller's own shape,
+// by its name, before any model is asked: passed over, it could have been
+// a format or a seed the caller is counting on.
+func TestTheModelDoorRefusesAFieldItDoesNotRead(t *testing.T) {
+	r := newDoorRig(t)
+	auth := map[string]string{"Authorization": "Bearer " + r.token}
+	for _, c := range []struct{ path, body, shape string }{
+		{"/v1/chat/completions", `{"model":"quilzo","messages":[{"role":"user","content":"hi"}],"guided_json":{}}`, `"error":{`},
+		{"/v1/responses", `{"model":"quilzo","input":"hi","guided_json":{}}`, `"error":{`},
+		{"/v1/messages", `{"model":"quilzo","max_tokens":10,"messages":[{"role":"user","content":"hi"}],"guided_json":{}}`,
+			`"type":"invalid_request_error"`},
+	} {
+		w := r.send(t, c.path, c.body, auth)
+		if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), c.shape) ||
+			!strings.Contains(w.Body.String(), `guided_json`) {
+			t.Errorf("%s: %d %s", c.path, w.Code, w.Body)
+		}
+	}
+	if len(r.asked) != 0 {
+		t.Errorf("a refused request was asked of the model: %v", r.asked)
+	}
+	r.fail = fmt.Errorf("%w: hosted: it is not declared to honour a response format", assist.ErrCannotHonour)
+	if w := r.send(t, "/v1/messages", anthropicBody, auth); w.Code != http.StatusBadRequest ||
+		!strings.Contains(w.Body.String(), "invalid_request_error") {
+		t.Errorf("a request nothing can honour: %d %s", w.Code, w.Body)
+	}
+}
