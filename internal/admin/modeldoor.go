@@ -151,5 +151,5 @@ func (s *Server) handleModelDoor(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		name = "quilzo"
 	}
-	write(w, name, reply, req.Stream)
+	write(w, name, req, reply)
 }

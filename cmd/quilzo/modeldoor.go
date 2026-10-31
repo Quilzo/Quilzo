@@ -330,6 +330,16 @@ func doorChat(ctx context.Context, root string, caller *Caller, client, shape, m
 			remembers = holdsCapability(m, "remember")
 		}
 	}
+	// What the caller asked, before the door offers its own tool: the
+	// answer that goes back is held to it, whatever the door asked on the
+	// way. A turn that must call one of the caller's tools leaves no room
+	// for the door's, so none is offered: a model sent "auto" in place of
+	// the caller's choice could remember in place of the call, and the
+	// caller would get no call back.
+	asked := req
+	if asked.ToolChoice == "required" {
+		remembers = false
+	}
 	if remembers {
 		for _, t := range req.Tools {
 			if t.Function.Name == rememberTool {
@@ -396,5 +406,8 @@ func doorChat(ctx context.Context, root string, caller *Caller, client, shape, m
 		detail["remembered"] = strings.Join(remembered, " ")
 	}
 	reply.Usage = total
-	return reply, nil
+	// A turn that only remembered, asked again until the door stopped
+	// asking, is no answer to a schema or a format, and is not passed off
+	// as one.
+	return asked.Honour(reply)
 }

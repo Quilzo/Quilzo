@@ -100,15 +100,16 @@ type Models struct {
 }
 
 // whole reports whether a conversation needs to go as it is: it carries a
-// picture, offers a tool, continues one, or asks something of the answer
-// (a format, a stop sequence, a temperature) that text alone cannot carry.
+// picture or a refusal the model made, offers a tool, continues one, or
+// asks something of the answer (a format, a stop sequence, a temperature)
+// that text alone cannot carry.
 func whole(r assist.ChatRequest) bool {
 	if len(r.Tools) > 0 || r.ToolChoice != "" || r.ResponseFormat != nil || len(r.Stop) > 0 ||
 		r.Temperature != nil || r.TopP != nil || r.ReasoningEffort != "" || r.OneToolCall {
 		return true
 	}
 	for _, m := range r.Messages {
-		if m.Images() > 0 || len(m.ToolCalls) > 0 || m.Role == "tool" {
+		if m.Images() > 0 || len(m.ToolCalls) > 0 || m.Role == "tool" || m.Refusal != "" {
 			return true
 		}
 	}
@@ -178,7 +179,7 @@ func (h *Models) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		reply = assist.ChatReply{Message: assist.ChatMessage{Role: "assistant",
 			Content: []assist.Part{{Type: "text", Text: text}}}, Usage: assist.Usage{In: in, Out: out}}
 	}
-	modelapi.WriteOpenAI(w, name, reply, req.Stream)
+	modelapi.WriteOpenAI(w, name, req, reply)
 }
 
 func writeError(w http.ResponseWriter, code int, msg string) { modelapi.OpenAIError(w, code, msg) }

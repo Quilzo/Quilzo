@@ -266,7 +266,8 @@ func gatewayRoute(root string, args []string) error {
 	topP := fs.String("top-p", "", "a top_p sent on every call; empty sends none")
 	timeout := fs.String("timeout", "", "how long one call may take, such as 300s for a model that reasons at length")
 	autoTool := fs.Bool("auto-tool-choice", false, "send auto where a caller forces a tool, for a model that refuses a forced choice")
-	structured := fs.Bool("structured-output", false, "its model honours response_format: an answer as JSON, or as JSON to a schema")
+	structured := fs.Bool("structured-output", false, "its model honours response_format and a tool's strict: "+
+		"an answer as JSON, or as JSON to a schema, and a tool's arguments to its parameters")
 	reasoning := fs.Bool("reasoning-effort", false, "its model takes reasoning_effort, how hard it thinks")
 	if err := fs.Parse(args[2:]); err != nil {
 		return err

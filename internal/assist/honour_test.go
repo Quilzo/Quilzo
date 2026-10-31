@@ -150,6 +150,18 @@ func TestAnAnswerIsHeldToWhatWasAskedOfIt(t *testing.T) {
 			r.ResponseFormat = &ResponseFormat{Type: "json_schema", Schema: json.RawMessage(answerSchema)}
 		}, turn("Paris, 18"), false},
 		{"an answer cut short by its limit", strictly, ChatReply{Message: turn(`{"city":"Pa`).Message, Finish: "length"}, true},
+		{"an answer cut short before the call it was required to make", func(r *ChatRequest) { r.ToolChoice = "required" },
+			ChatReply{Message: turn("Let me").Message, Finish: "length"}, true},
+		{"a call cut short before its strict arguments were finished", strictTool,
+			ChatReply{Message: called("click", `{"x":`).Message, Finish: "length"}, true},
+		{"a strict tool's call that fits its parameters", strictTool, called("click", `{"x":10,"y":20}`), true},
+		{"a strict tool's call missing a parameter", strictTool, called("click", `{"x":10}`), false},
+		{"a strict tool's call with a parameter it does not take", strictTool, called("click", `{"x":1,"y":2,"as":"admin"}`), false},
+		{"a strict tool's call that is not JSON", strictTool, called("click", `x=10`), false},
+		{"a call to a tool that is not strict, missing a parameter", func(r *ChatRequest) {
+			strictTool(r)
+			r.Tools[0].Function.Strict = false
+		}, called("click", `{"x":10}`), true},
 		{"a call where the answer has a schema", strictly, turn("", "click"), true},
 		{"a refusal where the answer has a schema", strictly,
 			ChatReply{Message: ChatMessage{Role: "assistant", Refusal: "I cannot help with that."}}, true},
@@ -163,6 +175,76 @@ func TestAnAnswerIsHeldToWhatWasAskedOfIt(t *testing.T) {
 		if !c.ok && !errors.Is(err, ErrNotHonoured) {
 			t.Errorf("%s was passed: %v", c.name, err)
 		}
+	}
+}
+
+const clickSchema = `{"type":"object","properties":{"x":{"type":"integer"},"y":{"type":"integer"}},
+	"required":["x","y"],"additionalProperties":false}`
+
+func strictTool(r *ChatRequest) {
+	r.Tools[0].Function.Parameters, r.Tools[0].Function.Strict = json.RawMessage(clickSchema), true
+}
+
+func called(name, args string) ChatReply {
+	return ChatReply{Message: ChatMessage{Role: "assistant", ToolCalls: []ToolCall{{ID: "a", Type: "function",
+		Function: FunctionCall{Name: name, Arguments: args}}}}, Finish: "tool_calls"}
+}
+
+// A stop sequence ends a turn that only allowed a call, calls and all, as
+// a provider that stopped there would; a turn that had to be a call keeps
+// it, and only its words are cut.
+func TestAStopSequenceKeepsTheCallATurnWasRequiredToMake(t *testing.T) {
+	req := clickRequest()
+	req.Stop = []string{"END"}
+	reply := turn("Pressing it. END", "click")
+	reply.Finish = "tool_calls"
+	if r, err := req.Honour(reply); err != nil || len(r.Message.ToolCalls) != 0 || r.Finish != "stop" {
+		t.Errorf("a turn that only allowed a call: %+v %v", r, err)
+	}
+	for _, name := range []string{"", "click"} {
+		req.ToolChoice, req.ToolChoiceName = "required", name
+		r, err := req.Honour(reply)
+		if err != nil || r.Message.Text() != "Pressing it. " || len(r.Message.ToolCalls) != 1 || r.Finish != "tool_calls" {
+			t.Errorf("a turn required to call %q: %+v %v", name, r, err)
+		}
+	}
+}
+
+// An answer to a strict schema that does not fit is said to be the
+// answer's, not a request body's.
+func TestAnAnswerThatDoesNotFitSaysSo(t *testing.T) {
+	req := clickRequest()
+	strictly(&req)
+	_, err := req.Honour(turn(`{"city":"Paris","degrees":"warm"}`))
+	if err == nil || !strings.Contains(err.Error(), "answer.degrees is text") || strings.Contains(err.Error(), "body") {
+		t.Errorf("%v", err)
+	}
+	strictTool(&req)
+	req.ResponseFormat = nil
+	_, err = req.Honour(called("click", `{"x":1}`))
+	if err == nil || !strings.Contains(err.Error(), "its call to click does not fit the tool's parameters: arguments needs y") {
+		t.Errorf("%v", err)
+	}
+}
+
+// A refusal is the model's own: on anyone else's turn it is refused, and
+// where it is, it counts against a budget as the words it is.
+func TestARefusalIsOnlyTheModels(t *testing.T) {
+	var m ChatMessage
+	if err := json.Unmarshal([]byte(`{"role":"user","content":null,"refusal":"`+strings.Repeat("x", 5000)+`"}`), &m); err != nil {
+		t.Fatal(err)
+	}
+	req := ChatRequest{Messages: []ChatMessage{m}}
+	if err := req.Check(); err == nil || !strings.Contains(err.Error(), "not a user message") {
+		t.Errorf("a person's turn carrying a refusal: %v", err)
+	}
+	req.Messages[0].Role = "assistant"
+	req.Messages = append(req.Messages, ChatMessage{Role: "user", Content: []Part{{Type: "text", Text: "go on"}}})
+	if err := req.Check(); err != nil {
+		t.Errorf("the model's turn carrying a refusal: %v", err)
+	}
+	if n := req.TextLen(); n != 5005 {
+		t.Errorf("a refusal of 5,000 counted as %d", n)
 	}
 }
 

@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -145,6 +146,43 @@ func TestTheDoorServesOnlyThoseWhoMayUseTheModels(t *testing.T) {
 	usage := string(b)
 	if !strings.Contains(usage, `"door:dana"`) || !strings.Contains(usage, `"person:dana"`) {
 		t.Errorf("the ledger has %s", usage)
+	}
+}
+
+// An answer at the door is held to what the caller asked, not to what the
+// door asked on its way: a model that only remembers until the door stops
+// asking has given no answer to a schema, and a caller that names its own
+// tool is not offered the door's in its place.
+func TestTheDoorHoldsItsAnswerToWhatTheCallerAsked(t *testing.T) {
+	root, seen := doorRig(t, rememberTurn)
+	cfg, err := gateway.Load(gatewayPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Routes[0].Params.StructuredOutput = true
+	if err := gateway.Save(gatewayPath(root), cfg); err != nil {
+		t.Fatal(err)
+	}
+	req := say("Where do I live?")
+	req.ResponseFormat = &assist.ResponseFormat{Type: "json_schema", Strict: true,
+		Schema: json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}},"required":["city"],"additionalProperties":false}`)}
+	reply, err := doorChat(context.Background(), root, dana(), "", "openai", "agent/concierge", req)
+	if !errors.Is(err, assist.ErrNotHonoured) || len(seen()) != doorRounds+1 {
+		t.Errorf("a model that only remembered, asked %d times: %+v %v", len(seen()), reply, err)
+	}
+
+	lookupTurn := `{"role":"assistant","content":null,"tool_calls":[{"id":"c1","type":"function",` +
+		`"function":{"name":"lookup","arguments":"{}"}}]}`
+	root, seen = doorRig(t, lookupTurn)
+	req = say("Look it up")
+	req.Tools = []assist.ChatTool{{Type: "function", Function: assist.ToolFunction{Name: "lookup"}}}
+	req.ToolChoice, req.ToolChoiceName = "required", "lookup"
+	reply, err = doorChat(context.Background(), root, dana(), "", "openai", "agent/concierge", req)
+	if err != nil || len(reply.Message.ToolCalls) != 1 || reply.Message.ToolCalls[0].Function.Name != "lookup" {
+		t.Fatalf("a named tool: %+v %v", reply, err)
+	}
+	if strings.Contains(seen()[0], rememberTool) {
+		t.Errorf("the door offered its own tool where the caller named one: %s", seen()[0])
 	}
 }
 

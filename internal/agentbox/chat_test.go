@@ -71,8 +71,8 @@ func TestTheBoxPassesPicturesAndToolsThroughWhole(t *testing.T) {
 }
 
 // What a request asks of the answer, a format or a stop sequence, needs
-// the whole conversation path even with no tool or picture: the text path
-// would answer without it. A field nothing reads is refused before any
+// the whole conversation path even with no tool or picture, as does a
+// refusal the model made: the text path would answer without it. A field nothing reads is refused before any
 // model is asked, and what the gateway says of the request is passed on
 // as the caller's to fix or the model's failing.
 func TestWhatARequestAsksOfTheAnswerIsCarriedOrRefused(t *testing.T) {
@@ -97,8 +97,16 @@ func TestWhatARequestAsksOfTheAnswerIsCarriedOrRefused(t *testing.T) {
 	if whole[0].ReasoningEffort != "low" {
 		t.Errorf("the effort was not carried: %+v", whole[0])
 	}
+	// A refusal the model made earlier is part of the conversation, which
+	// the text path, reading only text, would drop.
 	whole = nil
-	code, out := askBox(t, h, `{"model":"x","messages":[{"role":"user","content":"hi"}],"seed":7}`)
+	code, out := askBox(t, h, `{"model":"x","messages":[{"role":"user","content":"hi"},
+		{"role":"assistant","content":null,"refusal":"I cannot help with that."},{"role":"user","content":"why?"}]}`)
+	if code != 200 || len(whole) != 1 || texts != 0 || whole[0].Messages[1].Refusal != "I cannot help with that." {
+		t.Errorf("an earlier refusal: %d whole=%d texts=%d %v", code, len(whole), texts, out)
+	}
+	whole = nil
+	code, out = askBox(t, h, `{"model":"x","messages":[{"role":"user","content":"hi"}],"seed":7}`)
 	if code != http.StatusBadRequest || len(whole) != 0 || texts != 0 ||
 		!strings.Contains(out["error"].(map[string]any)["message"].(string), "seed") {
 		t.Errorf("a seed: %d %v", code, out)

@@ -67,6 +67,11 @@ type ToolFunction struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description,omitempty"`
 	Parameters  json.RawMessage `json:"parameters,omitempty"`
+	// Strict is the promise that a call's arguments fit the parameters,
+	// structured output for a tool. It is checked on every call that
+	// comes back (Honour), and sent only to a model declared to honour it,
+	// since a server that cannot may refuse it or take it without a word.
+	Strict bool `json:"strict,omitempty"`
 }
 
 // ChatMessage is one turn of a conversation.
@@ -79,7 +84,8 @@ type ChatMessage struct {
 	// Refusal is a model declining to answer, which OpenAI's models say
 	// apart from their text, most often when asked for an answer to a
 	// schema. It is written back in the caller's shape as a refusal, and
-	// sent on in a later turn as what the model said.
+	// sent on in a later turn as what the model said; so only the model's
+	// own turn carries one (Check), and it counts as text against a budget.
 	Refusal string `json:"-"`
 }
 
@@ -262,44 +268,54 @@ var ErrNotHonoured = errors.New("the model's answer is not what the request aske
 //
 // A stop sequence the model wrote past is cut at, as the provider does
 // when it honours one: the text ends there, and so does the turn, so a
-// tool call after it goes too. Anything else asked for and not given is
-// ErrNotHonoured: a tool the request required, or named, that the model
-// did not call; a call where the request allowed none, or more than one
-// where it asked for one; text that is not JSON where JSON was asked for,
-// or JSON that does not fit a schema it was promised to fit.
+// tool call after it goes too, unless the request required a call, when
+// the call is the turn and the text only what came before it. Anything
+// else asked for and not given is ErrNotHonoured: a tool the request
+// required, or named, that the model did not call; a call where the
+// request allowed none, or more than one where it asked for one; a call
+// to a strict tool whose arguments do not fit its parameters; text that
+// is not JSON where JSON was asked for, or JSON that does not fit a schema
+// it was promised to fit. A schema is held to as far as internal/jsonschema
+// reads one, which is every keyword OpenAI's and Anthropic's structured
+// output take.
 //
 // It is checked here rather than trusted to have been sent, because not
 // every model honours what it is sent: a route that refuses a forced tool
 // is sent "auto" (Params.AutoToolChoice), and some servers take a forced
-// choice or a format and silently do as they please. An answer cut short
-// by its limit is not held to a format, since its finish says so; nor is
-// a refusal, which is an answer in every shape.
+// choice or a format and silently do as they please. A turn cut short by
+// its limit is not held to what it did not finish, a format, a call or a
+// call's arguments, since its finish says so; nor is a refusal, which is
+// an answer in every shape.
 func (r ChatRequest) Honour(reply ChatReply) (ChatReply, error) {
 	if len(r.Stop) > 0 {
-		reply = cutAtStop(reply, r.Stop)
+		reply = cutAtStop(reply, r.Stop, r.ToolChoice == "required")
 	}
 	m := reply.Message
 	if m.Refusal != "" {
 		return reply, nil
 	}
 	calls := m.ToolCalls
+	cut := reply.Finish == "length"
 	switch {
 	case r.ToolChoice == "none" && len(calls) > 0:
 		return reply, fmt.Errorf("%w: it called %s, and the request allowed no tool", ErrNotHonoured, calls[0].Function.Name)
-	case r.ToolChoice == "required" && len(calls) == 0:
+	case r.ToolChoice == "required" && len(calls) == 0 && !cut:
 		return reply, fmt.Errorf("%w: the request required a tool call, and the model answered without one", ErrNotHonoured)
 	case r.OneToolCall && len(calls) > 1:
 		return reply, fmt.Errorf("%w: it made %d tool calls, and the request asked for one at most", ErrNotHonoured, len(calls))
 	}
-	if r.ToolChoiceName != "" {
-		for _, c := range calls {
-			if c.Function.Name != r.ToolChoiceName {
-				return reply, fmt.Errorf("%w: it called %s, and the request named %s", ErrNotHonoured, c.Function.Name, r.ToolChoiceName)
+	for _, c := range calls {
+		if r.ToolChoiceName != "" && c.Function.Name != r.ToolChoiceName {
+			return reply, fmt.Errorf("%w: it called %s, and the request named %s", ErrNotHonoured, c.Function.Name, r.ToolChoiceName)
+		}
+		if !cut {
+			if err := r.strictCall(c); err != nil {
+				return reply, err
 			}
 		}
 	}
 	f := r.ResponseFormat
-	if f == nil || len(calls) > 0 || reply.Finish == "length" {
+	if f == nil || len(calls) > 0 || cut {
 		return reply, nil
 	}
 	var v any
@@ -310,15 +326,33 @@ func (r ChatRequest) Honour(reply ChatReply) (ChatReply, error) {
 		return reply, fmt.Errorf("%w: the answer is JSON, and not an object", ErrNotHonoured)
 	}
 	if f.Type == "json_schema" && f.Strict {
-		if err := jsonschema.Check(f.Schema, v); err != nil {
+		if err := jsonschema.CheckAnswer(f.Schema, v, "answer"); err != nil {
 			return reply, fmt.Errorf("%w: the answer does not fit its schema: %v", ErrNotHonoured, err)
 		}
 	}
 	return reply, nil
 }
 
-// cutAtStop ends a turn's text before the first stop sequence in it.
-func cutAtStop(reply ChatReply, stop []string) ChatReply {
+// strictCall holds a call to a strict tool to the tool's parameters.
+func (r ChatRequest) strictCall(c ToolCall) error {
+	for _, t := range r.Tools {
+		if t.Function.Name != c.Function.Name || !t.Function.Strict {
+			continue
+		}
+		var args any
+		if err := json.Unmarshal([]byte(c.Function.Arguments), &args); err != nil {
+			return fmt.Errorf("%w: its call to %s carries arguments that are not JSON (%v)", ErrNotHonoured, c.Function.Name, err)
+		}
+		if err := jsonschema.CheckAnswer(t.Function.Parameters, args, "arguments"); err != nil {
+			return fmt.Errorf("%w: its call to %s does not fit the tool's parameters: %v", ErrNotHonoured, c.Function.Name, err)
+		}
+	}
+	return nil
+}
+
+// cutAtStop ends a turn's text before the first stop sequence in it, and
+// the turn with it, keeping its calls only when a call was required.
+func cutAtStop(reply ChatReply, stop []string, keepCalls bool) ChatReply {
 	text := reply.Message.Text()
 	at := -1
 	for _, s := range stop {
@@ -330,6 +364,9 @@ func cutAtStop(reply ChatReply, stop []string) ChatReply {
 		return reply
 	}
 	reply.Message.Content = []Part{{Type: "text", Text: text[:at]}}
+	if keepCalls && len(reply.Message.ToolCalls) > 0 {
+		return reply
+	}
 	reply.Message.ToolCalls = nil
 	reply.Finish = "stop"
 	return reply
@@ -421,6 +458,11 @@ func (r ChatRequest) Check() error {
 		default:
 			return fmt.Errorf("%q is not a role in a conversation", m.Role)
 		}
+		// A refusal is sent on as what the model said, so on anyone else's
+		// turn it would be words put in the model's mouth.
+		if m.Refusal != "" && m.Role != "assistant" {
+			return fmt.Errorf("only the model's own turn carries a refusal, not a %s message", m.Role)
+		}
 		for _, p := range m.Content {
 			switch p.Type {
 			case "text":
@@ -466,7 +508,7 @@ func (r ChatRequest) Images() int {
 func (r ChatRequest) TextLen() int {
 	n := 0
 	for _, m := range r.Messages {
-		n += len(m.Text())
+		n += len(m.Text()) + len(m.Refusal)
 		for _, c := range m.ToolCalls {
 			n += len(c.Function.Arguments)
 		}

@@ -744,15 +744,17 @@ environment, never stored, because an object in this store cannot be deleted.
 **Models, for agents built anywhere.** At `/v1` the admin answers OpenAI's
 chat completions and responses and Anthropic's messages through the model
 gateway, so an agent made with any framework uses a Quilzo token as its key and
-each call is budgeted, masked and recorded. Every field of a request is read or
-refused by name. What changes the answer reaches the model: a format or a
-schema, stop sequences, a temperature, how hard to think, one tool call at a
-time. What nothing here could honour, a seed or several answers, is refused
+each call is budgeted, masked and recorded. Every field at a request's top
+level, and in its format, reasoning, tools and tool choice, is read or refused
+by name. What changes the answer reaches the model: a format or a schema, a
+tool's strict, stop sequences, a temperature, how hard to think, one tool call
+at a time. What nothing here could honour, a seed or several answers, is refused
 rather than dropped. A format or an effort goes only to a route declared to
 honour it (`quilzo gateway route add --structured-output --reasoning-effort`),
-because a model that cannot takes them without a word; an answer to a strict
-schema is checked against it, and one that does not fit, or that calls a tool
-the caller did not name, comes back as an error rather than as an answer.
+because a model that cannot takes them without a word. An answer to a strict
+schema, and a call to a strict tool, is checked against its schema on the way
+back, and one that does not fit, or that calls a tool the caller did not name,
+comes back as an error rather than as an answer.
 
 **Federation.** The site is followable from the fediverse — WebFinger, an actor
 at `/@`, an outbox — and a published page is delivered to every follower, signed,

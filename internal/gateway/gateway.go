@@ -105,8 +105,11 @@ type RouteParams struct {
 	// request asking for one goes only to a route that says it can, and is
 	// refused when none does.
 
-	// StructuredOutput says the model honours response_format: an answer
-	// as a JSON object, or as JSON to a schema.
+	// StructuredOutput says the model honours response_format, an answer
+	// as a JSON object or as JSON to a schema, and strict on a tool, its
+	// arguments held to its parameters. A strict tool still goes to a route
+	// that is not declared, sent without strict, since its calls are
+	// checked on the way back whichever route made them.
 	StructuredOutput bool `json:"structured_output,omitempty"`
 	// ReasoningEffort says the model takes reasoning_effort, how hard it
 	// thinks.

@@ -810,21 +810,24 @@ Unreleased
 ** Fixed
 
 *** The model door no longer passes over what a request asks of its
-    answer.  Each field of a chat completions, responses or messages
-    request is read, or refused by name with a 400.  An answer as JSON or
-    to a schema (response_format, text.format, output_config.format),
-    stop sequences, the caller's temperature and top_p, how hard to think
-    (reasoning_effort, reasoning, thinking) and one tool call at a time
-    reach the model; an answer to a strict schema that does not fit it,
-    or a call to another tool than the one the caller forced or named, is
-    an error rather than an answer, and rests no route.  A format or an
-    effort goes only to a route declared to honour it, since a model that
-    cannot takes them without a word: quilzo gateway route add
-    --structured-output --reasoning-effort, or the Models screen.  With no
-    such route the request is refused.  More than one answer, a seed, log
-    probabilities, logit_bias and penalties are refused rather than
-    dropped: the route that answers may be another model, or one that
-    ignores them.
+    answer.  Each field at the top of a chat completions, responses or
+    messages request, and in its format, reasoning, tools and tool
+    choice, is read, or refused by name with a 400.  An answer as JSON or
+    to a schema (response_format, text.format, output_config.format), a
+    tool's strict, stop sequences, the caller's temperature and top_p,
+    how hard to think (reasoning_effort, reasoning, thinking) and one tool
+    call at a time reach the model.  An answer to a strict schema that
+    does not fit it, a strict tool's arguments that do not fit its
+    parameters, or a call to another tool than the one the caller forced
+    or named, is an error rather than an answer, and rests no route.  A
+    format or an effort goes only to a route declared to honour it, since
+    a model that cannot takes them without a word: quilzo gateway route
+    add --structured-output --reasoning-effort, or the Models screen.
+    With no such route the request is refused; a strict tool goes to any
+    route, sent as strict only to a declared one.  More than one answer,
+    a seed, log probabilities, logit_bias and penalties are refused
+    rather than dropped: the route that answers may be another model, or
+    one that ignores them.
 
 *** A page of nothing but unclosed brackets or links rendered in time
     that grew with the square of its length: twenty thousand took a second

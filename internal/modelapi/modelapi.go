@@ -16,8 +16,10 @@
 // that is not a function. An agent told its picture was ignored can do
 // something about it; one whose picture silently vanished answers about a
 // picture it never saw. The same goes for every field at a request's top
-// level (see fields): an agent that asked for JSON to a schema and got
-// prose, because the field was passed over, is worse off than one told no.
+// level (see fields), and in the objects that shape the answer: its
+// format, its reasoning, its tools and the choice among them. An agent
+// that asked for JSON to a schema and got prose, because the field was
+// passed over, is worse off than one told no.
 //
 // An answer is written whole. A request that asked for a stream gets the
 // whole answer as one stream, in the events its shape expects, which
@@ -110,29 +112,42 @@ func (f fields) body(r io.Reader) ([]byte, error) {
 	return b, nil
 }
 
+// namedAtMost is how many of the fields it refuses a refusal names; a
+// request of a million strange keys is told of a few, and how many more.
+const namedAtMost = 5
+
 // strange refuses fields this does not read, naming them.
 func strange(within string, names []string) error {
 	if len(names) == 0 {
 		return nil
 	}
+	noun := "a field"
+	if len(names) > 1 {
+		noun = "fields"
+	}
 	sort.Strings(names)
+	more := len(names) - namedAtMost
+	if more > 0 {
+		names = names[:namedAtMost]
+	}
 	for i, n := range names {
 		if len(n) > 64 {
 			n = n[:64] + "…"
 		}
 		names[i] = strconv.Quote(within + n)
 	}
-	noun := "a field"
-	if len(names) > 1 {
-		noun = "fields"
+	list := strings.Join(names, ", ")
+	if more > 0 {
+		list += fmt.Sprintf(" and %d more", more)
 	}
 	return fmt.Errorf("%s: not %s this reads, so refused rather than passed over, "+
-		"since what is passed over could change the answer", strings.Join(names, ", "), noun)
+		"since what is passed over could change the answer", list, noun)
 }
 
 // only refuses a key of an object that keys does not name. It is used on
-// the objects that shape an answer (a format, a reasoning effort), where a
-// key passed over changes it as much as one at the top does.
+// the objects that shape an answer (a format, a reasoning effort, a tool,
+// a tool choice), where a key passed over changes it as much as one at
+// the top does.
 func only(raw json.RawMessage, what string, keys ...string) error {
 	if absent(raw) {
 		return nil
@@ -264,7 +279,7 @@ var openaiFields = fields{what: "a chat completion",
 type openaiRequest struct {
 	Model               string               `json:"model"`
 	Messages            []assist.ChatMessage `json:"messages"`
-	Tools               []assist.ChatTool    `json:"tools"`
+	Tools               []json.RawMessage    `json:"tools"`
 	ToolChoice          json.RawMessage      `json:"tool_choice"`
 	MaxTokens           int                  `json:"max_tokens"`
 	MaxCompletionTokens int                  `json:"max_completion_tokens"`
@@ -311,6 +326,40 @@ func openaiFormat(raw json.RawMessage) (*assist.ResponseFormat, error) {
 	return f.format("response_format", false)
 }
 
+// openaiTools reads tools as chat completions write them, a function in
+// an object of its own, refusing a key either holds that this does not
+// read.
+func openaiTools(raw []json.RawMessage) ([]assist.ChatTool, error) {
+	var out []assist.ChatTool
+	for i, t := range raw {
+		what := fmt.Sprintf("tools[%d]", i)
+		var tool struct {
+			Type     string          `json:"type"`
+			Function json.RawMessage `json:"function"`
+		}
+		if err := json.Unmarshal(t, &tool); err != nil {
+			return nil, fmt.Errorf("%s: %w", what, err)
+		}
+		if tool.Type != "function" {
+			return nil, errors.New("a tool is a function with a name")
+		}
+		if err := only(t, what, "type", "function"); err != nil {
+			return nil, err
+		}
+		if err := only(tool.Function, what+".function", "name", "description", "parameters", "strict"); err != nil {
+			return nil, err
+		}
+		var f assist.ToolFunction
+		if !absent(tool.Function) {
+			if err := json.Unmarshal(tool.Function, &f); err != nil {
+				return nil, fmt.Errorf("%s.function: %w", what, err)
+			}
+		}
+		out = append(out, assist.ChatTool{Type: "function", Function: f})
+	}
+	return out, nil
+}
+
 // stops reads stop sequences given as one string or a list of them.
 func stops(raw json.RawMessage) ([]string, error) {
 	if absent(raw) {
@@ -342,11 +391,9 @@ func readToolChoice(raw json.RawMessage) (choice, name string, err error) {
 		return choice, "", nil
 	}
 	var named struct {
-		Type     string `json:"type"`
-		Name     string `json:"name"`
-		Function struct {
-			Name string `json:"name"`
-		} `json:"function"`
+		Type     string          `json:"type"`
+		Name     string          `json:"name"`
+		Function json.RawMessage `json:"function"`
 	}
 	if json.Unmarshal(raw, &named) != nil {
 		return "", "", errors.New("tool_choice is a word, or an object naming one function")
@@ -354,7 +401,21 @@ func readToolChoice(raw json.RawMessage) (choice, name string, err error) {
 	if named.Type != "function" {
 		return "", "", fmt.Errorf("tool_choice is a word, or an object naming one function, not one of type %q", named.Type)
 	}
-	name = named.Function.Name
+	if err := only(raw, "tool_choice", "type", "name", "function"); err != nil {
+		return "", "", err
+	}
+	if err := only(named.Function, "tool_choice.function", "name"); err != nil {
+		return "", "", err
+	}
+	var function struct {
+		Name string `json:"name"`
+	}
+	if !absent(named.Function) {
+		if err := json.Unmarshal(named.Function, &function); err != nil {
+			return "", "", fmt.Errorf("tool_choice.function: %w", err)
+		}
+	}
+	name = function.Name
 	if name == "" {
 		name = named.Name
 	}
@@ -375,9 +436,12 @@ func ReadOpenAI(r io.Reader) (Request, error) {
 		return Request{}, fmt.Errorf("the request is not a chat completion: %w", err)
 	}
 	out := Request{Model: in.Model, Stream: in.Stream, Chat: assist.ChatRequest{
-		Messages: in.Messages, Tools: in.Tools, MaxTokens: in.MaxTokens,
+		Messages: in.Messages, MaxTokens: in.MaxTokens,
 		Temperature: in.Temperature, TopP: in.TopP,
 		OneToolCall: in.ParallelToolCalls != nil && !*in.ParallelToolCalls}}
+	if out.Chat.Tools, err = openaiTools(in.Tools); err != nil {
+		return Request{}, err
+	}
 	if out.Chat.MaxTokens == 0 {
 		out.Chat.MaxTokens = in.MaxCompletionTokens
 	}
@@ -399,8 +463,10 @@ func ReadOpenAI(r io.Reader) (Request, error) {
 	return out, nil
 }
 
-// WriteOpenAI writes the model's turn as a chat completion.
-func WriteOpenAI(w http.ResponseWriter, model string, reply assist.ChatReply, stream bool) {
+// WriteOpenAI writes the model's turn as a chat completion, as the request
+// asked for it: whole, or as a stream.
+func WriteOpenAI(w http.ResponseWriter, model string, req Request, reply assist.ChatReply) {
+	stream := req.Stream
 	text, calls := reply.Message.Text(), reply.Message.ToolCalls
 	finish := reply.Finish
 	if finish == "" {
@@ -486,22 +552,18 @@ var anthropicFields = fields{what: "a messages request",
 	}}
 
 type anthropicRequest struct {
-	Model      string             `json:"model"`
-	System     json.RawMessage    `json:"system"`
-	Messages   []anthropicMessage `json:"messages"`
-	Tools      []anthropicTool    `json:"tools"`
-	ToolChoice *struct {
-		Type                   string `json:"type"`
-		Name                   string `json:"name"`
-		DisableParallelToolUse bool   `json:"disable_parallel_tool_use"`
-	} `json:"tool_choice"`
-	MaxTokens     int             `json:"max_tokens"`
-	Stream        bool            `json:"stream"`
-	StopSequences []string        `json:"stop_sequences"`
-	Temperature   *float64        `json:"temperature"`
-	TopP          *float64        `json:"top_p"`
-	Thinking      json.RawMessage `json:"thinking"`
-	OutputConfig  json.RawMessage `json:"output_config"`
+	Model         string             `json:"model"`
+	System        json.RawMessage    `json:"system"`
+	Messages      []anthropicMessage `json:"messages"`
+	Tools         []json.RawMessage  `json:"tools"`
+	ToolChoice    json.RawMessage    `json:"tool_choice"`
+	MaxTokens     int                `json:"max_tokens"`
+	Stream        bool               `json:"stream"`
+	StopSequences []string           `json:"stop_sequences"`
+	Temperature   *float64           `json:"temperature"`
+	TopP          *float64           `json:"top_p"`
+	Thinking      json.RawMessage    `json:"thinking"`
+	OutputConfig  json.RawMessage    `json:"output_config"`
 	// OutputFormat is where structured output was asked for while it was
 	// in beta, and where clients written then still ask for it.
 	OutputFormat json.RawMessage `json:"output_format"`
@@ -563,8 +625,14 @@ type anthropicTool struct {
 	InputSchema json.RawMessage `json:"input_schema"`
 	// Type is set only on a tool the provider runs itself (a web search,
 	// a computer), which nothing here can run.
-	Type string `json:"type"`
+	Type   string `json:"type"`
+	Strict bool   `json:"strict"`
 }
+
+// anthropicToolKeys are what a tool may carry here: cache_control too,
+// which says where a provider may begin a cached prefix and changes
+// nothing in the answer.
+var anthropicToolKeys = []string{"name", "description", "input_schema", "type", "strict", "cache_control"}
 
 type anthropicBlock struct {
 	Type   string `json:"type"`
@@ -738,14 +806,32 @@ func ReadAnthropic(r io.Reader) (Request, error) {
 			return Request{}, fmt.Errorf("%q is not a role here: user or assistant, with the system prompt apart", m.Role)
 		}
 	}
-	for _, t := range in.Tools {
+	for i, raw := range in.Tools {
+		var t anthropicTool
+		if err := json.Unmarshal(raw, &t); err != nil {
+			return Request{}, fmt.Errorf("tools[%d]: %w", i, err)
+		}
 		if t.Type != "" && t.Type != "custom" {
 			return Request{}, fmt.Errorf("%s is a tool the provider runs itself, and nothing here runs it", t.Name)
 		}
+		if err := only(raw, fmt.Sprintf("tools[%d]", i), anthropicToolKeys...); err != nil {
+			return Request{}, err
+		}
 		out.Chat.Tools = append(out.Chat.Tools, assist.ChatTool{Type: "function",
-			Function: assist.ToolFunction{Name: t.Name, Description: t.Description, Parameters: t.InputSchema}})
+			Function: assist.ToolFunction{Name: t.Name, Description: t.Description, Parameters: t.InputSchema, Strict: t.Strict}})
 	}
-	if c := in.ToolChoice; c != nil {
+	if !absent(in.ToolChoice) {
+		if err := only(in.ToolChoice, "tool_choice", "type", "name", "disable_parallel_tool_use"); err != nil {
+			return Request{}, err
+		}
+		var c struct {
+			Type                   string `json:"type"`
+			Name                   string `json:"name"`
+			DisableParallelToolUse bool   `json:"disable_parallel_tool_use"`
+		}
+		if err := json.Unmarshal(in.ToolChoice, &c); err != nil {
+			return Request{}, fmt.Errorf("tool_choice: %w", err)
+		}
 		switch c.Type {
 		case "auto", "none":
 			out.Chat.ToolChoice = c.Type
@@ -764,8 +850,10 @@ func ReadAnthropic(r io.Reader) (Request, error) {
 	return out, nil
 }
 
-// WriteAnthropic writes the model's turn as a message.
-func WriteAnthropic(w http.ResponseWriter, model string, reply assist.ChatReply, stream bool) {
+// WriteAnthropic writes the model's turn as a message, as the request
+// asked for it: whole, or as a stream.
+func WriteAnthropic(w http.ResponseWriter, model string, req Request, reply assist.ChatReply) {
+	stream := req.Stream
 	content := []map[string]any{}
 	if text := reply.Message.Text(); text != "" {
 		content = append(content, map[string]any{"type": "text", "text": text})
@@ -902,21 +990,21 @@ var responsesFields = fields{what: "a responses request",
 	}}
 
 type responsesRequest struct {
-	Model              string          `json:"model"`
-	Instructions       string          `json:"instructions"`
-	Input              json.RawMessage `json:"input"`
-	Tools              []responsesTool `json:"tools"`
-	ToolChoice         json.RawMessage `json:"tool_choice"`
-	MaxOutputTokens    int             `json:"max_output_tokens"`
-	Stream             bool            `json:"stream"`
-	PreviousResponseID string          `json:"previous_response_id"`
-	Conversation       json.RawMessage `json:"conversation"`
-	Temperature        *float64        `json:"temperature"`
-	TopP               *float64        `json:"top_p"`
-	Text               json.RawMessage `json:"text"`
-	Reasoning          json.RawMessage `json:"reasoning"`
-	ParallelToolCalls  *bool           `json:"parallel_tool_calls"`
-	Include            []string        `json:"include"`
+	Model              string            `json:"model"`
+	Instructions       string            `json:"instructions"`
+	Input              json.RawMessage   `json:"input"`
+	Tools              []json.RawMessage `json:"tools"`
+	ToolChoice         json.RawMessage   `json:"tool_choice"`
+	MaxOutputTokens    int               `json:"max_output_tokens"`
+	Stream             bool              `json:"stream"`
+	PreviousResponseID string            `json:"previous_response_id"`
+	Conversation       json.RawMessage   `json:"conversation"`
+	Temperature        *float64          `json:"temperature"`
+	TopP               *float64          `json:"top_p"`
+	Text               json.RawMessage   `json:"text"`
+	Reasoning          json.RawMessage   `json:"reasoning"`
+	ParallelToolCalls  *bool             `json:"parallel_tool_calls"`
+	Include            []string          `json:"include"`
 }
 
 type responsesTool struct {
@@ -924,6 +1012,9 @@ type responsesTool struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
 	Parameters  json.RawMessage `json:"parameters"`
+	// Strict is true unless the request says otherwise, as the Responses
+	// API takes it, and as OpenAI's agent SDK sends every function tool.
+	Strict *bool `json:"strict"`
 }
 
 type responsesItem struct {
@@ -1042,12 +1133,20 @@ func ReadResponses(r io.Reader) (Request, error) {
 			return Request{}, fmt.Errorf("%q is an item for a tool the provider runs itself, and nothing here runs it", it.Type)
 		}
 	}
-	for _, t := range in.Tools {
+	for i, raw := range in.Tools {
+		var t responsesTool
+		if err := json.Unmarshal(raw, &t); err != nil {
+			return Request{}, fmt.Errorf("tools[%d]: %w", i, err)
+		}
 		if t.Type != "function" {
 			return Request{}, fmt.Errorf("%s is a tool the provider runs itself, and nothing here runs it", t.Type)
 		}
+		if err := only(raw, fmt.Sprintf("tools[%d]", i), "type", "name", "description", "parameters", "strict"); err != nil {
+			return Request{}, err
+		}
 		out.Chat.Tools = append(out.Chat.Tools, assist.ChatTool{Type: "function",
-			Function: assist.ToolFunction{Name: t.Name, Description: t.Description, Parameters: t.Parameters}})
+			Function: assist.ToolFunction{Name: t.Name, Description: t.Description, Parameters: t.Parameters,
+				Strict: t.Strict == nil || *t.Strict}})
 	}
 	if out.Chat.ToolChoice, out.Chat.ToolChoiceName, err = readToolChoice(in.ToolChoice); err != nil {
 		return Request{}, err
@@ -1104,8 +1203,52 @@ func ReadResponses(r io.Reader) (Request, error) {
 	return out, nil
 }
 
-// WriteResponses writes the model's turn as a response.
-func WriteResponses(w http.ResponseWriter, model string, reply assist.ChatReply, stream bool) {
+// asked is what a response says its request asked for, as the Responses
+// API says it back: the format, the tools and the choice among them, one
+// call at a time or not, how hard to think, and the caller's own
+// temperature and top_p, null where nobody gave one and the route's own
+// was used. Each is what the answer was held to, so a client that reads
+// them back reads what was done.
+func asked(r assist.ChatRequest) map[string]any {
+	format := map[string]any{"type": "text"}
+	if f := r.ResponseFormat; f != nil {
+		format = map[string]any{"type": f.Type}
+		if f.Type == "json_schema" {
+			format["name"], format["schema"], format["strict"] = f.Name, f.Schema, f.Strict
+			if f.Description != "" {
+				format["description"] = f.Description
+			}
+		}
+	}
+	var choice any = "auto"
+	switch {
+	case r.ToolChoiceName != "":
+		choice = map[string]any{"type": "function", "name": r.ToolChoiceName}
+	case r.ToolChoice != "":
+		choice = r.ToolChoice
+	}
+	tools := []any{}
+	for _, t := range r.Tools {
+		tool := map[string]any{"type": "function", "name": t.Function.Name, "parameters": t.Function.Parameters,
+			"strict": t.Function.Strict}
+		if t.Function.Description != "" {
+			tool["description"] = t.Function.Description
+		}
+		tools = append(tools, tool)
+	}
+	var effort any
+	if r.ReasoningEffort != "" {
+		effort = r.ReasoningEffort
+	}
+	return map[string]any{"text": map[string]any{"format": format}, "tools": tools, "tool_choice": choice,
+		"parallel_tool_calls": !r.OneToolCall, "temperature": r.Temperature, "top_p": r.TopP,
+		"reasoning": map[string]any{"effort": effort, "summary": nil}}
+}
+
+// WriteResponses writes the model's turn as a response, as the request
+// asked for it: whole, or as a stream.
+func WriteResponses(w http.ResponseWriter, model string, req Request, reply assist.ChatReply) {
+	stream := req.Stream
 	now := time.Now()
 	id := fmt.Sprintf("resp_%d", now.UnixNano())
 	var output []map[string]any
@@ -1132,11 +1275,12 @@ func WriteResponses(w http.ResponseWriter, model string, reply assist.ChatReply,
 	in, out := reply.Usage.In, reply.Usage.Out
 	resp := map[string]any{"id": id, "object": "response", "created_at": now.Unix(), "status": status,
 		"model": model, "output": output, "error": nil, "incomplete_details": incomplete,
-		"instructions": nil, "metadata": map[string]any{}, "parallel_tool_calls": true,
-		"tool_choice": "auto", "tools": []any{}, "store": false, "text": map[string]any{"format": map[string]any{"type": "text"}},
-		"truncation": "disabled", "temperature": nil, "top_p": nil,
+		"instructions": nil, "metadata": map[string]any{}, "store": false, "truncation": "disabled",
 		"usage": map[string]any{"input_tokens": in, "output_tokens": out, "total_tokens": in + out,
 			"input_tokens_details": map[string]int{"cached_tokens": 0}, "output_tokens_details": map[string]int{"reasoning_tokens": 0}}}
+	for k, v := range asked(req.Chat) {
+		resp[k] = v
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	if !stream {
 		w.Header().Set("Content-Type", "application/json")

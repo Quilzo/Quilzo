@@ -95,8 +95,8 @@
       <input id="rtimeout" name="timeout" placeholder="120s"></div>
   </div>
   <div class="field"><label><input type="checkbox" name="auto_tool_choice" value="yes"> Send auto where a caller forces a tool</label></div>
-  <p class="help" id="rhonour-help">A request asking for these goes only to a route that honours them, and is refused when none does: a model that cannot takes them without a word and answers as it pleases.</p>
-  <div class="field"><label><input type="checkbox" name="structured_output" value="yes" aria-describedby="rhonour-help"> Honours an answer as JSON, or JSON to a schema (response_format)</label></div>
+  <p class="help" id="rhonour-help">A request asking for these goes only to a route that honours them, and is refused when none does: a model that cannot takes them without a word and answers as it pleases. A strict tool goes to any route, and is sent as strict only to one that honours it; its calls are checked either way.</p>
+  <div class="field"><label><input type="checkbox" name="structured_output" value="yes" aria-describedby="rhonour-help"> Honours an answer as JSON, or JSON to a schema (response_format), and a strict tool</label></div>
   <div class="field"><label><input type="checkbox" name="reasoning_effort" value="yes" aria-describedby="rhonour-help"> Takes how hard to think (reasoning_effort)</label></div>
   </details>
   <button type="submit">Add route</button>

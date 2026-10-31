@@ -249,3 +249,95 @@ func TestWhatEachShapeAsksReachesTheRoute(t *testing.T) {
 		}
 	}
 }
+
+// A strict tool is sent as strict only to a route declared to honour
+// structured output; whichever route answers, a call whose arguments do
+// not fit the tool's parameters is an error, not a call.
+func TestAStrictToolIsHeldToItsParametersOnEveryRoute(t *testing.T) {
+	const point = `{"type":"object","properties":{"x":{"type":"integer"}},"required":["x"],"additionalProperties":false}`
+	strictClick := func() assist.ChatRequest {
+		req := talk("press it", 0)
+		req.Tools[0].Function.Parameters, req.Tools[0].Function.Strict = json.RawMessage(point), true
+		return req
+	}
+	for _, declared := range []bool{false, true} {
+		m := &chatty{name: "only", reply: called("click")}
+		m.reply.Message.ToolCalls[0].Function.Arguments = `{"x":"left"}`
+		g := chatRig(t, []Route{{Name: "only", Model: "x", Params: RouteParams{StructuredOutput: declared}}},
+			map[string]*chatty{"only": m})
+		_, err := g.For("agent:x").(*bound).Chat(context.Background(), strictClick())
+		if !errors.Is(err, assist.ErrNotHonoured) || !strings.Contains(err.Error(), "arguments.x is text") {
+			t.Errorf("declared %v: arguments outside the parameters came back as %v", declared, err)
+		}
+		if m.got[0].Tools[0].Function.Strict != declared {
+			t.Errorf("declared %v: the route was sent strict %v", declared, m.got[0].Tools[0].Function.Strict)
+		}
+		m.reply.Message.ToolCalls[0].Function.Arguments = `{"x":3}`
+		if _, err := g.For("agent:x").(*bound).Chat(context.Background(), strictClick()); err != nil {
+			t.Errorf("declared %v: arguments that fit: %v", declared, err)
+		}
+	}
+	m := &chatty{name: "only", reply: called("click")}
+	m.reply.Message.ToolCalls[0].Function.Arguments = `{}`
+	if _, err := (Guarded{Model: m, Personal: true}).Chat(context.Background(), strictClick()); !errors.Is(err, assist.ErrNotHonoured) ||
+		m.got[0].Tools[0].Function.Strict {
+		t.Errorf("without the gateway: %v, sent strict %v", err, m.got[0].Tools[0].Function.Strict)
+	}
+}
+
+// What the answer is asked to be leaves through the guard as the
+// conversation does: a schema's strings and a format's description are
+// masked and cleaned of what draws nothing, keeping the schema's order,
+// and a stop sequence the guard would change is not sent but cut at on
+// the way back.
+func TestWhatTheAnswerIsAskedToBeIsMasked(t *testing.T) {
+	m := &chatty{name: "hosted"}
+	g := chatRig(t, []Route{{Name: "hosted", Model: "x", Params: RouteParams{StructuredOutput: true}}},
+		map[string]*chatty{"hosted": m})
+	req := talk("who wrote?", 0)
+	req.Stop = []string{"END", "mira.k@mailhost.net"}
+	req.ResponseFormat = &assist.ResponseFormat{Type: "json_schema", Strict: true,
+		Description: "the sender, such as mira.k@mailhost.net",
+		Schema: json.RawMessage(`{"type":"object","properties":{"zone":{"type":"string","description":"a time zone` + "​" + `"},` +
+			`"from":{"enum":["mira.k@mailhost.net","nobody"]}},"required":["from"],"additionalProperties":false}`)}
+	m.reply = said(`{"from":"nobody"}`)
+	if _, err := g.For("door:dana").(*bound).Chat(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	sent := m.got[0]
+	schema := string(sent.ResponseFormat.Schema)
+	if strings.Contains(schema, "mira.k@mailhost.net") || strings.Contains(sent.ResponseFormat.Description, "mira.k@mailhost.net") ||
+		strings.Contains(schema, "​") || strings.Index(schema, `"zone"`) > strings.Index(schema, `"from"`) ||
+		!json.Valid(sent.ResponseFormat.Schema) {
+		t.Errorf("the format left as %q, %s", sent.ResponseFormat.Description, schema)
+	}
+	if strings.Join(sent.Stop, "|") != "END" {
+		t.Errorf("the stop sequences left as %q", sent.Stop)
+	}
+	if !strings.Contains(string(req.ResponseFormat.Schema), "mira.k@mailhost.net") {
+		t.Error("the caller's own format was changed")
+	}
+
+	// The model answers with the placeholder it was given, which is put
+	// back and held to the schema as the caller wrote it; and where the
+	// stop sequence it was not sent is in its answer, cut at.
+	var placeholder struct {
+		Properties struct {
+			From struct{ Enum []string }
+		}
+	}
+	_ = json.Unmarshal(sent.ResponseFormat.Schema, &placeholder)
+	ph := placeholder.Properties.From.Enum[0]
+	m.reply = said(`{"from":"` + ph + `"}`)
+	stop := req.Stop
+	req.Stop = nil
+	r, err := g.For("door:dana").(*bound).Chat(context.Background(), req)
+	if err != nil || r.Message.Text() != `{"from":"mira.k@mailhost.net"}` {
+		t.Errorf("the answer came back as %q, %v", r.Message.Text(), err)
+	}
+	req.ResponseFormat, req.Stop = nil, stop
+	m.reply = said("It was " + ph + " who wrote")
+	if r, err := g.For("door:dana").(*bound).Chat(context.Background(), req); err != nil || r.Message.Text() != "It was " {
+		t.Errorf("a stop sequence that was not sent was not cut at: %q, %v", r.Message.Text(), err)
+	}
+}

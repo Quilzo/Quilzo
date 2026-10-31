@@ -86,7 +86,7 @@ func TestAnAnswerIsWrittenInTheShapeAskedFor(t *testing.T) {
 		Usage: assist.Usage{In: 12, Out: 3}}
 
 	w := httptest.NewRecorder()
-	WriteAnthropic(w, "quilzo", reply, false)
+	WriteAnthropic(w, "quilzo", Request{}, reply)
 	var msg struct {
 		Content []struct {
 			Type, Text, Name string
@@ -107,7 +107,7 @@ func TestAnAnswerIsWrittenInTheShapeAskedFor(t *testing.T) {
 	}
 
 	w = httptest.NewRecorder()
-	WriteAnthropic(w, "quilzo", reply, true)
+	WriteAnthropic(w, "quilzo", Request{Stream: true}, reply)
 	stream := w.Body.String()
 	for _, e := range []string{"message_start", "content_block_start", "input_json_delta", "message_delta", "message_stop"} {
 		if !strings.Contains(stream, e) {
@@ -116,7 +116,7 @@ func TestAnAnswerIsWrittenInTheShapeAskedFor(t *testing.T) {
 	}
 
 	w = httptest.NewRecorder()
-	WriteOpenAI(w, "quilzo", reply, false)
+	WriteOpenAI(w, "quilzo", Request{}, reply)
 	var cc struct {
 		Choices []struct {
 			Finish  string `json:"finish_reason"`
@@ -169,8 +169,8 @@ func TestAResponsesRequestIsReadAsTheSameConversation(t *testing.T) {
 		}
 	}
 	w := httptest.NewRecorder()
-	WriteResponses(w, "quilzo", assist.ChatReply{Message: assist.ChatMessage{Role: "assistant",
-		ToolCalls: []assist.ToolCall{{ID: "c2", Type: "function", Function: assist.FunctionCall{Name: "get_weather", Arguments: "{}"}}}}}, true)
+	WriteResponses(w, "quilzo", Request{Stream: true}, assist.ChatReply{Message: assist.ChatMessage{Role: "assistant",
+		ToolCalls: []assist.ToolCall{{ID: "c2", Type: "function", Function: assist.FunctionCall{Name: "get_weather", Arguments: "{}"}}}}})
 	for _, e := range []string{"response.created", "response.function_call_arguments.done", "response.completed"} {
 		if !strings.Contains(w.Body.String(), "event: "+e+"\n") {
 			t.Errorf("the stream has no %s", e)

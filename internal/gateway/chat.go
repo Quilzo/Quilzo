@@ -4,9 +4,12 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/quilzo/quilzo/internal/assist"
@@ -114,6 +117,9 @@ func (g *Gateway) chat(ctx context.Context, consumers []string, p pick, req assi
 		start := g.now()
 		mask := &pii.Masker{Allowed: g.OwnDomains, Secrets: codescan.SecretSpans}
 		sent, hidden := maskChat(req, mask, r.Personal)
+		if !r.Params.StructuredOutput {
+			sent.Tools = loose(sent.Tools)
+		}
 		reply, err := cm.Chat(ctx, sent)
 		reply = restoreChat(reply, mask)
 		masked := mask.Masked()
@@ -165,9 +171,26 @@ func (g *Gateway) chat(ctx context.Context, consumers []string, p pick, req assi
 	return assist.ChatReply{}, 0, fmt.Errorf("%w: %s", ErrNoRoute, strings.Join(errs, "; "))
 }
 
+// loose is the tools as a model not declared to honour structured output
+// is sent them: without strict, which such a server may refuse, or take
+// and ignore. A call to a strict tool is held to its parameters all the
+// same, on what comes back (assist.ChatRequest.Honour).
+func loose(tools []assist.ChatTool) []assist.ChatTool {
+	if len(tools) == 0 {
+		return tools
+	}
+	out := make([]assist.ChatTool, len(tools))
+	for i, t := range tools {
+		t.Function.Strict = false
+		out[i] = t
+	}
+	return out
+}
+
 // maskChat is the conversation as it may leave for a route: invisible
 // characters out of every text, and what may not leave replaced, in the
-// messages' text and in the arguments of tool calls already made.
+// messages' text, in the arguments of tool calls already made, and in
+// what the answer is asked to be.
 func maskChat(req assist.ChatRequest, mask *pii.Masker, personal bool) (assist.ChatRequest, int) {
 	hidden := 0
 	clean := func(s string) string {
@@ -199,7 +222,89 @@ func maskChat(req assist.ChatRequest, mask *pii.Masker, personal bool) (assist.C
 		}
 		out.Messages[i] = c
 	}
+	// A format leaves with its description and every string in its schema
+	// cleaned, since an enumeration of customers' names is still their
+	// names; the answer comes back with what was masked put back, and is
+	// held to the schema as the caller wrote it.
+	if f := req.ResponseFormat; f != nil {
+		sentFormat := *f
+		sentFormat.Description = clean(f.Description)
+		sentFormat.Schema = cleanStrings(f.Schema, clean)
+		out.ResponseFormat = &sentFormat
+	}
+	// A stop sequence the guard would change is not sent at all, since
+	// changed it would stop the model at something else: the answer is cut
+	// at it on its way back instead (assist.ChatRequest.Honour), where what
+	// was masked is back.
+	out.Stop = nil
+	for _, s := range req.Stop {
+		if clean(s) == s {
+			out.Stop = append(out.Stop, s)
+		}
+	}
 	return out, hidden
+}
+
+// cleanStrings is a JSON document with every string in it that is not a
+// key passed through clean, and everything else as it was, in the order it
+// was: a model writes an object's properties in the order its schema
+// gives them. A document that cannot be read leaves as nothing.
+func cleanStrings(doc json.RawMessage, clean func(string) string) json.RawMessage {
+	if len(doc) == 0 {
+		return doc
+	}
+	dec := json.NewDecoder(bytes.NewReader(doc))
+	dec.UseNumber()
+	var out bytes.Buffer
+	// Each open object or list, and how many tokens are in it so far: in
+	// an object every other one is a key.
+	type open struct {
+		object bool
+		n      int
+	}
+	var stack []open
+	for {
+		tok, err := dec.Token()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil
+		}
+		if d, ok := tok.(json.Delim); ok && (d == '}' || d == ']') {
+			stack = stack[:len(stack)-1]
+			out.WriteRune(rune(d))
+			continue
+		}
+		key := false
+		if len(stack) > 0 {
+			o := &stack[len(stack)-1]
+			switch {
+			case o.object && o.n%2 == 1:
+				out.WriteByte(':')
+			case o.n > 0:
+				out.WriteByte(',')
+			}
+			key = o.object && o.n%2 == 0
+			o.n++
+		}
+		switch x := tok.(type) {
+		case json.Delim:
+			out.WriteRune(rune(x))
+			stack = append(stack, open{object: x == '{'})
+			continue
+		case string:
+			if !key {
+				tok = clean(x)
+			}
+		}
+		b, err := json.Marshal(tok)
+		if err != nil {
+			return nil
+		}
+		out.Write(b)
+	}
+	return out.Bytes()
 }
 
 // restoreChat puts back what was masked, in what the model said, or
@@ -246,6 +351,7 @@ func (g Guarded) Chat(ctx context.Context, req assist.ChatRequest) (assist.ChatR
 	}
 	mask := &pii.Masker{Allowed: g.OwnDomains, Secrets: codescan.SecretSpans}
 	sent, hidden := maskChat(req, mask, g.Personal)
+	sent.Tools = loose(sent.Tools)
 	reply, err := cm.Chat(ctx, sent)
 	counts := mask.Masked()
 	if hidden > 0 {

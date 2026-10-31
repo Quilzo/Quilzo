@@ -5,6 +5,7 @@ package modelapi
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http/httptest"
 	"strings"
@@ -223,7 +224,7 @@ func TestARefusalIsWrittenInEveryShape(t *testing.T) {
 	reply := assist.ChatReply{Message: assist.ChatMessage{Role: "assistant", Refusal: "I cannot help with that."}}
 
 	w := httptest.NewRecorder()
-	WriteOpenAI(w, "quilzo", reply, false)
+	WriteOpenAI(w, "quilzo", Request{}, reply)
 	var cc struct {
 		Choices []struct {
 			Message map[string]any `json:"message"`
@@ -234,13 +235,13 @@ func TestARefusalIsWrittenInEveryShape(t *testing.T) {
 		t.Errorf("chat completions: %s", w.Body)
 	}
 	w = httptest.NewRecorder()
-	WriteOpenAI(w, "quilzo", reply, true)
+	WriteOpenAI(w, "quilzo", Request{Stream: true}, reply)
 	if !strings.Contains(w.Body.String(), `"refusal":"I cannot help with that."`) {
 		t.Errorf("chat completions stream: %s", w.Body)
 	}
 
 	w = httptest.NewRecorder()
-	WriteAnthropic(w, "quilzo", reply, false)
+	WriteAnthropic(w, "quilzo", Request{}, reply)
 	var msg struct {
 		Content    []struct{ Type, Text string }
 		StopReason string `json:"stop_reason"`
@@ -251,7 +252,7 @@ func TestARefusalIsWrittenInEveryShape(t *testing.T) {
 	}
 
 	w = httptest.NewRecorder()
-	WriteResponses(w, "quilzo", reply, false)
+	WriteResponses(w, "quilzo", Request{}, reply)
 	var resp struct {
 		Output []struct {
 			Content []map[string]any
@@ -262,7 +263,7 @@ func TestARefusalIsWrittenInEveryShape(t *testing.T) {
 		t.Errorf("responses: %s", w.Body)
 	}
 	w = httptest.NewRecorder()
-	WriteResponses(w, "quilzo", reply, true)
+	WriteResponses(w, "quilzo", Request{Stream: true}, reply)
 	for _, e := range []string{"response.content_part.added", "response.refusal.delta", "response.refusal.done", "response.completed"} {
 		if !strings.Contains(w.Body.String(), "event: "+e+"\n") {
 			t.Errorf("the responses stream has no %s:\n%s", e, w.Body)
@@ -270,5 +271,144 @@ func TestARefusalIsWrittenInEveryShape(t *testing.T) {
 	}
 	if strings.Contains(w.Body.String(), "response.output_text.delta") {
 		t.Errorf("a refusal was streamed as text:\n%s", w.Body)
+	}
+}
+
+// A tool's strict, structured output for its arguments, is read in every
+// shape, as each shape defaults it; and a key in a tool or a tool choice
+// that nothing reads is refused by name, as one at the top is.
+func TestAToolIsReadWholeOrRefused(t *testing.T) {
+	for _, c := range []struct {
+		shape, tools string
+		strict       bool
+	}{
+		{"chat completions", `"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object"},"strict":true}}]`, true},
+		{"chat completions", `"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}]`, false},
+		{"responses", `"tools":[{"type":"function","name":"lookup","parameters":{"type":"object"}}]`, true},
+		{"responses", `"tools":[{"type":"function","name":"lookup","parameters":{"type":"object"},"strict":false}]`, false},
+		{"messages", `"tools":[{"name":"lookup","input_schema":{"type":"object"},"strict":true}]`, true},
+		{"messages", `"tools":[{"name":"lookup","input_schema":{"type":"object"},"cache_control":{"type":"ephemeral"}}]`, false},
+	} {
+		s := shapes[c.shape]
+		base := s.base[:strings.Index(s.base, `"tools"`)]
+		r, err := s.read(strings.NewReader("{" + base + c.tools + "}"))
+		if err != nil {
+			t.Errorf("%s: %s: %v", c.shape, c.tools, err)
+			continue
+		}
+		if f := r.Chat.Tools[0].Function; f.Name != "lookup" || f.Strict != c.strict {
+			t.Errorf("%s: %s read as %+v", c.shape, c.tools, f)
+		}
+	}
+	for shape, more := range map[string][]string{
+		"chat completions": {
+			`"tools":[{"type":"function","function":{"name":"lookup","examples":[]}}]`,
+			`"tools":[{"type":"function","function":{"name":"lookup"},"cache":true}]`,
+			`"tool_choice":{"type":"function","function":{"name":"lookup","only":true}}`,
+			`"tool_choice":{"type":"function","name":"lookup","mode":"any"}`,
+		},
+		"responses": {
+			`"tools":[{"type":"function","name":"lookup","parameters":{},"defer_loading":true}]`,
+			`"tool_choice":{"type":"function","name":"lookup","mode":"any"}`,
+		},
+		"messages": {
+			`"tools":[{"name":"lookup","input_schema":{},"input_examples":[{}]}]`,
+			`"tool_choice":{"type":"auto","weird":1}`,
+		},
+	} {
+		for _, m := range more {
+			s := shapes[shape]
+			body := "{" + s.base + "," + m + "}"
+			if strings.HasPrefix(m, `"tools"`) {
+				body = "{" + s.base[:strings.Index(s.base, `"tools"`)] + m + "}"
+			}
+			_, err := s.read(strings.NewReader(body))
+			if err == nil || !strings.Contains(err.Error(), "not a field this reads") {
+				t.Errorf("%s: %s came back as %v", shape, m, err)
+			}
+		}
+	}
+}
+
+// A refusal names a few of the fields it refuses and counts the rest, so
+// a body of a million strange keys is not answered with all of them.
+func TestARefusalNamesAFewFieldsAndCountsTheRest(t *testing.T) {
+	var b strings.Builder
+	b.WriteString(`{"model":"m","messages":[{"role":"user","content":"hi"}]`)
+	for i := 0; i < 100000; i++ {
+		fmt.Fprintf(&b, `,"k%06d":1`, i)
+	}
+	b.WriteString("}")
+	_, err := ReadOpenAI(strings.NewReader(b.String()))
+	if err == nil || len(err.Error()) > 300 || !strings.Contains(err.Error(), `"k000000", "k000001", "k000002", "k000003", "k000004" and 99995 more`) {
+		t.Errorf("%.400v", err)
+	}
+	_, err = ReadOpenAI(strings.NewReader(`{"model":"m","messages":[{"role":"user","content":"hi"}],"odd":1}`))
+	if err == nil || !strings.Contains(err.Error(), `"odd": not a field this reads`) {
+		t.Errorf("one field: %v", err)
+	}
+}
+
+// A response says back what its request asked for and was held to, not
+// what a request that asked for nothing would have been given.
+func TestAResponseSaysWhatWasAskedOfIt(t *testing.T) {
+	req, err := ReadResponses(strings.NewReader(`{"model":"m","input":"weather?","temperature":0.2,"top_p":0.9,
+		"parallel_tool_calls":false,"reasoning":{"effort":"low"},
+		"tools":[{"type":"function","name":"lookup","description":"Look it up","parameters":{"type":"object"}}],
+		"tool_choice":{"type":"function","name":"lookup"},
+		"text":{"format":{"type":"json_schema","name":"weather","strict":true,"schema":` + schema + `}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reply := assist.ChatReply{Message: assist.ChatMessage{Role: "assistant",
+		Content: []assist.Part{{Type: "text", Text: `{"city":"Paris"}`}}}}
+	for _, stream := range []bool{false, true} {
+		req.Stream = stream
+		w := httptest.NewRecorder()
+		WriteResponses(w, "quilzo", req, reply)
+		body := w.Body.String()
+		if stream {
+			at := strings.Index(body, "event: response.completed\ndata: ")
+			body = strings.TrimSpace(body[at+len("event: response.completed\ndata: "):])
+			var event struct{ Response json.RawMessage }
+			_ = json.Unmarshal([]byte(body), &event)
+			body = string(event.Response)
+		}
+		var resp struct {
+			Text struct {
+				Format struct {
+					Type, Name string
+					Strict     bool
+					Schema     json.RawMessage
+				}
+			}
+			ParallelToolCalls bool                        `json:"parallel_tool_calls"`
+			ToolChoice        struct{ Type, Name string } `json:"tool_choice"`
+			Tools             []struct {
+				Name   string
+				Strict bool
+			}
+			Temperature *float64
+			TopP        *float64 `json:"top_p"`
+			Reasoning   struct{ Effort string }
+		}
+		if err := json.Unmarshal([]byte(body), &resp); err != nil {
+			t.Fatalf("stream %v: %v: %s", stream, err, body)
+		}
+		f := resp.Text.Format
+		if f.Type != "json_schema" || f.Name != "weather" || !f.Strict || !strings.Contains(string(f.Schema), `"city"`) ||
+			resp.ParallelToolCalls || resp.ToolChoice.Name != "lookup" || len(resp.Tools) != 1 || !resp.Tools[0].Strict ||
+			resp.Temperature == nil || *resp.Temperature != 0.2 || resp.TopP == nil || *resp.TopP != 0.9 || resp.Reasoning.Effort != "low" {
+			t.Errorf("stream %v: the response says %s", stream, body)
+		}
+	}
+
+	w := httptest.NewRecorder()
+	WriteResponses(w, "quilzo", Request{}, reply)
+	var plain map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &plain)
+	if b, _ := json.Marshal(plain["text"]); string(b) != `{"format":{"type":"text"}}` || plain["parallel_tool_calls"] != true ||
+		plain["tool_choice"] != "auto" || plain["temperature"] != nil {
+		t.Errorf("a request that asked for nothing: %s", w.Body)
 	}
 }
