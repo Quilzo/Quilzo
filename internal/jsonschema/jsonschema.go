@@ -9,7 +9,8 @@
 // schema ($ref, as $defs and recursive schemas are written). What a model
 // was held to as it wrote (CheckAnswer) is held to its string formats too.
 // A keyword it does not know, or a reference to anywhere else, constrains
-// nothing.
+// nothing. Checks that belong together, every strict call in one model's
+// answer say, share one Budget, so together they cost no more than one.
 //
 // One rule is stricter than the standard. An object schema that lists its
 // properties takes only those, unless additionalProperties says otherwise:
@@ -21,7 +22,6 @@ package jsonschema
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math"
 	"net/mail"
@@ -66,16 +66,59 @@ const patternWork = 32
 // known; a longer one is more than this checks, and says so.
 const maxPattern = 4096
 
-// checker is one check: the schema it began with, which a reference
-// points into, and the work done so far.
-type checker struct {
-	root  any
+// Budget is the work that checking one thing may do, however many checks
+// it takes: a model's whole answer, say, which is its text or every
+// strict tool call in it. Each check draws on what those before it left,
+// so a turn of a thousand calls costs no more to check than a turn of
+// one, and once it is spent every check that draws on it refuses: a value
+// is never passed for want of the time to look at it. A pattern is
+// compiled once for all the checks that share a budget.
+//
+// The zero Budget is ready to use, by one goroutine at a time.
+type Budget struct {
 	steps int
+	// patterns are the patterns compiled so far, so each is compiled
+	// once however often it is met.
+	patterns map[string]compiled
+}
+
+// Spent reports whether the checks that drew on b ran out of steps: what
+// refused the value was the work of looking at it, not the value.
+func (b *Budget) Spent() bool {
+	return b.steps > maxSteps
+}
+
+// spend counts work, and reports whether it is more than a check may do.
+func (b *Budget) spend(n int) bool {
+	b.steps += n
+	return b.steps > maxSteps
+}
+
+// Schema is a schema read once, to check any number of values against.
+type Schema struct {
+	root any
+}
+
+// Parse reads a schema to check values against. An empty one takes
+// anything.
+func Parse(schema json.RawMessage) (*Schema, error) {
+	if len(schema) == 0 {
+		return &Schema{}, nil
+	}
+	var s any
+	if err := json.Unmarshal(schema, &s); err != nil {
+		return nil, fmt.Errorf("the schema cannot be read: %w", err)
+	}
+	return &Schema{root: s}, nil
+}
+
+// checker is one check: the schema it began with, which a reference
+// points into, and the budget it draws on.
+type checker struct {
+	*Budget
+	root any
 	// formats holds a string to its format.
 	formats bool
-	// patterns are the patterns compiled in this check, so each is
-	// compiled once however often it is met.
-	patterns map[string]compiled
 }
 
 // compiled is a pattern as a check runs it, and what its program costs;
@@ -90,7 +133,11 @@ type compiled struct {
 // bool and nil. What it says calls the value "body", as the body of an
 // API request is checked.
 func Check(schema json.RawMessage, v any) error {
-	return check(schema, v, "body", false)
+	s, err := Parse(schema)
+	if err != nil {
+		return err
+	}
+	return new(Budget).check(s, v, "body", false)
 }
 
 // CheckAnswer is Check for what a model wrote to a schema it was held to
@@ -100,39 +147,94 @@ func Check(schema json.RawMessage, v any) error {
 // structured output holds it; Check leaves format alone, since in an API
 // description it is as often a note as a rule.
 func CheckAnswer(schema json.RawMessage, v any, name string) error {
-	return check(schema, v, name, true)
+	s, err := Parse(schema)
+	if err != nil {
+		return err
+	}
+	return new(Budget).check(s, v, name, true)
 }
 
-func check(schema json.RawMessage, v any, name string, formats bool) error {
-	if len(schema) == 0 {
+// CheckAnswer is CheckAnswer for a schema already read, drawing on b,
+// which every check of the same answer shares.
+func (b *Budget) CheckAnswer(s *Schema, v any, name string) error {
+	return b.check(s, v, name, true)
+}
+
+func (b *Budget) check(s *Schema, v any, name string, formats bool) error {
+	if s.root == nil {
 		return nil
 	}
-	var s any
-	if err := json.Unmarshal(schema, &s); err != nil {
-		return fmt.Errorf("the schema cannot be read: %w", err)
-	}
 	// Round-trip the value, so integers and structs arrive as JSON does.
-	b, err := json.Marshal(v)
+	raw, err := json.Marshal(v)
 	if err != nil {
 		return err
 	}
 	var norm any
-	if err := json.Unmarshal(b, &norm); err != nil {
+	if err := json.Unmarshal(raw, &norm); err != nil {
 		return err
 	}
-	c := &checker{root: s, formats: formats, patterns: map[string]compiled{}}
-	return c.check(s, norm, name, 0)
+	c := &checker{Budget: b, root: s.root, formats: formats}
+	return c.check(s.root, norm, &place{name: name, item: -1}, 0)
 }
 
-// spend counts work, and reports whether it is more than a check may do.
-func (c *checker) spend(n int) bool {
-	c.steps += n
-	return c.steps > maxSteps
+// place is where in a value a check is: the value's name at the top, and
+// a property or an item at each level below. It is written out only for
+// the failure that is returned, since writing it at every step would copy
+// every key on the way down, again at every visit.
+type place struct {
+	up *place
+	// name is the value's at the top, and a property's below.
+	name string
+	// item is an item's index, or -1 for a property.
+	item int
 }
 
-func (c *checker) check(schema any, v any, at string, depth int) error {
+func (p *place) property(k string) *place { return &place{up: p, name: k, item: -1} }
+
+func (p *place) index(i int) *place { return &place{up: p, item: i} }
+
+func (p *place) String() string {
+	var path []*place
+	for q := p; q != nil; q = q.up {
+		path = append(path, q)
+	}
+	var b strings.Builder
+	for i := len(path) - 1; i >= 0; i-- {
+		switch q := path[i]; {
+		case q.up == nil:
+			b.WriteString(q.name)
+		case q.item >= 0:
+			b.WriteString("[" + strconv.Itoa(q.item) + "]")
+		default:
+			b.WriteString("." + q.name)
+		}
+	}
+	return b.String()
+}
+
+// failure is a way a value does not fit its schema, written out only when
+// it is read. Under anyOf, oneOf and not a failure is looked at only to
+// see that there was one, and writing out each, with its place and
+// perhaps every property its schema lists, is work no step counts: a few
+// hundred thousand of them took minutes.
+type failure struct {
+	at *place
+	// format takes the place first, then args.
+	format string
+	args   []any
+}
+
+func (f *failure) Error() string {
+	return fmt.Sprintf(f.format, append([]any{f.at}, f.args...)...)
+}
+
+func fail(at *place, format string, args ...any) error {
+	return &failure{at: at, format: format, args: args}
+}
+
+func (c *checker) check(schema any, v any, at *place, depth int) error {
 	if depth > maxDepth {
-		return fmt.Errorf("%s is nested deeper than %d", at, maxDepth)
+		return fail(at, "%s is nested deeper than %d", maxDepth)
 	}
 	if c.spend(1) {
 		return c.tooMuch(at)
@@ -141,7 +243,7 @@ func (c *checker) check(schema any, v any, at string, depth int) error {
 	if !ok {
 		// true admits everything, false nothing.
 		if b, isBool := schema.(bool); isBool && !b {
-			return fmt.Errorf("%s is not allowed", at)
+			return fail(at, "%s is not allowed")
 		}
 		return nil
 	}
@@ -157,20 +259,20 @@ func (c *checker) check(schema any, v any, at string, depth int) error {
 				break
 			}
 		}
-		if c.steps > maxSteps {
+		if c.Spent() {
 			return c.tooMuch(at)
 		}
 		if !found {
-			return fmt.Errorf("%s is not one of the values it may take", at)
+			return fail(at, "%s is not one of the values it may take")
 		}
 	}
 	if k, ok := s["const"]; ok {
 		same := c.same(k, v)
-		if c.steps > maxSteps {
+		if c.Spent() {
 			return c.tooMuch(at)
 		}
 		if !same {
-			return fmt.Errorf("%s is not the value it must be", at)
+			return fail(at, "%s is not the value it must be")
 		}
 	}
 	switch x := v.(type) {
@@ -180,23 +282,23 @@ func (c *checker) check(schema any, v any, at string, depth int) error {
 		}
 	case float64:
 		if m, ok := num(s["maximum"]); ok && x > m {
-			return fmt.Errorf("%s is more than %v", at, m)
+			return fail(at, "%s is more than %v", m)
 		}
 		if m, ok := num(s["minimum"]); ok && x < m {
-			return fmt.Errorf("%s is less than %v", at, m)
+			return fail(at, "%s is less than %v", m)
 		}
 		if m, ok := num(s["exclusiveMaximum"]); ok && x >= m {
-			return fmt.Errorf("%s is not less than %v", at, m)
+			return fail(at, "%s is not less than %v", m)
 		}
 		if m, ok := num(s["exclusiveMinimum"]); ok && x <= m {
-			return fmt.Errorf("%s is not more than %v", at, m)
+			return fail(at, "%s is not more than %v", m)
 		}
 		if m, ok := num(s["multipleOf"]); ok && m > 0 {
 			// Within rounding, so 0.3 is a multiple of 0.1, as it is
 			// written if not as it is stored.
 			q := x / m
 			if math.IsInf(q, 0) || math.IsNaN(q) || math.Abs(q-math.Round(q)) > 1e-9*math.Max(1, math.Abs(q)) {
-				return fmt.Errorf("%s is not a multiple of %v", at, m)
+				return fail(at, "%s is not a multiple of %v", m)
 			}
 		}
 	case []any:
@@ -209,7 +311,8 @@ func (c *checker) check(schema any, v any, at string, depth int) error {
 		}
 	}
 	if ref, ok := s["$ref"].(string); ok {
-		if c.spend(len(ref) / stringBytes) {
+		// Read, and followed a part at a time, each part looked up.
+		if c.spend(len(ref)/stringBytes + strings.Count(ref, "/")) {
 			return c.tooMuch(at)
 		}
 		if target, found := c.resolve(ref); found {
@@ -231,15 +334,15 @@ func (c *checker) check(schema any, v any, at string, depth int) error {
 	if anyOf, ok := s["anyOf"].([]any); ok && len(anyOf) > 0 {
 		fits := false
 		for _, sub := range anyOf {
-			if fits = c.check(sub, v, at, depth+1) == nil; fits || c.steps > maxSteps {
+			if fits = c.check(sub, v, at, depth+1) == nil; fits || c.Spent() {
 				break
 			}
 		}
-		if c.steps > maxSteps {
+		if c.Spent() {
 			return c.tooMuch(at)
 		}
 		if !fits {
-			return fmt.Errorf("%s fits none of the shapes it may take", at)
+			return fail(at, "%s fits none of the shapes it may take")
 		}
 	}
 	if oneOf, ok := s["oneOf"].([]any); ok && len(oneOf) > 0 {
@@ -248,32 +351,34 @@ func (c *checker) check(schema any, v any, at string, depth int) error {
 			if c.check(sub, v, at, depth+1) == nil {
 				n++
 			}
-			if c.steps > maxSteps {
+			if c.Spent() {
 				return c.tooMuch(at)
 			}
 		}
 		if n != 1 {
-			return fmt.Errorf("%s fits %d of the shapes it may take, and must fit exactly one", at, n)
+			return fail(at, "%s fits %d of the shapes it may take, and must fit exactly one", n)
 		}
 	}
 	if not, ok := s["not"]; ok {
 		fits := c.check(not, v, at, depth+1) == nil
-		if c.steps > maxSteps {
+		if c.Spent() {
 			return c.tooMuch(at)
 		}
 		if fits {
-			return fmt.Errorf("%s is in a shape it must not take", at)
+			return fail(at, "%s is in a shape it must not take")
 		}
 	}
 	return nil
 }
 
-func (c *checker) tooMuch(at string) error {
-	return fmt.Errorf("%s takes more than %d steps to check against its schema", at, maxSteps)
+// tooMuch is a check that ran out of steps, which with a budget shared
+// may be the work of other values as much as of this one.
+func (c *checker) tooMuch(at *place) error {
+	return fail(at, "%s takes the check past the %d steps it may take", maxSteps)
 }
 
 // checkString holds a string to its length, its pattern and its format.
-func (c *checker) checkString(s map[string]any, x string, at string) error {
+func (c *checker) checkString(s map[string]any, x string, at *place) error {
 	maxLen, hasMax := num(s["maxLength"])
 	minLen, hasMin := num(s["minLength"])
 	format, _ := s["format"].(string)
@@ -285,10 +390,10 @@ func (c *checker) checkString(s map[string]any, x string, at string) error {
 	if hasMax || hasMin {
 		n := float64(utf8.RuneCountInString(x))
 		if hasMax && n > maxLen {
-			return fmt.Errorf("%s is longer than %v characters", at, maxLen)
+			return fail(at, "%s is longer than %v characters", maxLen)
 		}
 		if hasMin && n < minLen {
-			return fmt.Errorf("%s is shorter than %v characters", at, minLen)
+			return fail(at, "%s is shorter than %v characters", minLen)
 		}
 	}
 	if p, ok := s["pattern"].(string); ok {
@@ -303,19 +408,19 @@ func (c *checker) checkString(s map[string]any, x string, at string) error {
 				return c.tooMuch(at)
 			}
 			if !re.re.MatchString(x) {
-				return fmt.Errorf("%s is not in the form it must be", at)
+				return fail(at, "%s is not in the form it must be")
 			}
 		}
 	}
 	if c.formats && format != "" && !inFormat(format, x) {
-		return fmt.Errorf("%s is not in the format %s", at, format)
+		return fail(at, "%s is not in the format %s", format)
 	}
 	return nil
 }
 
-// pattern compiles a pattern once a check, counting the work: its length
+// pattern compiles a pattern once a budget, counting the work: its length
 // to read it, and the size of what it compiles to.
-func (c *checker) pattern(p string, at string) (compiled, error) {
+func (c *checker) pattern(p string, at *place) (compiled, error) {
 	if c.spend(len(p) / stringBytes) {
 		return compiled{}, c.tooMuch(at)
 	}
@@ -323,7 +428,7 @@ func (c *checker) pattern(p string, at string) (compiled, error) {
 		return got, nil
 	}
 	if len(p) > maxPattern {
-		return compiled{}, fmt.Errorf("%s has a pattern longer than %d bytes, which is more than this checks", at, maxPattern)
+		return compiled{}, fail(at, "%s has a pattern longer than %d bytes, which is more than this checks", maxPattern)
 	}
 	// ECMA-262 and RE2 differ at the edges; a pattern this program cannot
 	// compile constrains nothing rather than refusing all.
@@ -336,6 +441,9 @@ func (c *checker) pattern(p string, at string) (compiled, error) {
 			}
 			got.re, _ = regexp.Compile(p)
 		}
+	}
+	if c.patterns == nil {
+		c.patterns = map[string]compiled{}
 	}
 	c.patterns[p] = got
 	return got, nil
@@ -479,12 +587,12 @@ func (c *checker) resolve(ref string) (any, bool) {
 	return at, true
 }
 
-func (c *checker) checkArray(s map[string]any, x []any, at string, depth int) error {
+func (c *checker) checkArray(s map[string]any, x []any, at *place, depth int) error {
 	if m, ok := num(s["maxItems"]); ok && float64(len(x)) > m {
-		return fmt.Errorf("%s has more than %v items", at, m)
+		return fail(at, "%s has more than %v items", m)
 	}
 	if m, ok := num(s["minItems"]); ok && float64(len(x)) < m {
-		return fmt.Errorf("%s has fewer than %v items", at, m)
+		return fail(at, "%s has fewer than %v items", m)
 	}
 	if unique, _ := s["uniqueItems"].(bool); unique {
 		// Each item as JSON, whose objects are written with their keys in
@@ -500,7 +608,7 @@ func (c *checker) checkArray(s map[string]any, x []any, at string, depth int) er
 				return c.tooMuch(at)
 			}
 			if j, ok := seen[string(b)]; ok {
-				return fmt.Errorf("%s has the same item twice, at %d and %d", at, j, i)
+				return fail(at, "%s has the same item twice, at %d and %d", j, i)
 			}
 			seen[string(b)] = i
 		}
@@ -509,59 +617,67 @@ func (c *checker) checkArray(s map[string]any, x []any, at string, depth int) er
 	// shape of every item after them.
 	prefix, _ := s["prefixItems"].([]any)
 	items, hasItems := s["items"]
-	for i, item := range x {
-		var sub any
-		switch {
-		case i < len(prefix):
+	n := len(x)
+	if !hasItems && len(prefix) < n {
+		// What comes after the prefix is not looked at, and a list of a
+		// million is not walked, at every visit, to find that out.
+		n = len(prefix)
+	}
+	for i := 0; i < n; i++ {
+		sub := items
+		if i < len(prefix) {
 			sub = prefix[i]
-		case hasItems:
-			sub = items
-		default:
-			continue
 		}
-		if err := c.check(sub, item, fmt.Sprintf("%s[%d]", at, i), depth+1); err != nil {
+		if err := c.check(sub, x[i], at.index(i), depth+1); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (c *checker) checkObject(s map[string]any, x map[string]any, at string, depth int) error {
+func (c *checker) checkObject(s map[string]any, x map[string]any, at *place, depth int) error {
 	props, _ := s["properties"].(map[string]any)
 	if req, ok := s["required"].([]any); ok {
-		if c.spend(len(req)) {
-			return c.tooMuch(at)
-		}
 		for _, r := range req {
-			if name, ok := r.(string); ok {
-				if _, present := x[name]; !present {
-					return fmt.Errorf("%s needs %s", at, name)
-				}
+			// A name is read in full to look it up.
+			name, ok := r.(string)
+			if c.spend(1 + len(name)/stringBytes) {
+				return c.tooMuch(at)
+			}
+			if _, present := x[name]; ok && !present {
+				return fail(at, "%s needs %s", name)
 			}
 		}
 	}
 	if m, ok := num(s["maxProperties"]); ok && float64(len(x)) > m {
-		return fmt.Errorf("%s has more than %v properties", at, m)
+		return fail(at, "%s has more than %v properties", m)
 	}
 	if m, ok := num(s["minProperties"]); ok && float64(len(x)) < m {
-		return fmt.Errorf("%s has fewer than %v properties", at, m)
+		return fail(at, "%s has fewer than %v properties", m)
 	}
 	extra, hasExtra := s["additionalProperties"]
 	if props == nil && !hasExtra {
 		return nil
 	}
-	// Putting the properties in order, so the first one wrong is the same
-	// every time, is work in proportion to how many there are.
+	// Each key is read to put it in order, so the first one wrong is the
+	// same every time, and again to find it among the properties: work in
+	// proportion to how many there are and how long, counted before it is
+	// done, since a single key can be most of a value.
 	if c.spend(len(x)) {
 		return c.tooMuch(at)
 	}
 	keys := make([]string, 0, len(x))
+	n := 0
 	for k := range x {
 		keys = append(keys, k)
+		n += len(k)
+	}
+	if c.spend(n / stringBytes) {
+		return c.tooMuch(at)
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		where := at + "." + k
+		where := at.property(k)
 		if p, ok := props[k]; ok {
 			if err := c.check(p, x[k], where, depth+1); err != nil {
 				return err
@@ -571,19 +687,19 @@ func (c *checker) checkObject(s map[string]any, x map[string]any, at string, dep
 		switch {
 		case hasExtra:
 			if err := c.check(extra, x[k], where, depth+1); err != nil {
-				if c.steps > maxSteps {
+				if c.Spent() {
 					return err
 				}
-				return errors.New(where + " is not a property it takes")
+				return fail(where, "%s is not a property it takes")
 			}
 		case props != nil:
-			return fmt.Errorf("%s is not a property it takes; it takes %s", where, names(props))
+			return fail(where, "%s is not a property it takes; it takes %s", listed(props))
 		}
 	}
 	return nil
 }
 
-func (c *checker) checkType(t any, v any, at string) error {
+func (c *checker) checkType(t any, v any, at *place) error {
 	var types []string
 	switch x := t.(type) {
 	case string:
@@ -606,8 +722,13 @@ func (c *checker) checkType(t any, v any, at string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("%s is %s, and must be %s", at, kind(v), strings.Join(types, " or "))
+	return fail(at, "%s is %s, and must be %s", kind(v), either(types))
 }
+
+// either is the types a value may be, as a failure names them.
+type either []string
+
+func (e either) String() string { return strings.Join(e, " or ") }
 
 func is(want string, v any) bool {
 	switch want {
@@ -658,14 +779,30 @@ func num(v any) (float64, bool) {
 	return f, ok
 }
 
+// listed is the properties a schema lists, as a failure names them.
+type listed map[string]any
+
+func (l listed) String() string { return names(l) }
+
+// names is the first dozen of a schema's properties in order, found in
+// one pass rather than by putting them all in order.
 func names(props map[string]any) string {
-	out := make([]string, 0, len(props))
+	const shown = 12
+	first := make([]string, 0, shown+1)
 	for k := range props {
-		out = append(out, k)
+		if len(first) == shown && k >= first[shown-1] {
+			continue
+		}
+		i := sort.SearchStrings(first, k)
+		first = append(first, "")
+		copy(first[i+1:], first[i:])
+		first[i] = k
+		if len(first) > shown {
+			first = first[:shown]
+		}
 	}
-	sort.Strings(out)
-	if len(out) > 12 {
-		out = append(out[:12], "…")
+	if len(props) > shown {
+		first = append(first, "…")
 	}
-	return strings.Join(out, ", ")
+	return strings.Join(first, ", ")
 }

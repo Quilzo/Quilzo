@@ -196,6 +196,63 @@ func mustJSON(v any) string {
 	return string(b)
 }
 
+// inTime is how long the worst a schema can ask may take on a slow
+// machine: what maxSteps allows, with room to spare. A case that takes
+// longer is one whose work the steps do not count.
+const inTime = 2 * time.Second
+
+// wide is a shape of n properties, all of which take anything.
+func wide(n int) string {
+	props := make([]string, n)
+	for i := range props {
+		props[i] = fmt.Sprintf(`"p%d":{}`, i)
+	}
+	return `{"properties":{` + strings.Join(props, ",") + `}}`
+}
+
+// selfAndWide refers to itself under anyOf beside a wide shape, which an
+// object with a property the shape does not list fails at every level.
+func selfAndWide(n int) string {
+	return `{"anyOf":[{"$ref":"#/$defs/big"},{"$ref":"#"},{"$ref":"#"}],"$defs":{"big":` + wide(n) + `}}`
+}
+
+// The costliest cases found are measured, not only counted, so the bound
+// on steps is held to what a step costs. A shape that fails is written
+// out only if its failure is the one returned, not for each anyOf throws
+// away, which wrote out every property a schema of 2,000 takes at every
+// level; and a long key costs its length, not one step, since each visit
+// reads it to find it among the properties.
+func TestTheCostliestCasesFinishInTime(t *testing.T) {
+	long := strings.Repeat("k", 200<<10)
+	for name, c := range map[string]struct {
+		schema string
+		value  any
+		says   string
+	}{
+		"2,000 properties under anyOf (21 KB)":   {selfAndWide(2000), map[string]any{"zzz": 1.0}, "steps"},
+		"20,000 properties under anyOf (229 KB)": {selfAndWide(20000), map[string]any{"zzz": 1.0}, "steps"},
+		"a key of 200 KB under anyOf": {`{"type":"object","properties":{"name":{"type":"string"}},` +
+			`"additionalProperties":true,"anyOf":[{"$ref":"#"},{"$ref":"#"},{"$ref":"#"}]}`,
+			map[string]any{long: 1.0}, "steps"},
+		"a key of 200 KB, once": {`{"type":"object","properties":{"name":{"type":"string"}},` +
+			`"additionalProperties":{"type":"integer"}}`, map[string]any{long: 1.0}, ""},
+		"one property of 20,000":  {wide(20000), map[string]any{"p19999": 1.0}, ""},
+		"another than 20,000 take": {wide(20000), map[string]any{"zzz": 1.0}, "answer.zzz is not a property it takes; it takes p0, p1, p10,"},
+	} {
+		start := time.Now()
+		err := CheckAnswer(json.RawMessage(c.schema), c.value, "answer")
+		if took := time.Since(start); took > inTime {
+			t.Errorf("%s took %v", name, took)
+		}
+		switch {
+		case c.says == "" && err != nil:
+			t.Errorf("%s was refused: %v", name, err)
+		case c.says != "" && (err == nil || !strings.Contains(err.Error(), c.says)):
+			t.Errorf("%s: %v, want %q", name, err, c.says)
+		}
+	}
+}
+
 // The keywords structured output holds an answer to are checked, so an
 // answer that breaks one is not passed as fitting.
 func TestEveryKeywordStructuredOutputUsesIsChecked(t *testing.T) {
