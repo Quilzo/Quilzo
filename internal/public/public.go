@@ -146,9 +146,11 @@ type Site struct {
 	IndexLive bool
 	searchMu  sync.Mutex
 	// searchKey names what Search was built from when IndexLive keeps it:
-	// the published commit, and the records a visitor can open now, so a
-	// record that leaves its listing leaves search too.
-	searchKey string
+	// the published commit, and what the records a visitor can open now
+	// say, so a record that leaves its listing leaves search too. And
+	// searchRecords is those records, which a result is checked against.
+	searchKey     string
+	searchRecords map[string]any
 	// recordMu and records keep the records a visitor can open, read the
 	// way their pages show them, for the chatbots and search. See
 	// records.go.
@@ -347,9 +349,8 @@ func (st *Site) Handler() http.Handler {
 }
 
 // routes is which handler answers which address. Its own function, so
-// what a chatbot and search read about records can ask it whether a
-// record's address reaches the record's page or a route of its own
-// (records.go).
+// what a chatbot and search read about records can ask it what a visitor
+// is shown at a record's address (records.go).
 func (st *Site) routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/manifest.webmanifest", st.manifest)
@@ -418,6 +419,10 @@ func (st *Site) routes() *http.ServeMux {
 	mux.HandleFunc("/", st.page)
 	return mux
 }
+
+// APIPrefix is where the API answers when the site is served with it
+// (quilzo site --api), in front of every route here.
+const APIPrefix = "/api/"
 
 // CrawlGate enforces the published licence against identified crawlers.
 type CrawlGate struct {
@@ -798,7 +803,7 @@ func (st *Site) searchAPI(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "nothing is published", http.StatusServiceUnavailable)
 		return
 	}
-	results := st.searchVisible(q, st.withRecords(visible), 20)
+	results, _ := st.searchVisible(q, visible, 20)
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	// No caching. A results page cached by a proxy is a results page served to
@@ -820,14 +825,17 @@ func (st *Site) searchAPI(w http.ResponseWriter, r *http.Request) {
 // them. Asked for more than it returns, so the filtering does not leave a
 // page of results short when hidden pages ranked high.
 //
-// visible is what a visitor can open now: the pages, and the records'
-// pages (withRecords), which are in the index only while they can be
-// opened and are filtered here all the same.
-func (st *Site) searchVisible(q string, visible map[string]any, n int) []search.Result {
+// visible is the pages a visitor can open now. The records' pages they can
+// open are the ones the index holds, taken with it: a name is a record's
+// address or a page's, and which one is decided by the set the index was
+// built from, not by one read a moment before or after it. Returned with
+// the results, as what the results are read from.
+func (st *Site) searchVisible(q string, visible map[string]any, n int) ([]search.Result, map[string]any) {
 	out := []search.Result{}
-	idx := st.searchIndex()
+	idx, records := st.searchIndexed()
+	visible = readable(visible, records)
 	if idx == nil {
-		return out
+		return out, visible
 	}
 	for _, res := range idx.Search(q, n*3) {
 		if _, ok := visible[res.Page]; ok {
@@ -837,7 +845,7 @@ func (st *Site) searchVisible(q string, visible map[string]any, n int) []search.
 			}
 		}
 	}
-	return out
+	return out, visible
 }
 
 // searchIndex is the search index to answer from. With IndexLive it is
@@ -845,22 +853,29 @@ func (st *Site) searchVisible(q string, visible map[string]any, n int) []search.
 // the first time it is asked for after a publish; the build is once per
 // publish, not per request. With nothing published it is what there was.
 func (st *Site) searchIndex() *search.Index {
+	idx, _ := st.searchIndexed()
+	return idx
+}
+
+// searchIndexed is searchIndex, and the records' pages it holds.
+func (st *Site) searchIndexed() (*search.Index, map[string]any) {
 	if !st.IndexLive {
-		return st.Search
+		return st.Search, nil
 	}
 	live := st.Store.GetRef(st.ref())
 	// And the records a visitor can open now, read the way their pages
 	// show them (records.go): the index holds no other record, so one
 	// outside its listing, its page's window or the published set is not
-	// in it to be filtered out later. Read outside the lock, which is the
-	// index's: the set is shared with the chatbots and drawn once for both.
-	var records map[string]any
+	// in it to be filtered out later. Keyed by what they say, so the
+	// minute passing on a site with events is not the index built again.
+	// Read outside the lock, which is the index's: the set is shared with
+	// the chatbots and drawn once for both.
+	var recs *recordSet
 	key := live
 	if live != "" {
 		if visible, _, err := st.pages(); err == nil {
-			var rkey string
-			if records, rkey = st.recordPages(visible); rkey != "" {
-				key += "\x00" + rkey
+			if recs = st.recordPages(visible); recs != nil {
+				key += "\x00" + recs.sum
 			}
 		}
 	}
@@ -870,15 +885,15 @@ func (st *Site) searchIndex() *search.Index {
 	// when it is of the commit and there are no records to add to it.
 	if live == "" || (st.Search != nil && (st.searchKey == key ||
 		st.searchKey == "" && st.Search.Commit == key)) {
-		return st.Search
+		return st.Search, st.searchRecords
 	}
 	pages, err := site.PagesAt(st.Store, live)
 	if err != nil {
-		return st.Search
+		return st.Search, st.searchRecords
 	}
-	st.Search = search.Build(live, readable(pages, records))
-	st.searchKey = key
-	return st.Search
+	st.Search = search.Build(live, readable(pages, recs.read()))
+	st.searchKey, st.searchRecords = key, recs.read()
+	return st.Search, st.searchRecords
 }
 
 // PermissionsPolicy is what a published page may ask the browser for.
@@ -1068,6 +1083,11 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 		// keep the plain response, because a stylesheet request answered with
 		// an HTML page is worse than one answered with a string.
 		st.notFound(w, r)
+		return
+	}
+	// A page is what is here, not a record, which is all the chatbots and
+	// search asked (records.go): not drawn for them, since nobody reads it.
+	if _, asked := probing(r); asked {
 		return
 	}
 

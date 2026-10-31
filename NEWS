@@ -68,10 +68,11 @@ Unreleased
     finds that page.  Only what a visitor can open is read: not a record
     its listing leaves out or that is only in the draft, not one behind a
     page for members or outside its publish window, and not a field the
-    page's layout does not show.  quilzo assistant ask, the admin's
-    Chatbots screen and MCP read records through the layouts in the
-    site's templates directory.  Up to a thousand records are read, in
-    each listing's own order.
+    page's layout does not show.  A chatbot tried with quilzo assistant
+    ask or eval, on the admin's Chatbots screen or over MCP reads what
+    the site's own chatbot reads, and records through the site's layouts
+    (--templates DIR), and says when it could read none.  Up to a
+    thousand records are read, in each listing's own order.
 
 *** Bring a site from the file it exported.  quilzo site import, and
     Make › Bring your site, take a WordPress or Squarespace export (.xml),

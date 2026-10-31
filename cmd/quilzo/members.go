@@ -62,22 +62,32 @@ func memberParty(base string) (webauthn.Party, error) {
 }
 
 // siteMembers is the public site's accounts, or nil when there are none.
-func siteMembers(root string, cfg *config.Config, base string) *public.Members {
+//
+// serving is false for a site built to be read (siteOpts.Reading), which
+// needs to know only that pages for members are answered for members: it
+// sweeps nothing away, and says nothing about a site it is not starting.
+func siteMembers(root string, cfg *config.Config, base string, serving bool) *public.Members {
 	mode := membersMode(cfg)
 	if mode == "off" {
 		return nil
 	}
 	party, err := memberParty(base)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "accounts are off: %v\n", err)
+		if serving {
+			fmt.Fprintf(os.Stderr, "accounts are off: %v\n", err)
+		}
 		return nil
 	}
 	store, err := openMembers(root)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "accounts are off: %v\n", err)
+		if serving {
+			fmt.Fprintf(os.Stderr, "accounts are off: %v\n", err)
+		}
 		return nil
 	}
-	store.Sweep()
+	if serving {
+		store.Sweep()
+	}
 	return &public.Members{
 		Store: store, Mode: mode, Party: party,
 		Limit: throttle.New(throttlePolicy(cfg)),

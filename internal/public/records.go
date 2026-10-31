@@ -4,10 +4,12 @@
 package public
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"html"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"sort"
 	"strings"
@@ -35,27 +37,35 @@ import (
 // public about it. So a record is read through its page, by the code that
 // serves the page. Every page a visitor can open now that stands for
 // records; every record the listing it names keeps, with no arguments, as
-// the sitemap and a static copy count them (render.DetailRows); drawn by
-// detailBody, as the route draws it; and then read as a visitor reads it:
-// the words inside <main>, and nothing inside a tag, a script, a form or a
-// hidden element. A field the listing hands the layout and the layout does
-// not print is not something the page says, and it is not something a
-// chatbot can say either.
+// the sitemap and a static copy count them (render.DetailRows); asked for at
+// its address of the site's own routes and page handler, as a visitor with
+// no account asks for it (recordAt); drawn by detailBody, as the route draws
+// it; and then read as a visitor reads it: the words inside <main>, and
+// nothing inside a tag, a script, a form or an element marked hidden. A
+// field the listing hands the layout and the layout does not print is not
+// something the page says, and it is not something a chatbot can say
+// either.
 //
-// What a visitor cannot open is not read: a page for members or outside its
-// publish window, a record that is only in the draft, one the listing's
-// conditions leave out, a key two records share (the route answers it with
-// neither), and an address that a redirect, a page of the same name or
-// another of the site's routes answers instead.
+// What a visitor cannot open is not read, and nothing here decides what
+// that is. A page for members or outside its publish window is not among
+// the pages a visitor can open (pages). A record only in the draft, one the
+// listing's conditions leave out and a key two records share are not what
+// the route finds. A redirect, a page of the same name for anybody or for
+// members, and another of the site's routes answer the address before the
+// route is asked.
 //
 // # What it costs
 //
 // Every record is drawn once for what it depends on, not once per question:
 // the published content, the records, the pages a visitor can open, the
 // minute when a listing reads the clock, and the payment links behind a Buy
-// button. The chatbots and the search index share the set. It is bounded by
-// maxRecordPages, in page order and then in each listing's own, so which
-// records are read is the same every time.
+// button. The chatbots and the search index share the set, and are built
+// again from it only when what it says has changed: a chatbot only when a
+// record it reads says something else. The minute passing on a site with
+// events, or a publish that changed none of what a chatbot reads, draws the
+// records again and leaves its knowledge, and the guardrail that screens
+// it, alone. The set is bounded by maxRecordPages, in page order and then in
+// each listing's own, so which records are read is the same every time.
 
 // maxRecordPages is how many records' pages the chatbots and site search
 // read. A site with more answers about the first this many, in the order
@@ -67,30 +77,47 @@ const maxRecordWords = 2000
 
 // recordSet is the records read for one set of things they depend on.
 type recordSet struct {
-	key   string
+	// key names what the records were read from (recordKey).
+	key string
+	// pages is each record a visitor can open, at its address, read the way
+	// its page shows it.
 	pages map[string]any
+	// digests is a hash of what each record's page says, and sum one of
+	// what all of them say: what a chatbot and search are built again for,
+	// where key is only what the records are read again for.
+	digests map[string]string
+	sum     string
 }
 
-// RecordPages is every record a visitor can open now at its own address,
-// keyed by that address (page/key) and read the way its page shows it: what
-// this site's chatbots and search know about records. For the command line
-// and the admin, so a chatbot tried there answers as it answers visitors.
-func (st *Site) RecordPages() (map[string]any, error) {
+// read is the records' pages, or none.
+func (rs *recordSet) read() map[string]any {
+	if rs == nil {
+		return nil
+	}
+	return rs.pages
+}
+
+// Readable is what a visitor can open now, as this site's chatbots and
+// search read it: every page open to anybody, and every record at its own
+// address, read the way its page shows it. For the command line, the admin
+// and MCP, so a chatbot tried there answers from what it answers visitors
+// from. A site with no listings has no records to read, and is the pages a
+// visitor can open.
+func (st *Site) Readable() (map[string]any, error) {
 	visible, _, err := st.pages()
 	if err != nil {
 		return nil, err
 	}
-	recs, _ := st.recordPages(visible)
-	// A copy of the set, which the chatbots and search go on sharing.
-	return readable(map[string]any{}, recs), nil
+	// A set of its own: the records' pages are shared with the chatbots
+	// and search, and the caller may add to what it is given.
+	return readable(visible, st.recordPages(visible).read()), nil
 }
 
 // recordPages is the records a visitor can open, given the pages they can
-// open now, and a name for what the set was read from that changes whenever
-// the set could. Empty when no page stands for records.
-func (st *Site) recordPages(visible map[string]any) (map[string]any, string) {
+// open now: nil when no page stands for records.
+func (st *Site) recordPages(visible map[string]any) *recordSet {
 	if st.Listings == nil || st.Listings.Set == nil {
-		return nil, ""
+		return nil
 	}
 	var stands []string
 	for name, body := range visible {
@@ -99,25 +126,25 @@ func (st *Site) recordPages(visible map[string]any) (map[string]any, string) {
 		}
 	}
 	if len(stands) == 0 {
-		return nil, ""
+		return nil
 	}
 	sort.Strings(stands)
-	members := st.membersShadow()
-	key := st.recordKey(visible, members, stands)
+	key := st.recordKey(visible, stands)
 
 	st.recordMu.Lock()
 	defer st.recordMu.Unlock()
 	if st.records != nil && st.records.key == key {
-		return st.records.pages, key
+		return st.records
 	}
-	pages := st.readRecords(visible, members, stands)
-	st.records = &recordSet{key: key, pages: pages}
-	return pages, key
+	recs := st.readRecords(visible, stands)
+	recs.key = key
+	st.records = recs
+	return recs
 }
 
-// membersShadow is the pages for members a signed-in member opens now. The
-// page handler answers their names before it looks for a record, so a
-// record at the same address is not what anybody opens there.
+// membersShadow is the pages for members open now. The page handler
+// answers their names before it looks for a record, so one opening or
+// closing changes what is at a record's address.
 func (st *Site) membersShadow() map[string]any {
 	if !st.membersOn() {
 		return nil
@@ -130,7 +157,7 @@ func (st *Site) membersShadow() map[string]any {
 }
 
 // recordKey names everything the records read for a visitor depend on.
-func (st *Site) recordKey(visible, members map[string]any, stands []string) string {
+func (st *Site) recordKey(visible map[string]any, stands []string) string {
 	h := sha256.New()
 	h.Write([]byte(st.Store.GetRef(st.ref())))
 	h.Write([]byte{0})
@@ -138,7 +165,7 @@ func (st *Site) recordKey(visible, members map[string]any, stands []string) stri
 	// The pages a visitor can open: a page standing for records opens or
 	// closes with its publish window, and a page of the same name as a
 	// record's address is answered instead of it.
-	for _, set := range []map[string]any{visible, members} {
+	for _, set := range []map[string]any{visible, st.membersShadow()} {
 		names := make([]string, 0, len(set))
 		for n := range set {
 			names = append(names, n)
@@ -165,8 +192,9 @@ func (st *Site) recordKey(visible, members map[string]any, stands []string) stri
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// readRecords draws and reads every record a visitor can open.
-func (st *Site) readRecords(visible, members map[string]any, stands []string) map[string]any {
+// readRecords asks for every record a visitor might open at its address,
+// and reads the ones they would be shown.
+func (st *Site) readRecords(visible map[string]any, stands []string) *recordSet {
 	src := st.sources()
 	// What visitors wrote under a page, and the times a booking has free,
 	// are on it and are not what the site says about the record. Neither is
@@ -175,25 +203,34 @@ func (st *Site) readRecords(visible, members map[string]any, stands []string) ma
 	src.Thread, src.Booking = nil, nil
 
 	mux := st.routes()
-	out := map[string]any{}
+	out := &recordSet{pages: map[string]any{}, digests: map[string]string{}}
+	asked := map[string]bool{}
+read:
 	for _, name := range stands {
 		body := visible[name]
 		d, _ := detailOf(body)
-		keys, rows, err := render.DetailRows(src, name, body, d)
+		keys, _, err := render.DetailRows(src, name, body, d)
 		if err != nil {
 			continue
 		}
-		shared := map[string]int{}
-		for _, k := range keys {
-			shared[k]++
-		}
-		for i, row := range rows {
-			if len(out) == maxRecordPages {
-				return out
+		for _, key := range keys {
+			if len(out.pages) == maxRecordPages {
+				break read
 			}
-			key := keys[i]
-			addr := name + "/" + key
-			if !st.recordOpens(mux, addr, key, shared[key], visible, members) {
+			if strings.ContainsAny(key, "/?#") {
+				// Not a link anything here would write either: see recordLink.
+				continue
+			}
+			// Escaped as the sitemap and a listing's links write it, so the
+			// address a chatbot or search links to is the one that opens the
+			// record, and not another record's or a bad request.
+			addr := name + "/" + url.PathEscape(key)
+			if asked[addr] {
+				continue
+			}
+			asked[addr] = true
+			row, ok := st.recordAt(mux, addr)
+			if !ok {
 				continue
 			}
 			page, err := st.detailBody(src, name, body, row, nil)
@@ -202,39 +239,75 @@ func (st *Site) readRecords(visible, members map[string]any, stands []string) ma
 			}
 			title, text := readPage(page)
 			if text == "" {
+				// A page saying nothing but its heading still says what the
+				// record is called, and is found by it.
+				text = title
+			}
+			if text == "" {
 				continue
 			}
-			out[addr] = map[string]any{"title": title, "body": text}
+			out.pages[addr] = map[string]any{"title": title, "body": text}
+			sum := sha256.Sum256([]byte(title + "\x00" + text))
+			out.digests[addr] = hex.EncodeToString(sum[:])
 		}
 	}
+	addrs := make([]string, 0, len(out.digests))
+	for a := range out.digests {
+		addrs = append(addrs, a)
+	}
+	sort.Strings(addrs)
+	h := sha256.New()
+	for _, a := range addrs {
+		h.Write([]byte(a + "\x00" + out.digests[a] + "\x00"))
+	}
+	out.sum = hex.EncodeToString(h.Sum(nil))
 	return out
 }
 
-// recordOpens says whether a visitor asking for a record's address gets the
-// record's page, the way the site answers it: by page() and not by a route
-// of its own, such as /media/ or /book/; then a redirect first, a page of
-// that name for anybody or for members next, and only then the record,
-// which the route finds by a key naming one record and fitting in one
-// segment.
-func (st *Site) recordOpens(mux *http.ServeMux, addr, key string, records int,
-	visible, members map[string]any) bool {
+// recordProbe is a question carried in a request's context: which record
+// is a visitor shown here? detailRoute answers it and draws nothing.
+type recordProbe struct {
+	row   listing.Row
+	found bool
+}
 
-	if records != 1 || key == "" || strings.ContainsAny(key, "/?#") {
-		// Not a link anything here would write either: see recordLink.
-		return false
+type probeKey struct{}
+
+// probing is the question a request carries, if it carries one.
+func probing(r *http.Request) (*recordProbe, bool) {
+	p, ok := r.Context().Value(probeKey{}).(*recordProbe)
+	return p, ok
+}
+
+// recordAt is the record a visitor with no account is shown at an address,
+// asked of the site's own routes and page handler: so every check a visitor
+// meets on the way, in the order they meet it, is the one made here, and a
+// check added there later is made here too. A redirect, a page of that name
+// for anybody or for members, an address that is not in its plain form, a
+// key two records share: each is answered there as it is for a visitor, and
+// is not a record.
+//
+// Only the page handler is asked. An address another of the site's routes
+// answers, such as /book/ or /media/, is not a record's page, and that
+// route would answer the question as if a visitor had asked it.
+func (st *Site) recordAt(mux *http.ServeMux, addr string) (listing.Row, bool) {
+	// In front of every route here when the site is served with its API,
+	// which is not the site's to know (quilzo site --api).
+	if strings.HasPrefix("/"+addr, APIPrefix) {
+		return nil, false
 	}
-	ask := &http.Request{Method: http.MethodGet, URL: &url.URL{Path: "/" + addr}}
-	if _, pattern := mux.Handler(ask); pattern != "/" {
-		return false
+	probe := &recordProbe{}
+	ctx := context.WithValue(context.Background(), probeKey{}, probe)
+	r, err := http.NewRequestWithContext(ctx, http.MethodGet, "/"+addr, nil)
+	if err != nil {
+		return nil, false
 	}
-	if _, moved := st.Redirects.Lookup("/" + addr); moved {
-		return false
+	h, pattern := mux.Handler(r)
+	if pattern != "/" {
+		return nil, false
 	}
-	if _, page := visible[addr]; page {
-		return false
-	}
-	_, forMembers := members[addr]
-	return !forMembers
+	h.ServeHTTP(httptest.NewRecorder(), r)
+	return probe.row, probe.found
 }
 
 // What a visitor reads on a page.
@@ -257,6 +330,10 @@ var around = map[string]bool{"header": true, "footer": true, "aside": true}
 // rawText are elements whose content is not markup, so it is skipped to
 // their closing tag rather than read for tags.
 var rawText = map[string]bool{"script": true, "style": true, "textarea": true, "title": true}
+
+// foreign are the elements whose own tags, and theirs only, a slash at the
+// end closes: <svg/> is a whole drawing, where <div/> opens a division.
+var foreign = map[string]bool{"svg": true, "math": true}
 
 // voidTags have no closing tag.
 var voidTags = map[string]bool{
@@ -363,8 +440,9 @@ func (r *pageReader) scan(page, lower string) {
 		if name == "" {
 			continue
 		}
-		if !closing && rawText[name] && !strings.HasSuffix(raw, "/") {
-			// Its content is not markup: on to its closing tag.
+		if !closing && rawText[name] {
+			// Its content is not markup: on to its closing tag. A slash at
+			// the end of the tag closes nothing here, as in a browser.
 			end := strings.Index(lower[i:], "</"+name)
 			if end < 0 {
 				return
@@ -391,7 +469,10 @@ func tagName(raw string) (string, bool) {
 }
 
 func (r *pageReader) tag(name, raw string, closing bool) {
-	selfClosing := voidTags[name] || strings.HasSuffix(raw, "/")
+	// A slash at the end of a tag closes it only for an element that has no
+	// content, or in a drawing or a formula. A browser reads <div hidden/>
+	// as a hidden element running on to its </div>, and so is it read here.
+	selfClosing := voidTags[name] || foreign[name] && strings.HasSuffix(raw, "/")
 	if r.skip != "" {
 		if name == r.skip && !selfClosing {
 			if closing {
@@ -439,8 +520,10 @@ func (r *pageReader) tag(name, raw string, closing bool) {
 	}
 }
 
-// hidden says an element is not shown: it has the hidden attribute, or it
-// is taken away from a screen reader as well.
+// hidden says an element is not shown: it has the hidden attribute, it is
+// taken away from a screen reader as well, or its own style does not draw
+// it. A class that the site's stylesheet hides is not seen here, and what
+// is inside it is read.
 func hidden(raw string) bool {
 	i := strings.IndexAny(raw, " \t\r\n")
 	if i < 0 {
@@ -475,10 +558,20 @@ func hidden(raw string) bool {
 				value, s = s[:j], s[j:]
 			}
 		}
-		if name == "hidden" || name == "aria-hidden" && strings.TrimSpace(value) == "true" {
+		switch {
+		case name == "hidden",
+			name == "aria-hidden" && strings.TrimSpace(value) == "true",
+			name == "style" && styleHides(value):
 			return true
 		}
 	}
+}
+
+// styleHides says a style attribute takes its element off the page.
+func styleHides(style string) bool {
+	s := strings.Join(strings.Fields(style), "")
+	return strings.Contains(s, "display:none") || strings.Contains(s, "visibility:hidden") ||
+		strings.Contains(s, "visibility:collapse")
 }
 
 // textRun takes the text between two tags.
@@ -517,6 +610,11 @@ func (r *pageReader) flush() {
 	r.cur.Reset()
 	r.kind = ""
 	if t == "" {
+		if kind == "dd" {
+			// A term with nothing beside it says nothing, and the words
+			// after it are not what it means.
+			r.term = ""
+		}
 		return
 	}
 	switch {
@@ -619,7 +717,7 @@ func docTitle(page, lower string) string {
 // readable is the pages and the records' pages in one set.
 //
 // A record is in its set only where it is what a visitor opens at its
-// address (recordOpens), so a page of the same name in a wider set is one
+// address (recordAt), so a page of the same name in a wider set is one
 // nobody opens there, such as a page whose window has closed. The record
 // is what search and a chatbot answer with at that address, and the page
 // does not come back through it.
@@ -635,11 +733,4 @@ func readable(pages, records map[string]any) map[string]any {
 		out[n] = b
 	}
 	return out
-}
-
-// withRecords is the pages a visitor can open now and the records they can
-// open, in one set: what search answers from and shows.
-func (st *Site) withRecords(visible map[string]any) map[string]any {
-	records, _ := st.recordPages(visible)
-	return readable(visible, records)
 }
