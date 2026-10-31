@@ -143,7 +143,7 @@
 </form>
 
 <h2>Never blocked</h2>
-<p>Anything on the inside — this machine, private networks, carrier-grade NAT — is never blocked. Add the networks your people work from{{if .Trusted}}:{{else}}.{{end}}</p>
+<p>This machine is never blocked, and neither is a network added here. A machine on a private network or behind carrier-grade NAT is blocked like any other; add the networks your people work from{{if .Trusted}}:{{else}}.{{end}}</p>
 {{if .Trusted}}<ul class="auto-list">{{range .Trusted}}<li class="auto-card"><div class="auto-head"><code>{{.}}</code>
   <form method="post" action="/security/shield/act"><input type="hidden" name="do" value="trust-remove"><input type="hidden" name="network" value="{{.}}">
     <button type="submit" class="btn-text">Remove<span class="visually-hidden"> {{.}}</span></button></form></div></li>{{end}}</ul>{{end}}

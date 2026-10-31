@@ -83,7 +83,7 @@ func assumedProxy(root, local string) string {
 		return ""
 	}
 	return "a forwarded address is believed from this machine only (" + local +
-		"); a proxy anywhere else is named in network.trusted_proxies"
+		"); name a proxy anywhere else in network.trusted_proxies"
 }
 
 // maxUnbelieved is how many different machines unbelieved names, so a
@@ -117,9 +117,15 @@ func unbelieved(local string, resolve func() *clientip.Resolver, to io.Writer, n
 					said[c.Peer] = true
 				}
 				mu.Unlock()
+				// The list is one for both surfaces, and naming anything in
+				// it ends the assumption for both, so the hint says so
+				// before it is followed rather than leaving a proxy on this
+				// machine to stop being believed without a word.
 				if first {
 					fmt.Fprintf(to, "  %s%s sent X-Forwarded-For and is not believed: %s believes "+
-						"a proxy on this machine only. If %s is the proxy in front, name it:%s\n"+
+						"a proxy on this machine only. If %s is the proxy in front, name it. Naming "+
+						"any proxy ends that for the site and the admin both, so a proxy on this "+
+						"machine is then believed only if it is named too:%s\n"+
 						"      quilzo config set network.trusted_proxies %s\n",
 						yellow, c.Peer, local, c.Peer, reset, c.Peer)
 				}

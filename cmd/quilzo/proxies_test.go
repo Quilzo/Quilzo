@@ -115,8 +115,11 @@ func TestAMachineOnTheNetworkThatForwardsIsToldHowToNameIt(t *testing.T) {
 		h.ServeHTTP(httptest.NewRecorder(), req)
 	}
 	send("172.17.0.1:80", "203.0.113.9")
+	// And before it is followed, what following it costs: the list is both
+	// surfaces', and a proxy on this machine must then be named too.
 	if !strings.Contains(out.String(), "172.17.0.1 sent X-Forwarded-For and is not believed") ||
-		!strings.Contains(out.String(), "quilzo config set network.trusted_proxies 172.17.0.1") {
+		!strings.Contains(out.String(), "quilzo config set network.trusted_proxies 172.17.0.1") ||
+		!strings.Contains(out.String(), "for the site and the admin both") {
 		t.Fatalf("%q", out.String())
 	}
 	// Once for each machine, and not for the proxy on this machine (it is
@@ -172,5 +175,31 @@ func TestASurfaceThatAssumesItsProxySaysWhereItBelievesItFrom(t *testing.T) {
 	}
 	if line := assumedProxy(root, "site.trusted_proxy"); line != "" {
 		t.Fatalf("with its proxy named, the site said %q", line)
+	}
+}
+
+// Both listeners decide their clients at the edge the configuration
+// describes, say there which machine forwarded an address that was not
+// believed, and say at start where they believe one from. A source check
+// rather than a request, because the wiring is what could go missing: a
+// listener built on clientip.Middleware alone resolves clients correctly
+// and says nothing, and every other test would still pass.
+func TestBothListenersAreBuiltOnTheEdgeAndSaySo(t *testing.T) {
+	for file, surface := range map[string]string{"serve.go": "admin", "site.go": "site"} {
+		body, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		src := string(body)
+		local := `"` + surface + `.trusted_proxy"`
+		if !strings.Contains(src, "edge(root, "+local+", sh.guard.Wrap(") {
+			t.Errorf("%s: the %s is not built on edge(root, %s, ...) in front of the shield's guard", file, surface, local)
+		}
+		if !strings.Contains(src, "assumedProxy(root, "+local+")") {
+			t.Errorf("%s: the %s does not say at start where it believes a forwarded address from", file, surface)
+		}
+		if strings.Contains(src, "clientip.Middleware(") {
+			t.Errorf("%s: a listener built on clientip.Middleware directly never says which machine was not believed", file)
+		}
 	}
 }

@@ -108,34 +108,49 @@ func TestWrapRefusesBlockedSourcesFirst(t *testing.T) {
 }
 
 func TestANamedProxysOwnRequestIsSlowedLikeAnybodys(t *testing.T) {
-	g := guard(t)
-	p := ok(Slow, "source:"+audit.Pseudonym(testKey, "192.0.2.10"))
-	p.Until, p.Where = time.Now().Add(time.Hour), Site
-	if _, _, err := Apply(g.Root, p, time.Now()); err != nil {
-		t.Fatal(err)
-	}
-	g.Refresh()
-	named := &clientip.Resolver{Proxies: []netip.Prefix{netip.MustParsePrefix("192.0.2.0/24")}}
-	h := clientip.Middleware(func() *clientip.Resolver { return named },
-		g.Wrap(Site, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})))
-	// A prefetch from a slowed source is refused at once, so one request
-	// says whether the slowing held.
-	prefetch := func(xff string) int {
-		r := httptest.NewRequest("GET", "/", nil)
-		r.RemoteAddr = "192.0.2.10:443"
-		r.Header.Set("Sec-Purpose", "prefetch")
-		if xff != "" {
-			r.Header.Set("X-Forwarded-For", xff)
+	// On the internet or on a private network alike: only this machine is
+	// never slowed, even when it is named.
+	for _, tc := range []struct {
+		proxy, named string
+		slowed       bool
+	}{
+		{"192.0.2.10", "192.0.2.0/24", true},
+		{"10.0.0.5", "10.0.0.5/32", true},
+		{"127.0.0.1", "127.0.0.1/32", false},
+	} {
+		g := guard(t)
+		p := ok(Slow, "source:"+audit.Pseudonym(testKey, tc.proxy))
+		p.Until, p.Where = time.Now().Add(time.Hour), Site
+		if _, _, err := Apply(g.Root, p, time.Now()); err != nil {
+			t.Fatal(err)
 		}
-		w := httptest.NewRecorder()
-		h.ServeHTTP(w, r)
-		return w.Code
-	}
-	if code := prefetch(""); code != http.StatusServiceUnavailable {
-		t.Fatalf("a named proxy's own request was not slowed: %d", code)
-	}
-	if code := prefetch("203.0.113.10"); code != http.StatusOK {
-		t.Fatalf("a client was slowed for the proxy it came through: %d", code)
+		g.Refresh()
+		named := &clientip.Resolver{Proxies: []netip.Prefix{netip.MustParsePrefix(tc.named)}}
+		h := clientip.Middleware(func() *clientip.Resolver { return named },
+			g.Wrap(Site, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})))
+		// A prefetch from a slowed source is refused at once, so one
+		// request says whether the slowing held.
+		prefetch := func(xff string) int {
+			r := httptest.NewRequest("GET", "/", nil)
+			r.RemoteAddr = tc.proxy + ":443"
+			r.Header.Set("Sec-Purpose", "prefetch")
+			if xff != "" {
+				r.Header.Set("X-Forwarded-For", xff)
+			}
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			return w.Code
+		}
+		want := http.StatusOK
+		if tc.slowed {
+			want = http.StatusServiceUnavailable
+		}
+		if code := prefetch(""); code != want {
+			t.Fatalf("%s's own request: %d, want %d", tc.proxy, code, want)
+		}
+		if code := prefetch("203.0.113.10"); code != http.StatusOK {
+			t.Fatalf("a client was slowed for the proxy it came through, %s: %d", tc.proxy, code)
+		}
 	}
 }
 
