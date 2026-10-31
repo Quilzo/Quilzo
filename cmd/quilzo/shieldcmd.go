@@ -130,7 +130,7 @@ func shieldStatus(root string) error {
 		w.Human("\n%snot run%s %s\n", red, reset, pr)
 	}
 	if len(st.Trusted) > 0 {
-		w.Human("\n%snever blocked%s %s, and anything on the inside\n", bold, reset, strings.Join(st.Trusted, ", "))
+		w.Human("\n%snever blocked%s %s, and this machine\n", bold, reset, strings.Join(st.Trusted, ", "))
 	}
 	w.Human("\n%s%s planted; %s an administrator signed in from strongly in the last 30 days%s\n",
 		dim, countWord(len(st.Decoys), "decoy", "decoys"), countWord(len(st.Vouched), "source", "sources"), reset)
@@ -358,7 +358,7 @@ func shieldTrust(root string, args []string) error {
 			return nil
 		}
 		if len(st.Trusted) == 0 {
-			w.Human("%sno networks declared; anything on the inside is never blocked anyway%s\n", dim, reset)
+			w.Human("%sno networks declared; only this machine is never blocked%s\n", dim, reset)
 		}
 		for _, t := range st.Trusted {
 			w.Human("  %s\n", t)

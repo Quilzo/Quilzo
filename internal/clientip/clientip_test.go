@@ -124,13 +124,19 @@ func TestARequestANamedProxyMakesItselfIsItsOwn(t *testing.T) {
 	if c := from(r, "10.0.0.2:80", long); c.Known() {
 		t.Fatalf("past the hop limit: %+v", c)
 	}
-	// A named proxy that says who it forwards in another header is
-	// everybody it forwards: known, and not to be blocked on that alone.
-	req := httptest.NewRequest("GET", "/", nil)
-	req.RemoteAddr = "192.0.2.10:443"
-	req.Header.Set("Forwarded", "for=203.0.113.9")
-	if c := r.From(req); c.Addr.String() != "192.0.2.10" || !c.Unverified {
-		t.Fatalf("another header: %+v", c)
+	// Whoever makes the proxy's own request chooses its headers, so no
+	// other header makes it one the shield may not act on: it is still
+	// the proxy's, known and verified.
+	for _, h := range forwardingHeaders {
+		if h == "X-Forwarded-For" {
+			continue
+		}
+		req := httptest.NewRequest("GET", "/", nil)
+		req.RemoteAddr = "192.0.2.10:443"
+		req.Header.Set(h, "203.0.113.9")
+		if c := r.From(req); c.Addr.String() != "192.0.2.10" || c.Via != Connection || c.Unverified {
+			t.Errorf("%s: %+v", h, c)
+		}
 	}
 }
 
@@ -295,6 +301,25 @@ func TestAForwardedAddressTheShieldCannotTrustIsMarked(t *testing.T) {
 	named := resolver(t, "10.0.0.2")
 	if c := from(named, "10.0.0.2:80", "203.0.113.9"); c.Unverified {
 		t.Fatalf("named: %+v", c)
+	}
+}
+
+func TestThisMachineIsLoopbackAndNothingNearIt(t *testing.T) {
+	for _, s := range []string{"127.0.0.1", "127.1.2.3", "::1", "::ffff:127.0.0.1"} {
+		if !ThisMachine(netip.MustParseAddr(s)) {
+			t.Errorf("%s is this machine", s)
+		}
+	}
+	for _, s := range []string{"10.0.0.5", "172.17.0.1", "192.168.1.1", "100.64.0.1",
+		"169.254.1.1", "fd00::1", "fe80::1", "0.0.0.1", "203.0.113.9"} {
+		if ThisMachine(netip.MustParseAddr(s)) {
+			t.Errorf("%s is not this machine", s)
+		}
+	}
+	// What a caller does with the list is not the package's.
+	Loopback()[0] = netip.MustParsePrefix("10.0.0.0/8")
+	if ThisMachine(netip.MustParseAddr("10.0.0.5")) {
+		t.Fatal("a caller's change to the list reached the package")
 	}
 }
 

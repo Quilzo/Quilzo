@@ -421,9 +421,11 @@ var settings = []Setting{
 			"network.trusted_proxies: an address there says where a machine " +
 			"is, not that it is the proxy, and anything else there can write " +
 			"the header too. When a machine there forwards an address that " +
-			"is not believed, the site says so once, with the command that " +
-			"names it. Naming 127.0.0.1 in network.trusted_proxies has " +
-			"the shield act on what a proxy on this machine forwards too.\n\n" +
+			"is not believed, the site says so once on standard error, with " +
+			"the command that names it. Naming any proxy ends this for the " +
+			"site and the admin both: a proxy on this machine is then " +
+			"believed only if it is named too, and naming 127.0.0.1 lets " +
+			"any program on this machine choose its address on both.\n\n" +
 			"Off by default, because X-Forwarded-For is a header anybody can " +
 			"write: believed from anybody, it lets every caller choose their " +
 			"own address, which is every limit and every block switched off.",
@@ -440,8 +442,11 @@ var settings = []Setting{
 			"A proxy on a private network, a container bridge or " +
 			"carrier-grade NAT is believed only when it is named in " +
 			"network.trusted_proxies; when one forwards an address that is " +
-			"not believed, the admin says so once, with the command that " +
-			"names it. Off by default: X-Forwarded-For is a " +
+			"not believed, the admin says so once on standard error, with " +
+			"the command that names it. Naming any proxy ends this for the " +
+			"admin and the site both, so a proxy on this machine is then " +
+			"believed only if it is named too.\n\n" +
+			"Off by default: X-Forwarded-For is a " +
 			"header anybody can write, and believed from anybody it lets a " +
 			"sign-in say where it is.",
 	},
@@ -454,12 +459,21 @@ var settings = []Setting{
 			"the right, past the proxies, and the first address that is not a " +
 			"proxy is the client. Anything unreadable before that point is " +
 			"an unknown client, never a guess.\n\n" +
-			"Name what is actually in front: 10.0.0.5, or 10.0.0.0/8 for a " +
-			"cluster, or a CDN's published ranges. A request a proxy makes " +
-			"itself, with no X-Forwarded-For, is the proxy's own, and is " +
-			"counted, limited and blocked like anybody's. Empty means no " +
-			"proxy, unless site.trusted_proxy or admin.trusted_proxy says " +
-			"one is on this machine, and then only loopback is believed.",
+			"Name what is actually in front, by its own address: 10.0.0.5 " +
+			"for one proxy, the addresses of a cluster's ingress or load " +
+			"balancers, or a CDN's published ranges. A range believes every " +
+			"machine in it, and the shield acts on whatever address they " +
+			"forward, so name the smallest range that holds only proxies.\n\n" +
+			"Only X-Forwarded-For is read. A request a proxy sends without " +
+			"it is the proxy's own, and is counted, limited and blocked like " +
+			"anybody's, on a private address as anywhere else; only this " +
+			"machine is never blocked. quilzo shield lift on this machine " +
+			"ends a block, and quilzo shield trust add keeps a network from " +
+			"being blocked at all.\n\n" +
+			"Empty means no proxy, unless site.trusted_proxy or " +
+			"admin.trusted_proxy says one is on this machine, and then only " +
+			"loopback is believed. The list is the site's and the admin's " +
+			"both, and naming anything in it ends that assumption for both.",
 		Weaker: func(v string) (bool, string) {
 			for _, p := range strings.Split(v, ",") {
 				pfx, err := clientip.ParseProxy(strings.TrimSpace(p))
