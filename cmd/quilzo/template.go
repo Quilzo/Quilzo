@@ -299,7 +299,9 @@ func templateUse(root string, args []string) error {
 // help chatbot is not told to declare it again.
 //
 // A hint and not a check: chatbots that cannot be read leave it unsaid, and
-// the publish gate says why when it is run.
+// the publish gate says why when it is run. Each step is a line somebody
+// copies into a shell, so what it says about itself is a shell comment
+// after the command, and anything that is not a command is one whole.
 func sampleChatbotSteps(root, page string, sample map[string]any) []string {
 	set, err := assistant.Load(assistantsPath(root))
 	if err != nil {
@@ -317,12 +319,12 @@ func sampleChatbotSteps(root, page string, sample map[string]any) []string {
 		if !exists && bot.Validate() == nil {
 			if !declared[b.Names] {
 				declared[b.Names] = true
-				steps = append(steps, fmt.Sprintf("quilzo assistant add %s --title %q --public   %sthe sample's question box opens it%s",
+				steps = append(steps, fmt.Sprintf("quilzo assistant add %s --title %q --public   %s# the sample's question box opens it%s",
 					b.Names, title, dim, reset))
 			}
 			continue
 		}
-		steps = append(steps, fmt.Sprintf("%s%s: %s%s", dim, page, b, reset))
+		steps = append(steps, fmt.Sprintf("%s# %s: %s%s", dim, page, b, reset))
 	}
 	return steps
 }

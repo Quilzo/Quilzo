@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/section"
 	"github.com/quilzo/quilzo/internal/site"
@@ -177,8 +178,29 @@ func sectionAdd(root string, args []string) error {
 			where = len(section.On(body))
 		}
 		next, err := section.Insert(body, pos[1], where)
+		if err == nil && pos[1] == assistant.SectionKind {
+			next, err = opensAChatbot(root, body, next, where)
+		}
 		return next, fmt.Sprintf("add a %s section to %s", pos[1], pos[0]), err
 	})
+}
+
+// opensAChatbot points the question box just inserted at the site's first
+// public chatbot, as the Sections screen does, rather than at the
+// catalogue's "help", which a site may not have. A site with no public
+// chatbot keeps "help", the name the steps for a first site declare, and
+// chatbots that cannot be read leave the box as it was inserted: this is a
+// better first value, and publishing is where a box is checked.
+func opensAChatbot(root string, before any, after map[string]any, at int) (map[string]any, error) {
+	set, err := assistant.Load(assistantsPath(root))
+	if err != nil || set.FirstPublic() == "" {
+		return after, nil
+	}
+	// Where Insert put it: at, or the end when at is past it.
+	if n := len(section.On(before)); at < 0 || at > n {
+		at = n
+	}
+	return section.Apply(after, at, map[string]string{assistant.BoxField: set.FirstPublic()})
 }
 
 func sectionRemove(root string, args []string) error {

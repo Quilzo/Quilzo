@@ -5,6 +5,7 @@ package admin
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/form"
+	"github.com/quilzo/quilzo/internal/site"
 )
 
 // Building a site's chatbots, and seeing exactly why they answer as they do.
@@ -44,6 +46,10 @@ type Assistants struct {
 	Documents func() ([]DocumentChoice, error)
 	// Model is the configured model, or nil with the reason there is none.
 	Model func(assistant.Assistant) (assistant.Model, string)
+	// Offers is Model for saying whether a chatbot's actions can be offered
+	// at all, which knows in advance what answering finds out a call at a
+	// time, such as a gateway with no route. Model when nil.
+	Offers func(assistant.Assistant) (assistant.Model, string)
 	// Forms are the site's forms: their names for the action picker, and
 	// their fields for checking a form action before it is saved.
 	Forms func() (*form.Set, error)
@@ -151,8 +157,12 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request) {
 	why := "extractive by declaration"
 	if a.UseModel {
 		why = "this build was started without a model"
-		if s.Assistants.Model != nil {
-			m, why = s.Assistants.Model(a)
+		offers := s.Assistants.Offers
+		if offers == nil {
+			offers = s.Assistants.Model
+		}
+		if offers != nil {
+			m, why = offers(a)
 		}
 	}
 	data["NoOffers"] = assistant.WhyNoOffers(a, m, why)
@@ -293,11 +303,11 @@ func (s *Server) handleAssistantAction(w http.ResponseWriter, r *http.Request) {
 				Description: strings.TrimSpace(r.FormValue("description")),
 				Fields:      splitCSV(r.FormValue("fields")),
 			}
-			sensitive, ferr := s.checkActionForm(ac)
+			said, ferr := s.checkActionForm(ac)
 			if ferr != nil {
 				return ferr
 			}
-			note = assistant.SensitiveNote(ac, sensitive)
+			note = strings.Join(said, ". ")
 			kept = append(kept, ac)
 		}
 		a.Actions = kept
@@ -393,10 +403,41 @@ func (s *Server) changeAssistants(p principal, change, name string,
 	if err != nil {
 		return err
 	}
+	was := set.PublicNames()
 	if err := edit(set); err != nil {
 		return err
 	}
+	if err := s.withdrawsFromBoxes(was, set); err != nil {
+		return err
+	}
 	return s.Assistants.Save(set, p.Name, change, name)
+}
+
+// withdrawsFromBoxes refuses a change that takes a chatbot away from
+// visitors, by removing it or unticking Public, while a question box on a
+// live or a draft page still opens it: every question asked in that box
+// would be answered "not found" from the moment it is saved, and nothing
+// would say so. See assistant.Withdraws. Pages that are there and cannot
+// be read refuse it too, as the command line does.
+func (s *Server) withdrawsFromBoxes(was map[string]bool, after *assistant.Set) error {
+	gone := after.Withdrawing(was)
+	if len(gone) == 0 {
+		return nil
+	}
+	pages := map[string]map[string]any{}
+	for _, ref := range []string{site.RefLive, site.RefDraft} {
+		if s.Store.GetRef(ref) == "" {
+			continue
+		}
+		got, err := site.PagesAt(s.Store, ref)
+		if err != nil {
+			return fmt.Errorf("the pages could not be read, so whether a "+
+				"question box still opens %s cannot be checked, and it is left "+
+				"as it is: %w", strings.Join(gone, " or "), err)
+		}
+		pages[ref] = got
+	}
+	return after.Withdraws(was, pages[site.RefLive], pages[site.RefDraft])
 }
 
 func splitCSV(s string) []string {

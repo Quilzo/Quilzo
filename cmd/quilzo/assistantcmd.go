@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/admin"
@@ -98,7 +99,11 @@ func saveAssistant(root string, caller *Caller, action, name string,
 	if err != nil {
 		return err
 	}
+	was := set.PublicNames()
 	if err := change(set); err != nil {
+		return err
+	}
+	if err := withdrawsFromBoxes(root, was, set, nil); err != nil {
 		return err
 	}
 	if err := assistant.Save(path, set); err != nil {
@@ -110,6 +115,51 @@ func saveAssistant(root string, caller *Caller, action, name string,
 		Verified: caller.Verified, Detail: map[string]string{"assistant": name},
 	})
 	return nil
+}
+
+// withdrawsFromBoxes refuses a change to the chatbots that takes one away
+// from visitors while a question box on the site still opens it: was is
+// the public chatbots before the change, after the set it leaves, and draft
+// the draft's pages as the change leaves them, or nil for the draft as it
+// is. See assistant.Withdraws.
+//
+// Pages that are there and cannot be read refuse the change rather than
+// let it through: whether a box still opens the chatbot is then a question
+// nobody answered. A change that takes nothing away reads nothing.
+func withdrawsFromBoxes(root string, was map[string]bool, after *assistant.Set, draft map[string]any) error {
+	gone := after.Withdrawing(was)
+	if len(gone) == 0 {
+		return nil
+	}
+	s, err := open(root)
+	if err == nil {
+		var live, stored map[string]any
+		if live, stored, err = sitePages(s); err == nil {
+			if draft == nil {
+				draft = stored
+			}
+			return after.Withdraws(was, live, draft)
+		}
+	}
+	return fmt.Errorf("the pages could not be read, so whether a question box "+
+		"still opens %s cannot be checked, and it is left as it is: %w",
+		strings.Join(gone, " or "), err)
+}
+
+// sitePages is the live and the draft pages, either of them empty while the
+// site has none.
+func sitePages(s *store.Store) (live, draft map[string]any, err error) {
+	if s.GetRef(site.RefLive) != "" {
+		if live, err = site.PagesAt(s, site.RefLive); err != nil {
+			return nil, nil, err
+		}
+	}
+	if s.GetRef(site.RefDraft) != "" {
+		if draft, err = site.PagesAt(s, site.RefDraft); err != nil {
+			return nil, nil, err
+		}
+	}
+	return live, draft, nil
 }
 
 func assistantAdd(root string, args []string) error {
@@ -180,6 +230,14 @@ func assistantAdd(root string, args []string) error {
 		}
 		return s.Put(a)
 	})
+	// add declares a chatbot afresh, so declaring a public one again without
+	// --public makes it private. Said, because nobody running it to change a
+	// title means that.
+	var withdrawn *assistant.Withdrawn
+	if errors.As(err, &withdrawn) && !a.Public {
+		return fmt.Errorf("%w. quilzo assistant add declares a chatbot afresh: "+
+			"--public keeps %s public", err, a.Name)
+	}
 	if err != nil {
 		return err
 	}
@@ -245,13 +303,11 @@ func assistantAction(root string, args []string) error {
 					return fmt.Errorf("the site's forms could not be read, so "+
 						"%s cannot be checked: %w", ac.Name, ferr)
 				}
-				sensitive, cerr := ac.CheckForm(forms)
+				said, cerr := ac.CheckForm(forms)
 				if cerr != nil {
 					return cerr
 				}
-				if n := assistant.SensitiveNote(ac, sensitive); n != "" {
-					notes = append(notes, n)
-				}
+				notes = append(notes, said...)
 			}
 			kept = append(kept, ac)
 		}
@@ -263,7 +319,7 @@ func assistantAction(root string, args []string) error {
 		return err
 	}
 	if len(saved.Actions) > 0 {
-		m, why := assistantModelAt(root, saved)
+		m, why := offersModelAt(root, saved)
 		if n := assistant.WhyNoOffers(saved, m, why); n != "" {
 			notes = append(notes, n)
 		}
@@ -392,13 +448,6 @@ func assistantModelAt(root string, a assistant.Assistant) (assistant.Model, stri
 		if err != nil {
 			return nil, "the model gateway could not be read: " + err.Error()
 		}
-		// A gateway with no route answers every call with "no route", so
-		// it is said here rather than discovered a call at a time: the
-		// answer is the extractive one either way, and the owner's screen
-		// can say why its actions are not offered.
-		if gw != nil && gw.FirstRoute() == "" {
-			return nil, "the model gateway declares no route"
-		}
 		if gw != nil {
 			return gw.For("chatbot:" + a.Name), ""
 		}
@@ -408,6 +457,26 @@ func assistantModelAt(root string, a assistant.Assistant) (assistant.Model, stri
 		return nil, "no model configured: " + err.Error()
 	}
 	return m, ""
+}
+
+// offersModelAt is assistantModelAt for saying whether a chatbot's actions
+// can be offered at all, which is the one place a gateway with no route is
+// told apart from one with routes.
+//
+// Answering leaves that to the call, as it always has: the gateway answers
+// "no route", the chatbot quotes its pages instead, and the owner's test
+// console says why. Whether its actions will ever be offered cannot wait for
+// a question, so a gateway that declares no route is said here to have no
+// model, and nothing the public site or the inbox answers with changes.
+func offersModelAt(root string, a assistant.Assistant) (assistant.Model, string) {
+	m, why := assistantModelAt(root, a)
+	if m == nil || root == "" {
+		return m, why
+	}
+	if gw, _, err := modelGateway(root); err == nil && gw != nil && gw.FirstRoute() == "" {
+		return nil, "the model gateway declares no route"
+	}
+	return m, why
 }
 
 func loadAssistant(root, name string) (assistant.Assistant, error) {
@@ -588,6 +657,9 @@ func assistantsCapability(root string) *admin.Assistants {
 		},
 		Model: func(a assistant.Assistant) (assistant.Model, string) {
 			return assistantModelAt(root, a)
+		},
+		Offers: func(a assistant.Assistant) (assistant.Model, string) {
+			return offersModelAt(root, a)
 		},
 		Forms: func() (*form.Set, error) { return loadForms(root) },
 	}

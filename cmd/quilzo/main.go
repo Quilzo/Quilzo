@@ -349,7 +349,8 @@ working together
 publishing
   quilzo env list                          what is where, and what is waiting
   quilzo env add staging --before production
-  quilzo env promote staging production    a pointer move; production is checked first
+  quilzo env promote staging production    a pointer move; production asks what publish asks
+  quilzo env promote ... --templates DIR   where its pages render from (default templates)
   quilzo env diff staging production       what would change
   quilzo env remove NAME                   take one out of the pipeline
   quilzo publish [COMMIT]                  move live to the draft

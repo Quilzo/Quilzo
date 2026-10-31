@@ -15,7 +15,8 @@
 //
 // So this installs an application. Marginalia is a shop that sells paper:
 // twelve products, three stockists, a catalogue a machine can read, two
-// policies, a wholesale enquiry form and a sale that has not started yet.
+// policies with a question box that answers from them, a wholesale enquiry
+// form and a sale that has not started yet.
 //
 // # Why a shop, and why it replaced a photo-sharing site
 //
@@ -70,6 +71,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/brand"
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/form"
@@ -136,6 +138,10 @@ type Site struct {
 
 	// Research are the research projects it starts.
 	Research []ResearchProject
+
+	// Chatbots are the chatbots it declares, for the question boxes on its
+	// pages to open.
+	Chatbots []assistant.Assistant
 }
 
 // Template and CSS, read from the embedded copies.

@@ -254,6 +254,9 @@ func (s *Server) handleSectionEdit(w http.ResponseWriter, r *http.Request) {
 	case "add":
 		kind := strings.TrimSpace(r.FormValue("kind"))
 		next, err = section.Insert(body, kind, at)
+		if err == nil && kind == assistant.SectionKind {
+			next, err = s.opensAChatbot(body, next, at)
+		}
 		msg = fmt.Sprintf("add a %s section to %s", kind, name)
 	case "remove":
 		removed := "a"
@@ -396,7 +399,7 @@ func (s *Server) handleSectionFields(w http.ResponseWriter, r *http.Request) {
 	var own []fieldView
 	var blocks []block
 	index := map[string]int{}
-	names := s.namesFor(kind)
+	names := s.namesFor(p, kind)
 	for _, f := range viewsOf(fields, name, at, names) {
 		if f.Group == "" {
 			own = append(own, f)
@@ -567,6 +570,30 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+// opensAChatbot points the question box just inserted, at position at, at
+// the site's first public chatbot.
+//
+// The catalogue's stub opens "help", whatever the site has, so on a site
+// without one every new box started out opening nothing, to be refused at
+// publishing after the editing was done: the moment the datalist is there
+// to spare somebody. A site with no public chatbot keeps "help", the name
+// the steps for a first site declare. Chatbots that cannot be read leave the
+// stub as it is: this is a better first value, not a check.
+func (s *Server) opensAChatbot(before any, after map[string]any, at int) (map[string]any, error) {
+	if s.Assistants == nil || s.Assistants.Load == nil {
+		return after, nil
+	}
+	set, err := s.Assistants.Load()
+	if err != nil || set == nil || set.FirstPublic() == "" {
+		return after, nil
+	}
+	// Where Insert put it: at, or the end when at is past it.
+	if n := len(section.On(before)); at < 0 || at > n {
+		at = n
+	}
+	return section.Apply(after, at, map[string]string{assistant.BoxField: set.FirstPublic()})
+}
+
 // suggestions is what one field of a section may be set to: the names of
 // something the site declares, offered as a datalist.
 type suggestions struct {
@@ -594,7 +621,13 @@ type suggestion struct {
 // carries nothing it does not use. Nil too when what it reads is unwired or
 // unreadable: a suggestion list that cannot be built is not an error, it is
 // a field without suggestions, which is what this screen has always been.
-func (s *Server) namesFor(kind string) *suggestions {
+//
+// The chatbots that are not public are offered only to somebody who may
+// open the Chatbots screen, which is asked of the whole site. This screen is
+// asked of one page, and an editor kept to /blog would otherwise learn the
+// names of chatbots an owner is still building, which the public site
+// answers "not found" for on purpose.
+func (s *Server) namesFor(p principal, kind string) *suggestions {
 	switch kind {
 	case listing.SectionKind:
 		if s.Listings == nil || s.Listings.Load == nil {
@@ -614,22 +647,28 @@ func (s *Server) namesFor(kind string) *suggestions {
 			return nil
 		}
 		set, err := s.Assistants.Load()
-		if err != nil || set == nil || len(set.Assistants) == 0 {
+		if err != nil || set == nil {
 			return nil
 		}
 		// Public first: those are the ones a box can open, and the first
 		// name a browser offers is the one somebody takes.
 		out := &suggestions{Field: assistant.BoxField, List: "chatbot-names"}
 		var private []suggestion
+		mayList := s.allows(p, auth.ActEditDraft, "/")
 		for _, a := range set.Assistants {
 			if a.Public {
 				out.Options = append(out.Options, suggestion{Value: a.Name, Note: a.Title})
 				continue
 			}
-			private = append(private, suggestion{Value: a.Name,
-				Note: "not public yet: publishing refuses a box that opens it"})
+			if mayList {
+				private = append(private, suggestion{Value: a.Name,
+					Note: "not public yet: publishing refuses a box that opens it"})
+			}
 		}
 		out.Options = append(out.Options, private...)
+		if len(out.Options) == 0 {
+			return nil
+		}
 		return out
 	}
 	return nil

@@ -50,14 +50,17 @@ type Box struct {
 	Why string
 }
 
-// String names the section the way a person counts them, from one.
-func (b Box) String() string {
+// Place names the section the way a person counts them, from one.
+func (b Box) Place() string {
 	where := fmt.Sprintf("section %d", b.At+1)
 	if b.Title != "" {
 		where += fmt.Sprintf(" (%s)", b.Title)
 	}
-	return where + ": " + b.Why
+	return where
 }
+
+// String is where the box is and what is wrong with it.
+func (b Box) String() string { return b.Place() + ": " + b.Why }
 
 // Boxes is every question box on these pages that opens a chatbot visitors
 // cannot reach, page by page in name order.
@@ -118,3 +121,112 @@ func Boxes(pages map[string]any, find func(name string) (Assistant, bool)) []Box
 
 // Boxes is Boxes against this set.
 func (s *Set) Boxes(pages map[string]any) []Box { return Boxes(pages, s.Get) }
+
+// FirstPublic is the name of the first chatbot in this set visitors can
+// reach, or nothing when there is none: what a new question box opens
+// rather than a name the site may not have.
+func (s *Set) FirstPublic() string {
+	for _, a := range s.Assistants {
+		if a.Public {
+			return a.Name
+		}
+	}
+	return ""
+}
+
+// Taking a chatbot away from the boxes that open it.
+//
+// Publishing asks a page whether its boxes open something, which is the half
+// of the question a page can answer. The other half is the chatbot's.
+// Removing one, or making it private, breaks every box that opens it at
+// once, on the live site as much as in the draft, and nothing is published
+// for the publish gate to refuse. So the change is refused instead, while a
+// box still opens the chatbot, as a menu is refused while it points at a
+// page that does not exist, and the refusal names the page and the section.
+
+// PublicNames is the chatbots in this set that visitors can reach.
+func (s *Set) PublicNames() map[string]bool {
+	out := map[string]bool{}
+	for _, a := range s.Assistants {
+		if a.Public {
+			out[a.Name] = true
+		}
+	}
+	return out
+}
+
+// Withdrawing is the chatbots public in was, as PublicNames had them before
+// a change, that this set leaves out or makes private, by name.
+func (s *Set) Withdrawing(was map[string]bool) []string {
+	var out []string
+	for name := range was {
+		if a, ok := s.Get(name); !ok || !a.Public {
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// Withdrawn is the error for a change that would leave question boxes
+// opening a chatbot it takes away from visitors.
+type Withdrawn struct {
+	// Names are the chatbots taken away that a box still opens.
+	Names []string
+	// Where is each box, as "the live page index, section 2 (Ask us), opens
+	// help", live pages first.
+	Where []string
+}
+
+func (e *Withdrawn) Error() string {
+	it := "it"
+	if len(e.Names) > 1 {
+		it = "them"
+	}
+	return fmt.Sprintf("a question box still opens %s, so removing %s or "+
+		"making %s private would answer every question asked there \"not "+
+		"found\": %s. Point each box at another public chatbot or take it "+
+		"out first, and publish that where the box is on a live page",
+		strings.Join(e.Names, " and "), it, it, strings.Join(e.Where, "; "))
+}
+
+// Withdraws refuses a change to the chatbots that would leave a question
+// box on these pages opening one that visitors could reach before it: was
+// is PublicNames before the change, this set is after it, and live and
+// draft are the site's pages, either of them empty when it has none yet.
+//
+// Only what the change takes away. A box that opened nothing before it is
+// publishing's to refuse, and refusing an unrelated change over it would
+// make every chatbot unchangeable until somebody else's draft was mended.
+func (s *Set) Withdraws(was map[string]bool, live, draft map[string]any) error {
+	gone := map[string]bool{}
+	for _, name := range s.Withdrawing(was) {
+		gone[name] = true
+	}
+	if len(gone) == 0 {
+		return nil
+	}
+	e := &Withdrawn{}
+	named := map[string]bool{}
+	for _, side := range []struct {
+		which string
+		pages map[string]any
+	}{{"live", live}, {"draft", draft}} {
+		for _, b := range Boxes(side.pages, s.Get) {
+			if !gone[b.Names] {
+				continue
+			}
+			e.Where = append(e.Where, fmt.Sprintf("the %s page %s, %s, opens %s",
+				side.which, b.Page, b.Place(), b.Names))
+			if !named[b.Names] {
+				named[b.Names] = true
+				e.Names = append(e.Names, b.Names)
+			}
+		}
+	}
+	if len(e.Where) == 0 {
+		return nil
+	}
+	sort.Strings(e.Names)
+	return e
+}

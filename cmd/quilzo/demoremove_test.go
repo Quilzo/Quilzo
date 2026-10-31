@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/config"
@@ -177,6 +178,9 @@ func TestTheDemonstrationComesBackOutWhole(t *testing.T) {
 	}
 	if !gone(t, brandPath(root)) {
 		t.Error("the claim rules are left")
+	}
+	if bots, err := assistant.Load(assistantsPath(root)); err != nil || len(bots.Assistants) != 0 {
+		t.Errorf("chatbots left: %v %v", bots, err)
 	}
 	lib, err := openMedia(root)
 	if err != nil {

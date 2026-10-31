@@ -10,10 +10,14 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/quilzo/quilzo/internal/a11y"
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 func envsPath(root string) string { return filepath.Join(root, "environments.json") }
@@ -244,16 +248,29 @@ func envRemove(root string, args []string) error {
 
 func envPromote(root string, args []string) error {
 	skip := false
+	// Where the pages are rendered from for the accessibility check, as
+	// quilzo publish takes it and with the same default.
+	tplDir := "templates"
 	var rest []string
-	for _, a := range args {
-		if a == "--skip" {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--skip" || a == "-skip":
 			skip = true
-			continue
+		case a == "--templates" || a == "-templates":
+			if i+1 == len(args) {
+				return fmt.Errorf("--templates needs the folder the site's templates are in")
+			}
+			i++
+			tplDir = args[i]
+		case strings.HasPrefix(a, "--templates=") || strings.HasPrefix(a, "-templates="):
+			_, tplDir, _ = strings.Cut(a, "=")
+		default:
+			rest = append(rest, a)
 		}
-		rest = append(rest, a)
 	}
 	if len(rest) != 2 {
-		return fmt.Errorf("usage: quilzo env promote <from> <to> [--skip]")
+		return fmt.Errorf("usage: quilzo env promote <from> <to> [--skip] [--templates DIR]")
 	}
 
 	e, err := loadEnvs(root)
@@ -264,16 +281,33 @@ func envPromote(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	caller := resolveCaller(root, "")
+	caller := resolveCaller(root, flagToken)
 	if err := refuseWhileFrozen(root); err != nil {
 		return err
 	}
 
 	// Promoting to production is publishing, so the commit that moves is
-	// asked every check about the content that `quilzo publish` asks. It
-	// was asked none, which made `env promote draft production` the way to
-	// put up a draft the publish command refuses.
+	// asked what `quilzo publish` asks: whether the caller may publish each
+	// page it changes, every check about the content, whether each page says
+	// who or what wrote it, whether it renders accessibly, and the approvals
+	// its bytes need. It was asked none of them, which made `env promote
+	// draft production` the way to put up a draft the publish command
+	// refuses, a model's included.
+	//
+	// None of them is waived here. A publish takes a written reason for an
+	// unmarked page or an inaccessible one, and --no-a11y-check for a store
+	// that is not what renders its pages; a pipeline step promoting what an
+	// earlier step checked has nowhere to give either, so a commit that
+	// needs one is published with `quilzo publish`, which records it.
+	unchecked, refusal := "", ""
 	p, err := site.PromoteChecked(s, e, rest[0], rest[1], skip, func(commit string) error {
+		if err := mayPublishChanges(root, s, caller, commit); err != nil {
+			// The record says why as a publish's does, without the
+			// sentence, which names the caller: the record carries
+			// people under keys of their own.
+			refusal = "authorisation"
+			return err
+		}
 		refused, advice, gerr := contentGates(root, s, commit).Run()
 		for _, f := range advice {
 			w.Human("  %s%s%s\n", dim, f.String(), reset)
@@ -287,12 +321,37 @@ func envPromote(root string, args []string) error {
 			}
 			return errBlocked{fmt.Errorf("%s", refused.Check.Refusal(len(refused.Findings)))}
 		}
+		unmarked, uerr := unmarkedAt(root, s, commit)
+		if uerr != nil {
+			return errBlocked{fmt.Errorf("the provenance check could not run, so "+
+				"promoting would claim a check that did not happen: %v", uerr)}
+		}
+		if len(unmarked) > 0 {
+			return errBlocked{fmt.Errorf("%d page(s) have no provenance and cannot "+
+				"go to production: %s\n"+
+				"  say who or what wrote each: quilzo provenance set PAGE --source humanEdits --author WHO\n"+
+				"  a promotion takes no override; quilzo publish --force-unmarked --reason \"...\" records one",
+				len(unmarked), strings.Join(unmarked, ", "))}
+		}
+		why, err := promotionAccessible(root, s, commit, tplDir)
+		if err != nil {
+			return err
+		}
+		unchecked = why
+		if err := promotionApproved(root, s, commit); err != nil {
+			// Likewise: an approval's reason can name the author.
+			refusal = "dual-authorization"
+			return err
+		}
 		return nil
 	})
 	if err != nil {
+		if refusal == "" {
+			refusal = err.Error()
+		}
 		record(root, caller.auditRecord("env.promote", "/", audit.Denied,
 			map[string]string{"from": rest[0], "to": rest[1],
-				"reason": err.Error()}))
+				"reason": refusal}))
 		return err
 	}
 	detail := map[string]string{
@@ -301,6 +360,11 @@ func envPromote(root string, args []string) error {
 	}
 	if skip {
 		detail["skipped"] = "an environment was bypassed deliberately"
+	}
+	// Recorded as a publish records it: a configured skip is still a skip.
+	if unchecked != "" {
+		detail["a11y"] = "not checked"
+		detail["why"] = unchecked
 	}
 	record(root, caller.auditRecord("env.promote", "/", audit.Success, detail))
 
@@ -361,3 +425,57 @@ func envDiff(root string, args []string) error {
 }
 
 var _ = strings.TrimSpace
+
+// promotionAccessible is the accessibility check a publish makes, made of
+// the commit going into production: rendered through the templates in
+// tplDir, as the site serves it, and refused on a blocking failure or a
+// check that could not run. publish.require_a11y turned off is the one way
+// past it, as it is for a publish, and what comes back then is why it was
+// not checked, for the audit record.
+func promotionAccessible(root string, s *store.Store, commit, tplDir string) (string, error) {
+	if cfg, err := loadConfig(root); err == nil && cfg != nil && !cfg.Bool("publish.require_a11y") {
+		w.Human("  %saccessibility not checked: publish.require_a11y is off%s\n", yellow, reset)
+		return "publish.require_a11y is off", nil
+	}
+	reports, err := checkAccessibility(root, s, commit, tplDir)
+	if err != nil {
+		return "", errBlocked{fmt.Errorf("the accessibility check could not run, so "+
+			"promoting would claim a check that did not happen: %v\n"+
+			"  point --templates at the site's templates; a store that is not what "+
+			"renders its pages is published with quilzo publish --no-a11y-check", err)}
+	}
+	if n := a11y.BlockingCount(reports); n > 0 {
+		if w.Mode != out.JSON {
+			printA11y(reports)
+		}
+		return "", errBlocked{fmt.Errorf("%d blocking accessibility failure(s); this "+
+			"content is unusable for someone.\n"+
+			"  fix them; a promotion takes no override, and quilzo publish "+
+			"--force-inaccessible --reason \"...\" records one", n)}
+	}
+	return "", nil
+}
+
+// promotionApproved is dual authorisation for a commit going into
+// production: the approvals given to those bytes, under the policy a
+// publish is held to. A policy or a proposal that cannot be read refuses
+// the promotion, since approvals nobody could count are not approvals.
+func promotionApproved(root string, s *store.Store, commit string) error {
+	pol, err := loadApprovalPolicy(root)
+	if err != nil {
+		return errBlocked{fmt.Errorf("the approval policy could not be read, so "+
+			"promoting would claim approvals nobody counted: %w", err)}
+	}
+	if pol.Required <= 0 && !pol.RequireHumanForAI {
+		return nil
+	}
+	prop, _, err := proposalFor(root, s, commit)
+	if err != nil {
+		return errBlocked{fmt.Errorf("the approvals for %s could not be read, so "+
+			"promoting would claim approvals nobody counted: %w", short(commit), err)}
+	}
+	if d := pol.Evaluate(*prop, kindOfPrincipal(root), time.Now()); !d.Allowed {
+		return errBlocked{fmt.Errorf("%s\n  quilzo review status", d.Reason)}
+	}
+	return nil
+}

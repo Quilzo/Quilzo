@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/demo"
@@ -272,6 +273,22 @@ func cmdDemo(root string, args []string) (err error) {
 	if werr := saveJSON(formsPath(root), forms); werr != nil {
 		return werr
 	}
+	// The chatbots its question boxes open, public before anything is
+	// published, since publishing refuses a box that opens nothing.
+	if len(d.Chatbots) > 0 {
+		bots, berr := assistant.Load(assistantsPath(root))
+		if berr != nil {
+			return berr
+		}
+		for _, a := range d.Chatbots {
+			if perr := bots.Put(a); perr != nil {
+				return fmt.Errorf("chatbot %s: %w", a.Name, perr)
+			}
+		}
+		if werr := assistant.Save(assistantsPath(root), bots); werr != nil {
+			return werr
+		}
+	}
 
 	// The claim rules, if the demonstration has any.
 	//
@@ -393,9 +410,9 @@ func cmdDemo(root string, args []string) (err error) {
 	}
 
 	w.Human("%s%s is installed.%s %s\n\n", bold, d.Name, reset, d.Summary)
-	w.Human("  %d page(s), %d record(s), %d image(s), %d listing(s), %d form(s)\n",
+	w.Human("  %d page(s), %d record(s), %d image(s), %d listing(s), %d form(s), %d chatbot(s)\n",
 		len(d.Pages), recordCount(d), len(d.Media), len(d.Listings),
-		len(d.Forms))
+		len(d.Forms), len(d.Chatbots))
 	w.Human("\n  %sto look at it%s\n", bold, reset)
 	w.Human("    quilzo site  --addr 127.0.0.1:8081   %sthe site%s\n", dim, reset)
 	w.Human("    quilzo serve --addr 127.0.0.1:8080   %sthe admin%s\n", dim, reset)
@@ -412,6 +429,10 @@ func cmdDemo(root string, args []string) (err error) {
 		"window has not opened%s\n", dim, reset)
 	w.Human("    /wholesale               %sthe one thing the public server "+
 		"may write%s\n", dim, reset)
+	for _, a := range d.Chatbots {
+		w.Human("    /ask/%-19s %s%s: a question box on the returns page "+
+			"opens it%s\n", a.Name+"/", dim, a.Title, reset)
+	}
 	if len(d.Examples) > 0 {
 		w.Human("\n  %sand on files%s\n", bold, reset)
 		w.Human("    %s/evolve/  %sa program search, judged where the programs cannot reach (README.txt)%s\n",

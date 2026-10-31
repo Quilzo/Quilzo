@@ -128,6 +128,14 @@ button {
 .privacy { max-width: 52ch; font-size: .88rem; color: var(--muted);
   border-left: 3px solid var(--line); padding-left: 1rem; }
 
+.ask { max-width: 34rem; margin: 0 0 3rem; padding: 1.2rem; background: var(--raised);
+  border: 1px solid var(--line); border-radius: var(--radius); }
+.ask h2 { margin: 0 0 .8rem; font-size: 1.1rem; }
+.suggest { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-top: 1rem; }
+.suggest .meta { margin: 0; color: var(--muted); }
+.suggest button { background: transparent; color: var(--ink); border: 1px solid var(--line);
+  font-weight: 500; padding: .45rem .9rem; }
+
 .prose { max-width: 68ch; margin: 0 0 3rem; }
 .prose h2 { margin: 2rem 0 .6rem; font-size: 1.25rem; }
 .prose p { margin: 0 0 1rem; }

@@ -912,6 +912,7 @@ func applyFeature(root string, p *feature.Package, digest string, plan feature.P
 	if err != nil {
 		return nil, err
 	}
+	was := bots.PublicNames()
 	for _, a := range p.Chatbots {
 		if changes("chatbot", a.Name) {
 			if err := bots.Put(a); err != nil {
@@ -921,6 +922,14 @@ func applyFeature(root string, p *feature.Package, digest string, plan feature.P
 	}
 	for _, name := range removing("chatbot") {
 		bots.Remove(name)
+	}
+	// Removing a feature, or a version of it that drops a chatbot or makes
+	// it private, takes that chatbot away from every question box on the
+	// site that opens it, on the live site as soon as it is written. Refused
+	// before anything is, against the draft as this leaves it: the plan only
+	// sees the package's own pages, and these are everybody's.
+	if err := withdrawsFromBoxes(root, was, bots, pages); err != nil {
+		return nil, err
 	}
 
 	// Webhooks: a new endpoint gets its own secret, shown once. The changes

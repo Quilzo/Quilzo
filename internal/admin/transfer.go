@@ -356,7 +356,50 @@ func (s *Server) handleStarter(w http.ResponseWriter, r *http.Request) {
 	}
 	s.auditPub(p, "template.apply", "/"+page, map[string]string{"starter": t.Name})
 	s.transferRedirect(w, r, "applied "+t.Name+" to "+page+". Its fields are "+
-		strings.Join(t.Fields, ", ")+".", "")
+		strings.Join(t.Fields, ", ")+"."+s.sampleBoxes(page, t.Sample), "")
+}
+
+// sampleBoxes is what applying a starter leaves to do before its page can
+// be published: a question box in the sample that opens a chatbot this site
+// does not have, or has and has not made public, said as a sentence after
+// the message, or nothing.
+//
+// The sections starter shows every kind of section, a question box among
+// them, and publishing refuses a box that opens a chatbot visitors cannot
+// reach. Without this the browser said "applied" and the first publish was
+// refused, where quilzo template use names the chatbot to declare. A hint
+// and not a check: chatbots that cannot be read leave it unsaid, and the
+// publish gate says why when it runs.
+func (s *Server) sampleBoxes(page string, sample map[string]any) string {
+	if s.Assistants == nil || s.Assistants.Load == nil {
+		return ""
+	}
+	set, err := s.Assistants.Load()
+	if err != nil || set == nil {
+		return ""
+	}
+	var out []string
+	said := map[string]bool{}
+	for _, b := range set.Boxes(map[string]any{page: sample}) {
+		if said[b.Names] {
+			continue
+		}
+		said[b.Names] = true
+		switch _, exists := set.Get(b.Names); {
+		case strings.TrimSpace(b.Names) == "":
+			out = append(out, " Its question box names no chatbot: choose one of the "+
+				"site's public chatbots on the Sections screen before publishing.")
+		case exists:
+			out = append(out, fmt.Sprintf(" Its question box opens %s, which is not "+
+				"public: make it public on the Chatbots screen, or point the box at "+
+				"one that is, before publishing.", b.Names))
+		default:
+			out = append(out, fmt.Sprintf(" Its question box opens %s, which this "+
+				"site does not have: declare it on the Chatbots screen and make it "+
+				"public, or point the box at one that is, before publishing.", b.Names))
+		}
+	}
+	return strings.Join(out, "")
 }
 
 func (s *Server) transferRedirect(w http.ResponseWriter, r *http.Request, msg, errMsg string) {

@@ -168,7 +168,7 @@ func offerNotes(root string, a assistant.Assistant) []string {
 		return nil
 	}
 	var notes []string
-	m, why := assistantModelAt(root, a)
+	m, why := offersModelAt(root, a)
 	if n := assistant.WhyNoOffers(a, m, why); n != "" {
 		notes = append(notes, n)
 	}
@@ -177,13 +177,12 @@ func offerNotes(root string, a assistant.Assistant) []string {
 		return append(notes, "the site's forms could not be read, so its form actions were not checked: "+err.Error())
 	}
 	for _, ac := range a.Actions {
-		sensitive, cerr := ac.CheckForm(forms)
-		switch {
-		case cerr != nil:
+		said, cerr := ac.CheckForm(forms)
+		if cerr != nil {
 			notes = append(notes, cerr.Error()+"; a person changes its actions on the Chatbots screen")
-		case len(sensitive) > 0:
-			notes = append(notes, assistant.SensitiveNote(ac, sensitive))
+			continue
 		}
+		notes = append(notes, said...)
 	}
 	return notes
 }

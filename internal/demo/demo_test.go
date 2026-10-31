@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/media"
 	"github.com/quilzo/quilzo/internal/schema"
@@ -128,6 +129,42 @@ func TestEveryListingAPageNamesExists(t *testing.T) {
 	if used == 0 {
 		t.Error("no page embeds a listing, so the demonstration does not " +
 			"demonstrate the feature it exists to show")
+	}
+}
+
+// The question box on the returns page opens a chatbot the demonstration
+// declares and makes public, which is what publishing asks of a box; the
+// chatbot reads the policies it is there to answer from, and the template
+// draws the box.
+func TestTheQuestionBoxOpensAChatbotItDeclares(t *testing.T) {
+	d := Marginalia()
+	set := &assistant.Set{}
+	for _, a := range d.Chatbots {
+		if err := set.Put(a); err != nil {
+			t.Fatalf("chatbot %s: %v", a.Name, err)
+		}
+	}
+	every := assistant.Boxes(d.Pages, func(string) (assistant.Assistant, bool) {
+		return assistant.Assistant{}, false
+	})
+	if len(every) == 0 {
+		t.Fatal("no page has a question box, so the demonstration does not show one")
+	}
+	for _, b := range set.Boxes(d.Pages) {
+		t.Errorf("%s: %s", b.Page, b)
+	}
+	for _, b := range every {
+		a, _ := set.Get(b.Names)
+		for _, page := range []string{"returns", "delivery"} {
+			if !a.Reads(page) {
+				t.Errorf("%s does not read %s", a.Name, page)
+			}
+		}
+		out, err := tmpl.Render(d.Template, map[string]any{"page": d.Pages[b.Page],
+			"site": map[string]any{"name": d.Name}, "menus": map[string]any{}})
+		if err != nil || !strings.Contains(out, `action="/ask/`+b.Names+`/"`) {
+			t.Errorf("%s does not draw its question box: %v", b.Page, err)
+		}
 	}
 }
 

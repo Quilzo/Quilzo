@@ -682,14 +682,19 @@ listings it embeds; the template receives data, never a callable.
 misspelled tag cannot invent a new one. Menus that refuse to save while pointing
 at a page that does not exist, and refuse to publish while pointing at one that
 is not going live. A question box that refuses to publish while it opens a
-chatbot that does not exist or is not public, naming the page and the section;
-the editor offers the site's chatbots, public ones first.
+chatbot that does not exist or is not public, naming the page and the section,
+and a chatbot that refuses to be removed or made private while a box on the live
+site or in the draft opens it; a new box opens the site's first public chatbot,
+and the editor offers the site's chatbots, public ones first.
 
 **Publishing.** Draft and live refs, diff, instant rollback, staged environments
-with promotion (into production, after the same checks about the content as a
-publish), scheduled publication, and content that carries its own publish
+with promotion, scheduled publication, and content that carries its own publish
 window — checked when the page is served, so an embargo cannot lift because a
-cron job was wedged.
+cron job was wedged. Promoting into production asks what a publish asks and
+waives nothing: whether you may publish each page it changes, the checks about
+the content, provenance, accessibility (rendered through `--templates`, as a
+publish renders it) and the approvals given to those exact bytes. A commit that
+needs an override is published instead, where the override is recorded.
 
 **Gates before publication.** Accessibility, checked by rendering the page and
 not by inspecting the content. Provenance, because the EU AI Act requires
@@ -1575,8 +1580,9 @@ host's own controls are the boundary.
 ## The demonstration
 
 `quilzo demo` installs **Marginalia**: a shop selling paper. Twelve products as
-typed records, three stockists, a catalogue a machine can read, two policies, a
-wholesale enquiry form, and a sale that has not started yet.
+typed records, three stockists, a catalogue a machine can read, two policies
+with a question box that answers from them, a wholesale enquiry form, and a sale
+that has not started yet.
 
 It exists because a starter template shows what a page looks like and cannot
 show what the tool is for — that only appears with several features working at
@@ -1603,6 +1609,7 @@ Things worth trying once it is running:
 /available                filtered on the data, not on somebody remembering
 /sale                     404s until 24 November; its window has not opened
 /wholesale                the one thing the public server may write
+/returns                  a question box opening the public chatbot counter
 ```
 
 And the gates, from a terminal:
@@ -1610,6 +1617,7 @@ And the gates, from a terminal:
 ```bash
 quilzo brand check    # every claim, and what substantiates it
 quilzo rights         # image licences: expired, lapsing, undeclared
+quilzo assistant remove counter   # refused: the returns page's box opens it
 ```
 
 ## No dependencies

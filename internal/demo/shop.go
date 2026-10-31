@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/brand"
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/form"
@@ -84,6 +85,7 @@ func Marginalia() *Site {
 	s.addMenu()
 	s.addForms()
 	s.addClaimRules()
+	s.addChatbot()
 	return s
 }
 
@@ -636,9 +638,35 @@ func (s *Site) addScreens() {
 	}
 }
 
+// addChatbot puts a question box on the returns page, opening a chatbot
+// that answers from the two policies.
+//
+// Extractive, with no model: it quotes the policies and says nothing they
+// do not, which is what a shop wants said about refunds, and it costs
+// nothing and sends nothing anywhere. Public, because publishing refuses a
+// box that opens a chatbot visitors cannot reach; pointing this one at a
+// name the site does not have is the quickest way to see that refusal.
+func (s *Site) addChatbot() {
+	s.Chatbots = []assistant.Assistant{{
+		Name: "counter", Title: "Ask about returns and delivery",
+		Greeting: "Ask about returns or delivery. The answer quotes our policies.",
+		Pages:    []string{"returns", "delivery"},
+		Refusal: "Our returns and delivery pages do not say. The wholesale " +
+			"form reaches the two people who run the shop.",
+		Public: true,
+	}}
+	returns := s.Pages["returns"].(map[string]any)
+	returns["sections"] = []any{map[string]any{"ask": map[string]any{
+		"title": "Ask about returns and delivery", "assistant": "counter",
+		"label": "Your question", "button": "Ask",
+		"suggestions": []any{"Can I send back an opened bottle of ink?",
+			"How long does ink take to reach Canada?"},
+	}}}
+}
+
 const aboutBody = `## What this is
 
-Marginalia is a demonstration shop. Twelve products, three stockists, a catalogue a machine can read, two policies, a wholesale enquiry form and a sale that has not started yet. Everything here was built through the Quilzo admin interface — no configuration files were edited, and no code was written for it beyond one HTML template and one stylesheet.
+Marginalia is a demonstration shop. Twelve products, three stockists, a catalogue a machine can read, two policies with a question box that answers from them, a wholesale enquiry form and a sale that has not started yet. Everything here was built through the Quilzo admin interface — no configuration files were edited, and no code was written for it beyond one HTML template and one stylesheet.
 
 ## How it is put together
 

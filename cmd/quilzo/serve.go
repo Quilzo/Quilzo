@@ -612,6 +612,10 @@ func cmdServe(root string, args []string) error {
 			prop, _, err := currentProposal(root, s)
 			return prop, err
 		},
+		For: func(commit string) (*collab.Proposal, error) {
+			prop, _, err := proposalFor(root, s, commit)
+			return prop, err
+		},
 		Save: func(prop *collab.Proposal) error {
 			return saveProposal(root, s, prop)
 		},

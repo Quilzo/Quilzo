@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/quilzo/quilzo/internal/admin"
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/collab"
 	"github.com/quilzo/quilzo/internal/feature"
 	"github.com/quilzo/quilzo/internal/form"
 	"github.com/quilzo/quilzo/internal/gate"
@@ -201,16 +203,106 @@ func TestEveryPublishPathRefusesABrokenQuestionBox(t *testing.T) {
 	})
 
 	t.Run("a promotion to production", func(t *testing.T) {
-		root, _, s := boxStore(t, "helpp")
-		err := cmdEnv(root, []string{"promote", "draft", "production"})
+		root, tpl, s := boxStore(t, "helpp")
+		err := cmdEnv(root, []string{"promote", "draft", "production", "--templates", tpl})
 		if err == nil || !strings.Contains(err.Error(), "question box") || live(s) != "" {
 			t.Fatalf("a promotion put up a broken box: %v, live %q", err, live(s))
 		}
 		fixBox(t, root, s)
-		if err := cmdEnv(root, []string{"promote", "draft", "production"}); err != nil || live(s) == "" {
+		if err := cmdEnv(root, []string{"promote", "draft", "production", "--templates", tpl}); err != nil || live(s) == "" {
 			t.Fatalf("a box opening a public chatbot was not promoted: %v", err)
 		}
 	})
+}
+
+// Promoting to production from the command line is asked the rest of what
+// quilzo publish asks, and waives none of it: whether the caller may publish
+// each page it changes, whether each page says who wrote it, whether it
+// renders accessibly through the templates, and the approvals given to those
+// bytes. Each refusal is its own, and once each is met the commit goes live.
+func TestPromotingToProductionAsksWhatQuilzoPublishAsks(t *testing.T) {
+	root, tpl, s := boxStore(t, "help")
+	live := func() string { return s.GetRef(site.RefLive) }
+	refused := func(why, want string, args ...string) {
+		t.Helper()
+		err := cmdEnv(root, append([]string{"promote", "draft", "production"}, args...))
+		if err == nil || !strings.Contains(err.Error(), want) || live() != "" {
+			t.Fatalf("%s: promoted, or refused for something else:\n  got  %v\n  want …%s…", why, err, want)
+		}
+	}
+	about := func(body map[string]any) {
+		t.Helper()
+		pages, err := site.PagesAt(s, site.RefDraft)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pages["about"] = body
+		if _, err := site.SaveDraft(s, pages, "about", "test"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mark := func() {
+		t.Helper()
+		if err := cmdProvenance(root, []string{"set", "about", "--source", "humanEdits", "--author", "dana"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	page := map[string]any{"title": "About", "standfirst": "Who makes the paper."}
+
+	about(page)
+	refused("a page nobody said wrote", "have no provenance and cannot go to production: about", "--templates", tpl)
+	mark()
+
+	// Each page it changes, asked about its own path.
+	pol := &auth.Policy{}
+	grantAll(t, root, pol,
+		auth.Binding{Principal: "pat", Role: auth.RolePublisher, Resource: "/"},
+		auth.Binding{Principal: "pat", Role: auth.RolePublisher, Resource: "/about", Deny: true})
+	toks := &auth.TokenStore{}
+	secret, _, err := toks.Issue("pat", "pat", auth.RolePublisher, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveJSON(tokensPath(root), toks); err != nil {
+		t.Fatal(err)
+	}
+	func() {
+		defer func(old string) { flagToken = old }(flagToken)
+		flagToken = secret
+		refused("a page the caller may not publish", "about, which pat may not publish", "--templates", tpl)
+	}()
+	for _, path := range []string{policyPath(root), tokensPath(root)} {
+		if err := os.Remove(path); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Rendered as a publish renders it: templates that are not there are a
+	// check that could not run, and a page asking for a layout the site
+	// does not have is a blocking failure.
+	refused("templates that are not there", "the accessibility check could not run",
+		"--templates", t.TempDir()+"/none")
+	about(map[string]any{"title": "About", "standfirst": "Who makes the paper.", "layout": "no-such-layout"})
+	mark()
+	refused("a page that does not render", "blocking accessibility failure", "--templates", tpl)
+	about(page)
+	mark()
+
+	// The approvals given to these bytes, and none to any other.
+	if err := saveJSON(approvalPolicyPath(root), collab.Policy{Required: 1}); err != nil {
+		t.Fatal(err)
+	}
+	refused("a commit nobody approved", "quilzo review status", "--templates", tpl)
+	draft := s.GetRef(site.RefDraft)
+	if err := saveJSON(proposalsPath(root), &proposalFile{Proposals: []collab.Proposal{{
+		Content: draft, Author: "test", AuthorKind: "human", CreatedAt: time.Now().Unix(),
+		Approvals: []collab.Approval{{Content: draft, By: "ria", At: time.Now().Unix()}},
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdEnv(root, []string{"promote", "draft", "production", "--templates", tpl}); err != nil || live() != draft {
+		t.Fatalf("an approved, marked, accessible commit was not promoted: %v, live %q", err, live())
+	}
 }
 
 // fixBox points the draft's question box at the public chatbot, and says
@@ -268,34 +360,29 @@ func TestAFeatureIsNotInstalledWithAQuestionBoxThatOpensNothing(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	root, _, _ := boxStore(t, "help")
 	seedPolicy(t, root, [2]string{"dana", "admin"})
-	withBox := func(opens string, bots ...assistant.Assistant) func(*feature.Package) {
-		return func(p *feature.Package) {
-			withoutAddress(p)
-			p.Pages[0].Body["sections"] = []any{map[string]any{"ask": map[string]any{
-				"title": "Ask about samples", "assistant": opens}}}
-			p.Chatbots = bots
-			p.Forms = []form.Form{{Name: "sample_intake", Notice: "To log the sample.",
-				Fields: []form.Field{{Name: "sample", Label: "Sample", Kind: form.Line}}}}
-		}
-	}
-	for name, edit := range map[string]func(*feature.Package){
-		"a chatbot nobody declares":        withBox("concierge"),
-		"its own chatbot, not public":      withBox("lab", assistant.Assistant{Name: "lab", Title: "Lab"}),
-		"the site's chatbot, not public":   withBox("draft-bot"),
-		"a form action with a stray field": withBox("help", labBot("notes")),
+	withBox := labPackage
+	// Each refusal carries its own reason, so a package refused for
+	// something else entirely does not pass for one refused over its box.
+	for name, c := range map[string]struct {
+		edit func(*feature.Package)
+		why  string
+	}{
+		"a chatbot nobody declares": {withBox("concierge"),
+			`page samples, section 1 (Ask about samples): the question box opens the chatbot "concierge", which does not exist`},
+		"its own chatbot, not public": {withBox("lab", assistant.Assistant{Name: "lab", Title: "Lab"}),
+			"page samples, section 1 (Ask about samples): the question box opens the chatbot lab, which is not public"},
+		"the site's chatbot, not public": {withBox("draft-bot"),
+			"page samples, section 1 (Ask about samples): the question box opens the chatbot draft-bot, which is not public"},
+		"a form action with a stray field": {withBox("help", labBot("notes")),
+			"notes, which the form sample_intake does not ask for"},
 	} {
-		err := installFeatureFile(root, writePackage(t, edit), "", "", asAdmin("dana"))
-		if err == nil {
-			t.Errorf("%s: installed", name)
-			continue
+		err := installFeatureFile(root, writePackage(t, c.edit), "", "", asAdmin("dana"))
+		if err == nil || !strings.Contains(err.Error(), c.why) {
+			t.Errorf("%s: not refused for the box or the action:\n  got  %v\n  want …%s…", name, err, c.why)
 		}
 		if owns(t, root, "lab-samples") != nil {
 			t.Fatalf("%s: refused, and installed anyway", name)
 		}
-	}
-	err := installFeatureFile(root, writePackage(t, withBox("concierge")), "", "", asAdmin("dana"))
-	if err == nil || !strings.Contains(err.Error(), `page samples, section 1 (Ask about samples): the question box opens the chatbot "concierge"`) {
-		t.Errorf("the refusal does not say where the box is: %v", err)
 	}
 
 	// Its own public chatbot, or the site's, is what a box may open.
@@ -306,6 +393,201 @@ func TestAFeatureIsNotInstalledWithAQuestionBoxThatOpensNothing(t *testing.T) {
 	lab.Public = true
 	if err := installFeatureFile(root, writePackage(t, withBox("lab", lab)), "", "", asAdmin("dana")); err != nil {
 		t.Fatalf("a box opening the package's own public chatbot was refused: %v", err)
+	}
+}
+
+// The command line does not take a chatbot away from the question boxes
+// that open it: removing it, or declaring it again without --public, is
+// refused while a box opens it, saying where the box is, and nothing is
+// saved. Declared again with --public it goes through, and a chatbot no box
+// opens is the owner's to remove.
+func TestTheCommandLineKeepsAChatbotABoxOpens(t *testing.T) {
+	root, _, _ := boxStore(t, "help")
+	const where = "the draft page index, section 1 (Ask a question), opens help"
+
+	err := cmdAssistant(root, []string{"remove", "help"})
+	if err == nil || !strings.Contains(err.Error(), where) {
+		t.Fatalf("removing a chatbot a box opens:\n  got  %v\n  want …%s…", err, where)
+	}
+	err = cmdAssistant(root, []string{"add", "help", "--title", "Ask us anything"})
+	if err == nil || !strings.Contains(err.Error(), where) ||
+		!strings.Contains(err.Error(), "--public keeps help public") {
+		t.Fatalf("declaring it again without --public: %v", err)
+	}
+	if a, err := loadAssistant(root, "help"); err != nil || !a.Public || a.Title != "Ask the shop" {
+		t.Fatalf("a refused change was saved: %+v %v", a, err)
+	}
+
+	if err := cmdAssistant(root, []string{"add", "help", "--title", "Ask us anything", "--public"}); err != nil {
+		t.Fatalf("declaring it again, public, was refused: %v", err)
+	}
+	if err := cmdAssistant(root, []string{"remove", "draft-bot"}); err != nil {
+		t.Fatalf("removing a chatbot no box opens was refused: %v", err)
+	}
+}
+
+// Removing a package takes its chatbots with it, and a question box the
+// site put on a page of its own opening one would answer "not found" from
+// then on: refused, naming that box, and the package stays. The package's
+// own pages go with it, so the box on one of them is not counted.
+func TestRemovingAFeatureKeepsAChatbotABoxOpens(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root, _, s := boxStore(t, "help")
+	seedPolicy(t, root, [2]string{"dana", "admin"})
+	lab := labBot("sample")
+	lab.Public = true
+	if err := installFeatureFile(root, writePackage(t, labPackage("lab", lab)), "", "", asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	pointAt := func(name string) {
+		t.Helper()
+		pages, err := site.PagesAt(s, site.RefDraft)
+		if err != nil {
+			t.Fatal(err)
+		}
+		box := pages["index"].(map[string]any)["sections"].([]any)[0].(map[string]any)["ask"].(map[string]any)
+		box["assistant"] = name
+		if _, err := site.SaveDraft(s, pages, "the box opens "+name, "test"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	pointAt("lab")
+	err := removeFeature(root, "lab-samples", asAdmin("dana"))
+	const where = "the draft page index, section 1 (Ask a question), opens lab"
+	if err == nil || !strings.Contains(err.Error(), where) {
+		t.Fatalf("removing the package a box's chatbot came with:\n  got  %v\n  want …%s…", err, where)
+	}
+	if strings.Contains(err.Error(), "page samples") {
+		t.Errorf("the package's own page, which goes with it, was counted: %v", err)
+	}
+	if owns(t, root, "lab-samples") == nil {
+		t.Fatal("refused, and removed anyway")
+	}
+	if a, err := loadAssistant(root, "lab"); err != nil || !a.Public {
+		t.Fatalf("refused, and the chatbot went anyway: %v", err)
+	}
+
+	pointAt("help")
+	if err := removeFeature(root, "lab-samples", asAdmin("dana")); err != nil {
+		t.Fatalf("removing a package no other box depends on was refused: %v", err)
+	}
+}
+
+// A question box added from the command line opens the site's first public
+// chatbot, as one added on the Sections screen does, and the catalogue's
+// "help" when the site has no public chatbot.
+func TestAQuestionBoxAddedFromTheCommandLineOpensAChatbotTheSiteHas(t *testing.T) {
+	root, _, s := boxStore(t, "help")
+	opened := func() string {
+		t.Helper()
+		pages, err := site.PagesAt(s, site.RefDraft)
+		if err != nil {
+			t.Fatal(err)
+		}
+		list := pages["index"].(map[string]any)["sections"].([]any)
+		name, _ := list[0].(map[string]any)["ask"].(map[string]any)["assistant"].(string)
+		return name
+	}
+	set := &assistant.Set{}
+	for _, a := range []assistant.Assistant{
+		{Name: "a-draft", Title: "Not yet"},
+		{Name: "shop", Title: "Ask the shop", Public: true},
+	} {
+		if err := set.Put(a); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := assistant.Save(assistantsPath(root), set); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdSection(root, []string{"add", "index", "ask", "--at", "0"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := opened(); got != "shop" {
+		t.Errorf("a new box opens %q, want the site's public chatbot shop", got)
+	}
+
+	if err := assistant.Save(assistantsPath(root), &assistant.Set{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdSection(root, []string{"add", "index", "ask", "--at", "0"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := opened(); got != "help" {
+		t.Errorf("with no public chatbot a new box opens %q, want the stub's help", got)
+	}
+}
+
+// The demonstration shows a question box: its returns page opens a public
+// chatbot it declares, so it publishes through the question box gate, and
+// pointing the box at a name the site does not have is refused, naming the
+// page and the section. Its chatbot cannot be taken away while the box is
+// live, and taking the demonstration out takes the chatbot only when no
+// page left opens it.
+func TestTheDemonstrationsQuestionBoxOpensItsChatbot(t *testing.T) {
+	root, tpl, _ := installedDemo(t)
+	s, err := open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a, err := loadAssistant(root, "counter"); err != nil || !a.Public {
+		t.Fatalf("the demonstration's chatbot is missing or private: %+v %v", a, err)
+	}
+	if refused, _, err := contentGates(root, s, "").Run(); err != nil || refused != nil {
+		t.Fatalf("the demonstration's own draft is refused: %v %v", refused, err)
+	}
+
+	err = cmdAssistant(root, []string{"remove", "counter"})
+	if err == nil || !strings.Contains(err.Error(), "the live page returns, section 1 (Ask about returns and delivery), opens counter") {
+		t.Fatalf("the chatbot the live box opens was taken away: %v", err)
+	}
+
+	pages, err := draftPages(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	returns := pages["returns"].(map[string]any)
+	box := returns["sections"].([]any)[0].(map[string]any)["ask"].(map[string]any)
+	box["assistant"] = "counterr"
+	if _, err := site.SaveDraft(s, pages, "the box opens a typo", "test"); err != nil {
+		t.Fatal(err)
+	}
+	refused, _, err := contentGates(root, s, "").Run()
+	const want = `returns: section 1 (Ask about returns and delivery): the question box opens the chatbot "counterr", which does not exist`
+	if err != nil || refused == nil || refused.Check.Name != "question boxes" ||
+		!strings.HasPrefix(refused.Findings[0].String(), want) {
+		t.Fatalf("a box opening a name the demonstration does not have:\n  got  %v %v\n  want %s…", refused, err, want)
+	}
+	box["assistant"] = "counter"
+	if _, err := site.SaveDraft(s, pages, "the box opens counter again", "test"); err != nil {
+		t.Fatal(err)
+	}
+
+	// A page of somebody's own opening the chatbot keeps it when the
+	// demonstration goes.
+	addOwnPage(t, root, tpl, "help-desk", map[string]any{"title": "Help desk",
+		"sections": []any{map[string]any{"ask": map[string]any{
+			"title": "Ask us", "assistant": "counter"}}}})
+	if err := removeDemo(root, true, resolveCaller(root, "")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadAssistant(root, "counter"); err != nil {
+		t.Fatalf("the chatbot a page of somebody's own opens was taken: %v", err)
+	}
+}
+
+// labPackage is the example package with a question box on its page
+// opening the chatbot named, declaring these chatbots and the form its
+// chatbot's action fills in.
+func labPackage(opens string, bots ...assistant.Assistant) func(*feature.Package) {
+	return func(p *feature.Package) {
+		withoutAddress(p)
+		p.Pages[0].Body["sections"] = []any{map[string]any{"ask": map[string]any{
+			"title": "Ask about samples", "assistant": opens}}}
+		p.Chatbots = bots
+		p.Forms = []form.Form{{Name: "sample_intake", Notice: "To log the sample.",
+			Fields: []form.Field{{Name: "sample", Label: "Sample", Kind: form.Line}}}}
 	}
 }
 
@@ -399,6 +681,17 @@ func TestAnActionIsCheckedAndToldWhetherItIsOffered(t *testing.T) {
 	if err != nil || !strings.Contains(said, "declares no route") {
 		t.Errorf("a chatbot with no model to use was not told: %v %s", err, said)
 	}
+
+	// Only the notice tells a gateway with no route apart. Answering, on
+	// the public site and in the inbox, still goes to the gateway, whose
+	// "no route" turns the answer into a quoted one there, as it always has.
+	a, _ = loadAssistant(root, "help")
+	if m, why := assistantModelAt(root, a); m == nil {
+		t.Errorf("the answering path lost its model over a gateway with no route: %s", why)
+	}
+	if m, why := offersModelAt(root, a); m != nil || why != "the model gateway declares no route" {
+		t.Errorf("the notice: %v %q", m, why)
+	}
 }
 
 // An agent declaring a chatbot is told about the actions a person gave it,
@@ -474,6 +767,13 @@ func TestTheSamplesStepsDeclareTheChatbotItsBoxOpens(t *testing.T) {
 	if len(steps) != 1 || !strings.HasPrefix(steps[0], want) {
 		t.Fatalf("the steps before publishing the sample are %q, want one starting %s", steps, want)
 	}
+	// A step is a line somebody pastes into a shell, so what it says about
+	// itself is a comment: the command alone before the #, and the
+	// apostrophe in "sample's" after it, where it opens no quote.
+	cmd, said, commented := strings.Cut(colourless(steps[0]), "#")
+	if strings.TrimSpace(cmd) != want || !commented || !strings.Contains(said, "question box") {
+		t.Errorf("the step is not the command and a comment: %q", colourless(steps[0]))
+	}
 	if err := cmdAssistant(root, []string{"add", "help", "--title", "Ask this site", "--public"}); err != nil {
 		t.Fatal(err)
 	}
@@ -496,7 +796,13 @@ func TestTheSamplesStepsDeclareTheChatbotItsBoxOpens(t *testing.T) {
 		t.Fatal(err)
 	}
 	if steps := sampleChatbotSteps(root, "index", sample.Sample); len(steps) != 1 ||
-		strings.Contains(steps[0], "assistant add") || !strings.Contains(steps[0], "not public") {
-		t.Errorf("a private chatbot: %q", steps)
+		strings.Contains(steps[0], "assistant add") || !strings.Contains(steps[0], "not public") ||
+		!strings.HasPrefix(colourless(steps[0]), "# ") {
+		t.Errorf("a private chatbot, said as a comment: %q", steps)
 	}
+}
+
+// colourless is a line as it reads with the terminal's colours taken out.
+func colourless(line string) string {
+	return regexp.MustCompile("\x1b\\[[0-9;]*m").ReplaceAllString(line, "")
 }

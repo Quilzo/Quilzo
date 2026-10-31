@@ -17,9 +17,10 @@ import (
 // actions silently. Only a model chooses an action, so one declared on a
 // chatbot that answers without a model is a row on the owner's screen that
 // no visitor ever sees. And a form action is pre-filled by name, so a form
-// that does not exist is an offer the public site drops without a word, and
-// a field the form does not ask for is one nobody is ever shown. Each
-// declaration looked right where it was made and did nothing.
+// that does not exist, or is closed, is an offer the public site drops
+// without a word, and a field the form does not ask for is one nobody is
+// ever shown. Each declaration looked right where it was made and did
+// nothing.
 
 // ActionsNeedModel is what every surface says about a chatbot's actions
 // when it will not offer them, in the same words, so that the screen, the
@@ -55,11 +56,16 @@ const SensitiveNever = "a field marked sensitive is never filled in: the visitor
 // checked here: it names a page, and whether that page is published is a
 // question about the site on the day, which the public site answers.
 //
-// What comes back on success is the fields it lists that the form marks
-// sensitive. They are not refused, because listing one does no harm —
-// offerFor in internal/public leaves it empty whatever the model wrote —
-// but nobody should believe they will be filled, so the caller says so.
-func (ac Action) CheckForm(forms *form.Set) (sensitive []string, err error) {
+// What comes back on success is what the person adding it should be told,
+// a sentence each. The fields it lists that the form marks sensitive are
+// not refused, because listing one does no harm — offerFor in
+// internal/public leaves it empty whatever the model wrote — but nobody
+// should believe they will be filled. Nor is a closed form refused: closing
+// a form is a pause its owner chose, and an action prepared for the day it
+// reopens is a reasonable thing to add. But the public site offers no form
+// that is closed, so until then the action is one nobody sees, and that is
+// said rather than discovered.
+func (ac Action) CheckForm(forms *form.Set) (notes []string, err error) {
 	if ac.Kind != Form {
 		return nil, nil
 	}
@@ -84,7 +90,7 @@ func (ac Action) CheckForm(forms *form.Set) (sensitive []string, err error) {
 			may = append(may, fl.Name)
 		}
 	}
-	var unknown []string
+	var unknown, sensitive []string
 	for _, name := range ac.Fields {
 		fl, ok := asks[name]
 		switch {
@@ -100,7 +106,15 @@ func (ac Action) CheckForm(forms *form.Set) (sensitive []string, err error) {
 			ac.Name, strings.Join(unknown, ", "), f.Name, orNothing(may),
 			SensitiveNever)
 	}
-	return sensitive, nil
+	if len(sensitive) > 0 {
+		notes = append(notes, fmt.Sprintf("The form %s marks %s sensitive, and %s",
+			f.Name, strings.Join(sensitive, ", "), SensitiveNever))
+	}
+	if f.Closed {
+		notes = append(notes, fmt.Sprintf("The form %s is closed, so %s is "+
+			"not offered to anybody until the form is opened again", f.Name, ac.Name))
+	}
+	return notes, nil
 }
 
 // CheckForms is CheckForm for every action a chatbot declares, for the
@@ -112,16 +126,6 @@ func (a Assistant) CheckForms(forms *form.Set) error {
 		}
 	}
 	return nil
-}
-
-// SensitiveNote is what to say about the sensitive fields an action lists,
-// or nothing when it lists none.
-func SensitiveNote(ac Action, sensitive []string) string {
-	if len(sensitive) == 0 {
-		return ""
-	}
-	return fmt.Sprintf("The form %s marks %s sensitive, and %s",
-		ac.Target, strings.Join(sensitive, ", "), SensitiveNever)
 }
 
 func orNothing(names []string) string {

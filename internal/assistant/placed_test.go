@@ -5,6 +5,7 @@ package assistant
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -103,6 +104,86 @@ func TestTheQuestionBoxIsTheCataloguesAskSection(t *testing.T) {
 	}
 }
 
+// Taking a chatbot away from visitors is refused while a box on a live or
+// a draft page opens it, naming each; a chatbot no box opens, and a box
+// that opened nothing before the change, are not this change's to refuse.
+func TestAChatbotABoxOpensIsNotTakenAway(t *testing.T) {
+	before := &Set{}
+	for _, a := range []Assistant{
+		{Name: "help", Title: "Help", Public: true},
+		{Name: "shop", Title: "Shop", Public: true},
+		{Name: "spare", Title: "Spare", Public: true},
+		{Name: "draft-bot", Title: "Not yet"},
+	} {
+		if err := before.Put(a); err != nil {
+			t.Fatal(err)
+		}
+	}
+	was := before.PublicNames()
+	live := map[string]any{"index": map[string]any{"sections": []any{box("help", "Ask us")}}}
+	draft := map[string]any{
+		"index": map[string]any{"sections": []any{box("shop", "")}},
+		"about": map[string]any{"sections": []any{box("helpp", "Typo"), box("draft-bot", "")}},
+	}
+	after := func(change func(*Set)) *Set {
+		s := &Set{Assistants: append([]Assistant(nil), before.Assistants...)}
+		change(s)
+		return s
+	}
+
+	private := after(func(s *Set) {
+		a, _ := s.Get("help")
+		a.Public = false
+		_ = s.Put(a)
+		s.Remove("shop")
+	})
+	err := private.Withdraws(was, live, draft)
+	var e *Withdrawn
+	if !errors.As(err, &e) {
+		t.Fatalf("taking two chatbots that boxes open away was not refused: %v", err)
+	}
+	if strings.Join(e.Names, ",") != "help,shop" || len(e.Where) != 2 ||
+		e.Where[0] != "the live page index, section 1 (Ask us), opens help" ||
+		e.Where[1] != "the draft page index, section 1, opens shop" {
+		t.Errorf("what the refusal names: %q %q", e.Names, e.Where)
+	}
+	if !strings.Contains(err.Error(), "removing them or making them private") {
+		t.Errorf("the refusal: %v", err)
+	}
+
+	if err := after(func(s *Set) { s.Remove("spare") }).Withdraws(was, live, draft); err != nil {
+		t.Errorf("a chatbot no box opens was refused: %v", err)
+	}
+	unrelated := after(func(s *Set) {
+		a, _ := s.Get("spare")
+		a.Title = "Spare, renamed"
+		_ = s.Put(a)
+	})
+	if err := unrelated.Withdraws(was, live, draft); err != nil {
+		t.Errorf("a change that takes nothing away was refused over boxes that already opened nothing: %v", err)
+	}
+	if err := private.Withdraws(was, nil, nil); err != nil {
+		t.Errorf("a site with no pages yet was refused: %v", err)
+	}
+}
+
+// A new question box opens the first chatbot visitors can reach, and none
+// when there is none.
+func TestANewBoxOpensTheFirstPublicChatbot(t *testing.T) {
+	set := &Set{}
+	if set.FirstPublic() != "" {
+		t.Fatal("an empty set offered a chatbot")
+	}
+	for _, a := range []Assistant{{Name: "a-draft", Title: "Not yet"}, {Name: "shop", Title: "Shop", Public: true}} {
+		if err := set.Put(a); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := set.FirstPublic(); got != "shop" {
+		t.Errorf("the first public chatbot is %q, want shop", got)
+	}
+}
+
 // -- offers ---------------------------------------------------------------------
 
 // Without a model nothing is offered, however the question asks for it,
@@ -146,12 +227,13 @@ func returnsForms() *form.Set {
 
 // A form action is checked against the form it fills in: one that is not
 // there, or a field it does not ask for, is refused with what there is;
-// a sensitive field is let through and named, because it is never filled.
+// a sensitive field is let through and named, because it is never filled,
+// and so is a closed form, because nothing is offered until it reopens.
 func TestAFormActionIsCheckedAgainstItsForm(t *testing.T) {
 	ret := Action{Name: "start-return", Kind: Form, Target: "returns-form",
 		Description: "start a return", Fields: []string{"order", "reason"}}
-	if s, err := ret.CheckForm(returnsForms()); err != nil || len(s) != 0 {
-		t.Fatalf("a good action: %v %v", s, err)
+	if notes, err := ret.CheckForm(returnsForms()); err != nil || len(notes) != 0 {
+		t.Fatalf("a good action: %q %v", notes, err)
 	}
 
 	missing := ret
@@ -174,12 +256,18 @@ func TestAFormActionIsCheckedAgainstItsForm(t *testing.T) {
 
 	secret := ret
 	secret.Fields = []string{"order", "card"}
-	s, err := secret.CheckForm(returnsForms())
-	if err != nil || len(s) != 1 || s[0] != "card" {
-		t.Fatalf("a sensitive field: %v %v", s, err)
+	notes, err := secret.CheckForm(returnsForms())
+	if err != nil || len(notes) != 1 || !strings.Contains(notes[0], "marks card sensitive") ||
+		!strings.Contains(notes[0], SensitiveNever) {
+		t.Fatalf("a sensitive field: %q %v", notes, err)
 	}
-	if note := SensitiveNote(secret, s); !strings.Contains(note, "card") || !strings.Contains(note, SensitiveNever) {
-		t.Errorf("the note: %q", note)
+
+	closed := returnsForms()
+	closed.Forms[0].Closed = true
+	notes, err = ret.CheckForm(closed)
+	if err != nil || len(notes) != 1 || !strings.Contains(notes[0], "returns-form is closed") ||
+		!strings.Contains(notes[0], "start-return is not offered") {
+		t.Errorf("a closed form: %q %v", notes, err)
 	}
 
 	// A link names a page, and is not a form's to answer for.

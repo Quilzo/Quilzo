@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/a11y"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collab"
 	"github.com/quilzo/quilzo/internal/schedule"
@@ -139,11 +140,22 @@ func (s *Server) handlePromote(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// Promoting to production is publishing, so the commit that moves is
-	// asked the same checks about the content the Review screen asks, and
-	// refused the same way: not clearable here, and not wired is not
-	// passed. It was asked none, which made this button the way round
-	// every one of them.
+	// asked what the Review screen asks before it publishes, and refused the
+	// same way: whether this session may publish each page it changes, every
+	// check about the content, whether each page says who or what wrote it,
+	// whether it renders accessibly, and the approvals the policy asks for,
+	// of these bytes. Not wired is not passed. It was asked none, which made
+	// this button the way round every one of them.
+	//
+	// Nothing is waived here. The reason box on the Review screen is the
+	// one place a person takes responsibility for an unmarked page or a
+	// blocking accessibility failure, and this form has none, so such a
+	// commit is published from there.
 	prom, err := site.PromoteChecked(s.Store, envs, from, to, skip, func(commit string) error {
+		if denied := s.deniedChanges(p, commit); len(denied) > 0 {
+			return fmt.Errorf("promoting %s would change %s, which you may not publish",
+				shortHash(commit), strings.Join(denied, ", "))
+		}
 		if s.ContentGates == nil {
 			return errors.New("the content checks are not wired up in this " +
 				"build, so promoting to production would claim checks that did not happen")
@@ -154,6 +166,40 @@ func (s *Server) handlePromote(w http.ResponseWriter, r *http.Request) {
 		}
 		if refused != nil {
 			return refused
+		}
+		unmarked, uerr := s.unmarkedPages(commit)
+		if uerr != nil {
+			return fmt.Errorf("the provenance check could not run, so promoting "+
+				"would claim a check that did not happen: %w", uerr)
+		}
+		if len(unmarked) > 0 {
+			return fmt.Errorf("%d page%s without provenance: %s. Say who or what "+
+				"wrote each on the Provenance screen; a promotion takes no "+
+				"override, and the Review screen records one", len(unmarked),
+				plural(len(unmarked)), strings.Join(unmarked, ", "))
+		}
+		reports, aerr := s.checkAll(commit)
+		if aerr != nil {
+			return fmt.Errorf("the accessibility check could not run, so "+
+				"promoting would claim a check that did not happen: %w", aerr)
+		}
+		if n := a11y.BlockingCount(reports); n > 0 {
+			return fmt.Errorf("%d blocking accessibility failure%s, so this "+
+				"content is unusable for someone. Fix them; a promotion takes no "+
+				"override, and the Review screen records one", n, plural(n))
+		}
+		// Approvals name the bytes they agreed to, and what Review proposes
+		// is the draft as it stands. A commit promoted from staging after
+		// the draft moved on is not that, and is said to be not that rather
+		// than told the draft has moved.
+		if st := s.approvalFor(p, commit); st.Configured && st.Proposed && !st.Matches {
+			return fmt.Errorf("%s is not what was proposed for review, and an "+
+				"approval names the exact bytes it agreed to. Promote the "+
+				"commit that was approved, or propose and approve this one",
+				shortHash(commit))
+		}
+		if blocked := s.blockedByApproval(p, commit); blocked != "" {
+			return errors.New(blocked)
 		}
 		return nil
 	})

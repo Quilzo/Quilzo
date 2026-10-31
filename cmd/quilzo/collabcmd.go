@@ -204,21 +204,28 @@ func atoiOr(raw string, fallback int) int {
 // The proposal is keyed by the draft's commit id, so editing the draft produces
 // a different proposal with no approvals rather than mutating the approved one.
 func currentProposal(root string, s *store.Store) (*collab.Proposal, *proposalFile, error) {
-	f := &proposalFile{}
-	if err := loadJSON(proposalsPath(root), f); err != nil {
-		return nil, nil, err
-	}
 	draft := s.GetRef(site.RefDraft)
 	if draft == "" {
 		return nil, nil, fmt.Errorf("there is no draft to review")
 	}
+	return proposalFor(root, s, draft)
+}
+
+// proposalFor is currentProposal for any commit: the one a promotion moves
+// into production is the draft as it was when it was promoted out of it,
+// and its approvals are the ones given to those bytes.
+func proposalFor(root string, s *store.Store, content string) (*collab.Proposal, *proposalFile, error) {
+	f := &proposalFile{}
+	if err := loadJSON(proposalsPath(root), f); err != nil {
+		return nil, nil, err
+	}
 	for i := range f.Proposals {
-		if f.Proposals[i].Content == draft {
+		if f.Proposals[i].Content == content {
 			return &f.Proposals[i], f, nil
 		}
 	}
 
-	commit, err := s.GetCommit(draft)
+	commit, err := s.GetCommit(content)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -226,7 +233,7 @@ func currentProposal(root string, s *store.Store) (*collab.Proposal, *proposalFi
 	// the admin decided authorship a different way — see collab/authorship.go.
 	kind := collab.AuthorKindFor(commit.Message, "human")
 	f.Proposals = append(f.Proposals, collab.Proposal{
-		Content: draft, Author: commit.Author, AuthorKind: kind,
+		Content: content, Author: commit.Author, AuthorKind: kind,
 		CreatedAt: commit.At, Message: commit.Message,
 	})
 	return &f.Proposals[len(f.Proposals)-1], f, nil

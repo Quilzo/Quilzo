@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
@@ -94,8 +95,8 @@ type demoManifest struct {
 	// and its records, with the object it wrote there. A path still holding
 	// that object is the demonstration's; any other is somebody's edit.
 	Tree map[string]string `json:"tree"`
-	// Blocks are its content types, collection bindings, listings, forms and
-	// menus, as "kind name", with the digest of each definition.
+	// Blocks are its content types, collection bindings, listings, forms,
+	// menus and chatbots, as "kind name", with the digest of each definition.
 	Blocks map[string]string `json:"blocks"`
 	// Bound is the type each of its pages is bound to.
 	Bound map[string]string `json:"bound,omitempty"`
@@ -265,6 +266,9 @@ func recordDemo(root string, s *store.Store, d *demo.Site, m *demoManifest) (str
 			add("menu", mn.Name)
 		}
 	}
+	for _, a := range d.Chatbots {
+		add("chatbot", a.Name)
+	}
 	types, err := schema.Load(root)
 	if err != nil {
 		return "", err
@@ -398,6 +402,15 @@ func demoInstallable(root string, s *store.Store, d *demo.Site, tplDir, exDir st
 	}
 	full = full || len(listings.Listings) > 0 || len(forms.Forms) > 0 ||
 		len(menus.Menus) > 0 || len(vocab.Vocabularies) > 0
+	bots, err := assistant.Load(assistantsPath(root))
+	if err != nil {
+		return err
+	}
+	for _, a := range d.Chatbots {
+		if _, taken := bots.Get(a.Name); taken {
+			full = true
+		}
+	}
 	if _, err := os.Lstat(brandPath(root)); err == nil && len(d.ClaimRules.Terms) > 0 {
 		full = true
 	}
@@ -428,8 +441,8 @@ func demoInstallable(root string, s *store.Store, d *demo.Site, tplDir, exDir st
 	if full {
 		return errors.New(
 			"this store already has content, and the demonstration would " +
-				"write over the content types, listings, menus and forms that " +
-				"share a name with its own.\n  Run it in an empty directory:\n" +
+				"write over the content types, listings, menus, forms and " +
+				"chatbots that share a name with its own.\n  Run it in an empty directory:\n" +
 				"    mkdir shop && cd shop && quilzo init && quilzo demo")
 	}
 	for _, name := range demoTemplateFiles {
@@ -466,6 +479,7 @@ type demoRemoval struct {
 	listings    []string
 	forms       []string
 	menus       []string
+	chatbots    []string
 	vocab       []string
 	brand       bool
 	settings    []string
@@ -726,6 +740,34 @@ func planDemoRemoval(root string, s *store.Store, m *demoManifest) (*demoRemoval
 				p.menus = append(p.menus, name)
 			}
 		}
+	}
+
+	// Chatbots, unless a question box on a page that stays opens one: taking
+	// it away would leave that box answering "not found", which the
+	// Chatbots screen and quilzo assistant remove refuse to do too.
+	left := make(map[string]any, len(pagesLeft))
+	for page, body := range pagesLeft {
+		left[page] = body
+	}
+	opened := map[string][]string{}
+	for _, b := range assistant.Boxes(left, func(string) (assistant.Assistant, bool) {
+		return assistant.Assistant{}, false // so that every box naming one is listed
+	}) {
+		opened[b.Names] = append(opened[b.Names], b.Page)
+	}
+	for _, name := range blocks["chatbot"] {
+		if !exists("chatbot", name) {
+			continue
+		}
+		if !unchanged("chatbot", name) {
+			keepBlock("chatbot", name, "changed since it was installed")
+			continue
+		}
+		if by := opened[name]; len(by) > 0 {
+			keepBlock("chatbot", name, "a question box on %s opens it", strings.Join(by, ", "))
+			continue
+		}
+		p.chatbots = append(p.chatbots, name)
 	}
 
 	// Vocabularies, unless content that stays is tagged from one.
@@ -1130,7 +1172,7 @@ func removeDemo(root string, yes bool, caller *Caller) error {
 // publishes, kept so a refused publish can put them back.
 func sideFiles(root string) []string {
 	return []string{filepath.Join(root, "types.json"), listingPath(root), formsPath(root),
-		menuPath(root), vocabPath(root), brandPath(root)}
+		menuPath(root), assistantsPath(root), vocabPath(root), brandPath(root)}
 }
 
 // apply carries the removal out.
@@ -1212,7 +1254,7 @@ func (p *demoRemoval) apply(root string, s *store.Store, caller *Caller) (err er
 		return err
 	}
 	if len(p.types)+len(p.collections)+len(p.unbind)+len(p.listings)+len(p.forms)+
-		len(p.menus)+len(p.vocab) > 0 || p.brand {
+		len(p.menus)+len(p.chatbots)+len(p.vocab) > 0 || p.brand {
 		wrote = true
 	}
 
@@ -1399,6 +1441,18 @@ func (p *demoRemoval) applySideFiles(root string) error {
 			return err
 		}
 	}
+	if len(p.chatbots) > 0 {
+		set, err := assistant.Load(assistantsPath(root))
+		if err != nil {
+			return err
+		}
+		for _, name := range p.chatbots {
+			set.Remove(name)
+		}
+		if err := assistant.Save(assistantsPath(root), set); err != nil {
+			return err
+		}
+	}
 	if len(p.vocab) > 0 {
 		set := &taxonomy.Set{}
 		if err := loadJSON(vocabPath(root), set); err != nil {
@@ -1470,6 +1524,7 @@ func (p *demoRemoval) summary(done bool, published string, images, files int) ma
 		"listings":     orEmpty(p.listings),
 		"forms":        orEmpty(p.forms),
 		"menus":        orEmpty(p.menus),
+		"chatbots":     orEmpty(p.chatbots),
 		"vocabularies": orEmpty(p.vocab),
 		"claim_rules":  p.brand,
 		"settings":     orEmpty(p.settings),
@@ -1494,7 +1549,7 @@ func (p *demoRemoval) print(done bool) {
 		verb = "removed"
 	}
 	nothing := len(p.paths)+len(p.types)+len(p.collections)+len(p.listings)+len(p.forms)+
-		len(p.menus)+len(p.vocab)+len(p.settings)+len(p.research)+len(p.media)+
+		len(p.menus)+len(p.chatbots)+len(p.vocab)+len(p.settings)+len(p.research)+len(p.media)+
 		len(p.templates)+len(p.examples) == 0 && !p.brand && !p.publish
 	if nothing {
 		w.Human("%s%s%s: nothing is left that it can take\n", bold, p.m.Name, reset)
@@ -1515,6 +1570,7 @@ func (p *demoRemoval) print(done bool) {
 	line("listings", p.listings)
 	line("forms", p.forms)
 	line("menus", p.menus)
+	line("chatbots", p.chatbots)
 	line("vocabularies", p.vocab)
 	if p.brand {
 		w.Human("  %-14s the claim rules\n", "brand")
