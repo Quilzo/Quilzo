@@ -421,11 +421,12 @@ var settings = []Setting{
 			"network.trusted_proxies: an address there says where a machine " +
 			"is, not that it is the proxy, and anything else there can write " +
 			"the header too. When a machine there forwards an address that " +
-			"is not believed, the site says so once on standard error, with " +
-			"the command that names it. Naming any proxy ends this for the " +
-			"site and the admin both: a proxy on this machine is then " +
-			"believed only if it is named too, and naming 127.0.0.1 lets " +
-			"any program on this machine choose its address on both.\n\n" +
+			"is not believed, the site says so once, on standard error with " +
+			"the command that names it and in the audit log. Naming any " +
+			"proxy ends this for the site and the admin both: a proxy on " +
+			"this machine is then believed only if it is named too, and " +
+			"naming 127.0.0.1 lets any program on this machine choose its " +
+			"address on both.\n\n" +
 			"Off by default, because X-Forwarded-For is a header anybody can " +
 			"write: believed from anybody, it lets every caller choose their " +
 			"own address, which is every limit and every block switched off.",
@@ -442,10 +443,10 @@ var settings = []Setting{
 			"A proxy on a private network, a container bridge or " +
 			"carrier-grade NAT is believed only when it is named in " +
 			"network.trusted_proxies; when one forwards an address that is " +
-			"not believed, the admin says so once on standard error, with " +
-			"the command that names it. Naming any proxy ends this for the " +
-			"admin and the site both, so a proxy on this machine is then " +
-			"believed only if it is named too.\n\n" +
+			"not believed, the admin says so once, on standard error with " +
+			"the command that names it and in the audit log. Naming any " +
+			"proxy ends this for the admin and the site both, so a proxy on " +
+			"this machine is then believed only if it is named too.\n\n" +
 			"Off by default: X-Forwarded-For is a " +
 			"header anybody can write, and believed from anybody it lets a " +
 			"sign-in say where it is.",
@@ -470,6 +471,15 @@ var settings = []Setting{
 			"machine, and the networks added with quilzo shield trust add, " +
 			"are never blocked; quilzo shield lift on this machine ends a " +
 			"block.\n\n" +
+			"A machine that is not named is the client, whatever it says it " +
+			"forwards: its headers are not read, and it is counted, limited " +
+			"and blocked like anybody's, so no header is a way past the " +
+			"shield. A proxy or CDN nobody named makes every visitor behind " +
+			"it one address. One that forwards eight different addresses " +
+			"within an hour is reported once, on standard error with the " +
+			"command that names it and in the audit log " +
+			"(shield.unnamed-proxy), and a block on it says that it may hold " +
+			"everybody behind it.\n\n" +
 			"Empty means no proxy, unless site.trusted_proxy or " +
 			"admin.trusted_proxy says one is on this machine, and then only " +
 			"loopback is believed. The list is the site's and the admin's " +

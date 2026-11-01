@@ -1776,9 +1776,21 @@ alone. A proxy on a private network, a container bridge or carrier-grade NAT
 is believed only when it is named, because anything else on that network can
 write X-Forwarded-For as well as the proxy can. Each surface says at start,
 with the rest of what it prints, when it believes a proxy on this machine.
-With either setting on and no proxy named, the first time a machine on the
-network forwards an address that is not believed, the site or the admin says
-on standard error which machine it was and the command that names it.
+
+A machine that is not named is the client, whatever it says it forwards: its
+headers are not read, and the shield counts, slows and blocks its address like
+anybody's, so no header is a way past it. A proxy or CDN nobody named therefore
+makes every visitor behind it one address, and a block on it a block on all of
+them. Quilzo finds one by what it forwards. When a machine that is not named
+forwards eight different addresses within an hour, or, with either setting on
+and no proxy named, the first time a machine on the network sends
+X-Forwarded-For, the site or the admin says once, on standard error, which
+machine it was and the command that names it, and records
+`shield.unnamed-proxy` in the audit log under the handle the shield blocks it
+by. A block on a machine it reported says that it may hold everybody behind
+it, how to name it, and that `quilzo shield lift` ends it; an administrator
+signing in through it does not keep it on the admin, since its address is
+everybody's behind it.
 
 The list is the site's and the admin's both, and naming any proxy in it ends
 the assumption for both: a proxy on this machine, in front of either, is then

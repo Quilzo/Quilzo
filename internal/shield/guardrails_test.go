@@ -484,14 +484,89 @@ func TestAnUnverifiedSourceIsCountedAndNotBlocked(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		got = r.Observe(Signal{Name: "chatbot-injection", Source: "104.16.1.1", Unverified: true, At: r.clock})
 	}
-	if len(got) != 1 || !strings.Contains(got[0].Did[0], "not named in network.trusted_proxies") || !got[0].Tell {
+	if len(got) != 1 || !strings.Contains(got[0].Did[0], "assumed to be on this machine") || !got[0].Tell {
 		t.Fatalf("%+v", got)
 	}
 	if _, blocked := r.Guard.Blocked("104.16.1.1", Site, r.clock); blocked {
-		t.Fatal("an unnamed proxy was blocked as one visitor")
+		t.Fatal("an address any program on this machine could have forwarded was blocked")
 	}
 	if len(r.notified) != 1 {
 		t.Fatal("nobody was told")
+	}
+}
+
+func TestAProxyNobodyNamedIsBlockedAndTheBlockSaysWhatItMayHold(t *testing.T) {
+	// Holding back for it would let anybody past the shield who sends
+	// headers enough to be reported, so it is blocked; the protection and
+	// the person told say it may be everybody behind it, how to name it,
+	// and how to end it.
+	r := newRig(t, injection())
+	var got []Response
+	for i := 0; i < 3; i++ {
+		got = r.Observe(Signal{Name: "chatbot-injection", Source: "104.16.1.1", UnnamedProxy: true, At: r.clock})
+	}
+	if _, blocked := r.Guard.Blocked("104.16.1.1", Site, r.clock); !blocked {
+		t.Fatal("a source reported as a proxy nobody named was not blocked")
+	}
+	if len(got) != 1 || !got[0].Tell || len(r.notified) != 1 {
+		t.Fatalf("nobody was told: %+v", got)
+	}
+	did := strings.Join(got[0].Did, "; ")
+	for _, want := range []string{"blocked the source", "everybody behind it",
+		"quilzo config set network.trusted_proxies", "quilzo shield lift"} {
+		if !strings.Contains(did, want) {
+			t.Errorf("what it did does not say %q: %s", want, did)
+		}
+	}
+	st := r.state(t)
+	if len(st.Protections) != 1 {
+		t.Fatalf("%+v", st.Protections)
+	}
+	reason := st.Protections[0].Reason
+	if !strings.HasPrefix(reason, "Prompt injection against a chatbot (stage 1). The source may be a proxy nobody named") ||
+		!strings.Contains(reason, "quilzo config set network.trusted_proxies") || !strings.Contains(reason, "quilzo shield lift") {
+		t.Fatalf("the reason: %q", reason)
+	}
+	// A title that leaves no room keeps the block and its own reason.
+	pb := injection()
+	pb.Title = strings.Repeat("t", 120)
+	r = newRig(t, pb)
+	for i := 0; i < 3; i++ {
+		r.Observe(Signal{Name: "chatbot-injection", Source: "104.16.1.2", UnnamedProxy: true, At: r.clock})
+	}
+	if _, blocked := r.Guard.Blocked("104.16.1.2", Site, r.clock); !blocked {
+		t.Fatal("a long title cost the block")
+	}
+	// An administrator who signed in through it before it was reported
+	// keeps nobody behind it on the admin; one who signed in from their own
+	// address keeps it.
+	pb = injection()
+	pb.Stages[0].Do[0].Where = Admin
+	r = newRig(t, pb)
+	for _, a := range []string{"104.16.1.4", "203.0.113.9"} {
+		if err := Vouch(r.Root, r.Guard.Handles(mustAddr(a)), r.clock); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 0; i < 3; i++ {
+		r.Observe(Signal{Name: "chatbot-injection", Source: "104.16.1.4", UnnamedProxy: true, At: r.clock})
+		got = r.Observe(Signal{Name: "chatbot-injection", Source: "203.0.113.9", At: r.clock})
+	}
+	if _, blocked := r.Guard.Blocked("104.16.1.4", Admin, r.clock); !blocked {
+		t.Fatal("a vouch kept a proxy nobody named on the admin")
+	}
+	if _, blocked := r.Guard.Blocked("203.0.113.9", Admin, r.clock); blocked || !strings.Contains(got[0].Did[0], "did not block the admin") {
+		t.Fatalf("an administrator's own address lost the admin: %+v", got)
+	}
+	// Watching, nothing is held, so nothing says how to end it.
+	pb = injection()
+	pb.Mode = "watch"
+	r = newRig(t, pb)
+	for i := 0; i < 3; i++ {
+		got = r.Observe(Signal{Name: "chatbot-injection", Source: "104.16.1.3", UnnamedProxy: true, At: r.clock})
+	}
+	if len(got) != 1 || strings.Contains(strings.Join(got[0].Did, "; "), "shield lift") {
+		t.Fatalf("watching: %+v", got)
 	}
 }
 

@@ -4,9 +4,12 @@
 package main
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -123,6 +126,128 @@ func TestANamedProxysOwnRequestIsCountedAndBlocked(t *testing.T) {
 			t.Fatalf("somebody %s forwards was refused for it: %d", tc.proxy, code)
 		}
 	}
+}
+
+func TestAClientWritingForwardingHeadersIsBlockedLikeAnybody(t *testing.T) {
+	// A header was a way past the shield: from a machine not named as a
+	// proxy, any forwarding header made it a client the shield counted and
+	// never blocked. It is the client whatever it sends, and five guessed
+	// tokens block it however it varies its headers, on the internet and on
+	// a private network, whether nothing is named, a proxy is assumed on
+	// this machine, or another is named.
+	headers := []string{"X-Forwarded-For", "Forwarded", "X-Real-Ip", "Cf-Connecting-Ip", "True-Client-Ip", "Fastly-Client-Ip"}
+	for _, setup := range []map[string]string{{}, {"admin.trusted_proxy": "true"}, {"network.trusted_proxies": "192.0.2.10"}} {
+		for _, peer := range []string{"198.51.100.7", "10.0.0.9"} {
+			root := shieldRoot(t)
+			cfg := config.New()
+			for k, v := range setup {
+				if err := cfg.Set(k, v, "", "test"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := saveConfig(root, cfg); err != nil {
+				t.Fatal(err)
+			}
+			h := newShieldHost(root)
+			reached := 0
+			srv := edgeTo(root, "admin.trusted_proxy", &bytes.Buffer{}, h.guard.Wrap(shield.Admin,
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					reached++
+					h.badToken(r, "qz_"+strings.Repeat("b", 52), errUnknownForTest())
+				})))
+			send := func(i int) int {
+				r := httptest.NewRequest(http.MethodGet, "/api/v1/pages", nil)
+				r.RemoteAddr = peer + ":443"
+				r.Header.Set(headers[i%len(headers)], fmt.Sprintf("203.0.113.%d", i+1))
+				w := httptest.NewRecorder()
+				srv.ServeHTTP(w, r)
+				return w.Code
+			}
+			for i := 0; i < 5; i++ {
+				if code := send(i); code != http.StatusOK {
+					t.Fatalf("%v, %s: guess %d was refused before the threshold: %d", setup, peer, i+1, code)
+				}
+			}
+			if code := send(5); code != http.StatusTooManyRequests || reached != 5 {
+				t.Fatalf("%v: %s guessed five tokens behind forwarding headers and still reaches the admin: %d", setup, peer, code)
+			}
+		}
+	}
+	finishBackground(10 * time.Second)
+}
+
+func TestABlockOnAProxyNobodyNamedSaysHowToNameIt(t *testing.T) {
+	root := shieldRoot(t)
+	pol := &auth.Policy{}
+	if err := pol.Grant(auth.Binding{Principal: "dana", Role: auth.RoleAdmin, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveJSON(policyPath(root), pol); err != nil {
+		t.Fatal(err)
+	}
+	h := newShieldHost(root)
+	var out bytes.Buffer
+	srv := edgeTo(root, "admin.trusted_proxy", &out, h.guard.Wrap(shield.Admin,
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.URL.Path == "/signin":
+				h.vouch(r, "dana")
+			case r.Header.Get("Authorization") != "":
+				h.badToken(r, "qz_"+strings.Repeat("b", 52), errUnknownForTest())
+			}
+		})))
+	send := func(peer, path, xff string, token bool) int {
+		r := httptest.NewRequest(http.MethodGet, path, nil)
+		r.RemoteAddr = peer + ":443"
+		if xff != "" {
+			r.Header.Set("X-Forwarded-For", xff)
+		}
+		if token {
+			r.Header.Set("Authorization", "Bearer x")
+		}
+		w := httptest.NewRecorder()
+		srv.ServeHTTP(w, r)
+		return w.Code
+	}
+	// Visitors behind a CDN's edge that nobody named: it is reported.
+	for i := 0; i < manyDifferent; i++ {
+		send("104.16.1.1", "/", fmt.Sprintf("203.0.113.%d", i+1), false)
+	}
+	if !strings.Contains(out.String(), "quilzo config set network.trusted_proxies 104.16.1.1") {
+		t.Fatalf("%q", out.String())
+	}
+	// An administrator signing in strongly through it does not keep
+	// everybody behind it on the admin; one signing in from their own
+	// address does.
+	send("104.16.1.1", "/signin", "203.0.113.50", false)
+	send("198.51.100.20", "/signin", "", false)
+	st, _ := shield.Load(root)
+	if len(st.Vouched) != 1 || !st.IsVouched(h.guard.Handles(netip.MustParseAddr("198.51.100.20")), time.Now()) {
+		t.Fatalf("vouched %+v", st.Vouched)
+	}
+	// Somebody behind it guesses tokens: it is blocked all the same, and
+	// what is in force says what that may hold and how to undo it.
+	for i := 0; i < 5; i++ {
+		send("104.16.1.1", "/api/v1/pages", "203.0.113.66", true)
+	}
+	if code := send("104.16.1.1", "/", "203.0.113.67", false); code != http.StatusTooManyRequests {
+		t.Fatalf("a proxy nobody named was not blocked: %d", code)
+	}
+	st, _ = shield.Load(root)
+	if len(st.Protections) != 1 || len(st.Responses) != 1 {
+		t.Fatalf("%+v %+v", st.Protections, st.Responses)
+	}
+	reason, did := st.Protections[0].Reason, strings.Join(st.Responses[0].Did, "; ")
+	for _, text := range []string{reason, did} {
+		if !strings.Contains(text, "proxy") || !strings.Contains(text, "everybody behind it") ||
+			!strings.Contains(text, "quilzo config set network.trusted_proxies") || !strings.Contains(text, "quilzo shield lift") {
+			t.Errorf("does not say what it may hold and how to undo it: %q", text)
+		}
+		if strings.Contains(text, "104.16.1.1") {
+			t.Errorf("the shield stored an address: %q", text)
+		}
+	}
+	finishBackground(10 * time.Second)
 }
 
 func TestGuessesAreCountedAndLateCredentialsAreNot(t *testing.T) {

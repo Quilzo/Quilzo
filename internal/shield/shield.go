@@ -34,6 +34,8 @@
 //   - A source an administrator signed in from with a passkey or single
 //     sign-on in the last thirty days is not blocked from the admin by a
 //     playbook: that is the security contact's call, and they are told.
+//     Not one reported as a proxy nobody named (Signal.UnnamedProxy),
+//     whose address is everybody's behind it.
 //   - The admin's sign-in pages and the shield's own screen cannot be
 //     shielded, and lockdown never refuses a passkey or single sign-on, or
 //     a token made after it began.
@@ -97,6 +99,7 @@ const (
 	MaxManual = 7 * 24 * time.Hour
 	MaxActive = 5000
 	maxKept   = 500
+	maxReason = 300
 )
 
 // Features are what a feature shield may name: the public surfaces an
@@ -335,8 +338,8 @@ func (p Protection) Validate(now time.Time) error {
 	if p.Until.Sub(now) > max+time.Minute {
 		return fmt.Errorf("a protection set %s ends within %s", map[bool]string{true: "automatically", false: "by a person"}[p.Auto], max)
 	}
-	if strings.TrimSpace(p.Reason) == "" || len(p.Reason) > 300 {
-		return errors.New("a protection says why, in at most 300 characters")
+	if strings.TrimSpace(p.Reason) == "" || len(p.Reason) > maxReason {
+		return fmt.Errorf("a protection says why, in at most %d characters", maxReason)
 	}
 	if strings.TrimSpace(p.By) == "" {
 		return errors.New("a protection says who or what applied it")

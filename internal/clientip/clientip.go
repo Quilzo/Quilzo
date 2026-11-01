@@ -35,6 +35,7 @@ package clientip
 
 import (
 	"context"
+	"hash/maphash"
 	"net"
 	"net/http"
 	"net/netip"
@@ -62,10 +63,9 @@ type Client struct {
 	// Via says whether Addr is the connection's or a proxy's report of it.
 	Via string
 	// Unverified marks a client the shield must not act on by its address
-	// alone: a connection carrying a forwarded address from a peer that
-	// was not named as a proxy (it may be a CDN edge everybody shares), or
-	// an address forwarded by a proxy only assumed to be one because it is
-	// on this machine (any program there could have written it).
+	// alone: an address forwarded by a proxy only assumed to be one because
+	// it is on this machine (Resolver.Assumed), where any program could have
+	// written it.
 	Unverified bool
 }
 
@@ -88,7 +88,13 @@ type Resolver struct {
 }
 
 // forwardingHeaders are the headers a proxy or CDN puts its client in.
+// Only X-Forwarded-For is ever read for an address, and only from a named
+// proxy; the rest are how a proxy nobody named is recognised (Claim).
 var forwardingHeaders = []string{"X-Forwarded-For", "Forwarded", "X-Real-Ip", "Cf-Connecting-Ip", "True-Client-Ip", "Fastly-Client-Ip"}
+
+// Trusts reports whether a forwarded address is believed from a peer: it is
+// one of Proxies, named or assumed.
+func (r *Resolver) Trusts(a netip.Addr) bool { return r.trusted(a.Unmap()) }
 
 // trusted reports whether an address is one of the named proxies.
 func (r *Resolver) trusted(a netip.Addr) bool {
@@ -113,19 +119,14 @@ func (r *Resolver) From(req *http.Request) Client {
 	peer, _ := Parse(req.RemoteAddr)
 	c := Client{Addr: peer, Peer: peer, Via: Connection}
 	if !peer.IsValid() || !r.trusted(peer) {
-		// The connection is the client. If it brought a forwarded address
-		// anyway, it is either a proxy nobody named (a CDN edge, shared by
-		// everybody behind it) or somebody writing their own header; the
-		// first must not be blocked as one visitor, so the shield is told
-		// not to act on it alone.
-		if peer.IsValid() {
-			for _, h := range forwardingHeaders {
-				if req.Header.Get(h) != "" {
-					c.Unverified = true
-					break
-				}
-			}
-		}
+		// The connection is the client, whatever it says it forwards, and
+		// its headers are not read. A proxy nobody named (a CDN's edge,
+		// say) makes everybody behind it one visitor; but a header cannot
+		// tell that proxy from somebody writing their own, and a client
+		// the shield would not act on because of a header is a client that
+		// switches the shield off by sending one. So it is counted and
+		// blocked like anybody's, and a proxy nobody named is found by
+		// what it forwards over time and reported (Claim, cmd/quilzo).
 		return c
 	}
 	lines := req.Header.Values("X-Forwarded-For")
@@ -173,6 +174,32 @@ func (r *Resolver) From(req *http.Request) Client {
 	// and is its client.
 	c.Addr = last
 	return c
+}
+
+// Claim is a digest of what a request says it forwards, across every header
+// a proxy or CDN puts its client in; ok is false when it says nothing. It
+// is never an address anybody believes. It is how a proxy nobody named is
+// told from a client writing its own header: a client sends one value, a
+// proxy a different one for each visitor behind it, so whoever counts the
+// different digests a peer sends can tell them apart, holding one number
+// per value however long the header. The seed is the counter's own, kept
+// for as long as it counts.
+func Claim(req *http.Request, seed maphash.Seed) (digest uint64, ok bool) {
+	var h maphash.Hash
+	h.SetSeed(seed)
+	for _, name := range forwardingHeaders {
+		for _, v := range req.Header.Values(name) {
+			if v == "" {
+				continue
+			}
+			h.WriteString(name)
+			h.WriteByte(0)
+			h.WriteString(v)
+			h.WriteByte(0)
+			ok = true
+		}
+	}
+	return h.Sum64(), ok
 }
 
 type ctxKey struct{}

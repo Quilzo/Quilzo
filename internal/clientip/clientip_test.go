@@ -4,6 +4,7 @@
 package clientip
 
 import (
+	"hash/maphash"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -279,21 +280,37 @@ func TestPaddingTheHeaderCannotHideTheClient(t *testing.T) {
 	}
 }
 
-func TestAForwardedAddressTheShieldCannotTrustIsMarked(t *testing.T) {
-	// An unnamed peer that forwards: a CDN edge, or somebody writing a header.
-	none := resolver(t)
-	for _, h := range []string{"X-Forwarded-For", "Forwarded", "CF-Connecting-IP", "True-Client-IP"} {
-		req := httptest.NewRequest("GET", "/", nil)
-		req.RemoteAddr = "104.16.1.1:443"
-		req.Header.Set(h, "203.0.113.9")
-		if c := none.From(req); !c.Unverified || c.Addr.String() != "104.16.1.1" {
-			t.Errorf("%s: %+v", h, c)
+func TestAPeerNobodyNamedIsTheClientWhateverItForwards(t *testing.T) {
+	// Marking it, in case it was a CDN's edge everybody shares, let anybody
+	// switch the shield off for themselves with one header. It is the
+	// client, known and verified, on the internet and on a private network,
+	// whether nothing is named, something else is, or a proxy is assumed.
+	resolvers := map[string]*Resolver{
+		"none":    resolver(t),
+		"named":   resolver(t, "192.0.2.10"),
+		"assumed": {Proxies: Loopback(), Assumed: true},
+	}
+	for name, r := range resolvers {
+		for _, remote := range []string{"104.16.1.1:443", "10.0.0.9:80", "[2001:db8::7]:443", "[fd00::7]:80"} {
+			want, _ := Parse(remote)
+			for _, h := range forwardingHeaders {
+				req := httptest.NewRequest("GET", "/", nil)
+				req.RemoteAddr = remote
+				req.Header.Set(h, "203.0.113.9")
+				if c := r.From(req); c.Addr != want || c.Peer != want || c.Via != Connection || c.Unverified || !c.Known() {
+					t.Errorf("%s, %s from %s: %+v", name, h, remote, c)
+				}
+			}
 		}
 	}
-	if c := from(none, "104.16.1.1:443"); c.Unverified {
+	if c := from(resolver(t), "104.16.1.1:443"); c.Unverified {
 		t.Fatal("a plain connection was marked")
 	}
-	// A proxy assumed to be on this machine, not named.
+}
+
+func TestOnlyAProxyAssumedRatherThanNamedIsUnverified(t *testing.T) {
+	// A proxy assumed to be on this machine, not named: any program there
+	// could have written the address.
 	assumed := &Resolver{Proxies: Loopback(), Assumed: true}
 	if c := from(assumed, "127.0.0.1:80", "203.0.113.9"); !c.Unverified || c.Addr.String() != "203.0.113.9" {
 		t.Fatalf("assumed: %+v", c)
@@ -301,6 +318,54 @@ func TestAForwardedAddressTheShieldCannotTrustIsMarked(t *testing.T) {
 	named := resolver(t, "10.0.0.2")
 	if c := from(named, "10.0.0.2:80", "203.0.113.9"); c.Unverified {
 		t.Fatalf("named: %+v", c)
+	}
+}
+
+func TestAClaimIsTheSameForTheSameForwardedValues(t *testing.T) {
+	seed := maphash.MakeSeed()
+	claim := func(headers map[string][]string) (uint64, bool) {
+		req := httptest.NewRequest("GET", "/", nil)
+		for k, vs := range headers {
+			for _, v := range vs {
+				req.Header.Add(k, v)
+			}
+		}
+		return Claim(req, seed)
+	}
+	if _, ok := claim(nil); ok {
+		t.Fatal("a request that forwards nothing made a claim")
+	}
+	if _, ok := claim(map[string][]string{"X-Forwarded-For": {""}, "Accept": {"text/html"}}); ok {
+		t.Fatal("an empty header, or one no proxy writes, made a claim")
+	}
+	a, _ := claim(map[string][]string{"X-Forwarded-For": {"203.0.113.9"}})
+	b, _ := claim(map[string][]string{"X-Forwarded-For": {"203.0.113.9"}})
+	if a != b {
+		t.Fatal("the same value was two claims")
+	}
+	seen := map[uint64]bool{a: true}
+	for _, h := range []map[string][]string{
+		{"X-Forwarded-For": {"203.0.113.10"}},
+		{"X-Forwarded-For": {"203.0.113.9", "198.51.100.1"}},
+		{"Forwarded": {"for=203.0.113.9"}},
+		{"Cf-Connecting-Ip": {"203.0.113.9"}},
+		{"True-Client-Ip": {"203.0.113.9"}},
+	} {
+		d, ok := claim(h)
+		if !ok || seen[d] {
+			t.Fatalf("%v: %v %v", h, ok, seen[d])
+		}
+		seen[d] = true
+	}
+}
+
+func TestAResolverTrustsItsProxiesAndNothingElse(t *testing.T) {
+	r := resolver(t, "10.0.0.0/8")
+	if !r.Trusts(netip.MustParseAddr("10.1.2.3")) || !r.Trusts(netip.MustParseAddr("::ffff:10.1.2.3")) {
+		t.Fatal("a named proxy is not trusted")
+	}
+	if r.Trusts(netip.MustParseAddr("192.0.2.1")) || (*Resolver)(nil).Trusts(netip.MustParseAddr("10.1.2.3")) {
+		t.Fatal("trusted what is not named")
 	}
 }
 
