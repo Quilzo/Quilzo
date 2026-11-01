@@ -268,8 +268,12 @@ func (st *Site) assistantIndex(a assistant.Assistant) (*assistant.Index, error) 
 	if err != nil {
 		return nil, err
 	}
-	names := make([]string, 0, len(hashes))
-	for n := range hashes {
+	// Of them, the ones a visitor is shown at their address (shownPages).
+	// The key names these, so a page a redirect comes to answer, or stops
+	// answering, is a different index.
+	shown := st.shownPages(pages)
+	names := make([]string, 0, len(shown))
+	for n := range shown {
 		if a.Reads(n) {
 			names = append(names, n)
 		}
@@ -283,6 +287,26 @@ func (st *Site) assistantIndex(a assistant.Assistant) (*assistant.Index, error) 
 	for _, n := range names {
 		h.Write([]byte(n + "\x00" + hashes[n] + "\x00"))
 	}
+	// And the records a visitor can open that this chatbot reads, each by
+	// what its page says: a changed price, a record added and one that has
+	// left its listing are each a different index, and a record it does not
+	// read, or the minute passing with nothing said differently, is not.
+	// Read outside this lock: the set is shared with search and every
+	// other chatbot, and drawn once for all of them (records.go).
+	recs := st.recordPages(pages)
+	if recs != nil {
+		addrs := make([]string, 0, len(recs.digests))
+		for addr := range recs.digests {
+			if a.Reads(addr) {
+				addrs = append(addrs, addr)
+			}
+		}
+		sort.Strings(addrs)
+		h.Write([]byte("records\x00"))
+		for _, addr := range addrs {
+			h.Write([]byte(addr + "\x00" + recs.digests[addr] + "\x00"))
+		}
+	}
 	key := hex.EncodeToString(h.Sum(nil))
 
 	as := st.Assistants
@@ -291,7 +315,9 @@ func (st *Site) assistantIndex(a assistant.Assistant) (*assistant.Index, error) 
 	if c, ok := as.cache[a.Name]; ok && c.key == key {
 		return c.idx, nil
 	}
-	passages := assistant.Chunk(pages, a.Reads)
+	// A record's page is read under the chatbot's own Pages and Exclude,
+	// at its own address, as any page is.
+	passages := assistant.Chunk(readable(shown, recs.read()), a.Reads)
 	if as.Document != nil {
 		for _, id := range a.Documents {
 			name, format, body, derr := as.Document(id)

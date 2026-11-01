@@ -364,6 +364,7 @@ the assistant
   quilzo assistant action NAME ACTION      what it may offer to do: a link or a form
   quilzo assistant ask NAME "question"     try it, with its sources and what was removed
   quilzo assistant eval NAME CASES.jsonl   measure it, including what it should refuse
+                                           (--templates DIR: the site's layouts, which show its records)
   quilzo assistant list | remove NAME
   quilzo inbox list | show ASSISTANT/ID     visitors who asked a chatbot for a person
   quilzo inbox reply ASSISTANT/ID "text"    answer one, as yourself; inbox close ends it
@@ -589,7 +590,7 @@ log transparency
   quilzo timestamp stamp | list | export   RFC 3161 proof of when you published
   quilzo anchor submit | status | upgrade  one hash over a whole publication
 
-  quilzo mcp [--list]                      the agent interface, over stdio
+  quilzo mcp [--list] [--templates DIR]    the agent interface, over stdio
   quilzo __sandbox --allow DIR -- CMD       run CMD confined to DIR. Not a
                                             command you type: this program
                                             re-executes itself as this to put

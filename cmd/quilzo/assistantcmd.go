@@ -18,7 +18,8 @@ import (
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
-	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/public"
+	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/store"
 )
 
@@ -253,30 +254,23 @@ func assistantRemove(root string, args []string) error {
 	})
 }
 
-// assistantIndex builds what an assistant may read: the published site,
-// through its page filter, and the documents it was given.
+// assistantKnowledge builds what an assistant may read: the published
+// site, through its page filter, and the documents it was given; and says
+// what it could not use, and why, for the owner. design is the site's
+// templates directory, whose layouts show its records.
 //
 // Published, never the draft. A visitor's assistant answering from a page
-// nobody has approved would be publishing it by another route.
-func assistantIndex(root string, a assistant.Assistant) (*assistant.Index, error) {
-	idx, _, err := assistantKnowledge(root, a)
-	return idx, err
-}
-
-// assistantKnowledge is assistantIndex with the reasons any document could
-// not be used, for the owner's console.
-func assistantKnowledge(root string, a assistant.Assistant) (*assistant.Index, []string, error) {
-	s, err := store.Open(root)
+// nobody has approved would be publishing it by another route. And of the
+// published site, what a visitor can open, as the site's own chatbot reads
+// it: a chatbot tried here, from the admin or over MCP answers as it
+// answers visitors, and a reply the inbox drafts for a visitor says
+// nothing a page for members or one not open yet says.
+func assistantKnowledge(root, design string, a assistant.Assistant) (*assistant.Index, []string, error) {
+	pages, warnings, err := siteKnowledge(root, design)
 	if err != nil {
 		return nil, nil, err
 	}
-	pages, err := site.PagesAt(s, site.RefLive)
-	if err != nil {
-		return nil, nil, fmt.Errorf("nothing is published yet, so there is "+
-			"nothing to answer from: %w", err)
-	}
 	passages := assistant.Chunk(pages, a.Reads)
-	var warnings []string
 	for _, id := range a.Documents {
 		name, format, body, derr := assistantDocument(root, id)
 		if derr != nil {
@@ -293,6 +287,103 @@ func assistantKnowledge(root string, a assistant.Assistant) (*assistant.Index, [
 	passages, held := screenKnowledge(a, passages)
 	warnings = append(warnings, held...)
 	return assistant.NewIndex(passages), warnings, nil
+}
+
+// siteKnowledge is what a visitor can open on the published site now, read
+// the way the site's own chatbots read it (public.Site.Readable).
+//
+// The pages from a site made of the store and the site's own redirects,
+// which `quilzo site` serves (servedRedirects), since which pages a visitor
+// can open needs nothing else: a page at an address a redirect answers is
+// not read, as the site's own chatbot does not read it. Redirects that
+// cannot be read are an error and not none, since which pages a visitor is
+// shown is then not known, and the site will not start with them. The
+// records, when a page stands for them, from the site built as `quilzo
+// site` builds it, with the layouts in design and the same redirects, so
+// that what a visitor meets at a record's address is met here. Without
+// those layouts, or with a site that cannot be built, no record is read,
+// and the owner is told why. A redirect file given only to `quilzo site
+// --redirects` is not known here; the site's own chatbot, which runs there,
+// follows it.
+func siteKnowledge(root, design string) (map[string]any, []string, error) {
+	s, err := store.Open(root)
+	if err != nil {
+		return nil, nil, err
+	}
+	plain := public.New(s, render.Layouts{})
+	visible, err := plain.Readable()
+	if err != nil {
+		return nil, nil, fmt.Errorf("nothing is published yet, so there is "+
+			"nothing to answer from: %w", err)
+	}
+	// Records are looked for under every page a visitor can open, one at an
+	// address a redirect answers too: the redirect moves that address, and
+	// not its records'.
+	stands := false
+	for _, body := range visible {
+		if d, ok := render.DetailOf(body); ok && d.Declared() {
+			stands = true
+			break
+		}
+	}
+	redirects, err := servedRedirects(root, "")
+	if err != nil {
+		return nil, nil, fmt.Errorf("the site's redirects could not be read, so "+
+			"which pages a visitor is shown is not known: %w", err)
+	}
+	plain.Redirects = redirects
+	pages, err := plain.Readable()
+	if err != nil {
+		return nil, nil, err
+	}
+	if !stands {
+		return pages, nil, nil
+	}
+	st, why := readingSite(root, design)
+	if st == nil {
+		return pages, []string{"records: not read, because " + why}, nil
+	}
+	st.Redirects = redirects
+	all, err := st.Readable()
+	if err != nil {
+		return pages, []string{"records: not read: " + err.Error()}, nil
+	}
+	return all, nil, nil
+}
+
+// readingSite is the published site as `quilzo site` builds it, to be read
+// rather than served (siteOpts.Reading), or why it cannot be built. With no
+// redirects: the caller gives it the site's own.
+func readingSite(root, design string) (*public.Site, string) {
+	d, err := loadDesign(design)
+	if err != nil {
+		return nil, "the layouts that show them could not be loaded: " + err.Error()
+	}
+	st, err := siteFor(root, d, siteOpts{Reading: true})
+	if err != nil {
+		return nil, "the site could not be built: " + err.Error()
+	}
+	return st, ""
+}
+
+// designArgs reads --templates, the site's templates directory, from the
+// flags after a command's arguments.
+func designArgs(name string, flags []string) (string, error) {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	design := fs.String("templates", featureDesignDir,
+		"the site's templates directory, whose layouts show its records")
+	if err := fs.Parse(flags); err != nil {
+		return "", err
+	}
+	return *design, nil
+}
+
+// tellNotRead says what a chatbot's knowledge left out and why, beside
+// what the command prints rather than in it.
+func tellNotRead(warnings []string) {
+	for _, why := range warnings {
+		fmt.Fprintf(w.Err, "  %s%s%s\n", yellow, why, reset)
+	}
 }
 
 // screenKnowledge leaves out of what an assistant reads the passages that
@@ -372,9 +463,13 @@ func loadAssistant(root, name string) (assistant.Assistant, error) {
 }
 
 func assistantAsk(root string, args []string) error {
-	pos, _ := leadingArgs(args, 2)
+	pos, flags := leadingArgs(args, 2)
 	if len(pos) != 2 {
-		return fmt.Errorf("usage: quilzo assistant ask NAME \"question\"")
+		return fmt.Errorf("usage: quilzo assistant ask NAME \"question\" [--templates DIR]")
+	}
+	design, err := designArgs("assistant ask", flags)
+	if err != nil {
+		return err
 	}
 	caller := resolveCaller(root, flagToken)
 	if err := authorise(root, caller, auth.ActView, "/"); err != nil {
@@ -384,10 +479,11 @@ func assistantAsk(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	idx, err := assistantIndex(root, a)
+	idx, notRead, err := assistantKnowledge(root, design, a)
 	if err != nil {
 		return err
 	}
+	tellNotRead(notRead)
 	m, why := assistantModelAt(root, a)
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
@@ -420,11 +516,15 @@ func assistantAsk(root string, args []string) error {
 }
 
 func assistantEval(root string, args []string) error {
-	pos, _ := leadingArgs(args, 2)
+	pos, flags := leadingArgs(args, 2)
 	if len(pos) != 2 {
-		return fmt.Errorf("usage: quilzo assistant eval NAME CASES.jsonl\n" +
+		return fmt.Errorf("usage: quilzo assistant eval NAME CASES.jsonl [--templates DIR]\n" +
 			"  one case per line: {\"question\": \"...\", \"page\": \"returns\"}\n" +
 			"  a case with no page is a question the site does not answer")
+	}
+	design, err := designArgs("assistant eval", flags)
+	if err != nil {
+		return err
 	}
 	caller := resolveCaller(root, flagToken)
 	if err := authorise(root, caller, auth.ActView, "/"); err != nil {
@@ -448,10 +548,11 @@ func assistantEval(root string, args []string) error {
 	if len(cases) == 0 {
 		return fmt.Errorf("%s holds no cases", pos[1])
 	}
-	idx, err := assistantIndex(root, a)
+	idx, notRead, err := assistantKnowledge(root, design, a)
 	if err != nil {
 		return err
 	}
+	tellNotRead(notRead)
 	m, _ := assistantModelAt(root, a)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
@@ -513,8 +614,10 @@ func assistantsCapability(root string) *admin.Assistants {
 			})
 			return nil
 		},
+		// Through the layouts the admin was started with, which are the
+		// site's (featureDesignDir).
 		Index: func(a assistant.Assistant) (*assistant.Index, []string, error) {
-			return assistantKnowledge(root, a)
+			return assistantKnowledge(root, featureDesignDir, a)
 		},
 		Documents: func() ([]admin.DocumentChoice, error) {
 			lib, err := openMedia(root)

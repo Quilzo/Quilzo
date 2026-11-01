@@ -22,7 +22,11 @@ import (
 // the path is already in their address bar — showing it back adds nothing they
 // cannot see.
 func (st *Site) notFound(w http.ResponseWriter, r *http.Request) {
+	_, asked := probing(r)
 	switch {
+	case asked:
+		// The site asking itself what is at a record's address
+		// (records.go), which is nobody hunting for anything.
 	case IsAdminPath(r.URL.Path):
 		st.signal(AdminHunt, huntedPath(r.URL.Path), r)
 	case IsForeignProbe(r.URL.Path):

@@ -139,7 +139,9 @@ func (st *Site) searchData(query string, pages map[string]any) map[string]any {
 		return data
 	}
 
-	found := st.searchVisible(query, pages, 20)
+	// A record's page is a result like any other, with its snippet from
+	// what the page shows. See records.go.
+	found, pages := st.searchVisible(query, pages, 20)
 	rows := make([]any, 0, len(found))
 	for _, res := range found {
 		title := res.Title

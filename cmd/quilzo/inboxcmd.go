@@ -68,7 +68,9 @@ func suggestReply(root, name, question string) (string, []string, error) {
 	if !ok {
 		return "", nil, fmt.Errorf("the chatbot %s no longer exists", name)
 	}
-	idx, _, err := assistantKnowledge(root, a)
+	// Through the layouts the admin was started with, which are the
+	// site's (featureDesignDir).
+	idx, _, err := assistantKnowledge(root, featureDesignDir, a)
 	if err != nil {
 		return "", nil, err
 	}
