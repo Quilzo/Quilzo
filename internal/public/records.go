@@ -48,11 +48,12 @@ import (
 //
 // What a visitor cannot open is not read, and nothing here decides what
 // that is. A page for members or outside its publish window is not among
-// the pages a visitor can open (pages). A record only in the draft, one the
-// listing's conditions leave out and a key two records share are not what
-// the route finds. A redirect, a page of the same name for anybody or for
-// members, and another of the site's routes answer the address before the
-// route is asked.
+// the pages a visitor can open (pages), and a page a redirect answers is
+// not what a visitor is shown at its address (shownPages). A record only
+// in the draft, one the listing's conditions leave out and a key two
+// records share are not what the route finds. A redirect, a page of the
+// same name for anybody or for members, and another of the site's routes
+// answer the address before the route is asked.
 //
 // # What it costs
 //
@@ -98,19 +99,22 @@ func (rs *recordSet) read() map[string]any {
 }
 
 // Readable is what a visitor can open now, as this site's chatbots and
-// search read it: every page open to anybody, and every record at its own
-// address, read the way its page shows it. For the command line, the admin
-// and MCP, so a chatbot tried there answers from what it answers visitors
-// from. A site with no listings has no records to read, and is the pages a
-// visitor can open.
+// search read it: every page open to anybody that no redirect answers, and
+// every record at its own address, read the way its page shows it. For
+// the command line, the admin and MCP, so a chatbot tried there answers
+// from what it answers visitors from. A site with no listings has no
+// records to read, and is the pages a visitor can open.
 func (st *Site) Readable() (map[string]any, error) {
 	visible, _, err := st.pages()
 	if err != nil {
 		return nil, err
 	}
 	// A set of its own: the records' pages are shared with the chatbots
-	// and search, and the caller may add to what it is given.
-	return readable(visible, st.recordPages(visible).read()), nil
+	// and search, and the caller may add to what it is given. A page a
+	// redirect answers is left out (shownPages); the records are looked
+	// for under every page, since a redirect from a page's own address
+	// does not move its records' addresses.
+	return readable(st.shownPages(visible), st.recordPages(visible).read()), nil
 }
 
 // recordPages is the records a visitor can open, given the pages they can
@@ -188,6 +192,17 @@ func (st *Site) recordKey(visible map[string]any, stands []string) string {
 	// The payment links, which a record's Buy button and its price follow.
 	if st.BuyTag != nil {
 		h.Write([]byte("\x03" + st.BuyTag()))
+	}
+	// The addresses a redirect answers, which the page handler asks before
+	// anything else, so a record at one is not what a visitor is shown.
+	// `quilzo site` reads them once, when it starts; named here all the
+	// same, so a site given others is not answered from the records read
+	// under the old ones.
+	if st.Redirects != nil {
+		h.Write([]byte{4})
+		for _, rd := range st.Redirects.Redirects {
+			h.Write([]byte(rd.From + "\x00"))
+		}
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }

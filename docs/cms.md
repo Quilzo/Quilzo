@@ -1362,30 +1362,37 @@ the whole site decides who may ask, as it does for every page. On a page,
 WebMCP marks the forms an agent may fill in for its visitor: search, a
 question, a declared form, a booking.
 
-A record with a page of its own, such as a product, an event or a post, is
-among what site search, NLWeb and the chatbots answer from, read the way that
-page shows it: the words inside its `<main>`, drawn through its layout, and
-nothing inside a tag, a script, a form, or an element with the `hidden`
-attribute, `aria-hidden="true"` or a `style` of `display: none` or
-`visibility: hidden`. An element hidden only by a class in the stylesheet is
-read. So a field the listing hands the layout and the layout does not print is
-never an answer, and neither is a record a visitor cannot open: one its listing
-leaves out, one only in the draft, a key two records share, one behind a page
-for members or outside its publish window, or one whose address a redirect, a
-page of the same name or another route answers. Which record is at an address
-is asked of the site's own page handler, as a visitor with no account asks it.
-A record is linked at the address the sitemap gives it, and a chatbot's Pages
-and Exclude apply to that address as to a page's. A page saying nothing but
-its heading is found by that heading. Up to a thousand records are read.
+Site search, NLWeb and the chatbots answer from the pages a visitor can open
+now: not a page for members or outside its publish window, and not one at an
+address a redirect answers, since a visitor asking for it is sent on and never
+shown it. A record with a page of its own, such as a product, an event or a
+post, is among what they answer from too, read the way that page shows it: the
+words inside its `<main>`, drawn through its layout, and nothing inside a tag,
+a script, a form, or an element with the `hidden` attribute,
+`aria-hidden="true"` or a `style` of `display: none` or `visibility: hidden`.
+An element hidden only by a class in the stylesheet is read. So a field the
+listing hands the layout and the layout does not print is never an answer, and
+neither is a record a visitor cannot open: one its listing leaves out, one only
+in the draft, a key two records share, one behind a page for members or
+outside its publish window, or one whose address a redirect, a page of the same
+name or another route answers. A redirect from the address of the page a record
+is behind does not move the record's, so the record is still read. Which
+record is at an address is asked of the site's own page handler, as a visitor
+with no account asks it. A record is linked at the address the sitemap gives
+it, and a chatbot's Pages and Exclude apply to that address as to a page's. A
+page saying nothing but its heading is found by that heading. Up to a thousand
+records are read.
 
 A chatbot tried with `quilzo assistant ask` or `quilzo assistant eval`, on the
 admin's Chatbots screen or over MCP (`ask_assistant`) reads what the site's
-own chatbot reads: the pages a visitor can open now, and the records through
-the site's layouts, which are the templates directory `quilzo serve` was
-started with for the admin and `--templates DIR` for the commands and for
-`quilzo mcp`. With no layout to show a record, none is read, and each of them
-says so. A redirect file given only to `quilzo site --redirects` is not known
-to them; the site's own chatbot follows it.
+own chatbot reads: the pages a visitor can open now, under the site's own
+redirects, and the records through the site's layouts, which are the templates
+directory `quilzo serve` was started with for the admin and `--templates DIR`
+for the commands and for `quilzo mcp`. With no layout to show a record, none
+is read, and each of them says so. With redirects that cannot be read, which
+`quilzo site` will not start with either, nothing is read and each says why.
+A redirect file given only to `quilzo site --redirects` is not known to them;
+the site's own chatbot follows it.
 
 ## Three interfaces, and the same rules in all of them
 

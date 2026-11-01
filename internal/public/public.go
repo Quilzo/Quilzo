@@ -692,6 +692,31 @@ func (st *Site) redirected(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
+// shownPages is the pages, of those given, that a visitor is shown at their
+// own address: every one but those a redirect answers there.
+//
+// Decided here alone, and asked by everything that reads the site for a
+// visitor (the chatbots, site search, NLWeb and Readable), so that none of
+// them reads a page another leaves out. The page handler asks the redirects
+// before it looks for a page (redirected), so a page published for anybody
+// at an address that has moved is one nobody opens: a visitor following a
+// link to it is sent on, and an answer quoting it quotes what they are never
+// shown. Asked with the handler's own lookup, at the address the page is
+// linked at (pagePath). A record's address is not asked here: the handler
+// itself is asked what a visitor is shown there (recordAt).
+func (st *Site) shownPages(pages map[string]any) map[string]any {
+	if st.Redirects.Len() == 0 {
+		return pages
+	}
+	out := make(map[string]any, len(pages))
+	for name, body := range pages {
+		if _, moved := st.Redirects.Lookup(st.pagePath(name)); !moved {
+			out[name] = body
+		}
+	}
+	return out
+}
+
 // Licence is the terms an operator sets for automated use of their content.
 //
 // Really Simple Licensing, whose 1.0 specification was finalised in December
@@ -819,13 +844,15 @@ func (st *Site) searchAPI(w http.ResponseWriter, r *http.Request) {
 // searchVisible is a search answered only from pages a visitor may read now.
 //
 // The index is built from everything published, so it holds pages for
-// members and pages whose publish window has not opened or has closed. Both
-// the search page and the API answered from it unfiltered, and so named
-// those pages — title and address — to anybody who searched for a word in
-// them. Asked for more than it returns, so the filtering does not leave a
-// page of results short when hidden pages ranked high.
+// members, pages whose publish window has not opened or has closed, and
+// pages a redirect answers. Both the search page and the API answered from
+// it unfiltered, and so named those pages — title and address — to anybody
+// who searched for a word in them. Asked for more than it returns, so the
+// filtering does not leave a page of results short when hidden pages ranked
+// high.
 //
-// visible is the pages a visitor can open now. The records' pages they can
+// visible is the pages a visitor can open now, of which a page a redirect
+// answers is left out here (shownPages). The records' pages they can
 // open are the ones the index holds, taken with it: a name is a record's
 // address or a page's, and which one is decided by the set the index was
 // built from, not by one read a moment before or after it. Returned with
@@ -833,7 +860,7 @@ func (st *Site) searchAPI(w http.ResponseWriter, r *http.Request) {
 func (st *Site) searchVisible(q string, visible map[string]any, n int) ([]search.Result, map[string]any) {
 	out := []search.Result{}
 	idx, records := st.searchIndexed()
-	visible = readable(visible, records)
+	visible = readable(st.shownPages(visible), records)
 	if idx == nil {
 		return out, visible
 	}

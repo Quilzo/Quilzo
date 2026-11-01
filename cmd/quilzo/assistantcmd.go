@@ -292,30 +292,49 @@ func assistantKnowledge(root, design string, a assistant.Assistant) (*assistant.
 // siteKnowledge is what a visitor can open on the published site now, read
 // the way the site's own chatbots read it (public.Site.Readable).
 //
-// The pages from a site made of the store alone, since which pages a
-// visitor can open needs nothing else. The records, when a page stands for
-// them, from the site built as `quilzo site` builds it, with the layouts in
-// design and the site's own redirects, so that what a visitor meets at a
-// record's address is met here. Without those layouts, or with a site that
-// cannot be built, no record is read, and the owner is told why. A redirect
-// file given only to `quilzo site --redirects` is not known here; the
-// site's own chatbot, which runs there, follows it.
+// The pages from a site made of the store and the site's own redirects,
+// which `quilzo site` serves (servedRedirects), since which pages a visitor
+// can open needs nothing else: a page at an address a redirect answers is
+// not read, as the site's own chatbot does not read it. Redirects that
+// cannot be read are an error and not none, since which pages a visitor is
+// shown is then not known, and the site will not start with them. The
+// records, when a page stands for them, from the site built as `quilzo
+// site` builds it, with the layouts in design and the same redirects, so
+// that what a visitor meets at a record's address is met here. Without
+// those layouts, or with a site that cannot be built, no record is read,
+// and the owner is told why. A redirect file given only to `quilzo site
+// --redirects` is not known here; the site's own chatbot, which runs there,
+// follows it.
 func siteKnowledge(root, design string) (map[string]any, []string, error) {
 	s, err := store.Open(root)
 	if err != nil {
 		return nil, nil, err
 	}
-	pages, err := public.New(s, render.Layouts{}).Readable()
+	plain := public.New(s, render.Layouts{})
+	visible, err := plain.Readable()
 	if err != nil {
 		return nil, nil, fmt.Errorf("nothing is published yet, so there is "+
 			"nothing to answer from: %w", err)
 	}
+	// Records are looked for under every page a visitor can open, one at an
+	// address a redirect answers too: the redirect moves that address, and
+	// not its records'.
 	stands := false
-	for _, body := range pages {
+	for _, body := range visible {
 		if d, ok := render.DetailOf(body); ok && d.Declared() {
 			stands = true
 			break
 		}
+	}
+	redirects, err := servedRedirects(root, "")
+	if err != nil {
+		return nil, nil, fmt.Errorf("the site's redirects could not be read, so "+
+			"which pages a visitor is shown is not known: %w", err)
+	}
+	plain.Redirects = redirects
+	pages, err := plain.Readable()
+	if err != nil {
+		return nil, nil, err
 	}
 	if !stands {
 		return pages, nil, nil
@@ -324,6 +343,7 @@ func siteKnowledge(root, design string) (map[string]any, []string, error) {
 	if st == nil {
 		return pages, []string{"records: not read, because " + why}, nil
 	}
+	st.Redirects = redirects
 	all, err := st.Readable()
 	if err != nil {
 		return pages, []string{"records: not read: " + err.Error()}, nil
@@ -332,7 +352,8 @@ func siteKnowledge(root, design string) (map[string]any, []string, error) {
 }
 
 // readingSite is the published site as `quilzo site` builds it, to be read
-// rather than served (siteOpts.Reading), or why it cannot be built.
+// rather than served (siteOpts.Reading), or why it cannot be built. With no
+// redirects: the caller gives it the site's own.
 func readingSite(root, design string) (*public.Site, string) {
 	d, err := loadDesign(design)
 	if err != nil {
@@ -342,12 +363,6 @@ func readingSite(root, design string) (*public.Site, string) {
 	if err != nil {
 		return nil, "the site could not be built: " + err.Error()
 	}
-	// Answered before any page, as `quilzo site` answers them.
-	redirects, err := servedRedirects(root, "")
-	if err != nil {
-		return nil, "the site's redirects could not be read: " + err.Error()
-	}
-	st.Redirects = redirects
 	return st, ""
 }
 
