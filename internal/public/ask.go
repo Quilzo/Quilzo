@@ -268,8 +268,12 @@ func (st *Site) assistantIndex(a assistant.Assistant) (*assistant.Index, error) 
 	if err != nil {
 		return nil, err
 	}
-	names := make([]string, 0, len(hashes))
-	for n := range hashes {
+	// Of them, the ones a visitor is shown at their address (shownPages).
+	// The key names these, so a page a redirect comes to answer, or stops
+	// answering, is a different index.
+	shown := st.shownPages(pages)
+	names := make([]string, 0, len(shown))
+	for n := range shown {
 		if a.Reads(n) {
 			names = append(names, n)
 		}
@@ -313,7 +317,7 @@ func (st *Site) assistantIndex(a assistant.Assistant) (*assistant.Index, error) 
 	}
 	// A record's page is read under the chatbot's own Pages and Exclude,
 	// at its own address, as any page is.
-	passages := assistant.Chunk(readable(pages, recs.read()), a.Reads)
+	passages := assistant.Chunk(readable(shown, recs.read()), a.Reads)
 	if as.Document != nil {
 		for _, id := range a.Documents {
 			name, format, body, derr := as.Document(id)

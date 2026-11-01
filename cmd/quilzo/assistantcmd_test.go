@@ -6,6 +6,8 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,6 +22,7 @@ import (
 	"github.com/quilzo/quilzo/internal/member"
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/public"
+	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/seo"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
@@ -174,9 +177,10 @@ func TestAChatbotsOwnerIsToldWhatItWillNotRead(t *testing.T) {
 // recordShop is a published shop whose products are records with pages of
 // their own, and the templates directory whose layout shows them: a
 // product's name and price, and not what it costs the shop. Around them, a
-// page for members, a page not open yet, and a product whose address
-// redirects; and the site's accounts on, with an invitation that has run
-// out and is the site's to sweep away when it starts.
+// page for members, a page not open yet, a product whose address
+// redirects, and the shop's own address redirecting while its products'
+// do not; and the site's accounts on, with an invitation that has run out
+// and is the site's to sweep away when it starts.
 func recordShop(t *testing.T) (root, design string) {
 	t.Helper()
 	if w == nil {
@@ -230,7 +234,7 @@ func recordShop(t *testing.T) (root, design string) {
 		t.Fatal(err)
 	}
 	if err := saveJSON(storeRedirectsPath(root), redirectFile{Redirects: []seo.Redirect{
-		{From: "/product/oak-ruler", To: "/rulers"}}}); err != nil {
+		{From: "/product/oak-ruler", To: "/rulers"}, {From: "/product", To: "/shop"}}}); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := loadConfig(root)
@@ -404,9 +408,11 @@ func TestAChatbotTriedHereReadsRecordsThroughTheTemplatesGiven(t *testing.T) {
 }
 
 // On a site with no records, what a chatbot tried here knows is still only
-// what a visitor can open: a page for members and one whose publish window
-// has not opened are published and not read, and an ordinary published page
-// is.
+// what a visitor can open: a page for members, one whose publish window has
+// not opened and one at an address the site's own redirects answer are
+// published and not read, and an ordinary published page is. With
+// redirects that cannot be read, which pages a visitor is shown is not
+// known, and nothing is read.
 func TestAChatbotTriedHereOnASiteWithNoRecordsReadsOnlyWhatAVisitorCanOpen(t *testing.T) {
 	if w == nil {
 		w = out.New(false)
@@ -426,12 +432,28 @@ func TestAChatbotTriedHereOnASiteWithNoRecordsReadsOnlyWhatAVisitorCanOpen(t *te
 			public.MembersOnlyField: true},
 		"launch": map[string]any{"title": "Launch", "body": "The embargoed fountain pen.",
 			site.Starts: "2099-01-01"},
+		"old-prices": map[string]any{"title": "Old prices", "body": "Quillwort nibs were three pounds."},
 	}
 	if _, err := site.SaveDraft(s, pages, "shop", "test"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := site.Publish(s, ""); err != nil {
 		t.Fatal(err)
+	}
+	if err := saveJSON(storeRedirectsPath(root), redirectFile{Redirects: []seo.Redirect{
+		{From: "/old-prices", To: "/returns", Permanent: true}}}); err != nil {
+		t.Fatal(err)
+	}
+	// The site served from this store sends a visitor on from the old
+	// prices, as `quilzo site` serves it.
+	served := public.New(s, render.Layouts{})
+	if served.Redirects, err = servedRedirects(root, ""); err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	served.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/old-prices", nil))
+	if rec.Code != http.StatusPermanentRedirect || rec.Header().Get("Location") != "/returns" {
+		t.Fatalf("the old prices answered %d %q", rec.Code, rec.Header().Get("Location"))
 	}
 	if err := cmdAssistant(root, []string{"add", "help", "--title", "Ask the shop"}); err != nil {
 		t.Fatal(err)
@@ -451,17 +473,28 @@ func TestAChatbotTriedHereOnASiteWithNoRecordsReadsOnlyWhatAVisitorCanOpen(t *te
 		read[p.Page] = true
 		said.WriteString(p.Page + " " + p.Header() + " " + p.Text + "\n")
 	}
-	for _, never := range []string{"club", "launch"} {
+	for _, never := range []string{"club", "launch", "old-prices"} {
 		if read[never] {
 			t.Errorf("the chatbot reads %s:\n%s", never, said.String())
 		}
 	}
-	for _, never := range []string{"handshake", "embargoed"} {
+	for _, never := range []string{"handshake", "embargoed", "Quillwort"} {
 		if strings.Contains(said.String(), never) {
 			t.Errorf("the chatbot reads %q:\n%s", never, said.String())
 		}
 	}
 	if !read["returns"] || !strings.Contains(said.String(), "cannot be returned") {
 		t.Errorf("an ordinary published page is not read:\n%s", said.String())
+	}
+
+	// A redirect back to where it came from is a loop, which the site
+	// will not start with.
+	if err := saveJSON(storeRedirectsPath(root), redirectFile{Redirects: []seo.Redirect{
+		{From: "/old-prices", To: "/returns"}, {From: "/returns", To: "/old-prices"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if idx, _, err := assistantKnowledge(root, t.TempDir(), a); err == nil ||
+		!strings.Contains(err.Error(), "redirects could not be read") {
+		t.Fatalf("with redirects that cannot be read: %v %+v", err, idx)
 	}
 }

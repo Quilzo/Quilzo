@@ -45,7 +45,8 @@ const recordsLayout = `<!doctype html><html lang="en"><head><title>{{ site.name 
 // for anybody and one at a page for members, one whose key is not an
 // address in its plain form, and every one at an address another route, a
 // page with no record route or the API answers; and a page not open yet at
-// the address of a product that is, and one whose key needs escaping.
+// the address of a product that is, and one whose key needs escaping. And
+// two ordinary pages: one whose address redirects, and one that is read.
 func recordsShop(t *testing.T) (*Site, *store.Store) {
 	t.Helper()
 	s, err := store.Open(t.TempDir())
@@ -80,6 +81,9 @@ func recordsShop(t *testing.T) (*Site, *store.Store) {
 		// A page with no record route, at an address only the admin has
 		// on its own server.
 		"settings/team": map[string]any{"detail": "catalogue", "detail_key": "slug"},
+		// Published for anybody, at an address a redirect answers.
+		"old-prices": map[string]any{"title": "Old prices", "intro": "Quillwort nibs were three pounds."},
+		"delivery":   map[string]any{"title": "Delivery", "intro": "Parcels leave the bindery on Thursdays."},
 	}
 	if _, err := site.SaveDraft(s, pages, "shop", "test"); err != nil {
 		t.Fatal(err)
@@ -158,7 +162,8 @@ func recordsShop(t *testing.T) (*Site, *store.Store) {
 	}
 
 	st := New(s, render.OneLayout(recordsLayout))
-	moved, err := seo.NewMap([]seo.Redirect{{From: "/product/oak-ruler", To: "/rulers"}})
+	moved, err := seo.NewMap([]seo.Redirect{{From: "/product/oak-ruler", To: "/rulers"},
+		{From: "/old-prices", To: "/product", Permanent: true}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -352,6 +357,106 @@ func TestNoIndexHoldsARecordAVisitorCannotOpen(t *testing.T) {
 	}
 	if w := get(st, "/product/brass-pen", nil); w.Code != 200 {
 		t.Errorf("the brass pen's page answered %d", w.Code)
+	}
+}
+
+// A page published for anybody at an address a redirect answers is not
+// what a visitor is shown there, so neither a chatbot, site search, NLWeb
+// nor Readable reads it. A redirect that comes to answer a page's or a
+// record's address takes it out of each of them with nothing published,
+// and one from the address of a page standing for records leaves its
+// records where they are.
+func TestNothingReadsAPageARedirectAnswers(t *testing.T) {
+	st, _ := recordsShop(t)
+	bot := assistant.Assistant{Name: "help", Public: true}
+	// Which of the readers find a word, or the page at an address.
+	readers := func(word, page string) []string {
+		t.Helper()
+		var in []string
+		idx, err := st.assistantIndex(bot)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, p := range idx.Passages {
+			if p.Page == page || strings.Contains(strings.ToLower(p.Text), word) {
+				in = append(in, "the chatbot")
+				break
+			}
+		}
+		var api struct {
+			Results []struct{ Page string } `json:"results"`
+		}
+		if err := json.Unmarshal(get(st, "/search.json?q="+word, nil).Body.Bytes(), &api); err != nil {
+			t.Fatal(err)
+		}
+		if len(api.Results) > 0 {
+			in = append(in, "search.json")
+		}
+		if strings.Contains(get(st, "/search?q="+word, nil).Body.String(), `href="/`+page+`"`) {
+			in = append(in, "the search page")
+		}
+		if res, _ := askJSON(t, st, "/ask?query="+word+"&streaming=false")["results"].([]any); len(res) > 0 {
+			in = append(in, "NLWeb")
+		}
+		all, err := st.Readable()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := all[page]; ok {
+			in = append(in, "Readable")
+		}
+		return in
+	}
+	every := []string{"the chatbot", "search.json", "the search page", "NLWeb", "Readable"}
+
+	if w := get(st, "/old-prices", nil); w.Code != http.StatusPermanentRedirect {
+		t.Fatalf("the old prices answered %d", w.Code)
+	}
+	if in := readers("quillwort", "old-prices"); len(in) != 0 {
+		t.Errorf("a page a redirect answers is read by %v", in)
+	}
+	for _, c := range [][2]string{{"bindery", "delivery"}, {"brass", "product/brass-pen"},
+		{"undyed", "product/100%25-wool"}} {
+		if in := readers(c[0], c[1]); len(in) != len(every) {
+			t.Fatalf("%s is read only by %v", c[1], in)
+		}
+	}
+
+	// A redirect that comes to answer the delivery page, with nothing
+	// published and no record changed, and then the brass pen and the
+	// shop's own address.
+	redirect := func(more ...seo.Redirect) {
+		t.Helper()
+		moved, err := seo.NewMap(append([]seo.Redirect{{From: "/product/oak-ruler", To: "/rulers"},
+			{From: "/old-prices", To: "/product", Permanent: true}}, more...))
+		if err != nil {
+			t.Fatal(err)
+		}
+		st.Redirects = moved
+		for _, rd := range more {
+			if w := get(st, rd.From, nil); w.Code != http.StatusTemporaryRedirect {
+				t.Fatalf("%s answered %d", rd.From, w.Code)
+			}
+		}
+	}
+	shipping := seo.Redirect{From: "/delivery", To: "/shipping"}
+	redirect(shipping)
+	if in := readers("bindery", "delivery"); len(in) != 0 {
+		t.Errorf("a page a redirect has come to answer is still read by %v", in)
+	}
+	if in := readers("brass", "product/brass-pen"); len(in) != len(every) {
+		t.Fatalf("the brass pen is read only by %v", in)
+	}
+	redirect(shipping, seo.Redirect{From: "/product/brass-pen", To: "/pens"},
+		seo.Redirect{From: "/product", To: "/shop"})
+	if in := readers("brass", "product/brass-pen"); len(in) != 0 {
+		t.Errorf("a record a redirect has come to answer is still read by %v", in)
+	}
+	if w := get(st, "/product/100%25-wool", nil); w.Code != 200 {
+		t.Fatalf("the wool wrap answered %d under a shop that has moved", w.Code)
+	}
+	if in := readers("undyed", "product/100%25-wool"); len(in) != len(every) {
+		t.Errorf("a record under a page whose own address has moved is read only by %v", in)
 	}
 }
 
