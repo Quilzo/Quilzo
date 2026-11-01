@@ -740,7 +740,7 @@ func readable(pages, records map[string]any) map[string]any {
 	if len(records) == 0 {
 		return pages
 	}
-	out := make(map[string]any, len(pages)+len(records))
+	out := make(map[string]any, len(pages))
 	for n, b := range pages {
 		out[n] = b
 	}
