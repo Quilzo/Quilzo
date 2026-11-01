@@ -7,11 +7,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 const answerSchema = `{"type":"object","properties":{"city":{"type":"string"},"degrees":{"type":"number"}},
@@ -268,5 +270,71 @@ func TestARefusalIsReadAndSentOnAsWhatTheModelSaid(t *testing.T) {
 	b, _ := json.Marshal(r.Message)
 	if !strings.Contains(string(b), `"content":"I cannot help with that."`) || strings.Contains(string(b), `"refusal"`) {
 		t.Errorf("a refusal went on as %s", b)
+	}
+}
+
+// The worst a caller's schemas were found to ask of one answer is timed
+// through Honour, not only counted: a strict tool whose parameters list
+// 2,000 properties (or 20,000) beside two references to themselves under
+// anyOf, called with a property they do not list; a key of 200 KB against
+// 134 bytes that refer to themselves three times; and a thousand calls to
+// a tool each of whose calls takes half the steps a check may. These took
+// from 15 seconds to over three minutes. Each answer is now refused in
+// time, since every check of one answer draws on one budget and what runs
+// it out is never passed; a thousand calls in good faith still pass.
+func TestTheWorstAnAnswerCanAskIsRefusedInTime(t *testing.T) {
+	const inTime = 2 * time.Second
+	selfAndWide := func(n int) string {
+		props := make([]string, n)
+		for i := range props {
+			props[i] = fmt.Sprintf(`"p%d":{}`, i)
+		}
+		return `{"anyOf":[{"$ref":"#/$defs/big"},{"$ref":"#"},{"$ref":"#"}],"$defs":{"big":{"properties":{` +
+			strings.Join(props, ",") + `}}}}`
+	}
+	// halving is fitted after about half the steps a check may take: each
+	// of its levels asks for the one below twice.
+	defs := []string{`"d0":{"type":"integer"}`}
+	for i := 1; i <= 14; i++ {
+		defs = append(defs, fmt.Sprintf(`"d%d":{"allOf":[{"$ref":"#/$defs/d%d"},{"$ref":"#/$defs/d%d"}]}`, i, i-1, i-1))
+	}
+	halving := `{"type":"object","properties":{"x":{"$ref":"#/$defs/d14"}},"required":["x"],"$defs":{` +
+		strings.Join(defs, ",") + `}}`
+	calls := func(n int, args string) ChatReply {
+		r := called("click", args)
+		for len(r.Message.ToolCalls) < n {
+			r.Message.ToolCalls = append(r.Message.ToolCalls, r.Message.ToolCalls[0])
+		}
+		return r
+	}
+	for _, c := range []struct {
+		name, schema string
+		reply        ChatReply
+		ok           bool
+	}{
+		{"2,000 properties under anyOf (21 KB)", selfAndWide(2000), called("click", `{"zzz":1}`), false},
+		{"20,000 properties under anyOf (229 KB)", selfAndWide(20000), called("click", `{"zzz":1}`), false},
+		{"a key of 200 KB", `{"type":"object","properties":{"name":{"type":"string"}},"additionalProperties":true,` +
+			`"anyOf":[{"$ref":"#"},{"$ref":"#"},{"$ref":"#"}]}`,
+			called("click", `{"`+strings.Repeat("k", 200<<10)+`":1}`), false},
+		{"one call of half a budget", halving, called("click", `{"x":1}`), true},
+		{"a thousand calls of half a budget each", halving, calls(1000, `{"x":1}`), false},
+		{"a thousand calls in good faith", clickSchema, calls(1000, `{"x":10,"y":20}`), true},
+	} {
+		r := clickRequest()
+		r.Tools[0].Function.Parameters, r.Tools[0].Function.Strict = json.RawMessage(c.schema), true
+		start := time.Now()
+		_, err := r.Honour(c.reply)
+		took := time.Since(start)
+		t.Logf("%s: %v", c.name, took)
+		if took > inTime {
+			t.Errorf("%s took %v", c.name, took)
+		}
+		if c.ok && err != nil {
+			t.Errorf("%s: %v", c.name, err)
+		}
+		if !c.ok && !errors.Is(err, ErrNotHonoured) {
+			t.Errorf("%s was passed: %v", c.name, err)
+		}
 	}
 }

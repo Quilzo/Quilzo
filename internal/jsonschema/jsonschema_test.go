@@ -103,17 +103,27 @@ func TestAReferenceIsFollowedWithinTheSchema(t *testing.T) {
 
 // A schema that refers to itself is bounded: one that only ever points
 // at itself, and one small enough to write in a line that would double
-// the work at every level, are both refused rather than followed.
+// the work at every level, are both refused rather than followed, and in
+// time.
 func TestASchemaThatRefersToItselfIsBounded(t *testing.T) {
 	if err := Check(json.RawMessage(`{"$ref":"#"}`), "x"); err == nil || !strings.Contains(err.Error(), "deeper") {
 		t.Errorf("a schema that is only a reference to itself: %v", err)
 	}
+	timed := func(name, schema string, v any) {
+		start := time.Now()
+		err := Check(json.RawMessage(schema), v)
+		took := time.Since(start)
+		t.Logf("%s: %v", name, took)
+		if took > inTime {
+			t.Errorf("%s took %v", name, took)
+		}
+		if err == nil || !strings.Contains(err.Error(), "steps") {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
 	refs := strings.Repeat(`{"$ref":"#"},`, 9) + `{"$ref":"#"}`
 	for _, combine := range []string{"anyOf", "oneOf"} {
-		err := Check(json.RawMessage(`{"`+combine+`":[`+refs+`]}`), "x")
-		if err == nil || !strings.Contains(err.Error(), "steps") {
-			t.Errorf("%s of ten references to itself: %v", combine, err)
-		}
+		timed(combine+" of ten references to itself", `{"`+combine+`":[`+refs+`]}`, "x")
 	}
 	// Ten nested lists, each item checked ten times over: ten to the
 	// tenth checks, unbounded.
@@ -121,10 +131,8 @@ func TestASchemaThatRefersToItselfIsBounded(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		nested = []any{nested}
 	}
-	err := Check(json.RawMessage(`{"type":"array","items":{"allOf":[`+refs+`]}}`), nested)
-	if err == nil || !strings.Contains(err.Error(), "steps") {
-		t.Errorf("allOf of ten references to itself, over ten nested lists: %v", err)
-	}
+	timed("allOf of ten references to itself, over ten nested lists",
+		`{"type":"array","items":{"allOf":[`+refs+`]}}`, nested)
 }
 
 // What one visit costs is counted, not only how many there are: a long
@@ -157,7 +165,9 @@ func TestTheWorkOfEachVisitIsCounted(t *testing.T) {
 	} {
 		start := time.Now()
 		err := Check(json.RawMessage(c.schema), c.value)
-		if took := time.Since(start); took > 5*time.Second {
+		took := time.Since(start)
+		t.Logf("%s: %v", name, took)
+		if took > inTime {
 			t.Errorf("%s took %v", name, took)
 		}
 		if err == nil || !strings.Contains(err.Error(), "steps") {
@@ -170,7 +180,7 @@ func TestTheWorkOfEachVisitIsCounted(t *testing.T) {
 	if err := Check(json.RawMessage(long), strings.Repeat("a", 1<<20)); err == nil || !strings.Contains(err.Error(), "steps") {
 		t.Errorf("a pattern of 300,000 states over a megabyte: %v", err)
 	}
-	if took := time.Since(start); took > 5*time.Second {
+	if took := time.Since(start); took > inTime {
 		t.Errorf("a pattern of 300,000 states over a megabyte took %v", took)
 	}
 	many := make([]any, 20000)
@@ -194,6 +204,119 @@ func TestTheWorkOfEachVisitIsCounted(t *testing.T) {
 func mustJSON(v any) string {
 	b, _ := json.Marshal(v)
 	return string(b)
+}
+
+// inTime is how long the worst a schema can ask may take on a slow
+// machine: what maxSteps allows, with room to spare. A case that takes
+// longer is one whose work the steps do not count.
+const inTime = 2 * time.Second
+
+// wide is a shape of n properties, all of which take anything.
+func wide(n int) string {
+	props := make([]string, n)
+	for i := range props {
+		props[i] = fmt.Sprintf(`"p%d":{}`, i)
+	}
+	return `{"properties":{` + strings.Join(props, ",") + `}}`
+}
+
+// selfAndWide refers to itself under anyOf beside a wide shape, which an
+// object with a property the shape does not list fails at every level.
+func selfAndWide(n int) string {
+	return `{"anyOf":[{"$ref":"#/$defs/big"},{"$ref":"#"},{"$ref":"#"}],"$defs":{"big":` + wide(n) + `}}`
+}
+
+// The costliest cases found are measured, not only counted, so the bound
+// on steps is held to what a step costs. A shape that fails is written
+// out only if its failure is the one returned, not for each anyOf throws
+// away, which wrote out every property a schema of 2,000 takes at every
+// level; and a long key costs its length, not one step, since each visit
+// reads it to find it among the properties, all of it once there are more
+// than a few.
+func TestTheCostliestCasesFinishInTime(t *testing.T) {
+	long := strings.Repeat("k", 200<<10)
+	self := `,"additionalProperties":true,"anyOf":[{"$ref":"#"},{"$ref":"#"},{"$ref":"#"}]}`
+	for name, c := range map[string]struct {
+		schema string
+		value  any
+		says   string
+	}{
+		"2,000 properties under anyOf (21 KB)":   {selfAndWide(2000), map[string]any{"zzz": 1.0}, "steps"},
+		"20,000 properties under anyOf (229 KB)": {selfAndWide(20000), map[string]any{"zzz": 1.0}, "steps"},
+		"a key of 200 KB under anyOf": {`{"type":"object","properties":{"name":{"type":"string"}},` +
+			`"additionalProperties":true,"anyOf":[{"$ref":"#"},{"$ref":"#"},{"$ref":"#"}]}`,
+			map[string]any{long: 1.0}, "steps"},
+		"a key of 2 MB among a dozen under anyOf": {strings.TrimSuffix(wide(12), "}") + self,
+			map[string]any{strings.Repeat("k", 2<<20): 1.0}, "steps"},
+		"a key of 200 KB, once": {`{"type":"object","properties":{"name":{"type":"string"}},` +
+			`"additionalProperties":{"type":"integer"}}`, map[string]any{long: 1.0}, ""},
+		"one property of 20,000":   {wide(20000), map[string]any{"p19999": 1.0}, ""},
+		"a property not of 20,000": {wide(20000), map[string]any{"zzz": 1.0}, "answer.zzz is not a property it takes; it takes p0, p1, p10,"},
+	} {
+		start := time.Now()
+		err := CheckAnswer(json.RawMessage(c.schema), c.value, "answer")
+		took := time.Since(start)
+		t.Logf("%s: %v", name, took)
+		if took > inTime {
+			t.Errorf("%s took %v", name, took)
+		}
+		switch {
+		case c.says == "" && err != nil:
+			t.Errorf("%s was refused: %v", name, err)
+		case c.says != "" && (err == nil || !strings.Contains(err.Error(), c.says)):
+			t.Errorf("%s: %v, want %q", name, err, c.says)
+		}
+	}
+}
+
+// halving is a schema a value fits after about half the steps a check
+// may take: each of its n levels asks for the one below twice.
+func halving(n int) string {
+	defs := []string{`"d0":{"type":"integer"}`}
+	for i := 1; i <= n; i++ {
+		defs = append(defs, fmt.Sprintf(`"d%d":{"allOf":[{"$ref":"#/$defs/d%d"},{"$ref":"#/$defs/d%d"}]}`, i, i-1, i-1))
+	}
+	return fmt.Sprintf(`{"type":"object","properties":{"x":{"$ref":"#/$defs/d%d"}},"required":["x"],"$defs":{%s}}`,
+		n, strings.Join(defs, ","))
+}
+
+// Checks that share a budget share its bound, so a thousand values, each
+// of which takes half of it, cost no more to check than two: the first
+// fits, and the second runs the budget out and is refused, as is every
+// one after it, rather than each getting steps of its own. A thousand
+// values of a schema in good faith fit in one budget with room to spare.
+func TestABudgetBoundsEveryCheckThatSharesIt(t *testing.T) {
+	half, err := Parse(json.RawMessage(halving(14)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var b Budget
+	start := time.Now()
+	for i := 0; i < 1000; i++ {
+		err := b.CheckAnswer(half, map[string]any{"x": 1.0}, "arguments")
+		if i == 0 && err != nil {
+			t.Fatalf("the first value was refused: %v", err)
+		}
+		if i > 0 && (err == nil || !strings.Contains(err.Error(), "steps")) {
+			t.Fatalf("value %d: %v", i, err)
+		}
+	}
+	took := time.Since(start)
+	t.Logf("a thousand values of half a budget each: %v", took)
+	if took > inTime || !b.Spent() {
+		t.Errorf("a thousand values of half a budget each took %v, spent %v", took, b.Spent())
+	}
+	small, err := Parse(json.RawMessage(`{"type":"object","properties":{"x":{"type":"integer"},"y":{"type":"integer"}},` +
+		`"required":["x","y"],"additionalProperties":false}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var many Budget
+	for i := 0; i < 1000; i++ {
+		if err := many.CheckAnswer(small, map[string]any{"x": float64(i), "y": 2.0}, "arguments"); err != nil {
+			t.Fatalf("small value %d: %v", i, err)
+		}
+	}
 }
 
 // The keywords structured output holds an answer to are checked, so an

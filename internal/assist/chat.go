@@ -277,7 +277,8 @@ var ErrNotHonoured = errors.New("the model's answer is not what the request aske
 // is not JSON where JSON was asked for, or JSON that does not fit a schema
 // it was promised to fit. A schema is held to as far as internal/jsonschema
 // reads one, which is every keyword OpenAI's and Anthropic's structured
-// output take.
+// output take, and the work of checking a turn, its answer and every call
+// in it together, has one bound: a turn that would take more is refused.
 //
 // It is checked here rather than trusted to have been sent, because not
 // every model honours what it is sent: a route that refuses a forced tool
@@ -304,12 +305,18 @@ func (r ChatRequest) Honour(reply ChatReply) (ChatReply, error) {
 	case r.OneToolCall && len(calls) > 1:
 		return reply, fmt.Errorf("%w: it made %d tool calls, and the request asked for one at most", ErrNotHonoured, len(calls))
 	}
+	// Every check of one answer draws on one budget, the answer's own and
+	// each strict call's in it: the schemas are the caller's, and a turn
+	// of a thousand calls must cost no more to check than a turn of one.
+	// A check that runs out of it refuses the answer, never passes it.
+	var budget jsonschema.Budget
+	read := map[int]*jsonschema.Schema{}
 	for _, c := range calls {
 		if r.ToolChoiceName != "" && c.Function.Name != r.ToolChoiceName {
 			return reply, fmt.Errorf("%w: it called %s, and the request named %s", ErrNotHonoured, c.Function.Name, r.ToolChoiceName)
 		}
 		if !cut {
-			if err := r.strictCall(c); err != nil {
+			if err := r.strictCall(c, &budget, read); err != nil {
 				return reply, err
 			}
 		}
@@ -326,24 +333,38 @@ func (r ChatRequest) Honour(reply ChatReply) (ChatReply, error) {
 		return reply, fmt.Errorf("%w: the answer is JSON, and not an object", ErrNotHonoured)
 	}
 	if f.Type == "json_schema" && f.Strict {
-		if err := jsonschema.CheckAnswer(f.Schema, v, "answer"); err != nil {
+		s, err := jsonschema.Parse(f.Schema)
+		if err == nil {
+			err = budget.CheckAnswer(s, v, "answer")
+		}
+		if err != nil {
 			return reply, fmt.Errorf("%w: the answer does not fit its schema: %v", ErrNotHonoured, err)
 		}
 	}
 	return reply, nil
 }
 
-// strictCall holds a call to a strict tool to the tool's parameters.
-func (r ChatRequest) strictCall(c ToolCall) error {
-	for _, t := range r.Tools {
+// strictCall holds a call to a strict tool to the tool's parameters,
+// drawing on the budget every check of the answer shares. A tool's
+// parameters are read once, into read, however many calls it has.
+func (r ChatRequest) strictCall(c ToolCall, budget *jsonschema.Budget, read map[int]*jsonschema.Schema) error {
+	for i, t := range r.Tools {
 		if t.Function.Name != c.Function.Name || !t.Function.Strict {
 			continue
+		}
+		s, ok := read[i]
+		if !ok {
+			var err error
+			if s, err = jsonschema.Parse(t.Function.Parameters); err != nil {
+				return fmt.Errorf("%w: its call to %s does not fit the tool's parameters: %v", ErrNotHonoured, c.Function.Name, err)
+			}
+			read[i] = s
 		}
 		var args any
 		if err := json.Unmarshal([]byte(c.Function.Arguments), &args); err != nil {
 			return fmt.Errorf("%w: its call to %s carries arguments that are not JSON (%v)", ErrNotHonoured, c.Function.Name, err)
 		}
-		if err := jsonschema.CheckAnswer(t.Function.Parameters, args, "arguments"); err != nil {
+		if err := budget.CheckAnswer(s, args, "arguments"); err != nil {
 			return fmt.Errorf("%w: its call to %s does not fit the tool's parameters: %v", ErrNotHonoured, c.Function.Name, err)
 		}
 	}
