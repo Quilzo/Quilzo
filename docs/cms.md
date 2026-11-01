@@ -289,6 +289,10 @@ The result is a package like any other: its card says what it collects and
 shows, a second administrator approves a site with a contact form (or the only
 administrator does, on the record), and removing it puts the site back as it
 was. The Make screen does the same under Build a whole site and Fill in.
+Removing it takes its pages out of the draft, and off the live site when that
+is published, while its chatbot goes at once; so once the site is live, the
+question box on its contact page comes off the live site first, and the
+refusal says how.
 
 ### An agent as the site crew
 
@@ -692,9 +696,10 @@ with promotion, scheduled publication, and content that carries its own publish
 window — checked when the page is served, so an embargo cannot lift because a
 cron job was wedged. Promoting into production asks what a publish asks and
 waives nothing: whether you may publish each page it changes, the checks about
-the content, provenance, accessibility (rendered through `--templates`, as a
-publish renders it) and the approvals given to those exact bytes. A commit that
-needs an override is published instead, where the override is recorded.
+the content, whether each page satisfies its type, provenance, accessibility
+(rendered through `--templates`, as a publish renders it) and the approvals
+given to those exact bytes. A commit that needs an override is published
+instead, where the override is recorded.
 
 **Gates before publication.** Accessibility, checked by rendering the page and
 not by inspecting the content. Provenance, because the EU AI Act requires

@@ -71,17 +71,18 @@ Unreleased
     box opens the site's first public chatbot, and the section's chatbot
     field offers the site's chatbots, public ones first.  Promoting to the
     production environment asks what publishing asks and waives nothing:
-    who may publish each page, the checks about the content, provenance,
-    accessibility (env promote --templates) and approvals.  The actions
-    panel, quilzo assistant action and the agent's declare_assistant say
-    when actions will never be offered: only a chatbot answering with a
-    model offers one.  An action filling in a form is refused if the form
-    does not exist or a field is not one of its fields; a field marked
-    sensitive is said to be never filled, and a closed form to be offered
-    to nobody.  A built site's question box declares no contact action it
-    could not offer.  Applying the sections starter, in the browser or
-    with quilzo template use, names the chatbot its box needs.  The
-    Marginalia demonstration has a question box on its returns page.
+    who may publish each page, the checks about the content, whether each
+    page satisfies its type, provenance, accessibility (env promote
+    --templates) and approvals.  The actions panel, quilzo assistant
+    action and the agent's declare_assistant say when actions will never
+    be offered: only a chatbot answering with a model offers one.  An
+    action filling in a form is refused if the form does not exist or a
+    field is not one of its fields; a field marked sensitive is said to be
+    never filled, and a closed form to be offered to nobody.  A built
+    site's question box declares no contact action it could not offer.
+    Applying the sections starter, in the browser or with quilzo template
+    use, names the chatbot its box needs.  The Marginalia demonstration
+    has a question box on its returns page.
 
 *** Bring a site from the file it exported.  quilzo site import, and
     Make › Bring your site, take a WordPress or Squarespace export (.xml),

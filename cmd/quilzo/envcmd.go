@@ -16,6 +16,7 @@ import (
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/out"
+	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 )
@@ -290,9 +291,10 @@ func envPromote(root string, args []string) error {
 	// asked what `quilzo publish` asks: whether the caller may publish each
 	// page it changes, every check about the content, whether each page says
 	// who or what wrote it, whether it renders accessibly, and the approvals
-	// its bytes need. It was asked none of them, which made `env promote
-	// draft production` the way to put up a draft the publish command
-	// refuses, a model's included.
+	// its bytes need; and whether each page satisfies its type, which the
+	// Review screen asks before it publishes. It was asked none of them,
+	// which made `env promote draft production` the way to put up a draft
+	// the publish command refuses, a model's included.
 	//
 	// None of them is waived here. A publish takes a written reason for an
 	// unmarked page or an inaccessible one, and --no-a11y-check for a store
@@ -320,6 +322,9 @@ func envPromote(root string, args []string) error {
 				w.Human("  %s%s%s\n", yellow, f.String(), reset)
 			}
 			return errBlocked{fmt.Errorf("%s", refused.Check.Refusal(len(refused.Findings)))}
+		}
+		if err := promotionTyped(root, s, commit); err != nil {
+			return err
 		}
 		unmarked, uerr := unmarkedAt(root, s, commit)
 		if uerr != nil {
@@ -454,6 +459,40 @@ func promotionAccessible(root string, s *store.Store, commit, tplDir string) (st
 			"--force-inaccessible --reason \"...\" records one", n)}
 	}
 	return "", nil
+}
+
+// promotionTyped refuses a commit going into production with a page that
+// does not satisfy the type it was given, as the Review screen refuses one
+// before it publishes and the Publishing screen's promotion refuses it.
+//
+// Every write is checked against its page's type, but a page can come to
+// fail one without being written to: binding it to a type it does not
+// match is enough. So the whole set is asked on the way out, and this was
+// the way round that question into production. Types or pages that cannot
+// be read refuse it, as a check that could not run.
+func promotionTyped(root string, s *store.Store, commit string) error {
+	st, err := schema.Load(root)
+	if err != nil {
+		return errBlocked{fmt.Errorf("the content types could not be read, so "+
+			"promoting would claim a check that did not happen: %w", err)}
+	}
+	pages, err := site.PagesAt(s, commit)
+	if err != nil {
+		return errBlocked{fmt.Errorf("the pages of %s could not be read, so "+
+			"promoting would claim a check that did not happen: %w", short(commit), err)}
+	}
+	failures := st.Gate(pages)
+	if len(failures) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(failures))
+	for _, f := range failures {
+		w.Human("  %s%s%s\n", yellow, f.String(), reset)
+		names = append(names, f.Page)
+	}
+	return errBlocked{fmt.Errorf("%d page(s) do not satisfy their type and cannot "+
+		"go to production: %s\n  fix them in the draft; there is no override for this",
+		len(failures), strings.Join(names, ", "))}
 }
 
 // promotionApproved is dual authorisation for a commit going into

@@ -176,6 +176,12 @@ type Withdrawn struct {
 	// Where is each box, as "the live page index, section 2 (Ask us), opens
 	// help", live pages first.
 	Where []string
+	// Live is the boxes among them on the live site, which a change to the
+	// draft does not reach until it is published.
+	Live []Box
+	// Advice, when set, is said in place of the general advice: what to do
+	// about these boxes, from a caller that knows how they came to be there.
+	Advice string
 }
 
 func (e *Withdrawn) Error() string {
@@ -183,11 +189,15 @@ func (e *Withdrawn) Error() string {
 	if len(e.Names) > 1 {
 		it = "them"
 	}
+	advice := e.Advice
+	if advice == "" {
+		advice = "Point each box at another public chatbot or take it " +
+			"out first, and publish that where the box is on a live page"
+	}
 	return fmt.Sprintf("a question box still opens %s, so removing %s or "+
 		"making %s private would answer every question asked there \"not "+
-		"found\": %s. Point each box at another public chatbot or take it "+
-		"out first, and publish that where the box is on a live page",
-		strings.Join(e.Names, " and "), it, it, strings.Join(e.Where, "; "))
+		"found\": %s. %s",
+		strings.Join(e.Names, " and "), it, it, strings.Join(e.Where, "; "), advice)
 }
 
 // Withdraws refuses a change to the chatbots that would leave a question
@@ -218,6 +228,9 @@ func (s *Set) Withdraws(was map[string]bool, live, draft map[string]any) error {
 			}
 			e.Where = append(e.Where, fmt.Sprintf("the %s page %s, %s, opens %s",
 				side.which, b.Page, b.Place(), b.Names))
+			if side.which == "live" {
+				e.Live = append(e.Live, b)
+			}
 			if !named[b.Names] {
 				named[b.Names] = true
 				e.Names = append(e.Names, b.Names)
