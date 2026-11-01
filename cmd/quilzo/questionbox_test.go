@@ -6,6 +6,8 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -26,6 +28,8 @@ import (
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/provenance"
 	"github.com/quilzo/quilzo/internal/schedule"
+	"github.com/quilzo/quilzo/internal/schema"
+	"github.com/quilzo/quilzo/internal/section"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/starter"
 	"github.com/quilzo/quilzo/internal/store"
@@ -219,7 +223,8 @@ func TestEveryPublishPathRefusesABrokenQuestionBox(t *testing.T) {
 // quilzo publish asks, and waives none of it: whether the caller may publish
 // each page it changes, whether each page says who wrote it, whether it
 // renders accessibly through the templates, and the approvals given to those
-// bytes. Each refusal is its own, and once each is met the commit goes live.
+// bytes; and whether each page satisfies its type, as the Review screen
+// asks. Each refusal is its own, and once each is met the commit goes live.
 func TestPromotingToProductionAsksWhatQuilzoPublishAsks(t *testing.T) {
 	root, tpl, s := boxStore(t, "help")
 	live := func() string { return s.GetRef(site.RefLive) }
@@ -287,6 +292,33 @@ func TestPromotingToProductionAsksWhatQuilzoPublishAsks(t *testing.T) {
 	refused("a page that does not render", "blocking accessibility failure", "--templates", tpl)
 	about(page)
 	mark()
+
+	// Whether each page satisfies its type, as the Review screen asks
+	// before it publishes: a page bound to a type after it was written is
+	// checked by nothing else.
+	types, err := schema.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := types.Registry.Add(schema.Type{Name: "profile", Fields: []schema.Field{
+		{Name: "title", Kind: schema.Text, Required: true},
+		{Name: "standfirst", Kind: schema.Text},
+		{Name: "link", Kind: schema.URL, Required: true},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := types.Bind("about", "profile"); err != nil {
+		t.Fatal(err)
+	}
+	if err := types.Save(); err != nil {
+		t.Fatal(err)
+	}
+	refused("a page that does not satisfy its type", "1 page(s) do not satisfy their type and cannot go to production: about",
+		"--templates", tpl)
+	delete(types.Bound, "about")
+	if err := types.Save(); err != nil {
+		t.Fatal(err)
+	}
 
 	// The approvals given to these bytes, and none to any other.
 	if err := saveJSON(approvalPolicyPath(root), collab.Policy{Required: 1}); err != nil {
@@ -471,6 +503,227 @@ func TestRemovingAFeatureKeepsAChatbotABoxOpens(t *testing.T) {
 	pointAt("help")
 	if err := removeFeature(root, "lab-samples", asAdmin("dana")); err != nil {
 		t.Fatalf("removing a package no other box depends on was refused: %v", err)
+	}
+}
+
+// builtSite is a store with a site built for a bakery and installed: its
+// contact page has a question box opening its own chatbot, help.
+func builtSite(t *testing.T) (root, design, name string) {
+	t.Helper()
+	root, design = siteStore(t)
+	built := builtAndInstalled(t, root, feature.SiteBrief{Description: "Our bakery in Leeds", Name: "Hart's Bakery"}, false)
+	if _, ok := draftBox(t, root, "contact", "help"); !ok {
+		t.Fatal("the built site's contact page has no question box opening help")
+	}
+	return root, design, built.Package.Name
+}
+
+// draftBox is where, on a page of the draft, the first question box opening
+// the chatbot named is.
+func draftBox(t *testing.T, root, page, opens string) (int, bool) {
+	t.Helper()
+	pages, err := draftPages(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range assistant.Boxes(map[string]any{page: pages[page]}, func(string) (assistant.Assistant, bool) {
+		return assistant.Assistant{}, false
+	}) {
+		if b.Names == opens {
+			return b.At, true
+		}
+	}
+	return 0, false
+}
+
+// removeInBrowser presses Remove on the Features screen, as an
+// administrator signed in with a passkey, and is what the screen said.
+func removeInBrowser(t *testing.T, root, design, name string) (said, refused string) {
+	t.Helper()
+	s, err := open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv, token := wiredBrowser(t, root, design, s)
+	srv.Features = featureHooks(root, sessionCaller)
+	req := httptest.NewRequest(http.MethodPost, "/make/act",
+		strings.NewReader(url.Values{"do": {"remove"}, "name": {name}}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	loc, err := url.Parse(rec.Header().Get("Location"))
+	if rec.Code != http.StatusSeeOther || err != nil {
+		t.Fatalf("Remove answered %d: %s", rec.Code, rec.Body.String())
+	}
+	return loc.Query().Get("m"), loc.Query().Get("e")
+}
+
+// A built site that has not been published is removed in one step, from
+// the command line and from the Features screen: its contact page leaves
+// the draft with it, so the box on that page opening its own chatbot goes
+// with the chatbot and is not counted. A box on a page the package did not
+// make, opening that chatbot, still holds the removal up, and is the only
+// box named.
+func TestABuiltSiteIsRemovedWithItsOwnQuestionBox(t *testing.T) {
+	for _, surface := range []struct {
+		name   string
+		remove func(t *testing.T, root, design, name string) error
+	}{
+		{"the command line", func(t *testing.T, root, _, name string) error {
+			asOnly(t, root, "dana")
+			return cmdFeature(root, []string{"remove", name})
+		}},
+		{"the Features screen", func(t *testing.T, root, design, name string) error {
+			said, refused := removeInBrowser(t, root, design, name)
+			if refused != "" {
+				return errors.New(refused)
+			}
+			if !strings.Contains(said, name+" was removed") {
+				t.Fatalf("the screen said %q", said)
+			}
+			return nil
+		}},
+	} {
+		t.Run(surface.name, func(t *testing.T) {
+			root, design, name := builtSite(t)
+			pages, err := draftPages(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pages["faq"] = map[string]any{"title": "Questions", "sections": []any{
+				map[string]any{"ask": map[string]any{"title": "Ask the bakery", "assistant": "help"}}}}
+			s, err := open(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := site.SaveDraft(s, pages, "a page of our own opening the site's chatbot", "dana"); err != nil {
+				t.Fatal(err)
+			}
+
+			err = surface.remove(t, root, design, name)
+			const where = "the draft page faq, section 1 (Ask the bakery), opens help"
+			if err == nil || !strings.Contains(err.Error(), where) {
+				t.Fatalf("a box on a page the package did not make let it go:\n  got  %v\n  want …%s…", err, where)
+			}
+			if strings.Contains(err.Error(), "contact") {
+				t.Errorf("the package's own page, which goes with it, was counted: %v", err)
+			}
+			if owns(t, root, name) == nil {
+				t.Fatal("refused, and removed anyway")
+			}
+
+			delete(pages, "faq")
+			if _, err := site.SaveDraft(s, pages, "our page goes", "dana"); err != nil {
+				t.Fatal(err)
+			}
+			if err := surface.remove(t, root, design, name); err != nil {
+				t.Fatalf("the built site was not removed in one step: %v", err)
+			}
+			if owns(t, root, name) != nil {
+				t.Fatal("the package is still installed")
+			}
+			if _, err := loadAssistant(root, "help"); err == nil {
+				t.Error("the package's chatbot stayed behind")
+			}
+			if after, _ := draftPages(root); after["contact"] != nil {
+				t.Error("the contact page is still in the draft")
+			}
+		})
+	}
+}
+
+// A built site that is live keeps its contact page, box and all, until the
+// removal is published, and its chatbot would go at once, so removing it is
+// refused. The refusal says which page and what to run: the commands it
+// names, run as given, with the provenance a publish asks for, let the
+// removal through, and publishing that leaves no box opening the chatbot.
+func TestAPublishedSiteSaysHowToTakeItsQuestionBoxOffFirst(t *testing.T) {
+	root, design, name := builtSite(t)
+	pages, err := draftPages(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	known, err := builderBlanks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	whats, _ := siteBlanks(pages, known)
+	values := map[string]string{}
+	for _, what := range whats {
+		values[what] = "Filled: " + what
+	}
+	if _, _, err := fillSite(root, values, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	asOnly(t, root, "dana")
+	if err := cmdPublish(root, []string{"--templates", design}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, surface := range []struct {
+		name   string
+		remove func() error
+	}{
+		{"the command line", func() error { return cmdFeature(root, []string{"remove", name}) }},
+		{"the Features screen", func() error {
+			if _, refused := removeInBrowser(t, root, design, name); refused != "" {
+				return errors.New(refused)
+			}
+			return nil
+		}},
+	} {
+		err := surface.remove()
+		if err == nil || !strings.Contains(err.Error(), "the live page contact, section 1 (Ask a question), opens help") ||
+			!strings.Contains(err.Error(), "The page contact is the package's own, and the live site keeps it as it is until the draft is published") {
+			t.Fatalf("%s: removing a live site whose own box opens its chatbot:\n  got  %v", surface.name, err)
+		}
+		if owns(t, root, name) == nil {
+			t.Fatalf("%s: refused, and removed anyway", surface.name)
+		}
+	}
+
+	err = cmdFeature(root, []string{"remove", name})
+	steps := regexp.MustCompile(`or with: (quilzo section remove contact (\S+)); quilzo publish\. Then do this again$`).
+		FindStringSubmatch(err.Error())
+	if steps == nil {
+		t.Fatalf("the refusal does not say what to run: %v", err)
+	}
+	if at, _ := draftBox(t, root, "contact", "help"); steps[2] != fmt.Sprint(at) {
+		if pages, _ := draftPages(root); section.On(pages["contact"])[at].ID != steps[2] {
+			t.Fatalf("the refusal names section %s of contact, and the box is at %d", steps[2], at)
+		}
+	}
+	if err := cmdSection(root, []string{"remove", "contact", steps[2]}); err != nil {
+		t.Fatalf("%s: %v", steps[1], err)
+	}
+	if err := cmdProvenance(root, []string{"set", "contact", "--source", "humanEdits", "--author", "dana"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdPublish(root, []string{"--templates", design}); err != nil {
+		t.Fatalf("publishing the contact page without its box: %v", err)
+	}
+
+	if err := cmdFeature(root, []string{"remove", name}); err != nil {
+		t.Fatalf("with its box off the live site, the site was not removed: %v", err)
+	}
+	if _, err := loadAssistant(root, "help"); err == nil {
+		t.Error("the package's chatbot stayed behind")
+	}
+	if err := cmdPublish(root, []string{"--templates", design}); err != nil {
+		t.Fatalf("publishing the removal: %v", err)
+	}
+	s, err := open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	live, err := site.PagesAt(s, site.RefLive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if boxes := assistant.Boxes(live, func(string) (assistant.Assistant, bool) { return assistant.Assistant{}, false }); len(boxes) > 0 {
+		t.Errorf("the live site still has a box opening a chatbot that is gone: %v", boxes)
 	}
 }
 

@@ -264,6 +264,51 @@ func TestApplyingAStarterSaysWhatItsQuestionBoxNeeds(t *testing.T) {
 	}
 }
 
+// An editor kept to part of the site is told the same about a starter's
+// box opening a chatbot the site keeps private as about one it does not
+// have: whether a private one exists is for whoever may open the Chatbots
+// screen, and the public site answers "not found" for both so that the
+// name is not learnt. The owner is still told which it is.
+func TestAStarterDoesNotTellAPathScopedEditorWhichChatbotsArePrivate(t *testing.T) {
+	srv, tok := scoped(t,
+		auth.Binding{Principal: "owner", Role: auth.RoleAdmin, Resource: "/"},
+		auth.Binding{Principal: "blogger", Role: auth.RoleAuthor, Resource: "/blog"},
+	)
+	fa := &fakeAssistants{set: &assistant.Set{}}
+	srv.Assistants = fa.wire()
+	srv.Transfer = &Transfer{
+		Pages: func() (map[string]any, error) { return srv.draftPages() },
+		Save:  func(map[string]any, string, string, string) error { return nil },
+	}
+	apply := func(who string) string {
+		t.Helper()
+		w := decideForm(t, srv, "/transfer/starter", tok[who], url.Values{"name": {"sections"}, "page": {"blog/start"}})
+		loc, err := url.Parse(w.Header().Get("Location"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if e := loc.Query().Get("e"); e != "" {
+			t.Fatalf("%s: applying the starter was refused: %s", who, e)
+		}
+		return loc.Query().Get("m")
+	}
+
+	missing := apply("blogger")
+	if err := fa.set.Put(assistant.Assistant{Name: "help", Title: "Help"}); err != nil {
+		t.Fatal(err)
+	}
+	private := apply("blogger")
+	if missing != private {
+		t.Errorf("the blogger learnt that a private chatbot called help exists:\n  missing  %s\n  private  %s", missing, private)
+	}
+	if !strings.Contains(private, "Its question box opens help, which is not one of this site's public chatbots") {
+		t.Errorf("the blogger was not told what the box needs: %s", private)
+	}
+	if got := apply("owner"); !strings.Contains(got, "Its question box opens help, which is not public") {
+		t.Errorf("the owner, who may open the Chatbots screen, was not told it is private: %s", got)
+	}
+}
+
 // A form action is checked against the form it fills in when it is added:
 // a form that is not there, or a field it does not ask for, is refused
 // with what there is; a sensitive field is let through and said, because
@@ -484,7 +529,7 @@ func TestPromotingToProductionAsksWhatAPublishAsks(t *testing.T) {
 	refused("a page with an image nobody described", "blocking accessibility failure")
 	srv.Layouts = layouts
 
-	// Two approvals needed, and the proposal for the commit found by For:
+	// One approval needed, and the proposal for the commit found by For:
 	// the draft, here, and so the commit the draft once was in a pipeline.
 	prop := &collab.Proposal{Content: draft, Author: "editor", AuthorKind: "human"}
 	var askedFor []string

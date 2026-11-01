@@ -150,6 +150,17 @@ func TestAChatbotABoxOpensIsNotTakenAway(t *testing.T) {
 	if !strings.Contains(err.Error(), "removing them or making them private") {
 		t.Errorf("the refusal: %v", err)
 	}
+	if len(e.Live) != 1 || e.Live[0].Page != "index" || e.Live[0].Names != "help" {
+		t.Errorf("the boxes on the live site: %+v", e.Live)
+	}
+	if !strings.HasSuffix(err.Error(), "opens shop. Point each box at another public chatbot or take it "+
+		"out first, and publish that where the box is on a live page") {
+		t.Errorf("the general advice: %v", err)
+	}
+	e.Advice = "Do this instead"
+	if got := e.Error(); !strings.HasSuffix(got, "opens shop. Do this instead") {
+		t.Errorf("advice given in place of the general advice: %s", got)
+	}
 
 	if err := after(func(s *Set) { s.Remove("spare") }).Withdraws(was, live, draft); err != nil {
 		t.Errorf("a chatbot no box opens was refused: %v", err)

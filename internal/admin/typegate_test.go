@@ -6,6 +6,7 @@ package admin
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -153,6 +154,36 @@ func TestPublishingProceedsOnceTheInvalidPageIsFixed(t *testing.T) {
 		strings.Contains(w.Body.String(), "satisfy the type") {
 		t.Fatalf("publishing still refused on types after the page was fixed\n%s",
 			firstLines(w.Body.String(), 8))
+	}
+}
+
+// Promoting to production asks it too, of the commit that moves, and takes
+// no reason for it: a promotion was the way round this check into
+// production. Fixed, the same promotion goes through.
+func TestPromotingRefusesADraftWithAnInvalidPage(t *testing.T) {
+	srv, token := typedServer(t)
+	withPipeline(srv, site.DefaultEnvs())
+	markedBy(t, srv, "editor")
+
+	loc := promoteAs(t, srv, token, "draft", "production")
+	if !strings.Contains(loc, "e=") ||
+		!strings.Contains(loc, url.QueryEscape("the page about does not satisfy the type it was given")) {
+		t.Fatalf("a draft with a page that fails its type was promoted, or refused for something else: %s", loc)
+	}
+	if live := srv.Store.GetRef(site.RefLive); live != "" {
+		t.Fatalf("production moved to %s with a page that fails its type", live)
+	}
+
+	if w := postForm(t, srv, "/save", token,
+		"__name=about&title=About&link=https://example.org"); w.Code != http.StatusSeeOther {
+		t.Fatalf("fixing the page answered %d\n%s", w.Code, firstLines(w.Body.String(), 8))
+	}
+	markedBy(t, srv, "editor")
+	if loc := promoteAs(t, srv, token, "draft", "production"); strings.Contains(loc, "e=") {
+		t.Fatalf("the fixed draft was not promoted: %s", loc)
+	}
+	if live, draft := srv.Store.GetRef(site.RefLive), srv.Store.GetRef(site.RefDraft); live != draft {
+		t.Fatalf("production is %q, want the draft %s", live, draft)
 	}
 }
 

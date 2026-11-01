@@ -34,6 +34,7 @@ import (
 	"github.com/quilzo/quilzo/internal/menu"
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/schema"
+	"github.com/quilzo/quilzo/internal/section"
 	"github.com/quilzo/quilzo/internal/webhook"
 	"github.com/quilzo/quilzo/internal/webimport"
 )
@@ -927,9 +928,11 @@ func applyFeature(root string, p *feature.Package, digest string, plan feature.P
 	// it private, takes that chatbot away from every question box on the
 	// site that opens it, on the live site as soon as it is written. Refused
 	// before anything is, against the draft as this leaves it: the plan only
-	// sees the package's own pages, and these are everybody's.
+	// sees the package's own pages, and these are everybody's. Its own pages
+	// leave the draft with it, and the live site only when that is
+	// published, so a box on one of them that is live counts.
 	if err := withdrawsFromBoxes(root, was, bots, pages); err != nil {
-		return nil, err
+		return nil, ownBoxesFirst(root, err, plan)
 	}
 
 	// Webhooks: a new endpoint gets its own secret, shown once. The changes
@@ -1178,6 +1181,107 @@ func applyFeature(root string, p *feature.Package, digest string, plan feature.P
 		}
 	}
 	return secrets, nil
+}
+
+// ownBoxesFirst says how to get past a refusal over a question box that is
+// live on one of the package's own pages, and passes any other error on.
+//
+// A package never publishes (internal/feature): removing it, or installing
+// a version that changes its pages, changes them in the draft, and the live
+// site keeps them as they are until somebody publishes. Its chatbots are
+// not pages, and would go at once. So a published package whose page has a
+// box opening its own chatbot, as every built site's contact page has, is
+// refused rather than left answering "not found" until the next publish.
+// The general advice, point the box elsewhere or take it out, does not say
+// how for a page the person means to take away with the package; this does,
+// with the box's place in the draft, which is what quilzo section remove
+// counts, and the publish that takes it off the live site.
+func ownBoxesFirst(root string, err error, plan feature.Plan) error {
+	var e *assistant.Withdrawn
+	if !errors.As(err, &e) {
+		return err
+	}
+	own := map[string]bool{}
+	for _, s := range plan.Steps {
+		if s.Ref.Kind == "page" {
+			own[s.Ref.Name] = true
+		}
+	}
+	var pages []string
+	listed, mine := map[string]bool{}, 0
+	for _, b := range e.Live {
+		if !own[b.Page] {
+			continue
+		}
+		mine++
+		if !listed[b.Page] {
+			listed[b.Page] = true
+			pages = append(pages, b.Page)
+		}
+	}
+	if mine == 0 {
+		return err
+	}
+	// The general advice is all that can be given without the draft.
+	draft, derr := draftPages(root)
+	if derr != nil {
+		return err
+	}
+	gone := map[string]bool{}
+	for _, name := range e.Names {
+		gone[name] = true
+	}
+	var steps []string
+	for _, page := range pages {
+		body, ok := draft[page]
+		if !ok {
+			continue
+		}
+		placed := section.On(body)
+		boxes := assistant.Boxes(map[string]any{page: body}, func(string) (assistant.Assistant, bool) {
+			return assistant.Assistant{}, false // so that every box naming one is listed
+		})
+		// From the last, so that a position given by number is still right
+		// once the boxes after it have gone.
+		for i := len(boxes) - 1; i >= 0; i-- {
+			if !gone[boxes[i].Names] {
+				continue
+			}
+			which := fmt.Sprint(boxes[i].At)
+			if at := boxes[i].At; at < len(placed) && placed[at].ID != "" {
+				which = placed[at].ID
+			}
+			steps = append(steps, "quilzo section remove "+page+" "+which)
+		}
+	}
+
+	subject, it, as := "The page "+pages[0]+" is", "it", "it is"
+	if len(pages) > 1 {
+		subject, it, as = "The pages "+strings.Join(pages, " and ")+" are", "them", "they are"
+	}
+	bot := "the chatbot"
+	if len(e.Names) > 1 {
+		bot = "the chatbots"
+	}
+	box := "box"
+	if mine > 1 {
+		box = "boxes"
+	}
+	advice := fmt.Sprintf("%s the package's own, and the live site keeps %s as %s "+
+		"until the draft is published, while %s would go at once. ", subject, it, as, bot)
+	if len(steps) == 0 {
+		advice += fmt.Sprintf("The draft no longer has the %s, so publish it first, "+
+			"on the Review screen or with quilzo publish", box)
+	} else {
+		advice += fmt.Sprintf("Take the %s off %s in the draft and publish that first, on "+
+			"the Sections and Review screens or with: %s; quilzo publish", box, it, strings.Join(steps, "; "))
+	}
+	if len(e.Where) > mine {
+		advice += ". Point every other box named here at another public chatbot or " +
+			"take it out too, and publish that where the box is on a live page"
+	}
+	e.Advice = advice + ". Then do this again"
+	return e
 }
 
 // typeUsers is what still depends on a type: bound pages and collections.

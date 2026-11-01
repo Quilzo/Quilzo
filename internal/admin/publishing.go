@@ -142,10 +142,11 @@ func (s *Server) handlePromote(w http.ResponseWriter, r *http.Request) {
 	// Promoting to production is publishing, so the commit that moves is
 	// asked what the Review screen asks before it publishes, and refused the
 	// same way: whether this session may publish each page it changes, every
-	// check about the content, whether each page says who or what wrote it,
-	// whether it renders accessibly, and the approvals the policy asks for,
-	// of these bytes. Not wired is not passed. It was asked none, which made
-	// this button the way round every one of them.
+	// check about the content, whether each page satisfies its type, whether
+	// each page says who or what wrote it, whether it renders accessibly, and
+	// the approvals the policy asks for, of these bytes. Not wired is not
+	// passed. It was asked none, which made this button the way round every
+	// one of them.
 	//
 	// Nothing is waived here. The reason box on the Review screen is the
 	// one place a person takes responsibility for an unmarked page or a
@@ -166,6 +167,32 @@ func (s *Server) handlePromote(w http.ResponseWriter, r *http.Request) {
 		}
 		if refused != nil {
 			return refused
+		}
+		// Whether each page satisfies the type it was given, as the Review
+		// screen asks of the whole set before it publishes: a page can be
+		// made to fail its type without being edited, by binding it to one,
+		// and a promotion that did not ask put up what Review refuses. Nil is
+		// a site with no types, as there. Pages that cannot be read are a
+		// check that could not run, not a set with nothing in it.
+		if s.CheckTypes != nil {
+			pages, perr := site.PagesAt(s.Store, commit)
+			if perr != nil {
+				return fmt.Errorf("the pages of %s could not be read, so whether "+
+					"they satisfy their types cannot be checked: %w", shortHash(commit), perr)
+			}
+			if failures := s.CheckTypes(pages); len(failures) == 1 {
+				return fmt.Errorf("the page %s does not satisfy the type it was "+
+					"given. Fix it in the draft; there is no override for this",
+					failures[0].Page)
+			} else if len(failures) > 1 {
+				names := make([]string, 0, len(failures))
+				for _, f := range failures {
+					names = append(names, f.Page)
+				}
+				return fmt.Errorf("%d pages do not satisfy the types they were "+
+					"given: %s. Fix them in the draft; there is no override for this",
+					len(failures), strings.Join(names, ", "))
+			}
 		}
 		unmarked, uerr := s.unmarkedPages(commit)
 		if uerr != nil {

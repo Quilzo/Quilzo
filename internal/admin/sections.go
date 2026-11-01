@@ -654,7 +654,7 @@ func (s *Server) namesFor(p principal, kind string) *suggestions {
 		// name a browser offers is the one somebody takes.
 		out := &suggestions{Field: assistant.BoxField, List: "chatbot-names"}
 		var private []suggestion
-		mayList := s.allows(p, auth.ActEditDraft, "/")
+		mayList := s.maySeeChatbots(p)
 		for _, a := range set.Assistants {
 			if a.Public {
 				out.Options = append(out.Options, suggestion{Value: a.Name, Note: a.Title})
@@ -672,6 +672,14 @@ func (s *Server) namesFor(p principal, kind string) *suggestions {
 		return out
 	}
 	return nil
+}
+
+// maySeeChatbots is whether this person may be told about chatbots that
+// are not public: whoever may open the Chatbots screen, which is asked of
+// the whole site (assistantsReady). Anybody else is told only of the public
+// ones, which the public site answers for anyway.
+func (s *Server) maySeeChatbots(p principal) bool {
+	return s.allows(p, auth.ActEditDraft, "/")
 }
 
 // fieldView is one editable value plus what the screen needs to draw it.

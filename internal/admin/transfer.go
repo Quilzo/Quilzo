@@ -356,7 +356,7 @@ func (s *Server) handleStarter(w http.ResponseWriter, r *http.Request) {
 	}
 	s.auditPub(p, "template.apply", "/"+page, map[string]string{"starter": t.Name})
 	s.transferRedirect(w, r, "applied "+t.Name+" to "+page+". Its fields are "+
-		strings.Join(t.Fields, ", ")+"."+s.sampleBoxes(page, t.Sample), "")
+		strings.Join(t.Fields, ", ")+"."+s.sampleBoxes(p, page, t.Sample), "")
 }
 
 // sampleBoxes is what applying a starter leaves to do before its page can
@@ -370,7 +370,13 @@ func (s *Server) handleStarter(w http.ResponseWriter, r *http.Request) {
 // refused, where quilzo template use names the chatbot to declare. A hint
 // and not a check: chatbots that cannot be read leave it unsaid, and the
 // publish gate says why when it runs.
-func (s *Server) sampleBoxes(page string, sample map[string]any) string {
+//
+// Whether a chatbot that is not public exists is said only to somebody who
+// may see the chatbots, as the chatbot suggestions on the Sections screen
+// are offered: to anybody else a private one and a missing one are the same
+// sentence, or an editor kept to one path could learn from this which names
+// an owner is still building, which the public site does not answer.
+func (s *Server) sampleBoxes(p principal, page string, sample map[string]any) string {
 	if s.Assistants == nil || s.Assistants.Load == nil {
 		return ""
 	}
@@ -389,6 +395,11 @@ func (s *Server) sampleBoxes(page string, sample map[string]any) string {
 		case strings.TrimSpace(b.Names) == "":
 			out = append(out, " Its question box names no chatbot: choose one of the "+
 				"site's public chatbots on the Sections screen before publishing.")
+		case !s.maySeeChatbots(p):
+			out = append(out, fmt.Sprintf(" Its question box opens %s, which is not "+
+				"one of this site's public chatbots: point the box at one that is on "+
+				"the Sections screen, or ask whoever looks after the chatbots for a "+
+				"public one called %s, before publishing.", b.Names, b.Names))
 		case exists:
 			out = append(out, fmt.Sprintf(" Its question box opens %s, which is not "+
 				"public: make it public on the Chatbots screen, or point the box at "+
