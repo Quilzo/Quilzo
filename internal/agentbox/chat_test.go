@@ -72,9 +72,10 @@ func TestTheBoxPassesPicturesAndToolsThroughWhole(t *testing.T) {
 
 // What a request asks of the answer, a format or a stop sequence, needs
 // the whole conversation path even with no tool or picture, as does a
-// refusal the model made: the text path would answer without it. A field nothing reads is refused before any
-// model is asked, and what the gateway says of the request is passed on
-// as the caller's to fix or the model's failing.
+// refusal the model made: the text path would answer without it. A field
+// nothing reads is refused before any model is asked, and what the
+// gateway says of the request is passed on as the caller's to fix or the
+// model's failing.
 func TestWhatARequestAsksOfTheAnswerIsCarriedOrRefused(t *testing.T) {
 	var whole []assist.ChatRequest
 	texts := 0
