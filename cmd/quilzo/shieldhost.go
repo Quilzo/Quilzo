@@ -181,12 +181,15 @@ func canSignInStrongly(root string) bool {
 }
 
 // signal tells the engine something a request did. A request whose client
-// could not be told has no source to count; one whose address cannot be
-// trusted enough to block is counted and marked so. One a named proxy made
-// itself counts against the proxy, as anybody's would.
+// could not be told has no source to count; one whose address a proxy only
+// assumed to be on this machine forwarded is counted and marked so. One a
+// named proxy made itself counts against the proxy, as anybody's would, and
+// so does one from a machine the edge reported as probably a proxy nobody
+// named, marked so that a block on it says what it may be holding.
 func (h *shieldHost) signal(name, subject string, r *http.Request) {
 	c := clientip.FromRequest(r)
-	s := shield.Signal{Name: name, Subject: subject, Unverified: c.Unverified, Where: h.where}
+	s := shield.Signal{Name: name, Subject: subject, Unverified: c.Unverified,
+		UnnamedProxy: unnamedProxy(r), Where: h.where}
 	if c.Known() {
 		s.Source = c.Addr.String()
 	}
@@ -268,10 +271,14 @@ func (h *shieldHost) gate(ts *auth.TokenStore) *auth.TokenStore {
 
 // vouch records that an administrator signed in strongly from where this
 // request came from. Only an administrator of the whole site: an author's
-// passkey does not make an address one the shield keeps on the admin.
+// passkey does not make an address one the shield keeps on the admin. Not
+// an address any program on this machine could have forwarded, and not a
+// machine the edge reported as probably a proxy nobody named: that address
+// is everybody's behind it, and vouching for it would keep them all on the
+// admin.
 func (h *shieldHost) vouch(r *http.Request, principal string) {
 	c := clientip.FromRequest(r)
-	if !c.Known() || c.Unverified {
+	if !c.Known() || c.Unverified || unnamedProxy(r) {
 		return
 	}
 	pol, err := loadPolicy(h.root)

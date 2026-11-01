@@ -809,6 +809,21 @@ Unreleased
 
 ** Fixed
 
+*** A header is no longer a way past the shield.  A request from a
+    machine not named in network.trusted_proxies that carried
+    X-Forwarded-For, Forwarded or a CDN's client header was counted and
+    never blocked or slowed, in case the machine was a CDN's edge that
+    everybody shares, so anybody on the internet or a private network could
+    opt out of every automatic block with one header.  Such a machine is
+    now the client whatever it sends, counted, slowed and blocked like
+    anybody's.  One that forwards eight different addresses within an hour
+    is probably a proxy or CDN nobody named: the site or the admin says so
+    once, on standard error with the command that names it and in the
+    audit log (shield.unnamed-proxy).  A block on it says that it may hold
+    everybody behind it, how to name it, and that `quilzo shield lift` on
+    this machine ends it.  Once it is reported, signing in through it does
+    not keep it on the admin, since its address is everybody's behind it.
+
 *** A forwarded address is believed only from a proxy that is named or one
     on this machine, and the shield exempts this machine, not every private
     address.  With site.trusted_proxy or admin.trusted_proxy on and no proxy

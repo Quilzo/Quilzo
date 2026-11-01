@@ -8,11 +8,14 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/clientip"
 	"github.com/quilzo/quilzo/internal/config"
 )
@@ -98,56 +101,272 @@ func TestAnUnreadableConfigurationBelievesNoProxy(t *testing.T) {
 	}
 }
 
+// watching is a surface's edge over a resolver, with what it says and a
+// clock the test moves, and a way to send it a request.
+type watching struct {
+	f   *forwarders
+	h   http.Handler
+	out *bytes.Buffer
+	at  time.Time
+	// marked is whether the last request reached the handler marked as
+	// from a machine reported as a proxy nobody named.
+	marked bool
+}
+
+func watch(root, local string, resolve func() *clientip.Resolver) *watching {
+	w := &watching{out: &bytes.Buffer{}, at: time.Now()}
+	w.f = newForwarders(root, local, resolve, w.out)
+	w.f.now = func() time.Time { return w.at }
+	w.h = clientip.Middleware(resolve, w.f.watch(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		w.marked = unnamedProxy(r)
+	})))
+	return w
+}
+
+func (w *watching) send(remote, header, value string) {
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = remote
+	if value != "" {
+		req.Header.Set(header, value)
+	}
+	w.h.ServeHTTP(httptest.NewRecorder(), req)
+}
+
+// unnamedRecords are the reports the audit log holds.
+func unnamedRecords(t *testing.T, root string) []audit.Event {
+	t.Helper()
+	evs, err := audit.Read(auditPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []audit.Event
+	for _, e := range evs {
+		if e.Action == "shield.unnamed-proxy" {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 func TestAMachineOnTheNetworkThatForwardsIsToldHowToNameIt(t *testing.T) {
+	root := shieldRoot(t)
 	cfg := config.New()
 	if err := cfg.Set("site.trusted_proxy", "true", "", "test"); err != nil {
 		t.Fatal(err)
 	}
 	resolve := func() *clientip.Resolver { return resolverFrom(cfg, "site.trusted_proxy") }
-	var out bytes.Buffer
-	h := clientip.Middleware(resolve, unbelieved("site.trusted_proxy", resolve, &out, http.NotFoundHandler()))
-	send := func(remote, xff string) {
-		req := httptest.NewRequest("GET", "/", nil)
-		req.RemoteAddr = remote
-		if xff != "" {
-			req.Header.Set("X-Forwarded-For", xff)
-		}
-		h.ServeHTTP(httptest.NewRecorder(), req)
-	}
-	send("172.17.0.1:80", "203.0.113.9")
+	w := watch(root, "site.trusted_proxy", resolve)
+	w.send("172.17.0.1:80", "X-Forwarded-For", "203.0.113.9")
 	// And before it is followed, what following it costs: the list is both
 	// surfaces', and a proxy on this machine must then be named too.
-	if !strings.Contains(out.String(), "172.17.0.1 sent X-Forwarded-For and is not believed") ||
-		!strings.Contains(out.String(), "quilzo config set network.trusted_proxies 172.17.0.1") ||
-		!strings.Contains(out.String(), "for the site and the admin both") {
-		t.Fatalf("%q", out.String())
+	out := w.out.String()
+	if !strings.Contains(out, "172.17.0.1 sent X-Forwarded-For and is not believed") ||
+		!strings.Contains(out, "quilzo config set network.trusted_proxies 172.17.0.1\n") ||
+		!strings.Contains(out, "for the site and the admin both") {
+		t.Fatalf("%q", out)
+	}
+	if recs := unnamedRecords(t, root); len(recs) != 1 || recs[0].Detail["surface"] != "site" ||
+		!strings.Contains(recs[0].Detail["seen"], "site.trusted_proxy believes a proxy on this machine only") {
+		t.Fatalf("%+v", recs)
 	}
 	// Once for each machine, and not for the proxy on this machine (it is
-	// believed), a machine that forwards nothing, or the internet.
-	n := out.Len()
-	send("172.17.0.1:80", "203.0.113.9")
-	send("127.0.0.1:80", "203.0.113.9")
-	send("10.0.0.5:80", "")
-	send("198.51.100.7:80", "203.0.113.9")
-	if out.Len() != n {
-		t.Fatalf("said again, or for the wrong machine: %q", out.String()[n:])
+	// believed), a machine that forwards nothing, or the internet's first
+	// header.
+	n := w.out.Len()
+	w.send("172.17.0.1:80", "X-Forwarded-For", "203.0.113.9")
+	w.send("127.0.0.1:80", "X-Forwarded-For", "203.0.113.9")
+	w.send("10.0.0.5:80", "", "")
+	w.send("198.51.100.7:80", "X-Forwarded-For", "203.0.113.9")
+	if w.out.Len() != n {
+		t.Fatalf("said again, or for the wrong machine: %q", w.out.String()[n:])
 	}
 	// A network full of machines writing the header cannot fill the log.
-	for i := 0; i < maxUnbelieved*2; i++ {
-		send(fmt.Sprintf("10.1.0.%d:80", i+1), "203.0.113.9")
+	for i := 0; i < maxReported*2; i++ {
+		w.send(fmt.Sprintf("10.1.0.%d:80", i+1), "X-Forwarded-For", "203.0.113.9")
 	}
-	if got := strings.Count(out.String(), "is not believed"); got != maxUnbelieved {
-		t.Fatalf("named %d machines, want %d", got, maxUnbelieved)
+	if got := strings.Count(w.out.String(), "is not believed"); got != maxReported {
+		t.Fatalf("named %d machines, want %d", got, maxReported)
 	}
-	// With proxies named, the deployment has said which they are.
+	if got := len(unnamedRecords(t, root)); got != maxReported {
+		t.Fatalf("recorded %d machines, want %d", got, maxReported)
+	}
+	// With proxies named, the deployment has said which they are, and one
+	// header is somebody writing their own.
 	if err := cfg.Set("network.trusted_proxies", "192.0.2.10", "", "test"); err != nil {
 		t.Fatal(err)
 	}
-	out.Reset()
-	h = clientip.Middleware(resolve, unbelieved("site.trusted_proxy", resolve, &out, http.NotFoundHandler()))
-	send("10.2.0.1:80", "203.0.113.9")
-	if out.Len() != 0 {
-		t.Fatalf("%q", out.String())
+	w = watch(root, "site.trusted_proxy", resolve)
+	w.send("10.2.0.1:80", "X-Forwarded-For", "203.0.113.9")
+	if w.out.Len() != 0 {
+		t.Fatalf("%q", w.out.String())
+	}
+}
+
+func TestAMachineThatForwardsManyDifferentAddressesIsReportedOnce(t *testing.T) {
+	root := shieldRoot(t)
+	nothing := func() *clientip.Resolver { return &clientip.Resolver{} }
+	w := watch(root, "admin.trusted_proxy", nothing)
+	for i := 1; i < manyDifferent; i++ {
+		w.send("198.51.100.7:443", "X-Forwarded-For", fmt.Sprintf("203.0.113.%d", i))
+	}
+	if w.out.Len() != 0 || w.marked {
+		t.Fatalf("reported before %d different addresses: %q", manyDifferent, w.out.String())
+	}
+	w.send("198.51.100.7:443", "X-Forwarded-For", fmt.Sprintf("203.0.113.%d", manyDifferent))
+	out := w.out.String()
+	for _, want := range []string{
+		fmt.Sprintf("198.51.100.7 forwarded %d different addresses within an hour", manyDifferent),
+		"a block on it is a block on all of them",
+		"\n      quilzo config set network.trusted_proxies 198.51.100.7\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("the report does not say %q: %q", want, out)
+		}
+	}
+	if !w.marked {
+		t.Fatal("the request that found it was not marked")
+	}
+	recs := unnamedRecords(t, root)
+	if len(recs) != 1 || recs[0].Detail["surface"] != "admin" || recs[0].Outcome != audit.Denied ||
+		!strings.Contains(recs[0].Detail["fix"], "network.trusted_proxies") {
+		t.Fatalf("%+v", recs)
+	}
+	// The log keeps the handle the shield blocks it by, not the address.
+	if strings.Contains(fmt.Sprint(recs[0]), "198.51.100.7") || !strings.HasPrefix(recs[0].Principal, "p_") {
+		t.Fatalf("the address reached the log: %+v", recs[0])
+	}
+	// Once: what it sends from now on is marked, and says nothing more,
+	// whatever it forwards or if it forwards nothing.
+	n := w.out.Len()
+	for i := 0; i < 3*manyDifferent; i++ {
+		w.send("198.51.100.7:443", "X-Forwarded-For", fmt.Sprintf("198.18.0.%d", i))
+	}
+	if w.out.Len() != n || len(unnamedRecords(t, root)) != 1 {
+		t.Fatalf("said again: %q", w.out.String()[n:])
+	}
+	if w.send("198.51.100.7:443", "", ""); !w.marked {
+		t.Fatal("its own request was not marked")
+	}
+	if w.send("198.51.100.99:443", "", ""); w.marked {
+		t.Fatal("another machine was marked")
+	}
+	// Any of the headers a proxy or CDN writes, on a private network as on
+	// the internet.
+	for i := 0; i < manyDifferent; i++ {
+		w.send("10.0.0.9:80", "Cf-Connecting-Ip", fmt.Sprintf("203.0.113.%d", i))
+	}
+	if !strings.Contains(w.out.String(), "10.0.0.9 forwarded") {
+		t.Fatalf("a private machine forwarding a CDN's header was not reported: %q", w.out.String())
+	}
+	// One client writing the same header, however often, is one client.
+	n = w.out.Len()
+	for i := 0; i < 10*manyDifferent; i++ {
+		w.send("198.51.100.8:443", "X-Forwarded-For", "203.0.113.9")
+	}
+	// Nor is a handful spread over more than the window.
+	for i := 0; i < 2*manyDifferent; i++ {
+		w.send("198.51.100.9:443", "X-Forwarded-For", fmt.Sprintf("203.0.113.%d", i))
+		w.at = w.at.Add(forwardWindow/(manyDifferent-1) + time.Second)
+	}
+	if w.out.Len() != n {
+		t.Fatalf("one client, or a few over hours, was reported: %q", w.out.String()[n:])
+	}
+}
+
+func TestANamedProxyIsNeverReported(t *testing.T) {
+	root := shieldRoot(t)
+	cfg := config.New()
+	if err := cfg.Set("network.trusted_proxies", "192.0.2.10,10.0.0.0/8", "", "test"); err != nil {
+		t.Fatal(err)
+	}
+	resolve := func() *clientip.Resolver { return resolverFrom(cfg, "site.trusted_proxy") }
+	w := watch(root, "site.trusted_proxy", resolve)
+	for i := 0; i < 4*manyDifferent; i++ {
+		// What it forwards is believed; what it sends of its own, with a
+		// CDN's header and no X-Forwarded-For, is its own request.
+		w.send("192.0.2.10:443", "X-Forwarded-For", fmt.Sprintf("203.0.113.%d", i))
+		w.send("10.1.2.3:443", "Cf-Connecting-Ip", fmt.Sprintf("203.0.113.%d", i))
+	}
+	if w.out.Len() != 0 || len(unnamedRecords(t, root)) != 0 || w.marked {
+		t.Fatalf("a named proxy was reported: %q", w.out.String())
+	}
+	// One that is not named is told how to join them, keeping them.
+	for i := 0; i < manyDifferent; i++ {
+		w.send("198.51.100.7:443", "X-Forwarded-For", fmt.Sprintf("203.0.113.%d", i))
+	}
+	if !strings.Contains(w.out.String(), "quilzo config set network.trusted_proxies 192.0.2.10,10.0.0.0/8,198.51.100.7\n") {
+		t.Fatalf("%q", w.out.String())
+	}
+}
+
+func TestAProxyOnThisMachineIsToldToTurnItsSettingOn(t *testing.T) {
+	// Caddy in front of the site, with site.trusted_proxy off: every
+	// visitor is this machine, which the shield never blocks. Naming
+	// 127.0.0.1 would let any program here choose its address on both
+	// surfaces, so the hint is the surface's own setting.
+	root := shieldRoot(t)
+	w := watch(root, "site.trusted_proxy", func() *clientip.Resolver { return &clientip.Resolver{} })
+	for i := 0; i < manyDifferent; i++ {
+		w.send("127.0.0.1:80", "X-Forwarded-For", fmt.Sprintf("203.0.113.%d", i))
+	}
+	out := w.out.String()
+	if !strings.Contains(out, "the shield blocks none of them") ||
+		!strings.Contains(out, "\n      quilzo config set site.trusted_proxy true\n") ||
+		strings.Contains(out, "network.trusted_proxies") {
+		t.Fatalf("%q", out)
+	}
+}
+
+func TestWatchingWhatMachinesForwardIsBounded(t *testing.T) {
+	root := shieldRoot(t)
+	w := watch(root, "site.trusted_proxy", func() *clientip.Resolver { return &clientip.Resolver{} })
+	// Many machines, each with a few values: no more are watched than the
+	// limit, and none holds more than it needs to count.
+	for i := 0; i < 4*maxWatched; i++ {
+		for j := 0; j < manyDifferent-1; j++ {
+			w.send(fmt.Sprintf("[2001:db8::%x]:443", i), "X-Forwarded-For", fmt.Sprintf("203.0.113.%d", j))
+		}
+		w.at = w.at.Add(time.Millisecond)
+	}
+	w.f.mu.Lock()
+	watched := len(w.f.watched)
+	for _, x := range w.f.watched {
+		if len(x.seen) > manyDifferent {
+			t.Errorf("a machine holds %d values", len(x.seen))
+		}
+	}
+	// The oldest went first: the last machine is still watched.
+	_, last := w.f.watched[netip.MustParseAddr(fmt.Sprintf("2001:db8::%x", 4*maxWatched-1))]
+	w.f.mu.Unlock()
+	if watched > maxWatched || !last {
+		t.Fatalf("%d machines watched, the last one %v", watched, last)
+	}
+	if w.out.Len() != 0 {
+		t.Fatalf("%q", w.out.String())
+	}
+	// Many machines that each forward enough: no more than maxReported are
+	// ever named, and past that nothing more is watched.
+	for i := 0; i < 3*maxReported; i++ {
+		for j := 0; j < manyDifferent; j++ {
+			w.send(fmt.Sprintf("198.51.100.%d:443", i+1), "X-Forwarded-For", fmt.Sprintf("203.0.113.%d", j))
+		}
+	}
+	if got := strings.Count(w.out.String(), "different addresses within an hour"); got != maxReported {
+		t.Fatalf("named %d machines, want %d", got, maxReported)
+	}
+	if got := len(unnamedRecords(t, root)); got != maxReported {
+		t.Fatalf("recorded %d machines, want %d", got, maxReported)
+	}
+	w.f.mu.Lock()
+	before := len(w.f.watched)
+	w.f.mu.Unlock()
+	for i := 0; i < maxWatched; i++ {
+		w.send(fmt.Sprintf("[2001:db8:1::%x]:443", i), "X-Forwarded-For", "203.0.113.1")
+	}
+	w.f.mu.Lock()
+	defer w.f.mu.Unlock()
+	if len(w.f.watched) > before || len(w.f.reported) != maxReported {
+		t.Fatalf("watched %d (was %d), reported %d", len(w.f.watched), before, len(w.f.reported))
 	}
 }
 

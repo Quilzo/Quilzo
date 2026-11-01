@@ -33,11 +33,19 @@ type Signal struct {
 	Subject string
 	At      time.Time
 	// Unverified says the source's address cannot be trusted enough to
-	// block it: it came forwarded by a proxy nobody named, or by one only
-	// assumed to be a proxy because it is on this machine
+	// block it: it was forwarded by a proxy only assumed to be one because
+	// it is on this machine, where any program could have written it
 	// (clientip.Client.Unverified). It is counted, and a person is told; it
 	// is not blocked or slowed.
 	Unverified bool
+	// UnnamedProxy says the source was reported as probably a proxy or CDN
+	// nobody named: it forwarded addresses, many different ones or while a
+	// proxy was only assumed, without being named in
+	// network.trusted_proxies (cmd/quilzo finds it at the edge). It is
+	// blocked and slowed like anybody's, or sending such headers would be a
+	// way past the shield; what blocks or slows it says that this may hold
+	// everybody behind it, and how to name it.
+	UnnamedProxy bool
 	// Where is the surface it came from, Admin or Site, when known.
 	Where string
 	// By is who raised it, as a network's handle, for a trigger that counts
@@ -437,7 +445,8 @@ func (e *Engine) step(pb Playbook, stage int, step Step, mode, key string, addr 
 			return "did not block or slow: the source is this machine or on a trusted network", "", false
 		}
 		if s.Unverified {
-			return "did not block or slow: its address came through a proxy that is not named in network.trusted_proxies, so it may be everybody's", "", true
+			return "did not block or slow: its address was forwarded by a proxy assumed to be on this machine " +
+				"rather than named in network.trusted_proxies, and any program there could have written it", "", true
 		}
 		// Never lock out somebody who runs this place: a source an
 		// administrator signed in from strongly keeps the admin.
@@ -547,12 +556,37 @@ func (e *Engine) step(pb Playbook, stage int, step Step, mode, key string, addr 
 	default:
 		return "would have " + what, "", false
 	}
+	// A source reported as a proxy nobody named is held all the same, and
+	// the protection and the person told both say what that may mean. The
+	// reason has a limit and the block matters more than the words, so a
+	// playbook whose title leaves no room keeps its reason as it was.
+	shared := s.UnnamedProxy && (p.Kind == Block || p.Kind == Slow)
+	if more := ". " + unnamedProxyReason; shared && len(p.Reason)+len(more) <= maxReason {
+		p.Reason += more
+	}
 	applied, _, err := Apply(e.Root, p, now)
 	if err != nil {
 		return "did not " + what + ": " + err.Error(), "", true
 	}
+	if shared {
+		return what + "; " + unnamedProxyNote, applied.ID, true
+	}
 	return what, applied.ID, note != ""
 }
+
+// What blocking or slowing a source reported as a proxy nobody named adds:
+// to its reason, in brief, and to what a person is told, in full. What it
+// may be holding, how to stop that happening again, and how to end it now.
+// The command without its address: the shield stores none, and the line
+// the server wrote on standard error has it whole.
+const (
+	unnamedProxyReason = "The source may be a proxy nobody named, holding everybody behind it: " +
+		"quilzo config set network.trusted_proxies names it, and quilzo shield lift on this machine ends this."
+	unnamedProxyNote = "the source forwarded addresses without being named as a proxy, so it may be " +
+		"a proxy or CDN in front, and this may hold everybody behind it. If it is one, name it with the " +
+		"line the server wrote on standard error (quilzo config set network.trusted_proxies with its " +
+		"address). On this machine, quilzo shield lift ends this now"
+)
 
 // vouched reports whether the signal's source signed in strongly lately.
 func (e *Engine) vouched(st *State, addr netip.Addr, s Signal, now time.Time) bool {
