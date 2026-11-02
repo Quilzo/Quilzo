@@ -210,6 +210,13 @@ var Purposes = []Purpose{
 		Without: "a replica stops following and serves what it last had",
 	},
 	{
+		Name: "accounts",
+		What: "connecting a person's account at a provider an administrator declared, refreshing " +
+			"its token, and revoking it when they disconnect",
+		Without: "nobody connects an account, and an integration that acts with one is refused; " +
+			"integrations with their own credential still work",
+	},
+	{
 		Name: "integrations",
 		What: "calling a tool on an MCP server an administrator declared and enabled, for an " +
 			"agent's run or for another system's agent through the gateway",

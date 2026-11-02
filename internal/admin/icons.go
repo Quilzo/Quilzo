@@ -40,7 +40,7 @@ var iconSymbol = map[string]string{
 	"people": "person", "members": "group", "boards": "forum", "provisioning": "sync", "sso": "badge", "access": "key", "passkeys": "passkey", "apps": "apps", "memory": "psychology", "fleet": "lan",
 	"integrations": "extension", "models": "memory", "settings": "settings",
 	"find": "search", "start": "rocket_launch", "playground": "api",
-	"profile": "account_circle",
+	"profile": "account_circle", "accounts": "account_circle",
 }
 
 var iconPath = func() map[string]string {

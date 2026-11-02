@@ -511,6 +511,11 @@ var commandNeeds = map[string]need{
 	"vault": {action: auth.ActToken},
 	// Credentials agents use: whoever may mint a token may keep one.
 	"secret": {action: auth.ActToken},
+	// A person's own accounts elsewhere: an author's to connect and
+	// disconnect, for agents acting for them. Declaring where accounts may
+	// be connected, and disconnecting somebody else's, is a grant, which
+	// connectcmd.go checks itself: this table only narrows.
+	"connect": {action: auth.ActEditDraft},
 	// Fetching and installing a program this store then runs: whoever may
 	// mint a token. Looking at which browser would be used is reading.
 	"browser": {action: auth.ActToken},

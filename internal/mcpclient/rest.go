@@ -188,6 +188,13 @@ func (c *Client) restCall(ctx context.Context, in agent.Integration, tool string
 	if body != nil {
 		headers["Content-Type"] = "application/json"
 	}
+	if in.Connection != "" {
+		tok, err := c.connected(ctx, in)
+		if err != nil {
+			return "", err
+		}
+		headers["Authorization"] = "Bearer " + tok
+	}
 	if in.Secret != "" {
 		if c.Secrets == nil {
 			return "", fmt.Errorf("%s authenticates with the secret %q and this process has no vault to read it from",

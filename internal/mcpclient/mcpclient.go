@@ -81,6 +81,13 @@ type Client struct {
 	// person approved, so the shield can hear about it.
 	Changed func(in agent.Integration, tool, pinned, now string)
 
+	// Connection is the access token of the account the person this
+	// client acts for connected at a provider (internal/connect), for an
+	// integration that names one; host is where it would be sent, which
+	// the provider must name. Nil means this client acts for nobody, and
+	// such an integration is refused rather than called anonymously.
+	Connection func(ctx context.Context, provider, host string) (string, error)
+
 	// Now is a clock for the definitions' cache.
 	Now func() time.Time
 
@@ -518,6 +525,13 @@ func (c *Client) post(ctx context.Context, in agent.Integration, msg rpc, versio
 	if sessionID != "" {
 		headers["Mcp-Session-Id"] = sessionID
 	}
+	if in.Connection != "" {
+		tok, err := c.connected(ctx, in)
+		if err != nil {
+			return nil, nil, err
+		}
+		headers["Authorization"] = "Bearer " + tok
+	}
 	if in.Secret != "" {
 		if c.Secrets == nil {
 			return nil, nil, fmt.Errorf(
@@ -709,4 +723,18 @@ func clamp(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
+}
+
+// connected is the token of the account the person this client acts for
+// connected at the integration's provider.
+func (c *Client) connected(ctx context.Context, in agent.Integration) (string, error) {
+	if c.Connection == nil {
+		return "", fmt.Errorf("%s acts with the connected account of the person an agent acts for, "+
+			"and this call acts for nobody", in.Name)
+	}
+	tok, err := c.Connection(ctx, in.Connection, in.Endpoint)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", in.Name, err)
+	}
+	return tok, nil
 }

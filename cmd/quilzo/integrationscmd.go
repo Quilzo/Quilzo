@@ -219,7 +219,7 @@ func integrationsCall(root string, args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	out, cerr := newMCPClient(root).Call(ctx, in, tool, argv)
+	out, cerr := newMCPClientFor(root, actingFor(caller)).Call(ctx, in, tool, argv)
 	if cerr != nil {
 		record(root, caller.auditRecord("integration.call", name, audit.Denied,
 			map[string]string{"tool": tool, "error": cerr.Error()}))
@@ -256,9 +256,17 @@ var mcpTransport func(ctx context.Context, url string, body []byte, headers map[
 // the network, with every address check.
 var restTransport func(ctx context.Context, method, url string, body []byte, headers map[string]string) (*fetch.Result, error)
 
-// newMCPClient builds the client, with the vault if there is one.
+// newMCPClient builds the client, with the vault if there is one. It acts
+// for nobody: an integration that acts with a person's connected account
+// is refused through it. newMCPClientFor acts for a person.
 func newMCPClient(root string) *mcpclient.Client {
-	return &mcpclient.Client{
+	return newMCPClientFor(root, "")
+}
+
+// newMCPClientFor builds the client acting for person: an integration that
+// names a connection goes with that person's connected account.
+func newMCPClientFor(root, person string) *mcpclient.Client {
+	c := &mcpclient.Client{
 		Do:       mcpTransport,
 		DoMethod: restTransport,
 		Secrets: func(name string) (string, error) {
@@ -271,6 +279,12 @@ func newMCPClient(root string) *mcpclient.Client {
 			noteToolChanged(root, in, tool, pinned, now)
 		},
 	}
+	if person != "" {
+		c.Connection = func(ctx context.Context, provider, host string) (string, error) {
+			return connectionToken(ctx, root, provider, person, host)
+		}
+	}
+	return c
 }
 
 // integrationsPin records the definitions a person has read and approves:

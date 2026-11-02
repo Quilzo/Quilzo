@@ -125,6 +125,19 @@ Unreleased
 
 ** Added
 
+*** Agents act with a person's own accounts.  An administrator declares
+    a provider (quilzo connect provider add NAME --template google,
+    microsoft or github, or its endpoints), people connect their accounts
+    on Your accounts or with quilzo connect start, and an integration that
+    names a connection goes with the account of the person the agent acts
+    for, and nobody else's.
+    - OAuth 2.1 with PKCE, and a state that finishes once, for the person
+      who started it.
+    - Tokens are sealed, refreshed when due, sent only to the hosts their
+      provider names, and revoked at the provider on disconnecting.
+    - An agent acting on its own name, and the gateway, have no person,
+      and are refused.
+
 *** A model reads text aloud.  quilzo media speak "text" (or @FILE)
     --voice V --author WHO sends it to a route that speaks (quilzo gateway
     route add NAME --speaks, or "It reads text aloud" on the Models

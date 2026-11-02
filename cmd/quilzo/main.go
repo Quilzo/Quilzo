@@ -459,6 +459,10 @@ encryption at rest
       QUILZO_KEY / _KEY_FILE / _KEY_COMMAND  where the key comes from
   quilzo secret set NAME < file            keep a credential an agent uses, sealed
   quilzo secret list | remove NAME         what is kept, by name; never the value
+  quilzo connect providers | provider add NAME --template google --client-id ID
+                                           where people may connect their own accounts
+  quilzo connect start NAME | list | revoke NAME
+                                           your account there, for agents acting for you
 
 compliance evidence
   quilzo compliance summary                what a procurement questionnaire asks
@@ -845,6 +849,8 @@ func main() {
 		err = cmdVault(root, cmdArgs)
 	case "secret":
 		err = cmdSecret(root, cmdArgs)
+	case "connect":
+		err = cmdConnect(root, cmdArgs)
 	case "browser":
 		err = cmdBrowser(root, cmdArgs)
 	case "cell":
