@@ -395,6 +395,7 @@ the assistant
   quilzo decide list | remove NAME
   quilzo gateway status                    model routes, and what each caller spent today
   quilzo gateway route add|remove NAME     where model calls go, in fallback order, and what a million tokens cost there
+  quilzo gateway providers [ID]            the model providers a route can name, what each keeps, and how to add one
   quilzo gateway budget CALLER             calls a minute, characters or tokens a day, money a day or a month
   quilzo gateway currency USD              the currency prices and money budgets are in
   quilzo fediverse init                    a signing key, so the site can federate

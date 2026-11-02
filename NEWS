@@ -107,6 +107,17 @@ Unreleased
 
 ** Added
 
+*** Models from more than forty providers, by name.  quilzo gateway
+    providers lists them, from runtimes on this machine to model makers,
+    open-model hosts, routers, clouds and regional providers, each with
+    what it says it does with what it is sent; quilzo gateway route add
+    NAME --provider ID takes the address and the way it wants its key from
+    the provider's profile.  A provider's route reaches that provider's
+    host and nothing else, at public addresses (this network for a local
+    runtime), and its key can be sealed (--key-secret) rather than in an
+    environment variable.  The Models screen offers the same list.  An
+    operator's own providers.json adds profiles or replaces built-in ones.
+
 *** Staff hear what visitors are waiting on.  When a visitor asks a
     chatbot for a person or sends a form, notify.staff is told: by mail,
     or in a Slack, Teams or Discord channel through an incoming webhook

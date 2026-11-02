@@ -6,6 +6,8 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/quilzo/quilzo/internal/fetch"
+	"github.com/quilzo/quilzo/internal/provider"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -67,14 +69,7 @@ func modelGateway(root string) (*gateway.Gateway, *gateway.Config, error) {
 		return nil, nil, err
 	}
 	gw := gateway.New(*cfg, func(r gateway.Route) (gateway.Model, error) {
-		key := ""
-		if r.KeyEnv != "" {
-			key = os.Getenv(r.KeyEnv)
-			if key == "" {
-				return nil, fmt.Errorf("%s is not set", r.KeyEnv)
-			}
-		}
-		m, err := assist.NewHTTPModelAt(r.URL, key, r.Model)
+		m, err := routeModel(root, r)
 		if err != nil {
 			return nil, err
 		}
@@ -82,6 +77,9 @@ func modelGateway(root string) (*gateway.Gateway, *gateway.Config, error) {
 		// long a call through it may take: see gateway.RouteParams.
 		var timeout time.Duration
 		m.Params, timeout = r.Params.Model()
+		if m.Params.MaxTokensField == "" {
+			m.Params.MaxTokensField = providerMaxTokens(root, r)
+		}
 		if timeout > 0 {
 			m.Client.Timeout = timeout
 		}
@@ -90,6 +88,10 @@ func modelGateway(root string) (*gateway.Gateway, *gateway.Config, error) {
 	// The shield: a route it cut is not used, and what the gateway sees
 	// that a person must know (a spent budget, a provider refusing a route
 	// for its cap or its key) reaches its playbooks.
+	gw.HasSecret = func(name string) bool {
+		_, err := readSecret(root, name)
+		return err == nil
+	}
 	gw.Cut = func(route string) bool {
 		p, on := shield.Find(root, shield.Route, route, time.Now())
 		return on && p.Reason != shield.Unreadable
@@ -134,6 +136,8 @@ func cmdGateway(root string, args []string) error {
 		return gatewayStatus(root)
 	case "route":
 		return gatewayRoute(root, args[1:])
+	case "providers", "provider":
+		return gatewayProviders(root, args[1:])
 	case "budget":
 		return gatewayBudget(root, args[1:])
 	case "currency":
@@ -175,11 +179,20 @@ func gatewayStatus(root string) error {
 	w.Human("%sroutes, in fallback order%s\n", bold, reset)
 	for _, h := range gw.Health() {
 		key := "no key needed"
-		if h.Route.KeyEnv != "" {
+		switch {
+		case h.Route.KeySecret != "":
+			key = "key sealed as " + h.Route.KeySecret
+			if !h.KeySet {
+				key += " (not kept: quilzo secret set " + h.Route.KeySecret + ")"
+			}
+		case h.Route.KeyEnv != "":
 			key = "key in $" + h.Route.KeyEnv
 			if !h.KeySet {
 				key += " (not set)"
 			}
+		}
+		if h.Route.Provider != "" {
+			key = h.Route.Provider + ", " + key
 		}
 		privacy := "personal data masked"
 		if h.Route.Personal {
@@ -247,7 +260,8 @@ func changeGateway(root, change, name string, edit func(*gateway.Config) error) 
 
 func gatewayRoute(root string, args []string) error {
 	if len(args) < 2 || (args[0] != "add" && args[0] != "remove") {
-		return fmt.Errorf("usage: quilzo gateway route add NAME --url U --model M [--key-env VAR] [--personal]\n" +
+		return fmt.Errorf("usage: quilzo gateway route add NAME --provider ID --model M [--param name=value] [--key-secret NAME]\n" +
+			"       quilzo gateway route add NAME --url U --model M [--key-env VAR | --key-secret NAME] [--personal]\n" +
 			"         [--max-tokens-field max_completion_tokens] [--temperature T] [--top-p P] [--timeout 300s] [--auto-tool-choice]\n" +
 			"       quilzo gateway route remove NAME")
 	}
@@ -265,12 +279,50 @@ func gatewayRoute(root string, args []string) error {
 	topP := fs.String("top-p", "", "a top_p sent on every call; empty sends none")
 	timeout := fs.String("timeout", "", "how long one call may take, such as 300s for a model that reasons at length")
 	autoTool := fs.Bool("auto-tool-choice", false, "send auto where a caller forces a tool, for a model that refuses a forced choice")
+	prov := fs.String("provider", "", "a provider from quilzo gateway providers: the route reaches it and nothing else")
+	keySecret := fs.String("key-secret", "", "the sealed credential holding the key (quilzo secret set NAME)")
+	var provParams multiFlag
+	fs.Var(&provParams, "param", "a provider's parameter, name=value (an Azure resource, an AWS region)")
 	if err := fs.Parse(args[2:]); err != nil {
 		return err
 	}
 	params, err := routeParams(*maxField, *temperature, *topP, *timeout, *autoTool)
 	if err != nil {
 		return err
+	}
+	// A provider's route: its address from the profile, checked now, and
+	// its key's credential named the way the profile suggests.
+	var pp map[string]string
+	if verb == "add" && *prov != "" {
+		cat, cerr := loadProviders(root)
+		if cerr != nil {
+			return cerr
+		}
+		p, ok := cat.Get(*prov)
+		if !ok {
+			return fmt.Errorf("no provider called %q; quilzo gateway providers lists them", *prov)
+		}
+		pp = map[string]string{}
+		for _, kv := range provParams {
+			k, v, ok := strings.Cut(kv, "=")
+			if !ok {
+				return fmt.Errorf("--param is name=value, not %q", kv)
+			}
+			pp[strings.TrimSpace(k)] = strings.TrimSpace(v)
+		}
+		base, _, eerr := p.Endpoint(pp)
+		if eerr != nil {
+			return eerr
+		}
+		if *u == "" {
+			*u = base
+		}
+		if *keySecret == "" && *keyEnv == "" && p.Auth != "none" {
+			*keySecret = p.Key
+		}
+		if len(pp) == 0 {
+			pp = nil
+		}
 	}
 	return changeGateway(root, "route."+verb, name, func(c *gateway.Config) error {
 		var kept []gateway.Route
@@ -287,7 +339,7 @@ func gatewayRoute(root string, args []string) error {
 			return nil
 		}
 		r := gateway.Route{Name: name, URL: *u, Model: *model, KeyEnv: *keyEnv, PriceIn: *priceIn, PriceOut: *priceOut,
-			Personal: *personal, Params: params}
+			Personal: *personal, Params: params, Provider: *prov, ProviderParams: pp, KeySecret: *keySecret}
 		if *first {
 			c.Routes = append([]gateway.Route{r}, kept...)
 		} else {
@@ -354,6 +406,13 @@ func gatewayBudget(root string, args []string) error {
 // gatewayCapability is the gateway for the admin's Models screen.
 func gatewayCapability(root string) *admin.Models {
 	return &admin.Models{
+		Providers: func() []provider.Provider {
+			cat, err := loadProviders(root)
+			if err != nil {
+				return nil
+			}
+			return cat.All()
+		},
 		Load: func() (*gateway.Config, []gateway.Health, []gateway.Spend, error) {
 			gw, cfg, err := modelGateway(root)
 			if err != nil || gw == nil {
@@ -414,4 +473,159 @@ func noteMasked(root, caller, route string, counts map[string]int) {
 	if counts[string(pii.Secret)] > 0 {
 		newShieldHost(root).engine.Observe(shield.Signal{Name: "secret-in-prompt", Subject: caller})
 	}
+}
+
+// providersPath is the operator's own provider profiles, laid over the
+// built-in ones (internal/provider).
+func providersPath(root string) string { return filepath.Join(root, "providers.json") }
+
+func loadProviders(root string) (*provider.Catalogue, error) {
+	return provider.Load(providersPath(root))
+}
+
+// routeKey is a route's key: from its sealed credential, or from the
+// environment variable it names.
+func routeKey(root string, r gateway.Route) (string, error) {
+	if r.KeySecret != "" {
+		v, err := readSecret(root, r.KeySecret)
+		if err != nil {
+			return "", fmt.Errorf("route %s's key: %w", r.Name, err)
+		}
+		return strings.TrimSpace(v), nil
+	}
+	if r.KeyEnv != "" {
+		key := os.Getenv(r.KeyEnv)
+		if key == "" {
+			return "", fmt.Errorf("%s is not set", r.KeyEnv)
+		}
+		return key, nil
+	}
+	return "", nil
+}
+
+// routeModel is the model a route reaches.
+//
+// A route that names a provider reaches that provider's host and nothing
+// else, at public addresses for a hosted one and on this network for a
+// local one, and sends its key the way the provider takes it. A route with
+// only an address is as it was: any https address with a key, this network
+// without one.
+func routeModel(root string, r gateway.Route) (*assist.HTTPModel, error) {
+	key, err := routeKey(root, r)
+	if err != nil {
+		return nil, err
+	}
+	if r.Provider == "" {
+		return assist.NewHTTPModelAt(r.URL, key, r.Model)
+	}
+	cat, err := loadProviders(root)
+	if err != nil {
+		return nil, err
+	}
+	p, ok := cat.Get(r.Provider)
+	if !ok {
+		return nil, fmt.Errorf("route %s names %s, which is not a provider here (quilzo gateway providers)", r.Name, r.Provider)
+	}
+	base, host, err := p.Endpoint(r.ProviderParams)
+	if err != nil {
+		return nil, fmt.Errorf("route %s: %w", r.Name, err)
+	}
+	if r.URL != "" {
+		u, perr := url.Parse(r.URL)
+		if perr != nil || !strings.EqualFold(u.Host, host) || (u.Scheme != "https" && !p.Local) {
+			return nil, fmt.Errorf("route %s is at %s and its provider, %s, is at %s: a route reaches its "+
+				"provider and nothing else", r.Name, r.URL, p.Name, host)
+		}
+		base = strings.TrimSuffix(r.URL, "/")
+	}
+	if p.Auth != "none" && key == "" {
+		return nil, fmt.Errorf("route %s needs its key for %s: quilzo secret set %s < keyfile, then "+
+			"--key-secret %s", r.Name, p.Name, p.Key, p.Key)
+	}
+	reach := fetch.Public
+	if p.Local {
+		reach = fetch.OnThisNetwork
+	}
+	m := &assist.HTTPModel{BaseURL: base, APIKey: key, Model: r.Model,
+		Client: fetch.Speaking("assistant", reach, assist.RequestTimeout),
+		Auth:   p.Auth, Headers: p.Headers, Host: host}
+	if p.Auth == "none" && key != "" {
+		m.Auth = "bearer"
+	}
+	return m, nil
+}
+
+// providerMaxTokens is the output-limit field a route uses: its own, or
+// its provider's.
+func providerMaxTokens(root string, r gateway.Route) string {
+	if r.Params.MaxTokens != "" || r.Provider == "" {
+		return r.Params.MaxTokens
+	}
+	if cat, err := loadProviders(root); err == nil {
+		if p, ok := cat.Get(r.Provider); ok {
+			return p.MaxTokens
+		}
+	}
+	return ""
+}
+
+// gatewayProviders lists the providers a route can name, or one of them.
+func gatewayProviders(root string, args []string) error {
+	cat, err := loadProviders(root)
+	if err != nil {
+		return err
+	}
+	if len(args) > 0 {
+		p, ok := cat.Get(args[0])
+		if !ok {
+			return fmt.Errorf("no provider called %q; quilzo gateway providers lists them", args[0])
+		}
+		if w.JSON(p) {
+			return nil
+		}
+		w.Human("%s%s%s  (%s)\n", bold, p.Name, reset, p.ID)
+		w.Human("  %s, %s\n", provider.GroupName(p.Group), p.Where)
+		w.Human("  address   %s\n", p.Base)
+		auth := "Authorization: Bearer"
+		switch {
+		case p.Auth == "none":
+			auth = "no key"
+		case strings.HasPrefix(p.Auth, "header:"):
+			auth = strings.TrimPrefix(p.Auth, "header:") + " header"
+		}
+		w.Human("  key       %s\n", auth)
+		w.Human("  trains on what it is sent: %s\n", p.Data.Trains)
+		w.Human("  keeps it: %s", p.Data.Retention)
+		if p.Data.ZeroRetention != "" {
+			w.Human(" (zero retention: %s)", p.Data.ZeroRetention)
+		}
+		w.Human("\n  where it is processed: %s\n", p.Data.Residency)
+		w.Human("  %saddress from %s; %s%s\n", dim, p.Verified, p.Docs, reset)
+		add := "quilzo gateway route add NAME --provider " + p.ID + " --model MODEL"
+		for _, prm := range p.Params {
+			add += " --param " + prm.Name + "=..."
+		}
+		if p.Auth != "none" {
+			w.Human("\n  quilzo secret set %s < keyfile\n", p.Key)
+			add += " --key-secret " + p.Key
+		} else {
+			w.Human("\n")
+		}
+		w.Human("  %s\n", add)
+		return nil
+	}
+	all := cat.All()
+	if w.JSON(all) {
+		return nil
+	}
+	group := ""
+	for _, p := range all {
+		if p.Group != group {
+			group = p.Group
+			w.Human("\n%s%s%s\n", bold, provider.GroupName(group), reset)
+		}
+		w.Human("  %-16s %-48s %s%s%s\n", p.ID, clip(p.Name, 48), dim, p.Where, reset)
+	}
+	w.Human("\n%squilzo gateway providers ID for one, with what it keeps and how to add it%s\n", dim, reset)
+	return nil
 }
