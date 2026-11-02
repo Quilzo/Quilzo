@@ -69,7 +69,7 @@ func Write(m agent.Manifest, format string) (*Exported, error) {
 		note(Left, "%s: the gate here enforces these, and the %s format has no field for them", names(unheld), f.Title)
 		var content []string
 		for _, c := range m.Capabilities {
-			if !agent.IsShell(c) && !agent.IsBrowser(c) {
+			if !agent.IsShell(c) && !agent.IsBrowser(c) && !agent.IsWeb(c) {
 				content = append(content, c)
 			}
 		}
@@ -135,8 +135,11 @@ func claudeToolsFor(m agent.Manifest) []string {
 		slices.Contains(m.Capabilities, "file_move") || slices.Contains(m.Capabilities, "file_delete") {
 		tools = append(tools, "Bash")
 	}
-	if m.Browser != nil && len(m.Browser.Read) > 0 {
+	if (m.Browser != nil && len(m.Browser.Read) > 0) || slices.Contains(m.Capabilities, "web_fetch") {
 		tools = append(tools, "WebFetch")
+	}
+	if slices.Contains(m.Capabilities, "web_search") {
+		tools = append(tools, "WebSearch")
 	}
 	return tools
 }

@@ -100,6 +100,9 @@ func knownCapabilities(root string) map[string]bool {
 	for _, c := range agent.ShellCapabilities {
 		known[c] = true
 	}
+	for _, c := range agent.WebCapabilities {
+		known[c] = true
+	}
 	for _, c := range agent.CellCapabilities {
 		known[c] = true
 	}
@@ -1375,6 +1378,11 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 		defer rs.end()
 		runner.Perform = rs.driver.Perform(runner.Perform)
 		weighs = append(weighs, rs.driver.Weighs)
+	}
+	// Its reach onto the web without a browser (agentweb.go): reading an
+	// address, and searching.
+	if holdsWeb(m) {
+		runner.Perform = newWebDriver(root, sess).Perform(runner.Perform)
 	}
 	// Its desktop cell (agentcell.go): a microVM from the warm snapshot,
 	// worked through the same governed shape as the browser. Nothing is

@@ -100,6 +100,9 @@ func (s *Session) Breaks(a Action) (string, bool) {
 		if to, sends := browserSends(a); sends {
 			return s.breaksTo(to, "")
 		}
+		if to, sends := webSends(a); sends {
+			return s.breaksTo(to, "")
+		}
 		return "", false
 	}
 	return s.breaksTo(s.HostFor(a.Tool), a.Tool)

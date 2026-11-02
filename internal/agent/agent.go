@@ -341,6 +341,10 @@ type Manifest struct {
 	// holds the workspace's capabilities. See shell.go.
 	Shell *Shell `json:"shell,omitempty"`
 
+	// Web is what it may read on the web without a browser, when it holds
+	// web_fetch. See web.go.
+	Web *Web `json:"web,omitempty"`
+
 	// Cell is what its desktop cell may do, when it holds the desktop's
 	// capabilities. See cell.go.
 	Cell *Cell `json:"cell,omitempty"`
@@ -559,6 +563,9 @@ func (m *Manifest) ValidateWith(known map[string]bool, customKinds map[Kind]bool
 	if err := m.validateShell(); err != nil {
 		return err
 	}
+	if err := m.validateWeb(); err != nil {
+		return err
+	}
 	if err := m.validateCell(); err != nil {
 		return err
 	}
@@ -678,6 +685,7 @@ func (m Manifest) Narrow(by Manifest) Manifest {
 	// And the workspace: the programs and hosts both name, every question
 	// either asks.
 	out.Shell = narrowShell(m.Shell, by.Shell)
+	out.Web = narrowWeb(m.Web, by.Web)
 	out.Cell = narrowCell(m.Cell, by.Cell)
 
 	// Approval is sticky: a parent that needs one cannot delegate its way out.

@@ -113,6 +113,18 @@ Unreleased
 
 ** Added
 
+*** Agents read the web and search it, without a browser.  web_fetch reads
+    an https address: a page's words and links, without its scripts and
+    forms, or text and JSON as they are.  It reads the hosts the
+    declaration's "web": {"fetch": [...]} names, or any public host with
+    {"any": true}, never a private address, and a redirect is held to the
+    same.  web_search asks the provider agents.search names (Brave,
+    Tavily, Exa, Serper, SerpApi, Kagi, Perplexity, Jina, or your own
+    SearXNG at agents.search_url), with its key sealed as
+    search-PROVIDER.  Both taint the run, and once a run holds something
+    private an address or a query waits for a person, since either could
+    carry it.  Claude Code's WebFetch and WebSearch now import as these.
+
 *** An agent's browser does more of what Chrome does.  New actions, each a
     capability:
     - browser_scroll: by screens, or an element into view;
