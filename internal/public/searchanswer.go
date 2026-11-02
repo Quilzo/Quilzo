@@ -107,6 +107,9 @@ func (st *Site) searchAnswer(r *http.Request, query string) map[string]any {
 	if st.Assistants.Audit != nil {
 		st.Assistants.Audit(a.Name, sourceOf(r), err == nil && !ans.Refused)
 	}
+	if err == nil && ans.Refused && st.Assistants.Unanswered != nil {
+		st.Assistants.Unanswered(a.Name, query)
+	}
 	if err != nil || ans.Refused || len(ans.Kept) == 0 {
 		return nil
 	}

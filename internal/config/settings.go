@@ -310,6 +310,36 @@ var settings = []Setting{
 			"budget in seconds"),
 	},
 	{
+		Key: "chatbot.gaps", Kind: Bool, Default: "false",
+		Summary:  "keep what visitors asked a chatbot that it could not answer, with their details masked, to find what the site does not say",
+		Controls: []string{"AC-6", "SI-12"},
+		Why: "Off: what somebody asks a site is theirs, and the audit log keeps only that a question " +
+			"went unanswered. On, the words are kept too, for one purpose: the Chatbots screen and " +
+			"quilzo assistant gaps group them by what they are about, somebody (or an agent) writes " +
+			"the page that answers them, and once it is published the questions are asked again and " +
+			"a group the chatbot now answers is closed. Addresses, numbers and cards are masked before " +
+			"anything is written; nobody is named; each day is a file of its own, deleted whole after " +
+			"chatbot.gaps_days.",
+		Weaker: onIsWeaker("visitors' unanswered questions are kept, masked, for chatbot.gaps_days"),
+	},
+	{
+		Key: "chatbot.gaps_agents", Kind: Bool, Default: "false",
+		Summary:  "agents may read the unanswered questions chatbot.gaps keeps, to draft the pages that answer them",
+		Controls: []string{"AC-6", "SI-12"},
+		Why: "Off: the questions are visitors' words, masked, and a person reads them on the Chatbots " +
+			"screen. On, an agent holding list_chatbot_gaps reads the groups too (a model's provider " +
+			"sees the masked words), so it can draft the page that answers them for a person to review; " +
+			"publishing it closes the group as it does any page.",
+		Weaker: onIsWeaker("agents, and the model providers behind them, read visitors' unanswered questions, masked"),
+	},
+	{
+		Key: "chatbot.gaps_days", Kind: Int, Default: "30",
+		Summary: "how many days unanswered questions are kept, when chatbot.gaps is on",
+		Why: "A month: long enough to see what is asked more than once, short enough that nothing is " +
+			"kept past finding it. Between 1 and 365.",
+		Weaker: atMost(90, "unanswered questions are kept %s days"),
+	},
+	{
 		Key: "site.webmcp", Kind: Bool, Default: "true",
 		Summary: "mark the site's search, chatbots and forms as tools a visitor's browser agent can use",
 		Why: "WebMCP: attributes on the forms the site already has, saying what " +
@@ -1455,6 +1485,7 @@ var reBrandColour = regexp.MustCompile(`^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$`)
 // session.idle's are NIST SP 800-63B-4's AAL2 inactivity limit above and,
 // below, the shortest a person reading a page is not interrupted by.
 var hardBounds = map[string][2]int64{
+	"chatbot.gaps_days":     {1, 365},
 	"auth.throttle.after":   {0, throttle.MostFree},
 	"auth.throttle.ceiling": {throttle.LeastCeiling, throttle.MostCeiling},
 	"auth.throttle.base":    {int64(throttle.LeastDelay), int64(throttle.LongestDelay)},

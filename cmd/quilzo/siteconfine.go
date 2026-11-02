@@ -27,8 +27,8 @@ import (
 // state is kept: form submissions, boards, members, handoffs, analytics, the
 // shield, its followers, the model ledger, webhook deliveries, bookings, the
 // newsletter's list, its own log of events (the things visitors do that
-// agents may start from), the audit log's two files, and a temporary
-// directory of its own. The network is left alone:
+// agents may start from), unanswered questions when the owner keeps them,
+// the audit log's two files, and a temporary directory of its own. The network is left alone:
 // it serves, and it calls models, mail and webhooks.
 //
 // What the site writes was moved out of the store's root to make this
@@ -51,7 +51,7 @@ func siteWritable(root string) (dirs, files []string) {
 		submissionDir(root), postsDir(root), membersDir(root), handoffDir(root), analyticsDir(root),
 		filepath.Dir(shield.Path(root)), filepath.Dir(fediverseFollowersPath(root)),
 		filepath.Dir(usagePath(root)), filepath.Dir(deliveriesPath(root)), siteTempDir(root),
-		bookingsDir(root), newsletterDir(root), siteEvents(root).Dir,
+		bookingsDir(root), newsletterDir(root), siteEvents(root).Dir, gapsDir(root),
 	}
 	// The audit log, unless a separate writer keeps it: then the site hands
 	// records to it over its socket and writes none itself.

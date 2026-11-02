@@ -638,6 +638,13 @@ func cmdServe(root string, args []string) error {
 				sayNoticeError(err)
 			}
 		},
+		// And chatbots asked again what they could not answer, now the
+		// page that answers it may be live (gapscmd.go).
+		published: func(ctx context.Context) {
+			if said := checkAllGaps(ctx, root); said != "" {
+				fmt.Printf("  %schatbots: %s%s\n", dim, said, reset)
+			}
+		},
 	})
 
 	// Dual authorisation. The same files and the same engine the command line

@@ -1398,6 +1398,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/assistants/save", s.handleAssistantSave)
 	mux.HandleFunc("/assistants/action", s.handleAssistantAction)
 	mux.HandleFunc("/assistants/remove", s.handleAssistantRemove)
+	mux.HandleFunc("/assistants/gaps", s.handleAssistantGaps)
 	mux.HandleFunc("/languages", s.handleLanguages)
 	mux.HandleFunc("/languages/add", s.handleLanguageAdd)
 	mux.HandleFunc("/languages/translated", s.handleLanguageTranslated)

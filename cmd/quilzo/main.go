@@ -372,6 +372,8 @@ the assistant
   quilzo assistant action NAME ACTION      what it may offer to do: a link or a form
   quilzo assistant ask NAME "question"     try it, with its sources and what was removed
   quilzo assistant eval NAME CASES.jsonl   measure it, including what it should refuse
+  quilzo assistant gaps NAME [--check] [--close KEY]
+                                          what it could not answer, grouped, when chatbot.gaps keeps it
   quilzo assistant list | remove NAME
   quilzo inbox list | show ASSISTANT/ID     visitors who asked a chatbot for a person
   quilzo inbox reply ASSISTANT/ID "text"    answer one, as yourself; inbox close ends it
