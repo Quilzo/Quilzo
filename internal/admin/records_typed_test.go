@@ -53,8 +53,10 @@ func TestARecordIsWrittenWithItsTypesForm(t *testing.T) {
 
 	form := url.Values{"collection": {"events"}, "id": {""}, "__typed": {"1"}, "title": {"Rye night"},
 		"date": {"2026-11-14"}, "time": {"19:30"}, "seats": {"40"}, "status": {""}, "venue": {""}}
+	// The redirect's own parameters, not its text: a flash token is random,
+	// and one with "not" in it once read here as a refusal.
 	if w := postForm(t, srv, "/records/save", token, form.Encode()); w.Code != http.StatusSeeOther ||
-		strings.Contains(w.Header().Get("Location"), "not") {
+		redirectQuery(w).Get("e") != "" || redirectQuery(w).Get("m") != "saved" {
 		t.Fatalf("saving: %d %s", w.Code, w.Header().Get("Location"))
 	}
 	recs, _, err := collection.List(srv.Store, tree, "events", collection.Query{})
@@ -164,4 +166,13 @@ func TestTheDataScreenBringsASpreadsheetInAndGivesOneBack(t *testing.T) {
 	if get(t, srv, "/records/export?c=../x", token).Code != http.StatusNotFound {
 		t.Error("a collection that cannot be was answered")
 	}
+}
+
+// redirectQuery is a redirect's parameters.
+func redirectQuery(w *httptest.ResponseRecorder) url.Values {
+	u, err := url.Parse(w.Header().Get("Location"))
+	if err != nil {
+		return url.Values{}
+	}
+	return u.Query()
 }
