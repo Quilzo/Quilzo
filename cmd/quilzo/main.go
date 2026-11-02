@@ -559,7 +559,7 @@ agents and integrations
   quilzo agents                            what models have been doing, and
                                             which are not accepting refusals
   quilzo integrations list|tools|call      outside systems this install may reach
-  quilzo integrations import FILE [--uses A,B]   an OpenAPI 3 document or an MCP registry server.json, declared switched off
+  quilzo integrations import FILE [--uses A,B]   an OpenAPI 3 document, an MCP registry server.json or an A2A agent card, declared switched off
   quilzo integrations undelivered [--dismiss N]  writes agents made that did not get through, kept to settle
   quilzo integrations template [NAME]      a calendar or issues, with each person's connected account, switched off
   quilzo integrations pin NAME [TOOL...]   approve what a tool is; a server's change to it is refused until pinned again

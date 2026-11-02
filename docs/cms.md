@@ -539,6 +539,12 @@ quilzo pay                                  # products for sale, links selling
 quilzo pay orders                           # read from Stripe, not kept here
 ```
 
+A product whose row says `"interval": "month"` (or week, or year) is a
+subscription: its price at Stripe is recurring, its payment link starts a
+subscription the buyer manages and cancels at Stripe, and its Buy button says
+"£12.00 a month". Monthly and yearly at one price are two offers, each with its
+own link; an interval Quilzo cannot read is no offer, and no button.
+
 The links follow publishing. A new price gets a new link, and then the old one
 is retired. A price no link charges yet shows no button at all, so a page
 never offers a checkout at a price it does not show. The site process holds no
@@ -1808,6 +1814,17 @@ Google Calendar, a Microsoft 365 calendar or GitHub issues (reading, and
 adding a meeting or an issue), switched off and unpinned for a person to read,
 pin and turn on as an imported one is. An agent acting on its own name, or another vendor's agent through
 the gateway, has no person and is refused.
+
+Another vendor's agent is an integration too, spoken to over Agent2Agent:
+`quilzo integrations import agent-card.json` declares it from its card, switched
+off, reaching the host its card says it speaks at. Its skills are the tools,
+listed, pinned, allowed and approved as an MCP server's are; a call sends one
+message naming the skill and returns what the agent answered, or what the task
+it took on came to, asked after until it finishes or ninety seconds pass. A card
+whose service address is not on the declared host is refused before anything
+is sent, so a card cannot send this installation's credential somewhere else,
+and the message carries the step's idempotency key as its id. An agent that
+needs more ("input-required") is said so, with what it asked.
 
 A remote MCP server that asks people to sign in — an issue tracker's, a
 document store's — is set up from what it publishes, rather than by copying

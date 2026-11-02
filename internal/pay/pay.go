@@ -44,6 +44,7 @@ import (
 	"fmt"
 	"math"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -63,12 +64,24 @@ type Offer struct {
 	// Amount is the price in minor units, and Currency its ISO 4217 code.
 	Amount   int64  `json:"amount"`
 	Currency string `json:"currency"`
+	// Interval makes it a subscription, charged every week, month or year;
+	// empty is a single payment. Read from the row's "interval".
+	Interval string `json:"interval,omitempty"`
 }
+
+// Intervals are how often a subscription may be charged.
+var Intervals = []string{"week", "month", "year"}
 
 // Terms identifies an offer's terms, for an idempotency key: two requests
 // for the same offer are the same request.
 func (o Offer) Terms() string {
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%d\x00%s", o.ID, o.Title, o.Amount, o.Currency)))
+	terms := fmt.Sprintf("%s\x00%s\x00%d\x00%s", o.ID, o.Title, o.Amount, o.Currency)
+	if o.Interval != "" {
+		// A subscription's terms include how often: monthly and yearly at
+		// one price are two offers.
+		terms += "\x00" + o.Interval
+	}
+	sum := sha256.Sum256([]byte(terms))
 	return hex.EncodeToString(sum[:12])
 }
 
@@ -79,6 +92,13 @@ func (o Offer) Price() string { return spend.Format(o.Amount, o.Currency) }
 // Display is the offer's price as a shopper reads it: £4.20, or 4.20 SEK
 // for a currency with no symbol everybody agrees on.
 func (o Offer) Display() string {
+	if o.Interval != "" {
+		return o.once() + " a " + o.Interval
+	}
+	return o.once()
+}
+
+func (o Offer) once() string {
 	sym, ok := symbols[o.Currency]
 	if !ok {
 		return o.Price()
@@ -112,7 +132,16 @@ func OfferOf(row map[string]any) (Offer, bool) {
 	if v.Price.Amount <= 0 || (v.Availability != nil && !v.Availability.Available) {
 		return Offer{}, false
 	}
-	return Offer{ID: p.ID, Title: p.Title, Amount: v.Price.Amount, Currency: v.Price.Currency}, true
+	out := Offer{ID: p.ID, Title: p.Title, Amount: v.Price.Amount, Currency: v.Price.Currency}
+	if iv, _ := row["interval"].(string); iv != "" {
+		iv = strings.ToLower(strings.TrimSpace(iv))
+		if !slices.Contains(Intervals, iv) {
+			// A subscription charged on terms nobody can read is no offer.
+			return Offer{}, false
+		}
+		out.Interval = iv
+	}
+	return out, true
 }
 
 // Link is a payment link at the provider, for one offer.

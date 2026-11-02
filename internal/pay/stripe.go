@@ -145,6 +145,11 @@ func (s *Stripe) Make(ctx context.Context, o Offer, opts Options) (Link, error) 
 		"product_data[name]":                   {o.Title},
 		"product_data[metadata][quilzo_offer]": {o.ID},
 	}
+	if o.Interval != "" {
+		// A recurring price: the payment link starts a subscription, which
+		// the buyer manages and cancels at Stripe.
+		price.Set("recurring[interval]", o.Interval)
+	}
 	var p struct {
 		ID string `json:"id"`
 	}
