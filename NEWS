@@ -125,6 +125,15 @@ Unreleased
 
 ** Added
 
+*** The editor's preview shows what you type, before you save.  A
+    moment after typing stops, the page beside the form shows what is
+    typed, rendered as readers will get it and saved nowhere; without
+    script, "Show in the preview" does the same.  What is typed and not
+    saved is kept for the tab: after a reload the editor offers to put it
+    back, and leaving with it unsaved asks first.  Showing unsaved words
+    takes what saving takes, so somebody who may only read sees the saved
+    draft.
+
 *** Backups of the whole store, encrypted and checked.  quilzo backup key
     makes a key (shown once, kept nowhere here); quilzo backup create
     FILE takes the store and the layouts, encrypted with AES-256-GCM in

@@ -22,7 +22,11 @@
 //     each value under its column's name, instead of hiding the columns
 //     that matter past the edge of the screen. Without the script the table
 //     scrolls sideways, with a shadow at the edge that says it does;
-//   * on a run's page taken over, a click on the live picture presses there.
+//   * on a run's page taken over, a click on the live picture presses there;
+//   * in the editor, the preview beside the form shows what is typed a
+//     moment after typing stops, by pressing the form's own preview button;
+//     and what is typed and not saved is kept for the tab, offered back
+//     after a reload, and leaving with it unsaved asks first.
 //
 // The palette is a native <dialog> with the ARIA combobox pattern: the
 // input owns a listbox, arrow keys move the active option, Enter opens it,
@@ -563,6 +567,92 @@
       send(b);
       var t = form.querySelector('input[name="text"]');
       if (t) t.value = "";
+    });
+  });
+
+  // The editor's live preview: a moment after typing stops, the form is
+  // posted into the preview frame by its own "Show in the preview" button,
+  // which renders what was typed and saves nothing. Without the script the
+  // button does the same when pressed; this only presses it.
+  document.querySelectorAll("form[data-live-preview]").forEach(function (form) {
+    var button = form.querySelector("[data-preview-now]");
+    if (!button || typeof form.requestSubmit !== "function") return;
+    var timer = 0;
+    var later = function () {
+      clearTimeout(timer);
+      timer = setTimeout(function () { form.requestSubmit(button); }, 700);
+    };
+    form.addEventListener("input", later);
+    form.addEventListener("change", later);
+  });
+
+  // What is typed and not saved is kept for this tab (sessionStorage, gone
+  // when the tab closes), so a reload or a slip of a link does not lose it:
+  // the page offers it back. Leaving with something unsaved asks first.
+  // Saving lets it go; showing it in the preview does not.
+  document.querySelectorAll("form[data-live-preview]").forEach(function (form) {
+    var base = form.querySelector('input[name="__base"]');
+    var key = "quilzo-unsaved:" + location.pathname + ":" + (base ? base.value : "");
+    var dirty = false;
+    var snapshot = function () {
+      var d = {};
+      new FormData(form).forEach(function (v, k) {
+        if (k.indexOf("__") !== 0 || k === "__form" || k === "__message") d[k] = String(v);
+      });
+      return d;
+    };
+    var keep = function () {
+      dirty = true;
+      try { sessionStorage.setItem(key, JSON.stringify(snapshot())); } catch (e) { /* full, or refused */ }
+    };
+    form.addEventListener("input", keep);
+    form.addEventListener("change", keep);
+    form.addEventListener("submit", function (e) {
+      if (e.submitter && e.submitter.hasAttribute("data-preview-now")) return;
+      dirty = false;
+      try { sessionStorage.removeItem(key); } catch (err) { /* nothing kept */ }
+    });
+    window.addEventListener("beforeunload", function (e) {
+      if (dirty) { e.preventDefault(); e.returnValue = ""; }
+    });
+    var saved = null;
+    try { saved = JSON.parse(sessionStorage.getItem(key) || "null"); } catch (e) { saved = null; }
+    if (!saved) return;
+    var now = snapshot();
+    var differs = Object.keys(saved).some(function (k) { return saved[k] !== now[k]; });
+    if (!differs) return;
+    var note = document.createElement("div");
+    note.className = "notice warn";
+    note.setAttribute("role", "status");
+    var p = document.createElement("p");
+    p.textContent = "You typed changes here earlier that were not saved. ";
+    var put = document.createElement("button");
+    put.type = "button";
+    put.className = "btn tonal";
+    put.textContent = "Put them back";
+    var drop = document.createElement("button");
+    drop.type = "button";
+    drop.className = "btn-text";
+    drop.textContent = "Let them go";
+    p.appendChild(put);
+    p.appendChild(drop);
+    note.appendChild(p);
+    form.parentNode.insertBefore(note, form);
+    put.addEventListener("click", function () {
+      Array.prototype.forEach.call(form.elements, function (el) {
+        if (!el.name || !(el.name in saved) && el.type !== "checkbox") return;
+        if (el.type === "checkbox") el.checked = el.name in saved && saved[el.name] === el.value;
+        else if (el.type === "radio") el.checked = saved[el.name] === el.value;
+        else el.value = saved[el.name];
+      });
+      note.remove();
+      dirty = true;
+      var b = form.querySelector("[data-preview-now]");
+      if (b && typeof form.requestSubmit === "function") form.requestSubmit(b);
+    });
+    drop.addEventListener("click", function () {
+      try { sessionStorage.removeItem(key); } catch (e) { /* nothing kept */ }
+      note.remove();
     });
   });
 

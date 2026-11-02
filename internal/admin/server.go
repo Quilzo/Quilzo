@@ -2914,40 +2914,7 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 		}
 		pages = map[string]any{}
 	}
-	body := map[string]any{}
-	if existing, ok := pages[name].(map[string]any); ok {
-		for k, v := range existing {
-			body[k] = v
-		}
-	}
-	// A form submits strings and nothing else. A number field arrives as "4"
-	// and a checkbox arrives as "true" or not at all, so the type is what says
-	// which of those is a number, a boolean or a list. Without this step every
-	// typed page would fail its own validation on the first save from the
-	// browser, and the fix people would reach for is turning validation off.
-	var typ schema.Type
-	typed := false
-	if s.TypeFor != nil {
-		typ, typed = s.TypeFor(name)
-	}
-	if typed {
-		coerceForm(typ, r.Form, body)
-	} else {
-		for key, values := range r.Form {
-			if strings.HasPrefix(key, "__") || len(values) == 0 {
-				continue
-			}
-			body[key] = values[0]
-		}
-	}
-	// The page's form, from the editor's list: none takes it off.
-	if _, asked := r.Form["__form"]; asked {
-		if f := strings.TrimSpace(r.FormValue("__form")); f == "" {
-			delete(body, "form")
-		} else {
-			body["form"] = f
-		}
-	}
+	body := s.pageFromForm(pages, name, r.Form)
 	pages[name] = body
 
 	msg := r.FormValue("__message")
@@ -3884,8 +3851,24 @@ func (s *Server) handlePreview(w http.ResponseWriter, r *http.Request) {
 	}
 	pages, err := site.PagesAt(s.Store, site.RefDraft)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		if s.Store.GetRef(site.RefDraft) != "" {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		pages = map[string]any{}
+	}
+	// The editor's unsaved form, posted into the preview beside it: the
+	// page as saving it would write it, rendered as a reader would get it,
+	// and nothing saved. Whoever may edit the page may see it so.
+	if r.Method == http.MethodPost {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "bad form", http.StatusBadRequest)
+			return
+		}
+		if !s.can(w, r, p, auth.ActEditDraft, "/"+name) {
+			return
+		}
+		pages[name] = s.pageFromForm(pages, name, r.PostForm)
 	}
 	body, exists := pages[name]
 	var record map[string]any
@@ -3956,6 +3939,47 @@ func (s *Server) handlePreview(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(out))
+}
+
+// pageFromForm is a page as the editor's form says it: the draft's page,
+// with what the form changes. The save and the live preview build it the
+// same way, so the preview shows what saving would write.
+func (s *Server) pageFromForm(pages map[string]any, name string, form url.Values) map[string]any {
+	body := map[string]any{}
+	if existing, ok := pages[name].(map[string]any); ok {
+		for k, v := range existing {
+			body[k] = v
+		}
+	}
+	// A form submits strings and nothing else. A number field arrives as "4"
+	// and a checkbox arrives as "true" or not at all, so the type is what says
+	// which of those is a number, a boolean or a list. Without this step every
+	// typed page would fail its own validation on the first save from the
+	// browser, and the fix people would reach for is turning validation off.
+	var typ schema.Type
+	typed := false
+	if s.TypeFor != nil {
+		typ, typed = s.TypeFor(name)
+	}
+	if typed {
+		coerceForm(typ, form, body)
+	} else {
+		for key, values := range form {
+			if strings.HasPrefix(key, "__") || len(values) == 0 {
+				continue
+			}
+			body[key] = values[0]
+		}
+	}
+	// The page's form, from the editor's list: none takes it off.
+	if _, asked := form["__form"]; asked {
+		if f := strings.TrimSpace(form.Get("__form")); f == "" {
+			delete(body, "form")
+		} else {
+			body["form"] = f
+		}
+	}
+	return body
 }
 
 // previewRecord resolves a detail address in the draft.
