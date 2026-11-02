@@ -360,6 +360,8 @@ func settingGroupLabel(key string) string {
 		return "Publishing"
 	case "schedule":
 		return "Scheduled publishing"
+	case "notify":
+		return "Telling staff what visitors are waiting on"
 	case "review":
 		return "Review and approval"
 	case "approval":

@@ -107,6 +107,14 @@ Unreleased
 
 ** Added
 
+*** Staff hear what visitors are waiting on.  When a visitor asks a
+    chatbot for a person or sends a form, notify.staff is told: by mail,
+    or in a Slack, Teams or Discord channel through an incoming webhook
+    whose address is kept sealed (secret:NAME); an address in the setting
+    itself is refused.  A notice says which chatbot or form and how many,
+    never who or what they wrote, and at most thirty go in an hour.
+    notify.events chooses what is told.
+
 *** Agents start on their own.  A trigger starts one at a time of day
     (quilzo agent trigger NAME add --every 24h --at 07:30 --zone
     Europe/London) or when something happens: pages go live, a draft is
