@@ -118,9 +118,10 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request) {
 	}
 	data := map[string]any{
 		"Nav": "assistants", "Title": a.Title, "Principal": p, "A": a,
-		"Pages":   strings.Join(a.Pages, ", "),
-		"Exclude": strings.Join(a.Exclude, ", "),
-		"Message": r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"),
+		"Pages":       strings.Join(a.Pages, ", "),
+		"Collections": strings.Join(a.Collections, ", "),
+		"Exclude":     strings.Join(a.Exclude, ", "),
+		"Message":     r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"),
 		"CanSave": s.mayUse(p, auth.ActPublish, "/") && !p.Limits.ReadOnly,
 	}
 	if s.Assistants.Documents != nil {
@@ -266,6 +267,7 @@ func (s *Server) handleAssistantSave(w http.ResponseWriter, r *http.Request) {
 			a.Instructions = strings.TrimSpace(r.FormValue("instructions"))
 			a.Refusal = strings.TrimSpace(r.FormValue("refusal"))
 			a.Pages = splitCSV(r.FormValue("pages"))
+			a.Collections = splitCSV(r.FormValue("collections"))
 			a.Exclude = splitCSV(r.FormValue("exclude"))
 			a.Public = r.FormValue("public") == "1"
 			a.Static = r.FormValue("static") == "1"

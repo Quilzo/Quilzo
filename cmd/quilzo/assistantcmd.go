@@ -18,6 +18,7 @@ import (
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/gaps"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
@@ -121,6 +122,7 @@ func assistantAdd(root string, args []string) error {
 	greeting := fs.String("greeting", "", "the first thing it says")
 	instructions := fs.String("instructions", "", "tone and focus, or @FILE")
 	pages := fs.String("pages", "", "comma-separated page prefixes it may read (default: all published)")
+	collections := fs.String("collections", "", "comma-separated record collections it may answer from too, published records only")
 	exclude := fs.String("exclude", "", "comma-separated page prefixes it may not read")
 	refusal := fs.String("refusal", "", "what it says when it does not know")
 	public := fs.Bool("public", false, "serve it on the site at /ask/NAME")
@@ -159,7 +161,7 @@ func assistantAdd(root string, args []string) error {
 	}
 	a := assistant.Assistant{
 		Name: pos[0], Title: *title, Greeting: *greeting, Instructions: instr,
-		Pages: splitList(*pages), Exclude: splitList(*exclude),
+		Pages: splitList(*pages), Exclude: splitList(*exclude), Collections: splitList(*collections),
 		Refusal: *refusal, Public: *public, Static: *static, UseModel: *model, Passages: *passages,
 		Handoff: *handoffOn, HandoffDays: *handoffDays, Voice: *voice, Translate: *translate,
 		Documents: splitList(*documents), Embed: splitList(*embed),
@@ -287,6 +289,11 @@ func assistantKnowledge(root string, a assistant.Assistant) (*assistant.Index, [
 	}
 	passages := assistant.Chunk(pages, a.Reads)
 	var warnings []string
+	recs, rerr := assistantRecords(s, a)
+	if rerr != nil {
+		warnings = append(warnings, rerr.Error())
+	}
+	passages = append(passages, recs...)
 	for _, id := range a.Documents {
 		name, format, body, derr := assistantDocument(root, id)
 		if derr != nil {
@@ -303,6 +310,45 @@ func assistantKnowledge(root string, a assistant.Assistant) (*assistant.Index, [
 	passages, held := screenKnowledge(a, passages)
 	warnings = append(warnings, held...)
 	return assistant.NewIndex(passages), warnings, nil
+}
+
+// assistantRecords are the published records of the collections an
+// assistant reads, as passages.
+func assistantRecords(s *store.Store, a assistant.Assistant) ([]assistant.Passage, error) {
+	if len(a.Collections) == 0 {
+		return nil, nil
+	}
+	commit := s.GetRef(site.RefLive)
+	if commit == "" {
+		return nil, nil
+	}
+	c, err := s.GetCommit(commit)
+	if err != nil {
+		return nil, err
+	}
+	return recordPassages(s, c.Tree, a.Collections)
+}
+
+// recordPassages are a tree's records of some collections, as passages.
+func recordPassages(s *store.Store, tree string, collections []string) ([]assistant.Passage, error) {
+	var out []assistant.Passage
+	var missing []string
+	for _, name := range collections {
+		recs, _, err := collection.List(s, tree, name, collection.Query{Limit: collection.MaxLimit})
+		if err != nil {
+			missing = append(missing, name)
+			continue
+		}
+		texts := make([]assistant.RecordText, len(recs))
+		for i, r := range recs {
+			texts[i] = assistant.RecordText{ID: r.ID, Fields: r.Fields}
+		}
+		out = append(out, assistant.ChunkRecords(name, texts)...)
+	}
+	if len(missing) > 0 {
+		return out, fmt.Errorf("no published records in %s", strings.Join(missing, ", "))
+	}
+	return out, nil
 }
 
 // screenKnowledge leaves out of what an assistant reads the passages that

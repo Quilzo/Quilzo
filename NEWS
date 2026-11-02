@@ -113,6 +113,15 @@ Unreleased
 
 ** Added
 
+*** A chatbot answers from the site's records too.  An owner chooses which
+    collections it reads (products, events, opening times), on the
+    chatbot's page or with quilzo assistant add --collections, and it
+    answers from their published records as it does from pages: each
+    record a passage of its fields, cited by its name.  Fields named for a
+    person (an email address, a telephone number, an address, a password)
+    are never read, and the chatbot reads the records again when they are
+    published anew.
+
 *** A chatbot can ask one of the site's agents to do something for a
     visitor.  A new kind of action, agent: the chatbot offers it ("Look up
     your booking"), the visitor sees what will be asked, corrects it if

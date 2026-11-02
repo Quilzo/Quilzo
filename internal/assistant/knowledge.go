@@ -70,12 +70,18 @@ type Passage struct {
 	// rather than a page, and DocName its file name.
 	Doc     string `json:"doc,omitempty"`
 	DocName string `json:"doc_name,omitempty"`
+	// Record is collection/id when the passage is a record (records.go),
+	// which has no page of its own to link to.
+	Record string `json:"record,omitempty"`
 }
 
 // Link is where a citation of this passage points.
 func (p Passage) Link() string {
-	if p.Doc != "" {
+	switch {
+	case p.Doc != "":
 		return "/media/" + p.Doc
+	case p.Record != "":
+		return ""
 	}
 	return "/" + p.Page
 }
