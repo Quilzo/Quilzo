@@ -4,8 +4,10 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
+	"github.com/quilzo/quilzo/internal/codescan"
 	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/provider"
 	"net/url"
@@ -73,6 +75,7 @@ func modelGateway(root string) (*gateway.Gateway, *gateway.Config, error) {
 		if err != nil {
 			return nil, err
 		}
+		m.Draws = r.Draws
 		// What this route's model is sent beside the conversation, and how
 		// long a call through it may take: see gateway.RouteParams.
 		var timeout time.Duration
@@ -194,6 +197,9 @@ func gatewayStatus(root string) error {
 		if h.Route.Provider != "" {
 			key = h.Route.Provider + ", " + key
 		}
+		if h.Route.Draws {
+			key = "draws pictures; " + key
+		}
 		privacy := "personal data masked"
 		if h.Route.Personal {
 			privacy = "may receive personal data"
@@ -262,6 +268,7 @@ func gatewayRoute(root string, args []string) error {
 	if len(args) < 2 || (args[0] != "add" && args[0] != "remove") {
 		return fmt.Errorf("usage: quilzo gateway route add NAME --provider ID --model M [--param name=value] [--key-secret NAME]\n" +
 			"       quilzo gateway route add NAME --url U --model M [--key-env VAR | --key-secret NAME] [--personal]\n" +
+			"       quilzo gateway route add NAME ... --draws [--price-picture 0.04]   a route that draws pictures\n" +
 			"         [--max-tokens-field max_completion_tokens] [--temperature T] [--top-p P] [--timeout 300s] [--auto-tool-choice]\n" +
 			"       quilzo gateway route remove NAME")
 	}
@@ -279,6 +286,8 @@ func gatewayRoute(root string, args []string) error {
 	topP := fs.String("top-p", "", "a top_p sent on every call; empty sends none")
 	timeout := fs.String("timeout", "", "how long one call may take, such as 300s for a model that reasons at length")
 	autoTool := fs.Bool("auto-tool-choice", false, "send auto where a caller forces a tool, for a model that refuses a forced choice")
+	draws := fs.Bool("draws", false, "this route's model draws pictures (an images endpoint), and is used for nothing else")
+	pricePicture := fs.String("price-picture", "", "what one picture costs here, like 0.04")
 	prov := fs.String("provider", "", "a provider from quilzo gateway providers: the route reaches it and nothing else")
 	keySecret := fs.String("key-secret", "", "the sealed credential holding the key (quilzo secret set NAME)")
 	var provParams multiFlag
@@ -339,7 +348,8 @@ func gatewayRoute(root string, args []string) error {
 			return nil
 		}
 		r := gateway.Route{Name: name, URL: *u, Model: *model, KeyEnv: *keyEnv, PriceIn: *priceIn, PriceOut: *priceOut,
-			Personal: *personal, Params: params, Provider: *prov, ProviderParams: pp, KeySecret: *keySecret}
+			Personal: *personal, Params: params, Provider: *prov, ProviderParams: pp, KeySecret: *keySecret,
+			Draws: *draws, PricePicture: *pricePicture}
 		if *first {
 			c.Routes = append([]gateway.Route{r}, kept...)
 		} else {
@@ -435,6 +445,61 @@ func gatewayCapability(root string) *admin.Models {
 			return nil
 		},
 	}
+}
+
+// assistModel is the model a person writes with: the gateway's routes, as
+// the assistant and as them, each against its own budget and on the
+// record, when the store has a gateway; the one configured model, guarded,
+// when it has none. It went straight to the configured model either way,
+// so the writing assistant was outside every budget and the ledger.
+func assistModel(root, person string) (assist.Model, error) {
+	gw, _, err := modelGateway(root)
+	if err != nil {
+		return nil, err
+	}
+	if gw != nil {
+		var also []string
+		if person != "" {
+			also = append(also, "person:"+person)
+		}
+		return gw.For("assist", also...), nil
+	}
+	return directModel(root)
+}
+
+// paintPicture draws a picture: through the gateway's routes that draw,
+// charged to "media" and to the person, on the record, when there are
+// any; otherwise through the one configured image model, with the prompt's
+// personal data and credentials taken out first (unless the model is on
+// this network). It went straight to the configured model, unmasked and
+// outside every budget.
+func paintPicture(ctx context.Context, root, person, prompt, size string) (assist.Picture, error) {
+	gw, _, err := modelGateway(root)
+	if err != nil {
+		return assist.Picture{}, err
+	}
+	if gw != nil && gw.Draws() {
+		consumers := []string{"media"}
+		if person != "" {
+			consumers = append(consumers, "person:"+person)
+		}
+		pic, _, err := gw.Paint(ctx, consumers, prompt, size)
+		return pic, err
+	}
+	m, err := assist.NewHTTPModel()
+	if err != nil {
+		return assist.Picture{}, err
+	}
+	host := ""
+	if u, err := url.Parse(m.BaseURL); err == nil {
+		host = u.Hostname()
+	}
+	mask := &pii.Masker{Allowed: ownDomains(root), Secrets: codescan.SecretSpans}
+	prompt = mask.Mask(prompt, hostIsLocal(host))
+	if counts := mask.Masked(); len(counts) > 0 {
+		noteMasked(root, "media", host, counts)
+	}
+	return m.Paint(ctx, prompt, size)
 }
 
 // directModel is the one model an install configures without the gateway

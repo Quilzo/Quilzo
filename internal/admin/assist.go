@@ -38,7 +38,9 @@ type Assist struct {
 	// Model is the configured model. Nil means none, which is a complete
 	// configuration — the screen says so rather than offering a box that
 	// cannot answer.
-	Model func() (assist.Model, error)
+	// Model is the model a person writes with: the gateway's, charged to
+	// them as well as to the assistant, when there is one.
+	Model func(person string) (assist.Model, error)
 	// Pages is what exists, so the assistant is told what it is adding to.
 	Pages func() (map[string]any, error)
 	// Save writes an accepted proposal into the draft. base is the commit the
@@ -89,7 +91,7 @@ func (s *Server) handleAssist(w http.ResponseWriter, r *http.Request) {
 		s.render(w, r, "assist.html", data)
 		return
 	}
-	m, err := s.Assist.Model()
+	m, err := s.Assist.Model(p.Name)
 	if err != nil || m == nil {
 		data["Unconfigured"] = true
 		if err != nil {

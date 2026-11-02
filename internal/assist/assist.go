@@ -403,6 +403,9 @@ type HTTPModel struct {
 	// a provider's profile reaches that provider and nothing else, so its
 	// key is never sent anywhere the profile does not name.
 	Host string
+	// Draws is a route whose model draws pictures: Paint asks for Model,
+	// rather than QUILZO_IMAGE_MODEL.
+	Draws bool
 }
 
 // prepare puts the key and the profile's headers on a request, after

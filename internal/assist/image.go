@@ -91,6 +91,9 @@ func (h *HTTPModel) Paint(ctx context.Context, prompt, size string) (Picture, er
 			"%q is not a size; they are written like 1024x1024", size)
 	}
 	model := ImageModel()
+	if h.Draws {
+		model = h.Model
+	}
 	if model == "" {
 		return Picture{}, fmt.Errorf(
 			"no image model is configured. Set QUILZO_IMAGE_MODEL to the one " +
