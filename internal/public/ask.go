@@ -80,6 +80,11 @@ type Assistants struct {
 	Act         func(chatact.Request) error
 	Answer      func(id string) (res chatact.Result, answered, made bool)
 	VisitorKey  func(assistant.Assistant) []byte
+	// Meaning is a chatbot's ranker by meaning (assistant.Meaning), or
+	// nil when it ranks by words alone; MeaningKey is what that ranker
+	// depends on, which keys the index too.
+	Meaning    func(assistant.Assistant, []assistant.Passage) *assistant.Meaning
+	MeaningKey func(assistant.Assistant) string
 	// Unanswered is told a question a chatbot could not answer, for the
 	// owner's record of what the site does not say (chatbot.gaps). Nil,
 	// which it is unless the owner turned that on, keeps nothing.
@@ -317,6 +322,11 @@ func (st *Site) assistantIndex(a assistant.Assistant) (*assistant.Index, error) 
 	for _, n := range names {
 		h.Write([]byte(n + "\x00" + hashes[n] + "\x00"))
 	}
+	// And how it ranks by meaning: a passage embedded since the index was
+	// built is found by meaning once it is rebuilt.
+	if st.Assistants.MeaningKey != nil {
+		h.Write([]byte("|" + st.Assistants.MeaningKey(a)))
+	}
 	key := hex.EncodeToString(h.Sum(nil))
 
 	as := st.Assistants
@@ -349,6 +359,9 @@ func (st *Site) assistantIndex(a assistant.Assistant) (*assistant.Index, error) 
 		passages = as.guard(a.Name, passages)
 	}
 	idx := assistant.NewIndex(passages)
+	if as.Meaning != nil {
+		idx = idx.WithMeaning(as.Meaning(a, idx.Passages))
+	}
 	if as.cache == nil {
 		as.cache = map[string]cachedIndex{}
 	}

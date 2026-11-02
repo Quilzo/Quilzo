@@ -1602,6 +1602,36 @@ provider, in one region, and nowhere else. When that route cannot answer, the
 chatbot quotes its pages rather than asking another. Agents already choose
 theirs by their manifest's model.
 
+**Chatbots can find passages by what they mean.** By default a chatbot finds
+the passages that answer a question by their words, here, and sends nothing
+anywhere to do it. Name a route added with `--embeds` (an `/embeddings`
+endpoint: OpenAI, Mistral, Gemini, Ollama and most others serve one) and
+chatbots that answer with a model find passages by meaning too:
+
+```
+quilzo gateway route add vectors --provider openai --model MODEL --embeds --price-in 0.02
+quilzo config set chatbot.embeddings vectors --reason "find passages by meaning"
+quilzo assistant embed                  # now; after each publish it is automatic
+```
+
+A visitor asking "may I have a refund on ink I have used" then finds the
+passage about returns, which never says "refund".
+
+How it works:
+- The site's published passages are embedded once, after each publish, and
+  kept by their text's hash, never the text; only new ones are embedded again.
+- Each question is embedded as it is asked, charged to the chatbot and masked
+  as for any route not allowed personal data.
+- A chatbot that only quotes its pages, or is kept to one route, takes no
+  part: one promises nothing leaves, the other that its visitors' words go
+  nowhere else.
+- One route, and no fallback: vectors from two models are not comparable, so
+  when that route cannot answer, chatbots rank by words alone.
+- Meaning ranks beside words. It lets a passage that shares too few of a
+  question's words through only when the two are at least
+  `chatbot.embeddings_floor` alike (55% by default). The chatbot's test screen
+  shows each passage's similarity, to tune it by.
+
 **Pictures and writing go through the gateway too.** A route added with
 `--draws` (or "It draws pictures" on the Models screen) is an images model,
 used by `quilzo media generate` and for nothing else, and charged by the

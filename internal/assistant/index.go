@@ -25,6 +25,65 @@ type Index struct {
 	vec *vector.Index
 	// heads are each passage's heading terms, for the third leg.
 	heads []map[string]bool
+	// meaning is the fourth, when a model makes embeddings: see Meaning.
+	meaning  *Meaning
+	meanings []vector.Vector
+}
+
+// Meaning is a ranker by what a passage means rather than the words it
+// uses, when a model makes embeddings (chatbot.embeddings): "can I send
+// back opened ink" finds the passage about returns that never says
+// "send back".
+//
+// It ranks beside the others, and it lets a passage that shares too few
+// of the question's words through the floor only when it is at least
+// Floor alike: the floor is what stops a chatbot answering a question
+// its pages are not about, and a passage merely in the same neighbourhood
+// as the question is not about it.
+type Meaning struct {
+	// Model made the vectors. A question's vector is compared with
+	// passages' from the same model only.
+	Model string
+	// Vectors are the passages' vectors, by their position; a passage
+	// without one is ranked by its words alone.
+	Vectors [][]float64
+	// Question is a question's vector, made by Model. When it fails, the
+	// question is ranked by its words alone.
+	Question func(question string) ([]float64, error)
+	// Floor is how alike a passage and a question must be, from 0 to 1,
+	// for the passage to be about the question whatever its words. Zero
+	// lets nothing through on meaning alone.
+	Floor float64
+}
+
+// WithMeaning adds the ranker by meaning to an index.
+func (idx *Index) WithMeaning(m *Meaning) *Index {
+	if idx == nil || m == nil || m.Question == nil || m.Model == "" {
+		return idx
+	}
+	idx.meaning = m
+	idx.meanings = make([]vector.Vector, len(idx.Passages))
+	for i := range idx.Passages {
+		if i < len(m.Vectors) && len(m.Vectors[i]) > 0 {
+			idx.meanings[i] = vector.FromDense(m.Model, m.Vectors[i])
+		}
+	}
+	return idx
+}
+
+// Meant reports whether the index ranks by meaning, and how many of its
+// passages it can.
+func (idx *Index) Meant() (bool, int) {
+	if idx == nil || idx.meaning == nil {
+		return false, 0
+	}
+	n := 0
+	for _, v := range idx.meanings {
+		if v.Dims > 0 {
+			n++
+		}
+	}
+	return true, n
 }
 
 // BM25 parameters, at their textbook values. Tuned values exist for every
@@ -135,6 +194,10 @@ type Hit struct {
 	// question, 0 when its heading does not.
 	HeadingRank int     `json:"heading_rank,omitempty"`
 	Cosine      float64 `json:"cosine,omitempty"`
+	// MeaningRank is 1-based by meaning, when a model makes embeddings,
+	// and Similarity how alike the passage and the question are.
+	MeaningRank int     `json:"meaning_rank,omitempty"`
+	Similarity  float64 `json:"similarity,omitempty"`
 	// Matched are the query's informative terms this passage contains.
 	Matched []string `json:"matched,omitempty"`
 }
@@ -151,7 +214,13 @@ func (idx *Index) Retrieve(question string, k int) []Hit {
 		return nil
 	}
 	q := informative(tokens(question), idx.df, len(idx.Passages))
-	if len(q) == 0 {
+	var qv vector.Vector
+	if m := idx.meaning; m != nil {
+		if raw, err := m.Question(question); err == nil && len(raw) > 0 {
+			qv = vector.FromDense(m.Model, raw)
+		}
+	}
+	if len(q) == 0 && qv.Dims == 0 {
 		return nil
 	}
 
@@ -255,6 +324,34 @@ func (idx *Index) Retrieve(question string, k int) []Hit {
 		h.Score += 1 / float64(rrfK+r+1)
 	}
 
+	// The fourth: by meaning, when the question has a vector.
+	if qv.Dims > 0 {
+		var near []scored
+		for i, v := range idx.meanings {
+			if v.Dims != qv.Dims {
+				continue
+			}
+			if s, err := vector.Cosine(qv, v); err == nil && s > 0 {
+				near = append(near, scored{i, s})
+			}
+		}
+		sort.Slice(near, func(a, b int) bool {
+			if near[a].s != near[b].s {
+				return near[a].s > near[b].s
+			}
+			return near[a].i < near[b].i
+		})
+		for r, x := range near {
+			if r == depth {
+				break
+			}
+			h := get(x.i)
+			h.MeaningRank = r + 1
+			h.Similarity = x.s
+			h.Score += 1 / float64(rrfK+r+1)
+		}
+	}
+
 	var out []Hit
 	for i, h := range fused {
 		for _, t := range q {
@@ -270,7 +367,11 @@ func (idx *Index) Retrieve(question string, k int) []Hit {
 		// how a site's assistant ends up giving a weather forecast. So a
 		// passage has to cover at least half of what the question asks
 		// about.
-		if len(h.Matched) == 0 || float64(len(h.Matched)) < Coverage*float64(len(q)) {
+		// A passage that misses on words passes on meaning only when it is
+		// at least the floor alike: see Meaning.
+		byWords := len(h.Matched) > 0 && float64(len(h.Matched)) >= Coverage*float64(len(q))
+		byMeaning := idx.meaning != nil && idx.meaning.Floor > 0 && h.Similarity >= idx.meaning.Floor
+		if !byWords && !byMeaning {
 			continue
 		}
 		out = append(out, *h)

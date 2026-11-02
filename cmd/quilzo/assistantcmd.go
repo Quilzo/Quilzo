@@ -51,9 +51,11 @@ func cmdAssistant(root string, args []string) error {
 		return assistantEval(root, args[1:])
 	case "gaps":
 		return assistantGaps(root, args[1:])
+	case "embed":
+		return assistantEmbed(root, args[1:])
 	default:
 		return fmt.Errorf("unknown assistant command %q; try list, add, "+
-			"action, remove, ask, eval or gaps", args[0])
+			"action, remove, ask, eval, gaps or embed", args[0])
 	}
 }
 
@@ -312,7 +314,7 @@ func assistantKnowledge(root string, a assistant.Assistant) (*assistant.Index, [
 	}
 	passages, held := screenKnowledge(a, passages)
 	warnings = append(warnings, held...)
-	return assistant.NewIndex(passages), warnings, nil
+	return withMeaning(root, a, assistant.NewIndex(passages)), warnings, nil
 }
 
 // assistantRecords are the published records of the collections an

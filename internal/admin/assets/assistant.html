@@ -45,6 +45,7 @@
 <table>
   <thead><tr><th scope="col">#</th><th scope="col">Passage</th>
     <th scope="col">Keyword rank</th><th scope="col">Vector rank</th><th scope="col">Heading rank</th>
+    <th scope="col">Meaning rank</th>
     <th scope="col">Matched</th></tr></thead>
   <tbody>
   {{range $i, $h := .Sources}}
@@ -54,6 +55,7 @@
     <td>{{if $h.BM25Rank}}{{$h.BM25Rank}}{{else}}—{{end}}</td>
     <td>{{if $h.VectorRank}}{{$h.VectorRank}}{{else}}—{{end}}</td>
     <td>{{if $h.HeadingRank}}{{$h.HeadingRank}}{{else}}—{{end}}</td>
+    <td>{{if $h.MeaningRank}}{{$h.MeaningRank}} <span class="hint">{{printf "%.0f%%" (pct $h.Similarity)}} alike</span>{{else}}—{{end}}</td>
     <td>{{range $h.Matched}}<code>{{.}}</code> {{end}}</td>
   </tr>
   {{end}}

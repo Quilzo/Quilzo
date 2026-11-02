@@ -113,6 +113,20 @@ Unreleased
 
 ** Added
 
+*** Chatbots find passages by what they mean, not only by their words.
+    Add a route that makes embeddings (quilzo gateway route add NAME
+    --embeds, or "It makes embeddings" on the Models screen) and name it
+    in chatbot.embeddings.  Chatbots that answer with a model then find
+    the passage about returns when a visitor asks about a refund.
+    - The site's passages are embedded after each publish (or now, with
+      quilzo assistant embed), and kept by hash, never by their text.
+    - Each question is embedded as it is asked, masked.
+    - A passage that shares too few of a question's words is answered
+      from only when it is at least chatbot.embeddings_floor alike.
+    - Chatbots that only quote their pages, or are kept to one route,
+      send nothing.
+    - The test screen shows each passage's meaning rank and similarity.
+
 *** A chatbot chooses the model that answers it.  A chatbot can name a
     route, or the model a route serves, that answers it first, with the
     gateway's other routes behind it: --route on quilzo assistant add, or

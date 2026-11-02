@@ -26,7 +26,7 @@
   <tr>
     <th scope="row">{{$h.Route.Name}}<div class="hint mono">{{$h.Route.URL}}</div>
       {{with index $.Known $h.Route.Provider}}<div class="hint">{{.Name}} · {{.Where}} · trains on it: {{.Data.Trains}}</div>{{end}}</th>
-    <td><code>{{$h.Route.Model}}</code>{{if $h.Route.Draws}} <span class="tag">draws pictures</span>{{end}}{{with $h.Route.Params.String}}<div class="hint">{{.}}</div>{{end}}</td>
+    <td><code>{{$h.Route.Model}}</code>{{if $h.Route.Draws}} <span class="tag">draws pictures</span>{{end}}{{if $h.Route.Embeds}} <span class="tag">makes embeddings</span>{{end}}{{with $h.Route.Params.String}}<div class="hint">{{.}}</div>{{end}}</td>
     <td data-label="Key">{{if $h.Route.KeySecret}}sealed as <code>{{$h.Route.KeySecret}}</code>{{if not $h.KeySet}} <span class="tag tag-bad">not kept</span>{{end}}{{else if $h.Route.KeyEnv}}<code>${{$h.Route.KeyEnv}}</code>{{if not $h.KeySet}} <span class="tag tag-bad">not set</span>{{end}}{{else}}<span class="hint">none — this network only</span>{{end}}</td>
     <td>{{if $h.Route.Personal}}<span class="tag tag-warn">sent</span>{{else}}<span class="tag tag-ok">masked</span>{{end}}</td>
     <td>{{if or $h.Route.PriceIn $h.Route.PriceOut}}{{or $h.Route.PriceIn "0"}} in, {{or $h.Route.PriceOut "0"}} out{{with $.Cfg}} {{.Currency}}{{end}}{{else}}<span class="hint">free</span>{{end}}</td>
@@ -94,6 +94,8 @@
     <p id="rkey-help" class="help">The name of an environment variable holding the key — never the key itself. A sealed key is safer: every process the server starts inherits its environment. Leave both empty for a model on this network.</p></div>
   <div class="field"><label><input type="checkbox" name="draws" value="yes" aria-describedby="rdraws-help"> It draws pictures</label>
     <p id="rdraws-help" class="help">An images model, used by <code>quilzo media generate</code> and for nothing else, under the same budgets (the caller is <code>media</code>) and record as words.</p></div>
+  <div class="field"><label><input type="checkbox" name="embeds" value="yes" aria-describedby="rembeds-help"> It makes embeddings</label>
+    <p id="rembeds-help" class="help">An embeddings model, used for nothing else: name it in <code>chatbot.embeddings</code> and chatbots that answer with a model find passages by what they mean. Its input price is per million tokens embedded.</p></div>
   <div class="field"><label for="rppic">Price of a picture</label>
     <input id="rppic" name="price_picture" inputmode="decimal" pattern="[0-9]{1,10}(\.[0-9]{1,6})?" placeholder="0.04"></div>
   <div class="field"><label><input type="checkbox" name="personal" value="yes" aria-describedby="rpersonal-help"> It may receive personal data</label>
