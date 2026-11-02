@@ -11,6 +11,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/shield"
 	"github.com/quilzo/quilzo/internal/site"
 )
@@ -168,6 +169,7 @@ func (s *Server) handleToday(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.render(w, r, "today.html", map[string]any{
+		"Glance": s.glance(p, visible, now),
 		"Message": r.URL.Query().Get("m"),
 		"CanAsk":  s.askAllowed(p), "Answer": answer, "Views": views, "CanKeep": canKeep,
 		"Title": "Today", "Nav": "today", "Principal": p,
@@ -228,4 +230,82 @@ func (s *Server) handleTodayStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/today", http.StatusSeeOther)
+}
+
+// glanceItem is one figure in the site at a glance.
+type glanceItem struct {
+	N          int
+	Text, Href string
+}
+
+// todayGlance is the site at a glance: when it was last published and by
+// whom, how much there is, and where to start. Today showed only what was
+// unusual, so on a quiet day a store with fifteen pages and twenty records
+// said "Nothing to report", which reads as an empty store.
+type todayGlance struct {
+	Published, PublishedBy string
+	NeverPublished         bool
+	Items                  []glanceItem
+	Starts                 []glanceItem
+}
+
+func (s *Server) glance(p principal, visible map[string]bool, now time.Time) todayGlance {
+	var g todayGlance
+	if s.Store == nil {
+		return g
+	}
+	if live := s.Store.GetRef(site.RefLive); live == "" {
+		g.NeverPublished = true
+	} else if c, err := s.Store.GetCommit(live); err == nil {
+		g.Published = agoAt(c.At, now)
+		g.PublishedBy = c.Author
+	}
+	if visible["pages"] {
+		if pages, err := site.PagesAt(s.Store, site.RefDraft); err == nil {
+			n := 0
+			for name := range pages {
+				if s.mayUse(p, auth.ActView, pageResource(name)) {
+					n++
+				}
+			}
+			g.Items = append(g.Items, glanceItem{N: n, Text: plural2(n, "page", "pages"), Href: "/"})
+		}
+	}
+	if visible["records"] && s.Data != nil && s.Data.Tree != nil {
+		if tree, err := s.Data.Tree(); err == nil {
+			names, _ := collection.Names(s.Store, tree)
+			total, colls := 0, 0
+			for _, n := range names {
+				if !s.allows(p, auth.ActView, auth.DataResource(n)) {
+					continue
+				}
+				c, _ := collection.Count(s.Store, tree, n)
+				total += c
+				colls++
+			}
+			if colls > 0 {
+				g.Items = append(g.Items, glanceItem{N: total, Text: plural2(total, "record", "records") + " in " +
+					countOf(colls, "collection", "collections"), Href: "/records"})
+			}
+		}
+	}
+	if visible["media"] && s.Media != nil {
+		if lib, err := s.Media.Library(); err == nil {
+			if files, err := lib.List(); err == nil {
+				g.Items = append(g.Items, glanceItem{N: len(files), Text: plural2(len(files), "file", "files") +
+					" in the library", Href: "/media"})
+			}
+		}
+	}
+	start := func(key, text, href string) {
+		if visible[key] {
+			g.Starts = append(g.Starts, glanceItem{Text: text, Href: href})
+		}
+	}
+	start("pages", "Write a page", "/#newpage-name")
+	start("media", "Upload a picture", "/media")
+	start("make", "Add a feature", "/make")
+	start("assistants", "Add a chatbot", "/assistants")
+	start("review", "Review and publish", "/review")
+	return g
 }

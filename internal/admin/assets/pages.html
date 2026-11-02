@@ -11,6 +11,14 @@
 </p>
 {{end}}
 
+{{if .CanEdit}}
+<form method="get" action="/pages/new" class="newpage" aria-label="Start a new page">
+  <label for="newpage-name">New page at {{template "req"}}</label>
+  <span class="newpage-field"><span class="hint" aria-hidden="true">/</span><input id="newpage-name" name="name" required maxlength="200" spellcheck="false" autocomplete="off" placeholder="about-us"></span>
+  <button type="submit">{{icon "add"}}Start writing</button>
+</form>
+{{end}}
+
 {{if and .CheckedOn .DueCount}}
 <p class="notice" role="status">
   <strong>{{.DueCount}} page{{if ne .DueCount 1}}s{{end}}</strong> haven't been

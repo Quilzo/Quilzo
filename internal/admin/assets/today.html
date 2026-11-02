@@ -3,6 +3,15 @@
 {{if .Message}}<p class="notice" role="status">{{.Message}}</p>{{end}}
 <p class="lead">{{.Date}}. What is waiting for you, then what is happening in the parts of the store you work in.</p>
 
+{{with .Glance}}{{if or .Items .Starts .Published .NeverPublished}}
+<section class="glance" aria-labelledby="glance">
+<h2 id="glance" class="visually-hidden">Your site at a glance</h2>
+{{if .Items}}<dl class="glance-figures">{{range .Items}}<div><dt><a href="{{.Href}}">{{.Text}}</a></dt><dd><a href="{{.Href}}">{{.N}}</a></dd></div>{{end}}</dl>{{end}}
+<p class="glance-live">{{if .NeverPublished}}Nothing has been published yet: the site has no live version.{{else}}Last published {{.Published}}{{if .PublishedBy}} by {{.PublishedBy}}{{end}}.{{end}}</p>
+{{if .Starts}}<nav class="glance-starts" aria-label="Start something">{{range .Starts}}<a class="btn btn-tonal" href="{{.Href}}">{{.Text}}</a>{{end}}</nav>{{end}}
+</section>
+{{end}}{{end}}
+
 <section aria-labelledby="waiting">
 <h2 id="waiting">Waiting for you{{if .WaitingTotal}} <span class="count">{{.WaitingTotal}}</span>{{end}}</h2>
 {{if .Waiting}}<div class="table-wrap"><table class="approvals-table">
@@ -27,7 +36,7 @@
 <h2 id="happening">In your parts of the store</h2>
 {{if .Lines}}<dl class="stats-row">{{range .Lines}}<div{{if .Warn}} class="serious"{{end}}><dt>{{.Text}}</dt><dd><a href="{{.Href}}">{{.N}}</a></dd></div>{{end}}</dl>
 <p class="hint">Counted now, from the records each figure links to.</p>
-{{else}}<p>Nothing to report in what you can open.</p>{{end}}
+{{else}}<p>Nothing unusual today.</p>{{end}}
 </section>
 
 {{if .CanAsk}}<section aria-labelledby="ask">
@@ -35,7 +44,7 @@
 <form method="post" action="/today/ask" class="param-form">
   <div class="field"><label for="question">Ask about what you can open, in your own words</label>
     <input id="question" name="question" maxlength="300" autocomplete="off" aria-describedby="ask-help"
-      placeholder="Which samples are checked out, by who has them?"></div>
+      placeholder="How many records were added this month?"></div>
   <p id="ask-help" class="hint">The answer is cards Quilzo draws. The model chooses the cards and what each counts; it never sees your records, and every figure is read from what you may open.</p>
   <button type="submit">Ask</button>
 </form>
@@ -67,9 +76,9 @@
 
 <form method="post" action="/today/start" class="inline">
   {{if .StartsHere}}<input type="hidden" name="to" value="pages">
-  <button type="submit" class="quiet">Start on Pages after signing in instead</button>
+  <button type="submit" class="quiet">Open Pages first when I sign in</button>
   {{else}}<input type="hidden" name="to" value="today">
-  <button type="submit" class="quiet">Start here after signing in</button>{{end}}
+  <button type="submit" class="quiet">Open Today first when I sign in</button>{{end}}
 </form>
 {{template "foot" .}}
 {{define "viewcards"}}<div class="view-cards">{{range .Cards}}<div class="view-card">

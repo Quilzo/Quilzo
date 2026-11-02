@@ -180,6 +180,8 @@ var notAScreen = map[string]string{
 	"/newsletter/export.csv":      "is a download of the list as CSV; Newsletter explains a site with none",
 	"/records/export": "is a download of a collection as CSV, linked from the Data screen beside each " +
 		"collection; records_typed_test.go downloads one",
+	"/pages/new": "is where the New page form on Pages goes: it turns an address into a page name " +
+		"and redirects to the editor, so there is nothing to render",
 	"/security/controls/component": "is a download of OSCAL JSON",
 	"/security/controls/ssp":       "is a download of OSCAL JSON",
 	"/style.css":                   "is a stylesheet",

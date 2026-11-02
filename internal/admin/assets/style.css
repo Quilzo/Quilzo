@@ -3423,3 +3423,23 @@ td code, td .mono { overflow-wrap: break-word; }
 .tag.state-perpetual, .tag.state-licensed { background: var(--ok-container); color: var(--on-ok-container); }
 .tag.state-lapsing, .tag.state-undeclared { background: var(--warning-container); color: var(--on-warning-container); }
 .tag.state-expired, .tag.state-lapsed { background: var(--error-container); color: var(--on-error-container); }
+
+/* Pages: start a new one by its address. */
+.newpage { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; margin: .5rem 0 1.25rem; }
+.newpage label { font: var(--label-lg); margin: 0; }
+.newpage-field { display: inline-flex; align-items: center; gap: .25rem; flex: 1 1 14rem; max-width: 24rem; }
+.newpage-field input { flex: 1; min-width: 0; }
+.newpage button .icon { width: 18px; height: 18px; }
+
+/* Today: the site at a glance, then where to start. */
+.glance { display: grid; gap: .75rem; margin: 1rem 0 1.75rem; }
+.glance-figures { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 11rem), 1fr)); gap: .75rem; margin: 0; }
+.glance-figures > div { display: flex; flex-direction: column-reverse; gap: .1rem; padding: .85rem 1rem;
+  border-radius: var(--shape-lg); background: var(--surface-container-low); border: 1px solid var(--outline-variant); }
+.glance-figures dt { margin: 0; font: var(--body-md); }
+.glance-figures dt a { color: var(--on-surface-variant); text-decoration: none; }
+.glance-figures dd { margin: 0; font: var(--headline-md); font-weight: 700; font-variant-numeric: tabular-nums; }
+.glance-figures dd a { color: var(--on-surface); text-decoration: none; }
+.glance-figures > div:hover { background: var(--surface-container); }
+.glance-live { margin: 0; color: var(--on-surface-variant); }
+.glance-starts { display: flex; flex-wrap: wrap; gap: .5rem; }

@@ -92,6 +92,7 @@ import (
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/research"
 	"github.com/quilzo/quilzo/internal/schema"
+	"github.com/quilzo/quilzo/internal/sheet"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 	"github.com/quilzo/quilzo/internal/theme"
@@ -1444,6 +1445,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/checked/set", s.handleCheckedSet)
 	mux.HandleFunc("/checked/own", s.handleCheckedOwn)
 	mux.HandleFunc("/pages/bulk", s.handleBulk)
+	mux.HandleFunc("/pages/new", s.handleNewPage)
 	mux.HandleFunc("/notes", s.handleNotes)
 	mux.HandleFunc("/notes/add", s.handleNoteAdd)
 	mux.HandleFunc("/notes/resolve", s.handleNoteResolve)
@@ -2209,6 +2211,32 @@ func (s *Server) handlePages(w http.ResponseWriter, r *http.Request) {
 		"CanEdit":     s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/").Allowed,
 		"CanPublish":  s.Policy.Evaluate(p.Name, auth.ActPublish, "/").Allowed,
 	})
+}
+
+// handleNewPage starts a page: its address, made into a page name, and the
+// editor opened on it. Pages had no way to add one; the editor opened only
+// for a name somebody already knew to type into the address bar.
+func (s *Server) handleNewPage(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.requireAuth(w, r)
+	if !ok {
+		return
+	}
+	if !s.can(w, r, p, auth.ActEditDraft, "/") {
+		return
+	}
+	raw := strings.Trim(strings.TrimSpace(r.URL.Query().Get("name")), "/")
+	var parts []string
+	for _, part := range strings.Split(raw, "/") {
+		if slug := sheet.Slug(part); slug != "" {
+			parts = append(parts, slug)
+		}
+	}
+	name := strings.Join(parts, "/")
+	if name == "" || len(parts) > 8 {
+		http.Redirect(w, r, "/?e="+urlQueryEscape("Give the new page an address, such as about-us"), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/page/"+name, http.StatusSeeOther)
 }
 
 func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {

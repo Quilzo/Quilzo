@@ -79,6 +79,12 @@ Unreleased
     access table says Edit drafts and Install features rather than the
     names the policy file uses.
 
+*** Pages has a New page box: an address, made into a page name, opens
+    the editor on it.  A page could only be started by typing its name
+    into the browser's address bar.  Today shows the site at a glance (its
+    pages, records and files, when it was last published and by whom) and
+    where to start, so a quiet day no longer reads as an empty store.
+
 ** Added
 
 *** Spreadsheets and calendars in and out.  quilzo records import reads a
