@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -294,5 +295,44 @@ func TestTheServerRunsAnAgentWhenAPageGoesLive(t *testing.T) {
 	}
 	if !found {
 		t.Error("the triggered run is not on the record")
+	}
+}
+
+// Off, what happens is passed over: turning triggers on again starts
+// nothing for what came before, and starts what comes after.
+func TestTurningTriggersOnStartsNothingForWhatCameBefore(t *testing.T) {
+	root := triggeredStore(t, onBlog)
+	var on atomic.Bool
+	started := make(chan string, 8)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		runTriggers(ctx, root, dispatcher{
+			on: on.Load, runner: func() *Caller { return asAdmin("sam") }, poll: 20 * time.Millisecond,
+			start: func(_ context.Context, _ string, s triggerStart) (string, error) {
+				started <- s.describe()
+				return "run-x", nil
+			},
+		})
+	}()
+	defer func() { cancel(); <-done }()
+
+	fireWebhooks(root, "published", strings.Repeat("d", 64), []string{"blog/while-off"})
+	time.Sleep(200 * time.Millisecond)
+	on.Store(true)
+	select {
+	case s := <-started:
+		t.Fatalf("started for something that happened while off: %s", s)
+	case <-time.After(200 * time.Millisecond):
+	}
+	fireWebhooks(root, "published", strings.Repeat("e", 64), []string{"blog/after"})
+	select {
+	case s := <-started:
+		if !strings.Contains(s, "blog/after") {
+			t.Fatalf("%s", s)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("nothing started once on")
 	}
 }

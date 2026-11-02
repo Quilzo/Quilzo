@@ -222,11 +222,15 @@ func runTriggers(ctx context.Context, root string, d dispatcher) {
 	t := time.NewTicker(d.poll)
 	defer t.Stop()
 	for {
-		if d.on == nil || d.on() {
+		{
+			// Read on every pass, on or off: off, what happens is passed over
+			// and schedules move on, so turning triggers on again starts
+			// nothing for what came before.
+			on := d.on == nil || d.on()
 			starts, err := dueStarts(root, time.Now(), func(key string) bool {
 				mu.Lock()
 				defer mu.Unlock()
-				return running[key]
+				return running[key] || !on
 			}, nil)
 			if err != nil {
 				d.say("agents' triggers: " + err.Error())
