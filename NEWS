@@ -125,6 +125,14 @@ Unreleased
 
 ** Added
 
+*** A calendar and issues, ready-made for agents acting for somebody.
+    quilzo integrations template lists them, and quilzo integrations
+    template google-calendar (or microsoft-calendar, github-issues)
+    declares one, switched off and unpinned, using the account each
+    person connects at the provider.  Each reads (events, issues) and
+    adds (a meeting, an issue, a comment), and nothing more; --uses
+    narrows it further.
+
 *** Agents act with a person's own accounts.  An administrator declares
     a provider (quilzo connect provider add NAME --template google,
     microsoft or github, or its endpoints), people connect their accounts

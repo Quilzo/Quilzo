@@ -1686,7 +1686,10 @@ quilzo connect provider add google --template google --client-id ID --client-sec
 
 An integration that names a connection (`"connection": "google"`) then goes
 with the account of the person the agent acts for, its sponsor, and nobody
-else's. An agent acting on its own name, or another vendor's agent through
+else's. Three come ready-made: `quilzo integrations template` declares
+Google Calendar, a Microsoft 365 calendar or GitHub issues (reading, and
+adding a meeting or an issue), switched off and unpinned for a person to read,
+pin and turn on as an imported one is. An agent acting on its own name, or another vendor's agent through
 the gateway, has no person and is refused.
 
 How it is kept safe:
