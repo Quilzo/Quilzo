@@ -231,6 +231,8 @@ func cmdMedia(root string, args []string) error {
 		return mediaTranscribe(root, args[1:])
 	case "speak":
 		return mediaSpeak(root, args[1:])
+	case "film":
+		return mediaFilm(root, args[1:])
 	case "verify":
 		return cmdMediaVerify(root, args[1:])
 	case "formats":

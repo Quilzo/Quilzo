@@ -279,6 +279,7 @@ func gatewayRoute(root string, args []string) error {
 			"       quilzo gateway route add NAME ... --embeds   a route that makes embeddings (chatbot.embeddings)\n" +
 			"       quilzo gateway route add NAME ... --transcribes --personal [--price-minute 0.006]   one that drafts captions\n" +
 			"       quilzo gateway route add NAME ... --speaks   one that reads text aloud (quilzo media speak)\n" +
+			"       quilzo gateway route add NAME --provider google-veo|fal --model M --films   one that makes video (quilzo media film)\n" +
 			"         [--max-tokens-field max_completion_tokens] [--temperature T] [--top-p P] [--timeout 300s] [--auto-tool-choice]\n" +
 			"         [--effort low|medium|high|xhigh|max] [--geo us|global] [--server-fallback]   Anthropic's Messages API only\n" +
 			"       quilzo gateway route remove NAME")
@@ -308,6 +309,8 @@ func gatewayRoute(root string, args []string) error {
 		"/audio/transcriptions endpoint), is used for nothing else, and is sent a recording only with --personal")
 	priceMinute := fs.String("price-minute", "", "what a minute of recording costs to transcribe here, like 0.006")
 	speaks := fs.Bool("speaks", false, "this route's model reads text aloud (an /audio/speech endpoint), and is used for nothing else")
+	films := fs.Bool("films", false, "this route's model makes video from a prompt (--provider google-veo or fal), and is used for nothing else")
+	priceVideo := fs.String("price-video", "", "what one video costs here, like 0.75")
 	embeds := fs.Bool("embeds", false, "this route's model makes embeddings (an /embeddings endpoint), and is used for nothing else")
 	pricePicture := fs.String("price-picture", "", "what one picture costs here, like 0.04")
 	prov := fs.String("provider", "", "a provider from quilzo gateway providers: the route reaches it and nothing else")
@@ -379,7 +382,8 @@ func gatewayRoute(root string, args []string) error {
 		r := gateway.Route{Name: name, URL: *u, Model: *model, KeyEnv: *keyEnv, PriceIn: *priceIn, PriceOut: *priceOut,
 			Personal: *personal, Params: params, Provider: *prov, ProviderParams: pp, KeySecret: *keySecret,
 			Draws: *draws, PricePicture: *pricePicture, Embeds: *embeds,
-			Transcribes: *transcribes, PriceMinute: strings.TrimSpace(*priceMinute), Speaks: *speaks}
+			Transcribes: *transcribes, PriceMinute: strings.TrimSpace(*priceMinute), Speaks: *speaks,
+			Films: *films, PriceVideo: strings.TrimSpace(*priceVideo)}
 		if err := r.CheckWire(wire); err != nil {
 			return err
 		}

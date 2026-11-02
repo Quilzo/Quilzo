@@ -106,6 +106,11 @@ type Route struct {
 	// endpoint): it is used for that and for nothing else, and PriceIn is
 	// what a million tokens of text read cost, at four characters a token.
 	Speaks bool `json:"speaks,omitempty"`
+	// Films says this route's model makes video from a prompt (film.go):
+	// it is used for that and nothing else, names a provider whose wire
+	// makes video, and PriceVideo is what one costs.
+	Films      bool   `json:"films,omitempty"`
+	PriceVideo string `json:"price_video,omitempty"`
 }
 
 // RouteParams are the request fields one route needs. Nothing beyond the
@@ -181,6 +186,8 @@ func (p RouteParams) Check() error {
 const (
 	WireOpenAI    = "openai-chat"
 	WireAnthropic = "anthropic-messages"
+	WireVeo       = "google-veo"
+	WireFalQueue  = "fal-queue"
 )
 
 // CheckWire refuses parameters the route's protocol cannot carry: a route
@@ -189,7 +196,19 @@ const (
 // with nobody told why, so it is refused where the route is made.
 func (r Route) CheckWire(wire string) error {
 	p := r.Params
+	video := wire == WireVeo || wire == WireFalQueue
+	if r.Films && !video {
+		return fmt.Errorf("route %s makes video, and names no provider that does (quilzo gateway providers: "+
+			"google-veo, fal)", r.Name)
+	}
+	if video && !r.Films {
+		return fmt.Errorf("route %s names a provider that makes video and nothing else: add --films", r.Name)
+	}
 	switch wire {
+	case WireVeo, WireFalQueue:
+		if p != (RouteParams{}) {
+			return fmt.Errorf("route %s makes video, and takes none of a conversation's parameters", r.Name)
+		}
 	case "", WireOpenAI:
 		if p.Effort != "" || p.Geo != "" || p.Fallback {
 			return fmt.Errorf("route %s: effort, geo and server fallback are for a provider that speaks "+
@@ -202,7 +221,7 @@ func (r Route) CheckWire(wire string) error {
 		if p.MaxTokens != "" && p.MaxTokens != "max_tokens" {
 			return fmt.Errorf("route %s: Anthropic's Messages API takes max_tokens, not %s", r.Name, p.MaxTokens)
 		}
-		if r.Draws || r.Embeds || r.Transcribes || r.Speaks {
+		if r.Draws || r.Embeds || r.Transcribes || r.Speaks || r.Films {
 			return fmt.Errorf("route %s: Anthropic's models answer in words, and neither draw, make embeddings, "+
 				"transcribe nor speak", r.Name)
 		}
@@ -360,13 +379,13 @@ func (c Config) Validate() error {
 			return fmt.Errorf("route %s asks for a picture's bytes and does not draw", r.Name)
 		}
 		jobs := 0
-		for _, on := range []bool{r.Draws, r.Embeds, r.Transcribes, r.Speaks} {
+		for _, on := range []bool{r.Draws, r.Embeds, r.Transcribes, r.Speaks, r.Films} {
 			if on {
 				jobs++
 			}
 		}
 		if jobs > 1 {
-			return fmt.Errorf("route %s draws, makes embeddings, transcribes or speaks: one of them", r.Name)
+			return fmt.Errorf("route %s draws, makes embeddings, transcribes, speaks or makes video: one of them", r.Name)
 		}
 		if r.PriceMinute != "" {
 			pm, perr := ParseMoney(r.PriceMinute)
@@ -377,6 +396,18 @@ func (c Config) Validate() error {
 				return fmt.Errorf("route %s has a price a minute and does not transcribe", r.Name)
 			}
 			if pm > 0 && !reCurrency.MatchString(c.Currency) {
+				return fmt.Errorf("route %s has prices and the configuration names no currency (USD, EUR, …)", r.Name)
+			}
+		}
+		if r.PriceVideo != "" {
+			if !r.Films {
+				return fmt.Errorf("route %s has a price for a video and makes none", r.Name)
+			}
+			vid, perr := ParseMoney(r.PriceVideo)
+			if perr != nil {
+				return fmt.Errorf("route %s's price of a video: %w", r.Name, perr)
+			}
+			if vid > 0 && !reCurrency.MatchString(c.Currency) {
 				return fmt.Errorf("route %s has prices and the configuration names no currency (USD, EUR, …)", r.Name)
 			}
 		}
@@ -765,7 +796,7 @@ func (g *Gateway) complete(ctx context.Context, consumers []string, p pick, syst
 	for _, r := range g.routesFor(p) {
 		// A route that draws pictures, makes embeddings or transcribes is
 		// not asked for words.
-		if r.Draws || r.Embeds || r.Transcribes || r.Speaks {
+		if r.Draws || r.Embeds || r.Transcribes || r.Speaks || r.Films {
 			continue
 		}
 		g.mu.Lock()

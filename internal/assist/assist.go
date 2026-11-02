@@ -434,6 +434,11 @@ func (h *HTTPModel) prepare(req *http.Request) error {
 		req.Header.Set(name, h.APIKey)
 		return nil
 	}
+	if h.Auth == "key" {
+		// fal's: Authorization: Key KEY.
+		req.Header.Set("Authorization", "Key "+h.APIKey)
+		return nil
+	}
 	req.Header.Set("Authorization", "Bearer "+h.APIKey)
 	return nil
 }

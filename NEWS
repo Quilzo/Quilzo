@@ -134,6 +134,18 @@ Unreleased
     takes what saving takes, so somebody who may only read sees the saved
     draft.
 
+*** Video from a prompt.  quilzo media film "PROMPT" --author WHO
+    [--aspect 9:16] asks a gateway route added with --films, through one
+    of two new provider profiles: google-veo (Veo through the Gemini
+    API: predictLongRunning, then the operation asked after) or fal
+    (fal's queue: taken, asked after, the video fetched from fal's
+    storage without the key).  Every address an answer names must be
+    https on the provider's host, a key never follows a redirect to
+    another host, and what comes back must be an MP4.  It is stored
+    marked as generated, with the model, the prompt and the person
+    accountable, and needs captions before a page shows it, as every
+    video does.  Masked, budgeted and in the ledger as pictures are.
+
 *** Subscriptions.  A catalogue row with "interval": week, month or year
     is sold as a subscription: a recurring price at Stripe, a payment
     link that starts a subscription the buyer manages there, and a Buy
