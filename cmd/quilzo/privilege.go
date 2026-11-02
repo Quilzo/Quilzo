@@ -516,6 +516,13 @@ var commandNeeds = map[string]need{
 	// be connected, and disconnecting somebody else's, is a grant, which
 	// connectcmd.go checks itself: this table only narrows.
 	"connect": {action: auth.ActEditDraft},
+	// The whole store, sealed credentials and all: an administrator's to
+	// take. Checking one reads nothing of the store's.
+	"backup":        {action: auth.ActGrant},
+	"backup verify": {action: auth.ActView},
+	"backup key":    {why: "makes a random key and prints it; it reads and changes nothing of the store's"},
+	"backup restore": {why: "writes only into an empty directory it is given, with the backup's own key; " +
+		"the store it restores is not this one until somebody moves it into place"},
 	// Fetching and installing a program this store then runs: whoever may
 	// mint a token. Looking at which browser would be used is reading.
 	"browser": {action: auth.ActToken},
