@@ -178,6 +178,12 @@ func (s *Server) pointingAt(name string, pages map[string]any) []string {
 		}
 	}
 
+	// Pages that reuse it as a block, which would lose those sections
+	// without a word.
+	for _, u := range site.BlockUses(pages)[name] {
+		out = append(out, fmt.Sprintf("%q, which reuses it as a block", u))
+	}
+
 	// Content references, which are the other way a reader meets a 404.
 	//
 	// The menus were checked here from the start and the references were not,

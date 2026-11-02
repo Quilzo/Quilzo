@@ -32,6 +32,7 @@ package render
 import (
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/menu"
+	"github.com/quilzo/quilzo/internal/site"
 	"strconv"
 	"time"
 	"unicode/utf8"
@@ -71,6 +72,10 @@ type Sources struct {
 	// it stops being served. For a preview it is the draft, because a preview
 	// that hid unpublished pages would not be a preview.
 	Pages map[string]any
+	// Blocks are the pages a page's reusable blocks are read from
+	// (site.ExpandBlocks): the whole set at the same commit, blocks
+	// included. Nil means Pages, which for a preview is that set already.
+	Blocks map[string]any
 	// Listings resolves the queries a page embeds. Nil means a page naming one
 	// gets an error rather than a silent gap.
 	Listings *listing.Resolver
@@ -130,6 +135,13 @@ type Sources struct {
 // navigation. args are the request's parameters, which listings declare and
 // nothing else can read.
 func (s Sources) For(name string, body any, args map[string]string) (map[string]any, error) {
+	// A block's sections where a page reuses it, before anything else
+	// reads the page: to every layout, gate and listing it is the page.
+	blocks := s.Blocks
+	if blocks == nil {
+		blocks = s.Pages
+	}
+	body, _ = site.ExpandBlocks(body, blocks)
 	ctx := map[string]any{
 		// Decorated, not raw. The derived companions — the negations a language
 		// with no else cannot express — are added here so that every renderer

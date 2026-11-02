@@ -132,8 +132,12 @@ func (s *Server) handleSections(w http.ResponseWriter, r *http.Request) {
 		rows = append(rows, row{Placed: pl, First: i == 0, Last: i == len(placed)-1})
 	}
 
+	uses := site.BlockUses(pages)
 	s.render(w, r, "sections.html", map[string]any{
 		"Title": "Sections", "Principal": p, "Nav": "sections",
+		"IsBlock":  site.IsBlock(body),
+		"UsedOn":   uses[name],
+		"Blocks":   site.Blocks(pages),
 		"Page":     name,
 		"Sections": rows,
 		"Count":    len(placed),
@@ -170,11 +174,13 @@ func (s *Server) pagesWithSections() []map[string]any {
 	}
 	sort.Strings(names)
 
+	uses := site.BlockUses(pages)
 	out := []map[string]any{}
 	for _, name := range names {
 		placed := section.On(pages[name])
 		out = append(out, map[string]any{
 			"Name": name, "Count": len(placed),
+			"IsBlock": site.IsBlock(pages[name]), "Uses": len(uses[name]),
 		})
 	}
 	return out
@@ -267,6 +273,21 @@ func (s *Server) handleSectionEdit(w http.ResponseWriter, r *http.Request) {
 	case "down":
 		next, err = section.Move(body, at, 1)
 		msg = fmt.Sprintf("move a section down on %s", name)
+	case "reuse":
+		block := strings.TrimSpace(r.FormValue("block"))
+		if err = site.CanReuse(name, block, pages); err == nil {
+			next, err = section.InsertBlock(body, block, at)
+		}
+		msg = fmt.Sprintf("reuse the block %s on %s", block, name)
+	case "block", "unblock":
+		on := r.FormValue("do") == "block"
+		if err = site.BlockChange(name, pages, on); err == nil {
+			next = withBlockFlag(body, on)
+		}
+		msg = fmt.Sprintf("make %s a reusable block", name)
+		if !on {
+			msg = fmt.Sprintf("make %s a page of its own again", name)
+		}
 	default:
 		s.sectionsRedirect(w, r, name, "", "that is not something to do to a section")
 		return
@@ -301,6 +322,21 @@ func (s *Server) handleSectionEdit(w http.ResponseWriter, r *http.Request) {
 		"did": strings.TrimSpace(r.FormValue("do")),
 	})
 	s.sectionsRedirect(w, r, name, msg, "")
+}
+
+// withBlockFlag is a copy of a page marked a block, or not.
+func withBlockFlag(body any, on bool) map[string]any {
+	m, _ := body.(map[string]any)
+	next := make(map[string]any, len(m)+1)
+	for k, v := range m {
+		next[k] = v
+	}
+	if on {
+		next[site.BlockField] = true
+	} else {
+		delete(next, site.BlockField)
+	}
+	return next
 }
 
 func (s *Server) sectionsRedirect(w http.ResponseWriter, r *http.Request,

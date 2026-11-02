@@ -4,6 +4,8 @@
 package public
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/site"
@@ -122,6 +124,31 @@ func (st *Site) decoded(commit string) (*pageSet, error) {
 			set.hidden[name] = true
 		} else {
 			set.window[name] = wnd
+		}
+	}
+
+	// Reusable blocks: never a page of their own, and every page that
+	// reuses one says what it says. Its hash, which its ETag and every
+	// index built over it are keyed by, covers the blocks too, so a page
+	// whose block changed is not served from what was cached before.
+	for name, body := range set.bodies {
+		if site.IsBlock(body) {
+			set.hidden[name] = true
+		}
+	}
+	for name, body := range set.bodies {
+		if set.hidden[name] && site.IsBlock(body) {
+			continue
+		}
+		expanded, used := site.ExpandBlocks(body, set.bodies)
+		set.bodies[name] = expanded
+		if len(used) > 0 {
+			h := sha256.New()
+			h.Write([]byte(set.oids[name]))
+			for _, b := range used {
+				h.Write([]byte("\x00" + b + "\x00" + set.oids[b]))
+			}
+			set.oids[name] = hex.EncodeToString(h.Sum(nil))
 		}
 	}
 

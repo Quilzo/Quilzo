@@ -448,6 +448,8 @@ var commandNeeds = map[string]need{
 	"section fields":  {action: auth.ActView},
 	"sections fields": {action: auth.ActView},
 	"sections list":   {action: auth.ActView},
+	"section blocks":  {action: auth.ActView},
+	"sections blocks": {action: auth.ActView},
 	"sections kinds":  {action: auth.ActView},
 	"templates list":  {action: auth.ActView},
 	"templates show":  {action: auth.ActView},

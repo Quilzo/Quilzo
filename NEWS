@@ -134,6 +134,18 @@ Unreleased
     takes what saving takes, so somebody who may only read sees the saved
     draft.
 
+*** Reusable blocks: sections written once and shown on many pages.
+    quilzo section block PAGE makes a page a block, quilzo section reuse
+    PAGE BLOCK puts its sections on another, and quilzo section blocks
+    says where each is used; the Sections screen does all three.  A block
+    is saved, published and rolled back with the draft, and never served
+    on its own: no address, sitemap entry, search result or chatbot
+    passage.  A page reusing one is that page with those sections to
+    every layout, search index and chatbot, and its ETag changes when the
+    block does.  A block for members only is never shown on a public
+    page, a block in a block shows nothing, and a block a page still
+    reuses cannot be deleted or made a page again.
+
 *** Visitors say whether a chatbot's answer helped.  Two buttons under
     an answer, Yes and No, counted with nothing about who pressed them;
     the chatbot's screen and quilzo assistant gaps NAME say how many
