@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -32,6 +33,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/admin"
 	"github.com/quilzo/quilzo/internal/agent"
+	"github.com/quilzo/quilzo/internal/agentexec"
 	"github.com/quilzo/quilzo/internal/agentwatch"
 	"github.com/quilzo/quilzo/internal/aievidence"
 	"github.com/quilzo/quilzo/internal/assist"
@@ -469,6 +471,17 @@ func cmdServe(root string, args []string) error {
 		},
 		Decide: func(id string, approve bool, by admin.Actor) error {
 			return gatewayDecide(root, id, approve, signedIn(by), time.Now())
+		},
+		Undelivered: func() ([]agentexec.Undelivered, error) { return loadUndelivered(root) },
+		Dismiss: func(n int, by string) error {
+			count, err := dismissUndelivered(root, n)
+			if err != nil {
+				return err
+			}
+			record(root, audit.Record{Action: "integration.undelivered.dismissed", Resource: "/integrations",
+				Outcome: audit.Success, Principal: by, Kind: audit.KindHuman, Verified: true,
+				Detail: map[string]string{"count": strconv.Itoa(count)}})
+			return nil
 		},
 		Declared: func() (agent.Integrations, error) {
 			set, err := loadIntegrations(root)

@@ -1251,8 +1251,9 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 				// Acting for the person the run is for: an integration that
 				// names a connection goes with their account, and nobody
 				// else's.
-				Call: newMCPClientFor(root, actingFor(caller)),
-				Pay:  payer{root: root, run: func() string { return from.RunID }},
+				Call:        newMCPClientFor(root, actingFor(caller)),
+				Pay:         payer{root: root, run: func() string { return from.RunID }},
+				Undelivered: keepUndelivered(root),
 			},
 			// The delegate surface, which had no executor either.
 			//
@@ -1536,6 +1537,14 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 	}
 
 	started := time.Now()
+	// Its name, for the writes its steps make: a run picked up from its
+	// record keeps it, so a write it repeats carries the same key. A run
+	// with no record yet is named for this process alone, which is all it
+	// is.
+	runner.RunID = from.RunID
+	if runner.RunID == "" {
+		runner.RunID = "once-" + randomHex(12)
+	}
 	var trace agent.Trace
 	var runErr error
 	if from.Prior != nil {

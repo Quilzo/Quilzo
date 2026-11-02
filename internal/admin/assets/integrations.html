@@ -66,6 +66,32 @@ write.</p>
   two lists is the thing worth looking at.</p>
 {{end}}
 
+{{if or .Undelivered .UndeliveredError}}
+<h2 id="undelivered">Writes that did not get through</h2>
+{{with .UndeliveredError}}<p class="notice bad">{{.}}</p>{{end}}
+<p class="hint">Calls agents made to change something elsewhere that failed after being tried as often as was safe.
+  None is sent again by itself: settle each at the far side, then take it off the list. Each was sent with an
+  idempotency key, so the same call sent again is not done twice by a service that keeps them.</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th scope="col">Call</th><th scope="col">By</th><th scope="col">What it answered</th>
+    <th scope="col">When</th><th scope="col"><span class="visually-hidden">Settle</span></th></tr></thead>
+  <tbody>
+  {{range $u := .Undelivered}}
+  <tr>
+    <th scope="row"><code>{{$u.Tool}}</code> on {{$u.Integration}}{{with $u.Key}}<div class="hint"><code>{{.}}</code></div>{{end}}</th>
+    <td>{{$u.Agent}}{{with $u.Run}}<div class="hint">run {{.}}, step {{$u.Step}}</div>{{end}}</td>
+    <td>{{$u.Error}}</td>
+    <td>{{when $u.At.Unix}}</td>
+    <td class="actions"><form method="post" action="/integrations/undelivered"><input type="hidden" name="n" value="{{$u.N}}">
+      <button type="submit" class="btn-text">Settled</button></form></td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+
 {{if or .Held .HeldError}}
 <h2>Calls waiting for a person</h2>
 {{with .HeldError}}<p class="notice bad">{{.}}</p>{{end}}

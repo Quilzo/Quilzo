@@ -1421,6 +1421,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/integrations/extension/remove", s.handleExtensionRemove)
 	mux.HandleFunc("/integrations/siem", s.handleSIEMExport)
 	mux.HandleFunc("/integrations/held", s.handleGatewayHeld)
+	mux.HandleFunc("/integrations/undelivered", s.handleUndeliveredDismiss)
 	mux.HandleFunc("/forms", s.handleForms)
 	mux.HandleFunc("/forms/save", s.handleFormSave)
 	mux.HandleFunc("/forms/close", s.handleFormClose)

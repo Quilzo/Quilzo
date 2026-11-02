@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
+	"github.com/quilzo/quilzo/internal/agentexec"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/ext"
@@ -70,6 +72,51 @@ type Integrations struct {
 	// Decide approves or declines one; nil when nothing is held here.
 	Held   func() ([]GatewayHeld, error)
 	Decide func(id string, approve bool, by Actor) error
+	// Undelivered are writes agents made that did not get through, oldest
+	// first, and Dismiss takes one off the list (by its place, from 1) or,
+	// given 0, all of them; nil when this build keeps none.
+	Undelivered func() ([]agentexec.Undelivered, error)
+	Dismiss     func(n int, by string) error
+}
+
+// undeliveredRow is one undelivered write and its place in the list.
+type undeliveredRow struct {
+	agentexec.Undelivered
+	N int
+}
+
+// handleUndeliveredDismiss takes undelivered writes off the list, once
+// somebody settled them at the far side.
+func (s *Server) handleUndeliveredDismiss(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, "use POST", http.StatusMethodNotAllowed)
+		return
+	}
+	p, ok := s.requireAuth(w, r)
+	if !ok {
+		return
+	}
+	if !s.can(w, r, p, auth.ActGrant, "/") {
+		return
+	}
+	back := func(key, msg string) {
+		http.Redirect(w, r, "/integrations?"+key+"="+url.QueryEscape(msg)+"#undelivered", http.StatusSeeOther)
+	}
+	if s.Integrations == nil || s.Integrations.Dismiss == nil {
+		back("e", "this build keeps no undelivered writes")
+		return
+	}
+	n, err := strconv.Atoi(r.FormValue("n"))
+	if err != nil || n < 0 {
+		back("e", "which one?")
+		return
+	}
+	if err := s.Integrations.Dismiss(n, p.Name); err != nil {
+		back("e", err.Error())
+		return
+	}
+	back("m", "Taken off the list.")
 }
 
 // GatewayHeld is a call through the gateway waiting for a person.
@@ -131,6 +178,17 @@ func (s *Server) handleIntegrations(w http.ResponseWriter, r *http.Request) {
 		} else {
 			data["Extensions"] = exts
 		}
+	}
+	if s.Integrations.Undelivered != nil {
+		list, err := s.Integrations.Undelivered()
+		if err != nil {
+			data["UndeliveredError"] = err.Error()
+		}
+		rows := make([]undeliveredRow, 0, len(list))
+		for i, u := range list {
+			rows = append(rows, undeliveredRow{Undelivered: u, N: i + 1})
+		}
+		data["Undelivered"] = rows
 	}
 	if s.Integrations.Held != nil {
 		held, err := s.Integrations.Held()

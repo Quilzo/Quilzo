@@ -99,6 +99,10 @@ type Client struct {
 	// check. A test hands the server in directly.
 	DoMethod func(ctx context.Context, method, url string, body []byte, headers map[string]string) (*fetch.Result, error)
 
+	// Wait is how long to wait before trying a call again; nil waits as
+	// RetryAfter says (rest.go). A test waits for nothing.
+	Wait func(attempt int, retryAfter string) time.Duration
+
 	id atomic.Int64
 
 	mu       sync.Mutex

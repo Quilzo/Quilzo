@@ -197,6 +197,10 @@ type Runner struct {
 	// Decide proposes; Perform carries out. Both are the host's.
 	Decide  Decide
 	Perform Perform
+	// RunID names this run, so what performs a step can say which step of
+	// which run it is (StepOf): the same step of a run resumed from its
+	// record is the same step, and a write it repeats is the same write.
+	RunID string
 	// OwnDomains are the organisation's own email domains: an address at
 	// one, in what a tool returned, is not somebody's personal data.
 	OwnDomains []string
@@ -626,6 +630,9 @@ func (r Runner) run(ctx context.Context, s *Session, t Trace,
 			// as a payment outside every mandate does.
 			pctx = WithPersonApproval(ctx)
 		}
+		if r.RunID != "" {
+			pctx = WithStep(pctx, r.RunID, turn)
+		}
 		out, perr := r.Perform(pctx, action)
 		if c, ok := s.takeConfidence(); ok {
 			step.Confidence = &c
@@ -793,6 +800,25 @@ func personalIn(text string, own []string) string {
 }
 
 type approvalKey struct{}
+
+type stepKey struct{}
+
+type stepRef struct {
+	run string
+	n   int
+}
+
+// WithStep says which step of which run an action is performed for.
+func WithStep(ctx context.Context, run string, n int) context.Context {
+	return context.WithValue(ctx, stepKey{}, stepRef{run, n})
+}
+
+// StepOf is the run and step an action is performed for, when the runner
+// named its run.
+func StepOf(ctx context.Context) (run string, n int, ok bool) {
+	v, ok := ctx.Value(stepKey{}).(stepRef)
+	return v.run, v.n, ok
+}
 
 // WithPersonApproval marks ctx as performing an action a person decided.
 func WithPersonApproval(ctx context.Context) context.Context {

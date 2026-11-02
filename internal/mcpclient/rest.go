@@ -230,7 +230,36 @@ func (c *Client) restCall(ctx context.Context, in agent.Integration, tool string
 		}
 		do = client.Do
 	}
-	res, err := do(ctx, o.Method, u, body, headers)
+	// A write carries the key that names it, so a far side that keeps
+	// them answers a repeat as the first time rather than doing it twice:
+	// the same step of a run, resumed or tried again, sends the same key.
+	key, keyed := IdempotencyKeyOf(ctx)
+	if keyed && o.Writes() {
+		headers["Idempotency-Key"] = key
+	}
+	// Tried again, a little later, when the far side was busy or did not
+	// answer; only a call that is safe to repeat: a read, or a write that
+	// carries its key.
+	safe := !o.Writes() || keyed
+	var res *fetch.Result
+	for attempt := 1; ; attempt++ {
+		res, err = do(ctx, o.Method, u, body, headers)
+		if !safe || attempt >= MaxAttempts || !transient(res, err) || ctx.Err() != nil {
+			break
+		}
+		retryAfter := ""
+		if res != nil && res.Header != nil {
+			retryAfter = res.Header.Get("Retry-After")
+		}
+		wait := c.Wait
+		if wait == nil {
+			wait = RetryAfter
+		}
+		select {
+		case <-ctx.Done():
+		case <-time.After(wait(attempt, retryAfter)):
+		}
+	}
 	if err != nil {
 		return "", fmt.Errorf("%s %s: %w", in.Name, o.Name, err)
 	}
@@ -245,4 +274,43 @@ func (c *Client) restCall(ctx context.Context, in agent.Integration, tool string
 		text = fmt.Sprintf("%d, with nothing in the answer", res.Status)
 	}
 	return text, nil
+}
+
+type idempotencyKey struct{}
+
+// WithIdempotencyKey names the write a call makes, for the far side to
+// recognise a repeat of it.
+func WithIdempotencyKey(ctx context.Context, key string) context.Context {
+	return context.WithValue(ctx, idempotencyKey{}, key)
+}
+
+// IdempotencyKeyOf is the key a call's write is named by, when it has one.
+func IdempotencyKeyOf(ctx context.Context) (string, bool) {
+	k, ok := ctx.Value(idempotencyKey{}).(string)
+	return k, ok && k != ""
+}
+
+// MaxAttempts is how many times a call safe to repeat is made, at most.
+const MaxAttempts = 3
+
+// transient reports whether a call failed in a way that trying again a
+// little later may mend: no answer, or an answer that says busy.
+func transient(res *fetch.Result, err error) bool {
+	if err != nil {
+		return true
+	}
+	switch res.Status {
+	case 408, 425, 429, 502, 503, 504:
+		return true
+	}
+	return false
+}
+
+// RetryAfter is how long to wait before another attempt: what the far side
+// asked, up to ten seconds, or one second and then two.
+func RetryAfter(attempt int, header string) time.Duration {
+	if s, err := strconv.Atoi(strings.TrimSpace(header)); err == nil && s >= 0 {
+		return min(time.Duration(s)*time.Second, 10*time.Second)
+	}
+	return time.Duration(attempt) * time.Second
 }

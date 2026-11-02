@@ -5,11 +5,15 @@ package agentexec
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
+	"github.com/quilzo/quilzo/internal/mcpclient"
 )
 
 // The one thing an agent could be authorised to do and could not do.
@@ -86,6 +90,30 @@ type Tools struct {
 	// made, and settles its receipt with what the far side answered. Nil
 	// means this build cannot check a payment, and a paying call is refused.
 	Pay Payer
+	// Undelivered is told of a write that did not get through after it was
+	// tried as often as was safe: kept for a person to see and settle,
+	// never sent again by itself. Nil keeps nothing.
+	Undelivered func(Undelivered)
+}
+
+// Undelivered is a write an agent made that did not get through.
+type Undelivered struct {
+	At          time.Time `json:"at"`
+	Agent       string    `json:"agent"`
+	Run         string    `json:"run,omitempty"`
+	Step        int       `json:"step,omitempty"`
+	Integration string    `json:"integration"`
+	Tool        string    `json:"tool"`
+	// Key is the idempotency key it was sent with: sent again with the same
+	// key, a far side that keeps them will not do it twice.
+	Key   string `json:"key,omitempty"`
+	Error string `json:"error"`
+}
+
+// writeKey names one write of one step of one run.
+func writeKey(run string, n int, integration, tool string) string {
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%d\x00%s\x00%s", run, n, integration, tool)))
+	return "qz-" + hex.EncodeToString(sum[:16])
 }
 
 // Payer checks and records the payments tool calls make (internal/spend).
@@ -152,6 +180,25 @@ func (t Tools) Perform(s *agent.Session) func(context.Context, agent.Action) (st
 		}
 		// A paying call is charged before it is made: within a mandate, or
 		// on a person's approval of this step, and never otherwise.
+		// A write is named by its step, so repeating it is recognised.
+		writes := !isOp || op.Writes()
+		key := ""
+		if run, n, ok := agent.StepOf(ctx); ok && writes {
+			key = writeKey(run, n, in.Name, name)
+			ctx = mcpclient.WithIdempotencyKey(ctx, key)
+		}
+		undelivered := func(err error) {
+			if err == nil || !writes || t.Undelivered == nil || ctx.Err() != nil {
+				return
+			}
+			run, n, _ := agent.StepOf(ctx)
+			msg := err.Error()
+			if len(msg) > 300 {
+				msg = msg[:300]
+			}
+			t.Undelivered(Undelivered{At: time.Now().UTC(), Agent: s.Manifest().Name, Run: run, Step: n,
+				Integration: in.Name, Tool: name, Key: key, Error: msg})
+		}
 		if isOp && op.Pays != nil {
 			if t.Pay == nil {
 				return "", fmt.Errorf("%q pays, and this build has no way to check a payment", name)
@@ -162,9 +209,12 @@ func (t Tools) Perform(s *agent.Session) func(context.Context, agent.Action) (st
 			}
 			out, cerr := t.Call.Call(ctx, in, name, args)
 			settle(cerr)
+			undelivered(cerr)
 			return out, cerr
 		}
-		return t.Call.Call(ctx, in, name, args)
+		out, cerr := t.Call.Call(ctx, in, name, args)
+		undelivered(cerr)
+		return out, cerr
 	}
 }
 
