@@ -2357,7 +2357,7 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 		"FormChoices": formChoices,
 		"Incoming":    incoming,
 		"Base":        base, "HeldBy": heldBy,
-		"CanEdit": s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/"+name).Allowed,
+		"CanEdit":   s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/"+name).Allowed,
 		"NoIndex":   seo.NoIndex(body),
 		"Canonical": canonicalRaw(body),
 		"CanShare": exists && s.Shares != nil && s.Shares.Create != nil &&
