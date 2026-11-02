@@ -70,6 +70,9 @@ type FormField struct {
 	Choices  []string
 	// Type is the input type for the ordinary case: text, email, number.
 	Type string
+	// When says the field is asked only on an earlier answer, in words:
+	// "Only if “Topic” is Returns."
+	When string
 }
 
 // FormOf assembles the data a layout needs from a declaration's parts.
@@ -83,6 +86,9 @@ func FormOf(name, label, intro, notice, submit string, fields []FormField) formD
 		item := map[string]any{
 			"name": f.Name, "label": f.Label, "help": f.Help,
 			"required": f.Required,
+		}
+		if f.When != "" {
+			item["when"] = f.When
 		}
 		switch {
 		case len(f.Choices) > 0:

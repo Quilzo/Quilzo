@@ -361,6 +361,7 @@
   "slices": [
    "*",
    "chatbots",
+   "forms",
    "scim"
   ],
   "sort": [

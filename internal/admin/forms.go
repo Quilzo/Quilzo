@@ -141,6 +141,9 @@ func formFieldFromRequest(r *http.Request) form.Field {
 			f.Choices = append(f.Choices, c)
 		}
 	}
+	if on := strings.TrimSpace(r.FormValue("when_field")); on != "" {
+		f.When = &form.When{Field: on, Is: strings.TrimSpace(r.FormValue("when_is"))}
+	}
 	return f
 }
 

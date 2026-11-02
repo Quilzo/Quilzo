@@ -45,7 +45,10 @@ func Embed(f *Form) string {
 			label = fl.Name
 		}
 		req := ""
-		if fl.Required {
+		// A question asked only on an answer is never required in the
+		// markup: hidden or not, a required control nobody can see stops
+		// the form being sent. The server requires it when it is asked.
+		if fl.Required && fl.When == nil {
 			req = " required"
 		}
 		fmt.Fprintf(&b, "  <p>\n    <label for=\"%s\">%s</label>\n",
@@ -60,7 +63,7 @@ func Embed(f *Form) string {
 			fmt.Fprintf(&b, "    <select id=\"%s\" name=\"%s\"%s>\n",
 				esc(id(fl.Name)), esc(fl.Name), req)
 			for _, c := range fl.Choices {
-				fmt.Fprintf(&b, "      <option>%s</option>\n", esc(c))
+				fmt.Fprintf(&b, "      <option value=\"%s\">%s</option>\n", esc(c), esc(c))
 			}
 			b.WriteString("    </select>\n")
 		case Agree:
@@ -74,6 +77,9 @@ func Embed(f *Form) string {
 		}
 		if fl.Help != "" {
 			fmt.Fprintf(&b, "    <span class=\"hint\">%s</span>\n", esc(fl.Help))
+		}
+		if fl.When != nil {
+			fmt.Fprintf(&b, "    <span class=\"hint\">%s</span>\n", esc(f.Words(fl.When)))
 		}
 		b.WriteString("  </p>\n")
 	}
