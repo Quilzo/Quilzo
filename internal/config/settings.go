@@ -606,10 +606,12 @@ var settings = []Setting{
 			"at a time, and at most thirty go in an hour.",
 	},
 	{
-		Key: "notify.events", Kind: List, Default: "handoff.requested,form.submitted",
+		Key: "notify.events", Kind: List, Default: "handoff.requested,form.submitted,approval.waiting",
 		Summary: "what staff are told about (quilzo agent trigger events lists them)",
-		Why: "A visitor asking for a person and a form sent, by default: the two things a " +
-			"person is waiting on. Any event an agent can start from may be added.",
+		Why: "A visitor asking for a person, a form sent, and an agent waiting for a person to " +
+			"approve what it would do, by default: the things somebody is waiting on. A notice " +
+			"names the agent, never what it would do, and deciding is done signed in, under " +
+			"Approvals. Any event an agent can start from may be added.",
 	},
 	{
 		Key: "agents.triggers", Kind: Bool, Default: "true",

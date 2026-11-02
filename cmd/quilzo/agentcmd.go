@@ -1502,6 +1502,17 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 			}
 		}
 	}
+	// A run that starts waiting for a person says so, once for each wait:
+	// staff hear of it where notify.events asks (approval.waiting), with
+	// which agent and never what it would do.
+	toldWaiting := 0
+	noteWaiting := func(t agent.Trace) {
+		if from.Eval != nil || t.Waiting == nil || t.Waiting.N == toldWaiting {
+			return
+		}
+		toldWaiting = t.Waiting.N
+		emitEvent(root, event.Event{Type: event.ApprovalWaiting, Subject: m.Name}, caller)
+	}
 	runner.Admit = func(agent.Action) error {
 		if unrecorded != nil {
 			return unrecorded
@@ -1517,6 +1528,7 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 		keep := runner.Checkpoint
 		runner.Checkpoint = func(t agent.Trace) {
 			recordSteps(t)
+			noteWaiting(t)
 			if keep != nil {
 				keep(t)
 			}
@@ -1527,6 +1539,10 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 	var trace agent.Trace
 	var runErr error
 	if from.Prior != nil {
+		// The wait this continues from was told of already.
+		if w := from.Prior.Trace.Waiting; w != nil {
+			toldWaiting = w.N
+		}
 		trace, runErr = runner.Continue(ctx, sess, from.Prior.Trace,
 			from.Verdict, started)
 		if runErr != nil && len(trace.Steps) == len(from.Prior.Trace.Steps) &&
@@ -1555,6 +1571,9 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 		out.ProgramErr = prog.stderr.String()
 	}
 	recordSteps(trace)
+	if from.Eval == nil {
+		noteWaiting(trace)
+	}
 	rc := trace.Receipt(sess)
 	trace.Lessons = out.Lessons
 	out.Manifest, out.Trace, out.Receipt, out.Started = m, trace, rc, started

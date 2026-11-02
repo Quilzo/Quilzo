@@ -70,6 +70,8 @@ func cmdIntegrations(root string, args []string) error {
 		return integrationsHeld(root)
 	case "import":
 		return integrationsImport(root, args[1:])
+	case "template":
+		return integrationsTemplate(root, args[1:])
 	case "approve", "decline":
 		if len(args) != 2 {
 			return fmt.Errorf("quilzo integrations %s ID", args[0])
@@ -81,7 +83,7 @@ func cmdIntegrations(root string, args []string) error {
 		return nil
 	default:
 		return fmt.Errorf(
-			"unknown integrations command %q; try list, import, tools, pin, call, gateway, held, approve or decline", args[0])
+			"unknown integrations command %q; try list, import, template, tools, pin, call, gateway, held, approve or decline", args[0])
 	}
 }
 

@@ -70,7 +70,15 @@ const (
 	BookingCancelled  Type = "booking.cancelled"
 	SubscriberJoined  Type = "subscriber.joined"
 	SubscriberLeft    Type = "subscriber.left"
+	// ApprovalWaiting is an agent's run waiting for a person to approve
+	// what it would do, or to answer it. Staff may be told of it
+	// (notify.events); no agent starts from it (Triggerable), since an
+	// agent started by another's waiting is how a queue feeds itself.
+	ApprovalWaiting Type = "approval.waiting"
 )
+
+// Triggerable reports whether an agent may start from an event.
+func Triggerable(t Type) bool { return Known(t) && t != ApprovalWaiting }
 
 // Source is the process an event was written by, known from its log.
 type Source string
@@ -97,6 +105,7 @@ var producers = map[Type][]Source{
 	BookingCancelled:  {Site, Admin},
 	SubscriberJoined:  {Site, Admin},
 	SubscriberLeft:    {Site, Admin},
+	ApprovalWaiting:   {Admin},
 }
 
 // Types lists every event, for a person choosing one.
@@ -133,6 +142,8 @@ func Describe(t Type) string {
 		return "somebody joins the newsletter"
 	case SubscriberLeft:
 		return "somebody leaves the newsletter"
+	case ApprovalWaiting:
+		return "an agent waits for a person"
 	}
 	return string(t)
 }
