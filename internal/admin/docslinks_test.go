@@ -170,6 +170,7 @@ func TestEveryDestinationIsServedAndEveryScreenIsADestination(t *testing.T) {
 
 // notADestination is every top-level route that is not a place to navigate to.
 var notADestination = map[string]string{
+	"/shares":                "the editor's form that makes and revokes a link to a draft; POST only",
 	"/save":                  "a form target",
 	"/publish":               "a form target",
 	"/rollback":              "a form target",

@@ -69,6 +69,10 @@ import (
 // Site serves the live ref.
 type Site struct {
 	Store *store.Store
+	// Shared renders a draft shared for review by its link's id, or says
+	// there is no such link, or it has ended (shared.go). Nil shares
+	// nothing.
+	Shared func(id string) (string, bool)
 	// Analytics counts page views and conversions without a script or a
 	// cookie. Nil counts nothing.
 	Analytics *analytics.Counter
@@ -358,6 +362,7 @@ func (st *Site) Handler() http.Handler {
 	mux.HandleFunc(SpeculationPath, st.speculationRules)
 	mux.HandleFunc("/llms.txt", st.llms)
 	mux.HandleFunc("/media/", st.mediaFile)
+	mux.HandleFunc("/shared/", st.shared)
 	mux.HandleFunc(ReportsPath, st.reportsHandler)
 	mux.HandleFunc("/favicon.ico", st.favicon)
 	mux.HandleFunc("/form/", st.submit)

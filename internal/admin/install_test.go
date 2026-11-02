@@ -262,17 +262,21 @@ func TestTheEditorShowsThePageBesideTheForm(t *testing.T) {
 	}
 }
 
-// The preview does not claim to be live.
+// The preview shows what is typed, and says so; it works without script.
 //
-// It cannot be — live preview needs script and this response permits none —
-// and a label implying otherwise would have somebody typing into a form and
-// believing the panel beside it.
+// The editor's own "Show in the preview" button posts the form into the
+// frame beside it, which renders the page as saving would write it and
+// saves nothing: no script is needed for that, and admin.js only presses
+// the button when typing stops. A label claiming the panel is live when it
+// is not would have somebody believing it; this one is true either way.
 func TestThePreviewSaysWhenItChanges(t *testing.T) {
 	srv, token := setup(t)
 	body := get(t, srv, "/page/index", token).Body.String()
-	if !strings.Contains(body, "not as you type") {
-		t.Error("nothing tells the editor when the preview refreshes, so it " +
-			"reads as live and is not")
+	for _, want := range []string{`name="preview-frame"`, `formtarget="preview-frame"`,
+		`formaction="/preview/index?plain=1"`, "not saved yet"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the editor lacks %s", want)
+		}
 	}
 }
 

@@ -518,6 +518,11 @@ var commandNeeds = map[string]need{
 	"connect": {action: auth.ActEditDraft},
 	// The whole store, sealed credentials and all: an administrator's to
 	// take. Checking one reads nothing of the store's.
+	// A draft shown to somebody outside: whoever may publish it, since that
+	// shows it to everybody. Listing and revoking links take less.
+	"share":         {action: auth.ActPublish},
+	"share list":    {action: auth.ActEditDraft},
+	"share revoke":  {action: auth.ActEditDraft},
 	"backup":        {action: auth.ActGrant},
 	"backup verify": {action: auth.ActView},
 	"backup key":    {why: "makes a random key and prints it; it reads and changes nothing of the store's"},
