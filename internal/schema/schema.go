@@ -256,6 +256,14 @@ var reserved = map[string]bool{
 	// Cross-cutting for the same reason as the window: any kind of content
 	// can be for members.
 	"members_only": true,
+	// site.BlockField — a page that is a reusable block, shown where other
+	// pages reuse it. Any content can be one, so no type should have to say.
+	"block": true,
+	// seo.NoIndexField — a page left out of search results. About where the
+	// page stands, not what it says, for any kind of content. (canonical is
+	// not reserved: types declared it as their own field before the system
+	// read it, and the system reads it the same way they meant it.)
+	"noindex": true,
 }
 
 // Reserved reports whether a field name belongs to the system.

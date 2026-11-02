@@ -92,6 +92,7 @@ import (
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/research"
 	"github.com/quilzo/quilzo/internal/schema"
+	"github.com/quilzo/quilzo/internal/seo"
 	"github.com/quilzo/quilzo/internal/sheet"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
@@ -2357,6 +2358,8 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 		"Incoming":    incoming,
 		"Base":        base, "HeldBy": heldBy,
 		"CanEdit": s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/"+name).Allowed,
+		"NoIndex":   seo.NoIndex(body),
+		"Canonical": canonicalRaw(body),
 		"CanShare": exists && s.Shares != nil && s.Shares.Create != nil &&
 			s.Policy.Evaluate(p.Name, auth.ActPublish, "/"+name).Allowed,
 		"ShareLinks": s.sharesFor(name),
@@ -2607,6 +2610,14 @@ func typedFields(t schema.Type, body any, pages []string) []field {
 	return out
 }
 
+// canonicalRaw is what a page's canonical field says, usable or not, for
+// the editor to show back.
+func canonicalRaw(body any) string {
+	m, _ := body.(map[string]any)
+	s, _ := m[seo.CanonicalField].(string)
+	return s
+}
+
 // flatten turns a page into a flat list of editable fields.
 //
 // Only the top level, and only scalars. A generic tree editor for arbitrary JSON
@@ -2635,6 +2646,10 @@ func flatten(body any) []field {
 
 	out := make([]field, 0, len(keys))
 	for _, k := range keys {
+		// Edited in the editor's own "Search engines" fieldset.
+		if k == seo.NoIndexField || k == seo.CanonicalField {
+			continue
+		}
 		switch v := m[k].(type) {
 		case string:
 			out = append(out, field{Key: k, Label: keyLabel(k), Value: v, Long: len(v) > 80,
@@ -3978,6 +3993,24 @@ func (s *Server) pageFromForm(pages map[string]any, name string, form url.Values
 				continue
 			}
 			body[key] = values[0]
+		}
+	}
+	// What it tells search engines, from the editor's own fieldset: an
+	// unticked box and an empty address take them off.
+	if _, asked := form["__seo"]; asked {
+		if form.Get("__noindex") != "" {
+			body[seo.NoIndexField] = true
+		} else {
+			delete(body, seo.NoIndexField)
+		}
+		// Offered on a page with no type only: a typed page says it, if at
+		// all, through a field its type declares.
+		if _, offered := form["__canonical"]; offered {
+			if c := strings.TrimSpace(form.Get("__canonical")); c != "" {
+				body[seo.CanonicalField] = c
+			} else {
+				delete(body, seo.CanonicalField)
+			}
 		}
 	}
 	// The page's form, from the editor's list: none takes it off.

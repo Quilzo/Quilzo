@@ -785,6 +785,21 @@ long page is not rewarded for being long, which is what the conjunction was
 protecting against. Measured on a judgement corpus before and after, and both
 numbers are in the tests.
 
+**What search engines and agents are told.** Every page names where it lives
+with a canonical link, once the site has an address, so the same page reached
+with a query string or through a redirect is one page and not several competing
+with each other; a layout that writes its own keeps it. A page published first
+somewhere else names that address instead (`"canonical"`, or "Published first
+at" in the editor; a typed page through a `canonical` field its type declares)
+and leaves the sitemap, which lists what this site is the
+source of. A page that should not be found — a thank-you page, a campaign's
+landing page — asks to be left out of results (`"noindex": true`, or the box
+in the editor) in its head, its headers and the sitemap. And every page has a
+Markdown copy of its words at `/NAME.md`, made from the content rather than
+scraped from the markup, linked from the page and from `llms.txt`, for a
+language model or a reader's agent; the copy is never indexed and names the
+page as canonical.
+
 **Views over records.** Declared queries with typed parameters, a field
 allowlist and a cost budget, resolved before rendering. A page names the
 listings it embeds; the template receives data, never a callable.

@@ -134,6 +134,18 @@ Unreleased
     takes what saving takes, so somebody who may only read sees the saved
     draft.
 
+*** Pages tell search engines and agents where they stand.  Every page
+    names where it lives with rel=canonical once the site has an address
+    (a layout that writes its own keeps it).  A page can be left out of
+    search results ("noindex", or the editor's box), in its head, its
+    X-Robots-Tag and the sitemap, or name the address it copies
+    ("canonical", or "Published first at") and leave the sitemap.  Every
+    page has a Markdown copy of its words at /NAME.md, linked from the
+    page and from llms.txt, never indexed and naming the page as
+    canonical.  "block" and "noindex" are system fields, so a typed page
+    can carry them; a typed page names a canonical address through a
+    "canonical" field its type declares.
+
 *** A form can take a file: a CV, a photograph of the damage.  A field of
     kind file takes images and documents, or the kinds it names; a file
     is taken by what its bytes are, with the media library's checks (an
