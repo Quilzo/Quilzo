@@ -565,6 +565,10 @@ func (st *Site) sitemap(w http.ResponseWriter, r *http.Request) {
 			}
 			continue
 		}
+		// Not a page that asks to be left out, nor a copy of one elsewhere.
+		if !seo.InSitemap(base, name, st.Index, pages[name]) {
+			continue
+		}
 		loc := base + "/" + name
 		if name == st.Index {
 			loc = base + "/"
@@ -1007,6 +1011,10 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 	}
 	body, ok := pages[name]
 	forMembers := false
+	// A page's Markdown copy, when NAME.md is not a page of its own.
+	if !ok && st.pageMarkdown(w, r, pages, name) {
+		return
+	}
 	if !ok {
 		// A page for members: served to one who is signed in, privately, and
 		// to anybody else as a page saying so. Not part of pages, so nothing
@@ -1088,6 +1096,11 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 		tag = strings.TrimSuffix(tag, `"`) + map[bool]string{true: "-nl1", false: "-nl0"}[st.newsletterReady()] + `"`
 	}
 	w.Header().Set("ETag", tag)
+	// Left out of search results when it asks to be, on the response a
+	// crawler reads as well as in the page.
+	if seo.NoIndex(body) {
+		w.Header().Set("X-Robots-Tag", "noindex")
+	}
 	// Before the conditional answer, not after: a 304 replaces the policy a
 	// cache stored with the page, and one without this hash would stop the
 	// script the cached page carries.
@@ -1225,6 +1238,25 @@ func (st *Site) injectHead(html, page, hash string, body any) string {
 			`href="` + atomPath + `" title="` + escape(st.Name) + `">` + "\n")
 		b.WriteString(`<link rel="alternate" type="application/feed+json" ` +
 			`href="` + jsonPath + `" title="` + escape(st.Name) + `">` + "\n")
+	}
+
+	// Where this page lives, and whether a search engine may list it. The
+	// canonical link only when the layout wrote none: a layout that names
+	// one has decided.
+	if c := seo.Canonical(st.BaseURL, page, st.Index, body); c != "" &&
+		!strings.Contains(strings.ToLower(html), `rel="canonical"`) {
+		b.WriteString(`<link rel="canonical" href="` + escape(c) + `">` + "\n")
+	}
+	if seo.NoIndex(body) {
+		b.WriteString(`<meta name="robots" content="noindex">` + "\n")
+	}
+	// Its words alone, for a reader's agent.
+	if pages, _, perr := st.pages(); perr == nil && pages[page] != nil && page != askPageName && page != searchPageName {
+		mdName := page
+		if page == st.Index {
+			mdName = "index"
+		}
+		b.WriteString(`<link rel="alternate" type="text/markdown" href="/` + escape(mdName) + `.md">` + "\n")
 	}
 
 	// What this page is, for a reader that is not a person. Built here rather
@@ -1509,7 +1541,11 @@ func (st *Site) llms(w http.ResponseWriter, r *http.Request) {
 				title = t
 			}
 		}
-		fmt.Fprintf(w, "- [%s](/%s)\n", title, n)
+		md := n
+		if n == st.Index {
+			md = "index"
+		}
+		fmt.Fprintf(w, "- [%s](/%s.md)\n", title, md)
 	}
 }
 

@@ -26,6 +26,17 @@
     </select>
     <p id="form-help" class="help">Shown at the foot of the page for visitors to fill in. What they send arrives under <a href="/forms">Forms</a>.</p>
   </div>{{end}}
+  <fieldset class="field">
+    <legend>Search engines</legend>
+    <input type="hidden" name="__seo" value="1">
+    <p><input id="f-noindex" type="checkbox" name="__noindex" value="1"{{if .NoIndex}} checked{{end}}>
+      <label for="f-noindex">Leave this page out of search results</label></p>
+    {{if not .Type}}<label for="f-canonical">Published first at</label>
+    <input id="f-canonical" name="__canonical" type="url" inputmode="url" value="{{.Canonical}}"
+           placeholder="https://" aria-describedby="canon-help">
+    <p id="canon-help" class="help">Only for a page that copies one published elsewhere: search engines are sent there, and
+      it is left out of the sitemap. Empty means this page is the original.</p>{{end}}
+  </fieldset>
   <div class="field">
     <label for="f-msg">What changed</label>
     <input id="f-msg" name="__message" type="text"

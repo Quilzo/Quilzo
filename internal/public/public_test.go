@@ -227,10 +227,15 @@ func TestOfflinePageIsSelfContained(t *testing.T) {
 func TestLLMsIndexListsPublishedPages(t *testing.T) {
 	st, _ := setup(t)
 	body := get(st, "/llms.txt", nil).Body.String()
-	for _, want := range []string{"# Example", "(/index)", "(/about)"} {
+	// Each page by its Markdown copy, as llmstxt.org asks, and each copy
+	// is there.
+	for _, want := range []string{"# Example", "(/index.md)", "(/about.md)"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("llms.txt is missing %s: %q", want, body)
 		}
+	}
+	if w := get(st, "/about.md", nil); w.Code != 200 || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/markdown") {
+		t.Errorf("the copy llms.txt names: %d %q", w.Code, w.Header().Get("Content-Type"))
 	}
 }
 
