@@ -358,6 +358,8 @@ func settingGroupLabel(key string) string {
 		return "Content API"
 	case "publish":
 		return "Publishing"
+	case "schedule":
+		return "Scheduled publishing"
 	case "review":
 		return "Review and approval"
 	case "approval":

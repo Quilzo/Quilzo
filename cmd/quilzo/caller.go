@@ -66,6 +66,13 @@ type Caller struct {
 	// which model it runs, or an agent acting under its own identity.
 	// Empty for a person or a service.
 	Model string
+	// Via says how an act reached this caller when it was not them at a
+	// keyboard ("schedule" for a publish somebody scheduled), and FiredBy
+	// whose identity set it off. The act is still theirs and on their
+	// authority; this is so nobody reading the record thinks they clicked
+	// at nine on Friday. FiredBy is kept under an identity key, so the log
+	// pseudonymises it like the principal.
+	Via, FiredBy string
 }
 
 // tokenFile is preferred over the environment.
@@ -251,6 +258,12 @@ func (c *Caller) auditRecord(action, resource string, outcome audit.Outcome,
 		// Written into the record rather than left to be inferred from a false
 		// flag, so a reader scanning entries sees it without checking a field.
 		detail["identity"] = "unverified: " + c.Why
+	}
+	if c.Via != "" {
+		detail["via"] = c.Via
+	}
+	if c.FiredBy != "" {
+		detail["fired_by"] = c.FiredBy
 	}
 	return audit.Record{
 		Action: action, Resource: resource, Outcome: outcome,

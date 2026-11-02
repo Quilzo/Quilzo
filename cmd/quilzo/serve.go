@@ -412,10 +412,11 @@ func cmdServe(root string, args []string) error {
 	// no access to X" rather than rendering an empty list — because empty and
 	// absent look identical on a page and mean opposite things.
 	srv.Publishing = &admin.Publishing{
-		Envs:         func() (*site.Envs, error) { return loadEnvs(root) },
-		SaveEnvs:     func(e *site.Envs) error { return saveEnvs(root, e) },
-		Schedule:     func() (*schedule.Schedule, error) { return loadSchedule(root) },
-		SaveSchedule: func(sc *schedule.Schedule) error { return saveJSON(schedulePath(root), sc) },
+		Envs:           func() (*site.Envs, error) { return loadEnvs(root) },
+		SaveEnvs:       func(e *site.Envs) error { return saveEnvs(root, e) },
+		Schedule:       func() (*schedule.Schedule, error) { return loadSchedule(root) },
+		UpdateSchedule: func(fn func(*schedule.Schedule) error) error { return updateSchedule(root, fn) },
+		InServer:       func() bool { return mustConfig(root).Bool("schedule.in_server") },
 	}
 	srv.Media = &admin.Media{
 		Library: func() (*medialib.Library, error) { return openMedia(root) },
@@ -591,6 +592,22 @@ func cmdServe(root string, args []string) error {
 				"declares%s\n", dim, count(n, "submission"), reset)
 		}
 	}, jobs...)
+
+	// Scheduled publishing, at its time, unless this deployment publishes
+	// from a timer of its own. See runScheduler for why it is here and whose
+	// authority each publish goes out on.
+	go runScheduler(upkeepCtx, root, scheduler{
+		templates: *tplDir,
+		on:        func() bool { return mustConfig(root).Bool("schedule.in_server") },
+		runner:    func() *Caller { return resolveCaller(root, flagToken) },
+		report: func(f firing, err error) {
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "  %sscheduled publishing: %v%s\n", dim, err, reset)
+				return
+			}
+			sayFiring(f)
+		},
+	})
 
 	// Dual authorisation. The same files and the same engine the command line
 	// uses — a second implementation of an approval rule would be a second

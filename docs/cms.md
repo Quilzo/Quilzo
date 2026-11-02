@@ -852,10 +852,21 @@ period and an enforced one are different things, and only the second is worth
 anything to the person whose data it is.
 
 An install that runs neither server has nothing sweeping, so `quilzo posture
-scan` counts submissions that have outlived their period. Scheduled publishing
-is the other half and keeps its external timer on purpose — a scheduler that is
-also a long-lived process is a second thing that can be down — so the scan
-reports an entry that was due and did not fire rather than firing it.
+scan` counts submissions that have outlived their period.
+
+**Scheduled publishing** goes out on time from `quilzo serve`, which sleeps
+until the next entry is due and publishes it within a second; an entry that
+fell due while the server was down goes out when it starts, and the record
+says how late. Each publish is on the authority of the person who scheduled
+it, checked again when it fires — somebody who has lost the publisher role
+since does not have their launch published for them — and of the identity the
+server runs as, and it carries the publisher role and nothing more. Every gate
+runs then, against the content as it stands. A deployment that would rather
+publish from a timer of its own turns off `schedule.in_server` and runs
+`quilzo schedule run`; the two take the same lock, so an entry is never
+published twice. The Publishing screen lists what fired in the last thirty
+days and why anything was refused, and the posture scan reports an entry that
+was due and did not fire.
 
 **Working together.** Compare-and-swap on every write, so nobody silently
 overwrites anybody; a three-way merge for the writes that only collided on the

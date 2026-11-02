@@ -98,8 +98,8 @@ what production serves is the bytes that were checked — not a copy of them.</p
   {{range .Pending}}
   <tr>
     <th scope="row">{{when .Entry.At}}</th>
-    <td><code>{{short .Entry.Commit}}</code></td>
-    <td>{{.Entry.By}}{{if .Entry.Note}}<div class="hint">{{.Entry.Note}}</div>{{end}}</td>
+    <td data-label="Commit"><code>{{short .Entry.Commit}}</code></td>
+    <td data-label="By">{{.Entry.By}}{{if .Entry.Note}}<div class="hint">{{.Entry.Note}}</div>{{end}}</td>
     <td>
       {{if .Stale}}<span class="warn">stale — the draft has moved to
         {{short .Current}} since this was scheduled, so it describes content
@@ -121,6 +121,29 @@ what production serves is the bytes that were checked — not a copy of them.</p
 </div>
 {{end}}
 
+{{if .Fired}}
+<h3>Recently fired</h3>
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th scope="col">Scheduled for</th><th scope="col">Commit</th>
+    <th scope="col">By</th><th scope="col">What happened</th>
+  </tr></thead>
+  <tbody>
+  {{range .Fired}}
+  <tr>
+    <th scope="row">{{when .At}}</th>
+    <td data-label="Commit"><code>{{short .Commit}}</code></td>
+    <td data-label="By">{{.By}}</td>
+    <td>{{if .Refused}}<span class="warn">{{.Result}}</span>{{else}}<span class="ok">{{.Result}}</span>{{end}}
+      {{if .FiredAt}}<div class="hint">at {{when .FiredAt}}</div>{{end}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+
 {{if .CanPromote}}
 <form method="post" action="/publishing/schedule" class="inline">
   <span class="pair"><label for="s-when">Publish the current draft at {{template "req"}}</label>
@@ -131,7 +154,11 @@ what production serves is the bytes that were checked — not a copy of them.</p
   <button type="submit">Schedule</button>
 </form>
 <p class="hint">
-  This names one exact commit. Editing the draft afterwards does not change what
+  {{if .InServer}}This server publishes it at that time, on your authority as it
+  stands then: if you can no longer publish, it is refused.{{else}}Nothing
+  publishes it until <code>quilzo schedule run</code> runs, because
+  <code>schedule.in_server</code> is off on this server.{{end}}
+  It names one exact commit. Editing the draft afterwards does not change what
   is scheduled — it makes the entry stale, and a stale entry is reported rather
   than fired. Every gate runs at publication, not now.
 </p>

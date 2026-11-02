@@ -61,6 +61,21 @@ Unreleased
 
 ** Changed
 
+*** Scheduled publishing needs no timer.  quilzo serve publishes each
+    entry within a second of its time, and at once for one that fell due
+    while it was down; schedule.in_server turns it off for a deployment
+    that would rather run quilzo schedule run from a timer of its own.
+    The two never publish one entry twice.  The Publishing screen lists
+    what fired in the last thirty days, and why anything was refused.
+
+*** A scheduled publish goes out on the authority of the person who
+    scheduled it, checked when it fires, and of whatever fires it.  It
+    used to need only the timer's: somebody who scheduled a launch and then
+    lost the publisher role, or whose grant ran out, still had it published
+    by an administrator's cron token.  It carries the publisher role and no
+    more, every gate runs then, and the record says it came by the schedule
+    and names who fired it.
+
 *** A site that has chosen no style is drawn in Material 3 Expressive, as
     the admin is.  The Design screen offered Classic as the default and
     Material 3 Expressive as one choice among seven, while the admin a
@@ -858,6 +873,13 @@ Unreleased
     No run may use a person's desktop.
 
 ** Fixed
+
+*** An entry added to the schedule while another was cancelled or fired
+    is kept.  The browser, the command line and the timer each read the
+    schedule, changed it and wrote it back with nothing in between, so the
+    second writer lost the first's change.  They now take one lock.  And
+    quilzo schedule add and cancel record the person --token named, not
+    whoever QUILZO_TOKEN or the token file did.
 
 *** A forwarded address is believed only from a proxy that is named or one
     on this machine, and the shield exempts this machine, not every private

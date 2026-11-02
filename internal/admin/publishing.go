@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -31,9 +32,15 @@ type Publishing struct {
 	// Envs is the configured environment set and how to change it.
 	Envs     func() (*site.Envs, error)
 	SaveEnvs func(*site.Envs) error
-	// Schedule is work queued for later.
-	Schedule     func() (*schedule.Schedule, error)
-	SaveSchedule func(*schedule.Schedule) error
+	// Schedule is work queued for later, and UpdateSchedule changes it
+	// under the lock the command line and the server's own timer take, so
+	// an entry added here while the timer fires one is not lost when the
+	// two write the file.
+	Schedule       func() (*schedule.Schedule, error)
+	UpdateSchedule func(func(*schedule.Schedule) error) error
+	// InServer says whether this server publishes scheduled entries itself
+	// (schedule.in_server), so the screen can say who will.
+	InServer func() bool
 }
 
 // envView is one environment as the screen shows it.
@@ -83,11 +90,14 @@ func (s *Server) handlePublishing(w http.ResponseWriter, r *http.Request) {
 	// looked at. A stale entry is the failure mode of scheduled publishing and
 	// it is invisible unless it is drawn.
 	var pending []schedule.Staleness
+	var fired []firedView
 	if s.Publishing.Schedule != nil {
 		if sch, err := s.Publishing.Schedule(); err == nil {
 			pending = sch.Check(draft, time.Now())
+			fired = recentlyFired(sch, time.Now())
 		}
 	}
+	inServer := s.Publishing.InServer != nil && s.Publishing.InServer()
 
 	var held []collab.Lock
 	if s.Locks != nil {
@@ -100,6 +110,7 @@ func (s *Server) handlePublishing(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "publishing.html", map[string]any{
 		"Nav": "publishing", "Title": "Publishing", "Principal": p,
 		"Envs": views, "Draft": shortHash(draft), "Pending": pending,
+		"Fired": fired, "InServer": inServer,
 		"Locks": held, "Now": time.Now().Unix(),
 		"Message": r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"),
 		"CanPromote": s.Policy.Evaluate(p.Name, auth.ActPublish, "/").Allowed,
@@ -249,6 +260,47 @@ func (s *Server) handleEnvRemove(w http.ResponseWriter, r *http.Request) {
 		"was serving is still recoverable.", "")
 }
 
+// recentlyFired is what scheduled publishing did in the last thirty days,
+// newest first, at most ten: whether each went out, and if not, why.
+//
+// Without it an entry vanished from the screen when it fired, and somebody
+// whose launch was refused — a gate failed, or they could no longer
+// publish — had nowhere to find out.
+// firedView is an entry that fired, and whether it was refused.
+type firedView struct {
+	schedule.Entry
+	Refused bool
+}
+
+func recentlyFired(sch *schedule.Schedule, now time.Time) []firedView {
+	var out []firedView
+	since := now.Add(-30 * 24 * time.Hour).Unix()
+	for _, e := range sch.Entries {
+		if !e.Done {
+			continue
+		}
+		when := e.FiredAt
+		if when == 0 {
+			when = e.At
+		}
+		if when >= since {
+			out = append(out, firedView{Entry: e, Refused: strings.HasPrefix(e.Result, "refused")})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return firedAt(out[i].Entry) > firedAt(out[j].Entry) })
+	if len(out) > 10 {
+		out = out[:10]
+	}
+	return out
+}
+
+func firedAt(e schedule.Entry) int64 {
+	if e.FiredAt != 0 {
+		return e.FiredAt
+	}
+	return e.At
+}
+
 // handleScheduleAdd queues the current draft for later.
 func (s *Server) handleScheduleAdd(w http.ResponseWriter, r *http.Request) {
 	p, ok := s.publishWriter(w, r, auth.ActPublish)
@@ -269,17 +321,19 @@ func (s *Server) handleScheduleAdd(w http.ResponseWriter, r *http.Request) {
 		s.pubRedirect(w, r, "", err.Error())
 		return
 	}
-	sch, err := s.Publishing.Schedule()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
 	note := strings.TrimSpace(r.FormValue("note"))
-	if err := sch.Add(draft, when, p.Name, note, time.Now()); err != nil {
-		s.pubRedirect(w, r, "", err.Error())
-		return
-	}
-	if err := s.Publishing.SaveSchedule(sch); err != nil {
+	// Signed in, so verified: the publish goes out on this person's
+	// authority when it fires, checked again then.
+	who := schedule.Who{Name: p.Name, Kind: "human", Verified: true}
+	var refused error
+	if err := s.Publishing.UpdateSchedule(func(sch *schedule.Schedule) error {
+		refused = sch.Add(draft, when, who, note, time.Now())
+		return refused
+	}); err != nil {
+		if refused != nil {
+			s.pubRedirect(w, r, "", refused.Error())
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -303,17 +357,18 @@ func (s *Server) handleScheduleCancel(w http.ResponseWriter, r *http.Request) {
 		s.pubRedirect(w, r, "", "scheduling is not wired up in this build")
 		return
 	}
-	sch, err := s.Publishing.Schedule()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
 	commit := r.FormValue("commit")
-	if !sch.Cancel(commit) {
-		s.pubRedirect(w, r, "", "nothing pending matches "+shortHash(commit))
-		return
-	}
-	if err := s.Publishing.SaveSchedule(sch); err != nil {
+	errNone := errors.New("nothing pending matches " + shortHash(commit))
+	if err := s.Publishing.UpdateSchedule(func(sch *schedule.Schedule) error {
+		if !sch.Cancel(commit) {
+			return errNone
+		}
+		return nil
+	}); err != nil {
+		if errors.Is(err, errNone) {
+			s.pubRedirect(w, r, "", err.Error())
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

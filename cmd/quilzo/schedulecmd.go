@@ -4,12 +4,16 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"path/filepath"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/schedule"
 	"github.com/quilzo/quilzo/internal/site"
 )
@@ -19,6 +23,37 @@ func schedulePath(root string) string { return filepath.Join(root, "schedule.jso
 func loadSchedule(root string) (*schedule.Schedule, error) {
 	s := &schedule.Schedule{}
 	return s, loadJSON(schedulePath(root), s)
+}
+
+// lockSchedule takes the schedule's lock, which every change to it holds
+// from reading the file to writing it back.
+//
+// Adding, cancelling and firing each read the file, changed it and wrote
+// it, with nothing between. Two of them at once — an entry added in the
+// browser while the server's timer fired another, or a timer and a cron
+// job firing the same entry — each wrote what they read plus their own
+// change, and the second write lost the first: an entry that vanished, or a
+// publish recorded as pending after it went out.
+func lockSchedule(root string) (func(), error) {
+	return atomicfile.Lock(schedulePath(root) + ".lock")
+}
+
+// updateSchedule changes the schedule under its lock, and writes it only
+// when fn succeeds.
+func updateSchedule(root string, fn func(*schedule.Schedule) error) error {
+	unlock, err := lockSchedule(root)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	sch, err := loadSchedule(root)
+	if err != nil {
+		return err
+	}
+	if err := fn(sch); err != nil {
+		return err
+	}
+	return saveJSON(schedulePath(root), sch)
 }
 
 func cmdSchedule(root string, args []string) error {
@@ -67,15 +102,19 @@ func scheduleAdd(root string, args []string) error {
 		return fmt.Errorf("there is no draft to schedule")
 	}
 
-	sch, err := loadSchedule(root)
-	if err != nil {
-		return err
-	}
-	caller := resolveCaller(root, "")
-	if err := sch.Add(draft, when, caller.Name, *note, time.Now()); err != nil {
-		return errBlocked{err}
-	}
-	if err := saveJSON(schedulePath(root), sch); err != nil {
+	// The caller the command was authorised as, --token included: resolving
+	// it again without the flag recorded whoever QUILZO_TOKEN or the token
+	// file named, which is not always who was let in.
+	caller := resolveCaller(root, flagToken)
+	who := schedule.Who{Name: caller.Name, Kind: string(caller.Kind), Verified: caller.Verified}
+	var refused error
+	if err := updateSchedule(root, func(sch *schedule.Schedule) error {
+		refused = sch.Add(draft, when, who, *note, time.Now())
+		return refused
+	}); err != nil {
+		if refused != nil {
+			return errBlocked{refused}
+		}
 		return err
 	}
 
@@ -121,17 +160,15 @@ func scheduleCancel(root string, args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("usage: quilzo schedule cancel <commit>")
 	}
-	sch, err := loadSchedule(root)
-	if err != nil {
+	if err := updateSchedule(root, func(sch *schedule.Schedule) error {
+		if !sch.Cancel(args[0]) {
+			return fmt.Errorf("nothing pending matches %q", args[0])
+		}
+		return nil
+	}); err != nil {
 		return err
 	}
-	if !sch.Cancel(args[0]) {
-		return fmt.Errorf("nothing pending matches %q", args[0])
-	}
-	if err := saveJSON(schedulePath(root), sch); err != nil {
-		return err
-	}
-	caller := resolveCaller(root, "")
+	caller := resolveCaller(root, flagToken)
 	record(root, audit.Record{
 		Action: "schedule.cancel", Resource: "/", Outcome: audit.Success,
 		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
@@ -190,67 +227,323 @@ func scheduleList(root string) error {
 
 // scheduleRun fires whatever is due.
 //
-// Meant for a timer — systemd, cron, a Kubernetes CronJob. It does not daemonise,
-// because a scheduler that is also a long-lived process is a second thing that
-// can be down, and the machinery for running something every minute already
-// exists on every system this runs on.
+// For a timer — systemd, cron, a Kubernetes CronJob — where `quilzo serve`
+// is not running, or runs with schedule.in_server off. Where it is running,
+// it fires these itself (runScheduler), and the two never fire one entry
+// twice: both take the schedule's lock and read the file afresh under it.
 func scheduleRun(root string, args []string) error {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	dry := fs.Bool("dry-run", false, "report what would publish and change nothing")
+	tplDir := fs.String("templates", "templates", "where page.html lives, as for publish")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-
-	sch, err := loadSchedule(root)
+	fired, err := fireDue(root, resolveCaller(root, flagToken), time.Now,
+		fireOptions{dry: *dry, templates: *tplDir})
 	if err != nil {
 		return err
 	}
-	s, err := open(root)
-	if err != nil {
-		return err
+	if w.JSON(map[string]any{"fired": fired}) {
+		return nil
 	}
-	draft := s.GetRef(site.RefDraft)
-	now := time.Now()
-
-	due := sch.Due(now)
-	if len(due) == 0 {
+	if len(fired) == 0 {
 		w.Human("%snothing due%s\n", dim, reset)
 		return nil
 	}
-
-	for _, e := range due {
-		if draft != "" && e.Commit != draft {
-			// Refused rather than fired. The entry describes bytes that are no
-			// longer what anybody is looking at, and publishing them because a
-			// clock said so is how a scheduled publish surprises everyone.
-			w.Human("  %sskipped%s %s — the draft has moved since this was "+
-				"scheduled\n", yellow, reset, short(e.Commit))
-			w.Human("          %squilzo schedule cancel %s, then schedule "+
-				"again%s\n", dim, short(e.Commit), reset)
-			continue
-		}
-		if *dry {
-			w.Human("  %swould publish%s %s\n", dim, reset, short(e.Commit))
-			continue
-		}
-
-		// Publishing goes through the ordinary command, so every gate —
-		// accessibility, provenance, content types, dual authorization — runs
-		// now, against the content as it stands, rather than having run when
-		// somebody clicked schedule.
-		if err := cmdPublish(root, []string{e.Commit}); err != nil {
-			sch.Complete(e.Commit, "refused: "+err.Error())
-			w.Human("  %srefused%s %s — %v\n", red, reset, short(e.Commit), err)
-			continue
-		}
-		sch.Complete(e.Commit, "published")
-		w.Human("  %spublished%s %s\n", green, reset, short(e.Commit))
-	}
-
-	if !*dry {
-		if err := saveJSON(schedulePath(root), sch); err != nil {
-			return err
-		}
+	for _, f := range fired {
+		sayFiring(f)
 	}
 	return nil
+}
+
+// A firing is what happened to one entry whose time had come.
+type firing struct {
+	Commit string `json:"commit"`
+	By     string `json:"by"`
+	At     int64  `json:"at"`
+	// Outcome is published, refused, stale (the draft has moved on, so it is
+	// left for a person to cancel) or would-publish (a dry run).
+	Outcome string `json:"outcome"`
+	Reason  string `json:"reason,omitempty"`
+	// Late is how long after its time it went out, when that was more than
+	// a minute: the server was down, or nothing was running a timer.
+	Late time.Duration `json:"late_ns,omitempty"`
+}
+
+func sayFiring(f firing) {
+	late := ""
+	if f.Late > 0 {
+		late = fmt.Sprintf(" (%s late)", lateBy(f.Late))
+	}
+	switch f.Outcome {
+	case "published":
+		w.Human("  %spublished%s %s, scheduled by %s%s\n", green, reset, short(f.Commit), f.By, late)
+	case "refused":
+		w.Human("  %srefused%s %s, scheduled by %s — %s\n", red, reset, short(f.Commit), f.By, f.Reason)
+	case "stale":
+		w.Human("  %sskipped%s %s — the draft has moved since this was scheduled\n",
+			yellow, reset, short(f.Commit))
+		w.Human("          %squilzo schedule cancel %s, then schedule again%s\n",
+			dim, short(f.Commit), reset)
+	case "would-publish":
+		w.Human("  %swould publish%s %s, scheduled by %s\n", dim, reset, short(f.Commit), f.By)
+	}
+}
+
+// lateBy is how late something was, in the unit a person would say it in:
+// "4 minutes", "3 hours", "2 days", and never "4m12.093s".
+func lateBy(d time.Duration) string {
+	switch {
+	case d >= 48*time.Hour:
+		return fmt.Sprintf("%d days", int(d.Hours())/24)
+	case d >= 2*time.Hour:
+		return fmt.Sprintf("%d hours", int(d.Hours()))
+	case d >= 2*time.Minute:
+		return fmt.Sprintf("%d minutes", int(d.Minutes()))
+	default:
+		return "a minute"
+	}
+}
+
+// errRunnerMayNotPublish is fireDue refusing to fire anything, and leaving
+// every entry as it was, because whatever is running it may not publish.
+var errRunnerMayNotPublish = errors.New("may not publish")
+
+// fireDue publishes every entry whose time has come.
+//
+// # Whose authority
+//
+// A scheduled publish goes out on the authority of the person who
+// scheduled it, checked when it fires, and of whatever fires it. Both.
+//
+// The runner alone was the old rule: `schedule run` checked the token cron
+// held, which is usually an administrator's. Somebody who scheduled a
+// launch and then lost the publisher role, or whose grant ran out, still
+// had it published, by an identity that never looked at it. The scheduler
+// alone would let a forged entry in schedule.json publish as anybody; a
+// process that can write that file can also move the draft, so it gains
+// nothing a runner it is not could not already do, and that is why the
+// runner is checked too. Their intersection is the least this act needs.
+//
+// The scheduled act carries the publisher role and no more, whatever else
+// the person holds: it is a publish, so that is all it may be.
+//
+// # Every gate, now
+//
+// It goes through publishAs, the publish command itself, so the
+// accessibility gate, provenance, content types, the freeze and dual
+// authorisation run against the content as it stands when it fires.
+//
+// # Once
+//
+// Under the schedule's lock it decides what is due and claims it, then
+// publishes with the lock let go — publishing tells webhooks, and a slow
+// receiver must not hold up somebody adding an entry in the browser — and
+// takes the lock again to record what happened. A timer and a cron job
+// firing together publish an entry once: the second finds it claimed.
+func fireDue(root string, runner *Caller, now func() time.Time, opts fireOptions) ([]firing, error) {
+	var out []firing
+	var claimed []schedule.Entry
+	err := updateSchedule(root, func(sch *schedule.Schedule) error {
+		due := sch.Due(now())
+		if len(due) == 0 {
+			return errNothingToSave
+		}
+		s, err := open(root)
+		if err != nil {
+			return err
+		}
+		draft := s.GetRef(site.RefDraft)
+
+		// The runner first, and before any entry is touched: a server started
+		// without an identity that may publish leaves every entry pending, for
+		// a timer that has one, rather than marking them refused.
+		if !opts.dry {
+			if err := authorise(root, runner, auth.ActPublish, "/"); err != nil {
+				return fmt.Errorf("%s %w, so nothing scheduled was published: %v",
+					runner.Name, errRunnerMayNotPublish, err)
+			}
+		}
+		for _, e := range due {
+			f := firing{Commit: e.Commit, By: e.By, At: e.At}
+			switch {
+			case draft != "" && e.Commit != draft:
+				// Refused rather than fired. The entry describes bytes that are
+				// no longer what anybody is looking at, and publishing them
+				// because a clock said so is how a scheduled publish surprises
+				// everyone.
+				f.Outcome = "stale"
+				out = append(out, f)
+			case opts.dry:
+				f.Outcome = "would-publish"
+				out = append(out, f)
+			default:
+				if sch.Claim(e.Commit, now()) {
+					claimed = append(claimed, e)
+				}
+			}
+		}
+		if len(claimed) == 0 {
+			return errNothingToSave
+		}
+		return nil
+	})
+	if err != nil && !errors.Is(err, errNothingToSave) {
+		return out, err
+	}
+	if len(claimed) == 0 {
+		return out, nil
+	}
+
+	results := make([]firing, 0, len(claimed))
+	for _, e := range claimed {
+		f := firing{Commit: e.Commit, By: e.By, At: e.At}
+		perr := publishAs(root, []string{e.Commit}, scheduledBy(e, runner),
+			publishFlags{tplDir: opts.templates})
+		if late := now().Sub(time.Unix(e.At, 0)); late > time.Minute {
+			f.Late = late
+		}
+		if perr != nil {
+			f.Outcome, f.Reason = "refused", perr.Error()
+		} else {
+			f.Outcome = "published"
+		}
+		results = append(results, f)
+	}
+	err = updateSchedule(root, func(sch *schedule.Schedule) error {
+		at := now()
+		for _, f := range results {
+			result := "published"
+			switch {
+			case f.Outcome == "refused":
+				result = "refused: " + f.Reason
+			case f.Late > 0:
+				result = fmt.Sprintf("published %s late", lateBy(f.Late))
+			}
+			sch.Complete(f.Commit, result, at)
+		}
+		return nil
+	})
+	return append(out, results...), err
+}
+
+// errNothingToSave ends an update that changed nothing, so the schedule is
+// not written back for no reason.
+var errNothingToSave = errors.New("nothing to save")
+
+// fireOptions are how fireDue publishes: as a dry run, and with which
+// templates the accessibility gate renders pages through — the server's
+// own, so a scheduled publish is checked as the site will be served.
+type fireOptions struct {
+	dry       bool
+	templates string
+}
+
+// scheduledBy is the caller a scheduled publish acts as: the person who
+// scheduled it, holding the publisher role and no more, and as verified as
+// they were when they scheduled it.
+//
+// An entry written before who was verified was recorded counts as
+// verified: access control was on and it was let in (the schedule command
+// needs a verified identity to publish), or access control was off and
+// nothing is checked. One recorded as unverified is checked as that, so it
+// fires on a store without access control and is refused on one with it.
+func scheduledBy(e schedule.Entry, runner *Caller) *Caller {
+	verified := e.Verified == nil || *e.Verified
+	kind := audit.Kind(e.Kind)
+	if kind == "" {
+		kind = audit.KindHuman
+	}
+	c := &Caller{Name: e.By, Kind: kind, Verified: verified, Role: auth.RolePublisher,
+		Via: "schedule", FiredBy: runner.Name}
+	if !verified {
+		c.Why = "they were not a verified identity when they scheduled it"
+	}
+	return c
+}
+
+// schedulePoll bounds how long the server's timer sleeps, so an entry the
+// command line or another process added is noticed within it.
+const schedulePoll = 30 * time.Second
+
+// scheduler is what runScheduler is given: whether it is on
+// (schedule.in_server, read on every pass so turning it off takes effect
+// without a restart), who it fires as, and where it says what happened.
+type scheduler struct {
+	templates string
+	// poll is the longest it sleeps; schedulePoll when zero.
+	poll   time.Duration
+	on     func() bool
+	runner func() *Caller
+	report func(firing, error)
+}
+
+// runScheduler publishes scheduled entries at their time, inside quilzo
+// serve, until ctx is done.
+//
+// # Why in the server now
+//
+// Scheduled publishing used to need a timer calling `quilzo schedule run`,
+// on the argument that a scheduler which is also a long-lived process is a
+// second thing that can be down. That was right while it would have been a
+// second process. It is the server's own goroutine here, so it is down
+// exactly when the admin is, and the posture check reports an entry that
+// did not fire either way. What the old rule cost was real: an operator who
+// never set up the cron entry had launches that silently did not happen,
+// the commonest complaint about scheduling in any CMS.
+//
+// It sleeps until the next entry is due, and never more than schedulePoll,
+// so a publish goes out within a second of its time and an entry added
+// elsewhere is seen within half a minute. It fires what is overdue when it
+// starts, so a restart over nine o'clock publishes at once rather than
+// never. Who it fires as is resolved each time, so a token that expires or
+// is revoked while the server runs stops it publishing.
+func runScheduler(ctx context.Context, root string, sc scheduler) {
+	lastErr := ""
+	for {
+		var fired []firing
+		var err error
+		if sc.on() {
+			fired, err = fireDue(root, sc.runner(), time.Now, fireOptions{templates: sc.templates})
+		}
+		switch {
+		case err != nil:
+			// Said once, not every half minute, and said again only when it
+			// changes: the same refusal on every tick is noise that hides
+			// the next different one.
+			if err.Error() != lastErr {
+				sc.report(firing{}, err)
+			}
+			lastErr = err.Error()
+		default:
+			lastErr = ""
+			for _, f := range fired {
+				if f.Outcome != "stale" {
+					sc.report(f, nil)
+				}
+			}
+		}
+
+		wait := sc.poll
+		if wait <= 0 {
+			wait = schedulePoll
+		}
+		if sch, lerr := loadSchedule(root); lerr == nil {
+			if next, ok := sch.Next(time.Now()); ok {
+				if d := time.Until(next); d < wait {
+					wait = d
+				}
+			}
+		}
+		if wait < 0 {
+			wait = 0
+		}
+		t := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			t.Stop()
+			return
+		case <-t.C:
+		}
+	}
 }

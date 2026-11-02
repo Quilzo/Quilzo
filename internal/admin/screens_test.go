@@ -274,14 +274,14 @@ func fullyWired(t *testing.T) (*Server, string) {
 	envs := site.DefaultEnvs()
 	sched := &schedule.Schedule{}
 	if err := sched.Add(srv.Store.GetRef(site.RefDraft),
-		time.Now().Add(48*time.Hour), "editor", "launch", time.Now()); err != nil {
+		time.Now().Add(48*time.Hour), schedule.Who{Name: "editor"}, "launch", time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	srv.Publishing = &Publishing{
-		Envs:         func() (*site.Envs, error) { return envs, nil },
-		SaveEnvs:     func(*site.Envs) error { return nil },
-		Schedule:     func() (*schedule.Schedule, error) { return sched, nil },
-		SaveSchedule: func(*schedule.Schedule) error { return nil },
+		Envs:           func() (*site.Envs, error) { return envs, nil },
+		SaveEnvs:       func(*site.Envs) error { return nil },
+		Schedule:       func() (*schedule.Schedule, error) { return sched, nil },
+		UpdateSchedule: func(func(*schedule.Schedule) error) error { return nil },
 	}
 
 	locks := &collab.Locks{}
