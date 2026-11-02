@@ -1426,6 +1426,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/forms/expire", s.handleFormExpire)
 	mux.HandleFunc("/forms/purge", s.handleFormPurge)
 	mux.HandleFunc("/forms/submission/delete", s.handleSubmissionDelete)
+	mux.HandleFunc("/forms/file", s.handleFormFile)
 	mux.HandleFunc("/listings", s.handleListings)
 	mux.HandleFunc("/listings/save", s.handleListingSave)
 	mux.HandleFunc("/listings/remove", s.handleListingRemove)

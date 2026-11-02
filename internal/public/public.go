@@ -1658,6 +1658,8 @@ func (st *Site) formData(name string) map[string]any {
 			out.Type = "email"
 		case form.Number:
 			out.Type = "number"
+		case form.File:
+			out.File, out.Accept = true, fl.AcceptTypes()
 		default:
 			out.Type = "text"
 		}
@@ -1666,6 +1668,9 @@ func (st *Site) formData(name string) map[string]any {
 	data := render.FormOf(f.Name, f.Label, f.Intro, f.Told(), "", fields)
 	if f.StyleSheet() != "" {
 		data["style"] = "/form/" + f.Name + ".css"
+	}
+	if f.HasFiles() {
+		data["multipart"] = true
 	}
 	return data
 }

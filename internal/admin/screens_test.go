@@ -170,6 +170,8 @@ func TestEveryScreenSurvivesWithNothingWiredIn(t *testing.T) {
 // filtered by a pattern — a pattern would also excuse the next thing that
 // happens to match it.
 var notAScreen = map[string]string{
+	"/forms/file": "is a download of a file a submission carries, reached from the Forms screen's link with the submission named; " +
+		"with none named there is nothing to give, so it answers 404",
 	"/signin/oidc": "starts an authorisation redirect, and answers 404 when " +
 		"no identity provider is configured",
 	"/auth/callback": "receives one, and is never opened directly",

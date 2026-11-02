@@ -134,6 +134,16 @@ Unreleased
     takes what saving takes, so somebody who may only read sees the saved
     draft.
 
+*** A form can take a file: a CV, a photograph of the damage.  A field of
+    kind file takes images and documents, or the kinds it names; a file
+    is taken by what its bytes are, with the media library's checks (an
+    image must decode, a PDF must not run anything), at most 10 MB, 20 MB
+    a submission.  It is kept with the submission and deleted with it,
+    and staff download it from the Forms screen as an attachment named
+    afresh, under a policy that runs nothing; reading it is audited
+    (form.file.read).  The starters, the embed snippet and the chatbot's
+    form offers send such a form as multipart.
+
 *** A form can ask a question only on an earlier answer: an order number
     when the topic is Returns, who gave it when "It was a gift" is
     ticked.  "when" on the field, or "Asked only when" in the form

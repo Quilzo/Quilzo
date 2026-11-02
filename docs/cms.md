@@ -896,6 +896,16 @@ spreadsheet formula injection, and erasure by search — because an append-only
 merkle store cannot erase, which is why submissions deliberately do not live in
 it.
 
+A form can take a file — a CV, a photograph of the damage, a signed letter —
+with a field of kind `file` (`"accept": ["image"]` to narrow it; images and
+documents by default). A file is taken by what its bytes are, never by its name
+or the type the browser claimed, with the media library's own checks: an image
+must decode, a PDF must be one and do nothing when opened. At most 10 MB a file
+and 20 MB a submission. It is kept beside the submission and goes with it — when
+it expires, when it is erased, when the form is purged — and staff get it back
+only as a download from the Forms screen, named afresh, typed by what it is,
+under a policy that runs nothing, with the reading in the audit log.
+
 A question can be asked only on an earlier answer — the order number when the
 topic is Returns, who gave it when "It was a gift" is ticked — with
 `"when": {"field": "topic", "is": "Returns"}` on the field, or "Asked only when"

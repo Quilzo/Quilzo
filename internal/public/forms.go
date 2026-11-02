@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/clientip"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -159,16 +160,10 @@ func (st *Site) submit(w http.ResponseWriter, r *http.Request) {
 
 	// The body limit is applied before parsing, not after. A limit checked
 	// after ParseForm is a limit that ran once the allocation had happened.
-	r.Body = http.MaxBytesReader(w, r.Body, form.MaxSubmission)
-	if err := r.ParseForm(); err != nil {
+	values, files, ok := readSubmission(w, r, f)
+	if !ok {
 		http.Error(w, "that submission could not be read", http.StatusBadRequest)
 		return
-	}
-	values := make(map[string]string, len(r.PostForm))
-	for k, v := range r.PostForm {
-		if len(v) > 0 {
-			values[k] = v[0]
-		}
 	}
 
 	// Every attempt counts against the limiter, accepted or not.
@@ -188,7 +183,7 @@ func (st *Site) submit(w http.ResponseWriter, r *http.Request) {
 		st.Forms.Limit.Spend(throttle.Subject{Source: source})
 	}
 
-	sub, err := form.Accept(f, values, source, time.Now())
+	sub, err := form.AcceptWithFiles(f, values, files, source, time.Now())
 	if err != nil {
 		if st.Forms.Audit != nil {
 			st.Forms.Audit(name, source, false)
@@ -216,6 +211,59 @@ func (st *Site) submit(w http.ResponseWriter, r *http.Request) {
 		st.Forms.Notify(name)
 	}
 	st.formResult(w, r, f, "")
+}
+
+// readSubmission reads what was sent: the fields, and for a form that
+// takes files, the files its file fields were sent, each read no further
+// than it may be. A form that takes none is read as it always was, with no
+// multipart parser in the way of a request that should not need one.
+func readSubmission(w http.ResponseWriter, r *http.Request, f *form.Form) (map[string]string, map[string]form.Upload, bool) {
+	values := map[string]string{}
+	if !f.HasFiles() || !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+		r.Body = http.MaxBytesReader(w, r.Body, form.MaxSubmission)
+		if err := r.ParseForm(); err != nil {
+			return nil, nil, false
+		}
+		for k, v := range r.PostForm {
+			if len(v) > 0 {
+				values[k] = v[0]
+			}
+		}
+		return values, nil, true
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, form.MaxUploadBytes+form.MaxSubmission)
+	// Held in memory up to a megabyte, the rest in the site's own temporary
+	// directory (TMPDIR, inside the store), removed before this returns.
+	if err := r.ParseMultipartForm(1 << 20); err != nil {
+		return nil, nil, false
+	}
+	defer func() { _ = r.MultipartForm.RemoveAll() }()
+	for k, v := range r.MultipartForm.Value {
+		if len(v) > 0 {
+			values[k] = v[0]
+		}
+	}
+	files := map[string]form.Upload{}
+	for _, fl := range f.Fields {
+		if fl.Kind != form.File {
+			continue
+		}
+		hs := r.MultipartForm.File[fl.Name]
+		if len(hs) == 0 || hs[0].Size == 0 {
+			continue
+		}
+		in, err := hs[0].Open()
+		if err != nil {
+			return nil, nil, false
+		}
+		data, err := io.ReadAll(io.LimitReader(in, form.MaxFileBytes+1))
+		in.Close()
+		if err != nil {
+			return nil, nil, false
+		}
+		files[fl.Name] = form.Upload{Name: hs[0].Filename, Data: data}
+	}
+	return values, files, true
 }
 
 // formResult answers a submission.

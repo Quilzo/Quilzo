@@ -529,12 +529,17 @@ type askOffer struct {
 	Action string
 	Writes bool
 	Token  string
+	// Multipart is a form that takes a file.
+	Multipart bool
 }
 
 type askField struct {
 	Name, Label, Kind, Value string
 	Required                 bool
 	Choices                  []string
+	// Accept is a file field's hint; When the words saying when a field
+	// is asked.
+	Accept, When string
 }
 
 // firstCited is the page of the first source an answer cites.
@@ -597,6 +602,7 @@ func (st *Site) offerFor(p assistant.Proposal) *askOffer {
 			o.Label = f.Name
 		}
 		o.Stamp = strconv.FormatInt(time.Now().Unix(), 10)
+		o.Multipart = f.HasFiles()
 		for _, fl := range f.Fields {
 			v := p.Args[fl.Name]
 			// Never pre-filled, whatever the conversation established: a
@@ -604,9 +610,15 @@ func (st *Site) offerFor(p assistant.Proposal) *askOffer {
 			if fl.Sensitive {
 				v = ""
 			}
+			if fl.Kind == form.File {
+				v = ""
+			}
+			// Asked only on an answer: required by the server when it is,
+			// never by the markup.
 			o.Fields = append(o.Fields, askField{Name: fl.Name,
 				Label: fl.Label, Kind: string(fl.Kind), Value: v,
-				Required: fl.Required, Choices: fl.Choices})
+				Required: fl.Required && fl.When == nil, Choices: fl.Choices,
+				Accept: fl.AcceptTypes(), When: f.Words(fl.When)})
 		}
 		return o
 	}
@@ -759,13 +771,14 @@ var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
   <h2>{{.Label}}</h2>
   <p>I have filled in what I could. Check it, change anything that is
     wrong, and send it yourself — nothing is sent until you do.</p>
-  <form method="post" action="/form/{{.Form}}">
+  <form method="post" action="/form/{{.Form}}"{{if .Multipart}} enctype="multipart/form-data"{{end}}>
     {{range .Fields}}
     <p><label for="f-{{.Name}}">{{.Label}}{{if .Required}} (required){{end}}</label><br>
     {{if eq .Kind "para"}}<textarea id="f-{{.Name}}" name="{{.Name}}" rows="4"{{if .Required}} required{{end}}>{{.Value}}</textarea>
     {{else if eq .Kind "choice"}}<select id="f-{{.Name}}" name="{{.Name}}"{{if .Required}} required{{end}}>{{$v := .Value}}{{range .Choices}}<option{{if eq . $v}} selected{{end}}>{{.}}</option>{{end}}</select>
     {{else if eq .Kind "agree"}}<input id="f-{{.Name}}" name="{{.Name}}" type="checkbox" value="yes"{{if .Required}} required{{end}}>
-    {{else}}<input id="f-{{.Name}}" name="{{.Name}}" type="{{if eq .Kind "email"}}email{{else if eq .Kind "number"}}number{{else}}text{{end}}" value="{{.Value}}"{{if .Required}} required{{end}}>{{end}}</p>
+    {{else if eq .Kind "file"}}<input id="f-{{.Name}}" name="{{.Name}}" type="file" accept="{{.Accept}}"{{if .Required}} required{{end}}>
+    {{else}}<input id="f-{{.Name}}" name="{{.Name}}" type="{{if eq .Kind "email"}}email{{else if eq .Kind "number"}}number{{else}}text{{end}}" value="{{.Value}}"{{if .Required}} required{{end}}>{{end}}{{if .When}}<br><span class="qz-small">{{.When}}</span>{{end}}</p>
     {{end}}
     <p class="qz-hidden" aria-hidden="true"><label>Leave this empty <input name="{{$.Honeypot}}" tabindex="-1" autocomplete="off"></label></p>
     <input type="hidden" name="{{$.StampField}}" value="{{.Stamp}}">
