@@ -113,6 +113,31 @@ Unreleased
 
 ** Added
 
+*** An agent's browser does more of what Chrome does.  New actions, each a
+    capability:
+    - browser_scroll: by screens, or an element into view;
+    - browser_key: Enter, Tab, Escape, arrows, Page Up and Down and the
+      rest.  Enter or Space that would press a button or send a form is
+      weighed as pressing that button is;
+    - browser_navigate: back, forward or reload, never back to a page a
+      form led to, which would send the form again;
+    - browser_wait: until the page shows some text, or for some seconds;
+    - browser_hover: rest the pointer on something, as for a menu;
+    - browser_emulate: the page as a phone, tablet, laptop or desktop, in
+      light or dark, with reduced motion, or as printed;
+    - browser_console: what the page logged, its errors and the requests
+      that failed, kept only for an agent that may read it;
+    - browser_check: the page's speed (first byte, largest contentful
+      paint, layout shift, requests), what the accessibility checks find,
+      and what a search engine reads of it.
+    Anthropic's, OpenAI's and Gemini's computer-use models now scroll,
+    press keys, wait, hover and go back through these, where before they
+    were refused.  A browser grant over MCP that offers every action
+    offers these too; name --ops to hold one to fewer.
+    quilzo browser find lists the Chrome, Chromium, Edge and Chrome for
+    Testing builds this machine has, with their versions, for
+    browser.path; quilzo browser status says the version in use.
+
 *** Agents edit, move, delete and search files, and run code.  An agent's
     workspace had list, read, write and run a named program.  It now has:
     - file_edit: replace exact text (once, or every time), or put lines in

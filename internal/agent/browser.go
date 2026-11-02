@@ -26,6 +26,8 @@ import (
 var BrowserCapabilities = []string{
 	"browser_open", "browser_read", "browser_look", "browser_type",
 	"browser_choose", "browser_click", "browser_sign_in",
+	"browser_scroll", "browser_key", "browser_navigate", "browser_wait",
+	"browser_hover", "browser_emulate", "browser_console", "browser_check",
 }
 
 // IsBrowser reports whether a capability is one of the browser's.
@@ -164,6 +166,10 @@ func (m *Manifest) validateBrowser() error {
 	}
 	if uses["browser_sign_in"] && len(b.Credentials) == 0 {
 		return fmt.Errorf("%s holds browser_sign_in and declares no credential to sign in with", m.Name)
+	}
+	if uses["browser_emulate"] && m.Dialect == "gemini-computer" {
+		return fmt.Errorf("%s holds browser_emulate and its model places points on a screen of 1280 by 800 "+
+			"(gemini-computer), so its browser is not shown at another size", m.Name)
 	}
 	return nil
 }

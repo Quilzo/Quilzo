@@ -81,6 +81,10 @@ type Driver struct {
 	nmu     sync.Mutex
 	said    []string
 	refused map[string]int
+	// console is what the page logged since browser_console last read it,
+	// and consoleLost how much more there was than is kept.
+	console     []consoleLine
+	consoleLost int
 	// secrets are the credentials this run has typed, as they could
 	// appear in text; nothing the driver says or keeps carries them.
 	secrets []string
@@ -183,6 +187,8 @@ func (d *Driver) Weighs(a agent.Action) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	switch a.Op {
+	case "browser_key":
+		return d.weighKey(ctx, a)
 	case "browser_sign_in":
 		name := str(a, "credential")
 		cred, ok := d.decl().CredentialFor(name)
@@ -309,6 +315,22 @@ func (d *Driver) perform(ctx context.Context, a agent.Action) (string, error) {
 		return d.click(ctx, "")
 	case "browser_sign_in":
 		return d.signIn(ctx, str(a, "credential"))
+	case "browser_scroll":
+		return d.scroll(ctx, a)
+	case "browser_key":
+		return d.key(ctx, str(a, "key"))
+	case "browser_navigate":
+		return d.navigate(ctx, str(a, "to"))
+	case "browser_wait":
+		return d.wait(ctx, a)
+	case "browser_hover":
+		return d.hover(ctx, str(a, "ref"))
+	case "browser_emulate":
+		return d.emulate(ctx, a)
+	case "browser_console":
+		return d.readConsole(ctx)
+	case "browser_check":
+		return d.check(ctx, str(a, "what"))
 	}
 	return "", fmt.Errorf("%q is not one of the browser's actions", a.Op)
 }
@@ -356,6 +378,14 @@ func (d *Driver) start(ctx context.Context) error {
 	}
 	d.stops = append(d.stops, stop)
 	d.stops = append(d.stops, d.answerDialogs(b, p))
+	// What the page logs is kept only for an agent that may read it.
+	if slices.Contains(d.Session.Manifest().Capabilities, "browser_console") {
+		stop, err := d.watchConsole(ctx, b, p)
+		if err != nil {
+			return fail(err)
+		}
+		d.stops = append(d.stops, stop)
+	}
 	if d.Live != nil {
 		if stop, err := d.screencast(ctx, b, p); err == nil {
 			d.stops = append(d.stops, stop)

@@ -73,6 +73,8 @@ func CommitOf(a Action, why, kind string, writes bool) string {
 		return "writes"
 	case strings.HasPrefix(op, "read_") || strings.HasPrefix(op, "list_") || strings.HasPrefix(op, "search") ||
 		op == "recall" || op == "browser_read" || op == "browser_look" || op == "desktop_read" ||
+		op == "browser_scroll" || op == "browser_wait" || op == "browser_hover" || op == "browser_console" ||
+		op == "browser_check" || op == "browser_emulate" || op == "browser_navigate" ||
 		op == "desktop_look" || op == "file_read" || op == "file_list" || op == "file_search" || op == "decide":
 		return "reads"
 	}

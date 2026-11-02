@@ -208,6 +208,17 @@ func TestADialectMeansAModelThatAnswersAboutABrowser(t *testing.T) {
 	if err := m.Validate(nil); err == nil || !strings.Contains(err.Error(), "not a dialect") {
 		t.Errorf("an unknown dialect was accepted: %v", err)
 	}
+	// A model that places points on a screen of its own is scaled to the
+	// default window, so its browser is never shown at another size.
+	m = browsing([]string{"browser_open", "browser_emulate"}, b)
+	m.Dialect = "gemini-computer"
+	if err := m.Validate(nil); err == nil || !strings.Contains(err.Error(), "browser_emulate") {
+		t.Errorf("emulation with a dialect scaled to the default window: %v", err)
+	}
+	m.Dialect = "anthropic-computer"
+	if err := m.Validate(nil); err != nil {
+		t.Errorf("a dialect in the picture's own pixels may emulate: %v", err)
+	}
 	plain := Manifest{Name: "reader", Kind: KindRetrieval, Purpose: "read the store",
 		Capabilities: []string{"read_page"}, Autonomy: AutonomyPropose,
 		Budget: Budget{Steps: 10, Tools: 1, Duration: Duration(time.Minute)}}

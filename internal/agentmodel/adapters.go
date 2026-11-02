@@ -112,23 +112,28 @@ func anthropicComputer() dialect {
 	return dialect{
 		answer: "Answer with one JSON object per action, on one line each: " +
 			`{"name":"left_click","input":{"coordinate":[640,400]}}` + " — " +
-			"the members are left_click, double_click, type and screenshot. " +
-			"A click takes a [x, y] of the picture you were shown; type goes " +
-			"into the field last pressed; screenshot is browser_look. Several " +
-			"objects may be given, and they run in order while each succeeds.",
+			"the members are left_click, double_click, type, key, scroll, wait " +
+			"and screenshot. A click takes a [x, y] of the picture you were " +
+			"shown; type goes into the field last pressed; key presses one key " +
+			"(no chords); screenshot is browser_look. Several objects may be " +
+			"given, and they run in order while each succeeds.",
 		members: map[string]member{
 			"left_click":   {op: "browser_click", input: click},
 			"double_click": {op: "browser_click", input: click},
 			"triple_click": {op: "browser_click", input: click},
 			"type":         {op: "browser_type", input: typ},
 			"screenshot":   {op: "browser_look"},
+			"scroll": {op: "browser_scroll", input: func(p params) (map[string]any, error) {
+				return scrollBy(p.str("scroll_direction"), p["scroll_amount"], 5)
+			}},
+			"key":  {op: "browser_key", input: oneKey("text")},
+			"wait": {op: "browser_wait", input: waitFor("duration")},
 			// No honest translation: the governed browser has no cursor to
-			// move, no keys to hold, no zoom, and a right or middle press is
-			// not a press of the element.
+			// move freely, no keys to hold, no zoom, and a right or middle
+			// press is not a press of the element.
 			"right_click": {}, "middle_click": {}, "mouse_move": {},
 			"left_click_drag": {}, "left_mouse_down": {}, "left_mouse_up": {},
-			"cursor_position": {}, "scroll": {}, "key": {}, "hold_key": {},
-			"wait": {}, "zoom": {},
+			"cursor_position": {}, "hold_key": {}, "zoom": {},
 		},
 	}
 }
@@ -142,7 +147,8 @@ func anthropicBrowser() dialect {
 			`{"name":"navigate","input":{"url":"https://…"}}` + " — " +
 			"the members are navigate, read_page, find, get_page_text, " +
 			"screenshot, form_input, select_option, left_click, double_click, " +
-			"triple_click and type. An element is named by its reference from " +
+			"triple_click, type, hover, scroll, scroll_to, key, wait and " +
+			"read_console. An element is named by its reference from " +
 			"the last read ({\"type\":\"ref\",\"ref\":\"e12\"} or \"e12\"); " +
 			"form_input takes target and value; type goes into the field last " +
 			"pressed. Several objects may be given, and they run in order " +
@@ -170,14 +176,23 @@ func anthropicBrowser() dialect {
 			"type": {op: "browser_type", input: func(p params) (map[string]any, error) {
 				return map[string]any{"text": p.str("text")}, nil
 			}},
-			// The governed browser has one page, no tabs, no console to
-			// read, no script of the page's to run, and hovers nothing.
-			"right_click": {}, "middle_click": {}, "hover": {}, "scroll": {},
-			"scroll_to": {}, "mouse_move": {}, "left_click_drag": {},
-			"left_mouse_down": {}, "left_mouse_up": {}, "key": {},
-			"hold_key": {}, "wait": {}, "new_tab": {}, "list_tabs": {},
-			"switch_tab": {}, "close_tab": {}, "file_upload": {},
-			"read_console": {}, "read_network": {}, "javascript_exec": {},
+			"hover": {op: "browser_hover", input: refOnly("target")},
+			"scroll": {op: "browser_scroll", input: func(p params) (map[string]any, error) {
+				return scrollBy(p.str("scroll_direction"), p["scroll_amount"], 5)
+			}},
+			"scroll_to":    {op: "browser_scroll", input: refOnly("target")},
+			"key":          {op: "browser_key", input: oneKey("text")},
+			"wait":         {op: "browser_wait", input: waitFor("duration")},
+			"read_console": {op: "browser_console"},
+			"read_network": {op: "browser_console"},
+			// The governed browser has one page and no tabs, runs no
+			// script of the model's (a typed password could be read back
+			// by one), and a right or middle press, a drag or a held key
+			// is not a press of the element.
+			"right_click": {}, "middle_click": {}, "mouse_move": {}, "left_click_drag": {},
+			"left_mouse_down": {}, "left_mouse_up": {}, "hold_key": {}, "new_tab": {},
+			"list_tabs": {}, "switch_tab": {}, "close_tab": {}, "file_upload": {},
+			"javascript_exec": {},
 		},
 	}
 }
@@ -188,10 +203,11 @@ func openAIComputer() dialect {
 	return dialect{
 		answer: "Answer with one JSON object: " +
 			`{"type":"computer_call","actions":[{"type":"click","x":640,"y":400}]}` +
-			" — the members are click, double_click, type and screenshot. " +
-			"A click takes x and y of the picture you were shown; type goes " +
-			"into the field last clicked. The actions run in order while each " +
-			"succeeds, and the first failure stops the rest.",
+			" — the members are click, double_click, type, keypress (one key), " +
+			"scroll, wait and screenshot. A click takes x and y of the picture " +
+			"you were shown; type goes into the field last clicked. The " +
+			"actions run in order while each succeeds, and the first failure " +
+			"stops the rest.",
 		members: map[string]member{
 			"click": {op: "browser_click", input: func(p params) (map[string]any, error) {
 				if b := p.str("button"); b != "" && b != "left" {
@@ -206,10 +222,24 @@ func openAIComputer() dialect {
 				return map[string]any{"text": p.str("text")}, nil
 			}},
 			"screenshot": {op: "browser_look"},
+			"scroll": {op: "browser_scroll", input: func(p params) (map[string]any, error) {
+				dx, _ := p.num("scroll_x")
+				dy, _ := p.num("scroll_y")
+				return scrollPixels(dx, dy)
+			}},
+			"keypress": {op: "browser_key", input: func(p params) (map[string]any, error) {
+				keys, ok := p["keys"].([]any)
+				if !ok || len(keys) != 1 {
+					return nil, errors.New("the governed browser presses one key at a time, and holds none down with another")
+				}
+				k, _ := keys[0].(string)
+				return keyInput(k)
+			}},
+			"wait": {op: "browser_wait", input: func(params) (map[string]any, error) { return map[string]any{"seconds": 2.0}, nil }},
 			// No honest translation, for the reasons the computer toolset's
-			// table gives; a drag is not a click, a wheel press is not one,
-			// and a keystroke is not a field.
-			"drag": {}, "move": {}, "scroll": {}, "keypress": {}, "wait": {},
+			// table gives: a drag is not a click, and a pointer moved to a
+			// point names no element.
+			"drag": {}, "move": {},
 		},
 	}
 }
@@ -231,8 +261,9 @@ func geminiComputer() dialect {
 	return dialect{
 		answer: "Answer with one JSON object per action: " +
 			`{"functionCall":{"name":"click","args":{"x":500,"y":312,"intent":"…"}}}` +
-			" — the names are navigate, click, double_click, triple_click, " +
-			"type, take_screenshot and done. A point is placed 0–999 across " +
+			" — the names are navigate, go_back, go_forward, click, " +
+			"double_click, triple_click, type, press_key, scroll, wait, " +
+			"take_screenshot and done. A point is placed 0–999 across " +
 			"and down the screen; type goes into the field last clicked; " +
 			"done ends the run, with the answer in its message.",
 		members: map[string]member{
@@ -245,15 +276,97 @@ func geminiComputer() dialect {
 			}},
 			"take_screenshot": {op: "browser_look"},
 			"done":            {say: func(p params) (string, error) { return p.str("message"), nil }},
+			"go_back":         {op: "browser_navigate", input: func(params) (map[string]any, error) { return map[string]any{"to": "back"}, nil }},
+			"go_forward":      {op: "browser_navigate", input: func(params) (map[string]any, error) { return map[string]any{"to": "forward"}, nil }},
+			"wait":            {op: "browser_wait", input: waitFor("seconds")},
+			"press_key":       {op: "browser_key", input: oneKey("key")},
+			"scroll": {op: "browser_scroll", input: func(p params) (map[string]any, error) {
+				return scrollBy(p.str("direction"), p["magnitude"], 1)
+			}},
 			// The rest of Gemini's browser namespace has no honest
 			// translation; see the computer toolset's table for why each
 			// kind is refused rather than approximated.
 			"right_click": {}, "middle_click": {}, "mouse_down": {},
-			"mouse_up": {}, "move": {}, "drag_and_drop": {}, "wait": {},
-			"press_key": {}, "key_down": {}, "key_up": {}, "hotkey": {},
-			"scroll": {}, "go_back": {}, "go_forward": {}, "cancel": {},
-			"open_app": {}, "list_apps": {}, "long_press": {},
+			"mouse_up": {}, "move": {}, "drag_and_drop": {},
+			"key_down": {}, "key_up": {}, "hotkey": {},
+			"cancel": {}, "open_app": {}, "list_apps": {}, "long_press": {},
 		},
+	}
+}
+
+// scrollBy is a scroll by a direction and a number of the dialect's own
+// steps, perScreen of which make a screen.
+func scrollBy(dir string, amount any, perScreen float64) (map[string]any, error) {
+	dir = strings.ToLower(strings.TrimSpace(dir))
+	switch dir {
+	case "down", "up", "left", "right":
+	case "":
+		dir = "down"
+	default:
+		return nil, fmt.Errorf("%q is not a direction to scroll", dir)
+	}
+	n, ok := amount.(float64)
+	if !ok || n <= 0 {
+		n = perScreen
+	}
+	return map[string]any{"direction": dir, "amount": max(n/perScreen, 0.2)}, nil
+}
+
+// scrollPixels is a scroll by pixels, as screens of the default window.
+func scrollPixels(dx, dy float64) (map[string]any, error) {
+	switch {
+	case dy > 0:
+		return map[string]any{"direction": "down", "amount": max(dy/cdp.DefaultHeight, 0.2)}, nil
+	case dy < 0:
+		return map[string]any{"direction": "up", "amount": max(-dy/cdp.DefaultHeight, 0.2)}, nil
+	case dx > 0:
+		return map[string]any{"direction": "right", "amount": max(dx/cdp.DefaultWidth, 0.2)}, nil
+	case dx < 0:
+		return map[string]any{"direction": "left", "amount": max(-dx/cdp.DefaultWidth, 0.2)}, nil
+	}
+	return nil, errors.New("this scroll moved nowhere")
+}
+
+// oneKey reads one key from a parameter. A chord (ctrl+a) is refused: the
+// governed browser presses one key and holds none down.
+func oneKey(k string) func(params) (map[string]any, error) {
+	return func(p params) (map[string]any, error) { return keyInput(p.str(k)) }
+}
+
+func keyInput(k string) (map[string]any, error) {
+	k = strings.TrimSpace(k)
+	if strings.Contains(k, "+") && len(k) > 1 {
+		return nil, fmt.Errorf("%q holds one key down with another, and the governed browser presses one key at a time", k)
+	}
+	name, ok := cdp.KeyNamed(k)
+	if !ok {
+		return nil, fmt.Errorf("%q is not a key the governed browser presses", k)
+	}
+	return map[string]any{"key": name}, nil
+}
+
+// waitFor is a wait for some seconds a parameter gives, at most 30.
+func waitFor(k string) func(params) (map[string]any, error) {
+	return func(p params) (map[string]any, error) {
+		n, ok := p.num(k)
+		if !ok || n <= 0 {
+			n = 2
+		}
+		return map[string]any{"seconds": min(n, 30)}, nil
+	}
+}
+
+// refOnly is an element named by reference, never by a point.
+func refOnly(key string) func(params) (map[string]any, error) {
+	return func(p params) (map[string]any, error) {
+		ref, at, err := p.targetAt(key)
+		if err != nil {
+			return nil, err
+		}
+		if at != nil {
+			return nil, errors.New("this named a point, and the governed browser acts on an element it names by reference")
+		}
+		return map[string]any{"ref": ref}, nil
 	}
 }
 

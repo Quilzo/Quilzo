@@ -58,7 +58,7 @@ func EarnClass(a Action, why string) string {
 			prog, _ = argv[0].(string)
 		}
 		return a.Op + " " + firstOf(prog, str("program"))
-	case "browser_click", "browser_choose", "desktop_press", "desktop_key":
+	case "browser_click", "browser_choose", "browser_key", "desktop_press", "desktop_key":
 		// The reason names the element and where it is: "it presses link
 		// \"Next\" on shop.example.com, and ...".
 		target, _, _ := strings.Cut(why, ", and ")

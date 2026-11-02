@@ -156,17 +156,16 @@ func TestGeminiPointsAreScaledToTheBrowsersScreen(t *testing.T) {
 }
 
 // A member with no honest translation is refused as one, never
-// approximated: scroll is not a click, a right press is not a press of the
-// element.
+// approximated: a drag is not a click, a right press is not a press of the
+// element, and the page runs no script of the model's.
 func TestAMemberWithNoHonestTranslationIsRefusedNotApproximated(t *testing.T) {
 	for _, tc := range []struct{ dialect, reply string }{
-		{DialectAnthropicComputer, `{"name":"scroll","input":{"scroll_direction":"down","scroll_amount":3}}`},
+		{DialectAnthropicComputer, `{"name":"left_click_drag","input":{"start_coordinate":[1,2],"coordinate":[3,4]}}`},
 		{DialectAnthropicComputer, `{"name":"right_click","input":{"coordinate":[10,10]}}`},
 		{DialectAnthropicBrowser, `{"name":"javascript_exec","input":{"text":"return 1"}}`},
-		{DialectAnthropicBrowser, `{"name":"hover","input":{"target":"e2"}}`},
+		{DialectAnthropicBrowser, `{"name":"new_tab","input":{"url":"https://example.com"}}`},
 		{DialectOpenAIComputer, `{"type":"computer_call","actions":[{"type":"drag","path":[[1,2],[3,4]]}]}`},
-		{DialectOpenAIComputer, `{"type":"computer_call","actions":[{"type":"keypress","keys":["CTRL","A"]}]}`},
-		{DialectGeminiComputer, `{"functionCall":{"name":"scroll","args":{"direction":"down"}}}`},
+		{DialectGeminiComputer, `{"functionCall":{"name":"drag_and_drop","args":{"x":1,"y":2,"destination_x":3,"destination_y":4}}}`},
 	} {
 		m := &fakeModel{reply: tc.reply}
 		_, err := Decider{Model: m, Session: browserSession(agent.BrowserCapabilities[:]...),
@@ -178,6 +177,55 @@ func TestAMemberWithNoHonestTranslationIsRefusedNotApproximated(t *testing.T) {
 		if !strings.Contains(err.Error(), "no honest translation") {
 			t.Errorf("%s %s: refused as %q", tc.dialect, tc.reply, err)
 		}
+	}
+}
+
+// Scrolling, keys, waiting, hovering and going back are each the governed
+// browser's own action in every dialect that has them; a chord of keys is
+// refused, since one key is pressed at a time.
+func TestScrollKeysWaitAndHoverTranslate(t *testing.T) {
+	for _, tc := range []struct {
+		dialect, reply, op string
+		want               map[string]any
+	}{
+		{DialectAnthropicComputer, `{"name":"scroll","input":{"coordinate":[640,400],"scroll_direction":"down","scroll_amount":10}}`,
+			"browser_scroll", map[string]any{"direction": "down", "amount": 2.0}},
+		{DialectAnthropicComputer, `{"name":"key","input":{"text":"Return"}}`, "browser_key", map[string]any{"key": "Enter"}},
+		{DialectAnthropicComputer, `{"name":"wait","input":{"duration":3}}`, "browser_wait", map[string]any{"seconds": 3.0}},
+		{DialectAnthropicBrowser, `{"name":"hover","input":{"target":"e2"}}`, "browser_hover", map[string]any{"ref": "e2"}},
+		{DialectAnthropicBrowser, `{"name":"scroll_to","input":{"target":"e4"}}`, "browser_scroll", map[string]any{"ref": "e4"}},
+		{DialectAnthropicBrowser, `{"name":"read_console","input":{}}`, "browser_console", nil},
+		{DialectOpenAIComputer, `{"type":"computer_call","actions":[{"type":"scroll","x":5,"y":5,"scroll_x":0,"scroll_y":-1600}]}`,
+			"browser_scroll", map[string]any{"direction": "up", "amount": 2.0}},
+		{DialectOpenAIComputer, `{"type":"computer_call","actions":[{"type":"keypress","keys":["ESC"]}]}`, "browser_key",
+			map[string]any{"key": "Escape"}},
+		{DialectGeminiComputer, `{"functionCall":{"name":"go_back","args":{}}}`, "browser_navigate", map[string]any{"to": "back"}},
+		{DialectGeminiComputer, `{"functionCall":{"name":"scroll","args":{"direction":"up"}}}`, "browser_scroll",
+			map[string]any{"direction": "up", "amount": 1.0}},
+		{DialectGeminiComputer, `{"functionCall":{"name":"press_key","args":{"key":"PageDown"}}}`, "browser_key",
+			map[string]any{"key": "PageDown"}},
+	} {
+		m := &fakeModel{reply: tc.reply}
+		a, err := Decider{Model: m, Session: browserSession(agent.BrowserCapabilities[:]...),
+			Dialect: tc.dialect}.Decide()(context.Background(), "read the page", nil)
+		if err != nil {
+			t.Errorf("%s %s: %v", tc.dialect, tc.reply, err)
+			continue
+		}
+		if a.Op != tc.op {
+			t.Errorf("%s %s: became %s", tc.dialect, tc.reply, a.Op)
+		}
+		for k, v := range tc.want {
+			if a.Input[k] != v {
+				t.Errorf("%s %s: %s is %v, not %v", tc.dialect, tc.reply, k, a.Input[k], v)
+			}
+		}
+	}
+	m := &fakeModel{reply: `{"type":"computer_call","actions":[{"type":"keypress","keys":["CTRL","A"]}]}`}
+	if _, err := (Decider{Model: m, Session: browserSession(agent.BrowserCapabilities[:]...),
+		Dialect: DialectOpenAIComputer}).Decide()(context.Background(), "x", nil); err == nil ||
+		!strings.Contains(err.Error(), "one key at a time") {
+		t.Errorf("a chord was let through: %v", err)
 	}
 }
 

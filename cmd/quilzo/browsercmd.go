@@ -68,6 +68,9 @@ func cmdBrowser(root string, args []string) error {
 				doc["problem"] = err.Error()
 			} else {
 				doc["browser"], doc["from"] = path, from
+				if v, verr := browserVersion(path); verr == nil {
+					doc["version"] = v
+				}
 			}
 			n, nerr := programBackend(root, "native", "")
 			if nerr != nil {
@@ -82,6 +85,11 @@ func cmdBrowser(root string, args []string) error {
 			fmt.Printf("  %s%s%s\n", yellow, err.Error(), reset)
 		} else {
 			fmt.Printf("%s%s%s\n  %sfrom %s%s\n", bold, path, reset, dim, from, reset)
+			if v, verr := browserVersion(path); verr == nil {
+				fmt.Printf("  %s%s%s\n", dim, v, reset)
+			} else {
+				fmt.Printf("  %s%s%s\n", yellow, verr, reset)
+			}
 		}
 		n, nerr := programBackend(root, "native", "")
 		if nerr != nil {
@@ -121,8 +129,10 @@ func cmdBrowser(root string, args []string) error {
 		return nil
 	case "grant", "grants":
 		return cmdBrowserGrant(root, args[1:])
+	case "find":
+		return cmdBrowserFind(root)
 	}
-	return fmt.Errorf("unknown browser command %q; try status, install or grant", args[0])
+	return fmt.Errorf("unknown browser command %q; try status, install, find or grant", args[0])
 }
 
 // cmdBrowserGrant declares what an outside MCP client's browser may do:
