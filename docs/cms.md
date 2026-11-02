@@ -1632,6 +1632,27 @@ How it works:
   `chatbot.embeddings_floor` alike (55% by default). The chatbot's test screen
   shows each passage's similarity, to tune it by.
 
+**A model drafts a video's captions.** A video with no captions does not
+publish (WCAG 1.2.2), and writing them by hand is the hour nobody has. A route
+added with `--transcribes` (an `/audio/transcriptions` endpoint: OpenAI, Groq,
+or whisper.cpp and Speaches on this machine) drafts them:
+
+```
+quilzo gateway route add ears --url http://localhost:9000/v1 --model whisper --transcribes --personal
+quilzo media transcribe VIDEO --lang en --author dana
+quilzo media captions VIDEO DRAFT --lang en      # once a person has read it
+```
+
+The rules:
+- The draft is stored as a WebVTT file, marked as a model's work and the
+  person accountable for it.
+- It is never attached. A model hears the words, not the door closing nor who
+  is speaking, which is what captions are for; attaching it is a person
+  saying it is right.
+- A recording's voices cannot be masked the way text is, so it goes only to a
+  route allowed personal data (`--personal`).
+- It is charged by the minute (`--price-minute`) to `media` and to the person.
+
 **Pictures and writing go through the gateway too.** A route added with
 `--draws` (or "It draws pictures" on the Models screen) is an images model,
 used by `quilzo media generate` and for nothing else, and charged by the

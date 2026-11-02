@@ -96,6 +96,12 @@ type Route struct {
 	// what uses it (chatbot.embeddings), and PriceIn is what a million
 	// tokens embedded cost.
 	Embeds bool `json:"embeds,omitempty"`
+	// Transcribes says this route's model turns recordings into timed
+	// text (an /audio/transcriptions endpoint): it is used for that and
+	// for nothing else, is sent a recording only when it is Personal (see
+	// transcribe.go), and PriceMinute is what a minute of recording costs.
+	Transcribes bool   `json:"transcribes,omitempty"`
+	PriceMinute string `json:"price_minute,omitempty"`
 }
 
 // RouteParams are the request fields one route needs. Nothing beyond the
@@ -192,8 +198,8 @@ func (r Route) CheckWire(wire string) error {
 		if p.MaxTokens != "" && p.MaxTokens != "max_tokens" {
 			return fmt.Errorf("route %s: Anthropic's Messages API takes max_tokens, not %s", r.Name, p.MaxTokens)
 		}
-		if r.Draws || r.Embeds {
-			return fmt.Errorf("route %s: Anthropic's models answer in words, and neither draw nor make embeddings", r.Name)
+		if r.Draws || r.Embeds || r.Transcribes {
+			return fmt.Errorf("route %s: Anthropic's models answer in words, and neither draw, make embeddings nor transcribe", r.Name)
 		}
 	default:
 		return fmt.Errorf("route %s: its provider speaks %q, which this build does not", r.Name, wire)
@@ -348,8 +354,26 @@ func (c Config) Validate() error {
 		if r.Params.AskBase64 && !r.Draws {
 			return fmt.Errorf("route %s asks for a picture's bytes and does not draw", r.Name)
 		}
-		if r.Draws && r.Embeds {
-			return fmt.Errorf("route %s draws pictures and makes embeddings; a route does one", r.Name)
+		jobs := 0
+		for _, on := range []bool{r.Draws, r.Embeds, r.Transcribes} {
+			if on {
+				jobs++
+			}
+		}
+		if jobs > 1 {
+			return fmt.Errorf("route %s draws, makes embeddings or transcribes: one of them", r.Name)
+		}
+		if r.PriceMinute != "" {
+			pm, perr := ParseMoney(r.PriceMinute)
+			if perr != nil {
+				return fmt.Errorf("route %s's price of a minute: %w", r.Name, perr)
+			}
+			if pm > 0 && !r.Transcribes {
+				return fmt.Errorf("route %s has a price a minute and does not transcribe", r.Name)
+			}
+			if pm > 0 && !reCurrency.MatchString(c.Currency) {
+				return fmt.Errorf("route %s has prices and the configuration names no currency (USD, EUR, …)", r.Name)
+			}
 		}
 		if r.PricePicture != "" {
 			pic, perr := ParseMoney(r.PricePicture)
@@ -734,9 +758,9 @@ func (g *Gateway) complete(ctx context.Context, consumers []string, p pick, syst
 	}
 	var errs []string
 	for _, r := range g.routesFor(p) {
-		// A route that draws pictures, or makes embeddings, is not asked
-		// for words.
-		if r.Draws || r.Embeds {
+		// A route that draws pictures, makes embeddings or transcribes is
+		// not asked for words.
+		if r.Draws || r.Embeds || r.Transcribes {
 			continue
 		}
 		g.mu.Lock()

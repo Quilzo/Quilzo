@@ -125,6 +125,17 @@ Unreleased
 
 ** Added
 
+*** A model drafts a video's captions.  quilzo media transcribe VIDEO
+    --lang en --author WHO sends the recording to a route that transcribes
+    (quilzo gateway route add NAME --transcribes, or "It transcribes
+    recordings" on the Models screen).  The timed text comes back as
+    WebVTT and is stored as a caption file marked as a model's, unattached.
+    A person reads it, mends it, and attaches it with quilzo media
+    captions, so the gate that refuses a video without captions is
+    satisfied by a person and not by a model.  A recording's voices cannot
+    be masked, so it goes only to a route allowed personal data, and it
+    is charged by the minute (--price-minute).
+
 *** Chatbots find passages by what they mean, not only by their words.
     Add a route that makes embeddings (quilzo gateway route add NAME
     --embeds, or "It makes embeddings" on the Models screen) and name it
