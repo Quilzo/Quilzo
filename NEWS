@@ -134,6 +134,17 @@ Unreleased
     takes what saving takes, so somebody who may only read sees the saved
     draft.
 
+*** Visitors say whether a chatbot's answer helped.  Two buttons under
+    an answer, Yes and No, counted with nothing about who pressed them;
+    the chatbot's screen and quilzo assistant gaps NAME say how many
+    helped.  With chatbot.gaps on, a "no" keeps the question, masked,
+    beside the questions it could not answer, marked as one whose answer
+    did not help; asking it again proves nothing, so such a group waits
+    for a person to close it.  The form carries a token the site signed
+    for that question, good once and for an hour, so the route cannot
+    put somebody's own words in front of the owner.  The conversation
+    page no longer says nothing is stored when chatbot.gaps keeps some.
+
 *** A draft can be shared with somebody who has no account.  quilzo
     share PAGE [--days 7], or "Make a link" in the page's editor, gives a
     link to that page as the draft is now: later changes do not reach it,

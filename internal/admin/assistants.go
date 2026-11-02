@@ -52,7 +52,10 @@ type Assistants struct {
 	// grouped, and whether they are kept at all (chatbot.gaps). CheckGaps
 	// asks them again and closes what it now answers; CloseGap closes one
 	// group a person decided needs no page.
-	Gaps      func(name string) ([]gaps.Group, bool, error)
+	Gaps func(name string) ([]gaps.Group, bool, error)
+	// Ratings are how many answers visitors said helped, and did not, in
+	// the days gaps are kept.
+	Ratings   func(name string) (helped, didNot int)
 	CheckGaps func(ctx context.Context, name, by string) (asked, closed int, err error)
 	CloseGap  func(name, key, by string) error
 }
@@ -161,6 +164,12 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request) {
 				rows = append(rows, gapRow{Group: g, Write: "/pages/new?name=" + url.QueryEscape(sheet.Slug(g.Questions[0]))})
 			}
 			data["Gaps"], data["GapsOn"] = rows, on
+		}
+	}
+	if s.Assistants.Ratings != nil {
+		if h, d := s.Assistants.Ratings(a.Name); h+d > 0 {
+			data["Helped"], data["DidNot"] = h, d
+			data["HelpedShare"] = (100*h + (h+d)/2) / (h + d)
 		}
 	}
 

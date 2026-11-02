@@ -69,12 +69,18 @@
 {{end}}
 {{end}}
 
+{{if .HelpedShare}}
+<h2 id="ratings">Whether its answers helped</h2>
+<p>Visitors said <strong>{{.Helped}}</strong> answers helped and <strong>{{.DidNot}}</strong> did not
+  ({{.HelpedShare}}% helped), in the days questions are kept. Counted with nothing about who said so.</p>
+{{end}}
 {{if or .Gaps .GapsOn}}
 <h2 id="gaps">What it could not answer</h2>
 {{if .Gaps}}
 <p class="hint">What visitors asked in the last days, grouped by what it is about, with their details masked.
   Write the page that answers a group; once the site is published the questions are asked again, and a group it
-  answers is closed.</p>
+  answers is closed. A question it answered and the visitor said did not help is here too; answering it again
+  shows nothing, so a person closes those.</p>
 <form method="post" action="/assistants/gaps" class="actions">
   <input type="hidden" name="name" value="{{.A.Name}}"><input type="hidden" name="do" value="check">
   <button type="submit" class="btn tonal">Ask them again now</button>
@@ -86,7 +92,8 @@
     <th scope="row">{{index .Questions 0}}{{if gt (len .Questions) 1}}<ul class="hint">{{range $i, $q := .Questions}}{{if $i}}<li>{{$q}}</li>{{end}}{{end}}</ul>{{end}}</th>
     <td>{{.Count}}</td>
     <td>{{.Last.Format "2 Jan"}}</td>
-    <td>{{if .Closed}}{{if eq .Closed.How "answered"}}<span class="tag ok">answered{{if .Closed.Page}} from {{.Closed.Page}}{{end}}</span>{{else}}<span class="tag">closed by {{.Closed.By}}</span>{{end}}{{else if .Since}}<span class="tag warn">asked {{.Since}} more since it was closed</span>{{else}}<span class="tag warn">open</span>{{end}}</td>
+    <td>{{if .Closed}}{{if eq .Closed.How "answered"}}<span class="tag ok">answered{{if .Closed.Page}} from {{.Closed.Page}}{{end}}</span>{{else}}<span class="tag">closed by {{.Closed.By}}</span>{{end}}{{else if .Since}}<span class="tag warn">asked {{.Since}} more since it was closed</span>{{else}}<span class="tag warn">open</span>{{end}}
+      {{if .Unhelpful}}<span class="tag">{{.Unhelpful}} said the answer did not help</span>{{end}}</td>
     <td class="actions">{{if not .Closed}}<a href="{{.Write}}">Write the page</a>
       <form method="post" action="/assistants/gaps"><input type="hidden" name="name" value="{{$.A.Name}}">
         <input type="hidden" name="do" value="close"><input type="hidden" name="key" value="{{.Key}}">

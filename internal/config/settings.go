@@ -317,7 +317,8 @@ var settings = []Setting{
 			"went unanswered. On, the words are kept too, for one purpose: the Chatbots screen and " +
 			"quilzo assistant gaps group them by what they are about, somebody (or an agent) writes " +
 			"the page that answers them, and once it is published the questions are asked again and " +
-			"a group the chatbot now answers is closed. Addresses, numbers and cards are masked before " +
+			"a group the chatbot now answers is closed. A question it answered and the visitor said did " +
+			"not help is kept too, marked so, and waits for a person to close it. Addresses, numbers and cards are masked before " +
 			"anything is written; nobody is named; each day is a file of its own, deleted whole after " +
 			"chatbot.gaps_days.",
 		Weaker: onIsWeaker("visitors' unanswered questions are kept, masked, for chatbot.gaps_days"),

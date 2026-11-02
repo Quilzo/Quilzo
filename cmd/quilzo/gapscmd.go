@@ -40,7 +40,15 @@ func gapsKept(root string) time.Duration {
 // not answer. The setting is read each time, so turning it off stops it at
 // once; the question is masked before anything is written.
 func gapKeeper(root string) func(name, question string) {
-	return func(name, question string) {
+	keep := gapKeep(root)
+	return func(name, question string) { keep(name, question, "") }
+}
+
+// gapKeep keeps a question, masked, when chatbot.gaps is on: why is "" for
+// one the chatbot could not answer, gaps.WhyUnhelpful for one whose answer
+// the visitor said did not help.
+func gapKeep(root string) func(name, question, why string) {
+	return func(name, question, why string) {
 		cfg := mustConfig(root)
 		if !cfg.Bool("chatbot.gaps") {
 			return
@@ -49,8 +57,33 @@ func gapKeeper(root string) func(name, question string) {
 		if u, err := url.Parse(cfg.Raw("site.base_url")); err == nil && u.Hostname() != "" {
 			own = append(own, strings.TrimPrefix(u.Hostname(), "www."))
 		}
-		_ = gapLedger(root).Add(name, gaps.Clean(question, own), time.Now())
+		q := gaps.Clean(question, own)
+		if why == gaps.WhyUnhelpful {
+			_ = gapLedger(root).Unhelpful(name, q, time.Now())
+			return
+		}
+		_ = gapLedger(root).Add(name, q, time.Now())
 	}
+}
+
+// ratingKeeper counts whether answers helped, and keeps the question of
+// one that did not where gapKeeper keeps unanswered ones, when the owner
+// keeps those.
+func ratingKeeper(root string) func(name, question string, helpful bool) {
+	keep := gapKeep(root)
+	return func(name, question string, helpful bool) {
+		_ = gapLedger(root).Rate(name, helpful, time.Now())
+		if !helpful {
+			keep(name, question, gaps.WhyUnhelpful)
+		}
+	}
+}
+
+// gapRatings are how many answers a chatbot's visitors said helped, and
+// did not, in the days gaps are kept.
+func gapRatings(root, name string, now time.Time) (helped, didNot int) {
+	h, d, _ := gapLedger(root).Ratings(name, now.Add(-gapsKept(root)))
+	return h, d
 }
 
 // gapGroups are a chatbot's groups now, after old days are let go.
@@ -94,7 +127,8 @@ func checkGaps(ctx context.Context, root, name, by string, now time.Time) (gapCh
 	}
 	var open []gaps.Group
 	for _, g := range groups {
-		if g.Open() {
+		// One a visitor said was answered badly is closed by a person.
+		if g.Open() && g.Answerable() {
 			open = append(open, g)
 		}
 	}
@@ -214,9 +248,14 @@ func assistantGaps(root string, args []string) error {
 	}
 	record(root, caller.auditRecord("assistant.gaps.read", "/ask/"+name, audit.Success,
 		map[string]string{"assistant": name, "groups": strconv.Itoa(len(groups))}))
+	helped, didNot := gapRatings(root, name, now)
 	if w.Mode == out.JSON {
 		w.JSON(groups)
 		return nil
+	}
+	if helped+didNot > 0 {
+		w.Human("  visitors said %d answers helped and %d did not, in the last %d days\n\n", helped, didNot,
+			int(gapsKept(root).Hours()/24))
 	}
 	if !mustConfig(root).Bool("chatbot.gaps") && len(groups) == 0 {
 		w.Human("  %snothing is kept: unanswered questions are kept only when chatbot.gaps is on%s\n", dim, reset)
@@ -239,6 +278,9 @@ func assistantGaps(root string, args []string) error {
 			status = dim + "closed by " + g.Closed.By + reset
 		case g.Since > 0:
 			status = yellow + fmt.Sprintf("open again: asked %s since it was closed", plural2(g.Since, "once", "times")) + reset
+		}
+		if g.Unhelpful > 0 {
+			status += fmt.Sprintf("; %d said the answer did not help", g.Unhelpful)
 		}
 		w.Human("%s%s%s  asked %s, last %s  [%s]\n", bold, g.Questions[0], reset, plural2(g.Count, "once", "times"),
 			g.Last.Local().Format("2 Jan"), status)

@@ -625,6 +625,7 @@ func assistantsCapability(root string) *admin.Assistants {
 			groups, err := gapGroups(root, name, time.Now())
 			return groups, mustConfig(root).Bool("chatbot.gaps"), err
 		},
+		Ratings: func(name string) (int, int) { return gapRatings(root, name, time.Now()) },
 		CheckGaps: func(ctx context.Context, name, by string) (int, int, error) {
 			r, err := checkGaps(ctx, root, name, by, time.Now())
 			return r.Asked, r.Closed, err

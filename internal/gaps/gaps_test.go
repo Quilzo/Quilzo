@@ -111,3 +111,45 @@ func TestOldDaysAreDeletedWhole(t *testing.T) {
 		t.Error("a file that is not a day was deleted")
 	}
 }
+
+// A question whose answer did not help is kept as one, counted in its
+// group, and keeps the group from being closed by answering it again;
+// ratings are counted with nothing else, and let go with their days.
+func TestAnAnswerThatDidNotHelpIsAGap(t *testing.T) {
+	l := Ledger{Dir: t.TempDir()}
+	now := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
+	if err := l.Add("help", "do you ship to Norway", now); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Unhelpful("help", "do you ship to Norway and how long", now); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := l.Read("help", now.Add(-time.Hour))
+	if err != nil || len(entries) != 2 || entries[1].Why != WhyUnhelpful {
+		t.Fatalf("%+v %v", entries, err)
+	}
+	g := Groups(entries, nil)
+	if len(g) != 1 || g[0].Unhelpful != 1 || g[0].Answerable() {
+		t.Fatalf("%+v", g)
+	}
+	for _, helpful := range []bool{true, true, false} {
+		if err := l.Rate("help", helpful, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := l.Rate("help", true, now.Add(-40*24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if h, d, err := l.Ratings("help", now.Add(-24*time.Hour)); err != nil || h != 2 || d != 1 {
+		t.Fatalf("%d %d %v", h, d, err)
+	}
+	if n, _ := l.Prune(30*24*time.Hour, now); n != 1 {
+		t.Fatalf("pruned %d", n)
+	}
+	if h, _, _ := l.Ratings("help", now.Add(-60*24*time.Hour)); h != 2 {
+		t.Fatalf("an old day's ratings outlived it: %d", h)
+	}
+	if err := l.Rate("../x", true, now); err == nil {
+		t.Error("a name that is not a chatbot's")
+	}
+}

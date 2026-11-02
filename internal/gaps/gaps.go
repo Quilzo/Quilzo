@@ -21,6 +21,11 @@
 //   - the public site appends and nothing else; reading, grouping and
 //     closing happen in the admin and on the command line.
 //
+// A question a chatbot did answer, and the visitor said the answer did not
+// help, is kept the same way, marked so (Unhelpful): what a page says
+// badly is as much a gap as what it does not say. Whether answers helped
+// at all is counted, a mark a rating, with nothing else (Rate).
+//
 // # The loop
 //
 // Questions are grouped by what they are about (Groups). Somebody, or an
@@ -64,11 +69,20 @@ const (
 
 var reName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 
-// Entry is one question that went unanswered.
+// Entry is one question that went unanswered, or whose answer a visitor
+// said did not help (Why is WhyUnhelpful).
 type Entry struct {
-	At time.Time `json:"at"`
-	Q  string    `json:"q"`
+	At  time.Time `json:"at"`
+	Q   string    `json:"q"`
+	Why string    `json:"why,omitempty"`
 }
+
+// WhyUnhelpful marks a question that was answered, and the visitor said the
+// answer did not help.
+const WhyUnhelpful = "unhelpful"
+
+// MaxRatings is the most ratings counted for one chatbot in one day.
+const MaxRatings = 50_000
 
 // Ledger is the folder gaps are kept in: one folder per chatbot, one file
 // per day.
@@ -116,7 +130,17 @@ func Clean(q string, allowed []string) string {
 
 // Add keeps one unanswered question, already Clean.
 func (l Ledger) Add(chatbot, q string, now time.Time) error {
-	q = strings.TrimSpace(q)
+	return l.add(chatbot, Entry{Q: q}, now)
+}
+
+// Unhelpful keeps one question, already Clean, whose answer the visitor
+// said did not help.
+func (l Ledger) Unhelpful(chatbot, q string, now time.Time) error {
+	return l.add(chatbot, Entry{Q: q, Why: WhyUnhelpful}, now)
+}
+
+func (l Ledger) add(chatbot string, e Entry, now time.Time) error {
+	q := strings.TrimSpace(e.Q)
 	if q == "" {
 		return nil
 	}
@@ -131,7 +155,7 @@ func (l Ledger) Add(chatbot, q string, now time.Time) error {
 	if fi, err := os.Stat(p); err == nil && fi.Size() > MaxDay*(MaxQuestion+64) {
 		return nil
 	}
-	line, err := json.Marshal(Entry{At: now.UTC().Truncate(time.Second), Q: q})
+	line, err := json.Marshal(Entry{At: now.UTC().Truncate(time.Second), Q: q, Why: e.Why})
 	if err != nil {
 		return err
 	}
@@ -203,8 +227,12 @@ func (l Ledger) Prune(keep time.Duration, now time.Time) (int, error) {
 		}
 		days, _ := os.ReadDir(filepath.Join(l.Dir, b.Name()))
 		for _, day := range days {
-			at, err := time.Parse("2006-01-02", strings.TrimSuffix(day.Name(), ".jsonl"))
-			if err != nil || !strings.HasSuffix(day.Name(), ".jsonl") || !at.Before(cut) {
+			stem, ok := strings.CutSuffix(day.Name(), ".jsonl")
+			if !ok {
+				stem, ok = strings.CutSuffix(day.Name(), ratingsSuffix)
+			}
+			at, err := time.Parse("2006-01-02", stem)
+			if err != nil || !ok || !at.Before(cut) {
 				continue
 			}
 			if os.Remove(filepath.Join(l.Dir, b.Name(), day.Name())) == nil {
@@ -213,6 +241,77 @@ func (l Ledger) Prune(keep time.Duration, now time.Time) (int, error) {
 		}
 	}
 	return n, nil
+}
+
+// ratingsSuffix names a day's ratings: one byte a rating, + or -.
+const ratingsSuffix = ".ratings"
+
+// Rate counts one rating of an answer, and nothing about it or who gave it.
+func (l Ledger) Rate(chatbot string, helpful bool, now time.Time) error {
+	d, err := l.dir(chatbot)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(d, 0o700); err != nil {
+		return err
+	}
+	p := filepath.Join(d, now.UTC().Format("2006-01-02")+ratingsSuffix)
+	if fi, err := os.Stat(p); err == nil && fi.Size() >= MaxRatings {
+		return nil
+	}
+	f, err := os.OpenFile(p, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
+	if err != nil {
+		return err
+	}
+	mark := []byte{'-'}
+	if helpful {
+		mark[0] = '+'
+	}
+	_, werr := f.Write(mark)
+	if cerr := f.Close(); werr == nil {
+		werr = cerr
+	}
+	return werr
+}
+
+// Ratings are how many answers a chatbot's visitors said helped, and did
+// not, since a day.
+func (l Ledger) Ratings(chatbot string, since time.Time) (helped, didNot int, err error) {
+	d, err := l.dir(chatbot)
+	if err != nil {
+		return 0, 0, err
+	}
+	days, err := os.ReadDir(d)
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, 0, nil
+	}
+	if err != nil {
+		return 0, 0, err
+	}
+	from := since.UTC().Truncate(24 * time.Hour)
+	for _, day := range days {
+		stem, ok := strings.CutSuffix(day.Name(), ratingsSuffix)
+		at, perr := time.Parse("2006-01-02", stem)
+		if !ok || perr != nil || at.Before(from) {
+			continue
+		}
+		b, rerr := os.ReadFile(filepath.Join(d, day.Name()))
+		if rerr != nil {
+			continue
+		}
+		if len(b) > MaxRatings {
+			b = b[:MaxRatings]
+		}
+		for _, c := range b {
+			switch c {
+			case '+':
+				helped++
+			case '-':
+				didNot++
+			}
+		}
+	}
+	return helped, didNot, nil
 }
 
 // Closure is how a group was closed: answered from a page, or dismissed
@@ -290,7 +389,16 @@ type Group struct {
 	Closed *Closure
 	// Since is how many times it was asked after it was closed.
 	Since int
+	// Unhelpful is how many of its questions were answered, and the
+	// visitor said the answer did not help. A chatbot answering one again
+	// says nothing about whether the answer helps now, so a group with
+	// any is not closed by asking again: a person closes it.
+	Unhelpful int
 }
+
+// Answerable reports whether asking a group's questions again can show it
+// is answered: not when a visitor said an answer did not help.
+func (g Group) Answerable() bool { return g.Unhelpful == 0 }
 
 // Open reports whether the group still wants a page.
 func (g Group) Open() bool { return g.Closed == nil }
@@ -328,6 +436,9 @@ func Groups(entries []Entry, closed map[string]Closure) []Group {
 		}
 		into.asked[norm]++
 		into.g.Count++
+		if e.Why == WhyUnhelpful {
+			into.g.Unhelpful++
+		}
 		into.g.Last = e.At
 	}
 	out := make([]Group, 0, len(groups))

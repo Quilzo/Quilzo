@@ -89,6 +89,12 @@ type Assistants struct {
 	// owner's record of what the site does not say (chatbot.gaps). Nil,
 	// which it is unless the owner turned that on, keeps nothing.
 	Unanswered func(name, question string)
+	// Rated is told a visitor's rating of an answer: whether it helped,
+	// and the question, for the owner's record of what the site says badly
+	// when they keep one. Nil offers no rating. Keeps reports whether
+	// questions are kept at all (chatbot.gaps), which the page says.
+	Rated func(name, question string, helpful bool)
+	Keeps func() bool
 	// Handoff keeps conversations an assistant passed to a person. Nil means
 	// no assistant on this site can hand over, whatever it declares.
 	Handoff *handoff.Store
@@ -110,6 +116,9 @@ type Assistants struct {
 
 	mu    sync.Mutex
 	cache map[string]cachedIndex
+	// rateKey signs rating tokens; rated are the ones used (askrate.go).
+	rateKey []byte
+	rated   map[string]time.Time
 	// fresh is, for each chatbot, the pages that entered its knowledge in a
 	// rebuild while this server ran, and when. A page already there when
 	// the server started is not new.
@@ -164,6 +173,10 @@ func (st *Site) ask(w http.ResponseWriter, r *http.Request) {
 		st.askKnowledge(w, r, a)
 		return
 	}
+	if rest == "rate" {
+		st.rate(w, r, a)
+		return
+	}
 	if rest != "" {
 		if !st.actRoute(w, r, a, rest) && !st.handoffRoute(w, r, a, rest) {
 			st.notFound(w, r)
@@ -181,6 +194,10 @@ func (st *Site) ask(w http.ResponseWriter, r *http.Request) {
 
 	view.Embedded, view.Panel = embedMode(r.URL.Query().Get("embed"))
 	view.Visitor = visitorToken(r.URL.Query().Get("v"))
+	view.Rated = ratedNote(r.URL.Query().Get("rated"))
+	if st.Assistants.Keeps != nil {
+		view.Keeps = st.Assistants.Keeps()
+	}
 	if a.Launcher != nil {
 		view.Suggestions = a.Launcher.Suggestions
 	}
@@ -277,6 +294,10 @@ func (st *Site) answer(w http.ResponseWriter, r *http.Request,
 		st.convert(r, "chatbot:"+a.Name)
 	}
 	view.Answer = &ans
+	if !ans.Refused && st.Assistants.Rated != nil {
+		view.Rate = st.Assistants.rateToken(a.Name, view.Question, time.Now())
+		view.Rated = ""
+	}
 	view.Sources = st.citedSources(ans)
 	if top, ok := firstCited(ans); ok && st.Assistants.Takeover != nil && st.Assistants.isFresh(a.Name, top, time.Now()) {
 		sum := sha256.Sum256([]byte(strings.ToLower(strings.Join(strings.Fields(view.Question), " "))))
@@ -467,6 +488,12 @@ type askView struct {
 	// Visitor is the host site's signed token about the visitor, carried
 	// from the address the page was opened at to the forms it posts.
 	Visitor string
+	// Rate is the token an answer's "did this help?" form carries, when it
+	// can be rated; Rated is what the page says after a rating. Keeps is
+	// whether some questions are kept (chatbot.gaps), which it says too.
+	Rate  string
+	Rated string
+	Keeps bool
 }
 
 // EmbedValue is how the page was framed, carried on its forms: "panel" for
@@ -655,6 +682,10 @@ func (st *Site) askThroughLayout(body any, hash string, r *http.Request, v askVi
 		}
 		data["followups"] = fu
 	}
+	if v.Rate != "" {
+		data["rate"] = map[string]any{"action": "/ask/" + v.Assistant.Name + "/rate", "token": v.Rate}
+	}
+	data["rated"] = v.Rated
 	ctx["ask"] = data
 	_, layout, lerr := st.Layouts.For(body)
 	if lerr != nil {
@@ -747,6 +778,15 @@ var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
 <p class="qz-greeting">{{.V.Greeting}}</p>
 {{if .V.Suggestions}}<ul class="qz-suggest" aria-label="Questions you could ask">{{range .V.Suggestions}}<li><a href="/ask/{{$.V.Assistant.Name}}?q={{.}}{{if $.V.EmbedValue}}&amp;embed={{$.V.EmbedValue}}{{end}}">{{.}}</a></li>{{end}}</ul>{{end}}
 {{end}}
+{{if .V.Rate}}<form method="post" action="/ask/{{.V.Assistant.Name}}/rate" class="qz-rate" aria-labelledby="qz-rate-label">
+  <input type="hidden" name="q" value="{{.V.Question}}"><input type="hidden" name="t" value="{{.V.Rate}}">
+  {{if .V.Visitor}}<input type="hidden" name="v" value="{{.V.Visitor}}">{{end}}
+  {{if .V.Embedded}}<input type="hidden" name="embed" value="{{.V.EmbedValue}}">{{end}}
+  <span id="qz-rate-label">Did this answer help?</span>
+  <button type="submit" name="helpful" value="yes">Yes</button>
+  <button type="submit" name="helpful" value="no">No</button>
+</form>{{end}}
+{{if .V.Rated}}<p class="qz-small" role="status">{{.V.Rated}}</p>{{end}}
 {{if and .V.Answer .V.FollowUps}}<ul class="qz-suggest" aria-label="You could also ask">{{range .V.FollowUps}}<li><a href="/ask/{{$.V.Assistant.Name}}?q={{.}}{{if $.V.EmbedValue}}&amp;embed={{$.V.EmbedValue}}{{end}}">{{.}}</a></li>{{end}}</ul>{{end}}
 {{if .V.Problem}}<p class="qz-problem" role="alert">{{.V.Problem}}</p>{{end}}
 {{if and .V.Answer .V.Handoff}}
@@ -774,7 +814,9 @@ var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
   <button type="submit">Ask</button>
 </form>
 <p class="qz-small">{{.Disclosure}} Answers come from this site's pages, and
-  every sentence links to where it came from. Nothing you ask is stored.</p>
+  every sentence links to where it came from. {{if .V.Keeps}}A question it cannot answer, or whose
+  answer you say did not help, is kept for a while with anything that could name you taken out, so the
+  site can say it better; nothing else you ask is stored.{{else}}Nothing you ask is stored.{{end}}</p>
 </main>{{.Voice}}</body></html>`))
 
 // askCSS is the built-in page's stylesheet, served at /ask.css. Small and
@@ -786,6 +828,7 @@ const askCSS = `.qz-ask main{max-width:42rem;margin:0 auto;padding:1.5rem 1rem 3
 .qz-a p{margin:.4rem 0;line-height:1.6}
 .qz-a sup a{text-decoration:none;font-size:.8em}
 .qz-refused{opacity:.85}
+.qz-rate{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:.6rem 0;font-size:.95em}
 .qz-sources{font-size:.9em;padding-left:1.4rem}
 .qz-offer{margin:1.2rem 0;padding:1rem 1.1rem;border-radius:12px;border:2px solid color-mix(in srgb,currentColor 30%,transparent)}
 .qz-offer input:not([type=checkbox]),.qz-offer textarea,.qz-offer select,.qz-ask-form textarea{width:100%;box-sizing:border-box;font:inherit;padding:.5rem .6rem;border-radius:8px;border:1px solid color-mix(in srgb,currentColor 35%,transparent)}
