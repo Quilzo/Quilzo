@@ -51,7 +51,9 @@ type Provider struct {
 	Group string `json:"group"`
 	// Where is where it serves from, in a person's words.
 	Where string `json:"where"`
-	// Wire is the protocol: openai-chat today.
+	// Wire is the protocol: openai-chat (OpenAI's chat completions, which
+	// nearly every provider serves) or anthropic-messages (Anthropic's
+	// Messages API).
 	Wire string `json:"wire"`
 	// Base is the address calls go to, with {param} for a parameter.
 	Base   string  `json:"base"`
@@ -73,6 +75,12 @@ type Provider struct {
 	Verified string `json:"verified"`
 	Docs     string `json:"docs,omitempty"`
 }
+
+// The protocols a provider may speak.
+const (
+	WireOpenAI    = "openai-chat"
+	WireAnthropic = "anthropic-messages"
+)
 
 // Param is a value a provider's address needs: a resource, a region, an
 // account.
@@ -116,7 +124,9 @@ func (p Provider) Check() error {
 	if strings.TrimSpace(p.Name) == "" {
 		return fmt.Errorf("%s has no name", p.ID)
 	}
-	if p.Wire != "openai-chat" {
+	switch p.Wire {
+	case WireOpenAI, WireAnthropic:
+	default:
 		return fmt.Errorf("%s speaks %q, which this build does not", p.ID, p.Wire)
 	}
 	switch {

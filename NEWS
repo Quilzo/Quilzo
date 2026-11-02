@@ -113,6 +113,19 @@ Unreleased
 
 ** Added
 
+*** Anthropic's models are spoken to natively.  Anthropic is in the
+    providers' catalogue (quilzo gateway providers anthropic), and a route
+    to it speaks its Messages API rather than an OpenAI-compatible
+    imitation.  A route can say:
+    - how hard the model thinks (--effort);
+    - that it runs only in the US (--geo us);
+    - that a request its model declines is answered by another of
+      Anthropic's models (--server-fallback).
+    These are on the Models screen too.  A temperature or a top_p, which
+    Anthropic's models refuse, is refused where the route is made.  A
+    request a model's safeguards decline goes back to whoever asked, says
+    why, and is not sent on to the next route.
+
 *** A chatbot answers from the site's records too.  An owner chooses which
     collections it reads (products, events, opening times), on the
     chatbot's page or with quilzo assistant add --collections, and it

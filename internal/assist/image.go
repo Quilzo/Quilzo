@@ -73,6 +73,9 @@ func ImageModel() string { return strings.TrimSpace(os.Getenv("QUILZO_IMAGE_MODE
 
 // Paint asks for one picture.
 func (h *HTTPModel) Paint(ctx context.Context, prompt, size string) (Picture, error) {
+	if h.Wire == WireAnthropic {
+		return Picture{}, fmt.Errorf("%s answers in words and does not draw", h.Model)
+	}
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
 		return Picture{}, fmt.Errorf("a picture needs something to be asked for")

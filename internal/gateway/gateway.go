@@ -111,6 +111,16 @@ type RouteParams struct {
 	// AutoToolChoice sends "auto" where a caller forces a tool, for a model
 	// that answers a forced choice with an error.
 	AutoToolChoice bool `json:"auto_tool_choice,omitempty"`
+	// Effort, Geo and Fallback are for a provider that speaks Anthropic's
+	// Messages API (see internal/assist/anthropic.go), and are refused on
+	// any other (Route.CheckWire). Effort is how hard the model thinks:
+	// low, medium, high, xhigh or max. Geo is where it may run: us, or
+	// global, which is the provider's default. Fallback lets the provider
+	// answer a request its model declines with another of its own models,
+	// for the models that take it.
+	Effort   string `json:"effort,omitempty"`
+	Geo      string `json:"geo,omitempty"`
+	Fallback bool   `json:"server_fallback,omitempty"`
 }
 
 // Check refuses parameters that could not be sent.
@@ -134,6 +144,50 @@ func (p RouteParams) Check() error {
 			return fmt.Errorf("timeout is a duration from 1s to 30m, such as 300s")
 		}
 	}
+	switch p.Effort {
+	case "", "low", "medium", "high", "xhigh", "max":
+	default:
+		return fmt.Errorf("effort is low, medium, high, xhigh or max, not %q", p.Effort)
+	}
+	switch p.Geo {
+	case "", "us", "global":
+	default:
+		return fmt.Errorf("geo is us or global, not %q", p.Geo)
+	}
+	return nil
+}
+
+// The protocols a route's provider speaks (internal/provider).
+const (
+	WireOpenAI    = "openai-chat"
+	WireAnthropic = "anthropic-messages"
+)
+
+// CheckWire refuses parameters the route's protocol cannot carry: a route
+// with no provider speaks OpenAI's chat completions. A field a model
+// refuses fails every call through the route, and the route would rest
+// with nobody told why, so it is refused where the route is made.
+func (r Route) CheckWire(wire string) error {
+	p := r.Params
+	switch wire {
+	case "", WireOpenAI:
+		if p.Effort != "" || p.Geo != "" || p.Fallback {
+			return fmt.Errorf("route %s: effort, geo and server fallback are for a provider that speaks "+
+				"Anthropic's Messages API, and this one speaks OpenAI's chat completions", r.Name)
+		}
+	case WireAnthropic:
+		if p.Temperature != nil || p.TopP != nil {
+			return fmt.Errorf("route %s: Anthropic's Messages API refuses temperature and top_p on every model", r.Name)
+		}
+		if p.MaxTokens != "" && p.MaxTokens != "max_tokens" {
+			return fmt.Errorf("route %s: Anthropic's Messages API takes max_tokens, not %s", r.Name, p.MaxTokens)
+		}
+		if r.Draws {
+			return fmt.Errorf("route %s: Anthropic's models answer in words and do not draw", r.Name)
+		}
+	default:
+		return fmt.Errorf("route %s: its provider speaks %q, which this build does not", r.Name, wire)
+	}
 	return nil
 }
 
@@ -156,6 +210,15 @@ func (p RouteParams) String() string {
 	if p.AutoToolChoice {
 		parts = append(parts, "auto tool choice")
 	}
+	if p.Effort != "" {
+		parts = append(parts, "effort "+p.Effort)
+	}
+	if p.Geo != "" {
+		parts = append(parts, "runs in "+map[string]string{"us": "the US", "global": "any region"}[p.Geo])
+	}
+	if p.Fallback {
+		parts = append(parts, "server fallback")
+	}
 	return strings.Join(parts, ", ")
 }
 
@@ -167,7 +230,7 @@ func (p RouteParams) Model() (assist.Params, time.Duration) {
 		d, _ = time.ParseDuration(p.Timeout)
 	}
 	return assist.Params{MaxTokensField: p.MaxTokens, Temperature: p.Temperature, TopP: p.TopP,
-		AutoToolChoice: p.AutoToolChoice}, d
+		AutoToolChoice: p.AutoToolChoice, Effort: p.Effort, Geo: p.Geo, Fallback: p.Fallback}, d
 }
 
 // Budget bounds one caller.
@@ -255,6 +318,14 @@ func (c Config) Validate() error {
 		}
 		if err := r.Params.Check(); err != nil {
 			return fmt.Errorf("route %s: %w", r.Name, err)
+		}
+		// A route with only an address speaks OpenAI's chat completions;
+		// one with a provider is checked against its provider's protocol
+		// where the catalogue is read (CheckWire).
+		if r.Provider == "" {
+			if err := r.CheckWire(""); err != nil {
+				return err
+			}
 		}
 		in, out, err := r.prices()
 		if err != nil {
@@ -852,6 +923,11 @@ const (
 	refused
 	// cancelled is the caller going away. It says nothing about the route.
 	cancelled
+	// declined is a request the model's safeguards would not answer
+	// (assist.Declined). Like refused, it goes back to the caller and
+	// rests nothing; it is not sent to the next route, because routing
+	// round a provider's safeguard is not a fallback.
+	declined
 )
 
 func (k failureKind) outcome() string {
@@ -860,6 +936,8 @@ func (k failureKind) outcome() string {
 		return "refused"
 	case cancelled:
 		return "cancelled"
+	case declined:
+		return "declined"
 	}
 	return "failed"
 }
@@ -875,6 +953,10 @@ func (k failureKind) outcome() string {
 func (g *Gateway) failure(ctx context.Context, route string, err error) failureKind {
 	if ctx.Err() != nil {
 		return cancelled
+	}
+	var d *assist.Declined
+	if errors.As(err, &d) {
+		return declined
 	}
 	kind := unavailable
 	trouble := Trouble(err)
@@ -1020,9 +1102,10 @@ func OpenLedger(path string, now time.Time) (*Ledger, error) {
 
 func (l *Ledger) keep(u Usage) {
 	// Every call that sent a prompt counts against its callers, whatever
-	// came back: a request the provider refused, or one the caller gave up
-	// on, still sent what it sent.
-	if u.Outcome == "ok" || u.Outcome == "failed" || u.Outcome == "refused" || u.Outcome == "cancelled" {
+	// came back: a request the provider refused or its model declined, or
+	// one the caller gave up on, still sent what it sent.
+	if u.Outcome == "ok" || u.Outcome == "failed" || u.Outcome == "refused" || u.Outcome == "declined" ||
+		u.Outcome == "cancelled" {
 		for _, who := range u.payers() {
 			if u.At.UTC().Format("2006-01-02") == l.day {
 				l.used[who] += u.In + u.Out
@@ -1201,7 +1284,7 @@ func (l *Ledger) Summary(cfg Config, now time.Time) []Spend {
 			switch u.Outcome {
 			case "ok":
 				s.Calls++
-			case "failed", "refused", "cancelled":
+			case "failed", "refused", "declined", "cancelled":
 				s.Failed++
 			case "over-budget":
 				s.Refused++

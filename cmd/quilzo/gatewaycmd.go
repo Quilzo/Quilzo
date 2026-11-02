@@ -270,6 +270,7 @@ func gatewayRoute(root string, args []string) error {
 			"       quilzo gateway route add NAME --url U --model M [--key-env VAR | --key-secret NAME] [--personal]\n" +
 			"       quilzo gateway route add NAME ... --draws [--price-picture 0.04]   a route that draws pictures\n" +
 			"         [--max-tokens-field max_completion_tokens] [--temperature T] [--top-p P] [--timeout 300s] [--auto-tool-choice]\n" +
+			"         [--effort low|medium|high|xhigh|max] [--geo us|global] [--server-fallback]   Anthropic's Messages API only\n" +
 			"       quilzo gateway route remove NAME")
 	}
 	verb, name := args[0], args[1]
@@ -286,6 +287,10 @@ func gatewayRoute(root string, args []string) error {
 	topP := fs.String("top-p", "", "a top_p sent on every call; empty sends none")
 	timeout := fs.String("timeout", "", "how long one call may take, such as 300s for a model that reasons at length")
 	autoTool := fs.Bool("auto-tool-choice", false, "send auto where a caller forces a tool, for a model that refuses a forced choice")
+	effort := fs.String("effort", "", "Anthropic's Messages API: how hard the model thinks, low, medium, high, xhigh or max")
+	geo := fs.String("geo", "", "Anthropic's Messages API: where the model may run, us or global (the provider's default)")
+	serverFallback := fs.Bool("server-fallback", false, "Anthropic's Messages API: a request the model declines is answered by "+
+		"another of Anthropic's models, for the models that take it")
 	draws := fs.Bool("draws", false, "this route's model draws pictures (an images endpoint), and is used for nothing else")
 	pricePicture := fs.String("price-picture", "", "what one picture costs here, like 0.04")
 	prov := fs.String("provider", "", "a provider from quilzo gateway providers: the route reaches it and nothing else")
@@ -299,6 +304,11 @@ func gatewayRoute(root string, args []string) error {
 	if err != nil {
 		return err
 	}
+	params.Effort, params.Geo, params.Fallback = strings.TrimSpace(*effort), strings.TrimSpace(*geo), *serverFallback
+	if err := params.Check(); err != nil {
+		return err
+	}
+	wire := ""
 	// A provider's route: its address from the profile, checked now, and
 	// its key's credential named the way the profile suggests.
 	var pp map[string]string
@@ -323,6 +333,7 @@ func gatewayRoute(root string, args []string) error {
 		if eerr != nil {
 			return eerr
 		}
+		wire = p.Wire
 		if *u == "" {
 			*u = base
 		}
@@ -350,6 +361,9 @@ func gatewayRoute(root string, args []string) error {
 		r := gateway.Route{Name: name, URL: *u, Model: *model, KeyEnv: *keyEnv, PriceIn: *priceIn, PriceOut: *priceOut,
 			Personal: *personal, Params: params, Provider: *prov, ProviderParams: pp, KeySecret: *keySecret,
 			Draws: *draws, PricePicture: *pricePicture}
+		if err := r.CheckWire(wire); err != nil {
+			return err
+		}
 		if *first {
 			c.Routes = append([]gateway.Route{r}, kept...)
 		} else {
@@ -581,6 +595,9 @@ func routeModel(root string, r gateway.Route) (*assist.HTTPModel, error) {
 		return nil, err
 	}
 	if r.Provider == "" {
+		if err := r.CheckWire(""); err != nil {
+			return nil, err
+		}
 		return assist.NewHTTPModelAt(r.URL, key, r.Model)
 	}
 	cat, err := loadProviders(root)
@@ -594,6 +611,9 @@ func routeModel(root string, r gateway.Route) (*assist.HTTPModel, error) {
 	base, host, err := p.Endpoint(r.ProviderParams)
 	if err != nil {
 		return nil, fmt.Errorf("route %s: %w", r.Name, err)
+	}
+	if err := r.CheckWire(p.Wire); err != nil {
+		return nil, err
 	}
 	if r.URL != "" {
 		u, perr := url.Parse(r.URL)
@@ -613,7 +633,7 @@ func routeModel(root string, r gateway.Route) (*assist.HTTPModel, error) {
 	}
 	m := &assist.HTTPModel{BaseURL: base, APIKey: key, Model: r.Model,
 		Client: fetch.Speaking("assistant", reach, assist.RequestTimeout),
-		Auth:   p.Auth, Headers: p.Headers, Host: host}
+		Auth:   p.Auth, Headers: p.Headers, Host: host, Wire: p.Wire}
 	if p.Auth == "none" && key != "" {
 		m.Auth = "bearer"
 	}
@@ -651,6 +671,9 @@ func gatewayProviders(root string, args []string) error {
 		w.Human("%s%s%s  (%s)\n", bold, p.Name, reset, p.ID)
 		w.Human("  %s, %s\n", provider.GroupName(p.Group), p.Where)
 		w.Human("  address   %s\n", p.Base)
+		if p.Wire == provider.WireAnthropic {
+			w.Human("  speaks    Anthropic's Messages API: --effort, --geo and --server-fallback apply\n")
+		}
 		auth := "Authorization: Bearer"
 		switch {
 		case p.Auth == "none":

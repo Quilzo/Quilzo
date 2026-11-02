@@ -65,6 +65,12 @@ func doorStatus(err error) int {
 	case errors.Is(err, gateway.ErrPictureNotAllowed):
 		return http.StatusBadRequest
 	}
+	// A request the model's safeguards declined: understood, and not to be
+	// sent again as it is, which a 5xx would invite.
+	var declined *assist.Declined
+	if errors.As(err, &declined) {
+		return http.StatusUnprocessableEntity
+	}
 	// A request the provider refused as malformed comes back unwrapped
 	// (see gateway's refused), and is the caller's to fix.
 	var se *assist.StatusError

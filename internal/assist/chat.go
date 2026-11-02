@@ -274,6 +274,9 @@ func (h *HTTPModel) Chat(ctx context.Context, req ChatRequest) (ChatReply, error
 	if err := req.Check(); err != nil {
 		return ChatReply{}, err
 	}
+	if h.Wire == WireAnthropic {
+		return h.anthropicChat(ctx, req)
+	}
 	payload := map[string]any{
 		"model":    h.Model,
 		"messages": req.Messages,

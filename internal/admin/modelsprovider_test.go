@@ -68,3 +68,44 @@ func TestARouteIsAddedByChoosingItsProvider(t *testing.T) {
 		}
 	}
 }
+
+// A route to Anthropic is added with what its models take, and what they
+// refuse is refused with why: a temperature to Anthropic, an effort to a
+// provider that speaks OpenAI's chat completions.
+func TestAnAnthropicRouteIsAddedFromTheForm(t *testing.T) {
+	srv, token := setup(t)
+	m, cfg := modelsRig()
+	cat, err := provider.Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Providers = cat.All
+	srv.Models = m
+	body := get(t, srv, "/models", token).Body.String()
+	whole(t, body)
+	for _, want := range []string{`<option value="anthropic">Anthropic`, `name="effort"`, `name="geo"`, `name="server_fallback"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the form does not offer %q", want)
+		}
+	}
+	for _, v := range []url.Values{
+		{"op": {"route-add"}, "name": {"warm"}, "provider": {"anthropic"}, "model": {"m"}, "temperature": {"0.3"}},
+		{"op": {"route-add"}, "name": {"deep"}, "provider": {"groq"}, "model": {"m"}, "effort": {"high"}},
+		{"op": {"route-add"}, "name": {"here"}, "url": {"http://localhost:11434/v1"}, "model": {"m"}, "geo": {"us"}},
+	} {
+		w := decideForm(t, srv, "/models/change", token, v)
+		if !strings.Contains(w.Header().Get("Location"), "e=") || len(cfg.Routes) != 0 {
+			t.Errorf("%v was not refused: %s", v, w.Header().Get("Location"))
+		}
+	}
+	decideForm(t, srv, "/models/change", token, url.Values{"op": {"route-add"}, "name": {"claude"},
+		"provider": {"anthropic"}, "model": {"m"}, "effort": {"high"}, "geo": {"us"}, "server_fallback": {"yes"}})
+	if len(cfg.Routes) != 1 {
+		t.Fatalf("%+v", cfg.Routes)
+	}
+	r := cfg.Routes[0]
+	if r.URL != "https://api.anthropic.com/v1" || r.KeySecret != "anthropic" || r.Params.Effort != "high" ||
+		r.Params.Geo != "us" || !r.Params.Fallback {
+		t.Fatalf("%+v", r)
+	}
+}
