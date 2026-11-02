@@ -114,6 +114,9 @@ func boundOf(m agent.Manifest, c *Caller) agent.Manifest {
 		// And its workspace, the same way.
 		Shell: m.Shell,
 
+		// And what it may read on the web: a token says nothing of hosts.
+		Web: m.Web,
+
 		// Memory is the agent's, and a token says nothing about it.
 		Memory: agent.Memory{
 			Episodic: true, Semantic: true, Procedural: true,

@@ -285,8 +285,21 @@ func claudeTools(b *builder, tools []string) {
 		b.unmapped("%s ran any command: here a workspace runs only programs it names. Declare shell_run with its "+
 			"programs (shell.programs) if it needs to", names(shell))
 	}
-	if len(web) > 0 {
-		b.unmapped("%s reached the web: here its browser reads only hosts it names (browser.read)", names(web))
+	for _, t := range web {
+		switch t {
+		case "WebFetch":
+			b.addCaps("web_fetch")
+			if b.m.Web == nil {
+				b.m.Web = &agent.Web{}
+			}
+			b.m.Web.Any = true
+			b.changed("WebFetch, as web_fetch reading any public https address, as it did: narrow web.fetch to " +
+				"the hosts it needs")
+		case "WebSearch":
+			b.addCaps("web_search")
+			b.changed("WebSearch, as web_search through the provider agents.search names here; a search waits " +
+				"for a person once the run holds something private")
+		}
 	}
 	if len(mcp) > 0 {
 		b.unmapped("%s came from MCP servers: register each as an integration, pin its tools, and add them to "+

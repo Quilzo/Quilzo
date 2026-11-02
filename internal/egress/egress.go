@@ -135,6 +135,19 @@ var Purposes = []Purpose{
 			"what happens when no guardrail is set",
 	},
 	{
+		Name: "agent-web",
+		What: "an agent reading an https address with web_fetch: a host its declaration names, or any " +
+			"public host when it says so, never a private address",
+		Without: "agents with web_fetch read nothing on the web; their browser, if they have one, is " +
+			"held to the same mode",
+	},
+	{
+		Name: "agent-search",
+		What: "an agent asking the web search provider agents.search names (Brave, Tavily, Exa, " +
+			"Serper, SerpApi, Kagi, Perplexity, Jina, or your own SearXNG)",
+		Without: "web_search answers that the provider cannot be reached; nothing else changes",
+	},
+	{
 		Name: "research",
 		What: "resolving a citation, and searching for works, in open scholarly indexes: " +
 			"OpenAlex, Crossref and arXiv",

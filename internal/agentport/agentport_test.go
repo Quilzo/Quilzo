@@ -25,7 +25,7 @@ var known = func() map[string]bool {
 		"write_record", "publish", "remember", "recall"} {
 		k[c] = true
 	}
-	for _, l := range [][]string{agent.ShellCapabilities, agent.BrowserCapabilities, agent.CellCapabilities[:]} {
+	for _, l := range [][]string{agent.ShellCapabilities, agent.BrowserCapabilities, agent.CellCapabilities[:], agent.WebCapabilities} {
 		for _, c := range l {
 			k[c] = true
 		}
@@ -164,7 +164,12 @@ func TestClaudeCodeSubagent(t *testing.T) {
 		t.Errorf("Read, Glob and Grep are a workspace it reads and searches: %v %+v", m.Capabilities, m.Shell)
 	}
 	mustNote(t, a, Decide, "Bash ran any command")
-	mustNote(t, a, Decide, "WebFetch reached the web")
+	// WebFetch reads any address there, and here too, said so with how to
+	// narrow it.
+	if !slices.Contains(m.Capabilities, "web_fetch") || m.Web == nil || !m.Web.Any {
+		t.Errorf("WebFetch did not become web_fetch: %v %+v", m.Capabilities, m.Web)
+	}
+	mustNote(t, a, Changed, "narrow web.fetch")
 	mustNote(t, a, Decide, "mcp__github__get_pull_request")
 	mustNote(t, a, Changed, "alias")
 	mustNote(t, a, Left, "color")

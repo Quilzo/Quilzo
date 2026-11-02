@@ -15,6 +15,7 @@ import (
 	"github.com/quilzo/quilzo/internal/clientip"
 	"github.com/quilzo/quilzo/internal/event"
 	"github.com/quilzo/quilzo/internal/throttle"
+	"github.com/quilzo/quilzo/internal/websearch"
 )
 
 // Every setting, in one table.
@@ -558,6 +559,22 @@ var settings = []Setting{
 			"starting each other at three. Off, nothing starts unless a person runs it, and what " +
 			"happens is still recorded, so turning it on again starts nothing for what came " +
 			"before.",
+	},
+	{
+		Key: "agents.search", Kind: Text, Default: "",
+		Summary:  "the web search provider agents with web_search ask: brave, tavily, exa, serper, serpapi, kagi, perplexity, jina or searxng",
+		Controls: []string{"SC-7", "AC-6"},
+		Why: "None, by default: an agent's search is its words sent to a third party, so it is something " +
+			"somebody chooses. The key is a sealed credential, quilzo secret set search-NAME (search-brave, " +
+			"say), sent only to that provider's host. A search taints the run, and once a run holds something " +
+			"private a search waits for a person, since the query could carry it. searxng is one you run " +
+			"yourself, at agents.search_url.",
+	},
+	{
+		Key: "agents.search_url", Kind: Text, Default: "",
+		Summary: "where your own SearXNG answers, when agents.search is searxng: an https address",
+		Why: "Only for a provider run on your own network, which is the one search reached on a private " +
+			"address. https, since a query is somebody's words and a result is what an agent acts on.",
 	},
 	{
 		Key: "agents.trigger_runs", Kind: Int, Default: "2",
@@ -1649,6 +1666,17 @@ func (s Setting) Validate(v string) error {
 		if s.Key == "site.timezone" && v != "" {
 			if _, err := time.LoadLocation(v); err != nil || v == "Local" {
 				return fmt.Errorf("%q is not a time zone name; give one like Europe/London or America/New_York", v)
+			}
+		}
+		if s.Key == "agents.search" && v != "" {
+			if _, ok := websearch.Get(v); !ok {
+				return fmt.Errorf("%q is not a search provider; it is one of %s", v, strings.Join(websearch.IDs(), ", "))
+			}
+		}
+		if s.Key == "agents.search_url" && v != "" {
+			u, err := url.Parse(v)
+			if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+				return fmt.Errorf("%q is not an https address like https://search.example.internal", v)
 			}
 		}
 		if s.Key == "site.csp.mode" {
