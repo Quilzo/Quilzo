@@ -523,6 +523,8 @@ var commandNeeds = map[string]need{
 	// A draft shown to somebody outside: whoever may publish it, since that
 	// shows it to everybody. Listing and revoking links take less.
 	"share":         {action: auth.ActPublish},
+	"redirect":      {action: auth.ActPublish},
+	"redirect list": {action: auth.ActView},
 	"share list":    {action: auth.ActEditDraft},
 	"share revoke":  {action: auth.ActEditDraft},
 	"backup":        {action: auth.ActGrant},

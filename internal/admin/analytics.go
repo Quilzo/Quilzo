@@ -6,15 +6,69 @@ package admin
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/analytics"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/seo"
+	"github.com/quilzo/quilzo/internal/site"
 )
 
 // Analytics is the site's traffic, counted without a script or a cookie.
 type Analytics struct {
 	Read func(days int) ([]analytics.Day, error)
+	// Redirect adds a redirect from an address nobody found to a page, as
+	// quilzo redirect add does. Nil offers none.
+	Redirect func(r seo.Redirect, by string) error
+}
+
+// missingRow is an address people asked for that is not there, with the
+// page it most likely meant.
+type missingRow struct {
+	analytics.Ranked
+	Suggest string
+}
+
+// handleAnalyticsRedirect sends an address nobody found to a page. It
+// changes the live site at once, so it takes what publishing takes.
+func (s *Server) handleAnalyticsRedirect(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, "use POST", http.StatusMethodNotAllowed)
+		return
+	}
+	p, ok := s.requireAuth(w, r)
+	if !ok {
+		return
+	}
+	if !s.can(w, r, p, auth.ActPublish, "/") {
+		return
+	}
+	back := func(key, msg string) {
+		http.Redirect(w, r, "/analytics?"+key+"="+url.QueryEscape(msg)+"#missing", http.StatusSeeOther)
+	}
+	if s.Analytics == nil || s.Analytics.Redirect == nil {
+		back("e", "this build cannot add redirects")
+		return
+	}
+	from, to := strings.TrimSpace(r.FormValue("from")), strings.TrimSpace(r.FormValue("to"))
+	if from == "" || to == "" {
+		back("e", "a redirect needs where from and where to")
+		return
+	}
+	if !strings.HasPrefix(to, "/") {
+		to = "/" + to
+	}
+	if err := s.Analytics.Redirect(seo.Redirect{From: from, To: to, Permanent: true,
+		Note: "from the Analytics screen: asked for and not found"}, p.Name); err != nil {
+		back("e", err.Error())
+		return
+	}
+	s.audit("redirect.added", from, map[string]string{"by": p.Name, "to": to})
+	back("m", from+" now goes to "+to)
 }
 
 // bar is one day in the chart, drawn on the server as SVG: no chart library
@@ -81,5 +135,31 @@ func (s *Server) handleAnalytics(w http.ResponseWriter, r *http.Request) {
 	}
 	data["S"], data["Bars"], data["Days"], data["Peak"] = sum, bars, days, peak
 	data["Conversion"] = conv
+	// What people looked for and did not find, and the page each most
+	// likely meant: offered as a redirect for a person to confirm.
+	var live []string
+	if pages, perr := site.PagesAt(s.Store, site.RefLive); perr == nil {
+		for name := range site.Visible(pages, time.Now()) {
+			live = append(live, name)
+		}
+	}
+	var missing []missingRow
+	for i, m := range sum.Missing {
+		if i == 20 {
+			break
+		}
+		row := missingRow{Ranked: m}
+		if m.Name != analytics.Other {
+			row.Suggest, _ = seo.Suggest(m.Name, live)
+		}
+		missing = append(missing, row)
+	}
+	if len(sum.NoResults) > 20 {
+		sum.NoResults = sum.NoResults[:20]
+		data["S"] = sum
+	}
+	data["Missing"] = missing
+	data["CanRedirect"] = s.Analytics.Redirect != nil && s.Policy.Evaluate(p.Name, auth.ActPublish, "/").Allowed
+	data["Message"], data["Error"] = r.URL.Query().Get("m"), r.URL.Query().Get("e")
 	s.render(w, r, "analytics.html", data)
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/quilzo/quilzo/internal/admin"
 	"github.com/quilzo/quilzo/internal/analytics"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/seo"
 )
 
 // Site analytics without a script or a cookie. See internal/analytics.
@@ -52,7 +53,11 @@ func cmdAnalytics(root string, args []string) error {
 }
 
 func analyticsCapability(root string) *admin.Analytics {
-	return &admin.Analytics{Read: func(days int) ([]analytics.Day, error) {
-		return analytics.Read(analyticsDir(root), days, time.Now())
-	}}
+	return &admin.Analytics{
+		Read: func(days int) ([]analytics.Day, error) {
+			return analytics.Read(analyticsDir(root), days, time.Now())
+		},
+		// The handler checked who may, and records it.
+		Redirect: func(r seo.Redirect, by string) error { return addSiteRedirect(root, r) },
+	}
 }

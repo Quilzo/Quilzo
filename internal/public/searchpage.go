@@ -4,7 +4,9 @@
 package public
 
 import (
+	"github.com/quilzo/quilzo/internal/gaps"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 
@@ -92,7 +94,13 @@ func (st *Site) searchPage(w http.ResponseWriter, r *http.Request) {
 			http.StatusInternalServerError)
 		return
 	}
-	ctx["search"] = st.searchData(query, pages)
+	data := st.searchData(query, pages)
+	ctx["search"] = data
+	// A search a reader typed and the site has nothing for: what it does
+	// not say, in their words, masked before it is counted.
+	if empty, _ := data["empty"].(bool); empty && query != "" && st.Analytics != nil {
+		st.Analytics.NoResult(r, gaps.Clean(query, st.ownDomains()))
+	}
 	if ans := st.searchAnswer(r, query); ans != nil {
 		ctx["answer"] = ans
 	}
@@ -232,4 +240,14 @@ func cutAround(text string, at, length int) string {
 		out += " …"
 	}
 	return out
+}
+
+// ownDomains are the site's own mail domains, which masking leaves alone:
+// an address at the site is not a reader's.
+func (st *Site) ownDomains() []string {
+	u, err := url.Parse(st.BaseURL)
+	if err != nil || u.Hostname() == "" {
+		return nil
+	}
+	return []string{strings.TrimPrefix(u.Hostname(), "www.")}
 }

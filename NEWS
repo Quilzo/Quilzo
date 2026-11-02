@@ -134,6 +134,16 @@ Unreleased
     takes what saving takes, so somebody who may only read sees the saved
     draft.
 
+*** What people looked for and did not find.  The cookieless counts now
+    include addresses people asked for that are not on the site (not the
+    ones somebody hunting for an admin asks for, which the shield keeps)
+    and searches that found nothing, masked as unanswered questions are.
+    The Analytics screen lists both, each missing address with the page
+    it most likely meant and, for whoever may publish, "Redirect it".
+    quilzo redirect list | add FROM TO [--temporary] | remove FROM keeps
+    the same redirects, and the running site reads them again within a
+    second of a change: no restart.
+
 *** Pages tell search engines and agents where they stand.  Every page
     names where it lives with rel=canonical once the site has an address
     (a layout that writes its own keeps it).  A page can be left out of

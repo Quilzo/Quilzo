@@ -800,6 +800,24 @@ scraped from the markup, linked from the page and from `llms.txt`, for a
 language model or a reader's agent; the copy is never indexed and names the
 page as canonical.
 
+**What people looked for and did not find.** The cookieless count of views
+also counts addresses people asked for that are not on the site, and searches
+that found nothing (masked as unanswered questions are, so an address typed
+into the search box is not kept). The Analytics screen lists both: each missing
+address with the published page it most likely meant — the same last segment,
+a spelling one slip away, most of the same words — and, for whoever may
+publish, "Redirect it", which writes a permanent redirect the running site
+picks up within a second. Never applied by itself: a wrong redirect is worse
+than an honest 404. The same from the command line:
+
+```bash
+quilzo redirect list
+quilzo redirect add /old-prices /shop [--temporary] [--note "the 2024 catalogue"]
+quilzo redirect remove /old-prices
+```
+
+A redirect that would make a loop or a chain is refused when it is added.
+
 **Views over records.** Declared queries with typed parameters, a field
 allowlist and a cost budget, resolved before rendering. A page names the
 listings it embeds; the template receives data, never a callable.

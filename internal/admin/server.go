@@ -1353,6 +1353,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/connections/change", s.handleConnectionsChange)
 	mux.HandleFunc("/connections/callback", s.handleConnectionsCallback)
 	mux.HandleFunc("/analytics", s.handleAnalytics)
+	mux.HandleFunc("/analytics/redirect", s.handleAnalyticsRedirect)
 	mux.HandleFunc("/experiments", s.handleExperiments)
 	mux.HandleFunc("/personalise", s.handlePersonalise)
 	mux.HandleFunc("/personalise/change", s.handlePersonaliseChange)

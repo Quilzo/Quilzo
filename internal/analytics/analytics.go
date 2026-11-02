@@ -62,6 +62,10 @@ const (
 	MaxReferrers = 500
 	MaxVisitors  = 200_000
 	MaxGoals     = 200
+	// MaxMissing and MaxNoResults bound the addresses that were not found
+	// and the searches that found nothing, kept a day.
+	MaxMissing   = 500
+	MaxNoResults = 500
 	Other        = "(other)"
 )
 
@@ -81,6 +85,13 @@ type Day struct {
 	Referrers map[string]int  `json:"referrers"`
 	// Goals are conversions: how many distinct visitors reached each.
 	Goals map[string]int `json:"goals"`
+	// Missing are addresses people asked for that are not there, and how
+	// often: a link somebody else has wrong, or a page that moved.
+	Missing map[string]int `json:"missing,omitempty"`
+	// NoResults are searches that found nothing, and how often: what the
+	// site does not say, in its readers' words. Masked as unanswered
+	// questions are (gaps.Clean) before they are counted.
+	NoResults map[string]int `json:"no_results,omitempty"`
 }
 
 func newDay(date string) Day {
@@ -132,6 +143,12 @@ func fill(d *Day) {
 	}
 	if d.Goals == nil {
 		d.Goals = map[string]int{}
+	}
+	if d.Missing == nil {
+		d.Missing = map[string]int{}
+	}
+	if d.NoResults == nil {
+		d.NoResults = map[string]int{}
 	}
 }
 
@@ -291,6 +308,39 @@ func (c *Counter) Convert(r *http.Request, goal string) {
 	c.day.Goals[goal]++
 }
 
+// NotFound counts a person asking for an address that is not there.
+func (c *Counter) NotFound(r *http.Request, path string) {
+	if r.Method != http.MethodGet || !Human(r) || Prefetch(r) {
+		return
+	}
+	c.count(func(d *Day) map[string]int { return d.Missing }, clean(path), MaxMissing)
+}
+
+// NoResult counts a search that found nothing. query is already masked.
+func (c *Counter) NoResult(r *http.Request, query string) {
+	if !Human(r) || Prefetch(r) {
+		return
+	}
+	query = strings.ToLower(strings.Join(strings.Fields(query), " "))
+	if query == "" {
+		return
+	}
+	c.count(func(d *Day) map[string]int { return d.NoResults }, clean(query), MaxNoResults)
+}
+
+func (c *Counter) count(of func(*Day) map[string]int, key string, most int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.roll()
+	fill(&c.day)
+	m := of(&c.day)
+	if _, known := m[key]; !known && len(m) >= most {
+		key = Other
+	}
+	m[key]++
+	c.dirty = true
+}
+
 // Today is a copy of the day so far.
 func (c *Counter) Today() Day {
 	c.mu.Lock()
@@ -367,6 +417,8 @@ type Summary struct {
 	Pages     []Ranked
 	Referrers []Ranked
 	Goals     []Ranked
+	Missing   []Ranked
+	NoResults []Ranked
 }
 
 // Summarise adds days up. Visitors across days are a sum of daily visitors,
@@ -374,6 +426,7 @@ type Summary struct {
 func Summarise(days []Day) Summary {
 	s := Summary{Days: days}
 	pages, refs, goals := map[string]*Ranked{}, map[string]int{}, map[string]int{}
+	missing, empty := map[string]int{}, map[string]int{}
 	for _, d := range days {
 		s.Views += d.Views
 		s.Visitors += d.Visitors
@@ -393,6 +446,12 @@ func Summarise(days []Day) Summary {
 		for k, v := range d.Goals {
 			goals[k] += v
 		}
+		for k, v := range d.Missing {
+			missing[k] += v
+		}
+		for k, v := range d.NoResults {
+			empty[k] += v
+		}
 	}
 	for _, r := range pages {
 		s.Pages = append(s.Pages, *r)
@@ -403,7 +462,13 @@ func Summarise(days []Day) Summary {
 	for k, v := range goals {
 		s.Goals = append(s.Goals, Ranked{Name: k, Count: v})
 	}
-	for _, l := range [][]Ranked{s.Pages, s.Referrers, s.Goals} {
+	for k, v := range missing {
+		s.Missing = append(s.Missing, Ranked{Name: k, Count: v})
+	}
+	for k, v := range empty {
+		s.NoResults = append(s.NoResults, Ranked{Name: k, Count: v})
+	}
+	for _, l := range [][]Ranked{s.Pages, s.Referrers, s.Goals, s.Missing, s.NoResults} {
 		sort.Slice(l, func(i, j int) bool {
 			if l[i].Count != l[j].Count {
 				return l[i].Count > l[j].Count
