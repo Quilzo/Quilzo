@@ -6,18 +6,23 @@ package main
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/memory"
+	"github.com/quilzo/quilzo/internal/newsletter"
+	"github.com/quilzo/quilzo/internal/site"
 )
 
 // `quilzo approvals`: everything waiting for a person, in one list — what
 // agents are waiting on, tool calls held for a second person, acts on
-// other tools a case is waiting to have approved, and memories held until
-// somebody confirms them. Each line says what deciding commits to and the
+// other tools a case is waiting to have approved, features and newsletter
+// issues agents proposed, the change to the site waiting for approvals,
+// and memories held until somebody confirms them. The admin's Approvals
+// and Today read the same sources. Each line says what deciding commits to and the
 // command that decides it.
 
 // waitingItem is one thing waiting, for the command line.
@@ -107,6 +112,41 @@ func waitingFor(root string, c *Caller, now time.Time) ([]waitingItem, error) {
 			}
 		}
 	}
+	// What agents drafted for a person to read and install: the same list
+	// the admin's Approvals has, which the command line left out.
+	if authorise(root, c, auth.ActInstall, "/") == nil {
+		if list, err := proposals(root); err == nil {
+			for _, pr := range list {
+				out = append(out, waitingItem{Source: "feature", Agent: pr.By, What: "read " + pr.Title + " " + pr.Version,
+					Why:     pr.What + ", proposed by an agent for " + pr.For + "; nothing is installed until you install it",
+					Commits: "installs", Since: pr.At, Decide: "quilzo feature proposals"})
+			}
+		}
+	}
+	// The change to the site waiting for approvals, for whoever may give
+	// one: never its author, nor somebody who already has.
+	if item, ok := reviewWaiting(root, c, now); ok {
+		out = append(out, item)
+	}
+	// A newsletter issue an agent proposed, for whoever may send it. It
+	// was on the Newsletter screen and nowhere a person looks for what is
+	// waiting on them.
+	if authorise(root, c, auth.ActPublish, "/") == nil {
+		if list, err := openNewsletter(root); err == nil {
+			if issues, err := list.Issues(); err == nil {
+				for _, is := range issues {
+					if is.State != newsletter.Proposed {
+						continue
+					}
+					out = append(out, waitingItem{Source: "newsletter", Agent: is.By,
+						What:    "send the issue " + strconv.Quote(is.Subject),
+						Why:     nonEmpty(is.Note, "proposed from the page "+is.Page),
+						Commits: "sends", Since: is.Proposed,
+						Decide: "quilzo newsletter send " + is.Page + " --yes"})
+				}
+			}
+		}
+	}
 	f := memory.Filter{}
 	if !admin {
 		f.About = c.Name
@@ -153,4 +193,46 @@ func cmdApprovals(root string, args []string) error {
 		fmt.Printf("            %s\n", it.Decide)
 	}
 	return nil
+}
+
+// reviewWaiting is the change to the site waiting for approvals, when the
+// caller may approve it.
+func reviewWaiting(root string, c *Caller, now time.Time) (waitingItem, bool) {
+	var none waitingItem
+	if authorise(root, c, auth.ActEditDraft, "/") != nil {
+		return none, false
+	}
+	s, err := open(root)
+	if err != nil {
+		return none, false
+	}
+	draft := s.GetRef(site.RefDraft)
+	if draft == "" || draft == s.GetRef(site.RefLive) {
+		return none, false
+	}
+	pol, err := loadApprovalPolicy(root)
+	if err != nil || (pol.Required == 0 && !pol.RequireHumanForAI) {
+		return none, false
+	}
+	prop, _, err := currentProposal(root, s)
+	if err != nil || prop.Content != draft || prop.Author == c.Name {
+		return none, false
+	}
+	for _, a := range prop.Approvals {
+		if a.Content == draft && a.By == c.Name {
+			return none, false
+		}
+	}
+	d := pol.Evaluate(*prop, kindOfPrincipal(root), now)
+	if d.Allowed {
+		return none, false
+	}
+	since := now
+	if prop.CreatedAt > 0 {
+		since = time.Unix(prop.CreatedAt, 0)
+	}
+	return waitingItem{Source: "review", Agent: nonEmpty(prop.Author, "content"),
+		What:    "approve the change to the site",
+		Why:     fmt.Sprintf("%d of %d approvals; %s", d.Have, d.Need, clip(prop.Message, 160)),
+		Commits: "publishes", Since: since, Decide: "quilzo review approve"}, true
 }

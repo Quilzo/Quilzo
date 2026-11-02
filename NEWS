@@ -61,6 +61,12 @@ Unreleased
 
 ** Changed
 
+*** What waits on a person is one list wherever they look.  quilzo
+    approvals now has what Approvals and Today had and it did not: the
+    change to the site waiting for approvals, and the features agents
+    drafted for a person to read.  All three now have the newsletter issues
+    agents proposed, which were only on the Newsletter screen.
+
 *** Scheduled publishing needs no timer.  quilzo serve publishes each
     entry within a second of its time, and at once for one that fell due
     while it was down; schedule.in_server turns it off for a deployment
