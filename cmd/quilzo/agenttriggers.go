@@ -115,6 +115,8 @@ func triggerStatePath(root string) string { return filepath.Join(agentsDir(root)
 type triggerState struct {
 	Cursors map[event.Source]int64   `json:"cursors"`
 	Fired   map[string]*triggerFired `json:"fired"`
+	// Notices is this hour's notices to staff (staffnotice.go).
+	Notices noticeState `json:"notices,omitzero"`
 }
 
 // triggerFired is one trigger's day: how many runs it has started, when it
@@ -161,6 +163,10 @@ type dispatcher struct {
 	start func(ctx context.Context, root string, s triggerStart) (string, error)
 	// report says what happened, for the server's log.
 	report func(string)
+	// noticeTypes is what staff are told about, read each pass, and notify
+	// tells them (staffnotice.go); nil for either tells nobody.
+	noticeTypes func() map[event.Type]bool
+	notify      func(events []event.Event, held int)
 }
 
 // triggerStart is one run a trigger is to start.
@@ -214,7 +220,7 @@ func runTriggers(ctx context.Context, root string, d dispatcher) {
 		d.start = startTriggered
 	}
 	sem := make(chan struct{}, d.workers)
-	var mu sync.Mutex
+	var mu, noticeMu sync.Mutex
 	running := map[string]bool{}
 	var wg sync.WaitGroup
 	defer wg.Wait()
@@ -227,13 +233,30 @@ func runTriggers(ctx context.Context, root string, d dispatcher) {
 			// and schedules move on, so turning triggers on again starts
 			// nothing for what came before.
 			on := d.on == nil || d.on()
-			starts, err := dueStarts(root, time.Now(), func(key string) bool {
+			var types map[event.Type]bool
+			if d.noticeTypes != nil {
+				types = d.noticeTypes()
+			}
+			work, err := dueWork(root, time.Now(), func(key string) bool {
 				mu.Lock()
 				defer mu.Unlock()
 				return running[key] || !on
-			}, nil)
+			}, nil, types)
 			if err != nil {
 				d.say("agents' triggers: " + err.Error())
+			}
+			starts := work.starts
+			// Staff are told in the background, one notice at a time, so a
+			// slow mail relay neither holds up the agents nor sends two at
+			// once.
+			if (len(work.notices) > 0 || work.held > 0) && d.notify != nil {
+				wg.Add(1)
+				go func(w due) {
+					defer wg.Done()
+					noticeMu.Lock()
+					defer noticeMu.Unlock()
+					d.notify(w.notices, w.held)
+				}(work)
 			}
 			// Who the server runs as, read only when something is to start:
 			// resolving it reads the token store, and most seconds nothing is.
@@ -290,9 +313,27 @@ func (d dispatcher) say(s string) {
 // clock says, and returns the runs to start, counting each against its
 // trigger's day before it is started, so a cap holds even when runs fail.
 func dueStarts(root string, now time.Time, isRunning func(string) bool, runner *Caller) ([]triggerStart, error) {
+	w, err := dueWork(root, now, isRunning, runner, nil)
+	return w.starts, err
+}
+
+// due is what one pass found to do: runs to start, and events to tell
+// staff about, with how many earlier ones were held back this hour.
+type due struct {
+	starts  []triggerStart
+	notices []event.Event
+	held    int
+}
+
+// dueWork is dueStarts, and gathers the events staff are told about
+// (notify, by type; nil tells nobody), counted against the hour's notices.
+func dueWork(root string, now time.Time, isRunning func(string) bool, runner *Caller,
+	notify map[event.Type]bool) (due, error) {
+
+	var out due
 	set, err := loadAgents(root)
 	if err != nil {
-		return nil, err
+		return out, err
 	}
 	type withTrigger struct {
 		name string
@@ -311,6 +352,7 @@ func dueStarts(root string, now time.Time, isRunning func(string) bool, runner *
 	}
 
 	var starts []triggerStart
+	var notices []event.Event
 	err = atomicfile.Update(triggerStatePath(root), func(st *triggerState) error {
 		if st.Cursors == nil {
 			st.Cursors = map[event.Source]int64{}
@@ -351,6 +393,9 @@ func dueStarts(root string, now time.Time, isRunning func(string) bool, runner *
 			for i := range events {
 				e := events[i]
 				st.Cursors[l.Source] = e.Seq
+				if notify[e.Type] {
+					notices = append(notices, e)
+				}
 				for _, wt := range all {
 					if !wt.t.Matches(e) || !startsFrom(wt.name, e) {
 						continue
@@ -400,12 +445,34 @@ func dueStarts(root string, now time.Time, isRunning func(string) bool, runner *
 				changed = true
 			}
 		}
+		// This hour's notices: one per pass, at most noticesPerHour, and
+		// what is held back is said in the next one that goes.
+		if len(notices) > 0 {
+			hour := now.UTC().Format("2006-01-02T15")
+			if st.Notices.Hour != hour {
+				st.Notices.Hour, st.Notices.Sent = hour, 0
+			}
+			if st.Notices.Sent >= noticesPerHour {
+				st.Notices.Held += len(notices)
+				notices = nil
+			} else {
+				st.Notices.Sent++
+				out.held, st.Notices.Held = st.Notices.Held, 0
+			}
+			changed = true
+		}
 		if !changed {
 			return atomicfile.ErrUnchanged
 		}
 		return nil
 	})
-	return starts, err
+	// Nothing is done for a pass whose state was not kept: the next pass
+	// reads the same events again, and doing it now too would do it twice.
+	if err != nil {
+		return due{}, err
+	}
+	out.starts, out.notices = starts, notices
+	return out, nil
 }
 
 // startsFrom reports whether an event may start an agent: never one the

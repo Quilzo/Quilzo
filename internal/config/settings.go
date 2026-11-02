@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/clientip"
+	"github.com/quilzo/quilzo/internal/event"
 	"github.com/quilzo/quilzo/internal/throttle"
 )
 
@@ -528,6 +529,23 @@ var settings = []Setting{
 		Summary: "the name an OpenShell sandbox uses for that address, e.g. host.openshell.internal",
 		Why: "Written into each sandbox's network policy as the only place it may connect, " +
 			"so its program reaches the outside only through the run's own proxy.",
+	},
+	{
+		Key: "notify.staff", Kind: List, Default: "",
+		Summary: "who hears when a visitor asks for a person or sends a form: mailto: addresses, or secret:NAME for a webhook",
+		Why: "A visitor who asks a chatbot for a person and is never answered is the commonest " +
+			"way a chatbot fails, and nothing told anybody: the Inbox waited to be opened. Each " +
+			"entry is a mailto: address, or secret:NAME naming a sealed credential that holds a " +
+			"Slack, Teams or Discord incoming-webhook address (quilzo secret set NAME), never the " +
+			"address itself: whoever has it can post as the site. A notice says which chatbot or " +
+			"form and how many, never who or what they wrote; notices are gathered a few seconds " +
+			"at a time, and at most thirty go in an hour.",
+	},
+	{
+		Key: "notify.events", Kind: List, Default: "handoff.requested,form.submitted",
+		Summary: "what staff are told about (quilzo agent trigger events lists them)",
+		Why: "A visitor asking for a person and a form sent, by default: the two things a " +
+			"person is waiting on. Any event an agent can start from may be added.",
 	},
 	{
 		Key: "agents.triggers", Kind: Bool, Default: "true",
@@ -1410,6 +1428,9 @@ func All() []Setting { return append([]Setting(nil), settings...) }
 // refused when it is set rather than ignored when it is rendered — a setting
 // accepted and then silently doing nothing is worse than one refused, because
 // the operator believes the first.
+// reSecretName is a sealed credential's name, as quilzo secret set takes it.
+var reSecretName = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
+
 var reBrandColour = regexp.MustCompile(`^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$`)
 
 // hardBounds are the settings held between bounds no reason steps outside:
@@ -1642,6 +1663,41 @@ func (s Setting) Validate(v string) error {
 			if strings.ContainsAny(p, " \t\r\n;'\"") {
 				return fmt.Errorf("%q contains a character that cannot appear "+
 					"in a list entry", p)
+			}
+		}
+		if s.Key == "notify.staff" {
+			// An address or a sealed credential's name. A webhook's address
+			// in the settings is a credential in a file anybody who can read
+			// the settings can read, and in every backup of them.
+			for _, c := range strings.Split(v, ",") {
+				c = strings.TrimSpace(c)
+				if c == "" {
+					continue
+				}
+				scheme, rest, _ := strings.Cut(c, ":")
+				switch strings.ToLower(scheme) {
+				case "mailto":
+					if !strings.Contains(rest, "@") || strings.ContainsAny(rest, " \r\n<>,") {
+						return fmt.Errorf("%q is not a mail address", c)
+					}
+				case "secret":
+					if !reSecretName.MatchString(rest) {
+						return fmt.Errorf("%q does not name a credential: secret:NAME, with NAME as "+
+							"quilzo secret set took it", c)
+					}
+				case "https", "http":
+					return fmt.Errorf("a webhook's address is a credential: keep it sealed with " +
+						"quilzo secret set NAME, and give secret:NAME here")
+				default:
+					return fmt.Errorf("%q is neither mailto: nor secret:", c)
+				}
+			}
+		}
+		if s.Key == "notify.events" {
+			for _, e := range strings.Split(v, ",") {
+				if e = strings.TrimSpace(e); e != "" && !event.Known(event.Type(e)) {
+					return fmt.Errorf("%q is not an event; quilzo agent trigger events lists them", e)
+				}
 			}
 		}
 		if s.Key == "network.trusted_proxies" && strings.TrimSpace(v) != "" {

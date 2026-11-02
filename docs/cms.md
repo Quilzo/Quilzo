@@ -1480,6 +1480,33 @@ operations it holds.
 `agents.triggers` turns all of it off (nothing starts unless a person runs it),
 and `agents.trigger_runs` says how many triggered runs go at once.
 
+### Staff hear what visitors are waiting on
+
+A visitor who asks a chatbot for a person and is never answered is the
+commonest way a chatbot fails. `notify.staff` says who is told, by mail or in a
+team channel:
+
+```
+quilzo secret set team-hook < slack-incoming-webhook.txt
+quilzo config set notify.staff mailto:team@example.com,secret:team-hook
+```
+
+A channel's incoming-webhook address (Slack, Teams or Discord) is a credential,
+since whoever has it can post as the site. So it is kept sealed, and the setting
+names it (`secret:NAME`); an address given in the setting itself is refused. The
+notice is posted with the site's webhook client, which will not reach this
+machine or its network and does not follow redirects.
+
+`notify.events` says what staff are told about: a visitor asking for a person
+and a form sent, by default, and any event an agent can start from. A notice says
+which chatbot or form and how many, never who or what they wrote:
+
+> 2 visitors asked the chatbot "help" for a person. They are waiting in the Inbox.
+
+Notices are gathered a pass at a time, at most thirty go in an hour, and the
+rest are counted in the next. Each is in the audit log (`notify.staff`), naming
+the credential it used and never the address.
+
 ---
 
 ## Agents asking the site

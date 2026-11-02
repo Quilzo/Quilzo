@@ -631,6 +631,13 @@ func cmdServe(root string, args []string) error {
 		report: func(line string) {
 			fmt.Printf("  %sagents: %s%s\n", dim, line, reset)
 		},
+		// And staff told what visitors are waiting on (staffnotice.go).
+		noticeTypes: func() map[event.Type]bool { return noticeTypes(root) },
+		notify: func(events []event.Event, held int) {
+			if err := sendStaffNotice(root, events, held); err != nil {
+				sayNoticeError(err)
+			}
+		},
 	})
 
 	// Dual authorisation. The same files and the same engine the command line
