@@ -31,7 +31,8 @@ func painterAt(t *testing.T, url string) *HTTPModel {
 	}
 }
 
-// The bytes are asked for, not a link.
+// The bytes come back, and response_format, which OpenAI's current image
+// models refuse, is sent only when the route asks for it.
 func TestPaintAsksForTheBytes(t *testing.T) {
 	var asked map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(
@@ -45,13 +46,20 @@ func TestPaintAsksForTheBytes(t *testing.T) {
 		}))
 	defer srv.Close()
 
-	pic, err := painterAt(t, srv.URL).Paint(
-		context.Background(), "a brass pen", "512x512")
+	m := painterAt(t, srv.URL)
+	pic, err := m.Paint(context.Background(), "a brass pen", "512x512")
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, sent := asked["response_format"]; sent {
+		t.Errorf("response_format was sent unasked: %v", asked["response_format"])
+	}
+	m.Params.AskBase64 = true
+	if _, err := m.Paint(context.Background(), "a brass pen", "512x512"); err != nil {
+		t.Fatal(err)
+	}
 	if asked["response_format"] != "b64_json" {
-		t.Errorf("it asked for %v", asked["response_format"])
+		t.Errorf("a route asking for the bytes asked for %v", asked["response_format"])
 	}
 	if asked["model"] != "a-painter" {
 		t.Errorf("it asked model %v; the image model is a separate setting "+
@@ -101,7 +109,7 @@ func TestALinkInTheReplyIsRefusedAndNeverFetched(t *testing.T) {
 	if reached {
 		t.Error("the address the model named was fetched")
 	}
-	if !strings.Contains(err.Error(), "b64_json") {
+	if !strings.Contains(err.Error(), "--ask-base64") {
 		t.Errorf("the refusal does not say which knob turns it into a yes: %v",
 			err)
 	}

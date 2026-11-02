@@ -113,6 +113,7 @@ importing
   quilzo media edit ID --crop 16:9        derive a crop; the original stays
   quilzo media generate "..." --alt "..."  ask a model; marked as generated
   quilzo media captions VIDEO FILE --lang en  a video will not publish without
+  quilzo media transcribe VIDEO --lang en --author WHO  a model drafts them; you attach
   quilzo media verify [ID]                check every manifest, ours and theirs
   quilzo form list | expire | erase VALUE  forms, retention and erasure
   quilzo listing list | run NAME           declared queries a page can show

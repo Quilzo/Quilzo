@@ -42,8 +42,15 @@ import (
 // of the machine it runs on.
 //
 // So the answer is no, and it says which knob turns it into a yes.
-// response_format is part of the API every implementation of it supports, and
-// an endpoint that ignores it is one this program cannot safely use.
+//
+// # Why response_format is sent only when a route asks
+//
+// It used to be sent on every request, and OpenAI's current image models
+// refuse it as an unknown parameter: they always answer with the bytes. So
+// every picture asked of OpenAI failed. Those models, and most endpoints
+// built after them, answer with base64 unasked; an endpoint that answers
+// with a link unless asked (DALL·E, some local servers) is asked when its
+// route says so (Params.AskBase64, quilzo gateway route add --ask-base64).
 
 // A Picture is what a model returned, before anything has been decided about
 // whether it is acceptable.
@@ -105,10 +112,10 @@ func (h *HTTPModel) Paint(ctx context.Context, prompt, size string) (Picture, er
 				"message about the far end")
 	}
 
-	payload := map[string]any{
-		"model": model, "prompt": prompt, "n": 1, "size": size,
+	payload := map[string]any{"model": model, "prompt": prompt, "n": 1, "size": size}
+	if h.Params.AskBase64 {
 		// The bytes, not a link. See the note at the top of this file.
-		"response_format": "b64_json",
+		payload["response_format"] = "b64_json"
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -137,8 +144,9 @@ func (h *HTTPModel) Paint(ctx context.Context, prompt, size string) (Picture, er
 		if len(snippet) > 300 {
 			snippet = snippet[:300]
 		}
-		return Picture{}, fmt.Errorf("the model returned %d: %s",
-			resp.StatusCode, snippet)
+		// A StatusError, as for words, so the gateway can tell a request it
+		// must give back from a route that cannot answer.
+		return Picture{}, &StatusError{Code: resp.StatusCode, Body: snippet}
 	}
 
 	var out struct {
@@ -162,9 +170,9 @@ func (h *HTTPModel) Paint(ctx context.Context, prompt, size string) (Picture, er
 				"this endpoint answered with a link rather than the picture, " +
 					"and a link in a model's reply is an address the model " +
 					"chose. Fetching it would mean this program making a " +
-					"request to a host a language model named. Ask the " +
-					"provider for response_format=b64_json, or use one that " +
-					"honours it")
+					"request to a host a language model named. Ask it for the " +
+					"picture itself: add the route with --ask-base64 (it sends " +
+					"response_format=b64_json), or use an endpoint that honours it")
 		}
 		return Picture{}, fmt.Errorf("the model's reply carries no image data")
 	}

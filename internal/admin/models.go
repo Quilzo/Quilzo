@@ -157,7 +157,7 @@ func (s *Server) handleModelsChange(w http.ResponseWriter, r *http.Request) {
 			params := gateway.RouteParams{MaxTokens: strings.TrimSpace(r.FormValue("max_tokens_field")),
 				Timeout: strings.TrimSpace(r.FormValue("timeout")), AutoToolChoice: r.FormValue("auto_tool_choice") == "yes",
 				Effort: strings.TrimSpace(r.FormValue("effort")), Geo: strings.TrimSpace(r.FormValue("geo")),
-				Fallback: r.FormValue("server_fallback") == "yes"}
+				Fallback: r.FormValue("server_fallback") == "yes", AskBase64: r.FormValue("ask_base64") == "yes"}
 			for _, f := range []struct {
 				field string
 				into  **float64
@@ -182,6 +182,8 @@ func (s *Server) handleModelsChange(w http.ResponseWriter, r *http.Request) {
 				Params:       params,
 				Draws:        r.FormValue("draws") == "yes",
 				Embeds:       r.FormValue("embeds") == "yes",
+				Transcribes:  r.FormValue("transcribes") == "yes",
+				PriceMinute:  strings.TrimSpace(r.FormValue("price_minute")),
 				PricePicture: strings.TrimSpace(r.FormValue("price_picture"))}
 			// A provider chosen: its address from its profile, its
 			// parameter checked before it goes into a host name, and its

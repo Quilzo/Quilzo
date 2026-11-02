@@ -111,7 +111,30 @@ Unreleased
     a template; it now points at the editor, and keeps the code for a
     design of one's own under a disclosure.
 
+** Fixed
+
+*** Pictures from OpenAI's current image models.  Every request for a
+    picture carried response_format=b64_json, which those models refuse
+    as an unknown parameter, so quilzo media generate through OpenAI
+    failed.  It is sent now only for a route added with --ask-base64 (or
+    "Ask it for the picture itself" on the Models screen), for an
+    endpoint that answers with a link unless asked; a link is still never
+    fetched.  A provider's refusal of a picture (its content policy) goes
+    back to whoever asked, rather than resting the route and trying the
+    next.
+
 ** Added
+
+*** A model drafts a video's captions.  quilzo media transcribe VIDEO
+    --lang en --author WHO sends the recording to a route that transcribes
+    (quilzo gateway route add NAME --transcribes, or "It transcribes
+    recordings" on the Models screen).  The timed text comes back as
+    WebVTT and is stored as a caption file marked as a model's, unattached.
+    A person reads it, mends it, and attaches it with quilzo media
+    captions, so the gate that refuses a video without captions is
+    satisfied by a person and not by a model.  A recording's voices cannot
+    be masked, so it goes only to a route allowed personal data, and it
+    is charged by the minute (--price-minute).
 
 *** Chatbots find passages by what they mean, not only by their words.
     Add a route that makes embeddings (quilzo gateway route add NAME
