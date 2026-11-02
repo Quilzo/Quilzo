@@ -125,6 +125,15 @@ Unreleased
 
 ** Added
 
+*** Staff hear when an agent waits for them.  An agent's run that stops
+    to ask a person to approve what it would do, or to answer it, is a
+    new event, approval.waiting, in notify.events by default.  Staff are
+    told by mail, or in Slack, Teams or Discord (notify.staff), which
+    agent waits, never what it would do, with the admin's address;
+    deciding is still done signed in, under Approvals.  No agent may
+    start from it, since an agent started by another's waiting is how a
+    queue feeds itself.
+
 *** A calendar and issues, ready-made for agents acting for somebody.
     quilzo integrations template lists them, and quilzo integrations
     template google-calendar (or microsoft-calendar, github-issues)

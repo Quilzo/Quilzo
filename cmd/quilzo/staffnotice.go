@@ -108,6 +108,11 @@ func staffNotice(events []event.Event, held int, admin string) (subject, body st
 			lines = append(lines, fmt.Sprintf("%s for %s.", plural2(n, "A booking was made", "bookings were made"), about))
 		case event.BookingCancelled:
 			lines = append(lines, fmt.Sprintf("%s for %s.", plural2(n, "A booking was cancelled", "bookings were cancelled"), about))
+		case event.ApprovalWaiting:
+			// Which agent, never what it would do: a notice goes to a
+			// channel, and deciding is done signed in, under Approvals.
+			lines = append(lines, fmt.Sprintf("The agent %s is waiting for a person (%s). Decide under Approvals.",
+				about, plural2(n, "once", "times")))
 		default:
 			line := fmt.Sprintf("%s: %s", strings.ToUpper(event.Describe(k.t)[:1])+event.Describe(k.t)[1:],
 				plural2(n, "once", "times"))

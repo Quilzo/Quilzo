@@ -115,6 +115,9 @@ func (t Trigger) Validate() error {
 	if !event.Known(event.Type(t.On)) {
 		return fmt.Errorf("%q is neither an event nor %q", t.On, OnSchedule)
 	}
+	if !event.Triggerable(event.Type(t.On)) {
+		return fmt.Errorf("no agent starts from %s: an agent started by another's waiting is how a queue feeds itself", t.On)
+	}
 	if t.Every != 0 || t.At != "" || t.Zone != "" {
 		return fmt.Errorf("a trigger on %s happens when it does, with no every, at or zone", t.On)
 	}
