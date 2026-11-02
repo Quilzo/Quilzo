@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/assistant"
+	"github.com/quilzo/quilzo/internal/chatact"
 	"github.com/quilzo/quilzo/internal/form"
 	"github.com/quilzo/quilzo/internal/handoff"
 	"github.com/quilzo/quilzo/internal/rate"
@@ -65,6 +66,14 @@ type Assistants struct {
 	Questions *rate.Limiter
 	// Audit records that a question was asked, never what.
 	Audit func(name, source string, answered bool)
+	// Act hands on a visitor's confirmed request to a chatbot's agent
+	// (internal/chatact), and Answer reads its answer back: whether there
+	// is one, and whether the request was made at all. VisitorKey is the
+	// key the host site signs visitors' tokens with, for an assistant that
+	// names one. Nil Act offers no agent action.
+	Act        func(chatact.Request) error
+	Answer     func(id string) (res chatact.Result, answered, made bool)
+	VisitorKey func(assistant.Assistant) []byte
 	// Unanswered is told a question a chatbot could not answer, for the
 	// owner's record of what the site does not say (chatbot.gaps). Nil,
 	// which it is unless the owner turned that on, keeps nothing.
@@ -145,7 +154,7 @@ func (st *Site) ask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if rest != "" {
-		if !st.handoffRoute(w, r, a, rest) {
+		if !st.actRoute(w, r, a, rest) && !st.handoffRoute(w, r, a, rest) {
 			st.notFound(w, r)
 		}
 		return
@@ -160,6 +169,7 @@ func (st *Site) ask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	view.Embedded, view.Panel = embedMode(r.URL.Query().Get("embed"))
+	view.Visitor = visitorToken(r.URL.Query().Get("v"))
 	if a.Launcher != nil {
 		view.Suggestions = a.Launcher.Suggestions
 	}
@@ -187,6 +197,7 @@ func (st *Site) ask(w http.ResponseWriter, r *http.Request) {
 		}
 		view.Question = r.PostFormValue("q")
 		view.Previous = r.PostFormValue("prev")
+		view.Visitor = visitorToken(r.PostFormValue("v"))
 		view.Embedded, view.Panel = embedMode(r.PostFormValue("embed"))
 		if !st.answer(w, r, a, &view) {
 			return
@@ -263,7 +274,11 @@ func (st *Site) answer(w http.ResponseWriter, r *http.Request,
 	view.Cards = st.cardsFor(view.Sources, ans)
 	view.FollowUps = followUps(a, view.Question, &ans, view.Sources)
 	if ans.Proposed != nil {
-		view.Offer = st.offerFor(*ans.Proposed)
+		if ans.Proposed.Action.Kind == assistant.Agent {
+			view.Offer = st.agentOffer(*ans.Proposed, view.Visitor, a)
+		} else {
+			view.Offer = st.offerFor(*ans.Proposed)
+		}
 	}
 	return true
 }
@@ -421,6 +436,9 @@ type askView struct {
 	// Handoff is where the "talk to a person" form posts, when this
 	// assistant may hand over.
 	Handoff string
+	// Visitor is the host site's signed token about the visitor, carried
+	// from the address the page was opened at to the forms it posts.
+	Visitor string
 }
 
 // EmbedValue is how the page was framed, carried on its forms: "panel" for
@@ -451,6 +469,11 @@ type askOffer struct {
 	Form                           string
 	Fields                         []askField
 	Stamp                          string
+	// Action names an agent action, Writes says it may change something,
+	// and Token is the host site's word about the visitor, carried.
+	Action string
+	Writes bool
+	Token  string
 }
 
 type askField struct {
@@ -658,7 +681,21 @@ var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
 </section>
 {{with .V.Offer}}
 <section class="qz-offer" aria-label="Something I can help with">
-  {{if eq .Kind "link"}}<p><a class="qz-button" href="{{.Href}}"{{if $.V.Panel}} target="_top"{{else if $.V.Embedded}} target="_blank" rel="noopener"{{end}}>{{.Label}}</a></p>
+  {{if eq .Kind "agent"}}
+  <h2>{{.Label}}</h2>
+  <p>Check what will be asked, change anything that is wrong, and press to ask it.
+    {{if .Writes}}It may make a change for you once you do.{{else}}It only looks things up; it changes nothing.{{end}}</p>
+  <form method="post" action="/ask/{{$.V.Assistant.Name}}/act">
+    <input type="hidden" name="action" value="{{.Action}}">
+    {{if .Token}}<input type="hidden" name="v" value="{{.Token}}">{{end}}
+    {{if $.V.EmbedValue}}<input type="hidden" name="embed" value="{{$.V.EmbedValue}}">{{end}}
+    {{range .Fields}}
+    <p><label for="a-{{.Name}}">{{.Label}}</label><br>
+    <input id="a-{{.Name}}" name="a_{{.Name}}" type="text" value="{{.Value}}" maxlength="300" required></p>
+    {{end}}
+    <p><button type="submit">Ask</button></p>
+  </form>
+  {{else if eq .Kind "link"}}<p><a class="qz-button" href="{{.Href}}"{{if $.V.Panel}} target="_top"{{else if $.V.Embedded}} target="_blank" rel="noopener"{{end}}>{{.Label}}</a></p>
   {{else}}
   <h2>{{.Label}}</h2>
   <p>I have filled in what I could. Check it, change anything that is
@@ -702,6 +739,7 @@ var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
 {{end}}
 <form method="post" action="/ask/{{.V.Assistant.Name}}" class="qz-ask-form"{{if and .Tools (not .V.Embedded)}} toolname="ask-{{.V.Assistant.Name}}" tooldescription="{{.V.Assistant.Title}}: answers a question from this site's published pages only, and every sentence links to the page it came from." toolautosubmit{{end}}>
   {{if .V.Answer}}<input type="hidden" name="prev" value="{{.V.Question}}">{{end}}
+  {{if .V.Visitor}}<input type="hidden" name="v" value="{{.V.Visitor}}">{{end}}
   {{if .V.Embedded}}<input type="hidden" name="embed" value="{{.V.EmbedValue}}">{{end}}
   <label for="q">{{if .V.Answer}}Ask another question{{else}}Your question{{end}}</label>
   <textarea id="q" name="q" rows="2" maxlength="1000" required{{if not .V.Embedded}} autofocus{{end}}{{if and .Tools (not .V.Embedded)}} toolparamdescription="The question, in plain words."{{end}}></textarea>
@@ -847,4 +885,18 @@ func inAbout(d time.Duration) string {
 	default:
 		return fmt.Sprintf("in about %d minutes", (s+59)/60)
 	}
+}
+
+// visitorToken is a token as it may be carried: short, one line, and the
+// characters a signed token has, or nothing.
+func visitorToken(s string) string {
+	if s == "" || len(s) > assistant.MaxVisitorToken {
+		return ""
+	}
+	for _, r := range s {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.') {
+			return ""
+		}
+	}
+	return s
 }

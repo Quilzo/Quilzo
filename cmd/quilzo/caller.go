@@ -77,6 +77,10 @@ type Caller struct {
 	// trigger started it: an event it causes carries them, so agents do not
 	// set each other off for ever (internal/event.MaxChain).
 	Chain []string
+	// Untrusted says a run starts with somebody else's words in its goal (a
+	// visitor's request to a chatbot's agent), so it is tainted from its
+	// first step, as reading a page would make it.
+	Untrusted string
 }
 
 // tokenFile is preferred over the environment.

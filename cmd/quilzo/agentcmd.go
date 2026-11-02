@@ -1044,6 +1044,9 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 		defer stoppedBy()
 	}
 	sess := agent.NewSession(m, nil)
+	if caller != nil && caller.Untrusted != "" {
+		sess.ReadVisitor(caller.Untrusted)
+	}
 	if from.Prior != nil {
 		sess.Recall(from.Prior.Receipt.Sources, from.Prior.Receipt.Omitted)
 		sess.RecallPrivate(from.Prior.Receipt.Private)

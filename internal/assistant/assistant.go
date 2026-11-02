@@ -88,6 +88,10 @@ type Assistant struct {
 	// Launcher puts the assistant on the site's pages: a button in a corner
 	// that opens it in a panel, without leaving the page. Nil is no launcher.
 	Launcher *Launcher `json:"launcher,omitempty"`
+	// IdentitySecret names the sealed credential the host site signs a
+	// visitor's token with (VerifyVisitor), for agent actions that need to
+	// know who they act for. Never the key itself.
+	IdentitySecret string `json:"identity_secret,omitempty"`
 }
 
 // Launcher is how an assistant appears on the site's pages.
@@ -238,6 +242,12 @@ const (
 	// and submits. The form's own validation, rate limit and storage apply;
 	// the assistant only pre-fills it.
 	Form ActionKind = "form"
+	// Agent asks one of the site's agents to do something for the visitor:
+	// look up a booking, find a time, check an order. The visitor sees what
+	// will be asked and presses to ask it; the agent runs on its sponsor's
+	// authority, reading only unless the action says it writes, with what
+	// the visitor typed treated as somebody else's words.
+	Agent ActionKind = "agent"
 )
 
 // Action is one thing an assistant may offer to do.
@@ -250,6 +260,14 @@ type Action struct {
 	// Fields are the form fields the model may pre-fill. A field not listed
 	// here is never filled by the model, however it asks.
 	Fields []string `json:"fields,omitempty"`
+	// Writes lets an agent action change something once the visitor
+	// confirms: a draft, a proposal, or a request a person approves. Off,
+	// the agent only reads.
+	Writes bool `json:"writes,omitempty"`
+	// Identity offers an agent action only to a visitor the host site
+	// vouches for (Assistant.IdentitySecret), and gives the agent what the
+	// site said about them.
+	Identity bool `json:"identity,omitempty"`
 }
 
 func (a Action) fieldNames() []string { return a.Fields }
@@ -260,7 +278,11 @@ type Proposal struct {
 	Args   map[string]string `json:"args,omitempty"`
 }
 
-var reName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
+var (
+	reName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
+	// reField is what an agent action asks a visitor for: booking_ref.
+	reField = regexp.MustCompile(`^[a-z][a-z0-9_]{0,31}$`)
+)
 
 // Limits on what an owner can declare, so a declaration cannot be the way a
 // prompt grows to a size that costs more than the page it serves.
@@ -381,9 +403,28 @@ func (a Assistant) Validate() error {
 				return fmt.Errorf("action %s pre-fills a form and names no "+
 					"field it may fill", ac.Name)
 			}
+		case Agent:
+			if !reName.MatchString(ac.Target) {
+				return fmt.Errorf("action %s asks the agent %q, which is not an agent's name", ac.Name, ac.Target)
+			}
+			if len(ac.Fields) > 8 {
+				return fmt.Errorf("action %s asks for %d things; at most 8", ac.Name, len(ac.Fields))
+			}
+			for _, f := range ac.Fields {
+				if !reField.MatchString(f) {
+					return fmt.Errorf("action %s asks for %q, which is not a field's name", ac.Name, f)
+				}
+			}
+			if ac.Identity && strings.TrimSpace(a.IdentitySecret) == "" {
+				return fmt.Errorf("action %s is for a visitor the site vouches for, and %s names no credential "+
+					"the site signs with (identity_secret)", ac.Name, a.Name)
+			}
 		default:
-			return fmt.Errorf("action %s is a %q; an action is a link or a "+
-				"form", ac.Name, ac.Kind)
+			return fmt.Errorf("action %s is a %q; an action is a link, a "+
+				"form or an agent", ac.Name, ac.Kind)
+		}
+		if ac.Kind != Agent && (ac.Writes || ac.Identity) {
+			return fmt.Errorf("action %s is a %s, and only an agent action writes or knows who the visitor is", ac.Name, ac.Kind)
 		}
 		if strings.TrimSpace(ac.Target) == "" || strings.ContainsAny(ac.Target, "\\:") ||
 			strings.Contains(ac.Target, "..") || strings.HasPrefix(ac.Target, "//") {
@@ -446,7 +487,7 @@ func (a Assistant) Propose(call ActionCall) (Proposal, error) {
 			continue
 		}
 		p := Proposal{Action: ac}
-		if ac.Kind == Form {
+		if ac.Kind == Form || ac.Kind == Agent {
 			allowed := map[string]bool{}
 			for _, f := range ac.Fields {
 				allowed[f] = true

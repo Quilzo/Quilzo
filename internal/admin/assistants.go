@@ -349,6 +349,8 @@ func (s *Server) handleAssistantAction(w http.ResponseWriter, r *http.Request) {
 				Target:      strings.TrimSpace(r.FormValue("target")),
 				Description: strings.TrimSpace(r.FormValue("description")),
 				Fields:      splitCSV(r.FormValue("fields")),
+				Writes:      r.FormValue("writes") == "1",
+				Identity:    r.FormValue("identity") == "1",
 			})
 		}
 		a.Actions = kept

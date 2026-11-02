@@ -57,7 +57,8 @@
    "*"
   ],
   "crypto/hmac": [
-   "*"
+   "*",
+   "chatbots"
   ],
   "crypto/hpke": [
    "*"

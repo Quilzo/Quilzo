@@ -369,7 +369,7 @@ publishing
 the assistant
   quilzo assist "..." --author WHO         propose changes; marks what it writes
   quilzo assistant add NAME --title T      declare a chatbot that answers from the site
-  quilzo assistant action NAME ACTION      what it may offer to do: a link or a form
+  quilzo assistant action NAME ACTION      what it may offer to do: a link, a form, or an agent it asks
   quilzo assistant ask NAME "question"     try it, with its sources and what was removed
   quilzo assistant eval NAME CASES.jsonl   measure it, including what it should refuse
   quilzo assistant gaps NAME [--check] [--close KEY]

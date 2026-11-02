@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/assistant"
+	"github.com/quilzo/quilzo/internal/chatact"
 	"github.com/quilzo/quilzo/internal/form"
 	"github.com/quilzo/quilzo/internal/rate"
 	"github.com/quilzo/quilzo/internal/render"
@@ -434,5 +435,80 @@ func TestAnUnansweredQuestionIsHandedOn(t *testing.T) {
 	askPost(st, "help", "do you sell laptops?")
 	if len(kept) != 1 || kept[0] != "help: do you sell laptops?" {
 		t.Fatalf("%v", kept)
+	}
+}
+
+// A visitor's confirmed request to a chatbot's agent is handed on with
+// only what the action asks for, and the page it leads to waits for the
+// answer and then shows it, escaped; one the site must vouch for is
+// refused without the site's word.
+func TestAVisitorAsksAChatbotsAgent(t *testing.T) {
+	bot := shopBot
+	bot.IdentitySecret = "shop-visitors"
+	bot.Actions = []assistant.Action{
+		{Name: "booking", Kind: assistant.Agent, Target: "bookings", Description: "Look up your booking", Fields: []string{"booking_ref"}},
+		{Name: "orders", Kind: assistant.Agent, Target: "orders", Description: "Check your order", Identity: true},
+	}
+	st, _ := askSite(t, bot)
+	key := []byte("a key the shop and the chatbot share")
+	var asked []chatact.Request
+	results := map[string]chatact.Result{}
+	st.Assistants.Act = func(r chatact.Request) error { asked = append(asked, r); return nil }
+	st.Assistants.Answer = func(id string) (chatact.Result, bool, bool) {
+		for _, r := range asked {
+			if r.ID == id {
+				res, ok := results[id]
+				return res, ok, true
+			}
+		}
+		return chatact.Result{}, false, false
+	}
+	st.Assistants.VisitorKey = func(assistant.Assistant) []byte { return key }
+	post := func(form url.Values) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/ask/help/act", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.RemoteAddr = "198.51.100.9:1234"
+		w := httptest.NewRecorder()
+		st.Handler().ServeHTTP(w, req)
+		return w
+	}
+	w := post(url.Values{"action": {"booking"}, "a_booking_ref": {"  HB-2201  "}, "a_other": {"x"}})
+	if w.Code != http.StatusSeeOther || len(asked) != 1 || asked[0].Args["booking_ref"] != "HB-2201" || len(asked[0].Args) != 1 {
+		t.Fatalf("%d %+v", w.Code, asked)
+	}
+	where := w.Header().Get("Location")
+	if !strings.HasPrefix(where, "/ask/help/act/"+asked[0].ID) {
+		t.Fatalf("%s", where)
+	}
+	if g := get(st, where, nil); g.Code != 200 || !strings.Contains(g.Body.String(), "Working on it") || g.Header().Get("Refresh") == "" {
+		t.Fatalf("%d %s", g.Code, g.Body.String())
+	}
+	results[asked[0].ID] = chatact.Result{ID: asked[0].ID, State: chatact.Done, Answer: "Your table is at 7pm <b>tonight</b>."}
+	g := get(st, where, nil)
+	if !strings.Contains(g.Body.String(), "Your table is at 7pm &lt;b&gt;tonight&lt;/b&gt;.") || g.Header().Get("Refresh") != "" {
+		t.Fatalf("%s", g.Body.String())
+	}
+	results[asked[0].ID] = chatact.Result{ID: asked[0].ID, State: chatact.Person}
+	if g := get(st, where, nil); !strings.Contains(g.Body.String(), "A person needs to look at this") {
+		t.Fatalf("%s", g.Body.String())
+	}
+	// Not a request anybody made.
+	if g := get(st, "/ask/help/act/"+strings.Repeat("a", 32), nil); g.Code != http.StatusNotFound {
+		t.Errorf("%d", g.Code)
+	}
+	// A field left empty, an action that is not one, and one only for a
+	// visitor the site vouches for.
+	if w := post(url.Values{"action": {"booking"}}); w.Code != http.StatusBadRequest {
+		t.Errorf("an empty field: %d", w.Code)
+	}
+	if w := post(url.Values{"action": {"refund"}}); w.Code != http.StatusBadRequest {
+		t.Errorf("an action that is not one: %d", w.Code)
+	}
+	if w := post(url.Values{"action": {"orders"}, "v": {"made.up"}}); w.Code != http.StatusForbidden {
+		t.Errorf("an unsigned visitor: %d", w.Code)
+	}
+	tok := assistant.SignVisitor(map[string]string{"customer": "c-1042"}, key, time.Now().Add(time.Hour))
+	if w := post(url.Values{"action": {"orders"}, "v": {tok}}); w.Code != http.StatusSeeOther || asked[len(asked)-1].Token != tok {
+		t.Errorf("a signed visitor: %d", w.Code)
 	}
 }
