@@ -1,6 +1,8 @@
 {{template "head" .}}
 <h1>Edit {{if .PageTitle}}“{{.PageTitle}}”{{else}}{{.Name}}{{end}}</h1>
 {{if or .PageTitle .Type}}<p class="help">{{if .PageTitle}}The page <code>{{.Name}}</code>. {{end}}{{if .Type}}It is a <strong>{{.Type}}</strong>, so it must have the fields that type asks for.{{end}}</p>{{end}}
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
 {{with .HeldBy}}
 <div class="notice warn">
   <p><strong>{{.Holder}}</strong> opened this page for editing recently{{if .Note}} — {{.Note}}{{end}}.</p>
@@ -193,6 +195,30 @@
 {{end}}
 </div>
 </div>
+
+{{if or .CanShare .ShareLinks}}
+<section id="share" class="card" aria-labelledby="share-h">
+  <h2 id="share-h">Share this draft</h2>
+  <p class="help">A link for somebody with no account: this page as the draft is now, on the public site,
+    never indexed. Later changes do not reach it; revoke it, or let it expire.</p>
+  {{if .CanShare}}
+  <form method="post" action="/shares" class="inline">
+    <input type="hidden" name="op" value="share"><input type="hidden" name="page" value="{{.Name}}">
+    <label for="share-days">For</label>
+    <select id="share-days" name="days"><option value="1">a day</option><option value="7" selected>a week</option>
+      <option value="30">thirty days</option></select>
+    <button class="btn tonal" type="submit">Make a link</button>
+  </form>
+  {{end}}
+  {{if .ShareLinks}}<ul>
+  {{range .ShareLinks}}<li>{{if .Live}}<code>{{.URL}}</code>, until {{.Expires.Format "2 Jan 15:04"}}, by {{.By}}
+    <form method="post" action="/shares" class="inline"><input type="hidden" name="op" value="revoke">
+      <input type="hidden" name="page" value="{{$.Name}}"><input type="hidden" name="id" value="{{.ID}}">
+      <button class="btn-text" type="submit">Revoke</button></form>
+  {{else}}<span class="hint">ended: {{.ID}}</span>{{end}}</li>{{end}}
+  </ul>{{end}}
+</section>
+{{end}}
 
 <aside class="preview" aria-labelledby="preview-h">
   <h2 id="preview-h">The page</h2>

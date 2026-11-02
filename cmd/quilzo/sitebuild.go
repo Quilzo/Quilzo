@@ -75,6 +75,8 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 		note = func(string, ...any) {}
 	}
 	st := public.New(s, design.Layouts)
+	// A draft shared for review, at /shared/ID (sharecmd.go).
+	st.Shared = func(id string) (string, bool) { return renderShared(root, design, id, time.Now()) }
 	st.Fonts = design.Fonts
 	st.Stylesheet = design.Stylesheet
 	st.IconStyle = design.Theme.IconStyle()

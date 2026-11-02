@@ -458,6 +458,8 @@ encryption at rest
   quilzo vault rewrap                      move what is there onto it
       QUILZO_KEY / _KEY_FILE / _KEY_COMMAND  where the key comes from
   quilzo secret set NAME < file            keep a credential an agent uses, sealed
+  quilzo share PAGE [--days 7] | list | revoke ID
+                                           a link to a draft page for somebody with no account
   quilzo backup key | create FILE | verify FILE | restore FILE --into DIR
                                            the whole store, encrypted, checked; daily with backup.dir
   quilzo secret list | remove NAME         what is kept, by name; never the value
@@ -856,6 +858,8 @@ func main() {
 		err = cmdConnect(root, cmdArgs)
 	case "backup":
 		err = cmdBackup(root, cmdArgs)
+	case "share":
+		err = cmdShare(root, cmdArgs)
 	case "browser":
 		err = cmdBrowser(root, cmdArgs)
 	case "cell":

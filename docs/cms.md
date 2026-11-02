@@ -719,13 +719,14 @@ It cannot read a submission back: reading the postbag happens in the admin,
 behind authentication.
 
 The studio is a separate process for the same reason, arriving from the
-opposite direction. The admin's policy is `default-src 'none'` and a test asserts its screens execute
-nothing, but `getDisplayMedia` and `MediaRecorder` are JavaScript APIs — there
-is no form post that reaches a screen and there will not be one. So either
-recording does not happen here, or something runs a script. Rather than open a
-nonce route in the admin and weaken the claim that holds everywhere else, the
-capture surface is its own process: **the argument for that header is that the
-admin has no scripts, not that it has some the policy catches.**
+opposite direction. The admin's policy is `default-src 'none'` with one script
+allowed, its own, by a nonce on each response. It finds a screen by name, keeps
+a form's unsaved words for its tab, and sends what the admin's own forms send,
+to the admin and nowhere else; every screen works without it. `getDisplayMedia` and `MediaRecorder` are JavaScript
+APIs with no form post behind them, and capturing a screen or a microphone is
+not a script the admin should carry. So the capture surface is its own process:
+**the argument for that header is that the admin's one script does nothing a
+form cannot, not that the policy catches the rest.**
 
 ## What is in it
 
@@ -1847,7 +1848,28 @@ to break.
 
 There is no live cursor in a shared document, and there will not be. That
 feature is JavaScript by construction — an editor, a transport, and a CRDT in
-the browser — and this admin serves no script at all.
+the browser — and the admin's one script sends only what its own forms would.
+
+### Seeing it, and showing it, before it is published
+
+The preview beside the editor shows what is typed, a moment after typing
+stops: rendered through the site's own layouts, as a reader would get it, and
+saved nowhere. Without the script, "Show in the preview" does the same.
+What is typed and not saved is kept for the tab, so a reload offers to put it
+back. Showing unsaved words takes what saving takes: somebody who may only read
+sees the saved draft.
+
+A draft can be shown to somebody with no account — a client, a colleague
+elsewhere — with a link: `quilzo share PAGE [--days 7]`, or "Make a link" in
+the page's editor. The link is to that page as the draft was when it was
+shared, not as it is later, so a link sent last week cannot show somebody what
+was written since. It is a random id nobody can guess, lives thirty days at the
+most, and ends at once with `quilzo share revoke ID` or Revoke in the editor.
+The public site serves it at `/shared/ID` with a note saying it is a draft and
+headers asking that it not be indexed, stored, or referred onward; an ended link
+is the site's own 404, the same as one that never was. Sharing takes what
+publishing takes, since it shows the page outside; ending a link takes what
+editing the page takes. Both are in the audit log.
 
 ---
 

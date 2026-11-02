@@ -242,6 +242,9 @@ type Server struct {
 	// Connections are people's own accounts elsewhere, for agents acting
 	// for them (connections.go). Nil shows the screen as unavailable.
 	Connections *Connections
+	// Shares are links to a draft page for somebody with no account
+	// (shares.go). Nil offers no sharing.
+	Shares *Shares
 
 	// Assistants are the site's chatbots: declared here, served by the
 	// public site at /ask/NAME.
@@ -1344,6 +1347,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/security/verify", s.handleVerify)
 	mux.HandleFunc("/security/agents", s.handleAgentsScreen)
 	mux.HandleFunc("/models", s.handleModels)
+	mux.HandleFunc("/shares", s.handleShares)
 	mux.HandleFunc("/connections", s.handleConnections)
 	mux.HandleFunc("/connections/change", s.handleConnectionsChange)
 	mux.HandleFunc("/connections/callback", s.handleConnectionsCallback)
@@ -2352,6 +2356,10 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 		"Incoming":    incoming,
 		"Base":        base, "HeldBy": heldBy,
 		"CanEdit": s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/"+name).Allowed,
+		"CanShare": exists && s.Shares != nil && s.Shares.Create != nil &&
+			s.Policy.Evaluate(p.Name, auth.ActPublish, "/"+name).Allowed,
+		"ShareLinks": s.sharesFor(name),
+		"Message":    r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"),
 	})
 }
 
