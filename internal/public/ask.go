@@ -65,6 +65,10 @@ type Assistants struct {
 	Questions *rate.Limiter
 	// Audit records that a question was asked, never what.
 	Audit func(name, source string, answered bool)
+	// Unanswered is told a question a chatbot could not answer, for the
+	// owner's record of what the site does not say (chatbot.gaps). Nil,
+	// which it is unless the owner turned that on, keeps nothing.
+	Unanswered func(name, question string)
 	// Handoff keeps conversations an assistant passed to a person. Nil means
 	// no assistant on this site can hand over, whatever it declares.
 	Handoff *handoff.Store
@@ -243,6 +247,9 @@ func (st *Site) answer(w http.ResponseWriter, r *http.Request,
 	}
 	if st.Assistants.Audit != nil {
 		st.Assistants.Audit(a.Name, sourceOf(r), !ans.Refused)
+	}
+	if ans.Refused && st.Assistants.Unanswered != nil {
+		st.Assistants.Unanswered(a.Name, view.Question)
 	}
 	if !ans.Refused {
 		st.convert(r, "chatbot:"+a.Name)

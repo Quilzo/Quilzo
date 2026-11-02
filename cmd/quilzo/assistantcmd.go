@@ -18,6 +18,7 @@ import (
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/gaps"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 )
@@ -47,9 +48,11 @@ func cmdAssistant(root string, args []string) error {
 		return assistantAsk(root, args[1:])
 	case "eval":
 		return assistantEval(root, args[1:])
+	case "gaps":
+		return assistantGaps(root, args[1:])
 	default:
 		return fmt.Errorf("unknown assistant command %q; try list, add, "+
-			"action, remove, ask or eval", args[0])
+			"action, remove, ask, eval or gaps", args[0])
 	}
 }
 
@@ -544,6 +547,23 @@ func assistantsCapability(root string) *admin.Assistants {
 				return nil, err
 			}
 			return set.Names(), nil
+		},
+		Gaps: func(name string) ([]gaps.Group, bool, error) {
+			groups, err := gapGroups(root, name, time.Now())
+			return groups, mustConfig(root).Bool("chatbot.gaps"), err
+		},
+		CheckGaps: func(ctx context.Context, name, by string) (int, int, error) {
+			r, err := checkGaps(ctx, root, name, by, time.Now())
+			return r.Asked, r.Closed, err
+		},
+		CloseGap: func(name, key, by string) error {
+			if err := gapLedger(root).Close(name, key, gaps.Closure{At: time.Now().UTC(), By: by, How: "dismissed"}); err != nil {
+				return err
+			}
+			record(root, audit.Record{Action: "assistant.gaps.closed", Resource: "/ask/" + name,
+				Outcome: audit.Success, Principal: by, Kind: audit.KindHuman, Verified: true,
+				Detail: map[string]string{"assistant": name, "group": key}})
+			return nil
 		},
 	}
 }

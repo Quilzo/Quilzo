@@ -252,7 +252,7 @@ var coverage = map[string]surfaces{
 	// publish and it does not decide what a public one may do.
 	"assistant": {
 		GUI: "/assistants",
-		MCP: []string{"list_assistants", "ask_assistant", "declare_assistant"},
+		MCP: []string{"list_assistants", "ask_assistant", "declare_assistant", "list_chatbot_gaps"},
 	},
 
 	"inbox": {

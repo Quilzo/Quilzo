@@ -28,6 +28,53 @@ import (
 // not the launching.
 
 func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
+	// What a chatbot could not answer, grouped and masked, for an agent
+	// that drafts the pages that would: only when the owner keeps them and
+	// lets agents read them, and for an author, as the Inbox is.
+	srv.Register(mcp.Operation{
+		Name: "list_chatbot_gaps", NeedsRole: "author",
+		Summary: "what visitors asked a chatbot that it could not answer, grouped by subject, to write the pages that answer them",
+		Detail: "Visitors' questions with their details masked, most asked first, each group with a key. " +
+			"Write the page that answers a group as a draft for a person to review; once the site is " +
+			"published the chatbot is asked again and a group it answers is closed. Only when the owner " +
+			"keeps unanswered questions (chatbot.gaps) and lets agents read them (chatbot.gaps_agents).",
+		Args:     map[string]string{"name": "the chatbot"},
+		Keywords: []string{"chatbot", "gaps", "unanswered", "questions", "missing", "content"},
+	}, func(a map[string]any) (any, error) {
+		if err := authorise(root, caller, auth.ActEditDraft, "/"); err != nil {
+			return nil, &mcp.Refusal{Reason: err.Error()}
+		}
+		cfg := mustConfig(root)
+		if !cfg.Bool("chatbot.gaps") || !cfg.Bool("chatbot.gaps_agents") {
+			return nil, &mcp.Refusal{Reason: "unanswered questions are visitors' words, and the owner has not " +
+				"let agents read them (chatbot.gaps and chatbot.gaps_agents)"}
+		}
+		name, _ := a["name"].(string)
+		if _, err := loadAssistant(root, name); err != nil {
+			return nil, &mcp.Refusal{Reason: err.Error()}
+		}
+		groups, err := gapGroups(root, name, time.Now())
+		if err != nil {
+			return nil, err
+		}
+		type row struct {
+			Key       string   `json:"key"`
+			Asked     int      `json:"asked"`
+			Questions []string `json:"questions"`
+			Last      string   `json:"last"`
+		}
+		var out []row
+		for _, g := range groups {
+			if g.Open() {
+				out = append(out, row{Key: g.Key, Asked: g.Count, Questions: g.Questions, Last: g.Last.Format("2006-01-02")})
+			}
+		}
+		record(root, caller.auditRecord("assistant.gaps.read", "/ask/"+name, audit.Success,
+			map[string]string{"assistant": name, "groups": fmt.Sprint(len(out)), "via": "mcp"}))
+		b, err := json.Marshal(out)
+		return string(b), err
+	})
+
 	srv.Register(mcp.Operation{
 		Name: "list_assistants", NeedsRole: "reader",
 		Summary:  "the site's chatbots, whether each is public, and what it may offer",

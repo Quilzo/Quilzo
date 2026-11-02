@@ -113,6 +113,21 @@ Unreleased
 
 ** Added
 
+*** What a chatbot could not answer becomes the page that answers it.
+    Off until the owner turns on chatbot.gaps: then the questions a
+    chatbot could not answer are kept, with addresses, numbers and cards
+    masked and nobody named, a day to a file, deleted whole after
+    chatbot.gaps_days (30).  The chatbot's page in the admin, and quilzo
+    assistant gaps NAME, group them by what they are about, most asked
+    first, each with a link to write the page that answers it, or to
+    close it as needing none.  When the site is published, each open
+    group's questions are asked again (at most 25), and a group the
+    chatbot now answers is closed, naming the page it answered from; one
+    asked about again opens again.  With chatbot.gaps_agents on as well,
+    an agent holding list_chatbot_gaps reads the open groups too, to
+    draft the pages for a person to review.  The audit log says a group
+    was read, checked or closed, never what was asked.
+
 *** An agent's browser and workspace work together.  browser_save keeps
     the page in the workspace as a PDF, a picture of all of it, its markup
     or its words; browser_download presses a link that downloads and

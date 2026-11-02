@@ -65,5 +65,5 @@ ReadWritePaths=/srv/quilzo/.quilzo/webhook-deliveries /srv/quilzo/.quilzo/tmp
 # quilzo site --prepare to make them, the unit starts without them and the
 # site says what is off, rather than not starting at all.
 ReadWritePaths=-/srv/quilzo/.quilzo/bookings -/srv/quilzo/.quilzo/newsletter
-ReadWritePaths=-/srv/quilzo/.quilzo/events/site
+ReadWritePaths=-/srv/quilzo/.quilzo/events/site -/srv/quilzo/.quilzo/gaps
 ReadWritePaths=/srv/quilzo/.quilzo/audit.jsonl /srv/quilzo/.quilzo/audit.jsonl.lock

@@ -167,6 +167,9 @@ type dispatcher struct {
 	// tells them (staffnotice.go); nil for either tells nobody.
 	noticeTypes func() map[event.Type]bool
 	notify      func(events []event.Event, held int)
+	// published runs after the site goes live, in the background and one
+	// at a time: asking chatbots again what they could not answer.
+	published func(ctx context.Context)
 }
 
 // triggerStart is one run a trigger is to start.
@@ -221,6 +224,7 @@ func runTriggers(ctx context.Context, root string, d dispatcher) {
 	}
 	sem := make(chan struct{}, d.workers)
 	var mu, noticeMu sync.Mutex
+	checking := make(chan struct{}, 1)
 	running := map[string]bool{}
 	var wg sync.WaitGroup
 	defer wg.Wait()
@@ -257,6 +261,20 @@ func runTriggers(ctx context.Context, root string, d dispatcher) {
 					defer noticeMu.Unlock()
 					d.notify(w.notices, w.held)
 				}(work)
+			}
+			// After a publish: one check at a time, and none queued behind
+			// it, since the one running reads the site as it is now.
+			if work.published && d.published != nil {
+				select {
+				case checking <- struct{}{}:
+					wg.Add(1)
+					go func() {
+						defer wg.Done()
+						defer func() { <-checking }()
+						d.published(ctx)
+					}()
+				default:
+				}
 			}
 			// Who the server runs as, read only when something is to start:
 			// resolving it reads the token store, and most seconds nothing is.
@@ -323,6 +341,9 @@ type due struct {
 	starts  []triggerStart
 	notices []event.Event
 	held    int
+	// published says the site went live in this pass, so a chatbot's
+	// unanswered questions are worth asking again.
+	published bool
 }
 
 // dueWork is dueStarts, and gathers the events staff are told about
@@ -395,6 +416,9 @@ func dueWork(root string, now time.Time, isRunning func(string) bool, runner *Ca
 				st.Cursors[l.Source] = e.Seq
 				if notify[e.Type] {
 					notices = append(notices, e)
+				}
+				if e.Type == event.PagePublished && l.Source == event.Admin {
+					out.published = true
 				}
 				for _, wt := range all {
 					if !wt.t.Matches(e) || !startsFrom(wt.name, e) {

@@ -66,6 +66,36 @@
 {{end}}
 {{end}}
 
+{{if or .Gaps .GapsOn}}
+<h2 id="gaps">What it could not answer</h2>
+{{if .Gaps}}
+<p class="hint">What visitors asked in the last days, grouped by what it is about, with their details masked.
+  Write the page that answers a group; once the site is published the questions are asked again, and a group it
+  answers is closed.</p>
+<form method="post" action="/assistants/gaps" class="actions">
+  <input type="hidden" name="name" value="{{.A.Name}}"><input type="hidden" name="do" value="check">
+  <button type="submit" class="btn tonal">Ask them again now</button>
+</form>
+<div class="table-wrap"><table>
+  <thead><tr><th scope="col">Asked</th><th scope="col">Times</th><th scope="col">Last</th><th scope="col">Now</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+  <tbody>{{range .Gaps}}
+  <tr>
+    <th scope="row">{{index .Questions 0}}{{if gt (len .Questions) 1}}<ul class="hint">{{range $i, $q := .Questions}}{{if $i}}<li>{{$q}}</li>{{end}}{{end}}</ul>{{end}}</th>
+    <td>{{.Count}}</td>
+    <td>{{.Last.Format "2 Jan"}}</td>
+    <td>{{if .Closed}}{{if eq .Closed.How "answered"}}<span class="tag ok">answered{{if .Closed.Page}} from {{.Closed.Page}}{{end}}</span>{{else}}<span class="tag">closed by {{.Closed.By}}</span>{{end}}{{else if .Since}}<span class="tag warn">asked {{.Since}} more since it was closed</span>{{else}}<span class="tag warn">open</span>{{end}}</td>
+    <td class="actions">{{if not .Closed}}<a href="{{.Write}}">Write the page</a>
+      <form method="post" action="/assistants/gaps"><input type="hidden" name="name" value="{{$.A.Name}}">
+        <input type="hidden" name="do" value="close"><input type="hidden" name="key" value="{{.Key}}">
+        <button type="submit" class="btn-text">Needs no page</button></form>{{end}}</td>
+  </tr>{{end}}
+  </tbody>
+</table></div>
+{{else}}
+<p class="hint">It has answered everything it was asked.</p>
+{{end}}
+{{end}}
+
 {{if .CanSave}}
 <h2>Settings</h2>
 <form method="post" action="/assistants/save" class="card settings-form">

@@ -423,3 +423,16 @@ func TestAPageIsNewForAWeek(t *testing.T) {
 		t.Fatal("a page is new for more than a week")
 	}
 }
+
+// A question the chatbot could not answer is handed on for the owner's
+// record of what the site does not say, and one it answered is not.
+func TestAnUnansweredQuestionIsHandedOn(t *testing.T) {
+	st, _ := askSite(t, shopBot)
+	var kept []string
+	st.Assistants.Unanswered = func(name, q string) { kept = append(kept, name+": "+q) }
+	askPost(st, "help", "can I return opened ink?")
+	askPost(st, "help", "do you sell laptops?")
+	if len(kept) != 1 || kept[0] != "help: do you sell laptops?" {
+		t.Fatalf("%v", kept)
+	}
+}

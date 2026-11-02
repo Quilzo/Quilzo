@@ -38,6 +38,11 @@ func TestEveryMCPOperationDeclaresACheckableRole(t *testing.T) {
 		t.Fatalf("only %d operations registered; this is checking the wrong "+
 			"server", len(ops))
 	}
+	// Reads that are an author's on purpose: what visitors wrote, which a
+	// reader does not read anywhere else either.
+	visitorsWords := map[string]string{
+		"list_chatbot_gaps": "visitors' unanswered questions, masked, an author's as the Inbox is",
+	}
 	for _, op := range ops {
 		action, err := actionForRole(op.NeedsRole)
 		if err != nil {
@@ -51,6 +56,9 @@ func TestEveryMCPOperationDeclaresACheckableRole(t *testing.T) {
 		// labelling boundary; this is the privilege one.
 		if op.Writes && action == auth.ActView {
 			t.Errorf("%s changes content and is gated on %s", op.Name, action)
+		}
+		if _, ok := visitorsWords[op.Name]; ok && action == auth.ActEditDraft {
+			continue
 		}
 		if !op.Writes && (action == auth.ActEditDraft || action == auth.ActPublish) {
 			t.Errorf("%s reads and is gated on %s, which is stricter than it "+

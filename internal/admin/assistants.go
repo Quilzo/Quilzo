@@ -5,6 +5,7 @@ package admin
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -13,6 +14,8 @@ import (
 
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/gaps"
+	"github.com/quilzo/quilzo/internal/sheet"
 )
 
 // Building a site's chatbots, and seeing exactly why they answer as they do.
@@ -45,6 +48,13 @@ type Assistants struct {
 	Model func(assistant.Assistant) (assistant.Model, string)
 	// Forms names the site's forms, for the action picker.
 	Forms func() ([]string, error)
+	// Gaps are what visitors asked a chatbot that it could not answer,
+	// grouped, and whether they are kept at all (chatbot.gaps). CheckGaps
+	// asks them again and closes what it now answers; CloseGap closes one
+	// group a person decided needs no page.
+	Gaps      func(name string) ([]gaps.Group, bool, error)
+	CheckGaps func(ctx context.Context, name, by string) (asked, closed int, err error)
+	CloseGap  func(name, key, by string) error
 }
 
 func (s *Server) assistantsReady(w http.ResponseWriter, r *http.Request) (principal, bool) {
@@ -142,6 +152,17 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// What it could not answer, for whoever may read the Inbox.
+	if s.Assistants.Gaps != nil {
+		if groups, on, gerr := s.Assistants.Gaps(a.Name); gerr == nil {
+			var rows []gapRow
+			for _, g := range groups {
+				rows = append(rows, gapRow{Group: g, Write: "/pages/new?name=" + url.QueryEscape(sheet.Slug(g.Questions[0]))})
+			}
+			data["Gaps"], data["GapsOn"] = rows, on
+		}
+	}
+
 	// The test console.
 	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" && s.Assistants.Index != nil {
 		data["Q"] = q
@@ -175,6 +196,58 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleAssistantSave creates or updates an assistant's settings.
+// gapRow is a group of unanswered questions, with where to write the page
+// that answers them.
+type gapRow struct {
+	gaps.Group
+	Write string
+}
+
+// handleAssistantGaps checks a chatbot's unanswered questions again, or
+// closes one group.
+func (s *Server) handleAssistantGaps(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.assistantsReady(w, r)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "use POST", http.StatusMethodNotAllowed)
+		return
+	}
+	name := r.FormValue("name")
+	back := "/assistants/" + url.PathEscape(name) + "#gaps"
+	if s.Assistants == nil || s.Assistants.CheckGaps == nil || s.Assistants.CloseGap == nil {
+		http.Redirect(w, r, back, http.StatusSeeOther)
+		return
+	}
+	switch r.FormValue("do") {
+	case "check":
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
+		defer cancel()
+		asked, closed, err := s.Assistants.CheckGaps(ctx, name, p.Name)
+		if err != nil {
+			http.Redirect(w, r, "/assistants/"+url.PathEscape(name)+"?e="+url.QueryEscape(err.Error())+"#gaps", http.StatusSeeOther)
+			return
+		}
+		msg := fmt.Sprintf("Asked %d again. ", asked)
+		if closed == 0 {
+			msg += "It still cannot answer them."
+		} else {
+			msg += fmt.Sprintf("It answers %d %s now.", closed, map[bool]string{true: "group", false: "groups"}[closed == 1])
+		}
+		http.Redirect(w, r, "/assistants/"+url.PathEscape(name)+"?m="+url.QueryEscape(msg)+"#gaps", http.StatusSeeOther)
+	case "close":
+		if err := s.Assistants.CloseGap(name, r.FormValue("key"), p.Name); err != nil {
+			http.Redirect(w, r, "/assistants/"+url.PathEscape(name)+"?e="+url.QueryEscape(err.Error())+"#gaps", http.StatusSeeOther)
+			return
+		}
+		http.Redirect(w, r, "/assistants/"+url.PathEscape(name)+"?m="+
+			url.QueryEscape("Closed. It opens again if somebody asks it again.")+"#gaps", http.StatusSeeOther)
+	default:
+		http.Redirect(w, r, back, http.StatusSeeOther)
+	}
+}
+
 func (s *Server) handleAssistantSave(w http.ResponseWriter, r *http.Request) {
 	p, ok := s.assistantWrite(w, r)
 	if !ok {

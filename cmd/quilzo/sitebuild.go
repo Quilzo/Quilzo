@@ -207,7 +207,8 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 			m, _ := assistantModelAt(root, a)
 			return m
 		},
-		Questions: chatbotQuestions(mustConfig(root)),
+		Questions:  chatbotQuestions(mustConfig(root)),
+		Unanswered: gapKeeper(root),
 		Audit: func(name, source string, answered bool) {
 			outcome := audit.Success
 			if !answered {
