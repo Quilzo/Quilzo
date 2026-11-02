@@ -125,6 +125,16 @@ Unreleased
 
 ** Added
 
+*** Backups of the whole store, encrypted and checked.  quilzo backup key
+    makes a key (shown once, kept nowhere here); quilzo backup create
+    FILE takes the store and the layouts, encrypted with AES-256-GCM in
+    numbered parts, and reads it back whole to check every file against
+    its manifest before calling it a backup.  quilzo backup verify checks
+    one without restoring it, and quilzo backup restore FILE --into DIR
+    restores one into an empty directory and checks its history.  With
+    backup.dir set, the admin server makes one a day and keeps
+    backup.keep (seven).  CP-9 is in the controls table.
+
 *** Staff hear when an agent waits for them.  An agent's run that stops
     to ask a person to approve what it would do, or to answer it, is a
     new event, approval.waiting, in notify.events by default.  Staff are

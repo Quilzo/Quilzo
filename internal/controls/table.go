@@ -139,6 +139,10 @@ var table = []Implementation{
 		Statement: "Quilzo reports a deployment with a single administrator, keeps a break-glass recovery for when every administrator token is lost, and its store can be verified object by object.",
 		Customer:  "Writes and tests the contingency plan, including backups of the store.",
 		Where:     []string{"quilzo auth recover", "quilzo verify"}},
+	{Control: "CP-9", Title: "System Backup", Responsibility: Shared,
+		Statement: "quilzo backup makes a backup of the whole store and the layouts beside it, encrypted with AES-256-GCM in authenticated chunks under a backup key kept apart from the vault's, reads it back whole to check every file against its manifest, and restores one only into an empty directory, where the history is checked object by object; with backup.dir set the admin server makes one a day and keeps backup.keep of them.",
+		Customer:  "Sets backup.dir on another disk or copies it off the machine, keeps the backup key where the backups are not, and restores one now and then to see that it does.",
+		Where:     []string{"quilzo backup", "internal/backup"}},
 
 	// -- identification and authentication -----------------------------------
 	{Control: "IA-2", Title: "Identification and Authentication (Organizational Users)", Responsibility: Shared,

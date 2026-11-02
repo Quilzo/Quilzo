@@ -109,6 +109,36 @@ conditional request answers itself and nothing has to be purged on publish.
 has been tampered with does not verify, and the check does not depend on a log
 that the tamperer could also edit.
 
+**A backup is the whole store, encrypted, and checked before it is called one.**
+
+```
+quilzo backup key                         # once: a key shown once, kept nowhere here
+export QUILZO_BACKUP_KEY=...              # or QUILZO_BACKUP_KEY_FILE
+quilzo backup create site.qzb             # the store and the layouts, read back whole to check
+quilzo backup verify site.qzb             # any time, without restoring
+quilzo backup restore site.qzb --into /srv/restored
+quilzo config set backup.dir /mnt/backups # and the admin server makes one a day
+```
+
+What it holds and how:
+- **Everything:** the history, settings, sealed credentials (still sealed),
+  media, records and logs, and the layouts beside the store; not locks or
+  temporary files.
+- **Encrypted in parts:** AES-256-GCM, 64 KiB at a time, each part numbered and
+  the last one marked, under a key derived for that backup from the backup key.
+  A part changed, moved, dropped or cut off at the end is refused. The backup
+  key is not the vault's: whoever holds the backups need not hold the keyring.
+- **Checked whole:** a manifest lists every file's SHA-256, and a check decrypts
+  every part and compares every file. A backup that checks is one that
+  restores; one that does not is not kept.
+- **Taken while running:** the history's objects are taken last, after the
+  pointers to them, so every pointer in a backup points at an object in it.
+- **Restored apart:** only into an empty directory, where the history is
+  checked object by object; it becomes the store when somebody moves it into
+  place.
+- **Kept a week:** with `backup.dir` set, a backup a day, the newest
+  `backup.keep` (seven) kept.
+
 ## Why templates cannot execute
 
 Server-side template injection exists because the popular template languages are

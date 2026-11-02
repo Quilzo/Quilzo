@@ -1307,6 +1307,8 @@ func upkeepJobs(root string, posture upkeep.Job) []upkeep.Job {
 	jobs = append(jobs, selfJob(root))
 	// And an agent or app that keeps trying what it was refused.
 	jobs = append(jobs, agentwatchJob(root))
+	// And a backup a day, when backup.dir is set.
+	jobs = append(jobs, backupJob(root))
 	// And what agents remember, past its time.
 	return append(jobs, memoryJob(root))
 }

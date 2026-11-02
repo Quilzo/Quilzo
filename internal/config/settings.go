@@ -340,6 +340,21 @@ var settings = []Setting{
 		Weaker: atMost(90, "unanswered questions are kept %s days"),
 	},
 	{
+		Key: "backup.dir", Kind: Text, Default: "",
+		Summary:  "where the admin server keeps a backup a day of the whole store, encrypted and checked",
+		Controls: []string{"CP-9"},
+		Why: "Empty: no backup is made unless somebody runs quilzo backup create. Set to a directory " +
+			"(best on another disk, or one another machine copies away), the admin server makes a backup " +
+			"a day of the store and the layouts beside it, encrypted with the backup key " +
+			"(QUILZO_BACKUP_KEY, which quilzo backup key makes and nothing here keeps), reads it back " +
+			"whole to check it, and keeps backup.keep of them. A backup that does not check is not kept.",
+	},
+	{
+		Key: "backup.keep", Kind: Int, Default: "7",
+		Summary: "how many daily backups are kept in backup.dir",
+		Why:     "A week. The oldest is deleted when a new one checks. Between 1 and 365.",
+	},
+	{
 		Key: "chatbot.embeddings", Kind: Text, Default: "",
 		Summary:  "the gateway route that makes embeddings, so chatbots that answer with a model find passages by what they mean, not only by their words",
 		Controls: []string{"SA-9", "PT-2"},
@@ -1522,6 +1537,7 @@ var reBrandColour = regexp.MustCompile(`^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$`)
 var hardBounds = map[string][2]int64{
 	"chatbot.gaps_days":        {1, 365},
 	"chatbot.embeddings_floor": {20, 95},
+	"backup.keep":              {1, 365},
 	"auth.throttle.after":      {0, throttle.MostFree},
 	"auth.throttle.ceiling":    {throttle.LeastCeiling, throttle.MostCeiling},
 	"auth.throttle.base":       {int64(throttle.LeastDelay), int64(throttle.LongestDelay)},
