@@ -3443,3 +3443,8 @@ td code, td .mono { overflow-wrap: break-word; }
 .glance-figures > div:hover { background: var(--surface-container); }
 .glance-live { margin: 0; color: var(--on-surface-variant); }
 .glance-starts { display: flex; flex-wrap: wrap; gap: .5rem; }
+
+/* Forms: the code for a design of one's own, kept out of the way. */
+.embed-code > summary { cursor: pointer; display: inline-flex; align-items: center; gap: .25rem;
+  min-height: 40px; font: var(--label-lg); color: var(--primary); }
+.embed-code[open] > summary .chev { transform: rotate(180deg); }

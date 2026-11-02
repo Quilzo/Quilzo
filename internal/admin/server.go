@@ -2314,6 +2314,20 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Which declared form the page carries, chosen from the forms there
+	// are. A page could only be given one by writing its name into the
+	// page's JSON, and Forms told people to paste HTML into a template.
+	formChoices := s.formChoices(body)
+	if formChoices != nil {
+		kept := fields[:0:0]
+		for _, f := range fields {
+			if f.Key != "form" {
+				kept = append(kept, f)
+			}
+		}
+		fields = kept
+	}
+
 	s.render(w, r, "edit.html", map[string]any{
 		"PageTitle":  pageTitle,
 		"Nav":        "pages",
@@ -2323,10 +2337,42 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 		"Notes":      notes,
 		"Title":      "Edit " + name, "Principal": p, "Name": name,
 		"Fields": fields, "Exists": exists, "Type": typeName,
-		"Incoming": incoming,
+		"FormChoices": formChoices,
+		"Incoming":    incoming,
 		"Base":     base, "HeldBy": heldBy,
 		"CanEdit": s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/"+name).Allowed,
 	})
+}
+
+// formChoice is one form a page may carry.
+type formChoice struct {
+	Name, Title string
+	On          bool
+}
+
+// formChoices is the declared forms, the one a page carries marked, or nil
+// when there are none to choose from.
+func (s *Server) formChoices(body any) []formChoice {
+	if s.Forms == nil || s.Forms.Load == nil {
+		return nil
+	}
+	set, err := s.Forms.Load()
+	if err != nil || set == nil || len(set.Forms) == 0 {
+		return nil
+	}
+	current := ""
+	if m, ok := body.(map[string]any); ok {
+		current, _ = m["form"].(string)
+	}
+	out := make([]formChoice, 0, len(set.Forms))
+	for _, f := range set.Forms {
+		title := f.Label
+		if title == "" {
+			title = f.Name
+		}
+		out = append(out, formChoice{Name: f.Name, Title: title, On: f.Name == current})
+	}
+	return out
 }
 
 // field is one editable value.
@@ -2881,6 +2927,14 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			body[key] = values[0]
+		}
+	}
+	// The page's form, from the editor's list: none takes it off.
+	if _, asked := r.Form["__form"]; asked {
+		if f := strings.TrimSpace(r.FormValue("__form")); f == "" {
+			delete(body, "form")
+		} else {
+			body["form"] = f
 		}
 	}
 	pages[name] = body

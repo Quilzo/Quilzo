@@ -85,6 +85,11 @@ Unreleased
     pages, records and files, when it was last published and by whom) and
     where to start, so a quiet day no longer reads as an empty store.
 
+*** A page is given a form in its editor: Form on this page lists the
+    forms there are, and None takes it off.  Forms said to paste HTML into
+    a template; it now points at the editor, and keeps the code for a
+    design of one's own under a disclosure.
+
 ** Added
 
 *** Spreadsheets and calendars in and out.  quilzo records import reads a

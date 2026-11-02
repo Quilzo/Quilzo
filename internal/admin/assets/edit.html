@@ -16,6 +16,14 @@
   <input type="hidden" name="__base" value="{{.Base}}">
   {{if .Type}}<input type="hidden" name="__type" value="{{.Type}}">{{end}}
   {{range .Fields}}{{template "typedfield" .}}{{end}}
+  {{if .FormChoices}}<div class="field">
+    <label for="f-form">Form on this page</label>
+    <select id="f-form" name="__form" aria-describedby="form-help">
+      <option value="">None</option>
+      {{range .FormChoices}}<option value="{{.Name}}"{{if .On}} selected{{end}}>{{.Title}}</option>{{end}}
+    </select>
+    <p id="form-help" class="help">Shown at the foot of the page for visitors to fill in. What they send arrives under <a href="/forms">Forms</a>.</p>
+  </div>{{end}}
   <div class="field">
     <label for="f-msg">What changed</label>
     <input id="f-msg" name="__message" type="text"
