@@ -16,7 +16,7 @@ const c2 = "2222222222222222222222222222222222222222222222222222222222222222"
 
 func TestSchedulingAndFiring(t *testing.T) {
 	var s Schedule
-	if err := s.Add(c1, now.Add(time.Hour), "dana", "embargo lifts", now); err != nil {
+	if err := s.Add(c1, now.Add(time.Hour), Who{Name: "dana"}, "embargo lifts", now); err != nil {
 		t.Fatal(err)
 	}
 	if len(s.Due(now)) != 0 {
@@ -33,7 +33,7 @@ func TestSchedulingAndFiring(t *testing.T) {
 // instruction than the one somebody thought they were giving.
 func TestAnEntryGoesStaleIfTheDraftMoves(t *testing.T) {
 	var s Schedule
-	if err := s.Add(c1, now.Add(time.Hour), "dana", "", now); err != nil {
+	if err := s.Add(c1, now.Add(time.Hour), Who{Name: "dana"}, "", now); err != nil {
 		t.Fatal(err)
 	}
 	if states := s.Check(c1, now); states[0].Stale {
@@ -53,14 +53,14 @@ func TestAnEntryGoesStaleIfTheDraftMoves(t *testing.T) {
 // depend on when a timer happens to run.
 func TestAPastTimeIsRefused(t *testing.T) {
 	var s Schedule
-	if err := s.Add(c1, now.Add(-time.Minute), "dana", "", now); err == nil {
+	if err := s.Add(c1, now.Add(-time.Minute), Who{Name: "dana"}, "", now); err == nil {
 		t.Fatal("a time in the past was accepted")
 	}
 }
 
 func TestAnAbsurdlyDistantTimeIsRefused(t *testing.T) {
 	var s Schedule
-	err := s.Add(c1, now.Add(2*MaxAhead), "dana", "", now)
+	err := s.Add(c1, now.Add(2*MaxAhead), Who{Name: "dana"}, "", now)
 	if err == nil {
 		t.Fatal("a publication two years out was accepted")
 	}
@@ -71,14 +71,14 @@ func TestAnAbsurdlyDistantTimeIsRefused(t *testing.T) {
 
 func TestTheSameCommitCannotBeScheduledTwice(t *testing.T) {
 	var s Schedule
-	if err := s.Add(c1, now.Add(time.Hour), "dana", "", now); err != nil {
+	if err := s.Add(c1, now.Add(time.Hour), Who{Name: "dana"}, "", now); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Add(c1, now.Add(2*time.Hour), "sam", "", now); err == nil {
+	if err := s.Add(c1, now.Add(2*time.Hour), Who{Name: "sam"}, "", now); err == nil {
 		t.Error("the same commit was scheduled twice; which fires would depend " +
 			"on ordering")
 	}
-	if err := s.Add(c2, now.Add(2*time.Hour), "sam", "", now); err != nil {
+	if err := s.Add(c2, now.Add(2*time.Hour), Who{Name: "sam"}, "", now); err != nil {
 		t.Errorf("a second commit was refused: %v", err)
 	}
 }
@@ -89,7 +89,7 @@ func TestSomethingThatIsNotACommitIsRefused(t *testing.T) {
 		"", "draft", "live", "abc", strings.Repeat("z", 64),
 		strings.Repeat("1", 63), strings.Repeat("1", 65), "../etc",
 	} {
-		if err := s.Add(bad, now.Add(time.Hour), "dana", "", now); err == nil {
+		if err := s.Add(bad, now.Add(time.Hour), Who{Name: "dana"}, "", now); err == nil {
 			t.Errorf("%q was accepted as a commit", bad)
 		}
 	}
@@ -100,10 +100,10 @@ func TestSomethingThatIsNotACommitIsRefused(t *testing.T) {
 // an audit asks.
 func TestAFiredEntryStaysInTheRecord(t *testing.T) {
 	var s Schedule
-	if err := s.Add(c1, now.Add(time.Hour), "dana", "embargo", now); err != nil {
+	if err := s.Add(c1, now.Add(time.Hour), Who{Name: "dana"}, "embargo", now); err != nil {
 		t.Fatal(err)
 	}
-	s.Complete(c1, "published")
+	s.Complete(c1, "published", time.Now())
 
 	if len(s.Pending(now)) != 0 {
 		t.Error("a completed entry is still pending")
@@ -122,7 +122,7 @@ func TestAFiredEntryStaysInTheRecord(t *testing.T) {
 // A cancel that removes the wrong entry is worse than one that removes none.
 func TestCancellingNeedsAPrefixLongEnoughNotToCollide(t *testing.T) {
 	var s Schedule
-	if err := s.Add(c1, now.Add(time.Hour), "dana", "", now); err != nil {
+	if err := s.Add(c1, now.Add(time.Hour), Who{Name: "dana"}, "", now); err != nil {
 		t.Fatal(err)
 	}
 	if s.Cancel("111") {
@@ -137,5 +137,68 @@ func TestCancellingNeedsAPrefixLongEnoughNotToCollide(t *testing.T) {
 	}
 	if s.Cancel("ffffffffffff") {
 		t.Error("an unknown prefix cancelled something")
+	}
+}
+
+// The next time to wake is the next entry still to come: not one already
+// due, which a timer would wake for again at once, and not one that fired.
+func TestNextIsTheNextEntryStillToCome(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	var s Schedule
+	if _, ok := s.Next(now); ok {
+		t.Fatal("an empty schedule has a next time")
+	}
+	c1, c2, c3 := strings.Repeat("a", 64), strings.Repeat("b", 64), strings.Repeat("c", 64)
+	for _, e := range []struct {
+		c  string
+		in time.Duration
+	}{{c1, 3 * time.Hour}, {c2, time.Hour}, {c3, 2 * time.Hour}} {
+		if err := s.Add(e.c, now.Add(e.in), Who{Name: "dana", Verified: true}, "", now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if next, ok := s.Next(now); !ok || !next.Equal(now.Add(time.Hour)) {
+		t.Fatalf("%v %v", next, ok)
+	}
+	// An hour on, c2 is due but not fired: the next to come is c3.
+	if next, _ := s.Next(now.Add(time.Hour)); !next.Equal(now.Add(2 * time.Hour)) {
+		t.Fatalf("woke for an entry already due: %v", next)
+	}
+	s.Complete(c3, "published", now.Add(2*time.Hour))
+	if next, _ := s.Next(now.Add(time.Hour)); !next.Equal(now.Add(3 * time.Hour)) {
+		t.Fatalf("woke for a fired entry: %v", next)
+	}
+	for _, e := range s.Entries {
+		if e.Commit == c3 && (e.FiredAt != now.Add(2*time.Hour).Unix() || e.Result != "published") {
+			t.Fatalf("%+v", e)
+		}
+		if e.Verified == nil || !*e.Verified || e.By != "dana" {
+			t.Fatalf("who scheduled it was not kept: %+v", e)
+		}
+	}
+}
+
+// An entry being published is not due to anybody else, until its claim is
+// old enough that whoever made it must have stopped.
+func TestAClaimedEntryIsNotFiredTwice(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	var s Schedule
+	c := strings.Repeat("a", 64)
+	if err := s.Add(c, now.Add(time.Minute), Who{Name: "dana", Verified: true}, "", now); err != nil {
+		t.Fatal(err)
+	}
+	at := now.Add(2 * time.Minute)
+	if !s.Claim(c, at) {
+		t.Fatal("a due entry could not be claimed")
+	}
+	if len(s.Due(at)) != 0 || s.Claim(c, at.Add(time.Minute)) {
+		t.Fatal("a claimed entry is due to somebody else")
+	}
+	if due := s.Due(at.Add(ClaimFor)); len(due) != 1 {
+		t.Fatal("a claim nobody completed holds the entry for ever")
+	}
+	s.Complete(c, "published", at)
+	if s.Entries[0].Claimed != 0 || len(s.Due(at.Add(ClaimFor))) != 0 {
+		t.Fatalf("%+v", s.Entries[0])
 	}
 }

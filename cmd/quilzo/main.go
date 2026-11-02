@@ -361,7 +361,7 @@ publishing
   quilzo env diff staging production       what would change
   quilzo env remove NAME                   take one out of the pipeline
   quilzo publish [COMMIT]                  move live to the draft
-  quilzo schedule add 48h | list | run     publish later; gates run at publish
+  quilzo schedule add 48h | list | run     publish later, as you, checked again then; serve publishes on time
   quilzo schedule cancel ID                call one off before it fires
   quilzo rollback [--steps N]              back to a version that was live before
   quilzo a11y [--ref REF]                  accessibility check, blocking publish
@@ -1411,9 +1411,26 @@ func cmdPublish(root string, args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	args = fs.Args()
+	return publishAs(root, fs.Args(), resolveCaller(root, flagToken), publishFlags{
+		force: *force, reason: *reason, tplDir: *tplDir, skip: *skip, forceUnmarked: *forceUnmarked,
+	})
+}
 
-	caller := resolveCaller(root, flagToken)
+// publishFlags are publish's options, for a publish that did not come from
+// its command line: one somebody scheduled.
+type publishFlags struct {
+	force, skip, forceUnmarked bool
+	reason, tplDir             string
+}
+
+// publishAs publishes on caller's authority, checked here: every gate, the
+// freeze and dual authorisation run for whoever caller is, which is the
+// point of a scheduled publish going through it.
+func publishAs(root string, args []string, caller *Caller, opts publishFlags) error {
+	force, reason, tplDir, skip, forceUnmarked := &opts.force, &opts.reason, &opts.tplDir, &opts.skip, &opts.forceUnmarked
+	if *tplDir == "" {
+		*tplDir = "templates"
+	}
 	if err := authorise(root, caller, auth.ActPublish, "/"); err != nil {
 		record(root, caller.auditRecord("publish", "/", audit.Denied,
 			map[string]string{"reason": "authorisation"}))

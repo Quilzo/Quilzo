@@ -94,10 +94,10 @@ func scoped(t *testing.T, bindings ...auth.Binding) (*Server, map[string]string)
 	locks := &collab.Locks{}
 	locks.Claim("about", "someone", "", time.Now())
 	srv.Publishing = &Publishing{
-		Envs:         func() (*site.Envs, error) { return &site.Envs{}, nil },
-		SaveEnvs:     func(*site.Envs) error { return nil },
-		Schedule:     func() (*schedule.Schedule, error) { return &schedule.Schedule{}, nil },
-		SaveSchedule: func(*schedule.Schedule) error { return nil },
+		Envs:           func() (*site.Envs, error) { return &site.Envs{}, nil },
+		SaveEnvs:       func(*site.Envs) error { return nil },
+		Schedule:       func() (*schedule.Schedule, error) { return &schedule.Schedule{}, nil },
+		UpdateSchedule: func(func(*schedule.Schedule) error) error { return nil },
 	}
 	srv.Locks = func() (*collab.Locks, error) { return locks, nil }
 	srv.SaveLocks = func(*collab.Locks) error {

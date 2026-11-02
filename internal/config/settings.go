@@ -237,6 +237,20 @@ var settings = []Setting{
 			"memory an unauthenticated-until-parsed request can ask for"),
 	},
 
+	// -- scheduled publishing ------------------------------------------------
+	{
+		Key: "schedule.in_server", Kind: Bool, Default: "true",
+		Summary:  "quilzo serve publishes what was scheduled, at its time, with no timer to set up",
+		Controls: []string{"CM-3", "AC-6"},
+		Why: "On, the server publishes each scheduled entry within a second of " +
+			"its time, on the authority of the person who scheduled it, checked " +
+			"again then, and of the identity the server runs as; every publishing " +
+			"gate runs at that moment. Off, nothing publishes until something runs " +
+			"`quilzo schedule run`, which is for a deployment that would rather " +
+			"publish from a timer of its own. Either way an entry that did not " +
+			"fire is reported by the posture check.",
+	},
+
 	// -- gates ----------------------------------------------------------------
 	{
 		Key: "publish.require_a11y", Kind: Bool, Default: "true",

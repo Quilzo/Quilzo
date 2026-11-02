@@ -54,6 +54,12 @@ type Entry struct {
 	// By and Note are for whoever finds this in the list next week.
 	By   string `json:"by"`
 	Note string `json:"note,omitempty"`
+	// Kind and Verified are what was established about By when they
+	// scheduled it. The publish goes out on By's authority at the moment it
+	// fires, so whether By was a verified identity matters then; an entry
+	// written before this was recorded has neither (Verified nil).
+	Kind     string `json:"kind,omitempty"`
+	Verified *bool  `json:"verified,omitempty"`
 	// CreatedAt is when the decision was made, which is what makes "scheduled
 	// three months ago" visible.
 	CreatedAt int64 `json:"created_at"`
@@ -61,18 +67,57 @@ type Entry struct {
 	// than vanishing.
 	Done   bool   `json:"done,omitempty"`
 	Result string `json:"result,omitempty"`
+	// FiredAt is when it was published or refused, which is how "it went out
+	// four minutes late because the server was restarting" is visible.
+	FiredAt int64 `json:"fired_at,omitempty"`
+	// Claimed is when something began publishing it. Whoever fires an entry
+	// claims it under the schedule's lock, publishes without holding the
+	// lock — publishing tells webhooks, which can take a while — and then
+	// records what happened. A claim nobody completed within ClaimFor was
+	// left by a process that stopped, and the entry is due again.
+	Claimed int64 `json:"claimed,omitempty"`
 }
 
-// Due reports whether this entry's time has come.
-func (e Entry) Due(now time.Time) bool { return !e.Done && now.Unix() >= e.At }
+// ClaimFor is how long an entry somebody began publishing is left to them.
+// Far longer than a publish takes, and short enough that one a crashed
+// process left is published again the same morning.
+const ClaimFor = 15 * time.Minute
+
+// Due reports whether this entry's time has come and nobody is publishing
+// it now.
+func (e Entry) Due(now time.Time) bool {
+	if e.Done || now.Unix() < e.At {
+		return false
+	}
+	return e.Claimed == 0 || now.Sub(time.Unix(e.Claimed, 0)) >= ClaimFor
+}
+
+// Claim marks a due entry as being published now, and reports whether it
+// was there to claim.
+func (s *Schedule) Claim(commit string, now time.Time) bool {
+	for i := range s.Entries {
+		if s.Entries[i].Commit == commit && s.Entries[i].Due(now) {
+			s.Entries[i].Claimed = now.Unix()
+			return true
+		}
+	}
+	return false
+}
 
 // Schedule is the set of scheduled publications.
 type Schedule struct {
 	Entries []Entry `json:"entries"`
 }
 
+// Who scheduled something, as far as it was established when they did.
+type Who struct {
+	Name     string
+	Kind     string
+	Verified bool
+}
+
 // Add schedules a commit.
-func (s *Schedule) Add(commit string, at time.Time, by, note string,
+func (s *Schedule) Add(commit string, at time.Time, by Who, note string,
 	now time.Time) error {
 
 	if !reCommit.MatchString(commit) {
@@ -97,8 +142,10 @@ func (s *Schedule) Add(commit string, at time.Time, by, note string,
 				time.Unix(e.At, 0).UTC().Format(time.RFC3339))
 		}
 	}
+	verified := by.Verified
 	s.Entries = append(s.Entries, Entry{
-		Commit: commit, At: at.Unix(), By: by, Note: note, CreatedAt: now.Unix(),
+		Commit: commit, At: at.Unix(), By: by.Name, Note: note, CreatedAt: now.Unix(),
+		Kind: by.Kind, Verified: &verified,
 	})
 	sort.Slice(s.Entries, func(i, j int) bool { return s.Entries[i].At < s.Entries[j].At })
 	return nil
@@ -150,19 +197,40 @@ func (s *Schedule) Due(now time.Time) []Entry {
 	return out
 }
 
-// Complete records what happened to an entry.
+// Complete records what happened to an entry, and when.
 //
 // Kept rather than removed. A schedule that deletes entries as it fires them
 // leaves nobody able to answer "what went out on Friday and who decided that",
 // which is the question an audit asks first.
-func (s *Schedule) Complete(commit, result string) {
+func (s *Schedule) Complete(commit, result string, at time.Time) {
 	for i := range s.Entries {
 		if s.Entries[i].Commit == commit && !s.Entries[i].Done {
 			s.Entries[i].Done = true
 			s.Entries[i].Result = result
+			s.Entries[i].FiredAt = at.Unix()
+			s.Entries[i].Claimed = 0
 			return
 		}
 	}
+}
+
+// Next is the earliest time after now at which an entry falls due, and false
+// when nothing pending is still to come.
+//
+// After now, not at or before it: an entry already due and still pending is
+// one that could not fire (its commit is no longer the draft), and a timer
+// that woke for it would wake again at once, for ever.
+func (s *Schedule) Next(now time.Time) (time.Time, bool) {
+	var next int64
+	for _, e := range s.Entries {
+		if !e.Done && e.At > now.Unix() && (next == 0 || e.At < next) {
+			next = e.At
+		}
+	}
+	if next == 0 {
+		return time.Time{}, false
+	}
+	return time.Unix(next, 0), true
 }
 
 // Staleness is what an entry describes relative to the current draft.

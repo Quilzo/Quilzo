@@ -1143,11 +1143,12 @@ var rules = []Rule{
 		Severity: Medium,
 		Controls: []string{"CM-3"},
 		OWASP:    "",
-		Why: "Scheduled publishing deliberately does not daemonise — a " +
-			"scheduler that is also a long-lived process is a second thing " +
-			"that can be down — so it needs a timer calling `quilzo schedule " +
-			"run`. Without one the entry waits forever, and the failure is " +
-			"silent: somebody arranged for a page to go out and it did not.",
+		Why: "`quilzo serve` publishes each scheduled entry at its time " +
+			"(schedule.in_server), and `quilzo schedule run` does where it does " +
+			"not. An entry past its time means neither ran: the server was " +
+			"down, it runs as an identity that may not publish, or the setting " +
+			"is off and no timer calls the command. The failure is silent " +
+			"otherwise: somebody arranged for a page to go out and it did not.",
 		Check: func(s State) []Finding {
 			if !s.Upkeep.Checked || s.Upkeep.OverdueEntries == 0 {
 				return nil
@@ -1161,7 +1162,7 @@ var rules = []Rule{
 				detail += fmt.Sprintf("; the oldest has waited %s",
 					roughly(s.Upkeep.OldestOverdue))
 			}
-			return []Finding{{Detail: detail, Fix: "quilzo schedule run"}}
+			return []Finding{{Detail: detail, Fix: "start quilzo serve with a token that may publish, or run quilzo schedule run"}}
 		},
 	},
 	{

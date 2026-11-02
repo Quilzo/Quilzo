@@ -388,6 +388,9 @@ var IdentityKeys = map[string]bool{
 	// agent's sponsor, and the person who decided what an agent or a call
 	// through the gateway waited for.
 	"link_by": true, "sponsor": true, "decided_by": true,
+	// Whose identity fired something somebody else arranged: the server or
+	// the timer that published an entry another person scheduled.
+	"fired_by": true,
 }
 
 // people are the identifiers a record names as somebody: its principal,
