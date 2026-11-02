@@ -539,6 +539,12 @@ quilzo pay                                  # products for sale, links selling
 quilzo pay orders                           # read from Stripe, not kept here
 ```
 
+A product whose row says `"interval": "month"` (or week, or year) is a
+subscription: its price at Stripe is recurring, its payment link starts a
+subscription the buyer manages and cancels at Stripe, and its Buy button says
+"£12.00 a month". Monthly and yearly at one price are two offers, each with its
+own link; an interval Quilzo cannot read is no offer, and no button.
+
 The links follow publishing. A new price gets a new link, and then the old one
 is retired. A price no link charges yet shows no button at all, so a page
 never offers a checkout at a price it does not show. The site process holds no

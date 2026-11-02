@@ -185,6 +185,10 @@ func (s *Site) addTypes() {
 					Required: true, Min: num(1), Max: num(500000)},
 				{Name: "currency", Kind: schema.Choice, Label: "Currency",
 					Required: true, Choices: []string{"GBP", "EUR", "USD"}},
+				// Empty is paid once; a week, month or year makes it a
+				// subscription, which Stripe charges until the buyer stops it.
+				{Name: "interval", Kind: schema.Choice, Label: "Charged every",
+					Choices: []string{"week", "month", "year"}},
 				// The same price, written for a person.
 				//
 				// This is the bill for a template language that cannot
