@@ -16,6 +16,7 @@ import (
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/memory"
+	"github.com/quilzo/quilzo/internal/newsletter"
 	"github.com/quilzo/quilzo/internal/site"
 )
 
@@ -172,6 +173,21 @@ func (s *Server) otherApprovals(p principal, now time.Time) []approvalItem {
 					Title: "Approve the change to the site", Commits: "publishes", Href: "/review",
 					Detail: fmt.Sprintf("%d of %d approvals; %s", st.Have, st.Need, clipText(st.Message, 160)),
 					Since:  now})
+			}
+		}
+	}
+	// A newsletter issue an agent proposed, for whoever may send it: it was
+	// on the Newsletter screen and nowhere a person looks for what waits.
+	if s.Newsletter != nil && s.Newsletter.Issues != nil && s.Policy.Evaluate(p.Name, auth.ActPublish, "/").Allowed {
+		if issues, err := s.Newsletter.Issues(); err == nil {
+			for _, is := range issues {
+				if is.State != newsletter.Proposed {
+					continue
+				}
+				out = append(out, approvalItem{Source: "newsletter", Agent: firstNonEmpty(is.By, "newsletter"),
+					Title:   "Send the issue “" + is.Subject + "”",
+					Detail:  firstNonEmpty(is.Note, "proposed from the page "+is.Page) + "; nothing is sent until a person sends it",
+					Commits: "sends", Href: "/newsletter", Since: is.Proposed})
 			}
 		}
 	}
