@@ -448,6 +448,8 @@ var coverage = map[string]surfaces{
 		"design, with nothing a screen changes",
 		NoMCP: "a person's consent dialog on the machine their desktop is on; it " +
 			"cannot be reached or answered from another one"},
+	"connect": {GUI: "/connections", NoMCP: "connects a person's own account, in their own browser, at the " +
+		"provider; an agent that could connect one could put any account in their name"},
 	"secret": {Why: "a credential is given on standard input, where no browser history, " +
 		"screen or form field holds it on the way",
 		NoMCP: "keeps credentials; an agent that could set one could set the one it is about to be handed"},

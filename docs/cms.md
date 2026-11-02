@@ -1671,6 +1671,35 @@ The rules:
 - Text holding personal data goes only to a route allowed it. Masking cannot
   help here: a placeholder read aloud is not a recording anybody wants.
 
+**Agents act with a person's own accounts, not one key for everybody.** An
+integration used to carry one credential for the whole install: an agent
+filing into somebody's calendar did it as whoever owned the key, and every
+agent that could reach the integration could do it in every calendar the key
+reached. Now people connect their own accounts, on Your accounts in the admin
+or with `quilzo connect start NAME`, at providers an administrator declares:
+
+```
+quilzo secret set google-oauth < client-secret.txt
+quilzo connect provider add google --template google --client-id ID --client-secret google-oauth \
+  --scope https://www.googleapis.com/auth/calendar.events
+```
+
+An integration that names a connection (`"connection": "google"`) then goes
+with the account of the person the agent acts for, its sponsor, and nobody
+else's. An agent acting on its own name, or another vendor's agent through
+the gateway, has no person and is refused.
+
+How it is kept safe:
+- **The flow:** authorization code with PKCE (S256), a state that finishes
+  once, within ten minutes, and only for the person who started it, in their
+  browser; templates for Google, Microsoft and GitHub, every endpoint https.
+- **Where a token goes:** each provider names the API hosts its tokens are
+  for, and a token goes to those and nowhere else.
+- **How it is kept:** sealed under the store's keyring, in a file that names
+  nobody; refreshed when due, keeping a rotated refresh token.
+- **Disconnecting:** revokes at the provider where it offers that (RFC 7009),
+  and forgets it here either way.
+
 **Pictures and writing go through the gateway too.** A route added with
 `--draws` (or "It draws pictures" on the Models screen) is an images model,
 used by `quilzo media generate` and for nothing else, and charged by the

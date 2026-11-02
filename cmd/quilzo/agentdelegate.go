@@ -106,7 +106,7 @@ func (d delegation) Run(ctx context.Context, name string, child *agent.Session,
 					}
 					return *set, lerr
 				},
-				Call: newMCPClient(d.root),
+				Call: newMCPClientFor(d.root, actingFor(caller)),
 				Pay:  payer{root: d.root},
 			},
 			d.next(m.Name),

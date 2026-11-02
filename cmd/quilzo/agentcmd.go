@@ -1248,7 +1248,10 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 					}
 					return *set, nil
 				},
-				Call: newMCPClient(root),
+				// Acting for the person the run is for: an integration that
+				// names a connection goes with their account, and nobody
+				// else's.
+				Call: newMCPClientFor(root, actingFor(caller)),
 				Pay:  payer{root: root, run: func() string { return from.RunID }},
 			},
 			// The delegate surface, which had no executor either.

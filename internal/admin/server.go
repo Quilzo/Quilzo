@@ -239,6 +239,9 @@ type Server struct {
 
 	// Models is the model gateway: routes, budgets, today's spending.
 	Models *Models
+	// Connections are people's own accounts elsewhere, for agents acting
+	// for them (connections.go). Nil shows the screen as unavailable.
+	Connections *Connections
 
 	// Assistants are the site's chatbots: declared here, served by the
 	// public site at /ask/NAME.
@@ -1341,6 +1344,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/security/verify", s.handleVerify)
 	mux.HandleFunc("/security/agents", s.handleAgentsScreen)
 	mux.HandleFunc("/models", s.handleModels)
+	mux.HandleFunc("/connections", s.handleConnections)
+	mux.HandleFunc("/connections/change", s.handleConnectionsChange)
+	mux.HandleFunc("/connections/callback", s.handleConnectionsCallback)
 	mux.HandleFunc("/analytics", s.handleAnalytics)
 	mux.HandleFunc("/experiments", s.handleExperiments)
 	mux.HandleFunc("/personalise", s.handlePersonalise)

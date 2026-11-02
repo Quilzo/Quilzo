@@ -156,6 +156,9 @@ var destinations = []destination{
 	// View, for the same reason: everybody sees and disconnects the apps
 	// they connected to the agent interface.
 	{"apps", "Connected apps", "/apps", "Administration", "agent-interface", auth.ActView},
+	// Edit, because an author's agents are what act with what they
+	// connect: their own accounts elsewhere, for agents acting for them.
+	{"accounts", "Your accounts", "/connections", "Administration", "integrations", auth.ActEditDraft},
 	// View, as with apps: everybody sees, and removes, what agents remember
 	// about them.
 	{"memory", "Memory", "/memory", "Administration", "memory", auth.ActView},
@@ -566,6 +569,7 @@ func Screens() []find.Destination {
 			"authorization"},
 		"passkeys":     {"passkey", "webauthn", "2fa", "security key", "login"},
 		"apps":         {"oauth", "mcp", "connected", "assistant", "claude", "chatgpt", "copilot", "agent interface"},
+		"accounts":     {"google", "microsoft", "github", "calendar", "gmail", "oauth", "connect", "account"},
 		"memory":       {"remember", "forget", "personal data", "privacy", "erase", "recall"},
 		"fleet":        {"agent map", "shadow ai", "a2a", "registry", "inventory", "who called what"},
 		"integrations": {"webhook", "siem", "extension"},

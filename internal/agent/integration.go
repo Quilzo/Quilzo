@@ -90,6 +90,9 @@ var rePin = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 var reDigest = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 
+// reConnection is a connected-account provider's name.
+var reConnection = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,39}$`)
+
 // Integration is one external system this install may reach.
 type Integration struct {
 	Name string          `json:"name"`
@@ -150,6 +153,13 @@ type Integration struct {
 	// Secret names the credential in the vault. Never the value: this is
 	// stored in a content-addressed object, and an object cannot be deleted.
 	Secret string `json:"secret,omitempty"`
+
+	// Connection names a provider people connect their own accounts at
+	// (internal/connect): a call goes with the account of the person the
+	// agent acts for, its sponsor, and with nobody's when nobody is; never
+	// with one key for everybody. Exclusive of Secret, and never offered
+	// through the gateway, where there is no person to act for.
+	Connection string `json:"connection,omitempty"`
 
 	// Pins are the tool definitions a person approved, by the SHA-256 of
 	// each definition (name, description, input schema) as the server gave
@@ -529,6 +539,20 @@ func (in *Integration) Validate() error {
 		}
 		if !rePin.MatchString(pin) {
 			return fmt.Errorf("%s pins %q with %q, which is not a SHA-256", in.Name, tool, pin)
+		}
+	}
+	if in.Connection != "" {
+		switch {
+		case !reConnection.MatchString(in.Connection):
+			return fmt.Errorf("%s: %q is not a provider's name (quilzo connect providers)", in.Name, in.Connection)
+		case in.Secret != "":
+			return fmt.Errorf("%s acts with a person's connected account and with the secret %q: one or the other",
+				in.Name, in.Secret)
+		case in.Gateway != nil:
+			return fmt.Errorf("%s acts with a person's connected account, and the gateway has no person to act "+
+				"for: it is not offered there", in.Name)
+		case strings.HasPrefix(in.Auth, "header:"):
+			return fmt.Errorf("%s acts with a connected account, whose token goes as a bearer token", in.Name)
 		}
 	}
 	if g := in.Gateway; g != nil {

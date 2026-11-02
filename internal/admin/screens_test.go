@@ -172,7 +172,9 @@ func TestEveryScreenSurvivesWithNothingWiredIn(t *testing.T) {
 var notAScreen = map[string]string{
 	"/signin/oidc": "starts an authorisation redirect, and answers 404 when " +
 		"no identity provider is configured",
-	"/auth/callback":              "receives one, and is never opened directly",
+	"/auth/callback": "receives one, and is never opened directly",
+	"/connections/callback": "is where a provider sends a person back after connecting an account, and " +
+		"redirects to Your accounts; connections_test.go follows it",
 	"/signout":                    "clears the cookie and redirects; there is nothing to render",
 	"/session/alive":              "is posted to by admin.js and answers 204",
 	"/security/parameters/export": "is a download of OSCAL JSON",
