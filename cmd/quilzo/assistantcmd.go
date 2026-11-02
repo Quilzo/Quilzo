@@ -145,6 +145,8 @@ func assistantAdd(root string, args []string) error {
 	nudge := fs.String("nudge", "", "a short line shown beside the button once a visit (default: none)")
 	nudgeAfter := fs.Int("nudge-after", 0, "seconds on a page before the nudge (default 20)")
 	nudgePages := fs.String("nudge-pages", "", "comma-separated page prefixes the nudge may show on")
+	route := fs.String("route", "", "the gateway route, or the model a route serves, that answers first")
+	routeOnly := fs.Bool("route-only", false, "keep it to that route alone: no other route answers for it")
 	if err := fs.Parse(flags); err != nil {
 		return err
 	}
@@ -163,6 +165,7 @@ func assistantAdd(root string, args []string) error {
 		Name: pos[0], Title: *title, Greeting: *greeting, Instructions: instr,
 		Pages: splitList(*pages), Exclude: splitList(*exclude), Collections: splitList(*collections),
 		Refusal: *refusal, Public: *public, Static: *static, UseModel: *model, Passages: *passages,
+		Route: strings.TrimSpace(*route), RouteOnly: *routeOnly,
 		Handoff: *handoffOn, HandoffDays: *handoffDays, Voice: *voice, Translate: *translate,
 		Documents: splitList(*documents), Embed: splitList(*embed),
 	}
@@ -405,8 +408,23 @@ func assistantModelAt(root string, a assistant.Assistant) (assistant.Model, stri
 			return nil, "the model gateway could not be read: " + err.Error()
 		}
 		if gw != nil {
+			switch {
+			case a.Route != "" && a.RouteOnly:
+				// Kept to one route: when none serves it, the chatbot
+				// answers from its pages rather than through another.
+				r := gw.RouteServing(a.Route)
+				if r == "" {
+					return nil, "kept to " + a.Route + ", which no route serves"
+				}
+				return gw.ForRoute(r, "chatbot:"+a.Name), ""
+			case a.Route != "":
+				return gw.ForModel(a.Route, "chatbot:"+a.Name), ""
+			}
 			return gw.For("chatbot:" + a.Name), ""
 		}
+	}
+	if a.RouteOnly {
+		return nil, "kept to " + a.Route + ", and no model gateway is declared"
 	}
 	m, err := directModel(root)
 	if err != nil {

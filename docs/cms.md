@@ -1589,6 +1589,19 @@ to the next route, because routing round one provider's safeguard to whichever
 has fewer is not a fallback. The ledger counts it among the failed calls,
 since it was sent and paid for.
 
+**A chatbot chooses the model that answers it.** Each chatbot can name a
+route, or the model a route serves, that answers it first, with the gateway's
+other routes behind it:
+- a cheaper model for a busy help desk;
+- a stronger one for a sales chatbot.
+
+Use `quilzo assistant add NAME --model --route big`, or "Model that answers
+first" on the chatbot's page. Add `--route-only` (or "Only that one") to keep
+a chatbot to that route alone, for one whose visitors' words may go to one
+provider, in one region, and nowhere else. When that route cannot answer, the
+chatbot quotes its pages rather than asking another. Agents already choose
+theirs by their manifest's model.
+
 **Pictures and writing go through the gateway too.** A route added with
 `--draws` (or "It draws pictures" on the Models screen) is an images model,
 used by `quilzo media generate` and for nothing else, and charged by the

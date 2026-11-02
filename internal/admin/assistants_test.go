@@ -202,3 +202,28 @@ func TestTheConsoleSaysWhichDocumentsCouldNotBeRead(t *testing.T) {
 		t.Fatal("a document that could not be read is not reported")
 	}
 }
+
+// The model that answers a chatbot is chosen on its page, and the page
+// says which: first, or only.
+func TestAChatbotsModelIsChosenOnItsPage(t *testing.T) {
+	srv, token, fa := chatbots(t)
+	decideForm(t, srv, "/assistants/save", token, url.Values{"name": {"help"}, "title": {"Help"}})
+	body := get(t, srv, "/assistants/help", token).Body.String()
+	whole(t, body)
+	if !strings.Contains(body, `name="route"`) || !strings.Contains(body, `name="route_only"`) {
+		t.Fatal("the page offers no choice of model")
+	}
+	decideForm(t, srv, "/assistants/save", token, url.Values{"name": {"help"}, "full": {"1"}, "title": {"Help"},
+		"use_model": {"1"}, "route": {"eu-model"}, "route_only": {"1"}})
+	if a, _ := fa.set.Get("help"); a.Route != "eu-model" || !a.RouteOnly {
+		t.Fatalf("%+v", a)
+	}
+	if body := get(t, srv, "/assistants/help", token).Body.String(); !strings.Contains(body, "only <code>eu-model</code>") {
+		t.Error("the page does not say which model answers")
+	}
+	w := decideForm(t, srv, "/assistants/save", token, url.Values{"name": {"help"}, "full": {"1"}, "title": {"Help"},
+		"route_only": {"1"}})
+	if !strings.Contains(w.Header().Get("Location"), "e=") {
+		t.Error("a chatbot kept to no route was saved")
+	}
+}
