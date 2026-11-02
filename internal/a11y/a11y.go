@@ -110,6 +110,7 @@ var (
 		"images have alternative text (1.1.1)",
 		"heading levels do not skip (1.3.1)",
 		"link text is meaningful on its own (2.4.4)",
+		"a link that opens a new tab says so (3.2.5, technique G201)",
 		"the page declares a language (3.1.1)",
 		"the page has a title (2.4.2)",
 		"form inputs have labels (3.3.2)",
@@ -318,7 +319,37 @@ func (r *Report) checkLinks(tags []tag, html string) {
 				fmt.Sprintf("link text %q says nothing out of context, and links "+
 					"are often read as a list", text), t.raw)
 		}
+		if opensNewWindow(t) && !saysNewWindow(text+" "+t.attrs["aria-label"]+" "+t.attrs["title"]) {
+			r.add("new-tab-not-announced", Advisory, "WCAG 3.2.5",
+				fmt.Sprintf("link %q opens a new tab without saying so; somebody "+
+					"who cannot see the tab bar finds the back button does "+
+					"nothing. Say \"(opens in a new tab)\" in the link, "+
+					"visually hidden if need be (technique G201)", text), t.raw)
+		}
 	}
+}
+
+// opensNewWindow reports whether a link's target is a window other than
+// the one it is in: _blank, or a named window, which is as new the first
+// time it is opened. _self, _parent and _top stay where the reader is.
+func opensNewWindow(t tag) bool {
+	target, ok := t.attrs["target"]
+	if !ok {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(target)) {
+	case "", "_self", "_parent", "_top":
+		return false
+	}
+	return true
+}
+
+// saysNewWindow reports whether a link's name tells the reader it opens a
+// new tab or window, in any of the ways people write it.
+func saysNewWindow(name string) bool {
+	n := strings.ToLower(name)
+	return strings.Contains(n, "new tab") || strings.Contains(n, "new window") ||
+		strings.Contains(n, "another tab") || strings.Contains(n, "separate tab")
 }
 
 func (r *Report) checkLanguage(tags []tag) {

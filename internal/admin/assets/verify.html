@@ -18,14 +18,14 @@
     <p class="brand">{{template "lockup" .}}</p>
     <h1>Confirm it's you</h1>
     {{if .Clear}}<p class="lead">Signed in as <strong>{{.Who}}</strong>. There is nothing to confirm: this session has already shown it is yours.</p>
-    <p class="actions"><a class="btn" href="/">Carry on</a></p>{{else}}
+    <p class="actions"><a class="btn" href="{{.Next}}">Carry on</a></p>{{else}}
     <p class="lead">Signed in as <strong>{{.Who}}</strong>. Before anything else, this sign-in has to be shown to be yours.</p>
     <p class="notice stepup" role="status">{{icon "info"}}<span>{{.Reason}}</span></p>
     {{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
     {{if .Passkey}}<div class="card">
       <h2>Use your passkey</h2>
       <p>The quickest way, and the one a stolen password cannot pass.</p>
-      <p class="actions"><a class="btn" href="/signin/passkey">Use my passkey</a></p>
+      <p class="actions"><a class="btn" href="/signin/passkey{{with .Next}}?next={{.}}{{end}}">Use my passkey</a></p>
     </div>{{end}}
     {{if .SingleSignOn}}<div class="card">
       <h2>Sign in again with single sign-on</h2>

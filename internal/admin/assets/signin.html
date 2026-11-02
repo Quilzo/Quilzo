@@ -39,11 +39,12 @@
     <div class="card">
       <h2>Continue with your organisation</h2>
       <form method="post" action="/signin/sso" class="sso-discover">
+        {{with .Next}}<input type="hidden" name="next" value="{{.}}">{{end}}
         <div class="field"><label for="work-email">Work email {{template "req"}}</label>
           <input id="work-email" name="email" type="email" autocomplete="username" required autofocus></div>
         <button type="submit">Continue</button>
       </form>
-      <p class="actions sso-buttons">{{range .SSO}}<a class="btn tonal" href="{{.Href}}">Sign in with {{.Label}}</a> {{end}}</p>
+      <p class="actions sso-buttons">{{range .SSO}}<a class="btn tonal" href="{{.Href}}{{with $.Next}}?next={{.}}{{end}}">Sign in with {{.Label}}</a> {{end}}</p>
     </div>
     {{if not .OIDC}}<p class="or-divider"><span>or</span></p>{{end}}
     {{end}}
@@ -51,7 +52,7 @@
     <div class="card">
       <h2>{{if .OIDCLabel}}Sign in with {{.OIDCLabel}}{{else}}Continue with your organisation{{end}}</h2>
       <p>You will be sent to {{if .OIDCLabel}}{{.OIDCLabel}}{{else}}your identity provider{{end}} and back here.</p>
-      <p class="actions"><a class="btn" href="/signin/oidc">{{if .OIDCLabel}}Continue with {{.OIDCLabel}}{{else}}Continue{{end}}</a></p>
+      <p class="actions"><a class="btn" href="/signin/oidc{{with .Next}}?next={{.}}{{end}}">{{if .OIDCLabel}}Continue with {{.OIDCLabel}}{{else}}Continue{{end}}</a></p>
     </div>
     <p class="help">Signing in there proves who you are. What you may do here
       is decided by this site’s access policy, which an administrator
@@ -61,6 +62,7 @@
     {{end}}
 
     <form method="post" action="/signin">
+      {{with .Next}}<input type="hidden" name="next" value="{{.}}">{{end}}
       <div class="field">
         <label for="tok">API token {{template "req"}}</label>
         <input id="tok" name="token" type="password"
@@ -78,7 +80,7 @@
     </form>
 
     <p class="or-divider"><span>or</span></p>
-    <p class="help"><a href="/signin/passkey">Sign in with a passkey</a> if you
+    <p class="help"><a href="/signin/passkey{{with .Next}}?next={{.}}{{end}}">Sign in with a passkey</a> if you
       have registered one. It cannot be read off a screen or sent to somebody
       by mistake, and your browser will not offer it to any site but this
       one.</p>

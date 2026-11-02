@@ -1,5 +1,5 @@
 {{template "head" .}}
-<p class="hint"><a href="/agents">Agents</a> · <a href="/agents/edit/{{.M.Name}}">{{.M.Name}}</a></p>
+<nav class="crumbs" aria-label="Breadcrumb">{{icon "arrow_back"}}<ol><li><a href="/agents">Agents</a></li><li>{{icon "chevron_right"}}<a href="/agents/edit/{{.M.Name}}">{{.M.Name}}</a></li></ol></nav>
 <h1>Take {{.M.Name}} to another platform</h1>
 <p class="lead">Its declaration, written in another platform's format: its instructions, model, tools and
 helpers, as far as that platform has words for them. What it cannot hold is listed, so nothing is lost

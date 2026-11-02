@@ -309,3 +309,11 @@ func (s *Server) glance(p principal, visible map[string]bool, now time.Time) tod
 	start("review", "Review and publish", "/review")
 	return g
 }
+
+// startLabel names startPath's screen, for a link that goes there.
+func startLabel(r *http.Request) string {
+	if startPath(r) == "/" {
+		return "Pages"
+	}
+	return "Today"
+}

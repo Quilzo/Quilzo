@@ -120,7 +120,18 @@ func localPaths(src string) []string {
 				continue
 			}
 			path := seg[:end]
-			if !strings.HasPrefix(path, "/") || strings.Contains(path, "{{") {
+			// A path followed by an action that adds a query to it, such as
+			// /signin/passkey{{with .Next}}?next={{.}}{{end}}, still links
+			// to the path. One with an action inside it (/page/{{.Name}})
+			// names a place this cannot know.
+			if i := strings.Index(path, "{{"); i >= 0 {
+				if strings.HasSuffix(path[:i], "/") || strings.HasSuffix(path[:i], "=") ||
+					!strings.Contains(path[i:], "?") {
+					continue
+				}
+				path = path[:i]
+			}
+			if !strings.HasPrefix(path, "/") {
 				continue
 			}
 			if i := strings.IndexAny(path, "?#"); i >= 0 {

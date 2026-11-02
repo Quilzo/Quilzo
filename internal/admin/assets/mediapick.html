@@ -1,7 +1,6 @@
 {{template "head" .}}
+<nav class="crumbs" aria-label="Breadcrumb">{{icon "arrow_back"}}<ol><li><a href="{{.Back}}">The section</a></li></ol></nav>
 <h1>Choose {{.Noun}}</h1>
-
-<p class="hint"><a href="{{.Back}}">Back to the section</a></p>
 
 <p class="lead">For <code>{{.Path}}</code> on section {{.At}} of
   <a href="/page/{{.Page}}">{{.Page}}</a>.</p>

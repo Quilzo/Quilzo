@@ -586,3 +586,62 @@ func Screens() []find.Destination {
 	}
 	return out
 }
+
+// crumb is the way up from a screen: the destination it is below.
+type crumb struct {
+	Label, Path string
+}
+
+// crumbFor is the destination the request is below, when it is below one:
+// the one the screen names as its section, or else the one whose address
+// the request's begins with. Nothing on a destination itself, which is
+// already where the way up would go, and nothing that this person's menu
+// does not show them -- a way up to a refusal is not a way up.
+func (s *Server) crumbFor(r *http.Request, p principal, navKey string) (crumb, bool) {
+	path := r.URL.Path
+	var best destination
+	for _, d := range visibleTo(s, p) {
+		if navKey != "" {
+			if d.Key == navKey {
+				best = d
+				break
+			}
+			continue
+		}
+		if d.Path != "/" && strings.HasPrefix(path, d.Path+"/") && len(d.Path) > len(best.Path) {
+			best = d
+		}
+	}
+	if best.Path == "" || best.Path == path {
+		return crumb{}, false
+	}
+	return crumb{Label: best.Label, Path: best.Path}, true
+}
+
+// wayBack is the link at the foot of a message: what the handler named,
+// or the form the message answers came from, or the section the screen is
+// in, or the person's start.
+//
+// It was "Back to pages" whatever the message was about, so a refusal on
+// Agents, a failed note on a record or an error in Settings each sent
+// somebody to the page list: the second place the owner found this
+// interface taking them to Pages from somewhere else.
+func wayBack(r *http.Request, data map[string]any) crumb {
+	// The form's own record of where it was, which every form posting
+	// somewhere other than its own screen carries (theme.go). Read only if
+	// the handler already parsed the body: reading it here would consume a
+	// body some handler streams.
+	if r.Method == http.MethodPost && r.PostForm != nil {
+		if back := r.PostForm.Get("back"); back != "" {
+			if u, err := url.Parse(back); err == nil && u.Scheme == "" && u.Host == "" && u.Opaque == "" {
+				if to := safeLocalPath(u.Path, u.RawQuery); isLocalURL(to) {
+					return crumb{Label: "where you were", Path: to}
+				}
+			}
+		}
+	}
+	if c, ok := data["Crumb"].(crumb); ok {
+		return c
+	}
+	return crumb{Label: startLabel(r), Path: startPath(r)}
+}

@@ -1,5 +1,5 @@
 {{template "head" .}}
-<p class="hint"><a href="/agents">Agents</a></p>
+<nav class="crumbs" aria-label="Breadcrumb">{{icon "arrow_back"}}<ol><li><a href="/agents">Agents</a></li></ol></nav>
 <h1>Import an agent</h1>
 {{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
 {{if .Unavailable}}<div class="notice warn"><p>{{.Unavailable}}</p></div>{{end}}

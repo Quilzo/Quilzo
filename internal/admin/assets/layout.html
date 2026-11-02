@@ -34,7 +34,15 @@
       {{template "menuicon"}}
     </button>
     {{template "navtoggle" .}}
-    <a class="brand" href="/" title="{{.Brand}}">{{if .BrandMark}}<span class="mark mark-initial" aria-hidden="true">{{.BrandMark}}</span><span class="brand-name">{{.Brand}}</span>{{else if eq .Brand "Quilzo"}}{{template "lockup" .}}{{else}}<svg class="mark" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path class="mark-loop" d="{{.MarkLoop}}"/><path class="mark-tail" d="{{.MarkTail}}"/></svg><span class="brand-name">{{.Brand}}</span>{{end}}</a>
+    {{/*
+      The name goes where signing in goes: the screen this person chose to
+      start on (Today unless they picked Pages), never a fixed one. It went
+      to "/" -- the page list -- while signing in landed on Today, so the
+      one link on every screen that means "home" took people somewhere
+      that was not their home, and the owner reported it as "everything I
+      click takes me to Pages".
+    */}}
+    <a class="brand" href="{{.Home}}" title="{{.Brand}}">{{if .BrandMark}}<span class="mark mark-initial" aria-hidden="true">{{.BrandMark}}</span><span class="brand-name">{{.Brand}}</span>{{else if eq .Brand "Quilzo"}}{{template "lockup" .}}{{else}}<svg class="mark" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path class="mark-loop" d="{{.MarkLoop}}"/><path class="mark-tail" d="{{.MarkTail}}"/></svg><span class="brand-name">{{.Brand}}</span>{{end}}</a>
     </div>
 
     {{/*
@@ -121,6 +129,20 @@
 {{if .NavGroups}}{{template "rail" .}}{{end}}
 
 <main id="main" tabindex="-1" class="shell">
+{{/*
+  The way up, on every screen below a destination in the menu: an editor
+  under Pages, an agent under Agents, a refusal under the screen it was
+  refused on. Set by render from the menu table, so a screen added later
+  has one without anybody remembering.
+
+  On a phone the menu is closed, and before this the only way from an
+  editor back to its list was the browser's own button -- which after a
+  save goes back to the form that was just posted. A link to the parent,
+  above the heading, is what Polaris and Material both put there.
+*/}}
+{{/* A screen with a longer trail of its own (Agents › Runs) draws it with
+     the same markup, and render leaves this one off (Server.trails). */}}
+{{with .Crumb}}<nav class="crumbs" aria-label="Breadcrumb">{{icon "arrow_back"}}<ol><li><a href="{{.Path}}">{{.Label}}</a></li></ol></nav>{{end}}
 {{with .Principal}}{{if .Grace}}<p class="notice warn" role="status">You signed in with one factor. From {{.Grace}}, signing in here takes two: <a href="/passkeys">add a passkey</a> now.</p>{{end}}{{end}}
 {{end}}
 
@@ -177,6 +199,10 @@
 {{/* The logotype: the mark is the Q of the name, so the word is not
      spelled with two of them. Read out as the whole word. */}}
 {{define "lockup"}}<span class="lockup" role="img" aria-label="Quilzo"><svg class="mark lockup-q" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path class="mark-loop" d="{{.MarkLoop}}"/><path class="mark-tail" d="{{.MarkTail}}"/></svg><span aria-hidden="true">uilzo</span></span>{{end}}
+{{/* What every link that opens a new tab ends with: the mark somebody
+     sees and the words a screen reader says. Used inside the link, so the
+     words are part of its name (TestEveryNewTabSaysSo). */}}
+{{define "newtab"}}<span class="newtab" aria-hidden="true">{{icon "open_in_new"}}</span><span class="visually-hidden"> (opens in a new tab)</span>{{end}}
 {{define "req"}}<span class="req" aria-hidden="true">*</span><span class="visually-hidden"> (required)</span>{{end}}
 
 {{/*
@@ -330,17 +356,27 @@
 {{define "foot"}}
 </main>
 {{/*
-  The manual is a site of its own, so these leave this origin.
+  The manual is a site of its own, so these leave this origin -- in a new
+  tab, and saying so.
 
-  rel="noopener noreferrer" because target is not set and never should be here:
-  opening documentation in a new tab is a decision that belongs to whoever
-  clicks, and a Help link that steals a tab from somebody mid-edit is the
-  reason people stop pressing it.
+  They opened in the same tab, on the argument that where a link opens is
+  the reader's decision. It is the wrong argument for help: somebody
+  presses it in the middle of a form, the form is replaced by the manual,
+  and what they had typed is gone. That is the case the guidance makes
+  its exception for (NN/g: open help and reference in a new window when
+  people are in the middle of a task), and it is how the owner of this
+  program asked for it to work.
+
+  Said three ways, because each reader needs one: the icon for somebody
+  looking, "(opens in a new tab)" for a screen reader, which would
+  otherwise announce a link and then leave the back button doing nothing
+  (WCAG technique G201), and rel=noopener noreferrer so the manual gets no
+  handle on this window and no address of the screen it was opened from.
 */}}
 <footer class="shell">
-  <p><a href="{{.DocURL}}" rel="noopener noreferrer">Help with this screen</a>
+  <p><a href="{{.DocURL}}" target="_blank" rel="noopener noreferrer">Help with this screen{{template "newtab"}}</a>
     — the same link, in the same place, on every page.
-    <a href="{{.DocsBase}}" rel="noopener noreferrer">All documentation</a>.</p>
+    <a href="{{.DocsBase}}" target="_blank" rel="noopener noreferrer">All documentation{{template "newtab"}}</a>.</p>
 </footer>
 </body>
 </html>

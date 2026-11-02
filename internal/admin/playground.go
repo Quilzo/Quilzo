@@ -87,7 +87,7 @@ func (s *Server) playground(w http.ResponseWriter, r *http.Request) {
 	// press Dark in the header, walk into the API console, and it is still
 	// light. A page that opts out of the layout has to opt back into
 	// everything the layout was doing.
-	fmt.Fprint(w, playgroundHTML(n, p.Name, themeOf(r), s.playgroundRoutes()))
+	fmt.Fprint(w, playgroundHTML(n, p.Name, themeOf(r), startPath(r), s.playgroundRoutes()))
 }
 
 // Route is one thing the playground can call.
@@ -130,7 +130,7 @@ func (s *Server) playgroundRoutes() []Route {
 	}
 }
 
-func playgroundHTML(nonce, who, theme string, routes []Route) string {
+func playgroundHTML(nonce, who, theme, home string, routes []Route) string {
 	var opts strings.Builder
 	sorted := append([]Route(nil), routes...)
 	sort.SliceStable(sorted, func(i, j int) bool {
@@ -203,10 +203,13 @@ func playgroundHTML(nonce, who, theme string, routes []Route) string {
   .pg .note:empty, .pg pre:empty { display: none; }
   .pg .status.waiting { font-weight: 400; color: var(--on-surface-variant, GrayText); }
   .pg .hint { font-size: .8125rem; opacity: .7 }
+  /* The way back is the one link on this page, so it is a target a finger
+     can find: 24px tall at least (WCAG 2.5.8), not the 17 its line gave. */
+  .pg nav.hint a { display: inline-flex; align-items: center; min-height: 24px; }
 </style>
 </head><body>
 <main class="pg">
-<p class="hint"><a href="/">Back to Quilzo</a></p>
+<nav class="hint" aria-label="Breadcrumb"><a href="` + html.EscapeString(home) + `">Back to Quilzo</a></nav>
 <h1>API playground</h1>
 <p class="hint">Signed in as ` + html.EscapeString(who) + `. Requests go to this
 server, through the same middleware your own code will meet, using your session

@@ -52,6 +52,7 @@
 package admin
 
 import (
+	"bytes"
 	"embed"
 	"encoding/base64"
 	"errors"
@@ -67,6 +68,7 @@ import (
 	"github.com/quilzo/quilzo/internal/throttle"
 	"html/template"
 	"io"
+	"io/fs"
 	"math"
 	"net/http"
 	"net/url"
@@ -108,6 +110,8 @@ type Server struct {
 	// flashKey signs the messages this server puts in a redirect, so a link
 	// from anywhere else cannot make a screen say something. See flash.go.
 	flashKey []byte
+	// trails is which templates draw their own breadcrumb (ownTrails).
+	trails map[string]bool
 
 	Store  *store.Store
 	Policy *auth.Policy
@@ -583,7 +587,29 @@ func New(s *store.Store, p *auth.Policy, ts *auth.TokenStore, layouts render.Lay
 	}
 	return &Server{Store: s, Policy: p, Tokens: ts, Layouts: layouts, briefs: &briefCache{}, asks: &askCache{},
 		proofs: &dpop.Replays{}, admitted: &federate.Replays{},
-		Records: collection.NewCache(), tpl: t, flashKey: newFlashKey()}, nil
+		Records: collection.NewCache(), tpl: t, flashKey: newFlashKey(), trails: ownTrails()}, nil
+}
+
+// ownTrails is which screens draw a breadcrumb trail of their own, longer
+// than the one way up render adds (Agents › Runs), read from the templates
+// once. Read rather than listed, so a screen that gains a trail loses the
+// second one without anybody remembering.
+func ownTrails() map[string]bool {
+	out := map[string]bool{}
+	files, err := fs.Glob(assets, "assets/*.html")
+	if err != nil {
+		return out
+	}
+	for _, f := range files {
+		name := stdpath.Base(f)
+		if name == "layout.html" {
+			continue
+		}
+		if b, rerr := fs.ReadFile(assets, f); rerr == nil && bytes.Contains(b, []byte(`aria-label="Breadcrumb"`)) {
+			out[name] = true
+		}
+	}
+	return out
 }
 
 // fixPart is a run of a fix's note: words, or a command it names.
@@ -1036,11 +1062,27 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, name string,
 	data["MarkPath"] = MarkPath
 	data["MarkLoop"], data["MarkTail"] = MarkLoop, MarkTail
 
+	// Where the name in the bar goes: where signing in goes.
+	data["Home"] = startPath(r)
+
 	// The navigation itself, filtered to what this person may use and sorted
 	// into the order they chose.
 	if p, ok := data["Principal"].(principal); ok {
 		data["Nav"] = navKey
 		data["NavGroups"] = s.navigation(r, p, navKey)
+		// The way up, from any screen below a destination; see layout.html.
+		if _, set := data["Crumb"]; !set && !s.trails[name] {
+			if c, found := s.crumbFor(r, p, navKey); found {
+				data["Crumb"] = c
+			}
+		}
+	}
+	// The way out of a message, which every handler's refusal shares: back
+	// to where the person was, never a fixed screen. See wayBack.
+	if name == "message.html" {
+		if _, set := data["Back"]; !set {
+			data["Back"] = wayBack(r, data)
+		}
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	// A status other than 200 is passed in rather than written by the
@@ -1782,8 +1824,19 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 		Secure:   r.TLS != nil || s.behindTLSProxy(),
 		MaxAge:   maxAge,
 	})
+	next := signInNext(r.FormValue("next"))
 	if stepUp {
-		http.Redirect(w, r, "/signin/verify", http.StatusSeeOther)
+		to := "/signin/verify"
+		if next != "" {
+			to += "?next=" + url.QueryEscape(next)
+		}
+		http.Redirect(w, r, to, http.StatusSeeOther)
+		return
+	}
+	// Back to what they asked for, ahead of the getting-started screen: a
+	// link somebody followed is more particular than a first visit.
+	if next != "" {
+		http.Redirect(w, r, next, http.StatusSeeOther)
 		return
 	}
 	// Somebody signing in for the first time lands on the getting started
@@ -1839,8 +1892,46 @@ var signInReasons = map[string]string{
 
 // signInAgain sends the browser back to the form with a reason code.
 func signInAgain(w http.ResponseWriter, r *http.Request, why string) {
-	http.Redirect(w, r, "/signin?e="+url.QueryEscape(why),
-		http.StatusSeeOther)
+	to := "/signin?e=" + url.QueryEscape(why)
+	// Where they were going survives a mistyped token.
+	if next := signInNext(r.FormValue("next")); next != "" {
+		to += "&next=" + url.QueryEscape(next)
+	}
+	http.Redirect(w, r, to, http.StatusSeeOther)
+}
+
+// signInNext is where a sign-in returns somebody to: the screen they asked
+// for when the sign-in form answered instead, or nothing.
+//
+// Signing in went to the start screen whatever had been asked for, so a
+// session that ended mid-task, or a link from a colleague to one approval,
+// arrived at Today or Pages and the person had to find their way back to
+// what they had been doing. WCAG 2.2.5 asks that re-authenticating lets
+// somebody carry on with what they were doing.
+//
+// Only a path on this server, in the same form every other way back here
+// is (theme.go), and never a sign-in or sign-out address, which would
+// loop, nor one of the few addresses that are written to rather than
+// read: arriving somewhere is a GET.
+func signInNext(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "" || u.Host != "" || u.Opaque != "" || u.User != nil {
+		return ""
+	}
+	to := safeLocalPath(u.Path, u.RawQuery)
+	if !isLocalURL(to) {
+		return ""
+	}
+	switch path, _, _ := strings.Cut(to, "?"); {
+	case path == "/signin", strings.HasPrefix(path, "/signin/"),
+		path == "/signout", strings.HasPrefix(path, "/enrol/"),
+		path == "/theme", path == "/sidebar", path == "/favicon.ico":
+		return ""
+	}
+	return to
 }
 
 // signInForm renders the form, saying why somebody is back at it.
@@ -1854,6 +1945,9 @@ func (s *Server) signInForm(w http.ResponseWriter, r *http.Request) {
 		"OIDCLabel": s.oidcLabel(), "SSO": s.ssoChoices()}
 	if msg, ok := signInReasons[r.URL.Query().Get("e")]; ok {
 		data["Error"] = msg
+	}
+	if next := signInNext(r.URL.Query().Get("next")); next != "" {
+		data["Next"] = next
 	}
 	if s.Throttle != nil {
 		sub := throttle.Subject{Source: sourceOf(r)}
@@ -2008,6 +2102,14 @@ func (s *Server) requireAuth(w http.ResponseWriter, r *http.Request) (principal,
 			"OIDCLabel": s.oidcLabel(), "SSO": s.ssoChoices()}
 		if !errors.Is(err, errNoCredential) {
 			data["Error"] = err.Error()
+		}
+		// The form answers at the address that was asked for, so signing
+		// in can go back to it (signInNext). A read only: a form posted
+		// after the session ended has nothing to come back to.
+		if r.Method == http.MethodGet {
+			if next := signInNext(r.URL.RequestURI()); next != "" {
+				data["Next"] = next
+			}
 		}
 		s.render(w, r, "signin.html", data)
 		return principal{}, false

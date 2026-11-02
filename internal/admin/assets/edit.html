@@ -234,7 +234,7 @@
 <aside class="preview" aria-labelledby="preview-h">
   <h2 id="preview-h">The page</h2>
   <p class="help">Your page as readers will see it, with what you have typed and not saved yet.
-    <a href="/preview/{{.Name}}" target="_blank" rel="noopener">Open the saved draft in a tab</a>.</p>
+    <a href="/preview/{{.Name}}" target="_blank" rel="noopener">Open the saved draft{{template "newtab"}}</a>.</p>
 
   {{/*
     ?plain=1 here and nowhere else. The editing panel is what turns a preview

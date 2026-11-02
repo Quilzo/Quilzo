@@ -1,5 +1,5 @@
 {{template "head" .}}
-<p class="hint"><a href="/assistants">Chatbots</a></p>
+<nav class="crumbs" aria-label="Breadcrumb">{{icon "arrow_back"}}<ol><li><a href="/assistants">Chatbots</a></li></ol></nav>
 <h1>{{.A.Title}}</h1>
 {{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
 {{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}

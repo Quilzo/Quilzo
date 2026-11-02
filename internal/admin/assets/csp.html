@@ -1,5 +1,5 @@
 {{template "head" .}}
-<p class="hint"><a href="/security">Security</a></p>
+<nav class="crumbs" aria-label="Breadcrumb">{{icon "arrow_back"}}<ol><li><a href="/security">Security</a></li></ol></nav>
 <h1>Content policy</h1>
 
 {{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}

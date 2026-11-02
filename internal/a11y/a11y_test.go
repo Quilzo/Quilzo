@@ -429,3 +429,34 @@ func hasRule(r *Report, rule string) bool {
 	}
 	return false
 }
+
+// A link that opens a new tab says so, in words a screen reader reads,
+// and one that stays where it is is left alone.
+func TestANewTabIsAnnounced(t *testing.T) {
+	quiet := Check("p", `<html lang="en"><title>t</title><h1>a</h1>
+      <a href="https://example.org/" target="_blank">The manual</a></html>`)
+	if !has(quiet, "new-tab-not-announced") {
+		t.Error("a link opening a new tab without saying so was not reported")
+	}
+	if quiet.Blocks() {
+		t.Error("an unannounced new tab is advisory: a site may have its reasons")
+	}
+	for _, link := range []string{
+		`<a href="https://example.org/" target="_blank">The manual<span class="visually-hidden"> (opens in a new tab)</span></a>`,
+		`<a href="https://example.org/" target="_blank" aria-label="The manual, opens in a new window">Manual</a>`,
+		`<a href="https://example.org/" target="_BLANK" title="Opens in a new tab">The manual</a>`,
+		`<a href="/x" target="_self">Here as ever</a>`,
+		`<a href="/x" target="_top">Here as ever</a>`,
+		`<a href="/x">Here as ever</a>`,
+	} {
+		r := Check("p", `<html lang="en"><title>t</title><h1>a</h1>`+link+`</html>`)
+		if has(r, "new-tab-not-announced") {
+			t.Errorf("reported a link that says what it does: %s", link)
+		}
+	}
+	named := Check("p", `<html lang="en"><title>t</title><h1>a</h1>
+      <a href="/x" target="preview">Preview</a></html>`)
+	if !has(named, "new-tab-not-announced") {
+		t.Error("a named target opens a new window the first time, and was not reported")
+	}
+}

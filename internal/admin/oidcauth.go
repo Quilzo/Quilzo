@@ -9,6 +9,7 @@ import (
 	"crypto/subtle"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -80,6 +81,10 @@ type OIDC struct {
 type oidcPending struct {
 	req     *oidc.Request
 	binding [32]byte
+	// next is the screen the sign-in was asked for from (signInNext),
+	// kept here with the rest of the attempt rather than handed to the
+	// provider and back.
+	next string
 }
 
 // ssoProof is what an identity provider said about how somebody signed in
@@ -180,7 +185,8 @@ func (o *OIDC) start(w http.ResponseWriter, r *http.Request, cookie string, maxA
 		http.Error(w, "too many sign-ins in progress", http.StatusTooManyRequests)
 		return
 	}
-	o.pending[req.State] = &oidcPending{req: req, binding: sha256.Sum256([]byte(secret))}
+	o.pending[req.State] = &oidcPending{req: req, binding: sha256.Sum256([]byte(secret)),
+		next: signInNext(r.URL.Query().Get("next"))}
 	o.mu.Unlock()
 
 	// Lax, because the provider sends the browser back with a top-level GET
@@ -204,51 +210,52 @@ func (o *OIDC) take(state string) *oidcPending {
 	return nil
 }
 
-// callback finishes a sign-in, in the browser that started it.
-func (o *OIDC) callback(ctx context.Context, r *http.Request, cookie string) (string, ssoProof, error) {
+// callback finishes a sign-in, in the browser that started it, and says
+// where the sign-in was going.
+func (o *OIDC) callback(ctx context.Context, r *http.Request, cookie string) (string, ssoProof, string, error) {
 	if e := r.URL.Query().Get("error"); e != "" {
-		return "", ssoProof{}, fmt.Errorf("the provider refused: %s (%s)", e,
+		return "", ssoProof{}, "", fmt.Errorf("the provider refused: %s (%s)", e,
 			r.URL.Query().Get("error_description"))
 	}
 	state := r.URL.Query().Get("state")
 	if state == "" {
-		return "", ssoProof{}, fmt.Errorf("no state parameter; this response did not come " +
+		return "", ssoProof{}, "", fmt.Errorf("no state parameter; this response did not come " +
 			"from a sign-in this server started")
 	}
 	p := o.take(state)
 	if p == nil {
-		return "", ssoProof{}, fmt.Errorf("this state does not match a sign-in in progress. " +
+		return "", ssoProof{}, "", fmt.Errorf("this state does not match a sign-in in progress. " +
 			"It has already been used, it expired, or the request did not " +
 			"originate here")
 	}
 	c, err := r.Cookie(cookie)
 	if err != nil {
-		return "", ssoProof{}, fmt.Errorf("this sign-in was started in another browser. Start again here")
+		return "", ssoProof{}, "", fmt.Errorf("this sign-in was started in another browser. Start again here")
 	}
 	if got := sha256.Sum256([]byte(c.Value)); subtle.ConstantTimeCompare(got[:], p.binding[:]) != 1 {
-		return "", ssoProof{}, fmt.Errorf("this sign-in was started in another browser. Start again here")
+		return "", ssoProof{}, "", fmt.Errorf("this sign-in was started in another browser. Start again here")
 	}
 	req := p.req
 	if req.Expired(time.Now()) {
-		return "", ssoProof{}, fmt.Errorf("this sign-in took too long; start again")
+		return "", ssoProof{}, "", fmt.Errorf("this sign-in took too long; start again")
 	}
 
 	tokens, err := o.Provider.Exchange(ctx, o.ClientID, o.Secret, req,
 		r.URL.Query().Get("code"))
 	if err != nil {
-		return "", ssoProof{}, err
+		return "", ssoProof{}, "", err
 	}
 
 	claims, err := o.Provider.Verifier(o.ClientID).Verify(tokens.IDToken, req.Nonce)
 	if err != nil {
-		return "", ssoProof{}, err
+		return "", ssoProof{}, "", err
 	}
 
 	principal, err := o.principalFor(claims)
 	if err != nil {
-		return "", ssoProof{}, err
+		return "", ssoProof{}, "", err
 	}
-	return principal, o.proof(claims, req.MaxAge, time.Now()), nil
+	return principal, o.proof(claims, req.MaxAge, time.Now()), p.next, nil
 }
 
 // rawString reads a claim the Claims struct does not name.
@@ -355,7 +362,7 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	// Spent either way: the binding is for one sign-in.
 	http.SetCookie(w, &http.Cookie{Name: cn, Value: "", Path: "/", HttpOnly: true,
 		Secure: true, SameSite: http.SameSiteLaxMode, MaxAge: -1})
-	principal, proof, err := s.OIDC.callback(ctx, r, cn)
+	principal, proof, asked, err := s.OIDC.callback(ctx, r, cn)
 	if err != nil {
 		s.refuseSignIn(w, r, err.Error(), "")
 		return
@@ -407,7 +414,7 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.signInDone(r, tok.ID)
-	next := s.ssoNext(r, principal, proof)
+	next := s.ssoNext(r, principal, proof, asked)
 
 	http.SetCookie(w, &http.Cookie{
 		Name: "quilzo_token", Value: secret, Path: "/",
@@ -437,14 +444,24 @@ func (s *Server) auditProof(principal, session string, p ssoProof) {
 // used two factors, and the person's passkeys work again if a lockout had
 // turned them off; to "Confirm it's you" when it did not, once two factors
 // are compulsory.
-func (s *Server) ssoNext(r *http.Request, principal string, p ssoProof) string {
+//
+// On means the screen the sign-in was asked for from, when there was one
+// (asked, from signInNext), and the person's start otherwise.
+func (s *Server) ssoNext(r *http.Request, principal string, p ssoProof, asked string) string {
+	home := startPath(r)
+	if asked = signInNext(asked); asked != "" {
+		home = asked
+	}
 	if p.MFA {
-		return s.lockoutProven(r, principal, startPath(r))
+		return s.lockoutProven(r, principal, home)
 	}
 	if s.mfaEnforced(time.Now()) {
+		if asked != "" {
+			return "/signin/verify?next=" + url.QueryEscape(asked)
+		}
 		return "/signin/verify"
 	}
-	return startPath(r)
+	return home
 }
 
 // oidcTTL is the provider's own session length or session.max, whichever

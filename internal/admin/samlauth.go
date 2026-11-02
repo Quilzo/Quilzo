@@ -62,6 +62,8 @@ type samlPending struct {
 	requestID string
 	binding   [32]byte
 	created   time.Time
+	// next is the screen the sign-in was asked for from (signInNext).
+	next string
 }
 
 // samlState is what sign-ins in progress need, kept in this process.
@@ -188,7 +190,8 @@ func (s *Server) handleSAMLStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	st.pending[relay] = &samlPending{provider: name, requestID: id,
-		binding: sha256.Sum256([]byte(secret)), created: now}
+		binding: sha256.Sum256([]byte(secret)), created: now,
+		next: signInNext(r.URL.Query().Get("next"))}
 	st.mu.Unlock()
 
 	cn, same := s.samlCookie(r)
@@ -312,7 +315,7 @@ func (s *Server) samlACS(w http.ResponseWriter, r *http.Request, cfg *saml.Confi
 	}
 	s.finishSSO(w, r, principal, "saml:"+cfg.Name, saml.SessionTTL(a, s.sessionMax(), now), samlProof(cfg, a),
 		map[string]string{"provider": cfg.Name, "issuer": a.Issuer, "assertion": a.ID,
-			"context": a.AuthnContext}, clear)
+			"context": a.AuthnContext}, pending.next, clear)
 }
 
 // samlProof is what an assertion says about factors, in the way this
@@ -336,7 +339,7 @@ func label(c *saml.Config) string {
 // finishSSO is the end every single sign-on shares: refused if suspended or
 // not in the access policy, otherwise a session of this program's own.
 func (s *Server) finishSSO(w http.ResponseWriter, r *http.Request, principal, how string,
-	ttl time.Duration, proof ssoProof, detail map[string]string, before func()) {
+	ttl time.Duration, proof ssoProof, detail map[string]string, asked string, before func()) {
 	if s.suspended(principal) {
 		before()
 		s.refuseSignIn(w, r, principal+" is suspended here: the identity provider deactivated or removed them.", "")
@@ -380,7 +383,7 @@ func (s *Server) finishSSO(w http.ResponseWriter, r *http.Request, principal, ho
 		return
 	}
 	s.signInDone(r, tok.ID)
-	next := s.ssoNext(r, principal, proof)
+	next := s.ssoNext(r, principal, proof, asked)
 	before()
 	http.SetCookie(w, &http.Cookie{
 		Name: "quilzo_token", Value: secret, Path: "/", HttpOnly: true,
@@ -451,6 +454,11 @@ func (s *Server) handleSSODiscover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	addr := strings.TrimSpace(r.FormValue("email"))
+	// Where the sign-in was going, onto the start it moves on to.
+	carry := ""
+	if next := signInNext(r.FormValue("next")); next != "" {
+		carry = "?next=" + url.QueryEscape(next)
+	}
 	// Not a redirect. The admin's policy says form-action 'self', and a
 	// browser applies that to every hop a form submission is redirected
 	// through, so a 303 that ends at the identity provider is stopped,
@@ -464,7 +472,7 @@ func (s *Server) handleSSODiscover(w http.ResponseWriter, r *http.Request) {
 		if all, err := s.SAML.Providers(); err == nil {
 			for _, c := range all {
 				if c.Owns(addr) {
-					onward("/signin/saml/"+c.Name, label(&c))
+					onward("/signin/saml/"+c.Name+carry, label(&c))
 					return
 				}
 			}
@@ -478,7 +486,7 @@ func (s *Server) handleSSODiscover(w http.ResponseWriter, r *http.Request) {
 					if name == "" {
 						name = "your organisation"
 					}
-					onward("/signin/oidc", name)
+					onward("/signin/oidc"+carry, name)
 					return
 				}
 			}

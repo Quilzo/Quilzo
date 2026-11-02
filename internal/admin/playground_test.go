@@ -212,7 +212,7 @@ func TestTheHiddenRuleSurvivesTheFlexLayout(t *testing.T) {
 			"request body field will show for GET requests")
 	}
 	// And the page must still offer a way back, or it is a dead end.
-	if !strings.Contains(body, `href="/"`) {
+	if !strings.Contains(body, `href="/today"`) {
 		t.Error("the playground has no link back to the admin")
 	}
 }
