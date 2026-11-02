@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"flag"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/codescan"
@@ -41,7 +42,7 @@ var (
 )
 
 type gatewayEntry struct {
-	mod time.Time
+	sum [32]byte
 	gw  *gateway.Gateway
 	cfg *gateway.Config
 }
@@ -49,17 +50,23 @@ type gatewayEntry struct {
 // modelGateway is this root's gateway, or nil when none is declared. Rebuilt
 // when the declaration changes on disk, so a route or a budget edited from
 // the admin or the command line takes effect without a restart.
+//
+// Changed is what the file says, not when it was written: two changes in
+// one tick of the file system's clock (a route added, and another a moment
+// later) kept the first one's gateway, and a route just added was not
+// there to answer.
 func modelGateway(root string) (*gateway.Gateway, *gateway.Config, error) {
-	fi, err := os.Stat(gatewayPath(root))
+	raw, err := os.ReadFile(gatewayPath(root))
 	if os.IsNotExist(err) {
 		return nil, nil, nil
 	}
 	if err != nil {
 		return nil, nil, err
 	}
+	sum := sha256.Sum256(raw)
 	gatewaysMu.Lock()
 	defer gatewaysMu.Unlock()
-	if e, ok := gateways[root]; ok && e.mod.Equal(fi.ModTime()) {
+	if e, ok := gateways[root]; ok && e.sum == sum {
 		return e.gw, e.cfg, nil
 	}
 	cfg, err := gateway.Load(gatewayPath(root))
@@ -126,7 +133,7 @@ func modelGateway(root string) (*gateway.Gateway, *gateway.Config, error) {
 		}
 		newShieldHost(root).engine.Observe(shield.Signal{Name: name, Subject: subject})
 	}
-	gateways[root] = &gatewayEntry{mod: fi.ModTime(), gw: gw, cfg: cfg}
+	gateways[root] = &gatewayEntry{sum: sum, gw: gw, cfg: cfg}
 	return gw, cfg, nil
 }
 
