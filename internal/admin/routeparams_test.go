@@ -63,4 +63,7 @@ func TestARefusedRequestIsTheCallersToFix(t *testing.T) {
 	if got := doorStatus(errors.New("something else")); got != http.StatusBadGateway {
 		t.Errorf("an unknown failure became %d", got)
 	}
+	if got := doorStatus(&assist.Declined{Model: "m", Category: "cyber"}); got != http.StatusUnprocessableEntity {
+		t.Errorf("a declined request became %d, which invites sending it again", got)
+	}
 }

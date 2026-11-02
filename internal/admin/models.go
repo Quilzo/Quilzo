@@ -155,7 +155,9 @@ func (s *Server) handleModelsChange(w http.ResponseWriter, r *http.Request) {
 		switch op {
 		case "route-add":
 			params := gateway.RouteParams{MaxTokens: strings.TrimSpace(r.FormValue("max_tokens_field")),
-				Timeout: strings.TrimSpace(r.FormValue("timeout")), AutoToolChoice: r.FormValue("auto_tool_choice") == "yes"}
+				Timeout: strings.TrimSpace(r.FormValue("timeout")), AutoToolChoice: r.FormValue("auto_tool_choice") == "yes",
+				Effort: strings.TrimSpace(r.FormValue("effort")), Geo: strings.TrimSpace(r.FormValue("geo")),
+				Fallback: r.FormValue("server_fallback") == "yes"}
 			for _, f := range []struct {
 				field string
 				into  **float64
@@ -199,6 +201,10 @@ func (s *Server) handleModelsChange(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 				route.Provider = pv.ID
+				if err := route.CheckWire(pv.Wire); err != nil {
+					back("e", err.Error())
+					return
+				}
 				if len(pv.Params) > 0 {
 					route.ProviderParams = values
 				}
@@ -210,6 +216,9 @@ func (s *Server) handleModelsChange(w http.ResponseWriter, r *http.Request) {
 				}
 			} else if route.URL == "" {
 				back("e", "choose a provider, or give the address of one")
+				return
+			} else if err := route.CheckWire(""); err != nil {
+				back("e", err.Error())
 				return
 			}
 			kept = append(kept, route)

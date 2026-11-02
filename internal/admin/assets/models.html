@@ -112,6 +112,17 @@
       <input id="rtimeout" name="timeout" placeholder="120s"></div>
   </div>
   <div class="field"><label><input type="checkbox" name="auto_tool_choice" value="yes"> Send auto where a caller forces a tool</label></div>
+  <p class="help" id="ranth-help">For a provider that speaks Anthropic's Messages API, and refused for any other.</p>
+  <div class="numrow">
+    <div class="field"><label for="reffort">How hard it thinks</label>
+      <select id="reffort" name="effort" aria-describedby="ranth-help">
+        <option value="">the model's default</option><option value="low">low</option><option value="medium">medium</option>
+        <option value="high">high</option><option value="xhigh">xhigh</option><option value="max">max</option></select></div>
+    <div class="field"><label for="rgeo">Where it may run</label>
+      <select id="rgeo" name="geo" aria-describedby="ranth-help">
+        <option value="">the provider's default</option><option value="us">the US only</option><option value="global">any region</option></select></div>
+  </div>
+  <div class="field"><label><input type="checkbox" name="server_fallback" value="yes" aria-describedby="ranth-help"> A request the model declines is answered by another of the provider's models</label></div>
   </details>
   <button type="submit">Add route</button>
 </form>

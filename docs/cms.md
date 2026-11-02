@@ -1527,8 +1527,8 @@ quilzo gateway route add azure --provider azure-openai --param resource=contoso-
 
 The **built-in catalogue** has more than forty providers:
 - runtimes on this machine (Ollama, llama.cpp, vLLM, LM Studio, SGLang, LocalAI);
-- the model makers (OpenAI, Google Gemini, xAI, Mistral, Cohere, Perplexity,
-  AI21, DeepSeek);
+- the model makers (OpenAI, Anthropic, Google Gemini, xAI, Mistral, Cohere,
+  Perplexity, AI21, DeepSeek);
 - open-model hosts (Groq, Together, Fireworks, Cerebras, SambaNova, DeepInfra,
   Hyperbolic, Nebius, Novita, NVIDIA);
 - routers (OpenRouter, Hugging Face, GitHub Models);
@@ -1551,6 +1551,43 @@ read.
 - redirects are refused;
 - a parameter such as an Azure resource or an AWS region is checked before it
   goes into a host name, so it cannot become a different host.
+
+**Anthropic is spoken natively.** Nearly every provider serves OpenAI's chat
+completions, and a profile says which protocol it speaks. Anthropic's profile
+speaks its own Messages API, because what an operator chooses Anthropic for is
+missing from its OpenAI-compatible endpoint. A route to it can say:
+- how hard the model thinks (`--effort low|medium|high|xhigh|max`);
+- where it may run (`--geo us`, or `global`, the provider's default);
+- whether a request the model's safeguards decline is answered by another of
+  Anthropic's models (`--server-fallback`, for the models that take it).
+
+```
+quilzo secret set anthropic < key.txt
+quilzo gateway route add claude --provider anthropic --model MODEL --geo us --effort high
+```
+
+What Anthropic's models refuse is refused where the route is made, not on
+every call after:
+- a temperature or a top_p;
+- `--draws`;
+- an effort, a geo or a server fallback on a provider that speaks OpenAI's
+  protocol.
+
+The conversation goes as the Messages API takes it:
+- system prompts in its own field;
+- pictures as base64 blocks;
+- tools with their schemas, and a tool's results in the user's turn.
+
+A request that may write at length is streamed and read whole. Usage, cache
+reads included, goes into the ledger. Thinking blocks the model returns are
+not passed on.
+
+**A request a model declines is not sent round its safeguard.** When a
+model's safeguards decline a request (Anthropic's `refusal`), the caller is
+told so. The route is not rested, since it is well. The request is not sent on
+to the next route, because routing round one provider's safeguard to whichever
+has fewer is not a fallback. The ledger counts it among the failed calls,
+since it was sent and paid for.
 
 **Pictures and writing go through the gateway too.** A route added with
 `--draws` (or "It draws pictures" on the Models screen) is an images model,

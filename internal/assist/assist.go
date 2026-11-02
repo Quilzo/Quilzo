@@ -406,7 +406,17 @@ type HTTPModel struct {
 	// Draws is a route whose model draws pictures: Paint asks for Model,
 	// rather than QUILZO_IMAGE_MODEL.
 	Draws bool
+	// Wire is the protocol the endpoint speaks: OpenAI's chat completions
+	// when empty or WireOpenAI, Anthropic's Messages API when
+	// WireAnthropic (anthropic.go).
+	Wire string
 }
+
+// The protocols a model endpoint speaks.
+const (
+	WireOpenAI    = "openai-chat"
+	WireAnthropic = "anthropic-messages"
+)
 
 // prepare puts the key and the profile's headers on a request, after
 // checking it goes where it may.
@@ -447,6 +457,14 @@ type Params struct {
 	// AutoToolChoice sends "auto" where a request would force a tool, for
 	// a model that refuses a forced choice.
 	AutoToolChoice bool
+	// Effort, Geo and Fallback are Anthropic's Messages API's own (see
+	// anthropic.go): how hard the model thinks (output_config.effort),
+	// where it may run (inference_geo), and whether a request its first
+	// model declines is answered by another of Anthropic's models
+	// (fallbacks "default"). Sent only when set, and only on that wire.
+	Effort   string
+	Geo      string
+	Fallback bool
 }
 
 // apply puts a route's fields into a request.
@@ -604,6 +622,13 @@ func (h *HTTPModel) Complete(ctx context.Context, system, user string) (string, 
 // usage block every OpenAI-compatible server returns, or an estimate when
 // it returns none.
 func (h *HTTPModel) CompleteMetered(ctx context.Context, system, user string) (string, Usage, error) {
+	if h.Wire == WireAnthropic {
+		r, err := h.anthropicChat(ctx, ChatRequest{Messages: []ChatMessage{
+			{Role: "system", Content: []Part{{Type: "text", Text: system}}},
+			{Role: "user", Content: []Part{{Type: "text", Text: user}}},
+		}})
+		return r.Message.Text(), r.Usage, err
+	}
 	payload := map[string]any{
 		"model": h.Model,
 		"messages": []map[string]string{
