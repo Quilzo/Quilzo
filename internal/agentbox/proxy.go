@@ -43,7 +43,23 @@ type Proxy struct {
 	// the user "run", so nothing else on this machine can borrow the run's
 	// reach.
 	Secret string
+	// Idle is how long a tunnel may carry nothing in either direction
+	// before it is closed. Zero is DefaultIdle.
+	Idle time.Duration
 }
+
+// DefaultIdle is how long a silent tunnel is kept open.
+//
+// A tunnel lasted as long as the run did: a program that opened one to an
+// allowed host and left it idle held a connection, a file descriptor here
+// and a slot at the far side for the whole of its wall clock, and a run is
+// allowed hours. Silence is measured on the tunnel as a whole -- a
+// download where only the far side speaks is not idle -- because a timeout
+// on each direction alone cuts off every long response whose request was
+// sent at the start. The same residual risk is written down in the
+// Kubernetes agent-sandbox project's threat model for its router, which
+// has no limit on upgraded connections at all.
+const DefaultIdle = 5 * time.Minute
 
 // Egress is one connection the box asked for.
 type Egress struct {
@@ -158,16 +174,49 @@ func splitHostPort(hostport string, def int) (string, int, error) {
 	return host, port, nil
 }
 
-// counter counts bytes through a stream.
+// counter counts bytes through a stream, and says when any last moved.
 type counter struct {
 	io.Reader
 	n atomic.Int64
+	// last, when set, is shared by both directions of a tunnel: the time,
+	// in Unix nanoseconds, anything last went through either way.
+	last *atomic.Int64
 }
 
 func (c *counter) Read(b []byte) (int, error) {
 	n, err := c.Reader.Read(b)
 	c.n.Add(int64(n))
+	if n > 0 && c.last != nil {
+		c.last.Store(time.Now().UnixNano())
+	}
 	return n, err
+}
+
+// closeWhenSilent closes a tunnel's two ends once nothing has gone through
+// either way for idle, and reports whether it did. It stops when stop is
+// closed.
+func closeWhenSilent(idle time.Duration, last *atomic.Int64, stop <-chan struct{}, ends ...net.Conn) <-chan bool {
+	closed := make(chan bool, 1)
+	go func() {
+		tick := time.NewTicker(idle / 4)
+		defer tick.Stop()
+		for {
+			select {
+			case <-stop:
+				closed <- false
+				return
+			case now := <-tick.C:
+				if now.Sub(time.Unix(0, last.Load())) >= idle {
+					for _, c := range ends {
+						_ = c.Close()
+					}
+					closed <- true
+					return
+				}
+			}
+		}
+	}()
+	return closed
 }
 
 func (p *Proxy) tunnel(w http.ResponseWriter, r *http.Request) {
@@ -205,18 +254,31 @@ func (p *Proxy) tunnel(w http.ResponseWriter, r *http.Request) {
 		down.Close()
 		return
 	}
-	sent := &counter{Reader: io.MultiReader(bufferedOf(buf), down)}
-	got := &counter{Reader: up}
+	idle := p.Idle
+	if idle <= 0 {
+		idle = DefaultIdle
+	}
+	last := &atomic.Int64{}
+	last.Store(time.Now().UnixNano())
+	sent := &counter{Reader: io.MultiReader(bufferedOf(buf), down), last: last}
+	got := &counter{Reader: up, last: last}
+	stop := make(chan struct{})
+	silent := closeWhenSilent(idle, last, stop, up, down)
 	done := make(chan struct{}, 2)
 	go func() { _, _ = io.Copy(up, sent); closeWrite(up); done <- struct{}{} }()
 	go func() { _, _ = io.Copy(down, got); closeWrite(down); done <- struct{}{} }()
 	<-done
 	<-done
+	close(stop)
 	up.Close()
 	down.Close()
 	if p.Record != nil {
-		p.Record(Egress{Host: host, Port: port, Method: "CONNECT", Allowed: true,
-			Up: sent.n.Load(), Down: got.n.Load(), Took: time.Since(start)})
+		e := Egress{Host: host, Port: port, Method: "CONNECT", Allowed: true,
+			Up: sent.n.Load(), Down: got.n.Load(), Took: time.Since(start)}
+		if <-silent {
+			e.Why = fmt.Sprintf("closed after %s with nothing sent either way", idle)
+		}
+		p.Record(e)
 	}
 }
 

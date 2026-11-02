@@ -100,6 +100,13 @@ const (
 // itself, is a separate call and stays allowed.
 var allowedFamilies = []uint32{syscall.AF_INET, syscall.AF_INET6, syscall.AF_NETLINK}
 
+// netlinkRoute is the one netlink protocol a confined program may open: the
+// routing tables, which is what the C library asks about interfaces with.
+// The rest -- netfilter, xfrm, audit, the generic families and their
+// drivers -- are the kernel's busiest source of privilege escalations
+// reached from an unprivileged socket, and nothing a box runs needs them.
+const netlinkRoute = 0
+
 // ipprotoMPTCP is Multipath TCP's protocol number, which a stream socket in
 // either internet family may ask for. Landlock's TCP rules are written
 // against plain TCP sockets, and on the kernels this was tested on (Linux
@@ -156,8 +163,8 @@ func prelude() []sockFilter {
 
 // network is the part of the filter about sockets, with the call's number
 // in the accumulator: no listening, and a socket only in the families
-// above, never raw and never Multipath TCP. What it does not refuse it
-// allows.
+// above, never raw, never Multipath TCP, and in netlink only the routing
+// protocol. What it does not refuse it allows.
 //
 // Listening, because Landlock decides bind(2) and not the bind listen(2)
 // does by itself on a socket that has none: an unbound socket that listens
@@ -167,7 +174,7 @@ func network() []sockFilter {
 	p := []sockFilter{jump(bpfJMP|bpfJEQ|bpfK, sysListen, 0, 1), errno(syscall.EPERM)}
 	fam := len(allowedFamilies)
 	p = append(p,
-		jump(bpfJMP|bpfJEQ|bpfK, sysSocket, 0, uint8(fam+10)), // past the block
+		jump(bpfJMP|bpfJEQ|bpfK, sysSocket, 0, uint8(fam+15)), // past the block
 		stmt(bpfLD|bpfW|bpfABS, offArg(0)),
 	)
 	for i, f := range allowedFamilies {
@@ -183,6 +190,12 @@ func network() []sockFilter {
 		errno(syscall.EPERM),
 		stmt(bpfLD|bpfW|bpfABS, offArg(2)),
 		jump(bpfJMP|bpfJEQ|bpfK, ipprotoMPTCP, 0, 1),
+		errno(syscall.EPROTONOSUPPORT),
+		// Netlink: the routing protocol and no other.
+		stmt(bpfLD|bpfW|bpfABS, offArg(0)),
+		jump(bpfJMP|bpfJEQ|bpfK, syscall.AF_NETLINK, 0, 3), // not netlink: allowed
+		stmt(bpfLD|bpfW|bpfABS, offArg(2)),
+		jump(bpfJMP|bpfJEQ|bpfK, netlinkRoute, 1, 0),
 		errno(syscall.EPROTONOSUPPORT),
 		allow,
 	)

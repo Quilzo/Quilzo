@@ -303,3 +303,98 @@ func TestTheRunsInterfaceIsTheManifest(t *testing.T) {
 		t.Fatalf("%+v", res)
 	}
 }
+
+// A tunnel nothing goes through is closed, and one where only the far side
+// speaks is not: silence is the tunnel's, not one direction's.
+func TestASilentTunnelIsClosed(t *testing.T) {
+	far, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer far.Close()
+	// The far side: for "talk", a byte every 30ms for 400ms and then
+	// done; otherwise nothing, ever.
+	go func() {
+		for {
+			c, aerr := far.Accept()
+			if aerr != nil {
+				return
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				line, _ := bufio.NewReader(c).ReadString('\n')
+				if strings.HasPrefix(line, "talk") {
+					for i := 0; i < 13; i++ {
+						if _, werr := c.Write([]byte("x")); werr != nil {
+							return
+						}
+						time.Sleep(30 * time.Millisecond)
+					}
+					return
+				}
+				time.Sleep(5 * time.Second)
+			}(c)
+		}
+	}()
+	var mu sync.Mutex
+	var log []Egress
+	p := &Proxy{Secret: "s3cret", Idle: 120 * time.Millisecond,
+		Allow: func(string, int) error { return nil },
+		Dial: func(ctx context.Context, _ string, _ int) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "tcp", far.Addr().String())
+		},
+		Record: func(e Egress) { mu.Lock(); log = append(log, e); mu.Unlock() },
+	}
+	srv := httptest.NewServer(p)
+	defer srv.Close()
+	open := func() net.Conn {
+		c, derr := net.Dial("tcp", srv.Listener.Addr().String())
+		if derr != nil {
+			t.Fatal(derr)
+		}
+		fmt.Fprintf(c, "CONNECT api.example.com:443 HTTP/1.1\r\nHost: api.example.com:443\r\nProxy-Authorization: %s\r\n\r\n", basic("run", "s3cret"))
+		br := bufio.NewReader(c)
+		if res, rerr := http.ReadResponse(br, nil); rerr != nil || res.StatusCode != 200 {
+			t.Fatalf("the tunnel was not opened: %v", rerr)
+		}
+		return &bufConn{Conn: c, r: br}
+	}
+
+	quiet := open()
+	fmt.Fprintf(quiet, "wait\n")
+	began := time.Now()
+	_ = quiet.SetReadDeadline(time.Now().Add(3 * time.Second))
+	if _, rerr := io.ReadAll(quiet); rerr != nil {
+		t.Fatalf("a silent tunnel stayed open: %v", rerr)
+	}
+	if took := time.Since(began); took > 2*time.Second {
+		t.Fatalf("a silent tunnel took %s to close", took)
+	}
+	quiet.Close()
+
+	talking := open()
+	fmt.Fprintf(talking, "talk\n")
+	_ = talking.SetReadDeadline(time.Now().Add(3 * time.Second))
+	got, _ := io.ReadAll(talking)
+	talking.Close()
+	if len(got) != 13 {
+		t.Fatalf("a tunnel only the far side spoke on was cut after %d of 13 bytes", len(got))
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		n := len(log)
+		mu.Unlock()
+		if n == 2 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(log) != 2 || !strings.Contains(log[0].Why, "nothing sent either way") || log[1].Why != "" {
+		t.Fatalf("recorded %+v", log)
+	}
+}

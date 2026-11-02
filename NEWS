@@ -61,6 +61,18 @@ Unreleased
 
 ** Changed
 
+*** An agent's box narrows two more doors.
+    - A tunnel through the box's proxy that carries nothing in either
+      direction for five minutes is closed and recorded as such.  It
+      lasted as long as the run, which may be hours.  Silence is the
+      tunnel's, not one direction's, so a long download is not cut off.
+    - A netlink socket opens only for the routing tables, which the C
+      library reads.  Netfilter, xfrm, audit and the generic families are
+      the kernel's usual way from an unprivileged socket to root, and
+      nothing in a box uses them.  Packet, raw, local, Multipath TCP and
+      crypto (AF_ALG, the CVE-2026-31431 route) sockets were already
+      refused.
+
 *** The admin takes you where you meant to go.
     - The name in the bar goes to the screen you start on (Today, unless
       you chose Pages), as signing in does.  It went to the page list

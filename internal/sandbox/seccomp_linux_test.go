@@ -118,6 +118,20 @@ func TestTheFilterRefusesWhatAConfinedProgramMustNotDo(t *testing.T) {
 	if got := call(sysListen, 3, 1); got != eperm {
 		t.Errorf("listen: %#x, want refused", got)
 	}
+	// Netlink: the routing tables, and none of the other protocols.
+	if got := call(sysSocket, syscall.AF_NETLINK, syscall.SOCK_DGRAM|syscall.SOCK_CLOEXEC, syscall.NETLINK_ROUTE); got != retAllow {
+		t.Errorf("a routing netlink socket: %#x", got)
+	}
+	for _, proto := range []uint64{syscall.NETLINK_NETFILTER, syscall.NETLINK_XFRM, syscall.NETLINK_AUDIT,
+		syscall.NETLINK_GENERIC, syscall.NETLINK_KOBJECT_UEVENT, syscall.NETLINK_INET_DIAG} {
+		if got := call(sysSocket, syscall.AF_NETLINK, syscall.SOCK_DGRAM, proto); got != retErrno|uint32(syscall.EPROTONOSUPPORT) {
+			t.Errorf("a netlink socket of protocol %d: %#x", proto, got)
+		}
+	}
+	// And the rest of the families are untouched by the netlink rule.
+	if got := call(sysSocket, syscall.AF_INET, syscall.SOCK_DGRAM, 17); got != retAllow {
+		t.Errorf("a UDP socket: %#x", got)
+	}
 	// Everything else is allowed, or a program cannot start.
 	for _, nr := range []uint32{0, 1, 2, 39, 57, 59, 60, 231, 444, 445, 446} {
 		if !contains(denied(), nr) && nr != sysClone && nr != sysSocket {
@@ -233,13 +247,14 @@ func TestAHardenedProcessIsConfined(t *testing.T) {
 		"mount": syscall.EPERM, "io_uring": syscall.EPERM, "clone3": syscall.ENOSYS,
 		"packet socket": syscall.EAFNOSUPPORT, "raw socket": syscall.EPERM, "connect elsewhere": syscall.EACCES,
 		"unix socket": syscall.EAFNOSUPPORT, "mptcp socket": syscall.EPROTONOSUPPORT,
-		"listen unbound": syscall.EPERM}
+		"netfilter netlink": syscall.EPROTONOSUPPORT,
+		"listen unbound":    syscall.EPERM}
 	for name, e := range want {
 		if got := syscall.Errno(r.Errnos[name]); got != e {
 			t.Errorf("%s: %v, want %v", name, got, e)
 		}
 	}
-	for _, name := range []string{"getpid", "tcp socket", "socketpair", "connect allowed"} {
+	for _, name := range []string{"getpid", "tcp socket", "socketpair", "connect allowed", "route netlink"} {
 		if !r.Allowed[name] {
 			t.Errorf("%s was refused", name)
 		}
@@ -286,7 +301,7 @@ func TestHardenedHelper(t *testing.T) {
 			return
 		}
 		r.Allowed[name] = true
-		if name == "tcp socket" || name == "unix socket" {
+		if name == "tcp socket" || name == "unix socket" || name == "route netlink" {
 			syscall.Close(int(fd))
 		}
 	}
@@ -301,6 +316,8 @@ func TestHardenedHelper(t *testing.T) {
 	try("tcp socket", sysSocket, syscall.AF_INET, syscall.SOCK_STREAM, 0)
 	try("unix socket", sysSocket, syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
 	try("mptcp socket", sysSocket, syscall.AF_INET, syscall.SOCK_STREAM, ipprotoMPTCP)
+	try("netfilter netlink", sysSocket, syscall.AF_NETLINK, syscall.SOCK_DGRAM, syscall.NETLINK_NETFILTER)
+	try("route netlink", sysSocket, syscall.AF_NETLINK, syscall.SOCK_DGRAM, syscall.NETLINK_ROUTE)
 	if fd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_STREAM, 0); err == nil {
 		try("listen unbound", sysListen, uintptr(fd), 1)
 		syscall.Close(fd)
