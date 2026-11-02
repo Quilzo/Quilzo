@@ -70,6 +70,9 @@ type FormField struct {
 	Choices  []string
 	// Type is the input type for the ordinary case: text, email, number.
 	Type string
+	// File is a file field, and Accept the picker's hint of what it takes.
+	File   bool
+	Accept string
 	// When says the field is asked only on an earlier answer, in words:
 	// "Only if “Topic” is Returns."
 	When string
@@ -101,6 +104,8 @@ func FormOf(name, label, intro, notice, submit string, fields []FormField) formD
 			item["textarea"] = true
 		case f.Checkbox:
 			item["checkbox"] = true
+		case f.File:
+			item["file"], item["accept"] = true, f.Accept
 		default:
 			t := f.Type
 			if t == "" {

@@ -81,6 +81,7 @@
    "*",
    "boards",
    "chatbots",
+   "forms",
    "signup",
    "uploads"
   ],
@@ -242,6 +243,7 @@
    "*",
    "api",
    "chatbots",
+   "forms",
    "import",
    "mcp",
    "uploads"

@@ -136,7 +136,7 @@ const (
 // that the guess was wrong.
 func KindList() string {
 	return string(Line) + ", " + string(Para) + ", " + string(Email) + ", " +
-		string(Number) + ", " + string(Choice) + " or " + string(Agree)
+		string(Number) + ", " + string(Choice) + ", " + string(Agree) + " or " + string(File)
 }
 
 // Field is one thing a form asks for.
@@ -156,6 +156,9 @@ type Field struct {
 	// by the server from what arrived (Accept), and shown or not by a
 	// stylesheet (StyleSheet), so it works with no script at all.
 	When *When `json:"when,omitempty"`
+	// Accept is what a file field takes: image, document, text, audio or
+	// video. Empty takes images and documents (upload.go).
+	Accept []string `json:"accept,omitempty"`
 }
 
 // When is the answer that makes a field asked.
@@ -372,6 +375,12 @@ func (f *Form) Validate() error {
 		}
 		switch fl.Kind {
 		case Line, Para, Email, Number, Agree:
+		case File:
+			for _, k := range fl.Accept {
+				if !slices.Contains(UploadKinds, k) {
+					return fmt.Errorf("%q takes %q; a file field takes %s", fl.Name, k, strings.Join(UploadKinds, ", "))
+				}
+			}
 		case Choice:
 			if len(fl.Choices) == 0 {
 				return fmt.Errorf("%q is a choice with nothing to choose",
@@ -514,6 +523,10 @@ type Submission struct {
 	// which is why it expires with everything else rather than living in a log
 	// that is never rotated.
 	Source string `json:"source,omitempty"`
+	// Files are the files it carries, kept beside it (upload.go).
+	Files []FileRef `json:"files,omitempty"`
+	// data are the files' bytes, from arrival until Put writes them.
+	data map[string][]byte
 }
 
 // Accept turns a submitted set of values into a submission, or refuses it.
@@ -559,6 +572,11 @@ func AcceptShare(f *Form, values map[string]string, source string,
 var ErrSpam = errors.New("this submission was not accepted")
 
 func accept(f *Form, values map[string]string, source string,
+	now time.Time, human bool) (Submission, error) {
+	return acceptAll(f, values, nil, source, now, human)
+}
+
+func acceptAll(f *Form, values map[string]string, files map[string]Upload, source string,
 	now time.Time, human bool) (Submission, error) {
 
 	if f.Closed {
@@ -611,10 +629,34 @@ func accept(f *Form, values map[string]string, source string,
 
 	// Only declared fields, checked against their kinds. There is no path here
 	// by which a name from the request becomes a key in anything.
+	var uploaded int64
 	for _, fl := range f.Fields {
 		// A field asked only on an answer is neither required nor kept
 		// when the answer was not given, whatever arrived for it.
 		if !fl.When.holds(out.Values) {
+			continue
+		}
+		if fl.Kind == File {
+			u, sent := files[fl.Name]
+			if !sent || len(u.Data) == 0 {
+				if fl.Required {
+					return Submission{}, fmt.Errorf("%s is required", fl.Label)
+				}
+				continue
+			}
+			ref, err := checkUpload(fl, u, now)
+			if err != nil {
+				return Submission{}, fmt.Errorf("%s %w", fl.Label, err)
+			}
+			if uploaded += ref.Size; uploaded > MaxUploadBytes {
+				return Submission{}, fmt.Errorf("the files are over %d MB together", MaxUploadBytes>>20)
+			}
+			if out.data == nil {
+				out.data = map[string][]byte{}
+			}
+			out.data[fl.Name] = u.Data
+			out.Files = append(out.Files, ref)
+			out.Values[fl.Name] = fmt.Sprintf("%s (%s, %d KB)", ref.Name, ref.Format, (ref.Size+1023)/1024)
 			continue
 		}
 		raw := strings.TrimSpace(values[fl.Name])
@@ -713,10 +755,13 @@ func (st *Store) path(form, id string) (string, error) {
 	return filepath.Join(st.dir, form, id+".json"), nil
 }
 
-// Put writes one submission.
+// Put writes one submission, and the files it carries first.
 func (st *Store) Put(s Submission) error {
 	p, err := st.path(s.Form, s.ID)
 	if err != nil {
+		return err
+	}
+	if err := st.putFiles(s); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
@@ -781,6 +826,13 @@ func (st *Store) Delete(form, id string) error {
 	p, err := st.path(form, id)
 	if err != nil {
 		return err
+	}
+	// Its files go with it, and first: a submission that is gone keeps no
+	// file behind.
+	if dir, derr := st.filesDir(form, id); derr == nil {
+		if err := os.RemoveAll(dir); err != nil {
+			return err
+		}
 	}
 	if err := os.Remove(p); err != nil {
 		if os.IsNotExist(err) {

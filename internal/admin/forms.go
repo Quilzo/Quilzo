@@ -116,7 +116,7 @@ func (s *Server) handleForms(w http.ResponseWriter, r *http.Request) {
 		"Fields": fields, "Found": found, "Query": r.URL.Query().Get("q"),
 		"Embed": embed,
 		"Kinds": []form.Kind{form.Line, form.Para, form.Email, form.Number,
-			form.Choice, form.Agree},
+			form.Choice, form.Agree, form.File},
 		"MaxRetention": form.MaxRetentionDays, "Bases": form.Bases,
 		"Message": r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"),
 		"CanErase": s.Policy.Evaluate(p.Name, auth.ActGrant, "/").Allowed,
@@ -139,6 +139,11 @@ func formFieldFromRequest(r *http.Request) form.Field {
 	for _, c := range strings.Split(r.FormValue("choices"), ",") {
 		if c = strings.TrimSpace(c); c != "" {
 			f.Choices = append(f.Choices, c)
+		}
+	}
+	for _, k := range strings.Split(r.FormValue("takes"), ",") {
+		if k = strings.TrimSpace(k); k != "" && f.Kind == form.File {
+			f.Accept = append(f.Accept, k)
 		}
 	}
 	if on := strings.TrimSpace(r.FormValue("when_field")); on != "" {
@@ -517,3 +522,36 @@ func (s *Server) formRedirect(w http.ResponseWriter, r *http.Request, msg, errMs
 }
 
 var _ = sort.Strings
+
+// handleFormFile gives staff a file a submission carries: as a download,
+// never shown in the admin's own pages, typed from what the bytes were
+// found to be and named afresh, under a policy that runs nothing.
+func (s *Server) handleFormFile(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.requireAuth(w, r)
+	if !ok {
+		return
+	}
+	// Reading what the public sent takes what reading submissions takes.
+	if !s.can(w, r, p, auth.ActEditDraft, "/") {
+		return
+	}
+	if s.Forms == nil || s.Forms.Store == nil {
+		http.NotFound(w, r)
+		return
+	}
+	q := r.URL.Query()
+	name, id, field := q.Get("form"), q.Get("id"), q.Get("field")
+	ref, data, err := s.Forms.Store.File(name, id, field)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	s.auditPub(p, "form.file.read", "/forms/"+name, map[string]string{"form": name, "submission": id, "field": field})
+	h := w.Header()
+	h.Set("Content-Type", ref.MIME())
+	h.Set("Content-Disposition", `attachment; filename="`+ref.DownloadName(id)+`"`)
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Content-Security-Policy", "default-src 'none'; sandbox")
+	h.Set("Cache-Control", "no-store")
+	_, _ = w.Write(data)
+}

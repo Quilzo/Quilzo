@@ -87,7 +87,9 @@ the page, with its spam checks.</p>
       <div class="hint"><code>{{short $sub.ID}}</code></div></th>
     {{range $f := $.Fields}}
     <td>{{if $f.Sensitive}}<span class="hint">held, not shown</span>
-        {{else}}{{index $sub.Values $f.Name}}{{end}}</td>
+        {{else}}{{index $sub.Values $f.Name}}{{end}}
+        {{if eq (print $f.Kind) "file"}}{{range $sub.Files}}{{if eq .Field $f.Name}}
+        <a href="/forms/file?form={{$sub.Form}}&amp;id={{$sub.ID}}&amp;field={{.Field}}" download>Download<span class="visually-hidden"> {{$f.Label}}</span></a>{{end}}{{end}}{{end}}</td>
     {{end}}
     <td>
       <form method="post" action="/forms/submission/delete" class="inline">
@@ -189,6 +191,10 @@ the page, with its spam checks.</p>
     <p><label for="f-help">Its help text</label>
       <input id="f-help" name="field_help"
              placeholder="we only use this to reply"></p>
+    <p><label for="f-takes">Takes, for a file</label>
+      <input id="f-takes" name="takes" spellcheck="false" placeholder="image, document">
+      <span class="hint">Any of image, document, text, audio, video; images and documents when empty.
+        Checked by what the file is, never by its name.</span></p>
     <p><label for="f-when">Asked only when</label>
       <input id="f-when" name="when_field" spellcheck="false" placeholder="topic">
       <span class="hint">An earlier choice or box. Empty asks it of everybody.</span></p>

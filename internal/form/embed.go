@@ -37,7 +37,11 @@ func Embed(f *Form) string {
 	var b strings.Builder
 	id := func(name string) string { return "f-" + f.Name + "-" + name }
 
-	fmt.Fprintf(&b, "<form method=\"post\" action=\"/form/%s\">\n", esc(f.Name))
+	enctype := ""
+	if f.HasFiles() {
+		enctype = ` enctype="multipart/form-data"`
+	}
+	fmt.Fprintf(&b, "<form method=\"post\" action=\"/form/%s\"%s>\n", esc(f.Name), enctype)
 
 	for _, fl := range f.Fields {
 		label := fl.Label
@@ -70,6 +74,10 @@ func Embed(f *Form) string {
 			fmt.Fprintf(&b,
 				"    <input id=\"%s\" name=\"%s\" type=\"checkbox\" value=\"true\"%s>\n",
 				esc(id(fl.Name)), esc(fl.Name), req)
+		case File:
+			fmt.Fprintf(&b,
+				"    <input id=\"%s\" name=\"%s\" type=\"file\" accept=\"%s\"%s>\n",
+				esc(id(fl.Name)), esc(fl.Name), esc(fl.AcceptTypes()), req)
 		default:
 			fmt.Fprintf(&b,
 				"    <input id=\"%s\" name=\"%s\" type=\"%s\"%s>\n",
