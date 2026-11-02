@@ -512,3 +512,32 @@ func TestAVisitorAsksAChatbotsAgent(t *testing.T) {
 		t.Errorf("a signed visitor: %d", w.Code)
 	}
 }
+
+// A chatbot that reads records answers from them on the site, naming the
+// record it answered from without a link, and reads them again when they
+// change.
+func TestAChatbotOnTheSiteAnswersFromRecords(t *testing.T) {
+	bot := shopBot
+	bot.Collections = []string{"products"}
+	st, _ := askSite(t, bot)
+	tree, reads := "t1", 0
+	price := "£24"
+	st.Assistants.RecordsTree = func() string { return tree }
+	st.Assistants.Records = func(_ string, cols []string) []assistant.Passage {
+		reads++
+		return assistant.ChunkRecords("products", []assistant.RecordText{{ID: "p1",
+			Fields: map[string]any{"name": "Desk blotter", "price_display": price, "dimensions": "600 × 400mm"}}})
+	}
+	body := askPost(st, "help", "how much is the desk blotter?").Body.String()
+	if !strings.Contains(body, "£24") || !strings.Contains(body, "Desk blotter") {
+		t.Fatalf("%s", body)
+	}
+	askPost(st, "help", "how big is the desk blotter?")
+	if reads != 1 {
+		t.Fatalf("records read %d times for one tree", reads)
+	}
+	tree, price = "t2", "£26"
+	if body := askPost(st, "help", "how much is the desk blotter?").Body.String(); !strings.Contains(body, "£26") || reads != 2 {
+		t.Fatalf("not read again when the records changed: %d\n%s", reads, body)
+	}
+}

@@ -71,9 +71,15 @@ type Assistants struct {
 	// is one, and whether the request was made at all. VisitorKey is the
 	// key the host site signs visitors' tokens with, for an assistant that
 	// names one. Nil Act offers no agent action.
-	Act        func(chatact.Request) error
-	Answer     func(id string) (res chatact.Result, answered, made bool)
-	VisitorKey func(assistant.Assistant) []byte
+	// RecordsTree is the published tree records are read from, which
+	// keys the index of an assistant that reads records, so it is rebuilt
+	// when they change; Records are some collections' records in it, as
+	// passages, read only when the index is rebuilt.
+	RecordsTree func() string
+	Records     func(tree string, collections []string) []assistant.Passage
+	Act         func(chatact.Request) error
+	Answer      func(id string) (res chatact.Result, answered, made bool)
+	VisitorKey  func(assistant.Assistant) []byte
 	// Unanswered is told a question a chatbot could not answer, for the
 	// owner's record of what the site does not say (chatbot.gaps). Nil,
 	// which it is unless the owner turned that on, keeps nothing.
@@ -301,7 +307,13 @@ func (st *Site) assistantIndex(a assistant.Assistant) (*assistant.Index, error) 
 	// The declaration is part of the key: an owner narrowing what the
 	// assistant reads must not be answered from the wider index.
 	h.Write([]byte(strings.Join(a.Pages, ",") + "|" + strings.Join(a.Exclude, ",") +
-		"|" + strings.Join(a.Documents, ",") + "|" + strconv.FormatBool(a.KeepInstructions)))
+		"|" + strings.Join(a.Documents, ",") + "|" + strconv.FormatBool(a.KeepInstructions) +
+		"|" + strings.Join(a.Collections, ",")))
+	tree := ""
+	if len(a.Collections) > 0 && st.Assistants.RecordsTree != nil {
+		tree = st.Assistants.RecordsTree()
+		h.Write([]byte("|" + tree))
+	}
 	for _, n := range names {
 		h.Write([]byte(n + "\x00" + hashes[n] + "\x00"))
 	}
@@ -314,6 +326,9 @@ func (st *Site) assistantIndex(a assistant.Assistant) (*assistant.Index, error) 
 		return c.idx, nil
 	}
 	passages := assistant.Chunk(pages, a.Reads)
+	if tree != "" && st.Assistants.Records != nil {
+		passages = append(passages, st.Assistants.Records(tree, a.Collections)...)
+	}
 	if as.Document != nil {
 		for _, id := range a.Documents {
 			name, format, body, derr := as.Document(id)
@@ -676,7 +691,7 @@ var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
   {{end}}
   {{if .V.Sources}}
   <h2>Sources</h2>
-  <ol class="qz-sources">{{range .V.Sources}}<li id="src-{{.N}}" value="{{.N}}"><a href="{{.Href}}"{{if $.V.Panel}} target="_top"{{else if $.V.Embedded}} target="_blank" rel="noopener"{{end}}>{{.Title}}</a></li>{{end}}</ol>
+  <ol class="qz-sources">{{range .V.Sources}}<li id="src-{{.N}}" value="{{.N}}">{{if .Href}}<a href="{{.Href}}"{{if $.V.Panel}} target="_top"{{else if $.V.Embedded}} target="_blank" rel="noopener"{{end}}>{{.Title}}</a>{{else}}{{.Title}}{{end}}</li>{{end}}</ol>
   {{end}}
 </section>
 {{with .V.Offer}}

@@ -88,6 +88,9 @@ type Assistant struct {
 	// Launcher puts the assistant on the site's pages: a button in a corner
 	// that opens it in a panel, without leaving the page. Nil is no launcher.
 	Launcher *Launcher `json:"launcher,omitempty"`
+	// Collections are the record collections it may answer from too,
+	// published records only (records.go).
+	Collections []string `json:"collections,omitempty"`
 	// IdentitySecret names the sealed credential the host site signs a
 	// visitor's token with (VerifyVisitor), for agent actions that need to
 	// know who they act for. Never the key itself.
@@ -379,6 +382,14 @@ func (a Assistant) Validate() error {
 	if len(a.Actions) > MaxActions {
 		return fmt.Errorf("%s declares %d actions, over %d", a.Name,
 			len(a.Actions), MaxActions)
+	}
+	if len(a.Collections) > MaxCollections {
+		return fmt.Errorf("%s reads %d collections; at most %d", a.Name, len(a.Collections), MaxCollections)
+	}
+	for _, c := range a.Collections {
+		if !reCollection.MatchString(c) {
+			return fmt.Errorf("%s reads %q, which is not a collection's name", a.Name, c)
+		}
 	}
 	seen := map[string]bool{}
 	for _, ac := range a.Actions {

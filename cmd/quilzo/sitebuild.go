@@ -212,6 +212,21 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 		Questions:  chatbotQuestions(mustConfig(root)),
 		Unanswered: gapKeeper(root),
 		VisitorKey: func(a assistant.Assistant) []byte { return visitorKey(root, a) },
+		RecordsTree: func() string {
+			commit := s.GetRef(site.RefLive)
+			if commit == "" {
+				return ""
+			}
+			c, err := s.GetCommit(commit)
+			if err != nil {
+				return ""
+			}
+			return c.Tree
+		},
+		Records: func(tree string, collections []string) []assistant.Passage {
+			ps, _ := recordPassages(s, tree, collections)
+			return ps
+		},
 		Audit: func(name, source string, answered bool) {
 			outcome := audit.Success
 			if !answered {

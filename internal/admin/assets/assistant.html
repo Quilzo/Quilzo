@@ -121,6 +121,10 @@
     <p id="pages-help" class="help">Comma-separated. Only published pages, never drafts.</p></div>
   <div class="field"><label for="exclude">Never reads pages under</label>
     <input id="exclude" name="exclude" value="{{.Exclude}}" placeholder="internal, legal/drafts"></div>
+  <div class="field"><label for="collections">Answers from these records too</label>
+    <input id="collections" name="collections" value="{{.Collections}}" placeholder="products, events" aria-describedby="collections-help">
+    <p id="collections-help" class="help">Comma-separated record collections: published records only. Fields
+      named for a person (an email address, a telephone number, an address) are never read.</p></div>
   <fieldset class="field">
     <legend>Documents it may also read</legend>
     {{if .Docs}}{{range .Docs}}
