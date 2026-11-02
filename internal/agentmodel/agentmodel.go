@@ -807,6 +807,17 @@ func browserPrompt(ops map[string]bool, decl *agent.Browser) string {
 		"browser_click":   `{"op": "browser_click", "input": {"ref": "e5"}} presses a button or link, and answers with the page it led to`,
 		"browser_sign_in": `{"op": "browser_sign_in", "input": {"credential": "name"}} signs in on the open sign-in page; you never see the password`,
 		"browser_look":    `{"op": "browser_look"} sends you a picture of the page, for when its outline is not enough`,
+		"browser_scroll": `{"op": "browser_scroll", "input": {"direction": "down", "amount": 1}} scrolls by screens (down, up, left, right); ` +
+			`{"op": "browser_scroll", "input": {"ref": "e9"}} brings an element into view`,
+		"browser_key": `{"op": "browser_key", "input": {"key": "Enter"}} presses a key where the focus is: Enter, Tab, Escape, ` +
+			`Backspace, Delete, Space, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, PageUp, PageDown, Home or End`,
+		"browser_navigate": `{"op": "browser_navigate", "input": {"to": "back"}} goes back, forward or reloads ("reload")`,
+		"browser_wait": `{"op": "browser_wait", "input": {"text": "Order received", "seconds": 15}} waits until the page shows the text ` +
+			`(or for the seconds alone, at most 30)`,
+		"browser_hover":   `{"op": "browser_hover", "input": {"ref": "e7"}} rests the pointer on an element, as for a menu that opens on hover`,
+		"browser_emulate": `{"op": "browser_emulate", "input": {"device": "phone", "color_scheme": "dark"}} shows the page as a phone, tablet, laptop or desktop would, or at a "width" and "height", in light or dark, with "reduced_motion" or "media": "print"; "device": "reset" goes back`,
+		"browser_console": `{"op": "browser_console"} reads what the page logged: its errors, warnings and failed requests`,
+		"browser_check":   `{"op": "browser_check", "input": {"what": "all"}} checks the page's speed ("performance"), "accessibility" and search listing ("seo")`,
 	}
 	var held []string
 	for _, op := range agent.BrowserCapabilities {

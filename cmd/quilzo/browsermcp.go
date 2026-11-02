@@ -69,7 +69,9 @@ const maxBrowserGrantHosts = 32
 // without signing in, and without looking unless the grant allows
 // pictures, which carry a picture of whatever the page shows.
 func grantOps(g browserGrant) []string {
-	all := []string{"browser_open", "browser_read", "browser_look", "browser_type", "browser_choose", "browser_click"}
+	all := []string{"browser_open", "browser_read", "browser_look", "browser_type", "browser_choose", "browser_click",
+		"browser_key", "browser_scroll", "browser_navigate", "browser_wait", "browser_hover", "browser_emulate",
+		"browser_console", "browser_check"}
 	if len(g.Ops) == 0 {
 		g.Ops = all
 	}
@@ -391,11 +393,20 @@ func grantOperations(g browserGrant) []mcp.Operation {
 				"browser_type":   "types text into a field of the page, by its reference from the outline",
 				"browser_choose": "chooses an option in a list, by its reference and the option's label",
 				"browser_click":  "presses a button or link by its reference; what commits to something waits for a person",
+				"browser_key": "presses one key where the focus is; Enter or Space that would press a button or send a form " +
+					"is weighed as that press is",
+				"browser_scroll":   "scrolls the page by screens, or brings an element into view by its reference",
+				"browser_navigate": "goes back, forward or reloads; never back to a page a form led to, which would send it again",
+				"browser_wait":     "waits until the page shows some text, or for some seconds, at most 30",
+				"browser_hover":    "rests the pointer on an element, as for a menu that opens on hover",
+				"browser_emulate":  "shows the page as a phone, tablet, laptop or desktop, in light or dark, or as printed",
+				"browser_console":  "reads what the page logged: its errors, warnings and failed requests",
+				"browser_check":    "checks the page's speed, accessibility and search listing",
 			}[op],
 			NeedsRole: "reader",
 		}
 		switch op {
-		case "browser_type", "browser_choose", "browser_click":
+		case "browser_type", "browser_choose", "browser_click", "browser_key":
 			o.Writes = true
 		}
 		switch op {
@@ -405,8 +416,22 @@ func grantOperations(g browserGrant) []mcp.Operation {
 			o.Args = map[string]string{"ref": "the field's reference from the outline", "text": "the text to type"}
 		case "browser_choose":
 			o.Args = map[string]string{"ref": "the list's reference from the outline", "option": "the option's label"}
-		case "browser_click":
+		case "browser_click", "browser_hover":
 			o.Args = map[string]string{"ref": "the element's reference from the outline"}
+		case "browser_key":
+			o.Args = map[string]string{"key": "Enter, Tab, Escape, Backspace, Delete, Space, an arrow, PageUp, PageDown, Home or End"}
+		case "browser_scroll":
+			o.Args = map[string]string{"direction": "down, up, left or right", "amount": "how many screens, 1 when not given",
+				"ref": "instead, an element to bring into view"}
+		case "browser_navigate":
+			o.Args = map[string]string{"to": "back, forward or reload"}
+		case "browser_wait":
+			o.Args = map[string]string{"text": "text to wait for the page to show", "seconds": "how long, at most 30"}
+		case "browser_emulate":
+			o.Args = map[string]string{"device": "phone, tablet, laptop, desktop or reset", "width": "pixels", "height": "pixels",
+				"color_scheme": "light or dark", "reduced_motion": "true to ask for less motion", "media": "print to see it printed"}
+		case "browser_check":
+			o.Args = map[string]string{"what": "performance, accessibility, seo or all"}
 		}
 		out = append(out, o)
 	}

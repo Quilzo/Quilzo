@@ -11,11 +11,13 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/cdp"
 )
@@ -123,10 +125,11 @@ func TestAGrantMeansWhatItSays(t *testing.T) {
 	} else if len(grantOps(g)) != 2 || m.Capabilities[0] != "browser_open" {
 		t.Fatalf("the ops offered: %v", grantOps(g))
 	}
-	if ops := grantOps(browserGrant{Name: "seven", Read: []string{"shop.example.com"}}); len(ops) != 5 {
+	all := len(agent.BrowserCapabilities) - 1 // without signing in
+	if ops := grantOps(browserGrant{Name: "seven", Read: []string{"shop.example.com"}}); len(ops) != all-1 || slices.Contains(ops, "browser_look") {
 		t.Errorf("an empty ops list did not mean all but sign-in and, without pictures, looking: %v", ops)
 	}
-	if ops := grantOps(browserGrant{Name: "eight", Read: []string{"shop.example.com"}, Pictures: true}); len(ops) != 6 {
+	if ops := grantOps(browserGrant{Name: "eight", Read: []string{"shop.example.com"}, Pictures: true}); len(ops) != all {
 		t.Errorf("a grant with pictures did not offer looking: %v", ops)
 	}
 }
@@ -177,15 +180,16 @@ func TestTheOfferedServerNamesItsActions(t *testing.T) {
 		t.Fatal(err)
 	}
 	ops := grantOperations(g)
-	if len(ops) != 5 {
-		t.Fatalf("five actions offered (no pictures: no looking), %d named", len(ops))
+	if want := len(agent.BrowserCapabilities) - 2; len(ops) != want {
+		t.Fatalf("%d actions offered (no sign-in, no pictures: no looking), %d named", want, len(ops))
 	}
 	writes := map[string]bool{}
 	for _, o := range ops {
 		writes[o.Name] = o.Writes
 	}
-	if writes["browser_click"] != true || writes["browser_read"] != false || writes["browser_look"] != false {
-		t.Errorf("acting on a page must be a write: %+v", ops)
+	if writes["browser_click"] != true || writes["browser_key"] != true || writes["browser_read"] != false ||
+		writes["browser_look"] != false || writes["browser_scroll"] != false || writes["browser_check"] != false {
+		t.Errorf("acting on a page must be a write, and only that: %+v", ops)
 	}
 	for _, o := range ops {
 		if o.Summary == "" {
