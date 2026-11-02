@@ -80,6 +80,10 @@ type Provider struct {
 const (
 	WireOpenAI    = "openai-chat"
 	WireAnthropic = "anthropic-messages"
+	// WireVeo and WireFalQueue make video, and nothing else
+	// (internal/assist film.go).
+	WireVeo      = "google-veo"
+	WireFalQueue = "fal-queue"
 )
 
 // Param is a value a provider's address needs: a resource, a region, an
@@ -125,15 +129,15 @@ func (p Provider) Check() error {
 		return fmt.Errorf("%s has no name", p.ID)
 	}
 	switch p.Wire {
-	case WireOpenAI, WireAnthropic:
+	case WireOpenAI, WireAnthropic, WireVeo, WireFalQueue:
 	default:
 		return fmt.Errorf("%s speaks %q, which this build does not", p.ID, p.Wire)
 	}
 	switch {
-	case p.Auth == "bearer", p.Auth == "none":
+	case p.Auth == "bearer", p.Auth == "none", p.Auth == "key":
 	case strings.HasPrefix(p.Auth, "header:") && reHeader.MatchString(strings.TrimPrefix(p.Auth, "header:")):
 	default:
-		return fmt.Errorf("%s sends its key %q; bearer, header:NAME or none", p.ID, p.Auth)
+		return fmt.Errorf("%s sends its key %q; bearer, key, header:NAME or none", p.ID, p.Auth)
 	}
 	if p.Auth == "none" && !p.Local {
 		return fmt.Errorf("%s is hosted and takes no key, which no hosted provider is", p.ID)

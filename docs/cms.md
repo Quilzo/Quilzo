@@ -1794,6 +1794,26 @@ The rules:
 - Text holding personal data goes only to a route allowed it. Masking cannot
   help here: a placeholder read aloud is not a recording anybody wants.
 
+**Video from a prompt.** A route added with `--films` names a provider that
+makes video — Google's Veo through the Gemini API, or a model on fal's queue —
+and `quilzo media film` asks it:
+
+```
+quilzo secret set gemini < key.txt
+quilzo gateway route add veo --provider google-veo --model veo-3.1-generate-preview --films --price-video 0.75
+quilzo media film "a slow pan over a bakery at dawn, steam rising" --aspect 9:16 --author dana
+```
+
+Both are asynchronous: the request is taken, asked after until it is done (ten
+minutes at the most), and the video fetched. Every address an answer names has
+to be https on the provider's own host — a finished fal video on fal's storage
+is fetched without the key — and a key never follows a redirect to another
+host. What comes back is checked to be an MP4, stored marked as generated with
+the model, the prompt and the person accountable, and like every video needs
+its captions before a page shows it. The prompt is masked for a route not
+allowed personal data, the call is charged to the budget and in the ledger,
+and a prompt the provider's filters decline is said so.
+
 **Agents act with a person's own accounts, not one key for everybody.** An
 integration used to carry one credential for the whole install: an agent
 filing into somebody's calendar did it as whoever owned the key, and every
