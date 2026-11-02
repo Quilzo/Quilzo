@@ -134,6 +134,16 @@ Unreleased
     takes what saving takes, so somebody who may only read sees the saved
     draft.
 
+*** A remote MCP server's sign-in, discovered.  quilzo connect provider
+    discover NAME https://SERVER/mcp reads the server's protected-
+    resource metadata (RFC 9728) and its authorization server's (RFC
+    8414 or OpenID discovery), requires PKCE with S256, registers this
+    installation there as a public client (RFC 7591) or takes
+    --client-id, and keeps a provider whose tokens carry the resource
+    indicator (RFC 8707) and go to that server alone.  Each person then
+    connects in Your accounts, and an MCP integration naming the
+    connection reaches the server as them.
+
 *** An agent's writes elsewhere are not done twice, and not lost.  Each
     write is named by its run and step and sent with an Idempotency-Key,
     the same whenever that step is sent again, so a service that keeps
