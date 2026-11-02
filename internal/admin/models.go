@@ -183,6 +183,7 @@ func (s *Server) handleModelsChange(w http.ResponseWriter, r *http.Request) {
 				Draws:        r.FormValue("draws") == "yes",
 				Embeds:       r.FormValue("embeds") == "yes",
 				Transcribes:  r.FormValue("transcribes") == "yes",
+				Speaks:       r.FormValue("speaks") == "yes",
 				PriceMinute:  strings.TrimSpace(r.FormValue("price_minute")),
 				PricePicture: strings.TrimSpace(r.FormValue("price_picture"))}
 			// A provider chosen: its address from its profile, its

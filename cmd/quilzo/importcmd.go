@@ -229,6 +229,8 @@ func cmdMedia(root string, args []string) error {
 		return mediaCaptions(root, args[1:])
 	case "transcribe":
 		return mediaTranscribe(root, args[1:])
+	case "speak":
+		return mediaSpeak(root, args[1:])
 	case "verify":
 		return cmdMediaVerify(root, args[1:])
 	case "formats":
@@ -236,7 +238,7 @@ func cmdMedia(root string, args []string) error {
 	default:
 		return fmt.Errorf("unknown media command %q; try add, get, list, "+
 			"remove, replace, renditions, origin, focus, edit, generate, "+
-			"captions, transcribe, verify or formats", args[0])
+			"captions, transcribe, speak, verify or formats", args[0])
 	}
 }
 

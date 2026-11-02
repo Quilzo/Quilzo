@@ -102,6 +102,10 @@ type Route struct {
 	// transcribe.go), and PriceMinute is what a minute of recording costs.
 	Transcribes bool   `json:"transcribes,omitempty"`
 	PriceMinute string `json:"price_minute,omitempty"`
+	// Speaks says this route's model reads text aloud (an /audio/speech
+	// endpoint): it is used for that and for nothing else, and PriceIn is
+	// what a million tokens of text read cost, at four characters a token.
+	Speaks bool `json:"speaks,omitempty"`
 }
 
 // RouteParams are the request fields one route needs. Nothing beyond the
@@ -198,8 +202,9 @@ func (r Route) CheckWire(wire string) error {
 		if p.MaxTokens != "" && p.MaxTokens != "max_tokens" {
 			return fmt.Errorf("route %s: Anthropic's Messages API takes max_tokens, not %s", r.Name, p.MaxTokens)
 		}
-		if r.Draws || r.Embeds || r.Transcribes {
-			return fmt.Errorf("route %s: Anthropic's models answer in words, and neither draw, make embeddings nor transcribe", r.Name)
+		if r.Draws || r.Embeds || r.Transcribes || r.Speaks {
+			return fmt.Errorf("route %s: Anthropic's models answer in words, and neither draw, make embeddings, "+
+				"transcribe nor speak", r.Name)
 		}
 	default:
 		return fmt.Errorf("route %s: its provider speaks %q, which this build does not", r.Name, wire)
@@ -355,13 +360,13 @@ func (c Config) Validate() error {
 			return fmt.Errorf("route %s asks for a picture's bytes and does not draw", r.Name)
 		}
 		jobs := 0
-		for _, on := range []bool{r.Draws, r.Embeds, r.Transcribes} {
+		for _, on := range []bool{r.Draws, r.Embeds, r.Transcribes, r.Speaks} {
 			if on {
 				jobs++
 			}
 		}
 		if jobs > 1 {
-			return fmt.Errorf("route %s draws, makes embeddings or transcribes: one of them", r.Name)
+			return fmt.Errorf("route %s draws, makes embeddings, transcribes or speaks: one of them", r.Name)
 		}
 		if r.PriceMinute != "" {
 			pm, perr := ParseMoney(r.PriceMinute)
@@ -760,7 +765,7 @@ func (g *Gateway) complete(ctx context.Context, consumers []string, p pick, syst
 	for _, r := range g.routesFor(p) {
 		// A route that draws pictures, makes embeddings or transcribes is
 		// not asked for words.
-		if r.Draws || r.Embeds || r.Transcribes {
+		if r.Draws || r.Embeds || r.Transcribes || r.Speaks {
 			continue
 		}
 		g.mu.Lock()
