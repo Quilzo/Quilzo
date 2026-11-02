@@ -24,9 +24,10 @@
   <tbody>
   {{range $i, $h := .Health}}
   <tr>
-    <th scope="row">{{$h.Route.Name}}<div class="hint mono">{{$h.Route.URL}}</div></th>
+    <th scope="row">{{$h.Route.Name}}<div class="hint mono">{{$h.Route.URL}}</div>
+      {{with index $.Known $h.Route.Provider}}<div class="hint">{{.Name}} · {{.Where}} · trains on it: {{.Data.Trains}}</div>{{end}}</th>
     <td><code>{{$h.Route.Model}}</code>{{with $h.Route.Params.String}}<div class="hint">{{.}}</div>{{end}}</td>
-    <td>{{if $h.Route.KeyEnv}}<code>${{$h.Route.KeyEnv}}</code>{{if not $h.KeySet}} <span class="tag tag-bad">not set</span>{{end}}{{else}}<span class="hint">none — this network only</span>{{end}}</td>
+    <td data-label="Key">{{if $h.Route.KeySecret}}sealed as <code>{{$h.Route.KeySecret}}</code>{{if not $h.KeySet}} <span class="tag tag-bad">not kept</span>{{end}}{{else if $h.Route.KeyEnv}}<code>${{$h.Route.KeyEnv}}</code>{{if not $h.KeySet}} <span class="tag tag-bad">not set</span>{{end}}{{else}}<span class="hint">none — this network only</span>{{end}}</td>
     <td>{{if $h.Route.Personal}}<span class="tag tag-warn">sent</span>{{else}}<span class="tag tag-ok">masked</span>{{end}}</td>
     <td>{{if or $h.Route.PriceIn $h.Route.PriceOut}}{{or $h.Route.PriceIn "0"}} in, {{or $h.Route.PriceOut "0"}} out{{with $.Cfg}} {{.Currency}}{{end}}{{else}}<span class="hint">free</span>{{end}}</td>
     <td>{{if $h.Resting}}<span class="tag tag-warn">resting</span>{{else}}<span class="tag tag-ok">ready</span>{{end}}</td>
@@ -64,9 +65,18 @@
   <h3>Add a route</h3>
   <div class="field"><label for="rname">Name {{template "req"}}</label>
     <input id="rname" name="name" required pattern="[a-z0-9][a-z0-9\-]{0,39}" placeholder="local"></div>
-  <div class="field"><label for="rurl">Address {{template "req"}}</label>
-    <input id="rurl" name="url" type="url" required placeholder="http://localhost:11434/v1" aria-describedby="rurl-help">
-    <p id="rurl-help" class="help">Any endpoint speaking the OpenAI chat protocol: Ollama, vLLM, LM Studio, llama.cpp, or a hosted provider.</p></div>
+  {{if .Choices}}<div class="field"><label for="rprov">Provider</label>
+    <select id="rprov" name="provider" aria-describedby="rprov-help">
+      <option value="">Another address, given below</option>
+      {{range .Choices}}<optgroup label="{{.Group}}">{{range .Providers}}<option value="{{.ID}}">{{.Name}} — {{.Where}}</option>{{end}}</optgroup>{{end}}
+    </select>
+    <p id="rprov-help" class="help">A provider's route reaches that provider and nothing else, and sends its key the way it takes it. <code>quilzo gateway providers ID</code> says what each keeps and where it processes it.</p></div>
+  <div class="field"><label for="rparam">The provider's resource, region or account</label>
+    <input id="rparam" name="provider_param" spellcheck="false" placeholder="contoso-ai, us-east-1" aria-describedby="rparam-help">
+    <p id="rparam-help" class="help">Only for a provider that needs one: Azure OpenAI's resource, Amazon Bedrock's region, Cloudflare's account id.</p></div>{{end}}
+  <div class="field"><label for="rurl">Address</label>
+    <input id="rurl" name="url" type="url" placeholder="http://localhost:11434/v1" aria-describedby="rurl-help">
+    <p id="rurl-help" class="help">{{if .Choices}}Taken from the provider when one is chosen. Otherwise, any{{else}}Any{{end}} endpoint speaking the OpenAI chat protocol: Ollama, vLLM, LM Studio, llama.cpp, or a hosted provider.</p></div>
   <div class="field"><label for="rmodel">Model {{template "req"}}</label>
     <input id="rmodel" name="model" required placeholder="gpt-oss:20b"></div>
   <div class="numrow">
@@ -76,9 +86,12 @@
       <input id="rpout" name="price_out" inputmode="decimal" pattern="[0-9]{1,10}(\.[0-9]{1,6})?" placeholder="0.60" aria-describedby="rprice-help"></div>
   </div>
   <p id="rprice-help" class="help numhelp">In the currency set below, from the provider's price list. Empty for a model that costs nothing per call.</p>
-  <div class="field"><label for="rkey">Key variable</label>
+  <div class="field"><label for="rsecret">Key, sealed</label>
+    <input id="rsecret" name="key_secret" pattern="[a-z0-9][a-z0-9._\-]{0,63}" spellcheck="false" placeholder="openai" aria-describedby="rsecret-help">
+    <p id="rsecret-help" class="help">The name of a sealed credential holding the key, kept encrypted with <code>quilzo secret set NAME &lt; keyfile</code> on the server. A provider suggests one when this is empty.</p></div>
+  <div class="field"><label for="rkey">Or a key variable</label>
     <input id="rkey" name="key_env" pattern="[A-Z_][A-Z0-9_]{0,63}" placeholder="HOSTED_MODEL_KEY" aria-describedby="rkey-help">
-    <p id="rkey-help" class="help">The name of the environment variable holding the key — never the key itself. Leave empty for a model on this network.</p></div>
+    <p id="rkey-help" class="help">The name of an environment variable holding the key — never the key itself. A sealed key is safer: every process the server starts inherits its environment. Leave both empty for a model on this network.</p></div>
   <div class="field"><label><input type="checkbox" name="personal" value="yes" aria-describedby="rpersonal-help"> It may receive personal data</label>
     <p id="rpersonal-help" class="help">Only for a model on this machine or network, or a provider with an agreement to process personal data for you. Otherwise email addresses, telephone numbers and bank accounts are replaced before a prompt leaves and put back in the answer. Card numbers and keys are replaced for every route.</p></div>
   <details class="astable"><summary>What this model is sent<span class="chev">{{icon "expand_more"}}</span></summary>

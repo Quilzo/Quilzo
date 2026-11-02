@@ -393,6 +393,36 @@ type HTTPModel struct {
 	Client  *http.Client
 	// Params are what this endpoint is sent beside the conversation.
 	Params Params
+	// Auth is how the key is sent: "bearer" (Authorization: Bearer, also
+	// when empty) or "header:NAME", as a provider's profile says
+	// (internal/provider).
+	Auth string
+	// Headers are sent on every call, beside the key.
+	Headers map[string]string
+	// Host, when set, is the one host a call may go to: a route made from
+	// a provider's profile reaches that provider and nothing else, so its
+	// key is never sent anywhere the profile does not name.
+	Host string
+}
+
+// prepare puts the key and the profile's headers on a request, after
+// checking it goes where it may.
+func (h *HTTPModel) prepare(req *http.Request) error {
+	if h.Host != "" && !strings.EqualFold(req.URL.Host, h.Host) {
+		return fmt.Errorf("this route may reach %s, and this call was to %s", h.Host, req.URL.Host)
+	}
+	for k, v := range h.Headers {
+		req.Header.Set(k, v)
+	}
+	if h.APIKey == "" {
+		return nil
+	}
+	if name, ok := strings.CutPrefix(h.Auth, "header:"); ok {
+		req.Header.Set(name, h.APIKey)
+		return nil
+	}
+	req.Header.Set("Authorization", "Bearer "+h.APIKey)
+	return nil
 }
 
 // Params are the request fields a route sends beside the conversation.
@@ -591,12 +621,11 @@ func (h *HTTPModel) CompleteMetered(ctx context.Context, system, user string) (s
 		return "", Usage{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	// Omitted rather than sent empty. "Bearer " with nothing after it is a
-	// credential that is present and blank, which some servers reject and
-	// others log as a failed authentication — neither of which is what a
-	// keyless local model meant to happen.
-	if h.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+h.APIKey)
+	// The key omitted rather than sent empty: "Bearer " with nothing after
+	// it is a credential that is present and blank, which some servers
+	// reject and others log as a failed authentication.
+	if err := h.prepare(req); err != nil {
+		return "", Usage{}, err
 	}
 
 	resp, err := h.Client.Do(req)

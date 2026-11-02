@@ -1509,6 +1509,55 @@ the credential it used and never the address.
 
 ---
 
+### Models from any provider
+
+A gateway route can name a **provider** instead of an address. The address,
+the way the provider takes its key, and what it says it does with what it is
+sent then come from the provider's profile:
+
+```
+quilzo gateway providers                 # by group: this machine, model makers,
+                                         # open-model hosts, routers, clouds, regional
+quilzo gateway providers azure-openai    # what it keeps, where, and how to add it
+quilzo secret set groq < key.txt
+quilzo gateway route add fast --provider groq --model llama-3.3-70b-versatile
+quilzo gateway route add azure --provider azure-openai --param resource=contoso-ai \
+  --model gpt-prod --key-secret azure-prod
+```
+
+The **built-in catalogue** has more than forty providers:
+- runtimes on this machine (Ollama, llama.cpp, vLLM, LM Studio, SGLang, LocalAI);
+- the model makers (OpenAI, Google Gemini, xAI, Mistral, Cohere, Perplexity,
+  AI21, DeepSeek);
+- open-model hosts (Groq, Together, Fireworks, Cerebras, SambaNova, DeepInfra,
+  Hyperbolic, Nebius, Novita, NVIDIA);
+- routers (OpenRouter, Hugging Face, GitHub Models);
+- clouds (Azure OpenAI, Amazon Bedrock, Cloudflare Workers AI, OVHcloud,
+  Scaleway, Ollama Cloud);
+- regional providers (Alibaba's Qwen, Moonshot's Kimi, Zhipu and Z.ai, MiniMax,
+  SiliconFlow, Baidu, Volcengine, Sarvam, Upstage).
+
+Each profile says where its address came from: the provider's own
+documentation or code, widely used integration code, or unverified. An
+operator's own `providers.json` beside the store adds profiles, or replaces
+built-in ones with a company proxy, and every profile is checked when it is
+read.
+
+**A provider's route reaches that provider and nothing else:**
+- it is pinned to the provider's host, so a key is never sent anywhere the
+  profile does not name;
+- a hosted provider is reached only at public addresses, and a local runtime
+  only on this network;
+- redirects are refused;
+- a parameter such as an Azure resource or an AWS region is checked before it
+  goes into a host name, so it cannot become a different host.
+
+**The key is sealed.** It is kept encrypted with `quilzo secret set NAME` and
+named with `--key-secret`, rather than in an environment variable every process
+the server starts would inherit. The Models screen offers the same list and
+shows, beside each route, its provider, where it serves from, and whether it
+trains on what it is sent.
+
 ## Agents asking the site
 
 A visitor's agent should not have to scrape pages built for people. The public

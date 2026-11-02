@@ -114,8 +114,8 @@ func (h *HTTPModel) Paint(ctx context.Context, prompt, size string) (Picture, er
 		return Picture{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if h.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+h.APIKey)
+	if err := h.prepare(req); err != nil {
+		return Picture{}, err
 	}
 
 	resp, err := h.Client.Do(req)

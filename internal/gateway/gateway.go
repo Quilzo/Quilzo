@@ -76,6 +76,16 @@ type Route struct {
 	Personal bool `json:"personal,omitempty"`
 	// Params are what this route's model is sent beside the conversation.
 	Params RouteParams `json:"params,omitempty"`
+	// Provider names a provider's profile (internal/provider): the route
+	// then reaches that provider's host and nothing else, and sends its key
+	// the way the provider takes it. ProviderParams fill the profile's
+	// address (an Azure resource, an AWS region).
+	Provider       string            `json:"provider,omitempty"`
+	ProviderParams map[string]string `json:"provider_params,omitempty"`
+	// KeySecret names the sealed credential holding the key (quilzo secret
+	// set NAME), which is kept encrypted where KeyEnv's is in the
+	// environment of every process the server starts. Used before KeyEnv.
+	KeySecret string `json:"key_secret,omitempty"`
 }
 
 // RouteParams are the request fields one route needs. Nothing beyond the
@@ -197,6 +207,13 @@ var (
 )
 
 // Validate refuses a declaration that could not work.
+// reSecret is a sealed credential's name, and reProvider a provider's id
+// or a parameter's name.
+var (
+	reSecret   = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
+	reProvider = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,40}$`)
+)
+
 func (c Config) Validate() error {
 	seen := map[string]bool{}
 	for _, r := range c.Routes {
@@ -218,6 +235,18 @@ func (c Config) Validate() error {
 		if r.KeyEnv != "" && !reEnv.MatchString(r.KeyEnv) {
 			return fmt.Errorf("route %s: %q is not an environment variable name; "+
 				"the key itself is never written here", r.Name, r.KeyEnv)
+		}
+		if r.KeySecret != "" && !reSecret.MatchString(r.KeySecret) {
+			return fmt.Errorf("route %s: %q is not a credential's name (quilzo secret set NAME); "+
+				"the key itself is never written here", r.Name, r.KeySecret)
+		}
+		if r.Provider != "" && !reProvider.MatchString(r.Provider) {
+			return fmt.Errorf("route %s: %q is not a provider (quilzo gateway providers)", r.Name, r.Provider)
+		}
+		for k, v := range r.ProviderParams {
+			if !reProvider.MatchString(k) || len(v) > 100 || strings.ContainsAny(v, "/?#@: \t\r\n") {
+				return fmt.Errorf("route %s: %s=%q is not a provider's parameter", r.Name, k, v)
+			}
 		}
 		if err := r.Params.Check(); err != nil {
 			return fmt.Errorf("route %s: %w", r.Name, err)
@@ -339,6 +368,9 @@ type Gateway struct {
 	// Cut reports a route the shield has cut, which is skipped as a route
 	// resting after failures is (internal/shield). Nil cuts nothing.
 	Cut func(route string) bool
+	// HasSecret reports whether a sealed credential is kept, for a route
+	// whose key is one (Route.KeySecret); nil is none kept.
+	HasSecret func(name string) bool
 	// OnTrouble is told what the shield should know: a caller that spent
 	// its budget ("spent", with the consumer), a route the provider
 	// refused for its spend cap or its key ("route-spent", "route-auth",
@@ -774,7 +806,14 @@ func (g *Gateway) Health() []Health {
 	for _, r := range g.cfg.Routes {
 		h := Health{Route: r, Failures: g.fails[r.Name], Until: g.downTil[r.Name]}
 		h.Resting = g.now().Before(h.Until)
-		h.KeySet = r.KeyEnv == "" || os.Getenv(r.KeyEnv) != ""
+		switch {
+		case r.KeySecret != "":
+			h.KeySet = g.HasSecret != nil && g.HasSecret(r.KeySecret)
+		case r.KeyEnv != "":
+			h.KeySet = os.Getenv(r.KeyEnv) != ""
+		default:
+			h.KeySet = true
+		}
 		out = append(out, h)
 	}
 	return out

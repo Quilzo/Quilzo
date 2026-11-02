@@ -301,8 +301,8 @@ func (h *HTTPModel) Chat(ctx context.Context, req ChatRequest) (ChatReply, error
 		return ChatReply{}, err
 	}
 	hreq.Header.Set("Content-Type", "application/json")
-	if h.APIKey != "" {
-		hreq.Header.Set("Authorization", "Bearer "+h.APIKey)
+	if err := h.prepare(hreq); err != nil {
+		return ChatReply{}, err
 	}
 	resp, err := h.Client.Do(hreq)
 	if err != nil {

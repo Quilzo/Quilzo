@@ -11,6 +11,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/gateway"
+	"github.com/quilzo/quilzo/internal/provider"
 )
 
 // The model gateway, on a screen: where prompts go, what happens when a
@@ -27,6 +28,43 @@ type Models struct {
 	// spending. A nil declaration means no gateway is configured.
 	Load func() (*gateway.Config, []gateway.Health, []gateway.Spend, error)
 	Save func(cfg *gateway.Config, by, change, name string) error
+	// Providers are the providers a route can name (internal/provider),
+	// in the order a person reads them; nil offers only an address.
+	Providers func() []provider.Provider
+}
+
+// providerChoice is a group of providers, for the form's list.
+type providerChoice struct {
+	Group     string
+	Providers []provider.Provider
+}
+
+func (m *Models) choices() []providerChoice {
+	if m == nil || m.Providers == nil {
+		return nil
+	}
+	var out []providerChoice
+	for _, p := range m.Providers() {
+		name := provider.GroupName(p.Group)
+		if len(out) == 0 || out[len(out)-1].Group != name {
+			out = append(out, providerChoice{Group: name})
+		}
+		out[len(out)-1].Providers = append(out[len(out)-1].Providers, p)
+	}
+	return out
+}
+
+// providerOf is a provider by id, from the list the form offered.
+func (m *Models) providerOf(id string) (provider.Provider, bool) {
+	if m == nil || m.Providers == nil {
+		return provider.Provider{}, false
+	}
+	for _, p := range m.Providers() {
+		if p.ID == id {
+			return p, true
+		}
+	}
+	return provider.Provider{}, false
 }
 
 func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
@@ -53,6 +91,15 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data["Cfg"], data["Health"], data["Spend"] = cfg, health, spend
+	data["Choices"] = s.Models.choices()
+	// What each route's provider says it does with what it is sent, by id.
+	known := map[string]provider.Provider{}
+	if s.Models.Providers != nil {
+		for _, pv := range s.Models.Providers() {
+			known[pv.ID] = pv
+		}
+	}
+	data["Known"] = known
 	if d := s.ModelDoor; d != nil && d.Enabled != nil {
 		data["Door"], data["DoorOn"], data["Origin"] = true, d.Enabled(), s.ownOrigin(r)
 	}
@@ -122,14 +169,48 @@ func (s *Server) handleModelsChange(w http.ResponseWriter, r *http.Request) {
 					*f.into = &v
 				}
 			}
-			kept = append(kept, gateway.Route{Name: name,
-				URL:      strings.TrimSpace(r.FormValue("url")),
-				Model:    strings.TrimSpace(r.FormValue("model")),
-				KeyEnv:   strings.TrimSpace(r.FormValue("key_env")),
-				PriceIn:  strings.TrimSpace(r.FormValue("price_in")),
-				PriceOut: strings.TrimSpace(r.FormValue("price_out")),
-				Personal: r.FormValue("personal") == "yes",
-				Params:   params})
+			route := gateway.Route{Name: name,
+				URL:       strings.TrimSpace(r.FormValue("url")),
+				Model:     strings.TrimSpace(r.FormValue("model")),
+				KeyEnv:    strings.TrimSpace(r.FormValue("key_env")),
+				KeySecret: strings.TrimSpace(r.FormValue("key_secret")),
+				PriceIn:   strings.TrimSpace(r.FormValue("price_in")),
+				PriceOut:  strings.TrimSpace(r.FormValue("price_out")),
+				Personal:  r.FormValue("personal") == "yes",
+				Params:    params}
+			// A provider chosen: its address from its profile, its
+			// parameter checked before it goes into a host name, and its
+			// key's credential named the way it suggests.
+			if id := strings.TrimSpace(r.FormValue("provider")); id != "" {
+				pv, ok := s.Models.providerOf(id)
+				if !ok {
+					back("e", id+" is not a provider here")
+					return
+				}
+				values := map[string]string{}
+				if len(pv.Params) > 0 {
+					values[pv.Params[0].Name] = strings.TrimSpace(r.FormValue("provider_param"))
+				}
+				base, _, perr := pv.Endpoint(values)
+				if perr != nil {
+					back("e", perr.Error())
+					return
+				}
+				route.Provider = pv.ID
+				if len(pv.Params) > 0 {
+					route.ProviderParams = values
+				}
+				if route.URL == "" {
+					route.URL = base
+				}
+				if route.KeySecret == "" && route.KeyEnv == "" && pv.Auth != "none" {
+					route.KeySecret = pv.Key
+				}
+			} else if route.URL == "" {
+				back("e", "choose a provider, or give the address of one")
+				return
+			}
+			kept = append(kept, route)
 		case "route-first":
 			if found == nil {
 				back("e", "there is no route called "+name)
