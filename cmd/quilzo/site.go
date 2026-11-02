@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/analytics"
+	"github.com/quilzo/quilzo/internal/event"
 	"github.com/quilzo/quilzo/internal/experiment"
 	"github.com/quilzo/quilzo/internal/listen"
 	"github.com/quilzo/quilzo/internal/personalise"
@@ -96,6 +97,9 @@ func cmdSite(root string, args []string) error {
 		}
 		return nil
 	}
+	// What happens here is the site's to record, in its own log: it may not
+	// write the admin's (agenttriggers.go).
+	eventSource = event.Site
 	// The public site runs confined (siteconfine.go): re-executed under
 	// Landlock before it opens anything, and checked once it is.
 	switch {

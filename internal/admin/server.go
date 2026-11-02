@@ -139,6 +139,10 @@ type Server struct {
 	// events the command line sends, so a receiver does not depend on
 	// which interface somebody used.
 	Told func(event, commit string, pages []string)
+	// Happened records something agents may start from (internal/event):
+	// records in a collection changed by a person here. Nil records
+	// nothing.
+	Happened func(eventType, subject string)
 	// DraftSSP drafts the system security plan at an impact level, from
 	// the same code as quilzo compliance ssp.
 	DraftSSP func(impact string) ([]byte, error)

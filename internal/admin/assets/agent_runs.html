@@ -20,7 +20,7 @@
   <thead><tr><th scope="col">What it was asked</th><th scope="col">Agent</th><th scope="col">Outcome</th><th scope="col">Did</th><th scope="col">Refused</th><th scope="col">Failed</th><th scope="col">Chosen by</th><th scope="col">Cost</th><th scope="col">When</th></tr></thead>
   <tbody>{{range .Runs}}<tr>
     <th scope="row"><a href="/agents/run/{{.ID}}">{{if .Goal}}{{.Goal}}{{else}}{{.ID}}{{end}}</a>
-      <div class="hint">by {{.By}}{{if .Tainted}} · read stored content{{end}}</div></th>
+      <div class="hint">{{if .Trigger}}on its own ({{.Trigger}}), as {{.By}}{{else}}by {{.By}}{{end}}{{if .Tainted}} · read stored content{{end}}</div></th>
     <td><a href="/agents/edit/{{.Agent}}">{{.Agent}}</a></td>
     <td><span class="wf-word {{.Tone}}">{{.Outcome}}</span></td>
     <td>{{.Did}}</td><td>{{.Refused}}</td><td>{{.Failed}}</td>

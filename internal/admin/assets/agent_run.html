@@ -2,7 +2,7 @@
 <p class="hint"><a href="/agents/runs?agent={{.R.Agent}}">Runs of {{.R.Agent}}</a></p>
 <h1>{{if .R.Goal}}{{.R.Goal}}{{else}}A run of {{.R.Agent}}{{end}}</h1>
 <p><a href="/agents/edit/{{.R.Agent}}"><code>{{.R.Agent}}</code></a> <span class="wf-word {{.Row.Tone}}">{{.Row.Outcome}}</span>
-  <span class="hint">started by {{.R.By}}, {{.Started}}; {{if .R.Model}}a model ({{.R.Model}}) chose each action{{else}}the declaration was walked, with no model{{end}}</span></p>
+  <span class="hint">{{if .R.Trigger}}started on its own ({{.R.Trigger}}) as {{.R.By}}, its sponsor{{else}}started by {{.R.By}}{{end}}, {{.Started}}; {{if .R.Model}}a model ({{.R.Model}}) chose each action{{else}}the declaration was walked, with no model{{end}}</span></p>
 {{if .CanStop}}<form method="post" action="/agents/act"><input type="hidden" name="do" value="stop"><input type="hidden" name="run" value="{{.R.ID}}">
   <p class="actions"><button type="submit" class="danger">Stop the run</button></p></form>{{end}}
 {{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}

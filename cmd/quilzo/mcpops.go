@@ -18,6 +18,7 @@ import (
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/compliance"
 	"github.com/quilzo/quilzo/internal/controls"
+	"github.com/quilzo/quilzo/internal/event"
 	"github.com/quilzo/quilzo/internal/export"
 	"github.com/quilzo/quilzo/internal/find"
 	"github.com/quilzo/quilzo/internal/i18n"
@@ -382,6 +383,7 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 			Model: "mcp-client", Verified: false,
 			Detail: map[string]string{"on_behalf_of": caller.Name, "id": out.ID},
 		})
+		emitEvent(root, event.Event{Type: event.RecordChanged, Subject: name, Kind: string(audit.KindAI)}, nil)
 		return fmt.Sprintf("wrote %s in %s", out.ID, name), nil
 	})
 

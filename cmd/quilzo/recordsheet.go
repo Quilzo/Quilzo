@@ -17,6 +17,7 @@ import (
 	"github.com/quilzo/quilzo/internal/admin"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/collection"
+	"github.com/quilzo/quilzo/internal/event"
 	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/sheet"
@@ -286,6 +287,7 @@ func bringFile(ctx context.Context, root, coll, name string, body []byte, opts b
 	}
 	record(root, caller.auditRecord("records.import", "/"+coll, audit.Success, map[string]string{
 		"collection": coll, "from": kind, "new": fmt.Sprint(plan.New), "updated": fmt.Sprint(plan.Updated)}))
+	emitEvent(root, event.Event{Type: event.RecordChanged, Subject: coll}, caller)
 	return out, nil
 }
 

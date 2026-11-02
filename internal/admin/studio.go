@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/quilzo/quilzo/internal/event"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -430,7 +431,74 @@ func (s *Server) handleAgentEdit(w http.ResponseWriter, r *http.Request) {
 			data["Runs"] = runRows(runs, time.Now().UTC())
 		}
 	}
+	data["Triggers"] = s.triggerRows(name, m)
+	data["Events"] = eventChoices()
+	data["Everies"] = []struct{ Value, Label string }{{"15m", "every 15 minutes"}, {"1h", "every hour"},
+		{"6h", "every 6 hours"}, {"24h", "every day"}, {"168h", "every week"}}
 	s.render(w, r, "agent_edit.html", data)
+}
+
+// triggerRow is one of an agent's triggers as its page shows it.
+type triggerRow struct {
+	N           int
+	Means, Goal string
+	Today, Max  int
+	Last, Next  string
+}
+
+func (s *Server) triggerRows(name string, m agent.Manifest) []triggerRow {
+	var status map[string]TriggerStatus
+	if s.Agents.Triggered != nil {
+		status = s.Agents.Triggered(name)
+	}
+	rows := make([]triggerRow, 0, len(m.Triggers))
+	for i, t := range m.Triggers {
+		row := triggerRow{N: i + 1, Means: t.Describe(), Goal: t.Goal, Max: t.PerDayOrDefault()}
+		if st, ok := status[t.Key()]; ok {
+			row.Today = st.Today
+			if !st.Last.IsZero() {
+				row.Last = st.Last.UTC().Format("15:04 on 2 Jan") + " UTC"
+			}
+			if !st.Next.IsZero() {
+				row.Next = st.Next.UTC().Format("15:04 on 2 Jan") + " UTC"
+			}
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+// eventChoices are what an agent can start from, for the form.
+func eventChoices() []struct{ Value, Label string } {
+	out := []struct{ Value, Label string }{}
+	for _, t := range event.Types() {
+		out = append(out, struct{ Value, Label string }{string(t), "When " + event.Describe(t)})
+	}
+	return out
+}
+
+// triggerFromForm is the trigger the form describes.
+func triggerFromForm(r *http.Request) (agent.Trigger, error) {
+	t := agent.Trigger{On: r.FormValue("on"), Where: strings.TrimSpace(r.FormValue("where")),
+		At: strings.TrimSpace(r.FormValue("at")), Zone: strings.TrimSpace(r.FormValue("zone")),
+		Goal: strings.TrimSpace(r.FormValue("goal"))}
+	if t.On == agent.OnSchedule {
+		d, err := time.ParseDuration(r.FormValue("every"))
+		if err != nil {
+			return t, fmt.Errorf("choose how often it runs")
+		}
+		t.Every, t.Where = agent.Duration(d), ""
+	} else {
+		t.At, t.Zone = "", ""
+	}
+	if n := strings.TrimSpace(r.FormValue("per_day")); n != "" {
+		v, err := strconv.Atoi(n)
+		if err != nil {
+			return t, fmt.Errorf("%q is not a number of runs", n)
+		}
+		t.PerDay = v
+	}
+	return t, t.Validate()
 }
 
 func list(s string) []string {
@@ -541,11 +609,17 @@ func (s *Server) handleAgentsAct(w http.ResponseWriter, r *http.Request) {
 		} else {
 			v.Set("m", msg)
 		}
+		// A place on the page (#triggers) stays at the end, after the
+		// message, or the browser would read the message as the place.
+		frag := ""
+		if i := strings.IndexByte(to, '#'); i >= 0 {
+			to, frag = to[:i], to[i:]
+		}
 		sep := "?"
 		if strings.Contains(to, "?") {
 			sep = "&"
 		}
-		http.Redirect(w, r, to+sep+v.Encode(), http.StatusSeeOther)
+		http.Redirect(w, r, to+sep+v.Encode()+frag, http.StatusSeeOther)
 	}
 	declared, err := s.Agents.Load()
 	if err != nil {
@@ -629,6 +703,35 @@ func (s *Server) handleAgentsAct(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		back(page, "Saved from the text.", nil)
+	case "trigger-add", "trigger-remove":
+		if !exists {
+			http.NotFound(w, r)
+			return
+		}
+		m := existing
+		said := ""
+		if do == "trigger-add" {
+			t, terr := triggerFromForm(r)
+			if terr != nil {
+				back(page+"#triggers", "", terr)
+				return
+			}
+			m.Triggers = append(append([]agent.Trigger(nil), m.Triggers...), t)
+			said = name + " now starts on its own " + t.Describe() + ". Each run is its sponsor's, checked when it starts."
+		} else {
+			n, nerr := strconv.Atoi(r.FormValue("n"))
+			if nerr != nil || n < 1 || n > len(m.Triggers) {
+				back(page+"#triggers", "", fmt.Errorf("that is not one of its triggers"))
+				return
+			}
+			said = name + " no longer starts on its own " + m.Triggers[n-1].Describe() + "."
+			m.Triggers = append(append([]agent.Trigger(nil), m.Triggers[:n-1]...), m.Triggers[n:]...)
+		}
+		if serr := s.Agents.Save(m, false, p.actor()); serr != nil {
+			back(page+"#triggers", "", serr)
+			return
+		}
+		back(page+"#triggers", said, nil)
 	case "unearn":
 		if !exists || s.Agents.Unearn == nil {
 			http.NotFound(w, r)
@@ -669,6 +772,8 @@ type runRow struct {
 	// Cost is what the run spent at the gateway's prices, when anything was priced.
 	Cost                                                  string
 	ID, Agent, Goal, By, Model, When, Outcome, Tone, Took string
+	// Trigger is what started it, when no person did.
+	Trigger string
 	// ModelLabel is Model as a person reads it: a gateway route
 	// "gateway:agent:help-desk" is "help-desk (gateway)".
 	ModelLabel                  string
@@ -691,7 +796,7 @@ func runRows(in []agent.Record, now time.Time) []runRow {
 			By: r.By, Model: r.Model, When: agoText(now.Sub(r.Started)),
 			Outcome: r.OutcomeAt(now), Did: r.Receipt.Did,
 			Refused: r.Receipt.Refused, Failed: r.Receipt.Failed,
-			Steps: len(r.Trace.Steps), Tainted: r.Trace.Tainted,
+			Steps: len(r.Trace.Steps), Tainted: r.Trace.Tainted, Trigger: r.Trigger,
 			Took: r.Trace.Spent.Elapsed.Round(time.Millisecond).String()}
 		if r.Trace.Spent.Cost > 0 {
 			row.Cost = agent.MoneyText(r.Trace.Spent.Cost, "")

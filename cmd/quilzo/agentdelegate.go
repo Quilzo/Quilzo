@@ -96,7 +96,7 @@ func (d delegation) Run(ctx context.Context, name string, child *agent.Session,
 				// wrong agent, and the review queue reads the author.
 				Author:  "agent/" + m.Name,
 				Gate:    pageGate(d.root),
-				Propose: proposeCommit(d.root, d.store),
+				Propose: proposeCommit(d.root, d.store, m.Name, caller),
 			},
 			agentexec.Tools{
 				Installed: func() (agent.Integrations, error) {

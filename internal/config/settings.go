@@ -530,6 +530,24 @@ var settings = []Setting{
 			"so its program reaches the outside only through the run's own proxy.",
 	},
 	{
+		Key: "agents.triggers", Kind: Bool, Default: "true",
+		Summary:  "agents with triggers start on their own, when something happens or on their schedule",
+		Controls: []string{"CM-7", "AC-6"},
+		Why: "An agent's triggers start it when a page goes live, a form is sent, a visitor asks a " +
+			"chatbot for a person, or at a time. Each run is on its sponsor's authority, checked " +
+			"then, capped at drafting and proposing; each trigger starts a limited number of runs " +
+			"a day, never one from something its own agent caused, and stops a chain of agents " +
+			"starting each other at three. Off, nothing starts unless a person runs it, and what " +
+			"happens is still recorded, so turning it on again starts nothing for what came " +
+			"before.",
+	},
+	{
+		Key: "agents.trigger_runs", Kind: Int, Default: "2",
+		Summary: "how many runs started by triggers go at once",
+		Why: "Two: enough that one slow run does not hold up the next, few enough that a burst " +
+			"of events does not spend a day's model budget in a minute. Between 1 and 16.",
+	},
+	{
 		Key: "agents.earned_autonomy", Kind: Bool, Default: "true",
 		Summary:  "a model-driven agent acts at what its evaluations earned",
 		Controls: []string{"AC-6", "CA-7"},
@@ -1405,6 +1423,7 @@ var hardBounds = map[string][2]int64{
 	"auth.throttle.max":     {int64(throttle.LeastDelay), int64(throttle.LongestDelay)},
 	"auth.lockout.alert":    {1, throttle.LatestAlert},
 	"session.idle":          {int64(5 * time.Minute), int64(time.Hour)},
+	"agents.trigger_runs":   {1, 16},
 }
 
 // ErrOutOfBounds is a value outside a setting's hard bounds.

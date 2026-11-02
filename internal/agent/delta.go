@@ -295,6 +295,23 @@ func DeltaOf(old, new Manifest) Delta {
 	if new.Kind != old.Kind {
 		add(fmt.Sprintf("is now of kind %s rather than %s", new.Kind, old.Kind))
 	}
+	// Triggers: a new one, or one that starts more runs a day, is the agent
+	// starting on its own where it did not, or more often. A changed trigger
+	// is a new one (Trigger.Key).
+	had := map[string]Trigger{}
+	for _, t := range old.Triggers {
+		had[t.Key()] = t
+	}
+	for _, t := range new.Triggers {
+		prev, ok := had[t.Key()]
+		switch {
+		case !ok:
+			add("starts on its own " + t.Describe())
+		case t.PerDayOrDefault() > prev.PerDayOrDefault():
+			add(fmt.Sprintf("starts up to %d runs a day %s", t.PerDayOrDefault(), t.Describe()))
+		}
+	}
+
 	return d
 }
 

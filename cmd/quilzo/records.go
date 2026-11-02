@@ -17,6 +17,7 @@ import (
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/collection"
+	"github.com/quilzo/quilzo/internal/event"
 	"github.com/quilzo/quilzo/internal/sheet"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
@@ -286,6 +287,7 @@ func recordsAdd(root string, args []string) error {
 	}
 	record(root, caller.auditRecord("records.write", "/"+coll, audit.Success,
 		map[string]string{"collection": coll, "record": rec.ID[:12]}))
+	emitEvent(root, event.Event{Type: event.RecordChanged, Subject: coll}, caller)
 
 	if w.JSON(rec) {
 		return nil
@@ -318,6 +320,7 @@ func recordsDelete(root string, args []string) error {
 	record(root, caller.auditRecord("records.delete", "/"+args[0],
 		audit.Success, map[string]string{
 			"collection": args[0], "record": args[1][:12]}))
+	emitEvent(root, event.Event{Type: event.RecordChanged, Subject: args[0]}, caller)
 	w.Human("deleted\n")
 	return nil
 }
@@ -468,6 +471,7 @@ func putCheckedRecords(root, name string, rows []map[string]any, caller *Caller)
 	record(root, caller.auditRecord("records.import", "/"+name,
 		audit.Success, map[string]string{
 			"collection": name, "count": fmt.Sprintf("%d", len(out))}))
+	emitEvent(root, event.Event{Type: event.RecordChanged, Subject: name}, caller)
 	return len(out), nil
 }
 
