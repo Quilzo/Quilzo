@@ -486,10 +486,14 @@ func cmdConnect(root string, args []string) error {
 
 // connectProvider declares or removes a provider: an administrator's.
 func connectProvider(root string, caller *Caller, args []string) error {
+	if len(args) >= 1 && args[0] == "discover" {
+		return connectDiscover(root, caller, args[1:])
+	}
 	if len(args) < 2 || (args[0] != "add" && args[0] != "remove") {
 		return errors.New("usage: quilzo connect provider add NAME [--template google|microsoft|github] --client-id ID " +
 			"[--client-secret SECRET] [--scope S]... [--host H]... [--auth-url URL --token-url URL --revocation-url URL --title T]\n" +
-			"       quilzo connect provider remove NAME")
+			"       quilzo connect provider remove NAME\n" +
+			"       quilzo connect provider discover NAME https://SERVER/mcp [--client-id ID] [--title T]")
 	}
 	if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
 		return err

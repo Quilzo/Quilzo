@@ -1809,6 +1809,27 @@ adding a meeting or an issue), switched off and unpinned for a person to read,
 pin and turn on as an imported one is. An agent acting on its own name, or another vendor's agent through
 the gateway, has no person and is refused.
 
+A remote MCP server that asks people to sign in — an issue tracker's, a
+document store's — is set up from what it publishes, rather than by copying
+endpoints from its documentation:
+
+```bash
+quilzo connect provider discover tracker https://mcp.tracker.example/mcp
+```
+
+Its protected-resource metadata (RFC 9728), named by the 401 it answers with
+or at the well-known address, says which authorization server it trusts; that
+server's own metadata (RFC 8414, or OpenID discovery) gives the endpoints. PKCE
+with S256 is required, and a server that does not say it supports it is
+refused. This installation registers there as a public client (RFC 7591) when
+the server takes registrations, or uses `--client-id`; a server that answers a
+registration with a secret is refused, so a secret is never kept that nobody
+chose to keep. The metadata has to be for the server asked about, and the
+authorization server's for itself: one server cannot speak for another. Every
+request carries the resource indicator (RFC 8707), so a token is for that server
+and is sent to it alone. Then an MCP integration naming the connection reaches
+it as each person who connected, in Your accounts.
+
 A write an agent makes elsewhere is named by the step of the run that makes it:
 an `Idempotency-Key` header, the same for that step however often it is sent —
 a run picked up again from its record included — so a service that keeps them

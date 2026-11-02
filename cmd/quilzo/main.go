@@ -469,6 +469,7 @@ encryption at rest
   quilzo secret list | remove NAME         what is kept, by name; never the value
   quilzo connect providers | provider add NAME --template google --client-id ID
                                            where people may connect their own accounts
+  quilzo connect provider discover NAME https://SERVER/mcp   a remote MCP server's sign-in, found from what it publishes
   quilzo connect start NAME | list | revoke NAME
                                            your account there, for agents acting for you
 

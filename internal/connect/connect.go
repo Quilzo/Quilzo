@@ -66,6 +66,10 @@ type Provider struct {
 	// Params are sent on the authorization request beside the standard
 	// ones, such as Google's access_type=offline.
 	Params map[string]string `json:"params,omitempty"`
+	// Resource is the server a token is for (RFC 8707), sent on every
+	// authorization and token request: a remote MCP server's address, as
+	// discovered (discover.go). Empty sends none.
+	Resource string `json:"resource,omitempty"`
 }
 
 var (
@@ -79,7 +83,7 @@ var (
 // reserved are the authorization request's own parameters, which a
 // declaration may not set.
 var reserved = map[string]bool{"response_type": true, "client_id": true, "redirect_uri": true, "scope": true,
-	"state": true, "code_challenge": true, "code_challenge_method": true, "nonce": true}
+	"state": true, "code_challenge": true, "code_challenge_method": true, "nonce": true, "resource": true}
 
 // Check says what is wrong with a provider, or nil.
 func (p Provider) Check() error {
@@ -110,6 +114,11 @@ func (p Provider) Check() error {
 	for _, s := range p.Scopes {
 		if !reScope.MatchString(s) {
 			return fmt.Errorf("%s: %q is not a scope", p.Name, s)
+		}
+	}
+	if p.Resource != "" {
+		if err := checkEndpoint(p.Resource); err != nil {
+			return fmt.Errorf("%s's resource: %w", p.Name, err)
 		}
 	}
 	if len(p.Hosts) == 0 || len(p.Hosts) > 16 {
@@ -253,6 +262,9 @@ func Begin(p Provider, redirect, person string, now time.Time) (Pending, string,
 	q.Set("state", state)
 	q.Set("code_challenge", base64.RawURLEncoding.EncodeToString(sum[:]))
 	q.Set("code_challenge_method", "S256")
+	if p.Resource != "" {
+		q.Set("resource", p.Resource)
+	}
 	sep := "?"
 	if strings.Contains(p.AuthURL, "?") {
 		sep = "&"
@@ -292,6 +304,9 @@ func Exchange(ctx context.Context, post Poster, p Provider, secret string, pd Pe
 	}
 	form := url.Values{"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {pd.Redirect},
 		"client_id": {p.ClientID}, "code_verifier": {pd.Verifier}}
+	if p.Resource != "" {
+		form.Set("resource", p.Resource)
+	}
 	if secret != "" {
 		form.Set("client_secret", secret)
 	}
@@ -306,6 +321,9 @@ func Refresh(ctx context.Context, post Poster, p Provider, secret, refresh strin
 		return Token{}, errors.New("the connection has no refresh token: connect again")
 	}
 	form := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {refresh}, "client_id": {p.ClientID}}
+	if p.Resource != "" {
+		form.Set("resource", p.Resource)
+	}
 	if secret != "" {
 		form.Set("client_secret", secret)
 	}
