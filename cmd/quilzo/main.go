@@ -482,6 +482,7 @@ compliance evidence
 
 agents and integrations
   quilzo agent templates                    the agent archetypes, and when to use each
+  quilzo agent capabilities                 everything an agent may be declared to do, by where it happens
   quilzo agent new NAME --kind KIND         declare what an agent may do
   quilzo agent draft "what it is for" [-o F] a model drafts a declaration; the checker says what it could do; nothing is saved
   quilzo agent declare FILE                save a declaration written out, checked again on the way in

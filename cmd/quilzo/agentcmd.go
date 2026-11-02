@@ -25,6 +25,7 @@ import (
 	"github.com/quilzo/quilzo/internal/agentmodel"
 	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/browser"
 	decidepkg "github.com/quilzo/quilzo/internal/decide"
 	"github.com/quilzo/quilzo/internal/evals"
@@ -86,9 +87,23 @@ func knownCapabilities(root string) map[string]bool {
 	}
 	caller := resolveCaller(root, "")
 	srv := buildMCP(root, s, caller, "templates")
+	// What a run performs, of what the agent interface offers: what the
+	// executor does itself, and what it does through the interface
+	// (agentexec.Bridged). An administrator's reports and the rest are not
+	// an agent's, and a manifest naming one is refused when it is written
+	// rather than failing the day the agent runs.
+	performs := map[string]bool{}
+	for _, op := range agentexec.Performs() {
+		performs[op] = true
+	}
+	for op := range agentexec.Bridged {
+		performs[op] = true
+	}
 	known := map[string]bool{}
 	for _, op := range srv.Operations() {
-		known[op.Name] = true
+		if performs[op.Name] {
+			known[op.Name] = true
+		}
 	}
 	// A run's memory, which no other surface performs.
 	known["remember"], known["recall"] = true, true
@@ -116,6 +131,8 @@ func cmdAgent(root string, args []string) error {
 	switch args[0] {
 	case "templates":
 		return agentTemplates(root)
+	case "capabilities":
+		return agentCapabilities(root)
 	case "list":
 		return agentList(root)
 	case "show":
@@ -1279,6 +1296,10 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 				delegateModel, detail))
 		},
 	}
+	// The rest of what the CMS offers (agentplatform.go): records, media,
+	// menus, newsletters, chatbots, research and the site crew, through the
+	// same agent interface an outside agent calls, as the run's caller.
+	runner.Perform = agentexec.WithPlatform(agentexec.Platform{Call: platformCall(root, s, caller)}, sess, runner.Perform)
 
 	// A run here can be held for a person and continued: every run made
 	// through this function is kept, which is what makes that possible.
@@ -1597,4 +1618,65 @@ func printPending(id string, w *agent.Pending) {
 	}
 	fmt.Printf("    quilzo agent approve %s %d\n", id, w.N)
 	fmt.Printf("    quilzo agent decline %s %d\n", id, w.N)
+}
+
+// agentCapabilities lists what an agent may be declared to do: everything
+// a run performs, by where it happens.
+func agentCapabilities(root string) error {
+	caller := resolveCaller(root, flagToken)
+	if err := authorise(root, caller, auth.ActView, "/"); err != nil {
+		return err
+	}
+	known := knownCapabilities(root)
+	native := map[string]bool{}
+	for _, op := range agentexec.Performs() {
+		native[op] = true
+	}
+	groups := []struct {
+		name string
+		of   func(string) bool
+	}{
+		{"pages, done by the run itself", func(c string) bool { return native[c] }},
+		{"the rest of the CMS, through the agent interface as the run's caller", func(c string) bool {
+			_, ok := agentexec.Bridged[c]
+			return ok
+		}},
+		{"its memory", func(c string) bool { return c == "remember" || c == "recall" }},
+		{"its browser", agent.IsBrowser},
+		{"its workspace", agent.IsShell},
+		{"the web, without a browser", agent.IsWeb},
+		{"its desktop cell", agent.IsDesktop},
+	}
+	all := make([]string, 0, len(known))
+	for c := range known {
+		all = append(all, c)
+	}
+	sort.Strings(all)
+	if w.Mode == out.JSON {
+		doc := map[string][]string{}
+		for _, g := range groups {
+			for _, c := range all {
+				if g.of(c) {
+					doc[g.name] = append(doc[g.name], c)
+				}
+			}
+		}
+		w.JSON(doc)
+		return nil
+	}
+	for _, g := range groups {
+		var in []string
+		for _, c := range all {
+			if g.of(c) {
+				if writes, ok := agentexec.Bridged[c]; ok && writes {
+					c += " (writes)"
+				}
+				in = append(in, c)
+			}
+		}
+		if len(in) > 0 {
+			fmt.Printf("%s%s%s\n  %s\n", bold, g.name, reset, strings.Join(in, ", "))
+		}
+	}
+	return nil
 }

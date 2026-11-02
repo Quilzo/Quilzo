@@ -232,6 +232,17 @@ func (s *Session) ReadWeb(host, where string) {
 	s.note(FromWeb, host, where)
 }
 
+// ReadStore records that the run read the store through an operation of
+// the agent interface (a record, a note, media, a chatbot's answer): words
+// that may be somebody else's, so the run is tainted, as reading a page
+// taints it.
+func (s *Session) ReadStore(op string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.tainted = true
+	s.note(FromSet, op, "")
+}
+
 // browserSends is where a browser action would carry words the model chose:
 // an address it opens, whose path and query are the model's, or text it
 // types into a page, which the page may send wherever its rule allows.

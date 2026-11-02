@@ -441,7 +441,8 @@ func (m *Manifest) ValidateWith(known map[string]bool, customKinds map[Kind]bool
 	for _, c := range m.Capabilities {
 		if known != nil && !known[c] {
 			return fmt.Errorf(
-				"%s asks for the capability %q and no interface offers it",
+				"%s asks for the capability %q, which nothing an agent runs performs "+
+					"(quilzo agent capabilities lists what does)",
 				m.Name, c)
 		}
 	}
