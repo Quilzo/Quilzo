@@ -928,7 +928,10 @@ tr.detail td { padding-top: 0; border-top: 0; }
   cursor: pointer;
 }
 .themetoggle button:hover { background: var(--surface-container-highest); }
-.icon { width: 20px; height: 20px; display: block; }
+/* An icon keeps its size in a flex row: allowed to shrink, the one in a row's
+   menu button was squeezed to a sliver five pixels wide by a padding meant
+   for buttons with words in them, and the button was an empty circle. */
+.icon { width: 20px; height: 20px; display: block; flex-shrink: 0; }
 
 /* The menu control, drawn as Chrome draws cr-icon-button: round, no
  * outline, a state layer on hover, at the far left of the bar.
@@ -2956,12 +2959,12 @@ form.fieldrow > button { margin-bottom: 2px; }
 /* A button in a table row is one of many rows' buttons: tonal, so a column
    of them does not outshout the page's own action. A destructive one keeps
    its red outline, and one that must stand out says so with .btn-filled. */
-td button:not(.danger):not(.btn-danger):not(.btn-text):not(.btn-outlined):not(.btn-filled):not(.iconbutton),
+td button:not(.danger):not(.btn-danger):not(.btn-text):not(.btn-outlined):not(.btn-filled):not(.iconbutton):not(.rowmenu-open),
 td .btn:not(.danger):not(.btn-danger):not(.btn-text):not(.btn-outlined):not(.btn-filled) {
   background: var(--secondary-container); color: var(--on-secondary-container);
   min-height: 40px; padding: 0 1.1rem;
 }
-td button:not(.danger):not(.btn-danger):not(.btn-text):not(.btn-outlined):not(.btn-filled):not(.iconbutton):hover {
+td button:not(.danger):not(.btn-danger):not(.btn-text):not(.btn-outlined):not(.btn-filled):not(.iconbutton):not(.rowmenu-open):hover {
   background: color-mix(in srgb, var(--on-secondary-container) var(--state-hover), var(--secondary-container));
 }
 
@@ -3350,3 +3353,73 @@ td .duty-more { margin: 4px 0 0; }
 fieldset.fill-blank { display: grid; gap: 0.4rem; margin-block-end: 0.9rem; }
 fieldset.fill-blank textarea { inline-size: 100%; field-sizing: content; min-block-size: 2.6rem; }
 fieldset.fill-blank label.fill-leave { font-weight: 400; }
+
+/* -- tables on a phone ---------------------------------------------------------
+ * A table is a grid of columns, and a phone is one column wide. Scrolled
+ * sideways inside .table-wrap, a three-column table of requirements put its
+ * one column worth reading off the right of the screen, and a row's buttons
+ * after it: on a 390-pixel phone the audit of every screen found more than a
+ * thousand controls a person would have had to scroll sideways to find.
+ *
+ * So below 40rem a row is a card: its cells flow one after another and wrap,
+ * a short cell beside the next and a long one on a line of its own, and the
+ * actions go to the row's end. A cell whose meaning is its column's heading
+ * says it, from data-label. A real grid, where the columns are the point
+ * (who may do what), keeps its columns with class="grid" and scrolls. */
+@media (max-width: 40rem) {
+  .table-wrap > table:not(.grid), .table-wrap > table:not(.grid) > tbody { display: block; }
+  .table-wrap > table:not(.grid) > thead {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .table-wrap > table:not(.grid) > caption { display: block; padding: .75rem 1rem 0; }
+  .table-wrap > table:not(.grid) tr {
+    display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .75rem;
+    padding: .85rem 1rem; border-bottom: 1px solid var(--outline-variant); }
+  .table-wrap > table:not(.grid) tbody tr:last-child { border-bottom: 0; }
+  .table-wrap > table:not(.grid) td, .table-wrap > table:not(.grid) tbody th {
+    display: block; padding: 0; border: 0; min-width: 0; max-width: 100%; }
+  .table-wrap > table:not(.grid) td:empty { display: none; }
+  .table-wrap > table:not(.grid) td[data-label]::before {
+    content: attr(data-label) " "; font: var(--label-md); color: var(--on-surface-variant); }
+  .table-wrap > table:not(.grid) td.actions, .table-wrap > table:not(.grid) td:has(> .rowmenu-open) {
+    margin-inline-start: auto; }
+  .table-wrap > table:not(.grid) td.clip { max-width: 100%; }
+  .table-wrap > table:not(.grid) td code, .table-wrap > table:not(.grid) td a { overflow-wrap: break-word; }
+}
+/* Long identifiers in a cell break where they must at every width, rather
+   than pushing the column, and the table, past the screen. */
+td code, td .mono { overflow-wrap: break-word; }
+
+/* -- the media library: a card for each file --------------------------------- */
+.media-grid { list-style: none; margin: 1rem 0; padding: 0; display: grid; gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr)); align-items: start; }
+.media-card { display: flex; flex-direction: column; min-width: 0; overflow: hidden;
+  background: var(--surface-container-low); border: 1px solid var(--outline-variant);
+  border-radius: var(--shape-lg); }
+.media-shot { display: grid; place-items: center; aspect-ratio: 4 / 3;
+  background: var(--surface-container-high); color: var(--on-surface-variant); }
+.media-shot img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.media-shot .icon { width: 48px; height: 48px; }
+.media-body { padding: .75rem 1rem 1rem; display: grid; gap: .35rem; min-width: 0; }
+.media-head { display: flex; align-items: flex-start; gap: .25rem; }
+.media-head .rowmenu-open { margin: -6px -8px 0 auto; }
+.media-title { font: var(--title-sm); font-weight: 600; overflow-wrap: break-word; min-width: 0; padding-top: 2px; }
+.media-meta, .media-alt, .media-tags { margin: 0; }
+.media-alt { font: var(--body-md); }
+.media-tags { display: flex; flex-wrap: wrap; gap: .35rem .5rem; align-items: center; }
+.media-tags:empty, .media-alt:empty { display: none; }
+.media-more > summary { cursor: pointer; display: inline-flex; align-items: center; gap: .25rem;
+  min-height: 40px; font: var(--label-lg); color: var(--primary); }
+.media-more[open] > summary .chev { transform: rotate(180deg); }
+.media-more .media-path { display: grid; gap: .25rem; margin: .25rem 0 .75rem; }
+.media-more .media-path input { width: 100%; min-width: 0; font-family: var(--mono); }
+.media-form { border-top: 1px solid var(--outline-variant); padding-top: .75rem; margin-top: .75rem; }
+.media-form h3 { font: var(--title-sm); margin: 0 0 .5rem; }
+.media-form input:not([type=radio]):not([type=checkbox]), .media-form select { width: 100%; min-width: 0; }
+.media-buttons { display: flex; flex-wrap: wrap; gap: .5rem; }
+
+/* Pages: a page by its title, its address quietly beneath. */
+.page-cell a { font-weight: 600; }
+.page-cell .page-path { display: block; font: var(--body-sm); font-family: var(--mono); }
+.tag.state-perpetual, .tag.state-licensed { background: var(--ok-container); color: var(--on-ok-container); }
+.tag.state-lapsing, .tag.state-undeclared { background: var(--warning-container); color: var(--on-warning-container); }
+.tag.state-expired, .tag.state-lapsed { background: var(--error-container); color: var(--on-error-container); }

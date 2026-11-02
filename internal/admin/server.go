@@ -2178,8 +2178,20 @@ func (s *Server) handlePages(w http.ResponseWriter, r *http.Request) {
 	pg := paginate(r, len(names), PageSize)
 	from, to := pg.slice(len(names))
 	shown := names[from:to]
+	// Each page by its title, with its name beneath: the list was the
+	// names alone, which are how the store addresses a page and not how
+	// anybody looking for "About Marginalia" thinks of it.
+	titles := map[string]string{}
+	for _, n := range shown {
+		if body, ok := pages[n].(map[string]any); ok {
+			if t, _ := body["title"].(string); strings.TrimSpace(t) != "" {
+				titles[n] = strings.TrimSpace(t)
+			}
+		}
+	}
 
 	s.render(w, r, "pages.html", map[string]any{
+		"Titles":    titles,
 		"Paging":    pg,
 		"PagePath":  "/",
 		"Shown":     shown,
@@ -3417,9 +3429,9 @@ func (s *Server) handleAccess(w http.ResponseWriter, r *http.Request) {
 	type row struct {
 		Principal string
 		Actions   []struct {
-			Name    string
-			Allowed bool
-			Reason  string
+			Name, Label string
+			Allowed     bool
+			Reason      string
 		}
 	}
 	var rows []row
@@ -3428,10 +3440,10 @@ func (s *Server) handleAccess(w http.ResponseWriter, r *http.Request) {
 		for _, a := range auth.Actions() {
 			d := s.Policy.Evaluate(who, a, "/")
 			rr.Actions = append(rr.Actions, struct {
-				Name    string
-				Allowed bool
-				Reason  string
-			}{string(a), d.Allowed, d.Reason})
+				Name, Label string
+				Allowed     bool
+				Reason      string
+			}{string(a), actionLabel(a), d.Allowed, d.Reason})
 		}
 		rows = append(rows, rr)
 	}
@@ -3441,6 +3453,21 @@ func (s *Server) handleAccess(w http.ResponseWriter, r *http.Request) {
 		"Title": "Access", "Principal": p,
 		"Rows": rows, "Bindings": s.Policy.Bindings,
 	})
+}
+
+// actionLabel is a permission as people say it: the matrix's headings
+// were the names the policy file uses, edit-draft and use-models.
+func actionLabel(a auth.Action) string {
+	words := map[auth.Action]string{
+		auth.ActView: "View", auth.ActEditDraft: "Edit drafts", auth.ActPublish: "Publish",
+		auth.ActRollback: "Roll back", auth.ActGrant: "Grant access", auth.ActToken: "Manage tokens",
+		auth.ActRunAgents: "Run agents", auth.ActApprove: "Approve", auth.ActManageAgents: "Manage agents",
+		auth.ActUseModels: "Use models", auth.ActInstall: "Install features",
+	}
+	if w, ok := words[a]; ok {
+		return w
+	}
+	return string(a)
 }
 
 // unmarkedPages lists pages with no usable provenance at a commit.

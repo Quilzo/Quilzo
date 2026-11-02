@@ -168,17 +168,29 @@ func (s *Server) handleDesign(w http.ResponseWriter, r *http.Request) {
 		On                 bool
 	}
 	var styles, motions, schemes, levels []choice
+	// Each choice is named once. Style, motion and colour scheme all had an
+	// option called Expressive, and the default style was called Classic
+	// while this admin is drawn in Material 3 Expressive, so the look a
+	// person was looking at seemed to be a second option rather than the
+	// one they had.
+	styleLabels := map[string]string{"expressive": "Material 3 Expressive"}
 	for _, st := range theme.Styles {
-		styles = append(styles, choice{Name: st, Label: strings.ToUpper(st[:1]) + st[1:], Words: theme.StyleWords[st], On: th.Style() == st})
+		label := styleLabels[st]
+		if label == "" {
+			label = strings.ToUpper(st[:1]) + st[1:]
+		}
+		styles = append(styles, choice{Name: st, Label: label, Words: theme.StyleWords[st], On: th.Style() == st})
 	}
-	motionWords := map[string]string{"subtle": "Short, gentle transitions.", "expressive": "Springy, bouncy motion, as Material 3 Expressive.", "none": "Nothing moves."}
+	motionLabels := map[string]string{"subtle": "Subtle", "expressive": "Springy", "none": "None"}
+	motionWords := map[string]string{"subtle": "Short, gentle transitions. The default.", "expressive": "Movement that overshoots a little and settles, as Material 3 Expressive's springs do.", "none": "Nothing moves."}
 	for _, m := range theme.Motions {
-		motions = append(motions, choice{Name: m, Label: strings.ToUpper(m[:1]) + m[1:], Words: motionWords[m], On: th.Motion() == m})
+		motions = append(motions, choice{Name: m, Label: motionLabels[m], Words: motionWords[m], On: th.Motion() == m})
 	}
-	schemeWords := map[string]string{"tonal": "Calm containers and related accents.", "vibrant": "Fuller colour, accents close to the seed.",
+	schemeLabels := map[string]string{"tonal": "Tonal", "vibrant": "Vibrant", "expressive": "Playful", "neutral": "Neutral", "monochrome": "Monochrome"}
+	schemeWords := map[string]string{"tonal": "Calm containers and related accents. The default.", "vibrant": "Fuller colour, accents close to the seed.",
 		"expressive": "Accents far round the colour wheel.", "neutral": "Barely tinted.", "monochrome": "Greys only."}
 	for i, sc := range theme.Schemes {
-		schemes = append(schemes, choice{Name: sc, Label: strings.ToUpper(sc[:1]) + sc[1:], Words: schemeWords[sc], On: i == 0})
+		schemes = append(schemes, choice{Name: sc, Label: schemeLabels[sc], Words: schemeWords[sc], On: i == 0})
 	}
 	levelWords := map[string]string{"standard": "WCAG AA, which publishing requires.", "medium": "Text at 6:1.", "high": "Text at 7:1, WCAG AAA."}
 	for i, l := range theme.ContrastLevels {

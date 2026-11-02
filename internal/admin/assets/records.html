@@ -34,22 +34,29 @@ which is what an application holds rather than what a page does.</p>
     <th scope="col">Id</th>
     {{range .Columns}}<th scope="col">{{.}}</th>{{end}}
     <th scope="col">Updated</th>
-    {{if $.CanWrite}}<th scope="col"><span class="visually-hidden">Actions</span></th>{{end}}
+    {{if $.CanWrite}}<th scope="col" class="actions"><span class="visually-hidden">Actions</span></th>{{end}}
   </tr></thead>
   <tbody>
   {{range .Records}}
   <tr>
     <th scope="row" class="mono">{{slice .ID 0 12}}</th>
     {{$r := .}}
-    {{range $.Columns}}<td class="clip">{{index $r.Fields .}}</td>{{end}}
-    <td class="nowrap">{{ago .Updated}}</td>
+    {{range $.Columns}}<td class="clip" data-label="{{.}}">{{index $r.Fields .}}</td>{{end}}
+    <td class="nowrap" data-label="Updated">{{ago .Updated}}</td>
     {{if $.CanWrite}}
-    <td class="right nowrap">
-      <a class="btn" href="/records?c={{$.Selected}}&amp;edit={{.ID}}#write">Edit</a>
-      <form method="post" action="/records/delete" class="inline">
+    <td class="actions">
+      {{/* One button at the row's end, as on Pages: an Edit and a Delete
+           on every row made the table wider than the screen at 1280
+           pixels, and Delete was the half that fell off it. */}}
+      <button type="button" class="rowmenu-open" popovertarget="rec-{{.ID}}"
+              title="More for this record">{{icon "more_vert"}}<span class="visually-hidden">More for record {{slice .ID 0 12}}</span></button>
+      <div id="rec-{{.ID}}" class="menu rowmenu" popover>
+        <a href="/records?c={{$.Selected}}&amp;edit={{.ID}}#write">Edit</a>
+        <button type="submit" form="del-{{.ID}}" class="menu-danger">Delete</button>
+      </div>
+      <form id="del-{{.ID}}" method="post" action="/records/delete" class="inline" hidden>
         <input type="hidden" name="collection" value="{{$.Selected}}">
         <input type="hidden" name="id" value="{{.ID}}">
-        <button type="submit" class="danger">Delete</button>
       </form>
     </td>
     {{end}}
