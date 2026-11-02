@@ -62,6 +62,12 @@ type Driver struct {
 	Refused func(Refusal)
 	// Plain allows http, for tests on loopback only.
 	Plain bool
+	// Files is the run's workspace, for saving a page or a download into
+	// and putting a file into a page from. Nil when the agent has none.
+	Files Files
+	// Downloads is a folder the browser may write a download into while
+	// browser_download waits for one; empty allows none.
+	Downloads string
 
 	mu      sync.Mutex
 	browser *cdp.Browser
@@ -189,6 +195,19 @@ func (d *Driver) Weighs(a agent.Action) string {
 	switch a.Op {
 	case "browser_key":
 		return d.weighKey(ctx, a)
+	case "browser_upload":
+		return d.weighUpload(ctx, a)
+	case "browser_download":
+		e, ok := d.outline.Elements[str(a, "ref")]
+		if !d.read || !ok {
+			return ""
+		}
+		why := d.weigh(ctx, "browser_click", e)
+		if why != "" {
+			why = d.redact(why)
+			d.frame(ctx, a.Op, why, e.Backend)
+		}
+		return why
 	case "browser_sign_in":
 		name := str(a, "credential")
 		cred, ok := d.decl().CredentialFor(name)
@@ -331,6 +350,12 @@ func (d *Driver) perform(ctx context.Context, a agent.Action) (string, error) {
 		return d.readConsole(ctx)
 	case "browser_check":
 		return d.check(ctx, str(a, "what"))
+	case "browser_save":
+		return d.save(ctx, a)
+	case "browser_download":
+		return d.download(ctx, a)
+	case "browser_upload":
+		return d.upload(ctx, a)
 	}
 	return "", fmt.Errorf("%q is not one of the browser's actions", a.Op)
 }

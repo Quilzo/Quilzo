@@ -139,3 +139,22 @@ func TestTheFileActionsAreDone(t *testing.T) {
 		t.Errorf("into the bin waited with nothing asked: %q", why)
 	}
 }
+
+// What the browser keeps goes through the workspace's own rules: its
+// quota, and nothing for a run that only reads.
+func TestWhatTheBrowserKeepsIsHeldToTheWorkspace(t *testing.T) {
+	d, _ := testDriver(t, &agent.Shell{Programs: []string{"ls"}, QuotaMB: 1})
+	if used, err := d.SaveFile("downloads/prices.csv", []byte("loaf,3\n")); err != nil || used != "downloads/prices.csv" {
+		t.Fatalf("%q %v", used, err)
+	}
+	if _, err := d.SaveFile("big.bin", make([]byte, 2<<20)); err == nil || !strings.Contains(err.Error(), "over its 1 MiB") {
+		t.Errorf("%v", err)
+	}
+	if b, err := d.LoadFile("downloads/prices.csv"); err != nil || string(b) != "loaf,3\n" || !d.Session.Tainted() {
+		t.Errorf("%q %v tainted=%v", b, err, d.Session.Tainted())
+	}
+	d.Session.Manifest().Shell.ReadOnly = true
+	if _, err := d.SaveFile("x.txt", []byte("x")); err == nil {
+		t.Error("a run that only reads saved a file")
+	}
+}

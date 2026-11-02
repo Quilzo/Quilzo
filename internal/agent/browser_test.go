@@ -219,6 +219,28 @@ func TestADialectMeansAModelThatAnswersAboutABrowser(t *testing.T) {
 	if err := m.Validate(nil); err != nil {
 		t.Errorf("a dialect in the picture's own pixels may emulate: %v", err)
 	}
+	// Keeping a page or a download needs the workspace's writing, and
+	// putting a file into a page its reading and a host to send to.
+	for _, c := range []struct {
+		caps []string
+		b    *Browser
+		want string
+	}{
+		{[]string{"browser_open", "browser_save"}, b, "does not hold file_write"},
+		{[]string{"browser_open", "browser_download"}, b, "does not hold file_write"},
+		{[]string{"browser_open", "browser_upload", "file_read"}, b, "may send to no host"},
+		{[]string{"browser_open", "browser_upload"}, &Browser{Write: []string{"jobs.example.com"}}, "does not hold file_read"},
+	} {
+		m := browsing(c.caps, c.b)
+		if err := m.Validate(nil); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%v: %v, want %q", c.caps, err, c.want)
+		}
+	}
+	ok := browsing([]string{"browser_open", "browser_save", "browser_download", "browser_upload", "file_read", "file_write"},
+		&Browser{Write: []string{"jobs.example.com"}})
+	if err := ok.Validate(nil); err != nil {
+		t.Errorf("%v", err)
+	}
 	plain := Manifest{Name: "reader", Kind: KindRetrieval, Purpose: "read the store",
 		Capabilities: []string{"read_page"}, Autonomy: AutonomyPropose,
 		Budget: Budget{Steps: 10, Tools: 1, Duration: Duration(time.Minute)}}

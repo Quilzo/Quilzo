@@ -67,7 +67,8 @@ func CommitOf(a Action, why, kind string, writes bool) string {
 			return "sends"
 		}
 		return "writes"
-	case op == "write_page" || op == "file_write" || op == "file_edit" || op == "file_move" || op == "remember" || op == "forget" ||
+	case op == "write_page" || op == "file_write" || op == "file_edit" || op == "file_move" || op == "browser_save" ||
+		op == "remember" || op == "forget" ||
 		strings.HasPrefix(op, "write_") || strings.HasPrefix(op, "create_") || strings.HasPrefix(op, "update_") ||
 		strings.HasPrefix(op, "delete_"):
 		if strings.HasPrefix(op, "delete_") || op == "forget" {

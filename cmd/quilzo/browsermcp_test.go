@@ -125,7 +125,9 @@ func TestAGrantMeansWhatItSays(t *testing.T) {
 	} else if len(grantOps(g)) != 2 || m.Capabilities[0] != "browser_open" {
 		t.Fatalf("the ops offered: %v", grantOps(g))
 	}
-	all := len(agent.BrowserCapabilities) - 1 // without signing in
+	// Without signing in, and without what needs a workspace, which a
+	// grant's caller has none of here: saving, downloading, uploading.
+	all := len(agent.BrowserCapabilities) - 4
 	if ops := grantOps(browserGrant{Name: "seven", Read: []string{"shop.example.com"}}); len(ops) != all-1 || slices.Contains(ops, "browser_look") {
 		t.Errorf("an empty ops list did not mean all but sign-in and, without pictures, looking: %v", ops)
 	}
@@ -180,7 +182,7 @@ func TestTheOfferedServerNamesItsActions(t *testing.T) {
 		t.Fatal(err)
 	}
 	ops := grantOperations(g)
-	if want := len(agent.BrowserCapabilities) - 2; len(ops) != want {
+	if want := len(agent.BrowserCapabilities) - 5; len(ops) != want {
 		t.Fatalf("%d actions offered (no sign-in, no pictures: no looking), %d named", want, len(ops))
 	}
 	writes := map[string]bool{}

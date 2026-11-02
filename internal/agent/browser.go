@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/url"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -28,6 +29,7 @@ var BrowserCapabilities = []string{
 	"browser_choose", "browser_click", "browser_sign_in",
 	"browser_scroll", "browser_key", "browser_navigate", "browser_wait",
 	"browser_hover", "browser_emulate", "browser_console", "browser_check",
+	"browser_save", "browser_download", "browser_upload",
 }
 
 // IsBrowser reports whether a capability is one of the browser's.
@@ -167,6 +169,21 @@ func (m *Manifest) validateBrowser() error {
 	if uses["browser_sign_in"] && len(b.Credentials) == 0 {
 		return fmt.Errorf("%s holds browser_sign_in and declares no credential to sign in with", m.Name)
 	}
+	// Saving and downloading write the workspace, and putting a file into
+	// a page reads it and sends it: each needs what it does with it.
+	for _, op := range []string{"browser_save", "browser_download"} {
+		if uses[op] && !slices.Contains(m.Capabilities, "file_write") {
+			return fmt.Errorf("%s holds %s, which keeps a file in its workspace, and does not hold file_write", m.Name, op)
+		}
+	}
+	if uses["browser_upload"] {
+		switch {
+		case !slices.Contains(m.Capabilities, "file_read"):
+			return fmt.Errorf("%s holds browser_upload, which puts a workspace file into a page, and does not hold file_read", m.Name)
+		case len(b.Write) == 0:
+			return fmt.Errorf("%s holds browser_upload and its browser may send to no host, which a file put into a page is", m.Name)
+		}
+	}
 	if uses["browser_emulate"] && m.Dialect == "gemini-computer" {
 		return fmt.Errorf("%s holds browser_emulate and its model places points on a screen of 1280 by 800 "+
 			"(gemini-computer), so its browser is not shown at another size", m.Name)
@@ -229,7 +246,7 @@ func browserSends(a Action) (string, bool) {
 			return strings.ToLower(u.Hostname()), true
 		}
 		return "the address it opens", true
-	case "browser_type":
+	case "browser_type", "browser_upload":
 		return "the page open in its browser", true
 	case "desktop_type":
 		return "an app in its desktop cell", true

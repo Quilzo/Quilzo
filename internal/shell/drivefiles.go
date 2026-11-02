@@ -247,3 +247,44 @@ func (d *Driver) code(ctx context.Context, a agent.Action) (string, error) {
 	}
 	return head.String() + "\n" + out.Text, nil
 }
+
+// SaveFile saves bytes into the workspace for another of the run's hands
+// (the browser saving a page or a download): within the quota, never over
+// a file that is there, refused for a run that only reads. It answers with
+// the name it used and what changed.
+func (d *Driver) SaveFile(name string, data []byte) (string, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	sh := d.decl()
+	if sh.ReadOnly {
+		return "", errors.New("this run only reads; nothing is saved")
+	}
+	before := d.scan()
+	if err := d.overQuota(before, sh); err != nil {
+		return "", err
+	}
+	if int64(len(data))+before.Size > int64(sh.Quota())<<20 {
+		return "", fmt.Errorf("%d bytes would put the workspace over its %d MiB", len(data), sh.Quota())
+	}
+	used, err := d.Workspace.Save(name, data)
+	if err != nil {
+		return "", err
+	}
+	d.wrote()
+	d.rescan()
+	return used, nil
+}
+
+// LoadFile is a workspace file's bytes for another of the run's hands (the
+// browser putting it into a page). What is in the workspace may be
+// somebody else's words, so the run is tainted by reading it.
+func (d *Driver) LoadFile(name string) ([]byte, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	b, err := d.Workspace.Load(name)
+	if err != nil {
+		return nil, err
+	}
+	d.Session.ReadFiles(name)
+	return b, nil
+}

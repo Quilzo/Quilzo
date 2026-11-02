@@ -461,3 +461,94 @@ func (w *Workspace) searchFile(p string, match func(string) bool, found *[]Found
 		*found = append(*found, Found{File: p, Line: i + 1, Text: line})
 	}
 }
+
+// Bounds on files the browser saves into a workspace and reads from it.
+const (
+	// MaxSaved is the largest file saved: a page as a PDF, a download.
+	MaxSaved = 32 << 20
+	// MaxLoaded is the largest file read whole to put into a page.
+	MaxLoaded = 16 << 20
+)
+
+// Save puts bytes into a new file, never over one that is there: a name
+// already taken gets a number before its extension (report-2.pdf). It
+// answers with the name it used.
+func (w *Workspace) Save(name string, data []byte) (string, error) {
+	c, err := clean(name)
+	if err != nil {
+		return "", err
+	}
+	switch {
+	case c == ".":
+		return "", errors.New("name a file to save")
+	case gitOwn(c):
+		return "", errors.New("git's own folder is not written by hand")
+	case inBin(c):
+		return "", errors.New("the bin is where deleted files go; save somewhere else")
+	case len(data) > MaxSaved:
+		return "", fmt.Errorf("at most %d bytes are saved at once", MaxSaved)
+	}
+	if l := w.throughLink(c); l != "" {
+		return "", fmt.Errorf("%s is reached through a link (%s); save it where it is", name, l)
+	}
+	if dir := path.Dir(c); dir != "." {
+		if err := w.root.MkdirAll(dir, 0o755); err != nil {
+			return "", err
+		}
+	}
+	ext := path.Ext(c)
+	stem := strings.TrimSuffix(c, ext)
+	for i := 1; i <= 1000; i++ {
+		try := c
+		if i > 1 {
+			try = fmt.Sprintf("%s-%d%s", stem, i, ext)
+		}
+		// Made fresh, so nothing is written over and nothing a command
+		// left there (a link, a pipe) is opened.
+		f, err := w.root.OpenFile(try, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		if errors.Is(err, fs.ErrExist) {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		_, werr := f.Write(data)
+		if cerr := f.Close(); werr == nil {
+			werr = cerr
+		}
+		if werr != nil {
+			_ = w.root.Remove(try)
+			return "", werr
+		}
+		return try, nil
+	}
+	return "", fmt.Errorf("%s and a thousand like it are taken", name)
+}
+
+// Load is a file's bytes, whole, when it is a plain file no larger than
+// MaxLoaded.
+func (w *Workspace) Load(name string) ([]byte, error) {
+	c, err := clean(name)
+	if err != nil {
+		return nil, err
+	}
+	if c == "." || gitOwn(c) {
+		return nil, fmt.Errorf("%s is not a file to read", name)
+	}
+	f, err := w.root.OpenFile(c, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, notThere(name, err)
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !fi.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s is not a plain file", name)
+	}
+	if fi.Size() > MaxLoaded {
+		return nil, fmt.Errorf("%s is %d bytes; at most %d", name, fi.Size(), MaxLoaded)
+	}
+	return io.ReadAll(io.LimitReader(f, MaxLoaded+1))
+}
