@@ -70,6 +70,8 @@ func cmdIntegrations(root string, args []string) error {
 		return integrationsHeld(root)
 	case "import":
 		return integrationsImport(root, args[1:])
+	case "undelivered":
+		return integrationsUndelivered(root, args[1:])
 	case "template":
 		return integrationsTemplate(root, args[1:])
 	case "approve", "decline":

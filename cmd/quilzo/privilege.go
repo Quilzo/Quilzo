@@ -139,9 +139,12 @@ var commandNeeds = map[string]need{
 	// deciding the calls a person approves one by one.
 	"integrations gateway": {action: auth.ActGrant},
 	"integrations held":    {action: auth.ActApprove},
-	"integrations approve": {action: auth.ActApprove},
-	"integrations decline": {action: auth.ActApprove},
-	"integration":          {action: auth.ActView},
+	// Reading what did not get through is reading the integrations; taking
+	// it off the list (--dismiss, --clear) is checked as granting.
+	"integrations undelivered": {action: auth.ActView},
+	"integrations approve":     {action: auth.ActApprove},
+	"integrations decline":     {action: auth.ActApprove},
+	"integration":              {action: auth.ActView},
 	// Each part of the list is filtered by what the caller may decide; the
 	// list itself needs only that they are somebody here.
 	"approvals":       {action: auth.ActView},

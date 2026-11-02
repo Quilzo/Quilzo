@@ -1809,6 +1809,18 @@ adding a meeting or an issue), switched off and unpinned for a person to read,
 pin and turn on as an imported one is. An agent acting on its own name, or another vendor's agent through
 the gateway, has no person and is refused.
 
+A write an agent makes elsewhere is named by the step of the run that makes it:
+an `Idempotency-Key` header, the same for that step however often it is sent —
+a run picked up again from its record included — so a service that keeps them
+does it once. A call that met a busy service or no answer at all (408, 425,
+429, 502, 503, 504, or a dropped connection) is tried again, up to three times,
+waiting as `Retry-After` asks (ten seconds at most); a read always, a write only
+when it carries its key. One that still did not get through is kept on the
+Integrations screen and by `quilzo integrations undelivered`: which agent, run
+and step, which integration and tool, the key, and what came back — never the
+arguments, which the run's own record holds. Nothing there is sent again by
+itself; a person settles it at the far side and takes it off the list.
+
 How it is kept safe:
 - **The flow:** authorization code with PKCE (S256), a state that finishes
   once, within ten minutes, and only for the person who started it, in their

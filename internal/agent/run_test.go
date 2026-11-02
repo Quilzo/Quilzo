@@ -242,3 +242,33 @@ func TestARunnerWithoutADecideIsRefused(t *testing.T) {
 		t.Error("a runner with no Decide ran")
 	}
 }
+
+// A runner that names its run tells what performs each step which step of
+// which run it is; one that does not, tells nothing.
+func TestAStepKnowsItsRun(t *testing.T) {
+	s := testSession(t, KindRetrieval)
+	var seen []int
+	perform := func(ctx context.Context, a Action) (string, error) {
+		if run, n, ok := StepOf(ctx); ok && run == "run-9" {
+			seen = append(seen, n)
+		}
+		return "ok", nil
+	}
+	r := Runner{Decide: script(Action{Op: "read_page"}, Action{Op: "read_page"}, Action{Say: "done"}),
+		Perform: perform, RunID: "run-9"}
+	if _, err := r.Run(context.Background(), s, "read twice"); err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 2 || seen[0] == seen[1] {
+		t.Fatalf("%v", seen)
+	}
+	seen = nil
+	r.RunID = ""
+	r.Decide = script(Action{Op: "read_page"}, Action{Say: "done"})
+	if _, err := r.Run(context.Background(), testSession(t, KindRetrieval), "read"); err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 0 {
+		t.Fatal("a step told a run nobody named")
+	}
+}

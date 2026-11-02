@@ -83,6 +83,8 @@ func (d delegation) Run(ctx context.Context, name string, child *agent.Session,
 	runner := agent.Runner{
 		Decide:     decide,
 		OwnDomains: ownDomains(d.root),
+		// Named for its writes' keys, as every run is.
+		RunID: "delegated-" + randomHex(12),
 		Perform: agentexec.Dispatch(
 			agentexec.Reader{
 				Store:  d.store,
@@ -106,8 +108,9 @@ func (d delegation) Run(ctx context.Context, name string, child *agent.Session,
 					}
 					return *set, lerr
 				},
-				Call: newMCPClientFor(d.root, actingFor(caller)),
-				Pay:  payer{root: d.root},
+				Call:        newMCPClientFor(d.root, actingFor(caller)),
+				Pay:         payer{root: d.root},
+				Undelivered: keepUndelivered(d.root),
 			},
 			d.next(m.Name),
 			// The deciders, for a delegate as for its parent: a typed

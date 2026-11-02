@@ -134,6 +134,16 @@ Unreleased
     takes what saving takes, so somebody who may only read sees the saved
     draft.
 
+*** An agent's writes elsewhere are not done twice, and not lost.  Each
+    write is named by its run and step and sent with an Idempotency-Key,
+    the same whenever that step is sent again, so a service that keeps
+    them does it once.  A busy or silent far side is tried again, up to
+    three times, as Retry-After asks: a read always, a write only with
+    its key.  One that still did not get through is kept, with the key
+    and what came back but never the arguments, on the Integrations
+    screen and in quilzo integrations undelivered, for a person to settle
+    and take off the list; nothing is sent again by itself.
+
 *** Search engines told what changed, as it is published.  With
     site.indexnow on (off by default), each publish sends the addresses
     of the pages that changed to IndexNow, which Bing, Yandex, Seznam,
