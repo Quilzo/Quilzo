@@ -270,6 +270,9 @@ events (what is on: dates and times on the site's clock, site.timezone; gone fro
   quilzo events [list]                     what is still to come, as the site lists it
   quilzo events setup                      add events: a type, its records, an events page, a page for each,
                                            and a calendar visitors subscribe to at /events.ics
+  quilzo events import FILE|URL [--dry-run]   bring a calendar's events in (.ics, or the address Google, Outlook
+                                           or Apple publish it at); each time a repeating one happens, a year either
+                                           side; private ones left out; brought again, changed not doubled
   quilzo events example                    that feature as a package, to edit and install
 
 newsletter (a mailing list: each address confirms by mail first, and leaves with one click; never read by the site)
@@ -323,7 +326,12 @@ content types
   quilzo records collections               what data this application holds
   quilzo records list NAME [--where k=v]   query records
   quilzo records add NAME field=value      write one
-  quilzo records import NAME rows.json     write many, in one commit
+  quilzo records import NAME FILE          write many, in one commit: a spreadsheet saved as CSV, a JSON list or a
+                                           calendar; rows matched to records by id or page link (--key FIELD|none),
+                                           columns to fields by name (--map 'Heading=field'), --dates dmy|mdy,
+                                           --skip-bad, --dry-run, --no-pictures
+  quilzo records export NAME [-o FILE]     every record as a spreadsheet (--format json for JSON, --excel for
+                                           Excel), which import brings back as the same records
   quilzo records get NAME ID               read one
   quilzo records delete NAME ID            take one out
   quilzo type example > FILE.json          a definition you can edit
