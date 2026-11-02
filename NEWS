@@ -107,6 +107,23 @@ Unreleased
 
 ** Added
 
+*** Agents start on their own.  A trigger starts one at a time of day
+    (quilzo agent trigger NAME add --every 24h --at 07:30 --zone
+    Europe/London) or when something happens: pages go live, a draft is
+    proposed, records change, a form is sent, a booking is made, somebody
+    joins the newsletter, a visitor asks a chatbot for a person, or a
+    chatbot cannot answer.  Each run is the agent's sponsor's, checked when
+    it starts, and capped at drafting and proposing.  A trigger starts at
+    most its day's runs, never a second while its first is going, never
+    from what its own agent did, and a chain of agents starting each other
+    stops at three.  The agent's page in the admin has the same, under
+    When it runs on its own; agents.triggers turns it off.
+
+*** What happens on the site is kept as events, without people in them:
+    which page, collection, form or chatbot, never who or what they wrote.
+    The public site keeps the events visitors cause in a log of its own,
+    and one that claims a page went live is refused and recorded.
+
 *** Spreadsheets and calendars in and out.  quilzo records import reads a
     CSV from Excel, Google Sheets, Numbers, Airtable, Notion or Shopify
     into any collection, whatever it was saved as (commas, semicolons or
@@ -873,6 +890,12 @@ Unreleased
     No run may use a person's desktop.
 
 ** Fixed
+
+*** A --token given on the command line is who every command acts as.
+    The check in front of each command used it, and a hundred and
+    thirty-five places inside commands then acted as, and recorded,
+    whoever the token file or QUILZO_TOKEN named instead: an approval that
+    needed a second person could compare the wrong one.
 
 *** An entry added to the schedule while another was cancelled or fired
     is kept.  The browser, the command line and the timer each read the

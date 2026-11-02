@@ -142,7 +142,7 @@ func (k *keptRun) finish(out agentOutcome) error {
 	if rec.Agent == "" {
 		rec.Agent = k.rec.Agent
 	}
-	rec.From, rec.Answers = k.rec.From, k.rec.Answers
+	rec.From, rec.Answers, rec.Trigger = k.rec.From, k.rec.Answers, k.rec.Trigger
 	rec.Eval, rec.Plant = k.rec.Eval, k.rec.Plant
 	k.rec = rec
 	if err := writeAgentRun(k.root, rec); err != nil {
@@ -166,6 +166,13 @@ func runAgentKept(ctx context.Context, root, name, goal string, withModel bool,
 // when program is set.
 func runAgentKeptBy(ctx context.Context, root, name, goal string, withModel, program bool,
 	caller *Caller) (string, agentOutcome, error) {
+	return runAgentKeptFor(ctx, root, name, goal, withModel, program, caller, "")
+}
+
+// runAgentKeptFor is runAgentKeptBy for a run a trigger started, kept
+// with what started it.
+func runAgentKeptFor(ctx context.Context, root, name, goal string, withModel, program bool,
+	caller *Caller, trigger string) (string, agentOutcome, error) {
 
 	started := time.Now().UTC()
 	id, err := newAgentRunID(started)
@@ -173,7 +180,7 @@ func runAgentKeptBy(ctx context.Context, root, name, goal string, withModel, pro
 		return "", agentOutcome{}, err
 	}
 	k := &keptRun{root: root, rec: agent.Record{ID: id, Agent: name,
-		Goal: goal, By: caller.Name, Started: started}}
+		Goal: goal, By: caller.Name, Started: started, Trigger: trigger}}
 	if withModel {
 		if m, _ := agentRunModel(root, name); m != nil {
 			k.rec.Model = m.Name()
@@ -696,6 +703,22 @@ func declareAgent(root string, m agent.Manifest, isNew bool, widen bool, caller 
 			return err
 		}
 	}
+	// Its triggers start it on its own, on its sponsor's authority, so they
+	// are its sponsor's to set, or an administrator's: otherwise somebody
+	// who may manage agents could have one act, unasked, in another
+	// person's name.
+	if !sameTriggers(set.Agents[m.Name].Triggers, m.Triggers) && !isNew {
+		if id := set.identityOf(m.Name); id == nil || id.Sponsor != caller.Name {
+			if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
+				sponsor := "nobody"
+				if id != nil && id.Sponsor != "" {
+					sponsor = id.Sponsor
+				}
+				return fmt.Errorf("%s's triggers start it in its sponsor's name, so they are its sponsor's "+
+					"(%s) to change, or an administrator's: %w", m.Name, sponsor, err)
+			}
+		}
+	}
 	if err := updateAgents(root, func(set *agentSet) error {
 		set.Agents[m.Name] = m
 		// A new agent is answered for by whoever declared it, until
@@ -724,6 +747,19 @@ func declareAgent(root string, m agent.Manifest, isNew bool, widen bool, caller 
 		detail["widened"] = clip(delta.Lines(), 2000)
 	}
 	return recordE(root, caller.auditRecord(did, "/", audit.Success, detail))
+}
+
+// sameTriggers reports whether two lists of triggers are the same ones.
+func sameTriggers(a, b []agent.Trigger) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].Key() != b[i].Key() || a[i].PerDayOrDefault() != b[i].PerDayOrDefault() {
+			return false
+		}
+	}
+	return true
 }
 
 // withdrawAgent removes a declaration. What the agent did stays on record.

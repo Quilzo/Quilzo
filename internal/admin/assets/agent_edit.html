@@ -137,6 +137,42 @@
 </table></div>
 <p class="hint"><a href="/agents/runs?agent={{.M.Name}}">Every run of {{.M.Name}}</a></p>{{end}}
 
+<h2 id="triggers">When it runs on its own</h2>
+{{if .Triggers}}<div class="table-wrap"><table>
+  <thead><tr><th scope="col">When</th><th scope="col">What it does</th><th scope="col">Today</th><th scope="col" class="actions"><span class="visually-hidden">Actions</span></th></tr></thead>
+  <tbody>{{range .Triggers}}<tr>
+    <th scope="row">{{.Means}}{{if .Next}}<div class="hint">next at {{.Next}}</div>{{end}}</th>
+    <td data-label="Does">{{.Goal}}</td>
+    <td data-label="Today">{{.Today}} of {{.Max}} runs{{if .Last}}<div class="hint">last at {{.Last}}</div>{{end}}</td>
+    <td class="actions"><form method="post" action="/agents/act">
+      <input type="hidden" name="do" value="trigger-remove"><input type="hidden" name="name" value="{{$.M.Name}}"><input type="hidden" name="n" value="{{.N}}">
+      <button type="submit" class="danger">Remove<span class="visually-hidden"> the trigger {{.Means}}</span></button></form></td>
+  </tr>{{end}}</tbody>
+</table></div>
+{{else}}<p>It runs only when somebody runs it.</p>{{end}}
+<details class="card trigger-add"{{if not .Triggers}} open{{end}}>
+  <summary><h3>Start it on its own</h3><span class="chev">{{icon "expand_more"}}</span></summary>
+  <form method="post" action="/agents/act">
+    <input type="hidden" name="do" value="trigger-add"><input type="hidden" name="name" value="{{.M.Name}}">
+    <p><label for="t-on">It starts</label>
+      <select id="t-on" name="on">{{range .Events}}<option value="{{.Value}}">{{.Label}}</option>{{end}}<option value="schedule">On a schedule</option></select></p>
+    <p><label for="t-where">About</label>
+      <input id="t-where" name="where" maxlength="200" spellcheck="false" placeholder="/blog, a collection, a form or a chatbot">
+      <span class="hint">For an event: anything when empty.</span></p>
+    <p class="trigger-when"><label for="t-every">How often</label>
+      <select id="t-every" name="every">{{range .Everies}}<option value="{{.Value}}">{{.Label}}</option>{{end}}</select>
+      <label for="t-at">at</label> <input id="t-at" name="at" type="time">
+      <label for="t-zone">in</label> <input id="t-zone" name="zone" spellcheck="false" placeholder="Europe/London">
+      <span class="hint">For a schedule. A time of day goes with every day or every week; UTC when no zone is given.</span></p>
+    <p><label for="t-goal">What each run does {{template "req"}}</label>
+      <textarea id="t-goal" name="goal" rows="3" maxlength="1000" required placeholder="Summarise the new post in two sentences and propose it for the newsletter"></textarea></p>
+    <p><label for="t-per">At most this many runs a day</label>
+      <input id="t-per" name="per_day" type="number" min="1" max="500" inputmode="numeric" placeholder="24"></p>
+    <p class="hint">Each run is its sponsor's, checked when it starts, and drafts and proposes at most: publishing, and anything that goes out, is still a person's decision. It never starts from something it did itself, and a chain of agents starting one another stops at three.</p>
+    <p><button type="submit">Add the trigger</button></p>
+  </form>
+</details>
+
 {{with .Earned}}<h2>What it has earned</h2>
 <p>It stops asking about a kind of action after {{.After}} approvals of it in a row, while its evaluations still earn it its autonomy. A decline sends that kind back to asking; the reviewer refusing, or the exfiltration breaker stopping, anything it does sends every kind back. Sending, paying, deleting and publishing always ask.</p>
 {{if not .Counts}}<p class="notice warn" role="note">Nothing it earned counts now: {{.WhyNot}}.</p>{{end}}

@@ -21,6 +21,7 @@ import (
 	"github.com/quilzo/quilzo/internal/controls"
 	"github.com/quilzo/quilzo/internal/dual"
 	"github.com/quilzo/quilzo/internal/evals"
+	"github.com/quilzo/quilzo/internal/event"
 	"github.com/quilzo/quilzo/internal/fedramp"
 	"github.com/quilzo/quilzo/internal/listen"
 	"github.com/quilzo/quilzo/internal/logd"
@@ -256,6 +257,17 @@ func cmdServe(root string, args []string) error {
 				out = append(out, c)
 			}
 			sort.Strings(out)
+			return out
+		},
+		Triggered: func(name string) map[string]admin.TriggerStatus {
+			set, err := loadAgents(root)
+			if err != nil {
+				return nil
+			}
+			out := map[string]admin.TriggerStatus{}
+			for _, v := range triggerViews(root, name, set.Agents[name], time.Now()) {
+				out[v.Trigger.Key()] = admin.TriggerStatus{Today: v.Today, Last: v.Last, Next: v.Next}
+			}
 			return out
 		},
 		Save: func(m agent.Manifest, isNew bool, by admin.Actor) error {
@@ -609,6 +621,18 @@ func cmdServe(root string, args []string) error {
 		},
 	})
 
+	// Agents started by what happens on the site and by their schedules
+	// (agenttriggers.go): each on its sponsor's authority, checked when it
+	// starts.
+	go runTriggers(upkeepCtx, root, dispatcher{
+		on:      func() bool { return mustConfig(root).Bool("agents.triggers") },
+		runner:  func() *Caller { return resolveCaller(root, flagToken) },
+		workers: mustConfig(root).Int("agents.trigger_runs"),
+		report: func(line string) {
+			fmt.Printf("  %sagents: %s%s\n", dim, line, reset)
+		},
+	})
+
 	// Dual authorisation. The same files and the same engine the command line
 	// uses — a second implementation of an approval rule would be a second
 	// answer to "may this be published".
@@ -805,6 +829,10 @@ func cmdServe(root string, args []string) error {
 	srv.Frozen = sh.frozen
 	srv.Reports = public.ReportsHandler(sh.violation)
 	srv.Version = version
+	srv.Happened = func(eventType, subject string) {
+		emitEvent(root, event.Event{Type: event.Type(eventType), Subject: subject},
+			&Caller{Kind: audit.KindHuman})
+	}
 	srv.Told = func(event, commit string, pages []string) {
 		fireWebhooks(root, event, commit, pages)
 		if event == "published" || event == "rolled-back" {

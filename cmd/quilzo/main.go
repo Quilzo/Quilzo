@@ -489,6 +489,8 @@ agents and integrations
   quilzo agent list | show NAME | check     what is declared, and whether it still validates
   quilzo agent sponsor NAME PERSON         who answers for it; it stops running when they can no longer act here
   quilzo agent renew NAME [--for 2160h]    another stretch before it has to be renewed
+  quilzo agent trigger NAME [add|remove N] what starts it on its own: an event, or --every 24h --at 07:30
+  quilzo agent trigger events              the events an agent can start from
   quilzo agent receipt RUN [-o FILE]       every action of a run from the log, with proofs and a signed head
   quilzo agent verify-receipt FILE [--keys head.pub.json]   check one anywhere, against keys you were given
   quilzo agent run NAME                    a model chooses, inside the manifest

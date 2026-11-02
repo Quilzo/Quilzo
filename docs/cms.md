@@ -1416,6 +1416,70 @@ worker in the path, no JavaScript, no SDK. It lands as a submission with a
 retention period and a privacy notice, because content anybody with a URL can
 create is the vulnerability every CMS with open registration has had.
 
+### Agents that start on their own
+
+An agent can be given **triggers**: a time (`every day at 07:30
+Europe/London`), or something happening on the site. The events are:
+- pages going live, the live site rolled back, a draft proposed for review;
+- records in a collection changing;
+- a form sent, a booking made or cancelled, somebody joining or leaving the
+  newsletter;
+- a visitor asking a chatbot for a person, and a chatbot that could not
+  answer.
+
+This is how the CMS, the chatbots and the agents work through each other:
+- a writer drafts a summary when a post goes live;
+- a reviewer looks at every draft proposed;
+- a helper drafts a reply when a visitor asks for a person;
+- a gardener proposes a page when the chatbot keeps failing on a subject.
+
+```
+quilzo agent trigger tidy add --on page.published --where /blog \
+  --goal "Summarise the new post and propose it for the newsletter"
+quilzo agent trigger tidy add --every 24h --at 07:30 --zone Europe/London \
+  --goal "Check yesterday's pages for broken links"
+quilzo agent trigger tidy               # what starts it, and what each did today
+quilzo agent trigger events             # every event an agent can start from
+```
+
+The agent's page in the admin has the same, under **When it runs on its own**.
+
+**Authority.** A triggered run acts for the agent's sponsor, checked when it
+starts:
+- an agent whose sponsor has left, may no longer run it, or whose identity has
+  run out does not start;
+- it is capped at authoring, whatever its sponsor holds, so nothing that starts
+  unattended can do more than draft and propose; publishing, and anything that
+  goes out, is still a person's decision;
+- triggers start it in its sponsor's name, so they are its sponsor's to set, or
+  an administrator's. Adding one is a widening, recorded as one.
+
+**Safeguards against runaway runs.** Each trigger:
+- starts at most its runs for the day (24 unless it says otherwise);
+- never starts a second run while its first is going;
+- never starts from something its own agent caused.
+
+An event that agents' runs led to carries their names, and once three agents
+have started each other it starts nothing more. A schedule that came round
+while the server was down fires once when it starts, not once for every time it
+missed.
+
+**No people in it.** An event says what kind of thing happened and to what (a
+page, a collection, a form, a chatbot), never who, nor what a visitor wrote. The
+run is given that as data, after its goal, and reads anything more through the
+operations it holds.
+
+**Where an event came from is where it is kept.**
+- The confined public site writes the events visitors cause in a log of its own,
+  and cannot write the admin's.
+- A line in the site's log claiming that a page went live is refused, and the
+  refusal is recorded.
+- So a site that was broken into cannot make agents believe something was
+  published.
+
+`agents.triggers` turns all of it off (nothing starts unless a person runs it),
+and `agents.trigger_runs` says how many triggered runs go at once.
+
 ---
 
 ## Agents asking the site

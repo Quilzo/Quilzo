@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agentexec"
+	"github.com/quilzo/quilzo/internal/event"
 	"github.com/quilzo/quilzo/internal/out"
 
 	"github.com/quilzo/quilzo/internal/actioncache"
@@ -150,6 +151,8 @@ func cmdAgent(root string, args []string) error {
 		return agentReplay(root, args[1:])
 	case "sponsor", "renew":
 		return agentIdentityCmd(root, args[0], args[1:])
+	case "trigger", "triggers":
+		return agentTriggerCmd(root, args[1:])
 	case "backends":
 		return agentBackends(root)
 	case "could":
@@ -669,7 +672,7 @@ func pageGate(root string) func(string, map[string]any) error {
 // ends up with two inboxes and treats one of them as less real; and the rules
 // that matter here — an author may not approve their own change, and a
 // machine-written one needs a human — are already written against this queue.
-func proposeCommit(root string, s *store.Store) func(string, string) error {
+func proposeCommit(root string, s *store.Store, agentName string, cause *Caller) func(string, string) error {
 	return func(commit, message string) error {
 		prop, file, err := currentProposal(root, s)
 		if err != nil {
@@ -688,7 +691,13 @@ func proposeCommit(root string, s *store.Store) func(string, string) error {
 		if message != "" && prop.Message == "" {
 			prop.Message = message
 		}
-		return saveJSON(proposalsPath(root), file)
+		if err := saveJSON(proposalsPath(root), file); err != nil {
+			return err
+		}
+		// Proposed for review: something a reviewing agent may start from,
+		// and never this agent, which proposed it.
+		emitEvent(root, event.Event{Type: event.DraftProposed, Commit: commit, Agent: agentName}, cause)
+		return nil
 	}
 }
 
@@ -1191,7 +1200,7 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 				// wrote it, and the review queue reads the author.
 				Author:  "agent/" + m.Name,
 				Gate:    pageGate(root),
-				Propose: proposeCommit(root, s),
+				Propose: proposeCommit(root, s, m.Name, caller),
 				Written: func(page string) {
 					markAgentWrite(root, s, page, m.Name, out.Model, goal,
 						caller, approvedWrite(from, page))

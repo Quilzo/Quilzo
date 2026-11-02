@@ -73,6 +73,10 @@ type Caller struct {
 	// at nine on Friday. FiredBy is kept under an identity key, so the log
 	// pseudonymises it like the principal.
 	Via, FiredBy string
+	// Chain is the agents whose runs led to this act, oldest first, when a
+	// trigger started it: an event it causes carries them, so agents do not
+	// set each other off for ever (internal/event.MaxChain).
+	Chain []string
 }
 
 // tokenFile is preferred over the environment.
@@ -112,6 +116,15 @@ func findToken(explicit string) (string, string) {
 // and lets the action decide whether that is good enough, which keeps the
 // decision where the consequences are.
 func resolveCaller(root, explicitToken string) *Caller {
+	// A --token given anywhere on the command line is the caller, for every
+	// command. A hundred and thirty-five places asked with an empty token,
+	// which skipped it: the gate in front of the command (privilege.go)
+	// authorised the --token identity, and the command then acted as, and
+	// recorded, whoever the token file or QUILZO_TOKEN named. An approval
+	// meant to need a second person compared the wrong one.
+	if strings.TrimSpace(explicitToken) == "" {
+		explicitToken = flagToken
+	}
 	unverified := func(why string) *Caller {
 		return &Caller{
 			Name: osUser(), Kind: audit.KindHuman, Verified: false, Why: why,

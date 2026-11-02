@@ -406,6 +406,7 @@ func (s *Server) handleRecordSave(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit("records.write", "/"+coll, map[string]string{
 		"collection": coll, "by": p.Name})
+	s.happened("record.changed", coll)
 	s.recordsBack(w, r, coll, "saved")
 }
 
@@ -438,7 +439,15 @@ func (s *Server) handleRecordDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit("records.delete", "/"+coll, map[string]string{
 		"collection": coll, "record": id, "by": p.Name})
+	s.happened("record.changed", coll)
 	s.recordsBack(w, r, coll, "deleted")
+}
+
+// happened tells Happened, when there is one.
+func (s *Server) happened(eventType, subject string) {
+	if s.Happened != nil {
+		s.Happened(eventType, subject)
+	}
 }
 
 // handleRecordImport brings a spreadsheet, a JSON list or a calendar into

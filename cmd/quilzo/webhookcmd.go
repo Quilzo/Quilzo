@@ -333,6 +333,11 @@ func fireBookingWebhooks(root, eventType, service string) {
 // sendWebhookEvent stamps an event and posts it to every endpoint that
 // wants it.
 func sendWebhookEvent(root string, ev webhook.Event) {
+	// Every act that tells webhooks is also an event agents can start
+	// from (agenttriggers.go), whether or not any webhook is configured.
+	if e, ok := eventOfWebhook(ev); ok {
+		emitEvent(root, e, nil)
+	}
 	eventType := ev.Type
 	// One at a time: the admin tells from a goroutine per change, and two
 	// publishes reading and rewriting the deliveries at once would lose one.

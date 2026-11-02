@@ -365,6 +365,9 @@ type Manifest struct {
 	// route's own name. A run tries the route serving it first and the
 	// others after; a model no route serves changes nothing.
 	Model string `json:"model,omitempty"`
+	// Triggers start it without a person asking: at a time, or when
+	// something happens on the site. See trigger.go.
+	Triggers []Trigger `json:"triggers,omitempty"`
 }
 
 // MaxInstructions is how long an agent's instructions may be. They go to
@@ -423,6 +426,9 @@ func (m *Manifest) ValidateWith(known map[string]bool, customKinds map[Kind]bool
 	}
 	if strings.ContainsFunc(m.Model, func(r rune) bool { return r < ' ' || r == 0x7f }) || len(m.Model) > 200 {
 		return fmt.Errorf("%q is not a model's name", m.Model)
+	}
+	if err := validateTriggers(m.Triggers); err != nil {
+		return fmt.Errorf("%s: %w", m.Name, err)
 	}
 
 	// Capabilities have to exist. An operation name that no interface

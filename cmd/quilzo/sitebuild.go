@@ -12,6 +12,7 @@ import (
 	"github.com/quilzo/quilzo/internal/activitypub"
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/config"
+	"github.com/quilzo/quilzo/internal/event"
 	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/httpsig"
 	"github.com/quilzo/quilzo/internal/rate"
@@ -191,6 +192,12 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 		Handoff: handoffStore(root),
 		HandoffEvent: func(action, name, id, source string) {
 			recordHandoff(root, action, name, id, source, audit.KindUnknown)
+			// A visitor asking for a person is something an agent may help
+			// answer (a person still sends the reply): which chatbot, not
+			// who or what they wrote.
+			if action == "handoff.open" {
+				emitEvent(root, event.Event{Type: event.HandoffRequested, Subject: name}, nil)
+			}
 		},
 		Forms: func() (*form.Set, error) { return loadForms(root) },
 		Document: func(id string) (string, string, []byte, error) {
@@ -212,6 +219,11 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 				Action: "assistant.ask", Resource: "/ask/" + name,
 				Outcome: outcome, Principal: source, Kind: audit.KindUnknown,
 			})
+			// And for an agent that looks after this chatbot: which one
+			// could not answer, never what it was asked.
+			if !answered {
+				emitEvent(root, event.Event{Type: event.ChatbotUnanswered, Subject: name}, nil)
+			}
 		},
 	}
 	// The declared listings, and one index cache for the process. Without

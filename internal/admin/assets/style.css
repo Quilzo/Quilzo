@@ -3482,3 +3482,16 @@ td code, td .mono { overflow-wrap: break-word; }
 .embed-code > summary { cursor: pointer; display: inline-flex; align-items: center; gap: .25rem;
   min-height: 40px; font: var(--label-lg); color: var(--primary); }
 .embed-code[open] > summary .chev { transform: rotate(180deg); }
+
+/* -- an agent's triggers ----------------------------------------------------------
+ * The form that starts an agent on its own: one field to a line with its
+ * label above it, except how often, at what time and in which zone, which
+ * read as one sentence and sit on one line where there is room. */
+.trigger-add form > p { margin: .75rem 0; }
+.trigger-add form > p > label { display: block; font: var(--label-lg); margin-bottom: 4px; }
+.trigger-add select, .trigger-add textarea, .trigger-add input[name="where"] { width: 100%; max-width: 40rem; }
+.trigger-add input[type="number"] { width: 8rem; }
+.trigger-add .trigger-when { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; }
+.trigger-add .trigger-when > label { display: inline; margin: 0; font: var(--label-lg); }
+.trigger-add .trigger-when select, .trigger-add .trigger-when input { width: auto; max-width: 100%; }
+.trigger-add .trigger-when .hint { flex-basis: 100%; }

@@ -36,6 +36,9 @@ type Agents struct {
 	// Known is every capability the machine interface offers, which is
 	// what a declaration is validated against.
 	Known func() []string
+	// Triggered is what each of an agent's triggers has done today, by
+	// trigger key: nil shows only the triggers themselves.
+	Triggered func(name string) map[string]TriggerStatus
 	// Save stores a declaration after validating it; Remove withdraws one.
 	Save   func(m agent.Manifest, isNew bool, by Actor) error
 	Remove func(name string, by Actor) error
@@ -285,4 +288,11 @@ type EarnedView struct {
 	Counts  bool
 	WhyNot  string
 	Classes []agent.EarnRecord
+}
+
+// TriggerStatus is one trigger's day: the runs it started, and when it
+// last did and, for a schedule, next will.
+type TriggerStatus struct {
+	Today      int
+	Last, Next time.Time
 }

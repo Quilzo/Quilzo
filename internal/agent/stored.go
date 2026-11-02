@@ -48,6 +48,9 @@ type Record struct {
 	Beat  time.Time `json:"beat,omitzero"`
 	// From is the run and step this one was run again from.
 	From string `json:"from,omitempty"`
+	// Trigger is what started it when no person did: a schedule, or an
+	// event and what it was about.
+	Trigger string `json:"trigger,omitempty"`
 	// Answers are what people decided about the actions it stopped at.
 	Answers []Answer `json:"answers,omitempty"`
 	// Eval names the evaluation this run was made for, and Plant the
