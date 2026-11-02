@@ -283,6 +283,9 @@ func (rb *runBrowser) launch(ctx context.Context, root string, m agent.Manifest,
 	if err := os.Mkdir(filepath.Join(work, "tmp"), 0o700); err != nil {
 		return nil, err
 	}
+	// Where a download lands while browser_download waits for one, inside
+	// the box's own directory, before it is moved into the workspace.
+	d.Downloads = filepath.Join(work, "downloads")
 
 	decl := m.Browser
 	proxy := &agentbox.Proxy{Secret: secret,

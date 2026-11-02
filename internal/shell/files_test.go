@@ -273,3 +273,36 @@ func TestPartOfALargeFileIsRead(t *testing.T) {
 		t.Error("read outside the workspace")
 	}
 }
+
+// A file another hand keeps is saved new, never over one that is there,
+// never in git's folder or the bin; a file it reads is read whole when it
+// is a plain file within the bound.
+func TestSavedFilesAreNewAndLoadedFilesArePlain(t *testing.T) {
+	w, dir := workspace(t)
+	if used, err := w.Save("saved/menu.pdf", []byte("%PDF-1")); err != nil || used != "saved/menu.pdf" {
+		t.Fatalf("%q %v", used, err)
+	}
+	if used, err := w.Save("saved/menu.pdf", []byte("%PDF-2")); err != nil || used != "saved/menu-2.pdf" {
+		t.Fatalf("%q %v", used, err)
+	}
+	if b, err := w.Load("saved/menu.pdf"); err != nil || string(b) != "%PDF-1" {
+		t.Fatalf("the first was written over: %q %v", b, err)
+	}
+	for _, bad := range []string{".git/hooks/x", Bin + "/x", "../x", ".", "/etc/x"} {
+		if _, err := w.Save(bad, []byte("x")); err == nil {
+			t.Errorf("saved %s", bad)
+		}
+	}
+	if _, err := w.Save("big.bin", make([]byte, MaxSaved+1)); err == nil {
+		t.Error("saved more than the bound")
+	}
+	if err := os.Symlink("/etc/hostname", filepath.Join(dir, "host")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Load("host"); err == nil {
+		t.Error("loaded through a link out of the workspace")
+	}
+	if _, err := w.Load("saved"); err == nil {
+		t.Error("loaded a folder")
+	}
+}

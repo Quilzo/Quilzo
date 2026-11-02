@@ -819,6 +819,12 @@ func browserPrompt(ops map[string]bool, decl *agent.Browser) string {
 		"browser_emulate": `{"op": "browser_emulate", "input": {"device": "phone", "color_scheme": "dark"}} shows the page as a phone, tablet, laptop or desktop would, or at a "width" and "height", in light or dark, with "reduced_motion" or "media": "print"; "device": "reset" goes back`,
 		"browser_console": `{"op": "browser_console"} reads what the page logged: its errors, warnings and failed requests`,
 		"browser_check":   `{"op": "browser_check", "input": {"what": "all"}} checks the page's speed ("performance"), "accessibility" and search listing ("seo")`,
+		"browser_save": `{"op": "browser_save", "input": {"as": "pdf", "path": "saved/menu.pdf"}} keeps the page in the workspace ` +
+			`as a pdf, a png of all of it, its html, or its text`,
+		"browser_download": `{"op": "browser_download", "input": {"ref": "e6"}} presses a link or button that downloads a file, ` +
+			`and keeps the file in the workspace's downloads folder`,
+		"browser_upload": `{"op": "browser_upload", "input": {"ref": "e8", "path": "cv.pdf"}} puts a workspace file into a ` +
+			`file field; it always waits for a person first`,
 	}
 	var held []string
 	for _, op := range agent.BrowserCapabilities {

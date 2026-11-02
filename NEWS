@@ -113,6 +113,16 @@ Unreleased
 
 ** Added
 
+*** An agent's browser and workspace work together.  browser_save keeps
+    the page in the workspace as a PDF, a picture of all of it, its markup
+    or its words; browser_download presses a link that downloads and
+    keeps the file (at most 32 MB, under a name of its own, never a path
+    the server chose), weighed as the press it is; browser_upload puts a
+    workspace file into a page's file field, only on a host the agent may
+    send to and always after a person is told which file and where.  The
+    first two need file_write, the third file_read, and all three keep to
+    the workspace's quota and to a run that only reads.
+
 *** Agents read the web and search it, without a browser.  web_fetch reads
     an https address: a page's words and links, without its scripts and
     forms, or text and JSON as they are.  It reads the hosts the

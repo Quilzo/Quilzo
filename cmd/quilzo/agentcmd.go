@@ -1378,6 +1378,12 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 		defer rs.end()
 		runner.Perform = rs.driver.Perform(runner.Perform)
 		weighs = append(weighs, rs.driver.Weighs)
+		// The browser keeps pages and downloads in the workspace, and
+		// puts files from it into pages, through the workspace's own
+		// driver: its quota, its lock, and reading only when the run does.
+		if rb != nil {
+			rb.driver.Files = rs.driver
+		}
 	}
 	// Its reach onto the web without a browser (agentweb.go): reading an
 	// address, and searching.
