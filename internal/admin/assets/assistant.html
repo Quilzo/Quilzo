@@ -268,16 +268,27 @@
     <select id="kind" name="kind">
       <option value="link">Link to a page</option>
       <option value="form">Fill in a form</option>
+      <option value="agent">Ask an agent</option>
     </select></div>
-  <div class="field"><label for="target">Page or form {{template "req"}}</label>
+  <div class="field"><label for="target">Page, form or agent {{template "req"}}</label>
     <input id="target" class="short" name="target" required list="form-names" placeholder="contact"></div>
   <datalist id="form-names">{{range .FormNames}}<option value="{{.}}">{{end}}</datalist>
   <div class="field"><label for="description">What it does {{template "req"}}</label>
     <input id="description" name="description" required placeholder="Start a return for an order"></div>
   <div class="field"><label for="fields">Form fields it may fill in</label>
     <input id="fields" name="fields" placeholder="order, reason" aria-describedby="fields-help">
-    <p id="fields-help" class="help">Only for a form. Fields marked sensitive
-      in the form are never filled in, whatever is listed here.</p></div>
+    <p id="fields-help" class="help">For a form, the fields it may fill in; fields marked sensitive
+      in the form are never filled in, whatever is listed here. For an agent, what it asks the visitor
+      for, such as booking_ref: their words, which the agent treats as somebody else's.</p></div>
+  <div class="field"><label><input type="checkbox" name="writes" value="1" aria-describedby="writes-help">
+    The agent may change something once the visitor confirms</label>
+    <p id="writes-help" class="help">Off, the agent only looks things up. On, it acts at its own autonomy,
+      no more than drafting and proposing, and whatever it asks a person waits for one.</p></div>
+  <div class="field"><label><input type="checkbox" name="identity" value="1" aria-describedby="identity-help">
+    Only for visitors your site vouches for</label>
+    <p id="identity-help" class="help">The site that embeds the chatbot signs who the visitor is; the agent is told
+      that, and nothing the visitor typed about themselves. Name the credential it signs with on the chatbot
+      (quilzo assistant action … --identity-secret NAME).</p></div>
   <button type="submit">Add action</button>
 </form>
 

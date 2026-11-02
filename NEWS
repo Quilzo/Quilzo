@@ -113,6 +113,25 @@ Unreleased
 
 ** Added
 
+*** A chatbot can ask one of the site's agents to do something for a
+    visitor.  A new kind of action, agent: the chatbot offers it ("Look up
+    your booking"), the visitor sees what will be asked, corrects it if
+    it is wrong, and presses to ask.  The public site, which is confined,
+    hands the request to the admin server, which runs the agent on its
+    sponsor's authority, no more than an author's: as a reader unless the
+    action says it writes, and then still only drafting and proposing.
+    What the visitor typed is given to the agent as somebody else's
+    words, and the run is tainted by it from its first step.  Who the
+    visitor is comes only from a token the host site signs (HMAC-SHA256,
+    with a key sealed as a credential the chatbot names), checked again
+    by the admin server, never from what they type; an action can be
+    offered only to visitors the site vouches for.  The visitor is shown
+    the agent's answer when its run read nothing private and waits for
+    nobody; otherwise they are told a person will look at it.  quilzo
+    assistant action NAME ACTION --kind agent --target AGENT [--fields
+    a,b] [--writes] [--identity --identity-secret NAME], or the
+    chatbot's page in the admin.
+
 *** An agent's own run does what the agent interface offers.  A manifest
     could declare any operation of the agent interface (records, media,
     menus, newsletters, chatbots, research, the site crew); an outside

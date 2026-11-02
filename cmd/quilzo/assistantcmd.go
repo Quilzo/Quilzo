@@ -207,16 +207,20 @@ func assistantAdd(root string, args []string) error {
 func assistantAction(root string, args []string) error {
 	pos, flags := leadingArgs(args, 2)
 	fs := flag.NewFlagSet("action", flag.ContinueOnError)
-	kind := fs.String("kind", "link", "link or form")
-	target := fs.String("target", "", "the page for a link, the form for a form")
+	kind := fs.String("kind", "link", "link, form or agent")
+	target := fs.String("target", "", "the page for a link, the form for a form, the agent for an agent")
 	description := fs.String("description", "", "what it does, for the model and the visitor")
-	fields := fs.String("fields", "", "comma-separated form fields it may pre-fill")
+	fields := fs.String("fields", "", "comma-separated fields it may pre-fill, or an agent asks for")
+	writes := fs.Bool("writes", false, "an agent action may change something once the visitor confirms")
+	identity := fs.Bool("identity", false, "an agent action only for a visitor the site vouches for")
+	signer := fs.String("identity-secret", "", "the sealed credential the site signs visitors with (the assistant's)")
 	remove := fs.Bool("remove", false, "remove this action instead")
 	if err := fs.Parse(flags); err != nil {
 		return err
 	}
 	if len(pos) != 2 {
-		return fmt.Errorf("usage: quilzo assistant action ASSISTANT ACTION --kind link|form --target T --description D [--fields a,b]")
+		return fmt.Errorf("usage: quilzo assistant action ASSISTANT ACTION --kind link|form|agent --target T --description D " +
+			"[--fields a,b] [--writes] [--identity --identity-secret NAME]")
 	}
 	caller := resolveCaller(root, flagToken)
 	return saveAssistant(root, caller, "action", pos[0], func(s *assistant.Set) error {
@@ -234,8 +238,11 @@ func assistantAction(root string, args []string) error {
 			kept = append(kept, assistant.Action{
 				Name: pos[1], Kind: assistant.ActionKind(*kind),
 				Target: *target, Description: *description,
-				Fields: splitList(*fields),
+				Fields: splitList(*fields), Writes: *writes, Identity: *identity,
 			})
+		}
+		if *signer != "" {
+			a.IdentitySecret = *signer
 		}
 		a.Actions = kept
 		return s.Put(a)

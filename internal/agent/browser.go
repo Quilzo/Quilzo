@@ -243,6 +243,16 @@ func (s *Session) ReadStore(op string) {
 	s.note(FromSet, op, "")
 }
 
+// ReadVisitor records that the run starts with a visitor's words in its
+// goal: a request to a chatbot's agent. Somebody else's words, so the run
+// is tainted from its first step.
+func (s *Session) ReadVisitor(what string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.tainted = true
+	s.note(FromSet, "visitor", what)
+}
+
 // browserSends is where a browser action would carry words the model chose:
 // an address it opens, whose path and query are the model's, or text it
 // types into a page, which the page may send wherever its rule allows.

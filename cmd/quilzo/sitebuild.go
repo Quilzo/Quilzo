@@ -186,7 +186,9 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 	if gerr != nil {
 		note("  %sguardrail off: %v%s\n", yellow, gerr, reset)
 	}
+	chatAct, chatAnswer := chatActSite(root)
 	st.Assistants = &public.Assistants{
+		Act: chatAct, Answer: chatAnswer,
 		Guardrail: guard, GuardrailEvent: guardEvent,
 		Set:     func() (*assistant.Set, error) { return assistant.Load(assistantsPath(root)) },
 		Handoff: handoffStore(root),
@@ -209,6 +211,7 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 		},
 		Questions:  chatbotQuestions(mustConfig(root)),
 		Unanswered: gapKeeper(root),
+		VisitorKey: func(a assistant.Assistant) []byte { return visitorKey(root, a) },
 		Audit: func(name, source string, answered bool) {
 			outcome := audit.Success
 			if !answered {

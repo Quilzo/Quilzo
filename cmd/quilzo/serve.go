@@ -621,6 +621,10 @@ func cmdServe(root string, args []string) error {
 		},
 	})
 
+	// Chatbots' agent actions (chatact.go): what visitors confirmed they
+	// want a chatbot's agent to do, run on its sponsor's authority.
+	go runChatActions(upkeepCtx, root, func(line string) { fmt.Printf("  %s%s%s\n", dim, line, reset) })
+
 	// Agents started by what happens on the site and by their schedules
 	// (agenttriggers.go): each on its sponsor's authority, checked when it
 	// starts.
