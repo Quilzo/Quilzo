@@ -189,3 +189,34 @@ func TestBucketsAreStableWeightedAndCrawlersSeeTheControl(t *testing.T) {
 		t.Fatal("a crawler was put in a variant")
 	}
 }
+
+// Addresses that were not there and searches that found nothing are counted
+// for people, bounded, and added up across days.
+func TestMissingAddressesAndEmptySearchesAreCounted(t *testing.T) {
+	c, _, _ := counter(t)
+	req := func(ua string) *http.Request {
+		r := httptest.NewRequest("GET", "http://shop.example/x", nil)
+		r.RemoteAddr = "203.0.113.4:5555"
+		r.Header.Set("User-Agent", ua)
+		return r
+	}
+	c.NotFound(req(chrome), "/old-prices")
+	c.NotFound(req(chrome), "/old-prices")
+	c.NotFound(req("Googlebot/2.1"), "/old-prices")
+	c.NoResult(req(chrome), "  Gift   VOUCHERS ")
+	c.NoResult(req(chrome), "")
+	d := c.Today()
+	if d.Missing["/old-prices"] != 2 || d.NoResults["gift vouchers"] != 1 || len(d.NoResults) != 1 {
+		t.Fatalf("%+v %+v", d.Missing, d.NoResults)
+	}
+	for i := 0; i < MaxMissing+20; i++ {
+		c.NotFound(req(chrome), fmt.Sprintf("/p%d", i))
+	}
+	if d := c.Today(); len(d.Missing) > MaxMissing+1 || d.Missing[Other] == 0 {
+		t.Fatalf("%d addresses, other %d", len(d.Missing), d.Missing[Other])
+	}
+	s := Summarise([]Day{{Missing: map[string]int{"/a": 2}}, {Missing: map[string]int{"/a": 3, "/b": 9}}})
+	if len(s.Missing) != 2 || s.Missing[0].Name != "/b" || s.Missing[1].Count != 5 {
+		t.Fatalf("%+v", s.Missing)
+	}
+}

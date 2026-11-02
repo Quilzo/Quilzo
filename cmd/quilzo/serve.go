@@ -655,6 +655,10 @@ func cmdServe(root string, args []string) error {
 			if said := checkAllGaps(ctx, root); said != "" {
 				fmt.Printf("  %schatbots: %s%s\n", dim, said, reset)
 			}
+			// And search engines told what changed (indexnow.go).
+			if said := indexNowAfterPublish(ctx, root); said != "" {
+				fmt.Printf("  %ssearch engines: %s%s\n", dim, said, reset)
+			}
 		},
 	})
 

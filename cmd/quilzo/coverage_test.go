@@ -451,6 +451,8 @@ var coverage = map[string]surfaces{
 	"backup": {Why: "writes, reads and restores files on this machine's disk, with a key given in the environment; " +
 		"the admin server makes one a day where backup.dir says",
 		NoMCP: "takes the whole store, sealed credentials and all; an agent that could take it could carry everything off"},
+	"redirect": {GUI: "/analytics", NoMCP: "a redirect changes the live site at once, before any page, with no " +
+		"draft to review: a person sends an address somewhere"},
 	"share": {GUI: "/page/", NoMCP: "shows a draft to somebody outside, with no account: a person decides " +
 		"what leaves, and an agent's draft is read by a person before anybody else"},
 	"connect": {GUI: "/connections", NoMCP: "connects a person's own account, in their own browser, at the " +

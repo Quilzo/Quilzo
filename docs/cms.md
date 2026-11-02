@@ -800,6 +800,33 @@ scraped from the markup, linked from the page and from `llms.txt`, for a
 language model or a reader's agent; the copy is never indexed and names the
 page as canonical.
 
+**What people looked for and did not find.** The cookieless count of views
+also counts addresses people asked for that are not on the site, and searches
+that found nothing (masked as unanswered questions are, so an address typed
+into the search box is not kept). The Analytics screen lists both: each missing
+address with the published page it most likely meant — the same last segment,
+a spelling one slip away, most of the same words — and, for whoever may
+publish, "Redirect it", which writes a permanent redirect the running site
+picks up within a second. Never applied by itself: a wrong redirect is worse
+than an honest 404. The same from the command line:
+
+```bash
+quilzo redirect list
+quilzo redirect add /old-prices /shop [--temporary] [--note "the 2024 catalogue"]
+quilzo redirect remove /old-prices
+```
+
+A redirect that would make a loop or a chain is refused when it is added.
+
+With `site.indexnow` on, each publish tells the search engines that take
+IndexNow (Bing, Yandex, Seznam, Naver and others, which share what one is told)
+the addresses of the pages that changed — a page that reuses a changed block
+among them, never one left out of results, a copy of one elsewhere or a block's
+own — with a key the site serves at `/KEY.txt` to show the addresses are its
+own. Off by default, since it sends the site's addresses to a third party on
+every publish, and it goes out through its own declared network purpose, so an
+offline installation refuses it and says why.
+
 **Views over records.** Declared queries with typed parameters, a field
 allowlist and a cost budget, resolved before rendering. A page names the
 listings it embeds; the template receives data, never a callable.

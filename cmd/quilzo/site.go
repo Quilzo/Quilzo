@@ -260,6 +260,8 @@ func cmdSite(root string, args []string) error {
 		return err
 	}
 	st.Redirects = redirects
+	st.RedirectsAt = reloadingRedirects(root, *redirectFile, redirects)
+	st.IndexNowKey = servedIndexNowKey(root)
 	if *name != "" {
 		st.Name = *name
 	}

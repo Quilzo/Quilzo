@@ -461,6 +461,7 @@ encryption at rest
   quilzo vault rewrap                      move what is there onto it
       QUILZO_KEY / _KEY_FILE / _KEY_COMMAND  where the key comes from
   quilzo secret set NAME < file            keep a credential an agent uses, sealed
+  quilzo redirect list | add FROM TO [--temporary] | remove FROM   old addresses sent where their pages are now
   quilzo share PAGE [--days 7] | list | revoke ID
                                            a link to a draft page for somebody with no account
   quilzo backup key | create FILE | verify FILE | restore FILE --into DIR
@@ -861,6 +862,8 @@ func main() {
 		err = cmdConnect(root, cmdArgs)
 	case "backup":
 		err = cmdBackup(root, cmdArgs)
+	case "redirect":
+		err = cmdRedirect(root, cmdArgs)
 	case "share":
 		err = cmdShare(root, cmdArgs)
 	case "browser":

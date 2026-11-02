@@ -389,6 +389,15 @@ var settings = []Setting{
 		},
 	},
 	{
+		Key: "site.indexnow", Kind: Bool, Default: "false",
+		Summary: "tell search engines that take IndexNow which pages changed, each time the site is published",
+		Why: "IndexNow (Bing, Yandex, Seznam, Naver and others share what one is told): a change is " +
+			"crawled in minutes rather than whenever the engine next comes by. Off by default, " +
+			"because it sends this site's addresses to a third party on every publish; on, each " +
+			"publish sends the addresses of the pages that changed, and nothing else, with a key " +
+			"the site serves at /KEY.txt to prove the addresses are its own. Needs site.base_url.",
+	},
+	{
 		Key: "site.webmcp", Kind: Bool, Default: "true",
 		Summary: "mark the site's search, chatbots and forms as tools a visitor's browser agent can use",
 		Why: "WebMCP: attributes on the forms the site already has, saying what " +

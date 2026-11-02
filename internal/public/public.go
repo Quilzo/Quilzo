@@ -200,6 +200,12 @@ type Site struct {
 	BaseURL string
 	// Redirects preserves old URLs after a migration. Nil is inert.
 	Redirects *seo.Map
+	// RedirectsAt, when set, is the map as it is now, so a redirect added
+	// in the admin works without a restart; Redirects is not read then.
+	RedirectsAt func() *seo.Map
+	// IndexNowKey is the site's IndexNow key, served at /KEY.txt to show the
+	// addresses it sends are its own; "" serves none.
+	IndexNowKey func() string
 	// Locales is the site's language configuration, when it has more than one.
 	// Nil means a single-language site and nothing about this feature appears
 	// in the output.
@@ -659,7 +665,11 @@ func (st *Site) contentTag(what string) string {
 // target does not exist is a redirect that stops working the moment somebody
 // creates a page with the old name.
 func (st *Site) redirected(w http.ResponseWriter, r *http.Request) bool {
-	rd, ok := st.Redirects.Lookup(r.URL.Path)
+	m := st.Redirects
+	if st.RedirectsAt != nil {
+		m = st.RedirectsAt()
+	}
+	rd, ok := m.Lookup(r.URL.Path)
 	if !ok {
 		return false
 	}
@@ -1014,6 +1024,15 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 	// A page's Markdown copy, when NAME.md is not a page of its own.
 	if !ok && st.pageMarkdown(w, r, pages, name) {
 		return
+	}
+	// The IndexNow key, at the address the notices name.
+	if !ok && st.IndexNowKey != nil {
+		if k := st.IndexNowKey(); k != "" && name == k+".txt" {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			_, _ = w.Write([]byte(k))
+			return
+		}
 	}
 	if !ok {
 		// A page for members: served to one who is signed in, privately, and

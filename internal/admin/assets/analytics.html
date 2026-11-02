@@ -38,6 +38,27 @@
 </tbody></table></div>{{else}}<p class="notice">Nothing from other sites yet.</p>{{end}}</section>
 </div>
 
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+<h2 id="missing">Looked for and not found</h2>
+{{if .Missing}}<p class="hint">Addresses people asked for that are not on the site: a link somebody else has wrong, or a
+  page that moved. Sending one to the page it meant keeps the visitor and what the link was worth.</p>
+<div class="table-wrap"><table><thead><tr><th scope="col">Address</th><th scope="col">Asked</th><th scope="col">Probably meant</th></tr></thead><tbody>
+{{range .Missing}}<tr><th scope="row"><code>{{.Name}}</code></th><td>{{.Count}}</td>
+  <td>{{if .Suggest}}<code>/{{.Suggest}}</code>
+    {{if $.CanRedirect}}<form method="post" action="/analytics/redirect" class="inline">
+      <input type="hidden" name="from" value="{{.Name}}"><input type="hidden" name="to" value="/{{.Suggest}}">
+      <button type="submit" class="btn-text">Redirect it<span class="visually-hidden"> {{.Name}} to /{{.Suggest}}</span></button></form>{{end}}
+  {{else}}<span class="hint">no close page</span>{{end}}</td></tr>{{end}}
+</tbody></table></div>{{else}}<p class="notice">Every address people asked for was there.</p>{{end}}
+
+<h2 id="no-results">Searches that found nothing</h2>
+{{if .S.NoResults}}<p class="hint">What readers searched for that the site does not say, in their words, with addresses and
+  numbers masked. Each is a page somebody could write.</p>
+<div class="table-wrap"><table><thead><tr><th scope="col">Search</th><th scope="col">Times</th></tr></thead><tbody>
+{{range .S.NoResults}}<tr><th scope="row">{{.Name}}</th><td>{{.Count}}</td></tr>{{end}}
+</tbody></table></div>{{else}}<p class="notice">Every search found something.</p>{{end}}
+
 <h2>Conversions</h2>
 {{if .S.Goals}}<div class="table-wrap"><table><thead><tr><th scope="col">Goal</th><th scope="col">Visitors</th></tr></thead><tbody>
 {{range .S.Goals}}<tr><th scope="row"><code>{{.Name}}</code></th><td>{{.Count}}</td></tr>{{end}}

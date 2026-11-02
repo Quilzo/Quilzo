@@ -34,6 +34,13 @@ func (st *Site) counted(next http.Handler) http.Handler {
 			st.Analytics.Visit(r, r.URL.Path)
 			st.convertPage(r, r.URL.Path)
 		}
+		// An address a person asked for that is not here, as the site's own
+		// 404 page answers it; not one somebody hunting for an admin or
+		// another product's files asked for, which the shield counts.
+		if sw.status == http.StatusNotFound && strings.HasPrefix(sw.Header().Get("Content-Type"), "text/html") &&
+			!IsAdminPath(r.URL.Path) && !IsForeignProbe(r.URL.Path) {
+			st.Analytics.NotFound(r, r.URL.Path)
+		}
 	})
 }
 

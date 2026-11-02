@@ -109,6 +109,13 @@ var Purposes = []Purpose{
 			"issued here",
 	},
 	{
+		Name: "indexnow",
+		What: "telling search engines that take IndexNow which of this site's " +
+			"addresses changed, after a publish, when site.indexnow is on",
+		Without: "search engines find changes when they next crawl the site, " +
+			"from its sitemap, as they always did",
+	},
+	{
 		Name:    "webhook",
 		What:    "notifying an endpoint that something was published or proposed",
 		Without: "webhooks are not delivered. Nothing is queued or retried",
