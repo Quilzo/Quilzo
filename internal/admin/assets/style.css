@@ -3385,6 +3385,28 @@ fieldset.fill-blank label.fill-leave { font-weight: 400; }
   .table-wrap > table:not(.grid) td.clip { max-width: 100%; }
   .table-wrap > table:not(.grid) td code, .table-wrap > table:not(.grid) td a { overflow-wrap: break-word; }
 }
+/* Wider than a phone, a table with more columns than the screen has room for
+ * scrolls sideways inside .table-wrap. Its row's actions stay at the right
+ * edge while the columns scroll under them: the audit at 768 pixels found
+ * Records' menus, the only way to edit or delete a record, scrolled out of
+ * sight. Where the browser can tell that there is more to scroll, a shadow
+ * says so. */
+@media (min-width: 40.0625rem) {
+  .table-wrap > table :is(td, th).actions,
+  .table-wrap > table :is(td, th):has(> .rowmenu-open) {
+    position: sticky; inset-inline-end: 0; z-index: 1;
+    background: var(--surface-container-lowest); }
+  .table-wrap > table tbody tr:hover > :is(td, th).actions,
+  .table-wrap > table tbody tr:hover > :is(td, th):has(> .rowmenu-open) { background: var(--surface-container); }
+  @supports (container-type: scroll-state) {
+    .table-wrap { container-type: scroll-state; }
+    @container scroll-state(scrollable: inline-end) {
+      .table-wrap > table :is(td, th).actions,
+      .table-wrap > table :is(td, th):has(> .rowmenu-open) {
+        box-shadow: -10px 0 10px -10px color-mix(in srgb, var(--on-surface) 35%, transparent); }
+    }
+  }
+}
 /* Long identifiers in a cell break where they must at every width, rather
    than pushing the column, and the table, past the screen. */
 td code, td .mono { overflow-wrap: break-word; }
@@ -3399,10 +3421,22 @@ td code, td .mono { overflow-wrap: break-word; }
   background: var(--surface-container-high); color: var(--on-surface-variant); }
 .media-shot img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .media-shot .icon { width: 48px; height: 48px; }
-.media-body { padding: .75rem 1rem 1rem; display: grid; gap: .35rem; min-width: 0; }
+/* One column no wider than the card, whatever is in it: a rights tag that
+   said "lapsing until 10 December 2026" on one line, and the crop grid's
+   fieldset, which is as wide as its widest content unless told otherwise,
+   made the column wider than the card and pushed its menu out of it. */
+.media-body { padding: .75rem 1rem 1rem; display: grid; grid-template-columns: minmax(0, 1fr); gap: .35rem; min-width: 0; }
+.media-body fieldset { min-inline-size: 0; }
+.media-tags .tag { white-space: normal; max-width: 100%; }
+/* In a card the crop grid is three narrow columns: each position's name goes
+   under its button, centred, so the grid keeps its shape and every name is
+   seen whole instead of the right-hand column running out of the card. */
+.media-body .focusgrid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem .25rem; }
+.media-body .focusgrid label { flex-direction: column; justify-content: flex-start; text-align: center;
+  gap: 2px; white-space: normal; min-width: 0; }
 .media-head { display: flex; align-items: flex-start; gap: .25rem; }
-.media-head .rowmenu-open { margin: -6px -8px 0 auto; }
-.media-title { font: var(--title-sm); font-weight: 600; overflow-wrap: break-word; min-width: 0; padding-top: 2px; }
+.media-head .rowmenu-open { flex: none; margin: -6px -8px 0 auto; }
+.media-title { flex: 1 1 0; font: var(--title-sm); font-weight: 600; overflow-wrap: break-word; word-break: break-word; min-width: 0; padding-top: 2px; }
 .media-meta, .media-alt, .media-tags { margin: 0; }
 .media-alt { font: var(--body-md); }
 .media-tags { display: flex; flex-wrap: wrap; gap: .35rem .5rem; align-items: center; }
