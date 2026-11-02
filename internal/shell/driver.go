@@ -52,6 +52,9 @@ type Kept struct {
 	Digest  string
 	Output  []byte
 	Changes Changes
+	// Input is what the command read, by its digest: the code code_run
+	// gave it.
+	Input string
 }
 
 // Performs reports whether the driver performs an action.
@@ -67,6 +70,49 @@ func (d *Driver) decl() *agent.Shell {
 func str(a agent.Action, k string) string {
 	v, _ := a.Input[k].(string)
 	return strings.TrimSpace(v)
+}
+
+// raw is an input's text exactly as given: a file's, or code's, whose
+// spaces are part of it.
+func raw(a agent.Action, k string) string {
+	v, _ := a.Input[k].(string)
+	return v
+}
+
+// num is a whole number an input gives, as a number or as its digits.
+func num(a agent.Action, k string) int {
+	switch v := a.Input[k].(type) {
+	case float64:
+		if v >= 0 && v <= 1<<30 {
+			return int(v)
+		}
+	case int:
+		return v
+	case string:
+		n := 0
+		for _, r := range strings.TrimSpace(v) {
+			if r < '0' || r > '9' || n > 1<<26 {
+				return 0
+			}
+			n = n*10 + int(r-'0')
+		}
+		return n
+	}
+	return 0
+}
+
+// yes is a yes-or-no an input gives, as true or as the word.
+func yes(a agent.Action, k string) bool {
+	switch v := a.Input[k].(type) {
+	case bool:
+		return v
+	case string:
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "true", "yes", "1":
+			return true
+		}
+	}
+	return false
 }
 
 // argv is a command's program and arguments as the action gives them.
@@ -147,12 +193,21 @@ func (d *Driver) Perform(next func(context.Context, agent.Action) (string, error
 		case "file_list":
 			return d.list(str(a, "path"))
 		case "file_read":
+			if from, lines := num(a, "from"), num(a, "lines"); from > 0 || lines > 0 {
+				return d.readLines(str(a, "path"), from, lines)
+			}
 			return d.read(str(a, "path"))
 		case "file_write":
 			text, _ := a.Input["text"].(string)
 			return d.write(str(a, "path"), text)
+		case "file_edit", "file_move", "file_delete":
+			return d.change(a)
+		case "file_search":
+			return d.search(a)
 		case "shell_run":
 			return d.run(ctx, a)
+		case "code_run":
+			return d.code(ctx, a)
 		}
 		return "", fmt.Errorf("%q is not one of the workspace's actions", a.Op)
 	}
@@ -298,46 +353,7 @@ func (d *Driver) run(ctx context.Context, a agent.Action) (string, error) {
 	if !kind.Network {
 		b.Proxy = nil
 	}
-	// While it runs: the run's record kept fresh, and the workspace and
-	// home measured, so a command that would fill the disk is stopped
-	// when it goes over rather than found afterwards.
-	cctx, cancel := context.WithCancelCause(ctx)
-	defer cancel(nil)
-	watched := make(chan struct{})
-	go func() {
-		defer close(watched)
-		quota := int64(sh.Quota()) << 20
-		beat, measure := time.NewTicker(30*time.Second), time.NewTicker(5*time.Second)
-		defer beat.Stop()
-		defer measure.Stop()
-		for {
-			select {
-			case <-cctx.Done():
-				return
-			case <-beat.C:
-				if d.Beat != nil {
-					d.Beat()
-				}
-			case <-measure.C:
-				if kind.Reads() {
-					continue
-				}
-				ws, ok1 := SizeOf(b.Workspace)
-				home, ok2 := SizeOf(b.Home)
-				if !ok1 || !ok2 || ws+home > quota {
-					cancel(fmt.Errorf("it went over the workspace's %d MiB", sh.Quota()))
-					return
-				}
-			}
-		}
-	}()
-	out, err := b.Run(cctx, Command{Path: path, Args: args, Kind: kind})
-	cancel(nil)
-	<-watched
-	if cause := context.Cause(cctx); cause != nil && cause != context.Canceled && ctx.Err() == nil {
-		out.Stopped = cause.Error()
-		err = nil
-	}
+	out, err := d.execute(ctx, b, Command{Path: path, Args: args, Kind: kind}, sh)
 	if err != nil {
 		return "", err
 	}
@@ -381,6 +397,35 @@ func (d *Driver) Weighs(a agent.Action) string {
 		if sh.Asks("write") && !sh.ReadOnly {
 			return "it writes " + str(a, "path") + " in the workspace"
 		}
+	case "file_edit":
+		if sh.Asks("write") && !sh.ReadOnly {
+			return "it edits " + str(a, "path") + " in the workspace"
+		}
+	case "file_move":
+		if sh.Asks("write") && !sh.ReadOnly {
+			return "it moves " + nonEmpty(str(a, "from"), str(a, "path")) + " to " + str(a, "to") + " in the workspace"
+		}
+	case "file_delete":
+		switch {
+		case sh.ReadOnly:
+		case IsInBin(str(a, "path")):
+			return "it deletes " + str(a, "path") + " from the workspace's bin, which nothing brings back"
+		case sh.Asks("write"):
+			return "it moves " + str(a, "path") + " to the workspace's bin, where it is kept a week"
+		}
+	case "code_run":
+		if sh.ReadOnly || !yes(a, "writes") {
+			return ""
+		}
+		program, _, err := d.interpreter(str(a, "language"))
+		if err != nil {
+			return ""
+		}
+		code := strings.TrimSpace(raw(a, "code"))
+		if len(code) > MaxAskedCode {
+			return "" // refused when it runs, being longer than a person can read
+		}
+		return "it runs " + program + " code that may change or delete anything in the workspace:\n" + code
 	case "shell_run":
 		program, args, err := argv(a)
 		if err != nil || !sh.Runs(program) {
@@ -407,4 +452,56 @@ func (d *Driver) Weighs(a agent.Action) string {
 		}
 	}
 	return ""
+}
+
+func nonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
+}
+
+// execute runs a command for the run: the run's record kept fresh while it
+// does, and the workspace and home measured, so a command that would fill
+// the disk is stopped when it goes over rather than found afterwards.
+func (d *Driver) execute(ctx context.Context, b Box, c Command, sh *agent.Shell) (Output, error) {
+	kind := c.Kind
+	cctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	watched := make(chan struct{})
+	go func() {
+		defer close(watched)
+		quota := int64(sh.Quota()) << 20
+		beat, measure := time.NewTicker(30*time.Second), time.NewTicker(5*time.Second)
+		defer beat.Stop()
+		defer measure.Stop()
+		for {
+			select {
+			case <-cctx.Done():
+				return
+			case <-beat.C:
+				if d.Beat != nil {
+					d.Beat()
+				}
+			case <-measure.C:
+				if kind.Reads() {
+					continue
+				}
+				ws, ok1 := SizeOf(b.Workspace)
+				home, ok2 := SizeOf(b.Home)
+				if !ok1 || !ok2 || ws+home > quota {
+					cancel(fmt.Errorf("it went over the workspace's %d MiB", sh.Quota()))
+					return
+				}
+			}
+		}
+	}()
+	out, err := b.Run(cctx, c)
+	cancel(nil)
+	<-watched
+	if cause := context.Cause(cctx); cause != nil && cause != context.Canceled && ctx.Err() == nil {
+		out.Stopped = cause.Error()
+		err = nil
+	}
+	return out, err
 }

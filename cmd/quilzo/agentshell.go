@@ -314,7 +314,13 @@ func (o *runOutputs) keep(k shell.Kept) {
 		return
 	}
 	n := len(o.index) + 1
-	e := runOutput{N: n, Command: shell.Line(k.Program, k.Args), Kind: k.Kind, Exit: k.Exit,
+	command := shell.Line(k.Program, k.Args)
+	if k.Input != "" {
+		// Code run reads its program from its input: the record names it
+		// by its digest, and the step's input holds the code itself.
+		command += " < " + k.Input
+	}
+	e := runOutput{N: n, Command: command, Kind: k.Kind, Exit: k.Exit,
 		Took: k.Took.Round(time.Millisecond).String(), Total: k.Total, Digest: k.Digest, Changes: capChanges(k.Changes), When: time.Now().UTC()}
 	// Past the bound, a command is still recorded (what ran, how it ended,
 	// the digest of what it printed); only its output is not kept.

@@ -150,6 +150,37 @@ func TestTheModelIsToldHowToUseItsWorkspace(t *testing.T) {
 	}
 }
 
+// An edit's text and code arrive whole, as a file's does, and the prompt
+// says which languages run, that code changes nothing unless it says so,
+// and that deleting from the bin is for good.
+func TestAnEditAndCodeArriveWhole(t *testing.T) {
+	sess := agent.NewSession(agent.Manifest{Name: "coder", Kind: agent.KindTask, Purpose: "x",
+		Capabilities: agent.ShellCapabilities, Autonomy: agent.AutonomyDraft,
+		Shell:  &agent.Shell{Programs: []string{"python3", "node", "git"}},
+		Budget: agent.Budget{Steps: 10, Tools: 1, Duration: agent.Duration(time.Minute)}}, nil)
+	code := strings.Repeat("print('a line of code')\n", 400)
+	body, _ := json.Marshal(map[string]any{"op": "code_run", "input": map[string]any{"language": "python", "code": code}})
+	m := &fakeModel{reply: string(body)}
+	a, err := Decider{Model: m, Session: sess}.Decide()(context.Background(), "count", nil)
+	if err != nil || a.Input["code"] != code {
+		t.Fatalf("the code did not arrive whole: %v", err)
+	}
+	for _, want := range []string{"Languages code_run runs: javascript, python.", "never reaches the network",
+		`"writes": true`, "Deleting from the bin (.quilzo-bin) is for good", `"op": "file_edit"`, `"op": "file_search"`,
+		`"from": 400, "lines": 100`} {
+		if !strings.Contains(m.system, want) {
+			t.Errorf("the prompt does not say %q", want)
+		}
+	}
+	old, repl := strings.Repeat("old line\n", 700), strings.Repeat("new line\n", 700)
+	body, _ = json.Marshal(map[string]any{"op": "file_edit", "input": map[string]any{"path": "a.txt", "old": old, "new": repl}})
+	m.reply = string(body)
+	a, err = Decider{Model: m, Session: sess}.Decide()(context.Background(), "edit", nil)
+	if err != nil || a.Input["old"] != old || a.Input["new"] != repl {
+		t.Fatalf("the edit did not arrive whole: %v", err)
+	}
+}
+
 // The larger answer is for a file's text: any other action that size is
 // refused, since a person could not read it when asked.
 func TestOnlyAFileWriteMayBeLarge(t *testing.T) {

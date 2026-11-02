@@ -85,6 +85,10 @@ type Command struct {
 	Path string
 	Args []string
 	Kind Kind
+	// Stdin is what the command reads: the code code_run gives an
+	// interpreter. Empty for every other command, so a program that would
+	// ask a question gets nothing rather than waiting.
+	Stdin string
 }
 
 // Output is how a command went.
@@ -189,7 +193,7 @@ func (b Box) Run(ctx context.Context, c Command) (Output, error) {
 		Limits: sandbox.Limits{CPUSeconds: uint64(timeout/time.Second) + 1, DataBytes: uint64(mem) << 20,
 			FileBytes: 256 << 20, OpenFiles: 1024, Processes: 512},
 		Wall:  timeout,
-		Stdin: strings.NewReader(""), Stdout: out, Stderr: out,
+		Stdin: strings.NewReader(c.Stdin), Stdout: out, Stderr: out,
 	})
 	o := Output{Exit: res.Exit, Took: res.Took, Stopped: res.Stopped}
 	o.Text, o.Kept, o.Total, o.Digest = out.result()

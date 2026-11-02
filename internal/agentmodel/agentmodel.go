@@ -63,6 +63,7 @@ import (
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/plaintext"
+	"github.com/quilzo/quilzo/internal/shell"
 )
 
 // MaxObservation bounds how much of one observation reaches the model.
@@ -86,7 +87,14 @@ const (
 // MaxWorkspaceShown is how much of the latest workspace result reaches the
 // model: a file read whole up to 64 KB, a command's output as it was shown
 // (its start and end), a folder's listing.
-var MaxWorkspaceShown = map[string]int{"file_read": 64 << 10, "shell_run": 12 << 10, "file_list": 16 << 10, "file_write": 2 << 10}
+var MaxWorkspaceShown = map[string]int{"file_read": 64 << 10, "shell_run": 12 << 10, "code_run": 12 << 10,
+	"file_list": 16 << 10, "file_search": 24 << 10, "file_write": 2 << 10, "file_edit": 2 << 10,
+	"file_move": 2 << 10, "file_delete": 2 << 10}
+
+// longInputs are the inputs whose text is kept whole, up to what a write
+// may be, rather than cut to an input's usual few thousand characters: a
+// file's text, the text an edit replaces and puts in, and code.
+var longInputs = map[string][]string{"file_write": {"text"}, "file_edit": {"old", "new", "insert"}, "code_run": {"code"}}
 
 // MaxObservations is how many recent observations are shown.
 //
@@ -273,7 +281,7 @@ func (d Decider) DecideResettable() (agent.Decide, func()) {
 			return agent.Action{}, fmt.Errorf("the model could not be reached: %w", err)
 		}
 		limit := MaxAnswer
-		if ops["file_write"] {
+		if ops["file_write"] || ops["file_edit"] || ops["code_run"] {
 			limit = MaxWriteAnswer
 		}
 		if len(raw) > limit {
@@ -300,7 +308,7 @@ func (d Decider) DecideResettable() (agent.Decide, func()) {
 		}
 		// The larger limit is for a file's text only: an action of any other
 		// kind that size is one a person could not read when asked about it.
-		if err == nil && limit > MaxAnswer && a.Op != "file_write" && len(raw) > MaxAnswer {
+		if _, long := longInputs[a.Op]; err == nil && limit > MaxAnswer && !long && len(raw) > MaxAnswer {
 			return agent.Action{}, fmt.Errorf("the model returned %d bytes for %s and the limit is %d", len(raw), a.Op, MaxAnswer)
 		}
 		return a, err
@@ -596,14 +604,15 @@ func parse(raw string, ops map[string]bool) (agent.Action, error) {
 			clamp(op, 60), strings.Join(sorted(ops), ", "))
 	}
 	in := bounded(c.Input)
-	if op == "file_write" {
-		// A file's text is its own: kept whole and exactly, up to what a
-		// write may be, not cut to an input's usual few thousand characters.
-		if text, ok := c.Input["text"].(string); ok && len(text) <= MaxWriteAnswer {
+	for _, k := range longInputs[op] {
+		// A file's text is its own, and so is code: kept whole and exactly,
+		// up to what a write may be, not cut to an input's usual few
+		// thousand characters.
+		if text, ok := c.Input[k].(string); ok && len(text) <= MaxWriteAnswer {
 			if in == nil {
 				in = map[string]any{}
 			}
-			in["text"] = text
+			in[k] = text
 		}
 	}
 	return agent.Action{Op: op, Input: in}, nil
@@ -834,11 +843,22 @@ A press that pays, sends, deletes, agrees or submits a form waits for a person t
 // that holds them, what it may run, and what waits for a person.
 func shellPrompt(ops map[string]bool, decl *agent.Shell) string {
 	lines := map[string]string{
-		"file_list":  `{"op": "file_list", "input": {"path": "."}} lists a folder of the workspace`,
-		"file_read":  `{"op": "file_read", "input": {"path": "go.mod"}} reads a file (up to 256 KB of text)`,
+		"file_list": `{"op": "file_list", "input": {"path": "."}} lists a folder of the workspace`,
+		"file_read": `{"op": "file_read", "input": {"path": "go.mod"}} reads a file (up to 256 KB of text); ` +
+			`{"op": "file_read", "input": {"path": "big.log", "from": 400, "lines": 100}} reads lines 400 to 499 of one, however large`,
+		"file_search": `{"op": "file_search", "input": {"path": "src", "name": "*.go", "text": "TODO"}} finds files by name, ` +
+			`lines by text, or both, under a folder; "regex": true reads text as a regular expression, "ignore_case": true ignores case`,
 		"file_write": `{"op": "file_write", "input": {"path": "docs/notes.md", "text": "..."}} writes a file whole, replacing what it held`,
+		"file_edit": `{"op": "file_edit", "input": {"path": "main.go", "old": "exact text", "new": "its replacement"}} replaces text ` +
+			`that is in the file once ("all": true for every time); {"op": "file_edit", "input": {"path": "notes.md", "line": 12, ` +
+			`"insert": "..."}} puts lines in after line 12 (0 is the top)`,
+		"file_move": `{"op": "file_move", "input": {"from": "draft.md", "to": "docs/final.md"}} renames or moves a file or folder`,
+		"file_delete": `{"op": "file_delete", "input": {"path": "old.txt"}} deletes a file or folder into the workspace's bin, ` +
+			`where it is kept a week and file_move brings it back`,
 		"shell_run": `{"op": "shell_run", "input": {"program": "git", "args": ["status"]}} runs one program with its arguments, ` +
 			`in the workspace; there is no shell, so no pipes, redirections or variables`,
+		"code_run": `{"op": "code_run", "input": {"language": "python", "code": "..."}} runs code and answers with what it printed; ` +
+			`it may read the workspace and change nothing there, unless you say "writes": true`,
 	}
 	var held []string
 	for _, op := range agent.ShellCapabilities {
@@ -874,6 +894,25 @@ The workspace: a folder kept between runs. Paths are inside it.
 			b.WriteString(", and so does one that changes the workspace")
 		}
 		b.WriteString(". You are shown the start and the end of what a command prints.")
+	}
+	if ops["code_run"] {
+		var langs []string
+		for _, l := range shell.LanguageNames() {
+			for _, p := range shell.Languages[l].Programs {
+				if decl.Runs(p) {
+					langs = append(langs, l)
+					break
+				}
+			}
+		}
+		fmt.Fprintf(&b, "\nLanguages code_run runs: %s. Code never reaches the network. Code that may change the "+
+			"workspace (\"writes\": true) waits for a person to read and approve it.", strings.Join(langs, ", "))
+	}
+	if ops["file_delete"] {
+		b.WriteString("\nDeleting from the bin (" + shell.Bin + ") is for good, and waits for a person.")
+	}
+	if decl.Asks("write") && (ops["file_write"] || ops["file_edit"] || ops["file_move"] || ops["file_delete"]) {
+		b.WriteString("\nWriting, editing, moving and deleting files each wait for a person to approve them.")
 	}
 	if decl.ReadOnly {
 		b.WriteString("\nThis run only reads: only commands that read run, and nothing is written.")

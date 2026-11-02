@@ -113,6 +113,26 @@ Unreleased
 
 ** Added
 
+*** Agents edit, move, delete and search files, and run code.  An agent's
+    workspace had list, read, write and run a named program.  It now has:
+    - file_edit: replace exact text (once, or every time), or put lines in
+      after a line;
+    - file_move: rename or move, where what was at the new name goes to
+      the bin rather than being lost;
+    - file_delete: into the workspace's bin, kept a week, from where
+      file_move brings it back; deleting from the bin is for good and
+      waits for a person;
+    - file_search: files by name, lines by text or regular expression;
+    - file_read of part of a file, by its lines, however large;
+    - code_run: Python, JavaScript, TypeScript, shell, Ruby, Perl, PHP or
+      Lua, with an interpreter the declaration names.  The code reads the
+      workspace and changes nothing there unless it says "writes", and
+      then a person reads it whole and approves it first.  It never
+      reaches the network.
+    OpenAI's, Copilot's and Bedrock's code interpreters now import as
+    code_run, and Claude Code's Grep, Glob and Edit as file_search and
+    file_edit.
+
 *** Models from more than forty providers, by name.  quilzo gateway
     providers lists them, from runtimes on this machine to model makers,
     open-model hosts, routers, clouds and regional providers, each with

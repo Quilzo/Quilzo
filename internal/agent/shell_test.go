@@ -25,6 +25,7 @@ func TestAShellDeclarationMeansWhatItSays(t *testing.T) {
 		shelled([]string{"file_read", "file_list"}, nil),
 		shelled(run, &Shell{Programs: []string{"git"}, Hosts: []string{"github.com"}, Ask: []string{"network", "write"},
 			Workspace: "/srv/work/site", Timeout: Duration(5 * time.Minute), MemoryMB: 4096, QuotaMB: 512}),
+		shelled([]string{"code_run", "file_edit", "file_move", "file_delete", "file_search"}, &Shell{Programs: []string{"python3"}}),
 	}
 	for _, m := range ok {
 		if err := m.Validate(nil); err != nil {
@@ -48,6 +49,9 @@ func TestAShellDeclarationMeansWhatItSays(t *testing.T) {
 		{shelled(run, &Shell{Programs: []string{"git"}, Workspace: "/etc"}), "system folder"},
 		{shelled(run, &Shell{Programs: []string{"git"}, Timeout: Duration(time.Hour)}), "at most"},
 		{shelled(run, &Shell{Programs: []string{"git"}, QuotaMB: 1 << 20}), "at most"},
+		// Code is run with an interpreter the declaration names.
+		{shelled([]string{"code_run"}, nil), "names no interpreter"},
+		{shelled([]string{"code_run"}, &Shell{Programs: []string{"git"}}), "names no interpreter"},
 	} {
 		err := c.m.Validate(nil)
 		if err == nil || !strings.Contains(err.Error(), c.want) {

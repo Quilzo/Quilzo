@@ -135,7 +135,11 @@ func TestOpenAIAssistants(t *testing.T) {
 	if !slices.Contains(m.Capabilities, "search_pages") {
 		t.Errorf("file_search did not become searching: %v", m.Capabilities)
 	}
-	mustNote(t, tutor, Decide, "code interpreter")
+	// Its code interpreter is Python run with code_run, in a workspace.
+	if !slices.Contains(m.Capabilities, "code_run") || m.Shell == nil || !slices.Contains(m.Shell.Programs, "python3") {
+		t.Errorf("the code interpreter did not become code_run: %v %+v", m.Capabilities, m.Shell)
+	}
+	mustNote(t, tutor, Changed, "code interpreter")
 	mustNote(t, tutor, Decide, "vs_2")
 	mustNote(t, tutor, Decide, "get_grade")
 	mustNote(t, tutor, Left, "temperature (0.2)")
@@ -155,8 +159,9 @@ func TestClaudeCodeSubagent(t *testing.T) {
 		!strings.HasSuffix(m.Instructions, "best practices.") || m.Model != "sonnet" || m.Budget.Steps != 12 {
 		t.Errorf("%+v", m)
 	}
-	if !slices.Contains(m.Capabilities, "file_read") || slices.Contains(m.Capabilities, "file_write") || m.Shell == nil {
-		t.Errorf("Read, Glob and Grep are a workspace it reads: %v %+v", m.Capabilities, m.Shell)
+	if !slices.Contains(m.Capabilities, "file_read") || !slices.Contains(m.Capabilities, "file_search") ||
+		slices.Contains(m.Capabilities, "file_write") || m.Shell == nil {
+		t.Errorf("Read, Glob and Grep are a workspace it reads and searches: %v %+v", m.Capabilities, m.Shell)
 	}
 	mustNote(t, a, Decide, "Bash ran any command")
 	mustNote(t, a, Decide, "WebFetch reached the web")
@@ -204,7 +209,7 @@ func TestMicrosoftCopilotDeclarativeAgent(t *testing.T) {
 		t.Errorf("instructions %q", m.Instructions)
 	}
 	mustNote(t, a, Decide, "OneDriveAndSharePoint and GraphConnectors")
-	mustNote(t, a, Decide, "code interpreter")
+	mustNote(t, a, Changed, "code interpreter")
 	mustNote(t, a, Decide, "ai-plugin.json")
 	mustNote(t, a, Left, "1 conversation starter")
 	mustNote(t, a, Left, "disclaimer")

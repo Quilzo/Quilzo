@@ -26,6 +26,17 @@ import (
 // note, lists the workspace, removes the note and says it is done.
 func keeperRun(t *testing.T) string {
 	t.Helper()
+	return keeperRunWith(t, []string{
+		`{"op":"file_write","input":{"path":"notes.md","text":"Ship the shell.\n"}}`,
+		`{"op":"shell_run","input":{"program":"ls","args":["-1"]}}`,
+		`{"op":"shell_run","input":{"program":"rm","args":["notes.md"]}}`,
+	}, nil)
+}
+
+// keeperRunWith declares the keeper with a model that takes these steps,
+// running these programs as well as ls and rm.
+func keeperRunWith(t *testing.T, plan, programs []string) string {
+	t.Helper()
 	n := agentbox.Native{Exe: os.Args[0], Init: []string{"agentbox-init"}, Shim: []string{"agentbox-shim"}}
 	if a := n.Check(); !a.OK {
 		t.Skip("no box here: " + a.Why)
@@ -45,11 +56,6 @@ func keeperRun(t *testing.T) string {
 
 	var mu sync.Mutex
 	turn := 0
-	plan := []string{
-		`{"op":"file_write","input":{"path":"notes.md","text":"Ship the shell.\n"}}`,
-		`{"op":"shell_run","input":{"program":"ls","args":["-1"]}}`,
-		`{"op":"shell_run","input":{"program":"rm","args":["notes.md"]}}`,
-	}
 	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.ReadAll(r.Body)
 		mu.Lock()
@@ -70,13 +76,64 @@ func keeperRun(t *testing.T) string {
 	t.Setenv("QUILZO_MODEL_KEY", "")
 
 	m := agent.Manifest{Name: "keeper", Kind: agent.KindTask, Purpose: "Keep the notes folder tidy",
-		Capabilities: agent.ShellCapabilities, Autonomy: agent.AutonomyDraft,
-		Shell:  &agent.Shell{Programs: []string{"ls", "rm"}},
-		Budget: agent.Budget{Steps: 8, Tools: 1, Duration: agent.Duration(2 * time.Minute)}}
+		Capabilities: []string{"file_list", "file_read", "file_write", "file_edit", "file_move", "file_delete",
+			"file_search", "shell_run"}, Autonomy: agent.AutonomyDraft,
+		Shell:  &agent.Shell{Programs: append([]string{"ls", "rm"}, programs...)},
+		Budget: agent.Budget{Steps: 12, Tools: 1, Duration: agent.Duration(2 * time.Minute)}}
+	if len(programs) > 0 {
+		m.Capabilities = append(m.Capabilities, "code_run")
+	}
 	if err := declareAgent(root, m, true, true, asAdmin("dana")); err != nil {
 		t.Fatal(err)
 	}
 	return root
+}
+
+// A model's hands in its workspace, through a real run: it edits a file,
+// finds what it changed, works something out in Python, moves a file and
+// deletes one into the bin, with nobody asked, since none of it is lost.
+func TestAnAgentEditsSearchesRunsCodeAndTidies(t *testing.T) {
+	if _, err := shell.Find("python3"); err != nil {
+		t.Skip("no python3 here")
+	}
+	root := keeperRunWith(t, []string{
+		`{"op":"file_write","input":{"path":"prices.csv","text":"loaf,3\nbun,1\n"}}`,
+		`{"op":"file_edit","input":{"path":"prices.csv","old":"bun,1","new":"bun,2"}}`,
+		`{"op":"file_search","input":{"text":"bun"}}`,
+		`{"op":"code_run","input":{"language":"python","code":"print(sum(int(l.split(',')[1]) for l in open('prices.csv')))"}}`,
+		`{"op":"file_move","input":{"from":"prices.csv","to":"archive/prices.csv"}}`,
+		`{"op":"file_write","input":{"path":"scratch.txt","text":"x"}}`,
+		`{"op":"file_delete","input":{"path":"scratch.txt"}}`,
+	}, []string{"python3"})
+	id, out, err := runAgentKeptBy(context.Background(), root, "keeper", "price the bun", true, false, asAdmin("dana"))
+	if err != nil || !out.Trace.Complete {
+		t.Fatalf("%v\n%s", err, describeRun(out.Trace))
+	}
+	results := map[string]string{}
+	for _, st := range out.Trace.Steps {
+		if st.Err != "" {
+			t.Fatalf("%s failed: %s\n%s", st.Action.Op, st.Err, describeRun(out.Trace))
+		}
+		results[st.Action.Op] += st.Result
+	}
+	for op, want := range map[string]string{"file_edit": "replaced one place in prices.csv", "file_search": "prices.csv:2: bun,2",
+		"code_run": "\n5\n", "file_move": "moved prices.csv to archive/prices.csv", "file_delete": "file_move brings it back"} {
+		if !strings.Contains(results[op], want) {
+			t.Errorf("%s answered %q, not %q", op, results[op], want)
+		}
+	}
+	set, _ := loadAgents(root)
+	ws, _ := workspaceDir(root, set.Agents["keeper"])
+	if b, err := os.ReadFile(filepath.Join(ws, "archive", "prices.csv")); err != nil || string(b) != "loaf,3\nbun,2\n" {
+		t.Errorf("%q %v", b, err)
+	}
+	if _, err := os.Stat(filepath.Join(ws, "scratch.txt")); !os.IsNotExist(err) {
+		t.Errorf("deleted, and still there: %v", err)
+	}
+	outs, err := loadRunOutputs(root, id)
+	if err != nil || len(outs) != 1 || !strings.Contains(outs[0].Command, "python3 - < code sha256:") {
+		t.Fatalf("the code's run is not recorded by what it ran: %+v %v", outs, err)
+	}
 }
 
 // A model works in its workspace through a real run: it writes, lists, and
