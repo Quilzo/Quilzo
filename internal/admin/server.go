@@ -2339,7 +2339,7 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 		"Fields": fields, "Exists": exists, "Type": typeName,
 		"FormChoices": formChoices,
 		"Incoming":    incoming,
-		"Base":     base, "HeldBy": heldBy,
+		"Base":        base, "HeldBy": heldBy,
 		"CanEdit": s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/"+name).Allowed,
 	})
 }
