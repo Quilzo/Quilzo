@@ -4,9 +4,12 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +20,8 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/feature"
+	"github.com/quilzo/quilzo/internal/fetch"
+	"github.com/quilzo/quilzo/internal/ical"
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/site"
@@ -125,12 +130,14 @@ func eventsCmd(root string, args []string, caller *Caller) error {
 		return eventsList(root, caller)
 	case "setup":
 		return eventsSetup(root, caller)
+	case "import":
+		return eventsImport(root, args[1:], caller)
 	case "example":
 		body, _ := json.MarshalIndent(eventsPackage(), "", "  ")
 		w.Human("%s\n", body)
 		return nil
 	default:
-		return fmt.Errorf("unknown events command %q; try list, setup or example", args[0])
+		return fmt.Errorf("unknown events command %q; try list, setup, import or example", args[0])
 	}
 }
 
@@ -258,4 +265,99 @@ func setSiteEvents(root, name, why string, caller *Caller) error {
 	}
 	return recordE(root, caller.auditRecord("site.events", "/", audit.Success,
 		map[string]string{"listing": name, "why": why}))
+}
+
+// eventsCollection is the collection the site's events listing reads.
+func eventsCollection(root string) (string, error) {
+	cfg, err := loadConfig(root)
+	if err != nil {
+		return "", err
+	}
+	name := strings.TrimSpace(cfg.Raw("site.events"))
+	if name == "" {
+		return "", errors.New("this site has no events yet: quilzo events setup adds them, then bring the calendar in")
+	}
+	set, err := loadListings(root)
+	if err != nil {
+		return "", err
+	}
+	l, ok := set.Get(name)
+	if !ok {
+		return "", fmt.Errorf("site.events names %q and no listing has that name", name)
+	}
+	return l.Collection, nil
+}
+
+// eventsImport brings a calendar's events in, from a file or from the
+// address a calendar is published at, each time a repeating one happens
+// as an event of its own. Brought again, the same events are changed
+// rather than added twice.
+func eventsImport(root string, args []string, caller *Caller) error {
+	fs := flag.NewFlagSet("events import", flag.ContinueOnError)
+	dryRun := fs.Bool("dry-run", false, "say what would be brought, and write nothing")
+	flags, rest := splitFlags(args, nil)
+	if err := fs.Parse(flags); err != nil {
+		return err
+	}
+	if len(rest) != 1 {
+		return errors.New("usage: quilzo events import <file.ics | https://… | webcal://…> [--dry-run]")
+	}
+	coll, err := eventsCollection(root)
+	if err != nil {
+		return err
+	}
+	if err := authorise(root, caller, auth.ActEditDraft, auth.DataResource(coll)); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	body, name, err := calendarFrom(ctx, rest[0])
+	if err != nil {
+		return err
+	}
+	if fileKind(body) != fromCalendar {
+		return fmt.Errorf("%s is not a calendar file: it does not begin BEGIN:VCALENDAR", name)
+	}
+	b, err := bringFile(ctx, root, coll, name, body, bringOptions{dryRun: *dryRun}, caller)
+	if w.JSON(map[string]any{"brought": b, "error": errString(err)}) {
+		return err
+	}
+	sayBrought(b, name)
+	return err
+}
+
+// calendarFrom reads a calendar from a file or an address. An address is
+// named by its host alone: a private calendar's address is its password,
+// and it is not printed or written down.
+func calendarFrom(ctx context.Context, where string) ([]byte, string, error) {
+	lower := strings.ToLower(where)
+	if !strings.HasPrefix(lower, "https://") && !strings.HasPrefix(lower, "http://") &&
+		!strings.HasPrefix(lower, "webcal://") && !strings.HasPrefix(lower, "webcals://") {
+		body, err := readBounded(where, ical.MaxBytes)
+		return body, filepath.Base(where), err
+	}
+	if i := strings.Index(where, "://"); strings.HasPrefix(lower, "webcal") {
+		where = "https" + where[i:]
+	}
+	u, err := url.Parse(where)
+	if err != nil || u.Host == "" {
+		return nil, "", errors.New("that is not the address of a calendar")
+	}
+	name := u.Hostname()
+	res, err := fetch.For("import").Get(ctx, u.String())
+	if err != nil {
+		// The error may carry the address, which is said as its host.
+		reason := strings.ReplaceAll(err.Error(), u.String(), name)
+		if len(u.Path) > 1 {
+			reason = strings.ReplaceAll(reason, u.Path, "")
+		}
+		if u.RawQuery != "" {
+			reason = strings.ReplaceAll(reason, u.RawQuery, "")
+		}
+		return nil, name, fmt.Errorf("the calendar at %s could not be fetched: %s", name, reason)
+	}
+	if res.Status != 200 || res.Truncated || len(res.Body) > ical.MaxBytes {
+		return nil, name, fmt.Errorf("the calendar at %s could not be read whole (it answered %d)", name, res.Status)
+	}
+	return res.Body, name, nil
 }

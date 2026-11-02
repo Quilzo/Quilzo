@@ -1133,7 +1133,7 @@ func limitBody(next http.Handler) http.Handler {
 		// photograph larger than a paragraph of text would be refused with an
 		// error about the request body. The limit is not removed, it is moved
 		// to the handler that knows what is being sent.
-		if r.URL.Path == uploadPath || r.URL.Path == exportUploadPath {
+		if r.URL.Path == uploadPath || r.URL.Path == exportUploadPath || r.URL.Path == recordUploadPath {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -1153,6 +1153,10 @@ const uploadPath = "/media/upload"
 // exportUploadPath is the other: the file a site's last home exported, to
 // bring it here (make.go).
 const exportUploadPath = "/make/import-file"
+
+// recordUploadPath is the third: a spreadsheet or calendar brought into a
+// collection.
+const recordUploadPath = "/records/import"
 
 // sameSiteOnly refuses cross-origin state changes.
 //
@@ -1479,6 +1483,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/records", s.handleRecords)
 	mux.HandleFunc("/records/save", s.handleRecordSave)
 	mux.HandleFunc("/records/delete", s.handleRecordDelete)
+	mux.HandleFunc(recordUploadPath, s.handleRecordImport)
+	mux.HandleFunc("/records/export", s.handleRecordExport)
 	mux.HandleFunc("/logs", s.handleLogs)
 	mux.HandleFunc("/people", s.handlePeople)
 	mux.HandleFunc("/people/grant", s.handlePeopleGrant)

@@ -428,6 +428,9 @@
    "chatbots",
    "signup"
   ],
+  "unicode/utf16": [
+   "*"
+  ],
   "unicode/utf8": [
    "*",
    "boards",

@@ -379,6 +379,22 @@ and the structured data say exactly as it decides what the page says.
 by writing a record, and proposes events for a site that has none with a
 package carrying an `events` block.
 
+Events kept in a calendar come in from it:
+
+```bash
+quilzo events import club.ics                       # a calendar file
+quilzo events import webcal://calendar.example/…    # or where Google, Outlook or Apple publish it
+```
+
+Each event, and each time a repeating one happens from a year before to a
+year after, becomes an event of the site, on the site's clock whatever zone
+the calendar wrote it in, Outlook's Windows zone names included. Brought in
+again, the same events are changed rather than added twice, keeping a picture
+or a page link somebody gave one since. An event the calendar marks private
+is left out, because a site's events are public once published, and a private
+calendar's address is its password, so only its host is ever printed or
+written down. The events wait in the draft to be looked over and published.
+
 ## Keeping a blog
 
 A blog is posts, newest first, each with its own address that keeps working
@@ -524,6 +540,48 @@ addresses. The posts travel as records named by the hash of a staged file, so
 the package stays one a person reads, and they are written once, when it is
 first installed. It is meant for a site that has none of its own yet: one with
 a blog or a home page already refuses it, and says which part.
+
+## Spreadsheets in and out
+
+A catalogue, a price list, a directory or a term's events often already
+lives in a spreadsheet. Any collection takes one, and gives itself back as
+one:
+
+```bash
+quilzo records import products prices.csv --dry-run    # what it would do, writing nothing
+quilzo records import products prices.csv --key sku    # a row with a known sku changes that product
+quilzo records export products -o products.csv --excel # out again, for Excel
+```
+
+A CSV from Excel, Google Sheets, Numbers, Airtable, Notion or Shopify is
+read whatever it was saved as: commas, semicolons or tabs between cells,
+UTF-8, UTF-16 or older Excel's Windows-1252. Columns are matched to the
+type's fields by name, by label, or by what other platforms call them (a
+product's Handle is its page link), and `--map 'Heading=field'` matches the
+rest by hand. Each value is read as its field's kind: 14/11/2026 and
+14 November 2026 as a date, 7.30pm as a time, £1,250.00 as a number, Yes as
+true. A date that could be the 3rd of April or the 4th of March is asked
+about (`--dates dmy` or `mdy`) rather than read one way, and a value that is
+not its kind is reported with its line.
+
+A row is the record already there when its id column names it, or when its
+key field matches, the page link unless `--key` says another: that record is
+changed by the row and keeps its other fields, and an emptied cell clears
+its field. Any other row is a new record, with an id worked out from what
+names it, so a sheet brought in twice is the same records. A page link a row
+leaves empty is made from its title and kept apart from the others. A
+picture named by address is fetched into the media library with what its
+alt column says it shows. One row the type refuses refuses the sheet, unless
+`--skip-bad` brings the rest and lists it, and the whole sheet is one
+commit, in the draft until it is published.
+
+`records export` writes the id first and the type's fields in order, so the
+sheet comes back in as the same records, and each picture as the address the
+site serves it at, so another site can bring it in too. A cell beginning
+`=`, `+`, `-` or `@` that is not a number is written after an apostrophe, so
+a spreadsheet opening it does not run it as a formula. `--format json`
+writes JSON instead, which import reads the same way. The Data screen does
+both: Download as a spreadsheet, and Bring rows in, with the same choices.
 
 ## Bringing a template you already have
 

@@ -199,6 +199,7 @@ var commandNeeds = map[string]need{
 	"record":              {action: auth.ActEditDraft},
 	"records list":        {action: auth.ActView},
 	"records get":         {action: auth.ActView},
+	"records export":      {action: auth.ActView},
 	"records collections": {action: auth.ActView},
 	"import":              {action: auth.ActEditDraft},
 	"assist":              {action: auth.ActUseModels},
@@ -567,6 +568,9 @@ var commandNeeds = map[string]need{
 	"events list":    {action: auth.ActView},
 	"events example": {action: auth.ActView},
 	"events setup":   {action: auth.ActInstall},
+	// Bringing a calendar in writes the events collection's records, which
+	// is an author's act, asked again of that collection when it runs.
+	"events import": {action: auth.ActEditDraft},
 	// The blog likewise: a feature to set up, posts anybody may view.
 	"blog":               {action: auth.ActInstall},
 	"blog list":          {action: auth.ActView},
@@ -1217,7 +1221,8 @@ func lookupNeed(cmd string, args []string) (need, bool) {
 }
 
 // recordVerbs are the records subcommands that name a collection first.
-var recordVerbs = map[string]bool{"list": true, "get": true, "add": true, "delete": true, "import": true}
+var recordVerbs = map[string]bool{"list": true, "get": true, "add": true, "delete": true, "import": true,
+	"export": true}
 
 // reAgentArg is an agent's name as a command takes it.
 var reAgentArg = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)

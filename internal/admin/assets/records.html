@@ -2,7 +2,8 @@
 <h1>Data</h1>
 
 {{if .Unavailable}}<p class="notice">{{.Unavailable}}</p>{{else}}
-{{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Problem}}<p class="notice bad" role="alert">{{.Problem}}</p>{{end}}
 
 {{if .Collections}}
 <nav class="chips" aria-label="Collections">
@@ -24,7 +25,7 @@ which is what an application holds rather than what a page does.</p>
   <label class="check"><button type="submit">Search</button></label>
 </form>
 
-<p class="hint">{{plural .Total "record" "records"}} in {{.Selected}}</p>
+<p class="hint">{{plural .Total "record" "records"}} in {{.Selected}}{{if .CanSheet}} · <a href="/records/export?c={{.Selected}}" download>Download as a spreadsheet</a>{{end}}</p>
 
 {{if .Records}}
 <div class="table-wrap">
@@ -58,6 +59,32 @@ which is what an application holds rather than what a page does.</p>
 </table>
 </div>
 {{end}}
+{{end}}
+
+{{if .CanBring}}
+<h2 id="bring">Bring rows in</h2>
+<form method="post" action="/records/import" enctype="multipart/form-data" class="param-form">
+  <input type="hidden" name="collection" value="{{.Selected}}">
+  <label for="bring-file">A spreadsheet, a JSON list or a calendar {{template "req"}}</label>
+  <input id="bring-file" name="file" type="file" required accept=".csv,.tsv,.txt,text/csv,.json,application/json,.ics,text/calendar" aria-describedby="bring-hint">
+  {{if .Keys}}<label for="bring-key">A row is the record already here with the same</label>
+  <select id="bring-key" name="key">
+    {{if not .KeyChosen}}<option value="" selected>Id, when the sheet has an id column</option>{{end}}
+    {{range .Keys}}<option value="{{.Name}}"{{if .Default}} selected{{end}}>{{.Label}}</option>{{end}}
+    <option value="none">Nothing: add every row as a new record</option>
+  </select>{{end}}
+  <label for="bring-dates">Dates written like 03/04/2026 are</label>
+  <select id="bring-dates" name="dates">
+    <option value="">Worked out from the column</option>
+    <option value="dmy">Day first: 3 April</option>
+    <option value="mdy">Month first: 4 March</option>
+  </select>
+  <p><label><input type="checkbox" name="pictures" value="1" checked> Fetch the pictures the rows link to</label></p>
+  <p><label><input type="checkbox" name="skip_bad" value="1"> Bring the rows that can be, and list the rest</label></p>
+  <p><label><input type="checkbox" name="dry_run" value="1"> Only check it: write nothing</label></p>
+  <div class="auto-controls"><button type="submit" class="btn-tonal">Bring them in</button></div>
+</form>
+<p id="bring-hint" class="hint">A CSV from Excel, Google Sheets, Numbers, Airtable, Shopify or anything else, a JSON list, or for events a calendar file (.ics). Columns are matched to fields by name or label; a row with an id, or with the same value in the field above, changes that record rather than adding another, and an empty cell clears its field. Unless you say otherwise, nothing is brought in when a row cannot be. Up to {{.MaxUpload}} MB. A new kind of thing altogether? <a href="/make#make-data">Make one from a spreadsheet</a>.</p>
 {{end}}
 
 {{if and .CanWrite .Fields}}

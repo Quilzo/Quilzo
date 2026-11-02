@@ -172,12 +172,14 @@ func TestEveryScreenSurvivesWithNothingWiredIn(t *testing.T) {
 var notAScreen = map[string]string{
 	"/signin/oidc": "starts an authorisation redirect, and answers 404 when " +
 		"no identity provider is configured",
-	"/auth/callback":               "receives one, and is never opened directly",
-	"/signout":                     "clears the cookie and redirects; there is nothing to render",
-	"/session/alive":               "is posted to by admin.js and answers 204",
-	"/security/parameters/export":  "is a download of OSCAL JSON",
-	"/bookings/calendar.ics":       "is a download of a calendar file; Bookings explains a site that takes none",
-	"/newsletter/export.csv":       "is a download of the list as CSV; Newsletter explains a site with none",
+	"/auth/callback":              "receives one, and is never opened directly",
+	"/signout":                    "clears the cookie and redirects; there is nothing to render",
+	"/session/alive":              "is posted to by admin.js and answers 204",
+	"/security/parameters/export": "is a download of OSCAL JSON",
+	"/bookings/calendar.ics":      "is a download of a calendar file; Bookings explains a site that takes none",
+	"/newsletter/export.csv":      "is a download of the list as CSV; Newsletter explains a site with none",
+	"/records/export": "is a download of a collection as CSV, linked from the Data screen beside each " +
+		"collection; records_typed_test.go downloads one",
 	"/security/controls/component": "is a download of OSCAL JSON",
 	"/security/controls/ssp":       "is a download of OSCAL JSON",
 	"/style.css":                   "is a stylesheet",

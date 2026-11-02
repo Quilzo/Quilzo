@@ -4,15 +4,20 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/collection"
+	"github.com/quilzo/quilzo/internal/sheet"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 )
@@ -40,9 +45,11 @@ func cmdRecords(root string, args []string) error {
 		return recordsDelete(root, args[1:])
 	case "import":
 		return recordsImport(root, args[1:])
+	case "export":
+		return recordsExport(root, args[1:])
 	default:
 		return fmt.Errorf("unknown records command %q; try collections, "+
-			"list, get, add, delete or import", args[0])
+			"list, get, add, delete, import or export", args[0])
 	}
 }
 
@@ -315,33 +322,107 @@ func recordsDelete(root string, args []string) error {
 	return nil
 }
 
-// recordsImport loads a JSON array in one write.
+// recordsImport brings a spreadsheet, a JSON list or a calendar into a
+// collection, in one write (recordsheet.go).
 //
 // One commit for the whole file rather than one per record: the cost of a
 // commit is paid per commit, so importing ten thousand records one at a time
 // pays for ten thousand tree rebuilds and ten thousand ref moves.
 func recordsImport(root string, args []string) error {
-	if len(args) != 2 {
-		return fmt.Errorf("usage: quilzo records import <collection> <file.json>")
+	fs := flag.NewFlagSet("import", flag.ContinueOnError)
+	key := fs.String("key", "", "the field saying which record already here a row is, or none; "+
+		"the page link when the type has one")
+	mapping := fs.String("map", "", "columns to fields by hand: 'Heading=field,Other=' (empty leaves it out)")
+	dates := fs.String("dates", "", "dmy or mdy: which comes first in a date like 03/04/2026")
+	skipBad := fs.Bool("skip-bad", false, "bring the rows that can be, and report the rest")
+	dryRun := fs.Bool("dry-run", false, "say what would be brought, and write nothing")
+	noPictures := fs.Bool("no-pictures", false, "leave out pictures named by address rather than fetch them")
+	flags, rest := splitFlags(args, map[string]bool{"key": true, "map": true, "dates": true})
+	if err := fs.Parse(flags); err != nil {
+		return err
 	}
-	body, err := os.ReadFile(args[1])
+	if len(rest) != 2 {
+		return fmt.Errorf("usage: quilzo records import <collection> <file.csv|file.json|file.ics> " +
+			"[--key FIELD|none] [--map 'Heading=field,…'] [--dates dmy|mdy] [--skip-bad] [--dry-run] [--no-pictures]")
+	}
+	if *dates != "" && *dates != "dmy" && *dates != "mdy" {
+		return fmt.Errorf("--dates is dmy (day first) or mdy (month first), not %q", *dates)
+	}
+	body, err := readBounded(rest[1], sheet.MaxBytes)
 	if err != nil {
 		return err
 	}
-	var rows []map[string]any
-	if err := json.Unmarshal(body, &rows); err != nil {
-		return fmt.Errorf("%s must be a JSON array of objects: %w", args[1], err)
+	opts := bringOptions{key: strings.TrimSpace(*key), dates: *dates, mapping: stringPairsKeepEmpty(*mapping),
+		skipBad: *skipBad, dryRun: *dryRun, pictures: !*noPictures}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+	b, err := bringFile(ctx, root, rest[0], filepath.Base(rest[1]), body, opts, resolveCaller(root, flagToken))
+	if w.JSON(map[string]any{"brought": b, "error": errString(err)}) {
+		return err
 	}
-	if len(rows) == 0 {
-		return fmt.Errorf("%s holds no records", args[1])
+	sayBrought(b, filepath.Base(rest[1]))
+	var amb *sheet.AmbiguousDates
+	if errors.As(err, &amb) {
+		return fmt.Errorf("%w (--dates dmy, or --dates mdy)", err)
 	}
+	return err
+}
 
-	n, err := putCheckedRecords(root, args[0], rows, resolveCaller(root, ""))
+// recordsExport writes a collection as a spreadsheet, or a JSON list,
+// which records import brings back as the same records.
+func recordsExport(root string, args []string) error {
+	fs := flag.NewFlagSet("export", flag.ContinueOnError)
+	format := fs.String("format", "csv", "csv, for a spreadsheet, or json")
+	outPath := fs.String("o", "", "write to this file rather than the terminal")
+	excel := fs.Bool("excel", false, "begin the file with the mark Excel needs to read accents")
+	flags, rest := splitFlags(args, map[string]bool{"format": true, "o": true})
+	if err := fs.Parse(flags); err != nil {
+		return err
+	}
+	if len(rest) != 1 {
+		return fmt.Errorf("usage: quilzo records export <collection> [--format csv|json] [-o FILE] [--excel]")
+	}
+	if *format != "csv" && *format != "json" {
+		return fmt.Errorf("--format is csv or json, not %q", *format)
+	}
+	body, n, err := sheetOf(root, rest[0], *format, *excel)
 	if err != nil {
 		return err
 	}
-	w.Human("imported %d record(s) into %s\n", n, args[0])
+	caller := resolveCaller(root, flagToken)
+	record(root, caller.auditRecord("records.export", "/"+rest[0], audit.Success,
+		map[string]string{"collection": rest[0], "records": fmt.Sprint(n), "format": *format}))
+	if *outPath == "" {
+		_, err := os.Stdout.Write(body)
+		return err
+	}
+	if err := atomicfile.Write(*outPath, body, 0o600); err != nil {
+		return err
+	}
+	w.Human("wrote %d record(s) from %s to %s\n", n, rest[0], *outPath)
 	return nil
+}
+
+// stringPairsKeepEmpty is stringPairs keeping a pair with nothing after
+// its =, which --map uses to leave a column out.
+func stringPairsKeepEmpty(s string) map[string]string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	out := map[string]string{}
+	for _, kv := range strings.Split(s, ",") {
+		if k, v, ok := strings.Cut(kv, "="); ok && strings.TrimSpace(k) != "" {
+			out[strings.TrimSpace(k)] = strings.TrimSpace(v)
+		}
+	}
+	return out
+}
+
+func errString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 // putCheckedRecords writes many records in one commit, each checked against

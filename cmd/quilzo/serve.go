@@ -393,6 +393,18 @@ func cmdServe(root string, args []string) error {
 		Commit: func(tree, message, author string) error {
 			return commitTreeNoLock(s, tree, message, author)
 		},
+		Bring: func(coll, filename string, body []byte, o admin.BringOptions, by admin.Actor) (*admin.BringResult, error) {
+			// Bounded for a browser waiting on the answer; the command
+			// line waits longer.
+			ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+			defer cancel()
+			b, err := bringFile(ctx, root, coll, filepath.Base(filename), body, bringOptions{key: o.Key,
+				dates: o.Dates, skipBad: o.SkipBad, dryRun: o.DryRun, pictures: o.Pictures}, signedIn(by))
+			return broughtForAdmin(b), err
+		},
+		Sheet: func(coll string, by admin.Actor) ([]byte, int, error) {
+			return sheetOf(root, coll, "csv", true)
+		},
 	}
 	// Everything below is the same wiring pattern: the admin package holds no
 	// knowledge of where this store keeps its files, so the host hands it

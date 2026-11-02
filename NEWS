@@ -61,6 +61,25 @@ Unreleased
 
 ** Added
 
+*** Spreadsheets and calendars in and out.  quilzo records import reads a
+    CSV from Excel, Google Sheets, Numbers, Airtable, Notion or Shopify
+    into any collection, whatever it was saved as (commas, semicolons or
+    tabs; UTF-8, UTF-16 or Windows-1252), matching columns to fields by
+    name, label or --map, reading each value as its field's kind, and
+    asking rather than guessing when a date could be day or month first.
+    A row is the record already there when its id or key field (the page
+    link by default) says so, and is changed rather than added; a sheet
+    brought in twice is the same records.  One bad row refuses the sheet
+    unless --skip-bad; --dry-run writes nothing.  quilzo records export
+    writes a collection back out as CSV or JSON, which comes back in as the
+    same records, with no cell a spreadsheet would run as a formula.
+    quilzo events import brings a calendar's events in from a file or
+    the address Google, Outlook or Apple publish it at: each time a
+    repeating event happens, a year either side, on the site's clock, with
+    private events left out and the address never printed.  The Data
+    screen downloads a collection as a spreadsheet and brings rows in, and
+    Make's From a spreadsheet reads the same files.
+
 *** Bring a site from the file it exported.  quilzo site import, and
     Make › Bring your site, take a WordPress or Squarespace export (.xml),
     a Ghost export (.json, with --site for where it was, for its

@@ -18,6 +18,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/schema"
+	"github.com/quilzo/quilzo/internal/sheet"
 )
 
 // A feature from raw data: a spreadsheet or a JSON list of records becomes
@@ -253,7 +254,12 @@ func readTable(body []byte) ([]string, []map[string]string, error) {
 		}
 		return headers, rows, nil
 	}
-	r := csv.NewReader(bytes.NewReader(trimmed))
+	// Whatever a spreadsheet saved it as: a semicolon or a tab between
+	// cells, UTF-16 or Windows-1252, as the Data screen reads it.
+	text, comma := sheet.Text(body)
+	r := csv.NewReader(strings.NewReader(text))
+	r.Comma = comma
+	r.LazyQuotes = true
 	r.FieldsPerRecord = -1
 	headers, err := r.Read()
 	if err != nil {

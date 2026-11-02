@@ -4,7 +4,10 @@
 package admin
 
 import (
+	"bytes"
+	"mime/multipart"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -79,5 +82,86 @@ func TestARecordIsWrittenWithItsTypesForm(t *testing.T) {
 	w := postForm(t, srv, "/records/save", token, form.Encode())
 	if !strings.Contains(w.Header().Get("Location"), "time") {
 		t.Fatalf("a bad time was saved: %s", w.Header().Get("Location"))
+	}
+}
+
+// The Data screen takes a spreadsheet or a calendar into a collection, as
+// `quilzo records import` does, and gives the collection back as a
+// spreadsheet; each asks of the collection what writing and reading it ask.
+func TestTheDataScreenBringsASpreadsheetInAndGivesOneBack(t *testing.T) {
+	srv, token := setup(t)
+	reg := schema.NewRegistry()
+	if err := reg.Add(schema.Type{Name: "event", Fields: []schema.Field{
+		{Name: "title", Kind: schema.Text, Label: "Title", Required: true},
+		{Name: "slug", Kind: schema.Slug, Label: "Page link", Required: true},
+		{Name: "date", Kind: schema.Date, Label: "Date", Required: true},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	st := &schema.Store{Registry: reg, Collections: map[string]string{"events": "event"}}
+	srv.Types = &Types{Load: func() (*schema.Store, error) { return st, nil }}
+	var got struct {
+		coll, name string
+		size       int
+		opts       BringOptions
+		by         string
+	}
+	srv.Data = &Data{Tree: func() (string, error) { return "", nil },
+		Commit: func(next, msg, by string) error { return nil },
+		Bring: func(coll, name string, body []byte, o BringOptions, by Actor) (*BringResult, error) {
+			got.coll, got.name, got.size, got.opts, got.by = coll, name, len(body), o, by.Name
+			return &BringResult{New: 2, Updated: 1, Columns: []string{`"Notes" left out: no field of event is called this`},
+				Problems: []string{"line 4: date: \"someday\" is not a date"}}, nil
+		},
+		Sheet: func(coll string, by Actor) ([]byte, int, error) {
+			return []byte("id,title\r\nabc,'=SUM(A1)\r\n"), 1, nil
+		}}
+
+	page := get(t, srv, "/records?c=events", token).Body.String()
+	for _, want := range []string{`action="/records/import" enctype="multipart/form-data"`,
+		`<option value="slug" selected>Page link</option>`, `href="/records/export?c=events"`,
+		`<option value="dmy">Day first: 3 April</option>`} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the Data screen lacks %s", want)
+		}
+	}
+	whole(t, page)
+
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	_ = mw.WriteField("collection", "events")
+	fw, _ := mw.CreateFormFile("file", "events.csv")
+	_, _ = fw.Write(bytes.Repeat([]byte("x"), 3<<20))
+	_ = mw.WriteField("key", "slug")
+	_ = mw.WriteField("dates", "dmy")
+	_ = mw.WriteField("skip_bad", "1")
+	_ = mw.Close()
+	req := httptest.NewRequest(http.MethodPost, "/records/import", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer "+token)
+	res := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, req)
+	loc := res.Header().Get("Location")
+	if res.Code != http.StatusSeeOther || got.coll != "events" || got.name != "events.csv" || got.size != 3<<20 ||
+		got.opts != (BringOptions{Key: "slug", Dates: "dmy", SkipBad: true}) {
+		t.Fatalf("%d %s: %+v", res.Code, loc, got)
+	}
+	back, _ := url.Parse(loc)
+	msg := back.Query().Get("m")
+	for _, want := range []string{"Brought in 3 records: 2 new, 1 changed.", `"Notes" left out`, "line 4: date",
+		"in the draft until you publish"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("the screen does not say %q: %s", want, msg)
+		}
+	}
+
+	dl := get(t, srv, "/records/export?c=events", token)
+	if dl.Code != http.StatusOK || dl.Header().Get("Content-Type") != "text/csv; charset=utf-8" ||
+		!strings.Contains(dl.Header().Get("Content-Disposition"), `filename="events.csv"`) ||
+		!strings.Contains(dl.Body.String(), "'=SUM(A1)") {
+		t.Fatalf("download: %d %v %q", dl.Code, dl.Header(), dl.Body.String())
+	}
+	if get(t, srv, "/records/export?c=../x", token).Code != http.StatusNotFound {
+		t.Error("a collection that cannot be was answered")
 	}
 }

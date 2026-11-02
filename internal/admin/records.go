@@ -6,6 +6,7 @@ package admin
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"sort"
@@ -29,7 +30,41 @@ import (
 type Data struct {
 	Tree   func() (string, error)
 	Commit func(tree, message, author string) error
+	// Bring brings a spreadsheet, a JSON list or a calendar into a
+	// collection, as `quilzo records import` does. Nil means the screen
+	// offers no upload.
+	Bring func(coll, filename string, body []byte, opts BringOptions, by Actor) (*BringResult, error)
+	// Sheet is a collection as a spreadsheet, for the download. Nil means
+	// the screen offers none.
+	Sheet func(coll string, by Actor) ([]byte, int, error)
 }
+
+// BringOptions says how a file is brought into a collection.
+type BringOptions struct {
+	// Key is the field matching rows to records already here, "none", or
+	// "" for the type's page link.
+	Key string
+	// Dates is "dmy" or "mdy" for dates like 03/04/2026, or "" to work
+	// it out.
+	Dates    string
+	SkipBad  bool
+	DryRun   bool
+	Pictures bool
+}
+
+// BringResult is what bringing a file in did, or would do.
+type BringResult struct {
+	New, Updated int
+	// Columns says which column became which field, and which were left
+	// out and why.
+	Columns  []string
+	Problems []string
+	Notes    []string
+}
+
+// MaxRecordUpload bounds a file brought into a collection from the Data
+// screen.
+const MaxRecordUpload = 32 << 20
 
 // typeLoader adapts the admin's Types wiring to what the record gate wants.
 //
@@ -117,7 +152,38 @@ func (s *Server) handleRecords(w http.ResponseWriter, r *http.Request) {
 		"Title": "Data", "Principal": p, "Nav": "records",
 		"Collections": colls, "Selected": selected,
 		"Message":  r.URL.Query().Get("m"),
+		"Problem":  r.URL.Query().Get("e"),
 		"CanWrite": selected != "" && s.allows(p, auth.ActEditDraft, auth.DataResource(selected)),
+		"CanBring": selected != "" && s.Data.Bring != nil &&
+			s.allows(p, auth.ActEditDraft, auth.DataResource(selected)),
+		"CanSheet":  selected != "" && s.Data.Sheet != nil,
+		"MaxUpload": MaxRecordUpload >> 20,
+	}
+	// The fields rows can be matched by, the page link first and chosen
+	// unless asked otherwise.
+	if t, ok := s.recordType(selected); ok {
+		var keys []map[string]string
+		chosen := false
+		for _, f := range t.Fields {
+			switch f.Kind {
+			case schema.Slug, schema.Text, schema.Email, schema.Number:
+			default:
+				continue
+			}
+			if f.AltFor != "" {
+				continue
+			}
+			label := f.Label
+			if label == "" {
+				label = f.Name
+			}
+			k := map[string]string{"Name": f.Name, "Label": label}
+			if f.Kind == schema.Slug && !chosen {
+				k["Default"], chosen = "1", true
+			}
+			keys = append(keys, k)
+		}
+		data["Keys"], data["KeyChosen"] = keys, chosen
 	}
 
 	// What a new record of this collection's type starts as.
@@ -373,6 +439,139 @@ func (s *Server) handleRecordDelete(w http.ResponseWriter, r *http.Request) {
 	s.audit("records.delete", "/"+coll, map[string]string{
 		"collection": coll, "record": id, "by": p.Name})
 	s.recordsBack(w, r, coll, "deleted")
+}
+
+// handleRecordImport brings a spreadsheet, a JSON list or a calendar into
+// a collection, as `quilzo records import` does: all of it or, when it
+// cannot all be, none of it unless asked otherwise, and back to the
+// screen with what was done.
+func (s *Server) handleRecordImport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+	p, ok := s.requireAuth(w, r)
+	if !ok {
+		return
+	}
+	// A file, not a form: its own limit, as an upload to the media library
+	// has (the middleware leaves this path to it).
+	r.Body = http.MaxBytesReader(w, r.Body, MaxRecordUpload+1<<20)
+	if err := r.ParseMultipartForm(8 << 20); err != nil {
+		s.recordsProblem(w, r, "", fmt.Sprintf("that file could not be read: the limit is %d MB", MaxRecordUpload>>20))
+		return
+	}
+	defer func() { _ = r.MultipartForm.RemoveAll() }()
+	coll := strings.TrimSpace(r.FormValue("collection"))
+	if collection.ValidName(coll) != nil {
+		http.Error(w, "no such collection", http.StatusBadRequest)
+		return
+	}
+	if !s.can(w, r, p, auth.ActEditDraft, auth.DataResource(coll)) {
+		return
+	}
+	if s.Data == nil || s.Data.Bring == nil {
+		http.NotFound(w, r)
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		s.recordsProblem(w, r, coll, "choose a file to bring in")
+		return
+	}
+	defer file.Close()
+	body, err := io.ReadAll(io.LimitReader(file, MaxRecordUpload+1))
+	if err != nil || len(body) > MaxRecordUpload {
+		s.recordsProblem(w, r, coll, fmt.Sprintf("the file is larger than %d MB", MaxRecordUpload>>20))
+		return
+	}
+	opts := BringOptions{Key: r.FormValue("key"), Dates: r.FormValue("dates"),
+		SkipBad: r.FormValue("skip_bad") == "1", DryRun: r.FormValue("dry_run") == "1",
+		Pictures: r.FormValue("pictures") == "1"}
+	if opts.Dates != "dmy" && opts.Dates != "mdy" {
+		opts.Dates = ""
+	}
+	res, err := s.Data.Bring(coll, header.Filename, body, opts, p.actor())
+	if err != nil {
+		s.recordsProblem(w, r, coll, err.Error())
+		return
+	}
+	s.recordsBack(w, r, coll, broughtSentence(res, opts.DryRun))
+}
+
+// broughtSentence is what bringing a file in did, as the screen says it.
+func broughtSentence(res *BringResult, dry bool) string {
+	verb := "Brought in"
+	if dry {
+		verb = "Checked: it would bring in"
+	}
+	n := res.New + res.Updated
+	noun := "records"
+	if n == 1 {
+		noun = "record"
+	}
+	parts := []string{fmt.Sprintf("%s %d %s: %d new, %d changed.", verb, n, noun, res.New, res.Updated)}
+	var left []string
+	for _, c := range res.Columns {
+		if strings.Contains(c, "left out") {
+			left = append(left, c)
+		}
+	}
+	if len(left) > 0 {
+		parts = append(parts, "Columns "+strings.Join(left, "; ")+".")
+	}
+	if len(res.Problems) > 0 {
+		shown := res.Problems
+		if len(shown) > 5 {
+			shown = append(shown[:5:5], fmt.Sprintf("and %d more", len(res.Problems)-5))
+		}
+		parts = append(parts, "Not brought in: "+strings.Join(shown, "; ")+".")
+	}
+	parts = append(parts, res.Notes...)
+	if dry {
+		parts = append(parts, "Nothing was written.")
+	} else if res.New+res.Updated > 0 {
+		parts = append(parts, "They are in the draft until you publish.")
+	}
+	return strings.Join(parts, " ")
+}
+
+// handleRecordExport is a collection as a spreadsheet, to download.
+func (s *Server) handleRecordExport(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.requireAuth(w, r)
+	if !ok {
+		return
+	}
+	coll := strings.TrimSpace(r.URL.Query().Get("c"))
+	if collection.ValidName(coll) != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if !s.can(w, r, p, auth.ActView, auth.DataResource(coll)) {
+		return
+	}
+	if s.Data == nil || s.Data.Sheet == nil {
+		http.NotFound(w, r)
+		return
+	}
+	body, n, err := s.Data.Sheet(coll, p.actor())
+	if err != nil {
+		s.recordsProblem(w, r, coll, err.Error())
+		return
+	}
+	s.audit("records.export", "/"+coll, map[string]string{"collection": coll, "records": fmt.Sprint(n),
+		"by": p.Name})
+	h := w.Header()
+	h.Set("Content-Type", "text/csv; charset=utf-8")
+	h.Set("Content-Disposition", `attachment; filename="`+coll+`.csv"`)
+	h.Set("Cache-Control", "no-store")
+	h.Set("X-Content-Type-Options", "nosniff")
+	_, _ = w.Write(body)
+}
+
+func (s *Server) recordsProblem(w http.ResponseWriter, r *http.Request, coll, msg string) {
+	http.Redirect(w, r, "/records?c="+urlQueryEscape(coll)+"&e="+
+		urlQueryEscape(msg), http.StatusSeeOther)
 }
 
 func (s *Server) recordsBack(w http.ResponseWriter, r *http.Request, coll, msg string) {
