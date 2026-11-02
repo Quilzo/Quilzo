@@ -113,6 +113,20 @@ Unreleased
 
 ** Added
 
+*** An agent's own run does what the agent interface offers.  A manifest
+    could declare any operation of the agent interface (records, media,
+    menus, newsletters, chatbots, research, the site crew); an outside
+    agent calling them through MCP got them, and the same agent run here
+    got "not implemented" for all but nine.  A run now performs the reads
+    and the writes that make a draft or a proposal (quilzo agent
+    capabilities lists them) through that same interface, as the run's
+    caller, with the role each needs and every check its handler makes; a
+    write waits on the agent's autonomy except a proposal.  An
+    administrator's reports, and publishing other than by proposing, are
+    not an agent's, and a manifest naming one is refused when it is
+    written.  So a gardener agent can read list_chatbot_gaps and draft
+    the page that answers what a chatbot could not.
+
 *** What a chatbot could not answer becomes the page that answers it.
     Off until the owner turns on chatbot.gaps: then the questions a
     chatbot could not answer are kept, with addresses, numbers and cards
