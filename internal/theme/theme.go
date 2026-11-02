@@ -207,8 +207,8 @@ var tokens = []Token{
 	{"border", Length, "1px", "", "hairline thickness; 0 removes every card and table border", "shape"},
 
 	// -- style ----------------------------------------------------------------
-	{"style", Choice, "classic", "", "the overall look: classic, expressive, glass, editorial, bold, soft or business; it sets corners, density and type, and never colour", "style"},
-	{"motion", Choice, "subtle", "", "how much moves: subtle, expressive or none; reduced motion is honoured whatever is chosen", "style"},
+	{"style", Choice, "expressive", "", "the overall look: expressive (Material 3 Expressive, the default), classic, glass, editorial, bold, soft or business; it sets corners, density and type, and never colour", "style"},
+	{"motion", Choice, "subtle", "", "how much moves: subtle, expressive (springy) or none; reduced motion is honoured whatever is chosen", "style"},
 	{"icons", Choice, "rounded", "", "how every icon is drawn: rounded, outlined or sharp, each plain or filled", "style"},
 }
 

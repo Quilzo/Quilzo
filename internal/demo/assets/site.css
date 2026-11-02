@@ -177,14 +177,16 @@ a { color: var(--accent); }
   .shot { filter: brightness(.78) saturate(.9); }
 }
 
-/* A phone: the wordmark has room above it, the menu is one row that scrolls
- * sideways rather than two ragged ones, and a picture is shorter than the
- * screen so the name and price under it are seen with it. */
+/* A phone: the wordmark has room above it, every item of the menu is on the
+ * screen, and a picture is shorter than the screen so the name and price
+ * under it are seen with it. The menu was one row that scrolled sideways
+ * with its scrollbar hidden, which left Stockists, Wholesale and About past
+ * the right edge with nothing to say they were there; two even rows show
+ * them all. */
 @media (max-width: 40rem) {
   .bar { gap: .25rem; padding-top: 12px; flex-direction: column; flex-wrap: nowrap; align-items: stretch; }
-  .bar nav { min-width: 0; margin: 0 -20px; }
-  .mainnav { flex-wrap: nowrap; overflow-x: auto; white-space: nowrap; scrollbar-width: none;
-    padding: 0 20px .4rem; }
-  .mainnav::-webkit-scrollbar { display: none; }
+  .bar nav { min-width: 0; }
+  .mainnav { flex-wrap: wrap; gap: 0 1rem; padding: 0 0 .4rem; }
+  .mainnav a { display: inline-block; padding: .5rem 0; }
   .grid .shot { aspect-ratio: 4 / 3; }
 }

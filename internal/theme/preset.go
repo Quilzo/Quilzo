@@ -29,7 +29,8 @@ import (
 // # The six, and where each comes from
 //
 //	expressive  Material 3 Expressive (Google, 2025): large and varied
-//	            corners, tonal containers, springs, shape that answers touch
+//	            corners, tonal containers, springs, shape that answers touch;
+//	            the default
 //	glass       translucent layers over a soft gradient, as Apple's Liquid
 //	            Glass (2025); solid wherever blur is not supported or the
 //	            visitor asks for reduced transparency
@@ -42,15 +43,21 @@ import (
 //	business    compact and quiet: small corners, a fine border, a slight
 //	            shadow, a gentle type scale
 //
-// classic is what a site had before styles existed, and the default.
+// expressive is the default: a site starts in the look its admin is drawn
+// in. classic is what sites had before styles existed, kept as the calmer
+// choice: the same tones with smaller shapes and a quieter type scale.
 
-// Styles lists the styles, in the order a screen offers them.
-var Styles = []string{"classic", "expressive", "glass", "editorial", "bold", "soft", "business"}
+// Styles lists the styles, in the order a screen offers them: the default
+// first.
+var Styles = []string{"expressive", "classic", "glass", "editorial", "bold", "soft", "business"}
+
+// DefaultStyle is the style of a site that has chosen none.
+const DefaultStyle = "expressive"
 
 // StyleWords says what each style is, for a screen and `theme styles`.
 var StyleWords = map[string]string{
-	"classic":    "Quilzo's own: rounded, tonal, calm.",
-	"expressive": "Material 3 Expressive: big rounded shapes, tonal colour and springy motion.",
+	"expressive": "The default, and how this admin is drawn: big rounded shapes, tonal colour, a bold type scale.",
+	"classic":    "Calmer than the default: the same tones with smaller shapes and quieter type.",
 	"glass":      "Translucent layers over a soft gradient, solid where blur is not supported.",
 	"editorial":  "Type first: a serif display face, a long measure, rules instead of boxes.",
 	"bold":       "Heavy type, square corners, thick borders and hard shadows.",
@@ -192,15 +199,15 @@ var motionCSS = map[string]string{
 `,
 }
 
-// Style is the theme's style, "classic" when none is set.
+// Style is the theme's style, DefaultStyle when none is set.
 func (t *Theme) Style() string {
 	if t == nil {
-		return "classic"
+		return DefaultStyle
 	}
 	if v, ok := t.light["style"]; ok && presetTokens[v] != nil {
 		return v
 	}
-	return "classic"
+	return DefaultStyle
 }
 
 // Motion is the theme's motion setting.

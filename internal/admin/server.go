@@ -92,6 +92,7 @@ import (
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/research"
 	"github.com/quilzo/quilzo/internal/schema"
+	"github.com/quilzo/quilzo/internal/sheet"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 	"github.com/quilzo/quilzo/internal/theme"
@@ -1444,6 +1445,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/checked/set", s.handleCheckedSet)
 	mux.HandleFunc("/checked/own", s.handleCheckedOwn)
 	mux.HandleFunc("/pages/bulk", s.handleBulk)
+	mux.HandleFunc("/pages/new", s.handleNewPage)
 	mux.HandleFunc("/notes", s.handleNotes)
 	mux.HandleFunc("/notes/add", s.handleNoteAdd)
 	mux.HandleFunc("/notes/resolve", s.handleNoteResolve)
@@ -2178,8 +2180,20 @@ func (s *Server) handlePages(w http.ResponseWriter, r *http.Request) {
 	pg := paginate(r, len(names), PageSize)
 	from, to := pg.slice(len(names))
 	shown := names[from:to]
+	// Each page by its title, with its name beneath: the list was the
+	// names alone, which are how the store addresses a page and not how
+	// anybody looking for "About Marginalia" thinks of it.
+	titles := map[string]string{}
+	for _, n := range shown {
+		if body, ok := pages[n].(map[string]any); ok {
+			if t, _ := body["title"].(string); strings.TrimSpace(t) != "" {
+				titles[n] = strings.TrimSpace(t)
+			}
+		}
+	}
 
 	s.render(w, r, "pages.html", map[string]any{
+		"Titles":    titles,
 		"Paging":    pg,
 		"PagePath":  "/",
 		"Shown":     shown,
@@ -2197,6 +2211,32 @@ func (s *Server) handlePages(w http.ResponseWriter, r *http.Request) {
 		"CanEdit":     s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/").Allowed,
 		"CanPublish":  s.Policy.Evaluate(p.Name, auth.ActPublish, "/").Allowed,
 	})
+}
+
+// handleNewPage starts a page: its address, made into a page name, and the
+// editor opened on it. Pages had no way to add one; the editor opened only
+// for a name somebody already knew to type into the address bar.
+func (s *Server) handleNewPage(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.requireAuth(w, r)
+	if !ok {
+		return
+	}
+	if !s.can(w, r, p, auth.ActEditDraft, "/") {
+		return
+	}
+	raw := strings.Trim(strings.TrimSpace(r.URL.Query().Get("name")), "/")
+	var parts []string
+	for _, part := range strings.Split(raw, "/") {
+		if slug := sheet.Slug(part); slug != "" {
+			parts = append(parts, slug)
+		}
+	}
+	name := strings.Join(parts, "/")
+	if name == "" || len(parts) > 8 {
+		http.Redirect(w, r, "/?e="+urlQueryEscape("Give the new page an address, such as about-us"), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/page/"+name, http.StatusSeeOther)
 }
 
 func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
@@ -2274,6 +2314,20 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Which declared form the page carries, chosen from the forms there
+	// are. A page could only be given one by writing its name into the
+	// page's JSON, and Forms told people to paste HTML into a template.
+	formChoices := s.formChoices(body)
+	if formChoices != nil {
+		kept := fields[:0:0]
+		for _, f := range fields {
+			if f.Key != "form" {
+				kept = append(kept, f)
+			}
+		}
+		fields = kept
+	}
+
 	s.render(w, r, "edit.html", map[string]any{
 		"PageTitle":  pageTitle,
 		"Nav":        "pages",
@@ -2283,10 +2337,42 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 		"Notes":      notes,
 		"Title":      "Edit " + name, "Principal": p, "Name": name,
 		"Fields": fields, "Exists": exists, "Type": typeName,
-		"Incoming": incoming,
-		"Base":     base, "HeldBy": heldBy,
+		"FormChoices": formChoices,
+		"Incoming":    incoming,
+		"Base":        base, "HeldBy": heldBy,
 		"CanEdit": s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/"+name).Allowed,
 	})
+}
+
+// formChoice is one form a page may carry.
+type formChoice struct {
+	Name, Title string
+	On          bool
+}
+
+// formChoices is the declared forms, the one a page carries marked, or nil
+// when there are none to choose from.
+func (s *Server) formChoices(body any) []formChoice {
+	if s.Forms == nil || s.Forms.Load == nil {
+		return nil
+	}
+	set, err := s.Forms.Load()
+	if err != nil || set == nil || len(set.Forms) == 0 {
+		return nil
+	}
+	current := ""
+	if m, ok := body.(map[string]any); ok {
+		current, _ = m["form"].(string)
+	}
+	out := make([]formChoice, 0, len(set.Forms))
+	for _, f := range set.Forms {
+		title := f.Label
+		if title == "" {
+			title = f.Name
+		}
+		out = append(out, formChoice{Name: f.Name, Title: title, On: f.Name == current})
+	}
+	return out
 }
 
 // field is one editable value.
@@ -2841,6 +2927,14 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			body[key] = values[0]
+		}
+	}
+	// The page's form, from the editor's list: none takes it off.
+	if _, asked := r.Form["__form"]; asked {
+		if f := strings.TrimSpace(r.FormValue("__form")); f == "" {
+			delete(body, "form")
+		} else {
+			body["form"] = f
 		}
 	}
 	pages[name] = body
@@ -3417,9 +3511,9 @@ func (s *Server) handleAccess(w http.ResponseWriter, r *http.Request) {
 	type row struct {
 		Principal string
 		Actions   []struct {
-			Name    string
-			Allowed bool
-			Reason  string
+			Name, Label string
+			Allowed     bool
+			Reason      string
 		}
 	}
 	var rows []row
@@ -3428,10 +3522,10 @@ func (s *Server) handleAccess(w http.ResponseWriter, r *http.Request) {
 		for _, a := range auth.Actions() {
 			d := s.Policy.Evaluate(who, a, "/")
 			rr.Actions = append(rr.Actions, struct {
-				Name    string
-				Allowed bool
-				Reason  string
-			}{string(a), d.Allowed, d.Reason})
+				Name, Label string
+				Allowed     bool
+				Reason      string
+			}{string(a), actionLabel(a), d.Allowed, d.Reason})
 		}
 		rows = append(rows, rr)
 	}
@@ -3441,6 +3535,21 @@ func (s *Server) handleAccess(w http.ResponseWriter, r *http.Request) {
 		"Title": "Access", "Principal": p,
 		"Rows": rows, "Bindings": s.Policy.Bindings,
 	})
+}
+
+// actionLabel is a permission as people say it: the matrix's headings
+// were the names the policy file uses, edit-draft and use-models.
+func actionLabel(a auth.Action) string {
+	words := map[auth.Action]string{
+		auth.ActView: "View", auth.ActEditDraft: "Edit drafts", auth.ActPublish: "Publish",
+		auth.ActRollback: "Roll back", auth.ActGrant: "Grant access", auth.ActToken: "Manage tokens",
+		auth.ActRunAgents: "Run agents", auth.ActApprove: "Approve", auth.ActManageAgents: "Manage agents",
+		auth.ActUseModels: "Use models", auth.ActInstall: "Install features",
+	}
+	if w, ok := words[a]; ok {
+		return w
+	}
+	return string(a)
 }
 
 // unmarkedPages lists pages with no usable provenance at a commit.

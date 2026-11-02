@@ -59,6 +59,37 @@ Unreleased
     around the gateway; what people across the estate reach is in its
     proxy and DNS logs, which are Vaigil's.
 
+** Changed
+
+*** A site that has chosen no style is drawn in Material 3 Expressive, as
+    the admin is.  The Design screen offered Classic as the default and
+    Material 3 Expressive as one choice among seven, while the admin a
+    person was looking at was drawn in it.  Expressive is now the default
+    and listed first; Classic is the calmer choice, the look sites had
+    before styles.  Motion's and the colour scheme's options are Springy
+    and Playful, so no choice is called Expressive twice.
+
+*** The admin on a phone and a laptop.  Every screen was opened at 1280,
+    768 and 390 pixels and measured: a table on a phone is now a card for
+    each row, its long names wrapping, rather than columns scrolled off the
+    right of the screen; a row's actions are one button at its end, on
+    Pages and Data alike, whose icon is no longer squeezed to a sliver; the
+    media library is a card for each file, its rights, crop, address and
+    replacement under Details; Pages names each page by its title; and the
+    access table says Edit drafts and Install features rather than the
+    names the policy file uses.
+
+*** Pages has a New page box: an address, made into a page name, opens
+    the editor on it.  A page could only be started by typing its name
+    into the browser's address bar.  Today shows the site at a glance (its
+    pages, records and files, when it was last published and by whom) and
+    where to start, so a quiet day no longer reads as an empty store.
+
+*** A page is given a form in its editor: Form on this page lists the
+    forms there are, and None takes it off.  Forms said to paste HTML into
+    a template; it now points at the editor, and keeps the code for a
+    design of one's own under a disclosure.
+
 ** Added
 
 *** Spreadsheets and calendars in and out.  quilzo records import reads a

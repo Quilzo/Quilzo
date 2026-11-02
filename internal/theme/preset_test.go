@@ -78,14 +78,20 @@ func TestMotionCanBeTurnedOff(t *testing.T) {
 	if !strings.Contains(th.Preset(), "--dur: 0ms") {
 		t.Error("motion none leaves things moving")
 	}
+	// A site that chose nothing is drawn as its admin is: Material 3
+	// Expressive, with gentle motion. Classic is a choice, and adds nothing.
 	th, _ = New(nil, nil)
-	if th.Motion() != "subtle" || th.Style() != "classic" || th.Preset() != "" {
+	if th.Motion() != "subtle" || th.Style() != "expressive" || !strings.Contains(th.Preset(), "/* style: expressive */") {
 		t.Errorf("defaults: %s %s %q", th.Style(), th.Motion(), th.Preset())
+	}
+	th, _ = New(map[string]string{"style": "classic"}, nil)
+	if th.Preset() != "" {
+		t.Errorf("classic adds %q", th.Preset())
 	}
 }
 
 func TestTheThemeExportsForTailwind(t *testing.T) {
-	th, _ := New(map[string]string{"primary": "#0b57d0", "primary.dark": "#a8c7fa", "radius": "20px"}, nil)
+	th, _ := New(map[string]string{"primary": "#0b57d0", "primary.dark": "#a8c7fa", "radius": "20px", "style": "classic"}, nil)
 	css := Tailwind(th)
 	for _, want := range []string{"@theme {", "--color-primary: #0b57d0;", "--radius-lg: 20px;", "--radius-sm: 5px;",
 		"@media (prefers-color-scheme: dark)", "--color-primary: #a8c7fa;", "--font-sans:", "--spacing: 0.25rem;"} {

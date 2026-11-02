@@ -46,8 +46,9 @@
 </table>
 </div>
 <p class="hint">
-  Put a form on a page by posting to <code>/form/&lt;name&gt;</code>. Open a
-  form's name for the code to paste.
+  To show a form on a page, open the page and choose it under
+  <strong>Form on this page</strong>. A design of your own can carry it too:
+  open a form's name for its code.
 </p>
 <form method="post" action="/forms/expire" class="inline">
   <button type="submit">Run retention now</button>
@@ -56,12 +57,18 @@
 
 {{if .Embed}}
 <h2 id="embed">Put {{.Selected}} on a page</h2>
-<p>Paste this into your template. Keep the two fields you did not declare, the
-hidden trap field and the time the page was shown: they stop spam, and a form
-without them is refused.</p>
-<div class="table-wrap">
-<pre><code>{{.Embed}}</code></pre>
-</div>
+<p>Open the page in <a href="/">Pages</a> and choose {{.Selected}} under
+<strong>Form on this page</strong>: the site's design shows it at the foot of
+the page, with its spam checks.</p>
+<details class="embed-code">
+  <summary>For a design of your own: the code to paste<span class="chev">{{icon "expand_more"}}</span></summary>
+  <p>Keep the two fields you did not declare, the hidden trap field and the
+  time the page was shown: they stop spam, and a form without them is
+  refused.</p>
+  <div class="table-wrap">
+  <pre><code>{{.Embed}}</code></pre>
+  </div>
+</details>
 {{end}}
 
 {{if .Submissions}}

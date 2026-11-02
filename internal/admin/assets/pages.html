@@ -11,6 +11,14 @@
 </p>
 {{end}}
 
+{{if .CanEdit}}
+<form method="get" action="/pages/new" class="newpage" aria-label="Start a new page">
+  <label for="newpage-name">New page at {{template "req"}}</label>
+  <span class="newpage-field"><span class="hint" aria-hidden="true">/</span><input id="newpage-name" name="name" required maxlength="200" spellcheck="false" autocomplete="off" placeholder="about-us"></span>
+  <button type="submit">{{icon "add"}}Start writing</button>
+</form>
+{{end}}
+
 {{if and .CheckedOn .DueCount}}
 <p class="notice" role="status">
   <strong>{{.DueCount}} page{{if ne .DueCount 1}}s{{end}}</strong> haven't been
@@ -51,7 +59,7 @@
       <td><input type="checkbox" name="page" value="{{.}}"
                  id="sel-{{.}}" aria-labelledby="name-{{.}}"></td>
       {{end}}
-      <th scope="row" id="name-{{.}}" class="depth-{{index $.Depth .}}"><a href="/page/{{.}}">{{.}}</a></th>
+      <th scope="row" id="name-{{.}}" class="depth-{{index $.Depth .}} page-cell"><a href="/page/{{.}}">{{with index $.Titles .}}{{.}}{{else}}{{.}}{{end}}</a>{{if index $.Titles .}}<span class="hint page-path">/{{if ne . "index"}}{{.}}{{end}}</span>{{end}}</th>
       <td>{{if index $.Changed .}}<span class="tag tag-changed">changed</span>{{else}}<span class="tag">unchanged</span>{{end}}
         {{with index $.Windows .}}
           {{if eq . "expired"}}<span class="tag tag-bad">expired</span>
