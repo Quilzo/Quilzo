@@ -198,6 +198,14 @@ func renderShared(root string, design *Design, id string, now time.Time) (string
 	}
 	src := sourcesFor(root, s, sh.Commit, siteName(root), pages)
 	src.IconStyle = design.Theme.IconStyle()
+	// The navigation around it is the published site's, so a link to one
+	// draft page does not show the names of every other one in its menus;
+	// the blocks the page reuses are the draft's it was shared with.
+	src.Blocks = pages
+	src.Pages = map[string]any{}
+	if live, lerr := site.PagesAt(s, site.RefLive); lerr == nil {
+		src.Pages = site.Visible(live, now)
+	}
 	ctx, err := src.For(sh.Page, body, nil)
 	if err != nil {
 		return "", false

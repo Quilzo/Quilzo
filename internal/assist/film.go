@@ -111,8 +111,18 @@ func (h *HTTPModel) keyless() *http.Client {
 	return &c
 }
 
-// do sends one request and reads its answer, bounded.
+// do sends one request and reads its answer, bounded. Only the fetch of a
+// finished file follows a redirect (a provider's file links do redirect);
+// a call to the API itself does not, as no model call does.
 func (h *HTTPModel) do(ctx context.Context, method, u string, body any, keyed bool, max int64) ([]byte, error) {
+	return h.doFollowing(ctx, method, u, body, keyed, max, false)
+}
+
+func (h *HTTPModel) fetchFile(ctx context.Context, u string, keyed bool) ([]byte, error) {
+	return h.doFollowing(ctx, http.MethodGet, u, nil, keyed, MaxFilm, true)
+}
+
+func (h *HTTPModel) doFollowing(ctx context.Context, method, u string, body any, keyed bool, max int64, follow bool) ([]byte, error) {
 	var rd io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -128,14 +138,14 @@ func (h *HTTPModel) do(ctx context.Context, method, u string, body any, keyed bo
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	client := h.keyless()
+	client := h.Client
+	if follow {
+		client = h.keyless()
+	}
 	if keyed {
 		if err := h.prepare(req); err != nil {
 			return nil, err
 		}
-	} else {
-		plain := *h.Client
-		client = &plain
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -234,7 +244,7 @@ func (h *HTTPModel) veo(ctx context.Context, prompt, aspect string) ([]byte, err
 		if !h.onHost(uri) {
 			return nil, fmt.Errorf("the video is at %q, which is not https on the provider's host", clip300(uri))
 		}
-		return h.do(ctx, http.MethodGet, uri, nil, true, MaxFilm)
+		return h.fetchFile(ctx, uri, true)
 	}
 }
 
@@ -295,5 +305,5 @@ func (h *HTTPModel) fal(ctx context.Context, prompt, aspect string) ([]byte, err
 	}
 	// On fal's storage, a public address: fetched without the key, by the
 	// checked client, which refuses this network.
-	return h.do(ctx, http.MethodGet, out.Video.URL, nil, false, MaxFilm)
+	return h.fetchFile(ctx, out.Video.URL, false)
 }

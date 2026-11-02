@@ -130,3 +130,46 @@ func TestTheEditorSharesThroughTheCommand(t *testing.T) {
 		t.Fatalf("an ended link is listed a while, as ended: %+v", got)
 	}
 }
+
+// A shared draft's menus are the published site's: a link to one draft
+// page does not show the names of the others.
+func TestASharedDraftShowsOnlyPublishedMenus(t *testing.T) {
+	root := demoStore(t)
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages, _ := site.PagesAt(s, site.RefDraft)
+	pages["secret-launch"] = map[string]any{"title": "Secret launch"}
+	pages["offer"] = map[string]any{"title": "The offer"}
+	if _, err := site.SaveDraft(s, pages, "drafts", "test"); err != nil {
+		t.Fatal(err)
+	}
+	set := `{"menus":[{"name":"main","items":[{"id":"a","label":"Secret launch","kind":"page","target":"secret-launch"},` +
+		`{"id":"b","label":"Home","kind":"page","target":"index"}]}]}`
+	if err := os.WriteFile(menuPath(root), []byte(set), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	tpl := `<!doctype html><html lang="en"><head><title>{{ page.title }}</title></head><body>` +
+		`<nav>{% for m in menus.main %}<a href="{{ m.href }}">{{ m.label }}</a>{% end %}</nav><h1>{{ page.title }}</h1></body></html>`
+	if err := os.WriteFile(filepath.Join(dir, "page.html"), []byte(tpl), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d, err := loadDesign(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	sh, err := newShare(root, s, "offer", "editor", 1, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, ok := renderShared(root, d, sh.ID, now)
+	if !ok || !strings.Contains(out, "The offer") {
+		t.Fatalf("%v %s", ok, out)
+	}
+	if strings.Contains(out, "Secret launch") {
+		t.Fatalf("a shared draft shows another draft page in its menu:\n%s", out)
+	}
+}
