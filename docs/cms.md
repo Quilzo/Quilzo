@@ -896,6 +896,18 @@ spreadsheet formula injection, and erasure by search — because an append-only
 merkle store cannot erase, which is why submissions deliberately do not live in
 it.
 
+A question can be asked only on an earlier answer — the order number when the
+topic is Returns, who gave it when "It was a gift" is ticked — with
+`"when": {"field": "topic", "is": "Returns"}` on the field, or "Asked only when"
+in the form builder. The server decides: such a question is required when its
+answer was given, and neither required nor kept when it was not, whatever
+arrived for it. The page hides it until then with a stylesheet the form serves
+at `/form/NAME.css`, using `:has()` and no script; a browser without `:has()`
+shows every question with the words that say when it is asked. A condition on a
+later field, on a choice the field does not offer, or on anything but a choice
+or a box is refused when the form is declared, and consent cannot rest on a box
+only some people are asked to tick.
+
 The retention ceiling is enforced by the program. Both long-running servers
 sweep on a timer of their own, and `quilzo form expire` still forces it. This
 used to say that nothing called it on its own and that a deployment needed a

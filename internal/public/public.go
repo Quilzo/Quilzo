@@ -1641,6 +1641,12 @@ func (st *Site) formData(name string) map[string]any {
 			Name: fl.Name, Label: fl.Label, Help: fl.Help,
 			Required: fl.Required,
 		}
+		if fl.When != nil {
+			// Not required in the markup: a hidden control that is
+			// required stops the form being sent. The server requires
+			// it when it is asked.
+			out.Required, out.When = false, f.Words(fl.When)
+		}
 		switch fl.Kind {
 		case form.Para:
 			out.Textarea = true
@@ -1657,7 +1663,11 @@ func (st *Site) formData(name string) map[string]any {
 		}
 		fields = append(fields, out)
 	}
-	return render.FormOf(f.Name, f.Label, f.Intro, f.Told(), "", fields)
+	data := render.FormOf(f.Name, f.Label, f.Intro, f.Told(), "", fields)
+	if f.StyleSheet() != "" {
+		data["style"] = "/form/" + f.Name + ".css"
+	}
+	return data
 }
 
 func (st *Site) sources() render.Sources {

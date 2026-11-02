@@ -90,9 +90,34 @@ type Forms struct {
 }
 
 // submit receives one form.
+// formStyle serves /form/NAME.css: the rules that hide a question until the
+// answer that asks it is given, from the declaration alone.
+func (st *Site) formStyle(w http.ResponseWriter, r *http.Request, name string) {
+	set, err := st.Forms.Set()
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	f, known := set.Get(name)
+	if !known {
+		http.NotFound(w, r)
+		return
+	}
+	h := w.Header()
+	h.Set("Content-Type", "text/css; charset=utf-8")
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Cache-Control", "public, max-age=300")
+	_, _ = w.Write([]byte(f.StyleSheet()))
+}
+
 func (st *Site) submit(w http.ResponseWriter, r *http.Request) {
 	if st.Forms == nil || st.Forms.Store == nil {
 		http.NotFound(w, r)
+		return
+	}
+	// A form's stylesheet: which questions wait for an answer (form.When).
+	if css, ok := strings.CutSuffix(strings.TrimPrefix(r.URL.Path, "/form/"), ".css"); ok && r.Method != http.MethodPost {
+		st.formStyle(w, r, css)
 		return
 	}
 	if r.Method != http.MethodPost {

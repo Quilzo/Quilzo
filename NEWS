@@ -134,6 +134,15 @@ Unreleased
     takes what saving takes, so somebody who may only read sees the saved
     draft.
 
+*** A form can ask a question only on an earlier answer: an order number
+    when the topic is Returns, who gave it when "It was a gift" is
+    ticked.  "when" on the field, or "Asked only when" in the form
+    builder.  The server asks it only on that answer, and keeps nothing
+    for it otherwise; the page hides it until then with /form/NAME.css,
+    by :has() and no script, and a browser without :has() shows it with
+    the words that say when it is asked.  The starter layouts give each
+    field a wrapper and each choice its value, which this needs.
+
 *** Reusable blocks: sections written once and shown on many pages.
     quilzo section block PAGE makes a page a block, quilzo section reuse
     PAGE BLOCK puts its sections on another, and quilzo section blocks

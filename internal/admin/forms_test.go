@@ -42,3 +42,22 @@ func TestDeclaringAFormKeepsWhatWasTicked(t *testing.T) {
 		t.Errorf("the help text was dropped: %q", f.Help)
 	}
 }
+
+// The builder keeps when a field is asked, and asks it of everybody when
+// nothing says otherwise.
+func TestTheFormBuilderKeepsWhenAFieldIsAsked(t *testing.T) {
+	r := httptest.NewRequest(http.MethodPost, "/forms/save",
+		strings.NewReader("form=contact&field=order&field_label=Order&field_kind=line&"+
+			"when_field=topic&when_is=Returns"))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	f := formFieldFromRequest(r)
+	if f.When == nil || f.When.Field != "topic" || f.When.Is != "Returns" {
+		t.Fatalf("%+v", f.When)
+	}
+	r = httptest.NewRequest(http.MethodPost, "/forms/save",
+		strings.NewReader("form=contact&field=name&field_label=Name&field_kind=line&when_field=+"))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if f := formFieldFromRequest(r); f.When != nil {
+		t.Fatalf("a blank condition kept: %+v", f.When)
+	}
+}

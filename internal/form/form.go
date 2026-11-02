@@ -80,6 +80,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -150,6 +151,35 @@ type Field struct {
 	// redacted in exports unless somebody asks for it explicitly. It does not
 	// encrypt anything on its own — see the note on Form.
 	Sensitive bool `json:"sensitive,omitempty"`
+	// When asks this field only when an earlier one was answered so: a
+	// choice was one value, or a box was ticked. Asked or not is decided
+	// by the server from what arrived (Accept), and shown or not by a
+	// stylesheet (StyleSheet), so it works with no script at all.
+	When *When `json:"when,omitempty"`
+}
+
+// When is the answer that makes a field asked.
+type When struct {
+	// Field is an earlier field, a choice or a box.
+	Field string `json:"field"`
+	// Is is the choice that makes this field asked; empty for a box, which
+	// asks it when ticked.
+	Is string `json:"is,omitempty"`
+}
+
+// holds reports whether a condition holds for what was accepted so far.
+func (w *When) holds(accepted map[string]string) bool {
+	if w == nil {
+		return true
+	}
+	v, ok := accepted[w.Field]
+	if !ok {
+		return false
+	}
+	if w.Is == "" {
+		return v == "yes"
+	}
+	return v == w.Is
 }
 
 // Form is a declared set of questions.
@@ -293,7 +323,9 @@ func (f *Form) Validate() error {
 		if f.Basis == "consent" {
 			agreed := false
 			for _, fl := range f.Fields {
-				if fl.Kind == Agree && fl.Required {
+				// Asked of everybody: consent asked only of some is consent
+				// most never gave.
+				if fl.Kind == Agree && fl.Required && fl.When == nil {
 					agreed = true
 				}
 			}
@@ -319,7 +351,12 @@ func (f *Form) Validate() error {
 	}
 
 	seen := map[string]bool{}
+	kinds := map[string]Field{}
 	for _, fl := range f.Fields {
+		if err := checkWhen(f.Name, fl, kinds); err != nil {
+			return err
+		}
+		kinds[fl.Name] = fl
 		if !reName.MatchString(fl.Name) {
 			return fmt.Errorf("%q asks for %q, which is not a usable field name",
 				f.Name, fl.Name)
@@ -353,6 +390,100 @@ func (f *Form) Validate() error {
 				"catch scripts. Rename it", f.Name, Honeypot)
 	}
 	return nil
+}
+
+// checkWhen refuses a condition that cannot hold or cannot be shown: on a
+// field that is not earlier, not a choice or a box, or a choice it does
+// not offer.
+func checkWhen(form string, fl Field, earlier map[string]Field) error {
+	w := fl.When
+	if w == nil {
+		return nil
+	}
+	on, ok := earlier[w.Field]
+	if !ok {
+		return fmt.Errorf("%q in %q is asked when %q is answered, which is not a field before it",
+			fl.Name, form, w.Field)
+	}
+	switch on.Kind {
+	case Agree:
+		if w.Is != "" {
+			return fmt.Errorf("%q is asked when the box %q is ticked; a box has no choice to name", fl.Name, w.Field)
+		}
+	case Choice:
+		if !slices.Contains(on.Choices, w.Is) {
+			return fmt.Errorf("%q is asked when %q is %q, which is not one of its choices (%s)",
+				fl.Name, w.Field, w.Is, strings.Join(on.Choices, ", "))
+		}
+	default:
+		return fmt.Errorf("%q is asked depending on %q, which is a %s; it can depend on a choice or a box",
+			fl.Name, w.Field, on.Kind)
+	}
+	return nil
+}
+
+// Words is a condition as a person reads it: "only if Topic is Returns".
+func (f *Form) Words(w *When) string {
+	if w == nil {
+		return ""
+	}
+	label := w.Field
+	for _, fl := range f.Fields {
+		if fl.Name == w.Field {
+			label = fl.Label
+		}
+	}
+	if w.Is == "" {
+		return "Only if “" + label + "” is ticked."
+	}
+	return "Only if “" + label + "” is " + w.Is + "."
+}
+
+// StyleSheet hides each field asked only on an answer until the answer is
+// given, with :has() and no script, or "" when no field is. Inside
+// @supports, so a browser without :has() shows every field with the words
+// that say when it is asked, and the server still takes only what is.
+//
+// The rendered field's wrapper is #f-NAME-field and its control #f-NAME,
+// as the starter's layouts write them.
+func (f *Form) StyleSheet() string {
+	var b strings.Builder
+	for _, fl := range f.Fields {
+		w := fl.When
+		if w == nil {
+			continue
+		}
+		wrap := "#f-" + fl.Name + "-field"
+		var on string
+		if w.Is == "" {
+			on = "#f-" + w.Field + ":checked"
+		} else {
+			on = "#f-" + w.Field + " option[value=" + cssString(w.Is) + "]:checked"
+		}
+		b.WriteString(wrap + "{display:none}\n")
+		b.WriteString("form:has(" + on + ") " + wrap + "{display:block}\n")
+	}
+	if b.Len() == 0 {
+		return ""
+	}
+	return "@supports selector(:has(a)){\n" + b.String() + "}\n"
+}
+
+// cssString quotes a value for a CSS string, every character outside
+// letters, digits and spaces escaped, so a choice cannot end the rule.
+func cssString(s string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == ' ':
+			b.WriteRune(r)
+		default:
+			fmt.Fprintf(&b, "\\%x ", r)
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
 }
 
 // Retention is how long this form's submissions are kept.
@@ -481,6 +612,11 @@ func accept(f *Form, values map[string]string, source string,
 	// Only declared fields, checked against their kinds. There is no path here
 	// by which a name from the request becomes a key in anything.
 	for _, fl := range f.Fields {
+		// A field asked only on an answer is neither required nor kept
+		// when the answer was not given, whatever arrived for it.
+		if !fl.When.holds(out.Values) {
+			continue
+		}
 		raw := strings.TrimSpace(values[fl.Name])
 		if raw == "" {
 			if fl.Required {
