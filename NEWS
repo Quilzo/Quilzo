@@ -113,6 +113,13 @@ Unreleased
 
 ** Added
 
+*** A chatbot chooses the model that answers it.  A chatbot can name a
+    route, or the model a route serves, that answers it first, with the
+    gateway's other routes behind it: --route on quilzo assistant add, or
+    "Model that answers first" on its page.  With --route-only ("Only that
+    one"), its visitors' words go to that route and no other, and when it
+    cannot answer the chatbot quotes its pages instead.
+
 *** Anthropic's models are spoken to natively.  Anthropic is in the
     providers' catalogue (quilzo gateway providers anthropic), and a route
     to it speaks its Messages API rather than an OpenAI-compatible

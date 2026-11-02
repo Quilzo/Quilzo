@@ -7,6 +7,7 @@
 <p class="chips">
   {{if .A.Public}}<span class="chip">public at <code>/ask/{{.A.Name}}</code></span>{{else}}<span class="chip">testing only — not on the site</span>{{end}}
   <span class="chip">{{if .A.UseModel}}model answers, verified{{else}}quotes only{{end}}</span>
+  {{if and .A.UseModel .A.Route}}<span class="chip">{{if .A.RouteOnly}}only {{else}}first {{end}}<code>{{.A.Route}}</code></span>{{end}}
   <span class="chip">{{plural (len .A.Actions) "action" "actions"}}</span>
 </p>
 
@@ -143,6 +144,14 @@
     <p class="help">Off, it quotes your pages directly: no model, no cost,
       nothing sent anywhere. On, every sentence is still checked against the
       page it cites.</p></div>
+  <div class="field"><label for="route">Model that answers first</label>
+    <input id="route" name="route" value="{{.A.Route}}" placeholder="the gateway's order" aria-describedby="route-help">
+    <p id="route-help" class="help">A route on the <a href="/models">Models</a> screen, or the model one
+      serves. The others stand behind it.</p></div>
+  <div class="field"><label><input type="checkbox" name="route_only" value="1"{{if .A.RouteOnly}} checked{{end}} aria-describedby="routeonly-help">
+    Only that one</label>
+    <p id="routeonly-help" class="help">Visitors' words go to that route and no other. When it cannot answer,
+      the chatbot quotes your pages instead.</p></div>
   <div class="field"><label><input type="checkbox" name="keep_instructions" value="1"{{if .A.KeepInstructions}} checked{{end}} aria-describedby="keep-help">
     Read passages that address an AI</label>
     <p id="keep-help" class="help">Off, a passage that speaks to the AI reading it rather than to

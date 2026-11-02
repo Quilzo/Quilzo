@@ -46,6 +46,14 @@ type Assistant struct {
 	// UseModel answers with the configured model when there is one. Off, it
 	// is always extractive — no model call, no cost, nothing sent anywhere.
 	UseModel bool `json:"use_model,omitempty"`
+	// Route is the model gateway's route, or the model one of its routes
+	// serves, that answers first: a cheaper model for a busy help desk, a
+	// stronger one for a sales chatbot. The gateway's other routes stand
+	// behind it unless RouteOnly, which keeps the chatbot to that route
+	// alone: for a chatbot whose visitors' words may go to one provider,
+	// in one region, and nowhere else. Empty is the gateway's own order.
+	Route     string `json:"route,omitempty"`
+	RouteOnly bool   `json:"route_only,omitempty"`
 	// KeepInstructions keeps passages that address an AI reading them,
 	// which are otherwise left out of what it reads (see screen.go): for a
 	// chatbot whose pages discuss these attacks on purpose.
@@ -285,6 +293,8 @@ var (
 	reName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 	// reField is what an agent action asks a visitor for: booking_ref.
 	reField = regexp.MustCompile(`^[a-z][a-z0-9_]{0,31}$`)
+	// reRoute is a gateway route's name, or a model's as a route names it.
+	reRoute = regexp.MustCompile(`^[A-Za-z0-9._:/@-]{1,120}$`)
 )
 
 // Limits on what an owner can declare, so a declaration cannot be the way a
@@ -342,6 +352,12 @@ func (a Assistant) Validate() error {
 	if len(a.Instructions) > MaxInstructions {
 		return fmt.Errorf("%s's instructions are over %d characters",
 			a.Name, MaxInstructions)
+	}
+	if a.Route != "" && !reRoute.MatchString(a.Route) {
+		return fmt.Errorf("%s: %q is not a route or a model's name", a.Name, a.Route)
+	}
+	if a.RouteOnly && a.Route == "" {
+		return fmt.Errorf("%s is kept to one route and names none", a.Name)
 	}
 	if a.Passages < 0 || a.Passages > 12 {
 		return fmt.Errorf("%s retrieves %d passages; between 1 and 12",
