@@ -169,7 +169,7 @@ func (s *Server) handleToday(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.render(w, r, "today.html", map[string]any{
-		"Glance": s.glance(p, visible, now),
+		"Glance":  s.glance(p, visible, now),
 		"Message": r.URL.Query().Get("m"),
 		"CanAsk":  s.askAllowed(p), "Answer": answer, "Views": views, "CanKeep": canKeep,
 		"Title": "Today", "Nav": "today", "Principal": p,
