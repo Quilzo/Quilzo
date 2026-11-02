@@ -81,14 +81,12 @@ func mediaGenerate(root string, args []string) error {
 				"at the picture and say what is in it")}
 	}
 
-	m, err := assist.NewHTTPModel()
-	if err != nil {
-		return errBlocked{err}
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), assist.RequestTimeout)
 	defer cancel()
 
-	pic, err := m.Paint(ctx, prompt, strings.TrimSpace(*size))
+	// Through the gateway's routes that draw when there are any: budgets,
+	// the ledger and the personal-data guard apply to pictures as to words.
+	pic, err := paintPicture(ctx, root, resolveCaller(root, flagToken).Name, prompt, strings.TrimSpace(*size))
 	if err != nil {
 		return errBlocked{err}
 	}

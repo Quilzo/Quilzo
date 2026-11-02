@@ -170,14 +170,16 @@ func (s *Server) handleModelsChange(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			route := gateway.Route{Name: name,
-				URL:       strings.TrimSpace(r.FormValue("url")),
-				Model:     strings.TrimSpace(r.FormValue("model")),
-				KeyEnv:    strings.TrimSpace(r.FormValue("key_env")),
-				KeySecret: strings.TrimSpace(r.FormValue("key_secret")),
-				PriceIn:   strings.TrimSpace(r.FormValue("price_in")),
-				PriceOut:  strings.TrimSpace(r.FormValue("price_out")),
-				Personal:  r.FormValue("personal") == "yes",
-				Params:    params}
+				URL:          strings.TrimSpace(r.FormValue("url")),
+				Model:        strings.TrimSpace(r.FormValue("model")),
+				KeyEnv:       strings.TrimSpace(r.FormValue("key_env")),
+				KeySecret:    strings.TrimSpace(r.FormValue("key_secret")),
+				PriceIn:      strings.TrimSpace(r.FormValue("price_in")),
+				PriceOut:     strings.TrimSpace(r.FormValue("price_out")),
+				Personal:     r.FormValue("personal") == "yes",
+				Params:       params,
+				Draws:        r.FormValue("draws") == "yes",
+				PricePicture: strings.TrimSpace(r.FormValue("price_picture"))}
 			// A provider chosen: its address from its profile, its
 			// parameter checked before it goes into a host name, and its
 			// key's credential named the way it suggests.

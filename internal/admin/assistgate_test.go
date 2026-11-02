@@ -65,7 +65,7 @@ func assistServer(t *testing.T, m *fakeModel,
 	t.Helper()
 	srv, token := setup(t)
 	srv.Assist = &Assist{
-		Model: func() (assist.Model, error) { return m, nil },
+		Model: func(string) (assist.Model, error) { return m, nil },
 		Pages: func() (map[string]any, error) {
 			return map[string]any{"index": map[string]any{"title": "Home"}}, nil
 		},

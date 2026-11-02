@@ -492,7 +492,7 @@ func fullyWired(t *testing.T) (*Server, string) {
 	// has to render something in it — which is the state a hosted fixture
 	// would never exercise.
 	srv.Assist = &Assist{
-		Model: func() (assist.Model, error) { return nil, nil },
+		Model: func(string) (assist.Model, error) { return nil, nil },
 		Pages: func() (map[string]any, error) { return srv.draftPages() },
 		Save:  func(map[string]any, string, string, string) error { return nil },
 	}

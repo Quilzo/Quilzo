@@ -54,7 +54,7 @@ func cmdAssist(root string, args []string) error {
 				"model writes, and that is never the tool")
 	}
 
-	model, err := directModel(root)
+	model, err := assistModel(root, resolveCaller(root, flagToken).Name)
 	if err != nil {
 		return err
 	}

@@ -1552,6 +1552,19 @@ read.
 - a parameter such as an Azure resource or an AWS region is checked before it
   goes into a host name, so it cannot become a different host.
 
+**Pictures and writing go through the gateway too.** A route added with
+`--draws` (or "It draws pictures" on the Models screen) is an images model,
+used by `quilzo media generate` and for nothing else, and charged by the
+picture (`--price-picture`). A picture's prompt passes the same guard as words:
+- personal data and credentials are taken out before it leaves;
+- it is charged to `media` and to the person, each against their budget;
+- it goes in the ledger.
+
+The writing assistant (`quilzo assist` and the Assistant screen) goes through the
+gateway as `assist`, charged to the person too. Both used to call the one
+configured model directly, outside every budget and the ledger, and
+`media generate` without masking anything.
+
 **The key is sealed.** It is kept encrypted with `quilzo secret set NAME` and
 named with `--key-secret`, rather than in an environment variable every process
 the server starts would inherit. The Models screen offers the same list and

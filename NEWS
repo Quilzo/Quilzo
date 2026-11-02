@@ -910,6 +910,16 @@ Unreleased
 
 ** Fixed
 
+*** Pictures and the writing assistant go through the gateway.  quilzo
+    media generate and the assistant (quilzo assist and the Assistant
+    screen) called the configured model directly: outside every budget
+    and the usage ledger, and media generate without taking personal data
+    or credentials out of its prompt.  A route added with --draws is an
+    images model used for pictures and nothing else, charged by the
+    picture (--price-picture); a picture is charged to media and to the
+    person, and the assistant to assist and to the person, each against
+    its budget and on the record.
+
 *** A --token given on the command line is who every command acts as.
     The check in front of each command used it, and a hundred and
     thirty-five places inside commands then acted as, and recorded,

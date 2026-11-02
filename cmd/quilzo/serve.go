@@ -762,8 +762,8 @@ func cmdServe(root string, args []string) error {
 		SiteName: cfg.Raw("site.name"), BaseURL: cfg.Raw("site.base_url"),
 	}
 	srv.Assist = &admin.Assist{
-		Model: func() (assist.Model, error) {
-			m, err := directModel(root)
+		Model: func(person string) (assist.Model, error) {
+			m, err := assistModel(root, person)
 			if err != nil {
 				// No model configured is not an error condition, it is a
 				// configuration. The screen says so and offers nothing rather

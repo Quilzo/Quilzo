@@ -86,6 +86,11 @@ type Route struct {
 	// set NAME), which is kept encrypted where KeyEnv's is in the
 	// environment of every process the server starts. Used before KeyEnv.
 	KeySecret string `json:"key_secret,omitempty"`
+	// Draws says this route's model draws pictures (an images endpoint):
+	// it is used for pictures and for nothing else, and PricePicture is
+	// what one costs.
+	Draws        bool   `json:"draws,omitempty"`
+	PricePicture string `json:"price_picture,omitempty"`
 }
 
 // RouteParams are the request fields one route needs. Nothing beyond the
@@ -254,6 +259,15 @@ func (c Config) Validate() error {
 		in, out, err := r.prices()
 		if err != nil {
 			return err
+		}
+		if r.PricePicture != "" {
+			pic, perr := ParseMoney(r.PricePicture)
+			if perr != nil {
+				return fmt.Errorf("route %s's price of a picture: %w", r.Name, perr)
+			}
+			if pic > 0 && !reCurrency.MatchString(c.Currency) {
+				return fmt.Errorf("route %s has prices and the configuration names no currency (USD, EUR, …)", r.Name)
+			}
 		}
 		if (in > 0 || out > 0) && !reCurrency.MatchString(c.Currency) {
 			return fmt.Errorf("route %s has prices and the configuration names no currency (USD, EUR, …)", r.Name)
@@ -629,6 +643,10 @@ func (g *Gateway) complete(ctx context.Context, consumers []string, p pick, syst
 	}
 	var errs []string
 	for _, r := range g.routesFor(p) {
+		// A route that draws pictures is not asked for words.
+		if r.Draws {
+			continue
+		}
 		g.mu.Lock()
 		down := g.now().Before(g.downTil[r.Name])
 		g.mu.Unlock()
@@ -693,6 +711,103 @@ func (g *Gateway) complete(ctx context.Context, consumers []string, p pick, syst
 		return "", assist.Usage{}, 0, fmt.Errorf("%w: the route %s is not declared", ErrNoRoute, p.only)
 	}
 	return "", assist.Usage{}, 0, fmt.Errorf("%w: %s", ErrNoRoute, strings.Join(errs, "; "))
+}
+
+// painter is a model that draws.
+type painter interface {
+	Paint(ctx context.Context, prompt, size string) (assist.Picture, error)
+}
+
+// Paint draws a picture through the routes that draw, in order, as
+// consumers: charged to each against its budget, recorded in the ledger,
+// with personal data and credentials taken out of the prompt first (a
+// picture's prompt has nothing to put them back into), and a route that
+// fails resting as any other does. It is how a picture is asked for, so
+// drawing is not a way round the budgets and the record words are under.
+func (g *Gateway) Paint(ctx context.Context, consumers []string, prompt, size string) (assist.Picture, Money, error) {
+	consumer, also := consumers[0], consumers[1:]
+	in := len(prompt)
+	if err := g.admit(consumers, in); err != nil {
+		g.note(Usage{At: g.now(), Consumer: consumer, Also: also, In: in, Outcome: "over-budget"})
+		if g.OnTrouble != nil && !errors.Is(err, ErrUnwritable) {
+			g.OnTrouble("spent", consumer)
+		}
+		return assist.Picture{}, 0, err
+	}
+	var errs []string
+	for _, r := range g.cfg.Routes {
+		if !r.Draws {
+			continue
+		}
+		g.mu.Lock()
+		down := g.now().Before(g.downTil[r.Name])
+		g.mu.Unlock()
+		if down {
+			errs = append(errs, r.Name+": resting after repeated failures")
+			continue
+		}
+		if g.Cut != nil && g.Cut(r.Name) {
+			errs = append(errs, r.Name+": cut by the shield")
+			continue
+		}
+		m, err := g.model(r)
+		if err != nil {
+			errs = append(errs, r.Name+": "+err.Error())
+			continue
+		}
+		pm, ok := m.(painter)
+		if !ok {
+			errs = append(errs, r.Name+": its model does not draw")
+			continue
+		}
+		mask := &pii.Masker{Allowed: g.OwnDomains, Secrets: codescan.SecretSpans}
+		_, usr, hidden := visible("", prompt)
+		usr = mask.Mask(usr, r.Personal)
+		masked := mask.Masked()
+		if hidden > 0 {
+			masked["invisible"] = hidden
+		}
+		if len(masked) > 0 && g.OnMasked != nil {
+			g.OnMasked(consumer, r.Name, masked)
+		}
+		start := g.now()
+		pic, err := pm.Paint(ctx, usr, size)
+		took := g.now().Sub(start)
+		if err != nil {
+			kind := g.failure(ctx, r.Name, err)
+			g.note(Usage{At: start, Consumer: consumer, Also: also, Route: r.Name,
+				Model: r.Model, In: in, Millis: took.Milliseconds(), Outcome: kind.outcome()})
+			if kind != unavailable {
+				return assist.Picture{}, 0, err
+			}
+			errs = append(errs, r.Name+": "+err.Error())
+			continue
+		}
+		g.mu.Lock()
+		g.fails[r.Name] = 0
+		g.mu.Unlock()
+		var cost Money
+		if r.PricePicture != "" {
+			cost, _ = ParseMoney(r.PricePicture)
+		}
+		g.note(Usage{At: start, Consumer: consumer, Also: also, Route: r.Name, Model: r.Model,
+			In: in, Millis: took.Milliseconds(), Cost: cost, Masked: masked, Outcome: "ok"})
+		return pic, cost, nil
+	}
+	if len(errs) == 0 {
+		return assist.Picture{}, 0, fmt.Errorf("%w: no route draws pictures (quilzo gateway route add NAME --draws ...)", ErrNoRoute)
+	}
+	return assist.Picture{}, 0, fmt.Errorf("%w: %s", ErrNoRoute, strings.Join(errs, "; "))
+}
+
+// Draws reports whether any route draws pictures.
+func (g *Gateway) Draws() bool {
+	for _, r := range g.cfg.Routes {
+		if r.Draws {
+			return true
+		}
+	}
+	return false
 }
 
 // routesFor are the routes a call may try: all of them in order, or the
