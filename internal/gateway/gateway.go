@@ -91,6 +91,11 @@ type Route struct {
 	// what one costs.
 	Draws        bool   `json:"draws,omitempty"`
 	PricePicture string `json:"price_picture,omitempty"`
+	// Embeds says this route's model makes embeddings (an /embeddings
+	// endpoint): it is used for embeddings and for nothing else, named by
+	// what uses it (chatbot.embeddings), and PriceIn is what a million
+	// tokens embedded cost.
+	Embeds bool `json:"embeds,omitempty"`
 }
 
 // RouteParams are the request fields one route needs. Nothing beyond the
@@ -182,8 +187,8 @@ func (r Route) CheckWire(wire string) error {
 		if p.MaxTokens != "" && p.MaxTokens != "max_tokens" {
 			return fmt.Errorf("route %s: Anthropic's Messages API takes max_tokens, not %s", r.Name, p.MaxTokens)
 		}
-		if r.Draws {
-			return fmt.Errorf("route %s: Anthropic's models answer in words and do not draw", r.Name)
+		if r.Draws || r.Embeds {
+			return fmt.Errorf("route %s: Anthropic's models answer in words, and neither draw nor make embeddings", r.Name)
 		}
 	default:
 		return fmt.Errorf("route %s: its provider speaks %q, which this build does not", r.Name, wire)
@@ -330,6 +335,9 @@ func (c Config) Validate() error {
 		in, out, err := r.prices()
 		if err != nil {
 			return err
+		}
+		if r.Draws && r.Embeds {
+			return fmt.Errorf("route %s draws pictures and makes embeddings; a route does one", r.Name)
 		}
 		if r.PricePicture != "" {
 			pic, perr := ParseMoney(r.PricePicture)
@@ -714,8 +722,9 @@ func (g *Gateway) complete(ctx context.Context, consumers []string, p pick, syst
 	}
 	var errs []string
 	for _, r := range g.routesFor(p) {
-		// A route that draws pictures is not asked for words.
-		if r.Draws {
+		// A route that draws pictures, or makes embeddings, is not asked
+		// for words.
+		if r.Draws || r.Embeds {
 			continue
 		}
 		g.mu.Lock()

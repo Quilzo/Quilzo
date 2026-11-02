@@ -645,6 +645,11 @@ func cmdServe(root string, args []string) error {
 		// And chatbots asked again what they could not answer, now the
 		// page that answers it may be live (gapscmd.go).
 		published: func(ctx context.Context) {
+			// Embedded first, so the questions asked again below are
+			// asked of chatbots that find passages by meaning too.
+			if said := embedAfterPublish(ctx, root); said != "" {
+				fmt.Printf("  %schatbots: %s%s\n", dim, said, reset)
+			}
 			if said := checkAllGaps(ctx, root); said != "" {
 				fmt.Printf("  %schatbots: %s%s\n", dim, said, reset)
 			}

@@ -374,6 +374,7 @@ the assistant
   quilzo assistant eval NAME CASES.jsonl   measure it, including what it should refuse
   quilzo assistant gaps NAME [--check] [--close KEY]
                                           what it could not answer, grouped, when chatbot.gaps keeps it
+  quilzo assistant embed [NAME]             embed the site's passages now, for chatbot.embeddings
   quilzo assistant list | remove NAME
   quilzo inbox list | show ASSISTANT/ID     visitors who asked a chatbot for a person
   quilzo inbox reply ASSISTANT/ID "text"    answer one, as yourself; inbox close ends it

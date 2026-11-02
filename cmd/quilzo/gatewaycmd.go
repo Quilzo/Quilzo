@@ -269,6 +269,7 @@ func gatewayRoute(root string, args []string) error {
 		return fmt.Errorf("usage: quilzo gateway route add NAME --provider ID --model M [--param name=value] [--key-secret NAME]\n" +
 			"       quilzo gateway route add NAME --url U --model M [--key-env VAR | --key-secret NAME] [--personal]\n" +
 			"       quilzo gateway route add NAME ... --draws [--price-picture 0.04]   a route that draws pictures\n" +
+			"       quilzo gateway route add NAME ... --embeds   a route that makes embeddings (chatbot.embeddings)\n" +
 			"         [--max-tokens-field max_completion_tokens] [--temperature T] [--top-p P] [--timeout 300s] [--auto-tool-choice]\n" +
 			"         [--effort low|medium|high|xhigh|max] [--geo us|global] [--server-fallback]   Anthropic's Messages API only\n" +
 			"       quilzo gateway route remove NAME")
@@ -292,6 +293,7 @@ func gatewayRoute(root string, args []string) error {
 	serverFallback := fs.Bool("server-fallback", false, "Anthropic's Messages API: a request the model declines is answered by "+
 		"another of Anthropic's models, for the models that take it")
 	draws := fs.Bool("draws", false, "this route's model draws pictures (an images endpoint), and is used for nothing else")
+	embeds := fs.Bool("embeds", false, "this route's model makes embeddings (an /embeddings endpoint), and is used for nothing else")
 	pricePicture := fs.String("price-picture", "", "what one picture costs here, like 0.04")
 	prov := fs.String("provider", "", "a provider from quilzo gateway providers: the route reaches it and nothing else")
 	keySecret := fs.String("key-secret", "", "the sealed credential holding the key (quilzo secret set NAME)")
@@ -360,7 +362,7 @@ func gatewayRoute(root string, args []string) error {
 		}
 		r := gateway.Route{Name: name, URL: *u, Model: *model, KeyEnv: *keyEnv, PriceIn: *priceIn, PriceOut: *priceOut,
 			Personal: *personal, Params: params, Provider: *prov, ProviderParams: pp, KeySecret: *keySecret,
-			Draws: *draws, PricePicture: *pricePicture}
+			Draws: *draws, PricePicture: *pricePicture, Embeds: *embeds}
 		if err := r.CheckWire(wire); err != nil {
 			return err
 		}

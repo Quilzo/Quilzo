@@ -181,6 +181,7 @@ func (s *Server) handleModelsChange(w http.ResponseWriter, r *http.Request) {
 				Personal:     r.FormValue("personal") == "yes",
 				Params:       params,
 				Draws:        r.FormValue("draws") == "yes",
+				Embeds:       r.FormValue("embeds") == "yes",
 				PricePicture: strings.TrimSpace(r.FormValue("price_picture"))}
 			// A provider chosen: its address from its profile, its
 			// parameter checked before it goes into a host name, and its

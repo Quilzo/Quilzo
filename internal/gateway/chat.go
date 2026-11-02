@@ -48,7 +48,7 @@ func (b *bound) ChatCosted(ctx context.Context, req assist.ChatRequest) (assist.
 // some route is marked personal, the only kind a picture is sent to.
 func (b *bound) TakesPictures() bool {
 	for _, r := range b.g.cfg.Routes {
-		if r.Personal && !r.Draws {
+		if r.Personal && !r.Draws && !r.Embeds {
 			return true
 		}
 	}
@@ -78,8 +78,9 @@ func (g *Gateway) chat(ctx context.Context, consumers []string, p pick, req assi
 	}
 	var errs []string
 	for _, r := range g.routesFor(p) {
-		// A route that draws pictures is not asked for a conversation.
-		if r.Draws {
+		// A route that draws pictures, or makes embeddings, is not asked
+		// for a conversation.
+		if r.Draws || r.Embeds {
 			continue
 		}
 		g.mu.Lock()

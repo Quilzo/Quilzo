@@ -541,3 +541,44 @@ func TestAChatbotOnTheSiteAnswersFromRecords(t *testing.T) {
 		t.Fatalf("not read again when the records changed: %d\n%s", reads, body)
 	}
 }
+
+// A chatbot on the site finds a passage by meaning when it has a ranker by
+// meaning; the index is built again when what that ranker depends on
+// changes (a passage embedded since), and not on every question.
+func TestAChatbotOnTheSiteFindsAPassageByMeaning(t *testing.T) {
+	st, _ := askSite(t, shopBot)
+	const q = "may I have a refund on ink I have used"
+	if body := askPost(st, "help", q).Body.String(); strings.Contains(body, "cannot be returned") {
+		t.Fatalf("answered by words alone:\n%s", body)
+	}
+	key, built, asked := "k1", 0, 0
+	subject := func(s string) []float64 {
+		if strings.Contains(strings.ToLower(s), "return") || strings.Contains(s, "refund") {
+			return []float64{1, 0}
+		}
+		return []float64{0, 1}
+	}
+	st.Assistants.MeaningKey = func(assistant.Assistant) string { return key }
+	st.Assistants.Meaning = func(_ assistant.Assistant, ps []assistant.Passage) *assistant.Meaning {
+		built++
+		vecs := make([][]float64, len(ps))
+		for i, p := range ps {
+			vecs[i] = subject(p.Header() + " " + p.Text)
+		}
+		return &assistant.Meaning{Model: "stand-in", Vectors: vecs, Floor: 0.8,
+			Question: func(q string) ([]float64, error) { asked++; return subject(q), nil }}
+	}
+	key = "k2"
+	if body := askPost(st, "help", q).Body.String(); !strings.Contains(body, "cannot be returned") {
+		t.Fatalf("not found by meaning:\n%s", body)
+	}
+	askPost(st, "help", q)
+	if built != 1 || asked < 2 {
+		t.Fatalf("built %d times, asked %d", built, asked)
+	}
+	key = "k3"
+	askPost(st, "help", q)
+	if built != 2 {
+		t.Fatalf("not built again when its vectors changed: %d", built)
+	}
+}

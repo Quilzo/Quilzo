@@ -340,6 +340,39 @@ var settings = []Setting{
 		Weaker: atMost(90, "unanswered questions are kept %s days"),
 	},
 	{
+		Key: "chatbot.embeddings", Kind: Text, Default: "",
+		Summary:  "the gateway route that makes embeddings, so chatbots that answer with a model find passages by what they mean, not only by their words",
+		Controls: []string{"SA-9", "PT-2"},
+		Why: "Empty: chatbots find passages by their words, here, and nothing is sent anywhere to do it. " +
+			"Set to a route added with --embeds, the site's published text is sent to that route's provider " +
+			"once, after each publish, to be embedded, and so is each question asked of a chatbot that " +
+			"answers with a model (one that only quotes its pages, or is kept to one route, never is). " +
+			"A visitor asking \"can I send back opened ink\" then finds the passage about returns that never " +
+			"says \"send back\". Personal data is masked first, as for any route not allowed it. Vectors " +
+			"are kept by the text's hash, never the text: quilzo assistant embed fills them now.",
+		Weaker: func(v string) (bool, string) {
+			if strings.TrimSpace(v) == "" {
+				return false, ""
+			}
+			return true, "the site's published text and visitors' questions are sent to " + v + "'s provider to be embedded"
+		},
+	},
+	{
+		Key: "chatbot.embeddings_floor", Kind: Int, Default: "55",
+		Summary: "how alike, in percent, a passage and a question must be for a chatbot to answer from a passage that shares too few of its words",
+		Why: "55: a passage about returns is found by \"can I send back opened ink\", and one merely in the " +
+			"same neighbourhood is not answered from. Models differ in how alike they find things: the " +
+			"chatbot's test screen shows each passage's similarity, and raising this makes a chatbot " +
+			"answer less often and more surely. Between 20 and 95.",
+		Weaker: func(v string) (bool, string) {
+			n, err := strconv.Atoi(strings.TrimSpace(v))
+			if err == nil && n < 40 {
+				return true, "a chatbot answers from passages only " + v + "% alike to the question"
+			}
+			return false, ""
+		},
+	},
+	{
 		Key: "site.webmcp", Kind: Bool, Default: "true",
 		Summary: "mark the site's search, chatbots and forms as tools a visitor's browser agent can use",
 		Why: "WebMCP: attributes on the forms the site already has, saying what " +
@@ -1485,14 +1518,15 @@ var reBrandColour = regexp.MustCompile(`^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$`)
 // session.idle's are NIST SP 800-63B-4's AAL2 inactivity limit above and,
 // below, the shortest a person reading a page is not interrupted by.
 var hardBounds = map[string][2]int64{
-	"chatbot.gaps_days":     {1, 365},
-	"auth.throttle.after":   {0, throttle.MostFree},
-	"auth.throttle.ceiling": {throttle.LeastCeiling, throttle.MostCeiling},
-	"auth.throttle.base":    {int64(throttle.LeastDelay), int64(throttle.LongestDelay)},
-	"auth.throttle.max":     {int64(throttle.LeastDelay), int64(throttle.LongestDelay)},
-	"auth.lockout.alert":    {1, throttle.LatestAlert},
-	"session.idle":          {int64(5 * time.Minute), int64(time.Hour)},
-	"agents.trigger_runs":   {1, 16},
+	"chatbot.gaps_days":        {1, 365},
+	"chatbot.embeddings_floor": {20, 95},
+	"auth.throttle.after":      {0, throttle.MostFree},
+	"auth.throttle.ceiling":    {throttle.LeastCeiling, throttle.MostCeiling},
+	"auth.throttle.base":       {int64(throttle.LeastDelay), int64(throttle.LongestDelay)},
+	"auth.throttle.max":        {int64(throttle.LeastDelay), int64(throttle.LongestDelay)},
+	"auth.lockout.alert":       {1, throttle.LatestAlert},
+	"session.idle":             {int64(5 * time.Minute), int64(time.Hour)},
+	"agents.trigger_runs":      {1, 16},
 }
 
 // ErrOutOfBounds is a value outside a setting's hard bounds.
