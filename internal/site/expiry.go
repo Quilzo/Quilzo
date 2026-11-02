@@ -169,6 +169,10 @@ func (w Window) State(now time.Time) string {
 func Visible(pages map[string]any, now time.Time) map[string]any {
 	out := make(map[string]any, len(pages))
 	for name, body := range pages {
+		// A block is shown on the pages that reuse it, never on its own.
+		if IsBlock(body) {
+			continue
+		}
 		w, err := WindowOf(body)
 		if err != nil {
 			// An unreadable window is treated as not public. Failing closed

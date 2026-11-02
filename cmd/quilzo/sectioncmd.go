@@ -6,6 +6,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -49,9 +50,15 @@ func cmdSection(root string, args []string) error {
 		return sectionSet(root, args[1:])
 	case "item":
 		return sectionItem(root, args[1:])
+	case "reuse":
+		return sectionReuse(root, args[1:])
+	case "block":
+		return sectionBlock(root, args[1:])
+	case "blocks":
+		return sectionBlocks(root, args[1:])
 	default:
 		return fmt.Errorf("unknown section command %q; try list, kinds, add, "+
-			"move, remove, fields, set or item", args[0])
+			"move, remove, fields, set, item, reuse, block or blocks", args[0])
 	}
 }
 
@@ -464,4 +471,129 @@ func sectionItem(root string, args []string) error {
 	default:
 		return fmt.Errorf("unknown item command %q; try add or remove", verb)
 	}
+}
+
+// sectionReuse is quilzo section reuse PAGE BLOCK [--at N]: a section that
+// shows a reusable block's sections where it is put.
+func sectionReuse(root string, args []string) error {
+	pos, flags := leadingArgs(args, 2)
+	fs := flag.NewFlagSet("reuse", flag.ContinueOnError)
+	at := fs.Int("at", -1, "position to insert at; the end by default")
+	if err := fs.Parse(flags); err != nil {
+		return err
+	}
+	if len(pos) != 2 {
+		return fmt.Errorf("usage: quilzo section reuse <page> <block> [--at N]\n" +
+			"  quilzo section blocks  lists the blocks")
+	}
+	s, err := open(root)
+	if err != nil {
+		return err
+	}
+	pages, err := site.PagesAt(s, site.RefDraft)
+	if err != nil {
+		return err
+	}
+	if err := site.CanReuse(pos[0], pos[1], pages); err != nil {
+		return fmt.Errorf("%w; quilzo section blocks lists them", err)
+	}
+	return editSections(root, pos[0], func(body any) (map[string]any, string, error) {
+		next, err := section.InsertBlock(body, pos[1], *at)
+		return next, fmt.Sprintf("reuse the block %s on %s", pos[1], pos[0]), err
+	})
+}
+
+// sectionBlock is quilzo section block PAGE [--off]: a page made a reusable
+// block, or a page again.
+func sectionBlock(root string, args []string) error {
+	pos, flags := leadingArgs(args, 1)
+	fs := flag.NewFlagSet("block", flag.ContinueOnError)
+	off := fs.Bool("off", false, "make it a page of its own again")
+	if err := fs.Parse(flags); err != nil {
+		return err
+	}
+	if len(pos) != 1 {
+		return fmt.Errorf("usage: quilzo section block <page> [--off]")
+	}
+	name := pos[0]
+	s, err := open(root)
+	if err != nil {
+		return err
+	}
+	pages, err := site.PagesAt(s, site.RefDraft)
+	if err != nil {
+		return err
+	}
+	if err := site.BlockChange(name, pages, !*off); err != nil {
+		return err
+	}
+	if err := editSections(root, name, func(body any) (map[string]any, string, error) {
+		m, ok := body.(map[string]any)
+		if !ok {
+			return nil, "", fmt.Errorf("%s is not a page with fields", name)
+		}
+		next := make(map[string]any, len(m)+1)
+		for k, v := range m {
+			next[k] = v
+		}
+		if *off {
+			delete(next, site.BlockField)
+			return next, fmt.Sprintf("make %s a page of its own again", name), nil
+		}
+		next[site.BlockField] = true
+		return next, fmt.Sprintf("make %s a reusable block", name), nil
+	}); err != nil {
+		return err
+	}
+	if !*off {
+		w.Human("  %sonce published it is no page of its own: it shows where a page reuses it "+
+			"(quilzo section reuse PAGE %s)%s\n", dim, name, reset)
+	}
+	return nil
+}
+
+// sectionBlocks is quilzo section blocks: every block, and where it is used.
+func sectionBlocks(root string, args []string) error {
+	fs := flag.NewFlagSet("blocks", flag.ContinueOnError)
+	live := fs.Bool("live", false, "read the published pages instead of the draft")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	s, err := open(root)
+	if err != nil {
+		return err
+	}
+	ref := site.RefDraft
+	if *live {
+		ref = site.RefLive
+	}
+	pages, err := site.PagesAt(s, ref)
+	if err != nil {
+		return err
+	}
+	uses := site.BlockUses(pages)
+	if w.JSON(uses) {
+		return nil
+	}
+	names := make([]string, 0, len(uses))
+	for n := range uses {
+		names = append(names, n)
+	}
+	slices.Sort(names)
+	if len(names) == 0 {
+		w.Human("  %sno blocks yet; quilzo section block PAGE makes a page one%s\n", dim, reset)
+		return nil
+	}
+	for _, n := range names {
+		switch {
+		case !site.IsBlock(pages[n]):
+			w.Human("%s%s%s  %snot a block, and reused on %s: it shows nothing there%s\n", bold, n, reset,
+				yellow, strings.Join(uses[n], ", "), reset)
+		case len(uses[n]) == 0:
+			w.Human("%s%s%s  %sused nowhere yet%s\n", bold, n, reset, dim, reset)
+		default:
+			w.Human("%s%s%s  used on %s\n", bold, n, reset, strings.Join(uses[n], ", "))
+		}
+	}
+	return nil
 }

@@ -202,7 +202,9 @@ func cmdSite(root string, args []string) error {
 		fmt.Fprintf(os.Stderr, "  %squilzo publish%s\n", dim, reset)
 	}
 	if live != "" {
-		if pages, perr := site.PagesAt(s, live); perr == nil {
+		if raw, perr := site.PagesAt(s, live); perr == nil {
+			// As readers get them: a reusable block is no result of its own.
+			pages := site.WithBlocks(raw)
 			st.Search = search.Build(live, pages)
 			fmt.Fprintf(os.Stderr, "  %ssearch: %d terms over %d pages%s\n",
 				dim, st.Search.Size(), len(pages), reset)

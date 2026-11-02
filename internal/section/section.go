@@ -447,6 +447,13 @@ func On(body any) []Placed {
 		}
 		name, inner := discriminator(m)
 		p := Placed{Index: i, Kind: name, ID: IDOf(m)}
+		if block, ok := reused(m); ok {
+			// A reusable block, put here when the page is rendered
+			// (internal/site blocks.go): its name is what it says.
+			p.Kind, p.Label = BlockKind, block
+			out = append(out, p)
+			continue
+		}
 		if _, known := Lookup(name); !known {
 			p.Unknown = true
 		}
@@ -500,6 +507,46 @@ func label(inner map[string]any) string {
 		}
 	}
 	return ""
+}
+
+// BlockKind is what a section reusing a block is listed as. It is no kind of
+// the catalogue: a layout never sees one, because the block's own sections
+// are put in its place before a page is rendered (internal/site).
+const BlockKind = "block"
+
+// reused is the block a section reuses, when it is one.
+func reused(m map[string]any) (string, bool) {
+	ref, ok := m[BlockKind].(map[string]any)
+	if !ok {
+		return "", false
+	}
+	name, _ := ref["page"].(string)
+	return name, name != ""
+}
+
+// InsertBlock puts a section reusing the block named at a position.
+func InsertBlock(body any, block string, at int) (map[string]any, error) {
+	if block == "" {
+		return nil, fmt.Errorf("which block?")
+	}
+	body, _ = EnsureIDs(body)
+	page, list := copyOf(body)
+	if at < 0 || at > len(list) {
+		at = len(list)
+	}
+	taken := map[string]bool{}
+	for _, e := range list {
+		if id := IDOf(e); id != "" {
+			taken[id] = true
+		}
+	}
+	entry := any(map[string]any{IDField: freshID(taken), BlockKind: map[string]any{"page": block}})
+	next := make([]any, 0, len(list)+1)
+	next = append(next, list[:at]...)
+	next = append(next, entry)
+	next = append(next, list[at:]...)
+	page[Field] = next
+	return page, nil
 }
 
 // Insert puts a new section of a kind at a position.

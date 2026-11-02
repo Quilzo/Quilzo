@@ -199,10 +199,30 @@ quilzo section set index 0 title='…'       # only where a value already is
 ```
 
 The browser has the same at `/sections`, with buttons rather than a canvas —
-the admin serves `script-src 'none'` and a test asserts it, so a drag-and-drop
-editor would mean an exception for the most attacker-interesting surface in the
-system. Each move writes a draft commit naming what it did, so an accidental
+the admin's one script is its own, allowed by a nonce, and every screen works
+without it, so a drag-and-drop editor would mean far more script on the most
+attacker-interesting surface in the system. Each move writes a draft commit naming what it did, so an accidental
 reorder is undone by rolling the draft back.
+
+**Sections written once, shown on many pages.** A page marked a block — a call
+to action, opening hours, a newsletter sign-up — is reused on others, and
+changing it changes every page that reuses it, at the next publish:
+
+```bash
+quilzo section block hours                 # hours is a block now, no page of its own
+quilzo section reuse index hours --at 2    # its sections, third on the home page
+quilzo section blocks                      # every block, and the pages that reuse it
+```
+
+A block is content, so it is saved, reviewed, published and rolled back with the
+rest of the draft, and it is never served on its own: no address, no sitemap
+entry, no search result, no chatbot passage. A page that reuses one is, to every
+layout, gate, search index and chatbot, a page with those sections in it, and
+its ETag covers the block, so a cache is never told an old block is current.
+One level only: a block inside a block shows nothing, so there is nothing to
+loop. A block for members only is never put on a public page, a block a page
+still reuses cannot be deleted or made a page again, and the Sections screen
+says where each one is used.
 
 **The negations are computed.** The language has no `else`, deliberately: an
 `if` with one exit means a template's structure can be read off its source. The
@@ -214,7 +234,9 @@ arithmetic, so the formatted price is computed before the render.
 
 What is still absent is absent on purpose. No partials, no includes, no
 inheritance — each of those resolves a name at render time, and this language
-resolves nothing at render time.
+resolves nothing at render time. A reused block is not one: it is put in place
+in the content before any template sees it, from the same commit, one level
+deep.
 
 ## Design, and the check that used to be missing
 

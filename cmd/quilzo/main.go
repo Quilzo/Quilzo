@@ -151,6 +151,9 @@ templates and design
   quilzo section fields PAGE N             what is editable inside one
   quilzo section set PAGE N path=value     change what a section says
   quilzo section item add PAGE N LIST      add an entry to a list inside one
+  quilzo section block PAGE [--off]        make a page a reusable block, shown where pages reuse it
+  quilzo section reuse PAGE BLOCK [--at N] show a block's sections on a page
+  quilzo section blocks                    every block, and the pages that reuse it
 
 conversation
   quilzo room list                         every room, and what it is for
@@ -1201,8 +1204,13 @@ func cmdAdd(root string, args []string) error {
 		}
 		pages[name] = v
 	}
+	uses := site.BlockUses(pages)
 	for _, name := range strings.Split(*remove, ",") {
 		if name = strings.TrimSpace(name); name != "" {
+			if u := uses[name]; len(u) > 0 {
+				return fmt.Errorf("%s is reused as a block on %s; take it off them first (quilzo section remove)",
+					name, strings.Join(u, ", "))
+			}
 			delete(pages, name)
 		}
 	}

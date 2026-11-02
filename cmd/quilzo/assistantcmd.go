@@ -292,7 +292,7 @@ func assistantKnowledge(root string, a assistant.Assistant) (*assistant.Index, [
 		return nil, nil, fmt.Errorf("nothing is published yet, so there is "+
 			"nothing to answer from: %w", err)
 	}
-	passages := assistant.Chunk(pages, a.Reads)
+	passages := assistant.Chunk(site.WithBlocks(pages), a.Reads)
 	var warnings []string
 	recs, rerr := assistantRecords(s, a)
 	if rerr != nil {

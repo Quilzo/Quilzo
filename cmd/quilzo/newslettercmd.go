@@ -121,7 +121,12 @@ func issuePage(root, name string) (map[string]any, string, error) {
 	if err != nil {
 		return nil, "", fmt.Errorf("nothing is published yet: %w", err)
 	}
-	body, ok := site.Visible(pages, time.Now())[name].(map[string]any)
+	visible, ok := site.Visible(pages, time.Now())[name]
+	if !ok {
+		return nil, "", fmt.Errorf("%q is not a page anybody can read now; an issue is a published page", name)
+	}
+	expanded, _ := site.ExpandBlocks(visible, pages)
+	body, ok := expanded.(map[string]any)
 	if !ok {
 		return nil, "", fmt.Errorf("%q is not a page anybody can read now; an issue is a published page", name)
 	}

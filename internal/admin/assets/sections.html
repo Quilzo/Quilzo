@@ -23,7 +23,8 @@
   {{range .Pages}}
   <tr>
     <th scope="row">{{.Name}}</th>
-    <td>{{if .Count}}{{plural .Count "section" "sections"}}{{else}}<span class="hint">—</span>{{end}}</td>
+    <td>{{if .Count}}{{plural .Count "section" "sections"}}{{else}}<span class="hint">—</span>{{end}}
+      {{if .IsBlock}}<span class="tag">block{{if .Uses}}, reused on {{plural .Uses "page" "pages"}}{{end}}</span>{{end}}</td>
     <td><a href="/sections?page={{.Name}}">Arrange<span class="visually-hidden"> {{.Name}}</span></a></td>
   </tr>
   {{end}}
@@ -41,6 +42,20 @@
 
 {{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
 {{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
+
+{{if .IsBlock}}
+<div class="notice">
+  <p><strong>This page is a reusable block.</strong> Once published it is no page of its own: its sections
+    show where a page reuses it, and changing them changes every one of those pages.</p>
+  {{if .UsedOn}}<p>Reused on {{range $i, $u := .UsedOn}}{{if $i}}, {{end}}<a href="/sections?page={{$u}}">{{$u}}</a>{{end}}.</p>
+  {{else}}<p class="hint">No page reuses it yet.</p>
+  <form method="post" action="/sections/edit" class="inline">
+    <input type="hidden" name="page" value="{{.Page}}"><input type="hidden" name="base" value="{{.Base}}">
+    <input type="hidden" name="do" value="unblock">
+    <button type="submit" class="btn-text">Make it a page of its own again</button>
+  </form>{{end}}
+</div>
+{{end}}
 
 <p class="hint">
   The order here is the order on the page. Every change is saved to the draft
@@ -73,7 +88,8 @@
         removed or a typo.</div>{{end}}
     </td>
     <td>{{if .Items}}{{plural .Items "item" "items"}}{{else}}<span class="hint">—</span>{{end}}</td>
-    <td><a href="/sections/fields?page={{$page}}&amp;at={{.Index}}">Edit</a></td>
+    <td>{{if eq .Kind "block"}}<a href="/sections?page={{.Label}}">Edit the block<span class="visually-hidden"> {{.Label}}</span></a>
+      {{else}}<a href="/sections/fields?page={{$page}}&amp;at={{.Index}}">Edit</a>{{end}}</td>
     <td>
       {{if not .First}}
       <form method="post" action="/sections/edit" class="inline">
@@ -157,6 +173,26 @@
   A section is added at the end, with sample content you can replace, and moved
   from there.
 </p>
+
+{{if not .IsBlock}}
+<h2>Reuse a block</h2>
+<p class="hint">A block is sections written once and shown on many pages, such as a call to action or opening
+  hours: change the block and every page that reuses it changes, at the next publish.</p>
+{{if .Blocks}}
+<form method="post" action="/sections/edit" class="inline">
+  <input type="hidden" name="page" value="{{.Page}}"><input type="hidden" name="base" value="{{.Base}}">
+  <input type="hidden" name="at" value="{{.Count}}"><input type="hidden" name="do" value="reuse">
+  <label for="reuse-block">Block</label>
+  <select id="reuse-block" name="block">{{range .Blocks}}<option>{{.}}</option>{{end}}</select>
+  <button type="submit">Reuse it here</button>
+</form>
+{{else}}<p class="hint">There are no blocks yet.</p>{{end}}
+<form method="post" action="/sections/edit" class="inline">
+  <input type="hidden" name="page" value="{{.Page}}"><input type="hidden" name="base" value="{{.Base}}">
+  <input type="hidden" name="do" value="block">
+  <button type="submit" class="btn-text">Make this page a reusable block</button>
+</form>
+{{end}}
 
 
 {{end}}

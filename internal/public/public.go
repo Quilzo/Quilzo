@@ -841,7 +841,8 @@ func (st *Site) searchIndex() *search.Index {
 	if err != nil {
 		return st.Search
 	}
-	st.Search = search.Build(live, pages)
+	// As readers get them: a reusable block is no result of its own.
+	st.Search = search.Build(live, site.WithBlocks(pages))
 	return st.Search
 }
 
