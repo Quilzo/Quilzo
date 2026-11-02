@@ -26,8 +26,8 @@ func importStudio(t *testing.T) (*Server, string, *studio) {
 	srv, token := setup(t)
 	st := wireStudio(srv)
 	known := map[string]bool{}
-	for _, c := range []string{"read_page", "list_pages", "search_pages", "similar_pages", "search", "write_page",
-		"file_read", "file_list", "file_write"} {
+	for _, c := range append([]string{"read_page", "list_pages", "search_pages", "similar_pages", "search", "write_page"},
+		agent.ShellCapabilities...) {
 		known[c] = true
 	}
 	srv.Agents.Known = func() []string {

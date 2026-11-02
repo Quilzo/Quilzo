@@ -124,13 +124,15 @@ func Write(m agent.Manifest, format string) (*Exported, error) {
 // claudeToolsFor is the workspace here as Claude Code's tools.
 func claudeToolsFor(m agent.Manifest) []string {
 	var tools []string
-	if slices.Contains(m.Capabilities, "file_read") || slices.Contains(m.Capabilities, "file_list") {
+	if slices.Contains(m.Capabilities, "file_read") || slices.Contains(m.Capabilities, "file_list") ||
+		slices.Contains(m.Capabilities, "file_search") {
 		tools = append(tools, "Read", "Glob", "Grep")
 	}
-	if slices.Contains(m.Capabilities, "file_write") {
+	if slices.Contains(m.Capabilities, "file_write") || slices.Contains(m.Capabilities, "file_edit") {
 		tools = append(tools, "Write", "Edit")
 	}
-	if slices.Contains(m.Capabilities, "shell_run") {
+	if slices.Contains(m.Capabilities, "shell_run") || slices.Contains(m.Capabilities, "code_run") ||
+		slices.Contains(m.Capabilities, "file_move") || slices.Contains(m.Capabilities, "file_delete") {
 		tools = append(tools, "Bash")
 	}
 	if m.Browser != nil && len(m.Browser.Read) > 0 {

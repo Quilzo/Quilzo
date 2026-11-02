@@ -88,8 +88,7 @@ func openAIAssistant(a map[string]any, i int) Agent {
 		tool := obj(t)
 		switch str(tool["type"]) {
 		case "code_interpreter":
-			b.unmapped("it ran code in OpenAI's code interpreter: here code runs in a declared workspace " +
-				"(a shell with named programs) or a program in a box (quilzo agent program); declare one if it needs to")
+			b.codeInterpreter("OpenAI's")
 			if ids := list(obj(res["code_interpreter"])["file_ids"]); len(ids) > 0 {
 				b.left("%s given to its code interpreter, which are OpenAI's", count(len(ids), "file", "files"))
 			}
@@ -247,11 +246,17 @@ func claudeTools(b *builder, tools []string) {
 	var ws, web, shell, mcp, other []string
 	for _, t := range tools {
 		switch {
-		case t == "Read" || t == "Glob" || t == "Grep" || t == "LS":
+		case t == "Read" || t == "LS":
 			b.addCaps("file_read", "file_list")
 			ws = append(ws, t)
-		case t == "Write" || t == "Edit" || t == "MultiEdit" || t == "NotebookEdit":
+		case t == "Glob" || t == "Grep":
+			b.addCaps("file_read", "file_list", "file_search")
+			ws = append(ws, t)
+		case t == "Write" || t == "NotebookEdit":
 			b.addCaps("file_write", "file_read", "file_list")
+			ws = append(ws, t)
+		case t == "Edit" || t == "MultiEdit":
+			b.addCaps("file_edit", "file_write", "file_read", "file_list")
 			ws = append(ws, t)
 		case t == "Bash" || t == "BashOutput" || t == "KillShell" || t == "KillBash":
 			shell = append(shell, t)
@@ -267,8 +272,14 @@ func claudeTools(b *builder, tools []string) {
 		if b.m.Shell == nil {
 			b.m.Shell = &agent.Shell{}
 		}
-		b.changed("%s, as a workspace of its own (file_list, file_read%s): quilzo agent workspace %s says where",
-			names(ws), map[bool]string{true: ", file_write", false: ""}[slices.Contains(b.m.Capabilities, "file_write")], b.m.Name)
+		var held []string
+		for _, c := range agent.ShellCapabilities {
+			if slices.Contains(b.m.Capabilities, c) {
+				held = append(held, c)
+			}
+		}
+		b.changed("%s, as a workspace of its own (%s): quilzo agent workspace %s says where",
+			names(ws), strings.Join(held, ", "), b.m.Name)
 	}
 	if len(shell) > 0 {
 		b.unmapped("%s ran any command: here a workspace runs only programs it names. Declare shell_run with its "+
@@ -471,7 +482,7 @@ func readM365(data []byte) (*Imported, error) {
 			b.addCaps("browser_open", "browser_read")
 			b.changed("its web search, limited to %s: here its browser opens and reads those hosts and no others", names(hosts))
 		case "CodeInterpreter":
-			b.unmapped("it ran code in Copilot's code interpreter: here code runs in a declared workspace or program; declare one if it needs to")
+			b.codeInterpreter("Copilot's")
 		case "GraphicArt":
 			b.left("it made pictures (GraphicArt): nothing here makes them")
 		case "ScenarioModels":
@@ -815,7 +826,7 @@ func bedrockGroup(b *builder, g map[string]any) {
 		b.left("its UserInput action group: here a run asks a person before what it declares to ask first")
 		return
 	case "AMAZON.CodeInterpreter":
-		b.unmapped("it ran code in Bedrock's code interpreter: here code runs in a declared workspace or program; declare one if it needs to")
+		b.codeInterpreter("Bedrock's")
 		return
 	}
 	if schema := obj(g["apiSchema"]); schema != nil {
@@ -1019,4 +1030,21 @@ func autogenAgent(cfg map[string]any, where string) Agent {
 		b.left("AutoGen's %s, which %s to its runtime", names(rest), belong(len(rest)))
 	}
 	return b.finish()
+}
+
+// codeInterpreter carries a maker's code interpreter over as code_run:
+// Python, in a workspace of its own, reading it and changing nothing
+// unless a person approves the code, and never reaching the network,
+// which is what those interpreters are too.
+func (b *builder) codeInterpreter(whose string) {
+	b.addCaps("code_run", "file_list", "file_read")
+	if b.m.Shell == nil {
+		b.m.Shell = &agent.Shell{}
+	}
+	if !slices.Contains(b.m.Shell.Programs, "python3") {
+		b.m.Shell.Programs = append(b.m.Shell.Programs, "python3")
+	}
+	b.changed("it ran code in %s code interpreter: here it runs Python with code_run, in a workspace of its own "+
+		"(quilzo agent workspace %s says where), with no network; code that would change the workspace waits for a person",
+		whose, b.m.Name)
 }

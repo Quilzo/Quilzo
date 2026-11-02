@@ -1013,7 +1013,7 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 			sr.Spend = fmt.Sprintf("%d tokens · %s", st.Tokens, agent.MoneyText(st.Cost, s.agentCurrency()))
 		}
 		sr.Took = took[i].Round(time.Millisecond).String()
-		if st.Action.Op == "shell_run" {
+		if st.Action.Op == "shell_run" || st.Action.Op == "code_run" {
 			var next time.Time
 			if i+1 < len(rec.Trace.Steps) {
 				next = rec.Trace.Steps[i+1].At

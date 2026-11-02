@@ -49,7 +49,14 @@ func CommitOf(a Action, why, kind string, writes bool) string {
 		return "publishes"
 	case op == "browser_open" || op == "browser_type" || op == "desktop_type" || op == "browser_sign_in":
 		return "sends"
-	case op == "shell_run":
+	case op == "file_delete":
+		// Into the bin is a write a person can take back; out of the bin
+		// is not.
+		if strings.Contains(why, "nothing brings back") {
+			return "deletes"
+		}
+		return "writes"
+	case op == "shell_run" || op == "code_run":
 		switch {
 		case reDeletes.MatchString(why):
 			return "deletes"
@@ -57,7 +64,7 @@ func CommitOf(a Action, why, kind string, writes bool) string {
 			return "sends"
 		}
 		return "writes"
-	case op == "write_page" || op == "file_write" || op == "remember" || op == "forget" ||
+	case op == "write_page" || op == "file_write" || op == "file_edit" || op == "file_move" || op == "remember" || op == "forget" ||
 		strings.HasPrefix(op, "write_") || strings.HasPrefix(op, "create_") || strings.HasPrefix(op, "update_") ||
 		strings.HasPrefix(op, "delete_"):
 		if strings.HasPrefix(op, "delete_") || op == "forget" {
@@ -66,7 +73,7 @@ func CommitOf(a Action, why, kind string, writes bool) string {
 		return "writes"
 	case strings.HasPrefix(op, "read_") || strings.HasPrefix(op, "list_") || strings.HasPrefix(op, "search") ||
 		op == "recall" || op == "browser_read" || op == "browser_look" || op == "desktop_read" ||
-		op == "desktop_look" || op == "file_read" || op == "file_list" || op == "decide":
+		op == "desktop_look" || op == "file_read" || op == "file_list" || op == "file_search" || op == "decide":
 		return "reads"
 	}
 	switch {

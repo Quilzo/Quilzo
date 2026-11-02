@@ -24,7 +24,13 @@ import (
 // handle on the workspace that cannot be walked out of.
 
 // ShellCapabilities are the workspace's actions, each a capability.
-var ShellCapabilities = []string{"file_list", "file_read", "file_write", "shell_run"}
+var ShellCapabilities = []string{"file_list", "file_read", "file_search", "file_write", "file_edit",
+	"file_move", "file_delete", "shell_run", "code_run"}
+
+// CodeInterpreters are the programs code_run runs code with, one of which
+// a declaration holding it names (internal/shell has which language each
+// runs).
+var CodeInterpreters = []string{"python3", "python", "node", "deno", "sh", "bash", "ruby", "perl", "php", "lua"}
 
 // IsShell reports whether a capability is one of the workspace's.
 func IsShell(op string) bool { return slices.Contains(ShellCapabilities, op) }
@@ -138,6 +144,10 @@ func (m *Manifest) validateShell() error {
 	}
 	if uses["shell_run"] && len(sh.Programs) == 0 {
 		return fmt.Errorf(`%s holds shell_run and names no program it may run: declare "shell": {"programs": [...]}`, m.Name)
+	}
+	if uses["code_run"] && !slices.ContainsFunc(sh.Programs, func(p string) bool { return slices.Contains(CodeInterpreters, p) }) {
+		return fmt.Errorf(`%s holds code_run and names no interpreter to run code with: declare "shell": {"programs": [...]} `+
+			`with one of %s`, m.Name, strings.Join(CodeInterpreters, ", "))
 	}
 	if len(sh.Programs) > MaxShellPrograms {
 		return fmt.Errorf("%s may run %d programs; at most %d", m.Name, len(sh.Programs), MaxShellPrograms)

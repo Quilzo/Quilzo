@@ -46,8 +46,12 @@ func EarnClass(a Action, why string) string {
 	switch a.Op {
 	case "write_page", "read_page":
 		return a.Op + " " + firstOf(str("page"), str("path"))
-	case "file_write", "file_read":
+	case "file_write", "file_read", "file_edit", "file_delete":
 		return a.Op + " " + str("path")
+	case "file_move":
+		return a.Op + " " + firstOf(str("from"), str("path")) + " to " + str("to")
+	case "code_run":
+		return a.Op + " " + str("language")
 	case "shell_run":
 		prog := ""
 		if argv, ok := a.Input["argv"].([]any); ok && len(argv) > 0 {
