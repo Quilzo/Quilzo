@@ -125,6 +125,14 @@ Unreleased
 
 ** Added
 
+*** A model reads text aloud.  quilzo media speak "text" (or @FILE)
+    --voice V --author WHO sends it to a route that speaks (quilzo gateway
+    route add NAME --speaks, or "It reads text aloud" on the Models
+    screen), and stores the MP3 marked as a synthetic voice, with the
+    model and the person accountable, and its words as its transcript.
+    Text holding personal data goes only to a route allowed it, since a
+    voice cannot leave it out the way a masked prompt does.
+
 *** A model drafts a video's captions.  quilzo media transcribe VIDEO
     --lang en --author WHO sends the recording to a route that transcribes
     (quilzo gateway route add NAME --transcribes, or "It transcribes

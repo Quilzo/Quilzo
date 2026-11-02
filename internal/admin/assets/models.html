@@ -26,7 +26,7 @@
   <tr>
     <th scope="row">{{$h.Route.Name}}<div class="hint mono">{{$h.Route.URL}}</div>
       {{with index $.Known $h.Route.Provider}}<div class="hint">{{.Name}} · {{.Where}} · trains on it: {{.Data.Trains}}</div>{{end}}</th>
-    <td><code>{{$h.Route.Model}}</code>{{if $h.Route.Draws}} <span class="tag">draws pictures</span>{{end}}{{if $h.Route.Embeds}} <span class="tag">makes embeddings</span>{{end}}{{if $h.Route.Transcribes}} <span class="tag">transcribes</span>{{end}}{{with $h.Route.Params.String}}<div class="hint">{{.}}</div>{{end}}</td>
+    <td><code>{{$h.Route.Model}}</code>{{if $h.Route.Draws}} <span class="tag">draws pictures</span>{{end}}{{if $h.Route.Embeds}} <span class="tag">makes embeddings</span>{{end}}{{if $h.Route.Transcribes}} <span class="tag">transcribes</span>{{end}}{{if $h.Route.Speaks}} <span class="tag">speaks</span>{{end}}{{with $h.Route.Params.String}}<div class="hint">{{.}}</div>{{end}}</td>
     <td data-label="Key">{{if $h.Route.KeySecret}}sealed as <code>{{$h.Route.KeySecret}}</code>{{if not $h.KeySet}} <span class="tag tag-bad">not kept</span>{{end}}{{else if $h.Route.KeyEnv}}<code>${{$h.Route.KeyEnv}}</code>{{if not $h.KeySet}} <span class="tag tag-bad">not set</span>{{end}}{{else}}<span class="hint">none — this network only</span>{{end}}</td>
     <td>{{if $h.Route.Personal}}<span class="tag tag-warn">sent</span>{{else}}<span class="tag tag-ok">masked</span>{{end}}</td>
     <td>{{if or $h.Route.PriceIn $h.Route.PriceOut}}{{or $h.Route.PriceIn "0"}} in, {{or $h.Route.PriceOut "0"}} out{{with $.Cfg}} {{.Currency}}{{end}}{{else}}<span class="hint">free</span>{{end}}</td>
@@ -100,6 +100,8 @@
     <p id="rb64-help" class="help">For an images endpoint that answers with a link unless asked (DALL·E, some local servers): a link is never fetched. OpenAI's current image models refuse the question and send the picture anyway, so leave it off for them.</p></div>
   <div class="field"><label><input type="checkbox" name="transcribes" value="yes" aria-describedby="rtrans-help"> It transcribes recordings</label>
     <p id="rtrans-help" class="help">A speech-to-text model, used by <code>quilzo media transcribe</code> to draft a video's captions and for nothing else. A recording's voices cannot be masked, so it is sent one only when it may receive personal data, below.</p></div>
+  <div class="field"><label><input type="checkbox" name="speaks" value="yes" aria-describedby="rspeaks-help"> It reads text aloud</label>
+    <p id="rspeaks-help" class="help">A text-to-speech model, used by <code>quilzo media speak</code> and for nothing else. The recording is marked as a synthetic voice. Text holding personal data goes only to a route that may receive it, since a voice cannot leave it out.</p></div>
   <div class="field"><label for="rpmin">Price of a minute of recording</label>
     <input id="rpmin" name="price_minute" inputmode="decimal" pattern="[0-9]{1,10}(\.[0-9]{1,6})?" placeholder="0.006"></div>
   <div class="field"><label for="rppic">Price of a picture</label>

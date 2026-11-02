@@ -1653,6 +1653,24 @@ The rules:
   route allowed personal data (`--personal`).
 - It is charged by the minute (`--price-minute`) to `media` and to the person.
 
+**A model reads text aloud.** An audio version of an article, a shop's
+welcome, a voice-over for a video. A route added with `--speaks` (an
+`/audio/speech` endpoint: OpenAI, or Kokoro and Piper on this machine)
+reads it:
+
+```
+quilzo gateway route add voice --url http://localhost:8880/v1 --model kokoro --speaks --personal
+quilzo media speak @welcome.txt --voice af_bella --author dana
+```
+
+The rules:
+- The recording is stored marked as a synthetic voice, with the model and the
+  person accountable, as a generated picture is. A person hearing it is owed
+  knowing it is not a person.
+- Its words are kept with it as its transcript.
+- Text holding personal data goes only to a route allowed it. Masking cannot
+  help here: a placeholder read aloud is not a recording anybody wants.
+
 **Pictures and writing go through the gateway too.** A route added with
 `--draws` (or "It draws pictures" on the Models screen) is an images model,
 used by `quilzo media generate` and for nothing else, and charged by the
