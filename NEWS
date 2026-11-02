@@ -111,6 +111,18 @@ Unreleased
     a template; it now points at the editor, and keeps the code for a
     design of one's own under a disclosure.
 
+** Fixed
+
+*** Pictures from OpenAI's current image models.  Every request for a
+    picture carried response_format=b64_json, which those models refuse
+    as an unknown parameter, so quilzo media generate through OpenAI
+    failed.  It is sent now only for a route added with --ask-base64 (or
+    "Ask it for the picture itself" on the Models screen), for an
+    endpoint that answers with a link unless asked; a link is still never
+    fetched.  A provider's refusal of a picture (its content policy) goes
+    back to whoever asked, rather than resting the route and trying the
+    next.
+
 ** Added
 
 *** Chatbots find passages by what they mean, not only by their words.

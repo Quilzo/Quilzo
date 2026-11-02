@@ -465,6 +465,10 @@ type Params struct {
 	Effort   string
 	Geo      string
 	Fallback bool
+	// AskBase64 sends response_format=b64_json when asking for a picture,
+	// for an images endpoint that answers with a link unless asked: see
+	// image.go.
+	AskBase64 bool
 }
 
 // apply puts a route's fields into a request.

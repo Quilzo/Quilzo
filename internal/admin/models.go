@@ -157,7 +157,7 @@ func (s *Server) handleModelsChange(w http.ResponseWriter, r *http.Request) {
 			params := gateway.RouteParams{MaxTokens: strings.TrimSpace(r.FormValue("max_tokens_field")),
 				Timeout: strings.TrimSpace(r.FormValue("timeout")), AutoToolChoice: r.FormValue("auto_tool_choice") == "yes",
 				Effort: strings.TrimSpace(r.FormValue("effort")), Geo: strings.TrimSpace(r.FormValue("geo")),
-				Fallback: r.FormValue("server_fallback") == "yes"}
+				Fallback: r.FormValue("server_fallback") == "yes", AskBase64: r.FormValue("ask_base64") == "yes"}
 			for _, f := range []struct {
 				field string
 				into  **float64

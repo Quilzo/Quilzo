@@ -126,6 +126,11 @@ type RouteParams struct {
 	Effort   string `json:"effort,omitempty"`
 	Geo      string `json:"geo,omitempty"`
 	Fallback bool   `json:"server_fallback,omitempty"`
+	// AskBase64 asks a route that draws for the picture itself
+	// (response_format=b64_json), for an endpoint that otherwise answers
+	// with a link, which is never fetched. OpenAI's current image models
+	// refuse the field, so it is sent only when a route says so.
+	AskBase64 bool `json:"ask_base64,omitempty"`
 }
 
 // Check refuses parameters that could not be sent.
@@ -224,6 +229,9 @@ func (p RouteParams) String() string {
 	if p.Fallback {
 		parts = append(parts, "server fallback")
 	}
+	if p.AskBase64 {
+		parts = append(parts, "asks for base64")
+	}
 	return strings.Join(parts, ", ")
 }
 
@@ -235,7 +243,8 @@ func (p RouteParams) Model() (assist.Params, time.Duration) {
 		d, _ = time.ParseDuration(p.Timeout)
 	}
 	return assist.Params{MaxTokensField: p.MaxTokens, Temperature: p.Temperature, TopP: p.TopP,
-		AutoToolChoice: p.AutoToolChoice, Effort: p.Effort, Geo: p.Geo, Fallback: p.Fallback}, d
+		AutoToolChoice: p.AutoToolChoice, Effort: p.Effort, Geo: p.Geo, Fallback: p.Fallback,
+		AskBase64: p.AskBase64}, d
 }
 
 // Budget bounds one caller.
@@ -335,6 +344,9 @@ func (c Config) Validate() error {
 		in, out, err := r.prices()
 		if err != nil {
 			return err
+		}
+		if r.Params.AskBase64 && !r.Draws {
+			return fmt.Errorf("route %s asks for a picture's bytes and does not draw", r.Name)
 		}
 		if r.Draws && r.Embeds {
 			return fmt.Errorf("route %s draws pictures and makes embeddings; a route does one", r.Name)
