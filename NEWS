@@ -134,6 +134,15 @@ Unreleased
     takes what saving takes, so somebody who may only read sees the saved
     draft.
 
+*** Search engines told what changed, as it is published.  With
+    site.indexnow on (off by default), each publish sends the addresses
+    of the pages that changed to IndexNow, which Bing, Yandex, Seznam,
+    Naver and others share: a page reusing a changed block among them,
+    never one left out of results or a block's own.  The key that shows
+    the addresses are the site's is served at /KEY.txt.  The first
+    publish after turning it on is only a starting point.  It goes out
+    as its own network purpose, indexnow, refused when offline.
+
 *** What people looked for and did not find.  The cookieless counts now
     include addresses people asked for that are not on the site (not the
     ones somebody hunting for an admin asks for, which the shield keeps)

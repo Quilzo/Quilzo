@@ -56,3 +56,20 @@ func TestAnEmptySearchIsCountedMasked(t *testing.T) {
 		}
 	}
 }
+
+// The IndexNow key is served at the address notices name, and only then.
+func TestTheIndexNowKeyIsServed(t *testing.T) {
+	st := published(t, map[string]any{"index": map[string]any{"title": "Home"}})
+	const key = "0123456789abcdef0123456789abcdef"
+	if w := get(st, "/"+key+".txt", nil); w.Code != 404 {
+		t.Fatalf("served with IndexNow off: %d", w.Code)
+	}
+	st.IndexNowKey = func() string { return key }
+	w := get(st, "/"+key+".txt", nil)
+	if w.Code != 200 || strings.TrimSpace(w.Body.String()) != key || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/plain") {
+		t.Fatalf("%d %q", w.Code, w.Body.String())
+	}
+	if w := get(st, "/ffffffffffffffffffffffffffffffff.txt", nil); w.Code != 404 {
+		t.Fatalf("another key: %d", w.Code)
+	}
+}

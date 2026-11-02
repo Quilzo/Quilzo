@@ -818,6 +818,15 @@ quilzo redirect remove /old-prices
 
 A redirect that would make a loop or a chain is refused when it is added.
 
+With `site.indexnow` on, each publish tells the search engines that take
+IndexNow (Bing, Yandex, Seznam, Naver and others, which share what one is told)
+the addresses of the pages that changed — a page that reuses a changed block
+among them, never one left out of results, a copy of one elsewhere or a block's
+own — with a key the site serves at `/KEY.txt` to show the addresses are its
+own. Off by default, since it sends the site's addresses to a third party on
+every publish, and it goes out through its own declared network purpose, so an
+offline installation refuses it and says why.
+
 **Views over records.** Declared queries with typed parameters, a field
 allowlist and a cost budget, resolved before rendering. A page names the
 listings it embeds; the template receives data, never a callable.
