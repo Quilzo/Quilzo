@@ -174,3 +174,32 @@ func TestAnAgentReadsTheGapsOnlyWhenLetTo(t *testing.T) {
 		t.Fatal("a reader read visitors' questions")
 	}
 }
+
+// A rating is counted whether or not questions are kept; a "no" keeps the
+// question, masked, only when they are, and asking it again does not close
+// it: the chatbot answered it the first time too.
+func TestAnAnswerThatDidNotHelpWaitsForAPerson(t *testing.T) {
+	root := publishedShop(t)
+	if err := cmdAssistant(root, []string{"add", "help", "--title", "Help"}); err != nil {
+		t.Fatal(err)
+	}
+	rate := ratingKeeper(root)
+	rate("help", "what does delivery cost? I am at ana.lopez@gmail.com", false)
+	if entries, _ := gapLedger(root).Read("help", time.Time{}); len(entries) != 0 {
+		t.Fatal("a question was kept with chatbot.gaps off")
+	}
+	keepGaps(t, root)
+	rate("help", "what does delivery cost? I am at ana.lopez@gmail.com", false)
+	rate("help", "do you sell ink?", true)
+	if h, d := gapRatings(root, "help", time.Now()); h != 1 || d != 2 {
+		t.Fatalf("helped %d, did not %d", h, d)
+	}
+	groups, err := gapGroups(root, "help", time.Now())
+	if err != nil || len(groups) != 1 || groups[0].Unhelpful != 1 || strings.Contains(groups[0].Questions[0], "ana.lopez") {
+		t.Fatalf("%+v %v", groups, err)
+	}
+	r, err := checkGaps(context.Background(), root, "help", "dana", time.Now())
+	if err != nil || r.Asked != 0 || r.Closed != 0 {
+		t.Fatalf("asked again: %+v %v", r, err)
+	}
+}

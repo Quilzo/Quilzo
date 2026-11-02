@@ -219,6 +219,7 @@ Help link opens its own.
 | **Evaluations** | Cases with expected sources and questions it must refuse. | `quilzo assistant eval NAME CASES.jsonl` |
 | **Voice and languages** | On-device speech and translation where the browser has them; the answer stays the site's own. | `assistant add … --voice --translate` |
 | **Talk to a person** | A visitor hands the conversation to a person, who replies from the Inbox. | `quilzo inbox list`, `inbox reply` |
+| **Did this help?** | Two buttons under an answer, counted with nothing about who pressed them; with `chatbot.gaps` on, a "no" keeps the question, masked, beside the ones it could not answer, for a person to write the page that says it better. | The chatbot's screen; `quilzo assistant gaps NAME` |
 | **On every page** | A launcher, a widget for other sites, static copies, and actions it may offer (a link or a form). | `assistant action NAME ACTION` |
 | **Typed decisions** | A model answers a fixed question with a confidence; below the threshold a person decides. | `quilzo decide set\|ask\|eval` |
 
