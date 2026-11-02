@@ -238,6 +238,9 @@ func (c *Client) Call(ctx context.Context, in agent.Integration, tool string,
 	if in.Kind == agent.IntegrationHTTP {
 		return c.restCall(ctx, in, tool, args)
 	}
+	if in.Kind == agent.IntegrationA2A {
+		return c.a2aCall(ctx, in, tool, args)
+	}
 	raw, err := c.send(ctx, in, "tools/call", map[string]any{
 		"name": tool, "arguments": args,
 	})
@@ -306,6 +309,9 @@ func (c *Client) Tools(ctx context.Context, in agent.Integration) ([]Tool, error
 	if in.Kind == agent.IntegrationHTTP {
 		return restTools(in), nil
 	}
+	if in.Kind == agent.IntegrationA2A {
+		return c.a2aTools(ctx, in)
+	}
 	raw, err := c.send(ctx, in, "tools/list", map[string]any{})
 	if err != nil {
 		return nil, err
@@ -349,8 +355,8 @@ func (c *Client) permits(in agent.Integration, tool string) error {
 		return fmt.Errorf(
 			"%s is declared and not enabled, so nothing may call it", in.Name)
 	}
-	if in.Kind != agent.IntegrationMCP && in.Kind != agent.IntegrationHTTP {
-		return fmt.Errorf("%s is a %s integration, not an MCP server or a REST API",
+	if in.Kind != agent.IntegrationMCP && in.Kind != agent.IntegrationHTTP && in.Kind != agent.IntegrationA2A {
+		return fmt.Errorf("%s is a %s integration, not an MCP server, a REST API or another agent",
 			in.Name, in.Kind)
 	}
 	for _, u := range in.Uses {

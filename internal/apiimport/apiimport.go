@@ -491,3 +491,67 @@ func MCPServer(body []byte, o Options) (*Imported, error) {
 	out.Integration = in
 	return out, nil
 }
+
+// IsAgentCard reports whether a document is an Agent2Agent agent card.
+func IsAgentCard(body []byte) bool {
+	var probe struct {
+		URL     string          `json:"url"`
+		Skills  json.RawMessage `json:"skills"`
+		OpenAPI string          `json:"openapi"`
+	}
+	return json.Unmarshal(body, &probe) == nil && probe.OpenAPI == "" && probe.URL != "" && len(probe.Skills) > 0
+}
+
+// AgentCard reads an A2A agent card into a declaration of that agent: its
+// host from the card's own service address, each skill on offer.
+func AgentCard(body []byte, o Options) (*Imported, error) {
+	var c struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		URL         string `json:"url"`
+		Skills      []struct {
+			ID          string `json:"id"`
+			Name        string `json:"name"`
+			Description string `json:"description"`
+		} `json:"skills"`
+	}
+	if err := json.Unmarshal(body, &c); err != nil {
+		return nil, fmt.Errorf("this is not an agent card: %w", err)
+	}
+	u, err := url.Parse(c.URL)
+	if err != nil || u.Scheme != "https" || u.Hostname() == "" {
+		return nil, fmt.Errorf("the card's address %q is not https", clip(c.URL, 120))
+	}
+	in := agent.Integration{Kind: agent.IntegrationA2A, Secret: o.Secret, Endpoint: strings.ToLower(u.Hostname()),
+		Purpose: firstLine(c.Description)}
+	if in.Purpose == "" {
+		in.Purpose = "ask " + c.Name
+	}
+	in.Name = o.Name
+	if in.Name == "" {
+		in.Name = strings.ToLower(strings.Trim(reWord.ReplaceAllString(c.Name, "-"), "-"))
+	}
+	if o.Endpoint != "" && !strings.EqualFold(o.Endpoint, in.Endpoint) {
+		return nil, fmt.Errorf("the card is for %s, not %s", in.Endpoint, o.Endpoint)
+	}
+	out := &Imported{}
+	for _, s := range c.Skills {
+		if s.ID != "" {
+			out.Available = append(out.Available, Offered{Name: s.ID, Summary: clip(s.Name+": "+s.Description, 100), Writes: true})
+		}
+	}
+	out.Notes = append(out.Notes, "its card is read again from https://"+in.Endpoint+"/.well-known/agent-card.json each time; "+
+		"pin its skills once you have read them")
+	in.Uses = o.Uses
+	in.Writes = true
+	out.Integration = in
+	return out, nil
+}
+
+// clip bounds what a card says, at a character boundary.
+func clip(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return strings.ToValidUTF8(s[:n], "")
+}

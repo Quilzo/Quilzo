@@ -65,6 +65,10 @@ const (
 	IntegrationHTTP IntegrationKind = "http"
 	// IntegrationProcess is a local program speaking the extension protocol.
 	IntegrationProcess IntegrationKind = "process"
+	// IntegrationA2A is another vendor's agent, spoken to over the Agent2Agent
+	// protocol: its card's skills are the tools, and a call is a message it
+	// answers, or a task it finishes (internal/mcpclient a2a.go).
+	IntegrationA2A IntegrationKind = "a2a"
 )
 
 // IntegrationKinds in the order they should be preferred.
@@ -73,7 +77,7 @@ const (
 // server you call over the network cannot read this store's files; a local
 // process can read anything the account running it can.
 var IntegrationKinds = []IntegrationKind{
-	IntegrationMCP, IntegrationHTTP, IntegrationProcess,
+	IntegrationMCP, IntegrationHTTP, IntegrationA2A, IntegrationProcess,
 }
 
 func (k IntegrationKind) Valid() bool {
@@ -472,7 +476,7 @@ func (in *Integration) Validate() error {
 	}
 
 	switch in.Kind {
-	case IntegrationMCP, IntegrationHTTP:
+	case IntegrationMCP, IntegrationHTTP, IntegrationA2A:
 		if err := checkHost(in.Name, in.Endpoint); err != nil {
 			return err
 		}
@@ -583,6 +587,13 @@ func (in *Integration) Validate() error {
 	case IntegrationMCP:
 		if len(in.Operations) > 0 || in.Auth != "" {
 			return fmt.Errorf("%s is an MCP server; operations and auth belong to a REST integration", in.Name)
+		}
+	case IntegrationA2A:
+		if len(in.Operations) > 0 || in.Auth != "" {
+			return fmt.Errorf("%s is another agent; operations and auth belong to a REST integration", in.Name)
+		}
+		if in.Gateway != nil {
+			return fmt.Errorf("%s is another agent, and the gateway offers MCP servers and REST APIs only", in.Name)
 		}
 	case IntegrationHTTP:
 		if err := in.checkOperations(); err != nil {

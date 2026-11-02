@@ -1809,6 +1809,17 @@ adding a meeting or an issue), switched off and unpinned for a person to read,
 pin and turn on as an imported one is. An agent acting on its own name, or another vendor's agent through
 the gateway, has no person and is refused.
 
+Another vendor's agent is an integration too, spoken to over Agent2Agent:
+`quilzo integrations import agent-card.json` declares it from its card, switched
+off, reaching the host its card says it speaks at. Its skills are the tools,
+listed, pinned, allowed and approved as an MCP server's are; a call sends one
+message naming the skill and returns what the agent answered, or what the task
+it took on came to, asked after until it finishes or ninety seconds pass. A card
+whose service address is not on the declared host is refused before anything
+is sent, so a card cannot send this installation's credential somewhere else,
+and the message carries the step's idempotency key as its id. An agent that
+needs more ("input-required") is said so, with what it asked.
+
 A remote MCP server that asks people to sign in — an issue tracker's, a
 document store's — is set up from what it publishes, rather than by copying
 endpoints from its documentation:

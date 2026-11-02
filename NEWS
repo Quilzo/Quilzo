@@ -134,6 +134,15 @@ Unreleased
     takes what saving takes, so somebody who may only read sees the saved
     draft.
 
+*** Agents ask other vendors' agents, over A2A.  A new integration kind,
+    a2a: quilzo integrations import agent-card.json declares one from its
+    card, switched off.  Its skills are tools, pinned, allowed and
+    approved as an MCP server's are; a call is message/send naming the
+    skill, and a task it takes on is followed with tasks/get until it
+    finishes or ninety seconds pass.  A card whose service address is off
+    the declared host is refused before anything is sent, and the
+    message id is the step's idempotency key.
+
 *** The content API describes itself.  /api/v1/openapi.json is an
     OpenAPI 3.1 document of every route: pages, collections and records,
     similar pages and search by meaning, and the replica routes, with
