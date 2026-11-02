@@ -111,7 +111,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/replica/object/", s.replicaObject)
 	mux.HandleFunc("/api/v1/search/vector", s.vectorSearch)
 	mux.HandleFunc("/api/v1/", s.notFound)
-	return s.middleware(mux)
+	inner := s.middleware(mux)
+	// The description is the same for every installation and says nothing
+	// about this one, so it needs no token; everything it describes does.
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/openapi.json" {
+			s.openAPI(w, r)
+			return
+		}
+		inner.ServeHTTP(w, r)
+	})
 }
 
 // canonicalPath reports whether a path needs no cleaning, checked in both the

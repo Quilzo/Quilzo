@@ -134,6 +134,13 @@ Unreleased
     takes what saving takes, so somebody who may only read sees the saved
     draft.
 
+*** The content API describes itself.  /api/v1/openapi.json is an
+    OpenAPI 3.1 document of every route: pages, collections and records,
+    similar pages and search by meaning, and the replica routes, with
+    their parameters, their If-Match rule and their errors.  The same for
+    every installation, so it needs no token; everything it describes
+    still does.  A test fails on a route served and not described.
+
 *** A remote MCP server's sign-in, discovered.  quilzo connect provider
     discover NAME https://SERVER/mcp reads the server's protected-
     resource metadata (RFC 9728) and its authorization server's (RFC
