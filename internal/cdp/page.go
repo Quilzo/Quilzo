@@ -385,7 +385,10 @@ func (p *Page) under(ctx context.Context, backend int64, x, y float64) error {
 // program's own: whether pressing it sends a form, the method of the form
 // it belongs to, where a link goes, and whether a list acts on a change.
 type Facts struct {
-	Submits    bool   `json:"submits"`
+	Submits bool `json:"submits"`
+	// FormMethod is the method pressing it sends its form with, lower case:
+	// the button's own formmethod when it is what sends the form, otherwise
+	// the form's. Empty is an element in no form.
 	FormMethod string `json:"formMethod"`
 	Href       string `json:"href"`
 	OnChange   bool   `json:"onchange"`
@@ -410,7 +413,10 @@ func (p *Page) Facts(ctx context.Context, backend int64) (Facts, error) {
 	// attribute sends it from anywhere on the page.
 	fn := `function(){const f=this.form||null;const t=(this.getAttribute("type")||"").toLowerCase();` +
 		`const sub=!!f&&((this.tagName==="BUTTON"&&(t===""||t==="submit"))||(this.tagName==="INPUT"&&(t==="submit"||t==="image")));` +
-		`return {submits:sub,formMethod:f?(f.getAttribute("method")||"get").toLowerCase():"",` +
+		// A submitter's formmethod overrides its form's: a button that posts
+		// in a form that searches sends.
+		`const m=sub&&this.hasAttribute("formmethod")?this.getAttribute("formmethod"):f?f.getAttribute("method"):"";` +
+		`return {submits:sub,formMethod:f?(m||"get").toLowerCase():"",` +
 		`href:(this.closest&&this.closest("a[href]"))?this.closest("a[href]").href:"",onchange:this.hasAttribute("onchange")}}`
 	err = p.call(ctx, "Runtime.callFunctionOn", map[string]any{"objectId": el, "functionDeclaration": fn, "returnByValue": true}, &r)
 	return r.Result.Value, err

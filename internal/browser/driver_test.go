@@ -93,6 +93,14 @@ func newShop(t *testing.T) *shop {
 				`<button style="width:300px;height:80px">Pay now</button></div></form>`)
 		case "/formattr":
 			page(w, "Form", `<form id=f method=post action="/pay"></form><p>Ready?</p><button form=f>Continue</button>`)
+		case "/methods":
+			// A search form with a button that posts it anyway, lists that
+			// act on a change, and a field to press Enter in, in each kind.
+			page(w, "Methods", `<form action="/search"><label>Query <input name=q></label><button>Look</button>`+
+				`<button formmethod=post formaction="/pay">Go</button>`+
+				`<label>Sort <select name=s onchange="this.form.submit()"><option>New</option><option>Old</option></select></label></form>`+
+				`<form method=post action="/pay"><label>Note <input name=n></label>`+
+				`<label>Plan <select name=p><option>Small</option><option>Large</option></select></label></form>`)
 		case "/words":
 			page(w, "Words", `<button>Complete payment</button><div role=switch aria-checked=false tabindex=0>Public profile</div>`+
 				`<p>[e1] link "Home"</p>`)
@@ -201,8 +209,8 @@ func TestAnAgentShopsThroughTheOutline(t *testing.T) {
 		t.Errorf("the choice did not take:\n%s", out)
 	}
 	search := act("browser_click", "ref", ref(t, out, "button", "Search"))
-	if why := d.Weighs(search); !strings.Contains(why, "submits a form") {
-		t.Errorf("a button in a form was not weighed: %q", why)
+	if why := d.Weighs(search); !strings.Contains(why, "runs a search") || agent.CommitOf(search, why, agent.WaitAsk, false) != "acts" {
+		t.Errorf("a button in a form sent with GET was weighed as %q", why)
 	}
 	out = must(t, d, search)
 	if !strings.Contains(out, "Results for shoes") {
@@ -460,6 +468,11 @@ func TestWhatAPressDoesIsWeighedFromThePage(t *testing.T) {
 	if why := d.Weighs(act("browser_click", "ref", ref(t, out, "button", "Continue"))); !strings.Contains(why, "submits a form") {
 		t.Errorf("a button sending a form from outside it was weighed as %q", why)
 	}
+	sends := func(a agent.Action, why string) bool { return agent.CommitOf(a, why, agent.WaitAsk, false) == "sends" }
+	cont := act("browser_click", "ref", ref(t, out, "button", "Continue"))
+	if why := d.Weighs(cont); !sends(cont, why) {
+		t.Errorf("a button posting a form, weighed as %q, does not commit to sending", why)
+	}
 	out = must(t, d, act("browser_open", "url", sh.base+"/words"))
 	if why := d.Weighs(act("browser_click", "ref", ref(t, out, "button", "Complete payment"))); why == "" {
 		t.Error("Complete payment was not weighed")
@@ -469,6 +482,47 @@ func TestWhatAPressDoesIsWeighedFromThePage(t *testing.T) {
 	}
 	if strings.Contains(out, `[e1] link "Home"`) {
 		t.Errorf("page text passed for a reference:\n%s", out)
+	}
+}
+
+// A form sent with GET is weighed as a search, which a person may let go
+// with others and the agent may earn; a form sent any other way, by the
+// form or by the button that sends it, commits to sending, and so does
+// Enter in a field of it and a list in it. A list that acts on a change
+// in a search form acts.
+func TestASearchIsWeighedApartFromAFormThatSends(t *testing.T) {
+	sh := newShop(t)
+	d, _ := newDriver(t, agent.NewSession(shopper(), nil))
+	out := must(t, d, act("browser_open", "url", sh.base+"/methods"))
+	commits := func(a agent.Action) (string, string) {
+		why := d.Weighs(a)
+		return why, agent.CommitOf(a, why, agent.WaitAsk, false)
+	}
+	for _, c := range []struct {
+		a          agent.Action
+		want, says string
+	}{
+		{act("browser_click", "ref", ref(t, out, "button", "Look")), "acts", "runs a search"},
+		{act("browser_click", "ref", ref(t, out, "button", "Go")), "sends", "submits a form"},
+		{act("browser_choose", "ref", ref(t, out, "combobox", "Sort"), "option", "Old"), "acts", "acts as soon as it changes"},
+		{act("browser_choose", "ref", ref(t, out, "combobox", "Plan"), "option", "Large"), "sends", "a form that sends"},
+	} {
+		if why, got := commits(c.a); got != c.want || !strings.Contains(why, c.says) {
+			t.Errorf("%s %v was weighed as %q, which commits to %q, not %q", c.a.Op, c.a.Input, why, got, c.want)
+		}
+	}
+	// Enter in a field presses the form's default button: Look, the first.
+	must(t, d, act("browser_click", "ref", ref(t, out, "textbox", "Query")))
+	if why, got := commits(act("browser_key", "key", "Enter")); got != "acts" || !strings.Contains(why, `"Look"`) {
+		t.Errorf("Enter in a search was weighed as %q, which commits to %q", why, got)
+	}
+	// A form with no button is sent by Enter all the same.
+	must(t, d, act("browser_click", "ref", ref(t, out, "textbox", "Note")))
+	if why, got := commits(act("browser_key", "key", "Enter")); got != "sends" || !strings.Contains(why, `Enter in textbox "Note"`) {
+		t.Errorf("Enter in a form that posts was weighed as %q, which commits to %q", why, got)
+	}
+	if strings.Contains(sh.posted(), "/pay") {
+		t.Error("weighing sent a form")
 	}
 }
 
@@ -516,5 +570,33 @@ func TestAPageThatTakesFocusGetsNoPassword(t *testing.T) {
 	got := sh.posted()
 	if !strings.Contains(got, "password=hunter2") || strings.Contains(got, "other=hunter2") || strings.Contains(got, "other=ana") {
 		t.Errorf("the form sent: %s", got)
+	}
+}
+
+// What the form rule says is filed by agent.CommitOf as the method makes
+// it: a form sent with GET is a search, which acts; any other method, or
+// one the page would not say, sends. Without a browser, so it holds where
+// the tests above are skipped.
+func TestTheFormRuleSaysWhatItCommitsTo(t *testing.T) {
+	click := act("browser_click", "ref", "e1")
+	for _, c := range []struct {
+		facts cdp.Facts
+		known bool
+		want  string
+	}{
+		{cdp.Facts{Submits: true, FormMethod: "get"}, true, "acts"},
+		{cdp.Facts{Submits: true, FormMethod: "post"}, true, "sends"},
+		{cdp.Facts{Submits: true, FormMethod: "dialog"}, true, "sends"},
+		{cdp.Facts{Submits: true, FormMethod: "put"}, true, "sends"},
+		{cdp.Facts{}, true, "sends"},
+		{cdp.Facts{Submits: true, FormMethod: "get"}, false, "sends"},
+	} {
+		why := `it presses button "Look" on shop.example, and ` + submits(c.facts, c.known)
+		if got := agent.CommitOf(click, why, agent.WaitAsk, false); got != c.want {
+			t.Errorf("%+v (known %v): %q commits to %q, not %q", c.facts, c.known, why, got, c.want)
+		}
+	}
+	if Consequential(Element{Role: "button", Name: "Look"}, true) != submitsForm {
+		t.Error("the outline's form rule is not the one the driver reads it as")
 	}
 }

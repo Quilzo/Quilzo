@@ -200,7 +200,11 @@ func Consequential(e Element, inForm bool) string {
 		return "it is a switch, which usually takes effect as it is pressed"
 	}
 	if inForm && e.Role == "button" {
-		return "it submits a form"
+		return submitsForm
 	}
 	return ""
 }
+
+// submitsForm is the form rule's reason, before the page is asked which
+// method the form is sent with (see Driver.weigh).
+const submitsForm = "it submits a form"

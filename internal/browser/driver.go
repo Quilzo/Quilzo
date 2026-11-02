@@ -258,12 +258,16 @@ func (d *Driver) weigh(ctx context.Context, op string, e Element) string {
 	}
 	facts, ferr := d.page.Facts(ctx, e.Backend)
 	switch {
-	case op == "browser_click" && e.Consequential != "":
+	case op == "browser_click" && e.Consequential != "" && e.Consequential != submitsForm:
+		// Its name, or a switch: what it says it does, whatever form it is
+		// in. A button called Delete in a search form still deletes.
 		return what + e.Consequential
-	case op == "browser_click" && ferr == nil && facts.Submits:
-		return what + "it submits a form"
-	case op == "browser_choose" && ferr == nil && (facts.FormMethod == "post" || facts.OnChange):
-		return what + "the list belongs to a form that sends, or acts as soon as it changes"
+	case op == "browser_click" && (e.Consequential == submitsForm || (ferr == nil && facts.Submits)):
+		return what + submits(facts, ferr == nil)
+	case op == "browser_choose" && ferr == nil && facts.FormMethod == "post":
+		return what + "the list belongs to a form that sends, and may send it as soon as it changes"
+	case op == "browser_choose" && ferr == nil && facts.OnChange:
+		return what + "the list acts as soon as it changes"
 	}
 	// A link elsewhere carries the model's choice of it to that host.
 	if op == "browser_click" && ferr == nil && facts.Href != "" {
@@ -274,6 +278,21 @@ func (d *Driver) weigh(ctx context.Context, op string, e Element) string {
 		}
 	}
 	return ""
+}
+
+// submits is why sending a form commits to something, by the method the
+// page says it is sent with. A form sent with GET (a search, a filter, a
+// look-up) only asks for a page, as a link does, and the browser's rule
+// lets it go only to a host the agent may read: it still waits, but as an
+// action, which may be approved with others and earned. Any other method,
+// or one the page would not say, sends: one at a time, and never earned.
+// The words matter: agent.CommitOf files a reason that says "submits" or
+// "sends" as sending, so the reason for GET says neither.
+func submits(facts cdp.Facts, known bool) string {
+	if known && facts.FormMethod == "get" {
+		return "it runs a search: the form only asks for a page, as a link does"
+	}
+	return submitsForm
 }
 
 // Close ends the browser.

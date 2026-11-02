@@ -14,10 +14,19 @@ import (
 // every question.
 func Batchable(class string) bool { return class == "reads" || class == "acts" }
 
+// What a reason says an action does. A reason is written in the third
+// person ("it submits a form", "a form that sends", "it deletes"), and a
+// control's name, which a reason quotes, as a command ("Pay now",
+// "Delete"), so each verb is matched in both forms. Other forms are not:
+// "booking", "shared" and "sent" name hosts, files and folders far more
+// often than they say what pressing something does, and no reason is
+// written with them. Nor are "orders" and "books", which are lists and
+// shop departments, and hosts (books.google.com), as often as not.
 var (
-	rePays    = regexp.MustCompile(`(?i)\b(pay|payment|purchase|buy|order|checkout|check out|donate|transfer|withdraw|subscribe|book|reserve|renew|upgrade)\b`)
-	reDeletes = regexp.MustCompile(`(?i)\b(delete|remove|erase|cancel|deactivate|destroys|unsubscribe)\b`)
-	reSends   = regexp.MustCompile(`(?i)\b(send|submit|post|publish|share|invite|sign in|reaches the network|network)\b`)
+	rePays = regexp.MustCompile(`(?i)\b(pays?|payment|purchases?|buys?|order|checkout|check out|checks out|` +
+		`donates?|transfers?|withdraws?|subscribes?|book|reserves?|renews?|upgrades?)\b`)
+	reDeletes = regexp.MustCompile(`(?i)\b(deletes?|removes?|erases?|cancels?|deactivates?|destroys?|unsubscribes?)\b`)
+	reSends   = regexp.MustCompile(`(?i)\b(sends?|submits?|posts?|publish|publishes|shares?|invites?|signs? in|reaches the network|network)\b`)
 )
 
 // CommitOf says what letting an action go ahead commits to, from the

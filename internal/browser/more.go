@@ -194,7 +194,7 @@ func (d *Driver) weighKey(ctx context.Context, a agent.Action) string {
 			}
 			backend = btn
 		} else if facts, ferr := d.page.Facts(ctx, backend); ferr == nil && facts.FormMethod != "" {
-			why = fmt.Sprintf("it presses Enter in %s %q on %s, and it submits a form", e.Role, e.Name, d.host(ctx))
+			why = fmt.Sprintf("it presses Enter in %s %q on %s, and %s", e.Role, e.Name, d.host(ctx), submits(facts, true))
 		}
 	} else {
 		why = d.weigh(ctx, "browser_click", d.elementFor(ctx, backend))

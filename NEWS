@@ -113,6 +113,26 @@ Unreleased
 
 ** Fixed
 
+*** A press that submits a form is filed as sending, as the agent is
+    told it is.  What an action that waits commits to is read from its
+    reason, and the words were matched only as a control is called ("Pay",
+    "Submit", "Delete"), not as a reason says them ("it submits a form",
+    "a form that sends", "it deletes").  So a browser press that submits
+    a form, a choice in a list in one, and Enter in a field of one were
+    filed as acting: approved with others on the Approvals screen, and
+    earned with earn_after until they went ahead with nobody asked.
+    Sending is decided one at a time and never earned, and they are now.
+    So is Enter on the desktop, whose reason says it sends or confirms.
+    A command the shell weighs as one that deletes (rm -rf, git push
+    --force) was filed as writing, and earned; it is now filed as
+    deleting.  A form sent with GET (a search, a filter, a look-up) is
+    not sending: it only asks for a page, as a link does, and the agent's
+    browser lets it go only to a host it may read.  Its press is weighed
+    as "it runs a search", still waits, and may still be approved with
+    others and earned, so searching does not need a person for every
+    query; a button with formmethod=post in such a form sends.  A list
+    that acts as soon as it changes, outside a form that posts, acts.
+
 *** Pictures from OpenAI's current image models.  Every request for a
     picture carried response_format=b64_json, which those models refuse
     as an unknown parameter, so quilzo media generate through OpenAI
