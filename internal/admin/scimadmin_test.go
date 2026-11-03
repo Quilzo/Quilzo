@@ -201,3 +201,31 @@ func TestAProvisioningTokenThatMakesAdministratorsTakesTwoOnTheScreen(t *testing
 		t.Error("an approved token was received twice")
 	}
 }
+
+// The People screen says what an approved request gives the one who asked.
+// A provisioning token waiting to be received was offered with the
+// enrolment link's words, "Receive the link", on a request that gives no
+// link, and the hint over the list did not name it among the changes that
+// take two administrators.
+func TestAnApprovedProvisioningTokenIsOfferedAsAToken(t *testing.T) {
+	srv, editor := setup(t)
+	wireSCIM(t, srv)
+	now := time.Now()
+	r, err := srv.Dual.Store.Propose(dual.SCIMToken, "a new provisioning token", dual.SCIMTokenChange{}, "", "editor", false, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.Dual.Store.Decide(r.ID, "lee", true, false, now); err != nil {
+		t.Fatal(err)
+	}
+	body := get(t, srv, "/people", editor).Body.String()
+	if !strings.Contains(body, `value="receive"`) {
+		t.Fatal("control: the approved token is not offered to the one who asked")
+	}
+	if strings.Contains(body, "Receive the link") || !strings.Contains(body, "Receive the token") {
+		t.Error("an approved provisioning token is not offered as a token")
+	}
+	if !strings.Contains(body, "the provisioning token") {
+		t.Error("the hint does not name the provisioning token among what takes two administrators")
+	}
+}

@@ -123,6 +123,10 @@ type pendingRow struct {
 	dual.Request
 	Words                              string
 	CanDecide, CanTakeBack, CanReceive bool
+	// Gives is what receiving it gives, in words: the link or the token.
+	// The button said "the link" for a provisioning token too, which gives
+	// no link.
+	Gives string
 }
 
 // pendingRows are the requests waiting, for the People screen, with what p
@@ -141,7 +145,8 @@ func (s *Server) pendingRows(p principal, now time.Time) []pendingRow {
 		mine := strings.EqualFold(r.By, p.Name)
 		out = append(out, pendingRow{Request: r, Words: dual.StateWords(r, now),
 			CanDecide: r.Open(now) && (!mine || alone), CanTakeBack: mine,
-			CanReceive: mine && r.Redeemable(now) && receivedHere(r)})
+			CanReceive: mine && r.Redeemable(now) && receivedHere(r),
+			Gives:      map[bool]string{true: "the link", false: "the token"}[r.Kind == dual.Enrol]})
 	}
 	return out
 }
