@@ -120,17 +120,19 @@ func reviewFacts(it accessreview.Item) string {
 }
 
 // reviewPost is the shared preamble for the three review buttons: an
-// administrator of the whole store, signed in as a person. A credential
-// sent by a program is refused whatever it holds, since a service token
-// reviews nothing.
+// administrator of the whole store, signed in as a person with two
+// factors. A credential sent by a program is refused whatever it holds,
+// since a service token reviews nothing.
 //
-// That includes a session exchanged from a long-lived token and sent in a
-// header, which is how a program uses one. authenticate refuses a header
-// credential short of two factors once two factors are compulsory; in the
-// grace before then it let one through, the session counted as a person's,
-// and a program started, decided and closed reviews in somebody's name.
-// The grace is for people to enrol a second factor, so it is not extended
-// to reviewing access.
+// Two factors, because nothing else here tells a person from a program.
+// authenticate refuses a one-factor credential once two factors are
+// compulsory, and in the grace before then it let one through: a program's
+// token sent in a header as a session exchanged from it, or pasted into the
+// sign-in form and held in a cookie as a browser holds one, counted as a
+// person signed in, and the program started, decided and closed reviews in
+// somebody's name. The grace is for people to enrol a second factor, so it
+// is not extended to deciding who keeps access; the command line, with the
+// person's own token, is the other way in.
 func (s *Server) reviewPost(w http.ResponseWriter, r *http.Request) (principal, bool) {
 	p, ok := s.postFrom(w, r, auth.ActGrant)
 	if !ok {
@@ -140,8 +142,9 @@ func (s *Server) reviewPost(w http.ResponseWriter, r *http.Request) (principal, 
 		s.peopleBack(w, r, "this server was started without access reviews")
 		return principal{}, false
 	}
-	if !p.Session || (p.Bearer && p.Level < 2) {
-		http.Error(w, "an access review is decided by a person signed in, not by a program's credential",
+	if !p.Session || p.Level < 2 {
+		http.Error(w, "an access review is decided by a person signed in with two factors, not by a program's "+
+			"credential: sign in with your passkey, or decide with quilzo access review and your own token",
 			http.StatusForbidden)
 		return principal{}, false
 	}

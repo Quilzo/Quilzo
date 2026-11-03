@@ -5,6 +5,7 @@ package admin
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -217,6 +218,54 @@ func TestASessionExchangedFromATokenCannotReview(t *testing.T) {
 	decide := url.Values{"item": {"1"}, "verdict": {"revoke"}}.Encode()
 	if w := postForm(t, srv, "/people/review/decide", exchanged, decide); w.Code != http.StatusForbidden {
 		t.Errorf("decide with an exchanged session: %d", w.Code)
+	}
+	if got := strings.Join(*pressed, "; "); got != "start editor" {
+		t.Errorf("the host was asked: %s", got)
+	}
+}
+
+// The same program, through the front door: its token pasted into the
+// sign-in form makes a session in a cookie, which in the grace before two
+// factors are compulsory is let in as a browser's, and the header check
+// above never sees it. A review is decided by somebody proved with two
+// factors, which a program's token is not, however it arrives.
+func TestAProgramsTokenSignedInThroughTheFormCannotReview(t *testing.T) {
+	srv, editor := setup(t)
+	hooks, pressed := memoryReview(srv)
+	srv.AccessReview = hooks
+	srv.MFAFrom = time.Now().Add(14 * 24 * time.Hour)
+	program, _, err := srv.Tokens.Issue("deploy", "editor", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/signin", strings.NewReader(url.Values{"token": {program}}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	var cookie string
+	for _, c := range w.Result().Cookies() {
+		if c.Name == "quilzo_token" {
+			cookie = c.Value
+		}
+	}
+	if cookie == "" {
+		t.Fatalf("signing in with the token made no session: %d %s", w.Code, w.Header().Get("Location"))
+	}
+	if w := postFormAs(t, srv, "/people", cookie, nil); w.Code == http.StatusUnauthorized {
+		t.Fatal("the session made from the token is not let in during the grace, so this tests nothing")
+	}
+	for _, path := range []string{"/people/review/start", "/people/review/close"} {
+		if w := postFormAs(t, srv, path, cookie, url.Values{}); w.Code != http.StatusForbidden {
+			t.Errorf("%s with a session signed in from a program's token: %d", path, w.Code)
+		}
+	}
+	if w := postForm(t, srv, "/people/review/start", editor, ""); w.Code != http.StatusSeeOther {
+		t.Fatalf("an administrator signed in with a passkey could not start: %d", w.Code)
+	}
+	decide := url.Values{"item": {"1"}, "verdict": {"revoke"}}
+	if w := postFormAs(t, srv, "/people/review/decide", cookie, decide); w.Code != http.StatusForbidden {
+		t.Errorf("decide with a session signed in from a program's token: %d", w.Code)
 	}
 	if got := strings.Join(*pressed, "; "); got != "start editor" {
 		t.Errorf("the host was asked: %s", got)

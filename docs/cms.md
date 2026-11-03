@@ -2017,7 +2017,9 @@ otherwise holds.
 
 The rules are the ones that make a review one. The reviewer is a person,
 signed in as themselves: a model, a program's token or a name nobody proved
-is refused. Nobody decides their own access, however their name is spelled,
+is refused. On People that means signed in with two factors, even in the
+grace before two factors are compulsory, since a token pasted into the
+sign-in form is how a program would get in. Nobody decides their own access, however their name is spelled,
 or a group they are in. Keeping privileged access needs a reason, which is
 kept in the review's file (`access/reviews/ID.json`) and never in the audit
 log, where the record says only that one was given. There is no "reduce":
