@@ -133,9 +133,16 @@ func (s *Server) replicaObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Immutable by construction: the id is the hash, so this response can
-	// never become wrong. Cached for a year, which is what content-addressing
-	// is for and the reason an edge replica costs nothing to keep warm.
-	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	// never become wrong, and the caller's own cache may keep it for a year.
+	//
+	// Private, never public. This was "public", which is what lets a cache
+	// shared between callers keep an answer to a request that carried a
+	// credential: a CDN or proxy in front of the API could have kept a
+	// draft's objects and served them to anybody asking the same address,
+	// with no credential at all. The hash makes the bytes unchangeable; it
+	// does not make them anybody's. Not no-store either: the caller was sent
+	// these bytes already, so its own cache keeping them reveals nothing.
+	w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
 	writeJSON(w, http.StatusOK, objectResponse{
 		ID: oid, Kind: kind, Payload: base64.StdEncoding.EncodeToString(payload)})
 }

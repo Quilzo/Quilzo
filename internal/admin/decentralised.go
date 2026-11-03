@@ -68,6 +68,12 @@ type Decentralised struct {
 	Stylesheet func() string
 	// Media returns the asset library as path-to-bytes, under media/.
 	Media func() (map[string][]byte, error)
+	// Bundle, when set, is the published site as `quilzo ipfs` and the
+	// content_id tool render it: what the public server serves, the fonts,
+	// and the asset library named by format. The screen and the download
+	// use it, so all three give one identifier for one site. Nil renders
+	// from Pages, Stylesheet and Media, which is not that site.
+	Bundle func() (map[string][]byte, error)
 }
 
 // MaxBundlePages bounds a render.
@@ -272,14 +278,21 @@ func (s *Server) bundle() (map[string][]byte, error) {
 				"response", len(pages))
 	}
 
+	// The command line's bundle, when the host gives it, so this screen's
+	// identifier is the one `quilzo ipfs id` and the content_id tool give.
+	// Rendering the pages alone here gave a different one for the same site,
+	// and a pinning service checked against one was told it had stored
+	// something else. The guard above still applies: the size of a site is
+	// what makes a render too long for a click, whichever renders it.
+	if s.Decentralised.Bundle != nil {
+		return s.Decentralised.Bundle()
+	}
+
 	// The same context the public server uses. A bundle is somebody's durable
 	// copy of their site — pinned, handed over, served from a gateway — and it
 	// used to come out with no navigation on any page.
 	src := s.sources(s.Store.GetRef(site.RefLive), pages)
 
-	// One renderer, shared with `quilzo ipfs write`. Two copies of this loop
-	// existed and diverged the moment detail pages arrived: which of your
-	// product pages got written depended on which interface you exported from.
 	out, berr := render.Bundle(src, s.Layouts, pages, tmpl.Render)
 	if berr != nil {
 		return nil, berr

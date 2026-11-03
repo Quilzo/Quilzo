@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/quilzo/quilzo/internal/mcp"
 	"github.com/quilzo/quilzo/internal/search"
 	"github.com/quilzo/quilzo/internal/site"
 )
@@ -119,5 +120,104 @@ func TestAnAgentAsksOverMCP(t *testing.T) {
 	}
 	if w := call(`{"jsonrpc":"2.0","method":"notifications/initialized"}`, ""); w.Code != http.StatusAccepted {
 		t.Fatalf("a notification: %d", w.Code)
+	}
+}
+
+// An agent on another revision of MCP is answered in a revision it speaks.
+//
+// # What this found
+//
+// The public /mcp answered every initialize with 2025-06-18, whatever the
+// client asked for, ignored the MCP-Protocol-Version header, and did not
+// know server/discover. A 2025-03-26 client was told a revision it may not
+// speak, a request naming a revision nobody speaks was answered as if it
+// were fine, and a client of the stateless revision found no method to
+// start with. The admin's /mcp, in internal/mcp, negotiates all of this;
+// the public one now does by the same rules and from the same list.
+func TestAnAgentIsAnsweredInARevisionItSpeaks(t *testing.T) {
+	st := nlwebSite(t)
+	type answer struct {
+		Result map[string]any `json:"result"`
+		Error  *struct {
+			Code int            `json:"code"`
+			Data map[string]any `json:"data"`
+		} `json:"error"`
+	}
+	call := func(body string, headers map[string]string) (int, answer) {
+		t.Helper()
+		r := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		for k, v := range headers {
+			r.Header.Set(k, v)
+		}
+		w := httptest.NewRecorder()
+		st.Handler().ServeHTTP(w, r)
+		var a answer
+		_ = json.Unmarshal(w.Body.Bytes(), &a)
+		return w.Code, a
+	}
+	initialize := func(asked string) string {
+		t.Helper()
+		_, a := call(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"`+asked+
+			`","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}`, nil)
+		v, _ := a.Result["protocolVersion"].(string)
+		return v
+	}
+
+	// The handshake: the revision asked for when it is one this speaks, and
+	// otherwise the newest it does.
+	for _, v := range mcp.Legacy {
+		if got := initialize(v); got != v {
+			t.Errorf("a client asking for %s was answered %s", v, got)
+		}
+	}
+	if got := initialize("1999-01-01"); got != mcp.Legacy[0] {
+		t.Errorf("a client asking for a revision nobody speaks was answered %s, not %s", got, mcp.Legacy[0])
+	}
+
+	// After it: a header naming a revision this does not speak is a 400
+	// that says which it does.
+	list := `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`
+	code, a := call(list, map[string]string{"MCP-Protocol-Version": "1999-01-01"})
+	if code != http.StatusBadRequest || a.Error == nil || a.Error.Code != mcp.CodeUnsupportedVersion {
+		t.Fatalf("a revision nobody speaks was answered %d %+v", code, a)
+	}
+	if supported, _ := a.Error.Data["supported"].([]any); len(supported) != len(mcp.Supported()) {
+		t.Errorf("the refusal does not say which revisions are spoken: %v", a.Error.Data)
+	}
+	if code, a := call(list, map[string]string{"MCP-Protocol-Version": "2025-06-18"}); code != 200 || a.Result["tools"] == nil {
+		t.Errorf("a client on 2025-06-18 was answered %d %+v", code, a)
+	}
+
+	// The stateless revision: no handshake, results marked final, and the
+	// same tool.
+	modern := func(method, name, params string) (int, answer) {
+		meta := `"_meta":{"io.modelcontextprotocol/protocolVersion":"` + mcp.Modern + `"}`
+		if params != "" {
+			params += ","
+		}
+		h := map[string]string{"MCP-Protocol-Version": mcp.Modern, "Mcp-Method": method}
+		if name != "" {
+			h["Mcp-Name"] = name
+		}
+		return call(`{"jsonrpc":"2.0","id":3,"method":"`+method+`","params":{`+params+meta+`}}`, h)
+	}
+	code, a = modern("server/discover", "", "")
+	if code != 200 || a.Result["resultType"] != "complete" {
+		t.Fatalf("server/discover was answered %d %+v", code, a)
+	}
+	if supported, _ := a.Result["supportedVersions"].([]any); len(supported) == 0 || supported[0] != mcp.Modern {
+		t.Errorf("server/discover does not name the revisions spoken: %v", a.Result)
+	}
+	if code, _ := modern("initialize", "", ""); code != http.StatusNotFound {
+		t.Errorf("the stateless revision has no handshake, and initialize was answered %d", code)
+	}
+	code, a = modern("tools/call", "ask", `"name":"ask","arguments":{"query":"sourdough"}`)
+	body, _ := json.Marshal(a.Result)
+	if code != 200 || a.Result["resultType"] != "complete" || !strings.Contains(string(body), "Our sourdough") {
+		t.Errorf("ask on the stateless revision was answered %d %s", code, body)
+	}
+	if code, a := modern("tools/call", "ask", `"name":"other","arguments":{}`); code != http.StatusBadRequest || a.Error == nil {
+		t.Errorf("a header and a body naming different tools were answered %d %+v", code, a)
 	}
 }
