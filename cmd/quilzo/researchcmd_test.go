@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/quilzo/quilzo/internal/agentbox"
@@ -361,6 +362,60 @@ func TestARewrittenPlanDoesNotCheck(t *testing.T) {
 		if !planProblem(fs) {
 			t.Errorf("%s: the screen found nothing wrong with the plan: %+v", name, fs)
 		}
+	}
+}
+
+// A plan that checks keeps checking while the store's published keys are
+// written again. They are rewritten every time the signing key is loaded:
+// by every agent receipt, every audit head and every round of the audit
+// stream under quilzo serve. Written by truncating and then writing, a
+// check landing between the two read an empty or half file and said the
+// registered plan did not check, so the screen and research check reported
+// a tampered plan that was not.
+func TestAPlanChecksWhileItsKeysAreWrittenAgain(t *testing.T) {
+	root, _ := identityStore(t)
+	dana := asAdmin("dana")
+	if err := researchNew(root, "fever", "Does aspirin lower fever?", dana); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := researchSetPlan(root, "fever", "Compare means.", "", dana); err != nil {
+		t.Fatal(err)
+	}
+	p, err := researchRegister(root, "fever", dana)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			if _, err := headSigner(root); err != nil {
+				t.Error(err)
+				return
+			}
+		}
+	}()
+	failed := 0
+	var first error
+	for i := 0; i < 500; i++ {
+		if err := researchPlanChecks(root, p); err != nil {
+			if first == nil {
+				first = err
+			}
+			failed++
+		}
+	}
+	close(stop)
+	wg.Wait()
+	if failed > 0 {
+		t.Errorf("%d of 500 checks of an honest plan failed while its keys were written again: %v", failed, first)
 	}
 }
 
