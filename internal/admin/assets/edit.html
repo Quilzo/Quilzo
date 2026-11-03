@@ -211,7 +211,8 @@
 <section id="share" class="card" aria-labelledby="share-h">
   <h2 id="share-h">Share this draft</h2>
   <p class="help">A link for somebody with no account: this page as the draft is now, on the public site,
-    never indexed. Later changes do not reach it; revoke it, or let it expire.</p>
+    never indexed. Later changes do not reach it; revoke it, or let it expire. Its address is shown once,
+    when it is made, and kept nowhere here: copy it then.</p>
   {{if .CanShare}}
   <form method="post" action="/shares" class="inline">
     <input type="hidden" name="op" value="share"><input type="hidden" name="page" value="{{.Name}}">

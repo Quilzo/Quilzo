@@ -532,6 +532,11 @@ func cmdServe(root string, args []string) error {
 	srv.Models = gatewayCapability(root)
 	srv.Connections = connectionsCapability(root)
 	srv.Shares = sharesCapability(root)
+	// A link made before the store kept digests holds its secret in the
+	// file until something rewrites it; the admin does as it starts.
+	if err := migrateShares(root); err != nil {
+		fmt.Fprintf(os.Stderr, "  %sshare links: %v%s\n", yellow, err, reset)
+	}
 	srv.Research = researchScreens(root)
 	srv.Deciders = decidersCapability(root)
 	srv.Analytics = analyticsCapability(root)
