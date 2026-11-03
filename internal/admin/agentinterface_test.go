@@ -111,9 +111,11 @@ func (r *ifaceRig) mcpCall(t *testing.T, bearer string) *httptest.ResponseRecord
 	return w
 }
 
-func authorizeURL(challenge string) string {
+func authorizeURL(challenge string) string { return authorizeURLFor(testApp, challenge) }
+
+func authorizeURLFor(client, challenge string) string {
 	return "/oauth/authorize?" + url.Values{
-		"client_id": {testApp}, "redirect_uri": {"https://app.example.com/cb"}, "response_type": {"code"},
+		"client_id": {client}, "redirect_uri": {"https://app.example.com/cb"}, "response_type": {"code"},
 		"state": {"s1"}, "code_challenge": {challenge}, "code_challenge_method": {"S256"},
 		"resource": {"https://admin.example.org/mcp"}, "scope": {"mcp:read"},
 	}.Encode()
@@ -123,12 +125,15 @@ var reRequest = regexp.MustCompile(`name="request" value="([^"]+)"`)
 var reCode = regexp.MustCompile(`code=([A-Za-z0-9_-]+)`)
 
 // connect runs the consent and the token exchange, as an app and a person.
-func (r *ifaceRig) connect(t *testing.T) map[string]any {
+func (r *ifaceRig) connect(t *testing.T) map[string]any { t.Helper(); return r.connectAs(t, testApp) }
+
+// connectAs is connect for an app published at another client_id.
+func (r *ifaceRig) connectAs(t *testing.T, client string) map[string]any {
 	t.Helper()
 	verifier := strings.Repeat("k", 64)
 	sum := sha256.Sum256([]byte(verifier))
 	challenge := base64.RawURLEncoding.EncodeToString(sum[:])
-	w := r.do(t, "GET", authorizeURL(challenge), r.token, nil, nil)
+	w := r.do(t, "GET", authorizeURLFor(client, challenge), r.token, nil, nil)
 	if w.Code != 200 || !strings.Contains(w.Body.String(), "Example Assistant") || !strings.Contains(w.Body.String(), "app.example.com") {
 		t.Fatalf("consent: %d %s", w.Code, w.Body.String())
 	}
@@ -147,7 +152,7 @@ func (r *ifaceRig) connect(t *testing.T) map[string]any {
 		t.Fatalf("no code in %s", w.Body.String())
 	}
 	w = r.do(t, "POST", "/oauth/token", "", url.Values{"grant_type": {"authorization_code"}, "code": {c[1]},
-		"client_id": {testApp}, "redirect_uri": {"https://app.example.com/cb"}, "code_verifier": {verifier},
+		"client_id": {client}, "redirect_uri": {"https://app.example.com/cb"}, "code_verifier": {verifier},
 		"resource": {"https://admin.example.org/mcp"}}, nil)
 	var out map[string]any
 	json.Unmarshal(w.Body.Bytes(), &out)
@@ -395,6 +400,38 @@ func TestRemovingAHostEndsItsConnections(t *testing.T) {
 	}
 	if w := r.mcpCall(t, access); w.Code != 401 {
 		t.Fatalf("still connected: %d", w.Code)
+	}
+}
+
+// Host names are case-insensitive, so an app may publish its client_id as
+// https://APP.example.com/... and be admitted under app.example.com. Removing
+// app.example.com once compared hosts exactly, ended nothing, and said the
+// host's apps could no longer connect while the app kept its access token
+// and went on refreshing for the rest of its grant.
+func TestRemovingAHostEndsItsConnectionsWhateverCaseTheAppSpellsIt(t *testing.T) {
+	r := newIfaceRig(t)
+	const shouted = "https://APP.example.com/client.json"
+	tokens := r.connectAs(t, shouted)
+	access, refresh := tokens["access_token"].(string), tokens["refresh_token"].(string)
+	w := r.do(t, "POST", "/apps/act", r.token, url.Values{"action": {"remove-host"}, "host": {"app.example.com"}},
+		map[string]string{"Sec-Fetch-Site": "same-origin"})
+	if w.Code != 303 {
+		t.Fatalf("%d", w.Code)
+	}
+	if loc, _ := url.QueryUnescape(w.Header().Get("Location")); !strings.Contains(loc, "1 connection from there ended") {
+		t.Errorf("the screen said %q", loc)
+	}
+	if w := r.mcpCall(t, access); w.Code != 401 {
+		t.Errorf("the access token still works: %d", w.Code)
+	}
+	w = r.do(t, "POST", "/oauth/token", "", url.Values{"grant_type": {"refresh_token"}, "refresh_token": {refresh},
+		"client_id": {shouted}}, nil)
+	if w.Code == 200 {
+		t.Errorf("the refresh token still mints tokens: %s", w.Body.String())
+	}
+	grants, _ := r.srv.Interface.OAuth.Store.Grants()
+	if len(grants) != 1 || grants[0].Ended.IsZero() {
+		t.Errorf("the connection is still in force: %+v", grants)
 	}
 }
 

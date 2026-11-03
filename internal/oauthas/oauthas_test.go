@@ -630,3 +630,39 @@ func TestRedirectMatching(t *testing.T) {
 		}
 	}
 }
+
+// Host names are case-insensitive, and HostAllowed folds case, so an app
+// may be admitted under app.example.com with a client_id that spells it
+// APP.example.com. The matcher that ends a removed host's connections
+// compared hosts exactly and missed such an app.
+func TestAnAppIsFromItsHostWhateverCaseItSpellsIt(t *testing.T) {
+	from := FromHost("app.example.com")
+	for _, id := range []string{appID, "https://APP.example.com/oauth/client.json", "https://App.Example.Com/c.json"} {
+		if !from(Grant{Client: id}) {
+			t.Errorf("%s is not from app.example.com", id)
+		}
+	}
+	for _, id := range []string{"https://app.example.com.evil.example/c.json", "https://evil.example/c.json", "qzc_abc"} {
+		if from(Grant{Client: id}) {
+			t.Errorf("%s is from app.example.com", id)
+		}
+	}
+	if !FromHost("*")(Grant{Client: "qzc_abc"}) {
+		t.Error("* does not match every app")
+	}
+}
+
+// A grant whose host is no longer allowed must stop refreshing even when
+// the sweep that ends a removed host's connections missed it: the screen
+// says the host's apps can no longer connect, and refresh is how a
+// connection outlives its last access token.
+func TestARefreshIsRefusedOnceTheAppsHostIsNoLongerAllowed(t *testing.T) {
+	r := newRig(t)
+	out, _ := r.connect(t)
+	r.Server.Config = func() Config { return Config{Issuer: "https://admin.example.org"} }
+	status, got := r.post(t, r.Token, url.Values{"grant_type": {"refresh_token"},
+		"refresh_token": {out["refresh_token"].(string)}, "client_id": {appID}})
+	if status != 400 || got["error"] != "invalid_grant" {
+		t.Fatalf("refreshed from a host no longer allowed: %d %v", status, got)
+	}
+}

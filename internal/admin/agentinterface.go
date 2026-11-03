@@ -784,10 +784,7 @@ func (s *Server) handleAppsAct(w http.ResponseWriter, r *http.Request) {
 			back("", "Apps from "+host+" may now ask people to connect.")
 			return
 		}
-		n := oa.EndWhere(func(g oauthas.Grant) bool {
-			c := oauthas.Client{ID: g.Client}
-			return host == "*" || c.Host() == host
-		}, p.Name, "apps from "+host+" are no longer allowed")
+		n := oa.EndWhere(oauthas.FromHost(host), p.Name, "apps from "+host+" are no longer allowed")
 		s.saveTokens()
 		back("", "Apps from "+host+" can no longer connect, and "+countOf(n, "connection", "connections")+" from there ended.")
 	case "register":

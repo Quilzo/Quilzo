@@ -650,6 +650,12 @@ func (s *Server) refresh(f url.Values) (map[string]any, error) {
 			if clientID != g.Client {
 				return badRequest("invalid_grant", "the refresh token was issued to another app")
 			}
+			// The app's host is asked again at every refresh, not only at
+			// consent, so a host an administrator removed stops refreshing
+			// even if the sweep that ends its connections missed one.
+			if h := (Client{ID: g.Client}).Host(); IsMetadataURL(g.Client) && !s.Config().HostAllowed(h) {
+				return badRequest("invalid_grant", "apps from "+h+" are no longer allowed to connect here")
+			}
 			if res := f.Get("resource"); res != "" && !s.Config().SameResource(res) {
 				return badRequest("invalid_target", "resource is not this server's agent interface")
 			}
@@ -791,6 +797,16 @@ func (s *Server) EndWhere(match func(Grant) bool, by, why string) int {
 		s.record("oauth.disconnected", g.Principal, map[string]string{"client": g.Client, "grant": g.ID, "by": by, "why": why})
 	}
 	return len(ended)
+}
+
+// FromHost chooses, for EndWhere, the grants of apps published from host,
+// or every grant when host is "*". It is the one matcher the Connected apps
+// screen and the command line share: each once compared Client.Host with
+// the host exactly, so removing app.example.com missed an app admitted
+// under a client_id that spelled it APP.example.com.
+func FromHost(host string) func(Grant) bool {
+	host = strings.ToLower(host)
+	return func(g Grant) bool { return host == "*" || (Client{ID: g.Client}).Host() == host }
 }
 
 func contains(list []string, s string) bool {
