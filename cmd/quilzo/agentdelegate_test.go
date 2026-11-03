@@ -133,3 +133,101 @@ func TestADelegatesModelSpendingIsChargedToTheRun(t *testing.T) {
 			models.total(), calls, dana)
 	}
 }
+
+// A delegate's actions are reviewed as its supervisor's are. Its decider was
+// a bare model with no reviewer, so a store whose reviewer refuses every
+// write still had one made by any supervisor that handed the writing on, and
+// the reviewer, shown the hand-off alone, was never shown what was handed on
+// either.
+func TestADelegateIsReviewedAsItsSupervisorIs(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := demoStore(t)
+	declaredAutonomy(t, root)
+	models := &pricedModels{choose: writesPages(), review: func(prompt string) string {
+		if strings.Contains(prompt, "write_page") {
+			return "no - this store never lets an agent write"
+		}
+		return "yes - handing it on serves the goal"
+	}}
+	pricedGateway(t, root, models, true)
+	declareBoss(t, root, boss("writer"), handedWriter())
+	if _, err := runAgentOnce(root, "boss", "make the pages through the writer", true, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	if n := pagesWritten(t, root); n != 0 {
+		t.Errorf("the reviewer refuses every write and the delegate wrote %d pages", n)
+	}
+	models.mu.Lock()
+	defer models.mu.Unlock()
+	writes, handed := 0, false
+	for _, r := range models.reviews {
+		if strings.Contains(r, "write_page") {
+			writes++
+		}
+		if strings.Contains(r, "handing work to writer") && strings.Contains(r, "write the pages") {
+			handed = true
+		}
+	}
+	if writes == 0 {
+		t.Errorf("of %d reviews, none was of the delegate's write", len(models.reviews))
+	}
+	if !handed {
+		t.Errorf("the reviewer was never shown what the supervisor handed on: %q", models.reviews)
+	}
+}
+
+// A delegate's reviewer that cannot be reached stops the delegate, as it
+// stops its supervisor: running without it would be the open way to fail.
+func TestADelegateWhoseReviewerCannotBeReachedDoesNothing(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := demoStore(t)
+	declaredAutonomy(t, root)
+	models := &pricedModels{choose: writesPages()}
+	pricedGateway(t, root, models, true)
+	declareBoss(t, root, boss("writer"), handedWriter())
+	// The route the reviewer is named by goes after the supervisor's run has
+	// found it, so only the delegate looks for it and does not find it.
+	models.review = func(prompt string) string {
+		if strings.Contains(prompt, "handing work to writer") {
+			if err := cmdGateway(root, []string{"route", "remove", "second-opinion"}); err != nil {
+				t.Error(err)
+			}
+		}
+		return "yes - it serves the goal"
+	}
+	if _, err := runAgentOnce(root, "boss", "make the pages through the writer", true, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	if n := pagesWritten(t, root); n != 0 {
+		t.Errorf("with its reviewer gone, the delegate wrote %d pages", n)
+	}
+}
+
+// What a delegate writes says a model wrote it, as its supervisor's writes
+// do. Its writer had no hook to say so, so the page had no provenance mark,
+// and an unmarked page is one the publish gate calls a gap.
+func TestADelegatesWriteIsMarkedAsAModelsWork(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := demoStore(t)
+	declaredAutonomy(t, root)
+	models := &pricedModels{choose: writesPages()}
+	pricedGateway(t, root, models, false)
+	sup, del := boss("writer"), handedWriter()
+	del.Budget.Steps = 2
+	declareBoss(t, root, sup, del)
+	if _, err := runAgentOnce(root, "boss", "make the pages through the writer", true, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := draftPage(t, root, "page-1"); !ok {
+		t.Fatal("the delegate wrote nothing")
+	}
+	idx, err := loadProvenance(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec, ok := idx.Get("page-1")
+	if !ok || rec.Model == "" || !strings.Contains(rec.Note, "writer") || rec.Author != "dana" ||
+		rec.Instruction != "write the pages" {
+		t.Errorf("the delegate's page is recorded as %+v (recorded %v)", rec, ok)
+	}
+}

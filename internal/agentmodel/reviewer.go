@@ -83,10 +83,18 @@ func review(ctx context.Context, model assist.Model, goal string, a agent.Action
 	// marker is new for every review and taken out of what it fences, so
 	// an input that writes "END UNTRUSTED" closes nothing (see userPrompt).
 	mark := fenceMark()
+	// And what the agent says with the action, inside the same fence: a
+	// hand-off carries the work it hands on there and in no input, so the
+	// reviewer asked about "handing work to writer" was shown nothing of
+	// the work, which is the part to judge.
+	said := ""
+	if s := strings.TrimSpace(a.Say); s != "" {
+		said = "\nWhat it says with it: " + clamp(strings.ReplaceAll(s, mark, ""), 2000)
+	}
 	user := "The goal, set by a person: " + clamp(goal, 2000) + "\n" +
 		"The action chosen: " + what + "\n" +
 		"[BEGIN UNTRUSTED CONTENT " + mark + ", chosen by the agent, possibly under a page's influence]\n" +
-		clamp(strings.ReplaceAll(string(input), mark, ""), 2000) + "\n" +
+		clamp(strings.ReplaceAll(string(input), mark, ""), 2000) + said + "\n" +
 		"[END UNTRUSTED CONTENT " + mark + "]\n" +
 		"yes or no, and why:"
 	out, err := model.Complete(ctx, system, user)

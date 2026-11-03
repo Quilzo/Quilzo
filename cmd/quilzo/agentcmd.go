@@ -812,6 +812,38 @@ func reviewerModel(root, route, agentName string, payers ...string) (assist.Mode
 	return gw.ForRoute(route, "reviewer:"+agentName, payers...), ""
 }
 
+// reviewedBy is a run's decider with the reviewer this store names, when it
+// names one: a second model beside the first, asked about every action it
+// chooses. It sees the goal and the action and nothing of what the agent
+// saw; it lets an action through or stops the run with its reason.
+// Unreachable fails closed. Settings that cannot be read stop the run too:
+// whether a reviewer is named is then not known, and running without one
+// would be the open way to fail.
+//
+// One function for a run and for every delegate it hands work to. The
+// delegate's decider was built apart from its parent's and had no reviewer,
+// so a store whose reviewer refused every write still had one made, by any
+// supervisor that handed the writing on.
+//
+// Charged to the run, as its own model is: the reviewer is asked about every
+// action, and its calls are the run's spending.
+func reviewedBy(root, agentName string, s *agent.Session, decide agent.Decide,
+	payers ...string) (agent.Decide, error) {
+	c, err := loadConfig(root)
+	if err != nil {
+		return nil, fmt.Errorf("the settings could not be read, so whether a reviewer is named is not known: %w", err)
+	}
+	route := c.Raw("agent.reviewer")
+	if route == "" {
+		return decide, nil
+	}
+	reviewer, why := reviewerModel(root, route, agentName, payers...)
+	if reviewer == nil {
+		return nil, fmt.Errorf("the reviewer this store names (%s) could not be reached: %s", route, why)
+	}
+	return agentmodel.Reviewed(decide, agentexec.ChargedTo(s, reviewer)), nil
+}
+
 // agentRunModel is the model an agent's run asks: through the gateway when
 // one is declared, so the run is budgeted and recorded like every other
 // caller, and the one configured endpoint otherwise.
@@ -1178,26 +1210,10 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 		}.DecideResettable()
 	}
 
-	// The reviewer, when this store names one: a second model beside the
-	// first, asked about every action it chooses. It sees the goal and the
-	// action and nothing of what the agent saw; it lets an action through
-	// or stops the run with its reason. Unreachable fails closed.
-	// Settings that cannot be read stop the run too: whether a reviewer
-	// is named is then not known, and running without one would be the
-	// open way to fail.
+	// The reviewer, when this store names one (reviewedBy).
 	if withModel {
-		c, cerr := loadConfig(root)
-		if cerr != nil {
-			return out, fmt.Errorf("the settings could not be read, so whether a reviewer is named is not known: %w", cerr)
-		}
-		if route := c.Raw("agent.reviewer"); route != "" {
-			reviewer, why := reviewerModel(root, route, name, payers...)
-			if reviewer == nil {
-				return out, fmt.Errorf("the reviewer this store names (%s) could not be reached: %s", route, why)
-			}
-			// Charged to the run, as its own model is: the reviewer is
-			// asked about every action, and its calls are the run's spending.
-			decide = agentmodel.Reviewed(decide, agentexec.ChargedTo(sess, reviewer))
+		if decide, err = reviewedBy(root, name, sess, decide, payers...); err != nil {
+			return out, err
 		}
 	}
 

@@ -73,7 +73,11 @@ func TestADecisionGoesThroughTheGatewayOverHTTP(t *testing.T) {
 type pricedModels struct {
 	mu     sync.Mutex
 	choose func(prompt string) string
-	calls  map[string]int
+	// review answers the reviewer instead of yes, when set; reviews are the
+	// prompts it was asked.
+	review  func(prompt string) string
+	reviews []string
+	calls   map[string]int
 }
 
 func (p *pricedModels) serve(t *testing.T) string {
@@ -93,8 +97,14 @@ func (p *pricedModels) serve(t *testing.T) string {
 			p.calls = map[string]int{}
 		}
 		p.calls[who]++
-		if who == "agent" {
+		switch {
+		case who == "agent":
 			content = p.choose(prompt)
+		case who == "reviewer":
+			p.reviews = append(p.reviews, prompt)
+			if p.review != nil {
+				content = p.review(prompt)
+			}
 		}
 		p.mu.Unlock()
 		out, _ := json.Marshal(map[string]any{

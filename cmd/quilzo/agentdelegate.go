@@ -113,6 +113,14 @@ func (d delegation) Run(ctx context.Context, name string, child *agent.Session,
 				Author:  "agent/" + m.Name,
 				Gate:    pageGate(d.root),
 				Propose: proposeCommit(d.root, d.store, m.Name, caller),
+				// Marked as a model's work, as its parent's writes are. The
+				// delegate's writer had no such hook, so its page had no
+				// provenance mark and the publish gate called it a gap. Never
+				// reviewed by a person: a delegate has nobody to ask first.
+				Written: func(page string) {
+					markAgentWrite(d.root, d.store, page, m.Name, modelName(d.model),
+						instruction, caller, false)
+				},
 			},
 			agentexec.Tools{
 				Installed: func() (agent.Integrations, error) {
@@ -186,11 +194,14 @@ func (d delegation) next(parent string) agentexec.Delegates {
 // does without --model: it costs nothing, needs no endpoint, and answers the
 // question an operator asks first, which is whether the pipeline is wired at
 // all rather than whether it is clever.
+//
+// With one, it is reviewed as its parent's is (reviewedBy), and a reviewer
+// that cannot be reached stops it as it stops the parent.
 func (d delegation) decider(child *agent.Session, m agent.Manifest) (agent.Decide, error) {
 	if d.model == nil {
 		return walkOf(m), nil
 	}
-	return agentmodel.Decider{
+	return reviewedBy(d.root, m.Name, child, agentmodel.Decider{
 		Model:   d.model,
 		Session: child,
 		Dialect: m.Dialect,
@@ -200,7 +211,16 @@ func (d delegation) decider(child *agent.Session, m agent.Manifest) (agent.Decid
 		// a supervisor's money budget did not bound the work it handed on.
 		Tokens: child.Tokens,
 		Charge: child.Charge,
-	}.Decide(), nil
+	}.Decide(), personConsumer(d.caller)...)
+}
+
+// modelName is what chose a delegate's actions, for its writes' record:
+// empty for a walk, which no trained model decided.
+func modelName(m assist.Model) string {
+	if m == nil {
+		return ""
+	}
+	return m.Name()
 }
 
 // walkOf is the scripted plan: every capability and every tool, once.
