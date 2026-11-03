@@ -1652,6 +1652,19 @@ func (p *Policy) Snapshot() []Binding {
 	return append([]Binding(nil), p.Bindings...)
 }
 
+// Replace swaps the bindings, under the lock.
+//
+// For a host that re-reads the policy from disk because another process may
+// have changed it, as TokenStore.Replace is for credentials. The content API
+// in the admin evaluated the policy it was given at startup: a grant made
+// while it ran was refused there, and a revoked grant kept working there,
+// until the admin restarted.
+func (p *Policy) Replace(bindings []Binding) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.Bindings = bindings
+}
+
 // Snapshot returns a copy of the tokens, hashes included — callers that render
 // these must not print the Hash field, which is why nothing here does.
 func (ts *TokenStore) Snapshot() []Token {

@@ -814,3 +814,42 @@ func TestTheBearerSchemeIsReadInAnyCase(t *testing.T) {
 		}
 	}
 }
+
+// A grant made and a grant revoked while the server runs both apply at once.
+//
+// The server evaluated the policy it was given at startup. In the admin that
+// meant a reader granted on the command line was refused /api/v1 while /mcp
+// served them, and a revoked reader kept reading pages there until the admin
+// restarted. ReloadPolicy is how a host keeps it current, and it is asked
+// before every decision.
+func TestTheAPISeesTheAccessRulesAsTheyAreNow(t *testing.T) {
+	s, _, _ := setup(t)
+	late, _, err := s.Tokens.Issue("late", "late", auth.RoleReader, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The policy file as another process writes it.
+	disk := &auth.Policy{}
+	for _, b := range s.Policy.Snapshot() {
+		if err := disk.Grant(b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.ReloadPolicy = func() { s.Policy.Replace(disk.Snapshot()) }
+
+	if w := req(t, s, "GET", "/api/v1/pages", late, nil, nil); w.Code != http.StatusForbidden {
+		t.Fatalf("somebody granted nothing read the pages: %d", w.Code)
+	}
+	if err := disk.Grant(auth.Binding{Principal: "late", Role: auth.RoleReader, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	if w := req(t, s, "GET", "/api/v1/pages", late, nil, nil); w.Code != http.StatusOK {
+		t.Fatalf("a reader granted while the server ran was refused: %d %s", w.Code, w.Body.String())
+	}
+	if n := disk.Revoke("late", auth.RoleReader, "/"); n != 1 {
+		t.Fatalf("revoked %d bindings", n)
+	}
+	if w := req(t, s, "GET", "/api/v1/pages", late, nil, nil); w.Code != http.StatusForbidden {
+		t.Fatalf("a reader revoked while the server ran still read the pages: %d", w.Code)
+	}
+}

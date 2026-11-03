@@ -74,6 +74,12 @@ type Server struct {
 	// ReloadTokens re-reads the credential store when it has changed on disk.
 	// Nil means never, which is only right for a test.
 	ReloadTokens func()
+	// ReloadPolicy re-reads the access rules when they have changed on disk,
+	// for the same reason. Without it this server decided against the policy
+	// it was started with: a grant made while it ran was refused here while
+	// the admin, the CLI and /mcp allowed it, and a revoked grant kept working
+	// here until a restart. Nil means never, which is only right for a test.
+	ReloadPolicy func()
 	// Throttle slows repeated authentication failures. Nil disables it, which
 	// is for tests; the CLI wires one in from configuration.
 	Throttle *throttle.Limiter
@@ -230,6 +236,11 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		// is one stat per request rather than a parse.
 		if s.ReloadTokens != nil {
 			s.ReloadTokens()
+		}
+		// And the access rules, which are the same kind of shared file and
+		// were read once: see ReloadPolicy.
+		if s.ReloadPolicy != nil {
+			s.ReloadPolicy()
 		}
 
 		authSub := throttle.Subject{Source: sourceOf(r)}

@@ -964,6 +964,11 @@ func cmdServe(root string, args []string) error {
 		// until an admin request happened to reload the store.
 		Throttle:     srv.Throttle,
 		ReloadTokens: srv.ReloadTokens,
+		// And the access rules, for the same reason. With only the tokens
+		// reloaded, a grant made while the admin ran was refused here while
+		// its screens and /mcp allowed it, and a revoked grant kept working
+		// here until a restart.
+		ReloadPolicy: policyReloader(root, pol),
 		OnBadToken:   sh.badToken,
 		Shield:       func() (time.Time, bool) { return sh.off("api") },
 		// The same cache the admin uses. One process, one decoded copy of a
