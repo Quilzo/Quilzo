@@ -768,7 +768,12 @@ func main() {
 	// Authorisation happens here, once, for every command. See privilege.go
 	// for why it is a table rather than a call at the top of each one.
 	if cmd != "help" && cmd != "-h" && cmd != "--help" {
-		if err := authoriseCommand(root, cmd, cmdArgs); err != nil {
+		if err := authoriseCommand(root, cmd, cmdArgs); errors.Is(err, errHelpOnly) {
+			// Help for somebody who may not run the command, and nothing
+			// else: letting it through to the command ran the command.
+			usage()
+			return
+		} else if err != nil {
 			w.Error(err)
 			os.Exit(out.ExitFailure)
 		}

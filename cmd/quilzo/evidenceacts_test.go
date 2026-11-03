@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -23,27 +24,7 @@ import (
 // stamp. Those take what `auditlog anchor` takes; reading and exporting what
 // is kept, and the bare commands, which only read, stay a reader's.
 func TestSendingEvidenceOutTakesWhatAuditlogAnchorTakes(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	root := connectStore(t)
-	if err := cmdAuth(root, []string{"grant", "boss", "admin"}); err != nil {
-		t.Fatal(err)
-	}
-	if err := cmdAuth(root, []string{"grant", "rae", "reader"}); err != nil {
-		t.Fatal(err)
-	}
-	isolateToken(t)
-	issueFor := func(who string, role auth.Role) string {
-		ts, _ := loadTokens(root)
-		secret, _, err := ts.Issue("t-"+who, who, role, "/", time.Hour, role)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := saveJSON(tokensPath(root), ts); err != nil {
-			t.Fatal(err)
-		}
-		return secret
-	}
-	reader, admin := issueFor("rae", auth.RoleReader), issueFor("boss", auth.RoleAdmin)
+	root, reader, admin := readerAndAdmin(t)
 
 	acts := [][]string{{"anchor", "submit"}, {"anchor", "upgrade"},
 		{"timestamp", "stamp"}, {"stamp", "stamp"}}
@@ -69,6 +50,79 @@ func TestSendingEvidenceOutTakesWhatAuditlogAnchorTakes(t *testing.T) {
 	for _, c := range acts {
 		if err := authoriseCommand(root, c[0], c[1:]); err != nil {
 			t.Errorf("an administrator cannot run %v: %v", c, err)
+		}
+	}
+}
+
+// readerAndAdmin is a store with a reader, rae, and an administrator, boss,
+// and a token for each.
+func readerAndAdmin(t *testing.T) (root, reader, admin string) {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	root = connectStore(t)
+	if err := cmdAuth(root, []string{"grant", "boss", "admin"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdAuth(root, []string{"grant", "rae", "reader"}); err != nil {
+		t.Fatal(err)
+	}
+	isolateToken(t)
+	issueFor := func(who string, role auth.Role) string {
+		ts, _ := loadTokens(root)
+		secret, _, err := ts.Issue("t-"+who, who, role, "/", time.Hour, role)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := saveJSON(tokensPath(root), ts); err != nil {
+			t.Fatal(err)
+		}
+		return secret
+	}
+	return root, issueFor("rae", auth.RoleReader), issueFor("boss", auth.RoleAdmin)
+}
+
+// Asking how to use a command needs no authority, and was let through to
+// the command itself. Most commands take "help" as one more argument and
+// ignore it, a flag parser stops at the first argument that is not a flag,
+// and `anchor upgrade` and `auditlog anchor` read no arguments at all, so
+// the command ran: a reader's `quilzo timestamp stamp help` sent the
+// publication's digest to an authority, and `quilzo auth grant rae admin
+// help` proposed the grant. Somebody who may not run a command is shown its
+// usage and nothing runs; somebody who may gets the command's own help.
+func TestAskingForHelpDoesNotRunTheCommand(t *testing.T) {
+	root, reader, admin := readerAndAdmin(t)
+	asks := [][]string{
+		{"timestamp", "stamp", "help"},
+		{"stamp", "stamp", "--tsa", "https://tsa.example/", "help"},
+		{"anchor", "submit", "help"},
+		{"anchor", "upgrade", "-h"},
+		{"auditlog", "anchor", "--help"},
+		{"auth", "grant", "rae", "admin", "help"},
+	}
+
+	t.Setenv("QUILZO_TOKEN", reader)
+	for _, c := range asks {
+		err := authoriseCommand(root, c[0], c[1:])
+		if err == nil {
+			t.Errorf("a reader's %v is let through to the command", c)
+			continue
+		}
+		if !errors.Is(err, errHelpOnly) {
+			t.Errorf("a reader asking %v for help is refused it: %v", c, err)
+		}
+	}
+	// Not a refusal on the record: nobody tried to do anything.
+	for _, e := range auditedActions(t, root) {
+		if e.Outcome == audit.Denied {
+			t.Errorf("asking for help left a refusal on the record: %s", e.Action)
+		}
+	}
+
+	t.Setenv("QUILZO_TOKEN", admin)
+	for _, c := range asks {
+		if err := authoriseCommand(root, c[0], c[1:]); err != nil {
+			t.Errorf("an administrator asking %v for help is not let through to "+
+				"the command's own: %v", c, err)
 		}
 	}
 }

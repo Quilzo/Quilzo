@@ -4,6 +4,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	stdpath "path"
 	"regexp"
@@ -1105,6 +1106,20 @@ func min3(a, b, c int) int {
 	return a
 }
 
+// errHelpOnly is authoriseCommand's answer to somebody who asked how to use
+// a command they may not run: main shows them the usage, and the command
+// does not run.
+//
+// A command line carrying -h, --help or help was let through to the command
+// itself, so that asking needed no authority. Most commands take "help" as
+// one more argument and ignore it, a flag parser stops at the first argument
+// that is not a flag, and some commands read no arguments at all, so the
+// command ran: a reader's `quilzo timestamp stamp help` sent the
+// publication's digest to an authority, `quilzo anchor upgrade -h` rewrote
+// the proofs, and `quilzo auth grant NAME admin help` proposed the grant.
+// Somebody who may run the command still gets its own help.
+var errHelpOnly = errors.New("help was asked for, by somebody who may not run the command")
+
 // authoriseCommand is the single point every command passes through.
 func authoriseCommand(root, cmd string, args []string) error {
 	n, ok := lookupNeed(cmd, args)
@@ -1152,10 +1167,12 @@ func authoriseCommand(root, cmd string, args []string) error {
 	if n.action == auth.ActToken && bootstrapIssue(root, cmd, args) {
 		return nil
 	}
-	// Asking a command for help must not require the authority to run it.
+	// Asking a command for help must not require the authority to run it,
+	// and must not run it for somebody who has none: see errHelpOnly.
+	help := false
 	for _, a := range args {
 		if a == "-h" || a == "--help" || a == "help" {
-			return nil
+			help = true
 		}
 	}
 
@@ -1169,6 +1186,10 @@ func authoriseCommand(root, cmd string, args []string) error {
 	// the second page be worked around by naming a permitted page alongside it.
 	for _, resource := range resources {
 		if err := authorise(root, caller, n.action, resource); err != nil {
+			if help {
+				// Not a refusal on the record: nothing was attempted.
+				return errHelpOnly
+			}
 			sub := cmd
 			if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 				sub = cmd + " " + args[0]

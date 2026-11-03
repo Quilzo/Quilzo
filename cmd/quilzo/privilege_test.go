@@ -4,6 +4,7 @@
 package main
 
 import (
+	"errors"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -316,6 +317,8 @@ func TestAnUnconfiguredStoreNeedsNoToken(t *testing.T) {
 }
 
 // Asking a command how to use it must not require the authority to run it.
+// Without that authority the answer is the usage (errHelpOnly), not the
+// command: TestAskingForHelpDoesNotRunTheCommand.
 func TestHelpNeedsNoAuthority(t *testing.T) {
 	root := t.TempDir()
 	if err := cmdInit(root); err != nil {
@@ -328,7 +331,8 @@ func TestHelpNeedsNoAuthority(t *testing.T) {
 	}
 	isolateToken(t)
 	t.Setenv("QUILZO_TOKEN", "")
-	if err := authoriseCommand(root, "publish", []string{"--help"}); err != nil {
+	if err := authoriseCommand(root, "publish", []string{"--help"}); err != nil &&
+		!errors.Is(err, errHelpOnly) {
 		t.Errorf("publish --help was refused: %v", err)
 	}
 }
