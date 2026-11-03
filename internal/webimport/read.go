@@ -20,6 +20,7 @@
 package webimport
 
 import (
+	"bytes"
 	"html"
 	"net/url"
 	"strings"
@@ -86,9 +87,6 @@ var skipped = map[string]bool{
 	"select": true, "button": true, "dialog": true, "math": true, "video": true, "audio": true,
 }
 
-// chrome are the regions around content.
-var chrome = map[string]bool{"header": true, "nav": true, "footer": true, "aside": true}
-
 // blockTags start or end a piece of content.
 var blockTags = map[string]string{
 	"h1": "h1", "h2": "h2", "h3": "h3", "h4": "h4", "h5": "h5", "h6": "h6",
@@ -110,7 +108,8 @@ func Read(body []byte, base *url.URL) Page {
 	if len(body) > MaxPageBytes {
 		body = body[:MaxPageBytes]
 	}
-	r := &reader{page: Page{URL: base, Left: map[string]int{}}, base: base}
+	r := &reader{page: Page{URL: base, Left: map[string]int{}}, base: base,
+		opened: map[string]int{}, marked: map[string]int{}}
 	r.scan(string(body))
 	r.flush()
 	r.finish()
@@ -120,8 +119,17 @@ func Read(body []byte, base *url.URL) Page {
 type reader struct {
 	page Page
 	base *url.URL
-	// open is the stack of open elements.
-	open []string
+	// open is the stack of open elements. opened counts them by name, inside
+	// counts the ones asked about, and lists are where in it the lists are.
+	// Asking whether an element is open, or which list is innermost, or
+	// closing one that is not, looks at these and never walks the stack: an
+	// element nobody closes stays on it, and walked at every tag and every
+	// run of words, a 1 MiB page of unclosed tags took 45 seconds to read,
+	// through an agent's web_fetch as much as an import.
+	open   []string
+	opened map[string]int
+	inside [asked]int
+	lists  []int
 	// skipping is the element whose content is being left behind.
 	skipping string
 	// text is the block being written, and kind what it is; prose says some
@@ -132,11 +140,16 @@ type reader struct {
 	prose bool
 	md    []byte
 	marks []mark
+	// marked counts the marks by name, for the same reason as opened.
+	marked map[string]int
 	// region counts, for each block, whether it is in chrome, main, article.
 	blocks []regionBlock
-	// head text being read: the title.
+	// head text being read: the title, and how much of it had been read
+	// when a title last closed. It is cleaned once, at the end, not at
+	// every closing title tag, each of which cleaned all of it again.
 	inTitle bool
 	title   strings.Builder
+	titled  int
 	// nav being read, and the link in it.
 	nav      *Nav
 	navDepth int
@@ -164,22 +177,69 @@ type regionBlock struct {
 	chrome, main, article bool
 }
 
-func (r *reader) in(name string) bool {
-	for _, o := range r.open {
-		if o == name {
-			return true
-		}
+// The elements the reader asks whether it is inside.
+const (
+	inHead = iota
+	inPre
+	inMain
+	inArticle
+	inQuote
+	inFooter
+	// inChrome are the regions around content: a header, a nav or an
+	// aside, and a footer too.
+	inChrome
+	asked
+)
+
+// askedAbout is which of the elements asked about name is, or -1.
+func askedAbout(name string) int {
+	switch name {
+	case "head":
+		return inHead
+	case "pre":
+		return inPre
+	case "main":
+		return inMain
+	case "article":
+		return inArticle
+	case "blockquote":
+		return inQuote
+	case "footer":
+		return inFooter
+	case "header", "nav", "aside":
+		return inChrome
 	}
-	return false
+	return -1
 }
 
-func (r *reader) inChrome() bool {
-	for _, o := range r.open {
-		if chrome[o] {
-			return true
-		}
+func (r *reader) in(what int) bool { return r.inside[what] > 0 }
+
+func (r *reader) inChrome() bool { return r.in(inChrome) || r.in(inFooter) }
+
+// push opens an element.
+func (r *reader) push(name string) {
+	if name == "ol" || name == "ul" {
+		r.lists = append(r.lists, len(r.open))
 	}
-	return false
+	if what := askedAbout(name); what >= 0 {
+		r.inside[what]++
+	}
+	r.open = append(r.open, name)
+	r.opened[name]++
+}
+
+// pop closes the open elements from the i-th in.
+func (r *reader) pop(i int) {
+	for _, o := range r.open[i:] {
+		if what := askedAbout(o); what >= 0 {
+			r.inside[what]--
+		}
+		r.opened[o]--
+	}
+	r.open = r.open[:i]
+	for len(r.lists) > 0 && r.lists[len(r.lists)-1] >= i {
+		r.lists = r.lists[:len(r.lists)-1]
+	}
 }
 
 // scan walks the markup: text, tags, comments.
@@ -237,7 +297,7 @@ func (r *reader) textRun(t string) {
 	if r.link != nil {
 		r.linkText.WriteString(t)
 	}
-	if r.in("head") {
+	if r.in(inHead) {
 		return
 	}
 	if r.link == nil && strings.TrimSpace(t) != "" {
@@ -259,42 +319,43 @@ const cellGap = " · "
 
 // innerList is the list being written in, ol or ul, or "".
 func (r *reader) innerList() string {
-	for i := len(r.open) - 1; i >= 0; i-- {
-		if r.open[i] == "ol" || r.open[i] == "ul" {
-			return r.open[i]
-		}
+	if len(r.lists) == 0 {
+		return ""
 	}
-	return ""
+	return r.open[r.lists[len(r.lists)-1]]
 }
 
 // inCode says whether md is inside a code span.
-func (r *reader) inCode() bool {
-	for _, m := range r.marks {
-		if m.name == "code" {
-			return true
-		}
-	}
-	return false
-}
+func (r *reader) inCode() bool { return r.marked["code"] > 0 }
 
 // mark writes an inline element's opener into md.
 func (r *reader) mark(m mark) {
 	m.at = len(r.md)
 	r.md = append(r.md, m.opener...)
 	r.marks = append(r.marks, m)
+	r.marked[m.name]++
 }
 
 // shut closes the innermost open element of this name: with its closer
 // when it held words, and by taking its opener back when it held none.
+//
+// It reads md back from its end, and what it closes only as far as its
+// first word: md was made into a string whole at every closing tag, so a
+// 1 MiB paragraph of bold words took 13 seconds.
 func (r *reader) shut(name string) {
+	if r.marked[name] == 0 {
+		return
+	}
 	for i := len(r.marks) - 1; i >= 0; i-- {
 		m := r.marks[i]
 		if m.name != name {
 			continue
 		}
+		for _, inner := range r.marks[i:] {
+			r.marked[inner.name]--
+		}
 		r.marks = r.marks[:i]
-		inner := strings.TrimSpace(string(r.md[m.at+len(m.opener):]))
-		if inner == "" {
+		if len(bytes.TrimLeftFunc(r.md[m.at+len(m.opener):], unicode.IsSpace)) == 0 {
 			r.md = r.md[:m.at]
 			return
 		}
@@ -302,10 +363,15 @@ func (r *reader) shut(name string) {
 		case "a":
 			r.md = append(r.md, "]("+m.href+")"...)
 		default:
-			// Emphasis ends on the word, not on the space after it.
-			trail := len(r.md) - len(strings.TrimRight(string(r.md), " \t\n"))
-			end := string(r.md[len(r.md)-trail:])
-			r.md = append(r.md[:len(r.md)-trail], m.opener+end...)
+			// Emphasis ends on the word, not on the space after it. That
+			// space is closed up to one, as flush closes it up anyway, so
+			// that the closing tags after it do not each walk all of it.
+			words := bytes.TrimRight(r.md, " \t\n")
+			spaced := len(words) < len(r.md)
+			r.md = append(words, m.opener...)
+			if spaced {
+				r.md = append(r.md, ' ')
+			}
 		}
 		return
 	}
@@ -391,12 +457,12 @@ func (r *reader) tag(raw string) {
 			}
 		}
 	case "strong", "b", "em", "i", "code":
-		if !r.in("pre") {
+		if !r.in(inPre) {
 			r.mark(mark{name: name, opener: inlineMarks[name]})
 		}
 	case "nav":
 		if r.nav == nil {
-			r.nav = &Nav{Foot: r.in("footer")}
+			r.nav = &Nav{Foot: r.in(inFooter)}
 			r.navDepth = len(r.open)
 		}
 	}
@@ -407,15 +473,14 @@ func (r *reader) tag(raw string) {
 		}
 	}
 	if !void[name] && !strings.HasSuffix(raw, "/") {
-		r.open = append(r.open, name)
+		r.push(name)
 	}
 }
 
 func (r *reader) close(name string) {
 	switch name {
 	case "title":
-		r.inTitle = false
-		r.page.Title = clean(r.title.String())
+		r.inTitle, r.titled = false, r.title.Len()
 		return
 	case "a":
 		if r.link != nil {
@@ -436,10 +501,12 @@ func (r *reader) close(name string) {
 		r.flush()
 	}
 	// Close back to the matching element; a stray closing tag closes nothing.
-	for i := len(r.open) - 1; i >= 0; i-- {
-		if r.open[i] == name {
-			r.open = r.open[:i]
-			break
+	if r.opened[name] > 0 {
+		for i := len(r.open) - 1; i >= 0; i-- {
+			if r.open[i] == name {
+				r.pop(i)
+				break
+			}
 		}
 	}
 	if r.nav != nil && len(r.open) < r.navDepth+1 && name == "nav" {
@@ -456,13 +523,22 @@ func (r *reader) flush() {
 	prose := r.prose
 	r.text.Reset()
 	// An element still open when its block ends did not close inside it:
-	// its opener is taken back, innermost first, and it marks nothing.
-	for i := len(r.marks) - 1; i >= 0; i-- {
-		m := r.marks[i]
-		r.md = append(r.md[:m.at], r.md[m.at+len(m.opener):]...)
+	// its opener is taken back, and it marks nothing. They are taken back
+	// in one pass over md: one at a time, each moved all that followed it.
+	if len(r.marks) > 0 {
+		w := r.marks[0].at
+		for i, m := range r.marks {
+			end := len(r.md)
+			if i+1 < len(r.marks) {
+				end = r.marks[i+1].at
+			}
+			w += copy(r.md[w:], r.md[m.at+len(m.opener):end])
+		}
+		r.md = r.md[:w]
 	}
 	md := strings.Join(strings.Fields(string(r.md)), " ")
 	r.md, r.marks = r.md[:0], r.marks[:0]
+	clear(r.marked)
 	t, md = strings.TrimSuffix(t, strings.TrimSpace(cellGap)), strings.TrimSuffix(md, strings.TrimSpace(cellGap))
 	t, md = strings.TrimSpace(t), strings.TrimSpace(md)
 	kind := r.kind
@@ -471,7 +547,7 @@ func (r *reader) flush() {
 		return
 	}
 	switch {
-	case (kind == "p" || kind == "") && r.in("blockquote"):
+	case (kind == "p" || kind == "") && r.in(inQuote):
 		// A quotation's paragraphs are the quotation.
 		kind = "quote"
 	case kind == "li" && r.innerList() == "ol":
@@ -493,11 +569,12 @@ func (r *reader) flush() {
 }
 
 func (r *reader) add(b Block) {
-	r.blocks = append(r.blocks, regionBlock{Block: b, chrome: r.inChrome(), main: r.in("main"), article: r.in("article")})
+	r.blocks = append(r.blocks, regionBlock{Block: b, chrome: r.inChrome(), main: r.in(inMain), article: r.in(inArticle)})
 }
 
 // finish keeps the blocks that are the page's content.
 func (r *reader) finish() {
+	r.page.Title = clean(r.title.String()[:r.titled])
 	if r.nav != nil && len(r.nav.Links) > 0 {
 		r.page.Navs = append(r.page.Navs, *r.nav)
 	}

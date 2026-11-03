@@ -448,13 +448,25 @@ func (m *Manifest) ValidateWith(known map[string]bool, customKinds map[Kind]bool
 	}
 
 	// Asking first about something the agent does not hold is a line that
-	// reads as a safeguard and guards nothing.
-	for _, a := range m.AskFirst {
-		if !m.holds(a) {
-			return fmt.Errorf(
-				"%s asks a person first about %q, which it does not hold. "+
-					"A safeguard on something it cannot do reads as one and "+
-					"is not", m.Name, a)
+	// reads as a safeguard and guards nothing. What it holds is gathered
+	// once: looked through for each name asked about, an agent file
+	// offering 40,000 operations took three seconds to check, and one with
+	// the 8 MiB an OpenAPI document may be would have taken twenty minutes.
+	if len(m.AskFirst) > 0 {
+		held := make(map[string]bool, len(m.Capabilities)+len(m.Tools))
+		for _, c := range m.Capabilities {
+			held[c] = true
+		}
+		for _, t := range m.Tools {
+			held[t.Name] = true
+		}
+		for _, a := range m.AskFirst {
+			if !held[a] {
+				return fmt.Errorf(
+					"%s asks a person first about %q, which it does not hold. "+
+						"A safeguard on something it cannot do reads as one and "+
+						"is not", m.Name, a)
+			}
 		}
 	}
 

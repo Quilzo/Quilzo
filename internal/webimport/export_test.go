@@ -4,6 +4,7 @@
 package webimport
 
 import (
+	"fmt"
 	"net/url"
 	"slices"
 	"strings"
@@ -349,4 +350,157 @@ func wordsOf(body map[string]any) string {
 		}
 	}
 	return strings.Join(out, "\n\n")
+}
+
+// An export is read in time in proportion to it. A menu entry with no title
+// of its own looked for its page through every item of the export, so
+// 40,000 of them (2.2 MB) took 45 seconds; and a Ghost post kept only as
+// plain text was put together a paragraph at a time, each copying all the
+// paragraphs before it, so 100,000 of them (500 KB) took 12.
+func TestAnExportIsReadInTimeInProportionToIt(t *testing.T) {
+	var w strings.Builder
+	w.WriteString(`<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:wp="http://wordpress.org/export/1.2/"` +
+		` xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>Many</title><link>https://many.example</link>` +
+		`<item><title>About us</title><link>https://many.example/about-us/</link><wp:post_id>3</wp:post_id>` +
+		`<wp:post_type>page</wp:post_type><wp:status>publish</wp:status><content:encoded>We bake.</content:encoded></item>` +
+		`<item><title></title><wp:post_id>4</wp:post_id><wp:post_type>nav_menu_item</wp:post_type>` +
+		`<category domain="nav_menu" nicename="main">Main</category>` +
+		`<wp:postmeta><wp:meta_key>_menu_item_object_id</wp:meta_key><wp:meta_value>3</wp:meta_value></wp:postmeta></item>`)
+	for i := 0; i < 40000; i++ {
+		w.WriteString("<item><wp:post_type>nav_menu_item</wp:post_type></item>")
+	}
+	w.WriteString("</channel></rss>")
+	start := time.Now()
+	s, err := FromWordPress([]byte(w.String()), "many.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if took := time.Since(start); took > 5*time.Second {
+		t.Errorf("a %d-byte WordPress export took %v", w.Len(), took)
+	}
+	if navs := s.Pages[0].Navs; len(navs) != 1 || len(navs[0].Links) != 1 || navs[0].Links[0].Label != "About us" {
+		t.Errorf("the menu: %+v", navs)
+	}
+
+	plain := strings.Repeat("a\n\n", 100000)
+	doc := `{"data":{"posts":[{"id":"p1","title":"Long","slug":"long","html":"","plaintext":"` +
+		strings.ReplaceAll(plain, "\n", `\n`) + `","status":"published","visibility":"public"}]}}`
+	start = time.Now()
+	g, err := FromGhost([]byte(doc), "long.json", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if took := time.Since(start); took > 5*time.Second {
+		t.Errorf("a %d-byte Ghost export took %v", len(doc), took)
+	}
+	if len(g.Posts) != 1 || len(g.Posts[0].Blocks) != 100000 {
+		t.Errorf("the post has %d blocks", len(g.Posts[0].Blocks))
+	}
+}
+
+// A post's tags are kept once each, whatever their case, as strings.EqualFold
+// tells them apart (the Kelvin sign is a K, and the long s an s), and finding
+// the ones already kept does not look through all of them for each: a post
+// with 80,000 tags in a WordPress export, or in a Markdown file's front
+// matter, took 23 seconds. A tag in a front matter list is compared as it is
+// kept, without the spaces around it.
+func TestTagsAreKeptOnceInTimeInProportionToThem(t *testing.T) {
+	var w, md strings.Builder
+	w.WriteString(`<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:wp="http://wordpress.org/export/1.2/"` +
+		` xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>Tags</title><link>https://tags.example</link>` +
+		`<item><title>Rye</title><link>https://tags.example/rye/</link><wp:post_id>3</wp:post_id><wp:post_date>2026-10-27</wp:post_date>` +
+		`<wp:post_type>post</wp:post_type><wp:status>publish</wp:status><content:encoded>We bake.</content:encoded>` +
+		`<category domain="post_tag">Rye</category><category domain="category">rye</category><category domain="post_tag">KELVIN</category>` +
+		"<category domain=\"post_tag\">\u212aelvin</category><category domain=\"post_tag\">Toast</category>" +
+		"<category domain=\"post_tag\">toa\u017ft</category><category domain=\"category\">Uncategorized</category>")
+	md.WriteString("---\ntitle: Rye\ndate: 2026-10-27\ncategories: [\" rye \", \" Bread \"]\ntags: Rye, rye, KELVIN, \u212aelvin, Toast, toa\u017ft")
+	want := []string{"Rye", "KELVIN", "Toast"}
+	for i := 0; i < 80000; i++ {
+		fmt.Fprintf(&w, `<category domain="post_tag">t%d</category>`, i)
+		fmt.Fprintf(&md, ", t%d", i)
+		want = append(want, fmt.Sprintf("t%d", i))
+	}
+	w.WriteString("</item></channel></rss>")
+	md.WriteString("\n---\nWe bake.\n")
+	start := time.Now()
+	s, err := FromWordPress([]byte(w.String()), "tags.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := FromFiles(fstest.MapFS{"content/posts/rye.md": {Data: []byte(md.String())}}, "tags")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if took := time.Since(start); took > 5*time.Second {
+		t.Errorf("reading %d tags twice took %v", 80000, took)
+	}
+	// The front matter's tags come first, then its categories.
+	for from, c := range map[string]struct{ got, want []string }{
+		"WordPress": {s.Posts[0].Tags, want},
+		"Markdown":  {f.Posts[0].Tags, append(slices.Clip(want), "Bread")},
+	} {
+		if !slices.Equal(c.got, c.want) {
+			t.Errorf("%s: %d tags, %q ... %q", from, len(c.got), c.got[:min(4, len(c.got))], c.got[max(0, len(c.got)-2):])
+		}
+	}
+}
+
+// Posts and pages that would have the same name are numbered, and finding
+// the next number does not count up from 2 again for each: 10,000 posts
+// named alike took 21 seconds. Nor is the package measured again for every
+// page that does not fit: an export of 10,000 pages took three and a half
+// minutes to become one.
+func TestSameNamesAreNumberedInTimeInProportionToThem(t *testing.T) {
+	posts := []Post{{Title: "Same", Slug: "same", Published: "2026-10-27"}, {Title: "Same", Slug: "same-3", Published: "2026-10-27"}}
+	for i := 0; i < 10000; i++ {
+		posts = append(posts, Post{Title: "Same", Slug: "same", Published: "2026-10-27"})
+	}
+	start := time.Now()
+	slugs := postSlugs(posts)
+	if took := time.Since(start); took > 2*time.Second {
+		t.Errorf("naming %d posts took %v", len(posts), took)
+	}
+	if got := strings.Join(slugs[:5], ","); got != "same,same-3,same-2,same-4,same-5" || slugs[len(slugs)-1] != "same-10002" {
+		t.Errorf("the posts are named %s ... %s", got, slugs[len(slugs)-1])
+	}
+
+	// Letters a page's name leaves out tell the pages' addresses apart.
+	odd := func(i int) string {
+		var b strings.Builder
+		for _, d := range fmt.Sprint(i) {
+			b.WriteRune([]rune("àáâãäåæçèé")[d-'0'])
+		}
+		return b.String()
+	}
+	home, _ := url.Parse("https://same.example/")
+	s := &Site{Home: home, Name: "Same", From: KindWordPress, Origin: "same.xml"}
+	for i := 0; i < 10000; i++ {
+		u, _ := url.Parse("https://same.example/same" + odd(i) + "/")
+		s.Pages = append(s.Pages, Page{URL: u, Title: "Same", Blocks: []Block{{Kind: "p", Text: "We bake.", MD: "We bake."}}})
+	}
+	start = time.Now()
+	b, err := Package(s, "", "dana", nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if took := time.Since(start); took > 5*time.Second {
+		t.Errorf("packaging %d pages took %v", len(s.Pages), took)
+	}
+	p := b.Package
+	var names []string
+	for _, pg := range p.Pages {
+		names = append(names, pg.Name)
+	}
+	if p.Blocks() != feature.MaxBlocks || names[1] != "same" || names[2] != "same-2" || names[len(names)-1] != fmt.Sprintf("same-%d", len(names)-1) {
+		t.Errorf("%d blocks, pages %v ... %v", p.Blocks(), names[:3], names[len(names)-1])
+	}
+	left := 0
+	for _, n := range b.Notes {
+		if strings.Contains(n, "was left out to keep the package within what one may hold") {
+			left++
+		}
+	}
+	if left != len(s.Pages)-len(p.Pages) || !strings.Contains(strings.Join(b.Notes, "\n"), "page same-9999 was left out") {
+		t.Errorf("%d pages kept, %d named as left out", len(p.Pages), left)
+	}
 }

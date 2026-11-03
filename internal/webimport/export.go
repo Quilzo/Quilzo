@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // A site brought from the file its last home exported.
@@ -166,6 +167,10 @@ func FromWordPress(body []byte, origin string) (*Site, error) {
 	type attachment struct{ url, alt string }
 	attachments := map[string]attachment{}
 	links := map[string]string{}
+	// titles are the items' titles by id, the last of an id winning, for a
+	// menu entry with no title of its own: each one looked through every
+	// item for its page, so 40,000 of them (2.2 MB) took 45 seconds.
+	titles := map[string]string{}
 	for _, it := range ch.Items {
 		if it.Type == "attachment" && it.AttachURL != "" {
 			alt := it.meta("_wp_attachment_image_alt")
@@ -174,6 +179,7 @@ func FromWordPress(body []byte, origin string) (*Site, error) {
 		if it.Link != "" {
 			links[it.ID] = it.Link
 		}
+		titles[it.ID] = it.Title
 	}
 	held, other, comments, shortcodes := 0, map[string]int{}, 0, 0
 	var pages []Page
@@ -204,11 +210,7 @@ func FromWordPress(body []byte, origin string) (*Site, error) {
 			}
 			label := title
 			if label == "" {
-				for _, o := range ch.Items {
-					if o.ID == it.meta("_menu_item_object_id") {
-						label = strings.TrimSpace(html.UnescapeString(o.Title))
-					}
-				}
+				label = strings.TrimSpace(html.UnescapeString(titles[it.meta("_menu_item_object_id")]))
 			}
 			if href != "" && label != "" {
 				menus[menu] = append(menus[menu], menuItem{it.MenuOrder, label, href, it.meta("_menu_item_menu_item_parent"),
@@ -266,11 +268,14 @@ func FromWordPress(body []byte, origin string) (*Site, error) {
 				pst.Image, pst.Alt = u, a.alt
 			}
 		}
+		// tagged are the tags kept, by foldKey.
+		tagged := map[string]bool{}
 		for _, c := range it.Categories {
 			v := strings.TrimSpace(html.UnescapeString(c.Value))
 			if (c.Domain == "category" || c.Domain == "post_tag") && v != "" && !strings.EqualFold(v, "Uncategorized") &&
-				!containsFold(pst.Tags, v) {
+				!tagged[foldKey(v)] {
 				pst.Tags = append(pst.Tags, v)
+				tagged[foldKey(v)] = true
 			}
 		}
 		s.Posts = append(s.Posts, pst)
@@ -400,13 +405,19 @@ func day(s string) string {
 	return ""
 }
 
-func containsFold(list []string, s string) bool {
-	for _, x := range list {
-		if strings.EqualFold(x, s) {
-			return true
+// foldKey is s with each letter as the least of the letters it is in
+// another case, so that two strings have one key when strings.EqualFold
+// says they are the same. Tags are kept once each by their keys: kept by
+// looking through all those kept so far for each, a post with 80,000 tags
+// took 23 seconds.
+func foldKey(s string) string {
+	return strings.Map(func(r rune) rune {
+		least := r
+		for f := unicode.SimpleFold(r); f != r; f = unicode.SimpleFold(f) {
+			least = min(least, f)
 		}
-	}
-	return false
+		return least
+	}, s)
 }
 
 // -- Ghost --------------------------------------------------------------------
@@ -563,9 +574,14 @@ func FromGhost(body []byte, origin string, base *url.URL) (*Site, error) {
 		link := home.JoinPath(gp.Slug + "/")
 		content := gp.HTML
 		if strings.TrimSpace(content) == "" && strings.TrimSpace(gp.Plaintext) != "" {
+			// Built up in place: added to a paragraph at a time, each copied
+			// all those before it, so 100,000 (500 KB) took 12 seconds.
+			var b strings.Builder
+			b.WriteString(content)
 			for _, para := range strings.Split(gp.Plaintext, "\n\n") {
-				content += "<p>" + html.EscapeString(para) + "</p>"
+				b.WriteString("<p>" + html.EscapeString(para) + "</p>")
 			}
+			content = b.String()
 		}
 		if strings.TrimSpace(content) == "" {
 			noWords++

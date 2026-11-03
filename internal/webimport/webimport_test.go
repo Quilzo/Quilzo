@@ -384,3 +384,44 @@ func TestQuotationsTablesAndNumberedListsKeepTheirShape(t *testing.T) {
 		t.Fatalf("the words: %q", words)
 	}
 }
+
+// However a page is made, reading it takes time in proportion to its size.
+// Each of these took time in proportion to its square: an element left open
+// stayed on a stack that was walked at every tag and every run of words, a
+// closing tag looked again at all the words before it, and so on. A 1 MiB
+// page of unclosed bold took 45 seconds, through an agent's web_fetch as
+// much as an import, and the 4 MiB a page may be would have taken minutes.
+func TestAPageIsReadInTimeInProportionToIt(t *testing.T) {
+	const size = 1 << 20
+	base, _ := url.Parse("https://hartsbakery.example/")
+	fill := func(units ...string) string {
+		var b strings.Builder
+		for _, u := range units {
+			b.WriteString(strings.Repeat(u, size/len(units)/len(u)))
+		}
+		return b.String()
+	}
+	for name, page := range map[string]string{
+		"elements left open":            fill("<x>a"),
+		"list items left open":          "<ol>" + fill("<li>a"),
+		"closing what is not open":      fill("<s>", "</u>"),
+		"bold left open":                "<p>" + fill("<b>a"),
+		"bold words in one paragraph":   "<p>" + fill("<b>a</b> "),
+		"closing bold that is not open": fill("<i>", "</b>"),
+		"closing bold after spaces":     fill("<b>x", " ", "</b>"),
+		"closing bold after wide space": fill("<b>x", "\u00a0", "</b>"),
+		"titles":                        "<title>" + fill("a", "<title></title>"),
+	} {
+		read := make(chan Page, 1)
+		start := time.Now()
+		go func() { read <- Read([]byte(page), base) }()
+		select {
+		case p := <-read:
+			if name == "titles" && p.Title != strings.Repeat("a", size/2) {
+				t.Errorf("the title is %.20s, %d bytes", p.Title, len(p.Title))
+			}
+		case <-time.After(8 * time.Second):
+			t.Errorf("%s: a %d-byte page was not read in %v", name, len(page), time.Since(start))
+		}
+	}
+}

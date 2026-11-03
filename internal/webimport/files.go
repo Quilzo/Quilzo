@@ -316,18 +316,26 @@ func text(m map[string]any, keys ...string) string {
 // list is a front matter field as a list of words.
 func list(m map[string]any, keys ...string) []string {
 	var out []string
+	// kept are the words kept, by foldKey, each as it is kept: without the
+	// spaces around it. A list's were compared with their spaces, so " rye "
+	// after "Rye" was kept twice.
+	kept := map[string]bool{}
 	for _, k := range keys {
 		switch v := m[k].(type) {
 		case []any:
 			for _, x := range v {
-				if s, ok := x.(string); ok && strings.TrimSpace(s) != "" && !containsFold(out, s) {
-					out = append(out, strings.TrimSpace(s))
+				if s, ok := x.(string); ok {
+					if s = strings.TrimSpace(s); s != "" && !kept[foldKey(s)] {
+						out = append(out, s)
+						kept[foldKey(s)] = true
+					}
 				}
 			}
 		case string:
 			for _, s := range strings.Split(v, ",") {
-				if s = strings.TrimSpace(s); s != "" && !containsFold(out, s) {
+				if s = strings.TrimSpace(s); s != "" && !kept[foldKey(s)] {
 					out = append(out, s)
+					kept[foldKey(s)] = true
 				}
 			}
 		}

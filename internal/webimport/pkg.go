@@ -116,14 +116,17 @@ func Package(s *Site, name, by string, picture Picture, now time.Time) (*Brought
 	names := map[string]string{}
 	// Each post's page is the blog's, by this name.
 	taken := map[string]bool{postPage: len(s.Posts) > 0}
+	// next is, for a name taken, the number to try first, as in postSlugs.
+	next := map[string]int{}
 	for i, pg := range s.Pages {
 		n := pageName(pg.URL)
 		if i == 0 {
 			n = "index"
 		}
 		base := n
-		for k := 2; taken[n]; k++ {
+		for k := max(2, next[base]); taken[n]; k++ {
 			n = fmt.Sprintf("%s-%d", base, k)
+			next[base] = k + 1
 		}
 		taken[n] = true
 		names[keyOf(pg.URL)] = n
@@ -269,23 +272,28 @@ func Package(s *Site, name, by string, picture Picture, now time.Time) (*Brought
 		note("the site has more pages than were read; read more with --pages")
 	}
 
-	// A package a person can read: the pages that fit, the rest named.
-	for size(p) > feature.MaxBytes || p.Blocks() > feature.MaxBlocks {
-		if len(p.Pages) <= 1 {
+	// A package a person can read: the pages that fit, the rest named. The
+	// most pages that fit are found by halving: measured whole again for
+	// each page taken off the end, an export of 10,000 pages took three
+	// and a half minutes to become a package. Taking pages off only ever
+	// makes a package smaller, so halving keeps the pages that taking them
+	// off one at a time kept.
+	if n := len(p.Pages); overfull(p, n) {
+		if n <= 1 || overfull(p, 1) {
 			return nil, fmt.Errorf("the home page alone is larger than a package may be")
 		}
-		gone := p.Pages[len(p.Pages)-1]
-		p.Pages = p.Pages[:len(p.Pages)-1]
-		note("page %s was left out to keep the package within what one may hold", gone.Name)
-		for i := range p.Menus {
-			kept := p.Menus[i].Items[:0]
-			for _, it := range p.Menus[i].Items {
-				if it.Target != gone.Name {
-					kept = append(kept, it)
-				}
+		fit, over := 1, n
+		for over-fit > 1 {
+			if mid := (fit + over) / 2; overfull(p, mid) {
+				over = mid
+			} else {
+				fit = mid
 			}
-			p.Menus[i].Items = kept
 		}
+		for i := n - 1; i >= fit; i-- {
+			note("page %s was left out to keep the package within what one may hold", p.Pages[i].Name)
+		}
+		*p = firstPages(p, fit)
 	}
 	// The blog, last, so trimming the pages above never takes it.
 	if len(s.Posts) > 0 {
@@ -348,6 +356,38 @@ func Package(s *Site, name, by string, picture Picture, now time.Time) (*Brought
 	site.Redirects = out.Redirects
 	out.Package = p
 	return out, nil
+}
+
+// firstPages is the package with only its first n pages, and its menus
+// without the entries for the others.
+func firstPages(p *feature.Package, n int) feature.Package {
+	q := *p
+	gone := map[string]bool{}
+	for _, pg := range p.Pages[n:] {
+		gone[pg.Name] = true
+	}
+	q.Pages = p.Pages[:n]
+	q.Menus = slices.Clone(p.Menus)
+	for i, m := range q.Menus {
+		var kept []menu.Item
+		if m.Items != nil {
+			kept = make([]menu.Item, 0, len(m.Items))
+		}
+		for _, it := range m.Items {
+			if !gone[it.Target] {
+				kept = append(kept, it)
+			}
+		}
+		q.Menus[i].Items = kept
+	}
+	return q
+}
+
+// overfull says whether the package with only its first n pages is more
+// than one may hold.
+func overfull(p *feature.Package, n int) bool {
+	q := firstPages(p, n)
+	return q.Blocks() > feature.MaxBlocks || size(&q) > feature.MaxBytes
 }
 
 func hasPage(p *feature.Package, name string) bool {
