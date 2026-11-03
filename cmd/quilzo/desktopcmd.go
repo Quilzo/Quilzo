@@ -66,8 +66,13 @@ func desktopConsent(root string) error {
 	outcome, detail := audit.Success, map[string]string{"asked": "keyboard,pointer"}
 	switch {
 	case err != nil:
-		outcome, detail["why"] = audit.Failure, clip(err.Error(), 300)
-		fmt.Printf("  %s%s%s\n", yellow, err.Error(), reset)
+		// Returned, and not only printed. It fell through to closing a
+		// desktop it never had, which is nil, so the command exited 0 and a
+		// script or an agent was told the person had been asked when the
+		// question never reached them. main prints it once, as a failure.
+		detail["why"] = clip(err.Error(), 300)
+		record(root, caller.auditRecord("desktop.consent", "/", audit.Failure, detail))
+		return fmt.Errorf("the desktop could not be asked: %w", err)
 	case d == nil:
 		fmt.Printf("  %sthe person declined, and that is an answer%s\n", yellow, reset)
 		record(root, caller.auditRecord("desktop.consent", "/", audit.Denied, detail))
