@@ -179,12 +179,10 @@ func cavageBase(r *http.Request, c cavageSignature, origin string) (string, []st
 			// The Host header is not in r.Header on a server request; Go puts
 			// it on the request itself. Reading r.Header.Get("Host") returns
 			// empty, and a base built over an empty host verifies against
-			// nothing while looking like a signature mismatch.
-			host := r.Host
-			if host == "" && origin != "" {
-				host = strings.TrimPrefix(strings.TrimPrefix(origin,
-					"https://"), "http://")
-			}
+			// nothing while looking like a signature mismatch. Where the
+			// origin is known it is the origin's host, for the reason
+			// authority gives.
+			host := authority(r, origin)
 			lines = append(lines, "host: "+host)
 			covered = append(covered, "@authority")
 		default:

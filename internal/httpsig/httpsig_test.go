@@ -443,3 +443,48 @@ func TestCoversRequestNeedsTheDestination(t *testing.T) {
 		}
 	}
 }
+
+// Where the server knows its origin, the destination a signature covers is
+// checked against that origin, not against the Host the request names. The
+// receiver of a delivery signed for b.example could replay it to a.example
+// with Host: b.example inside the age window, and it passed every check an
+// inbox makes, CoversDestination and CoversRequest included.
+func TestASignatureForAnotherHostIsRefusedWhereTheOriginIsKnown(t *testing.T) {
+	priv, pub := edPair(t, 9)
+	keys := []httpsig.PublicKey{pub}
+	for _, format := range []string{"rfc9421", "cavage"} {
+		t.Run(format, func(t *testing.T) {
+			signedFor := func(host string) http.Header {
+				out, err := http.NewRequest("POST", "https://"+host+"/@/inbox", nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if format == "rfc9421" {
+					err = httpsig.Sign(out, pub.ID, pub.Alg, priv, cover, at())
+				} else {
+					err = httpsig.SignCavage(out, pub.ID, pub.Alg, priv, []string{"(request-target)", "host", "date"}, at())
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				return out.Header
+			}
+			arriving := func(h http.Header, host string) *http.Request {
+				r := httptest.NewRequest("POST", "/@/inbox", nil)
+				r.Host, r.Header = host, h.Clone()
+				return r
+			}
+			if s, err := httpsig.VerifyAt(arriving(signedFor("b.example"), "b.example"), "https://a.example", keys, 0, at()); err == nil {
+				t.Errorf("a delivery signed for b.example verified at a.example, covering %v", s.Covered)
+			}
+			// Signed for this server, it verifies whatever Host a proxy in
+			// front passed on, as @target-uri already did.
+			for _, host := range []string{"a.example", "A.EXAMPLE", "10.0.0.5:8080"} {
+				s, err := httpsig.VerifyAt(arriving(signedFor("a.example"), host), "https://a.example", keys, 0, at())
+				if err != nil || s == nil || !s.CoversRequest() {
+					t.Errorf("signed for a.example and arriving as %s: %v %v", host, s, err)
+				}
+			}
+		})
+	}
+}

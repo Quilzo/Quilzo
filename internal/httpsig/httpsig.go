@@ -49,6 +49,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -118,6 +119,9 @@ func (s Signed) Covers(component string) bool {
 //
 // Returns nil, nil for a request carrying no signature at all — the ordinary
 // case for a browser, and not a failure to report.
+//
+// With no origin, @authority and the draft's host line are the Host the
+// request names. A server that knows where it is uses VerifyAt.
 func Verify(r *http.Request, keys []PublicKey, maxAge time.Duration,
 	now time.Time) (*Signed, error) {
 
@@ -144,7 +148,7 @@ func VerifyAt(r *http.Request, origin string, keys []PublicKey,
 		if len(keys) == 0 {
 			return nil, errNoKeys
 		}
-		return verifyCavage(r, "", keys, maxAge, now)
+		return verifyCavage(r, origin, keys, maxAge, now)
 	}
 	if input == "" || sig == "" {
 		return nil, fmt.Errorf(
@@ -348,6 +352,29 @@ func targetURI(r *http.Request, origin string) string {
 	return scheme + "://" + r.Host + r.URL.RequestURI()
 }
 
+// authority is the host a request was sent to, for @authority and the
+// draft's host line.
+//
+// Inbound, with a configured origin, it is the origin's host, as
+// @target-uri's is. The Host header is chosen by whoever is talking to us
+// and the public site answers whatever Host it is given, so reading it let
+// the receiver of a delivery signed for b.example replay it to a.example
+// with Host: b.example and pass every destination check here. Lower-cased,
+// as RFC 9421 section 2.2.3 normalises it, so a sender that wrote the
+// origin's host in capitals is not refused for it.
+//
+// Outbound, or with no origin, it is the request's own Host: a client
+// signing what it is about to send, or a server that has not said where it
+// is, for which @authority proves only the host the request names.
+func authority(r *http.Request, origin string) string {
+	if origin != "" && !r.URL.IsAbs() {
+		if u, err := url.Parse(origin); err == nil && u.Host != "" {
+			return strings.ToLower(u.Host)
+		}
+	}
+	return r.Host
+}
+
 func quoteAll(in []string) []string {
 	out := make([]string, len(in))
 	for i, s := range in {
@@ -388,7 +415,7 @@ func BaseAt(r *http.Request, origin, components, input string) (string, []string
 		case "@method":
 			value = r.Method
 		case "@authority":
-			value = r.Host
+			value = authority(r, origin)
 		case "@path":
 			value = r.URL.EscapedPath()
 		case "@query":
@@ -671,10 +698,13 @@ func CheckSignedDigest(r *http.Request, body []byte, s *Signed) error {
 // and each says which ecosystem it is for.
 //
 // What this still stops is the replay that matters: a signature captured in
-// flight cannot be aimed at another host. What it does not stop is a replay at
-// a different path on the same host inside the age window, which is the
-// trade-off the spec itself makes -- its answer is expires and nonce, not the
-// request line.
+// flight cannot be aimed at another host. That holds where the signature was
+// checked with VerifyAt and the server's origin; Verify, knowing no origin,
+// reads the destination from the Host the request names, which the sender
+// chooses, so its caller has to know that Host is its own. What it does not
+// stop is a replay at a different path on the same host inside the age
+// window, which is the trade-off the spec itself makes -- its answer is
+// expires and nonce, not the request line.
 func (s Signed) CoversDestination() bool {
 	return s.Covers("@authority") || s.Covers("@target-uri")
 }
