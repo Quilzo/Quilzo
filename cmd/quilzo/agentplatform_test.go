@@ -174,3 +174,61 @@ func TestAProposingAgentProposesThroughTheInterface(t *testing.T) {
 		t.Errorf("%v", called)
 	}
 }
+
+// A chatbot an agent asks in its run is the run's spending, and the
+// person's who started it.
+//
+// ask_assistant is the one operation a run performs through the agent
+// interface that asks a model (site_build drafts without one there, and the
+// research operations read and compute). Its model was charged to the
+// chatbot alone: a run with a money budget could ask a chatbot past it,
+// its receipt priced the agent's own calls only, and the person who started
+// it was not charged either.
+func TestAChatbotAskedInARunIsChargedToTheRunAndItsPerson(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := demoStore(t)
+	declaredAutonomy(t, root)
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Publish(s, ""); err != nil {
+		t.Fatal(err)
+	}
+	var chatbot int
+	models := &pricedModels{choose: func(prompt string) string {
+		if strings.Contains(prompt, "You answer questions for visitors") {
+			chatbot++
+			return `{"answer": "", "action": null}`
+		}
+		return `{"op":"ask_assistant","input":{"name":"help","question":"can I return opened ink"}}`
+	}}
+	pricedGateway(t, root, models, false)
+	if err := cmdAssistant(root, []string{"add", "help", "--title", "Help", "--model"}); err != nil {
+		t.Fatal(err)
+	}
+	asker := agent.Manifest{Name: "asker", Kind: agent.KindTask, Purpose: "Ask the help chatbot",
+		Capabilities: []string{"ask_assistant"}, Autonomy: agent.AutonomyDraft,
+		Budget: agent.Budget{Steps: 6, Tools: 6, Duration: agent.Duration(time.Minute), Money: "0.30"}}
+	if err := declareAgent(root, asker, true, true, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	id, err := runAgentOnce(root, "asker", "see what the help chatbot says about returns", true, asAdmin("dana"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec, _ := loadAgentRun(root, id)
+	if chatbot == 0 {
+		t.Fatalf("control: the run asked no chatbot: %v %+v", models.calls, rec.Trace)
+	}
+	if want := int64(models.total()) * 100_000; rec.Trace.Spent.Cost != want {
+		t.Errorf("%d calls at 0.10 (%d of them the chatbot's) are recorded as a run that cost %d micros",
+			models.total(), chatbot, rec.Trace.Spent.Cost)
+	}
+	if models.total() > 4 {
+		t.Errorf("with a money budget of 0.30, the run made %d calls at 0.10", models.total())
+	}
+	if calls, dana := chargedTo(t, root, "chatbot:help", "person:dana"); calls == 0 || dana != calls {
+		t.Errorf("of %d calls as chatbot:help, %d were charged to the person who started the run", calls, dana)
+	}
+}

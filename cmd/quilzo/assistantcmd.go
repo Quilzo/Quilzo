@@ -399,8 +399,9 @@ func assistantModel(a assistant.Assistant) (assistant.Model, string) {
 // assistantModelAt routes a chatbot through the model gateway when one is
 // declared, as the caller "chatbot:NAME", so its routes, fallbacks and budget
 // apply. Over budget, the gateway refuses the call and the chatbot answers
-// from its pages instead.
-func assistantModelAt(root string, a assistant.Assistant) (assistant.Model, string) {
+// from its pages instead. Each of payers is charged as well, each against
+// its own budget: the person whose agent run asked the chatbot.
+func assistantModelAt(root string, a assistant.Assistant, payers ...string) (assistant.Model, string) {
 	if !a.UseModel {
 		return nil, "extractive by declaration"
 	}
@@ -418,11 +419,11 @@ func assistantModelAt(root string, a assistant.Assistant) (assistant.Model, stri
 				if r == "" {
 					return nil, "kept to " + a.Route + ", which no route serves"
 				}
-				return gw.ForRoute(r, "chatbot:"+a.Name), ""
+				return gw.ForRoute(r, "chatbot:"+a.Name, payers...), ""
 			case a.Route != "":
-				return gw.ForModel(a.Route, "chatbot:"+a.Name), ""
+				return gw.ForModel(a.Route, "chatbot:"+a.Name, payers...), ""
 			}
-			return gw.For("chatbot:" + a.Name), ""
+			return gw.For("chatbot:"+a.Name, payers...), ""
 		}
 	}
 	if a.RouteOnly {
