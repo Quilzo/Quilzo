@@ -4,13 +4,14 @@
 package newsletter
 
 import (
-	"bufio"
 	"encoding/csv"
 	"errors"
 	"fmt"
 	"io"
 	"strings"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/sheet"
 )
 
 // A list taken from another platform, and taken to one.
@@ -62,18 +63,23 @@ var (
 )
 
 // ReadCSV reads addresses from a list exported by another platform.
+//
+// The list is read whole first, so that no row is wider than a sheet may
+// be before encoding/csv builds it, which it does whole however wide: a
+// row of 32 million commas, in a 32 MB list, cost gigabytes before the
+// row was looked at.
 func ReadCSV(r io.Reader) ([]Row, error) {
-	br := bufio.NewReader(r)
-	// A byte-order mark, which spreadsheet programs put first.
-	if b, err := br.Peek(3); err == nil && string(b) == "\xef\xbb\xbf" {
-		_, _ = br.Discard(3)
+	body, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
 	}
-	peek, _ := br.Peek(4096)
-	line := string(peek)
+	// A byte-order mark, which spreadsheet programs put first.
+	text := strings.TrimPrefix(string(body), "\xef\xbb\xbf")
+	line := text[:min(len(text), 4096)]
 	if i := strings.IndexByte(line, '\n'); i >= 0 {
 		line = line[:i]
 	}
-	cr := csv.NewReader(br)
+	cr := csv.NewReader(strings.NewReader(text))
 	cr.FieldsPerRecord = -1
 	cr.LazyQuotes = true
 	// Separated by what the first line is separated by: a semicolon where
@@ -83,6 +89,11 @@ func ReadCSV(r io.Reader) ([]Row, error) {
 		cr.Comma = '\t'
 	case strings.Count(line, ";") > strings.Count(line, ","):
 		cr.Comma = ';'
+	}
+	if row, at, cells := sheet.TooWide(text, cr.Comma, sheet.MaxColumns); row == 0 {
+		return nil, fmt.Errorf("the file has %d columns; at most %d are read", cells, sheet.MaxColumns)
+	} else if row > 0 {
+		return nil, fmt.Errorf("line %d has %d cells; at most %d are read", at, cells, sheet.MaxColumns)
 	}
 	head, err := cr.Read()
 	if errors.Is(err, io.EOF) {

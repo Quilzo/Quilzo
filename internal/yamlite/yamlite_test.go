@@ -5,10 +5,13 @@ package yamlite
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func parse(t *testing.T, src string) any {
@@ -158,6 +161,109 @@ func TestWhatIsNotReadIsRefusedByLine(t *testing.T) {
 			} else if !strings.HasPrefix(err.Error(), "line ") && name != "a bad escape" && name != "an unclosed quote" &&
 				name != "past the last character" {
 				t.Logf("%v", err)
+			}
+		})
+	}
+}
+
+// Collections nested past maxDepth are refused, naming the line, whether
+// they nest in flow, in blocks or in both. Each level was a call of the
+// reader's own, so 3 million brackets — 6 MB, a few KB compressed —
+// overflowed the stack, which ends the process rather than the import.
+// A hundred thousand is enough to see they are refused.
+func TestCollectionsNestedTooDeepAreRefused(t *testing.T) {
+	// indented is n keys, each the one mapping in the one before, and the
+	// last holding value: n+1 mappings deep, and value's depth more.
+	indented := func(n int, value string) string {
+		var b strings.Builder
+		for i := 0; i < n; i++ {
+			b.WriteString(strings.Repeat(" ", i) + "k:\n")
+		}
+		return b.String() + strings.Repeat(" ", n) + "k: " + value + "\n"
+	}
+	brackets := func(n int) string { return strings.Repeat("[", n) + strings.Repeat("]", n) }
+	const deep = 100000
+	for name, c := range map[string]struct {
+		src  string
+		line int
+	}{
+		"flow lists":       {"title: " + brackets(deep) + "\n", 1},
+		"flow mappings":    {"a: " + strings.Repeat("{a: ", deep) + "1" + strings.Repeat("}", deep) + "\n", 1},
+		"compact lists":    {strings.Repeat("- ", 2000) + "x\n", 1},
+		"indented keys":    {indented(200, "v"), maxDepth + 1},
+		"both":             {indented(40, brackets(40)), 41},
+		"one past, flow":   {brackets(maxDepth+1) + "\n", 1},
+		"one past, blocks": {indented(maxDepth, "v"), maxDepth + 1},
+		"one past, both":   {indented(maxDepth/2-1, brackets(maxDepth/2+1)), maxDepth / 2},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := Parse([]byte(c.src))
+			if err == nil || !strings.HasPrefix(err.Error(), fmt.Sprintf("line %d: ", c.line)) ||
+				!strings.Contains(err.Error(), "deep") {
+				t.Fatalf("err = %v, want one naming line %d", err, c.line)
+			}
+		})
+	}
+	// As deep as is read, it is read, in either form, and what is written
+	// of it reads back.
+	for name, src := range map[string]string{
+		"flow":   brackets(maxDepth) + "\n",
+		"blocks": indented(maxDepth-1, "v"),
+		"both":   indented(maxDepth/2-1, brackets(maxDepth/2)),
+	} {
+		t.Run("at the limit, "+name, func(t *testing.T) {
+			v := parse(t, src)
+			out, err := Marshal(v)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if again := parse(t, string(out)); asJSON(again) != asJSON(v) {
+				t.Fatalf("read back differently:\n%s\n%s", asJSON(v), asJSON(again))
+			}
+		})
+	}
+}
+
+// A flow collection or a quoted value written over many lines is read in
+// time and memory that grow with its length. Each line was added to all
+// the text before it, which was then scanned again for its end: 80,000
+// lines, 400 KB, took 27 seconds, and an agent file may be 2 MiB.
+func TestLongMultiLineValuesAreReadInLinearTime(t *testing.T) {
+	const n = 10000
+	var list, quote strings.Builder
+	list.WriteString("tools: [\n")
+	quote.WriteString("instruction: \"start\n")
+	for i := 0; i < n; i++ {
+		list.WriteString("  item, 'it''s', \"a \\\" b\",\n")
+		quote.WriteString("  word \\\" it's\n")
+	}
+	list.WriteString("  last]\n")
+	quote.WriteString("  end\"\n")
+	for name, c := range map[string]struct {
+		src   string
+		check func(any) bool
+	}{
+		"a flow list": {list.String(), func(v any) bool {
+			l, _ := v.(map[string]any)["tools"].([]any)
+			return len(l) == 3*n+1 && l[1] == "it's" && l[2] == `a " b` && l[3*n] == "last"
+		}},
+		"a quoted value": {quote.String(), func(v any) bool {
+			s, _ := v.(map[string]any)["instruction"].(string)
+			return strings.HasPrefix(s, `start word " it's word`) && strings.HasSuffix(s, `word " it's end`)
+		}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var before, after runtime.MemStats
+			runtime.ReadMemStats(&before)
+			start := time.Now()
+			v := parse(t, c.src)
+			took := time.Since(start)
+			runtime.ReadMemStats(&after)
+			if !c.check(v) {
+				t.Fatalf("read wrongly: %.200s", asJSON(v))
+			}
+			if spent := after.TotalAlloc - before.TotalAlloc; spent > 64<<20 || took > 2*time.Second {
+				t.Fatalf("%d KB took %v and %d MB to read", len(c.src)>>10, took, spent>>20)
 			}
 		})
 	}

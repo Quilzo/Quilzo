@@ -198,3 +198,22 @@ func mustJSON(t *testing.T, v any) []byte {
 	}
 	return b
 }
+
+// A row with more cells than a sheet may have is refused before
+// encoding/csv builds it: only the headings were bounded, and a row of
+// commas cost its whole width in memory before the rest of it was ignored.
+func TestARowTooWideToReadIsRefused(t *testing.T) {
+	_, err := Infer("x", []byte("name,tier\nAda,gold\n"+strings.Repeat(",", 1<<20)+"\n"))
+	if err == nil || !strings.Contains(err.Error(), "line 3 has 1048577 cells") {
+		t.Fatalf("err = %v", err)
+	}
+	_, err = Infer("x", []byte("name"+strings.Repeat(",", 1<<20)+"\nAda\n"))
+	if err == nil || !strings.Contains(err.Error(), "1048577 columns; at most 60") {
+		t.Fatalf("err = %v", err)
+	}
+	// A few cells more than the headings are left out, as before.
+	in, err := Infer("x", []byte("name,tier\nAda,gold,extra\nBo,silver\n"))
+	if err != nil || len(in.Rows) != 2 {
+		t.Fatalf("%v %v", err, in)
+	}
+}

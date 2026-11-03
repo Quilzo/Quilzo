@@ -234,18 +234,32 @@ func top(stack []string) string {
 // unfold joins continued lines: a line break followed by a space or a tab
 // is not there. Both CRLF and a bare LF end a line, as files in the wild
 // use either.
+//
+// The line being joined is built up and kept when the next one starts.
+// Adding each continuation to it as a string copied all of it each time,
+// so one property folded over 80,000 lines, 960 KB, took 18 seconds.
 func unfold(s string) []string {
 	s = strings.ReplaceAll(s, "\r\n", "\n")
 	s = strings.ReplaceAll(s, "\r", "\n")
 	var out []string
+	var line strings.Builder
+	started := false
 	for _, l := range strings.Split(s, "\n") {
-		if l != "" && (l[0] == ' ' || l[0] == '\t') && len(out) > 0 {
-			out[len(out)-1] += l[1:]
+		if l != "" && (l[0] == ' ' || l[0] == '\t') && started {
+			line.WriteString(l[1:])
 			continue
 		}
 		if strings.TrimSpace(l) != "" {
-			out = append(out, l)
+			if started {
+				out = append(out, line.String())
+				line.Reset()
+			}
+			line.WriteString(l)
+			started = true
 		}
+	}
+	if started {
+		out = append(out, line.String())
 	}
 	return out
 }

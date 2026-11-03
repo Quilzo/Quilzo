@@ -389,6 +389,25 @@ func TestListsFromOtherPlatformsAreRead(t *testing.T) {
 	}
 }
 
+// A row with more cells than a sheet may have is refused before
+// encoding/csv builds it: nothing bounded a row's width, and a row of 32
+// million commas in a 32 MB list cost gigabytes before it was skipped.
+func TestARowTooWideToReadIsRefused(t *testing.T) {
+	for name, c := range map[string]struct{ file, want string }{
+		"a row":        {"email,name\nann@example.com,Ann\n" + strings.Repeat(",", 1<<20) + "\n", "line 3 has 1048577 cells"},
+		"the headings": {"email" + strings.Repeat(",", 1<<20) + "\nann@example.com\n", "1048577 columns"},
+		"by tabs":      {"email\tname\nann@example.com\tAnn\n" + strings.Repeat("\t", 1<<20) + "\n", "line 3 has 1048577 cells"},
+	} {
+		if _, err := ReadCSV(strings.NewReader(c.file)); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: err = %v, want %q", name, err, c.want)
+		}
+	}
+	rows, err := ReadCSV(strings.NewReader("\xef\xbb\xbfemail,name\nann@example.com,Ann,,\n"))
+	if err != nil || len(rows) != 1 || rows[0].Name != "Ann" {
+		t.Fatalf("%v %+v", err, rows)
+	}
+}
+
 func TestAnImportHonoursWhoLeftWhereverTheyLeft(t *testing.T) {
 	l := openList(t)
 	here, _, _ := l.SignUp(Subscriber{Email: "here@example.com"}, t0)
