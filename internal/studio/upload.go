@@ -46,8 +46,9 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "POST only", http.StatusMethodNotAllowed)
 		return
 	}
-	tok := s.caller(r)
-	if !s.mayWrite(tok) {
+	toks, pol := s.current()
+	tok := s.caller(r, toks)
+	if !s.mayWrite(tok, pol) {
 		http.Error(w, "sign in first", http.StatusUnauthorized)
 		return
 	}

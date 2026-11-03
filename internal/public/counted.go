@@ -30,18 +30,35 @@ func (st *Site) counted(next http.Handler) http.Handler {
 		// stylesheet says otherwise.
 		revisit := sw.status == http.StatusNotModified &&
 			r.Header.Get("Sec-Fetch-Dest") == "document"
+		path := countedAs(r.URL.Path)
 		if page || revisit {
-			st.Analytics.Visit(r, r.URL.Path)
-			st.convertPage(r, r.URL.Path)
+			st.Analytics.Visit(r, path)
+			st.convertPage(r, path)
 		}
 		// An address a person asked for that is not here, as the site's own
 		// 404 page answers it; not one somebody hunting for an admin or
 		// another product's files asked for, which the shield counts.
 		if sw.status == http.StatusNotFound && strings.HasPrefix(sw.Header().Get("Content-Type"), "text/html") &&
 			!IsAdminPath(r.URL.Path) && !IsForeignProbe(r.URL.Path) {
-			st.Analytics.NotFound(r, r.URL.Path)
+			st.Analytics.NotFound(r, path)
 		}
 	})
+}
+
+// countedAs is the path a request is counted under: its own, except a
+// shared draft's.
+//
+// A shared draft's address is the only key to it (shared.go), and the
+// store keeps a digest of that key so that whoever reads the store, or a
+// backup, opens nothing. Counted by its path, every link anybody opened
+// went into the day's totals in clear, on the disk and on the admin's
+// analytics screen, and every ended one into the addresses not found. So
+// they are counted together, under the prefix.
+func countedAs(path string) string {
+	if strings.HasPrefix(path, "/shared/") {
+		return "/shared/"
+	}
+	return path
 }
 
 type statusWriter struct {

@@ -165,13 +165,14 @@ templates and design
   quilzo section blocks                    every block, and the pages that reuse it
 
 conversation
-  quilzo room list                         every room, and what it is for
+  quilzo room list                         the rooms you can read, and what is unread
   quilzo room open ID --purpose W          start one, with a stated purpose
   quilzo room say ROOM "..." [--reply ID]  post; a broadcast says who it interrupts
   quilzo room read ROOM [--thread ID]      the conversation, tombstones and all
   quilzo room edit ROOM MSG "..."          append a revision; the old words stay
   quilzo room remove ROOM MSG              take the words and leave the shape
   quilzo room history ROOM MSG             what it said, and when
+  quilzo room react ROOM MSG EMOJI [--off] a reaction, kept beside the message
 
 sharing a screen
   quilzo screen cost --width 1920          what a shared screen actually costs, losslessly

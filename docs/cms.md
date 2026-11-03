@@ -2030,9 +2030,12 @@ A draft can be shown to somebody with no account — a client, a colleague
 elsewhere — with a link: `quilzo share PAGE [--days 7]`, or "Make a link" in
 the page's editor. The link is to that page as the draft was when it was
 shared, not as it is later, so a link sent last week cannot show somebody what
-was written since. It is a random id nobody can guess, lives thirty days at the
-most, and ends at once with `quilzo share revoke ID` or Revoke in the editor.
-The public site serves it at `/shared/ID` with a note saying it is a draft and
+was written since. Its address holds a random secret nobody can guess, shown
+once, when the link is made: the store keeps only a digest of it, which is the
+ID the link is listed and logged by, so a copy of the store or of a backup
+opens nothing. It lives thirty days at the most, and ends at once with
+`quilzo share revoke ID` or Revoke in the editor. The public site serves it at
+`/shared/SECRET` with a note saying it is a draft and
 headers asking that it not be indexed, stored, or referred onward; an ended link
 is the site's own 404, the same as one that never was. Sharing takes what
 publishing takes, since it shows the page outside; ending a link takes what

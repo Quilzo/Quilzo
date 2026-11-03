@@ -51,6 +51,7 @@ package studio
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/clientip"
 	"net/http"
@@ -78,14 +79,32 @@ const CookieName = "quilzo_studio"
 // Server is the capture surface.
 type Server struct {
 	// Tokens verifies a credential. The same store the admin and the command
-	// line read, so revoking a token stops it here too.
+	// line read, so revoking a token stops it here too — through Reload.
 	Tokens *auth.TokenStore
 	// Policy decides whether the holder may write. Editing a draft, because
 	// that is what putting a recording in the library is.
 	Policy *auth.Policy
+	// Reload reads the policy and the tokens as they are now, before each
+	// request decides anything; the two fields above are used only when it
+	// is nil, as a test that builds them by hand leaves it.
+	//
+	// The studio read both once, when it started. A token revoked with
+	// `quilzo token revoke` or through the admin went on signing in and
+	// putting recordings in the library until somebody restarted it, while
+	// the sign-in page told its holder that revoking it stops this surface
+	// too; a token issued, or a grant withdrawn, after it started was as
+	// invisible. The same failure the admin's Reload exists for.
+	Reload func() (*auth.Policy, *auth.TokenStore, error)
 	// Library is where a recording goes.
 	Library func() (*medialib.Library, error)
-	// Options are the media settings, read per upload.
+	// Options are the media settings, as the admin's upload is given them.
+	//
+	// Not read, and this said "read per upload" when nothing did. Every one
+	// of them is about an image — its size, its quality, WebP, the EXIF
+	// that goes with a photograph (media.Optimise) — and this server takes
+	// recordings only, so a recording is stored as the browser made it.
+	// Wired anyway, so the day a setting applies to a recording it reaches
+	// this door the way it reaches the admin's.
 	Options func() media.Options
 	// Throttle counts failed credentials. Not optional in practice: the
 	// admin's sign-in form was measured taking forty wrong tokens without
@@ -168,16 +187,33 @@ func policyFor(n string) string {
 		"form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
 }
 
+// current is the credential store and the policy to decide a request by.
+//
+// Handed down the request rather than written back to the fields:
+// requests are served concurrently, and a field one of them replaces while
+// another reads it is a race. A store that cannot be read decides nothing,
+// as an unreadable policy refuses everything on the command line.
+func (s *Server) current() (*auth.TokenStore, *auth.Policy) {
+	if s.Reload == nil {
+		return s.Tokens, s.Policy
+	}
+	pol, toks, err := s.Reload()
+	if err != nil {
+		return nil, nil
+	}
+	return toks, pol
+}
+
 // caller is who a request is acting as, or nil.
-func (s *Server) caller(r *http.Request) *auth.Token {
-	if s.Tokens == nil {
+func (s *Server) caller(r *http.Request, toks *auth.TokenStore) *auth.Token {
+	if toks == nil {
 		return nil
 	}
 	c, err := r.Cookie(CookieName)
 	if err != nil || c.Value == "" {
 		return nil
 	}
-	tok, err := s.Tokens.Authenticate(c.Value, s.now())
+	tok, err := toks.Authenticate(c.Value, s.now())
 	if err != nil {
 		return nil
 	}
@@ -185,8 +221,8 @@ func (s *Server) caller(r *http.Request) *auth.Token {
 }
 
 // mayWrite reports whether this caller may put a recording in the library.
-func (s *Server) mayWrite(tok *auth.Token) bool {
-	if tok == nil || s.Policy == nil {
+func (s *Server) mayWrite(tok *auth.Token, pol *auth.Policy) bool {
+	if tok == nil || pol == nil {
 		return false
 	}
 	// Edit-draft, because storing an asset is part of preparing content — the
@@ -198,7 +234,7 @@ func (s *Server) mayWrite(tok *auth.Token) bool {
 	// holder could, and one scoped to /blog must not reach the library at
 	// all. The admin asks both for the same reason and through the same two
 	// functions.
-	if !s.Policy.Evaluate(tok.Principal, auth.ActEditDraft, "/").Allowed {
+	if !pol.Evaluate(tok.Principal, auth.ActEditDraft, "/").Allowed {
 		return false
 	}
 	return auth.CheckCredential(tok.Role, tok.Resource, tok.Scope,
@@ -238,8 +274,13 @@ func (s *Server) signIn(w http.ResponseWriter, r *http.Request) {
 	}
 
 	secret := strings.TrimSpace(r.FormValue("token"))
-	tok, err := s.Tokens.Authenticate(secret, s.now())
-	if err != nil || !s.mayWrite(tok) {
+	toks, pol := s.current()
+	var tok *auth.Token
+	err := errNoStore
+	if toks != nil {
+		tok, err = toks.Authenticate(secret, s.now())
+	}
+	if err != nil || !s.mayWrite(tok, pol) {
 		if s.Throttle != nil {
 			s.Throttle.Fail(sub)
 		}
@@ -270,6 +311,9 @@ func (s *Server) signIn(w http.ResponseWriter, r *http.Request) {
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
+
+// errNoStore is a sign-in that met a credential store it could not read.
+var errNoStore = errors.New("the credential store could not be read")
 
 // sourceOf is who a request is from, for the limiter.
 //

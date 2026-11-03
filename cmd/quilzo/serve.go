@@ -532,6 +532,11 @@ func cmdServe(root string, args []string) error {
 	srv.Models = gatewayCapability(root)
 	srv.Connections = connectionsCapability(root)
 	srv.Shares = sharesCapability(root)
+	// A link made before the store kept digests holds its secret in the
+	// file until something rewrites it; the admin does as it starts.
+	if err := migrateShares(root); err != nil {
+		fmt.Fprintf(os.Stderr, "  %sshare links: %v%s\n", yellow, err, reset)
+	}
 	srv.Research = researchScreens(root)
 	srv.Deciders = decidersCapability(root)
 	srv.Analytics = analyticsCapability(root)
@@ -617,6 +622,9 @@ func cmdServe(root string, args []string) error {
 		case "retention":
 			fmt.Printf("  %sretention: removed %s past the period their form "+
 				"declares%s\n", dim, count(n, "submission"), reset)
+		case "rooms":
+			fmt.Printf("  %sretention: took the words of %s past their "+
+				"room's period%s\n", dim, count(n, "message"), reset)
 		}
 	}, jobs...)
 
@@ -1308,7 +1316,11 @@ func upkeepJobs(root string, posture upkeep.Job) []upkeep.Job {
 	// And a backup a day, when backup.dir is set.
 	jobs = append(jobs, backupJob(root))
 	// And what agents remember, past its time.
-	return append(jobs, memoryJob(root))
+	jobs = append(jobs, memoryJob(root))
+	// And what was said in a room, past the room's retention. Here and not
+	// in retentionJob, which the public site runs too: rooms/ is not the
+	// site's to write.
+	return append(jobs, roomRetentionJob(root))
 }
 
 // retentionJob sweeps submissions past the retention their form declares.
