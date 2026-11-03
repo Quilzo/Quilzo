@@ -4,14 +4,17 @@
 package scim
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"github.com/quilzo/quilzo/internal/clientip"
+	"io"
 	"net/http"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/quilzo/quilzo/internal/throttle"
 )
@@ -81,6 +84,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("WWW-Authenticate", `Bearer realm="scim"`)
 		fail(w, http.StatusUnauthorized, "", "a provisioning token is required")
 		return
+	}
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		// Read whole before the lock is taken, so a slow sender holds up
+		// nobody else's provisioning.
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+		if err != nil {
+			fail(w, http.StatusBadRequest, "invalidSyntax", "the body is not the JSON this expects")
+			return
+		}
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		mu := h.applying()
+		mu.Lock()
+		defer mu.Unlock()
 	}
 	path := strings.TrimPrefix(r.URL.Path, h.prefix())
 	resource, id, _ := strings.Cut(strings.Trim(path, "/"), "/")
@@ -606,8 +622,26 @@ func unique(ids []string) []string {
 	return out
 }
 
+// applyLocks holds, for each state file, the lock a change to it is made
+// and applied under. Identity providers send requests in parallel, and a
+// sync once read what somebody should hold, let go, and applied it later:
+// an ordinary change that had read "active, in Editors" was applied after
+// a concurrent deactivation, lifted the suspension and gave back what the
+// group gives, with both requests answered 200. Keyed by the file, not
+// kept on the Handler, because the admin and the command line make a
+// Handler of their own to sync everybody after a mapping changes.
+var applyLocks sync.Map
+
+// applying is the lock every change to this handler's state, and what is
+// applied from it, is made under; each request takes it whole, so the
+// last sync to run has read the state every earlier change left.
+func (h *Handler) applying() *sync.Mutex {
+	mu, _ := applyLocks.LoadOrStore(h.Store.Path, new(sync.Mutex))
+	return mu.(*sync.Mutex)
+}
+
 // sync tells the host what each of these users should now hold, and says
-// whether any of it could not be applied.
+// whether any of it could not be applied. It is called under applying.
 //
 // A failure is answered, not only recorded, wherever it would leave
 // somebody holding access they were meant to lose: the identity provider
@@ -650,6 +684,9 @@ func (h *Handler) audit(action, subject string, ok bool) {
 
 // SyncAll re-applies every user's grants: after the mapping changes.
 func (h *Handler) SyncAll() {
+	mu := h.applying()
+	mu.Lock()
+	defer mu.Unlock()
 	var ids []string
 	_ = h.Store.Read(func(st *State) {
 		for _, u := range st.Users {

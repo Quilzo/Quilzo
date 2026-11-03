@@ -11,7 +11,9 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 // fixture is a handler whose sync is recorded: what each person would hold.
@@ -352,5 +354,69 @@ func TestAGroupRemovalIsHeardHoweverItIsSpelled(t *testing.T) {
 	}
 	if len(f.held["bo@example.com"]) != 1 {
 		t.Errorf("a refused change changed what they hold: %v", f.held["bo@example.com"])
+	}
+}
+
+// Identity providers send requests in parallel. A sync once read what
+// somebody should hold, let go of the lock, and only then applied it, so an
+// ordinary change that had read "active, in Editors" could be applied after
+// a concurrent deactivation, lift its suspension and give back what the
+// group gives: both answered 200, the SCIM state said inactive, and the
+// person could publish again.
+func TestAStaleSyncCannotUndoAConcurrentDeactivation(t *testing.T) {
+	f := newFixture(t)
+	_, u := f.do(t, http.MethodPost, "/Users", `{"userName":"ada@example.com","active":true}`)
+	id := u["id"].(string)
+	f.do(t, http.MethodPost, "/Groups", `{"displayName":"Editors","members":[{"value":"`+id+`"}]}`)
+	if len(f.held["ada@example.com"]) != 1 {
+		t.Fatalf("the group gave %v", f.held["ada@example.com"])
+	}
+
+	// The first change's sync is held after it has read what she should
+	// hold, as two net/http goroutines can be scheduled.
+	var mu sync.Mutex
+	recorded, entered, release := f.h.Sync, make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	f.h.Sync = func(name string, grants []string, suspended bool) error {
+		if name == "ada@example.com" && !suspended {
+			held := false
+			once.Do(func() { held = true })
+			if held {
+				close(entered)
+				<-release
+			}
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		return recorded(name, grants, suspended)
+	}
+	changed, deactivated := make(chan int), make(chan int)
+	go func() {
+		code, _ := f.do(t, http.MethodPatch, "/Users/"+id, `{"Operations":[{"op":"replace","path":"externalId","value":"x1"}]}`)
+		changed <- code
+	}()
+	<-entered
+	go func() {
+		code, _ := f.do(t, http.MethodPatch, "/Users/"+id, `{"Operations":[{"op":"replace","path":"active","value":false}]}`)
+		deactivated <- code
+	}()
+	// The deactivation either finishes, or waits for the change's sync to.
+	codes := map[string]int{}
+	select {
+	case codes["deactivated"] = <-deactivated:
+	case <-time.After(300 * time.Millisecond):
+	}
+	close(release)
+	codes["changed"] = <-changed
+	if _, done := codes["deactivated"]; !done {
+		codes["deactivated"] = <-deactivated
+	}
+	if codes["changed"] != 200 || codes["deactivated"] != 200 {
+		t.Fatalf("answered %v", codes)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if !f.suspended["ada@example.com"] || len(f.held["ada@example.com"]) != 0 {
+		t.Errorf("deactivated, she is suspended=%v and holds %v", f.suspended["ada@example.com"], f.held["ada@example.com"])
 	}
 }
