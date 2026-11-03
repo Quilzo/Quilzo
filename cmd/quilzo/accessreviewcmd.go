@@ -223,20 +223,52 @@ func nobodyAdministers(p *auth.Policy) bool {
 func groupNow(root, group string) (string, []string, error) {
 	var means string
 	var members []string
-	err := scimStore(root).Read(func(st *scim.State) {
-		means = st.Mapping[group]
-		for _, g := range st.Groups {
-			if g.DisplayName != group {
-				continue
-			}
-			for _, id := range g.Members {
-				if u, ok := st.User(id); ok {
-					members = append(members, u.UserName)
-				}
+	err := scimStore(root).Read(func(st *scim.State) { means, members = groupIn(st, group) })
+	return means, members, err
+}
+
+// groupIn is groupNow's answer from provisioning's state.
+//
+// The users are indexed once rather than searched for each member, and
+// so are the members below: asking every member about every user, then
+// every binding about every member, took most of a minute for a group of
+// forty thousand, in the request that decided it.
+func groupIn(st *scim.State, group string) (string, []string) {
+	users := make(map[string]string, len(st.Users))
+	for _, u := range st.Users {
+		users[u.ID] = u.UserName
+	}
+	var members []string
+	for _, g := range st.Groups {
+		if g.DisplayName != group {
+			continue
+		}
+		for _, id := range g.Members {
+			if name, ok := users[id]; ok {
+				members = append(members, name)
 			}
 		}
-	})
-	return means, members, err
+	}
+	return st.Mapping[group], members
+}
+
+// withoutWhatTheyWereProvisioned is the policy with every grant
+// provisioning made any of members taken away, which is the most that
+// unmapping a group of theirs could take. Names are matched without case,
+// as provisioning matches them.
+func withoutWhatTheyWereProvisioned(pol *auth.Policy, members []string) *auth.Policy {
+	in := make(map[string]bool, len(members))
+	for _, m := range members {
+		in[strings.ToLower(m)] = true
+	}
+	after := &auth.Policy{}
+	for _, b := range pol.Snapshot() {
+		if !b.Deny && b.GrantedBy == scimBy && in[strings.ToLower(b.Principal)] {
+			continue
+		}
+		after.Bindings = append(after.Bindings, b)
+	}
+	return after
 }
 
 // applyRevoke takes an item's access away through the path that grants
@@ -279,17 +311,7 @@ func applyRevoke(root string, c *Caller, it accessreview.Item) error {
 		if err != nil {
 			return err
 		}
-		after := &auth.Policy{}
-		for _, b := range pol.Snapshot() {
-			gone := false
-			for _, m := range members {
-				gone = gone || (!b.Deny && b.GrantedBy == scimBy && strings.EqualFold(b.Principal, m))
-			}
-			if !gone {
-				after.Bindings = append(after.Bindings, b)
-			}
-		}
-		if nobodyAdministers(after) {
+		if nobodyAdministers(withoutWhatTheyWereProvisioned(pol, members)) {
 			return errLastAdministrator
 		}
 		if err := scimUnmap(root, it.Group); err != nil {

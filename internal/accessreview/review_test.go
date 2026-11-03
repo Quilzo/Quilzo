@@ -5,6 +5,7 @@ package accessreview
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -481,5 +482,41 @@ func TestNotHeldByRefusesTheHolderUnderAnySpelling(t *testing.T) {
 	group.Members = append(group.Members, "Boss ")
 	if err := group.NotHeldBy("boss"); err == nil || !strings.Contains(err.Error(), "own access") {
 		t.Errorf("a member decided their group: %v", err)
+	}
+}
+
+// A snapshot of a large provisioned store is taken in time to answer the
+// request that asked for it, and the hourly posture scan, which takes one
+// in a store that has never closed a review. It looked each item's holder
+// up in every token and each member up in every user, and twenty thousand
+// people in a group with ten thousand tokens took most of a minute.
+func TestASnapshotOfALargeStoreIsQuick(t *testing.T) {
+	pol := &auth.Policy{}
+	for i := 0; i < 500; i++ {
+		pol.Bindings = append(pol.Bindings, auth.Binding{Principal: fmt.Sprintf("p%d", i), Role: auth.RoleAuthor,
+			Resource: "/", GrantedBy: "dana", GrantedAt: now.Add(-day).Unix()})
+	}
+	ts := &auth.TokenStore{}
+	for i := 0; i < 10000; i++ {
+		ts.Tokens = append(ts.Tokens, auth.Token{ID: fmt.Sprint("t", i), Principal: fmt.Sprintf("u%d@example.com", i),
+			Session: true, CreatedAt: now.Unix(), ExpiresAt: now.Add(time.Hour).Unix(), LastUsed: now.Unix()})
+	}
+	st := &scim.State{Mapping: map[string]string{"Everybody": "reader"}}
+	everybody := scim.Group{ID: "g", DisplayName: "Everybody"}
+	for i := 0; i < 20000; i++ {
+		id := fmt.Sprint("u", i)
+		st.Users = append(st.Users, scim.User{ID: id, UserName: fmt.Sprintf("u%d@example.com", i), Active: true})
+		everybody.Members = append(everybody.Members, id)
+	}
+	st.Groups = []scim.Group{everybody}
+	start := time.Now()
+	items := Snapshot(Inputs{Policy: pol, Tokens: ts, SCIM: st, Now: now})
+	if took := time.Since(start); took > 3*time.Second {
+		t.Errorf("a snapshot of 500 grants, a group of 20000 and 10000 tokens took %v", took)
+	}
+	group := items[len(items)-1]
+	if group.Kind != Mapping || len(group.Members) != 20000 || !group.LastActive.Equal(now) {
+		t.Errorf("the group, its members and their last use: %d members, last active %v", len(group.Members),
+			group.LastActive)
 	}
 }

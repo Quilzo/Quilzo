@@ -219,13 +219,15 @@ func (i Item) Covers(b auth.Binding) bool {
 // "Dana", so the comparison here is the loose one, which can only refuse
 // more.
 func SamePerson(a, b string) bool {
-	norm := func(s string) string {
-		s = strings.TrimSpace(s)
-		s, _ = strings.CutPrefix(strings.ToLower(s), "mailto:")
-		return s
-	}
-	a, b = norm(a), norm(b)
-	return a != "" && strings.EqualFold(a, b)
+	a = personKey(a)
+	return a != "" && strings.EqualFold(a, personKey(b))
+}
+
+// personKey is a name as SamePerson compares it: without the spaces around
+// it, its case or a mailto: in front.
+func personKey(s string) string {
+	s, _ = strings.CutPrefix(strings.ToLower(strings.TrimSpace(s)), "mailto:")
+	return s
 }
 
 // Inputs is what a snapshot is taken from.
@@ -337,6 +339,18 @@ func Snapshot(in Inputs) []Item {
 	for _, t := range tokens {
 		note(t.Principal)
 	}
+	// Each person's latest token use, found once rather than by asking
+	// every token about every holder: twenty thousand people in a group
+	// and ten thousand tokens took most of a minute that way, in the
+	// request that started a review and in every hourly posture scan.
+	used := map[string]time.Time{}
+	for _, t := range tokens {
+		if k := personKey(t.Principal); k != "" && t.LastUsed > 0 {
+			if at := time.Unix(t.LastUsed, 0).UTC(); at.After(used[k]) {
+				used[k] = at
+			}
+		}
+	}
 	active := func(who string) time.Time {
 		var last time.Time
 		later := func(t time.Time) {
@@ -351,10 +365,8 @@ func Snapshot(in Inputs) []Item {
 		for _, n := range names {
 			later(seen(n))
 		}
-		for _, t := range tokens {
-			if t.LastUsed > 0 && SamePerson(t.Principal, who) {
-				later(time.Unix(t.LastUsed, 0).UTC())
-			}
+		if k := personKey(who); k != "" {
+			later(used[k])
 		}
 		return last
 	}
@@ -389,6 +401,10 @@ func Snapshot(in Inputs) []Item {
 	}
 
 	if in.SCIM != nil {
+		users := make(map[string]*scim.User, len(in.SCIM.Users))
+		for i := range in.SCIM.Users {
+			users[in.SCIM.Users[i].ID] = &in.SCIM.Users[i]
+		}
 		groups := make([]string, 0, len(in.SCIM.Mapping))
 		for g, to := range in.SCIM.Mapping {
 			if to != "" {
@@ -404,7 +420,7 @@ func Snapshot(in Inputs) []Item {
 					continue
 				}
 				for _, id := range grp.Members {
-					if u, ok := in.SCIM.User(id); ok && u.Active {
+					if u, ok := users[id]; ok && u.Active {
 						it.Members = append(it.Members, u.UserName)
 					}
 				}

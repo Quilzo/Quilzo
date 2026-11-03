@@ -5,6 +5,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -1032,5 +1033,33 @@ func TestActivityIsWhatThePersonDidNotWhatWasTriedInTheirName(t *testing.T) {
 				t.Errorf("sam published today: %+v", it)
 			}
 		}
+	}
+}
+
+// Deciding a group's mapping looks at the group as it stands and, for a
+// revoke, at the policy without what its members were provisioned. Both
+// asked every member about every user or every binding, and a group of
+// forty thousand took most of a minute in the request that decided it.
+func TestDecidingALargeGroupIsQuick(t *testing.T) {
+	const n = 40000
+	st := &scim.State{Mapping: map[string]string{"Everybody": "reader"}}
+	everybody := scim.Group{ID: "g", DisplayName: "Everybody"}
+	pol := &auth.Policy{Bindings: []auth.Binding{{Principal: "boss", Role: auth.RoleAdmin, Resource: "/"}}}
+	for i := 0; i < n; i++ {
+		id, name := fmt.Sprint("u", i), fmt.Sprintf("u%d@example.com", i)
+		st.Users = append(st.Users, scim.User{ID: id, UserName: name, Active: true})
+		everybody.Members = append(everybody.Members, id)
+		pol.Bindings = append(pol.Bindings, auth.Binding{Principal: name, Role: auth.RoleReader, Resource: "/",
+			GrantedBy: scimBy})
+	}
+	st.Groups = []scim.Group{everybody}
+	start := time.Now()
+	means, members := groupIn(st, "Everybody")
+	after := withoutWhatTheyWereProvisioned(pol, members)
+	if took := time.Since(start); took > 3*time.Second {
+		t.Errorf("the group of %d and the policy without what they were provisioned took %v", n, took)
+	}
+	if means != "reader" || len(members) != n || len(after.Bindings) != 1 || after.Bindings[0].Principal != "boss" {
+		t.Errorf("the group means %q, has %d members, and leaves %d bindings", means, len(members), len(after.Bindings))
 	}
 }
