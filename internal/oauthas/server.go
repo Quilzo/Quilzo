@@ -595,7 +595,7 @@ func (s *Server) redeem(f url.Values) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	access, err := s.issue(g, now)
+	access, err := s.issue(s.Config(), g, now)
 	if err != nil {
 		return nil, err
 	}
@@ -604,11 +604,14 @@ func (s *Server) redeem(f url.Values) (map[string]any, error) {
 	return s.tokenResponse(g, access, refresh), nil
 }
 
-func (s *Server) issue(g Grant, now time.Time) (string, error) {
+// issue is given the configuration rather than asking for it, because a
+// refresh issues inside the grant store's lock and the server reads its
+// configuration from that store under the same lock.
+func (s *Server) issue(cfg Config, g Grant, now time.Time) (string, error) {
 	if s.Tokens == nil {
 		return "", errors.New("no token store")
 	}
-	return s.Tokens.Issue(g, RoleFor(g.Scopes), s.Config().accessTTL(), now)
+	return s.Tokens.Issue(g, RoleFor(g.Scopes), cfg.accessTTL(), now)
 }
 
 func (s *Server) tokenResponse(g Grant, access, refresh string) map[string]any {
@@ -628,6 +631,11 @@ func (s *Server) refresh(f url.Values) (map[string]any, error) {
 	var out Grant
 	var access, refresh string
 	var reused string
+	// Read once, before the grant store's lock is taken: the server keeps
+	// the allowed hosts in that store and reads them under the same lock,
+	// so asking for the configuration inside it waited for ever, and every
+	// refresh, and everything after it that touched the store, hung.
+	cfg := s.Config()
 	err := s.Store.changeGrants(now, func(file *grantsFile) error {
 		for i := range file.Grants {
 			g := &file.Grants[i]
@@ -653,10 +661,10 @@ func (s *Server) refresh(f url.Values) (map[string]any, error) {
 			// The app's host is asked again at every refresh, not only at
 			// consent, so a host an administrator removed stops refreshing
 			// even if the sweep that ends its connections missed one.
-			if h := (Client{ID: g.Client}).Host(); IsMetadataURL(g.Client) && !s.Config().HostAllowed(h) {
+			if h := (Client{ID: g.Client}).Host(); IsMetadataURL(g.Client) && !cfg.HostAllowed(h) {
 				return badRequest("invalid_grant", "apps from "+h+" are no longer allowed to connect here")
 			}
-			if res := f.Get("resource"); res != "" && !s.Config().SameResource(res) {
+			if res := f.Get("resource"); res != "" && !cfg.SameResource(res) {
 				return badRequest("invalid_target", "resource is not this server's agent interface")
 			}
 			// Asking for less narrows the access token issued now and not
@@ -698,7 +706,7 @@ func (s *Server) refresh(f url.Values) (map[string]any, error) {
 			// Issued before the rotation is kept, which a failure here
 			// stops: a refresh token spent on an answer the app never had
 			// made its retry look like a copy, and ended the grant.
-			if access, err = s.issue(out, now); err != nil {
+			if access, err = s.issue(cfg, out, now); err != nil {
 				return err
 			}
 			return nil

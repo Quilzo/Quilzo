@@ -735,3 +735,46 @@ func TestARefreshThatCannotBeAnsweredSpendsNothing(t *testing.T) {
 		t.Errorf("the grant ended: %s", grants[0].EndedWhy)
 	}
 }
+
+// The server reads the allowed hosts from the same store the grants are in,
+// under the same lock, so a refresh must not ask for its configuration
+// while it holds that lock. One that asked for it there, to check the app's
+// host and the access token's lifetime, waited for itself for ever, and so
+// did every request after it that touched the store.
+func TestARefreshDoesNotWaitForItselfWhereTheHostsAreKeptWithTheGrants(t *testing.T) {
+	r := newRig(t)
+	if err := r.Store.ChangeClients(func(_ *[]Client, hosts *[]string) error {
+		*hosts = []string{"app.example.com"}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	r.Server.Config = func() Config {
+		_, hosts, _ := r.Store.Clients()
+		return Config{Issuer: "https://admin.example.org", Hosts: hosts}
+	}
+	out, _ := r.connect(t)
+	tok := out["refresh_token"].(string)
+	for _, extra := range []url.Values{nil, {"resource": {"https://admin.example.org/mcp"}}} {
+		f := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {tok}, "client_id": {appID}}
+		for k, v := range extra {
+			f[k] = v
+		}
+		done := make(chan int, 1)
+		var got map[string]any
+		go func() {
+			status, body := r.post(t, r.Token, f)
+			got = body
+			done <- status
+		}()
+		select {
+		case status := <-done:
+			if status != 200 {
+				t.Fatalf("refresh with %v: %d %v", extra, status, got)
+			}
+			tok = got["refresh_token"].(string)
+		case <-time.After(10 * time.Second):
+			t.Fatalf("a refresh with %v did not finish: it waits for the store's lock it holds", extra)
+		}
+	}
+}
