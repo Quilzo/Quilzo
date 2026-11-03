@@ -49,8 +49,11 @@ var Pledge = []Goal{
 	{N: 4, Title: "Security patches",
 		Asks:     "Demonstrate actions taken to measurably increase the installation of security patches by customers.",
 		Standing: Partly,
-		Position: "Every running copy checks itself hourly against the Go vulnerability database, decided by what is actually linked into it, tells the administrator which release fixes a flaw that applies, and switches off the features a known exploited flaw reaches until it is upgraded. An upgrade is one binary. Quilzo does not update itself.",
-		Where:    []string{"quilzo self check", "/security/inventory"}},
+		// Which server, said: this read "every running copy checks itself
+		// hourly", and the check is one of the admin server's jobs. The
+		// public site server runs only retention.
+		Position: "The admin server (quilzo serve) checks its binary hourly against the Go vulnerability database, decided by what is actually linked into it, tells the administrator which release fixes a flaw that applies, and switches off the features a known exploited flaw reaches until it is upgraded. The public site server (quilzo site) does not run the check itself, so a copy serving the site without the admin running is not checked until somebody runs quilzo self check. An upgrade is one binary. Quilzo does not update itself.",
+		Where:    []string{"quilzo serve", "quilzo self check", "/security/inventory"}},
 	{N: 5, Title: "Vulnerability disclosure policy",
 		Asks:     "Publish a vulnerability disclosure policy (VDP) that authorizes testing by members of the public on products.",
 		Standing: Partly,

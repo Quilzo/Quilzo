@@ -518,8 +518,8 @@ func buildKSI(root, tplDir string) (ksiReport, error) {
 	}
 	return ksiReport{Source: src, Generated: time.Now().UTC().Format(time.RFC3339), System: siteName(root),
 		Note: "Quilzo is one component of the service being authorised and cannot meet an indicator. For each, " +
-			"this says which related SP 800-53 controls Quilzo implements, whether its checks on them pass now, " +
-			"and where it has nothing to show and the provider's own process does.",
+			"this says which related SP 800-53 controls Quilzo implements, whether anything checks them and " +
+			"whether those checks pass now, and where it has nothing to show and the provider's own process does.",
 		Indicators: res}, nil
 }
 
@@ -551,9 +551,11 @@ func complianceKSI(root string, args []string) error {
 		n[r.Standing]++
 	}
 	w.Human("%sFedRAMP 20x Key Security Indicators%s  %s, version %s\n", bold, reset, rep.Source.Title, rep.Source.Version)
-	w.Human("  Quilzo contributes to %d, %d with a check failing now, and has nothing to show for %d\n\n",
-		n[fedramp.Contributes], n[fedramp.Failing], n[fedramp.Elsewhere])
-	colour := map[fedramp.Standing]string{fedramp.Contributes: green, fedramp.Failing: red, fedramp.Elsewhere: dim}
+	w.Human("  Quilzo contributes to %d, %d with a check failing now, %d on its statement alone with "+
+		"nothing checking it, and has nothing to show for %d\n\n",
+		n[fedramp.Contributes], n[fedramp.Failing], n[fedramp.Stated], n[fedramp.Elsewhere])
+	colour := map[fedramp.Standing]string{fedramp.Contributes: green, fedramp.Failing: red,
+		fedramp.Stated: yellow, fedramp.Elsewhere: dim}
 	theme := ""
 	for _, r := range rep.Indicators {
 		if r.Theme != theme {

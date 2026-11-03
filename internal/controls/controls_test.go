@@ -154,3 +154,55 @@ func TestThePlanSplitsEachControlAndShowsWhatFails(t *testing.T) {
 		}
 	}
 }
+
+// AU-10 said publications "are timestamped and anchored" and that content
+// and media "carry signed provenance", and it flows into the component
+// definition and the system security plan an assessor tests. Timestamping
+// and anchoring are commands somebody runs: no job and no publish hook does
+// either. A page's provenance is a record bound to the hash of its content,
+// not a signature; only images carry one. So the statement says which part
+// happens by itself and which on request, and the customer's half is named.
+func TestNonRepudiationSaysWhatIsAutomaticAndWhatIsOnRequest(t *testing.T) {
+	im, ok := Lookup("au-10")
+	if !ok {
+		t.Fatal("no AU-10")
+	}
+	s := strings.ToLower(im.Statement)
+	for _, claim := range []string{"publications are timestamped", "content and media carry signed"} {
+		if strings.Contains(s, claim) {
+			t.Errorf("AU-10 says %q, which nothing in the program does by itself", claim)
+		}
+	}
+	if !strings.Contains(s, "on request") {
+		t.Errorf("AU-10 does not say timestamping and anchoring happen on request: %s", im.Statement)
+	}
+	if im.Responsibility == Quilzo {
+		t.Error("AU-10 is Quilzo's alone, and a publication nobody stamps is not stamped")
+	}
+	for _, cmd := range []string{"quilzo timestamp stamp", "quilzo anchor submit"} {
+		found := false
+		for _, w := range im.Where {
+			found = found || w == cmd
+		}
+		if !found {
+			t.Errorf("AU-10 does not name %q, the command that does it", cmd)
+		}
+	}
+}
+
+// Goal 4 said every running copy checks itself hourly. The check is one of
+// the admin server's jobs: the public site server runs only retention, so a
+// copy serving the site without the admin never checks itself.
+func TestThePatchGoalSaysWhichServerChecksItself(t *testing.T) {
+	g := Pledge[3]
+	if g.N != 4 {
+		t.Fatalf("goal %d where 4 was expected", g.N)
+	}
+	p := strings.ToLower(g.Position)
+	if strings.Contains(p, "every running copy") {
+		t.Errorf("goal 4 says every running copy checks itself: %s", g.Position)
+	}
+	if !strings.Contains(g.Position, "quilzo serve") || !strings.Contains(g.Position, "quilzo site") {
+		t.Errorf("goal 4 does not say which server checks itself and which does not: %s", g.Position)
+	}
+}

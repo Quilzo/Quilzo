@@ -187,15 +187,31 @@ type Options struct {
 	Version string
 	// RulesHref points at the rule set this executed.
 	RulesHref string
+	// Accepted are the findings an administrator has accepted as a risk for
+	// a time, which the scan reports apart from the rest.
+	//
+	// They are carried as not satisfied, and say so. Left out, as they once
+	// were, a control whose only finding was accepted read as reviewed and
+	// clean, while the system security plan and the KSI report, which scan
+	// with no suppressions, showed it failing.
+	Accepted []Accepted
+}
+
+// Accepted is a finding somebody accepted as a risk rather than fixed.
+type Accepted struct {
+	Finding posture.Finding
+	// Why is what they recorded: who accepted it, until when, and why.
+	Why string
 }
 
 // From renders a posture scan as OSCAL assessment results.
 //
-// Every finding the scan produced becomes both an observation — this was
-// looked at, here is what was seen — and one finding per control the rule bears
-// on. One rule touching three controls produces three findings, because an
-// assessor reads by control and a single finding referencing three would be
-// invisible under two of them.
+// Every finding the scan produced, the accepted ones in o.Accepted with
+// them, becomes both an observation — this was looked at, here is what was
+// seen — and one finding per control the rule bears on. One rule touching
+// three controls produces three findings, because an assessor reads by
+// control and a single finding referencing three would be invisible under
+// two of them.
 func From(findings []posture.Finding, rules map[string]posture.Rule,
 	at time.Time, o Options) (Results, error) {
 
@@ -279,20 +295,40 @@ func From(findings []posture.Finding, rules map[string]posture.Rule,
 	// Deterministic order, so two runs over the same store produce documents
 	// that diff cleanly. An assessor comparing this month against last month
 	// should see what changed, not a reshuffle.
-	sorted := append([]posture.Finding(nil), findings...)
+	type entry struct {
+		f        posture.Finding
+		accepted string
+	}
+	sorted := make([]entry, 0, len(findings)+len(o.Accepted))
+	for _, f := range findings {
+		sorted = append(sorted, entry{f: f})
+	}
+	for _, a := range o.Accepted {
+		sorted = append(sorted, entry{f: a.Finding, accepted: nonEmpty(a.Why, "no reason recorded")})
+	}
 	sort.Slice(sorted, func(i, j int) bool {
-		if sorted[i].Rule != sorted[j].Rule {
-			return sorted[i].Rule < sorted[j].Rule
+		if sorted[i].f.Rule != sorted[j].f.Rule {
+			return sorted[i].f.Rule < sorted[j].f.Rule
 		}
-		return sorted[i].Resource < sorted[j].Resource
+		return sorted[i].f.Resource < sorted[j].f.Resource
 	})
 
-	for _, f := range sorted {
+	for _, e := range sorted {
+		f := e.f
 		obsUUID, uerr := newUUID()
 		if uerr != nil {
 			return Results{}, uerr
 		}
 		rule := rules[f.Rule]
+		severity, remarks := string(f.Severity), nonEmpty(rule.Why, "")
+		obsRemarks := "resource: " + nonEmpty(f.Resource, "the deployment")
+		if e.accepted != "" {
+			// Still not satisfied: accepting a risk is a decision about the
+			// finding, not a fix for it.
+			severity += "; accepted as a risk"
+			remarks = strings.TrimSpace("Accepted as a risk, not fixed: " + e.accepted + ". " + remarks)
+			obsRemarks += "; accepted as a risk: " + e.accepted
+		}
 		res.Observations = append(res.Observations, Observation{
 			UUID:  obsUUID,
 			Title: f.Title,
@@ -304,7 +340,7 @@ func From(findings []posture.Finding, rules map[string]posture.Rule,
 			// direction would be claiming a document review as a test.
 			Methods:   []string{MethodTest},
 			Collected: stamp,
-			Remarks:   "resource: " + nonEmpty(f.Resource, "the deployment"),
+			Remarks:   obsRemarks,
 		})
 
 		for _, control := range rule.Controls {
@@ -322,9 +358,9 @@ func From(findings []posture.Finding, rules map[string]posture.Rule,
 					// OSCAL has two states and no third. A finding exists
 					// because a check failed, so it is not-satisfied; a check
 					// that passed produces no finding and therefore no claim.
-					Status: Status{State: "not-satisfied", Remarks: string(f.Severity)},
+					Status: Status{State: "not-satisfied", Remarks: severity},
 				},
-				Remarks: nonEmpty(rule.Why, ""),
+				Remarks: remarks,
 			})
 		}
 	}
