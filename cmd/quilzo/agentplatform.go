@@ -11,6 +11,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/agentexec"
+	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/mcp"
 	"github.com/quilzo/quilzo/internal/store"
@@ -70,6 +71,19 @@ func (c *Caller) runPayers() []string {
 		return nil
 	}
 	return personConsumer(c)
+}
+
+// chargeRun counts a model call the caller's operation made against the
+// run it acts in, when it acts in one: the tokens the model reported and
+// what the gateway priced them at, as ChargedTo counts a completion. It is
+// for a call ChargedTo cannot wrap, such as the vector of a question a
+// chatbot embeds (chatbotMeaning).
+func (c *Caller) chargeRun(u assist.Usage, cost int64) {
+	if c == nil || c.run == nil {
+		return
+	}
+	c.run.Tokens(u.In + u.Out)
+	c.run.Charge(cost)
 }
 
 // chargedToRun is m charged to the run the caller acts in, when it acts in

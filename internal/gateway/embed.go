@@ -42,8 +42,18 @@ func (g *Gateway) EmbeddingModel(route string) string {
 // Embed turns texts into vectors through the route named, charged to the
 // consumers each against its budget.
 func (g *Gateway) Embed(ctx context.Context, route string, consumers []string, texts []string) ([][]float64, error) {
+	vecs, _, _, err := g.EmbedCosted(ctx, route, consumers, texts)
+	return vecs, err
+}
+
+// EmbedCosted is Embed, saying as well what the model reported using and
+// what that cost at the route's price, in millionths, as CompleteCosted
+// does for words. A caller with a budget of its own beside the gateway's
+// (an agent's run) counts them: a question a chatbot embedded inside a run
+// was otherwise spending the run's money where its budget could not see.
+func (g *Gateway) EmbedCosted(ctx context.Context, route string, consumers []string, texts []string) ([][]float64, assist.Usage, int64, error) {
 	if len(consumers) == 0 {
-		return nil, errors.New("an embedding is charged to somebody")
+		return nil, assist.Usage{}, 0, errors.New("an embedding is charged to somebody")
 	}
 	var r *Route
 	for i := range g.cfg.Routes {
@@ -52,7 +62,7 @@ func (g *Gateway) Embed(ctx context.Context, route string, consumers []string, t
 		}
 	}
 	if r == nil || !r.Embeds {
-		return nil, fmt.Errorf("%w: %s is not a route that makes embeddings (quilzo gateway route add NAME --embeds ...)",
+		return nil, assist.Usage{}, 0, fmt.Errorf("%w: %s is not a route that makes embeddings (quilzo gateway route add NAME --embeds ...)",
 			ErrNoRoute, route)
 	}
 	consumer, also := consumers[0], consumers[1:]
@@ -65,24 +75,24 @@ func (g *Gateway) Embed(ctx context.Context, route string, consumers []string, t
 		if g.OnTrouble != nil && !errors.Is(err, ErrUnwritable) {
 			g.OnTrouble("spent", consumer)
 		}
-		return nil, err
+		return nil, assist.Usage{}, 0, err
 	}
 	g.mu.Lock()
 	down := g.now().Before(g.downTil[r.Name])
 	g.mu.Unlock()
 	if down {
-		return nil, fmt.Errorf("%w: %s: resting after repeated failures", ErrNoRoute, r.Name)
+		return nil, assist.Usage{}, 0, fmt.Errorf("%w: %s: resting after repeated failures", ErrNoRoute, r.Name)
 	}
 	if g.Cut != nil && g.Cut(r.Name) {
-		return nil, fmt.Errorf("%w: %s: cut by the shield", ErrNoRoute, r.Name)
+		return nil, assist.Usage{}, 0, fmt.Errorf("%w: %s: cut by the shield", ErrNoRoute, r.Name)
 	}
 	m, err := g.model(*r)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s: %v", ErrNoRoute, r.Name, err)
+		return nil, assist.Usage{}, 0, fmt.Errorf("%w: %s: %v", ErrNoRoute, r.Name, err)
 	}
 	em, ok := m.(embedder)
 	if !ok {
-		return nil, fmt.Errorf("%w: %s: its model makes no embeddings", ErrNoRoute, r.Name)
+		return nil, assist.Usage{}, 0, fmt.Errorf("%w: %s: its model makes no embeddings", ErrNoRoute, r.Name)
 	}
 	// What may not leave for this route is replaced first. Nothing comes
 	// back to put it back into: a vector of a placeholder is as near the
@@ -109,7 +119,7 @@ func (g *Gateway) Embed(ctx context.Context, route string, consumers []string, t
 		kind := g.failure(ctx, r.Name, err)
 		g.note(Usage{At: start, Consumer: consumer, Also: also, Route: r.Name,
 			Model: r.Model, In: in, Millis: took.Milliseconds(), Outcome: kind.outcome()})
-		return nil, err
+		return nil, assist.Usage{}, 0, err
 	}
 	g.mu.Lock()
 	g.fails[r.Name] = 0
@@ -119,5 +129,5 @@ func (g *Gateway) Embed(ctx context.Context, route string, consumers []string, t
 	g.note(Usage{At: start, Consumer: consumer, Also: also, Route: r.Name, Model: r.Model, In: in,
 		Millis: took.Milliseconds(), TokensIn: used.In, Estimated: !used.Reported, Cost: cost,
 		Masked: masked, Outcome: "ok"})
-	return vecs, nil
+	return vecs, used, int64(cost), nil
 }

@@ -64,7 +64,13 @@ func embedText(p assistant.Passage) string {
 
 // chatbotMeaning is the ranker by meaning for a chatbot's passages, or
 // nil when it does not take part.
-func chatbotMeaning(root string, a assistant.Assistant, passages []assistant.Passage) *assistant.Meaning {
+//
+// c is who asks, when that may be an agent's run (assistantIndexAs). The
+// question's vector is a model call: in a run it is charged to the run and
+// to its person as well as to the chatbot. It was charged to the chatbot
+// alone, so the run's money budget did not see it and the person who
+// started the run was not charged for it.
+func chatbotMeaning(root string, a assistant.Assistant, passages []assistant.Passage, c *Caller) *assistant.Meaning {
 	if !meansWithModel(a) {
 		return nil
 	}
@@ -85,7 +91,9 @@ func chatbotMeaning(root string, a assistant.Assistant, passages []assistant.Pas
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			out, err := gw.Embed(ctx, route, []string{"chatbot:" + a.Name}, []string{q})
+			consumers := append([]string{"chatbot:" + a.Name}, c.runPayers()...)
+			out, used, cost, err := gw.EmbedCosted(ctx, route, consumers, []string{q})
+			c.chargeRun(used, cost)
 			if err != nil {
 				return nil, err
 			}
@@ -110,11 +118,11 @@ func meaningKey(root string, a assistant.Assistant) string {
 }
 
 // withMeaning is an index with its ranker by meaning, when it has one.
-func withMeaning(root string, a assistant.Assistant, idx *assistant.Index) *assistant.Index {
+func withMeaning(root string, a assistant.Assistant, idx *assistant.Index, c *Caller) *assistant.Index {
 	if idx == nil {
 		return nil
 	}
-	return idx.WithMeaning(chatbotMeaning(root, a, idx.Passages))
+	return idx.WithMeaning(chatbotMeaning(root, a, idx.Passages, c))
 }
 
 // embedReport is what one embedding found and did.
