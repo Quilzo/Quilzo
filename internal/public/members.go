@@ -61,7 +61,8 @@ type Members struct {
 	Mode string
 	// Party is this site as a passkey relying party: its domain and origin.
 	Party webauthn.Party
-	// Limit bounds sign-ups, sign-ins and recovery attempts per address.
+	// Limit bounds sign-ups, sign-ins, new passkeys and recovery attempts
+	// per address.
 	Limit *throttle.Limiter
 	// Lockout is smart lockout for a member's failing passkey: the places
 	// it is tried from are locked out of the account, not the member
@@ -74,7 +75,23 @@ type Members struct {
 
 	mu         sync.Mutex
 	ceremonies map[string]ceremony
+	// swept is when expired ceremonies were last let go. Every start used
+	// to walk the whole map under mu, which every sign-up, sign-in and new
+	// passkey waits on, so a loop of starts made each one slower than the
+	// last: 600,000 held made a start hold the lock for 26ms.
+	swept time.Time
 }
+
+// maxCeremonies bounds the passkey prompts held at once, from everywhere.
+// Starting one is limited per address, but an address is one of millions
+// to somebody with an IPv6 range, and the map is memory and the time a
+// sweep takes. Ten thousand is a sign-in started every twelve
+// milliseconds for the two minutes a prompt lasts, far past what a site
+// sees from people.
+const maxCeremonies = 10000
+
+// errBusy is a new passkey prompt refused because maxCeremonies are held.
+var errBusy = errors.New("too many passkey prompts in progress")
 
 // ceremony is one passkey prompt in progress: server-side, single use and
 // short-lived, so a challenge cannot be replayed or kept for later.
@@ -185,10 +202,19 @@ func (st *Site) startCeremony(c ceremony) (string, error) {
 	if m.ceremonies == nil {
 		m.ceremonies = map[string]ceremony{}
 	}
-	for k, v := range m.ceremonies {
-		if now.After(v.expires) {
-			delete(m.ceremonies, k)
+	// At most once a second, so the walk is bounded by maxCeremonies and
+	// paid once a second, not once a start. An expired one kept a second
+	// longer is still refused by takeCeremony.
+	if now.Sub(m.swept) >= time.Second {
+		for k, v := range m.ceremonies {
+			if now.After(v.expires) {
+				delete(m.ceremonies, k)
+			}
 		}
+		m.swept = now
+	}
+	if len(m.ceremonies) >= maxCeremonies {
+		return "", errBusy
 	}
 	c.expires = now.Add(webauthn.ChallengeLifetime)
 	m.ceremonies[ch] = c
@@ -207,6 +233,17 @@ func (st *Site) takeCeremony(challenge, kind string) (ceremony, bool) {
 		return ceremony{}, false
 	}
 	return c, true
+}
+
+// ceremonyRefused answers a passkey prompt that could not be started.
+func ceremonyRefused(w http.ResponseWriter, err error) {
+	if errors.Is(err, errBusy) {
+		w.Header().Set("Retry-After", "60")
+		jsonError(w, http.StatusServiceUnavailable,
+			"Too many people are signing in just now. Wait a minute and try again.")
+		return
+	}
+	jsonError(w, http.StatusInternalServerError, "Something went wrong. Try again.")
 }
 
 func (st *Site) setSession(w http.ResponseWriter, token string) {
@@ -325,7 +362,7 @@ func (st *Site) signupStart(w http.ResponseWriter, r *http.Request) {
 	}
 	ch, err := st.startCeremony(ceremony{kind: "signup", name: in.Name, invite: in.Invite})
 	if err != nil {
-		jsonError(w, http.StatusInternalServerError, "Something went wrong. Try again.")
+		ceremonyRefused(w, err)
 		return
 	}
 	handle := make([]byte, 16)
@@ -391,19 +428,25 @@ func (st *Site) signupFinish(w http.ResponseWriter, r *http.Request) {
 	replyJSON(w, http.StatusOK, map[string]any{"codes": codes})
 }
 
+// signinStart is where a sign-in is counted against its address, as a
+// sign-up is counted where it starts. It was not limited at all: anybody
+// could ask for challenges in a loop, each one held for two minutes, and
+// only the finish was counted. Counted here and not again at the finish,
+// so one sign-in is one attempt: a finish needs a challenge only a start
+// makes, and takes it once, so the finishes are bounded by the starts.
 func (st *Site) signinStart(w http.ResponseWriter, r *http.Request) {
+	if st.limited(w, r) {
+		return
+	}
 	ch, err := st.startCeremony(ceremony{kind: "signin"})
 	if err != nil {
-		jsonError(w, http.StatusInternalServerError, "Something went wrong. Try again.")
+		ceremonyRefused(w, err)
 		return
 	}
 	replyJSON(w, http.StatusOK, map[string]string{"challenge": ch, "rpId": st.Members.Party.ID})
 }
 
 func (st *Site) signinFinish(w http.ResponseWriter, r *http.Request) {
-	if st.limited(w, r) {
-		return
-	}
 	var in struct {
 		Challenge string `json:"challenge"`
 		webauthn.Assertion
@@ -483,9 +526,15 @@ func (st *Site) passkeyStart(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusUnauthorized, "Sign in first.")
 		return
 	}
+	// Counted like a sign-in, for the same reason: each start holds a
+	// prompt, and a member in a loop would otherwise fill them for
+	// everybody.
+	if st.limited(w, r) {
+		return
+	}
 	ch, err := st.startCeremony(ceremony{kind: "add", member: m.ID})
 	if err != nil {
-		jsonError(w, http.StatusInternalServerError, "Something went wrong. Try again.")
+		ceremonyRefused(w, err)
 		return
 	}
 	var exclude []string
