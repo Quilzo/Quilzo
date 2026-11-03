@@ -630,6 +630,7 @@ log transparency
                                             history contradicts a block
   quilzo timestamp stamp | list | export   RFC 3161 proof of when you published
   quilzo anchor submit | status | upgrade  one hash over a whole publication
+  quilzo anchor export [--dir DIR]         each proof as an .ots file, for ots verify
 
   quilzo mcp [--list]                      the agent interface, over stdio
   quilzo __sandbox --allow DIR -- CMD       run CMD confined to DIR. Not a

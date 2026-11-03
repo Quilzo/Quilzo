@@ -134,7 +134,8 @@ func recordAssisted(root string, s *store.Store, pages []string,
 	return saveJSON(provPath(root), idx)
 }
 
-// evidenceRows flattens timestamps and anchors into one list.
+// evidenceRows flattens timestamps and anchors into one list: a
+// publication's, and the audit log heads' anchors, each named for which.
 //
 // They answer the same question — can somebody who does not trust us check
 // when this was published — and two tables of one row each are harder to read
@@ -157,8 +158,7 @@ func evidenceRows(root string) ([]admin.Evidence, error) {
 		}
 	}
 
-	file := &anchorFile{}
-	if err := loadJSON(anchorPath(root), file); err == nil {
+	if file, err := loadAnchors(root); err == nil {
 		for _, p := range file.Proofs {
 			state := string(p.State)
 			if !p.Anchored() {
@@ -167,8 +167,14 @@ func evidenceRows(root string) ([]admin.Evidence, error) {
 				// intention, not of a time.
 				state = "pending"
 			}
+			// An anchor of the audit log's head says so: it shares the file
+			// with publications' anchors, and was listed as one of them.
+			kind := "anchor"
+			if p.Kind == anchor.LogHead {
+				kind = "log-head anchor"
+			}
 			out = append(out, admin.Evidence{
-				Kind: "anchor", Subject: p.Digest, Authority: p.Calendar,
+				Kind: kind, Subject: p.Digest, Authority: p.Calendar,
 				State: state, Detail: anchor.Describe(p), At: p.SubmittedAt,
 			})
 		}

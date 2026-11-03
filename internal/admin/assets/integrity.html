@@ -67,4 +67,10 @@
   of an intention rather than of a time, which is why its state is shown rather
   than a tick.
 </p>
+<p class="hint">
+  A log-head anchor commits the audit log as it stood, not a publication: once
+  it is in a block, entries before it cannot be rewritten without failing
+  consistency. <code>quilzo anchor export</code> writes any anchor as a file the
+  OpenTimestamps client verifies.
+</p>
 {{template "foot" .}}

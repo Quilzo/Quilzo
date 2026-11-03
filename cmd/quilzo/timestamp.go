@@ -91,8 +91,8 @@ func covers(st timestamp.Stamp, current, legacy string) bool {
 // from pending to a block later, and a copy taken at stamping would go on
 // saying pending. The best proof wins, one in a block over one waiting.
 func joinAnchors(root string, stamps []timestamp.Stamp) []timestamp.Stamp {
-	file := &anchorFile{}
-	if err := loadJSON(anchorPath(root), file); err != nil || len(file.Proofs) == 0 {
+	file, err := loadAnchors(root)
+	if err != nil || len(file.Proofs) == 0 {
 		return stamps
 	}
 	out := make([]timestamp.Stamp, len(stamps))
@@ -104,7 +104,7 @@ func joinAnchors(root string, stamps []timestamp.Stamp) []timestamp.Stamp {
 		var best *anchor.Proof
 		for j := range file.Proofs {
 			p := &file.Proofs[j]
-			if p.Digest != st.Root {
+			if p.Digest != st.Root || p.Kind != anchor.Publication {
 				continue
 			}
 			if best == nil || (p.Anchored() && !best.Anchored()) {

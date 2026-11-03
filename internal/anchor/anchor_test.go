@@ -432,3 +432,59 @@ func TestForkNestingIsBoundedBeforeItReachesTenThousandFrames(t *testing.T) {
 		t.Errorf("refused, but not as excessive nesting: %v", err)
 	}
 }
+
+// -- the file the ots client reads -------------------------------------------
+
+// The status told people to run `ots verify anchor.ots`, and nothing wrote
+// that file: a proof is kept as the calendar's bytes inside anchors.json,
+// with no header, which the client cannot read. File writes the standard
+// detached timestamp: the header, version 1, the SHA-256 tag, the digest,
+// and the proof as the calendar sent it.
+func TestAProofIsWrittenAsTheFileTheOtsClientReads(t *testing.T) {
+	d := digest("a publication")
+	var b build
+	b.op(opAppend).arg([]byte("12345678")).op(opSHA256).pending("https://alice.example")
+	p := Proof{Digest: hex.EncodeToString(d), Calendar: "https://alice.example",
+		Body: b.b, State: Pending, Kind: Publication}
+
+	file, err := File(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// OpenTimestamps' DetachedTimestampFile, byte for byte.
+	header := []byte("\x00OpenTimestamps\x00\x00Proof\x00\xbf\x89\xe2\xe8\x84\xe8\x92\x94")
+	want := append(append(append(append([]byte(nil), header...), 0x01, opSHA256), d...), b.b...)
+	if !bytes.Equal(file, want) {
+		t.Fatalf("the file is not a detached timestamp of the digest:\n got %x\nwant %x", file, want)
+	}
+
+	// A proof that does not commit to its digest is not written: a file
+	// that fails to verify reads as the anchor failing.
+	bad := p
+	bad.Digest = hex.EncodeToString(digest("something else"))
+	bad.Body = []byte{opAttestation}
+	if _, err := File(bad); err == nil {
+		t.Error("a proof that does not walk from its digest was written as a file")
+	}
+	short := p
+	short.Digest = hex.EncodeToString(d[:20])
+	if _, err := File(short); err == nil {
+		t.Error("a digest that is not SHA-256 was written under the SHA-256 tag")
+	}
+}
+
+// Describe names how to get the file it tells somebody to verify.
+func TestDescribeNamesAFileSomethingWrites(t *testing.T) {
+	for _, p := range []Proof{
+		{State: Anchored, Height: 870000, Digest: strings.Repeat("ab", 32)},
+		{State: Pending, PendingAt: "https://alice.example", Digest: strings.Repeat("ab", 32)},
+	} {
+		d := Describe(p)
+		if strings.Contains(d, "anchor.ots") {
+			t.Errorf("Describe names anchor.ots, which nothing writes:\n%s", d)
+		}
+		if p.Anchored() && !strings.Contains(d, "quilzo anchor export") {
+			t.Errorf("Describe does not say how to get the file to verify:\n%s", d)
+		}
+	}
+}
