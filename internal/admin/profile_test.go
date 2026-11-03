@@ -37,3 +37,24 @@ func TestTheProfileOffersNoScopingToOwnContent(t *testing.T) {
 		}
 	}
 }
+
+// The profile does not say this program sends no mail.
+//
+// Beside the contact field it said "Nothing here is emailed — this program
+// sends no mail." It does: the security contact is told when the shield acts
+// or a sign-in is stepped up, an agent's sponsor before it stops, and a
+// newsletter's subscribers their issues (internal/mail). Somebody reading the
+// sentence to decide what to tell their mail administrator was told the
+// opposite of what happens. What stays true is that nothing is sent to the
+// field.
+func TestTheProfileDoesNotSayNoMailIsSent(t *testing.T) {
+	page := profileText(t)
+	for _, claim := range []string{"sends no mail", "sends no email", "no mail is sent"} {
+		if strings.Contains(page, claim) {
+			t.Errorf("the profile says the program %q", claim)
+		}
+	}
+	if !strings.Contains(page, "Nothing is sent to it") {
+		t.Error("the profile no longer says the contact field is not written to")
+	}
+}

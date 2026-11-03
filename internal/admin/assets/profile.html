@@ -22,8 +22,9 @@ role <strong>{{.Principal.Role}}</strong>.</p>
     <p><label for="pf-contact">Contact</label>
       <input id="pf-contact" name="contact" maxlength="120"
              value="{{.Details.Contact}}" placeholder="a room, a handle, a rota">
-      <span class="hint">Free text. Nothing here is emailed — this program
-        sends no mail.</span></p>
+      <span class="hint">Free text, for colleagues to read. Nothing is sent to
+        it: the mail this program sends goes only to the addresses set for
+        that, such as the security contact.</span></p>
   </div>
   <button type="submit">Save</button>
 </form>
