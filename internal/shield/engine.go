@@ -29,7 +29,9 @@ type Signal struct {
 	// not known: the audit log records the provider's number beside the
 	// handle, which is not personal data.
 	Provider uint32
-	// Subject is the chatbot, form, agent or address the signal is about.
+	// Subject is the chatbot, form, agent or address the signal is about;
+	// for form spam, "booking:SERVICE" or "newsletter:signup" when it is
+	// not a form (subjectFeature).
 	Subject string
 	At      time.Time
 	// Unverified says the source's address cannot be trusted enough to
@@ -499,11 +501,7 @@ func (e *Engine) step(pb Playbook, stage int, step Step, mode, key string, addr 
 	case "shield-feature":
 		target := step.Feature
 		if target == "subject" {
-			if kind, ok := map[string]string{"chatbot-injection": "chatbot", "form-spam": "form"}[s.Name]; ok {
-				target = kind + ":" + s.Subject
-			} else {
-				target = s.Subject // a feature by its own name
-			}
+			target = subjectFeature(s)
 		}
 		p.Kind, p.Target, p.Level = Feature, target, step.Level
 	case "lockdown":
@@ -552,6 +550,37 @@ func (e *Engine) step(pb Playbook, stage int, step Step, mode, key string, addr 
 		return "did not " + what + ": " + err.Error(), "", true
 	}
 	return what, applied.ID, note != ""
+}
+
+// subjectFeature is the feature a signal's subject names, for a playbook
+// that turns down what a signal is about: the chatbot, the form, or a
+// feature by its own name.
+//
+// Form spam is said by everything that refuses spam as a form does, and
+// two of those are features of their own, not forms. They name themselves
+// "booking:SERVICE" and "newsletter:signup", with a colon no form's name
+// can have. Every such subject used to be made a form's: a flood at the
+// newsletter turned off form:newsletter, which closes a form called
+// newsletter if there is one and leaves the sign-up open, and a flood at a
+// booking named form:booking:SERVICE, which is not a name, so nothing was
+// turned off at all.
+func subjectFeature(s Signal) string {
+	switch s.Name {
+	case "chatbot-injection":
+		return "chatbot:" + s.Subject
+	case "form-spam":
+		if kind, _, ok := strings.Cut(s.Subject, ":"); ok {
+			switch kind {
+			case "booking":
+				// Bookings are one feature: no switch turns one service off.
+				return "bookings"
+			case "newsletter":
+				return "newsletter"
+			}
+		}
+		return "form:" + s.Subject
+	}
+	return s.Subject // a feature by its own name
 }
 
 // vouched reports whether the signal's source signed in strongly lately.

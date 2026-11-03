@@ -144,3 +144,158 @@ func featureNamed(call *ast.CallExpr) (string, bool) {
 	name, _, _ = strings.Cut(name, ":")
 	return name, name != ""
 }
+
+// A flood of spam turns off what was flooded.
+//
+// # What this found
+//
+// The booking form and the newsletter sign-up refuse spam as a form does,
+// and say so with the same signal, so that the shipped form-flood playbook
+// can close them for a while. The engine made every such signal's subject
+// a form's name: the newsletter's became form:newsletter, which closes a
+// form called newsletter if there is one and leaves the sign-up open, and a
+// booking's became form:booking:NAME, which the shield refuses as not a
+// name, so nothing was turned off. Switches for bookings and the
+// newsletter could be turned on by hand; the shield's own answer to the
+// attack that most calls for them still could not reach them.
+//
+// # How
+//
+// Every place that raises a form-spam signal, in every package, with the
+// subject it raises it with; the engine acting on that signal, as the
+// shipped playbook does; and the feature it turned off held against what
+// the same function asks the shield about. A subject that is not written
+// out — a form's own name — stands in as a name.
+func TestAFloodOfSpamTurnsOffWhatWasFlooded(t *testing.T) {
+	type raised struct {
+		subject, where string
+		asks           map[string]bool
+	}
+	var found []raised
+	for _, dir := range []string{"../../internal", "../../cmd"} {
+		err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
+			fset := token.NewFileSet()
+			file, perr := parser.ParseFile(fset, path, nil, 0)
+			if perr != nil {
+				return nil
+			}
+			for _, decl := range file.Decls {
+				fn, ok := decl.(*ast.FuncDecl)
+				if !ok || fn.Body == nil {
+					continue
+				}
+				asks := map[string]bool{}
+				var here []raised
+				ast.Inspect(fn.Body, func(n ast.Node) bool {
+					call, ok := n.(*ast.CallExpr)
+					if !ok {
+						return true
+					}
+					if name, ok := featureNamed(call); ok {
+						asks[name] = true
+					}
+					if subject, ok := spamSubject(call); ok {
+						here = append(here, raised{subject: subject, where: fset.Position(call.Pos()).String()})
+					}
+					return true
+				})
+				for _, r := range here {
+					r.asks = asks
+					found = append(found, r)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A form, the newsletter and a booking, or the walk is reading nothing
+	// and a test that sees nothing passes.
+	for _, want := range []string{"name", "newsletter", "booking"} {
+		seen := false
+		for _, r := range found {
+			seen = seen || strings.HasPrefix(r.subject, want)
+		}
+		if !seen {
+			t.Fatalf("the walk found nothing raising form-spam about %q; found %+v", want, found)
+		}
+	}
+
+	var flood Playbook
+	for _, pb := range Builtins() {
+		if pb.Name == "form-flood" {
+			flood = pb
+		}
+	}
+	if flood.Name == "" {
+		t.Fatal("no form-flood playbook is shipped")
+	}
+	flood.Mode, flood.On.Count = "act", 1
+
+	for _, r := range found {
+		rig := newRig(t, flood)
+		rig.see("form-spam", "198.51.100.1", r.subject)
+		var off []string
+		for _, p := range rig.state(t).Protections {
+			if p.Kind == Feature {
+				off = append(off, p.Target)
+			}
+		}
+		if len(off) != 1 {
+			t.Errorf("%s: a flood of spam about %q turned off %v, not the one thing that was flooded", r.where, r.subject, off)
+			continue
+		}
+		if name, _, _ := strings.Cut(off[0], ":"); !r.asks[name] {
+			t.Errorf("%s: a flood of spam about %q turned off %s, and what was flooded asks the shield only about %v",
+				r.where, r.subject, off[0], r.asks)
+		}
+	}
+
+	// And a form that happens to be called newsletter is still a form.
+	rig := newRig(t, flood)
+	rig.see("form-spam", "198.51.100.1", "newsletter")
+	if _, on := rig.Guard.Feature("form:newsletter", rig.clock); !on {
+		t.Error("a flood at the form called newsletter did not close that form")
+	}
+	if _, on := rig.Guard.Feature("newsletter", rig.clock); on {
+		t.Error("a flood at the form called newsletter closed the newsletter sign-up instead")
+	}
+}
+
+// spamSubject is the subject a call raises a form-spam signal with: the
+// site's signal(FormSpam, subject, r). What is added to a written-out
+// prefix, and a subject not written out at all, stand in as a name.
+func spamSubject(call *ast.CallExpr) (string, bool) {
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != "signal" || len(call.Args) < 2 {
+		return "", false
+	}
+	switch kind := call.Args[0].(type) {
+	case *ast.Ident:
+		if kind.Name != "FormSpam" {
+			return "", false
+		}
+	case *ast.SelectorExpr:
+		if kind.Sel.Name != "FormSpam" {
+			return "", false
+		}
+	default:
+		return "", false
+	}
+	subject, rest := call.Args[1], ""
+	if bin, ok := subject.(*ast.BinaryExpr); ok && bin.Op == token.ADD {
+		subject, rest = bin.X, "name"
+	}
+	if s, ok := subject.(*ast.BasicLit); ok && s.Kind == token.STRING {
+		v, err := strconv.Unquote(s.Value)
+		return v + rest, err == nil
+	}
+	return "name", true
+}
