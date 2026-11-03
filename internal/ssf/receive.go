@@ -35,8 +35,9 @@ import (
 // worth of guesses and have the transmitter's real event told to wait,
 // and somebody holding a stolen session would do exactly that, for as
 // long as the transmitter kept retrying, to keep the provider's
-// session-revoked from ending it. Comparing a bearer is a hash of a few
-// dozen bytes, so it costs no more to do first.
+// session-revoked from ending it. What comes before the rate is reading
+// the stream's digest, a small file, and hashing a bearer of at most a few
+// hundred bytes against it, so doing them first costs little more.
 
 // PushRate is how many deliveries a minute the endpoint takes from the
 // transmitter. A transmitter sends one event per change to somebody's
