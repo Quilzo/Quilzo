@@ -339,6 +339,7 @@ func anchorExport(root string, args []string) error {
 		State    string `json:"state"`
 	}
 	var out []written
+	used := map[string]bool{}
 	for _, p := range file.Proofs {
 		body, err := anchor.File(p)
 		if err != nil {
@@ -349,8 +350,16 @@ func anchorExport(root string, args []string) error {
 		if u, perr := url.Parse(p.Calendar); perr == nil && u.Host != "" {
 			host = u.Host
 		}
-		name := filepath.Join(*dir, fmt.Sprintf("%s-%s-%s.ots", p.Kind, short(p.Digest),
-			reUnsafeName.ReplaceAllString(host, "-")))
+		base := fmt.Sprintf("%s-%s-%s", p.Kind, short(p.Digest),
+			reUnsafeName.ReplaceAllString(host, "-"))
+		// Numbered past the first: one calendar can hold two proofs of one
+		// digest, a log head anchored twice, and the second was written
+		// over the first.
+		name := filepath.Join(*dir, base+".ots")
+		for n := 2; used[name]; n++ {
+			name = filepath.Join(*dir, fmt.Sprintf("%s-%d.ots", base, n))
+		}
+		used[name] = true
 		if err := os.WriteFile(name, body, 0o644); err != nil {
 			return err
 		}

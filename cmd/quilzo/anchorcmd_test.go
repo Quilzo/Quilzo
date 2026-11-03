@@ -166,3 +166,53 @@ func TestEachAnchorIsKeptWithWhatItIsAbout(t *testing.T) {
 		t.Errorf("%d publication and %d log-head proofs kept", pub, logs)
 	}
 }
+
+// A file is named by the proof's kind, digest and calendar, and one digest
+// can have two proofs from one calendar: the same log head anchored twice
+// before anything was written between. The second was written over the
+// first, and both were listed under the one name, so one proof never left.
+func TestEveryProofIsExportedToAFileOfItsOwn(t *testing.T) {
+	root, _ := publishedStore(t)
+	head := strings.Repeat("cd", 32)
+	if err := saveJSON(headsPath(root), &headFile{Heads: []audit.Head{{Size: 3, Root: head,
+		At: "2026-11-01T09:00:00Z"}}}); err != nil {
+		t.Fatal(err)
+	}
+	first := calendarAnswer(anchor.Calendars[0])
+	second := append([]byte{0xf0, 8}, "87654321"...) // another nonce, the same calendar
+	second = append(second, first[10:]...)
+	d, _ := hex.DecodeString(head)
+	for _, body := range [][]byte{first, second} {
+		if _, err := anchor.Walk(d, body); err != nil {
+			t.Fatalf("the test's proof does not commit to its digest: %v", err)
+		}
+	}
+	if err := saveJSON(anchorPath(root), &anchorFile{Proofs: []anchor.Proof{
+		{Digest: head, Calendar: anchor.Calendars[0], Body: first, State: anchor.Pending,
+			Kind: anchor.LogHead, SubmittedAt: "2026-11-01T09:01:00Z"},
+		{Digest: head, Calendar: anchor.Calendars[0], Body: second, State: anchor.Pending,
+			Kind: anchor.LogHead, SubmittedAt: "2026-11-01T09:02:00Z"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	dir := t.TempDir()
+	if err := cmdAnchor(root, []string{"export", "--dir", dir}); err != nil {
+		t.Fatal(err)
+	}
+	files, _ := filepath.Glob(filepath.Join(dir, "*.ots"))
+	if len(files) != 2 {
+		t.Fatalf("%d .ots files for two proofs: %v", len(files), files)
+	}
+	seen := map[string]bool{}
+	for _, f := range files {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		seen[string(b)] = true
+	}
+	if len(seen) != 2 {
+		t.Error("two proofs were exported as the same file")
+	}
+}
