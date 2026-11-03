@@ -110,7 +110,9 @@ func (p Power) Validate() error {
 
 // Situational is a role a situation confers rather than an administrator.
 type Situational struct {
-	// Package is where it lives, and Name what that package calls it.
+	// Package is where it lives, or, for a role the command layer keeps
+	// with no package of its own, the command; Name is what it is called
+	// there.
 	Package string `json:"package"`
 	Name    string `json:"name"`
 	// What it is, in the words somebody unfamiliar would need.

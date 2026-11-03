@@ -23,11 +23,10 @@ func TestTheRegisterIsWellFormed(t *testing.T) {
 	if s.Roles < 5 || s.Powers < 12 {
 		t.Fatalf("%+v", s)
 	}
-	// Every role here today acts inside its own situation: the ones that
-	// reached outside (an incident's commander, a detection's promoter, a
-	// work item's assignee) left with the security team's tools for
-	// Vaigil. TestAPowerThatOutlivesItsSituationIsAStandingAct keeps the
-	// rule for the next one.
+	// Most roles here act inside their own situation. Two reach outside:
+	// the room's moderator, whose removals need publish on the whole site,
+	// and an enrolment link, whose passkey outlives it.
+	// TestAPowerThatOutlivesItsSituationIsAStandingAct keeps the rule.
 	if s.Contained == 0 {
 		t.Fatal("everything reaches outside, which would mean the " +
 			"distinction is not being drawn")
@@ -82,8 +81,8 @@ func TestACallHostNeedsNoStandingAuthority(t *testing.T) {
 
 // A power that outlives its situation is a standing act: refused with no
 // standing authority, and with the reason, refused to a reader, allowed to
-// somebody who may publish. Built here because no role this program has
-// today reaches outside; the rule is what keeps the next one honest.
+// somebody who may publish. Built here rather than read from the register,
+// so the rule is tested whatever the register holds.
 func TestAPowerThatOutlivesItsSituationIsAStandingAct(t *testing.T) {
 	pro := Situational{Package: "example", Name: "promoter", What: "moves a rule to live",
 		Held: "by being somebody other than whoever proposed it", Ends: "at the promotion",
@@ -154,6 +153,25 @@ func TestAnUnknownPowerSaysWhatExists(t *testing.T) {
 	}
 }
 
+// exemptions are the packages whose roles are standing rather than
+// situational, or which have none, with the reason each is exempt.
+//
+// Each names a package that is here and not registered
+// (TestEveryExemptionNamesAPackageThatIsHere): workforce, review and vendor
+// were listed after they left with the security team's tools, and agent
+// after its run starter was registered.
+var exemptions = map[string]string{
+	"auth": "it is the standing model itself",
+	"collab": "a proposal's author is a fact about the proposal " +
+		"rather than authority over anything",
+	"posture": "a severity is not a role",
+	"oscal": "a role in an OSCAL document names who is responsible " +
+		"for a control in that document; it confers nothing here",
+	"feature": "a role a feature declares is standing: it is granted " +
+		"as auth bindings, held until revoked, and confers nothing " +
+		"those bindings do not",
+}
+
 // TestEveryPackageWithASituationalRoleIsRegistered.
 //
 // The guard this package exists for. The failure is not a wrong entry, it
@@ -165,25 +183,6 @@ func TestEveryPackageWithASituationalRoleIsRegistered(t *testing.T) {
 	for _, p := range Packages() {
 		registered[p] = true
 	}
-	// Packages whose roles are standing rather than situational, or which
-	// have none, with the reason each is exempt.
-	exempt := map[string]string{
-		"auth": "it is the standing model itself",
-		"agent": "an agent's authority is a manifest bounded by the " +
-			"person who ran it, which is a narrowing rather than a role",
-		"workforce": "it reads roles from an identity provider and " +
-			"reconciles them; it confers nothing",
-		"review": "it reads access somebody else granted",
-		"collab": "a proposal's author is a fact about the proposal " +
-			"rather than authority over anything",
-		"vendor":  "a tier is a classification, not a power",
-		"posture": "a severity is not a role",
-		"oscal": "a role in an OSCAL document names who is responsible " +
-			"for a control in that document; it confers nothing here",
-		"feature": "a role a feature declares is standing: it is granted " +
-			"as auth bindings, held until revoked, and confers nothing " +
-			"those bindings do not",
-	}
 	var missing []string
 	err := filepath.WalkDir("..", func(path string, d os.DirEntry,
 		err error) error {
@@ -191,7 +190,7 @@ func TestEveryPackageWithASituationalRoleIsRegistered(t *testing.T) {
 			return err
 		}
 		pkg := filepath.Base(path)
-		if pkg == "standing" || registered[pkg] || exempt[pkg] != "" {
+		if pkg == "standing" || registered[pkg] || exemptions[pkg] != "" {
 			return nil
 		}
 		if !defines(t, path) {
@@ -215,9 +214,9 @@ func TestEveryPackageWithASituationalRoleIsRegistered(t *testing.T) {
 
 // defines reports whether a package declares a type called Role.
 //
-// The common shape and not the only one: internal/errand's owner and
-// internal/proving's promoter are situational roles with no type called
-// Role, and both are registered anyway. So the register is deliberately
+// The common shape and not the only one: internal/errand's owner and a
+// share link's holder are situational roles with no type called Role, and
+// both are registered anyway. So the register is deliberately
 // wider than this catches, and what this catches is the case where
 // somebody reaches for the obvious name — which is the case most likely to
 // be written without thinking about whether its powers survive.
@@ -247,4 +246,75 @@ func defines(t *testing.T, dir string) bool {
 		}
 	}
 	return false
+}
+
+// The room moderator was registered as "granted for that room", ending
+// "with the grant", and contained. There is no per-room grant: taking down
+// somebody else's words needs the authority to publish on the whole site
+// (cmd/quilzo/roomcmd.go), because the tombstone stays and a room does not
+// end. The register says what the command enforces.
+func TestTheRoomModeratorIsWhatTheRoomCommandEnforces(t *testing.T) {
+	mod, ok := Find("room", "moderator")
+	if !ok {
+		t.Fatal("no room moderator")
+	}
+	if strings.Contains(mod.Held, "granted for that room") {
+		t.Errorf("the moderator is held %q, and no grant names a room", mod.Held)
+	}
+	p, ok := mod.Power("remove")
+	if !ok {
+		t.Fatal("the moderator confers no remove")
+	}
+	if !p.Outside || p.Needs != auth.ActPublish {
+		t.Fatalf("remove is outside=%v needing %q; the command asks for %s on the whole site",
+			p.Outside, p.Needs, auth.ActPublish)
+	}
+	reader := &auth.Policy{}
+	if err := reader.Grant(auth.Binding{Principal: "grace", Role: auth.RoleReader, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Allows(mod, "remove", "grace", reader, "/"); err == nil {
+		t.Error("a reader may take down somebody else's words by the register, and not by the command")
+	}
+}
+
+// The register called itself every situational role in this program and
+// left out the ones a deployment hands out every day: a share link, a
+// handoff conversation's secret, an enrolment link and an agent run's
+// starter. Each is authority a situation hands somebody that no grant did.
+func TestTheRolesADeploymentHandsOutAreRegistered(t *testing.T) {
+	for _, r := range []struct{ pkg, name string }{
+		{"share", "link holder"},
+		{"handoff", "visitor"},
+		{"enrol", "link holder"},
+		{"agent", "run starter"},
+	} {
+		if _, ok := Find(r.pkg, r.name); !ok {
+			t.Errorf("%s/%s is handed out by a deployment and is not in the register", r.pkg, r.name)
+		}
+	}
+	// An enrolment link adds a passkey that outlives it: a standing act,
+	// resting on the grant of whoever made the link.
+	if l, ok := Find("enrol", "link holder"); ok && l.Contained() {
+		t.Error("a passkey added through an enrolment link outlives the link, and the register says it does not")
+	}
+}
+
+// The exemptions named packages that are not in this repository — they
+// left with the security team's tools — so the guard was excusing nothing
+// and reading as if it covered them. An exemption names a package that
+// exists and is not already registered.
+func TestEveryExemptionNamesAPackageThatIsHere(t *testing.T) {
+	registered := map[string]bool{}
+	for _, p := range Packages() {
+		registered[p] = true
+	}
+	for pkg := range exemptions {
+		if info, err := os.Stat(filepath.Join("..", pkg)); err != nil || !info.IsDir() {
+			t.Errorf("internal/%s is exempt and does not exist", pkg)
+		}
+		if registered[pkg] {
+			t.Errorf("internal/%s is exempt and registered", pkg)
+		}
+	}
 }

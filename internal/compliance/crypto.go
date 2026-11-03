@@ -53,6 +53,15 @@ const (
 	// Verified means this program only checks material somebody else made, so
 	// the choice of algorithm is theirs and the migration is theirs to lead.
 	Verified Use = "verified"
+	// Demonstration means only the terminal demonstrations of a call reach it
+	// (quilzo call, huddle, scribe and their kind), against identities made
+	// for the run: the program carries the code and nothing a deployment does
+	// runs it.
+	//
+	// Named because the call cryptography was listed as generated, for "the
+	// per-epoch secret of a call", in the inventory an agency hands a client
+	// as what the product does, and no product path makes a call.
+	Demonstration Use = "demonstration"
 )
 
 // Algorithm is one cryptographic primitive in use.
@@ -135,7 +144,7 @@ func Inventory() []Algorithm {
 		{
 			Name: "Ed25519", Package: "crypto/ed25519",
 			Purpose: "HTTP message signatures under RFC 9421",
-			Where:   "httpsig, crawl, groupkey", Use: Generated,
+			Where:   "httpsig, crawl", Use: Generated,
 			Quantum: Broken,
 			Note: "Signed and verified. internal/httpsig signs Ed25519 for " +
 				"any caller that asks — that is what Web Bot Auth uses — and " +
@@ -144,13 +153,14 @@ func Inventory() []Algorithm {
 				"Listed as generated anyway, because a signing implementation " +
 				"is part of this program's cryptographic surface and a " +
 				"document about that surface should overstate it rather than " +
-				"understate it.",
+				"understate it. internal/groupkey signs with it too, and " +
+				"only the terminal demonstrations of a call reach that.",
 		},
 		{
 			Name: "ML-DSA-65 (FIPS 204)", Package: "crypto/mldsa",
 			Purpose: "the second signature on an audit head, so a published " +
 				"commitment stays unforgeable after a quantum computer exists",
-			Where: "audit, groupkey", Use: Generated, Quantum: Safe,
+			Where: "audit", Use: Generated, Quantum: Safe,
 			Note: "Alongside Ed25519, not instead of it: a head verifies only " +
 				"if both signatures do, so a break in either one forges " +
 				"nothing. This is the case where the threat is real rather " +
@@ -158,35 +168,41 @@ func Inventory() []Algorithm {
 				"looked at years later, so a signature only has to be " +
 				"forgeable by the time somebody checks it. Both ends of this " +
 				"one are this program, which is why it could be done here and " +
-				"not yet for federation.",
+				"not yet for federation. internal/groupkey uses it as well, " +
+				"and only the terminal demonstrations of a call reach that.",
 		},
 		{
 			Name: "HKDF-SHA256 / HKDF-SHA512", Package: "crypto/hkdf",
-			Purpose: "deriving per-sender media keys, salts and ratchets " +
-				"from a group base key, under RFC 9605",
-			Where: "sframe, groupkey", Use: Generated, Quantum: Reduced,
+			Purpose: "deriving the key a backup is sealed under from the " +
+				"backup key and a salt",
+			Where: "backup", Use: Generated, Quantum: Reduced,
 			Note: "A key derivation function is only as strong as the " +
-				"secret it expands. RFC 9605 says explicitly that the base " +
-				"key is the deployment's to distribute and specifies " +
-				"nothing about how; internal/groupkey is that part, and " +
-				"the same KDF runs the epoch schedule that produces the " +
-				"base key as runs the per-sender expansion underneath it.",
+				"secret it expands, which for a backup is a 256-bit key. " +
+				"internal/sframe and internal/groupkey use it as well, for " +
+				"the per-sender media keys of RFC 9605 and the epoch " +
+				"schedule that produces their base key, and only the " +
+				"terminal demonstrations of a call reach those.",
 		},
 		{
 			Name:    "ML-KEM-768 with X25519 (FIPS 203, RFC 9180)",
 			Package: "crypto/hpke",
-			Purpose: "encapsulating the per-epoch secret of a call to each " +
-				"participant, which is what gives SFrame its base key",
-			Where: "groupkey", Use: Generated, Quantum: Safe,
-			Note: "Hybrid, and the hybrid is the point: the shared secret " +
+			Purpose: "in the demonstrations of a call only: encapsulating " +
+				"the per-epoch secret to each participant, which is what " +
+				"gives SFrame its base key",
+			Where: "groupkey, reached by quilzo call, huddle and scribe",
+			Use:   Demonstration, Quantum: Safe,
+			Note: "Nothing a deployment runs makes a call, so nothing it " +
+				"ships encrypts with this; the demonstrations run it against " +
+				"identities made for the run.\n\n" +
+				"Hybrid, and the hybrid is the point: the shared secret " +
 				"holds if either ML-KEM or X25519 holds, so neither a " +
 				"lattice break nor a quantum computer is enough on its own. " +
 				"One is three years standardised and the other thirty, and " +
 				"nobody sensible bets a call on the younger one alone. " +
-				"Harvest-now-decrypt-later is the reason it matters here " +
-				"rather than notionally: a recorded call is a ciphertext " +
-				"somebody can keep, and the key that opens it is negotiated " +
-				"once, today.\n\nReached through crypto/hpke rather than " +
+				"Harvest-now-decrypt-later is why it would matter: a " +
+				"recorded call is a ciphertext somebody can keep, and the " +
+				"key that opens it is negotiated once.\n\nReached through " +
+				"crypto/hpke rather than " +
 				"crypto/mlkem and crypto/ecdh directly, which is why those " +
 				"two are not listed: this program does not touch either " +
 				"primitive, it asks the standard library's RFC 9180 " +
@@ -262,9 +278,14 @@ func Posture() string {
 		if a.Quantum != Broken {
 			continue
 		}
-		if a.Use == Generated {
+		// By name rather than "everything else is verified": a broken
+		// algorithm only a demonstration reaches is neither this program's
+		// output nor an identity provider's, and leaving it out of the
+		// summary fails TestThePostureNamesWhatIsActuallyGenerated.
+		switch a.Use {
+		case Generated:
 			brokenGenerated = append(brokenGenerated, a.Name)
-		} else {
+		case Verified:
 			brokenVerified = append(brokenVerified, a.Name)
 		}
 	}
