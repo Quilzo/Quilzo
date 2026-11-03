@@ -224,6 +224,13 @@ func loadSelfReport(root string) (selfReport, error) {
 // itself. The same findings come every hour, so they go to the one engine
 // that remembers having acted on them (shieldFor), and the playbooks'
 // day-long rest keeps a person from hearing of the same flaw every hour.
+//
+// A contained feature cannot rest the whole day. Turning it off lasts a
+// day at most, as long as the rest, so the feature came back on when its
+// day ran out and stayed on until the run after, open to whoever was using
+// the flaw. Its rest is ended a few hours before (containmentEnding), and
+// a flaw still there is contained, and told, again without the feature
+// coming back on in between.
 func tellTheShield(root string, rep selfReport, now time.Time) int {
 	sh := shieldFor(root)
 	n := 0
@@ -231,7 +238,11 @@ func tellTheShield(root string, rep selfReport, now time.Time) int {
 		switch f.Decision {
 		case selfvuln.Contain:
 			for _, ft := range f.Features {
-				sh.engine.Observe(shield.Signal{Name: "self-exposure", Subject: ft, At: now})
+				s := shield.Signal{Name: "self-exposure", Subject: ft, At: now}
+				if containmentEnding(root, ft, now) {
+					sh.engine.Wake(s)
+				}
+				sh.engine.Observe(s)
 				n++
 			}
 		case selfvuln.Tell:
@@ -244,6 +255,28 @@ func tellTheShield(root string, rep selfReport, now time.Time) int {
 		n++
 	}
 	return n
+}
+
+// containAhead is how long before a feature turned off for a flaw would
+// come back on that the self-check contains it again. The next run is an
+// hour or an hour and a quarter away (the upkeep wakes every quarter of an
+// hour), later when a slow job ahead of it holds the upkeep up.
+const containAhead = 3 * time.Hour
+
+// containmentEnding reports whether the shield turned this feature off by
+// itself and that ends within containAhead. One a person set, or lifted,
+// is theirs, and is left to them.
+func containmentEnding(root, feature string, now time.Time) bool {
+	st, err := shield.Load(root)
+	if err != nil {
+		return false
+	}
+	for _, p := range st.Active(now) {
+		if p.Auto && p.Kind == shield.Feature && p.Target == feature && p.Until.Before(now.Add(containAhead)) {
+			return true
+		}
+	}
+	return false
 }
 
 // selfJob is the self-check as the admin's upkeep runs it: at most hourly.

@@ -341,6 +341,36 @@ func (e *Engine) cross(pbs []Playbook, s Signal, now time.Time, st *State) []cro
 	return due
 }
 
+// Wake ends the rest that every playbook this signal meets takes after
+// acting on what it is about, so the signal is counted when it is next
+// observed. It is for a caller that raises the same thing on a timer and
+// knows what the playbook applied will end before it comes round again:
+// the self-check finds an exploited flaw every hour, and turning its
+// feature off lasts a day at most (MaxAuto), as long as the playbook's
+// rest. Left resting, the feature came back on when the day ran out and
+// stayed on until the run after. Woken first, a flaw still there meets a
+// new protection with its own start, and the rest of the stage's steps,
+// telling the security contact among them, run again with it. Nothing is
+// renewed behind the playbook's back: what it does still depends on its
+// mode, a hold and every guardrail, as on any signal.
+func (e *Engine) Wake(s Signal) {
+	if e == nil || e.Playbooks == nil {
+		return
+	}
+	pbs := e.Playbooks()
+	addr := addrOf(s)
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for _, pb := range pbs {
+		if pb.On.Signal != s.Name {
+			continue
+		}
+		if key, ok := e.keyOf(pb.On.Per, s, addr); ok {
+			delete(e.quiet, pb.Name+"|"+key)
+		}
+	}
+}
+
 // Observe runs every playbook a signal meets. It is called on the request
 // that raised the signal, so a block is in force before the next one.
 func (e *Engine) Observe(s Signal) []Response {

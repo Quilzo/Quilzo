@@ -137,6 +137,50 @@ func TestACallerPastingCredentialsIsToldOnceADay(t *testing.T) {
 	}
 }
 
+// exposureIn is a self-check that found a flaw attackers are using, in
+// this build, that only this feature reaches.
+func exposureIn(id, feature string) selfReport {
+	return selfReport{Report: selfvuln.Report{Findings: []selfvuln.Finding{{ID: id,
+		Summary: "an exploited flaw in mime/multipart", Applies: true, Decision: selfvuln.Contain,
+		Features: []string{feature}}}}}
+}
+
+// An exploited flaw that only one feature reaches keeps that feature off
+// for as long as the hourly self-check finds it, and the security contact
+// hears of it about once a day, not every hour. Turning a feature off lasts
+// a day at most (shield.MaxAuto), which is as long as the playbook rests
+// after acting: with one engine remembering the rest, the feature came back
+// on when the day ran out and stayed on until the run after, with the flaw
+// open to whoever was using it.
+func TestAnExploitedFlawStaysContainedEveryHourItIsThere(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := shieldRoot(t)
+	box := securityMailbox(t, root)
+	start := time.Now()
+	clock := start
+	shieldFor(root).engine.Now = func() time.Time { return clock }
+	// Two days of runs, an hour and a quarter apart: the upkeep wakes every
+	// quarter of an hour and runs the self-check once an hour has passed,
+	// so a run is often a tick later than the hour.
+	const every = 75 * time.Minute
+	for at := start; at.Before(start.Add(48 * time.Hour)); at = at.Add(every) {
+		clock = at
+		tellTheShield(root, exposureIn("GO-2026-0002", "forms"), at)
+		if _, off := shield.Find(root, shield.Feature, "forms", at.Add(every)); !off {
+			t.Fatalf("the forms were on again %s after the first run, before the next one",
+				at.Add(every).Sub(start).Round(time.Minute))
+		}
+		if at.Sub(start) < 20*time.Hour {
+			if n := mailsAbout(box, "An exploited flaw in this build"); n != 1 {
+				t.Fatalf("%s in, the security contact was told %d times", at.Sub(start).Round(time.Minute), n)
+			}
+		}
+	}
+	if n := mailsAbout(box, "An exploited flaw in this build"); n < 2 || n > 3 {
+		t.Errorf("two days told the security contact %d times", n)
+	}
+}
+
 // kevMissing is what the posture says about the exploited catalogue, for
 // this store.
 func kevMissing(t *testing.T, root string) []posture.Finding {
