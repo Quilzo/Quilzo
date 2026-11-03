@@ -22,14 +22,20 @@ import (
 // SCIMAdmin is provisioning, as the admin reaches it.
 type SCIMAdmin struct {
 	// Handler answers the identity provider at /scim/v2.
-	Handler     http.Handler
-	Status      func() (tokenSet bool, st *scim.State, err error)
-	Map         func(group, to, by string) error
-	Unmap       func(group, by string) error
-	NewToken    func(by string) (string, error)
+	Handler http.Handler
+	Status  func() (tokenSet bool, st *scim.State, err error)
+	Map     func(group, to, by string) error
+	Unmap   func(group, by string) error
+	// NewToken makes the provisioning token, keeping who made it and how
+	// it was approved.
+	NewToken    func(made scim.TokenMade) (string, error)
 	RevokeToken func(by string) error
 	// TokenEnds is when the provisioning token stops working, if one is set.
 	TokenEnds func() (time.Time, bool, error)
+	// LiveTokens are the provisioning tokens that work now, with who made
+	// each and how, for whoever approves a mapping that makes
+	// administrators.
+	LiveTokens func() ([]scim.LiveToken, error)
 }
 
 type scimGroupRow struct {
@@ -189,6 +195,7 @@ func (s *Server) handleProvisioningAct(w http.ResponseWriter, r *http.Request) {
 		// received by whoever asked (on People). It did not, and either of
 		// two administrators alone made mallory an administrator through
 		// the identity provider's door.
+		made := scim.TokenMade{By: p.Name, Approval: scim.Unasked}
 		if s.provisioningMakesAdministrators() {
 			apply, msg, perr := s.proposeSecond(p, dual.SCIMToken,
 				"a new provisioning token, which makes administrators through a mapped group",
@@ -201,8 +208,9 @@ func (s *Server) handleProvisioningAct(w http.ResponseWriter, r *http.Request) {
 				back("m", msg)
 				return
 			}
+			made.Approval = scim.Alone
 		}
-		token, terr := s.SCIM.NewToken(p.Name)
+		token, terr := s.SCIM.NewToken(made)
 		if terr == nil {
 			// Shown in this response and never again, so not a redirect.
 			s.renderProvisioning(w, r, p, token)

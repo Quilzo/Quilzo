@@ -54,18 +54,25 @@ const (
 	scimTokenGrace = 30 * 24 * time.Hour
 )
 
-// scimToken is what is kept of the provisioning token: its hash, and when
-// it was made and ends.
+// scimToken is what is kept of the provisioning token: its hash, when it
+// was made and ends, and who made it and how it was approved, which the
+// approval of a mapping that makes administrators shows (liveSCIMTokens).
 type scimToken struct {
 	Hash    string    `json:"hash"`
 	Created time.Time `json:"created"`
 	Expires time.Time `json:"expires"`
+	scim.TokenMade
 }
 
 // newSCIMToken makes the provisioning token, lasting days, keeps its hash,
 // and returns it once. A new one replaces the old: there is one
 // provisioning connection.
 func newSCIMToken(root string, days int) (string, scimToken, error) {
+	return newSCIMTokenMade(root, days, scim.TokenMade{})
+}
+
+// newSCIMTokenMade is newSCIMToken, keeping who made it and how.
+func newSCIMTokenMade(root string, days int, made scim.TokenMade) (string, scimToken, error) {
 	if days <= 0 || days > scimTokenMaxDays {
 		return "", scimToken{}, fmt.Errorf("a provisioning token lasts from 1 to %d days", scimTokenMaxDays)
 	}
@@ -76,7 +83,7 @@ func newSCIMToken(root string, days int) (string, scimToken, error) {
 	token := "qzscim_" + base64.RawURLEncoding.EncodeToString(b)
 	sum := sha256.Sum256([]byte(token))
 	now := time.Now().UTC()
-	kept := scimToken{Hash: hex.EncodeToString(sum[:]), Created: now, Expires: now.AddDate(0, 0, days)}
+	kept := scimToken{Hash: hex.EncodeToString(sum[:]), Created: now, Expires: now.AddDate(0, 0, days), TokenMade: made}
 	if err := saveSCIMToken(root, kept); err != nil {
 		return "", scimToken{}, err
 	}
@@ -89,6 +96,17 @@ func saveSCIMToken(root string, t scimToken) error {
 		return err
 	}
 	return atomicfile.Write(scimTokenPath(root), b, 0o600)
+}
+
+// liveSCIMTokens are the provisioning tokens that work at now: who made
+// each, when, and how it was approved. There is one at most, since a new
+// one replaces the old, and none once it has ended or been revoked.
+func liveSCIMTokens(root string, now time.Time) ([]scim.LiveToken, error) {
+	t, ok, err := readSCIMToken(root, now)
+	if err != nil || !ok || !now.Before(t.Expires) {
+		return nil, err
+	}
+	return []scim.LiveToken{{TokenMade: t.TokenMade, Made: t.Created, Ends: t.Expires}}, nil
 }
 
 // readSCIMToken is the kept token, and whether there is one. A token kept
@@ -501,6 +519,7 @@ func cmdSCIM(root string, args []string) error {
 		if err != nil {
 			return err
 		}
+		made := scim.TokenMade{By: caller.Name, Approval: scim.Unasked}
 		if makes {
 			apply, err := proposeSecond(root, caller, dual.SCIMToken,
 				"a new provisioning token, which makes administrators through a mapped group",
@@ -508,8 +527,9 @@ func cmdSCIM(root string, args []string) error {
 			if err != nil || !apply {
 				return err
 			}
+			made.Approval = scim.Alone
 		}
-		return giveSCIMToken(root, *days, caller)
+		return giveSCIMToken(root, *days, caller, made)
 	case "map":
 		if len(args) != 3 {
 			return scimUsage()
@@ -557,8 +577,8 @@ func scimMakesAdministrators(root string) (bool, error) {
 
 // giveSCIMToken makes the provisioning token, records it (never the
 // secret), and prints it once.
-func giveSCIMToken(root string, days int, caller *Caller) error {
-	token, kept, err := newSCIMToken(root, days)
+func giveSCIMToken(root string, days int, caller *Caller, made scim.TokenMade) error {
+	token, kept, err := newSCIMTokenMade(root, days, made)
 	if err != nil {
 		return err
 	}
@@ -599,13 +619,14 @@ func scimHooks(root string) *admin.SCIMAdmin {
 			scimHandler(root).SyncAll()
 			return note("scim.unmapped", by, group)
 		},
-		NewToken: func(by string) (string, error) {
-			t, _, err := newSCIMToken(root, scimTokenDays)
+		NewToken: func(made scim.TokenMade) (string, error) {
+			t, _, err := newSCIMTokenMade(root, scimTokenDays, made)
 			if err != nil {
 				return "", err
 			}
-			return t, note("scim.token-made", by, "")
+			return t, note("scim.token-made", made.By, "")
 		},
+		LiveTokens: func() ([]scim.LiveToken, error) { return liveSCIMTokens(root, time.Now()) },
 		TokenEnds: func() (time.Time, bool, error) {
 			t, ok, err := readSCIMToken(root, time.Now())
 			return t.Expires, ok, err

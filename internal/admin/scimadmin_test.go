@@ -37,7 +37,7 @@ func wireSCIM(t *testing.T, srv *Server) (*scimCalls, *scim.Store) {
 			return st.Update(func(s *scim.State) error { s.Mapping[group] = to; return nil })
 		},
 		Unmap:       func(group, by string) error { calls.unmapped, calls.by = group, by; return nil },
-		NewToken:    func(by string) (string, error) { calls.tokens++; return "qzscim_shown-once", nil },
+		NewToken:    func(scim.TokenMade) (string, error) { calls.tokens++; return "qzscim_shown-once", nil },
 		RevokeToken: func(by string) error { calls.revoked++; return nil },
 	}
 	return calls, st
@@ -227,5 +227,43 @@ func TestAnApprovedProvisioningTokenIsOfferedAsAToken(t *testing.T) {
 	}
 	if !strings.Contains(body, "the provisioning token") {
 		t.Error("the hint does not name the provisioning token among what takes two administrators")
+	}
+}
+
+// Approving on People a group mapping that makes administrators shows the
+// provisioning token it would let make them: who made it, when, and how it
+// was approved.
+//
+// A token made while no group made administrators was made by one person,
+// rightly, and stays valid once such a mapping is approved. Whoever
+// approved the mapping on this screen could not see it.
+func TestAMappingThatMakesAdministratorsShowsTheLiveProvisioningTokensOnPeople(t *testing.T) {
+	srv, editor := setup(t)
+	wireSCIM(t, srv)
+	made := time.Date(2026, 11, 2, 9, 30, 0, 0, time.UTC)
+	tokens := []scim.LiveToken{{TokenMade: scim.TokenMade{By: "editor", Approval: scim.Unasked},
+		Made: made, Ends: made.AddDate(0, 0, 180)}}
+	srv.SCIM.LiveTokens = func() ([]scim.LiveToken, error) { return tokens, nil }
+	if err := srv.Policy.Grant(auth.Binding{Principal: "lee", Role: auth.RoleAdmin, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	lee, _, err := srv.Tokens.IssueSession("lee", "lee", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	postForm(t, srv, "/provisioning/act", editor, "do=map&group=IT+admins&to=admin")
+	if pend, _ := srv.Dual.Store.Pending(time.Now()); len(pend) != 1 || pend[0].Kind != dual.Mapping {
+		t.Fatalf("control: the mapping does not wait: %+v", pend)
+	}
+	page := get(t, srv, "/people", lee).Body.String()
+	for _, want := range []string{"made by editor", "nobody else was asked", "2 Nov 2026"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the mapping waiting on People does not say %q", want)
+		}
+	}
+
+	tokens = nil
+	if page := get(t, srv, "/people", lee).Body.String(); !strings.Contains(page, "No provisioning token works now") {
+		t.Error("with no live token, People does not say so")
 	}
 }

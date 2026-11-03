@@ -14,6 +14,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/dual"
+	"github.com/quilzo/quilzo/internal/scim"
 )
 
 // Privileged changes that wait for a second administrator (internal/dual):
@@ -182,6 +183,16 @@ type pendingRow struct {
 	// The button said "the link" for a provisioning token too, which gives
 	// no link.
 	Gives string
+	// Mapping says this is a group mapped to make administrators, and
+	// Tokens are the provisioning tokens approving it lets make them, or
+	// TokensUnread why they could not be read.
+	//
+	// A token made while no group made administrators was made by one
+	// person, rightly, and stays valid once such a mapping is approved;
+	// whoever approved the mapping here could not see it.
+	Mapping      bool
+	Tokens       []scim.LiveToken
+	TokensUnread string
 }
 
 // pendingRows are the requests waiting, for the People screen, with what p
@@ -196,14 +207,36 @@ func (s *Server) pendingRows(p principal, now time.Time) []pendingRow {
 	}
 	alone := s.onlyAdministrator(p.Name)
 	var out []pendingRow
+	var tokens []scim.LiveToken
+	var unread error
+	read := false
 	for _, r := range pend {
 		mine := strings.EqualFold(r.By, p.Name)
-		out = append(out, pendingRow{Request: r, Words: dual.StateWords(r, now),
+		row := pendingRow{Request: r, Words: dual.StateWords(r, now),
 			CanDecide: r.Open(now) && (!mine || alone), CanTakeBack: mine,
 			CanReceive: mine && r.Redeemable(now) && receivedHere(r),
-			Gives:      map[bool]string{true: "the link", false: "the token"}[r.Kind == dual.Enrol]})
+			Gives:      map[bool]string{true: "the link", false: "the token"}[r.Kind == dual.Enrol]}
+		if r.Kind == dual.Mapping {
+			if !read {
+				tokens, unread = s.liveTokens()
+				read = true
+			}
+			row.Mapping, row.Tokens = true, tokens
+			if unread != nil {
+				row.TokensUnread = unread.Error()
+			}
+		}
+		out = append(out, row)
 	}
 	return out
+}
+
+// liveTokens are the provisioning tokens that work now.
+func (s *Server) liveTokens() ([]scim.LiveToken, error) {
+	if s.SCIM == nil || s.SCIM.LiveTokens == nil {
+		return nil, errors.New("this build cannot say which provisioning tokens work")
+	}
+	return s.SCIM.LiveTokens()
 }
 
 // handlePeoplePending approves, declines or withdraws a request.
@@ -319,7 +352,11 @@ func (s *Server) receiveCredential(w http.ResponseWriter, r *http.Request, p pri
 		s.giveEnrolLink(w, r, p, ch.Principal, ch.For)
 		return
 	}
-	token, err := s.SCIM.NewToken(p.Name)
+	made := scim.TokenMade{By: p.Name, Approval: scim.ByTwo, ApprovedBy: req.DecidedBy}
+	if req.Alone {
+		made = scim.TokenMade{By: p.Name, Approval: scim.Alone}
+	}
+	token, err := s.SCIM.NewToken(made)
 	if err != nil {
 		s.peopleBack(w, r, err.Error())
 		return

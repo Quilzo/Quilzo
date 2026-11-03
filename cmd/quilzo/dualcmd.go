@@ -15,6 +15,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/dual"
+	"github.com/quilzo/quilzo/internal/scim"
 )
 
 // Privileged changes that wait for a second administrator (internal/dual):
@@ -159,14 +160,20 @@ func cmdPending(root string, args []string) error {
 			if r.Why != "" {
 				w.Human("  %swhy: %s%s\n", dim, r.Why, reset)
 			}
+			if r.Kind == dual.Mapping && r.Open(now) {
+				w.Human("  %squilzo pending show %s lists the provisioning tokens it lets make administrators%s\n",
+					dim, r.ID, reset)
+			}
 		}
 		return nil
 	}
 	if len(args) != 2 {
-		return errors.New("usage: quilzo pending [list] | approve ID | decline ID | withdraw ID | redeem ID")
+		return errors.New("usage: quilzo pending [list] | show ID | approve ID | decline ID | withdraw ID | redeem ID")
 	}
 	id := args[1]
 	switch args[0] {
+	case "show":
+		return showPending(root, id, now)
 	case "approve", "decline":
 		approve := args[0] == "approve"
 		if err := authorise(root, c, auth.ActGrant, "/"); err != nil {
@@ -237,7 +244,7 @@ func cmdPending(root string, args []string) error {
 			if days == 0 {
 				days = scimTokenDays
 			}
-			return giveSCIMToken(root, days, c)
+			return giveSCIMToken(root, days, c, tokenMadeBy(c.Name, r))
 		}
 		if r.Kind != dual.Token {
 			return fmt.Errorf("request %s is not a token: an approved %s is already done", r.ID, r.Kind)
@@ -255,5 +262,57 @@ func cmdPending(root string, args []string) error {
 		}
 		return tokenIssueAs(root, ch.Args, true)
 	}
-	return errors.New("usage: quilzo pending [list] | approve ID | decline ID | withdraw ID | redeem ID")
+	return errors.New("usage: quilzo pending [list] | show ID | approve ID | decline ID | withdraw ID | redeem ID")
+}
+
+// showPending is `quilzo pending show ID`: one request, as a person
+// deciding it reads it.
+//
+// A group mapped to make administrators lets whoever holds the
+// provisioning token make them, by putting people in the group, so its
+// request lists every live token: who made it, when, and how it was
+// approved. One made while no group made administrators was made by one
+// person and stays valid once the mapping is approved; whoever approved
+// the mapping could not see it.
+func showPending(root, id string, now time.Time) error {
+	r, err := dualStore(root).Get(id)
+	if err != nil {
+		return err
+	}
+	var live []scim.LiveToken
+	if r.Kind == dual.Mapping {
+		if live, err = liveSCIMTokens(root, now); err != nil {
+			return fmt.Errorf("the provisioning token could not be read, and approving this lets it make administrators: %w", err)
+		}
+	}
+	if w.JSON(map[string]any{"request": r, "state": dual.StateWords(r, now), "provisioning_tokens": live}) {
+		return nil
+	}
+	w.Human("%s%s%s  %s\n  %sasked by %s at %s; %s%s\n", bold, r.ID, reset, r.What, dim, r.By,
+		r.At.UTC().Format("15:04 2 Jan 2006 UTC"), dual.StateWords(r, now), reset)
+	if r.Why != "" {
+		w.Human("  %swhy: %s%s\n", dim, r.Why, reset)
+	}
+	if r.Kind != dual.Mapping {
+		return nil
+	}
+	if len(live) == 0 {
+		w.Human("  no provisioning token works now; one made after this is approved takes two administrators\n")
+		return nil
+	}
+	w.Human("  %sapproving this lets the provisioning token make administrators:%s\n", yellow, reset)
+	for _, t := range live {
+		w.Human("    %s\n", t.Words())
+	}
+	w.Human("  %sif that is not who should hold it, decline, or revoke it first: quilzo scim token --revoke%s\n", dim, reset)
+	return nil
+}
+
+// tokenMadeBy is how a provisioning token given to by on request r was
+// approved.
+func tokenMadeBy(by string, r dual.Request) scim.TokenMade {
+	if r.Alone {
+		return scim.TokenMade{By: by, Approval: scim.Alone}
+	}
+	return scim.TokenMade{By: by, Approval: scim.ByTwo, ApprovedBy: r.DecidedBy}
 }
