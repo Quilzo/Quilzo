@@ -299,6 +299,23 @@ type SignalsFacts struct {
 	Manual    bool      `json:"manual,omitempty"`
 }
 
+// SignalsSilentAfter is how long a connected stream may go without
+// answering a verification: a day to answer the first, and a day between
+// answers, since the server asks once a day.
+const SignalsSilentAfter = 24 * time.Hour
+
+// Silent reports whether the stream has gone SignalsSilentAfter without
+// proving it still arrives. One judgement, read by the posture rule, the
+// command's status and the Sign-ins screen: each had its own reading of
+// "a day", and the screen could call a stream silent that the status
+// called fine.
+func (f SignalsFacts) Silent(now time.Time) bool {
+	if f.Connected.IsZero() || now.Sub(f.Connected) <= SignalsSilentAfter {
+		return false
+	}
+	return f.Verified.IsZero() || now.Sub(f.Verified) > SignalsSilentAfter
+}
+
 // SSOProvider is one SAML identity provider.
 type SSOProvider struct {
 	Name    string      `json:"name"`

@@ -98,7 +98,7 @@ func TestTheSignInsScreenShowsTheStream(t *testing.T) {
 			}
 		}
 	}
-	check("From the identity provider", "oidc sign-ins, from https://idp.example", "silent", "enabled",
+	check("From the identity provider", "oidc sign-ins, from <code>https://idp.example</code>", "silent", "enabled",
 		"session-revoked", "Unmatched")
 
 	st.Manual = true
@@ -109,6 +109,64 @@ func TestTheSignInsScreenShowsTheStream(t *testing.T) {
 
 	stErr = errors.New("signals.json cannot be read")
 	check("signals.json cannot be read")
+}
+
+// What is wrong with a stream is said, not left to be guessed, in the
+// house's list of facts. One never asked to verify says so, where it said
+// "asked, not answered yet"; a request that failed says why; a stream the
+// provider paused is marked; events past the hourly cap are drawn as the
+// worst figure on the screen, which the stylesheet did not draw at all; and
+// with none connected the command shown is one that works as written, where
+// it lacked the client and failed. The hint no longer says a passkey
+// session is left alone when the provider reports a credential stolen.
+func TestTheSignInsScreenSaysWhatIsWrongWithTheStream(t *testing.T) {
+	srv, token := setup(t)
+	now := time.Now()
+	st := &SignalsStatus{Provider: "saml:okta", Issuer: "https://okta.example", State: "paused",
+		Connected: now.Add(-time.Hour), AskFailed: "QUILZO_SIGNALS_SECRET is not set in this process's environment",
+		Acted: 20, Capped: 3}
+	srv.Signals = &SignalsAdmin{Handler: &pushCounter{},
+		Status: func() (*SignalsStatus, error) { return st, nil }}
+	page := func() string {
+		t.Helper()
+		w := get(t, srv, "/security/signins", token)
+		if w.Code != http.StatusOK {
+			t.Fatalf("Sign-ins answered %d", w.Code)
+		}
+		body := w.Body.String()
+		if r := a11y.Check("/security/signins", body); r.Blocks() {
+			for _, f := range r.Findings {
+				if f.Severity == a11y.Blocking {
+					t.Errorf("%s (%s): %s", f.Rule, f.Criterion, f.Detail)
+				}
+			}
+		}
+		return body
+	}
+	body := page()
+	for _, want := range []string{`<dl class="kv">`, "not asked yet; the server asks within a day",
+		"Last request", "failed</span> QUILZO_SIGNALS_SECRET is not set", "paused</span> as the identity provider last said",
+		"nothing is sent while it is", `class="critical"><dt>Past the hourly cap`, "confirm it is them"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("Sign-ins does not say %q", want)
+		}
+	}
+	for _, wrong := range []string{"asked, not answered", "Held back", ">silent<", "Passkey sessions, tokens and connected apps are left alone"} {
+		if strings.Contains(body, wrong) {
+			t.Errorf("Sign-ins says %q", wrong)
+		}
+	}
+	if !strings.Contains(string(mustAsset(t, "style.css")), ".stats-row > div.critical {") {
+		t.Error("a figure marked critical is drawn like every other")
+	}
+
+	st = nil
+	body = page()
+	for _, want := range []string{"quilzo signals connect --provider oidc --client-id ID", "QUILZO_SIGNALS_SECRET", "--jwks URL"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("with none connected, Sign-ins does not say %q", want)
+		}
+	}
 }
 
 // The deny the receiver adds when the provider disables an account is the

@@ -44,7 +44,7 @@ func TestEveryListingAnswersInJSON(t *testing.T) {
 		{"agent", "list"}, {"agent", "templates"}, {"apps", "list"}, {"audit", tpl},
 		{"auth", "list"}, {"auth", "roles"}, {"brand", "check"}, {"brand", "list"},
 		{"browser", "status"}, {"diff"}, {"inbox", "list"}, {"integrations", "list"},
-		{"log"}, {"peer", "list"}, {"research", "list"}, {"rights"}, {"secret", "list"},
+		{"log"}, {"peer", "list"}, {"research", "list"}, {"rights"}, {"secret", "list"}, {"signals", "status"},
 		{"token", "list"}, {"version"},
 	} {
 		name := strings.Join(c, " ")

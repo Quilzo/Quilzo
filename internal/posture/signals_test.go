@@ -28,10 +28,16 @@ func TestASecurityEventStreamThatStopsAnsweringIsReported(t *testing.T) {
 		{"none connected", nil, ""},
 		{"answered this morning", &SignalsFacts{Connected: week, Verified: now.Add(-3 * time.Hour)}, ""},
 		{"connected an hour ago", &SignalsFacts{Connected: now.Add(-time.Hour)}, ""},
+		{"answered exactly a day ago", &SignalsFacts{Connected: week, Verified: now.Add(-SignalsSilentAfter)}, ""},
 		{"answered 25 hours ago", &SignalsFacts{Connected: week, Verified: now.Add(-25 * time.Hour)}, "last answered"},
 		{"never answered", &SignalsFacts{Connected: week}, "never answered"},
 		{"made by hand", &SignalsFacts{Connected: week, Manual: true}, "cannot be asked"},
 	} {
+		// The rule fires exactly when the judgement the status and the
+		// Sign-ins screen read says silent.
+		if silent := c.facts != nil && c.facts.Silent(now); silent != (c.want != "") {
+			t.Errorf("%s: Silent says %v", c.name, silent)
+		}
 		got := r.Check(State{Now: now, SSO: SSOFacts{Signals: c.facts}})
 		if c.want == "" {
 			if len(got) != 0 {

@@ -6,6 +6,8 @@ package admin
 import (
 	"net/http"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/posture"
 )
 
 // Security events from the identity provider (internal/ssf), as the admin
@@ -36,8 +38,10 @@ type SignalsStatus struct {
 	// verification that can never come.
 	Manual bool
 	// Verified is when the transmitter last answered a verification, and
-	// Asked when one was last asked for.
+	// Asked when one was last asked for; AskFailed is why that request
+	// failed, when it did.
 	Verified, Asked time.Time
+	AskFailed       string
 	// State is what the transmitter last said the stream is: enabled,
 	// paused or disabled.
 	State     string
@@ -53,15 +57,11 @@ type SignalsStatus struct {
 type signalsPanel struct {
 	Provider, Issuer, State, LastType  string
 	Verified, Asked, Connected, LastAt string
+	AskFailed                          string
 	Manual, Silent                     bool
 	Received, Acted, Unmatched         int
 	Refused, Capped                    int
 }
-
-// signalsSilentAfter is how long a stream may go without answering a
-// verification before the screen calls it silent, as the posture rule
-// signals.stream-silent does.
-const signalsSilentAfter = 24 * time.Hour
 
 // signalsData puts the stream on the Sign-ins screen, or says why it
 // cannot.
@@ -71,7 +71,7 @@ func (s *Server) signalsData(data map[string]any, now time.Time) {
 	}
 	st, err := s.Signals.Status()
 	if err != nil {
-		data["SignalsError"] = err.Error()
+		data["SignalsError"] = "The stream's settings cannot be read, so nobody can tell here whether it works: " + err.Error()
 		return
 	}
 	if st == nil {
@@ -87,8 +87,10 @@ func (s *Server) signalsData(data map[string]any, now time.Time) {
 	data["Signals"] = signalsPanel{
 		Provider: st.Provider, Issuer: st.Issuer, State: st.State, LastType: st.LastType,
 		Verified: when(st.Verified), Asked: when(st.Asked), Connected: when(st.Connected), LastAt: when(st.LastAt),
-		Manual:   st.Manual,
-		Silent:   now.Sub(st.Verified) > signalsSilentAfter && now.Sub(st.Connected) > signalsSilentAfter,
+		AskFailed: st.AskFailed, Manual: st.Manual,
+		// The posture rule's judgement, so the screen and the finding on
+		// Security never disagree about the same stream.
+		Silent:   posture.SignalsFacts{Connected: st.Connected, Verified: st.Verified, Manual: st.Manual}.Silent(now),
 		Received: st.Received, Acted: st.Acted, Unmatched: st.Unmatched, Refused: st.Refused, Capped: st.Capped,
 	}
 }

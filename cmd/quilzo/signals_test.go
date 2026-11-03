@@ -83,6 +83,9 @@ type transmitter struct {
 	deleted  bool
 	clientOK bool
 	n        int
+	// refuseVerify makes the verification endpoint refuse, as one does
+	// for a client without the scope.
+	refuseVerify bool
 }
 
 func b64url(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }
@@ -126,6 +129,9 @@ func (x *transmitter) Do(_ context.Context, method, raw string, body []byte, h m
 		return answer(201, map[string]any{"stream_id": "s-1", "iss": txIss, "aud": asked.Delivery.Endpoint,
 			"events_delivered": asked.Events}), nil
 	case "POST " + txIss + "/ssf/verify":
+		if x.refuseVerify {
+			return answer(403, map[string]any{"error": "insufficient_scope"}), nil
+		}
 		var v struct{ State string }
 		_ = json.Unmarshal(body, &v)
 		x.state = v.State
@@ -1123,5 +1129,175 @@ func TestTheStatusSaysWhatTheStreamDid(t *testing.T) {
 	}
 	if strings.Contains(filepath.Base(signalsPath(c.root)), "token") {
 		t.Error("an odd name for the file")
+	}
+}
+
+// The status says what the Sign-ins screen says, in the same words, and
+// answers --json with a time never reached left out rather than written as
+// the year 1. A stream gone a day without an answer is silent on both, as
+// it is to the posture rule; a request for a verification that failed says
+// why, until one succeeds. A server started without the client secret in
+// its own environment failed every day's request, and all the status said
+// was "last asked".
+func TestTheStatusSaysWhyAStreamIsSilent(t *testing.T) {
+	c := signalsStore(t, "email")
+	c.connect(t, "oidc")
+	if err := updateSignals(c.root, func(s *signalsConfig) error {
+		s.Connected = time.Now().Add(-48 * time.Hour)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(signalsSecretEnv, "")
+	job := signalsJob(c.root)
+	if _, err := job.Do(time.Now().Add(25 * time.Hour)); err == nil {
+		t.Fatal("a request with no client secret did not fail")
+	}
+
+	var said bytes.Buffer
+	w = out.New(false)
+	w.Out = &said
+	if err := cmdSignals(c.root, []string{"status"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"silent: ", "never answered a verification", "the last request failed:",
+		signalsSecretEnv + " is not set", "the stream is enabled, as the identity provider last said",
+		"last event: none yet"} {
+		if !strings.Contains(said.String(), want) {
+			t.Errorf("the status does not say %q:\n%s", want, said.String())
+		}
+	}
+
+	var doc bytes.Buffer
+	w = out.New(true)
+	w.Out = &doc
+	if err := cmdSignals(c.root, []string{"status"}); err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(doc.Bytes(), &got); err != nil {
+		t.Fatalf("%s (%v)", doc.Bytes(), err)
+	}
+	if got["silent"] != true || !strings.Contains(fmt.Sprint(got["ask_failed"]), signalsSecretEnv) {
+		t.Errorf("the JSON says %s", doc.Bytes())
+	}
+	if _, ok := got["verified"]; ok || strings.Contains(doc.String(), "0001-01-01") {
+		t.Errorf("a verification never answered is in the JSON as a time: %s", doc.Bytes())
+	}
+	if st, err := signalsHooks(c.root).Status(); err != nil || st.AskFailed == "" {
+		t.Errorf("the screen is not told why the request failed: %+v (%v)", st, err)
+	}
+
+	t.Setenv(signalsSecretEnv, "client-secret")
+	if _, err := job.Do(time.Now().Add(50 * time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if got := readSignals(t, c.root); got.AskFailed != "" {
+		t.Errorf("a request that worked still says the last one failed: %q", got.AskFailed)
+	}
+}
+
+// Connecting says what it needs: a provider, one of a client and a key
+// set, and nothing left over. A verification that could not be asked for
+// is a warning on standard error and a reason in the JSON document, where
+// "verification_asked": false said nothing about why, and the status says
+// it was never asked rather than that it waits for an answer.
+func TestConnectingSaysWhatItNeedsAndWhatWentWrong(t *testing.T) {
+	c := signalsStore(t, "email")
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"connect", "--client-id", txClientID}, "--provider names"},
+		{[]string{"connect", "--provider", "oidc", "stray", "--client-id", txClientID}, "usage: quilzo signals connect"},
+		{[]string{"connect", "--provider", "oidc"}, "--jwks"},
+		{[]string{"connect", "--provider", "saml:nobody", "--client-id", txClientID}, "quilzo saml list"},
+		{[]string{"nonsense"}, "(--client-id ID | --jwks URL)"},
+	} {
+		err := cmdSignals(c.root, tc.args)
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("quilzo signals %s: %v, want %q", strings.Join(tc.args, " "), err, tc.want)
+		}
+	}
+	if readSignals(t, c.root).connected() {
+		t.Fatal("a refused connect connected a stream")
+	}
+
+	c.tx.refuseVerify = true
+	var doc, warned bytes.Buffer
+	w = out.New(true)
+	w.Out, w.Err = &doc, &warned
+	if err := cmdSignals(c.root, []string{"connect", "--provider", "oidc", "--client-id", txClientID}); err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Asked bool   `json:"verification_asked"`
+		Why   string `json:"verification_error"`
+	}
+	if err := json.Unmarshal(doc.Bytes(), &got); err != nil || got.Asked || got.Why == "" {
+		t.Fatalf("the JSON says %s (%v)", doc.Bytes(), err)
+	}
+	if !strings.Contains(warned.String(), "verification was not asked for") {
+		t.Errorf("standard error says %q", warned.String())
+	}
+	if kept := readSignals(t, c.root); kept.AskFailed == "" || !kept.Asked.IsZero() {
+		t.Errorf("kept %+v", kept)
+	}
+	var said bytes.Buffer
+	w = out.New(false)
+	w.Out = &said
+	if err := cmdSignals(c.root, []string{"status"}); err != nil {
+		t.Fatal(err)
+	}
+	if s := said.String(); !strings.Contains(s, "verification not asked yet") || !strings.Contains(s, "the last request failed:") {
+		t.Errorf("the status says %q", s)
+	}
+}
+
+// Turning the stream off answers --json, and says what is left to do at
+// the identity provider on standard error as well: a script turning it off
+// read nothing at all, not even that the provider still had the stream and
+// would go on pushing to an address that refuses everything.
+func TestTurningOffSaysWhatIsLeftAtTheProvider(t *testing.T) {
+	c := signalsStore(t, "email")
+	c.connect(t, "oidc")
+	t.Setenv(signalsSecretEnv, "")
+	off := func() (map[string]any, string) {
+		t.Helper()
+		var doc, warned bytes.Buffer
+		w = out.New(true)
+		w.Out, w.Err = &doc, &warned
+		if err := cmdSignals(c.root, []string{"off"}); err != nil {
+			t.Fatal(err)
+		}
+		dec := json.NewDecoder(&doc)
+		var got map[string]any
+		if err := dec.Decode(&got); err != nil {
+			t.Fatalf("off --json wrote %q (%v)", doc.String(), err)
+		}
+		if dec.More() {
+			t.Errorf("off --json wrote more than one document")
+		}
+		return got, warned.String()
+	}
+	got, warned := off()
+	if got["was_connected"] != true || got["deleted_at_provider"] != false ||
+		!strings.Contains(fmt.Sprint(got["warning"]), "did not delete") || !strings.Contains(warned, "did not delete") {
+		t.Errorf("with the provider not asked: %v, standard error %q", got, warned)
+	}
+	if c.tx.deleted || readSignals(t, c.root).connected() {
+		t.Fatal("off did not turn the stream off here, or deleted it with no secret")
+	}
+	if got, _ := off(); got["was_connected"] != false || got["connected"] != false {
+		t.Errorf("with nothing connected: %v", got)
+	}
+
+	t.Setenv(signalsSecretEnv, "client-secret")
+	w = out.New(false)
+	w.Out = &bytes.Buffer{}
+	c.connect(t, "oidc")
+	got, warned = off()
+	if got["deleted_at_provider"] != true || got["warning"] != nil || warned != "" || !c.tx.deleted {
+		t.Errorf("with the provider asked: %v, standard error %q", got, warned)
 	}
 }

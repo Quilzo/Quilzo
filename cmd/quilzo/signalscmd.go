@@ -86,9 +86,15 @@ type signalsConfig struct {
 	Push string `json:"push_digest,omitempty"`
 	// State is the digest of the state the last verification was asked
 	// with; Asked when, and Verified when one was last answered.
-	State       string    `json:"state_digest,omitempty"`
-	Asked       time.Time `json:"asked,omitzero"`
-	Verified    time.Time `json:"verified,omitzero"`
+	State    string    `json:"state_digest,omitempty"`
+	Asked    time.Time `json:"asked,omitzero"`
+	Verified time.Time `json:"verified,omitzero"`
+	// AskFailed is why the last request for a verification failed, until
+	// one succeeds. Kept so the status and the Sign-ins screen can say it:
+	// a server started without the client secret in its environment asked
+	// and failed every day, and all either showed was "last asked", which
+	// read as asked and not yet answered.
+	AskFailed   string    `json:"ask_failed,omitempty"`
 	Status      string    `json:"status,omitempty"`
 	Connected   time.Time `json:"connected,omitzero"`
 	ConnectedBy string    `json:"connected_by,omitempty"`
@@ -239,9 +245,12 @@ func samlNamed(root, name string) (*saml.Config, error) {
 	return nil, fmt.Errorf("there is no SAML provider %q (quilzo saml list)", name)
 }
 
+// signalsUsage names one of --client-id and --jwks as needed, which the
+// brackets of the first spelling hid: both looked optional, and connecting
+// with neither was refused.
 func signalsUsage() error {
-	return errors.New("usage: quilzo signals connect --provider oidc|saml:NAME [--issuer URL] [--audience A] " +
-		"[--client-id ID] [--jwks URL] | status | off")
+	return errors.New("usage: quilzo signals connect --provider oidc|saml:NAME (--client-id ID | --jwks URL) " +
+		"[--issuer URL] [--audience A] | status | off")
 }
 
 func cmdSignals(root string, args []string) error {
@@ -268,6 +277,16 @@ func signalsConnect(root string, args []string) error {
 	jwks := fs.String("jwks", "", "the transmitter's key set, for a stream made in its own console")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	// A word left over is a flag mistyped or a value given its own place,
+	// and parsing stops there: `connect --provider oidc oops --client-id ID`
+	// read no client and said so, about the wrong thing.
+	if fs.NArg() > 0 {
+		return signalsUsage()
+	}
+	if *provider == "" {
+		return errors.New("--provider names the sign-in whose sessions the events end: oidc, or saml:NAME for a " +
+			"SAML provider (quilzo saml list)")
 	}
 	caller := resolveCaller(root, "")
 	now := time.Now().UTC()
@@ -386,6 +405,9 @@ func signalsConnect(root string, args []string) error {
 	cfg.JWKS, cfg.ClientID, cfg.TokenURL, cfg.Stream = t.JWKSURI, *clientID, tokenURL, s.ID
 	cfg.ConfigURL, cfg.StatusURL, cfg.VerifyURL = t.ConfigurationEndpoint, t.StatusEndpoint, t.VerificationEndpoint
 	verr := signalsAskVerification(ctx, h, &cfg, access, now)
+	if verr != nil {
+		cfg.AskFailed = onOneLine(verr.Error())
+	}
 	if st, _, err := t.Status(ctx, h, access, s.ID); err == nil {
 		cfg.Status = st
 	}
@@ -396,14 +418,22 @@ func signalsConnect(root string, args []string) error {
 		map[string]string{"issuer": iss, "type": "stream"})); err != nil {
 		return err
 	}
-	if w.JSON(map[string]any{"provider": cfg.Provider, "issuer": iss, "stream": s.ID, "push_url": push,
-		"events": len(s.EventsDelivered), "verification_asked": verr == nil}) {
+	// Connected either way; a verification that could not be asked for is
+	// a warning, on standard error, which the server's daily request
+	// retries. In JSON it is in the document too, since a caller reading
+	// only that would otherwise see false and never why.
+	doc := map[string]any{"provider": cfg.Provider, "issuer": iss, "stream": s.ID, "push_url": push,
+		"events": len(s.EventsDelivered), "verification_asked": verr == nil}
+	if verr != nil {
+		doc["verification_error"] = cfg.AskFailed
+		fmt.Fprintf(w.Err, "  %sverification was not asked for: %s; the server asks again within a day, with the "+
+			"client secret in %s in its own environment%s\n", yellow, cfg.AskFailed, signalsSecretEnv, reset)
+	}
+	if w.JSON(doc) {
 		return nil
 	}
 	w.Human("stream %s made at %s; %d event types will be pushed to %s\n", s.ID, iss, len(s.EventsDelivered), push)
-	if verr != nil {
-		w.Human("  %sverification was not asked for: %v; the server asks again within a day%s\n", yellow, verr, reset)
-	} else {
+	if verr == nil {
 		w.Human("  verification asked for; quilzo signals status shows when it arrives\n")
 	}
 	return nil
@@ -449,6 +479,16 @@ func signalsAskVerification(ctx context.Context, h ssf.HTTP, c *signalsConfig, a
 	return nil
 }
 
+// facts is the stream as the posture rule judges it, so the status, the
+// Sign-ins screen and the finding call the same stream silent.
+func (c *signalsConfig) facts() posture.SignalsFacts {
+	return posture.SignalsFacts{Connected: c.Connected, Verified: c.Verified, Manual: c.Manual}
+}
+
+// signalsStatus says what the Sign-ins screen says, in the same words:
+// whose sign-ins, whether it has answered a verification and whether it
+// has gone silent, why the last request failed, what the identity provider
+// says of the stream, the counts, and the last event.
 func signalsStatus(root string) error {
 	c, err := loadSignals(root)
 	if err != nil {
@@ -458,32 +498,68 @@ func signalsStatus(root string) error {
 		if w.JSON(map[string]any{"connected": false}) {
 			return nil
 		}
-		w.Human("no stream is connected, so a session the identity provider ends goes on here until it ends by itself\n")
-		w.Human("  %squilzo signals connect --provider oidc --client-id ID   with the secret in %s%s\n", dim, signalsSecretEnv, reset)
+		w.Human("no stream is connected, so a session the identity provider ends, or an account it disables, goes on " +
+			"here until it ends by itself\n")
+		w.Human("  %squilzo signals connect --provider oidc --client-id ID   with the secret in %s; "+
+			"or --jwks URL, for a stream made in the provider's own console%s\n", dim, signalsSecretEnv, reset)
 		return nil
 	}
-	if w.JSON(map[string]any{"connected": true, "provider": c.Provider, "issuer": c.Issuer, "audience": c.Audience,
-		"stream": c.Stream, "manual": c.Manual, "status": c.Status, "verified": c.Verified, "asked": c.Asked,
-		"connected_at": c.Connected, "counts": c.Counts}) {
+	now := time.Now()
+	silent := !c.Manual && c.facts().Silent(now)
+	// A time never reached is left out rather than written as the year 1,
+	// which a caller would have to know to read as never.
+	doc := map[string]any{"connected": true, "provider": c.Provider, "issuer": c.Issuer, "audience": c.Audience,
+		"stream": c.Stream, "manual": c.Manual, "status": c.Status, "silent": silent,
+		"connected_at": c.Connected, "counts": c.Counts}
+	for k, t := range map[string]time.Time{"verified": c.Verified, "asked": c.Asked} {
+		if !t.IsZero() {
+			doc[k] = t
+		}
+	}
+	if c.AskFailed != "" {
+		doc["ask_failed"] = c.AskFailed
+	}
+	if w.JSON(doc) {
 		return nil
 	}
-	w.Human("  %s%s%s sign-ins, from %s\n", bold, c.Provider, reset, c.Issuer)
-	switch {
-	case c.Manual:
-		w.Human("  %smade in the transmitter's console, so it cannot be asked to verify%s\n", yellow, reset)
-	case c.Verified.IsZero():
-		w.Human("  %snever verified%s; last asked %s\n", yellow, reset, signalsWhen(c.Asked))
+	w.Human("  %s%s%s sign-ins, from %s; connected %s\n", bold, c.Provider, reset, c.Issuer, signalsWhen(c.Connected))
+	if c.Manual {
+		w.Human("  %scannot be asked:%s made in the identity provider's own console, so it cannot be asked to prove "+
+			"it reaches here\n", yellow, reset)
+	} else {
+		mark := ""
+		if silent {
+			mark = yellow + "silent: " + reset
+		}
+		switch {
+		case !c.Verified.IsZero():
+			w.Human("  %slast answered a verification %s; last asked %s\n", mark, signalsWhen(c.Verified), signalsWhen(c.Asked))
+		case !c.Asked.IsZero() && silent:
+			w.Human("  %snever answered a verification; last asked %s\n", mark, signalsWhen(c.Asked))
+		case !c.Asked.IsZero():
+			w.Human("  verification not answered yet; asked %s\n", signalsWhen(c.Asked))
+		default:
+			w.Human("  %sverification not asked yet; the server asks within a day\n", mark)
+		}
+		if c.AskFailed != "" {
+			w.Human("  %sthe last request failed:%s %s\n", yellow, reset, c.AskFailed)
+		}
+	}
+	switch c.Status {
+	case "":
+	case "enabled":
+		w.Human("  the stream is enabled, as the identity provider last said\n")
 	default:
-		w.Human("  verified %s; last asked %s\n", signalsWhen(c.Verified), signalsWhen(c.Asked))
-	}
-	if c.Status != "" {
-		w.Human("  the transmitter says the stream is %s\n", c.Status)
+		w.Human("  %sthe stream is %s%s, as the identity provider last said, so nothing is sent while it is\n",
+			yellow, c.Status, reset)
 	}
 	n := c.Counts
 	w.Human("  %d received, %d acted on, %d unmatched, %d refused, %d past the hourly cap, never acted on\n",
 		n.Received, n.Acted, n.Unmatched, n.Refused, n.Capped)
 	if !n.LastAt.IsZero() {
-		w.Human("  last: %s, %s\n", n.LastType, signalsWhen(n.LastAt))
+		w.Human("  last event: %s, %s\n", n.LastType, signalsWhen(n.LastAt))
+	} else {
+		w.Human("  last event: none yet\n")
 	}
 	return nil
 }
@@ -505,10 +581,13 @@ func signalsOff(root string) error {
 		return err
 	}
 	if !c.connected() {
+		if w.JSON(map[string]any{"connected": false, "was_connected": false}) {
+			return nil
+		}
 		w.Human("no stream is connected\n")
 		return nil
 	}
-	warn := ""
+	warn, deleted := "", false
 	if !c.Manual && c.Stream != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -518,12 +597,14 @@ func signalsOff(root string) error {
 			err = c.transmitter().DeleteStream(ctx, h, access, c.Stream)
 		}
 		if err != nil {
-			warn = "the transmitter did not delete the stream (" + err.Error() + "); delete it in its console, " +
-				"or it goes on pushing to an address that refuses everything"
+			warn = "the identity provider did not delete the stream (" + onOneLine(err.Error()) + "); delete it in " +
+				"its console, or it goes on pushing to an address that refuses everything"
+		} else {
+			deleted = true
 		}
 	} else if c.Manual {
-		warn = "the stream was made in the transmitter's console; delete it there, or it goes on pushing to an " +
-			"address that refuses everything"
+		warn = "the stream was made in the identity provider's console; delete it there, or it goes on pushing to " +
+			"an address that refuses everything"
 	}
 	issuer := c.Issuer
 	if err := updateSignals(root, func(s *signalsConfig) error {
@@ -536,8 +617,20 @@ func signalsOff(root string) error {
 		map[string]string{"issuer": issuer})); err != nil {
 		return err
 	}
+	// Turned off here either way. What is left to do at the provider is a
+	// warning, on standard error, and in the JSON document too: a script
+	// that turned the stream off read nothing at all, not even whether the
+	// provider still had it.
 	if warn != "" {
-		w.Human("  %s%s%s\n", yellow, warn, reset)
+		fmt.Fprintf(w.Err, "  %s%s%s\n", yellow, warn, reset)
+	}
+	doc := map[string]any{"connected": false, "was_connected": true, "issuer": issuer,
+		"deleted_at_provider": deleted}
+	if warn != "" {
+		doc["warning"] = warn
+	}
+	if w.JSON(doc) {
+		return nil
 	}
 	w.Human("turned off; anything pushed to %s is refused from now. Denies it added stay until the account is "+
 		"enabled or a person lifts them\n", admin.SignalsPath)
@@ -584,6 +677,10 @@ func signalsJob(root string) upkeep.Job {
 				return atomicfile.ErrUnchanged
 			}
 			s.State, s.Asked = asked.State, asked.Asked
+			s.AskFailed = ""
+			if err != nil {
+				s.AskFailed = detail["error"]
+			}
 			if status != "" {
 				s.Status = status
 			}
@@ -634,7 +731,7 @@ func signalsHooks(root string) *admin.SignalsAdmin {
 			}
 			n := c.Counts
 			return &admin.SignalsStatus{Provider: c.Provider, Issuer: c.Issuer, Manual: c.Manual,
-				Verified: c.Verified, Asked: c.Asked, State: c.Status, Connected: c.Connected,
+				Verified: c.Verified, Asked: c.Asked, AskFailed: c.AskFailed, State: c.Status, Connected: c.Connected,
 				LastAt: n.LastAt, LastType: n.LastType, Received: n.Received, Acted: n.Acted,
 				Unmatched: n.Unmatched, Refused: n.Refused, Capped: n.Capped}, nil
 		},

@@ -720,13 +720,7 @@ var rules = []Rule{
 			"only proof the stream still reaches this server.",
 		Check: func(s State) []Finding {
 			f := s.SSO.Signals
-			if f == nil || f.Connected.IsZero() {
-				return nil
-			}
-			// A day to answer the first verification, and a day between
-			// answers: the server asks once a day.
-			const silent = 24 * time.Hour
-			if s.Now.Sub(f.Connected) <= silent || (!f.Verified.IsZero() && s.Now.Sub(f.Verified) <= silent) {
+			if f == nil || !f.Silent(s.Now) {
 				return nil
 			}
 			if f.Manual {

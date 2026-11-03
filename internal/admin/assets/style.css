@@ -1988,6 +1988,12 @@ table.queue td:nth-child(5), table.queue td:nth-child(6) {
 .wf-hero-n { font: 600 3.5rem/1 var(--font); color: var(--on-surface); }
 .stats-row > div.serious dd { color: var(--on-surface); }
 .stats-row > div.serious { border-color: var(--viz-serious); }
+/* A figure that is the worst news on its screen: a run's calls that failed,
+   cases an agent was hijacked by, the events the hourly cap left unacted.
+   Three screens marked it critical and nothing drew it, so the worst figure
+   looked like the plainest one. The border, as serious has; the words in its
+   note carry the meaning for anybody who cannot see the colour. */
+.stats-row > div.critical { border-color: var(--viz-critical); }
 .wf-note { font: var(--label-md) !important; color: var(--on-surface-variant); }
 
 .wf-charts { gap: 1.5rem; }
