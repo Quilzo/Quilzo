@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
@@ -552,25 +553,45 @@ func authList(root string) error {
 	// file by hand. For an AC-2 story that is the one field that matters, and
 	// its sibling Note was already on both surfaces, which is what makes this
 	// an oversight rather than a decision.
-	fmt.Printf("  %-18s %-10s %-16s %-14s %s\n",
-		"principal", "role", "resource", "granted by", "")
-	fmt.Printf("  %s %s %s %s\n", strings.Repeat("-", 18),
-		strings.Repeat("-", 10), strings.Repeat("-", 16),
-		strings.Repeat("-", 14))
+	//
+	// Each column is as wide as its longest entry, and no narrower than it
+	// was. The widths were fixed, and a principal is often an email address:
+	// claimsadmin@qz.test is 19 characters, one more than the column, and its
+	// row pushed everything after it out of line with the header.
+	const unrecorded = "unrecorded"
+	pw, rw, resw, bw := 18, 10, 16, 14
+	for _, b := range p.Bindings {
+		by := b.GrantedBy
+		if by == "" {
+			by = unrecorded
+		}
+		pw = max(pw, utf8.RuneCountInString(b.Principal))
+		rw = max(rw, utf8.RuneCountInString(b.What()))
+		resw = max(resw, utf8.RuneCountInString(b.Resource))
+		bw = max(bw, utf8.RuneCountInString(by))
+	}
+	fmt.Printf("  %-*s %-*s %-*s %-*s %s\n", pw, "principal", rw, "role",
+		resw, "resource", bw, "granted by", "")
+	fmt.Printf("  %s %s %s %s\n", strings.Repeat("-", pw),
+		strings.Repeat("-", rw), strings.Repeat("-", resw),
+		strings.Repeat("-", bw))
 	for _, b := range p.Bindings {
 		mark := ""
 		if b.Deny {
 			mark = red + "DENY" + reset
 		}
-		by := b.GrantedBy
-		if by == "" {
+		// Padded before it is coloured: padding the coloured string counts
+		// the escape codes as width, and on a terminal what followed an
+		// unrecorded grant stood four places left of the rows around it.
+		by := fmt.Sprintf("%-*s", bw, b.GrantedBy)
+		if b.GrantedBy == "" {
 			// A binding from before this was recorded. Said as unknown rather
 			// than left blank, because a blank column reads as "nobody" and
 			// the truthful answer is that nothing wrote it down.
-			by = dim + "unrecorded" + reset
+			by = dim + fmt.Sprintf("%-*s", bw, unrecorded) + reset
 		}
-		fmt.Printf("  %-18s %-10s %-16s %-14s %s",
-			b.Principal, b.What(), b.Resource, by, mark)
+		fmt.Printf("  %-*s %-*s %-*s %s %s",
+			pw, b.Principal, rw, b.What(), resw, b.Resource, by, mark)
 		if b.Expires != 0 {
 			if b.Live(time.Now()) {
 				fmt.Printf("  %suntil %s%s", dim, expiryText(b.Expires), reset)
@@ -1041,7 +1062,14 @@ func tokenList(root string) error {
 		fmt.Println("no tokens")
 		return nil
 	}
-	fmt.Printf("  %-14s %-16s %-10s %-12s %s\n", "id", "name", "role", "expires", "last used")
+	// As wide as the longest name, as `auth list` is as wide as its longest
+	// principal: a name is the operator's own words, "ci-deploy-production"
+	// is twenty characters, and a fixed sixteen pushed its row out of line.
+	nw := 16
+	for _, t := range ts.Tokens {
+		nw = max(nw, utf8.RuneCountInString(t.Name))
+	}
+	fmt.Printf("  %-14s %-*s %-10s %-12s %s\n", "id", nw, "name", "role", "expires", "last used")
 	for _, t := range ts.Tokens {
 		state := ""
 		switch {
@@ -1054,7 +1082,7 @@ func tokenList(root string) error {
 		if t.LastUsed > 0 {
 			last = time.Unix(t.LastUsed, 0).UTC().Format("2006-01-02")
 		}
-		fmt.Printf("  %-14s %-16s %-10s %-12s %-10s %s\n", t.ID, t.Name, t.Role,
+		fmt.Printf("  %-14s %-*s %-10s %-12s %-10s %s\n", t.ID, nw, t.Name, t.Role,
 			time.Unix(t.ExpiresAt, 0).UTC().Format("2006-01-02"), last, state)
 	}
 	return nil

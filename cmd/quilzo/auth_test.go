@@ -11,6 +11,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/out"
 )
 
 // A job is granted, works on its area's commands only, and is revoked whole.
@@ -250,4 +251,99 @@ func requiredArgs(synopsis string) int {
 		}
 	}
 	return n
+}
+
+// Every row of `quilzo auth list` keeps to the columns of its header.
+//
+// The widths were fixed at 18, 10, 16 and 14, and a principal is often an
+// email address: claimsadmin@qz.test is 19 characters, and its row pushed
+// every column after it one place right of the header and of the rows
+// around it. "unrecorded" was padded with its colour codes counted as
+// width, so on a terminal what followed it stood four places left of the
+// same thing on a recorded row.
+func TestAuthListKeepsEveryRowInItsColumns(t *testing.T) {
+	root := connectStore(t)
+	pol := &auth.Policy{}
+	for _, b := range []auth.Binding{
+		{Principal: "claimsadmin@qz.test", Role: auth.RoleAdmin, Resource: "/", GrantedBy: "cli", Deny: true},
+		{Principal: "bo", Role: auth.RoleReader, Resource: "/a-rather-long/section/path", Deny: true},
+		{Principal: "a-principal-of-forty-characters@qz.test", Role: auth.RolePublisher,
+			Resource: "/", GrantedBy: "an-administrator-with-a-long-name", Deny: true},
+	} {
+		if err := pol.Grant(b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := saveJSON(policyPath(root), pol); err != nil {
+		t.Fatal(err)
+	}
+	// The table, as a terminal shows it: connectStore asks for JSON.
+	savedDim, savedRed, savedReset := dim, red, reset
+	dim, red, reset = "\x1b[2m", "\x1b[31m", "\x1b[0m"
+	t.Cleanup(func() { dim, red, reset = savedDim, savedRed, savedReset })
+
+	_, read := captureStdout(t)
+	w = out.New(false)
+	err := authList(root)
+	printed := regexp.MustCompile("\x1b\\[[0-9;]*m").ReplaceAllString(read(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimRight(printed, "\n"), "\n")
+	if len(lines) != 5 {
+		t.Fatalf("expected a header, a rule and three rows:\n%s", printed)
+	}
+	header := lines[0]
+	for _, col := range []string{"role", "resource", "granted by"} {
+		at := strings.Index(header, col)
+		for _, row := range lines[2:] {
+			if at > len(row) || row[at-1] != ' ' || row[at] == ' ' {
+				t.Errorf("the %q column starts at %d in the header and not in this row:\n%s\n%s",
+					col, at, header, row)
+			}
+		}
+	}
+	deny := -1
+	for _, row := range lines[2:] {
+		at := strings.Index(row, "DENY")
+		if deny == -1 {
+			deny = at
+		}
+		if at != deny {
+			t.Errorf("DENY stands at %d in one row and %d in another:\n%s", deny, at, printed)
+		}
+	}
+}
+
+// The token list keeps its columns the same way, for a token whose name is
+// longer than the sixteen characters the column used to be.
+func TestTokenListKeepsEveryRowInItsColumns(t *testing.T) {
+	root := connectStore(t)
+	ts, _ := loadTokens(root)
+	for _, name := range []string{"ci-deploy-production", "laptop"} {
+		if _, _, err := ts.Issue(name, "dana", auth.RoleReader, "/", time.Hour, auth.RoleAdmin); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := saveJSON(tokensPath(root), ts); err != nil {
+		t.Fatal(err)
+	}
+	_, read := captureStdout(t)
+	w = out.New(false)
+	err := tokenList(root)
+	printed := read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimRight(printed, "\n"), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("expected a header and two rows:\n%s", printed)
+	}
+	at := strings.Index(lines[0], "role")
+	for _, row := range lines[1:] {
+		if !strings.HasPrefix(row[at:], "reader") {
+			t.Errorf("the role column starts at %d in the header and not in this row:\n%s\n%s",
+				at, lines[0], row)
+		}
+	}
 }
