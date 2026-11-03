@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/audit"
@@ -152,6 +153,13 @@ func secondPerson(root string, caller *Caller, rec agent.Record) (alone bool, er
 		return page != "" && pol.Evaluate(name, auth.ActApprove, pageResource(page)).Allowed
 	}, caller.Name)
 	if len(others) == 0 {
+		// Nobody else could decide it. Removing the other administrator
+		// makes that so at once, so not alone for a day after one is
+		// removed (dual.Settle), as the only administrator's own requests
+		// are not.
+		if rm := aloneRefusal(root, caller.Name, time.Now()); rm != nil {
+			return false, refuseAlone(root, caller, rm, map[string]string{"agent": rec.Agent, "run": rec.ID})
+		}
 		return true, nil
 	}
 	return false, fmt.Errorf("you started this run, so a step that %s goes ahead when somebody else lets it: %s",
@@ -213,8 +221,10 @@ func draftStarters(root string, s *store.Store) []string {
 }
 
 // secondPersonForDraft is the same rule for a draft a model wrote: the
-// person whose run wrote it approves it only when nobody else may publish.
-func secondPersonForDraft(root string, s *store.Store, prop collab.Proposal, by string) (alone bool, err error) {
+// person whose run wrote it approves it only when nobody else may publish,
+// and not for a day after another administrator stopped being one.
+func secondPersonForDraft(root string, s *store.Store, prop collab.Proposal, c *Caller) (alone bool, err error) {
+	by := c.Name
 	if prop.AuthorKind != "ai" {
 		return false, nil
 	}
@@ -234,6 +244,9 @@ func secondPersonForDraft(root string, s *store.Store, prop collab.Proposal, by 
 		return pol.Evaluate(name, auth.ActPublish, "/").Allowed
 	}, append(starters, by)...)
 	if len(others) == 0 {
+		if rm := aloneRefusal(root, by, time.Now()); rm != nil {
+			return false, refuseAlone(root, c, rm, map[string]string{"proposal": short(prop.Content)})
+		}
 		return true, nil
 	}
 	return false, fmt.Errorf("an agent run you started wrote this draft, so somebody else approves it: %s",
