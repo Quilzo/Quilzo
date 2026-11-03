@@ -4,6 +4,7 @@
 package ssf
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -11,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/oidc"
 )
 
 const pushSecret = "qzsig_the-transmitter-was-given-this"
@@ -202,5 +205,42 @@ func TestOnlyAConnectedStreamIsPushedTo(t *testing.T) {
 	x.p.Stream = func() (Connected, error) { return Connected{}, nil }
 	if w := x.send(t, pushSecret, "application/secevent+jwt", k.sign(t, nil, revoked())); w.Code != http.StatusNotFound || len(x.delivered) != 0 {
 		t.Errorf("with nothing connected: %d", w.Code)
+	}
+}
+
+// A token that could not be checked because the transmitter's keys could
+// not be read is not refused as invalid. A transmitter does not send an
+// invalid one again, so a session-revoked that arrived while the key set
+// was out of reach, the first after every restart among them, was lost
+// with a 400 that said the key was wrong. It is asked for again instead,
+// and not counted as a push that failed to prove itself; a token whose key
+// a key set that was read does not hold is still refused for that.
+func TestAnEventWhoseKeysCouldNotBeReadIsAskedForAgain(t *testing.T) {
+	k := newKey(t)
+	ks, err := oidc.NewKeySet("https://acme.okta.com/oauth2/v1/keys", func(context.Context, string) ([]byte, error) {
+		return nil, errors.New("connection refused")
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	x := newPush(t, k)
+	r := &Receiver{Issuer: iss, Audience: aud, Algorithms: []oidc.Algorithm{oidc.RS256}, Keys: ks,
+		Now: func() time.Time { return now }}
+	x.p.Stream = func() (Connected, error) { return Connected{Receiver: r, Bearer: Digest(pushSecret)}, nil }
+	tok := k.sign(t, nil, revoked())
+	for i, when := range []string{"when the key set could not be read", "moments after"} {
+		w := x.send(t, pushSecret, "application/secevent+jwt", tok)
+		if w.Code != http.StatusServiceUnavailable || w.Header().Get("Retry-After") == "" {
+			t.Errorf("%s: %d %s", when, w.Code, w.Body)
+		}
+		if len(x.refusals) != 0 || len(x.delivered) != 0 {
+			t.Fatalf("%d: refused %v, delivered %d", i, x.refusals, len(x.delivered))
+		}
+	}
+	other := newKey(t)
+	y := newPush(t, k)
+	if w := y.send(t, pushSecret, "application/secevent+jwt", other.sign(t, nil, revoked())); w.Code != http.StatusBadRequest ||
+		errCode(t, w) != "invalid_key" || len(y.refusals) != 1 {
+		t.Errorf("signed with a key the set does not hold: %d %s", w.Code, w.Body)
 	}
 }

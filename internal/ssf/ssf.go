@@ -50,6 +50,7 @@ package ssf
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -95,9 +96,20 @@ type Error struct {
 	// invalid_audience, authentication_failed, access_denied.
 	Code        string `json:"err"`
 	Description string `json:"description"`
+	// cause is why, when it was not the token: ErrKeysUnread.
+	cause error
 }
 
 func (e *Error) Error() string { return e.Code + ": " + e.Description }
+
+func (e *Error) Unwrap() error { return e.cause }
+
+// ErrKeysUnread is a token that could not be checked because the
+// transmitter's keys could not be read just then. It is no judgement of
+// the token, and is answered as "send it again": the error codes RFC 8935
+// gives are each a reason not to, and an event refused with one of them
+// for want of a key set that was out of reach is lost.
+var ErrKeysUnread = errors.New("the transmitter's keys could not be read")
 
 func refuse(code, format string, args ...any) *Error {
 	return &Error{Code: code, Description: fmt.Sprintf(format, args...)}
@@ -181,6 +193,10 @@ func (r *Receiver) Verify(token string) (*SET, error) {
 			t := strings.ToLower(typ)
 			return t == "secevent+jwt" || t == "application/secevent+jwt"
 		})
+	if errors.Is(err, oidc.ErrKeySetUnread) {
+		return nil, &Error{Code: "access_denied", cause: ErrKeysUnread,
+			Description: "this receiver could not read the transmitter's keys just now; send it again"}
+	}
 	if err != nil {
 		// What cannot be read as a signed token is a malformed request; a
 		// signature, algorithm or key this stream does not accept is a key

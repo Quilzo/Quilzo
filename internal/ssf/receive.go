@@ -180,6 +180,14 @@ func (p *Push) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	set, err := st.Receiver.Verify(string(body))
+	if errors.Is(err, ErrKeysUnread) {
+		// Not the token's fault, and not counted as a push that failed to
+		// prove itself: asked for again. A key set that stays out of reach
+		// stops verification answering too, which posture reports.
+		w.Header().Set("Retry-After", "60")
+		WriteError(w, http.StatusServiceUnavailable, err.(*Error))
+		return
+	}
 	if err != nil {
 		var e *Error
 		if !errors.As(err, &e) {
