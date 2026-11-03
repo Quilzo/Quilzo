@@ -180,7 +180,11 @@ func (s *Server) handleProvisioningAct(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if err = s.SCIM.Map(group, to, p.Name); err == nil {
-			back("m", "Members of "+group+" are now "+to+" here.")
+			msg := "Members of " + group + " are now " + to + " here."
+			if dual.MapsToAdministrator(to) {
+				msg += " " + s.mappedTokens()
+			}
+			back("m", msg)
 			return
 		}
 	case "unmap":

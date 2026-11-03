@@ -548,6 +548,9 @@ func cmdSCIM(root string, args []string) error {
 			return err
 		}
 		w.Human("members of %q are now %s here\n", args[1], args[2])
+		if dual.MapsToAdministrator(args[2]) {
+			mappedTokens(root, time.Now())
+		}
 		return note("scim.mapped", args[1]+" → "+args[2])
 	case "unmap":
 		if len(args) != 2 {
@@ -561,6 +564,29 @@ func cmdSCIM(root string, args []string) error {
 		return note("scim.unmapped", args[1])
 	}
 	return scimUsage()
+}
+
+// mappedTokens tells the only administrator, who has just mapped a group
+// to make administrators and so approved it alone, which provisioning
+// tokens now make them: what `quilzo pending show` lists for a second
+// administrator before approving. Nothing waited here, so nothing was
+// shown, and a token another administrator made before any group made
+// administrators went on working as a way to make them.
+func mappedTokens(root string, now time.Time) {
+	live, err := liveSCIMTokens(root, now)
+	switch {
+	case err != nil:
+		w.Human("  %sthis lets the provisioning token make administrators, and it could not be read: %v%s\n",
+			yellow, err, reset)
+	case len(live) == 0:
+		w.Human("  no provisioning token works now; one made from now on asks a second administrator, when there is one\n")
+	default:
+		w.Human("  %sthis lets the provisioning token make administrators:%s\n", yellow, reset)
+		for _, t := range live {
+			w.Human("    %s\n", t.Words())
+		}
+		w.Human("  %sif that is not who should hold it, revoke it: quilzo scim token --revoke%s\n", dim, reset)
+	}
 }
 
 // scimMakesAdministrators reports whether a group the identity provider

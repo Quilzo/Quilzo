@@ -231,6 +231,29 @@ func (s *Server) pendingRows(p principal, now time.Time) []pendingRow {
 	return out
 }
 
+// mappedTokens is, for the only administrator who has just mapped a group
+// to make administrators and so approved it alone, which provisioning
+// tokens now make them, as People lists them under the request for a
+// second administrator. Nothing waited, so nothing was shown, and a token
+// made before any group made administrators went on working as a way to
+// make them.
+func (s *Server) mappedTokens() string {
+	live, err := s.liveTokens()
+	switch {
+	case err != nil:
+		return "This lets the provisioning token make administrators, and which tokens work could not be read: " +
+			err.Error() + "."
+	case len(live) == 0:
+		return "No provisioning token works now; one made from now on asks a second administrator, when there is one."
+	}
+	words := make([]string, 0, len(live))
+	for _, t := range live {
+		words = append(words, t.Words())
+	}
+	return "This lets the provisioning token make administrators: " + strings.Join(words, "; ") +
+		". If that is not who should hold it, revoke it here."
+}
+
 // liveTokens are the provisioning tokens that work now.
 func (s *Server) liveTokens() ([]scim.LiveToken, error) {
 	if s.SCIM == nil || s.SCIM.LiveTokens == nil {

@@ -122,3 +122,67 @@ func TestAProvisioningTokenApprovedAloneIsShownAsSo(t *testing.T) {
 		t.Errorf("a token approved alone is not shown as one:\n%s", got)
 	}
 }
+
+// The only administrator, mapping a group to make administrators, is
+// approving it alone as they make it, and is shown the live tokens as an
+// approver on `quilzo pending show` is.
+//
+// Nothing waits, so there was no request to show: the mapping took effect
+// and said only that the group's members were administrators now, while a
+// token another administrator made before any group made administrators
+// went on working, now as a way to make them.
+func TestAMappingApprovedAloneShowsTheLiveProvisioningTokens(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root, dana, lee := twoAdmins(t)
+	old := w
+	t.Cleanup(func() { w = old })
+	var buf bytes.Buffer
+	w = out.New(false)
+	w.Out = &buf
+
+	t.Setenv("QUILZO_TOKEN", lee)
+	if err := cmdSCIM(root, []string{"token"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := updatePolicy(root, func(p *auth.Policy) error {
+		p.Revoke("lee", auth.RoleAdmin, "/")
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	removalAt(t, root, 25*time.Hour)
+	t.Setenv("QUILZO_TOKEN", dana)
+	buf.Reset()
+	if err := cmdSCIM(root, []string{"map", "IT admins", "admin"}); err != nil {
+		t.Fatal(err)
+	}
+	got := buf.String()
+	if !strings.Contains(got, "now admin") {
+		t.Fatalf("control: the mapping was not made alone:\n%s", got)
+	}
+	for _, want := range []string{"provisioning token", "made by lee", "nobody else was asked", "quilzo scim token --revoke"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the mapping made alone does not say %q:\n%s", want, got)
+		}
+	}
+
+	// No token, and it says so; a mapping that makes nobody an
+	// administrator says nothing about tokens.
+	if err := cmdSCIM(root, []string{"token", "--revoke"}); err != nil {
+		t.Fatal(err)
+	}
+	buf.Reset()
+	if err := cmdSCIM(root, []string{"map", "Ops", "admin"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := buf.String(); !strings.Contains(got, "no provisioning token works now") {
+		t.Errorf("with no live token, the mapping made alone does not say so:\n%s", got)
+	}
+	buf.Reset()
+	if err := cmdSCIM(root, []string{"map", "Writers", "author"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := buf.String(); strings.Contains(got, "provisioning token") {
+		t.Errorf("a mapping that makes nobody an administrator talks about the token:\n%s", got)
+	}
+}

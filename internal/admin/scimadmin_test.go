@@ -267,3 +267,42 @@ func TestAMappingThatMakesAdministratorsShowsTheLiveProvisioningTokensOnPeople(t
 		t.Error("with no live token, People does not say so")
 	}
 }
+
+// The only administrator mapping a group to make administrators approves
+// it alone as they make it, and is told which provisioning tokens it now
+// lets make them, as a second administrator is told on People.
+//
+// Nothing waited, so the screen said only that the group's members were
+// administrators now, while a token made before any group made
+// administrators went on working as a way to make them.
+func TestAMappingApprovedAloneOnTheScreenShowsTheLiveProvisioningTokens(t *testing.T) {
+	srv, editor := setup(t)
+	calls, _ := wireSCIM(t, srv)
+	made := time.Date(2026, 11, 2, 9, 30, 0, 0, time.UTC)
+	tokens := []scim.LiveToken{{TokenMade: scim.TokenMade{By: "lee", Approval: scim.Unasked},
+		Made: made, Ends: made.AddDate(0, 0, 180)}}
+	srv.SCIM.LiveTokens = func() ([]scim.LiveToken, error) { return tokens, nil }
+	said := func(form string) string {
+		t.Helper()
+		w := postForm(t, srv, "/provisioning/act", editor, form)
+		loc, _ := url.QueryUnescape(w.Header().Get("Location"))
+		return loc
+	}
+
+	loc := said("do=map&group=IT+admins&to=admin")
+	if calls.mapped != "IT admins=admin" {
+		t.Fatalf("control: the only administrator's mapping was not made as asked: %+v %s", calls, loc)
+	}
+	for _, want := range []string{"provisioning token", "made by lee", "nobody else was asked", "2 Nov 2026", "revoke"} {
+		if !strings.Contains(loc, want) {
+			t.Errorf("the mapping made alone does not say %q: %s", want, loc)
+		}
+	}
+	tokens = nil
+	if loc := said("do=map&group=Ops&to=admin"); !strings.Contains(loc, "No provisioning token works now") {
+		t.Errorf("with no live token, the mapping made alone does not say so: %s", loc)
+	}
+	if loc := said("do=map&group=Writers&to=author"); strings.Contains(loc, "provisioning token") {
+		t.Errorf("a mapping that makes nobody an administrator talks about the token: %s", loc)
+	}
+}
