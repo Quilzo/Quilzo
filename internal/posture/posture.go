@@ -294,8 +294,6 @@ type SSOProvider struct {
 	Problem string      `json:"problem,omitempty"`
 }
 
-// InterfaceFacts is the agent interface as set up: whether it answers, and
-// which apps may connect to it on people's behalf.
 // AlertFacts are where the security contact's alerts go. Every one of them
 // (the shield acting, a risky sign-in, a held call, a check starting to
 // fail) is a mail to security.contact's mailto: address through the relay
@@ -319,6 +317,8 @@ type StreamFacts struct {
 	Error    string    `json:"error,omitempty"`
 }
 
+// InterfaceFacts is the agent interface as set up: whether it answers, and
+// which apps may connect to it on people's behalf.
 type InterfaceFacts struct {
 	Checked bool `json:"checked"`
 	On      bool `json:"on"`
