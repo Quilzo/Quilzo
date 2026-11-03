@@ -231,6 +231,11 @@ func clampShare(s string) string {
 // retention and the store are all the ones a browser submission gets. The only
 // difference is the two checks a share cannot carry, and the rate limit above
 // that stands in for them.
+//
+// And through keep, so what a submission tells is told of a share too: the
+// audit record, the staff alert and the form's goal. It called Store.Put and
+// nothing else, which left the share sheet the one way to write a submission
+// that nobody heard about.
 func (st *Site) storeShare(name string, values map[string]string,
 	r *http.Request) error {
 
@@ -245,11 +250,15 @@ func (st *Site) storeShare(name string, values map[string]string,
 	if !ok {
 		return fmt.Errorf("no form called %q", name)
 	}
-	sub, err := form.AcceptShare(f, values, sourceOf(r), time.Now())
+	source := sourceOf(r)
+	sub, err := form.AcceptShare(f, values, source, time.Now())
 	if err != nil {
+		if st.Forms.Audit != nil {
+			st.Forms.Audit(name, source, false)
+		}
 		return err
 	}
-	return st.Forms.Store.Put(sub)
+	return st.keep(r, name, source, sub)
 }
 
 // Validate refuses a share target that cannot work.

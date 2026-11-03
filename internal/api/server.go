@@ -387,8 +387,8 @@ func retryAfter(w http.ResponseWriter, d throttle.Decision) {
 func sourceOf(r *http.Request) string { return clientip.SourceFrom(r) }
 
 func (s *Server) authenticate(r *http.Request) (*auth.Token, error) {
-	raw, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if !ok {
+	raw, scheme := auth.Presented(r.Header.Get("Authorization"))
+	if scheme != "Bearer" {
 		// The admin's session cookie, accepted only when this server is
 		// mounted inside the admin and only for a same-origin request.
 		//

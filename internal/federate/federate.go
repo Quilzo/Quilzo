@@ -30,11 +30,11 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/oidc"
+	"github.com/quilzo/quilzo/internal/replay"
 )
 
 // Trust admits the jobs of one issuer whose claims match.
@@ -118,28 +118,12 @@ func (t Trust) Life() time.Duration {
 // Keys gives an issuer's signing keys and the algorithms agreed with it.
 type Keys func(ctx context.Context, issuer string) (oidc.KeySource, []oidc.Algorithm, error)
 
-// Replays remembers the identifiers of tokens already exchanged.
-type Replays struct {
-	mu   sync.Mutex
-	seen map[string]int64
-}
+// Replays remembers the identifiers of tokens already exchanged, until
+// each token could no longer be presented.
+type Replays struct{ seen replay.Cache }
 
 func (r *Replays) first(id string, exp int64, now time.Time) bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.seen == nil {
-		r.seen = map[string]int64{}
-	}
-	for k, e := range r.seen {
-		if now.Unix() > e+int64(skew/time.Second) {
-			delete(r.seen, k)
-		}
-	}
-	if _, ok := r.seen[id]; ok {
-		return false
-	}
-	r.seen[id] = exp
-	return true
+	return r.seen.First(id, time.Unix(exp, 0).Add(skew), now)
 }
 
 const (

@@ -131,7 +131,7 @@ var destinations = []destination{
 
 	// What Quilzo is doing to protect itself, the playbooks deciding it,
 	// and who signed in from where. The queue a security team works from —
-	// findings, cases, vulnerabilities, the estate — is Vaigil's, which
+	// findings, cases, vulnerabilities, the estate — is in the SIEM that
 	// reads this program's audit log as it is written.
 	{"shield", "Shield", "/security/shield", "Protection", "shield", auth.ActGrant},
 	{"signins", "Sign-ins", "/security/signins", "Protection", "signins", auth.ActGrant},

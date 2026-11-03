@@ -96,6 +96,13 @@ func (s *Server) runApprovals(now time.Time) []approvalItem {
 	if s.Agents.Load != nil {
 		declared, _ = s.Agents.Load()
 	}
+	// Whether a tool's step writes is the integration's to say as well as
+	// the manifest's: the manifest's label defaults to off, and a write
+	// listed as a read was offered to approve with others like it.
+	var installed agent.Integrations
+	if s.Integrations != nil && s.Integrations.Declared != nil {
+		installed, _ = s.Integrations.Declared()
+	}
 	var out []approvalItem
 	for _, rec := range runs {
 		w := rec.Trace.Waiting
@@ -105,20 +112,8 @@ func (s *Server) runApprovals(now time.Time) []approvalItem {
 		if w.Live && (rec.State != agent.Running || now.Sub(rec.Beat) > agent.StaleAfter) {
 			continue
 		}
-		writes := false
-		if w.Action.Tool != "" {
-			if m, ok := declared[rec.Agent]; ok {
-				for _, t := range m.Tools {
-					if t.Name == w.Action.Tool {
-						writes = t.Writes
-					}
-				}
-			}
-		}
-		what := w.Action.Op
-		if what == "" {
-			what = w.Action.Tool
-		}
+		writes := installed.ToolWrites(declared[rec.Agent], w.Action.Tool)
+		what := w.Action.Name()
 		it := approvalItem{Source: "run", Agent: rec.Agent, RunID: rec.ID, Step: w.N, Kind: w.Kind,
 			Since: w.Since, Live: w.Live, Href: "/agents/run/" + rec.ID,
 			Expired: now.Sub(w.Since) > agent.PendingTTL,

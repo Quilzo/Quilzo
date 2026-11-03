@@ -6,6 +6,7 @@ package agent
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // The dimension Narrow used to skip.
@@ -129,6 +130,34 @@ func TestNarrowBoundsTheToolHosts(t *testing.T) {
 
 	if len(got.Tools) != 1 || got.Tools[0].Host != "api.example.com" {
 		t.Errorf("tools are %+v", got.Tools)
+	}
+}
+
+// A supervisor that may call one tool on a host, asking first, does not
+// hand its delegate a different tool on that host that asks nobody. Tools
+// were kept by host alone, so a delegate declaring delete_issue where its
+// supervisor declared only create_issue held delete_issue, and the
+// supervisor's ask_first, kept only for what the delegate holds, said
+// nothing about it. The delegate holds the tools both declare, by name as
+// well as host, as it holds the capabilities both declare.
+func TestNarrowKeepsOnlyTheToolsBothSidesDeclare(t *testing.T) {
+	budget := Budget{Steps: 5, Tools: 5, Duration: Duration(time.Minute)}
+	boss := Manifest{AskFirst: []string{"create_issue"}, Budget: budget,
+		Tools: []Tool{{Name: "create_issue", Host: "tracker.example", Purpose: "file issues", Writes: true}}}
+	helper := Manifest{Budget: budget, Tools: []Tool{
+		{Name: "delete_issue", Host: "tracker.example", Purpose: "delete one", Writes: true},
+		{Name: "create_issue", Host: "tracker.example", Purpose: "file one"}}}
+
+	got := boss.Narrow(helper)
+
+	if len(got.Tools) != 1 || got.Tools[0].Name != "create_issue" || !got.Tools[0].Writes {
+		t.Errorf("the delegate holds %+v", got.Tools)
+	}
+	if strings.Join(got.AskFirst, ",") != "create_issue" {
+		t.Errorf("the delegate asks first about %v", got.AskFirst)
+	}
+	if err := NewSession(got, nil).MayCallTool("delete_issue", ""); err == nil {
+		t.Error("the delegate may call a tool its supervisor does not hold")
 	}
 }
 

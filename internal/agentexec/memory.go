@@ -64,8 +64,16 @@ func WithMemory(m Memory, s *agent.Session,
 			s.HoldsPrivate("what " + s.Manifest().Name + " remembers about the person it acts for")
 			for _, e := range found {
 				s.UsedMemory(true, e.ID)
+				// A procedure is recalled into everybody's runs, so one
+				// that somebody else's run kept is their words in this
+				// one. It was recalled as the person's own, untainted, so
+				// anybody who may run the agent could plant one that
+				// drove everybody else's runs past the breaker.
+				if othersWords(e, m.About) {
+					s.ReadMemory(e.ID)
+				}
 			}
-			return Recalled(found), nil
+			return Recalled(found, m.About), nil
 		}
 		kind, _ := a.Input["kind"].(string)
 		if kind == "" {
@@ -97,9 +105,24 @@ func WithMemory(m Memory, s *agent.Session,
 	}
 }
 
+// ownWords reports whether a recalled entry is the words of who, the
+// person the run is for: kept by one of their runs, or about them.
+func ownWords(e memory.Entry, who string) bool {
+	return who != "" && (e.By == who || e.About == who)
+}
+
+// othersWords reports whether a recalled entry is somebody else's words
+// that no person here has looked at since: neither confirmed nor
+// rewritten, the two ways a person vouches for what is remembered.
+func othersWords(e memory.Entry, who string) bool {
+	return !ownWords(e, who) && e.Confirmed.IsZero() && e.Edited.IsZero()
+}
+
 // Recalled is what was recalled as a model reads it: each entry with its
-// kind, since when it is true, and how far it can be trusted.
-func Recalled(found []memory.Entry) string {
+// kind, since when it is true, and how far it can be trusted. who is the
+// person the run is for: an entry somebody else's run kept is labelled as
+// theirs, where it used to read "from what the person said".
+func Recalled(found []memory.Entry, who string) string {
 	var b strings.Builder
 	for _, e := range found {
 		if e.Key != "" {
@@ -107,7 +130,15 @@ func Recalled(found []memory.Entry) string {
 		} else {
 			fmt.Fprintf(&b, "- (%s, %s", e.Kind, e.Created.Format("2 Jan 2006"))
 		}
-		if w := memory.TierWords[e.Tier]; w != "" {
+		w := memory.TierWords[e.Tier]
+		if !ownWords(e, who) {
+			if e.Tier == memory.TierPerson || w == "" {
+				w = "from what somebody else said"
+			} else {
+				w = "from somebody else's run, " + w
+			}
+		}
+		if w != "" {
 			b.WriteString(", " + w)
 		}
 		fmt.Fprintf(&b, ") %s\n", e.Text)

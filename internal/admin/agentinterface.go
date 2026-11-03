@@ -257,10 +257,13 @@ func (s *Server) interfaceCaller(r *http.Request, token, resource string) (*mcp.
 	if _, scheme := authzToken(r); scheme == "DPoP" {
 		// A token bound to a key, with the proof that this request was made
 		// by the key: checked before the token is looked at, so a request
-		// with a stolen token and no key costs a signature check.
-		var thumb string
-		if thumb, err = s.proofOf(r, token); err == nil {
-			tok, err = s.Tokens.AuthenticateProved(token, resource, thumb, time.Now())
+		// with a stolen token and no key costs a signature check, and spent
+		// once the token is accepted, as proofOf says why.
+		var proof dpop.Proof
+		if proof, err = s.proofOf(r, token); err == nil {
+			if tok, err = s.Tokens.AuthenticateProved(token, resource, proof.Thumbprint, time.Now()); err == nil {
+				err = s.proofs.Spend(proof, time.Now())
+			}
 		}
 	} else {
 		tok, err = s.Tokens.AuthenticateFor(token, resource, time.Now())
@@ -784,10 +787,7 @@ func (s *Server) handleAppsAct(w http.ResponseWriter, r *http.Request) {
 			back("", "Apps from "+host+" may now ask people to connect.")
 			return
 		}
-		n := oa.EndWhere(func(g oauthas.Grant) bool {
-			c := oauthas.Client{ID: g.Client}
-			return host == "*" || c.Host() == host
-		}, p.Name, "apps from "+host+" are no longer allowed")
+		n := oa.EndWhere(oauthas.FromHost(host), p.Name, "apps from "+host+" are no longer allowed")
 		s.saveTokens()
 		back("", "Apps from "+host+" can no longer connect, and "+countOf(n, "connection", "connections")+" from there ended.")
 	case "register":

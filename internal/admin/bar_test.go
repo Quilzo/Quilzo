@@ -53,6 +53,42 @@ func TestALongNameKeepsToOneLine(t *testing.T) {
 	}
 }
 
+// The account menu is two choices and it does not scroll.
+//
+// It did. The menu opens inside the bar, and the bar's rule for small text
+// links -- 5px of padding above and below and the same as a negative margin,
+// so a 16px link becomes a 24px target without its line moving -- reached the
+// menu's 44px items too. In the menu's grid the negative margin took 10px off
+// every row: the two items overlapped by 8px, and the last one ended a pixel
+// below the menu, whose overflow (auto, as every popover's is) then drew a
+// scroll bar beside "Your profile" and "Sign out".
+//
+// Measured in Chromium before the fix: grid rows 73px 34px 34px for items
+// 44px tall, scrollHeight 154 against a clientHeight of 153. A layout cannot
+// be computed here, so this holds the two facts that produced it: the menu
+// is inside the bar, and a menu item's own rule, later in the stylesheet,
+// takes the margin back.
+func TestTheAccountMenuItemsDoNotOverlapOrScroll(t *testing.T) {
+	srv, token := setup(t)
+	body := get(t, srv, "/", token).Body.String()
+	bar := body[:strings.Index(body, "</header>")]
+	if !strings.Contains(bar, `id="accountmenu" class="menu" popover`) {
+		t.Fatal("the account menu is no longer in the bar; re-check what of the bar's link rule reaches it")
+	}
+	css := stylesheet(t)
+	barRule := strings.Index(css, ".bar a, p > a:only-child {")
+	if barRule < 0 {
+		t.Fatal("the bar's link target rule moved; this test reads where it is")
+	}
+	item := regexp.MustCompile(`(?m)^\.menu a, \.menu button, \.menu-danger \{[^}]*margin-block: 0;`).FindStringIndex(css)
+	if item == nil {
+		t.Fatal("the menu item rule does not set margin-block: 0, so the bar's -5px reaches the menu's items")
+	}
+	if item[0] < barRule {
+		t.Error("the menu item rule comes before the bar's link rule, so the bar's -5px wins on equal specificity")
+	}
+}
+
 func stylesheet(t *testing.T) string {
 	t.Helper()
 	b, err := assets.ReadFile("assets/style.css")

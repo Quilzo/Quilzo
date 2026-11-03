@@ -26,6 +26,7 @@ import (
 	"github.com/quilzo/quilzo/internal/lockout"
 	"github.com/quilzo/quilzo/internal/member"
 	"github.com/quilzo/quilzo/internal/search"
+	"github.com/quilzo/quilzo/internal/throttle"
 	"github.com/quilzo/quilzo/internal/webauthn"
 )
 
@@ -542,5 +543,106 @@ func TestFailuresFromElsewhereLockOutThePlaceNotTheMember(t *testing.T) {
 	}
 	if held, _ := st.Members.Lockout.Held(time.Now()); len(held) != 0 {
 		t.Errorf("a recovery code left the account held: %+v", held)
+	}
+}
+
+// Starting a sign-in is limited per address, as starting a sign-up is, and
+// so is starting to add a passkey. Neither was: anybody could ask for
+// sign-in challenges in a loop, each one held for two minutes under the
+// lock every sign-in waits on, and fifty-one thousand from one address
+// were all answered.
+func TestStartingAPasskeyPromptIsLimitedPerAddress(t *testing.T) {
+	st, _ := memberSite(t, "open")
+	st.Members.Limit = throttle.New(throttle.Default())
+	v := &visitor{t: t, st: st, site: "same-origin"}
+	refused := 0
+	for i := 0; i < 50; i++ {
+		if w, _ := v.json("/account/signin/start", nil); w.Code == http.StatusTooManyRequests {
+			refused++
+		}
+	}
+	if refused == 0 {
+		t.Fatal("fifty sign-in starts from one address were all answered")
+	}
+	if held := len(st.Members.ceremonies); held > 10 {
+		t.Fatalf("one address holds %d sign-in prompts", held)
+	}
+	// Somebody else, somewhere else, is not held up by it.
+	other := &visitor{t: t, st: st, site: "same-origin", from: "198.51.100.7:5000"}
+	if w, _ := other.json("/account/signin/start", nil); w.Code != http.StatusOK {
+		t.Fatalf("another address was refused a sign-in: %d", w.Code)
+	}
+
+	// A member asking to add a passkey, again and again.
+	member := &visitor{t: t, st: st, site: "same-origin", from: "192.0.2.44:6000"}
+	if w, _ := signUp(t, member, newDevice(t), "Ada", ""); w.Code != http.StatusOK {
+		t.Fatalf("signing up: %d", w.Code)
+	}
+	refused = 0
+	for i := 0; i < 50; i++ {
+		if w, _ := member.json("/account/passkey/start", nil); w.Code == http.StatusTooManyRequests {
+			refused++
+		}
+	}
+	if refused == 0 {
+		t.Fatal("fifty passkey starts from one member were all answered")
+	}
+}
+
+// A sign-in is one attempt, counted where it starts as a sign-up's is, so
+// a member is not charged twice for signing in once and an office behind
+// one address keeps the sign-ins it had.
+func TestASignInIsOneAttempt(t *testing.T) {
+	st, _ := memberSite(t, "open")
+	st.Members.Limit = throttle.New(throttle.Default())
+	v := &visitor{t: t, st: st, site: "same-origin"}
+	d := newDevice(t)
+	if w, _ := signUp(t, v, d, "Ada", ""); w.Code != http.StatusOK {
+		t.Fatalf("signing up: %d", w.Code)
+	}
+	v.form("/account/signout", nil)
+	if w := signIn(t, v, d); w.Code != http.StatusOK {
+		t.Fatalf("signing in: %d %s", w.Code, w.Body)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/account/signin/start", nil)
+	req.RemoteAddr = "203.0.113.9:4000"
+	if n := st.Members.Limit.Failures(throttle.Subject{Source: sourceOf(req)}); n != 2 {
+		t.Fatalf("a sign-up and a sign-in cost %d attempts, not two", n)
+	}
+}
+
+// However many addresses ask, the passkey prompts held at once are
+// bounded: past the bound a new one is refused, plainly, until older ones
+// expire. Before, the map grew with every start and every start walked all
+// of it under the lock: 600,000 held made each start hold it for 26ms.
+func TestPasskeyPromptsHeldAtOnceAreBounded(t *testing.T) {
+	st, _ := memberSite(t, "open")
+	for i := 0; i < maxCeremonies; i++ {
+		if _, err := st.startCeremony(ceremony{kind: "signin"}); err != nil {
+			t.Fatalf("prompt %d: %v", i+1, err)
+		}
+	}
+	v := &visitor{t: t, st: st, site: "same-origin"}
+	w, out := v.json("/account/signin/start", nil)
+	if w.Code != http.StatusServiceUnavailable || out["challenge"] != nil || out["error"] == nil {
+		t.Fatalf("one prompt past the bound: %d %v", w.Code, out)
+	}
+	if held := len(st.Members.ceremonies); held > maxCeremonies {
+		t.Fatalf("%d prompts held, past the bound of %d", held, maxCeremonies)
+	}
+	// Once they have expired and been let go, signing in works again.
+	m := st.Members
+	m.mu.Lock()
+	for k, c := range m.ceremonies {
+		c.expires = time.Now().Add(-time.Second)
+		m.ceremonies[k] = c
+	}
+	m.swept = time.Time{}
+	m.mu.Unlock()
+	if w, _ := v.json("/account/signin/start", nil); w.Code != http.StatusOK {
+		t.Fatalf("after the old prompts expired: %d", w.Code)
+	}
+	if held := len(st.Members.ceremonies); held != 1 {
+		t.Fatalf("expired prompts kept: %d held", held)
 	}
 }

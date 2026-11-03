@@ -416,3 +416,129 @@ func TestAPauseDoesNotRefillTheMoneyBudget(t *testing.T) {
 		t.Fatalf("spending 0.006 against a 0.003 budget went on after the pause: %q", tr.Stopped)
 	}
 }
+
+// looker may call one tool and write a page, and asks a person before it
+// writes.
+func looker() Manifest {
+	return Manifest{Name: "looker", Kind: KindTask, Purpose: "look things up",
+		Capabilities: []string{"write_page"},
+		Tools:        []Tool{{Name: "lookup", Host: "api.example", Purpose: "look up"}},
+		Autonomy:     AutonomyDraft, AskFirst: []string{"write_page"},
+		Budget: Budget{Steps: 3, Tools: 10, Duration: Duration(time.Minute)}}
+}
+
+// chargedSteps counts the steps of a run the gate let through, which is what
+// its step budget bounds: every allowed action but the answer.
+func chargedSteps(tr Trace) int {
+	n := 0
+	for _, st := range tr.Steps {
+		if st.Allowed && !st.Action.Done() {
+			n++
+		}
+	}
+	return n
+}
+
+// A tool call costs a step as well as a tool use, and pausing for a person
+// gave the step back: the spend was recounted from the steps as tool uses
+// alone, so a run whose model chose an action that asks first, whenever it
+// liked, went on with its step budget refilled.
+func TestPausingDoesNotGiveBackTheStepsToolCallsCost(t *testing.T) {
+	lookup := Action{Tool: "lookup"}
+	p := &scripted{plan: []Action{lookup, lookup, write, lookup, lookup, lookup}}
+	r := Runner{Decide: p.decide, Perform: (&doer{}).perform, Pause: true}
+	first, err := r.Run(context.Background(), NewSession(looker(), nil), "g")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Waiting == nil || first.Spent.Steps != 2 || first.Spent.Tools != 2 {
+		t.Fatalf("the run did not stop to ask after two lookups: %+v %+v", first.Waiting, first.Spent)
+	}
+	s := NewSession(looker(), nil)
+	tr, err := r.Continue(context.Background(), s, first,
+		&Verdict{N: first.Waiting.N, Approve: true, By: "dana"}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := chargedSteps(tr); n > 3 {
+		t.Errorf("%d steps were let through against a step budget of 3, by pausing once", n)
+	}
+	if steps, tools, _ := s.Spent(); steps != 3 || tools < 2 {
+		t.Errorf("after continuing the run has spent steps=%d tools=%d", steps, tools)
+	}
+}
+
+// What a delegate spent lands on its supervisor's budget, and pausing for a
+// person forgot it: a delegation was recounted as one step, so the tool
+// calls its delegate made were available again once a person approved
+// anything.
+func TestPausingDoesNotForgetWhatADelegateSpent(t *testing.T) {
+	m := Manifest{Name: "boss", Kind: KindSupervisor, Purpose: "hand work on",
+		Capabilities: []string{"write_page"}, Delegates: []string{"helper"},
+		Tools:    []Tool{{Name: "lookup", Host: "api.example", Purpose: "look up"}},
+		Autonomy: AutonomyDraft, AskFirst: []string{"write_page"},
+		Budget: Budget{Steps: 10, Tools: 3, Duration: Duration(time.Minute)}}
+	calls := 0
+	perform := func(_ context.Context, a Action) (string, error) {
+		if a.Tool != "" {
+			calls++
+		}
+		return "did it", nil
+	}
+	var parent *Session
+	delegating := func(ctx context.Context, a Action) (string, error) {
+		if a.Delegate == "" {
+			return perform(ctx, a)
+		}
+		// The delegate spends the whole of the tool budget, as Fold
+		// brings back to its supervisor.
+		child := NewSession(m, nil)
+		for child.MayCallTool("lookup", "") == nil {
+			calls++
+		}
+		parent.Fold(child)
+		return "handed on", nil
+	}
+	lookup := Action{Tool: "lookup"}
+	p := &scripted{plan: []Action{{Delegate: "helper", Say: "look it up"}, write, lookup, lookup, lookup}}
+	r := Runner{Decide: p.decide, Perform: delegating, Pause: true}
+	parent = NewSession(m, nil)
+	first, err := r.Run(context.Background(), parent, "g")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Waiting == nil || first.Spent.Tools != 3 {
+		t.Fatalf("the run did not stop to ask with the tools spent: %+v %+v", first.Waiting, first.Spent)
+	}
+	parent = NewSession(m, nil)
+	if _, err := r.Continue(context.Background(), parent, first,
+		&Verdict{N: first.Waiting.N, Approve: true, By: "dana"}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if calls > 3 {
+		t.Errorf("%d tool calls were made against a tool budget of 3, by pausing once", calls)
+	}
+}
+
+// A decider's question was asked, and its step charged, before the run
+// stopped for a person; answering it charges that step once and not twice.
+func TestAnsweringAQuestionChargesItsStepOnce(t *testing.T) {
+	p := &scripted{plan: []Action{{Op: "read_page"}, {Op: "decide", Input: map[string]any{"name": "refunds"}}}}
+	r := Runner{Decide: p.decide, Perform: unsure, Pause: true}
+	first, err := r.Run(context.Background(), NewSession(asker2(), nil), "triage ticket 12")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Waiting == nil || first.Spent.Steps != 2 {
+		t.Fatalf("the run did not stop at the question with two steps spent: %+v %+v", first.Waiting, first.Spent)
+	}
+	s := NewSession(asker2(), nil)
+	tr, err := r.Continue(context.Background(), s, first,
+		&Verdict{N: first.Waiting.N, Approve: true, By: "dana", Answers: map[string]string{"eligible": "no"}}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if steps, _, _ := s.Spent(); steps != chargedSteps(tr) {
+		t.Errorf("the run let %d steps through and charged %d", chargedSteps(tr), steps)
+	}
+}

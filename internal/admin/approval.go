@@ -50,6 +50,11 @@ type Approvals struct {
 	// none. It is created lazily by Propose rather than on every save: a
 	// proposal for content nobody has offered for review is noise.
 	Current func() (*collab.Proposal, error)
+	// For is the proposal for one commit, for publishing something other
+	// than the draft: a promotion from staging into production, asked
+	// about what staging holds and not about a later draft. Nil asks
+	// Current, which refuses any commit but the draft's.
+	For func(commit string) (*collab.Proposal, error)
 	// Save records a changed proposal.
 	Save func(*collab.Proposal) error
 	// KindOf says whether a principal is a person, a service or a model, which
@@ -124,6 +129,9 @@ func (s *Server) approvalFor(p principal, draft string) approvalState {
 	st := approvalState{Configured: true, Need: pol.Required}
 
 	prop, err := s.Approvals.Current()
+	if s.Approvals.For != nil && draft != s.Store.GetRef(site.RefDraft) {
+		prop, err = s.Approvals.For(draft)
+	}
 	if err != nil || prop == nil {
 		st.Why = "Nobody has offered this for review yet."
 		return st

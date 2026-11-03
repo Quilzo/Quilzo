@@ -53,8 +53,10 @@ type Page struct {
 // Driver performs the web's actions for one run.
 type Driver struct {
 	Session *agent.Session
-	// Get reads an address: the program's guarded client in a run.
-	Get func(ctx context.Context, address string) (Page, error)
+	// Get reads an address: the program's guarded client in a run. It asks
+	// hop about every address a redirect sends it on to, before requesting
+	// it, and stops at the first hop refuses.
+	Get func(ctx context.Context, address string, hop func(next *url.URL) error) (Page, error)
 	// Search is the provider agents.search names, and Do how it is asked;
 	// a zero Provider is none configured.
 	Search websearch.Provider
@@ -115,7 +117,30 @@ func (d *Driver) fetch(ctx context.Context, raw string) (string, error) {
 	if d.Get == nil {
 		return "", errors.New("this run cannot reach the web")
 	}
-	page, err := d.Get(ctx, u.String())
+	// Every address a redirect leads to is held to the declaration before it
+	// is requested. Only the first and the last were: an open redirect on a
+	// declared host sent the request, whose path and query are the model's
+	// words, to any host at all, and a chain that came back to a declared
+	// host left no sign it had been anywhere else. Once the run holds
+	// something private, a hop to a host other than the one the action named
+	// is refused, as a program's connection is: whoever approved the read saw
+	// that host and no other, and nobody can be asked in the middle of a
+	// redirect.
+	var passed []*url.URL
+	hop := func(next *url.URL) error {
+		nh := strings.ToLower(next.Hostname())
+		if !web.Reads(nh) {
+			return fmt.Errorf("%s is not a host this agent may read", nh)
+		}
+		if nh != host {
+			if why, breaks := d.Session.BreaksTo(nh); breaks {
+				return errors.New(why)
+			}
+		}
+		passed = append(passed, next)
+		return nil
+	}
+	page, err := d.Get(ctx, u.String(), hop)
 	if err != nil {
 		return "", err
 	}
@@ -127,6 +152,16 @@ func (d *Driver) fetch(ctx context.Context, raw string) (string, error) {
 	}
 	if fh := strings.ToLower(final.Hostname()); !web.Reads(fh) {
 		return "", fmt.Errorf("%s sent it on to %s, which is not a host this agent may read", host, fh)
+	}
+	// Each host the chain passed through chose where it went next, so each
+	// is a source of what the run read, and the receipt names it. The last
+	// hop is the page it landed on, which is named once, below: named here
+	// as well, one page read through a redirect was two reads on the
+	// receipt.
+	for _, p := range passed {
+		if p.String() != final.String() {
+			d.Session.ReadWeb(strings.ToLower(p.Hostname()), p.Redacted())
+		}
 	}
 	d.Session.ReadWeb(strings.ToLower(final.Hostname()), final.Redacted())
 	return Render(final, page.ContentType, page.Body), nil

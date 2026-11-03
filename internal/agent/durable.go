@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 )
 
@@ -109,7 +111,19 @@ func (s *Session) AsksFirst(a Action) bool {
 
 // wouldAllow reports whether the gate would let an action through, without
 // charging for it or recording a refusal.
+//
+// A hand-off is asked of the delegate list, as MayDelegate asks it, and
+// first, as the gate asks it. It was asked of the capabilities, which
+// never name one, so a hand-off the reviewer refused was taken for one the
+// declaration refuses, needing nobody to refuse it; the gate then allowed
+// it and the delegate ran.
 func (s *Session) wouldAllow(a Action) bool {
+	if a.Delegate != "" {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.manifest.Kind == KindSupervisor &&
+			slices.Contains(s.manifest.Delegates, strings.TrimSpace(a.Delegate))
+	}
 	if a.Tool != "" {
 		_, declared := s.ToolFor(a.Tool)
 		return declared
@@ -121,23 +135,38 @@ func (s *Session) wouldAllow(a Action) bool {
 
 // carry restores what the steps already taken spent, and that they read.
 //
-// Counted from the steps rather than taken from a figure stored beside
-// them: a step that was allowed was charged, a tool call against the tool
-// budget and everything else against the steps. The clock is not carried. Time spent waiting for a person is not
-// time the agent used, and the duration budget applies to each stretch.
+// Counted from the steps, and never less than the figure stored beside
+// them. Every step that was allowed was charged a step, and a tool call a
+// tool use as well (MayReach spends both); a question the run stopped at was
+// asked, and charged, before it stopped. The count alone was what this used
+// to trust, and it was short twice over: it charged a tool call as a tool use
+// and no step, and a delegation as one step and none of what the delegate
+// spent, which Fold had put on this run's budget. So every pause a person
+// approved gave those back, and a model can pause whenever it likes by
+// choosing something that asks first. The stored figure is the session's own
+// at the checkpoint and has all of it; the count is kept for a trace that
+// carries no figure, such as one cut back to run again from an earlier step.
+//
+// The clock is not carried. Time spent waiting for a person is not time the
+// agent used, and the duration budget applies to each stretch.
 func (s *Session) carry(prior Trace) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	steps, tools := 0, 0
 	for _, st := range prior.Steps {
 		if !st.Allowed || st.Action.Done() {
 			continue
 		}
+		steps++
 		if st.Action.Tool != "" {
-			s.toolUses++
-			continue
+			tools++
 		}
-		s.steps++
 	}
+	if w := prior.Waiting; w != nil && w.Kind == WaitQuestion {
+		steps++
+	}
+	s.steps += max(steps, prior.Spent.Steps)
+	s.toolUses += max(tools, prior.Spent.Tools)
 	s.tokens += prior.Spent.Tokens
 	s.cost += prior.Spent.Cost
 	if prior.Tainted {
@@ -232,8 +261,9 @@ func (r Runner) Continue(ctx context.Context, s *Session, prior Trace,
 
 	carry()
 	if w := prior.Waiting; w.Kind == WaitQuestion {
-		// The decider was asked, and charged, before the run stopped; the
-		// person's answer is what it returns.
+		// The decider was asked, and charged, before the run stopped, and
+		// carry has counted that step; the person's answer is what it
+		// returns.
 		by := v.By
 		if by == "" {
 			by = "a person"
@@ -249,7 +279,6 @@ func (r Runner) Continue(ctx context.Context, s *Session, prior Trace,
 			st.Result = by + " declined to answer, so nothing the decider said is to be acted on"
 		}
 		t.Steps = append(t.Steps, st)
-		s.chargeStep()
 		seen = append(seen, Observation{From: from(w.Action), Body: st.Result, Trusted: true})
 		r.checkpoint(t, s)
 		return r.run(ctx, s, t, seen, nil, Pending{})

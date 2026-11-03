@@ -168,10 +168,7 @@ func programHold(root, id string, gone <-chan struct{}, said func(string), answe
 		// the run waiting for one that had been given until its time ran
 		// out.
 		if said != nil {
-			what := w.Action.Op
-			if w.Action.Tool != "" {
-				what = w.Action.Tool
-			}
+			what := w.Action.Name()
 			said(fmt.Sprintf("waiting for a person to decide on %s: the run's page, or "+
 				"quilzo agent approve %s %d (decline the same way)", what, id, w.N))
 		}

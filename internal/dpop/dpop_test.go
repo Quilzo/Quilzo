@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -106,5 +107,36 @@ func TestAProofThatDoesNotHoldIsRefused(t *testing.T) {
 				t.Errorf("accepted, or refused for another reason: %v", err)
 			}
 		})
+	}
+}
+
+// The proofs remembered are bounded, and remembering one does not walk the
+// rest. Any valid proof is remembered for the window, and anybody can make
+// a valid proof with a key of their own before a token is looked at, so the
+// cache once grew with whatever was sent, and every request swept all of it
+// under one lock.
+func TestTheProofsRememberedAreBounded(t *testing.T) {
+	var r Replays
+	now := time.Unix(1787000000, 0)
+	const max = 1 << 16
+	accepted := 0
+	start := time.Now()
+	for i := 0; i < max+100; i++ {
+		if r.first(fmt.Sprintf("thumb|%012d", i), now) {
+			accepted++
+		}
+	}
+	if accepted > max {
+		t.Errorf("%d proofs remembered at once", accepted)
+	}
+	if took := time.Since(start); took > 5*time.Second {
+		t.Errorf("remembering %d proofs took %s", max+100, took)
+	}
+	if r.first("thumb|000000000001", now.Add(time.Second)) {
+		t.Error("a proof was accepted twice within the window")
+	}
+	// Once the window has passed they are forgotten, and there is room.
+	if !r.first("thumb|later-proof", now.Add(Window+Skew+time.Second)) {
+		t.Error("no room once the window passed")
 	}
 }

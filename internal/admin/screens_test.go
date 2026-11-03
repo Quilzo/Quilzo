@@ -177,7 +177,8 @@ var notAScreen = map[string]string{
 	"/auth/callback": "receives one, and is never opened directly",
 	"/connections/callback": "is where a provider sends a person back after connecting an account, and " +
 		"redirects to Your accounts; connections_test.go follows it",
-	"/signout":                    "clears the cookie and redirects; there is nothing to render",
+	"/signout": "clears the cookie and redirects; a request the person did not make is asked " +
+		"to confirm with a form, which credentials_test.go covers",
 	"/session/alive":              "is posted to by admin.js and answers 204",
 	"/security/parameters/export": "is a download of OSCAL JSON",
 	"/bookings/calendar.ics":      "is a download of a calendar file; Bookings explains a site that takes none",

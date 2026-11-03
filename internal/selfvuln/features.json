@@ -15,6 +15,7 @@
    "chatbots",
    "import",
    "mcp",
+   "scim",
    "uploads"
   ],
   "cmp": [
@@ -28,6 +29,9 @@
   ],
   "compress/zlib": [
    "chatbots"
+  ],
+  "container/heap": [
+   "*"
   ],
   "context": [
    "*",
@@ -246,6 +250,7 @@
    "forms",
    "import",
    "mcp",
+   "scim",
    "uploads"
   ],
   "io/fs": [
@@ -330,6 +335,9 @@
   "os/signal": [
    "*"
   ],
+  "os/user": [
+   "*"
+  ],
   "path": [
    "*",
    "api"
@@ -404,6 +412,7 @@
    "api",
    "boards",
    "chatbots",
+   "forms",
    "scim",
    "signup",
    "uploads"

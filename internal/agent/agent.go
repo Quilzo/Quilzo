@@ -448,13 +448,25 @@ func (m *Manifest) ValidateWith(known map[string]bool, customKinds map[Kind]bool
 	}
 
 	// Asking first about something the agent does not hold is a line that
-	// reads as a safeguard and guards nothing.
-	for _, a := range m.AskFirst {
-		if !m.holds(a) {
-			return fmt.Errorf(
-				"%s asks a person first about %q, which it does not hold. "+
-					"A safeguard on something it cannot do reads as one and "+
-					"is not", m.Name, a)
+	// reads as a safeguard and guards nothing. What it holds is gathered
+	// once: looked through for each name asked about, an agent file
+	// offering 40,000 operations took three seconds to check, and one with
+	// the 8 MiB an OpenAPI document may be would have taken twenty minutes.
+	if len(m.AskFirst) > 0 {
+		held := make(map[string]bool, len(m.Capabilities)+len(m.Tools))
+		for _, c := range m.Capabilities {
+			held[c] = true
+		}
+		for _, t := range m.Tools {
+			held[t.Name] = true
+		}
+		for _, a := range m.AskFirst {
+			if !held[a] {
+				return fmt.Errorf(
+					"%s asks a person first about %q, which it does not hold. "+
+						"A safeguard on something it cannot do reads as one and "+
+						"is not", m.Name, a)
+			}
 		}
 	}
 
@@ -662,19 +674,24 @@ func (m Manifest) Narrow(by Manifest) Manifest {
 		KeepInstructions: m.Retrieval.KeepInstructions && by.Retrieval.KeepInstructions,
 	}
 
-	// Tools: only the hosts the bound already reaches.
+	// Tools: only those the bound holds too, by name and by host.
 	//
 	// Matched on the declared host, because that is what Session.MayReach
 	// asks about. A delegate naming a host its parent does not hold would
 	// otherwise be a way to reach the network through a supervisor that
-	// cannot.
-	reachable := map[string]bool{}
+	// cannot. And on the name, as capabilities are: kept by host alone, a
+	// supervisor that may call create_issue on a tracker, asking first,
+	// handed its delegate delete_issue on the same tracker asking nobody,
+	// since asking first is kept below only for what the delegate holds. A
+	// tool either side says writes, writes.
+	bound := map[string]Tool{}
 	for _, t := range m.Tools {
-		reachable[t.Host] = true
+		bound[t.Name+"\x00"+t.Host] = t
 	}
 	var tools []Tool
 	for _, t := range by.Tools {
-		if reachable[t.Host] {
+		if b, ok := bound[t.Name+"\x00"+t.Host]; ok {
+			t.Writes = t.Writes || b.Writes
 			tools = append(tools, t)
 		}
 	}

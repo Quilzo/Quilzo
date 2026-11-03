@@ -308,3 +308,77 @@ func TestADelegateStartsHoldingWhatItsSupervisorRead(t *testing.T) {
 		t.Fatalf("the delegate started holding %v", r.private)
 	}
 }
+
+// spender is a delegate that spends a fixed amount of tokens and money on
+// every step it is allowed, until the gate refuses one: a model that keeps
+// working for as long as the budget it was handed lets it.
+type spender struct {
+	tokens int
+	micros int64
+	given  agent.Budget
+}
+
+func (sp *spender) Run(_ context.Context, _ string, child *agent.Session, _ string) (string, error) {
+	sp.given = child.Manifest().Budget
+	for child.Authorize("read_page") == nil {
+		child.Tokens(sp.tokens)
+		child.Charge(sp.micros)
+	}
+	return "done", nil
+}
+
+// What a supervisor has spent on models is not given back to it by handing
+// work on. Remaining narrowed the steps, the tools and the time and left
+// the tokens and the money at Narrow's smaller total, so a supervisor that
+// had used 900 of its 1000 tokens handed its delegate a fresh 1000, and the
+// run used 1900 against a budget of 1000.
+func TestADelegateGetsWhatIsLeftOfTheTokensAndTheMoney(t *testing.T) {
+	m := lead()
+	m.Budget.Tokens, m.Budget.Money = 1000, "0.25"
+	s := agent.NewSession(m, nil)
+	s.Tokens(900)
+	s.Charge(200_000)
+	sp := &spender{tokens: 100, micros: 50_000}
+	d := delegates(nil)
+	d.Manifest = func(string) (agent.Manifest, error) {
+		r := researcher()
+		r.Budget.Tokens, r.Budget.Money = 1000, "0.25"
+		return r, nil
+	}
+	d.Run = sp
+	if _, err := d.Perform(s)(context.Background(), agent.Action{Delegate: "researcher", Say: "go"}); err != nil {
+		t.Fatal(err)
+	}
+	if sp.given.Tokens != 100 {
+		t.Errorf("with 100 of the supervisor's 1000 tokens left, the delegate was given %d", sp.given.Tokens)
+	}
+	if got, _ := sp.given.MoneyMicros(); got != 50_000 {
+		t.Errorf("with 0.05 of the supervisor's 0.25 left, the delegate was given %q", sp.given.Money)
+	}
+	if used := s.TokensUsed(); used > 1000 {
+		t.Errorf("the run used %d tokens against a budget of 1000", used)
+	}
+	if cost := s.Cost(); cost > 250_000 {
+		t.Errorf("the run spent %d micros against a budget of 250000", cost)
+	}
+}
+
+// A cap already reached is not handed on as zero, which a budget reads as
+// no cap at all: a delegate given that would spend without a ceiling.
+func TestASpentTokenBudgetIsNotHandedOnAsNoBudget(t *testing.T) {
+	m := lead()
+	m.Budget.Tokens = 1000
+	s := agent.NewSession(m, nil)
+	sp := &spender{tokens: 100}
+	d := delegates(nil)
+	d.Run = sp
+	// Spent after the gate let the hand-off through, as a parallel
+	// delegate's folded spend would be.
+	d.Manifest = func(string) (agent.Manifest, error) {
+		s.Tokens(1000)
+		return researcher(), nil
+	}
+	if _, err := d.Perform(s)(context.Background(), agent.Action{Delegate: "researcher", Say: "go"}); err == nil {
+		t.Errorf("a delegate was started with the supervisor's tokens spent, holding %+v", sp.given)
+	}
+}

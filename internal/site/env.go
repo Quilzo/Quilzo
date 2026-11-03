@@ -188,27 +188,36 @@ type Promotion struct {
 	Identical bool `json:"identical,omitempty"`
 }
 
-// Promote moves one environment's ref to whatever another one holds.
-//
-// The whole operation is a ref pointing somewhere else. Nothing is copied,
-// re-serialised or rebuilt, which is what makes the guarantee exact: the bytes
-// production serves are the bytes staging served, because they are the same
-// objects.
+// PromotionPlan is a promotion checked and not yet made: where from, where
+// to, and the commit that would move.
+type PromotionPlan struct {
+	From   string
+	To     Env
+	Commit string
+}
+
+// IntoProduction reports whether the promotion changes what the public
+// sees, which makes it publishing.
+func (p PromotionPlan) IntoProduction() bool {
+	return p.To.Production || p.To.Ref == RefLive
+}
+
+// PlanPromotion checks a promotion as Promote does and moves nothing.
 //
 // Skipping ahead is possible and must be asked for. An environment sequence
 // exists so that things pass through it, and a pipeline that can silently skip
 // staging is one that eventually does — usually at the worst moment, by
 // somebody in a hurry.
-func Promote(s *store.Store, envs *Envs, from, to string, allowSkip bool) (
-	Promotion, error) {
+func PlanPromotion(s *store.Store, envs *Envs, from, to string, allowSkip bool) (
+	PromotionPlan, error) {
 
 	src, ok := envs.Lookup(from)
 	if !ok && from != RefDraft && from != "draft" {
-		return Promotion{}, fmt.Errorf("there is no environment called %q", from)
+		return PromotionPlan{}, fmt.Errorf("there is no environment called %q", from)
 	}
 	dst, ok := envs.Lookup(to)
 	if !ok {
-		return Promotion{}, fmt.Errorf("there is no environment called %q", to)
+		return PromotionPlan{}, fmt.Errorf("there is no environment called %q", to)
 	}
 
 	srcRef := RefDraft
@@ -221,13 +230,13 @@ func Promote(s *store.Store, envs *Envs, from, to string, allowSkip bool) (
 	// production commit ends up in staging and everybody's mental model of
 	// which is ahead stops being true.
 	if src.Name != "" && src.Order >= dst.Order {
-		return Promotion{}, fmt.Errorf(
+		return PromotionPlan{}, fmt.Errorf(
 			"%s is not before %s in the promotion order, so this would move "+
 				"content backwards", srcName, dst.Name)
 	}
 	if !allowSkip {
 		if prev, has := envs.Previous(dst.Name); has && prev.Name != srcName {
-			return Promotion{}, fmt.Errorf(
+			return PromotionPlan{}, fmt.Errorf(
 				"%s comes after %s, not after %s.\n"+
 					"  Promoting straight to %s skips the environment that "+
 					"exists to catch this.\n"+
@@ -238,11 +247,35 @@ func Promote(s *store.Store, envs *Envs, from, to string, allowSkip bool) (
 
 	commit := s.GetRef(srcRef)
 	if commit == "" {
-		return Promotion{}, fmt.Errorf("%s holds nothing to promote", srcName)
+		return PromotionPlan{}, fmt.Errorf("%s holds nothing to promote", srcName)
 	}
+	return PromotionPlan{From: srcName, To: dst, Commit: commit}, nil
+}
+
+// Promote moves one environment's ref to whatever another one holds.
+//
+// The whole operation is a ref pointing somewhere else. Nothing is copied,
+// re-serialised or rebuilt, which is what makes the guarantee exact: the bytes
+// production serves are the bytes staging served, because they are the same
+// objects.
+//
+// It checks the order and nothing about the content. A promotion into
+// production is publishing, so its callers plan it (PlanPromotion) and put
+// it through every check publishing makes, and the notifications, instead
+// of calling this: quilzo env promote and the Publishing screen both moved
+// the live ref here with none of them, and a draft that `quilzo publish`
+// refused went live this way, directly or by way of staging.
+func Promote(s *store.Store, envs *Envs, from, to string, allowSkip bool) (
+	Promotion, error) {
+
+	plan, err := PlanPromotion(s, envs, from, to, allowSkip)
+	if err != nil {
+		return Promotion{}, err
+	}
+	srcName, dst, commit := plan.From, plan.To, plan.Commit
 
 	var out Promotion
-	err := s.WithRefLock(func() error {
+	err = s.WithRefLock(func() error {
 		previous := s.GetRef(dst.Ref)
 		if previous == commit {
 			out = Promotion{From: srcName, To: dst.Name, Commit: commit,

@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -39,7 +40,7 @@ func TestAnAgentSearchesAndReadsTheWeb(t *testing.T) {
 			return 200, []byte(`{"web":{"results":[{"title":"Hart's Bakery","url":"https://hartsbakery.co.uk/loaves","description":"Sourdough"}]}}`), nil
 		}
 	}
-	webGet = func(_ context.Context, address string) (web.Page, error) {
+	webGet = func(_ context.Context, address string, _ func(*url.URL) error) (web.Page, error) {
 		mu.Lock()
 		read = append(read, address)
 		mu.Unlock()

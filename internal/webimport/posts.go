@@ -150,6 +150,10 @@ func postRows(s *Site, picture func(*url.URL, string) string, link func(string) 
 func postSlugs(posts []Post) []string {
 	out := make([]string, len(posts))
 	taken := map[string]bool{}
+	// next is, for a slug taken, the number to try first: every one below
+	// it is taken. Counting up from 2 again for each, 10,000 posts with one
+	// slug took 21 seconds.
+	next := map[string]int{}
 	for i, pst := range posts {
 		slug := slugOf(pst.Slug)
 		if slug == "" {
@@ -159,8 +163,9 @@ func postSlugs(posts []Post) []string {
 			continue
 		}
 		base := slug
-		for k := 2; taken[slug]; k++ {
+		for k := max(2, next[base]); taken[slug]; k++ {
 			slug = fmt.Sprintf("%s-%d", base, k)
+			next[base] = k + 1
 		}
 		taken[slug] = true
 		out[i] = slug

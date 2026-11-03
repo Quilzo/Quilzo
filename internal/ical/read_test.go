@@ -4,6 +4,7 @@
 package ical
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -239,5 +240,30 @@ func TestManyOldRulesAreQuickToWorkOut(t *testing.T) {
 	}
 	if len(got) == 0 || len(notes) == 0 {
 		t.Errorf("%d times, notes %v", len(got), notes)
+	}
+}
+
+// A property folded over many lines is unfolded in time and memory that
+// grow with its length. Each continuation was added to the line before it,
+// copying all of it each time: a calendar of 960 KB took 18 seconds, and
+// one at MaxBytes would take over an hour of a server's CPU.
+func TestALongFoldedLineIsQuickToUnfold(t *testing.T) {
+	const n = 20000
+	lines := []string{"UID:a@x", "DTSTART:20261114T193000Z", "SUMMARY:Long", "DESCRIPTION:start"}
+	for i := 0; i < n; i++ {
+		lines = append(lines, " xxxxxxxxx")
+	}
+	body := cal(vevent(lines...))
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	start := time.Now()
+	c := mustParse(t, body, time.UTC)
+	took := time.Since(start)
+	runtime.ReadMemStats(&after)
+	if len(c.Events) != 1 || c.Events[0].Description != "start"+strings.Repeat("xxxxxxxxx", n) {
+		t.Fatalf("unfolded wrongly: %d events", len(c.Events))
+	}
+	if spent := after.TotalAlloc - before.TotalAlloc; spent > 64<<20 || took > 2*time.Second {
+		t.Fatalf("%d KB took %v and %d MB to read", len(body)>>10, took, spent>>20)
 	}
 }

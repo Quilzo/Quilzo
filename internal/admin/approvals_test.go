@@ -203,3 +203,58 @@ func TestApprovalsAreDecidedByTheSessionNotThePerson(t *testing.T) {
 		t.Errorf("the command line was not told the session's cap: %+v", seen)
 	}
 }
+
+// What a tool's step commits to is read from the integration that offers
+// it as well as from the manifest. A manifest that left "writes" off a tool
+// on an integration that changes something listed its step as a read, and
+// a read is approved several at a time.
+func TestAToolStepItsIntegrationSaysWritesIsNotBatchedAsARead(t *testing.T) {
+	srv, _ := setup(t)
+	st := wireStudio(srv)
+	st.declared["filer"] = agent.Manifest{Name: "filer",
+		Tools: []agent.Tool{{Name: "create_issue", Host: "tracker.example", Purpose: "file issues"}}}
+	srv.Integrations = &Integrations{Declared: func() (agent.Integrations, error) {
+		return agent.Integrations{Declared: []agent.Integration{{Name: "tracker", Kind: agent.IntegrationMCP,
+			Enabled: true, Purpose: "file issues", Endpoint: "tracker.example", Uses: []string{"create_issue"},
+			Writes: true}}}, nil
+	}}
+	file := agent.Action{Tool: "create_issue", Input: map[string]any{"title": "x"}}
+	waitingRun(st, "run-20261103-000000c1", "filer", file, "it asks first", time.Now())
+	waitingRun(st, "run-20261103-000000c2", "filer", file, "it asks first", time.Now())
+	for _, it := range srv.runApprovals(time.Now()) {
+		if it.Commits != "writes" || it.Batch != "" {
+			t.Errorf("%s commits to %q and is offered in the batch %q", it.RunID, it.Commits, it.Batch)
+		}
+	}
+}
+
+// A hand-off the reviewer refused waits for a person, who is shown which
+// agent the work goes to and the work itself. A waiting action was named by
+// its capability or its tool, and a hand-off has neither, so a person was
+// asked to let an unnamed capability go ahead "with nothing given", and the
+// work to be handed on, which is what the reviewer refused, was nowhere.
+func TestAWaitingHandOffShowsWhoAndWhatIsHandedOn(t *testing.T) {
+	srv, token := setup(t)
+	st := wireStudio(srv)
+	const id = "run-20261103-000000d1"
+	waitingRun(st, id, "boss", agent.Action{Delegate: "writer", Say: "write a page called offer"},
+		"the reviewer refused it: nobody asked for an offer", time.Now())
+	r := st.runs[id]
+	r.Trace.Waiting.Kind = agent.WaitReview
+	st.runs[id] = r
+
+	page := get(t, srv, "/agents/run/"+id, token).Body.String()
+	whole(t, page)
+	for _, want := range []string{"The reviewer stopped step 2", "<code>writer</code>", "write a page called offer"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the waiting hand-off's page does not show %q", want)
+		}
+	}
+	if strings.Contains(page, "<code></code>") || strings.Contains(page, "with nothing given") {
+		t.Error("the waiting hand-off is shown as an unnamed action with nothing given")
+	}
+	list := get(t, srv, "/approvals", token).Body.String()
+	if !strings.Contains(list, "delegate/writer, which the reviewer refused") {
+		t.Error("the approvals do not say which agent the waiting hand-off goes to")
+	}
+}

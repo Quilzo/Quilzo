@@ -30,13 +30,17 @@ type Client struct {
 }
 
 // Host is the host the client's identity is published from: for a
-// metadata document, its URL's; for a registered client, none.
+// metadata document, its URL's; for a registered client, none. It is in
+// lower case, as allowed hosts are, because host names are
+// case-insensitive: HostAllowed admits https://APP.example.com/... under
+// app.example.com, and a Host that kept the capitals let that app survive
+// the host's removal.
 func (c Client) Host() string {
 	if c.Registered {
 		return ""
 	}
 	if u, err := url.Parse(c.ID); err == nil {
-		return u.Host
+		return strings.ToLower(u.Host)
 	}
 	return ""
 }

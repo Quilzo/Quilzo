@@ -254,10 +254,11 @@ func From(manifests map[string]agent.Manifest, known map[string]bool, o Options)
 		Version:            nonEmpty(o.Version, "0.0.0"),
 		DocumentationURL:   o.DocumentationURL,
 		Capabilities: Capabilities{
-			// All false, and true. This server publishes a discovery document;
-			// it does not implement A2A task transport. A card claiming
-			// streaming it does not have is the failure mode that makes
-			// published cards untrustworthy.
+			// All false, and true. Tasks, when they are taken, are taken over
+			// A2A 1.0's JSON-RPC binding at the address in
+			// supportedInterfaces, without streaming, push notifications or a
+			// task's history. A card claiming streaming it does not have is
+			// the failure mode that makes published cards untrustworthy.
 			Streaming: false, PushNotifications: false,
 			StateTransitionHistory: false,
 		},

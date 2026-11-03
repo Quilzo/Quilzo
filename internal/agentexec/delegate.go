@@ -146,5 +146,16 @@ func smaller(a, b agent.Budget) agent.Budget {
 	if b.Duration < out.Duration {
 		out.Duration = b.Duration
 	}
+	// The tokens and the money as well, where zero and empty are no cap
+	// rather than nothing: without these a supervisor that had spent most
+	// of its model budget handed every delegate the whole of it again.
+	if b.Tokens > 0 && (out.Tokens == 0 || b.Tokens < out.Tokens) {
+		out.Tokens = b.Tokens
+	}
+	if bm, err := b.MoneyMicros(); err == nil && bm > 0 {
+		if om, oerr := out.MoneyMicros(); oerr != nil || om == 0 || bm < om {
+			out.Money = b.Money
+		}
+	}
 	return out
 }

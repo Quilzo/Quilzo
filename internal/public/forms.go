@@ -194,10 +194,40 @@ func (st *Site) submit(w http.ResponseWriter, r *http.Request) {
 		st.formResult(w, r, f, err.Error())
 		return
 	}
-	if err := st.Forms.Store.Put(sub); err != nil {
+	if err := st.keep(r, name, source, sub); err != nil {
+		// The files kept have reached their ceiling: refused as a
+		// submission the form cannot take, in words, not as a fault. keep
+		// has audited it as refused.
+		if errors.Is(err, form.ErrFilesFull) {
+			st.formResult(w, r, f, err.Error())
+			return
+		}
 		http.Error(w, "that submission could not be stored",
 			http.StatusInternalServerError)
 		return
+	}
+	st.formResult(w, r, f, "")
+}
+
+// keep stores an accepted submission and tells everything a submission
+// tells: the audit record of the source that wrote it, the form's goal, and
+// the staff alert.
+//
+// One function for every route that writes a submission, because there are
+// two and they drifted. /share stored through the same form pipeline and did
+// none of the rest, so a submission from the share sheet, the less defended
+// route, left no audit record and alerted nobody: an abuse investigation saw
+// nothing of it, and a real enquiry sent that way waited until somebody
+// opened the admin.
+func (st *Site) keep(r *http.Request, name, source string, sub form.Submission) error {
+	if err := st.Forms.Store.Put(sub); err != nil {
+		// A submission refused for want of room is a refusal, recorded as
+		// one on whichever route it came by; any other failure is a fault,
+		// and the caller answers it as one.
+		if errors.Is(err, form.ErrFilesFull) && st.Forms.Audit != nil {
+			st.Forms.Audit(name, source, false)
+		}
+		return err
 	}
 	if st.Forms.Audit != nil {
 		st.Forms.Audit(name, source, true)
@@ -210,7 +240,7 @@ func (st *Site) submit(w http.ResponseWriter, r *http.Request) {
 	if st.Forms.Notify != nil {
 		st.Forms.Notify(name)
 	}
-	st.formResult(w, r, f, "")
+	return nil
 }
 
 // readSubmission reads what was sent: the fields, and for a form that

@@ -1351,8 +1351,8 @@ situational costume and needs the standing authority for what it actually does,
 which lands on **publish**: the ladder already defines it as the only action with
 an outside observer. Every situational role here today acts inside its own
 situation; the ones that reached outside (an incident's commander, a detection's
-promoter) left with a security team's tools for Vaigil, and the rule is what keeps
-the next one honest.
+promoter) left with a security team's tools, and the rule is what keeps the next
+one honest.
 
 So every situational role declares its powers and, for each, whether the effect
 survives — with the reason, because that classification is a judgement and an

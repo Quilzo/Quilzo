@@ -5,6 +5,7 @@ package form
 
 import (
 	"bytes"
+	"errors"
 	"image"
 	"image/color"
 	"image/png"
@@ -114,5 +115,62 @@ func TestUploadsAreBounded(t *testing.T) {
 	}
 	if got := claimForm().Fields[1].AcceptTypes(); got != "image/*" {
 		t.Fatalf("%q", got)
+	}
+}
+
+// The files kept for every form together have a ceiling. Nothing bounded
+// them: one address sending pictures at the rate the throttle allows kept
+// 338 MB an hour, on the disk the content store is on, for the whole
+// retention period, and a few hundred addresses would fill it.
+func TestTheFilesKeptHaveACeiling(t *testing.T) {
+	st, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pic := pngBytes(t)
+	st.FileCeiling = int64(2*len(pic) + len(pic)/2)
+	f := claimForm()
+	put := func() error {
+		t.Helper()
+		sub, err := AcceptWithFiles(f, sent(map[string]string{"name": "Ana"}),
+			map[string]Upload{"photo": {Name: "x.png", Data: pic}}, "", time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return st.Put(sub)
+	}
+	for i := 0; i < 2; i++ {
+		if err := put(); err != nil {
+			t.Fatalf("picture %d, under the ceiling: %v", i+1, err)
+		}
+	}
+	if err := put(); !errors.Is(err, ErrFilesFull) {
+		t.Fatalf("a third picture past the ceiling: %v", err)
+	}
+	subs, _ := st.List("claim")
+	if len(subs) != 2 {
+		t.Fatalf("%d submissions kept, not two", len(subs))
+	}
+	if kept, _ := filepath.Glob(filepath.Join(st.dir, "claim", "*.files")); len(kept) != 2 {
+		t.Fatalf("the refused submission left files behind: %v", kept)
+	}
+	// What carries no file is not held up by the files.
+	note := &Form{Name: "note", Notice: "Kept 30 days.", Fields: []Field{{Name: "text", Label: "Text", Kind: Para}}}
+	sub, err := Accept(note, sent(map[string]string{"text": "Hello"}), "", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Put(sub); err != nil {
+		t.Fatalf("a submission with no file, at the ceiling: %v", err)
+	}
+	// Deleting one makes room for one.
+	if err := st.Delete("claim", subs[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := put(); err != nil {
+		t.Fatalf("a picture after one was deleted: %v", err)
+	}
+	if (&Store{}).fileCeiling() != MaxKeptFileBytes {
+		t.Fatal("a store that says nothing has no ceiling")
 	}
 }

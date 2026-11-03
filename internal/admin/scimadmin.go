@@ -108,6 +108,22 @@ func (s *Server) renderProvisioning(w http.ResponseWriter, r *http.Request, p pr
 	s.render(w, r, "provisioning.html", data)
 }
 
+// provisioningMakesAdministrators reports whether a group the identity
+// provider sends makes its members administrators of anything. Unreadable
+// is taken as yes, which waits rather than hands out a way in.
+func (s *Server) provisioningMakesAdministrators() bool {
+	_, st, err := s.SCIM.Status()
+	if err != nil || st == nil {
+		return true
+	}
+	for _, to := range st.Mapping {
+		if dual.MapsToAdministrator(to) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) handleProvisioningAct(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
@@ -167,6 +183,25 @@ func (s *Server) handleProvisioningAct(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case "token":
+		// While a group makes administrators, whoever holds this token
+		// makes anybody one by putting them in it, so making it waits for a
+		// second administrator, as an administrator's token does, and is
+		// received by whoever asked (on People). It did not, and either of
+		// two administrators alone made mallory an administrator through
+		// the identity provider's door.
+		if s.provisioningMakesAdministrators() {
+			apply, msg, perr := s.proposeSecond(p, dual.SCIMToken,
+				"a new provisioning token, which makes administrators through a mapped group",
+				dual.SCIMTokenChange{}, "")
+			if perr != nil {
+				back("e", perr.Error())
+				return
+			}
+			if !apply {
+				back("m", msg)
+				return
+			}
+		}
 		token, terr := s.SCIM.NewToken(p.Name)
 		if terr == nil {
 			// Shown in this response and never again, so not a redirect.

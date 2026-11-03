@@ -111,6 +111,10 @@ func TestWhatIsNotATaskHereIsSaidPrecisely(t *testing.T) {
 	if len(*sent) != 0 {
 		t.Fatalf("something ran: %v", *sent)
 	}
+	// A message naming the card's skill is for that skill's agent.
+	if got := rpc(t, h, "1.0", strings.Replace(send, `"agent":"tidy"`, `"skill":"support"`, 1)); code(got) != 0 || len(*sent) != 1 || (*sent)[0] != "support: Summarise the pricing page" {
+		t.Errorf("naming the skill: %v %v", got, *sent)
+	}
 	// One agent needs no naming.
 	one, sent := taskHost("tidy")
 	if got := rpc(t, one, "1.0", strings.Replace(send, `,"metadata":{"agent":"tidy"}`, "", 1)); code(got) != 0 || len(*sent) != 1 {

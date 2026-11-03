@@ -736,7 +736,12 @@ func (s *Server) mfaEnforced(now time.Time) bool { return !now.Before(s.MFAFrom)
 func (s *Server) authenticate(r *http.Request) (principal, error) {
 	s.refresh()
 	header := r.Header.Get("Authorization")
-	raw := strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
+	// A bearer token in any case of the scheme; anything else is presented
+	// whole, and refused as before.
+	raw := strings.TrimSpace(header)
+	if t, scheme := auth.Presented(header); scheme == "Bearer" {
+		raw = t
+	}
 	bearer := raw != ""
 	if raw == "" {
 		if c, err := r.Cookie("quilzo_token"); err == nil {
@@ -1997,7 +2002,13 @@ func (s *Server) handleSignOut(w http.ResponseWriter, r *http.Request) {
 	// Only a session. A long-lived token presented as a cookie is somebody's
 	// own credential, used deliberately, and revoking it because they closed
 	// a tab would destroy the thing they signed in with.
-	if p, err := s.authenticate(r); err == nil && p.TokenID != "" && p.Session {
+	p, err := s.authenticate(r)
+	if err == nil && !signOutAsked(r, p) {
+		s.render(w, r, "signout.html", map[string]any{
+			"Title": "Sign out", "Who": p.Name})
+		return
+	}
+	if err == nil && p.TokenID != "" && p.Session {
 		if _, err := s.Tokens.Revoke(p.TokenID); err == nil {
 			if serr := s.save(); serr == nil {
 				s.audit("session.end", "/", map[string]string{"by": p.Name})
@@ -2009,6 +2020,50 @@ func (s *Server) handleSignOut(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: r.TLS != nil || s.behindTLSProxy(),
 	})
 	http.Redirect(w, r, "/signin", http.StatusSeeOther)
+}
+
+// signOutAsked reports whether a request to /signout is the person asking,
+// so that it may end their session without asking them again.
+//
+// GET ended it whatever made the request, and sameSiteOnly screens only the
+// methods that write. The cookie is SameSite=Strict, which a sibling host is
+// not foreign to: an <img src> pointing at /signout in content on
+// www.example.com, beside admin.example.com, or in a preview on this origin,
+// ended the session of every administrator who looked at it, and with it
+// whatever they were in the middle of.
+//
+// A POST has already been screened. A credential in the Authorization header
+// is a program holding its own secret, which nothing on another page can
+// attach. A GET is the person's when the browser says it is a page they
+// opened, from this origin or from nowhere (the menu's link, a typed address,
+// a bookmark); an image, a frame, another host's link, or a browser that
+// sends no fetch metadata is shown the question instead, as a form that
+// posts, which is one more press for the person and nothing for a page.
+//
+// Nor is a load the browser makes ahead of the person, which says so in a
+// purpose header. A prefetch or a prerender is sent as a navigation to a
+// document from this origin or from the address bar, so it passed as the
+// menu's link: a browser preloading /signout from its history, or a prefetch
+// hint in a page here, ended the session before anybody chose to.
+func signOutAsked(r *http.Request, p principal) bool {
+	if r.Method == http.MethodPost || p.Bearer {
+		return true
+	}
+	if r.Method != http.MethodGet {
+		return false
+	}
+	for _, h := range []string{"Sec-Purpose", "Purpose", "X-Purpose"} {
+		if r.Header.Get(h) != "" {
+			return false
+		}
+	}
+	switch r.Header.Get("Sec-Fetch-Site") {
+	case "same-origin", "none":
+	default:
+		return false
+	}
+	return r.Header.Get("Sec-Fetch-Mode") == "navigate" &&
+		r.Header.Get("Sec-Fetch-Dest") == "document"
 }
 
 func (s *Server) handleCSS(w http.ResponseWriter, r *http.Request) {
@@ -2256,9 +2311,13 @@ func (s *Server) handlePages(w http.ResponseWriter, r *http.Request) {
 	// names pages somebody cannot open is a worse answer than a refusal: it
 	// tells them the pages exist and what they are called, which is most of
 	// what a scope was drawn to withhold.
+	//
+	// Through allows, so the credential's path withholds them too. The
+	// policy alone answered for the person, and a whole-site administrator
+	// signed in with a credential issued `--on /blog` was shown every name.
 	names := make([]string, 0, len(pages))
 	for n := range pages {
-		if !s.mayUse(p, auth.ActView, pageResource(n)) {
+		if !s.allows(p, auth.ActView, pageResource(n)) {
 			continue
 		}
 		names = append(names, n)
@@ -3302,17 +3361,81 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	}
 
 	draft := s.Store.GetRef(site.RefDraft)
+	reason := strings.TrimSpace(r.FormValue("reason"))
+	waived, refusal := s.publishChecks(p, draft, reason)
+	if refusal != nil {
+		s.showRefusal(w, r, refusal, nil)
+		return
+	}
 
+	// The commit that was checked, and not whatever the draft is by now: a
+	// save landing between the checks and this would go live unchecked.
+	pub, err := site.Publish(s.Store, draft)
+	if err != nil {
+		s.audit("publish", "/", map[string]string{
+			"by": p.Name, "outcome": "failed", "detail": err.Error()})
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.recordPublished(p, pub, waived, reason)
+	s.render(w, r, "message.html", map[string]any{
+		"Title": "Published", "Principal": p,
+		"Heading": "Published",
+		"Body": fmt.Sprintf("%d change%s are now live. The previous version is "+
+			"still stored, so rolling back moves a pointer.",
+			len(pub.Changes), plural(len(pub.Changes))),
+		// What was waived, and not the word "accessibility" whatever it was.
+		// The template said "Published with an accessibility override" for
+		// every one of the four gates this box clears, so somebody who typed a
+		// reason for an unmarked page was told they had overridden an
+		// accessibility failure — which is the wrong record of the wrong
+		// decision, on the screen where the decision is confirmed.
+		"Override": reason,
+		"Waived":   waived,
+	})
+}
+
+// publishRefusal is why a commit does not go live, as the screen shows it:
+// a page and what it shows, or a plain error.
+type publishRefusal struct {
+	status int
+	page   string
+	data   map[string]any
+	text   string
+}
+
+// showRefusal writes a refusal. A promotion's carries what was being
+// promoted, so the reason box on it promotes that rather than publishing
+// the draft.
+func (s *Server) showRefusal(w http.ResponseWriter, r *http.Request, ref *publishRefusal, promote map[string]any) {
+	if ref.page == "" {
+		http.Error(w, ref.text, ref.status)
+		return
+	}
+	if promote != nil {
+		ref.data["Promote"] = promote
+	}
+	s.render(w, r, ref.page, ref.data)
+}
+
+// publishChecks runs every check publishing makes on draft, the commit
+// that would go live, for p, with reason waiving what a reason waives. It
+// says what was waived, or why the commit may not go live.
+//
+// Review → Publish asks it about the draft, and a promotion into
+// production about the commit it would move. The Publishing screen moved
+// the live ref with none of these, so a draft Publish refused went live
+// from there, straight from the draft or by way of staging.
+func (s *Server) publishChecks(p principal, draft, reason string) (waived []string, refusal *publishRefusal) {
 	// Each page the publish would change, asked about its own path: a deny
-	// of publishing on /legal is not seen by the check on "/" above.
+	// of publishing on /legal is not seen by the caller's check on "/".
 	if denied := s.deniedChanges(p, draft); len(denied) > 0 {
 		msg := fmt.Sprintf("Publishing the draft would change %s, which you may not publish.",
 			strings.Join(denied, ", "))
 		s.audit("publish", "/", map[string]string{"outcome": "refused", "by": p.Name, "reason": "authorisation"})
-		s.render(w, r, "review.html", map[string]any{"Status": http.StatusForbidden,
+		return waived, &publishRefusal{page: "review.html", data: map[string]any{"Status": http.StatusForbidden,
 			"Nav": "review", "Title": "Review", "Principal": p,
-			"CanPublish": false, "Error": msg})
-		return
+			"CanPublish": false, "Error": msg}}
 	}
 
 	// Every check about the content, first and unwaivable.
@@ -3327,18 +3450,16 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	// typing in it is thinking about; adding four more to it would be worse
 	// than leaving them out.
 	if s.ContentGates == nil {
-		http.Error(w, "the content checks are not wired up in this build, so "+
-			"publishing would claim checks that did not happen",
-			http.StatusServiceUnavailable)
-		return
+		return waived, &publishRefusal{status: http.StatusServiceUnavailable,
+			text: "the content checks are not wired up in this build, so " +
+				"publishing would claim checks that did not happen"}
 	}
 	refused, advisory, gerr := s.ContentGates(draft)
 	if gerr != nil {
-		s.render(w, r, "message.html", map[string]any{"Status": http.StatusUnprocessableEntity,
+		return waived, &publishRefusal{page: "message.html", data: map[string]any{"Status": http.StatusUnprocessableEntity,
 			"Title": "Not published", "Principal": p,
 			"Heading": "A check could not run", "Body": gerr.Error(),
-		})
-		return
+		}}
 	}
 	if refused != nil {
 		details := make([]string, 0, len(refused.Findings))
@@ -3349,12 +3470,11 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 			"by": p.Name, "gate": refused.Check.Name,
 			"how": strconv.Itoa(len(refused.Findings)),
 		})
-		s.render(w, r, "message.html", map[string]any{"Status": http.StatusUnprocessableEntity,
+		return waived, &publishRefusal{page: "message.html", data: map[string]any{"Status": http.StatusUnprocessableEntity,
 			"Title": "Not published", "Principal": p,
 			"Heading": refused.Check.Refusal(len(refused.Findings)),
 			"Details": details,
-		})
-		return
+		}}
 	}
 
 	reports, a11yErr := s.checkAll(draft)
@@ -3362,16 +3482,14 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 		// Refused, not waived. An override is for a judgement call about a
 		// finding somebody has read; there is no finding here, because the
 		// check did not run.
-		s.render(w, r, "message.html", map[string]any{"Status": http.StatusUnprocessableEntity,
+		return waived, &publishRefusal{page: "message.html", data: map[string]any{"Status": http.StatusUnprocessableEntity,
 			"Title": "Not published", "Principal": p,
 			"Heading": "The accessibility check could not run",
 			"Body": "Publishing would claim a check that did not happen: " +
 				a11yErr.Error(),
-		})
-		return
+		}}
 	}
 	blocking := a11y.BlockingCount(reports)
-	reason := strings.TrimSpace(r.FormValue("reason"))
 	_ = advisory
 
 	// Provenance is gated here for the same reason accessibility is: a control
@@ -3384,13 +3502,12 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 		// Refused, not waived, and for the same reason the accessibility error
 		// above is: the reason box is for a judgement call about something
 		// somebody has read, and there is nothing here to read.
-		s.render(w, r, "message.html", map[string]any{"Status": http.StatusUnprocessableEntity,
+		return waived, &publishRefusal{page: "message.html", data: map[string]any{"Status": http.StatusUnprocessableEntity,
 			"Title": "Not published", "Principal": p,
 			"Heading": "The provenance check could not run",
 			"Body": "Publishing would claim a check that did not happen: " +
 				provErr.Error(),
-		})
-		return
+		}}
 	}
 	// What the one reason field waives, collected as each gate is reached.
 	//
@@ -3401,12 +3518,11 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	// waives the Article 50 marking gate, in the same click, without being
 	// told. Splitting them is a change to the screen; recording which ones
 	// were actually in force is not, and it is the part an auditor needs.
-	var waived []string
 	if len(unmarked) > 0 {
 		waived = append(waived, "unmarked-ai")
 	}
 	if len(unmarked) > 0 && reason == "" {
-		s.render(w, r, "review.html", map[string]any{"Status": http.StatusUnprocessableEntity,
+		return waived, &publishRefusal{page: "review.html", data: map[string]any{"Status": http.StatusUnprocessableEntity,
 			"Nav":   "review",
 			"Title": "Review", "Principal": p, "Reports": reports,
 			"Blocking": blocking, "Unmarked": unmarked, "CanPublish": true,
@@ -3415,8 +3531,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 					"AI-generated content to carry a machine-readable mark, and "+
 					"unrecorded is not the same as human-written.",
 				len(unmarked), plural(len(unmarked))),
-		})
-		return
+		}}
 	}
 
 	// Dual authorisation, and this one has no override.
@@ -3427,13 +3542,12 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	// prevent, so accepting a reason here would be offering a button that
 	// switches the control off.
 	if blocked := s.blockedByApproval(p, draft); blocked != "" {
-		s.render(w, r, "review.html", map[string]any{"Status": http.StatusUnprocessableEntity,
+		return waived, &publishRefusal{page: "review.html", data: map[string]any{"Status": http.StatusUnprocessableEntity,
 			"Nav": "review", "Title": "Review", "Principal": p,
 			"Reports": reports, "Blocking": blocking, "CanPublish": true,
 			"Approval": s.approvalFor(p, draft),
 			"Error":    blocked,
-		})
-		return
+		}}
 	}
 
 	// A page that expired before it was published.
@@ -3447,7 +3561,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 		waived = append(waived, "expired-pages")
 	}
 	if len(stale) > 0 && reason == "" {
-		s.render(w, r, "review.html", map[string]any{"Status": http.StatusUnprocessableEntity,
+		return waived, &publishRefusal{page: "review.html", data: map[string]any{"Status": http.StatusUnprocessableEntity,
 			"Nav": "review", "Title": "Review", "Principal": p,
 			"Reports": reports, "Blocking": blocking, "CanPublish": true,
 			"Expired": stale,
@@ -3455,8 +3569,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 				"%d page%s already past the date it stops being public. "+
 					"Publishing would put up content nobody can see.",
 				len(stale), plural(len(stale))),
-		})
-		return
+		}}
 	}
 
 	// Every page satisfies its type, checked over the whole draft.
@@ -3479,7 +3592,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	// cannot disagree about what publishes.
 	if s.CheckReferences != nil {
 		if failures := s.CheckReferences(site.PagesOf(s.Store, draft)); len(failures) > 0 {
-			s.render(w, r, "review.html", map[string]any{"Status": http.StatusUnprocessableEntity,
+			return waived, &publishRefusal{page: "review.html", data: map[string]any{"Status": http.StatusUnprocessableEntity,
 				"Nav": "review", "Title": "Review", "Principal": p,
 				"Reports": reports, "Blocking": blocking, "CanPublish": true,
 				"TypeFailures": failures,
@@ -3489,8 +3602,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 						"reference — a link pointing at nothing is a broken link "+
 						"every reader finds before anybody here does.",
 					len(failures), plural(len(failures))),
-			})
-			return
+			}}
 		}
 	}
 
@@ -3500,7 +3612,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 			for _, f := range failures {
 				names = append(names, f.Page)
 			}
-			s.render(w, r, "review.html", map[string]any{"Status": http.StatusUnprocessableEntity,
+			return waived, &publishRefusal{page: "review.html", data: map[string]any{"Status": http.StatusUnprocessableEntity,
 				"Nav": "review", "Title": "Review", "Principal": p,
 				"Reports": reports, "Blocking": blocking, "CanPublish": true,
 				"TypeFailures": failures,
@@ -3510,8 +3622,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 						"giving an existing page a type it does not match is "+
 						"enough — so this is checked on the way out.",
 					len(failures), plural(len(failures)), strings.Join(names, ", ")),
-			})
-			return
+			}}
 		}
 	}
 
@@ -3527,7 +3638,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 		waived = append(waived, "broken-links")
 	}
 	if len(broken) > 0 && reason == "" {
-		s.render(w, r, "review.html", map[string]any{"Status": http.StatusUnprocessableEntity,
+		return waived, &publishRefusal{page: "review.html", data: map[string]any{"Status": http.StatusUnprocessableEntity,
 			"Nav": "review", "Title": "Review", "Principal": p,
 			"Reports": reports, "Blocking": blocking, "CanPublish": true,
 			"BrokenLinks": broken,
@@ -3535,8 +3646,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 				"%d navigation entr%s point at pages that are not being "+
 					"published. They work for you and 404 for every reader.",
 				len(broken), map[bool]string{true: "y", false: "ies"}[len(broken) == 1]),
-		})
-		return
+		}}
 	}
 
 	// The same gate as the CLI, for the same reason. An override that is
@@ -3546,7 +3656,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 		waived = append(waived, "accessibility")
 	}
 	if blocking > 0 && reason == "" {
-		s.render(w, r, "review.html", map[string]any{"Status": http.StatusUnprocessableEntity,
+		return waived, &publishRefusal{page: "review.html", data: map[string]any{"Status": http.StatusUnprocessableEntity,
 			"Nav":   "review",
 			"Title": "Review", "Principal": p, "Reports": reports,
 			"Blocking":   blocking,
@@ -3555,8 +3665,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 				"%d blocking accessibility failure%s. Fix them, or give a reason "+
 					"to publish anyway — it will be recorded.",
 				blocking, plural(blocking)),
-		})
-		return
+		}}
 	}
 
 	// Publishing with nothing to publish is a thing somebody did, not a thing
@@ -3565,38 +3674,37 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	// already does that; this one was reaching the store first and reporting
 	// whatever came back.
 	if draft == "" {
-		s.render(w, r, "review.html", map[string]any{"Status": http.StatusUnprocessableEntity,
+		return waived, &publishRefusal{page: "review.html", data: map[string]any{"Status": http.StatusUnprocessableEntity,
 			"Nav":   "review",
 			"Title": "Review", "Principal": p, "Reports": reports,
 			"Blocking": blocking, "CanPublish": true,
 			"Error": "There is no draft to publish. Save a page first, and it " +
 				"becomes the draft that publishing makes live.",
-		})
-		return
+		}}
 	}
 
-	pub, err := site.Publish(s.Store, "")
-	if err != nil {
-		s.audit("publish", "/", map[string]string{
-			"by": p.Name, "outcome": "failed", "detail": err.Error()})
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	// Publishing is recorded here, which it was not.
-	//
-	// This handler wrote nothing to the audit log at all: not the publish, not
-	// the override, not the reason. The CLI has always recorded all three. So
-	// the audit log held every publish made from a script and none made from
-	// the browser — which is the interface an ordinary editor uses, and the
-	// only one most people ever touch.
-	//
-	// The override field mattered most. review.html labels the reason box
-	// "Recorded." and it was not: the text went into the confirmation page and
-	// nowhere else, and site.Publish is not even given it. One free-text field
-	// waives four separate gates — unmarked AI content, blocking accessibility
-	// failures, expired pages and broken menu links — so what it waived is
-	// recorded next to it rather than left to be inferred from what happened
-	// to be failing at the time.
+	return waived, nil
+}
+
+// recordPublished records a publish and tells whoever listens: Review →
+// Publish, and a promotion into production, which is the same act.
+//
+// It is recorded, which it was not.
+//
+// Publishing in the browser wrote nothing to the audit log at all: not the publish, not
+// the override, not the reason. The CLI has always recorded all three. So
+// the audit log held every publish made from a script and none made from
+// the browser — which is the interface an ordinary editor uses, and the
+// only one most people ever touch.
+//
+// The override field mattered most. review.html labels the reason box
+// "Recorded." and it was not: the text went into the confirmation page and
+// nowhere else, and site.Publish is not even given it. One free-text field
+// waives four separate gates — unmarked AI content, blocking accessibility
+// failures, expired pages and broken menu links — so what it waived is
+// recorded next to it rather than left to be inferred from what happened
+// to be failing at the time.
+func (s *Server) recordPublished(p principal, pub site.Publication, waived []string, reason string) {
 	s.audit("publish", "/", map[string]string{
 		"by":      p.Name,
 		"commit":  shortHash(pub.Published),
@@ -3605,21 +3713,6 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 		"reason":  reason,
 	})
 	s.tell("published", pub)
-	s.render(w, r, "message.html", map[string]any{
-		"Title": "Published", "Principal": p,
-		"Heading": "Published",
-		"Body": fmt.Sprintf("%d change%s are now live. The previous version is "+
-			"still stored, so rolling back moves a pointer.",
-			len(pub.Changes), plural(len(pub.Changes))),
-		// What was waived, and not the word "accessibility" whatever it was.
-		// The template said "Published with an accessibility override" for
-		// every one of the four gates this box clears, so somebody who typed a
-		// reason for an unmarked page was told they had overridden an
-		// accessibility failure — which is the wrong record of the wrong
-		// decision, on the screen where the decision is confirmed.
-		"Override": reason,
-		"Waived":   waived,
-	})
 }
 
 func (s *Server) handleAccess(w http.ResponseWriter, r *http.Request) {
@@ -4187,8 +4280,11 @@ func (s *Server) previewRecord(pages map[string]any, path string) (
 // draft goes to that page's preview, with its query string; anything else is
 // still a 404.
 //
-// Signed in first, and only for pages this person may read, so the redirect
-// cannot be used to learn which page names exist.
+// Signed in first, and only for pages this person may read through this
+// session, so the redirect cannot be used to learn which page names exist. It
+// asked the policy alone, so a credential issued `--on /blog` was redirected
+// for about and refused for a name that is not there, which is the answer the
+// 404 was for.
 func (s *Server) followPreviewLink(w http.ResponseWriter, r *http.Request) {
 	p, ok := s.requireAuth(w, r)
 	if !ok {
@@ -4201,7 +4297,7 @@ func (s *Server) followPreviewLink(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if _, exists := pages[base]; !exists || !s.mayUse(p, auth.ActView, "/"+base) {
+	if _, exists := pages[base]; !exists || !s.allows(p, auth.ActView, pageResource(base)) {
 		http.NotFound(w, r)
 		return
 	}

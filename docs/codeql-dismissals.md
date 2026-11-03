@@ -26,7 +26,7 @@ safe. It is kept here, with what would make it wrong, for the same reason.
 What forced it is the same thing that froze four files in September. A pull
 request too large for the analyser to tell which lines it changed is judged
 on every alert in the files it touches. The split of the security team's
-tools into Vaigil touched 413 files, and the required check failed on alerts
+tools out of Quilzo touched 413 files, and the required check failed on alerts
 that `main` had carried, identically, for weeks.
 
 ### The models: `.github/codeql/extensions/quilzo-go`

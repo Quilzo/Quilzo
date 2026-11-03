@@ -1083,16 +1083,20 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request) {
 	if wt := rec.Trace.Waiting; wt != nil {
 		pend := stepRow{N: wt.N, Why: wt.Why}
 		switch {
+		case wt.Action.Delegate != "":
+			// A hand-off, which the reviewer may hold: named by the agent
+			// it goes to, and shown with the work it hands on (Shown).
+			pend.What, pend.Kind = wt.Action.Delegate, "delegate"
 		case wt.Action.Tool != "":
 			pend.What, pend.Kind = wt.Action.Tool, "tool"
 		default:
 			pend.What, pend.Kind = wt.Action.Op, "capability"
 		}
-		if len(wt.Action.Input) > 0 {
-			if b, jerr := json.MarshalIndent(wt.Action.Input, "", "  "); jerr == nil {
+		if in := wt.Action.Shown(); len(in) > 0 {
+			if b, jerr := json.MarshalIndent(in, "", "  "); jerr == nil {
 				pend.Input = clipText(string(b), 8000)
 			}
-			pend.Fields = readableInput(wt.Action.Input)
+			pend.Fields = readableInput(in)
 		}
 		data["Pending"] = pend
 		data["Live"] = wt.Live

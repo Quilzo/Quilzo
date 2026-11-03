@@ -257,6 +257,13 @@ func readTable(body []byte) ([]string, []map[string]string, error) {
 	// Whatever a spreadsheet saved it as: a semicolon or a tab between
 	// cells, UTF-16 or Windows-1252, as the Data screen reads it.
 	text, comma := sheet.Text(body)
+	// Bounded before encoding/csv builds a row, which it does whole
+	// however wide: only the headings were compared with MaxColumns.
+	if row, line, cells := sheet.TooWide(text, comma, sheet.MaxColumns); row == 0 {
+		return nil, nil, fmt.Errorf("%d columns; at most %d", cells, MaxColumns)
+	} else if row > 0 {
+		return nil, nil, fmt.Errorf("line %d has %d cells; at most %d", line, cells, sheet.MaxColumns)
+	}
 	r := csv.NewReader(strings.NewReader(text))
 	r.Comma = comma
 	r.LazyQuotes = true

@@ -42,29 +42,27 @@ const (
 )
 
 // authzToken is the token in a request's Authorization header and the
-// scheme it came under.
+// scheme it came under, in any case (auth.Presented).
 func authzToken(r *http.Request) (token, scheme string) {
-	h := r.Header.Get("Authorization")
-	if t, ok := strings.CutPrefix(h, "Bearer "); ok {
-		return strings.TrimSpace(t), "Bearer"
-	}
-	if t, ok := strings.CutPrefix(h, "DPoP "); ok {
-		return strings.TrimSpace(t), "DPoP"
-	}
-	return "", ""
+	return auth.Presented(r.Header.Get("Authorization"))
 }
 
 // requestURL is the address a request was made to, as a proof names it.
 func (s *Server) requestURL(r *http.Request) string { return s.ownOrigin(r) + r.URL.Path }
 
 // proofOf checks the one DPoP proof a request carries, made for it and for
-// the token presented, and returns the key's thumbprint.
-func (s *Server) proofOf(r *http.Request, token string) (string, error) {
+// the token presented. It is not spent: the caller spends it (s.proofs)
+// once the token it came with is accepted, because anybody can make a proof
+// with a key of their own and the proofs remembered are bounded. Spent here,
+// proofs sent with tokens that were then refused filled the bound, and
+// every key-bound client's fresh proof after them was refused as used
+// before.
+func (s *Server) proofOf(r *http.Request, token string) (dpop.Proof, error) {
 	proofs := r.Header.Values("DPoP")
 	if len(proofs) != 1 {
-		return "", fmt.Errorf("%w: a request carries exactly one DPoP proof", dpop.ErrProof)
+		return dpop.Proof{}, fmt.Errorf("%w: a request carries exactly one DPoP proof", dpop.ErrProof)
 	}
-	return dpop.Check(proofs[0], r.Method, s.requestURL(r), token, time.Now(), s.proofs)
+	return dpop.Verify(proofs[0], r.Method, s.requestURL(r), token, time.Now())
 }
 
 // tokenChallenge answers a refused token with what this server accepts: a
@@ -151,13 +149,15 @@ func (s *Server) handleTokenExchange(w http.ResponseWriter, r *http.Request) {
 		fail(code, kind, err.Error())
 	}
 
+	var proof *dpop.Proof
 	thumb := ""
 	if len(r.Header.Values("DPoP")) > 0 {
-		var err error
-		if thumb, err = s.proofOf(r, ""); err != nil {
+		p, err := s.proofOf(r, "")
+		if err != nil {
 			failed("invalid_dpop_proof", err)
 			return
 		}
+		proof, thumb = &p, p.Thumbprint
 	}
 	role := auth.Role(strings.TrimSpace(f.Get("scope")))
 	if role != "" && !role.Valid() {
@@ -227,6 +227,17 @@ func (s *Server) handleTokenExchange(w http.ResponseWriter, r *http.Request) {
 	default:
 		failed("invalid_request", errors.New("subject_token_type is a Quilzo access token, or an identity token (id_token or jwt) from an issuer a trust names"))
 		return
+	}
+	// The proof is spent only now its subject token has been accepted (see
+	// proofOf). A copy of it gets nothing: the token made for it is revoked
+	// before anybody is told its secret.
+	if proof != nil {
+		if err := s.proofs.Spend(*proof, now); err != nil {
+			_, _ = s.Tokens.Revoke(tok.ID)
+			_ = s.save()
+			failed("invalid_dpop_proof", err)
+			return
+		}
 	}
 	if s.Throttle != nil {
 		s.Throttle.Succeed(throttle.Subject{Principal: tok.Principal})

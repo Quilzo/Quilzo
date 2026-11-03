@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"net/http"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -63,5 +64,51 @@ func TestThePolicyScreenTakesTwo(t *testing.T) {
 	}
 	if w := get(t, srv, "/security/parameters/export", second); !strings.Contains(w.Body.String(), `"param-id": "ac-12_odp"`) {
 		t.Fatalf("export: %d", w.Code)
+	}
+}
+
+// The credential caps the session, here as on /people/grant. An
+// administrator who signed in with a token issued `--role reader` (for an
+// audit view, a demo, a reviewer) proposed and approved the organisation's
+// policy, because the screen asked whether the person administers the site
+// and never whether this session may: the only administrator, alone, raised
+// session.max through a credential meant only to look.
+func TestAReaderCappedSessionCannotChangeThePolicy(t *testing.T) {
+	srv, _ := setup(t)
+	cfg := config.New()
+	saved := cfg
+	srv.Settings = &Settings{Load: func() (*config.Config, error) {
+		c := saved
+		return c, nil
+	}, Save: func(c *config.Config) error { saved = c; return nil }}
+	path := filepath.Join(t.TempDir(), "parameters.json")
+	srv.Parameters = &Parameters{Path: path, OnlyAdmin: func(string) bool { return true }}
+	view, _, err := srv.Tokens.IssueSession("audit-view", "editor", auth.RoleReader, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := postForm(t, srv, "/people/grant", view, "principal=mallory&role=admin&resource=/"); w.Code != http.StatusForbidden {
+		t.Fatalf("control: a reader-capped /people/grant answered %d", w.Code)
+	}
+	if body := get(t, srv, "/security/parameters", view).Body.String(); strings.Contains(body, `value="propose"`) {
+		t.Error("a reader-capped session is offered a proposal")
+	}
+	form := url.Values{"do": {"propose"}, "param": {"ac-12_odp"}, "value": {"4 hours"}, "reason": {"x"}}
+	postForm(t, srv, "/security/parameters/act", view, form.Encode())
+	pol, _ := odp.Load(path)
+	if len(pol.Proposals) != 0 {
+		t.Fatalf("a reader-capped session proposed a policy change: %+v", pol.Proposals)
+	}
+	// And approving one somebody else proposed, as the only administrator.
+	if err := odp.Update(path, func(pol *odp.Policy) error {
+		_, perr := pol.Propose([]odp.Change{{Param: "ac-12_odp", Value: "4 hours"}}, "x", "someone", "", time.Now())
+		return perr
+	}); err != nil {
+		t.Fatal(err)
+	}
+	pol, _ = odp.Load(path)
+	postForm(t, srv, "/security/parameters/act", view, url.Values{"do": {"approve"}, "id": {pol.Proposals[0].ID}}.Encode())
+	if saved.Raw("session.max") == "4h" {
+		t.Fatal("a reader-capped session approved a policy change and raised session.max")
 	}
 }

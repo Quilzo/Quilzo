@@ -136,6 +136,13 @@ type Operation struct {
 	Area string
 }
 
+// isCheck reports whether an operation is one of the checks that gate
+// publishing, which quilzo_check runs and nothing else does under that
+// name: a read named check_something, as describe routes it.
+func (op Operation) isCheck() bool {
+	return strings.HasPrefix(op.Name, "check") && !op.Writes && !op.Publishes
+}
+
 // Handler performs an operation. Returning an error whose message begins with a
 // refusal is surfaced to the agent as a refusal rather than a failure.
 type Handler func(args map[string]any) (any, error)
@@ -494,6 +501,16 @@ func (s *Server) call(raw json.RawMessage) (any, *Error) {
 			Message: fmt.Sprintf("%q does not publish; call it through %s", opName,
 				map[bool]string{true: "quilzo_write", false: "quilzo_read"}[op.Writes])}
 	}
+	// And the check tool runs the checks and nothing else. Held only to the
+	// rules about publishing, it ran any other read under the name a host
+	// was told runs the accessibility and provenance checks, an export of
+	// the whole site among them, and any write, under a tool it marks as
+	// only reading.
+	if kind == "check" && !op.isCheck() {
+		return nil, &Error{Code: CodeInvalidParams,
+			Message: fmt.Sprintf("%q is not one of the checks that gate publishing; call it through %s", opName,
+				map[bool]string{true: "quilzo_write", false: "quilzo_read"}[op.Writes])}
+	}
 
 	if s.Authorise == nil {
 		return nil, &Error{Code: CodeInternal, Message: fmt.Sprintf(
@@ -583,7 +600,7 @@ func (s *Server) describe(ops []Operation) string {
 		if op.Publishes {
 			tool = "quilzo_publish"
 		}
-		if strings.HasPrefix(op.Name, "check") {
+		if op.isCheck() {
 			tool = "quilzo_check"
 		}
 		fmt.Fprintf(&b, "%s — %s\n", op.Name, op.Summary)

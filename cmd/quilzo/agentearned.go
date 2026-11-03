@@ -131,11 +131,7 @@ func earnOnAnswer(root string, caller *Caller, prior agent.Record, v agent.Verdi
 	if !ok || m.EarnAfter == 0 {
 		return
 	}
-	writes := false
-	for _, t := range m.Tools {
-		writes = writes || (t.Name == w.Action.Tool && t.Writes)
-	}
-	if !agent.Earnable(w.Action, w.Why, w.Kind, writes) {
+	if !agent.Earnable(w.Action, w.Why, w.Kind, stepWrites(root, m, w.Action.Tool)) {
 		return
 	}
 	class := agent.EarnClass(w.Action, w.Why)

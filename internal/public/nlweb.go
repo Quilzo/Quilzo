@@ -101,12 +101,12 @@ func readNLWebQuery(r *http.Request) (nlwebQuery, string) {
 
 // nlwebAnswer is the results, and the answer when asked for one.
 func (st *Site) nlwebAnswer(r *http.Request, q nlwebQuery) map[string]any {
-	visible, _, err := st.pages()
+	visible, oids, err := st.pages()
 	if err != nil {
 		visible = map[string]any{}
 	}
 	results := []any{}
-	for _, res := range st.searchVisible(q.Query, visible, nlwebResults) {
+	for _, res := range st.searchVisible(q.Query, visible, oids, nlwebResults) {
 		body, _ := visible[res.Page].(map[string]any)
 		href := st.absoluteURL(st.pagePath(res.Page))
 		name := res.Title

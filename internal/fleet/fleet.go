@@ -15,7 +15,7 @@
 //
 // What nobody registered — somebody reaching an AI service directly, seen
 // in the proxy and DNS logs of the estate — is in those logs, and so is
-// Vaigil's to find, not this program's.
+// for the organisation's security tooling to find, not this program.
 package fleet
 
 import (

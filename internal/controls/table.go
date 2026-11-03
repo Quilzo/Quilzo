@@ -73,7 +73,7 @@ var table = []Implementation{
 		Customer:  "Watches the log writer and the space where the log is kept, and acts on refusals that name the audit log.",
 		Where:     []string{"cmd/quilzo/auditlog.go", "internal/agent", "internal/logd"}},
 	{Control: "AU-6", Title: "Audit Record Review, Analysis, and Reporting", Responsibility: Shared,
-		Statement: "Repeated authentication failures, risky sign-ins and agents that keep trying refused things raise signals the shield acts on and the security contact hears of; agent activity is summarised. The log screen is where a person reviews it here, and the audit stream hands every record to the organisation's SIEM (Vaigil, or another), whose detections and queue are where it is analysed.",
+		Statement: "Repeated authentication failures, risky sign-ins and agents that keep trying refused things raise signals the shield acts on and the security contact hears of; agent activity is summarised. The log screen is where a person reviews it here, and the audit stream hands every record to the organisation's SIEM, whose detections and queue are where it is analysed.",
 		Customer:  "Reviews the log, and Quilzo's records in its SIEM, at the organisation's frequency.",
 		Where:     []string{"/logs", "/security/agents", "/security/shield", "quilzo siem stream"}},
 	{Control: "AU-6(4)", Title: "Central Review and Analysis", Responsibility: Shared,
@@ -177,7 +177,7 @@ var table = []Implementation{
 
 	// -- incident response, planning, privacy --------------------------------
 	{Control: "IR-4", Title: "Incident Handling", Responsibility: Shared,
-		Statement: "The shield contains attacks on Quilzo itself automatically and reversibly, tells the security contact, and records a request to open a case in the audit log, where the organisation's incident tooling (Vaigil, or another) picks it up; a risky sign-in is held until its person confirms it.",
+		Statement: "The shield contains attacks on Quilzo itself automatically and reversibly, tells the security contact, and records a request to open a case in the audit log, where the organisation's incident tooling picks it up; a risky sign-in is held until its person confirms it.",
 		Customer:  "Runs the incident response process and its decisions, in its own incident tooling.",
 		Where:     []string{"/security/shield", "/security/signins", "quilzo siem stream"}},
 	{Control: "PL-4", Title: "Rules of Behavior", Responsibility: Customer,

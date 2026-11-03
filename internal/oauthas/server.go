@@ -549,7 +549,8 @@ func (s *Server) redeem(f url.Values) (map[string]any, error) {
 	if f.Get("redirect_uri") != c.redirect {
 		return nil, badRequest("invalid_grant", "redirect_uri is not the one the code was issued for")
 	}
-	if res := f.Get("resource"); res != "" && !s.Config().SameResource(res) {
+	cfg := s.Config()
+	if res := f.Get("resource"); res != "" && !cfg.SameResource(res) {
 		return nil, badRequest("invalid_target", "resource is not this server's agent interface")
 	}
 	verifier := f.Get("code_verifier")
@@ -559,6 +560,9 @@ func (s *Server) redeem(f url.Values) (map[string]any, error) {
 		return nil, badRequest("invalid_grant", "code_verifier does not match the code_challenge")
 	}
 	g := c.grant
+	if err := s.stillAdmitted(cfg, g.Client); err != nil {
+		return nil, err
+	}
 	if s.Admit != nil {
 		if err := s.Admit(g, now); err != nil {
 			return nil, badRequest("invalid_grant", err.Error())
@@ -595,7 +599,7 @@ func (s *Server) redeem(f url.Values) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	access, err := s.issue(g, now)
+	access, err := s.issue(cfg, g, now)
 	if err != nil {
 		return nil, err
 	}
@@ -604,11 +608,44 @@ func (s *Server) redeem(f url.Values) (map[string]any, error) {
 	return s.tokenResponse(g, access, refresh), nil
 }
 
-func (s *Server) issue(g Grant, now time.Time) (string, error) {
+// stillAdmitted refuses a code whose app an administrator has stopped
+// admitting since the request was made: its host is no longer allowed, or
+// it is no longer on the register. Removing a host or an app ends the
+// connections in the store, and a consent still waiting for the person, or
+// a code the app had not yet redeemed, was in none. Redeemed afterwards it
+// became a connection all the same, whose access token worked for an hour
+// after the screen said the host's apps could no longer connect, and whose
+// refresh token, for a registered app, worked for the rest of the grant.
+func (s *Server) stillAdmitted(cfg Config, client string) error {
+	if IsMetadataURL(client) {
+		if h := (Client{ID: client}).Host(); !cfg.HostAllowed(h) {
+			return badRequest("invalid_grant", "apps from "+h+" are no longer allowed to connect here")
+		}
+		return nil
+	}
+	var registered []Client
+	if s.Directory != nil && s.Directory.Registered != nil {
+		var err error
+		if registered, err = s.Directory.Registered(); err != nil {
+			return err
+		}
+	}
+	for _, c := range registered {
+		if c.ID == client {
+			return nil
+		}
+	}
+	return badRequest("invalid_grant", "this app is no longer registered here; connect it again once it is")
+}
+
+// issue is given the configuration rather than asking for it, because a
+// refresh issues inside the grant store's lock and the server reads its
+// configuration from that store under the same lock.
+func (s *Server) issue(cfg Config, g Grant, now time.Time) (string, error) {
 	if s.Tokens == nil {
 		return "", errors.New("no token store")
 	}
-	return s.Tokens.Issue(g, RoleFor(g.Scopes), s.Config().accessTTL(), now)
+	return s.Tokens.Issue(g, RoleFor(g.Scopes), cfg.accessTTL(), now)
 }
 
 func (s *Server) tokenResponse(g Grant, access, refresh string) map[string]any {
@@ -626,8 +663,13 @@ func (s *Server) refresh(f url.Values) (map[string]any, error) {
 	presented := hashOf(f.Get("refresh_token"))
 	clientID := f.Get("client_id")
 	var out Grant
-	var refresh string
+	var access, refresh string
 	var reused string
+	// Read once, before the grant store's lock is taken: the server keeps
+	// the allowed hosts in that store and reads them under the same lock,
+	// so asking for the configuration inside it waited for ever, and every
+	// refresh, and everything after it that touched the store, hung.
+	cfg := s.Config()
 	err := s.Store.changeGrants(now, func(file *grantsFile) error {
 		for i := range file.Grants {
 			g := &file.Grants[i]
@@ -650,20 +692,34 @@ func (s *Server) refresh(f url.Values) (map[string]any, error) {
 			if clientID != g.Client {
 				return badRequest("invalid_grant", "the refresh token was issued to another app")
 			}
-			if res := f.Get("resource"); res != "" && !s.Config().SameResource(res) {
+			// The app's host is asked again at every refresh, not only at
+			// consent, so a host an administrator removed stops refreshing
+			// even if the sweep that ends its connections missed one.
+			if h := (Client{ID: g.Client}).Host(); IsMetadataURL(g.Client) && !cfg.HostAllowed(h) {
+				return badRequest("invalid_grant", "apps from "+h+" are no longer allowed to connect here")
+			}
+			if res := f.Get("resource"); res != "" && !cfg.SameResource(res) {
 				return badRequest("invalid_target", "resource is not this server's agent interface")
 			}
+			// Asking for less narrows the access token issued now and not
+			// the grant (RFC 6749 section 6): writing it into the grant
+			// once took away for good what the person had agreed to.
+			scopes := g.Scopes
 			if sc := f.Get("scope"); sc != "" {
 				asked, err := normScopes(sc)
 				if err != nil {
 					return badRequest("invalid_scope", err.Error())
+				}
+				if len(asked) == 0 {
+					return badRequest("invalid_scope", "the scope names none of "+strings.Join(g.Scopes, ", ")+
+						"; leave it out for everything the connection holds")
 				}
 				for _, a := range asked {
 					if !contains(g.Scopes, a) {
 						return badRequest("invalid_scope", "a refresh cannot add "+a+"; the person has to agree to it")
 					}
 				}
-				g.Scopes = asked
+				scopes = asked
 			}
 			if s.Admit != nil {
 				if err := s.Admit(*g, now); err != nil {
@@ -680,6 +736,13 @@ func (s *Server) refresh(f url.Values) (map[string]any, error) {
 			}
 			g.Refresh, g.LastUsed = hashOf(next), now
 			out, refresh = *g, next
+			out.Scopes = scopes
+			// Issued before the rotation is kept, which a failure here
+			// stops: a refresh token spent on an answer the app never had
+			// made its retry look like a copy, and ended the grant.
+			if access, err = s.issue(cfg, out, now); err != nil {
+				return err
+			}
 			return nil
 		}
 		return badRequest("invalid_grant", "the refresh token is unknown")
@@ -691,10 +754,6 @@ func (s *Server) refresh(f url.Values) (map[string]any, error) {
 		s.record("oauth.refresh-reused", "", map[string]string{"grant": reused})
 		return nil, badRequest("invalid_grant", "that refresh token was already used; connect the app again")
 	}
-	if err != nil {
-		return nil, err
-	}
-	access, err := s.issue(out, now)
 	if err != nil {
 		return nil, err
 	}
@@ -791,6 +850,16 @@ func (s *Server) EndWhere(match func(Grant) bool, by, why string) int {
 		s.record("oauth.disconnected", g.Principal, map[string]string{"client": g.Client, "grant": g.ID, "by": by, "why": why})
 	}
 	return len(ended)
+}
+
+// FromHost chooses, for EndWhere, the grants of apps published from host,
+// or every grant when host is "*". It is the one matcher the Connected apps
+// screen and the command line share: each once compared Client.Host with
+// the host exactly, so removing app.example.com missed an app admitted
+// under a client_id that spelled it APP.example.com.
+func FromHost(host string) func(Grant) bool {
+	host = strings.ToLower(host)
+	return func(g Grant) bool { return host == "*" || (Client{ID: g.Client}).Host() == host }
 }
 
 func contains(list []string, s string) bool {

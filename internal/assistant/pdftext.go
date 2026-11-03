@@ -31,13 +31,29 @@ import (
 // be read.
 //
 // Bounded throughout, because the input is whoever uploaded it: a stream
-// inflates to at most maxInflate, the whole document to maxPDFText, and the
-// number of streams considered is capped. A Flate bomb stops at the limit.
+// inflates to at most maxInflate, all of them together to maxInflated, the
+// text of the whole document to maxPDFText, the strings waiting for an
+// operator to maxOperands, and the number of streams considered is capped.
+// A Flate bomb stops at the limit.
 
 const (
 	maxInflate = 8 << 20
-	maxPDFText = 2 << 20
-	maxStreams = 2000
+	// maxInflated bounds what a document's streams inflate to between
+	// them. With only the per-stream limit, 2000 streams of 8 KB that each
+	// inflate to 8 MiB of digits — no text, so maxPDFText never fills —
+	// cost 16 GB of inflating and three and a half minutes, on a visitor's
+	// question to a chatbot, for a file small enough to upload. It is room
+	// for content streams many times the size of maxPDFText's text, which
+	// is what positioning every word costs.
+	maxInflated = 64 << 20
+	maxPDFText  = 2 << 20
+	maxStreams  = 2000
+	// maxOperands bounds the strings waiting for an operator to show them.
+	// Those of one TJ wait together, and no line of text is thousands of
+	// them. Unbounded, 8 MiB of () was four million empty strings waiting
+	// for an operator that never came: eight such streams, 128 KB of PDF
+	// within maxInflated, cost 2.7 GB of slices.
+	maxOperands = 8192
 )
 
 // ErrNoText is a PDF this cannot read text from, with the reason.
@@ -54,7 +70,7 @@ func PDFText(pdf []byte) (string, error) {
 		return "", errors.New("not a PDF")
 	}
 	var out strings.Builder
-	streams := 0
+	streams, inflated := 0, 0
 	rest := pdf
 	for {
 		dict, data, next, ok := nextStream(rest)
@@ -74,16 +90,20 @@ func PDFText(pdf []byte) (string, error) {
 			continue
 		}
 		if reFlate.Match(dict) {
+			if inflated >= maxInflated {
+				break
+			}
 			zr, err := zlib.NewReader(bytes.NewReader(data))
 			if err != nil {
 				continue
 			}
-			inflated, err := io.ReadAll(io.LimitReader(zr, maxInflate))
+			plain, err := io.ReadAll(io.LimitReader(zr, int64(min(maxInflate, maxInflated-inflated))))
 			zr.Close()
-			if err != nil && len(inflated) == 0 {
+			inflated += len(plain)
+			if err != nil && len(plain) == 0 {
 				continue
 			}
-			data = inflated
+			data = plain
 		}
 		showText(data, &out)
 		if out.Len() > maxPDFText {
@@ -172,11 +192,15 @@ func showText(cs []byte, out *strings.Builder) {
 		switch {
 		case c == '(':
 			s, n := pdfString(cs[i:])
-			operands = append(operands, s)
+			if len(operands) < maxOperands {
+				operands = append(operands, s)
+			}
 			i += n
 		case c == '<' && i+1 < len(cs) && cs[i+1] != '<':
 			s, n := pdfHex(cs[i:])
-			operands = append(operands, s)
+			if len(operands) < maxOperands {
+				operands = append(operands, s)
+			}
 			i += n
 		case c == '[' || c == ']':
 			i++
@@ -210,10 +234,10 @@ func showText(cs []byte, out *strings.Builder) {
 				flush()
 				operands = operands[:0]
 			default:
-				if n, err := strconv.ParseFloat(tok, 64); err == nil {
+				if n, ok := number(tok); ok {
 					// Inside a TJ array, a large negative adjustment is the
 					// gap between words.
-					if n < -180 && len(operands) > 0 {
+					if n < -180 && len(operands) > 0 && len(operands) < maxOperands {
 						operands = append(operands, " ")
 					}
 				} else if !isOperand(tok) {
@@ -233,8 +257,20 @@ func isOperand(tok string) bool {
 	if strings.HasPrefix(tok, "/") || tok == "true" || tok == "false" || tok == "null" {
 		return true
 	}
-	_, err := strconv.ParseFloat(tok, 64)
-	return err == nil
+	_, ok := number(tok)
+	return ok
+}
+
+// number reads a token as a PDF number, which is digits with a sign or a
+// point, and only a token that starts as one is parsed. Every operator was
+// parsed as a number first, and each refusal is an error allocated: 64 MiB
+// of operators, which maxInflated lets through, cost 2.3 GB of errors.
+func number(tok string) (float64, bool) {
+	if c := tok[0]; c != '+' && c != '-' && c != '.' && (c < '0' || c > '9') {
+		return 0, false
+	}
+	n, err := strconv.ParseFloat(tok, 64)
+	return n, err == nil
 }
 
 func isDelim(c byte) bool {

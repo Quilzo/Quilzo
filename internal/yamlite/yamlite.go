@@ -88,6 +88,25 @@ type parser struct {
 	i     int
 	// err is a fault next found, which ends the reading.
 	err error
+	// depth is how many block collections hold the one being read.
+	depth int
+}
+
+// maxDepth bounds how deep collections nest, in blocks and in flow
+// together. Each level is a call of the reader's own, and in flow a level
+// costs one byte: 3 million brackets, 6 MB that compress to a few KB,
+// overflowed the stack, which ends the process rather than the import.
+// No agent definition or front matter comes near it.
+const maxDepth = 64
+
+// nested counts one more block collection, and refuses it past maxDepth.
+// Its caller undoes the count when the collection ends.
+func (p *parser) nested() error {
+	p.depth++
+	if p.depth > maxDepth {
+		return p.errf("collections nest more than %d deep", maxDepth)
+	}
+	return nil
 }
 
 func (p *parser) errf(format string, a ...any) error {
@@ -184,8 +203,19 @@ func keyOf(body string) int {
 
 // closingQuote is where the quote that opens s closes, or -1.
 func closingQuote(s string) int {
+	end, _ := closingQuoteFrom(s, 1)
+	return end
+}
+
+// closingQuoteFrom looks for where the quote that opens s closes from byte
+// from on, and when it does not, says where to look on from once more is
+// added to s. A quoted value over many lines is looked through once: it
+// was looked through again from its start for each line it took, and
+// 80,000 lines took 20 seconds.
+func closingQuoteFrom(s string, from int) (end, next int) {
 	q := s[0]
-	for i := 1; i < len(s); i++ {
+	i := from
+	for ; i < len(s); i++ {
 		switch {
 		case q == '"' && s[i] == '\\':
 			i++
@@ -194,13 +224,17 @@ func closingQuote(s string) int {
 				i++
 				continue
 			}
-			return i
+			return i, 0
 		}
 	}
-	return -1
+	return -1, i
 }
 
 func (p *parser) mapping(ind int) (any, error) {
+	defer func() { p.depth-- }()
+	if err := p.nested(); err != nil {
+		return nil, err
+	}
 	out := map[string]any{}
 	for {
 		at, ok := p.next()
@@ -291,16 +325,27 @@ func (p *parser) value(rest string, parent int, inMap bool) (any, error) {
 func (p *parser) inline(rest string, parent int) (any, error) {
 	switch rest[0] {
 	case '[', '{':
-		text := rest
-		for !flowClosed(text) {
+		// The lines are gathered, and followed to the collection's end,
+		// once each: each was added to all the text before it, which was
+		// then scanned again, and 80,000 lines took 27 seconds.
+		var text strings.Builder
+		var end flowEnd
+		text.WriteString(rest)
+		end.read(rest)
+		for !end.closed() {
 			p.i++
 			if p.i >= len(p.lines) {
 				return nil, p.errf("a flow collection that never closes")
 			}
-			text += " " + strings.TrimSpace(stripComment(p.lines[p.i]))
+			line := strings.TrimSpace(stripComment(p.lines[p.i]))
+			text.WriteByte(' ')
+			text.WriteString(line)
+			end.read(" ")
+			end.read(line)
 		}
-		p.i++
-		f := &flow{s: text}
+		// A fault is named by the collection's last line, as a quoted
+		// value's is: the line after it named a line it is not on.
+		f := &flow{s: text.String(), depth: p.depth}
 		v, err := f.value()
 		if err != nil {
 			return nil, p.errf("%v", err)
@@ -309,16 +354,22 @@ func (p *parser) inline(rest string, parent int) (any, error) {
 		if f.i != len(f.s) {
 			return nil, p.errf("something follows the flow collection: %q", f.s[f.i:])
 		}
+		p.i++
 		return v, nil
 	case '"', '\'':
-		text := rest
-		for closingQuote(text) < 0 {
+		var b strings.Builder
+		b.WriteString(rest)
+		end, from := closingQuoteFrom(rest, 1)
+		for end < 0 {
 			p.i++
 			if p.i >= len(p.lines) {
 				return nil, p.errf("a quoted value that never closes")
 			}
-			text += "\n" + strings.TrimSpace(p.lines[p.i])
+			b.WriteByte('\n')
+			b.WriteString(strings.TrimSpace(p.lines[p.i]))
+			end, from = closingQuoteFrom(b.String(), from)
 		}
+		text := b.String()
 		s, n, err := quoted(text)
 		if err != nil {
 			return nil, p.errf("%v", err)
@@ -380,6 +431,10 @@ func (p *parser) scalarAt(ind, parent int) (any, error) {
 }
 
 func (p *parser) sequence(ind int) (any, error) {
+	defer func() { p.depth-- }()
+	if err := p.nested(); err != nil {
+		return nil, err
+	}
 	out := []any{}
 	for {
 		at, ok := p.next()
@@ -703,29 +758,44 @@ func radix(digits string, base int) float64 {
 type flow struct {
 	s string
 	i int
+	// depth is how many collections, block and flow, hold the value
+	// being read.
+	depth int
 }
 
-func flowClosed(s string) bool {
-	depth, inQ := 0, byte(0)
+// flowEnd follows a flow collection's brackets and quotes as its text is
+// read, a piece at a time, to say when it closes.
+type flowEnd struct {
+	depth int
+	quote byte
+	// escaped is a backslash in double quotes that the text so far ends
+	// with: the next byte is what it escapes.
+	escaped bool
+}
+
+func (e *flowEnd) read(s string) {
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		switch {
-		case inQ == '"' && c == '\\':
-			i++
-		case inQ != 0:
-			if c == inQ {
-				inQ = 0
+		case e.escaped:
+			e.escaped = false
+		case e.quote == '"' && c == '\\':
+			e.escaped = true
+		case e.quote != 0:
+			if c == e.quote {
+				e.quote = 0
 			}
 		case c == '"' || c == '\'':
-			inQ = c
+			e.quote = c
 		case c == '[' || c == '{':
-			depth++
+			e.depth++
 		case c == ']' || c == '}':
-			depth--
+			e.depth--
 		}
 	}
-	return depth <= 0 && inQ == 0
 }
+
+func (e *flowEnd) closed() bool { return e.depth <= 0 && e.quote == 0 }
 
 func (f *flow) space() {
 	for f.i < len(f.s) && (f.s[f.i] == ' ' || f.s[f.i] == '\t' || f.s[f.i] == '\n') {
@@ -737,6 +807,13 @@ func (f *flow) value() (any, error) {
 	f.space()
 	if f.i >= len(f.s) {
 		return nil, fmt.Errorf("a flow collection ends early")
+	}
+	if c := f.s[f.i]; c == '[' || c == '{' {
+		f.depth++
+		defer func() { f.depth-- }()
+		if f.depth > maxDepth {
+			return nil, fmt.Errorf("collections nest more than %d deep", maxDepth)
+		}
 	}
 	switch c := f.s[f.i]; c {
 	case '[':

@@ -151,6 +151,21 @@ func (s *Session) UsedMemory(recalled bool, ids ...string) {
 	}
 }
 
+// FromMemory is a run that recalled what somebody else's run kept.
+const FromMemory SourceKind = "memory"
+
+// ReadMemory records that the run recalled an entry somebody else's run
+// kept, by its id: a procedure is about nobody and so recalled into
+// everybody's runs, and in any run but its author's it is somebody else's
+// words. The run is tainted from here, as reading them anywhere else would
+// taint it, so the breaker and the hold on what it learns apply.
+func (s *Session) ReadMemory(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.tainted = true
+	s.note(FromMemory, id, "")
+}
+
 // MemoryUsed is the memory the run recalled and kept.
 func (s *Session) MemoryUsed() (recalled, remembered []string) {
 	s.mu.Lock()

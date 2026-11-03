@@ -303,3 +303,20 @@ func TestTheSiteMailsABoundedNumberOfLinksAnHour(t *testing.T) {
 		t.Fatal("the next hour mails nothing")
 	}
 }
+
+// The form mails one inbox one link an hour however its address is
+// spelled. A fresh sub-address on each sign-up had a link mailed each
+// time, from the site's own relay, to an inbox that never asked.
+func TestTheFormMailsOneInboxOnceAnHourHoweverItIsSpelled(t *testing.T) {
+	rig := newsletterSite(t)
+	for i := 0; i < 6; i++ {
+		res := rig.signUp(fmt.Sprintf("victim+%d@gmail.com", i))
+		if loc := res.Header().Get("Location"); loc != "/news?newsletter=sent#newsletter" {
+			t.Fatalf("sign-up %d was answered differently: %d %q", i+1, res.Code, loc)
+		}
+	}
+	if m := rig.nextMail(t); m.To != "victim+0@gmail.com" {
+		t.Fatalf("the one link went to %q", m.To)
+	}
+	rig.noMail(t)
+}

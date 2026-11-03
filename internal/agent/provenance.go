@@ -79,6 +79,8 @@ func (s Source) String() string {
 		return "delegated to " + s.Name
 	case FromProgram:
 		return "decided by the program " + s.Name
+	case FromMemory:
+		return "the memory " + s.Name + ", kept by somebody else's run"
 	}
 	return s.Name
 }

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/quilzo/quilzo/internal/agent"
+	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/decide"
 )
 
@@ -91,7 +92,10 @@ func (dd Deciders) ask(ctx context.Context, s *agent.Session, a agent.Action) (s
 	}
 	var m decide.Model
 	if dd.Model != nil {
-		m = dd.Model(name)
+		// Charged to the run, as the agent's own calls are: a decide step
+		// is a call for each sample, up to five, and the run's money and
+		// token budgets did not see one of them.
+		m = ChargedTo(s, dd.Model(name))
 	}
 	res, err := decide.Decide(ctx, d, m, state)
 	if err != nil {
@@ -138,6 +142,47 @@ func (dd Deciders) ask(ctx context.Context, s *agent.Session, a agent.Action) (s
 				d.Name, strings.Join(low, ", "), threshold)}
 	}
 	return strings.TrimRight(out.String(), "\n"), nil
+}
+
+// ChargedTo is a model whose every call is charged to a run: the tokens the
+// provider reported and what the gateway priced the call at, against the
+// run's own budgets, as agentmodel.Decider charges the agent's own calls.
+//
+// For the other models a run asks, a decider's and the reviewer's, which
+// were charged to nothing: a step that asked a decider sampled five times
+// spent five calls the run's money budget never saw, and its receipt priced
+// the agent's calls alone. Nil stays nil, so a decider with no
+// model still escalates everything rather than failing on a call.
+func ChargedTo(s *agent.Session, m assist.Model) assist.Model {
+	if m == nil || s == nil {
+		return m
+	}
+	return charged{m: m, s: s}
+}
+
+type charged struct {
+	m assist.Model
+	s *agent.Session
+}
+
+func (c charged) Name() string { return c.m.Name() }
+
+func (c charged) Complete(ctx context.Context, system, user string) (string, error) {
+	type costed interface {
+		CompleteCosted(ctx context.Context, system, user string) (string, assist.Usage, int64, error)
+	}
+	switch m := c.m.(type) {
+	case costed:
+		out, u, cost, err := m.CompleteCosted(ctx, system, user)
+		c.s.Tokens(u.In + u.Out)
+		c.s.Charge(cost)
+		return out, err
+	case assist.Metered:
+		out, u, err := m.CompleteMetered(ctx, system, user)
+		c.s.Tokens(u.In + u.Out)
+		return out, err
+	}
+	return c.m.Complete(ctx, system, user)
 }
 
 func clip(s string, n int) string {

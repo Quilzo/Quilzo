@@ -137,6 +137,12 @@ func (s *Server) navigableTo(p principal) []find.Destination {
 //
 // No policy means no access control is configured, which is the single-operator
 // case and permits everything — again matching navigation().
+//
+// A question about the person and not about this session, so it is for what
+// the menu shows and nothing else. A gate on an act, or a filter over pages,
+// asks allows, which caps the answer by the credential: bulk removal and the
+// pages list asked this one, and a credential issued `--on /blog` removed and
+// listed pages outside /blog that the single-page handlers refused it.
 func (s *Server) mayUse(p principal, act auth.Action, resource string) bool {
 	if s.Policy == nil {
 		return true

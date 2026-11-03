@@ -126,6 +126,11 @@ func Read(body []byte, opts Options) (*Sheet, error) {
 		sh.Notes = append(sh.Notes, "read as "+enc)
 	}
 	comma, text := delimiter(text)
+	if rec, line, cells := TooWide(text, comma, MaxColumns); rec == 0 {
+		return nil, fmt.Errorf("it has %d columns, and at most %d are read", cells, MaxColumns)
+	} else if rec > 0 {
+		return nil, fmt.Errorf("line %d has %d cells, and at most %d are read", line, cells, MaxColumns)
+	}
 	r := csv.NewReader(strings.NewReader(text))
 	r.Comma = comma
 	r.FieldsPerRecord = -1
@@ -260,6 +265,86 @@ func Text(body []byte) (string, rune) {
 	text, _ := decode(body)
 	comma, text := delimiter(text)
 	return text, comma
+}
+
+// TooWide finds the first row of a CSV text with more than max cells, as
+// encoding/csv splits it with LazyQuotes: which row it is, counting the
+// first as 0, the line it starts on, and how many cells it has. row is -1
+// when no row has more than max.
+//
+// It is for before encoding/csv reads the text, which builds each row
+// whole however many cells it has. Only the headings were compared with a
+// limit, and only once built: a row of 32 million commas, in a 32 MB
+// upload, took 2.9 GB of heap. Counting takes one pass and no memory.
+func TooWide(text string, comma rune, max int) (row, line, cells int) {
+	sep := string(comma)
+	at, row := 1, 0
+	for i := 0; i < len(text); row++ {
+		// Lines with nothing on them are not rows, and the line break
+		// that ends a row is passed here.
+		for n := lineBreak(text[i:]); n > 0; n = lineBreak(text[i:]) {
+			i += n
+			at++
+		}
+		if i == len(text) {
+			break
+		}
+		start, n := at, 0
+	cell:
+		for {
+			n++
+			if i < len(text) && text[i] == '"' {
+				// A quoted cell ends at a quote before a separator or a
+				// line break; "" is a quote, and any other quote is kept
+				// as it is.
+				i++
+				for {
+					j := strings.IndexByte(text[i:], '"')
+					if j < 0 {
+						i = len(text)
+						break cell
+					}
+					at += strings.Count(text[i:i+j], "\n")
+					i += j + 1
+					switch {
+					case strings.HasPrefix(text[i:], `"`):
+						i++
+					case strings.HasPrefix(text[i:], sep):
+						i += len(sep)
+						continue cell
+					case i == len(text) || lineBreak(text[i:]) > 0:
+						break cell
+					}
+				}
+			}
+			for {
+				switch {
+				case i == len(text) || lineBreak(text[i:]) > 0:
+					break cell
+				case strings.HasPrefix(text[i:], sep):
+					i += len(sep)
+					continue cell
+				}
+				i++
+			}
+		}
+		if n > max {
+			return row, start, n
+		}
+	}
+	return -1, 0, 0
+}
+
+// lineBreak is how long the line break that s starts with is, as
+// encoding/csv reads one: \n, \r\n, or a \r that ends the file.
+func lineBreak(s string) int {
+	switch {
+	case strings.HasPrefix(s, "\n"), s == "\r":
+		return 1
+	case strings.HasPrefix(s, "\r\n"):
+		return 2
+	}
+	return 0
 }
 
 // decode is the file as text, and the encoding it was read as when that

@@ -2568,7 +2568,16 @@ button:disabled, .btn[aria-disabled="true"] {
 .menu { padding: 4px; min-width: 14rem; border-radius: var(--shape-lg);
   background: var(--surface-container-low); box-shadow: var(--elevation-2); }
 .menu:popover-open { gap: 2px; }
+/* margin-block: 0 because the account menu is inside the bar, and `.bar a`
+   gives every link there a 5px negative margin to enlarge a text link's target
+   without moving its line (WCAG 2.5.8, above). A menu item is a 44px block,
+   already past the 24 the criterion asks for, and in the menu's grid that
+   margin shrank each row to 34px: the two items overlapped by 8px, a click
+   near the line between them could land on the other one, and the last item
+   ended a pixel below the menu, so the menu scrolled -- a scroll bar on a menu
+   of two choices. */
 .menu a, .menu button, .menu-danger { min-height: 44px; padding: 0 16px; gap: 12px;
+  margin-block: 0;
   border-radius: var(--shape-xs); font: var(--body-lg); letter-spacing: .03125rem; }
 .menu > a:first-of-type, .menu > :first-child button { border-start-start-radius: var(--shape-md); border-start-end-radius: var(--shape-md); }
 .menu > a:last-of-type, .menu > :last-child button { border-end-start-radius: var(--shape-md); border-end-end-radius: var(--shape-md); }

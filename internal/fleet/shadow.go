@@ -19,7 +19,8 @@ import (
 // gateway, the budget and the log of what the model was told.
 //
 // What people across the estate reach — proxy and DNS logs, app grants —
-// is in those systems' logs, and so is Vaigil's to find.
+// is in those systems' logs, and so is for the organisation's security
+// tooling to find.
 
 // The AI services a program reaches directly: model APIs and the
 // assistants' own sites. A host is matched exactly or as a subdomain of one

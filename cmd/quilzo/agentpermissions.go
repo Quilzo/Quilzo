@@ -95,11 +95,7 @@ func riskyStep(root string, rec agent.Record) (string, bool) {
 	}
 	writes := false
 	if set, err := loadAgents(root); err == nil {
-		if m, ok := set.Agents[rec.Agent]; ok {
-			for _, t := range m.Tools {
-				writes = writes || (t.Name == w.Action.Tool && t.Writes)
-			}
-		}
+		writes = stepWrites(root, set.Agents[rec.Agent], w.Action.Tool)
 	}
 	class := agent.CommitOf(w.Action, w.Why, w.Kind, writes)
 	switch class {
@@ -111,6 +107,18 @@ func riskyStep(root string, rec agent.Record) (string, bool) {
 		return class, w.Action.Tool != ""
 	}
 	return class, false
+}
+
+// stepWrites says whether an agent's call of a tool writes to another
+// system: as its manifest says, or as the integration offering the tool
+// says, whichever says more (agent.Integrations.ToolWrites). The
+// manifest's label alone was what decided, and it defaults to off.
+func stepWrites(root string, m agent.Manifest, tool string) bool {
+	var installed agent.Integrations
+	if set, err := loadIntegrations(root); err == nil && set != nil {
+		installed = *set
+	}
+	return installed.ToolWrites(m, tool)
 }
 
 // secondPerson decides whether caller may let a run's waiting step go

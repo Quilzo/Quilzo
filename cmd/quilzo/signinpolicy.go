@@ -32,7 +32,7 @@ import (
 // new installation stepped nobody up. It is built in and on: turning it
 // off (signin.adaptive false) is a weaker setting, so it takes two
 // administrators. Rules about other systems' accounts left Quilzo, with
-// the rest of a security team's tools, for Vaigil.
+// the rest of a security team's tools.
 
 // signinBy is who the audit log says decided, for what the policy does.
 const signinBy = "signin-policy"

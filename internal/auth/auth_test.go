@@ -731,3 +731,25 @@ func TestMergingTokenStoresNeverUndoesARevocation(t *testing.T) {
 		t.Error("the admin's new session was lost")
 	}
 }
+
+// Authorization schemes are case-insensitive (RFC 9110 section 11.1), and
+// every reader of the header reads it here.
+func TestPresentedReadsTheSchemeInAnyCase(t *testing.T) {
+	for header, want := range map[string][2]string{
+		"Bearer qz_a":     {"qz_a", "Bearer"},
+		"bearer qz_a":     {"qz_a", "Bearer"},
+		"BEARER   qz_a  ": {"qz_a", "Bearer"},
+		"DPoP qz_b":       {"qz_b", "DPoP"},
+		"dpop qz_b":       {"qz_b", "DPoP"},
+		"DPOP qz_b":       {"qz_b", "DPoP"},
+		"Bearer":          {"", "Bearer"},
+		"Basic qz_a":      {"", ""},
+		"qz_a":            {"", ""},
+		"Bearerqz_a":      {"", ""},
+		"":                {"", ""},
+	} {
+		if tok, scheme := Presented(header); tok != want[0] || scheme != want[1] {
+			t.Errorf("%q: %q %q", header, tok, scheme)
+		}
+	}
+}

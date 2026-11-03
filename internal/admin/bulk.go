@@ -137,8 +137,14 @@ func (s *Server) bulkChecked(w http.ResponseWriter, r *http.Request,
 	// Without it, certifying a page as reviewed was the one write in this
 	// interface a scoped author could aim anywhere, and the review-due column
 	// is what somebody reads to decide a page does not need looking at.
+	//
+	// Through allows, which asks about this session as well as the person.
+	// The policy alone answered for the person, so a whole-site
+	// administrator signed in with a credential issued `--on /blog` was
+	// refused a check on legal/terms one page at a time and could record it
+	// here.
 	for _, name := range names {
-		if !s.mayUse(p, auth.ActEditDraft, pageResource(name)) {
+		if !s.allows(p, auth.ActEditDraft, pageResource(name)) {
 			s.pagesBack(w, r, "", fmt.Sprintf(
 				"you may not record a check on %s, so none of this selection "+
 					"was recorded", name))
@@ -214,6 +220,12 @@ func (s *Server) confirmRemove(w http.ResponseWriter, r *http.Request,
 // is refused whole rather than partly applied: half a bulk action is worse
 // than none, because nobody can tell which half.
 //
+// Asked of the session through allows, and of the page through pageResource,
+// as handlePageDelete asks. The policy alone is a question about the person:
+// an administrator holding a credential issued `--on /blog` was refused the
+// single removal of about and could remove about and index here, because the
+// person may and nothing asked whether the credential could.
+//
 // One commit, not one per page. The set went in one act and reads as one act
 // in the history, and a partial failure cannot leave the draft half-changed.
 func (s *Server) bulkRemove(w http.ResponseWriter, r *http.Request,
@@ -226,7 +238,7 @@ func (s *Server) bulkRemove(w http.ResponseWriter, r *http.Request,
 	}
 
 	for _, name := range names {
-		if !s.mayUse(p, auth.ActEditDraft, "/"+name) {
+		if !s.allows(p, auth.ActEditDraft, pageResource(name)) {
 			s.pagesBack(w, r, "", fmt.Sprintf(
 				"you may not remove %s, so none of this selection was removed",
 				name))

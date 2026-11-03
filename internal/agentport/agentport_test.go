@@ -462,3 +462,40 @@ func TestDelegatesAreDeclaredFirst(t *testing.T) {
 		t.Fatalf("a circle: %v", got)
 	}
 }
+
+// An agent file whose OpenAPI document offers many operations is read in
+// time in proportion to them. Each tool looked through all those before it
+// for one of its name: 80,000 operations, a 1.2 MB Bedrock file, took
+// twenty-three seconds in the server, and the 8 MiB a document may be
+// would have taken half an hour.
+func TestAnAgentWithManyOperationsIsReadInTimeInProportion(t *testing.T) {
+	var paths []string
+	for i := 0; i < 20000; i++ {
+		paths = append(paths, fmt.Sprintf(`"/a%05d": {"get": {}, "put": {}, "post": {}, "patch": {}, "delete": {}}`, i))
+	}
+	doc := `{"openapi": "3.0.0", "info": {"title": "Many"}, "servers": [{"url": "https://many.example"}],
+	  "paths": {` + strings.Join(paths, ", ") + `}}`
+	payload, _ := json.Marshal(doc)
+	file := `{"agent": {"agentName": "Many", "instruction": "Answer.", "foundationModel": "m"},
+	  "actionGroups": [{"agentActionGroup": {"actionGroupName": "many", "actionGroupState": "ENABLED",
+	    "apiSchema": {"payload": ` + string(payload) + `}}}]}`
+	read, failed := make(chan *Imported, 1), make(chan error, 1)
+	start := time.Now()
+	go func() {
+		if imp, err := Read([]byte(file), "", ""); err != nil {
+			failed <- err
+		} else {
+			read <- imp
+		}
+	}()
+	select {
+	case err := <-failed:
+		t.Fatal(err)
+	case imp := <-read:
+		if m := imp.Agents[0].Manifest; len(m.Tools) != 100000 || len(m.AskFirst) != 80000 {
+			t.Errorf("%d tools, %d asked about first", len(m.Tools), len(m.AskFirst))
+		}
+	case <-time.After(8 * time.Second):
+		t.Errorf("a %d-byte agent file was not read in %v", len(file), time.Since(start))
+	}
+}
