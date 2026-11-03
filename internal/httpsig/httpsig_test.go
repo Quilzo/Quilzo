@@ -547,3 +547,42 @@ func TestARequestLineNamingAnotherHostIsReadAgainstTheOrigin(t *testing.T) {
 		})
 	}
 }
+
+// A site's origin may be configured with its scheme's own port written out,
+// as https://a.example:443. A sender leaves that port out of the host it
+// signs, as RFC 9421 section 2.2.3 and HTTP's normal form have it, so the
+// destination read from the origin has to leave it out too: kept, it
+// refused every delivery to such a site that verified before the
+// destination was read from the origin.
+func TestTheOriginsOwnDefaultPortIsNotPartOfTheDestination(t *testing.T) {
+	priv, pub := edPair(t, 13)
+	keys := []httpsig.PublicKey{pub}
+	for _, format := range []string{"rfc9421", "cavage"} {
+		for _, origin := range []string{"https://a.example:443", "http://a.example:80"} {
+			t.Run(format+" "+origin, func(t *testing.T) {
+				scheme, _, _ := strings.Cut(origin, "://")
+				out, err := http.NewRequest("POST", scheme+"://a.example/@/inbox", nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if format == "rfc9421" {
+					err = httpsig.Sign(out, pub.ID, pub.Alg, priv, cover, at())
+				} else {
+					err = httpsig.SignCavage(out, pub.ID, pub.Alg, priv, []string{"(request-target)", "host", "date"}, at())
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				r := httptest.NewRequest("POST", "/@/inbox", nil)
+				r.Host, r.Header = "a.example", out.Header.Clone()
+				if s, err := httpsig.VerifyAt(r, origin, keys, 0, at()); err != nil || s == nil || !s.CoversRequest() {
+					t.Errorf("signed for a.example and checked at %s: %v %v", origin, s, err)
+				}
+				// A port that is not the scheme's own stays part of the host.
+				if _, err := httpsig.VerifyAt(r, scheme+"://a.example:8443", keys, 0, at()); err == nil {
+					t.Error("signed for a.example and verified at a.example:8443")
+				}
+			})
+		}
+	}
+}

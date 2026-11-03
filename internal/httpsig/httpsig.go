@@ -374,13 +374,22 @@ func targetURI(r *http.Request, origin string) string {
 // such a request as outbound let "POST https://b.example/@/inbox" past the
 // origin. An origin is given only to check an inbound request.
 //
+// The origin's port is left out when it is its scheme's own, as RFC 9421
+// section 2.2.3 normalises that too and senders sign it: an origin
+// configured as https://a.example:443 otherwise refused every delivery
+// signed for a.example.
+//
 // With no origin it is the request's own Host: a client signing what it is
 // about to send, or a server that has not said where it is, for which
 // @authority proves only the host the request names.
 func authority(r *http.Request, origin string) string {
 	if origin != "" {
 		if u, err := url.Parse(origin); err == nil && u.Host != "" {
-			return strings.ToLower(u.Host)
+			host := strings.ToLower(u.Host)
+			if p := u.Port(); p == "443" && u.Scheme == "https" || p == "80" && u.Scheme == "http" {
+				host = strings.TrimSuffix(host, ":"+p)
+			}
+			return host
 		}
 	}
 	return r.Host
