@@ -60,6 +60,9 @@ func mediaSpeak(root string, args []string) error {
 		return errBlocked{fmt.Errorf("what is read aloud is 1 to %d characters; this is %d", assist.MaxSpeech, len(text))}
 	}
 	caller := resolveCaller(root, flagToken)
+	if err := mayStoreMade(root, caller, "a recording"); err != nil {
+		return err
+	}
 	gw, _, err := modelGateway(root)
 	if err != nil {
 		return err

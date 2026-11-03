@@ -59,6 +59,9 @@ func mediaTranscribe(root string, args []string) error {
 		return fmt.Errorf("%q is not a language code, like en or fr", tag)
 	}
 	caller := resolveCaller(root, flagToken)
+	if err := mayStoreMade(root, caller, "a caption draft"); err != nil {
+		return err
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	rec, f, model, err := transcribeRecording(ctx, root, caller.Name, rest[0], tag, who)

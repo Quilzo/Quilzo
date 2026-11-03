@@ -57,6 +57,9 @@ func mediaFilm(root string, args []string) error {
 		return errBlocked{fmt.Errorf("a video is asked for in 1 to 4,000 characters; this is %d", len(prompt))}
 	}
 	caller := resolveCaller(root, flagToken)
+	if err := mayStoreMade(root, caller, "a video"); err != nil {
+		return err
+	}
 	gw, _, err := modelGateway(root)
 	if err != nil {
 		return err

@@ -1905,6 +1905,12 @@ gateway as `assist`, charged to the person too. Both used to call the one
 configured model directly, outside every budget and the ledger, and
 `media generate` without masking anything.
 
+Making a picture, a video or a voice (`media generate`, `film`, `speak`) or
+drafting captions (`media transcribe`) spends the store's models, so it needs
+the use-models permission, as the writing assistant does, and edit-draft to
+store what comes back. Somebody denied the models still adds, edits and
+captions media.
+
 **The key is sealed.** It is kept encrypted with `quilzo secret set NAME` and
 named with `--key-secret`, rather than in an environment variable every process
 the server starts would inherit. The Models screen offers the same list and
