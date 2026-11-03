@@ -4,8 +4,12 @@
 package sheet
 
 import (
+	"encoding/csv"
 	"errors"
+	"io"
+	"math/rand"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -366,6 +370,90 @@ func TestACalendarBecomesEvents(t *testing.T) {
 	if again.New != 0 || again.Updated != 4 || again.Records[0].Fields["slug"] != "rye" ||
 		again.Records[0].Fields["image"] != "pic" {
 		t.Errorf("%+v %v", again, again.Records[0].Fields)
+	}
+}
+
+// A row is refused before it is read when it has more cells than a sheet
+// may have columns. encoding/csv builds a row whole, however wide, and only
+// the headings were compared with MaxColumns, after they too were built: a
+// row of 32 million commas, in a 32 MB upload, took 2.9 GB of heap.
+func TestARowWiderThanASheetIsRefusedBeforeItIsRead(t *testing.T) {
+	commas := strings.Repeat(",", 4<<20)
+	for name, c := range map[string]struct{ body, want string }{
+		"a row":              {"title\nRye\n" + commas + "\n", "line 3 has 4194305 cells"},
+		"the headings":       {"title" + commas + "\nRye\n", "it has 4194305 columns"},
+		"after a quote":      {"title\n\"Rye\nbread\"" + commas + "\n", "line 2 has 4194305 cells"},
+		"by semicolons":      {"sep=;\ntitle\nRye\n" + strings.Repeat(";", 4<<20) + "\n", "line 3 has 4194305 cells"},
+		"after a bare quote": {"title\nR\"ye" + commas + "\n", "line 2 has 4194305 cells"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var before, after runtime.MemStats
+			runtime.ReadMemStats(&before)
+			_, err := Read([]byte(c.body), Options{})
+			runtime.ReadMemStats(&after)
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("err = %v, want %q", err, c.want)
+			}
+			if spent := after.TotalAlloc - before.TotalAlloc; spent > 64<<20 {
+				t.Fatalf("a %d MB sheet took %d MB to refuse", len(c.body)>>20, spent>>20)
+			}
+		})
+	}
+	// As wide as a sheet may be, it is read, and a row with a few cells
+	// more than its headings is read as before, with its problem.
+	wide := strings.Repeat("x,", MaxColumns-1) + "x"
+	sh := read(t, "title"+strings.Repeat(",h", MaxColumns-1)+"\n"+wide+"\nRye,,,\n", Options{})
+	if len(sh.Rows) != 2 || sh.Rows[0].Fields["title"] != "x" {
+		t.Fatalf("%+v", sh.Rows)
+	}
+	sh = read(t, "title\nRye,a,b\n", Options{})
+	if len(sh.Rows) != 1 || len(sh.Rows[0].Problems) != 1 {
+		t.Fatalf("%+v", sh.Rows)
+	}
+}
+
+// TooWide counts each row's cells as encoding/csv splits them, whatever
+// the quotes and line breaks in it, or a refusal could be dodged by
+// writing a row in a way the counting reads differently.
+func TestCellsAreCountedAsEncodingCSVSplitsThem(t *testing.T) {
+	r := rand.New(rand.NewSource(1))
+	pieces := []string{"a", ",", ";", "é", `"`, `"`, "\n", "\r", "\r\n", " "}
+	for k := 0; k < 20000; k++ {
+		var b strings.Builder
+		for n := r.Intn(24); n > 0; n-- {
+			b.WriteString(pieces[r.Intn(len(pieces))])
+		}
+		text := b.String()
+		for _, comma := range []rune{',', ';', 'é'} {
+			cr := csv.NewReader(strings.NewReader(text))
+			cr.Comma, cr.FieldsPerRecord, cr.LazyQuotes = comma, -1, true
+			var lines, cells []int
+			for {
+				rec, err := cr.Read()
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				if err != nil {
+					t.Fatalf("%q: %v", text, err)
+				}
+				line, _ := cr.FieldPos(0)
+				lines, cells = append(lines, line), append(cells, len(rec))
+			}
+			for max := 0; max <= 25; max++ {
+				want := -1
+				for i, n := range cells {
+					if n > max {
+						want = i
+						break
+					}
+				}
+				row, line, n := TooWide(text, comma, max)
+				if row != want || want >= 0 && (line != lines[want] || n != cells[want]) {
+					t.Fatalf("%q split by %q, more than %d: row %d, line %d, %d cells; encoding/csv: lines %v, cells %v",
+						text, comma, max, row, line, n, lines, cells)
+				}
+			}
+		}
 	}
 }
 
