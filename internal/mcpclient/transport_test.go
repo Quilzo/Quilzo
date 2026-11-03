@@ -219,6 +219,45 @@ func TestAPinnedToolThatChangedIsRefused(t *testing.T) {
 	}
 }
 
+// failingTool is a 2026-07-28 server with one tool, which runs and says
+// it failed.
+type failingTool struct{}
+
+func (failingTool) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var msg struct {
+		ID     json.RawMessage `json:"id"`
+		Method string          `json:"method"`
+	}
+	json.NewDecoder(r.Body).Decode(&msg)
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"resultType":"complete","isError":true,`+
+		`"content":[{"type":"text","text":"no such project"}]}}`, msg.ID)
+}
+
+// A tool that reports failing is text for a model, and a *ToolError for
+// whatever records the call or sets an exit status; a call this refuses
+// is a *Refused, so the two are never recorded as each other.
+func TestAToolThatFailsAndACallRefusedAreToldApart(t *testing.T) {
+	c := &Client{Do: via(failingTool{}, nil)}
+	in := integration("create_issue")
+	out, err := c.Call(context.Background(), in, "create_issue", nil)
+	if err != nil || !strings.Contains(out, "no such project") || !strings.Contains(out, "error") {
+		t.Fatalf("for a model: %q %v", out, err)
+	}
+	var reported *ToolError
+	out, err = c.CallStrict(context.Background(), in, "create_issue", nil)
+	if !errors.As(err, &reported) || reported.Tool != "create_issue" || !strings.Contains(out, "no such project") {
+		t.Fatalf("strictly: %q %v", out, err)
+	}
+	var refused *Refused
+	if _, err := c.CallStrict(context.Background(), in, "delete_everything", nil); !errors.As(err, &refused) {
+		t.Fatalf("a tool nobody agreed to: %v", err)
+	}
+	if errors.As(err, &refused) {
+		t.Fatalf("a tool that ran was read as refused: %v", err)
+	}
+}
+
 func TestAnUnsupportedRevisionNamingAnOlderOneHandsShakes(t *testing.T) {
 	inits := 0
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

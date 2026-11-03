@@ -121,7 +121,7 @@ func TestASecretWithNoVaultIsRefusedRatherThanCalledAnonymously(t *testing.T) {
 // text at all, so removing the type check changed nothing and the sabotage
 // passed.
 func TestOnlyTextPartsOfAResultAreRead(t *testing.T) {
-	got := renderContent(json.RawMessage(`{"content":[
+	got, _ := renderContent(json.RawMessage(`{"content":[
 		{"type":"text","text":"opened #41"},
 		{"type":"image","data":"AAAA","text":"a screenshot of the tracker"},
 		{"type":"resource","text":"file:///etc/passwd"},
@@ -148,17 +148,20 @@ func TestOnlyTextPartsOfAResultAreRead(t *testing.T) {
 
 // An error result says so rather than reading as a successful answer.
 func TestAToolErrorIsNotRenderedAsASuccessfulAnswer(t *testing.T) {
-	got := renderContent(json.RawMessage(
+	got, failed := renderContent(json.RawMessage(
 		`{"isError":true,"content":[{"type":"text","text":"no such project"}]}`))
-	if !strings.Contains(got, "error") {
-		t.Errorf("a tool error reads as a normal result: %q", got)
+	if !strings.Contains(got, "error") || !failed {
+		t.Errorf("a tool error reads as a normal result: %q %v", got, failed)
+	}
+	if _, failed := renderContent(json.RawMessage(`{"content":[{"type":"text","text":"filed"}]}`)); failed {
+		t.Error("a result that did not report failing was read as a failure")
 	}
 }
 
 // A result this cannot parse is handed back bounded rather than as an error.
 func TestAnUnrecognisedResultShapeIsStillBounded(t *testing.T) {
 	long := `{"weird":"` + strings.Repeat("x", MaxResult*2) + `"}`
-	got := renderContent(json.RawMessage(long))
+	got, _ := renderContent(json.RawMessage(long))
 	if len(got) > MaxResult+8 {
 		t.Errorf("an unrecognised result came back at %d bytes; the ceiling "+
 			"is what stops a server filling a model's context", len(got))

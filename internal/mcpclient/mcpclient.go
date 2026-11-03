@@ -224,7 +224,29 @@ func (c *Client) now() time.Time {
 // The integration is resolved from the tool name by the caller, so this is
 // handed both: what it may not do is pick an integration from something a
 // model said.
+//
+// A tool that runs and reports that it failed is an answer here, not an
+// error: its text comes back saying so, which is what the protocol means
+// it for, because a model that reads "no such project" can try another.
+// Whatever has to tell a failure from a success — a command's exit
+// status, the outcome a call is recorded with — uses CallStrict.
 func (c *Client) Call(ctx context.Context, in agent.Integration, tool string,
+	args map[string]any) (string, error) {
+
+	out, err := c.CallStrict(ctx, in, tool, args)
+	var reported *ToolError
+	if errors.As(err, &reported) {
+		return out, nil
+	}
+	return out, err
+}
+
+// CallStrict is Call, and a tool that reports failing is a *ToolError,
+// returned with the same text Call returns for it.
+//
+// Call alone left `quilzo integrations call` exiting 0 for a tool that
+// failed, and recording the call as a success.
+func (c *Client) CallStrict(ctx context.Context, in agent.Integration, tool string,
 	args map[string]any) (string, error) {
 
 	if err := c.permits(in, tool); err != nil {
@@ -247,8 +269,38 @@ func (c *Client) Call(ctx context.Context, in agent.Integration, tool string,
 	if err != nil {
 		return "", err
 	}
-	return renderContent(raw), nil
+	out, failed := renderContent(raw)
+	if failed {
+		return out, &ToolError{Integration: in.Name, Tool: tool, Text: out}
+	}
+	return out, nil
 }
+
+// ToolError is a tool that ran and reported that it failed (isError).
+//
+// The server answered, so the call was made: this is a failure there, not
+// a refusal here, and a record of the call says which it was.
+type ToolError struct {
+	Integration, Tool string
+	// Text is what the tool said, as Call returns it.
+	Text string
+}
+
+func (e *ToolError) Error() string {
+	return fmt.Sprintf("%s on %s: %s", e.Tool, e.Integration, e.Text)
+}
+
+// Refused is a call this client would not make: an integration that is
+// not enabled, a tool this install did not agree to, a definition changed
+// since a person approved it.
+//
+// Typed so a record of the call can say "denied" for a decision made here
+// and "failure" for everything that went wrong over there. Both were
+// recorded as denied, and a log reader looking for refused calls found
+// outages.
+type Refused struct{ Reason string }
+
+func (r *Refused) Error() string { return r.Reason }
 
 // checkPin refuses a tool whose definition is not the one approved.
 func (c *Client) checkPin(ctx context.Context, in agent.Integration, tool, pin string) error {
@@ -266,10 +318,10 @@ func (c *Client) checkPin(ctx context.Context, in agent.Integration, tool, pin s
 		if c.Changed != nil {
 			c.Changed(in, tool, pin, t.Definition)
 		}
-		return fmt.Errorf("%s has changed what %q is since a person approved it "+
+		return &Refused{Reason: fmt.Sprintf("%s has changed what %q is since a person approved it "+
 			"(approved %s, now %s). Nothing is called until somebody looks: "+
 			"quilzo integrations tools %s, then quilzo integrations pin %s",
-			in.Name, tool, pin[:12], t.Definition[:12], in.Name, in.Name)
+			in.Name, tool, pin[:12], t.Definition[:12], in.Name, in.Name)}
 	}
 	return fmt.Errorf("%s no longer offers %q, which was approved", in.Name, tool)
 }
@@ -352,12 +404,12 @@ func markAllowed(tools []Tool, uses []string) []Tool {
 // permits is the allow-list, and it is the whole control.
 func (c *Client) permits(in agent.Integration, tool string) error {
 	if !in.Enabled {
-		return fmt.Errorf(
-			"%s is declared and not enabled, so nothing may call it", in.Name)
+		return &Refused{Reason: fmt.Sprintf(
+			"%s is declared and not enabled, so nothing may call it", in.Name)}
 	}
 	if in.Kind != agent.IntegrationMCP && in.Kind != agent.IntegrationHTTP && in.Kind != agent.IntegrationA2A {
-		return fmt.Errorf("%s is a %s integration, not an MCP server, a REST API or another agent",
-			in.Name, in.Kind)
+		return &Refused{Reason: fmt.Sprintf("%s is a %s integration, not an MCP server, a REST API or another agent",
+			in.Name, in.Kind)}
 	}
 	for _, u := range in.Uses {
 		if u == tool {
@@ -367,11 +419,11 @@ func (c *Client) permits(in agent.Integration, tool string) error {
 	// Named plainly, including the list. The operator reading this is deciding
 	// whether to add the tool, and "not permitted" without the agreed set
 	// makes that a trip to a config file.
-	return fmt.Errorf(
+	return &Refused{Reason: fmt.Sprintf(
 		"%s may not call %q on %s. This install agreed to %s, and a tool the "+
 			"server offers is not thereby a tool this may call — that is the "+
 			"whole point of naming them",
-		in.Name, clamp(tool, 60), in.Endpoint, strings.Join(in.Uses, ", "))
+		in.Name, clamp(tool, 60), in.Endpoint, strings.Join(in.Uses, ", "))}
 }
 
 // send performs one JSON-RPC call: as 2026-07-28 first, statelessly; and,
@@ -690,13 +742,14 @@ func headerValue(v string) string {
 	return "=?base64?" + base64.StdEncoding.EncodeToString([]byte(v)) + "?="
 }
 
-// renderContent turns an MCP tool result into text for a model.
+// renderContent turns an MCP tool result into text for a model, and says
+// whether the tool reported that it failed.
 //
 // The protocol returns a content array of typed parts. Only text parts are
 // read: an image or a blob coming back from a tool is not something this can
 // put in front of a model, and rendering it as its own JSON would be handing
 // the model a base64 payload and calling it an answer.
-func renderContent(raw json.RawMessage) string {
+func renderContent(raw json.RawMessage) (string, bool) {
 	var out struct {
 		Content []struct {
 			Type string `json:"type"`
@@ -707,7 +760,7 @@ func renderContent(raw json.RawMessage) string {
 	if err := json.Unmarshal(raw, &out); err != nil || len(out.Content) == 0 {
 		// Not every server returns the content shape. Handing back the raw
 		// result is more useful than an error, and it is still bounded.
-		return clamp(string(raw), MaxResult)
+		return clamp(string(raw), MaxResult), out.IsError
 	}
 	var b strings.Builder
 	if out.IsError {
@@ -723,9 +776,9 @@ func renderContent(raw json.RawMessage) string {
 		b.WriteString(part.Text)
 	}
 	if b.Len() == 0 {
-		return "the tool returned nothing this can read as text"
+		return "the tool returned nothing this can read as text", out.IsError
 	}
-	return clamp(b.String(), MaxResult)
+	return clamp(b.String(), MaxResult), out.IsError
 }
 
 func clamp(s string, n int) string {

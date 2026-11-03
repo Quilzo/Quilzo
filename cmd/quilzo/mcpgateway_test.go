@@ -182,6 +182,32 @@ func mustHeld(t *testing.T, root string) []heldCall {
 	return held
 }
 
+// A tool that reports failing is answered as the server answered it, and
+// recorded as a failure. It was recorded as a success, as it was for
+// `quilzo integrations call`, so the record of a call into somebody
+// else's system said it worked when the tool had said it did not.
+func TestAToolThatFailsThroughTheGatewayIsRecordedAsAFailure(t *testing.T) {
+	root, tr := gatewayRig(t, &agent.GatewayPolicy{Role: "author"})
+	tr.fails = true
+	out, err := gatewayCallAs(t, root, appToken("rae", auth.RoleAuthor))
+	if err != nil || !strings.Contains(out, "no such project") {
+		t.Fatalf("%q %v", out, err)
+	}
+	evs, _ := audit.Read(auditPath(root))
+	var last *audit.Event
+	for i := range evs {
+		if evs[i].Action == "mcp.gateway" {
+			last = &evs[i]
+		}
+	}
+	if last == nil || last.Outcome != audit.Failure {
+		t.Fatalf("recorded as %+v", last)
+	}
+	if strings.Contains(last.Detail["error"], "no such project") {
+		t.Errorf("the tool's own text reached the log: %v", last.Detail)
+	}
+}
+
 func TestTheGatewayIsOffOnlyWhenSomethingSaysSo(t *testing.T) {
 	root, _ := gatewayRig(t, nil)
 	if _, ok := gatewayOffered(root, "tracker"); ok {

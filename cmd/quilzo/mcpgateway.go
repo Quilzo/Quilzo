@@ -206,6 +206,7 @@ func gatewayCall(ctx context.Context, root string, in agent.Integration, mc *mcp
 	g := *in.Gateway
 	digest := argsDigest(in.Name, tool, args)
 	held, decidedBy := "", ""
+	reported := false
 	defer func() {
 		d := map[string]string{"integration": in.Name, "tool": tool, "on_behalf_of": tok.Principal, "args_digest": digest}
 		if decidedBy != "" {
@@ -222,9 +223,13 @@ func gatewayCall(ctx context.Context, root string, in agent.Integration, mc *mcp
 			outcome, d["error"] = audit.Denied, clip(err.Error(), 300)
 			var ref *mcp.Refusal
 			var se *mcp.ScopeError
-			if !errors.As(err, &ref) && !errors.As(err, &se) {
+			var refused *mcpclient.Refused
+			if !errors.As(err, &ref) && !errors.As(err, &se) && !errors.As(err, &refused) {
 				outcome = audit.Failure
 			}
+		}
+		if reported {
+			outcome, d["error"] = audit.Failure, "the tool reported that it failed"
 		}
 		who, kind := tok.Principal, audit.KindHuman
 		if tok.Client != "" {
@@ -294,7 +299,15 @@ func gatewayCall(ctx context.Context, root string, in agent.Integration, mc *mcp
 	if err != nil {
 		return "", err
 	}
-	return mc.Call(ctx, in, tool, args)
+	out, err = mc.CallStrict(ctx, in, tool, args)
+	var failed *mcpclient.ToolError
+	if errors.As(err, &failed) {
+		// Answered as the server answered, so the caller reads what the
+		// tool said; recorded as the failure it was, not as a success.
+		reported = true
+		return out, nil
+	}
+	return out, err
 }
 
 const heldNew = "new"
