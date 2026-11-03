@@ -224,13 +224,32 @@ func complianceSummary(root string) error {
 	w.Human("%s%s%s  %s\n\n", bold, s.Metadata.Component.Name, reset,
 		s.Metadata.Component.Version)
 
+	// Counted from the inventory, as --json hands it over. This line was a
+	// literal "none" in green while the inventory listed RSA, ECDSA, Ed25519
+	// and TLS as broken and generated here, and "verified only" counted every
+	// concern, the generated ones with them: the one command whose purpose is
+	// answering a questionnaire answered it wrongly.
+	generated, verified := 0, 0
+	for _, a := range compliance.Concerns() {
+		switch a.Use {
+		case compliance.Generated:
+			generated++
+		case compliance.Verified:
+			verified++
+		}
+	}
+	mark := green
+	if generated > 0 {
+		mark = yellow
+	}
+
 	w.Human("  %-34s %s%d%s\n", "third-party components", green, len(third), reset)
 	w.Human("  %-34s %s%d%s\n", "NIST controls with a check", green,
 		len(controls), reset)
-	w.Human("  %-34s %s%s\n", "quantum-broken, generated here",
-		green+"none"+reset, "")
+	w.Human("  %-34s %s%d%s\n", "quantum-broken, generated here", mark,
+		generated, reset)
 	w.Human("  %-34s %s%d%s\n", "quantum-broken, verified only", dim,
-		len(compliance.Concerns()), reset)
+		verified, reset)
 
 	w.Human("\n  %squilzo compliance sbom      CycloneDX 1.6, machine-readable%s\n",
 		dim, reset)
