@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -293,5 +294,44 @@ func TestADelegatesReviewerJudgesThePersonsGoal(t *testing.T) {
 	}
 	if writes == 0 {
 		t.Errorf("the delegate's write was never reviewed: %q", models.reviews)
+	}
+}
+
+// A hand-off the reviewer refuses waits for a person, and the delegate does
+// nothing meanwhile. The refusal was ignored: a hand-off is neither a
+// capability nor a tool, so the run took it for something the declaration
+// refuses, handed it to the gate, which allows it, and the writer wrote.
+func TestAHandOffTheReviewerRefusesWaitsForAPerson(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := demoStore(t)
+	declaredAutonomy(t, root)
+	models := &pricedModels{choose: writesPages(), review: func(prompt string) string {
+		if strings.Contains(prompt, "handing work to writer") {
+			return "no - the goal does not ask for new pages"
+		}
+		return "yes - it serves the goal"
+	}}
+	pricedGateway(t, root, models, true)
+	declareBoss(t, root, boss("writer"), handedWriter())
+	id, err := runAgentOnce(root, "boss", "make the pages through the writer", true, asAdmin("dana"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := pagesWritten(t, root); n != 0 {
+		t.Errorf("the reviewer refused the hand-off and the delegate wrote %d pages", n)
+	}
+	rec, _ := loadAgentRun(root, id)
+	w := rec.Trace.Waiting
+	if w == nil || w.Kind != agent.WaitReview || w.Action.Delegate != "writer" {
+		t.Fatalf("the refused hand-off is not waiting for a person: %+v (%s)", w, rec.Trace.Stopped)
+	}
+	// And a person may still let it go ahead, as with anything the
+	// reviewer refused.
+	if _, err := continueAgentRun(context.Background(), root, id,
+		&agent.Verdict{N: w.N, Approve: true}, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	if n := pagesWritten(t, root); n == 0 {
+		t.Error("a person let the hand-off go ahead and the delegate wrote nothing")
 	}
 }

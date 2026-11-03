@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 )
 
@@ -109,7 +111,19 @@ func (s *Session) AsksFirst(a Action) bool {
 
 // wouldAllow reports whether the gate would let an action through, without
 // charging for it or recording a refusal.
+//
+// A hand-off is asked of the delegate list, as MayDelegate asks it, and
+// first, as the gate asks it. It was asked of the capabilities, which
+// never name one, so a hand-off the reviewer refused was taken for one the
+// declaration refuses, needing nobody to refuse it; the gate then allowed
+// it and the delegate ran.
 func (s *Session) wouldAllow(a Action) bool {
+	if a.Delegate != "" {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.manifest.Kind == KindSupervisor &&
+			slices.Contains(s.manifest.Delegates, strings.TrimSpace(a.Delegate))
+	}
 	if a.Tool != "" {
 		_, declared := s.ToolFor(a.Tool)
 		return declared

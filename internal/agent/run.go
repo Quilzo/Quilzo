@@ -625,9 +625,15 @@ func (r Runner) run(ctx context.Context, s *Session, t Trace,
 		}
 
 		pctx := ctx
-		if approved && step.Earned == "" {
+		if approved && step.Earned == "" && action.Delegate == "" {
 			// A person decided this step: what performs it may need to know,
 			// as a payment outside every mandate does.
+			//
+			// Not a hand-off. A person who let one go ahead decided to hand
+			// the work on, and the delegate's whole run is performed inside
+			// this step under this context: marked, every payment it made
+			// went ahead as one a person had approved, though nobody was
+			// shown its amount or its payee.
 			pctx = WithPersonApproval(ctx)
 		}
 		if r.RunID != "" {
