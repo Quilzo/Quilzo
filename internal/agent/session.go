@@ -212,14 +212,6 @@ func (s *Session) takeConfidence() (float64, bool) {
 	return c, ok
 }
 
-// chargeStep counts a step the run took before it stopped to ask, when the
-// step is kept on its continuation.
-func (s *Session) chargeStep() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.steps++
-}
-
 // Cost is what the run's model calls have cost so far.
 func (s *Session) Cost() int64 {
 	s.mu.Lock()
