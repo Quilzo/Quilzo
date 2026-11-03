@@ -33,6 +33,11 @@
 // which is what lets a receiver make its own handling idempotent. Pretending
 // exactly-once is achievable over HTTP is how integrations end up processing a
 // publication twice and nobody knowing why.
+//
+// The retries are spaced over a few seconds, which is what a receiver being
+// restarted needs, and no longer: a delivery that fails every attempt is
+// recorded as failed with the deliveries, for somebody to see, rather than
+// queued to be sent again later.
 package webhook
 
 import (
@@ -267,6 +272,23 @@ type Sender interface {
 // retrying for an hour turns one outage into a queue somebody has to drain.
 const MaxAttempts = 3
 
+// retryAfter is how long Send waits before each attempt after the first.
+//
+// The attempts used to be made back to back, all three within about 10 ms,
+// so a receiver restarting for a deploy — down for well under a second —
+// answered every one of them with a 503 and the event was lost. One second
+// and then four more cover a restart, keep the last attempt within the few
+// seconds MaxAttempts gives a receiver, and keep every attempt's timestamp
+// far inside Tolerance.
+var retryAfter = [MaxAttempts - 1]time.Duration{time.Second, 4 * time.Second}
+
+// Waiter is a Sender that does its own waiting between attempts, which is
+// how a test gives Send a clock of its own. Any other Sender is waited for
+// with time.Sleep.
+type Waiter interface {
+	Wait(d time.Duration)
+}
+
 // Send delivers one event to one endpoint.
 //
 // At-least-once, and the id is stable across attempts so a receiver can
@@ -286,8 +308,20 @@ func Send(s Sender, e Endpoint, ev Event, now time.Time) []Delivery {
 	}
 
 	var out []Delivery
+	var waited time.Duration
 	for attempt := 1; attempt <= MaxAttempts; attempt++ {
-		at := now
+		if attempt > 1 {
+			d := retryAfter[attempt-2]
+			if w, ok := s.(Waiter); ok {
+				w.Wait(d)
+			} else {
+				time.Sleep(d)
+			}
+			waited += d
+		}
+		// Signed for when it is sent: a retry carrying the first attempt's
+		// timestamp is a few seconds stale before it leaves.
+		at := now.Add(waited)
 		headers := map[string]string{
 			"Content-Type":       "application/json",
 			"X-Quilzo-Event":     ev.Type,
