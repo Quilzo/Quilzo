@@ -13,6 +13,12 @@ bin/
 # commit on their first run.
 .quilzo/
 
+# What `quilzo demo` writes beside the working directory for its program
+# search (internal/demo/packing.go): a sample program, its judge and two
+# days' orders. Generated, like the store, so a demo run at the root of a
+# checkout leaves the tree as it was.
+/examples/evolve/
+
 # What a running site writes beside its store.
 #
 # Anchored to the root. Unanchored, "export/" matches a directory of that name
