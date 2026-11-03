@@ -1470,6 +1470,11 @@ type publishFlags struct {
 	reason, tplDir             string
 }
 
+// beforeLiveMoves, when set, is called after every check a publish makes has
+// passed and before live moves. The tests set it to land a save in exactly
+// that gap (publishrace_test.go); nothing else does.
+var beforeLiveMoves func()
+
 // publishAs publishes on caller's authority, checked here: every gate, the
 // freeze and dual authorisation run for whoever caller is, which is the
 // point of a scheduled publish going through it.
@@ -1500,10 +1505,17 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 	if len(args) > 0 {
 		target = args[0]
 	}
+	// The draft, read once: every gate below is asked about this commit and
+	// this commit is what goes live. Each of them read the draft again, and
+	// so did site.Publish(s, ""), so a save landing between the checks and
+	// the publish went live with none of them having seen it.
+	if target == "" {
+		target = s.GetRef(site.RefDraft)
+	}
 	// Nothing drafted is said as that, before any gate runs: a gate asked
 	// to examine no commit answered "not an object id", which sent a first
 	// publish off looking for a broken image.
-	if target == "" && s.GetRef(site.RefDraft) == "" {
+	if target == "" {
 		return fmt.Errorf("there is nothing to publish: no page has been " +
 			"drafted yet. quilzo add NAME=FILE.json drafts one")
 	}
@@ -1575,11 +1587,7 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 	// The way to satisfy it rather than override it is `quilzo provenance set`
 	// for new content, or `quilzo provenance backfill` for a store that
 	// predates the records.
-	candidateFor := target
-	if candidateFor == "" {
-		candidateFor = s.GetRef(site.RefDraft)
-	}
-	unmarked, uerr := unmarkedAt(root, s, candidateFor)
+	unmarked, uerr := unmarkedAt(root, s, target)
 	if uerr != nil {
 		// A gate that cannot run must not exit like a gate that passed. The
 		// accessibility gate below says this at length; the reasoning is the
@@ -1648,11 +1656,7 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 			"off%s\n", yellow, reset)
 	}
 	if required && !*skip {
-		candidate := target
-		if candidate == "" {
-			candidate = s.GetRef(site.RefDraft)
-		}
-		reports, cerr := checkAccessibility(root, s, candidate, *tplDir)
+		reports, cerr := checkAccessibility(root, s, target, *tplDir)
 		if cerr != nil {
 			// A gate that cannot run must not exit like a gate that passed.
 			//
@@ -1716,7 +1720,7 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 		if pol.Required > 0 || pol.RequireHumanForAI {
 			// The approvals of what is being published, which is the draft
 			// unless a commit was named (see proposalFor).
-			prop, _, cerr := proposalFor(root, s, candidateFor)
+			prop, _, cerr := proposalFor(root, s, target)
 			if cerr != nil {
 				record(root, caller.auditRecord("publish", "/", audit.Denied,
 					map[string]string{"reason": "the approval check could not run",
@@ -1748,6 +1752,9 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 		}
 	}
 
+	if beforeLiveMoves != nil {
+		beforeLiveMoves()
+	}
 	pub, err := site.Publish(s, target)
 	if err != nil {
 		return err
