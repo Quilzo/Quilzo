@@ -638,20 +638,35 @@ func (s *Server) handlePasskeyVerify(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusServiceUnavailable, errNoPasskeyStore)
 		return
 	}
-	// Slowed per source like every other way in, before anything is read.
+	// Slowed per source like every other way in: a failure from a throttled
+	// address is refused for trying too often, and a passkey that verifies
+	// signs its person in all the same.
+	//
+	// This refused before anything was read, so one person's bad tokens
+	// kept everybody else behind the same address (a NAT, an office proxy,
+	// Docker's port publishing) from signing in with their own passkeys for
+	// up to fifteen minutes. A signature cannot be guessed, which is why the
+	// content API and the screens already let a valid credential through.
 	src := throttle.Subject{Source: sourceOf(r)}
+	var throttled *throttle.Decision
 	if s.Throttle != nil {
 		if d := s.Throttle.Check(src); !d.Allowed {
-			s.tooManyAttempts(w, r, d)
-			return
+			throttled = &d
 		}
 	}
-	failed := func() {
+	// refuse answers a sign-in that did not prove anybody: counted, or, from
+	// an address already throttled, refused for trying too often.
+	refuse := func() {
+		if throttled != nil {
+			s.tooManyAttempts(w, r, *throttled)
+			return
+		}
 		if s.Throttle != nil {
 			if d, alert := s.Throttle.Fail(src); alert && s.OnAuthFailure != nil {
 				s.OnAuthFailure(src.Source, d.Failures)
 			}
 		}
+		writeJSONError(w, http.StatusUnauthorized, errSignIn)
 	}
 	party, err := s.partyFor(r)
 	if err != nil {
@@ -697,8 +712,7 @@ func (s *Server) handlePasskeyVerify(w http.ResponseWriter, r *http.Request) {
 		if held := s.stepUpFailed(r); held != "" {
 			s.lockoutFail(r, held)
 		}
-		failed()
-		writeJSONError(w, http.StatusUnauthorized, errSignIn)
+		refuse()
 		return
 	}
 	// A credential the store knows names its account, so its failures count
@@ -720,12 +734,11 @@ func (s *Server) handlePasskeyVerify(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		held := s.stepUpFailed(r)
-		failed()
 		s.lockoutFail(r, cred.Principal)
 		if held != "" && !strings.EqualFold(held, cred.Principal) {
 			s.lockoutFail(r, held)
 		}
-		writeJSONError(w, http.StatusUnauthorized, errSignIn)
+		refuse()
 		return
 	}
 
@@ -736,8 +749,7 @@ func (s *Server) handlePasskeyVerify(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, errPasskeyGone) {
 			// Removed while this sign-in was being checked: it signs in
 			// nobody, as it would have a moment later.
-			failed()
-			writeJSONError(w, http.StatusUnauthorized, errSignIn)
+			refuse()
 			return
 		}
 		writeJSONError(w, http.StatusInternalServerError, err)

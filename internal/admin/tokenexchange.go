@@ -134,14 +134,21 @@ func (s *Server) handleTokenExchange(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusBadRequest, "invalid_request", "acting for another is not exchanged here")
 		return
 	}
+	// A throttled exchange is still checked, and a valid one let through,
+	// as at /mcp (interfaceCaller): the address is all that is known before
+	// the token is, and refusing on it refused everybody behind it.
 	sub := throttle.Subject{Source: sourceOf(r)}
+	var throttled *throttle.Decision
 	if s.Throttle != nil {
 		if d := s.Throttle.Check(sub); !d.Allowed {
-			fail(http.StatusTooManyRequests, "invalid_request", "too many failed attempts from this address. "+d.Why)
-			return
+			throttled = &d
 		}
 	}
 	failed := func(kind string, err error) {
+		if throttled != nil {
+			fail(http.StatusTooManyRequests, "invalid_request", "too many failed attempts from this address. "+throttled.Why)
+			return
+		}
 		if s.Throttle != nil {
 			if d, alert := s.Throttle.Fail(sub); alert && s.OnAuthFailure != nil {
 				s.OnAuthFailure(sub.Source, d.Failures)

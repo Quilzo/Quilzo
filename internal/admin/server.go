@@ -1705,14 +1705,15 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 	// counter that protects every other surface, and they never crossed the
 	// threshold that fires OnAuthFailure — so a sustained attempt against the
 	// one door built for people raised no alert at all.
+	//
+	// Checked, and the token looked at all the same: the throttle refuses
+	// failures, not the address (see requireAuth). Refusing here before
+	// looking turned one person's mistakes into everybody's lockout behind a
+	// shared address, which on the reference stack was every client.
 	sub := throttle.Subject{Source: sourceOf(r)}
+	throttled := false
 	if s.Throttle != nil {
-		if d := s.Throttle.Check(sub); !d.Allowed {
-			// Not looked at, so not counted: the token in this request is
-			// neither a failure nor a success.
-			signInAgain(w, r, "throttled")
-			return
-		}
+		throttled = !s.Throttle.Check(sub).Allowed
 	}
 
 	raw := strings.TrimSpace(r.FormValue("token"))
@@ -1726,6 +1727,11 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 		// holding tokens made the day before.
 		if errors.Is(err, auth.ErrLockedDown) {
 			signInAgain(w, r, "lockdown")
+			return
+		}
+		// Refused for trying too often, and not counted again.
+		if throttled {
+			signInAgain(w, r, "throttled")
 			return
 		}
 		if s.Throttle != nil {
@@ -2150,7 +2156,10 @@ func (s *Server) requireAuth(w http.ResponseWriter, r *http.Request) (principal,
 
 	p, err := s.authenticate(r)
 	if err != nil {
-		if throttled {
+		// Only a credential that was presented and refused is answered 429.
+		// Somebody arriving signed out presented nothing, and was told "too
+		// many attempts" for guesses somebody else made from their address.
+		if throttled && !errors.Is(err, errNoCredential) {
 			s.tooManyAttempts(w, r, tdec)
 			return principal{}, false
 		}

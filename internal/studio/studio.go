@@ -263,13 +263,15 @@ func (s *Server) signIn(w http.ResponseWriter, r *http.Request) {
 	// never once a 429, while two through the cookie path were enough to
 	// start refusing. A new door with the same shape gets the limiter from
 	// the start.
+	//
+	// The token is looked at all the same: the throttle refuses failures, not
+	// the address. Refusing before looking kept everybody behind one address
+	// out for somebody else's wrong tokens, as the admin's doors did.
 	sub := throttle.Subject{Source: sourceOf(r)}
+	var throttled *throttle.Decision
 	if s.Throttle != nil {
 		if d := s.Throttle.Check(sub); !d.Allowed {
-			http.Error(w, fmt.Sprintf(
-				"too many attempts; try again in %s", d.RetryAfter.Round(time.Second)),
-				http.StatusTooManyRequests)
-			return
+			throttled = &d
 		}
 	}
 
@@ -281,6 +283,12 @@ func (s *Server) signIn(w http.ResponseWriter, r *http.Request) {
 		tok, err = toks.Authenticate(secret, s.now())
 	}
 	if err != nil || !s.mayWrite(tok, pol) {
+		if throttled != nil {
+			http.Error(w, fmt.Sprintf(
+				"too many attempts; try again in %s", throttled.RetryAfter.Round(time.Second)),
+				http.StatusTooManyRequests)
+			return
+		}
 		if s.Throttle != nil {
 			s.Throttle.Fail(sub)
 		}

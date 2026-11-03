@@ -307,6 +307,40 @@ func TestWrongTokensAreThrottled(t *testing.T) {
 	}
 }
 
+// The right token is let in from an address somebody else is guessing from.
+//
+// The studio refused every sign-in from a throttled address before looking at
+// the token, so one person's wrong tokens kept everybody behind the same
+// address (a NAT, an office proxy, Docker's port publishing) out of the
+// recorder. Found on the admin, whose doors had the same shape; a token
+// cannot be guessed, which is why the content API lets a valid one through.
+func TestTheRightTokenIsLetInFromAThrottledAddress(t *testing.T) {
+	srv, secret := wired(t)
+	stopped := time.Now() // so the delay outlasts the test however slow it runs
+	srv.Throttle = throttle.New(throttle.Default()).WithClock(func() time.Time { return stopped })
+	signIn := func(token string) int {
+		req := httptest.NewRequest(http.MethodPost, "/signin", bytes.NewBufferString("token="+token))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.RemoteAddr = "10.1.2.3:5555"
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, req)
+		return rec.Code
+	}
+	limited := false
+	for i := 0; i < 30 && !limited; i++ {
+		limited = signIn("not-a-real-token") == http.StatusTooManyRequests
+	}
+	if !limited {
+		t.Fatal("thirty wrong tokens were never throttled")
+	}
+	if code := signIn("not-a-real-token"); code != http.StatusTooManyRequests {
+		t.Fatalf("a wrong token from the throttled address: %d", code)
+	}
+	if code := signIn(secret); code == http.StatusTooManyRequests || code == http.StatusUnauthorized {
+		t.Fatalf("the right token from the throttled address was refused: %d", code)
+	}
+}
+
 // Each request is decided by the store as it is now.
 //
 // The studio read its tokens and its policy once, at start, so a revoked

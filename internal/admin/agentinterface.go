@@ -255,10 +255,21 @@ func (s *Server) interfaceCaller(r *http.Request, token, resource string) (*mcp.
 	if s.Tokens == nil {
 		return nil, errors.New("no token store")
 	}
+	// The throttle refuses failures, not the address: a throttled request is
+	// still authenticated, and a valid token is let through, as at the
+	// content API and the screens (see requireAuth).
+	//
+	// This refused before looking. Every client behind one address (a NAT,
+	// an office proxy, Docker's port publishing) shares its count, so six
+	// bad tokens from one of them and a valid token from any other was
+	// "too many failed attempts from this address" for up to fifteen
+	// minutes. Found on the reference stack, where every client is one
+	// address.
 	sub := throttle.Subject{Source: sourceOf(r)}
+	var throttled *throttle.Decision
 	if s.Throttle != nil {
 		if d := s.Throttle.Check(sub); !d.Allowed {
-			return nil, errors.New("too many failed attempts from this address. " + d.Why)
+			throttled = &d
 		}
 	}
 	var tok *auth.Token
@@ -278,13 +289,18 @@ func (s *Server) interfaceCaller(r *http.Request, token, resource string) (*mcp.
 		tok, err = s.Tokens.AuthenticateFor(token, resource, time.Now())
 	}
 	if err != nil {
+		if s.OnBadToken != nil {
+			s.OnBadToken(r, token, err)
+		}
+		// Refused for trying too often, and not counted again: the
+		// address is already being slowed down.
+		if throttled != nil {
+			return nil, errors.New("too many failed attempts from this address. " + throttled.Why)
+		}
 		if s.Throttle != nil {
 			if d, alert := s.Throttle.Fail(sub); alert && s.OnAuthFailure != nil {
 				s.OnAuthFailure(sub.Source, d.Failures)
 			}
-		}
-		if s.OnBadToken != nil {
-			s.OnBadToken(r, token, err)
 		}
 		if errors.Is(err, auth.ErrStepUp) {
 			return nil, errors.New("this session must confirm it is its person first: sign in to the admin")
