@@ -1972,6 +1972,16 @@ func (s *Server) signInForm(w http.ResponseWriter, r *http.Request) {
 	if next := signInNext(r.URL.Query().Get("next")); next != "" {
 		data["Next"] = next
 	}
+	// Signed out of a session a provider vouched for (afterSignOut). The
+	// code picks a sentence and the address is this server's own setting,
+	// never anything from the query.
+	switch via := r.URL.Query().Get("out"); via {
+	case "oidc", "saml":
+		data["SignedOut"] = s.idpName(via)
+		if via == "oidc" {
+			data["SignOutAt"] = s.OIDC.signOutURL()
+		}
+	}
 	if s.Throttle != nil {
 		sub := throttle.Subject{Source: sourceOf(r)}
 		if d := s.Throttle.Check(sub); !d.Allowed {
@@ -2004,9 +2014,18 @@ func (s *Server) handleSignOut(w http.ResponseWriter, r *http.Request) {
 	// own credential, used deliberately, and revoking it because they closed
 	// a tab would destroy the thing they signed in with.
 	p, err := s.authenticate(r)
+	// Where the session came from, read before it is revoked.
+	via := ""
+	if err == nil && p.Session {
+		via = s.sessionVia(p.TokenID)
+	}
 	if err == nil && !signOutAsked(r, p) {
-		s.render(w, r, "signout.html", map[string]any{
-			"Title": "Sign out", "Who": p.Name})
+		data := map[string]any{"Title": "Sign out", "Who": p.Name}
+		if via != "" {
+			data["IdP"] = s.idpName(via)
+			data["IdPOut"] = via == "oidc" && s.OIDC.signOutURL() != ""
+		}
+		s.render(w, r, "signout.html", data)
 		return
 	}
 	if err == nil && p.TokenID != "" && p.Session {
@@ -2020,7 +2039,52 @@ func (s *Server) handleSignOut(w http.ResponseWriter, r *http.Request) {
 		Name: "quilzo_token", Value: "", Path: "/", MaxAge: -1,
 		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: r.TLS != nil || s.behindTLSProxy(),
 	})
-	http.Redirect(w, r, "/signin", http.StatusSeeOther)
+	http.Redirect(w, r, s.afterSignOut(r, via), http.StatusSeeOther)
+}
+
+// sessionVia is the identity provider a session was signed in through,
+// "oidc" or "saml", or empty for any other.
+func (s *Server) sessionVia(id string) string {
+	for _, t := range s.Tokens.Snapshot() {
+		if t.ID != id {
+			continue
+		}
+		if how, _, _ := strings.Cut(t.Name, ":"); how == "oidc" || how == "saml" {
+			return how
+		}
+		return ""
+	}
+	return ""
+}
+
+// idpName is what the sign-out and sign-in pages call the provider.
+func (s *Server) idpName(via string) string {
+	if l := s.oidcLabel(); via == "oidc" && l != "" {
+		return l
+	}
+	return "your organisation's identity provider"
+}
+
+// afterSignOut is where signing out goes.
+//
+// Signing out of a session an identity provider vouched for left the
+// provider's own session going, so the next sign-in through it skipped the
+// password, and nothing said so; with a provider that says a sign-in used
+// two factors, nothing at all was asked. The sign-in page now says so, and
+// offers the provider's end-session address where it has one; asked for
+// from Sign out? (idp), it goes straight there. Either way the session here
+// has already ended.
+func (s *Server) afterSignOut(r *http.Request, via string) string {
+	switch via {
+	case "oidc":
+		if out := s.OIDC.signOutURL(); out != "" && r.FormValue("idp") == "1" {
+			return out
+		}
+		return "/signin?out=oidc"
+	case "saml":
+		return "/signin?out=saml"
+	}
+	return "/signin"
 }
 
 // signOutAsked reports whether a request to /signout is the person asking,

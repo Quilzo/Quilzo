@@ -331,6 +331,15 @@ func (o *OIDC) principalFor(c *oidc.Claims) (string, error) {
 	}
 }
 
+// signOutURL is where somebody signing out here can sign out of the
+// identity provider too, or empty when it offers no such address.
+func (o *OIDC) signOutURL() string {
+	if o == nil || o.Provider == nil {
+		return ""
+	}
+	return o.Provider.EndSessionURL(o.ClientID)
+}
+
 // handleOIDCStart begins a sign-in.
 func (s *Server) handleOIDCStart(w http.ResponseWriter, r *http.Request) {
 	if s.OIDC == nil {

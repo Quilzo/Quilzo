@@ -22,7 +22,9 @@
     <p class="brand">{{template "lockup" .}}</p>
     <h1>Sign out?</h1>
     <p class="lead">Signed in as <strong>{{.Who}}</strong>. Signing out ends this session, and nothing it started will continue.</p>
-    <form method="post" action="/signout" class="actions"><button type="submit" class="btn">Sign out</button></form>
+    {{with .IdP}}<p>Your session at {{.}} is its own, and goes on unless you sign out there as well.</p>{{end}}
+    <form method="post" action="/signout" class="actions"><button type="submit" class="btn">Sign out</button>
+      {{if .IdPOut}}<button type="submit" name="idp" value="1" class="btn tonal">Sign out here and at {{.IdP}}</button>{{end}}</form>
     <p class="help"><a href="/">Stay signed in</a></p>
   </section>
 </main>
