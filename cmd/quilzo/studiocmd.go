@@ -108,8 +108,26 @@ func studioServer(root string) (*studio.Server, error) {
 		// policy mattered here.
 		Throttle: throttle.New(throttlePolicy(mustConfig(root))),
 		Audit: func(action, resource string, detail map[string]string) {
-			record(root, resolveCaller(root, "").auditRecord(
-				action, resource, audit.Success, detail))
+			record(root, studioRecord(action, resource, detail))
 		},
 	}, nil
+}
+
+// studioRecord is an audit record for what the studio reports, made out to
+// the holder of the token it authenticated.
+//
+// It was made out to whoever started the studio: resolveCaller on the
+// process, so its token file, QUILZO_TOKEN or $USER. Every recording
+// anybody put in the library through the page was in the log as the
+// operator's, the person whose token did it only a detail beside it, and a
+// refused sign-in was the operator's success. The studio names the holder
+// under "principal" once it has checked their token, a person at a
+// browser; a refusal at the door names nobody, and is a refusal, the way
+// the admin's are (adminRecord).
+func studioRecord(action, resource string, detail map[string]string) audit.Record {
+	r := adminRecord(action, resource, detail)
+	if who := detail["principal"]; who != "" {
+		r.Principal, r.Kind, r.Verified = who, audit.KindHuman, true
+	}
+	return r
 }

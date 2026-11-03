@@ -8,10 +8,12 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/studio"
 )
@@ -147,4 +149,64 @@ func TestTheStudioReloadsUnderConcurrentRequests(t *testing.T) {
 	}
 	issueFor(t, root, "ada")
 	wg.Wait()
+}
+
+// What the studio records is made out to the person whose token did it.
+//
+// It was made out to whoever started the studio: the audit hook resolved
+// the caller of the process, so its token file or QUILZO_TOKEN, and every
+// recording anybody put in the library through the page was in the log as
+// the operator's. A refused sign-in was written as the operator's success.
+func TestTheStudioRecordsTheTokenHolder(t *testing.T) {
+	root, secret, _, srv := studioStore(t)
+	// The operator who ran `quilzo studio`, with a token of their own.
+	if _, err := updatePolicy(root, func(p *auth.Policy) error {
+		return p.Grant(auth.Binding{Principal: "olu", Role: auth.RoleAdmin, Resource: "/"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	operator, _ := issueFor(t, root, "olu")
+	t.Setenv("QUILZO_TOKEN", operator)
+
+	signIn := func(token string) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/signin",
+			strings.NewReader("token="+token))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		srv.Handler().ServeHTTP(httptest.NewRecorder(), req)
+	}
+	signIn(secret)
+	if code := uploadAs(t, srv, secret); code != http.StatusOK {
+		t.Fatalf("the upload answered %d", code)
+	}
+	signIn("not-a-token")
+
+	evs, err := audit.Read(auditPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ada, olu := loggedAs(t, root, "ada"), loggedAs(t, root, "olu")
+	seen := map[string]audit.Event{}
+	for _, e := range evs {
+		if strings.HasPrefix(e.Action, "studio.") {
+			seen[e.Action] = e
+		}
+	}
+	for _, action := range []string{"studio.signin", "studio.upload"} {
+		e, ok := seen[action]
+		if !ok {
+			t.Errorf("no %s was recorded", action)
+			continue
+		}
+		if e.Principal != ada || !e.Verified || e.Kind != audit.KindHuman {
+			t.Errorf("%s is recorded as %s (verified %v, %s); ada's token did it",
+				action, e.Principal, e.Verified, e.Kind)
+		}
+	}
+	if e, ok := seen["studio.signin.refused"]; !ok {
+		t.Error("a refused sign-in was not recorded")
+	} else if e.Principal == olu || e.Verified || e.Outcome != audit.Denied {
+		t.Errorf("a refused sign-in is recorded as %s's %s (verified %v)",
+			e.Principal, e.Outcome, e.Verified)
+	}
 }

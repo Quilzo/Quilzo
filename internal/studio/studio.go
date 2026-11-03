@@ -97,7 +97,14 @@ type Server struct {
 	Reload func() (*auth.Policy, *auth.TokenStore, error)
 	// Library is where a recording goes.
 	Library func() (*medialib.Library, error)
-	// Options are the media settings, read per upload.
+	// Options are the media settings, as the admin's upload is given them.
+	//
+	// Not read, and this said "read per upload" when nothing did. Every one
+	// of them is about an image — its size, its quality, WebP, the EXIF
+	// that goes with a photograph (media.Optimise) — and this server takes
+	// recordings only, so a recording is stored as the browser made it.
+	// Wired anyway, so the day a setting applies to a recording it reaches
+	// this door the way it reaches the admin's.
 	Options func() media.Options
 	// Throttle counts failed credentials. Not optional in practice: the
 	// admin's sign-in form was measured taking forty wrong tokens without
