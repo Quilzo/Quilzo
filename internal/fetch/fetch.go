@@ -274,6 +274,15 @@ type Client struct {
 	// the network. Nil is Public, as for every fetch somebody else chose the
 	// address of.
 	Reach Reach
+	// Redirect, when set, is asked about every address a GET is sent on to,
+	// after the address rules and before anything is requested there; an
+	// error refuses the hop and ends the fetch. For a caller with a rule of
+	// its own about hosts: the address rules say only that a host is public,
+	// and a redirect is the site's choice of where the request, with its path
+	// and its query, goes next. An agent that may read one host was sent to
+	// any host by an open redirect on it, because only the first address and
+	// the last were held to what it declared.
+	Redirect func(next *url.URL) error
 }
 
 // checkIP is the client's rule.
@@ -436,6 +445,11 @@ func (c *Client) get(ctx context.Context, raw string, decorate func(*http.Reques
 		}
 		if _, err := c.validateURL(req.URL.String()); err != nil {
 			return fmt.Errorf("redirect to %s refused: %w", req.URL, err)
+		}
+		if c.Redirect != nil {
+			if err := c.Redirect(req.URL); err != nil {
+				return fmt.Errorf("redirect to %s refused: %w", req.URL, err)
+			}
 		}
 		return nil
 	}
