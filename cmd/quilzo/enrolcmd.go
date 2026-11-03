@@ -4,6 +4,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -11,9 +12,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/admin"
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/dual"
 	"github.com/quilzo/quilzo/internal/enrol"
 	"github.com/quilzo/quilzo/internal/shield"
 )
@@ -85,7 +88,76 @@ func authEnrol(root string, args []string) error {
 		return fmt.Errorf("%s has no access here, so a passkey would sign them in to nothing. "+
 			"Grant them a role first: quilzo auth grant %s author", name, name)
 	}
+	// A link for somebody who administers anything waits for a second
+	// administrator and goes to whoever asked (quilzo pending redeem), as
+	// an administrator's token does: whoever opens it signs in as them from
+	// then on, so one administrator could otherwise give themselves a
+	// second administrator's sign-in and approve their own requests as her.
+	if *life <= 0 || *life > enrol.MaxLife {
+		return fmt.Errorf("an enrolment link lasts more than nothing and at most %s", enrol.MaxLife)
+	}
+	if dual.Privileged(heldBy(pol, name)) {
+		apply, err := proposeSecond(root, caller, dual.Enrol, "a passkey enrolment link for "+name,
+			dual.EnrolChange{Principal: name, For: *life}, "")
+		if err != nil || !apply {
+			return err
+		}
+	}
 	return issueEnrolment(root, name, caller.Name, *life, caller)
+}
+
+// heldBy is what name holds that is not a deny.
+func heldBy(pol *auth.Policy, name string) []auth.Binding {
+	var out []auth.Binding
+	for _, b := range pol.Bindings {
+		if !b.Deny && strings.EqualFold(b.Principal, name) {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
+// redeemEnrolment gives whoever asked for an approved enrolment link the
+// link: quilzo pending redeem, for an Enrol request.
+func redeemEnrolment(root string, r dual.Request, c *Caller, now time.Time) error {
+	var ch dual.EnrolChange
+	if err := json.Unmarshal(r.Payload, &ch); err != nil {
+		return err
+	}
+	pol, err := loadPolicy(root)
+	if err != nil {
+		return err
+	}
+	if !holdsAny(pol, ch.Principal) {
+		return fmt.Errorf("%s holds nothing here now, so a passkey would sign them in to nothing", ch.Principal)
+	}
+	if _, err := dualStore(root).Redeem(r.ID, c.Name, now); err != nil {
+		return err
+	}
+	if err := recordE(root, c.auditRecord("dual.redeemed", "/", audit.Success,
+		map[string]string{"request": r.ID, "for": ch.Principal, "approved_by": r.DecidedBy})); err != nil {
+		return err
+	}
+	life := ch.For
+	if life <= 0 {
+		life = enrol.MaxLife
+	}
+	return issueEnrolment(root, ch.Principal, c.Name, life, c)
+}
+
+// enteredBefore reports whether anybody has held a credential for this
+// store: a token or session, one that ended, or a passkey. Unreadable is
+// taken as yes, which refuses rather than hands out a way in.
+func enteredBefore(root string) bool {
+	ts, err := loadTokens(root)
+	if err != nil || len(ts.Tokens) > 0 || len(ts.Ended) > 0 {
+		return true
+	}
+	pk := &admin.Passkeys{}
+	if err := loadJSON(passkeysPath(root), pk); err != nil {
+		return true
+	}
+	return len(pk.Credentials) > 0
 }
 
 // holdsAny reports whether name holds anything that is not a deny.
@@ -156,6 +228,17 @@ func initAdmin(root string, args []string, created bool) error {
 	if len(pol.Principals()) > 0 && !holdsAny(pol, *admin) {
 		return fmt.Errorf("this store already has people; another administrator grants %s and gives the link: "+
 			"quilzo auth grant %s admin, then quilzo auth enrol %s", *admin, *admin, *admin)
+	}
+	// Run again, it gives the first administrator a fresh link, for a
+	// store nobody has signed in to yet: nobody holds anything to escalate
+	// from, as with the first token (bootstrapIssue). Once anybody has a
+	// credential, a link is quilzo auth enrol's, which asks who is giving
+	// it and waits for a second administrator. This asked nothing, so on a
+	// store in use anybody at the machine, with no credential at all, was
+	// printed a link that signed in as an existing administrator.
+	if len(pol.Principals()) > 0 && enteredBefore(root) {
+		return fmt.Errorf("somebody has already signed in to this store, so a link for %s is given "+
+			"by an administrator: quilzo auth enrol %s", *admin, *admin)
 	}
 	if !holdsAny(pol, *admin) {
 		if _, err := updatePolicy(root, func(p *auth.Policy) error {

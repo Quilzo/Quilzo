@@ -488,16 +488,28 @@ func cmdSCIM(root string, args []string) error {
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
-		token, kept, err := newSCIMToken(root, *days)
+		if *days <= 0 || *days > scimTokenMaxDays {
+			return fmt.Errorf("a provisioning token lasts from 1 to %d days", scimTokenMaxDays)
+		}
+		// While a group makes administrators, whoever holds this token
+		// makes anybody one by putting them in it, so making it waits for a
+		// second administrator and goes to whoever asked (quilzo pending
+		// redeem), as an administrator's token does. It did not, and either
+		// of two administrators alone made mallory an administrator through
+		// the identity provider's door.
+		makes, err := scimMakesAdministrators(root)
 		if err != nil {
 			return err
 		}
-		w.Human("%s\n", token)
-		w.Human("  %sgive this to the identity provider as its bearer token, with the URL\n"+
-			"  https://YOUR-ADMIN/scim/v2. Shown once; it replaces any earlier one, and ends on %s:\n"+
-			"  make a new one before then, or provisioning stops, taking access away included%s\n",
-			dim, kept.Expires.Format("2 January 2006"), reset)
-		return note("scim.token-made", "")
+		if makes {
+			apply, err := proposeSecond(root, caller, dual.SCIMToken,
+				"a new provisioning token, which makes administrators through a mapped group",
+				dual.SCIMTokenChange{Days: *days}, "")
+			if err != nil || !apply {
+				return err
+			}
+		}
+		return giveSCIMToken(root, *days, caller)
 	case "map":
 		if len(args) != 3 {
 			return scimUsage()
@@ -529,6 +541,34 @@ func cmdSCIM(root string, args []string) error {
 		return note("scim.unmapped", args[1])
 	}
 	return scimUsage()
+}
+
+// scimMakesAdministrators reports whether a group the identity provider
+// sends makes its members administrators of anything.
+func scimMakesAdministrators(root string) (bool, error) {
+	makes := false
+	err := scimStore(root).Read(func(st *scim.State) {
+		for _, to := range st.Mapping {
+			makes = makes || dual.MapsToAdministrator(to)
+		}
+	})
+	return makes, err
+}
+
+// giveSCIMToken makes the provisioning token, records it (never the
+// secret), and prints it once.
+func giveSCIMToken(root string, days int, caller *Caller) error {
+	token, kept, err := newSCIMToken(root, days)
+	if err != nil {
+		return err
+	}
+	w.Human("%s\n", token)
+	w.Human("  %sgive this to the identity provider as its bearer token, with the URL\n"+
+		"  https://YOUR-ADMIN/scim/v2. Shown once; it replaces any earlier one, and ends on %s:\n"+
+		"  make a new one before then, or provisioning stops, taking access away included%s\n",
+		dim, kept.Expires.Format("2 January 2006"), reset)
+	return recordE(root, caller.auditRecord("scim.token-made", "/", audit.Success,
+		map[string]string{"group": ""}))
 }
 
 // scimHooks is the admin's Provisioning screen.

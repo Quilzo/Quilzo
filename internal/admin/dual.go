@@ -107,8 +107,10 @@ func (s *Server) applyDual(r dual.Request, by string) error {
 			return errors.New("this server has no provisioning")
 		}
 		return s.SCIM.Map(ch.Group, ch.To, by)
-	case dual.Token:
-		// Issued to whoever asked, on the command line: quilzo pending redeem.
+	case dual.Token, dual.Enrol, dual.SCIMToken:
+		// Issued to whoever asked: a token on the command line (quilzo
+		// pending redeem), a link or a provisioning token there or on
+		// People.
 		return nil
 	}
 	if s.Dual.Apply == nil {
@@ -119,8 +121,12 @@ func (s *Server) applyDual(r dual.Request, by string) error {
 
 type pendingRow struct {
 	dual.Request
-	Words                  string
-	CanDecide, CanTakeBack bool
+	Words                              string
+	CanDecide, CanTakeBack, CanReceive bool
+	// Gives is what receiving it gives, in words: the link or the token.
+	// The button said "the link" for a provisioning token too, which gives
+	// no link.
+	Gives string
 }
 
 // pendingRows are the requests waiting, for the People screen, with what p
@@ -138,7 +144,9 @@ func (s *Server) pendingRows(p principal, now time.Time) []pendingRow {
 	for _, r := range pend {
 		mine := strings.EqualFold(r.By, p.Name)
 		out = append(out, pendingRow{Request: r, Words: dual.StateWords(r, now),
-			CanDecide: r.Open(now) && (!mine || alone), CanTakeBack: mine})
+			CanDecide: r.Open(now) && (!mine || alone), CanTakeBack: mine,
+			CanReceive: mine && r.Redeemable(now) && receivedHere(r),
+			Gives:      map[bool]string{true: "the link", false: "the token"}[r.Kind == dual.Enrol]})
 	}
 	return out
 }
@@ -167,6 +175,9 @@ func (s *Server) handlePeoplePending(w http.ResponseWriter, r *http.Request) {
 		}
 	case "withdraw":
 		req, err = s.Dual.Store.Withdraw(id, p.Name, now)
+	case "receive":
+		s.receiveCredential(w, r, p, id, now)
+		return
 	default:
 		err = errors.New("approve, decline or withdraw?")
 	}
@@ -184,5 +195,72 @@ func (s *Server) handlePeoplePending(w http.ResponseWriter, r *http.Request) {
 	if do == "approve" && req.Kind == dual.Token {
 		msg += " " + req.By + " receives it with quilzo pending redeem " + req.ID + ", within a day."
 	}
+	if do == "approve" && dual.Received(req.Kind) && req.Kind != dual.Token {
+		if receivedHere(req) {
+			msg += " " + req.By + " receives it here, within a day."
+		} else {
+			msg += " " + req.By + " receives it with quilzo pending redeem " + req.ID + ", within a day."
+		}
+	}
 	s.peopleBack(w, r, msg)
+}
+
+// receivedHere reports whether an approved request is received on People:
+// an enrolment link, and a provisioning token asked for here. A token, and
+// a provisioning token asked for on the command line for a number of days
+// the screen cannot make, are received with quilzo pending redeem.
+func receivedHere(r dual.Request) bool {
+	switch r.Kind {
+	case dual.Enrol:
+		return true
+	case dual.SCIMToken:
+		var ch dual.SCIMTokenChange
+		return json.Unmarshal(r.Payload, &ch) == nil && ch.Days == 0
+	}
+	return false
+}
+
+// receiveCredential gives whoever asked for an enrolment link or a
+// provisioning token what they asked for, once another administrator has
+// approved it, and only them.
+func (s *Server) receiveCredential(w http.ResponseWriter, r *http.Request, p principal, id string, now time.Time) {
+	// Asked before it is redeemed, so nothing is used up here that cannot
+	// be given here.
+	req, err := s.Dual.Store.Get(id)
+	if err == nil && !receivedHere(req) {
+		err = fmt.Errorf("request %s is not received here: quilzo pending redeem %s", req.ID, req.ID)
+	}
+	var ch dual.EnrolChange
+	switch {
+	case err != nil:
+	case req.Kind == dual.Enrol && s.Enrol == nil:
+		err = errors.New("this server was started without enrolment links")
+	case req.Kind == dual.Enrol:
+		if err = json.Unmarshal(req.Payload, &ch); err == nil && len(s.heldBy(ch.Principal)) == 0 {
+			err = errors.New("a passkey would sign " + ch.Principal + " in to nothing now: they hold nothing here")
+		}
+	case s.SCIM == nil || s.SCIM.NewToken == nil:
+		err = errors.New("this build has no provisioning")
+	}
+	if err == nil {
+		req, err = s.Dual.Store.Redeem(id, p.Name, now)
+	}
+	if err != nil {
+		s.peopleBack(w, r, err.Error())
+		return
+	}
+	detail := map[string]string{"by": p.Name, "request": req.ID, "kind": req.Kind, "approved_by": req.DecidedBy}
+	maps.Copy(detail, req.About())
+	s.audit("dual.redeemed", "/", detail)
+	if req.Kind == dual.Enrol {
+		s.giveEnrolLink(w, r, p, ch.Principal, ch.For)
+		return
+	}
+	token, err := s.SCIM.NewToken(p.Name)
+	if err != nil {
+		s.peopleBack(w, r, err.Error())
+		return
+	}
+	// Shown in this response and never again, as on Provisioning.
+	s.renderProvisioning(w, r, p, token)
 }

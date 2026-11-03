@@ -222,3 +222,34 @@ func TestPublishingFromTheBrowserChecksTheThemesContrast(t *testing.T) {
 		t.Fatal("a hand-written stylesheet was judged by tokens it does not use")
 	}
 }
+
+// A credential confined to /@security reaches the shield's screen, which is
+// the security area's, but changing the shield takes an administrator of
+// the whole site, and that is asked of the session as well as the person.
+// It used to be asked of the person alone, so an administrator's token
+// issued `--on /@security` (refused /people/grant) blocked networks, added
+// trusted networks and decoys, and held every playbook.
+func TestASessionConfinedToSecurityCannotChangeTheShield(t *testing.T) {
+	srv, _ := setup(t)
+	root, _ := wireShield(t, srv)
+	sec, _, err := srv.Tokens.IssueSession("sec-only", "editor", auth.RoleAdmin, auth.AreaSecurity, time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := postForm(t, srv, "/people/grant", sec, "principal=mallory&role=admin&resource=/"); w.Code != http.StatusForbidden {
+		t.Fatalf("control: a /@security-scoped /people/grant answered %d", w.Code)
+	}
+	if page := getPage(t, srv, "/security/shield", sec); strings.Contains(page, "Protect by hand") {
+		t.Error("a session confined to /@security is offered the shield's controls")
+	}
+	for _, body := range []string{"do=hold&why=x",
+		"do=apply&kind=block&target=203.0.113.0/24&where=site&for=1h&reason=x",
+		"do=decoy-add&where=x", "do=trust-add&network=198.51.100.0/24", "do=mode&name=chatbot-flood&mode=act&why=x"} {
+		postForm(t, srv, "/security/shield/act", sec, body)
+	}
+	st, _ := shield.Load(root)
+	bk, _ := shield.LoadBook(root)
+	if st.Watching != nil || len(st.Protections) != 0 || len(st.Decoys) != 0 || len(st.Trusted) != 0 || len(bk.Pending) != 0 {
+		t.Fatalf("a session confined to /@security changed the shield: %+v %+v", st, bk)
+	}
+}

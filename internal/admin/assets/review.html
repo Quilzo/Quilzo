@@ -137,7 +137,9 @@ human-written.</p>
 
 {{if .CanPublish}}
 <h2>Publish</h2>
-<form method="post" action="/publish">
+{{with .Promote}}<form method="post" action="/publishing/promote">
+  <input type="hidden" name="from" value="{{.From}}"><input type="hidden" name="to" value="{{.To}}">{{if .Skip}}<input type="hidden" name="skip" value="1">{{end}}
+{{else}}<form method="post" action="/publish">{{end}}
   {{if or (gt .Blocking 0) .Unmarked}}
   <div class="field">
     <label for="reason">Reason for publishing anyway {{template "req"}}</label>
@@ -146,7 +148,7 @@ human-written.</p>
       indistinguishable from not checking.</p>
   </div>
   {{end}}
-  <button type="submit">Publish to live</button>
+  <button type="submit">{{with .Promote}}Promote {{.From}} to {{.To}}{{else}}Publish to live{{end}}</button>
 </form>
 {{else}}
 <p class="notice">You can review but not publish.</p>

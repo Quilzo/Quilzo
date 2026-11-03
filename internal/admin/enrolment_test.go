@@ -7,12 +7,14 @@ import (
 	"crypto/x509"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/dual"
 	"github.com/quilzo/quilzo/internal/enrol"
 )
 
@@ -163,5 +165,87 @@ func TestTheLinkIsGivenFromThePeopleScreen(t *testing.T) {
 	post(t, srv2, "/people/enrol/revoke?principal=dana", admin)
 	if _, err := srv2.Enrol.Peek(secret, time.Now()); err == nil {
 		t.Error("the link still works after it was ended")
+	}
+}
+
+// linkIn is the enrolment secret a page shows, or "".
+func linkIn(body string) string {
+	i := strings.Index(body, enrolStart+enrol.Prefix)
+	if i < 0 {
+		return ""
+	}
+	return body[i+len(enrolStart) : i+len(enrolStart)+len(enrol.Prefix)+52]
+}
+
+// An enrolment link is a credential for the person it names, so one for an
+// administrator waits for a second administrator, as an administrator's
+// token does.
+//
+// It did not. Editor asked for mallory to be made an administrator, which
+// waited for a second one; issued an enrolment link for dana, the other
+// administrator; opened it with editor's own authenticator; signed in as
+// dana at two factors; and approved the waiting request as her. Mallory
+// became an administrator on one person's word, and the record said dana
+// had agreed.
+func TestOneAdministratorCannotEnrolAPasskeyForAnother(t *testing.T) {
+	srv, editor := fullyWired(t)
+	srv.Enrol = &enrol.Store{Path: filepath.Join(t.TempDir(), "enrolments.json")}
+	if err := srv.Policy.Grant(auth.Binding{Principal: "dana", Role: auth.RoleAdmin, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	if w := postForm(t, srv, "/people/grant", editor, "principal=mallory&role=admin&resource=/"); !strings.Contains(w.Header().Get("Location"), "waits") {
+		t.Fatalf("control: making mallory an administrator did not wait: %s", w.Header().Get("Location"))
+	}
+	w := postForm(t, srv, "/people/enrol", editor, "principal=dana")
+	if secret := linkIn(w.Body.String()); secret != "" {
+		// The rest of the way in, to show what the link was worth.
+		mine := newFake(t, "editor-key")
+		if w := mine.enrol(t, srv, secret); w.Code == http.StatusOK {
+			mine.count++
+			if as := cookieFrom(mine.signIn(t, srv)); as != "" {
+				for _, r := range srv.pendingRows(principal{Name: "dana"}, time.Now()) {
+					postFormAs(t, srv, "/people/pending", as, url.Values{"id": {r.ID}, "do": {"approve"}})
+				}
+			}
+		}
+		if srv.Policy.Evaluate("mallory", auth.ActGrant, "/").Allowed {
+			t.Fatal("one administrator made mallory an administrator alone, through a passkey enrolled for another")
+		}
+		t.Fatal("one administrator was given an enrolment link for another with nobody agreeing")
+	}
+	if !strings.Contains(w.Header().Get("Location"), "waits+for+a+second+administrator") {
+		t.Fatalf("the link did not wait for a second administrator: %d %s", w.Code, w.Header().Get("Location"))
+	}
+	var id string
+	for _, r := range srv.pendingRows(principal{Name: "dana"}, time.Now()) {
+		if r.Kind == dual.Enrol {
+			id = r.ID
+		}
+	}
+	if id == "" {
+		t.Fatal("no request for the link is waiting")
+	}
+	// The one who asked cannot receive it before somebody agrees.
+	if w := postForm(t, srv, "/people/pending", editor, "do=receive&id="+id); linkIn(w.Body.String()) != "" {
+		t.Fatal("the link was received before anybody approved it")
+	}
+	danaSession, _, err := srv.Tokens.IssueSession("dana", "dana", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	postForm(t, srv, "/people/pending", danaSession, "do=approve&id="+id)
+	// Approved, it is the asker's to receive, once, and nobody else's.
+	if w := postForm(t, srv, "/people/pending", danaSession, "do=receive&id="+id); linkIn(w.Body.String()) != "" {
+		t.Fatal("the approver received the link somebody else asked for")
+	}
+	if !strings.Contains(get(t, srv, "/people", editor).Body.String(), `value="receive"`) {
+		t.Error("the People screen does not offer the approved link to the one who asked")
+	}
+	secret := linkIn(postForm(t, srv, "/people/pending", editor, "do=receive&id="+id).Body.String())
+	if l, err := srv.Enrol.Peek(secret, time.Now()); err != nil || l.Principal != "dana" || l.By != "editor" {
+		t.Fatalf("the link received: %+v %v", l, err)
+	}
+	if again := postForm(t, srv, "/people/pending", editor, "do=receive&id="+id); linkIn(again.Body.String()) != "" {
+		t.Error("an approved link was received twice")
 	}
 }

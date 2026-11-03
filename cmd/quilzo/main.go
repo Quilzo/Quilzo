@@ -371,7 +371,7 @@ working together
 publishing
   quilzo env list                          what is where, and what is waiting
   quilzo env add staging --before production
-  quilzo env promote staging production    a pointer move; the same bytes
+  quilzo env promote staging production    a pointer move; into production, checked as publish is
   quilzo env diff staging production       what would change
   quilzo env remove NAME                   take one out of the pipeline
   quilzo publish [COMMIT]                  move live to the draft
@@ -1714,30 +1714,37 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 	// and teaches them the approval is a formality.
 	if pol, perr := loadApprovalPolicy(root); perr == nil {
 		if pol.Required > 0 || pol.RequireHumanForAI {
-			prop, _, cerr := currentProposal(root, s)
-			if cerr == nil {
-				d := pol.Evaluate(*prop, kindOfPrincipal(root), time.Now())
-				if !d.Allowed {
-					record(root, caller.auditRecord("publish", "/", audit.Denied,
-						map[string]string{
-							// "proposal" and not "content": Append refuses
-							// any key containing "content" and refuses the
-							// whole record with it, so every publish blocked
-							// by dual authorisation went unrecorded — the one
-							// gate whose entire purpose is that somebody
-							// later can see it was tried.
-							"reason":     "dual-authorization",
-							"have":       fmt.Sprintf("%d", d.Have),
-							"need":       fmt.Sprintf("%d", d.Need),
-							"proposal":   prop.Content,
-							"author":     prop.Author,
-							"authorkind": prop.AuthorKind,
-						}))
-					return errBlocked{fmt.Errorf("%s\n  quilzo review status",
-						d.Reason)}
-				}
-				w.Human("  %s%s%s\n", green, d.Reason, reset)
+			// The approvals of what is being published, which is the draft
+			// unless a commit was named (see proposalFor).
+			prop, _, cerr := proposalFor(root, s, candidateFor)
+			if cerr != nil {
+				record(root, caller.auditRecord("publish", "/", audit.Denied,
+					map[string]string{"reason": "the approval check could not run",
+						"detail": cerr.Error()}))
+				return errBlocked{fmt.Errorf("the approval check could not run, so "+
+					"publishing would claim a check that did not happen: %v", cerr)}
 			}
+			d := pol.Evaluate(*prop, kindOfPrincipal(root), time.Now())
+			if !d.Allowed {
+				record(root, caller.auditRecord("publish", "/", audit.Denied,
+					map[string]string{
+						// "proposal" and not "content": Append refuses
+						// any key containing "content" and refuses the
+						// whole record with it, so every publish blocked
+						// by dual authorisation went unrecorded — the one
+						// gate whose entire purpose is that somebody
+						// later can see it was tried.
+						"reason":     "dual-authorization",
+						"have":       fmt.Sprintf("%d", d.Have),
+						"need":       fmt.Sprintf("%d", d.Need),
+						"proposal":   prop.Content,
+						"author":     prop.Author,
+						"authorkind": prop.AuthorKind,
+					}))
+				return errBlocked{fmt.Errorf("%s\n  quilzo review status",
+					d.Reason)}
+			}
+			w.Human("  %s%s%s\n", green, d.Reason, reset)
 		}
 	}
 
