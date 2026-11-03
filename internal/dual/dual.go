@@ -15,7 +15,9 @@
 // administrator proposes and another approves, and the request records
 // both. A store with one administrator is not left unable to change
 // anything: their own request is applied as they make it, and the record
-// says it was approved alone.
+// says it was approved alone. Not for a day after another administrator
+// stopped being one, though (Settle): removing the other was otherwise the
+// way to approve anything alone.
 //
 // The store keeps the request, not the change: what applying a request
 // does is its caller's, by kind, because the changes live in different
@@ -257,6 +259,114 @@ func (r Request) Redeemable(now time.Time) bool {
 
 type file struct {
 	Requests []Request `json:"requests"`
+	// Removed is the last administrator who stopped being one while
+	// another still was, until two or more hold the role again.
+	Removed *Removal `json:"removed,omitempty"`
+}
+
+// Settle is how long, after an administrator stops being one, the
+// administrator left does not approve alone, unless two or more hold the
+// role again before it is over.
+//
+// One administrator may remove another; that is not dual-controlled. And
+// the only administrator approves alone. Together, two administrators
+// became one in a single step, and the one approved their own requests at
+// once, including the one the other would have refused. A day is long
+// enough for the person removed, or anybody watching the log, to notice
+// and say so before anything is approved on one person's word.
+const Settle = 24 * time.Hour
+
+// Removal is an administrator who stopped being one, and when.
+type Removal struct {
+	Principal string    `json:"principal"`
+	At        time.Time `json:"at"`
+}
+
+// Until is when approving alone is allowed again.
+func (r Removal) Until() time.Time { return r.At.Add(Settle) }
+
+// Refusal is why approving alone is refused, and until when, as the
+// person refused reads it. It names nobody: it is said where a record may
+// copy it, and the person removed is in the record under an identity key.
+func (r Removal) Refusal() string {
+	const when = "15:04 MST on 2 Jan 2006"
+	return fmt.Sprintf("approving alone is refused until %s: an administrator stopped being one at %s, "+
+		"and for a day after that the administrator left does not approve alone. Another administrator "+
+		"approves it, or you do once the day is over", r.Until().UTC().Format(when), r.At.UTC().Format(when))
+}
+
+// Detail is the removal as the record of a refusal carries it: who was
+// removed (an identity key, so the log pseudonymises them), when, and
+// until when approving alone is refused.
+func (r Removal) Detail() map[string]string {
+	return map[string]string{"subject": r.Principal, "removed_at": r.At.UTC().Format(time.RFC3339),
+		"until": r.Until().UTC().Format(time.RFC3339)}
+}
+
+// Administrators are who pol lets administer the whole site now, by name
+// in lower case: a binding that has ended, or one a deny outranks, is
+// nobody. These are who could approve a request; only they count towards
+// whether somebody is the only one.
+func Administrators(pol *auth.Policy) map[string]bool {
+	out := map[string]bool{}
+	if pol == nil {
+		return out
+	}
+	for _, b := range pol.Snapshot() {
+		if !b.Deny && b.Role == auth.RoleAdmin && pol.Evaluate(b.Principal, auth.ActGrant, "/").Allowed {
+			out[strings.ToLower(b.Principal)] = true
+		}
+	}
+	return out
+}
+
+// NoteAdministrators records a change to who administers the whole site,
+// from before to after, at now. Somebody who stopped being one while
+// another still was starts a day in which the administrator left does not
+// approve alone; two or more holding the role ends it. A store that has
+// never had two administrators is not touched.
+//
+// Called by whatever writes the access policy, under its lock, so every
+// way an administrator stops being one is seen: revoked, denied, or
+// deprovisioned by the identity provider.
+func (s Store) NoteAdministrators(before, after map[string]bool, now time.Time) error {
+	var gone []string
+	for p := range before {
+		if !after[p] {
+			gone = append(gone, p)
+		}
+	}
+	sort.Strings(gone)
+	removed := len(gone) > 0 && len(before) >= 2 && len(after) < 2
+	again := len(after) >= 2 && len(before) < 2
+	if !removed && !again {
+		return nil
+	}
+	return atomicfile.Update(s.Path, func(f *file) error {
+		if again {
+			if f.Removed == nil {
+				return atomicfile.ErrUnchanged
+			}
+			f.Removed = nil
+			return nil
+		}
+		f.Removed = &Removal{Principal: gone[0], At: now.UTC()}
+		return nil
+	})
+}
+
+// Settling is the removal the administrator left is still waiting out at
+// now, or nil when approving alone is not refused.
+func (s Store) Settling(now time.Time) (*Removal, error) {
+	var out *Removal
+	err := atomicfile.Update(s.Path, func(f *file) error {
+		if f.Removed != nil && now.Before(f.Removed.Until()) {
+			r := *f.Removed
+			out = &r
+		}
+		return atomicfile.ErrUnchanged
+	})
+	return out, err
 }
 
 // Store is the requests, in one file.

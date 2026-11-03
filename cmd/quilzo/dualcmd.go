@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"maps"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
@@ -29,8 +30,9 @@ func dualStore(root string) *dual.Store {
 // is the only administrator, whose request is approved as it is made;
 // false when it waits, and the person has been told how it is approved.
 func proposeSecond(root string, c *Caller, kind, what string, payload any, why string) (bool, error) {
+	now := time.Now()
 	alone := onlyAdministrator(root, c.Name)
-	r, err := dualStore(root).Propose(kind, what, payload, why, c.Name, alone, time.Now())
+	r, err := dualStore(root).Propose(kind, what, payload, why, c.Name, alone, now)
 	if err != nil {
 		return false, err
 	}
@@ -47,6 +49,11 @@ func proposeSecond(root string, c *Caller, kind, what string, payload any, why s
 	}
 	if err := recordE(root, c.auditRecord("dual.proposed", "/", audit.Success, detail)); err != nil {
 		return false, err
+	}
+	// The only administrator, whose request would have been approved as
+	// they made it, a moment after another administrator was removed.
+	if rm := aloneRefusal(root, c.Name, now); rm != nil {
+		w.Human("%s%s%s\n", yellow, refuseAlone(root, c, rm, map[string]string{"request": r.ID, "kind": kind}), reset)
 	}
 	if w.JSON(r) {
 		return false, nil
@@ -164,6 +171,13 @@ func cmdPending(root string, args []string) error {
 		approve := args[0] == "approve"
 		if err := authorise(root, c, auth.ActGrant, "/"); err != nil {
 			return err
+		}
+		// Their own request, approved alone: not for a day after another
+		// administrator stopped being one.
+		if mine, gerr := store.Get(id); approve && gerr == nil && strings.EqualFold(mine.By, c.Name) {
+			if rm := aloneRefusal(root, c.Name, now); rm != nil {
+				return refuseAlone(root, c, rm, map[string]string{"request": mine.ID, "kind": mine.Kind})
+			}
 		}
 		r, err := store.Decide(id, c.Name, approve, onlyAdministrator(root, c.Name), now)
 		if err != nil {

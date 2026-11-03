@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"maps"
 	"os"
 	"sort"
 	"strconv"
@@ -15,7 +16,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
-	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/dual"
 	"github.com/quilzo/quilzo/internal/shield"
 )
 
@@ -514,6 +515,16 @@ func shieldPlaybook(root string, args []string) error {
 		if len(args) != 2 {
 			return fmt.Errorf("usage: quilzo shield playbook %s ID", args[0])
 		}
+		// Their own change, approved alone: not for a day after another
+		// administrator stopped being one.
+		for _, q := range bk.Pending {
+			if q.ID != args[1] || q.By != by || args[0] != "approve" {
+				continue
+			}
+			if rm := aloneRefusal(root, by, now); rm != nil {
+				return refuseAlone(root, c, rm, map[string]string{"proposal": q.ID})
+			}
+		}
 		p, err := shield.Decide(root, args[1], by, args[0] == "approve", onlyAdministrator(root, by), now)
 		if err != nil {
 			return err
@@ -566,6 +577,9 @@ func shieldAloneOr(root string, c *Caller, by string, p shield.Proposal, now tim
 			green, d.Outcome, reset, proposalWords(d))
 		return nil
 	}
+	if rm := aloneRefusal(root, by, now); rm != nil {
+		w.Human("  %s%s%s\n", yellow, refuseAlone(root, c, rm, map[string]string{"proposal": p.ID}), reset)
+	}
 	if w.JSON(p) {
 		return nil
 	}
@@ -575,22 +589,47 @@ func shieldAloneOr(root string, c *Caller, by string, p shield.Proposal, now tim
 }
 
 // onlyAdministrator reports whether this person is the only one who could
-// approve: an install with one administrator is not left unable to change
-// anything, and the history says the change was made alone.
+// approve, and may approve alone: an install with one administrator is not
+// left unable to change anything, and the history says the change was made
+// alone. Not for a day after another administrator stopped being one
+// (aloneRefusal), and not when that cannot be read.
 func onlyAdministrator(root, by string) bool {
+	if !soleAdministrator(root, by) {
+		return false
+	}
+	rm, err := dualStore(root).Settling(time.Now())
+	return err == nil && rm == nil
+}
+
+// soleAdministrator reports whether nobody but this person administers the
+// whole site now (dual.Administrators).
+func soleAdministrator(root, by string) bool {
 	pol, err := loadPolicy(root)
 	if err != nil {
 		return false
 	}
-	// Whoever the policy would let administer the whole site now: a
-	// binding that has ended, or one a deny outranks, is nobody.
-	admins := map[string]bool{}
-	for _, b := range pol.Bindings {
-		if !b.Deny && b.Role == auth.RoleAdmin && pol.Evaluate(b.Principal, auth.ActGrant, "/").Allowed {
-			admins[b.Principal] = true
-		}
+	admins := dual.Administrators(pol)
+	return len(admins) == 0 || (len(admins) == 1 && admins[strings.ToLower(by)])
+}
+
+// aloneRefusal is the removal that keeps by, the only administrator, from
+// approving alone at now, or nil when they are not the only one or may.
+func aloneRefusal(root, by string, now time.Time) *dual.Removal {
+	if !soleAdministrator(root, by) {
+		return nil
 	}
-	return len(admins) == 0 || (len(admins) == 1 && admins[by])
+	rm, _ := dualStore(root).Settling(now)
+	return rm
+}
+
+// refuseAlone records that the only administrator was refused approving
+// alone, with the removal it follows and what they were approving, and is
+// the refusal in words.
+func refuseAlone(root string, c *Caller, rm *dual.Removal, about map[string]string) error {
+	detail := rm.Detail()
+	maps.Copy(detail, about)
+	record(root, c.auditRecord("dual.alone-refused", "/", audit.Denied, detail))
+	return errors.New(rm.Refusal())
 }
 
 func shieldHold(root string, args []string) error {

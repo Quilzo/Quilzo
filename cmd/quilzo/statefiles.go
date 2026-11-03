@@ -9,6 +9,7 @@ import (
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/dual"
 )
 
 // The state files where a lost write undoes a security decision: who may
@@ -19,11 +20,21 @@ import (
 
 // updatePolicy changes the access policy as it is stored now, and returns
 // it as it was written.
+//
+// An administrator who stops being one is noted, before the policy is
+// written, for the day in which the one left does not approve alone
+// (dual.Settle). Here because every change to who may do what comes this
+// way: revoked or denied on the command line or on People, or
+// deprovisioned by the identity provider.
 func updatePolicy(root string, change func(*auth.Policy) error) (*auth.Policy, error) {
 	var out *auth.Policy
 	err := atomicfile.Update(policyPath(root), func(p *auth.Policy) error {
 		out = p
-		return change(p)
+		before := dual.Administrators(p)
+		if err := change(p); err != nil {
+			return err
+		}
+		return dualStore(root).NoteAdministrators(before, dual.Administrators(p), time.Now())
 	})
 	if err != nil {
 		return nil, err

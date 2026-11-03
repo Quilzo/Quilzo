@@ -92,3 +92,68 @@ func TestAWeakerSettingOnTheScreenTakesTwo(t *testing.T) {
 		t.Fatal("approved, and the setting did not change")
 	}
 }
+
+// On People, the administrator left after removing the other does not
+// approve alone for a day, and is told why and until when; a second
+// administrator ends the wait.
+//
+// One administrator may remove another, and the only administrator
+// approves alone. Together they were one administrator approving anything
+// alone: the editor asked for pat to be made an administrator, removed lee,
+// who would have decided it, and approved it as the only one left.
+func TestRemovingTheOtherAdministratorOnTheScreenDoesNotLetTheOneLeftApproveAlone(t *testing.T) {
+	srv, editor := setup(t)
+	var refused []map[string]string
+	srv.Audit = func(action, _ string, detail map[string]string) {
+		if action == "dual.alone-refused" {
+			refused = append(refused, detail)
+		}
+	}
+	if err := srv.Policy.Grant(auth.Binding{Principal: "lee", Role: auth.RoleAdmin, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	postForm(t, srv, "/people/grant", editor, url.Values{"principal": {"pat"}, "role": {"admin"}, "resource": {"/"}}.Encode())
+	pend, _ := srv.Dual.Store.Pending(time.Now())
+	if len(pend) != 1 {
+		t.Fatalf("pending: %+v", pend)
+	}
+	postForm(t, srv, "/people/revoke", editor, url.Values{"principal": {"lee"}, "role": {"admin"}, "resource": {"/"}}.Encode())
+	if srv.Policy.Evaluate("lee", auth.ActGrant, "/").Allowed {
+		t.Fatal("control: lee was not removed")
+	}
+
+	w := postForm(t, srv, "/people/pending", editor, url.Values{"id": {pend[0].ID}, "do": {"approve"}}.Encode())
+	if srv.Policy.Evaluate("pat", auth.ActGrant, "/").Allowed {
+		t.Fatal("the editor removed the other administrator and approved their own request alone")
+	}
+	if loc, _ := url.QueryUnescape(w.Header().Get("Location")); !strings.Contains(loc, "until") {
+		t.Errorf("the refusal does not say why and until when: %s", loc)
+	}
+	if len(refused) == 0 || refused[0]["subject"] != "lee" || refused[0]["until"] == "" {
+		t.Errorf("the refusal was not recorded with the removal it follows: %v", refused)
+	}
+	if strings.Contains(get(t, srv, "/people", editor).Body.String(), `value="approve"`) {
+		t.Error("the only administrator is still offered to approve their own request")
+	}
+	// A change they ask for now waits as well.
+	postForm(t, srv, "/people/grant", editor, url.Values{"principal": {"kim"}, "role": {"admin"}, "resource": {"/"}}.Encode())
+	if srv.Policy.Evaluate("kim", auth.ActGrant, "/").Allowed {
+		t.Fatal("an administrator was made alone a moment after the other was removed")
+	}
+
+	// sam is made an administrator as the identity provider makes one, by
+	// a group already mapped, and approves.
+	if err := srv.changePolicy(func(p *auth.Policy) error {
+		return p.Grant(auth.Binding{Principal: "sam", Role: auth.RoleAdmin, Resource: "/"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if rm, err := srv.Dual.Store.Settling(time.Now()); err != nil || rm != nil {
+		t.Fatalf("two administrators again, and the wait goes on: %+v %v", rm, err)
+	}
+	sam, _, _ := srv.Tokens.IssueSession("sam", "sam", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+	postForm(t, srv, "/people/pending", sam, url.Values{"id": {pend[0].ID}, "do": {"approve"}}.Encode())
+	if !srv.Policy.Evaluate("pat", auth.ActGrant, "/").Allowed {
+		t.Fatal("a second administrator could not approve")
+	}
+}

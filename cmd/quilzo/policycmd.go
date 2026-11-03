@@ -270,6 +270,10 @@ func policyDecide(root, verb string, args []string) error {
 		return derr
 	}); err != nil {
 		if errors.Is(err, odp.ErrSameAdministrator) {
+			// The only administrator, a moment after another was removed.
+			if rm := aloneRefusal(root, c.Name, time.Now()); rm != nil {
+				return refuseAlone(root, c, rm, map[string]string{"proposal": args[0]})
+			}
 			record(root, c.auditRecord("policy.refused", "/settings", audit.Denied,
 				map[string]string{"proposal": args[0], "reason": "proposer approving"}))
 		}

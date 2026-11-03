@@ -273,6 +273,11 @@ func (s *Server) handleParametersAct(w http.ResponseWriter, r *http.Request) {
 		})
 		if err != nil {
 			if errors.Is(err, odp.ErrSameAdministrator) {
+				// The only administrator, a moment after another was removed.
+				if rm := s.aloneRefusal(p.Name, now); rm != nil {
+					back("e", s.refuseAlone(p, rm, map[string]string{"proposal": id}))
+					return
+				}
 				s.audit("policy.refused", "/settings", map[string]string{"by": p.Name, "proposal": id, "reason": "proposer approving"})
 			}
 			back("e", err.Error())

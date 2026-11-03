@@ -612,7 +612,13 @@ func (s *Server) handleMakeAct(w http.ResponseWriter, r *http.Request) {
 		case err != nil:
 			makeBack(w, r, "", err)
 		case id != "":
-			makeBack(w, r, fmt.Sprintf("%s waits for a second person to approve it.", pkg.Title), nil)
+			msg := fmt.Sprintf("%s waits for a second person to approve it.", pkg.Title)
+			// The only administrator, a moment after another was removed:
+			// the install recorded the refusal, and this says why.
+			if rm := s.aloneRefusal(p.Name, time.Now()); rm != nil {
+				msg += " " + aloneSentence(rm)
+			}
+			makeBack(w, r, msg, nil)
 		case len(secrets) > 0:
 			w.Header().Set("Cache-Control", "no-store")
 			s.render(w, r, "make.html", map[string]any{"Title": "Make", "Nav": "make", "Principal": p,
