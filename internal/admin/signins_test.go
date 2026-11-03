@@ -30,3 +30,31 @@ func TestAnAnalystCannotLetAnAdministratorPastAStepUp(t *testing.T) {
 		}
 	}
 }
+
+// Standing is the session's, not only the person's. An administrator of the
+// whole site signed in with a credential confined to /@security reaches
+// Sign-ins, but vouching for another administrator of the whole site takes
+// that standing through this session, which it does not have.
+func TestASessionConfinedToSecurityCannotLetAnAdministratorIn(t *testing.T) {
+	srv, _ := setup(t)
+	if err := srv.Policy.Grant(auth.Binding{Principal: "boss", Role: auth.RoleAdmin, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	sec, _, err := srv.Tokens.IssueSession("sec-only", "editor", auth.RoleAdmin, auth.AreaSecurity, time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, tok, err := srv.Tokens.IssueSession("s", "boss", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.Tokens.RequireStepUp(tok.ID, "Sydney"); err != nil {
+		t.Fatal(err)
+	}
+	postForm(t, srv, "/security/signins/act", sec, "do=letin&session="+tok.ID)
+	for _, x := range srv.Tokens.Snapshot() {
+		if x.ID == tok.ID && x.StepUp == "" {
+			t.Error("a session confined to /@security let a site administrator in")
+		}
+	}
+}

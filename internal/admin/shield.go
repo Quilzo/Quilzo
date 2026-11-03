@@ -67,8 +67,17 @@ type shieldProposal struct {
 	Mine       bool
 }
 
+// shieldSiteAdmin says whether this session administers the whole site,
+// which changing the shield or the organisation's policy takes.
+//
+// Asked of the session through allows, and not of the person alone. It
+// used to be Evaluate on the person, so the credential's own role and path
+// never counted: an administrator's token issued `--role reader` proposed
+// and approved the organisation's policy, and one issued `--on /@security`
+// blocked networks and held every playbook, while both were refused
+// /people/grant.
 func (s *Server) shieldSiteAdmin(p principal) bool {
-	return s.Policy != nil && s.Policy.Evaluate(p.Name, auth.ActGrant, "/").Allowed
+	return s.Policy != nil && s.allows(p, auth.ActGrant, "/")
 }
 
 func (s *Server) handleShield(w http.ResponseWriter, r *http.Request) {

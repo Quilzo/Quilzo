@@ -440,10 +440,12 @@ func (s *Server) handleSignInsAct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Vouching for somebody takes at least their standing: an analyst
-	// cannot let an administrator of the whole site past a step-up.
+	// cannot let an administrator of the whole site past a step-up. The
+	// standing is this session's, so an administrator signed in with a
+	// credential confined to /@security cannot either.
 	if r.FormValue("do") == "letin" && s.Policy != nil &&
 		s.Policy.Evaluate(who, auth.ActGrant, "/").Allowed &&
-		!s.Policy.Evaluate(p.Name, auth.ActGrant, "/").Allowed {
+		!s.allows(p, auth.ActGrant, "/") {
 		back("e", who+" administers the whole site; only somebody who does too can let them in.")
 		return
 	}

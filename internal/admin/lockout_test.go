@@ -229,3 +229,31 @@ func TestSigningInAgainInPlaceIsForThePagesPerson(t *testing.T) {
 		t.Errorf("the notice in place: %q", notice)
 	}
 }
+
+// Unlocking an administrator of the whole site takes somebody who is one
+// through the session they are using: a credential confined to /@security
+// reaches Sign-ins but not that standing.
+func TestASessionConfinedToSecurityCannotUnlockAnAdministrator(t *testing.T) {
+	srv, _ := setup(t)
+	if err := srv.Policy.Grant(auth.Binding{Principal: "boss", Role: auth.RoleAdmin, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	srv.Lockout = &lockout.Store{Path: filepath.Join(t.TempDir(), "lockout.json")}
+	now := time.Now()
+	for i := 0; i < lockout.Threshold; i++ {
+		if _, _, err := srv.Lockout.Fail("boss", "203.0.113.7:5000", now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if held, _ := srv.Lockout.Held(now); len(held) != 1 {
+		t.Fatalf("control: boss is not locked out: %+v", held)
+	}
+	sec, _, err := srv.Tokens.IssueSession("sec-only", "editor", auth.RoleAdmin, auth.AreaSecurity, time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	postForm(t, srv, "/security/signins/unlock", sec, "person=boss")
+	if held, _ := srv.Lockout.Held(time.Now()); len(held) != 1 {
+		t.Fatal("a session confined to /@security unlocked an administrator of the whole site")
+	}
+}

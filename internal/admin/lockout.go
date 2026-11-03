@@ -174,8 +174,11 @@ func (s *Server) handleSignInsUnlock(w http.ResponseWriter, r *http.Request) {
 	case strings.EqualFold(who, p.Name):
 		back("e", "Somebody else has to unlock you: that is the point of a lockout.")
 		return
+	// The standing is this session's, as shieldSiteAdmin explains: a
+	// credential confined to /@security reaches this screen, and is not an
+	// administrator of the whole site for the request it makes.
 	case s.Policy != nil && s.Policy.Evaluate(who, auth.ActGrant, "/").Allowed &&
-		!s.Policy.Evaluate(p.Name, auth.ActGrant, "/").Allowed:
+		!s.allows(p, auth.ActGrant, "/"):
 		back("e", who+" administers the whole site; only somebody who does too can unlock them.")
 		return
 	}
