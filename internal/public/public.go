@@ -149,6 +149,12 @@ type Site struct {
 	// otherwise never find it.
 	IndexLive bool
 	searchMu  sync.Mutex
+	// visibleIdx is the index a visitor's search is answered from: of the
+	// pages they may read now, and nothing else, kept under visibleKey
+	// until that set changes (visibleSearch).
+	visibleMu  sync.Mutex
+	visibleKey string
+	visibleIdx *search.Index
 	// Licence declares terms for automated crawlers under Really Simple
 	// Licensing. Empty means no terms are declared, which is not the same as
 	// permitting everything — it is saying nothing, and saying nothing is the
@@ -794,12 +800,12 @@ func (st *Site) searchAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	visible, _, err := st.pages()
+	visible, oids, err := st.pages()
 	if err != nil {
 		http.Error(w, "nothing is published", http.StatusServiceUnavailable)
 		return
 	}
-	results := st.searchVisible(q, visible, 20)
+	results := st.searchVisible(q, visible, oids, 20)
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	// No caching. A results page cached by a proxy is a results page served to
@@ -818,23 +824,54 @@ func (st *Site) searchAPI(w http.ResponseWriter, r *http.Request) {
 // members and pages whose publish window has not opened or has closed. Both
 // the search page and the API answered from it unfiltered, and so named
 // those pages — title and address — to anybody who searched for a word in
-// them. Asked for more than it returns, so the filtering does not leave a
-// page of results short when hidden pages ranked high.
-func (st *Site) searchVisible(q string, visible map[string]any, n int) []search.Result {
+// them. Filtering the results stopped that and left the scores counting
+// them: BM25 weighs a word by how many pages hold it and a page by the
+// average length, and /search.json and /ask return the score, so a visible
+// page's score for "merger" fell when an embargoed press release
+// mentioning one was published. So a visitor's search is answered from an
+// index of the visible pages alone (visibleSearch), and the filter stays
+// as the guard it was.
+func (st *Site) searchVisible(q string, visible map[string]any, oids map[string]string, n int) []search.Result {
 	out := []search.Result{}
-	idx := st.searchIndex()
+	idx := st.visibleSearch(visible, oids)
 	if idx == nil {
 		return out
 	}
-	for _, res := range idx.Search(q, n*3) {
+	for _, res := range idx.Search(q, n) {
 		if _, ok := visible[res.Page]; ok {
 			out = append(out, res)
-			if len(out) == n {
-				break
-			}
 		}
 	}
 	return out
+}
+
+// visibleSearch is the index of the pages a visitor may read now, built
+// again when that set changes: a publish, or a publish window opening or
+// closing. Keyed by each page's name and object id, as an assistant's
+// index is (assistantIndex), so the same pages are not indexed twice. Nil
+// when the site has no search.
+func (st *Site) visibleSearch(visible map[string]any, oids map[string]string) *search.Index {
+	full := st.searchIndex()
+	if full == nil {
+		return nil
+	}
+	names := make([]string, 0, len(visible))
+	for n := range visible {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	h := sha256.New()
+	h.Write([]byte(full.Commit))
+	for _, n := range names {
+		h.Write([]byte("\x00" + n + "\x00" + oids[n]))
+	}
+	key := hex.EncodeToString(h.Sum(nil))
+	st.visibleMu.Lock()
+	defer st.visibleMu.Unlock()
+	if st.visibleIdx == nil || st.visibleKey != key {
+		st.visibleIdx, st.visibleKey = search.Build(full.Commit, visible), key
+	}
+	return st.visibleIdx
 }
 
 // searchIndex is the search index to answer from. With IndexLive it is
