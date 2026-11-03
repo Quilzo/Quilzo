@@ -10,7 +10,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -106,5 +109,93 @@ func TestAProofThatDoesNotHoldIsRefused(t *testing.T) {
 				t.Errorf("accepted, or refused for another reason: %v", err)
 			}
 		})
+	}
+}
+
+// The proofs remembered are bounded, by time and by number.
+//
+// Replays kept every proof it was shown for the window with no limit, and
+// walked them all on every request. The token exchange checks a proof
+// before the token that comes with it, so anybody can make a key and have
+// proof after proof remembered. Measured before the bound: 65,537 proofs
+// remembered of 65,537 offered, and a minute and a half to remember them.
+func TestTheProofsRememberedAreBounded(t *testing.T) {
+	var r Replays
+	now := time.Now()
+	start := time.Now()
+	for i := 0; i < MaxReplays; i++ {
+		if err := r.first(fmt.Sprintf("k|%012d", i), now); err != nil {
+			t.Fatalf("proof %d of %d was refused: %v", i, MaxReplays, err)
+		}
+	}
+	if took := time.Since(start); took > 10*time.Second {
+		t.Errorf("remembering %d proofs took %s: each one is walking the rest", MaxReplays, took)
+	}
+	// Full: a new proof is refused, rather than remembered or let through
+	// unremembered, and a used one is still a replay.
+	if err := r.first("k|one-more-proof", now); err == nil {
+		t.Errorf("with %d proofs remembered another was taken, and %d are remembered", MaxReplays, len(r.seen))
+	}
+	if err := r.first("k|000000000000", now); !errors.Is(err, errReplayed) {
+		t.Errorf("a proof used before was not refused as one when the list was full: %v", err)
+	}
+	if len(r.seen) > MaxReplays {
+		t.Errorf("%d proofs are remembered; the limit is %d", len(r.seen), MaxReplays)
+	}
+	// Within the window nothing is forgotten; past it, everything is, and
+	// there is room again.
+	if err := r.first("k|one-more-proof", now.Add(Window+Skew)); err == nil {
+		t.Error("a proof was taken while the list was full and none had aged out")
+	}
+	later := now.Add(Window + Skew + time.Second)
+	if err := r.first("k|one-more-proof", later); err != nil {
+		t.Errorf("once the window had passed a new proof was refused: %v", err)
+	}
+	if len(r.seen) != 1 || len(r.order) != 1 {
+		t.Errorf("%d proofs (%d in order) are remembered after the window; want only the newest", len(r.seen), len(r.order))
+	}
+	if err := r.first("k|000000000000", later); err != nil {
+		t.Errorf("a proof's identifier was still remembered after the window: %v", err)
+	}
+}
+
+// And a full list refuses through Check, as a proof that does not hold.
+func TestAFullListRefusesAProof(t *testing.T) {
+	key := newKey(t)
+	now := time.Now()
+	r := Replays{seen: map[string]time.Time{}}
+	for i := 0; i < MaxReplays; i++ {
+		k := fmt.Sprintf("k|%012d", i)
+		r.seen[k] = now
+		r.order = append(r.order, seenAt{k, now})
+	}
+	proof, err := Prove(key, "POST", "https://admin.example/mcp", "qz_token", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Check(proof, "POST", "https://admin.example/mcp", "qz_token", now, &r); !errors.Is(err, ErrProof) {
+		t.Fatalf("a proof was taken with the list full: %v", err)
+	}
+}
+
+// One proof sent many times at once is taken once.
+func TestAProofSentAtOnceIsTakenOnce(t *testing.T) {
+	var r Replays
+	now := time.Now()
+	var wg sync.WaitGroup
+	var taken atomic.Int32
+	for i := 0; i < 64; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			if r.first("k|the-same-proof", now) == nil {
+				taken.Add(1)
+			}
+			_ = r.first(fmt.Sprintf("k|%012d", i), now.Add(time.Duration(i)*time.Second))
+		}(i)
+	}
+	wg.Wait()
+	if n := taken.Load(); n != 1 {
+		t.Errorf("one proof sent 64 times at once was taken %d times", n)
 	}
 }

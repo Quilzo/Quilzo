@@ -63,27 +63,69 @@ var ErrProof = errors.New("invalid DPoP proof")
 
 // Replays remembers the identifiers of the proofs seen within the window,
 // so a proof is good for one request.
+//
+// # Bounded, by time and by number
+//
+// It kept every proof for the window with no limit on how many, and walked
+// all of them on every request to forget the old ones. The token exchange
+// checks a proof before the token that comes with it, so anybody can make a
+// key and have proof after proof remembered: memory grew with each one, and
+// every DPoP request waited on a longer walk under the one lock they all
+// take. Sixty-five thousand proofs took a minute and a half to remember.
+//
+// So the oldest are forgotten first, from the front of a list kept in the
+// order they came, which looks at each proof once on the way in and once on
+// the way out; and with MaxReplays remembered, a new proof is refused until
+// the window lets some go. Refused, not let through unremembered: a proof
+// that is not remembered can be used again, and a full list is when
+// somebody is trying.
 type Replays struct {
-	mu   sync.Mutex
-	seen map[string]time.Time
+	mu    sync.Mutex
+	seen  map[string]time.Time
+	order []seenAt // oldest first
 }
 
-func (r *Replays) first(jti string, now time.Time) bool {
+type seenAt struct {
+	key string
+	at  time.Time
+}
+
+// MaxReplays is how many proofs are remembered at once: nearly two hundred
+// a second for the whole window, far past what the people and programs
+// holding this store's tokens make, and some tens of megabytes at the very
+// most, since a proof's identifier is at most 256 bytes.
+const MaxReplays = 1 << 16
+
+var (
+	errReplayed = errors.New("this proof was used before")
+	errFull     = fmt.Errorf("more than %d proofs arrived within %s, so this one "+
+		"cannot be remembered and is refused; try again shortly", MaxReplays, Window+Skew)
+)
+
+func (r *Replays) first(key string, now time.Time) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.seen == nil {
 		r.seen = map[string]time.Time{}
 	}
-	for k, at := range r.seen {
-		if now.Sub(at) > Window+Skew {
-			delete(r.seen, k)
+	n := 0
+	for ; n < len(r.order) && now.Sub(r.order[n].at) > Window+Skew; n++ {
+		if at, ok := r.seen[r.order[n].key]; ok && at.Equal(r.order[n].at) {
+			delete(r.seen, r.order[n].key)
 		}
+		r.order[n] = seenAt{}
 	}
-	if _, ok := r.seen[jti]; ok {
-		return false
+	r.order = r.order[n:]
+	at, ok := r.seen[key]
+	if ok && now.Sub(at) <= Window+Skew {
+		return errReplayed
 	}
-	r.seen[jti] = now
-	return true
+	if !ok && len(r.seen) >= MaxReplays {
+		return errFull
+	}
+	r.seen[key] = now
+	r.order = append(r.order, seenAt{key, now})
+	return nil
 }
 
 type header struct {
@@ -175,8 +217,10 @@ func Check(proof, method, url, accessToken string, now time.Time, replays *Repla
 	if err != nil {
 		return fail("%v", err)
 	}
-	if replays != nil && !replays.first(thumb+"|"+c.JTI, now) {
-		return fail("this proof was used before")
+	if replays != nil {
+		if err := replays.first(thumb+"|"+c.JTI, now); err != nil {
+			return fail("%v", err)
+		}
 	}
 	return thumb, nil
 }
