@@ -120,7 +120,20 @@ func postureDrift(root string, state posture.State, now time.Time) (int, int, er
 			if f.Resource != "" {
 				summary = fmt.Sprintf("%s (%s): %s. %s", f.Title, f.Resource, f.Detail, f.Fix)
 			}
-			inBackground(func() { _, _ = tellSecurity(root, strings.TrimSpace(summary)) })
+			rule := f.Rule
+			inBackground(func() {
+				// Whether it went is on the record: a relay that refuses
+				// used to be thrown away, and the log said a high finding
+				// was found and nothing about whether anybody heard.
+				did, err := tellSecurity(root, strings.TrimSpace(summary))
+				detail := map[string]string{"rule": rule, "did": did}
+				outcome := audit.Success
+				if err != nil {
+					detail["error"], outcome = err.Error(), audit.Failure
+				}
+				record(root, audit.Record{Action: "posture.told", Resource: "/security", Outcome: outcome,
+					Principal: "quilzo", Kind: audit.KindService, Verified: true, Detail: detail})
+			})
 		}
 	}
 	skipped := map[string]bool{}

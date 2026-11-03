@@ -330,7 +330,9 @@ newest:
 }
 
 // tellHeld tells the security contact a call is waiting for them, in the
-// background (background.go).
+// background (background.go), and records whether it reached them. The
+// result used to be thrown away, so a call nobody was told about waited
+// with nothing to say why nobody came.
 func tellHeld(root, integration, tool, id string, tok auth.Token) {
 	by := tok.Principal
 	if tok.Client != "" {
@@ -338,7 +340,16 @@ func tellHeld(root, integration, tool, id string, tok auth.Token) {
 	}
 	summary := fmt.Sprintf("%s asks to call %s on %s, which a person approves call by call (%s). "+
 		"Decide on Integrations, or with quilzo integrations approve %s.", by, tool, integration, id, id)
-	inBackground(func() { _, _ = tellSecurity(root, summary) })
+	inBackground(func() {
+		did, err := tellSecurity(root, summary)
+		detail := map[string]string{"held": id, "integration": integration, "tool": tool, "did": did}
+		outcome := audit.Success
+		if err != nil {
+			detail["error"], outcome = err.Error(), audit.Failure
+		}
+		record(root, audit.Record{Action: "mcp.gateway.told", Resource: "/integrations/" + integration, Outcome: outcome,
+			Principal: "quilzo", Kind: audit.KindService, Verified: true, Detail: detail})
+	})
 }
 
 // gatewayDecide approves or declines a held call. Somebody other than the

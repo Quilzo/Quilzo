@@ -652,6 +652,39 @@ var rules = []Rule{
 		},
 	},
 	{
+		ID:       "alerts.unrouted",
+		Title:    "Security alerts reach nobody",
+		Severity: High,
+		Controls: []string{"IR-4", "SI-4"},
+		OWASP:    "A09:2025 Logging and Alerting Failures",
+		Why: "Every alert Quilzo sends is a mail to the mailto: address in " +
+			"security.contact, through the relay in mail.json: a decoy touched, " +
+			"a risky sign-in, a call waiting for a person, a check that starts " +
+			"failing. Without either, each one is dropped where nobody reads it, " +
+			"and the shield's playbooks go on saying they told somebody.",
+		Check: func(s State) []Finding {
+			if !s.Alerts.Checked {
+				return nil
+			}
+			var out []Finding
+			if !s.Alerts.Address {
+				out = append(out, Finding{Resource: "security.contact",
+					Detail: "security.contact has no mailto: address, so no alert has anywhere to go",
+					Fix:    "quilzo config set security.contact mailto:security@example.org  # beside any https: or tel: given already"})
+			}
+			if !s.Alerts.Relay {
+				detail := "there is no mail.json, so no alert can be sent"
+				if s.Alerts.Problem != "" {
+					detail = "mail.json cannot be used, so no alert can be sent: " + s.Alerts.Problem
+				}
+				out = append(out, Finding{Resource: "mail.json", Detail: detail,
+					Fix: `write mail.json in the store: {"host": "smtp.example.org:587", "from": "quilzo@example.org"}, ` +
+						`with "username" and "password" when the relay asks for them`})
+			}
+			return out
+		},
+	},
+	{
 		ID:       "mfa.no-second-factor",
 		Title:    "Somebody with access has no second factor",
 		Severity: High,

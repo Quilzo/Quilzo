@@ -90,6 +90,8 @@ func Observe(root, tplDir string, srv posture.ServerFacts) posture.State {
 		s.Stream = posture.StreamFacts{Set: true, Sent: c.Sent, Failures: c.Failures, Since: c.Since, Error: c.Error}
 	}
 
+	s.Alerts = observeAlerts(root)
+
 	// The agent interface: whether it answers, which apps may connect, and
 	// which connections hold administrator scope.
 	{
@@ -231,6 +233,25 @@ func Observe(root, tplDir string, srv posture.ServerFacts) posture.State {
 	s.AI = observeAI(root, tplDir, s.Audit)
 	s.Upkeep = observeUpkeep(root, st)
 	return s
+}
+
+// observeAlerts is where the security contact's alerts go: every one is a
+// mail to security.contact's mailto: address through mail.json
+// (securitymail.go), and with either missing each was dropped and nothing
+// said so. Settings that cannot be read are not looked at, rather than
+// reported as no address.
+func observeAlerts(root string) posture.AlertFacts {
+	if cfg, err := loadConfig(root); err != nil || cfg == nil {
+		return posture.AlertFacts{}
+	}
+	a := posture.AlertFacts{Checked: true, Address: securityAddress(root) != ""}
+	switch m, err := loadMailer(root); {
+	case err != nil:
+		a.Problem = err.Error()
+	case m != nil:
+		a.Relay = true
+	}
+	return a
 }
 
 // observeUpkeep counts the work that was supposed to have happened by now.
