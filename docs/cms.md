@@ -1977,6 +1977,74 @@ Failed authentication is throttled with a soft lockout. The audit log has a
 published commitment to every entry so far, so removing one is detectable rather
 than merely forbidden.
 
+### Reviewing who has access
+
+Access granted to unblock somebody is never taken back by itself. So an
+administrator reviews, every `access.review.every` (ninety days unless the
+organisation declares `ac-02_odp.10`, between 30 and 365), the access only
+Quilzo holds:
+
+- every grant made by hand, a role in an app counted once;
+- what each identity provider group means here, one item however many people
+  are in it;
+- every long-lived token.
+
+Sessions end within a day, an agent's identity is renewed rather than
+reviewed, a grant provisioning made is the identity provider's to review,
+and the site's members hold nothing in the admin, so none of those is in
+it. Access to other systems is reviewed in whatever reviews those.
+
+```
+quilzo access review start               the snapshot: one review open at a time
+quilzo access review items               dormant first, then privileged
+quilzo access review decide 3 revoke     applied at once
+quilzo access review decide 4 keep --why "edits the handbook"
+quilzo access review close
+```
+
+Or Review who has access on People, one card and two buttons per item.
+
+Each item says who granted it and when, until when, and when it was last
+used: a token's last use, or the person's last record in the audit log,
+which is the one lasting record once sessions are pruned. Nothing for ninety
+days is dormant, listed first and proposed for revoke, the same threshold as
+the posture scan's `token.stale`. Privileged means administration, the
+security, compliance or log areas, or a permission only an administrator
+otherwise holds.
+
+The rules are the ones that make a review one. The reviewer is a person,
+signed in as themselves: a model, a program's token or a name nobody proved
+is refused. Nobody decides their own access, however their name is spelled,
+or a group they are in. Keeping privileged access needs a reason, which is
+kept in the review's file (`access/reviews/ID.json`) and never in the audit
+log, where the record says only that one was given. There is no "reduce":
+revoke, then grant the lower role. Deciding takes an administrator of the
+whole store; a publisher or an auditor can do neither.
+
+A revoke goes through the path that granted the access, at once: the binding
+is removed, the token revoked with every session minted from it, the
+group's mapping taken off and its grants with it. The person's next request
+is refused. A revoke that would leave nobody able to administer the store is
+refused, whoever decided it and whenever.
+
+Closing is refused while anything is undecided. It reports grants made since
+the review started as not reviewed by it, writes `review.closed` with the
+counts, and writes evidence for the built-in quarterly control
+`quilzo/AC-2 account review`, which `quilzo assurance report` measures like
+any other: one review in a six-month window is unproven, two are covered.
+With one administrator there is nobody else to decide their own access, so
+the review closes alone, says how much of theirs went unreviewed, and
+`approval.alone` counts it.
+
+When no review has closed within the period, the posture scan reports
+`access.review-due` and the security contact is mailed.
+
+The records are `review.started`, `review.keep`, `review.revoke` and
+`review.closed`, beside the record the revoked path writes itself
+(`auth.revoke`, `token.revoke`, `scim.unmapped`). A token is named in them as
+a `credential`, and the person under `principal`, which the log
+pseudonymises.
+
 ---
 
 ## Working on the same site at the same time
