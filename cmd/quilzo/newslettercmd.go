@@ -374,7 +374,7 @@ func addSubscriber(root, addr string, caller *Caller) error {
 			"sent, and the address is forgotten in a week.\n"
 		if err := deliverMail(mailer, mail.Message{To: s.Email, FromName: name,
 			Subject: "Would you like " + name + "'s newsletter?", Body: body}); err != nil {
-			list.Unsent(s.ID, time.Now())
+			list.Unsent(s, time.Now())
 			return err
 		}
 	}

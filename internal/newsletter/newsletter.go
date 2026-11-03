@@ -41,6 +41,7 @@
 //	newsletter.key                   at the store's root: the key, made once
 //	newsletter/subscribers/ID.json   one address, written once
 //	newsletter/confirmed/ID          it was confirmed, and when
+//	newsletter/mailed/ID             the inbox an address reaches was last mailed a link then
 //	newsletter/left/ID               it asked to stop, or was removed
 //	newsletter/issues/ID.json        an issue: proposed, sending, or sent
 //	newsletter/issues/ID.sent        the ids an issue reached, one a line
@@ -61,6 +62,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -69,15 +71,20 @@ import (
 // Keep is how long an address that has not confirmed is kept.
 const Keep = 7 * 24 * time.Hour
 
-// ResendAfter is how soon one address may be mailed a link again. Anybody
-// can type anybody's address into a form, so this is what stops the form
-// being used to fill somebody's inbox.
+// ResendAfter is how soon one inbox may be mailed a link again, however
+// its address is spelled (mailbox). Anybody can type anybody's address
+// into a form, so this is what stops the form being used to fill
+// somebody's inbox.
 const ResendAfter = time.Hour
 
 // List is a site's mailing list.
 type List struct {
 	dir string
 	key []byte
+	// mu makes asking whether an inbox was mailed within the hour and
+	// saying it is now one step, so sign-ups for one inbox arriving
+	// together are one link and not one each.
+	mu sync.Mutex
 }
 
 // Subscriber is one address on the list.
@@ -119,6 +126,31 @@ func Normalize(addr string) (string, error) {
 	return addr, nil
 }
 
+// mailbox is the inbox a normalized address reaches, as far as the address
+// tells: without a +tag, which the large providers deliver to the inbox
+// before it, and for Gmail without dots, which it ignores, with
+// googlemail.com as gmail.com. The hour between links is kept for this and
+// not for the spelling, which only trims and lower-cases: victim+1@gmail.com,
+// victim+2@gmail.com and v.ictim@gmail.com were three addresses, an hour
+// each, and one inbox mailed three links. The list keeps the address as it
+// was typed.
+func mailbox(addr string) string {
+	local, domain, ok := strings.Cut(addr, "@")
+	if !ok {
+		return addr
+	}
+	if i := strings.IndexByte(local, '+'); i > 0 {
+		local = local[:i]
+	}
+	if domain == "googlemail.com" {
+		domain = "gmail.com"
+	}
+	if domain == "gmail.com" {
+		local = strings.ReplaceAll(local, ".", "")
+	}
+	return local + "@" + domain
+}
+
 // MakeKey makes the key at path when there is none. It is made by the
 // process that is not yet confined; the confined site only reads it.
 func MakeKey(path string) error {
@@ -147,7 +179,7 @@ func Open(dir, keyPath string) (*List, error) {
 	if err != nil || len(key) < 32 {
 		return nil, fmt.Errorf("%s is not a newsletter key", filepath.Base(keyPath))
 	}
-	for _, d := range []string{"subscribers", "confirmed", "left", "issues"} {
+	for _, d := range []string{"subscribers", "confirmed", "left", "issues", "mailed"} {
 		if err := os.MkdirAll(filepath.Join(dir, d), 0o700); err != nil {
 			return nil, err
 		}
@@ -195,11 +227,12 @@ type Outcome int
 
 const (
 	// Mail: a new address, or one that has not confirmed and was last sent
-	// a link more than ResendAfter ago. Mail it the link.
+	// a link more than ResendAfter ago, whose inbox was not mailed one
+	// within that time under another spelling. Mail it the link.
 	Mail Outcome = iota
-	// Quiet: already confirmed, or mailed a link within the hour. Send
-	// nothing, and say the same to the visitor as for Mail, so the form
-	// does not tell anybody who is on the list.
+	// Quiet: already confirmed, or it or its inbox was mailed a link
+	// within the hour. Send nothing, and say the same to the visitor as
+	// for Mail, so the form does not tell anybody who is on the list.
 	Quiet
 )
 
@@ -218,36 +251,74 @@ func (l *List) SignUp(s Subscriber, now time.Time) (Subscriber, Outcome, error) 
 	}
 	path := l.subscriberPath(s.ID)
 	err = createOnce(path, body)
-	if err == nil {
-		return s, Mail, nil
-	}
-	if !errors.Is(err, os.ErrExist) {
+	again := errors.Is(err, os.ErrExist)
+	if err != nil && !again {
 		return s, Quiet, err
 	}
-	// Already here. When it last had a link is the record's time, so asking
-	// again is answered from the file's clock and not by reading it.
-	if exists(l.marker("confirmed", s.ID)) {
-		return s, Quiet, nil
+	if again {
+		// Already here. When it last had a link is the record's time, so
+		// asking again is answered from the file's clock and not by
+		// reading it.
+		if exists(l.marker("confirmed", s.ID)) {
+			return s, Quiet, nil
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			return s, Quiet, err
+		}
+		if now.Sub(info.ModTime()) < ResendAfter {
+			return s, Quiet, nil
+		}
 	}
-	info, err := os.Stat(path)
-	if err != nil {
+	// And the inbox it reaches, under whatever spelling it was mailed;
+	// except for an address coming back after it left, which is mailed at
+	// once, as it always was. Leaving takes the link in a mail only that
+	// inbox has, so nobody else can have put it there.
+	back := !again && exists(l.marker("left", s.ID))
+	if ok, err := l.claimInbox(addr, now, back); err != nil || !ok {
 		return s, Quiet, err
 	}
-	if now.Sub(info.ModTime()) < ResendAfter {
-		return s, Quiet, nil
-	}
-	if err := os.Chtimes(path, now, now); err != nil {
-		return s, Quiet, err
+	if again {
+		if err := os.Chtimes(path, now, now); err != nil {
+			return s, Quiet, err
+		}
 	}
 	return s, Mail, nil
 }
 
-// Unsent says a link was not sent after all, so the address may ask again
-// at once rather than in an hour.
-func (l *List) Unsent(id string, now time.Time) {
-	if ValidID(id) {
-		old := now.Add(-ResendAfter - time.Minute)
-		_ = os.Chtimes(l.subscriberPath(id), old, old)
+// inboxMarker is the file whose clock says when an address's inbox was
+// last mailed a link: a keyed hash of the inbox, not the address.
+func (l *List) inboxMarker(addr string) string { return l.marker("mailed", l.ID(mailbox(addr))) }
+
+// claimInbox says whether the inbox an address reaches may be mailed a
+// link now, always when anyway is set, and if it may, records that it is.
+func (l *List) claimInbox(addr string, now time.Time, anyway bool) (bool, error) {
+	p := l.inboxMarker(addr)
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if info, err := os.Stat(p); err == nil && now.Sub(info.ModTime()) < ResendAfter && !anyway {
+		return false, nil
+	}
+	if err := os.WriteFile(p, nil, 0o600); err != nil {
+		return false, err
+	}
+	if err := os.Chtimes(p, now, now); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// Unsent says a link was not sent after all, so the address, and the inbox
+// it reaches, may ask again at once rather than in an hour. It takes the
+// address the link was for, as typed, because the inbox is worked out
+// from that and the list is never read for it.
+func (l *List) Unsent(s Subscriber, now time.Time) {
+	old := now.Add(-ResendAfter - time.Minute)
+	if ValidID(s.ID) {
+		_ = os.Chtimes(l.subscriberPath(s.ID), old, old)
+	}
+	if addr, err := Normalize(s.Email); err == nil {
+		_ = os.Chtimes(l.inboxMarker(addr), old, old)
 	}
 }
 
@@ -446,6 +517,21 @@ func (l *List) Expire(now time.Time) (int, error) {
 			return gone, err
 		}
 		gone++
+	}
+	// And the clocks of inboxes last mailed more than an hour ago, which
+	// stop nothing any more: one is made for every inbox a link goes to.
+	marks, err := filepath.Glob(filepath.Join(l.dir, "mailed", "*"))
+	if err != nil {
+		return gone, err
+	}
+	for _, n := range marks {
+		info, err := os.Stat(n)
+		if err != nil || !ValidID(filepath.Base(n)) || now.Sub(info.ModTime()) < ResendAfter {
+			continue
+		}
+		if err := os.Remove(n); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return gone, err
+		}
 	}
 	return gone, nil
 }
