@@ -30,6 +30,21 @@ const MaxBytes = 16 << 20
 // MaxEvents bounds the events one file holds.
 const MaxEvents = 50000
 
+// maxDates bounds the dates one event lists to add (RDATE) or leave out
+// (EXDATE), and maxListed those of all a file's events together. Each list
+// is counted, and a file refused, before any of the list is read, because
+// one RDATE of fifteen million commas was once split into as many strings
+// and each tried as a time: seven seconds and 2.7 GB for a file under
+// MaxBytes. The file has a bound of its own because many events, each
+// listing fewer than maxDates, were together nearly as slow as one listing
+// them all. Neither touches a real calendar: ten thousand dates are every
+// day for twenty-seven years, and a million dates written as times fill
+// nearly all of MaxBytes, leaving no room for much else.
+const (
+	maxDates  = 10000
+	maxListed = 1000000
+)
+
 // Read is a calendar file, read.
 type Read struct {
 	// Name is what the calendar calls itself, when it says.
@@ -119,7 +134,7 @@ func Parse(body []byte, floating *time.Location) (*Read, error) {
 
 	stack = stack[:0]
 	var ev *VEvent
-	bad := 0
+	bad, listed, evListed := 0, 0, 0
 	for _, raw := range lines {
 		p, ok := parseLine(raw)
 		if !ok {
@@ -132,7 +147,7 @@ func Parse(body []byte, floating *time.Location) (*Read, error) {
 				if len(cal.Events) >= MaxEvents {
 					return nil, fmt.Errorf("more than %d events", MaxEvents)
 				}
-				ev = &VEvent{}
+				ev, evListed = &VEvent{}, 0
 			}
 			continue
 		case "END":
@@ -193,10 +208,22 @@ func Parse(body []byte, floating *time.Location) (*Read, error) {
 			}
 		case "RRULE":
 			ev.RRule = strings.TrimSpace(p.value)
-		case "RDATE":
-			ev.RDates = append(ev.RDates, zones.list(p)...)
-		case "EXDATE":
-			ev.ExDates = append(ev.ExDates, zones.list(p)...)
+		case "RDATE", "EXDATE":
+			// Every piece counts, read or not, since a list of nothing but
+			// commas holds no dates and was the most work of all.
+			n := strings.Count(p.value, ",") + 1
+			evListed, listed = evListed+n, listed+n
+			if evListed > maxDates {
+				return nil, fmt.Errorf("an event lists more than %d dates to add or leave out", maxDates)
+			}
+			if listed > maxListed {
+				return nil, fmt.Errorf("more than %d dates to add or leave out", maxListed)
+			}
+			if p.name == "RDATE" {
+				ev.RDates = append(ev.RDates, zones.list(p)...)
+			} else {
+				ev.ExDates = append(ev.ExDates, zones.list(p)...)
+			}
 		case "RECURRENCE-ID":
 			if t, _, err := zones.when(p); err == nil {
 				ev.RecurrenceID = t
@@ -490,9 +517,13 @@ func (z *zones) when(p prop) (time.Time, bool, error) {
 }
 
 // list reads an RDATE or EXDATE, which may hold several, comma separated.
+// The commas are walked one at a time rather than split at, because a
+// split makes a string of every piece before the first is read.
 func (z *zones) list(p prop) []time.Time {
 	var out []time.Time
-	for _, v := range strings.Split(p.value, ",") {
+	for rest, more := p.value, true; more; {
+		var v string
+		v, rest, more = strings.Cut(rest, ",")
 		q := prop{name: p.name, params: p.params, value: v}
 		if t, _, err := z.when(q); err == nil {
 			out = append(out, t)

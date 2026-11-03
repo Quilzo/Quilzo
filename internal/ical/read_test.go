@@ -4,6 +4,7 @@
 package ical
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -91,6 +92,55 @@ func TestEveryZoneACalendarNamesResolves(t *testing.T) {
 	notes := strings.Join(c.Notes, "\n")
 	if !strings.Contains(notes, "Made Up Time") || !strings.Contains(notes, "Nowhere/Atall") {
 		t.Errorf("the zones read differently were not said:\n%s", notes)
+	}
+}
+
+// One RDATE of fifteen million commas, in a file under MaxBytes, was split
+// into as many strings and each tried as a time: seven seconds and 2.7 GB.
+// Its commas are counted now, and the file refused, before any is read.
+func TestAListOfDatesTooLongForAnEventIsRefusedUnread(t *testing.T) {
+	body := []byte("BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:a\r\nDTSTART:20261114T193000Z\r\nRDATE:" +
+		strings.Repeat(",", 15<<20) + "\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n")
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	_, err := Parse(body, time.UTC)
+	runtime.ReadMemStats(&after)
+	if err == nil {
+		t.Error("an event listing fifteen million dates was read")
+	}
+	// The file is copied twice on its way to lines, which is most of what
+	// reading it should cost; the list should add next to nothing.
+	if grew := after.TotalAlloc - before.TotalAlloc; grew > 4*uint64(len(body)) {
+		t.Errorf("%d MB allocated reading a %d MB file", grew>>20, len(body)>>20)
+	}
+}
+
+// The bounds must not cost a real calendar a date. An event listing
+// maxDates is read whole; one more is refused, and so is a file whose
+// events each list no more than that but together more than maxListed.
+func TestDatesAreBoundedForEachEventAndForTheFile(t *testing.T) {
+	times := func(n int) string { return strings.TrimSuffix(strings.Repeat("20261121T193000Z,", n), ",") }
+	half := maxDates / 2
+	full := vevent("UID:a", "DTSTART:20261114T193000Z", "RRULE:FREQ=WEEKLY",
+		"RDATE:"+times(half), "EXDATE:"+times(maxDates-half))
+	c := mustParse(t, cal(full), time.UTC)
+	if e := c.Events[0]; len(e.RDates) != half || len(e.ExDates) != maxDates-half {
+		t.Errorf("an event listing %d dates kept %d and %d", maxDates, len(e.RDates), len(e.ExDates))
+	}
+	over := vevent("UID:a", "DTSTART:20261114T193000Z", "RRULE:FREQ=WEEKLY",
+		"RDATE:"+times(half), "EXDATE:"+times(maxDates-half+1))
+	if _, err := Parse(cal(over), time.UTC); err == nil || !strings.Contains(err.Error(), "an event") {
+		t.Errorf("an event listing %d dates was not refused: %v", maxDates+1, err)
+	}
+	// Dates without times, as only a file of times cannot hold a million.
+	days := "RDATE;VALUE=DATE:" + strings.TrimSuffix(strings.Repeat("20261121,", maxDates), ",")
+	var evs []string
+	for i := 0; i <= maxListed/maxDates; i++ {
+		evs = append(evs, vevent("UID:a", "DTSTART;VALUE=DATE:20261114", days))
+	}
+	if _, err := Parse(cal(evs...), time.UTC); err == nil || strings.Contains(err.Error(), "an event") {
+		t.Errorf("%d events listing %d dates each were not refused as a file: %v", len(evs), maxDates, err)
 	}
 }
 
