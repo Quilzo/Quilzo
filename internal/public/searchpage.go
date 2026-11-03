@@ -94,7 +94,7 @@ func (st *Site) searchPage(w http.ResponseWriter, r *http.Request) {
 			http.StatusInternalServerError)
 		return
 	}
-	data := st.searchData(query, pages)
+	data := st.searchData(query, pages, hashes)
 	ctx["search"] = data
 	// A search a reader typed and the site has nothing for: what it does
 	// not say, in their words, masked before it is counted.
@@ -138,7 +138,7 @@ const maxQuery = 200
 // language understands. An empty query is not an empty result set: the page has
 // to be able to tell "you have not searched yet" from "nothing matched", and
 // with no else in the language that means two booleans rather than one.
-func (st *Site) searchData(query string, pages map[string]any) map[string]any {
+func (st *Site) searchData(query string, pages map[string]any, oids map[string]string) map[string]any {
 	data := map[string]any{
 		"query": query, "asked": query != "", "results": []any{},
 		"count": float64(0), "empty": false,
@@ -147,7 +147,7 @@ func (st *Site) searchData(query string, pages map[string]any) map[string]any {
 		return data
 	}
 
-	found := st.searchVisible(query, pages, 20)
+	found := st.searchVisible(query, pages, oids, 20)
 	rows := make([]any, 0, len(found))
 	for _, res := range found {
 		title := res.Title

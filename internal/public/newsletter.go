@@ -245,7 +245,7 @@ func (st *Site) newsletterSubscribe(w http.ResponseWriter, r *http.Request) {
 		} else {
 			// Not sent, so the address may ask again later rather than
 			// waiting an hour for a link that is not coming.
-			n.List.Unsent(s.ID, now)
+			n.List.Unsent(s, now)
 			n.audit("newsletter.link-held", source, false)
 		}
 	}
@@ -274,7 +274,7 @@ func (st *Site) mailConfirm(s newsletter.Subscriber) {
 	err := n.Mail(mail.Message{To: s.Email, FromName: site, Subject: "Confirm your subscription to " + site,
 		Body: body})
 	if err != nil {
-		n.List.Unsent(s.ID, st.newsletterNow())
+		n.List.Unsent(s, st.newsletterNow())
 		n.audit("newsletter.link-failed", "", false)
 		return
 	}

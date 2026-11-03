@@ -38,7 +38,20 @@ const (
 	MaxFileBytes = 10 << 20
 	// MaxUploadBytes is the most one submission's files may be together.
 	MaxUploadBytes = 20 << 20
+	// MaxKeptFileBytes is the most the files kept with every form's
+	// submissions may come to together, unless the store says less
+	// (Store.FileCeiling). Nothing bounded them: one address sending
+	// pictures as fast as the throttle allows kept 338 MB an hour, for the
+	// whole retention period, on the disk the content store and the site's
+	// temporary directory are on, and a few hundred addresses would fill
+	// it and stop publishing with it. A gigabyte is thousands of CVs or
+	// hundreds of photographs inside a retention period.
+	MaxKeptFileBytes = 1 << 30
 )
+
+// ErrFilesFull is a submission refused because the files it carries would
+// take what is kept past the store's ceiling. Said to the sender as it is.
+var ErrFilesFull = errors.New("this form cannot take any more files just now. Please try again later")
 
 // UploadKinds are what a file field may take.
 var UploadKinds = []string{string(media.Image), string(media.Document), string(media.Text),
@@ -134,6 +147,67 @@ func (st *Store) filesDir(form, id string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSuffix(p, ".json") + ".files", nil
+}
+
+// fileCeiling is the most the files kept here may come to.
+func (st *Store) fileCeiling() int64 {
+	if st.FileCeiling > 0 {
+		return st.FileCeiling
+	}
+	return MaxKeptFileBytes
+}
+
+// roomFor refuses a submission's files when they would take the files
+// kept past the ceiling. Counted from the files on disk rather than kept
+// as a total, because the admin deletes and expires submissions in
+// another process, and a total here would never see it.
+func (st *Store) roomFor(s Submission) error {
+	var adding int64
+	for _, d := range s.data {
+		adding += int64(len(d))
+	}
+	kept, err := st.keptFileBytes()
+	if err != nil {
+		return err
+	}
+	if kept+adding > st.fileCeiling() {
+		return ErrFilesFull
+	}
+	return nil
+}
+
+// keptFileBytes is what the files kept with every submission come to.
+func (st *Store) keptFileBytes() (int64, error) {
+	forms, err := os.ReadDir(st.dir)
+	if err != nil {
+		return 0, err
+	}
+	var n int64
+	for _, f := range forms {
+		if !f.IsDir() {
+			continue
+		}
+		entries, err := os.ReadDir(filepath.Join(st.dir, f.Name()))
+		if err != nil {
+			// Purged while this was counting: nothing of it is kept.
+			continue
+		}
+		for _, e := range entries {
+			if !e.IsDir() || !strings.HasSuffix(e.Name(), ".files") {
+				continue
+			}
+			files, err := os.ReadDir(filepath.Join(st.dir, f.Name(), e.Name()))
+			if err != nil {
+				continue
+			}
+			for _, fl := range files {
+				if info, err := fl.Info(); err == nil && info.Mode().IsRegular() {
+					n += info.Size()
+				}
+			}
+		}
+	}
+	return n, nil
 }
 
 // putFiles writes a submission's files, before the submission itself, so a
