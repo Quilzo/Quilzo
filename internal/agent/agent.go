@@ -662,19 +662,24 @@ func (m Manifest) Narrow(by Manifest) Manifest {
 		KeepInstructions: m.Retrieval.KeepInstructions && by.Retrieval.KeepInstructions,
 	}
 
-	// Tools: only the hosts the bound already reaches.
+	// Tools: only those the bound holds too, by name and by host.
 	//
 	// Matched on the declared host, because that is what Session.MayReach
 	// asks about. A delegate naming a host its parent does not hold would
 	// otherwise be a way to reach the network through a supervisor that
-	// cannot.
-	reachable := map[string]bool{}
+	// cannot. And on the name, as capabilities are: kept by host alone, a
+	// supervisor that may call create_issue on a tracker, asking first,
+	// handed its delegate delete_issue on the same tracker asking nobody,
+	// since asking first is kept below only for what the delegate holds. A
+	// tool either side says writes, writes.
+	bound := map[string]Tool{}
 	for _, t := range m.Tools {
-		reachable[t.Host] = true
+		bound[t.Name+"\x00"+t.Host] = t
 	}
 	var tools []Tool
 	for _, t := range by.Tools {
-		if reachable[t.Host] {
+		if b, ok := bound[t.Name+"\x00"+t.Host]; ok {
+			t.Writes = t.Writes || b.Writes
 			tools = append(tools, t)
 		}
 	}

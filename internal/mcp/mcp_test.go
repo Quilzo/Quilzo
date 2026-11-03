@@ -190,6 +190,30 @@ func TestAWriteToolCannotBeUsedForAReadOperation(t *testing.T) {
 	}
 }
 
+// quilzo_check is listed as running the checks that gate publishing, and a
+// host that asks a person by a tool's name and description is granted only
+// that. The only rules it was held to were the ones about publishing, so it
+// ran any other operation named to it: a read that is no check, and even a
+// write, under a tool that tells hosts it only reads.
+func TestTheCheckToolRunsOnlyTheChecks(t *testing.T) {
+	s := testServer()
+	r := call(t, s, "tools/call", callParams{Name: "quilzo_check",
+		Arguments: map[string]any{"operation": "check_accessibility"}})
+	if got := text(t, r); got != "no blocking failures" {
+		t.Errorf("the check answered %q", got)
+	}
+	for op, tool := range map[string]string{"list_pages": "quilzo_read", "write_page": "quilzo_write",
+		"publish": "quilzo_publish"} {
+		r := call(t, s, "tools/call", callParams{Name: "quilzo_check", Arguments: map[string]any{"operation": op}})
+		if r.Error == nil || !strings.Contains(r.Error.Message, tool) {
+			t.Errorf("%s ran through quilzo_check, or the refusal does not name %s: %+v", op, tool, r.Error)
+		}
+	}
+	// A check still reads, through the read tool, as it always could.
+	text(t, call(t, s, "tools/call", callParams{Name: "quilzo_read",
+		Arguments: map[string]any{"operation": "check_accessibility"}}))
+}
+
 // A refusal is a decision. An agent that reads "denied by policy" as "the server
 // broke" will retry, and retrying a refusal turns one blocked action into many.
 func TestARefusalIsDistinguishableFromAFailure(t *testing.T) {

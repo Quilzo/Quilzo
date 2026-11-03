@@ -203,3 +203,27 @@ func TestApprovalsAreDecidedByTheSessionNotThePerson(t *testing.T) {
 		t.Errorf("the command line was not told the session's cap: %+v", seen)
 	}
 }
+
+// What a tool's step commits to is read from the integration that offers
+// it as well as from the manifest. A manifest that left "writes" off a tool
+// on an integration that changes something listed its step as a read, and
+// a read is approved several at a time.
+func TestAToolStepItsIntegrationSaysWritesIsNotBatchedAsARead(t *testing.T) {
+	srv, _ := setup(t)
+	st := wireStudio(srv)
+	st.declared["filer"] = agent.Manifest{Name: "filer",
+		Tools: []agent.Tool{{Name: "create_issue", Host: "tracker.example", Purpose: "file issues"}}}
+	srv.Integrations = &Integrations{Declared: func() (agent.Integrations, error) {
+		return agent.Integrations{Declared: []agent.Integration{{Name: "tracker", Kind: agent.IntegrationMCP,
+			Enabled: true, Purpose: "file issues", Endpoint: "tracker.example", Uses: []string{"create_issue"},
+			Writes: true}}}, nil
+	}}
+	file := agent.Action{Tool: "create_issue", Input: map[string]any{"title": "x"}}
+	waitingRun(st, "run-20261103-000000c1", "filer", file, "it asks first", time.Now())
+	waitingRun(st, "run-20261103-000000c2", "filer", file, "it asks first", time.Now())
+	for _, it := range srv.runApprovals(time.Now()) {
+		if it.Commits != "writes" || it.Batch != "" {
+			t.Errorf("%s commits to %q and is offered in the batch %q", it.RunID, it.Commits, it.Batch)
+		}
+	}
+}

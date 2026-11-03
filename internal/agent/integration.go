@@ -822,6 +822,46 @@ func (s Integrations) Resolve(tool string) (Integration, error) {
 	}
 }
 
+// ToolWrites reports whether an agent's call of a tool changes something on
+// the far side.
+//
+// Either declaration may say so, and the one that says more is believed.
+// The manifest's own label used to be the only one asked, and it defaults to
+// off: a manifest that left it off a tool on an integration declared as
+// writing made the step a read, so the person who started the run let its
+// far-side write go ahead alone with somebody else there to decide it, and
+// several such steps were offered to approve together. A REST operation
+// says by its method, as the executor reads it; an MCP server or another
+// agent says once for every tool it offers, since it says nothing tool by
+// tool. Every declaration is asked, enabled or not, because which one a
+// call reaches is settled only when it is made.
+func (s Integrations) ToolWrites(m Manifest, tool string) bool {
+	name := strings.ToLower(strings.TrimSpace(tool))
+	if name == "" {
+		return false
+	}
+	for _, t := range m.Tools {
+		if t.Writes && strings.ToLower(strings.TrimSpace(t.Name)) == name {
+			return true
+		}
+	}
+	for _, in := range s.Declared {
+		for _, u := range in.Uses {
+			if strings.ToLower(strings.TrimSpace(u)) != name {
+				continue
+			}
+			if op, ok := in.Operation(u); ok {
+				if op.Writes() {
+					return true
+				}
+			} else if in.Writes {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // Hosts returns the hostnames the enabled integrations reach, for building an
 // agent's tool allow-list from what the install actually has.
 func (s Integrations) Hosts() []string {

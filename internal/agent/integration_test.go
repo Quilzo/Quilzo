@@ -378,3 +378,33 @@ func TestARESTIntegrationsOperationsMustMeanWhatTheySay(t *testing.T) {
 		t.Errorf("a REST integration offered through the gateway was refused: %v", err)
 	}
 }
+
+// Whether calling a tool changes something on the far side is what the
+// manifest says or what the integration offering it says, whichever says
+// more: a REST operation by its method, an MCP server or another agent by
+// its own declaration. The manifest's label alone defaults to off and
+// nothing held it to the integration, so a tool left unlabelled on an
+// integration that writes was counted as a read.
+func TestAToolWritesWhenEitherDeclarationSaysSo(t *testing.T) {
+	rest := Integration{Name: "tickets", Kind: IntegrationHTTP, Enabled: true, Purpose: "open and read tickets",
+		Endpoint: "api.tickets.example", Writes: true, Uses: []string{"open_ticket", "get_ticket"},
+		Operations: []Operation{{Name: "open_ticket", Method: "POST", Path: "/tickets"},
+			{Name: "get_ticket", Method: "GET", Path: "/tickets/{id}",
+				Params: []OperationParam{{Name: "id", In: "path", Required: true}}}}}
+	writing := mcpIntegration()
+	writing.Writes = true
+	reading := mcpIntegration()
+	reading.Name, reading.Endpoint, reading.Uses = "search", "mcp.search.example.com", []string{"find"}
+	set := Integrations{Declared: []Integration{rest, writing, reading}}
+	if err := set.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	m := Manifest{Tools: []Tool{{Name: "open_ticket"}, {Name: "get_ticket"}, {Name: "create_issue"},
+		{Name: "find"}, {Name: "labelled", Writes: true}}}
+	for tool, want := range map[string]bool{"open_ticket": true, "get_ticket": false, "create_issue": true,
+		"list_issues": true, "find": false, "labelled": true, "nothing": false} {
+		if got := set.ToolWrites(m, tool); got != want {
+			t.Errorf("%s writes: %v, wanted %v", tool, got, want)
+		}
+	}
+}
