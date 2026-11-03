@@ -161,6 +161,7 @@ func cmdRecover(root string, args []string) error {
 				"with filesystem access to the store",
 		},
 	})
+	tellOfRecovery(root, principal, reason, ttl)
 
 	fmt.Println(secret)
 	fmt.Fprintf(os.Stderr, "\n  %sid %s · admin on / · expires in %s%s\n",
@@ -170,7 +171,29 @@ func cmdRecover(root string, args []string) error {
 		"issue a proper token%s\n", yellow, reset)
 	fmt.Fprintf(os.Stderr, "  %sand to find out why every admin credential "+
 		"was lost%s\n", yellow, reset)
-	fmt.Fprintf(os.Stderr, "  %sthe recovery is in the audit log, and cannot "+
-		"be removed from it%s\n", dim, reset)
+	fmt.Fprintf(os.Stderr, "  %sthe recovery is in the audit log, where it cannot "+
+		"be removed, and the security contact is told of it%s\n", dim, reset)
 	return nil
+}
+
+// tellOfRecovery mails the security contact that a break-glass made
+// somebody an administrator, in the background, and records whether it
+// reached them. A recovery is also what an intruder holding the store's
+// files would run, and it used to be written to the audit log and nowhere
+// else: nobody heard of it until somebody read the log. The credential it
+// printed is never in the message.
+func tellOfRecovery(root, principal, reason string, ttl time.Duration) {
+	summary := fmt.Sprintf("Break-glass: %s, on the machine that holds the store, made %s an administrator of "+
+		"everything with a token that lasts %s, because %q. No usable admin token remained. If nobody expected "+
+		"this, somebody who can read the store's files has taken it over.", osUser(), principal, ttl, reason)
+	inBackground(func() {
+		did, err := tellSecurity(root, summary)
+		detail := map[string]string{"about": "break-glass", "did": did}
+		outcome := audit.Success
+		if err != nil {
+			detail["error"], outcome = err.Error(), audit.Failure
+		}
+		record(root, audit.Record{Action: "auth.told", Resource: "/", Outcome: outcome,
+			Principal: "quilzo", Kind: audit.KindService, Verified: true, Detail: detail})
+	})
 }
