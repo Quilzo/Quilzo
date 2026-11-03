@@ -186,7 +186,15 @@ func checkMarking(root string, s *store.Store, target string) error {
 		if !ok {
 			continue
 		}
-		declared, _ := fields["classification"].(string)
+		// Read as text, and refused when it is not: a marking that was not
+		// text read as no marking, so a page marked ["SECRET"] went out under
+		// the deployment's banner while "SECRET" written plainly was refused.
+		declared, isText := fields["classification"].(string)
+		if raw, present := fields["classification"]; present && raw != nil && !isText {
+			refused = append(refused, fmt.Sprintf("  %s — its classification is not "+
+				"text, so the level it is marked at cannot be read", name))
+			continue
+		}
 
 		// A field may carry its own marking, named for the field it marks:
 		// body_classification marks body. Checked upward only — a portion
@@ -198,15 +206,28 @@ func checkMarking(root string, s *store.Store, target string) error {
 			fieldNames = append(fieldNames, k)
 		}
 		sort.Strings(fieldNames)
+		unreadable := false
 		for _, k := range fieldNames {
 			base, found := strings.CutSuffix(k, "_classification")
 			if !found || base == "" {
 				continue
 			}
-			if m, ok := fields[k].(string); ok && strings.TrimSpace(m) != "" {
+			m, ok := fields[k].(string)
+			if !ok && fields[k] != nil {
+				// As the page's own: a portion marked in something other
+				// than text is a portion whose level nobody checked.
+				refused = append(refused, fmt.Sprintf("  %s — %s is not text, so "+
+					"the level it is marked at cannot be read", name, k))
+				unreadable = true
+				continue
+			}
+			if strings.TrimSpace(m) != "" {
 				portions = append(portions,
 					marking.Portion{Field: base, Marking: m})
 			}
+		}
+		if unreadable {
+			continue
 		}
 
 		if err := p.CheckPortions(declared, portions); err != nil {

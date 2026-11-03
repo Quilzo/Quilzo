@@ -200,3 +200,36 @@ func TestAnExportOverMCPCarriesTheBanner(t *testing.T) {
 			"with no banner: %s", got)
 	}
 }
+
+// A page's marking is read as text, and one that was not text read as no
+// marking at all, so the page went out under the deployment's banner: a
+// page marked ["SECRET"], or a body marked {"level": "SECRET"}, passed a
+// gate that refuses "SECRET" written plainly. A marking the gate cannot
+// read is refused, as one it cannot parse is.
+func TestAMarkingThatIsNotTextIsRefused(t *testing.T) {
+	for name, fields := range map[string]map[string]any{
+		"page":    {"title": "Plans", "classification": []any{"SECRET"}},
+		"portion": {"title": "Plans", "body": "x", "body_classification": map[string]any{"level": "SECRET"}},
+	} {
+		root := connectStore(t)
+		for _, kv := range [][2]string{
+			{"marking.levels", "OFFICIAL,SECRET"},
+			{"marking.banner", "OFFICIAL"},
+		} {
+			if err := cmdConfig(root, []string{"set", kv[0], kv[1]}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		s, err := open(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := site.SaveDraft(s, map[string]any{"index": map[string]any{"title": "Home"},
+			"plans": fields}, "first", "test"); err != nil {
+			t.Fatal(err)
+		}
+		if err := checkMarking(root, s, ""); err == nil {
+			t.Errorf("%s: a marking that is not text passed the classification gate", name)
+		}
+	}
+}
