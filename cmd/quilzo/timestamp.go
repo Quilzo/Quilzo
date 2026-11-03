@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/quilzo/quilzo/internal/anchor"
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/public"
 	"github.com/quilzo/quilzo/internal/render"
@@ -45,24 +46,82 @@ func cmdTimestamp(root string, args []string) error {
 	}
 }
 
-// publishedRoot is what gets stamped: a fingerprint over every published page.
+// publishedRoot is what gets stamped: the live commit id, which is what an
+// anchor commits to (liveFingerprint).
 //
 // One stamp for the whole site rather than one per page. Content is
-// content-addressed, so the root commits to all of it at once — and a page's
+// content-addressed, so the commit commits to all of it at once — and a page's
 // membership is provable from the tree afterwards. Per-page stamps would be more
 // requests proving less.
+//
+// It was the display fingerprint, which is SHA-256 over the page names and
+// hashes cut to sixteen hex characters: sixty-four bits, a weaker receipt
+// than it looks, and never the subject an anchor commits to. So a stamp and
+// an anchor of one publication could not be joined, and every stamp said it
+// had no blockchain anchor. A stamp made then is still read: see
+// legacyRoot.
 func publishedRoot(root string) (string, error) {
+	return liveFingerprint(root)
+}
+
+// legacyRoot is what a stamp made before publishedRoot changed was over: the
+// display fingerprint of what is live, or empty when that cannot be read.
+//
+// Kept so such a stamp still says it covers what is live when the content
+// has not changed since. Its stamp.data holds the fingerprint, so it still
+// verifies as it always did.
+func legacyRoot(root string) string {
 	s, err := open(root)
 	if err != nil {
-		return "", err
+		return ""
 	}
 	// No layouts: a fingerprint is over what is published, and nothing here
 	// renders anything.
-	fp := public.New(s, render.Layouts{}).Fingerprint()
-	if fp == "" {
-		return "", fmt.Errorf("nothing is published, so there is nothing to prove")
+	return public.New(s, render.Layouts{}).Fingerprint()
+}
+
+// covers says whether a stamp is over what is live now.
+func covers(st timestamp.Stamp, current, legacy string) bool {
+	return st.Root != "" && (st.Root == current || st.Root == legacy)
+}
+
+// joinAnchors sets each stamp's Anchor from the anchors of its subject.
+//
+// Joined when read rather than written into the stamp: an anchor upgrades
+// from pending to a block later, and a copy taken at stamping would go on
+// saying pending. The best proof wins, one in a block over one waiting.
+func joinAnchors(root string, stamps []timestamp.Stamp) []timestamp.Stamp {
+	file := &anchorFile{}
+	if err := loadJSON(anchorPath(root), file); err != nil || len(file.Proofs) == 0 {
+		return stamps
 	}
-	return fp, nil
+	out := make([]timestamp.Stamp, len(stamps))
+	for i, st := range stamps {
+		out[i] = st
+		if st.Anchor != nil {
+			continue
+		}
+		var best *anchor.Proof
+		for j := range file.Proofs {
+			p := &file.Proofs[j]
+			if p.Digest != st.Root {
+				continue
+			}
+			if best == nil || (p.Anchored() && !best.Anchored()) {
+				best = p
+			}
+		}
+		if best == nil {
+			continue
+		}
+		ref := best.Calendar
+		if best.Anchored() {
+			ref = fmt.Sprintf("Bitcoin block %d, from %s", best.Height, best.Calendar)
+		}
+		out[i].Anchor = &timestamp.Anchor{Method: "OpenTimestamps", Reference: ref,
+			SubmittedAt: best.SubmittedAt, Confirmed: best.Anchored()}
+	}
+	return out
 }
 
 func stampNow(root string, args []string) error {
@@ -95,6 +154,8 @@ func stampNow(root string, args []string) error {
 	if err := os.WriteFile(stampPath(root), b, 0o600); err != nil {
 		return err
 	}
+	// Shown with the anchor of the same publication, when there is one.
+	stamp = joinAnchors(root, []timestamp.Stamp{stamp})[0]
 
 	if w.JSON(map[string]any{
 		"root": stamp.Root, "authority": stamp.Authority,
@@ -115,34 +176,41 @@ func stampList(root string) error {
 		return err
 	}
 	current, _ := publishedRoot(root)
+	legacy := legacyRoot(root)
+	stamps := joinAnchors(root, store.Stamps)
 
 	if w.Mode == out.JSON {
-		rows := make([]map[string]any, 0, len(store.Stamps))
-		for _, s := range store.Stamps {
+		rows := make([]map[string]any, 0, len(stamps))
+		for _, s := range stamps {
 			rows = append(rows, map[string]any{
 				"root": s.Root, "authority": s.Authority,
 				"requested_at": s.RequestedAt, "anchored": s.Anchor != nil,
-				"covers_current": s.Root == current,
+				"covers_current": covers(s, current, legacy),
 			})
 		}
 		w.JSON(map[string]any{"stamps": rows, "current_root": current})
 		return nil
 	}
 
-	if len(store.Stamps) == 0 {
+	if len(stamps) == 0 {
 		w.Human("no timestamps\n")
 		return nil
 	}
-	for _, s := range store.Stamps {
+	live := false
+	for _, s := range stamps {
 		mark := ""
-		if s.Root == current {
+		if covers(s, current, legacy) {
 			mark = green + "  ← covers what is live now" + reset
+			live = true
 		}
-		w.Human("  %s  %s  %s%s\n", s.RequestedAt, s.Root[:16], s.Authority, mark)
+		if s.Anchor != nil {
+			mark += "  " + dim + "anchored: " + describeStampAnchor(s.Anchor) + reset
+		}
+		w.Human("  %s  %s  %s%s\n", s.RequestedAt, short(s.Root), s.Authority, mark)
 	}
 	// Said plainly: a stamp of an older root proves what the site used to say,
 	// which is a different claim from proving what it says now.
-	if _, ok := store.Latest(current); !ok && current != "" {
+	if !live && current != "" {
 		w.Human("\n  %swhat is live now has not been stamped; the stamps above\n"+
 			"  cover earlier versions%s\n", yellow, reset)
 	}

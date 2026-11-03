@@ -143,7 +143,9 @@ func evidenceRows(root string) ([]admin.Evidence, error) {
 	var out []admin.Evidence
 
 	if stamps, err := loadStamps(root); err == nil {
-		for _, st := range stamps.Stamps {
+		// With the anchor of each stamp's own publication: the Detail column
+		// was always empty, because nothing set it.
+		for _, st := range joinAnchors(root, stamps.Stamps) {
 			out = append(out, admin.Evidence{
 				Kind: "timestamp", Subject: st.Root, Authority: st.Authority,
 				// The trustworthy time is inside the token; this is our clock.

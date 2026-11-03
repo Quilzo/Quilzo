@@ -84,7 +84,7 @@ func liveFingerprint(root string) (string, error) {
 	// the entire tree, which is exactly the value worth anchoring.
 	live := s.GetRef(site.RefLive)
 	if live == "" {
-		return "", fmt.Errorf("nothing is published, so there is nothing to anchor")
+		return "", fmt.Errorf("nothing is published, so there is nothing to stamp or anchor")
 	}
 	if len(live) != 64 {
 		return "", fmt.Errorf("the live commit id is %d characters, not a "+
