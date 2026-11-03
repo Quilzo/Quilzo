@@ -169,7 +169,11 @@ var settings = []Setting{
 		Why: "Eight hours: a working day. Whatever signed somebody in — a token, a " +
 			"passkey, single sign-on — the session it starts ends after this, and " +
 			"signing out or revoking the credential ends it sooner. At most twelve " +
-			"hours, the ceiling on any session this program issues.",
+			"hours, the ceiling on any session this program issues.\n\nA single " +
+			"sign-on session also ends sooner when its identity provider says so, " +
+			"once its security event stream is connected (quilzo signals connect): " +
+			"a session it ended there, or a password it saw stolen, ends the " +
+			"sessions it signed in here.",
 		Weaker: atMostDur(8*time.Hour, "a sign-in lasting %s outlives a working day, "+
 			"so a browser left open overnight is still signed in in the morning"),
 	},
@@ -1047,7 +1051,12 @@ var settings = []Setting{
 			"than being told.\n\nA mailto:, https: or tel: URI; several may " +
 			"be given, comma-separated. Empty publishes no file rather than " +
 			"an empty one — a security.txt with nothing in it answers the " +
-			"scanner that went looking and tells the person nothing.",
+			"scanner that went looking and tells the person nothing.\n\nThe " +
+			"first mailto: address is also who Quilzo tells, through mail.json, " +
+			"what needs a person: what the shield did, a sign-in that had to be " +
+			"confirmed, and the identity provider reporting a credential " +
+			"stolen, disabling the only administrator, or acting on more " +
+			"people in an hour than Quilzo will.",
 	},
 	{
 		Key: "security.expires", Kind: Text, Default: "",

@@ -1977,6 +1977,65 @@ Failed authentication is throttled with a soft lockout. The audit log has a
 published commitment to every entry so far, so removing one is detectable rather
 than merely forbidden.
 
+### When the identity provider says a session is over
+
+A session made by single sign-on is Quilzo's own: the provider vouches once, and
+the eight hours after that are local. So when the provider ends somebody's
+session, sees their password stolen or disables their account, nothing reaches
+the session already open here unless the provider can say so. Its security event
+stream (OpenID Shared Signals: CAEP and RISC) is how it says so, and Quilzo
+listens at `/sso/signals` on the admin:
+
+```
+export QUILZO_SIGNALS_SECRET=...      # the stream client's secret; never stored
+quilzo signals connect --provider oidc --client-id quilzo-stream
+quilzo signals status
+```
+
+The stream is bound to one way of signing in, `oidc` or `saml:NAME`, and the
+provider's word reaches only the sessions that provider signed in. Connecting is
+the whole opt-in: there is no rule to write, and every event only takes access
+away, so one administrator connects it.
+
+| The provider says | Quilzo does |
+|---|---|
+| session-revoked, sessions-revoked; credential-change (update, revoke, delete) | ends that provider's sessions for them |
+| credential-compromise, account-credential-change-required | the same; every other session they hold must confirm it is them; the security contact is told |
+| account-disabled, account-purged | suspends them as SCIM does: every token, every app they connected, and a deny over the whole site that passkeys and single sign-on refuse |
+| account-enabled | lifts the deny it added, and no other |
+
+What keeps that from being turned against the site:
+
+- Every event is a token signed by the provider's published key, for this
+  receiver, carrying one event Quilzo asked for. It is pushed with a bearer
+  only the transmitter was given, and Quilzo keeps the bearer's digest.
+- Who an event is about is read the way the provider names people at sign-in,
+  and has to be somebody the access policy already knows. Anything else is
+  counted as unmatched and nothing is done.
+- The last person who can grant access is never suspended this way: their
+  sessions end and the security contact is told.
+- At most twenty people an hour are acted on. Past that the rest wait, the cap
+  is recorded once, and the security contact is told.
+- An account-enabled older than the last event acted on for that person is
+  refused, after a restart too, so a replay cannot lift a newer suspension.
+- The shield's `signals` feature turns the endpoint off, and the transmitter
+  retries later.
+
+Once a day the server asks the provider to verify the stream, and the posture
+rule `signals.stream-silent` reports a stream that has not answered for a day: a
+stream gone quiet looks the same as one with nothing to say. A stream made by
+hand in the provider's console (`--jwks`, for a transmitter with no stream API)
+cannot be asked, and is reported for that. The Sign-ins screen shows the stream,
+the last event and what came of it. `quilzo signals off` deletes the stream at
+the provider; denies it added stay until the account is enabled or a person
+lifts them.
+
+With the admin on loopback, publish only `/scim/v2/` and `/sso/signals` through
+the proxy (`deploy/Caddyfile` has the block, commented out). Each act is in the
+audit log as `signals.sessions-ended`, `signals.step-up`, `signals.suspended`,
+`signals.restored`, `signals.verified`, `signals.stream-status`,
+`signals.capped` and, at most once an hour, `signals.refused`.
+
 ---
 
 ## Working on the same site at the same time

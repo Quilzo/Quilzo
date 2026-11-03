@@ -96,3 +96,16 @@ Reach it over SSH instead:
 ssh -N -L 8080:127.0.0.1:8080 you@your-server
 # then open http://127.0.0.1:8080
 ```
+
+### Except what the identity provider calls
+
+Provisioning (`quilzo scim`) and the identity provider's security events
+(`quilzo signals`) are sent by the provider to the admin, so those two paths need
+a public https address while everything else stays on loopback. The `Caddyfile`
+has a block, commented out, that publishes `/scim/v2/` and `/sso/signals` and
+answers 404 for every other path. Each endpoint authenticates the provider with a
+bearer of its own, and the shield can turn either off (`scim`, `signals`).
+
+Give the provider the same hostname the admin's single sign-on uses, since the
+receiver's address is derived from it: the OIDC redirect URI, or the SAML
+provider's `--url`.
