@@ -8,6 +8,7 @@ import (
 	"go/parser"
 	"go/token"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -453,5 +454,38 @@ func TestAListingIsCappedByTheCredentialsPath(t *testing.T) {
 	if w := get(t, srv, "/about", blog); w.Code != http.StatusNotFound {
 		t.Errorf("a preview link to about answered %d for a session scoped to "+
 			"/blog, which says the page exists", w.Code)
+	}
+}
+
+// And the figures on Today count what the pages screen lists.
+//
+// Both counts asked the policy alone. A credential issued `--on /blog` to a
+// whole-site administrator was listed one page on the pages screen and told
+// on Today that the draft held four, and that four were waiting to be
+// published: the size of what the path was drawn to withhold, which the
+// listing had stopped giving away.
+func TestTodaysFiguresAreCappedByTheCredentialsPath(t *testing.T) {
+	srv, _ := scoped(t, auth.Binding{
+		Principal: "ada", Role: auth.RoleAdmin, Resource: "/"})
+	req := httptest.NewRequest(http.MethodGet, "/today", nil)
+	req.AddCookie(&http.Cookie{Name: "quilzo_token", Value: blogSession(t, srv, "ada")})
+	p, err := srv.authenticate(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pages := -1
+	for _, it := range srv.glance(p, map[string]bool{"pages": true}, time.Now()).Items {
+		if it.Href == "/" {
+			pages = it.N
+		}
+	}
+	if pages != 1 {
+		t.Errorf("Today counted %d pages for a session scoped to /blog, which "+
+			"may read only blog/first", pages)
+	}
+	if n := srv.unpublishedFor(p); n != 1 {
+		t.Errorf("Today counted %d unpublished pages for a session scoped to "+
+			"/blog, which may read only blog/first", n)
 	}
 }
