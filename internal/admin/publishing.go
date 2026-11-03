@@ -148,7 +148,15 @@ func (s *Server) handlePromote(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	prom, err := site.Promote(s.Store, envs, from, to, skip)
+	plan, err := site.PlanPromotion(s.Store, envs, from, to, skip)
+	if err == nil && plan.IntoProduction() {
+		s.promoteByPublishing(w, r, p, plan, skip)
+		return
+	}
+	var prom site.Promotion
+	if err == nil {
+		prom, err = site.Promote(s.Store, envs, from, to, skip)
+	}
 	if err != nil {
 		s.auditPub(p, "env.promote", "/", map[string]string{
 			"from": from, "to": to, "outcome": "denied", "reason": err.Error()})
@@ -170,6 +178,57 @@ func (s *Server) handlePromote(w http.ResponseWriter, r *http.Request) {
 	s.pubRedirect(w, r, fmt.Sprintf(
 		"%s → %s, %s. The same objects, not a copy.",
 		prom.From, prom.To, countOf(len(prom.Changes), "change", "changes")), "")
+}
+
+// promoteByPublishing makes a promotion into production as Review →
+// Publish makes a publish, on the commit the promotion would move: every
+// check, with the reason given here waiving what a reason waives there,
+// then the live ref, the record and the webhooks. It used to move the live
+// ref with none of them, so a draft Publish refused went live from this
+// screen, straight from the draft or by way of staging, and nobody
+// listening was told.
+func (s *Server) promoteByPublishing(w http.ResponseWriter, r *http.Request, p principal,
+	plan site.PromotionPlan, skip bool) {
+
+	detail := map[string]string{"from": plan.From, "to": plan.To.Name,
+		"commit": shortHash(plan.Commit), "was": shortHash(s.Store.GetRef(site.RefLive))}
+	if skip {
+		detail["skipped"] = "an environment was bypassed deliberately"
+	}
+	if plan.To.Ref != site.RefLive {
+		msg := fmt.Sprintf("%s is served from the ref %q, and publishing moves %q.",
+			plan.To.Name, plan.To.Ref, site.RefLive)
+		s.auditPub(p, "env.promote", "/", map[string]string{
+			"from": plan.From, "to": plan.To.Name, "outcome": "denied", "reason": msg})
+		s.pubRedirect(w, r, "", msg)
+		return
+	}
+	reason := strings.TrimSpace(r.FormValue("reason"))
+	waived, refusal := s.publishChecks(p, plan.Commit, reason)
+	if refusal != nil {
+		s.auditPub(p, "env.promote", "/", map[string]string{
+			"from": plan.From, "to": plan.To.Name, "outcome": "denied",
+			"reason": "a check publishing makes"})
+		s.showRefusal(w, r, refusal, map[string]any{"From": plan.From, "To": plan.To.Name, "Skip": skip})
+		return
+	}
+	pub, err := site.Publish(s.Store, plan.Commit)
+	if err != nil {
+		s.auditPub(p, "env.promote", "/", map[string]string{
+			"from": plan.From, "to": plan.To.Name, "outcome": "denied", "reason": err.Error()})
+		s.pubRedirect(w, r, "", err.Error())
+		return
+	}
+	s.auditPub(p, "env.promote", "/", detail)
+	if pub.Previous == pub.Published {
+		s.pubRedirect(w, r, fmt.Sprintf("%s already held %s; nothing moved",
+			plan.To.Name, shortHash(plan.Commit)), "")
+		return
+	}
+	s.recordPublished(p, pub, waived, reason)
+	s.pubRedirect(w, r, fmt.Sprintf(
+		"%s → %s, %s, published. The same objects, not a copy.",
+		plan.From, plan.To.Name, countOf(len(pub.Changes), "change", "changes")), "")
 }
 
 // handleEnvSave adds an environment.

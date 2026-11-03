@@ -5,15 +5,18 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 func envsPath(root string) string { return filepath.Join(root, "environments.json") }
@@ -243,17 +246,24 @@ func envRemove(root string, args []string) error {
 }
 
 func envPromote(root string, args []string) error {
-	skip := false
-	var rest []string
-	for _, a := range args {
-		if a == "--skip" {
-			skip = true
-			continue
-		}
-		rest = append(rest, a)
+	fs := flag.NewFlagSet("env promote", flag.ContinueOnError)
+	skipFlag := fs.Bool("skip", false, "promote past the environments in between, and record that you did")
+	// Promoting into production is publishing, so it takes publishing's
+	// options, and its refusals name them.
+	force := fs.Bool("force-inaccessible", false,
+		"into production: publish despite blocking accessibility failures, and record that you did")
+	reason := fs.String("reason", "", "why an override is justified")
+	tplDir := fs.String("templates", "templates", "where page.html lives")
+	noCheck := fs.Bool("no-a11y-check", false, "into production: skip the accessibility check entirely")
+	forceUnmarked := fs.Bool("force-unmarked", false,
+		"into production: publish pages that declare no provenance (needs --reason)")
+	if err := fs.Parse(reorder(args, map[string]bool{"reason": true, "templates": true})); err != nil {
+		return err
 	}
+	rest, skip := fs.Args(), *skipFlag
 	if len(rest) != 2 {
-		return fmt.Errorf("usage: quilzo env promote <from> <to> [--skip]")
+		return fmt.Errorf("usage: quilzo env promote <from> <to> [--skip] " +
+			"[the options of quilzo publish, into production]")
 	}
 
 	e, err := loadEnvs(root)
@@ -269,7 +279,16 @@ func envPromote(root string, args []string) error {
 		return err
 	}
 
-	p, err := site.Promote(s, e, rest[0], rest[1], skip)
+	plan, err := site.PlanPromotion(s, e, rest[0], rest[1], skip)
+	var p site.Promotion
+	switch {
+	case err != nil:
+	case plan.IntoProduction():
+		p, err = promoteByPublishing(root, s, plan, caller, publishFlags{force: *force,
+			reason: *reason, tplDir: *tplDir, skip: *noCheck, forceUnmarked: *forceUnmarked})
+	default:
+		p, err = site.Promote(s, e, rest[0], rest[1], skip)
+	}
 	if err != nil {
 		record(root, caller.auditRecord("env.promote", "/", audit.Denied,
 			map[string]string{"from": rest[0], "to": rest[1],
@@ -301,6 +320,32 @@ func envPromote(root string, args []string) error {
 			short(p.Previous), reset)
 	}
 	return nil
+}
+
+// promoteByPublishing makes a promotion into production as a publish of
+// the commit it would move: every check quilzo publish makes, run on that
+// commit for the caller, then the live ref, the record, the webhooks and
+// the events. It used to move the live ref with none of them, so a draft
+// that quilzo publish refused went live through here, straight from the
+// draft or by way of staging, and nobody listening was told.
+func promoteByPublishing(root string, s *store.Store, plan site.PromotionPlan, caller *Caller,
+	opts publishFlags) (site.Promotion, error) {
+
+	if plan.To.Ref != site.RefLive {
+		return site.Promotion{}, fmt.Errorf("%s is served from the ref %q, and publishing "+
+			"moves %q: give %s the ref %q in %s", plan.To.Name, plan.To.Ref, site.RefLive,
+			plan.To.Name, site.RefLive, envsPath(root))
+	}
+	previous := s.GetRef(site.RefLive)
+	if err := publishAs(root, []string{plan.Commit}, caller, opts); err != nil {
+		return site.Promotion{}, err
+	}
+	p := site.Promotion{From: plan.From, To: plan.To.Name, Commit: plan.Commit,
+		Previous: previous, At: time.Now(), Identical: previous == plan.Commit}
+	if !p.Identical {
+		p.Changes, _ = site.Diff(s, previous, plan.Commit)
+	}
+	return p, nil
 }
 
 func envDiff(root string, args []string) error {

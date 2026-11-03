@@ -204,13 +204,24 @@ func atoiOr(raw string, fallback int) int {
 // The proposal is keyed by the draft's commit id, so editing the draft produces
 // a different proposal with no approvals rather than mutating the approved one.
 func currentProposal(root string, s *store.Store) (*collab.Proposal, *proposalFile, error) {
-	f := &proposalFile{}
-	if err := loadJSON(proposalsPath(root), f); err != nil {
-		return nil, nil, err
-	}
 	draft := s.GetRef(site.RefDraft)
 	if draft == "" {
 		return nil, nil, fmt.Errorf("there is no draft to review")
+	}
+	return proposalFor(root, s, draft)
+}
+
+// proposalFor is currentProposal for any commit: the proposal for exactly
+// these bytes, with whatever approvals it has, or a new one with none.
+//
+// Publishing a commit other than the draft (quilzo publish COMMIT, or a
+// promotion from staging into production) is asked about that commit's
+// approvals. It used to be asked about the draft's, so staging went live on
+// the approval of a later draft that nobody had promoted.
+func proposalFor(root string, s *store.Store, draft string) (*collab.Proposal, *proposalFile, error) {
+	f := &proposalFile{}
+	if err := loadJSON(proposalsPath(root), f); err != nil {
+		return nil, nil, err
 	}
 	for i := range f.Proposals {
 		if f.Proposals[i].Content == draft {
