@@ -285,6 +285,75 @@ func TestASentenceAboutSomethingElseIsRemoved(t *testing.T) {
 	}
 }
 
+// A sentence that says the opposite of what it cites is removed, though it
+// shares its words. "We open at 9am now" was cited for "The checker place
+// opens at midnight", and shown to the visitor: it had no digit to hold to
+// the passage, and two of its four informative words were there, which was
+// half and so enough.
+func TestASentenceThatContradictsItsPassageIsRemoved(t *testing.T) {
+	pages := map[string]any{
+		"visit": map[string]any{"title": "Visit us", "body": "The checker code word " +
+			"is chkc9d64848a9c8. Parking is by the river gate. We open at 9am now."},
+	}
+	idx := NewIndex(Chunk(pages, nil))
+	m := &scripted{reply: `{"answer": "The checker place opens at midnight [1].", "action": null}`}
+	ans, err := Respond(context.Background(), helper, idx, m, "When does the checker place open?")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(ans.Text, "midnight") {
+		t.Fatalf("a time the page does not say reached the visitor: %q", ans.Text)
+	}
+	if len(ans.Dropped) != 1 || !strings.Contains(ans.Dropped[0].Why, "midnight") {
+		t.Fatalf("dropped %+v", ans.Dropped)
+	}
+}
+
+// What a sentence can turn around without a digit: a figure or a time
+// written as a word, and a "not" left out or put in.
+func TestVerifyHoldsWordFiguresAndNegationsToThePassage(t *testing.T) {
+	hit := func(title, text string) []Hit {
+		return []Hit{{Passage: Passage{ID: "p#1", Page: "p", Title: title, Text: text}}}
+	}
+	bakery := hit("Bread", "We bake every morning. We do not sell gluten-free bread.")
+	hours := hit("Opening hours", "We open at 9am and close at 6pm, Monday to Saturday.")
+	stock := hit("Stock", "gluten free: no\nvegan: yes")
+	delivery := hit("Delivery", "Orders ship from Leeds within 2 working days. "+
+		"We do not ship outside the UK and the EU.")
+	for _, c := range []struct {
+		hits     []Hit
+		sentence string
+		why      string // "" when it is supported
+	}{
+		{bakery, "We sell gluten-free bread [1].", `"not"`},
+		{bakery, "We do not sell gluten-free bread [1].", ""},
+		{bakery, "We don't sell gluten-free bread [1].", ""},
+		{bakery, "We do not bake every morning [1].", `says "not"`},
+		{hours, "We close at midnight [1].", "midnight"},
+		{hours, "We open on Sundays [1].", "sunday"},
+		{hours, "We open in the evening [1].", "evening"},
+		{hours, "We close at 6pm [1].", ""},
+		{hours, "We open at nine [1].", ""},
+		{hours, "We open on Mondays [1].", ""},
+		{stock, "The loaf is gluten free [1].", `"no"`},
+		{stock, "The loaf is vegan [1].", ""},
+		{delivery, "Orders ship from Leeds within three working days [1].", "three"},
+		{delivery, "Orders ship from Leeds within two working days [1].", ""},
+		{delivery, "We ship outside the UK and the EU [1].", `"not"`},
+		{delivery, "We do not ship outside the UK and the EU [1].", ""},
+	} {
+		v := Verify(c.sentence, c.hits)
+		switch {
+		case c.why == "" && !v.Supported:
+			t.Errorf("%q was removed: %s", c.sentence, v.Why)
+		case c.why != "" && v.Supported:
+			t.Errorf("%q was kept, though it turns round %q", c.sentence, c.hits[0].Text)
+		case c.why != "" && !strings.Contains(v.Why, c.why):
+			t.Errorf("%q: the reason %q does not name %s", c.sentence, v.Why, c.why)
+		}
+	}
+}
+
 func TestAModelThatFailsFallsBack(t *testing.T) {
 	for name, m := range map[string]*scripted{
 		"error":    {err: errors.New("connection refused")},

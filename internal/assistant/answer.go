@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/quilzo/quilzo/internal/search"
 )
 
 // Model is anything that completes a prompt. The same shape as
@@ -386,17 +388,29 @@ func Figures(text string) [][2]int {
 
 // Verify checks one sentence against the passages it cites.
 //
-// Three tests, each cheap and each aimed at a failure that has been seen:
+// Four tests, each cheap and each aimed at a failure that has been seen:
 //
 //   - It must cite, and only passages it was given. An uncited sentence is
 //     the model speaking for itself.
-//   - Every figure in it must appear in what it cites. Invented prices,
-//     dates and quantities are the most damaging thing a site's assistant
-//     can say and the easiest to check.
+//   - Every figure in it must appear in what it cites, whether it is
+//     written in digits or in words. Invented prices, dates, times and
+//     quantities are the most damaging thing a site's assistant can say and
+//     the easiest to check.
 //   - Most of its informative words must appear in what it cites. Not
 //     entailment — a word-overlap test cannot prove a paraphrase is right —
 //     but it catches the sentence that cites passage 2 and is about
 //     something passage 2 never mentions.
+//   - It must not leave out a "not" that the passage it rests on says, nor
+//     say one that the passage does not. Deleting one keeps every word of
+//     the passage and reverses it.
+//
+// The last two were added after a cited contradiction was shown as
+// verified: "We open at 9am now" cited for "The checker place opens at
+// midnight", and "We do not sell gluten-free bread" for "We sell
+// gluten-free bread". Both kept enough of the passage's words to pass the
+// overlap test, which cannot see a changed value or a dropped negation. A
+// faithful sentence these refuse costs the answer a sentence; one they let
+// through would be the site contradicting itself in its own voice.
 func Verify(sentence string, hits []Hit) Sentence {
 	out := Sentence{}
 	seen := map[int]bool{}
@@ -417,6 +431,7 @@ func Verify(sentence string, hits []Hit) Sentence {
 		return out
 	}
 	var cited strings.Builder
+	var units []string
 	for _, n := range out.Cites {
 		if n < 1 || n > len(hits) {
 			out.Why = fmt.Sprintf("cites [%d], which it was not given", n)
@@ -426,6 +441,7 @@ func Verify(sentence string, hits []Hit) Sentence {
 		cited.WriteByte(' ')
 		cited.WriteString(hits[n-1].Text)
 		cited.WriteByte(' ')
+		units = append(units, statements(hits[n-1])...)
 	}
 	source := cited.String()
 	norm := func(s string) string { return strings.NewReplacer(",", "").Replace(s) }
@@ -435,6 +451,10 @@ func Verify(sentence string, hits []Hit) Sentence {
 			out.Why = fmt.Sprintf("says %s, which the cited passage does not", f)
 			return out
 		}
+	}
+	if w := wordFigureMissing(out.Text, source); w != "" {
+		out.Why = fmt.Sprintf("says %s, which the cited passage does not", w)
+		return out
 	}
 	have := map[string]bool{}
 	for _, t := range tokens(source) {
@@ -455,11 +475,142 @@ func Verify(sentence string, hits []Hit) Sentence {
 			found, content)
 		return out
 	}
+	if why := turnedAround(out.Text, units); why != "" {
+		out.Why = why
+		return out
+	}
 	out.Supported = true
 	return out
 }
 
 // SupportThreshold is the share of a sentence's informative words that must
 // appear in its cited passages. Half: a faithful paraphrase keeps the nouns
-// and changes the grammar, and an invented sentence keeps neither.
+// and changes the grammar, and a sentence about something else keeps
+// neither. A sentence that keeps the nouns and changes the one word that
+// matters passes this, which is why figures and negations are checked on
+// their own.
 const SupportThreshold = 0.5
+
+// figureWords are figures written as words — numbers, times of day, days
+// and months — each with its numeral where it has one, so "within two
+// working days" is found in "within 2 working days".
+//
+// They are held to the passage as a figure in digits is. Without them a
+// sentence could replace "9am" with "midnight", or "Monday to Saturday"
+// with "Sundays", and keep enough of the other words to pass. "May" is
+// left out because it is far more often the verb; "one" is kept, though it
+// is sometimes a pronoun, because a sentence refused for it costs a
+// sentence and "a one-person workshop" cited for "a two-person workshop"
+// costs the truth.
+var figureWords = map[string]string{
+	"zero": "0", "one": "1", "two": "2", "three": "3", "four": "4", "five": "5",
+	"six": "6", "seven": "7", "eight": "8", "nine": "9", "ten": "10",
+	"eleven": "11", "twelve": "12", "thirteen": "13", "fourteen": "14",
+	"fifteen": "15", "sixteen": "16", "seventeen": "17", "eighteen": "18",
+	"nineteen": "19", "twenty": "20", "thirty": "30", "forty": "40",
+	"fifty": "50", "sixty": "60", "seventy": "70", "eighty": "80",
+	"ninety": "90", "hundred": "100", "thousand": "1000", "million": "",
+	"billion": "", "dozen": "12", "half": "",
+	"midnight": "", "noon": "", "midday": "", "morning": "", "afternoon": "",
+	"evening": "", "night": "", "tonight": "", "today": "", "tomorrow": "",
+	"yesterday": "", "weekend": "", "weekday": "",
+	"monday": "", "tuesday": "", "wednesday": "", "thursday": "", "friday": "",
+	"saturday": "", "sunday": "",
+	"january": "", "february": "", "march": "", "april": "", "june": "",
+	"july": "", "august": "", "september": "", "october": "", "november": "",
+	"december": "",
+}
+
+// wordFigureMissing is the first figure written as a word in a sentence
+// that what it cites does not state, as that word, its plural or its
+// numeral, or "" when there is none.
+func wordFigureMissing(sentence, source string) string {
+	words := map[string]bool{}
+	for _, t := range search.Tokenise(source) {
+		words[t] = true
+	}
+	numerals := map[string]bool{}
+	for _, at := range Figures(source) {
+		numerals[strings.ReplaceAll(source[at[0]:at[1]], ",", "")] = true
+	}
+	for _, t := range search.Tokenise(sentence) {
+		w := t
+		if _, ok := figureWords[w]; !ok {
+			w = strings.TrimSuffix(t, "s")
+			if _, ok := figureWords[w]; !ok || w == t {
+				continue
+			}
+		}
+		if words[w] || words[w+"s"] || (figureWords[w] != "" && numerals[figureWords[w]]) {
+			continue
+		}
+		return w
+	}
+	return ""
+}
+
+// reNegation finds a word that turns a statement around: "not" and its
+// contractions, and the words that say none, nowhere or only otherwise.
+// The apostrophe may be typed or typographic, as a page's text has either.
+var reNegation = regexp.MustCompile(`(?i)\b(?:not|no|never|none|nor|neither|nobody|nothing|nowhere|cannot|without|except|unless)\b|n['’]t\b`)
+
+// statements are the pieces of a passage a sentence can rest on: its
+// header, and each sentence of each line, so a record's "gluten free: no"
+// is not read together with the "vegan: yes" under it.
+func statements(h Hit) []string {
+	out := []string{h.Header()}
+	for _, line := range strings.Split(h.Text, "\n") {
+		out = append(out, sentences(line)...)
+	}
+	return out
+}
+
+// turnedAround says why a sentence reverses what it rests on, or "".
+//
+// What it rests on is the statement among those it cites that shares the
+// most of its informative words, the negations aside. When that statement
+// says "not" and the sentence does not, or the other way round, the
+// sentence is refused: "We sell gluten-free bread" shares every word with
+// "We do not sell gluten-free bread", and is its opposite. Where several
+// statements share as many words, one that agrees is enough.
+func turnedAround(sentence string, units []string) string {
+	content := func(s string) map[string]bool {
+		out := map[string]bool{}
+		for _, t := range tokens(reNegation.ReplaceAllString(s, " ")) {
+			if !stopword[t] && len([]rune(t)) >= 3 {
+				out[t] = true
+			}
+		}
+		return out
+	}
+	want := content(sentence)
+	says := reNegation.FindString(sentence)
+	best, agrees, other := 0, false, ""
+	for _, u := range units {
+		n := 0
+		for t := range content(u) {
+			if want[t] {
+				n++
+			}
+		}
+		if n == 0 || n < best {
+			continue
+		}
+		if n > best {
+			best, agrees, other = n, false, ""
+		}
+		neg := reNegation.FindString(u)
+		if (neg != "") == (says != "") {
+			agrees = true
+		} else if other == "" {
+			other = neg
+		}
+	}
+	switch {
+	case best == 0 || agrees:
+		return ""
+	case says != "":
+		return fmt.Sprintf("says %q, where what it cites does not", strings.ToLower(says))
+	}
+	return fmt.Sprintf("leaves out the %q in what it cites", strings.ToLower(other))
+}
