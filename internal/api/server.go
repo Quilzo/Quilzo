@@ -95,6 +95,12 @@ type Server struct {
 	// authenticate, and why, for the shield's decoys and guess counting
 	// (internal/shield). Nil tells nobody.
 	OnBadToken func(r *http.Request, presented string, err error)
+	// OnTokenUsed is told every token that authenticated, so the host can
+	// write down when it was last used. This server never saves the store,
+	// and the use Authenticate notes in its copy was lost with it: a token
+	// used here every day was listed as used "never", and `token stale`
+	// offered it for revocation. Nil tells nobody.
+	OnTokenUsed func(tok auth.Token)
 	// Shield reports whether the shield has turned the content API off for
 	// a while. Nil means never.
 	Shield func() (until time.Time, on bool)
@@ -295,6 +301,9 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 			// person signing in is not evidence that the guessing from it
 			// stopped.
 			s.Throttle.Succeed(throttle.Subject{Principal: tok.Principal})
+		}
+		if s.OnTokenUsed != nil {
+			s.OnTokenUsed(*tok)
 		}
 
 		// Checked after authentication, not before. A syntactic rejection is

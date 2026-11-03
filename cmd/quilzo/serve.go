@@ -854,6 +854,10 @@ func cmdServe(root string, args []string) error {
 	srv.Brand = brand
 
 	srv.ReloadTokens = tokenReloader(root, toks)
+	// When a token was last used at /mcp, and below at /api/v1: neither
+	// door saves the store, so `token list` said "never" of tokens used
+	// there every day (useRecorder).
+	srv.OnTokenUsed = useRecorder(root)
 	// The agent interface at /mcp, and the OAuth server apps connect
 	// through. Off until mcp.remote is set. See agentinterface.go.
 	wireInterface(root, s, srv, sh, *tplDir)
@@ -970,7 +974,9 @@ func cmdServe(root string, args []string) error {
 		// here until a restart.
 		ReloadPolicy: policyReloader(root, pol),
 		OnBadToken:   sh.badToken,
-		Shield:       func() (time.Time, bool) { return sh.off("api") },
+		// When each token was last used, which nothing here wrote down.
+		OnTokenUsed: srv.OnTokenUsed,
+		Shield:      func() (time.Time, bool) { return sh.off("api") },
 		// The same cache the admin uses. One process, one decoded copy of a
 		// collection — two would be the same memory spent twice and two
 		// chances for one of them to be built wrong.

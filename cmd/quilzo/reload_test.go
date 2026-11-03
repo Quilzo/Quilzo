@@ -4,7 +4,9 @@
 package main
 
 import (
+	"os"
 	"testing"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
 )
@@ -47,5 +49,55 @@ func TestThePolicyAServerHoldsFollowsTheFile(t *testing.T) {
 	reload()
 	if pol.Evaluate("late", auth.ActView, "/").Allowed {
 		t.Fatal("a reader revoked while the server ran may still read")
+	}
+}
+
+// A token's use at a server that does not save the store is written down, at
+// most once an hour, and nothing else about the token is touched.
+func TestATokensUseIsWrittenDown(t *testing.T) {
+	root := t.TempDir()
+	ts := &auth.TokenStore{}
+	_, tok, err := ts.Issue("integration", "ada", auth.RoleReader, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveTokens(root, ts); err != nil {
+		t.Fatal(err)
+	}
+	record := useRecorder(root)
+	record(tok)
+	stored, err := loadTokens(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := stored.Snapshot()[0]
+	if first.LastUsed == 0 {
+		t.Fatal("a use was not written down: `token list` says never")
+	}
+	if first.Name != tok.Name || first.Hash != tok.Hash || first.Role != tok.Role {
+		t.Fatalf("writing the use changed the token: %+v", first)
+	}
+
+	// Revoked elsewhere since: a use written down does not bring it back.
+	if _, err := stored.Revoke(tok.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveTokens(root, stored); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(tokensPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	record(tok)
+	if after, err := os.Stat(tokensPath(root)); err != nil || !after.ModTime().Equal(fi.ModTime()) || after.Size() != fi.Size() {
+		t.Error("a second use within the hour rewrote the file every other process reloads on change")
+	}
+	again, err := loadTokens(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !again.Snapshot()[0].Revoked {
+		t.Error("the revocation was undone")
 	}
 }

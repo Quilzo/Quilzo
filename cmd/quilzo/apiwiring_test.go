@@ -93,3 +93,37 @@ func TestBothContentAPIsRereadThePolicy(t *testing.T) {
 		}
 	}
 }
+
+// The admin's doors that take a token without saving the store record its
+// use.
+//
+// None did. Authenticating sets a token's last use in the memory of the
+// process that checked it, and only the command line and the app-connection
+// paths wrote the store back, so a token used every day at /api/v1 or /mcp
+// was listed as used "never" by `token list`, and `token stale` offered it
+// for revocation. Found on the reference stack: two tokens used three times
+// each, one at each door, both "never".
+//
+// The admin's only: the public site's API runs confined and never writes
+// the store's tokens (siteconfine.go).
+func TestTheAdminsDoorsRecordATokensUse(t *testing.T) {
+	body, err := os.ReadFile("serve.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(body)
+	start := strings.Index(src, "apiSrv := &api.Server{")
+	if start < 0 {
+		t.Fatal("no API server is constructed in serve.go")
+	}
+	block := src[start:]
+	if end := strings.Index(block, "\n\t}\n"); end > 0 {
+		block = block[:end]
+	}
+	if !strings.Contains(block, "OnTokenUsed:") {
+		t.Error("the admin's /api/v1 does not record a token's use")
+	}
+	if !strings.Contains(src, "srv.OnTokenUsed = ") {
+		t.Error("the admin's /mcp does not record a token's use")
+	}
+}

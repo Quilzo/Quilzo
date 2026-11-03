@@ -853,3 +853,24 @@ func TestTheAPISeesTheAccessRulesAsTheyAreNow(t *testing.T) {
 		t.Fatalf("a reader revoked while the server ran still read the pages: %d", w.Code)
 	}
 }
+
+// Every token that authenticates is told to the host, so the host can write
+// down when it was last used; a token that does not is not.
+//
+// Authenticating notes a use only in this process's copy of the store, and
+// this server never saves it, so a token used daily here was listed as used
+// "never" and offered by `token stale` for revocation.
+func TestATokensUseIsToldToTheHost(t *testing.T) {
+	s, read, _ := setup(t)
+	var used []string
+	s.OnTokenUsed = func(tok auth.Token) { used = append(used, tok.Principal) }
+	if w := req(t, s, "GET", "/api/v1/pages", read, nil, nil); w.Code != http.StatusOK {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	if w := req(t, s, "GET", "/api/v1/pages", "qz_nosuchtokennosuchtoken", nil, nil); w.Code != http.StatusUnauthorized {
+		t.Fatalf("a wrong token: %d", w.Code)
+	}
+	if len(used) != 1 || used[0] != "reader" {
+		t.Fatalf("told of %v", used)
+	}
+}

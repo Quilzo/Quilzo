@@ -755,3 +755,21 @@ func TestTheInterfaceSeesTokensChangedElsewhereAtOnce(t *testing.T) {
 		t.Fatalf("a token revoked on the command line still worked at /mcp: %d %s", w.Code, w.Body.String())
 	}
 }
+
+// A token used at /mcp is told to the host, which writes down when it was
+// last used: the store this server holds is a copy, and its notes of use
+// were lost with it, so `token list` called a token in daily use at /mcp
+// "never" used.
+func TestATokensUseAtTheInterfaceIsToldToTheHost(t *testing.T) {
+	r := newIfaceRig(t)
+	r.oauth = false
+	var used []string
+	r.srv.OnTokenUsed = func(tok auth.Token) { used = append(used, tok.Principal) }
+	if w := r.mcpCall(t, r.token); w.Code != http.StatusOK {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	r.mcpCall(t, "qz_wrongwrongwrongwrongwrong")
+	if len(used) != 1 || used[0] != "editor" {
+		t.Fatalf("told of %v", used)
+	}
+}

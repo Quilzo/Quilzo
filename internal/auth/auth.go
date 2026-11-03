@@ -1619,6 +1619,29 @@ func (ts *TokenStore) ClearStepUp(id string) error {
 	return fmt.Errorf("no token %s", id)
 }
 
+// NoteUsed records that the token id was used at at, when that is later than
+// the use already recorded, and reports whether it was.
+//
+// For a host writing a use down in the stored file. Authenticate notes a use
+// only in the copy of the store held by the process that checked the token,
+// and that note is lost with the copy unless the process saves it: the
+// content API and the admin's /mcp never did, so a token used there every
+// day was listed as used "never", and Stale offered it for revocation.
+func (ts *TokenStore) NoteUsed(id string, at time.Time) bool {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	for i := range ts.Tokens {
+		if ts.Tokens[i].ID == id {
+			if at.Unix() <= ts.Tokens[i].LastUsed {
+				return false
+			}
+			ts.Tokens[i].LastUsed = at.Unix()
+			return true
+		}
+	}
+	return false
+}
+
 // Stale lists tokens that have never been used or have not been used recently.
 // Unused credentials are the ones nobody notices are still valid.
 func (ts *TokenStore) Stale(now time.Time, idle time.Duration) []Token {

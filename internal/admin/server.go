@@ -329,6 +329,11 @@ type Server struct {
 	// ReloadTokens re-reads the credential store when it has changed on disk.
 	// Nil means never, which is only right for a test.
 	ReloadTokens func()
+	// OnTokenUsed is told every token that authenticated at /mcp, and the
+	// doors that share its check, so the host can write down when it was
+	// last used: the store this server reads is a copy refresh replaces, and
+	// the use noted in it was lost with it. Nil tells nobody.
+	OnTokenUsed func(tok auth.Token)
 	// Throttle slows repeated authentication failures. Nil means no
 	// throttling, which is only right in tests: the host wires one in from
 	// configuration, and a nil check here rather than a panic means a caller

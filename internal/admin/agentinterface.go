@@ -310,6 +310,9 @@ func (s *Server) interfaceCaller(r *http.Request, token, resource string) (*mcp.
 	if s.Throttle != nil {
 		s.Throttle.Succeed(throttle.Subject{Principal: tok.Principal})
 	}
+	if s.OnTokenUsed != nil {
+		s.OnTokenUsed(*tok)
+	}
 	return &mcp.Caller{Principal: tok.Principal, Client: tok.Client, Data: *tok}, nil
 }
 
