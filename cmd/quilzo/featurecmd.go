@@ -114,8 +114,9 @@ func featureChecks(root string) feature.Checks {
 	caps, kinds := knownCapabilities(root), customKinds(root)
 	return feature.Checks{
 		Agent: func(m agent.Manifest) error { return m.ValidateWith(caps, kinds) },
+		// A package's URLs are its webhooks' (feature.Package.Webhooks).
 		URL: func(u string) error {
-			_, err := fetch.ValidateURL(u)
+			_, err := fetch.For("webhook").ValidateURL(u)
 			return err
 		},
 		EventType: webhook.KnownType,

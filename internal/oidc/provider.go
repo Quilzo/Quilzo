@@ -76,7 +76,7 @@ const MinRefresh = 30 * time.Second
 // metadata, for verifying tokens that are not ID tokens. get reads the key
 // set's URL, which has already passed the same address rules as any fetch.
 func NewKeySet(jwksURI string, get func(ctx context.Context, url string) ([]byte, error)) (*Provider, error) {
-	if _, err := fetch.ValidateURL(jwksURI); err != nil {
+	if _, err := fetch.For("trust").ValidateURL(jwksURI); err != nil {
 		return nil, fmt.Errorf("the key set URL is not usable: %w", err)
 	}
 	if get == nil {
@@ -166,7 +166,7 @@ func Discover(ctx context.Context, issuer string, client *fetch.Client) (*Provid
 		"token_endpoint":         d.TokenEndpoint,
 		"jwks_uri":               d.JWKSURI,
 	} {
-		if _, err := fetch.ValidateURL(endpoint); err != nil {
+		if _, err := client.ValidateURL(endpoint); err != nil {
 			return nil, fmt.Errorf("the metadata's %s is not usable: %w", name, err)
 		}
 	}

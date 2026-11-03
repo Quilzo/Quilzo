@@ -76,7 +76,7 @@ func hookAdd(root string, args []string) error {
 	if len(pos) != 1 {
 		return fmt.Errorf("usage: quilzo webhook add https://receiver.example/hook")
 	}
-	if _, err := fetch.ValidateURL(pos[0]); err != nil {
+	if _, err := fetch.For("webhook").ValidateURL(pos[0]); err != nil {
 		return fmt.Errorf("that endpoint is not usable: %w", err)
 	}
 

@@ -32,7 +32,8 @@
 //
 // Only https. A plain http URL is an unauthenticated channel where a network
 // position rewrites what the site imports, and the whole point of importing is
-// that the result gets published.
+// that the result gets published. Every other purpose is refused it too, each
+// for its own reason (plainHTTP).
 //
 // Userinfo (https://user@host/) is refused rather than stripped, because
 // parsers disagree about which part is the host and disagreeing is how a filter
@@ -383,6 +384,38 @@ func ValidateURL(raw string) (*url.URL, error) {
 	return (&Client{}).validateURL(raw)
 }
 
+// ValidateURL is the package's ValidateURL under this client's rules: the
+// ranges declared for it, and its purpose's reason for refusing plain
+// http. A caller that checks an address before handing it to a client
+// checks it here, so the check and the connection cannot disagree.
+func (c *Client) ValidateURL(raw string) (*url.URL, error) {
+	return c.validateURL(raw)
+}
+
+// plainHTTP is why plain http is refused, in the words of what the
+// connection is for.
+//
+// One sentence about importing served every purpose, so an identity
+// provider's issuer at http://localhost was refused because "imported
+// content gets published": somebody setting up sign-in, or a webhook, was
+// told about a risk that was not theirs and nothing about the one that was.
+func plainHTTP(purpose string) string {
+	switch purpose {
+	case "", "import":
+		return "Imported content gets published, and over plain http anyone on the path chooses what you publish"
+	case "sso":
+		return "An identity provider's metadata and keys decide who signs in, and over plain http anyone " +
+			"on the path chooses them, and with them signs in as anybody"
+	case "trust":
+		return "An issuer's keys decide whose tokens are accepted here, and over plain http anyone on the " +
+			"path chooses them"
+	case "webhook":
+		return "A webhook carries what happened here, and over plain http anyone on the path reads it " +
+			"and changes it"
+	}
+	return "Over plain http anyone on the path reads and changes what is sent and what comes back"
+}
+
 // validateURL is ValidateURL with this client's declared ranges open.
 func (c *Client) validateURL(raw string) (*url.URL, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
@@ -390,9 +423,7 @@ func (c *Client) validateURL(raw string) (*url.URL, error) {
 		return nil, fmt.Errorf("that is not a URL: %w", err)
 	}
 	if u.Scheme != "https" {
-		return nil, fmt.Errorf("only https is allowed, not %q. Imported content "+
-			"gets published, and over plain http anyone on the path chooses "+
-			"what you publish", u.Scheme)
+		return nil, fmt.Errorf("only https is allowed, not %q. %s", u.Scheme, plainHTTP(c.Purpose))
 	}
 	if u.User != nil {
 		return nil, fmt.Errorf("a URL with credentials in it is refused. " +

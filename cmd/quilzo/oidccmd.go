@@ -163,7 +163,7 @@ func oidcConfigure(root string, args []string) error {
 			"usage: quilzo oidc configure --issuer https://idp.example \\\n" +
 				"    --client-id ... --redirect-uri https://cms.example/auth/callback")
 	}
-	if _, err := fetch.ValidateURL(*issuer); err != nil {
+	if _, err := fetch.For("sso").ValidateURL(*issuer); err != nil {
 		return fmt.Errorf("the issuer URL is not usable: %w", err)
 	}
 	switch *claim {

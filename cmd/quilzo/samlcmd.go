@@ -76,12 +76,11 @@ func removeSAML(root, name string) error {
 
 // samlFetch reads metadata from an address under the sso purpose.
 func samlFetch(addr string) ([]byte, error) {
-	if _, err := fetch.ValidateURL(addr); err != nil {
+	c := fetch.For("sso")
+	c.UserAgent = "quilzo/1 (+saml metadata)"
+	if _, err := c.ValidateURL(addr); err != nil {
 		return nil, err
 	}
-	c := fetch.New()
-	c.Purpose = "sso"
-	c.UserAgent = "quilzo/1 (+saml metadata)"
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	res, err := c.Get(ctx, addr)
