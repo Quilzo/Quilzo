@@ -88,6 +88,25 @@ type parser struct {
 	i     int
 	// err is a fault next found, which ends the reading.
 	err error
+	// depth is how many block collections hold the one being read.
+	depth int
+}
+
+// maxDepth bounds how deep collections nest, in blocks and in flow
+// together. Each level is a call of the reader's own, and in flow a level
+// costs one byte: 3 million brackets, 6 MB that compress to a few KB,
+// overflowed the stack, which ends the process rather than the import.
+// No agent definition or front matter comes near it.
+const maxDepth = 64
+
+// nested counts one more block collection, and refuses it past maxDepth.
+// Its caller undoes the count when the collection ends.
+func (p *parser) nested() error {
+	p.depth++
+	if p.depth > maxDepth {
+		return p.errf("collections nest more than %d deep", maxDepth)
+	}
+	return nil
 }
 
 func (p *parser) errf(format string, a ...any) error {
@@ -201,6 +220,10 @@ func closingQuote(s string) int {
 }
 
 func (p *parser) mapping(ind int) (any, error) {
+	defer func() { p.depth-- }()
+	if err := p.nested(); err != nil {
+		return nil, err
+	}
 	out := map[string]any{}
 	for {
 		at, ok := p.next()
@@ -299,8 +322,9 @@ func (p *parser) inline(rest string, parent int) (any, error) {
 			}
 			text += " " + strings.TrimSpace(stripComment(p.lines[p.i]))
 		}
-		p.i++
-		f := &flow{s: text}
+		// A fault is named by the collection's last line, as a quoted
+		// value's is: the line after it named a line it is not on.
+		f := &flow{s: text, depth: p.depth}
 		v, err := f.value()
 		if err != nil {
 			return nil, p.errf("%v", err)
@@ -309,6 +333,7 @@ func (p *parser) inline(rest string, parent int) (any, error) {
 		if f.i != len(f.s) {
 			return nil, p.errf("something follows the flow collection: %q", f.s[f.i:])
 		}
+		p.i++
 		return v, nil
 	case '"', '\'':
 		text := rest
@@ -380,6 +405,10 @@ func (p *parser) scalarAt(ind, parent int) (any, error) {
 }
 
 func (p *parser) sequence(ind int) (any, error) {
+	defer func() { p.depth-- }()
+	if err := p.nested(); err != nil {
+		return nil, err
+	}
 	out := []any{}
 	for {
 		at, ok := p.next()
@@ -703,6 +732,9 @@ func radix(digits string, base int) float64 {
 type flow struct {
 	s string
 	i int
+	// depth is how many collections, block and flow, hold the value
+	// being read.
+	depth int
 }
 
 func flowClosed(s string) bool {
@@ -737,6 +769,13 @@ func (f *flow) value() (any, error) {
 	f.space()
 	if f.i >= len(f.s) {
 		return nil, fmt.Errorf("a flow collection ends early")
+	}
+	if c := f.s[f.i]; c == '[' || c == '{' {
+		f.depth++
+		defer func() { f.depth-- }()
+		if f.depth > maxDepth {
+			return nil, fmt.Errorf("collections nest more than %d deep", maxDepth)
+		}
 	}
 	switch c := f.s[f.i]; c {
 	case '[':

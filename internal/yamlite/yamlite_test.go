@@ -5,6 +5,7 @@ package yamlite
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"reflect"
 	"strings"
@@ -158,6 +159,64 @@ func TestWhatIsNotReadIsRefusedByLine(t *testing.T) {
 			} else if !strings.HasPrefix(err.Error(), "line ") && name != "a bad escape" && name != "an unclosed quote" &&
 				name != "past the last character" {
 				t.Logf("%v", err)
+			}
+		})
+	}
+}
+
+// Collections nested past maxDepth are refused, naming the line, whether
+// they nest in flow, in blocks or in both. Each level was a call of the
+// reader's own, so 3 million brackets — 6 MB, a few KB compressed —
+// overflowed the stack, which ends the process rather than the import.
+// A hundred thousand is enough to see they are refused.
+func TestCollectionsNestedTooDeepAreRefused(t *testing.T) {
+	// indented is n keys, each the one mapping in the one before, and the
+	// last holding value: n+1 mappings deep, and value's depth more.
+	indented := func(n int, value string) string {
+		var b strings.Builder
+		for i := 0; i < n; i++ {
+			b.WriteString(strings.Repeat(" ", i) + "k:\n")
+		}
+		return b.String() + strings.Repeat(" ", n) + "k: " + value + "\n"
+	}
+	brackets := func(n int) string { return strings.Repeat("[", n) + strings.Repeat("]", n) }
+	const deep = 100000
+	for name, c := range map[string]struct {
+		src  string
+		line int
+	}{
+		"flow lists":       {"title: " + brackets(deep) + "\n", 1},
+		"flow mappings":    {"a: " + strings.Repeat("{a: ", deep) + "1" + strings.Repeat("}", deep) + "\n", 1},
+		"compact lists":    {strings.Repeat("- ", 2000) + "x\n", 1},
+		"indented keys":    {indented(200, "v"), maxDepth + 1},
+		"both":             {indented(40, brackets(40)), 41},
+		"one past, flow":   {brackets(maxDepth+1) + "\n", 1},
+		"one past, blocks": {indented(maxDepth, "v"), maxDepth + 1},
+		"one past, both":   {indented(maxDepth/2-1, brackets(maxDepth/2+1)), maxDepth / 2},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := Parse([]byte(c.src))
+			if err == nil || !strings.HasPrefix(err.Error(), fmt.Sprintf("line %d: ", c.line)) ||
+				!strings.Contains(err.Error(), "deep") {
+				t.Fatalf("err = %v, want one naming line %d", err, c.line)
+			}
+		})
+	}
+	// As deep as is read, it is read, in either form, and what is written
+	// of it reads back.
+	for name, src := range map[string]string{
+		"flow":   brackets(maxDepth) + "\n",
+		"blocks": indented(maxDepth-1, "v"),
+		"both":   indented(maxDepth/2-1, brackets(maxDepth/2)),
+	} {
+		t.Run("at the limit, "+name, func(t *testing.T) {
+			v := parse(t, src)
+			out, err := Marshal(v)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if again := parse(t, string(out)); asJSON(again) != asJSON(v) {
+				t.Fatalf("read back differently:\n%s\n%s", asJSON(v), asJSON(again))
 			}
 		})
 	}
