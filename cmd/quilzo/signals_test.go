@@ -196,7 +196,6 @@ func signalsStore(t *testing.T, claim string) *signalsCase {
 	w = out.New(false)
 	w.Out = &bytes.Buffer{}
 	root := t.TempDir() + "/st"
-	t.Cleanup(func() { finishBackground(10 * time.Second) })
 	if err := cmdInit(root); err != nil {
 		t.Fatal(err)
 	}
@@ -244,6 +243,11 @@ func signalsStore(t *testing.T, claim string) *signalsCase {
 	signalsClient = func() ssf.HTTP { return c.tx }
 	t.Cleanup(func() { signalsClient = oldClient })
 	t.Setenv(signalsSecretEnv, "client-secret")
+	// Registered last, so it runs first: a message to the security contact
+	// still being sent finishes before deliverMail is put back. Registered
+	// first, it ran last, and a test that never read its mail raced the
+	// restore under -race.
+	t.Cleanup(func() { finishBackground(10 * time.Second) })
 	return c
 }
 
