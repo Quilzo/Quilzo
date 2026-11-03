@@ -1195,7 +1195,9 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 			if reviewer == nil {
 				return out, fmt.Errorf("the reviewer this store names (%s) could not be reached: %s", route, why)
 			}
-			decide = agentmodel.Reviewed(decide, reviewer)
+			// Charged to the run, as its own model is: the reviewer is
+			// asked about every action, and its calls are the run's spending.
+			decide = agentmodel.Reviewed(decide, agentexec.ChargedTo(sess, reviewer))
 		}
 	}
 
@@ -1277,8 +1279,10 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 				Load: func() (*decidepkg.Set, error) {
 					return decidepkg.Load(decidersPath(root))
 				},
+				// Charged to the person who started the run, as the
+				// agent's own calls are; agentexec charges the run.
 				Model: func(name string) decidepkg.Model {
-					m, _ := deciderModel(root, name)
+					m, _ := deciderModel(root, name, payers...)
 					return m
 				},
 			},

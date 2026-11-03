@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
+	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/decide"
 )
 
@@ -130,5 +131,53 @@ func TestTheAgentSeesWhichDecidersExist(t *testing.T) {
 	out, err := perform(context.Background(), agent.Action{Op: "list_deciders"})
 	if err != nil || !strings.Contains(out, "triage") || !strings.Contains(out, "choice") {
 		t.Fatalf("the listing: %v\n%s", err, out)
+	}
+}
+
+// pricedModel answers as steadyModel does and says what each call used and
+// cost, as the gateway's models do.
+type pricedModel struct {
+	steadyModel
+	calls int
+}
+
+func (m *pricedModel) Complete(ctx context.Context, system, user string) (string, error) {
+	m.calls++
+	return m.steadyModel.Complete(ctx, system, user)
+}
+
+func (m *pricedModel) CompleteCosted(ctx context.Context, system, user string) (string, assist.Usage, int64, error) {
+	out, err := m.Complete(ctx, system, user)
+	return out, assist.Usage{In: 600, Out: 400}, 100_000, err
+}
+
+// A decider's model calls are the run's, and were charged to nothing: each
+// decide step could be up to forty calls the run's money and token budgets
+// never saw, and its receipt priced the agent's own calls alone.
+func TestADecidersModelCallsAreChargedToTheRun(t *testing.T) {
+	m := &pricedModel{steadyModel: steadyModel{`{"answers":{"queue":{"value":"billing","confidence":0.95}}}`}}
+	perform, s := decidersFor(t, m)
+	if _, err := perform(context.Background(), agent.Action{Op: "decide",
+		Input: map[string]any{"name": "triage", "state": "my card was charged twice"}}); err != nil {
+		t.Fatal(err)
+	}
+	if m.calls != 3 {
+		t.Fatalf("the decider asked its model %d times; it samples 3", m.calls)
+	}
+	if s.Cost() != 300_000 || s.TokensUsed() != 3000 {
+		t.Errorf("three calls at 0.10 and 1000 tokens each left the run charged %d micros and %d tokens",
+			s.Cost(), s.TokensUsed())
+	}
+}
+
+// Without a model every question escalates, as the package's own failure
+// mode, and charging cannot be what turns that into a model call.
+func TestADeciderWithNoModelStillEscalates(t *testing.T) {
+	perform, _ := decidersFor(t, nil)
+	_, err := perform(context.Background(), agent.Action{Op: "decide",
+		Input: map[string]any{"name": "triage", "state": "my card was charged twice"}})
+	var esc *agent.Escalation
+	if !errors.As(err, &esc) {
+		t.Fatalf("with no model the question came back %v", err)
 	}
 }
