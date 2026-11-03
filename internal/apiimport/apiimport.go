@@ -234,7 +234,7 @@ func OpenAPI(body []byte, opts Options) (*Imported, error) {
 				}
 			}
 			if len(op.RequestBody) > 0 && o.Writes() {
-				schema, note := bodySchema(d, op.RequestBody)
+				schema, note := bodySchema(d, op.RequestBody, 0)
 				if note != "" {
 					out.Notes = append(out.Notes, o.Name+": "+note)
 				}
@@ -334,7 +334,11 @@ func resolveParam(d document, raw json.RawMessage) (parameter, string) {
 
 // bodySchema is a JSON request body's schema, with local references
 // followed to a bounded depth and anything else left as an open object.
-func bodySchema(d document, raw json.RawMessage) (json.RawMessage, string) {
+// depth counts the request bodies followed to reach this one, so that one
+// naming itself, or another that names it back, ends as an open object: it
+// was followed until the stack ran out, a fatal error that no recover
+// catches, and a 263-byte document ended the whole server.
+func bodySchema(d document, raw json.RawMessage, depth int) (json.RawMessage, string) {
 	var rb struct {
 		Ref     string `json:"$ref"`
 		Content map[string]struct {
@@ -349,7 +353,10 @@ func bodySchema(d document, raw json.RawMessage) (json.RawMessage, string) {
 		if !ok || d.Components.RequestBodies[name] == nil {
 			return json.RawMessage(`{"type":"object"}`), "its body is described elsewhere and is not fetched"
 		}
-		return bodySchema(d, d.Components.RequestBodies[name])
+		if depth >= refDepth {
+			return json.RawMessage(`{"type":"object"}`), "its body refers to itself, or through too many others; it takes any object"
+		}
+		return bodySchema(d, d.Components.RequestBodies[name], depth+1)
 	}
 	c, ok := rb.Content["application/json"]
 	if !ok || len(c.Schema) == 0 {

@@ -162,3 +162,40 @@ func TestAnMCPRegistryEntryBecomesAServerDeclaration(t *testing.T) {
 		t.Error("a package-only server was declared with nowhere to reach")
 	}
 }
+
+// A request body that names itself, or names one that names it back, is an
+// open object and a note. It was followed until the stack ran out, which is
+// a fatal error no recover catches: a 263-byte document, or an agent file
+// carrying one, ended the whole server.
+func TestARequestBodyThatNamesItselfIsAnOpenObject(t *testing.T) {
+	for name, bodies := range map[string]string{
+		"itself":     `"A": {"$ref": "#/components/requestBodies/A"}`,
+		"each other": `"A": {"$ref": "#/components/requestBodies/B"}, "B": {"$ref": "#/components/requestBodies/A"}`,
+	} {
+		doc := `{"openapi": "3.0.3", "info": {"title": "Loop"}, "servers": [{"url": "https://loop.example"}],
+		  "components": {"requestBodies": {` + bodies + `}},
+		  "paths": {"/a": {"post": {"operationId": "send", "requestBody": {"$ref": "#/components/requestBodies/A"}}}}}`
+		imp, err := OpenAPI([]byte(doc), Options{Uses: []string{"send"}})
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if b := string(imp.Integration.Operations[0].Body); b != `{"type":"object"}` {
+			t.Errorf("%s: the body is %s", name, b)
+		}
+		if notes := strings.Join(imp.Notes, "\n"); !strings.Contains(notes, "send: its body refers to itself") {
+			t.Errorf("%s: the loop was not named:\n%s", name, notes)
+		}
+	}
+	// A body named through a few others is still followed to its schema.
+	doc := `{"openapi": "3.0.3", "info": {"title": "Chain"}, "servers": [{"url": "https://chain.example"}],
+	  "components": {"requestBodies": {"A": {"$ref": "#/components/requestBodies/B"}, "B": {"$ref": "#/components/requestBodies/C"},
+	    "C": {"content": {"application/json": {"schema": {"type": "object", "properties": {"to": {"type": "string"}}}}}}}},
+	  "paths": {"/a": {"post": {"operationId": "send", "requestBody": {"$ref": "#/components/requestBodies/A"}}}}}`
+	imp, err := OpenAPI([]byte(doc), Options{Uses: []string{"send"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b := string(imp.Integration.Operations[0].Body); !strings.Contains(b, `"to"`) {
+		t.Errorf("a chain of bodies was not followed: %s", b)
+	}
+}
