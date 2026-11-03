@@ -241,3 +241,33 @@ func TestEveryHopOfARedirectIsHeldToTheDeclaration(t *testing.T) {
 		t.Errorf("the host the chain passed through is not among the run's sources: %+v", open.Sources())
 	}
 }
+
+// A page read through a redirect is one read of it. The last hop of a chain
+// is the page it landed on, and it was named once as a hop and again as
+// what was read, so a run that read one page once had a receipt saying it
+// read something untrusted twice, and a chain through another host said
+// three times for two.
+func TestThePageARedirectLandsOnIsReadOnce(t *testing.T) {
+	c := &chain{next: map[string]string{"https://docs.example/moved": "https://docs.example/here"}}
+	s := reader(&agent.Web{Fetch: []string{"docs.example"}})
+	d := &Driver{Session: s, Get: c.get}
+	if _, err := do(t, d, "web_fetch", map[string]any{"url": "https://docs.example/moved"}); err != nil {
+		t.Fatal(err)
+	}
+	if n := s.Reads(); n != 1 {
+		t.Errorf("one page read through one redirect is %d reads", n)
+	}
+
+	c = &chain{next: map[string]string{
+		"https://docs.example/a":   "https://mirror.example/a",
+		"https://mirror.example/a": "https://docs.example/b",
+	}}
+	s = reader(&agent.Web{Any: true})
+	d = &Driver{Session: s, Get: c.get}
+	if _, err := do(t, d, "web_fetch", map[string]any{"url": "https://docs.example/a"}); err != nil {
+		t.Fatal(err)
+	}
+	if n := s.Reads(); n != 2 {
+		t.Errorf("a chain through one other host to one page is %d reads: %+v", n, s.Sources())
+	}
+}

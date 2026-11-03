@@ -154,9 +154,14 @@ func (d *Driver) fetch(ctx context.Context, raw string) (string, error) {
 		return "", fmt.Errorf("%s sent it on to %s, which is not a host this agent may read", host, fh)
 	}
 	// Each host the chain passed through chose where it went next, so each
-	// is a source of what the run read, and the receipt names it.
+	// is a source of what the run read, and the receipt names it. The last
+	// hop is the page it landed on, which is named once, below: named here
+	// as well, one page read through a redirect was two reads on the
+	// receipt.
 	for _, p := range passed {
-		d.Session.ReadWeb(strings.ToLower(p.Hostname()), p.Redacted())
+		if p.String() != final.String() {
+			d.Session.ReadWeb(strings.ToLower(p.Hostname()), p.Redacted())
+		}
 	}
 	d.Session.ReadWeb(strings.ToLower(final.Hostname()), final.Redacted())
 	return Render(final, page.ContentType, page.Body), nil
