@@ -93,8 +93,8 @@ func (dd Deciders) ask(ctx context.Context, s *agent.Session, a agent.Action) (s
 	var m decide.Model
 	if dd.Model != nil {
 		// Charged to the run, as the agent's own calls are: a decide step
-		// is up to forty calls, and the run's money and token budgets did
-		// not see one of them.
+		// is a call for each sample, up to five, and the run's money and
+		// token budgets did not see one of them.
 		m = ChargedTo(s, dd.Model(name))
 	}
 	res, err := decide.Decide(ctx, d, m, state)
@@ -149,9 +149,9 @@ func (dd Deciders) ask(ctx context.Context, s *agent.Session, a agent.Action) (s
 // run's own budgets, as agentmodel.Decider charges the agent's own calls.
 //
 // For the other models a run asks, a decider's and the reviewer's, which
-// were charged to nothing: a step that asked a decider five samples of eight
-// questions spent forty calls the run's money budget never saw, and its
-// receipt priced the agent's calls alone. Nil stays nil, so a decider with no
+// were charged to nothing: a step that asked a decider sampled five times
+// spent five calls the run's money budget never saw, and its receipt priced
+// the agent's calls alone. Nil stays nil, so a decider with no
 // model still escalates everything rather than failing on a call.
 func ChargedTo(s *agent.Session, m assist.Model) assist.Model {
 	if m == nil || s == nil {

@@ -152,7 +152,7 @@ func (m *pricedModel) CompleteCosted(ctx context.Context, system, user string) (
 }
 
 // A decider's model calls are the run's, and were charged to nothing: each
-// decide step could be up to forty calls the run's money and token budgets
+// decide step could be up to five calls the run's money and token budgets
 // never saw, and its receipt priced the agent's own calls alone.
 func TestADecidersModelCallsAreChargedToTheRun(t *testing.T) {
 	m := &pricedModel{steadyModel: steadyModel{`{"answers":{"queue":{"value":"billing","confidence":0.95}}}`}}
