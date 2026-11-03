@@ -315,3 +315,37 @@ func TestEveryHopIsPutToTheCallerBeforeItIsRequested(t *testing.T) {
 		t.Errorf("the caller was asked about %q", asked)
 	}
 }
+
+// An answer longer than the ceiling is cut at the ceiling and says so, from
+// every method that hands back a body. PostForm and PostWithHeaders read one
+// byte past the ceiling, to tell a full answer from a long one, and then
+// handed that byte back too with Truncated false: a caller that trusted the
+// flag took a cut answer for a whole one, one byte over the limit it set.
+func TestAnAnswerPastTheCeilingIsCutAndSaysSo(t *testing.T) {
+	port := serve(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, strings.Repeat("x", 64))
+	}))
+	u := "https://answer.test:" + port + "/long"
+	c := toServer("import")
+	c.Limits.MaxBytes = 16
+	ctx := context.Background()
+	for _, k := range []struct {
+		name string
+		do   func() (*Result, error)
+	}{
+		{"PostForm", func() (*Result, error) { return c.PostForm(ctx, u, url.Values{"a": {"b"}}, "", "") }},
+		{"PostWithHeaders", func() (*Result, error) { return c.PostWithHeaders(ctx, u, []byte("{}"), nil) }},
+		{"Post", func() (*Result, error) { return c.Post(ctx, u, []byte("{}"), "application/json") }},
+		{"Do", func() (*Result, error) { return c.Do(ctx, http.MethodPost, u, []byte("{}"), nil) }},
+	} {
+		res, err := k.do()
+		if err != nil {
+			t.Errorf("%s: %v", k.name, err)
+			continue
+		}
+		if len(res.Body) != 16 || !res.Truncated {
+			t.Errorf("%s: a 64-byte answer under a 16-byte ceiling came back as %d bytes, truncated %v",
+				k.name, len(res.Body), res.Truncated)
+		}
+	}
+}
