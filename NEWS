@@ -148,6 +148,14 @@ Unreleased
 
 ** Fixed
 
+*** A site import with thousands of tags on one post is read in moments.
+    Each tag was checked against every tag kept before it, so 40,000 tags
+    in one page's front matter took seconds, and the million that the
+    8 MiB read of one file can hold would have kept the server busy for
+    hours.  A WordPress post's categories were read the same way.  Tags
+    are now told apart in one pass, and the same tags are kept, in the
+    same order.
+
 *** The connected-accounts callback no longer reflects what it is sent.
     It turned a provider's error text into a message on the Connections
     screen.  The address is one anybody can link to before any state is

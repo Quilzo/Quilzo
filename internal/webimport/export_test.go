@@ -4,12 +4,15 @@
 package webimport
 
 import (
+	"fmt"
+	"math/rand/v2"
 	"net/url"
 	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
+	"unicode"
 
 	"github.com/quilzo/quilzo/internal/feature"
 	"github.com/quilzo/quilzo/internal/section"
@@ -349,4 +352,168 @@ func wordsOf(body map[string]any) string {
 		}
 	}
 	return strings.Join(out, "\n\n")
+}
+
+// A post's tags are read in time that grows with their number, not with its
+// square. Each tag was checked against every tag kept before it, so 40,000
+// distinct tags in one front matter field took between 2.4 and 8.7 seconds,
+// by machine, and the 8 MiB a folder import reads of one file holds about a
+// million: one imported page could keep a server busy for hours. A
+// WordPress post's categories were kept the same way, and a WordPress
+// export may be 256 MiB.
+func TestAPostWithThousandsOfTagsIsReadInTime(t *testing.T) {
+	const n = 40000
+	tags := make([]any, n)
+	for i := range tags {
+		tags[i] = fmt.Sprintf("t%d", i)
+	}
+	start := time.Now()
+	got := list(map[string]any{"tags": tags}, "tags")
+	if took := time.Since(start); took > time.Second {
+		t.Errorf("%d tags as a list took %v", n, took)
+	}
+	if len(got) != n || got[0] != "t0" || got[n-1] != fmt.Sprint("t", n-1) {
+		t.Errorf("%d tags as a list became %d", n, len(got))
+	}
+
+	var joined strings.Builder
+	for i := range n {
+		fmt.Fprintf(&joined, "t%d,", i)
+	}
+	start = time.Now()
+	got = list(map[string]any{"tags": joined.String()}, "tags")
+	if took := time.Since(start); took > time.Second {
+		t.Errorf("%d tags written with commas took %v", n, took)
+	}
+	if len(got) != n {
+		t.Errorf("%d tags written with commas became %d", n, len(got))
+	}
+
+	// Reading the XML of 40,000 categories takes time of its own, most of a
+	// second under the race detector, so the post with 40,000 tags is held to
+	// one whose 40,000 categories are all one tag, which the scan read as
+	// quickly as it read the XML.
+	wordpress := func(tag func(int) string) (*Site, time.Duration) {
+		var doc strings.Builder
+		doc.WriteString(`<?xml version="1.0"?><rss version="2.0" xmlns:wp="http://wordpress.org/export/1.2/"><channel>` +
+			`<link>https://oldbakery.example</link><item><title>Rye</title><link>https://oldbakery.example/rye/</link>` +
+			`<wp:post_id>1</wp:post_id><wp:post_type>post</wp:post_type><wp:status>publish</wp:status>`)
+		for i := range n {
+			fmt.Fprintf(&doc, `<category domain="post_tag">%s</category>`, tag(i))
+		}
+		doc.WriteString(`</item></channel></rss>`)
+		start := time.Now()
+		s, err := FromWordPress([]byte(doc.String()), "x")
+		took := time.Since(start)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s, took
+	}
+	_, oneTag := wordpress(func(int) string { return "rye" })
+	s, took := wordpress(func(i int) string { return fmt.Sprint("t", i) })
+	if took > oneTag+time.Second {
+		t.Errorf("a WordPress post with %d tags took %v, and with one tag %d times %v", n, took, n, oneTag)
+	}
+	if len(s.Posts) != 1 || len(s.Posts[0].Tags) != n {
+		t.Errorf("a WordPress post with %d tags: %d posts", n, len(s.Posts))
+	}
+}
+
+// foldKey keys two strings alike exactly when strings.EqualFold says they
+// are equal, which strings.ToLower does not: 'ſ' and 's' are equal and
+// lower-case differently, and 'İ' lower-cases to an 'i' it is not equal to.
+// So every rune is held to its key and to every rune a case mapping makes
+// of it, and short strings of the runes where folding is surprising, with
+// bytes that are not UTF-8 among them, are held to each other.
+func TestTagsAreTheSameExactlyWhenEqualFoldSaysSo(t *testing.T) {
+	same := func(a, b, ka, kb string) {
+		t.Helper()
+		if eq := strings.EqualFold(a, b); eq != (ka == kb) {
+			t.Fatalf("EqualFold(%+q, %+q) is %v, and their keys are %+q and %+q", a, b, eq, ka, kb)
+		}
+	}
+	for r := rune(0); r <= unicode.MaxRune; r++ {
+		s := string(r)
+		k := foldKey(s)
+		// Each rune is equal to its key, and the key is its own key, so two
+		// runes that share a key are equal. Holding each rune to the next
+		// one SimpleFold gives, below, carries one key round all the runes
+		// EqualFold takes as one.
+		same(s, k, k, foldKey(k))
+		for _, c := range []rune{unicode.ToLower(r), unicode.ToUpper(r), unicode.ToTitle(r), unicode.SimpleFold(r),
+			unicode.TurkishCase.ToLower(r), unicode.TurkishCase.ToUpper(r)} {
+			if c != r {
+				same(s, string(c), k, foldKey(string(c)))
+			}
+		}
+	}
+	pieces := []string{"", "a", "A", "k", "K", "\u212a", "s", "S", "\u017f", "i", "I", "\u0130", "\u0131",
+		"\u00df", "\u1e9e", "\u03c3", "\u03c2", "\u03a3", "\u00b5", "\u03bc", "\u039c", "\u0345", "\u03b9", "\u0399",
+		"\u1fbe", "\u03a9", "\u2126", "\u00e5", "\u00c5", "\u212b", "\u01c4", "\u01c5", "\u01c6", "\u00e9",
+		"\xc3", "\xa9", "\xff", "\ufffd", " ", "1", "-"}
+	var words, keys []string
+	for _, a := range pieces {
+		for _, b := range pieces {
+			words, keys = append(words, a+b), append(keys, foldKey(a+b))
+		}
+	}
+	for i, a := range words {
+		for j, b := range words {
+			same(a, b, keys[i], keys[j])
+		}
+	}
+}
+
+// list keeps the tags, in the order, that it kept when every tag was
+// checked against those before it with strings.EqualFold.
+func TestTagsAreKeptAsTheyWereBeforeTheyWereKeyed(t *testing.T) {
+	words := []string{"rye", "Rye", " rye", "rye ", "RYE", "\u017fpelt", "spelt", "Spelt", "\u212aamut", "kamut",
+		"\u0130stanbul", "istanbul", "\u0131stanbul", "Straße", "STRASSE", "\xff", "\ufffd", "", " ", "\t", "a,b"}
+	rng := rand.New(rand.NewPCG(1, 2))
+	for range 20000 {
+		var items []any
+		var commas []string
+		for range rng.IntN(8) {
+			w := words[rng.IntN(len(words))]
+			items = append(items, w)
+			commas = append(commas, w)
+			if rng.IntN(6) == 0 {
+				items = append(items, 1.5, nil)
+			}
+		}
+		fm := map[string]any{"tags": items, "categories": strings.Join(commas, ","), "keywords": items[:len(items)/2]}
+		if rng.IntN(2) == 0 {
+			fm["tags"], fm["categories"] = fm["categories"], fm["tags"]
+		}
+		keys := []string{"tags", "categories", "keywords"}
+		if got, want := list(fm, keys...), listByScan(fm, keys...); !slices.Equal(got, want) {
+			t.Fatalf("%#v became %+q, not %+q", fm, got, want)
+		}
+	}
+}
+
+// listByScan is list as it was before foldSet, to hold list to.
+func listByScan(m map[string]any, keys ...string) []string {
+	var out []string
+	kept := func(s string) bool {
+		return slices.ContainsFunc(out, func(x string) bool { return strings.EqualFold(x, s) })
+	}
+	for _, k := range keys {
+		switch v := m[k].(type) {
+		case []any:
+			for _, x := range v {
+				if s, ok := x.(string); ok && strings.TrimSpace(s) != "" && !kept(s) {
+					out = append(out, strings.TrimSpace(s))
+				}
+			}
+		case string:
+			for _, s := range strings.Split(v, ",") {
+				if s = strings.TrimSpace(s); s != "" && !kept(s) {
+					out = append(out, s)
+				}
+			}
+		}
+	}
+	return out
 }

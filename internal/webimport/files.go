@@ -316,17 +316,25 @@ func text(m map[string]any, keys ...string) string {
 // list is a front matter field as a list of words.
 func list(m map[string]any, keys ...string) []string {
 	var out []string
+	seen := foldSet{}
 	for _, k := range keys {
 		switch v := m[k].(type) {
 		case []any:
 			for _, x := range v {
-				if s, ok := x.(string); ok && strings.TrimSpace(s) != "" && !containsFold(out, s) {
-					out = append(out, strings.TrimSpace(s))
+				// The word is looked up as it came, spaces and all, because
+				// the scan this replaced compared it so: " rye" after "rye"
+				// is kept a second time. Trimming it first would change
+				// which tags an import keeps, which a change made for speed
+				// should not.
+				s, ok := x.(string)
+				if t := strings.TrimSpace(s); ok && t != "" && !seen.has(s) {
+					seen.add(t)
+					out = append(out, t)
 				}
 			}
 		case string:
 			for _, s := range strings.Split(v, ",") {
-				if s = strings.TrimSpace(s); s != "" && !containsFold(out, s) {
+				if s = strings.TrimSpace(s); s != "" && seen.add(s) {
 					out = append(out, s)
 				}
 			}

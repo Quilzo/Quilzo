@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // A site brought from the file its last home exported.
@@ -266,10 +267,11 @@ func FromWordPress(body []byte, origin string) (*Site, error) {
 				pst.Image, pst.Alt = u, a.alt
 			}
 		}
+		seen := foldSet{}
 		for _, c := range it.Categories {
 			v := strings.TrimSpace(html.UnescapeString(c.Value))
 			if (c.Domain == "category" || c.Domain == "post_tag") && v != "" && !strings.EqualFold(v, "Uncategorized") &&
-				!containsFold(pst.Tags, v) {
+				seen.add(v) {
 				pst.Tags = append(pst.Tags, v)
 			}
 		}
@@ -400,13 +402,56 @@ func day(s string) string {
 	return ""
 }
 
-func containsFold(list []string, s string) bool {
-	for _, x := range list {
-		if strings.EqualFold(x, s) {
-			return true
-		}
+// foldSet holds words as strings.EqualFold compares them. It replaced a
+// scan of every word kept so far with strings.EqualFold, which made reading
+// n tags cost n² comparisons: 40,000 tags in one front matter field, or on
+// one WordPress post, took seconds, and the million an 8 MiB file holds
+// would have taken hours.
+type foldSet map[string]struct{}
+
+// has says whether a word equal to s under strings.EqualFold is in the set.
+func (set foldSet) has(s string) bool {
+	_, ok := set[foldKey(s)]
+	return ok
+}
+
+// add puts s in the set and says whether no word equal to it was there.
+func (set foldSet) add(s string) bool {
+	k := foldKey(s)
+	if _, ok := set[k]; ok {
+		return false
 	}
-	return false
+	set[k] = struct{}{}
+	return true
+}
+
+// foldKey is the same for two strings exactly when strings.EqualFold says
+// they are equal. strings.ToLower is not that: EqualFold uses Unicode simple
+// case folding, under which 'ſ' (U+017F) equals 's' and the Kelvin sign
+// equals 'k', while ToLower leaves 'ſ' as it is and turns 'İ' (U+0130) into
+// 'i', which EqualFold does not equal it to. A key that folds otherwise than
+// EqualFold would keep tags the old scan dropped, or drop tags it kept.
+//
+// strings.Map also turns each byte that is not UTF-8 into U+FFFD, as
+// EqualFold reads it, and hands back s itself when nothing changes.
+func foldKey(s string) string {
+	return strings.Map(foldRune, s)
+}
+
+// foldRune stands for the runes unicode.SimpleFold goes round, which are the
+// runes strings.EqualFold takes as one: whichever of them it is given, it
+// gives the least of them. When the least is a capital A to Z it gives the
+// small letter instead, so a word already in small letters is its own key
+// and strings.Map does not copy it.
+func foldRune(r rune) rune {
+	least := r
+	for f := unicode.SimpleFold(r); f != r; f = unicode.SimpleFold(f) {
+		least = min(least, f)
+	}
+	if 'A' <= least && least <= 'Z' {
+		return least + 'a' - 'A'
+	}
+	return least
 }
 
 // -- Ghost --------------------------------------------------------------------
