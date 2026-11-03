@@ -7,6 +7,20 @@ has the rest.
 Unreleased
 ==========
 
+** Governance
+
+*** A publish of the draft, from the command line or over MCP, puts live
+    exactly the commit its checks were asked about; a save landing while
+    they ran went live unchecked.  For a day after an administrator is
+    removed, the one left cannot approve anything alone (their own
+    requests, playbooks, policy changes, installs, the first token) unless
+    a second administrator holds the role again; a store that only ever had
+    one administrator is unaffected.  Approving a group mapping that makes
+    administrators shows every live provisioning token, who made it and how
+    it was approved (People, or quilzo pending show), and a token made
+    while such a mapping waits takes two administrators.  A chatbot asked
+    inside an agent's run is charged to the run's budget and its person.
+
 ** Kept features made right
 
 *** Self-defence tells its owner: a hold on the shield's playbooks no
