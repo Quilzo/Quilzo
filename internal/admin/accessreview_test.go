@@ -48,7 +48,7 @@ func memoryReview(srv *Server) (*AccessReview, *[]string) {
 		},
 		Close: func(by Actor) (accessreview.Summary, error) {
 			pressed = append(pressed, "close "+by.Name)
-			return current.Close(as(by), current.Items, false, time.Now())
+			return current.Close(as(by), current.Items, false, nil, time.Now())
 		},
 	}, &pressed
 }

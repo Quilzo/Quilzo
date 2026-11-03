@@ -654,6 +654,11 @@ type Summary struct {
 	NotReviewed []Item `json:"not_reviewed,omitempty"`
 	// Alone says the store had one administrator, who did the review.
 	Alone bool `json:"alone,omitempty"`
+	// Unreviewable are items every administrator holds, a group they are
+	// all in, which nobody may decide and which the review closes
+	// undecided, saying so, as a review done alone says what of the
+	// administrator's own went unreviewed.
+	Unreviewable int `json:"unreviewable,omitempty"`
 }
 
 // Close ends a review. Refused while any item is undecided, except an item
@@ -662,7 +667,13 @@ type Summary struct {
 // is closed as done alone and says how many of theirs went unreviewed.
 // current is a snapshot taken now, against which both are judged and from
 // which grants made since the start are reported as not reviewed.
-func (r *Review) Close(d Decider, current []Item, alone bool, now time.Time) (Summary, error) {
+//
+// administrators is everybody who may decide, and an item every one of them
+// holds is closed undecided too, and counted (Unreviewable): the whole staff
+// mapped to reader is every administrator's own access, and a review that
+// waited for somebody to decide it waited for ever, with no other review
+// able to start while it was open.
+func (r *Review) Close(d Decider, current []Item, alone bool, administrators []string, now time.Time) (Summary, error) {
 	if !r.Open() {
 		return Summary{}, fmt.Errorf("review %s closed on %s", r.ID, r.Closed.Format("2 January 2006"))
 	}
@@ -698,6 +709,8 @@ func (r *Review) Close(d Decider, current []Item, alone bool, now time.Time) (Su
 			// by the snapshot alone it waited for a decision nobody could
 			// give, so the review could not close.
 			sum.Own++
+		case heldByAll(administrators, it, now):
+			sum.Unreviewable++
 		default:
 			waiting = append(waiting, it.ID)
 		}
@@ -718,6 +731,17 @@ func (r *Review) Close(d Decider, current []Item, alone bool, now time.Time) (Su
 	}
 	r.Closed, r.ClosedBy, r.Closer, r.Summary = now.UTC(), d.Name, d.Kind, &sum
 	return sum, nil
+}
+
+// heldByAll reports whether every one of administrators holds an item, as
+// the snapshot had it or as it is now. With nobody named, nobody does.
+func heldByAll(administrators []string, then, now Item) bool {
+	for _, a := range administrators {
+		if !then.Holder(a) && !now.Holder(a) {
+			return false
+		}
+	}
+	return len(administrators) > 0
 }
 
 // Resource is where a review's records are filed in the audit log.
@@ -775,6 +799,9 @@ func (r *Review) ClosedDetail(s Summary) map[string]string {
 	if s.Gone > 0 {
 		d["gone"] = fmt.Sprint(s.Gone)
 	}
+	if s.Unreviewable > 0 {
+		d["unreviewable"] = fmt.Sprint(s.Unreviewable)
+	}
 	if s.Alone {
 		d["alone"] = "true"
 		d["own_unreviewed"] = fmt.Sprint(s.Own)
@@ -802,6 +829,9 @@ func (r *Review) Evidence() assurance.Evidence {
 		r.ID, s.Items, s.Kept, s.Revoked, len(s.NotReviewed))
 	if s.Alone {
 		what += fmt.Sprintf("; done by the only administrator, %d of their own left unreviewed", s.Own)
+	}
+	if s.Unreviewable > 0 {
+		what += fmt.Sprintf("; %d held by every administrator, so left unreviewed", s.Unreviewable)
 	}
 	return assurance.Evidence{Control: ControlID, From: r.Closed.Add(-assurance.Quarterly.Every()), To: r.Closed,
 		Outcome: assurance.Operated, What: what, Source: "quilzo access review",

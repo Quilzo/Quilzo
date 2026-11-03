@@ -294,12 +294,12 @@ func TestEveryReviewRecordIsAcceptedAndCarriesNoReason(t *testing.T) {
 			}
 		}
 	}
-	sum, err := r.Close(person("lee"), r.Items, false, now)
+	sum, err := r.Close(person("lee"), r.Items, false, nil, now)
 	if err == nil {
 		t.Fatal("closed with dana's item undecided and a second administrator to decide it")
 	}
 	r.Record(itemOf(t, r, func(i Item) bool { return i.Principal == "dana" }).ID, Keep, person("sam"), "the owner", now)
-	if sum, err = r.Close(person("lee"), r.Items, false, now); err != nil {
+	if sum, err = r.Close(person("lee"), r.Items, false, nil, now); err != nil {
 		t.Fatal(err)
 	}
 	if d := write("review.closed", r.ClosedDetail(sum)); d["kept"] == "" || d["revoked"] != "1" {
@@ -315,16 +315,16 @@ func TestEveryReviewRecordIsAcceptedAndCarriesNoReason(t *testing.T) {
 // its close: one in six months is unproven, two are covered.
 func TestCloseNeedsEveryDecisionAndTwoMakeTheControlProven(t *testing.T) {
 	r := open(t)
-	if _, err := r.Close(person("lee"), r.Items, false, now); err == nil || !strings.Contains(err.Error(), "undecided") {
+	if _, err := r.Close(person("lee"), r.Items, false, nil, now); err == nil || !strings.Contains(err.Error(), "undecided") {
 		t.Fatalf("closed with nothing decided: %v", err)
 	}
 	for _, it := range r.Items {
 		r.Record(it.ID, Keep, person("lee"), "still needed", now)
 	}
-	if _, err := r.Close(person("lee"), r.Items, false, now); err != nil {
+	if _, err := r.Close(person("lee"), r.Items, false, nil, now); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.Close(person("lee"), r.Items, false, now); err == nil {
+	if _, err := r.Close(person("lee"), r.Items, false, nil, now); err == nil {
 		t.Error("a closed review closed twice")
 	}
 	if _, err := r.Check("1", Keep, person("lee"), "x"); err == nil {
@@ -360,10 +360,10 @@ func TestTheOnlyAdministratorClosesAlone(t *testing.T) {
 			r.Record(it.ID, Keep, person("dana"), "needed", now)
 		}
 	}
-	if _, err := r.Close(person("dana"), r.Items, false, now); err == nil {
+	if _, err := r.Close(person("dana"), r.Items, false, nil, now); err == nil {
 		t.Fatal("dana's own item was left undecided with a second administrator to decide it")
 	}
-	sum, err := r.Close(person("dana"), r.Items, true, now)
+	sum, err := r.Close(person("dana"), r.Items, true, nil, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -394,7 +394,7 @@ func TestTheSnapshotIsWhatWasReviewed(t *testing.T) {
 			r.Record(it.ID, Keep, person("lee"), "needed", now)
 		}
 	}
-	sum, err := r.Close(person("lee"), Snapshot(in), false, now)
+	sum, err := r.Close(person("lee"), Snapshot(in), false, nil, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -424,7 +424,7 @@ func TestOneReviewAtATime(t *testing.T) {
 		for _, it := range r.Items {
 			r.Record(it.ID, Keep, person("lee"), "needed", now)
 		}
-		_, err := r.Close(person("lee"), r.Items, false, now)
+		_, err := r.Close(person("lee"), r.Items, false, nil, now)
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -532,14 +532,45 @@ func TestClosingAloneCountsAGroupJoinedSinceAsOwn(t *testing.T) {
 	}
 	joined := group
 	joined.ID, joined.Members = "", []string{"ada@example.com", "boss"}
-	if _, err := r.Close(person("boss"), []Item{joined}, false, now); err == nil {
+	if _, err := r.Close(person("boss"), []Item{joined}, false, nil, now); err == nil {
 		t.Fatal("a review with two administrators closed with an item undecided")
 	}
-	sum, err := r.Close(person("boss"), []Item{joined}, true, now)
+	sum, err := r.Close(person("boss"), []Item{joined}, true, nil, now)
 	if err != nil {
 		t.Fatalf("the only administrator could not close: %v", err)
 	}
 	if sum.Own != 1 || !sum.Alone {
 		t.Errorf("the group boss joined since: %+v", sum)
+	}
+}
+
+// An item every administrator holds, a group they are all in, is decided
+// by nobody, and closes undecided and counted; one an administrator does
+// not hold still waits for them.
+func TestAnItemEveryAdministratorHoldsClosesUndecided(t *testing.T) {
+	staff := Item{ID: "1", Kind: Mapping, Group: "Staff", Role: "reader", Members: []string{"dana", "sam", "kit"}}
+	editors := Item{ID: "2", Kind: Mapping, Group: "Editors", Role: "publisher", Members: []string{"dana", "kit"}}
+	r, err := New("r1", []Item{staff, editors}, person("dana"), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Close(person("dana"), r.Items, false, []string{"dana", "sam"}, now); err == nil ||
+		!strings.Contains(err.Error(), "(2)") {
+		t.Fatalf("Editors, which sam may decide, did not wait for sam: %v", err)
+	}
+	if _, err := r.Check("2", Keep, person("sam"), ""); err != nil {
+		t.Fatal(err)
+	}
+	r.Record("2", Keep, person("sam"), "", now)
+	sum, err := r.Close(person("dana"), r.Items, false, []string{"dana", "sam"}, now)
+	if err != nil {
+		t.Fatalf("Staff, which every administrator is in, held the review open: %v", err)
+	}
+	if sum.Unreviewable != 1 || sum.Kept != 1 || r.ClosedDetail(sum)["unreviewable"] != "1" ||
+		!strings.Contains(r.Evidence().What, "held by every administrator") {
+		t.Errorf("what was left unreviewed is not said: %+v %v", sum, r.ClosedDetail(sum))
+	}
+	if heldByAll(nil, staff, staff) {
+		t.Error("with nobody named, an item was held by everybody")
 	}
 }

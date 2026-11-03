@@ -1108,3 +1108,52 @@ func TestTheOnlyAdministratorJoiningAGroupCanStillClose(t *testing.T) {
 		t.Errorf("the group boss joined is not counted as their own and unreviewed: %+v", closed)
 	}
 }
+
+// A group every administrator is in, the whole staff mapped to reader,
+// is every administrator's own access, and nobody may decide it. The
+// review waited for that decision for ever, and with one review open at a
+// time the store could never review its access again. It closes with the
+// group undecided, counted, and said in the record, as a review done alone
+// says what of the administrator's own went unreviewed.
+func TestAGroupEveryAdministratorIsInDoesNotHoldTheReviewOpen(t *testing.T) {
+	root, tokens := reviewed(t)
+	if err := scimStore(root).Update(func(st *scim.State) error {
+		st.Users = append(st.Users, scim.User{ID: "u-dana", UserName: "dana", Active: true},
+			scim.User{ID: "u-sam", UserName: "sam", Active: true})
+		st.Groups = append(st.Groups, scim.Group{ID: "g-staff", DisplayName: "Staff",
+			Members: []string{"u-dana", "u-sam"}})
+		st.Mapping["Staff"] = "reader"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := review(t, root, tokens["dana"], "start"); err != nil {
+		t.Fatal(err)
+	}
+	r := openReview(t, root)
+	staff := itemFor(t, r, func(it accessreview.Item) bool { return it.Group == "Staff" })
+	for _, it := range r.Items {
+		if it.ID == staff.ID {
+			continue
+		}
+		as := tokens["dana"]
+		if it.Holder("dana") {
+			as = tokens["sam"]
+		}
+		if err := review(t, root, as, "decide", it.ID, "keep", "--why", "needed"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, who := range []string{"dana", "sam"} {
+		if err := review(t, root, tokens[who], "decide", staff.ID, "keep"); err == nil {
+			t.Fatalf("%s decided a group they are in", who)
+		}
+	}
+	if err := review(t, root, tokens["dana"], "close"); err != nil {
+		t.Fatalf("a group every administrator is in held the review open: %v", err)
+	}
+	closed := lastEvent(t, root, "review.closed")
+	if closed == nil || closed.Detail["unreviewable"] != "1" || closed.Detail["alone"] != "" {
+		t.Errorf("review.closed does not say one item was every administrator's own: %+v", closed)
+	}
+}

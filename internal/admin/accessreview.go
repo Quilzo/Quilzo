@@ -196,5 +196,9 @@ func (s *Server) handleReviewClose(w http.ResponseWriter, r *http.Request) {
 	if sum.Alone {
 		msg += "; done alone, as the only administrator, and the record says so"
 	}
+	if sum.Unreviewable > 0 {
+		msg += fmt.Sprintf("; %s held by every administrator went unreviewed, and the record says so",
+			countOf(sum.Unreviewable, "item", "items"))
+	}
 	s.peopleBack(w, r, msg)
 }

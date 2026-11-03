@@ -217,6 +217,19 @@ func nobodyAdministers(p *auth.Policy) bool {
 	return true
 }
 
+// administrators is everybody a policy lets grant on the whole store,
+// which is who may decide a review's items; an agent is not among them,
+// since a model decides nothing in a review.
+func administrators(p *auth.Policy) []string {
+	var out []string
+	for _, who := range p.Principals() {
+		if !strings.HasPrefix(who, "agent:") && p.Evaluate(who, auth.ActGrant, "/").Allowed {
+			out = append(out, who)
+		}
+	}
+	return out
+}
+
 // groupNow is what an identity provider group means here now, and the
 // user name of everybody in it, active or not: a mapping item is judged
 // on the group as it stands, not as its snapshot had it.
@@ -368,7 +381,7 @@ func reviewClose(root string, c *Caller) (*accessreview.Review, accessreview.Sum
 	var sum accessreview.Summary
 	r, err := reviewStore(root).Update(func(r *accessreview.Review) error {
 		var cerr error
-		sum, cerr = r.Close(reviewer(c), current, alone, now)
+		sum, cerr = r.Close(reviewer(c), current, alone, administrators(in.Policy), now)
 		return cerr
 	})
 	if err != nil {
@@ -544,6 +557,10 @@ func cmdAccessReview(root string, args []string) error {
 		if sum.Alone {
 			w.Human("  %syou are the only administrator, so this was done alone, and %d of your own access "+
 				"went unreviewed; the record says so%s\n", yellow, sum.Own, reset)
+		}
+		if sum.Unreviewable > 0 {
+			w.Human("  %s%d held by every administrator, a group you are all in, went unreviewed, since "+
+				"nobody may decide their own; the record says so%s\n", yellow, sum.Unreviewable, reset)
 		}
 		if len(sum.NotReviewed) > 0 {
 			w.Human("  %s%d granted since it started, not reviewed by it:%s\n", yellow, len(sum.NotReviewed), reset)

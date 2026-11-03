@@ -2039,7 +2039,9 @@ counts, and writes evidence for the built-in quarterly control
 any other: one review in a six-month window is unproven, two are covered.
 With one administrator there is nobody else to decide their own access, so
 the review closes alone, says how much of theirs went unreviewed, and
-`approval.alone` counts it.
+`approval.alone` counts it. In the same way, a group every administrator is
+in (the whole staff mapped to reader, say) is everybody's own and nobody's to
+decide: it closes undecided, and `review.closed` counts it as `unreviewable`.
 
 When no review has closed within the period, the posture scan reports
 `access.review-due` and the security contact is mailed.
