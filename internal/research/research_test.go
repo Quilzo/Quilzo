@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/assistant"
 )
 
 var day = time.Date(2026, 10, 14, 9, 0, 0, 0, time.UTC)
@@ -101,6 +103,34 @@ func TestEveryNumberInAReportIsLinkedOrFlagged(t *testing.T) {
 	}
 	if strings.Join(numbers, ",") != "37" || strings.Join(claims, ",") != "effect" || strings.Join(stated, ",") != "120" {
 		t.Errorf("numbers %v, claims %v, stated %v", numbers, claims, stated)
+	}
+}
+
+// A report's figures are the ones the chatbot's check finds, less those
+// standalone says are not claims: one detector serves both, so a figure
+// the chatbot must reproduce is never one a report may leave unlinked
+// without saying why. They had been two copies of one pattern, free to
+// drift.
+func TestAReportsFiguresAreTheOnesTheChatbotFinds(t *testing.T) {
+	for _, text := range []string{
+		"37% improved, and 1,200 were seen in 2026.",
+		"It cost 4.5 and then 12.",
+		"COVID-19 and p53 in Figure 2, on the 3rd day, at https://x.org/10.1",
+	} {
+		var flagged, kept []string
+		for _, sg := range numbers(text, "") {
+			if sg.Kind == "number" {
+				flagged = append(flagged, sg.Text)
+			}
+		}
+		for _, f := range assistant.Figures(text) {
+			if standalone(text, f[0], f[1], "") {
+				kept = append(kept, text[f[0]:f[1]])
+			}
+		}
+		if strings.Join(flagged, "|") != strings.Join(kept, "|") {
+			t.Errorf("%q: the report flags %q, the shared detector %q", text, flagged, kept)
+		}
 	}
 }
 

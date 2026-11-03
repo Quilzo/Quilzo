@@ -366,6 +366,24 @@ var reCite = regexp.MustCompile(`\s*\[(\d{1,2})\]`)
 // one figure each.
 var reNumber = regexp.MustCompile(`\d[\d,.]*\d|\d`)
 
+// Figures finds the figures text states, by where each starts and ends.
+// Each ends at a digit, so the full stop after a figure that ends a
+// sentence, or the comma after one in a list, is not part of it.
+//
+// Exported because research reads a report's figures with it: what a
+// chatbot's answer must reproduce and what a report must link are the same
+// figures, and they had been found by two copies of one pattern, each free
+// to learn a figure the other did not. Which figures need a source is each
+// caller's: Verify holds every one to its passage, and research leaves out
+// the ones that number a part of the document or a name.
+func Figures(text string) [][2]int {
+	var out [][2]int
+	for _, loc := range reNumber.FindAllStringIndex(text, -1) {
+		out = append(out, [2]int{loc[0], loc[1]})
+	}
+	return out
+}
+
 // Verify checks one sentence against the passages it cites.
 //
 // Three tests, each cheap and each aimed at a failure that has been seen:
@@ -411,8 +429,8 @@ func Verify(sentence string, hits []Hit) Sentence {
 	}
 	source := cited.String()
 	norm := func(s string) string { return strings.NewReplacer(",", "").Replace(s) }
-	for _, fig := range reNumber.FindAllString(out.Text, -1) {
-		f := strings.TrimRight(fig, ".,")
+	for _, at := range Figures(out.Text) {
+		f := out.Text[at[0]:at[1]]
 		if !strings.Contains(norm(source), norm(f)) {
 			out.Why = fmt.Sprintf("says %s, which the cited passage does not", f)
 			return out
