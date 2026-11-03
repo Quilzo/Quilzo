@@ -55,10 +55,51 @@ func TestAReplicaReadsARefAndAnObject(t *testing.T) {
 		t.Errorf("what was served hashes to %s, not to %s. A replica would "+
 			"refuse it, correctly, and never be able to sync", got, head)
 	}
-	// Immutable, because the name is the hash. This is what makes an edge
-	// replica cost nothing to keep warm.
+	// Immutable, because the name is the hash: the replica's own cache never
+	// has to ask about it again.
 	if cc := w.Header().Get("Cache-Control"); !strings.Contains(cc, "immutable") {
 		t.Errorf("an object is served as %q; it can never change", cc)
+	}
+}
+
+// What a replica is sent is for the credential that asked, never for a cache
+// shared between callers.
+//
+// Objects were served "public, max-age=31536000, immutable". A shared cache
+// does not keep an answer to a request with Authorization unless the answer
+// says it may, and "public" is how an answer says so: a CDN or proxy in
+// front of the API could keep a draft's commit, tree and blobs for a year
+// and hand them to anybody who asked for the same address, with no
+// credential at all. Content-addressing makes the bytes unchangeable; it
+// does not make them anybody's.
+func TestADraftIsNotOfferedToASharedCache(t *testing.T) {
+	s, readTok, _ := setup(t)
+	if _, err := site.SaveDraft(s.Store, map[string]any{
+		"index":  map[string]any{"title": "Home", "body": "Welcome."},
+		"launch": map[string]any{"title": "Launch", "body": "Not announced yet."},
+	}, "unannounced", "test"); err != nil {
+		t.Fatal(err)
+	}
+	draft := s.Store.GetRef(site.RefDraft)
+	if draft == "" || draft == s.Store.GetRef(site.RefLive) {
+		t.Fatal("the fixture has no unpublished draft to ask for")
+	}
+
+	w := req(t, s, "GET", "/api/v1/replica/object/"+draft, readTok, nil, nil)
+	if w.Code != 200 {
+		t.Fatalf("reading the draft's commit gave %d: %s", w.Code, w.Body)
+	}
+	cc := strings.ToLower(w.Header().Get("Cache-Control"))
+	for _, directive := range strings.Split(cc, ",") {
+		switch d := strings.TrimSpace(directive); {
+		case d == "public", strings.HasPrefix(d, "s-maxage"):
+			t.Errorf("a draft object is served as %q, which lets a cache "+
+				"shared between callers keep it and serve it to anybody", cc)
+		}
+	}
+	if !strings.Contains(cc, "private") && !strings.Contains(cc, "no-store") {
+		t.Errorf("a draft object is served as %q, which does not keep it "+
+			"out of a shared cache", cc)
 	}
 }
 
