@@ -8,6 +8,7 @@ import (
 	"compress/zlib"
 	"errors"
 	"fmt"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -105,6 +106,44 @@ func TestAFlateBombStopsAtTheLimit(t *testing.T) {
 	}
 	if time.Since(start) > 10*time.Second {
 		t.Fatal("a bomb took too long")
+	}
+}
+
+// TestManySmallBombsStopAtTheDocumentsLimit — the audit's case: each stream
+// stopped at maxInflate, and nothing stopped the document, so 2000 streams
+// of 8 KB that each inflate to 8 MiB of digits (no text, so maxPDFText never
+// fills) cost minutes and tens of gigabytes on a chatbot's question. A
+// hundred of them is enough to see it; the text before them still counts.
+func TestManySmallBombsStopAtTheDocumentsLimit(t *testing.T) {
+	compress := func(p []byte) []byte {
+		var b bytes.Buffer
+		zw := zlib.NewWriter(&b)
+		zw.Write(p)
+		zw.Close()
+		return b.Bytes()
+	}
+	var out bytes.Buffer
+	out.WriteString("%PDF-1.7\n")
+	stream := func(n int, body []byte) {
+		fmt.Fprintf(&out, "%d 0 obj\n<< /Length %d /Filter /FlateDecode >>\nstream\n", n, len(body))
+		out.Write(body)
+		out.WriteString("\nendstream\nendobj\n")
+	}
+	stream(1, compress([]byte(policy)))
+	bomb := compress(bytes.Repeat([]byte("1"), maxInflate))
+	for i := 0; i < 100; i++ {
+		stream(i+2, bomb)
+	}
+
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	text, err := PDFText(out.Bytes())
+	runtime.ReadMemStats(&after)
+	if err != nil || !strings.Contains(text, "Refunds take 5 working days.") {
+		t.Fatalf("the text before the bombs was lost: %v %q", err, text)
+	}
+	if spent := after.TotalAlloc - before.TotalAlloc; spent > 1<<30 {
+		t.Fatalf("a %d KB PDF cost %d MB to read", out.Len()>>10, spent>>20)
 	}
 }
 
