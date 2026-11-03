@@ -205,3 +205,49 @@ func TestAPostIsAnsweredByAnySuccess(t *testing.T) {
 		t.Errorf("a refusal: %v", err)
 	}
 }
+
+// Federation delivery is held to the timeout like every other call.
+//
+// DoChecked ran the request it was handed with no deadline at all: no
+// context of its own and no client timeout, and the deliverer builds its
+// request with the background context. A follower whose inbox sent its
+// headers and then a byte every few minutes held the one delivery loop, and
+// every follower sorted after it, and every post published after, waited on
+// it for good.
+func TestDoCheckedGivesUpOnAReceiverThatDrips(t *testing.T) {
+	release := make(chan struct{})
+	port := serve(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "65536")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte("x"))
+		w.(http.Flusher).Flush()
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	// After serve's, so it runs first: the server waits for its handler.
+	t.Cleanup(func() { close(release) })
+
+	c := toServer("federation")
+	c.Limits.Timeout = time.Second
+	// As the deliverer builds it: no context but the background.
+	req, err := http.NewRequest(http.MethodPost, "https://inbox.test:"+port+"/inbox", strings.NewReader("{}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	start := time.Now()
+	go func() {
+		_, err := c.DoChecked(req)
+		done <- err
+	}()
+	// The status line came before the drip, and what follows it is read
+	// only to be discarded, so what it returns is the receiver's 202 or the
+	// deadline; either is an answer. Not answering is the bug.
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatalf("DoChecked is still waiting after %s with a timeout of 1s", time.Since(start).Round(time.Second))
+	}
+}

@@ -825,11 +825,20 @@ func (c *Client) PostSigned(ctx context.Context, raw string, body []byte,
 //
 // Redirects are refused for the same reason PostSigned refuses them: a
 // redirect would replay a signed body at an address the signature never named.
+//
+// The request is held to the client's timeout, whatever context it came
+// with. It used to run with none: the deliverer builds its request with the
+// background context, so a follower whose inbox sent its headers and then a
+// byte every few minutes held the one delivery loop, and every follower after
+// it and every later post waited for good.
 func (c *Client) DoChecked(req *http.Request) (int, error) {
 	lim := c.Limits.withDefaults()
 	if _, err := c.validateURL(req.URL.String()); err != nil {
 		return 0, err
 	}
+	ctx, cancel := context.WithTimeout(req.Context(), lim.Timeout)
+	defer cancel()
+	req = req.WithContext(ctx)
 	client, err := c.httpClient(lim)
 	if err != nil {
 		return 0, err
