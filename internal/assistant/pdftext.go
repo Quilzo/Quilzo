@@ -32,8 +32,9 @@ import (
 //
 // Bounded throughout, because the input is whoever uploaded it: a stream
 // inflates to at most maxInflate, all of them together to maxInflated, the
-// text of the whole document to maxPDFText, and the number of streams
-// considered is capped. A Flate bomb stops at the limit.
+// text of the whole document to maxPDFText, the strings waiting for an
+// operator to maxOperands, and the number of streams considered is capped.
+// A Flate bomb stops at the limit.
 
 const (
 	maxInflate = 8 << 20
@@ -47,6 +48,12 @@ const (
 	maxInflated = 64 << 20
 	maxPDFText  = 2 << 20
 	maxStreams  = 2000
+	// maxOperands bounds the strings waiting for an operator to show them.
+	// Those of one TJ wait together, and no line of text is thousands of
+	// them. Unbounded, 8 MiB of () was four million empty strings waiting
+	// for an operator that never came: eight such streams, 128 KB of PDF
+	// within maxInflated, cost 2.7 GB of slices.
+	maxOperands = 8192
 )
 
 // ErrNoText is a PDF this cannot read text from, with the reason.
@@ -185,11 +192,15 @@ func showText(cs []byte, out *strings.Builder) {
 		switch {
 		case c == '(':
 			s, n := pdfString(cs[i:])
-			operands = append(operands, s)
+			if len(operands) < maxOperands {
+				operands = append(operands, s)
+			}
 			i += n
 		case c == '<' && i+1 < len(cs) && cs[i+1] != '<':
 			s, n := pdfHex(cs[i:])
-			operands = append(operands, s)
+			if len(operands) < maxOperands {
+				operands = append(operands, s)
+			}
 			i += n
 		case c == '[' || c == ']':
 			i++
@@ -223,10 +234,10 @@ func showText(cs []byte, out *strings.Builder) {
 				flush()
 				operands = operands[:0]
 			default:
-				if n, err := strconv.ParseFloat(tok, 64); err == nil {
+				if n, ok := number(tok); ok {
 					// Inside a TJ array, a large negative adjustment is the
 					// gap between words.
-					if n < -180 && len(operands) > 0 {
+					if n < -180 && len(operands) > 0 && len(operands) < maxOperands {
 						operands = append(operands, " ")
 					}
 				} else if !isOperand(tok) {
@@ -246,8 +257,20 @@ func isOperand(tok string) bool {
 	if strings.HasPrefix(tok, "/") || tok == "true" || tok == "false" || tok == "null" {
 		return true
 	}
-	_, err := strconv.ParseFloat(tok, 64)
-	return err == nil
+	_, ok := number(tok)
+	return ok
+}
+
+// number reads a token as a PDF number, which is digits with a sign or a
+// point, and only a token that starts as one is parsed. Every operator was
+// parsed as a number first, and each refusal is an error allocated: 64 MiB
+// of operators, which maxInflated lets through, cost 2.3 GB of errors.
+func number(tok string) (float64, bool) {
+	if c := tok[0]; c != '+' && c != '-' && c != '.' && (c < '0' || c > '9') {
+		return 0, false
+	}
+	n, err := strconv.ParseFloat(tok, 64)
+	return n, err == nil
 }
 
 func isDelim(c byte) bool {
