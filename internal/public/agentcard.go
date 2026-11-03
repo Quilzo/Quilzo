@@ -43,8 +43,20 @@ func (st *Site) agentCard(w http.ResponseWriter, r *http.Request) {
 	}
 	card, err := st.AgentCard()
 	if err != nil {
+		// Could not be built at all (the agents could not be read): a fault,
+		// answered as one, rather than passed off as a deliberate absence.
 		http.Error(w, "the agent card could not be built",
 			http.StatusInternalServerError)
+		return
+	}
+	// Validated here, on the way out, whoever built it. This answered 500
+	// when the builder refused its own card, and a static copy takes
+	// anything but 200 or 404 from an optional address as a hole: one card
+	// that did not validate — a site whose address was not https yet —
+	// failed every `quilzo ipfs id`, `ipfs write` and content_id. No card is
+	// what the documentation promises, and a copy simply goes without it.
+	if card.Validate() != nil {
+		http.NotFound(w, r)
 		return
 	}
 	body, err := json.MarshalIndent(card, "", "  ")
