@@ -57,11 +57,7 @@ func waitingFor(root string, c *Caller, now time.Time) ([]waitingItem, error) {
 		}
 		writes := false
 		if declared != nil {
-			if m, ok := declared.Agents[rec.Agent]; ok {
-				for _, t := range m.Tools {
-					writes = writes || (t.Name == w.Action.Tool && t.Writes)
-				}
-			}
+			writes = stepWrites(root, declared.Agents[rec.Agent], w.Action.Tool)
 		}
 		what := w.Action.Op
 		if what == "" {

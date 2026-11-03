@@ -275,6 +275,43 @@ func TestTheStarterDoesNotApproveTheirRunsRiskyStepWhenSomebodyElseCan(t *testin
 	}
 }
 
+// Whether a tool's step writes to another system is the integration's to
+// say as well as the manifest's. The manifest's "writes" defaults to off and
+// nothing held it to the integration, so a manifest that left it off a tool
+// on an integration declared as changing something made the waiting step a
+// read, and the person who started the run let their own far-side write go
+// ahead with somebody else there to decide it.
+func TestAToolStepWritesWhenItsIntegrationDoesWhateverTheManifestSays(t *testing.T) {
+	root, _ := identityStore(t)
+	rec := riskyRun(t, root)
+	if err := saveJSON(integrationsPath(root), agent.Integrations{Declared: []agent.Integration{{Name: "tracker",
+		Kind: agent.IntegrationMCP, Enabled: true, Purpose: "file issues", Endpoint: "tracker.example",
+		Uses: []string{"create_issue"}, Writes: true}}}); err != nil {
+		t.Fatal(err)
+	}
+	set, _ := loadAgents(root)
+	m := set.Agents["tidy"]
+	m.Tools = append(m.Tools, agent.Tool{Name: "create_issue", Host: "tracker.example", Purpose: "file issues"})
+	set.Agents["tidy"] = m
+	if err := saveJSON(agentsPath(root), set); err != nil {
+		t.Fatal(err)
+	}
+	rec.Trace.Waiting.Action = agent.Action{Tool: "create_issue", Input: map[string]any{"title": "x"}}
+	if err := writeAgentRun(root, rec); err != nil {
+		t.Fatal(err)
+	}
+	if class, risky := riskyStep(root, rec); class != "writes" || !risky {
+		t.Errorf("a step its integration says writes is %q, risky %v", class, risky)
+	}
+	if _, err := secondPerson(root, asAdmin("dana"), rec); err == nil || !strings.Contains(err.Error(), "sam") {
+		t.Errorf("the starter let their own run's far-side write go ahead with sam there: %v", err)
+	}
+	items, _ := waitingFor(root, asAdmin("sam"), time.Now())
+	if len(items) != 1 || items[0].Commits != "writes" {
+		t.Errorf("what waits is listed as %+v", items)
+	}
+}
+
 // With nobody else who could decide, the starter approves alone: allowed,
 // so one person can run Quilzo, and said in the record so posture counts it.
 func TestAStarterWithNobodyElseApprovesAloneAndTheRecordSaysSo(t *testing.T) {
