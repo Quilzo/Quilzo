@@ -141,13 +141,13 @@ func cmdExport(root string, args []string) error {
 	// The deployment's marking, on every exported file. An export is the copy
 	// that ends up on removable media or in somebody's home directory, and a
 	// file with no marking does not look like one whose marking was lost.
+	// Refused when the configuration cannot be read, which used to write the
+	// export with no banner at all (deploymentMarking).
 	banner := ""
-	if cfg, cerr := loadConfig(root); cerr == nil {
-		if p, perr := markingFrom(cfg); perr != nil {
-			return errBlocked{perr}
-		} else if p != nil {
-			banner = p.Banner
-		}
+	if p, perr := deploymentMarking(root); perr != nil {
+		return errBlocked{perr}
+	} else if p != nil {
+		banner = p.Banner
 	}
 
 	files, err := export.Export(format, export.Site{

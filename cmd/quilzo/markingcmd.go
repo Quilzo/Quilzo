@@ -55,6 +55,24 @@ func markingFrom(cfg *config.Config) (*marking.Policy, error) {
 	return p, nil
 }
 
+// deploymentMarking is the deployment's scheme, read from its configuration.
+//
+// A configuration that cannot be read is an error, not "no scheme". A
+// missing file already reads as the defaults, which mark nothing; a file
+// that will not parse is a scheme nobody can see. Each caller used to read
+// the configuration itself and take a failure as "marks nothing", so the
+// publish gate in the set that says nothing in it is waivable let a page
+// marked above the banner through, and an export, a static site and a
+// transfer record went out with no banner at all.
+func deploymentMarking(root string) (*marking.Policy, error) {
+	cfg, err := loadConfig(root)
+	if err != nil {
+		return nil, fmt.Errorf("the configuration cannot be read, so whether this "+
+			"deployment marks its pages, and at what level, cannot be known: %w", err)
+	}
+	return markingFrom(cfg)
+}
+
 // cmdMarking prints the scheme and what it would refuse.
 func cmdMarking(root string, args []string) error {
 	if len(args) > 1 || (len(args) == 1 && args[0] != "show" && args[0] != "check") {
@@ -115,11 +133,10 @@ func cmdMarking(root string, args []string) error {
 // requiring every page to repeat it is how people start pasting markings
 // without reading them, which is the failure the scheme exists to prevent.
 func checkMarking(root string, s *store.Store, target string) error {
-	cfg, err := loadConfig(root)
-	if err != nil {
-		return nil // a store with no config marks nothing
-	}
-	p, err := markingFrom(cfg)
+	// Refused, not passed, when the scheme cannot be read: see
+	// deploymentMarking. A store with no configuration file still marks
+	// nothing, because loadConfig reads a missing one as the defaults.
+	p, err := deploymentMarking(root)
 	if err != nil {
 		return err
 	}
@@ -134,9 +151,12 @@ func checkMarking(root string, s *store.Store, target string) error {
 	if commit == "" {
 		return nil
 	}
+	// And refused when the pages cannot be read. Returning nil here passed a
+	// publication nothing had looked at.
 	pages, err := site.PagesAt(s, commit)
 	if err != nil {
-		return nil
+		return fmt.Errorf("the pages to be published cannot be read, so their "+
+			"classification cannot be checked: %w", err)
 	}
 
 	var refused []string
@@ -229,11 +249,16 @@ func transferRecord(root string, args []string) error {
 			"WHO --carried-by WHO --reason WHY")
 	}
 
+	// The paperwork carries the deployment's banner, and is refused when the
+	// scheme cannot be read or does not parse rather than recorded without
+	// one: a transfer record with no banner reads as unmarked material.
 	banner := ""
-	if cfg, err := loadConfig(root); err == nil {
-		if p, perr := markingFrom(cfg); perr == nil && p != nil {
-			banner = p.Banner
-		}
+	p, err := deploymentMarking(root)
+	if err != nil {
+		return errBlocked{err}
+	}
+	if p != nil {
+		banner = p.Banner
 	}
 
 	rec, err := marking.RecordTransfer(rest[0], marking.Transfer{
