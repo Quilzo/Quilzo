@@ -350,3 +350,49 @@ func wordsOf(body map[string]any) string {
 	}
 	return strings.Join(out, "\n\n")
 }
+
+// An export is read in time in proportion to it. A menu entry with no title
+// of its own looked for its page through every item of the export, so
+// 40,000 of them (2.2 MB) took 45 seconds; and a Ghost post kept only as
+// plain text was put together a paragraph at a time, each copying all the
+// paragraphs before it, so 100,000 of them (500 KB) took 12.
+func TestAnExportIsReadInTimeInProportionToIt(t *testing.T) {
+	var w strings.Builder
+	w.WriteString(`<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:wp="http://wordpress.org/export/1.2/"` +
+		` xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>Many</title><link>https://many.example</link>` +
+		`<item><title>About us</title><link>https://many.example/about-us/</link><wp:post_id>3</wp:post_id>` +
+		`<wp:post_type>page</wp:post_type><wp:status>publish</wp:status><content:encoded>We bake.</content:encoded></item>` +
+		`<item><title></title><wp:post_id>4</wp:post_id><wp:post_type>nav_menu_item</wp:post_type>` +
+		`<category domain="nav_menu" nicename="main">Main</category>` +
+		`<wp:postmeta><wp:meta_key>_menu_item_object_id</wp:meta_key><wp:meta_value>3</wp:meta_value></wp:postmeta></item>`)
+	for i := 0; i < 40000; i++ {
+		w.WriteString("<item><wp:post_type>nav_menu_item</wp:post_type></item>")
+	}
+	w.WriteString("</channel></rss>")
+	start := time.Now()
+	s, err := FromWordPress([]byte(w.String()), "many.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if took := time.Since(start); took > 5*time.Second {
+		t.Errorf("a %d-byte WordPress export took %v", w.Len(), took)
+	}
+	if navs := s.Pages[0].Navs; len(navs) != 1 || len(navs[0].Links) != 1 || navs[0].Links[0].Label != "About us" {
+		t.Errorf("the menu: %+v", navs)
+	}
+
+	plain := strings.Repeat("a\n\n", 100000)
+	doc := `{"data":{"posts":[{"id":"p1","title":"Long","slug":"long","html":"","plaintext":"` +
+		strings.ReplaceAll(plain, "\n", `\n`) + `","status":"published","visibility":"public"}]}}`
+	start = time.Now()
+	g, err := FromGhost([]byte(doc), "long.json", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if took := time.Since(start); took > 5*time.Second {
+		t.Errorf("a %d-byte Ghost export took %v", len(doc), took)
+	}
+	if len(g.Posts) != 1 || len(g.Posts[0].Blocks) != 100000 {
+		t.Errorf("the post has %d blocks", len(g.Posts[0].Blocks))
+	}
+}

@@ -166,6 +166,10 @@ func FromWordPress(body []byte, origin string) (*Site, error) {
 	type attachment struct{ url, alt string }
 	attachments := map[string]attachment{}
 	links := map[string]string{}
+	// titles are the items' titles by id, the last of an id winning, for a
+	// menu entry with no title of its own: each one looked through every
+	// item for its page, so 40,000 of them (2.2 MB) took 45 seconds.
+	titles := map[string]string{}
 	for _, it := range ch.Items {
 		if it.Type == "attachment" && it.AttachURL != "" {
 			alt := it.meta("_wp_attachment_image_alt")
@@ -174,6 +178,7 @@ func FromWordPress(body []byte, origin string) (*Site, error) {
 		if it.Link != "" {
 			links[it.ID] = it.Link
 		}
+		titles[it.ID] = it.Title
 	}
 	held, other, comments, shortcodes := 0, map[string]int{}, 0, 0
 	var pages []Page
@@ -204,11 +209,7 @@ func FromWordPress(body []byte, origin string) (*Site, error) {
 			}
 			label := title
 			if label == "" {
-				for _, o := range ch.Items {
-					if o.ID == it.meta("_menu_item_object_id") {
-						label = strings.TrimSpace(html.UnescapeString(o.Title))
-					}
-				}
+				label = strings.TrimSpace(html.UnescapeString(titles[it.meta("_menu_item_object_id")]))
 			}
 			if href != "" && label != "" {
 				menus[menu] = append(menus[menu], menuItem{it.MenuOrder, label, href, it.meta("_menu_item_menu_item_parent"),
@@ -563,9 +564,14 @@ func FromGhost(body []byte, origin string, base *url.URL) (*Site, error) {
 		link := home.JoinPath(gp.Slug + "/")
 		content := gp.HTML
 		if strings.TrimSpace(content) == "" && strings.TrimSpace(gp.Plaintext) != "" {
+			// Built up in place: added to a paragraph at a time, each copied
+			// all those before it, so 100,000 (500 KB) took 12 seconds.
+			var b strings.Builder
+			b.WriteString(content)
 			for _, para := range strings.Split(gp.Plaintext, "\n\n") {
-				content += "<p>" + html.EscapeString(para) + "</p>"
+				b.WriteString("<p>" + html.EscapeString(para) + "</p>")
 			}
+			content = b.String()
 		}
 		if strings.TrimSpace(content) == "" {
 			noWords++
