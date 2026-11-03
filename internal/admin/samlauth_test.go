@@ -573,3 +573,43 @@ func TestOktasSecondFactorIsReadFromItsAMRAttribute(t *testing.T) {
 		t.Errorf("the Okta preset: %+v", p)
 	}
 }
+
+// The form takes the Keycloak preset's verified-address rule, as saml add
+// does, and the operator's decision to take addresses unverified.
+func TestTheSSOScreenAsksKeycloakToSayAnAddressIsVerified(t *testing.T) {
+	srv, token := samlServer(t, nil)
+	_, der := testIdP(t)
+	cert, _ := x509.ParseCertificate(der)
+	meta := `<md:EntityDescriptor xmlns:md="` + saml.NSMetadata + `" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" entityID="https://kc.example/realms/r"><md:IDPSSODescriptor protocolSupportEnumeration="` + saml.NSProtocol + `"><md:KeyDescriptor use="signing"><ds:KeyInfo><ds:X509Data><ds:X509Certificate>` +
+		base64.StdEncoding.EncodeToString(der) + `</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor><md:SingleSignOnService Binding="` + saml.BindingRedirect + `" Location="https://kc.example/realms/r/protocol/saml"/></md:IDPSSODescriptor></md:EntityDescriptor>`
+	add := func(name string, more url.Values) saml.Config {
+		t.Helper()
+		form := url.Values{"do": {"add"}, "name": {name}, "url": {tAdmin}, "preset": {"keycloak"},
+			"metadata": {meta}, "fingerprint": {saml.Fingerprint(cert)}}
+		for k, v := range more {
+			form[k] = v
+		}
+		req := httptest.NewRequest("POST", "/sso/act", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.AddCookie(&http.Cookie{Name: "quilzo_token", Value: token})
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		if w.Code != http.StatusSeeOther {
+			t.Fatalf("%s: %d", name, w.Code)
+		}
+		c, err := srv.samlProvider(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return *c
+	}
+	if c := add("kc", nil); c.VerifiedAttribute != "email_verified" || c.AllowUnverified {
+		t.Errorf("the Keycloak preset: %q, allow %v", c.VerifiedAttribute, c.AllowUnverified)
+	}
+	if c := add("kc-open", url.Values{"allow_unverified": {"on"}}); c.VerifiedAttribute != "" || !c.AllowUnverified {
+		t.Errorf("taking addresses unverified: %q, allow %v", c.VerifiedAttribute, c.AllowUnverified)
+	}
+	if g := get(t, srv, "/sso", token); !strings.Contains(g.Body.String(), "taken as sent, verified or not") {
+		t.Error("the screen does not say kc-open takes addresses unverified")
+	}
+}

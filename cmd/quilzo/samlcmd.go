@@ -97,7 +97,8 @@ func samlFetch(addr string) ([]byte, error) {
 func samlUsage() error {
 	return fmt.Errorf("usage: quilzo saml list | show NAME | metadata NAME | presets | " +
 		"add NAME --metadata FILE|URL --url https://YOUR-ADMIN [--preset okta] " +
-		"[--domain d] [--required] [--fingerprint SHA256] | remove NAME")
+		"[--domain d] [--required] [--verified-attribute NAME | --allow-unverified-email] " +
+		"[--fingerprint SHA256] | remove NAME")
 }
 
 func cmdSAML(root string, args []string) error {
@@ -157,7 +158,8 @@ func cmdSAML(root string, args []string) error {
 		}
 		return recordE(root, caller.auditRecord("saml.add", "/", audit.Success, map[string]string{
 			"provider": c.Name, "entity": c.EntityID, "certs": fmt.Sprint(len(c.Certs)),
-			"domains": strings.Join(c.Domains, ","), "required": fmt.Sprint(c.Required)}))
+			"domains": strings.Join(c.Domains, ","), "required": fmt.Sprint(c.Required),
+			"verified_attribute": c.VerifiedAttribute, "allow_unverified": fmt.Sprint(c.AllowUnverified)}))
 	case "remove":
 		if len(args) < 2 {
 			return samlUsage()
@@ -208,6 +210,14 @@ func samlShow(c *saml.Config) error {
 	if len(c.Domains) > 0 {
 		w.Human("\n  domains %s%s\n", strings.Join(c.Domains, ", "), map[bool]string{true: " (required)"}[c.Required])
 	}
+	switch {
+	case c.AllowUnverified:
+		w.Human("  addresses      taken as %s sends them, verified or not\n", c.Name)
+	case c.VerifiedAttribute != "":
+		w.Human("  addresses      only those %s says are verified, in %s\n", c.Name, c.VerifiedAttribute)
+	default:
+		w.Human("  addresses      as %s sends them, unless its email_verified says otherwise\n", c.Name)
+	}
 	if c.SaysMFA() {
 		w.Human("  second factor  from %s when it says so; otherwise a passkey here\n", c.Name)
 	} else {
@@ -230,6 +240,10 @@ func samlAdd(root string, args []string) (*saml.Config, error) {
 	principal := fs.String("principal", "", `"nameid" (the default) or "attribute:NAME"`)
 	required := fs.Bool("required", false, "people in the domains must sign in this way")
 	breakGlass := fs.String("break-glass", "", "people who may still use a token or passkey, comma-separated")
+	verifiedAttr := fs.String("verified-attribute", "",
+		"the attribute in which the provider says it verified the address; without it saying true, a sign-in is refused")
+	allowUnverified := fs.Bool("allow-unverified-email", false,
+		"take the address as the provider sends it, verified or not")
 	fingerprint := fs.String("fingerprint", "", "the SHA-256 fingerprint you checked at the provider")
 	replace := fs.Bool("replace", false, "replace a provider with this name")
 	if err := fs.Parse(args[1:]); err != nil {
@@ -257,10 +271,18 @@ func samlAdd(root string, args []string) (*saml.Config, error) {
 	c := saml.Config{Name: name, URL: strings.TrimRight(*adminURL, "/"), EntityID: m.EntityID,
 		SSOURL: m.SSOURL, Principal: *principal, Required: *required, Preset: *preset}
 	if p, ok := saml.Presets[*preset]; ok {
-		c.Label, c.MFAContexts, c.MFAAttribute, c.MFAValues, c.NameIDFormat =
-			p.Label, p.MFAContexts, p.MFAAttribute, p.MFAValues, p.NameIDFormat
+		c.UsePreset(p)
 	} else if *preset != "" {
 		return nil, fmt.Errorf("%q is not a preset; quilzo saml presets lists them", *preset)
+	}
+	switch {
+	case *verifiedAttr != "" && *allowUnverified:
+		return nil, errors.New("--verified-attribute requires the address to be verified and " +
+			"--allow-unverified-email takes it unverified; give one")
+	case *verifiedAttr != "":
+		c.VerifiedAttribute = strings.TrimSpace(*verifiedAttr)
+	case *allowUnverified:
+		c.VerifiedAttribute, c.AllowUnverified = "", true
 	}
 	if *label != "" {
 		c.Label = *label

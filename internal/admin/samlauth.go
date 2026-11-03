@@ -669,8 +669,10 @@ func (s *Server) samlFromForm(r *http.Request) (saml.Config, *saml.IdPMetadata, 
 		Preset: r.FormValue("preset"), Principal: strings.TrimSpace(r.FormValue("principal")),
 		Required: r.FormValue("required") == "on"}
 	if pr, ok := saml.Presets[c.Preset]; ok {
-		c.Label, c.MFAContexts, c.MFAAttribute, c.MFAValues, c.NameIDFormat =
-			pr.Label, pr.MFAContexts, pr.MFAAttribute, pr.MFAValues, pr.NameIDFormat
+		c.UsePreset(pr)
+	}
+	if r.FormValue("allow_unverified") == "on" {
+		c.VerifiedAttribute, c.AllowUnverified = "", true
 	}
 	if l := strings.TrimSpace(r.FormValue("label")); l != "" {
 		c.Label = l
