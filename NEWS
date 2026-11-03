@@ -7,6 +7,38 @@ has the rest.
 Unreleased
 ==========
 
+** Kept features made right
+
+*** Rooms keep their word: erasing a message rewrites the room so no
+    byte of it is left on disk (copies already in backups age out with
+    them), a room's retention is applied by the admin's sweep, a closed or
+    direct room is read only by its members, reactions are kept (quilzo
+    room react), and the room list shows what is unread.
+
+*** The studio follows a revoked token without a restart, records what it
+    uploads as the token's holder, and records sound only when somebody
+    ticks "Record sound too", with a notice to ask the people it will hear.
+
+*** Share links keep a digest of their secret, not the secret, and are
+    matched in constant time; links already given out keep working.
+    quilzo desktop consent fails when it could not ask.
+
+*** A research plan reads as signed only when its signature checks.
+    Making pictures, video and voice (media generate, film, speak,
+    transcribe) needs use-models, as assist and evolve run do.  A recording
+    over the 25 MB a transcription service takes is transcribed from its
+    sound alone when ffmpeg is installed.  quilzo cell warm makes the
+    snapshot every cell session restores.  The chatbot and research find
+    figures with one detector.
+
+*** The shield can turn down bookings, the newsletter and the fediverse,
+    which it was asked about and could never switch off.  Replica answers
+    are private to shared caches.  An agent card that does not validate is
+    left out of a static copy instead of failing it.  The Permanent web
+    screen gives the same content identifier as quilzo ipfs id, and no
+    longer bundles members-only or scheduled pages.  The public /mcp
+    negotiates the MCP revision as the admin's does.
+
 ** Fixes from a security review of the whole program
 
 *** The admin and the site start for the account the store belongs to.
