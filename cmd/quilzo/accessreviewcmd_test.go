@@ -1063,3 +1063,48 @@ func TestDecidingALargeGroupIsQuick(t *testing.T) {
 		t.Errorf("the group means %q, has %d members, and leaves %d bindings", means, len(members), len(after.Bindings))
 	}
 }
+
+// The only administrator, put in a group by the identity provider after
+// the review started, may not decide the group's mapping (it is their own
+// now), and nobody else can. Close judged their own by the snapshot alone,
+// so the item waited for a decision nobody could give, and the review
+// could neither close nor be replaced by another.
+func TestTheOnlyAdministratorJoiningAGroupCanStillClose(t *testing.T) {
+	root, c := newSCIM(t)
+	c.do("POST", "/Users", `{"userName":"ada@example.com","active":true}`)
+	_, g := c.do("POST", "/Groups", `{"displayName":"Editors"}`)
+	_, users := c.do("GET", "/Users", "")
+	ada := users["Resources"].([]any)[0].(map[string]any)["id"].(string)
+	add := func(id string) {
+		c.do("PATCH", "/Groups/"+g["id"].(string), `{"schemas":["`+scim.SchemaPatch+`"],
+		"Operations":[{"op":"add","path":"members","value":[{"value":"`+id+`"}]}]}`)
+	}
+	add(ada)
+	boss := personToken(t, root, "boss", auth.RoleAdmin)
+	t.Cleanup(func(old string) func() { return func() { flagToken = old } }(flagToken))
+	if err := review(t, root, boss, "start"); err != nil {
+		t.Fatal(err)
+	}
+	_, u := c.do("POST", "/Users", `{"userName":"boss","active":true}`)
+	add(u["id"].(string))
+	r := openReview(t, root)
+	editors := itemFor(t, r, func(it accessreview.Item) bool { return it.Group == "Editors" })
+	for _, it := range r.Items {
+		if it.ID == editors.ID || it.Holder("boss") {
+			continue
+		}
+		if err := review(t, root, boss, "decide", it.ID, "keep", "--why", "needed"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := review(t, root, boss, "decide", editors.ID, "keep", "--why", "needed"); err == nil {
+		t.Fatal("boss decided the mapping of a group boss is now in")
+	}
+	if err := review(t, root, boss, "close"); err != nil {
+		t.Fatalf("the only administrator could not close: %v", err)
+	}
+	closed := lastEvent(t, root, "review.closed")
+	if closed == nil || closed.Detail["alone"] != "true" || closed.Detail["own_unreviewed"] == "0" {
+		t.Errorf("the group boss joined is not counted as their own and unreviewed: %+v", closed)
+	}
+}

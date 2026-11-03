@@ -520,3 +520,26 @@ func TestASnapshotOfALargeStoreIsQuick(t *testing.T) {
 			group.LastActive)
 	}
 }
+
+// Closing alone, the closer's own items are theirs as the snapshot had
+// them or as they are now: a group they joined after the start waits for
+// nobody.
+func TestClosingAloneCountsAGroupJoinedSinceAsOwn(t *testing.T) {
+	group := Item{ID: "1", Kind: Mapping, Group: "Editors", Role: "publisher", Members: []string{"ada@example.com"}}
+	r, err := New("r1", []Item{group}, person("boss"), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := group
+	joined.ID, joined.Members = "", []string{"ada@example.com", "boss"}
+	if _, err := r.Close(person("boss"), []Item{joined}, false, now); err == nil {
+		t.Fatal("a review with two administrators closed with an item undecided")
+	}
+	sum, err := r.Close(person("boss"), []Item{joined}, true, now)
+	if err != nil {
+		t.Fatalf("the only administrator could not close: %v", err)
+	}
+	if sum.Own != 1 || !sum.Alone {
+		t.Errorf("the group boss joined since: %+v", sum)
+	}
+}

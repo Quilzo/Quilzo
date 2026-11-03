@@ -669,9 +669,9 @@ func (r *Review) Close(d Decider, current []Item, alone bool, now time.Time) (Su
 	if err := d.check(); err != nil {
 		return Summary{}, err
 	}
-	still := map[string]bool{}
+	still := map[string]Item{}
 	for _, it := range current {
-		still[it.Key()] = true
+		still[it.Key()] = it
 	}
 	sum := Summary{Items: len(r.Items), Alone: alone}
 	var waiting []string
@@ -683,14 +683,20 @@ func (r *Review) Close(d Decider, current []Item, alone bool, now time.Time) (Su
 			sum.Privileged++
 		}
 		dec, ok := r.Decided(it.ID)
+		now, there := still[it.Key()]
 		switch {
 		case ok && dec.Verdict == Revoke:
 			sum.Revoked++
 		case ok:
 			sum.Kept++
-		case !still[it.Key()]:
+		case !there:
 			sum.Gone++
-		case alone && it.Holder(d.Name):
+		case alone && (it.Holder(d.Name) || now.Holder(d.Name)):
+			// Their own as the snapshot had it or as it is now: a group
+			// the identity provider put them in after the start is theirs
+			// to decide no more than one they were in from it, and judged
+			// by the snapshot alone it waited for a decision nobody could
+			// give, so the review could not close.
 			sum.Own++
 		default:
 			waiting = append(waiting, it.ID)
