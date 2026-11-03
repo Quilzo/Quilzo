@@ -373,3 +373,47 @@ func TestAWideComponentIsCopiedOnlyAsFarAsABodyMayGrow(t *testing.T) {
 		}
 	}
 }
+
+// Operations that share a name are numbered in time in proportion to how
+// many there are. Each counted up from 2 again past all those before it:
+// 4,000 operations with one operationId, 160 KB of document, took four
+// and a half seconds, and the 8 MiB a document may be would have taken
+// hours.
+func TestOperationsThatShareANameAreNumberedInTimeInProportion(t *testing.T) {
+	// The numbers are as they were: the least free, past one taken by
+	// another operation's own name.
+	doc := `{"openapi": "3.0.3", "info": {"title": "Same"}, "servers": [{"url": "https://same.example"}],
+	  "paths": {"/a": {"get": {"operationId": "send"}}, "/b": {"get": {"operationId": "send_3"}},
+	    "/c": {"get": {"operationId": "send"}}, "/d": {"get": {"operationId": "send"}}, "/e": {"get": {"operationId": "send"}}}}`
+	imp, err := OpenAPI([]byte(doc), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, o := range imp.Available {
+		got = append(got, o.Name)
+	}
+	if strings.Join(got, " ") != "send send_3 send_2 send_4 send_5" {
+		t.Errorf("the names are %v", got)
+	}
+	var paths []string
+	for i := 0; i < 20000; i++ {
+		paths = append(paths, fmt.Sprintf(`"/a%05d": {"get": {"operationId": "send"}}`, i))
+	}
+	doc = `{"openapi": "3.0.3", "info": {"title": "Same"}, "servers": [{"url": "https://same.example"}],
+	  "paths": {` + strings.Join(paths, ", ") + `}}`
+	read := make(chan *Imported, 1)
+	start := time.Now()
+	go func() {
+		imp, _ := OpenAPI([]byte(doc), Options{})
+		read <- imp
+	}()
+	select {
+	case imp := <-read:
+		if n := len(imp.Available); n != 20000 || imp.Available[n-1].Name != "send_20000" {
+			t.Errorf("the last of %d is %s", n, imp.Available[n-1].Name)
+		}
+	case <-time.After(8 * time.Second):
+		t.Errorf("%d bytes of operations with one name were not read in %v", len(doc), time.Since(start))
+	}
+}

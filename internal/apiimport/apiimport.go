@@ -52,8 +52,11 @@ type Offered struct {
 var reWord = regexp.MustCompile(`[^A-Za-z0-9]+`)
 
 // opName is an operation's name: its operationId when it has a usable one,
-// otherwise its method and path.
-func opName(id, method, path string, taken map[string]bool) string {
+// otherwise its method and path. next is, for a name taken, the number to
+// try first after it: every one below it is taken. Counting up from 2
+// again for each, 4,000 operations with one operationId took four and a
+// half seconds, and the 8 MiB a document may be would have taken hours.
+func opName(id, method, path string, taken map[string]bool, next map[string]int) string {
 	n := strings.Trim(reWord.ReplaceAllString(id, "_"), "_")
 	if n == "" {
 		n = strings.ToLower(method) + "_" + strings.Trim(reWord.ReplaceAllString(path, "_"), "_")
@@ -64,10 +67,10 @@ func opName(id, method, path string, taken map[string]bool) string {
 	if len(n) > 60 {
 		n = n[:60]
 	}
-	base, i := n, 2
-	for taken[n] {
+	base := n
+	for i := max(2, next[base]); taken[n]; i++ {
 		n = fmt.Sprintf("%s_%d", base, i)
-		i++
+		next[base] = i + 1
 	}
 	taken[n] = true
 	return n
@@ -191,7 +194,7 @@ func OpenAPI(body []byte, opts Options) (*Imported, error) {
 		paths = append(paths, p)
 	}
 	sort.Strings(paths)
-	taken := map[string]bool{}
+	taken, next := map[string]bool{}, map[string]int{}
 	follow := &refs{d: d, params: map[string]decoded[parameter]{}, bodies: map[bodyAt]bodyResult{},
 		schemas: map[string]decoded[any]{}}
 	var all []agent.Operation
@@ -211,7 +214,7 @@ func OpenAPI(body []byte, opts Options) (*Imported, error) {
 				out.Notes = append(out.Notes, fmt.Sprintf("%s %s could not be read: %v", strings.ToUpper(method), path, err))
 				continue
 			}
-			o := agent.Operation{Name: opName(op.OperationID, method, path, taken), Method: strings.ToUpper(method), Path: path,
+			o := agent.Operation{Name: opName(op.OperationID, method, path, taken, next), Method: strings.ToUpper(method), Path: path,
 				Description: firstLine(nonEmpty(op.Summary, op.Description))}
 			if len(o.Description) > 200 {
 				o.Description = o.Description[:200]
