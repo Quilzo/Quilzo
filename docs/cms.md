@@ -2014,8 +2014,11 @@ What keeps that from being turned against the site:
   counted as unmatched and nothing is done.
 - The last person who can grant access is never suspended this way: their
   sessions end and the security contact is told.
-- At most twenty people an hour are acted on. Past that the rest wait, the cap
-  is recorded once, and the security contact is told.
+- At most twenty people an hour are acted on. Past that the cap is recorded
+  once and the security contact is told; an event about anybody else that hour
+  is accepted, so the provider does not send it again, and never acted on.
+  Whoever is told suspends the rest by hand, from the provider's own log of
+  whom it disabled.
 - An account-enabled older than the last event acted on for that person is
   refused, after a restart too, so a replay cannot lift a newer suspension.
 - The shield's `signals` feature turns the endpoint off, and the transmitter

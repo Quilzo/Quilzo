@@ -480,7 +480,7 @@ func signalsStatus(root string) error {
 		w.Human("  the transmitter says the stream is %s\n", c.Status)
 	}
 	n := c.Counts
-	w.Human("  %d received, %d acted on, %d unmatched, %d refused, %d held back by the hourly cap\n",
+	w.Human("  %d received, %d acted on, %d unmatched, %d refused, %d past the hourly cap, never acted on\n",
 		n.Received, n.Acted, n.Unmatched, n.Refused, n.Capped)
 	if !n.LastAt.IsZero() {
 		w.Human("  last: %s, %s\n", n.LastType, signalsWhen(n.LastAt))

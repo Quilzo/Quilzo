@@ -40,9 +40,11 @@ import (
 //
 // It replaces the templates an operator had to add before any of this
 // happened, and the hourly limit they ran under: twenty people an hour,
-// then the security contact is told and the rest wait. A provider
-// offboarding a team stays inside that; a stolen transmitter key signing
-// everybody out does not get past it.
+// then the security contact is told. An event past that is accepted, so
+// the transmitter does not send it again, and is never acted on; whoever
+// is told has to act on the rest by hand. A provider offboarding a team
+// stays inside that; a stolen transmitter key signing everybody out does
+// not get past it.
 
 // signalsCap is how many people the receiver acts on in an hour.
 const signalsCap = 20
@@ -174,9 +176,11 @@ func signalsDeliver(root string, set *ssf.SET, now time.Time) error {
 			d["count"] = fmt.Sprint(signalsCap)
 			signalsRecord(root, "signals.capped", audit.Denied, d)
 			signalsTell(root, "", fmt.Sprintf("The identity provider's security events have acted on %d people "+
-				"within an hour, which is as many as Quilzo acts on in one; the rest are not acted on until the hour "+
-				"is over. If this is not an offboarding you expected, the transmitter's key or the stream may be in "+
-				"somebody else's hands: quilzo signals off stops it.", signalsCap))
+				"within an hour, which is as many as Quilzo acts on in one. Events about anybody else this hour "+
+				"are accepted and never acted on, and the provider will not send them again: if this is an "+
+				"offboarding you expected, the provider's own log says whom it disabled, and the rest are "+
+				"suspended by hand here (quilzo auth deny WHO reader). If it is not, the transmitter's key or "+
+				"the stream may be in somebody else's hands: quilzo signals off stops it.", signalsCap))
 		}
 		return nil
 	}

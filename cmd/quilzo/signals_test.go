@@ -921,6 +921,42 @@ func TestNoMoreThanTwentyPeopleAnHourAreActedOn(t *testing.T) {
 	}
 }
 
+// What the cap says is what it does. An event past it is accepted, so the
+// transmitter does not send it again, and it is never acted on; the
+// security contact was told the rest were acted on once the hour was over,
+// and somebody reading that would have waited for an offboarding that was
+// not coming.
+func TestTheCapSaysWhatBecomesOfWhatItHeldBack(t *testing.T) {
+	c := signalsStore(t, "email")
+	c.connect(t, "oidc")
+	if _, err := updatePolicy(c.root, func(p *auth.Policy) error {
+		for i := 1; i <= signalsCap+1; i++ {
+			p.Bindings = append(p.Bindings, auth.Binding{Principal: fmt.Sprintf("p%d@example.com", i), Role: auth.RoleReader, Resource: "/"})
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i <= signalsCap+1; i++ {
+		c.send(t, riscEvent+"account-disabled", email(fmt.Sprintf("p%d@example.com", i)), nil, time.Now())
+	}
+	sent := c.mails()
+	if len(sent) != 1 {
+		t.Fatalf("mailed %d", len(sent))
+	}
+	body := sent[0].Body
+	if strings.Contains(body, "until the hour is over") || !strings.Contains(body, "never acted on") ||
+		!strings.Contains(body, "by hand") {
+		t.Errorf("the security contact was told %q", body)
+	}
+	if err := cmdSignals(c.root, []string{"status"}); err != nil {
+		t.Fatal(err)
+	}
+	if said := w.Out.(*bytes.Buffer).String(); !strings.Contains(said, "1 past the hourly cap, never acted on") {
+		t.Errorf("the status says %q", said)
+	}
+}
+
 // Verification with the state it was asked with marks the stream verified,
 // and with any other does not; a stream-updated is recorded.
 func TestVerificationAndStreamStatusAreRecorded(t *testing.T) {
