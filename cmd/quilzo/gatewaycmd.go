@@ -131,7 +131,7 @@ func modelGateway(root string) (*gateway.Gateway, *gateway.Config, error) {
 		if kind == "spent" {
 			name = "model-spend"
 		}
-		newShieldHost(root).engine.Observe(shield.Signal{Name: name, Subject: subject})
+		shieldFor(root).engine.Observe(shield.Signal{Name: name, Subject: subject})
 	}
 	gateways[root] = &gatewayEntry{sum: sum, gw: gw, cfg: cfg}
 	return gw, cfg, nil
@@ -573,7 +573,7 @@ func noteMasked(root, caller, route string, counts map[string]int) {
 	record(root, audit.Record{Action: "model.masked", Resource: "/models", Outcome: audit.Success,
 		Principal: "quilzo", Kind: audit.KindService, Verified: true, Detail: d})
 	if counts[string(pii.Secret)] > 0 {
-		newShieldHost(root).engine.Observe(shield.Signal{Name: "secret-in-prompt", Subject: caller})
+		shieldFor(root).engine.Observe(shield.Signal{Name: "secret-in-prompt", Subject: caller})
 	}
 }
 

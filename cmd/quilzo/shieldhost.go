@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/admin"
@@ -106,6 +107,35 @@ func newShieldHost(root string) *shieldHost {
 	}
 	return h
 }
+
+// shieldFor is this process's one shield host for a store, for signals
+// raised away from a request about something that stays true: the hourly
+// self-check's flaws, a caller past its model budget, a route its provider
+// refuses, credentials pasted into prompts. The engine remembers what a
+// playbook did and its rest afterwards (Cooldown, and at least the
+// trigger's own window) only in memory, and a host made for each signal
+// forgot both: the self-check told the security contact of the same flaw
+// every hour instead of once a day, every call refused past a budget or
+// carrying a credential was mailed, and no playbook ever reached its
+// second stage. A caller that raises a signal once per new thing (a tool
+// redefined again, a new strike, a setting put back) still makes its own,
+// so new news is told. A server's own host, which requests signal, is made
+// once already (serve.go, site.go).
+func shieldFor(root string) *shieldHost {
+	shieldHostsMu.Lock()
+	defer shieldHostsMu.Unlock()
+	h := shieldHosts[root]
+	if h == nil {
+		h = newShieldHost(root)
+		shieldHosts[root] = h
+	}
+	return h
+}
+
+var (
+	shieldHostsMu sync.Mutex
+	shieldHosts   = map[string]*shieldHost{}
+)
 
 // agentOf is the declared agent a signal is about, if it is about one: an
 // agent's evaluation names it, the gateway and agentwatch say agent:NAME.

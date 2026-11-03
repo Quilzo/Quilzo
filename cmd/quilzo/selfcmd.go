@@ -178,25 +178,28 @@ func loadSelfReport(root string) (selfReport, error) {
 	return rep, json.Unmarshal(b, &rep)
 }
 
-// tellTheShield raises what a self-check found: a contained flaw for each
-// feature it reaches, a flaw to upgrade for, a binary that is not itself.
-func tellTheShield(root string, rep selfReport) int {
-	sh := newShieldHost(root)
+// tellTheShield raises what a self-check found at now: a contained flaw
+// for each feature it reaches, a flaw to upgrade for, a binary that is not
+// itself. The same findings come every hour, so they go to the one engine
+// that remembers having acted on them (shieldFor), and the playbooks'
+// day-long rest keeps a person from hearing of the same flaw every hour.
+func tellTheShield(root string, rep selfReport, now time.Time) int {
+	sh := shieldFor(root)
 	n := 0
 	for _, f := range rep.Findings {
 		switch f.Decision {
 		case selfvuln.Contain:
 			for _, ft := range f.Features {
-				sh.engine.Observe(shield.Signal{Name: "self-exposure", Subject: ft})
+				sh.engine.Observe(shield.Signal{Name: "self-exposure", Subject: ft, At: now})
 				n++
 			}
 		case selfvuln.Tell:
-			sh.engine.Observe(shield.Signal{Name: "self-flaw", Subject: f.ID})
+			sh.engine.Observe(shield.Signal{Name: "self-flaw", Subject: f.ID, At: now})
 			n++
 		}
 	}
 	if rep.Binary.Suspicious() {
-		sh.engine.Observe(shield.Signal{Name: "binary-changed", Subject: "binary"})
+		sh.engine.Observe(shield.Signal{Name: "binary-changed", Subject: "binary", At: now})
 		n++
 	}
 	return n
@@ -214,7 +217,7 @@ func selfJob(root string) upkeep.Job {
 		if err != nil {
 			return 0, err
 		}
-		return tellTheShield(root, rep), nil
+		return tellTheShield(root, rep, now), nil
 	}}
 }
 
