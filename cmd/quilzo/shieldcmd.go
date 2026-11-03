@@ -520,6 +520,9 @@ func shieldPlaybook(root string, args []string) error {
 		}
 		shieldAudit(root, c, "shield.playbook-"+p.Outcome, audit.Success, map[string]string{
 			"proposal": p.ID, "change": proposalWords(p), "proposed_by": p.By, "alone": strconv.FormatBool(p.Alone)})
+		if p.Release && p.Outcome == "approved" {
+			tellOfHold(root, false, by, p.Why)
+		}
 		w.Human("%s%s%s %s\n", green, p.Outcome, reset, proposalWords(p))
 		return nil
 	case "withdraw":
@@ -559,6 +562,9 @@ func shieldAloneOr(root string, c *Caller, by string, p shield.Proposal, now tim
 		}
 		shieldAudit(root, c, "shield.playbook-"+d.Outcome, audit.Success, map[string]string{
 			"proposal": d.ID, "change": proposalWords(d), "proposed_by": d.By, "alone": "true"})
+		if d.Release && d.Outcome == "approved" {
+			tellOfHold(root, false, by, d.Why)
+		}
 		if w.JSON(d) {
 			return nil
 		}
@@ -604,6 +610,7 @@ func shieldHold(root string, args []string) error {
 		return err
 	}
 	shieldAudit(root, c, "shield.held", audit.Success, map[string]string{"why": *why})
+	tellOfHold(root, true, by, *why)
 	w.Human("%severy playbook now watches%s; letting them act again takes a second administrator\n", yellow, reset)
 	return nil
 }

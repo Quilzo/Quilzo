@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/netip"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -232,6 +233,42 @@ func TestHoldingEveryPlaybookTakesOnePersonAndLettingThemActTakesTwo(t *testing.
 	}
 	if _, err := ProposeRelease(r.Root, "x", "root", r.clock); err == nil {
 		t.Fatal("proposed releasing what was not held")
+	}
+}
+
+// A hold stops the shield acting while somebody works out why it did; it
+// used to stop it telling anybody too, so a decoy touched during a hold
+// blocked nobody and reached nobody. Nothing legitimate touches a decoy:
+// the security contact hears of it once, held or not, and nothing else the
+// playbooks do happens until they are let act again.
+func TestADecoyTouchedDuringAHoldIsToldAndNothingElse(t *testing.T) {
+	r := newRig(t, Builtins()...)
+	if err := HoldAll(r.Root, "dana", "a block looked wrong", r.clock); err != nil {
+		t.Fatal(err)
+	}
+	r.Guard.Refresh()
+	got := r.Observe(Signal{Name: "decoy", Source: "203.0.113.9", Subject: "sh-1", At: r.clock})
+	if len(got) != 2 {
+		t.Fatalf("%d playbooks met a decoy: %+v", len(got), got)
+	}
+	r.Guard.Refresh()
+	if _, blocked := r.Guard.Blocked("203.0.113.9", Admin, r.clock); blocked {
+		t.Fatal("a held playbook blocked the source")
+	}
+	if _, on := r.Guard.Lockdown(r.clock); on {
+		t.Fatal("a held playbook locked the admin down")
+	}
+	if len(r.notified) != 1 || r.notified[0].Playbook != "decoy-touched" {
+		t.Fatalf("the security contact was told %d times: %+v", len(r.notified), r.notified)
+	}
+	if !slices.Contains(r.notified[0].Did, "told the security contact; a hold stops the shield acting, not telling") {
+		t.Errorf("the response does not say a person was told: %q", r.notified[0].Did)
+	}
+	if len(r.cases) != 0 {
+		t.Error("a held playbook opened a case")
+	}
+	if !slices.Contains(r.records, "shield.would-respond decoy-touched held") {
+		t.Errorf("not on the record as what it would have done: %q", r.records)
 	}
 }
 

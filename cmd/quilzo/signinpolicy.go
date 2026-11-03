@@ -140,7 +140,7 @@ func judgeSignIn(root string, f admin.SignInFacts, in travel.SignIn, judged trav
 	}
 	d := decideSignIn(f.Role, judged)
 	if d.Tell {
-		tellAboutSignIn(root, f.Principal, d.Why)
+		tellAboutSignIn(root, f.Principal, d.Why, steppedUp)
 	}
 	if !d.StepUp {
 		return admin.SignInVerdict{}
@@ -150,9 +150,18 @@ func judgeSignIn(root string, f admin.SignInFacts, in travel.SignIn, judged trav
 
 // tellAboutSignIn mails the security contact in the background, so no
 // sign-in waits on a mail server, and records whether it reached them.
-func tellAboutSignIn(root, principal, why string) {
+// What happened is why; then is what happens next, or nothing when why
+// says it already. Every mail used to end with what a stepped-up session
+// does, so a locked account, where nobody got in, and a person whose
+// sessions were all ended left the security contact waiting for a
+// confirmation that would never come.
+func tellAboutSignIn(root, principal, why, then string) {
+	msg := principal + ": " + why + "."
+	if then != "" {
+		msg += " " + then
+	}
 	inBackground(func() {
-		did, err := tellSecurity(root, principal+": "+why+". The session must confirm it is them before it can do anything.")
+		did, err := tellSecurity(root, msg)
 		detail := map[string]string{"subject": principal, "did": did}
 		outcome := audit.Success
 		if err != nil {
@@ -161,6 +170,26 @@ func tellAboutSignIn(root, principal, why string) {
 		record(root, audit.Record{Action: "signin.told", Resource: "/", Outcome: outcome,
 			Principal: signinBy, Kind: audit.KindService, Verified: true, Detail: detail})
 	})
+}
+
+// steppedUp is what happens next to a sign-in or a session the policy
+// stepped up.
+const steppedUp = "The session must confirm it is them before it can do anything."
+
+// signalThen are the sign-in signals the security contact hears of, with
+// what happens next to each. A locked account has no session: sign-ins
+// from where the failures came, or every passkey sign-in, are refused
+// until the lock ends or somebody lifts it. A session that keeps failing
+// to confirm is the one stepped up, and stays so.
+func signalThen(principal, kind string) (string, bool) {
+	switch kind {
+	case "account-locked":
+		return "Nobody got in. Sign-ins lists the account as held; another administrator can let it sign in " +
+			"from everywhere again there, or with quilzo auth unlock " + principal + ".", true
+	case "verification-failing":
+		return "Nothing has proved it is them, and the session can still do nothing until something does.", true
+	}
+	return "", false
 }
 
 // sessionHooks are the admin's other ways into the policy: where a request
@@ -188,7 +217,7 @@ func sessionHooks(root string) (func(addr, agent string) admin.SessionContext,
 		if !adaptiveSignIn(root) {
 			return admin.SignInVerdict{}
 		}
-		tellAboutSignIn(root, m.Principal, detail)
+		tellAboutSignIn(root, m.Principal, detail, steppedUp)
 		return admin.SignInVerdict{StepUp: true, Reason: detail}
 	}
 	// The person themselves is the best detector there is: a sign-in they
@@ -203,7 +232,7 @@ func sessionHooks(root string) (func(addr, agent string) admin.SessionContext,
 		}
 		record(root, audit.Record{Action: "signin.reported-ended", Resource: "/", Outcome: outcome,
 			Principal: signinBy, Kind: audit.KindService, Verified: true, Detail: detail})
-		tellAboutSignIn(root, principal, "they said a sign-in was not them, so every session they held was ended")
+		tellAboutSignIn(root, principal, "they said a sign-in was not them, so every session they held was ended", "")
 	}
 	// Somebody guessing codes, or an account tried from places it is not
 	// used from: the person is not locked out, and the security contact
@@ -212,8 +241,8 @@ func sessionHooks(root string) (func(addr, agent string) admin.SessionContext,
 		record(root, audit.Record{Action: "signin.signal", Resource: "/", Outcome: audit.Success,
 			Principal: signinBy, Kind: audit.KindService, Verified: true,
 			Detail: map[string]string{"subject": principal, "signal": kind, "detail": detail, "risk": travel.Severity(kind)}})
-		if kind == "verification-failing" || kind == "account-locked" {
-			tellAboutSignIn(root, principal, detail)
+		if then, ok := signalThen(principal, kind); ok {
+			tellAboutSignIn(root, principal, detail, then)
 		}
 	}
 	return place, moved, reported, signal

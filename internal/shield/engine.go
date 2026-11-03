@@ -343,6 +343,36 @@ func (e *Engine) cross(pbs []Playbook, s Signal, now time.Time, st *State) []cro
 	return due
 }
 
+// Wake ends the rest that every playbook this signal meets takes after
+// acting on what it is about, so the signal is counted when it is next
+// observed. It is for a caller that raises the same thing on a timer and
+// knows what the playbook applied will end before it comes round again:
+// the self-check finds an exploited flaw every hour, and turning its
+// feature off lasts a day at most (MaxAuto), as long as the playbook's
+// rest. Left resting, the feature came back on when the day ran out and
+// stayed on until the run after. Woken first, a flaw still there meets a
+// new protection with its own start, and the rest of the stage's steps,
+// telling the security contact among them, run again with it. Nothing is
+// renewed behind the playbook's back: what it does still depends on its
+// mode, a hold and every guardrail, as on any signal.
+func (e *Engine) Wake(s Signal) {
+	if e == nil || e.Playbooks == nil {
+		return
+	}
+	pbs := e.Playbooks()
+	addr := addrOf(s)
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for _, pb := range pbs {
+		if pb.On.Signal != s.Name {
+			continue
+		}
+		if key, ok := e.keyOf(pb.On.Per, s, addr); ok {
+			delete(e.quiet, pb.Name+"|"+key)
+		}
+	}
+}
+
 // Observe runs every playbook a signal meets. It is called on the request
 // that raised the signal, so a block is in force before the next one.
 func (e *Engine) Observe(s Signal) []Response {
@@ -370,16 +400,20 @@ func (e *Engine) Observe(s Signal) []Response {
 			e.sim[d.ck] = append(e.sim[d.ck], mark{at: s.At})
 		}
 		e.mu.Unlock()
+		// A hold stops the shield acting while somebody works out why it
+		// did, and its notify steps still tell the security contact. They
+		// used to be held too, so a decoy touched during a hold blocked
+		// nobody and reached nobody: an intruder holding the playbooks first
+		// would have gone unheard. Telling a person changes nothing about
+		// who gets in; everything else a held playbook would do waits.
 		told := false
-		if d.mode == "act" {
-			for _, step := range d.pb.Stages[d.stage].Do {
-				switch {
-				case step.Action == "notify" && e.Notify != nil:
-					e.Notify(r, s)
-					told = true
-				case step.Action == "open-case" && e.OpenCase != nil:
-					e.OpenCase(r, s)
-				}
+		for _, step := range d.pb.Stages[d.stage].Do {
+			switch {
+			case step.Action == "notify" && e.Notify != nil && (d.mode == "act" || d.mode == "held"):
+				e.Notify(r, s)
+				told = true
+			case step.Action == "open-case" && e.OpenCase != nil && d.mode == "act":
+				e.OpenCase(r, s)
 			}
 		}
 		if r.Tell && !told && e.Notify != nil {
@@ -523,10 +557,13 @@ func (e *Engine) step(pb Playbook, stage int, step Step, mode, key string, addr 
 	case "cut-route":
 		p.Kind, p.Target = Route, s.Subject
 	case "notify":
-		if mode != "act" {
-			return "would have told the security contact", "", false
+		switch mode {
+		case "act":
+			return "told the security contact", "", false
+		case "held":
+			return "told the security contact; a hold stops the shield acting, not telling", "", false
 		}
-		return "told the security contact", "", false
+		return "would have told the security contact", "", false
 	case "open-case":
 		if mode != "act" {
 			return "would have opened a case", "", false

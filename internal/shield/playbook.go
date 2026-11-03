@@ -36,7 +36,7 @@ var Signals = map[string]string{
 	"conversation-guess": "wrong secrets on chatbot conversations' addresses",
 	"chatbot-injection":  "prompt-injection phrases sent to a chatbot",
 	"form-spam":          "a form refusing submissions as spam",
-	"decoy":              "a decoy was touched: a decoy token was tried, or a decoy address asked for",
+	"decoy":              "a decoy was touched: a decoy token was presented where a token is accepted",
 	"agent-hijacked":     "an agent followed an instruction planted in what it read",
 	"foreign-probe":      "the public site asked for software it does not run: WordPress, .env, .git",
 	"model-spend":        "a caller of the models spent its daily budget",
