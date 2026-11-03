@@ -47,6 +47,10 @@ type need struct {
 	// command needs no authority, and then why must say why that is safe.
 	action auth.Action
 	why    string
+	// server marks a command that starts one of the program's servers. The
+	// operating-system account the store belongs to may start it without a
+	// token; anybody else still needs action. See startedByStoreOwner.
+	server bool
 }
 
 // commandNeeds is keyed by "command" or by "command subcommand" where the
@@ -657,8 +661,21 @@ var commandNeeds = map[string]need{
 
 	// Serving is starting a process that enforces its own authorisation per
 	// request, but deciding to expose the store at all is an operator act.
-	"serve": {action: auth.ActPublish},
-	"site":  {action: auth.ActPublish},
+	//
+	// The operator is the account the store belongs to, which is who starts
+	// a server: the systemd unit runs the site as that account and gives it no
+	// credential, the image runs the admin as the account its store is owned
+	// by, and `init --admin` ends by telling its reader to start the admin.
+	// With publish alone, all three were refused the moment the store had an
+	// administrator, because none of them presents a token -- and a token in
+	// a server's environment is a person's authority kept where any process
+	// of that account can read it, which is the thing the unit says it avoids.
+	//
+	// It is not a way round the policy. That account can rewrite the policy
+	// file itself, so a token asked of it proved nothing the filesystem had
+	// not already settled. Anybody else still needs publish.
+	"serve": {action: auth.ActPublish, server: true},
+	"site":  {action: auth.ActPublish, server: true},
 	// Building a site is authoring: it writes a package file. Asking a
 	// model to write it is checked when one is asked, so --no-model needs
 	// no model rights, and --install checks install authority itself.
@@ -1099,6 +1116,10 @@ func authoriseCommand(root, cmd string, args []string) error {
 	if n.action == "" {
 		return nil
 	}
+	// A server started by the account the store belongs to (need.server).
+	if n.server && startedByStoreOwner(root) {
+		return nil
+	}
 	// The bootstrap, and the only way out of a chicken and egg that otherwise
 	// bricks the store on the first grant.
 	//
@@ -1141,6 +1162,9 @@ func authoriseCommand(root, cmd string, args []string) error {
 			}
 			record(root, caller.auditRecord(sub, resource, audit.Denied,
 				map[string]string{"reason": "authorisation"}))
+			if n.server {
+				return fmt.Errorf("%w\n%s", err, storeOwnerHint(root))
+			}
 			return err
 		}
 	}
