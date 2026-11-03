@@ -24,7 +24,7 @@ import (
 // it is about to stop running: one plain message to one address, through
 // the relay in mail.json (internal/mail). Nothing else is sent: notices to
 // customers and reminders to a workforce are a security team's tools, and
-// left Quilzo with them for Vaigil.
+// left Quilzo with them.
 //
 // A file rather than flags. The credentials for a mail relay on a command
 // line end up in a shell history and in the process table.

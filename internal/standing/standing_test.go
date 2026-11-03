@@ -25,8 +25,8 @@ func TestTheRegisterIsWellFormed(t *testing.T) {
 	}
 	// Every role here today acts inside its own situation: the ones that
 	// reached outside (an incident's commander, a detection's promoter, a
-	// work item's assignee) left with the security team's tools for
-	// Vaigil. TestAPowerThatOutlivesItsSituationIsAStandingAct keeps the
+	// work item's assignee) left with the security team's tools.
+	// TestAPowerThatOutlivesItsSituationIsAStandingAct keeps the
 	// rule for the next one.
 	if s.Contained == 0 {
 		t.Fatal("everything reaches outside, which would mean the " +
