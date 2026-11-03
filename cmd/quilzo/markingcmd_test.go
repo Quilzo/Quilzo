@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
@@ -163,5 +164,39 @@ func TestATransferRecordRefusesASchemeThatDoesNotParse(t *testing.T) {
 		"--carried-by", "bo", "--reason", "release"}); err == nil {
 		t.Error("a transfer was recorded under a scheme that does not parse, " +
 			"so with no banner")
+	}
+}
+
+// `quilzo export` puts the deployment's banner on every file it writes,
+// because an export is the copy that ends up on removable media. The same
+// export over the machine interface (export_site) carried none, scheme or
+// no scheme, and said nothing when the scheme could not be read.
+func TestAnExportOverMCPCarriesTheBanner(t *testing.T) {
+	root := connectStore(t)
+	for _, kv := range [][2]string{
+		{"marking.levels", "OFFICIAL,SECRET"},
+		{"marking.banner", "OFFICIAL"},
+	} {
+		if err := cmdConfig(root, []string{"set", kv[0], kv[1]}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s, err := open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.SaveDraft(s, map[string]any{
+		"index": map[string]any{"title": "Home"},
+	}, "first", "test"); err != nil {
+		t.Fatal(err)
+	}
+	call := mcpAs(t, root, withRole("dana", auth.RoleAdmin))
+	if got := call("quilzo_read", "export_site", nil); refused(got) || !strings.Contains(got, "OFFICIAL") {
+		t.Errorf("an export over MCP carries no banner: %s", got)
+	}
+	breakConfig(t, root)
+	if got := call("quilzo_read", "export_site", nil); !refused(got) {
+		t.Errorf("an export over MCP went out with the configuration unreadable, so "+
+			"with no banner: %s", got)
 	}
 }

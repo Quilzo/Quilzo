@@ -73,6 +73,21 @@ func deploymentMarking(root string) (*marking.Policy, error) {
 	return markingFrom(cfg)
 }
 
+// deploymentBanner is the banner every exported file carries: empty for a
+// deployment that does not mark, and an error when its scheme cannot be read
+// or does not parse (deploymentMarking).
+//
+// For the exports that are not `quilzo export`: the machine interface's
+// export_site and the admin's Transfer screen put no banner on anything,
+// whatever the scheme said, while the command line's did.
+func deploymentBanner(root string) (string, error) {
+	p, err := deploymentMarking(root)
+	if err != nil || p == nil {
+		return "", err
+	}
+	return p.Banner, nil
+}
+
 // cmdMarking prints the scheme and what it would refuse.
 func cmdMarking(root string, args []string) error {
 	if len(args) > 1 || (len(args) == 1 && args[0] != "show" && args[0] != "check") {
