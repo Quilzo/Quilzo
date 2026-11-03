@@ -813,6 +813,57 @@ func TestTheLastAdministratorIsNotSuspendedOnTheProvidersWord(t *testing.T) {
 	}
 }
 
+// The only two people who can grant access, disabled at the same moment,
+// do not both lose it: whether somebody is the last is decided on the
+// policy as it is when the deny is written, not as it was a moment before.
+// Two admins on one shared store each take one push, so the receiver's own
+// lock does not put them in order.
+func TestTwoAdministratorsDisabledAtOnceLeaveOneWhoCanGrant(t *testing.T) {
+	c := signalsStore(t, "email")
+	c.connect(t, "oidc")
+	disabled := func(who string, n int) *ssf.SET {
+		return &ssf.SET{JTI: fmt.Sprintf("race-%s-%d", who, n), Issuer: txIss, IssuedAt: time.Now(),
+			Type: riscEvent + "account-disabled", Short: "account-disabled", Family: "risc",
+			Subject: ssf.Subject{Format: "email", Email: who}, Claims: map[string]any{}}
+	}
+	for n := 0; n < 20; n++ {
+		if _, err := updatePolicy(c.root, func(p *auth.Policy) error {
+			kept := p.Bindings[:0]
+			for _, b := range p.Bindings {
+				if b.GrantedBy != signalsBy {
+					kept = append(kept, b)
+				}
+			}
+			p.Bindings = kept
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := updateSignals(c.root, func(s *signalsConfig) error {
+			s.Hour, s.LastActed = signalsHour{}, nil
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		var wg sync.WaitGroup
+		for _, who := range []string{"boss@example.com", "dana@example.com"} {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if err := signalsDeliver(c.root, disabled(who, n), time.Now()); err != nil {
+					t.Error(err)
+				}
+			}()
+		}
+		wg.Wait()
+		p, _ := loadPolicy(c.root)
+		if !p.Evaluate("boss@example.com", auth.ActGrant, "/").Allowed &&
+			!p.Evaluate("dana@example.com", auth.ActGrant, "/").Allowed {
+			t.Fatalf("round %d: both administrators were denied, and nobody can grant access", n)
+		}
+	}
+}
+
 // Twenty people an hour; the twenty-first is not acted on, the cap is
 // recorded once, and the security contact is told once.
 func TestNoMoreThanTwentyPeopleAnHourAreActedOn(t *testing.T) {

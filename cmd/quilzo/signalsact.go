@@ -510,11 +510,37 @@ func lastGranter(p *auth.Policy, who string) bool {
 // whether the deny was added: it is not for the last person who can grant
 // access, whose sessions end and nothing more.
 func suspendOnSignal(root, principal string, now time.Time) (int, bool, error) {
-	pol, err := loadPolicy(root)
-	if err != nil {
+	// The deny first, so a sign-in in the moment between is refused.
+	//
+	// Whether they are the last who can grant is decided inside the same
+	// change, on the policy as it is stored when the deny is written. Read
+	// a moment before, two administrators disabled at once (two admins on a
+	// shared store, each taking one push) each saw the other able to grant,
+	// both were denied, and nobody could grant access to anybody.
+	//
+	// Appended rather than granted: Grant takes a binding the same shape
+	// as one already there to be that one, and SCIM's suspension is the
+	// same shape. Each keeps its own deny, so the provider enabling the
+	// account through one lifts only what that one added.
+	last := false
+	if _, err := updatePolicy(root, func(p *auth.Policy) error {
+		if lastGranter(p, principal) {
+			last = true
+			return atomicfile.ErrUnchanged
+		}
+		for _, b := range p.Bindings {
+			if b.GrantedBy == signalsBy && b.Deny && strings.EqualFold(b.Principal, principal) && b.Live(now) {
+				return atomicfile.ErrUnchanged
+			}
+		}
+		p.Bindings = append(p.Bindings, auth.Binding{Principal: principal, Role: auth.RoleReader, Resource: "/",
+			Deny: true, GrantedBy: signalsBy, GrantedAt: now.Unix(),
+			Note: "suspended: the identity provider disabled their account"})
+		return nil
+	}); err != nil && !errors.Is(err, atomicfile.ErrUnchanged) {
 		return 0, false, err
 	}
-	if lastGranter(pol, principal) {
+	if last {
 		ts, err := loadTokens(root)
 		if err != nil {
 			return 0, false, err
@@ -533,25 +559,6 @@ func suspendOnSignal(root, principal string, now time.Time) (int, bool, error) {
 			}
 		}
 		return n, false, nil
-	}
-	// The deny first, so a sign-in in the moment between is refused.
-	//
-	// Appended rather than granted: Grant takes a binding the same shape
-	// as one already there to be that one, and SCIM's suspension is the
-	// same shape. Each keeps its own deny, so the provider enabling the
-	// account through one lifts only what that one added.
-	if _, err := updatePolicy(root, func(p *auth.Policy) error {
-		for _, b := range p.Bindings {
-			if b.GrantedBy == signalsBy && b.Deny && strings.EqualFold(b.Principal, principal) && b.Live(now) {
-				return atomicfile.ErrUnchanged
-			}
-		}
-		p.Bindings = append(p.Bindings, auth.Binding{Principal: principal, Role: auth.RoleReader, Resource: "/",
-			Deny: true, GrantedBy: signalsBy, GrantedAt: now.Unix(),
-			Note: "suspended: the identity provider disabled their account"})
-		return nil
-	}); err != nil && !errors.Is(err, atomicfile.ErrUnchanged) {
-		return 0, false, err
 	}
 	ts, err := loadTokens(root)
 	if err != nil {
