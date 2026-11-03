@@ -188,6 +188,9 @@ type Server struct {
 	Boards *BoardsAdmin
 	// SCIM is provisioning from an identity provider. See scimadmin.go.
 	SCIM *SCIMAdmin
+	// AccessReview is the review of who has access, on People. See
+	// accessreview.go; nil leaves the section out.
+	AccessReview *AccessReview
 	// SignInRisk judges each sign-in as it is made (see signins.go);
 	// SignIns is where people signed in from. A session it holds back is
 	// confirmed with a passkey or a fresh single sign-on, never a code sent
@@ -1560,6 +1563,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/people/enrol", s.handlePeopleEnrol)
 	mux.HandleFunc("/people/enrol/revoke", s.handlePeopleEnrolRevoke)
 	mux.HandleFunc("/people/pending", s.handlePeoplePending)
+	mux.HandleFunc("/people/review/start", s.handleReviewStart)
+	mux.HandleFunc("/people/review/decide", s.handleReviewDecide)
+	mux.HandleFunc("/people/review/close", s.handleReviewClose)
 	mux.HandleFunc("/sessions/revoke", s.handleSessionRevoke)
 	mux.HandleFunc("/provenance", s.handleProvenance)
 	mux.HandleFunc("/provenance/set", s.handleProvenanceSet)

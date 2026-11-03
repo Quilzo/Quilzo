@@ -844,3 +844,50 @@ func TestApprovalsMadeAloneAreCounted(t *testing.T) {
 		t.Errorf("an approval made with somebody else around was counted: %+v", got)
 	}
 }
+
+// A review of the access Quilzo grants falls due a period after the last
+// one closed, or after the oldest grant one would cover; a grant from
+// before grants were dated is owed one at once; and a store nobody looked
+// at is not checked rather than clean.
+func TestAnAccessReviewFallsDueAfterItsPeriod(t *testing.T) {
+	r := ruleByID(t, "access.review-due")
+	const day = 24 * time.Hour
+	at := func(facts ReviewFacts) []Finding { return r.Check(State{Now: now, Reviews: facts}) }
+	if got := at(ReviewFacts{Checked: true, Every: 90 * day, LastClosed: now.Add(-91 * day)}); len(got) != 1 ||
+		!strings.Contains(got[0].Detail, "90 days") || !strings.Contains(got[0].Fix, "access review start") {
+		t.Errorf("ninety-one days after the last close: %+v", got)
+	}
+	if got := at(ReviewFacts{Checked: true, Every: 90 * day, LastClosed: now.Add(-89 * day)}); len(got) != 0 {
+		t.Errorf("eighty-nine days after the last close: %+v", got)
+	}
+	if got := at(ReviewFacts{Checked: true, Every: 30 * day, LastClosed: now.Add(-31 * day)}); len(got) != 1 {
+		t.Error("a shorter period is not the one judged by")
+	}
+	if got := at(ReviewFacts{Checked: true, Every: 90 * day, Owed: now.Add(-91 * day)}); len(got) != 1 {
+		t.Error("a store that never closed one, with grants ninety-one days old")
+	}
+	if got := at(ReviewFacts{Checked: true, Every: 90 * day, Owed: now.Add(-day)}); len(got) != 0 {
+		t.Errorf("due a day after the first grant: %+v", got)
+	}
+	if got := at(ReviewFacts{Checked: true, Every: 90 * day}); len(got) != 0 {
+		t.Errorf("due with nothing to review: %+v", got)
+	}
+	if got := at(ReviewFacts{Checked: true, Every: 90 * day, Undated: true}); len(got) != 1 {
+		t.Error("an undated grant nobody has reviewed is not owed a review")
+	}
+	open := at(ReviewFacts{Checked: true, Every: 90 * day, LastClosed: now.Add(-100 * day), Open: now.Add(-day)})
+	if len(open) != 1 || !strings.Contains(open[0].Fix, "close") || !strings.Contains(open[0].Detail, "still open") {
+		t.Errorf("an open review is not named: %+v", open)
+	}
+	rep := Scan(clean(t), nil)
+	skipped := false
+	for _, id := range rep.Skipped {
+		skipped = skipped || id == "access.review-due"
+	}
+	if !skipped || has(rep, "access.review-due") != nil {
+		t.Error("a scan given no review facts reports the rule as run")
+	}
+	if !Reminds("access.review-due") || Reminds("access.sole-admin") {
+		t.Error("the reminder is not the one the drift check mails")
+	}
+}

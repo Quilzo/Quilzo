@@ -555,6 +555,46 @@ var rules = []Rule{
 			}}
 		},
 	},
+	{
+		ID:       "access.review-due",
+		Title:    "The access Quilzo grants has not been reviewed within its period",
+		Severity: Medium,
+		Controls: []string{"AC-2"},
+		Remind:   true,
+		Why: "AC-2 asks that accounts are reviewed at a set frequency " +
+			"(access.review.every, or the organisation's ac-02_odp.10). " +
+			"Access granted to unblock somebody is never taken back by itself, " +
+			"and a grant nobody has looked at since it was made is the one " +
+			"still working for somebody who left.",
+		Check: func(s State) []Finding {
+			r := s.Reviews
+			if !r.Checked || r.Every <= 0 {
+				return nil
+			}
+			since, what := r.LastClosed, "the last review closed on "+r.LastClosed.UTC().Format("2 Jan 2006")
+			switch {
+			case !since.IsZero():
+			case r.Undated:
+				what = "no review has closed, and a grant one would cover was made before grants were dated"
+			default:
+				since, what = r.Owed, "no review has closed, and the oldest grant one would cover was made on "+
+					r.Owed.UTC().Format("2 Jan 2006")
+				if since.IsZero() {
+					return nil
+				}
+			}
+			if !(r.Undated && r.LastClosed.IsZero()) && s.Now.Sub(since) <= r.Every {
+				return nil
+			}
+			f := Finding{Detail: fmt.Sprintf("%s; a review is due every %s", what, days(r.Every)),
+				Fix: "quilzo access review start  # or People › Review who has access"}
+			if !r.Open.IsZero() {
+				f.Detail += fmt.Sprintf("; the one started on %s is still open", r.Open.UTC().Format("2 Jan 2006"))
+				f.Fix = "quilzo access review items  # then decide each, and quilzo access review close"
+			}
+			return []Finding{f}
+		},
+	},
 
 	// -- credentials --------------------------------------------------------
 

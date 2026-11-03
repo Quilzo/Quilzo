@@ -195,6 +195,17 @@ func scimMap(root, group, to string) error {
 	return nil
 }
 
+// scimUnmap makes a group mean nothing here, and takes back what it gave
+// everybody in it. The command, the Provisioning screen and an access
+// review that revokes a mapping all come through here.
+func scimUnmap(root, group string) error {
+	if err := scimStore(root).Update(func(st *scim.State) error { delete(st.Mapping, group); return nil }); err != nil {
+		return err
+	}
+	scimHandler(root).SyncAll()
+	return nil
+}
+
 // scimMappingWhat is a mapping that waits, in words, for the person
 // deciding it.
 func scimMappingWhat(group, to string) string {
@@ -556,10 +567,9 @@ func cmdSCIM(root string, args []string) error {
 		if len(args) != 2 {
 			return scimUsage()
 		}
-		if err := store.Update(func(st *scim.State) error { delete(st.Mapping, args[1]); return nil }); err != nil {
+		if err := scimUnmap(root, args[1]); err != nil {
 			return err
 		}
-		scimHandler(root).SyncAll()
 		w.Human("%q no longer grants anything here\n", args[1])
 		return note("scim.unmapped", args[1])
 	}
@@ -653,10 +663,9 @@ func scimHooks(root string) *admin.SCIMAdmin {
 			return note("scim.mapped", by, group+" → "+to)
 		},
 		Unmap: func(group, by string) error {
-			if err := store.Update(func(st *scim.State) error { delete(st.Mapping, group); return nil }); err != nil {
+			if err := scimUnmap(root, group); err != nil {
 				return err
 			}
-			scimHandler(root).SyncAll()
 			return note("scim.unmapped", by, group)
 		},
 		NewToken: func(made scim.TokenMade) (string, error) {

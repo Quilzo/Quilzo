@@ -43,9 +43,9 @@
 // # There is no single percentage here, and that is deliberate
 //
 // A compliance score is controls-passing over controls-in-scope, and scope is
-// chosen by whoever wants the number. The honest figures are these: how
-// many controls have any evidence at all, how much of the period that
-// evidence covers, and what is missing.
+// chosen by whoever wants the number. The honest figures are the ones a
+// Readiness reports: how many controls have any evidence at all, how much
+// of the period that evidence covers, and what is missing.
 package assurance
 
 import (

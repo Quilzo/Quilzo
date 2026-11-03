@@ -76,3 +76,27 @@ func TestAnOriginTrialTokenCannotCarryAHeader(t *testing.T) {
 		t.Errorf("a token was refused: %v", err)
 	}
 }
+
+// How often the access Quilzo grants is reviewed: between thirty days and
+// a year whatever the reason, and longer than ninety only with one, since
+// a longer wait is a grant nobody needs working for longer.
+func TestTheAccessReviewPeriodIsBoundedAndLongerIsWeaker(t *testing.T) {
+	c := fresh()
+	if got := c.Dur("access.review.every").Hours() / 24; got != 90 {
+		t.Fatalf("the default is %v days", got)
+	}
+	if err := c.Set("access.review.every", "720h", "", "dana"); err != nil {
+		t.Errorf("thirty days, which is stricter, was refused: %v", err)
+	}
+	if err := c.Set("access.review.every", "4380h", "", "dana"); err == nil {
+		t.Error("half a year was set with no reason")
+	}
+	if err := c.Set("access.review.every", "4380h", "an annual audit cycle", "dana"); err != nil {
+		t.Errorf("half a year with a reason: %v", err)
+	}
+	for _, v := range []string{"480h", "9000h"} {
+		if err := c.Set("access.review.every", v, "a reason", "dana"); err == nil {
+			t.Errorf("%s is outside thirty days to a year and was accepted", v)
+		}
+	}
+}

@@ -233,6 +233,7 @@ func Observe(root, tplDir string, srv posture.ServerFacts) posture.State {
 	s.Agents = observeAgents(root, st, tplDir)
 	s.AI = observeAI(root, tplDir, s.Audit)
 	s.Upkeep = observeUpkeep(root, st)
+	s.Reviews = observeReviews(root, s.Audit, s.Now)
 	return s
 }
 

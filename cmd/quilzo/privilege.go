@@ -290,6 +290,9 @@ var commandNeeds = map[string]need{
 	"geo help":   {action: auth.ActView},
 	// Grant: provisioning decides who holds which role.
 	"scim": {action: auth.ActGrant},
+	// Reviewing who holds what, and revoking it, is granting's other half,
+	// listing the items included: they are who holds what, by name.
+	"access": {action: auth.ActGrant},
 	// Spending authority is approving what an agent does; the command asks
 	// about the agent itself, and listing is reading.
 	"spend":          {action: auth.ActView},

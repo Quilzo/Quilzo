@@ -206,6 +206,7 @@ func cmdServe(root string, args []string) error {
 	srv.Members = membersHooks(root)
 	srv.Boards = boardsHooks(root)
 	srv.SCIM = scimHooks(root)
+	srv.AccessReview = accessReviewHooks(root)
 	srv.Memory = memoryAdmin(root)
 	srv.Features = featureHooks(root, signedIn)
 	srv.Pay = payHooks(root, signedIn)
