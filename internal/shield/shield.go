@@ -189,7 +189,8 @@ type State struct {
 	Vouched []Vouched `json:"vouched,omitempty"`
 	// Watching, when set, holds every playbook to watching: one
 	// administrator may set it, because it is the safe direction; letting
-	// them act again takes a second (Book).
+	// them act again takes a second (Book). Their notify steps still tell
+	// the security contact (Engine.Observe).
 	Watching *Hold `json:"watching,omitempty"`
 }
 

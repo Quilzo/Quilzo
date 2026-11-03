@@ -368,16 +368,20 @@ func (e *Engine) Observe(s Signal) []Response {
 			e.sim[d.ck] = append(e.sim[d.ck], mark{at: s.At})
 		}
 		e.mu.Unlock()
+		// A hold stops the shield acting while somebody works out why it
+		// did, and its notify steps still tell the security contact. They
+		// used to be held too, so a decoy touched during a hold blocked
+		// nobody and reached nobody: an intruder holding the playbooks first
+		// would have gone unheard. Telling a person changes nothing about
+		// who gets in; everything else a held playbook would do waits.
 		told := false
-		if d.mode == "act" {
-			for _, step := range d.pb.Stages[d.stage].Do {
-				switch {
-				case step.Action == "notify" && e.Notify != nil:
-					e.Notify(r, s)
-					told = true
-				case step.Action == "open-case" && e.OpenCase != nil:
-					e.OpenCase(r, s)
-				}
+		for _, step := range d.pb.Stages[d.stage].Do {
+			switch {
+			case step.Action == "notify" && e.Notify != nil && (d.mode == "act" || d.mode == "held"):
+				e.Notify(r, s)
+				told = true
+			case step.Action == "open-case" && e.OpenCase != nil && d.mode == "act":
+				e.OpenCase(r, s)
 			}
 		}
 		if r.Tell && !told && e.Notify != nil {
@@ -525,10 +529,13 @@ func (e *Engine) step(pb Playbook, stage int, step Step, mode, key string, addr 
 	case "cut-route":
 		p.Kind, p.Target = Route, s.Subject
 	case "notify":
-		if mode != "act" {
-			return "would have told the security contact", "", false
+		switch mode {
+		case "act":
+			return "told the security contact", "", false
+		case "held":
+			return "told the security contact; a hold stops the shield acting, not telling", "", false
 		}
-		return "told the security contact", "", false
+		return "would have told the security contact", "", false
 	case "open-case":
 		if mode != "act" {
 			return "would have opened a case", "", false
