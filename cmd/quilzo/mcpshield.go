@@ -13,8 +13,8 @@ import (
 
 // What Quilzo is doing to protect itself, for an agent: read-only. Lifting,
 // blocking and changing a playbook are a person's. A security team's queue
-// — findings, cases, vulnerabilities, the estate — is Vaigil's, and its
-// agents reach it through Vaigil's own interface.
+// — findings, cases, vulnerabilities, the estate — is in the team's own
+// tools, which its agents reach through those tools' own interfaces.
 
 func registerShieldOps(srv *mcp.Server, root string, caller *Caller) {
 	srv.Register(mcp.Operation{

@@ -7,22 +7,20 @@ has the rest.
 Unreleased
 ==========
 
-** Security operations are Vaigil now
+** Quilzo defends itself; a security team's own tools are no longer in it
 
-*** A security team's tools left Quilzo for Vaigil
-    (https://github.com/Vaigil/vaigil), which began as this half of the
-    program: collecting from other systems (connect, collect, inbound,
-    source, spool, telemetry and the Feeds and Events screens), detections,
-    Sigma, correlations and the trial ring (detect, sigma, correlate,
-    proving, hunt, triage), the finding queue and risk (finding, analyst),
-    cases and incidents with their regulatory clocks, actions on other
-    platforms, automations, vulnerabilities (vuln, sca, sarif, appsec, feed,
-    reachability), the estate and workforce risk, vendors, access reviews,
-    reminders, notices to customers, work tracking, estate canaries, and the
-    MCP tools over all of them.  Their screens are gone from the admin, and
-    the Security operations menu is Protection: Shield and Sign-ins.
-    Quilzo keeps what it needs to defend itself, and hands its audit log
-    to Vaigil, or to any SIEM that reads OCSF, as it is written
+*** A security team's tools left Quilzo: collecting from other systems
+    (connect, collect, inbound, source, spool, telemetry and the Feeds and
+    Events screens), detections, Sigma, correlations and the trial ring
+    (detect, sigma, correlate, proving, hunt, triage), the finding queue and
+    risk (finding, analyst), cases and incidents with their regulatory
+    clocks, actions on other platforms, automations, vulnerabilities (vuln,
+    sca, sarif, appsec, feed, reachability), the estate and workforce risk,
+    vendors, access reviews, reminders, notices to customers, work tracking,
+    estate canaries, and the MCP tools over all of them.  Their screens are
+    gone from the admin, and the Security operations menu is Protection:
+    Shield and Sign-ins.  Quilzo keeps what it needs to defend itself, and
+    hands its audit log to any SIEM that reads OCSF, as it is written
     (siem.stream.url).
 
 *** A risky sign-in has to confirm it is its person, built in and on.
@@ -57,7 +55,8 @@ Unreleased
 *** Mail is configured in mail.json (notify/mail.json is still read).
     Shadow AI on the Fleet screen is what agents' own programs reached
     around the gateway; what people across the estate reach is in its
-    proxy and DNS logs, which are Vaigil's.
+    proxy and DNS logs, which belong to the organisation's own security
+    tooling.
 
 ** Changed
 
@@ -1409,7 +1408,7 @@ Unreleased
     asking for 2025-11-25; it negotiates as the HTTP transport does.
 
 *** The Sign-ins screen's Help opens the manual's Sign-ins guide, not
-    the automations guide that went with Vaigil.  Its first line no
+    the automations guide that left with them.  Its first line no
     longer says "the 0 networks you declared" on a new store.  The agent
     form no longer lists security operations nothing offers, and quilzo
     help says what shadow AI is now: what agents' own programs reached
@@ -1491,8 +1490,8 @@ Unreleased
 *** The audit stream's receiver checks the address its sender signed.
     Behind a proxy that ends TLS it rebuilt the address from the request,
     plain HTTP to an internal host, and refused every batch.  Its Origin
-    is the receiver's public address; Vaigil, which receives Quilzo's
-    stream, sets it from admin.base_url.
+    is the receiver's public address, which a receiver of Quilzo's stream
+    sets from admin.base_url.
 
 *** Publishing over MCP is a tool of its own, quilzo_publish.  It was an
     operation of quilzo_write, whose description says "Never publishes",

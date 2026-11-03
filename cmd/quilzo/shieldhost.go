@@ -89,7 +89,7 @@ func newShieldHost(root string) *shieldHost {
 		})
 	}
 	// A case is the security team's, in whatever reads this audit log as
-	// it is written (Vaigil, or another SIEM): this record is the request,
+	// it is written (a SIEM on siem.stream.url): this record is the request,
 	// carrying what it needs to open one.
 	openCase := func(r shield.Response, s shield.Signal) {
 		done(r, "open-case", "asked the security team's tools, which read this log, to open a case", nil,

@@ -31,7 +31,7 @@ import (
 // failing is written to the audit log once (posture.drifted), and once more
 // when a later scan in which that check ran no longer reports it
 // (posture.restored). The audit log is what a security team's tools read as
-// it is written — Vaigil, or another SIEM (siem.stream.url) — so that is
+// it is written — any SIEM on siem.stream.url — so that is
 // where it is triaged, and the security contact is told at once of a newly
 // failing check that is high or critical.
 //

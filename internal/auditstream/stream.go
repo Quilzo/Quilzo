@@ -265,7 +265,7 @@ type Receiver struct {
 	// sender signed the address with. Behind a proxy that ends TLS the
 	// request arrives as plain HTTP to an internal host, so an address
 	// rebuilt from the request is not the one signed and every batch is
-	// refused; Vaigil found this receiving Quilzo's stream. Empty, the
+	// refused, which a receiver of Quilzo's stream found in practice. Empty, the
 	// request's own address is used.
 	Origin string
 

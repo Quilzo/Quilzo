@@ -50,8 +50,8 @@ MCP gateway in front of your own tool servers, a map of every agent and what it
 called, evidence for the EU AI Act and ISO/IEC 42001, a shield that defends
 the installation itself, and the content platform the agents read and write.
 A security team's own tools — the finding queue, cases, vulnerabilities, the
-estate — are [Vaigil](https://github.com/Vaigil/vaigil), which reads Quilzo's
-audit log as it is written.
+estate — are not part of it: Quilzo streams its audit log, as it is written,
+to whichever SIEM the organisation already runs.
 
 One static binary. Go, standard library only, no third-party dependencies; the
 few third-party assets it carries (a typeface, icons, public data sets) are
@@ -261,15 +261,15 @@ Help link opens its own.
 | **From a sentence or a spreadsheet** | A model drafts a package of content blocks only, never agents, webhooks or links elsewhere; or a CSV or JSON list becomes a type, collection, listing and page, its rows imported with the install. | `quilzo feature draft "…"`, `feature from FILE.csv`, `feature install FILE --rows ROWS`; Make › Describe it, From a spreadsheet |
 | **Roll back, remove, share** | Upgrades remove what a version dropped; roll back or remove as one; export signed with the log's keys, install checking them; package blocks built by hand. | `quilzo feature rollback\|remove NAME`, `feature export NAME --sign`, `feature install FILE --keys K`, `feature capture` |
 
-### A security team's tools are Vaigil
+### What Quilzo leaves to a security team's own tools
 
 Collecting from other systems, detections and Sigma, the finding queue,
 cases and incidents with their regulatory clocks, actions on other
-platforms, vulnerabilities (KEV, EPSS, SSVC, VEX, SARIF, SCA), the estate
-and workforce risk, vendors, access reviews and notices to customers are
-**[Vaigil](https://github.com/Vaigil/vaigil)**, which began as that half of
-this program. Quilzo keeps what it needs to defend itself, below, and hands
-its audit log to Vaigil, or to any SIEM that reads OCSF, as it is written.
+platforms, the organisation's vulnerability management, the estate and
+workforce risk, vendors and notices to customers belong to the security
+operations tooling an organisation already runs. Quilzo keeps what it needs
+to defend itself, below, and hands its audit log to any SIEM that reads
+OCSF, as it is written.
 
 ### The shield: Quilzo defends itself
 
@@ -430,7 +430,7 @@ Every screen in the admin has a Help link to its own section.
 - [Build an agent](https://quilzo.github.io/agents/), [limits that hold](https://quilzo.github.io/agent-limits/), [evaluations](https://quilzo.github.io/evals/) and [memory](https://quilzo.github.io/memory/)
 - [Models and the gateway](https://quilzo.github.io/models/), [chatbots](https://quilzo.github.io/chatbots/) and [prompt injection in RAG](https://quilzo.github.io/chatbot-safety/)
 - [Connect AI apps over MCP](https://quilzo.github.io/agent-interface/), [the MCP gateway](https://quilzo.github.io/integrations/), [A2A](https://quilzo.github.io/a2a/) and [the fleet](https://quilzo.github.io/fleet/)
-- [The shield](https://quilzo.github.io/shield/) and [AI evidence](https://quilzo.github.io/ai-evidence/); detection and cases are [Vaigil's](https://vaigil.github.io/)
+- [The shield](https://quilzo.github.io/shield/) and [AI evidence](https://quilzo.github.io/ai-evidence/)
 - [docs/cms.md](docs/cms.md): the content platform, in full
 - [SECURITY.md](SECURITY.md): what is and is not bounded, and how to report
 
