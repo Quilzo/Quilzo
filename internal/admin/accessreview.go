@@ -98,6 +98,10 @@ func (s *Server) reviewSection(r *http.Request, p principal, now time.Time) *rev
 		return v
 	}
 	if open == nil {
+		// A decision that came back about a card that is not there, for a
+		// review somebody else closed meanwhile, says so at the top of the
+		// section rather than nowhere.
+		v.At = ""
 		return v
 	}
 	v.Open, v.Undecided = open, open.Undecided()
@@ -110,6 +114,9 @@ func (s *Server) reviewSection(r *http.Request, p principal, now time.Time) *rev
 			own = append(own, it.ID)
 		}
 		v.Rows = append(v.Rows, row)
+	}
+	if _, ok := open.Item(v.At); !ok {
+		v.At = ""
 	}
 	v.Alone = lastAdminIn(s.Policy, p.Name)
 	v.CloseHint = closeHint(v.Undecided, own, v.Alone)

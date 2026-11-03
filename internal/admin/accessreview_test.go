@@ -341,6 +341,13 @@ func TestAReviewButtonComesBackToWhereItWasPressed(t *testing.T) {
 	if anchor != "review" || !strings.Contains(body, `class="notice bad" role="alert">1 item(s) are undecided`) {
 		t.Errorf("a refused close did not come back to the section as an alert (#%s)", anchor)
 	}
+	// A card that is not there, as for an item number nobody listed, has
+	// its refusal said at the top of the section rather than nowhere.
+	body, _ = follow(postForm(t, srv, "/people/review/decide", editor,
+		url.Values{"item": {"99"}, "verdict": {"keep"}}.Encode()))
+	if !strings.Contains(body, `class="notice bad" role="alert">review r1 has no item`) {
+		t.Error("a refusal about an item that is not there was not shown")
+	}
 }
 
 // cardOf is one item's card on People.
