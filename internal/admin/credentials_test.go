@@ -179,6 +179,52 @@ func TestASignOutThePersonDidNotAskForAsksFirst(t *testing.T) {
 	}
 }
 
+// And a page the browser loads ahead, in case the person opens it, is not
+// the person opening it.
+//
+// A prefetch or a prerender is sent as a navigation to a document, from this
+// origin or from the address bar, with the purpose in its own header. It
+// passed as the menu's link, so a browser preloading /signout because it was
+// in the history, or a prefetch hint in a page here, ended the session
+// before anybody chose to.
+func TestASignOutTheBrowserLoadsAheadAsksFirst(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		headers map[string]string
+	}{
+		{"a prerender from the address bar", map[string]string{
+			"Sec-Fetch-Site": "none", "Sec-Fetch-Mode": "navigate",
+			"Sec-Fetch-Dest": "document", "Sec-Purpose": "prefetch;prerender"}},
+		{"a prefetch from a page here", map[string]string{
+			"Sec-Fetch-Site": "same-origin", "Sec-Fetch-Mode": "navigate",
+			"Sec-Fetch-Dest": "document", "Sec-Purpose": "prefetch"}},
+		{"the older prefetch header", map[string]string{
+			"Sec-Fetch-Site": "same-origin", "Sec-Fetch-Mode": "navigate",
+			"Sec-Fetch-Dest": "document", "Purpose": "prefetch"}},
+	} {
+		srv, _ := setup(t)
+		session, _, err := srv.Tokens.IssueSession("passkey:editor", "editor",
+			auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest(http.MethodGet, "/signout", nil)
+		req.AddCookie(&http.Cookie{Name: "quilzo_token", Value: session})
+		for k, v := range c.headers {
+			req.Header.Set(k, v)
+		}
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		if _, err := srv.Tokens.Authenticate(session, time.Now()); err != nil {
+			t.Errorf("%s ended the session: %d", c.name, w.Code)
+		}
+		if body := w.Body.String(); w.Code != http.StatusOK ||
+			!strings.Contains(body, `action="/signout"`) {
+			t.Errorf("%s was not asked to confirm: %d", c.name, w.Code)
+		}
+	}
+}
+
 // And a long-lived token is not revoked by signing out.
 //
 // It is somebody's own credential, used deliberately. Revoking it because they

@@ -2034,12 +2034,23 @@ func (s *Server) handleSignOut(w http.ResponseWriter, r *http.Request) {
 // a bookmark); an image, a frame, another host's link, or a browser that
 // sends no fetch metadata is shown the question instead, as a form that
 // posts, which is one more press for the person and nothing for a page.
+//
+// Nor is a load the browser makes ahead of the person, which says so in a
+// purpose header. A prefetch or a prerender is sent as a navigation to a
+// document from this origin or from the address bar, so it passed as the
+// menu's link: a browser preloading /signout from its history, or a prefetch
+// hint in a page here, ended the session before anybody chose to.
 func signOutAsked(r *http.Request, p principal) bool {
 	if r.Method == http.MethodPost || p.Bearer {
 		return true
 	}
 	if r.Method != http.MethodGet {
 		return false
+	}
+	for _, h := range []string{"Sec-Purpose", "Purpose", "X-Purpose"} {
+		if r.Header.Get(h) != "" {
+			return false
+		}
 	}
 	switch r.Header.Get("Sec-Fetch-Site") {
 	case "same-origin", "none":
