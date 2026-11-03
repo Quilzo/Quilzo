@@ -188,6 +188,9 @@ func signalThen(principal, kind string) (string, bool) {
 			"from everywhere again there, or with quilzo auth unlock " + principal + ".", true
 	case "verification-failing":
 		return "Nothing has proved it is them, and the session can still do nothing until something does.", true
+	case "passkey-cloned":
+		return "That sign-in was refused, but whichever copy is used next with a higher count is let in. " +
+			"They should remove that key on their Passkeys screen and register it again.", true
 	}
 	return "", false
 }

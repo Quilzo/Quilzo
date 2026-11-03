@@ -88,6 +88,24 @@ var ErrUserNotVerified = errors.New("this passkey was only touched, and a passke
 	"also has to ask for the PIN, fingerprint or face that unlocks it. Set one on the " +
 	"key (the browser offers to) and try again")
 
+// ErrCounterWentBack is the refusal of a passkey whose signature counter did
+// not advance: the one sign WebAuthn gives that the credential was copied off
+// its authenticator. Its own error, so a caller can record it as that rather
+// than as one more failed sign-in, which is all it was taken for: a cloned
+// passkey looked in the log like a mistyped PIN.
+var ErrCounterWentBack = errors.New("this passkey's counter went back")
+
+// counterError is ErrCounterWentBack with the two numbers.
+type counterError struct{ was, now uint32 }
+
+func (e counterError) Error() string {
+	return fmt.Sprintf("this authenticator's counter went from %d to %d, which it cannot "+
+		"do unless the credential exists in two places. Refusing, and "+
+		"the key should be removed and registered again", e.was, e.now)
+}
+
+func (e counterError) Is(target error) bool { return target == ErrCounterWentBack }
+
 // authDataMinimum is rpIdHash (32) + flags (1) + signCount (4).
 const authDataMinimum = 37
 
@@ -323,11 +341,7 @@ func (p Party) Verify(cred Credential, challenge string, a Assertion) (Credentia
 	// Only meaningful when the authenticator keeps a counter at all. Many do
 	// not, and report zero forever -- refusing those would refuse most phones.
 	if cred.SignCount != 0 && count != 0 && count <= cred.SignCount {
-		return Credential{}, fmt.Errorf(
-			"this authenticator's counter went from %d to %d, which it cannot "+
-				"do unless the credential exists in two places. Refusing, and "+
-				"the key should be removed and registered again",
-			cred.SignCount, count)
+		return Credential{}, counterError{was: cred.SignCount, now: count}
 	}
 
 	used := cred

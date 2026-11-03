@@ -733,6 +733,19 @@ func (s *Server) handlePasskeyVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
+		// A counter that went back is refused like any failure, and is put
+		// on the record as what it is. It was only refused: the error that
+		// says the credential exists in two places was dropped, so a copied
+		// passkey left the log what a mistyped PIN leaves, raised no signal,
+		// and stayed registered with nobody told to remove it.
+		if errors.Is(err, webauthn.ErrCounterWentBack) {
+			s.audit("passkey.counter-refused", "/", map[string]string{"for": cred.Principal,
+				"source": sourceOf(r), "label": cred.Label, "why": err.Error()})
+			if s.SignInSignal != nil {
+				s.SignInSignal(cred.Principal, "passkey-cloned", "a passkey's counter went back, which it does "+
+					"only when the credential exists in two places")
+			}
+		}
 		held := s.stepUpFailed(r)
 		s.lockoutFail(r, cred.Principal)
 		if held != "" && !strings.EqualFold(held, cred.Principal) {
