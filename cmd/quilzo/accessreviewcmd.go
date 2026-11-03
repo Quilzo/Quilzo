@@ -155,6 +155,13 @@ func reviewDecide(root string, c *Caller, id string, v accessreview.Verdict, why
 	var dec accessreview.Decision
 	applied := false
 	r, err := reviewStore(root).Update(func(r *accessreview.Review) error {
+		// Asked again now the decision holds the lock, against the policy
+		// as it is: a decision that waited behind another was carried out
+		// on authority checked before, and an administrator another's
+		// decision had just revoked still revoked what they had queued.
+		if err := authorise(root, c, auth.ActGrant, "/"); err != nil {
+			return err
+		}
 		var cerr error
 		if it, cerr = r.Check(id, v, reviewer(c), why); cerr != nil {
 			return cerr
@@ -380,6 +387,10 @@ func reviewClose(root string, c *Caller) (*accessreview.Review, accessreview.Sum
 	alone := onlyAdministrator(root, c.Name)
 	var sum accessreview.Summary
 	r, err := reviewStore(root).Update(func(r *accessreview.Review) error {
+		// As a decision is, asked again under the lock.
+		if err := authorise(root, c, auth.ActGrant, "/"); err != nil {
+			return err
+		}
 		var cerr error
 		sum, cerr = r.Close(reviewer(c), current, alone, administrators(in.Policy), now)
 		return cerr

@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -19,6 +20,7 @@ import (
 	"github.com/quilzo/quilzo/internal/accessreview"
 	"github.com/quilzo/quilzo/internal/admin"
 	"github.com/quilzo/quilzo/internal/assurance"
+	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/mail"
@@ -1155,5 +1157,40 @@ func TestAGroupEveryAdministratorIsInDoesNotHoldTheReviewOpen(t *testing.T) {
 	closed := lastEvent(t, root, "review.closed")
 	if closed == nil || closed.Detail["unreviewable"] != "1" || closed.Detail["alone"] != "" {
 		t.Errorf("review.closed does not say one item was every administrator's own: %+v", closed)
+	}
+}
+
+// Who may decide is asked again once the decision holds the review's lock.
+// It was asked only before: a decision waiting for the lock behind
+// somebody else's was carried out on authority checked earlier, so an
+// administrator whose access had just been revoked by another's decision
+// still revoked whatever they had queued.
+func TestADecisionIsAuthorisedWhenItIsMadeNotWhenItWasAsked(t *testing.T) {
+	root, tokens := reviewed(t)
+	if err := review(t, root, tokens["dana"], "start"); err != nil {
+		t.Fatal(err)
+	}
+	kit := itemFor(t, openReview(t, root), bindingOf("kit"))
+	sam := resolveCaller(root, tokens["sam"])
+	unlock, err := atomicfile.Lock(filepath.Join(root, "access", "reviews", ".lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := reviewDecide(root, sam, kit.ID, accessreview.Revoke, "")
+		done <- err
+	}()
+	time.Sleep(300 * time.Millisecond) // sam is asked, and waits for the lock
+	if _, err := updatePolicy(root, func(p *auth.Policy) error { p.Revoke("sam", auth.RoleAdmin, "/"); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	unlock()
+	if err := <-done; err == nil {
+		t.Error("sam, no longer an administrator, revoked kit's access")
+	}
+	pol, _ := loadPolicy(root)
+	if !pol.Evaluate("kit", auth.ActEditDraft, "/blog/post").Allowed {
+		t.Error("kit's access is gone")
 	}
 }
