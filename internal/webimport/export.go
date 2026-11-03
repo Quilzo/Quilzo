@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // A site brought from the file its last home exported.
@@ -267,11 +268,14 @@ func FromWordPress(body []byte, origin string) (*Site, error) {
 				pst.Image, pst.Alt = u, a.alt
 			}
 		}
+		// tagged are the tags kept, by foldKey.
+		tagged := map[string]bool{}
 		for _, c := range it.Categories {
 			v := strings.TrimSpace(html.UnescapeString(c.Value))
 			if (c.Domain == "category" || c.Domain == "post_tag") && v != "" && !strings.EqualFold(v, "Uncategorized") &&
-				!containsFold(pst.Tags, v) {
+				!tagged[foldKey(v)] {
 				pst.Tags = append(pst.Tags, v)
+				tagged[foldKey(v)] = true
 			}
 		}
 		s.Posts = append(s.Posts, pst)
@@ -401,13 +405,19 @@ func day(s string) string {
 	return ""
 }
 
-func containsFold(list []string, s string) bool {
-	for _, x := range list {
-		if strings.EqualFold(x, s) {
-			return true
+// foldKey is s with each letter as the least of the letters it is in
+// another case, so that two strings have one key when strings.EqualFold
+// says they are the same. Tags are kept once each by their keys: kept by
+// looking through all those kept so far for each, a post with 80,000 tags
+// took 23 seconds.
+func foldKey(s string) string {
+	return strings.Map(func(r rune) rune {
+		least := r
+		for f := unicode.SimpleFold(r); f != r; f = unicode.SimpleFold(f) {
+			least = min(least, f)
 		}
-	}
-	return false
+		return least
+	}, s)
 }
 
 // -- Ghost --------------------------------------------------------------------
