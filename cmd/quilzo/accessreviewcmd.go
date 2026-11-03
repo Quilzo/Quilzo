@@ -395,13 +395,35 @@ func cmdAccess(root string, args []string) error {
 	switch args[0] {
 	case "review":
 		return cmdAccessReview(root, args[1:])
+	case "help", "-h", "--help":
+		w.Human("%s", accessReviewUsage)
+		return nil
 	}
 	return fmt.Errorf("unknown access command %q; quilzo access review start | items | decide | close", args[0])
 }
 
+// accessReviewUsage is how to use quilzo access review.
+const accessReviewUsage = `usage:
+  quilzo access review start                                 take the snapshot and open a review
+  quilzo access review items [--json]                        what to decide, dormant and privileged first
+  quilzo access review decide ITEM keep|revoke [--why TEXT]  a revoke applies at once; keeping privileged access needs --why
+  quilzo access review close                                 refused while anything is undecided; writes the AC-2 evidence
+`
+
 func cmdAccessReview(root string, args []string) error {
 	if len(args) == 0 {
 		args = []string{"items"}
+	}
+	// Help is answered before anything else, and with nothing but how to
+	// use the command: the gate in front of every command lets a request
+	// for help through without authority, and items, which listed the
+	// review whatever followed it, printed who holds what to anybody who
+	// added "help" to the line.
+	for _, a := range args {
+		if a == "help" || a == "-h" || a == "--help" {
+			w.Human("%s", accessReviewUsage)
+			return nil
+		}
 	}
 	c := resolveCaller(root, flagToken)
 	switch sub := args[0]; sub {
@@ -417,6 +439,12 @@ func cmdAccessReview(root string, args []string) error {
 		w.Human("  %squilzo access review items lists them, dormant and privileged first%s\n", dim, reset)
 		return nil
 	case "items":
+		// Asked here as well as at the gate, as start, decide and close ask
+		// for themselves: the list is who holds what, by name, with every
+		// token's id.
+		if err := authorise(root, c, auth.ActGrant, "/"); err != nil {
+			return err
+		}
 		r, err := reviewStore(root).Current()
 		if err != nil {
 			return err

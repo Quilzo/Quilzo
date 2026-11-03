@@ -5,6 +5,7 @@ package main
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -21,6 +22,7 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/mail"
 	"github.com/quilzo/quilzo/internal/odp"
+	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/posture"
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/scim"
@@ -936,5 +938,45 @@ func TestJoiningAGroupDuringTheReviewMakesItYourOwn(t *testing.T) {
 	}
 	if _, done := openReview(t, root).Decided(editors.ID); done {
 		t.Error("the refused decision was recorded")
+	}
+}
+
+// Asking for help passes the command gate without authority, so a word
+// "help" anywhere on the line let `access review items help` past it, and
+// items, which asked nothing itself, listed who holds what, with every
+// token's id, to anybody who could run the command. Each subcommand now
+// asks for itself, and help is answered with how to use it.
+func TestTheItemsAreNotListedToSomebodyWhoAskedForHelp(t *testing.T) {
+	root, tokens := reviewed(t)
+	if err := review(t, root, tokens["dana"], "start"); err != nil {
+		t.Fatal(err)
+	}
+	kitTok := itemFor(t, openReview(t, root), credentialOf("kit"))
+	t.Cleanup(func(old *out.Writer) func() { return func() { w = old } }(w))
+	printed := func(run func() error) (string, error) {
+		var b strings.Builder
+		w = &out.Writer{Mode: out.JSON, Out: &b, Err: io.Discard}
+		err := run()
+		return b.String(), err
+	}
+	for _, as := range []string{tokens["kit"], ""} {
+		for _, args := range [][]string{{"review", "items", "help"}, {"review", "items", "--help"},
+			{"review", "items", "-h"}, {"review", "help"}, {"review", "-h"}} {
+			flagToken = as
+			if err := authoriseCommand(root, "access", args); err != nil {
+				continue
+			}
+			text, err := printed(func() error { return cmdAccess(root, args) })
+			if strings.Contains(text, kitTok.Credential) || strings.Contains(text, "dana") {
+				t.Errorf("%v, as somebody who may not grant, listed the review: %v\n%s", args, err, text)
+			}
+		}
+	}
+	if text, err := printed(func() error { return review(t, root, tokens["kit"], "items") }); err == nil {
+		t.Errorf("an author listed the review:\n%s", text)
+	}
+	if text, err := printed(func() error { return review(t, root, tokens["dana"], "items") }); err != nil ||
+		!strings.Contains(text, kitTok.Credential) {
+		t.Errorf("an administrator could not list the review: %v\n%s", err, text)
 	}
 }
