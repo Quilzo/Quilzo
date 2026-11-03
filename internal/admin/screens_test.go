@@ -219,10 +219,13 @@ var notAScreen = map[string]string{
 	"/.well-known/oauth-authorization-server":   "is JSON for programs (RFC 8414), 404 until the interface and the admin's address are set",
 	"/.well-known/agent-credentials.json":       "is a JSON Web Key Set for programs checking agent credentials, 404 until the interface is set",
 	"/oauth/token":                              "is posted to by an app's program, never opened",
-	"/token/exchange":                           "is posted to by a program or a CI job exchanging a token, never opened",
-	"/features/check":                           "is posted to by a pull request's CI with a package, never opened",
-	"/features/install":                         "is posted to by the CI that runs on merge, never opened",
-	"/oauth/revoke":                             "is posted to by an app's program, never opened",
+	"/sso/signals": "is pushed to by the identity provider's transmitter with the stream's " +
+		"bearer, never opened; 404 while no stream is connected. signals_test.go pushes to it, " +
+		"and the stream it receives is shown on Sign-ins",
+	"/token/exchange":   "is posted to by a program or a CI job exchanging a token, never opened",
+	"/features/check":   "is posted to by a pull request's CI with a package, never opened",
+	"/features/install": "is posted to by the CI that runs on merge, never opened",
+	"/oauth/revoke":     "is posted to by an app's program, never opened",
 	"/apps/receipt": "is a file to keep, the receipt of one connection's calls, " +
 		"linked from Connected apps beside each connection; with no id it " +
 		"sends the person back there. agentinterface_test.go downloads one",

@@ -23,3 +23,23 @@ example.com {
 # store. Reach it over SSH with a port forward:
 #
 #   ssh -N -L 8080:127.0.0.1:8080 you@your-server
+
+# Except the two addresses the identity provider calls, when you use them.
+#
+# Provisioning (SCIM) and its security events (quilzo signals) are sent by the
+# identity provider to the admin, so they need a public https address. Publish
+# those two paths and nothing else: each authenticates the provider with a
+# bearer of its own, and every other path answers 404 here, so the sign-in
+# page and the screens stay on loopback. Replace the hostname, and uncomment.
+#
+# admin.example.com {
+# 	handle /scim/v2/* {
+# 		reverse_proxy 127.0.0.1:8080
+# 	}
+# 	handle /sso/signals {
+# 		reverse_proxy 127.0.0.1:8080
+# 	}
+# 	handle {
+# 		respond 404
+# 	}
+# }

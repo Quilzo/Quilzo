@@ -105,7 +105,7 @@ func (s *Server) handleShield(w http.ResponseWriter, r *http.Request) {
 
 func shieldFeatures() []map[string]string {
 	keys := []string{"chatbots", "search-answers", "forms", "boards", "signup", "bookings", "newsletter", "fediverse",
-		"uploads", "api", "mcp", "scim", "import", "feeds"}
+		"uploads", "api", "mcp", "scim", "signals", "import", "feeds"}
 	var out []map[string]string
 	for _, k := range keys {
 		out = append(out, map[string]string{"Key": k, "Words": shield.Features[k]})

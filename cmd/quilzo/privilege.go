@@ -293,6 +293,11 @@ var commandNeeds = map[string]need{
 	// Reviewing who holds what, and revoking it, is granting's other half,
 	// listing the items included: they are who holds what, by name.
 	"access": {action: auth.ActGrant},
+	// Grant: whose word ends sessions and suspends people here, and the
+	// one place to see what it did. Not a second administrator's: every
+	// event only takes access away.
+	"signals":        {action: auth.ActGrant},
+	"signals status": {action: auth.ActGrant},
 	// Spending authority is approving what an agent does; the command asks
 	// about the agent itself, and listing is reading.
 	"spend":          {action: auth.ActView},

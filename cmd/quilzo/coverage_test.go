@@ -302,6 +302,16 @@ var coverage = map[string]surfaces{
 		NoMCP: "provisioning decides who holds which role, and its token " +
 			"is a credential; both are an administrator's to handle",
 	},
+	// The Sign-ins screen shows the stream and what it did; connecting
+	// and turning it off stay in the terminal, where the client secret
+	// comes from the environment and never through a form.
+	"signals": {
+		GUI: "/security/signins",
+		NoMCP: "a connected stream ends people's sessions and suspends them on " +
+			"the identity provider's word; choosing whose word that is, or " +
+			"silencing it, decides who keeps access here, which is an " +
+			"administrator's decision and never a model's",
+	},
 
 	"member": {
 		GUI: "/members",

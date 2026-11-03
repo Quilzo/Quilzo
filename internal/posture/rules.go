@@ -812,6 +812,36 @@ var rules = []Rule{
 		},
 	},
 	{
+		ID:       "signals.stream-silent",
+		Title:    "The identity provider's security events have not proved they arrive",
+		Severity: Medium,
+		Controls: []string{"AC-12", "AC-2(3)"},
+		OWASP:    "A07:2025 Authentication Failures",
+		Why: "A stream that has gone quiet looks the same as one with nothing to " +
+			"say. If the identity provider's key, address or secret changed, a " +
+			"session it ends or an account it disables goes on here until it ends " +
+			"by itself, and nothing else says so. A verification answered is the " +
+			"only proof the stream still reaches this server.",
+		Check: func(s State) []Finding {
+			f := s.SSO.Signals
+			if f == nil || !f.Silent(s.Now) {
+				return nil
+			}
+			if f.Manual {
+				return []Finding{{Resource: "signals/stream",
+					Detail: "the stream was made in the identity provider's own console, so it cannot be " +
+						"asked to verify, and its silence cannot be told from having nothing to say",
+					Fix: "quilzo signals off  # then quilzo signals connect with --client-id, if the provider publishes a stream API"}}
+			}
+			detail := "the identity provider has never answered a verification"
+			if !f.Verified.IsZero() {
+				detail = "the identity provider last answered a verification on " + f.Verified.UTC().Format("2 Jan 2006 15:04 UTC")
+			}
+			return []Finding{{Resource: "signals/stream", Detail: detail,
+				Fix: "quilzo signals status  # the server asks once a day, with the client secret in QUILZO_SIGNALS_SECRET"}}
+		},
+	},
+	{
 		ID:       "sso.unusable",
 		Title:    "An identity provider is set up and cannot sign anybody in",
 		Severity: Medium,

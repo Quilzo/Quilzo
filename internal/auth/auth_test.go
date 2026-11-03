@@ -732,6 +732,64 @@ func TestMergingTokenStoresNeverUndoesARevocation(t *testing.T) {
 	}
 }
 
+// A step-up asked for in one copy of the store is not undone by writing
+// another copy read before it, and a step-up cleared in a copy that saw it
+// stays cleared. The receiver of the identity provider's security events
+// holds a person's sessions in the file while the admin keeps its own copy:
+// the admin's next sign-in wrote that copy back, and the hold was gone.
+func TestMergingTokenStoresNeverUndoesAStepUp(t *testing.T) {
+	now := time.Now()
+	stored := &TokenStore{}
+	_, s, err := stored.IssueSession("passkey:ada", "ada", RoleAuthor, "/", time.Hour, RoleAdmin, MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := &TokenStore{Tokens: append([]Token(nil), stored.Tokens...)}
+	if n := stored.RequireStepUpFor("ada", "their credential was reported compromised", now); n != 1 {
+		t.Fatalf("held %d", n)
+	}
+	// The admin, which read the store before that, signs somebody else in
+	// and writes its copy.
+	if _, _, err := stale.IssueSession("oidc:rae", "rae", RoleReader, "/", time.Hour, RoleReader, MethodSSO); err != nil {
+		t.Fatal(err)
+	}
+	stale.MergeInto(stored, now)
+	stepUp := func(ts *TokenStore) string {
+		for _, tk := range ts.Snapshot() {
+			if tk.ID == s.ID {
+				return tk.StepUp
+			}
+		}
+		return "missing"
+	}
+	if got := stepUp(stored); got != "their credential was reported compromised" {
+		t.Fatalf("a stale copy written back undid the step-up: %q", got)
+	}
+
+	// Ada proves it is her, in a copy that saw the hold; a copy from before
+	// the hold, written after, does not bring it back.
+	fresh := &TokenStore{Tokens: append([]Token(nil), stored.Tokens...)}
+	older := &TokenStore{Tokens: append([]Token(nil), stored.Tokens...)}
+	if err := fresh.ClearStepUp(s.ID); err != nil {
+		t.Fatal(err)
+	}
+	fresh.MergeInto(stored, now)
+	older.MergeInto(stored, now)
+	if got := stepUp(stored); got != "" {
+		t.Fatalf("the step-up she passed came back: %q", got)
+	}
+
+	// And a hold asked for after she passed is a new one, which stands.
+	again := &TokenStore{Tokens: append([]Token(nil), stored.Tokens...)}
+	if n := stored.RequireStepUpFor("ada", "reported again", now); n != 1 {
+		t.Fatalf("held %d", n)
+	}
+	again.MergeInto(stored, now)
+	if got := stepUp(stored); got != "reported again" {
+		t.Fatalf("the second hold was undone: %q", got)
+	}
+}
+
 // Authorization schemes are case-insensitive (RFC 9110 section 11.1), and
 // every reader of the header reads it here.
 func TestPresentedReadsTheSchemeInAnyCase(t *testing.T) {

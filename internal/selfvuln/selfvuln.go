@@ -150,7 +150,7 @@ type Finding struct {
 // Containable are features the shield can turn off for a day: public
 // surfaces a site can do without, the same list it may name.
 var Containable = map[string]bool{"chatbots": true, "search-answers": true, "forms": true, "boards": true,
-	"signup": true, "uploads": true, "import": true, "feeds": true, "scim": true, "api": true, "mcp": true}
+	"signup": true, "uploads": true, "import": true, "feeds": true, "scim": true, "signals": true, "api": true, "mcp": true}
 
 // Report is every advisory that applies, decided.
 type Report struct {

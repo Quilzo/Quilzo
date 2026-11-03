@@ -123,6 +123,7 @@ var Features = map[string]string{
 	"mcp":            "the machine interface",
 	"models":         "the model gateway for agents built anywhere, at /v1",
 	"scim":           "provisioning from the identity provider",
+	"signals":        "security events from the identity provider",
 	"uploads":        "media uploads",
 	"import":         "importing content",
 	"feeds":          "deliveries from other systems",

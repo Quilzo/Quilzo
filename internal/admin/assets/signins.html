@@ -23,6 +23,26 @@
     <td><form method="post" action="/security/signins/unlock"><input type="hidden" name="person" value="{{.Person}}"><button type="submit" class="btn-text">Unlock</button></form></td></tr>{{end}}</tbody>
 </table></div>{{else}}<p>Nobody is locked out.</p>{{end}}
 
+{{if or .Signals .SignalsOff .SignalsError}}<h2>From the identity provider</h2>
+<p class="hint">Security events the identity provider sends (OpenID Shared Signals) end the sessions it signed people in to here: a session it ended, a credential it changed or saw stolen, an account it disabled. A stolen credential also makes every other session of theirs confirm it is them, and a disabled account loses its passkey sessions, tokens and connected apps as well. Connected and turned off with <code>quilzo signals</code>.</p>
+{{if .SignalsError}}<p class="notice bad">{{.SignalsError}}</p>
+{{else if .SignalsOff}}<p>No stream is connected, so a session the identity provider ends, or an account it disables, goes on here until it ends on its own. <code>quilzo signals connect --provider oidc --client-id ID</code>, with the client's secret in <code>QUILZO_SIGNALS_SECRET</code>, connects one; or <code>--jwks URL</code> in place of <code>--client-id</code>, for a stream made in the provider's own console.</p>
+{{else}}{{with .Signals}}<dl class="kv">
+  <dt>Speaks for</dt><dd>{{.Provider}} sign-ins, from <code>{{.Issuer}}</code>; connected {{.Connected}}</dd>
+  <dt>Verified</dt><dd>{{if .Manual}}<span class="wf-band unknown"><span class="wf-icon">{{icon "help"}}</span>cannot be asked</span> made in the identity provider's own console, so it cannot be asked to prove it reaches here{{else}}{{if .Silent}}<span class="wf-band warning"><span class="wf-icon">{{icon "error"}}</span>silent</span> {{end}}{{if .Verified}}last answered {{.Verified}}; last asked {{if .Asked}}{{.Asked}}{{else}}never{{end}}{{else if .Asked}}{{if .Silent}}never answered{{else}}not answered yet{{end}}; asked {{.Asked}}{{else}}not asked yet; the server asks within a day{{end}}{{end}}</dd>
+  {{if .AskFailed}}<dt>Last request</dt><dd><span class="wf-band warning"><span class="wf-icon">{{icon "error"}}</span>failed</span> {{.AskFailed}}</dd>{{end}}
+  <dt>Stream</dt><dd>{{if not .State}}not said by the identity provider{{else if eq .State "enabled"}}enabled, as the identity provider last said{{else}}<span class="wf-band warning"><span class="wf-icon">{{icon "error"}}</span>{{.State}}</span> as the identity provider last said, so nothing is sent while it is{{end}}</dd>
+  <dt>Last event</dt><dd>{{if .LastAt}}{{.LastType}}, {{.LastAt}}{{else}}none yet{{end}}</dd>
+</dl>
+<dl class="stats-row">
+  <div><dt>Received</dt><dd>{{.Received}}</dd></div>
+  <div><dt>Acted on</dt><dd>{{.Acted}}</dd></div>
+  <div{{if .Unmatched}} class="serious"{{end}}><dt>Unmatched</dt><dd>{{.Unmatched}}</dd><dd class="wf-note">about nobody the access policy knows, or not clearly one person</dd></div>
+  <div{{if .Refused}} class="serious"{{end}}><dt>Refused</dt><dd>{{.Refused}}</dd><dd class="wf-note">did not prove it came from the stream, or came too late</dd></div>
+  <div{{if .Capped}} class="critical"{{end}}><dt>Past the hourly cap</dt><dd>{{.Capped}}</dd><dd class="wf-note">past twenty people in an hour; never acted on, so act on them by hand</dd></div>
+</dl>{{end}}{{end}}
+{{end}}
+
 <h2>Recent</h2>
 {{if .NoHistory}}<p class="notice bad">{{.NoHistory}}</p>{{else if .Rows}}<div class="table-wrap"><table>
   <thead><tr><th scope="col">Person</th><th scope="col">When</th><th scope="col">From</th><th scope="col">Device</th><th scope="col">Risk</th><th scope="col">Why</th></tr></thead>

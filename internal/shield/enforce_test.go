@@ -216,7 +216,7 @@ func TestARefusalAnswersInTheRequestersOwnTerms(t *testing.T) {
 		!strings.Contains(html.Body.String(), "<style>"+refusalStyle+"</style>") {
 		t.Fatalf("csp %q", csp)
 	}
-	for _, path := range []string{"/api/v1/pages", "/mcp", "/scim/v2/Users"} {
+	for _, path := range []string{"/api/v1/pages", "/mcp", "/scim/v2/Users", "/sso/signals"} {
 		j := ask(path, "")
 		var doc map[string]any
 		if j.Header().Get("Content-Type") != "application/problem+json" || json.Unmarshal(j.Body.Bytes(), &doc) != nil ||

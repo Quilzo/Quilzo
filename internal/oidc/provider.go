@@ -13,6 +13,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"net/url"
@@ -236,17 +237,32 @@ func (p *Provider) Key(kid string) (crypto.PublicKey, error) {
 		p.mu.RLock()
 		defer p.mu.RUnlock()
 		if p.keys == nil {
-			return nil, fmt.Errorf("the key set could not be read moments ago; it is not asked for again before %s", MinRefresh)
+			return nil, unread{fmt.Errorf("the key set could not be read moments ago; it is not asked for again before %s", MinRefresh)}
 		}
 		return pick(kid, p.keys[kid], p.keys[kid] != nil, p.singular, len(p.keys))
 	}
 	if err := p.refresh(context.Background()); err != nil {
-		return nil, err
+		return nil, unread{err}
 	}
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return pick(kid, p.keys[kid], p.keys[kid] != nil, p.singular, len(p.keys))
 }
+
+// ErrKeySetUnread is what Key's error wraps when the key set could not be
+// read at all: unreachable, not a key set, or not asked for again so soon
+// after failing. It says nothing about the token the key was wanted for,
+// which is what a caller answering somebody else needs to know. A security
+// event receiver that called this "the wrong key" was telling the
+// transmitter not to send the event again, and a session-revoked sent
+// while the keys were out of reach was lost.
+var ErrKeySetUnread = errors.New("the key set could not be read")
+
+// unread is a failure to read the key set, worded as it was.
+type unread struct{ err error }
+
+func (u unread) Error() string   { return u.err.Error() }
+func (u unread) Unwrap() []error { return []error{ErrKeySetUnread, u.err} }
 
 // pick chooses a key, refusing the ambiguous case.
 //

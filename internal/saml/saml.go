@@ -46,7 +46,9 @@
 // provider's logout request back, which a closed tab never does, so it
 // would promise what it cannot keep. A session ends at session.max, sooner
 // when the provider says its own does, and at once for somebody SCIM
-// deactivates; nothing else from the provider ends one. Inflate is never
+// deactivates or when the provider says so in a security event, through
+// the receiver in internal/ssf bound to that provider: both reach the
+// session without a browser carrying a logout request to it. Inflate is never
 // used on input: responses arrive by POST, base64 only, so there is no
 // decompression bomb to defuse (gosaml2 CVE-2023-26483).
 package saml
