@@ -549,7 +549,8 @@ func (s *Server) redeem(f url.Values) (map[string]any, error) {
 	if f.Get("redirect_uri") != c.redirect {
 		return nil, badRequest("invalid_grant", "redirect_uri is not the one the code was issued for")
 	}
-	if res := f.Get("resource"); res != "" && !s.Config().SameResource(res) {
+	cfg := s.Config()
+	if res := f.Get("resource"); res != "" && !cfg.SameResource(res) {
 		return nil, badRequest("invalid_target", "resource is not this server's agent interface")
 	}
 	verifier := f.Get("code_verifier")
@@ -559,6 +560,9 @@ func (s *Server) redeem(f url.Values) (map[string]any, error) {
 		return nil, badRequest("invalid_grant", "code_verifier does not match the code_challenge")
 	}
 	g := c.grant
+	if err := s.stillAdmitted(cfg, g.Client); err != nil {
+		return nil, err
+	}
 	if s.Admit != nil {
 		if err := s.Admit(g, now); err != nil {
 			return nil, badRequest("invalid_grant", err.Error())
@@ -595,13 +599,43 @@ func (s *Server) redeem(f url.Values) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	access, err := s.issue(s.Config(), g, now)
+	access, err := s.issue(cfg, g, now)
 	if err != nil {
 		return nil, err
 	}
 	s.record("oauth.connected", g.Principal, map[string]string{"client": g.Client, "app": g.ClientName,
 		"grant": g.ID, "scopes": strings.Join(g.Scopes, " ")})
 	return s.tokenResponse(g, access, refresh), nil
+}
+
+// stillAdmitted refuses a code whose app an administrator has stopped
+// admitting since the request was made: its host is no longer allowed, or
+// it is no longer on the register. Removing a host or an app ends the
+// connections in the store, and a consent still waiting for the person, or
+// a code the app had not yet redeemed, was in none. Redeemed afterwards it
+// became a connection all the same, whose access token worked for an hour
+// after the screen said the host's apps could no longer connect, and whose
+// refresh token, for a registered app, worked for the rest of the grant.
+func (s *Server) stillAdmitted(cfg Config, client string) error {
+	if IsMetadataURL(client) {
+		if h := (Client{ID: client}).Host(); !cfg.HostAllowed(h) {
+			return badRequest("invalid_grant", "apps from "+h+" are no longer allowed to connect here")
+		}
+		return nil
+	}
+	var registered []Client
+	if s.Directory != nil && s.Directory.Registered != nil {
+		var err error
+		if registered, err = s.Directory.Registered(); err != nil {
+			return err
+		}
+	}
+	for _, c := range registered {
+		if c.ID == client {
+			return nil
+		}
+	}
+	return badRequest("invalid_grant", "this app is no longer registered here; connect it again once it is")
 }
 
 // issue is given the configuration rather than asking for it, because a

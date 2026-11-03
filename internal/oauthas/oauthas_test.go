@@ -778,3 +778,68 @@ func TestARefreshDoesNotWaitForItselfWhereTheHostsAreKeptWithTheGrants(t *testin
 		}
 	}
 }
+
+// A consent held for the person to decide, or a code the app has not yet
+// redeemed, is in no store when an administrator removes the app's host or
+// takes the app off the register, so the removal ended nothing of it. Once
+// redeemed after the removal it became a connection all the same: its
+// access token worked for an hour after the screen said the host's apps
+// could no longer connect, and a registered app's went on refreshing for the
+// rest of its grant.
+func TestACodeRedeemedAfterItsAppWasRemovedConnectsNothing(t *testing.T) {
+	desk, err := NewRegistered("Desk app", []string{"http://localhost/cb"}, "sam", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		name, client, redirect string
+		remove                 func(r *rig)
+	}{
+		{"host", appID, "https://app.example.com/callback", func(r *rig) {
+			r.Server.Config = func() Config { return Config{Issuer: "https://admin.example.org"} }
+			r.EndWhere(FromHost("app.example.com"), "sam", "apps from app.example.com are no longer allowed")
+		}},
+		{"register", desk.ID, "http://localhost:4000/cb", func(r *rig) {
+			r.Store.ChangeClients(func(cs *[]Client, _ *[]string) error { *cs = nil; return nil })
+			r.EndWhere(func(g Grant) bool { return g.Client == desk.ID }, "sam", "the app was removed from the register")
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := newRig(t)
+			r.Store.ChangeClients(func(cs *[]Client, _ *[]string) error { *cs = append(*cs, desk); return nil })
+			verifier, challenge := pkce()
+			q := authQuery(challenge)
+			q.Set("client_id", c.client)
+			q.Set("redirect_uri", c.redirect)
+			req, err := r.Parse(context.Background(), q)
+			if err != nil {
+				t.Fatal(err)
+			}
+			p, err := r.Hold(req, "dana")
+			if err != nil {
+				t.Fatal(err)
+			}
+			taken, err := r.Take(p.ID, "dana")
+			if err != nil {
+				t.Fatal(err)
+			}
+			to, err := r.Approve(taken, req.Scopes, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			u, _ := url.Parse(to)
+			c.remove(r)
+			status, got := r.post(t, r.Token, url.Values{"grant_type": {"authorization_code"}, "code": {u.Query().Get("code")},
+				"client_id": {c.client}, "redirect_uri": {c.redirect}, "code_verifier": {verifier}})
+			if status != 400 || got["error"] != "invalid_grant" {
+				t.Errorf("redeemed after the app was removed: %d %v", status, got)
+			}
+			if grants, _ := r.Store.Grants(); len(grants) != 0 {
+				t.Errorf("a connection was made: %+v", grants)
+			}
+			if len(r.toks.issued) != 0 {
+				t.Errorf("tokens were issued: %v", r.toks.issued)
+			}
+		})
+	}
+}
