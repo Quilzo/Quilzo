@@ -5,6 +5,7 @@ package agent
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -321,5 +322,38 @@ func TestAManifestRoundTripsReadably(t *testing.T) {
 	}
 	if len(back.Capabilities) != len(m.Capabilities) {
 		t.Error("the capability list did not survive the round trip")
+	}
+}
+
+// A declaration with many tools, most asked about first, is checked in time
+// in proportion to them. Each one asked about looked through every tool for
+// itself: an agent file offering 40,000 operations, read on the admin's
+// Import an agent screen, took three seconds to check, and the 8 MiB an
+// OpenAPI document in one may be would have taken twenty minutes.
+func TestManyToolsAskedAboutFirstAreCheckedInTimeInProportion(t *testing.T) {
+	m := Manifest{Name: "many", Kind: KindTask, Purpose: "call an API", Autonomy: AutonomyPropose,
+		Budget: Budget{Steps: 10, Tools: 10, Duration: Duration(time.Minute)}}
+	for i := 0; i < 100000; i++ {
+		name := "op_" + strconv.Itoa(i)
+		m.Tools = append(m.Tools, Tool{Name: name, Host: "api.example.com", Purpose: "calls " + name, Writes: i%5 > 0})
+		if i%5 > 0 {
+			m.AskFirst = append(m.AskFirst, name)
+		}
+	}
+	checked := make(chan error, 1)
+	start := time.Now()
+	go func() { checked <- m.Validate(nil) }()
+	select {
+	case err := <-checked:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(8 * time.Second):
+		t.Fatalf("%d tools were not checked in %v", len(m.Tools), time.Since(start))
+	}
+	// One asked about that it does not hold is still refused.
+	m.AskFirst = append(m.AskFirst, "op_100000")
+	if err := m.Validate(nil); err == nil || !strings.Contains(err.Error(), `"op_100000", which it does not hold`) {
+		t.Errorf("asking first about a tool it does not hold: %v", err)
 	}
 }
