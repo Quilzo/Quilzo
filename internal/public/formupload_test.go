@@ -81,3 +81,32 @@ func TestAFormTakesAFileOnThePublicSite(t *testing.T) {
 		t.Fatal("the picker is not told what it takes")
 	}
 }
+
+// A form whose kept files have reached their ceiling says so, plainly,
+// and keeps nothing of what was sent.
+func TestAFormSaysWhenItCannotKeepMoreFiles(t *testing.T) {
+	st, fs := withForm(t)
+	set := &form.Set{Forms: []form.Form{{Name: "contact", Notice: "Kept 30 days.", Fields: []form.Field{
+		{Name: "name", Label: "Name", Kind: form.Line, Required: true},
+		{Name: "photo", Label: "Photo", Kind: form.File, Required: true, Accept: []string{"image"}},
+	}}}}
+	st.Forms.Set = func() (*form.Set, error) { return set, nil }
+	var pic bytes.Buffer
+	_ = png.Encode(&pic, image.NewRGBA(image.Rect(0, 0, 2, 2)))
+	fs.FileCeiling = int64(pic.Len())
+	stamp := fmt.Sprint(time.Now().Add(-5 * time.Second).Unix())
+	send := func() *httptest.ResponseRecorder {
+		return multipartPost(t, st, "/form/contact", map[string]string{"name": "Ana", form.StampField: stamp},
+			map[string][]byte{"photo": pic.Bytes()})
+	}
+	if w := send(); w.Code >= 400 {
+		t.Fatalf("the first picture: %d %s", w.Code, w.Body.String())
+	}
+	w := send()
+	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "cannot take any more files") {
+		t.Fatalf("a picture past the ceiling: %d %s", w.Code, w.Body.String())
+	}
+	if subs, _ := fs.List("contact"); len(subs) != 1 {
+		t.Fatalf("%d submissions kept, not one", len(subs))
+	}
+}

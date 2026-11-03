@@ -84,6 +84,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -734,7 +735,17 @@ func newID() (string, error) {
 // addressing — every one of those properties is the opposite of what this
 // data needs, which is to be deletable one row at a time and to disappear on
 // its own after a while.
-type Store struct{ dir string }
+type Store struct {
+	dir string
+	// FileCeiling is the most the files kept here may come to together;
+	// zero is MaxKeptFileBytes. A submission whose files would take them
+	// past it is refused with ErrFilesFull.
+	FileCeiling int64
+	// files makes counting what is kept and writing a submission's files
+	// one step, so two arriving together cannot both take the room that
+	// was left for one.
+	files sync.Mutex
+}
 
 func Open(dir string) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -755,11 +766,19 @@ func (st *Store) path(form, id string) (string, error) {
 	return filepath.Join(st.dir, form, id+".json"), nil
 }
 
-// Put writes one submission, and the files it carries first.
+// Put writes one submission, and the files it carries first, when they
+// fit under the store's ceiling (upload.go).
 func (st *Store) Put(s Submission) error {
 	p, err := st.path(s.Form, s.ID)
 	if err != nil {
 		return err
+	}
+	if len(s.data) > 0 {
+		st.files.Lock()
+		defer st.files.Unlock()
+		if err := st.roomFor(s); err != nil {
+			return err
+		}
 	}
 	if err := st.putFiles(s); err != nil {
 		return err

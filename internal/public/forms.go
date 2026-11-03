@@ -195,6 +195,15 @@ func (st *Site) submit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := st.Forms.Store.Put(sub); err != nil {
+		// The files kept have reached their ceiling: refused as a
+		// submission the form cannot take, in words, not as a fault.
+		if errors.Is(err, form.ErrFilesFull) {
+			if st.Forms.Audit != nil {
+				st.Forms.Audit(name, source, false)
+			}
+			st.formResult(w, r, f, err.Error())
+			return
+		}
 		http.Error(w, "that submission could not be stored",
 			http.StatusInternalServerError)
 		return
