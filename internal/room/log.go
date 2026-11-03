@@ -194,6 +194,20 @@ func (l *Log) All() []Message {
 	return out
 }
 
+// Arrived returns every message in the order this log received them.
+//
+// Not the order to show a reader, which All is, but the order to store
+// them in: a reply is accepted only after the message it answers, and two
+// clocks that disagree can put a reply before its parent by time, so a
+// file written in All's order may not replay.
+func (l *Log) Arrived() []Message {
+	out := make([]Message, 0, len(l.order))
+	for _, id := range l.order {
+		out = append(out, *l.byID[id])
+	}
+	return out
+}
+
 // Thread returns a message and its replies, in order.
 func (l *Log) Thread(id string) ([]Message, error) {
 	parent, ok := l.byID[id]

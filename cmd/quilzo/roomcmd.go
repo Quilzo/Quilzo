@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/room"
@@ -103,9 +105,63 @@ func loadRoom(root, id string) (*room.Log, error) {
 //
 // The file is a log and the last entry for an identifier wins on replay,
 // which is the same fold internal/finding uses for a decision: nothing is
-// rewritten in place, so a reader with the file has every version.
+// rewritten in place, so a reader with the file has every version — except
+// the words an erasure or retention took, which compactRoom takes out.
 func save(root, id string, m *room.Message) error {
 	return appendJSONL(roomMessages(root, id), m)
+}
+
+// changeRoom loads a room under its lock, for a command about to change
+// it, and returns what releases the lock.
+//
+// Every change is a read, a decision and a write, and the file is rewritten
+// whole when words have to leave it (compactRoom). An append that opened
+// the file before such a rewrite would land in the copy the rename just
+// unlinked, so a message somebody was told was sent would be gone; a
+// rewrite that read the file before an edit was appended would write the
+// room back without the edit. So the whole sequence holds one lock.
+func changeRoom(root, id string) (*room.Log, func(), error) {
+	// Asked first, so a room that does not exist is said to be missing
+	// rather than leaving a lock file behind in a directory nobody made.
+	if b, err := readFileMaybe(roomPath(root, id)); err != nil {
+		return nil, nil, err
+	} else if b == nil {
+		return nil, nil, fmt.Errorf("there is no room called %q", id)
+	}
+	unlock, err := atomicfile.Lock(roomMessages(root, id) + ".lock")
+	if err != nil {
+		return nil, nil, err
+	}
+	l, err := loadRoom(root, id)
+	if err != nil {
+		unlock()
+		return nil, nil, err
+	}
+	return l, unlock, nil
+}
+
+// compactRoom rewrites a room's file as its messages are now, one line
+// each, in the order they arrived; the caller holds the room's lock.
+//
+// For the removals that have to take words off the disk. An erasure was
+// appended like every other change, so `room read` said "erased under
+// Article 17" while the lines above it in the file still held what was
+// said, and every version of it, for anybody who opened rooms/ and in
+// every backup made afterwards. A message's last line carries its whole
+// history, so dropping the earlier ones loses nothing but what an erasure
+// or retention took out of it. Backups already made keep their copy until
+// backup.keep rotates them out; none made from now on has it.
+func compactRoom(root, id string, l *room.Log) error {
+	var b bytes.Buffer
+	for _, m := range l.Arrived() {
+		line, err := json.Marshal(m)
+		if err != nil {
+			return err
+		}
+		b.Write(line)
+		b.WriteByte('\n')
+	}
+	return atomicfile.Write(roomMessages(root, id), b.Bytes(), 0o600)
 }
 
 func roomList(root string) error {
@@ -230,10 +286,11 @@ func roomSay(root string, args []string) error {
 	if len(pos) != 2 {
 		return fmt.Errorf("usage: quilzo room say ROOM \"...\" [--reply ID]")
 	}
-	l, err := loadRoom(root, pos[0])
+	l, unlock, err := changeRoom(root, pos[0])
 	if err != nil {
 		return err
 	}
+	defer unlock()
 	caller := resolveCaller(root, flagToken)
 	if err := authorise(root, caller, auth.ActEditDraft, "/"); err != nil {
 		return err
@@ -338,10 +395,11 @@ func roomEdit(root string, args []string) error {
 	if len(pos) != 3 {
 		return fmt.Errorf("usage: quilzo room edit ROOM MESSAGE \"...\"")
 	}
-	l, err := loadRoom(root, pos[0])
+	l, unlock, err := changeRoom(root, pos[0])
 	if err != nil {
 		return err
 	}
+	defer unlock()
 	caller := resolveCaller(root, flagToken)
 	if err := authorise(root, caller, auth.ActEditDraft, "/"); err != nil {
 		return err
@@ -379,10 +437,11 @@ func roomRemove(root string, args []string) error {
 		return fmt.Errorf("usage: quilzo room remove ROOM MESSAGE " +
 			"[--because ...] [--erase]")
 	}
-	l, err := loadRoom(root, pos[0])
+	l, unlock, err := changeRoom(root, pos[0])
 	if err != nil {
 		return err
 	}
+	defer unlock()
 	existing, ok := l.Get(pos[1])
 	if !ok {
 		return fmt.Errorf("there is no message %s in %s", pos[1], pos[0])
@@ -411,7 +470,14 @@ func roomRemove(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := save(root, l.Room().ID, m); err != nil {
+	// An erasure rewrites the file without the words; any other removal
+	// keeps them in the log, out of the room, and is appended.
+	if why.Erases() {
+		err = compactRoom(root, l.Room().ID, l)
+	} else {
+		err = save(root, l.Room().ID, m)
+	}
+	if err != nil {
 		return err
 	}
 	record(root, m.Record("removed", caller.Name, caller.Kind))
@@ -424,6 +490,10 @@ func roomRemove(root string, args []string) error {
 		w.Human("  %sthe words are gone and the shape is not: a message "+
 			"that vanished and one that was never sent stay different "+
 			"facts%s\n", dim, reset)
+	} else {
+		w.Human("  %sthe words are gone from %s; a backup made before now "+
+			"keeps them until backup.keep rotates it out%s\n", dim,
+			roomMessages(root, l.Room().ID), reset)
 	}
 	return nil
 }
