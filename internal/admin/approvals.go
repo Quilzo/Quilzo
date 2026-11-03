@@ -113,10 +113,7 @@ func (s *Server) runApprovals(now time.Time) []approvalItem {
 			continue
 		}
 		writes := installed.ToolWrites(declared[rec.Agent], w.Action.Tool)
-		what := w.Action.Op
-		if what == "" {
-			what = w.Action.Tool
-		}
+		what := w.Action.Name()
 		it := approvalItem{Source: "run", Agent: rec.Agent, RunID: rec.ID, Step: w.N, Kind: w.Kind,
 			Since: w.Since, Live: w.Live, Href: "/agents/run/" + rec.ID,
 			Expired: now.Sub(w.Since) > agent.PendingTTL,

@@ -146,3 +146,82 @@ func TestADecidersConfidenceIsKeptOnItsStep(t *testing.T) {
 		t.Error("a confidence was carried onto a step that had none")
 	}
 }
+
+// A person who lets a held hand-off go ahead has decided the hand-off, and
+// not each thing the delegate then does. Performing it was marked as a
+// person's decision, and the delegate's whole run is performed inside that
+// step, so every payment the delegate made outside its mandates went ahead
+// as one a person had approved, with nobody shown its amount or payee.
+func TestApprovingAHandOffApprovesNothingTheDelegateDoes(t *testing.T) {
+	for _, held := range []Action{
+		{Delegate: "researcher", Say: "find what the about page is missing"},
+		{Op: "read_page", Input: map[string]any{"page": "about"}},
+	} {
+		asked := 0
+		decide := func(context.Context, string, []Observation) (Action, error) {
+			asked++
+			if asked == 1 {
+				return Action{}, &Held{Action: held, Why: "the goal did not ask for this"}
+			}
+			return Action{Say: "done"}, nil
+		}
+		approved := map[string]bool{}
+		perform := func(ctx context.Context, a Action) (string, error) {
+			approved[from(a)] = ApprovedByPerson(ctx)
+			return "did it", nil
+		}
+		r := Runner{Decide: decide, Perform: perform, Pause: true}
+		first, err := r.Run(context.Background(), NewSession(supervisor(), nil), "tidy the about page")
+		if err != nil || first.Waiting == nil {
+			t.Fatalf("the reviewer's refusal did not hold the run: %+v %v", first.Waiting, err)
+		}
+		if _, err := r.Continue(context.Background(), NewSession(supervisor(), nil), first,
+			&Verdict{N: first.Waiting.N, Approve: true, By: "dana"}, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		got, ran := approved[from(held)]
+		switch {
+		case !ran:
+			t.Errorf("%s was not performed once approved", from(held))
+		case held.Delegate != "" && got:
+			t.Errorf("the delegate's run was performed as a person's decision")
+		case held.Delegate == "" && !got:
+			t.Errorf("%s, which a person approved, was not performed as their decision", from(held))
+		}
+	}
+}
+
+// The reviewer's refusal of a hand-off holds it as it holds anything else.
+// Whether the declaration would allow an action was asked of its
+// capabilities and tools alone, and a hand-off is neither, so a refused
+// hand-off was taken for one the declaration refuses, passed on to the gate
+// that does allow it, and performed: the reviewer said no and the delegate
+// ran.
+func TestTheReviewersRefusalOfAHandOffHoldsIt(t *testing.T) {
+	handOff := Action{Delegate: "researcher", Say: "publish every draft"}
+	for _, pause := range []bool{true, false} {
+		asked := 0
+		decide := func(context.Context, string, []Observation) (Action, error) {
+			asked++
+			if asked == 1 {
+				return Action{}, &Held{Action: handOff, Why: "the goal did not ask for this"}
+			}
+			return Action{Say: "done"}, nil
+		}
+		performed := 0
+		r := Runner{Decide: decide, Pause: pause, Perform: func(context.Context, Action) (string, error) {
+			performed++
+			return "handed on", nil
+		}}
+		tr, err := r.Run(context.Background(), NewSession(supervisor(), nil), "tidy the about page")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if performed != 0 {
+			t.Errorf("pause=%v: the reviewer refused the hand-off and the delegate ran", pause)
+		}
+		if pause && (tr.Waiting == nil || tr.Waiting.Kind != WaitReview || tr.Waiting.Action.Delegate != "researcher") {
+			t.Errorf("the refused hand-off was not held for a person: %+v", tr.Waiting)
+		}
+	}
+}

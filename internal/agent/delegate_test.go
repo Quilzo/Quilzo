@@ -118,6 +118,31 @@ func TestNothingRemainsOnceTheBudgetIsSpent(t *testing.T) {
 	}
 }
 
+// What is left of the tokens and the money is part of what remains, and a
+// cap already reached leaves no step, never a remainder of zero, which a
+// budget reads as no cap at all.
+func TestWhatRemainsOfTheTokensAndTheMoneyIsWhatIsLeft(t *testing.T) {
+	m := supervisor()
+	m.Budget.Tokens, m.Budget.Money = 1000, "0.25"
+	s := NewSession(m, nil)
+	s.Tokens(900)
+	s.Charge(200_000)
+	left := s.Remaining()
+	if micros, _ := left.MoneyMicros(); left.Tokens != 100 || micros != 50_000 || left.Steps == 0 {
+		t.Fatalf("after 900 tokens and 0.20 of 1000 and 0.25, what is left is %+v", left)
+	}
+	for _, spend := range []func(*Session){
+		func(s *Session) { s.Tokens(1000) },
+		func(s *Session) { s.Charge(250_000) },
+	} {
+		s := NewSession(m, nil)
+		spend(s)
+		if left := s.Remaining(); left.Steps != 0 {
+			t.Errorf("a spent model budget leaves %+v", left)
+		}
+	}
+}
+
 // -- folding a child back ----------------------------------------------------
 
 func delegateSession(t *testing.T) *Session {

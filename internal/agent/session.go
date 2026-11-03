@@ -212,14 +212,6 @@ func (s *Session) takeConfidence() (float64, bool) {
 	return c, ok
 }
 
-// chargeStep counts a step the run took before it stopped to ask, when the
-// step is kept on its continuation.
-func (s *Session) chargeStep() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.steps++
-}
-
 // Cost is what the run's model calls have cost so far.
 func (s *Session) Cost() int64 {
 	s.mu.Lock()
@@ -998,6 +990,14 @@ func delegateList(names []string) string {
 // parent — and wrong for a run: a supervisor with ten steps and three
 // delegates declaring ten each would hand out thirty. Fold catches that
 // afterwards, and afterwards is one delegate too late.
+//
+// The tokens and the money are what is left of them too, and were not: only
+// the steps, the tools and the time were, so a supervisor that had used 900
+// of its 1000 tokens handed its delegate a fresh 1000. Zero and empty mean no
+// cap here as they do in a manifest, so a cap that is already reached cannot
+// be said as a remainder of nothing — that would read as no cap at all. It is
+// said as no steps left instead, which is the truth: spend refuses every
+// further step of a run whose tokens or money are spent.
 func (s *Session) Remaining() Budget {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1013,5 +1013,18 @@ func (s *Session) Remaining() Budget {
 	if left < 0 {
 		left = 0
 	}
-	return Budget{Steps: steps, Tools: tools, Duration: Duration(left)}
+	out := Budget{Steps: steps, Tools: tools, Duration: Duration(left)}
+	if b := s.manifest.Budget.Tokens; b > 0 {
+		if out.Tokens = b - s.tokens; out.Tokens <= 0 {
+			out.Steps, out.Tokens = 0, 0
+		}
+	}
+	if b, _ := s.manifest.Budget.MoneyMicros(); b > 0 {
+		if b-s.cost <= 0 {
+			out.Steps = 0
+		} else {
+			out.Money = microsString(b - s.cost)
+		}
+	}
+	return out
 }

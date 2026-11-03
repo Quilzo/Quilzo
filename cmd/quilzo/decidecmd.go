@@ -126,13 +126,17 @@ func decideRemove(root string, args []string) error {
 
 // deciderModel is the gateway as "decider:NAME" when one is declared, the
 // configured model otherwise, and nil — everything escalates — when neither.
-func deciderModel(root, name string) (decide.Model, string) {
+//
+// Charged as well to payers, each against its own budget: an agent's run
+// asks a decider for the person who started it, and a decider asked with
+// nobody else charged was a way to spend past that person's limit.
+func deciderModel(root, name string, payers ...string) (decide.Model, string) {
 	gw, _, err := modelGateway(root)
 	if err != nil {
 		return nil, "the model gateway could not be read: " + err.Error()
 	}
 	if gw != nil {
-		return gw.For("decider:" + name), ""
+		return gw.For("decider:"+name, payers...), ""
 	}
 	m, err := directModel(root)
 	if err != nil {
