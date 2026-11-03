@@ -337,6 +337,14 @@ func promoteByPublishing(root string, s *store.Store, plan site.PromotionPlan, c
 			plan.To.Name, site.RefLive, envsPath(root))
 	}
 	previous := s.GetRef(site.RefLive)
+	// What production already holds moves nothing, so nothing is published
+	// and no check about publishing applies. Put through publishing anyway,
+	// a pipeline that promoted staging again after staging had gone live
+	// was refused, on the approval of the version already live.
+	if previous == plan.Commit {
+		return site.Promotion{From: plan.From, To: plan.To.Name, Commit: plan.Commit,
+			Previous: previous, At: time.Now(), Identical: true}, nil
+	}
 	if err := publishAs(root, []string{plan.Commit}, caller, opts); err != nil {
 		return site.Promotion{}, err
 	}

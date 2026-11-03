@@ -203,6 +203,16 @@ func (s *Server) promoteByPublishing(w http.ResponseWriter, r *http.Request, p p
 		s.pubRedirect(w, r, "", msg)
 		return
 	}
+	// What production already holds moves nothing, so nothing is published
+	// and no check about publishing applies. Put through the checks anyway,
+	// promoting staging again after it had gone live was refused on
+	// whatever the version already live would fail today.
+	if s.Store.GetRef(site.RefLive) == plan.Commit {
+		s.auditPub(p, "env.promote", "/", detail)
+		s.pubRedirect(w, r, fmt.Sprintf("%s already held %s; nothing moved",
+			plan.To.Name, shortHash(plan.Commit)), "")
+		return
+	}
 	reason := strings.TrimSpace(r.FormValue("reason"))
 	waived, refusal := s.publishChecks(p, plan.Commit, reason)
 	if refusal != nil {

@@ -128,3 +128,50 @@ func TestPromotionIsCheckedOnWhatItPromotes(t *testing.T) {
 		t.Error("promoting into production told nobody it was published")
 	}
 }
+
+// Promoting what production already holds moves nothing, so nothing is
+// published and no check about publishing applies: it says so and
+// succeeds, as it did before promotion into production became publishing.
+// Routed through publishing whole, it did not. Once a store required an
+// approval, a pipeline that promoted staging again after staging had gone
+// live was refused, on the approval of the version already live.
+func TestPromotingWhatProductionHoldsMovesNothing(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root, dana, _ := twoAdmins(t)
+	t.Setenv("QUILZO_TOKEN", dana)
+	page := t.TempDir() + "/p.json"
+	if err := os.WriteFile(page, []byte(`{"title":"T","body":"b"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"add", "index=" + page, "-m", "first"},
+		{"provenance", "set", "index", "--source", "humanEdits", "--author", "dana"},
+	} {
+		if err := runCmd(t, root, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, args := range [][]string{
+		{"add", "staging", "--before", "production"},
+		{"promote", "draft", "staging"},
+		{"promote", "staging", "production", "--no-a11y-check"},
+	} {
+		if err := cmdEnv(root, args); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s, _ := open(root)
+	live := s.GetRef(site.RefLive)
+	if live == "" || live != s.GetRef("env-staging") {
+		t.Fatalf("control: staging did not go live: %q", live)
+	}
+	if err := cmdReview(root, []string{"require", "1"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdEnv(root, []string{"promote", "staging", "production", "--no-a11y-check"}); err != nil {
+		t.Fatalf("promoting what production already holds was refused: %v", err)
+	}
+	if s.GetRef(site.RefLive) != live {
+		t.Fatal("promoting what production already holds moved it")
+	}
+}

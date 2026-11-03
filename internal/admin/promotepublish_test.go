@@ -84,3 +84,31 @@ func TestPromotingIntoProductionOnTheScreenTakesThePublishChecks(t *testing.T) {
 		t.Fatal("promoting into production told nobody it was published")
 	}
 }
+
+// Promoting what production already holds moves nothing, so nothing is
+// published and no check about publishing applies: the screen says nothing
+// moved, as it did before promotion into production became publishing.
+// Routed through publishing whole, it refused instead, on whatever the
+// version already live would fail today.
+func TestPromotingWhatProductionHoldsOnTheScreenMovesNothing(t *testing.T) {
+	srv, token := fullyWired(t)
+	envs := &site.Envs{Environments: []site.Env{
+		{Name: "staging", Ref: "env-staging", Order: 50},
+		{Name: "production", Ref: site.RefLive, Order: 100, Production: true},
+	}}
+	srv.Publishing.Envs = func() (*site.Envs, error) { return envs, nil }
+	draft := srv.Store.GetRef(site.RefDraft)
+	if _, err := site.Publish(srv.Store, draft); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.Store.SetRef("env-staging", draft); err != nil {
+		t.Fatal(err)
+	}
+	w := postForm(t, srv, "/publishing/promote", token, url.Values{"from": {"staging"}, "to": {"production"}}.Encode())
+	if loc, _ := url.QueryUnescape(w.Header().Get("Location")); w.Code != http.StatusSeeOther || !strings.Contains(loc, "nothing moved") {
+		t.Fatalf("promoting what production already holds: %d %s", w.Code, loc)
+	}
+	if srv.Store.GetRef(site.RefLive) != draft {
+		t.Fatal("promoting what production already holds moved it")
+	}
+}
