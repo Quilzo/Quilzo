@@ -257,10 +257,13 @@ func (s *Server) interfaceCaller(r *http.Request, token, resource string) (*mcp.
 	if _, scheme := authzToken(r); scheme == "DPoP" {
 		// A token bound to a key, with the proof that this request was made
 		// by the key: checked before the token is looked at, so a request
-		// with a stolen token and no key costs a signature check.
-		var thumb string
-		if thumb, err = s.proofOf(r, token); err == nil {
-			tok, err = s.Tokens.AuthenticateProved(token, resource, thumb, time.Now())
+		// with a stolen token and no key costs a signature check, and spent
+		// once the token is accepted, as proofOf says why.
+		var proof dpop.Proof
+		if proof, err = s.proofOf(r, token); err == nil {
+			if tok, err = s.Tokens.AuthenticateProved(token, resource, proof.Thumbprint, time.Now()); err == nil {
+				err = s.proofs.Spend(proof, time.Now())
+			}
 		}
 	} else {
 		tok, err = s.Tokens.AuthenticateFor(token, resource, time.Now())

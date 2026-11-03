@@ -269,3 +269,76 @@ func TestTheAuthorizationSchemeIsReadInAnyCase(t *testing.T) {
 		t.Errorf("counted as bad tokens: %v", bad)
 	}
 }
+
+// Anybody can make a valid DPoP proof with a key of their own, and the
+// proofs remembered against replay are bounded. A proof was remembered
+// before the token it came with was looked at, so proofs sent with tokens
+// that were refused, at /mcp or at the token exchange, filled the bound,
+// and from then on every key-bound client's fresh proof was refused as used
+// before. A proof is spent only once its token is accepted, and is still
+// good once.
+func TestRefusedTokensCannotFillTheProofsRemembered(t *testing.T) {
+	r := newIfaceRig(t)
+	r.srv.Throttle = nil
+	r.srv.proofs = dpop.NewReplays(4)
+	key, thumb := programKey(t)
+	secret, tok, err := r.srv.Tokens.IssueSession("program", "editor", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.srv.Tokens.BindKey(tok.ID, thumb); err != nil {
+		t.Fatal(err)
+	}
+	parent, _, err := r.srv.Tokens.Issue("cli", "editor", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func(token, proof string) *httptest.ResponseRecorder {
+		body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"quilzo_read","arguments":{"operation":"whoami"},` +
+			`"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`
+		req := httptest.NewRequest("POST", "/mcp", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("MCP-Protocol-Version", "2026-07-28")
+		req.Header.Set("Mcp-Method", "tools/call")
+		req.Header.Set("Mcp-Name", "quilzo_read")
+		req.Header.Set("Authorization", "DPoP "+token)
+		req.Header.Set("DPoP", proof)
+		w := httptest.NewRecorder()
+		r.srv.Handler().ServeHTTP(w, req)
+		return w
+	}
+	form := func(subject string) url.Values {
+		return url.Values{"grant_type": {grantTokenExchange}, "subject_token": {subject},
+			"subject_token_type": {typeAccessToken}, "scope": {"reader"}}
+	}
+	for i := 0; i < 8; i++ {
+		junk, _ := programKey(t)
+		bogus := "qz_" + strings.Repeat(string(rune('a'+i)), 52)
+		if w := call(bogus, proved(t, junk, "POST", "http://example.com/mcp", bogus)); w.Code != http.StatusUnauthorized {
+			t.Fatalf("a token nobody issued: %d", w.Code)
+		}
+		if w := exchange(t, r.srv, form(bogus), proved(t, junk, "POST", "http://example.com/token/exchange", "")); w.Code != http.StatusBadRequest {
+			t.Fatalf("a token nobody issued was exchanged: %d", w.Code)
+		}
+	}
+	good := proved(t, key, "POST", "http://example.com/mcp", secret)
+	if w := call(secret, good); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "you are editor") {
+		t.Errorf("the program's own fresh proof, after proofs sent with refused tokens: %d %s", w.Code, w.Body)
+	}
+	if w := call(secret, good); w.Code != http.StatusUnauthorized {
+		t.Error("a proof was used twice at /mcp")
+	}
+	proof := proved(t, key, "POST", "http://example.com/token/exchange", "")
+	if w := exchange(t, r.srv, form(parent), proof); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"DPoP"`) {
+		t.Errorf("an exchange with a fresh proof, after proofs sent with refused tokens: %d %s", w.Code, w.Body)
+	}
+	before := len(r.srv.Tokens.Snapshot())
+	if w := exchange(t, r.srv, form(parent), proof); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "invalid_dpop_proof") {
+		t.Errorf("a proof was used twice at the token exchange: %d %s", w.Code, w.Body)
+	}
+	for _, x := range r.srv.Tokens.Snapshot()[before:] {
+		if !x.Revoked {
+			t.Errorf("the exchange refused for its proof left a token in force: %+v", x)
+		}
+	}
+}

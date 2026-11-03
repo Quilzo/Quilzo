@@ -66,6 +66,10 @@ var ErrProof = errors.New("invalid DPoP proof")
 // why: anybody can make a valid proof with a key of their own.
 type Replays struct{ seen replay.Cache }
 
+// NewReplays is Replays remembering at most max proofs at once; the zero
+// Replays remembers replay.DefaultMax.
+func NewReplays(max int) *Replays { return &Replays{seen: replay.Cache{Max: max}} }
+
 func (r *Replays) first(jti string, now time.Time) bool {
 	return r.seen.First(jti, now.Add(Window+Skew), now)
 }
@@ -92,8 +96,41 @@ func (k oneKey) Key(string) (crypto.PublicKey, error) { return k.key, nil }
 // key that made it. accessToken is the token the request presents, or empty
 // when the proof comes with a request for one.
 func Check(proof, method, url, accessToken string, now time.Time, replays *Replays) (string, error) {
-	fail := func(format string, a ...any) (string, error) {
-		return "", fmt.Errorf("%w: %s", ErrProof, fmt.Sprintf(format, a...))
+	p, err := Verify(proof, method, url, accessToken, now)
+	if err != nil {
+		return "", err
+	}
+	if err := replays.Spend(p, now); err != nil {
+		return "", err
+	}
+	return p.Thumbprint, nil
+}
+
+// Proof is a proof that holds for one request, not yet spent.
+type Proof struct {
+	// Thumbprint is the key's that made it.
+	Thumbprint string
+	jti        string
+}
+
+// Spend makes a proof good for this request only, and refuses one spent
+// already. A nil Replays remembers nothing, as Check given none.
+func (r *Replays) Spend(p Proof, now time.Time) error {
+	if r != nil && !r.first(p.Thumbprint+"|"+p.jti, now) {
+		return fmt.Errorf("%w: this proof was used before", ErrProof)
+	}
+	return nil
+}
+
+// Verify is Check without the spending, for a server that spends a proof
+// with Replays.Spend once the token it came with is accepted. Anybody can
+// make a proof that holds with a key of their own, and the proofs
+// remembered are bounded: spent before the token was looked at, proofs sent
+// with tokens that were then refused filled the bound, and every fresh
+// proof after them was refused as used before.
+func Verify(proof, method, url, accessToken string, now time.Time) (Proof, error) {
+	fail := func(format string, a ...any) (Proof, error) {
+		return Proof{}, fmt.Errorf("%w: %s", ErrProof, fmt.Sprintf(format, a...))
 	}
 	if len(proof) > 8<<10 {
 		return fail("the proof is larger than any proof needs to be")
@@ -159,10 +196,7 @@ func Check(proof, method, url, accessToken string, now time.Time, replays *Repla
 	if err != nil {
 		return fail("%v", err)
 	}
-	if replays != nil && !replays.first(thumb+"|"+c.JTI, now) {
-		return fail("this proof was used before")
-	}
-	return thumb, nil
+	return Proof{Thumbprint: thumb, jti: c.JTI}, nil
 }
 
 // sameTarget compares a proof's htu with a request's address, without query
