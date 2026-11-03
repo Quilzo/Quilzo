@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"unicode"
 
 	"github.com/quilzo/quilzo/internal/fetch"
 )
@@ -161,12 +162,20 @@ func ClientCredentials(ctx context.Context, h HTTP, tokenURL, clientID, secret s
 	}
 	_ = json.Unmarshal(res.Body, &m)
 	if res.Status != 200 || m.AccessToken == "" {
-		why := m.Error
+		why := oneLine(m.Error)
 		if m.Description != "" {
 			why += ": " + oneLine(m.Description)
 		}
 		if why == "" {
 			why = fmt.Sprintf("status %d", res.Status)
+		}
+		// The endpoint's words are its own, and one that repeats what it
+		// was sent would put the secret in an error the server's daily
+		// verification writes to the audit log.
+		for _, v := range []string{secret, url.QueryEscape(secret)} {
+			if v != "" {
+				why = strings.ReplaceAll(why, v, "[the client secret]")
+			}
 		}
 		return "", fmt.Errorf("the token endpoint refused: %s", why)
 	}
@@ -176,7 +185,16 @@ func ClientCredentials(ctx context.Context, h HTTP, tokenURL, clientID, secret s
 	return m.AccessToken, nil
 }
 
+// oneLine is a transmitter's words fit to repeat: on one line, short, and
+// without the control characters that would move or clear the terminal of
+// whoever connected the stream when the command prints them.
 func oneLine(s string) string {
+	s = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, s)
 	s = strings.Join(strings.Fields(s), " ")
 	if len(s) > 200 {
 		s = s[:200]
@@ -230,7 +248,7 @@ func answer(res *fetch.Result, what string, ok ...int) error {
 		Message     string `json:"message"`
 	}
 	_ = json.Unmarshal(res.Body, &e)
-	why := strings.TrimSpace(e.Error + " " + oneLine(e.Description+" "+e.Message))
+	why := oneLine(e.Error + " " + e.Description + " " + e.Message)
 	if why == "" {
 		why = "no reason given"
 	}
@@ -302,7 +320,14 @@ func (t *Transmitter) Status(ctx context.Context, h HTTP, token, streamID string
 	if err := json.Unmarshal(res.Body, &s); err != nil {
 		return "", "", fmt.Errorf("the status is not JSON")
 	}
-	return s.Status, oneLine(s.Reason), nil
+	// One of the three SSF names, or not kept: it is shown on the Sign-ins
+	// screen and printed to a terminal, and a transmitter's other words,
+	// an escape sequence among them, are not this receiver's to repeat.
+	switch st := strings.ToLower(s.Status); st {
+	case "enabled", "paused", "disabled":
+		return st, oneLine(s.Reason), nil
+	}
+	return "", "", fmt.Errorf("the transmitter gave the stream a status SSF does not name")
 }
 
 // DeleteStream asks the transmitter to stop and forget the stream.

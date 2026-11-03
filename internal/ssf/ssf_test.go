@@ -13,6 +13,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"math/big"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -359,5 +360,50 @@ func TestATokenRefusalDoesNotCarryTheSecret(t *testing.T) {
 	_, err := ClientCredentials(context.Background(), f, iss+"/oauth2/v1/token", "client", "s3cr3t-value", []string{"ssf.manage"})
 	if err == nil || strings.Contains(err.Error(), "s3cr3t") || !strings.Contains(err.Error(), "invalid_client") {
 		t.Errorf("%v", err)
+	}
+}
+
+// A token endpoint that repeats the secret in its refusal does not put it
+// in the error, which the server's daily verification writes to the audit
+// log.
+func TestATokenRefusalThatRepeatsTheSecretDoesNotCarryIt(t *testing.T) {
+	for _, secret := range []string{"s3cr3t-value", "s3cr3t value/+="} {
+		f := &fakeHTTP{answers: map[string]*fetch.Result{
+			"POST " + iss + "/oauth2/v1/token": ok(401, map[string]any{"error": "invalid_client",
+				"error_description": "the secret " + secret + " (" + url.QueryEscape(secret) + ") is not this client's"}),
+		}}
+		_, err := ClientCredentials(context.Background(), f, iss+"/oauth2/v1/token", "client", secret, []string{"ssf.manage"})
+		if err == nil || strings.Contains(err.Error(), "s3cr3t") || !strings.Contains(err.Error(), "invalid_client") {
+			t.Errorf("%v", err)
+		}
+	}
+	// Nor does it carry what would move a terminal's cursor or clear it,
+	// when the command that connects a stream prints it.
+	f := &fakeHTTP{answers: map[string]*fetch.Result{
+		"POST " + iss + "/oauth2/v1/token": ok(401, map[string]any{"error": "invalid_client\x1b[2J",
+			"error_description": "\x1b[Hconnected\u009b"}),
+	}}
+	if _, err := ClientCredentials(context.Background(), f, iss+"/oauth2/v1/token", "client", "s", nil); err == nil ||
+		strings.ContainsAny(err.Error(), "\x1b\u009b") {
+		t.Errorf("%q", err)
+	}
+}
+
+// What a transmitter says a stream's status is, is kept and shown only
+// when it is one SSF names: anything else, a terminal's escape sequence
+// among it, is not repeated to whoever reads the status.
+func TestAStreamStatusIsOnlyOneSSFNames(t *testing.T) {
+	var tr Transmitter
+	b, _ := json.Marshal(oktaConfig())
+	_ = json.Unmarshal(b, &tr)
+	for said, want := range map[string]string{"enabled": "enabled", "paused": "paused", "disabled": "disabled",
+		"enabled\x1b[2J\x1b[Hall clear": "", "": "", "ENABLED": "enabled"} {
+		f := &fakeHTTP{answers: map[string]*fetch.Result{
+			"GET " + iss + "/api/v1/ssf/stream/status?stream_id=s-1": ok(200, map[string]any{"status": said}),
+		}}
+		got, _, err := tr.Status(context.Background(), f, "at-1", "s-1")
+		if got != want || (want == "" && err == nil) {
+			t.Errorf("%q was read as %q (%v)", said, got, err)
+		}
 	}
 }
