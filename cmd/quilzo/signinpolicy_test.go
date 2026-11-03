@@ -4,6 +4,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -81,5 +82,45 @@ func TestTheSignInPolicyIsOnUntilSomebodyTurnsItOff(t *testing.T) {
 	}
 	if n != 2 {
 		t.Errorf("%d of the two sign-ins' signals are on the record", n)
+	}
+}
+
+// Only a session asked to confirm it is its person is said to be. Every
+// mail about a sign-in used to end "The session must confirm it is them
+// before it can do anything", so a locked account, where nobody got in and
+// there is no session, and a person whose sessions were all ended, told the
+// security contact to wait for a confirmation that would never come.
+func TestEachSignInMailSaysWhatHappensNext(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := connectStore(t)
+	box := securityMailbox(t, root)
+	_, moved, reported, signal := sessionHooks(root)
+	last := func() string {
+		sent := box.read()
+		if len(sent) == 0 {
+			t.Fatal("the security contact was told nothing")
+		}
+		return sent[len(sent)-1].Body
+	}
+	confirm := "must confirm it is them"
+	signal("dana", "account-locked", "repeated failed sign-ins from places this account is not used from")
+	if b := last(); strings.Contains(b, confirm) || !strings.Contains(b, "quilzo auth unlock dana") {
+		t.Errorf("the account-locked mail: %q", b)
+	}
+	signal("dana", "verification-failing", "three failed passkey confirmations from a session asked to confirm it is them")
+	if b := last(); strings.Contains(b, confirm) || !strings.Contains(b, "Nothing has proved it is them") {
+		t.Errorf("the verification-failing mail: %q", b)
+	}
+	reported("dana", "s1")
+	if b := last(); strings.Contains(b, confirm) {
+		t.Errorf("the mail about a sign-in reported as not them: %q", b)
+	}
+	// A session that moved is stepped up, and is the one that must confirm.
+	moved(admin.SessionMove{Principal: "dana"})
+	if b := last(); !strings.Contains(b, confirm) {
+		t.Errorf("the mail about a session that moved: %q", b)
+	}
+	if n := len(box.read()); n != 4 {
+		t.Errorf("four sign-in alerts made %d mails", n)
 	}
 }
