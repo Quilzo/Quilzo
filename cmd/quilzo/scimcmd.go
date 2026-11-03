@@ -590,7 +590,13 @@ func mappedTokens(root string, now time.Time) {
 }
 
 // scimMakesAdministrators reports whether a group the identity provider
-// sends makes its members administrators of anything.
+// sends makes its members administrators of anything, or will once a
+// mapping waiting for a second administrator is approved.
+//
+// The waiting mapping counts: its approver reads the live tokens with the
+// request, and a token made after that, while no group made
+// administrators yet, was made on one administrator's word and was not
+// among them. Once the mapping was approved it made administrators.
 func scimMakesAdministrators(root string) (bool, error) {
 	makes := false
 	err := scimStore(root).Read(func(st *scim.State) {
@@ -598,6 +604,14 @@ func scimMakesAdministrators(root string) (bool, error) {
 			makes = makes || dual.MapsToAdministrator(to)
 		}
 	})
+	if err != nil || makes {
+		return makes, err
+	}
+	now := time.Now()
+	pend, err := dualStore(root).Pending(now)
+	for _, r := range pend {
+		makes = makes || (r.Kind == dual.Mapping && r.Open(now))
+	}
 	return makes, err
 }
 

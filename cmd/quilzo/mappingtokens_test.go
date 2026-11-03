@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/dual"
 	"github.com/quilzo/quilzo/internal/out"
 )
 
@@ -184,5 +185,54 @@ func TestAMappingApprovedAloneShowsTheLiveProvisioningTokens(t *testing.T) {
 	}
 	if got := buf.String(); strings.Contains(got, "provisioning token") {
 		t.Errorf("a mapping that makes nobody an administrator talks about the token:\n%s", got)
+	}
+}
+
+// A provisioning token made while a mapping that makes administrators
+// waits takes two, as one made once it is approved does.
+//
+// The approver reads the live tokens with the request, then approves. A
+// token made in between, while no group made administrators yet, was made
+// on one administrator's word and was not among those read: dana asked
+// for the mapping, lee saw that no token worked and approved it, and the
+// token dana had made a moment before then made administrators.
+func TestAProvisioningTokenMadeWhileAMappingWaitsTakesTwo(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root, dana, lee := twoAdmins(t)
+	old := w
+	t.Cleanup(func() { w = old })
+	var buf bytes.Buffer
+	w = out.New(false)
+	w.Out = &buf
+
+	t.Setenv("QUILZO_TOKEN", dana)
+	if err := cmdSCIM(root, []string{"map", "IT admins", "admin"}); err != nil {
+		t.Fatal(err)
+	}
+	mapping := waiting(t, root)
+	t.Setenv("QUILZO_TOKEN", lee)
+	buf.Reset()
+	if err := cmdPending(root, []string{"show", mapping.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "no provisioning token works now") {
+		t.Fatalf("control: a token works before any was made:\n%s", buf.String())
+	}
+
+	t.Setenv("QUILZO_TOKEN", dana)
+	if err := cmdSCIM(root, []string{"token"}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("QUILZO_TOKEN", lee)
+	if err := cmdPending(root, []string{"approve", mapping.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if live, err := liveSCIMTokens(root, time.Now()); err != nil || len(live) != 0 {
+		t.Errorf("a token made on one administrator's word while the mapping waited now makes administrators: %+v %v",
+			live, err)
+	}
+	pend, _ := dualStore(root).Pending(time.Now())
+	if len(pend) != 1 || pend[0].Kind != dual.SCIMToken || pend[0].By != "dana" {
+		t.Errorf("the token does not wait for a second administrator: %+v", pend)
 	}
 }

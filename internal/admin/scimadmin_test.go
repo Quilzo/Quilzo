@@ -306,3 +306,29 @@ func TestAMappingApprovedAloneOnTheScreenShowsTheLiveProvisioningTokens(t *testi
 		t.Errorf("a mapping that makes nobody an administrator talks about the token: %s", loc)
 	}
 }
+
+// A provisioning token made on the Provisioning screen while a mapping
+// that makes administrators waits takes two, as one made once it is
+// approved does. Its approver reads the live tokens on People and then
+// approves, and a token made in between, on one administrator's word, was
+// not among them.
+func TestAProvisioningTokenMadeWhileAMappingWaitsTakesTwoOnTheScreen(t *testing.T) {
+	srv, editor := setup(t)
+	calls, _ := wireSCIM(t, srv)
+	if err := srv.Policy.Grant(auth.Binding{Principal: "lee", Role: auth.RoleAdmin, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	postForm(t, srv, "/provisioning/act", editor, "do=map&group=IT+admins&to=admin")
+	if pend, _ := srv.Dual.Store.Pending(time.Now()); len(pend) != 1 || pend[0].Kind != dual.Mapping {
+		t.Fatalf("control: the mapping does not wait: %+v", pend)
+	}
+	w := postForm(t, srv, "/provisioning/act", editor, "do=token")
+	if calls.tokens != 0 {
+		t.Fatalf("a token was made on one administrator's word while the mapping waited: %d %s",
+			w.Code, w.Header().Get("Location"))
+	}
+	pend, _ := srv.Dual.Store.Pending(time.Now())
+	if len(pend) != 2 || pend[1].Kind != dual.SCIMToken {
+		t.Errorf("the token does not wait for a second administrator: %+v", pend)
+	}
+}

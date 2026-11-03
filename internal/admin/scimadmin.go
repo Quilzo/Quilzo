@@ -115,8 +115,9 @@ func (s *Server) renderProvisioning(w http.ResponseWriter, r *http.Request, p pr
 }
 
 // provisioningMakesAdministrators reports whether a group the identity
-// provider sends makes its members administrators of anything. Unreadable
-// is taken as yes, which waits rather than hands out a way in.
+// provider sends makes its members administrators of anything, or will
+// once a mapping waiting for a second administrator is approved.
+// Unreadable is taken as yes, which waits rather than hands out a way in.
 func (s *Server) provisioningMakesAdministrators() bool {
 	_, st, err := s.SCIM.Status()
 	if err != nil || st == nil {
@@ -124,6 +125,23 @@ func (s *Server) provisioningMakesAdministrators() bool {
 	}
 	for _, to := range st.Mapping {
 		if dual.MapsToAdministrator(to) {
+			return true
+		}
+	}
+	// Or will, once a mapping waiting for a second administrator is
+	// approved. Its approver reads the live tokens with the request, and a
+	// token made after that was made on one administrator's word and was
+	// not among them (scimMakesAdministrators says the same).
+	if s.Dual == nil || s.Dual.Store == nil {
+		return false
+	}
+	now := time.Now()
+	pend, err := s.Dual.Store.Pending(now)
+	if err != nil {
+		return true
+	}
+	for _, r := range pend {
+		if r.Kind == dual.Mapping && r.Open(now) {
 			return true
 		}
 	}

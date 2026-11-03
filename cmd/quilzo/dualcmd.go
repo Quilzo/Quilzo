@@ -297,7 +297,7 @@ func showPending(root, id string, now time.Time) error {
 		return nil
 	}
 	if len(live) == 0 {
-		w.Human("  no provisioning token works now; one made after this is approved takes two administrators\n")
+		w.Human("  no provisioning token works now; one made from now on takes two administrators\n")
 		return nil
 	}
 	w.Human("  %sapproving this lets the provisioning token make administrators:%s\n", yellow, reset)
