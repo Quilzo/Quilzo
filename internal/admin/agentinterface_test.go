@@ -684,3 +684,74 @@ func TestABrowserGrantTakesAnAgentCredentialInPlaceOfAToken(t *testing.T) {
 		t.Fatalf("the issuer's keys are not published: %d %v", w.Code, w.Header())
 	}
 }
+
+// A token issued or revoked on the command line is seen at /mcp at once, as
+// it is at every other door.
+//
+// It was not. refresh, which every screen runs before deciding, swapped the
+// server's token store for a fresh copy read from disk, while ReloadTokens,
+// the hook /mcp calls, kept the store the server was started with current.
+// After the first screen was opened, /mcp read a store that nothing kept
+// current: a token issued on the command line was "no such token" there
+// until somebody opened a screen, and a token revoked on the command line
+// kept working there for as long. Found on the reference stack, where the
+// content API refused a revoked token at once and /mcp still took it.
+func TestTheInterfaceSeesTokensChangedElsewhereAtOnce(t *testing.T) {
+	r := newIfaceRig(t)
+	r.oauth = false
+	started := r.srv.Tokens
+	// The token file another process writes, and the host's two ways of
+	// reading it, wired as cmd/quilzo wires them: Reload reads a new copy,
+	// and ReloadTokens (its tokenReloader) refreshes the store the server
+	// was started with.
+	var disk []byte
+	write := func(ts *auth.TokenStore) {
+		b, err := json.Marshal(ts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		disk = b
+	}
+	read := func() *auth.TokenStore {
+		fresh := &auth.TokenStore{}
+		if err := json.Unmarshal(disk, fresh); err != nil {
+			t.Fatal(err)
+		}
+		return fresh
+	}
+	write(started)
+	r.srv.Reload = func() (*auth.Policy, *auth.TokenStore, error) { return nil, read(), nil }
+	r.srv.ReloadTokens = func() { started.Replace(read().Snapshot()) }
+
+	// Somebody opens a screen, as somebody always has on a running server.
+	if w := r.do(t, "GET", "/", r.token, nil, nil); w.Code != http.StatusOK {
+		t.Fatalf("the screen: %d", w.Code)
+	}
+
+	// The command line issues a token.
+	cli := read()
+	secret, tok, err := cli.Issue("integration", "editor", auth.RoleReader, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(cli)
+	// Exchanged first, because /mcp reads the store as well: each door is
+	// asked before the other has had a chance to bring it up to date.
+	swap := url.Values{"grant_type": {grantTokenExchange}, "subject_token": {secret}, "subject_token_type": {typeAccessToken}}
+	if w := exchange(t, r.srv, swap, ""); w.Code != http.StatusOK {
+		t.Fatalf("a token issued on the command line could not be exchanged: %d %s", w.Code, w.Body.String())
+	}
+	if w := r.mcpCall(t, secret); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "you are editor") {
+		t.Fatalf("a token issued on the command line was refused at /mcp: %d %s", w.Code, w.Body.String())
+	}
+
+	// And revokes it.
+	cli = read()
+	if _, err := cli.Revoke(tok.ID); err != nil {
+		t.Fatal(err)
+	}
+	write(cli)
+	if w := r.mcpCall(t, secret); w.Code != http.StatusUnauthorized {
+		t.Fatalf("a token revoked on the command line still worked at /mcp: %d %s", w.Code, w.Body.String())
+	}
+}

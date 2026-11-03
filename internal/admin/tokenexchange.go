@@ -106,6 +106,11 @@ func (s *Server) handleTokenExchange(w http.ResponseWriter, r *http.Request) {
 	if s.ReloadTokens != nil {
 		s.ReloadTokens()
 	}
+	// As at /mcp (interfaceCaller): ReloadTokens keeps the store the server
+	// started with current, and s.Tokens is the copy refresh read, so a
+	// token revoked on the command line could be exchanged until somebody
+	// opened a screen.
+	s.refresh()
 	if s.Tokens == nil {
 		fail(http.StatusServiceUnavailable, "server_error", "this build was started without a token store")
 		return

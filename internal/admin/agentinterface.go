@@ -243,6 +243,15 @@ func (s *Server) interfaceCaller(r *http.Request, token, resource string) (*mcp.
 	if s.ReloadTokens != nil {
 		s.ReloadTokens()
 	}
+	// And the credentials this server reads, as every screen re-reads them.
+	//
+	// ReloadTokens alone was not enough. It keeps current the store the
+	// server was started with, which the content API reads, but the first
+	// screen anybody opens runs refresh, which takes a copy read from disk as
+	// s.Tokens, and nothing kept that copy current here. So a token issued on
+	// the command line was "no such token" at /mcp, and a token revoked there
+	// kept working at /mcp, until somebody happened to open a screen.
+	s.refresh()
 	if s.Tokens == nil {
 		return nil, errors.New("no token store")
 	}
