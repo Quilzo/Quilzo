@@ -626,7 +626,7 @@ func (s *Server) refresh(f url.Values) (map[string]any, error) {
 	presented := hashOf(f.Get("refresh_token"))
 	clientID := f.Get("client_id")
 	var out Grant
-	var refresh string
+	var access, refresh string
 	var reused string
 	err := s.Store.changeGrants(now, func(file *grantsFile) error {
 		for i := range file.Grants {
@@ -659,17 +659,25 @@ func (s *Server) refresh(f url.Values) (map[string]any, error) {
 			if res := f.Get("resource"); res != "" && !s.Config().SameResource(res) {
 				return badRequest("invalid_target", "resource is not this server's agent interface")
 			}
+			// Asking for less narrows the access token issued now and not
+			// the grant (RFC 6749 section 6): writing it into the grant
+			// once took away for good what the person had agreed to.
+			scopes := g.Scopes
 			if sc := f.Get("scope"); sc != "" {
 				asked, err := normScopes(sc)
 				if err != nil {
 					return badRequest("invalid_scope", err.Error())
+				}
+				if len(asked) == 0 {
+					return badRequest("invalid_scope", "the scope names none of "+strings.Join(g.Scopes, ", ")+
+						"; leave it out for everything the connection holds")
 				}
 				for _, a := range asked {
 					if !contains(g.Scopes, a) {
 						return badRequest("invalid_scope", "a refresh cannot add "+a+"; the person has to agree to it")
 					}
 				}
-				g.Scopes = asked
+				scopes = asked
 			}
 			if s.Admit != nil {
 				if err := s.Admit(*g, now); err != nil {
@@ -686,6 +694,13 @@ func (s *Server) refresh(f url.Values) (map[string]any, error) {
 			}
 			g.Refresh, g.LastUsed = hashOf(next), now
 			out, refresh = *g, next
+			out.Scopes = scopes
+			// Issued before the rotation is kept, which a failure here
+			// stops: a refresh token spent on an answer the app never had
+			// made its retry look like a copy, and ended the grant.
+			if access, err = s.issue(out, now); err != nil {
+				return err
+			}
 			return nil
 		}
 		return badRequest("invalid_grant", "the refresh token is unknown")
@@ -697,10 +712,6 @@ func (s *Server) refresh(f url.Values) (map[string]any, error) {
 		s.record("oauth.refresh-reused", "", map[string]string{"grant": reused})
 		return nil, badRequest("invalid_grant", "that refresh token was already used; connect the app again")
 	}
-	if err != nil {
-		return nil, err
-	}
-	access, err := s.issue(out, now)
 	if err != nil {
 		return nil, err
 	}

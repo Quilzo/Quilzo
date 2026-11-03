@@ -29,9 +29,15 @@ var appDoc = `{"client_id":"` + appID + `","client_name":"Example Assistant",
 type fakeTokens struct {
 	issued  map[string]Grant
 	revoked map[string]bool
+	// fail, when set, is what the next Issue fails with.
+	fail error
 }
 
 func (f *fakeTokens) Issue(g Grant, role auth.Role, ttl time.Duration, now time.Time) (string, error) {
+	if err := f.fail; err != nil {
+		f.fail = nil
+		return "", err
+	}
 	s, _ := newSecret("qz_")
 	f.issued[s] = g
 	return s, nil
@@ -191,7 +197,7 @@ func TestRefreshRotatesAndACopyEndsTheGrant(t *testing.T) {
 	} else {
 		next = got
 	}
-	if status, _ := refresh(next["refresh_token"].(string), url.Values{"scope": {"mcp:write"}}); status != 400 {
+	if status, _ := refresh(next["refresh_token"].(string), url.Values{"scope": {"mcp:publish"}}); status != 400 {
 		t.Fatal("a refresh widened the scope")
 	}
 	// Another app cannot use it.
@@ -664,5 +670,68 @@ func TestARefreshIsRefusedOnceTheAppsHostIsNoLongerAllowed(t *testing.T) {
 		"refresh_token": {out["refresh_token"].(string)}, "client_id": {appID}})
 	if status != 400 || got["error"] != "invalid_grant" {
 		t.Fatalf("refreshed from a host no longer allowed: %d %v", status, got)
+	}
+}
+
+// RFC 6749 section 6: a refresh may ask for less, and only the access token
+// it is given is narrower; the grant keeps what the person agreed to. A
+// refresh once wrote what it asked for into the grant, so asking once for
+// less took away for good what the person had granted.
+func TestARefreshForLessNarrowsOnlyItsAccessToken(t *testing.T) {
+	r := newRig(t)
+	out, _ := r.connect(t)
+	refresh := func(tok, scope string) (int, map[string]any) {
+		f := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {tok}, "client_id": {appID}}
+		if scope != "" {
+			f.Set("scope", scope)
+		}
+		return r.post(t, r.Token, f)
+	}
+	status, got := refresh(out["refresh_token"].(string), "mcp:read")
+	if status != 200 || got["scope"] != "mcp:read" {
+		t.Fatalf("narrowing: %d %v", status, got)
+	}
+	if g := r.toks.issued[got["access_token"].(string)]; RoleFor(g.Scopes) != auth.RoleReader {
+		t.Errorf("the narrowed access token carries %v", g.Scopes)
+	}
+	if grants, _ := r.Store.Grants(); strings.Join(grants[0].Scopes, " ") != "mcp:read mcp:write" {
+		t.Errorf("the grant now holds %v", grants[0].Scopes)
+	}
+	status, got = refresh(got["refresh_token"].(string), "mcp:read mcp:write")
+	if status != 200 || got["scope"] != "mcp:read mcp:write" {
+		t.Errorf("asking again for what the person granted: %d %v", status, got)
+	}
+}
+
+// A scope parameter that names nothing is refused before anything is
+// spent. A blank one once emptied the grant's scopes, rotated the refresh
+// token, then failed to issue for no role, so the app never heard of the
+// new refresh token and its retry with the old one ended the grant.
+func TestARefreshThatCannotBeAnsweredSpendsNothing(t *testing.T) {
+	r := newRig(t)
+	out, _ := r.connect(t)
+	tok := out["refresh_token"].(string)
+	form := func(scope string) url.Values {
+		f := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {tok}, "client_id": {appID}}
+		if scope != "" {
+			f.Set("scope", scope)
+		}
+		return f
+	}
+	if status, got := r.post(t, r.Token, form(" ")); status != 400 || got["error"] != "invalid_scope" {
+		t.Errorf("a blank scope: %d %v", status, got)
+	}
+	// And a failure issuing the access token leaves the refresh token
+	// unspent, so the app's retry is not taken for a copy.
+	r.toks.fail = errors.New("the token store could not be written")
+	if status, _ := r.post(t, r.Token, form("")); status == 200 {
+		t.Fatal("a refresh whose access token could not be issued answered 200")
+	}
+	status, got := r.post(t, r.Token, form(""))
+	if status != 200 || got["scope"] != "mcp:read mcp:write" {
+		t.Fatalf("the retry: %d %v", status, got)
+	}
+	if grants, _ := r.Store.Grants(); !grants[0].Ended.IsZero() {
+		t.Errorf("the grant ended: %s", grants[0].EndedWhy)
 	}
 }
