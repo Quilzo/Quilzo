@@ -353,3 +353,105 @@ func TestPublishAndExportAskAboutEachPage(t *testing.T) {
 		t.Errorf("an export went round a deny: %d %s", w.Code, loc)
 	}
 }
+
+// blogSession signs a whole-site administrator in through a credential issued
+// `--on /blog`, which is narrower than the person.
+func blogSession(t *testing.T, srv *Server, who string) string {
+	t.Helper()
+	secret, _, err := srv.Tokens.IssueSession("blog-only", who, auth.RoleAdmin,
+		"/blog", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return secret
+}
+
+// A bulk action asks about the credential as well as the person.
+//
+// Both bulk loops asked the policy alone, which is a question about the
+// person. An administrator signing in with a credential issued `--on /blog`
+// was refused POST /page/delete for about, and could remove about and index
+// through /pages/bulk, or record legal/terms as reviewed, because the person
+// may and nobody asked whether this session could.
+func TestABulkActionIsCappedByTheCredentialsPath(t *testing.T) {
+	srv, _ := scoped(t, auth.Binding{
+		Principal: "ada", Role: auth.RoleAdmin, Resource: "/"})
+	blog := blogSession(t, srv, "ada")
+
+	if w := postForm(t, srv, "/page/delete", blog, "name=about"); w.Code != http.StatusForbidden {
+		t.Fatalf("control: the single removal answered %d for a /blog session", w.Code)
+	}
+
+	w := postForm(t, srv, "/pages/bulk", blog,
+		"page=about&page=index&confirm-remove=1")
+	if loc := w.Header().Get("Location"); !strings.Contains(loc, "e=") {
+		t.Errorf("a bulk removal outside the credential's path was not refused: "+
+			"%d %s", w.Code, loc)
+	}
+	pages := mustPages(t, srv)
+	for _, name := range []string{"about", "index"} {
+		if _, ok := pages[name]; !ok {
+			t.Errorf("a session scoped to /blog removed %s through /pages/bulk", name)
+		}
+	}
+
+	w = postForm(t, srv, "/pages/bulk", blog, "page=legal/terms&checked=1")
+	if loc := w.Header().Get("Location"); !strings.Contains(loc, "e=") {
+		t.Errorf("a bulk check outside the credential's path was not refused: "+
+			"%d %s", w.Code, loc)
+	}
+	if recs, err := srv.Checked.Store.All(); err == nil && len(recs) > 0 {
+		t.Errorf("a session scoped to /blog recorded a check outside it: %+v", recs)
+	}
+
+	// And inside the path it still works, so the fix is not a refusal of
+	// everything.
+	w = postForm(t, srv, "/pages/bulk", blog, "page=blog/first&checked=1")
+	if loc := w.Header().Get("Location"); !strings.Contains(loc, "m=") {
+		t.Errorf("a bulk check inside the credential's path was refused: %d %s",
+			w.Code, loc)
+	}
+}
+
+// The screens that list pages one at a time ask about the credential too.
+//
+// The same question as the bulk loops, asked the same wrong way: the pages
+// list, the notes screen and a link followed inside a preview filtered each
+// page by the policy alone. A credential issued `--on /blog` to a whole-site
+// administrator was shown every page's name and every page's remarks, which
+// quote the content, past the path it was issued for.
+func TestAListingIsCappedByTheCredentialsPath(t *testing.T) {
+	srv, _ := scoped(t, auth.Binding{
+		Principal: "ada", Role: auth.RoleAdmin, Resource: "/"})
+	blog := blogSession(t, srv, "ada")
+	for _, page := range []string{"blog/first", "legal/terms"} {
+		if _, err := srv.Notes.Store.Add(note.Note{Page: page, Author: "ada",
+			Text: "remark on " + page}, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	body := get(t, srv, "/", blog).Body.String()
+	if !strings.Contains(body, "blog/first") {
+		t.Error("the pages screen does not list blog/first, which is inside " +
+			"the credential's path")
+	}
+	if strings.Contains(body, "legal/terms") {
+		t.Error("the pages screen names legal/terms to a session scoped to /blog")
+	}
+
+	body = get(t, srv, "/notes", blog).Body.String()
+	if !strings.Contains(body, "remark on blog/first") {
+		t.Error("the notes screen does not show the note inside the " +
+			"credential's path")
+	}
+	if strings.Contains(body, "remark on legal/terms") {
+		t.Error("the notes screen shows a note on legal/terms to a session " +
+			"scoped to /blog")
+	}
+
+	if w := get(t, srv, "/about", blog); w.Code != http.StatusNotFound {
+		t.Errorf("a preview link to about answered %d for a session scoped to "+
+			"/blog, which says the page exists", w.Code)
+	}
+}

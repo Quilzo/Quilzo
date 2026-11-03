@@ -74,8 +74,10 @@ func (s *Server) handleNotes(w http.ResponseWriter, r *http.Request) {
 	for _, page := range pages {
 		// Only the pages this reader may open. A remark is written about
 		// content and quotes it, so a notes screen listing every page's notes
-		// is a way to read past a scope.
-		if !s.mayUse(p, auth.ActView, pageResource(page)) {
+		// is a way to read past a scope. Asked through allows, so the
+		// scope is the session's as well as the person's: a credential
+		// issued `--on /blog` was shown the remarks on every page.
+		if !s.allows(p, auth.ActView, pageResource(page)) {
 			continue
 		}
 		rows := s.noteRows(page, all)

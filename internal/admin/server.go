@@ -2256,9 +2256,13 @@ func (s *Server) handlePages(w http.ResponseWriter, r *http.Request) {
 	// names pages somebody cannot open is a worse answer than a refusal: it
 	// tells them the pages exist and what they are called, which is most of
 	// what a scope was drawn to withhold.
+	//
+	// Through allows, so the credential's path withholds them too. The
+	// policy alone answered for the person, and a whole-site administrator
+	// signed in with a credential issued `--on /blog` was shown every name.
 	names := make([]string, 0, len(pages))
 	for n := range pages {
-		if !s.mayUse(p, auth.ActView, pageResource(n)) {
+		if !s.allows(p, auth.ActView, pageResource(n)) {
 			continue
 		}
 		names = append(names, n)
@@ -4187,8 +4191,11 @@ func (s *Server) previewRecord(pages map[string]any, path string) (
 // draft goes to that page's preview, with its query string; anything else is
 // still a 404.
 //
-// Signed in first, and only for pages this person may read, so the redirect
-// cannot be used to learn which page names exist.
+// Signed in first, and only for pages this person may read through this
+// session, so the redirect cannot be used to learn which page names exist. It
+// asked the policy alone, so a credential issued `--on /blog` was redirected
+// for about and refused for a name that is not there, which is the answer the
+// 404 was for.
 func (s *Server) followPreviewLink(w http.ResponseWriter, r *http.Request) {
 	p, ok := s.requireAuth(w, r)
 	if !ok {
@@ -4201,7 +4208,7 @@ func (s *Server) followPreviewLink(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if _, exists := pages[base]; !exists || !s.mayUse(p, auth.ActView, "/"+base) {
+	if _, exists := pages[base]; !exists || !s.allows(p, auth.ActView, pageResource(base)) {
 		http.NotFound(w, r)
 		return
 	}
