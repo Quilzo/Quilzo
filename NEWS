@@ -7,6 +7,108 @@ has the rest.
 Unreleased
 ==========
 
+** Fixes from a security review of the whole program
+
+*** The admin and the site start for the account the store belongs to.
+    `quilzo init --admin NAME` ends by telling its reader to start the
+    admin, and the systemd unit and the image start the servers without a
+    token; all three were refused with "publish needs a verified identity"
+    once the store had an administrator.  The account that owns the store
+    (or root) may now start `serve` and `site` without one; anybody else
+    still needs publish, and is told whose store it is.  Everything else
+    that account does on the store still needs a token.
+
+*** The account menu no longer scrolls.  A rule meant to enlarge small
+    links in the bar reached the menu's items, so the two items overlapped
+    and the menu showed a scroll bar beside two choices.
+
+*** `go install github.com/quilzo/quilzo/cmd/quilzo@vX.Y.Z` makes a
+    binary that says it is vX.Y.Z; it said "dev".
+
+*** Outbound requests report the status that came back (they reported 0),
+    a staff notice to a chat service that answers 202 or 204 is delivered,
+    federation delivery gives up on a receiver that drips its answer, and an
+    agent's web_fetch is held to the hosts it declared on every redirect,
+    not only the first and last address.
+
+*** Member sign-in returns only to a page on this site; a "next" address
+    with a tab or newline in it went elsewhere.
+
+*** The public site's passkey sign-in is limited per address and its
+    prompts are bounded; one inbox is sent a newsletter confirmation once an
+    hour however its address is spelled (dots and +tags); the files every
+    form keeps together have a ceiling (1 GiB), and a form past it says so;
+    search scores are computed over the pages a visitor may read, so they no
+    longer reveal whether a hidden or embargoed page contains a word.
+
+*** A path-scoped session (an author on /blog) is held to its path in bulk
+    actions, the pages list, notes, preview links and Today's figures; a
+    peer is sent the whole store only on a credential for the whole store;
+    exporting the form fields marked sensitive asks about the session, as
+    purging them does.
+
+*** /signout from a link the person did not follow, an image or a frame
+    asks "Sign out?" instead of signing them out.  The menu's Sign out still
+    signs out at once.
+
+*** A submission through the share sheet is audited, counted and alerts
+    staff, as the same form's own route always has.
+
+*** Reading untrusted files is bounded: a PDF's streams together inflate
+    to at most 64 MiB, YAML refuses nesting deeper than 64 and reads long
+    values in one pass, a calendar's folded lines unfold in one pass, and a
+    CSV row wider than a sheet may be is refused before it is read.
+
+*** Promoting into production is publishing.  `quilzo env promote …
+    production` and the Publishing screen's promote put a draft live without
+    the publish checks (review approvals, provenance, accessibility,
+    marking) and fired no published event.  They now run every check on the
+    commit being promoted, record the publish and notify as publishing does,
+    and `env promote` takes publish's options.  Approvals are checked on the
+    commit being published, so staging cannot go live on a later draft's
+    approval.
+
+*** Dual control holds where one administrator could act alone: an
+    enrolment link for an administrator, and the provisioning token while a
+    group mapping makes administrators, each wait for a second
+    administrator, and are then received once by whoever asked (People, or
+    `quilzo pending redeem`).  A session confined to /@security, or capped
+    at reader, can no longer change the shield, the organisation's policy,
+    or another administrator's standing.
+
+*** Agents hand work on as safely as they do it: a supervisor's delegate is
+    reviewed as the supervisor is, its writes are marked as a model's work,
+    it acts and is charged for the person who started the run, it gets only
+    what is left of the run's tokens and money, and a hand-off the reviewer
+    refuses waits for a person who is shown where it goes and what it is.
+    Pausing a run no longer gives back what its steps and delegates spent,
+    and a decider's and the reviewer's model calls are charged to the run.
+
+*** A tool step counts as a write when its integration says it writes, not
+    only its manifest, so it is never batched with reads or approved by its
+    own requester.  Another person's remembered procedure is their words in
+    the run that recalls it, and taints it.  A delegate holds only the tools
+    its supervisor declares by name.  quilzo_check runs only the checks that
+    gate publishing.
+
+*** Apps connected over OAuth: removing an allowed host ends its
+    connections however the app spells the host, and a code redeemed after
+    its app was removed connects nothing.  A refresh asking for less
+    narrows its access token, never the grant.  SCIM hears a deactivation
+    however its attributes are spelled, refuses what it cannot apply, and a
+    stale change can no longer undo a concurrent deactivation.  HTTP message
+    signatures are bound to this server's own address.  Quilzo's A2A client
+    speaks A2A 1.0 where a card offers it, so one Quilzo agent can call
+    another.  The Authorization header is read in any case of its scheme,
+    and DPoP, agent credentials and federation share one bounded replay
+    cache that a flood of proofs cannot fill.
+
+*** Pages an agent reads with web_fetch, OpenAPI documents an agent is
+    declared from, and WordPress and Ghost exports are read in time in
+    proportion to their size: a crafted page, a self-referring request body
+    or a fan of references could take minutes, gigabytes or the process
+    itself.
+
 ** Quilzo defends itself; a security team's own tools are no longer in it
 
 *** A security team's tools left Quilzo: collecting from other systems
