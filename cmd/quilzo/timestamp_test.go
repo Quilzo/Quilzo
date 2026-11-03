@@ -6,10 +6,13 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
 	"testing"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/anchor"
 	"github.com/quilzo/quilzo/internal/out"
+	"github.com/quilzo/quilzo/internal/posture"
 	"github.com/quilzo/quilzo/internal/public"
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/site"
@@ -152,4 +155,62 @@ func TestAStampOfTheOldFingerprintStillReads(t *testing.T) {
 	if !doc.Stamps[0].Covers {
 		t.Error("a stamp of the fingerprint of what is live no longer says it covers it")
 	}
+}
+
+// The posture scan says "the current live content has never been
+// timestamped" until a stamp of what is live is found, and it looks the
+// stamp up by the live commit id. Stamps were over the display fingerprint,
+// so the finding stayed whatever `quilzo timestamp stamp`, the fix it names,
+// did. A stamp now is over the commit id; one made before, over the
+// fingerprint of the same content, is one `timestamp list` says covers what
+// is live, and the scan says so too.
+func TestThePostureScanSeesTheStampOfWhatIsLive(t *testing.T) {
+	unstamped := func(t *testing.T, root string) bool {
+		t.Helper()
+		s, err := open(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c := observeContent(root, "", s)
+		if c.PublishedAt == 0 {
+			t.Fatal("nothing reads as published")
+		}
+		return len(posture.RuleIndex()["evidence.unstamped"].Check(posture.State{Content: c})) > 0
+	}
+
+	t.Run("stamped now", func(t *testing.T) {
+		root, _ := publishedStore(t)
+		if !unstamped(t, root) {
+			t.Fatal("a publication nobody stamped reads as stamped")
+		}
+		saved := stampRequest
+		stampRequest = func(_ *http.Client, tsa, subject string) (timestamp.Stamp, error) {
+			return timestamp.Stamp{Root: subject, Authority: tsa, Token: []byte{0x30, 0x00},
+				RequestedAt: time.Now().UTC().Add(time.Second).Format(time.RFC3339)}, nil
+		}
+		t.Cleanup(func() { stampRequest = saved })
+		if err := stampNow(root, nil); err != nil {
+			t.Fatal(err)
+		}
+		if unstamped(t, root) {
+			t.Error("the posture scan says what is live has never been timestamped, " +
+				"right after `quilzo timestamp stamp`")
+		}
+	})
+
+	t.Run("stamped before the subject changed", func(t *testing.T) {
+		root, _ := publishedStore(t)
+		if err := saveJSON(stampPath(root), &timestamp.Store{Stamps: []timestamp.Stamp{{
+			Root: legacyRoot(root), Authority: timestamp.DefaultTSA, Token: []byte{0x30},
+			RequestedAt: time.Now().UTC().Add(time.Second).Format(time.RFC3339)}}}); err != nil {
+			t.Fatal(err)
+		}
+		if doc := listStamps(t, root); len(doc.Stamps) != 1 || !doc.Stamps[0].Covers {
+			t.Fatalf("timestamp list does not say the old stamp covers what is live: %+v", doc.Stamps)
+		}
+		if unstamped(t, root) {
+			t.Error("timestamp list says a stamp covers what is live, and the posture " +
+				"scan says it has never been timestamped")
+		}
+	})
 }

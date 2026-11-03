@@ -354,9 +354,18 @@ func observeContent(root, tplDir string, st *store.Store) posture.ContentFacts {
 		}
 	}
 
-	// The stamp is taken over the live root, so that is what is looked up.
+	// The stamp is taken over the live commit id, so that is what is looked
+	// up. A stamp made before was over the display fingerprint (legacyRoot),
+	// and `timestamp list` says one of the same content covers what is live:
+	// looked up by the commit id alone, this said it had never been stamped.
 	if stamps, err := loadStamps(root); err == nil {
-		if stamp, ok := stamps.Latest(live); ok {
+		stamp, ok := stamps.Latest(live)
+		if !ok && len(stamps.Stamps) > 0 {
+			if legacy := legacyRoot(root); legacy != "" {
+				stamp, ok = stamps.Latest(legacy)
+			}
+		}
+		if ok {
 			if at, err := time.Parse(time.RFC3339, stamp.RequestedAt); err == nil {
 				c.LastTimestamped = at.Unix()
 			}
