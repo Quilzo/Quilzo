@@ -149,6 +149,38 @@ func TestTheScriptUsesNoDangerousSinks(t *testing.T) {
 	}
 }
 
+// Sound is recorded only when somebody asks for it, and the page says whose
+// voices that takes in.
+//
+// The recorder asked the browser for the screen's audio every time, with no
+// way to say no and nothing on the page about it. Sound takes in everybody
+// who can be heard, and in many places recording a conversation needs the
+// agreement of everyone in it, so it is a box to tick, unticked, beside a
+// line that says so.
+func TestSoundIsOffUntilSomebodyAsksForIt(t *testing.T) {
+	srv, secret := wired(t)
+	body := signedIn(t, srv, secret, "/", nil, "").Body.String()
+	script := body[strings.Index(body, "<script"):]
+	if regexp.MustCompile(`audio:\s*true`).MatchString(script) {
+		t.Error("the recorder asks for sound whatever anybody wants")
+	}
+	if !strings.Contains(script, "audio: sound.checked") {
+		t.Error("the recorder does not ask for sound by the box")
+	}
+	box := regexp.MustCompile(`<input[^>]*id="sound"[^>]*>`).FindString(body)
+	if box == "" || !strings.Contains(box, `type="checkbox"`) {
+		t.Fatalf("there is no box to ask for sound: %q", box)
+	}
+	if strings.Contains(box, "checked") {
+		t.Errorf("sound is asked for unless somebody says no: %s", box)
+	}
+	// As a reader sees it, the markup's line breaks folded.
+	if !strings.Contains(strings.Join(strings.Fields(body), " "),
+		"everybody who can be heard") {
+		t.Error("the page does not say whose voices sound takes in")
+	}
+}
+
 // It loads nothing from anywhere else, which is what lets the policy name no
 // host at all.
 func TestThePageLoadsNothingExternal(t *testing.T) {

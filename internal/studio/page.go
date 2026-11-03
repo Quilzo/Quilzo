@@ -102,6 +102,12 @@ func recorderHTML(n, who string) string {
 <h1>Studio</h1>
 <p class="hint">Signed in as ` + html.EscapeString(who) + `.</p>
 
+<p class="field"><label class="check"><input id="sound" type="checkbox">
+  Record sound too</label>
+  <span class="hint">Off unless you tick it. Sound takes in everybody who can be
+    heard, not only you: ask them first. In many places recording a
+    conversation needs the agreement of everyone in it.</span></p>
+
 <div class="controls">
   <button id="start" type="button">Record the screen</button>
   <button id="stop" type="button" disabled>Stop</button>
@@ -141,6 +147,7 @@ func recorderHTML(n, who string) string {
   var done = document.getElementById('done');
   var name = document.getElementById('name');
   var alt = document.getElementById('alt');
+  var sound = document.getElementById('sound');
   var recorder = null, chunks = [], blob = null, url = null, stream = null;
 
   function say(text) { state.textContent = text; }
@@ -155,7 +162,9 @@ func recorderHTML(n, who string) string {
       say('This browser cannot record the screen.');
       return;
     }
-    navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
+    // Sound only when the box says so: it takes in everybody who can be
+    // heard, and they are the ones to ask.
+    navigator.mediaDevices.getDisplayMedia({ video: true, audio: sound.checked })
       .then(function (s) {
         stream = s;
         chunks = [];
@@ -181,11 +190,15 @@ func recorderHTML(n, who string) string {
           if (recorder && recorder.state !== 'inactive') { recorder.stop(); }
           stop.disabled = true;
           start.disabled = false;
+          sound.disabled = false;
         });
         recorder.start(1000);
         start.disabled = true;
         stop.disabled = false;
-        say('Recording. Nothing has left this page.');
+        // Fixed for the length of the recording, which is what it applies to.
+        sound.disabled = true;
+        say((s.getAudioTracks().length ? 'Recording the screen and its sound.' :
+          'Recording the screen, without sound.') + ' Nothing has left this page.');
       })
       .catch(function () { say('Nothing was shared.'); });
   });
@@ -194,6 +207,7 @@ func recorderHTML(n, who string) string {
     if (recorder && recorder.state !== 'inactive') { recorder.stop(); }
     stop.disabled = true;
     start.disabled = false;
+    sound.disabled = false;
   });
 
   send.addEventListener('click', function () {
@@ -247,6 +261,8 @@ input { font: inherit; padding: .45rem .6rem; border: 1px solid var(--rule);
 button { font: inherit; font-weight: 600; padding: .5rem .9rem; border: 0;
   border-radius: 4px; background: var(--accent); color: var(--paper); cursor: pointer; }
 button:disabled { opacity: .5; cursor: default; }
+label.check { display: flex; gap: .5rem; align-items: center; margin-bottom: .25rem; }
+input[type=checkbox] { width: auto; margin: 0; }
 .controls { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap;
   margin: 1.25rem 0; }
 .field { margin: 0 0 1rem; }
