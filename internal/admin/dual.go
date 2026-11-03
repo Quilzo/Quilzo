@@ -107,8 +107,9 @@ func (s *Server) applyDual(r dual.Request, by string) error {
 			return errors.New("this server has no provisioning")
 		}
 		return s.SCIM.Map(ch.Group, ch.To, by)
-	case dual.Token:
-		// Issued to whoever asked, on the command line: quilzo pending redeem.
+	case dual.Token, dual.Enrol:
+		// Issued to whoever asked: a token on the command line (quilzo
+		// pending redeem), a link there or on People.
 		return nil
 	}
 	if s.Dual.Apply == nil {
@@ -119,8 +120,8 @@ func (s *Server) applyDual(r dual.Request, by string) error {
 
 type pendingRow struct {
 	dual.Request
-	Words                  string
-	CanDecide, CanTakeBack bool
+	Words                              string
+	CanDecide, CanTakeBack, CanReceive bool
 }
 
 // pendingRows are the requests waiting, for the People screen, with what p
@@ -138,7 +139,8 @@ func (s *Server) pendingRows(p principal, now time.Time) []pendingRow {
 	for _, r := range pend {
 		mine := strings.EqualFold(r.By, p.Name)
 		out = append(out, pendingRow{Request: r, Words: dual.StateWords(r, now),
-			CanDecide: r.Open(now) && (!mine || alone), CanTakeBack: mine})
+			CanDecide: r.Open(now) && (!mine || alone), CanTakeBack: mine,
+			CanReceive: mine && r.Kind == dual.Enrol && r.Redeemable(now)})
 	}
 	return out
 }
@@ -167,6 +169,9 @@ func (s *Server) handlePeoplePending(w http.ResponseWriter, r *http.Request) {
 		}
 	case "withdraw":
 		req, err = s.Dual.Store.Withdraw(id, p.Name, now)
+	case "receive":
+		s.receiveEnrolLink(w, r, p, id, now)
+		return
 	default:
 		err = errors.New("approve, decline or withdraw?")
 	}
@@ -184,5 +189,40 @@ func (s *Server) handlePeoplePending(w http.ResponseWriter, r *http.Request) {
 	if do == "approve" && req.Kind == dual.Token {
 		msg += " " + req.By + " receives it with quilzo pending redeem " + req.ID + ", within a day."
 	}
+	if do == "approve" && req.Kind == dual.Enrol {
+		msg += " " + req.By + " receives it here, within a day."
+	}
 	s.peopleBack(w, r, msg)
+}
+
+// receiveEnrolLink gives whoever asked for an enrolment link the link,
+// once another administrator has approved it, and only them.
+func (s *Server) receiveEnrolLink(w http.ResponseWriter, r *http.Request, p principal, id string, now time.Time) {
+	if s.Enrol == nil {
+		s.peopleBack(w, r, "this server was started without enrolment links")
+		return
+	}
+	// Asked before it is redeemed, so a token cannot be used up here,
+	// where it cannot be issued.
+	req, err := s.Dual.Store.Get(id)
+	if err == nil && req.Kind != dual.Enrol {
+		err = fmt.Errorf("request %s is not an enrolment link", req.ID)
+	}
+	var ch dual.EnrolChange
+	if err == nil {
+		err = json.Unmarshal(req.Payload, &ch)
+	}
+	if err == nil && len(s.heldBy(ch.Principal)) == 0 {
+		err = errors.New("a passkey would sign " + ch.Principal + " in to nothing now: they hold nothing here")
+	}
+	if err == nil {
+		req, err = s.Dual.Store.Redeem(id, p.Name, now)
+	}
+	if err != nil {
+		s.peopleBack(w, r, err.Error())
+		return
+	}
+	s.audit("dual.redeemed", "/", map[string]string{"by": p.Name, "request": req.ID,
+		"for": ch.Principal, "approved_by": req.DecidedBy})
+	s.giveEnrolLink(w, r, p, ch.Principal, ch.For)
 }

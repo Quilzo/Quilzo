@@ -6,7 +6,8 @@
 // authorisation).
 //
 // Making somebody an administrator (by hand, or by mapping an identity
-// provider's group), issuing an administrator's token, weakening a setting,
+// provider's group), issuing an administrator's token or an enrolment link
+// that adds a passkey for one, weakening a setting,
 // lowering how many approvals a change needs and moving the audit log are
 // each something one person, or whoever has their
 // session, could do to take a store over or to hide that they had. So one
@@ -54,6 +55,9 @@ const (
 	// Pay is the site starting to take money, through a provider's hosted
 	// checkout: from then on a price on a page is a price somebody pays.
 	Pay = "pay"
+	// Enrol is a passkey enrolment link for somebody who administers
+	// something, given to whoever asked once another administrator agrees.
+	Enrol = "enrol"
 )
 
 // PayChange is a Pay request: the provider, and how its checkout behaves.
@@ -72,6 +76,21 @@ type GrantChange struct {
 // for whoever asked once it is approved.
 type TokenChange struct {
 	Args []string `json:"args"`
+}
+
+// EnrolChange is an Enrol request: who the link adds a passkey for, and
+// how long it waits to be opened once it is made (zero is the longest).
+type EnrolChange struct {
+	Principal string        `json:"principal"`
+	For       time.Duration `json:"for,omitempty"`
+}
+
+// Received reports whether an approved request of this kind is a
+// credential that waits for whoever asked to receive it, once, rather than
+// a change made as it is approved: an administrator's token, and an
+// enrolment link, whose secret is shown only to the person it is given to.
+func Received(kind string) bool {
+	return kind == Token || kind == Enrol
 }
 
 // SettingChange is a Setting request.
@@ -187,6 +206,11 @@ func (r Request) About() map[string]string {
 		if json.Unmarshal(r.Payload, &ch) == nil && len(ch.Bindings) > 0 && ch.Bindings[0].Principal != "" {
 			return map[string]string{"subject": ch.Bindings[0].Principal}
 		}
+	case Enrol:
+		var ch EnrolChange
+		if json.Unmarshal(r.Payload, &ch) == nil && ch.Principal != "" {
+			return map[string]string{"for": ch.Principal}
+		}
 	case Token:
 		var ch TokenChange
 		if json.Unmarshal(r.Payload, &ch) != nil {
@@ -213,7 +237,8 @@ func (r Request) Open(now time.Time) bool {
 	return r.State == Waiting && now.Before(r.At.Add(Wait))
 }
 
-// Redeemable reports whether an approved token may still be issued.
+// Redeemable reports whether an approved token or link may still be
+// issued.
 func (r Request) Redeemable(now time.Time) bool {
 	return r.State == Approved && now.Before(r.DecidedAt.Add(Redeem))
 }
@@ -257,9 +282,9 @@ func (s Store) Propose(kind, what string, payload any, why, by string, alone boo
 }
 
 // Decide approves or declines a waiting request. Nobody decides their own,
-// unless alone says they are the only administrator. An approved token
-// waits for whoever asked to redeem it; anything else approved is done,
-// for the approver to apply.
+// unless alone says they are the only administrator. An approved token or
+// enrolment link waits for whoever asked to redeem it; anything else
+// approved is done, for the approver to apply.
 func (s Store) Decide(id, by string, approve, alone bool, now time.Time) (Request, error) {
 	var out Request
 	err := atomicfile.Update(s.Path, func(f *file) error {
@@ -278,7 +303,7 @@ func (s Store) Decide(id, by string, approve, alone bool, now time.Time) (Reques
 		switch {
 		case !approve:
 			r.State = Declined
-		case r.Kind == Token:
+		case Received(r.Kind):
 			r.State = Approved
 		default:
 			r.State = Done
@@ -310,12 +335,13 @@ func (s Store) Withdraw(id, by string, now time.Time) (Request, error) {
 	return out, err
 }
 
-// Redeem uses an approved token request, once, for whoever made it.
+// Redeem uses an approved token or enrolment link request, once, for
+// whoever made it.
 func (s Store) Redeem(id, by string, now time.Time) (Request, error) {
 	var out Request
 	err := atomicfile.Update(s.Path, func(f *file) error {
 		r := find(f.Requests, id)
-		if r == nil || r.Kind != Token {
+		if r == nil || !Received(r.Kind) {
 			return ErrNoRequest
 		}
 		if !strings.EqualFold(r.By, by) {

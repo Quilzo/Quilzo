@@ -91,3 +91,27 @@ func TestWhichMappingsMakeAdministrators(t *testing.T) {
 		}
 	}
 }
+
+// An enrolment link is received the way a token is: approved, it waits
+// for whoever asked, and only they receive it, once. Marked done on
+// approval, as other kinds are, its secret would never reach anybody.
+func TestAnApprovedEnrolmentLinkWaitsForWhoeverAsked(t *testing.T) {
+	s := Store{Path: filepath.Join(t.TempDir(), "dual.json")}
+	now := time.Date(2026, 10, 21, 9, 0, 0, 0, time.UTC)
+	r, _ := s.Propose(Enrol, "a passkey enrolment link for lee", EnrolChange{Principal: "lee"}, "", "dana", false, now)
+	if r.About()["for"] != "lee" {
+		t.Errorf("about: %v", r.About())
+	}
+	if got, _ := s.Decide(r.ID, "lee", true, false, now); got.State != Approved {
+		t.Fatalf("approved: %+v", got)
+	}
+	if _, err := s.Redeem(r.ID, "lee", now); err == nil {
+		t.Fatal("the approver received the link")
+	}
+	if got, err := s.Redeem(r.ID, "dana", now); err != nil || got.State != Done {
+		t.Fatalf("redeem: %+v %v", got, err)
+	}
+	if _, err := s.Redeem(r.ID, "dana", now); err == nil {
+		t.Error("a link was received twice")
+	}
+}

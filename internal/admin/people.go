@@ -375,15 +375,51 @@ func (s *Server) handlePeopleEnrol(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	who := strings.TrimSpace(r.FormValue("principal"))
-	held := false
-	for _, b := range s.Policy.Snapshot() {
-		held = held || (!b.Deny && strings.EqualFold(b.Principal, who))
-	}
-	if who == "" || !held {
+	held := s.heldBy(who)
+	if who == "" || len(held) == 0 {
 		s.peopleBack(w, r, "a passkey would sign "+who+" in to nothing: grant them something first")
 		return
 	}
-	secret, l, err := s.Enrol.Issue(who, p.Name, enrol.MaxLife, time.Now())
+	// A link is a credential for the person it names: whoever opens it
+	// signs in as them from then on, at two factors. So one for somebody
+	// who administers anything waits for a second administrator, as an
+	// administrator's token does, and is received by whoever asked. It did
+	// not, and one administrator defeated every other dual control with
+	// it: they asked for somebody to be made an administrator, gave
+	// themselves a link for the other administrator, opened it with their
+	// own authenticator and approved their request as her.
+	if dual.Privileged(held) {
+		apply, msg, err := s.proposeSecond(p, dual.Enrol, "a passkey enrolment link for "+who,
+			dual.EnrolChange{Principal: who}, "")
+		if err != nil {
+			s.peopleBack(w, r, err.Error())
+			return
+		}
+		if !apply {
+			s.peopleBack(w, r, msg)
+			return
+		}
+	}
+	s.giveEnrolLink(w, r, p, who, enrol.MaxLife)
+}
+
+// heldBy is what somebody holds that is not a deny.
+func (s *Server) heldBy(who string) []auth.Binding {
+	var out []auth.Binding
+	for _, b := range s.Policy.Snapshot() {
+		if !b.Deny && strings.EqualFold(b.Principal, who) {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
+// giveEnrolLink makes a link for who and shows it, once, to p.
+func (s *Server) giveEnrolLink(w http.ResponseWriter, r *http.Request, p principal, who string, life time.Duration) {
+	if life <= 0 || life > enrol.MaxLife {
+		life = enrol.MaxLife
+	}
+	secret, l, err := s.Enrol.Issue(who, p.Name, life, time.Now())
 	if err != nil {
 		s.peopleBack(w, r, err.Error())
 		return

@@ -56,8 +56,9 @@ func proposeSecond(root string, c *Caller, kind, what string, payload any, why s
 	return false, nil
 }
 
-// applyDual makes an approved change, as by. A token is not made here: the
-// person who asked for it receives it (quilzo pending redeem).
+// applyDual makes an approved change, as by. A token or an enrolment link
+// is not made here: the person who asked for it receives it (quilzo
+// pending redeem).
 func applyDual(root string, r dual.Request, by string) error {
 	switch r.Kind {
 	case dual.Grant:
@@ -118,7 +119,7 @@ func applyDual(root string, r dual.Request, by string) error {
 		}
 		syncPayAfterLive(root, caller)
 		return nil
-	case dual.Token:
+	case dual.Token, dual.Enrol:
 		return nil
 	}
 	return fmt.Errorf("request %s is a %q, which this version does not know how to apply", r.ID, r.Kind)
@@ -186,7 +187,7 @@ func cmdPending(root string, args []string) error {
 			return nil
 		}
 		w.Human("%s: %s\n", dual.StateWords(r, now), r.What)
-		if approve && r.Kind == dual.Token {
+		if approve && dual.Received(r.Kind) {
 			w.Human("  %s%s receives it with quilzo pending redeem %s, within a day%s\n", dim, r.By, r.ID, reset)
 		}
 		return nil
@@ -202,6 +203,9 @@ func cmdPending(root string, args []string) error {
 		r, err := store.Get(id)
 		if err != nil {
 			return err
+		}
+		if r.Kind == dual.Enrol {
+			return redeemEnrolment(root, r, c, now)
 		}
 		if r.Kind != dual.Token {
 			return fmt.Errorf("request %s is not a token: an approved %s is already done", r.ID, r.Kind)
