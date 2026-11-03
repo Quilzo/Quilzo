@@ -100,9 +100,26 @@ type Result struct {
 	// returning a partial file, because a truncated PDF that validates is worse
 	// than a refused one.
 	Truncated bool
-	// Header is the response's headers, from Do: a protocol that carries
-	// state in a header (an MCP server's session) needs to read it.
+	// Header is the response's headers: a protocol that carries state in a
+	// header (an MCP server's session) needs to read it.
 	Header http.Header
+}
+
+// answered is the Result for a response, filled the same way by every
+// method here.
+//
+// Each method used to build its Result by hand, and Get, PostForm and
+// PostWithHeaders left the status out: a 200 came back as 0, and every
+// caller that checked for 200 refused every answer that succeeded. One place
+// that fills the status, the headers and the ceiling is one a method added
+// later cannot leave a field out of.
+func answered(raw, final string, resp *http.Response, body []byte, max int64) *Result {
+	res := &Result{URL: raw, FinalURL: final, Status: resp.StatusCode,
+		ContentType: resp.Header.Get("Content-Type"), Body: body, Header: resp.Header}
+	if int64(len(body)) > max {
+		res.Body, res.Truncated = body[:max], true
+	}
+	return res
 }
 
 // blocked lists the address ranges a fetch may never reach.
@@ -452,13 +469,9 @@ func (c *Client) get(ctx context.Context, raw string, decorate func(*http.Reques
 	}
 
 	sum := sha256.Sum256(body)
-	return &Result{
-		URL:         raw,
-		FinalURL:    resp.Request.URL.String(),
-		ContentType: resp.Header.Get("Content-Type"),
-		Body:        body,
-		SHA256:      hex.EncodeToString(sum[:]),
-	}, nil
+	res := answered(raw, resp.Request.URL.String(), resp, body, lim.MaxBytes)
+	res.SHA256 = hex.EncodeToString(sum[:])
+	return res, nil
 }
 
 // httpClient builds a client whose every connection passes the address check.
@@ -617,11 +630,7 @@ func (c *Client) PostForm(ctx context.Context, raw string, form url.Values,
 	// A non-200 body is returned rather than discarded: OAuth error responses
 	// are 400 with the reason inside, and swallowing them leaves the caller
 	// with "it failed".
-	return &Result{
-		URL: raw, FinalURL: u.String(),
-		ContentType: resp.Header.Get("Content-Type"),
-		Body:        body,
-	}, nil
+	return answered(raw, u.String(), resp, body, lim.MaxBytes), nil
 }
 
 // Post sends raw bytes, with the same connect-time address validation as Get.
@@ -644,6 +653,12 @@ func (c *Client) Post(ctx context.Context, raw string, body []byte,
 // The MCP client needs both at once: a JSON-RPC call carries an Authorization
 // header and the answer is the point. PostSigned has the headers and discards
 // the body — it is for webhooks, where the receiver's reply is not wanted.
+//
+// Any 2xx is an answer, reported with its status; anything else is an error
+// carrying the start of what the receiver said. Only 200 used to count, and a
+// receiver that succeeds with nothing to say answers 204: Discord does, to
+// every webhook, so every staff notice sent there was recorded as failed after
+// it had arrived.
 //
 // Post now delegates here rather than the two keeping their own copy of the
 // address validation, the redirect refusal, the timeout and the body ceiling.
@@ -688,12 +703,11 @@ func (c *Client) PostWithHeaders(ctx context.Context, raw string, body []byte,
 	if err != nil {
 		return nil, err
 	}
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return nil, fmt.Errorf("%s returned %d: %s", u, resp.StatusCode,
 			strings.TrimSpace(string(out[:min(len(out), 200)])))
 	}
-	return &Result{URL: raw, FinalURL: u.String(), Body: out,
-		ContentType: resp.Header.Get("Content-Type")}, nil
+	return answered(raw, u.String(), resp, out, lim.MaxBytes), nil
 }
 
 // Do makes one request with any method and reports the status rather than
@@ -742,12 +756,7 @@ func (c *Client) Do(ctx context.Context, method, raw string, body []byte,
 	if err != nil {
 		return nil, err
 	}
-	res := &Result{URL: raw, FinalURL: u.String(), Status: resp.StatusCode,
-		Body: out, ContentType: resp.Header.Get("Content-Type"), Header: resp.Header}
-	if int64(len(out)) > lim.MaxBytes {
-		res.Body, res.Truncated = out[:lim.MaxBytes], true
-	}
-	return res, nil
+	return answered(raw, u.String(), resp, out, lim.MaxBytes), nil
 }
 
 // PostSigned sends a body with caller-supplied headers, through the same
@@ -797,8 +806,7 @@ func (c *Client) PostSigned(ctx context.Context, raw string, body []byte,
 	// receiver cannot make this hold memory by answering with a stream.
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 
-	return &Result{URL: raw, FinalURL: u.String(), Status: resp.StatusCode,
-		ContentType: resp.Header.Get("Content-Type")}, nil
+	return answered(raw, u.String(), resp, nil, lim.MaxBytes), nil
 }
 
 // DoChecked sends an already-built request through the same address-checked,
