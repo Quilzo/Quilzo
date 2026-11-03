@@ -56,9 +56,9 @@ func proposeSecond(root string, c *Caller, kind, what string, payload any, why s
 	return false, nil
 }
 
-// applyDual makes an approved change, as by. A token or an enrolment link
-// is not made here: the person who asked for it receives it (quilzo
-// pending redeem).
+// applyDual makes an approved change, as by. A token, an enrolment link or
+// a provisioning token is not made here: the person who asked for it
+// receives it (quilzo pending redeem).
 func applyDual(root string, r dual.Request, by string) error {
 	switch r.Kind {
 	case dual.Grant:
@@ -119,7 +119,7 @@ func applyDual(root string, r dual.Request, by string) error {
 		}
 		syncPayAfterLive(root, caller)
 		return nil
-	case dual.Token, dual.Enrol:
+	case dual.Token, dual.Enrol, dual.SCIMToken:
 		return nil
 	}
 	return fmt.Errorf("request %s is a %q, which this version does not know how to apply", r.ID, r.Kind)
@@ -206,6 +206,24 @@ func cmdPending(root string, args []string) error {
 		}
 		if r.Kind == dual.Enrol {
 			return redeemEnrolment(root, r, c, now)
+		}
+		if r.Kind == dual.SCIMToken {
+			var ch dual.SCIMTokenChange
+			if err := json.Unmarshal(r.Payload, &ch); err != nil {
+				return err
+			}
+			if _, err := store.Redeem(id, c.Name, now); err != nil {
+				return err
+			}
+			if err := recordE(root, c.auditRecord("dual.redeemed", "/", audit.Success,
+				map[string]string{"request": r.ID, "kind": r.Kind, "approved_by": r.DecidedBy})); err != nil {
+				return err
+			}
+			days := ch.Days
+			if days == 0 {
+				days = scimTokenDays
+			}
+			return giveSCIMToken(root, days, c)
 		}
 		if r.Kind != dual.Token {
 			return fmt.Errorf("request %s is not a token: an approved %s is already done", r.ID, r.Kind)

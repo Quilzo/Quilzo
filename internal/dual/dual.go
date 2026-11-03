@@ -7,7 +7,8 @@
 //
 // Making somebody an administrator (by hand, or by mapping an identity
 // provider's group), issuing an administrator's token or an enrolment link
-// that adds a passkey for one, weakening a setting,
+// that adds a passkey for one, making the provisioning token while a group
+// makes administrators, weakening a setting,
 // lowering how many approvals a change needs and moving the audit log are
 // each something one person, or whoever has their
 // session, could do to take a store over or to hide that they had. So one
@@ -58,6 +59,10 @@ const (
 	// Enrol is a passkey enrolment link for somebody who administers
 	// something, given to whoever asked once another administrator agrees.
 	Enrol = "enrol"
+	// SCIMToken is the identity provider's provisioning token while a
+	// group it sends makes administrators, given to whoever asked once
+	// another administrator agrees.
+	SCIMToken = "scim-token"
 )
 
 // PayChange is a Pay request: the provider, and how its checkout behaves.
@@ -85,12 +90,19 @@ type EnrolChange struct {
 	For       time.Duration `json:"for,omitempty"`
 }
 
+// SCIMTokenChange is a SCIMToken request: how many days the token works
+// (zero is the usual length).
+type SCIMTokenChange struct {
+	Days int `json:"days,omitempty"`
+}
+
 // Received reports whether an approved request of this kind is a
 // credential that waits for whoever asked to receive it, once, rather than
-// a change made as it is approved: an administrator's token, and an
-// enrolment link, whose secret is shown only to the person it is given to.
+// a change made as it is approved: an administrator's token, an enrolment
+// link and a provisioning token, whose secret is shown only to the person
+// it is given to.
 func Received(kind string) bool {
-	return kind == Token || kind == Enrol
+	return kind == Token || kind == Enrol || kind == SCIMToken
 }
 
 // SettingChange is a Setting request.

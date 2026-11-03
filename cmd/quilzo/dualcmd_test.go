@@ -4,7 +4,9 @@
 package main
 
 import (
+	"bytes"
 	"maps"
+	"net/http"
 	"os"
 	"strings"
 	"testing"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/dual"
+	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/scim"
 	"github.com/quilzo/quilzo/internal/shield"
 )
@@ -282,5 +285,97 @@ func TestMappingAGroupToAdministratorTakesTwo(t *testing.T) {
 	}
 	if _, ok := mapped()["Ops analyst"]; ok {
 		t.Fatal("a declined mapping was made")
+	}
+}
+
+// While a group makes administrators, the provisioning token makes them,
+// so making one waits for a second administrator and goes to whoever
+// asked. It did not: with 'IT admins' mapped to admin, either of two
+// administrators alone made the token and, through the identity provider's
+// door, put mallory in the group and so made her an administrator.
+func TestAProvisioningTokenThatMakesAdministratorsTakesTwo(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root, dana, lee := twoAdmins(t)
+	old := w
+	t.Cleanup(func() { w = old })
+	var buf bytes.Buffer
+	w = out.New(false)
+	w.Out = &buf
+	t.Setenv("QUILZO_TOKEN", dana)
+	if err := cmdSCIM(root, []string{"map", "IT admins", "admin"}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("QUILZO_TOKEN", lee)
+	if err := cmdPending(root, []string{"approve", waiting(t, root).ID}); err != nil {
+		t.Fatal(err)
+	}
+	mallory := func(token string) bool {
+		c := scimClient{t: t, h: scimHandler(root), token: token}
+		_, u := c.do(http.MethodPost, "/Users", `{"userName":"mallory","active":true}`)
+		id, _ := u["id"].(string)
+		c.do(http.MethodPost, "/Groups", `{"displayName":"IT admins","members":[{"value":"`+id+`"}]}`)
+		pol, _ := loadPolicy(root)
+		return pol.Evaluate("mallory", auth.ActGrant, "/").Allowed
+	}
+	tokenIn := func(s string) string {
+		i := strings.Index(s, "qzscim_")
+		if i < 0 {
+			return ""
+		}
+		return strings.Fields(s[i:])[0]
+	}
+
+	t.Setenv("QUILZO_TOKEN", dana)
+	buf.Reset()
+	if err := cmdSCIM(root, []string{"token", "--days", "30"}); err != nil {
+		t.Fatal(err)
+	}
+	if token := tokenIn(buf.String()); token != "" {
+		if mallory(token) {
+			t.Fatal("one administrator, with a second present, made mallory an administrator with no second approval")
+		}
+		t.Fatal("one administrator made a provisioning token that makes administrators, with nobody agreeing")
+	}
+	if _, set, _ := readSCIMToken(root, time.Now()); set {
+		t.Fatal("a provisioning token was kept on one administrator's word")
+	}
+	r := waiting(t, root)
+	if r.Kind != dual.SCIMToken {
+		t.Fatalf("the request waiting is a %s", r.Kind)
+	}
+	if err := cmdPending(root, []string{"redeem", r.ID}); err == nil {
+		t.Fatal("the token was received before anybody approved it")
+	}
+	t.Setenv("QUILZO_TOKEN", lee)
+	if err := cmdPending(root, []string{"approve", r.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdPending(root, []string{"redeem", r.ID}); err == nil {
+		t.Fatal("the approver received the token somebody else asked for")
+	}
+	t.Setenv("QUILZO_TOKEN", dana)
+	buf.Reset()
+	if err := cmdPending(root, []string{"redeem", r.ID}); err != nil {
+		t.Fatal(err)
+	}
+	tok, set, _ := readSCIMToken(root, time.Now())
+	if !set || time.Until(tok.Expires) > 31*24*time.Hour {
+		t.Fatalf("the token received: %+v %v", tok, set)
+	}
+	if !mallory(tokenIn(buf.String())) {
+		t.Error("the token received does not work")
+	}
+	if err := cmdPending(root, []string{"redeem", r.ID}); err == nil {
+		t.Error("an approved token was received twice")
+	}
+
+	// A group that makes nobody an administrator leaves the token one
+	// administrator's to make.
+	if err := cmdSCIM(root, []string{"unmap", "IT admins"}); err != nil {
+		t.Fatal(err)
+	}
+	buf.Reset()
+	if err := cmdSCIM(root, []string{"token"}); err != nil || tokenIn(buf.String()) == "" {
+		t.Fatalf("a token with no administrators to make waited: %v", err)
 	}
 }

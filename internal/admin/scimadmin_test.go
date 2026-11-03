@@ -150,3 +150,54 @@ func TestMappingAGroupToAdminOnTheScreenTakesTwo(t *testing.T) {
 		t.Fatalf("approved, and provisioning was told %+v", calls)
 	}
 }
+
+// While a group makes administrators, the provisioning token makes them:
+// whoever holds it puts anybody in that group. So making one waits for a
+// second administrator, as an administrator's token does, and is received
+// by whoever asked. It did not: either of two administrators alone made
+// the token and, through 'IT admins' mapped to admin, made mallory one.
+func TestAProvisioningTokenThatMakesAdministratorsTakesTwoOnTheScreen(t *testing.T) {
+	srv, editor := setup(t)
+	calls, st := wireSCIM(t, srv)
+	if err := st.Update(func(s *scim.State) error { s.Mapping["IT admins"] = "admin"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.Policy.Grant(auth.Binding{Principal: "lee", Role: auth.RoleAdmin, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	lee, _, err := srv.Tokens.IssueSession("lee", "lee", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := postForm(t, srv, "/provisioning/act", editor, "do=token")
+	if strings.Contains(w.Body.String(), "qzscim_shown-once") || calls.tokens != 0 {
+		t.Fatal("one administrator made a provisioning token that makes administrators, with nobody agreeing")
+	}
+	if loc, _ := url.QueryUnescape(w.Header().Get("Location")); !strings.Contains(loc, "waits for a second administrator") {
+		t.Fatalf("the token did not wait: %d %s", w.Code, loc)
+	}
+	pend, _ := srv.Dual.Store.Pending(time.Now())
+	if len(pend) != 1 || pend[0].Kind != dual.SCIMToken {
+		t.Fatalf("pending: %+v", pend)
+	}
+	id := pend[0].ID
+	if w := postForm(t, srv, "/people/pending", editor, "do=receive&id="+id); strings.Contains(w.Body.String(), "qzscim_shown-once") {
+		t.Fatal("the token was received before anybody approved it")
+	}
+	postForm(t, srv, "/people/pending", lee, "do=approve&id="+id)
+	if calls.tokens != 0 {
+		t.Fatal("approving made the token for nobody to receive")
+	}
+	if w := postForm(t, srv, "/people/pending", lee, "do=receive&id="+id); strings.Contains(w.Body.String(), "qzscim_shown-once") {
+		t.Fatal("the approver received the token somebody else asked for")
+	}
+	if !strings.Contains(get(t, srv, "/people", editor).Body.String(), `value="receive"`) {
+		t.Error("the People screen does not offer the approved token to the one who asked")
+	}
+	if w := postForm(t, srv, "/people/pending", editor, "do=receive&id="+id); !strings.Contains(w.Body.String(), "qzscim_shown-once") || calls.tokens != 1 {
+		t.Fatalf("the one who asked did not receive it: %d, %d made", w.Code, calls.tokens)
+	}
+	if postForm(t, srv, "/people/pending", editor, "do=receive&id="+id); calls.tokens != 1 {
+		t.Error("an approved token was received twice")
+	}
+}
