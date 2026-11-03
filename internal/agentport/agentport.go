@@ -290,6 +290,11 @@ type builder struct {
 	// unmapped says it used something that does not carry over as an
 	// operation here: a tool, code, the web, a knowledge base.
 	unmapped_ bool
+	// tools are the names of the tools declared, so that each is declared
+	// once without looking through all the others: an OpenAPI document
+	// offering 80,000 operations, in a 1.2 MB Bedrock file, took
+	// twenty-three seconds to read that way.
+	tools map[string]bool
 }
 
 func newAgent(format, source, name string) *builder {
@@ -409,11 +414,13 @@ func (b *builder) tool(name, host, purpose string, writes, ask bool) {
 	if len(purpose) > 300 {
 		purpose = purpose[:297] + "..."
 	}
-	for _, t := range b.m.Tools {
-		if t.Name == name {
-			return
-		}
+	if b.tools[name] {
+		return
 	}
+	if b.tools == nil {
+		b.tools = map[string]bool{}
+	}
+	b.tools[name] = true
 	b.m.Tools = append(b.m.Tools, agent.Tool{Name: name, Host: host, Purpose: purpose, Writes: writes})
 	if ask || writes {
 		b.m.AskFirst = append(b.m.AskFirst, name)
