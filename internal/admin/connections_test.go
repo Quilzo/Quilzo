@@ -66,8 +66,19 @@ func TestConnectedAccountsAreAPersonsOwn(t *testing.T) {
 		t.Fatalf("a refused connection was reported done: %s", w.Header().Get("Location"))
 	}
 	w = get(t, srv, "/connections/callback?error=access_denied&error_description=the+person+said+no", token)
-	if loc := w.Header().Get("Location"); !strings.Contains(loc, "e=") || len(finished) != 2 {
+	if loc := w.Header().Get("Location"); !strings.Contains(loc, "e=") || !strings.Contains(loc, "access_denied") || len(finished) != 2 {
 		t.Fatalf("%s %v", loc, finished)
+	}
+	// The callback is a GET anybody can link to: what it says the provider
+	// answered is an OAuth error code or nothing, never a linker's sentence.
+	for _, q := range []string{
+		"error=Sign+in+again+at+elsewhere.example",
+		"error=access_denied&error_description=Sign+in+again+at+elsewhere.example",
+	} {
+		loc := get(t, srv, "/connections/callback?"+q, token).Header().Get("Location")
+		if !strings.Contains(loc, "e=") || strings.Contains(loc, "elsewhere") {
+			t.Errorf("?%s went to %s", q, loc)
+		}
 	}
 	decideForm(t, srv, "/connections/change", token, url.Values{"op": {"revoke"}, "provider": {"acme"}})
 	if len(revoked) != 1 || revoked[0] != "acme/editor" {

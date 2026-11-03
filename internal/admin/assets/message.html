@@ -20,5 +20,5 @@
 {{if .Override}}<p class="notice bad">Published, waiving
   {{range $i, $g := .Waived}}{{if $i}}, {{end}}{{$g}}{{else}}nothing{{end}}:
   {{.Override}}</p>{{end}}
-<p><a href="/">Back to pages</a></p>
+<p><a href="{{.Back.Path}}">Back to {{.Back.Label}}</a></p>
 {{template "foot" .}}

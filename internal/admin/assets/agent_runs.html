@@ -1,5 +1,5 @@
 {{template "head" .}}
-<p class="hint"><a href="/agents">Agents</a></p>
+<nav class="crumbs" aria-label="Breadcrumb">{{icon "arrow_back"}}<ol><li><a href="/agents">Agents</a></li></ol></nav>
 <h1>Runs{{if .Only}} of {{.Only}}{{end}}</h1>
 {{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
 <p class="lead">Every run of a declared agent, kept: what it was asked, each

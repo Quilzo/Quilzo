@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -591,6 +592,9 @@ func (s *Server) handlePasskeySignIn(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "passkeysignin.html", map[string]any{
 		"Title": "Sign in with a passkey", "Nonce": n,
 		"Unavailable": unavailable,
+		// Where the sign-in goes afterwards, carried by the page's script
+		// to the verify call: see signInNext.
+		"Next": signInNext(r.URL.Query().Get("next")),
 	})
 }
 
@@ -662,6 +666,9 @@ func (s *Server) handlePasskeyVerify(w http.ResponseWriter, r *http.Request) {
 		// in place after an idle sign-out: whatever that page holds is theirs,
 		// and only they carry on with it.
 		Expect string `json:"expect"`
+		// Next is the screen the person was asking for when the sign-in
+		// page answered instead (signInNext checks it).
+		Next string `json:"next"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		writeJSONError(w, http.StatusBadRequest, err)
@@ -809,6 +816,10 @@ func (s *Server) handlePasskeyVerify(w http.ResponseWriter, r *http.Request) {
 		s.OnSignIn(cred.Principal, tok.ID)
 	}
 	next := startPath(r)
+	asked := signInNext(body.Next)
+	if asked != "" {
+		next = asked
+	}
 	s.signInDone(r, tok.ID)
 	if stepped != nil {
 		_, _ = s.Tokens.Revoke(stepped.TokenID)
@@ -825,6 +836,9 @@ func (s *Server) handlePasskeyVerify(w http.ResponseWriter, r *http.Request) {
 		}
 		if up {
 			next = "/signin/verify"
+			if asked != "" {
+				next += "?next=" + url.QueryEscape(asked)
+			}
 		}
 	}
 	// The count starts again from a place now familiar, and the person is

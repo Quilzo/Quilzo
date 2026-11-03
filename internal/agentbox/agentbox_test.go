@@ -303,3 +303,181 @@ func TestTheRunsInterfaceIsTheManifest(t *testing.T) {
 		t.Fatalf("%+v", res)
 	}
 }
+
+// A tunnel nothing goes through is closed, and one where only the far side
+// speaks is not: silence is the tunnel's, not one direction's.
+func TestASilentTunnelIsClosed(t *testing.T) {
+	far, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer far.Close()
+	// The far side: for "talk", a byte every 30ms for 400ms and then
+	// done; otherwise nothing, ever.
+	go func() {
+		for {
+			c, aerr := far.Accept()
+			if aerr != nil {
+				return
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				line, _ := bufio.NewReader(c).ReadString('\n')
+				if strings.HasPrefix(line, "talk") {
+					for i := 0; i < 13; i++ {
+						if _, werr := c.Write([]byte("x")); werr != nil {
+							return
+						}
+						time.Sleep(30 * time.Millisecond)
+					}
+					return
+				}
+				time.Sleep(5 * time.Second)
+			}(c)
+		}
+	}()
+	var mu sync.Mutex
+	var log []Egress
+	p := &Proxy{Secret: "s3cret", Idle: 120 * time.Millisecond,
+		Allow: func(string, int) error { return nil },
+		Dial: func(ctx context.Context, _ string, _ int) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "tcp", far.Addr().String())
+		},
+		Record: func(e Egress) { mu.Lock(); log = append(log, e); mu.Unlock() },
+	}
+	srv := httptest.NewServer(p)
+	defer srv.Close()
+	open := func() net.Conn {
+		c, derr := net.Dial("tcp", srv.Listener.Addr().String())
+		if derr != nil {
+			t.Fatal(derr)
+		}
+		fmt.Fprintf(c, "CONNECT api.example.com:443 HTTP/1.1\r\nHost: api.example.com:443\r\nProxy-Authorization: %s\r\n\r\n", basic("run", "s3cret"))
+		br := bufio.NewReader(c)
+		if res, rerr := http.ReadResponse(br, nil); rerr != nil || res.StatusCode != 200 {
+			t.Fatalf("the tunnel was not opened: %v", rerr)
+		}
+		return &bufConn{Conn: c, r: br}
+	}
+
+	quiet := open()
+	fmt.Fprintf(quiet, "wait\n")
+	began := time.Now()
+	_ = quiet.SetReadDeadline(time.Now().Add(3 * time.Second))
+	if _, rerr := io.ReadAll(quiet); rerr != nil {
+		t.Fatalf("a silent tunnel stayed open: %v", rerr)
+	}
+	if took := time.Since(began); took > 2*time.Second {
+		t.Fatalf("a silent tunnel took %s to close", took)
+	}
+	quiet.Close()
+
+	talking := open()
+	fmt.Fprintf(talking, "talk\n")
+	_ = talking.SetReadDeadline(time.Now().Add(3 * time.Second))
+	got, _ := io.ReadAll(talking)
+	talking.Close()
+	if len(got) != 13 {
+		t.Fatalf("a tunnel only the far side spoke on was cut after %d of 13 bytes", len(got))
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		n := len(log)
+		mu.Unlock()
+		if n == 2 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(log) != 2 || !strings.Contains(log[0].Why, "nothing sent either way") || log[1].Why != "" {
+		t.Fatalf("recorded %+v", log)
+	}
+}
+
+// A tunnel delivering to a slow reader is not silent: every slice of a
+// write that goes out is progress, though no read finishes while the write
+// waits for room. Pipes stand in for the two connections, because a pipe's
+// write waits for its reader, which is what a full socket buffer does.
+func TestASlowReaderKeepsItsTunnel(t *testing.T) {
+	farClient, farProxy := net.Pipe()
+	boxProxy, boxClient := net.Pipe()
+	type result struct {
+		sent, got int64
+		silent    bool
+	}
+	out := make(chan result, 1)
+	go func() {
+		s, g, silent := splice(farProxy, boxProxy, boxProxy, 100*time.Millisecond)
+		out <- result{s, g, silent}
+	}()
+	const size = 64 << 10
+	go func() {
+		_, _ = farClient.Write(make([]byte, size))
+		farClient.Close()
+	}()
+	// 1 KiB every 5ms: 320ms for all of it, and 160ms for each 32 KiB
+	// write the copy makes, longer than the tunnel may be silent.
+	read := 0
+	buf := make([]byte, 1<<10)
+	for {
+		n, err := boxClient.Read(buf)
+		read += n
+		if err != nil {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	boxClient.Close()
+	r := <-out
+	if read != size || r.silent {
+		t.Fatalf("a slow reader got %d of %d bytes, closed for silence: %v", read, size, r.silent)
+	}
+	if r.got != size {
+		t.Errorf("recorded %d bytes down, not %d", r.got, size)
+	}
+}
+
+// A reader that has stopped takes nothing, and the tunnel is silent.
+func TestAStoppedReaderIsSilent(t *testing.T) {
+	farClient, farProxy := net.Pipe()
+	boxProxy, boxClient := net.Pipe()
+	defer boxClient.Close()
+	go func() { _, _ = farClient.Write(make([]byte, 64<<10)) }()
+	done := make(chan bool, 1)
+	go func() {
+		_, _, silent := splice(farProxy, boxProxy, boxProxy, 80*time.Millisecond)
+		done <- silent
+	}()
+	select {
+	case silent := <-done:
+		if !silent {
+			t.Fatal("a tunnel whose reader stopped ended, but not for its silence")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("a tunnel whose reader stopped was never closed")
+	}
+	farClient.Close()
+}
+
+// An allowance too small to divide still makes a ticker: a zero interval
+// panics in a goroutine no handler recovers, and takes the process with it.
+func TestATinyAllowanceDoesNotPanic(t *testing.T) {
+	for _, idle := range []time.Duration{1, 3, 4, time.Microsecond} {
+		if got := tick(idle); got <= 0 {
+			t.Fatalf("tick(%s) = %s", idle, got)
+		}
+	}
+	a, b := net.Pipe()
+	c, d := net.Pipe()
+	defer b.Close()
+	defer d.Close()
+	_, _, silent := splice(a, c, c, 3)
+	if !silent {
+		t.Error("a 3ns allowance did not close a silent tunnel")
+	}
+}

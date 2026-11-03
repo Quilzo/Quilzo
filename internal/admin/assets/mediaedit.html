@@ -1,8 +1,6 @@
 {{template "head" .}}
 <h1>Edit a picture</h1>
 
-<p class="hint"><a href="/media">Back to the library</a></p>
-
 {{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
 
 <p class="lead">This makes a copy. <strong>{{.Parent.Name}}</strong> is not

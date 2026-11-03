@@ -1,5 +1,5 @@
 {{template "head" .}}
-<p class="hint"><a href="/security">Security</a></p>
+<nav class="crumbs" aria-label="Breadcrumb">{{icon "arrow_back"}}<ol><li><a href="/security">Security</a></li></ol></nav>
 <h1>Inventory</h1>
 
 {{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{end}}
@@ -12,7 +12,7 @@
 {{if .Report.Findings}}<div class="table-wrap"><table>
   <thead><tr><th scope="col">Advisory</th><th scope="col">What</th><th scope="col">Here</th><th scope="col">Fixed in</th></tr></thead>
   <tbody>{{range .Report.Findings}}<tr>
-    <th scope="row"><a href="https://pkg.go.dev/vuln/{{.ID}}" rel="noreferrer">{{.ID}}</a>{{if .Exploited}}<div><span class="wf-band as-written critical">Exploited</span></div>{{end}}</th>
+    <th scope="row"><a href="https://pkg.go.dev/vuln/{{.ID}}" target="_blank" rel="noopener noreferrer">{{.ID}}{{template "newtab"}}</a>{{if .Exploited}}<div><span class="wf-band as-written critical">Exploited</span></div>{{end}}</th>
     <td>{{.Summary}}{{if .Linked}}<div class="hint">In this binary: {{range $i, $l := .Linked}}{{if $i}}, {{end}}<code>{{$l}}</code>{{end}}</div>{{end}}</td>
     <td><span class="wf-band as-written {{if eq .Decision "clear"}}good{{else if eq .Decision "contain"}}critical{{else}}warning{{end}}">{{if eq .Decision "clear"}}Not reachable{{else if eq .Decision "contain"}}Contained{{else}}Upgrade Go{{end}}</span><div class="hint">{{.Why}}</div></td>
     <td>{{if .Fixed}}Go {{.Fixed}}{{else}}<span class="hint">not yet</span>{{end}}</td>

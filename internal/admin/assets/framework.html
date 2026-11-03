@@ -1,7 +1,7 @@
 {{template "head" .}}
-<p class="hint"><a href="/security/frameworks">Frameworks</a></p>
+<nav class="crumbs" aria-label="Breadcrumb">{{icon "arrow_back"}}<ol><li><a href="/security/frameworks">Frameworks</a></li></ol></nav>
 <h1>{{.F.Name}}</h1>
-<p class="lead">{{.F.About}} <span class="hint">{{.F.Version}}. <a href="{{.F.URL}}" rel="noreferrer">The text</a>.</span></p>
+<p class="lead">{{.F.About}} <span class="hint">{{.F.Version}}. <a href="{{.F.URL}}" target="_blank" rel="noopener noreferrer">Read {{.F.Name}}{{template "newtab"}}</a>.</span></p>
 <dl class="stats-row">
   <div{{if .Failing}} class="critical"{{end}}><dt>Failing</dt><dd>{{.Failing}}</dd></div>
   <div><dt>Passing</dt><dd>{{.Passing}}</dd></div>

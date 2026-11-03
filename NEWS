@@ -61,6 +61,41 @@ Unreleased
 
 ** Changed
 
+*** An agent's box narrows two more doors.
+    - A tunnel through the box's proxy that carries nothing in either
+      direction for five minutes is closed and recorded as such.  It
+      lasted as long as the run, which may be hours.  Silence is the
+      tunnel's, not one direction's, so a long download is not cut off.
+    - A netlink socket opens only for the routing tables, which the C
+      library reads.  Netfilter, xfrm, audit and the generic families are
+      the kernel's usual way from an unprivileged socket to root, and
+      nothing in a box uses them.  Packet, raw, local, Multipath TCP and
+      crypto (AF_ALG, the CVE-2026-31431 route) sockets were already
+      refused.
+
+*** The admin takes you where you meant to go.
+    - The name in the bar goes to the screen you start on (Today, unless
+      you chose Pages), as signing in does.  It went to the page list
+      whatever you started on.
+    - A screen below one in the menu (a page's editor, one agent, one
+      framework) has a way up to it above its heading: "← Pages".  On a
+      phone, where the menu is closed, that was missing, and the screens
+      that had a way up drew it three different ways.
+    - A message (something refused, not saved, not found) offers the way
+      back to where you were, not "Back to pages".
+    - Signing in returns you to the screen you asked for, by token,
+      passkey or single sign-on (OIDC and SAML).  Followed links and
+      sessions that ended mid-task used to land on the start screen
+      (WCAG 2.2.5).
+
+*** Help opens in a new tab, and says so.  Help with this screen, All
+    documentation and every other link that leaves the admin open in a
+    new tab, so somebody partway through a form keeps what they typed.
+    Each one is marked with an icon and "(opens in a new tab)" for a
+    screen reader (WCAG technique G201).  The accessibility check that
+    runs before publishing now reports a link that opens a new tab
+    without saying so (new-tab-not-announced, advisory).
+
 *** What waits on a person is one list wherever they look.  quilzo
     approvals now has what Approvals and Today had and it did not: the
     change to the site waiting for approvals, and the features agents
@@ -112,6 +147,12 @@ Unreleased
     design of one's own under a disclosure.
 
 ** Fixed
+
+*** The connected-accounts callback no longer reflects what it is sent.
+    It turned a provider's error text into a message on the Connections
+    screen.  The address is one anybody can link to before any state is
+    checked, so that text could be a sentence of the linker's.  Now it
+    shows only an OAuth error code (access_denied and the like).
 
 *** Pictures from OpenAI's current image models.  Every request for a
     picture carried response_format=b64_json, which those models refuse

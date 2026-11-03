@@ -1,5 +1,5 @@
 {{template "head" .}}
-<p class="hint"><a href="/agents/runs?agent={{.R.Agent}}">Runs of {{.R.Agent}}</a></p>
+<nav class="crumbs" aria-label="Breadcrumb">{{icon "arrow_back"}}<ol><li><a href="/agents/runs?agent={{.R.Agent}}">Runs of {{.R.Agent}}</a></li></ol></nav>
 <h1>{{if .R.Goal}}{{.R.Goal}}{{else}}A run of {{.R.Agent}}{{end}}</h1>
 <p><a href="/agents/edit/{{.R.Agent}}"><code>{{.R.Agent}}</code></a> <span class="wf-word {{.Row.Tone}}">{{.Row.Outcome}}</span>
   <span class="hint">{{if .R.Trigger}}started on its own ({{.R.Trigger}}) as {{.R.By}}, its sponsor{{else}}started by {{.R.By}}{{end}}, {{.Started}}; {{if .R.Model}}a model ({{.R.Model}}) chose each action{{else}}the declaration was walked, with no model{{end}}</span></p>

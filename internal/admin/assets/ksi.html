@@ -1,5 +1,5 @@
 {{template "head" .}}
-<p class="hint"><a href="/security">Security</a> › <a href="/security/controls">Controls</a></p>
+<nav class="crumbs" aria-label="Breadcrumb">{{icon "arrow_back"}}<ol><li><a href="/security">Security</a></li><li>{{icon "chevron_right"}}<a href="/security/controls">Controls</a></li></ol></nav>
 <h1>FedRAMP 20x indicators</h1>
 {{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>
 {{else}}

@@ -7,6 +7,7 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -146,7 +147,16 @@ func (s *Server) handleConnectionsCallback(w http.ResponseWriter, r *http.Reques
 	}
 	q := r.URL.Query()
 	if e := q.Get("error"); e != "" {
-		back("e", "The provider did not connect it: "+clipText(e+" "+q.Get("error_description"), 200))
+		// The provider's error code, and only when it is one: this address
+		// is a GET anybody can link to, with no state yet checked, so its
+		// free text would be a sentence of the linker's on a screen this
+		// server vouches for (flash.go). OAuth's codes are a word with
+		// underscores (RFC 6749 4.1.2.1).
+		msg := "The provider did not connect it."
+		if oauthErrorCode.MatchString(e) {
+			msg = "The provider did not connect it (" + e + ")."
+		}
+		back("e", msg)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
@@ -158,3 +168,6 @@ func (s *Server) handleConnectionsCallback(w http.ResponseWriter, r *http.Reques
 	}
 	back("m", "Connected your "+title+" account. Agents acting for you may now use it where an integration says so.")
 }
+
+// oauthErrorCode is the shape of an OAuth error code.
+var oauthErrorCode = regexp.MustCompile(`^[a-z_]{1,40}$`)

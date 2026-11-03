@@ -36,13 +36,13 @@
       <p>Your device will ask you to confirm. Nothing is typed, and nothing
         that appears on this screen can be reused anywhere else.</p>
       <p class="actions">
-        <button id="go" class="btn" type="button">Use a passkey</button>
+        <button id="go" class="btn" type="button" data-next="{{.Next}}">Use a passkey</button>
       </p>
       <p id="msg" class="help" role="status" aria-live="polite"></p>
     {{end}}
 
     <p class="or-divider"><span>or</span></p>
-    <p class="help"><a href="/signin">Sign in with a token</a>.</p>
+    <p class="help"><a href="/signin{{with .Next}}?next={{.}}{{end}}">Sign in with a token</a>.</p>
 
     <h2>Why this is safer than the token</h2>
     <p class="help">A token is a string, so anybody who sees it is signed in —
@@ -120,7 +120,8 @@
         challenge: challenge,
         clientDataJSON: toText(credential.response.clientDataJSON),
         authenticatorData: toText(credential.response.authenticatorData),
-        signature: toText(credential.response.signature)
+        signature: toText(credential.response.signature),
+        next: button.getAttribute("data-next") || ""
       });
     }).then(function (done) {
       say("Signed in.");

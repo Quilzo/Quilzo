@@ -1,5 +1,5 @@
 {{template "head" .}}
-<p class="hint"><a href="/agents">Agents</a> › <a href="/agents/runs">Runs</a></p>
+<nav class="crumbs" aria-label="Breadcrumb">{{icon "arrow_back"}}<ol><li><a href="/agents">Agents</a></li><li>{{icon "chevron_right"}}<a href="/agents/runs">Runs</a></li></ol></nav>
 <h1>What agents cost</h1>
 {{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
 <p class="lead">Tokens and money for the runs kept since {{.Since}}, at the gateway's prices. Each step records what choosing it and doing it cost, so a run is the sum of its steps.</p>

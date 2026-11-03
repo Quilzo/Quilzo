@@ -33,7 +33,7 @@ func TestAnOIDCSignInFinishesOnlyWhereItStarted(t *testing.T) {
 		if cookie != nil {
 			r.AddCookie(cookie)
 		}
-		_, _, err := o.callback(context.Background(), r, "quilzo_oidc")
+		_, _, _, err := o.callback(context.Background(), r, "quilzo_oidc")
 		return err
 	}
 	for name, c := range map[string]*http.Cookie{

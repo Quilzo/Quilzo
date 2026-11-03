@@ -1,5 +1,5 @@
 {{template "head" .}}
-<p class="hint"><a href="/security">Security</a></p>
+<nav class="crumbs" aria-label="Breadcrumb">{{icon "arrow_back"}}<ol><li><a href="/security">Security</a></li></ol></nav>
 <h1>Controls</h1>
 <p class="lead">How Quilzo implements each NIST SP 800-53 control it has anything to do with, and who does the rest. Each statement says what the software does, written beside the code and joined to the rules that check it and the settings that hold it. A shared control is only as implemented as the customer's part.</p>
 
@@ -37,7 +37,7 @@
 {{end}}
 
 <h2 id="secure-by-design">Secure by Design</h2>
-<p>Where Quilzo stands on each goal of <a href="{{.PledgeURL}}" rel="noreferrer">CISA's Secure by Design pledge</a>, with what is not done said as plainly as what is.</p>
+<p>Where Quilzo stands on each goal of <a href="{{.PledgeURL}}" target="_blank" rel="noopener noreferrer">CISA's Secure by Design pledge{{template "newtab"}}</a>, with what is not done said as plainly as what is.</p>
 <ul class="auto-list">{{range .Pledge}}<li class="auto-card">
   <div class="auto-head"><strong>{{.N}}. {{.Title}}</strong>
     {{if eq (print .Standing) "met"}}<span class="wf-band as-written good"><span class="wf-icon">{{icon "check_circle"}}</span>Met</span>

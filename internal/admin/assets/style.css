@@ -832,6 +832,29 @@ footer { margin-top: 3rem; padding-top: 1.5rem;
          border-top: 1px solid var(--outline-variant);
          font: var(--body-md); color: var(--on-surface-variant); }
 
+/* The mark on a link that opens a new tab: the size of the text it ends,
+   on its baseline, so it reads as part of the link rather than a button
+   beside it. The words that say the same thing are visually hidden in the
+   markup (the "newtab" template). */
+.newtab { display: inline-block; margin-inline-start: .2em; vertical-align: -0.125em; }
+.newtab .icon { width: 1em; height: 1em; display: inline-block; }
+
+/* The way up from a screen below a destination: the parent's name with a
+   back arrow, above the heading, as Polaris and Material place it. A
+   target of 40px in height, because on a phone it is the main way back. */
+.crumbs { display: flex; align-items: center; gap: .25rem; margin: 1rem 0 -.75rem;
+  color: var(--primary); }
+.crumbs > .icon { width: 20px; height: 20px; }
+.crumbs ol { display: flex; flex-wrap: wrap; align-items: center; margin: 0; padding: 0;
+  list-style: none; }
+.crumbs li { display: flex; align-items: center; }
+.crumbs li > .icon { width: 18px; height: 18px; color: var(--on-surface-variant); }
+.crumbs a { display: inline-flex; align-items: center; min-height: 40px; padding: 0 .5rem;
+  border-radius: var(--shape-full); font: var(--label-lg); font-weight: 500;
+  text-decoration: none; color: var(--primary); }
+.crumbs a:hover { background: color-mix(in srgb, var(--primary) var(--state-hover), transparent);
+  text-decoration: underline; }
+
 /* -- reduced motion --------------------------------------------------------
    The Expressive springs overshoot by design, and overshoot is exactly what
    2.3.3 is about. Everything above degrades to an instant state change, which
@@ -1798,6 +1821,14 @@ td.actions > a.btn, th.actions > a.btn { display: inline-flex; }
   flex-wrap: wrap; min-height: 40px; padding: .5rem .75rem; cursor: pointer;
   list-style: none; border-radius: var(--shape-md); }
 .settinggroup > summary::-webkit-details-marker { display: none; }
+/* The chevron stays at the end of the first line, where every other one
+   is. The row wraps so a long name and its count fit a phone, and wrapping
+   took the chevron with it: "The audit log, streamed to a SIEM" put it alone
+   on a line of its own, under the count. Held to the right edge instead,
+   with room kept for it. */
+.settinggroup > summary { position: relative; padding-inline-end: 3rem; }
+.settinggroup > summary > .chev { position: absolute; inset-inline-end: .75rem;
+  top: 50%; translate: 0 -50%; margin: 0; }
 .settinggroup > summary > h2 { margin: 0; font: var(--title-sm); }
 .settinggroup > summary:hover { background: var(--surface-container); }
 
@@ -2038,7 +2069,6 @@ table.queue td:nth-child(5), table.queue td:nth-child(6) {
 .wf-word.unknown { color: var(--on-surface-variant); }
 .wf-tag, .wf-task { display: inline-block; padding: 0 .45rem; border-radius: var(--shape-xs);
   background: var(--surface-container-high); font: var(--label-md); }
-.wf-back { margin: 0 0 .25rem; font: var(--label-md); }
 .wf-reasons { margin-top: .75rem; }
 .wf-list { margin: 0; padding-inline-start: 1.1rem; }
 .wf-sync { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem;

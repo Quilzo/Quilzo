@@ -1,5 +1,5 @@
 {{template "head" .}}
-<p class="hint"><a href="/agents">Agents</a> › <a href="/agents/runs?agent={{.Agent}}">Runs</a></p>
+<nav class="crumbs" aria-label="Breadcrumb">{{icon "arrow_back"}}<ol><li><a href="/agents">Agents</a></li><li>{{icon "chevron_right"}}<a href="/agents/runs?agent={{.Agent}}">Runs</a></li></ol></nav>
 {{if not .Agent}}<h1>What agents are learning</h1>
 {{if .Choose}}<ul>{{range .Choose}}<li><a href="/agents/learning?agent={{.}}">{{.}}</a></li>{{end}}</ul>{{else}}<p>No agent is declared yet.</p>{{end}}
 {{else}}<h1>What {{.Agent}} is learning</h1>

@@ -268,7 +268,8 @@ func (s *Server) handleStepUp(w http.ResponseWriter, r *http.Request) {
 	}
 	if p.StepUp == "" {
 		// Nothing to confirm: say so, rather than send them somewhere.
-		s.render(w, r, "verify.html", map[string]any{"Title": "Confirm it's you", "Who": p.Name, "Clear": true})
+		s.render(w, r, "verify.html", map[string]any{"Title": "Confirm it's you", "Who": p.Name, "Clear": true,
+			"Next": stepUpNext(r)})
 		return
 	}
 	s.render(w, r, "verify.html", map[string]any{
@@ -278,7 +279,17 @@ func (s *Server) handleStepUp(w http.ResponseWriter, r *http.Request) {
 		// factor: it would say so again.
 		"SingleSignOn": (s.OIDC != nil || len(s.ssoChoices()) > 0) && !hasMethod(p.Methods, auth.MethodSSOOneFactor),
 		"Error":        r.URL.Query().Get("e"),
+		"Next":         signInNext(r.URL.Query().Get("next")),
 	})
+}
+
+// stepUpNext is where carrying on after a confirmation goes: the screen
+// the sign-in was on its way to, or the person's start.
+func stepUpNext(r *http.Request) string {
+	if next := signInNext(r.FormValue("next")); next != "" {
+		return next
+	}
+	return startPath(r)
 }
 
 // handleStepUpReport is the person saying the sign-in was not them. The
@@ -317,7 +328,7 @@ func (s *Server) passStepUp(w http.ResponseWriter, r *http.Request, p principal,
 		}
 	}
 	s.audit("session.stepup-passed", "/", map[string]string{"by": p.Name, "session": p.TokenID, "how": how})
-	http.Redirect(w, r, startPath(r), http.StatusSeeOther)
+	http.Redirect(w, r, stepUpNext(r), http.StatusSeeOther)
 }
 
 // -- sign-ins -------------------------------------------------------------------
