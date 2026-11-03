@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/accessreview"
 	"github.com/quilzo/quilzo/internal/assurance"
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
@@ -57,7 +58,9 @@ func selfControls() []assurance.Control {
 			Cadence: assurance.Continuous, Owner: "Quilzo", Maps: []string{"NIST SP 800-53 " + im.Control},
 			Automated: true})
 	}
-	return out
+	// And the one Quilzo's people perform rather than its checks: the
+	// review of who has access, evidenced each time one closes.
+	return append(out, accessreview.Control())
 }
 
 // recordSelfEvidence closes the evidence a scan ends, and opens what it

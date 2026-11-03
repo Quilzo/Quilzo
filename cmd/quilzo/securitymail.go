@@ -90,6 +90,11 @@ func securityAddress(root string) string {
 	return ""
 }
 
+// sendNotice hands one message to the relay. A variable so a test can see
+// what the security contact would have been told without a relay to
+// receive it; nothing else replaces it.
+var sendNotice = func(m *mail.Mailer, to, subject, body string) error { return m.Send(to, subject, body) }
+
 // tellSecurity mails the security contact, and says whom it told.
 func tellSecurity(root, summary string) (string, error) {
 	return tell(root, securityAddress(root), summary)
@@ -111,7 +116,7 @@ func tell(root, to, summary string) (string, error) {
 	}
 	// One line: a name with a line break in it must not cost the message
 	// (mail refuses broken headers).
-	if err := m.Send(to, "Quilzo: "+onOneLine(summary), summary+"\n\nThis was sent by Quilzo."); err != nil {
+	if err := sendNotice(m, to, "Quilzo: "+onOneLine(summary), summary+"\n\nThis was sent by Quilzo."); err != nil {
 		return "", err
 	}
 	return "told " + to, nil

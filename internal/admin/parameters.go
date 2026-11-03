@@ -51,6 +51,7 @@ var paramTitles = map[string]string{
 	"ac-07_odp.03": "What happens after too many failed sign-ins",
 	"ac-07_odp.04": "How long a lockout lasts",
 	"ac-07_odp.05": "How the delay grows",
+	"ac-02_odp.10": "How often access is reviewed",
 	"ac-02.05_odp": "Sign out after inactivity",
 	"ac-12_odp":    "Longest sign-in",
 	"ia-05_odp.01": "Longest life of a token",

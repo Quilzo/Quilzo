@@ -305,6 +305,26 @@ type StreamFacts struct {
 	Error    string    `json:"error,omitempty"`
 }
 
+// ReviewFacts is the review of the access Quilzo grants
+// (internal/accessreview): how often one is due, and when one last closed.
+type ReviewFacts struct {
+	Checked bool `json:"checked"`
+	// Every is the period, access.review.every or the organisation's
+	// declared ac-02_odp.10, whichever is stricter.
+	Every time.Duration `json:"every"`
+	// LastClosed is when the latest review closed, zero for never.
+	LastClosed time.Time `json:"last_closed,omitzero"`
+	// Owed is when the oldest grant a review would cover was made, which
+	// is where the period runs from in a store that has never closed one;
+	// zero when there is nothing to review.
+	Owed time.Time `json:"owed,omitzero"`
+	// Undated says a grant a review would cover was made before grants
+	// were dated, and so is owed one already.
+	Undated bool `json:"undated,omitempty"`
+	// Open is when the review still being decided started, zero for none.
+	Open time.Time `json:"open,omitzero"`
+}
+
 type InterfaceFacts struct {
 	Checked bool `json:"checked"`
 	On      bool `json:"on"`
@@ -423,6 +443,7 @@ type State struct {
 	SSO        SSOFacts          `json:"sso"`
 	Interface  InterfaceFacts    `json:"interface"`
 	Stream     StreamFacts       `json:"stream"`
+	Reviews    ReviewFacts       `json:"reviews"`
 	Now        time.Time         `json:"-"`
 	Extra      map[string]string `json:"extra,omitempty"`
 }
@@ -439,6 +460,17 @@ type Rule struct {
 	// act on and one they argue with.
 	Why   string
 	Check func(State) []Finding
+	// Remind says the security contact is told when this starts failing,
+	// whatever its severity. A reminder that something is due is Medium by
+	// what an attacker gains from it, and a reminder nobody receives
+	// reminds nobody: the drift check mailed only high and critical.
+	Remind bool
+}
+
+// Reminds reports whether a rule is a reminder (Rule.Remind).
+func Reminds(id string) bool {
+	r, ok := Explain(id)
+	return ok && r.Remind
 }
 
 // Suppression silences a finding until a date.
@@ -705,6 +737,8 @@ func RuleIndex() map[string]Rule {
 // read only one. A rule not listed reads what is always there.
 func inputFor(rule string) string {
 	switch {
+	case rule == "access.review-due":
+		return "reviews"
 	case strings.HasPrefix(rule, "access."):
 		return "policy"
 	case strings.HasPrefix(rule, "token."):
@@ -737,6 +771,8 @@ func supplied(s State, input string) bool {
 		return ok
 	case "ai":
 		return s.AI.Checked
+	case "reviews":
+		return s.Reviews.Checked
 	case "types":
 		return s.Types != nil
 	case "files":

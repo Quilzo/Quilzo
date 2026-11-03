@@ -33,7 +33,8 @@ import (
 // (posture.restored). The audit log is what a security team's tools read as
 // it is written — any SIEM on siem.stream.url — so that is
 // where it is triaged, and the security contact is told at once of a newly
-// failing check that is high or critical.
+// failing check that is high or critical, or that is a reminder of
+// something falling due (posture.Rule.Remind: an access review).
 //
 // A check that could not run (its input was not gathered) changes nothing
 // either way: silence from a check that did not look is not a fix.
@@ -115,7 +116,10 @@ func postureDrift(root string, state posture.State, now time.Time) (int, int, er
 			Outcome: audit.Success, Principal: "quilzo", Kind: audit.KindService, Verified: true,
 			Detail: map[string]string{"rule": f.Rule, "resource": f.Resource, "severity": string(f.Severity),
 				"title": f.Title, "detail": f.Detail + bearsOn(refs), "fix": f.Fix}, People: f.People})
-		if f.Severity == posture.Critical || f.Severity == posture.High {
+		// A reminder too, whatever its severity: an access review falling
+		// due is Medium, and a reminder written only to the audit log is
+		// one nobody receives.
+		if f.Severity == posture.Critical || f.Severity == posture.High || posture.Reminds(f.Rule) {
 			summary := fmt.Sprintf("%s: %s. %s", f.Title, f.Detail, f.Fix)
 			if f.Resource != "" {
 				summary = fmt.Sprintf("%s (%s): %s. %s", f.Title, f.Resource, f.Detail, f.Fix)

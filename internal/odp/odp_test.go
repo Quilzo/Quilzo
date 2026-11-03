@@ -45,6 +45,7 @@ func TestTheListIsClosedAndEachDeclarationCanBeKept(t *testing.T) {
 		"ia-05_odp.01": "365 days", "au-11_odp": "6 years", "ac-07_odp.02": "15 minutes",
 		"ac-07_odp.03": "delay next logon prompt per {{ insert: param, ac-07_odp.05 }}\nnotify system administrator",
 		"ac-07_odp.04": "30 minutes",
+		"ac-02_odp.10": "30 days",
 	}
 	for id, v := range ok {
 		p, _ := Lookup(id)
@@ -60,6 +61,7 @@ func TestTheListIsClosedAndEachDeclarationCanBeKept(t *testing.T) {
 		"ac-02.05_odp": "1 minute",    // shorter than the floor on idling
 		"ac-07_odp.03": "lock the account or node until released by an administrator",
 		"ac-07_odp.01": "five",
+		"ac-02_odp.10": "2 years", // longer than a review may wait
 	}
 	for id, v := range refused {
 		p, _ := Lookup(id)

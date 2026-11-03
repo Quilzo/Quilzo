@@ -456,6 +456,10 @@ access
   quilzo token exchange                    trade a stored token for a short session
   quilzo token keygen FILE | proof --key FILE --url URL   a program's key, and a DPoP proof
   quilzo token list | revoke ID | stale
+  quilzo access review start               review the access Quilzo grants: by hand, by group, by token
+  quilzo access review items [--json]      what to decide, dormant and privileged first
+  quilzo access review decide ITEM keep|revoke [--why TEXT]   a revoke applies at once; keeping privileged access needs --why
+  quilzo access review close               refused while anything is undecided; writes the AC-2 evidence
   quilzo spend grant AGENT --currency USD --per 50 --budget 500 --payee P --purpose WHY | list | revoke ID | receipts
                                            what an agent may pay, within limits a person sets, and what it paid
   quilzo evolve run --program F --evaluator F [--input F]... [--eval-input F]...
@@ -927,6 +931,8 @@ func main() {
 		err = cmdMember(root, cmdArgs)
 	case "scim":
 		err = cmdSCIM(root, cmdArgs)
+	case "access":
+		err = cmdAccess(root, cmdArgs)
 	case "geo":
 		err = cmdGeo(root, cmdArgs)
 	case "board":

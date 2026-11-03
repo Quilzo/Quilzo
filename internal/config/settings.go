@@ -92,6 +92,22 @@ var settings = []Setting{
 			"reported.",
 	},
 
+	// -- reviewing access ----------------------------------------------------
+	{
+		Key: "access.review.every", Kind: Duration, Default: "2160h",
+		Summary:  "how often the access Quilzo grants is reviewed",
+		Controls: []string{"AC-2"},
+		Params:   []string{"ac-02_odp.10"},
+		Why: "Ninety days. A review of the access this store grants (quilzo access review, or " +
+			"Review who has access on People) puts every grant made by hand, what each identity " +
+			"provider group means here and every long-lived token in front of an administrator, " +
+			"who keeps or revokes each one; the posture scan reports access.review-due, and the " +
+			"security contact is told, when none has closed for this long. Between 30 and 365 " +
+			"days. Shorter is stricter, and the organisation's ac-02_odp.10 is a floor under it.",
+		Weaker: atMostDur(90*24*time.Hour, "a review only every %s leaves a grant nobody needs "+
+			"working that long before anybody is asked about it"),
+	},
+
 	// -- content -------------------------------------------------------------
 	{
 		Key: "content.review.every", Kind: Duration, Default: "8760h",
@@ -1554,6 +1570,7 @@ var hardBounds = map[string][2]int64{
 	"auth.throttle.max":        {int64(throttle.LeastDelay), int64(throttle.LongestDelay)},
 	"auth.lockout.alert":       {1, throttle.LatestAlert},
 	"session.idle":             {int64(5 * time.Minute), int64(time.Hour)},
+	"access.review.every":      {int64(30 * 24 * time.Hour), int64(365 * 24 * time.Hour)},
 	"agents.trigger_runs":      {1, 16},
 }
 

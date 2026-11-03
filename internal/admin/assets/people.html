@@ -17,6 +17,30 @@
   </form>
 </li>{{end}}</ul>{{end}}
 
+{{with .Review}}<h2 id="review">Review who has access</h2>
+<p class="hint">Every grant made by hand, what each identity provider group means here and every long-lived token, put in front of an administrator who keeps or revokes each one. A revoke applies at once. Nobody decides their own access, and keeping privileged access needs a reason. One is due every {{.Every}}.</p>
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>
+{{else if .Open}}
+<p>Review {{.Open.ID}}, started {{.Open.Started.UTC.Format "2 Jan 2006"}} by {{.Open.StartedBy}}: {{.Undecided}} of {{len .Rows}} undecided. Dormant items come first, then privileged ones.</p>
+<ul class="auto-list">{{range .Rows}}<li class="auto-card{{if not .Decision}} waiting{{end}}">
+  <div class="auto-head">{{if .Dormant}}<span class="tag tag-bad">dormant: proposed revoke</span> {{end}}{{if .Privileged}}<span class="tag tag-warn">privileged</span> {{end}}<strong>{{.ID}}. {{.What}}</strong></div>
+  <p class="hint">{{.Facts}}</p>
+  {{if .Decision}}<p>{{sentence .Decision.Verdict}} by {{.Decision.By}} on {{.Decision.At.UTC.Format "2 Jan 2006"}}.</p>{{end}}
+  {{if .Own}}<p class="hint">This is your own access, so another administrator decides it.</p>
+  {{else if not (and .Decision (eq (print .Decision.Verdict) "revoke"))}}<form method="post" action="/people/review/decide" class="auto-controls">
+    <input type="hidden" name="item" value="{{.ID}}">
+    <label for="why-{{.ID}}">Why<span class="visually-hidden"> for item {{.ID}}</span></label>
+    <input id="why-{{.ID}}" name="why" placeholder="{{if .Privileged}}Needed to keep it{{else}}Optional{{end}}">
+    <button type="submit" name="verdict" value="keep" class="btn-tonal">Keep<span class="visually-hidden"> item {{.ID}}</span></button>
+    <button type="submit" name="verdict" value="revoke" class="danger">Revoke<span class="visually-hidden"> item {{.ID}}</span></button>
+  </form>{{end}}
+</li>{{end}}</ul>
+<form method="post" action="/people/review/close"><button type="submit">Close the review</button></form>
+{{else}}
+<p class="hint">{{if .Last}}The last review closed on {{.Last}}{{if .Due}}, more than {{.Every}} ago: one is due{{end}}.{{else}}No review has closed yet.{{end}}</p>
+<form method="post" action="/people/review/start"><button type="submit">Start a review</button></form>
+{{end}}{{end}}
+
 <h2>Add or change access</h2>
 <p class="hint">
   Pick somebody this store already knows, or name a new person. Typing a name

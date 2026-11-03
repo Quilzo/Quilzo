@@ -415,6 +415,9 @@ var coverage = map[string]surfaces{
 	"ext":      {GUI: "/integrations", NoMCP: "registers a process this store executes. Arbitrary code execution, reached by asking"},
 	"research": {GUI: "/research", MCP: []string{"research_projects", "research_project", "research_search",
 		"research_cite", "research_run", "research_claim", "research_write", "research_ideas"}},
+	// The review of who has access, a section of People.
+	"access": {GUI: "/people", NoMCP: "decides who keeps access and revokes it. A model may not be the " +
+		"reviewer, and a list of who holds what, dormant first, is the reconnaissance a review exists to act on"},
 	// An agent proposes a package; installing it stays a person's decision,
 	// one or two of them, made on the Make screen or the command line.
 	"feature": {GUI: "/make", MCP: []string{"propose_feature"}},

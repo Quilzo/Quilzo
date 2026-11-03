@@ -336,6 +336,8 @@ func (s *Server) idleFor(name string) time.Duration {
 // rather than to a guess, which is the honest answer for a group added later.
 func settingGroupLabel(key string) string {
 	switch key {
+	case "access":
+		return "Reviewing access"
 	case "backup":
 		return "Backups"
 	case "auth":
