@@ -496,6 +496,29 @@ func TestASessionTheProviderEndedEndsHereAndNothingElseDoes(t *testing.T) {
 	}
 }
 
+// The issuer a stream keeps is the one the transmitter says it is, not the
+// spelling it was asked for by: connected with a trailing slash the
+// transmitter's own issuer does not have, every event it then sent was
+// refused as from the wrong issuer, verification among them.
+func TestAStreamKeepsTheIssuerTheTransmitterSays(t *testing.T) {
+	c := signalsStore(t, "email")
+	if err := cmdSignals(c.root, []string{"connect", "--provider", "oidc", "--issuer", txIss + "/",
+		"--client-id", txClientID}); err != nil {
+		t.Fatal(err)
+	}
+	c.restart(t)
+	if got := readSignals(t, c.root).Issuer; got != txIss {
+		t.Errorf("kept the issuer %q", got)
+	}
+	sso := session(t, c.root, "oidc:ada@example.com", "ada@example.com", auth.MethodSSO)
+	c.send(t, ssfEvent+"verification", map[string]any{"format": "opaque", "id": "s-1"},
+		map[string]any{"state": c.tx.state}, time.Now())
+	c.send(t, caepEvent+"session-revoked", email("ada@example.com"), nil, time.Now())
+	if works(c.root, sso) || readSignals(t, c.root).Verified.IsZero() {
+		t.Errorf("the transmitter's own events were not taken: %+v", readSignals(t, c.root).Counts)
+	}
+}
+
 // appWorks is an app's access token, presented to the agent interface it
 // was issued for.
 func appWorks(root, secret string) bool {

@@ -356,6 +356,12 @@ func signalsConnect(root string, args []string) error {
 	if err != nil {
 		return err
 	}
+	// The issuer the transmitter says it is, which Discover has checked is
+	// the one asked for, give or take a trailing slash. Its tokens carry
+	// this spelling and Verify compares exactly, so keeping the one typed
+	// refused every event it sent, verification among them.
+	iss = t.Issuer
+	cfg.Issuer = iss
 	if t.ConfigurationEndpoint == "" {
 		return fmt.Errorf("%s publishes no stream API, so the stream has to be made in its own console: "+
 			"connect again with --jwks %s", t.Issuer, t.JWKSURI)
