@@ -1774,6 +1774,9 @@ The rules:
   saying it is right.
 - A recording's voices cannot be masked the way text is, so it goes only to a
   route allowed personal data (`--personal`).
+- The endpoints take a recording of at most 25 MB. One over that is sent as
+  its sound alone, about fifteen MB an hour, taken out with ffmpeg when it is
+  installed; without it, the refusal says how to take the sound out by hand.
 - It is charged by the minute (`--price-minute`) to `media` and to the person.
 
 **A model reads text aloud.** An audio version of an article, a shop's
