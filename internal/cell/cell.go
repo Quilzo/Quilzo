@@ -73,7 +73,8 @@ type Availability struct {
 // neither maker takes another shape at restore.
 type Machine struct {
 	// Snapshot is the warm snapshot to restore: the microVM's own files,
-	// made by this program's Snapshot when the operator warmed the cell.
+	// made by Snapshot or SnapshotCH when the operator warmed the cell with
+	// quilzo cell warm.
 	Snapshot string
 	// Memory is the memory file of that snapshot, where the maker keeps it
 	// apart from the description.
