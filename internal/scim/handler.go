@@ -5,6 +5,7 @@ package scim
 
 import (
 	"encoding/json"
+	"errors"
 	"github.com/quilzo/quilzo/internal/clientip"
 	"net/http"
 	"regexp"
@@ -298,7 +299,10 @@ func (h *Handler) user(w http.ResponseWriter, r *http.Request, id string) {
 			if !readBody(w, r, &op) {
 				return
 			}
-			changes = op.userChanges()
+			var err error
+			if changes, err = op.userChanges(); refused(w, err) {
+				return
+			}
 		}
 		// A renamed person's access moves with them, and the old name loses
 		// it before the rename is kept: a revocation that cannot be made then
@@ -504,13 +508,13 @@ func (h *Handler) group(w http.ResponseWriter, r *http.Request, id string) {
 		reply(w, http.StatusOK, out)
 	case http.MethodPut, http.MethodPatch:
 		var after Group
-		var apply func(*State, *Group)
+		var apply func(*State, *Group) error
 		if r.Method == http.MethodPut {
 			var in groupIn
 			if !readBody(w, r, &in) {
 				return
 			}
-			apply = func(st *State, g *Group) {
+			apply = func(st *State, g *Group) error {
 				if n := strings.TrimSpace(in.DisplayName); n != "" {
 					g.DisplayName = n
 				}
@@ -520,6 +524,7 @@ func (h *Handler) group(w http.ResponseWriter, r *http.Request, id string) {
 						g.Members = append(g.Members, m.Value)
 					}
 				}
+				return nil
 			}
 		} else {
 			var op patchOp
@@ -533,12 +538,17 @@ func (h *Handler) group(w http.ResponseWriter, r *http.Request, id string) {
 			if !ok {
 				return ErrNotFound
 			}
-			apply(st, g)
+			if err := apply(st, g); err != nil {
+				return err
+			}
 			g.Members = unique(g.Members)
 			g.Modified = h.Store.now()
 			after = *g
 			return nil
 		})
+		if refused(w, err) {
+			return
+		}
 		if err != nil {
 			fail(w, http.StatusInternalServerError, "", "that group could not be changed")
 			return
@@ -659,9 +669,65 @@ type patchOp struct {
 	} `json:"Operations"`
 }
 
+// patchError is an operation refused as written: answered 400 with its
+// SCIM error type, so the identity provider shows it and does not count
+// as done a change that was never made.
+type patchError struct{ scimType, detail string }
+
+func (e *patchError) Error() string { return e.detail }
+
+// refused answers a patchError, and reports whether err was one.
+func refused(w http.ResponseWriter, err error) bool {
+	var pe *patchError
+	if !errors.As(err, &pe) {
+		return false
+	}
+	fail(w, http.StatusBadRequest, pe.scimType, pe.detail)
+	return true
+}
+
+// check refuses an operation RFC 7644 section 3.5.2 does not allow: an op
+// other than add, remove or replace, or a remove that names no target.
+// Both were once skipped and answered 200, which an identity provider reads
+// as the change having been made.
+func (p patchOp) check() error {
+	for _, o := range p.Operations {
+		switch strings.ToLower(o.Op) {
+		case "add", "replace":
+		case "remove":
+			if strings.TrimSpace(o.Path) == "" {
+				return &patchError{"noTarget", "a remove names the attribute it removes in its path"}
+			}
+		default:
+			return &patchError{"invalidSyntax", "op is add, remove or replace, not " + strconv.Quote(o.Op)}
+		}
+	}
+	return nil
+}
+
+// attr reads a PATCH path, or a key of a path-less operation's value, as
+// the attribute it names: in lower case, because attribute names are
+// case-insensitive (RFC 7643 section 2.1), and without the core schema in
+// front, because a path may name it (RFC 7644 section 3.10). Matching
+// "active" exactly once let a deactivation sent as "Active", or as
+// "urn:ietf:params:scim:schemas:core:2.0:User:active", be answered 200 and
+// do nothing, and the person kept everything.
+func attr(schema, name string) string {
+	name = strings.ToLower(strings.TrimSpace(name))
+	return strings.TrimPrefix(name, strings.ToLower(schema)+":")
+}
+
+// userAttrs are the user attributes kept here, by attr's spelling. Any
+// other attribute an identity provider sends (Entra sends a name, emails
+// and more) is not kept, and is passed over.
+var userAttrs = map[string]string{"active": "active", "username": "userName", "externalid": "externalId"}
+
 // userChanges reads the operations a provider sends for a user: a path with
 // a value (Entra), or no path and an object of values (Okta).
-func (p patchOp) userChanges() map[string]any {
+func (p patchOp) userChanges() (map[string]any, error) {
+	if err := p.check(); err != nil {
+		return nil, err
+	}
 	out := map[string]any{}
 	for _, o := range p.Operations {
 		op := strings.ToLower(o.Op)
@@ -670,26 +736,35 @@ func (p patchOp) userChanges() map[string]any {
 		}
 		var v any
 		_ = json.Unmarshal(o.Value, &v)
-		switch strings.TrimSpace(o.Path) {
-		case "":
+		if strings.TrimSpace(o.Path) == "" {
 			if m, ok := v.(map[string]any); ok {
-				for _, k := range []string{"active", "userName", "externalId"} {
-					if x, has := m[k]; has {
-						out[k] = x
+				for k, x := range m {
+					if name, kept := userAttrs[attr(SchemaUser, k)]; kept {
+						out[name] = x
 					}
 				}
 			}
-		case "active", "userName", "externalId":
-			out[o.Path] = v
+		} else if name, kept := userAttrs[attr(SchemaUser, o.Path)]; kept {
+			out[name] = v
 		}
 	}
-	return out
+	return out, nil
 }
 
-var reMemberPath = regexp.MustCompile(`^members\[value eq "([^"]+)"\]$`)
+// reMemberPath is the filter Entra and Okta remove one member by. Attribute
+// names and the eq operator are case-insensitive and the schema may be
+// written in front, so Members[Value EQ "..."] is the same filter; the id
+// is taken as sent, being this server's own.
+var reMemberPath = regexp.MustCompile(`(?i)^(?:` + regexp.QuoteMeta(SchemaGroup) + `:)?members\[\s*value\s+eq\s+"([^"]+)"\s*\]$`)
 
 // applyToGroup applies the membership and name operations providers send.
-func (p patchOp) applyToGroup(st *State, g *Group) {
+// A change to members it cannot read is refused rather than passed over: a
+// removal dropped that way was answered 200 and left the person in the
+// group, holding what it gives.
+func (p patchOp) applyToGroup(st *State, g *Group) error {
+	if err := p.check(); err != nil {
+		return err
+	}
 	refs := func(raw json.RawMessage) []string {
 		var many []memberRef
 		if json.Unmarshal(raw, &many) == nil {
@@ -728,7 +803,8 @@ func (p patchOp) applyToGroup(st *State, g *Group) {
 		g.Members = kept
 	}
 	for _, o := range p.Operations {
-		op, path := strings.ToLower(o.Op), strings.TrimSpace(o.Path)
+		op, raw := strings.ToLower(o.Op), strings.TrimSpace(o.Path)
+		path := attr(SchemaGroup, raw)
 		switch {
 		case path == "members" && op == "add":
 			g.Members = append(g.Members, known(refs(o.Value))...)
@@ -740,9 +816,12 @@ func (p patchOp) applyToGroup(st *State, g *Group) {
 			} else {
 				g.Members = nil
 			}
-		case reMemberPath.MatchString(path) && op == "remove":
-			without([]string{reMemberPath.FindStringSubmatch(path)[1]})
-		case path == "displayName" && (op == "replace" || op == "add"):
+		case reMemberPath.MatchString(raw) && op == "remove":
+			without([]string{reMemberPath.FindStringSubmatch(raw)[1]})
+		case path == "members" || strings.HasPrefix(path, "members[") || strings.HasPrefix(path, "members."):
+			return &patchError{"invalidPath", "members are changed by the path members, or one is removed by " +
+				`members[value eq "id"]; ` + strconv.Quote(raw) + " is not read here"}
+		case path == "displayname" && (op == "replace" || op == "add"):
 			var name string
 			if json.Unmarshal(o.Value, &name) == nil && strings.TrimSpace(name) != "" {
 				g.DisplayName = strings.TrimSpace(name)
@@ -750,20 +829,23 @@ func (p patchOp) applyToGroup(st *State, g *Group) {
 		case path == "" && (op == "replace" || op == "add"):
 			var m map[string]json.RawMessage
 			if json.Unmarshal(o.Value, &m) == nil {
-				if raw, ok := m["displayName"]; ok {
-					var name string
-					if json.Unmarshal(raw, &name) == nil && strings.TrimSpace(name) != "" {
-						g.DisplayName = strings.TrimSpace(name)
-					}
-				}
-				if raw, ok := m["members"]; ok {
-					if op == "replace" {
-						g.Members = known(refs(raw))
-					} else {
-						g.Members = append(g.Members, known(refs(raw))...)
+				for k, v := range m {
+					switch attr(SchemaGroup, k) {
+					case "displayname":
+						var name string
+						if json.Unmarshal(v, &name) == nil && strings.TrimSpace(name) != "" {
+							g.DisplayName = strings.TrimSpace(name)
+						}
+					case "members":
+						if op == "replace" {
+							g.Members = known(refs(v))
+						} else {
+							g.Members = append(g.Members, known(refs(v))...)
+						}
 					}
 				}
 			}
 		}
 	}
+	return nil
 }

@@ -268,3 +268,89 @@ func TestProvisioningThatCannotRemoveAccessFailsAndCanBeRepeated(t *testing.T) {
 		t.Errorf("after the repeats the person still holds %v (suspended %v)", f.held, f.suspended)
 	}
 }
+
+// Attribute names are case-insensitive (RFC 7643 section 2.1) and a path
+// may name its schema in full (RFC 7644 section 3.10). PATCH once matched
+// "active" exactly, so a deactivation spelled any other way was answered
+// 200 and did nothing: the identity provider marked the person
+// deprovisioned and never tried again, and they kept everything.
+func TestADeactivationIsHeardHoweverItIsSpelled(t *testing.T) {
+	f := newFixture(t)
+	_, u := f.do(t, http.MethodPost, "/Users", `{"userName":"ada@example.com","active":true}`)
+	id := u["id"].(string)
+	f.do(t, http.MethodPost, "/Groups", `{"displayName":"Editors","members":[{"value":"`+id+`"}]}`)
+	for _, op := range []string{
+		`{"op":"replace","path":"Active","value":false}`,
+		`{"op":"replace","path":"urn:ietf:params:scim:schemas:core:2.0:User:active","value":false}`,
+		`{"op":"replace","path":"URN:IETF:PARAMS:SCIM:SCHEMAS:CORE:2.0:USER:ACTIVE","value":false}`,
+		`{"op":"replace","value":{"Active":false}}`,
+		`{"op":"replace","value":{"urn:ietf:params:scim:schemas:core:2.0:User:active":false}}`,
+	} {
+		code, out := f.do(t, http.MethodPatch, "/Users/"+id, `{"Operations":[`+op+`]}`)
+		if code != 200 || out["active"] != false || !f.suspended["ada@example.com"] {
+			t.Errorf("%s: %d active=%v suspended=%v", op, code, out["active"], f.suspended["ada@example.com"])
+		}
+		f.do(t, http.MethodPatch, "/Users/"+id, `{"Operations":[{"op":"replace","value":{"active":true}}]}`)
+		if f.suspended["ada@example.com"] {
+			t.Fatal("reactivating left them suspended")
+		}
+	}
+	// The other attributes kept here are read the same way.
+	code, out := f.do(t, http.MethodPatch, "/Users/"+id, `{"Operations":[
+		{"op":"replace","path":"UserName","value":"ada.l@example.com"},
+		{"op":"replace","path":"urn:ietf:params:scim:schemas:core:2.0:User:externalId","value":"x1"}]}`)
+	if code != 200 || out["userName"] != "ada.l@example.com" || out["externalId"] != "x1" {
+		t.Errorf("renaming by other spellings: %d %v", code, out)
+	}
+	// An operation SCIM does not have is refused, not answered as done.
+	if code, out := f.do(t, http.MethodPatch, "/Users/"+id, `{"Operations":[{"op":"deactivate","path":"active"}]}`); code != 400 || out["scimType"] != "invalidSyntax" {
+		t.Errorf("an op SCIM does not have answered %d %v", code, out)
+	}
+}
+
+// A removal from a group is heard however its path is spelled, and one
+// whose path cannot be read is refused rather than answered 200 with the
+// person still a member and still holding what the group gives.
+func TestAGroupRemovalIsHeardHoweverItIsSpelled(t *testing.T) {
+	f := newFixture(t)
+	_, u := f.do(t, http.MethodPost, "/Users", `{"userName":"bo@example.com"}`)
+	id := u["id"].(string)
+	_, g := f.do(t, http.MethodPost, "/Groups", `{"displayName":"Editors"}`)
+	gid := g["id"].(string)
+	add := `{"Operations":[{"op":"add","path":"members","value":[{"value":"` + id + `"}]}]}`
+	for _, op := range []string{
+		`{"op":"remove","path":"Members","value":[{"value":"` + id + `"}]}`,
+		`{"op":"remove","path":"urn:ietf:params:scim:schemas:core:2.0:Group:members","value":[{"value":"` + id + `"}]}`,
+		`{"op":"remove","path":"Members[Value EQ \"` + id + `\"]"}`,
+		`{"op":"replace","path":"MEMBERS","value":[]}`,
+		`{"op":"replace","value":{"Members":[]}}`,
+	} {
+		f.do(t, http.MethodPatch, "/Groups/"+gid, add)
+		if len(f.held["bo@example.com"]) != 1 {
+			t.Fatalf("joining the group gave %v", f.held["bo@example.com"])
+		}
+		code, _ := f.do(t, http.MethodPatch, "/Groups/"+gid, `{"Operations":[`+op+`]}`)
+		if code != 200 || len(f.held["bo@example.com"]) != 0 {
+			t.Errorf("%s: %d, they still hold %v", op, code, f.held["bo@example.com"])
+		}
+	}
+	code, _ := f.do(t, http.MethodPatch, "/Groups/"+gid, `{"Operations":[{"op":"replace","path":"DisplayName","value":"Writers"}]}`)
+	if _, after := f.do(t, http.MethodGet, "/Groups/"+gid, ""); code != 200 || after["displayName"] != "Writers" {
+		t.Errorf("renaming by another spelling: %d %v", code, after["displayName"])
+	}
+	f.do(t, http.MethodPatch, "/Groups/"+gid, `{"Operations":[{"op":"replace","path":"displayName","value":"Editors"}]}`)
+	f.do(t, http.MethodPatch, "/Groups/"+gid, add)
+	for _, op := range []string{
+		`{"op":"remove","path":"members[value eq \"` + id + `\" or value eq \"x\"]"}`,
+		`{"op":"remove","path":"members[display eq \"bo\"]"}`,
+		`{"op":"delete","path":"members"}`,
+	} {
+		code, out := f.do(t, http.MethodPatch, "/Groups/"+gid, `{"Operations":[`+op+`]}`)
+		if code != 400 || out["scimType"] == nil {
+			t.Errorf("%s answered %d %v", op, code, out)
+		}
+	}
+	if len(f.held["bo@example.com"]) != 1 {
+		t.Errorf("a refused change changed what they hold: %v", f.held["bo@example.com"])
+	}
+}
