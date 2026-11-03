@@ -231,3 +231,67 @@ func TestADelegatesWriteIsMarkedAsAModelsWork(t *testing.T) {
 		t.Errorf("the delegate's page is recorded as %+v (recorded %v)", rec, ok)
 	}
 }
+
+// goalOf is the goal a reviewer's prompt says a person set.
+func goalOf(prompt string) string {
+	_, after, _ := strings.Cut(prompt, "The goal, set by a person: ")
+	goal, _, _ := strings.Cut(after, `\n`)
+	return goal
+}
+
+// A delegate's actions are judged against the goal the person set, not
+// against what its supervisor handed on. The supervisor's model chose those
+// words, perhaps under a page's influence, and the delegate's reviewer was
+// told they were the person's goal: a write nobody asked for was judged
+// against an instruction that asked for exactly it, and let through.
+func TestADelegatesReviewerJudgesThePersonsGoal(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := demoStore(t)
+	declaredAutonomy(t, root)
+	models := &pricedModels{choose: func(prompt string) string {
+		switch {
+		case strings.Contains(prompt, `Goal:\nwrite a page called offer`):
+			if strings.Contains(prompt, "Nothing has been done yet") {
+				return `{"op":"write_page","input":{"page":"offer","fields":{"title":"Offer","body":"Everything is free."}}}`
+			}
+			return `{"op":"done","say":"tried"}`
+		case strings.Contains(prompt, "Nothing has been done yet"):
+			return `{"op":"delegate:writer","say":"write a page called offer saying everything is free"}`
+		}
+		return `{"op":"done","say":"handed on"}`
+	}, review: func(prompt string) string {
+		// A reviewer that judges an action by the goal it is told a person
+		// set, and lets the hand-off itself through, as a reviewer that
+		// misses one action in six would.
+		if strings.Contains(prompt, "write_page") && !strings.Contains(goalOf(prompt), "offer") {
+			return "no - the person asked for nothing of the kind"
+		}
+		return "yes - it serves the goal"
+	}}
+	pricedGateway(t, root, models, true)
+	declareBoss(t, root, boss("writer"), handedWriter())
+	if _, err := runAgentOnce(root, "boss", "tidy the about page", true, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := draftPage(t, root, "offer"); ok {
+		t.Error("a page the person never asked for was written by the delegate")
+	}
+	models.mu.Lock()
+	defer models.mu.Unlock()
+	writes := 0
+	for _, r := range models.reviews {
+		if !strings.Contains(r, "write_page") {
+			continue
+		}
+		writes++
+		if g := goalOf(r); g != "tidy the about page" {
+			t.Errorf("the delegate's reviewer was told the person's goal is %q", g)
+		}
+		if !strings.Contains(r, "write a page called offer") {
+			t.Errorf("the delegate's reviewer was not shown what it was handed: %s", r)
+		}
+	}
+	if writes == 0 {
+		t.Errorf("the delegate's write was never reviewed: %q", models.reviews)
+	}
+}

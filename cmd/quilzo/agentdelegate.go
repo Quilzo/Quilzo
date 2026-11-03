@@ -55,6 +55,10 @@ type delegation struct {
 	// so a run dana started handed its delegate's work to somebody else and
 	// the log said so.
 	caller *Caller
+	// goal is what that person asked the run for, which the reviewer judges
+	// a delegate's actions against. The delegate's own goal is what its
+	// supervisor handed it, which a model chose.
+	goal string
 	// parent names the supervisor, for the record. A delegated run with no
 	// note of who asked for it is the accountability gap with extra steps.
 	parent string
@@ -180,7 +184,7 @@ func (d delegation) Run(ctx context.Context, name string, child *agent.Session,
 func (d delegation) next(parent string) agentexec.Delegates {
 	deeper := delegation{
 		root: d.root, store: d.store, model: d.model, caller: d.caller,
-		parent: parent, depth: d.depth + 1,
+		goal: d.goal, parent: parent, depth: d.depth + 1,
 	}
 	return agentexec.Delegates{
 		Manifest: manifestLoader(d.root),
@@ -196,7 +200,10 @@ func (d delegation) next(parent string) agentexec.Delegates {
 // all rather than whether it is clever.
 //
 // With one, it is reviewed as its parent's is (reviewedBy), and a reviewer
-// that cannot be reached stops it as it stops the parent.
+// that cannot be reached stops it as it stops the parent. Reviewed against
+// the goal the person set, with what it was handed shown as an agent's
+// words: told that the supervisor's instruction was the person's goal, the
+// reviewer let through whatever the instruction asked for.
 func (d delegation) decider(child *agent.Session, m agent.Manifest) (agent.Decide, error) {
 	if d.model == nil {
 		return walkOf(m), nil
@@ -211,7 +218,9 @@ func (d delegation) decider(child *agent.Session, m agent.Manifest) (agent.Decid
 		// a supervisor's money budget did not bound the work it handed on.
 		Tokens: child.Tokens,
 		Charge: child.Charge,
-	}.Decide(), personConsumer(d.caller)...)
+	}.Decide(), func(inner agent.Decide, reviewer assist.Model) agent.Decide {
+		return agentmodel.ReviewedFor(inner, reviewer, d.goal)
+	}, personConsumer(d.caller)...)
 }
 
 // modelName is what chose a delegate's actions, for its writes' record:

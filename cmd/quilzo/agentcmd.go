@@ -827,8 +827,12 @@ func reviewerModel(root, route, agentName string, payers ...string) (assist.Mode
 //
 // Charged to the run, as its own model is: the reviewer is asked about every
 // action, and its calls are the run's spending.
+//
+// wrap puts the reviewer round the decider: agentmodel.Reviewed for a run a
+// person started, and for a delegate agentmodel.ReviewedFor with that
+// person's goal, never the words its supervisor handed it.
 func reviewedBy(root, agentName string, s *agent.Session, decide agent.Decide,
-	payers ...string) (agent.Decide, error) {
+	wrap func(agent.Decide, assist.Model) agent.Decide, payers ...string) (agent.Decide, error) {
 	c, err := loadConfig(root)
 	if err != nil {
 		return nil, fmt.Errorf("the settings could not be read, so whether a reviewer is named is not known: %w", err)
@@ -841,7 +845,7 @@ func reviewedBy(root, agentName string, s *agent.Session, decide agent.Decide,
 	if reviewer == nil {
 		return nil, fmt.Errorf("the reviewer this store names (%s) could not be reached: %s", route, why)
 	}
-	return agentmodel.Reviewed(decide, agentexec.ChargedTo(s, reviewer)), nil
+	return wrap(decide, agentexec.ChargedTo(s, reviewer)), nil
 }
 
 // agentRunModel is the model an agent's run asks: through the gateway when
@@ -1212,7 +1216,7 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 
 	// The reviewer, when this store names one (reviewedBy).
 	if withModel {
-		if decide, err = reviewedBy(root, name, sess, decide, payers...); err != nil {
+		if decide, err = reviewedBy(root, name, sess, decide, agentmodel.Reviewed, payers...); err != nil {
 			return out, err
 		}
 	}
@@ -1285,7 +1289,7 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 				Manifest: manifestLoader(root),
 				Run: delegation{
 					root: root, store: s, model: delegateModel,
-					caller: caller, parent: m.Name,
+					caller: caller, goal: goal, parent: m.Name,
 				},
 			},
 			// The deciders: a typed question with a confidence, asked by
