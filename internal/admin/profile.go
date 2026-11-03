@@ -81,7 +81,7 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 
 	// What this person may do, resolved against the policy as written rather
 	// than inferred from their role. A role is a rung; a binding can be
-	// own-only, scoped to a subtree, or a deny — and only Evaluate knows.
+	// scoped to a subtree, or a deny — and only Evaluate knows.
 	type permission struct {
 		Action  string
 		Allowed bool

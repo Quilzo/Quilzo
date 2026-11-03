@@ -1965,7 +1965,14 @@ what the keys are**. That boundary is the design, not an unfinished edge.
 
 ## Signing in
 
-Three ways, and the differences matter more than the count.
+People sign in with a passkey or through their organisation's identity
+provider, programs with a token, and a role says what either may do. The
+differences matter more than the count.
+
+**Passkeys**, added through a one-time link — `quilzo auth enrol WHO` — so no
+password is ever set. What the store keeps is public keys, and a copy of it lets
+nobody sign in as anybody. A sign-in unlike the person's own (impossible travel,
+a session copied to another device) gets no session until a passkey confirms it.
 
 **OpenID Connect** against whatever your organisation already runs —
 `quilzo oidc configure --issuer ... --client-id ...`, with PKCE, written from
@@ -1973,13 +1980,24 @@ scratch because there is no dependency to import it from. `quilzo oidc check`
 talks to the provider and reports what it actually offers rather than what the
 documentation claims.
 
+**SAML**, for the providers that speak only that — `quilzo saml add NAME
+--metadata F --url U`, with a preset for each common console (`quilzo saml
+presets`). A response nobody signed is refused. Single sign-on can be required,
+with named break-glass accounts.
+
+**SCIM provisioning** from Okta, Entra and others — `quilzo scim token`, then
+`quilzo scim map GROUP ROLE` for what each of their groups means here. It signs
+nobody in; it decides who exists, and somebody deactivated there is suspended
+here at once.
+
 **API tokens**, shown once, each with a scope **narrower than the principal
 holding it**. That is the part most systems get wrong: a token that inherits its
 owner's authority is a copy of that person, and it lives in a CI variable
 forever. Here a token is issued for a job and can do that job only.
 `quilzo token stale` finds the ones nobody has used.
 
-**Roles**, from reader to admin, scoped to a path or to a person's own content.
+**Roles**, from reader to admin, scoped to a path, and a deny wins wherever it
+sits.
 `quilzo auth explain WHO ACTION` answers *why* somebody can or cannot do a thing,
 which is the question that actually gets asked, and it answers it by evaluating
 the real policy rather than by describing it.
