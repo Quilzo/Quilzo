@@ -1913,6 +1913,13 @@ func signInAgain(w http.ResponseWriter, r *http.Request, why string) {
 // is (theme.go), and never a sign-in or sign-out address, which would
 // loop, nor one of the few addresses that are written to rather than
 // read: arriving somewhere is a GET.
+//
+// And never with a message in it. A screen shows ?m= and ?e= only when
+// this server signed them (flash.go), and the redirect at the end of a
+// sign-in is one this server writes, so a message carried in next would
+// be signed on the way out: a link to the real sign-in page could put any
+// sentence on the screen after it, and push the genuine "N failed sign-ins"
+// notice out of the way. Found by an adversarial review of this feature.
 func signInNext(raw string) string {
 	if raw == "" {
 		return ""
@@ -1921,7 +1928,17 @@ func signInNext(raw string) string {
 	if err != nil || u.Scheme != "" || u.Host != "" || u.Opaque != "" || u.User != nil {
 		return ""
 	}
-	to := safeLocalPath(u.Path, u.RawQuery)
+	// An escaped ? or # in the path reads as part of a name and becomes a
+	// query once the path is written back out.
+	if strings.ContainsAny(u.Path, "?#") {
+		return ""
+	}
+	q := u.Query()
+	for _, p := range flashParams {
+		q.Del(p)
+	}
+	q.Del(flashSig)
+	to := safeLocalPath(u.Path, q.Encode())
 	if !isLocalURL(to) {
 		return ""
 	}

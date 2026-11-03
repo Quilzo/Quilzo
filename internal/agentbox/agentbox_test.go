@@ -398,3 +398,86 @@ func TestASilentTunnelIsClosed(t *testing.T) {
 		t.Fatalf("recorded %+v", log)
 	}
 }
+
+// A tunnel delivering to a slow reader is not silent: every slice of a
+// write that goes out is progress, though no read finishes while the write
+// waits for room. Pipes stand in for the two connections, because a pipe's
+// write waits for its reader, which is what a full socket buffer does.
+func TestASlowReaderKeepsItsTunnel(t *testing.T) {
+	farClient, farProxy := net.Pipe()
+	boxProxy, boxClient := net.Pipe()
+	type result struct {
+		sent, got int64
+		silent    bool
+	}
+	out := make(chan result, 1)
+	go func() {
+		s, g, silent := splice(farProxy, boxProxy, boxProxy, 100*time.Millisecond)
+		out <- result{s, g, silent}
+	}()
+	const size = 64 << 10
+	go func() {
+		_, _ = farClient.Write(make([]byte, size))
+		farClient.Close()
+	}()
+	// 1 KiB every 5ms: 320ms for all of it, and 160ms for each 32 KiB
+	// write the copy makes, longer than the tunnel may be silent.
+	read := 0
+	buf := make([]byte, 1<<10)
+	for {
+		n, err := boxClient.Read(buf)
+		read += n
+		if err != nil {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	boxClient.Close()
+	r := <-out
+	if read != size || r.silent {
+		t.Fatalf("a slow reader got %d of %d bytes, closed for silence: %v", read, size, r.silent)
+	}
+	if r.got != size {
+		t.Errorf("recorded %d bytes down, not %d", r.got, size)
+	}
+}
+
+// A reader that has stopped takes nothing, and the tunnel is silent.
+func TestAStoppedReaderIsSilent(t *testing.T) {
+	farClient, farProxy := net.Pipe()
+	boxProxy, boxClient := net.Pipe()
+	defer boxClient.Close()
+	go func() { _, _ = farClient.Write(make([]byte, 64<<10)) }()
+	done := make(chan bool, 1)
+	go func() {
+		_, _, silent := splice(farProxy, boxProxy, boxProxy, 80*time.Millisecond)
+		done <- silent
+	}()
+	select {
+	case silent := <-done:
+		if !silent {
+			t.Fatal("a tunnel whose reader stopped ended, but not for its silence")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("a tunnel whose reader stopped was never closed")
+	}
+	farClient.Close()
+}
+
+// An allowance too small to divide still makes a ticker: a zero interval
+// panics in a goroutine no handler recovers, and takes the process with it.
+func TestATinyAllowanceDoesNotPanic(t *testing.T) {
+	for _, idle := range []time.Duration{1, 3, 4, time.Microsecond} {
+		if got := tick(idle); got <= 0 {
+			t.Fatalf("tick(%s) = %s", idle, got)
+		}
+	}
+	a, b := net.Pipe()
+	c, d := net.Pipe()
+	defer b.Close()
+	defer d.Close()
+	_, _, silent := splice(a, c, c, 3)
+	if !silent {
+		t.Error("a 3ns allowance did not close a silent tunnel")
+	}
+}

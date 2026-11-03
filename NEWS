@@ -148,6 +148,12 @@ Unreleased
 
 ** Fixed
 
+*** The connected-accounts callback no longer reflects what it is sent.
+    It turned a provider's error text into a message on the Connections
+    screen.  The address is one anybody can link to before any state is
+    checked, so that text could be a sentence of the linker's.  Now it
+    shows only an OAuth error code (access_denied and the like).
+
 *** Pictures from OpenAI's current image models.  Every request for a
     picture carried response_format=b64_json, which those models refuse
     as an unknown parameter, so quilzo media generate through OpenAI

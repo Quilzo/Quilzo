@@ -13,6 +13,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -174,49 +175,134 @@ func splitHostPort(hostport string, def int) (string, int, error) {
 	return host, port, nil
 }
 
-// counter counts bytes through a stream, and says when any last moved.
+// counter counts bytes through a stream, and marks a tunnel's progress
+// when any move.
 type counter struct {
 	io.Reader
 	n atomic.Int64
-	// last, when set, is shared by both directions of a tunnel: the time,
-	// in Unix nanoseconds, anything last went through either way.
-	last *atomic.Int64
+	// moved, when set, is the tunnel's: shared by both directions.
+	moved *progress
 }
 
 func (c *counter) Read(b []byte) (int, error) {
 	n, err := c.Reader.Read(b)
 	c.n.Add(int64(n))
-	if n > 0 && c.last != nil {
-		c.last.Store(time.Now().UnixNano())
+	if n > 0 && c.moved != nil {
+		c.moved.mark()
 	}
 	return n, err
 }
 
-// closeWhenSilent closes a tunnel's two ends once nothing has gone through
-// either way for idle, and reports whether it did. It stops when stop is
-// closed.
-func closeWhenSilent(idle time.Duration, last *atomic.Int64, stop <-chan struct{}, ends ...net.Conn) <-chan bool {
+// progress is when anything last went through a tunnel, either way.
+//
+// Kept on the monotonic clock, as an offset from when the tunnel opened: a
+// wall-clock time would let a clock stepped forward close every busy
+// tunnel at once, and one stepped back keep a silent one open for as long
+// as the step.
+type progress struct {
+	opened time.Time
+	last   atomic.Int64 // since opened
+}
+
+func newProgress() *progress { return &progress{opened: time.Now()} }
+
+func (p *progress) mark() { p.last.Store(int64(time.Since(p.opened))) }
+
+func (p *progress) silentFor() time.Duration {
+	return time.Since(p.opened) - time.Duration(p.last.Load())
+}
+
+// paced is one end of a tunnel, written a slice of time at a time so that
+// a reader taking the bytes slowly is seen to be taking them.
+//
+// A write to a reader slower than the far side blocks until the kernel
+// frees room, and Linux wakes a blocked writer only once a large part of
+// the buffer has drained -- minutes, for a program reading a few kilobytes
+// a second. Counted only when a read finished, such a tunnel looked silent
+// while it was delivering, and was closed. Each slice of a write that goes
+// out marks progress; a reader that has stopped takes nothing, frees no
+// room, and the tunnel is silent, as it should be.
+type paced struct {
+	net.Conn
+	step  time.Duration
+	moved *progress
+}
+
+func (w paced) Write(b []byte) (int, error) {
+	total := 0
+	for len(b) > 0 {
+		_ = w.Conn.SetWriteDeadline(time.Now().Add(w.step))
+		n, err := w.Conn.Write(b)
+		total += n
+		b = b[n:]
+		if n > 0 {
+			w.moved.mark()
+		}
+		if err != nil && !errors.Is(err, os.ErrDeadlineExceeded) {
+			_ = w.Conn.SetWriteDeadline(time.Time{})
+			return total, err
+		}
+	}
+	_ = w.Conn.SetWriteDeadline(time.Time{})
+	return total, nil
+}
+
+// tick is how often a tunnel's silence is looked at, and how long one
+// slice of a write may wait: a quarter of the allowance, and never zero,
+// which a ticker refuses with a panic no handler would catch.
+func tick(idle time.Duration) time.Duration {
+	if t := idle / 4; t >= time.Millisecond {
+		return t
+	}
+	return time.Millisecond
+}
+
+// splice carries a tunnel both ways, reading from the box through
+// fromDown, until both directions end, and closes both ends once nothing
+// has moved either way for idle. It says how much went each way and
+// whether the tunnel was closed for its silence.
+func splice(up, down net.Conn, fromDown io.Reader, idle time.Duration) (sent, got int64, silent bool) {
+	moved := newProgress()
+	step := tick(idle)
+	toUp := &counter{Reader: fromDown, moved: moved}
+	toDown := &counter{Reader: up, moved: moved}
+	stop := make(chan struct{})
 	closed := make(chan bool, 1)
 	go func() {
-		tick := time.NewTicker(idle / 4)
-		defer tick.Stop()
+		t := time.NewTicker(step)
+		defer t.Stop()
 		for {
 			select {
 			case <-stop:
 				closed <- false
 				return
-			case now := <-tick.C:
-				if now.Sub(time.Unix(0, last.Load())) >= idle {
-					for _, c := range ends {
-						_ = c.Close()
-					}
+			case <-t.C:
+				if moved.silentFor() >= idle {
+					_ = up.Close()
+					_ = down.Close()
 					closed <- true
 					return
 				}
 			}
 		}
 	}()
-	return closed
+	done := make(chan struct{}, 2)
+	go func() {
+		_, _ = io.Copy(paced{Conn: up, step: step, moved: moved}, toUp)
+		closeWrite(up)
+		done <- struct{}{}
+	}()
+	go func() {
+		_, _ = io.Copy(paced{Conn: down, step: step, moved: moved}, toDown)
+		closeWrite(down)
+		done <- struct{}{}
+	}()
+	<-done
+	<-done
+	close(stop)
+	_ = up.Close()
+	_ = down.Close()
+	return toUp.n.Load(), toDown.n.Load(), <-closed
 }
 
 func (p *Proxy) tunnel(w http.ResponseWriter, r *http.Request) {
@@ -258,24 +344,11 @@ func (p *Proxy) tunnel(w http.ResponseWriter, r *http.Request) {
 	if idle <= 0 {
 		idle = DefaultIdle
 	}
-	last := &atomic.Int64{}
-	last.Store(time.Now().UnixNano())
-	sent := &counter{Reader: io.MultiReader(bufferedOf(buf), down), last: last}
-	got := &counter{Reader: up, last: last}
-	stop := make(chan struct{})
-	silent := closeWhenSilent(idle, last, stop, up, down)
-	done := make(chan struct{}, 2)
-	go func() { _, _ = io.Copy(up, sent); closeWrite(up); done <- struct{}{} }()
-	go func() { _, _ = io.Copy(down, got); closeWrite(down); done <- struct{}{} }()
-	<-done
-	<-done
-	close(stop)
-	up.Close()
-	down.Close()
+	sent, got, silent := splice(up, down, io.MultiReader(bufferedOf(buf), down), idle)
 	if p.Record != nil {
 		e := Egress{Host: host, Port: port, Method: "CONNECT", Allowed: true,
-			Up: sent.n.Load(), Down: got.n.Load(), Took: time.Since(start)}
-		if <-silent {
+			Up: sent, Down: got, Took: time.Since(start)}
+		if silent {
 			e.Why = fmt.Sprintf("closed after %s with nothing sent either way", idle)
 		}
 		p.Record(e)

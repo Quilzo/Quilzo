@@ -1,5 +1,5 @@
 {{template "head" .}}
-{{if .One}}<p class="wf-back"><a href="/security">Security</a> · <a href="/security/rules">What is checked</a></p>
+{{if .One}}<nav class="crumbs" aria-label="Breadcrumb">{{icon "arrow_back"}}<ol><li><a href="/security">Security</a></li><li>{{icon "chevron_right"}}<a href="/security/rules">What is checked</a></li></ol></nav>
 {{with index .Rules 0}}<h1>{{.Title}}</h1>
 <p class="meta"><span class="pill {{.Severity}}">{{sentence .Severity}}</span> <code>{{.ID}}</code>{{if .Controls}} · NIST {{range .Controls}}{{.}} {{end}}{{end}}{{if .OWASP}} · {{.OWASP}}{{end}}</p>{{end}}
 {{if .Checked}}{{if .Failing}}<h2>Failing now</h2>
@@ -11,7 +11,7 @@
 <h2>Why it matters</h2>
 {{with index .Rules 0}}<p>{{.Why}}</p>{{end}}
 {{else}}
-<p class="wf-back"><a href="/security">Security</a></p>
+<nav class="crumbs" aria-label="Breadcrumb">{{icon "arrow_back"}}<ol><li><a href="/security">Security</a></li></ol></nav>
 <h1>What is checked</h1>
 <p>Each rule maps to the NIST SP 800-53 controls it provides evidence for, and to the OWASP Top 10:2025 category it belongs to. Severity is assigned by what an attacker gains.</p>
 

@@ -95,11 +95,18 @@ func (s *Server) withNotice(next, msg string) string {
 	if msg == "" {
 		return next
 	}
-	sep := "?"
-	if strings.Contains(next, "?") {
-		sep = "&"
+	// Set, not appended: a screen reads the first m it is given, so an m
+	// already in next would be the one shown and signed, and this one --
+	// the warning about failed sign-ins -- would never be seen.
+	u, err := url.Parse(next)
+	if err != nil {
+		return next
 	}
-	return signFlash(s.flashKey, next+sep+"m="+url.QueryEscape(msg))
+	q := u.Query()
+	q.Del(flashSig)
+	q.Set("m", msg)
+	u.RawQuery = q.Encode()
+	return signFlash(s.flashKey, u.String())
 }
 
 // lockoutProven is lockoutSucceed for a sign-in made another way than a

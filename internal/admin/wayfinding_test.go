@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -170,33 +171,7 @@ func TestEveryNewTabSaysSo(t *testing.T) {
 		}
 		return m[1], true
 	}
-	// Every destination, and every screen one link below one: the source
-	// links on a framework's own screen were missed by a test that opened
-	// only the menu.
-	paths := []string{}
-	seen := map[string]bool{}
-	for _, d := range destinations {
-		paths = append(paths, d.Path)
-		seen[d.Path] = true
-	}
-	local := regexp.MustCompile(`href="(/[a-z][^"?#{]*)"`)
-	// Two links deep: Security, then Frameworks, then one framework.
-	for depth, from := 0, 0; depth < 2; depth++ {
-		level := paths[from:]
-		from = len(paths)
-		for _, at := range level {
-			for _, m := range local.FindAllStringSubmatch(get(t, srv, at, token).Body.String(), -1) {
-				p := m[1]
-				// Leaving is a GET here, and it would end the session the
-				// rest of this test uses.
-				if seen[p] || p == "/signout" || strings.HasPrefix(p, "/signin") {
-					continue
-				}
-				seen[p] = true
-				paths = append(paths, p)
-			}
-		}
-	}
+	paths := screensTwoDeep(t, srv, token)
 	checked := 0
 	for _, p := range paths {
 		w := get(t, srv, p, token)
@@ -268,5 +243,129 @@ func TestSigningOnReturnsToWhatWasAskedFor(t *testing.T) {
 	body := get(t, srv, "/history", "").Body.String()
 	if !strings.Contains(body, `href="/signin/oidc?next=%2fhistory"`) {
 		t.Error("the single sign-on link does not carry the address that was asked for")
+	}
+}
+
+// Where a sign-in goes never carries a message. A screen shows ?m= and ?e=
+// only when this server signed them, and it signs what is in a redirect it
+// writes, so a message riding in next would be shown as the program's own.
+func TestSigningInCannotCarryAMessage(t *testing.T) {
+	srv, token := setup(t)
+	signIn := func(next string) string {
+		form := url.Values{"token": {token}, "next": {next}}
+		req := httptest.NewRequest(http.MethodPost, "/signin", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		return w.Header().Get("Location")
+	}
+	forged := "Sign in again at elsewhere.example"
+	for _, next := range []string{
+		"/history?m=" + url.QueryEscape(forged),
+		"/history?e=" + url.QueryEscape(forged),
+		"/history?from=50&m=" + url.QueryEscape(forged) + "&fs=whatever",
+		"/history%3Fm=" + url.QueryEscape(forged),
+		"/history%23m=" + url.QueryEscape(forged),
+	} {
+		loc := signIn(next)
+		u, err := url.Parse(loc)
+		if err != nil {
+			t.Fatalf("next=%q: %q", next, loc)
+		}
+		if q := u.Query(); q.Has("m") || q.Has("e") || strings.Contains(loc, "elsewhere") {
+			t.Errorf("next=%q went to %q, carrying a message", next, loc)
+		}
+	}
+	// What else was asked for survives.
+	if loc := signIn("/history?from=50&m=x"); unsigned(loc) != "/history?from=50" {
+		t.Errorf("the rest of the address was lost: %q", loc)
+	}
+
+	// The notice about failed sign-ins replaces any m already there, so
+	// the one signed and shown is the server's.
+	got := srv.withNotice("/history?m="+url.QueryEscape(forged), "3 failed sign-ins")
+	u, _ := url.Parse(got)
+	if ms := u.Query()["m"]; len(ms) != 1 || ms[0] != "3 failed sign-ins" {
+		t.Errorf("the notice is %q in %q", ms, got)
+	}
+}
+
+// screensTwoDeep is every menu destination and every screen up to two links
+// below one, as a person would find them: Security, then Frameworks, then
+// one framework. Signing out is a GET here and would end the session the
+// caller uses, so it is left alone, as is signing in.
+func screensTwoDeep(t *testing.T, srv *Server, token string) []string {
+	t.Helper()
+	paths := []string{}
+	seen := map[string]bool{}
+	for _, d := range destinations {
+		paths = append(paths, d.Path)
+		seen[d.Path] = true
+	}
+	// And every route the mux serves, so a screen nothing links to in the
+	// test's data (the blanks to fill, before there are any) is opened too.
+	for r := range servedRoutes(t) {
+		if seen[r] || strings.HasSuffix(r, "/") || r == "/signout" || strings.HasPrefix(r, "/signin") {
+			continue
+		}
+		if _, excused := notAScreen[r]; excused {
+			continue
+		}
+		seen[r] = true
+		paths = append(paths, r)
+	}
+	sort.Strings(paths[len(destinations):])
+	local := regexp.MustCompile(`href="(/[a-z][^"?#{]*)"`)
+	for depth, from := 0, 0; depth < 2; depth++ {
+		level := paths[from:]
+		from = len(paths)
+		for _, at := range level {
+			for _, m := range local.FindAllStringSubmatch(get(t, srv, at, token).Body.String(), -1) {
+				p := m[1]
+				if seen[p] || p == "/signout" || strings.HasPrefix(p, "/signin") {
+					continue
+				}
+				seen[p] = true
+				paths = append(paths, p)
+			}
+		}
+	}
+	return paths
+}
+
+// Above a screen's heading there is one way up: the breadcrumb, drawn the
+// one way. A screen that kept a trail of its own in an older form showed
+// it beside the breadcrumb the layout adds, so "Security" twice before the
+// heading, or "Security" and then "Security › Frameworks".
+func TestOneWayUpAboveEveryHeading(t *testing.T) {
+	srv, token := fullyWired(t)
+	wirePosture(srv, true)
+	link := regexp.MustCompile(`<a [^>]*href="([^"]*)"`)
+	notice := regexp.MustCompile(`(?s)<p class="notice[^"]*"[^>]*>.*?</p>`)
+	crumbs := regexp.MustCompile(`(?s)<nav class="crumbs" aria-label="Breadcrumb">.*?</nav>`)
+	checked := 0
+	for _, p := range screensTwoDeep(t, srv, token) {
+		w := get(t, srv, p, token)
+		body := w.Body.String()
+		if w.Code != http.StatusOK || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") {
+			continue
+		}
+		start := strings.Index(body, `<main id="main"`)
+		end := strings.Index(body, "<h1")
+		if start < 0 || end < start {
+			continue
+		}
+		checked++
+		above := body[start:end]
+		if n := strings.Count(above, `aria-label="Breadcrumb"`); n > 1 {
+			t.Errorf("%s has %d breadcrumbs above its heading", p, n)
+		}
+		rest := crumbs.ReplaceAllString(notice.ReplaceAllString(above, ""), "")
+		if m := link.FindStringSubmatch(rest); m != nil {
+			t.Errorf("%s has a link to %s above its heading that is not the breadcrumb", p, m[1])
+		}
+	}
+	if checked < 80 {
+		t.Fatalf("only %d screens checked", checked)
 	}
 }

@@ -45,6 +45,8 @@ package a11y
 
 import (
 	"fmt"
+	stdhtml "html"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -266,6 +268,7 @@ func (r *Report) checkHeadings(tags []tag) {
 }
 
 func (r *Report) checkLinks(tags []tag, html string) {
+	lang := pageLang(tags)
 	for i, t := range tags {
 		if t.name != "a" || t.closing {
 			continue
@@ -319,7 +322,7 @@ func (r *Report) checkLinks(tags []tag, html string) {
 				fmt.Sprintf("link text %q says nothing out of context, and links "+
 					"are often read as a list", text), t.raw)
 		}
-		if opensNewWindow(t) && !saysNewWindow(text+" "+t.attrs["aria-label"]+" "+t.attrs["title"]) {
+		if opensNewWindow(t) && announcedNot(t, text, inner, lang) {
 			r.add("new-tab-not-announced", Advisory, "WCAG 3.2.5",
 				fmt.Sprintf("link %q opens a new tab without saying so; somebody "+
 					"who cannot see the tab bar finds the back button does "+
@@ -327,6 +330,51 @@ func (r *Report) checkLinks(tags []tag, html string) {
 					"visually hidden if need be (technique G201)", text), t.raw)
 		}
 	}
+}
+
+// pageLang is the page's declared language, lower-cased: "" when it has
+// none.
+func pageLang(tags []tag) string {
+	for _, t := range tags {
+		if t.name == "html" && !t.closing {
+			return strings.ToLower(strings.TrimSpace(t.attrs["lang"]))
+		}
+	}
+	return ""
+}
+
+// innerNames is the alt and aria-label text inside a link, which is part
+// of its name.
+var innerNames = regexp.MustCompile(`(?i)\b(?:alt|aria-label)\s*=\s*"([^"]*)"`)
+
+// announcedNot reports whether a link that opens a new tab certainly does
+// not say so. Certainly: a name given by another element (aria-labelledby,
+// aria-describedby) is not something a parser can read, and nor is a
+// language it has no words for, and a finding that cannot be fixed is one
+// people learn to ignore.
+func announcedNot(t tag, text, inner, lang string) bool {
+	for _, a := range []string{"aria-labelledby", "aria-describedby"} {
+		if _, ok := t.attrs[a]; ok {
+			return false
+		}
+	}
+	name := text + " " + t.attrs["aria-label"] + " " + t.attrs["title"]
+	for _, m := range innerNames.FindAllStringSubmatch(inner, -1) {
+		name += " " + m[1]
+	}
+	name = strings.ToLower(stdhtml.UnescapeString(name))
+	name = strings.Join(strings.Fields(strings.ReplaceAll(name, "\u00a0", " ")), " ")
+	if saysNewWindowIn(name, "en") {
+		return false
+	}
+	base, _, _ := strings.Cut(lang, "-")
+	if base == "" {
+		base = "en"
+	}
+	if _, known := newWindowWords[base]; !known {
+		return false
+	}
+	return !saysNewWindowIn(name, base)
 }
 
 // opensNewWindow reports whether a link's target is a window other than
@@ -344,12 +392,26 @@ func opensNewWindow(t tag) bool {
 	return true
 }
 
-// saysNewWindow reports whether a link's name tells the reader it opens a
-// new tab or window, in any of the ways people write it.
-func saysNewWindow(name string) bool {
-	n := strings.ToLower(name)
-	return strings.Contains(n, "new tab") || strings.Contains(n, "new window") ||
-		strings.Contains(n, "another tab") || strings.Contains(n, "separate tab")
+// newWindowWords is how "opens in a new tab or window" is said, by
+// language, in the words a translated site uses. English is matched on
+// every page, since a page in another language may still say it in
+// English; a language not listed here is one this cannot read, and is not
+// reported.
+var newWindowWords = map[string]*regexp.Regexp{
+	"en": regexp.MustCompile(`\b(new|another|separate|different)\s+(browser\s+)?(tab|window)\b`),
+	"fr": regexp.MustCompile(`(nouvel|autre)\s+onglet|nouvelle\s+fenêtre`),
+	"de": regexp.MustCompile(`neue[mns]?\s+(browser-?)?(tab|fenster)`),
+	"es": regexp.MustCompile(`(nueva|otra)\s+(pestaña|ventana)`),
+	"it": regexp.MustCompile(`nuov[ao]\s+(scheda|finestra)`),
+	"pt": regexp.MustCompile(`(nova|outra)\s+(aba|guia|janela)`),
+	"nl": regexp.MustCompile(`nieuw(e)?\s+(tabblad|venster)`),
+}
+
+// saysNewWindowIn reports whether a lower-cased name says, in the given
+// language, that the link opens a new tab or window.
+func saysNewWindowIn(name, lang string) bool {
+	re, ok := newWindowWords[lang]
+	return ok && re.MatchString(name)
 }
 
 func (r *Report) checkLanguage(tags []tag) {
