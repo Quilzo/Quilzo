@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func parse(t *testing.T, src string) any {
@@ -217,6 +219,51 @@ func TestCollectionsNestedTooDeepAreRefused(t *testing.T) {
 			}
 			if again := parse(t, string(out)); asJSON(again) != asJSON(v) {
 				t.Fatalf("read back differently:\n%s\n%s", asJSON(v), asJSON(again))
+			}
+		})
+	}
+}
+
+// A flow collection or a quoted value written over many lines is read in
+// time and memory that grow with its length. Each line was added to all
+// the text before it, which was then scanned again for its end: 80,000
+// lines, 400 KB, took 27 seconds, and an agent file may be 2 MiB.
+func TestLongMultiLineValuesAreReadInLinearTime(t *testing.T) {
+	const n = 10000
+	var list, quote strings.Builder
+	list.WriteString("tools: [\n")
+	quote.WriteString("instruction: \"start\n")
+	for i := 0; i < n; i++ {
+		list.WriteString("  item, 'it''s', \"a \\\" b\",\n")
+		quote.WriteString("  word \\\" it's\n")
+	}
+	list.WriteString("  last]\n")
+	quote.WriteString("  end\"\n")
+	for name, c := range map[string]struct {
+		src   string
+		check func(any) bool
+	}{
+		"a flow list": {list.String(), func(v any) bool {
+			l, _ := v.(map[string]any)["tools"].([]any)
+			return len(l) == 3*n+1 && l[1] == "it's" && l[2] == `a " b` && l[3*n] == "last"
+		}},
+		"a quoted value": {quote.String(), func(v any) bool {
+			s, _ := v.(map[string]any)["instruction"].(string)
+			return strings.HasPrefix(s, `start word " it's word`) && strings.HasSuffix(s, `word " it's end`)
+		}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var before, after runtime.MemStats
+			runtime.ReadMemStats(&before)
+			start := time.Now()
+			v := parse(t, c.src)
+			took := time.Since(start)
+			runtime.ReadMemStats(&after)
+			if !c.check(v) {
+				t.Fatalf("read wrongly: %.200s", asJSON(v))
+			}
+			if spent := after.TotalAlloc - before.TotalAlloc; spent > 64<<20 || took > 2*time.Second {
+				t.Fatalf("%d KB took %v and %d MB to read", len(c.src)>>10, took, spent>>20)
 			}
 		})
 	}
