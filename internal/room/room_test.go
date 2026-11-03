@@ -447,6 +447,41 @@ func TestReactionsFoldOverTimeAndNotArrival(t *testing.T) {
 	}
 }
 
+// A reaction is an emoji, from somebody in the room.
+//
+// Reactions are kept now, beside the messages, and a reaction is neither
+// erased with the message under it nor held as a digest in the audit log:
+// one that could carry a sentence would be a way to say something that
+// skips both, and one from outside a closed room is reading it.
+func TestAReactionIsAnEmojiFromSomebodyInTheRoom(t *testing.T) {
+	l, err := New(Room{ID: "board", Name: "board", Kind: Closed,
+		Purpose: "the merger", Created: now, Members: []string{"sam", "lee"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := said("m1", "sam", "the merger is on", now)
+	m.Room = "board"
+	post(t, l, m)
+	for _, ok := range []string{"+1", "tada", "\U0001F44D\U0001F3FD",
+		"\U0001F468\u200D\U0001F469\u200D\U0001F467"} {
+		if err := l.React(Reaction{Message: "m1", Emoji: ok, By: "LEE",
+			At: now}); err != nil {
+			t.Errorf("%q was refused: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"the buyer is Initech", "a\nb",
+		strings.Repeat("x", MaxEmoji+1)} {
+		if err := l.React(Reaction{Message: "m1", Emoji: bad, By: "lee",
+			At: now}); err == nil {
+			t.Errorf("%q was kept as a reaction", bad)
+		}
+	}
+	if err := l.React(Reaction{Message: "m1", Emoji: "+1", By: "pat",
+		At: now}); err == nil {
+		t.Error("somebody outside a closed room reacted in it")
+	}
+}
+
 // A room nobody can state the purpose of accumulates people.
 func TestARoomNobodyCanExplainIsRefused(t *testing.T) {
 	good := Room{ID: "deploys", Name: "deploys", Kind: Open,

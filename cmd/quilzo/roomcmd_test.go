@@ -266,3 +266,82 @@ func TestOnlyItsMembersReadAClosedRoom(t *testing.T) {
 		}
 	}
 }
+
+// A reaction is kept and shown, and the list says what is unread.
+//
+// `room read` printed a message's reactions and nothing could make one:
+// room.Log.React kept them in memory, no command called it, and nothing
+// was stored, so the line could never print. room.Log.Unread, written so
+// that a reply in a thread nobody follows is still news, was called by
+// nothing at all.
+func TestReactionsAreKeptAndTheListSaysWhatIsUnread(t *testing.T) {
+	root := roomStore(t)
+	inRoom(t, root, "sam", "open", "plans", "--purpose", "what ships when")
+	id, _ := inRoom(t, root, "sam", "say", "plans", "ship on Friday?")["message"].(string)
+
+	if _, err := tryInRoom(t, root, "lee", "react", "plans", id, "+1"); err != nil {
+		t.Fatalf("there is no way to react to a message: %v", err)
+	}
+	inRoom(t, root, "pat", "react", "plans", id, "+1")
+	inRoom(t, root, "pat", "react", "plans", id, "tada")
+	inRoom(t, root, "pat", "react", "plans", id, "tada", "--off")
+
+	// Kept, in a fresh read of the store.
+	l, err := loadRoom(root, "plans")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := l.Reactions(id); len(got["+1"]) != 2 || len(got["tada"]) != 0 {
+		t.Errorf("the reactions kept are %v", got)
+	}
+	// Shown, to a reader and to a script.
+	said, err := roomSaid(t, root, "sam", "read", "plans")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var read []struct {
+		ID        string              `json:"id"`
+		Reactions map[string][]string `json:"reactions"`
+	}
+	if err := json.Unmarshal(said, &read); err != nil {
+		t.Fatalf("%v: %s", err, said)
+	}
+	if len(read) != 1 || len(read[0].Reactions["+1"]) != 2 {
+		t.Errorf("room read shows %s", said)
+	}
+	// A reaction is an emoji and not a second way to say something.
+	if _, err := tryInRoom(t, root, "pat", "react", "plans", id,
+		"the merger is with Initech"); err == nil {
+		t.Error("a sentence was kept as a reaction")
+	}
+
+	unread := func(who string) int {
+		t.Helper()
+		said, err := roomSaid(t, root, who, "list")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var rows []struct {
+			Unread int `json:"unread"`
+		}
+		if err := json.Unmarshal(said, &rows); err != nil || len(rows) != 1 {
+			t.Fatalf("%v: %s", err, said)
+		}
+		return rows[0].Unread
+	}
+	if n := unread("lee"); n != 1 {
+		t.Errorf("somebody who never read the room has %d unread", n)
+	}
+	if n := unread("sam"); n != 0 {
+		t.Errorf("somebody's own message is %d unread to them", n)
+	}
+	inRoom(t, root, "lee", "read", "plans")
+	if n := unread("lee"); n != 0 {
+		t.Errorf("after reading the room %d are unread", n)
+	}
+	// A reply in a thread is news in the room.
+	inRoom(t, root, "sam", "say", "plans", "or Monday", "--reply", id)
+	if n := unread("lee"); n != 1 {
+		t.Errorf("a reply in a thread is %d unread", n)
+	}
+}

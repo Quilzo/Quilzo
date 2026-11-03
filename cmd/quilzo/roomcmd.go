@@ -44,6 +44,19 @@ func roomMessages(root, id string) string {
 	return filepath.Join(roomDir(root), safeName(id)+".messages.jsonl")
 }
 
+// roomReactions are a room's reactions, appended one line each: taking one
+// back is a line of its own, so the fold (room.Tally) is over what happened
+// rather than over what the file was last told.
+func roomReactions(root, id string) string {
+	return filepath.Join(roomDir(root), safeName(id)+".reactions.jsonl")
+}
+
+// roomSeen is how far each person has read a room, for what is unread.
+// In a directory of its own, so the list of rooms never mistakes it for one.
+func roomSeen(root, id string) string {
+	return filepath.Join(roomDir(root), "seen", safeName(id)+".json")
+}
+
 func cmdRoom(root string, args []string) error {
 	if len(args) == 0 {
 		args = []string{"list"}
@@ -63,9 +76,11 @@ func cmdRoom(root string, args []string) error {
 		return roomRemove(root, args[1:])
 	case "history":
 		return roomHistory(root, args[1:])
+	case "react":
+		return roomReact(root, args[1:])
 	default:
 		return fmt.Errorf("unknown room command %q; try list, open, say, "+
-			"read, edit, remove or history", args[0])
+			"read, edit, remove, history or react", args[0])
 	}
 }
 
@@ -98,6 +113,16 @@ func loadRoom(root, id string) (*room.Log, error) {
 		}
 		_, _, perr := l.Post(m)
 		return perr
+	})
+	if err != nil {
+		return l, err
+	}
+	err = loadJSONL(roomReactions(root, id), func(line []byte) error {
+		var r room.Reaction
+		if uerr := json.Unmarshal(line, &r); uerr != nil {
+			return uerr
+		}
+		return l.React(r)
 	})
 	return l, err
 }
@@ -255,6 +280,9 @@ func roomList(root string) error {
 		Room     room.Room `json:"room"`
 		Messages int       `json:"messages"`
 		Removed  int       `json:"removed"`
+		// Unread is what has been said since the caller last read the
+		// room, replies in threads included and their own words not.
+		Unread int `json:"unread"`
 	}
 	var rows []row
 	caller := resolveCaller(root, flagToken)
@@ -268,7 +296,9 @@ func roomList(root string) error {
 		if !l.Room().Holds(caller.Name) {
 			continue
 		}
-		r := row{Room: l.Room(), Messages: l.Len()}
+		r := row{Room: l.Room(), Messages: l.Len(),
+			Unread: len(l.Unread(caller.Name, lastRead(root, id, caller.Name),
+				false))}
 		for _, m := range l.All() {
 			if m.Gone() {
 				r.Removed++
@@ -291,6 +321,9 @@ func roomList(root string) error {
 			r.Room.Kind, reset)
 		w.Human("  %s%s%s\n", dim, r.Room.Purpose, reset)
 		line := fmt.Sprintf("%d message(s)", r.Messages)
+		if r.Unread > 0 {
+			line += fmt.Sprintf(", %d unread", r.Unread)
+		}
 		if r.Removed > 0 {
 			line += fmt.Sprintf(", %d removed and still accounted for",
 				r.Removed)
@@ -440,7 +473,8 @@ func roomRead(root string, args []string) error {
 	if len(pos) != 1 {
 		return fmt.Errorf("usage: quilzo room read ROOM [--thread ID]")
 	}
-	l, err := readableRoom(root, pos[0], resolveCaller(root, flagToken))
+	caller := resolveCaller(root, flagToken)
+	l, err := readableRoom(root, pos[0], caller)
 	if err != nil {
 		return err
 	}
@@ -450,8 +484,24 @@ func roomRead(root string, args []string) error {
 		if err != nil {
 			return err
 		}
+	} else {
+		// The whole room, so what it held is read. Not for one thread: the
+		// rest of the room has not been seen.
+		markRead(root, l.Room().ID, caller.Name, messages)
 	}
-	if w.JSON(messages) {
+	type shown struct {
+		room.Message
+		Reactions map[string][]string `json:"reactions,omitempty"`
+	}
+	out := make([]shown, 0, len(messages))
+	for _, m := range messages {
+		got := l.Reactions(m.ID)
+		if len(got) == 0 {
+			got = nil
+		}
+		out = append(out, shown{Message: m, Reactions: got})
+	}
+	if w.JSON(out) {
 		return nil
 	}
 	for _, m := range messages {
@@ -476,6 +526,99 @@ func roomRead(root string, args []string) error {
 				strings.Join(parts, "  "), reset)
 		}
 	}
+	return nil
+}
+
+// lastRead is when somebody last read a room, or the zero time if never.
+func lastRead(root, id, who string) time.Time {
+	var seen map[string]time.Time
+	if err := loadJSON(roomSeen(root, id), &seen); err != nil {
+		return time.Time{}
+	}
+	return seen[strings.ToLower(who)]
+}
+
+// markRead records that somebody has read a room up to the newest message
+// they were shown.
+//
+// The newest message's time and not the clock's: a message another process
+// stamped a moment before this read finished, and that this read never
+// showed, stays unread. Never moved back. A failure to write is not a
+// failure to read, so it is left for the next read to try.
+func markRead(root, id, who string, shown []room.Message) {
+	var newest time.Time
+	for _, m := range shown {
+		if m.At.After(newest) {
+			newest = m.At
+		}
+	}
+	if newest.IsZero() {
+		return
+	}
+	_ = atomicfile.Update(roomSeen(root, id), func(seen *map[string]time.Time) error {
+		if *seen == nil {
+			*seen = map[string]time.Time{}
+		}
+		key := strings.ToLower(who)
+		if !newest.After((*seen)[key]) {
+			return atomicfile.ErrUnchanged
+		}
+		(*seen)[key] = newest
+		return nil
+	})
+}
+
+// roomReact puts a reaction on a message, or takes it back.
+//
+// `room read` showed reactions and nothing could make one: room.Log.React
+// held them in memory, no command called it, and nothing was kept. They
+// are appended beside the messages, like an edit, and somebody must be in
+// the room to react in it.
+func roomReact(root string, args []string) error {
+	pos, flags := leadingArgs(args, 3)
+	fs := flag.NewFlagSet("react", flag.ContinueOnError)
+	off := fs.Bool("off", false, "take the reaction back")
+	if err := fs.Parse(flags); err != nil {
+		return err
+	}
+	if len(pos) != 3 {
+		return fmt.Errorf("usage: quilzo room react ROOM MESSAGE EMOJI [--off]")
+	}
+	l, unlock, err := changeRoom(root, pos[0])
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	caller := resolveCaller(root, flagToken)
+	if err := authorise(root, caller, auth.ActEditDraft, "/"); err != nil {
+		return err
+	}
+	r := room.Reaction{Message: pos[1], Emoji: strings.TrimSpace(pos[2]),
+		By: caller.Name, At: time.Now().UTC(), Off: *off}
+	if err := l.React(r); err != nil {
+		return err
+	}
+	if err := appendJSONL(roomReactions(root, l.Room().ID), r); err != nil {
+		return err
+	}
+	action := "room.reacted"
+	if r.Off {
+		action = "room.unreacted"
+	}
+	record(root, caller.auditRecord(action, "/room/"+l.Room().ID,
+		audit.Success, map[string]string{"room": l.Room().ID,
+			"message": r.Message, "emoji": r.Emoji}))
+	got := l.Reactions(r.Message)
+	if w.JSON(map[string]any{"message": r.Message, "reactions": got}) {
+		return nil
+	}
+	var parts []string
+	for emoji, who := range got {
+		parts = append(parts, fmt.Sprintf("%s %d", emoji, len(who)))
+	}
+	sort.Strings(parts)
+	w.Human("%s%s%s  %s%s%s\n", bold, r.Message, reset, dim,
+		strings.Join(parts, "  "), reset)
 	return nil
 }
 

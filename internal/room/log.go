@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/quilzo/quilzo/internal/audit"
 )
@@ -227,6 +228,14 @@ func (l *Log) Thread(id string) ([]Message, error) {
 	return out, nil
 }
 
+// MaxEmoji is the longest a reaction may be, in bytes.
+//
+// Room for a shortcode, or for an emoji with its skin tone and joiners, and
+// not for a sentence. A reaction holds no digest in the audit log and is not
+// taken away when the message under it is erased, so a reaction that could
+// carry words would be a second way to say something that skips both.
+const MaxEmoji = 32
+
 // React records a reaction.
 func (l *Log) React(r Reaction) error {
 	if _, ok := l.byID[r.Message]; !ok {
@@ -234,6 +243,18 @@ func (l *Log) React(r Reaction) error {
 	}
 	if strings.TrimSpace(r.Emoji) == "" || strings.TrimSpace(r.By) == "" {
 		return fmt.Errorf("a reaction needs an emoji and somebody")
+	}
+	if len(r.Emoji) > MaxEmoji ||
+		strings.ContainsFunc(r.Emoji, func(c rune) bool {
+			return unicode.IsSpace(c) || unicode.IsControl(c)
+		}) {
+		return fmt.Errorf("a reaction is one emoji or a shortcode such as "+
+			"+1, at most %d bytes with no spaces; a sentence is a message",
+			MaxEmoji)
+	}
+	if !l.room.Holds(r.By) {
+		return fmt.Errorf("%s is not in %s. Reacting to what is said there "+
+			"is reading it", r.By, l.room.ID)
 	}
 	if r.At.IsZero() {
 		return fmt.Errorf("a reaction needs a time")
