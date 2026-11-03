@@ -32,10 +32,10 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/oidc"
+	"github.com/quilzo/quilzo/internal/replay"
 )
 
 // Window is how old a proof may be, and Skew how far ahead of this
@@ -62,28 +62,12 @@ func AlgorithmNames() string {
 var ErrProof = errors.New("invalid DPoP proof")
 
 // Replays remembers the identifiers of the proofs seen within the window,
-// so a proof is good for one request.
-type Replays struct {
-	mu   sync.Mutex
-	seen map[string]time.Time
-}
+// so a proof is good for one request. Bounded, as internal/replay says
+// why: anybody can make a valid proof with a key of their own.
+type Replays struct{ seen replay.Cache }
 
 func (r *Replays) first(jti string, now time.Time) bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.seen == nil {
-		r.seen = map[string]time.Time{}
-	}
-	for k, at := range r.seen {
-		if now.Sub(at) > Window+Skew {
-			delete(r.seen, k)
-		}
-	}
-	if _, ok := r.seen[jti]; ok {
-		return false
-	}
-	r.seen[jti] = now
-	return true
+	return r.seen.First(jti, now.Add(Window+Skew), now)
 }
 
 type header struct {
