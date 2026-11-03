@@ -42,7 +42,12 @@
   <dt>Registered</dt><dd>{{.Plan.Registered.Format "2 January 2006 15:04"}} by {{.Plan.By}},
     {{if .Plan.BeforeData}}before the data was analysed{{else}}<span class="tag tag-warn">after the data was first analysed</span>{{end}}</dd>
   <dt>SHA-256</dt><dd><code>{{.Plan.Digest}}</code></dd>
-  {{with .Plan.Signature}}<dt>Signed</dt><dd>with the log's key <code>{{.KeyID}}</code> ({{range $i, $a := .Algorithms}}{{if $i}}, {{end}}{{$a}}{{end}})</dd>{{end}}
+  <dt>Signature</dt>
+  <dd>{{if $.PlanProblem}}<span class="tag tag-bad">does not check</span> {{$.PlanProblem}}
+    {{- else if not .Plan.Signature}}none
+    {{- else if $.PlanChecked}}<span class="tag tag-ok">checks</span> against the store's published keys
+    {{- else}}<span class="tag tag-warn">not checked</span>{{end}}</dd>
+  {{with .Plan.Signature}}<dd>with the log's key <code>{{.KeyID}}</code> ({{range $i, $a := .Algorithms}}{{if $i}}, {{end}}{{$a}}{{end}})</dd>{{end}}
 </dl>
 {{range .Amendments}}<p class="hint">Amended {{.At.Format "2 Jan 2006"}} by {{.By}}{{if .AfterData}}, after the data was analysed{{end}}: {{.Why}}</p>{{end}}
 {{else if .Plan.Text}}<p><span class="tag tag-warn">not registered</span> Register it before the data is analysed: <code>quilzo research register {{.Name}}</code>.</p>

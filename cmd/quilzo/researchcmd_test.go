@@ -295,3 +295,80 @@ func TestAnAgentCitesOnlyWorksThatExist(t *testing.T) {
 		t.Error("a reader cited a work")
 	}
 }
+
+// A registered plan reads as signed only when its signature checks. A
+// project.json edited by hand, its plan rewritten and the signature left
+// in place, used to pass research check and show as "Signed" on the
+// screen, because nothing recomputed the digest or checked the signature.
+func TestARewrittenPlanDoesNotCheck(t *testing.T) {
+	root, _ := identityStore(t)
+	dana := asAdmin("dana")
+	if err := researchNew(root, "fever", "Does aspirin lower fever?", dana); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := researchSetPlan(root, "fever", "Compare means.", "", dana); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := researchRegister(root, "fever", dana); err != nil {
+		t.Fatal(err)
+	}
+	// An amendment made the honest way still checks: the signature is over
+	// the plan as registered, and the amendments lead from it to the plan
+	// as it stands.
+	if _, err := researchSetPlan(root, "fever", "Compare medians.", "the outcome is skewed", dana); err != nil {
+		t.Fatal(err)
+	}
+	if _, fs, err := researchCheck(root, "fever", dana); err != nil || research.Problems(fs) != 0 {
+		t.Fatalf("an honest plan: %+v %v", fs, err)
+	}
+
+	path := filepath.Join(researchStore(root).Dir, "fever", "project.json")
+	honest, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, tamper := range map[string]func(*research.Project){
+		"the text alone": func(p *research.Project) { p.Plan.Text = "Compare whichever came out best." },
+		"the text and its digest, amendments dropped": func(p *research.Project) {
+			p.Plan.Text = "Compare whichever came out best."
+			p.Plan.Digest, p.Amendments = research.Digest(p.Plan.Text), nil
+		},
+		"an amendment's starting point": func(p *research.Project) {
+			p.Amendments[0].From = research.Digest("Compare whichever came out best.")
+		},
+		"the signature dropped": func(p *research.Project) { p.Plan.Signature = nil },
+	} {
+		var p research.Project
+		if err := json.Unmarshal(honest, &p); err != nil {
+			t.Fatal(err)
+		}
+		tamper(&p)
+		b, _ := json.Marshal(p)
+		if err := os.WriteFile(path, b, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, fs, err := researchCheck(root, "fever", dana)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !planProblem(fs) {
+			t.Errorf("%s: research check found nothing wrong with the plan: %+v", name, fs)
+		}
+		_, _, fs, err = researchScreens(root).Load("fever")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !planProblem(fs) {
+			t.Errorf("%s: the screen found nothing wrong with the plan: %+v", name, fs)
+		}
+	}
+}
+
+func planProblem(fs []research.Finding) bool {
+	for _, f := range fs {
+		if f.Problem && strings.Contains(f.What, "plan") {
+			return true
+		}
+	}
+	return false
+}
