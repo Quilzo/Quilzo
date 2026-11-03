@@ -186,3 +186,39 @@ func TestWithoutReviewsTheSectionIsAbsent(t *testing.T) {
 		t.Errorf("start with no host: %d %s", w.Code, loc)
 	}
 }
+
+// A session exchanged from a long-lived token and sent in a header is a
+// program's, as the token is: the admin's own rule (authenticate) is that
+// a credential in a header short of two factors belongs to a program. In
+// the grace before two factors are compulsory that rule is not yet
+// enforced, and the screen let such a session start and decide a review as
+// a person.
+func TestASessionExchangedFromATokenCannotReview(t *testing.T) {
+	srv, editor := setup(t)
+	hooks, pressed := memoryReview(srv)
+	srv.AccessReview = hooks
+	srv.MFAFrom = time.Now().Add(14 * 24 * time.Hour)
+	program, _, err := srv.Tokens.Issue("deploy", "editor", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exchanged, _, err := srv.Tokens.Exchange(program, auth.RoleNone, "", 15*time.Minute, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/people/review/start", "/people/review/close"} {
+		if w := postForm(t, srv, path, exchanged, ""); w.Code != http.StatusForbidden {
+			t.Errorf("%s with an exchanged session: %d", path, w.Code)
+		}
+	}
+	if w := postForm(t, srv, "/people/review/start", editor, ""); w.Code != http.StatusSeeOther {
+		t.Fatalf("an administrator signed in with a passkey could not start: %d", w.Code)
+	}
+	decide := url.Values{"item": {"1"}, "verdict": {"revoke"}}.Encode()
+	if w := postForm(t, srv, "/people/review/decide", exchanged, decide); w.Code != http.StatusForbidden {
+		t.Errorf("decide with an exchanged session: %d", w.Code)
+	}
+	if got := strings.Join(*pressed, "; "); got != "start editor" {
+		t.Errorf("the host was asked: %s", got)
+	}
+}

@@ -177,6 +177,40 @@ func (i Item) Holder(name string) bool {
 	return false
 }
 
+// NotHeldBy refuses name deciding an item they hold (Holder), because
+// nobody reviews their own access. The host asks it again of a mapping
+// with the group's members as they are now, since the identity provider
+// may have put the reviewer in the group after the review started.
+func (i Item) NotHeldBy(name string) error {
+	if i.Holder(name) {
+		return fmt.Errorf("item %s is %s's own access. Nobody reviews their own: another "+
+			"administrator decides it", i.ID, name)
+	}
+	return nil
+}
+
+// Covers reports whether a binding is one this item put in front of the
+// reviewer, which is what revoking the item may take away and all it may.
+//
+// The same principal and the same grant, made by hand, as Snapshot took it
+// in: never a deny, and never a binding provisioning made. Revoking by
+// principal, role and resource alone (auth's RevokeNamed) took a deny with
+// the same three as well, and provisioning suspends somebody with a deny of
+// reader on "/", the same three as the reader grant most people hold by
+// hand. A suspended person's items are dormant and proposed for revoke, so
+// the review's own suggestion lifted the suspension and their other grants
+// worked again.
+func (i Item) Covers(b auth.Binding) bool {
+	if i.Kind != Binding || b.Deny || b.GrantedBy == provisioned || b.Principal != i.Principal {
+		return false
+	}
+	if i.AppRole {
+		role, ok := b.AppRoleOf()
+		return ok && role == i.Role
+	}
+	return b.Via == "" && b.What() == i.Role && b.Resource == i.Resource
+}
+
 // SamePerson reports whether two names are one person's.
 //
 // Policy decisions compare names exactly and people do not: "Dana" and
@@ -563,9 +597,8 @@ func (r *Review) Check(id string, v Verdict, d Decider, why string) (Item, error
 	if err := d.check(); err != nil {
 		return Item{}, err
 	}
-	if it.Holder(d.Name) {
-		return Item{}, fmt.Errorf("item %s is %s's own access. Nobody reviews their own: another "+
-			"administrator decides it", it.ID, d.Name)
+	if err := it.NotHeldBy(d.Name); err != nil {
+		return Item{}, err
 	}
 	if v == Keep && it.Privileged && strings.TrimSpace(why) == "" {
 		return Item{}, fmt.Errorf("item %s is privileged, and keeping it needs a reason (--why). It is the "+

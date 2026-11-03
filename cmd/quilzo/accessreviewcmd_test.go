@@ -818,3 +818,123 @@ func TestAReviewFallingDueIsMailedToTheSecurityContact(t *testing.T) {
 		t.Errorf("the security contact was not told a review is due: %q", told)
 	}
 }
+
+// A revoke takes away the grant the reviewer was shown and nothing else
+// that shares its principal, role and resource. Provisioning suspends
+// somebody with a deny of reader on "/", the same three as the reader
+// binding most people hold by hand, and a suspended person's items are
+// dormant and proposed for revoke: a revoke matched on those three alone
+// took the suspension with it, and their other grants worked again.
+func TestARevokeLeavesASuspensionInPlace(t *testing.T) {
+	root, tokens := reviewed(t)
+	for _, g := range [][]string{{"grant", "lee", "reader"}, {"grant", "lee", "author", "--on", "/blog"}} {
+		if err := cmdAuth(root, g); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The identity provider deactivates lee.
+	if err := scimSync(root, "lee", nil, true); err != nil {
+		t.Fatal(err)
+	}
+	suspended := func() bool {
+		t.Helper()
+		pol, err := loadPolicy(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return !pol.Evaluate("lee", auth.ActView, "/blog").Allowed
+	}
+	if !suspended() {
+		t.Fatal("provisioning did not suspend lee")
+	}
+	if err := review(t, root, tokens["dana"], "start"); err != nil {
+		t.Fatal(err)
+	}
+	reader := itemFor(t, openReview(t, root), func(it accessreview.Item) bool {
+		return it.Kind == accessreview.Binding && it.Principal == "lee" && it.Role == string(auth.RoleReader)
+	})
+	if err := review(t, root, tokens["dana"], "decide", reader.ID, "revoke"); err != nil {
+		t.Fatal(err)
+	}
+	if !suspended() {
+		t.Error("revoking lee's reader grant lifted provisioning's suspension, and lee's author grant on /blog works again")
+	}
+	pol, _ := loadPolicy(root)
+	for _, b := range pol.Snapshot() {
+		if b.Principal == "lee" && !b.Deny && b.Role == auth.RoleReader {
+			t.Errorf("the reader grant the review revoked is still there: %+v", b)
+		}
+	}
+}
+
+// The check before a mapping's revoke keeps what provisioning took away.
+// A suspended member who also holds admin by hand administers nothing,
+// and counting them as an administrator let the last group that made
+// anybody one be unmapped.
+func TestAMappingRevokeCountsASuspendedAdministratorAsNobody(t *testing.T) {
+	root, _ := newSCIM(t)
+	if err := scimStore(root).Update(func(st *scim.State) error {
+		st.Users = append(st.Users, scim.User{ID: "u-ada", UserName: "ada@example.com", Active: true},
+			scim.User{ID: "u-bea", UserName: "bea@example.com", Active: false})
+		st.Groups = append(st.Groups, scim.Group{ID: "g-admins", DisplayName: "Admins",
+			Members: []string{"u-ada", "u-bea"}})
+		st.Mapping["Admins"] = "admin"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := scimSync(root, "ada@example.com", []string{"admin"}, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := updatePolicy(root, func(p *auth.Policy) error {
+		p.Revoke("boss", auth.RoleAdmin, "/")
+		return p.Grant(auth.Binding{Principal: "bea@example.com", Role: auth.RoleAdmin, Resource: "/",
+			GrantedBy: "boss"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := scimSync(root, "bea@example.com", nil, true); err != nil {
+		t.Fatal(err)
+	}
+	pol, _ := loadPolicy(root)
+	if pol.Evaluate("bea@example.com", auth.ActGrant, "/").Allowed || !pol.Evaluate("ada@example.com", auth.ActGrant, "/").Allowed {
+		t.Fatal("the store is not as the test needs it: ada administers through the group, bea is suspended")
+	}
+	item := accessreview.Item{Kind: accessreview.Mapping, Group: "Admins", Role: "admin",
+		Members: []string{"ada@example.com"}}
+	if err := applyRevoke(root, human("boss"), item); !errors.Is(err, errLastAdministrator) {
+		t.Fatalf("the group that made the only working administrator was unmapped: %v", err)
+	}
+}
+
+// Nobody decides a group they are in, including one the identity
+// provider put them in after the review started: the snapshot's members
+// say who was in it then, and the reviewer's own access is what it is now.
+func TestJoiningAGroupDuringTheReviewMakesItYourOwn(t *testing.T) {
+	root, c := newSCIM(t)
+	c.do("POST", "/Users", `{"userName":"ada@example.com","active":true}`)
+	_, g := c.do("POST", "/Groups", `{"displayName":"Editors"}`)
+	_, users := c.do("GET", "/Users", "")
+	ada := users["Resources"].([]any)[0].(map[string]any)["id"].(string)
+	add := func(id string) {
+		c.do("PATCH", "/Groups/"+g["id"].(string), `{"schemas":["`+scim.SchemaPatch+`"],
+		"Operations":[{"op":"add","path":"members","value":[{"value":"`+id+`"}]}]}`)
+	}
+	add(ada)
+	boss := personToken(t, root, "boss", auth.RoleAdmin)
+	t.Cleanup(func(old string) func() { return func() { flagToken = old } }(flagToken))
+	if err := review(t, root, boss, "start"); err != nil {
+		t.Fatal(err)
+	}
+	editors := itemFor(t, openReview(t, root), func(it accessreview.Item) bool { return it.Group == "Editors" })
+
+	_, u := c.do("POST", "/Users", `{"userName":"boss","active":true}`)
+	add(u["id"].(string))
+	err := review(t, root, boss, "decide", editors.ID, "keep")
+	if err == nil || !strings.Contains(err.Error(), "own access") {
+		t.Fatalf("boss kept the mapping of a group boss is now in: %v", err)
+	}
+	if _, done := openReview(t, root).Decided(editors.ID); done {
+		t.Error("the refused decision was recorded")
+	}
+}

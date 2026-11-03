@@ -438,3 +438,48 @@ func TestOneReviewAtATime(t *testing.T) {
 		t.Error("a failed change was reported as made")
 	}
 }
+
+// A revoke may take what the reviewer was shown and nothing that only
+// shares its principal, role and resource: not a deny (provisioning's
+// suspension is a deny of reader on "/"), not what provisioning granted,
+// and not another app role's bindings.
+func TestAnItemCoversOnlyTheGrantItShowed(t *testing.T) {
+	reader := Item{Kind: Binding, Principal: "lee", Role: "reader", Resource: "/"}
+	app := Item{Kind: Binding, Principal: "lee", Role: "shop/clerk", AppRole: true}
+	for _, c := range []struct {
+		it   Item
+		b    auth.Binding
+		want bool
+	}{
+		{reader, auth.Binding{Principal: "lee", Role: auth.RoleReader, Resource: "/", GrantedBy: "dana"}, true},
+		{reader, auth.Binding{Principal: "lee", Role: auth.RoleReader, Resource: "/", Deny: true, GrantedBy: provisioned}, false},
+		{reader, auth.Binding{Principal: "lee", Role: auth.RoleReader, Resource: "/", Deny: true, GrantedBy: "dana"}, false},
+		{reader, auth.Binding{Principal: "lee", Role: auth.RoleReader, Resource: "/", GrantedBy: provisioned}, false},
+		{reader, auth.Binding{Principal: "Lee", Role: auth.RoleReader, Resource: "/"}, false},
+		{reader, auth.Binding{Principal: "lee", Role: auth.RoleReader, Resource: "/blog"}, false},
+		{reader, auth.Binding{Principal: "lee", Role: auth.RoleReader, Resource: "/", Via: auth.ViaApp("shop/clerk")}, false},
+		{app, auth.Binding{Principal: "lee", Role: auth.RoleAuthor, Resource: "/shop", Via: auth.ViaApp("shop/clerk")}, true},
+		{app, auth.Binding{Principal: "lee", Role: auth.RoleAuthor, Resource: "/shop", Via: auth.ViaApp("shop/owner")}, false},
+		{app, auth.Binding{Principal: "lee", Role: auth.RoleAuthor, Resource: "/shop", Via: auth.ViaApp("shop/clerk"),
+			GrantedBy: provisioned}, false},
+		{Item{Kind: Credential, Principal: "lee", Role: "reader", Resource: "/"},
+			auth.Binding{Principal: "lee", Role: auth.RoleReader, Resource: "/"}, false},
+	} {
+		if got := c.it.Covers(c.b); got != c.want {
+			t.Errorf("%+v covers %+v: %v, want %v", c.it, c.b, got, c.want)
+		}
+	}
+}
+
+// NotHeldBy is the self-review rule on its own, so the host can ask it of
+// a group's members as they are now.
+func TestNotHeldByRefusesTheHolderUnderAnySpelling(t *testing.T) {
+	group := Item{ID: "3", Kind: Mapping, Group: "Editors", Role: "publisher", Members: []string{"ada@example.com"}}
+	if err := group.NotHeldBy("boss"); err != nil {
+		t.Errorf("boss is not in the group: %v", err)
+	}
+	group.Members = append(group.Members, "Boss ")
+	if err := group.NotHeldBy("boss"); err == nil || !strings.Contains(err.Error(), "own access") {
+		t.Errorf("a member decided their group: %v", err)
+	}
+}

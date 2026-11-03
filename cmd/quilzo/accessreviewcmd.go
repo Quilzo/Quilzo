@@ -145,6 +145,20 @@ func reviewDecide(root string, c *Caller, id string, v accessreview.Verdict, why
 		if it, cerr = r.Check(id, v, reviewer(c), why); cerr != nil {
 			return cerr
 		}
+		if it.Kind == accessreview.Mapping {
+			// The group as it is now as well as in the snapshot: somebody
+			// the identity provider added after the review started holds
+			// what the group means, and would be deciding their own.
+			_, members, err := groupNow(root, it.Group)
+			if err != nil {
+				return err
+			}
+			now := it
+			now.Members = members
+			if err := now.NotHeldBy(c.Name); err != nil {
+				return err
+			}
+		}
 		if v == accessreview.Revoke {
 			if err := applyRevoke(root, c, it); err != nil {
 				return err
@@ -189,6 +203,28 @@ func nobodyAdministers(p *auth.Policy) bool {
 	return true
 }
 
+// groupNow is what an identity provider group means here now, and the
+// user name of everybody in it, active or not: a mapping item is judged
+// on the group as it stands, not as its snapshot had it.
+func groupNow(root, group string) (string, []string, error) {
+	var means string
+	var members []string
+	err := scimStore(root).Read(func(st *scim.State) {
+		means = st.Mapping[group]
+		for _, g := range st.Groups {
+			if g.DisplayName != group {
+				continue
+			}
+			for _, id := range g.Members {
+				if u, ok := st.User(id); ok {
+					members = append(members, u.UserName)
+				}
+			}
+		}
+	})
+	return means, members, err
+}
+
 // applyRevoke takes an item's access away through the path that grants
 // it, and records that path's own entry as well as the review's, so a
 // search for auth.revoke or token.revoke finds a revocation however it was
@@ -211,20 +247,8 @@ func applyRevoke(root string, c *Caller, it accessreview.Item) error {
 			"revoked_id": it.Credential, "sessions_cascaded": fmt.Sprint(sessions)}))
 		return nil
 	case accessreview.Mapping:
-		var current string
-		var members []string
-		if err := scimStore(root).Read(func(st *scim.State) {
-			current = st.Mapping[it.Group]
-			for _, g := range st.Groups {
-				if g.DisplayName == it.Group {
-					for _, id := range g.Members {
-						if u, ok := st.User(id); ok {
-							members = append(members, u.UserName)
-						}
-					}
-				}
-			}
-		}); err != nil {
+		current, members, err := groupNow(root, it.Group)
+		if err != nil {
 			return err
 		}
 		if current != it.Role {
@@ -233,7 +257,10 @@ func applyRevoke(root string, c *Caller, it accessreview.Item) error {
 		}
 		// Judged on everything provisioning gave the group's members, not
 		// only what this one group gave: refusing a removal another group
-		// would have covered is the safe way to be wrong.
+		// would have covered is the safe way to be wrong. What it took
+		// away stays: unmapping a group lifts no suspension, and dropping
+		// a suspended member's deny here counted them, through a grant
+		// made by hand, as an administrator they are not.
 		pol, err := loadPolicy(root)
 		if err != nil {
 			return err
@@ -242,7 +269,7 @@ func applyRevoke(root string, c *Caller, it accessreview.Item) error {
 		for _, b := range pol.Snapshot() {
 			gone := false
 			for _, m := range members {
-				gone = gone || (b.GrantedBy == scimBy && strings.EqualFold(b.Principal, m))
+				gone = gone || (!b.Deny && b.GrantedBy == scimBy && strings.EqualFold(b.Principal, m))
 			}
 			if !gone {
 				after.Bindings = append(after.Bindings, b)
@@ -259,11 +286,21 @@ func applyRevoke(root string, c *Caller, it accessreview.Item) error {
 	}
 	n := 0
 	if _, err := updatePolicy(root, func(p *auth.Policy) error {
-		if it.AppRole {
-			n = p.RevokeAppRole(it.Principal, it.Role)
-		} else {
-			n = p.RevokeNamed(it.Principal, it.Role, it.Resource)
+		// The grant the reviewer was shown and nothing else that shares its
+		// principal, role and resource (Item.Covers): not a deny, which
+		// RevokeNamed would take too and which may be provisioning's
+		// suspension of the person, and not what provisioning granted,
+		// which the review left to the identity provider. Filtered here on
+		// the policy as stored, as scimSync filters its own.
+		kept := p.Bindings[:0]
+		for _, b := range p.Bindings {
+			if it.Covers(b) {
+				n++
+				continue
+			}
+			kept = append(kept, b)
 		}
+		p.Bindings = kept
 		if n == 0 {
 			return fmt.Errorf("%s no longer holds this; nothing to revoke", it.Principal)
 		}

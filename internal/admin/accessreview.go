@@ -123,6 +123,14 @@ func reviewFacts(it accessreview.Item) string {
 // administrator of the whole store, signed in as a person. A credential
 // sent by a program is refused whatever it holds, since a service token
 // reviews nothing.
+//
+// That includes a session exchanged from a long-lived token and sent in a
+// header, which is how a program uses one. authenticate refuses a header
+// credential short of two factors once two factors are compulsory; in the
+// grace before then it let one through, the session counted as a person's,
+// and a program started, decided and closed reviews in somebody's name.
+// The grace is for people to enrol a second factor, so it is not extended
+// to reviewing access.
 func (s *Server) reviewPost(w http.ResponseWriter, r *http.Request) (principal, bool) {
 	p, ok := s.postFrom(w, r, auth.ActGrant)
 	if !ok {
@@ -132,7 +140,7 @@ func (s *Server) reviewPost(w http.ResponseWriter, r *http.Request) (principal, 
 		s.peopleBack(w, r, "this server was started without access reviews")
 		return principal{}, false
 	}
-	if !p.Session {
+	if !p.Session || (p.Bearer && p.Level < 2) {
 		http.Error(w, "an access review is decided by a person signed in, not by a program's credential",
 			http.StatusForbidden)
 		return principal{}, false
