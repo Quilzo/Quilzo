@@ -289,3 +289,43 @@ func TestControlIDsAreTheCataloguesTokens(t *testing.T) {
 		}
 	}
 }
+
+// A finding accepted as a risk is a finding: it is carried as not
+// satisfied under every control its rule bears on, says it was accepted and
+// why, and is observed like the rest. Leaving it out made the control read
+// as reviewed and clean.
+func TestAnAcceptedFindingIsNotSatisfiedAndSaysSo(t *testing.T) {
+	findings, rules := scan(t)
+	open, accepted := findings[:1], findings[1]
+	doc, err := From(open, rules, time.Now(), Options{System: "test",
+		Accepted: []Accepted{{Finding: accepted, Why: "by dana, until 2026-12-01, because a migration is planned"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := doc.AssessmentResults.Results[0]
+	want := len(rules[accepted.Rule].Controls)
+	got := 0
+	for _, f := range res.Findings {
+		if f.Title != accepted.Title {
+			continue
+		}
+		got++
+		if f.Target.Status.State != "not-satisfied" {
+			t.Errorf("an accepted finding reads as %q", f.Target.Status.State)
+		}
+		if !strings.Contains(f.Remarks, "Accepted as a risk") || !strings.Contains(f.Remarks, "a migration is planned") {
+			t.Errorf("the finding does not say it was accepted, or why: %q", f.Remarks)
+		}
+	}
+	if got != want {
+		t.Errorf("the accepted finding appears under %d controls; its rule bears on %d", got, want)
+	}
+	if len(res.Observations) != 2 {
+		t.Errorf("%d observations for one open and one accepted finding", len(res.Observations))
+	}
+	for _, f := range res.Findings {
+		if f.Title == open[0].Title && strings.Contains(f.Remarks, "Accepted") {
+			t.Errorf("an open finding says it was accepted: %q", f.Remarks)
+		}
+	}
+}

@@ -558,6 +558,13 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 				}
 			}
 		}
+	} else {
+		// Refused, as a scheme that does not parse is above. Skipping this
+		// block served and bundled every page with no classification banner
+		// whenever the configuration could not be read (deploymentMarking),
+		// and the admin's server already refuses to start on one.
+		return nil, fmt.Errorf("the configuration cannot be read, so whether "+
+			"this deployment marks its pages cannot be known: %w", cerr)
 	}
 
 	// The provenance records, which decide whether a page carries its

@@ -240,8 +240,8 @@ func TestADatabaseZipIsReadForTheStandardLibraryOnly(t *testing.T) {
 	}
 }
 
-// Every file a feature is said to own is in the tree. Packages that left
-// for Vaigil (internal/inbound, internal/ssf) were still listed as serving
+// Every file a feature is said to own is in the tree. Packages that had
+// left Quilzo (internal/inbound, internal/ssf) were still listed as serving
 // feeds, so the map said a feature was reached through code that is not
 // here, and nothing would have said so of the next one to go.
 func TestEveryOwnedPatternNamesFilesThatExist(t *testing.T) {

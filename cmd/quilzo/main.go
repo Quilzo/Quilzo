@@ -633,6 +633,7 @@ log transparency
                                             history contradicts a block
   quilzo timestamp stamp | list | export   RFC 3161 proof of when you published
   quilzo anchor submit | status | upgrade  one hash over a whole publication
+  quilzo anchor export [--dir DIR]         each proof as an .ots file, for ots verify
 
   quilzo mcp [--list]                      the agent interface, over stdio
   quilzo __sandbox --allow DIR -- CMD       run CMD confined to DIR. Not a
@@ -770,7 +771,13 @@ func main() {
 	// Authorisation happens here, once, for every command. See privilege.go
 	// for why it is a table rather than a call at the top of each one.
 	if cmd != "help" && cmd != "-h" && cmd != "--help" {
-		if err := authoriseCommand(root, cmd, cmdArgs); err != nil {
+		if err := authoriseCommand(root, cmd, cmdArgs); errors.Is(err, errHelpOnly) {
+			// Help for somebody who may not run the command, and nothing
+			// else: letting it through to the command ran the command.
+			usage()
+			fmt.Fprintf(os.Stderr, "\n%s%v%s\n", yellow, err, reset)
+			return
+		} else if err != nil {
 			w.Error(err)
 			os.Exit(out.ExitFailure)
 		}

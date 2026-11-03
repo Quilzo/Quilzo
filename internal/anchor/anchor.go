@@ -22,8 +22,9 @@
 //
 // # What is anchored, and why nothing else can be
 //
-// One hash: the fingerprint of the whole published site. Not a page, not a
-// field, not anything about a person.
+// One hash: the live commit id of the whole published site. Not a page, not
+// a field, not anything about a person. (The audit log's head is anchored
+// too, by `quilzo auditlog anchor`; a proof says which it is.)
 //
 // This is not a design preference. The EDPB's guidelines on blockchain and
 // personal data (02/2025, version 2.0, adopted July 2026) recommend not
@@ -93,10 +94,27 @@ const (
 	Unknown State = "unknown"
 )
 
+// What a proof is about. One file keeps both, and a proof kept before
+// proofs said which has no kind: the command layer reads those as before,
+// a publication, unless the digest is a log head it saved.
+const (
+	// Publication is a publication's live commit id.
+	Publication = "publication"
+	// LogHead is the Merkle root of the audit log at a head.
+	LogHead = "log-head"
+)
+
 // Proof is one calendar's answer.
 type Proof struct {
-	// Digest is what was submitted: the site fingerprint.
+	// Digest is what was submitted: a publication's commit id, or the audit
+	// log's root at a head, as Kind says.
 	Digest string `json:"digest"`
+	// Kind is Publication or LogHead.
+	//
+	// Both went into one file with nothing to tell them apart, and the
+	// admin's Integrity screen listed every audit log head as evidence of
+	// when something was published.
+	Kind string `json:"kind,omitempty"`
 	// Calendar is who produced it.
 	Calendar string `json:"calendar"`
 	// Body is the raw proof bytes, stored verbatim. Re-encoding a proof would
@@ -458,7 +476,9 @@ func Describe(p Proof) string {
 		fmt.Fprintf(&b, "anchored in Bitcoin block %d\n", p.Height)
 		fmt.Fprintf(&b, "  the commitment is in a block, so the date is as hard "+
 			"as the chain\n")
-		fmt.Fprintf(&b, "  verify independently:  ots verify anchor.ots\n")
+		// It named anchor.ots, a file nothing wrote.
+		fmt.Fprintf(&b, "  verify independently: `quilzo anchor export` writes it as a file,\n"+
+			"  then `ots verify -d %s FILE`\n", p.Digest)
 	case Pending:
 		fmt.Fprintf(&b, "pending at %s\n", p.PendingAt)
 		fmt.Fprintf(&b, "  this is NOT an anchor yet. The calendar has the hash "+
@@ -471,6 +491,41 @@ func Describe(p Proof) string {
 		fmt.Fprintf(&b, "  submitted %s\n", p.SubmittedAt)
 	}
 	return b.String()
+}
+
+// fileMagic opens every detached timestamp file the OpenTimestamps client
+// writes and reads; fileVersion is the major version that follows it.
+var fileMagic = []byte("\x00OpenTimestamps\x00\x00Proof\x00\xbf\x89\xe2\xe8\x84\xe8\x92\x94")
+
+const fileVersion = 1
+
+// File is a proof as the `ots` client reads it: a detached timestamp file.
+//
+// The status told people to run `ots verify anchor.ots`, and nothing wrote
+// one. A proof is kept as the calendar's bytes, which are the timestamp from
+// the digest onward; the client wants a header, a version, how the digest
+// was made and the digest before them. The digest is the subject itself
+// rather than a file's hash, so it is checked with `ots verify -d DIGEST`.
+//
+// Walked first, so a file written here is one that commits to its digest:
+// a file that fails to verify reads as the anchor having failed.
+func File(p Proof) ([]byte, error) {
+	digest, err := hex.DecodeString(p.Digest)
+	if err != nil {
+		return nil, fmt.Errorf("the stored digest is not hex: %w", err)
+	}
+	if len(digest) != sha256.Size {
+		return nil, fmt.Errorf("the digest is %d bytes, and a timestamp file "+
+			"names a SHA-256 of %d", len(digest), sha256.Size)
+	}
+	if _, err := Walk(digest, p.Body); err != nil {
+		return nil, fmt.Errorf("the proof does not commit to its digest: %w", err)
+	}
+	out := make([]byte, 0, len(fileMagic)+2+len(digest)+len(p.Body))
+	out = append(out, fileMagic...)
+	out = append(out, fileVersion, opSHA256)
+	out = append(out, digest...)
+	return append(out, p.Body...), nil
 }
 
 // Age reports how long a proof has been pending, for the case where a calendar

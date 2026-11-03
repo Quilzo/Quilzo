@@ -385,9 +385,18 @@ func observeContent(root, tplDir string, st *store.Store) posture.ContentFacts {
 		}
 	}
 
-	// The stamp is taken over the live root, so that is what is looked up.
+	// The stamp is taken over the live commit id, so that is what is looked
+	// up. A stamp made before was over the display fingerprint (legacyRoot),
+	// and `timestamp list` says one of the same content covers what is live:
+	// looked up by the commit id alone, this said it had never been stamped.
 	if stamps, err := loadStamps(root); err == nil {
-		if stamp, ok := stamps.Latest(live); ok {
+		stamp, ok := stamps.Latest(live)
+		if !ok && len(stamps.Stamps) > 0 {
+			if legacy := legacyRoot(root); legacy != "" {
+				stamp, ok = stamps.Latest(legacy)
+			}
+		}
+		if ok {
 			if at, err := time.Parse(time.RFC3339, stamp.RequestedAt); err == nil {
 				c.LastTimestamped = at.Unix()
 			}
@@ -1060,14 +1069,31 @@ func frameworkSummaries(rep posture.Report) []frameworkSummary {
 // and only the rules that ran. --min is for reading — a document that
 // dropped a finding below it would list that rule's controls as reviewed
 // and clean — and a rule whose input was never supplied reviewed nothing.
+//
+// A finding accepted as a risk is every finding too, for the same reason.
+// Only rep.Findings used to reach the document, so an accepted finding was
+// dropped from it while the plan and the KSI report showed it failing; it
+// goes in as not satisfied, with who accepted it, until when, and why.
 func assessmentResults(root string, rep posture.Report, at time.Time) (oscal.Results, error) {
 	ran := posture.RuleIndex()
 	for _, id := range rep.Skipped {
 		delete(ran, id)
 	}
+	why := map[string]string{}
+	if sup, err := loadSuppressions(root); err == nil {
+		for _, sp := range sup {
+			why[sp.ID] = fmt.Sprintf("by %s, until %s, because %s", sp.By,
+				time.Unix(sp.Until, 0).UTC().Format("2006-01-02"), sp.Reason)
+		}
+	}
+	accepted := make([]oscal.Accepted, 0, len(rep.Suppressed))
+	for _, f := range rep.Suppressed {
+		accepted = append(accepted, oscal.Accepted{Finding: f, Why: why[f.ID()]})
+	}
 	return oscal.From(rep.Findings, ran, at, oscal.Options{
 		System:       siteName(root),
 		Organisation: organisationOf(root),
 		Version:      version,
+		Accepted:     accepted,
 	})
 }

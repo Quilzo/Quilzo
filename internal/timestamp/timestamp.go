@@ -105,7 +105,9 @@ type timeStampResp struct {
 
 // Stamp is a stored proof about one publication.
 type Stamp struct {
-	// Root is what was stamped: the fingerprint of the published site.
+	// Root is what was stamped: the live commit id of the publication, the
+	// subject an anchor commits to. A stamp made before that is over the
+	// sixteen-character display fingerprint, and still reads.
 	Root string `json:"root"`
 	// Hash is the SHA-256 actually submitted, hex encoded.
 	Hash string `json:"hash"`
@@ -117,16 +119,19 @@ type Stamp struct {
 	// inside the token. Kept because a mismatch between the two is itself worth
 	// noticing.
 	RequestedAt string `json:"requested_at"`
-	// Anchor holds a blockchain commitment, when one has been made.
+	// Anchor holds a blockchain commitment of the same subject, when one has
+	// been made. The command layer joins it from the anchors it keeps when a
+	// stamp is read, so it follows the anchor from pending to a block.
 	Anchor *Anchor `json:"anchor,omitempty"`
 }
 
-// Anchor is a commitment in a public chain.
+// Anchor is a commitment in a public chain, as a stamp describes it.
 //
-// Deliberately a record of a submission rather than an implementation of one.
-// Anchoring properly means talking to calendar servers and later upgrading the
-// proof once a block confirms, and a half-built version that reports success
-// before confirmation would be claiming durability it has not got.
+// A summary rather than the proof. internal/anchor talks to the calendars,
+// keeps the proofs and upgrades them once a block confirms; this says which
+// method, where, and whether it is confirmed, so a stamp can say it is not
+// relying on the authority's certificate alone without claiming durability
+// a pending proof has not got.
 type Anchor struct {
 	Method      string `json:"method"`
 	Reference   string `json:"reference"`

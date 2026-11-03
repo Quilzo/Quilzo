@@ -98,9 +98,14 @@ var table = []Implementation{
 		Statement: "The log collector can run as its own account, so the process serving the admin can append to the log and cannot rewrite it; the posture scan reports when it does not.",
 		Customer:  "Deploys the collector under its own account.",
 		Where:     []string{"quilzo logd"}},
-	{Control: "AU-10", Title: "Non-repudiation", Responsibility: Quilzo,
-		Statement: "Signed log heads with inclusion proofs bind each record to the log at a point in time; publications are timestamped and anchored; content and media carry signed provenance.",
-		Where:     []string{"internal/audit", "internal/anchor", "internal/timestamp", "internal/c2pa"}},
+	// Shared, and on request said in so many words: this read "publications
+	// are timestamped and anchored; content and media carry signed
+	// provenance", and no job or publish hook stamps or anchors anything,
+	// and a page's provenance is a record bound to its hash, not a signature.
+	{Control: "AU-10", Title: "Non-repudiation", Responsibility: Shared,
+		Statement: "Every record is chained into the audit log as it is written, and signed log heads with inclusion proofs bind each record to the log at a point in time. A publication is timestamped by an RFC 3161 authority and anchored in Bitcoin on request, by quilzo timestamp stamp and quilzo anchor submit; nothing does either on a schedule or when a page is published. Images the site serves carry a signed C2PA manifest; a page's provenance is a record bound to the hash of its content, which shows when it was changed or stripped and is not a signature.",
+		Customer:  "Timestamps and anchors the publications it needs evidence of, upgrades pending anchors, and keeps the exported tokens and proofs.",
+		Where:     []string{"quilzo auditlog head", "quilzo timestamp stamp", "quilzo anchor submit", "internal/audit", "internal/anchor", "internal/timestamp", "internal/c2pa", "internal/provenance"}},
 	{Control: "AU-11", Title: "Audit Record Retention", Responsibility: Shared,
 		Statement: "The audit log is never pruned, so records are kept for any period the organisation declares (au-11_odp). Form submissions are kept for the period their form declares and then deleted by both servers.",
 		Customer:  "Keeps backups of the store for as long as its records policy requires.",
@@ -111,8 +116,8 @@ var table = []Implementation{
 
 	// -- assessment, configuration, contingency -------------------------------
 	{Control: "CA-7", Title: "Continuous Monitoring", Responsibility: Quilzo,
-		Statement: "The posture scan runs on the server's schedule and records each check that starts failing, and its fix, in the audit log, telling the security contact of high and critical ones; this binary is checked hourly against the Go vulnerability database; chatbots and agents are evaluated against planted instructions.",
-		Where:     []string{"quilzo posture scan", "quilzo self check", "quilzo eval"}},
+		Statement: "The posture scan runs on the admin server's schedule (quilzo serve) and records each check that starts failing, and its fix, in the audit log, telling the security contact of high and critical ones; that server checks its binary hourly against the Go vulnerability database; chatbots and agents are evaluated against planted instructions. The public site server runs none of these checks itself.",
+		Where:     []string{"quilzo serve", "quilzo posture scan", "quilzo self check", "quilzo eval"}},
 	{Control: "CM-3", Title: "Configuration Change Control", Responsibility: Shared,
 		Statement: "Every configuration change is recorded; a value weaker than the default needs a written reason that lapses in ninety days; the organisation's parameters change only by one administrator proposing and another approving; content changes can need approvals and are versioned.",
 		Customer:  "Reviews proposed changes and approvals.",
@@ -200,10 +205,13 @@ var table = []Implementation{
 		Where:     []string{"internal/form", "internal/public"}},
 
 	// -- risk, acquisition ----------------------------------------------------
+	// Which server, said, as goal 4 and CA-7 say it: this read "this binary
+	// is checked hourly", and a copy serving the site without the admin is
+	// not checked until somebody runs quilzo self check.
 	{Control: "RA-5", Title: "Vulnerability Monitoring and Scanning", Responsibility: Shared,
-		Statement: "This binary is checked hourly against an embedded, updatable snapshot of the Go vulnerability database, decided by which affected functions are actually linked into it, and contained at once when CISA's catalogue says a flaw is exploited; templates and content are scanned for injection and leaked credentials.",
-		Customer:  "Keeps the vulnerability database and the exploited catalogue current, and scans the rest of its estate.",
-		Where:     []string{"quilzo self", "quilzo scan"}},
+		Statement: "The admin server (quilzo serve) checks its binary hourly against an embedded, updatable snapshot of the Go vulnerability database, decided by which affected functions are actually linked into it, and contains a flaw at once when CISA's catalogue says it is exploited; the public site server (quilzo site) does not run the check itself, and quilzo self check runs it on request. Templates and content are scanned for injection and leaked credentials.",
+		Customer:  "Keeps the vulnerability database and the exploited catalogue current, runs the admin server or quilzo self check where only the site runs, and scans the rest of its estate.",
+		Where:     []string{"quilzo serve", "quilzo self", "quilzo scan"}},
 	{Control: "SA-9", Title: "External System Services", Responsibility: Shared,
 		Statement: "Every outbound connection carries a declared purpose and can be switched off together (offline mode); a model hosted outside the organisation's network is reported, because what it is sent leaves.",
 		Customer:  "Approves the external services used, including model providers.",

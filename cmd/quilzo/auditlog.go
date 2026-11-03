@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/anchor"
-	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/logd"
 
 	"github.com/quilzo/quilzo/internal/audit"
@@ -721,13 +720,17 @@ func auditAnchor(root string) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	proofs, errs := anchor.Submit(ctx, httpSubmitter{fetch.For("anchor")}, digest, nil,
-		time.Now())
+	proofs, errs := anchor.Submit(ctx, anchorCalendars(), digest, nil, time.Now())
 	for _, e := range errs {
 		w.Human("  %s%v%s\n", yellow, e, reset)
 	}
 	if len(proofs) == 0 {
 		return errBlocked{fmt.Errorf("no calendar accepted the log head")}
+	}
+	// Kept as a log head: these go into the file publications' proofs are
+	// in, and without the kind the Integrity screen showed them as those.
+	for i := range proofs {
+		proofs[i].Kind = anchor.LogHead
 	}
 
 	// The head is saved alongside, because a proof about a root nobody kept is
@@ -741,14 +744,27 @@ func auditAnchor(root string) error {
 		return err
 	}
 
-	af := &anchorFile{}
-	if err := loadJSON(anchorPath(root), af); err != nil {
+	af, err := loadAnchors(root)
+	if err != nil {
 		return err
 	}
 	af.Proofs = append(af.Proofs, proofs...)
 	if err := saveJSON(anchorPath(root), af); err != nil {
 		return err
 	}
+	// Sending the log's head out is an act, as `anchor submit` sending the
+	// publication's is, and that one was on the record while this was not.
+	// The entry goes after the head it names, so the head is unchanged.
+	caller := resolveCaller(root, "")
+	record(root, audit.Record{
+		Action: "auditlog.anchor", Resource: "/", Outcome: audit.Success,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
+		Detail: map[string]string{
+			"root":      head.Root,
+			"size":      fmt.Sprintf("%d", head.Size),
+			"calendars": fmt.Sprintf("%d", len(proofs)),
+		},
+	})
 
 	w.Human("submitted the log head at %d entries\n", head.Size)
 	for _, p := range proofs {

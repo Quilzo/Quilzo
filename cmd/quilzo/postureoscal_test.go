@@ -81,3 +81,61 @@ func TestTheAssessmentResultsClaimOnlyWhatRan(t *testing.T) {
 		}
 	}
 }
+
+// A finding an administrator accepted as a risk was dropped from the
+// assessment results: the scan was handed the suppressions and only the
+// unsuppressed findings reached the document, so the control read as
+// reviewed and clean. The system security plan and the KSI report scan with
+// no suppressions and show it failing, so the three exports disagreed about
+// the same deployment. It is carried as not satisfied, and as accepted.
+func TestAnAcceptedRiskStaysInTheAssessmentResults(t *testing.T) {
+	if w == nil {
+		w = out.New(false)
+		t.Cleanup(func() { w = nil })
+	}
+	root := t.TempDir()
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	tpl := t.TempDir()
+	scan := posture.Scan(Observe(root, tpl, posture.ServerFacts{}), nil)
+	if len(scan.Findings) == 0 {
+		t.Fatal("a new store has no finding to accept; the test needs one")
+	}
+	f := scan.Findings[0]
+	if err := postureSuppress(root, []string{f.ID(), "--reason", "a migration is planned",
+		"--by", "dana", "--days", "30"}); err != nil {
+		t.Fatal(err)
+	}
+
+	r, pw, _ := os.Pipe()
+	stdout := os.Stdout
+	os.Stdout = pw
+	_ = postureScan(root, []string{"--oscal", "--templates", tpl})
+	pw.Close()
+	os.Stdout = stdout
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+	var doc oscal.Results
+	if err := json.Unmarshal(buf.Bytes(), &doc); err != nil {
+		t.Fatalf("not OSCAL JSON: %v\n%s", err, buf.String())
+	}
+	found := false
+	for _, got := range doc.AssessmentResults.Results[0].Findings {
+		if got.Title != f.Title || got.Description != f.Detail {
+			continue
+		}
+		found = true
+		if got.Target.Status.State != "not-satisfied" {
+			t.Errorf("an accepted risk reads as %q", got.Target.Status.State)
+		}
+		if !strings.Contains(strings.ToLower(got.Remarks), "accepted as a risk") ||
+			!strings.Contains(got.Remarks, "a migration is planned") {
+			t.Errorf("the finding does not say it was accepted, or why: %q", got.Remarks)
+		}
+	}
+	if !found {
+		t.Fatalf("%s was accepted as a risk and is missing from the assessment results, "+
+			"so its controls read as reviewed and clean", f.ID())
+	}
+}

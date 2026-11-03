@@ -783,6 +783,9 @@ func cmdServe(root string, args []string) error {
 			return nil
 		},
 		SiteName: cfg.Raw("site.name"), BaseURL: cfg.Raw("site.base_url"),
+		// Read at each export, so a scheme changed while this runs is the
+		// one an export carries.
+		Banner: func() (string, error) { return deploymentBanner(root) },
 	}
 	srv.Assist = &admin.Assist{
 		Model: func(person string) (assist.Model, error) {

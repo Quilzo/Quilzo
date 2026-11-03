@@ -81,9 +81,12 @@ type SelfCheck struct {
 
 // Evidence is one timestamp or anchor, flattened for display.
 type Evidence struct {
-	// Kind is "timestamp" or "anchor".
+	// Kind is "timestamp", "anchor", or "log-head anchor" for an anchor of
+	// the audit log's head, which shares a file with publications' anchors
+	// and was listed as one of them.
 	Kind string
-	// Subject is what was stamped: the fingerprint of a publication.
+	// Subject is what was stamped or anchored: a publication's commit id,
+	// or the audit log's root at a head.
 	Subject string
 	// Authority is the TSA or calendar that produced it.
 	Authority string

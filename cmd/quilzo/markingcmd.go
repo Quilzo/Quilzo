@@ -55,6 +55,39 @@ func markingFrom(cfg *config.Config) (*marking.Policy, error) {
 	return p, nil
 }
 
+// deploymentMarking is the deployment's scheme, read from its configuration.
+//
+// A configuration that cannot be read is an error, not "no scheme". A
+// missing file already reads as the defaults, which mark nothing; a file
+// that will not parse is a scheme nobody can see. Each caller used to read
+// the configuration itself and take a failure as "marks nothing", so the
+// publish gate in the set that says nothing in it is waivable let a page
+// marked above the banner through, and an export, a static site and a
+// transfer record went out with no banner at all.
+func deploymentMarking(root string) (*marking.Policy, error) {
+	cfg, err := loadConfig(root)
+	if err != nil {
+		return nil, fmt.Errorf("the configuration cannot be read, so whether this "+
+			"deployment marks its pages, and at what level, cannot be known: %w", err)
+	}
+	return markingFrom(cfg)
+}
+
+// deploymentBanner is the banner every exported file carries: empty for a
+// deployment that does not mark, and an error when its scheme cannot be read
+// or does not parse (deploymentMarking).
+//
+// For the exports that are not `quilzo export`: the machine interface's
+// export_site and the admin's Transfer screen put no banner on anything,
+// whatever the scheme said, while the command line's did.
+func deploymentBanner(root string) (string, error) {
+	p, err := deploymentMarking(root)
+	if err != nil || p == nil {
+		return "", err
+	}
+	return p.Banner, nil
+}
+
 // cmdMarking prints the scheme and what it would refuse.
 func cmdMarking(root string, args []string) error {
 	if len(args) > 1 || (len(args) == 1 && args[0] != "show" && args[0] != "check") {
@@ -115,11 +148,10 @@ func cmdMarking(root string, args []string) error {
 // requiring every page to repeat it is how people start pasting markings
 // without reading them, which is the failure the scheme exists to prevent.
 func checkMarking(root string, s *store.Store, target string) error {
-	cfg, err := loadConfig(root)
-	if err != nil {
-		return nil // a store with no config marks nothing
-	}
-	p, err := markingFrom(cfg)
+	// Refused, not passed, when the scheme cannot be read: see
+	// deploymentMarking. A store with no configuration file still marks
+	// nothing, because loadConfig reads a missing one as the defaults.
+	p, err := deploymentMarking(root)
 	if err != nil {
 		return err
 	}
@@ -134,9 +166,12 @@ func checkMarking(root string, s *store.Store, target string) error {
 	if commit == "" {
 		return nil
 	}
+	// And refused when the pages cannot be read. Returning nil here passed a
+	// publication nothing had looked at.
 	pages, err := site.PagesAt(s, commit)
 	if err != nil {
-		return nil
+		return fmt.Errorf("the pages to be published cannot be read, so their "+
+			"classification cannot be checked: %w", err)
 	}
 
 	var refused []string
@@ -151,7 +186,15 @@ func checkMarking(root string, s *store.Store, target string) error {
 		if !ok {
 			continue
 		}
-		declared, _ := fields["classification"].(string)
+		// Read as text, and refused when it is not: a marking that was not
+		// text read as no marking, so a page marked ["SECRET"] went out under
+		// the deployment's banner while "SECRET" written plainly was refused.
+		declared, isText := fields["classification"].(string)
+		if raw, present := fields["classification"]; present && raw != nil && !isText {
+			refused = append(refused, fmt.Sprintf("  %s — its classification is not "+
+				"text, so the level it is marked at cannot be read", name))
+			continue
+		}
 
 		// A field may carry its own marking, named for the field it marks:
 		// body_classification marks body. Checked upward only — a portion
@@ -163,15 +206,28 @@ func checkMarking(root string, s *store.Store, target string) error {
 			fieldNames = append(fieldNames, k)
 		}
 		sort.Strings(fieldNames)
+		unreadable := false
 		for _, k := range fieldNames {
 			base, found := strings.CutSuffix(k, "_classification")
 			if !found || base == "" {
 				continue
 			}
-			if m, ok := fields[k].(string); ok && strings.TrimSpace(m) != "" {
+			m, ok := fields[k].(string)
+			if !ok && fields[k] != nil {
+				// As the page's own: a portion marked in something other
+				// than text is a portion whose level nobody checked.
+				refused = append(refused, fmt.Sprintf("  %s — %s is not text, so "+
+					"the level it is marked at cannot be read", name, k))
+				unreadable = true
+				continue
+			}
+			if strings.TrimSpace(m) != "" {
 				portions = append(portions,
 					marking.Portion{Field: base, Marking: m})
 			}
+		}
+		if unreadable {
+			continue
 		}
 
 		if err := p.CheckPortions(declared, portions); err != nil {
@@ -229,11 +285,16 @@ func transferRecord(root string, args []string) error {
 			"WHO --carried-by WHO --reason WHY")
 	}
 
+	// The paperwork carries the deployment's banner, and is refused when the
+	// scheme cannot be read or does not parse rather than recorded without
+	// one: a transfer record with no banner reads as unmarked material.
 	banner := ""
-	if cfg, err := loadConfig(root); err == nil {
-		if p, perr := markingFrom(cfg); perr == nil && p != nil {
-			banner = p.Banner
-		}
+	p, err := deploymentMarking(root)
+	if err != nil {
+		return errBlocked{err}
+	}
+	if p != nil {
+		banner = p.Banner
 	}
 
 	rec, err := marking.RecordTransfer(rest[0], marking.Transfer{
