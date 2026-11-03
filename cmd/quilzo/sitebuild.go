@@ -218,7 +218,7 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 		VisitorKey: func(a assistant.Assistant) []byte { return visitorKey(root, a) },
 		MeaningKey: func(a assistant.Assistant) string { return meaningKey(root, a) },
 		Meaning: func(a assistant.Assistant, ps []assistant.Passage) *assistant.Meaning {
-			return chatbotMeaning(root, a, ps)
+			return chatbotMeaning(root, a, ps, nil)
 		},
 		RecordsTree: func() string {
 			commit := s.GetRef(site.RefLive)

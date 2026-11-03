@@ -728,7 +728,8 @@ func cmdServe(root string, args []string) error {
 			notifyProposed(root, prop)
 		},
 		SecondPerson: func(prop collab.Proposal, by string) (bool, error) {
-			return secondPersonForDraft(root, s, prop, by)
+			// A person signed in to the admin, as sessionCaller makes one.
+			return secondPersonForDraft(root, s, prop, &Caller{Name: by, Kind: audit.KindHuman, Verified: true})
 		},
 	}
 	srv.Listings = &admin.Listings{

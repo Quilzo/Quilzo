@@ -276,13 +276,22 @@ func assistantRemove(root string, args []string) error {
 // Published, never the draft. A visitor's assistant answering from a page
 // nobody has approved would be publishing it by another route.
 func assistantIndex(root string, a assistant.Assistant) (*assistant.Index, error) {
-	idx, _, err := assistantKnowledge(root, a)
+	return assistantIndexAs(root, a, nil)
+}
+
+// assistantIndexAs is assistantIndex for a caller who may be acting in an
+// agent's run (agentplatform.go). The question the index embeds to rank its
+// passages by meaning is a model call, and in a run it is charged to the run
+// and its person, as the chatbot's answer is.
+func assistantIndexAs(root string, a assistant.Assistant, c *Caller) (*assistant.Index, error) {
+	idx, _, err := assistantKnowledge(root, a, c)
 	return idx, err
 }
 
 // assistantKnowledge is assistantIndex with the reasons any document could
-// not be used, for the owner's console.
-func assistantKnowledge(root string, a assistant.Assistant) (*assistant.Index, []string, error) {
+// not be used, for the owner's console. c is as in assistantIndexAs, and nil
+// when the index is asked in no run.
+func assistantKnowledge(root string, a assistant.Assistant, c *Caller) (*assistant.Index, []string, error) {
 	s, err := store.Open(root)
 	if err != nil {
 		return nil, nil, err
@@ -314,7 +323,7 @@ func assistantKnowledge(root string, a assistant.Assistant) (*assistant.Index, [
 	}
 	passages, held := screenKnowledge(a, passages)
 	warnings = append(warnings, held...)
-	return withMeaning(root, a, assistant.NewIndex(passages)), warnings, nil
+	return withMeaning(root, a, assistant.NewIndex(passages), c), warnings, nil
 }
 
 // assistantRecords are the published records of the collections an
@@ -399,8 +408,9 @@ func assistantModel(a assistant.Assistant) (assistant.Model, string) {
 // assistantModelAt routes a chatbot through the model gateway when one is
 // declared, as the caller "chatbot:NAME", so its routes, fallbacks and budget
 // apply. Over budget, the gateway refuses the call and the chatbot answers
-// from its pages instead.
-func assistantModelAt(root string, a assistant.Assistant) (assistant.Model, string) {
+// from its pages instead. Each of payers is charged as well, each against
+// its own budget: the person whose agent run asked the chatbot.
+func assistantModelAt(root string, a assistant.Assistant, payers ...string) (assistant.Model, string) {
 	if !a.UseModel {
 		return nil, "extractive by declaration"
 	}
@@ -418,11 +428,11 @@ func assistantModelAt(root string, a assistant.Assistant) (assistant.Model, stri
 				if r == "" {
 					return nil, "kept to " + a.Route + ", which no route serves"
 				}
-				return gw.ForRoute(r, "chatbot:"+a.Name), ""
+				return gw.ForRoute(r, "chatbot:"+a.Name, payers...), ""
 			case a.Route != "":
-				return gw.ForModel(a.Route, "chatbot:"+a.Name), ""
+				return gw.ForModel(a.Route, "chatbot:"+a.Name, payers...), ""
 			}
-			return gw.For("chatbot:" + a.Name), ""
+			return gw.For("chatbot:"+a.Name, payers...), ""
 		}
 	}
 	if a.RouteOnly {
@@ -590,7 +600,7 @@ func assistantsCapability(root string) *admin.Assistants {
 			return nil
 		},
 		Index: func(a assistant.Assistant) (*assistant.Index, []string, error) {
-			return assistantKnowledge(root, a)
+			return assistantKnowledge(root, a, nil)
 		},
 		Documents: func() ([]admin.DocumentChoice, error) {
 			lib, err := openMedia(root)

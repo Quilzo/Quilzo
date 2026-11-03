@@ -14,6 +14,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/dual"
+	"github.com/quilzo/quilzo/internal/scim"
 )
 
 // Privileged changes that wait for a second administrator (internal/dual):
@@ -29,18 +30,66 @@ type Dual struct {
 }
 
 // onlyAdministrator reports whether name is the only person who could
-// approve: nobody else administers the whole site.
+// approve, and may approve alone: nobody else administers the whole site,
+// and no other administrator stopped being one in the last day
+// (aloneRefusal), or the record of that cannot be read.
 func (s *Server) onlyAdministrator(name string) bool {
+	if !s.soleAdministrator(name) {
+		return false
+	}
+	if s.Dual == nil || s.Dual.Store == nil {
+		return true
+	}
+	rm, err := s.Dual.Store.Settling(time.Now())
+	return err == nil && rm == nil
+}
+
+// soleAdministrator reports whether nobody but name administers the whole
+// site now (dual.Administrators).
+func (s *Server) soleAdministrator(name string) bool {
 	if s.Policy == nil {
 		return true
 	}
-	admins := map[string]bool{}
-	for _, b := range s.Policy.Snapshot() {
-		if !b.Deny && b.Role == auth.RoleAdmin && s.Policy.Evaluate(b.Principal, auth.ActGrant, "/").Allowed {
-			admins[strings.ToLower(b.Principal)] = true
-		}
-	}
+	admins := dual.Administrators(s.Policy)
 	return len(admins) == 0 || (len(admins) == 1 && admins[strings.ToLower(name)])
+}
+
+// aloneRefusal is the removal that keeps name, the only administrator,
+// from approving alone at now, or nil when they are not the only one or
+// may.
+func (s *Server) aloneRefusal(name string, now time.Time) *dual.Removal {
+	if s.Dual == nil || s.Dual.Store == nil || !s.soleAdministrator(name) {
+		return nil
+	}
+	rm, _ := s.Dual.Store.Settling(now)
+	return rm
+}
+
+// refuseAlone records that the only administrator was refused approving
+// alone, with the removal it follows and what they were approving, and is
+// the refusal in words.
+func (s *Server) refuseAlone(p principal, rm *dual.Removal, about map[string]string) string {
+	detail := rm.Detail()
+	maps.Copy(detail, about)
+	detail["by"] = p.Name
+	s.audit("dual.alone-refused", "/", detail)
+	return aloneSentence(rm)
+}
+
+// aloneSentence is the refusal as a sentence on a screen.
+func aloneSentence(rm *dual.Removal) string {
+	why := rm.Refusal()
+	return strings.ToUpper(why[:1]) + why[1:] + "."
+}
+
+// noteAdministrators is updatePolicy's note of an administrator removed
+// (dual.Store.NoteAdministrators), for a server that keeps its policy in
+// memory and has nothing else to note it.
+func (s *Server) noteAdministrators(before map[string]bool) error {
+	if s.Dual == nil || s.Dual.Store == nil {
+		return nil
+	}
+	return s.Dual.Store.NoteAdministrators(before, dual.Administrators(s.Policy), time.Now())
 }
 
 // proposeSecond records a privileged change made on a screen. It reports
@@ -50,8 +99,9 @@ func (s *Server) proposeSecond(p principal, kind, what string, payload any, why 
 	if s.Dual == nil || s.Dual.Store == nil {
 		return false, "", errors.New("this server keeps no requests for a second administrator, so this change cannot be made here")
 	}
+	now := time.Now()
 	alone := s.onlyAdministrator(p.Name)
-	r, err := s.Dual.Store.Propose(kind, what, payload, why, p.Name, alone, time.Now())
+	r, err := s.Dual.Store.Propose(kind, what, payload, why, p.Name, alone, now)
 	if err != nil {
 		return false, "", err
 	}
@@ -63,7 +113,13 @@ func (s *Server) proposeSecond(p principal, kind, what string, payload any, why 
 		return true, "", nil
 	}
 	s.audit("dual.proposed", "/", detail)
-	return false, fmt.Sprintf("%s waits for a second administrator, who approves it here (request %s).", what, r.ID), nil
+	msg := fmt.Sprintf("%s waits for a second administrator, who approves it here (request %s).", what, r.ID)
+	// The only administrator, whose request would have been approved as
+	// they made it, a moment after another administrator was removed.
+	if rm := s.aloneRefusal(p.Name, now); rm != nil {
+		msg += " " + s.refuseAlone(p, rm, map[string]string{"request": r.ID, "kind": kind})
+	}
+	return false, msg, nil
 }
 
 // applyDual makes an approved change, as by.
@@ -127,6 +183,16 @@ type pendingRow struct {
 	// The button said "the link" for a provisioning token too, which gives
 	// no link.
 	Gives string
+	// Mapping says this is a group mapped to make administrators, and
+	// Tokens are the provisioning tokens approving it lets make them, or
+	// TokensUnread why they could not be read.
+	//
+	// A token made while no group made administrators was made by one
+	// person, rightly, and stays valid once such a mapping is approved;
+	// whoever approved the mapping here could not see it.
+	Mapping      bool
+	Tokens       []scim.LiveToken
+	TokensUnread string
 }
 
 // pendingRows are the requests waiting, for the People screen, with what p
@@ -141,14 +207,59 @@ func (s *Server) pendingRows(p principal, now time.Time) []pendingRow {
 	}
 	alone := s.onlyAdministrator(p.Name)
 	var out []pendingRow
+	var tokens []scim.LiveToken
+	var unread error
+	read := false
 	for _, r := range pend {
 		mine := strings.EqualFold(r.By, p.Name)
-		out = append(out, pendingRow{Request: r, Words: dual.StateWords(r, now),
+		row := pendingRow{Request: r, Words: dual.StateWords(r, now),
 			CanDecide: r.Open(now) && (!mine || alone), CanTakeBack: mine,
 			CanReceive: mine && r.Redeemable(now) && receivedHere(r),
-			Gives:      map[bool]string{true: "the link", false: "the token"}[r.Kind == dual.Enrol]})
+			Gives:      map[bool]string{true: "the link", false: "the token"}[r.Kind == dual.Enrol]}
+		if r.Kind == dual.Mapping {
+			if !read {
+				tokens, unread = s.liveTokens()
+				read = true
+			}
+			row.Mapping, row.Tokens = true, tokens
+			if unread != nil {
+				row.TokensUnread = unread.Error()
+			}
+		}
+		out = append(out, row)
 	}
 	return out
+}
+
+// mappedTokens is, for the only administrator who has just mapped a group
+// to make administrators and so approved it alone, which provisioning
+// tokens now make them, as People lists them under the request for a
+// second administrator. Nothing waited, so nothing was shown, and a token
+// made before any group made administrators went on working as a way to
+// make them.
+func (s *Server) mappedTokens() string {
+	live, err := s.liveTokens()
+	switch {
+	case err != nil:
+		return "This lets the provisioning token make administrators, and which tokens work could not be read: " +
+			err.Error() + "."
+	case len(live) == 0:
+		return "No provisioning token works now; one made from now on asks a second administrator, when there is one."
+	}
+	words := make([]string, 0, len(live))
+	for _, t := range live {
+		words = append(words, t.Words())
+	}
+	return "This lets the provisioning token make administrators: " + strings.Join(words, "; ") +
+		". If that is not who should hold it, revoke it here."
+}
+
+// liveTokens are the provisioning tokens that work now.
+func (s *Server) liveTokens() ([]scim.LiveToken, error) {
+	if s.SCIM == nil || s.SCIM.LiveTokens == nil {
+		return nil, errors.New("this build cannot say which provisioning tokens work")
+	}
+	return s.SCIM.LiveTokens()
 }
 
 // handlePeoplePending approves, declines or withdraws a request.
@@ -167,6 +278,14 @@ func (s *Server) handlePeoplePending(w http.ResponseWriter, r *http.Request) {
 	var err error
 	switch do {
 	case "approve", "decline":
+		// Their own request, approved alone: not for a day after another
+		// administrator stopped being one.
+		if mine, gerr := s.Dual.Store.Get(id); do == "approve" && gerr == nil && strings.EqualFold(mine.By, p.Name) {
+			if rm := s.aloneRefusal(p.Name, now); rm != nil {
+				s.peopleBack(w, r, s.refuseAlone(p, rm, map[string]string{"request": mine.ID, "kind": mine.Kind}))
+				return
+			}
+		}
 		req, err = s.Dual.Store.Decide(id, p.Name, do == "approve", s.onlyAdministrator(p.Name), now)
 		if err == nil && do == "approve" {
 			if aerr := s.applyDual(req, p.Name); aerr != nil {
@@ -256,7 +375,11 @@ func (s *Server) receiveCredential(w http.ResponseWriter, r *http.Request, p pri
 		s.giveEnrolLink(w, r, p, ch.Principal, ch.For)
 		return
 	}
-	token, err := s.SCIM.NewToken(p.Name)
+	made := scim.TokenMade{By: p.Name, Approval: scim.ByTwo, ApprovedBy: req.DecidedBy}
+	if req.Alone {
+		made = scim.TokenMade{By: p.Name, Approval: scim.Alone}
+	}
+	token, err := s.SCIM.NewToken(made)
 	if err != nil {
 		s.peopleBack(w, r, err.Error())
 		return

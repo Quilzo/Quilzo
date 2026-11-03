@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/site"
@@ -81,6 +82,10 @@ type Caller struct {
 	// visitor's request to a chatbot's agent), so it is tainted from its
 	// first step, as reading a page would make it.
 	Untrusted string
+	// run is the agent run whose operations this caller performs through
+	// the agent interface, when it is one (agentplatform.go): a model an
+	// operation asks is charged to it.
+	run *agent.Session
 }
 
 // tokenFile is preferred over the environment.

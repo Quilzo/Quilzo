@@ -1330,7 +1330,7 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 	// The rest of what the CMS offers (agentplatform.go): records, media,
 	// menus, newsletters, chatbots, research and the site crew, through the
 	// same agent interface an outside agent calls, as the run's caller.
-	runner.Perform = agentexec.WithPlatform(agentexec.Platform{Call: platformCall(root, s, caller)}, sess, runner.Perform)
+	runner.Perform = agentexec.WithPlatform(agentexec.Platform{Call: platformCall(root, s, caller, sess)}, sess, runner.Perform)
 
 	// A run here can be held for a person and continued: every run made
 	// through this function is kept, which is what makes that possible.

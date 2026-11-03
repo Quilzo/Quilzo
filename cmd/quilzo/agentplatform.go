@@ -9,6 +9,10 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/quilzo/quilzo/internal/agent"
+	"github.com/quilzo/quilzo/internal/agentexec"
+	"github.com/quilzo/quilzo/internal/assist"
+	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/mcp"
 	"github.com/quilzo/quilzo/internal/store"
 )
@@ -17,14 +21,19 @@ import (
 // (internal/agentexec, Bridged), exactly as an outside agent's call would
 // be: the read or write tool, the role the operation needs checked against
 // the run's caller, and the handler's own checks and records. The
-// interface is built once, when the run first needs it.
-func platformCall(root string, s *store.Store, caller *Caller) func(context.Context, string, bool, map[string]any) (string, error) {
+// interface is built once, when the run first needs it, for the caller
+// acting in sess, so what its operations spend on models is the run's.
+func platformCall(root string, s *store.Store, caller *Caller, sess *agent.Session) func(context.Context, string, bool, map[string]any) (string, error) {
 	var (
 		once sync.Once
 		srv  *mcp.Server
 	)
 	return func(_ context.Context, op string, writes bool, args map[string]any) (string, error) {
-		once.Do(func() { srv = buildMCP(root, s, caller, "templates") })
+		once.Do(func() {
+			inRun := *caller
+			inRun.run = sess
+			srv = buildMCP(root, s, &inRun, "templates")
+		})
 		tool := "quilzo_read"
 		if writes {
 			tool = "quilzo_write"
@@ -52,4 +61,40 @@ func platformCall(root string, s *store.Store, caller *Caller) func(context.Cont
 		}
 		return r.Content[0].Text, nil
 	}
+}
+
+// runPayers are who besides its own consumer a model an operation asks is
+// charged to: the person who started the run the caller acts in, as the
+// run's own calls are, and nobody when the caller acts in no run.
+func (c *Caller) runPayers() []string {
+	if c == nil || c.run == nil {
+		return nil
+	}
+	return personConsumer(c)
+}
+
+// chargeRun counts a model call the caller's operation made against the
+// run it acts in, when it acts in one: the tokens the model reported and
+// what the gateway priced them at, as ChargedTo counts a completion. It is
+// for a call ChargedTo cannot wrap, such as the vector of a question a
+// chatbot embeds (chatbotMeaning).
+func (c *Caller) chargeRun(u assist.Usage, cost int64) {
+	if c == nil || c.run == nil {
+		return
+	}
+	c.run.Tokens(u.In + u.Out)
+	c.run.Charge(cost)
+}
+
+// chargedToRun is m charged to the run the caller acts in, when it acts in
+// one, as the agent's own calls and its deciders' are.
+//
+// ask_assistant asked its chatbot's model on the chatbot's account alone,
+// so a run with a money budget could spend past it by asking a chatbot,
+// and its receipt priced the agent's own calls only.
+func (c *Caller) chargedToRun(m assistant.Model) assistant.Model {
+	if c == nil || c.run == nil || m == nil {
+		return m
+	}
+	return agentexec.ChargedTo(c.run, m)
 }

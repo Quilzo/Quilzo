@@ -5,6 +5,7 @@ package dual
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -113,5 +114,68 @@ func TestAnApprovedEnrolmentLinkWaitsForWhoeverAsked(t *testing.T) {
 	}
 	if _, err := s.Redeem(r.ID, "dana", now); err == nil {
 		t.Error("a link was received twice")
+	}
+}
+
+// After an administrator stops being one, the one left waits a day before
+// approving alone, and a second administrator ends the wait at once.
+func TestARemovedAdministratorStartsADaysWait(t *testing.T) {
+	s := Store{Path: filepath.Join(t.TempDir(), "dual.json")}
+	at := time.Date(2026, 11, 3, 9, 0, 0, 0, time.UTC)
+	set := func(names ...string) map[string]bool {
+		out := map[string]bool{}
+		for _, n := range names {
+			out[n] = true
+		}
+		return out
+	}
+	settling := func(now time.Time) *Removal {
+		t.Helper()
+		rm, err := s.Settling(now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rm
+	}
+
+	// One administrator, and somebody else's access going: nothing waits.
+	if err := s.NoteAdministrators(set("dana"), set("dana"), at); err != nil || settling(at) != nil {
+		t.Fatalf("a store with one administrator waits: %v", err)
+	}
+	if err := s.NoteAdministrators(set("dana"), set(), at); err != nil || settling(at) != nil {
+		t.Fatalf("a store that never had two waits: %v", err)
+	}
+
+	if err := s.NoteAdministrators(set("dana", "lee"), set("dana"), at); err != nil {
+		t.Fatal(err)
+	}
+	rm := settling(at.Add(23 * time.Hour))
+	if rm == nil || rm.Principal != "lee" || !rm.Until().Equal(at.Add(Settle)) {
+		t.Fatalf("23 hours after lee was removed: %+v", rm)
+	}
+	if !strings.Contains(rm.Refusal(), "until 09:00 UTC on 4 Nov 2026") {
+		t.Errorf("the refusal does not say until when: %s", rm.Refusal())
+	}
+	if rm := settling(at.Add(Settle)); rm != nil {
+		t.Fatalf("a day after the removal, still waiting: %+v", rm)
+	}
+
+	// Two again ends it; one again starts another day.
+	if err := s.NoteAdministrators(set("dana"), set("dana", "sam"), at.Add(time.Hour)); err != nil || settling(at.Add(time.Hour)) != nil {
+		t.Fatalf("two administrators again, and still waiting: %v", err)
+	}
+	if err := s.NoteAdministrators(set("dana", "sam"), set("dana"), at.Add(2*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if rm := settling(at.Add(25 * time.Hour)); rm == nil || rm.Principal != "sam" {
+		t.Fatalf("the second removal started no wait of its own: %+v", rm)
+	}
+	// The record is kept with the requests, and a request written after it
+	// keeps it.
+	if _, err := s.Propose(Grant, "x", nil, "", "dana", false, at.Add(3*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if rm := settling(at.Add(3 * time.Hour)); rm == nil {
+		t.Fatal("writing a request lost the removal")
 	}
 }

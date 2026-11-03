@@ -642,7 +642,11 @@ func (s *Server) save() error {
 // takes the result as this server's policy.
 func (s *Server) changePolicy(change func(*auth.Policy) error) error {
 	if s.UpdatePolicy == nil {
-		return change(s.Policy)
+		before := dual.Administrators(s.Policy)
+		if err := change(s.Policy); err != nil {
+			return err
+		}
+		return s.noteAdministrators(before)
 	}
 	pol, err := s.UpdatePolicy(change)
 	if err != nil {

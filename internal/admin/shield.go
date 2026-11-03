@@ -494,6 +494,14 @@ func (s *Server) handleShieldAct(w http.ResponseWriter, r *http.Request) {
 		audit("playbook-proposed", map[string]string{"proposal": q.ID, "change": shieldProposalWords(q), "why": why})
 		back("m", shieldProposalWords(q)+": proposed. Another administrator approves it here.")
 	case "approve", "decline":
+		// Their own change, approved alone: not for a day after another
+		// administrator stopped being one.
+		if r.FormValue("do") == "approve" {
+			if rm := s.aloneRefusal(p.Name, now); rm != nil && shieldProposedBy(root, id) == p.Name {
+				back("e", s.refuseAlone(p, rm, map[string]string{"proposal": id}))
+				return
+			}
+		}
 		only := s.ShieldAdmin.OnlyAdmin != nil && s.ShieldAdmin.OnlyAdmin(p.Name)
 		q, err := shield.Decide(root, id, p.Name, r.FormValue("do") == "approve", only, now)
 		if err != nil {
@@ -623,4 +631,18 @@ func shieldFromForm(r *http.Request, by string, now time.Time) (shield.Protectio
 		return x, fmt.Errorf("choose what to do")
 	}
 	return x, nil
+}
+
+// shieldProposedBy is who proposed a change still waiting, or "".
+func shieldProposedBy(root, id string) string {
+	bk, err := shield.LoadBook(root)
+	if err != nil {
+		return ""
+	}
+	for _, q := range bk.Pending {
+		if q.ID == id {
+			return q.By
+		}
+	}
+	return ""
 }

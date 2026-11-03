@@ -9,6 +9,11 @@
 <ul class="auto-list">{{range .Pending}}<li class="auto-card waiting">
   <div class="auto-head"><span class="wf-band as-written warning"><span class="wf-icon">{{icon "error"}}</span>Waiting</span><strong>{{.What}}</strong></div>
   <p>Asked by {{.By}} at {{.At.UTC.Format "15:04 2 Jan"}}{{if .Why}}: “{{.Why}}”{{end}}. {{.Words}}.</p>
+  {{if .Mapping}}{{if .TokensUnread}}<p class="notice bad">Approving this lets the provisioning token make administrators, and which tokens work could not be read: {{.TokensUnread}}</p>
+  {{else if .Tokens}}<p>Approving this lets the provisioning token make administrators:</p>
+  <ul>{{range .Tokens}}<li>{{.Words}}.</li>{{end}}</ul>
+  <p class="hint">If that is not who should hold it, decline, or revoke it first on Provisioning.</p>
+  {{else}}<p>No provisioning token works now; one made from now on takes two administrators.</p>{{end}}{{end}}
   <form method="post" action="/people/pending" class="auto-controls"><input type="hidden" name="id" value="{{.ID}}">
     {{if .CanDecide}}<button type="submit" name="do" value="approve" class="btn-tonal">Approve<span class="visually-hidden"> {{.What}}</span></button>
     <button type="submit" name="do" value="decline" class="btn-outlined">Decline<span class="visually-hidden"> {{.What}}</span></button>{{end}}

@@ -357,13 +357,13 @@ func TestApprovingADraftTakesPublishingAndASecondPersonForAModelsWork(t *testing
 	}
 	prop := collabProposal("ai")
 	setProvenanceAuthor(t, root, s, "dana")
-	if _, err := secondPersonForDraft(root, s, prop, "dana"); err == nil || !strings.Contains(err.Error(), "sam") {
+	if _, err := secondPersonForDraft(root, s, prop, asAdmin("dana")); err == nil || !strings.Contains(err.Error(), "sam") {
 		t.Errorf("the person whose run wrote the draft approved it with sam there: %v", err)
 	}
-	if alone, err := secondPersonForDraft(root, s, prop, "sam"); err != nil || alone {
+	if alone, err := secondPersonForDraft(root, s, prop, asAdmin("sam")); err != nil || alone {
 		t.Errorf("sam could not approve: %v %v", alone, err)
 	}
-	if _, err := secondPersonForDraft(root, s, collabProposal("human"), "dana"); err != nil {
+	if _, err := secondPersonForDraft(root, s, collabProposal("human"), asAdmin("dana")); err != nil {
 		t.Errorf("a person's own draft was held for a second person: %v", err)
 	}
 }
@@ -425,5 +425,69 @@ func TestTheAdminsSessionReachesTheCommandLineWithItsLimits(t *testing.T) {
 	if c.Name != "sam" || c.Role != auth.RoleReader || c.Scope != "/blog" || !c.Limits.ReadOnly || !c.Verified ||
 		c.Kind != audit.KindHuman {
 		t.Fatalf("%+v", c)
+	}
+}
+
+// The starter's alone, like the only administrator's, waits a day after
+// the other administrator is removed.
+//
+// A run's risky step and a draft a model wrote are let go ahead by the
+// person who started the run only when nobody else could. Removing the
+// other administrator, which one administrator may do without a second,
+// made that so at once: dana removed sam and let her own run publish, and
+// approved her own agent's draft, alone, a moment later. The day the only
+// administrator waits before approving alone (dual.Settle) held for dual
+// requests and not for these.
+func TestRemovingTheOtherAdministratorDoesNotLetTheStarterApproveAlone(t *testing.T) {
+	root, _ := identityStore(t)
+	rec := riskyRun(t, root)
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prop := collabProposal("ai")
+	setProvenanceAuthor(t, root, s, "dana")
+	if _, err := updatePolicy(root, func(p *auth.Policy) error {
+		p.Revoke("sam", auth.RoleAdmin, "/")
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	approve := &agent.Verdict{N: rec.Trace.Waiting.N, Approve: true}
+	if _, err := continueAgentRun(context.Background(), root, rec.ID, approve, asAdmin("dana")); err == nil ||
+		!strings.Contains(err.Error(), "until") {
+		t.Errorf("dana removed the other administrator and let her own run publish alone: %v", err)
+	}
+	if _, err := secondPersonForDraft(root, s, prop, asAdmin("dana")); err == nil || !strings.Contains(err.Error(), "until") {
+		t.Errorf("dana removed the other administrator and approved her own agent's draft alone: %v", err)
+	}
+	events, _ := audit.Read(auditPath(root))
+	refused := 0
+	for _, e := range events {
+		if e.Action == "dual.alone-refused" && e.Detail["removed_at"] != "" && e.Detail["until"] != "" {
+			refused++
+		}
+	}
+	if refused != 2 {
+		t.Errorf("%d of the two refusals were recorded with the removal they follow", refused)
+	}
+	if now, _ := loadAgentRun(root, rec.ID); now.Trace.Waiting == nil {
+		t.Fatal("the run's publish went ahead on the word of the person who started it alone")
+	}
+	// Declining is never held, nor is a person's own draft.
+	if err := decideRun(root, rec.ID, asAdmin("dana")); err != nil {
+		t.Errorf("the starter could not decline their own run's publish: %v", err)
+	}
+	if _, err := secondPersonForDraft(root, s, collabProposal("human"), asAdmin("dana")); err != nil {
+		t.Errorf("a person's own draft was held: %v", err)
+	}
+
+	removalAt(t, root, 24*time.Hour+time.Minute)
+	if alone, err := secondPerson(root, asAdmin("dana"), rec); err != nil || !alone {
+		t.Errorf("a day after the removal the starter still could not approve alone: %v %v", alone, err)
+	}
+	if alone, err := secondPersonForDraft(root, s, prop, asAdmin("dana")); err != nil || !alone {
+		t.Errorf("a day after the removal the draft still could not be approved alone: %v %v", alone, err)
 	}
 }
