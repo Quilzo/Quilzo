@@ -192,6 +192,8 @@ func OpenAPI(body []byte, opts Options) (*Imported, error) {
 	}
 	sort.Strings(paths)
 	taken := map[string]bool{}
+	follow := &refs{d: d, params: map[string]decoded[parameter]{}, bodies: map[bodyAt]bodyResult{},
+		schemas: map[string]decoded[any]{}}
 	var all []agent.Operation
 	for _, path := range paths {
 		item := d.Paths[path]
@@ -216,7 +218,7 @@ func OpenAPI(body []byte, opts Options) (*Imported, error) {
 			}
 			seen := map[string]bool{}
 			for _, praw := range append(append([]json.RawMessage(nil), op.Parameters...), shared...) {
-				p, note := resolveParam(d, praw)
+				p, note := follow.param(praw)
 				if note != "" {
 					out.Notes = append(out.Notes, o.Name+": "+note)
 					continue
@@ -234,7 +236,7 @@ func OpenAPI(body []byte, opts Options) (*Imported, error) {
 				}
 			}
 			if len(op.RequestBody) > 0 && o.Writes() {
-				schema, note := bodySchema(d, op.RequestBody, 0)
+				schema, note := follow.bodySchema(op.RequestBody, 0)
 				if note != "" {
 					out.Notes = append(out.Notes, o.Name+": "+note)
 				}
@@ -306,8 +308,65 @@ func place(in *agent.Integration, server string) error {
 
 const refDepth = 4
 
-// resolveParam follows a local parameter reference.
-func resolveParam(d document, raw json.RawMessage) (parameter, string) {
+// maxBody bounds a request body's schema, as JSON, once its references are
+// followed.
+const maxBody = 32 << 10
+
+// maxBodies bounds the body schemas one document makes, together: room for
+// five hundred of the largest, more than any API describes. Each is bounded
+// by maxBody, but a reference lets a few bytes of operation name a large
+// schema, and 1.1 MB of operations that each named one of 20 KiB took
+// nineteen seconds and kept 380 MB, so 8 MiB would have kept three
+// gigabytes.
+const maxBodies = 16 << 20
+
+// refs follows one document's local references. A component is decoded the
+// first time a reference names it and kept, and a request body's schema is
+// made once for all the operations that name it: read afresh at every
+// reference, a 2 MB schema named by two hundred properties cost twenty
+// seconds and 2.9 GB, and a parameter or a body named by every operation was
+// read again for each one, all within the 8 MiB a document may be.
+type refs struct {
+	d       document
+	params  map[string]decoded[parameter]
+	bodies  map[bodyAt]bodyResult
+	schemas map[string]decoded[any]
+	// made is how much body schema the document has made, as expansion
+	// counts it.
+	made int
+}
+
+// decoded is a component as it was decoded, and whether it could be.
+type decoded[T any] struct {
+	v  T
+	ok bool
+}
+
+// decode is the component of that name, decoded the first time it is asked
+// for. What it gives is shared, and never changed by whoever asked.
+func decode[T any](kept map[string]decoded[T], name string, raw json.RawMessage) (T, bool) {
+	c, seen := kept[name]
+	if !seen {
+		c.ok = raw != nil && json.Unmarshal(raw, &c.v) == nil
+		kept[name] = c
+	}
+	return c.v, c.ok
+}
+
+// bodyAt is a request body named at a depth of references, which decides
+// whether it is followed further.
+type bodyAt struct {
+	name  string
+	depth int
+}
+
+type bodyResult struct {
+	schema json.RawMessage
+	note   string
+}
+
+// param follows a local parameter reference.
+func (r *refs) param(raw json.RawMessage) (parameter, string) {
 	var p parameter
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return p, "a parameter could not be read"
@@ -317,12 +376,11 @@ func resolveParam(d document, raw json.RawMessage) (parameter, string) {
 		if !ok {
 			return p, fmt.Sprintf("the parameter %s is outside this document and is not fetched", p.Ref)
 		}
-		r, ok := d.Components.Parameters[name]
+		named, ok := r.d.Components.Parameters[name]
 		if !ok {
 			return p, fmt.Sprintf("the parameter %s is not in the document", p.Ref)
 		}
-		p = parameter{}
-		if err := json.Unmarshal(r, &p); err != nil || p.Ref != "" {
+		if p, ok = decode(r.params, name, named); !ok || p.Ref != "" {
 			return p, fmt.Sprintf("the parameter %s could not be read", name)
 		}
 	}
@@ -338,7 +396,7 @@ func resolveParam(d document, raw json.RawMessage) (parameter, string) {
 // naming itself, or another that names it back, ends as an open object: it
 // was followed until the stack ran out, a fatal error that no recover
 // catches, and a 263-byte document ended the whole server.
-func bodySchema(d document, raw json.RawMessage, depth int) (json.RawMessage, string) {
+func (r *refs) bodySchema(raw json.RawMessage, depth int) (json.RawMessage, string) {
 	var rb struct {
 		Ref     string `json:"$ref"`
 		Content map[string]struct {
@@ -350,13 +408,19 @@ func bodySchema(d document, raw json.RawMessage, depth int) (json.RawMessage, st
 	}
 	if rb.Ref != "" {
 		name, ok := strings.CutPrefix(rb.Ref, "#/components/requestBodies/")
-		if !ok || d.Components.RequestBodies[name] == nil {
+		if !ok || r.d.Components.RequestBodies[name] == nil {
 			return json.RawMessage(`{"type":"object"}`), "its body is described elsewhere and is not fetched"
 		}
 		if depth >= refDepth {
 			return json.RawMessage(`{"type":"object"}`), "its body refers to itself, or through too many others; it takes any object"
 		}
-		return bodySchema(d, d.Components.RequestBodies[name], depth+1)
+		at := bodyAt{name, depth + 1}
+		got, seen := r.bodies[at]
+		if !seen {
+			got.schema, got.note = r.bodySchema(r.d.Components.RequestBodies[name], depth+1)
+			r.bodies[at] = got
+		}
+		return got.schema, got.note
 	}
 	c, ok := rb.Content["application/json"]
 	if !ok || len(c.Schema) == 0 {
@@ -366,45 +430,92 @@ func bodySchema(d document, raw json.RawMessage, depth int) (json.RawMessage, st
 	if err := json.Unmarshal(c.Schema, &v); err != nil {
 		return json.RawMessage(`{"type":"object"}`), "its body schema could not be read"
 	}
-	note := ""
-	v = inline(d, v, 0, &note)
-	b, _ := json.Marshal(v)
-	if len(b) > 32<<10 {
+	if r.made > maxBodies {
+		return json.RawMessage(`{"type":"object"}`), "the document's body schemas are over 16 MiB together; this one takes any object"
+	}
+	e := expansion{refs: r}
+	v = e.inline(v, 0)
+	r.made += e.size
+	if e.size > maxBody {
 		return json.RawMessage(`{"type":"object"}`), "its body schema is over 32 KiB; it takes any object"
 	}
-	return b, note
+	b, _ := json.Marshal(v)
+	if len(b) > maxBody {
+		return json.RawMessage(`{"type":"object"}`), "its body schema is over 32 KiB; it takes any object"
+	}
+	return b, e.note
 }
 
-// inline replaces local schema references with what they name.
-func inline(d document, v any, depth int, note *string) any {
+// expansion is one body schema having its references followed. size counts
+// no more bytes than what has been made so far will take as JSON, so once it
+// is over maxBody the schema is known to be too, and the expansion stops
+// there rather than once the whole schema is made: a reference is expanded
+// where it is used, so a schema whose properties each name another, whose
+// properties each name another, grows as the power of its fan-out, and 8.6 KB
+// of document reached 1.6 GB of memory before its size was looked at.
+type expansion struct {
+	*refs
+	size int
+	note string
+}
+
+// inline is a schema with local schema references replaced by what they
+// name. It is made afresh, never changing what it was made from, which may
+// be a component other references share.
+func (e *expansion) inline(v any, depth int) any {
+	if e.size > maxBody {
+		return nil
+	}
 	switch x := v.(type) {
 	case map[string]any:
 		if ref, ok := x["$ref"].(string); ok {
 			name, local := strings.CutPrefix(ref, "#/components/schemas/")
 			if !local {
-				*note = "its body refers outside this document, which is not fetched"
-				return map[string]any{"type": "object"}
+				e.note = "its body refers outside this document, which is not fetched"
+				return e.open()
 			}
-			if depth >= refDepth || d.Components.Schemas[name] == nil {
-				return map[string]any{"type": "object"}
+			if depth >= refDepth {
+				return e.open()
 			}
-			var inner any
-			if json.Unmarshal(d.Components.Schemas[name], &inner) != nil {
-				return map[string]any{"type": "object"}
+			inner, ok := decode(e.schemas, name, e.d.Components.Schemas[name])
+			if !ok {
+				return e.open()
 			}
-			return inline(d, inner, depth+1, note)
+			return e.inline(inner, depth+1)
 		}
+		out := make(map[string]any, len(x))
+		e.size += len(`{}`)
 		for k, val := range x {
-			x[k] = inline(d, val, depth, note)
+			if e.size > maxBody {
+				break
+			}
+			e.size += len(k) + len(`"":`)
+			out[k] = e.inline(val, depth)
 		}
-		return x
+		return out
 	case []any:
-		for i := range x {
-			x[i] = inline(d, x[i], depth, note)
+		out := make([]any, 0, len(x))
+		e.size += len(`[]`)
+		for _, val := range x {
+			if e.size > maxBody {
+				break
+			}
+			out = append(out, e.inline(val, depth))
 		}
-		return x
+		return out
+	case string:
+		e.size += len(x) + len(`""`)
+	default:
+		// A number, true, false or null is a byte at the least.
+		e.size++
 	}
 	return v
+}
+
+// open is the schema of any object, for what is not followed.
+func (e *expansion) open() any {
+	e.size += len(`{"type":"object"}`)
+	return map[string]any{"type": "object"}
 }
 
 func primitive(t string) string {

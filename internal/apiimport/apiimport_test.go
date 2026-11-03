@@ -4,8 +4,11 @@
 package apiimport
 
 import (
+	"fmt"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
 )
@@ -197,5 +200,141 @@ func TestARequestBodyThatNamesItselfIsAnOpenObject(t *testing.T) {
 	}
 	if b := string(imp.Integration.Operations[0].Body); !strings.Contains(b, `"to"`) {
 		t.Errorf("a chain of bodies was not followed: %s", b)
+	}
+}
+
+// allocated is how many bytes f allocated.
+func allocated(f func()) uint64 {
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	f()
+	runtime.ReadMemStats(&after)
+	return after.TotalAlloc - before.TotalAlloc
+}
+
+// A schema whose properties each name another, whose properties each name
+// another, grows as the power of its fan-out when every reference is
+// expanded where it is used, as the billion laughs do with entities. Only
+// the result's size was bounded, after it was made: 8.6 KB of document
+// reached 1.6 GB of memory and ten seconds first. It is refused as it
+// grows instead.
+func TestAReferenceFanOutIsRefusedBeforeItGrows(t *testing.T) {
+	doc := fanOut(5, 40)
+	var imp *Imported
+	var err error
+	start := time.Now()
+	n := allocated(func() { imp, err = OpenAPI([]byte(doc), Options{Uses: []string{"send"}}) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if took := time.Since(start); took > 5*time.Second || n > 64<<20 {
+		t.Errorf("reading %d bytes took %v and %d MB", len(doc), took, n>>20)
+	}
+	if b := string(imp.Integration.Operations[0].Body); b != `{"type":"object"}` {
+		t.Errorf("the body is %.200s", b)
+	}
+	if notes := strings.Join(imp.Notes, "\n"); !strings.Contains(notes, "over 32 KiB") {
+		t.Errorf("the size was not named:\n%s", notes)
+	}
+	// One that stays within the limit is followed as before.
+	imp, err = OpenAPI([]byte(fanOut(2, 10)), Options{Uses: []string{"send"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b := string(imp.Integration.Operations[0].Body); strings.Count(b, `{"type":"string"}`) != 100 || strings.Contains(b, "$ref") {
+		t.Errorf("a schema within the limit was not followed: %.300s", b)
+	}
+}
+
+// fanOut is a document whose body schema has n properties that each name a
+// schema with n properties, levels deep.
+func fanOut(levels, n int) string {
+	var schemas []string
+	for level := 0; level < levels; level++ {
+		var props []string
+		for i := 0; i < n; i++ {
+			props = append(props, fmt.Sprintf(`"p%d": {"$ref": "#/components/schemas/S%d"}`, i, level+1))
+		}
+		schemas = append(schemas, fmt.Sprintf(`"S%d": {"type": "object", "properties": {%s}}`, level, strings.Join(props, ", ")))
+	}
+	schemas = append(schemas, fmt.Sprintf(`"S%d": {"type": "string"}`, levels))
+	return `{"openapi": "3.0.3", "info": {"title": "Fan"}, "servers": [{"url": "https://fan.example"}],
+	  "components": {"schemas": {` + strings.Join(schemas, ", ") + `}},
+	  "paths": {"/a": {"post": {"operationId": "send",
+	    "requestBody": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/S0"}}}}}}}}`
+}
+
+// A component named from many places is read once, not once for each
+// place. Read at every reference, a 2 MB schema named by two hundred
+// properties cost twenty seconds and 2.9 GB, and a parameter or a request
+// body named by every operation was read again for each of them.
+func TestAComponentNamedFromManyPlacesIsReadOnce(t *testing.T) {
+	pad := strings.Repeat("x", 2<<20)
+	var props, params, paths []string
+	for i := 0; i < 200; i++ {
+		props = append(props, fmt.Sprintf(`"p%d": {"$ref": "#/components/schemas/S"}`, i))
+		params = append(params, `{"$ref": "#/components/parameters/P"}`)
+		paths = append(paths, fmt.Sprintf(`"/b%d": {"post": {"operationId": "b%d", "requestBody": {"$ref": "#/components/requestBodies/R"}}}`, i, i))
+	}
+	doc := `{"openapi": "3.0.3", "info": {"title": "Many"}, "servers": [{"url": "https://many.example"}],
+	  "components": {
+	    "schemas": {"S": {"type": "string", "description": "` + pad + `"}},
+	    "parameters": {"P": {"name": "id", "in": "query", "description": "` + pad + `"}},
+	    "requestBodies": {"R": {"content": {"application/json": {"schema": {"type": "object", "description": "` + pad + `"}}}}}},
+	  "paths": {"/a": {"parameters": [` + strings.Join(params, ", ") + `],
+	    "get": {"operationId": "list"},
+	    "post": {"operationId": "send", "requestBody": {"content": {"application/json": {"schema": {"type": "object",
+	      "properties": {` + strings.Join(props, ", ") + `}}}}}}}, ` + strings.Join(paths, ", ") + `}}`
+	var imp *Imported
+	var err error
+	start := time.Now()
+	n := allocated(func() { imp, err = OpenAPI([]byte(doc), Options{Uses: []string{"list", "send", "b0", "b199"}}) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if took := time.Since(start); took > 10*time.Second || n > 96<<20 {
+		t.Errorf("reading %d bytes took %v and %d MB", len(doc), took, n>>20)
+	}
+	ops := map[string]agent.Operation{}
+	for _, o := range imp.Integration.Operations {
+		ops[o.Name] = o
+	}
+	if p := ops["list"].Params; len(p) != 1 || p[0].Name != "id" {
+		t.Errorf("the parameter named many times is %+v", p)
+	}
+	for _, name := range []string{"send", "b0", "b199"} {
+		if b := string(ops[name].Body); b != `{"type":"object"}` {
+			t.Errorf("%s: the body over 32 KiB is %.100s", name, b)
+		}
+	}
+}
+
+// Each body schema is bounded, but a reference lets a few bytes of operation
+// name a large one, so the bodies one document makes are bounded together
+// too. 1.1 MB of operations that each named the same 20 KiB schema took
+// nineteen seconds and kept 380 MB; 8 MiB would have kept three gigabytes.
+func TestTheBodiesOfOneDocumentAreBoundedTogether(t *testing.T) {
+	var paths []string
+	for i := 0; i < 1200; i++ {
+		paths = append(paths, fmt.Sprintf(`"/a%04d": {"post": {"operationId": "a%04d",
+		  "requestBody": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/Big"}}}}}}`, i, i))
+	}
+	doc := `{"openapi": "3.0.3", "info": {"title": "Wide"}, "servers": [{"url": "https://wide.example"}],
+	  "components": {"schemas": {"Big": {"type": "object", "description": "` + strings.Repeat("x", 16<<10) + `"}}},
+	  "paths": {` + strings.Join(paths, ", ") + `}}`
+	imp, err := OpenAPI([]byte(doc), Options{Uses: []string{"a0000", "a1199"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ops := imp.Integration.Operations
+	if b := string(ops[0].Body); len(b) < 16<<10 {
+		t.Errorf("the first body is %.100s", b)
+	}
+	if b := string(ops[1].Body); b != `{"type":"object"}` {
+		t.Errorf("the last body is %d bytes", len(b))
+	}
+	if notes := strings.Join(imp.Notes, "\n"); !strings.Contains(notes, "a1199: the document's body schemas are over 16 MiB together") {
+		t.Errorf("the bound was not named:\n%.500s", notes)
 	}
 }
