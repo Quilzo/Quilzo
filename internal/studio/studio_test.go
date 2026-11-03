@@ -5,6 +5,7 @@ package studio
 
 import (
 	"bytes"
+	"errors"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -271,6 +272,40 @@ func TestWrongTokensAreThrottled(t *testing.T) {
 		t.Errorf("thirty wrong tokens produced %d refusals and never a 429; "+
 			"this is the door the admin's own form was measured leaving open",
 			refused)
+	}
+}
+
+// Each request is decided by the store as it is now.
+//
+// The studio read its tokens and its policy once, at start, so a revoked
+// token kept recording until it restarted. With Reload wired, what the
+// store says at the moment of the request is what counts; and a store that
+// cannot be read decides nothing.
+func TestEachRequestIsDecidedByTheStoreAsItIsNow(t *testing.T) {
+	srv, secret := wired(t)
+	pol := srv.Policy
+	srv.Reload = func() (*auth.Policy, *auth.TokenStore, error) {
+		return pol, &auth.TokenStore{}, nil // the token is gone from it
+	}
+	body, ct := oneRecording(t, "clip.webm", webmBytes())
+	if rec := signedIn(t, srv, secret, "/upload", body, ct); rec.Code != http.StatusUnauthorized {
+		t.Errorf("a token the store no longer holds uploaded, answering %d", rec.Code)
+	}
+
+	srv.Reload = func() (*auth.Policy, *auth.TokenStore, error) {
+		return nil, nil, errors.New("tokens.json: unexpected end of JSON input")
+	}
+	page := signedIn(t, srv, secret, "/", nil, "")
+	if strings.Contains(page.Body.String(), "<script") {
+		t.Error("the recorder was served while the store could not be read")
+	}
+	form := bytes.NewBufferString("token=" + secret)
+	req := httptest.NewRequest(http.MethodPost, "/signin", form)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("signing in against a store that cannot be read answered %d", rec.Code)
 	}
 }
 

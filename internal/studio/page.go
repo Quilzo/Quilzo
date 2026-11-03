@@ -46,8 +46,9 @@ func (s *Server) page(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Security-Policy", policyFor(n))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
-	tok := s.caller(r)
-	if !s.mayWrite(tok) {
+	toks, pol := s.current()
+	tok := s.caller(r, toks)
+	if !s.mayWrite(tok, pol) {
 		// The sign-in form carries no script, so it is served under a policy
 		// that permits none. A door that runs code before anybody is through
 		// it is a door with a larger attack surface than the room.
