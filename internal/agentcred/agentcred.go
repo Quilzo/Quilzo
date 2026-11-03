@@ -39,8 +39,9 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/replay"
 )
 
 // Bounds.
@@ -292,31 +293,11 @@ func Prove(holder ed25519.PrivateKey, credential, method, url string, now time.T
 
 // Replays remembers the proofs already accepted, for as long as one could
 // be presented again.
-type Replays struct {
-	mu   sync.Mutex
-	seen map[string]time.Time
-}
+type Replays struct{ seen replay.Cache }
 
 // first reports whether jti is new, and remembers it.
 func (r *Replays) first(jti string, now time.Time) bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.seen == nil {
-		r.seen = map[string]time.Time{}
-	}
-	for k, at := range r.seen {
-		if now.Sub(at) > 2*ProofWindow {
-			delete(r.seen, k)
-		}
-	}
-	if _, ok := r.seen[jti]; ok {
-		return false
-	}
-	if len(r.seen) >= 1<<16 {
-		return false
-	}
-	r.seen[jti] = now
-	return true
+	return r.seen.First(jti, now.Add(2*ProofWindow), now)
 }
 
 // CheckProof checks a request's proof against the credential it goes

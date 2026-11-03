@@ -278,11 +278,18 @@ func (h Host) call(r *http.Request, req rpcRequest) (any, *Error) {
 }
 
 // pick is the agent a message is for: named in its metadata as "agent",
-// or the one agent there is.
+// or as "skill", or the one agent there is. A skill's id on the card is its
+// agent's name, and "skill" is what a client that read the card names: what
+// Quilzo's own client sends, which this once ignored, refusing a message
+// from another install whenever more than one agent was offered.
 func (h Host) pick(metas ...map[string]any) (string, *Error) {
 	agents := h.Agents()
 	for _, m := range metas {
-		if name, ok := m["agent"].(string); ok && name != "" {
+		for _, key := range []string{"agent", "skill"} {
+			name, ok := m[key].(string)
+			if !ok || name == "" {
+				continue
+			}
 			for _, a := range agents {
 				if a == name {
 					return a, nil

@@ -736,7 +736,12 @@ func (s *Server) mfaEnforced(now time.Time) bool { return !now.Before(s.MFAFrom)
 func (s *Server) authenticate(r *http.Request) (principal, error) {
 	s.refresh()
 	header := r.Header.Get("Authorization")
-	raw := strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
+	// A bearer token in any case of the scheme; anything else is presented
+	// whole, and refused as before.
+	raw := strings.TrimSpace(header)
+	if t, scheme := auth.Presented(header); scheme == "Bearer" {
+		raw = t
+	}
 	bearer := raw != ""
 	if raw == "" {
 		if c, err := r.Cookie("quilzo_token"); err == nil {

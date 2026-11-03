@@ -29,9 +29,15 @@ var appDoc = `{"client_id":"` + appID + `","client_name":"Example Assistant",
 type fakeTokens struct {
 	issued  map[string]Grant
 	revoked map[string]bool
+	// fail, when set, is what the next Issue fails with.
+	fail error
 }
 
 func (f *fakeTokens) Issue(g Grant, role auth.Role, ttl time.Duration, now time.Time) (string, error) {
+	if err := f.fail; err != nil {
+		f.fail = nil
+		return "", err
+	}
 	s, _ := newSecret("qz_")
 	f.issued[s] = g
 	return s, nil
@@ -191,7 +197,7 @@ func TestRefreshRotatesAndACopyEndsTheGrant(t *testing.T) {
 	} else {
 		next = got
 	}
-	if status, _ := refresh(next["refresh_token"].(string), url.Values{"scope": {"mcp:write"}}); status != 400 {
+	if status, _ := refresh(next["refresh_token"].(string), url.Values{"scope": {"mcp:publish"}}); status != 400 {
 		t.Fatal("a refresh widened the scope")
 	}
 	// Another app cannot use it.
@@ -628,5 +634,212 @@ func TestRedirectMatching(t *testing.T) {
 		if got := RedirectMatches(reg, req); got != want {
 			t.Errorf("%s: %v, want %v", req, got, want)
 		}
+	}
+}
+
+// Host names are case-insensitive, and HostAllowed folds case, so an app
+// may be admitted under app.example.com with a client_id that spells it
+// APP.example.com. The matcher that ends a removed host's connections
+// compared hosts exactly and missed such an app.
+func TestAnAppIsFromItsHostWhateverCaseItSpellsIt(t *testing.T) {
+	from := FromHost("app.example.com")
+	for _, id := range []string{appID, "https://APP.example.com/oauth/client.json", "https://App.Example.Com/c.json"} {
+		if !from(Grant{Client: id}) {
+			t.Errorf("%s is not from app.example.com", id)
+		}
+	}
+	for _, id := range []string{"https://app.example.com.evil.example/c.json", "https://evil.example/c.json", "qzc_abc"} {
+		if from(Grant{Client: id}) {
+			t.Errorf("%s is from app.example.com", id)
+		}
+	}
+	if !FromHost("*")(Grant{Client: "qzc_abc"}) {
+		t.Error("* does not match every app")
+	}
+}
+
+// A grant whose host is no longer allowed must stop refreshing even when
+// the sweep that ends a removed host's connections missed it: the screen
+// says the host's apps can no longer connect, and refresh is how a
+// connection outlives its last access token.
+func TestARefreshIsRefusedOnceTheAppsHostIsNoLongerAllowed(t *testing.T) {
+	r := newRig(t)
+	out, _ := r.connect(t)
+	r.Server.Config = func() Config { return Config{Issuer: "https://admin.example.org"} }
+	status, got := r.post(t, r.Token, url.Values{"grant_type": {"refresh_token"},
+		"refresh_token": {out["refresh_token"].(string)}, "client_id": {appID}})
+	if status != 400 || got["error"] != "invalid_grant" {
+		t.Fatalf("refreshed from a host no longer allowed: %d %v", status, got)
+	}
+}
+
+// RFC 6749 section 6: a refresh may ask for less, and only the access token
+// it is given is narrower; the grant keeps what the person agreed to. A
+// refresh once wrote what it asked for into the grant, so asking once for
+// less took away for good what the person had granted.
+func TestARefreshForLessNarrowsOnlyItsAccessToken(t *testing.T) {
+	r := newRig(t)
+	out, _ := r.connect(t)
+	refresh := func(tok, scope string) (int, map[string]any) {
+		f := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {tok}, "client_id": {appID}}
+		if scope != "" {
+			f.Set("scope", scope)
+		}
+		return r.post(t, r.Token, f)
+	}
+	status, got := refresh(out["refresh_token"].(string), "mcp:read")
+	if status != 200 || got["scope"] != "mcp:read" {
+		t.Fatalf("narrowing: %d %v", status, got)
+	}
+	if g := r.toks.issued[got["access_token"].(string)]; RoleFor(g.Scopes) != auth.RoleReader {
+		t.Errorf("the narrowed access token carries %v", g.Scopes)
+	}
+	if grants, _ := r.Store.Grants(); strings.Join(grants[0].Scopes, " ") != "mcp:read mcp:write" {
+		t.Errorf("the grant now holds %v", grants[0].Scopes)
+	}
+	status, got = refresh(got["refresh_token"].(string), "mcp:read mcp:write")
+	if status != 200 || got["scope"] != "mcp:read mcp:write" {
+		t.Errorf("asking again for what the person granted: %d %v", status, got)
+	}
+}
+
+// A scope parameter that names nothing is refused before anything is
+// spent. A blank one once emptied the grant's scopes, rotated the refresh
+// token, then failed to issue for no role, so the app never heard of the
+// new refresh token and its retry with the old one ended the grant.
+func TestARefreshThatCannotBeAnsweredSpendsNothing(t *testing.T) {
+	r := newRig(t)
+	out, _ := r.connect(t)
+	tok := out["refresh_token"].(string)
+	form := func(scope string) url.Values {
+		f := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {tok}, "client_id": {appID}}
+		if scope != "" {
+			f.Set("scope", scope)
+		}
+		return f
+	}
+	if status, got := r.post(t, r.Token, form(" ")); status != 400 || got["error"] != "invalid_scope" {
+		t.Errorf("a blank scope: %d %v", status, got)
+	}
+	// And a failure issuing the access token leaves the refresh token
+	// unspent, so the app's retry is not taken for a copy.
+	r.toks.fail = errors.New("the token store could not be written")
+	if status, _ := r.post(t, r.Token, form("")); status == 200 {
+		t.Fatal("a refresh whose access token could not be issued answered 200")
+	}
+	status, got := r.post(t, r.Token, form(""))
+	if status != 200 || got["scope"] != "mcp:read mcp:write" {
+		t.Fatalf("the retry: %d %v", status, got)
+	}
+	if grants, _ := r.Store.Grants(); !grants[0].Ended.IsZero() {
+		t.Errorf("the grant ended: %s", grants[0].EndedWhy)
+	}
+}
+
+// The server reads the allowed hosts from the same store the grants are in,
+// under the same lock, so a refresh must not ask for its configuration
+// while it holds that lock. One that asked for it there, to check the app's
+// host and the access token's lifetime, waited for itself for ever, and so
+// did every request after it that touched the store.
+func TestARefreshDoesNotWaitForItselfWhereTheHostsAreKeptWithTheGrants(t *testing.T) {
+	r := newRig(t)
+	if err := r.Store.ChangeClients(func(_ *[]Client, hosts *[]string) error {
+		*hosts = []string{"app.example.com"}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	r.Server.Config = func() Config {
+		_, hosts, _ := r.Store.Clients()
+		return Config{Issuer: "https://admin.example.org", Hosts: hosts}
+	}
+	out, _ := r.connect(t)
+	tok := out["refresh_token"].(string)
+	for _, extra := range []url.Values{nil, {"resource": {"https://admin.example.org/mcp"}}} {
+		f := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {tok}, "client_id": {appID}}
+		for k, v := range extra {
+			f[k] = v
+		}
+		done := make(chan int, 1)
+		var got map[string]any
+		go func() {
+			status, body := r.post(t, r.Token, f)
+			got = body
+			done <- status
+		}()
+		select {
+		case status := <-done:
+			if status != 200 {
+				t.Fatalf("refresh with %v: %d %v", extra, status, got)
+			}
+			tok = got["refresh_token"].(string)
+		case <-time.After(10 * time.Second):
+			t.Fatalf("a refresh with %v did not finish: it waits for the store's lock it holds", extra)
+		}
+	}
+}
+
+// A consent held for the person to decide, or a code the app has not yet
+// redeemed, is in no store when an administrator removes the app's host or
+// takes the app off the register, so the removal ended nothing of it. Once
+// redeemed after the removal it became a connection all the same: its
+// access token worked for an hour after the screen said the host's apps
+// could no longer connect, and a registered app's went on refreshing for the
+// rest of its grant.
+func TestACodeRedeemedAfterItsAppWasRemovedConnectsNothing(t *testing.T) {
+	desk, err := NewRegistered("Desk app", []string{"http://localhost/cb"}, "sam", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		name, client, redirect string
+		remove                 func(r *rig)
+	}{
+		{"host", appID, "https://app.example.com/callback", func(r *rig) {
+			r.Server.Config = func() Config { return Config{Issuer: "https://admin.example.org"} }
+			r.EndWhere(FromHost("app.example.com"), "sam", "apps from app.example.com are no longer allowed")
+		}},
+		{"register", desk.ID, "http://localhost:4000/cb", func(r *rig) {
+			r.Store.ChangeClients(func(cs *[]Client, _ *[]string) error { *cs = nil; return nil })
+			r.EndWhere(func(g Grant) bool { return g.Client == desk.ID }, "sam", "the app was removed from the register")
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := newRig(t)
+			r.Store.ChangeClients(func(cs *[]Client, _ *[]string) error { *cs = append(*cs, desk); return nil })
+			verifier, challenge := pkce()
+			q := authQuery(challenge)
+			q.Set("client_id", c.client)
+			q.Set("redirect_uri", c.redirect)
+			req, err := r.Parse(context.Background(), q)
+			if err != nil {
+				t.Fatal(err)
+			}
+			p, err := r.Hold(req, "dana")
+			if err != nil {
+				t.Fatal(err)
+			}
+			taken, err := r.Take(p.ID, "dana")
+			if err != nil {
+				t.Fatal(err)
+			}
+			to, err := r.Approve(taken, req.Scopes, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			u, _ := url.Parse(to)
+			c.remove(r)
+			status, got := r.post(t, r.Token, url.Values{"grant_type": {"authorization_code"}, "code": {u.Query().Get("code")},
+				"client_id": {c.client}, "redirect_uri": {c.redirect}, "code_verifier": {verifier}})
+			if status != 400 || got["error"] != "invalid_grant" {
+				t.Errorf("redeemed after the app was removed: %d %v", status, got)
+			}
+			if grants, _ := r.Store.Grants(); len(grants) != 0 {
+				t.Errorf("a connection was made: %+v", grants)
+			}
+			if len(r.toks.issued) != 0 {
+				t.Errorf("tokens were issued: %v", r.toks.issued)
+			}
+		})
 	}
 }

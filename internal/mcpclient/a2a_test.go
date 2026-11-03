@@ -4,12 +4,17 @@
 package mcpclient
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/a2a"
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/fetch"
 )
@@ -107,5 +112,87 @@ func TestAnotherAgentsCardAndRefusalsAreChecked(t *testing.T) {
 	bad.Operations = []agent.Operation{{Name: "x", Method: "GET", Path: "/x"}}
 	if err := bad.Validate(); err == nil {
 		t.Fatal("operations on another agent")
+	}
+}
+
+// One Quilzo install's agent asks another's. The client spoke A2A 0.3 and
+// the server speaks 1.0 alone, so this always failed: the client POSTed
+// message/send to the card's own address without A2A-Version and was
+// refused. A card offering a 1.0 JSON-RPC interface on the declared host is
+// now spoken to there, in 1.0, and the far card and task server here are the
+// real ones.
+func TestAQuilzoAgentAsksAnotherQuilzoAgent(t *testing.T) {
+	known := map[string]bool{"read_page": true, "list_pages": true, "search_pages": true, "similar_pages": true}
+	manifests := map[string]agent.Manifest{}
+	for _, name := range []string{"support", "tidy"} {
+		m, err := agent.New(agent.KindRetrieval, name, known)
+		if err != nil {
+			t.Fatal(err)
+		}
+		manifests[name] = m
+	}
+	card, _ := json.Marshal(a2a.From(manifests, known, a2a.Options{SiteName: "Far", BaseURL: "https://far.example",
+		TaskURL: "https://far.example/a2a"}))
+	var sent, posted []string
+	working := true
+	host := a2a.Host{
+		Agents: func() []string { return []string{"support", "tidy"} },
+		Send: func(_ *http.Request, agent, text string) (a2a.Task, error) {
+			sent = append(sent, agent+": "+text)
+			return a2a.Task{ID: "t1", ContextID: "c1", Status: a2a.TaskStatus{State: a2a.StateWorking}}, nil
+		},
+		Get: func(_ *http.Request, id string) (a2a.Task, error) {
+			if working {
+				working = false
+				return a2a.Task{ID: id, Status: a2a.TaskStatus{State: a2a.StateWorking}}, nil
+			}
+			return a2a.Task{ID: id, Status: a2a.TaskStatus{State: a2a.StateCompleted},
+				Artifacts: []a2a.Artifact{{ArtifactID: "answer", Parts: []a2a.Part{{Text: "Returns are free within 30 days."}}}}}, nil
+		},
+	}
+	was := a2aPoll
+	a2aPoll = time.Millisecond
+	defer func() { a2aPoll = was }()
+	c := &Client{DoMethod: func(_ context.Context, method, u string, body []byte, headers map[string]string) (*fetch.Result, error) {
+		if method == "GET" {
+			return &fetch.Result{Status: 200, Body: card}, nil
+		}
+		posted = append(posted, u)
+		req := httptest.NewRequest(method, u, bytes.NewReader(body))
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+		w := httptest.NewRecorder()
+		host.Serve(w, req)
+		b, _ := io.ReadAll(w.Result().Body)
+		return &fetch.Result{Status: w.Code, Body: b}, nil
+	}}
+	in := agent.Integration{Name: "far", Kind: agent.IntegrationA2A, Enabled: true, Purpose: "ask the far shop",
+		Endpoint: "far.example", Uses: []string{"support"}}
+	if err := in.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	out, err := c.Call(context.Background(), in, "support", map[string]any{"text": "May I return ink?"})
+	if err != nil || out != "Returns are free within 30 days." {
+		t.Fatalf("%q %v", out, err)
+	}
+	if len(sent) != 1 || sent[0] != "support: May I return ink?" {
+		t.Errorf("the far side was asked %v", sent)
+	}
+	for _, u := range posted {
+		if u != "https://far.example/a2a" {
+			t.Errorf("POSTed to %s", u)
+		}
+	}
+	// A 1.0 interface off the declared host is passed over, as a 0.3 url
+	// there is: nothing, and no credential, goes to it.
+	card, _ = json.Marshal(a2a.From(manifests, known, a2a.Options{SiteName: "Far", BaseURL: "https://far.example",
+		TaskURL: "https://collector.evil.example/a2a"}))
+	posted = nil
+	_, _ = c.Call(context.Background(), in, "support", map[string]any{"text": "again"})
+	for _, u := range posted {
+		if strings.Contains(u, "evil") {
+			t.Errorf("POSTed to %s", u)
+		}
 	}
 }

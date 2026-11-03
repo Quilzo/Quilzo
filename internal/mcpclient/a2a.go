@@ -28,6 +28,12 @@ import (
 // finishes or a minute and a half passes. The card's service address must
 // be on the declared host: a card cannot send this installation's
 // credential somewhere else.
+//
+// A card that offers an A2A 1.0 JSON-RPC interface (supportedInterfaces) is
+// spoken to there, in 1.0: SendMessage and GetTask, with A2A-Version sent.
+// Any other is spoken to at its url, in 0.3: message/send and tasks/get.
+// Only 0.3 was spoken once, and Quilzo's own task server speaks 1.0 alone,
+// so one install's agent asking another's always failed.
 
 // A2AWait is how long a task the far agent took on is waited for.
 var A2AWait = 90 * time.Second
@@ -36,8 +42,13 @@ var A2AWait = 90 * time.Second
 var a2aPoll = 2 * time.Second
 
 type a2aCard struct {
-	Name   string `json:"name"`
-	URL    string `json:"url"`
+	Name                string `json:"name"`
+	URL                 string `json:"url"`
+	SupportedInterfaces []struct {
+		URL             string `json:"url"`
+		ProtocolBinding string `json:"protocolBinding"`
+		ProtocolVersion string `json:"protocolVersion"`
+	} `json:"supportedInterfaces"`
 	Skills []struct {
 		ID          string   `json:"id"`
 		Name        string   `json:"name"`
@@ -46,12 +57,21 @@ type a2aCard struct {
 	} `json:"skills"`
 }
 
+// a2aService is where, and in which revision, a far agent is spoken to.
+type a2aService struct {
+	URL     string
+	Version string // "1.0" or "0.3"
+}
+
 // a2aDo is the transport for one request to another agent: the checked
 // client, within the declared reach, with the declared credential.
-func (c *Client) a2aDo(ctx context.Context, in agent.Integration, method, u string, body []byte) (*fetch.Result, error) {
+func (c *Client) a2aDo(ctx context.Context, in agent.Integration, method, u, version string, body []byte) (*fetch.Result, error) {
 	headers := map[string]string{"Accept": "application/json"}
 	if body != nil {
 		headers["Content-Type"] = "application/json"
+	}
+	if version == "1.0" {
+		headers["A2A-Version"] = version
 	}
 	if in.Connection != "" {
 		tok, err := c.connected(ctx, in)
@@ -101,8 +121,8 @@ func (c *Client) a2aDo(ctx context.Context, in agent.Integration, method, u stri
 	return res, nil
 }
 
-// card reads the far agent's card and the address it is spoken to at.
-func (c *Client) a2aCardOf(ctx context.Context, in agent.Integration) (a2aCard, string, error) {
+// card reads the far agent's card and where it is spoken to.
+func (c *Client) a2aCardOf(ctx context.Context, in agent.Integration) (a2aCard, a2aService, error) {
 	path := in.Path
 	if path == "" || path == "/" {
 		path = "/.well-known/agent-card.json"
@@ -111,23 +131,39 @@ func (c *Client) a2aCardOf(ctx context.Context, in agent.Integration) (a2aCard, 
 	if in.Port != 0 && in.Port != 443 {
 		u = (&url.URL{Scheme: "https", Host: fmt.Sprintf("%s:%d", in.Endpoint, in.Port), Path: path}).String()
 	}
-	res, err := c.a2aDo(ctx, in, "GET", u, nil)
+	res, err := c.a2aDo(ctx, in, "GET", u, "", nil)
 	if err != nil {
-		return a2aCard{}, "", err
+		return a2aCard{}, a2aService{}, err
 	}
 	var card a2aCard
 	if err := json.Unmarshal(res.Body, &card); err != nil {
-		return a2aCard{}, "", fmt.Errorf("%s's agent card is not one this can read", in.Name)
-	}
-	svc, err := url.Parse(card.URL)
-	if err != nil || svc.Scheme != "https" || !strings.EqualFold(svc.Hostname(), in.Endpoint) {
-		return a2aCard{}, "", fmt.Errorf("%s's card sends its messages to %q, which is not https on %s: nothing is sent there",
-			in.Name, clamp(card.URL, 120), in.Endpoint)
+		return a2aCard{}, a2aService{}, fmt.Errorf("%s's agent card is not one this can read", in.Name)
 	}
 	if len(card.Skills) > 200 {
-		return a2aCard{}, "", fmt.Errorf("%s offers %d skills; that is not an agent anybody reviewed", in.Name, len(card.Skills))
+		return a2aCard{}, a2aService{}, fmt.Errorf("%s offers %d skills; that is not an agent anybody reviewed", in.Name, len(card.Skills))
 	}
-	return card, svc.String(), nil
+	onHost := func(raw string) (string, bool) {
+		svc, err := url.Parse(raw)
+		if err != nil || svc.Scheme != "https" || !strings.EqualFold(svc.Hostname(), in.Endpoint) {
+			return "", false
+		}
+		return svc.String(), true
+	}
+	// A 1.0 interface on another host is passed over as the 0.3 url would
+	// be: nothing, and no credential, is sent off the declared host.
+	for _, i := range card.SupportedInterfaces {
+		if strings.EqualFold(i.ProtocolBinding, "JSONRPC") && strings.HasPrefix(i.ProtocolVersion, "1.") {
+			if svc, ok := onHost(i.URL); ok {
+				return card, a2aService{URL: svc, Version: "1.0"}, nil
+			}
+		}
+	}
+	svc, ok := onHost(card.URL)
+	if !ok {
+		return a2aCard{}, a2aService{}, fmt.Errorf("%s's card sends its messages to %q, which is not https on %s: nothing is sent there",
+			in.Name, clamp(card.URL, 120), in.Endpoint)
+	}
+	return card, a2aService{URL: svc, Version: "0.3"}, nil
 }
 
 var a2aInput = json.RawMessage(`{"type":"object","properties":{"text":{"type":"string","description":"what to ask the other agent, in words"}},"required":["text"]}`)
@@ -155,6 +191,8 @@ func (c *Client) a2aTools(ctx context.Context, in agent.Integration) ([]Tool, er
 	return markAllowed(out, in.Uses), nil
 }
 
+// a2aPart is a part as either revision writes it: 0.3 names its kind, 1.0
+// is known by the member it carries.
 type a2aPart struct {
 	Kind string          `json:"kind"`
 	Text string          `json:"text,omitempty"`
@@ -194,12 +232,18 @@ func (c *Client) a2aCall(ctx context.Context, in agent.Integration, skill string
 	if key, ok := IdempotencyKeyOf(ctx); ok {
 		msgID = key
 	}
+	send, get := "message/send", "tasks/get"
 	params := map[string]any{
 		"message": map[string]any{"kind": "message", "role": "user", "messageId": msgID,
 			"parts": []any{map[string]any{"kind": "text", "text": clamp(text, 20000)}}},
 		"metadata": map[string]any{"skill": skill},
 	}
-	res, err := c.a2aRPC(ctx, in, svc, "message/send", params)
+	if svc.Version == "1.0" {
+		send, get = "SendMessage", "GetTask"
+		params["message"] = map[string]any{"role": "ROLE_USER", "messageId": msgID,
+			"parts": []any{map[string]any{"text": clamp(text, 20000)}}}
+	}
+	res, err := c.a2aRPC(ctx, in, svc, send, params)
 	if err != nil {
 		return "", err
 	}
@@ -213,7 +257,7 @@ func (c *Client) a2aCall(ctx context.Context, in agent.Integration, skill string
 			return "", ctx.Err()
 		case <-time.After(a2aPoll):
 		}
-		if res, err = c.a2aRPC(ctx, in, svc, "tasks/get", map[string]any{"id": res.ID}); err != nil {
+		if res, err = c.a2aRPC(ctx, in, svc, get, map[string]any{"id": res.ID}); err != nil {
 			return "", err
 		}
 	}
@@ -254,11 +298,11 @@ func (c *Client) a2aCall(ctx context.Context, in agent.Integration, skill string
 func partsText(parts []a2aPart) string {
 	var b strings.Builder
 	for _, p := range parts {
-		switch p.Kind {
-		case "text":
+		switch {
+		case p.Kind == "text" || p.Kind == "" && p.Text != "":
 			b.WriteString(p.Text)
 			b.WriteString("\n")
-		case "data":
+		case p.Kind == "data" || p.Kind == "" && len(p.Data) > 0:
 			b.Write(p.Data)
 			b.WriteString("\n")
 		}
@@ -266,15 +310,44 @@ func partsText(parts []a2aPart) string {
 	return strings.TrimSpace(b.String())
 }
 
+// a2aResult1 reads what A2A 1.0 answers in 0.3's shape, which the rest of
+// a call reads: SendMessage's task or message, or GetTask's task, with the
+// state as 0.3 writes it (TASK_STATE_INPUT_REQUIRED is input-required).
+func a2aResult1(raw json.RawMessage) (a2aResult, error) {
+	var sent struct {
+		Task    *a2aResult `json:"task"`
+		Message *struct {
+			Parts []a2aPart `json:"parts"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal(raw, &sent); err != nil {
+		return a2aResult{}, err
+	}
+	var out a2aResult
+	switch {
+	case sent.Message != nil:
+		return a2aResult{Kind: "message", Parts: sent.Message.Parts}, nil
+	case sent.Task != nil:
+		out = *sent.Task
+	default:
+		if err := json.Unmarshal(raw, &out); err != nil {
+			return a2aResult{}, err
+		}
+	}
+	out.Kind = "task"
+	out.Status.State = strings.ReplaceAll(strings.ToLower(strings.TrimPrefix(out.Status.State, "TASK_STATE_")), "_", "-")
+	return out, nil
+}
+
 // a2aRPC makes one JSON-RPC call to the far agent.
-func (c *Client) a2aRPC(ctx context.Context, in agent.Integration, svc, method string, params any) (a2aResult, error) {
+func (c *Client) a2aRPC(ctx context.Context, in agent.Integration, svc a2aService, method string, params any) (a2aResult, error) {
 	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": c.id.Add(1), "method": method, "params": params})
-	res, err := c.a2aDo(ctx, in, "POST", svc, body)
+	res, err := c.a2aDo(ctx, in, "POST", svc.URL, svc.Version, body)
 	if err != nil {
 		return a2aResult{}, err
 	}
 	var out struct {
-		Result *a2aResult `json:"result"`
+		Result json.RawMessage `json:"result"`
 		Error  *struct {
 			Code    int    `json:"code"`
 			Message string `json:"message"`
@@ -286,8 +359,17 @@ func (c *Client) a2aRPC(ctx context.Context, in agent.Integration, svc, method s
 	if out.Error != nil {
 		return a2aResult{}, fmt.Errorf("%s refused %s: %s", in.Name, method, clamp(out.Error.Message, 300))
 	}
-	if out.Result == nil {
+	if len(out.Result) == 0 || string(out.Result) == "null" {
 		return a2aResult{}, fmt.Errorf("%s answered %s with nothing", in.Name, method)
 	}
-	return *out.Result, nil
+	var result a2aResult
+	if svc.Version == "1.0" {
+		result, err = a2aResult1(out.Result)
+	} else {
+		err = json.Unmarshal(out.Result, &result)
+	}
+	if err != nil {
+		return a2aResult{}, fmt.Errorf("%s answered %s with something this cannot read", in.Name, method)
+	}
+	return result, nil
 }

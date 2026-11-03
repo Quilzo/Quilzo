@@ -4,6 +4,7 @@
 package httpsig_test
 
 import (
+	"bufio"
 	"crypto"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -440,6 +441,148 @@ func TestCoversRequestNeedsTheDestination(t *testing.T) {
 		s := httpsig.Signed{Covered: c.covered}
 		if got := s.CoversRequest(); got != c.want {
 			t.Errorf("%s: CoversRequest() = %v, want %v", what, got, c.want)
+		}
+	}
+}
+
+// Where the server knows its origin, the destination a signature covers is
+// checked against that origin, not against the Host the request names. The
+// receiver of a delivery signed for b.example could replay it to a.example
+// with Host: b.example inside the age window, and it passed every check an
+// inbox makes, CoversDestination and CoversRequest included.
+func TestASignatureForAnotherHostIsRefusedWhereTheOriginIsKnown(t *testing.T) {
+	priv, pub := edPair(t, 9)
+	keys := []httpsig.PublicKey{pub}
+	for _, format := range []string{"rfc9421", "cavage"} {
+		t.Run(format, func(t *testing.T) {
+			signedFor := func(host string) http.Header {
+				out, err := http.NewRequest("POST", "https://"+host+"/@/inbox", nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if format == "rfc9421" {
+					err = httpsig.Sign(out, pub.ID, pub.Alg, priv, cover, at())
+				} else {
+					err = httpsig.SignCavage(out, pub.ID, pub.Alg, priv, []string{"(request-target)", "host", "date"}, at())
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				return out.Header
+			}
+			arriving := func(h http.Header, host string) *http.Request {
+				r := httptest.NewRequest("POST", "/@/inbox", nil)
+				r.Host, r.Header = host, h.Clone()
+				return r
+			}
+			if s, err := httpsig.VerifyAt(arriving(signedFor("b.example"), "b.example"), "https://a.example", keys, 0, at()); err == nil {
+				t.Errorf("a delivery signed for b.example verified at a.example, covering %v", s.Covered)
+			}
+			// Signed for this server, it verifies whatever Host a proxy in
+			// front passed on, as @target-uri already did.
+			for _, host := range []string{"a.example", "A.EXAMPLE", "10.0.0.5:8080"} {
+				s, err := httpsig.VerifyAt(arriving(signedFor("a.example"), host), "https://a.example", keys, 0, at())
+				if err != nil || s == nil || !s.CoversRequest() {
+					t.Errorf("signed for a.example and arriving as %s: %v %v", host, s, err)
+				}
+			}
+		})
+	}
+}
+
+// A request line may name the whole URL (RFC 9112 section 3.2.2), and Go's
+// server then takes both the request's URL and its Host from it. Reading
+// such a request as one this server was about to send let the receiver of
+// a delivery signed for b.example replay it to a.example as
+// "POST https://b.example/@/inbox" and pass every destination check, the
+// origin notwithstanding, whether the signature covered @authority, the
+// draft's host line or @target-uri.
+func TestARequestLineNamingAnotherHostIsReadAgainstTheOrigin(t *testing.T) {
+	priv, pub := edPair(t, 11)
+	keys := []httpsig.PublicKey{pub}
+	for _, c := range []struct {
+		format string
+		cover  []string
+	}{
+		{"rfc9421", []string{"@method", "@authority", "@path"}},
+		{"rfc9421", []string{"@method", "@target-uri"}},
+		{"cavage", []string{"(request-target)", "host", "date"}},
+	} {
+		t.Run(c.format+" "+strings.Join(c.cover, " "), func(t *testing.T) {
+			arriving := func(signedHost, line string) *http.Request {
+				out, err := http.NewRequest("POST", "https://"+signedHost+"/@/inbox", nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if c.format == "rfc9421" {
+					err = httpsig.Sign(out, pub.ID, pub.Alg, priv, c.cover, at())
+				} else {
+					err = httpsig.SignCavage(out, pub.ID, pub.Alg, priv, c.cover, at())
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				var raw strings.Builder
+				raw.WriteString("POST " + line + " HTTP/1.1\r\nHost: " + signedHost + "\r\n")
+				out.Header.Write(&raw)
+				raw.WriteString("Content-Length: 0\r\n\r\n")
+				in, err := http.ReadRequest(bufio.NewReader(strings.NewReader(raw.String())))
+				if err != nil {
+					t.Fatal(err)
+				}
+				return in
+			}
+			r := arriving("b.example", "https://b.example/@/inbox")
+			if s, err := httpsig.VerifyAt(r, "https://a.example", keys, 0, at()); err == nil {
+				t.Errorf("a delivery signed for b.example, sent as %s %s, verified at a.example covering %v",
+					r.Method, r.RequestURI, s.Covered)
+			}
+			// Signed for this server, it verifies however the line is written.
+			for _, line := range []string{"/@/inbox", "https://a.example/@/inbox"} {
+				r := arriving("a.example", line)
+				if s, err := httpsig.VerifyAt(r, "https://a.example", keys, 0, at()); err != nil || s == nil {
+					t.Errorf("signed for a.example, sent as %s: %v %v", line, s, err)
+				}
+			}
+		})
+	}
+}
+
+// A site's origin may be configured with its scheme's own port written out,
+// as https://a.example:443. A sender leaves that port out of the host it
+// signs, as RFC 9421 section 2.2.3 and HTTP's normal form have it, so the
+// destination read from the origin has to leave it out too: kept, it
+// refused every delivery to such a site that verified before the
+// destination was read from the origin.
+func TestTheOriginsOwnDefaultPortIsNotPartOfTheDestination(t *testing.T) {
+	priv, pub := edPair(t, 13)
+	keys := []httpsig.PublicKey{pub}
+	for _, format := range []string{"rfc9421", "cavage"} {
+		for _, origin := range []string{"https://a.example:443", "http://a.example:80"} {
+			t.Run(format+" "+origin, func(t *testing.T) {
+				scheme, _, _ := strings.Cut(origin, "://")
+				out, err := http.NewRequest("POST", scheme+"://a.example/@/inbox", nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if format == "rfc9421" {
+					err = httpsig.Sign(out, pub.ID, pub.Alg, priv, cover, at())
+				} else {
+					err = httpsig.SignCavage(out, pub.ID, pub.Alg, priv, []string{"(request-target)", "host", "date"}, at())
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				r := httptest.NewRequest("POST", "/@/inbox", nil)
+				r.Host, r.Header = "a.example", out.Header.Clone()
+				if s, err := httpsig.VerifyAt(r, origin, keys, 0, at()); err != nil || s == nil || !s.CoversRequest() {
+					t.Errorf("signed for a.example and checked at %s: %v %v", origin, s, err)
+				}
+				// A port that is not the scheme's own stays part of the host.
+				if _, err := httpsig.VerifyAt(r, scheme+"://a.example:8443", keys, 0, at()); err == nil {
+					t.Error("signed for a.example and verified at a.example:8443")
+				}
+			})
 		}
 	}
 }

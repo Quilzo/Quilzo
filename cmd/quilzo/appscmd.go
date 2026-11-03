@@ -93,9 +93,7 @@ func cmdApps(root string, args []string) error {
 			fmt.Printf("apps published from %s may now ask people to connect\n", host)
 			return nil
 		}
-		n := oa.EndWhere(func(g oauthas.Grant) bool {
-			return host == "*" || (oauthas.Client{ID: g.Client}).Host() == host
-		}, by.Name, "apps from "+host+" are no longer allowed")
+		n := oa.EndWhere(oauthas.FromHost(host), by.Name, "apps from "+host+" are no longer allowed")
 		fmt.Printf("apps from %s can no longer connect; %s ended\n", host, count(n, "connection"))
 		return nil
 	case "register":
