@@ -4,6 +4,7 @@
 package controls
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -204,5 +205,34 @@ func TestThePatchGoalSaysWhichServerChecksItself(t *testing.T) {
 	}
 	if !strings.Contains(g.Position, "quilzo serve") || !strings.Contains(g.Position, "quilzo site") {
 		t.Errorf("goal 4 does not say which server checks itself and which does not: %s", g.Position)
+	}
+}
+
+// The hourly check against the Go vulnerability database is one of the
+// admin server's jobs, and goal 4 and CA-7 now say so. RA-5 made the same
+// claim, "this binary is checked hourly", without saying which server: a
+// copy serving the site without the admin is not checked. Every statement
+// that promises an hourly check names the server that runs it.
+func TestEveryHourlyCheckNamesTheServerThatRunsIt(t *testing.T) {
+	said := map[string]string{}
+	for _, im := range All() {
+		said[im.Control] = im.Statement
+	}
+	for _, g := range Pledge {
+		said[fmt.Sprintf("goal %d", g.N)] = g.Position
+	}
+	n := 0
+	for who, s := range said {
+		if !strings.Contains(strings.ToLower(s), "hourly") {
+			continue
+		}
+		n++
+		if !strings.Contains(s, "quilzo serve") {
+			t.Errorf("%s promises an hourly check and does not say it is the admin "+
+				"server's (quilzo serve): %s", who, s)
+		}
+	}
+	if n == 0 {
+		t.Fatal("nothing promises an hourly check; this test has stopped looking")
 	}
 }

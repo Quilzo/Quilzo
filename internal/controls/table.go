@@ -205,10 +205,13 @@ var table = []Implementation{
 		Where:     []string{"internal/form", "internal/public"}},
 
 	// -- risk, acquisition ----------------------------------------------------
+	// Which server, said, as goal 4 and CA-7 say it: this read "this binary
+	// is checked hourly", and a copy serving the site without the admin is
+	// not checked until somebody runs quilzo self check.
 	{Control: "RA-5", Title: "Vulnerability Monitoring and Scanning", Responsibility: Shared,
-		Statement: "This binary is checked hourly against an embedded, updatable snapshot of the Go vulnerability database, decided by which affected functions are actually linked into it, and contained at once when CISA's catalogue says a flaw is exploited; templates and content are scanned for injection and leaked credentials.",
-		Customer:  "Keeps the vulnerability database and the exploited catalogue current, and scans the rest of its estate.",
-		Where:     []string{"quilzo self", "quilzo scan"}},
+		Statement: "The admin server (quilzo serve) checks its binary hourly against an embedded, updatable snapshot of the Go vulnerability database, decided by which affected functions are actually linked into it, and contains a flaw at once when CISA's catalogue says it is exploited; the public site server (quilzo site) does not run the check itself, and quilzo self check runs it on request. Templates and content are scanned for injection and leaked credentials.",
+		Customer:  "Keeps the vulnerability database and the exploited catalogue current, runs the admin server or quilzo self check where only the site runs, and scans the rest of its estate.",
+		Where:     []string{"quilzo serve", "quilzo self", "quilzo scan"}},
 	{Control: "SA-9", Title: "External System Services", Responsibility: Shared,
 		Statement: "Every outbound connection carries a declared purpose and can be switched off together (offline mode); a model hosted outside the organisation's network is reported, because what it is sent leaves.",
 		Customer:  "Approves the external services used, including model providers.",
