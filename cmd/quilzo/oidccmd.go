@@ -67,6 +67,42 @@ func (c *oidcConfig) providerLabel() string {
 
 const oidcSecretEnv = "QUILZO_OIDC_SECRET"
 
+// ssoClient is the client sign-in reaches its identity provider through:
+// public addresses, and the private ranges sso.reach names. Every fetch
+// sign-in makes, at configure, check and serve and for SAML metadata, goes
+// through it, so the address checked when it is set is held to the same
+// rule when it is dialled.
+//
+// An issuer on a private or loopback address was refused with no way to
+// say otherwise, which is where an organisation's own Keycloak, AD FS or
+// Authentik usually is. The default stays: a declared range is a weaker
+// setting, with a reason and a second administrator.
+func ssoClient(root string) (*fetch.Client, error) {
+	c := fetch.For("sso")
+	cfg, err := loadConfig(root)
+	if err != nil {
+		return nil, err
+	}
+	ranges, err := fetch.ParseReach(cfg.Strings("sso.reach"))
+	if err != nil {
+		return nil, fmt.Errorf("sso.reach: %w", err)
+	}
+	if len(ranges) > 0 {
+		c.Reach = fetch.Within(ranges)
+	}
+	return c, nil
+}
+
+// ssoReachHint says, after an address was refused, how an identity
+// provider on the organisation's own network is reached.
+func ssoReachHint(err error) error {
+	if err == nil || !strings.Contains(err.Error(), "refusing to") {
+		return err
+	}
+	return fmt.Errorf("%w\n  an identity provider on your own network is reached by naming its range: "+
+		"quilzo config set sso.reach 10.20.0.0/16 --accept-risk \"why\"; a second administrator approves it", err)
+}
+
 var (
 	reDomain = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$`)
 	reTenant = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
@@ -163,8 +199,12 @@ func oidcConfigure(root string, args []string) error {
 			"usage: quilzo oidc configure --issuer https://idp.example \\\n" +
 				"    --client-id ... --redirect-uri https://cms.example/auth/callback")
 	}
-	if _, err := fetch.For("sso").ValidateURL(*issuer); err != nil {
-		return fmt.Errorf("the issuer URL is not usable: %w", err)
+	sso, err := ssoClient(root)
+	if err != nil {
+		return err
+	}
+	if _, err := sso.ValidateURL(*issuer); err != nil {
+		return ssoReachHint(fmt.Errorf("the issuer URL is not usable: %w", err))
 	}
 	switch *claim {
 	case "email", "sub", "preferred_username":
@@ -298,9 +338,13 @@ func oidcCheck(root string, args []string) error {
 	defer cancel()
 
 	w.Human("%sdiscovery%s\n", bold, reset)
-	p, err := oidc.Discover(ctx, target, fetch.For("sso"))
+	sso, err := ssoClient(root)
 	if err != nil {
-		return errBlocked{err}
+		return err
+	}
+	p, err := oidc.Discover(ctx, target, sso)
+	if err != nil {
+		return errBlocked{ssoReachHint(err)}
 	}
 	w.Human("  issuer       %s\n", p.Discovery.Issuer)
 	w.Human("  authorize    %s\n", p.Discovery.AuthorizationEndpoint)
@@ -321,7 +365,7 @@ func oidcCheck(root string, args []string) error {
 
 	w.Human("\n%skeys%s\n", bold, reset)
 	if err := p.Warm(ctx); err != nil {
-		return errBlocked{err}
+		return errBlocked{ssoReachHint(err)}
 	}
 	w.Human("  %d usable signing key(s)\n", p.KeyCount())
 

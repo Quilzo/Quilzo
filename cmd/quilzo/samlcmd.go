@@ -18,7 +18,6 @@ import (
 
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
-	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/saml"
 )
 
@@ -74,9 +73,13 @@ func removeSAML(root, name string) error {
 	return os.Remove(samlFile(root, name))
 }
 
-// samlFetch reads metadata from an address under the sso purpose.
-func samlFetch(addr string) ([]byte, error) {
-	c := fetch.For("sso")
+// samlFetch reads metadata from an address under the sso purpose, through
+// sign-in's own client (ssoClient).
+func samlFetch(root, addr string) ([]byte, error) {
+	c, err := ssoClient(root)
+	if err != nil {
+		return nil, err
+	}
 	c.UserAgent = "quilzo/1 (+saml metadata)"
 	if _, err := c.ValidateURL(addr); err != nil {
 		return nil, err
@@ -254,14 +257,14 @@ func samlAdd(root string, args []string) (*saml.Config, error) {
 	var raw []byte
 	var err error
 	if strings.HasPrefix(*meta, "https://") || strings.HasPrefix(*meta, "http://") {
-		raw, err = samlFetch(*meta)
+		raw, err = samlFetch(root, *meta)
 	} else if *meta == "-" {
 		raw, err = io.ReadAll(io.LimitReader(os.Stdin, 1<<20))
 	} else {
 		raw, err = os.ReadFile(*meta)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("reading the metadata: %w", err)
+		return nil, ssoReachHint(fmt.Errorf("reading the metadata: %w", err))
 	}
 	m, err := saml.ParseMetadata(raw)
 	if err != nil {

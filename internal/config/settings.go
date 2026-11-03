@@ -14,6 +14,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/clientip"
 	"github.com/quilzo/quilzo/internal/event"
+	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/throttle"
 	"github.com/quilzo/quilzo/internal/websearch"
 )
@@ -592,6 +593,29 @@ var settings = []Setting{
 			return false, ""
 		},
 		Controls: []string{"SC-7", "AU-3", "AC-7"},
+	},
+	{
+		Key: "sso.reach", Kind: List, Default: "",
+		Summary:  "the private ranges an identity provider may be reached at, e.g. 10.20.0.0/16",
+		Controls: []string{"SC-7", "IA-2"},
+		Why: "An OIDC issuer and a SAML metadata address are fetched by this server, so they are " +
+			"held to the rule every address somebody chose is held to: public, never this machine " +
+			"or the network it is on, because a fetch made from inside is how server-side request " +
+			"forgery reaches what only the inside can. That also refused the usual deployment of an " +
+			"organisation's own identity provider, a Keycloak, AD FS or Authentik on its internal " +
+			"network, and nothing could say otherwise.\n\n" +
+			"Name the ranges it is in, the smallest that hold it, or its one address: 10.20.0.0/16, " +
+			"10.20.3.4. Only private networks and this machine can be named, never link-local, where " +
+			"cloud metadata lives. They open sign-in's own connections (discovery, keys, the token " +
+			"exchange, SAML metadata) and nothing else. Weaker than the default, so it takes a reason " +
+			"and a second administrator: whatever answers at an address named here says who signs in.",
+		Weaker: func(v string) (bool, string) {
+			if strings.TrimSpace(v) == "" {
+				return false, ""
+			}
+			return true, "sign-in reaches " + v + ", inside the network, and whatever answers " +
+				"there says who signs in as anybody"
+		},
 	},
 	{
 		Key: "admin.base_url", Kind: Text, Default: "",
@@ -1820,6 +1844,11 @@ func (s Setting) Validate(v string) error {
 				if e = strings.TrimSpace(e); e != "" && !event.Known(event.Type(e)) {
 					return fmt.Errorf("%q is not an event; quilzo agent trigger events lists them", e)
 				}
+			}
+		}
+		if s.Key == "sso.reach" && strings.TrimSpace(v) != "" {
+			if _, err := fetch.ParseReach(strings.Split(v, ",")); err != nil {
+				return err
 			}
 		}
 		if s.Key == "network.trusted_proxies" && strings.TrimSpace(v) != "" {

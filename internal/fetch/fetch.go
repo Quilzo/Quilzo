@@ -245,6 +245,33 @@ func Declarable(p netip.Prefix) string {
 	return fmt.Sprintf("%s is public, and a public address needs no declaration", p)
 }
 
+// ParseReach reads ranges somebody declared reachable, each written as a
+// range or as one address, and refuses any that Declarable does not
+// accept. One reading for every place a range is declared, so what is
+// checked when a range is set is what is opened when it is used.
+func ParseReach(entries []string) ([]netip.Prefix, error) {
+	var out []netip.Prefix
+	for _, r := range entries {
+		r = strings.TrimSpace(r)
+		if r == "" {
+			continue
+		}
+		p, err := netip.ParsePrefix(r)
+		if err != nil {
+			a, aerr := netip.ParseAddr(r)
+			if aerr != nil {
+				return nil, fmt.Errorf("%q is not a range; write it like 10.20.0.0/16, or one address", r)
+			}
+			p = netip.PrefixFrom(a, a.BitLen())
+		}
+		if why := Declarable(p); why != "" {
+			return nil, fmt.Errorf("%s", why)
+		}
+		out = append(out, p)
+	}
+	return out, nil
+}
+
 // inside reports a range lying wholly within one reachable range.
 func inside(p netip.Prefix) bool {
 	for _, r := range reachable {

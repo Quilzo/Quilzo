@@ -46,7 +46,6 @@ import (
 	"github.com/quilzo/quilzo/internal/compliance"
 	"github.com/quilzo/quilzo/internal/csp"
 	"github.com/quilzo/quilzo/internal/ext"
-	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/fleet"
 	"github.com/quilzo/quilzo/internal/form"
 	"github.com/quilzo/quilzo/internal/gate"
@@ -1113,13 +1112,18 @@ func cmdServe(root string, args []string) error {
 					"that cannot work", cfg.Issuer, oidcSecretEnv)
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		provider, derr := oidc.Discover(ctx, cfg.Issuer, fetch.For("sso"))
+		sso, serr := ssoClient(root)
+		if serr != nil {
+			cancel()
+			return serr
+		}
+		provider, derr := oidc.Discover(ctx, cfg.Issuer, sso)
 		cancel()
 		if derr != nil {
-			return fmt.Errorf("cannot reach the identity provider: %w", derr)
+			return ssoReachHint(fmt.Errorf("cannot reach the identity provider: %w", derr))
 		}
 		if err := provider.Warm(context.Background()); err != nil {
-			return fmt.Errorf("cannot read the provider's signing keys: %w", err)
+			return ssoReachHint(fmt.Errorf("cannot read the provider's signing keys: %w", err))
 		}
 		srv.OIDC = &admin.OIDC{
 			Provider: provider, ClientID: cfg.ClientID, Secret: secret,
@@ -1201,7 +1205,7 @@ func cmdServe(root string, args []string) error {
 	// here, under the person who made them.
 	srv.SAML = &admin.SAMLAdmin{
 		Providers: func() ([]saml.Config, error) { return loadSAML(root) },
-		Fetch:     samlFetch,
+		Fetch:     func(addr string) ([]byte, error) { return samlFetch(root, addr) },
 		Save: func(c saml.Config) error {
 			if err := saveSAML(root, c); err != nil {
 				return err

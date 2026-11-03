@@ -398,6 +398,8 @@ func settingGroupLabel(key string) string {
 		return "Content"
 	case "session":
 		return "Admin sessions"
+	case "sso":
+		return "Single sign-on"
 	case "chatbot":
 		return "Chatbots"
 	case "agents":
