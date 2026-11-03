@@ -145,17 +145,47 @@ func TestAnEventThatCouldNotBeActedOnIsTakenAgain(t *testing.T) {
 func TestPushesAreHeldToAMinutesRate(t *testing.T) {
 	k := newKey(t)
 	x := newPush(t, k)
+	tok := k.sign(t, nil, revoked())
 	for i := 0; i < PushRate; i++ {
-		if w := x.send(t, "", "application/secevent+jwt", ""); w.Code == http.StatusTooManyRequests {
-			t.Fatalf("refused for rate at %d", i)
+		if w := x.send(t, pushSecret, "application/secevent+jwt", tok); w.Code != http.StatusAccepted {
+			t.Fatalf("refused at %d: %d", i, w.Code)
 		}
 	}
-	w := x.send(t, pushSecret, "application/secevent+jwt", k.sign(t, nil, revoked()))
+	other := revoked()
+	other["jti"] = "a-second-event"
+	w := x.send(t, pushSecret, "application/secevent+jwt", k.sign(t, nil, other))
 	if w.Code != http.StatusTooManyRequests || w.Header().Get("Retry-After") == "" {
 		t.Errorf("past the rate: %d", w.Code)
 	}
-	if len(x.delivered) != 0 {
-		t.Error("a delivery past the rate was acted on")
+	if len(x.delivered) != 1 {
+		t.Errorf("%d delivered; only the first of the minute's worth was new", len(x.delivered))
+	}
+}
+
+// Somebody without the stream's bearer cannot use up the transmitter's
+// rate. Holding a stolen session, they would flood the endpoint to keep
+// the provider's session-revoked out until the transmitter gave up: the
+// guesses are held to a rate of their own, and counted only up to it, and
+// the real event is still taken.
+func TestAFloodOfGuessesDoesNotKeepTheRealEventOut(t *testing.T) {
+	k := newKey(t)
+	x := newPush(t, k)
+	for i := 0; i < 3*PushRate; i++ {
+		w := x.send(t, "qzsig_a-guess", "application/secevent+jwt", "")
+		if w.Code != http.StatusUnauthorized && w.Code != http.StatusTooManyRequests {
+			t.Fatalf("guess %d answered %d", i, w.Code)
+		}
+	}
+	if len(x.refusals) != PushRate {
+		t.Errorf("%d refusals counted; past a minute's worth they are only told to wait", len(x.refusals))
+	}
+	if w := x.send(t, pushSecret, "application/secevent+jwt", k.sign(t, nil, revoked())); w.Code != http.StatusAccepted || len(x.delivered) != 1 {
+		t.Fatalf("the transmitter's own push, after the flood: %d %s, delivered %d", w.Code, w.Body, len(x.delivered))
+	}
+	// And a bearer longer than any push secret is refused without being
+	// hashed as one.
+	if w := x.send(t, strings.Repeat("q", 64<<10), "application/secevent+jwt", ""); w.Code != http.StatusTooManyRequests && w.Code != http.StatusUnauthorized {
+		t.Errorf("an enormous bearer: %d", w.Code)
 	}
 }
 

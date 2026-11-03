@@ -24,17 +24,32 @@ import (
 // Receiving a push (RFC 8935).
 //
 // Each check is cheaper than the one after it and comes first for that
-// reason: the rate before anything is read, the bearer before the body,
-// the size before parsing, the signature before anything is believed, and
-// the replay check before anything is done. A request refused early costs
-// almost nothing, so whoever is sending them chooses nothing about how
-// hard this works.
+// reason: the bearer before the body, the size before parsing, the
+// signature before anything is believed, and the replay check before
+// anything is done. A request refused early costs almost nothing, so
+// whoever is sending them chooses nothing about how hard this works.
+//
+// The rate comes after the bearer, not before it, and is two rates: one
+// for pushes that carry the stream's bearer and one for those that do not.
+// With one rate in front of everything, anybody could send a minute's
+// worth of guesses and have the transmitter's real event told to wait,
+// and somebody holding a stolen session would do exactly that, for as
+// long as the transmitter kept retrying, to keep the provider's
+// session-revoked from ending it. Comparing a bearer is a hash of a few
+// dozen bytes, so it costs no more to do first.
 
-// PushRate is how many deliveries a minute the endpoint takes. A
-// transmitter sends one event per change to somebody's account; even an
-// organisation offboarding a department at once sends a few a second at
-// most, and the hourly cap on people acted on is what bounds the effect.
+// PushRate is how many deliveries a minute the endpoint takes from the
+// transmitter. A transmitter sends one event per change to somebody's
+// account; even an organisation offboarding a department at once sends a
+// few a second at most, and the hourly cap on people acted on is what
+// bounds the effect. Pushes without its bearer are held to the same rate,
+// apart: past it they are told to wait and not counted, so a flood of them
+// writes nothing.
 const PushRate = 120
+
+// maxBearer is longer than any push secret this store makes. A longer one
+// is refused without being hashed: the header can be a megabyte.
+const maxBearer = 256
 
 // Connected is the stream as connected now: its verifier and the digest
 // of the bearer the transmitter was given to push with. A nil verifier is
@@ -62,7 +77,10 @@ type Push struct {
 	Refused func(why string)
 	Now     func() time.Time
 
-	once  sync.Once
+	once sync.Once
+	// limit holds two rates, "push" for deliveries that carry the stream's
+	// bearer and "refused" for those that do not, so the second cannot
+	// spend the first.
 	limit *rate.Limiter
 	// mu holds the replay check, the action and remembering the id
 	// together, so two copies of one event arriving at once are one event.
@@ -89,6 +107,17 @@ func (p *Push) refused(why string) {
 	}
 }
 
+// allow spends one of the rate's units, or answers that the sender has to
+// wait.
+func (p *Push) allow(w http.ResponseWriter, which string) bool {
+	ok, wait := p.limit.Allow(which, p.now())
+	if !ok {
+		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
+		WriteError(w, http.StatusTooManyRequests, &Error{Code: "access_denied", Description: "too many deliveries; send it again later"})
+	}
+	return ok
+}
+
 // WriteError answers with an RFC 8935 error.
 func WriteError(w http.ResponseWriter, status int, e *Error) {
 	w.Header().Set("Content-Type", "application/json")
@@ -104,13 +133,8 @@ func (p *Push) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p.once.Do(func() {
-		p.limit = &rate.Limiter{Every: time.Minute / PushRate, Burst: PushRate, MaxKeys: 1}
+		p.limit = &rate.Limiter{Every: time.Minute / PushRate, Burst: PushRate, MaxKeys: 2}
 	})
-	if ok, wait := p.limit.Allow("push", p.now()); !ok {
-		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
-		WriteError(w, http.StatusTooManyRequests, &Error{Code: "access_denied", Description: "too many deliveries; send it again later"})
-		return
-	}
 	st, err := p.Stream()
 	if err != nil {
 		WriteError(w, http.StatusServiceUnavailable, &Error{Code: "access_denied", Description: "this receiver cannot read its stream right now"})
@@ -120,14 +144,20 @@ func (p *Push) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	// The bearer, before the body is read. A stream with no digest kept is
-	// one nobody can push to: an empty secret matching an empty header is
-	// the mistake this refuses.
+	// The bearer, before the body is read and before either rate. A stream
+	// with no digest kept is one nobody can push to: an empty secret
+	// matching an empty header is the mistake this refuses.
 	got, scheme := auth.Presented(r.Header.Get("Authorization"))
-	if st.Bearer == "" || scheme != "Bearer" || got == "" ||
+	if st.Bearer == "" || scheme != "Bearer" || got == "" || len(got) > maxBearer ||
 		subtle.ConstantTimeCompare([]byte(Digest(got)), []byte(st.Bearer)) != 1 {
+		if !p.allow(w, "refused") {
+			return
+		}
 		p.refused("the push did not carry this stream's authorization")
 		WriteError(w, http.StatusUnauthorized, &Error{Code: "authentication_failed", Description: "the push did not carry this stream's authorization"})
+		return
+	}
+	if !p.allow(w, "push") {
 		return
 	}
 	ct := strings.ToLower(strings.TrimSpace(strings.Split(r.Header.Get("Content-Type"), ";")[0]))
