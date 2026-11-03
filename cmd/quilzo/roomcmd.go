@@ -19,6 +19,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/room"
+	"github.com/quilzo/quilzo/internal/upkeep"
 )
 
 // Conversation, built so that what was said stays said.
@@ -164,6 +165,68 @@ func compactRoom(root, id string, l *room.Log) error {
 	return atomicfile.Write(roomMessages(root, id), b.Bytes(), 0o600)
 }
 
+// roomRetentionJob takes the text of messages past their room's retention
+// out of the room and off the disk.
+//
+// A room opened with --retention said how long its text is kept, and
+// room.Log.Expire was written to enforce it, and nothing called it: every
+// room kept every word for ever, whatever it declared. In the admin's
+// sweep and never the public site's: rooms/ is outside what the confined
+// site may write (siteWritable), so there it could only fail.
+func roomRetentionJob(root string) upkeep.Job {
+	return upkeep.Job{Name: "rooms", Do: func(now time.Time) (int, error) {
+		names, err := jsonNamesIn(roomDir(root), ".messages.json")
+		if err != nil {
+			return 0, err
+		}
+		var gone int
+		var first error
+		for _, id := range names {
+			n, err := expireRoom(root, id, now)
+			gone += n
+			// One room that cannot be read does not keep the others'
+			// words past their period.
+			if err != nil && first == nil {
+				first = fmt.Errorf("room %s: %w", id, err)
+			}
+		}
+		return gone, first
+	}}
+}
+
+// expireRoom applies one room's retention, under its lock.
+func expireRoom(root, id string, now time.Time) (int, error) {
+	var r room.Room
+	if b, err := readFileMaybe(roomPath(root, id)); err != nil || b == nil {
+		return 0, err
+	} else if err := json.Unmarshal(b, &r); err != nil {
+		return 0, err
+	}
+	if r.Retention <= 0 {
+		// Kept indefinitely, as it says: nothing to lock or read.
+		return 0, nil
+	}
+	l, unlock, err := changeRoom(root, id)
+	if err != nil {
+		return 0, err
+	}
+	defer unlock()
+	n := l.Expire(now)
+	if n == 0 {
+		return 0, nil
+	}
+	if err := compactRoom(root, l.Room().ID, l); err != nil {
+		return 0, err
+	}
+	record(root, audit.Record{
+		Action: "room.expired", Resource: "/room/" + l.Room().ID,
+		Outcome: audit.Success, Principal: "quilzo", Kind: audit.KindService,
+		Verified: true, Detail: map[string]string{"room": l.Room().ID,
+			"count": fmt.Sprint(n), "retention": l.Room().Retention.String()},
+	})
+	return n, nil
+}
+
 func roomList(root string) error {
 	names, err := jsonNamesIn(roomDir(root), ".messages.json")
 	if err != nil {
@@ -219,7 +282,8 @@ func roomOpen(root string, args []string) error {
 	kind := fs.String("kind", string(room.Open), "open, closed or direct")
 	members := fs.String("members", "", "comma-separated, for a closed room")
 	retention := fs.Duration("retention", 0,
-		"how long the text is kept; indefinitely otherwise")
+		"how long the text is kept, enforced by quilzo serve's sweep; "+
+			"indefinitely otherwise")
 	if err := fs.Parse(flags); err != nil {
 		return err
 	}

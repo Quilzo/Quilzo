@@ -12,6 +12,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/room"
+	"github.com/quilzo/quilzo/internal/upkeep"
 )
 
 // roomStore is an empty store whose commands answer in JSON, run by
@@ -120,5 +121,74 @@ func TestAChangeToARoomWaitsForTheOneBeforeIt(t *testing.T) {
 	}
 	if l.Len() != 1 {
 		t.Fatalf("the room holds %d message(s) after one was sent", l.Len())
+	}
+}
+
+// A room's retention is applied, by the admin's sweep and not the site's.
+//
+// `room open --retention` said how long a room's text is kept and
+// room.Log.Expire was written to enforce it, and nothing called it: a room
+// kept every word for ever, whatever it declared. The public site's sweep
+// must leave rooms alone, because rooms/ is outside what the confined site
+// may write.
+func TestARoomsRetentionIsApplied(t *testing.T) {
+	root := roomStore(t)
+	inRoom(t, root, "sam", "open", "plans", "--purpose", "what ships when",
+		"--retention", "720h")
+	first, _ := inRoom(t, root, "sam", "say", "plans", "the launch code is marmalade")["message"].(string)
+	inRoom(t, root, "sam", "say", "plans", "and the venue is the old mill")
+	before, err := os.ReadFile(roomMessages(root, "plans"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var sweep *upkeep.Job
+	for _, j := range upkeepJobs(root, upkeep.Job{Name: "posture"}) {
+		if j.Name == "rooms" {
+			sweep = &j
+		}
+	}
+	if sweep == nil {
+		t.Fatal("the admin's sweep has nothing that applies a room's retention")
+	}
+
+	// Inside the period, nothing.
+	if n, err := sweep.Do(time.Now().Add(24 * time.Hour)); err != nil || n != 0 {
+		t.Fatalf("a day later the sweep took %d message(s) (%v)", n, err)
+	}
+	// The site's sweep, past the period: it must not touch rooms/.
+	if site, ok := retentionJob(root); ok {
+		if _, err := site.Do(time.Now().Add(31 * 24 * time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if after, _ := os.ReadFile(roomMessages(root, "plans")); !bytes.Equal(before, after) {
+		t.Fatal("the sweep the public site runs changed a room")
+	}
+
+	// The admin's, past the period: the words go, from the disk too.
+	n, err := sweep.Do(time.Now().Add(31 * 24 * time.Hour))
+	if err != nil || n != 2 {
+		t.Fatalf("past the period the sweep took %d message(s) (%v)", n, err)
+	}
+	b, err := os.ReadFile(roomMessages(root, "plans"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, words := range []string{"marmalade", "old mill"} {
+		if bytes.Contains(b, []byte(words)) {
+			t.Errorf("%q outlived its room's retention on disk:\n%s", words, b)
+		}
+	}
+	l, err := loadRoom(root, "plans")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m, ok := l.Get(first); !ok || !m.Gone() || m.Deleted.Why != room.ByRetention {
+		t.Fatalf("an expired message lost its shape: %+v", m)
+	}
+	// And again changes nothing.
+	if n, err := sweep.Do(time.Now().Add(32 * 24 * time.Hour)); err != nil || n != 0 {
+		t.Errorf("a second pass took %d more (%v)", n, err)
 	}
 }
