@@ -236,6 +236,30 @@ func TestAnInventedPriceIsRemoved(t *testing.T) {
 	}
 }
 
+// A figure is found as it is written, and only the digits are part of it:
+// the full stop that ends a sentence and the comma between two figures are
+// not. Research finds the figures in a report with this same detector, so
+// what the chatbot must reproduce and what a report must link cannot drift
+// apart, as two copies of one pattern had been free to.
+func TestFiguresAreFoundAsTheyAreWritten(t *testing.T) {
+	for text, want := range map[string]string{
+		"Delivery to the EU costs £9.99.":          "9.99",
+		"1,200 orders were sent in 2026.":          "1,200|2026",
+		"Between 3 and 4.5% of them, 7, came back": "3|4.5|7",
+		"It costs 12.":       "12",
+		"p53 and COVID-19":   "53|19",
+		"No figures at all.": "",
+	} {
+		var got []string
+		for _, f := range Figures(text) {
+			got = append(got, text[f[0]:f[1]])
+		}
+		if strings.Join(got, "|") != want {
+			t.Errorf("%q: found %q, not %q", text, got, want)
+		}
+	}
+}
+
 func TestUncitedAndMiscitedSentencesAreRemoved(t *testing.T) {
 	ans, _ := modelAnswer(t, helper,
 		`{"answer": "We are the best stationers in England. Returns are accepted within 30 days [9]. Unopened items can be returned within 30 days of delivery [1].", "action": null}`,

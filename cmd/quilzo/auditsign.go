@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 )
 
@@ -130,7 +131,13 @@ func writePublishedKeys(root string, s *audit.HeadSigner) error {
 	if err := os.MkdirAll(auditDir(root), 0o700); err != nil {
 		return err
 	}
-	return os.WriteFile(headKeysPath(root), append(out, '\n'), 0o644)
+	// Replaced in one step, because it is read while it is written: this
+	// runs every time the key is loaded, by every agent receipt, audit head
+	// and round of the audit stream, and a research plan is checked against
+	// this file whenever its project is shown. Truncated and then written,
+	// a check landing between the two read an empty file and reported an
+	// honest plan as one that does not check.
+	return atomicfile.Write(headKeysPath(root), append(out, '\n'), 0o644)
 }
 
 // verifyHead checks a signed head from a file against published keys.

@@ -66,9 +66,40 @@ func researchScreens(root string) *admin.Research {
 			if err != nil {
 				return p, nil, nil, err
 			}
-			return p, runs, research.Check(p, runs), nil
+			return p, runs, researchFindings(root, p, runs), nil
 		},
+		CheckPlan: func(p research.Project) error { return researchPlanChecks(root, p) },
 	}
+}
+
+// researchPlanChecks holds a registered plan to its signature, against the
+// keys this store publishes (quilzo auditlog's head.pub.json): what the
+// package's word "anybody holding the published keys can check" promises.
+// The published file rather than the signing key, because reading it
+// changes nothing, where loading the signing key writes one when there is
+// none.
+func researchPlanChecks(root string, p research.Project) error {
+	return research.CheckPlan(p, func(digest string, s research.Signature) error {
+		v, err := publishedVerifier(headKeysPath(root))
+		if err != nil {
+			// Not the error itself: it names a path on this machine, and the
+			// screen showing this is for anybody who may read the project.
+			return errors.New("this store's published keys cannot be read")
+		}
+		return v.VerifyStatement(research.PlanContext, []byte(digest), audit.Statement{
+			KeyID: s.KeyID, Ed25519: s.Ed25519, MLDSA: s.MLDSA, Algorithms: s.Algorithms})
+	})
+}
+
+// researchFindings is what a project's check finds, its plan's signature
+// with the rest: every place that reports a check reports this one, so the
+// screen, research check and what writing a report answers agree.
+func researchFindings(root string, p research.Project, runs []research.Run) []research.Finding {
+	fs := research.Check(p, runs)
+	if err := researchPlanChecks(root, p); err != nil {
+		fs = append([]research.Finding{{Problem: true, What: "the registered plan does not check: " + err.Error()}}, fs...)
+	}
+	return fs
 }
 
 // researchTimeout bounds one computation.
@@ -1035,7 +1066,7 @@ func researchWrite(root, name, text string, caller *Caller) ([]research.Finding,
 		return nil, err
 	}
 	runs, _ := researchStore(root).Runs(name)
-	fs := research.Check(p, runs)
+	fs := researchFindings(root, p, runs)
 	researchRecord(root, caller, "research.written", name, map[string]string{"digest": research.Digest(text),
 		"problems": strconv.Itoa(research.Problems(fs))})
 	return fs, nil
@@ -1054,7 +1085,7 @@ func researchCheck(root, name string, caller *Caller) (research.Project, []resea
 	if err != nil {
 		return p, nil, err
 	}
-	return p, research.Check(p, runs), nil
+	return p, researchFindings(root, p, runs), nil
 }
 
 func researchReport(root, name string, caller *Caller) (string, error) {

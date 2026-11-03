@@ -60,6 +60,9 @@ func mediaSpeak(root string, args []string) error {
 		return errBlocked{fmt.Errorf("what is read aloud is 1 to %d characters; this is %d", assist.MaxSpeech, len(text))}
 	}
 	caller := resolveCaller(root, flagToken)
+	if err := mayStoreMade(root, caller, "a recording"); err != nil {
+		return err
+	}
 	gw, _, err := modelGateway(root)
 	if err != nil {
 		return err
@@ -86,7 +89,13 @@ func mediaSpeak(root string, args []string) error {
 	w.Human("made %s%s%s\n", bold, f.Name, reset)
 	w.Human("  %srecorded as a synthetic voice (%s) by %s, for %s%s\n", dim, f.Origin.SourceType, model, who, reset)
 	w.Human("  %sid %s%s\n", dim, f.ID, reset)
-	w.Human("  %sin a page: /media/%s, with its words beside it as its transcript%s\n", dim, f.ID, reset)
+	// No section plays a recording yet, and nothing on a page shows a
+	// recording's words for it. This said "in a page: /media/ID, with its
+	// words beside it as its transcript", which read as a player and a
+	// transcript a page would show; neither appeared, so it says what a
+	// person has to do by hand.
+	w.Human("  %sin a page, by hand: no section plays a recording yet, so link /media/%s%s\n", dim, f.ID, reset)
+	w.Human("  %sand put its words beside the link yourself, as its transcript (WCAG 1.2.1)%s\n", dim, reset)
 	return nil
 }
 

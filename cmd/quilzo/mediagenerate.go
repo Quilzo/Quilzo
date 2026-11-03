@@ -81,12 +81,16 @@ func mediaGenerate(root string, args []string) error {
 				"at the picture and say what is in it")}
 	}
 
+	caller := resolveCaller(root, flagToken)
+	if err := mayStoreMade(root, caller, "a picture"); err != nil {
+		return err
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), assist.RequestTimeout)
 	defer cancel()
 
 	// Through the gateway's routes that draw when there are any: budgets,
 	// the ledger and the personal-data guard apply to pictures as to words.
-	pic, err := paintPicture(ctx, root, resolveCaller(root, flagToken).Name, prompt, strings.TrimSpace(*size))
+	pic, err := paintPicture(ctx, root, caller.Name, prompt, strings.TrimSpace(*size))
 	if err != nil {
 		return errBlocked{err}
 	}

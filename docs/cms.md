@@ -1774,6 +1774,9 @@ The rules:
   saying it is right.
 - A recording's voices cannot be masked the way text is, so it goes only to a
   route allowed personal data (`--personal`).
+- The endpoints take a recording of at most 25 MB. One over that is sent as
+  its sound alone, about fifteen MB an hour, taken out with ffmpeg when it is
+  installed; without it, the refusal says how to take the sound out by hand.
 - It is charged by the minute (`--price-minute`) to `media` and to the person.
 
 **A model reads text aloud.** An audio version of an article, a shop's
@@ -1790,7 +1793,9 @@ The rules:
 - The recording is stored marked as a synthetic voice, with the model and the
   person accountable, as a generated picture is. A person hearing it is owed
   knowing it is not a person.
-- Its words are kept with it as its transcript.
+- Its words are kept with it as its transcript. No section plays a recording
+  yet, and no page shows its words for it: link `/media/ID` from a page by
+  hand and put the words beside the link.
 - Text holding personal data goes only to a route allowed it. Masking cannot
   help here: a placeholder read aloud is not a recording anybody wants.
 
@@ -1902,6 +1907,12 @@ The writing assistant (`quilzo assist` and the Assistant screen) goes through th
 gateway as `assist`, charged to the person too. Both used to call the one
 configured model directly, outside every budget and the ledger, and
 `media generate` without masking anything.
+
+Making a picture, a video or a voice (`media generate`, `film`, `speak`) or
+drafting captions (`media transcribe`) spends the store's models, so it needs
+the use-models permission, as the writing assistant does, and edit-draft to
+store what comes back. Somebody denied the models still adds, edits and
+captions media.
 
 **The key is sealed.** It is kept encrypted with `quilzo secret set NAME` and
 named with `--key-secret`, rather than in an environment variable every process

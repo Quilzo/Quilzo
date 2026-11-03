@@ -70,3 +70,49 @@ func TestAProjectPageShowsWhereEveryNumberCameFrom(t *testing.T) {
 		t.Errorf("a project that is not here: %d", w.Code)
 	}
 }
+
+// The screen says whether a registered plan's signature checks, and never
+// that a plan is signed from the signature being there: a plan rewritten
+// by hand under its old signature read as "Signed" before anything asked.
+func TestAPlanReadsAsSignedOnlyWhenItsSignatureChecks(t *testing.T) {
+	srv, token := emptyStore(t)
+	at := time.Date(2026, 10, 14, 9, 0, 0, 0, time.UTC)
+	proj := research.Project{Name: "fever", Question: "Does aspirin lower fever?",
+		Plan: research.Plan{Text: "Compare means.", Digest: research.Digest("Compare means."), Registered: at, By: "dana", BeforeData: true,
+			Signature: &research.Signature{KeyID: "k1", Ed25519: "sig", Algorithms: []string{"ed25519"}}}}
+	load := func(string) (research.Project, []research.Run, []research.Finding, error) {
+		return proj, nil, research.Check(proj, nil), nil
+	}
+	for name, c := range map[string]struct {
+		check      func(research.Project) error
+		want, nope []string
+	}{
+		"good": {check: func(research.Project) error { return nil },
+			want: []string{`<span class="tag tag-ok">checks</span>`, "<code>k1</code>"}, nope: []string{"does not check", "not checked"}},
+		"rewritten": {check: func(research.Project) error { return errors.New("its text is not the text its digest was taken of") },
+			want: []string{`<span class="tag tag-bad">does not check</span> its text is not the text its digest was taken of`},
+			nope: []string{"tag-ok\">checks"}},
+		"nothing to check it with": {want: []string{`<span class="tag tag-warn">not checked</span>`}, nope: []string{"tag-ok\">checks"}},
+	} {
+		srv.Research = &Research{List: func() ([]research.Project, error) { return []research.Project{proj}, nil },
+			Load: load, CheckPlan: c.check}
+		w := get(t, srv, "/research/fever", token)
+		body := w.Body.String()
+		if w.Code != 200 || strings.Contains(body, "<!-- render error:") {
+			t.Fatalf("%s: %d\n%s", name, w.Code, body)
+		}
+		for _, want := range c.want {
+			if !strings.Contains(body, want) {
+				t.Errorf("%s: the page has no %q", name, want)
+			}
+		}
+		for _, nope := range c.nope {
+			if strings.Contains(body, nope) {
+				t.Errorf("%s: the page says %q", name, nope)
+			}
+		}
+		if strings.Contains(body, "<dt>Signed</dt>") {
+			t.Errorf("%s: the page says Signed without saying whether it checks", name)
+		}
+	}
+}

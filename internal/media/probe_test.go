@@ -156,3 +156,50 @@ func TestTheToolsMayOpenNothingButTheFile(t *testing.T) {
 			"that makes a demuxer loop is an upload that never returns")
 	}
 }
+
+// A recording's sound comes out alone, small, and checked: an M4A of one
+// channel, refused whole rather than cut short when even that is over the
+// bound, and a recording with no sound is said to have none. A
+// transcription endpoint takes 25 MB, and the words are all in the sound.
+func TestARecordingsSoundComesOutAlone(t *testing.T) {
+	bin, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Skip("no ffmpeg here, which is a configuration this supports")
+	}
+	dir := t.TempDir()
+	fixture := func(name string, args ...string) []byte {
+		t.Helper()
+		out := dir + "/" + name
+		if err := exec.Command(bin, append(append([]string{"-v", "error"}, args...), "-y", out)...).Run(); err != nil {
+			t.Skipf("this ffmpeg cannot make the fixture: %v", err)
+		}
+		body, err := os.ReadFile(out)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return body
+	}
+	video := fixture("talk.mp4", "-f", "lavfi", "-i", "testsrc=size=640x480:rate=25:duration=4",
+		"-f", "lavfi", "-i", "sine=frequency=440:duration=4", "-c:v", "mpeg4", "-q:v", "1", "-c:a", "aac", "-shortest")
+	sound, err := SoundFrom(video, 25<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sound) == 0 || len(sound) >= len(video)/4 || string(sound[4:8]) != "ftyp" {
+		t.Fatalf("%d bytes from a video of %d, not its sound alone", len(sound), len(video))
+	}
+	if _, err := SoundFrom(video, len(sound)-1); err == nil || !strings.Contains(err.Error(), "still over") {
+		t.Errorf("a sound over the bound came back, or was cut to fit: %v", err)
+	}
+	silent := fixture("silent.mp4", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=10:duration=2", "-c:v", "mpeg4")
+	if b, err := SoundFrom(silent, 25<<20); err == nil || !strings.Contains(err.Error(), "no sound") {
+		t.Errorf("a recording with no sound gave %d bytes and %v", len(b), err)
+	}
+	if b, err := SoundFrom([]byte("this is not a container"), 25<<20); err == nil || len(b) > 0 {
+		t.Error("a sound came out of something that is not a recording")
+	}
+	t.Setenv("PATH", "/nonexistent")
+	if b, err := SoundFrom(video, 25<<20); b != nil || err != nil {
+		t.Errorf("with no ffmpeg: %d bytes, %v", len(b), err)
+	}
+}

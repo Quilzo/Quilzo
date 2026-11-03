@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/quilzo/quilzo/internal/agentbox"
@@ -294,4 +295,135 @@ func TestAnAgentCitesOnlyWorksThatExist(t *testing.T) {
 	if _, err := researchCite(context.Background(), root, "fever", "doi:10.1000/aspirin", "", reader); err == nil {
 		t.Error("a reader cited a work")
 	}
+}
+
+// A registered plan reads as signed only when its signature checks. A
+// project.json edited by hand, its plan rewritten and the signature left
+// in place, used to pass research check and show as "Signed" on the
+// screen, because nothing recomputed the digest or checked the signature.
+func TestARewrittenPlanDoesNotCheck(t *testing.T) {
+	root, _ := identityStore(t)
+	dana := asAdmin("dana")
+	if err := researchNew(root, "fever", "Does aspirin lower fever?", dana); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := researchSetPlan(root, "fever", "Compare means.", "", dana); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := researchRegister(root, "fever", dana); err != nil {
+		t.Fatal(err)
+	}
+	// An amendment made the honest way still checks: the signature is over
+	// the plan as registered, and the amendments lead from it to the plan
+	// as it stands.
+	if _, err := researchSetPlan(root, "fever", "Compare medians.", "the outcome is skewed", dana); err != nil {
+		t.Fatal(err)
+	}
+	if _, fs, err := researchCheck(root, "fever", dana); err != nil || research.Problems(fs) != 0 {
+		t.Fatalf("an honest plan: %+v %v", fs, err)
+	}
+
+	path := filepath.Join(researchStore(root).Dir, "fever", "project.json")
+	honest, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, tamper := range map[string]func(*research.Project){
+		"the text alone": func(p *research.Project) { p.Plan.Text = "Compare whichever came out best." },
+		"the text and its digest, amendments dropped": func(p *research.Project) {
+			p.Plan.Text = "Compare whichever came out best."
+			p.Plan.Digest, p.Amendments = research.Digest(p.Plan.Text), nil
+		},
+		"an amendment's starting point": func(p *research.Project) {
+			p.Amendments[0].From = research.Digest("Compare whichever came out best.")
+		},
+		"the signature dropped": func(p *research.Project) { p.Plan.Signature = nil },
+	} {
+		var p research.Project
+		if err := json.Unmarshal(honest, &p); err != nil {
+			t.Fatal(err)
+		}
+		tamper(&p)
+		b, _ := json.Marshal(p)
+		if err := os.WriteFile(path, b, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, fs, err := researchCheck(root, "fever", dana)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !planProblem(fs) {
+			t.Errorf("%s: research check found nothing wrong with the plan: %+v", name, fs)
+		}
+		_, _, fs, err = researchScreens(root).Load("fever")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !planProblem(fs) {
+			t.Errorf("%s: the screen found nothing wrong with the plan: %+v", name, fs)
+		}
+	}
+}
+
+// A plan that checks keeps checking while the store's published keys are
+// written again. They are rewritten every time the signing key is loaded:
+// by every agent receipt, every audit head and every round of the audit
+// stream under quilzo serve. Written by truncating and then writing, a
+// check landing between the two read an empty or half file and said the
+// registered plan did not check, so the screen and research check reported
+// a tampered plan that was not.
+func TestAPlanChecksWhileItsKeysAreWrittenAgain(t *testing.T) {
+	root, _ := identityStore(t)
+	dana := asAdmin("dana")
+	if err := researchNew(root, "fever", "Does aspirin lower fever?", dana); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := researchSetPlan(root, "fever", "Compare means.", "", dana); err != nil {
+		t.Fatal(err)
+	}
+	p, err := researchRegister(root, "fever", dana)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			if _, err := headSigner(root); err != nil {
+				t.Error(err)
+				return
+			}
+		}
+	}()
+	failed := 0
+	var first error
+	for i := 0; i < 500; i++ {
+		if err := researchPlanChecks(root, p); err != nil {
+			if first == nil {
+				first = err
+			}
+			failed++
+		}
+	}
+	close(stop)
+	wg.Wait()
+	if failed > 0 {
+		t.Errorf("%d of 500 checks of an honest plan failed while its keys were written again: %v", failed, first)
+	}
+}
+
+func planProblem(fs []research.Finding) bool {
+	for _, f := range fs {
+		if f.Problem && strings.Contains(f.What, "plan") {
+			return true
+		}
+	}
+	return false
 }

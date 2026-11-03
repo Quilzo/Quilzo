@@ -46,7 +46,6 @@ type Paragraph struct {
 
 var (
 	reMark    = regexp.MustCompile(`\{\{\s*(=?)\s*([^{}]{1,80}?)\s*\}\}|\[@([^\]]{1,400})\]|` + "`[^`\n]{0,400}`")
-	reNumeral = regexp.MustCompile(`\d[\d,.]*\d|\d`)
 	reListNum = regexp.MustCompile(`^\s*\d{1,3}[.)]\s`)
 	reHeading = regexp.MustCompile(`^(#{1,6})\s+`)
 	// reSpacePunct is a space a citation left before punctuation.
@@ -134,17 +133,17 @@ func segments(text string) []Segment {
 func numbers(text, before string) []Segment {
 	var out []Segment
 	at := 0
-	for _, loc := range reNumeral.FindAllStringIndex(text, -1) {
+	// The chatbot's detector, so a report's figures are the ones an answer
+	// is held to; standalone is research's own say on which need a claim.
+	for _, loc := range assistant.Figures(text) {
 		s, e := loc[0], loc[1]
-		num := strings.TrimRight(text[s:e], ".,")
-		e = s + len(num)
 		if !standalone(text, s, e, before) {
 			continue
 		}
 		if s > at {
 			out = append(out, Segment{Kind: "text", Text: text[at:s]})
 		}
-		out = append(out, Segment{Kind: "number", Text: num})
+		out = append(out, Segment{Kind: "number", Text: text[s:e]})
 		at = e
 	}
 	if at < len(text) {

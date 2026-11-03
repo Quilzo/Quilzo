@@ -51,6 +51,9 @@ type need struct {
 	// operating-system account the store belongs to may start it without a
 	// token; anybody else still needs action. See startedByStoreOwner.
 	server bool
+	// hint is said after a refusal, where the action alone does not tell
+	// somebody why this command needs it.
+	hint string
 }
 
 // commandNeeds is keyed by "command" or by "command subcommand" where the
@@ -469,10 +472,17 @@ var commandNeeds = map[string]need{
 	// Checking a manifest changes nothing, and the person most likely to ask
 	// is an auditor who has been given view and nothing else. Inheriting the
 	// parent's edit-draft would shut the check to exactly them.
-	"media verify":       {action: auth.ActView},
-	"media edit":         {action: auth.ActEditDraft},
-	"media generate":     {action: auth.ActEditDraft},
-	"media film":         {action: auth.ActEditDraft},
+	"media verify": {action: auth.ActView},
+	"media edit":   {action: auth.ActEditDraft},
+	// Making a picture, a video or a voice, or hearing a recording, asks the
+	// store's models, as assist, agent draft and evolve run do, and needs
+	// what they need: an author denied use-models was refused the writing
+	// assistant and could still spend the models on media. Storing what
+	// comes back stays an author's, checked inside (mayStoreMade).
+	"media generate":     {action: auth.ActUseModels, hint: mediaModelsHint},
+	"media film":         {action: auth.ActUseModels, hint: mediaModelsHint},
+	"media speak":        {action: auth.ActUseModels, hint: mediaModelsHint},
+	"media transcribe":   {action: auth.ActUseModels, hint: mediaModelsHint},
 	"media captions":     {action: auth.ActEditDraft},
 	"agent probe":        {action: auth.ActView},
 	"media remove":       {action: auth.ActEditDraft},
@@ -1164,6 +1174,9 @@ func authoriseCommand(root, cmd string, args []string) error {
 				map[string]string{"reason": "authorisation"}))
 			if n.server {
 				return fmt.Errorf("%w\n%s", err, storeOwnerHint(root))
+			}
+			if n.hint != "" {
+				return fmt.Errorf("%w\n%s", err, n.hint)
 			}
 			return err
 		}

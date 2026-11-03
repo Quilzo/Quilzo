@@ -543,6 +543,8 @@ agents and integrations
   quilzo browser grant NAME [--read H,..] [--write H,..] [--ops O,..] [--daily N] [--pictures] | --off
                                           the governed browser offered to an outside agent at /mcp/browser/NAME
   quilzo cell status                     whether this machine can run a desktop cell, and what it would restore
+  quilzo cell warm --socket API.SOCK [--snapshot PATH] [--memory PATH]
+                                          snapshot a running cell as the warm one every session restores
   quilzo desktop status | consent        whether a person's own desktop can be reached, and asking them for it
   quilzo agent runs [NAME] | trace RUN     the runs that are kept, and one step by step
   quilzo agent cost [--by agent|person|goal|day]  what runs cost, in tokens and money
