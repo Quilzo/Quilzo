@@ -755,31 +755,7 @@ func cmdServe(root string, args []string) error {
 			return installStarter(*tplDir, name)
 		},
 	}
-	srv.Decentralised = &admin.Decentralised{
-		Pages:      func() (map[string]any, error) { return site.PagesAt(s, site.RefLive) },
-		Stylesheet: func() string { return design.Stylesheet },
-		Media: func() (map[string][]byte, error) {
-			lib, err := openMedia(root)
-			if err != nil {
-				return nil, err
-			}
-			all, err := lib.List()
-			if err != nil {
-				return nil, err
-			}
-			out := map[string][]byte{}
-			for _, f := range all {
-				_, body, gerr := lib.Get(f.ID)
-				if gerr != nil {
-					continue
-				}
-				// The same path the public server uses, so an image reference
-				// in a page resolves identically on IPFS.
-				out["media/"+f.ID] = body
-			}
-			return out, nil
-		},
-	}
+	srv.Decentralised = decentralisedFor(root, *tplDir, s, design)
 	srv.Transfer = &admin.Transfer{
 		Pages: func() (map[string]any, error) { return draftPages(root) },
 		// Its own Save rather than the shared one, so what it marks is what it
