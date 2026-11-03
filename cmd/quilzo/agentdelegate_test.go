@@ -4,6 +4,8 @@
 package main
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -68,5 +70,66 @@ func TestADelegateActsForThePersonWhoStartedTheRun(t *testing.T) {
 	if delegated.Principal != run.Principal || !delegated.Verified || delegated.Kind != run.Kind {
 		t.Errorf("the run was dana's (%s, verified=%v) and its delegate's was %s's (verified=%v)",
 			run.Principal, run.Verified, delegated.Principal, delegated.Verified)
+	}
+}
+
+// writesPages is a model that, for the writer, writes one new page each time
+// it is asked; for the supervisor, hands the writing on and then finishes.
+func writesPages() func(string) string {
+	n := 0
+	return func(prompt string) string {
+		switch {
+		case strings.Contains(prompt, `Goal:\nwrite the pages`):
+			n++
+			return fmt.Sprintf(`{"op":"write_page","input":{"page":"page-%d","fields":{"title":"Page %d","body":"Words."}}}`, n, n)
+		case strings.Contains(prompt, "Nothing has been done yet"):
+			return `{"op":"delegate:writer","say":"write the pages"}`
+		}
+		return `{"op":"done","say":"handed on"}`
+	}
+}
+
+// pagesWritten counts the pages writesPages wrote.
+func pagesWritten(t *testing.T, root string) int {
+	t.Helper()
+	n := 0
+	for i := 1; i <= 20; i++ {
+		if _, ok := draftPage(t, root, fmt.Sprintf("page-%d", i)); ok {
+			n++
+		}
+	}
+	return n
+}
+
+// What a delegate's model costs is charged to it, and so to its supervisor.
+// It was charged to nothing: the delegate's decider reported its tokens and
+// never its cost, so neither the delegate's money budget nor its
+// supervisor's bounded a model in a loop of writes, and the run's record
+// priced the supervisor's own calls alone.
+func TestADelegatesModelSpendingIsChargedToTheRun(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := demoStore(t)
+	declaredAutonomy(t, root)
+	models := &pricedModels{choose: writesPages()}
+	pricedGateway(t, root, models, false)
+	sup, del := boss("writer"), handedWriter()
+	sup.Budget.Money, del.Budget.Money = "0.25", "0.25"
+	declareBoss(t, root, sup, del)
+	id, err := runAgentOnce(root, "boss", "make the pages through the writer", true, asAdmin("dana"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec, _ := loadAgentRun(root, id)
+	if want := int64(models.total()) * 100_000; rec.Trace.Spent.Cost != want {
+		t.Errorf("%d model calls at 0.10 are recorded as a run that cost %d micros",
+			models.total(), rec.Trace.Spent.Cost)
+	}
+	if n := pagesWritten(t, root); n == 0 || n > 2 {
+		t.Errorf("a money budget of 0.25, at 0.10 a call, let the delegate write %d pages", n)
+	}
+	// And to the person who started it, against their own gateway budget.
+	if calls, dana := chargedTo(t, root, "agent:boss", "person:dana"); calls != models.total() || dana != calls {
+		t.Errorf("of %d model calls, %d went through the run's model and %d were charged to dana",
+			models.total(), calls, dana)
 	}
 }

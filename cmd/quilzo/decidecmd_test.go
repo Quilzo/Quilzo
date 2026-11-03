@@ -124,8 +124,8 @@ func (p *pricedModels) total() int {
 }
 
 // pricedGateway declares the actor's route and the reviewer's, both through
-// models, each call at 0.10, and names the reviewer.
-func pricedGateway(t *testing.T, root string, models *pricedModels) {
+// models, each call at 0.10, and names the reviewer when asked to.
+func pricedGateway(t *testing.T, root string, models *pricedModels, reviewed bool) {
 	t.Helper()
 	url := models.serve(t)
 	for _, args := range [][]string{
@@ -136,6 +136,9 @@ func pricedGateway(t *testing.T, root string, models *pricedModels) {
 		if err := cmdGateway(root, args); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if !reviewed {
+		return
 	}
 	if err := cmdConfig(root, []string{"set", "agent.reviewer", "second-opinion"}); err != nil {
 		t.Fatal(err)
@@ -179,7 +182,7 @@ func TestADecidersAndTheReviewersCallsAreChargedToTheRunAndItsPerson(t *testing.
 	models := &pricedModels{choose: func(string) string {
 		return `{"op":"decide","input":{"name":"refunds","state":"order 12 arrived broken"}}`
 	}}
-	pricedGateway(t, root, models)
+	pricedGateway(t, root, models, true)
 	file := filepath.Join(t.TempDir(), "d.json")
 	os.WriteFile(file, []byte(`{"name": "refunds", "title": "Refunds", "samples": 5, "questions": [
   {"name": "eligible", "ask": "Is the order eligible for a refund?", "kind": "yesno"}]}`), 0o600)

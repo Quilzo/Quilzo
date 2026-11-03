@@ -194,7 +194,12 @@ func (d delegation) decider(child *agent.Session, m agent.Manifest) (agent.Decid
 		Model:   d.model,
 		Session: child,
 		Dialect: m.Dialect,
-		Tokens:  child.Tokens,
+		// What the provider reported and what the gateway priced it at,
+		// both, as the parent's are. Only the tokens were, so a delegate's
+		// money budget never tripped, Fold had no cost to bring back, and
+		// a supervisor's money budget did not bound the work it handed on.
+		Tokens: child.Tokens,
+		Charge: child.Charge,
 	}.Decide(), nil
 }
 
