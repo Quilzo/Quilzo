@@ -4,11 +4,13 @@
 package admin
 
 import (
+	"net/http"
 	"net/url"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/form"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/section"
@@ -88,6 +90,43 @@ func TestTheExportRedactsSensitiveFieldsUnlessAsked(t *testing.T) {
 		"form=wholesale&sensitive=1").Body.String()
 	if !strings.Contains(asked, "ada@example.com") {
 		t.Errorf("asking for the held fields did not produce them:\n%s", asked)
+	}
+}
+
+// And asking needs the authority to erase through this session, not only the
+// person's.
+//
+// The tick was checked with the policy alone, which is a question about the
+// person. An administrator signed in with a credential issued `--role author`
+// was refused /forms/purge, which needs grant, and the same session took every
+// held-back value out through the export, which says it needs that authority.
+func TestAnAuthorCappedSessionCannotExportSensitiveFields(t *testing.T) {
+	srv, _ := setup(t)
+	srv.Forms = wiredForms(t, sensitiveSet(t))
+	capped, _, err := srv.Tokens.IssueSession("author-cap", "editor",
+		auth.RoleAuthor, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if w := postForm(t, srv, "/forms/purge", capped,
+		"form=wholesale&confirm=wholesale"); w.Code != http.StatusForbidden {
+		t.Fatalf("control: an author-capped purge answered %d", w.Code)
+	}
+
+	w := postForm(t, srv, "/forms/export", capped, "form=wholesale&sensitive=1")
+	if strings.Contains(w.Body.String(), "ada@example.com") {
+		t.Errorf("a session capped at author exported a field marked "+
+			"sensitive: %d\n%s", w.Code, w.Body.String())
+	}
+	if loc := w.Header().Get("Location"); !strings.Contains(loc, "e=") {
+		t.Errorf("the refusal did not say why: %d %q", w.Code, loc)
+	}
+
+	// The export without the tick is still the author's to take.
+	plain := postForm(t, srv, "/forms/export", capped, "form=wholesale").Body.String()
+	if !strings.Contains(plain, "Acme") {
+		t.Errorf("an author-capped session lost the redacted export:\n%s", plain)
 	}
 }
 

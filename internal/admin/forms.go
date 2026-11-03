@@ -390,8 +390,13 @@ func (s *Server) handleFormExport(w http.ResponseWriter, r *http.Request) {
 	// needs rather than the one that reads the screen: taking personal data
 	// out of the system is the act purge is gated on, and a file on somebody's
 	// laptop is out of the system.
+	//
+	// Through allows, as purge's can asks, so the session's cap counts. The
+	// policy alone answered for the person: an administrator signed in with
+	// a credential issued `--role author` was refused the purge and exported
+	// every held-back value here.
 	withSensitive := r.FormValue("sensitive") != ""
-	if withSensitive && !s.mayUse(p, auth.ActGrant, "/") {
+	if withSensitive && !s.allows(p, auth.ActGrant, "/") {
 		s.formRedirect(w, r, "", "exporting the fields marked sensitive "+
 			"needs the authority to erase them too")
 		return
