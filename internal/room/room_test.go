@@ -271,6 +271,86 @@ func TestRetentionRemovesContentAndNotTheShape(t *testing.T) {
 	}
 }
 
+// An erasure outranks a removal that kept the words.
+//
+// A message its author deleted, or a moderator took down, keeps its words
+// in the log for whoever has to answer for the removal. An Article 17
+// request about it was refused as "already removed", so the one removal
+// that takes the words out of the log could never reach the messages most
+// likely to be asked about.
+func TestAnErasureReachesAMessageAlreadyTakenDown(t *testing.T) {
+	l := open(t)
+	post(t, l, said("m1", "sam", "my home address is 12 Acacia Ave", now))
+	post(t, l, said("m2", "alex", "and mine is 3 Mill Lane", now))
+	if _, err := l.Remove("m1", Tombstone{At: now.Add(time.Minute),
+		By: "sam", Kind: audit.KindHuman, Why: ByAuthor}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.Remove("m2", Tombstone{At: now.Add(time.Minute),
+		By: "rashik", Kind: audit.KindHuman, Why: ByModerator,
+		Because: "an address"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"m1", "m2"} {
+		if _, err := l.Remove(id, Tombstone{At: now.Add(time.Hour),
+			By: "rashik", Kind: audit.KindHuman, Why: ByErasure}); err != nil {
+			t.Fatalf("erasing %s, which was already taken down: %v", id, err)
+		}
+		got, _ := l.Get(id)
+		for _, r := range got.History() {
+			if r.Text != "" {
+				t.Errorf("%s still holds %q after an erasure", id, r.Text)
+			}
+		}
+		if got.Deleted.Why != ByErasure {
+			t.Errorf("%s reads %q", id, got.Says())
+		}
+		// Once erased there is nothing left to take.
+		if _, err := l.Remove(id, Tombstone{At: now.Add(2 * time.Hour),
+			By: "rashik", Why: ByErasure}); err == nil {
+			t.Errorf("%s was erased twice", id)
+		}
+	}
+}
+
+// Retention takes the words a removal kept, and keeps the removal.
+//
+// Expire passed over every message that had a tombstone, so the words of a
+// message its author deleted stayed in the log, and on the disk, for as
+// long as the room lasted, whatever period it declared.
+func TestRetentionTakesTheWordsARemovalKept(t *testing.T) {
+	l, err := New(Room{
+		ID: "deploys", Name: "deploys", Kind: Open, Purpose: "deploys",
+		Created:   now.Add(-400 * 24 * time.Hour),
+		Retention: 30 * 24 * time.Hour,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := now.Add(-60 * 24 * time.Hour)
+	post(t, l, said("old", "rashik", "the deploy key is hunter2", old))
+	if _, err := l.Remove("old", Tombstone{At: old.Add(time.Minute),
+		By: "rashik", Kind: audit.KindHuman, Why: ByAuthor}); err != nil {
+		t.Fatal(err)
+	}
+	if n := l.Expire(now); n != 1 {
+		t.Fatalf("retention took the words of %d message(s)", n)
+	}
+	got, _ := l.Get("old")
+	for _, r := range got.History() {
+		if r.Text != "" {
+			t.Errorf("retention left %q", r.Text)
+		}
+	}
+	// What a reader was told stays what happened.
+	if got.Deleted.Why != ByAuthor {
+		t.Errorf("the author's removal now reads %q", got.Says())
+	}
+	if n := l.Expire(now); n != 0 {
+		t.Errorf("a second pass took %d more", n)
+	}
+}
+
 // A client that timed out and retried has sent one thing.
 func TestTheSameMessageTwiceIsOneMessage(t *testing.T) {
 	l := open(t)

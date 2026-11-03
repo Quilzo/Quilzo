@@ -345,3 +345,50 @@ func TestReactionsAreKeptAndTheListSaysWhatIsUnread(t *testing.T) {
 		t.Errorf("a reply in a thread is %d unread", n)
 	}
 }
+
+// A message somebody already took down still leaves the disk, by an
+// erasure or by its room's retention.
+//
+// A removal by the author or a moderator keeps the words in the log, and
+// both ways of taking them out of it passed such a message by: an erasure
+// was refused as "already removed", and retention skipped anything with a
+// tombstone. The words stayed in rooms/ for good, and in every backup.
+func TestAMessageAlreadyTakenDownStillLeavesTheDisk(t *testing.T) {
+	root := roomStore(t)
+	inRoom(t, root, "sam", "open", "plans", "--purpose", "what ships when",
+		"--retention", "720h")
+	asked, _ := inRoom(t, root, "sam", "say", "plans", "my home address is 12 Acacia Ave")["message"].(string)
+	kept, _ := inRoom(t, root, "sam", "say", "plans", "the launch code is marmalade")["message"].(string)
+	inRoom(t, root, "sam", "remove", "plans", asked)
+	inRoom(t, root, "lee", "remove", "plans", kept, "--because", "a secret")
+
+	if _, err := tryInRoom(t, root, "sam", "remove", "plans", asked, "--erase"); err != nil {
+		t.Fatalf("a message its author had deleted could not be erased: %v", err)
+	}
+	if b, _ := os.ReadFile(roomMessages(root, "plans")); bytes.Contains(b, []byte("Acacia")) {
+		t.Errorf("an erased message's words are still in the room's file:\n%s", b)
+	}
+
+	var sweep *upkeep.Job
+	for _, j := range upkeepJobs(root, upkeep.Job{Name: "posture"}) {
+		if j.Name == "rooms" {
+			sweep = &j
+		}
+	}
+	if sweep == nil {
+		t.Fatal("the admin's sweep has nothing that applies a room's retention")
+	}
+	if _, err := sweep.Do(time.Now().Add(31 * 24 * time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(roomMessages(root, "plans")); bytes.Contains(b, []byte("marmalade")) {
+		t.Errorf("words a moderator took down outlived the room's retention on disk:\n%s", b)
+	}
+	l, err := loadRoom(root, "plans")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m, ok := l.Get(kept); !ok || m.Deleted == nil || m.Deleted.Why != room.ByModerator {
+		t.Errorf("the moderator's removal did not survive retention: %+v", m)
+	}
+}
