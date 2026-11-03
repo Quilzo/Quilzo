@@ -211,7 +211,7 @@ func (s *Server) handlePeople(w http.ResponseWriter, r *http.Request) {
 
 	s.render(w, r, "people.html", map[string]any{
 		"Nav": "people", "Title": "People", "Principal": p, "People": people, "Enrol": s.Enrol != nil,
-		"Waiting": s.enrolWaiting(now), "Pending": s.pendingRows(p, now), "Review": s.reviewSection(p, now),
+		"Waiting": s.enrolWaiting(now), "Pending": s.pendingRows(p, now), "Review": s.reviewSection(r, p, now),
 		"Roles": auth.Roles, "Jobs": auth.Jobs, "Permissions": auth.Permissions, "AppRoles": s.appRoles(),
 		"ActiveWithin": activeWithin.String(),
 		"Known":        names, "Message": r.URL.Query().Get("m"),

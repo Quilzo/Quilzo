@@ -2002,39 +2002,52 @@ quilzo access review decide 4 keep --why "edits the handbook"
 quilzo access review close
 ```
 
-Or Review who has access on People, one card and two buttons per item.
+Or Review who has access on People, one card and two buttons per item; a
+button returns to its card, with what it did or why it was refused. Each
+item that is your own says so in both, and waits for another administrator.
+With no review open, both say when the last one closed and when the next is
+due.
 
-Each item says who granted it and when, until when, and when it was last
-used: a token's last use, or the person's last record in the audit log,
-which is the one lasting record once sessions are pruned. Only a record of
-the person doing something counts, with their identity proved and the act
-not refused: a command refused under their name, or a sign-in to their
-account held by the lockout, is somebody trying. Nothing for ninety
-days is dormant, listed first and proposed for revoke, the same threshold as
-the posture scan's `token.stale`. Privileged means administration, the
-security, compliance or log areas, or a permission only an administrator
-otherwise holds.
+Each item says how and when it was granted, by whom where the store recorded
+it (a grant made by hand), until when, and when it was last used: a token's
+last use, or the person's last record in the audit log, which is the one
+lasting record once sessions are pruned. Only a record of the person doing
+something counts, with their identity proved and the act not refused: a
+command refused under their name, or a sign-in to their account held by the
+lockout, is somebody trying. Nothing for ninety days is dormant, listed first
+and proposed for revoke, the same threshold as the posture scan's
+`token.stale`. Privileged means administration, the security, compliance or
+log areas, or a permission only an administrator otherwise holds.
 
 The rules are the ones that make a review one. The reviewer is a person,
 signed in as themselves: a model, a program's token or a name nobody proved
 is refused. On People that means signed in with two factors, even in the
 grace before two factors are compulsory, since a token pasted into the
-sign-in form is how a program would get in. Nobody decides their own access, however their name is spelled,
-or a group they are in. Keeping privileged access needs a reason, which is
-kept in the review's file (`access/reviews/ID.json`) and never in the audit
-log, where the record says only that one was given. There is no "reduce":
-revoke, then grant the lower role. Deciding takes an administrator of the
-whole store; a publisher or an auditor can do neither.
+sign-in form is how a program would get in; a session with one factor is
+told so in place of the buttons. Nobody decides their own access, however
+their name is spelled, or a group they are in. Keeping privileged access
+needs a reason (Why on People, `--why` on the command line), which is kept
+in the review's file (`access/reviews/ID.json`) and never in the audit log,
+where the record says only that one was given; a reason of more than one
+word goes in quotes, and words left over after a decision are refused rather
+than dropped. There is no "reduce": revoke, then grant the lower role.
+Starting, listing, deciding and closing each take an administrator of the
+whole store; a publisher or an auditor can do none of them.
 
 A revoke goes through the path that granted the access, at once: the binding
 is removed, the token revoked with every session minted from it, the
-group's mapping taken off and its grants with it. The person's next request
-is refused. A revoke that would leave nobody able to administer the store is
+group's mapping taken off and its grants with it. What it gave is refused
+from the next request: a revoked token's next request fails outright, and a
+revoked grant leaves the person any other grant they hold, which is an item
+of its own. A revoke that would leave nobody able to administer the store is
 refused, whoever decided it and whenever.
 
-Closing is refused while anything is undecided. It reports grants made since
-the review started as not reviewed by it, writes `review.closed` with the
-counts, and writes evidence for the built-in quarterly control
+Closing is refused while anything is undecided, and the refusal names which
+of the undecided items are your own. An item whose grant was taken away some
+other way since the start does not hold it open; it is counted as gone.
+Closing reports grants made since the review started as not reviewed by it,
+writes `review.closed` with the counts, and writes evidence for the built-in
+quarterly control
 `quilzo/AC-2 account review`, which `quilzo assurance report` measures like
 any other: one review in a six-month window is unproven, two are covered.
 With one administrator there is nobody else to decide their own access, so
@@ -2043,8 +2056,11 @@ the review closes alone, says how much of theirs went unreviewed, and
 in (the whole staff mapped to reader, say) is everybody's own and nobody's to
 decide: it closes undecided, and `review.closed` counts it as `unreviewable`.
 
-When no review has closed within the period, the posture scan reports
-`access.review-due` and the security contact is mailed.
+When no review has closed within the period, counted from the last close
+or, before the first, from the oldest grant a review would cover (at once
+for a grant made before grants were dated), the posture scan reports
+`access.review-due`, and drift mails it to the security contact as a
+reminder, though it is Medium.
 
 The records are `review.started`, `review.keep`, `review.revoke` and
 `review.closed`, beside the record the revoked path writes itself

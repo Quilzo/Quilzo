@@ -103,7 +103,8 @@ var settings = []Setting{
 			"provider group means here and every long-lived token in front of an administrator, " +
 			"who keeps or revokes each one; the posture scan reports access.review-due, and the " +
 			"security contact is told, when none has closed for this long. Between 30 and 365 " +
-			"days. Shorter is stricter, and the organisation's ac-02_odp.10 is a floor under it.",
+			"days. Shorter is stricter, and when the organisation declares ac-02_odp.10 that is the " +
+			"longest it can be.",
 		Weaker: atMostDur(90*24*time.Hour, "a review only every %s leaves a grant nobody needs "+
 			"working that long before anybody is asked about it"),
 	},

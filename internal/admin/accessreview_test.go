@@ -271,3 +271,185 @@ func TestAProgramsTokenSignedInThroughTheFormCannotReview(t *testing.T) {
 		t.Errorf("the host was asked: %s", got)
 	}
 }
+
+// A button returns to where it was pressed, saying what it came to there:
+// on the card for a decision, at the top of the section for starting and
+// closing, a success as a status and a refusal as an alert. It went to the
+// top of People, above the grant form, with a refusal in the same grey as
+// a success, and the administrator scrolled back down to find which card
+// the message was about.
+func TestAReviewButtonComesBackToWhereItWasPressed(t *testing.T) {
+	srv, editor := setup(t)
+	hooks, _ := memoryReview(srv)
+	srv.AccessReview = hooks
+	for _, b := range []auth.Binding{
+		{Principal: "sam", Role: auth.RoleAdmin, Resource: "/"},
+		{Principal: "kit", Role: auth.RoleAuthor, Resource: "/blog"},
+	} {
+		if err := srv.Policy.Grant(b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	follow := func(w *httptest.ResponseRecorder) (string, string) {
+		t.Helper()
+		loc := w.Header().Get("Location")
+		path, anchor, _ := strings.Cut(loc, "#")
+		return get(t, srv, path, editor).Body.String(), anchor
+	}
+	body, anchor := follow(postForm(t, srv, "/people/review/start", editor, ""))
+	if anchor != "review" || !strings.Contains(body, `<p class="notice ok" role="status">review r1 started`) {
+		t.Fatalf("starting did not come back to the section with a status (#%s)", anchor)
+	}
+	var sam, kit string
+	for _, it := range hooks.mustCurrent(t).Items {
+		switch it.Principal {
+		case "sam":
+			sam = it.ID
+		case "kit":
+			kit = it.ID
+		}
+	}
+	body, anchor = follow(postForm(t, srv, "/people/review/decide", editor,
+		url.Values{"item": {sam}, "verdict": {"keep"}}.Encode()))
+	card := cardOf(t, body, sam)
+	if anchor != "item-"+sam || !strings.Contains(card, `class="notice bad" role="alert">item `+sam+` is privileged`) {
+		t.Errorf("a refusal did not come back to its card as an alert (#%s): %s", anchor, card)
+	}
+	if strings.Contains(cardOf(t, body, kit), "notice") {
+		t.Error("the refusal was shown on another card too")
+	}
+	body, _ = follow(postForm(t, srv, "/people/review/decide", editor,
+		url.Values{"item": {sam}, "verdict": {"keep"}, "why": {"runs the agency's second shift"}}.Encode()))
+	card = cardOf(t, body, sam)
+	for _, want := range []string{`class="notice ok" role="status">item ` + sam + `: keep, sam is admin on /`,
+		"Kept by editor on", "runs the agency&#39;s second shift"} {
+		if !strings.Contains(card, want) {
+			t.Errorf("the decided card does not show %q: %s", want, card)
+		}
+	}
+	body, _ = follow(postForm(t, srv, "/people/review/decide", editor,
+		url.Values{"item": {kit}, "verdict": {"revoke"}}.Encode()))
+	if card := cardOf(t, body, kit); !strings.Contains(card, "from kit&#39;s next request, it gives them nothing") ||
+		!strings.Contains(card, "Revoked by editor on") {
+		t.Errorf("a revoke does not say what it took: %s", card)
+	}
+	if !strings.Contains(body, "Closing waits until every item is decided; item ") ||
+		!strings.Contains(body, " is your own, for another administrator to decide.") {
+		t.Error("the close button does not say that the rest is the administrator's own")
+	}
+	body, anchor = follow(postForm(t, srv, "/people/review/close", editor, ""))
+	if anchor != "review" || !strings.Contains(body, `class="notice bad" role="alert">1 item(s) are undecided`) {
+		t.Errorf("a refused close did not come back to the section as an alert (#%s)", anchor)
+	}
+}
+
+// cardOf is one item's card on People.
+func cardOf(t *testing.T, body, id string) string {
+	t.Helper()
+	start := strings.Index(body, `id="item-`+id+`"`)
+	if start < 0 {
+		t.Fatalf("no card for item %s", id)
+	}
+	end := strings.Index(body[start:], "</li>")
+	return body[start : start+end]
+}
+
+// What closing waits for is said beside the button, and when the person
+// pressing it is the only administrator, their own items do not hold it:
+// the review closes without them.
+func TestTheCloseButtonSaysWhatItWaitsFor(t *testing.T) {
+	if got := closeHint(0, nil, false); got != "" {
+		t.Errorf("nothing undecided: %q", got)
+	}
+	if got := closeHint(2, nil, false); got != "Closing waits until every item is decided." {
+		t.Errorf("none of their own: %q", got)
+	}
+	if got := closeHint(2, []string{"1", "3"}, false); !strings.Contains(got, "items 1 and 3 are your own, for another administrator") {
+		t.Errorf("two of their own: %q", got)
+	}
+	got := closeHint(3, []string{"1", "3"}, true)
+	if !strings.Contains(got, "closes without items 1 and 3, your own") || !strings.Contains(got, "every other item") {
+		t.Errorf("alone: %q", got)
+	}
+	if got := closeHint(1, []string{"1"}, true); strings.Contains(got, "waits") {
+		t.Errorf("alone with only their own left: %q", got)
+	}
+
+	srv, editor := setup(t)
+	hooks, _ := memoryReview(srv)
+	srv.AccessReview = hooks
+	postForm(t, srv, "/people/review/start", editor, "")
+	body := get(t, srv, "/people", editor).Body.String()
+	if !strings.Contains(body, "with no other administrator to decide it, the review closes without it") ||
+		strings.Contains(body, "another administrator decides it") {
+		t.Error("the only administrator's own card says another administrator decides it")
+	}
+}
+
+// A session that may not decide is not offered buttons that answer with a
+// bare refusal: it is told how to decide instead. A person signed in with
+// one factor in the grace before two are compulsory was shown Start,
+// Keep, Revoke and Close, and each answered with a page of plain text.
+func TestASessionThatMayNotDecideIsToldHowInsteadOfOfferedButtons(t *testing.T) {
+	srv, editor := setup(t)
+	hooks, _ := memoryReview(srv)
+	srv.AccessReview = hooks
+	srv.MFAFrom = time.Now().Add(14 * 24 * time.Hour)
+	if err := srv.Policy.Grant(auth.Binding{Principal: "sam", Role: auth.RoleAdmin, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	oneFactor, _, err := srv.Tokens.IssueSession("signin", "sam", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin, auth.MethodToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := func() string {
+		req := httptest.NewRequest(http.MethodGet, "/people", nil)
+		req.AddCookie(&http.Cookie{Name: "quilzo_token", Value: oneFactor})
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("People with one factor in the grace: %d", w.Code)
+		}
+		return w.Body.String()
+	}
+	before := page()
+	if strings.Contains(before, `action="/people/review/start"`) || !strings.Contains(before, "Starting one needs a sign-in with two factors") {
+		t.Error("a one-factor session was offered Start, or not told how to start")
+	}
+	postForm(t, srv, "/people/review/start", editor, "")
+	open := page()
+	for _, gone := range []string{`action="/people/review/decide"`, `action="/people/review/close"`} {
+		if strings.Contains(open, gone) {
+			t.Errorf("a one-factor session was offered %s", gone)
+		}
+	}
+	if !strings.Contains(open, "Deciding needs a sign-in with two factors") {
+		t.Error("a one-factor session is not told how to decide")
+	}
+	if strings.Contains(get(t, srv, "/people", editor).Body.String(), "Deciding needs a sign-in") {
+		t.Error("a passkey session is told it cannot decide")
+	}
+}
+
+// After a review closes, the section says when the next is due, as the
+// command line does, and that one is due once the period has passed.
+func TestTheSectionSaysWhenTheNextReviewIsDue(t *testing.T) {
+	srv, editor := setup(t)
+	hooks, _ := memoryReview(srv)
+	closed := time.Date(2026, 8, 4, 10, 0, 0, 0, time.UTC)
+	hooks.Last = func() (time.Time, bool, error) { return closed, true, nil }
+	srv.AccessReview = hooks
+	if body := get(t, srv, "/people", editor).Body.String(); !strings.Contains(body,
+		"The last review closed on 4 Aug 2026") {
+		t.Fatal("the last close is not shown")
+	}
+	v := srv.reviewSection(httptest.NewRequest(http.MethodGet, "/people", nil), principal{Name: "editor"},
+		closed.Add(30*24*time.Hour))
+	if v.Next != "2 Nov 2026" || v.Due {
+		t.Errorf("a month after a close: next %q, due %v", v.Next, v.Due)
+	}
+	if v := srv.reviewSection(httptest.NewRequest(http.MethodGet, "/people", nil), principal{Name: "editor"},
+		closed.Add(91*24*time.Hour)); !v.Due {
+		t.Error("ninety-one days after a close, one is not due")
+	}
+}

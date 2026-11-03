@@ -98,6 +98,19 @@ const (
 	Revoke Verdict = "revoke"
 )
 
+// Past is a verdict as something done, which is how both the command line
+// and People show a decision: "keep by dana" read as an instruction to
+// somebody, on a card that was already decided.
+func (v Verdict) Past() string {
+	switch v {
+	case Keep:
+		return "kept"
+	case Revoke:
+		return "revoked"
+	}
+	return string(v)
+}
+
 // Item is one grant, as it stood when the review started.
 type Item struct {
 	// ID is the item's number in its review, which is what a reviewer
@@ -161,6 +174,25 @@ func (i Item) Describe() string {
 		return fmt.Sprintf("%s is %s, a role in an app", i.Principal, i.Role)
 	}
 	return fmt.Sprintf("%s is %s on %s", i.Principal, i.Role, i.Resource)
+}
+
+// Revoked is what revoking this item did, in the words both surfaces say
+// it in once it is done.
+//
+// Both said "their next request is refused", which is true of a token and
+// not of a grant: somebody who is author on /blog and reader on "/" still
+// reads the site the moment after the author grant goes, and an
+// administrator told otherwise believes they removed somebody who is still
+// there.
+func (i Item) Revoked() string {
+	switch i.Kind {
+	case Credential:
+		return "revoked now, with every session made from it: its next request is refused"
+	case Mapping:
+		return "revoked now: the group means nothing here, and its members lose what it gave them"
+	}
+	return fmt.Sprintf("revoked now: from %s's next request, it gives them nothing; any other grant they hold "+
+		"is its own item", i.Principal)
 }
 
 // Holder is whether a person holds this item: as the principal, or as a
@@ -617,8 +649,11 @@ func (r *Review) Check(id string, v Verdict, d Decider, why string) (Item, error
 		return Item{}, err
 	}
 	if v == Keep && it.Privileged && strings.TrimSpace(why) == "" {
-		return Item{}, fmt.Errorf("item %s is privileged, and keeping it needs a reason (--why). It is the "+
-			"decision nobody writes down and the one an auditor asks about", it.ID)
+		// Both ways of giving one, since the same words reach People,
+		// where there is no --why to give, and the command line.
+		return Item{}, fmt.Errorf("item %s is privileged, and keeping it needs a reason: write it in Why "+
+			"on People, or give it with --why. It is the decision nobody writes down and the one an "+
+			"auditor asks about", it.ID)
 	}
 	return it, nil
 }
@@ -685,7 +720,7 @@ func (r *Review) Close(d Decider, current []Item, alone bool, administrators []s
 		still[it.Key()] = it
 	}
 	sum := Summary{Items: len(r.Items), Alone: alone}
-	var waiting []string
+	var waiting, theirs []string
 	for _, it := range r.Items {
 		if it.Dormant {
 			sum.Dormant++
@@ -713,11 +748,24 @@ func (r *Review) Close(d Decider, current []Item, alone bool, administrators []s
 			sum.Unreviewable++
 		default:
 			waiting = append(waiting, it.ID)
+			if it.Holder(d.Name) || now.Holder(d.Name) {
+				theirs = append(theirs, it.ID)
+			}
 		}
 	}
 	if len(waiting) > 0 {
-		return Summary{}, fmt.Errorf("%d item(s) are undecided (%s). A review closed with items nobody "+
-			"looked at evidences a list, not a review", len(waiting), strings.Join(waiting, ", "))
+		// Which of them are the closer's own, said: the list was the
+		// numbers alone, and an administrator who had decided everything
+		// they could was told only that items 1 and 3 were undecided,
+		// with nothing to say that nobody but another administrator may
+		// decide them.
+		own := ""
+		if len(theirs) > 0 {
+			own = fmt.Sprintf("; %s your own, for another administrator to decide",
+				listed(theirs, "is", "are"))
+		}
+		return Summary{}, fmt.Errorf("%d item(s) are undecided (%s)%s. A review closed with items nobody "+
+			"looked at evidences a list, not a review", len(waiting), strings.Join(waiting, ", "), own)
 	}
 	before := map[string]bool{}
 	for _, it := range r.Items {
@@ -731,6 +779,18 @@ func (r *Review) Close(d Decider, current []Item, alone bool, administrators []s
 	}
 	r.Closed, r.ClosedBy, r.Closer, r.Summary = now.UTC(), d.Name, d.Kind, &sum
 	return sum, nil
+}
+
+// listed is item numbers as a sentence says them, with the verb that
+// agrees: "3 is", "1 and 3 are", "1, 3 and 5 are".
+func listed(ids []string, one, many string) string {
+	switch len(ids) {
+	case 0:
+		return ""
+	case 1:
+		return ids[0] + " " + one
+	}
+	return strings.Join(ids[:len(ids)-1], ", ") + " and " + ids[len(ids)-1] + " " + many
 }
 
 // heldByAll reports whether every one of administrators holds an item, as

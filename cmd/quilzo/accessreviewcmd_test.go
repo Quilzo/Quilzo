@@ -1194,3 +1194,141 @@ func TestADecisionIsAuthorisedWhenItIsMadeNotWhenItWasAsked(t *testing.T) {
 		t.Error("kit's access is gone")
 	}
 }
+
+// humanOutput runs a review command with the words a person reads, and
+// returns them.
+func humanOutput(t *testing.T, run func() error) (string, error) {
+	t.Helper()
+	old := w
+	t.Cleanup(func() { w = old })
+	var b strings.Builder
+	w = &out.Writer{Mode: out.Human, Out: &b, Err: io.Discard}
+	err := run()
+	return b.String(), err
+}
+
+// A decision on the command line is what was typed and nothing is dropped
+// from it. "help" given as the reason answered with the usage, recorded
+// nothing and exited as though it had decided; a reason typed without
+// quotes kept its first word; and one typed without --why was not kept,
+// with the decision recorded either way.
+func TestADecisionOnTheCommandLineDropsNothingTyped(t *testing.T) {
+	root, tokens := reviewed(t)
+	if err := review(t, root, tokens["dana"], "start"); err != nil {
+		t.Fatal(err)
+	}
+	kit := itemFor(t, openReview(t, root), bindingOf("kit"))
+	sam := itemFor(t, openReview(t, root), bindingOf("sam"))
+	for _, args := range [][]string{
+		{"decide", kit.ID, "keep", "edits", "the", "handbook"},
+		{"decide", kit.ID, "keep", "--why", "edits", "the", "handbook"},
+		{"decide", sam.ID, "keep", "--why", "second", "administrator"},
+	} {
+		if err := review(t, root, tokens["dana"], args...); err == nil || !strings.Contains(err.Error(), "in quotes after --why") {
+			t.Errorf("%v: %v", args, err)
+		}
+	}
+	if len(openReview(t, root).Decisions) != 0 {
+		t.Fatalf("a decision with words left over was recorded: %+v", openReview(t, root).Decisions)
+	}
+	text, err := humanOutput(t, func() error {
+		return review(t, root, tokens["dana"], "decide", sam.ID, "keep", "--why", "help")
+	})
+	if err != nil || strings.Contains(text, "usage:") {
+		t.Fatalf("a reason of \"help\" was answered with the usage: %v\n%s", err, text)
+	}
+	if d, ok := openReview(t, root).Decided(sam.ID); !ok || d.Why != "help" {
+		t.Errorf("the decision with the reason \"help\" was not recorded: %+v", d)
+	}
+	for _, args := range [][]string{{"--help"}, {"-h"}, {"help"}} {
+		text, err := humanOutput(t, func() error { flagToken = ""; return cmdAccess(root, args) })
+		if err != nil || !strings.Contains(text, "quilzo access review decide ITEM keep|revoke") {
+			t.Errorf("quilzo access %v: %v\n%s", args, err, text)
+		}
+	}
+}
+
+// The list says what People says beside each card: which items are the
+// reviewer's own, for another administrator, what was decided in the past
+// tense and why, and what a revoke took.
+func TestTheListSaysWhatPeopleSays(t *testing.T) {
+	root, tokens := reviewed(t)
+	if err := review(t, root, tokens["dana"], "start"); err != nil {
+		t.Fatal(err)
+	}
+	r := openReview(t, root)
+	sam, kit := itemFor(t, r, bindingOf("sam")), itemFor(t, r, bindingOf("kit"))
+	if err := review(t, root, tokens["dana"], "decide", sam.ID, "keep", "--why", "runs the second shift"); err != nil {
+		t.Fatal(err)
+	}
+	text, err := humanOutput(t, func() error { return review(t, root, tokens["dana"], "decide", kit.ID, "revoke") })
+	if err != nil || !strings.Contains(text, "from kit's next request, it gives them nothing") {
+		t.Errorf("a revoke does not say what it took: %v\n%s", err, text)
+	}
+	text, err = humanOutput(t, func() error { return review(t, root, tokens["dana"], "items") })
+	if err != nil {
+		t.Fatal(err)
+	}
+	dana := itemFor(t, r, bindingOf("dana"))
+	for _, want := range []string{
+		dana.ID + "  dana is admin on /  undecided, your own: another administrator decides it",
+		"sam is admin on /  kept by dana", "why: runs the second shift",
+		"kit is author on /blog  revoked by dana",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the list does not say %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "keep by") || strings.Contains(text, "revoke by") {
+		t.Errorf("a decision is listed as an instruction:\n%s", text)
+	}
+	text, _ = humanOutput(t, func() error { return review(t, root, tokens["sam"], "items") })
+	if strings.Contains(text, "dana is admin on /  undecided, your own") {
+		t.Error("dana's own item is listed as sam's")
+	}
+}
+
+// With no review open, the command says when the last one closed and when
+// the next is due, as People does beside its Start button, and closing one
+// says when the next is due.
+func TestWithNoReviewOpenTheCommandSaysWhenOneIsDue(t *testing.T) {
+	root, tokens := reviewed(t)
+	if err := review(t, root, tokens["dana"], "items"); err == nil || !strings.Contains(err.Error(), "none has closed yet") {
+		t.Errorf("before any review: %v", err)
+	}
+	if err := review(t, root, tokens["dana"], "start"); err != nil {
+		t.Fatal(err)
+	}
+	decideAll(t, root, tokens)
+	text, err := humanOutput(t, func() error { return review(t, root, tokens["dana"], "close") })
+	next := time.Now().Add(accessreview.DefaultEvery).UTC().Format("2 Jan 2006")
+	if err != nil || !strings.Contains(text, "the next review is due by "+next) {
+		t.Errorf("closing does not say when the next is due: %v\n%s", err, text)
+	}
+	err = review(t, root, tokens["dana"], "items")
+	if err == nil || !strings.Contains(err.Error(), "the last closed on "+time.Now().UTC().Format("2 Jan 2006")) ||
+		!strings.Contains(err.Error(), "the next is due by "+next) {
+		t.Errorf("after a close: %v", err)
+	}
+}
+
+// The only administrator's own items are not said to wait for another
+// administrator, who does not exist: the review closes without them.
+func TestTheOnlyAdministratorIsToldTheReviewClosesWithoutTheirOwn(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("QUILZO_TOKEN", "")
+	root := connectStore(t)
+	t.Cleanup(func(old string) func() { return func() { flagToken = old } }(flagToken))
+	if err := cmdAuth(root, []string{"grant", "dana", "admin"}); err != nil {
+		t.Fatal(err)
+	}
+	dana := personToken(t, root, "dana", auth.RoleAdmin)
+	if err := review(t, root, dana, "start"); err != nil {
+		t.Fatal(err)
+	}
+	text, err := humanOutput(t, func() error { return review(t, root, dana, "items") })
+	if err != nil || !strings.Contains(text, "your own: with no other administrator to decide it, the review closes without it") ||
+		strings.Contains(text, "another administrator decides it") {
+		t.Errorf("the only administrator's own items: %v\n%s", err, text)
+	}
+}

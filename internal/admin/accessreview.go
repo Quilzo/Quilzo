@@ -6,6 +6,7 @@ package admin
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -54,17 +55,31 @@ type reviewView struct {
 	Open        *accessreview.Review
 	Rows        []reviewRow
 	Undecided   int
-	Last        string
-	Every       string
-	Due         bool
+	// CloseHint is what closing waits for, when anything is undecided:
+	// the signed-in person's own items wait for another administrator,
+	// unless there is none, when the review closes without them.
+	CloseHint string
+	// Alone is the signed-in person being the only administrator, whose
+	// own items nobody else can decide and the review closes without.
+	Alone     bool
+	Last      string
+	Next      string
+	Every     string
+	Due       bool
+	CanDecide bool
+	// Message and Error are what the last button pressed came back with,
+	// and At the item it was pressed on: shown where it was pressed, on
+	// the card or at the top of the section, not at the top of the page.
+	Message, Error, At string
 }
 
 // reviewSection is the Review section for the person signed in.
-func (s *Server) reviewSection(p principal, now time.Time) *reviewView {
+func (s *Server) reviewSection(r *http.Request, p principal, now time.Time) *reviewView {
 	if s.AccessReview == nil {
 		return nil
 	}
-	v := &reviewView{}
+	q := r.URL.Query()
+	v := &reviewView{CanDecide: canReview(p), Message: q.Get("rm"), Error: q.Get("re"), At: q.Get("ri")}
 	every := s.AccessReview.Every()
 	v.Every = fmt.Sprintf("%d days", int(every.Hours()/24))
 	last, ok, err := s.AccessReview.Last()
@@ -74,6 +89,7 @@ func (s *Server) reviewSection(p principal, now time.Time) *reviewView {
 	}
 	if ok {
 		v.Last = last.UTC().Format("2 Jan 2006")
+		v.Next = last.Add(every).UTC().Format("2 Jan 2006")
 		v.Due = now.Sub(last) > every
 	}
 	open, err := s.AccessReview.Current()
@@ -85,14 +101,49 @@ func (s *Server) reviewSection(p principal, now time.Time) *reviewView {
 		return v
 	}
 	v.Open, v.Undecided = open, open.Undecided()
+	var own []string
 	for _, it := range open.Items {
 		row := reviewRow{Item: it, What: it.Describe(), Facts: reviewFacts(it), Own: it.Holder(p.Name)}
 		if d, ok := open.Decided(it.ID); ok {
 			row.Decision = &d
+		} else if row.Own {
+			own = append(own, it.ID)
 		}
 		v.Rows = append(v.Rows, row)
 	}
+	v.Alone = lastAdminIn(s.Policy, p.Name)
+	v.CloseHint = closeHint(v.Undecided, own, v.Alone)
 	return v
+}
+
+// closeHint says what closing a review waits for, beside the button.
+//
+// The button was there and said nothing, and an administrator who had
+// decided all they could pressed it to be told that items 1 and 3 were
+// undecided: their own, which they may not decide and somebody else must.
+func closeHint(undecided int, own []string, alone bool) string {
+	if undecided == 0 {
+		return ""
+	}
+	var ids string
+	switch n := len(own); n {
+	case 0:
+		return "Closing waits until every item is decided."
+	case 1:
+		ids = "item " + own[0]
+	default:
+		ids = "items " + strings.Join(own[:n-1], ", ") + " and " + own[n-1]
+	}
+	if alone {
+		hint := "You are the only administrator, so the review closes without " + ids +
+			", your own, and the record says so"
+		if undecided > len(own) {
+			hint += "; closing waits until every other item is decided"
+		}
+		return hint + "."
+	}
+	return "Closing waits until every item is decided; " + ids + map[bool]string{true: " is", false: " are"}[len(own) == 1] +
+		" your own, for another administrator to decide."
 }
 
 func reviewFacts(it accessreview.Item) string {
@@ -119,6 +170,12 @@ func reviewFacts(it accessreview.Item) string {
 	return strings.Join(parts, "; ")
 }
 
+// canReview is whether this session may press the review's buttons: a
+// person's sign-in with two factors (reviewPost says why). The section
+// asks it as well, so a session that may not is told how to instead of
+// being offered buttons that answer with a bare refusal.
+func canReview(p principal) bool { return p.Session && p.Level >= 2 }
+
 // reviewPost is the shared preamble for the three review buttons: an
 // administrator of the whole store, signed in as a person with two
 // factors. A credential sent by a program is refused whatever it holds,
@@ -142,13 +199,39 @@ func (s *Server) reviewPost(w http.ResponseWriter, r *http.Request) (principal, 
 		s.peopleBack(w, r, "this server was started without access reviews")
 		return principal{}, false
 	}
-	if !p.Session || p.Level < 2 {
-		http.Error(w, "an access review is decided by a person signed in with two factors, not by a program's "+
-			"credential: sign in with your passkey, or decide with quilzo access review and your own token",
-			http.StatusForbidden)
+	if !canReview(p) {
+		http.Error(w, reviewNeedsTwoFactors, http.StatusForbidden)
 		return principal{}, false
 	}
 	return p, true
+}
+
+// reviewNeedsTwoFactors is why a session may not decide, and what to do.
+const reviewNeedsTwoFactors = "an access review is decided by a person signed in with two factors, not by a " +
+	"program's credential: sign in with your passkey, or decide with quilzo access review and your own token"
+
+// reviewBack returns to the review with what a button came to: to the card
+// it was pressed on (item), or to the top of the section, with the message
+// shown there as a success or as a refusal.
+//
+// It went back to the top of People, where every message on the screen is
+// shown alike: an administrator forty cards down who pressed Keep on a
+// privileged item without a reason landed above the grant form, with the
+// refusal in the same grey as a success, and scrolled back to find which
+// card it was about.
+func (s *Server) reviewBack(w http.ResponseWriter, r *http.Request, item, msg string, failed bool) {
+	q := url.Values{}
+	if failed {
+		q.Set("re", msg)
+	} else {
+		q.Set("rm", msg)
+	}
+	anchor := "#review"
+	if item != "" {
+		q.Set("ri", item)
+		anchor = "#item-" + url.PathEscape(item)
+	}
+	http.Redirect(w, r, "/people?"+q.Encode()+anchor, http.StatusSeeOther)
 }
 
 func (s *Server) handleReviewStart(w http.ResponseWriter, r *http.Request) {
@@ -158,11 +241,11 @@ func (s *Server) handleReviewStart(w http.ResponseWriter, r *http.Request) {
 	}
 	rev, err := s.AccessReview.Start(p.actor())
 	if err != nil {
-		s.peopleBack(w, r, err.Error())
+		s.reviewBack(w, r, "", err.Error(), true)
 		return
 	}
-	s.peopleBack(w, r, fmt.Sprintf("review %s started: %s to decide", rev.ID,
-		countOf(len(rev.Items), "item", "items")))
+	s.reviewBack(w, r, "", fmt.Sprintf("review %s started: %s to decide", rev.ID,
+		countOf(len(rev.Items), "item", "items")), false)
 }
 
 func (s *Server) handleReviewDecide(w http.ResponseWriter, r *http.Request) {
@@ -170,13 +253,19 @@ func (s *Server) handleReviewDecide(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	it, err := s.AccessReview.Decide(p.actor(), strings.TrimSpace(r.FormValue("item")),
-		accessreview.Verdict(r.FormValue("verdict")), r.FormValue("why"))
+	item := strings.TrimSpace(r.FormValue("item"))
+	v := accessreview.Verdict(r.FormValue("verdict"))
+	it, err := s.AccessReview.Decide(p.actor(), item, v, r.FormValue("why"))
 	if err != nil {
-		s.peopleBack(w, r, err.Error())
+		s.reviewBack(w, r, item, err.Error(), true)
 		return
 	}
-	s.peopleBack(w, r, fmt.Sprintf("item %s: %s", it.ID, r.FormValue("verdict")))
+	// The command line's words: item 4: revoke, kit is author on /blog.
+	msg := fmt.Sprintf("item %s: %s, %s", it.ID, v, it.Describe())
+	if v == accessreview.Revoke {
+		msg += "; " + it.Revoked()
+	}
+	s.reviewBack(w, r, it.ID, msg, false)
 }
 
 func (s *Server) handleReviewClose(w http.ResponseWriter, r *http.Request) {
@@ -186,19 +275,26 @@ func (s *Server) handleReviewClose(w http.ResponseWriter, r *http.Request) {
 	}
 	sum, err := s.AccessReview.Close(p.actor())
 	if err != nil {
-		s.peopleBack(w, r, err.Error())
+		s.reviewBack(w, r, "", err.Error(), true)
 		return
 	}
-	msg := fmt.Sprintf("the review is closed: %d kept, %d revoked", sum.Kept, sum.Revoked)
+	msg := fmt.Sprintf("the review is closed: %s, %d kept, %d revoked", countOf(sum.Items, "item", "items"),
+		sum.Kept, sum.Revoked)
+	if sum.Gone > 0 {
+		msg += fmt.Sprintf("; %s taken away some other way since it started, and counted as gone",
+			countOf(sum.Gone, "item", "items"))
+	}
 	if n := len(sum.NotReviewed); n > 0 {
-		msg += fmt.Sprintf("; %s granted since it started, not reviewed by it", countOf(n, "grant", "grants"))
+		msg += fmt.Sprintf("; %s made since it started, not reviewed by it", countOf(n, "grant", "grants"))
 	}
 	if sum.Alone {
-		msg += "; done alone, as the only administrator, and the record says so"
+		msg += fmt.Sprintf("; done alone, as the only administrator, with %s of your own unreviewed, and the "+
+			"record says so", countOf(sum.Own, "item", "items"))
 	}
 	if sum.Unreviewable > 0 {
 		msg += fmt.Sprintf("; %s held by every administrator went unreviewed, and the record says so",
 			countOf(sum.Unreviewable, "item", "items"))
 	}
-	s.peopleBack(w, r, msg)
+	s.reviewBack(w, r, "", msg+". Closing it is evidence for the control "+accessreview.ControlID+
+		" (quilzo assurance show).", false)
 }

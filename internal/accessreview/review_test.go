@@ -574,3 +574,57 @@ func TestAnItemEveryAdministratorHoldsClosesUndecided(t *testing.T) {
 		t.Error("with nobody named, an item was held by everybody")
 	}
 }
+
+// A close that waits names which of the waiting items are the closer's
+// own. The list was the numbers alone, so an administrator who had decided
+// everything they could was told items were undecided and nothing about
+// why they could not decide them.
+func TestACloseThatWaitsSaysWhichItemsAreYourOwn(t *testing.T) {
+	r := open(t)
+	for _, it := range r.Items {
+		if !it.Holder("dana") {
+			r.Record(it.ID, Keep, person("dana"), "still needed", now)
+		}
+	}
+	own := itemOf(t, r, func(i Item) bool { return i.Kind == Binding && i.Principal == "dana" })
+	_, err := r.Close(person("dana"), r.Items, false, []string{"dana", "sam"}, now)
+	if err == nil {
+		t.Fatal("closed with dana's own item undecided and sam to decide it")
+	}
+	if want := own.ID + " is your own, for another administrator to decide"; !strings.Contains(err.Error(), want) {
+		t.Errorf("the refusal does not say whose the item is: %v", err)
+	}
+	if _, err := r.Close(person("sam"), r.Items, false, []string{"dana", "sam"}, now); err == nil ||
+		strings.Contains(err.Error(), "your own") {
+		t.Errorf("sam was told dana's item is theirs: %v", err)
+	}
+	if got := listed([]string{"1", "3", "5"}, "is", "are"); got != "1, 3 and 5 are" {
+		t.Errorf("listed: %q", got)
+	}
+}
+
+// What a decision did is said the same way on both surfaces, in the past
+// tense, and a revoked grant is not described as refusing the person: a
+// grant revoked from somebody who holds another leaves them that one.
+func TestADecisionIsSaidAsDoneAndARevokeAsWhatItTook(t *testing.T) {
+	if Keep.Past() != "kept" || Revoke.Past() != "revoked" {
+		t.Errorf("past: %q %q", Keep.Past(), Revoke.Past())
+	}
+	grant := Item{Kind: Binding, Principal: "kit", Role: "author", Resource: "/blog"}
+	if got := grant.Revoked(); !strings.Contains(got, "kit's next request, it gives them nothing") ||
+		strings.Contains(got, "is refused") {
+		t.Errorf("a revoked grant: %q", got)
+	}
+	if got := (Item{Kind: Credential}).Revoked(); !strings.Contains(got, "every session made from it") {
+		t.Errorf("a revoked token: %q", got)
+	}
+	if got := (Item{Kind: Mapping}).Revoked(); !strings.Contains(got, "its members lose what it gave") {
+		t.Errorf("a revoked mapping: %q", got)
+	}
+	r := open(t)
+	sam := itemOf(t, r, func(i Item) bool { return i.Kind == Binding && i.Principal == "sam" })
+	if _, err := r.Check(sam.ID, Keep, person("dana"), ""); err == nil ||
+		!strings.Contains(err.Error(), "Why on People") || !strings.Contains(err.Error(), "--why") {
+		t.Errorf("a privileged keep with no reason says how to give one on only one surface: %v", err)
+	}
+}

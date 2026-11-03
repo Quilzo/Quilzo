@@ -452,6 +452,12 @@ func cmdAccess(root string, args []string) error {
 	if len(args) == 0 {
 		args = []string{"review"}
 	}
+	// Asked for in the way every program is, and answered as quilzo
+	// access review answers it, rather than as an unknown command.
+	if wantsReviewHelp(args[:1]) {
+		w.Human("%s", accessReviewUsage)
+		return nil
+	}
 	switch args[0] {
 	case "review":
 		return cmdAccessReview(root, args[1:])
@@ -467,6 +473,42 @@ const accessReviewUsage = `usage:
   quilzo access review close                                 refused while anything is undecided; writes the AC-2 evidence
 `
 
+// wantsReviewHelp reports whether a request for help is among args, other
+// than as the reason given with --why: `decide 3 keep --why help` is a
+// reason, and answering it with the usage dropped the decision and
+// exited as though it had been made.
+func wantsReviewHelp(args []string) bool {
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; a {
+		case "help", "-h", "--help":
+			return true
+		case "--why", "-why":
+			i++
+		}
+	}
+	return false
+}
+
+// noReviewOpen is the answer when there is no review to list or decide:
+// when the last one closed and when the next is due, which People says
+// beside its Start button and the command line said nothing of.
+func noReviewOpen(root string) error {
+	last, ok, err := reviewStore(root).LastClosed()
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errors.New("no review is open, and none has closed yet: quilzo access review start begins one")
+	}
+	every := accessReviewEvery(root)
+	when := "the next is due by " + last.Add(every).UTC().Format("2 Jan 2006")
+	if time.Since(last) > every {
+		when = fmt.Sprintf("more than %d days ago, so one is due", int(every.Hours()/24))
+	}
+	return fmt.Errorf("no review is open; the last closed on %s, %s: quilzo access review start begins one",
+		last.UTC().Format("2 Jan 2006"), when)
+}
+
 func cmdAccessReview(root string, args []string) error {
 	if len(args) == 0 {
 		args = []string{"items"}
@@ -476,11 +518,9 @@ func cmdAccessReview(root string, args []string) error {
 	// for help through without authority, and items, which listed the
 	// review whatever followed it, printed who holds what to anybody who
 	// added "help" to the line.
-	for _, a := range args {
-		if a == "help" || a == "-h" || a == "--help" {
-			w.Human("%s", accessReviewUsage)
-			return nil
-		}
+	if wantsReviewHelp(args) {
+		w.Human("%s", accessReviewUsage)
+		return nil
 	}
 	c := resolveCaller(root, flagToken)
 	switch sub := args[0]; sub {
@@ -507,17 +547,26 @@ func cmdAccessReview(root string, args []string) error {
 			return err
 		}
 		if r == nil {
-			return errors.New("no review is open: quilzo access review start begins one")
+			return noReviewOpen(root)
 		}
 		if w.JSON(r) {
 			return nil
+		}
+		own := dim + ", your own: another administrator decides it" + reset
+		if onlyAdministrator(root, c.Name) {
+			own = dim + ", your own: with no other administrator to decide it, the review closes without it" + reset
 		}
 		w.Human("review %s%s%s, started %s by %s: %d of %d undecided\n", bold, r.ID, reset,
 			r.Started.Format("2 Jan 2006"), onOneLine(r.StartedBy), r.Undecided(), len(r.Items))
 		for _, it := range r.Items {
 			state := yellow + "undecided" + reset
-			if d, ok := r.Decided(it.ID); ok {
-				state = green + string(d.Verdict) + reset + dim + " by " + onOneLine(d.By) + reset
+			d, decided := r.Decided(it.ID)
+			if decided {
+				state = green + d.Verdict.Past() + reset + dim + " by " + onOneLine(d.By) + reset
+			} else if it.Holder(c.Name) {
+				// As People says it beside the card: the item waits for
+				// somebody else, and deciding it here is refused.
+				state += own
 			}
 			marks := ""
 			if it.Dormant {
@@ -528,6 +577,9 @@ func cmdAccessReview(root string, args []string) error {
 			}
 			w.Human("%s%3s%s  %s  %s%s\n", bold, it.ID, reset, onOneLine(it.Describe()), state, marks)
 			w.Human("       %s%s%s\n", dim, itemFacts(it), reset)
+			if decided && d.Why != "" {
+				w.Human("       %swhy: %s%s\n", dim, onOneLine(d.Why), reset)
+			}
 		}
 		return nil
 	case "decide":
@@ -540,6 +592,14 @@ func cmdAccessReview(root string, args []string) error {
 		if len(pos) != 2 {
 			return errors.New("usage: quilzo access review decide ITEM keep|revoke [--why TEXT]")
 		}
+		// Anything left over is refused rather than dropped: a reason
+		// typed without its quotes (--why edits the handbook) was kept as
+		// "edits", and one typed without --why at all was not kept, with
+		// the decision recorded either way.
+		if fs.NArg() > 0 {
+			return fmt.Errorf("%q is not part of a decision: a reason goes in quotes after --why, "+
+				"as in --why \"edits the handbook\"", strings.Join(fs.Args(), " "))
+		}
 		it, dec, err := reviewDecide(root, c, pos[0], accessreview.Verdict(pos[1]), *why)
 		if err != nil {
 			return err
@@ -549,7 +609,7 @@ func cmdAccessReview(root string, args []string) error {
 		}
 		w.Human("item %s: %s%s%s, %s\n", it.ID, bold, dec.Verdict, reset, onOneLine(it.Describe()))
 		if dec.Verdict == accessreview.Revoke {
-			w.Human("  %srevoked now; their next request is refused%s\n", dim, reset)
+			w.Human("  %s%s%s\n", dim, onOneLine(it.Revoked()), reset)
 		}
 		return nil
 	case "close":
@@ -563,8 +623,11 @@ func cmdAccessReview(root string, args []string) error {
 		w.Human("review %s%s%s closed: %d item(s), %d kept, %d revoked\n", bold, r.ID, reset, sum.Items,
 			sum.Kept, sum.Revoked)
 		if sum.Alone {
-			w.Human("  %syou are the only administrator, so this was done alone, and %d of your own access "+
+			w.Human("  %syou are the only administrator, so this was done alone, and %d item(s) of your own "+
 				"went unreviewed; the record says so%s\n", yellow, sum.Own, reset)
+		}
+		if sum.Gone > 0 {
+			w.Human("  %s%d taken away some other way since it started, and counted as gone%s\n", dim, sum.Gone, reset)
 		}
 		if sum.Unreviewable > 0 {
 			w.Human("  %s%d held by every administrator, a group you are all in, went unreviewed, since "+
@@ -576,7 +639,8 @@ func cmdAccessReview(root string, args []string) error {
 				w.Human("    %s\n", onOneLine(it.Describe()))
 			}
 		}
-		w.Human("  %sthe evidence is in quilzo assurance show %q%s\n", dim, accessreview.ControlID, reset)
+		w.Human("  %sthe evidence is in quilzo assurance show %q; the next review is due by %s%s\n", dim,
+			accessreview.ControlID, r.Closed.Add(accessReviewEvery(root)).UTC().Format("2 Jan 2006"), reset)
 		return nil
 	}
 	return fmt.Errorf("unknown access review command %q; start, items, decide or close", args[0])
