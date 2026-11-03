@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -117,6 +118,31 @@ func TestHoldingTakesOneAndLettingThemActTakesTwoOnTheScreen(t *testing.T) {
 	postForm(t, srv, "/security/shield/act", lee, "do=approve&id="+bk.Pending[0].ID)
 	if st, _ := shield.Load(root); st.Watching != nil {
 		t.Fatal("still held")
+	}
+}
+
+// A hold set on the screen, and the approval that lifts it, reach the
+// security contact: a hold nobody hears of is the quiet way to stop the
+// shield acting.
+func TestHoldingAndLettingThemActAgainOnTheScreenAreTold(t *testing.T) {
+	srv, token := setup(t)
+	_, lee := wireShield(t, srv)
+	var told []string
+	srv.ShieldAdmin.TellHold = func(held bool, by, why string) {
+		told = append(told, fmt.Sprintf("%v %s %s", held, by, why))
+	}
+	postForm(t, srv, "/security/shield/act", token, "do=hold&why=a+block+looked+wrong")
+	if len(told) != 1 || told[0] != "true editor a block looked wrong" {
+		t.Fatalf("setting a hold told: %q", told)
+	}
+	postForm(t, srv, "/security/shield/act", token, "do=release&why=fixed")
+	if len(told) != 1 {
+		t.Fatalf("proposing to lift it told as if it were lifted: %q", told)
+	}
+	bk, _ := shield.LoadBook(srv.ShieldAdmin.Root)
+	postForm(t, srv, "/security/shield/act", lee, "do=approve&id="+bk.Pending[0].ID)
+	if len(told) != 2 || told[1] != "false lee fixed" {
+		t.Fatalf("lifting a hold told: %q", told)
 	}
 }
 

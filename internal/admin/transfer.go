@@ -43,6 +43,16 @@ type Transfer struct {
 	Save func(pages map[string]any, message, author, base string) error
 	// SiteName and BaseURL describe this site, for formats that carry them.
 	SiteName, BaseURL string
+	// Banner is the deployment's classification banner, which every
+	// exported file carries, or empty for a deployment that does not mark;
+	// an error when the scheme cannot be read refuses the export. Nil marks
+	// nothing.
+	//
+	// `quilzo export` marked every file and this export marked none,
+	// whatever the scheme said: an export is the copy that ends up on
+	// removable media, and a file with no marking does not look like one
+	// whose marking was lost.
+	Banner func() (string, error)
 }
 
 // MaxImport bounds an uploaded export.
@@ -149,9 +159,20 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 			"to read, %s among them", len(hidden), hidden[0]))
 		return
 	}
+	// The deployment's banner on every file (see Transfer.Banner).
+	banner := ""
+	if s.Transfer.Banner != nil {
+		b, berr := s.Transfer.Banner()
+		if berr != nil {
+			s.transferRedirect(w, r, "", berr.Error())
+			return
+		}
+		banner = b
+	}
 	format := export.Format(r.FormValue("format"))
 	files, err := export.Export(format, export.Site{
 		Pages: pages, Name: s.Transfer.SiteName, BaseURL: s.Transfer.BaseURL,
+		Banner: banner,
 	}, time.Now())
 	if err != nil {
 		s.transferRedirect(w, r, "", err.Error())

@@ -63,9 +63,16 @@ func Indicators() (Source, []Indicator, error) {
 type Standing string
 
 const (
-	// Contributes: Quilzo implements some of the related controls and its
-	// checks on them are passing.
+	// Contributes: Quilzo implements some of the related controls, at least
+	// one of them is checked, and its checks on them are passing.
 	Contributes Standing = "contributes"
+	// Stated: Quilzo implements some of the related controls and nothing
+	// here checks any of them, so its statement is all there is to show.
+	//
+	// A standing of its own because these read as Contributes, whose
+	// promise is a passing check: only a failing check was looked for, and
+	// a control nothing checks can never fail.
+	Stated Standing = "stated"
 	// Failing: a check on a related control is failing now.
 	Failing Standing = "failing"
 	// Elsewhere: Quilzo implements none of the related controls; the
@@ -104,6 +111,7 @@ func Assess(failing map[string][]string) (Source, []Result, error) {
 	var out []Result
 	for _, in := range all {
 		r := Result{Indicator: in, Standing: Elsewhere}
+		fails, checked := false, false
 		for _, c := range in.Controls {
 			im, ok := table[controls.Normal(c)]
 			if !ok || im.Responsibility == controls.Customer {
@@ -113,11 +121,16 @@ func Assess(failing map[string][]string) (Source, []Result, error) {
 			ev := Evidence{Control: im.Control, Responsibility: string(im.Responsibility),
 				Statement: im.Statement, Rules: im.Rules, Failing: failing[controls.Normal(c)]}
 			r.Evidence = append(r.Evidence, ev)
-			if len(ev.Failing) > 0 {
-				r.Standing = Failing
-			} else if r.Standing != Failing {
-				r.Standing = Contributes
-			}
+			fails = fails || len(ev.Failing) > 0
+			checked = checked || len(ev.Rules) > 0
+		}
+		switch {
+		case fails:
+			r.Standing = Failing
+		case checked:
+			r.Standing = Contributes
+		case r.Covered > 0:
+			r.Standing = Stated
 		}
 		sort.Slice(r.Evidence, func(i, j int) bool { return controls.Less(r.Evidence[i].Control, r.Evidence[j].Control) })
 		out = append(out, r)

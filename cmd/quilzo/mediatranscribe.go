@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"strings"
@@ -59,6 +60,9 @@ func mediaTranscribe(root string, args []string) error {
 		return fmt.Errorf("%q is not a language code, like en or fr", tag)
 	}
 	caller := resolveCaller(root, flagToken)
+	if err := mayStoreMade(root, caller, "a caption draft"); err != nil {
+		return err
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	rec, f, model, err := transcribeRecording(ctx, root, caller.Name, rest[0], tag, who)
@@ -74,13 +78,40 @@ func mediaTranscribe(root string, args []string) error {
 	w.Human("  %srecorded as %s by %s, for %s%s\n", dim, f.Origin.SourceType, model, who, reset)
 	w.Human("  %sid %s%s\n", dim, f.ID, reset)
 	w.Human("\n  A model heard the words, not the door closing nor who is speaking. Read it, mend it,\n")
-	w.Human("  then attach it:\n")
 	if rec.Kind == media.Video {
+		w.Human("  then attach it:\n")
 		w.Human("    quilzo media captions %s %s --lang %s\n", shortID(rec.ID), shortID(f.ID), orDefault(tag, "LANG"))
 	} else {
-		w.Human("    as the transcript beside the recording, on the page that plays it\n")
+		// A sound has nothing to attach captions to, and no section plays
+		// one yet. This said to put the words "on the page that plays it",
+		// and there was no such page.
+		w.Human("  then place it by hand: no section plays a recording yet, so link /media/%s\n", rec.ID)
+		w.Human("  from a page and put these words beside the link, as its transcript\n")
 	}
 	return nil
+}
+
+// tooBigToHear says why a recording cannot be sent to be transcribed as it
+// is, and how to get under the limit: why is what taking its sound out
+// said, nil when there is no ffmpeg to take it out with.
+func tooBigToHear(rec media.File, size int, why error) error {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s is %d MB, and a recording sent to be transcribed is at most %d MB, the most the "+
+		"transcription endpoints take. ", shortID(rec.ID), (size+1<<20-1)>>20, assist.MaxTranscribeBytes>>20)
+	if why != nil {
+		fmt.Fprintf(&b, "Its sound alone is all they hear, and it could not be sent: %v", why)
+		return errors.New(b.String())
+	}
+	b.WriteString("Its sound alone is all they hear, about fifteen MB an hour, and it is taken out here when " +
+		"ffmpeg is installed, which it is not. Install it, or take the sound out, store it and transcribe that:\n" +
+		"  ffmpeg -i RECORDING -vn -ac 1 -ar 16000 -b:a 32k sound.mp3\n" +
+		"  quilzo media add sound.mp3\n" +
+		"  quilzo media transcribe SOUND --lang LANG --author WHO")
+	if rec.Kind == media.Video {
+		fmt.Fprintf(&b, "\nThe draft is timed as the video is, so it attaches to it: quilzo media captions %s DRAFT --lang LANG",
+			shortID(rec.ID))
+	}
+	return errors.New(b.String())
 }
 
 // transcribeRecording drafts a recording's captions and stores them,
@@ -97,10 +128,16 @@ func transcribeRecording(ctx context.Context, root, person, id, lang, author str
 	if rec.Kind != media.Video && rec.Kind != media.Audio {
 		return media.File{}, media.File{}, "", fmt.Errorf("%s is a %s; a recording is a video or a sound", shortID(rec.ID), rec.Kind)
 	}
+	name := "recording" + rec.Extension()
 	if len(body) > assist.MaxTranscribeBytes {
-		return media.File{}, media.File{}, "", errBlocked{fmt.Errorf("%s is %d MB, and a recording sent to be "+
-			"transcribed is at most %d MB: send its sound alone, smaller", shortID(rec.ID), len(body)>>20,
-			assist.MaxTranscribeBytes>>20)}
+		// The sound alone, which is all a transcription hears: see
+		// media.SoundFrom. This refused anything over the limit with "send
+		// its sound alone, smaller", and nothing here took it out.
+		sound, err := media.SoundFrom(body, assist.MaxTranscribeBytes)
+		if sound == nil {
+			return media.File{}, media.File{}, "", errBlocked{tooBigToHear(rec, len(body), err)}
+		}
+		body, name = sound, "recording.m4a"
 	}
 	gw, _, err := modelGateway(root)
 	if err != nil {
@@ -114,7 +151,6 @@ func transcribeRecording(ctx context.Context, root, person, id, lang, author str
 	if person != "" {
 		consumers = append(consumers, "person:"+person)
 	}
-	name := "recording" + rec.Extension()
 	// The endpoints take a language's two letters: pt-BR is spoken pt.
 	spoken, _, _ := strings.Cut(lang, "-")
 	if len(spoken) != 2 {

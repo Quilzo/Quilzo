@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/quilzo/quilzo/internal/audit"
 )
@@ -124,12 +125,20 @@ func (l *Log) Edit(id string, r Revision) (*Message, error) {
 }
 
 // Remove takes a message's text away and leaves the shape.
+//
+// Once, except that an erasure outranks a removal that kept the words. A
+// message its author deleted or a moderator took down keeps them in the
+// log, for whoever has to answer for the removal, and an erasure of it was
+// refused as "already removed": the one removal that takes the words out
+// of the log could never reach the messages most likely to be asked about.
+// The erasure's tombstone takes the place of the earlier one, which the
+// audit log still records.
 func (l *Log) Remove(id string, t Tombstone) (*Message, error) {
 	m, ok := l.byID[id]
 	if !ok {
 		return nil, fmt.Errorf("there is no message %s here", id)
 	}
-	if m.Deleted != nil {
+	if m.Deleted != nil && !(t.Why.Erases() && m.holdsWords()) {
 		return nil, fmt.Errorf("%s was already removed on %s", id,
 			m.Deleted.At.Format("2006-01-02"))
 	}
@@ -150,6 +159,12 @@ func (l *Log) Remove(id string, t Tombstone) (*Message, error) {
 // Content and never shape. A room that has been running for three years
 // still says how much was said and when, which is the knowledge that is
 // otherwise lost and the record an auditor asks for.
+//
+// The words a removal kept go too. A message with a tombstone was passed
+// over, so the words of one its author deleted, or a moderator took down,
+// stayed in the log for as long as the room lasted, whatever period it
+// declared. That message keeps its tombstone, which is what a reader was
+// told; only the words go.
 func (l *Log) Expire(now time.Time) int {
 	if l.room.Retention <= 0 {
 		return 0
@@ -158,15 +173,29 @@ func (l *Log) Expire(now time.Time) int {
 	var n int
 	for _, id := range l.order {
 		m := l.byID[id]
-		if m.Deleted != nil || !m.At.Before(cutoff) {
+		if !m.holdsWords() || !m.At.Before(cutoff) {
 			continue
 		}
-		m.Deleted = &Tombstone{At: now, By: "retention",
-			Kind: audit.KindService, Why: ByRetention}
+		if m.Deleted == nil {
+			m.Deleted = &Tombstone{At: now, By: "retention",
+				Kind: audit.KindService, Why: ByRetention}
+		}
 		m.Revisions = []Revision{{At: m.At, By: m.Author}}
 		n++
 	}
 	return n
+}
+
+// holdsWords reports whether any of a message's revisions still carries
+// text: a message that was never removed, or one whose removal kept the
+// words in the log. An erasure and retention leave none.
+func (m Message) holdsWords() bool {
+	for _, r := range m.Revisions {
+		if r.Text != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // Get returns one message.
@@ -194,6 +223,20 @@ func (l *Log) All() []Message {
 	return out
 }
 
+// Arrived returns every message in the order this log received them.
+//
+// Not the order to show a reader, which All is, but the order to store
+// them in: a reply is accepted only after the message it answers, and two
+// clocks that disagree can put a reply before its parent by time, so a
+// file written in All's order may not replay.
+func (l *Log) Arrived() []Message {
+	out := make([]Message, 0, len(l.order))
+	for _, id := range l.order {
+		out = append(out, *l.byID[id])
+	}
+	return out
+}
+
 // Thread returns a message and its replies, in order.
 func (l *Log) Thread(id string) ([]Message, error) {
 	parent, ok := l.byID[id]
@@ -213,6 +256,14 @@ func (l *Log) Thread(id string) ([]Message, error) {
 	return out, nil
 }
 
+// MaxEmoji is the longest a reaction may be, in bytes.
+//
+// Room for a shortcode, or for an emoji with its skin tone and joiners, and
+// not for a sentence. A reaction holds no digest in the audit log and is not
+// taken away when the message under it is erased, so a reaction that could
+// carry words would be a second way to say something that skips both.
+const MaxEmoji = 32
+
 // React records a reaction.
 func (l *Log) React(r Reaction) error {
 	if _, ok := l.byID[r.Message]; !ok {
@@ -220,6 +271,18 @@ func (l *Log) React(r Reaction) error {
 	}
 	if strings.TrimSpace(r.Emoji) == "" || strings.TrimSpace(r.By) == "" {
 		return fmt.Errorf("a reaction needs an emoji and somebody")
+	}
+	if len(r.Emoji) > MaxEmoji ||
+		strings.ContainsFunc(r.Emoji, func(c rune) bool {
+			return unicode.IsSpace(c) || unicode.IsControl(c)
+		}) {
+		return fmt.Errorf("a reaction is one emoji or a shortcode such as "+
+			"+1, at most %d bytes with no spaces; a sentence is a message",
+			MaxEmoji)
+	}
+	if !l.room.Holds(r.By) {
+		return fmt.Errorf("%s is not in %s. Reacting to what is said there "+
+			"is reading it", r.By, l.room.ID)
 	}
 	if r.At.IsZero() {
 		return fmt.Errorf("a reaction needs a time")

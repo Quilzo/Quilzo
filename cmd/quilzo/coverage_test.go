@@ -190,10 +190,17 @@ var coverage = map[string]surfaces{
 	},
 
 	// What a situation can hand somebody that a grant did not.
+	// The note said the authority is exercised in "the call, the incident
+	// or the board, each of which has its own screen": the call has none,
+	// there is no incident here, and the board was not in the register.
 	"standing": {
 		Why: "it prints this program's own register of situational " +
-			"authority; where that authority is exercised is the call, " +
-			"the incident or the board, each of which has its own screen",
+			"authority, a table that reads in a terminal; the authority is " +
+			"exercised where each situation is — a shared draft and a " +
+			"handoff conversation on the public site, an enrolment link " +
+			"and a page's share links in the admin, an agent run wherever " +
+			"it was started, a room and the call demonstrations on the " +
+			"command line",
 		NoMCP: "this is the table that says which powers survive their " +
 			"situation, and a model editing it would be reclassifying an " +
 			"escalation as contained",

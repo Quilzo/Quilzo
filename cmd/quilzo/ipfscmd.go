@@ -10,11 +10,13 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/quilzo/quilzo/internal/admin"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/ipfs"
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 // Computing what the permanent web will call your site.
@@ -272,4 +274,37 @@ func renderBundle(root, tplDir string) (map[string][]byte, error) {
 		}
 	}
 	return files, nil
+}
+
+// decentralisedFor is what the Permanent web screen renders the published
+// site from: renderBundle, the bundle `quilzo ipfs` and the content_id tool
+// use, so the screen's identifier is theirs. The screen rendered a bundle
+// of its own, and gave a different identifier for the same site.
+func decentralisedFor(root, tplDir string, s *store.Store, design *Design) *admin.Decentralised {
+	return &admin.Decentralised{
+		Bundle:     func() (map[string][]byte, error) { return renderBundle(root, tplDir) },
+		Pages:      func() (map[string]any, error) { return site.PagesAt(s, site.RefLive) },
+		Stylesheet: func() string { return design.Stylesheet },
+		Media: func() (map[string][]byte, error) {
+			lib, err := openMedia(root)
+			if err != nil {
+				return nil, err
+			}
+			all, err := lib.List()
+			if err != nil {
+				return nil, err
+			}
+			out := map[string][]byte{}
+			for _, f := range all {
+				_, body, gerr := lib.Get(f.ID)
+				if gerr != nil {
+					continue
+				}
+				// The same path the public server uses, so an image reference
+				// in a page resolves identically on IPFS.
+				out["media/"+f.ID] = body
+			}
+			return out, nil
+		},
+	}
 }

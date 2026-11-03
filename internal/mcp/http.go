@@ -203,7 +203,7 @@ func (e *Endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	version, verr := e.version(r, req)
+	version, verr := Negotiate(r, req)
 	if verr != nil {
 		writeRPC(w, http.StatusBadRequest, Response{JSONRPC: "2.0", ID: req.ID, Error: verr})
 		return
@@ -230,7 +230,7 @@ func (e *Endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			e.notFound(w, req, modern)
 			return
 		}
-		writeRPC(w, http.StatusOK, Response{JSONRPC: "2.0", ID: req.ID, Result: srv.initialize(legacyVersion(req))})
+		writeRPC(w, http.StatusOK, Response{JSONRPC: "2.0", ID: req.ID, Result: srv.initialize(LegacyVersion(req))})
 		return
 	case "ping":
 		if modern {
@@ -278,9 +278,15 @@ func (e *Endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	e.notFound(w, req, modern)
 }
 
-// version decides which revision a request speaks, and checks a modern
+// Negotiate decides which revision a request speaks, and checks a modern
 // request's headers against its body.
-func (e *Endpoint) version(r *http.Request, req Request) (string, *Error) {
+//
+// Exported for a server that answers MCP over HTTP without this transport —
+// the public site's /mcp, which has no credentials to ask for — so the two
+// decide by one set of rules from one list of revisions. That one answered
+// every client with a single revision of its own and was never told when
+// the list here grew.
+func Negotiate(r *http.Request, req Request) (string, *Error) {
 	header := strings.TrimSpace(r.Header.Get("MCP-Protocol-Version"))
 	meta := metaOf(req.Params)
 	var bodyVersion string
@@ -294,7 +300,7 @@ func (e *Endpoint) version(r *http.Request, req Request) (string, *Error) {
 	switch {
 	case header == "" && req.Method == "initialize":
 		// The legacy opening, before a client has a version to state.
-		return legacyVersion(req), nil
+		return LegacyVersion(req), nil
 	case header == "" && bodyVersion == "":
 		// What 2025-03-26 clients sent: no header at all.
 		return "2025-03-26", nil
@@ -333,9 +339,10 @@ func (e *Endpoint) version(r *http.Request, req Request) (string, *Error) {
 		Data: map[string]any{"supported": Supported(), "requested": header}}
 }
 
-// legacyVersion is the revision a legacy client asked for in initialize, or
-// the newest legacy one when it asked for something else.
-func legacyVersion(req Request) string {
+// LegacyVersion is the revision a legacy client asked for in initialize, or
+// the newest legacy one when it asked for something else: what initialize
+// is answered with.
+func LegacyVersion(req Request) string {
 	var p struct {
 		ProtocolVersion string `json:"protocolVersion"`
 	}

@@ -5,6 +5,7 @@ package studio
 
 import (
 	"bytes"
+	"errors"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -148,6 +149,38 @@ func TestTheScriptUsesNoDangerousSinks(t *testing.T) {
 	}
 }
 
+// Sound is recorded only when somebody asks for it, and the page says whose
+// voices that takes in.
+//
+// The recorder asked the browser for the screen's audio every time, with no
+// way to say no and nothing on the page about it. Sound takes in everybody
+// who can be heard, and in many places recording a conversation needs the
+// agreement of everyone in it, so it is a box to tick, unticked, beside a
+// line that says so.
+func TestSoundIsOffUntilSomebodyAsksForIt(t *testing.T) {
+	srv, secret := wired(t)
+	body := signedIn(t, srv, secret, "/", nil, "").Body.String()
+	script := body[strings.Index(body, "<script"):]
+	if regexp.MustCompile(`audio:\s*true`).MatchString(script) {
+		t.Error("the recorder asks for sound whatever anybody wants")
+	}
+	if !strings.Contains(script, "audio: sound.checked") {
+		t.Error("the recorder does not ask for sound by the box")
+	}
+	box := regexp.MustCompile(`<input[^>]*id="sound"[^>]*>`).FindString(body)
+	if box == "" || !strings.Contains(box, `type="checkbox"`) {
+		t.Fatalf("there is no box to ask for sound: %q", box)
+	}
+	if strings.Contains(box, "checked") {
+		t.Errorf("sound is asked for unless somebody says no: %s", box)
+	}
+	// As a reader sees it, the markup's line breaks folded.
+	if !strings.Contains(strings.Join(strings.Fields(body), " "),
+		"everybody who can be heard") {
+		t.Error("the page does not say whose voices sound takes in")
+	}
+}
+
 // It loads nothing from anywhere else, which is what lets the policy name no
 // host at all.
 func TestThePageLoadsNothingExternal(t *testing.T) {
@@ -271,6 +304,40 @@ func TestWrongTokensAreThrottled(t *testing.T) {
 		t.Errorf("thirty wrong tokens produced %d refusals and never a 429; "+
 			"this is the door the admin's own form was measured leaving open",
 			refused)
+	}
+}
+
+// Each request is decided by the store as it is now.
+//
+// The studio read its tokens and its policy once, at start, so a revoked
+// token kept recording until it restarted. With Reload wired, what the
+// store says at the moment of the request is what counts; and a store that
+// cannot be read decides nothing.
+func TestEachRequestIsDecidedByTheStoreAsItIsNow(t *testing.T) {
+	srv, secret := wired(t)
+	pol := srv.Policy
+	srv.Reload = func() (*auth.Policy, *auth.TokenStore, error) {
+		return pol, &auth.TokenStore{}, nil // the token is gone from it
+	}
+	body, ct := oneRecording(t, "clip.webm", webmBytes())
+	if rec := signedIn(t, srv, secret, "/upload", body, ct); rec.Code != http.StatusUnauthorized {
+		t.Errorf("a token the store no longer holds uploaded, answering %d", rec.Code)
+	}
+
+	srv.Reload = func() (*auth.Policy, *auth.TokenStore, error) {
+		return nil, nil, errors.New("tokens.json: unexpected end of JSON input")
+	}
+	page := signedIn(t, srv, secret, "/", nil, "")
+	if strings.Contains(page.Body.String(), "<script") {
+		t.Error("the recorder was served while the store could not be read")
+	}
+	form := bytes.NewBufferString("token=" + secret)
+	req := httptest.NewRequest(http.MethodPost, "/signin", form)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("signing in against a store that cannot be read answered %d", rec.Code)
 	}
 }
 

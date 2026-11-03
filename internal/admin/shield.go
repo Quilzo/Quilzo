@@ -42,6 +42,12 @@ type ShieldAdmin struct {
 	// during a lockdown, with a passkey or single sign-on. Nil means it
 	// cannot be told, and a lockdown is not set from the screen.
 	CanLockdown func() bool
+	// TellHold tells the security contact that every playbook was held to
+	// watching (held), or let act again, by whom and why. A hold used to
+	// reach nobody, setting it or lifting it, and stopping the shield
+	// acting is the first thing somebody with a stolen administrator's
+	// session would do. Nil tells nobody.
+	TellHold func(held bool, by, why string)
 }
 
 // shieldProtection is one protection, for the screen.
@@ -98,7 +104,8 @@ func (s *Server) handleShield(w http.ResponseWriter, r *http.Request) {
 }
 
 func shieldFeatures() []map[string]string {
-	keys := []string{"chatbots", "search-answers", "forms", "boards", "signup", "uploads", "api", "mcp", "scim", "import", "feeds"}
+	keys := []string{"chatbots", "search-answers", "forms", "boards", "signup", "bookings", "newsletter", "fediverse",
+		"uploads", "api", "mcp", "scim", "import", "feeds"}
 	var out []map[string]string
 	for _, k := range keys {
 		out = append(out, map[string]string{"Key": k, "Words": shield.Features[k]})
@@ -449,6 +456,9 @@ func (s *Server) handleShieldAct(w http.ResponseWriter, r *http.Request) {
 		}
 		audit("held", map[string]string{"why": why})
 		changed()
+		if s.ShieldAdmin.TellHold != nil {
+			s.ShieldAdmin.TellHold(true, p.Name, why)
+		}
 		back("m", "Every playbook now watches. Letting them act again takes a second administrator.")
 	case "release":
 		q, err := shield.ProposeRelease(root, why, p.Name, now)
@@ -493,6 +503,9 @@ func (s *Server) handleShieldAct(w http.ResponseWriter, r *http.Request) {
 		audit("playbook-"+q.Outcome, map[string]string{"proposal": q.ID, "change": shieldProposalWords(q),
 			"proposed_by": q.By, "alone": strconv.FormatBool(q.Alone)})
 		changed()
+		if q.Release && q.Outcome == "approved" && s.ShieldAdmin.TellHold != nil {
+			s.ShieldAdmin.TellHold(false, p.Name, q.Why)
+		}
 		back("m", shieldProposalWords(q)+": "+q.Outcome+".")
 	case "withdraw":
 		q, err := shield.Withdraw(root, id, p.Name, now)

@@ -4,6 +4,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	stdpath "path"
 	"regexp"
@@ -51,6 +52,9 @@ type need struct {
 	// operating-system account the store belongs to may start it without a
 	// token; anybody else still needs action. See startedByStoreOwner.
 	server bool
+	// hint is said after a refusal, where the action alone does not tell
+	// somebody why this command needs it.
+	hint string
 }
 
 // commandNeeds is keyed by "command" or by "command subcommand" where the
@@ -193,10 +197,23 @@ var commandNeeds = map[string]need{
 	// Strict parent, narrowing children — see the note on posture. Pointing
 	// every reader at a different audit log is an operator act, so the parent
 	// takes that answer and the seven reading subcommands step down from it.
-	"auditlog":  {action: auth.ActGrant},
-	"anchor":    {action: auth.ActView},
-	"timestamp": {action: auth.ActView},
-	"stamp":     {action: auth.ActView},
+	"auditlog": {action: auth.ActGrant},
+	// Submitting, upgrading and stamping send the publication's digest to
+	// outside services and write what they return, which is what `auditlog
+	// anchor` does with the log's, and that takes grant. These were view as
+	// a whole, so a reader or an auditor could do all three. Strict parents,
+	// so a subcommand added later arrives guarded; reading and exporting
+	// what is kept step down, and a bare command is asked as the read it
+	// runs (bareRuns).
+	"anchor":           {action: auth.ActGrant},
+	"anchor status":    {action: auth.ActView},
+	"anchor export":    {action: auth.ActView},
+	"timestamp":        {action: auth.ActGrant},
+	"timestamp list":   {action: auth.ActView},
+	"timestamp export": {action: auth.ActView},
+	"stamp":            {action: auth.ActGrant},
+	"stamp list":       {action: auth.ActView},
+	"stamp export":     {action: auth.ActView},
 
 	// -- writing content
 	"add": {action: auth.ActEditDraft},
@@ -307,24 +324,6 @@ var commandNeeds = map[string]need{
 	"personalise list": {action: auth.ActView},
 	"personalise test": {action: auth.ActView},
 
-	// Planting a canary commits the organisation to acting when it fires,
-	// and puts a row in the audit log saying so. The same weight as a
-	// publish. The three subcommands that read a register the operator
-	// already holds are checked as views below — including mint, which
-	// writes nothing anywhere and produces random characters that are not a
-	// canary until somebody plants them.
-	// Deleting stored evidence and placing or lifting a hold are statements
-	// the organisation stands behind and cannot undo, so the default for the
-	// group is a publish. Storing events is an ordinary write, and the two
-	// that only read are views.
-	// Sending a notice is the organisation speaking to its customers and to
-	// a regulator, and an erasure cannot be undone: both are publishes.
-	// Adding a contact and recording an objection are ordinary writes, and
-	// the three that only read are views.
-	// Merging two people's records reports one person's device compliance
-	// as another's, and the merge is appended to the audit chain rather
-	// than edited afterwards: the same authority as publishing. Reading the
-	// reconciliation is a view.
 	// Saying something is an ordinary write. Taking down somebody else's
 	// words, or erasing under Article 17, is checked as a publish inside
 	// the command because the answer depends on whose message it is.
@@ -469,10 +468,17 @@ var commandNeeds = map[string]need{
 	// Checking a manifest changes nothing, and the person most likely to ask
 	// is an auditor who has been given view and nothing else. Inheriting the
 	// parent's edit-draft would shut the check to exactly them.
-	"media verify":       {action: auth.ActView},
-	"media edit":         {action: auth.ActEditDraft},
-	"media generate":     {action: auth.ActEditDraft},
-	"media film":         {action: auth.ActEditDraft},
+	"media verify": {action: auth.ActView},
+	"media edit":   {action: auth.ActEditDraft},
+	// Making a picture, a video or a voice, or hearing a recording, asks the
+	// store's models, as assist, agent draft and evolve run do, and needs
+	// what they need: an author denied use-models was refused the writing
+	// assistant and could still spend the models on media. Storing what
+	// comes back stays an author's, checked inside (mayStoreMade).
+	"media generate":     {action: auth.ActUseModels, hint: mediaModelsHint},
+	"media film":         {action: auth.ActUseModels, hint: mediaModelsHint},
+	"media speak":        {action: auth.ActUseModels, hint: mediaModelsHint},
+	"media transcribe":   {action: auth.ActUseModels, hint: mediaModelsHint},
 	"media captions":     {action: auth.ActEditDraft},
 	"agent probe":        {action: auth.ActView},
 	"media remove":       {action: auth.ActEditDraft},
@@ -1092,6 +1098,20 @@ func min3(a, b, c int) int {
 	return a
 }
 
+// errHelpOnly is authoriseCommand's answer to somebody who asked how to use
+// a command they may not run: main shows them the usage, and the command
+// does not run.
+//
+// A command line carrying -h, --help or help was let through to the command
+// itself, so that asking needed no authority. Most commands take "help" as
+// one more argument and ignore it, a flag parser stops at the first argument
+// that is not a flag, and some commands read no arguments at all, so the
+// command ran: a reader's `quilzo timestamp stamp help` sent the
+// publication's digest to an authority, `quilzo anchor upgrade -h` rewrote
+// the proofs, and `quilzo auth grant NAME admin help` proposed the grant.
+// Somebody who may run the command still gets its own help.
+var errHelpOnly = errors.New("help was asked for, by somebody who may not run the command")
+
 // authoriseCommand is the single point every command passes through.
 func authoriseCommand(root, cmd string, args []string) error {
 	n, ok := lookupNeed(cmd, args)
@@ -1139,10 +1159,12 @@ func authoriseCommand(root, cmd string, args []string) error {
 	if n.action == auth.ActToken && bootstrapIssue(root, cmd, args) {
 		return nil
 	}
-	// Asking a command for help must not require the authority to run it.
+	// Asking a command for help must not require the authority to run it,
+	// and must not run it for somebody who has none: see errHelpOnly.
+	help := false
 	for _, a := range args {
 		if a == "-h" || a == "--help" || a == "help" {
-			return nil
+			help = true
 		}
 	}
 
@@ -1156,6 +1178,12 @@ func authoriseCommand(root, cmd string, args []string) error {
 	// the second page be worked around by naming a permitted page alongside it.
 	for _, resource := range resources {
 		if err := authorise(root, caller, n.action, resource); err != nil {
+			if help {
+				// Not a refusal on the record: nothing was attempted. The
+				// reason goes with it, so whoever asked can tell help from
+				// a command that did nothing.
+				return fmt.Errorf("%w, so it was not run: %v", errHelpOnly, err)
+			}
 			sub := cmd
 			if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 				sub = cmd + " " + args[0]
@@ -1164,6 +1192,9 @@ func authoriseCommand(root, cmd string, args []string) error {
 				map[string]string{"reason": "authorisation"}))
 			if n.server {
 				return fmt.Errorf("%w\n%s", err, storeOwnerHint(root))
+			}
+			if n.hint != "" {
+				return fmt.Errorf("%w\n%s", err, n.hint)
 			}
 			return err
 		}
@@ -1259,7 +1290,20 @@ func commandArea(cmd string, args []string) (string, bool) {
 	return a, ok
 }
 
+// bareRuns is the subcommand a bare command runs, for a command whose own
+// row is strict and whose bare form only reads. Its dispatch reads the same
+// entry, so the two cannot disagree about what a bare command does.
+//
+// `anchor`, `timestamp` and `stamp` took grant as a whole so that sending a
+// digest out stopped being a reader's act, and their bare forms, which show
+// the proofs and the stamps, would have gone with them: a reader running
+// `quilzo anchor` would have been refused what `quilzo anchor status` shows.
+var bareRuns = map[string]string{"anchor": "status", "timestamp": "list", "stamp": "list"}
+
 func lookupNeed(cmd string, args []string) (need, bool) {
+	if sub, ok := bareRuns[cmd]; ok && len(args) == 0 {
+		args = []string{sub}
+	}
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		if n, ok := commandNeeds[cmd+" "+args[0]]; ok {
 			return n, true

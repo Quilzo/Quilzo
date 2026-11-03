@@ -7,6 +7,61 @@ has the rest.
 Unreleased
 ==========
 
+** Kept features made right
+
+*** Self-defence tells its owner: a hold on the shield's playbooks no
+    longer silences its alerts (a decoy touched during a hold is still
+    told), and holding and letting the playbooks act again are both told.
+    Alerts that have nowhere to go are a posture finding (alerts.unrouted),
+    and a mail that could not be sent is a failure on the record.  A flaw in
+    this build is told once a day, not every hour.  Sign-in mails say what
+    happens next.  A break-glass recovery is told to the security contact.
+    A missing or month-old catalogue of exploited flaws is said by self
+    check and is a posture finding (self.kev-missing).
+
+*** Compliance evidence says what the code does: compliance summary counts
+    the quantum-broken algorithms it generates (it printed "none"), the
+    control and pledge statements say what is automatic and which server
+    checks itself, a FedRAMP indicator nothing checks is "stated", and
+    posture scan --oscal keeps accepted risks as not satisfied, with who
+    accepted them.  A timestamp is over the full live commit, the subject an
+    anchor commits to, so each shows the other; anchors say whether they are
+    of a publication or a log head, and quilzo anchor export writes the .ots
+    files the ots client reads.  Sending a digest out (anchor submit and
+    upgrade, timestamp stamp) takes grant and is on the record.  The
+    classification marking gate refuses what it cannot read, instead of
+    letting it through.
+
+*** Rooms keep their word: erasing a message rewrites the room so no
+    byte of it is left on disk (copies already in backups age out with
+    them), a room's retention is applied by the admin's sweep, a closed or
+    direct room is read only by its members, reactions are kept (quilzo
+    room react), and the room list shows what is unread.
+
+*** The studio follows a revoked token without a restart, records what it
+    uploads as the token's holder, and records sound only when somebody
+    ticks "Record sound too", with a notice to ask the people it will hear.
+
+*** Share links keep a digest of their secret, not the secret, and are
+    matched in constant time; links already given out keep working.
+    quilzo desktop consent fails when it could not ask.
+
+*** A research plan reads as signed only when its signature checks.
+    Making pictures, video and voice (media generate, film, speak,
+    transcribe) needs use-models, as assist and evolve run do.  A recording
+    over the 25 MB a transcription service takes is transcribed from its
+    sound alone when ffmpeg is installed.  quilzo cell warm makes the
+    snapshot every cell session restores.  The chatbot and research find
+    figures with one detector.
+
+*** The shield can turn down bookings, the newsletter and the fediverse,
+    which it was asked about and could never switch off.  Replica answers
+    are private to shared caches.  An agent card that does not validate is
+    left out of a static copy instead of failing it.  The Permanent web
+    screen gives the same content identifier as quilzo ipfs id, and no
+    longer bundles members-only or scheduled pages.  The public /mcp
+    negotiates the MCP revision as the admin's does.
+
 ** Fixes from a security review of the whole program
 
 *** The admin and the site start for the account the store belongs to.

@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -209,6 +210,83 @@ func PosterFrom(format string, body []byte, at float64) ([]byte, error) {
 		return nil, fmt.Errorf("ffmpeg returned something that is not a PNG")
 	}
 	return out.Bytes(), nil
+}
+
+// soundTimeout bounds taking a recording's sound out. Longer than a probe:
+// the whole recording is read, and an hour of it on a slow disk is an
+// ordinary reason to take a minute.
+const soundTimeout = 5 * time.Minute
+
+// SoundFrom takes a recording's sound alone, as speech needs it to be
+// heard: one channel at 16 kHz, AAC at 32 kbit/s in an M4A, about fifteen
+// megabytes an hour. What comes back is at most max bytes and checked to
+// be an MP4 container, as a poster is checked to be a PNG. No ffmpeg here
+// is nil and no error, as for a poster: the caller says what that leaves a
+// person to do.
+//
+// For transcription. An endpoint takes a recording of at most 25 MB and
+// the library a video of up to 512, so captions could be drafted only for
+// a video of a few minutes, though every word is in its sound and the
+// sound alone of an hour fits. It is written to a file, not a pipe,
+// because an M4A's index is written last, at the front.
+func SoundFrom(body []byte, max int) ([]byte, error) {
+	bin, ok := HaveFFmpeg()
+	if !ok {
+		return nil, nil
+	}
+	in, cleanup, err := spill(body)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+	out, err := os.CreateTemp("", "quilzo-sound-*.m4a")
+	if err != nil {
+		return nil, err
+	}
+	out.Close()
+	defer os.Remove(out.Name())
+
+	ctx, cancel := context.WithTimeout(context.Background(), soundTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, bin,
+		"-v", "error", "-hide_banner", "-nostdin",
+		"-protocol_whitelist", "file",
+		"-i", in,
+		// The first sound and nothing else: no picture, no subtitles and no
+		// data leave with it.
+		"-map", "0:a:0", "-vn", "-sn", "-dn",
+		"-ac", "1", "-ar", "16000", "-c:a", "aac", "-b:a", "32k",
+		"-f", "ipod", "-y", out.Name())
+	var errb bytes.Buffer
+	cmd.Stderr = &limitedWriter{to: &errb, left: 4096}
+	if err := cmd.Run(); err != nil {
+		said, _, _ := strings.Cut(strings.TrimSpace(errb.String()), "\n")
+		if strings.Contains(said, "matches no streams") {
+			return nil, fmt.Errorf("it has no sound to hear")
+		}
+		if len(said) > 200 {
+			said = said[:200]
+		}
+		return nil, fmt.Errorf("ffmpeg could not take its sound out: %v %s", err, said)
+	}
+	// Measured before it is read, so a sound too long for the limit is
+	// refused whole rather than read and then refused, and never cut short:
+	// a transcript of the first part of a recording would pass for all of it.
+	st, err := os.Stat(out.Name())
+	if err != nil {
+		return nil, err
+	}
+	if st.Size() > int64(max) {
+		return nil, fmt.Errorf("its sound alone is %d MB, still over %d MB", (st.Size()+1<<20-1)>>20, max>>20)
+	}
+	b, err := os.ReadFile(out.Name())
+	if err != nil {
+		return nil, err
+	}
+	if err := verifyISOBMFF(b); err != nil {
+		return nil, fmt.Errorf("ffmpeg returned something that is not an M4A: %w", err)
+	}
+	return b, nil
 }
 
 // spill writes bytes to a temporary file and returns how to remove it.

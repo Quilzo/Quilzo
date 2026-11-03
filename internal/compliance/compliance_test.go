@@ -79,7 +79,7 @@ func TestEveryAlgorithmIsFullyDescribed(t *testing.T) {
 			t.Errorf("%s has quantum status %q", a.Name, a.Quantum)
 		}
 		switch a.Use {
-		case Generated, Verified:
+		case Generated, Verified, Demonstration:
 		default:
 			t.Errorf("%s has use %q", a.Name, a.Use)
 		}
@@ -361,5 +361,92 @@ func TestAnAlgorithmThisProgramSignsWithIsNotListedAsOnlyVerified(t *testing.T) 
 	if len(found) == 0 {
 		t.Error("no signing call was found anywhere, which means this test " +
 			"scanned nothing and would pass whatever the inventory said")
+	}
+}
+
+// demonstrations are the commands that run a call, its keys and its media
+// against identities made for the run, and the packages only they reach.
+// Nothing a deployment does on its own calls any of them.
+var (
+	demoCommands = map[string]bool{"callcmd.go": true, "huddlecmd.go": true, "scribecmd.go": true,
+		"sframecmd.go": true, "screencmd.go": true, "errandcmd.go": true, "annotatecmd.go": true}
+	demoPackages = map[string]bool{"groupkey": true, "sframe": true, "huddle": true, "scribe": true,
+		"errand": true, "screen": true, "annotate": true}
+)
+
+// The inventory claimed product use of call cryptography that only the
+// terminal demonstrations reach. ML-KEM with X25519 was "generated" for "the
+// per-epoch secret of a call", HKDF for "per-sender media keys", and
+// Ed25519 and ML-DSA named groupkey where they are used, while no call, key
+// agreement or media encryption runs anywhere but `quilzo call`, `huddle`,
+// `scribe` and their kind. An agency hands this to a client as what the
+// product does. So a package only demonstrations reach is not named where
+// an algorithm is used, and an algorithm only they reach says so in its use.
+func TestCallCryptographyIsMarkedAsDemonstrationOnly(t *testing.T) {
+	importRe := regexp.MustCompile(`"(crypto/[a-z0-9/]+|github\.com/quilzo/quilzo/internal/[a-z0-9]+)"`)
+	// crypto package -> where it is imported, split by what reaches it.
+	demo, product := map[string]map[string]bool{}, map[string]map[string]bool{}
+	for _, root := range []string{"..", filepath.Join("..", "..", "cmd")} {
+		_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+			if err != nil || info.IsDir() || !strings.HasSuffix(path, ".go") ||
+				strings.HasSuffix(path, "_test.go") || strings.Contains(path, "/compliance/") {
+				return nil
+			}
+			body, rerr := os.ReadFile(path)
+			if rerr != nil {
+				return nil
+			}
+			dir := filepath.Base(filepath.Dir(path))
+			isDemo := demoPackages[dir] || demoCommands[filepath.Base(path)]
+			for _, m := range importRe.FindAllStringSubmatch(string(body), -1) {
+				imp := m[1]
+				if pkg, ok := strings.CutPrefix(imp, "github.com/quilzo/quilzo/internal/"); ok {
+					// Only demonstrations may reach a demonstration package,
+					// or the marking below would understate what ships.
+					if demoPackages[pkg] && !isDemo {
+						t.Errorf("%s reaches internal/%s, which the inventory treats as "+
+							"reached only by the demonstrations", filepath.ToSlash(path), pkg)
+					}
+					continue
+				}
+				into := product
+				if isDemo {
+					into = demo
+				}
+				if into[imp] == nil {
+					into[imp] = map[string]bool{}
+				}
+				into[imp][dir] = true
+			}
+			return nil
+		})
+	}
+	if len(demo) == 0 {
+		t.Fatal("no demonstration imports any cryptography; this test has stopped looking")
+	}
+
+	for _, a := range Inventory() {
+		onlyDemo := true
+		for _, p := range strings.Split(a.Package, ",") {
+			pkg := strings.TrimSpace(p)
+			if len(product[pkg]) > 0 || len(demo[pkg]) == 0 {
+				onlyDemo = false
+			}
+		}
+		// Compared as a string so this reads the same before and after the
+		// use was named.
+		if onlyDemo != (string(a.Use) == "demonstration") {
+			t.Errorf("%s: only the demonstrations reach it is %v, and its use is %q",
+				a.Name, onlyDemo, a.Use)
+		}
+		if onlyDemo {
+			continue
+		}
+		for _, w := range strings.Split(a.Where, ",") {
+			if name := strings.Fields(strings.TrimSpace(w)); len(name) > 0 && demoPackages[name[0]] {
+				t.Errorf("%s names %s where it is used, and only the demonstrations reach %s",
+					a.Name, name[0], name[0])
+			}
+		}
 	}
 }

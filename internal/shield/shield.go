@@ -102,6 +102,12 @@ const (
 // Features are what a feature shield may name: the public surfaces an
 // attacker can reach and a site can do without for an hour. The admin's
 // sign-in, its screens and this package's own are deliberately absent.
+//
+// Every name a handler asks the shield about has to be here, because
+// Validate refuses any other: the fediverse inbox, bookings and the
+// newsletter sign-up were each checked by the public site and missing from
+// this map, so their switches could never be turned on. A test reads every
+// such call in the source and holds it against this map.
 var Features = map[string]string{
 	"chatbots":       "every chatbot on the site",
 	"chatbot":        "one chatbot, by name",
@@ -109,6 +115,9 @@ var Features = map[string]string{
 	"form":           "one form, by name",
 	"boards":         "members posting to boards",
 	"signup":         "making a new member account",
+	"bookings":       "booking an appointment on the site",
+	"newsletter":     "signing up to the newsletter",
+	"fediverse":      "activities other servers deliver to the fediverse inbox",
 	"search-answers": "AI answers in site search",
 	"api":            "the content API",
 	"mcp":            "the machine interface",
@@ -189,7 +198,8 @@ type State struct {
 	Vouched []Vouched `json:"vouched,omitempty"`
 	// Watching, when set, holds every playbook to watching: one
 	// administrator may set it, because it is the safe direction; letting
-	// them act again takes a second (Book).
+	// them act again takes a second (Book). Their notify steps still tell
+	// the security contact (Engine.Observe).
 	Watching *Hold `json:"watching,omitempty"`
 }
 

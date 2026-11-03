@@ -877,7 +877,14 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 		if err := everyPage(root, caller, pages); err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
-		files, err := export.Export(export.Format(f), export.Site{Pages: pages},
+		// The deployment's banner, as `quilzo export` puts it on every file,
+		// and refused when the scheme cannot be read: this export carried
+		// none at all.
+		banner, err := deploymentBanner(root)
+		if err != nil {
+			return nil, &mcp.Refusal{Reason: err.Error()}
+		}
+		files, err := export.Export(export.Format(f), export.Site{Pages: pages, Banner: banner},
 			time.Now())
 		if err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}

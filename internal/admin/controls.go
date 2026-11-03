@@ -177,8 +177,10 @@ func (s *Server) handleControlsKSI(w http.ResponseWriter, r *http.Request) {
 		{"All", "/security/controls/ksi", len(res), show == ""},
 		{"Failing", "/security/controls/ksi?show=" + string(fedramp.Failing), n[fedramp.Failing], show == string(fedramp.Failing)},
 		{"Quilzo contributes", "/security/controls/ksi?show=" + string(fedramp.Contributes), n[fedramp.Contributes], show == string(fedramp.Contributes)},
+		{"Stated, not checked", "/security/controls/ksi?show=" + string(fedramp.Stated), n[fedramp.Stated], show == string(fedramp.Stated)},
 		{"Your process", "/security/controls/ksi?show=" + string(fedramp.Elsewhere), n[fedramp.Elsewhere], show == string(fedramp.Elsewhere)},
 	}
 	data["Contributes"], data["Failing"], data["Elsewhere"] = n[fedramp.Contributes], n[fedramp.Failing], n[fedramp.Elsewhere]
+	data["Stated"] = n[fedramp.Stated]
 	s.render(w, r, "ksi.html", data)
 }

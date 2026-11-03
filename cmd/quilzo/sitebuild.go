@@ -513,7 +513,15 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 				if err != nil {
 					return a2a.Card{}, err
 				}
-				card := a2a.From(set.Agents, knownCapabilities(root), a2a.Options{
+				// Validated on the way out, by the public server, which serves
+				// nothing for a card that does not validate: no card is a site
+				// that is not discoverable, which is true and harmless; an
+				// invalid one is a site that looks discoverable and breaks
+				// whatever tried to use it. An error here is for a card that
+				// could not be built, which is a fault; returning the
+				// validation failure as one made it a 500, and a 500 stops
+				// every static copy of the site.
+				return a2a.From(set.Agents, knownCapabilities(root), a2a.Options{
 					SiteName:         cfg.Raw("site.name"),
 					BaseURL:          st.BaseURL,
 					Version:          version,
@@ -521,16 +529,17 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 					Provider:         cfg.Raw("site.provider"),
 					ProviderURL:      cfg.Raw("site.provider_url"),
 					TaskURL:          a2aTaskURL(cfg),
-				})
-				// Validated on the way out. A deployment that would publish an
-				// invalid card serves nothing instead: no card is a site that
-				// is not discoverable, which is true and harmless; an invalid
-				// one is a site that looks discoverable and breaks whatever
-				// tried to use it.
-				if verr := card.Validate(); verr != nil {
-					return a2a.Card{}, verr
+				}), nil
+			}
+			// Said once when a server starts, since a card that does not
+			// validate goes quietly unserved: the person who turned it on
+			// hears why. Only then, because building one reads every agent.
+			if opt.Note != nil {
+				if card, cerr := st.AgentCard(); cerr == nil {
+					if verr := card.Validate(); verr != nil {
+						note("  %sagent card not published: %v%s\n", yellow, verr, reset)
+					}
 				}
-				return card, nil
 			}
 		}
 		if live := s.GetRef(site.RefLive); live != "" {
@@ -549,6 +558,13 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 				}
 			}
 		}
+	} else {
+		// Refused, as a scheme that does not parse is above. Skipping this
+		// block served and bundled every page with no classification banner
+		// whenever the configuration could not be read (deploymentMarking),
+		// and the admin's server already refuses to start on one.
+		return nil, fmt.Errorf("the configuration cannot be read, so whether "+
+			"this deployment marks its pages cannot be known: %w", cerr)
 	}
 
 	// The provenance records, which decide whether a page carries its

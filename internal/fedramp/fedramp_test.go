@@ -58,3 +58,41 @@ func TestEachIndicatorSaysWhatQuilzoHasToShow(t *testing.T) {
 		}
 	}
 }
+
+// "Contributes" is documented as Quilzo implementing related controls with
+// its checks on them passing, and it was given to every indicator with a
+// related control Quilzo implements, whether or not anything checks it: only
+// a failing check was looked at, and a control with no check cannot fail.
+// A provider reads "contributes" as evidence that runs; for those indicators
+// there is only a statement, and the standing says so.
+func TestContributingTakesACheckThatIsPassing(t *testing.T) {
+	_, res, err := Assess(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unchecked := 0
+	for _, r := range res {
+		checked := false
+		for _, e := range r.Evidence {
+			checked = checked || len(e.Rules) > 0
+		}
+		if r.Standing == Contributes && !checked {
+			t.Errorf("%s contributes, and none of the %d related controls Quilzo "+
+				"implements is checked by anything", r.ID, r.Covered)
+		}
+		if r.Covered > 0 && !checked {
+			unchecked++
+			if r.Standing == Elsewhere {
+				t.Errorf("%s relates controls Quilzo implements and says it has "+
+					"nothing to show", r.ID)
+			}
+		}
+		if r.Covered > 0 && checked && r.Standing != Contributes {
+			t.Errorf("%s has a passing check and is %s", r.ID, r.Standing)
+		}
+	}
+	if unchecked == 0 {
+		t.Fatal("no indicator relates only controls nothing checks; this test " +
+			"needs one to tell a check from a statement")
+	}
+}

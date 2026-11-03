@@ -532,6 +532,49 @@ func Register(p *Project, by string, now time.Time) error {
 	return nil
 }
 
+// CheckPlan says whether a registered plan is still the plan its signature
+// was made over: the text is what its digest was taken of, the amendments
+// lead one to the next from the digest registered to the digest as it
+// stands, and verify finds the signature good over the digest registered.
+// verify is the store's key, checking a signature over a digest; it is
+// asked only about a registered plan.
+//
+// The signature used to be kept and never checked, so a project.json whose
+// plan was rewritten by hand, with the signature left as it was, showed
+// "Signed" on the screen and passed research check: the rewriting the
+// signature exists to show was the one thing that went unseen. An
+// amendment is not signed. It is a change kept in the open, with who made
+// it and why, and holding it to the chain means a plan that changed reads
+// as amended rather than as the plan that was registered.
+func CheckPlan(p Project, verify func(digest string, s Signature) error) error {
+	if !p.Registered() {
+		return nil
+	}
+	if p.Plan.Signature == nil {
+		return errors.New("it is registered and carries no signature")
+	}
+	if Digest(p.Plan.Text) != p.Plan.Digest {
+		return errors.New("its text is not the text its digest was taken of")
+	}
+	registered := p.Plan.Digest
+	if len(p.Amendments) > 0 {
+		registered = p.Amendments[0].From
+		for i := 1; i < len(p.Amendments); i++ {
+			if p.Amendments[i].From != p.Amendments[i-1].To {
+				return fmt.Errorf("the amendment of %s does not start from the plan the one before it left",
+					p.Amendments[i].At.Format("2 Jan 2006"))
+			}
+		}
+		if p.Amendments[len(p.Amendments)-1].To != p.Plan.Digest {
+			return errors.New("its amendments do not lead to the plan as it stands")
+		}
+	}
+	if err := verify(registered, *p.Plan.Signature); err != nil {
+		return fmt.Errorf("the signature is not good over the plan as registered: %w", err)
+	}
+	return nil
+}
+
 // Pin makes a computation's value a claim, replacing one by the same name.
 func Pin(p *Project, r Run, name, by string, now time.Time) (Claim, error) {
 	if r.Project != p.Name {

@@ -41,7 +41,8 @@ const (
 	// do, their credentials, their evaluations and the lessons they read.
 	ActManageAgents Action = "manage-agents"
 	// ActUseModels asks the store's models on one's own behalf: the writing
-	// assistant, drafting, and the model gateway at /v1.
+	// assistant, drafting, making pictures, video and voice and hearing
+	// recordings, and the model gateway at /v1.
 	ActUseModels Action = "use-models"
 	// ActInstall installs, removes and rolls back features.
 	ActInstall Action = "install-features"
@@ -60,7 +61,7 @@ var Permissions = []Permission{
 	{ActRunAgents, "start an agent's run"},
 	{ActApprove, "decide what an agent waits for a person to decide"},
 	{ActManageAgents, "declare and change agents: what they may do, their credentials, evaluations and lessons"},
-	{ActUseModels, "use the store's models: the writing assistant, drafting, and the model gateway"},
+	{ActUseModels, "use the store's models: the writing assistant, drafting, making pictures, video and voice, and the model gateway"},
 	{ActInstall, "install, remove and roll back features"},
 }
 

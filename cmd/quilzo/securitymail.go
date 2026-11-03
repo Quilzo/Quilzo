@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/egress"
 	"github.com/quilzo/quilzo/internal/mail"
 )
@@ -110,9 +111,38 @@ func tell(root, to, summary string) (string, error) {
 		return "", errors.New("no mail is set up (mail.json), so nobody was told; it is in the audit log")
 	}
 	// One line: a name with a line break in it must not cost the message
-	// (mail refuses broken headers).
-	if err := m.Send(to, "Quilzo: "+onOneLine(summary), summary+"\n\nThis was sent by Quilzo."); err != nil {
+	// (mail refuses broken headers). Through deliverMail, which is what
+	// Send does, so a test catches what the security contact would have
+	// been sent.
+	if err := deliverMail(m, mail.Message{To: to, Subject: "Quilzo: " + onOneLine(summary),
+		Body: summary + "\n\nThis was sent by Quilzo."}); err != nil {
 		return "", err
 	}
 	return "told " + to, nil
+}
+
+// tellOfHold mails the security contact that every playbook was held to
+// watching (held), or let act again, in the background, and records
+// whether it reached them. Holding the playbooks takes one administrator
+// and used to tell nobody: an intruder's first step could go unheard, and
+// so could the hold that kept the shield from answering it.
+func tellOfHold(root string, held bool, by, why string) {
+	summary := fmt.Sprintf("Shield: every playbook was held to watching by %s, because %q. Until a second "+
+		"administrator lets them act again, the shield blocks and turns off nothing by itself; it still tells you "+
+		"what it sees.", by, why)
+	about := "held"
+	if !held {
+		summary = fmt.Sprintf("Shield: every playbook may act again, approved by %s: %q.", by, why)
+		about = "released"
+	}
+	inBackground(func() {
+		did, err := tellSecurity(root, summary)
+		detail := map[string]string{"about": about, "did": did}
+		outcome := audit.Success
+		if err != nil {
+			detail["error"], outcome = err.Error(), audit.Failure
+		}
+		record(root, audit.Record{Action: "shield.told", Resource: "/security/shield", Outcome: outcome,
+			Principal: "shield", Kind: audit.KindService, Verified: true, Detail: detail})
+	})
 }

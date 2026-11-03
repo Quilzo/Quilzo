@@ -364,7 +364,7 @@ func (s *Server) Handle(req Request) *Response {
 		// The revision the client asked for, when it is one this speaks,
 		// as over HTTP: a client that opened with 2025-11-25 was answered
 		// 2025-06-18 on standard input, and went without what it added.
-		resp.Result = s.initialize(legacyVersion(req))
+		resp.Result = s.initialize(LegacyVersion(req))
 
 	case "server/discover":
 		resp.Result = s.discover()
@@ -421,13 +421,18 @@ func (s *Server) discover() map[string]any {
 
 // complete marks a result as final and names the server, as 2026-07-28
 // results do.
-func (s *Server) complete(m map[string]any) map[string]any {
+func (s *Server) complete(m map[string]any) map[string]any { return Complete(m, s.Name, s.Version) }
+
+// Complete marks a result as final and names the server that gave it, as
+// 2026-07-28 results do; for a server answering without this package's
+// Server, such as the public site's /mcp.
+func Complete(m map[string]any, name, version string) map[string]any {
 	out := make(map[string]any, len(m)+2)
 	for k, v := range m {
 		out[k] = v
 	}
 	out["resultType"] = "complete"
-	out["_meta"] = map[string]any{metaServer: map[string]any{"name": s.Name, "version": s.Version}}
+	out["_meta"] = map[string]any{metaServer: map[string]any{"name": name, "version": version}}
 	return out
 }
 

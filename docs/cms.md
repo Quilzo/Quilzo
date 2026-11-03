@@ -1774,6 +1774,9 @@ The rules:
   saying it is right.
 - A recording's voices cannot be masked the way text is, so it goes only to a
   route allowed personal data (`--personal`).
+- The endpoints take a recording of at most 25 MB. One over that is sent as
+  its sound alone, about fifteen MB an hour, taken out with ffmpeg when it is
+  installed; without it, the refusal says how to take the sound out by hand.
 - It is charged by the minute (`--price-minute`) to `media` and to the person.
 
 **A model reads text aloud.** An audio version of an article, a shop's
@@ -1790,7 +1793,9 @@ The rules:
 - The recording is stored marked as a synthetic voice, with the model and the
   person accountable, as a generated picture is. A person hearing it is owed
   knowing it is not a person.
-- Its words are kept with it as its transcript.
+- Its words are kept with it as its transcript. No section plays a recording
+  yet, and no page shows its words for it: link `/media/ID` from a page by
+  hand and put the words beside the link.
 - Text holding personal data goes only to a route allowed it. Masking cannot
   help here: a placeholder read aloud is not a recording anybody wants.
 
@@ -1902,6 +1907,12 @@ The writing assistant (`quilzo assist` and the Assistant screen) goes through th
 gateway as `assist`, charged to the person too. Both used to call the one
 configured model directly, outside every budget and the ledger, and
 `media generate` without masking anything.
+
+Making a picture, a video or a voice (`media generate`, `film`, `speak`) or
+drafting captions (`media transcribe`) spends the store's models, so it needs
+the use-models permission, as the writing assistant does, and edit-draft to
+store what comes back. Somebody denied the models still adds, edits and
+captions media.
 
 **The key is sealed.** It is kept encrypted with `quilzo secret set NAME` and
 named with `--key-secret`, rather than in an environment variable every process
@@ -2019,9 +2030,12 @@ A draft can be shown to somebody with no account — a client, a colleague
 elsewhere — with a link: `quilzo share PAGE [--days 7]`, or "Make a link" in
 the page's editor. The link is to that page as the draft was when it was
 shared, not as it is later, so a link sent last week cannot show somebody what
-was written since. It is a random id nobody can guess, lives thirty days at the
-most, and ends at once with `quilzo share revoke ID` or Revoke in the editor.
-The public site serves it at `/shared/ID` with a note saying it is a draft and
+was written since. Its address holds a random secret nobody can guess, shown
+once, when the link is made: the store keeps only a digest of it, which is the
+ID the link is listed and logged by, so a copy of the store or of a backup
+opens nothing. It lives thirty days at the most, and ends at once with
+`quilzo share revoke ID` or Revoke in the editor. The public site serves it at
+`/shared/SECRET` with a note saying it is a draft and
 headers asking that it not be indexed, stored, or referred onward; an ended link
 is the site's own 404, the same as one that never was. Sharing takes what
 publishing takes, since it shows the page outside; ending a link takes what

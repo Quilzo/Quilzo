@@ -51,8 +51,6 @@ var owners = []struct{ pattern, feature string }{
 	{"internal/member/*", "signup"},
 	{"internal/importer/*", "import"},
 	{"internal/admin/transfer.go", "import"},
-	{"internal/inbound/*", "feeds"},
-	{"internal/ssf/*", "feeds"},
 	{"internal/scim/*", "scim"},
 	{"internal/api/*", "api"},
 	{"internal/mcp/*", "mcp"},

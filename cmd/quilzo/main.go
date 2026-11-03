@@ -165,13 +165,14 @@ templates and design
   quilzo section blocks                    every block, and the pages that reuse it
 
 conversation
-  quilzo room list                         every room, and what it is for
+  quilzo room list                         the rooms you can read, and what is unread
   quilzo room open ID --purpose W          start one, with a stated purpose
   quilzo room say ROOM "..." [--reply ID]  post; a broadcast says who it interrupts
   quilzo room read ROOM [--thread ID]      the conversation, tombstones and all
   quilzo room edit ROOM MSG "..."          append a revision; the old words stay
   quilzo room remove ROOM MSG              take the words and leave the shape
   quilzo room history ROOM MSG             what it said, and when
+  quilzo room react ROOM MSG EMOJI [--off] a reaction, kept beside the message
 
 sharing a screen
   quilzo screen cost --width 1920          what a shared screen actually costs, losslessly
@@ -543,6 +544,8 @@ agents and integrations
   quilzo browser grant NAME [--read H,..] [--write H,..] [--ops O,..] [--daily N] [--pictures] | --off
                                           the governed browser offered to an outside agent at /mcp/browser/NAME
   quilzo cell status                     whether this machine can run a desktop cell, and what it would restore
+  quilzo cell warm --socket API.SOCK [--snapshot PATH] [--memory PATH]
+                                          snapshot a running cell as the warm one every session restores
   quilzo desktop status | consent        whether a person's own desktop can be reached, and asking them for it
   quilzo agent runs [NAME] | trace RUN     the runs that are kept, and one step by step
   quilzo agent cost [--by agent|person|goal|day]  what runs cost, in tokens and money
@@ -630,6 +633,7 @@ log transparency
                                             history contradicts a block
   quilzo timestamp stamp | list | export   RFC 3161 proof of when you published
   quilzo anchor submit | status | upgrade  one hash over a whole publication
+  quilzo anchor export [--dir DIR]         each proof as an .ots file, for ots verify
 
   quilzo mcp [--list]                      the agent interface, over stdio
   quilzo __sandbox --allow DIR -- CMD       run CMD confined to DIR. Not a
@@ -767,7 +771,13 @@ func main() {
 	// Authorisation happens here, once, for every command. See privilege.go
 	// for why it is a table rather than a call at the top of each one.
 	if cmd != "help" && cmd != "-h" && cmd != "--help" {
-		if err := authoriseCommand(root, cmd, cmdArgs); err != nil {
+		if err := authoriseCommand(root, cmd, cmdArgs); errors.Is(err, errHelpOnly) {
+			// Help for somebody who may not run the command, and nothing
+			// else: letting it through to the command ran the command.
+			usage()
+			fmt.Fprintf(os.Stderr, "\n%s%v%s\n", yellow, err, reset)
+			return
+		} else if err != nil {
 			w.Error(err)
 			os.Exit(out.ExitFailure)
 		}

@@ -475,3 +475,34 @@ func TestObserveWithoutPlaybooks(t *testing.T) {
 		t.Fatal("an engine with no playbooks responded")
 	}
 }
+
+// A playbook rests a day after turning a feature off for a flaw in this
+// build, and the feature is off for a day at most, so a flaw the hourly
+// self-check still finds would meet nothing until the run after the day ran
+// out. Woken, the signal is counted at once: a new protection with its own
+// start, and the security contact told again. Unwoken, the rest holds.
+func TestAWokenPlaybookCountsTheNextSignalAtOnce(t *testing.T) {
+	pb, _ := builtin("self-exposure")
+	r := newRig(t, pb)
+	if got := r.see("self-exposure", "", "forms"); len(got) != 1 {
+		t.Fatalf("the first sighting: %+v", got)
+	}
+	r.clock = t0.Add(22 * time.Hour)
+	if got := r.see("self-exposure", "", "forms"); len(got) != 0 {
+		t.Fatalf("resting, it acted again: %+v", got)
+	}
+	r.Wake(Signal{Name: "self-exposure", Subject: "chatbots"}) // another feature's rest
+	if got := r.see("self-exposure", "", "forms"); len(got) != 0 {
+		t.Fatalf("woken for another feature, it acted again: %+v", got)
+	}
+	r.Wake(Signal{Name: "self-exposure", Subject: "forms"})
+	got := r.see("self-exposure", "", "forms")
+	if len(got) != 1 || len(r.notified) != 2 {
+		t.Fatalf("woken, %d responses and %d told", len(got), len(r.notified))
+	}
+	if p, on := Find(r.Root, Feature, "forms", t0.Add(25*time.Hour)); !on || !p.At.Equal(r.clock) {
+		t.Fatalf("the forms were not turned off again from now: %+v", p)
+	}
+	// Like Observe, a nil engine does nothing.
+	(*Engine)(nil).Wake(Signal{Name: "self-exposure", Subject: "forms"})
+}

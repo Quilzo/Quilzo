@@ -22,7 +22,7 @@
 </div>
 
 {{if .Held}}<div class="notice warn" role="status">
-  <p><strong>Every playbook is watching, not acting,</strong> since {{.Held.At}}: {{.Held.By}} held them because “{{.Held.Reason}}”. They still say what they would have done.</p>
+  <p><strong>Every playbook is watching, not acting,</strong> since {{.Held.At}}: {{.Held.By}} held them because “{{.Held.Reason}}”. They still say what they would have done, and still tell the security contact.</p>
   {{if $.SiteAdmin}}{{if .ReleaseWaiting}}<p>Letting them act again is waiting for a second administrator, below.</p>{{else}}
   <form method="post" action="/security/shield/act" class="auto-controls shield-inline"><input type="hidden" name="do" value="release">
     <label for="release-why" class="visually-hidden">Why they can act again {{template "req"}}</label>
@@ -161,7 +161,7 @@
   <button type="submit" class="btn-tonal">{{icon "add"}}Plant a decoy</button></form>
 
 {{if not .Held}}<h2>Stop the playbooks acting</h2>
-<p>Holds every playbook to watching at once, while somebody works out why one acted. One administrator can do it; letting them act again takes a second.</p>
+<p>Holds every playbook to watching at once, while somebody works out why one acted. They still tell the security contact, who is told of the hold too. One administrator can do it; letting them act again takes a second.</p>
 <form method="post" action="/security/shield/act" class="auto-controls shield-inline"><input type="hidden" name="do" value="hold">
   <label for="hold-why" class="visually-hidden">Why {{template "req"}}</label><input id="hold-why" name="why" required maxlength="300" placeholder="Why">
   <button type="submit" class="btn-outlined">Hold every playbook</button></form>{{end}}

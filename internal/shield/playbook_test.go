@@ -149,3 +149,13 @@ func TestDurationsAreWrittenAsPeopleWriteThem(t *testing.T) {
 		}
 	}
 }
+
+// The decoy signal is raised for a decoy token presented where a token is
+// accepted, and for nothing else. Its description said a decoy address
+// asked for raised it too, which nothing does, so somebody reading it
+// would have planted an address and expected to hear when it was used.
+func TestTheDecoySignalSaysOnlyWhatRaisesIt(t *testing.T) {
+	if d := Signals["decoy"]; strings.Contains(d, "address") || !strings.Contains(d, "token") {
+		t.Fatalf("the decoy signal is described as %q", d)
+	}
+}

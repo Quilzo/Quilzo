@@ -996,9 +996,10 @@ var settings = []Setting{
 		Key: "cell.snapshot", Kind: Text, Default: "",
 		Summary: "the warm snapshot a session's cell is restored from",
 		Why: "A desktop takes minutes to boot and milliseconds to restore; a session " +
-			"steps into one that was already warm, made by the operator with the " +
-			"microVM's own snapshot of an image holding an X server, the accessibility " +
-			"tree and the apps.",
+			"steps into one that was already warm. The operator boots the image, holding " +
+			"an X server, the accessibility tree and the apps, with the microVM's own " +
+			"binary, sets its desktop up, and quilzo cell warm --socket API.SOCK writes " +
+			"the snapshot here.",
 	},
 	{
 		Key: "cell.memory", Kind: Text, Default: "",

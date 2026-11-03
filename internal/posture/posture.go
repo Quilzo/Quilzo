@@ -294,8 +294,34 @@ type SSOProvider struct {
 	Problem string      `json:"problem,omitempty"`
 }
 
-// InterfaceFacts is the agent interface as set up: whether it answers, and
-// which apps may connect to it on people's behalf.
+// AlertFacts are where the security contact's alerts go. Every one of them
+// (the shield acting, a risky sign-in, a held call, a check starting to
+// fail) is a mail to security.contact's mailto: address through the relay
+// in mail.json, and with either missing it is dropped where nobody reads it.
+type AlertFacts struct {
+	Checked bool `json:"checked"`
+	// Address says security.contact names a mailto: address.
+	Address bool `json:"address"`
+	// Relay says mail.json is there and can be used; Problem says why not,
+	// when it is there and cannot be.
+	Relay   bool   `json:"relay"`
+	Problem string `json:"problem,omitempty"`
+}
+
+// SelfFacts are what the self-check (quilzo self) decides with that an
+// operator has to give. A flaw in this build that is being exploited is
+// contained at once only when CISA's catalogue of exploited
+// vulnerabilities says so, and without the catalogue, or with one long out
+// of date, that never happens.
+type SelfFacts struct {
+	Checked bool `json:"checked"`
+	// Exploited says the catalogue is kept; ExploitedOf is the date it was
+	// released. Problem says why a kept one cannot be read.
+	Exploited   bool      `json:"exploited"`
+	ExploitedOf time.Time `json:"exploited_of,omitzero"`
+	Problem     string    `json:"problem,omitempty"`
+}
+
 // StreamFacts is the audit log's push to a SIEM (siem.stream.url).
 type StreamFacts struct {
 	Set      bool      `json:"set"`
@@ -305,6 +331,8 @@ type StreamFacts struct {
 	Error    string    `json:"error,omitempty"`
 }
 
+// InterfaceFacts is the agent interface as set up: whether it answers, and
+// which apps may connect to it on people's behalf.
 type InterfaceFacts struct {
 	Checked bool `json:"checked"`
 	On      bool `json:"on"`
@@ -423,6 +451,8 @@ type State struct {
 	SSO        SSOFacts          `json:"sso"`
 	Interface  InterfaceFacts    `json:"interface"`
 	Stream     StreamFacts       `json:"stream"`
+	Alerts     AlertFacts        `json:"alerts"`
+	Self       SelfFacts         `json:"self"`
 	Now        time.Time         `json:"-"`
 	Extra      map[string]string `json:"extra,omitempty"`
 }
@@ -720,6 +750,10 @@ func inputFor(rule string) string {
 		return "types"
 	case rule == "expose.file-mode":
 		return "files"
+	case strings.HasPrefix(rule, "alerts."):
+		return "alerts"
+	case strings.HasPrefix(rule, "self."):
+		return "self"
 	}
 	return ""
 }
@@ -741,6 +775,10 @@ func supplied(s State, input string) bool {
 		return s.Types != nil
 	case "files":
 		return len(s.Files) > 0
+	case "alerts":
+		return s.Alerts.Checked
+	case "self":
+		return s.Self.Checked
 	}
 	return true
 }

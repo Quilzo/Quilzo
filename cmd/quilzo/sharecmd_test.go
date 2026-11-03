@@ -4,12 +4,15 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 )
@@ -47,12 +50,12 @@ func TestALinkShowsThePageAsItWasShared(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now()
-	sh, err := newShare(root, s, "offer", "editor", 7, now)
+	sh, secret, err := newShare(root, s, "offer", "editor", 7, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reShareID.MatchString(sh.ID) {
-		t.Fatalf("id %q", sh.ID)
+	if !reShareID.MatchString(secret) || sh.ID != shareIDFor(secret) {
+		t.Fatalf("secret %q, id %q", secret, sh.ID)
 	}
 	// Changed after it was shared: the link still shows what was shared.
 	pages["offer"] = map[string]any{"title": "A second offer, not for them"}
@@ -60,11 +63,11 @@ func TestALinkShowsThePageAsItWasShared(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := shareDesign(t)
-	got, ok := renderShared(root, d, sh.ID, now.Add(time.Hour))
+	got, ok := renderShared(root, d, secret, now.Add(time.Hour))
 	if !ok || !strings.Contains(got, "The first offer") || strings.Contains(got, "second offer") {
 		t.Fatalf("%v %s", ok, got)
 	}
-	if _, ok := renderShared(root, d, sh.ID, now.Add(8*24*time.Hour)); ok {
+	if _, ok := renderShared(root, d, secret, now.Add(8*24*time.Hour)); ok {
 		t.Error("shown after it expired")
 	}
 	if _, ok := renderShared(root, d, strings.Repeat("0", 32), now); ok {
@@ -77,19 +80,19 @@ func TestALinkShowsThePageAsItWasShared(t *testing.T) {
 	if _, err := revokeShare(root, "index", sh.ID, now); err == nil {
 		t.Error("revoked through another page")
 	}
-	if _, ok := renderShared(root, d, sh.ID, now); !ok {
+	if _, ok := renderShared(root, d, secret, now); !ok {
 		t.Fatal("gone after a refused revoke")
 	}
 	if _, err := revokeShare(root, "offer", sh.ID, now); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := renderShared(root, d, sh.ID, now); ok {
+	if _, ok := renderShared(root, d, secret, now); ok {
 		t.Error("shown after it was revoked")
 	}
-	if _, err := newShare(root, s, "offer", "editor", MaxShareDays+1, now); err == nil {
+	if _, _, err := newShare(root, s, "offer", "editor", MaxShareDays+1, now); err == nil {
 		t.Error("a link for longer than a month")
 	}
-	if _, err := newShare(root, s, "nowhere", "editor", 1, now); err == nil {
+	if _, _, err := newShare(root, s, "nowhere", "editor", 1, now); err == nil {
 		t.Error("a link to a page there is not")
 	}
 	info, err := os.Stat(sharesPath(root))
@@ -106,7 +109,9 @@ func TestTheEditorSharesThroughTheCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasSuffix(link.URL, "/shared/"+link.ID) || !link.Live {
+	// The address carries the secret, this once; the id is its digest.
+	secret := link.URL[strings.LastIndex(link.URL, "/")+1:]
+	if !strings.Contains(link.URL, "/shared/") || shareIDFor(secret) != link.ID || !link.Live {
 		t.Fatalf("%+v", link)
 	}
 	got, _ := c.For("index")
@@ -161,15 +166,128 @@ func TestASharedDraftShowsOnlyPublishedMenus(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now()
-	sh, err := newShare(root, s, "offer", "editor", 1, now)
+	_, secret, err := newShare(root, s, "offer", "editor", 1, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, ok := renderShared(root, d, sh.ID, now)
+	out, ok := renderShared(root, d, secret, now)
 	if !ok || !strings.Contains(out, "The offer") {
 		t.Fatalf("%v %s", ok, out)
 	}
 	if strings.Contains(out, "Secret launch") {
 		t.Fatalf("a shared draft shows another draft page in its menu:\n%s", out)
+	}
+}
+
+// shareSaid runs one share command and returns what it answered in JSON.
+func shareSaid(t *testing.T, root string, args ...string) []byte {
+	t.Helper()
+	old := w
+	w = out.New(true)
+	defer func() { w = old }()
+	var buf bytes.Buffer
+	w.Out = &buf
+	if err := cmdShare(root, args); err != nil {
+		t.Fatalf("share %v: %v", args, err)
+	}
+	return buf.Bytes()
+}
+
+// A link's secret is in its address and nowhere else.
+//
+// shares.json held each link's address in clear, and the public site found
+// a link by comparing the address with ==: anybody who read the store, or
+// a backup of it, could open every draft shared from it, and the audit log
+// carried each one under "share". Huddle invitations and handoffs keep a
+// digest of theirs. The id a link is listed, logged and revoked by is now a
+// digest, which opens nothing.
+func TestALinksSecretIsKeptNowhere(t *testing.T) {
+	root := demoStore(t)
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("QUILZO_TOKEN", "")
+	var made struct {
+		ID  string `json:"id"`
+		URL string `json:"url"`
+	}
+	if err := json.Unmarshal(shareSaid(t, root, "index", "--days", "1"), &made); err != nil {
+		t.Fatal(err)
+	}
+	secret := made.URL[strings.LastIndex(made.URL, "/")+1:]
+	if !reShareID.MatchString(secret) {
+		t.Fatalf("the link is %s", made.URL)
+	}
+	d := shareDesign(t)
+	now := time.Now()
+	if _, ok := renderShared(root, d, secret, now); !ok {
+		t.Fatal("the link does not open the page")
+	}
+	for _, path := range []string{sharesPath(root), auditPath(root)} {
+		if b, _ := os.ReadFile(path); bytes.Contains(b, []byte(secret)) {
+			t.Errorf("%s holds the link's secret", filepath.Base(path))
+		}
+	}
+	if made.ID == secret {
+		t.Error("the id the link is listed and revoked by is its secret")
+	}
+	if _, ok := renderShared(root, d, made.ID, now); ok {
+		t.Error("the id a list shows opens the draft")
+	}
+	// Listed without it, on the command line and in the editor.
+	if b := shareSaid(t, root, "list"); bytes.Contains(b, []byte(secret)) {
+		t.Errorf("share list shows the link's secret: %s", b)
+	}
+	links, err := sharesCapability(root).For("index")
+	if err != nil || len(links) != 1 {
+		t.Fatalf("%v %+v", err, links)
+	}
+	if strings.Contains(links[0].URL+links[0].ID, secret) {
+		t.Errorf("the editor lists the link's secret: %+v", links[0])
+	}
+	// Revoked by the id it is listed by.
+	shareSaid(t, root, "revoke", made.ID)
+	if _, ok := renderShared(root, d, secret, now); ok {
+		t.Error("the link opens after it was revoked by its listed id")
+	}
+}
+
+// A link made before the store kept digests still opens, and its secret
+// leaves the store the next time anybody manages links.
+func TestALinkMadeBeforeDigestsStillOpens(t *testing.T) {
+	root := demoStore(t)
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("QUILZO_TOKEN", "")
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	given := strings.Repeat("5e", 16) // the address somebody was sent
+	before := `{"shares":[{"id":"` + given + `","page":"index","commit":"` +
+		s.GetRef(site.RefDraft) + `","by":"editor","created":"` +
+		now.UTC().Format(time.RFC3339) + `","expires":"` +
+		now.Add(24*time.Hour).UTC().Format(time.RFC3339) + `"}]}`
+	if err := os.WriteFile(sharesPath(root), []byte(before), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d := shareDesign(t)
+	if _, ok := renderShared(root, d, given, now); !ok {
+		t.Fatal("a link already given out stopped opening")
+	}
+	if links, _ := sharesCapability(root).For("index"); len(links) != 1 ||
+		strings.Contains(links[0].URL+links[0].ID, given) {
+		t.Errorf("the editor lists an old link's secret: %+v", links)
+	}
+	shareSaid(t, root, "list")
+	if b, _ := os.ReadFile(sharesPath(root)); bytes.Contains(b, []byte(given)) {
+		t.Errorf("an old link's secret is still in the store:\n%s", b)
+	}
+	if _, ok := renderShared(root, d, given, now); !ok {
+		t.Fatal("a link already given out stopped opening once it was kept as a digest")
+	}
+	// The command printed the address as the id to revoke it by, so that
+	// still revokes it.
+	shareSaid(t, root, "revoke", given)
+	if _, ok := renderShared(root, d, given, now); ok {
+		t.Error("revoking an old link by the id it was given out with did nothing")
 	}
 }

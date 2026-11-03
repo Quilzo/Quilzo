@@ -25,6 +25,12 @@ type Research struct {
 	// Load is a project, its computations, newest first, and what its
 	// check finds.
 	Load func(name string) (research.Project, []research.Run, []research.Finding, error)
+	// CheckPlan says whether a registered plan is still the plan its
+	// signature was made over: nil when it is, or what is wrong. The
+	// screen said "Signed" from the signature being there, so a plan
+	// rewritten by hand under its old signature read as signed; without
+	// this it says the signature was not checked.
+	CheckPlan func(research.Project) error
 }
 
 func (s *Server) handleResearch(w http.ResponseWriter, r *http.Request) {
@@ -72,5 +78,11 @@ func (s *Server) handleResearch(w http.ResponseWriter, r *http.Request) {
 	}
 	data["Blocks"], data["Cited"], data["References"] = blocks, cited, refs
 	data["Problems"] = research.Problems(findings)
+	if proj.Registered() && s.Research.CheckPlan != nil {
+		data["PlanChecked"] = true
+		if err := s.Research.CheckPlan(proj); err != nil {
+			data["PlanProblem"] = err.Error()
+		}
+	}
 	s.render(w, r, "research_project.html", data)
 }

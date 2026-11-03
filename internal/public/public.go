@@ -119,9 +119,10 @@ type Site struct {
 	// off: no endpoint is named and none answers.
 	OnViolation func(v Violation, r *http.Request)
 	// Shield reports whether the shield has turned a feature down:
-	// "chatbot:NAME", "form:NAME", "boards", "signup", "search-answers",
-	// "uploads". The level is "off" or "limited" (a chatbot that quotes
-	// pages and asks no model). Nil means never.
+	// "chatbot:NAME", "form:NAME", "boards", "signup", "bookings",
+	// "newsletter", "fediverse", "search-answers", "upload:ID". The level is
+	// "off" or "limited" (a chatbot that quotes pages and asks no model).
+	// Nil means never.
 	Shield   func(target string) (level string, until time.Time, on bool)
 	CSP      func() (string, bool)
 	CSPValue func() string

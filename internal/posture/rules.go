@@ -652,6 +652,70 @@ var rules = []Rule{
 		},
 	},
 	{
+		ID:       "alerts.unrouted",
+		Title:    "Security alerts reach nobody",
+		Severity: High,
+		Controls: []string{"IR-4", "SI-4"},
+		OWASP:    "A09:2025 Logging and Alerting Failures",
+		Why: "Every alert Quilzo sends is a mail to the mailto: address in " +
+			"security.contact, through the relay in mail.json: a decoy touched, " +
+			"a risky sign-in, a call waiting for a person, a check that starts " +
+			"failing. Without either, each one is dropped where nobody reads it, " +
+			"and the shield's playbooks go on saying they told somebody.",
+		Check: func(s State) []Finding {
+			if !s.Alerts.Checked {
+				return nil
+			}
+			var out []Finding
+			if !s.Alerts.Address {
+				out = append(out, Finding{Resource: "security.contact",
+					Detail: "security.contact has no mailto: address, so no alert has anywhere to go",
+					Fix:    "quilzo config set security.contact mailto:security@example.org  # beside any https: or tel: given already"})
+			}
+			if !s.Alerts.Relay {
+				detail := "there is no mail.json, so no alert can be sent"
+				if s.Alerts.Problem != "" {
+					detail = "mail.json cannot be used, so no alert can be sent: " + s.Alerts.Problem
+				}
+				out = append(out, Finding{Resource: "mail.json", Detail: detail,
+					Fix: `write mail.json in the store: {"host": "smtp.example.org:587", "from": "quilzo@example.org"}, ` +
+						`with "username" and "password" when the relay asks for them`})
+			}
+			return out
+		},
+	},
+	{
+		ID:       "self.kev-missing",
+		Title:    "Nothing says which flaws are being exploited",
+		Severity: Medium,
+		Controls: []string{"RA-5", "SI-2"},
+		Why: "A flaw in this build that attackers are using is contained at " +
+			"once, by turning off the features it reaches through, only when " +
+			"CISA's catalogue of exploited vulnerabilities says it is being " +
+			"used. The catalogue is a file an operator gives; without it, or " +
+			"with one a month old, such a flaw waits for a person to upgrade.",
+		Check: func(s State) []Finding {
+			if !s.Self.Checked {
+				return nil
+			}
+			fix := "fetch https://www.cisa.gov/known-exploited-vulnerabilities-catalog's JSON, then " +
+				"quilzo self kev known_exploited_vulnerabilities.json  # read here, nothing is fetched"
+			switch {
+			case s.Self.Problem != "":
+				return []Finding{{Resource: "self/kev.json", Fix: fix,
+					Detail: "the catalogue of exploited vulnerabilities cannot be read: " + s.Self.Problem}}
+			case !s.Self.Exploited:
+				return []Finding{{Resource: "self/kev.json", Fix: fix,
+					Detail: "no catalogue of exploited vulnerabilities has been given, so no flaw is contained at once"}}
+			case s.Now.Sub(s.Self.ExploitedOf) > 30*24*time.Hour:
+				return []Finding{{Resource: "self/kev.json", Fix: fix,
+					Detail: fmt.Sprintf("the catalogue of exploited vulnerabilities is of %s, %d days old",
+						s.Self.ExploitedOf.UTC().Format("2 Jan 2006"), int(s.Now.Sub(s.Self.ExploitedOf).Hours()/24))}}
+			}
+			return nil
+		},
+	},
+	{
 		ID:       "mfa.no-second-factor",
 		Title:    "Somebody with access has no second factor",
 		Severity: High,

@@ -12,6 +12,8 @@ import (
 	"net/url"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/quilzo/quilzo/internal/mcp"
 )
 
 // The site asked in natural language by any agent (NLWeb).
@@ -206,6 +208,20 @@ func (st *Site) nlwebAsk(w http.ResponseWriter, r *http.Request) {
 }
 
 // nlwebMCP is the same over MCP: one tool, ask, read-only.
+//
+// # The revision is negotiated, by the admin's rules
+//
+// This answered every initialize with 2025-06-18 whatever the client asked
+// for, ignored the MCP-Protocol-Version header, and had no server/discover:
+// a client of another revision was told one it might not speak, a request
+// naming a revision nobody speaks was answered as if it were fine, and a
+// client of the stateless revision found nothing to start with. So the
+// revision is decided by mcp.Negotiate, from the list the admin's /mcp
+// speaks, and answered as that one answers: the handshake revisions through
+// initialize, the stateless one through server/discover with its results
+// marked final, and any other with a 400 that names those it speaks. Not
+// that endpoint itself, because it is for credentials and this is for
+// anybody; the tool and its answers are as they were.
 func (st *Site) nlwebMCP(w http.ResponseWriter, r *http.Request) {
 	if st.searchIndex() == nil {
 		http.NotFound(w, r)
@@ -217,44 +233,85 @@ func (st *Site) nlwebMCP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "this origin may not call the tool", http.StatusForbidden)
 		return
 	}
-	var req struct {
-		JSONRPC string          `json:"jsonrpc"`
-		ID      json.RawMessage `json:"id"`
-		Method  string          `json:"method"`
-		Params  json.RawMessage `json:"params"`
-	}
+	var req mcp.Request
 	if err := json.NewDecoder(io.LimitReader(r.Body, 32<<10)).Decode(&req); err != nil {
 		http.Error(w, "not JSON-RPC", http.StatusBadRequest)
 		return
 	}
-	reply := func(result any, code int, msg string) {
+	reply := func(status int, result any, rpcErr *mcp.Error) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(status)
 		out := map[string]any{"jsonrpc": "2.0", "id": req.ID}
-		if msg != "" {
-			out["error"] = map[string]any{"code": code, "message": msg}
+		if rpcErr != nil {
+			out["error"] = rpcErr
 		} else {
 			out["result"] = result
 		}
 		_ = json.NewEncoder(w).Encode(out)
+	}
+	version, verr := mcp.Negotiate(r, req)
+	if verr != nil {
+		reply(http.StatusBadRequest, nil, verr)
+		return
 	}
 	if len(req.ID) == 0 {
 		// A notification: nothing to answer.
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}
+	modern := version == mcp.Modern
+	name, instructions := st.siteLabel(), "Ask this site a question; answers come only from its published pages."
+	// What the stateless revision asks of a result: marked final, naming
+	// this server, and for a listing how long it may be kept and by whom.
+	// The same tool for everybody, so anybody's cache may keep the list.
+	stateless := func(m map[string]any, listing bool) map[string]any {
+		m = mcp.Complete(m, name, "nlweb")
+		if listing {
+			m["ttlMs"], m["cacheScope"] = 3600000, "public"
+		}
+		return m
+	}
+	final := func(m map[string]any, listing bool) map[string]any {
+		if !modern {
+			return m
+		}
+		return stateless(m, listing)
+	}
+	notFound := func() {
+		// The stateless revision answers an unknown method with a 404; the
+		// handshake revisions, inside a 200.
+		status := http.StatusOK
+		if modern {
+			status = http.StatusNotFound
+		}
+		reply(status, nil, &mcp.Error{Code: mcp.CodeMethodNotFound, Message: "no such method"})
+	}
+	capabilities := map[string]any{"tools": map[string]any{}}
 	switch req.Method {
 	case "initialize":
-		reply(map[string]any{"protocolVersion": "2025-06-18",
-			"capabilities": map[string]any{"tools": map[string]any{}},
-			"serverInfo":   map[string]any{"name": st.siteLabel(), "version": "nlweb"},
-			"instructions": "Ask this site a question; answers come only from its published pages."}, 0, "")
+		if modern {
+			notFound()
+			return
+		}
+		reply(http.StatusOK, map[string]any{"protocolVersion": mcp.LegacyVersion(req),
+			"capabilities": capabilities,
+			"serverInfo":   map[string]any{"name": name, "version": "nlweb"},
+			"instructions": instructions}, nil)
 	case "ping":
-		reply(map[string]any{}, 0, "")
+		if modern {
+			notFound()
+			return
+		}
+		reply(http.StatusOK, map[string]any{}, nil)
+	case "server/discover":
+		// In the stateless revision's shape whoever asks, as the admin's is.
+		reply(http.StatusOK, stateless(map[string]any{"supportedVersions": mcp.Supported(),
+			"capabilities": capabilities, "instructions": instructions}, true), nil)
 	case "tools/list":
-		reply(map[string]any{"tools": []any{map[string]any{
+		reply(http.StatusOK, final(map[string]any{"tools": []any{map[string]any{
 			"name": "ask",
-			"description": "Ask " + st.siteLabel() + " in plain words. Answers with the published pages that match, " +
+			"description": "Ask " + name + " in plain words. Answers with the published pages that match, " +
 				"as schema.org objects, and in summarize or generate mode the site's own answer with its sources.",
 			"inputSchema": map[string]any{"type": "object", "required": []string{"query"},
 				"properties": map[string]any{
@@ -263,14 +320,14 @@ func (st *Site) nlwebMCP(w http.ResponseWriter, r *http.Request) {
 						"description": "list (the default) for matching pages; summarize or generate for an answer too."},
 				}},
 			"annotations": map[string]any{"readOnlyHint": true, "openWorldHint": false},
-		}}}, 0, "")
+		}}}, true), nil)
 	case "tools/call":
 		var p struct {
 			Name      string         `json:"name"`
 			Arguments map[string]any `json:"arguments"`
 		}
 		if err := json.Unmarshal(req.Params, &p); err != nil || p.Name != "ask" {
-			reply(nil, -32602, "the one tool here is ask")
+			reply(http.StatusOK, nil, &mcp.Error{Code: mcp.CodeInvalidParams, Message: "the one tool here is ask"})
 			return
 		}
 		v := url.Values{}
@@ -283,13 +340,14 @@ func (st *Site) nlwebMCP(w http.ResponseWriter, r *http.Request) {
 		inner.Method, inner.URL = http.MethodGet, &url.URL{Path: "/ask", RawQuery: v.Encode()}
 		q, problem := readNLWebQuery(inner)
 		if problem != "" {
-			reply(map[string]any{"isError": true, "content": []any{map[string]any{"type": "text", "text": problem}}}, 0, "")
+			reply(http.StatusOK, final(map[string]any{"isError": true,
+				"content": []any{map[string]any{"type": "text", "text": problem}}}, false), nil)
 			return
 		}
 		b, _ := json.Marshal(st.nlwebAnswer(r, q))
-		reply(map[string]any{"content": []any{map[string]any{"type": "text", "text": string(b)}}}, 0, "")
+		reply(http.StatusOK, final(map[string]any{"content": []any{map[string]any{"type": "text", "text": string(b)}}}, false), nil)
 	default:
-		reply(nil, -32601, "no such method")
+		notFound()
 	}
 }
 

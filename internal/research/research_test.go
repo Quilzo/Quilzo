@@ -5,11 +5,14 @@ package research
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/assistant"
 )
 
 var day = time.Date(2026, 10, 14, 9, 0, 0, 0, time.UTC)
@@ -100,6 +103,34 @@ func TestEveryNumberInAReportIsLinkedOrFlagged(t *testing.T) {
 	}
 	if strings.Join(numbers, ",") != "37" || strings.Join(claims, ",") != "effect" || strings.Join(stated, ",") != "120" {
 		t.Errorf("numbers %v, claims %v, stated %v", numbers, claims, stated)
+	}
+}
+
+// A report's figures are the ones the chatbot's check finds, less those
+// standalone says are not claims: one detector serves both, so a figure
+// the chatbot must reproduce is never one a report may leave unlinked
+// without saying why. They had been two copies of one pattern, free to
+// drift.
+func TestAReportsFiguresAreTheOnesTheChatbotFinds(t *testing.T) {
+	for _, text := range []string{
+		"37% improved, and 1,200 were seen in 2026.",
+		"It cost 4.5 and then 12.",
+		"COVID-19 and p53 in Figure 2, on the 3rd day, at https://x.org/10.1",
+	} {
+		var flagged, kept []string
+		for _, sg := range numbers(text, "") {
+			if sg.Kind == "number" {
+				flagged = append(flagged, sg.Text)
+			}
+		}
+		for _, f := range assistant.Figures(text) {
+			if standalone(text, f[0], f[1], "") {
+				kept = append(kept, text[f[0]:f[1]])
+			}
+		}
+		if strings.Join(flagged, "|") != strings.Join(kept, "|") {
+			t.Errorf("%q: the report flags %q, the shared detector %q", text, flagged, kept)
+		}
 	}
 }
 
@@ -289,5 +320,63 @@ func TestACitationIsAWorkAnIndexReturned(t *testing.T) {
 	}
 	if k := SuggestKey(Source{Authors: []string{"Ann Smith"}, Year: 2020}, map[string]bool{"smith2020": true}); k != "smith2020a" {
 		t.Errorf("%q", k)
+	}
+}
+
+// A registered plan checks only as the plan that was signed: its text the
+// text of its digest, its amendments a chain from the digest registered to
+// the one it has now, and the signature good over the digest registered.
+// Nothing asked before, so a plan rewritten by hand under its old
+// signature read as signed.
+func TestARegisteredPlanChecksOnlyAsThePlanThatWasSigned(t *testing.T) {
+	var signed string
+	verify := func(digest string, s Signature) error {
+		if digest != signed || s.Ed25519 != "good" {
+			return errors.New("the signature does not verify")
+		}
+		return nil
+	}
+	honest := func() Project {
+		p := Project{Name: "trial"}
+		if _, err := SetPlan(&p, "Compare means.", "dana", "", day); err != nil {
+			t.Fatal(err)
+		}
+		if err := Register(&p, "dana", day); err != nil {
+			t.Fatal(err)
+		}
+		signed = p.Plan.Digest
+		p.Plan.Signature = &Signature{KeyID: "k", Ed25519: "good", Algorithms: []string{"ed25519"}}
+		for _, plan := range []string{"Compare medians.", "Compare medians, two-sided."} {
+			if _, err := SetPlan(&p, plan, "dana", "the outcome is skewed", day); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return p
+	}
+	if err := CheckPlan(honest(), verify); err != nil {
+		t.Fatalf("a plan registered and amended the honest way: %v", err)
+	}
+	if err := CheckPlan(Project{Name: "draft", Plan: Plan{Text: "Anything."}}, verify); err != nil {
+		t.Errorf("a draft has no signature to check: %v", err)
+	}
+	for name, tamper := range map[string]func(*Project){
+		"the text":            func(p *Project) { p.Plan.Text = "Compare whichever came out best." },
+		"the text and digest": func(p *Project) { p.Plan.Text = "Best."; p.Plan.Digest = Digest("Best.") },
+		"the amendments dropped": func(p *Project) {
+			p.Plan.Text, p.Plan.Digest, p.Amendments = "Best.", Digest("Best."), nil
+		},
+		"a link of the chain":    func(p *Project) { p.Amendments[1].From = Digest("Best.") },
+		"where the chain starts": func(p *Project) { p.Amendments[0].From = Digest("Best.") },
+		"where the chain ends": func(p *Project) {
+			p.Plan.Text, p.Plan.Digest = "Best.", Digest("Best.")
+		},
+		"the signature":         func(p *Project) { p.Plan.Signature.Ed25519 = "forged" },
+		"the signature dropped": func(p *Project) { p.Plan.Signature = nil },
+	} {
+		p := honest()
+		tamper(&p)
+		if err := CheckPlan(p, verify); err == nil {
+			t.Errorf("%s changed and the plan still checks", name)
+		}
 	}
 }
