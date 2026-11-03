@@ -1042,6 +1042,7 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, name string,
 	}
 	if p, ok := data["Principal"].(principal); ok {
 		data["Initial"] = initialOf(p.Name)
+		data["Holding"] = s.holding(p)
 		// The page tells the server somebody is there, warns before the
 		// end and offers to sign in again in place, only where the end
 		// applies (idle.go).

@@ -82,15 +82,43 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 	// What this person may do, resolved against the policy as written rather
 	// than inferred from their role. A role is a rung; a binding can be
 	// own-only, scoped to a subtree, or a deny — and only Evaluate knows.
+	//
+	// Asked at the root and wherever they hold something, and through this
+	// session, as every screen asks (allows). Asked at "/" alone, an
+	// analyst, administrator of /@security, and an author of /blog were told
+	// they may do nothing; asked of the person and not the credential, an
+	// administrator signed in with a reader's token was told they may grant.
 	type permission struct {
 		Action  string
 		Allowed bool
 		Reason  string
+		Where   string
 	}
+	places := s.heldPlaces(p.Name)
 	var may []permission
 	for _, a := range auth.Actions() {
-		d := s.Policy.Evaluate(p.Name, a, "/")
-		may = append(may, permission{string(a), d.Allowed, d.Reason})
+		row := permission{Action: string(a)}
+		var where []string
+		for i, at := range places {
+			d := s.Policy.Evaluate(p.Name, a, at)
+			ok, why := d.Allowed, d.Reason
+			if ok {
+				if err := auth.CheckGranted(d, p.Role, p.Scope, p.Limits, a, at); err != nil {
+					ok, why = false, "this session cannot: "+err.Error()
+				}
+			}
+			switch {
+			case ok && !row.Allowed:
+				row.Allowed, row.Reason = true, why
+				where = append(where, at)
+			case ok:
+				where = append(where, at)
+			case i == 0:
+				row.Reason = why
+			}
+		}
+		row.Where = strings.Join(where, ", ")
+		may = append(may, row)
 	}
 
 	// Their own sessions, and nobody else's. The people screen is where an
@@ -133,6 +161,64 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 		"TabGroups": tabGroups(s.arrangement(r, p), r.URL.Query().Get("moved")),
 		"Message":   r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"),
 	})
+}
+
+// heldPlaces is the root and every resource somebody holds a live grant
+// on, where what they may do is asked.
+func (s *Server) heldPlaces(name string) []string {
+	out := []string{"/"}
+	seen := map[string]bool{"/": true}
+	now := time.Now()
+	for _, b := range s.Policy.Snapshot() {
+		if b.Principal != name || b.Deny || !b.Live(now) || seen[b.Resource] {
+			continue
+		}
+		seen[b.Resource] = true
+		out = append(out, b.Resource)
+	}
+	return out
+}
+
+// holding is what the access policy grants somebody, in their own words:
+// "admin on /@security, reader on /@log". Each rung no higher than their
+// credential carries, because the credential is what acts: an
+// administrator signed in with a reader's token holds reader here.
+//
+// The profile named the session's role as the role somebody held, and the
+// menu said "Signed in as" it. A session carries the highest role held
+// anywhere, as a cap (auth.Policy.Highest), so an analyst, administrator of
+// /@security only, was told they held admin. Empty when the policy names
+// them nowhere, and the screens then say the session's role as before.
+func (s *Server) holding(p principal) string {
+	if s.Policy == nil {
+		return ""
+	}
+	now := time.Now()
+	var out []string
+	seen := map[string]bool{}
+	for _, b := range s.Policy.Snapshot() {
+		if b.Principal != p.Name || b.Deny || !b.Live(now) {
+			continue
+		}
+		what := string(b.Permission)
+		if what == "" {
+			r := b.Role
+			if p.Role.Valid() && !p.Role.AtLeast(r) {
+				r = p.Role
+			}
+			what = string(r)
+		}
+		h := what + " on " + b.Resource
+		if !seen[h] {
+			seen[h] = true
+			out = append(out, h)
+		}
+	}
+	held := strings.Join(out, ", ")
+	if held != "" && p.Scope != "" && p.Scope != "/" {
+		held += "; this credential reaches " + p.Scope + " only"
+	}
+	return held
 }
 
 // arrangement is the person's navigation order, as rows with move buttons.
