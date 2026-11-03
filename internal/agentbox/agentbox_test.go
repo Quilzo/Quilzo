@@ -481,3 +481,26 @@ func TestATinyAllowanceDoesNotPanic(t *testing.T) {
 		t.Error("a 3ns allowance did not close a silent tunnel")
 	}
 }
+
+// Authorization schemes are case-insensitive (RFC 9110 section 11.1); a
+// program whose library wrote "bearer" was refused by every service in its
+// box.
+func TestABoxServiceReadsTheBearerSchemeInAnyCase(t *testing.T) {
+	for _, h := range []string{"Bearer s", "bearer s", "BEARER s"} {
+		req := httptest.NewRequest("POST", "/v1/chat/completions", nil)
+		req.Header.Set("Authorization", h)
+		if !Bearer(req, "s") {
+			t.Errorf("%q was refused", h)
+		}
+	}
+	for _, h := range []string{"", "Bearer t", "Basic s", "s", "Bearer"} {
+		req := httptest.NewRequest("POST", "/v1/chat/completions", nil)
+		req.Header.Set("Authorization", h)
+		if Bearer(req, "s") {
+			t.Errorf("%q was accepted", h)
+		}
+	}
+	if Bearer(httptest.NewRequest("POST", "/", nil), "") {
+		t.Error("no secret accepted nothing")
+	}
+}

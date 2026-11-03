@@ -798,3 +798,19 @@ func TestASteppedUpSessionReachesNothingThroughTheAPI(t *testing.T) {
 		t.Errorf("stepped up: cookie %d, bearer %d", c, b)
 	}
 }
+
+// Authorization schemes are case-insensitive (RFC 9110 section 11.1). The
+// API matched "Bearer " exactly, so a client that wrote "bearer" was told
+// it had sent no token.
+func TestTheBearerSchemeIsReadInAnyCase(t *testing.T) {
+	s, tok, _ := setup(t)
+	for _, scheme := range []string{"Bearer", "bearer", "BEARER"} {
+		r := httptest.NewRequest(http.MethodGet, "/api/v1/pages/index", nil)
+		r.Header.Set("Authorization", scheme+" "+tok)
+		w := httptest.NewRecorder()
+		s.Handler().ServeHTTP(w, r)
+		if w.Code != http.StatusOK {
+			t.Errorf("scheme %q: %d %s", scheme, w.Code, w.Body)
+		}
+	}
+}

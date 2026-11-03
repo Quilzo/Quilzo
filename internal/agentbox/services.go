@@ -13,6 +13,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/assist"
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/mcp"
 	"github.com/quilzo/quilzo/internal/modelapi"
 )
@@ -76,8 +77,8 @@ func RunServer(b *Bridge, m agent.Manifest, catalog []mcp.Operation, version str
 
 // Bearer checks the run's credential on a request to a service in the box.
 func Bearer(r *http.Request, secret string) bool {
-	got, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-	return ok && secret != "" && subtle.ConstantTimeCompare([]byte(got), []byte(secret)) == 1
+	got, scheme := auth.Presented(r.Header.Get("Authorization"))
+	return scheme == "Bearer" && secret != "" && subtle.ConstantTimeCompare([]byte(got), []byte(secret)) == 1
 }
 
 // Models is the model endpoint in a box: the shape of OpenAI's chat

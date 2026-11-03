@@ -67,7 +67,18 @@ func (f *fixture) do(t *testing.T, method, path, body string) (int, map[string]a
 
 func TestOnlyTheProvisioningTokenIsAccepted(t *testing.T) {
 	f := newFixture(t)
-	for _, auth := range []string{"", "Bearer wrong", "Basic right-token", "right-token"} {
+	// The scheme is case-insensitive (RFC 9110 section 11.1); "bearer" was
+	// once refused as no token at all.
+	for _, auth := range []string{"Bearer right-token", "bearer right-token", "BEARER  right-token"} {
+		req := httptest.NewRequest(http.MethodGet, "/scim/v2/Users", nil)
+		req.Header.Set("Authorization", auth)
+		w := httptest.NewRecorder()
+		f.h.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Errorf("%q answered %d", auth, w.Code)
+		}
+	}
+	for _, auth := range []string{"", "Bearer wrong", "Basic right-token", "right-token", "DPoP right-token"} {
 		req := httptest.NewRequest(http.MethodGet, "/scim/v2/Users", nil)
 		if auth != "" {
 			req.Header.Set("Authorization", auth)

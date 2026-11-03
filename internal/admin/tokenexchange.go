@@ -42,16 +42,9 @@ const (
 )
 
 // authzToken is the token in a request's Authorization header and the
-// scheme it came under.
+// scheme it came under, in any case (auth.Presented).
 func authzToken(r *http.Request) (token, scheme string) {
-	h := r.Header.Get("Authorization")
-	if t, ok := strings.CutPrefix(h, "Bearer "); ok {
-		return strings.TrimSpace(t), "Bearer"
-	}
-	if t, ok := strings.CutPrefix(h, "DPoP "); ok {
-		return strings.TrimSpace(t), "DPoP"
-	}
-	return "", ""
+	return auth.Presented(r.Header.Get("Authorization"))
 }
 
 // requestURL is the address a request was made to, as a proof names it.

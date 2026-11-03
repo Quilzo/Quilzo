@@ -316,8 +316,8 @@ func (s *Server) currentTokenID(r *http.Request) string {
 
 // presentedToken is the raw credential on this request, if there is one.
 func presentedToken(r *http.Request) string {
-	if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
-		return strings.TrimSpace(strings.TrimPrefix(h, "Bearer "))
+	if t, scheme := auth.Presented(r.Header.Get("Authorization")); scheme == "Bearer" {
+		return t
 	}
 	if c, err := r.Cookie("quilzo_token"); err == nil {
 		return c.Value

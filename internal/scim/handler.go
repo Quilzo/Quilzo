@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/throttle"
 )
 
@@ -76,8 +77,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if !ok || h.Authenticate == nil || !h.Authenticate(strings.TrimSpace(token)) {
+	token, scheme := auth.Presented(r.Header.Get("Authorization"))
+	if scheme != "Bearer" || h.Authenticate == nil || !h.Authenticate(token) {
 		if h.Limit != nil {
 			h.Limit.Spend(subj)
 		}

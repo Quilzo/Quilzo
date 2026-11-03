@@ -212,3 +212,60 @@ func TestACIJobExchangesItsIdentityToken(t *testing.T) {
 		t.Errorf("a job reached outside its trust: %d %s", w.Code, w.Body)
 	}
 }
+
+// Authorization schemes are case-insensitive (RFC 9110 section 11.1). The
+// admin matched "Bearer " and "DPoP " exactly, so a client that wrote
+// "dpop" with a fresh proof was sent down the bearer path and refused as
+// key-bound, a refusal the throttle counted against its address and the
+// shield was told of as a bad token; "bearer" at /a2a or an admin page was a
+// 401 the same way.
+func TestTheAuthorizationSchemeIsReadInAnyCase(t *testing.T) {
+	r := newIfaceRig(t)
+	var bad []string
+	r.srv.OnBadToken = func(_ *http.Request, _ string, err error) { bad = append(bad, err.Error()) }
+	key, thumb := programKey(t)
+	secret, tok, err := r.srv.Tokens.IssueSession("program", "editor", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.srv.Tokens.BindKey(tok.ID, thumb); err != nil {
+		t.Fatal(err)
+	}
+	call := func(authorization, proof string) *httptest.ResponseRecorder {
+		body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"quilzo_read","arguments":{"operation":"whoami"},` +
+			`"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`
+		req := httptest.NewRequest("POST", "/mcp", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("MCP-Protocol-Version", "2026-07-28")
+		req.Header.Set("Mcp-Method", "tools/call")
+		req.Header.Set("Mcp-Name", "quilzo_read")
+		req.Header.Set("Authorization", authorization)
+		if proof != "" {
+			req.Header.Set("DPoP", proof)
+		}
+		w := httptest.NewRecorder()
+		r.srv.Handler().ServeHTTP(w, req)
+		return w
+	}
+	for _, scheme := range []string{"DPoP", "dpop", "DPOP"} {
+		w := call(scheme+" "+secret, proved(t, key, "POST", "http://example.com/mcp", secret))
+		if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "you are editor") {
+			t.Errorf("scheme %q: %d %s", scheme, w.Code, w.Body)
+		}
+	}
+	for _, scheme := range []string{"bearer", "BEARER"} {
+		if w := call(scheme+" "+r.token, ""); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "you are editor") {
+			t.Errorf("scheme %q at /mcp: %d %s", scheme, w.Code, w.Body)
+		}
+		req := httptest.NewRequest(http.MethodGet, "/today", nil)
+		req.Header.Set("Authorization", scheme+" "+r.token)
+		w := httptest.NewRecorder()
+		r.srv.Handler().ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Errorf("scheme %q at an admin page: %d", scheme, w.Code)
+		}
+	}
+	if len(bad) != 0 {
+		t.Errorf("counted as bad tokens: %v", bad)
+	}
+}

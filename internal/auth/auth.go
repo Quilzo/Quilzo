@@ -1293,6 +1293,29 @@ func (ts *TokenStore) AuthenticateFor(secret, resource string, now time.Time) (*
 	return t, err
 }
 
+// Presented reads an Authorization header: the credential, and the scheme
+// it came under as "Bearer" or "DPoP", whatever case the client wrote it in,
+// because RFC 9110 section 11.1 makes schemes case-insensitive. Any other
+// scheme, or none, is "", "".
+//
+// The one reading of the header the admin, the API, provisioning and the
+// agent box share. Each once matched "Bearer " or "DPoP " exactly: a client
+// that wrote "dpop" with a fresh proof was sent down the bearer path and
+// refused as key-bound, counted against its address and reported as a bad
+// token, and one that wrote "bearer" was told it had sent nothing.
+func Presented(header string) (token, scheme string) {
+	name, rest, _ := strings.Cut(strings.TrimSpace(header), " ")
+	switch {
+	case strings.EqualFold(name, "Bearer"):
+		scheme = "Bearer"
+	case strings.EqualFold(name, "DPoP"):
+		scheme = "DPoP"
+	default:
+		return "", ""
+	}
+	return strings.TrimSpace(rest), scheme
+}
+
 // ErrKeyBound is a token bound to a key presented without a proof made by
 // the key.
 var ErrKeyBound = errors.New("this token is bound to a key and is accepted only with a DPoP proof " +
