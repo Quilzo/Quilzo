@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -38,13 +39,21 @@ func inRoom(t *testing.T, root, who string, args ...string) map[string]any {
 // tryInRoom is inRoom, for a command that may be refused.
 func tryInRoom(t *testing.T, root, who string, args ...string) (map[string]any, error) {
 	t.Helper()
+	raw, err := roomSaid(t, root, who, args...)
+	var got map[string]any
+	_ = json.Unmarshal(raw, &got)
+	return got, err
+}
+
+// roomSaid runs one room command as somebody and returns everything it
+// wrote, whatever shape.
+func roomSaid(t *testing.T, root, who string, args ...string) ([]byte, error) {
+	t.Helper()
 	t.Setenv("USER", who)
 	var buf bytes.Buffer
 	w.Out = &buf
 	err := cmdRoom(root, args)
-	var got map[string]any
-	_ = json.Unmarshal(buf.Bytes(), &got)
-	return got, err
+	return buf.Bytes(), err
 }
 
 // An erasure takes the words off the disk, not only out of the room.
@@ -190,5 +199,70 @@ func TestARoomsRetentionIsApplied(t *testing.T) {
 	// And again changes nothing.
 	if n, err := sweep.Do(time.Now().Add(32 * 24 * time.Hour)); err != nil || n != 0 {
 		t.Errorf("a second pass took %d more (%v)", n, err)
+	}
+}
+
+// A closed room, or a direct one, is read by the people in it.
+//
+// room.Room.Holds says who can see a room, and only posting asked it:
+// anybody who could view the store read every closed room and every direct
+// conversation, saw each message's history, and had the list of who was
+// talking to whom. A member reads as before, and somebody outside who may
+// take a message down still can, without being shown what it said.
+func TestOnlyItsMembersReadAClosedRoom(t *testing.T) {
+	root := roomStore(t)
+	inRoom(t, root, "sam", "open", "board", "--purpose", "the merger",
+		"--kind", "closed", "--members", "sam,lee")
+	id, _ := inRoom(t, root, "sam", "say", "board", "the merger is with Initech")["message"].(string)
+	inRoom(t, root, "sam", "open", "sam-lee", "--kind", "direct", "--members", "sam,lee")
+	inRoom(t, root, "sam", "say", "sam-lee", "Initech said yes")
+	inRoom(t, root, "sam", "open", "lobby", "--purpose", "everybody")
+
+	for _, args := range [][]string{
+		{"read", "board"}, {"read", "board", "--thread", id},
+		{"history", "board", id}, {"read", "sam-lee"},
+	} {
+		said, err := roomSaid(t, root, "pat", args...)
+		if err == nil {
+			t.Errorf("room %v answered somebody outside the room", args)
+		}
+		if strings.Contains(string(said), "Initech") {
+			t.Errorf("room %v showed somebody outside the room what was said: %s", args, said)
+		}
+	}
+	// The list names the rooms somebody is in, and the open ones.
+	var listed []struct {
+		Room room.Room `json:"room"`
+	}
+	said, err := roomSaid(t, root, "pat", "list")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(said, &listed); err != nil {
+		t.Fatalf("%v: %s", err, said)
+	}
+	if len(listed) != 1 || listed[0].Room.ID != "lobby" {
+		t.Errorf("somebody outside two rooms is shown %+v", listed)
+	}
+
+	// A member reads it.
+	if _, err := tryInRoom(t, root, "lee", "read", "board"); err != nil {
+		t.Errorf("a member could not read the room: %v", err)
+	}
+	if _, err := tryInRoom(t, root, "LEE", "history", "board", id); err != nil {
+		t.Errorf("a member named in another case could not read it: %v", err)
+	}
+
+	// Somebody outside may still take a message down, and is told what
+	// they did and not what it said.
+	got := inRoom(t, root, "pat", "remove", "board", id, "--because", "names a client")
+	if b, _ := json.Marshal(got); strings.Contains(string(b), "Initech") || got["deleted"] == nil {
+		t.Errorf("a removal from outside the room answered %s", b)
+	}
+	// And the room still holds the words for its members, as removals do.
+	if l, _ := loadRoom(root, "board"); l != nil {
+		if m, ok := l.Get(id); !ok || len(m.History()) == 0 || m.History()[0].Text == "" {
+			t.Errorf("withholding the words from the answer took them from the room: %+v", m)
+		}
 	}
 }

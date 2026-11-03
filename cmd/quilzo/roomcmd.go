@@ -112,6 +112,25 @@ func save(root, id string, m *room.Message) error {
 	return appendJSONL(roomMessages(root, id), m)
 }
 
+// readableRoom loads a room for somebody who means to read it.
+//
+// A closed room is for its members and a direct one for the people in it
+// (room.Room.Holds), and only posting asked: anybody who could view the
+// store read every closed room and every direct conversation in it, and
+// each message's history. Refused in the words posting uses.
+func readableRoom(root, id string, caller *Caller) (*room.Log, error) {
+	l, err := loadRoom(root, id)
+	if err != nil {
+		return nil, err
+	}
+	if !l.Room().Holds(caller.Name) {
+		return nil, fmt.Errorf("%s is not in %s, which is %s: what is said "+
+			"there is for the people in it", caller.Name, l.Room().ID,
+			l.Room().Kind)
+	}
+	return l, nil
+}
+
 // changeRoom loads a room under its lock, for a command about to change
 // it, and returns what releases the lock.
 //
@@ -238,10 +257,16 @@ func roomList(root string) error {
 		Removed  int       `json:"removed"`
 	}
 	var rows []row
+	caller := resolveCaller(root, flagToken)
 	for _, id := range names {
 		l, lerr := loadRoom(root, id)
 		if lerr != nil {
 			return lerr
+		}
+		// The rooms somebody is in, and the open ones. A list of every
+		// direct conversation is a list of who talks to whom.
+		if !l.Room().Holds(caller.Name) {
+			continue
 		}
 		r := row{Room: l.Room(), Messages: l.Len()}
 		for _, m := range l.All() {
@@ -415,7 +440,7 @@ func roomRead(root string, args []string) error {
 	if len(pos) != 1 {
 		return fmt.Errorf("usage: quilzo room read ROOM [--thread ID]")
 	}
-	l, err := loadRoom(root, pos[0])
+	l, err := readableRoom(root, pos[0], resolveCaller(root, flagToken))
 	if err != nil {
 		return err
 	}
@@ -545,7 +570,19 @@ func roomRemove(root string, args []string) error {
 		return err
 	}
 	record(root, m.Record("removed", caller.Name, caller.Kind))
-	if w.JSON(m) {
+	// Somebody outside a closed room may still take a message down, as a
+	// moderator or for an erasure; they are told what they did and not
+	// what it said, which a removal other than an erasure keeps for the
+	// room's members.
+	shown := *m
+	if !l.Room().Holds(caller.Name) {
+		shown.Revisions = make([]room.Revision, len(m.Revisions))
+		for i, r := range m.Revisions {
+			r.Text = ""
+			shown.Revisions[i] = r
+		}
+	}
+	if w.JSON(shown) {
 		return nil
 	}
 	w.Human("%s%s%s\n", bold, m.ID, reset)
@@ -567,7 +604,7 @@ func roomHistory(root string, args []string) error {
 	if len(pos) != 2 {
 		return fmt.Errorf("usage: quilzo room history ROOM MESSAGE")
 	}
-	l, err := loadRoom(root, pos[0])
+	l, err := readableRoom(root, pos[0], resolveCaller(root, flagToken))
 	if err != nil {
 		return err
 	}
