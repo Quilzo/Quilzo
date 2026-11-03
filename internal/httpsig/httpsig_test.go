@@ -4,6 +4,7 @@
 package httpsig_test
 
 import (
+	"bufio"
 	"crypto"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -483,6 +484,64 @@ func TestASignatureForAnotherHostIsRefusedWhereTheOriginIsKnown(t *testing.T) {
 				s, err := httpsig.VerifyAt(arriving(signedFor("a.example"), host), "https://a.example", keys, 0, at())
 				if err != nil || s == nil || !s.CoversRequest() {
 					t.Errorf("signed for a.example and arriving as %s: %v %v", host, s, err)
+				}
+			}
+		})
+	}
+}
+
+// A request line may name the whole URL (RFC 9112 section 3.2.2), and Go's
+// server then takes both the request's URL and its Host from it. Reading
+// such a request as one this server was about to send let the receiver of
+// a delivery signed for b.example replay it to a.example as
+// "POST https://b.example/@/inbox" and pass every destination check, the
+// origin notwithstanding, whether the signature covered @authority, the
+// draft's host line or @target-uri.
+func TestARequestLineNamingAnotherHostIsReadAgainstTheOrigin(t *testing.T) {
+	priv, pub := edPair(t, 11)
+	keys := []httpsig.PublicKey{pub}
+	for _, c := range []struct {
+		format string
+		cover  []string
+	}{
+		{"rfc9421", []string{"@method", "@authority", "@path"}},
+		{"rfc9421", []string{"@method", "@target-uri"}},
+		{"cavage", []string{"(request-target)", "host", "date"}},
+	} {
+		t.Run(c.format+" "+strings.Join(c.cover, " "), func(t *testing.T) {
+			arriving := func(signedHost, line string) *http.Request {
+				out, err := http.NewRequest("POST", "https://"+signedHost+"/@/inbox", nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if c.format == "rfc9421" {
+					err = httpsig.Sign(out, pub.ID, pub.Alg, priv, c.cover, at())
+				} else {
+					err = httpsig.SignCavage(out, pub.ID, pub.Alg, priv, c.cover, at())
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				var raw strings.Builder
+				raw.WriteString("POST " + line + " HTTP/1.1\r\nHost: " + signedHost + "\r\n")
+				out.Header.Write(&raw)
+				raw.WriteString("Content-Length: 0\r\n\r\n")
+				in, err := http.ReadRequest(bufio.NewReader(strings.NewReader(raw.String())))
+				if err != nil {
+					t.Fatal(err)
+				}
+				return in
+			}
+			r := arriving("b.example", "https://b.example/@/inbox")
+			if s, err := httpsig.VerifyAt(r, "https://a.example", keys, 0, at()); err == nil {
+				t.Errorf("a delivery signed for b.example, sent as %s %s, verified at a.example covering %v",
+					r.Method, r.RequestURI, s.Covered)
+			}
+			// Signed for this server, it verifies however the line is written.
+			for _, line := range []string{"/@/inbox", "https://a.example/@/inbox"} {
+				r := arriving("a.example", line)
+				if s, err := httpsig.VerifyAt(r, "https://a.example", keys, 0, at()); err != nil || s == nil {
+					t.Errorf("signed for a.example, sent as %s: %v %v", line, s, err)
 				}
 			}
 		})

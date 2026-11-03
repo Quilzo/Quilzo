@@ -332,18 +332,24 @@ func parseUnix(s string) (int64, error) {
 
 // targetURI rebuilds the absolute request URI.
 //
-// An outbound request carries an absolute URL already and is used as-is: that
-// is a client signing what it is about to send. Otherwise this is an inbound
-// request and the URL holds only a path, so the origin supplies the rest.
-// Without a configured origin it falls back to the connection, which is right
-// for a directly-served site and wrong behind a proxy -- and wrong here means
-// a refused signature, never an accepted one.
+// A configured origin is given only to check an inbound request, and it
+// supplies everything but the path and query. That comes first, before the
+// URL is asked whether it is absolute: a request line may name the whole URL
+// (RFC 9112 section 3.2.2), Go's server then reads an absolute URL from it,
+// and taking that as-is let a delivery signed for another server, sent as
+// "POST https://b.example/@/inbox", verify here.
+//
+// Otherwise an absolute URL is used as-is: that is a client signing what it
+// is about to send. Without a configured origin an inbound request falls back
+// to the connection, which is right for a directly-served site and wrong
+// behind a proxy -- and wrong here means a refused signature, never an
+// accepted one.
 func targetURI(r *http.Request, origin string) string {
-	if r.URL.IsAbs() {
-		return r.URL.String()
-	}
 	if origin != "" {
 		return strings.TrimSuffix(origin, "/") + r.URL.RequestURI()
+	}
+	if r.URL.IsAbs() {
+		return r.URL.String()
 	}
 	scheme := "http"
 	if r.TLS != nil {
@@ -363,11 +369,16 @@ func targetURI(r *http.Request, origin string) string {
 // as RFC 9421 section 2.2.3 normalises it, so a sender that wrote the
 // origin's host in capitals is not refused for it.
 //
-// Outbound, or with no origin, it is the request's own Host: a client
-// signing what it is about to send, or a server that has not said where it
-// is, for which @authority proves only the host the request names.
+// That holds however the request line is written: one naming the whole URL
+// gives Go's server an absolute URL and takes the Host from it, and reading
+// such a request as outbound let "POST https://b.example/@/inbox" past the
+// origin. An origin is given only to check an inbound request.
+//
+// With no origin it is the request's own Host: a client signing what it is
+// about to send, or a server that has not said where it is, for which
+// @authority proves only the host the request names.
 func authority(r *http.Request, origin string) string {
-	if origin != "" && !r.URL.IsAbs() {
+	if origin != "" {
 		if u, err := url.Parse(origin); err == nil && u.Host != "" {
 			return strings.ToLower(u.Host)
 		}
@@ -393,9 +404,10 @@ func Base(r *http.Request, components, input string) (string, []string, error) {
 
 // BaseAt is Base for a server that knows its own public origin.
 //
-// Only @target-uri needs it, and only inbound. Go fills r.URL from the
-// request-target, which for an ordinary request is origin-form: a handler sees
-// "/inbox", not "https://us.example/inbox". Rebuilding the target URI from
+// @target-uri and @authority need it, and only inbound (see authority for
+// the second). Go fills r.URL from the request-target, which for an
+// ordinary request is origin-form: a handler sees "/inbox", not
+// "https://us.example/inbox". Rebuilding the target URI from
 // that produces "/inbox" and a base that matches nothing the sender signed, so
 // every signature covering @target-uri fails -- which is precisely the shape
 // Mastodon's RFC 9421 implementation requires and sends.
