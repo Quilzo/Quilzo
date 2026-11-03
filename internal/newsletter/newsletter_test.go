@@ -130,6 +130,34 @@ func TestOneInboxIsMailedOnceAnHourHoweverItIsSpelled(t *testing.T) {
 	}
 }
 
+// What a mail relay reads past before it delivers is read past here too: a
+// final dot on the domain, quoting and comments. Each of these spellings
+// was an inbox of its own, with an hour of its own, and the relay delivers
+// every one to victim@gmail.com: the dot alone gave Gmail's dots back,
+// one spelling a link for every place a dot can go.
+func TestAnInboxIsNotRespelledByWhatTheRelayReadsPast(t *testing.T) {
+	l := openList(t)
+	if _, out, err := l.SignUp(Subscriber{Email: "victim@gmail.com"}, t0); err != nil || out != Mail {
+		t.Fatalf("the first sign-up: %v %v", out, err)
+	}
+	for i, spelling := range []string{"v.ictim@gmail.com.", "vi.ctim+1@GMAIL.COM.", "vic.tim@googlemail.com..",
+		`"victim"@gmail.com`, `"v.ictim+2"@gmail.com`, `"vic\tim"@gmail.com`,
+		"victim(1)@gmail.com", "victim@gmail.com(2)", "victim@(3)gmail.com", "vic((4))tim@gmail.com"} {
+		if _, out, err := l.SignUp(Subscriber{Email: spelling}, t0.Add(time.Duration(i+1)*time.Minute)); err != nil || out != Quiet {
+			t.Errorf("%s, within the hour of a link to the same inbox: %v %v", spelling, out, err)
+		}
+	}
+	// Kept as typed, and other inboxes are still their own.
+	if s, err := l.Get(l.ID("v.ictim@gmail.com.")); err != nil || s.Email != "v.ictim@gmail.com." {
+		t.Fatalf("the address as typed: %+v %v", s, err)
+	}
+	for _, other := range []string{"victim2@gmail.com.", `"ann"@example.com`, "a.nn@example.com."} {
+		if _, out, _ := l.SignUp(Subscriber{Email: other}, t0.Add(20*time.Minute)); out != Mail {
+			t.Errorf("%s was not mailed: another inbox's hour held it", other)
+		}
+	}
+}
+
 // A link that was not sent after all lets the inbox ask again at once,
 // under any spelling, and the clocks of inboxes are let go of with the
 // addresses that never confirmed.

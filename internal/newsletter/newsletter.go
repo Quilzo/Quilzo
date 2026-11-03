@@ -116,6 +116,10 @@ var (
 
 var reEmail = regexp.MustCompile(`^[^@\s]{1,64}@[^@\s]+\.[^@\s]+$`)
 
+// reComment is a comment in an address, (like this), with none inside it:
+// mailbox takes them out innermost first.
+var reComment = regexp.MustCompile(`\([^()]*\)`)
+
 // Normalize checks an address and puts it in the one form the list keeps:
 // trimmed and in lower case, so one inbox is one entry.
 func Normalize(addr string) (string, error) {
@@ -134,11 +138,23 @@ func Normalize(addr string) (string, error) {
 // victim+2@gmail.com and v.ictim@gmail.com were three addresses, an hour
 // each, and one inbox mailed three links. The list keeps the address as it
 // was typed.
+//
+// First it reads past what a mail relay reads past before it delivers: a
+// comment, quoting, and a final dot on the domain. Without that,
+// "victim"@gmail.com, victim(1)@gmail.com and v.ictim@gmail.com. were each
+// an inbox with an hour of its own, all delivered to victim@gmail.com, and
+// the final dot alone gave Gmail's dots back. Reading past too much only
+// makes two inboxes share an hour; reading past too little is the hole.
 func mailbox(addr string) string {
+	for prev := ""; prev != addr; {
+		prev, addr = addr, reComment.ReplaceAllString(addr, "")
+	}
+	addr = strings.NewReplacer(`"`, "", `\`, "").Replace(addr)
 	local, domain, ok := strings.Cut(addr, "@")
 	if !ok {
 		return addr
 	}
+	domain = strings.TrimRight(domain, ".")
 	if i := strings.IndexByte(local, '+'); i > 0 {
 		local = local[:i]
 	}
