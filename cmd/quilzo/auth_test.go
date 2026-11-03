@@ -4,6 +4,7 @@
 package main
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -168,4 +169,85 @@ func TestTheOnlyAdministratorGetsTheirFirstToken(t *testing.T) {
 	if !boot {
 		t.Error("the record does not say the first token was the bootstrap")
 	}
+}
+
+// Each place that says how to run an auth subcommand names the arguments
+// the command needs.
+//
+// `quilzo help` said `quilzo auth revoke WHO [--on PATH]`, and the command
+// needs a principal and a role: a store set up by following the help failed
+// at its first revoke, with a usage line the help had never shown. `quilzo
+// auth`'s own list said explain needs an action, which it does not. So the
+// count of required arguments in both lists is checked against the usage
+// each command answers with when it is given none, which is what the
+// command itself reads.
+func TestEveryAuthSynopsisNamesTheArgumentsTheCommandNeeds(t *testing.T) {
+	root := connectStore(t)
+	help := helpText(t)
+	_, read := captureStdout(t)
+	_ = authUsage()
+	own := read()
+
+	for _, sub := range []string{"grant", "deny", "revoke", "explain", "enrol", "unlock"} {
+		err := cmdAuth(root, []string{sub})
+		if err == nil || !strings.Contains(err.Error(), "usage:") {
+			t.Fatalf("`quilzo auth %s` with nothing else did not answer its usage: %v", sub, err)
+		}
+		codes := synopses(err.Error(), "quilzo auth "+sub)
+		if len(codes) == 0 {
+			t.Fatalf("the usage of auth %s does not name it: %v", sub, err)
+		}
+		need := requiredArgs(codes[0])
+		if len(synopses(help, "quilzo auth "+sub)) == 0 || len(synopses(own, sub)) == 0 {
+			t.Fatalf("auth %s is missing from one of the lists, so nothing was compared", sub)
+		}
+		for _, line := range synopses(help, "quilzo auth "+sub) {
+			if n := requiredArgs(line); n >= 0 && n != need {
+				t.Errorf("`quilzo help` says `quilzo auth %s%s`, which is %d argument(s); "+
+					"the command needs %d: %s", sub, line, n, need, err)
+			}
+		}
+		for _, line := range synopses(own, sub) {
+			if n := requiredArgs(line); n >= 0 && n != need {
+				t.Errorf("`quilzo auth` says `%s%s`, which is %d argument(s); "+
+					"the command needs %d: %s", sub, line, n, need, err)
+			}
+		}
+	}
+}
+
+// synopses finds every place text names the command at the start of a line
+// or of a usage, and returns what follows it up to the description or the
+// next alternative.
+func synopses(text, command string) []string {
+	var out []string
+	pat := regexp.MustCompile(`(?m)(?:^\s*|usage: |or: |\| )` + regexp.QuoteMeta(command) +
+		`((?:[ \t][^\n]*)?)$`)
+	end := regexp.MustCompile(`\s{2,}| \| `)
+	for _, m := range pat.FindAllStringSubmatch(text, -1) {
+		rest := m[1]
+		if i := end.FindStringIndex(strings.TrimLeft(rest, " \t")); i != nil {
+			rest = strings.TrimLeft(rest, " \t")[:i[0]]
+		}
+		out = append(out, " "+strings.TrimSpace(rest))
+	}
+	return out
+}
+
+// requiredArgs counts the placeholders a synopsis requires, stopping at the
+// first optional part or flag. It is -1 for a line that says "as above".
+func requiredArgs(synopsis string) int {
+	placeholder := regexp.MustCompile(`^(<[^>]+>|[A-Z][A-Z0-9_/|]*)$`)
+	n := 0
+	for _, word := range strings.Fields(synopsis) {
+		switch {
+		case word == "...":
+			return -1
+		case placeholder.MatchString(word):
+			n++
+		default:
+			return n
+		}
+	}
+	return n
 }

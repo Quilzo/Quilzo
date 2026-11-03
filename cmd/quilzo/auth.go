@@ -174,7 +174,7 @@ func authUsage() error {
   list
   enrol <principal> [--for 24h] [--revoke]   a one-time link that adds their passkey
   unlock <principal>                         let them sign in again after a lockout
-  explain <principal> <action> [--on /path]
+  explain <principal> [action] [--on /path]
   roles
 
 Four roles, in order. Each includes the ones below it:

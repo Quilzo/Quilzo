@@ -448,7 +448,7 @@ access
   quilzo auth deny WHO ROLE [--on PATH]    a deny wins wherever it sits
   quilzo auth explain WHO [ACTION]         why someone can or cannot do a thing
   quilzo standing list                     what a situation can hand somebody, and what it cannot
-  quilzo auth revoke WHO [--on PATH]       take a grant back
+  quilzo auth revoke WHO ROLE [--on PATH]  take a grant back
   quilzo auth enrol WHO [--for 24h]        a one-time link that adds their passkey (--revoke ends it)
   quilzo auth unlock WHO                   let them sign in again after a lockout
   quilzo auth recover                      break-glass when every admin token is lost
