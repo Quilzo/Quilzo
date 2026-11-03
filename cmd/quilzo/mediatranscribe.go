@@ -74,11 +74,15 @@ func mediaTranscribe(root string, args []string) error {
 	w.Human("  %srecorded as %s by %s, for %s%s\n", dim, f.Origin.SourceType, model, who, reset)
 	w.Human("  %sid %s%s\n", dim, f.ID, reset)
 	w.Human("\n  A model heard the words, not the door closing nor who is speaking. Read it, mend it,\n")
-	w.Human("  then attach it:\n")
 	if rec.Kind == media.Video {
+		w.Human("  then attach it:\n")
 		w.Human("    quilzo media captions %s %s --lang %s\n", shortID(rec.ID), shortID(f.ID), orDefault(tag, "LANG"))
 	} else {
-		w.Human("    as the transcript beside the recording, on the page that plays it\n")
+		// A sound has nothing to attach captions to, and no section plays
+		// one yet. This said to put the words "on the page that plays it",
+		// and there was no such page.
+		w.Human("  then place it by hand: no section plays a recording yet, so link /media/%s\n", rec.ID)
+		w.Human("  from a page and put these words beside the link, as its transcript\n")
 	}
 	return nil
 }

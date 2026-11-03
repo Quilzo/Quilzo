@@ -1790,7 +1790,9 @@ The rules:
 - The recording is stored marked as a synthetic voice, with the model and the
   person accountable, as a generated picture is. A person hearing it is owed
   knowing it is not a person.
-- Its words are kept with it as its transcript.
+- Its words are kept with it as its transcript. No section plays a recording
+  yet, and no page shows its words for it: link `/media/ID` from a page by
+  hand and put the words beside the link.
 - Text holding personal data goes only to a route allowed it. Masking cannot
   help here: a placeholder read aloud is not a recording anybody wants.
 
