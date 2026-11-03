@@ -641,6 +641,30 @@ func TestACompromisedCredentialStepsUpTheRestAndTellsSecurity(t *testing.T) {
 	}
 }
 
+// The hold on the rest of their sessions survives the admin writing its
+// own copy of the store, read before the event: a sign-in by anybody, in
+// the moment before the admin next read the file, used to undo it.
+func TestAHoldAfterACompromiseSurvivesTheAdminsOwnCopy(t *testing.T) {
+	c := signalsStore(t, "email")
+	c.connect(t, "oidc")
+	pk := session(t, c.root, "passkey:ada@example.com", "ada@example.com", auth.MethodPasskey)
+	admins, err := loadTokens(c.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.send(t, riscEvent+"credential-compromise", email("ada@example.com"), nil, time.Now())
+	if _, _, err := admins.IssueSession("oidc:boss@example.com", "boss@example.com", auth.RoleAdmin, "/",
+		time.Hour, auth.RoleAdmin, auth.MethodSSO); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveTokens(c.root, admins); err != nil {
+		t.Fatal(err)
+	}
+	if got := stepUpOf(c.root, pk); !strings.Contains(got, "compromised") {
+		t.Fatalf("the admin's copy undid the hold: %q", got)
+	}
+}
+
 // A disabled account is suspended: every token, every app, and a deny
 // that passkey sign-in refuses (internal/admin, which checks the shape this
 // asserts).
