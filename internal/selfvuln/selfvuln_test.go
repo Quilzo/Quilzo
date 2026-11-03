@@ -239,3 +239,16 @@ func TestADatabaseZipIsReadForTheStandardLibraryOnly(t *testing.T) {
 		t.Fatal("read nothing")
 	}
 }
+
+// Every file a feature is said to own is in the tree. Packages that left
+// for Vaigil (internal/inbound, internal/ssf) were still listed as serving
+// feeds, so the map said a feature was reached through code that is not
+// here, and nothing would have said so of the next one to go.
+func TestEveryOwnedPatternNamesFilesThatExist(t *testing.T) {
+	for _, o := range owners {
+		got, err := filepath.Glob(filepath.Join("..", "..", filepath.FromSlash(o.pattern)))
+		if err != nil || len(got) == 0 {
+			t.Errorf("%s is said to serve %s, and no file is there", o.pattern, o.feature)
+		}
+	}
+}

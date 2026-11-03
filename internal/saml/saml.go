@@ -40,11 +40,15 @@
 // # What is not here, on purpose
 //
 // Encrypted assertions (XML Encryption's CBC mode has a padding oracle and
-// TLS already protects the response), single logout (SCIM and Shared
-// Signals end sessions more reliably), the artifact and SOAP bindings, and
-// acting as an identity provider. Inflate is never used on input: responses
-// arrive by POST, base64 only, so there is no decompression bomb to defuse
-// (gosaml2 CVE-2023-26483).
+// TLS already protects the response), single logout, the artifact and SOAP
+// bindings, and acting as an identity provider. Single logout is not
+// offered: it ends a session here only when the browser carries the
+// provider's logout request back, which a closed tab never does, so it
+// would promise what it cannot keep. A session ends at session.max, sooner
+// when the provider says its own does, and at once for somebody SCIM
+// deactivates; nothing else from the provider ends one. Inflate is never
+// used on input: responses arrive by POST, base64 only, so there is no
+// decompression bomb to defuse (gosaml2 CVE-2023-26483).
 package saml
 
 import (

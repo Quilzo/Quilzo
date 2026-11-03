@@ -307,24 +307,6 @@ var commandNeeds = map[string]need{
 	"personalise list": {action: auth.ActView},
 	"personalise test": {action: auth.ActView},
 
-	// Planting a canary commits the organisation to acting when it fires,
-	// and puts a row in the audit log saying so. The same weight as a
-	// publish. The three subcommands that read a register the operator
-	// already holds are checked as views below — including mint, which
-	// writes nothing anywhere and produces random characters that are not a
-	// canary until somebody plants them.
-	// Deleting stored evidence and placing or lifting a hold are statements
-	// the organisation stands behind and cannot undo, so the default for the
-	// group is a publish. Storing events is an ordinary write, and the two
-	// that only read are views.
-	// Sending a notice is the organisation speaking to its customers and to
-	// a regulator, and an erasure cannot be undone: both are publishes.
-	// Adding a contact and recording an objection are ordinary writes, and
-	// the three that only read are views.
-	// Merging two people's records reports one person's device compliance
-	// as another's, and the merge is appended to the audit chain rather
-	// than edited afterwards: the same authority as publishing. Reading the
-	// reconciliation is a view.
 	// Saying something is an ordinary write. Taking down somebody else's
 	// words, or erasing under Article 17, is checked as a publish inside
 	// the command because the answer depends on whose message it is.

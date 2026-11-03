@@ -4,12 +4,17 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/out"
+	"github.com/quilzo/quilzo/internal/posture"
 	"github.com/quilzo/quilzo/internal/selfvuln"
 	"github.com/quilzo/quilzo/internal/shield"
 
@@ -129,5 +134,82 @@ func TestACallerPastingCredentialsIsToldOnceADay(t *testing.T) {
 	}
 	if n := mailsAbout(box, "A credential was in a prompt"); n != 1 {
 		t.Fatalf("three prompts in a row told the security contact %d times", n)
+	}
+}
+
+// kevMissing is what the posture says about the exploited catalogue, for
+// this store.
+func kevMissing(t *testing.T, root string) []posture.Finding {
+	t.Helper()
+	var found []posture.Finding
+	for _, f := range posture.Scan(Observe(root, t.TempDir(), posture.ServerFacts{}), nil).Findings {
+		if f.Rule == "self.kev-missing" {
+			found = append(found, f)
+		}
+	}
+	return found
+}
+
+// kevFile is CISA's catalogue as an operator fetches it, released then.
+func kevFile(t *testing.T, released time.Time) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "known_exploited_vulnerabilities.json")
+	body := fmt.Sprintf(`{"dateReleased":%q,"vulnerabilities":[{"cveID":"CVE-2026-0001"}]}`,
+		released.UTC().Format(time.RFC3339Nano))
+	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+// Without CISA's catalogue, or with one long out of date, a flaw in this
+// build that is being exploited is never contained at once, and nothing
+// said so: self check showed the Go database's age and not the
+// catalogue's, and no posture rule looked. Both say it now.
+func TestAMissingOrOldExploitedCatalogueIsSaid(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("QUILZO_TOKEN", "")
+	root := connectStore(t)
+	var said bytes.Buffer
+	w = out.New(false)
+	w.Out = &said
+	if err := selfCheck(root); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(said.String(), "quilzo self kev") {
+		t.Errorf("self check with no catalogue says:\n%s", said.String())
+	}
+	if got := kevMissing(t, root); len(got) != 1 || !strings.Contains(got[0].Detail, "no catalogue") {
+		t.Errorf("the posture with no catalogue: %+v", got)
+	}
+
+	old := time.Now().AddDate(0, 0, -40)
+	if err := selfKEV(root, []string{kevFile(t, old)}); err != nil {
+		t.Fatal(err)
+	}
+	said.Reset()
+	if err := selfCheck(root); err != nil {
+		t.Fatal(err)
+	}
+	if s := said.String(); !strings.Contains(s, old.UTC().Format("2 January 2006")) || !strings.Contains(s, "40 days old") {
+		t.Errorf("self check with a catalogue 40 days old says:\n%s", s)
+	}
+	if got := kevMissing(t, root); len(got) != 1 || !strings.Contains(got[0].Detail, "40 days") {
+		t.Errorf("the posture with a catalogue 40 days old: %+v", got)
+	}
+
+	recent := time.Now().AddDate(0, 0, -2)
+	if err := selfKEV(root, []string{kevFile(t, recent)}); err != nil {
+		t.Fatal(err)
+	}
+	said.Reset()
+	if err := selfCheck(root); err != nil {
+		t.Fatal(err)
+	}
+	if s := said.String(); !strings.Contains(s, recent.UTC().Format("2 January 2006")) || strings.Contains(s, "quilzo self kev") {
+		t.Errorf("self check with a current catalogue says:\n%s", s)
+	}
+	if got := kevMissing(t, root); len(got) != 0 {
+		t.Errorf("the posture with a current catalogue: %+v", got)
 	}
 }

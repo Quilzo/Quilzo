@@ -55,18 +55,56 @@ func selfBinary() (selfvuln.Linked, string, error) {
 // last gave it (quilzo self kev).
 func kevPath(root string) string { return filepath.Join(root, "self", "kev.json") }
 
+// kevKept is CISA's catalogue as kept here: the date it was released, as
+// the catalogue gives it, and its CVE ids.
+type kevKept struct {
+	Released string   `json:"released"`
+	IDs      []string `json:"ids"`
+}
+
+// kevStatus is whether the catalogue is kept and of when. Without it, a
+// flaw in this build that is being exploited is never contained at once,
+// so self check and the posture say so (self.kev-missing).
+type kevStatus struct {
+	Kept bool `json:"kept"`
+	// Of is the date the catalogue was released, or when it was kept here
+	// when that date cannot be read.
+	Of    time.Time `json:"of,omitzero"`
+	Count int       `json:"count,omitempty"`
+	// Problem says why a kept catalogue cannot be read.
+	Problem string `json:"problem,omitempty"`
+}
+
+// loadKEV is the catalogue kept, and how it stands.
+func loadKEV(root string) (kevKept, kevStatus) {
+	var k kevKept
+	b, err := os.ReadFile(kevPath(root))
+	if errors.Is(err, os.ErrNotExist) {
+		return k, kevStatus{}
+	}
+	if err != nil {
+		return k, kevStatus{Problem: err.Error()}
+	}
+	if err := json.Unmarshal(b, &k); err != nil || len(k.IDs) == 0 {
+		return kevKept{}, kevStatus{Problem: "self/kev.json names no vulnerability; give the catalogue again"}
+	}
+	st := kevStatus{Kept: true, Count: len(k.IDs)}
+	if t, err := time.Parse(time.RFC3339, strings.TrimSpace(k.Released)); err == nil {
+		st.Of = t
+	} else if t, err := time.Parse(time.DateOnly, strings.TrimSpace(k.Released)); err == nil {
+		st.Of = t
+	} else if fi, err := os.Stat(kevPath(root)); err == nil {
+		st.Of = fi.ModTime()
+	}
+	return k, st
+}
+
 // exploitedIDs is which advisory ids are known to be exploited.
 func exploitedIDs(root string) func(ids []string) bool {
 	known := map[string]bool{}
-	if b, err := os.ReadFile(kevPath(root)); err == nil {
-		var kept struct {
-			IDs []string `json:"ids"`
-		}
-		if json.Unmarshal(b, &kept) == nil {
-			for _, id := range kept.IDs {
-				known[strings.ToUpper(id)] = true
-			}
-		}
+	kept, _ := loadKEV(root)
+	for _, id := range kept.IDs {
+		known[strings.ToUpper(id)] = true
 	}
 	return func(ids []string) bool {
 		for _, id := range ids {
@@ -135,6 +173,8 @@ type selfReport struct {
 	Binary   selfvuln.Verdict `json:"binary"`
 	Unread   string           `json:"unread,omitempty"`
 	Snapshot string           `json:"snapshot"`
+	// Exploited is CISA's catalogue as this check read it.
+	Exploited kevStatus `json:"exploited"`
 }
 
 func selfReportPath(root string) string { return filepath.Join(root, "self", "report.json") }
@@ -150,8 +190,9 @@ func runSelfCheck(root string, now time.Time) (selfReport, error) {
 		return selfReport{}, err
 	}
 	linked, started, lerr := selfBinary()
+	_, kev := loadKEV(root)
 	rep := selfReport{Report: selfvuln.Assess(snap, selfvuln.GoVersion(), linked, fm, exploitedIDs(root), now),
-		Snapshot: snap.Source}
+		Snapshot: snap.Source, Exploited: kev}
 	if lerr != nil {
 		rep.Unread = lerr.Error()
 	}
@@ -253,6 +294,24 @@ func selfCheck(root string) error {
 	if age := time.Since(rep.Database); age > 30*24*time.Hour {
 		w.Human("  %sthe database is %d days old; give a newer one with quilzo self update vulndb.zip%s\n",
 			yellow, int(age.Hours()/24), reset)
+	}
+	// What is known to be exploited is what contains a flaw at once, and
+	// without the catalogue that never happens: this used to say nothing.
+	const kevFetch = "quilzo self kev known_exploited_vulnerabilities.json (from https://www.cisa.gov/known-exploited-vulnerabilities-catalog)"
+	switch kev := rep.Exploited; {
+	case kev.Problem != "":
+		w.Human("  %sCISA's catalogue of exploited vulnerabilities cannot be read (%s), so no flaw is contained "+
+			"at once; give it again with %s%s\n", yellow, kev.Problem, kevFetch, reset)
+	case !kev.Kept:
+		w.Human("  %sno catalogue of exploited vulnerabilities has been given, so no flaw is contained at once; "+
+			"give CISA's with %s%s\n", yellow, kevFetch, reset)
+	default:
+		w.Human("  with CISA's catalogue of exploited vulnerabilities of %s (%d)\n",
+			kev.Of.UTC().Format("2 January 2006"), kev.Count)
+		if age := time.Since(kev.Of); age > 30*24*time.Hour {
+			w.Human("  %sthe catalogue is %d days old; give a newer one with %s%s\n",
+				yellow, int(age.Hours()/24), kevFetch, reset)
+		}
 	}
 	if rep.Unread != "" {
 		w.Human("  %swhat is linked into this binary could not be read (%s), so nothing is cleared for not being linked%s\n",

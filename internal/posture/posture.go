@@ -308,6 +308,20 @@ type AlertFacts struct {
 	Problem string `json:"problem,omitempty"`
 }
 
+// SelfFacts are what the self-check (quilzo self) decides with that an
+// operator has to give. A flaw in this build that is being exploited is
+// contained at once only when CISA's catalogue of exploited
+// vulnerabilities says so, and without the catalogue, or with one long out
+// of date, that never happens.
+type SelfFacts struct {
+	Checked bool `json:"checked"`
+	// Exploited says the catalogue is kept; ExploitedOf is the date it was
+	// released. Problem says why a kept one cannot be read.
+	Exploited   bool      `json:"exploited"`
+	ExploitedOf time.Time `json:"exploited_of,omitzero"`
+	Problem     string    `json:"problem,omitempty"`
+}
+
 // StreamFacts is the audit log's push to a SIEM (siem.stream.url).
 type StreamFacts struct {
 	Set      bool      `json:"set"`
@@ -438,6 +452,7 @@ type State struct {
 	Interface  InterfaceFacts    `json:"interface"`
 	Stream     StreamFacts       `json:"stream"`
 	Alerts     AlertFacts        `json:"alerts"`
+	Self       SelfFacts         `json:"self"`
 	Now        time.Time         `json:"-"`
 	Extra      map[string]string `json:"extra,omitempty"`
 }
@@ -737,6 +752,8 @@ func inputFor(rule string) string {
 		return "files"
 	case strings.HasPrefix(rule, "alerts."):
 		return "alerts"
+	case strings.HasPrefix(rule, "self."):
+		return "self"
 	}
 	return ""
 }
@@ -760,6 +777,8 @@ func supplied(s State, input string) bool {
 		return len(s.Files) > 0
 	case "alerts":
 		return s.Alerts.Checked
+	case "self":
+		return s.Self.Checked
 	}
 	return true
 }

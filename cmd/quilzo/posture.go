@@ -91,6 +91,7 @@ func Observe(root, tplDir string, srv posture.ServerFacts) posture.State {
 	}
 
 	s.Alerts = observeAlerts(root)
+	s.Self = observeSelf(root)
 
 	// The agent interface: whether it answers, which apps may connect, and
 	// which connections hold administrator scope.
@@ -252,6 +253,15 @@ func observeAlerts(root string) posture.AlertFacts {
 		a.Relay = true
 	}
 	return a
+}
+
+// observeSelf is what the self-check decides with that an operator gives:
+// CISA's catalogue of exploited vulnerabilities (quilzo self kev), without
+// which a flaw in this build that is being exploited is never contained
+// at once.
+func observeSelf(root string) posture.SelfFacts {
+	_, kev := loadKEV(root)
+	return posture.SelfFacts{Checked: true, Exploited: kev.Kept, ExploitedOf: kev.Of, Problem: kev.Problem}
 }
 
 // observeUpkeep counts the work that was supposed to have happened by now.
