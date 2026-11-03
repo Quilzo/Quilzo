@@ -546,6 +546,32 @@ func (s *Server) handleFormFile(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query()
 	name, id, field := q.Get("form"), q.Get("id"), q.Get("field")
+	// And a file in a field marked sensitive takes what exporting that field
+	// takes: the authority to erase it, through this session. The download
+	// asked only for editing, so an author, or an administrator's session
+	// capped at author, took a scan the listing said was held, not shown, and
+	// the export would have held back. A field the form no longer declares is
+	// treated as held, because nothing says it is not.
+	held := true
+	if s.Forms.Load == nil {
+		http.NotFound(w, r)
+		return
+	}
+	set, err := s.Forms.Load()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if f, ok := set.Get(name); ok {
+		for _, fl := range f.Fields {
+			if fl.Name == field {
+				held = fl.Sensitive
+			}
+		}
+	}
+	if held && !s.can(w, r, p, auth.ActGrant, "/") {
+		return
+	}
 	ref, data, err := s.Forms.Store.File(name, id, field)
 	if err != nil {
 		http.NotFound(w, r)

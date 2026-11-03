@@ -68,3 +68,66 @@ func TestStaffDownloadASubmittedFile(t *testing.T) {
 		t.Fatal("a reader downloaded what the public sent")
 	}
 }
+
+// A file in a field marked sensitive takes what exporting that field takes.
+//
+// The export holds a sensitive field back unless somebody with the authority
+// to erase it asks, and the listing says "held, not shown". The download
+// asked only for editing, and the listing linked it beside those words, so an
+// author, or an administrator's session capped at author, took the scan of
+// somebody's passport that the form had marked held.
+func TestASensitiveFileTakesTheAuthorityToEraseIt(t *testing.T) {
+	srv, token := setup(t)
+	set := &form.Set{Forms: []form.Form{{Name: "claim", Notice: "Kept 30 days.", Fields: []form.Field{
+		{Name: "name", Label: "Name", Kind: form.Line},
+		{Name: "proof", Label: "Proof of identity", Kind: form.File,
+			Accept: []string{"image"}, Sensitive: true},
+	}}}}
+	srv.Forms = wiredForms(t, set)
+	var pic bytes.Buffer
+	_ = png.Encode(&pic, image.NewRGBA(image.Rect(0, 0, 3, 3)))
+	f, _ := set.Get("claim")
+	sub, err := form.AcceptWithFiles(f, map[string]string{"name": "Ana",
+		form.StampField: fmt.Sprint(time.Now().Add(-10 * time.Second).Unix())},
+		map[string]form.Upload{"proof": {Name: "passport.png", Data: pic.Bytes()}}, "", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.Forms.Store.Put(sub); err != nil {
+		t.Fatal(err)
+	}
+	at := "/forms/file?form=claim&id=" + sub.ID + "&field=proof"
+
+	capped, _, err := srv.Tokens.IssueSession("author-cap", "editor",
+		auth.RoleAuthor, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := get(t, srv, at, capped); w.Code == http.StatusOK ||
+		bytes.Equal(w.Body.Bytes(), pic.Bytes()) {
+		t.Errorf("a session capped at author downloaded a file marked "+
+			"sensitive: %d", w.Code)
+	}
+
+	author, atoken := asRole(t, auth.RoleAuthor)
+	author.Forms = srv.Forms
+	if w := get(t, author, at, atoken); w.Code == http.StatusOK ||
+		bytes.Equal(w.Body.Bytes(), pic.Bytes()) {
+		t.Errorf("an author downloaded a file marked sensitive: %d", w.Code)
+	}
+	if body := get(t, author, "/forms?f=claim", atoken).Body.String(); strings.Contains(body, at) ||
+		strings.Contains(body, "/forms/file?form=claim&amp;id="+sub.ID+"&amp;field=proof") {
+		t.Error("the listing offers an author the download of a file it says " +
+			"is held, not shown")
+	}
+
+	// Whoever may erase it still has it.
+	if w := get(t, srv, at, token); w.Code != http.StatusOK ||
+		!bytes.Equal(w.Body.Bytes(), pic.Bytes()) {
+		t.Errorf("an administrator was refused a file marked sensitive: %d", w.Code)
+	}
+	if body := get(t, srv, "/forms?f=claim", token).Body.String(); !strings.Contains(body,
+		"/forms/file?form=claim&amp;id="+sub.ID+"&amp;field=proof") {
+		t.Error("the listing no longer links the file for an administrator")
+	}
+}

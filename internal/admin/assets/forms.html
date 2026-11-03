@@ -88,7 +88,7 @@ the page, with its spam checks.</p>
     {{range $f := $.Fields}}
     <td>{{if $f.Sensitive}}<span class="hint">held, not shown</span>
         {{else}}{{index $sub.Values $f.Name}}{{end}}
-        {{if eq (print $f.Kind) "file"}}{{range $sub.Files}}{{if eq .Field $f.Name}}
+        {{if and (eq (print $f.Kind) "file") (or (not $f.Sensitive) $.CanErase)}}{{range $sub.Files}}{{if eq .Field $f.Name}}
         <a href="/forms/file?form={{$sub.Form}}&amp;id={{$sub.ID}}&amp;field={{.Field}}" download>Download<span class="visually-hidden"> {{$f.Label}}</span></a>{{end}}{{end}}{{end}}</td>
     {{end}}
     <td>
