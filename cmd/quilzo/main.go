@@ -772,6 +772,7 @@ func main() {
 			// Help for somebody who may not run the command, and nothing
 			// else: letting it through to the command ran the command.
 			usage()
+			fmt.Fprintf(os.Stderr, "\n%s%v%s\n", yellow, err, reset)
 			return
 		} else if err != nil {
 			w.Error(err)

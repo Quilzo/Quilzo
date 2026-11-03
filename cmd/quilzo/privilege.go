@@ -1187,8 +1187,10 @@ func authoriseCommand(root, cmd string, args []string) error {
 	for _, resource := range resources {
 		if err := authorise(root, caller, n.action, resource); err != nil {
 			if help {
-				// Not a refusal on the record: nothing was attempted.
-				return errHelpOnly
+				// Not a refusal on the record: nothing was attempted. The
+				// reason goes with it, so whoever asked can tell help from
+				// a command that did nothing.
+				return fmt.Errorf("%w, so it was not run: %v", errHelpOnly, err)
 			}
 			sub := cmd
 			if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
