@@ -71,6 +71,9 @@ func programMain(args []string) {
 		time.Sleep(time.Minute)
 		return
 	}
+	if len(args) > 0 && args[0] == "exit" {
+		return
+	}
 	if len(args) > 0 && args[0] == "echo-fds" {
 		in, out := os.NewFile(3, "in"), os.NewFile(4, "out")
 		line, _ := bufio.NewReader(in).ReadString('\n')
@@ -240,5 +243,27 @@ func TestABoxThatCannotCloseDoesNotRunTheProgram(t *testing.T) {
 	}
 	if _, err := n.Run(context.Background(), Spec{Program: os.Args[0]}); err == nil {
 		t.Fatal("a box without a directory was opened")
+	}
+}
+
+// How long a box takes from nothing to a program that has run and ended:
+// namespaces, the first process, the shim, Landlock, the system call
+// filter, the program's exec and its exit. The figure a person waits for
+// before an agent's program does its first thing, and the one to compare
+// with a sandbox claimed from a pool of pods kept warm for the purpose.
+func BenchmarkABoxRunsAProgram(b *testing.B) {
+	n := Native{Exe: os.Args[0], Init: []string{"agentbox-init"}, Shim: []string{"agentbox-shim"}}
+	if a := n.Check(); !a.OK {
+		b.Skip("no box here: " + a.Why)
+	}
+	work := b.TempDir()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		res, err := n.Run(context.Background(), Spec{Run: "bench", Agent: "bench", Program: os.Args[0],
+			Args: []string{"agentbox-program", "exit"}, Workdir: work, Read: []string{filepath.Dir(os.Args[0])},
+			Wall: 10 * time.Second})
+		if err != nil || res.Exit != 0 {
+			b.Fatalf("%v %+v", err, res)
+		}
 	}
 }
