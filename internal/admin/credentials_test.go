@@ -102,6 +102,129 @@ func TestSigningOutRevokesTheSession(t *testing.T) {
 	}
 }
 
+// A sign-out the person did not ask for asks them, and changes nothing.
+//
+// GET /signout revoked the session whatever made the request, and
+// sameSiteOnly screens only the methods that write. The cookie is sent on a
+// same-site request, so an <img src> pointing at /signout in content on a
+// sibling host, or in a preview on this one, ended the session of every
+// administrator who looked at it. A request the browser says was not a page
+// the person opened is answered with the question, as a form that posts; the
+// menu's link, a typed address and a program holding its own credential still
+// sign out at once.
+func TestASignOutThePersonDidNotAskForAsksFirst(t *testing.T) {
+	srv, _ := setup(t)
+	session, _, err := srv.Tokens.IssueSession("passkey:editor", "editor",
+		auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signOut := func(headers map[string]string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/signout", nil)
+		req.AddCookie(&http.Cookie{Name: "quilzo_token", Value: session})
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		return w
+	}
+	stillIn := func() bool {
+		_, err := srv.Tokens.Authenticate(session, time.Now())
+		return err == nil
+	}
+
+	for _, c := range []struct {
+		name    string
+		headers map[string]string
+	}{
+		{"an image on a sibling host", map[string]string{
+			"Sec-Fetch-Site": "same-site", "Sec-Fetch-Mode": "no-cors",
+			"Sec-Fetch-Dest": "image"}},
+		{"an image in a preview here", map[string]string{
+			"Sec-Fetch-Site": "same-origin", "Sec-Fetch-Mode": "no-cors",
+			"Sec-Fetch-Dest": "image"}},
+		{"a frame here", map[string]string{
+			"Sec-Fetch-Site": "same-origin", "Sec-Fetch-Mode": "navigate",
+			"Sec-Fetch-Dest": "iframe"}},
+		{"a link on a sibling host", map[string]string{
+			"Sec-Fetch-Site": "same-site", "Sec-Fetch-Mode": "navigate",
+			"Sec-Fetch-Dest": "document", "Sec-Fetch-User": "?1"}},
+		{"a browser that says nothing", nil},
+	} {
+		w := signOut(c.headers)
+		if !stillIn() {
+			t.Fatalf("%s ended the session: %d", c.name, w.Code)
+		}
+		for _, sc := range w.Result().Cookies() {
+			if sc.Name == "quilzo_token" && sc.MaxAge < 0 {
+				t.Errorf("%s cleared the cookie, which signs the person out "+
+					"in this browser all the same", c.name)
+			}
+		}
+		body := w.Body.String()
+		if w.Code != http.StatusOK || !strings.Contains(body, `method="post"`) ||
+			!strings.Contains(body, `action="/signout"`) {
+			t.Errorf("%s was not asked to confirm: %d\n%s", c.name, w.Code, body)
+		}
+	}
+
+	// The menu's own link is a navigation the person made on this origin, and
+	// signs out at once.
+	w := signOut(map[string]string{
+		"Sec-Fetch-Site": "same-origin", "Sec-Fetch-Mode": "navigate",
+		"Sec-Fetch-Dest": "document", "Sec-Fetch-User": "?1"})
+	if w.Code != http.StatusSeeOther || stillIn() {
+		t.Errorf("the menu's Sign out link did not sign out: %d", w.Code)
+	}
+}
+
+// And a page the browser loads ahead, in case the person opens it, is not
+// the person opening it.
+//
+// A prefetch or a prerender is sent as a navigation to a document, from this
+// origin or from the address bar, with the purpose in its own header. It
+// passed as the menu's link, so a browser preloading /signout because it was
+// in the history, or a prefetch hint in a page here, ended the session
+// before anybody chose to.
+func TestASignOutTheBrowserLoadsAheadAsksFirst(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		headers map[string]string
+	}{
+		{"a prerender from the address bar", map[string]string{
+			"Sec-Fetch-Site": "none", "Sec-Fetch-Mode": "navigate",
+			"Sec-Fetch-Dest": "document", "Sec-Purpose": "prefetch;prerender"}},
+		{"a prefetch from a page here", map[string]string{
+			"Sec-Fetch-Site": "same-origin", "Sec-Fetch-Mode": "navigate",
+			"Sec-Fetch-Dest": "document", "Sec-Purpose": "prefetch"}},
+		{"the older prefetch header", map[string]string{
+			"Sec-Fetch-Site": "same-origin", "Sec-Fetch-Mode": "navigate",
+			"Sec-Fetch-Dest": "document", "Purpose": "prefetch"}},
+	} {
+		srv, _ := setup(t)
+		session, _, err := srv.Tokens.IssueSession("passkey:editor", "editor",
+			auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest(http.MethodGet, "/signout", nil)
+		req.AddCookie(&http.Cookie{Name: "quilzo_token", Value: session})
+		for k, v := range c.headers {
+			req.Header.Set(k, v)
+		}
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		if _, err := srv.Tokens.Authenticate(session, time.Now()); err != nil {
+			t.Errorf("%s ended the session: %d", c.name, w.Code)
+		}
+		if body := w.Body.String(); w.Code != http.StatusOK ||
+			!strings.Contains(body, `action="/signout"`) {
+			t.Errorf("%s was not asked to confirm: %d", c.name, w.Code)
+		}
+	}
+}
+
 // And a long-lived token is not revoked by signing out.
 //
 // It is somebody's own credential, used deliberately. Revoking it because they

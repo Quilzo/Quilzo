@@ -181,7 +181,8 @@ func (s *Server) handleToday(w http.ResponseWriter, r *http.Request) {
 }
 
 // unpublishedFor counts the pages changed in the draft and not yet live
-// that a person may read.
+// that a person may read through this session. Through allows, as the pages
+// list asks, so the figure on Today and the rows on the pages screen agree.
 func (s *Server) unpublishedFor(p principal) int {
 	if s.Store == nil {
 		return 0
@@ -196,7 +197,7 @@ func (s *Server) unpublishedFor(p principal) int {
 	}
 	n := 0
 	for _, c := range changes {
-		if s.mayUse(p, auth.ActView, pageResource(c.Path)) {
+		if s.allows(p, auth.ActView, pageResource(c.Path)) {
 			n++
 		}
 	}
@@ -264,7 +265,8 @@ func (s *Server) glance(p principal, visible map[string]bool, now time.Time) tod
 		if pages, err := site.PagesAt(s.Store, site.RefDraft); err == nil {
 			n := 0
 			for name := range pages {
-				if s.mayUse(p, auth.ActView, pageResource(name)) {
+				// The count the pages screen lists, asked the same way.
+				if s.allows(p, auth.ActView, pageResource(name)) {
 					n++
 				}
 			}

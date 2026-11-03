@@ -6,8 +6,10 @@ package api
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/replica"
@@ -41,6 +43,22 @@ import (
 //
 // An object id is not a capability. Knowing one means having read a tree that
 // named it, which means already having been served that tree.
+//
+// # But it is the whole store, so it takes a credential for the whole store
+//
+// The pages API asks about each page, and the records API about each
+// collection. This asked whether the caller may view "/", and then served
+// whatever was asked for: a reader on the site denied /pricing was refused
+// GET /api/v1/pages/pricing and read the draft's ref here, then its commit,
+// its tree and the page's blob. A reader denied a collection read the
+// collection the same way, and a token limited to some types or locales had
+// its limits skipped, because nothing here knows which page an object is.
+//
+// So a replica's credential must be one the whole store may be sent to:
+// viewing "/", with no deny on content or data that takes viewing away, and
+// no type or locale limit. Anything narrower is refused with the reason,
+// rather than served a partial store, which a replica cannot use: a tree
+// with a page missing does not hash to the commit that named it.
 
 // replicaRef answers what one ref points at.
 //
@@ -54,7 +72,7 @@ func (s *Server) replicaRef(w http.ResponseWriter, r *http.Request) {
 	}
 	// The draft is readable by a replica, so this is the draft's permission
 	// rather than the public site's.
-	if err := s.may(r, auth.ActView, "/"); err != nil {
+	if err := s.mayReplicate(r); err != nil {
 		writeError(w, http.StatusForbidden, Error{
 			Error: "not permitted", Detail: err.Error()})
 		return
@@ -100,7 +118,7 @@ func (s *Server) replicaObject(w http.ResponseWriter, r *http.Request) {
 			Detail: "a replica reads; it does not push"})
 		return
 	}
-	if err := s.may(r, auth.ActView, "/"); err != nil {
+	if err := s.mayReplicate(r); err != nil {
 		writeError(w, http.StatusForbidden, Error{
 			Error: "not permitted", Detail: err.Error()})
 		return
@@ -120,6 +138,45 @@ func (s *Server) replicaObject(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	writeJSON(w, http.StatusOK, objectResponse{
 		ID: oid, Kind: kind, Payload: base64.StdEncoding.EncodeToString(payload)})
+}
+
+// mayReplicate is whether the caller may be sent the whole store.
+//
+// Viewing "/" first, through may, so the credential's role, path and the
+// policy are asked as everywhere else. Then the two ways a reader of "/" is
+// still narrower than the store: a limit on the credential, and a deny in
+// the policy. A deny is asked about through Evaluate, at the place it was
+// written, so one that does not take viewing away (publishing /legal, say)
+// leaves replication alone, and an expired one counts as it does elsewhere.
+// An area other than the records is not in the store, so a deny there is
+// not a part of it this would send.
+func (s *Server) mayReplicate(r *http.Request) error {
+	if err := s.may(r, auth.ActView, "/"); err != nil {
+		return err
+	}
+	tok := tokenFrom(r)
+	if len(tok.Scope.Types) > 0 || len(tok.Scope.Locales) > 0 {
+		return fmt.Errorf("this credential is limited to %s, and a replica "+
+			"is sent every page and record in the store. Pair with a "+
+			"credential that has no type or locale limit", tok.Scope)
+	}
+	if s.Policy == nil {
+		return nil
+	}
+	now := time.Now()
+	for _, b := range s.Policy.Snapshot() {
+		if b.Principal != tok.Principal || !b.Deny || !b.Live(now) {
+			continue
+		}
+		if auth.IsArea(b.Resource) && !auth.Covers(auth.AreaData, b.Resource) {
+			continue
+		}
+		if d := s.Policy.Evaluate(tok.Principal, auth.ActView, b.Resource); !d.Allowed {
+			return fmt.Errorf("%s, and a replica is sent every page and "+
+				"record in the store", d.Reason)
+		}
+	}
+	return nil
 }
 
 // objectResponse is one object on the wire.

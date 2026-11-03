@@ -4,8 +4,16 @@
 package public
 
 import (
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/quilzo/quilzo/internal/analytics"
+	"github.com/quilzo/quilzo/internal/form"
 )
 
 // A share target whose form cannot be satisfied is refused at startup.
@@ -91,5 +99,86 @@ func TestSharedValuesAreBounded(t *testing.T) {
 	}
 	if got := clampShare("short"); got != "short" {
 		t.Errorf("an ordinary value was altered: %q", got)
+	}
+}
+
+// A share is told about as a submission through the form's own page is.
+//
+// /share wrote through form.AcceptShare and Store.Put and nothing else, while
+// /form/NAME also wrote the form.submit audit record, alerted staff through
+// Notify and counted the conversion. So a submission from the share sheet,
+// the less defended of the two routes, left no record of the source that
+// wrote it and woke nobody: an abuse investigation saw nothing, and a real
+// enquiry sent that way waited until somebody opened the admin.
+func TestAShareIsAuditedAndNotifiedAsASubmissionIs(t *testing.T) {
+	st, fs := withForm(t)
+	type said struct {
+		name, source string
+		ok           bool
+	}
+	var audited []said
+	var notified []string
+	st.Forms.Audit = func(name, source string, ok bool) {
+		audited = append(audited, said{name, source, ok})
+	}
+	st.Forms.Notify = func(name string) { notified = append(notified, name) }
+	counter, err := analytics.Open(t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Analytics = counter
+	st.Share = &ShareTarget{Form: "contact", TitleField: "name", TextField: "email"}
+
+	send := func(path, from string, v url.Values) int {
+		t.Helper()
+		r := httptest.NewRequest(http.MethodPost, path, strings.NewReader(v.Encode()))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		r.Header.Set("User-Agent", browser)
+		r.RemoteAddr = from + ":1"
+		w := httptest.NewRecorder()
+		st.Handler().ServeHTTP(w, r)
+		return w.Code
+	}
+
+	// The form's own route, for what the share is to match.
+	if code := send("/form/contact", "198.51.100.4", url.Values{"name": {"Ana"},
+		form.StampField: {fmt.Sprint(time.Now().Add(-time.Minute).Unix())}}); code != http.StatusOK {
+		t.Fatalf("control: the form answered %d", code)
+	}
+	if len(audited) != 1 || len(notified) != 1 {
+		t.Fatalf("control: the form audited %v and notified %v", audited, notified)
+	}
+	audited, notified = nil, nil
+
+	if code := send("/share", "203.0.113.7", url.Values{"title": {"Bo"}}); code != http.StatusSeeOther {
+		t.Fatalf("the share answered %d", code)
+	}
+	if subs, _ := fs.List("contact"); len(subs) != 2 {
+		t.Fatalf("the share was not stored: %d submissions", len(subs))
+	}
+	if len(audited) != 1 || audited[0] != (said{"contact", "203.0.113.7", true}) {
+		t.Errorf("a stored share was audited as %v; it should be one accepted "+
+			"record naming the form and the source", audited)
+	}
+	if len(notified) != 1 || notified[0] != "contact" {
+		t.Errorf("a stored share notified %v; staff are told about a share "+
+			"as about any submission", notified)
+	}
+	if n := counter.Today().Goals["form:contact"]; n != 2 {
+		t.Errorf("the form's goal counted %d visitors after one sent the form "+
+			"and another shared to it; a share reaches the goal too", n)
+	}
+
+	// A refused share is audited as refused and tells nobody, as a refused
+	// submission does.
+	audited, notified = nil, nil
+	if code := send("/share", "203.0.113.7", url.Values{"text": {"not an address"}}); code == http.StatusSeeOther {
+		t.Fatalf("a share failing the form's kinds was stored")
+	}
+	if len(audited) != 1 || audited[0].ok {
+		t.Errorf("a refused share was audited as %v", audited)
+	}
+	if len(notified) != 0 {
+		t.Errorf("a refused share notified %v", notified)
 	}
 }

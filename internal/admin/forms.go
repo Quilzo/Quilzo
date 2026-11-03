@@ -390,8 +390,13 @@ func (s *Server) handleFormExport(w http.ResponseWriter, r *http.Request) {
 	// needs rather than the one that reads the screen: taking personal data
 	// out of the system is the act purge is gated on, and a file on somebody's
 	// laptop is out of the system.
+	//
+	// Through allows, as purge's can asks, so the session's cap counts. The
+	// policy alone answered for the person: an administrator signed in with
+	// a credential issued `--role author` was refused the purge and exported
+	// every held-back value here.
 	withSensitive := r.FormValue("sensitive") != ""
-	if withSensitive && !s.mayUse(p, auth.ActGrant, "/") {
+	if withSensitive && !s.allows(p, auth.ActGrant, "/") {
 		s.formRedirect(w, r, "", "exporting the fields marked sensitive "+
 			"needs the authority to erase them too")
 		return
@@ -541,6 +546,32 @@ func (s *Server) handleFormFile(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query()
 	name, id, field := q.Get("form"), q.Get("id"), q.Get("field")
+	// And a file in a field marked sensitive takes what exporting that field
+	// takes: the authority to erase it, through this session. The download
+	// asked only for editing, so an author, or an administrator's session
+	// capped at author, took a scan the listing said was held, not shown, and
+	// the export would have held back. A field the form no longer declares is
+	// treated as held, because nothing says it is not.
+	held := true
+	if s.Forms.Load == nil {
+		http.NotFound(w, r)
+		return
+	}
+	set, err := s.Forms.Load()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if f, ok := set.Get(name); ok {
+		for _, fl := range f.Fields {
+			if fl.Name == field {
+				held = fl.Sensitive
+			}
+		}
+	}
+	if held && !s.can(w, r, p, auth.ActGrant, "/") {
+		return
+	}
 	ref, data, err := s.Forms.Store.File(name, id, field)
 	if err != nil {
 		http.NotFound(w, r)

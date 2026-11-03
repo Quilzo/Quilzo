@@ -1,0 +1,30 @@
+{{/*
+  Sign out? Asked when a request to /signout cannot be shown to be the
+  person's own: an image or a frame pointing at it, a link on another host,
+  or a browser that sends no fetch metadata. Answering it there signed the
+  person out for whatever page had the address in it.
+
+  Its own document, like the sign-in page and Confirm it's you, because a
+  session waiting to prove its person may reach this and nothing else.
+*/}}
+<!doctype html>
+<html lang="en"{{if .Theme}} data-theme="{{.Theme}}"{{end}}>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Sign out — Quilzo</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body class="signin-page">
+<main id="main" class="signin">
+  <section class="signin-panel">
+    <p class="brand">{{template "lockup" .}}</p>
+    <h1>Sign out?</h1>
+    <p class="lead">Signed in as <strong>{{.Who}}</strong>. Signing out ends this session, and nothing it started will continue.</p>
+    <form method="post" action="/signout" class="actions"><button type="submit" class="btn">Sign out</button></form>
+    <p class="help"><a href="/">Stay signed in</a></p>
+  </section>
+</main>
+</body>
+</html>

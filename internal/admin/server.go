@@ -1997,7 +1997,13 @@ func (s *Server) handleSignOut(w http.ResponseWriter, r *http.Request) {
 	// Only a session. A long-lived token presented as a cookie is somebody's
 	// own credential, used deliberately, and revoking it because they closed
 	// a tab would destroy the thing they signed in with.
-	if p, err := s.authenticate(r); err == nil && p.TokenID != "" && p.Session {
+	p, err := s.authenticate(r)
+	if err == nil && !signOutAsked(r, p) {
+		s.render(w, r, "signout.html", map[string]any{
+			"Title": "Sign out", "Who": p.Name})
+		return
+	}
+	if err == nil && p.TokenID != "" && p.Session {
 		if _, err := s.Tokens.Revoke(p.TokenID); err == nil {
 			if serr := s.save(); serr == nil {
 				s.audit("session.end", "/", map[string]string{"by": p.Name})
@@ -2009,6 +2015,50 @@ func (s *Server) handleSignOut(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: r.TLS != nil || s.behindTLSProxy(),
 	})
 	http.Redirect(w, r, "/signin", http.StatusSeeOther)
+}
+
+// signOutAsked reports whether a request to /signout is the person asking,
+// so that it may end their session without asking them again.
+//
+// GET ended it whatever made the request, and sameSiteOnly screens only the
+// methods that write. The cookie is SameSite=Strict, which a sibling host is
+// not foreign to: an <img src> pointing at /signout in content on
+// www.example.com, beside admin.example.com, or in a preview on this origin,
+// ended the session of every administrator who looked at it, and with it
+// whatever they were in the middle of.
+//
+// A POST has already been screened. A credential in the Authorization header
+// is a program holding its own secret, which nothing on another page can
+// attach. A GET is the person's when the browser says it is a page they
+// opened, from this origin or from nowhere (the menu's link, a typed address,
+// a bookmark); an image, a frame, another host's link, or a browser that
+// sends no fetch metadata is shown the question instead, as a form that
+// posts, which is one more press for the person and nothing for a page.
+//
+// Nor is a load the browser makes ahead of the person, which says so in a
+// purpose header. A prefetch or a prerender is sent as a navigation to a
+// document from this origin or from the address bar, so it passed as the
+// menu's link: a browser preloading /signout from its history, or a prefetch
+// hint in a page here, ended the session before anybody chose to.
+func signOutAsked(r *http.Request, p principal) bool {
+	if r.Method == http.MethodPost || p.Bearer {
+		return true
+	}
+	if r.Method != http.MethodGet {
+		return false
+	}
+	for _, h := range []string{"Sec-Purpose", "Purpose", "X-Purpose"} {
+		if r.Header.Get(h) != "" {
+			return false
+		}
+	}
+	switch r.Header.Get("Sec-Fetch-Site") {
+	case "same-origin", "none":
+	default:
+		return false
+	}
+	return r.Header.Get("Sec-Fetch-Mode") == "navigate" &&
+		r.Header.Get("Sec-Fetch-Dest") == "document"
 }
 
 func (s *Server) handleCSS(w http.ResponseWriter, r *http.Request) {
@@ -2256,9 +2306,13 @@ func (s *Server) handlePages(w http.ResponseWriter, r *http.Request) {
 	// names pages somebody cannot open is a worse answer than a refusal: it
 	// tells them the pages exist and what they are called, which is most of
 	// what a scope was drawn to withhold.
+	//
+	// Through allows, so the credential's path withholds them too. The
+	// policy alone answered for the person, and a whole-site administrator
+	// signed in with a credential issued `--on /blog` was shown every name.
 	names := make([]string, 0, len(pages))
 	for n := range pages {
-		if !s.mayUse(p, auth.ActView, pageResource(n)) {
+		if !s.allows(p, auth.ActView, pageResource(n)) {
 			continue
 		}
 		names = append(names, n)
@@ -4187,8 +4241,11 @@ func (s *Server) previewRecord(pages map[string]any, path string) (
 // draft goes to that page's preview, with its query string; anything else is
 // still a 404.
 //
-// Signed in first, and only for pages this person may read, so the redirect
-// cannot be used to learn which page names exist.
+// Signed in first, and only for pages this person may read through this
+// session, so the redirect cannot be used to learn which page names exist. It
+// asked the policy alone, so a credential issued `--on /blog` was redirected
+// for about and refused for a name that is not there, which is the answer the
+// 404 was for.
 func (s *Server) followPreviewLink(w http.ResponseWriter, r *http.Request) {
 	p, ok := s.requireAuth(w, r)
 	if !ok {
@@ -4201,7 +4258,7 @@ func (s *Server) followPreviewLink(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if _, exists := pages[base]; !exists || !s.mayUse(p, auth.ActView, "/"+base) {
+	if _, exists := pages[base]; !exists || !s.allows(p, auth.ActView, pageResource(base)) {
 		http.NotFound(w, r)
 		return
 	}
