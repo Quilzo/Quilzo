@@ -338,3 +338,38 @@ func TestTheBodiesOfOneDocumentAreBoundedTogether(t *testing.T) {
 		t.Errorf("the bound was not named:\n%.500s", notes)
 	}
 }
+
+// A wide component, a long list or many properties, named by many
+// operations, is copied at each only as far as a body may grow. Room for
+// all of it was made at every reference, however little was then copied: a
+// list of a million named by six hundred operations, 3.2 MB of document,
+// made 8 GB, and 150,000 properties made 5 GB.
+func TestAWideComponentIsCopiedOnlyAsFarAsABodyMayGrow(t *testing.T) {
+	var keys, paths []string
+	for i := 0; i < 150000; i++ {
+		keys = append(keys, fmt.Sprintf(`"k%x": 0`, i))
+	}
+	for i := 0; i < 600; i++ {
+		paths = append(paths, fmt.Sprintf(`"/a%03d": {"post": {"operationId": "a%03d",
+		  "requestBody": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/Wide"}}}}}}`, i, i))
+	}
+	for name, wide := range map[string]string{
+		"a long list":     `{"enum": [` + strings.Repeat("0, ", 1<<20) + `0]}`,
+		"many properties": `{"type": "object", "properties": {` + strings.Join(keys, ", ") + `}}`,
+	} {
+		doc := `{"openapi": "3.0.3", "info": {"title": "Wide"}, "servers": [{"url": "https://wide.example"}],
+		  "components": {"schemas": {"Wide": ` + wide + `}}, "paths": {` + strings.Join(paths, ", ") + `}}`
+		var imp *Imported
+		var err error
+		n := allocated(func() { imp, err = OpenAPI([]byte(doc), Options{Uses: []string{"a000"}}) })
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if n > 1<<30 {
+			t.Errorf("%s: reading %d bytes made %d MB", name, len(doc), n>>20)
+		}
+		if b := string(imp.Integration.Operations[0].Body); b != `{"type":"object"}` {
+			t.Errorf("%s: the body over 32 KiB is %.100s", name, b)
+		}
+	}
+}

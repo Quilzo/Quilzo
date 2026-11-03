@@ -483,8 +483,8 @@ func (e *expansion) inline(v any, depth int) any {
 			}
 			return e.inline(inner, depth+1)
 		}
-		out := make(map[string]any, len(x))
 		e.size += len(`{}`)
+		out := make(map[string]any, e.room(len(x), len(`"":0`)))
 		for k, val := range x {
 			if e.size > maxBody {
 				break
@@ -494,8 +494,8 @@ func (e *expansion) inline(v any, depth int) any {
 		}
 		return out
 	case []any:
-		out := make([]any, 0, len(x))
 		e.size += len(`[]`)
+		out := make([]any, 0, e.room(len(x), len(`0`)))
 		for _, val := range x {
 			if e.size > maxBody {
 				break
@@ -510,6 +510,15 @@ func (e *expansion) inline(v any, depth int) any {
 		e.size++
 	}
 	return v
+}
+
+// room is how many of n elements, each least bytes at the least, a copy
+// makes room for: no more than fit in what is left of maxBody. Room made
+// for all of a schema's elements was made at every reference to it,
+// however few were then copied, and a list of two million named by six
+// hundred operations cost thirty-seven seconds and 16 GB.
+func (e *expansion) room(n, least int) int {
+	return min(n, max(0, maxBody-e.size)/least+1)
 }
 
 // open is the schema of any object, for what is not followed.
