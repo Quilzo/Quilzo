@@ -15,6 +15,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/shield"
 	"github.com/quilzo/quilzo/internal/studio"
 )
 
@@ -131,6 +132,36 @@ func TestTheStudioFollowsRevocationWithoutARestart(t *testing.T) {
 	if code := uploadAs(t, srv, second); code != http.StatusUnauthorized {
 		t.Errorf("a token whose holder lost the right to write drafts put a "+
 			"recording in the library (%d)", code)
+	}
+}
+
+// A token the shield has suspended does not record either.
+//
+// The admin, the API and the site's API load their tokens through the
+// shield's gate, so `quilzo shield suspend` or a lockdown stops a token at
+// each of them; the studio loaded its own and asked nothing, and a token
+// suspended for leaking went on putting recordings in the library there.
+func TestTheStudioHonoursTheShield(t *testing.T) {
+	root, secret, id, srv := studioStore(t)
+	other, _ := issueFor(t, root, "ada")
+	if _, _, err := shield.Apply(root, shield.Protection{Kind: shield.Token,
+		Target: id, Reason: "leaked in a log", By: "dana",
+		Until: time.Now().Add(time.Hour)}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if code := uploadAs(t, srv, secret); code != http.StatusUnauthorized {
+		t.Errorf("a token the shield suspended put a recording in the library (%d)", code)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/signin",
+		strings.NewReader("token="+secret))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("a token the shield suspended signed in (%d)", rec.Code)
+	}
+	if code := uploadAs(t, srv, other); code != http.StatusOK {
+		t.Errorf("a token nobody suspended was refused with it (%d)", code)
 	}
 }
 

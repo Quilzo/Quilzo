@@ -76,8 +76,14 @@ func studioServer(root string) (*studio.Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The shield's lockdown and suspensions, on every token store this
+	// server loads, as the admin's and the API's are (shieldhost.go). The
+	// studio loaded its own and asked nothing, so a token suspended with
+	// `quilzo shield suspend`, or one from before a lockdown, went on
+	// recording here after every other door had shut on it.
+	sh := newShieldHost(root)
 	return &studio.Server{
-		Tokens: tokens,
+		Tokens: sh.gate(tokens),
 		Policy: pol,
 		// Read again for every request, as the admin's are (serve.go):
 		// revoking a token or withdrawing a grant stops it here too, and a
@@ -91,7 +97,7 @@ func studioServer(root string) (*studio.Server, error) {
 			if err != nil {
 				return nil, nil, err
 			}
-			return pol, toks, nil
+			return pol, sh.gate(toks), nil
 		},
 		Library: func() (*medialib.Library, error) {
 			return openMedia(root)
