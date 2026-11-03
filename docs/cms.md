@@ -2006,7 +2006,10 @@ Or Review who has access on People, one card and two buttons per item.
 
 Each item says who granted it and when, until when, and when it was last
 used: a token's last use, or the person's last record in the audit log,
-which is the one lasting record once sessions are pruned. Nothing for ninety
+which is the one lasting record once sessions are pruned. Only a record of
+the person doing something counts, with their identity proved and the act
+not refused: a command refused under their name, or a sign-in to their
+account held by the lockout, is somebody trying. Nothing for ninety
 days is dormant, listed first and proposed for revoke, the same threshold as
 the posture scan's `token.stale`. Privileged means administration, the
 security, compliance or log areas, or a permission only an administrator

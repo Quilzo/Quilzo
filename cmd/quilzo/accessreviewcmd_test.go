@@ -980,3 +980,57 @@ func TestTheItemsAreNotListedToSomebodyWhoAskedForHelp(t *testing.T) {
 		t.Errorf("an administrator could not list the review: %v\n%s", err, text)
 	}
 }
+
+// Activity is something the person did: a record of their proved identity
+// that succeeded. Anything else in the log under their name is somebody
+// else's doing, and counted as theirs it kept a dormant account off the top
+// of the review: `USER=kit quilzo publish` with no token writes a refused
+// record under kit's name, a refused command writes one, and the lockout
+// writes signin.held under the name of the account somebody is guessing at.
+func TestActivityIsWhatThePersonDidNotWhatWasTriedInTheirName(t *testing.T) {
+	root, _ := reviewed(t)
+	if _, err := updatePolicy(root, func(p *auth.Policy) error {
+		for i := range p.Bindings {
+			p.Bindings[i].GrantedAt = time.Now().Add(-120 * reviewDay).Unix()
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ts, _ := loadTokens(root)
+	ts.Tokens = nil
+	if err := saveJSON(tokensPath(root), ts); err != nil {
+		t.Fatal(err)
+	}
+	// Somebody at the keyboard calling themselves kit, with no token.
+	t.Setenv("USER", "kit")
+	flagToken = ""
+	if err := authoriseCommand(root, "publish", nil); err == nil {
+		t.Fatal("publish ran without a token on a store with a policy")
+	}
+	// kit's name on a refused act, and on a sign-in held by the lockout.
+	record(root, audit.Record{Action: "publish", Resource: "/", Outcome: audit.Denied,
+		Principal: "kit", Kind: audit.KindHuman, Verified: true})
+	record(root, adminRecord("signin.held", "/", map[string]string{"by": "kit", "source": "203.0.113.9",
+		"why": "locked"}))
+	// And sam, who did something.
+	record(root, audit.Record{Action: "publish", Resource: "/", Outcome: audit.Success,
+		Principal: "sam", Kind: audit.KindHuman, Verified: true})
+
+	in, err := reviewInputs(root, nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range accessreview.Snapshot(in) {
+		switch it.Principal {
+		case "kit":
+			if !it.Dormant || !it.LastActive.IsZero() {
+				t.Errorf("kit did nothing for a hundred and twenty days, and is counted active: %+v", it)
+			}
+		case "sam":
+			if it.Dormant {
+				t.Errorf("sam published today: %+v", it)
+			}
+		}
+	}
+}

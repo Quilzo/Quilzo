@@ -69,7 +69,7 @@ func auditActivity(root string, events []audit.Event) (func(string) time.Time, m
 		if err != nil {
 			continue
 		}
-		if at.After(latest[e.Principal]) {
+		if personActed(e) && at.After(latest[e.Principal]) {
 			latest[e.Principal] = at
 		}
 		if e.Action == "scim.mapped" {
@@ -85,6 +85,20 @@ func auditActivity(root string, events []audit.Event) (func(string) time.Time, m
 		return latest[who]
 	}
 	return seen, mapped
+}
+
+// personActed reports whether a record is its principal doing something:
+// their identity proved, and the act done rather than refused or failed.
+//
+// Every record under a name was counted at first, and much of the log is
+// written in a name by somebody else: anybody at the keyboard can run
+// `USER=kit quilzo publish` and leave a refused, unverified record under
+// kit's name, and the lockout writes signin.held under the name of the
+// account somebody is guessing at. Each kept an account nobody uses off
+// the top of the review, and the account under attack is the one that
+// most needs to be there.
+func personActed(e audit.Event) bool {
+	return e.Verified && e.Outcome == audit.Success && e.Action != "signin.held"
 }
 
 // reviewInputs is everything a snapshot is taken from, as stored now.
