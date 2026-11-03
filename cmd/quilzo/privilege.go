@@ -193,10 +193,23 @@ var commandNeeds = map[string]need{
 	// Strict parent, narrowing children — see the note on posture. Pointing
 	// every reader at a different audit log is an operator act, so the parent
 	// takes that answer and the seven reading subcommands step down from it.
-	"auditlog":  {action: auth.ActGrant},
-	"anchor":    {action: auth.ActView},
-	"timestamp": {action: auth.ActView},
-	"stamp":     {action: auth.ActView},
+	"auditlog": {action: auth.ActGrant},
+	// Submitting, upgrading and stamping send the publication's digest to
+	// outside services and write what they return, which is what `auditlog
+	// anchor` does with the log's, and that takes grant. These were view as
+	// a whole, so a reader or an auditor could do all three. Strict parents,
+	// so a subcommand added later arrives guarded; reading and exporting
+	// what is kept step down, and a bare command is asked as the read it
+	// runs (bareRuns).
+	"anchor":           {action: auth.ActGrant},
+	"anchor status":    {action: auth.ActView},
+	"anchor export":    {action: auth.ActView},
+	"timestamp":        {action: auth.ActGrant},
+	"timestamp list":   {action: auth.ActView},
+	"timestamp export": {action: auth.ActView},
+	"stamp":            {action: auth.ActGrant},
+	"stamp list":       {action: auth.ActView},
+	"stamp export":     {action: auth.ActView},
 
 	// -- writing content
 	"add": {action: auth.ActEditDraft},
@@ -1259,7 +1272,20 @@ func commandArea(cmd string, args []string) (string, bool) {
 	return a, ok
 }
 
+// bareRuns is the subcommand a bare command runs, for a command whose own
+// row is strict and whose bare form only reads. Its dispatch reads the same
+// entry, so the two cannot disagree about what a bare command does.
+//
+// `anchor`, `timestamp` and `stamp` took grant as a whole so that sending a
+// digest out stopped being a reader's act, and their bare forms, which show
+// the proofs and the stamps, would have gone with them: a reader running
+// `quilzo anchor` would have been refused what `quilzo anchor status` shows.
+var bareRuns = map[string]string{"anchor": "status", "timestamp": "list", "stamp": "list"}
+
 func lookupNeed(cmd string, args []string) (need, bool) {
+	if sub, ok := bareRuns[cmd]; ok && len(args) == 0 {
+		args = []string{sub}
+	}
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		if n, ok := commandNeeds[cmd+" "+args[0]]; ok {
 			return n, true

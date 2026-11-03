@@ -752,6 +752,19 @@ func auditAnchor(root string) error {
 	if err := saveJSON(anchorPath(root), af); err != nil {
 		return err
 	}
+	// Sending the log's head out is an act, as `anchor submit` sending the
+	// publication's is, and that one was on the record while this was not.
+	// The entry goes after the head it names, so the head is unchanged.
+	caller := resolveCaller(root, "")
+	record(root, audit.Record{
+		Action: "auditlog.anchor", Resource: "/", Outcome: audit.Success,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
+		Detail: map[string]string{
+			"root":      head.Root,
+			"size":      fmt.Sprintf("%d", head.Size),
+			"calendars": fmt.Sprintf("%d", len(proofs)),
+		},
+	})
 
 	w.Human("submitted the log head at %d entries\n", head.Size)
 	for _, p := range proofs {

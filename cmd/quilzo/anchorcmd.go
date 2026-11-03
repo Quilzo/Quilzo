@@ -91,7 +91,7 @@ func (h httpSubmitter) Get(ctx context.Context, url string) ([]byte, error) {
 
 func cmdAnchor(root string, args []string) error {
 	if len(args) == 0 {
-		args = []string{"status"}
+		args = []string{bareRuns["anchor"]}
 	}
 	switch args[0] {
 	case "status":
@@ -244,6 +244,17 @@ func anchorUpgrade(root string) error {
 	if err := saveJSON(anchorPath(root), file); err != nil {
 		return err
 	}
+	// Upgrading asks the calendars about each pending proof and writes what
+	// they answer over it; submitting was on the record and this was not.
+	caller := resolveCaller(root, "")
+	record(root, audit.Record{
+		Action: "anchor.upgrade", Resource: "/", Outcome: audit.Success,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
+		Detail: map[string]string{
+			"upgraded": fmt.Sprintf("%d", upgraded),
+			"waiting":  fmt.Sprintf("%d", waiting),
+		},
+	})
 	if upgraded == 0 {
 		w.Human("  %s%d proof(s) still waiting for a block; commitments take "+
 			"hours%s\n", dim, waiting, reset)

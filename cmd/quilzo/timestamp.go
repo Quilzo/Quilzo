@@ -6,10 +6,12 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 
 	"github.com/quilzo/quilzo/internal/anchor"
+	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/public"
 	"github.com/quilzo/quilzo/internal/render"
@@ -32,7 +34,7 @@ func loadStamps(root string) (*timestamp.Store, error) {
 
 func cmdTimestamp(root string, args []string) error {
 	if len(args) == 0 {
-		args = []string{"list"}
+		args = []string{bareRuns["timestamp"]}
 	}
 	switch args[0] {
 	case "stamp":
@@ -124,6 +126,11 @@ func joinAnchors(root string, stamps []timestamp.Stamp) []timestamp.Stamp {
 	return out
 }
 
+// stampRequest asks an authority for a token: timestamp.Request, through its
+// own client for public services. A variable so a test can stand in for the
+// authority.
+var stampRequest = timestamp.Request
+
 func stampNow(root string, args []string) error {
 	fs := flag.NewFlagSet("stamp", flag.ContinueOnError)
 	tsa := fs.String("tsa", timestamp.DefaultTSA, "the timestamp authority")
@@ -141,7 +148,7 @@ func stampNow(root string, args []string) error {
 	}
 
 	w.Human("asking %s to stamp %s...\n", *tsa, fp)
-	stamp, err := timestamp.Request(nil, *tsa, fp)
+	stamp, err := stampRequest(nil, *tsa, fp)
 	if err != nil {
 		return err
 	}
@@ -154,6 +161,16 @@ func stampNow(root string, args []string) error {
 	if err := os.WriteFile(stampPath(root), b, 0o600); err != nil {
 		return err
 	}
+	// Sending the publication's digest to an outside authority is an act, as
+	// submitting it to the calendars is, and `anchor submit` kept a record
+	// while this kept none. The authority is named by its host: an address
+	// can carry a credential, and the log is read further than this file.
+	caller := resolveCaller(root, "")
+	record(root, audit.Record{
+		Action: "timestamp.stamp", Resource: "/", Outcome: audit.Success,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
+		Detail: map[string]string{"root": stamp.Root, "authority": authorityHost(stamp.Authority)},
+	})
 	// Shown with the anchor of the same publication, when there is one.
 	stamp = joinAnchors(root, []timestamp.Stamp{stamp})[0]
 
@@ -168,6 +185,17 @@ func stampNow(root string, args []string) error {
 	w.Human("  %sexport it with `quilzo timestamp export` and verify with openssl%s\n",
 		dim, reset)
 	return nil
+}
+
+// authorityHost is the host of an outside service's address, for an audit
+// record: who the digest went to, without a user, password or query that
+// the address may carry. An address that does not parse is not named.
+func authorityHost(address string) string {
+	u, err := url.Parse(address)
+	if err != nil || u.Host == "" {
+		return "unreadable address"
+	}
+	return u.Host
 }
 
 func stampList(root string) error {
