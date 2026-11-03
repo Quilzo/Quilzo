@@ -566,6 +566,12 @@ func TestAReviewFallsDueAndAClosedOneAnswersIt(t *testing.T) {
 // Regression 9. A store with one administrator completes a review alone:
 // their own access goes unreviewed and is counted, the record says alone,
 // and approval.alone counts it.
+//
+// Not for a day after the other administrator was removed, as nothing else
+// is approved alone then (dual.Store.Settling). Closing in that day used to
+// succeed with dana's own access counted "unreviewable", nobody else being
+// left to decide it, and without the record saying it was done alone: so
+// removing sam was a way to sign off her own access with no trace of it.
 func TestTheOnlyAdministratorCompletesAReviewAlone(t *testing.T) {
 	root, tokens := reviewed(t)
 	flagToken = tokens["dana"]
@@ -582,6 +588,17 @@ func TestTheOnlyAdministratorCompletesAReviewAlone(t *testing.T) {
 			}
 		}
 	}
+	err := review(t, root, tokens["dana"], "close")
+	if err == nil || !strings.Contains(err.Error(), "until") {
+		t.Fatalf("closed alone the moment the other administrator was removed: %v", err)
+	}
+	if lastEvent(t, root, "review.closed") != nil {
+		t.Fatal("review.closed was written for a close that was refused")
+	}
+	if lastEvent(t, root, "dual.alone-refused") == nil {
+		t.Error("the refusal was not recorded")
+	}
+	removalAt(t, root, 24*time.Hour+time.Minute)
 	if err := review(t, root, tokens["dana"], "close"); err != nil {
 		t.Fatal(err)
 	}

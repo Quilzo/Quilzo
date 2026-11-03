@@ -385,6 +385,20 @@ func reviewClose(root string, c *Caller) (*accessreview.Review, accessreview.Sum
 	}
 	current := accessreview.Snapshot(in)
 	alone := onlyAdministrator(root, c.Name)
+	// The only administrator closes alone, but not for a day after the
+	// other one was removed, as nothing else is approved alone then. Without
+	// this the close went through anyway: their own access, nobody else left
+	// to decide it, was counted unreviewable, and the record never said the
+	// review was done alone.
+	if !alone {
+		if rm := aloneRefusal(root, c.Name, now); rm != nil {
+			about := map[string]string{"what": "review.close"}
+			if r, err := reviewStore(root).Current(); err == nil && r != nil {
+				about["review"] = r.ID
+			}
+			return nil, accessreview.Summary{}, refuseAlone(root, c, rm, about)
+		}
+	}
 	var sum accessreview.Summary
 	r, err := reviewStore(root).Update(func(r *accessreview.Review) error {
 		// As a decision is, asked again under the lock.
