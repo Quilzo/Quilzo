@@ -23,6 +23,25 @@
     <td><form method="post" action="/security/signins/unlock"><input type="hidden" name="person" value="{{.Person}}"><button type="submit" class="btn-text">Unlock</button></form></td></tr>{{end}}</tbody>
 </table></div>{{else}}<p>Nobody is locked out.</p>{{end}}
 
+{{if or .Signals .SignalsOff .SignalsError}}<h2>From the identity provider</h2>
+<p class="hint">Security events the identity provider sends (OpenID Shared Signals) end the sessions it signed people in to here: a session it ended, a password it saw stolen, an account it disabled. Passkey sessions, tokens and connected apps are left alone except when an account is disabled. Connected and turned off with <code>quilzo signals</code>.</p>
+{{if .SignalsError}}<p class="notice bad">{{.SignalsError}}</p>
+{{else if .SignalsOff}}<p>No stream is connected, so the identity provider ending a session or disabling an account reaches no session here until it ends on its own. <code>quilzo signals connect --provider oidc</code> connects one.</p>
+{{else}}{{with .Signals}}<dl>
+  <div><dt>Speaks for</dt><dd>{{.Provider}} sign-ins, from {{.Issuer}}</dd></div>
+  <div><dt>Verified</dt><dd>{{if .Manual}}<span class="wf-band unknown"><span class="wf-icon">{{icon "help"}}</span>cannot be asked</span> made in the identity provider's own console, so it cannot be asked to prove it reaches here{{else if .Verified}}{{if .Silent}}<span class="wf-band warning"><span class="wf-icon">{{icon "error"}}</span>silent</span> {{end}}last answered {{.Verified}}{{if .Asked}}; last asked {{.Asked}}{{end}}{{else if .Silent}}<span class="wf-band warning"><span class="wf-icon">{{icon "error"}}</span>silent</span> never answered{{if .Asked}}; last asked {{.Asked}}{{end}}{{else}}asked{{if .Asked}} {{.Asked}}{{end}}, not answered yet{{end}}</dd></div>
+  <div><dt>Stream</dt><dd>{{if .State}}{{.State}}, as the identity provider last said{{else}}not said{{end}}; connected {{.Connected}}</dd></div>
+  <div><dt>Last event</dt><dd>{{if .LastAt}}{{.LastType}}, {{.LastAt}}{{else}}none yet{{end}}</dd></div>
+</dl>
+<dl class="stats-row">
+  <div><dt>Received</dt><dd>{{.Received}}</dd></div>
+  <div><dt>Acted on</dt><dd>{{.Acted}}</dd></div>
+  <div{{if .Unmatched}} class="serious"{{end}}><dt>Unmatched</dt><dd>{{.Unmatched}}</dd><dd class="wf-note">about nobody the access policy knows, or not clearly one person</dd></div>
+  <div{{if .Refused}} class="serious"{{end}}><dt>Refused</dt><dd>{{.Refused}}</dd><dd class="wf-note">did not prove it came from the stream, or came too late</dd></div>
+  <div{{if .Capped}} class="critical"{{end}}><dt>Held back</dt><dd>{{.Capped}}</dd><dd class="wf-note">past twenty people in an hour</dd></div>
+</dl>{{end}}{{end}}
+{{end}}
+
 <h2>Recent</h2>
 {{if .NoHistory}}<p class="notice bad">{{.NoHistory}}</p>{{else if .Rows}}<div class="table-wrap"><table>
   <thead><tr><th scope="col">Person</th><th scope="col">When</th><th scope="col">From</th><th scope="col">Device</th><th scope="col">Risk</th><th scope="col">Why</th></tr></thead>

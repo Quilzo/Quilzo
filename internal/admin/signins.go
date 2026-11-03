@@ -374,6 +374,7 @@ func (s *Server) handleSignIns(w http.ResponseWriter, r *http.Request) {
 	}
 	data["Waiting"] = waiting
 	data["Held"] = s.heldRows(now)
+	s.signalsData(data, now)
 	if s.SignIns == nil || s.SignIns.Recent == nil {
 		data["NoHistory"] = "This build was started without sign-in checks, so where people signed in from is not kept."
 		s.render(w, r, "signins.html", data)

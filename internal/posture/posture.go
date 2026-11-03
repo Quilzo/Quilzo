@@ -285,6 +285,18 @@ type SSOFacts struct {
 	// nor single sign-on covering their address.
 	MFAFrom        time.Time `json:"mfa_from,omitzero"`
 	NoSecondFactor []string  `json:"no_second_factor,omitempty"`
+	// Signals is the stream of security events from the identity
+	// provider, when one is connected.
+	Signals *SignalsFacts `json:"signals,omitempty"`
+}
+
+// SignalsFacts is the security event stream as connected: when, and when
+// the transmitter last answered a verification. Manual is a stream made in
+// the transmitter's own console, which cannot be asked to verify.
+type SignalsFacts struct {
+	Connected time.Time `json:"connected"`
+	Verified  time.Time `json:"verified,omitzero"`
+	Manual    bool      `json:"manual,omitempty"`
 }
 
 // SSOProvider is one SAML identity provider.

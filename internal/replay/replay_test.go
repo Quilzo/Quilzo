@@ -67,3 +67,30 @@ func TestAnIdentifierIsAcceptedOnceUnderLoad(t *testing.T) {
 		t.Errorf("%d accepted", len(accepted))
 	}
 }
+
+// Seen asks without remembering, so an identifier looked at and not yet
+// acted on can still be remembered, once, after; Full says a new one would
+// be refused for want of room, and stops saying so when time makes room.
+func TestSeenAsksWithoutRememberingAndFullSaysWhenThereIsNoRoom(t *testing.T) {
+	c := &Cache{Max: 2}
+	now := time.Unix(1787000000, 0)
+	if c.Seen("a", now) {
+		t.Fatal("an identifier never given was seen")
+	}
+	if !c.First("a", now.Add(time.Minute), now) {
+		t.Fatal("asking whether it was seen remembered it")
+	}
+	if !c.Seen("a", now.Add(30*time.Second)) || c.Seen("a", now.Add(2*time.Minute)) {
+		t.Error("seen is not while its time lasts")
+	}
+	if c.Full(now) {
+		t.Error("one of two is full")
+	}
+	c.First("b", now.Add(time.Minute), now)
+	if !c.Full(now) {
+		t.Error("two of two is not full")
+	}
+	if c.Full(now.Add(2 * time.Minute)) {
+		t.Error("still full after everyone's time was up")
+	}
+}

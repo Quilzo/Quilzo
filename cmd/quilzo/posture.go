@@ -80,6 +80,7 @@ func Observe(root, tplDir string, srv posture.ServerFacts) posture.State {
 	if t, ok, err := readSCIMToken(root, s.Now); err == nil && ok {
 		s.SSO.SCIMTokenEnds = t.Expires
 	}
+	s.SSO.Signals = signalsFacts(root)
 	if from, ok := mfaFromIfSet(root); ok {
 		s.SSO.MFAFrom = from
 	}

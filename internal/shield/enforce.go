@@ -106,7 +106,7 @@ func wantsJSON(r *http.Request) bool {
 		return false
 	}
 	p := r.URL.Path
-	if strings.HasPrefix(p, "/api/") || p == "/mcp" || strings.HasPrefix(p, "/mcp/") || strings.HasPrefix(p, "/scim/") || strings.HasPrefix(p, "/feeds/") {
+	if strings.HasPrefix(p, "/api/") || p == "/mcp" || strings.HasPrefix(p, "/mcp/") || strings.HasPrefix(p, "/scim/") || strings.HasPrefix(p, "/feeds/") || p == "/sso/signals" {
 		return true
 	}
 	a := r.Header.Get("Accept")

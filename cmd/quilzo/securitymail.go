@@ -111,7 +111,10 @@ func tell(root, to, summary string) (string, error) {
 	}
 	// One line: a name with a line break in it must not cost the message
 	// (mail refuses broken headers).
-	if err := m.Send(to, "Quilzo: "+onOneLine(summary), summary+"\n\nThis was sent by Quilzo."); err != nil {
+	// Through deliverMail, which is Send's own path, so a test can read
+	// what the security contact would have been told.
+	if err := deliverMail(m, mail.Message{To: to, Subject: "Quilzo: " + onOneLine(summary),
+		Body: summary + "\n\nThis was sent by Quilzo."}); err != nil {
 		return "", err
 	}
 	return "told " + to, nil

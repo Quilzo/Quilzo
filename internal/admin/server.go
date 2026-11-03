@@ -188,6 +188,9 @@ type Server struct {
 	Boards *BoardsAdmin
 	// SCIM is provisioning from an identity provider. See scimadmin.go.
 	SCIM *SCIMAdmin
+	// Signals is security events from the identity provider, which end the
+	// sessions it vouched for. See signals.go.
+	Signals *SignalsAdmin
 	// SignInRisk judges each sign-in as it is made (see signins.go);
 	// SignIns is where people signed in from. A session it holds back is
 	// confirmed with a passkey or a fresh single sign-on, never a code sent
@@ -428,7 +431,8 @@ type Server struct {
 	// admin. Nil tells nobody.
 	OnStrongSignIn func(r *http.Request, principal string)
 	// Shield reports whether the shield has turned one of the admin's
-	// features off: "uploads", "import", "feeds", "scim". Nil means never.
+	// features off: "uploads", "import", "feeds", "scim", "signals". Nil
+	// means never.
 	Shield func(target string) (until time.Time, on bool)
 	// Frozen says why publishing is refused for now, if it is: the shield
 	// froze it. Rolling back is never refused. Nil means never.
@@ -1217,6 +1221,12 @@ const exportUploadPath = "/make/import-file"
 // collection.
 const recordUploadPath = "/records/import"
 
+// SignalsPath is where the identity provider's transmitter pushes security
+// events (signals.go). Exported because the command that connects a stream
+// tells the transmitter this address, and one spelling of it cannot drift
+// from the route it names.
+const SignalsPath = "/sso/signals"
+
 // sameSiteOnly refuses cross-origin state changes.
 //
 // The admin authenticates with a cookie, and a cookie is sent by the browser on
@@ -1345,6 +1355,12 @@ func (s *Server) readOnlyTokens(next http.Handler) http.Handler {
 		switch r.URL.Path {
 		case "/mcp", "/oauth/token", "/oauth/revoke", "/token/exchange", "/features/check", "/features/install",
 			"/v1/chat/completions", "/v1/responses", "/v1/messages":
+			next.ServeHTTP(w, r)
+			return
+		// A transmitter's push carries the stream's own bearer, which is no
+		// credential of this store's. Looking it up as one would only report
+		// every delivery to the shield as a token nobody issued.
+		case SignalsPath:
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -1652,6 +1668,12 @@ func (s *Server) Handler() http.Handler {
 	// its own token, not a person's session; see internal/scim.
 	if s.SCIM != nil && s.SCIM.Handler != nil {
 		mux.Handle("/scim/v2/", s.shieldable("scim", s.SCIM.Handler))
+	}
+	// And its security events, which take access away on its word; the
+	// transmitter authenticates with the bearer it was given when the
+	// stream was connected. See signals.go and internal/ssf.
+	if s.Signals != nil && s.Signals.Handler != nil {
+		mux.Handle(SignalsPath, s.shieldable("signals", s.Signals.Handler))
 	}
 	// /docs and /docs/img/ used to be served from here. The manual is now
 	// published at DocsBase and the footer links straight to it — deliberately

@@ -206,6 +206,7 @@ func cmdServe(root string, args []string) error {
 	srv.Members = membersHooks(root)
 	srv.Boards = boardsHooks(root)
 	srv.SCIM = scimHooks(root)
+	srv.Signals = signalsHooks(root)
 	srv.Memory = memoryAdmin(root)
 	srv.Features = featureHooks(root, signedIn)
 	srv.Pay = payHooks(root, signedIn)
@@ -1331,6 +1332,9 @@ func upkeepJobs(root string, posture upkeep.Job) []upkeep.Job {
 	jobs = append(jobs, agentwatchJob(root))
 	// And a backup a day, when backup.dir is set.
 	jobs = append(jobs, backupJob(root))
+	// And the identity provider's security event stream asked, once a
+	// day, to prove it still reaches here.
+	jobs = append(jobs, signalsJob(root))
 	// And what agents remember, past its time.
 	return append(jobs, memoryJob(root))
 }
