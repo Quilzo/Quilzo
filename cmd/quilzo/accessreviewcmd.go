@@ -444,9 +444,6 @@ func cmdAccess(root string, args []string) error {
 	switch args[0] {
 	case "review":
 		return cmdAccessReview(root, args[1:])
-	case "help", "-h", "--help":
-		w.Human("%s", accessReviewUsage)
-		return nil
 	}
 	return fmt.Errorf("unknown access command %q; quilzo access review start | items | decide | close", args[0])
 }
