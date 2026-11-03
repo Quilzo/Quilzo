@@ -320,6 +320,13 @@ func (s *Store) Remember(e Entry, retain time.Duration, now time.Time) (Entry, e
 			// less, by being said again in a run that was not.
 			if !old.Held || e.Held {
 				e.Held, e.Confirmed, e.ConfirmedBy = old.Held, old.Confirmed, old.ConfirmedBy
+				// And still the words of whoever said them first, since
+				// their saying is the trust kept. Whose words a procedure
+				// is decides whether recalling it taints a run, and taking
+				// the new run's person here let a run tainted by somebody
+				// else's procedure make it its own person's by saying it
+				// back, so their next run recalled it untainted.
+				e.Run, e.Step, e.By = old.Run, old.Step, old.By
 			}
 			if tierRank[old.Tier] > tierRank[e.Tier] {
 				e.Tier = old.Tier
