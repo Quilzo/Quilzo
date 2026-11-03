@@ -100,9 +100,26 @@ type Result struct {
 	// returning a partial file, because a truncated PDF that validates is worse
 	// than a refused one.
 	Truncated bool
-	// Header is the response's headers, from Do: a protocol that carries
-	// state in a header (an MCP server's session) needs to read it.
+	// Header is the response's headers: a protocol that carries state in a
+	// header (an MCP server's session) needs to read it.
 	Header http.Header
+}
+
+// answered is the Result for a response, filled the same way by every
+// method here.
+//
+// Each method used to build its Result by hand, and Get, PostForm and
+// PostWithHeaders left the status out: a 200 came back as 0, and every
+// caller that checked for 200 refused every answer that succeeded. One place
+// that fills the status, the headers and the ceiling is one a method added
+// later cannot leave a field out of.
+func answered(raw, final string, resp *http.Response, body []byte, max int64) *Result {
+	res := &Result{URL: raw, FinalURL: final, Status: resp.StatusCode,
+		ContentType: resp.Header.Get("Content-Type"), Body: body, Header: resp.Header}
+	if int64(len(body)) > max {
+		res.Body, res.Truncated = body[:max], true
+	}
+	return res
 }
 
 // blocked lists the address ranges a fetch may never reach.
@@ -257,6 +274,15 @@ type Client struct {
 	// the network. Nil is Public, as for every fetch somebody else chose the
 	// address of.
 	Reach Reach
+	// Redirect, when set, is asked about every address a GET is sent on to,
+	// after the address rules and before anything is requested there; an
+	// error refuses the hop and ends the fetch. For a caller with a rule of
+	// its own about hosts: the address rules say only that a host is public,
+	// and a redirect is the site's choice of where the request, with its path
+	// and its query, goes next. An agent that may read one host was sent to
+	// any host by an open redirect on it, because only the first address and
+	// the last were held to what it declared.
+	Redirect func(next *url.URL) error
 }
 
 // checkIP is the client's rule.
@@ -420,6 +446,11 @@ func (c *Client) get(ctx context.Context, raw string, decorate func(*http.Reques
 		if _, err := c.validateURL(req.URL.String()); err != nil {
 			return fmt.Errorf("redirect to %s refused: %w", req.URL, err)
 		}
+		if c.Redirect != nil {
+			if err := c.Redirect(req.URL); err != nil {
+				return fmt.Errorf("redirect to %s refused: %w", req.URL, err)
+			}
+		}
 		return nil
 	}
 
@@ -452,13 +483,9 @@ func (c *Client) get(ctx context.Context, raw string, decorate func(*http.Reques
 	}
 
 	sum := sha256.Sum256(body)
-	return &Result{
-		URL:         raw,
-		FinalURL:    resp.Request.URL.String(),
-		ContentType: resp.Header.Get("Content-Type"),
-		Body:        body,
-		SHA256:      hex.EncodeToString(sum[:]),
-	}, nil
+	res := answered(raw, resp.Request.URL.String(), resp, body, lim.MaxBytes)
+	res.SHA256 = hex.EncodeToString(sum[:])
+	return res, nil
 }
 
 // httpClient builds a client whose every connection passes the address check.
@@ -617,11 +644,7 @@ func (c *Client) PostForm(ctx context.Context, raw string, form url.Values,
 	// A non-200 body is returned rather than discarded: OAuth error responses
 	// are 400 with the reason inside, and swallowing them leaves the caller
 	// with "it failed".
-	return &Result{
-		URL: raw, FinalURL: u.String(),
-		ContentType: resp.Header.Get("Content-Type"),
-		Body:        body,
-	}, nil
+	return answered(raw, u.String(), resp, body, lim.MaxBytes), nil
 }
 
 // Post sends raw bytes, with the same connect-time address validation as Get.
@@ -644,6 +667,12 @@ func (c *Client) Post(ctx context.Context, raw string, body []byte,
 // The MCP client needs both at once: a JSON-RPC call carries an Authorization
 // header and the answer is the point. PostSigned has the headers and discards
 // the body — it is for webhooks, where the receiver's reply is not wanted.
+//
+// Any 2xx is an answer, reported with its status; anything else is an error
+// carrying the start of what the receiver said. Only 200 used to count, and a
+// receiver that succeeds with nothing to say answers 204: Discord does, to
+// every webhook, so every staff notice sent there was recorded as failed after
+// it had arrived.
 //
 // Post now delegates here rather than the two keeping their own copy of the
 // address validation, the redirect refusal, the timeout and the body ceiling.
@@ -688,12 +717,11 @@ func (c *Client) PostWithHeaders(ctx context.Context, raw string, body []byte,
 	if err != nil {
 		return nil, err
 	}
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return nil, fmt.Errorf("%s returned %d: %s", u, resp.StatusCode,
 			strings.TrimSpace(string(out[:min(len(out), 200)])))
 	}
-	return &Result{URL: raw, FinalURL: u.String(), Body: out,
-		ContentType: resp.Header.Get("Content-Type")}, nil
+	return answered(raw, u.String(), resp, out, lim.MaxBytes), nil
 }
 
 // Do makes one request with any method and reports the status rather than
@@ -742,12 +770,7 @@ func (c *Client) Do(ctx context.Context, method, raw string, body []byte,
 	if err != nil {
 		return nil, err
 	}
-	res := &Result{URL: raw, FinalURL: u.String(), Status: resp.StatusCode,
-		Body: out, ContentType: resp.Header.Get("Content-Type"), Header: resp.Header}
-	if int64(len(out)) > lim.MaxBytes {
-		res.Body, res.Truncated = out[:lim.MaxBytes], true
-	}
-	return res, nil
+	return answered(raw, u.String(), resp, out, lim.MaxBytes), nil
 }
 
 // PostSigned sends a body with caller-supplied headers, through the same
@@ -797,8 +820,7 @@ func (c *Client) PostSigned(ctx context.Context, raw string, body []byte,
 	// receiver cannot make this hold memory by answering with a stream.
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 
-	return &Result{URL: raw, FinalURL: u.String(), Status: resp.StatusCode,
-		ContentType: resp.Header.Get("Content-Type")}, nil
+	return answered(raw, u.String(), resp, nil, lim.MaxBytes), nil
 }
 
 // DoChecked sends an already-built request through the same address-checked,
@@ -817,11 +839,20 @@ func (c *Client) PostSigned(ctx context.Context, raw string, body []byte,
 //
 // Redirects are refused for the same reason PostSigned refuses them: a
 // redirect would replay a signed body at an address the signature never named.
+//
+// The request is held to the client's timeout, whatever context it came
+// with. It used to run with none: the deliverer builds its request with the
+// background context, so a follower whose inbox sent its headers and then a
+// byte every few minutes held the one delivery loop, and every follower after
+// it and every later post waited for good.
 func (c *Client) DoChecked(req *http.Request) (int, error) {
 	lim := c.Limits.withDefaults()
 	if _, err := c.validateURL(req.URL.String()); err != nil {
 		return 0, err
 	}
+	ctx, cancel := context.WithTimeout(req.Context(), lim.Timeout)
+	defer cancel()
+	req = req.WithContext(ctx)
 	client, err := c.httpClient(lim)
 	if err != nil {
 		return 0, err

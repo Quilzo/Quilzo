@@ -70,9 +70,26 @@
   }
 
   // Where to go after signing in: a path on this site, never anywhere else.
+  //
+  // Read with the browser's own URL parser, and the parsed address used,
+  // rather than the text matched against a pattern. The parser drops tabs
+  // and newlines before it looks for a host, so "/\t/evil.example" passed a
+  // check for one slash and then went to evil.example straight after a real
+  // sign-in. Keeping only the path of the parsed address would not do
+  // either: "/.//evil.example" parses to the path "//evil.example", which is
+  // another site again once it is assigned on its own.
   function next() {
     var n = new URLSearchParams(location.search).get("next") || "";
-    return /^\/(?!\/)/.test(n) && n.indexOf("\\") < 0 ? n : root;
+    if (!/^\/(?!\/)/.test(n) || n.indexOf("\\") >= 0) {
+      return root;
+    }
+    var u;
+    try {
+      u = new URL(n, location.href);
+    } catch (e) {
+      return root;
+    }
+    return u.origin === location.origin ? u.href : root;
   }
 
   function registered(credential, challenge, extra) {

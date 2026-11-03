@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"net/url"
 	"strings"
 	"time"
 
@@ -29,10 +30,12 @@ func holdsWeb(m agent.Manifest) bool {
 }
 
 // webGet reads an address for an agent: a variable so a test can stand in
-// for the web.
-var webGet = func(ctx context.Context, address string) (web.Page, error) {
+// for the web. Every address a redirect leads to is put to hop, which holds
+// it to the agent's declaration, before anything is sent there.
+var webGet = func(ctx context.Context, address string, hop func(*url.URL) error) (web.Page, error) {
 	c := fetch.For("agent-web")
 	c.Limits = fetch.Limits{MaxBytes: web.MaxFetched, Timeout: 20 * time.Second, MaxRedirects: 3}
+	c.Redirect = hop
 	r, err := c.Get(ctx, address)
 	if err != nil {
 		return web.Page{}, err
