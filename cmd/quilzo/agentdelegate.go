@@ -47,6 +47,14 @@ type delegation struct {
 	// delegate walks its manifest exactly as `agent run` does — which is the
 	// mode that costs nothing and still proves the pipeline is wired.
 	model assist.Model
+	// caller is who started the run the work is handed on from, and the
+	// delegate acts for them: its record names them, its tool calls go with
+	// their connected accounts, and what it proposes is theirs to answer for.
+	// It used to be resolved afresh inside the run, which found the server
+	// process's own token, or an unverified name from the operating system,
+	// so a run dana started handed its delegate's work to somebody else and
+	// the log said so.
+	caller *Caller
 	// parent names the supervisor, for the record. A delegated run with no
 	// note of who asked for it is the accountability gap with extra steps.
 	parent string
@@ -73,13 +81,19 @@ func (d delegation) Run(ctx context.Context, name string, child *agent.Session,
 				"instruction for that stage", name)
 	}
 
+	caller := d.caller
+	if caller == nil {
+		// Nobody to act for. Resolving one here is how the delegate came to
+		// act for the server process instead, so it is refused.
+		return "", fmt.Errorf("%s was handed work by a run that names "+
+			"nobody who started it, so there is nobody for it to act for", name)
+	}
 	m := child.Manifest()
 	decide, err := d.decider(child, m)
 	if err != nil {
 		return "", err
 	}
 
-	caller := resolveCaller(d.root, "")
 	runner := agent.Runner{
 		Decide:     decide,
 		OwnDomains: ownDomains(d.root),
@@ -119,8 +133,9 @@ func (d delegation) Run(ctx context.Context, name string, child *agent.Session,
 				Load: func() (*decidepkg.Set, error) {
 					return decidepkg.Load(decidersPath(d.root))
 				},
+				// Charged to the person the run is for, as its parent's are.
 				Model: func(name string) decidepkg.Model {
-					m, _ := deciderModel(d.root, name)
+					m, _ := deciderModel(d.root, name, personConsumer(caller)...)
 					return m
 				},
 			},
@@ -156,7 +171,7 @@ func (d delegation) Run(ctx context.Context, name string, child *agent.Session,
 // next is the delegate surface the child itself gets, one level deeper.
 func (d delegation) next(parent string) agentexec.Delegates {
 	deeper := delegation{
-		root: d.root, store: d.store, model: d.model,
+		root: d.root, store: d.store, model: d.model, caller: d.caller,
 		parent: parent, depth: d.depth + 1,
 	}
 	return agentexec.Delegates{

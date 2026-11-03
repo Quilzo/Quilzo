@@ -1269,7 +1269,7 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 				Manifest: manifestLoader(root),
 				Run: delegation{
 					root: root, store: s, model: delegateModel,
-					parent: m.Name,
+					caller: caller, parent: m.Name,
 				},
 			},
 			// The deciders: a typed question with a confidence, asked by
