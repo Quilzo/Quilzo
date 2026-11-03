@@ -325,6 +325,22 @@ func TestAHandOffTheReviewerRefusesWaitsForAPerson(t *testing.T) {
 	if w == nil || w.Kind != agent.WaitReview || w.Action.Delegate != "writer" {
 		t.Fatalf("the refused hand-off is not waiting for a person: %+v (%s)", w, rec.Trace.Stopped)
 	}
+	// Named for the person who decides it, as everything waiting is: a
+	// hand-off has no capability and no tool, which were all a waiting
+	// action was named by, so it was listed, and logged once decided, as
+	// nothing.
+	waiting, err := waitingFor(root, asAdmin("dana"), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(waiting) != 1 || waiting[0].What != "delegate/writer" {
+		t.Errorf("the waiting hand-off is listed as %+v", waiting)
+	}
+	_, read := captureStdout(t)
+	printPending(id, w)
+	if said := read(); !strings.Contains(said, "wants delegate/writer") || !strings.Contains(said, "write the pages") {
+		t.Errorf("the waiting hand-off is put to a person as:\n%s", said)
+	}
 	// And a person may still let it go ahead, as with anything the
 	// reviewer refused.
 	if _, err := continueAgentRun(context.Background(), root, id,
@@ -333,5 +349,18 @@ func TestAHandOffTheReviewerRefusesWaitsForAPerson(t *testing.T) {
 	}
 	if n := pagesWritten(t, root); n == 0 {
 		t.Error("a person let the hand-off go ahead and the delegate wrote nothing")
+	}
+	events, err := audit.Read(auditPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	approved := ""
+	for _, e := range events {
+		if e.Action == "agent.approve" {
+			approved = e.Detail["what"]
+		}
+	}
+	if approved != "delegate/writer" {
+		t.Errorf("the log says dana let %q go ahead", approved)
 	}
 }

@@ -1635,10 +1635,7 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 
 // printPending says what a run stopped at and how to answer it.
 func printPending(id string, w *agent.Pending) {
-	what := w.Action.Op
-	if what == "" {
-		what = w.Action.Tool
-	}
+	what := w.Action.Name()
 	if w.Kind == agent.WaitQuestion {
 		fmt.Printf("\n  %swaiting for a person to answer%s  step %d: %s\n", bold, reset, w.N, printable(w.Why))
 		var names []string
@@ -1669,8 +1666,8 @@ func printPending(id string, w *agent.Pending) {
 	if w.Why != "" {
 		fmt.Printf("    %s%s%s\n", dim, printable(w.Why), reset)
 	}
-	if len(w.Action.Input) > 0 {
-		if b, err := json.Marshal(w.Action.Input); err == nil {
+	if in := w.Action.Shown(); len(in) > 0 {
+		if b, err := json.Marshal(in); err == nil {
 			fmt.Printf("    with %s\n", truncate(string(b), 600))
 		}
 	}

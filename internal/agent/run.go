@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 	"time"
@@ -789,6 +790,28 @@ func from(a Action) string {
 		return a.Tool
 	}
 	return a.Op
+}
+
+// Name is what an action is called for a person deciding on it, and in the
+// record of what they decided: as from names it, so a hand-off is
+// delegate/NAME. A waiting action was named by its capability or its tool,
+// and a hand-off has neither, so one the reviewer refused was offered to a
+// person, and logged once they answered, with no name at all.
+func (a Action) Name() string { return from(a) }
+
+// Shown is the input a person reads before deciding on an action. For a
+// hand-off it holds the work handed on, which a supervisor says and puts in
+// no input: a person asked to let one go ahead was shown it "with nothing
+// given", and the work, which is what the reviewer refused, was not shown.
+func (a Action) Shown() map[string]any {
+	said := strings.TrimSpace(a.Say)
+	if a.Delegate == "" || said == "" {
+		return a.Input
+	}
+	out := make(map[string]any, len(a.Input)+1)
+	maps.Copy(out, a.Input)
+	out["instruction"] = said
+	return out
 }
 
 // personalIn is the kinds of personal data in text, or nothing.

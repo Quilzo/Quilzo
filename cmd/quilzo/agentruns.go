@@ -313,10 +313,7 @@ func recordAnswer(root string, caller *Caller, prior agent.Record, v agent.Verdi
 	if !v.Approve {
 		did = "agent.decline"
 	}
-	what := w.Action.Op
-	if what == "" {
-		what = w.Action.Tool
-	}
+	what := w.Action.Name()
 	detail := map[string]string{"agent": prior.Agent, "run": prior.ID,
 		"step": fmt.Sprint(w.N), "what": what}
 	if w.Kind != "" {
