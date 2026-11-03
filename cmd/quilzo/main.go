@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"time"
@@ -71,7 +72,14 @@ type errBlocked struct{ error }
 
 func (e errBlocked) Unwrap() error { return e.error }
 
+// version is what this binary says it is. A release build sets it with
+// -ldflags -X (Makefile, release.yml, Dockerfile), which works only on a
+// variable initialised to a constant, so it stays one; a binary from
+// `go install github.com/quilzo/quilzo/cmd/quilzo@v0.3.0` has no such flag,
+// and the init below reads its module version instead (version.go).
 var version = "dev"
+
+func init() { version = moduleVersion(version, debug.ReadBuildInfo) }
 
 func usage() {
 	// The whole surface, because `--help` is how an agent discovers a CLI. The
