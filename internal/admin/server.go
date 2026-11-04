@@ -3126,6 +3126,9 @@ func (s *Server) handleRule(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		data["Checked"], data["Failing"] = true, now
+		// Whose token, as the Security screen says it: the fix here says
+		// --principal HOLDER, and this is where its link leads.
+		data["Holders"] = s.tokenHolders(now)
 	}
 	s.render(w, r, "rules.html", data)
 }

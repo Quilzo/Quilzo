@@ -171,3 +171,43 @@ func TestPostureSaysWhoseTokenAFindingIsAbout(t *testing.T) {
 		t.Errorf("the finding does not say whose token it is:\n%s", finding)
 	}
 }
+
+// quilzo posture frameworks says whose token a finding is about too, as
+// quilzo posture scan and the framework's page on the Security screen do.
+//
+// It lists each failing requirement with the detail of what fails it, and
+// that detail said "deploy-bot belongs to lee" until the finding stopped
+// naming the holder; from then on the command said which token and not
+// whom to ask about it.
+func TestPostureFrameworksSaysWhoseTokenAFindingIsAbout(t *testing.T) {
+	root := t.TempDir()
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	ts, err := loadTokens(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ts.Issue("deploy-bot", "lee", "admin", "/", 30*24*time.Hour, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveTokens(root, ts); err != nil {
+		t.Fatal(err)
+	}
+	var text string
+	if _, err := humanOutput(t, func() error {
+		_, read := captureStdout(t)
+		err := postureFrameworks(root, []string{"nist-800-53", "--templates", t.TempDir()})
+		text = read()
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	at := strings.Index(text, "the token deploy-bot can change the access policy itself")
+	if at < 0 {
+		t.Fatalf("control: no token.admin-role finding about deploy-bot:\n%s", text)
+	}
+	if finding := text[at:]; !strings.Contains(finding[:min(len(finding), 200)], "held by lee") {
+		t.Errorf("the finding does not say whose token it is:\n%s", finding)
+	}
+}
