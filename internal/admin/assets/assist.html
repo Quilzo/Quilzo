@@ -14,11 +14,21 @@
 {{else}}
 <p class="lead">Describe what you want. Nothing is written until you accept it.</p>
 
+{{/*
+  The buttons say what they do, not what answers. They once read "Ask" and
+  the model's name, which through the gateway is a binding such as
+  gateway:assist and otherwise a vendor's product: neither is an action a
+  person can read. Where the request goes is still said, in the line under
+  the button, because it decides where this site's content is sent.
+*/}}
+
 <form method="post" action="/assist">
   <p><label for="a-instruction">What should this site have? {{template "req"}}</label>
     <textarea id="a-instruction" name="instruction" rows="4" required
       >{{.Instruction}}</textarea></p>
-  <button type="submit">Ask {{.Model}}</button>
+  <button type="submit">Ask the assistant</button>
+  <p class="hint">What you write here, and this site's pages, are sent to
+    <code>{{.Model}}</code>.</p>
 </form>
 
 {{if .Proposal}}
@@ -77,7 +87,7 @@
   <form method="post" action="/assist" class="inline">
     <input type="hidden" name="instruction" value="{{.Instruction}}">
     <input type="hidden" name="fix" value="{{.Fix}}">
-    <button type="submit">Ask {{.Model}} to fix this</button>
+    <button type="submit">Ask the assistant to fix this</button>
   </form>
 </div>
 {{end}}
