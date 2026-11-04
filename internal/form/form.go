@@ -572,6 +572,56 @@ func AcceptShare(f *Form, values map[string]string, source string,
 // it. The sender is told only that it was not accepted, as before.
 var ErrSpam = errors.New("this submission was not accepted")
 
+// ErrOld is a page that was opened longer ago than the route answering it
+// allows: a replayed form, or a tab that sat open for a week and is
+// answering questions that may have changed. It is not ErrSpam, and is not
+// told to the shield, because a person who left a tab open is not a script.
+// The words are the form's, which shows them as they are; a booking says it
+// in its own.
+var ErrOld = errors.New("this form was opened more than a day ago. Reload it and send " +
+	"again — the questions may have changed since")
+
+// OldestPage is how long ago a page may have been opened for a form or a
+// booking on it still to be taken.
+const OldestPage = 24 * time.Hour
+
+// CheckHuman makes the two checks a page this server rendered lets a route
+// make of what came back from it: the field nobody sees (Honeypot), and
+// when the page was read (StampField). It answers ErrSpam for a script's,
+// ErrOld for a page opened more than oldest ago, and nil for a person's.
+// An oldest of zero is no upper bound, for a route whose page may be
+// cached, as a newsletter sign-up in a page's footer is.
+//
+// A form, a booking and the newsletter's sign-up each made these checks in
+// a copy of their own, so a change to one (what a stamp may look like, how
+// quickly a person reads) would have reached one route and not the others.
+// Each route still tells the shield under its own name and answers in its
+// own words; this is only the judgement.
+func CheckHuman(honeypot, stamp string, now time.Time, oldest time.Duration) error {
+	// The honeypot. A person never sees this field; anything filling in
+	// every field it finds does.
+	if strings.TrimSpace(honeypot) != "" {
+		return ErrSpam
+	}
+	// The timing check. A person cannot read a form and answer it in under
+	// two seconds; a script does it in twenty milliseconds. A missing or
+	// unparseable stamp is refused rather than waved through — otherwise
+	// removing the field is how the check is bypassed. A stamp from the
+	// future is refused with them: it is less than two seconds old.
+	started, err := strconv.ParseInt(strings.TrimSpace(stamp), 10, 64)
+	if err != nil {
+		return ErrSpam
+	}
+	elapsed := now.Unix() - started
+	if elapsed < MinFillSeconds {
+		return ErrSpam
+	}
+	if oldest > 0 && elapsed > int64(oldest/time.Second) {
+		return ErrOld
+	}
+	return nil
+}
+
 func accept(f *Form, values map[string]string, source string,
 	now time.Time, human bool) (Submission, error) {
 	return acceptAll(f, values, nil, source, now, human)
@@ -585,36 +635,15 @@ func acceptAll(f *Form, values map[string]string, files map[string]Upload, sourc
 			"%q is not accepting submissions", f.Name)
 	}
 
-	// The honeypot. A person never sees this field; anything filling in every
-	// field it finds does.
+	// The honeypot and the timing check, with a day's bound on the page's
+	// age (CheckHuman).
 	//
-	// Both this and the timing check below need the sender to have loaded a
-	// page this server rendered. A share from the operating system did not,
-	// so AcceptShare skips them — see the note there for what replaces them.
-	if human && strings.TrimSpace(values[Honeypot]) != "" {
-		return Submission{}, ErrSpam
-	}
-
-	// The timing check. A person cannot read a form and answer it in under two
-	// seconds; a script does it in twenty milliseconds. A missing or
-	// unparseable stamp is refused rather than waved through — otherwise
-	// removing the field is how the check is bypassed.
+	// Both need the sender to have loaded a page this server rendered. A
+	// share from the operating system did not, so AcceptShare skips them —
+	// see the note there for what replaces them.
 	if human {
-		started, err := strconv.ParseInt(
-			strings.TrimSpace(values[StampField]), 10, 64)
-		if err != nil {
-			return Submission{}, ErrSpam
-		}
-		elapsed := now.Unix() - started
-		if elapsed < MinFillSeconds {
-			return Submission{}, ErrSpam
-		}
-		// And a stamp from the far past is a replayed form, or a page that sat
-		// open for a week and is answering questions that may have changed.
-		if elapsed > int64((24 * time.Hour).Seconds()) {
-			return Submission{}, fmt.Errorf(
-				"this form was opened more than a day ago. Reload it and send " +
-					"again — the questions may have changed since")
+		if err := CheckHuman(values[Honeypot], values[StampField], now, OldestPage); err != nil {
+			return Submission{}, err
 		}
 	}
 
