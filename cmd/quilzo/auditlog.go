@@ -64,14 +64,14 @@ func cmdAuditDir(root string, args []string) error {
 	if len(args) == 0 {
 		dir := auditDir(root)
 		if dir == root {
-			w.Human("  the log is in the store: %s", auditPath(root))
-			w.Human("  %sthat means this account writes its own audit record%s",
+			w.Human("  the log is in the store: %s\n", auditPath(root))
+			w.Human("  %sthat means this account writes its own audit record%s\n",
 				dim, reset)
 			w.Human("  %squilzo auditlog dir /srv/audit — after creating it "+
-				"for the log account%s", dim, reset)
+				"for the log account%s\n", dim, reset)
 			return nil
 		}
-		w.Human("  the log is at %s", filepath.Join(dir, "audit.jsonl"))
+		w.Human("  the log is at %s\n", filepath.Join(dir, "audit.jsonl"))
 		return nil
 	}
 	dir := args[0]
@@ -101,8 +101,8 @@ func cmdAuditDir(root string, args []string) error {
 	if err := setAuditDir(root, abs); err != nil {
 		return err
 	}
-	w.Human("  the log is now read from %s", filepath.Join(abs, "audit.jsonl"))
-	w.Human("  %sstart the writer: quilzo --root %s logd --log-dir %s%s",
+	w.Human("  the log is now read from %s\n", filepath.Join(abs, "audit.jsonl"))
+	w.Human("  %sstart the writer, unless something runs it already: quilzo --root %s logd --log-dir %s%s\n",
 		dim, root, abs, reset)
 	return nil
 }
