@@ -262,3 +262,31 @@ func TestClearingRightsLeavesNothingHalfRecorded(t *testing.T) {
 		t.Error("clearing a licence is not recorded in the audit log")
 	}
 }
+
+// `quilzo rights set ID --licence ADDRESS` records the licence the address
+// names. The CC0 address a pack of pictures links to was refused with "use a
+// short name", while a sentence of plain words was taken as a licence.
+func TestALicenceIsRecordedByItsAddress(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("QUILZO_TOKEN", "")
+	root := connectStore(t)
+	lib, err := openMedia(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := storeImage(t, lib, "flare.png", media.Rights{})
+	_, printed := captureStdout(t)
+	err = rightsSet(root, []string{id, "--licence", "https://creativecommons.org/publicdomain/zero/1.0/",
+		"--holder", "Kenney"})
+	printed()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := lib.Stat(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.Rights.Licence != "CC0-1.0" || f.Rights.Holder != "Kenney" {
+		t.Errorf("recorded %+v", f.Rights)
+	}
+}
