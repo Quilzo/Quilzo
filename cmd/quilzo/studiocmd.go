@@ -116,6 +116,9 @@ func studioServer(root string) (*studio.Server, error) {
 		Audit: func(action, resource string, detail map[string]string) {
 			record(root, studioRecord(action, resource, detail))
 		},
+		// When each token was last used, which a copy read per request
+		// forgot, as at the admin's /api/v1 and /mcp (useRecorder).
+		OnTokenUsed: useRecorder(root),
 	}, nil
 }
 

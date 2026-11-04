@@ -433,3 +433,29 @@ func webmBytes() []byte {
 	b := append([]byte{0x1A, 0x45, 0xDF, 0xA3}, []byte("webm")...)
 	return append(b, make([]byte, 4096)...)
 }
+
+// Every token that authenticates is told to the host, signing in and on each
+// request after, so the host can write down when it was last used.
+//
+// Nothing was. Each request is decided by a copy of the store read for it,
+// and the use Authenticate notes in the copy was lost with it, so a token
+// somebody recorded with every day was listed as used "never".
+func TestATokensUseIsToldToTheHost(t *testing.T) {
+	srv, secret := wired(t)
+	var told []string
+	srv.OnTokenUsed = func(tok auth.Token) { told = append(told, tok.Principal) }
+	req := httptest.NewRequest(http.MethodPost, "/signin", bytes.NewBufferString("token="+secret))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusSeeOther || len(told) != 1 || told[0] != "ada" {
+		t.Fatalf("signing in (%d) told %v", rec.Code, told)
+	}
+	if w := signedIn(t, srv, secret, "/", nil, ""); w.Code != http.StatusOK || len(told) != 2 {
+		t.Fatalf("a request signed in (%d) told %v", w.Code, told)
+	}
+	signedIn(t, srv, "qz_not-a-token", "/", nil, "")
+	if len(told) != 2 {
+		t.Fatalf("a token that did not authenticate was told: %v", told)
+	}
+}
