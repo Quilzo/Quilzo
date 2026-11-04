@@ -243,7 +243,8 @@ func (s *Server) interfaceCaller(r *http.Request, token, resource string) (*mcp.
 	if s.ReloadTokens != nil {
 		s.ReloadTokens()
 	}
-	// And the credentials this server reads, as every screen re-reads them.
+	// And the credentials as they are stored now, as every screen re-reads
+	// them (storedTokens).
 	//
 	// ReloadTokens alone was not enough. It keeps current the store the
 	// server was started with, which the content API reads, but the first
@@ -251,8 +252,8 @@ func (s *Server) interfaceCaller(r *http.Request, token, resource string) (*mcp.
 	// s.Tokens, and nothing kept that copy current here. So a token issued on
 	// the command line was "no such token" at /mcp, and a token revoked there
 	// kept working at /mcp, until somebody happened to open a screen.
-	s.refresh()
-	if s.Tokens == nil {
+	toks := s.storedTokens()
+	if toks == nil {
 		return nil, errors.New("no token store")
 	}
 	// The throttle refuses failures, not the address: a throttled request is
@@ -281,12 +282,12 @@ func (s *Server) interfaceCaller(r *http.Request, token, resource string) (*mcp.
 		// once the token is accepted, as proofOf says why.
 		var proof dpop.Proof
 		if proof, err = s.proofOf(r, token); err == nil {
-			if tok, err = s.Tokens.AuthenticateProved(token, resource, proof.Thumbprint, time.Now()); err == nil {
+			if tok, err = toks.AuthenticateProved(token, resource, proof.Thumbprint, time.Now()); err == nil {
 				err = s.proofs.Spend(proof, time.Now())
 			}
 		}
 	} else {
-		tok, err = s.Tokens.AuthenticateFor(token, resource, time.Now())
+		tok, err = toks.AuthenticateFor(token, resource, time.Now())
 	}
 	if err != nil {
 		if s.OnBadToken != nil {
@@ -314,6 +315,24 @@ func (s *Server) interfaceCaller(r *http.Request, token, resource string) (*mcp.
 		s.OnTokenUsed(*tok)
 	}
 	return &mcp.Caller{Principal: tok.Principal, Client: tok.Client, Data: *tok}, nil
+}
+
+// storedTokens is the credential store as it is stored now, for a door
+// that decides by a token alone: read as refresh reads it, and kept by the
+// request that asked rather than put in s.Tokens.
+//
+// /mcp and the token exchange ran refresh, which puts what it read in
+// s.Tokens, the field every other request reads. An MCP client calls several
+// tools at once, so each call wrote what the others were reading, a data
+// race; and an exchange could mint its token into one copy and save the copy
+// a request beside it had put in its place, which lacked the token.
+func (s *Server) storedTokens() *auth.TokenStore {
+	if s.Reload != nil {
+		if _, toks, err := s.Reload(); err == nil && toks != nil {
+			return toks
+		}
+	}
+	return s.Tokens
 }
 
 // ownOrigin is this admin's origin as the request reached it.

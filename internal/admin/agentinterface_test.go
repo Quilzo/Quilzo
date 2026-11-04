@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -753,6 +754,54 @@ func TestTheInterfaceSeesTokensChangedElsewhereAtOnce(t *testing.T) {
 	write(cli)
 	if w := r.mcpCall(t, secret); w.Code != http.StatusUnauthorized {
 		t.Fatalf("a token revoked on the command line still worked at /mcp: %d %s", w.Code, w.Body.String())
+	}
+}
+
+// Calls at /mcp and exchanges at once each read the credentials as they are
+// stored now, and none of them puts what it read where every other request
+// reads (s.Tokens). Run with -race.
+//
+// They ran refresh, which puts a copy read from disk in s.Tokens. An MCP
+// client calls several tools at once, so each call wrote the field the
+// others were reading, which the race detector reported at the first two
+// calls, and an exchange could mint its token into one copy and save
+// another.
+func TestCallsAtTheInterfaceAtOnceReadTheStoreWithoutWritingIt(t *testing.T) {
+	r := newIfaceRig(t)
+	r.oauth = false
+	started := r.srv.Tokens
+	secret, _, err := started.Issue("integration", "editor", auth.RoleReader, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	disk, err := json.Marshal(started)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.srv.Reload = func() (*auth.Policy, *auth.TokenStore, error) {
+		fresh := &auth.TokenStore{}
+		if err := json.Unmarshal(disk, fresh); err != nil {
+			return nil, nil, err
+		}
+		return nil, fresh, nil
+	}
+	swap := url.Values{"grant_type": {grantTokenExchange}, "subject_token": {secret}, "subject_token_type": {typeAccessToken}}
+	var wg sync.WaitGroup
+	codes := make(chan int, 8)
+	for range 4 {
+		wg.Add(2)
+		go func() { defer wg.Done(); codes <- r.mcpCall(t, secret).Code }()
+		go func() { defer wg.Done(); codes <- exchange(t, r.srv, swap, "").Code }()
+	}
+	wg.Wait()
+	close(codes)
+	for c := range codes {
+		if c != http.StatusOK {
+			t.Errorf("a call made at the same time as others was answered %d", c)
+		}
+	}
+	if r.srv.Tokens != started {
+		t.Error("a call at the interface replaced the store every other request reads")
 	}
 }
 
