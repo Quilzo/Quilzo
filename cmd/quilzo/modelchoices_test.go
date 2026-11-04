@@ -20,7 +20,11 @@ import (
 
 // tracker is a 2026-07-28 server offering one tool whose description the
 // test can change.
-type tracker struct{ description string }
+type tracker struct {
+	description string
+	// fails makes create_issue run and report that it failed.
+	fails bool
+}
 
 func (tr *tracker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var msg struct {
@@ -29,9 +33,11 @@ func (tr *tracker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewDecoder(r.Body).Decode(&msg)
 	w.Header().Set("Content-Type", "application/json")
-	switch msg.Method {
-	case "tools/list":
+	switch {
+	case msg.Method == "tools/list":
 		fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"resultType":"complete","tools":[{"name":"create_issue","description":%q,"inputSchema":{"type":"object","properties":{"title":{"type":"string"}}}}]}}`, msg.ID, tr.description)
+	case tr.fails:
+		fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"resultType":"complete","isError":true,"content":[{"type":"text","text":"no such project"}]}}`, msg.ID)
 	default:
 		fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"resultType":"complete","content":[{"type":"text","text":"filed"}]}}`, msg.ID)
 	}

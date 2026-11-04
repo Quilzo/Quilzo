@@ -82,8 +82,8 @@ func (c *Client) a2aDo(ctx context.Context, in agent.Integration, method, u, ver
 	}
 	if in.Secret != "" {
 		if c.Secrets == nil {
-			return nil, fmt.Errorf("%s authenticates with the secret %q and this process has no vault to read it from",
-				in.Name, in.Secret)
+			return nil, refuse(fmt.Errorf("%s authenticates with the secret %q and this process has no vault to read it from",
+				in.Name, in.Secret))
 		}
 		v, err := c.Secrets(in.Secret)
 		if err != nil {
@@ -112,6 +112,9 @@ func (c *Client) a2aDo(ctx context.Context, in agent.Integration, method, u, ver
 		do = client.Do
 	}
 	res, err := do(ctx, method, u, body, headers)
+	if guarded(err) {
+		return nil, refuse(fmt.Errorf("%s: %w", in.Name, err))
+	}
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", in.Name, err)
 	}
@@ -140,7 +143,7 @@ func (c *Client) a2aCardOf(ctx context.Context, in agent.Integration) (a2aCard, 
 		return a2aCard{}, a2aService{}, fmt.Errorf("%s's agent card is not one this can read", in.Name)
 	}
 	if len(card.Skills) > 200 {
-		return a2aCard{}, a2aService{}, fmt.Errorf("%s offers %d skills; that is not an agent anybody reviewed", in.Name, len(card.Skills))
+		return a2aCard{}, a2aService{}, refuse(fmt.Errorf("%s offers %d skills; that is not an agent anybody reviewed", in.Name, len(card.Skills)))
 	}
 	onHost := func(raw string) (string, bool) {
 		svc, err := url.Parse(raw)
@@ -160,8 +163,8 @@ func (c *Client) a2aCardOf(ctx context.Context, in agent.Integration) (a2aCard, 
 	}
 	svc, ok := onHost(card.URL)
 	if !ok {
-		return a2aCard{}, a2aService{}, fmt.Errorf("%s's card sends its messages to %q, which is not https on %s: nothing is sent there",
-			in.Name, clamp(card.URL, 120), in.Endpoint)
+		return a2aCard{}, a2aService{}, refuse(fmt.Errorf("%s's card sends its messages to %q, which is not https on %s: nothing is sent there",
+			in.Name, clamp(card.URL, 120), in.Endpoint))
 	}
 	return card, a2aService{URL: svc, Version: "0.3"}, nil
 }
@@ -218,7 +221,7 @@ type a2aResult struct {
 func (c *Client) a2aCall(ctx context.Context, in agent.Integration, skill string, args map[string]any) (string, error) {
 	text, _ := args["text"].(string)
 	if strings.TrimSpace(text) == "" {
-		return "", fmt.Errorf("%s: say what to ask, as text", in.Name)
+		return "", refuse(fmt.Errorf("%s: say what to ask, as text", in.Name))
 	}
 	_, svc, err := c.a2aCardOf(ctx, in)
 	if err != nil {

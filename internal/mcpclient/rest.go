@@ -178,11 +178,13 @@ func restRequest(in agent.Integration, o agent.Operation, args map[string]any) (
 func (c *Client) restCall(ctx context.Context, in agent.Integration, tool string, args map[string]any) (string, error) {
 	o, ok := operationOf(in, tool)
 	if !ok {
-		return "", fmt.Errorf("%s declares no operation %q", in.Name, clamp(tool, 60))
+		return "", refuse(fmt.Errorf("%s declares no operation %q", in.Name, clamp(tool, 60)))
 	}
+	// What its declaration does not name, or a body its schema does not
+	// describe, is refused before anything is sent.
 	u, body, err := restRequest(in, o, args)
 	if err != nil {
-		return "", err
+		return "", refuse(err)
 	}
 	headers := map[string]string{"Accept": "application/json"}
 	if body != nil {
@@ -197,8 +199,8 @@ func (c *Client) restCall(ctx context.Context, in agent.Integration, tool string
 	}
 	if in.Secret != "" {
 		if c.Secrets == nil {
-			return "", fmt.Errorf("%s authenticates with the secret %q and this process has no vault to read it from",
-				in.Name, in.Secret)
+			return "", refuse(fmt.Errorf("%s authenticates with the secret %q and this process has no vault to read it from",
+				in.Name, in.Secret))
 		}
 		v, serr := c.Secrets(in.Secret)
 		if serr != nil {
@@ -259,6 +261,9 @@ func (c *Client) restCall(ctx context.Context, in agent.Integration, tool string
 		case <-ctx.Done():
 		case <-time.After(wait(attempt, retryAfter)):
 		}
+	}
+	if guarded(err) {
+		return "", refuse(fmt.Errorf("%s %s: %w", in.Name, o.Name, err))
 	}
 	if err != nil {
 		return "", fmt.Errorf("%s %s: %w", in.Name, o.Name, err)
