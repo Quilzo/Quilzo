@@ -158,8 +158,18 @@ func scimAuthenticate(root, token string) bool {
 }
 
 // validMapping reports whether a group may be mapped to this: a role, a
-// permission, a job, or a role an installed feature declares.
-func validMapping(root, to string) error {
+// permission, a job, or a role an installed feature declares, and for a
+// job granted only for a time, until a day to come (scim.CheckEnds).
+func validMapping(root, mapping string) error {
+	to, _, _ := scim.SplitMapping(mapping)
+	if err := grantable(root, to); err != nil {
+		return err
+	}
+	return scim.CheckEnds(mapping, time.Now())
+}
+
+// grantable reports whether a group's mapping may grant this.
+func grantable(root, to string) error {
 	if _, ok := auth.JobNamed(to); ok {
 		return nil
 	}
@@ -247,27 +257,55 @@ func scimSync(root, name string, grants []string, suspended bool) error {
 				Note: "suspended: the identity provider deactivated or removed them"})
 		}
 	} else {
+		now := time.Now()
 		for _, g := range grants {
-			if job, ok := auth.JobNamed(g); ok {
+			// A mapping refused now grants nothing, so what it gave is
+			// taken back: a job granted only for a time with no day its
+			// access ends, saved before mappings carried one, or after it.
+			if scim.CheckEnds(g, now) != nil {
+				continue
+			}
+			to, until, _ := scim.SplitMapping(g)
+			var ends int64
+			if !until.IsZero() {
+				ends = until.Unix()
+			}
+			if job, ok := auth.JobNamed(to); ok {
 				for _, b := range job.Bindings {
-					want = append(want, auth.Binding{Principal: name, Role: b.Role, Resource: b.Resource})
+					want = append(want, auth.Binding{Principal: name, Role: b.Role, Resource: b.Resource, Expires: ends})
 				}
-			} else if auth.Role(g).Valid() {
-				want = append(want, auth.Binding{Principal: name, Role: auth.Role(g), Resource: "/"})
-			} else if perm, ok := auth.PermissionNamed(g); ok {
+			} else if auth.Role(to).Valid() {
+				want = append(want, auth.Binding{Principal: name, Role: auth.Role(to), Resource: "/"})
+			} else if perm, ok := auth.PermissionNamed(to); ok {
 				want = append(want, auth.Binding{Principal: name, Permission: perm.Action, Resource: "/"})
-			} else if i := slices.IndexFunc(roles, func(r auth.AppRole) bool { return r.Name == g }); i >= 0 {
+			} else if i := slices.IndexFunc(roles, func(r auth.AppRole) bool { return r.Name == to }); i >= 0 {
 				for _, b := range roles[i].Bindings {
 					want = append(want, auth.Binding{Principal: name, Role: b.Role, Permission: b.Permission,
-						Resource: b.Resource, Via: auth.ViaApp(g)})
+						Resource: b.Resource, Via: auth.ViaApp(to)})
 				}
 			}
 		}
 	}
+	// same is one binding as the policy counts them (Policy.Grant), which
+	// does not count when it ends.
 	same := func(a, b auth.Binding) bool {
 		return a.Principal == b.Principal && a.Role == b.Role && a.Permission == b.Permission &&
 			a.Resource == b.Resource && a.Deny == b.Deny && a.Via == b.Via
 	}
+	// What two groups both give is wanted once, until the later of their
+	// days, and for good if either has none: somebody in two groups mapped
+	// to auditor until different days holds it until the later one.
+	merged := want[:0]
+	for _, x := range want {
+		i := slices.IndexFunc(merged, func(m auth.Binding) bool { return same(m, x) })
+		switch {
+		case i < 0:
+			merged = append(merged, x)
+		case merged[i].Expires != 0 && (x.Expires == 0 || x.Expires > merged[i].Expires):
+			merged[i].Expires = x.Expires
+		}
+	}
+	want = merged
 
 	// Keep what provisioning made and still wants, so a grant's date is the
 	// day it was first made and an unchanged sync writes nothing. Worked out
@@ -288,9 +326,12 @@ func scimSync(root, name string, grants []string, suspended bool) error {
 				kept = append(kept, b)
 				continue
 			}
+			// Kept only while it ends when the mapping says, so a group
+			// mapped again with a later day replaces what it gave rather
+			// than keeping the earlier day.
 			keep := false
 			for i, x := range want {
-				if !satisfied[i] && same(b, x) {
+				if !satisfied[i] && same(b, x) && b.Expires == x.Expires {
 					satisfied[i], keep = true, true
 					break
 				}
@@ -429,7 +470,18 @@ func scimHandler(root string) *scim.Handler {
 }
 
 func scimUsage() error {
-	return fmt.Errorf("usage: quilzo scim status | token [--revoke] | map GROUP ROLE|JOB | unmap GROUP")
+	return fmt.Errorf("usage: quilzo scim status | token [--revoke] | map GROUP ROLE|JOB [--until DAY | --for 30d] | " +
+		"unmap GROUP")
+}
+
+// startOfDayAfter is the first start of a day at or after t: a mapping's
+// access ends on a day, and one asked for 30d lasts at least that long.
+func startOfDayAfter(t time.Time) time.Time {
+	day := t.UTC().Truncate(24 * time.Hour)
+	if day.Before(t) {
+		day = day.Add(24 * time.Hour)
+	}
+	return day
 }
 
 func cmdSCIM(root string, args []string) error {
@@ -488,6 +540,11 @@ func cmdSCIM(root string, args []string) error {
 		sort.Strings(names)
 		for _, g := range names {
 			w.Human("  %s%s%s  is  %s\n", bold, onOneLine(g), reset, mapping[g])
+			// Provisioning grants nothing for it (scimSync), which the
+			// line above would not say.
+			if err := scim.CheckEnds(mapping[g], now); err != nil {
+				w.Human("    %sgrants nothing: %v%s\n", yellow, err, reset)
+			}
 		}
 		if len(names) == 0 {
 			w.Human("  %sno group is mapped, so provisioning grants nothing%s\n", dim, reset)
@@ -531,27 +588,45 @@ func cmdSCIM(root string, args []string) error {
 		}
 		return giveSCIMToken(root, *days, caller, made)
 	case "map":
-		if len(args) != 3 {
-			return scimUsage()
-		}
-		if err := validMapping(root, args[2]); err != nil {
+		pos, flags := leadingArgs(args[1:], 2)
+		fs := flag.NewFlagSet("scim map", flag.ContinueOnError)
+		until := fs.String("until", "", "for a job granted for a time: its access ends at the start of this day (YYYY-MM-DD)")
+		forDur := fs.String("for", "", "for a job granted for a time: its access ends after this long, to the day: 30d")
+		if err := fs.Parse(flags); err != nil {
 			return err
 		}
-		if dual.MapsToAdministrator(args[2]) {
-			apply, err := proposeSecond(root, caller, dual.Mapping, scimMappingWhat(args[1], args[2]),
-				dual.MappingChange{Group: args[1], To: args[2]}, "")
+		if len(pos) != 2 || fs.NArg() != 0 {
+			return scimUsage()
+		}
+		group, to := pos[0], pos[1]
+		if *until != "" || *forDur != "" {
+			ends, err := grantExpiry(*until, *forDur, time.Now())
+			if err != nil {
+				return err
+			}
+			to = scim.MappedUntil(to, startOfDayAfter(time.Unix(ends, 0)))
+		}
+		if err := validMapping(root, to); err != nil {
+			if errors.Is(err, scim.ErrMustEnd) {
+				return fmt.Errorf("%w: give --for (30d, say) or --until a day", err)
+			}
+			return err
+		}
+		if dual.MapsToAdministrator(to) {
+			apply, err := proposeSecond(root, caller, dual.Mapping, scimMappingWhat(group, to),
+				dual.MappingChange{Group: group, To: to}, "")
 			if err != nil || !apply {
 				return err
 			}
 		}
-		if err := scimMap(root, args[1], args[2]); err != nil {
+		if err := scimMap(root, group, to); err != nil {
 			return err
 		}
-		w.Human("members of %q are now %s here\n", args[1], args[2])
-		if dual.MapsToAdministrator(args[2]) {
+		w.Human("members of %q are now %s here\n", group, to)
+		if dual.MapsToAdministrator(to) {
 			mappedTokens(root, time.Now())
 		}
-		return note("scim.mapped", args[1]+" → "+args[2])
+		return note("scim.mapped", group+" → "+to)
 	case "unmap":
 		if len(args) != 2 {
 			return scimUsage()

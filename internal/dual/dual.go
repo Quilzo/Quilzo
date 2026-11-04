@@ -38,6 +38,7 @@ import (
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/config"
+	"github.com/quilzo/quilzo/internal/scim"
 )
 
 // The kinds of change that wait.
@@ -128,8 +129,11 @@ type MappingChange struct {
 // MapsToAdministrator reports whether a group mapped to this, a role or a
 // job, makes its members administrators of anything, which is what a
 // Mapping request is for. Who is in the group is the identity provider's
-// to say from then on, so the mapping is the grant.
+// to say from then on, so the mapping is the grant. A mapping that ends on
+// a day (scim.MappedUntil) is asked about what it grants until then, so the
+// day written after a job cannot hide that the job makes administrators.
 func MapsToAdministrator(to string) bool {
+	to, _, _ = scim.SplitMapping(to)
 	if job, ok := auth.JobNamed(to); ok {
 		return Privileged(job.Bindings)
 	}

@@ -80,12 +80,14 @@ func TestAnApprovedTokenIsRedeemedOnceByWhoeverAsked(t *testing.T) {
 }
 
 // A group mapped to admin, or to a job that holds admin anywhere, makes
-// administrators; one mapped to anything less does not.
+// administrators; one mapped to anything less does not. A day written after
+// what a mapping grants (scim.MappedUntil) does not hide what that is.
 func TestWhichMappingsMakeAdministrators(t *testing.T) {
 	for to, want := range map[string]bool{
 		"admin": true, "analyst": true, "compliance": true,
 		"publisher": false, "reader": false, "support": false, "auditor": false,
 		"approve": false, "Admin": false, "": false,
+		"auditor until 2026-12-31": false, "analyst until 2026-12-31": true, "admin until soon": true,
 	} {
 		if got := MapsToAdministrator(to); got != want {
 			t.Errorf("%q makes administrators: %v, want %v", to, got, want)

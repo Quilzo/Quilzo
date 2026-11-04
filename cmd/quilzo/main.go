@@ -444,6 +444,7 @@ access
   quilzo auth grant ... --until 2026-12-31 access that ends by itself
   quilzo scim status | token [--revoke]     provisioning from Okta, Entra and others
   quilzo scim map GROUP ROLE|JOB | unmap GROUP   what each of their groups means here
+  quilzo scim map GROUP auditor --until 2026-12-31   a job granted for a time, until a day
   quilzo geo status | help | network add PREFIX NAME --kind office|vpn ... | network remove PREFIX   where sign-ins come from
   quilzo auth deny WHO ROLE [--on PATH]    a deny wins wherever it sits
   quilzo auth explain WHO [ACTION]         why someone can or cannot do a thing
