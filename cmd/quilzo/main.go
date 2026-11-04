@@ -757,6 +757,11 @@ func main() {
 		commandHelp(cmd, cmdArgs[1:])
 		return
 	}
+	if _, known := lookupNeed(cmd, cmdArgs); known && helpAfterSub(cmd, cmdArgs) &&
+		!strings.HasPrefix(cmd, "__") {
+		commandHelp(cmd, cmdArgs[:1])
+		return
+	}
 	if _, known := lookupNeed(cmd, cmdArgs); known && helpAsked(cmdArgs) &&
 		!strings.HasPrefix(cmd, "__") && !helpOrVersion[cmd] {
 		asked = true

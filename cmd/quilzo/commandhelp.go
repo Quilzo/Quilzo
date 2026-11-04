@@ -6,6 +6,7 @@ package main
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -140,6 +141,60 @@ func helpAfter(cmd string, args []string) bool {
 		}
 	}
 	return subs || lines > 0 && onlyFlags
+}
+
+// helpAfterSub reports whether `quilzo CMD SUB help` asks for the help of
+// CMD SUB: everywhere the help names SUB, it takes nothing after it but
+// flags and their values, so "help" there can be nothing but a question.
+// Such a subcommand ran with the word left over, as `quilzo rollback help`
+// did a level up: `quilzo vault enable help` sealed the store and printed
+// its key, `quilzo memory forget help` made every agent forget the
+// operator, `quilzo fediverse init help` wrote a signing key, and `quilzo
+// review approve help` approved the draft for anybody but its author.
+//
+// Where SUB takes a name, "help" is left to be one: `quilzo decide ask
+// help` asks the decider called help.
+func helpAfterSub(cmd string, args []string) bool {
+	if len(args) < 2 || args[1] != "help" || !helpSubcommand.MatchString(args[0]) {
+		return false
+	}
+	if primary, ok := helpAliases[cmd]; ok {
+		cmd = primary
+	}
+	named := false
+	for _, line := range strings.Split(usageText, "\n") {
+		rest, ok := strings.CutPrefix(line, "  quilzo "+cmd)
+		if !ok || rest == "" || rest[0] != ' ' {
+			continue
+		}
+		synopsis := rest[1:]
+		if i := helpDescription.FindStringIndex(synopsis); i != nil {
+			synopsis = synopsis[:i[0]]
+		}
+		for _, alt := range strings.Split(synopsis, " | ") {
+			fields := strings.Fields(alt)
+			if len(fields) == 0 || !slices.Contains(strings.Split(fields[0], "|"), args[0]) {
+				continue
+			}
+			named = true
+			after := strings.Join(fields[1:], " ")
+			for _, b := range helpBracketed.FindAllString(after, -1) {
+				if !strings.HasPrefix(b, "[-") {
+					return false
+				}
+			}
+			// A flag's value follows it, written as a name: the FILE of
+			// `auditlog export -o FILE`.
+			prev := ""
+			for _, f := range strings.Fields(helpBracketed.ReplaceAllString(after, " ")) {
+				if !strings.HasPrefix(f, "-") && !(strings.HasPrefix(prev, "-") && helpName.MatchString(f)) {
+					return false
+				}
+				prev = f
+			}
+		}
+	}
+	return named
 }
 
 // helpSubcommand is how a subcommand is written in the help, a lowercase

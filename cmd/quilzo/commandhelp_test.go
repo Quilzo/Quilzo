@@ -325,6 +325,92 @@ func TestHelpAfterACommandThatTakesOnlyFlagsIsItsHelp(t *testing.T) {
 	}
 }
 
+// `quilzo CMD SUB help` is the help of CMD SUB where SUB takes nothing but
+// flags, as `quilzo rollback help` is a level up. Each of these ran with the
+// word left over: `quilzo vault enable help` sealed the store and printed
+// its key, `quilzo memory forget help` made every agent forget the
+// operator, `quilzo fediverse init help` wrote a signing key, `quilzo blog
+// setup help` installed a blog, and `quilzo review approve help` approved
+// the draft somebody else had written.
+//
+// Asked in a process of its own, in a store with that draft waiting:
+// nothing may be written, the exit is 0, and every line shown is about the
+// subcommand asked.
+func TestHelpAfterASubcommandThatTakesOnlyFlagsIsItsHelp(t *testing.T) {
+	template := filepath.Join(t.TempDir(), ".quilzo")
+	if err := cmdInit(template); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.SaveDraft(s, map[string]any{"index": map[string]any{"title": "Waiting"}}, "test", "dana"); err != nil {
+		t.Fatal(err)
+	}
+	entry := regexp.MustCompile(`(?m)^  quilzo (\S+) (\S+)`)
+	for _, c := range [][2]string{
+		{"vault", "enable"}, {"memory", "forget"}, {"fediverse", "init"}, {"blog", "setup"},
+		{"events", "setup"}, {"brand", "init"}, {"auditlog", "head"}, {"review", "approve"},
+		{"auditlog", "export"}, {"newsletter", "list"}, {"auth", "recover"}, {"pay", "disable"},
+	} {
+		t.Run(c[0]+" "+c[1], func(t *testing.T) {
+			t.Parallel()
+			dir, home := t.TempDir(), t.TempDir()
+			copyTree(t, template, filepath.Join(dir, ".quilzo"))
+			before := treeState(t, dir) + treeState(t, home)
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, os.Args[0], "quilzo-main", c[0], c[1], "help")
+			cmd.Dir = dir
+			cmd.Env = append(os.Environ(), "HOME="+home, "QUILZO_TOKEN=", "NO_COLOR=1")
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout, cmd.Stderr = &stdout, &stderr
+			err := cmd.Run()
+			// Not shown: what vault enable printed was the store's key.
+			if err != nil {
+				t.Errorf("`quilzo %s %s help`: %v", c[0], c[1], err)
+			}
+			if after := treeState(t, dir) + treeState(t, home); after != before {
+				t.Errorf("`quilzo %s %s help` wrote something:\n%s", c[0], c[1], treeDiff(before, after))
+			}
+			lines := entry.FindAllStringSubmatch(stdout.String(), -1)
+			if len(lines) == 0 {
+				t.Errorf("`quilzo %s %s help` showed no line of the help about it", c[0], c[1])
+			}
+			for _, m := range lines {
+				if m[1] != c[0] || m[2] != c[1] {
+					t.Errorf("`quilzo %s %s help` answered with the help for `quilzo %s %s`", c[0], c[1], m[1], m[2])
+					break
+				}
+			}
+		})
+	}
+}
+
+// Where a subcommand takes a name, "help" is left to be one, and a
+// subcommand the help does not name is not answered for.
+func TestHelpAfterASubcommandThatTakesANameIsTheName(t *testing.T) {
+	for _, args := range [][]string{
+		{"decide", "ask", "help"}, {"lock", "release", "help"}, {"newsletter", "send", "help"},
+		{"records", "list", "help"}, {"memory", "history", "help"}, {"geo", "network", "help"},
+		{"decide", "nonsense", "help"}, {"vault", "enable", "x", "help"},
+	} {
+		if helpAfterSub(args[0], args[1:]) {
+			t.Errorf("`quilzo %s` is taken as asking for help", strings.Join(args, " "))
+		}
+	}
+	for _, args := range [][]string{
+		{"auditlog", "export", "help"}, {"decide", "list", "help"}, {"fediverse", "followers", "help"},
+		{"lock", "list", "help"}, {"share", "list", "help"}, {"forms", "list", "help"},
+		{"brand", "check", "help"},
+	} {
+		if !helpAfterSub(args[0], args[1:]) {
+			t.Errorf("`quilzo %s` is not taken as asking for help", strings.Join(args, " "))
+		}
+	}
+}
+
 // dispatchHandlers maps every command main.go dispatches to the function
 // that runs it, so that two spellings of one command can be told apart from
 // two commands.
