@@ -56,6 +56,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/quilzo/quilzo/internal/sheet"
 )
 
 // Kind is a category of accepted file.
@@ -1052,6 +1054,14 @@ var vttForbidden = []string{
 // A cell beginning =, +, - or @ is executed as a formula when the file is
 // opened in a spreadsheet. The file is harmless where it sits and dangerous
 // where it lands, which is the case people forget.
+//
+// What counts as a formula is sheet.IsFormula, the rule every export
+// guards by, so this refuses whatever an export would have guarded. It had
+// its own: it let a cell beginning with a minus through, which is the
+// classic -2+3+cmd|' /C calc'!A0; it stripped tabs before it looked, so its
+// branch for a tab could never be reached; and it read the carriage return
+// ending each line of a Windows file as a cell beginning with one, which
+// refused an export of records whose last column was empty.
 func verifyCSV(b []byte) error {
 	if err := verifyUTF8(b); err != nil {
 		return err
@@ -1060,20 +1070,21 @@ func verifyCSV(b []byte) error {
 		if i > 5000 {
 			break
 		}
+		line = strings.TrimSuffix(line, "\r")
 		for _, cell := range strings.Split(line, ",") {
-			cell = strings.TrimLeft(cell, " \t\"'")
-			if cell == "" {
+			// Spaces and quoting are not part of the value a spreadsheet
+			// reads; a tab or a carriage return is, and is looked at.
+			cell = strings.TrimLeft(cell, " \"'")
+			if !sheet.IsFormula(cell) {
 				continue
 			}
-			switch cell[0] {
-			case '=', '+', '@':
-				return fmt.Errorf(
-					"line %d has a cell starting %q, which a spreadsheet runs as "+
-						"a formula when the file is opened", i+1, cell[0])
-			case '\t', '\r':
+			if cell[0] == '\t' || cell[0] == '\r' {
 				return fmt.Errorf("line %d has a cell starting with a control "+
 					"character used to smuggle formulas past filters", i+1)
 			}
+			return fmt.Errorf(
+				"line %d has a cell starting %q, which a spreadsheet runs as "+
+					"a formula when the file is opened", i+1, cell[0])
 		}
 	}
 	return nil

@@ -133,14 +133,5 @@ func cell(v any) string {
 }
 
 // guardFormula keeps a cell from being run as a formula by the spreadsheet
-// it is opened in: one beginning = + - @ or a tab or carriage return, and
-// not a number, is written after an apostrophe, which reading takes off.
-func guardFormula(s string) string {
-	if s == "" || !strings.ContainsRune("=+-@\t\r", rune(s[0])) {
-		return s
-	}
-	if _, err := strconv.ParseFloat(s, 64); err == nil {
-		return s
-	}
-	return "'" + s
-}
+// it is opened in (GuardCell).
+func guardFormula(s string) string { return GuardCell(s) }
