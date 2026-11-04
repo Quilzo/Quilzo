@@ -10,11 +10,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/mail"
 	"github.com/quilzo/quilzo/internal/memory"
 	"github.com/quilzo/quilzo/internal/oauthas"
 	"github.com/quilzo/quilzo/internal/scim"
@@ -337,5 +339,126 @@ func TestDeletionByTheIdentityProviderErasesWhatAgentsRemember(t *testing.T) {
 	}
 	if left, _ := memoryStore(root).List(memory.Filter{About: "ada@example.com"}); len(left) != 0 {
 		t.Fatal("a deleted person is still remembered")
+	}
+}
+
+// scimSecurityMail sets up the security contact and catches what it is
+// sent.
+func scimSecurityMail(t *testing.T, root string) func() []mail.Message {
+	t.Helper()
+	cfg, err := loadConfig(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Set("security.contact", "mailto:security@example.com", "", "boss@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveConfig(root, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(mailConfigPath(root), []byte(`{"host":"relay.example:587","from":"quilzo@example.com"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	var sent []mail.Message
+	old := deliverMail
+	deliverMail = func(_ *mail.Mailer, m mail.Message) error {
+		mu.Lock()
+		defer mu.Unlock()
+		sent = append(sent, m)
+		return nil
+	}
+	t.Cleanup(func() { deliverMail = old })
+	// Registered last, so it runs first: a message still being sent
+	// finishes before deliverMail is put back.
+	t.Cleanup(func() { finishBackground(10 * time.Second) })
+	return func() []mail.Message {
+		finishBackground(10 * time.Second)
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]mail.Message(nil), sent...)
+	}
+}
+
+// The identity provider deactivating every administrator leaves one who
+// can grant access, by the rule the Shared Signals receiver keeps: the last
+// of them is not denied and keeps what provisioning gave them, their
+// sessions end, the refusal is recorded as a failure, and the security
+// contact is told. Each was denied in turn, by whoever held the
+// provisioning token or a provider set up wrong, and the store's only way
+// back was editing the policy by hand.
+func TestDeactivatingEveryAdministratorLeavesOneWhoCanGrant(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("QUILZO_TOKEN", "")
+	root := demoStore(t)
+	if err := cmdSCIM(root, []string{"map", "Admins", "admin"}); err != nil {
+		t.Fatal(err)
+	}
+	mails := scimSecurityMail(t, root)
+	token, _, err := newSCIMToken(root, scimTokenDays)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := scimClient{t: t, h: scimHandler(root), token: token}
+	var ids []string
+	for _, who := range []string{"boss@example.com", "dana@example.com"} {
+		_, u := c.do(http.MethodPost, "/Users", `{"userName":"`+who+`","active":true}`)
+		ids = append(ids, u["id"].(string))
+	}
+	c.do(http.MethodPost, "/Groups", `{"displayName":"Admins","members":[{"value":"`+ids[0]+`"},{"value":"`+ids[1]+`"}]}`)
+	p, _ := loadPolicy(root)
+	for _, who := range []string{"boss@example.com", "dana@example.com"} {
+		if !p.Evaluate(who, auth.ActGrant, "/").Allowed {
+			t.Fatalf("%s was not made an administrator: %+v", who, p.Bindings)
+		}
+	}
+	sso := session(t, root, "oidc:dana@example.com", "dana@example.com", auth.MethodSSO)
+	laptop := session(t, root, "laptop", "dana@example.com", "")
+
+	for _, id := range ids {
+		if code, _ := c.do(http.MethodPatch, "/Users/"+id, `{"Operations":[{"op":"replace","value":{"active":false}}]}`); code != http.StatusOK {
+			t.Fatalf("deactivating answered %d", code)
+		}
+	}
+	p, _ = loadPolicy(root)
+	if p.Evaluate("boss@example.com", auth.ActView, "/").Allowed {
+		t.Error("the first administrator deactivated was not suspended")
+	}
+	if !p.Evaluate("dana@example.com", auth.ActGrant, "/").Allowed {
+		t.Fatalf("every administrator was suspended, and nobody can grant access: %+v", p.Bindings)
+	}
+	if works(root, sso) {
+		t.Error("the last administrator's session still works")
+	}
+	if !works(root, laptop) {
+		t.Error("the last administrator's long-lived token was revoked, which could leave nobody able to get in")
+	}
+	sent := mails()
+	if len(sent) != 1 || !strings.Contains(sent[0].Body, "only person who can grant access") ||
+		!strings.Contains(sent[0].Body, "dana@example.com") {
+		t.Errorf("mailed %+v", sent)
+	}
+	evs, _ := audit.Read(auditPath(root))
+	var refused []audit.Event
+	for _, e := range evs {
+		if e.Action == "scim.suspended" {
+			refused = append(refused, e)
+		}
+	}
+	if len(refused) != 1 || refused[0].Outcome != audit.Failure || refused[0].Detail["count"] != "1" {
+		t.Errorf("recorded %+v", refused)
+	}
+
+	// Deleted rather than deactivated, the same: a deny for nobody, and
+	// nothing more to tell than the deactivation did.
+	if code, _ := c.do(http.MethodDelete, "/Users/"+ids[1], ""); code != http.StatusNoContent {
+		t.Fatalf("deleting answered %d", code)
+	}
+	p, _ = loadPolicy(root)
+	if !p.Evaluate("dana@example.com", auth.ActGrant, "/").Allowed {
+		t.Fatal("deleted, the last administrator was suspended")
+	}
+	if sent := mails(); len(sent) != 2 {
+		t.Errorf("the deletion mailed %d times in all", len(sent))
 	}
 }

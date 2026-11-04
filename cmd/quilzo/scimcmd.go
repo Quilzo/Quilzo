@@ -288,9 +288,28 @@ func scimSync(root, name string, grants []string, suspended bool) error {
 	// What provisioning gave and took is recorded one by one below: the role
 	// is what a rule about somebody being made an administrator reads, and
 	// a group mapped to admin is a way to make one.
+	//
+	// A suspension leaves the last person who can grant access on the whole
+	// site as they are, by the rule the Shared Signals receiver keeps
+	// (suspendOnSignal, lastGranter): no deny, and nothing provisioning gave
+	// them taken back, since an administrator's role from a mapped group
+	// ending would shut everybody out as surely as the deny. The identity
+	// provider deactivating every administrator, or whoever held the
+	// provisioning token doing it, denied each in turn, and nobody was left
+	// who could grant access to anybody. Decided under the same lock, so two
+	// administrators deactivated at once cannot each see the other still
+	// able to grant; any spelling of them counts, since the deny covers them
+	// all.
 	var granted, revoked []auth.Binding
+	last := false
 	p, err = updatePolicy(root, func(p *auth.Policy) error {
-		granted, revoked = nil, nil
+		granted, revoked, last = nil, nil, false
+		if suspended && slices.ContainsFunc(p.Principals(), func(who string) bool {
+			return strings.EqualFold(who, name) && lastGranter(p, who)
+		}) {
+			last = true
+			return atomicfile.ErrUnchanged
+		}
 		satisfied := make([]bool, len(want))
 		changed := false
 		kept := p.Bindings[:0]
@@ -366,7 +385,10 @@ func scimSync(root, name string, grants []string, suspended bool) error {
 	}
 	ended := 0
 	for _, t := range ts.Snapshot() {
-		if seen[t.Principal] && !t.Revoked {
+		// The last who can grant keeps their own long-lived token, as the
+		// receiver leaves it: with the provider no longer signing them in,
+		// it may be the one way in left to anybody.
+		if seen[t.Principal] && !t.Revoked && (!last || t.IsSession()) {
 			if _, err := ts.Revoke(t.ID); err == nil {
 				ended++
 			}
@@ -380,6 +402,31 @@ func scimSync(root, name string, grants []string, suspended bool) error {
 			Outcome: audit.Success, Principal: scimBy, Kind: audit.KindService,
 			Verified: true, Detail: map[string]string{"subject": name, "count": fmt.Sprint(ended)}})
 	}
+	exists := false
+	_ = scimStore(root).Read(func(st *scim.State) {
+		for _, u := range st.Users {
+			if strings.EqualFold(u.UserName, name) {
+				exists = true
+			}
+		}
+	})
+	if last {
+		// Not suspended, and recorded as a suspension that failed, so
+		// whoever reads the log sees it was asked for. A person decides the
+		// rest; their apps and what agents remember of them stay until
+		// then. A deletion is told of once: it suspends them first, while
+		// they are still provisioned, and that is what tells.
+		record(root, audit.Record{Action: "scim.suspended", Resource: "/", Outcome: audit.Failure,
+			Principal: scimBy, Kind: audit.KindService, Verified: true,
+			Detail: map[string]string{"subject": name, "count": fmt.Sprint(ended)}})
+		if exists {
+			scimTell(root, name, fmt.Sprintf("The identity provider deactivated or removed %s. %s is the only "+
+				"person who can grant access here, so they were not suspended and keep what provisioning gave "+
+				"them, and %s of theirs ended. Check with them; if it is right, make somebody else an "+
+				"administrator, then suspend them by hand.", name, name, plural2(ended, "the one session", "sessions")))
+		}
+		return nil
+	}
 	// And the apps they connected: an app acting for somebody who is no
 	// longer here is not connected to anybody. Ended after the tokens are
 	// saved, because ending a connection revokes its tokens in the same
@@ -389,14 +436,6 @@ func scimSync(root, name string, grants []string, suspended bool) error {
 		scimBy, "the identity provider suspended or removed them")
 	// Deleted, not suspended: no longer anybody here, so no agent keeps
 	// anything about them.
-	exists := false
-	_ = scimStore(root).Read(func(st *scim.State) {
-		for _, u := range st.Users {
-			if strings.EqualFold(u.UserName, name) {
-				exists = true
-			}
-		}
-	})
 	if !exists {
 		for _, who := range spellings {
 			if _, err := forgetPerson(root, who, scimBy); err != nil {
@@ -405,6 +444,22 @@ func scimSync(root, name string, grants []string, suspended bool) error {
 		}
 	}
 	return nil
+}
+
+// scimTell mails the security contact in the background, so no request
+// from the identity provider waits on a mail server, and records whether
+// it reached them.
+func scimTell(root, subject, summary string) {
+	inBackground(func() {
+		did, err := tellSecurity(root, summary)
+		detail := map[string]string{"did": did, "subject": subject}
+		outcome := audit.Success
+		if err != nil {
+			detail["error"], outcome = onOneLine(err.Error()), audit.Failure
+		}
+		record(root, audit.Record{Action: "scim.told", Resource: "/", Outcome: outcome,
+			Principal: scimBy, Kind: audit.KindService, Verified: true, Detail: detail})
+	})
 }
 
 // holdsArea reports whether somebody holds any grant on an area, which
