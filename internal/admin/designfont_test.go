@@ -125,6 +125,68 @@ func TestAReaderCannotAddATypeface(t *testing.T) {
 	}
 }
 
+// Adding a typeface takes the authority over the whole site, as installing a
+// layout does: an author who may edit drafts may not.
+//
+// A face is the glyphs every page that names it is drawn with, and its
+// glyphs are whatever its maker drew: a face whose digits are drawn as other
+// digits changes every price and telephone number on the site at once. No
+// gate reads a glyph, and a publisher reviewing an author's draft sees its
+// words, not the shapes the next publish will draw them in.
+func TestAnAuthorCannotAddATypeface(t *testing.T) {
+	srv, _ := setup(t)
+	designFake(srv, map[string]string{})
+	called := false
+	srv.DesignSet.AddFont = func(string, []byte, string, bool) (FontAdded, error) {
+		called = true
+		return FontAdded{File: "Aster.woff", Family: "Aster", Weight: "100 900", Style: "normal"}, nil
+	}
+	for _, who := range []struct {
+		name string
+		role auth.Role
+	}{{"kit", auth.RoleAuthor}, {"pat", auth.RolePublisher}} {
+		if err := srv.Policy.Grant(auth.Binding{Principal: who.name, Role: who.role, Resource: "/"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	author, _, err := srv.Tokens.IssueSession("a", "kit", auth.RoleAuthor, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := postFont(t, srv, author, "Aster.ttf", []byte("a face"), nil); w.Code < 400 || called {
+		t.Fatalf("an author added a typeface: %d, called %v", w.Code, called)
+	}
+	publisher, _, err := srv.Tokens.IssueSession("p", "pat", auth.RolePublisher, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := postFont(t, srv, publisher, "Aster.ttf", []byte("a face"), nil); w.Code != http.StatusSeeOther || !called {
+		t.Fatalf("a publisher could not add a typeface: %d, called %v", w.Code, called)
+	}
+}
+
+// Replacing a face that is served says so in the record, so the moment the
+// text on every page changed shape can be found.
+func TestAReplacedTypefaceIsRecordedAsReplaced(t *testing.T) {
+	srv, token := setup(t)
+	designFake(srv, map[string]string{})
+	srv.DesignSet.AddFont = func(_ string, _ []byte, _ string, replace bool) (FontAdded, error) {
+		return FontAdded{File: "Aster.woff", Family: "Aster", Weight: "100 900", Style: "normal",
+			From: "truetype", Replaced: replace}, nil
+	}
+	var records []map[string]string
+	srv.Audit = func(action, resource string, detail map[string]string) {
+		if action == "theme.font.add" {
+			records = append(records, detail)
+		}
+	}
+	postFont(t, srv, token, "Aster.ttf", []byte("a face"), nil)
+	postFont(t, srv, token, "Aster.ttf", []byte("a face"), map[string]string{"replace": "1"})
+	if len(records) != 2 || records[0]["replaced"] == "true" || records[1]["replaced"] != "true" {
+		t.Errorf("recorded %v", records)
+	}
+}
+
 // A WOFF 1.0 face is served to the preview as one.
 func TestThePreviewGetsAWOFFAsAWOFF(t *testing.T) {
 	srv, token := setup(t)

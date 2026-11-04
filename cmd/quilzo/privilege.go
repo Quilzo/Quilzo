@@ -405,6 +405,12 @@ var commandNeeds = map[string]need{
 	"assurance controls": {action: auth.ActView},
 
 	"theme": {action: auth.ActEditDraft},
+	// A typeface is the glyphs every page that names it is drawn with, and no
+	// gate reads a glyph: a face whose digits are drawn as other digits
+	// changes every price on the site at once. The Design screen asks a
+	// publisher for it, as it does for installing a layout, and so does this.
+	"theme font": {action: auth.ActPublish,
+		hint: "adding or replacing a typeface changes how every page that names it is drawn"},
 	// Sections are content: adding, moving and removing one writes a draft
 	// commit, so it is the authority an author already has over a page.
 	"section":  {action: auth.ActEditDraft},

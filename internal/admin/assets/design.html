@@ -161,7 +161,7 @@
   <p><label><input type="checkbox" name="replace" value="1"> Replace a face already served under that name</label></p>
   <div class="auto-controls"><button type="submit" class="btn-tonal">Add the typeface</button></div>
 </form>
-<p id="design-font-hint" class="hint">A TrueType or OpenType file (.ttf, .otf) is made into a WOFF here, with nothing sent anywhere; a .woff or .woff2 is checked as it is. Refused if it is not a face, is missing a table browsers need, its own licence flag forbids embedding it, or it is over 512 KiB once made. Its licence travels with it: put the licence text beside it in <code>{{.Dir}}/fonts/</code>.</p>
+<p id="design-font-hint" class="hint">A TrueType or OpenType file (.ttf, .otf) is made into a WOFF here, with nothing sent anywhere; a .woff or .woff2 is checked as it is. Refused if it is not a face, is missing a table browsers need, its own licence flag forbids embedding it, or it is over 512 KiB once made. Its licence travels with it: put the licence text beside it in <code>{{.Dir}}/fonts/</code>. Adding or replacing a typeface takes the authority to publish, as installing a design does: its glyphs are how every page that names it is drawn, and no check reads a glyph.</p>
 {{end}}
 <fieldset class="whileown"{{if .Own}} disabled{{end}}>
 <legend class="visually-hidden">Design tokens</legend>

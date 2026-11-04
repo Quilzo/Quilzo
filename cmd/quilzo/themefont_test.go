@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/webfont"
@@ -196,6 +197,60 @@ func TestAFaceIsReplacedOnlyWhenAskedAndIsOneFile(t *testing.T) {
 	}
 	if n := len(actions(t, root, "theme.font.add")); n != 2 {
 		t.Errorf("%d records for two faces written", n)
+	}
+}
+
+// The record says when a face that was served has been replaced.
+//
+// An add and a replacement wrote the same record, so somebody asking when the
+// body text on every page changed shape found the first add and nothing to
+// say the file under that name had since been overwritten.
+func TestAReplacedFaceIsRecordedAsReplaced(t *testing.T) {
+	root, tpl := fontSite(t)
+	ttf := writeTemp(t, "Aster.ttf", trueTypeFace(0))
+	for _, force := range []bool{false, true} {
+		args := []string{"font", "add", ttf, "--dir", tpl}
+		if force {
+			args = append(args, "--force")
+		}
+		if err := cmdTheme(root, args); err != nil {
+			t.Fatal(err)
+		}
+	}
+	recs := actions(t, root, "theme.font.add")
+	if len(recs) != 2 {
+		t.Fatalf("%d records", len(recs))
+	}
+	if recs[0].Detail["replaced"] == "true" || recs[1].Detail["replaced"] != "true" {
+		t.Errorf("the first add recorded %v and the replacement %v", recs[0].Detail, recs[1].Detail)
+	}
+}
+
+// Adding a typeface is a publisher's decision, on the command line as on the
+// Design screen; an author still sets the tokens.
+//
+// A face is the glyphs every page that names it is drawn with, and what a
+// page appears to say is the font's to decide: a face whose digits are drawn
+// as other digits changes every price and telephone number at once. No gate
+// reads a glyph, and a publisher reviewing a draft sees words, not shapes, so
+// it needs the authority over the whole site that installing a layout does.
+func TestAddingATypefaceIsAPublishersDecision(t *testing.T) {
+	root, tpl := fontSite(t)
+	seedPolicy(t, root, [2]string{"kit", "author"}, [2]string{"pat", "publisher"})
+	old := flagToken
+	t.Cleanup(func() { flagToken = old })
+
+	flagToken = personToken(t, root, "kit", auth.RoleAuthor)
+	ttf := writeTemp(t, "Aster.ttf", trueTypeFace(0))
+	if err := authoriseCommand(root, "theme", []string{"font", "add", ttf, "--dir", tpl}); err == nil {
+		t.Error("an author may add a typeface")
+	}
+	if err := authoriseCommand(root, "theme", []string{"set", "radius", "3px", "--dir", tpl}); err != nil {
+		t.Errorf("an author may no longer set a token: %v", err)
+	}
+	flagToken = personToken(t, root, "pat", auth.RolePublisher)
+	if err := authoriseCommand(root, "theme", []string{"font", "add", ttf, "--dir", tpl}); err != nil {
+		t.Errorf("a publisher may not add a typeface: %v", err)
 	}
 }
 

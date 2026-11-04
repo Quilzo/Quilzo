@@ -330,7 +330,11 @@ licence flag (OS/2 `fsType`) does not say "restricted licence embedding" — a
 face that may not be embedded may not be served with a page either. A `.woff` or
 a `.woff2` is checked as it is. Nothing is fetched or sent anywhere. The Design
 screen has the same form, through the same code. The licence still travels with
-the face: put its text beside it.
+the face: put its text beside it. Adding or replacing a face takes the authority
+to publish, on the screen and on the command line, as installing a layout does: a
+face is the glyphs every page that names it is drawn with, and no gate reads a
+glyph, so one whose digits are drawn as other digits would change every price on
+the site with no word of any page changed.
 
 The filename is still the contract, and a weight range is written either way:
 `Satoshi-400-700.woff2` and `Satoshi-400..700.woff2` are both 400 to 700. The

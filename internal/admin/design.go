@@ -92,6 +92,10 @@ type FontAdded struct {
 	Style  string `json:"style"`
 	// From is what the upload was: truetype, opentype, woff or woff2.
 	From string `json:"from"`
+	// Replaced says a face already served under that name was overwritten,
+	// which changes every page that names it without anybody naming it
+	// again, so the record has to be able to say so.
+	Replaced bool `json:"replaced,omitempty"`
 }
 
 func (s *Server) handleDesign(w http.ResponseWriter, r *http.Request) {
@@ -474,9 +478,16 @@ func (s *Server) handleDesignInstall(w http.ResponseWriter, r *http.Request) {
 //
 // The route in for a customer whose foundry sent a TrueType or OpenType
 // file, which there was none of: the screen said to put a .woff2 in a
-// directory, and nothing here could make one. The same authority as setting
-// a token, because a face nobody names changes no page, and naming it is a
-// token.
+// directory, and nothing here could make one.
+//
+// Publisher rather than author, as installing a layout is. It took the
+// authority of setting a token, on the reasoning that a face nobody names
+// changes no page; but a replaced face is already named, and an added one is
+// named by a token an author may set. A face is the glyphs every page that
+// names it is drawn with, and they are whatever its maker drew: one whose
+// digits are drawn as other digits changes every price and telephone number
+// at once. No gate reads a glyph, and a publisher reviewing an author's
+// draft sees its words, not the shapes the next publish draws them in.
 func (s *Server) handleDesignFont(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "post only", http.StatusMethodNotAllowed)
@@ -486,7 +497,7 @@ func (s *Server) handleDesignFont(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.can(w, r, p, auth.ActEditDraft, "/") {
+	if !s.can(w, r, p, auth.ActPublish, "/") {
 		return
 	}
 	if s.DesignSet == nil || s.DesignSet.AddFont == nil {
@@ -519,9 +530,11 @@ func (s *Server) handleDesignFont(w http.ResponseWriter, r *http.Request) {
 		s.designRedirect(w, r, "", err.Error())
 		return
 	}
-	s.auditPub(p, "theme.font.add", "/", map[string]string{
-		"file": added.File, "family": added.Family, "from": added.From,
-	})
+	detail := map[string]string{"file": added.File, "family": added.Family, "from": added.From}
+	if added.Replaced {
+		detail["replaced"] = "true"
+	}
+	s.auditPub(p, "theme.font.add", "/", detail)
 	s.designRedirect(w, r, fmt.Sprintf("The typeface is served from this origin at "+
 		"/fonts/%s: family %s, weight %s, %s. Choose %s for a font token below; the "+
 		"site serves it from its next publish", added.File, added.Family,

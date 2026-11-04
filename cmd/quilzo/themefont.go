@@ -117,7 +117,8 @@ func addFont(dir, filename string, body []byte, name string, replace bool) (font
 				"it first, or serve this one under another name", stem, other)
 		}
 	}
-	if fileExists(path) && !replace {
+	replaced := fileExists(path)
+	if replaced && !replace {
 		return fontAdded{}, fmt.Errorf("%s is already served. Replacing it changes "+
 			"the face for readers whose browsers fetch it again and not for those "+
 			"holding the old one for a year; say so to replace it anyway", file)
@@ -132,7 +133,7 @@ func addFont(dir, filename string, body []byte, name string, replace bool) (font
 	}
 	return fontAdded{
 		FontAdded: admin.FontAdded{File: face.File, Family: face.Family,
-			Weight: face.Weight, Style: face.Style, From: kind},
+			Weight: face.Weight, Style: face.Style, From: kind, Replaced: replaced},
 		Source: len(body), Served: len(served), Path: path,
 	}, nil
 }
@@ -181,10 +182,13 @@ func themeFontAdd(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	record(root, resolveCaller(root, "").auditRecord("theme.font.add", "/",
-		audit.Success, map[string]string{
-			"file": added.File, "family": added.Family, "from": added.From,
-		}))
+	detail := map[string]string{"file": added.File, "family": added.Family, "from": added.From}
+	// A replacement changes every page that names the face without anybody
+	// naming it again, so the record says which this was.
+	if added.Replaced {
+		detail["replaced"] = "true"
+	}
+	record(root, resolveCaller(root, "").auditRecord("theme.font.add", "/", audit.Success, detail))
 
 	if w.JSON(added) {
 		return nil
