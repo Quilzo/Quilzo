@@ -387,12 +387,22 @@ func applyRevoke(root string, c *Caller, it accessreview.Item) error {
 // written, so an audit log that refused review.closed left a review
 // closed with no record that it was done and no evidence for the control,
 // and closing again answered that no review was open. A failure part way
-// through and a close that then succeeds can write a record twice, which
-// says the review closed twice a minute apart; that is read for what it
-// is, and evidence never written is not read at all.
+// through and a close that then succeeds can write an audit record twice,
+// which says the review closed twice a minute apart; that is read for what
+// it is, and evidence never written is not read at all. The evidence
+// itself is written once (recordReviewEvidence), because each line of it
+// counts as an occurrence of the control.
 func reviewClose(root string, c *Caller) (*accessreview.Review, accessreview.Summary, error) {
 	if err := authorise(root, c, auth.ActGrant, "/"); err != nil {
 		return nil, accessreview.Summary{}, err
+	}
+	// Before the snapshot, as start asks: it reads the whole audit log, and
+	// a close with no review open read all of it to say there was none.
+	// Update asks again under the lock.
+	if open, err := reviewStore(root).Current(); err != nil {
+		return nil, accessreview.Summary{}, err
+	} else if open == nil {
+		return nil, accessreview.Summary{}, accessreview.ErrNoneOpen
 	}
 	now := time.Now()
 	in, err := reviewInputs(root, nil, now)
@@ -441,13 +451,30 @@ func reviewClose(root string, c *Caller) (*accessreview.Review, accessreview.Sum
 
 // recordReviewEvidence appends a closed review's evidence, beside the
 // evidence of every other control, and puts it in the audit chain.
+//
+// Once for each review. A close whose control.operated record was refused
+// after the evidence was appended stays open and is closed again, and that
+// appended it a second time: each line counts as an occurrence of the
+// control, so one review read as the two that show a quarterly control
+// operating over half a year. Evidence that cannot be read is no reason
+// to withhold it, so then it is appended as before.
 func recordReviewEvidence(root string, r *accessreview.Review) error {
 	e := r.Evidence()
 	if err := e.Validate(); err != nil {
 		return err
 	}
-	if err := appendJSONL(evidencePath(root), e); err != nil {
-		return err
+	written := false
+	if have, err := loadEvidence(root); err == nil {
+		for _, h := range have {
+			if h.Control == e.Control && h.Ref == e.Ref {
+				written = true
+			}
+		}
+	}
+	if !written {
+		if err := appendJSONL(evidencePath(root), e); err != nil {
+			return err
+		}
 	}
 	return recordE(root, e.Record())
 }

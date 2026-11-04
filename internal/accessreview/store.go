@@ -28,6 +28,9 @@ type Store struct{ Dir string }
 // decisions about it.
 var ErrOpen = errors.New("a review is already open; close it first")
 
+// ErrNoneOpen is deciding or closing with no review open.
+var ErrNoneOpen = errors.New("no review is open: quilzo access review start begins one")
+
 func (s *Store) path(id string) string { return filepath.Join(s.Dir, id+".json") }
 
 // lock serialises every change to the reviews, across the admin and the
@@ -155,7 +158,7 @@ func (s *Store) Update(change func(*Review) error) (*Review, error) {
 		return nil, err
 	}
 	if r == nil {
-		return nil, errors.New("no review is open: quilzo access review start begins one")
+		return nil, ErrNoneOpen
 	}
 	if err := change(r); err != nil {
 		return nil, err
