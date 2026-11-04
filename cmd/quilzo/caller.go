@@ -239,10 +239,7 @@ func authorise(root string, c *Caller, action auth.Action, resource string) erro
 		return nil // nothing has been granted; there is nothing to enforce
 	}
 	if !c.Verified {
-		return fmt.Errorf(
-			"this store has access control configured, so %s needs a verified "+
-				"identity (%s).\nPresent one with --token, %s, or QUILZO_TOKEN",
-			action, c.Why, tokenFile())
+		return &errUnverified{action: action, resource: resource, why: c.Why}
 	}
 	p, err := loadPolicy(root)
 	if err != nil {
@@ -267,6 +264,39 @@ func authorise(root string, c *Caller, action auth.Action, resource string) erro
 	// same three and one of the gaps was a privilege escalation. This surface
 	// had them all; being right is not the same as being the only one right.
 	return auth.CheckGranted(d, c.Role, c.Scope, c.Limits, action, resource)
+}
+
+// errUnverified is a refusal for want of an identity, before the policy
+// was asked anything.
+//
+// It said "so grant needs a verified identity", naming the action and not
+// what was run: quilzo oidc status, saml list and scim status, which grant
+// nothing, were refused as if they did. authoriseCommand knows the command
+// and names it (named); everywhere else the action is what there is.
+type errUnverified struct {
+	action   auth.Action
+	resource string
+	why      string
+	command  string
+}
+
+func (e *errUnverified) Error() string {
+	what := string(e.action)
+	if e.command != "" {
+		what = "quilzo " + e.command
+	}
+	s := fmt.Sprintf("this store has access control configured, so %s needs a verified identity (%s)", what, e.why)
+	if e.command != "" {
+		s += fmt.Sprintf(": it asks the access policy for %s on %s", e.action, e.resource)
+	}
+	return s + fmt.Sprintf(".\nPresent one with --token, %s, or QUILZO_TOKEN", tokenFile())
+}
+
+// named is the refusal saying which command it refused.
+func (e *errUnverified) named(command string) *errUnverified {
+	n := *e
+	n.command = command
+	return &n
 }
 
 // auditRecord builds a record carrying whatever was actually established.

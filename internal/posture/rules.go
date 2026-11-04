@@ -863,6 +863,33 @@ var rules = []Rule{
 		},
 	},
 	{
+		ID:       "sso.unverified-addresses",
+		Title:    "An identity provider signs people in as addresses it has not said it verified",
+		Severity: Medium,
+		Controls: []string{"IA-2", "AC-2"},
+		OWASP:    "A07:2025 Authentication Failures",
+		Why: "Its people can set their own address there and leave it " +
+			"unverified, and it is not asked to say whether it verified one, so " +
+			"whoever sets theirs to a colleague's signs in here as that " +
+			"colleague, where OIDC refuses them. A provider added before saml " +
+			"add asked for the attribute keeps signing them in until it is " +
+			"asked for, because asking for it unannounced would refuse everybody.",
+		Check: func(s State) []Finding {
+			var out []Finding
+			for _, p := range s.SSO.Providers {
+				if p.Unverified != "" {
+					out = append(out, Finding{Resource: "saml/" + p.Name,
+						Detail: p.Name + " is not asked to say in " + p.Unverified +
+							" whether it verified the address it signs somebody in as",
+						Fix: "quilzo saml presets  # how to send " + p.Unverified + "; then quilzo saml add " +
+							p.Name + " --metadata ... --url ... --replace --verified-attribute " + p.Unverified +
+							" (or --allow-unverified-email, to take addresses as sent)"})
+				}
+			}
+			return out
+		},
+	},
+	{
 		ID:       "mcp.any-app",
 		Title:    "Any app, published anywhere, may ask people to connect it",
 		Severity: High,

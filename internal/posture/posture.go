@@ -321,6 +321,10 @@ type SSOProvider struct {
 	Name    string      `json:"name"`
 	Expires []time.Time `json:"expires,omitempty"`
 	Problem string      `json:"problem,omitempty"`
+	// Unverified is the attribute this kind of provider says it verified
+	// an address in, when it is not asked for and nobody decided to take
+	// addresses as sent (saml.Config.VerifiedUnasked).
+	Unverified string `json:"unverified,omitempty"`
 }
 
 // AlertFacts are where the security contact's alerts go. Every one of them

@@ -532,7 +532,11 @@ var commandNeeds = map[string]need{
 	"token": {action: auth.ActToken},
 	"oidc":  {action: auth.ActGrant},
 	"saml":  {action: auth.ActGrant},
-	"vault": {action: auth.ActToken},
+	// The presets are built into the program, the same in every store:
+	// which consoles to set an identity provider up in, and what each says
+	// about a second factor. Nothing of the store's is read.
+	"saml presets": {why: "prints the identity provider presets built into the program"},
+	"vault":        {action: auth.ActToken},
 	// Credentials agents use: whoever may mint a token may keep one.
 	"secret": {action: auth.ActToken},
 	// A person's own accounts elsewhere: an author's to connect and
@@ -1180,6 +1184,10 @@ func authoriseCommand(root, cmd string, args []string) error {
 	}
 
 	caller := resolveCaller(root, tokenFromArgs(args))
+	sub := cmd
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		sub = cmd + " " + args[0]
+	}
 	resources := commandResources(cmd, args)
 	if area, ok := commandArea(cmd, args); ok {
 		resources = []string{area}
@@ -1189,15 +1197,15 @@ func authoriseCommand(root, cmd string, args []string) error {
 	// the second page be worked around by naming a permitted page alongside it.
 	for _, resource := range resources {
 		if err := authorise(root, caller, n.action, resource); err != nil {
+			var u *errUnverified
+			if errors.As(err, &u) {
+				err = u.named(sub)
+			}
 			if help {
 				// Not a refusal on the record: nothing was attempted. The
 				// reason goes with it, so whoever asked can tell help from
 				// a command that did nothing.
 				return fmt.Errorf("%w, so it was not run: %v", errHelpOnly, err)
-			}
-			sub := cmd
-			if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-				sub = cmd + " " + args[0]
 			}
 			record(root, caller.auditRecord(sub, resource, audit.Denied,
 				map[string]string{"reason": "authorisation"}))

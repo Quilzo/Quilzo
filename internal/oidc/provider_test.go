@@ -260,3 +260,23 @@ func TestTheAuthorizationRequestAsksHowAndWhen(t *testing.T) {
 		t.Errorf("claims %q: %v", q.Get("claims"), err)
 	}
 }
+
+// Signing out of the provider as well goes to its end-session address with
+// this client named, keeping what the provider put in the address, and
+// nowhere when it offers none or offers one that is not https.
+func TestTheEndSessionAddressNamesThisClient(t *testing.T) {
+	p := &Provider{Discovery: Discovery{EndSessionEndpoint: "https://idp.example/logout?realm=r"}}
+	u, err := url.Parse(p.EndSessionURL("cms"))
+	if err != nil || u.Host != "idp.example" || u.Query().Get("client_id") != "cms" || u.Query().Get("realm") != "r" {
+		t.Errorf("%v: %v", u, err)
+	}
+	for _, at := range []string{"", "http://idp.example/logout", "javascript:alert(1)"} {
+		p.Discovery.EndSessionEndpoint = at
+		if got := p.EndSessionURL("cms"); got != "" {
+			t.Errorf("%q gave %q", at, got)
+		}
+	}
+	if (*Provider)(nil).EndSessionURL("cms") != "" {
+		t.Error("no provider gave an address")
+	}
+}
