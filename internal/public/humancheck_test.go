@@ -95,13 +95,18 @@ func TestAPageOpenedYesterdayIsTreatedAsEachRouteAlwaysTreatedIt(t *testing.T) {
 	}
 }
 
-// formRoute posts the contact form, on the real clock as the route reads it.
+// formRoute posts the contact form, on a clock the test holds, as the
+// booking and the sign-up are posted. On the real clock a second ticking
+// over between stamping the page and the route reading the time made a
+// second ago two, and the case was answered as a person's.
 func formRoute(t *testing.T, c humanCase, _ int) string {
 	st, fs := withForm(t)
+	now := time.Now()
+	st.Forms.Now = func() time.Time { return now }
 	heard := tellingTheShield(st)
 	v := good()
 	v.Set(form.Honeypot, c.honeypot)
-	v.Set(form.StampField, c.stamp(time.Now()))
+	v.Set(form.StampField, c.stamp(now))
 	w := post(t, st, "/form/contact", v)
 	switch subs, _ := fs.List("contact"); {
 	case len(*heard) == 1 && (*heard)[0].kind == FormSpam && (*heard)[0].subject == "contact" && len(subs) == 0:
