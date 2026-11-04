@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 )
 
 // A break-glass recovery makes somebody an administrator of everything
@@ -65,5 +66,55 @@ func TestABreakGlassRecoveryNobodyCouldBeToldIsAFailureOnTheRecord(t *testing.T)
 	told := auditFor(t, root, "auth.told")
 	if len(told) != 1 || told[0].Outcome != audit.Failure || told[0].Detail["error"] == "" {
 		t.Fatalf("the log does not say nobody was told: %+v", told)
+	}
+}
+
+// The store's own administrator, the person most likely to need it, can
+// recover. A store made with `quilzo init --admin owner` has no token at
+// all, only a passkey, and `quilzo auth recover --principal owner` failed
+// with "that binding already exists", because owner already held the
+// grant the recovery makes. The grant is left as it is, the credential is
+// issued, and the record is written as for anybody else.
+func TestTheFirstAdministratorCanRecover(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("QUILZO_TOKEN", "")
+	root := connectStore(t)
+	_, link := captureStdout(t)
+	if err := initAdmin(root, []string{"--admin", "owner"}, true); err != nil {
+		t.Fatal(err)
+	}
+	link()
+	_, printed := captureStdout(t)
+	err := cmdRecover(root, []string{"--principal", "owner", "--reason", "the passkey was lost",
+		"--i-have-filesystem-access"})
+	secret := strings.TrimSpace(printed())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secret == "" {
+		t.Fatal("the recovery printed no credential")
+	}
+	pol, err := loadPolicy(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admins := 0
+	for _, b := range pol.Snapshot() {
+		if b.Principal == "owner" && b.Role == auth.RoleAdmin && b.Resource == "/" {
+			admins++
+		}
+	}
+	if admins != 1 {
+		t.Errorf("owner holds the admin grant %d times", admins)
+	}
+	toks, err := loadTokens(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(toks.Tokens) != 1 || toks.Tokens[0].Principal != "owner" || toks.Tokens[0].Role != auth.RoleAdmin {
+		t.Errorf("the tokens are %+v", toks.Tokens)
+	}
+	if got := auditFor(t, root, "auth.break-glass"); len(got) != 1 || got[0].Detail["granted"] == "" {
+		t.Errorf("the recovery is not on the record: %+v", got)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/shield"
@@ -121,7 +122,18 @@ func cmdRecover(root string, args []string) error {
 
 	// The grant, and a token to use it with. Both, because granting a role to
 	// somebody who then cannot authenticate is the lockout this exists to end.
+	//
+	// The grant only when they do not hold it. The store's first
+	// administrator, made by `quilzo init --admin`, holds it and has a
+	// passkey and no token, and is the person most likely to lose the one
+	// way in; the recovery refused them, "that binding already exists".
 	if _, err := updatePolicy(root, func(p *auth.Policy) error {
+		for _, b := range p.Snapshot() {
+			if b.Principal == principal && b.Role == auth.RoleAdmin && b.Permission == "" &&
+				b.Resource == "/" && !b.Deny && b.Via == "" {
+				return atomicfile.ErrUnchanged
+			}
+		}
 		return p.Grant(auth.Binding{Principal: principal, Role: auth.RoleAdmin, Resource: "/"})
 	}); err != nil {
 		return err
