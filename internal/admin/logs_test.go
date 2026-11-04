@@ -330,3 +330,23 @@ func TestAPersonInASentenceIsNamedForWhoeverReadsTheScreen(t *testing.T) {
 		t.Error("somebody the store does not know was named, or dropped")
 	}
 }
+
+// Where the writer signs the heads, the page says so and says where the
+// keys that check them are: a receipt handed to somebody is checked against
+// that file, and the page is where an administrator learns it exists.
+func TestTheLogSaysWhoSignsItsHeads(t *testing.T) {
+	events := realLog(t, 2)
+	s, tok := logServer(t, events, true)
+	s.LogHeadsByWriter, s.LogHeadKeys = true, "/srv/audit/head.pub.json"
+	body, code := getLogs(t, s, tok, "")
+	if code != http.StatusOK {
+		t.Fatalf("got %d", code)
+	}
+	if !strings.Contains(body, "signed by\n    the writer too") || !strings.Contains(body, "/srv/audit/head.pub.json") {
+		t.Errorf("the page does not say the writer signs the heads:\n%s", body)
+	}
+	s.LogHeadsByWriter = false
+	if body, _ := getLogs(t, s, tok, ""); strings.Contains(body, "signed by\n    the writer too") {
+		t.Error("the page says the writer signs heads it does not sign")
+	}
+}

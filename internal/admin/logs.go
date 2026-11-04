@@ -223,7 +223,8 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		"Offset": offset, "Next": end, "HasNext": end < total,
 		"Intact": intact, "Problems": problems,
 		"Actions": names, "Action": action, "Outcome": outcome, "Who": who,
-		"Separated": s.LogSeparated,
+		"Separated": s.LogSeparated, "HeadsByWriter": s.LogHeadsByWriter,
+		"HeadKeys": s.LogHeadKeys,
 	})
 }
 

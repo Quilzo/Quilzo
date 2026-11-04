@@ -19,6 +19,11 @@
     running as this account could rewrite it.{{end}}
     Nothing here can edit or delete an entry.
   </p>
+  {{if .HeadsByWriter}}
+  <p class="hint">Its heads, and every receipt made from them, are signed by
+    the writer too, with a key this account cannot read. The public keys that
+    check them are at <code>{{.HeadKeys}}</code>.</p>
+  {{end}}
 </div>
 
 <form method="get" action="/logs" class="stack">

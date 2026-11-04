@@ -912,6 +912,8 @@ func cmdServe(root string, args []string) error {
 		ok, _ := logd.CheckOwnership(auditPath(root), os.Geteuid())
 		return ok
 	}()
+	_, srv.LogHeadsByWriter = writerSigns(root)
+	srv.LogHeadKeys = headKeysPath(root)
 	// Forward matching only. The HMAC cannot be reversed; this computes the
 	// pseudonym for each principal the store knows and compares, so somebody
 	// the policy has never heard of stays opaque — which is itself worth

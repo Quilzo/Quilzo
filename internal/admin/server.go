@@ -133,6 +133,11 @@ type Server struct {
 	// LogSeparated reports whether the writer runs as another account, so the
 	// page can say what the record is worth rather than implying it.
 	LogSeparated bool
+	// LogHeadsByWriter reports whether that writer also signs the log's
+	// heads, with a key this account cannot read, and LogHeadKeys is where
+	// it publishes the public half for whoever checks one.
+	LogHeadsByWriter bool
+	LogHeadKeys      string
 
 	// Settings gives the admin the store's configuration.
 	Settings *Settings
