@@ -238,7 +238,6 @@ func themeFontAdd(root string, args []string) error {
 	w.Human("\n  %suse it:   quilzo theme set font-body %s%s\n", dim, added.Family, reset)
 	w.Human("  %sits licence goes with it: put the licence text beside it in %s%s\n",
 		dim, filepath.Join(*dir, "fonts"), reset)
-	w.Human("  %sthe admin's preview has it now; the site serves it from its next publish%s\n",
-		dim, reset)
+	sayWhenReadersSeeIt()
 	return nil
 }

@@ -501,3 +501,34 @@ func TestThemeSubcommandsAskWhatTheyAskedBefore(t *testing.T) {
 		}
 	}
 }
+
+// Every command that changes the design says when readers get the change.
+//
+// The admin's preview reads templates/ again as soon as it changes and the
+// public site takes the design with its next publish (designreload.go). Only
+// `theme font add` said so; `theme set` and the rest said "primary = …" and
+// stopped, which left somebody refreshing the live site for a palette that
+// was waiting for them to publish, and reaching for the restart that used to
+// be the answer.
+func TestEveryDesignCommandSaysWhenReadersGetIt(t *testing.T) {
+	root, tpl := fontSite(t)
+	tokens := writeTemp(t, "tokens.json", []byte(`{"color": {"brand": {"$type": "color", "$value": "#1d4ed8"}}}`))
+	for _, args := range [][]string{
+		{"set", "radius", "6px"},
+		{"unset", "radius"},
+		{"generate", "#7c3aed"},
+		{"unset", "--all"},
+		{"import", tokens, "--set", "primary=color.brand", "--scheme", "light"},
+		{"apply", "article", "--force"},
+		{"font", "add", writeTemp(t, "Aster-Regular.ttf", declaringFace(0, 400, false))},
+	} {
+		args := append(args, "--dir", tpl)
+		said, err := humanOutput(t, func() error { return cmdTheme(root, args) })
+		if err != nil {
+			t.Fatalf("theme %v: %v\n%s", args, err, said)
+		}
+		if !strings.Contains(said, "the site serves it from its next publish") {
+			t.Errorf("theme %v does not say when readers get it:\n%s", args, said)
+		}
+	}
+}

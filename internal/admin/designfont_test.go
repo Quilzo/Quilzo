@@ -348,3 +348,24 @@ func TestAFaceThatIsNotServedSaysWhyOnTheScreen(t *testing.T) {
 		}
 	}
 }
+
+// The Design screen says when a change reaches readers, above everything it
+// changes.
+//
+// The preview reads templates/ again as soon as it changes, and the public
+// site takes the design with its next publish. Only the install table and the
+// typeface form said so; a token saved from the screen said "primary saved",
+// and the live site went on showing the old colour until somebody published.
+func TestTheDesignScreenSaysWhenReadersGetAChange(t *testing.T) {
+	srv, token := setup(t)
+	designFake(srv, map[string]string{})
+	page := get(t, srv, "/design", token).Body.String()
+	top := page[strings.Index(page, "<h1>Design</h1>"):]
+	if i := strings.Index(top, "<h2"); i > 0 {
+		top = top[:i]
+	}
+	if !strings.Contains(strings.Join(strings.Fields(top), " "),
+		"The preview here shows a change at once; the site serves it from its next publish") {
+		t.Errorf("the top of the Design screen does not say when readers get a change:\n%s", top)
+	}
+}

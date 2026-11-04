@@ -319,7 +319,8 @@ func templateUse(root string, args []string) error {
 	}
 
 	// A template is what renders every page, so writing one is a change to
-	// what the public sees the moment the server restarts.
+	// what the public sees with the next publish, or when the site is told
+	// to reload (designreload.go).
 	record(root, resolveCaller(root, "").auditRecord("template.use", "/",
 		audit.Success, map[string]string{"starter": t.Name, "dir": *dir}))
 	for _, path := range paths {

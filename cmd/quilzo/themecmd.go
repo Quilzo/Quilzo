@@ -253,7 +253,21 @@ func themeSet(root string, args []string) error {
 	}
 	w.Human("\n  %squilzo theme check   the whole palette, both schemes%s\n",
 		dim, reset)
+	sayWhenReadersSeeIt()
 	return nil
+}
+
+// sayWhenReadersSeeIt says when a change to the design reaches readers.
+//
+// The admin's preview reads templates/ again as soon as it changes, and the
+// public site takes the design with its next publish, after the gate has
+// checked it (designreload.go). A command that saved a palette and said
+// nothing more left somebody refreshing the live site for a change that was
+// waiting for them to publish, and the cure people reached for was the one
+// that used to be needed: restarting the server.
+func sayWhenReadersSeeIt() {
+	w.Human("  %sthe admin's preview has it now; the site serves it from its next publish%s\n",
+		dim, reset)
 }
 
 func themeUnset(root string, args []string) error {
@@ -274,6 +288,7 @@ func themeUnset(root string, args []string) error {
 		w.Human("removed every override; the shipped palette is in effect\n")
 		record(root, resolveCaller(root, "").auditRecord("theme.unset", "/",
 			audit.Success, map[string]string{"removed": "all"}))
+		sayWhenReadersSeeIt()
 		return nil
 	}
 	if len(pos) == 0 {
@@ -293,6 +308,7 @@ func themeUnset(root string, args []string) error {
 	}
 	record(root, resolveCaller(root, "").auditRecord("theme.unset", "/",
 		audit.Success, map[string]string{"removed": strings.Join(pos, ",")}))
+	sayWhenReadersSeeIt()
 	return nil
 }
 
@@ -475,6 +491,7 @@ func themeApply(root string, args []string) error {
 	w.Human("applied the %s%s%s theme: %s\n", bold, st.Name, reset, st.Look)
 	w.Human("  %s%d token(s) written to %s%s\n", dim, len(st.Tokens),
 		filepath.Join(*dir, themeFile), reset)
+	sayWhenReadersSeeIt()
 	return nil
 }
 
@@ -638,5 +655,6 @@ func themeGenerate(root string, args []string) error {
 	w.Human("  %slight and dark, and every contrast pair checked%s\n", dim, reset)
 	w.Human("\n  %ssee it:      quilzo theme show%s\n", dim, reset)
 	w.Human("  %schange one:  quilzo theme set primary '#3b6ea5'%s\n", dim, reset)
+	sayWhenReadersSeeIt()
 	return nil
 }
