@@ -43,9 +43,9 @@ import (
 // SIGHUP. Its settings were already read when they are used.
 //
 // The public site reads its settings again when the configuration, the
-// listings or the languages change, looked at the same way, and reads both
-// the design and the settings when a publish moves the pages it serves, and
-// on SIGHUP.
+// listings or the languages change, and reads both the design and the
+// settings when a publish moves the pages it serves, looked at once a second
+// whether or not anybody is visiting (siteReloader.Watch), and on SIGHUP.
 //
 // The site does not take a design change the moment the file changes, and
 // that is deliberate. The publish gate is what holds the design to the
@@ -202,8 +202,12 @@ func newDesignWatch(dir string, d *Design, apply func(*Design)) *designWatch {
 	return dw
 }
 
-func (dw *designWatch) state() string {
-	return dirState(dw.dir, filepath.Join(dw.dir, "fonts"))
+func (dw *designWatch) state() string { return designState(dw.dir) }
+
+// designState is how a template directory and its fonts stand, as dirState
+// says it.
+func designState(dir string) string {
+	return dirState(dir, filepath.Join(dir, "fonts"))
 }
 
 // Current is the design as last read.
@@ -333,8 +337,11 @@ type siteReloader struct {
 	looked time.Time
 	// designDue is a publish whose design has not reached readers yet,
 	// because the build it came with was refused for a reason that was not
-	// the design: the next build that succeeds takes it.
+	// the design: the next build that succeeds takes it, if templates/ is
+	// still as it stood then (dueState). One saved since is not the design
+	// that publish was checked with.
 	designDue bool
+	dueState  string
 }
 
 func newSiteReloader(root, dir string, s *store.Store, ref string, d *Design, st *public.Site,
@@ -390,6 +397,32 @@ func (rl *siteReloader) Check() {
 	}
 }
 
+// Watch looks, every rl.every until ctx is done, for what Check looks for as
+// requests arrive: a publish, and settings that changed.
+//
+// Requests alone were not enough. The design is read from disk when a publish
+// is noticed, and a site nobody visited noticed it with its next visitor,
+// perhaps an hour after the publish gate had checked the design; by then
+// templates/ held whatever had been saved since, and a palette forced past
+// the gate after the publish went to readers with it. Looking every second, a
+// publish is taken within a second of the check it passed, busy site or not.
+func (rl *siteReloader) Watch(ctx context.Context) {
+	every := rl.every
+	if every <= 0 {
+		every = lookEvery
+	}
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			rl.Check()
+		}
+	}
+}
+
 // Reload builds the site again from the design and settings on disk, whatever
 // has or has not changed: SIGHUP, which is how a service manager says reload.
 func (rl *siteReloader) Reload() error {
@@ -408,13 +441,27 @@ func (rl *siteReloader) reload(trigger string) error {
 	var designErr error
 	// The design only with a publish, which the gate has passed, or when
 	// told: see the comment at the top of this file.
-	withDesign := trigger != reloadSettings || rl.designDue
+	withDesign := trigger != reloadSettings
+	if trigger == reloadSettings && rl.designDue {
+		if designState(rl.dir) == rl.dueState {
+			withDesign = true
+		} else {
+			// Changed since the publish it came with: that design waits for
+			// the next publish, or SIGHUP, as any other change does.
+			rl.designDue = false
+			rl.say("  %sthe design in %s changed after the publish it came with was "+
+				"checked; it reaches readers with the next publish%s\n", yellow, rl.dir, reset)
+		}
+	}
 	refused := func(err error) error {
 		rl.say("  %sthe site was not rebuilt (%s): %v. It is serving what it served "+
 			"before%s\n", yellow, trigger, err, reset)
 		rl.record(trigger, audit.Failure, map[string]string{"why": err.Error()})
 		// The publish's design waits for the next build that succeeds,
-		// rather than for the next publish.
+		// rather than for the next publish, as it stands now.
+		if withDesign && trigger != reloadSettings {
+			rl.dueState = designState(rl.dir)
+		}
 		rl.designDue = rl.designDue || withDesign
 		return err
 	}

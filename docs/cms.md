@@ -363,6 +363,14 @@ shows a change at once, and readers get it with the publish that passed. SIGHUP 
 `systemctl reload` with the unit in [deploy/](../deploy/) — is the operator
 saying so, as a restart was, without dropping a connection.
 
+The site looks for a publish once a second whether or not anybody is visiting,
+because it reads the design when it sees one: a site that looked only when
+somebody visited would read, an hour after the gate, whatever had been saved in
+the hour, and a palette forced past the gate after the publish would go to
+readers with it. A publish whose build is refused (below) brings its design with
+the next build that succeeds, unless `templates/` has changed since; then it
+waits for the next publish, as any other change does.
+
 A rebuilt site keeps what visitors are in the middle of: rate limits and their
 counts, the signals it is counting, sign-ins in progress, the chatbots' rating
 keys, the newsletter's hourly count and the fediverse queue. Their settings —

@@ -453,6 +453,46 @@ func TestAConfigurationCaughtEmptyIsNotReadAsNoSettings(t *testing.T) {
 	}
 }
 
+// The design a refused publish leaves due is the one its check read, not one
+// saved since.
+//
+// A publish whose build was refused (here, because the configuration was
+// caught empty) brings its design with the next build that succeeds. That
+// build read templates/ as it stood then, so a palette forced past the gate
+// after the publish, and before the settings were whole again, went to
+// readers as though the gate had passed it.
+func TestADesignLeftDueIsNotOneSavedSince(t *testing.T) {
+	root, tpl := fontSite(t)
+	if err := cmdConfig(root, []string{"set", "site.hsts", "24h"}); err != nil {
+		t.Fatal(err)
+	}
+	rl := servedSite(t, root, tpl)
+	whole, err := os.ReadFile(configPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath(root), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	editDraft(t, root, "index", "Published while the file was empty.")
+	commitLive(t, root)
+	served(rl, "/")
+
+	// After the publish, a palette that fails the gate, saved anyway.
+	if err := cmdTheme(root, []string{"set", "on-surface", "#777777", "surface", "#808080", "--dir", tpl, "--force"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath(root), whole, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if w := served(rl, "/"); w.Header().Get("Strict-Transport-Security") != "max-age=86400" {
+		t.Fatalf("the settings written whole were not read: %q", w.Header().Get("Strict-Transport-Security"))
+	}
+	if strings.Contains(served(rl, "/site.css").Body.String(), "#808080") {
+		t.Fatal("a palette saved after the publish was checked reached readers as the publish's design")
+	}
+}
+
 // A site that started with no settings of its own has none to keep, so an
 // empty configuration file is only what it already had.
 func TestAnEmptyConfigurationIsRefusedOnlyWhenItHidesSettings(t *testing.T) {
@@ -467,6 +507,51 @@ func TestAnEmptyConfigurationIsRefusedOnlyWhenItHidesSettings(t *testing.T) {
 		if r.Outcome != audit.Success {
 			t.Fatalf("a site with no settings refused an empty file: %+v", r)
 		}
+	}
+}
+
+// A publish is taken when it happens, not when somebody next visits.
+//
+// The site looked for a publish only as requests arrived, and read the
+// design from disk when it found one. On a site nobody visited for an hour
+// that was an hour after the gate had checked it, and whatever templates/
+// held by then went to readers: a palette forced past the gate after the
+// publish (`theme set --force`, an author's authority) rode in with it.
+func TestAPublishIsTakenWhenItHappensNotWhenSomebodyNextVisits(t *testing.T) {
+	root, tpl := fontSite(t)
+	rl := servedSite(t, root, tpl)
+	rl.every = 5 * time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go rl.Watch(ctx)
+	first := rl.Site()
+
+	if err := cmdTheme(root, []string{"set", "radius", "3px", "--dir", tpl}); err != nil {
+		t.Fatal(err)
+	}
+	editDraft(t, root, "index", "Published to nobody.")
+	if err := runPublish(t, root, "-templates", tpl); err != nil {
+		t.Fatal(err)
+	}
+	// Nobody visits; the site takes the publish anyway.
+	deadline := time.Now().Add(10 * time.Second)
+	for rl.Site() == first {
+		if time.Now().After(deadline) {
+			t.Fatal("a publish was not taken until somebody visited")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	// Then a palette that fails the gate, saved anyway, after the publish.
+	if err := cmdTheme(root, []string{"set", "on-surface", "#777777", "surface", "#808080", "--dir", tpl, "--force"}); err != nil {
+		t.Fatal(err)
+	}
+	css := served(rl, "/site.css").Body.String()
+	if !strings.Contains(css, "--radius: 3px") {
+		t.Fatal("the published design is not the one served")
+	}
+	if strings.Contains(css, "#808080") {
+		t.Fatal("a palette saved after the publish was checked reached readers with it")
 	}
 }
 

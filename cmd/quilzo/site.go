@@ -258,6 +258,10 @@ func cmdSite(root string, args []string) error {
 	hupCtx, stopHup := context.WithCancel(context.Background())
 	defer stopHup()
 	onHangup(hupCtx, "site", reloader.Reload)
+	// And once a second without a visitor, so a publish is taken with the
+	// design its check read, not with whatever templates/ holds when
+	// somebody next calls.
+	go reloader.Watch(hupCtx)
 
 	// The API shares the listener but not the routing. Mounted here rather than
 	// inside the public site because it is a different product with different
