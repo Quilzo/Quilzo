@@ -106,10 +106,37 @@ type signalsConfig struct {
 	// across restarts, so an older account-enabled cannot lift a newer
 	// suspension by arriving later or again.
 	LastActed map[string]int64 `json:"last_acted,omitempty"`
+	// LastDisabled and LastEnabled are, by the same digest, when the last
+	// account-disabled or account-purged, and the last account-enabled,
+	// acted on for them were issued. Kept the same way, so an older
+	// disable cannot suspend again somebody the provider enabled since:
+	// the transmitter's retry of a disable that failed here once arrived
+	// after the enable it sent next, and the enable was undone.
+	LastDisabled map[string]int64 `json:"last_disabled,omitempty"`
+	LastEnabled  map[string]int64 `json:"last_enabled,omitempty"`
 }
 
-// signalsCounts are what the stream has sent and what came of it.
+// keep carries over what the receiver remembers about whom it acted on,
+// from the stream that was to the one that is, or to none: what stops an
+// old event undoing a newer one.
+func (c *signalsConfig) keep(from *signalsConfig) {
+	c.LastActed, c.LastDisabled, c.LastEnabled = from.LastActed, from.LastDisabled, from.LastEnabled
+}
+
+// signalsCounts are what the stream has sent and what came of it, and the
+// receiver's own bookkeeping beside them.
 type signalsCounts struct {
+	signalsTally
+	// Unnoted are refusals since RefusedNoted, when the last summary of
+	// them went to the audit log.
+	Unnoted      int       `json:"unnoted,omitempty"`
+	RefusedNoted time.Time `json:"refused_noted,omitzero"`
+}
+
+// signalsTally is the counts as the status says them, which is all its
+// JSON gives: the bookkeeping beside them in signals.json became part of
+// what `quilzo signals status --json` promised, and nobody meant it to.
+type signalsTally struct {
 	Received  int       `json:"received"`
 	Acted     int       `json:"acted"`
 	Unmatched int       `json:"unmatched"`
@@ -117,10 +144,6 @@ type signalsCounts struct {
 	Capped    int       `json:"capped"`
 	LastAt    time.Time `json:"last_at,omitzero"`
 	LastType  string    `json:"last_type,omitempty"`
-	// Unnoted are refusals since RefusedNoted, when the last summary of
-	// them went to the audit log.
-	Unnoted      int       `json:"unnoted,omitempty"`
-	RefusedNoted time.Time `json:"refused_noted,omitzero"`
 }
 
 // signalsHour is the hour the cap counts in: the digests of the people
@@ -443,7 +466,7 @@ func signalsConnect(root string, args []string) error {
 // remembers about whom it acted on.
 func signalsSave(root string, cfg signalsConfig) error {
 	return updateSignals(root, func(c *signalsConfig) error {
-		cfg.LastActed = c.LastActed
+		cfg.keep(c)
 		*c = cfg
 		return nil
 	})
@@ -510,7 +533,7 @@ func signalsStatus(root string) error {
 	// which a caller would have to know to read as never.
 	doc := map[string]any{"connected": true, "provider": c.Provider, "issuer": c.Issuer, "audience": c.Audience,
 		"stream": c.Stream, "manual": c.Manual, "status": c.Status, "silent": silent,
-		"connected_at": c.Connected, "counts": c.Counts}
+		"connected_at": c.Connected, "counts": c.Counts.signalsTally}
 	for k, t := range map[string]time.Time{"verified": c.Verified, "asked": c.Asked} {
 		if !t.IsZero() {
 			doc[k] = t
@@ -554,7 +577,7 @@ func signalsStatus(root string) error {
 			yellow, c.Status, reset)
 	}
 	n := c.Counts
-	w.Human("  %d received, %d acted on, %d unmatched, %d refused, %d past the hourly cap, never acted on\n",
+	w.Human("  %d received, %d acted on, %d unmatched, %d refused, %d past the hourly cap, told to send it again later\n",
 		n.Received, n.Acted, n.Unmatched, n.Refused, n.Capped)
 	if !n.LastAt.IsZero() {
 		w.Human("  last event: %s, %s\n", n.LastType, signalsWhen(n.LastAt))
@@ -608,7 +631,9 @@ func signalsOff(root string) error {
 	}
 	issuer := c.Issuer
 	if err := updateSignals(root, func(s *signalsConfig) error {
-		*s = signalsConfig{LastActed: s.LastActed}
+		var off signalsConfig
+		off.keep(s)
+		*s = off
 		return nil
 	}); err != nil {
 		return err

@@ -2138,8 +2138,8 @@ reported as silent.
 
 | The provider says | Quilzo does |
 |---|---|
-| session-revoked, sessions-revoked; credential-change (update, revoke, delete) | ends that provider's sessions for them |
-| credential-compromise, account-credential-change-required | the same; every other session they hold must confirm it is them; the security contact is told |
+| session-revoked, sessions-revoked; credential-change (update, revoke, delete) | ends that provider's sessions for them opened before the event was issued |
+| credential-compromise, account-credential-change-required | the same; every other session they had open then must confirm it is them; the security contact is told |
 | account-disabled, account-purged | suspends them as SCIM does: every token, every app they connected, and a deny over the whole site that passkeys and single sign-on refuse |
 | account-enabled | lifts the deny it added, and no other |
 
@@ -2154,12 +2154,23 @@ What keeps that from being turned against the site:
 - The last person who can grant access is never suspended this way: their
   sessions end and the security contact is told.
 - At most twenty people an hour are acted on. Past that the cap is recorded
-  once and the security contact is told; an event about anybody else that hour
-  is accepted, so the provider does not send it again, and never acted on.
-  Whoever is told suspends the rest by hand, from the provider's own log of
-  whom it disabled.
+  once an hour and the security contact is told; an event about anybody else
+  is answered 503 with a `Retry-After` of when the hour is up, and is not
+  remembered as seen, so the provider sends it again then and it is acted on,
+  twenty people an hour. An offboarding larger than that finishes by itself
+  while the provider keeps retrying; whoever is told can suspend anybody sooner
+  by hand, from the provider's own log of whom it disabled.
+- A session opened after an event was issued, give or take two minutes for
+  the clocks, is one the provider vouched for since, and the event does not
+  reach it; nor does a compromise hold again a session that has confirmed it
+  is its person since. The same event sent again, after a restart has
+  forgotten it was seen, ends and holds nothing new.
 - An account-enabled older than the last event acted on for that person is
-  refused, after a restart too, so a replay cannot lift a newer suspension.
+  refused, after a restart too, so a replay cannot lift a newer suspension. An
+  account-disabled or account-purged older than the last account-enabled acted
+  on, or no newer than the last one acted on, is refused the same way, so a
+  late retry cannot suspend again somebody the provider has enabled since. Each
+  is recorded as `signals.stale`.
 - The shield's `signals` feature turns the endpoint off. It answers 503 with
   a time to come back, so a transmitter that retries sends the event again
   later.
@@ -2174,8 +2185,8 @@ that.
 things: whose sign-ins the stream speaks for, when it last answered a
 verification and whether it has gone silent, why the last request failed if it
 did, whether the provider says the stream is enabled, paused or disabled, the
-last event, and how many events were received, acted on, unmatched, refused and
-past the hourly cap.
+last event, and how many events were received, acted on, unmatched and
+refused, and how many deliveries past the hourly cap were told to wait.
 
 `quilzo signals off` turns the stream off here at once, and anything pushed
 after is refused. It asks the provider to delete the stream too, with the client
@@ -2187,7 +2198,7 @@ With the admin on loopback, publish only `/scim/v2/` and `/sso/signals` through
 the proxy (`deploy/Caddyfile` has the block, commented out). Each act is in the
 audit log as `signals.sessions-ended`, `signals.step-up`, `signals.suspended`,
 `signals.restored`, `signals.verified`, `signals.stream-status`,
-`signals.capped` and, at most once an hour, `signals.refused`. Connecting,
+`signals.stale`, `signals.capped` and, at most once an hour, `signals.refused`. Connecting,
 turning off and each day's request are `signals.connected`,
 `signals.disconnected` and `signals.verify-asked`, and each message to the
 security contact is `signals.told`.

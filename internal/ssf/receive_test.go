@@ -144,6 +144,26 @@ func TestAnEventThatCouldNotBeActedOnIsTakenAgain(t *testing.T) {
 	}
 }
 
+// An event the receiver will act on later is answered 503 with the wait it
+// names, and is taken again when it comes back. Past the hourly cap the
+// receiver answered 202 and never acted, and the transmitter, told yes,
+// never sent the event again.
+func TestAnEventToBeActedOnLaterIsAskedForThen(t *testing.T) {
+	k := newKey(t)
+	x := newPush(t, k)
+	tok := k.sign(t, nil, revoked())
+	x.fail = &Later{After: 41*time.Minute + 300*time.Millisecond, Why: "past the hourly cap; send it again later"}
+	w := x.send(t, pushSecret, "application/secevent+jwt", tok)
+	if w.Code != http.StatusServiceUnavailable || w.Header().Get("Retry-After") != "2461" ||
+		!strings.Contains(w.Body.String(), "past the hourly cap") {
+		t.Fatalf("to be acted on later: %d, Retry-After %q, %s", w.Code, w.Header().Get("Retry-After"), w.Body)
+	}
+	x.fail = nil
+	if w := x.send(t, pushSecret, "application/secevent+jwt", tok); w.Code != http.StatusAccepted || len(x.delivered) != 1 {
+		t.Fatalf("sent again: %d, delivered %d", w.Code, len(x.delivered))
+	}
+}
+
 // About two a second, in a burst of a minute's worth; then told to wait.
 func TestPushesAreHeldToAMinutesRate(t *testing.T) {
 	k := newKey(t)

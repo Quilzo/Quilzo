@@ -23,10 +23,11 @@ import (
 // every one of them takes access away or gives back only what this took.
 //
 //	session-revoked, sessions-revoked, credential-change (update, revoke,
-//	delete)                      the provider's sessions for them end
+//	delete)                      the provider's sessions for them end, of
+//	                             those opened before the event was issued
 //	credential-compromise,       those end, and every other session they
-//	account-credential-change-   have must confirm it is them; the security
-//	required                     contact is told
+//	account-credential-change-   had open then must confirm it is them; the
+//	required                     security contact is told
 //	account-disabled,            suspended as SCIM suspends: every token,
 //	account-purged               every app they connected, and a deny over
 //	                             the whole site that sign-in refuses
@@ -40,11 +41,14 @@ import (
 //
 // It replaces the templates an operator had to add before any of this
 // happened, and the hourly limit they ran under: twenty people an hour,
-// then the security contact is told. An event past that is accepted, so
-// the transmitter does not send it again, and is never acted on; whoever
-// is told has to act on the rest by hand. A provider offboarding a team
-// stays inside that; a stolen transmitter key signing everybody out does
-// not get past it.
+// then the security contact is told. An event past that is answered 503
+// with Retry-After set to when the hour's window frees, and not remembered
+// as seen, so the transmitter sends it again then and it is acted on at
+// the same rate. It was accepted and never acted on, and an offboarding
+// larger than the cap lost the rest without the transmitter knowing. A
+// provider offboarding a team finishes, an hour at a time; a stolen
+// transmitter key signing everybody out gets twenty people an hour, which
+// is time for whoever is told to turn the stream off.
 
 // signalsCap is how many people the receiver acts on in an hour.
 const signalsCap = 20
@@ -148,20 +152,24 @@ func signalsDeliver(root string, set *ssf.SET, now time.Time) error {
 		return count(func(n *signalsCounts) { n.Unmatched++ })
 	}
 	key := signalsKey(principal)
-	// An account-enabled no newer than the last event acted on for them is
-	// one that arrived late or again: a suspension made after it stands.
-	// Kept in the file, so a restart, which forgets the ids already seen,
-	// does not make an old one new.
-	if act == signalsRestore && set.IssuedAt.Unix() <= c.LastActed[key] {
-		if err := count(func(n *signalsCounts) { n.Refused++; n.Unnoted++ }); err != nil {
+	// An account event older than what was done since arrived late or
+	// again (signalsStale), and is recorded and not acted on. Kept in the
+	// file, so a restart, which forgets the ids already seen, does not make
+	// an old one new.
+	if signalsStale(c, act, key, set.IssuedAt.Unix()) {
+		if err := count(func(n *signalsCounts) { n.Refused++ }); err != nil {
 			return err
 		}
-		signalsNoteRefusals(root, now)
+		d := cloneDetail(base)
+		d["subject"] = principal
+		signalsRecord(root, "signals.stale", audit.Denied, d)
 		return nil
 	}
 	if capped, first := signalsOverCap(c, key, now); capped {
+		// Not received: it is not taken, and a delivery the transmitter
+		// sends again is counted when it is. Capped counts each delivery
+		// told to come back.
 		if err := updateSignals(root, func(s *signalsConfig) error {
-			s.Counts.Received++
 			s.Counts.Capped++
 			s.Counts.LastAt, s.Counts.LastType = now.UTC(), set.Short
 			if first {
@@ -176,27 +184,30 @@ func signalsDeliver(root string, set *ssf.SET, now time.Time) error {
 			d["count"] = fmt.Sprint(signalsCap)
 			signalsRecord(root, "signals.capped", audit.Denied, d)
 			signalsTell(root, "", fmt.Sprintf("The identity provider's security events have acted on %d people "+
-				"within an hour, which is as many as Quilzo acts on in one. Events about anybody else this hour "+
-				"are accepted and never acted on, and the provider will not send them again: if this is an "+
-				"offboarding you expected, the provider's own log says whom it disabled, and the rest are "+
-				"suspended by hand here (quilzo auth deny WHO reader). If it is not, the transmitter's key or "+
-				"the stream may be in somebody else's hands: quilzo signals off stops it.", signalsCap))
+				"within an hour, which is as many as Quilzo acts on in one. Events about anybody else are told "+
+				"to wait until the hour is up, and are acted on when the provider sends them again, %d people "+
+				"an hour. If this is an offboarding you expected, it goes on by itself while the provider keeps "+
+				"trying; its own log says whom it disabled, for anybody you want suspended sooner by hand "+
+				"(quilzo auth deny WHO reader). If it is not, the transmitter's key or the stream may be in "+
+				"somebody else's hands: quilzo signals off stops it.", signalsCap, signalsCap))
 		}
-		return nil
+		return &ssf.Later{After: c.Hour.Start.Add(time.Hour).Sub(now),
+			Why: fmt.Sprintf("this receiver acts on %d people an hour; send it again later", signalsCap)}
 	}
 
 	d := cloneDetail(base)
 	d["subject"] = principal
+	before := signalsBefore(set)
 	switch act {
 	case signalsEndSessions:
-		n, err := endProviderSessions(root, principal, c.Provider, now)
+		n, err := endProviderSessions(root, principal, c.Provider, before, now)
 		if err != nil {
 			return err
 		}
 		d["count"] = fmt.Sprint(n)
 		signalsRecord(root, "signals.sessions-ended", audit.Success, d)
 	case signalsStepUp:
-		n, held, err := stepUpAfterCompromise(root, principal, c.Provider, now)
+		n, held, err := stepUpAfterCompromise(root, principal, c.Provider, before, now)
 		if err != nil {
 			return err
 		}
@@ -238,11 +249,13 @@ func signalsDeliver(root string, set *ssf.SET, now time.Time) error {
 		s.Counts.Received++
 		s.Counts.Acted++
 		s.Counts.LastAt, s.Counts.LastType = now.UTC(), set.Short
-		if s.LastActed == nil {
-			s.LastActed = map[string]int64{}
-		}
-		if iat := set.IssuedAt.Unix(); iat > s.LastActed[key] {
-			s.LastActed[key] = iat
+		iat := set.IssuedAt.Unix()
+		signalsLater(&s.LastActed, key, iat)
+		switch act {
+		case signalsSuspend:
+			signalsLater(&s.LastDisabled, key, iat)
+		case signalsRestore:
+			signalsLater(&s.LastEnabled, key, iat)
 		}
 		if now.Sub(s.Hour.Start) >= time.Hour {
 			s.Hour = signalsHour{Start: now.UTC()}
@@ -252,6 +265,37 @@ func signalsDeliver(root string, set *ssf.SET, now time.Time) error {
 		}
 		return nil
 	})
+}
+
+// signalsStale reports whether an account event about somebody is older
+// than what was already done about them.
+//
+//	account-enabled    no newer than the last event of any kind acted on:
+//	                   a suspension, or anything else, made after it stands
+//	account-disabled,  older than the last account-enabled, which the
+//	account-purged     provider sent after it, or no newer than the last
+//	                   disable, which was acted on already: a person may
+//	                   have lifted that one since, and its copy is not the
+//	                   provider's word again
+func signalsStale(c *signalsConfig, act signalsAction, key string, iat int64) bool {
+	switch act {
+	case signalsRestore:
+		return iat <= c.LastActed[key]
+	case signalsSuspend:
+		return iat < c.LastEnabled[key] || iat <= c.LastDisabled[key]
+	}
+	return false
+}
+
+// signalsLater keeps, for somebody, the later of an issue time and the one
+// kept.
+func signalsLater(m *map[string]int64, key string, iat int64) {
+	if *m == nil {
+		*m = map[string]int64{}
+	}
+	if iat > (*m)[key] {
+		(*m)[key] = iat
+	}
 }
 
 // signalsOverCap reports whether acting on somebody would pass the hour's
@@ -449,10 +493,28 @@ func providerPrefix(provider string) string {
 	return provider + ":"
 }
 
+// signalsBefore is the moment an event about sessions reaches back from:
+// those opened before it was issued, with the skew the receiver forgives
+// (ssf.DefaultSkew, which signalsReceivers builds it with) in case this
+// clock runs ahead of the transmitter's. A session opened after is one the
+// provider vouched for since, which the event says nothing about. A
+// restart forgets the ids already seen, and the same session-revoked sent
+// again ended the session the person had opened since, as often as it was
+// sent for the three days an event is accepted.
+func signalsBefore(set *ssf.SET) time.Time {
+	return set.IssuedAt.Add(ssf.DefaultSkew)
+}
+
+// openedBefore reports whether a credential was issued before a moment.
+func openedBefore(t auth.Token, before time.Time) bool {
+	return t.CreatedAt < before.Unix()
+}
+
 // endProviderSessions ends somebody's live sessions that the bound
-// provider signed them in to, and only those: a passkey session, a
-// long-lived token and an app's grant are not the provider's to end.
-func endProviderSessions(root, principal, provider string, now time.Time) (int, error) {
+// provider signed them in to before a moment, and only those: a passkey
+// session, a long-lived token and an app's grant are not the provider's to
+// end.
+func endProviderSessions(root, principal, provider string, before, now time.Time) (int, error) {
 	ts, err := loadTokens(root)
 	if err != nil {
 		return 0, err
@@ -461,7 +523,7 @@ func endProviderSessions(root, principal, provider string, now time.Time) (int, 
 	n := 0
 	for _, t := range ts.Snapshot() {
 		if t.Revoked || !t.IsSession() || t.Expired(now) || !strings.EqualFold(t.Principal, principal) ||
-			!strings.HasPrefix(t.Name, prefix) {
+			!strings.HasPrefix(t.Name, prefix) || !openedBefore(t, before) {
 			continue
 		}
 		if _, err := ts.Revoke(t.ID); err == nil {
@@ -474,19 +536,37 @@ func endProviderSessions(root, principal, provider string, now time.Time) (int, 
 	return n, saveTokens(root, ts)
 }
 
+// provedSince reports whether a session confirmed it is its person at or
+// after a moment.
+func provedSince(t auth.Token, since time.Time) bool {
+	return t.StepUpCleared >= since.UnixNano()
+}
+
 // stepUpAfterCompromise ends the provider's sessions for somebody whose
 // credential it reports compromised, and holds every other session they
-// have until they prove it is them: a passkey, or a fresh sign-in at a
-// provider that has dealt with it.
-func stepUpAfterCompromise(root, principal, provider string, now time.Time) (ended, held int, err error) {
-	if ended, err = endProviderSessions(root, principal, provider, now); err != nil {
+// had open when it was reported until they prove it is them: a passkey, or
+// a fresh sign-in at a provider that has dealt with it. A session that has
+// proved it since is one its person vouched for after the event, as a
+// session opened since is: the same event sent again after a restart held
+// it once more, and its person had to prove it again as often as the event
+// was sent.
+func stepUpAfterCompromise(root, principal, provider string, before, now time.Time) (ended, held int, err error) {
+	if ended, err = endProviderSessions(root, principal, provider, before, now); err != nil {
 		return 0, 0, err
 	}
 	ts, err := loadTokens(root)
 	if err != nil {
 		return ended, 0, err
 	}
-	held = ts.RequireStepUpFor(principal, "the identity provider reported their credential compromised", now)
+	for _, t := range ts.Snapshot() {
+		if t.Revoked || !t.IsSession() || t.Expired(now) || !strings.EqualFold(t.Principal, principal) ||
+			!openedBefore(t, before) || provedSince(t, before) {
+			continue
+		}
+		if ts.RequireStepUp(t.ID, "the identity provider reported their credential compromised") == nil {
+			held++
+		}
+	}
 	if held == 0 {
 		return ended, 0, nil
 	}

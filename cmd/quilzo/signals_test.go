@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -807,6 +808,211 @@ func TestAnEnabledAccountLiftsOnlyThisReceiversDenyAndNeverAnOlderOne(t *testing
 	}
 }
 
+// backdate makes a credential look as if it was issued at a time.
+func backdate(t *testing.T, root, name string, at time.Time) {
+	t.Helper()
+	ts, _ := loadTokens(root)
+	for i := range ts.Tokens {
+		if ts.Tokens[i].Name == name {
+			ts.Tokens[i].CreatedAt = at.Unix()
+		}
+	}
+	if err := saveJSON(tokensPath(root), ts); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// An event about sessions reaches only the sessions open when it was
+// issued. A restart forgets the ids already seen, and the same
+// session-revoked sent again, by the transmitter late or by whoever held
+// its bearer, ended the session the person had opened since, as often as
+// it was sent for the three days an event is accepted. A compromise
+// likewise ends and holds only what was open when it was reported.
+func TestAnEventReachesOnlySessionsOpenedBeforeIt(t *testing.T) {
+	c := signalsStore(t, "email")
+	c.connect(t, "oidc")
+	iat := time.Now().Add(-time.Hour)
+	old := session(t, c.root, "oidc:old", "ada@example.com", auth.MethodSSO)
+	backdate(t, c.root, "oidc:old", iat.Add(-10*time.Minute))
+	revoked := c.tx.event(t, caepEvent+"session-revoked", email("ada@example.com"), nil, iat)
+	if w := c.push(t, revoked); w.Code != http.StatusAccepted {
+		t.Fatalf("%d", w.Code)
+	}
+	if works(c.root, old) {
+		t.Fatal("the session the provider ended still works")
+	}
+
+	c.restart(t)
+	since := session(t, c.root, "oidc:since", "ada@example.com", auth.MethodSSO)
+	if w := c.push(t, revoked); w.Code != http.StatusAccepted {
+		t.Fatalf("sent again: %d", w.Code)
+	}
+	if !works(c.root, since) {
+		t.Fatal("sent again after a restart, the event ended the session opened since")
+	}
+
+	held := session(t, c.root, "passkey:old", "ada@example.com", auth.MethodPasskey)
+	backdate(t, c.root, "passkey:old", iat.Add(-10*time.Minute))
+	fresh := session(t, c.root, "passkey:since", "ada@example.com", auth.MethodPasskey)
+	c.send(t, riscEvent+"credential-compromise", email("ada@example.com"), nil, iat)
+	if !works(c.root, since) || stepUpOf(c.root, since) != "" {
+		t.Errorf("a compromise reported before it reached the provider's session opened since: %q", stepUpOf(c.root, since))
+	}
+	if stepUpOf(c.root, fresh) != "" {
+		t.Errorf("the passkey session opened since is held: %q", stepUpOf(c.root, fresh))
+	}
+	if stepUpOf(c.root, held) == "" {
+		t.Error("the passkey session open when it was reported is not held")
+	}
+}
+
+// A session that proved it is its person after a compromise was reported
+// is not held again when the same event is sent again after a restart. It
+// was held once more, and its person had to prove it again as often as the
+// event was sent in the three days it is accepted.
+func TestACompromiseSentAgainDoesNotHoldASessionThatProvedItSince(t *testing.T) {
+	c := signalsStore(t, "email")
+	c.connect(t, "oidc")
+	iat := time.Now().Add(-time.Hour)
+	passkey := session(t, c.root, "passkey:old", "ada@example.com", auth.MethodPasskey)
+	backdate(t, c.root, "passkey:old", iat.Add(-10*time.Minute))
+	compromised := c.tx.event(t, riscEvent+"credential-compromise", email("ada@example.com"), nil, iat)
+	if w := c.push(t, compromised); w.Code != http.StatusAccepted {
+		t.Fatalf("%d", w.Code)
+	}
+	if stepUpOf(c.root, passkey) == "" {
+		t.Fatal("the passkey session open when it was reported is not held")
+	}
+	ts, _ := loadTokens(c.root)
+	for _, tok := range ts.Snapshot() {
+		if tok.Name == "passkey:old" {
+			if err := ts.ClearStepUp(tok.ID); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := saveTokens(c.root, ts); err != nil {
+		t.Fatal(err)
+	}
+
+	c.restart(t)
+	if w := c.push(t, compromised); w.Code != http.StatusAccepted {
+		t.Fatalf("sent again: %d", w.Code)
+	}
+	if held := stepUpOf(c.root, passkey); held != "" {
+		t.Errorf("sent again after a restart, the compromise held the session that had proved it since: %q", held)
+	}
+}
+
+// An account-disabled older than an account-enabled already acted on is a
+// retry that arrived late, and the person the provider enabled since stays
+// enabled, after a restart and with the stream turned off and connected
+// again too. The transmitter sent the disable, which failed once here, then
+// the enable; its retry of the disable came last and suspended the person
+// again. A disable newer than both still suspends.
+func TestAnOlderDisableDoesNotUndoANewerEnable(t *testing.T) {
+	c := signalsStore(t, "email")
+	c.connect(t, "oidc")
+	now := time.Now()
+	disabled := c.tx.event(t, riscEvent+"account-disabled", email("ada@example.com"), nil, now.Add(-10*time.Minute))
+	// The first try fails: the policy cannot be read, so the transmitter is
+	// told to send it again.
+	kept, err := os.ReadFile(policyPath(c.root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(policyPath(c.root), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if w := c.push(t, disabled); w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("with the policy unreadable the disable was answered %d", w.Code)
+	}
+	if err := os.WriteFile(policyPath(c.root), kept, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c.send(t, riscEvent+"account-enabled", email("ada@example.com"), nil, now.Add(-5*time.Minute))
+
+	reads := func(when string) {
+		t.Helper()
+		p, _ := loadPolicy(c.root)
+		if !p.Evaluate("ada@example.com", auth.ActView, "/").Allowed {
+			t.Fatalf("%s, the disable sent before the enable suspended her again", when)
+		}
+	}
+	if w := c.push(t, disabled); w.Code != http.StatusAccepted {
+		t.Fatalf("the late retry was answered %d", w.Code)
+	}
+	reads("retried late")
+	c.restart(t)
+	if w := c.push(t, disabled); w.Code != http.StatusAccepted {
+		t.Fatalf("after a restart the late retry was answered %d", w.Code)
+	}
+	reads("after a restart")
+	if err := cmdSignals(c.root, []string{"off"}); err != nil {
+		t.Fatal(err)
+	}
+	c.connect(t, "oidc")
+	if w := c.push(t, c.tx.event(t, riscEvent+"account-purged", email("ada@example.com"), nil, now.Add(-7*time.Minute))); w.Code != http.StatusAccepted {
+		t.Fatalf("an old purge was answered %d", w.Code)
+	}
+	reads("with the stream connected again")
+	stale := signalsActions(t, c.root)["signals.stale"]
+	if len(stale) != 3 || stale[0].Outcome != audit.Denied || stale[0].Detail["type"] != "account-disabled" {
+		t.Errorf("recorded as stale: %+v", stale)
+	}
+
+	c.send(t, riscEvent+"account-disabled", email("ada@example.com"), nil, now)
+	if p, _ := loadPolicy(c.root); p.Evaluate("ada@example.com", auth.ActView, "/").Allowed {
+		t.Error("a disable newer than the enable did not suspend her")
+	}
+}
+
+// A disable already acted on, sent again after a restart, does not put back
+// a suspension somebody lifted by hand since: it is a copy, not the
+// provider's word again. A disable it sends later still suspends.
+func TestADisableSentAgainDoesNotUndoALiftByHand(t *testing.T) {
+	c := signalsStore(t, "email")
+	c.connect(t, "oidc")
+	disabled := c.tx.event(t, riscEvent+"account-disabled", email("ada@example.com"), nil, time.Now().Add(-time.Hour))
+	if w := c.push(t, disabled); w.Code != http.StatusAccepted {
+		t.Fatalf("%d", w.Code)
+	}
+	can := func() bool {
+		p, _ := loadPolicy(c.root)
+		return p.Evaluate("ada@example.com", auth.ActView, "/").Allowed
+	}
+	if can() {
+		t.Fatal("the disable did not suspend her")
+	}
+	if _, err := updatePolicy(c.root, func(p *auth.Policy) error {
+		kept := p.Bindings[:0]
+		for _, b := range p.Bindings {
+			if !(b.Deny && b.Principal == "ada@example.com") {
+				kept = append(kept, b)
+			}
+		}
+		p.Bindings = kept
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	c.restart(t)
+	if w := c.push(t, disabled); w.Code != http.StatusAccepted {
+		t.Fatalf("sent again: %d", w.Code)
+	}
+	if !can() {
+		t.Error("sent again after a restart, the disable undid the lift made by hand")
+	}
+	if stale := signalsActions(t, c.root)["signals.stale"]; len(stale) != 1 {
+		t.Errorf("recorded as stale: %+v", stale)
+	}
+	c.send(t, riscEvent+"account-disabled", email("ada@example.com"), nil, time.Now())
+	if can() {
+		t.Error("a newer disable did not suspend her")
+	}
+}
+
 // The last person who can grant access is not shut out on the provider's
 // word: their sessions end, no deny is added, and the security contact is
 // told.
@@ -873,7 +1079,7 @@ func TestTwoAdministratorsDisabledAtOnceLeaveOneWhoCanGrant(t *testing.T) {
 			t.Fatal(err)
 		}
 		if err := updateSignals(c.root, func(s *signalsConfig) error {
-			s.Hour, s.LastActed = signalsHour{}, nil
+			s.Hour, s.LastActed, s.LastDisabled, s.LastEnabled = signalsHour{}, nil, nil, nil
 			return nil
 		}); err != nil {
 			t.Fatal(err)
@@ -897,7 +1103,7 @@ func TestTwoAdministratorsDisabledAtOnceLeaveOneWhoCanGrant(t *testing.T) {
 	}
 }
 
-// Twenty people an hour; the twenty-first is not acted on, the cap is
+// Twenty people an hour; the twenty-first is not acted on yet, the cap is
 // recorded once, and the security contact is told once.
 func TestNoMoreThanTwentyPeopleAnHourAreActedOn(t *testing.T) {
 	c := signalsStore(t, "email")
@@ -912,7 +1118,13 @@ func TestNoMoreThanTwentyPeopleAnHourAreActedOn(t *testing.T) {
 	}
 	last := session(t, c.root, "oidc:p21@example.com", "p21@example.com", auth.MethodSSO)
 	for i := 1; i <= 22; i++ {
-		c.send(t, caepEvent+"session-revoked", email(fmt.Sprintf("p%d@example.com", i)), nil, time.Now())
+		if i <= signalsCap {
+			c.send(t, caepEvent+"session-revoked", email(fmt.Sprintf("p%d@example.com", i)), nil, time.Now())
+			continue
+		}
+		if w := c.push(t, c.tx.event(t, caepEvent+"session-revoked", email(fmt.Sprintf("p%d@example.com", i)), nil, time.Now())); w.Code != http.StatusServiceUnavailable {
+			t.Fatalf("person %d, past the cap, was answered %d", i, w.Code)
+		}
 	}
 	if !works(c.root, last) {
 		t.Error("the twenty-first person was acted on")
@@ -931,11 +1143,13 @@ func TestNoMoreThanTwentyPeopleAnHourAreActedOn(t *testing.T) {
 	}
 }
 
-// What the cap says is what it does. An event past it is accepted, so the
-// transmitter does not send it again, and it is never acted on; the
-// security contact was told the rest were acted on once the hour was over,
-// and somebody reading that would have waited for an offboarding that was
-// not coming.
+// What the cap says is what it does. An event past it is told to come
+// again, and is acted on when it does; the security contact is told so,
+// and that the provider's own log says whom it disabled for anybody who
+// will not wait. It was told once that the rest were acted on when the
+// hour was over, while they were accepted and never acted on, and then
+// that they were never acted on, while a transmitter that would have sent
+// them again was told not to.
 func TestTheCapSaysWhatBecomesOfWhatItHeldBack(t *testing.T) {
 	c := signalsStore(t, "email")
 	c.connect(t, "oidc")
@@ -948,22 +1162,99 @@ func TestTheCapSaysWhatBecomesOfWhatItHeldBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := 1; i <= signalsCap+1; i++ {
-		c.send(t, riscEvent+"account-disabled", email(fmt.Sprintf("p%d@example.com", i)), nil, time.Now())
+		c.push(t, c.tx.event(t, riscEvent+"account-disabled", email(fmt.Sprintf("p%d@example.com", i)), nil, time.Now()))
 	}
 	sent := c.mails()
 	if len(sent) != 1 {
 		t.Fatalf("mailed %d", len(sent))
 	}
 	body := sent[0].Body
-	if strings.Contains(body, "until the hour is over") || !strings.Contains(body, "never acted on") ||
+	if strings.Contains(body, "never acted on") || !strings.Contains(body, "acted on when the provider sends them again") ||
 		!strings.Contains(body, "by hand") {
 		t.Errorf("the security contact was told %q", body)
 	}
 	if err := cmdSignals(c.root, []string{"status"}); err != nil {
 		t.Fatal(err)
 	}
-	if said := w.Out.(*bytes.Buffer).String(); !strings.Contains(said, "1 past the hourly cap, never acted on") {
+	if said := w.Out.(*bytes.Buffer).String(); !strings.Contains(said, "1 past the hourly cap, told to send it again later") {
 		t.Errorf("the status says %q", said)
+	}
+}
+
+// Past the cap an event is not lost: the transmitter is told to send it
+// again once the hour's window frees, its id is not remembered as seen,
+// and sent again then it is acted on, at the capped rate. Twenty-five
+// people disabled at once, a layoff larger than the cap, had five accepted
+// and never acted on: told yes, the transmitter never sent them again.
+func TestEventsPastTheCapWaitAndAreActedOnWhenSentAgain(t *testing.T) {
+	c := signalsStore(t, "email")
+	c.connect(t, "oidc")
+	const people = 25
+	who := func(i int) string { return fmt.Sprintf("p%d@example.com", i) }
+	if _, err := updatePolicy(c.root, func(p *auth.Policy) error {
+		for i := 1; i <= people; i++ {
+			p.Bindings = append(p.Bindings, auth.Binding{Principal: who(i), Role: auth.RoleReader, Resource: "/"})
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var waiting []string
+	for i := 1; i <= people; i++ {
+		token := c.tx.event(t, riscEvent+"account-disabled", email(who(i)), nil, time.Now())
+		w := c.push(t, token)
+		if i <= signalsCap {
+			if w.Code != http.StatusAccepted {
+				t.Fatalf("person %d was answered %d", i, w.Code)
+			}
+			continue
+		}
+		after, err := strconv.Atoi(w.Header().Get("Retry-After"))
+		if w.Code != http.StatusServiceUnavailable || err != nil || after < 3000 || after > 3601 {
+			t.Fatalf("person %d, past the cap, was answered %d with Retry-After %q", i, w.Code, w.Header().Get("Retry-After"))
+		}
+		waiting = append(waiting, token)
+	}
+	suspended := func() int {
+		p, _ := loadPolicy(c.root)
+		n := 0
+		for i := 1; i <= people; i++ {
+			if !p.Evaluate(who(i), auth.ActView, "/").Allowed {
+				n++
+			}
+		}
+		return n
+	}
+	if n := suspended(); n != signalsCap {
+		t.Fatalf("%d suspended in the first hour", n)
+	}
+	if n := readSignals(t, c.root).Counts; n.Received != signalsCap || n.Acted != signalsCap || n.Capped != people-signalsCap {
+		t.Errorf("counted %+v", n)
+	}
+	if acts := signalsActions(t, c.root); len(acts["signals.capped"]) != 1 {
+		t.Errorf("the cap was recorded %d times", len(acts["signals.capped"]))
+	}
+
+	// The hour is over, and the transmitter sends them again.
+	if err := updateSignals(c.root, func(s *signalsConfig) error {
+		s.Hour.Start = s.Hour.Start.Add(-time.Hour)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, token := range waiting {
+		if w := c.push(t, token); w.Code != http.StatusAccepted {
+			t.Fatalf("sent again after the hour, an event was answered %d", w.Code)
+		}
+	}
+	if n := suspended(); n != people {
+		t.Errorf("%d of %d suspended once the hour was over", n, people)
+	}
+	if n := readSignals(t, c.root).Counts; n.Received != people || n.Acted != people || n.Capped != people-signalsCap {
+		t.Errorf("counted %+v", n)
+	}
+	if sent := c.mails(); len(sent) != 1 {
+		t.Errorf("mailed %d", len(sent))
 	}
 }
 
@@ -1133,6 +1424,49 @@ func TestTheStatusSaysWhatTheStreamDid(t *testing.T) {
 	}
 	if strings.Contains(filepath.Base(signalsPath(c.root)), "token") {
 		t.Error("an odd name for the file")
+	}
+}
+
+// The status's counts in JSON are the ones it prints, and none of the
+// receiver's own bookkeeping: how many refusals wait to be summarised in
+// the audit log, and when the last summary was, are signals.json's to keep
+// and nobody's contract.
+func TestTheStatusCountsAreOnlyTheOnesItSays(t *testing.T) {
+	c := signalsStore(t, "email")
+	c.connect(t, "oidc")
+	c.send(t, caepEvent+"session-revoked", email("nobody@example.com"), nil, time.Now())
+	for i := 0; i < 2; i++ {
+		c.pushWith(t, "Bearer qzsig_a-guess", "application/secevent+jwt", "x")
+	}
+	if n := readSignals(t, c.root).Counts; n.Unnoted == 0 || n.RefusedNoted.IsZero() {
+		t.Fatalf("the receiver kept no bookkeeping to leave out: %+v", n)
+	}
+	var buf bytes.Buffer
+	w = out.New(true)
+	w.Out = &buf
+	if err := cmdSignals(c.root, []string{"status"}); err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Counts map[string]any `json:"counts"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("%s (%v)", buf.Bytes(), err)
+	}
+	want := map[string]bool{"received": true, "acted": true, "unmatched": true, "refused": true, "capped": true,
+		"last_at": true, "last_type": true}
+	for k := range got.Counts {
+		if !want[k] {
+			t.Errorf("the JSON counts carry %q", k)
+		}
+	}
+	for k := range want {
+		if _, ok := got.Counts[k]; !ok {
+			t.Errorf("the JSON counts lost %q", k)
+		}
+	}
+	if got.Counts["refused"] != float64(2) || got.Counts["unmatched"] != float64(1) {
+		t.Errorf("counts %v", got.Counts)
 	}
 }
 

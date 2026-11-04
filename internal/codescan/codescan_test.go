@@ -209,3 +209,32 @@ func TestSecretSpansCoverTheWholeCredential(t *testing.T) {
 		t.Fatal("a placeholder value was taken for a key")
 	}
 }
+
+// Every secret Quilzo makes is found, not only a person's token: the push
+// secret for the identity provider's stream, the provisioning token, an
+// app's refresh token and authorization code, and an enrolment link's
+// secret. Each, pasted into a page or a chat, was neither flagged nor
+// masked, because the rule knew qz_ alone, and all but the enrolment
+// secret are written in an alphabet it did not read. The whole of each is
+// covered, so a mask leaves none of it; a client id, which is public, is
+// not one.
+func TestItFindsEverySecretQuilzoMakes(t *testing.T) {
+	const b64 = "Zx9-Yw8_Vu7tS6rQ5pO4nM3lK2jI1hG0fEd-CbA9_xY"          // 32 bytes, base64url
+	const b32 = "mfrggzdfmztwq2lknnwg23tpobyxe43uov3ho6dzpiyteyzrgm3d" // 32 bytes, lowercase base32
+	for _, secret := range []string{"qzsig_" + b64, "qzscim_" + b64, "qzrt_" + b64, "qzac_" + b64, "qzenrol_" + b32} {
+		text := "here it is: Bearer " + secret + ", keep it safe"
+		if has(scan(Content, text), "secret.quilzo-secret") == nil {
+			t.Errorf("not found: %s", secret[:8])
+		}
+		covered := false
+		for _, s := range SecretSpans(text) {
+			covered = covered || text[s[0]:s[1]] == secret
+		}
+		if !covered {
+			t.Errorf("the mask does not cover all of %s: %v", secret[:8], SecretSpans(text))
+		}
+	}
+	if spans := SecretSpans("the app is qzc_0123456789abcdef"); len(spans) != 0 {
+		t.Errorf("a client id was taken for a secret: %v", spans)
+	}
+}
