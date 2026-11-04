@@ -315,3 +315,36 @@ func testRun(t *testing.T, root string) siteRun {
 	}
 	return siteRun{root: root, store: s, index: "index", ref: site.RefLive, shield: newShieldHost(root)}
 }
+
+// Asking a publisher for a typeface took nothing from an author or a reader.
+//
+// `theme font` asked for publish under a `theme` that asked an author's
+// authority, which the table forbids (a specific key narrows its parent, so
+// the next subcommand somebody adds arrives guarded). So `theme` is strict
+// now, and each subcommand that fell through to it says what it asked
+// before; a bare `quilzo theme` is asked as the `show` it runs.
+func TestThemeSubcommandsAskWhatTheyAskedBefore(t *testing.T) {
+	for args, want := range map[string]auth.Action{
+		"":         auth.ActView,
+		"show":     auth.ActView,
+		"tokens":   auth.ActView,
+		"check":    auth.ActView,
+		"fonts":    auth.ActView,
+		"css":      auth.ActView,
+		"export":   auth.ActView,
+		"set":      auth.ActEditDraft,
+		"unset":    auth.ActEditDraft,
+		"apply":    auth.ActEditDraft,
+		"generate": auth.ActEditDraft,
+		"import":   auth.ActEditDraft,
+		"styles":   auth.ActEditDraft,
+		"font add": auth.ActPublish,
+		// One added later and not listed.
+		"rename": auth.ActPublish,
+	} {
+		n, ok := lookupNeed("theme", strings.Fields(args))
+		if !ok || n.action != want {
+			t.Errorf("quilzo theme %s asks %q, want %q", args, n.action, want)
+		}
+	}
+}

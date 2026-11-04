@@ -32,7 +32,8 @@ import (
 
 func cmdTheme(root string, args []string) error {
 	if len(args) == 0 {
-		args = []string{"show"}
+		// The entry the privilege gate reads for a bare `quilzo theme`.
+		args = []string{bareRuns["theme"]}
 	}
 	switch args[0] {
 	case "show":
