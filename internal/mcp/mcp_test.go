@@ -322,3 +322,46 @@ func TestStandardInputAnswersTheRevisionAskedFor(t *testing.T) {
 		}
 	}
 }
+
+// What an operation answers with is text an agent can read: a string as it
+// is, and anything else as JSON. shield_status answered with a map, and the
+// text was Go's own notation for one, "map[active:[] held:false ...]",
+// which no client can parse.
+func TestAnAnswerThatIsNotTextIsJSON(t *testing.T) {
+	type entry struct {
+		Name  string `json:"name"`
+		Count int    `json:"count"`
+	}
+	answers := map[string]any{
+		"a_map":    map[string]any{"active": []any{}, "held": false, "count": 2},
+		"a_struct": entry{Name: "lockdown", Count: 3},
+		"a_list":   []entry{{Name: "freeze", Count: 1}},
+		"nothing":  nil,
+	}
+	s := NewServer("t", "1")
+	s.Authorise = allowAll
+	for name, answer := range answers {
+		s.Register(Operation{Name: name, Summary: "answers"},
+			func(map[string]any) (any, error) { return answer, nil })
+	}
+	s.Register(Operation{Name: "words", Summary: "answers"},
+		func(map[string]any) (any, error) { return "no blocking failures", nil })
+	for name, answer := range answers {
+		got := text(t, call(t, s, "tools/call", callParams{
+			Name: "quilzo_read", Arguments: map[string]any{"operation": name}}))
+		var back, want any
+		if err := json.Unmarshal([]byte(got), &back); err != nil {
+			t.Errorf("%s answered %q, which is not JSON", name, got)
+			continue
+		}
+		raw, _ := json.Marshal(answer)
+		_ = json.Unmarshal(raw, &want)
+		if a, b := fmt.Sprint(back), fmt.Sprint(want); a != b {
+			t.Errorf("%s answered %s, not %s", name, got, raw)
+		}
+	}
+	if got := text(t, call(t, s, "tools/call", callParams{
+		Name: "quilzo_read", Arguments: map[string]any{"operation": "words"}})); got != "no blocking failures" {
+		t.Errorf("a string answered %q", got)
+	}
+}

@@ -58,6 +58,7 @@
 package mcp
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -544,7 +545,35 @@ func (s *Server) call(raw json.RawMessage) (any, *Error) {
 		}
 		return nil, &Error{Code: CodeInternal, Message: err.Error()}
 	}
-	return textResult(fmt.Sprintf("%v", result)), nil
+	text, err := answerText(result)
+	if err != nil {
+		return nil, &Error{Code: CodeInternal, Message: err.Error()}
+	}
+	return textResult(text), nil
+}
+
+// answerText is an operation's answer as the text an agent reads: a string
+// as it is, and anything else as JSON.
+//
+// It was fmt's %v of whatever came back, so an operation that answered with
+// a map or a struct, as shield_status and eval_results do, gave Go's own
+// notation for it, "map[active:[] held:false ...]", which no client can
+// parse. Without HTML escaping, since nobody renders it as a page and a
+// "<" written as \u003c is one more thing for an agent to undo.
+func answerText(v any) (string, error) {
+	switch t := v.(type) {
+	case string:
+		return t, nil
+	case fmt.Stringer:
+		return t.String(), nil
+	}
+	var b bytes.Buffer
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return "", fmt.Errorf("the answer could not be written as JSON: %w", err)
+	}
+	return strings.TrimSuffix(b.String(), "\n"), nil
 }
 
 // callDirect performs one of another server's tools, through the host.
