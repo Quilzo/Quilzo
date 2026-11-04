@@ -129,8 +129,10 @@ services:
       - site
       - --addr
       - 0.0.0.0:8081
+      # The address visitors use, port and all: on 443 the site leaves the
+      # port out of its links, and on any other port they name it.
       - --base-url
-      - https://${QUILZO_DOMAIN:?set QUILZO_DOMAIN in deploy/.env}
+      - https://${QUILZO_DOMAIN:?set QUILZO_DOMAIN in deploy/.env}:${QUILZO_HTTPS_PORT:-443}
     volumes:
       - store:/srv/store
       # The site reads the design; only the admin changes it.
@@ -151,16 +153,22 @@ services:
     read_only: true
     cap_drop: [ALL]
     # Ports 80 and 443 are below 1024, and binding them is the one privilege
-    # Caddy needs.
+    # Caddy needs (on other ports it needs none, and keeps this all the same).
     cap_add: [NET_BIND_SERVICE]
     security_opt: ["no-new-privileges:true"]
     tmpfs: ["/tmp:size=64m"]
+    # The same port inside as out. Caddy listens on the ports .env gives
+    # (Caddyfile.compose), so the addresses it names itself -- the redirect
+    # from HTTP, the Alt-Svc offering HTTP/3 -- are ones a browser reaches;
+    # published elsewhere than it listens, they named :443 regardless.
     ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
+      - "${QUILZO_HTTP_PORT:-80}:${QUILZO_HTTP_PORT:-80}"
+      - "${QUILZO_HTTPS_PORT:-443}:${QUILZO_HTTPS_PORT:-443}"
+      - "${QUILZO_HTTPS_PORT:-443}:${QUILZO_HTTPS_PORT:-443}/udp"
     environment:
       QUILZO_DOMAIN: ${QUILZO_DOMAIN:?set QUILZO_DOMAIN in deploy/.env}
+      QUILZO_HTTP_PORT: ${QUILZO_HTTP_PORT:-80}
+      QUILZO_HTTPS_PORT: ${QUILZO_HTTPS_PORT:-443}
     volumes:
       - ./Caddyfile.compose:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
@@ -176,14 +184,17 @@ services:
         # place, not a proof: anything else on this network could write the
         # header too. So the network holds only Caddy and the site, and this
         # is the address to name.
-        ipv4_address: 172.31.250.10
+        #
+        # From .env, as the range is, so the README's trusted_proxies step
+        # names the address Caddy has rather than a copy of it.
+        ipv4_address: ${QUILZO_PROXY_ADDRESS:-172.31.250.10}
     depends_on: [site]
 
 networks:
   edge:
     ipam:
       config:
-        - subnet: 172.31.250.0/28
+        - subnet: ${QUILZO_EDGE_SUBNET:-172.31.250.0/28}
   admin: {}
 
 volumes:

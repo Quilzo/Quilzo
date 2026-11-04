@@ -6,8 +6,23 @@
 #
 # The admin is deliberately absent: it has a Caddy of its own, published on
 # the host's loopback only (Caddyfile.admin). See deploy/README.md.
+{
+	# The ports this listens on are the ports it is published on, from
+	# deploy/.env, so the addresses it names itself -- the redirect from HTTP
+	# and the Alt-Svc that offers HTTP/3 -- are ones a browser can reach.
+	#
+	# The HTTPS port is on the site's address below rather than here.
+	# Caddy's redirect names the site's port only when it differs from
+	# https_port, so setting https_port to it redirected
+	# http://localhost:18580/about to https://localhost/about.
+	http_port {$QUILZO_HTTP_PORT:80}
+	# With QUILZO_DOMAIN=localhost the certificate comes from Caddy's own
+	# authority, which is for the computer you browse from: this container
+	# has no trust store to install it in, and trying is an error in its log.
+	skip_install_trust
+}
 
-{$QUILZO_DOMAIN} {
+{$QUILZO_DOMAIN}:{$QUILZO_HTTPS_PORT:443} {
 	reverse_proxy site:8081
 	encode zstd gzip
 

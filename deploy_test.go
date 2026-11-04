@@ -5,6 +5,7 @@ package main
 
 import (
 	"fmt"
+	"net/netip"
 	"regexp"
 	"slices"
 	"strings"
@@ -634,3 +635,99 @@ func TestComposeEnrolmentLinkNamesThePublishedAdmin(t *testing.T) {
 	}
 }
 
+// Finding STACK-F11. The site was given --base-url https://DOMAIN, right on
+// 443 only: with Caddy published elsewhere, the sitemap and every canonical
+// link named a port nothing listened on. The port Caddy is published on, the
+// port it believes it serves (so its redirects and Alt-Svc name it too), and
+// the site's address all come from the one variable; the store is told the
+// same address for what the admin sends out, newsletters and share links.
+func TestComposeSiteURLNamesThePublishedPort(t *testing.T) {
+	svc := services(t)
+	caddy := svc["caddy"]
+	const https = "${QUILZO_HTTPS_PORT:-443}"
+	want := map[string]bool{https + ":" + https: false, https + ":" + https + "/udp": false}
+	for _, p := range strs(caddy["ports"]) {
+		if _, ok := want[p]; ok {
+			want[p] = true
+		}
+	}
+	for p, seen := range want {
+		if !seen {
+			t.Errorf("caddy does not publish %q: the port inside and out must be one, or Caddy's "+
+				"redirects and Alt-Svc name a port nobody can reach", p)
+		}
+	}
+	env, _ := caddy["environment"].(map[string]any)
+	if _, ok := env["QUILZO_HTTPS_PORT"]; !ok {
+		t.Error("caddy is not told QUILZO_HTTPS_PORT")
+	}
+	cf := read(t, "deploy/Caddyfile.compose")
+	if !strings.Contains(cf, "\n{$QUILZO_DOMAIN}:{$QUILZO_HTTPS_PORT:443} {") {
+		t.Error("Caddyfile.compose does not serve the site on QUILZO_HTTPS_PORT")
+	}
+	if !strings.Contains(cf, "http_port {$QUILZO_HTTP_PORT:80}") {
+		t.Error("Caddyfile.compose does not listen for HTTP on QUILZO_HTTP_PORT")
+	}
+	// Caddy's redirect from HTTP leaves the site's port out when it is
+	// https_port, so https_port must not be set to it.
+	if regexp.MustCompile(`(?m)^\s*https_port\s`).MatchString(cf) {
+		t.Error("Caddyfile.compose sets https_port, so its redirect from HTTP drops the port")
+	}
+	base := flagValue(strs(svc["site"]["command"]), "base-url")
+	if base != "https://${QUILZO_DOMAIN:?set QUILZO_DOMAIN in deploy/.env}:"+https {
+		t.Errorf("the site's --base-url is %q, which does not name the port Caddy is published on", base)
+	}
+	steps := composeSteps(t)
+	at := stepIndex(steps, "config", "set", "site.base_url", `"https://$QUILZO_DOMAIN:$QUILZO_HTTPS_PORT"`)
+	if at < 0 {
+		t.Error("the README does not tell the store the site's address, so the demonstration " +
+			"sets it to http://127.0.0.1:8081 and every link the admin sends out names that")
+	} else if demo := stepIndex(steps, "demo"); demo >= 0 && demo < at {
+		t.Error("the site's address is set after the demonstration, which sets its own when there is none")
+	}
+	if envDefaults(t)["QUILZO_HTTPS_PORT"] != "443" {
+		t.Error("compose.env.example does not set QUILZO_HTTPS_PORT=443")
+	}
+}
+
+// The site believes X-Forwarded-For from one address, Caddy's, and the
+// README tells the store that address. They were two copies of
+// 172.31.250.10, and the edge network's range a third: on a machine where
+// that range was taken -- by a second stack, as the test machine's was -- the
+// stack could not be made at all, and moving it meant editing three places
+// that had to agree. Now .env holds the range and the address once, and the
+// default address is in the default range.
+func TestComposeTrustsTheAddressCaddyHas(t *testing.T) {
+	top := composeFile(t)
+	nets, _ := top["networks"].(map[string]any)
+	edge, _ := nets["edge"].(map[string]any)
+	ipam, _ := edge["ipam"].(map[string]any)
+	cfg, _ := ipam["config"].([]any)
+	if len(cfg) != 1 {
+		t.Fatal("the edge network has no single address range")
+	}
+	subnet, _ := cfg[0].(map[string]any)["subnet"].(string)
+	if subnet != "${QUILZO_EDGE_SUBNET:-172.31.250.0/28}" {
+		t.Errorf("the edge network's range is %q, not QUILZO_EDGE_SUBNET", subnet)
+	}
+	caddyNets, _ := services(t)["caddy"]["networks"].(map[string]any)
+	onEdge, _ := caddyNets["edge"].(map[string]any)
+	if addr, _ := onEdge["ipv4_address"].(string); addr != "${QUILZO_PROXY_ADDRESS:-172.31.250.10}" {
+		t.Errorf("caddy's address on edge is %q, not QUILZO_PROXY_ADDRESS", addr)
+	}
+	if stepIndex(composeSteps(t), "config", "set", "network.trusted_proxies", `"$QUILZO_PROXY_ADDRESS"`) < 0 {
+		t.Error("the README does not trust QUILZO_PROXY_ADDRESS, the address .env gives Caddy")
+	}
+	env := envDefaults(t)
+	pfx, err := netip.ParsePrefix(env["QUILZO_EDGE_SUBNET"])
+	if err != nil {
+		t.Fatalf("compose.env.example's QUILZO_EDGE_SUBNET: %v", err)
+	}
+	addr, err := netip.ParseAddr(env["QUILZO_PROXY_ADDRESS"])
+	if err != nil || !pfx.Contains(addr) {
+		t.Errorf("compose.env.example gives Caddy %q, which is not in %s", env["QUILZO_PROXY_ADDRESS"], pfx)
+	}
+	if pfx.String() != "172.31.250.0/28" || addr.String() != "172.31.250.10" {
+		t.Errorf("compose.env.example's defaults (%s, %s) are not compose.yaml's", pfx, addr)
+	}
+}

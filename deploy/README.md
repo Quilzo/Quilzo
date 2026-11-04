@@ -24,9 +24,10 @@ cp compose.env.example .env    # then set QUILZO_DOMAIN in .env
 set -a; . ./.env; set +a       # so the steps below name the addresses in .env
 docker compose run --rm admin init
 docker compose run --rm admin auditlog dir /srv/audit
-docker compose run --rm admin config set network.trusted_proxies 172.31.250.10
+docker compose run --rm admin config set network.trusted_proxies "$QUILZO_PROXY_ADDRESS"
 docker compose run --rm admin config set admin.behind_tls_proxy true
 docker compose run --rm admin config set admin.base_url "https://localhost:$QUILZO_ADMIN_PORT"
+docker compose run --rm admin config set site.base_url "https://$QUILZO_DOMAIN:$QUILZO_HTTPS_PORT"
 docker compose run --rm admin demo --examples /srv/templates/examples
 docker compose run --rm admin init --admin you
 docker compose up -d
@@ -46,12 +47,16 @@ What each one is for:
   is running for every step after this one.)
 - `network.trusted_proxies` is Caddy's fixed address on the network it
   shares with the site, the one address the site believes `X-Forwarded-For`
-  from (see the note in `compose.yaml`).
+  from (see the note in `compose.yaml`). `.env` gives it, with the network's
+  range, so it can be moved if this machine already uses that range.
 - `admin.behind_tls_proxy` and `admin.base_url` say what the admin is: served
   over HTTPS by `admin-proxy`, at `https://localhost:` and the port in
   `.env`. The session cookie is Secure because of the first, and the second
   is the address every link to the admin names, the enrolment link below
   among them, so both come before it.
+- `site.base_url` is the site's address, for what the admin sends out:
+  newsletters, share links, booking confirmations. The site itself is given
+  the same one by `compose.yaml`. On 443 the port is left out of both.
 - `demo` installs Marginalia, the demonstration: a design, eleven pages and
   a small shop, published, so the site has something to serve the moment it
   starts. Its design goes to the `templates` volume, which the admin writes
