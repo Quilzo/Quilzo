@@ -648,7 +648,7 @@ func Scan(s State, suppressions []Suppression) Report {
 				Rule:     "suppression.expired",
 				Title:    "An accepted risk has come back",
 				Severity: Low,
-				Resource: sp.ID,
+				Resource: sp.ID, People: []string{sp.By},
 				Detail: fmt.Sprintf("%q was suppressed by %s until %s; that has passed",
 					sp.ID, sp.By, time.Unix(sp.Until, 0).UTC().Format("2006-01-02")),
 				Fix:      "quilzo posture suppress " + sp.ID + " --days 90 --reason ...",

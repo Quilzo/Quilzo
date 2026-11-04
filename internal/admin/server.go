@@ -3005,7 +3005,34 @@ func (s *Server) handleSecurity(w http.ResponseWriter, r *http.Request) {
 		"Title": "Security", "Principal": p, "Low": low,
 		"Report": rep, "Controls": controls, "Band": band(rep.Score),
 		"Throttled": s.throttled(), "Ran": ranAgo(rep.At),
+		"Holders": s.tokenHolders(rep.Findings),
 	})
+}
+
+// tokenHolders is whose token each finding about a token is about, by the
+// token id that is the finding's resource.
+//
+// A finding names a token by its name and id and not its holder, because
+// it goes into exports, OSCAL and the audit stream and the holder's name
+// went with it in clear. The administrator reading this screen still has
+// to know whom to ask before revoking it, and this screen may show them.
+func (s *Server) tokenHolders(findings []posture.Finding) map[string]string {
+	if s.Tokens == nil || len(findings) == 0 {
+		return nil
+	}
+	about := map[string]bool{}
+	for _, f := range findings {
+		if f.Resource != "" {
+			about[f.Resource] = true
+		}
+	}
+	holders := map[string]string{}
+	for _, t := range s.Tokens.Snapshot() {
+		if about[t.ID] {
+			holders[t.ID] = t.Principal
+		}
+	}
+	return holders
 }
 
 // throttled is who is currently being slowed down, or nothing.

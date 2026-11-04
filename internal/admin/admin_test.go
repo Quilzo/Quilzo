@@ -859,6 +859,33 @@ func TestEveryRuleCanBeExplainedFromTheDashboard(t *testing.T) {
 	}
 }
 
+// A finding about a token says whose token it is on the Security screen,
+// from the token's id, since the finding itself no longer does.
+//
+// token.admin-role said "cli belongs to lee" in its text, which went into
+// every export and the audit stream; the text now names the token alone,
+// and an administrator still has to know whom to ask before revoking it.
+func TestTheSecurityScreenSaysWhoseTokenAFindingIsAbout(t *testing.T) {
+	srv, token := setup(t)
+	if _, _, err := srv.Tokens.Issue("deploy-bot", "lee", auth.RoleAdmin, "/", 30*24*time.Hour, auth.RoleAdmin); err != nil {
+		t.Fatal(err)
+	}
+	withPosture(srv, posture.Scan(posture.State{Policy: &auth.Policy{}, Tokens: srv.Tokens, Now: time.Now()}, nil))
+	var about string
+	for _, f := range srv.Posture().Findings {
+		if f.Rule == "token.admin-role" {
+			about = f.Detail + " " + f.Fix
+		}
+	}
+	if about == "" || strings.Contains(about, "lee") {
+		t.Fatalf("control: the finding is missing or names its holder: %q", about)
+	}
+	body := get(t, srv, "/security", token).Body.String()
+	if !strings.Contains(body, "Held by <strong>lee</strong>") {
+		t.Error("the Security screen does not say whose token the finding is about")
+	}
+}
+
 // The dogfooding rule applies here too, and a table of severities is the
 // easiest place to signal meaning with colour alone.
 func TestTheSecurityPagesPassOurOwnAccessibilityChecks(t *testing.T) {

@@ -79,6 +79,7 @@
 <article class="finding {{.Severity}}">
   <h3><span class="pill {{.Severity}}">{{sentence .Severity}}</span> {{.Title}}</h3>
   <p>{{.Detail}}</p>
+  {{with index $.Holders .Resource}}<p class="hint">Held by <strong>{{.}}</strong></p>{{end}}
   <div class="finding-foot">
   {{if .Fix}}{{with fixparts .Fix}}<p class="fix"><span class="label">Fix</span> {{if .Cmd}}<code>{{.Cmd}}</code>{{end}}{{if .Note}} <span class="fix-note">{{range .Note}}{{if .Code}}<code>{{.Text}}</code>{{else}}{{.Text}}{{end}}{{end}}</span>{{end}}</p>{{end}}{{end}}
   <p class="meta">
@@ -94,6 +95,7 @@
 <article class="finding {{.Severity}}">
   <h3><span class="pill {{.Severity}}">{{sentence .Severity}}</span> {{.Title}}</h3>
   <p>{{.Detail}}</p>
+  {{with index $.Holders .Resource}}<p class="hint">Held by <strong>{{.}}</strong></p>{{end}}
   <div class="finding-foot">
   {{if .Fix}}{{with fixparts .Fix}}<p class="fix"><span class="label">Fix</span> {{if .Cmd}}<code>{{.Cmd}}</code>{{end}}{{if .Note}} <span class="fix-note">{{range .Note}}{{if .Code}}<code>{{.Text}}</code>{{else}}{{.Text}}{{end}}{{end}}</span>{{end}}</p>{{end}}{{end}}
   <p class="meta">

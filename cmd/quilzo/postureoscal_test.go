@@ -139,3 +139,35 @@ func TestAnAcceptedRiskStaysInTheAssessmentResults(t *testing.T) {
 			"so its controls read as reviewed and clean", f.ID())
 	}
 }
+
+// quilzo posture says whose token a finding is about, from the token's id,
+// since the finding no longer names the holder.
+//
+// token.admin-role said "deploy-bot belongs to lee", which went into the
+// JSON and OSCAL output and the audit stream with it; the finding now
+// names the token alone, and somebody acting on it at the command line
+// still has to know whom to ask.
+func TestPostureSaysWhoseTokenAFindingIsAbout(t *testing.T) {
+	root := t.TempDir()
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	ts, err := loadTokens(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ts.Issue("deploy-bot", "lee", "admin", "/", 30*24*time.Hour, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveTokens(root, ts); err != nil {
+		t.Fatal(err)
+	}
+	text, _ := humanOutput(t, func() error { return postureScan(root, []string{"--templates", t.TempDir()}) })
+	at := strings.Index(text, "the token deploy-bot can change the access policy itself")
+	if at < 0 {
+		t.Fatalf("no token.admin-role finding about deploy-bot:\n%s", text)
+	}
+	if finding := text[at:]; !strings.Contains(finding[:min(len(finding), 300)], "held by lee") {
+		t.Errorf("the finding does not say whose token it is:\n%s", finding)
+	}
+}

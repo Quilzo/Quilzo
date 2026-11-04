@@ -527,9 +527,23 @@ func postureScan(root string, args []string) error {
 	if len(shown) == 0 {
 		w.Human("  %snothing at %s or above%s\n", green, floor, reset)
 	}
+	// Whose token each finding about a token is about, by the token id
+	// that is its resource. The finding names the token and not its holder,
+	// since it goes into the JSON, OSCAL and the audit stream and the
+	// holder's name went with it in clear; whoever acts on it here has to
+	// know whom to ask, as the Security screen tells them.
+	holders := map[string]string{}
+	if state.Tokens != nil {
+		for _, t := range state.Tokens.Snapshot() {
+			holders[t.ID] = t.Principal
+		}
+	}
 	for _, f := range shown {
 		w.Human("  %s%-8s%s %s\n", colourFor(f.Severity), f.Severity, reset, f.Title)
 		w.Human("           %s\n", f.Detail)
+		if who := holders[f.Resource]; who != "" && f.Resource != "" {
+			w.Human("           %sheld by %s%s\n", dim, onOneLine(who), reset)
+		}
 		if f.Fix != "" {
 			w.Human("           %sfix:%s %s\n", dim, reset, f.Fix)
 		}
