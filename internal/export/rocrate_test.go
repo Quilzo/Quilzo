@@ -4,7 +4,6 @@
 package export_test
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -13,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/quilzo/quilzo/internal/export"
-	"github.com/quilzo/quilzo/internal/importer"
 )
 
 func crateSite() export.Site {
@@ -110,7 +108,7 @@ func TestACrateReImportsToTheSameSite(t *testing.T) {
 		if !strings.HasPrefix(f.Path, "content/") {
 			continue
 		}
-		rep, err := importer.Import(importer.Markdown, bytes.NewReader(f.Body), when)
+		rep, err := export.Read(export.ROCrate, f.Body)
 		if err != nil {
 			t.Fatalf("%s: this tool could not read its own crate: %v", f.Path, err)
 		}
@@ -137,11 +135,11 @@ func TestACrateReImportsToTheSameSite(t *testing.T) {
 				t.Errorf("page %q field %q: %v became %v", name, k, v, back[k])
 			}
 		}
-		// The importer records the name in a slug field whether or not the
-		// export carried one. That adds no information the name did not
-		// already carry, so it is not a loss — but it has to equal the name,
-		// because a slug that disagreed with the page's name would point the
-		// destination's URLs somewhere else.
+		// The export writes the name in a slug field when the page has none,
+		// so Hugo and Astro find it. That adds no information the name did
+		// not already carry, so it is not a loss — but it has to equal the
+		// name, because a slug that disagreed with the page's name would
+		// point the destination's URLs somewhere else.
 		for k := range back {
 			if _, expected := want.(map[string]any)[k]; expected {
 				continue

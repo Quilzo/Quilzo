@@ -280,8 +280,14 @@ func exportMarkdown(s Site) ([]File, error) {
 			}
 			front = append(front, k+": "+v)
 		}
-		if t, ok := s.Changed[name]; ok && !t.IsZero() {
-			front = append(front, "date: "+t.UTC().Format("2006-01-02"))
+		// The day it last changed, unless the page has a date of its own: an
+		// event's day, say. Both were written, so the file gave the key twice,
+		// which a YAML reader refuses and the rest read as whichever came
+		// last, and the page could not be read back.
+		if _, own := fields["date"]; !own {
+			if t, ok := s.Changed[name]; ok && !t.IsZero() {
+				front = append(front, "date: "+t.UTC().Format("2006-01-02"))
+			}
 		}
 		// The page's own name, so a re-import gets it back.
 		//
@@ -295,8 +301,13 @@ func exportMarkdown(s Site) ([]File, error) {
 		//
 		// `slug` rather than a key of this tool's own invention because Hugo,
 		// Jekyll and Astro all already read it and mean the same thing by it.
+		//
+		// Quoted, as every other value is. It was the one written bare, so a
+		// page called 404 or 2024 had the number for a link, true a yes and
+		// null nothing, and a page read back on its own lost its name to its
+		// title's.
 		if _, already := fields["slug"]; !already {
-			front = append(front, "slug: "+name)
+			front = append(front, "slug: "+quoteYAML(name))
 			sort.Strings(front)
 		}
 

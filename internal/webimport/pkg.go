@@ -13,7 +13,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/assistant"
@@ -21,6 +20,7 @@ import (
 	"github.com/quilzo/quilzo/internal/menu"
 	"github.com/quilzo/quilzo/internal/section"
 	"github.com/quilzo/quilzo/internal/seo"
+	"github.com/quilzo/quilzo/internal/sheet"
 	"github.com/quilzo/quilzo/internal/tmpl"
 )
 
@@ -634,21 +634,15 @@ func pageName(u *url.URL) string {
 	}
 	var parts []string
 	for _, seg := range strings.Split(p, "/") {
-		var b strings.Builder
-		dash := false
-		for _, r := range strings.ToLower(seg) {
-			switch {
-			case r < 128 && (unicode.IsLetter(r) || unicode.IsDigit(r)):
-				b.WriteRune(r)
-				dash = false
-			case r == '\'' || r == '’':
-			case !dash && b.Len() > 0:
-				b.WriteByte('-')
-				dash = true
+		// Each part is made as a post's link is, and cut at 60 characters
+		// where a hyphen can end it. It was cut by clip, which ends what it
+		// cuts with "…", so a page at a long address came to a name no page
+		// may have and the whole package was refused.
+		if s := sheet.Slug(seg); s != "" {
+			if len(s) > 60 {
+				s = strings.TrimRight(s[:60], "-")
 			}
-		}
-		if s := strings.Trim(b.String(), "-"); s != "" {
-			parts = append(parts, clip(s, 60))
+			parts = append(parts, s)
 		}
 	}
 	if len(parts) == 0 {
@@ -656,6 +650,14 @@ func pageName(u *url.URL) string {
 	}
 	if len(parts) > 4 {
 		parts = parts[len(parts)-4:]
+	}
+	// The parts nearest the page are kept, as above, while they come to 121
+	// characters or fewer: two parts at their longest, with room for the
+	// number a name two pages share is given (-2, -3), under the 128 a
+	// package's page may have. Four parts of up to 60 came to as many as 243,
+	// and the whole package was refused for one page deep in long addresses.
+	for len(parts) > 1 && len(strings.Join(parts, "/")) > 121 {
+		parts = parts[1:]
 	}
 	return strings.Join(parts, "/")
 }
