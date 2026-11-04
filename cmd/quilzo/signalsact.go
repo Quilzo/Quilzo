@@ -23,10 +23,11 @@ import (
 // every one of them takes access away or gives back only what this took.
 //
 //	session-revoked, sessions-revoked, credential-change (update, revoke,
-//	delete)                      the provider's sessions for them end
+//	delete)                      the provider's sessions for them end, of
+//	                             those opened before the event was issued
 //	credential-compromise,       those end, and every other session they
-//	account-credential-change-   have must confirm it is them; the security
-//	required                     contact is told
+//	account-credential-change-   had open then must confirm it is them; the
+//	required                     security contact is told
 //	account-disabled,            suspended as SCIM suspends: every token,
 //	account-purged               every app they connected, and a deny over
 //	                             the whole site that sign-in refuses
@@ -189,16 +190,17 @@ func signalsDeliver(root string, set *ssf.SET, now time.Time) error {
 
 	d := cloneDetail(base)
 	d["subject"] = principal
+	before := signalsBefore(set)
 	switch act {
 	case signalsEndSessions:
-		n, err := endProviderSessions(root, principal, c.Provider, now)
+		n, err := endProviderSessions(root, principal, c.Provider, before, now)
 		if err != nil {
 			return err
 		}
 		d["count"] = fmt.Sprint(n)
 		signalsRecord(root, "signals.sessions-ended", audit.Success, d)
 	case signalsStepUp:
-		n, held, err := stepUpAfterCompromise(root, principal, c.Provider, now)
+		n, held, err := stepUpAfterCompromise(root, principal, c.Provider, before, now)
 		if err != nil {
 			return err
 		}
@@ -484,10 +486,28 @@ func providerPrefix(provider string) string {
 	return provider + ":"
 }
 
+// signalsBefore is the moment an event about sessions reaches back from:
+// those opened before it was issued, with the skew the receiver forgives
+// (ssf.DefaultSkew, which signalsReceivers builds it with) in case this
+// clock runs ahead of the transmitter's. A session opened after is one the
+// provider vouched for since, which the event says nothing about. A
+// restart forgets the ids already seen, and the same session-revoked sent
+// again ended the session the person had opened since, as often as it was
+// sent for the three days an event is accepted.
+func signalsBefore(set *ssf.SET) time.Time {
+	return set.IssuedAt.Add(ssf.DefaultSkew)
+}
+
+// openedBefore reports whether a credential was issued before a moment.
+func openedBefore(t auth.Token, before time.Time) bool {
+	return t.CreatedAt < before.Unix()
+}
+
 // endProviderSessions ends somebody's live sessions that the bound
-// provider signed them in to, and only those: a passkey session, a
-// long-lived token and an app's grant are not the provider's to end.
-func endProviderSessions(root, principal, provider string, now time.Time) (int, error) {
+// provider signed them in to before a moment, and only those: a passkey
+// session, a long-lived token and an app's grant are not the provider's to
+// end.
+func endProviderSessions(root, principal, provider string, before, now time.Time) (int, error) {
 	ts, err := loadTokens(root)
 	if err != nil {
 		return 0, err
@@ -496,7 +516,7 @@ func endProviderSessions(root, principal, provider string, now time.Time) (int, 
 	n := 0
 	for _, t := range ts.Snapshot() {
 		if t.Revoked || !t.IsSession() || t.Expired(now) || !strings.EqualFold(t.Principal, principal) ||
-			!strings.HasPrefix(t.Name, prefix) {
+			!strings.HasPrefix(t.Name, prefix) || !openedBefore(t, before) {
 			continue
 		}
 		if _, err := ts.Revoke(t.ID); err == nil {
@@ -511,17 +531,25 @@ func endProviderSessions(root, principal, provider string, now time.Time) (int, 
 
 // stepUpAfterCompromise ends the provider's sessions for somebody whose
 // credential it reports compromised, and holds every other session they
-// have until they prove it is them: a passkey, or a fresh sign-in at a
-// provider that has dealt with it.
-func stepUpAfterCompromise(root, principal, provider string, now time.Time) (ended, held int, err error) {
-	if ended, err = endProviderSessions(root, principal, provider, now); err != nil {
+// had open when it was reported until they prove it is them: a passkey, or
+// a fresh sign-in at a provider that has dealt with it.
+func stepUpAfterCompromise(root, principal, provider string, before, now time.Time) (ended, held int, err error) {
+	if ended, err = endProviderSessions(root, principal, provider, before, now); err != nil {
 		return 0, 0, err
 	}
 	ts, err := loadTokens(root)
 	if err != nil {
 		return ended, 0, err
 	}
-	held = ts.RequireStepUpFor(principal, "the identity provider reported their credential compromised", now)
+	for _, t := range ts.Snapshot() {
+		if t.Revoked || !t.IsSession() || t.Expired(now) || !strings.EqualFold(t.Principal, principal) ||
+			!openedBefore(t, before) {
+			continue
+		}
+		if ts.RequireStepUp(t.ID, "the identity provider reported their credential compromised") == nil {
+			held++
+		}
+	}
 	if held == 0 {
 		return ended, 0, nil
 	}

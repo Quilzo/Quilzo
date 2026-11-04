@@ -807,6 +807,64 @@ func TestAnEnabledAccountLiftsOnlyThisReceiversDenyAndNeverAnOlderOne(t *testing
 	}
 }
 
+// backdate makes a credential look as if it was issued at a time.
+func backdate(t *testing.T, root, name string, at time.Time) {
+	t.Helper()
+	ts, _ := loadTokens(root)
+	for i := range ts.Tokens {
+		if ts.Tokens[i].Name == name {
+			ts.Tokens[i].CreatedAt = at.Unix()
+		}
+	}
+	if err := saveJSON(tokensPath(root), ts); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// An event about sessions reaches only the sessions open when it was
+// issued. A restart forgets the ids already seen, and the same
+// session-revoked sent again, by the transmitter late or by whoever held
+// its bearer, ended the session the person had opened since, as often as
+// it was sent for the three days an event is accepted. A compromise
+// likewise ends and holds only what was open when it was reported.
+func TestAnEventReachesOnlySessionsOpenedBeforeIt(t *testing.T) {
+	c := signalsStore(t, "email")
+	c.connect(t, "oidc")
+	iat := time.Now().Add(-time.Hour)
+	old := session(t, c.root, "oidc:old", "ada@example.com", auth.MethodSSO)
+	backdate(t, c.root, "oidc:old", iat.Add(-10*time.Minute))
+	revoked := c.tx.event(t, caepEvent+"session-revoked", email("ada@example.com"), nil, iat)
+	if w := c.push(t, revoked); w.Code != http.StatusAccepted {
+		t.Fatalf("%d", w.Code)
+	}
+	if works(c.root, old) {
+		t.Fatal("the session the provider ended still works")
+	}
+
+	c.restart(t)
+	since := session(t, c.root, "oidc:since", "ada@example.com", auth.MethodSSO)
+	if w := c.push(t, revoked); w.Code != http.StatusAccepted {
+		t.Fatalf("sent again: %d", w.Code)
+	}
+	if !works(c.root, since) {
+		t.Fatal("sent again after a restart, the event ended the session opened since")
+	}
+
+	held := session(t, c.root, "passkey:old", "ada@example.com", auth.MethodPasskey)
+	backdate(t, c.root, "passkey:old", iat.Add(-10*time.Minute))
+	fresh := session(t, c.root, "passkey:since", "ada@example.com", auth.MethodPasskey)
+	c.send(t, riscEvent+"credential-compromise", email("ada@example.com"), nil, iat)
+	if !works(c.root, since) || stepUpOf(c.root, since) != "" {
+		t.Errorf("a compromise reported before it reached the provider's session opened since: %q", stepUpOf(c.root, since))
+	}
+	if stepUpOf(c.root, fresh) != "" {
+		t.Errorf("the passkey session opened since is held: %q", stepUpOf(c.root, fresh))
+	}
+	if stepUpOf(c.root, held) == "" {
+		t.Error("the passkey session open when it was reported is not held")
+	}
+}
+
 // An account-disabled older than an account-enabled already acted on is a
 // retry that arrived late, and the person the provider enabled since stays
 // enabled, after a restart and with the stream turned off and connected

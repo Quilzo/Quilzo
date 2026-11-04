@@ -2120,8 +2120,8 @@ reported as silent.
 
 | The provider says | Quilzo does |
 |---|---|
-| session-revoked, sessions-revoked; credential-change (update, revoke, delete) | ends that provider's sessions for them |
-| credential-compromise, account-credential-change-required | the same; every other session they hold must confirm it is them; the security contact is told |
+| session-revoked, sessions-revoked; credential-change (update, revoke, delete) | ends that provider's sessions for them opened before the event was issued |
+| credential-compromise, account-credential-change-required | the same; every other session they had open then must confirm it is them; the security contact is told |
 | account-disabled, account-purged | suspends them as SCIM does: every token, every app they connected, and a deny over the whole site that passkeys and single sign-on refuse |
 | account-enabled | lifts the deny it added, and no other |
 
@@ -2140,6 +2140,10 @@ What keeps that from being turned against the site:
   is accepted, so the provider does not send it again, and never acted on.
   Whoever is told suspends the rest by hand, from the provider's own log of
   whom it disabled.
+- A session opened after an event was issued, give or take two minutes for
+  the clocks, is one the provider vouched for since, and the event does not
+  reach it: the same event sent again, after a restart has forgotten it was
+  seen, ends nothing new.
 - An account-enabled older than the last event acted on for that person is
   refused, after a restart too, so a replay cannot lift a newer suspension. An
   account-disabled or account-purged older than the last account-enabled acted
