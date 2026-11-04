@@ -40,6 +40,13 @@
 // to reach the same log. A unix socket lets the writer outlive any of them, and
 // the filesystem enforces who may connect — which is the same permission model
 // as the log file itself rather than a second one to get wrong.
+//
+// # Why the writer also signs
+//
+// The key that signs the log's tree heads is the writer's too, and the CMS
+// asks for a head over the same socket, naming how many entries it covers
+// and nothing else: the writer computes the root over its own file. See
+// sign.go for why the CMS can neither hold that key nor choose the root.
 package logd
 
 import (
@@ -97,6 +104,9 @@ type Response struct {
 	Seq   int64  `json:"seq,omitempty"`
 	Hash  string `json:"hash,omitempty"`
 	Error string `json:"error,omitempty"`
+	// Head and Statement answer a signing request (sign.go).
+	Head      *audit.SignedHead `json:"head,omitempty"`
+	Statement *audit.Statement  `json:"statement,omitempty"`
 }
 
 // Server accepts submissions and appends them.
@@ -109,6 +119,14 @@ type Server struct {
 	// OnRefusal is called when a submission is rejected, so a refusal is
 	// visible rather than being a silent gap in the log.
 	OnRefusal func(reason string, uid int)
+	// Heads signs tree heads over Log, and statements, for the accounts
+	// that submit records and may not hold the key (sign.go). Nil refuses
+	// every signing request, saying HeadsWhy.
+	Heads    *audit.HeadSigner
+	HeadsWhy string
+	// Statements are the contexts a statement may be signed under. Empty
+	// signs none.
+	Statements []string
 
 	mu sync.Mutex
 }
@@ -155,6 +173,9 @@ func (s *Server) handle(conn net.Conn) {
 		return
 	}
 
+	if s.signing(conn, line, uid) {
+		return
+	}
 	var sub Submission
 	if err := json.Unmarshal(line, &sub); err != nil {
 		s.refuse(conn, "the submission is not JSON", uid)
@@ -250,15 +271,21 @@ func Reachable(path string) error {
 // The client learns the sequence number it was given, which is what lets a
 // caller report where something landed without ever holding the log.
 func Submit(path string, sub Submission) (*Response, error) {
+	return exchange(path, sub, SubmitTimeout)
+}
+
+// exchange sends one line to the writer and reads its answer: a record, or a
+// request for a signature.
+func exchange(path string, v any, timeout time.Duration) (*Response, error) {
 	conn, err := net.DialTimeout("unix", path, 2*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("the log writer is not reachable at %s: %w",
 			path, err)
 	}
 	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(SubmitTimeout))
+	_ = conn.SetDeadline(time.Now().Add(timeout))
 
-	body, err := json.Marshal(sub)
+	body, err := json.Marshal(v)
 	if err != nil {
 		return nil, err
 	}

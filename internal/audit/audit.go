@@ -716,6 +716,25 @@ func (l *Log) write(b []byte) error {
 	return nil
 }
 
+// Events reads back every entry of this log's own file.
+//
+// For the log writer, which signs a tree head over the file it keeps rather
+// than over one a client describes (internal/logd). Read under the locks
+// Append takes, so a line being written is never read half-way: Read
+// reports a line it cannot parse as a finding, and a head refused because a
+// record happened to be arriving at that moment is a head refused for
+// nothing.
+func (l *Log) Events() ([]Event, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	unlock, err := atomicfile.Lock(l.path + ".lock")
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	return Read(l.path)
+}
+
 // Read loads every event.
 func Read(path string) ([]Event, error) {
 	f, err := os.Open(path)
