@@ -301,7 +301,7 @@ func (s *Server) samlACS(w http.ResponseWriter, r *http.Request, cfg *saml.Confi
 		fail(label(cfg) + " did not sign you in (" + code + ").")
 		return
 	case err != nil:
-		fail("The response from " + label(cfg) + " was refused: " + err.Error())
+		fail("The response from " + label(cfg) + " was refused: " + saml.Reason(err))
 		return
 	}
 	if !s.samlState.seen.Use(a.ID, a.Until, now) {
@@ -329,12 +329,7 @@ func samlProof(cfg *saml.Config, a *saml.Assertion) ssoProof {
 	return ssoProof{Said: "no second factor said: AuthnContext " + a.AuthnContext}
 }
 
-func label(c *saml.Config) string {
-	if c.Label != "" {
-		return c.Label
-	}
-	return "the identity provider"
-}
+func label(c *saml.Config) string { return c.Called() }
 
 // finishSSO is the end every single sign-on shares: refused if suspended or
 // not in the access policy, otherwise a session of this program's own.

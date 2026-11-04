@@ -14,6 +14,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/base64"
 	"fmt"
+	"html"
 	"io"
 	"math/big"
 	"net/http"
@@ -146,6 +147,7 @@ func start(t *testing.T, srv *Server) (requestID, relay string, cookie *http.Coo
 type resp struct {
 	who, inResponseTo, audience, context string
 	until                                time.Duration
+	unsigned                             bool // sent as a provider with signing off sends it
 }
 
 var endIssuerRe = regexp.MustCompile(`</saml:Issuer>`)
@@ -174,6 +176,9 @@ func response(t *testing.T, r resp) string {
 		`<saml:Conditions NotBefore="` + ts(-time.Minute) + `" NotOnOrAfter="` + ts(r.until) + `"><saml:AudienceRestriction><saml:Audience>` + r.audience + `</saml:Audience></saml:AudienceRestriction></saml:Conditions>` +
 		`<saml:AuthnStatement AuthnInstant="` + ts(-time.Second) + `"><saml:AuthnContext><saml:AuthnContextClassRef>` + r.context + `</saml:AuthnContextClassRef></saml:AuthnContext></saml:AuthnStatement>` +
 		`</saml:Assertion></samlp:Response>`
+	if r.unsigned {
+		return base64.StdEncoding.EncodeToString([]byte(doc))
+	}
 	return base64.StdEncoding.EncodeToString([]byte(signAssertion(t, doc, k)))
 }
 
@@ -611,5 +616,33 @@ func TestTheSSOScreenAsksKeycloakToSayAnAddressIsVerified(t *testing.T) {
 	}
 	if g := get(t, srv, "/sso", token); !strings.Contains(g.Body.String(), "taken as sent, verified or not") {
 		t.Error("the screen does not say kc-open takes addresses unverified")
+	}
+}
+
+// An unsigned response, from a provider added without a preset or a label,
+// is refused in one sentence that names the provider. The page said "The
+// response from the identity provider was refused: refused: neither the
+// response nor its assertion is signed": the handler said "was refused" of
+// a reason that already began with the word, and a provider with no label
+// was "the identity provider", here and on its button, so two of them
+// could not be told apart.
+func TestARefusedResponseSaysRefusedOnceAndNamesTheProvider(t *testing.T) {
+	srv, _ := samlServer(t, func(c *saml.Config) { c.Label = "" })
+	id, relay, cookie := start(t, srv)
+	w := postACS(t, srv, relay, response(t, resp{who: "dana.reyes@northwind.example", inResponseTo: id,
+		unsigned: true}), cookie)
+	if sessionOf(w) != nil {
+		t.Fatal("an unsigned response made a session")
+	}
+	page := html.UnescapeString(w.Body.String())
+	want := "The response from corp was refused: neither the response nor its assertion is signed"
+	if w.Code != http.StatusForbidden || !strings.Contains(page, want) {
+		t.Errorf("%d, wanted %q:\n%s", w.Code, want, firstLines(page, 60))
+	}
+	if strings.Contains(page, "refused: refused") {
+		t.Error("the refusal says refused twice")
+	}
+	if !strings.Contains(page, "Sign in with corp") {
+		t.Error("the sign-in button does not name the provider")
 	}
 }

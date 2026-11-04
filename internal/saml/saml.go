@@ -55,6 +55,7 @@ import (
 	"crypto"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/xmldsig"
@@ -104,6 +105,14 @@ func (e *StatusError) Error() string {
 
 func refuse(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrRefused, fmt.Sprintf(format, args...))
+}
+
+// Reason is what a refusal says, without the word that marks it as one,
+// for a sentence that already says the response was refused. The sign-in
+// page said "was refused: refused: neither the response nor its assertion
+// is signed". Anything that is not a refusal is said as it is.
+func Reason(err error) string {
+	return strings.TrimPrefix(err.Error(), ErrRefused.Error()+": ")
 }
 
 // Provider is one identity provider and this service as it knows it.

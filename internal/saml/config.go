@@ -252,6 +252,21 @@ func (c *Config) PrincipalOf(a *Assertion) (string, error) {
 	return v, nil
 }
 
+// Called is what this provider is called to the people who sign in through
+// it and to whoever reads a refusal: its label, or the name it was added
+// under. A provider added without a preset or a label was "the identity
+// provider" on its sign-in button and in every refusal, so two of them
+// read the same, and a sentence that began with it began in lower case.
+func (c *Config) Called() string {
+	switch {
+	case c.Label != "":
+		return c.Label
+	case c.Name != "":
+		return c.Name
+	}
+	return "the identity provider"
+}
+
 // verified refuses an address the provider has not said it verified, when
 // it was set up to say so, and one it says it has not, whatever it was set
 // up with; see VerifiedAttribute.
@@ -267,10 +282,7 @@ func (c *Config) verified(a *Assertion, who string) error {
 	if strings.EqualFold(said, "true") || said == "1" || (said == "" && c.VerifiedAttribute == "") {
 		return nil
 	}
-	by := c.Label
-	if by == "" {
-		by = "the identity provider"
-	}
+	by := c.Called()
 	if said == "" {
 		return fmt.Errorf("%s did not say whether it verified %s. It is set up to say so in the "+
 			"attribute %s; an unverified address is a claim by whoever set it, and honouring it would "+
