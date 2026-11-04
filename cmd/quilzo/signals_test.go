@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -1018,7 +1019,7 @@ func TestTwoAdministratorsDisabledAtOnceLeaveOneWhoCanGrant(t *testing.T) {
 	}
 }
 
-// Twenty people an hour; the twenty-first is not acted on, the cap is
+// Twenty people an hour; the twenty-first is not acted on yet, the cap is
 // recorded once, and the security contact is told once.
 func TestNoMoreThanTwentyPeopleAnHourAreActedOn(t *testing.T) {
 	c := signalsStore(t, "email")
@@ -1033,7 +1034,13 @@ func TestNoMoreThanTwentyPeopleAnHourAreActedOn(t *testing.T) {
 	}
 	last := session(t, c.root, "oidc:p21@example.com", "p21@example.com", auth.MethodSSO)
 	for i := 1; i <= 22; i++ {
-		c.send(t, caepEvent+"session-revoked", email(fmt.Sprintf("p%d@example.com", i)), nil, time.Now())
+		if i <= signalsCap {
+			c.send(t, caepEvent+"session-revoked", email(fmt.Sprintf("p%d@example.com", i)), nil, time.Now())
+			continue
+		}
+		if w := c.push(t, c.tx.event(t, caepEvent+"session-revoked", email(fmt.Sprintf("p%d@example.com", i)), nil, time.Now())); w.Code != http.StatusServiceUnavailable {
+			t.Fatalf("person %d, past the cap, was answered %d", i, w.Code)
+		}
 	}
 	if !works(c.root, last) {
 		t.Error("the twenty-first person was acted on")
@@ -1052,11 +1059,13 @@ func TestNoMoreThanTwentyPeopleAnHourAreActedOn(t *testing.T) {
 	}
 }
 
-// What the cap says is what it does. An event past it is accepted, so the
-// transmitter does not send it again, and it is never acted on; the
-// security contact was told the rest were acted on once the hour was over,
-// and somebody reading that would have waited for an offboarding that was
-// not coming.
+// What the cap says is what it does. An event past it is told to come
+// again, and is acted on when it does; the security contact is told so,
+// and that the provider's own log says whom it disabled for anybody who
+// will not wait. It was told once that the rest were acted on when the
+// hour was over, while they were accepted and never acted on, and then
+// that they were never acted on, while a transmitter that would have sent
+// them again was told not to.
 func TestTheCapSaysWhatBecomesOfWhatItHeldBack(t *testing.T) {
 	c := signalsStore(t, "email")
 	c.connect(t, "oidc")
@@ -1069,22 +1078,99 @@ func TestTheCapSaysWhatBecomesOfWhatItHeldBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := 1; i <= signalsCap+1; i++ {
-		c.send(t, riscEvent+"account-disabled", email(fmt.Sprintf("p%d@example.com", i)), nil, time.Now())
+		c.push(t, c.tx.event(t, riscEvent+"account-disabled", email(fmt.Sprintf("p%d@example.com", i)), nil, time.Now()))
 	}
 	sent := c.mails()
 	if len(sent) != 1 {
 		t.Fatalf("mailed %d", len(sent))
 	}
 	body := sent[0].Body
-	if strings.Contains(body, "until the hour is over") || !strings.Contains(body, "never acted on") ||
+	if strings.Contains(body, "never acted on") || !strings.Contains(body, "acted on when the provider sends them again") ||
 		!strings.Contains(body, "by hand") {
 		t.Errorf("the security contact was told %q", body)
 	}
 	if err := cmdSignals(c.root, []string{"status"}); err != nil {
 		t.Fatal(err)
 	}
-	if said := w.Out.(*bytes.Buffer).String(); !strings.Contains(said, "1 past the hourly cap, never acted on") {
+	if said := w.Out.(*bytes.Buffer).String(); !strings.Contains(said, "1 past the hourly cap, told to send it again later") {
 		t.Errorf("the status says %q", said)
+	}
+}
+
+// Past the cap an event is not lost: the transmitter is told to send it
+// again once the hour's window frees, its id is not remembered as seen,
+// and sent again then it is acted on, at the capped rate. Twenty-five
+// people disabled at once, a layoff larger than the cap, had five accepted
+// and never acted on: told yes, the transmitter never sent them again.
+func TestEventsPastTheCapWaitAndAreActedOnWhenSentAgain(t *testing.T) {
+	c := signalsStore(t, "email")
+	c.connect(t, "oidc")
+	const people = 25
+	who := func(i int) string { return fmt.Sprintf("p%d@example.com", i) }
+	if _, err := updatePolicy(c.root, func(p *auth.Policy) error {
+		for i := 1; i <= people; i++ {
+			p.Bindings = append(p.Bindings, auth.Binding{Principal: who(i), Role: auth.RoleReader, Resource: "/"})
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var waiting []string
+	for i := 1; i <= people; i++ {
+		token := c.tx.event(t, riscEvent+"account-disabled", email(who(i)), nil, time.Now())
+		w := c.push(t, token)
+		if i <= signalsCap {
+			if w.Code != http.StatusAccepted {
+				t.Fatalf("person %d was answered %d", i, w.Code)
+			}
+			continue
+		}
+		after, err := strconv.Atoi(w.Header().Get("Retry-After"))
+		if w.Code != http.StatusServiceUnavailable || err != nil || after < 3000 || after > 3601 {
+			t.Fatalf("person %d, past the cap, was answered %d with Retry-After %q", i, w.Code, w.Header().Get("Retry-After"))
+		}
+		waiting = append(waiting, token)
+	}
+	suspended := func() int {
+		p, _ := loadPolicy(c.root)
+		n := 0
+		for i := 1; i <= people; i++ {
+			if !p.Evaluate(who(i), auth.ActView, "/").Allowed {
+				n++
+			}
+		}
+		return n
+	}
+	if n := suspended(); n != signalsCap {
+		t.Fatalf("%d suspended in the first hour", n)
+	}
+	if n := readSignals(t, c.root).Counts; n.Received != signalsCap || n.Acted != signalsCap || n.Capped != people-signalsCap {
+		t.Errorf("counted %+v", n)
+	}
+	if acts := signalsActions(t, c.root); len(acts["signals.capped"]) != 1 {
+		t.Errorf("the cap was recorded %d times", len(acts["signals.capped"]))
+	}
+
+	// The hour is over, and the transmitter sends them again.
+	if err := updateSignals(c.root, func(s *signalsConfig) error {
+		s.Hour.Start = s.Hour.Start.Add(-time.Hour)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, token := range waiting {
+		if w := c.push(t, token); w.Code != http.StatusAccepted {
+			t.Fatalf("sent again after the hour, an event was answered %d", w.Code)
+		}
+	}
+	if n := suspended(); n != people {
+		t.Errorf("%d of %d suspended once the hour was over", n, people)
+	}
+	if n := readSignals(t, c.root).Counts; n.Received != people || n.Acted != people || n.Capped != people-signalsCap {
+		t.Errorf("counted %+v", n)
+	}
+	if sent := c.mails(); len(sent) != 1 {
+		t.Errorf("mailed %d", len(sent))
 	}
 }
 

@@ -39,7 +39,7 @@
   <div><dt>Acted on</dt><dd>{{.Acted}}</dd></div>
   <div{{if .Unmatched}} class="serious"{{end}}><dt>Unmatched</dt><dd>{{.Unmatched}}</dd><dd class="wf-note">about nobody the access policy knows, or not clearly one person</dd></div>
   <div{{if .Refused}} class="serious"{{end}}><dt>Refused</dt><dd>{{.Refused}}</dd><dd class="wf-note">did not prove it came from the stream, or came too late</dd></div>
-  <div{{if .Capped}} class="critical"{{end}}><dt>Past the hourly cap</dt><dd>{{.Capped}}</dd><dd class="wf-note">past twenty people in an hour; never acted on, so act on them by hand</dd></div>
+  <div{{if .Capped}} class="critical"{{end}}><dt>Past the hourly cap</dt><dd>{{.Capped}}</dd><dd class="wf-note">past twenty people in an hour; told to wait, and acted on when the provider sends them again</dd></div>
 </dl>{{end}}{{end}}
 {{end}}
 

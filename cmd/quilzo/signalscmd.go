@@ -569,7 +569,7 @@ func signalsStatus(root string) error {
 			yellow, c.Status, reset)
 	}
 	n := c.Counts
-	w.Human("  %d received, %d acted on, %d unmatched, %d refused, %d past the hourly cap, never acted on\n",
+	w.Human("  %d received, %d acted on, %d unmatched, %d refused, %d past the hourly cap, told to send it again later\n",
 		n.Received, n.Acted, n.Unmatched, n.Refused, n.Capped)
 	if !n.LastAt.IsZero() {
 		w.Human("  last event: %s, %s\n", n.LastType, signalsWhen(n.LastAt))

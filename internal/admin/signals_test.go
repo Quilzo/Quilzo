@@ -115,7 +115,9 @@ func TestTheSignInsScreenShowsTheStream(t *testing.T) {
 // house's list of facts. One never asked to verify says so, where it said
 // "asked, not answered yet"; a request that failed says why; a stream the
 // provider paused is marked; events past the hourly cap are drawn as the
-// worst figure on the screen, which the stylesheet did not draw at all; and
+// worst figure on the screen, which the stylesheet did not draw at all, and
+// said to wait for the provider to send them again, which they do, rather
+// than never to be acted on; and
 // with none connected the command shown is one that works as written, where
 // it lacked the client and failed. The hint no longer says a passkey
 // session is left alone when the provider reports a credential stolen.
@@ -146,12 +148,14 @@ func TestTheSignInsScreenSaysWhatIsWrongWithTheStream(t *testing.T) {
 	body := page()
 	for _, want := range []string{`<dl class="kv">`, "not asked yet; the server asks within a day",
 		"Last request", "failed</span> QUILZO_SIGNALS_SECRET is not set", "paused</span> as the identity provider last said",
-		"nothing is sent while it is", `class="critical"><dt>Past the hourly cap`, "confirm it is them"} {
+		"nothing is sent while it is", `class="critical"><dt>Past the hourly cap`,
+		"told to wait, and acted on when the provider sends them again", "confirm it is them"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("Sign-ins does not say %q", want)
 		}
 	}
-	for _, wrong := range []string{"asked, not answered", "Held back", ">silent<", "Passkey sessions, tokens and connected apps are left alone"} {
+	for _, wrong := range []string{"asked, not answered", "Held back", ">silent<", "Passkey sessions, tokens and connected apps are left alone",
+		"never acted on"} {
 		if strings.Contains(body, wrong) {
 			t.Errorf("Sign-ins says %q", wrong)
 		}

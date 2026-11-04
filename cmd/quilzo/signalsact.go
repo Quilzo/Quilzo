@@ -41,11 +41,14 @@ import (
 //
 // It replaces the templates an operator had to add before any of this
 // happened, and the hourly limit they ran under: twenty people an hour,
-// then the security contact is told. An event past that is accepted, so
-// the transmitter does not send it again, and is never acted on; whoever
-// is told has to act on the rest by hand. A provider offboarding a team
-// stays inside that; a stolen transmitter key signing everybody out does
-// not get past it.
+// then the security contact is told. An event past that is answered 503
+// with Retry-After set to when the hour's window frees, and not remembered
+// as seen, so the transmitter sends it again then and it is acted on at
+// the same rate. It was accepted and never acted on, and an offboarding
+// larger than the cap lost the rest without the transmitter knowing. A
+// provider offboarding a team finishes, an hour at a time; a stolen
+// transmitter key signing everybody out gets twenty people an hour, which
+// is time for whoever is told to turn the stream off.
 
 // signalsCap is how many people the receiver acts on in an hour.
 const signalsCap = 20
@@ -163,8 +166,10 @@ func signalsDeliver(root string, set *ssf.SET, now time.Time) error {
 		return nil
 	}
 	if capped, first := signalsOverCap(c, key, now); capped {
+		// Not received: it is not taken, and a delivery the transmitter
+		// sends again is counted when it is. Capped counts each delivery
+		// told to come back.
 		if err := updateSignals(root, func(s *signalsConfig) error {
-			s.Counts.Received++
 			s.Counts.Capped++
 			s.Counts.LastAt, s.Counts.LastType = now.UTC(), set.Short
 			if first {
@@ -179,13 +184,15 @@ func signalsDeliver(root string, set *ssf.SET, now time.Time) error {
 			d["count"] = fmt.Sprint(signalsCap)
 			signalsRecord(root, "signals.capped", audit.Denied, d)
 			signalsTell(root, "", fmt.Sprintf("The identity provider's security events have acted on %d people "+
-				"within an hour, which is as many as Quilzo acts on in one. Events about anybody else this hour "+
-				"are accepted and never acted on, and the provider will not send them again: if this is an "+
-				"offboarding you expected, the provider's own log says whom it disabled, and the rest are "+
-				"suspended by hand here (quilzo auth deny WHO reader). If it is not, the transmitter's key or "+
-				"the stream may be in somebody else's hands: quilzo signals off stops it.", signalsCap))
+				"within an hour, which is as many as Quilzo acts on in one. Events about anybody else are told "+
+				"to wait until the hour is up, and are acted on when the provider sends them again, %d people "+
+				"an hour. If this is an offboarding you expected, it goes on by itself while the provider keeps "+
+				"trying; its own log says whom it disabled, for anybody you want suspended sooner by hand "+
+				"(quilzo auth deny WHO reader). If it is not, the transmitter's key or the stream may be in "+
+				"somebody else's hands: quilzo signals off stops it.", signalsCap, signalsCap))
 		}
-		return nil
+		return &ssf.Later{After: c.Hour.Start.Add(time.Hour).Sub(now),
+			Why: fmt.Sprintf("this receiver acts on %d people an hour; send it again later", signalsCap)}
 	}
 
 	d := cloneDetail(base)

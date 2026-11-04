@@ -70,7 +70,8 @@ type Push struct {
 	Stream func() (Connected, error)
 	// Deliver is told each verified event once. An error asks the
 	// transmitter to send it again, and the event is not remembered as
-	// seen, so the retry is acted on rather than refused as a replay.
+	// seen, so the retry is acted on rather than refused as a replay; a
+	// *Later says when.
 	Deliver func(*SET) error
 	// Refused is told each delivery that did not prove itself, and why.
 	// Counted, not written to the audit log one by one: whoever is failing
@@ -87,6 +88,24 @@ type Push struct {
 	// together, so two copies of one event arriving at once are one event.
 	mu   sync.Mutex
 	seen replay.Cache
+}
+
+// Later is a Deliver error for an event the receiver will act on, but not
+// yet: the transmitter is answered 503 with Retry-After set to After, and
+// RFC 8935 has it send the event again then. The receiver's hourly cap on
+// people acted on answered an event past it 202 and never acted on it, so
+// a real offboarding larger than the cap lost the rest, and the
+// transmitter, told yes, never sent them again.
+type Later struct {
+	After time.Duration
+	Why   string
+}
+
+func (l *Later) Error() string { return l.Why }
+
+// retryAfter is a wait in whole seconds, rounded up and at least one.
+func retryAfter(d time.Duration) string {
+	return strconv.Itoa(max(1, int((d+time.Second-1)/time.Second)))
 }
 
 // Digest is the stored form of a push secret.
@@ -217,8 +236,13 @@ func (p *Push) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := p.Deliver(set); err != nil {
-		w.Header().Set("Retry-After", "60")
-		WriteError(w, http.StatusServiceUnavailable, &Error{Code: "access_denied", Description: "this receiver could not act on it; send it again"})
+		retry, why := time.Minute, "this receiver could not act on it; send it again"
+		var later *Later
+		if errors.As(err, &later) {
+			retry, why = later.After, later.Why
+		}
+		w.Header().Set("Retry-After", retryAfter(retry))
+		WriteError(w, http.StatusServiceUnavailable, &Error{Code: "access_denied", Description: why})
 		return
 	}
 	p.seen.First(id, st.Receiver.Until(set), now)

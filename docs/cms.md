@@ -2136,10 +2136,12 @@ What keeps that from being turned against the site:
 - The last person who can grant access is never suspended this way: their
   sessions end and the security contact is told.
 - At most twenty people an hour are acted on. Past that the cap is recorded
-  once and the security contact is told; an event about anybody else that hour
-  is accepted, so the provider does not send it again, and never acted on.
-  Whoever is told suspends the rest by hand, from the provider's own log of
-  whom it disabled.
+  once an hour and the security contact is told; an event about anybody else
+  is answered 503 with a `Retry-After` of when the hour is up, and is not
+  remembered as seen, so the provider sends it again then and it is acted on,
+  twenty people an hour. An offboarding larger than that finishes by itself
+  while the provider keeps retrying; whoever is told can suspend anybody sooner
+  by hand, from the provider's own log of whom it disabled.
 - A session opened after an event was issued, give or take two minutes for
   the clocks, is one the provider vouched for since, and the event does not
   reach it: the same event sent again, after a restart has forgotten it was
@@ -2164,8 +2166,8 @@ that.
 things: whose sign-ins the stream speaks for, when it last answered a
 verification and whether it has gone silent, why the last request failed if it
 did, whether the provider says the stream is enabled, paused or disabled, the
-last event, and how many events were received, acted on, unmatched, refused and
-past the hourly cap.
+last event, and how many events were received, acted on, unmatched and
+refused, and how many deliveries past the hourly cap were told to wait.
 
 `quilzo signals off` turns the stream off here at once, and anything pushed
 after is refused. It asks the provider to delete the stream too, with the client
