@@ -9,7 +9,7 @@
   <p><strong>{{plural (len .Weakened) "setting is" "settings are"}} running weaker than the default.</strong></p>
   <ul>
   {{range .Weakened}}
-    <li><code>{{.Setting.Key}}</code> = {{.Value}} &mdash; {{.Why}}
+    <li><code>{{.Setting.Key}}</code> = {{.Shown}} &mdash; {{.Why}}
       {{if not .Accepted}}<br><strong>No reason was recorded.</strong>
       {{else if .Expired}}<br>Accepted by {{.Accepted.By}}, and that has lapsed.
       {{else}}<br>Accepted by {{.Accepted.By}}: {{.Accepted.Reason}}{{end}}</li>
@@ -56,13 +56,13 @@
       {{if .Weaker}}<div class="hint warn">{{.Why}}</div>{{end}}
       {{range .Floors}}<div class="hint">{{if .Broken}}Held by the organisation's policy, which cannot be read, so it is not changed.{{else}}Held by the organisation's policy: <a href="/security/parameters">{{.Param}}</a> is {{.Declared}}. It may be stricter, never weaker.{{end}}</div>{{end}}
     </th>
-    <td>{{if .Overriden}}<strong>{{.Value}}</strong>{{else}}{{.Value}}{{end}}</td>
-    <td class="hint">{{.Setting.Default}}</td>
+    <td>{{if .Overriden}}<strong>{{.Shown}}</strong>{{else}}{{.Shown}}{{end}}</td>
+    <td class="hint">{{.Setting.DefaultShown}}</td>
     {{if $.CanWrite}}
     <td><div class="setrow">
       <form method="post" action="/settings/save" class="inline">
         <input type="hidden" name="key" value="{{.Setting.Key}}">
-        <input name="value" value="{{.Value}}" size="10" spellcheck="false"
+        <input name="value" value="{{.Shown}}" size="10" spellcheck="false"
           aria-label="Value for {{.Setting.Key}}">
         {{if .Setting.Weaker}}<input name="reason" placeholder="Reason"
           size="14" aria-label="Reason for weakening {{.Setting.Key}}">{{end}}

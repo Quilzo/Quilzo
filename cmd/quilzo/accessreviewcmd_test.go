@@ -1349,3 +1349,161 @@ func TestTheOnlyAdministratorIsToldTheReviewClosesWithoutTheirOwn(t *testing.T) 
 		t.Errorf("the only administrator's own items: %v\n%s", err, text)
 	}
 }
+
+// A second start is refused before the snapshot is taken.
+//
+// It took the snapshot first, which reads the whole audit log for when
+// each person last acted, and only then found a review open: on a store
+// with years of log, every refused start read all of it for nothing.
+// Shown here by leaving one of the snapshot's inputs unreadable, which a
+// start that reads nothing it would snapshot never notices.
+func TestASecondStartIsRefusedBeforeTheSnapshotIsTaken(t *testing.T) {
+	root, tokens := reviewed(t)
+	if err := review(t, root, tokens["dana"], "start"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(scimPath(root), []byte("{not the provisioning state"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := review(t, root, tokens["sam"], "start"); !errors.Is(err, accessreview.ErrOpen) {
+		t.Fatalf("a start with a review open took the snapshot before asking: %v", err)
+	}
+}
+
+// A close whose record cannot be written leaves the review open, so it
+// can be closed again once the log can be written, and the evidence is
+// written then.
+//
+// The review was saved as closed first and its records written after,
+// so when the audit log refused review.closed the review stood closed
+// with no record that it was done and no evidence for the control, and
+// closing again said no review was open: the one way to write that
+// evidence was gone.
+func TestAClosedReviewIsNotClosedUntilItsEvidenceIsWritten(t *testing.T) {
+	root, tokens := reviewed(t)
+	if err := review(t, root, tokens["dana"], "start"); err != nil {
+		t.Fatal(err)
+	}
+	decideAll(t, root, tokens)
+	// A log writer configured and not answering: every record is refused,
+	// and nothing falls back to writing the file.
+	if err := os.WriteFile(logSocketPath(root), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := review(t, root, tokens["dana"], "close"); err == nil {
+		t.Fatal("closed with the audit log refusing every record")
+	}
+	if r, err := reviewStore(root).Current(); err != nil || r == nil {
+		t.Fatalf("the review was closed with no record of it: %v", err)
+	}
+	if lastEvent(t, root, "review.closed") != nil {
+		t.Fatal("control: review.closed was written with the log refusing")
+	}
+
+	if err := os.Remove(logSocketPath(root)); err != nil {
+		t.Fatal(err)
+	}
+	if err := review(t, root, tokens["dana"], "close"); err != nil {
+		t.Fatalf("closing again once the log can be written: %v", err)
+	}
+	if r, _ := reviewStore(root).Current(); r != nil {
+		t.Fatal("the review is still open")
+	}
+	closed, operated := 0, 0
+	for _, e := range events(t, root) {
+		switch e.Action {
+		case "review.closed":
+			closed++
+		case "control.operated":
+			operated++
+		}
+	}
+	if closed != 1 || operated != 1 {
+		t.Errorf("review.closed %d time(s) and control.operated %d, want once each", closed, operated)
+	}
+	evidence, err := loadEvidence(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(evidence); n != 1 {
+		t.Errorf("%d piece(s) of evidence, want 1: %+v", n, evidence)
+	}
+}
+
+// A close with no review open is refused before the snapshot is taken,
+// as a second start is.
+//
+// Close took the snapshot it compares the review with, which reads the
+// whole audit log, and only then found there was no review to close: the
+// same full read for nothing that a refused start did. Shown, as for
+// start, by an input left unreadable.
+func TestACloseWithNoReviewOpenIsRefusedBeforeTheSnapshotIsTaken(t *testing.T) {
+	root, tokens := reviewed(t)
+	if err := os.WriteFile(scimPath(root), []byte("{not the provisioning state"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := review(t, root, tokens["dana"], "close"); !errors.Is(err, accessreview.ErrNoneOpen) {
+		t.Fatalf("a close with no review open took the snapshot before asking: %v", err)
+	}
+}
+
+// A close retried after its evidence was written and a later record was
+// refused writes the evidence once.
+//
+// Close writes review.closed, then the evidence, then its control.operated
+// record, and keeps the review open if any of them is refused, so that it
+// can be closed again. Evidence written before a refusal was written again
+// by the close that followed, and each line of evidence counts as one
+// occurrence of the control: one review read as the two a half-year needs
+// to show a quarterly control operating.
+func TestARetriedCloseWritesItsEvidenceOnce(t *testing.T) {
+	root, tokens := reviewed(t)
+	if err := review(t, root, tokens["dana"], "start"); err != nil {
+		t.Fatal(err)
+	}
+	decideAll(t, root, tokens)
+	// The log refuses control.operated, once: after review.closed and the
+	// evidence are written.
+	old := auditWritten
+	t.Cleanup(func() { auditWritten = old })
+	refused := false
+	auditWritten = func(at string, r audit.Record) {
+		if old != nil {
+			old(at, r)
+		}
+		if r.Action == "control.operated" && !refused {
+			refused = true
+			if err := os.WriteFile(logSocketPath(at), nil, 0o600); err != nil {
+				t.Error(err)
+			}
+		}
+	}
+	if err := review(t, root, tokens["dana"], "close"); err == nil {
+		t.Fatal("control: closed with control.operated refused")
+	}
+	if ev, err := loadEvidence(root); err != nil || len(ev) != 1 {
+		t.Fatalf("control: the evidence was not written before the refusal: %v %+v", err, ev)
+	}
+	if err := os.Remove(logSocketPath(root)); err != nil {
+		t.Fatal(err)
+	}
+	if err := review(t, root, tokens["dana"], "close"); err != nil {
+		t.Fatalf("closing again once the log can be written: %v", err)
+	}
+	evidence, err := loadEvidence(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(evidence); n != 1 {
+		t.Errorf("one review, %d pieces of evidence for it: %+v", n, evidence)
+	}
+	operated := 0
+	for _, e := range events(t, root) {
+		if e.Action == "control.operated" {
+			operated++
+		}
+	}
+	if operated != 1 {
+		t.Errorf("control.operated written %d time(s), want once", operated)
+	}
+}

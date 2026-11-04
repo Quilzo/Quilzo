@@ -336,7 +336,7 @@ var rules = []Rule{
 			var out []Finding
 			for _, a := range s.AI.Identities {
 				if a.Sponsor != "" && !a.SponsorActive {
-					out = append(out, Finding{Resource: "agent/" + a.Name,
+					out = append(out, Finding{Resource: "agent/" + a.Name, People: []string{a.Sponsor},
 						Detail: a.Name + "'s sponsor, " + a.Sponsor + ", can no longer act here",
 						Fix:    "quilzo agent sponsor " + a.Name + " PERSON  # or withdraw it"})
 				}
@@ -517,7 +517,10 @@ var rules = []Rule{
 			if len(admins) <= 3 {
 				return nil
 			}
+			// Declared, as access.sole-admin's is, so the record of the
+			// finding carries their handles and not their names.
 			return []Finding{{
+				People: admins,
 				Detail: fmt.Sprintf("%d administrators: %s",
 					len(admins), joinShort(admins, 6)),
 				Fix: "quilzo auth grant WHO publisher  # then revoke the admin role",
@@ -628,8 +631,9 @@ var rules = []Rule{
 				out = append(out, Finding{
 					Severity: sev,
 					Resource: t.ID,
-					Detail: fmt.Sprintf("%s (%s, %s) is valid for %s, until %s",
-						t.Name, t.Principal, t.Role, days(life),
+					// Its holder is shown from the id, as token.admin-role's is.
+					Detail: fmt.Sprintf("%s (%s) is valid for %s, until %s",
+						t.Name, t.Role, days(life),
 						time.Unix(t.ExpiresAt, 0).UTC().Format("2006-01-02")),
 					Fix: "quilzo token revoke " + t.ID +
 						"  # then issue with --ttl 720h and exchange for sessions",
@@ -957,12 +961,15 @@ var rules = []Rule{
 				if t.IsSession() {
 					continue
 				}
+				// The token by its name and id, not its holder: a finding
+				// goes into exports, OSCAL and the audit stream, and the
+				// person's name went with it in clear. The Security screen
+				// and quilzo posture show the holder from the id.
 				out = append(out, Finding{
 					Resource: t.ID,
-					Detail: fmt.Sprintf("%s belongs to %s and can change the "+
-						"access policy itself", t.Name, t.Principal),
+					Detail:   fmt.Sprintf("the token %s can change the access policy itself", t.Name),
 					Fix: "quilzo token issue " + t.Name +
-						" --principal " + t.Principal + " --role publisher",
+						" --principal HOLDER --role publisher",
 				})
 			}
 			return out
@@ -1612,8 +1619,10 @@ var rules = []Rule{
 					f.Severity = High
 					f.Detail += " — accepted by " + wk.By + " (" + wk.Reason +
 						"), and that acceptance has lapsed"
+					f.People = []string{wk.By}
 				default:
 					f.Detail += " — accepted by " + wk.By + ": " + wk.Reason
+					f.People = []string{wk.By}
 				}
 				out = append(out, f)
 			}
@@ -1676,12 +1685,14 @@ var rules = []Rule{
 					!strings.Contains(strings.ToLower(t.Name), "agent") {
 					continue
 				}
+				// The person by the token's id, as token.admin-role names
+				// them: the finding is that a person's name is on an
+				// agent's credential, and it put the name in clear.
 				out = append(out, Finding{
 					Resource: t.ID,
-					Detail: fmt.Sprintf("%s authenticates as %s, who is also a "+
-						"person in the access policy", t.Name, t.Principal),
+					Detail:   fmt.Sprintf("%s authenticates as its holder, who is also a person in the access policy", t.Name),
 					Fix: "quilzo token issue " + t.Name +
-						" --principal svc-" + t.Principal + " --role author",
+						" --principal svc-HOLDER --role author",
 				})
 			}
 			return out

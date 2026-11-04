@@ -5,6 +5,7 @@
 {{if .Checked}}{{if .Failing}}<h2>Failing now</h2>
 {{range .Failing}}<article class="finding {{.Severity}}">
   <p>{{.Detail}}</p>
+  {{with index $.Holders .Resource}}<p class="hint">Held by <strong>{{.}}</strong></p>{{end}}
   {{if .Fix}}{{with fixparts .Fix}}<p class="fix"><span class="label">Fix</span> {{if .Cmd}}<code>{{.Cmd}}</code>{{end}}{{if .Note}} <span class="fix-note">{{range .Note}}{{if .Code}}<code>{{.Text}}</code>{{else}}{{.Text}}{{end}}{{end}}</span>{{end}}</p>{{end}}{{end}}
 </article>{{end}}
 {{else}}<p><span class="pill ok">Passing</span> Nothing on this installation fails it at the last scan.</p>{{end}}{{end}}

@@ -321,7 +321,9 @@ func (p Param) Allows(declared string) func(value string) bool {
 			return func(string) bool { return false }
 		}
 		return func(v string) bool {
-			d, err := time.ParseDuration(v)
+			// Read as the setting reads itself, so a value in days is
+			// measured rather than refused as no period at all.
+			d, err := config.ParseDuration(v)
 			return err == nil && meets(p.Stricter, d, want)
 		}
 	}

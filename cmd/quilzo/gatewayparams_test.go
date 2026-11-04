@@ -10,14 +10,17 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/gateway"
+	"github.com/quilzo/quilzo/internal/mail"
 	"github.com/quilzo/quilzo/internal/posture"
 )
 
@@ -205,6 +208,67 @@ func TestAModelCallIsChargedToThePersonWhoAskedForIt(t *testing.T) {
 	}
 	if _, err := m.Complete(context.Background(), "s", "u"); !errors.Is(err, gateway.ErrBudget) {
 		t.Errorf("a draft was not charged to the person who asked for it: %v", err)
+	}
+}
+
+// A store a model was called in is removed only once what the call set
+// off in the background has finished.
+//
+// TestAModelCallIsChargedToThePersonWhoAskedForIt failed now and then in a
+// full run, with no line of its own to say why. Its second call is past
+// the budget, which raises model-spend, and the shield tells the security
+// contact in the background and writes the record of telling into the
+// store: into the test's folder while the folder was being removed, which
+// fails the test ("directory not empty") or leaves the folder behind.
+// demoStore waits for that work before its folder goes; publishedShop did
+// not. A slow relay here makes the work outlast the test every time.
+func TestAStoreOutlastsWhatItsModelCallsSetOff(t *testing.T) {
+	old := deliverMail
+	relay := make(chan struct{})
+	deliverMail = func(*mail.Mailer, mail.Message) error { <-relay; return nil }
+	t.Cleanup(func() { finishBackground(10 * time.Second); deliverMail = old })
+	var root string
+	ok := t.Run("over budget", func(t *testing.T) {
+		root = publishedShop(t)
+		if err := cmdConfig(root, []string{"set", "security.contact", "mailto:security@crumb.example"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(mailConfigPath(root), []byte(`{"host":"relay.example:587","from":"quilzo@crumb.example"}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		up := &capturing{}
+		for _, args := range [][]string{
+			{"route", "add", "up", "--url", up.serve(t), "--model", "m"},
+			{"budget", "person:dana", "--chars-per-day", "10"},
+		} {
+			if err := cmdGateway(root, args); err != nil {
+				t.Fatal(err)
+			}
+		}
+		m, why := draftModelFor(root, human("dana"), "draft")
+		if m == nil {
+			t.Fatal(why)
+		}
+		_, _ = m.Complete(context.Background(), "s", "u")
+		if _, err := m.Complete(context.Background(), "s", "u"); !errors.Is(err, gateway.ErrBudget) {
+			t.Fatalf("control: the second call was not past the budget: %v", err)
+		}
+		// The relay answers once the test has nothing left to do but clean
+		// up, which is when the folder is removed.
+		t.Cleanup(func() { time.AfterFunc(50*time.Millisecond, func() { close(relay) }) })
+	})
+	finishBackground(10 * time.Second)
+	// Written after the folder went, the record fails (the store remembers
+	// a failed write to its log); written while it went, the removal fails
+	// the subtest or leaves the folder behind.
+	_, unwritten := auditFaults.Load(auditKey(root))
+	auditFaults.Delete(auditKey(root))
+	if _, err := os.Stat(root); !errors.Is(err, os.ErrNotExist) {
+		_ = os.RemoveAll(root)
+		t.Error("what the model calls set off wrote into the store after its folder was removed")
+	}
+	if !ok || unwritten {
+		t.Error("the store's folder was removed while what its model calls set off still had to write to it")
 	}
 }
 

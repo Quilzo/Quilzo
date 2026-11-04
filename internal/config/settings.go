@@ -1545,21 +1545,21 @@ func atMost(limit int, format string) func(string) (bool, string) {
 
 func atMostDur(limit time.Duration, format string) func(string) (bool, string) {
 	return func(v string) (bool, string) {
-		d, err := time.ParseDuration(v)
+		d, err := ParseDuration(v)
 		if err != nil || d <= limit {
 			return false, ""
 		}
-		return true, fmt.Sprintf(format, d)
+		return true, fmt.Sprintf(format, FormatDuration(d))
 	}
 }
 
 func atLeastDur(limit time.Duration, format string) func(string) (bool, string) {
 	return func(v string) (bool, string) {
-		d, err := time.ParseDuration(v)
+		d, err := ParseDuration(v)
 		if err != nil || d >= limit {
 			return false, ""
 		}
-		return true, fmt.Sprintf(format, d)
+		return true, fmt.Sprintf(format, FormatDuration(d))
 	}
 }
 
@@ -1618,16 +1618,93 @@ func (e *ErrOutOfBounds) Error() string {
 	return fmt.Sprintf("%s is outside its bounds, %s to %s", e.Value, e.Least, e.Most)
 }
 
-// shortDuration writes a duration as a person would: 1h, not 1h0m0s.
-func shortDuration(d time.Duration) string {
-	s := d.String()
-	if strings.HasSuffix(s, "m0s") {
-		s = strings.TrimSuffix(s, "0s")
+// day and week are the units a duration setting takes beyond Go's own.
+const (
+	day  = 24 * time.Hour
+	week = 7 * day
+)
+
+// ParseDuration reads a duration setting's value: a Go duration (30s,
+// 15m, 36h, 1h30m), or a whole number of days or weeks (90d, 2w).
+//
+// Go's durations stop at hours, so a setting whose explanation says
+// "ninety days" refused 90d as not a duration and had to be given as
+// 2160h, which nobody reading the file later recognises as ninety days.
+// Every value Go's parser accepts is still accepted and means what it
+// did, so no file that loads today stops loading. Days and weeks are
+// whole numbers only: 1.5d is 36h, and saying so is clearer than taking
+// it.
+func ParseDuration(s string) (time.Duration, error) {
+	if d, err := time.ParseDuration(s); err == nil {
+		return d, nil
 	}
-	if strings.HasSuffix(s, "h0m") {
-		s = strings.TrimSuffix(s, "0m")
+	if n := len(s) - 1; n > 0 && (s[n] == 'd' || s[n] == 'w') &&
+		strings.Trim(s[:n], "0123456789") == "" {
+		unit := day
+		if s[n] == 'w' {
+			unit = week
+		}
+		if count, err := strconv.ParseInt(s[:n], 10, 64); err == nil &&
+			count <= int64((1<<63-1)/unit) {
+			return time.Duration(count) * unit, nil
+		}
 	}
-	return s
+	return 0, fmt.Errorf("%q is not a duration", s)
+}
+
+// FormatDuration writes a duration the way a person would, in the largest
+// whole unit it is: 100d, 36h, 90m, 5s. Anything finer is Go's own form.
+//
+// This was time.Duration's String, so a hundred days was "2400h0m0s" in
+// the message telling an administrator what a weaker value costs. Days
+// are the largest unit said, not weeks, so two durations side by side
+// (30d to 365d) can be compared at a glance. Whatever this writes,
+// ParseDuration reads back as the same duration.
+func FormatDuration(d time.Duration) string {
+	switch {
+	case d == 0:
+		return "0s"
+	case d%day == 0:
+		return fmt.Sprintf("%dd", d/day)
+	case d%time.Hour == 0:
+		return fmt.Sprintf("%dh", d/time.Hour)
+	case d%time.Minute == 0:
+		return fmt.Sprintf("%dm", d/time.Minute)
+	}
+	return d.String()
+}
+
+// DefaultShown is the default as the Settings screen and `config` print
+// it: a duration in its largest whole unit (90d rather than 2160h), any
+// other kind as written.
+func (s Setting) DefaultShown() string { return s.show(s.Default) }
+
+// show writes a value of this setting for a person to read.
+func (s Setting) show(v string) string {
+	if s.Kind != Duration {
+		return v
+	}
+	d, err := ParseDuration(v)
+	if err != nil {
+		return v
+	}
+	return FormatDuration(d)
+}
+
+// same reports whether two values of this setting mean the same thing.
+// For a duration that is the duration: 90d is the default 2160h, and
+// storing it as a change from the default would report the setting as
+// changed when it is not.
+func (s Setting) same(a, b string) bool {
+	if a == b {
+		return true
+	}
+	if s.Kind != Duration {
+		return false
+	}
+	x, errA := ParseDuration(a)
+	y, errB := ParseDuration(b)
+	return errA == nil && errB == nil && x == y
 }
 
 func (s Setting) bounds(n int64) error {
@@ -1636,8 +1713,8 @@ func (s Setting) bounds(n int64) error {
 		return nil
 	}
 	if s.Kind == Duration {
-		return &ErrOutOfBounds{Key: s.Key, Value: shortDuration(time.Duration(n)),
-			Least: shortDuration(time.Duration(b[0])), Most: shortDuration(time.Duration(b[1]))}
+		return &ErrOutOfBounds{Key: s.Key, Value: FormatDuration(time.Duration(n)),
+			Least: FormatDuration(time.Duration(b[0])), Most: FormatDuration(time.Duration(b[1]))}
 	}
 	return &ErrOutOfBounds{Key: s.Key, Value: strconv.FormatInt(n, 10),
 		Least: strconv.FormatInt(b[0], 10), Most: strconv.FormatInt(b[1], 10)}
@@ -1658,18 +1735,18 @@ func (s Setting) Validate(v string) error {
 			return err
 		}
 	case Duration:
-		d, err := time.ParseDuration(v)
+		d, err := ParseDuration(v)
 		if err != nil {
-			return fmt.Errorf("%q is not a duration (try 30s, 15m, 720h)", v)
+			return fmt.Errorf("%q is not a duration (try 30s, 15m, 36h, 90d)", v)
 		}
 		if d < 0 {
-			return fmt.Errorf("%s is negative", d)
+			return fmt.Errorf("%s is negative", FormatDuration(d))
 		}
 		if err := s.bounds(int64(d)); err != nil {
 			return err
 		}
 		if s.Key == "session.max" && (d < 5*time.Minute || d > 12*time.Hour) {
-			return fmt.Errorf("a sign-in lasts between 5m and 12h; %s is outside that", d)
+			return fmt.Errorf("a sign-in lasts between 5m and 12h; %s is outside that", FormatDuration(d))
 		}
 	case Bool:
 		if _, err := strconv.ParseBool(v); err != nil {

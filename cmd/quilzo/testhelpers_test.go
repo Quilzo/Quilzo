@@ -6,11 +6,28 @@ package main
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/mcp"
 	"github.com/quilzo/quilzo/internal/out"
 )
+
+// storeFolder is a folder for a test's store, removed only once the work
+// the test started in the background has finished.
+//
+// The shield's responses and the notices that go with them are written
+// into the store from the background (inBackground), and the folder's
+// removal raced the last write: on a loaded machine it failed the test
+// with "directory not empty" and no line of the test's own, or the record
+// was written to a folder already gone. The wait is registered after the
+// folder, so it runs first.
+func storeFolder(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	t.Cleanup(func() { finishBackground(10 * time.Second) })
+	return dir
+}
 
 // connectStore is an empty store, with the output quiet and read as JSON.
 func connectStore(t *testing.T) string {
@@ -18,7 +35,7 @@ func connectStore(t *testing.T) string {
 	old := w
 	w = out.New(true)
 	t.Cleanup(func() { w = old })
-	root := t.TempDir()
+	root := storeFolder(t)
 	if err := cmdInit(root); err != nil {
 		t.Fatal(err)
 	}

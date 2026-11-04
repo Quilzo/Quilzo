@@ -175,6 +175,27 @@ func TestADeclarationIsAFloorUnderItsSetting(t *testing.T) {
 	}
 }
 
+// A setting written in days meets the policy as the same setting in hours
+// does, and a policy may be declared in days the same way.
+//
+// The floor read the setting with Go's parser, so once a duration setting
+// took 90d, a value of 60d under a policy of ninety days read as nothing
+// at all and was refused as below it: a stricter value refused by the
+// policy that asks for it.
+func TestADurationInDaysMeetsThePolicy(t *testing.T) {
+	for _, declared := range []string{"90 days", "90d", "2160h"} {
+		pol := &Policy{Declared: []Declared{{Param: "ac-02_odp.10", Value: declared}}}
+		cfg := config.New().WithFloors(Floors(pol))
+		if err := cfg.Set("access.review.every", "60d", "", "dana"); err != nil {
+			t.Errorf("declared %s: sixty days, which is stricter, was refused: %v", declared, err)
+		}
+		var below *config.ErrBelowPolicy
+		if err := cfg.Set("access.review.every", "13w", "a reason", "dana"); !errors.As(err, &below) {
+			t.Errorf("declared %s: ninety-one days was allowed: %v", declared, err)
+		}
+	}
+}
+
 // Out as a profile, in from any OSCAL document, against the closed list.
 func TestThePolicyTravelsAsOSCAL(t *testing.T) {
 	pol := &Policy{Declared: []Declared{{Param: "ac-12_odp", Value: "4 hours"}}}

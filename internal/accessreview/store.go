@@ -28,6 +28,9 @@ type Store struct{ Dir string }
 // decisions about it.
 var ErrOpen = errors.New("a review is already open; close it first")
 
+// ErrNoneOpen is deciding or closing with no review open.
+var ErrNoneOpen = errors.New("no review is open: quilzo access review start begins one")
+
 func (s *Store) path(id string) string { return filepath.Join(s.Dir, id+".json") }
 
 // lock serialises every change to the reviews, across the admin and the
@@ -113,6 +116,22 @@ func NewID(now time.Time) string {
 	return now.UTC().Format("20060102-150405") + "-" + hex.EncodeToString(b)
 }
 
+// NoneOpen is nil when a review may start, and ErrOpen naming the open
+// one when it may not. Start asks it under the lock, which is the answer
+// that counts; a caller asks it first as well, before taking a snapshot,
+// because the snapshot reads the whole audit log and a start refused
+// after it had read all of that for nothing.
+func (s *Store) NoneOpen() error {
+	open, err := s.Current()
+	if err != nil {
+		return err
+	}
+	if open != nil {
+		return fmt.Errorf("%w (review %s, started %s)", ErrOpen, open.ID, open.Started.Format("2 January 2006"))
+	}
+	return nil
+}
+
 // Start keeps a new review, refused while another is open.
 func (s *Store) Start(r *Review) error {
 	unlock, err := s.lock()
@@ -120,10 +139,8 @@ func (s *Store) Start(r *Review) error {
 		return err
 	}
 	defer unlock()
-	if open, err := s.Current(); err != nil {
+	if err := s.NoneOpen(); err != nil {
 		return err
-	} else if open != nil {
-		return fmt.Errorf("%w (review %s, started %s)", ErrOpen, open.ID, open.Started.Format("2 January 2006"))
 	}
 	return s.save(r)
 }
@@ -141,7 +158,7 @@ func (s *Store) Update(change func(*Review) error) (*Review, error) {
 		return nil, err
 	}
 	if r == nil {
-		return nil, errors.New("no review is open: quilzo access review start begins one")
+		return nil, ErrNoneOpen
 	}
 	if err := change(r); err != nil {
 		return nil, err

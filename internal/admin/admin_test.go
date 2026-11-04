@@ -20,6 +20,7 @@ import (
 	"github.com/quilzo/quilzo/internal/a11y"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/dual"
+	"github.com/quilzo/quilzo/internal/frameworks"
 	publishgate "github.com/quilzo/quilzo/internal/gate"
 	"github.com/quilzo/quilzo/internal/oidc"
 	"github.com/quilzo/quilzo/internal/posture"
@@ -855,6 +856,71 @@ func TestEveryRuleCanBeExplainedFromTheDashboard(t *testing.T) {
 		got := strings.ReplaceAll(w.Body.String(), "&#39;", "'")
 		if !strings.Contains(got, r.Why[:30]) {
 			t.Errorf("%s renders without its reasoning", r.ID)
+		}
+	}
+}
+
+// A finding about a token says whose token it is on the Security screen,
+// from the token's id, since the finding itself no longer does.
+//
+// token.admin-role said "cli belongs to lee" in its text, which went into
+// every export and the audit stream; the text now names the token alone,
+// and an administrator still has to know whom to ask before revoking it.
+func TestTheSecurityScreenSaysWhoseTokenAFindingIsAbout(t *testing.T) {
+	srv, token := setup(t)
+	if _, _, err := srv.Tokens.Issue("deploy-bot", "lee", auth.RoleAdmin, "/", 30*24*time.Hour, auth.RoleAdmin); err != nil {
+		t.Fatal(err)
+	}
+	withPosture(srv, posture.Scan(posture.State{Policy: &auth.Policy{}, Tokens: srv.Tokens, Now: time.Now()}, nil))
+	var about string
+	for _, f := range srv.Posture().Findings {
+		if f.Rule == "token.admin-role" {
+			about = f.Detail + " " + f.Fix
+		}
+	}
+	if about == "" || strings.Contains(about, "lee") {
+		t.Fatalf("control: the finding is missing or names its holder: %q", about)
+	}
+	body := get(t, srv, "/security", token).Body.String()
+	if !strings.Contains(body, "Held by <strong>lee</strong>") {
+		t.Error("the Security screen does not say whose token the finding is about")
+	}
+}
+
+// The rule's own page and a framework's page say whose token a finding is
+// about too, as the Security screen does.
+//
+// Each lists the finding as it fails now, with its fix, and the fix says
+// --principal HOLDER since the finding stopped naming the holder: an
+// administrator who followed the rule's link from the Security screen was
+// told the token and not whom to ask about it.
+func TestEveryPageListingATokenFindingSaysWhoseItIs(t *testing.T) {
+	srv, token := setup(t)
+	if _, _, err := srv.Tokens.Issue("deploy-bot", "lee", auth.RoleAdmin, "/", 30*24*time.Hour, auth.RoleAdmin); err != nil {
+		t.Fatal(err)
+	}
+	rep := posture.Scan(posture.State{Policy: &auth.Policy{}, Tokens: srv.Tokens, Now: time.Now()}, nil)
+	withPosture(srv, rep)
+	pages := []string{"/security/rule/token.admin-role"}
+	for _, f := range frameworks.Catalogue {
+		for _, st := range posture.ByFramework(rep, f.ID) {
+			for _, about := range st.Findings {
+				if about.Rule == "token.admin-role" && len(pages) == 1 {
+					pages = append(pages, "/security/frameworks/"+f.ID)
+				}
+			}
+		}
+	}
+	if len(pages) != 2 {
+		t.Fatal("control: no framework lists token.admin-role")
+	}
+	for _, page := range pages {
+		body := get(t, srv, page, token).Body.String()
+		if !strings.Contains(body, "the token deploy-bot can change the access policy itself") {
+			t.Fatalf("control: %s does not list the finding", page)
+		}
+		if !strings.Contains(body, "Held by <strong>lee</strong>") {
+			t.Errorf("%s lists the finding and does not say whose token it is", page)
 		}
 	}
 }

@@ -527,9 +527,13 @@ func postureScan(root string, args []string) error {
 	if len(shown) == 0 {
 		w.Human("  %snothing at %s or above%s\n", green, floor, reset)
 	}
+	holders := tokenHolders(state)
 	for _, f := range shown {
 		w.Human("  %s%-8s%s %s\n", colourFor(f.Severity), f.Severity, reset, f.Title)
 		w.Human("           %s\n", f.Detail)
+		if who := holders[f.Resource]; who != "" && f.Resource != "" {
+			w.Human("           %sheld by %s%s\n", dim, onOneLine(who), reset)
+		}
 		if f.Fix != "" {
 			w.Human("           %sfix:%s %s\n", dim, reset, f.Fix)
 		}
@@ -588,6 +592,23 @@ func summarise(rep posture.Report) string {
 		}
 	}
 	return strings.Join(parts, "  ")
+}
+
+// tokenHolders is whose token each finding about a token is about, by the
+// token id that is its resource. The finding names the token and not its
+// holder, since it goes into the JSON, OSCAL and the audit stream and the
+// holder's name went with it in clear; whoever acts on it at the command
+// line has to know whom to ask, as the Security screen tells them. Shared
+// by posture scan and posture frameworks, because frameworks listed the
+// same detail and lost the holder with it.
+func tokenHolders(state posture.State) map[string]string {
+	holders := map[string]string{}
+	if state.Tokens != nil {
+		for _, t := range state.Tokens.Snapshot() {
+			holders[t.ID] = t.Principal
+		}
+	}
+	return holders
 }
 
 func colourFor(s posture.Severity) string {
@@ -994,7 +1015,8 @@ func postureFrameworks(root string, args []string) error {
 		return err
 	}
 	sup, _ := loadSuppressions(root)
-	rep := posture.Scan(Observe(root, *tplDir, posture.ServerFacts{}), sup)
+	state := Observe(root, *tplDir, posture.ServerFacts{})
+	rep := posture.Scan(state, sup)
 	if len(pos) == 0 {
 		if w.JSON(frameworkSummaries(rep)) {
 			return nil
@@ -1022,6 +1044,7 @@ func postureFrameworks(root string, args []string) error {
 		return nil
 	}
 	fmt.Printf("%s%s%s  %s\n  %s%s%s\n\n", bold, fw.Name, reset, fw.Version, dim, fw.About, reset)
+	holders := tokenHolders(state)
 	for _, st := range view {
 		colour := green
 		switch st.State {
@@ -1034,6 +1057,9 @@ func postureFrameworks(root string, args []string) error {
 			strings.Join(st.Rules, ", "))
 		for _, f := range st.Findings {
 			fmt.Printf("                 %s%s%s\n", dim, onOneLine(f.Detail), reset)
+			if who := holders[f.Resource]; who != "" && f.Resource != "" {
+				fmt.Printf("                 %sheld by %s%s\n", dim, onOneLine(who), reset)
+			}
 		}
 	}
 	return nil

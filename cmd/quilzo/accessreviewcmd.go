@@ -128,6 +128,12 @@ func reviewStart(root string, c *Caller) (*accessreview.Review, error) {
 	if err := authorise(root, c, auth.ActGrant, "/"); err != nil {
 		return nil, err
 	}
+	// Before the snapshot, which reads the whole audit log: a start with a
+	// review open is refused anyway, and was refused after reading it all.
+	// The store asks again under its lock when the review is kept.
+	if err := reviewStore(root).NoneOpen(); err != nil {
+		return nil, err
+	}
 	now := time.Now()
 	in, err := reviewInputs(root, nil, now)
 	if err != nil {
@@ -374,9 +380,29 @@ func applyRevoke(root string, c *Caller, it accessreview.Item) error {
 
 // reviewClose ends the open review, and writes the evidence that the
 // control operated.
+//
+// The evidence is written before the review is kept as closed, under the
+// store's lock, and the review stays open if any of it is refused. It was
+// the other way round: the review was saved closed and then its records
+// written, so an audit log that refused review.closed left a review
+// closed with no record that it was done and no evidence for the control,
+// and closing again answered that no review was open. A failure part way
+// through and a close that then succeeds can write an audit record twice,
+// which says the review closed twice a minute apart; that is read for what
+// it is, and evidence never written is not read at all. The evidence
+// itself is written once (recordReviewEvidence), because each line of it
+// counts as an occurrence of the control.
 func reviewClose(root string, c *Caller) (*accessreview.Review, accessreview.Summary, error) {
 	if err := authorise(root, c, auth.ActGrant, "/"); err != nil {
 		return nil, accessreview.Summary{}, err
+	}
+	// Before the snapshot, as start asks: it reads the whole audit log, and
+	// a close with no review open read all of it to say there was none.
+	// Update asks again under the lock.
+	if open, err := reviewStore(root).Current(); err != nil {
+		return nil, accessreview.Summary{}, err
+	} else if open == nil {
+		return nil, accessreview.Summary{}, accessreview.ErrNoneOpen
 	}
 	now := time.Now()
 	in, err := reviewInputs(root, nil, now)
@@ -406,27 +432,49 @@ func reviewClose(root string, c *Caller) (*accessreview.Review, accessreview.Sum
 			return err
 		}
 		var cerr error
-		sum, cerr = r.Close(reviewer(c), current, alone, administrators(in.Policy), now)
-		return cerr
+		if sum, cerr = r.Close(reviewer(c), current, alone, administrators(in.Policy), now); cerr != nil {
+			return cerr
+		}
+		if err := recordE(root, c.auditRecord("review.closed", r.Resource(), audit.Success, r.ClosedDetail(sum))); err != nil {
+			return fmt.Errorf("the review is still open, because its record could not be written: %w", err)
+		}
+		if err := recordReviewEvidence(root, r); err != nil {
+			return fmt.Errorf("the review is still open, because its evidence could not be written: %w", err)
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, sum, err
 	}
-	if err := recordE(root, c.auditRecord("review.closed", r.Resource(), audit.Success, r.ClosedDetail(sum))); err != nil {
-		return r, sum, err
-	}
-	return r, sum, recordReviewEvidence(root, r)
+	return r, sum, nil
 }
 
 // recordReviewEvidence appends a closed review's evidence, beside the
 // evidence of every other control, and puts it in the audit chain.
+//
+// Once for each review. A close whose control.operated record was refused
+// after the evidence was appended stays open and is closed again, and that
+// appended it a second time: each line counts as an occurrence of the
+// control, so one review read as the two that show a quarterly control
+// operating over half a year. Evidence that cannot be read is no reason
+// to withhold it, so then it is appended as before.
 func recordReviewEvidence(root string, r *accessreview.Review) error {
 	e := r.Evidence()
 	if err := e.Validate(); err != nil {
 		return err
 	}
-	if err := appendJSONL(evidencePath(root), e); err != nil {
-		return err
+	written := false
+	if have, err := loadEvidence(root); err == nil {
+		for _, h := range have {
+			if h.Control == e.Control && h.Ref == e.Ref {
+				written = true
+			}
+		}
+	}
+	if !written {
+		if err := appendJSONL(evidencePath(root), e); err != nil {
+			return err
+		}
 	}
 	return recordE(root, e.Record())
 }

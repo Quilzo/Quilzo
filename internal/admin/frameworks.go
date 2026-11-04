@@ -79,7 +79,8 @@ func (s *Server) handleFramework(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	view := posture.ByFramework(s.Posture(), f.ID)
+	rep := s.Posture()
+	view := posture.ByFramework(rep, f.ID)
 	counts := map[string]int{}
 	for _, st := range view {
 		counts[st.State]++
@@ -87,5 +88,7 @@ func (s *Server) handleFramework(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "framework.html", map[string]any{"Title": f.Name,
 		"Nav": "security", "Principal": p, "F": f, "View": view,
 		"Failing": counts["failing"], "Passing": counts["passing"],
-		"Unchecked": counts["not checked"]})
+		"Unchecked": counts["not checked"],
+		// Whose token a finding is about, as the Security screen says it.
+		"Holders": s.tokenHolders(rep.Findings)})
 }
