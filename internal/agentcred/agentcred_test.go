@@ -140,3 +140,77 @@ func TestDIDKeyRoundTrips(t *testing.T) {
 		t.Error("characters outside base58 were read")
 	}
 }
+
+// What an agent's proof is held to, pinned before it shares a verifier
+// with DPoP: a minute either side of now, the address exactly as the
+// request reached it (no query, case or port forgiven, unlike DPoP's), the
+// method in any case, and a proof remembered for as long as one could
+// still be presented, so even one dated a minute ahead is good once.
+func TestAnAgentProofKeepsItsOneMinuteWindowAndItsExactAddress(t *testing.T) {
+	now := time.Unix(1787000000, 0)
+	issuer, pubs, holder := keys(t)
+	tok, _ := Issue(issuer, "iss", credentialFor(holder, now), now)
+	c, err := Verify(tok, pubs, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	url := "https://quilzo.example.com/mcp/browser/shop"
+	at := func(made time.Time, method, url string) string {
+		p, err := Prove(holder, tok, method, url, made)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	for _, w := range []struct {
+		name string
+		made time.Time
+		ok   bool
+	}{
+		{"a minute old", now.Add(-ProofWindow), true},
+		{"a minute and a second old", now.Add(-ProofWindow - time.Second), false},
+		{"a minute ahead", now.Add(ProofWindow), true},
+		{"a minute and a second ahead", now.Add(ProofWindow + time.Second), false},
+	} {
+		err := CheckProof(c, at(w.made, "POST", url), "POST", url, now, &Replays{})
+		if (err == nil) != w.ok {
+			t.Errorf("a proof %s: %v", w.name, err)
+		}
+	}
+	if ProofWindow != time.Minute {
+		t.Errorf("the window is %s", ProofWindow)
+	}
+
+	for _, other := range []string{
+		url + "?x=1", url + "/", "https://QUILZO.example.com/mcp/browser/shop",
+		"https://quilzo.example.com:443/mcp/browser/shop", "http://quilzo.example.com/mcp/browser/shop",
+		"https://quilzo.example.com/mcp/browser/bank",
+	} {
+		if err := CheckProof(c, at(now, "POST", other), "POST", url, now, &Replays{}); err == nil {
+			t.Errorf("a proof for %s was accepted at %s", other, url)
+		}
+	}
+	if err := CheckProof(c, at(now, "post", url), "POST", url, now, &Replays{}); err != nil {
+		t.Errorf("the method is compared in any case, and was refused: %v", err)
+	}
+	if err := CheckProof(c, at(now, "GET", url), "POST", url, now, &Replays{}); err == nil {
+		t.Error("a proof for GET was accepted for POST")
+	}
+
+	// Dated a minute ahead, it is in its window until two minutes from
+	// now; the replays remember it that long.
+	replays := &Replays{}
+	ahead := at(now.Add(ProofWindow), "POST", url)
+	if err := CheckProof(c, ahead, "POST", url, now, replays); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckProof(c, ahead, "POST", url, now.Add(2*ProofWindow), &Replays{}); err != nil {
+		t.Fatalf("two minutes on, the proof is out of its window, so this test proves nothing: %v", err)
+	}
+	if err := CheckProof(c, ahead, "POST", url, now.Add(2*ProofWindow), replays); err == nil {
+		t.Error("a proof was accepted twice, the second time on the last moment of its window")
+	}
+	if err := CheckProof(c, at(now, "POST", url), "POST", url, now, nil); err == nil {
+		t.Error("a proof was accepted with nothing to remember it")
+	}
+}

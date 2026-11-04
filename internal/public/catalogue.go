@@ -33,8 +33,8 @@ import (
 // No prices are computed, no stock is reserved, no order is taken. Quilzo holds
 // what was published and can prove it; a catalogue is a statement about
 // content, and the moment it becomes a transaction this process needs
-// credentials it currently does not have. The public server's one write
-// capability is appending a form submission, and this does not change that.
+// credentials it currently does not have. The catalogue writes nothing, and
+// adds no write to the ones the public server already takes.
 
 // catalogue serves a declared listing as a machine-readable feed.
 //

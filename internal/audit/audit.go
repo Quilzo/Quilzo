@@ -27,11 +27,12 @@
 // before it. Altering or removing an entry breaks the chain at that point, and
 // `Verify` says exactly where.
 //
-// A hash chain rather than a Merkle tree, deliberately. A Merkle log buys
-// inclusion proofs — proving one entry to somebody without handing over the
-// rest — and that is worth the complexity when a third party audits a log they
-// cannot read. This log is read whole by its own operator, so the chain is the
-// right size of tool and there is no reason to reach for the larger one.
+// The chain is what Verify walks, and it is enough for an operator who reads
+// the log whole. A third party who audits a log they cannot read needs more:
+// proof of one entry without the rest, and proof that nothing before a
+// published head moved. For them a Merkle tree is built over the same entries
+// (merkle.go, on internal/translog). It is computed from the chain's entries
+// and does not replace the chain.
 //
 // # Identity, and the three kinds of actor
 //

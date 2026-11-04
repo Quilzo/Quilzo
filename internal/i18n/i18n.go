@@ -29,12 +29,15 @@
 //
 // # What is deliberately not here
 //
-// No machine translation, no locale detection from Accept-Language, no
-// automatic fallback to a default language. The last one is the interesting
+// Nothing here machine-translates a page, and no fallback to a default
+// language passes itself off as a match. Choosing among the translations a
+// site has, from Accept-Language, is here (Negotiate, in negotiate.go), and
+// when nothing the visitor asked for exists its answer says it fell back
+// (Match.Fallback), so a caller can say so too. That is the interesting
 // refusal: serving the English page to somebody who asked for French, without
-// saying so, is how a reader ends up believing a page exists in their language
-// when it does not. A missing translation is a missing translation, and the
-// site says which languages a page is actually available in.
+// saying so, is how a reader ends up believing a page exists in their
+// language when it does not. A missing translation is a missing translation,
+// and the site says which languages a page is actually available in.
 package i18n
 
 import (

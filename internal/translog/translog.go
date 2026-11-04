@@ -3,17 +3,17 @@
 
 // Package translog is an RFC 6962 Merkle tree log.
 //
-// It replaces the hash chain that came before it, and the reason is not
-// tidiness. Both structures detect tampering; they differ in what can be proved
-// about a *single* entry.
+// It sits over the audit log's hash chain rather than replacing it: every
+// entry still carries the hash of the one before (internal/audit), and this
+// tree is built over the same entries (internal/audit's merkle.go). Both
+// detect tampering; they differ in what can be proved about a *single* entry.
 //
-// With a hash chain, proving that one wire transfer was authorised means handing
-// over the log and letting the other party walk it. That is exactly the wrong
-// shape for this product, whose entire deployment argument is that the
-// confidential half stays inside the customer's VPC. With a Merkle log the same
-// proof is a handful of hashes: an auditor, an insurer or a regulator can verify
-// that a specific decision is in the log, and that the log has never been
-// rewritten, without ever seeing the rest of it.
+// With a hash chain, proving that one entry is in the log means handing over
+// the log and letting the other party walk it, and so handing over everything
+// else in it too. With a Merkle log the same proof is a handful of hashes: an
+// auditor, an insurer or a regulator can verify that a specific decision is in
+// the log, and that the log has never been rewritten, without ever seeing the
+// rest of it.
 //
 //	inclusion proof    this entry is in a tree with this root      O(log n)
 //	consistency proof  this tree is a prefix of that later tree    O(log n)

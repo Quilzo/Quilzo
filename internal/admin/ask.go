@@ -495,6 +495,11 @@ func cardWords(c AskCard) string {
 		if c.Outcome != "" {
 			what = map[string]string{"complete": "Finished runs", "failed": "Failed runs", "waiting": "Runs waiting", "running": "Runs going"}[c.Outcome]
 		}
+		// One day is "the last day", as Today says it: a question about
+		// the last day's runs was headed "in the last 1 days".
+		if c.Days == 1 {
+			return what + " of " + who + " in the last day"
+		}
 		return fmt.Sprintf("%s of %s in the last %d days", what, who, c.Days)
 	}
 	return ""

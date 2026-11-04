@@ -216,8 +216,9 @@ type UpkeepFacts struct {
 	// neither is running, or the sweep is failing.
 	ExpiredSubmissions int `json:"expired_submissions"`
 	// OverdueEntries are scheduled publishes whose moment has passed and which
-	// have not fired. Publishing deliberately does not daemonise — see
-	// scheduleRun — so this is the only thing that notices.
+	// have not fired. The admin server publishes them at their time unless
+	// schedule.in_server is off, and then only a timer running `quilzo
+	// schedule run` does; either can be down, and this is what notices.
 	OverdueEntries int `json:"overdue_entries"`
 	// OldestOverdue is how long the oldest of them has been waiting.
 	OldestOverdue time.Duration `json:"oldest_overdue,omitempty"`

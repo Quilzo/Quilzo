@@ -601,7 +601,9 @@ func cmdServe(root string, args []string) error {
 	// Retention. A form declares how long its submissions are kept and, until
 	// this, nothing removed them: the ceiling was a sentence in a policy and
 	// not a thing the program did. See internal/upkeep for why this sweeps
-	// here while scheduled publishing keeps its external timer.
+	// here. Scheduled publishing runs in this server too, on its own timer
+	// below (runScheduler), because it fires to the second and this loop
+	// wakes every quarter of an hour.
 	//
 	// The posture, rescanned on the same schedule, so a check that starts
 	// failing is on the record (and with the security contact) rather than

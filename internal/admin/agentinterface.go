@@ -174,7 +174,10 @@ func (s *Server) handleBrowserMCP(w http.ResponseWriter, r *http.Request) {
 	}
 	own := s.ownOrigin(r)
 	e := &mcp.Endpoint{
-		Metadata: metadata, DefaultScope: scope,
+		// DPoP offered in a refusal, as /mcp and the gateway offer it: a
+		// key-bound token is taken here too, through interfaceCaller, and a
+		// refusal that said "Bearer" alone did not tell its client so.
+		Metadata: metadata, DefaultScope: scope, DPoP: dpop.AlgorithmNames(),
 		Authenticate: func(r *http.Request, token string) (*mcp.Caller, error) {
 			// An agent credential is a compact JWS; a token is not.
 			if s.Interface.Credential != nil && strings.Count(token, ".") == 2 && strings.HasPrefix(token, "eyJ") {

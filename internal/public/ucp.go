@@ -13,8 +13,9 @@ import "net/http"
 // requests is held to the licence terms a crawler is, because what it takes
 // away is the same content.
 //
-// Reads only. The public server's one write is still a form submission;
-// nothing here keeps anything a caller sends.
+// Reads only: nothing here keeps anything a caller sends, and this adds no
+// write to the ones the public server already takes (forms, bookings,
+// sign-ups and the rest, each on a route of its own).
 func (st *Site) ucpRoutes(mux *http.ServeMux) {
 	if st.UCP == nil {
 		return

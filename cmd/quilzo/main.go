@@ -156,6 +156,7 @@ templates and design
   quilzo theme import FILE --list          what a design token file holds
   quilzo theme import FILE --set T=PATH    fill this site's tokens from it
   quilzo theme export [--out FILE]         this site's tokens, as design tokens
+      --tailwind                           or as a Tailwind CSS v4 @theme stylesheet
   quilzo section kinds                     what a page can be built out of
   quilzo section list [PAGE]               the sections on a page, in order
   quilzo section add PAGE KIND             add one, with content that renders
