@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -20,6 +21,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/decide"
 	"github.com/quilzo/quilzo/internal/evals"
+	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/provenance"
 	"github.com/quilzo/quilzo/internal/shield"
 	"github.com/quilzo/quilzo/internal/site"
@@ -714,6 +716,113 @@ func TestTheModelFlagWorksAfterTheAgentsName(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "quote it") || *asked != before {
 			t.Errorf("%q: %v, model asked %d time(s)", args, err, *asked-before)
 		}
+	}
+}
+
+// concludingModel is a model that finishes with words of its own: at
+// once, or, with write, after proposing to write the welcome page.
+func concludingModel(t *testing.T, say string, write bool) {
+	t.Helper()
+	done, _ := json.Marshal(map[string]any{"op": "done", "say": say})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		choice := string(done)
+		if write && strings.Contains(string(b), "Nothing has been done yet") {
+			choice = `{"op":"write_page","input":{"page":"welcome","fields":` +
+				`{"title":"Welcome","body":"Open nine to five."}}}`
+		}
+		out, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{
+			"message": map[string]any{"role": "assistant", "content": choice}}}})
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(out)
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("QUILZO_MODEL_URL", srv.URL+"/v1")
+	t.Setenv("QUILZO_MODEL", "stand-in")
+	t.Setenv("QUILZO_MODEL_KEY", "")
+}
+
+// The person who ran an agent is told what it concluded.
+//
+// Found by running one: `agent run NAME --model` ended with the steps and
+// a count, "finished done done", and what the agent had found was only in
+// `agent trace RUN --json`. A program's run printed its words; a model's
+// did not, and neither did a run that finished once a person answered it.
+func TestARunsFinalWordsArePrintedWhenItFinishes(t *testing.T) {
+	const said = "The welcome page says the shop opens at nine."
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("QUILZO_TOKEN", "")
+	root := demoStore(t)
+	declaredAutonomy(t, root)
+	if err := declareAgent(root, asker("tidy"), true, true, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	// With a control sequence after them, which is the agent's to write
+	// and not the terminal's to obey.
+	concludingModel(t, said+"\x1b[2J", false)
+	_, read := captureStdout(t)
+	err := agentCheckRun(root, []string{"tidy", "--model", "read the welcome page"})
+	got := read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "it said: "+said) {
+		t.Errorf("agent run --model did not print what the agent concluded:\n%s", got)
+	}
+	if strings.Contains(got, "\x1b[2J") {
+		t.Error("the agent's words reached the terminal with a control sequence in them")
+	}
+
+	// --json carries them: the run's record, as agent trace RUN --json
+	// shows it, and nothing else on standard output.
+	old := w
+	t.Cleanup(func() { w = old })
+	var doc bytes.Buffer
+	w = out.New(true)
+	w.Out = &doc
+	_, read = captureStdout(t)
+	err = agentCheckRun(root, []string{"tidy", "--model", "read the welcome page"})
+	stray := read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rec agent.Record
+	if err := json.Unmarshal(doc.Bytes(), &rec); err != nil || rec.ID == "" ||
+		!strings.HasPrefix(rec.Trace.Answer, said) {
+		t.Errorf("--json did not carry the run and its final words: %v %s", err, doc.String())
+	}
+	if strings.TrimSpace(stray) != "" {
+		t.Errorf("--json printed prose beside its document:\n%s", stray)
+	}
+	w = old
+
+	// A run that finishes once a person has let its write go ahead: the
+	// run printed after the answer says what it concluded too.
+	concludingModel(t, said, true)
+	id, _ := runAgentOnce(root, "tidy", "write a welcome page", true, asAdmin("dana"))
+	waiting, _ := loadAgentRun(root, id)
+	if waiting.Trace.Waiting == nil {
+		t.Fatal("the run did not wait for a person")
+	}
+	done, err := continueAgentRun(context.Background(), root, id,
+		&agent.Verdict{N: waiting.Trace.Waiting.N, Approve: true}, asAdmin("sam"))
+	if err != nil || !done.Trace.Complete {
+		t.Fatalf("the approved run did not finish: %v %+v", err, done.Trace)
+	}
+	_, read = captureStdout(t)
+	printAgentRun(done)
+	if got := read(); !strings.Contains(got, "it said: "+said) {
+		t.Errorf("the run printed after a person's answer did not say what it concluded:\n%s", got)
+	}
+	doc.Reset()
+	w = out.New(true)
+	w.Out = &doc
+	_, read = captureStdout(t)
+	printAgentRun(done)
+	stray = read()
+	w = old
+	if err := json.Unmarshal(doc.Bytes(), &rec); err != nil || rec.Trace.Answer != said || strings.TrimSpace(stray) != "" {
+		t.Errorf("with --json, the answered run was not one document carrying its words: %v %s %s", err, doc.String(), stray)
 	}
 }
 

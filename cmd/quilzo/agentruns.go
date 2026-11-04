@@ -945,6 +945,11 @@ func agentTrace(root string, args []string) error {
 }
 
 func printAgentRun(r agent.Record) {
+	// With --json the record itself, as agent trace RUN --json gives it,
+	// so a run answered, resumed or replayed is one document too.
+	if w.JSON(r) {
+		return
+	}
 	how := "the declaration was walked, with no model"
 	if r.Model != "" {
 		how = "decided by " + r.Model
@@ -987,6 +992,12 @@ func printAgentRun(r agent.Record) {
 	if sp := r.Trace.Spent; sp.Tokens > 0 || sp.Cost > 0 {
 		fmt.Printf("  %sspent %d tokens and %s over %d steps%s\n", dim, sp.Tokens,
 			formatCost(sp.Cost, ""), len(r.Trace.Steps), reset)
+	}
+	// What a model concluded. The run that finished once a person had
+	// answered it printed its steps, the last "finished done done", and
+	// not the words that step carried.
+	if a := strings.TrimSpace(r.Trace.Answer); a != "" && r.Model != "" {
+		fmt.Printf("  it said: %s\n", clip(printable(a), 600))
 	}
 	for _, a := range r.Answers {
 		word := "declined"
@@ -1094,7 +1105,7 @@ func agentReplay(root string, args []string) error {
 		if rec, lerr := loadAgentRun(root, newID); lerr == nil {
 			printAgentRun(rec)
 		}
-		fmt.Printf("  %skept as %s%s\n", dim, newID, reset)
+		w.Human("  %skept as %s%s\n", dim, newID, reset)
 	}
 	return err
 }
