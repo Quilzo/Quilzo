@@ -108,3 +108,18 @@ func TestEveryAgeOnTheScreensUsesTheSameWords(t *testing.T) {
 		}
 	}
 }
+
+// A card on Ask that counts agent runs said "Runs of every agent you
+// manage in the last 1 days" when the question was about the last day: the
+// same wrong plural as "for 1 minutes", in a span the card writes itself.
+// Today says "in the last day", and so does the card now.
+func TestADayIsOneDay(t *testing.T) {
+	for days, want := range map[int]string{
+		1: "Runs of every agent you manage in the last day",
+		7: "Runs of every agent you manage in the last 7 days",
+	} {
+		if got := cardWords(AskCard{Kind: "runs", Days: days}); got != want {
+			t.Errorf("%d days: %q, want %q", days, got, want)
+		}
+	}
+}
