@@ -315,6 +315,12 @@ func sfntTables(b []byte) ([]table, uint32, error) {
 	}
 	seen := map[string]bool{}
 	tables := make([]table, 0, n)
+	// What the tables come to uncompressed, counted before any is
+	// compressed. The directory may point several tables at the same bytes,
+	// so the file's own size bounds nothing: a hundred tables over one
+	// megabyte of outlines is a hundred megabytes to compress, which took a
+	// processor eleven seconds to refuse when this was counted afterwards.
+	var total uint64 = 12 + 16*uint64(n)
 	for i := 0; i < n; i++ {
 		rec := b[12+16*i:]
 		tag := string(rec[0:4])
@@ -325,6 +331,10 @@ func sfntTables(b []byte) ([]table, uint32, error) {
 		seen[tag] = true
 		if offset+length > uint64(len(b)) {
 			return nil, 0, fmt.Errorf("the %q table runs past the end of the file", tag)
+		}
+		if total += pad4(length); total > maxSfntBytes {
+			return nil, 0, fmt.Errorf("the face's tables come to more than %d bytes "+
+				"uncompressed, the most this serves", maxSfntBytes)
 		}
 		tables = append(tables, table{tag: tag, data: b[offset : offset+length]})
 	}

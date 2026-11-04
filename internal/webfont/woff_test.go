@@ -6,11 +6,13 @@ package webfont
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
+	"time"
 )
 
 // face builds a TrueType or OpenType file out of tables, as a font tool lays
@@ -202,6 +204,57 @@ func TestASourceTooLargeToServeIsRefusedAtTheDoor(t *testing.T) {
 	_, err := Convert(make([]byte, MaxSourceBytes+1))
 	if err == nil || !strings.Contains(err.Error(), "Subset") {
 		t.Fatalf("an oversized source: %v", err)
+	}
+}
+
+// A face whose directory claims more than can be served is refused before
+// a table is compressed.
+//
+// An sfnt directory may point several tables at the same bytes, so a file
+// under the two-megabyte door could claim a hundred megabytes of tables, and
+// every one was compressed at zlib's best before the total was looked at:
+// about eleven seconds of a processor for each upload, from the Design
+// screen as from the command line, to be told the face was too large.
+func TestADirectoryClaimingMoreThanCanBeServedIsRefusedBeforeAnyWork(t *testing.T) {
+	tables := trueTypeTables(0)
+	big := make([]byte, 1<<20)
+	for i := range big {
+		big[i] = byte(i * 7919 >> 3)
+	}
+	tables["glyf"] = big
+	for i := 0; i < 100; i++ {
+		tables[fmt.Sprintf("z%03d", i)] = []byte{0, 0, 0, 0}
+	}
+	src := face(flavourTrueType, tables)
+	// Every z table at the outlines' bytes.
+	be := binary.BigEndian
+	var glyfOffset, glyfLength uint32
+	n := int(be.Uint16(src[4:6]))
+	for i := 0; i < n; i++ {
+		rec := src[12+16*i:]
+		if string(rec[0:4]) == "glyf" {
+			glyfOffset, glyfLength = be.Uint32(rec[8:12]), be.Uint32(rec[12:16])
+		}
+	}
+	for i := 0; i < n; i++ {
+		rec := src[12+16*i:]
+		if rec[0] == 'z' {
+			be.PutUint32(rec[8:12], glyfOffset)
+			be.PutUint32(rec[12:16], glyfLength)
+		}
+	}
+	if len(src) > MaxSourceBytes {
+		t.Fatalf("the fixture is %d bytes, over the door it is meant to pass", len(src))
+	}
+	if _, _, err := sfntTables(src); err == nil || !strings.Contains(err.Error(), "uncompressed") {
+		t.Fatalf("a directory claiming %d tables of a megabyte was read as a face: %v", n-11, err)
+	}
+	start := time.Now()
+	if _, err := Convert(src); err == nil || !strings.Contains(err.Error(), "uncompressed") {
+		t.Fatalf("converted: %v", err)
+	}
+	if took := time.Since(start); took > 2*time.Second {
+		t.Errorf("refusing it took %v", took)
 	}
 }
 
