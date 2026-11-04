@@ -38,8 +38,8 @@ var Corners = []string{"round", "chamfer"}
 
 // CornerWords says what each corner choice does.
 var CornerWords = map[string]string{
-	"round":   "Rounded by the radius. The default.",
-	"chamfer": "Cut off at an angle, by the radius. A browser that cannot cut a corner rounds it instead.",
+	"round":   "Rounded by the radius. The default, in every style but neon.",
+	"chamfer": "Cut off at an angle, by the radius; the neon style's default. A browser that cannot cut a corner rounds it instead.",
 }
 
 // Scheme is the colour scheme a site is drawn in: both, dark or light.

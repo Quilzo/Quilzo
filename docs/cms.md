@@ -350,6 +350,10 @@ quilzo theme check                    # the palette, the backdrop veil and the l
 quilzo theme layer unset
 ```
 
+With `--json`, each of these answers with one document: the layer's path,
+its size, whether it is served, how many rules are refused and every finding.
+A refused `set` prints that document and exits non-zero.
+
 What it cannot see is said rather than claimed: a colour pair split across two
 rules, text faded afterwards by `opacity` or a filter, and a rule that hides
 something the layout draws — the veil over a backdrop, or its stop switch.
@@ -375,10 +379,14 @@ cannot be a backdrop, because muting it throws away what was said in it.
 ```
 
 On the Sections screen, "Put a backdrop behind it" gives a section the field,
-and the picker beside it offers the library's pictures and recordings; from the
+and the picker beside it offers the library's pictures and the recordings it
+knows to be silent, and says how many recordings it left out. From the
 terminal it is `quilzo section backdrop PAGE N /media/ID` (or `hero` for N, and
 `--off` to take it away), because an edit writes only the fields a section
-already has.
+already has; it refuses, before writing anything, a file the library does not
+hold and a recording not known to be silent. The hero has no screen of its
+own in the admin, so a hero's backdrop is set with that command, in the page's
+JSON (`quilzo add`, or an agent's `write_page`), or by a site package.
 
 **Silent recordings.** Whether a recording has sound is recorded when it is
 added, from the same probe that reads its size. One with sound still needs a
@@ -386,7 +394,9 @@ captions track to publish; one with none needs a description instead (WCAG
 1.2.1), which the layout takes from the library — the description written when
 it was added becomes the video's label — or from a caption beside it. A
 recording nothing could listen to, on a machine without ffprobe, is treated as
-having sound.
+having sound. `quilzo media list`, its `--json`, and the `list_media` tool an
+agent reads say which recordings have sound, which have none, and which are
+not known.
 
 **The neon style.** An eighth style: a glow on headings and filled buttons from
 the accent, section titles that run from the text colour into it, chamfered
@@ -417,8 +427,12 @@ gets its narrower copies as every other picture does.
 
 All of it is on the Design screen too — the neon style beside the others,
 corners and schemes in the Look section, the veil and the glow in the token
-table, and the layer, with what was refused in it — and in a site package's
-`site` block (`style`, `scheme`, `corner`, `tokens`, `layer`). The site builder,
+table, and the layer, with what was refused in it. A layer the screen refuses
+is given back as it was typed, with every refused rule named; somebody who may
+edit the design but not publish sees the layer read-only. `quilzo theme
+styles --json` lists the styles, corners and schemes for a script. It is also
+in a site package's `site` block (`style`, `scheme`, `corner`, `tokens`,
+`layer`). The site builder,
 from a sentence or over MCP, can choose the style and the scheme; it never
 writes a layer, because a model writing CSS is the one part of a site nobody
 reads before it is served.

@@ -25,6 +25,7 @@ import (
 	"github.com/quilzo/quilzo/internal/ipfs"
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/mcp"
+	"github.com/quilzo/quilzo/internal/media"
 	"github.com/quilzo/quilzo/internal/odp"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/site"
@@ -448,8 +449,15 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 			// The path, not a short id. Whatever reads this list is going to
 			// put the answer in a page, and a shortened id resolves to nothing
 			// — so the useful form is the one a page can carry.
-			fmt.Fprintf(&b, "/media/%s %s %s %dx%d %q\n", f.ID, f.Name,
+			fmt.Fprintf(&b, "/media/%s %s %s %dx%d %q", f.ID, f.Name,
 				f.Format, f.Width, f.Height, f.Alt)
+			// A recording's sound, because it decides what a page showing it
+			// needs and whether it can be a backdrop: an agent choosing one
+			// for write_page could not tell.
+			if f.Kind == media.Video {
+				fmt.Fprintf(&b, " (%s)", soundPhrase(f))
+			}
+			b.WriteByte('\n')
 		}
 		return strings.TrimSpace(b.String()), nil
 	})

@@ -61,6 +61,17 @@ func cmdTheme(root string, args []string) error {
 	case "export":
 		return themeExport(args[1:])
 	case "styles":
+		// The choices, for a script as well as a person: a site package or a
+		// builder that names a style, a corner or a scheme needs to know
+		// which there are, and this printed nothing under --json.
+		if w.JSON(map[string]any{
+			"styles":  namedChoices(theme.Styles, theme.StyleWords),
+			"corners": namedChoices(theme.Corners, theme.CornerWords),
+			"schemes": namedChoices(theme.SchemeChoices, theme.SchemeWords),
+			"motions": theme.Motions,
+		}) {
+			return nil
+		}
 		for _, st := range theme.Styles {
 			w.Human("  %s%-11s%s %s\n", bold, st, reset, theme.StyleWords[st])
 		}
@@ -266,6 +277,16 @@ func themeSet(root string, args []string) error {
 		w.Human("\n  %s%d contrast failure(s) saved with --force; the publish "+
 			"gate will refuse them%s\n", bold, blocking, reset)
 	}
+	// The veil over a backdrop is judged apart from the palette and refuses
+	// only a page that has a backdrop, so it is not a reason to refuse this
+	// change. It is said here all the same: `theme set scrim-strength 10%`
+	// was answered with the new value and nothing else, and the first anybody
+	// heard of it was a page refused at publish.
+	if theme.Blocks(th.CheckBackdrop()) {
+		w.Human("\n  %swords over a backdrop picture or video are now below their ratio, "+
+			"so a page with a backdrop will not publish; `quilzo theme check` says "+
+			"which and by how much%s\n", bold, reset)
+	}
 	schemes := "both schemes"
 	if sc := th.Scheme(); sc != "both" {
 		schemes = "the " + sc + " scheme it is drawn in"
@@ -423,6 +444,26 @@ func reportLayer(dir string, d *Design) {
 	}
 }
 
+// namedChoices is a list of choices with what each does, in their order.
+func namedChoices(names []string, words map[string]string) []map[string]string {
+	out := make([]map[string]string, 0, len(names))
+	for _, n := range names {
+		out = append(out, map[string]string{"name": n, "words": words[n]})
+	}
+	return out
+}
+
+// layerDoc is what `theme layer --json` answers with: where the layer is,
+// how big, whether it is served, and every finding, as a list even when there
+// are none, so a script reads one shape.
+func layerDoc(path string, size int, served bool, findings []theme.Finding) map[string]any {
+	if findings == nil {
+		findings = []theme.Finding{}
+	}
+	return map[string]any{"path": path, "bytes": size, "served": served,
+		"refused": blockingCount(findings), "findings": findings}
+}
+
 // themeValue is one token's value as a site has it.
 func themeValue(th *theme.Theme, name string) string {
 	v, _ := th.Value(name, false)
@@ -470,8 +511,7 @@ func themeLayer(root string, args []string) error {
 		if err != nil {
 			return err
 		}
-		if w.JSON(map[string]any{"path": path, "bytes": len(d.Layer), "served": d.LayerServed,
-			"findings": d.LayerFindings}) {
+		if w.JSON(layerDoc(path, len(d.Layer), d.LayerServed, d.LayerFindings)) {
 			return nil
 		}
 		if d.Layer == "" {
@@ -507,6 +547,10 @@ func themeLayer(root string, args []string) error {
 		}
 		findings := theme.CheckLayer(string(b), d.Theme)
 		if theme.Blocks(findings) {
+			// The refused rules are the answer a script needs, so they are the
+			// document on stdout and the refusal is the error, as `theme
+			// check --json` does: an error alone said how many and not which.
+			w.JSON(layerDoc(path, len(b), false, findings))
 			w.Human("%snot saved%s %s(it would not be served)%s\n\n", bold, reset, dim, reset)
 			for _, f := range findings {
 				if f.Blocking {
@@ -522,6 +566,11 @@ func themeLayer(root string, args []string) error {
 		}
 		record(root, resolveCaller(root, "").auditRecord("theme.layer.set", "/",
 			audit.Success, map[string]string{"bytes": fmt.Sprint(len(b))}))
+		doc := layerDoc(path, len(b), !d.OwnStylesheet, findings)
+		doc["saved"] = true
+		if w.JSON(doc) {
+			return nil
+		}
 		w.Human("%sstyle layer saved%s %s(%s, %d bytes)%s\n", bold, reset, dim, path, len(b), reset)
 		for _, f := range findings {
 			w.Human("  %s%s%s\n", dim, wrapIndent(f.Detail, 70, 4), reset)
@@ -535,6 +584,9 @@ func themeLayer(root string, args []string) error {
 	case "unset":
 		if err := os.Remove(path); err != nil {
 			if os.IsNotExist(err) {
+				if w.JSON(map[string]any{"path": path, "removed": false}) {
+					return nil
+				}
 				w.Human("  %sthere is no style layer%s\n", dim, reset)
 				return nil
 			}
@@ -542,6 +594,9 @@ func themeLayer(root string, args []string) error {
 		}
 		record(root, resolveCaller(root, "").auditRecord("theme.layer.unset", "/",
 			audit.Success, map[string]string{"layer": theme.LayerFile}))
+		if w.JSON(map[string]any{"path": path, "removed": true}) {
+			return nil
+		}
 		w.Human("took the style layer away; the generated stylesheet is served alone\n")
 		return nil
 	}

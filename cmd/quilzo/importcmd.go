@@ -525,6 +525,12 @@ func mediaList(root string, args []string) error {
 		if f.Width > 0 {
 			w.Human(" · %dx%d", f.Width, f.Height)
 		}
+		// Whether a recording has sound decides what a page showing it needs
+		// and whether it may be a backdrop, and it was said only once, when
+		// the file was added.
+		if f.Kind == media.Video {
+			w.Human(" · %s", soundPhrase(f))
+		}
 		w.Human("%s\n", reset)
 		if f.Alt != "" {
 			w.Human("  %s%s%s\n", dim, f.Alt, reset)
@@ -903,4 +909,16 @@ func keepFetched(root string, res *fetch.Result, alt string) (media.File, error)
 		return media.File{}, fmt.Errorf("fetched and could not be stored: %w", err)
 	}
 	return f, nil
+}
+
+// soundPhrase says what the library knows of a recording's sound, in the
+// words `media list` and the MCP media list use.
+func soundPhrase(f media.File) string {
+	switch f.SoundWord() {
+	case "no":
+		return "no sound"
+	case "yes":
+		return "has sound"
+	}
+	return "sound not known"
 }

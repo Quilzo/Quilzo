@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/media"
+	"github.com/quilzo/quilzo/internal/medialib"
 	"github.com/quilzo/quilzo/internal/section"
 	"github.com/quilzo/quilzo/internal/site"
 )
@@ -91,11 +93,17 @@ func sectionBackdrop(root string, args []string) error {
 		}
 		at, where = n, fmt.Sprintf("section %d", n)
 	}
-	media := ""
+	addr := ""
 	if len(pos) == 3 {
-		media = strings.TrimSpace(pos[2])
-		if !strings.HasPrefix(media, "/media/") {
-			media = "/media/" + media
+		addr = strings.TrimSpace(pos[2])
+		// A bare id, as `quilzo media list --json` gives it, is a /media/
+		// address. Anything else is left as written, so that a refusal quotes
+		// what was typed: an outside address came back as "/media/https://…".
+		if medialib.ValidID(addr) == nil {
+			addr = "/media/" + addr
+		}
+		if err := backdropFile(root, addr); err != nil {
+			return err
 		}
 	}
 	return editSections(root, pos[0], func(body any) (map[string]any, string, error) {
@@ -103,9 +111,46 @@ func sectionBackdrop(root string, args []string) error {
 			next, err := section.ClearBackdrop(body, at)
 			return next, fmt.Sprintf("take the backdrop away from %s of %s", where, pos[0]), err
 		}
-		next, err := section.SetBackdrop(body, at, media)
+		next, err := section.SetBackdrop(body, at, addr)
 		return next, fmt.Sprintf("put a backdrop behind %s of %s", where, pos[0]), err
 	})
+}
+
+// backdropFile refuses, before anything is written, a backdrop the publish
+// gate would refuse anyway: a file the library does not hold, one that is
+// neither a picture nor a recording, and a recording the library does not
+// know to be silent. The command used to write any of them and say the draft
+// had moved, and the first anybody heard was a page refused at publish.
+func backdropFile(root, addr string) error {
+	id, isMedia := strings.CutPrefix(addr, "/media/")
+	if !isMedia || medialib.ValidID(id) != nil {
+		return nil // the address itself is refused by section.SetBackdrop
+	}
+	lib, err := openMedia(root)
+	if err != nil {
+		return err
+	}
+	f, err := lib.Stat(id)
+	if err != nil {
+		return fmt.Errorf("%s is not in the media library; `quilzo media list` prints what is", addr)
+	}
+	switch f.Kind {
+	case media.Image:
+		return nil
+	case media.Video:
+	default:
+		return fmt.Errorf("%s is %s, and a backdrop is a picture or a silent video", f.Name, f.Kind)
+	}
+	switch sound, known := f.SoundKnown(); {
+	case sound:
+		return fmt.Errorf("%s has sound, so it cannot be a backdrop: a backdrop is muted, and "+
+			"what is said in it would be lost to every reader. A video section shows it, with captions", f.Name)
+	case !known:
+		return fmt.Errorf("whether %s has sound was not recorded when it was added, so it "+
+			"cannot be a backdrop: only a recording known to be silent can be muted without "+
+			"losing anything", f.Name)
+	}
+	return nil
 }
 
 // sectionKinds is the catalogue: what a page can be built out of.
