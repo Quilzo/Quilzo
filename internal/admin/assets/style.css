@@ -838,6 +838,10 @@ footer { margin-top: 3rem; padding-top: 1.5rem;
    markup (the "newtab" template). */
 .newtab { display: inline-block; margin-inline-start: .2em; vertical-align: -0.125em; }
 .newtab .icon { width: 1em; height: 1em; display: inline-block; }
+/* Such a link and the stop after it, kept on one line. A browser may break
+   a line after an inline-block, so the footer's "All documentation." put
+   its full stop alone on a line under the link. */
+.nobreak { white-space: nowrap; }
 
 /* The way up from a screen below a destination: the parent's name with a
    back arrow, above the heading, as Polaris and Material place it. A

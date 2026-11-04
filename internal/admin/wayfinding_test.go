@@ -207,6 +207,43 @@ func TestEveryNewTabSaysSo(t *testing.T) {
 	}
 }
 
+// A link that opens a new tab keeps the stop after it. The icon that says
+// so is drawn inline-block, and a browser may break a line after one, so
+// the footer's "All documentation." put its full stop alone on a line
+// under the link. Each such link with punctuation after it is held to it.
+func TestTheStopAfterANewTabLinkStaysWithIt(t *testing.T) {
+	srv, token := fullyWired(t)
+	wirePosture(srv, true)
+	const end = `(opens in a new tab)</span></a>`
+	const hold = `<span class="nobreak">`
+	checked := 0
+	for _, p := range screensTwoDeep(t, srv, token) {
+		w := get(t, srv, p, token)
+		if w.Code != http.StatusOK || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") {
+			continue
+		}
+		body := w.Body.String()
+		for i := strings.Index(body, end); i >= 0; {
+			after := i + len(end)
+			if after < len(body) && strings.ContainsRune(".,;:!?)", rune(body[after])) {
+				checked++
+				start := strings.LastIndex(body[:i], "<a ")
+				if !strings.HasSuffix(body[:start], hold) || !strings.HasPrefix(body[after+1:], "</span>") {
+					t.Errorf("%s: %q can be left on a line of its own after %.60q", p, body[after], body[start:after])
+				}
+			}
+			next := strings.Index(body[after:], end)
+			if next < 0 {
+				break
+			}
+			i = after + next
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no new-tab link with a stop after it was found; the footer has one")
+	}
+}
+
 // A sign-on through an identity provider returns to what was asked for
 // too: the destination is kept with the rest of the attempt, on this
 // server, and checked again on the way out.
