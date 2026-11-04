@@ -6,8 +6,11 @@ package admin
 import (
 	"fmt"
 	"html/template"
+	"math"
 	"regexp"
 	"strings"
+
+	"github.com/quilzo/quilzo/internal/theme"
 )
 
 // Whose product this appears to be.
@@ -134,5 +137,87 @@ func (b Brand) Style() template.CSS {
 	if b.Colour == "" || !reHexColour.MatchString(b.Colour) {
 		return ""
 	}
-	return template.CSS("--brand: " + b.Colour)
+	css := "--brand: " + b.Colour
+	// And --primary, the links' and filled buttons' colour, in each scheme
+	// the colour is legible in. It tinted only the logo, the name and the
+	// initial, so a deployment could not wear its own accent at all; and it
+	// cannot simply replace --primary, which would let a brand take this
+	// interface below the contrast it holds its text to without anybody
+	// noticing. In a scheme it fails, the built-in primary stays.
+	light, dark := b.accent(false), b.accent(true)
+	if light.ok || dark.ok {
+		l, d := primaryDefault[false], primaryDefault[true]
+		if light.ok {
+			l = b.Colour
+		}
+		if dark.ok {
+			d = b.Colour
+		}
+		css += "; --primary: light-dark(" + l + ", " + d + ")"
+	}
+	return template.CSS(css)
+}
+
+// AccentFloor is the contrast the interface holds its text to, and so what
+// the brand colour has to meet to stand in for --primary: AAA, 7:1.
+const AccentFloor = 7.0
+
+// What the colour is checked against, per scheme (false is light), as
+// style.css has it; brand_test.go holds these to the stylesheet. Primary
+// is text on every surface a link can sit on, and on-primary is the label
+// on a filled button, which is primary.
+var (
+	accentSurfaces = map[bool][]string{
+		false: {"#f8fafd", "#ffffff", "#f0f4f9", "#e9eef6", "#dde3ea"},
+		true:  {"#131314", "#0e0e0e", "#1b1b1b", "#1e1f20", "#282a2c", "#333537"},
+	}
+	accentOnPrimary = map[bool]string{false: "#ffffff", true: "#062e6f"}
+	primaryDefault  = map[bool]string{false: "var(--primary-30)", true: "var(--primary-80)"}
+)
+
+// accentCheck is how the colour fares as --primary in one scheme: the
+// lowest of its ratios, and whether that meets the floor.
+type accentCheck struct {
+	ratio float64
+	ok    bool
+}
+
+func (b Brand) accent(dark bool) accentCheck {
+	if b.Colour == "" || !reHexColour.MatchString(b.Colour) {
+		return accentCheck{}
+	}
+	low := theme.Contrast(accentOnPrimary[dark], b.Colour)
+	for _, bg := range accentSurfaces[dark] {
+		low = math.Min(low, theme.Contrast(b.Colour, bg))
+	}
+	return accentCheck{ratio: low, ok: low >= AccentFloor}
+}
+
+// AccentNote says what the colour in use does, and where it does not, why:
+// a colour that tinted only the logo, with nothing saying so, read as a
+// setting that did not work.
+func (b Brand) AccentNote() string {
+	if b.Colour == "" || !reHexColour.MatchString(b.Colour) {
+		return ""
+	}
+	light, dark := b.accent(false), b.accent(true)
+	under := func(scheme string, c accentCheck) string {
+		return fmt.Sprintf("in the %s scheme it is %.2f:1 where it would be read", scheme, c.ratio)
+	}
+	floor := fmt.Sprintf("under the %.0f:1 this interface holds its text to", AccentFloor)
+	switch {
+	case light.ok && dark.ok:
+		return b.Colour + " is the accent for links and buttons in both schemes."
+	case light.ok:
+		return fmt.Sprintf("%s is the accent for links and buttons in the light scheme. "+
+			"In the dark one it tints only the logo and the name: %s, %s. "+
+			"A paler shade could carry the dark scheme.", b.Colour, under("dark", dark), floor)
+	case dark.ok:
+		return fmt.Sprintf("%s is the accent for links and buttons in the dark scheme. "+
+			"In the light one it tints only the logo and the name: %s, %s. "+
+			"A darker shade could carry the light scheme.", b.Colour, under("light", light), floor)
+	}
+	return fmt.Sprintf("%s tints only the logo and the name: as links and buttons, %s and %s, %s. "+
+		"A darker shade could carry the light scheme, and a paler one the dark.",
+		b.Colour, under("light", light), under("dark", dark), floor)
 }
