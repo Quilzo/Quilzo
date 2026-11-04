@@ -366,6 +366,13 @@ func themeCheck(args []string) error {
 		}
 	}
 	if w.JSON(doc) {
+		// The status says what the prose says: a pair below its ratio fails
+		// the check, as a refused layer does. It exited 0 for the first and 1
+		// for the second, so a script reading the status alone passed a
+		// palette the publish gate refuses.
+		if n := blockingCount(findings); n > 0 {
+			return fmt.Errorf("%d text pair(s) below the ratio a reader needs", n)
+		}
 		if layerRefused {
 			return fmt.Errorf("the style layer is refused and is not served")
 		}
@@ -607,7 +614,9 @@ func themeLayer(root string, args []string) error {
 		if w.JSON(map[string]any{"path": path, "removed": true}) {
 			return nil
 		}
-		w.Human("took the style layer away; the generated stylesheet is served alone\n")
+		// When, as setting one says: the running site read the layer at its
+		// start and serves it until the next one.
+		w.Human("took the style layer away; the site serves the generated stylesheet alone from its next start\n")
 		return nil
 	}
 	return fmt.Errorf("unknown theme layer command %q; try show, set FILE or unset", sub)

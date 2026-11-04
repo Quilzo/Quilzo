@@ -317,9 +317,11 @@ corners and capital display type, on a site that is only ever dark. None of
 that was a token, so the only route was a hand-written layout with a `<style>`
 block in it: it worked, nobody could choose it from a screen, and its colours
 were ones the contrast check never saw. Each piece is now something a site
-opts into, held to the same promise as the tokens — and a site that opts into
-none of them is served exactly what it was served before, page for page and
-byte for byte in the token block, which a test holds.
+opts into, held to the same promise as the tokens. A site that opts into none
+of them is drawn as it was: its pages and its token block are the same byte
+for byte, which a test holds, and its stylesheet gains only rules that name the
+new classes a site opts into, and one fix — a centred hero's eyebrow is
+centred now.
 
 **A style layer.** `templates/style.css` is CSS of the site's own, served
 after the generated stylesheet rather than instead of it. It is held to the
@@ -350,9 +352,11 @@ quilzo theme check                    # the palette, the backdrop veil and the l
 quilzo theme layer unset
 ```
 
-With `--json`, each of these answers with one document: the layer's path,
-its size, whether it is served, how many rules are refused and every finding.
-A refused `set` prints that document and exits non-zero.
+With `--json`, `theme layer`, `set` and `unset` each answer with one document:
+the layer's path, its size, whether it is served, how many rules are refused
+and every finding. A refused `set` prints that document and exits non-zero.
+`theme check --json` is the list of every finding, the layer's and the veil's
+among them, and exits non-zero when a pair fails or the layer is refused.
 
 What it cannot see is said rather than claimed: a colour pair split across two
 rules, text faded afterwards by `opacity` or a filter, and a rule that hides

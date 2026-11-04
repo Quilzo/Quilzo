@@ -391,8 +391,8 @@ func editSections(root, page string,
 	if err != nil {
 		return err
 	}
-	if _, err := site.SaveDraftFrom(s, pages, msg, caller.Name,
-		s.GetRef(site.RefDraft)); err != nil {
+	cid, err := site.SaveDraftFrom(s, pages, msg, caller.Name, s.GetRef(site.RefDraft))
+	if err != nil {
 		return err
 	}
 	if err := types.Save(); err != nil {
@@ -401,8 +401,18 @@ func editSections(root, page string,
 	record(root, caller.auditRecord("section.edit", "/"+page, audit.Success,
 		map[string]string{"did": msg}))
 
+	// One document for a script, whatever the edit was: these commands
+	// printed nothing under --json, so a script that put a backdrop behind a
+	// section, or added one, had only the exit status to say it had.
+	placed := section.On(next)
+	if placed == nil {
+		placed = []section.Placed{}
+	}
+	if w.JSON(map[string]any{"page": page, "did": msg, "commit": cid, "sections": placed}) {
+		return nil
+	}
 	w.Human("%s\n", msg)
-	for _, pl := range section.On(next) {
+	for _, pl := range placed {
 		w.Human("  %2d  %s\n", pl.Index, pl.Kind)
 	}
 	w.Human("\n  %sthe draft moved; `quilzo publish` puts it live%s\n", dim, reset)

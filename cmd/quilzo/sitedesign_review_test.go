@@ -265,3 +265,90 @@ func TestTheLibraryListSaysWhichRecordingsHaveSound(t *testing.T) {
 		t.Errorf("list_media does not say which recordings have sound:\n%s", text)
 	}
 }
+
+// `theme check --json` fails when a pair fails, as the prose does. It printed
+// the document and exited 0 for a palette below its ratio while exiting 1 for
+// a refused layer, so a script reading only the status passed a palette the
+// publish gate would refuse.
+func TestTheCheckFailsAScriptWhenAPairFails(t *testing.T) {
+	root, tpl := designStore(t)
+	asMachine(t, false)
+	if err := cmdTheme(root, []string{"set", "on-surface", "#8a8a8a", "surface", "#9a9a9a",
+		"--force", "--dir", tpl}); err != nil {
+		t.Fatal(err)
+	}
+	doc := asMachine(t, true)
+	err := cmdTheme(root, []string{"check", "--dir", tpl})
+	if err == nil {
+		t.Error("theme check --json exited 0 for a palette below its ratio")
+	}
+	var findings []theme.Finding
+	if jerr := json.Unmarshal(doc.Bytes(), &findings); jerr != nil {
+		t.Fatalf("a failing check printed no document: %v\n%s", jerr, doc.String())
+	}
+	if !theme.Blocks(findings) {
+		t.Errorf("the document does not carry the failure:\n%s", doc.String())
+	}
+}
+
+// Taking the layer away says when it takes effect. It said the generated
+// stylesheet "is served alone" while the running site went on serving the
+// layer until its next start, which is what setting one already said.
+func TestTakingTheLayerAwaySaysWhenItTakesEffect(t *testing.T) {
+	root, tpl := designStore(t)
+	asPublisher(t, root)
+	good := filepath.Join(t.TempDir(), "good.css")
+	if err := os.WriteFile(good, []byte(".card { border-color: var(--outline); }"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	asMachine(t, false)
+	if err := cmdTheme(root, []string{"layer", "set", good, "--dir", tpl}); err != nil {
+		t.Fatal(err)
+	}
+	buf := asMachine(t, false)
+	if err := cmdTheme(root, []string{"layer", "unset", "--dir", tpl}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "next start") {
+		t.Errorf("taking the layer away does not say when it takes effect:\n%s", buf.String())
+	}
+}
+
+// Every section edit answers a script with one document: the page, what was
+// done, the draft commit and the sections as they now stand. `section add`,
+// `move`, `remove`, `set`, `item` and `backdrop` printed nothing under --json,
+// so a script that put a backdrop behind a section could not tell it had.
+func TestASectionEditAnswersAScript(t *testing.T) {
+	root, _ := designStore(t)
+	draftOf(t, root, map[string]any{"index": map[string]any{"title": "Home",
+		"sections": []any{map[string]any{"features": map[string]any{"title": "Games"}}}}})
+	type doc struct {
+		Page     string           `json:"page"`
+		Did      string           `json:"did"`
+		Commit   string           `json:"commit"`
+		Sections []map[string]any `json:"sections"`
+	}
+	run := func(args ...string) doc {
+		t.Helper()
+		buf := asMachine(t, true)
+		if err := cmdSection(root, args); err != nil {
+			t.Fatalf("section %v: %v", args, err)
+		}
+		var d doc
+		if err := json.Unmarshal(buf.Bytes(), &d); err != nil {
+			t.Fatalf("section %v printed no document: %v\n%s", args, err, buf.String())
+		}
+		if d.Page != "index" || d.Did == "" || d.Commit == "" {
+			t.Errorf("section %v: %+v", args, d)
+		}
+		return d
+	}
+	if d := run("add", "index", "faq"); len(d.Sections) != 2 {
+		t.Errorf("after an add the document lists %d sections", len(d.Sections))
+	}
+	quiet := aClip(t, root, false)
+	d := run("backdrop", "index", "0", quiet.ID)
+	if on, _ := d.Sections[0]["backdrop"].(bool); !on {
+		t.Errorf("the document does not show the backdrop: %+v", d.Sections[0])
+	}
+}
