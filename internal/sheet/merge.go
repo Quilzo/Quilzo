@@ -131,6 +131,11 @@ func (m Merge) Plan(rows []Row) *Plan {
 	seen := map[string]int{}
 	// fileSlugs are the page links this sheet has given so far.
 	fileSlugs := map[string]int{}
+	// next is, for a page link taken, the number to try first: every one
+	// below it is taken (as in webimport's postSlugs). It is the number a
+	// row was last given rather than the one after, because a row given
+	// it may yet be refused, and its number is then free again.
+	next := map[string]int{}
 	var bad []Problem
 	for _, row := range rows {
 		fail := func(text string) { bad = append(bad, Problem{Line: row.Line, Where: row.Where, Text: text}) }
@@ -173,17 +178,21 @@ func (m Merge) Plan(rows []Row) *Plan {
 				base = Slug(keyOf(row.Fields[m.Title]))
 			}
 			if base != "" {
-				slug := base
-				for k := 2; fileSlugs[slug] > 0; k++ {
-					slug = fmt.Sprintf("%s-%d", base, k)
+				// Kept apart from this sheet's other page links, and from
+				// other records' too, unless rows are matched to records by
+				// their page link, when the record with it is the one this
+				// row is.
+				taken := func(s string) bool {
+					return fileSlugs[s] > 0 || (m.Key != m.Slug && slugs[s] != "" && slugs[s] != id)
 				}
-				// Kept apart from other records' too, unless rows are
-				// matched to records by their page link, when the record
-				// with it is the one this row is.
-				if m.Key != m.Slug {
-					for k := 2; slugs[slug] != "" && slugs[slug] != id; k++ {
-						slug = fmt.Sprintf("%s-%d", base, k)
-					}
+				// One count from where the last row of this name stopped.
+				// Each row counted up from 2, once for the sheet and again
+				// for the records, so 10,000 rows of one name took 35
+				// seconds to plan.
+				slug := base
+				for k := max(2, next[base]); taken(slug); k++ {
+					slug = fmt.Sprintf("%s-%d", base, k)
+					next[base] = k
 				}
 				row.Fields[m.Slug] = slug
 			}

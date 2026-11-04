@@ -274,6 +274,38 @@ func TestAPageLinkIsMadeFromTheTitleAndKeptApart(t *testing.T) {
 	}
 }
 
+// Rows that would have the same page link are numbered from it, and
+// finding the next number does not count up from 2 again for each row.
+//
+// It did, twice over, so a sheet of thousands of events of one name (a
+// weekly class brought from a calendar) took time in the square of its
+// rows: 10,000 took seconds, and the 50,000 a sheet may hold, minutes.
+func TestSameTitledRowsAreNumberedInTimeInProportionToThem(t *testing.T) {
+	existing := []collection.Record{{ID: strings.Repeat("a", 32), Fields: map[string]any{"title": "Rye night",
+		"slug": "rye-night-3", "date": "2026-01-01"}}}
+	var rows []Row
+	for i := 0; i < 10000; i++ {
+		rows = append(rows, Row{Line: i + 2, Fields: map[string]any{"title": "Rye night", "date": "2026-11-14"}})
+	}
+	m := Merge{Collection: "events", Existing: existing, Check: check(event()), Slug: "slug", Title: "title"}
+	start := time.Now()
+	plan := m.Plan(rows)
+	if took := time.Since(start); took > 2*time.Second {
+		t.Errorf("planning %d rows named alike took %v", len(rows), took)
+	}
+	if plan.Refused() || plan.New != len(rows) {
+		t.Fatalf("%s", plan.Summary())
+	}
+	var first []string
+	for _, r := range plan.Records[:4] {
+		first = append(first, r.Fields["slug"].(string))
+	}
+	last := plan.Records[len(plan.Records)-1].Fields["slug"]
+	if got := strings.Join(first, " "); got != "rye-night rye-night-2 rye-night-4 rye-night-5" || last != "rye-night-10001" {
+		t.Errorf("page links %s ... %v", got, last)
+	}
+}
+
 func TestASheetIsWrittenSoNothingInItRuns(t *testing.T) {
 	recs := []collection.Record{
 		{ID: "b", Created: 2, Fields: map[string]any{"name": "=HYPERLINK(\"http://evil\")", "price": -4.0,
