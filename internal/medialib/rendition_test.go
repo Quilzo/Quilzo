@@ -166,6 +166,12 @@ func TestAStoredRecordingIsDescribed(t *testing.T) {
 	if stored.Seconds < 2.5 {
 		t.Errorf("it is stored as %.2f seconds long", stored.Seconds)
 	}
+	// Recorded at upload, from the probe: this clip has no audio stream, and
+	// the accessibility gate asks for a text alternative rather than captions
+	// for exactly that.
+	if !stored.Silent() {
+		t.Errorf("a recording with no sound is stored with sound %q", stored.SoundWord())
+	}
 	if stored.Poster == "" {
 		t.Fatal("no poster was taken, so a player shows a black rectangle " +
 			"until enough has loaded to draw a frame")
@@ -216,7 +222,7 @@ func TestARecordingStoresWithNoTools(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stored.Width != 0 || stored.Seconds != 0 || stored.Poster != "" {
+	if stored.Width != 0 || stored.Seconds != 0 || stored.Poster != "" || stored.Sound != nil {
 		t.Errorf("something was claimed about a recording nothing read: %+v",
 			stored)
 	}

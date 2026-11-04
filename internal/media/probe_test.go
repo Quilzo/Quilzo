@@ -203,3 +203,69 @@ func TestARecordingsSoundComesOutAlone(t *testing.T) {
 		t.Errorf("with no ffmpeg: %d bytes, %v", len(b), err)
 	}
 }
+
+// aRecordingWithSound is aRecording with a tone under it, or a skip.
+func aRecordingWithSound(t *testing.T) []byte {
+	t.Helper()
+	bin, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Skip("no ffmpeg here, which is a configuration this supports")
+	}
+	out := t.TempDir() + "/sound.webm"
+	cmd := exec.Command(bin, "-v", "error", "-f", "lavfi",
+		"-i", "testsrc=size=320x240:rate=10:duration=3",
+		"-f", "lavfi", "-i", "sine=frequency=440:duration=3",
+		"-c:v", "libvpx", "-b:v", "100k", "-c:a", "libvorbis", "-shortest", "-y", out)
+	if err := cmd.Run(); err != nil {
+		t.Skipf("this ffmpeg cannot make the fixture: %v", err)
+	}
+	body, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return body
+}
+
+// Whether a recording has sound is read from its streams, both ways.
+//
+// The gate asks this to tell a silent clip, which needs a text alternative,
+// from one with sound, which needs captions. A probe that said "no sound"
+// for a recording with a soundtrack would let that recording publish with
+// nobody able to follow it, so both answers are tested on real containers.
+func TestWhetherARecordingHasSoundIsRead(t *testing.T) {
+	silent, known, err := Probe("webm", aRecording(t))
+	if err != nil || !known {
+		t.Fatalf("the silent recording was not read: %v", err)
+	}
+	if silent.Sound {
+		t.Error("a recording with no audio stream was said to have sound")
+	}
+	loud, known, err := Probe("webm", aRecordingWithSound(t))
+	if err != nil || !known {
+		t.Fatalf("the recording with sound was not read: %v", err)
+	}
+	if !loud.Sound {
+		t.Error("a recording with a soundtrack was said to have none")
+	}
+	if loud.Width != 320 {
+		t.Errorf("the audio stream displaced the picture's size: %dx%d", loud.Width, loud.Height)
+	}
+}
+
+// Unknown is not silent. A recording nothing listened to is treated as
+// having sound wherever it matters.
+func TestUnknownSoundIsNotSilence(t *testing.T) {
+	var f File
+	if f.Silent() || f.SoundWord() != "unknown" {
+		t.Errorf("a recording with no answer is %q, silent %v", f.SoundWord(), f.Silent())
+	}
+	no, yes := false, true
+	f.Sound = &no
+	if !f.Silent() || f.SoundWord() != "no" {
+		t.Error("a silent recording is not silent")
+	}
+	f.Sound = &yes
+	if f.Silent() || f.SoundWord() != "yes" {
+		t.Error("a recording with sound is silent")
+	}
+}

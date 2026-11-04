@@ -370,6 +370,11 @@ pre {
 .hero .chip { background: color-mix(in srgb, currentColor 14%, transparent); color: inherit; }
 .hero.hero-center { align-items: center; text-align: center; }
 .hero.hero-center .lead { margin-inline: auto; }
+/* The eyebrow of a centred hero is centred too. The rule above that keeps a
+   chip from stretching into a bar sets align-self: start on every chip in a
+   hero, and it beat the hero's own align-items, so a centred heading sat
+   under a chip pinned to the left edge. */
+.hero.hero-center > .chip { align-self: center; }
 .hero.hero-plain { background: transparent; color: inherit; padding-inline: 0; border-radius: 0;
   /* A plain hero is text on the page: no style draws a card around it. */
   box-shadow: none; border: 0; }

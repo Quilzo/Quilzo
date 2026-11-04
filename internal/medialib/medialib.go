@@ -194,6 +194,11 @@ func (l *Library) describe(f *media.File, body []byte) {
 			"%s was stored without its dimensions: %v", f.Name, err))
 	} else if known {
 		f.Width, f.Height, f.Seconds = sh.Width, sh.Height, sh.Seconds
+		// Whether it has sound, which the accessibility gate asks: a
+		// recording with none needs a text alternative rather than a
+		// captions track (see media.File.Sound).
+		sound := sh.Sound
+		f.Sound = &sound
 	}
 
 	// A moment in rather than the first frame, because the first frame of a

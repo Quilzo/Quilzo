@@ -1,0 +1,71 @@
+
+/* -- backdrops and card pictures ------------------------------------------- */
+
+/* Opt-in, every rule: each selector names a class the layout writes only
+   when a page asks for a backdrop or a card picture, so a page that asks for
+   neither is drawn exactly as before these rules existed. A test holds that.
+
+   A backdrop is decoration: the picture or the video behind a hero or a
+   section, hidden from assistive technology, under a veil of one colour at one
+   strength so the words on it can be checked against the worst picture it
+   could cover (internal/theme, CheckBackdrop). A moving one is muted, loops,
+   plays inline, starts from its poster, stops for a reader who asked for
+   reduced motion, and can be stopped by anybody with the control beside it,
+   which needs no script (WCAG 2.2.2). */
+
+.has-backdrop, .surface-media { position: relative; isolation: isolate; overflow: hidden; }
+/* The words are on-surface, the colour the veil is checked against. Two
+   classes, so a hero's bold surface or a section's tone — each one class or
+   two, and earlier in the sheet — cannot put a colour nobody judged over the
+   picture. */
+.hero.has-backdrop, .section.surface-media { color: var(--on-surface); background: transparent; }
+.has-backdrop { min-height: min(70vh, 40rem); justify-content: flex-end; }
+.surface-media { padding-block: var(--space-7); }
+.has-backdrop > .backdrop, .surface-media > .backdrop { position: absolute; inset: 0; z-index: -2; }
+.has-backdrop > .backdrop img, .has-backdrop > .backdrop video,
+.surface-media > .backdrop img, .surface-media > .backdrop video {
+  position: absolute; inset: 0; width: 100%; height: 100%; max-width: none; object-fit: cover; }
+/* The veil. Its colour and strength are tokens with their defaults as the
+   fallbacks, because a site that never set them is not written them. */
+.has-backdrop::after, .surface-media::after {
+  content: ""; position: absolute; inset: 0; z-index: -1;
+  background: color-mix(in srgb, var(--scrim, var(--surface)) var(--scrim-strength, 82%), transparent); }
+/* What sits on the veil is in the colour the check judged against it. */
+.has-backdrop .lead { opacity: 1; }
+.has-backdrop > .chip { background: var(--scrim, var(--surface)); color: inherit; border: var(--border) solid currentColor; }
+.has-backdrop a:not(.btn), .has-backdrop .btn-outlined,
+.surface-media a:not(.btn), .surface-media .btn-outlined { color: inherit; }
+
+/* The switch that stops it: a checkbox and its label, no script. Hidden from
+   sight and not from the keyboard, so its label shows where the focus is. */
+.backdrop-stop { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.backdrop-stop-label {
+  position: absolute; inset-block-start: var(--space-3); inset-inline-end: var(--space-3); z-index: 1;
+  display: inline-flex; align-items: center; min-height: 32px; padding-inline: var(--space-3);
+  border-radius: var(--radius-pill); border: var(--border) solid var(--outline);
+  background: var(--scrim, var(--surface)); color: var(--on-surface);
+  font-size: var(--text-sm); cursor: pointer; }
+.backdrop-stop:focus-visible + .backdrop-stop-label { outline: 3px solid var(--focus-ring); outline-offset: 2px; }
+.backdrop-stop:checked ~ .backdrop video { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .backdrop video { display: none; }
+  .backdrop-stop, .backdrop-stop-label { display: none; }
+}
+/* A reader who asked for more contrast gets the veil at full strength. */
+@media (prefers-contrast: more) {
+  .has-backdrop::after, .surface-media::after { background: var(--scrim, var(--surface)); }
+}
+/* Forced colours keep pictures as they are and recolour the words, so words
+   over a picture are words over anything. The backdrop goes. */
+@media (forced-colors: active) {
+  .has-backdrop > .backdrop, .surface-media > .backdrop,
+  .has-backdrop::after, .surface-media::after { display: none; }
+}
+@media print {
+  .has-backdrop > .backdrop, .surface-media > .backdrop, .backdrop-stop-label { display: none; }
+}
+
+/* A picture at the top of a feature card. */
+.card-media img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border-radius: var(--radius-md); }

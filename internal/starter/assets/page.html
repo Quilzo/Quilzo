@@ -48,7 +48,7 @@
 
 {% if page.hero %}
 <div class="wrap wrap-wide">
-  <div class="hero hero-{{ page.hero.style }} {{ page.hero.surface }}">
+  <div class="hero hero-{{ page.hero.style }} {{ page.hero.surface }}{% if page.hero.backdrop_on %} has-backdrop{% end %}">{% if page.hero.backdrop_on %}{% if page.hero.backdrop_video %}<input class="backdrop-stop" type="checkbox" id="stop-hero" data-stop-motion><label class="backdrop-stop-label" for="stop-hero">Stop the moving background</label>{% end %}<div class="backdrop" aria-hidden="true">{% if page.hero.backdrop_image %}<img src="{{ page.hero.backdrop_url }}"{% if page.hero.backdrop_url_srcset %} srcset="{{ page.hero.backdrop_url_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if page.hero.backdrop_poster %}<img src="{{ page.hero.backdrop_poster }}"{% if page.hero.backdrop_poster_srcset %} srcset="{{ page.hero.backdrop_poster_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if page.hero.backdrop_video %}<video muted loop playsinline autoplay preload="metadata" aria-hidden="true" disablepictureinpicture disableremoteplayback{% if page.hero.backdrop_poster %} poster="{{ page.hero.backdrop_poster }}"{% end %}><source src="{{ page.hero.backdrop_url }}" media="(prefers-reduced-motion: no-preference)"></video>{% end %}</div>{% end %}
     {% if page.hero.eyebrow %}<p class="chip">{{ page.hero.eyebrow }}</p>{% end %}
     {% if page.hero.image %}
     <div class="hero-split">
@@ -133,7 +133,7 @@
 {% for s in page.sections %}
 
 {% if s.features %}
-<section class="section {{ s.features.tone }} reveal">
+<section class="section {{ s.features.tone }} reveal{% if s.features.backdrop_on %} surface-media{% end %}">{% if s.features.backdrop_on %}{% if s.features.backdrop_video %}<input class="backdrop-stop" type="checkbox" id="stop-{{ s.n }}" data-stop-motion><label class="backdrop-stop-label" for="stop-{{ s.n }}">Stop the moving background</label>{% end %}<div class="backdrop" aria-hidden="true">{% if s.features.backdrop_image %}<img src="{{ s.features.backdrop_url }}"{% if s.features.backdrop_url_srcset %} srcset="{{ s.features.backdrop_url_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.features.backdrop_poster %}<img src="{{ s.features.backdrop_poster }}"{% if s.features.backdrop_poster_srcset %} srcset="{{ s.features.backdrop_poster_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.features.backdrop_video %}<video muted loop playsinline autoplay preload="metadata" aria-hidden="true" disablepictureinpicture disableremoteplayback{% if s.features.backdrop_poster %} poster="{{ s.features.backdrop_poster }}"{% end %}><source src="{{ s.features.backdrop_url }}" media="(prefers-reduced-motion: no-preference)"></video>{% end %}</div>{% end %}
   <div class="wrap wrap-wide">
     {% if s.features.title %}
     <div class="section-head {{ s.features.align }}">
@@ -143,7 +143,7 @@
     {% end %}
     <div class="grid grid-{{ s.features.columns | default:3 }}">
       {% for f in s.features.items %}
-      <div class="card {{ f.tone }}">
+      <div class="card {{ f.tone }}">{% if f.image %}<div class="card-media"><img src="{{ f.image }}"{% if f.image_srcset %} srcset="{{ f.image_srcset }}" sizes="(min-width: 64rem) 24vw, (min-width: 46rem) 46vw, 92vw"{% end %} alt="{{ f.alt }}" width="800" height="500" loading="lazy"></div>{% end %}
         {% if f.icon_svg %}<span class="card-icon">{{ f.icon_svg }}</span>{% end %}
         {% if f.chip %}<p class="chip">{{ f.chip }}</p>{% end %}
         <h3>{% if f.href %}<a class="card-link" href="{{ f.href }}">{{ f.title }}</a>{% end %}{% if f.unlinked %}{{ f.title }}{% end %}</h3>
@@ -156,7 +156,7 @@
 {% end %}
 
 {% if s.tabs %}
-<section class="section {{ s.tabs.tone }} reveal">
+<section class="section {{ s.tabs.tone }} reveal{% if s.tabs.backdrop_on %} surface-media{% end %}">{% if s.tabs.backdrop_on %}{% if s.tabs.backdrop_video %}<input class="backdrop-stop" type="checkbox" id="stop-{{ s.n }}" data-stop-motion><label class="backdrop-stop-label" for="stop-{{ s.n }}">Stop the moving background</label>{% end %}<div class="backdrop" aria-hidden="true">{% if s.tabs.backdrop_image %}<img src="{{ s.tabs.backdrop_url }}"{% if s.tabs.backdrop_url_srcset %} srcset="{{ s.tabs.backdrop_url_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.tabs.backdrop_poster %}<img src="{{ s.tabs.backdrop_poster }}"{% if s.tabs.backdrop_poster_srcset %} srcset="{{ s.tabs.backdrop_poster_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.tabs.backdrop_video %}<video muted loop playsinline autoplay preload="metadata" aria-hidden="true" disablepictureinpicture disableremoteplayback{% if s.tabs.backdrop_poster %} poster="{{ s.tabs.backdrop_poster }}"{% end %}><source src="{{ s.tabs.backdrop_url }}" media="(prefers-reduced-motion: no-preference)"></video>{% end %}</div>{% end %}
   <div class="wrap wrap-wide">
     {% if s.tabs.title %}
     <div class="section-head center">
@@ -187,7 +187,7 @@
 {% end %}
 
 {% if s.metrics %}
-<section class="section {{ s.metrics.tone }} reveal">
+<section class="section {{ s.metrics.tone }} reveal{% if s.metrics.backdrop_on %} surface-media{% end %}">{% if s.metrics.backdrop_on %}{% if s.metrics.backdrop_video %}<input class="backdrop-stop" type="checkbox" id="stop-{{ s.n }}" data-stop-motion><label class="backdrop-stop-label" for="stop-{{ s.n }}">Stop the moving background</label>{% end %}<div class="backdrop" aria-hidden="true">{% if s.metrics.backdrop_image %}<img src="{{ s.metrics.backdrop_url }}"{% if s.metrics.backdrop_url_srcset %} srcset="{{ s.metrics.backdrop_url_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.metrics.backdrop_poster %}<img src="{{ s.metrics.backdrop_poster }}"{% if s.metrics.backdrop_poster_srcset %} srcset="{{ s.metrics.backdrop_poster_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.metrics.backdrop_video %}<video muted loop playsinline autoplay preload="metadata" aria-hidden="true" disablepictureinpicture disableremoteplayback{% if s.metrics.backdrop_poster %} poster="{{ s.metrics.backdrop_poster }}"{% end %}><source src="{{ s.metrics.backdrop_url }}" media="(prefers-reduced-motion: no-preference)"></video>{% end %}</div>{% end %}
   <div class="wrap wrap-wide">
     {% if s.metrics.title %}<div class="section-head"><h2>{{ s.metrics.title }}</h2></div>{% end %}
     <div class="metrics">
@@ -208,7 +208,7 @@
 {% end %}
 
 {% if s.bars %}
-<section class="section {{ s.bars.tone }} reveal">
+<section class="section {{ s.bars.tone }} reveal{% if s.bars.backdrop_on %} surface-media{% end %}">{% if s.bars.backdrop_on %}{% if s.bars.backdrop_video %}<input class="backdrop-stop" type="checkbox" id="stop-{{ s.n }}" data-stop-motion><label class="backdrop-stop-label" for="stop-{{ s.n }}">Stop the moving background</label>{% end %}<div class="backdrop" aria-hidden="true">{% if s.bars.backdrop_image %}<img src="{{ s.bars.backdrop_url }}"{% if s.bars.backdrop_url_srcset %} srcset="{{ s.bars.backdrop_url_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.bars.backdrop_poster %}<img src="{{ s.bars.backdrop_poster }}"{% if s.bars.backdrop_poster_srcset %} srcset="{{ s.bars.backdrop_poster_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.bars.backdrop_video %}<video muted loop playsinline autoplay preload="metadata" aria-hidden="true" disablepictureinpicture disableremoteplayback{% if s.bars.backdrop_poster %} poster="{{ s.bars.backdrop_poster }}"{% end %}><source src="{{ s.bars.backdrop_url }}" media="(prefers-reduced-motion: no-preference)"></video>{% end %}</div>{% end %}
   <div class="wrap">
     {% if s.bars.title %}
     <div class="section-head">
@@ -231,7 +231,7 @@
 {% end %}
 
 {% if s.donuts %}
-<section class="section {{ s.donuts.tone }} reveal">
+<section class="section {{ s.donuts.tone }} reveal{% if s.donuts.backdrop_on %} surface-media{% end %}">{% if s.donuts.backdrop_on %}{% if s.donuts.backdrop_video %}<input class="backdrop-stop" type="checkbox" id="stop-{{ s.n }}" data-stop-motion><label class="backdrop-stop-label" for="stop-{{ s.n }}">Stop the moving background</label>{% end %}<div class="backdrop" aria-hidden="true">{% if s.donuts.backdrop_image %}<img src="{{ s.donuts.backdrop_url }}"{% if s.donuts.backdrop_url_srcset %} srcset="{{ s.donuts.backdrop_url_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.donuts.backdrop_poster %}<img src="{{ s.donuts.backdrop_poster }}"{% if s.donuts.backdrop_poster_srcset %} srcset="{{ s.donuts.backdrop_poster_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.donuts.backdrop_video %}<video muted loop playsinline autoplay preload="metadata" aria-hidden="true" disablepictureinpicture disableremoteplayback{% if s.donuts.backdrop_poster %} poster="{{ s.donuts.backdrop_poster }}"{% end %}><source src="{{ s.donuts.backdrop_url }}" media="(prefers-reduced-motion: no-preference)"></video>{% end %}</div>{% end %}
   <div class="wrap">
     {% if s.donuts.title %}<div class="section-head"><h2>{{ s.donuts.title }}</h2></div>{% end %}
     <div class="donut-set">
@@ -247,7 +247,7 @@
 {% end %}
 
 {% if s.split %}
-<section class="section {{ s.split.tone }} reveal">
+<section class="section {{ s.split.tone }} reveal{% if s.split.backdrop_on %} surface-media{% end %}">{% if s.split.backdrop_on %}{% if s.split.backdrop_video %}<input class="backdrop-stop" type="checkbox" id="stop-{{ s.n }}" data-stop-motion><label class="backdrop-stop-label" for="stop-{{ s.n }}">Stop the moving background</label>{% end %}<div class="backdrop" aria-hidden="true">{% if s.split.backdrop_image %}<img src="{{ s.split.backdrop_url }}"{% if s.split.backdrop_url_srcset %} srcset="{{ s.split.backdrop_url_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.split.backdrop_poster %}<img src="{{ s.split.backdrop_poster }}"{% if s.split.backdrop_poster_srcset %} srcset="{{ s.split.backdrop_poster_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.split.backdrop_video %}<video muted loop playsinline autoplay preload="metadata" aria-hidden="true" disablepictureinpicture disableremoteplayback{% if s.split.backdrop_poster %} poster="{{ s.split.backdrop_poster }}"{% end %}><source src="{{ s.split.backdrop_url }}" media="(prefers-reduced-motion: no-preference)"></video>{% end %}</div>{% end %}
   <div class="wrap wrap-wide">
     <div class="split {{ s.split.flip }}">
       {% if s.split.image %}<img src="{{ s.split.image }}"{% if s.split.image_srcset %} srcset="{{ s.split.image_srcset }}" sizes="(min-width: 50rem) 48vw, 92vw"{% end %} alt="{{ s.split.alt }}" width="960" height="720">{% end %}
@@ -263,7 +263,7 @@
 {% end %}
 
 {% if s.gallery %}
-<section class="section {{ s.gallery.tone }} reveal">
+<section class="section {{ s.gallery.tone }} reveal{% if s.gallery.backdrop_on %} surface-media{% end %}">{% if s.gallery.backdrop_on %}{% if s.gallery.backdrop_video %}<input class="backdrop-stop" type="checkbox" id="stop-{{ s.n }}" data-stop-motion><label class="backdrop-stop-label" for="stop-{{ s.n }}">Stop the moving background</label>{% end %}<div class="backdrop" aria-hidden="true">{% if s.gallery.backdrop_image %}<img src="{{ s.gallery.backdrop_url }}"{% if s.gallery.backdrop_url_srcset %} srcset="{{ s.gallery.backdrop_url_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.gallery.backdrop_poster %}<img src="{{ s.gallery.backdrop_poster }}"{% if s.gallery.backdrop_poster_srcset %} srcset="{{ s.gallery.backdrop_poster_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.gallery.backdrop_video %}<video muted loop playsinline autoplay preload="metadata" aria-hidden="true" disablepictureinpicture disableremoteplayback{% if s.gallery.backdrop_poster %} poster="{{ s.gallery.backdrop_poster }}"{% end %}><source src="{{ s.gallery.backdrop_url }}" media="(prefers-reduced-motion: no-preference)"></video>{% end %}</div>{% end %}
   <div class="wrap wrap-wide">
     {% if s.gallery.title %}<div class="section-head"><h2>{{ s.gallery.title }}</h2></div>{% end %}
     <div class="gallery gallery-{{ s.gallery.shape }}">
@@ -279,7 +279,7 @@
 {% end %}
 
 {% if s.steps %}
-<section class="section {{ s.steps.tone }} reveal">
+<section class="section {{ s.steps.tone }} reveal{% if s.steps.backdrop_on %} surface-media{% end %}">{% if s.steps.backdrop_on %}{% if s.steps.backdrop_video %}<input class="backdrop-stop" type="checkbox" id="stop-{{ s.n }}" data-stop-motion><label class="backdrop-stop-label" for="stop-{{ s.n }}">Stop the moving background</label>{% end %}<div class="backdrop" aria-hidden="true">{% if s.steps.backdrop_image %}<img src="{{ s.steps.backdrop_url }}"{% if s.steps.backdrop_url_srcset %} srcset="{{ s.steps.backdrop_url_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.steps.backdrop_poster %}<img src="{{ s.steps.backdrop_poster }}"{% if s.steps.backdrop_poster_srcset %} srcset="{{ s.steps.backdrop_poster_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.steps.backdrop_video %}<video muted loop playsinline autoplay preload="metadata" aria-hidden="true" disablepictureinpicture disableremoteplayback{% if s.steps.backdrop_poster %} poster="{{ s.steps.backdrop_poster }}"{% end %}><source src="{{ s.steps.backdrop_url }}" media="(prefers-reduced-motion: no-preference)"></video>{% end %}</div>{% end %}
   <div class="wrap">
     {% if s.steps.title %}
     <div class="section-head">
@@ -300,7 +300,7 @@
 {% end %}
 
 {% if s.timeline %}
-<section class="section {{ s.timeline.tone }} reveal">
+<section class="section {{ s.timeline.tone }} reveal{% if s.timeline.backdrop_on %} surface-media{% end %}">{% if s.timeline.backdrop_on %}{% if s.timeline.backdrop_video %}<input class="backdrop-stop" type="checkbox" id="stop-{{ s.n }}" data-stop-motion><label class="backdrop-stop-label" for="stop-{{ s.n }}">Stop the moving background</label>{% end %}<div class="backdrop" aria-hidden="true">{% if s.timeline.backdrop_image %}<img src="{{ s.timeline.backdrop_url }}"{% if s.timeline.backdrop_url_srcset %} srcset="{{ s.timeline.backdrop_url_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.timeline.backdrop_poster %}<img src="{{ s.timeline.backdrop_poster }}"{% if s.timeline.backdrop_poster_srcset %} srcset="{{ s.timeline.backdrop_poster_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.timeline.backdrop_video %}<video muted loop playsinline autoplay preload="metadata" aria-hidden="true" disablepictureinpicture disableremoteplayback{% if s.timeline.backdrop_poster %} poster="{{ s.timeline.backdrop_poster }}"{% end %}><source src="{{ s.timeline.backdrop_url }}" media="(prefers-reduced-motion: no-preference)"></video>{% end %}</div>{% end %}
   <div class="wrap">
     {% if s.timeline.title %}<div class="section-head"><h2>{{ s.timeline.title }}</h2></div>{% end %}
     <ol class="timeline">
@@ -317,7 +317,7 @@
 {% end %}
 
 {% if s.quote %}
-<section class="section {{ s.quote.tone }} reveal">
+<section class="section {{ s.quote.tone }} reveal{% if s.quote.backdrop_on %} surface-media{% end %}">{% if s.quote.backdrop_on %}{% if s.quote.backdrop_video %}<input class="backdrop-stop" type="checkbox" id="stop-{{ s.n }}" data-stop-motion><label class="backdrop-stop-label" for="stop-{{ s.n }}">Stop the moving background</label>{% end %}<div class="backdrop" aria-hidden="true">{% if s.quote.backdrop_image %}<img src="{{ s.quote.backdrop_url }}"{% if s.quote.backdrop_url_srcset %} srcset="{{ s.quote.backdrop_url_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.quote.backdrop_poster %}<img src="{{ s.quote.backdrop_poster }}"{% if s.quote.backdrop_poster_srcset %} srcset="{{ s.quote.backdrop_poster_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.quote.backdrop_video %}<video muted loop playsinline autoplay preload="metadata" aria-hidden="true" disablepictureinpicture disableremoteplayback{% if s.quote.backdrop_poster %} poster="{{ s.quote.backdrop_poster }}"{% end %}><source src="{{ s.quote.backdrop_url }}" media="(prefers-reduced-motion: no-preference)"></video>{% end %}</div>{% end %}
   <div class="wrap">
     <blockquote class="pull">
       <p>{{ s.quote.text }}</p>
@@ -328,7 +328,7 @@
 {% end %}
 
 {% if s.logos %}
-<section class="section {{ s.logos.tone }}">
+<section class="section {{ s.logos.tone }}{% if s.logos.backdrop_on %} surface-media{% end %}">{% if s.logos.backdrop_on %}{% if s.logos.backdrop_video %}<input class="backdrop-stop" type="checkbox" id="stop-{{ s.n }}" data-stop-motion><label class="backdrop-stop-label" for="stop-{{ s.n }}">Stop the moving background</label>{% end %}<div class="backdrop" aria-hidden="true">{% if s.logos.backdrop_image %}<img src="{{ s.logos.backdrop_url }}"{% if s.logos.backdrop_url_srcset %} srcset="{{ s.logos.backdrop_url_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.logos.backdrop_poster %}<img src="{{ s.logos.backdrop_poster }}"{% if s.logos.backdrop_poster_srcset %} srcset="{{ s.logos.backdrop_poster_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.logos.backdrop_video %}<video muted loop playsinline autoplay preload="metadata" aria-hidden="true" disablepictureinpicture disableremoteplayback{% if s.logos.backdrop_poster %} poster="{{ s.logos.backdrop_poster }}"{% end %}><source src="{{ s.logos.backdrop_url }}" media="(prefers-reduced-motion: no-preference)"></video>{% end %}</div>{% end %}
   <div class="wrap wrap-wide">
     {% if s.logos.title %}<div class="section-head center"><h2>{{ s.logos.title }}</h2></div>{% end %}
     <ul class="logos">{% for l in s.logos.items %}<li>{{ l }}</li>{% end %}</ul>
@@ -337,7 +337,7 @@
 {% end %}
 
 {% if s.pricing %}
-<section class="section {{ s.pricing.tone }} reveal">
+<section class="section {{ s.pricing.tone }} reveal{% if s.pricing.backdrop_on %} surface-media{% end %}">{% if s.pricing.backdrop_on %}{% if s.pricing.backdrop_video %}<input class="backdrop-stop" type="checkbox" id="stop-{{ s.n }}" data-stop-motion><label class="backdrop-stop-label" for="stop-{{ s.n }}">Stop the moving background</label>{% end %}<div class="backdrop" aria-hidden="true">{% if s.pricing.backdrop_image %}<img src="{{ s.pricing.backdrop_url }}"{% if s.pricing.backdrop_url_srcset %} srcset="{{ s.pricing.backdrop_url_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.pricing.backdrop_poster %}<img src="{{ s.pricing.backdrop_poster }}"{% if s.pricing.backdrop_poster_srcset %} srcset="{{ s.pricing.backdrop_poster_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.pricing.backdrop_video %}<video muted loop playsinline autoplay preload="metadata" aria-hidden="true" disablepictureinpicture disableremoteplayback{% if s.pricing.backdrop_poster %} poster="{{ s.pricing.backdrop_poster }}"{% end %}><source src="{{ s.pricing.backdrop_url }}" media="(prefers-reduced-motion: no-preference)"></video>{% end %}</div>{% end %}
   <div class="wrap wrap-wide">
     {% if s.pricing.title %}
     <div class="section-head center">
@@ -362,7 +362,7 @@
 {% end %}
 
 {% if s.faq %}
-<section class="section {{ s.faq.tone }}">
+<section class="section {{ s.faq.tone }}{% if s.faq.backdrop_on %} surface-media{% end %}">{% if s.faq.backdrop_on %}{% if s.faq.backdrop_video %}<input class="backdrop-stop" type="checkbox" id="stop-{{ s.n }}" data-stop-motion><label class="backdrop-stop-label" for="stop-{{ s.n }}">Stop the moving background</label>{% end %}<div class="backdrop" aria-hidden="true">{% if s.faq.backdrop_image %}<img src="{{ s.faq.backdrop_url }}"{% if s.faq.backdrop_url_srcset %} srcset="{{ s.faq.backdrop_url_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.faq.backdrop_poster %}<img src="{{ s.faq.backdrop_poster }}"{% if s.faq.backdrop_poster_srcset %} srcset="{{ s.faq.backdrop_poster_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.faq.backdrop_video %}<video muted loop playsinline autoplay preload="metadata" aria-hidden="true" disablepictureinpicture disableremoteplayback{% if s.faq.backdrop_poster %} poster="{{ s.faq.backdrop_poster }}"{% end %}><source src="{{ s.faq.backdrop_url }}" media="(prefers-reduced-motion: no-preference)"></video>{% end %}</div>{% end %}
   <div class="wrap">
     {% if s.faq.title %}<div class="section-head"><h2>{{ s.faq.title }}</h2></div>{% end %}
     <div class="faq">
@@ -378,7 +378,7 @@
 {% end %}
 
 {% if s.table %}
-<section class="section {{ s.table.tone }}">
+<section class="section {{ s.table.tone }}{% if s.table.backdrop_on %} surface-media{% end %}">{% if s.table.backdrop_on %}{% if s.table.backdrop_video %}<input class="backdrop-stop" type="checkbox" id="stop-{{ s.n }}" data-stop-motion><label class="backdrop-stop-label" for="stop-{{ s.n }}">Stop the moving background</label>{% end %}<div class="backdrop" aria-hidden="true">{% if s.table.backdrop_image %}<img src="{{ s.table.backdrop_url }}"{% if s.table.backdrop_url_srcset %} srcset="{{ s.table.backdrop_url_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.table.backdrop_poster %}<img src="{{ s.table.backdrop_poster }}"{% if s.table.backdrop_poster_srcset %} srcset="{{ s.table.backdrop_poster_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.table.backdrop_video %}<video muted loop playsinline autoplay preload="metadata" aria-hidden="true" disablepictureinpicture disableremoteplayback{% if s.table.backdrop_poster %} poster="{{ s.table.backdrop_poster }}"{% end %}><source src="{{ s.table.backdrop_url }}" media="(prefers-reduced-motion: no-preference)"></video>{% end %}</div>{% end %}
   <div class="wrap wrap-wide">
     {% if s.table.title %}<div class="section-head"><h2>{{ s.table.title }}</h2></div>{% end %}
     <div class="table-wrap">
@@ -395,7 +395,7 @@
 {% end %}
 
 {% if s.listing %}
-<section class="section {{ s.listing.tone }} reveal">
+<section class="section {{ s.listing.tone }} reveal{% if s.listing.backdrop_on %} surface-media{% end %}">{% if s.listing.backdrop_on %}{% if s.listing.backdrop_video %}<input class="backdrop-stop" type="checkbox" id="stop-{{ s.n }}" data-stop-motion><label class="backdrop-stop-label" for="stop-{{ s.n }}">Stop the moving background</label>{% end %}<div class="backdrop" aria-hidden="true">{% if s.listing.backdrop_image %}<img src="{{ s.listing.backdrop_url }}"{% if s.listing.backdrop_url_srcset %} srcset="{{ s.listing.backdrop_url_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.listing.backdrop_poster %}<img src="{{ s.listing.backdrop_poster }}"{% if s.listing.backdrop_poster_srcset %} srcset="{{ s.listing.backdrop_poster_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.listing.backdrop_video %}<video muted loop playsinline autoplay preload="metadata" aria-hidden="true" disablepictureinpicture disableremoteplayback{% if s.listing.backdrop_poster %} poster="{{ s.listing.backdrop_poster }}"{% end %}><source src="{{ s.listing.backdrop_url }}" media="(prefers-reduced-motion: no-preference)"></video>{% end %}</div>{% end %}
   <div class="wrap wrap-wide">
     {% if s.listing.title %}<div class="section-head">
       <h2>{{ s.listing.title }}</h2>
@@ -435,7 +435,7 @@
 {% end %}
 
 {% if s.people %}
-<section class="section {{ s.people.tone }} reveal">
+<section class="section {{ s.people.tone }} reveal{% if s.people.backdrop_on %} surface-media{% end %}">{% if s.people.backdrop_on %}{% if s.people.backdrop_video %}<input class="backdrop-stop" type="checkbox" id="stop-{{ s.n }}" data-stop-motion><label class="backdrop-stop-label" for="stop-{{ s.n }}">Stop the moving background</label>{% end %}<div class="backdrop" aria-hidden="true">{% if s.people.backdrop_image %}<img src="{{ s.people.backdrop_url }}"{% if s.people.backdrop_url_srcset %} srcset="{{ s.people.backdrop_url_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.people.backdrop_poster %}<img src="{{ s.people.backdrop_poster }}"{% if s.people.backdrop_poster_srcset %} srcset="{{ s.people.backdrop_poster_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.people.backdrop_video %}<video muted loop playsinline autoplay preload="metadata" aria-hidden="true" disablepictureinpicture disableremoteplayback{% if s.people.backdrop_poster %} poster="{{ s.people.backdrop_poster }}"{% end %}><source src="{{ s.people.backdrop_url }}" media="(prefers-reduced-motion: no-preference)"></video>{% end %}</div>{% end %}
   <div class="wrap wrap-wide">
     {% if s.people.title %}<div class="section-head"><h2>{{ s.people.title }}</h2></div>{% end %}
     <ul class="people">
@@ -452,7 +452,7 @@
 {% end %}
 
 {% if s.prose %}
-<section class="section {{ s.prose.tone }}">
+<section class="section {{ s.prose.tone }}{% if s.prose.backdrop_on %} surface-media{% end %}">{% if s.prose.backdrop_on %}{% if s.prose.backdrop_video %}<input class="backdrop-stop" type="checkbox" id="stop-{{ s.n }}" data-stop-motion><label class="backdrop-stop-label" for="stop-{{ s.n }}">Stop the moving background</label>{% end %}<div class="backdrop" aria-hidden="true">{% if s.prose.backdrop_image %}<img src="{{ s.prose.backdrop_url }}"{% if s.prose.backdrop_url_srcset %} srcset="{{ s.prose.backdrop_url_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.prose.backdrop_poster %}<img src="{{ s.prose.backdrop_poster }}"{% if s.prose.backdrop_poster_srcset %} srcset="{{ s.prose.backdrop_poster_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.prose.backdrop_video %}<video muted loop playsinline autoplay preload="metadata" aria-hidden="true" disablepictureinpicture disableremoteplayback{% if s.prose.backdrop_poster %} poster="{{ s.prose.backdrop_poster }}"{% end %}><source src="{{ s.prose.backdrop_url }}" media="(prefers-reduced-motion: no-preference)"></video>{% end %}</div>{% end %}
   <div class="wrap">
     {% if s.prose.title %}<div class="section-head"><h2>{{ s.prose.title }}</h2></div>{% end %}
     <div class="prose narrow">{% for p in s.prose.paragraphs %}<p>{{ p }}</p>{% end %}{% if s.prose.body %}{{ s.prose.body | prose }}{% end %}</div>
@@ -472,7 +472,7 @@
 {% end %}
 
 {% if s.carousel %}
-<section class="section {{ s.carousel.tone }}">
+<section class="section {{ s.carousel.tone }}{% if s.carousel.backdrop_on %} surface-media{% end %}">{% if s.carousel.backdrop_on %}{% if s.carousel.backdrop_video %}<input class="backdrop-stop" type="checkbox" id="stop-{{ s.n }}" data-stop-motion><label class="backdrop-stop-label" for="stop-{{ s.n }}">Stop the moving background</label>{% end %}<div class="backdrop" aria-hidden="true">{% if s.carousel.backdrop_image %}<img src="{{ s.carousel.backdrop_url }}"{% if s.carousel.backdrop_url_srcset %} srcset="{{ s.carousel.backdrop_url_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.carousel.backdrop_poster %}<img src="{{ s.carousel.backdrop_poster }}"{% if s.carousel.backdrop_poster_srcset %} srcset="{{ s.carousel.backdrop_poster_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.carousel.backdrop_video %}<video muted loop playsinline autoplay preload="metadata" aria-hidden="true" disablepictureinpicture disableremoteplayback{% if s.carousel.backdrop_poster %} poster="{{ s.carousel.backdrop_poster }}"{% end %}><source src="{{ s.carousel.backdrop_url }}" media="(prefers-reduced-motion: no-preference)"></video>{% end %}</div>{% end %}
   <div class="wrap wrap-wide">
     {% if s.carousel.title %}<div class="section-head"><h2>{{ s.carousel.title }}</h2></div>{% end %}
     <ul class="carousel" role="list">
@@ -490,12 +490,12 @@
 {% end %}
 
 {% if s.video %}
-<section class="section video {{ s.video.tone }}">
+<section class="section video {{ s.video.tone }}{% if s.video.backdrop_on %} surface-media{% end %}">{% if s.video.backdrop_on %}{% if s.video.backdrop_video %}<input class="backdrop-stop" type="checkbox" id="stop-{{ s.n }}" data-stop-motion><label class="backdrop-stop-label" for="stop-{{ s.n }}">Stop the moving background</label>{% end %}<div class="backdrop" aria-hidden="true">{% if s.video.backdrop_image %}<img src="{{ s.video.backdrop_url }}"{% if s.video.backdrop_url_srcset %} srcset="{{ s.video.backdrop_url_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.video.backdrop_poster %}<img src="{{ s.video.backdrop_poster }}"{% if s.video.backdrop_poster_srcset %} srcset="{{ s.video.backdrop_poster_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.video.backdrop_video %}<video muted loop playsinline autoplay preload="metadata" aria-hidden="true" disablepictureinpicture disableremoteplayback{% if s.video.backdrop_poster %} poster="{{ s.video.backdrop_poster }}"{% end %}><source src="{{ s.video.backdrop_url }}" media="(prefers-reduced-motion: no-preference)"></video>{% end %}</div>{% end %}
   <div class="wrap">
     {% if s.video.title %}<div class="section-head"><h2>{{ s.video.title }}</h2></div>{% end %}
     <figure>
       {% if s.video.src %}
-      <video controls preload="metadata"{% if s.video.poster %} poster="{{ s.video.poster }}"{% end %}>
+      <video controls preload="metadata"{% if s.video.poster %} poster="{{ s.video.poster }}"{% end %}{% if s.video.src_alt %} aria-label="{{ s.video.src_alt }}"{% end %}>
         <source src="{{ s.video.src }}">
         {% for t in s.video.src_tracks %}
         <track kind="{{ t.kind }}" src="{{ t.src }}" srclang="{{ t.lang }}"{% if t.label %} label="{{ t.label }}"{% end %}{% if t.default %} default{% end %}>
@@ -511,7 +511,7 @@
 {% end %}
 
 {% if s.quotes %}
-<section class="section {{ s.quotes.tone }} reveal">
+<section class="section {{ s.quotes.tone }} reveal{% if s.quotes.backdrop_on %} surface-media{% end %}">{% if s.quotes.backdrop_on %}{% if s.quotes.backdrop_video %}<input class="backdrop-stop" type="checkbox" id="stop-{{ s.n }}" data-stop-motion><label class="backdrop-stop-label" for="stop-{{ s.n }}">Stop the moving background</label>{% end %}<div class="backdrop" aria-hidden="true">{% if s.quotes.backdrop_image %}<img src="{{ s.quotes.backdrop_url }}"{% if s.quotes.backdrop_url_srcset %} srcset="{{ s.quotes.backdrop_url_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.quotes.backdrop_poster %}<img src="{{ s.quotes.backdrop_poster }}"{% if s.quotes.backdrop_poster_srcset %} srcset="{{ s.quotes.backdrop_poster_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.quotes.backdrop_video %}<video muted loop playsinline autoplay preload="metadata" aria-hidden="true" disablepictureinpicture disableremoteplayback{% if s.quotes.backdrop_poster %} poster="{{ s.quotes.backdrop_poster }}"{% end %}><source src="{{ s.quotes.backdrop_url }}" media="(prefers-reduced-motion: no-preference)"></video>{% end %}</div>{% end %}
   <div class="wrap wrap-wide">
     {% if s.quotes.title %}<div class="section-head center"><h2>{{ s.quotes.title }}</h2></div>{% end %}
     <ul class="quotes" role="list">
@@ -527,7 +527,7 @@
 {% end %}
 
 {% if s.ask %}
-<section class="section {{ s.ask.tone }} reveal">
+<section class="section {{ s.ask.tone }} reveal{% if s.ask.backdrop_on %} surface-media{% end %}">{% if s.ask.backdrop_on %}{% if s.ask.backdrop_video %}<input class="backdrop-stop" type="checkbox" id="stop-{{ s.n }}" data-stop-motion><label class="backdrop-stop-label" for="stop-{{ s.n }}">Stop the moving background</label>{% end %}<div class="backdrop" aria-hidden="true">{% if s.ask.backdrop_image %}<img src="{{ s.ask.backdrop_url }}"{% if s.ask.backdrop_url_srcset %} srcset="{{ s.ask.backdrop_url_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.ask.backdrop_poster %}<img src="{{ s.ask.backdrop_poster }}"{% if s.ask.backdrop_poster_srcset %} srcset="{{ s.ask.backdrop_poster_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.ask.backdrop_video %}<video muted loop playsinline autoplay preload="metadata" aria-hidden="true" disablepictureinpicture disableremoteplayback{% if s.ask.backdrop_poster %} poster="{{ s.ask.backdrop_poster }}"{% end %}><source src="{{ s.ask.backdrop_url }}" media="(prefers-reduced-motion: no-preference)"></video>{% end %}</div>{% end %}
   <div class="wrap">
     <div class="ask-box">
       {% if s.ask.title %}<h2>{{ s.ask.title }}</h2>{% end %}
@@ -552,7 +552,7 @@
 {% end %}
 
 {% if s.comments %}
-<section class="section {{ s.comments.tone }}" id="comments">
+<section class="section {{ s.comments.tone }}{% if s.comments.backdrop_on %} surface-media{% end %}" id="comments">{% if s.comments.backdrop_on %}{% if s.comments.backdrop_video %}<input class="backdrop-stop" type="checkbox" id="stop-{{ s.n }}" data-stop-motion><label class="backdrop-stop-label" for="stop-{{ s.n }}">Stop the moving background</label>{% end %}<div class="backdrop" aria-hidden="true">{% if s.comments.backdrop_image %}<img src="{{ s.comments.backdrop_url }}"{% if s.comments.backdrop_url_srcset %} srcset="{{ s.comments.backdrop_url_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.comments.backdrop_poster %}<img src="{{ s.comments.backdrop_poster }}"{% if s.comments.backdrop_poster_srcset %} srcset="{{ s.comments.backdrop_poster_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.comments.backdrop_video %}<video muted loop playsinline autoplay preload="metadata" aria-hidden="true" disablepictureinpicture disableremoteplayback{% if s.comments.backdrop_poster %} poster="{{ s.comments.backdrop_poster }}"{% end %}><source src="{{ s.comments.backdrop_url }}" media="(prefers-reduced-motion: no-preference)"></video>{% end %}</div>{% end %}
   <div class="wrap">
     <div class="section-head">
       <h2>{{ s.comments.title | default:Comments }}</h2>
@@ -581,7 +581,7 @@
 {% end %}
 
 {% if s.events %}
-<section class="section {{ s.events.tone }}" id="events">
+<section class="section {{ s.events.tone }}{% if s.events.backdrop_on %} surface-media{% end %}" id="events">{% if s.events.backdrop_on %}{% if s.events.backdrop_video %}<input class="backdrop-stop" type="checkbox" id="stop-{{ s.n }}" data-stop-motion><label class="backdrop-stop-label" for="stop-{{ s.n }}">Stop the moving background</label>{% end %}<div class="backdrop" aria-hidden="true">{% if s.events.backdrop_image %}<img src="{{ s.events.backdrop_url }}"{% if s.events.backdrop_url_srcset %} srcset="{{ s.events.backdrop_url_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.events.backdrop_poster %}<img src="{{ s.events.backdrop_poster }}"{% if s.events.backdrop_poster_srcset %} srcset="{{ s.events.backdrop_poster_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.events.backdrop_video %}<video muted loop playsinline autoplay preload="metadata" aria-hidden="true" disablepictureinpicture disableremoteplayback{% if s.events.backdrop_poster %} poster="{{ s.events.backdrop_poster }}"{% end %}><source src="{{ s.events.backdrop_url }}" media="(prefers-reduced-motion: no-preference)"></video>{% end %}</div>{% end %}
   <div class="wrap">
     <div class="section-head">
       <h2>{{ s.events.title | default:What's on }}</h2>
@@ -611,7 +611,7 @@
 {% end %}
 
 {% if s.posts %}
-<section class="section {{ s.posts.tone }}" id="posts">
+<section class="section {{ s.posts.tone }}{% if s.posts.backdrop_on %} surface-media{% end %}" id="posts">{% if s.posts.backdrop_on %}{% if s.posts.backdrop_video %}<input class="backdrop-stop" type="checkbox" id="stop-{{ s.n }}" data-stop-motion><label class="backdrop-stop-label" for="stop-{{ s.n }}">Stop the moving background</label>{% end %}<div class="backdrop" aria-hidden="true">{% if s.posts.backdrop_image %}<img src="{{ s.posts.backdrop_url }}"{% if s.posts.backdrop_url_srcset %} srcset="{{ s.posts.backdrop_url_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.posts.backdrop_poster %}<img src="{{ s.posts.backdrop_poster }}"{% if s.posts.backdrop_poster_srcset %} srcset="{{ s.posts.backdrop_poster_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.posts.backdrop_video %}<video muted loop playsinline autoplay preload="metadata" aria-hidden="true" disablepictureinpicture disableremoteplayback{% if s.posts.backdrop_poster %} poster="{{ s.posts.backdrop_poster }}"{% end %}><source src="{{ s.posts.backdrop_url }}" media="(prefers-reduced-motion: no-preference)"></video>{% end %}</div>{% end %}
   <div class="wrap">
     <div class="section-head">
       <h2>{{ s.posts.title | default:Latest posts }}</h2>
@@ -641,7 +641,7 @@
 {% end %}
 
 {% if s.newsletter %}
-<section class="section {{ s.newsletter.tone }}" id="newsletter">
+<section class="section {{ s.newsletter.tone }}{% if s.newsletter.backdrop_on %} surface-media{% end %}" id="newsletter">{% if s.newsletter.backdrop_on %}{% if s.newsletter.backdrop_video %}<input class="backdrop-stop" type="checkbox" id="stop-{{ s.n }}" data-stop-motion><label class="backdrop-stop-label" for="stop-{{ s.n }}">Stop the moving background</label>{% end %}<div class="backdrop" aria-hidden="true">{% if s.newsletter.backdrop_image %}<img src="{{ s.newsletter.backdrop_url }}"{% if s.newsletter.backdrop_url_srcset %} srcset="{{ s.newsletter.backdrop_url_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.newsletter.backdrop_poster %}<img src="{{ s.newsletter.backdrop_poster }}"{% if s.newsletter.backdrop_poster_srcset %} srcset="{{ s.newsletter.backdrop_poster_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.newsletter.backdrop_video %}<video muted loop playsinline autoplay preload="metadata" aria-hidden="true" disablepictureinpicture disableremoteplayback{% if s.newsletter.backdrop_poster %} poster="{{ s.newsletter.backdrop_poster }}"{% end %}><source src="{{ s.newsletter.backdrop_url }}" media="(prefers-reduced-motion: no-preference)"></video>{% end %}</div>{% end %}
   <div class="wrap">
     <div class="section-head">
       <h2>{{ s.newsletter.title | default:Get our news }}</h2>
@@ -668,7 +668,7 @@
 {% end %}
 
 {% if s.booking %}
-<section class="section {{ s.booking.tone }}" id="book">
+<section class="section {{ s.booking.tone }}{% if s.booking.backdrop_on %} surface-media{% end %}" id="book">{% if s.booking.backdrop_on %}{% if s.booking.backdrop_video %}<input class="backdrop-stop" type="checkbox" id="stop-{{ s.n }}" data-stop-motion><label class="backdrop-stop-label" for="stop-{{ s.n }}">Stop the moving background</label>{% end %}<div class="backdrop" aria-hidden="true">{% if s.booking.backdrop_image %}<img src="{{ s.booking.backdrop_url }}"{% if s.booking.backdrop_url_srcset %} srcset="{{ s.booking.backdrop_url_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.booking.backdrop_poster %}<img src="{{ s.booking.backdrop_poster }}"{% if s.booking.backdrop_poster_srcset %} srcset="{{ s.booking.backdrop_poster_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.booking.backdrop_video %}<video muted loop playsinline autoplay preload="metadata" aria-hidden="true" disablepictureinpicture disableremoteplayback{% if s.booking.backdrop_poster %} poster="{{ s.booking.backdrop_poster }}"{% end %}><source src="{{ s.booking.backdrop_url }}" media="(prefers-reduced-motion: no-preference)"></video>{% end %}</div>{% end %}
   <div class="wrap">
     <div class="section-head">
       <h2>{{ s.booking.title | default:Book a time }}</h2>
@@ -730,7 +730,7 @@
 {% end %}
 
 {% if s.cta %}
-<section class="section {{ s.cta.tone | default:tone-primary }} reveal">
+<section class="section {{ s.cta.tone | default:tone-primary }} reveal{% if s.cta.backdrop_on %} surface-media{% end %}">{% if s.cta.backdrop_on %}{% if s.cta.backdrop_video %}<input class="backdrop-stop" type="checkbox" id="stop-{{ s.n }}" data-stop-motion><label class="backdrop-stop-label" for="stop-{{ s.n }}">Stop the moving background</label>{% end %}<div class="backdrop" aria-hidden="true">{% if s.cta.backdrop_image %}<img src="{{ s.cta.backdrop_url }}"{% if s.cta.backdrop_url_srcset %} srcset="{{ s.cta.backdrop_url_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.cta.backdrop_poster %}<img src="{{ s.cta.backdrop_poster }}"{% if s.cta.backdrop_poster_srcset %} srcset="{{ s.cta.backdrop_poster_srcset }}" sizes="100vw"{% end %} alt="" width="1920" height="1080">{% end %}{% if s.cta.backdrop_video %}<video muted loop playsinline autoplay preload="metadata" aria-hidden="true" disablepictureinpicture disableremoteplayback{% if s.cta.backdrop_poster %} poster="{{ s.cta.backdrop_poster }}"{% end %}><source src="{{ s.cta.backdrop_url }}" media="(prefers-reduced-motion: no-preference)"></video>{% end %}</div>{% end %}
   <div class="wrap">
     <div class="section-head center">
       <h2>{{ s.cta.title }}</h2>

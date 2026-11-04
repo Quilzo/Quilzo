@@ -416,6 +416,25 @@ type File struct {
 	// be an answer where there is none.
 	Seconds float64 `json:"seconds,omitempty"`
 
+	// Sound is whether the recording has an audio stream, as the probe at
+	// upload found it. Nil means nothing could tell — a store with no
+	// ffprobe, or a recording stored before anything asked.
+	//
+	// # Why it is recorded
+	//
+	// The accessibility gate refused every video with no captions track, and
+	// a recording with no sound in it has nothing to caption: what it owes a
+	// reader who cannot see it is a text alternative (WCAG 1.2.1), and a
+	// caption file saying "[No sound]" over a description of the picture was
+	// the only way through. The gate could not tell the two apart from the
+	// page, and the probe it already ran lists the streams. So the answer is
+	// taken once, here, where the recording is, and the gate asks for it.
+	//
+	// Unknown is treated as sound everywhere it matters, because a check that
+	// waved through a recording nothing had listened to would be a check that
+	// guessed.
+	Sound *bool `json:"sound,omitempty"`
+
 	// Poster is a still taken from this recording, stored as its own picture.
 	//
 	// A file of its own rather than bytes on this record, because that is the
@@ -1077,4 +1096,32 @@ func verifyCSV(b []byte) error {
 		}
 	}
 	return nil
+}
+
+// SoundKnown reports whether a recording's sound was recorded, and what it
+// was.
+func (f File) SoundKnown() (sound, known bool) {
+	if f.Sound == nil {
+		return false, false
+	}
+	return *f.Sound, true
+}
+
+// Silent reports whether a recording is known to have no sound at all.
+// Unknown is not silent.
+func (f File) Silent() bool {
+	sound, known := f.SoundKnown()
+	return known && !sound
+}
+
+// SoundWord says what was recorded about a recording's sound, in a word:
+// yes, no, or unknown.
+func (f File) SoundWord() string {
+	switch sound, known := f.SoundKnown(); {
+	case !known:
+		return "unknown"
+	case sound:
+		return "yes"
+	}
+	return "no"
 }
