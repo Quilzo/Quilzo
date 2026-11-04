@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -109,10 +110,68 @@ func (n Native) probe() Availability {
 	}
 	if err != nil {
 		return Availability{Will: will, Why: "an empty box could not be started (" + err.Error() + "). " +
-			"Unprivileged user namespaces are needed: on Ubuntu 23.10 and later AppArmor restricts them " +
-			"(kernel.apparmor_restrict_unprivileged_userns)"}
+			whyNoNamespaces()}
 	}
 	return Availability{OK: true, Will: will}
+}
+
+// readProc reads what the kernel says about this process and this machine;
+// a variable so a test can be a container without running in one.
+var readProc = os.ReadFile
+
+// whyNoNamespaces says what on this machine refuses the box its user
+// namespace, from what the machine says about itself.
+//
+// It named AppArmor on Ubuntu 23.10 whatever the cause, and in the reference
+// compose container, on a machine with no AppArmor at all, that sent people
+// to the wrong place: what refused the namespace there was the container,
+// whose runtime's default system call filter does not let a process in it
+// make one. Each cause the kernel can report is checked, and every one that
+// applies is said.
+func whyNoNamespaces() string {
+	var why []string
+	if procValue("/proc/sys/user/max_user_namespaces") == "0" {
+		why = append(why, "user namespaces are switched off on this machine (user.max_user_namespaces is 0)")
+	}
+	if procValue("/proc/sys/kernel/unprivileged_userns_clone") == "0" {
+		why = append(why, "unprivileged ones are switched off on this machine (kernel.unprivileged_userns_clone is 0)")
+	}
+	if statusField("Seccomp") == "2" {
+		why = append(why, "this process runs under a system call filter, as a container does, and Docker's "+
+			"default one refuses new user namespaces: run the agents that need a program box where Quilzo "+
+			"runs on the machine itself, or choose another backend (quilzo agent backends)")
+	}
+	if procValue("/proc/sys/kernel/apparmor_restrict_unprivileged_userns") == "1" {
+		why = append(why, "AppArmor restricts them, as on Ubuntu 23.10 and later "+
+			"(kernel.apparmor_restrict_unprivileged_userns is 1)")
+	}
+	if len(why) == 0 {
+		return "Unprivileged user namespaces are needed, and something on this machine refuses them"
+	}
+	return "Unprivileged user namespaces are needed, and " + strings.Join(why, "; ")
+}
+
+func procValue(path string) string {
+	b, err := readProc(path)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
+}
+
+// statusField is a field of /proc/self/status: Seccomp is 2 when a filter
+// is in force.
+func statusField(name string) string {
+	b, err := readProc("/proc/self/status")
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		if v, ok := strings.CutPrefix(line, name+":"); ok {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
 }
 
 func firstLine(b []byte) string {

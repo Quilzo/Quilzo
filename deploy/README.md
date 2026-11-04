@@ -50,6 +50,16 @@ What each one is for:
 - `up -d` starts everything, and `restart: unless-stopped` brings it back
   after a reboot.
 
+### What the containers do not do
+
+An agent that runs a program (`quilzo agent run --program`) runs it in the
+native agent box, which makes a user namespace of its own, and Docker's
+default system call filter refuses that inside a container: `quilzo agent
+backends` says so and why. Run those agents where Quilzo runs on the machine
+itself, or with a backend that runs the box elsewhere (`agent backends` lists
+them). Every other agent, and the rest of Quilzo, works here as it does
+anywhere.
+
 The store is the `store` volume, and it is kept until you delete it:
 `docker compose down` stops the stack and keeps every volume; only
 `docker compose down -v` throws them away.
