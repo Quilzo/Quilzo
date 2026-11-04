@@ -220,9 +220,23 @@ var commandNeeds = map[string]need{
 	// administrative: the key is the credential that speaks for the whole site
 	// to everybody following it, and the follower list names people who read
 	// this site, which is not public information.
-	"fediverse":  {action: auth.ActGrant},
-	"provenance": {action: auth.ActView},
-	"prov":       {action: auth.ActView},
+	"fediverse": {action: auth.ActGrant},
+	// Saying where a page's bytes came from writes what its readers are
+	// told about it, and the provenance screen asks to edit the page for
+	// it. Both were view as a whole, so a reader, and a token issued
+	// --read-only, recorded a page as a person's work. Strict parents, so a
+	// subcommand added later arrives guarded; checking steps down, and a
+	// bare command is asked as the check it runs (bareRuns). A backfill
+	// steps down too and asks to edit inside the command, once its flags
+	// are read, because a dry run writes nothing and stays a read.
+	"provenance":          {action: auth.ActEditDraft},
+	"provenance check":    {action: auth.ActView},
+	"provenance status":   {action: auth.ActView},
+	"provenance backfill": {action: auth.ActView},
+	"prov":                {action: auth.ActEditDraft},
+	"prov check":          {action: auth.ActView},
+	"prov status":         {action: auth.ActView},
+	"prov backfill":       {action: auth.ActView},
 	// Strict parent, narrowing children — see the note on posture. Pointing
 	// every reader at a different audit log is an operator act, so the parent
 	// takes that answer and the seven reading subcommands step down from it.
@@ -1376,7 +1390,8 @@ func commandArea(cmd string, args []string) (string, bool) {
 // digest out stopped being a reader's act, and their bare forms, which show
 // the proofs and the stamps, would have gone with them: a reader running
 // `quilzo anchor` would have been refused what `quilzo anchor status` shows.
-var bareRuns = map[string]string{"anchor": "status", "timestamp": "list", "stamp": "list"}
+var bareRuns = map[string]string{"anchor": "status", "timestamp": "list", "stamp": "list",
+	"provenance": "check", "prov": "check"}
 
 func lookupNeed(cmd string, args []string) (need, bool) {
 	if sub, ok := bareRuns[cmd]; ok && len(args) == 0 {
