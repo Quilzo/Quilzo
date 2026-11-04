@@ -4,8 +4,10 @@
 package admin
 
 import (
+	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/config"
 )
@@ -27,5 +29,34 @@ func TestEverySettingsGroupHasALabel(t *testing.T) {
 	}
 	if len(seen) == 0 {
 		t.Fatal("no settings were listed")
+	}
+}
+
+// A duration on Settings is shown in the largest whole unit it is, and a
+// value given in days is taken.
+//
+// The screen printed what the file holds, so the access review's ninety
+// days was 2160h in the Value and Default columns, and typing 60d in the
+// box was refused as not a duration.
+func TestADurationOnSettingsIsShownAndTakenInDays(t *testing.T) {
+	srv, editor := setup(t)
+	saved := []byte(`{"values":{"token.ttl.max":"720h"}}`)
+	srv.Settings = &Settings{
+		Load: func() (*config.Config, error) { return config.Parse(saved) },
+		Save: func(c *config.Config) error { b, err := c.Bytes(); saved = b; return err }}
+	body := get(t, srv, "/settings", editor).Body.String()
+	for _, want := range []string{`<strong>30d</strong>`, `<td class="hint">90d</td>`, `value="30d"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("Settings does not show %s", want)
+		}
+	}
+	for _, hours := range []string{`<td class="hint">2160h</td>`, `<strong>720h</strong>`, `value="720h"`} {
+		if strings.Contains(body, hours) {
+			t.Errorf("Settings still shows %s where it is a whole number of days", hours)
+		}
+	}
+	postForm(t, srv, "/settings/save", editor, url.Values{"key": {"access.review.every"}, "value": {"60d"}}.Encode())
+	if cfg, _ := srv.Settings.Load(); cfg.Dur("access.review.every") != 60*24*time.Hour {
+		t.Errorf("60d was not taken: %s", cfg.Raw("access.review.every"))
 	}
 }

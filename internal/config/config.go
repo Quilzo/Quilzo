@@ -290,12 +290,13 @@ func (c *Config) Int(key string) int {
 	return n
 }
 
-// Dur returns a setting as a duration.
+// Dur returns a setting as a duration, which may be written in days or
+// weeks (ParseDuration).
 func (c *Config) Dur(key string) time.Duration {
-	d, err := time.ParseDuration(c.Raw(key))
+	d, err := ParseDuration(c.Raw(key))
 	if err != nil {
 		s, _ := Lookup(key)
-		d, _ = time.ParseDuration(s.Default)
+		d, _ = ParseDuration(s.Default)
 	}
 	return d
 }
@@ -387,7 +388,7 @@ func (c *Config) Set(key, value, reason, by string) error {
 		c.dropAcceptance(key)
 	}
 
-	if value == s.Default {
+	if s.same(value, s.Default) {
 		delete(c.file.Values, key)
 		return nil
 	}
@@ -416,7 +417,7 @@ func (c *Config) Put(key, value, reason, by string) error {
 			At: now.UTC().Format(time.RFC3339), Until: now.Add(MaxAcceptance).UTC().Format(time.RFC3339),
 		})
 	}
-	if value == s.Default {
+	if s.same(value, s.Default) {
 		delete(c.file.Values, key)
 		return nil
 	}
@@ -466,6 +467,11 @@ type Effective struct {
 	// Floors is the organisation's policy under this setting, if any.
 	Floors []Floor
 }
+
+// Shown is the value as the Settings screen and `config show` print it:
+// a duration in its largest whole unit, so 1440h reads as 60d. Value is
+// still what is stored, which is what the JSON carries.
+func (e Effective) Shown() string { return e.Setting.show(e.Value) }
 
 // Effectives returns every setting, in declaration order.
 func (c *Config) Effectives() []Effective {
