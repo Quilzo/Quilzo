@@ -64,6 +64,14 @@ type need struct {
 	// alone does not include. The command still checks the exact agent or
 	// run itself; this only stops the table asking the wrong question.
 	or []auth.Action
+	// orAnywhere takes the or permissions wherever the caller holds them.
+	// For deciding what a run waits for, which the command checks against
+	// the agent and against the page the run would change (mayApprove), and
+	// a page can be anywhere: somebody given approve on /blog alone was
+	// listed a run waiting to change a page there by `approvals`, and
+	// refused `agent approve` for it, because the table asked about the
+	// agents.
+	orAnywhere bool
 }
 
 // installing is the permission whose work the feature commands that read
@@ -125,9 +133,9 @@ var commandNeeds = map[string]need{
 	// checked by the command against the run's agent: its sponsor, or the
 	// approve permission on it or on what it would change; run-agents to
 	// resume. The table cannot know which agent a run is of.
-	"agent approve": {action: auth.ActView, or: []auth.Action{auth.ActApprove}},
-	"agent decline": {action: auth.ActView, or: []auth.Action{auth.ActApprove}},
-	"agent answer":  {action: auth.ActView, or: []auth.Action{auth.ActApprove}},
+	"agent approve": {action: auth.ActView, or: []auth.Action{auth.ActApprove}, orAnywhere: true},
+	"agent decline": {action: auth.ActView, or: []auth.Action{auth.ActApprove}, orAnywhere: true},
+	"agent answer":  {action: auth.ActView, or: []auth.Action{auth.ActApprove}, orAnywhere: true},
 	"agent resume":  {action: auth.ActView, or: []auth.Action{auth.ActRunAgents}},
 	// Authoring an archetype shapes every agent made from it.
 	"agent template save":   {action: auth.ActGrant},
@@ -1198,7 +1206,7 @@ func authoriseCommand(root, cmd string, args []string) error {
 	// the authority for both, and stopping at the first would let a deny on
 	// the second page be worked around by naming a permitted page alongside it.
 	for _, resource := range resources {
-		if err := authorise(root, caller, n.action, resource); err != nil && !mayInstead(root, caller, n.or, resource) {
+		if err := authorise(root, caller, n.action, resource); err != nil && !mayInstead(root, caller, n, resource) {
 			if help {
 				// Not a refusal on the record: nothing was attempted. The
 				// reason goes with it, so whoever asked can tell help from
@@ -1224,11 +1232,13 @@ func authoriseCommand(root, cmd string, args []string) error {
 }
 
 // mayInstead reports whether the caller holds one of a row's other
-// permissions (need.or) on the resource or on anything under it: approve on
-// /@agents/newsletter reaches `agent approve`, which is asked about all the
-// agents because the table cannot know which agent a run is of.
-func mayInstead(root string, c *Caller, actions []auth.Action, resource string) bool {
-	if len(actions) == 0 {
+// permissions (need.or) on the resource or on anything under it, or for a
+// row that takes them anywhere (need.orAnywhere) on anything at all: approve
+// on /@agents/newsletter reaches `agent approve`, which is asked about all
+// the agents because the table cannot know which agent a run is of, and so
+// does approve on /blog, for the runs waiting to change a page there.
+func mayInstead(root string, c *Caller, n need, resource string) bool {
+	if len(n.or) == 0 {
 		return false
 	}
 	p, err := loadPolicy(root)
@@ -1237,11 +1247,11 @@ func mayInstead(root string, c *Caller, actions []auth.Action, resource string) 
 	}
 	places := []string{resource}
 	for _, b := range p.Snapshot() {
-		if strings.EqualFold(b.Principal, c.Name) && !b.Deny && auth.Covers(resource, b.Resource) {
+		if strings.EqualFold(b.Principal, c.Name) && !b.Deny && (n.orAnywhere || auth.Covers(resource, b.Resource)) {
 			places = append(places, b.Resource)
 		}
 	}
-	for _, a := range actions {
+	for _, a := range n.or {
 		for _, at := range places {
 			if authorise(root, c, a, at) == nil {
 				return true

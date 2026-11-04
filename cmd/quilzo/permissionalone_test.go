@@ -90,3 +90,52 @@ func TestAPermissionGrantedAloneReachesItsOwnCommands(t *testing.T) {
 		}
 	}
 }
+
+// Approve granted on part of the site alone reaches the commands that
+// decide what a run waits to change there.
+//
+// A run waiting to change a page is decided by whoever holds approve on that
+// page (mayApprove), and `approvals` listed it to them. But the table asked
+// about the agents, and took approve only on them or under them, so somebody
+// given approve on /blog was refused `agent approve` ("no binding gives bl
+// any role on /@agents") for the run `approvals` had just shown them. They
+// are still refused what approve does not reach.
+func TestApproveOnAPartOfTheSiteDecidesItsRuns(t *testing.T) {
+	isolateToken(t)
+	root := t.TempDir()
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	pol := &auth.Policy{}
+	for _, b := range []auth.Binding{
+		{Principal: "alice", Role: auth.RoleAdmin, Resource: "/"},
+		{Principal: "bl", Permission: auth.ActApprove, Resource: "/blog"},
+	} {
+		if err := pol.Grant(b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := saveJSON(policyPath(root), pol); err != nil {
+		t.Fatal(err)
+	}
+	ts, _ := loadTokens(root)
+	secret, _, err := ts.Issue("bl", "bl", auth.RoleReader, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveJSON(tokensPath(root), ts); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("QUILZO_TOKEN", secret)
+	for _, a := range [][]string{{"approvals"}, {"agent", "approve", "run-0000", "1"},
+		{"agent", "decline", "run-0000", "1"}, {"agent", "answer", "run-0000", "1", "a=b"}} {
+		if err := authoriseCommand(root, a[0], a[1:]); err != nil {
+			t.Errorf("approve on /blog alone was refused %v: %v", a, err)
+		}
+	}
+	for _, a := range [][]string{{"agent", "resume", "run-0000"}, {"agent", "list"}, {"publish"}, {"diff"}} {
+		if err := authoriseCommand(root, a[0], a[1:]); err == nil {
+			t.Errorf("approve on /blog alone may run %v", a)
+		}
+	}
+}
