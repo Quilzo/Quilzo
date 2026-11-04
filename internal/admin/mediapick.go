@@ -122,10 +122,21 @@ func (s *Server) handleMediaPick(w http.ResponseWriter, r *http.Request) {
 	search := strings.ToLower(strings.TrimSpace(q.Get("q")))
 
 	rows := make([]pickable, 0, len(files))
+	heldBack := 0
 	for _, f := range files {
 		// A backdrop is a picture or a recording; every other field one kind.
 		if string(f.Kind) != kind && !(kind == section.Backdrop && (f.Kind == media.Image || f.Kind == media.Video)) {
 			continue
+		}
+		// A backdrop is muted, so a recording is offered for one only when
+		// the library knows it to be silent. The picker offered every video,
+		// and choosing one with sound looked like it worked until the page
+		// was refused at publish.
+		if kind == section.Backdrop && f.Kind == media.Video && f.RenditionOf == "" {
+			if sound, known := f.SoundKnown(); sound || !known {
+				heldBack++
+				continue
+			}
 		}
 		// A rendition is a narrower copy of a picture that is already in this
 		// list. Offering both would put the same photograph on the screen four
@@ -167,6 +178,7 @@ func (s *Server) handleMediaPick(w http.ResponseWriter, r *http.Request) {
 		"Title": "Choose a file", "Principal": p, "Nav": "sections",
 		"Page": page, "At": at, "Path": path, "Kind": kind,
 		"Noun":     nounFor(kind),
+		"HeldBack": heldBack,
 		"Shown":    rows[from:to],
 		"Total":    len(rows),
 		"Current":  current,

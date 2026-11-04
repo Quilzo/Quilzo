@@ -4,6 +4,9 @@
 
 <p class="lead">For <code>{{.Path}}</code> on section {{.At}} of
   <a href="/page/{{.Page}}">{{.Page}}</a>.</p>
+{{if .HeldBack}}<p class="hint">{{plural .HeldBack "video is" "videos are"}} not offered: a backdrop
+  is muted, so it has to be a recording the library knows to be silent. One with
+  sound belongs in a video section, with captions.</p>{{end}}
 
 {{/*
   A search box and a grid, because the policy on this response is

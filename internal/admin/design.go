@@ -88,22 +88,35 @@ func (s *Server) handleDesign(w http.ResponseWriter, r *http.Request) {
 	if !s.can(w, r, p, auth.ActEditDraft, "/") {
 		return
 	}
+	s.showDesign(w, r, p, nil)
+}
+
+// showDesign draws the Design screen. extra is laid over what the screen
+// would show anyway, for a form that was refused and is given back as it
+// was written (see handleDesignLayer); nil for an ordinary visit.
+func (s *Server) showDesign(w http.ResponseWriter, r *http.Request, p principal, extra map[string]any) {
 	data := map[string]any{
 		"Title": "Design", "Principal": p, "Nav": "design",
 		"Message": r.URL.Query().Get("m"),
 		"Error":   r.URL.Query().Get("e"),
 	}
+	show := func() {
+		for k, v := range extra {
+			data[k] = v
+		}
+		s.render(w, r, "design.html", data)
+	}
 	if s.DesignSet == nil || s.DesignSet.Tokens == nil {
 		data["Unavailable"] = "this server was started without a template " +
 			"directory, so there is no design to show"
-		s.render(w, r, "design.html", data)
+		show()
 		return
 	}
 
 	overrides, err := s.DesignSet.Tokens()
 	if err != nil {
 		data["Unavailable"] = err.Error()
-		s.render(w, r, "design.html", data)
+		show()
 		return
 	}
 	th, problems := theme.New(overrides, s.siteFamilies())
@@ -225,7 +238,7 @@ func (s *Server) handleDesign(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	data["Veil"] = veil
-	s.designLayerData(data, th)
+	s.designLayerData(data, th, p)
 	type iconChoice struct {
 		Name, Label string
 		Preview     template.HTML
@@ -255,7 +268,7 @@ func (s *Server) handleDesign(w http.ResponseWriter, r *http.Request) {
 	data["Starters"] = starter.All()
 	data["Own"] = s.DesignSet.OwnStylesheet != nil && s.DesignSet.OwnStylesheet()
 	data["CanInstall"] = s.DesignSet.InstallLayout != nil
-	s.render(w, r, "design.html", data)
+	show()
 }
 
 func (s *Server) designLayouts() []string {

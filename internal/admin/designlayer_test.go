@@ -58,8 +58,8 @@ func TestAStyleLayerIsSavedFromTheBrowserOnlyWhenItWouldBeServed(t *testing.T) {
 	srv.Audit = func(action, resource string, _ map[string]string) { got = append(got, action+" "+resource) }
 
 	w := postForm(t, srv, "/design/layer", token, "layer="+url.QueryEscape(".hero { color: #ff00ff; }"))
-	if layer != "" || !strings.Contains(w.Header().Get("Location"), "e=") {
-		t.Fatalf("a layer with a hex colour was saved: %q", layer)
+	if layer != "" || w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("a layer with a hex colour was saved: %d %q", w.Code, layer)
 	}
 	good := ".card:hover { box-shadow: 0 0 1rem color-mix(in srgb, var(--primary) 30%, transparent); }"
 	postForm(t, srv, "/design/layer", token, "layer="+url.QueryEscape(good))
@@ -67,7 +67,7 @@ func TestAStyleLayerIsSavedFromTheBrowserOnlyWhenItWouldBeServed(t *testing.T) {
 		t.Fatalf("a layer that passes was not saved and recorded: %q %v", layer, got)
 	}
 	page := get(t, srv, "/design", token).Body.String()
-	if !strings.Contains(page, "The layer is served") {
+	if !strings.Contains(page, "The saved layer is served") {
 		t.Error("the screen does not say the layer is served")
 	}
 	postForm(t, srv, "/design/layer", token, "remove=1")
@@ -240,4 +240,57 @@ func TestTheBrowsersGateSeesABackdropThePageSwitchedOnItself(t *testing.T) {
 		}
 	}
 	t.Error("a hero drawn over a backdrop under a 30% veil passed the gate")
+}
+
+// A refused layer comes back as it was written, with every refused rule
+// named, rather than being replaced by the layer that was there. A redirect
+// used to lose it: a page of CSS with one hex colour in it was gone, and the
+// screen named only the first thing wrong with it.
+func TestARefusedLayerIsGivenBackWithEveryRefusal(t *testing.T) {
+	srv, token := setup(t)
+	designFake(srv, map[string]string{})
+	kept := ".card { border-color: var(--outline); }"
+	layer := kept
+	withLayer(srv, &layer)
+
+	draft := ".hero { color: #ff00ff; }\n.lead { background: red; }\n.note { padding: 2rem; }"
+	w := postForm(t, srv, "/design/layer", token, "layer="+url.QueryEscape(draft))
+	if w.Code != http.StatusUnprocessableEntity || layer != kept {
+		t.Fatalf("a refused layer: %d, saved %q", w.Code, layer)
+	}
+	page := w.Body.String()
+	if !strings.Contains(page, ".note { padding: 2rem; }") || !strings.Contains(page, "#ff00ff") {
+		t.Error("what was typed is not in the box")
+	}
+	if !strings.Contains(page, "Not saved.") || !strings.Contains(page, "2 rules are") ||
+		!strings.Contains(page, "hex colour") || !strings.Contains(page, "named colour") {
+		t.Errorf("the screen does not name both refused rules:\n%s", page)
+	}
+	if !strings.Contains(page, "The saved layer is served") {
+		t.Error("the screen does not say the saved layer is still served")
+	}
+}
+
+// Somebody who may edit the design but not publish is shown the layer and
+// told who may change it, rather than a form that ends on a refusal.
+func TestTheLayerIsReadOnlyToSomebodyWhoCannotPublish(t *testing.T) {
+	srv, _ := setup(t)
+	designFake(srv, map[string]string{})
+	layer := ".card { border-color: var(--outline); }"
+	withLayer(srv, &layer)
+	if err := srv.Policy.Grant(auth.Binding{Principal: "writer", Role: auth.RoleAuthor, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	author, _, err := srv.Tokens.IssueSession("w", "writer", auth.RoleAuthor, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := get(t, srv, "/design", author).Body.String()
+	if strings.Contains(page, `action="/design/layer"`) {
+		t.Error("an author is offered a form only a publisher can use")
+	}
+	if !strings.Contains(page, "border-color: var(--outline)") || !strings.Contains(page, "readonly") ||
+		!strings.Contains(page, "takes whoever may publish") {
+		t.Error("an author is not shown the layer, read-only, with who may change it")
+	}
 }

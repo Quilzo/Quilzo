@@ -24,23 +24,34 @@ import (
 // on every page at once, including pages this person may not edit.
 
 // designLayerData fills in what the Design screen shows about the layer.
-func (s *Server) designLayerData(data map[string]any, th *theme.Theme) {
+//
+// Whether this person may change it is said before they try: the form is a
+// publisher's, and somebody who may edit the tokens but not publish was shown
+// a textarea and two buttons that each ended on a refusal, with whatever they
+// had typed gone.
+func (s *Server) designLayerData(data map[string]any, th *theme.Theme, p principal) {
 	if s.DesignSet == nil || s.DesignSet.Layer == nil {
 		return
 	}
 	data["CanLayer"] = s.DesignSet.SaveLayer != nil
+	data["MayLayer"] = s.allows(p, auth.ActPublish, "/")
 	data["LayerMax"] = theme.MaxLayer / 1024
 	layer, err := s.DesignSet.Layer()
 	if err != nil {
 		data["LayerError"] = err.Error()
 		return
 	}
-	data["Layer"] = layer
+	data["Layer"], data["LayerText"] = layer, layer
 	if layer == "" {
 		return
 	}
-	findings := theme.CheckLayer(layer, th)
-	var refused, advice []theme.Finding
+	refused, advice := splitFindings(theme.CheckLayer(layer, th))
+	data["LayerRefused"], data["LayerAdvice"] = refused, advice
+	data["LayerBytes"] = len(layer)
+}
+
+// splitFindings parts a layer's findings into the refused and the advice.
+func splitFindings(findings []theme.Finding) (refused, advice []theme.Finding) {
 	for _, f := range findings {
 		if f.Blocking {
 			refused = append(refused, f)
@@ -48,8 +59,7 @@ func (s *Server) designLayerData(data map[string]any, th *theme.Theme) {
 			advice = append(advice, f)
 		}
 	}
-	data["LayerRefused"], data["LayerAdvice"] = refused, advice
-	data["LayerBytes"] = len(layer)
+	return refused, advice
 }
 
 // handleDesignLayer saves the style layer, or takes it away.
@@ -101,11 +111,18 @@ func (s *Server) handleDesignLayer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	th, _ := theme.New(overrides, s.siteFamilies())
-	for _, f := range theme.CheckLayer(css, th) {
-		if f.Blocking {
-			s.designRedirect(w, r, "", "not saved, because it would not be served: "+f.Detail)
-			return
-		}
+	if refused, _ := splitFindings(theme.CheckLayer(css, th)); len(refused) > 0 {
+		// Drawn again rather than redirected, with what was typed still in
+		// the box and every refused rule named. A redirect lost the text: a
+		// page of CSS with one hex colour in it came back as the layer that
+		// was there before, with only the first refusal to go on.
+		s.showDesign(w, r, p, map[string]any{
+			"Status":            http.StatusUnprocessableEntity,
+			"LayerText":         css,
+			"LayerDraftRefused": refused,
+			"Error":             "",
+		})
+		return
 	}
 	if err := s.DesignSet.SaveLayer(css); err != nil {
 		s.designRedirect(w, r, "", err.Error())
