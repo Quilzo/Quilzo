@@ -90,3 +90,68 @@ func TestCaptionsAreRecordedAsTheTokenGiven(t *testing.T) {
 		}
 	}
 }
+
+// Captions take their flags before the two ids, between them or after
+// them, as other commands do. With the flags first the command saw no ids
+// and answered with its usage line, because it read its ids only from the
+// front.
+func TestCaptionsTakeTheirFlagsAnywhere(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("QUILZO_TOKEN", "")
+	root := connectStore(t)
+	lib, err := openMedia(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clip := append([]byte{0, 0, 0, 0x18}, []byte("ftypisom")...)
+	clip = append(clip, bytes.Repeat([]byte{0}, 64)...)
+	video, err := media.Accept("returns-explained.mp4", clip, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	vtt := []byte("WEBVTT\n\n00:00.000 --> 00:02.000\nOpened ink cannot be returned.\n")
+	track, err := media.Accept("returns-explained.vtt", vtt, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := lib.Put(video, clip); err != nil {
+		t.Fatal(err)
+	}
+	if err := lib.Put(track, vtt); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"--lang", "fr", "--label", "Français", video.ID, track.ID},
+		{video.ID, "--lang", "de", track.ID},
+		{video.ID, track.ID, "--lang", "en", "--label", "English"},
+	} {
+		if err := mediaCaptions(root, args); err != nil {
+			t.Fatalf("quilzo media captions %v: %v", args, err)
+		}
+		got, err := lib.Stat(video.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got.Tracks) != 1 || got.Tracks[0].Lang != args[slicesIndex(args, "--lang")+1] {
+			t.Errorf("quilzo media captions %v left %+v", args, got.Tracks)
+		}
+	}
+	if err := mediaCaptions(root, []string{"--remove", track.ID, video.ID}); err != nil {
+		t.Fatalf("taking it off with the flag first: %v", err)
+	}
+	if got, _ := lib.Stat(video.ID); len(got.Tracks) != 0 {
+		t.Errorf("the track is still on: %+v", got.Tracks)
+	}
+	if err := mediaCaptions(root, []string{video.ID, track.ID, "extra", "--lang", "en"}); err == nil {
+		t.Error("a third id was taken without a word")
+	}
+}
+
+func slicesIndex(xs []string, x string) int {
+	for i, v := range xs {
+		if v == x {
+			return i
+		}
+	}
+	return -1
+}

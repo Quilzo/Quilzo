@@ -50,6 +50,10 @@ func mediaCaptions(root string, args []string) error {
 	if err := fs.Parse(flags); err != nil {
 		return err
 	}
+	// And the ids after the flags. They were read from the front only, so
+	// with the flags first, as most commands take them, the command saw no
+	// ids and answered with its usage line.
+	rest = append(rest, fs.Args()...)
 
 	lib, err := openMedia(root)
 	if err != nil {
