@@ -228,6 +228,10 @@ func TestADecidersAndTheReviewersCallsAreChargedToTheRunAndItsPerson(t *testing.
 			t.Errorf("of %d calls as %s, %d were charged to the person who started the run", calls, consumer, dana)
 		}
 	}
+	// The run's step is the record of what its decider answered.
+	if asked := auditFor(t, root, "decide.asked"); len(asked) != 0 {
+		t.Errorf("a decide step in a run was recorded twice: %+v", asked)
+	}
 }
 
 // An agent looking for the right operation in plain words is sent to the
@@ -270,6 +274,73 @@ func TestFindingADecisionInPlainWordsFindsTheDeciders(t *testing.T) {
 		}
 		if len(got) == 0 || got[0] != want {
 			t.Errorf("%q found %v first, not %s", query, got, want)
+		}
+	}
+}
+
+// A decision asked for outside an agent's run is on the record: which
+// decider, what it answered and how sure it was, whether a person has to
+// decide, and who asked, from the command line, the Decisions screen and
+// the agent interface alike. A single ask wrote nothing, so an automated
+// decision about somebody's ticket left no trace. The state is somebody's
+// words and is never written, only its digest; inside a run, the run's
+// step is the record and nothing is written twice.
+func TestADecisionAskedIsOnTheRecord(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := publishedShop(t)
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"choices":[{"message":{"content":` +
+			`"{\"answers\": {\"queue\": {\"value\": \"returns\", \"confidence\": 0.9}}}"}}]}`))
+	}))
+	defer model.Close()
+	if err := cmdGateway(root, []string{"route", "add", "local", "--url", model.URL + "/v1", "--model", "m"}); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(t.TempDir(), "d.json")
+	os.WriteFile(file, []byte(ticketDecider), 0o600)
+	if err := cmdDecide(root, []string{"set", file}); err != nil {
+		t.Fatal(err)
+	}
+	const state = `{"body": "Refund please, Jo Bloggs, 07700 900123"}`
+	if err := cmdDecide(root, []string{"ask", "ticket", state}); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var st any
+	_ = json.Unmarshal([]byte(state), &st)
+	srv := buildMCP(root, s, asAdmin("dana"), "templates")
+	if _, e := callTool(t, srv, "quilzo_read", "decide", map[string]any{"name": "ticket", "state": st}); e != nil {
+		t.Fatal(e.Message)
+	}
+	screen := decidersCapability(root)
+	d, _ := loadDecider(root, "ticket")
+	m, _ := screen.Model("ticket")
+	res, err := decide.Decide(context.Background(), d, m, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	screen.Asked("dana", res, st)
+
+	got := auditFor(t, root, "decide.asked")
+	if len(got) != 3 {
+		t.Fatalf("%d asks are on the record, not 3: %+v", len(got), got)
+	}
+	digest := got[0].Detail["state_sha256"]
+	for _, r := range got {
+		if r.Resource != "/decide/ticket" || r.Detail["decider"] != "ticket" ||
+			!strings.Contains(r.Detail["answers"], "queue=returns") || r.Detail["confidence"] != "0.90" ||
+			r.Detail["escalated"] != "false" || r.Principal == "" || len(digest) != 64 || r.Detail["state_sha256"] != digest {
+			t.Errorf("the record says %+v", r)
+		}
+		for _, k := range []string{"Refund", "Bloggs", "07700"} {
+			for _, v := range r.Detail {
+				if strings.Contains(v, k) {
+					t.Errorf("the record holds the state: %+v", r.Detail)
+				}
+			}
 		}
 	}
 }

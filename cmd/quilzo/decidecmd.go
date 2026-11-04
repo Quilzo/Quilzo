@@ -5,10 +5,13 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -197,6 +200,7 @@ func decideAsk(root string, args []string) error {
 	if err != nil {
 		return err
 	}
+	recordAsk(root, caller, res, state)
 	if w.JSON(res) {
 		return nil
 	}
@@ -260,6 +264,42 @@ func decideEval(root string, args []string) error {
 	return nil
 }
 
+// recordAsk writes down what a decider answered somebody who asked it, from
+// the command line, the Decisions screen or the agent interface.
+//
+// A single ask wrote nothing: declaring a decider was on the record and
+// every answer it gave was not, so what was decided, how sure it was and
+// who asked could not be told afterwards, which is what keeping records of
+// automated decisions asks for. Inside an agent's run the run's step is the
+// record, and this is not called there. The state is never written, since
+// it is somebody's ticket or comment, nor what the model gave as its
+// reasons, which may quote it; only the state's digest, which says the same
+// state was asked about twice without saying what it was.
+func recordAsk(root string, caller *Caller, res decide.Result, state any) {
+	answers := make([]string, 0, len(res.Answers))
+	lowest := 1.0
+	for _, a := range res.Answers {
+		lowest = min(lowest, a.Confidence)
+		if a.Escalate {
+			answers = append(answers, fmt.Sprintf("%s: a person decides (%.2f)", a.Question, a.Confidence))
+			continue
+		}
+		answers = append(answers, fmt.Sprintf("%s=%s (%.2f)", a.Question, a.Value, a.Confidence))
+	}
+	if len(res.Answers) == 0 {
+		lowest = 0
+	}
+	raw, _ := json.Marshal(state)
+	sum := sha256.Sum256(raw)
+	record(root, audit.Record{Action: "decide.asked", Resource: "/decide/" + res.Decider,
+		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
+		Verified: caller.Verified, Detail: map[string]string{
+			"decider": res.Decider, "answers": strings.Join(answers, "; "),
+			"confidence": fmt.Sprintf("%.2f", lowest), "escalated": strconv.FormatBool(res.Escalate),
+			"state_sha256": hex.EncodeToString(sum[:]),
+		}})
+}
+
 // decidersCapability is the admin's Decisions screen.
 func decidersCapability(root string) *admin.Deciders {
 	return &admin.Deciders{
@@ -274,5 +314,8 @@ func decidersCapability(root string) *admin.Deciders {
 			return nil
 		},
 		Model: func(name string) (decide.Model, string) { return deciderModel(root, name) },
+		Asked: func(by string, res decide.Result, state any) {
+			recordAsk(root, &Caller{Name: by, Kind: audit.KindHuman, Verified: true}, res, state)
+		},
 	}
 }

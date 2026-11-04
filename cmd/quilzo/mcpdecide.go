@@ -70,6 +70,7 @@ func registerDecideOps(srv *mcp.Server, root string, caller *Caller) {
 		if err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
+		recordAsk(root, caller, res, a["state"])
 		b, err := json.Marshal(res)
 		return string(b), err
 	})
