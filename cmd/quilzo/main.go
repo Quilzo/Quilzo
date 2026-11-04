@@ -155,8 +155,8 @@ templates and design
   quilzo theme font add FILE [--name N]    a .ttf or .otf made into a WOFF and checked, or a .woff
                                             or .woff2 checked, then served from this origin; N is
                                             Family-400-700, and without it the file's own name with
-                                            the weight and style the face declares (--force replaces
-                                            one of that name)
+                                            the weight and style a .ttf, .otf or .woff declares
+                                            (--force replaces one of that name)
   quilzo theme styles                      the looks: classic, expressive, glass, editorial, bold, soft, business
   quilzo theme apply STARTER               take a starter's palette, keep your layout
   quilzo theme import FILE --list          what a design token file holds

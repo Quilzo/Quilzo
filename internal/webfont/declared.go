@@ -111,6 +111,20 @@ func weightAxis(fvar []byte) (lo, hi int, ok bool) {
 	return 0, 0, false
 }
 
+// SaysWeight reports whether a stem names a weight or a weight range as the
+// filename contract reads it: Aster-600, Aster-bold, Aster-400-700 and
+// Aster-400..700 do; Aster, Aster-Regular and Aster-italic do not, and are
+// served as every weight from 100 to 900.
+func SaysWeight(stem string) bool {
+	parts := strings.Split(stem, "-")
+	for _, p := range parts[1:] {
+		if _, ok := weight(strings.ToLower(strings.TrimSpace(p))); ok {
+			return true
+		}
+	}
+	return false
+}
+
 // Named is the stem to serve a face under, from the stem of the file it came
 // in and what the face declares.
 //

@@ -344,7 +344,11 @@ italic as `Satoshi-700-italic.woff`, and a variable face as the range of its
 weight axis. A name that does say the weight, such as `Satoshi-Bold.ttf`, is
 kept; a word that is neither a weight nor a style, such as `Condensed`, is
 refused with a request for a name rather than guessed past; and a name given is
-used exactly as given. The output says when the name came from the face.
+used exactly as given. The output says when the name came from the face. A
+`.woff2` cannot be asked: its tables are Brotli, so it is served as its name
+says, and one whose name says no weight is served as every weight, which is
+right for a variable face; the output says so, so a static one can be given a
+name that says its weight.
 
 A face already served under the same name is replaced only when asked, with
 `--force` or the screen's "Replace a face already served under that name",

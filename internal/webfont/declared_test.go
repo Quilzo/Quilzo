@@ -119,3 +119,17 @@ func mustConvert(t *testing.T, tables map[string][]byte) []byte {
 	}
 	return out
 }
+
+// A stem says a weight when the filename contract reads one in it, and only
+// then: Aster-Regular says a style and no weight, and is every weight.
+func TestAStemSaysAWeightOnlyWhenItNamesOne(t *testing.T) {
+	for stem, want := range map[string]bool{
+		"Aster-600": true, "Aster-bold": true, "Aster-400-700": true, "Aster-400..700": true,
+		"Aster-600-italic": true, "Aster": false, "Aster-Regular": false, "Aster-italic": false,
+		"Aster-Variable": false,
+	} {
+		if got := SaysWeight(stem); got != want {
+			t.Errorf("%s: says a weight %v, want %v", stem, got, want)
+		}
+	}
+}

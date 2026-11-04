@@ -532,3 +532,56 @@ func TestEveryDesignCommandSaysWhenReadersGetIt(t *testing.T) {
 		}
 	}
 }
+
+// a woff2 is the shortest file the WOFF2 check accepts: the signature and a
+// length that agrees with the file. Its tables are Brotli and nothing here
+// reads them, which is the point of the test that uses it.
+func woff2() []byte {
+	b := make([]byte, 64)
+	copy(b, "wOF2")
+	binary.BigEndian.PutUint32(b[8:12], uint32(len(b)))
+	return b
+}
+
+// A .woff2 whose name says no weight is served as every weight, and the
+// person adding it is told, on the command line and in --json.
+//
+// Its tables are Brotli, so the face cannot be asked what it is, as a .ttf
+// or a .woff now is; Aster-Regular.woff2 from a foundry's web kit was served
+// as covering 100 to 900 with nothing said, and bold text drawn in the
+// regular glyphs looked like a browser fault.
+func TestAWOFF2ThatCannotBeAskedSaysSo(t *testing.T) {
+	root, tpl := fontSite(t)
+	said, err := humanOutput(t, func() error {
+		return cmdTheme(root, []string{"font", "add", writeTemp(t, "Aster-Regular.woff2", woff2()), "--dir", tpl})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(said, "/fonts/Aster-Regular.woff2") ||
+		!strings.Contains(said, "cannot be read here") ||
+		!strings.Contains(strings.Join(strings.Fields(said), " "), filepath.Join(tpl, "fonts", "Aster-400.woff2")) {
+		t.Errorf("a .woff2 that says no weight was added without a word:\n%s", said)
+	}
+	for _, c := range []struct {
+		file, name string
+		unread     bool
+	}{
+		{"Aster-Light.woff2", "", false},
+		{"Aster-Italic.woff2", "", true},
+		{"Aster-Wide.woff2", "Aster-500", false},
+	} {
+		added, err := addFont(tpl, c.file, woff2(), c.name, false, fontFromCommand)
+		if err != nil {
+			t.Fatalf("%s: %v", c.file, err)
+		}
+		if added.WeightUnread != c.unread {
+			t.Errorf("%s named %q: weight unread %v, want %v", c.file, c.name, added.WeightUnread, c.unread)
+		}
+	}
+	// A face whose tables are read is never said to be unread.
+	added, err := addFont(tpl, "Other-Regular.ttf", declaringFace(0, 400, false), "", false, fontFromCommand)
+	if err != nil || added.WeightUnread {
+		t.Errorf("a TrueType face was said to be unread: %+v %v", added, err)
+	}
+}

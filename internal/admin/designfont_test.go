@@ -386,3 +386,23 @@ func TestTheDesignScreenSaysWhenReadersGetAChange(t *testing.T) {
 		t.Errorf("the top of the Design screen does not say when readers get a change:\n%s", top)
 	}
 }
+
+// The screen says when a face is served as every weight because its tables
+// could not be read, so a static .woff2 is not left claiming all of them
+// without anybody having been told.
+func TestTheScreenSaysWhenAWOFF2CouldNotBeAsked(t *testing.T) {
+	srv, token := setup(t)
+	designFake(srv, map[string]string{})
+	srv.DesignSet.AddFont = func(filename string, body []byte, name string, replace bool) (FontAdded, error) {
+		return FontAdded{File: filename, Family: "Aster", Weight: "100 900",
+			Style: "normal", From: "woff2", WeightUnread: filename == "Aster-Regular.woff2"}, nil
+	}
+	for file, want := range map[string]bool{"Aster-Regular.woff2": true, "Aster.woff2": false} {
+		w := postFont(t, srv, token, file, []byte("wOF2"), nil)
+		loc, _ := url.Parse(w.Header().Get("Location"))
+		msg := loc.Query().Get("m")
+		if got := strings.Contains(msg, "cannot be read here") && strings.Contains(msg, "Aster-400"); got != want {
+			t.Errorf("%s: says it could not be asked %v, want %v (%q)", file, got, want, msg)
+		}
+	}
+}

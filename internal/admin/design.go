@@ -105,6 +105,11 @@ type FontAdded struct {
 	// NamedFromFace says the served name took its weight or style from the
 	// face's own tables, because the file's name did not say them.
 	NamedFromFace bool `json:"named_from_face,omitempty"`
+	// WeightUnread says the face is served as every weight because its name
+	// says none and its tables could not be read: a WOFF2, whose tables are
+	// Brotli. That is right for a variable face and wrong for a static one,
+	// and only the person adding it knows which.
+	WeightUnread bool `json:"weight_unread,omitempty"`
 }
 
 func (s *Server) handleDesign(w http.ResponseWriter, r *http.Request) {
@@ -557,6 +562,12 @@ func (s *Server) handleDesignFont(w http.ResponseWriter, r *http.Request) {
 		// The served name is not the file's, so say where it came from
 		// rather than leave somebody looking for a file they did not name.
 		named = " The weight and style are the ones the face declares, because the file's name does not give them as a served name does (Family-700-italic); give a name under Served as to choose another."
+	}
+	if added.WeightUnread {
+		// The one case the face could not be asked, so the screen says what
+		// was assumed rather than let a static face claim every weight
+		// unnoticed.
+		named = " A .woff2's tables cannot be read here, so it is served as its name says: every weight from 100 to 900, which is right for a variable face. If it is one weight, give the file in " + s.DesignSet.Dir + "/fonts/ a name that says which, such as " + added.Family + "-400.woff2."
 	}
 	s.designRedirect(w, r, fmt.Sprintf("The typeface is served from this origin at "+
 		"/fonts/%s: family %s, weight %s, %s.%s Choose %s for a font token below; the "+

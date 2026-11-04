@@ -163,7 +163,11 @@ func addFont(dir, filename string, body []byte, name string, replace bool, how f
 	return fontAdded{
 		FontAdded: admin.FontAdded{File: face.File, Family: face.Family,
 			Weight: face.Weight, Style: face.Style, From: kind, Replaced: replaced,
-			NamedFromFace: fromFace},
+			NamedFromFace: fromFace,
+			// A WOFF2 cannot be asked its weight (webfont.Declares), so one
+			// named Aster-Regular.woff2 claims every weight, as the
+			// filename contract says it does; the person adding it is told.
+			WeightUnread: !given && format == "woff2" && !webfont.SaysWeight(stem)},
 		Source: len(body), Served: len(served), Path: path,
 	}, nil
 }
@@ -229,6 +233,15 @@ func themeFontAdd(root string, args []string) error {
 		w.Human("  %snamed with the weight and style the face declares, because %s does not "+
 			"give them as a served name does (Family-700-italic); --name to choose another%s\n",
 			dim, filepath.Base(pos[0]), reset)
+	}
+	if added.WeightUnread {
+		// Renaming the file is the whole of the fix: adding it again under
+		// another name would leave this one claiming every weight.
+		w.Human("  %s%s%s\n", yellow, wrapIndent(fmt.Sprintf("a .woff2's tables cannot be read "+
+			"here, so it is served as its name says: every weight from 100 to 900, which is "+
+			"right for a variable face. If it is one weight, give the file a name that says "+
+			"which, such as %s", filepath.Join(filepath.Dir(added.Path), added.Family+"-400.woff2")),
+			76, 2), reset)
 	}
 	if added.From == "truetype" || added.From == "opentype" {
 		w.Human("  %smade from a %s face: %d KiB became %d KiB of WOFF%s\n", dim,
