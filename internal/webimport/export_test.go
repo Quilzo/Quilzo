@@ -572,6 +572,46 @@ func TestALongPageAddressGivesAPageNameAPackageAccepts(t *testing.T) {
 	}
 }
 
+// A page deep in long addresses is given a name a package may hold, and so is
+// the one beside it that has to be numbered.
+//
+// Each part was cut at 60 characters and up to four parts kept, so three long
+// parts came to a name of 182 characters, past the 128 a package's page may
+// have, and the whole package was refused for one page. Two pages that came
+// to the same long name, the second numbered, went past it the same way.
+func TestADeepLongPageAddressGivesAPageNameAPackageAccepts(t *testing.T) {
+	home, _ := url.Parse("https://bakery.example/")
+	deep, _ := url.Parse("https://bakery.example/the-whole-story-of-the-bakery-from-its-first-oven-to-its-latest-loaf/" +
+		"and-then-the-second-part-of-the-story-which-is-also-quite-long-indeed/" +
+		"and-a-third-part-that-goes-on-for-a-while-longer-than-it-should-do/")
+	// Elsewhere on the site, ending in the same two long parts, so it comes
+	// to the same name and is numbered.
+	twin, _ := url.Parse("https://bakery.example/elsewhere/" +
+		"and-then-the-second-part-of-the-story-which-is-also-quite-long-indeed/" +
+		"and-a-third-part-that-goes-on-for-a-while-longer-than-it-should-do/")
+	s := &Site{Home: home, Name: "Bakery", From: KindWordPress, Origin: "bakery.xml",
+		Pages: []Page{
+			{URL: home, Title: "Bakery", Blocks: []Block{{Kind: "p", Text: "We bake.", MD: "We bake."}}},
+			{URL: deep, Title: "Our story", Blocks: []Block{{Kind: "p", Text: "Since 1952.", MD: "Since 1952."}}},
+			{URL: twin, Title: "More of it", Blocks: []Block{{Kind: "p", Text: "And after.", MD: "And after."}}},
+		}}
+	// The parts nearest the page are the ones kept, as they are when an
+	// address has more than four.
+	if got := pageName(deep); len(got) > 121 || !strings.HasSuffix(got, "/and-a-third-part-that-goes-on-for-a-while-longer-than-it-sho") {
+		t.Errorf("the page at %s is named %q, %d characters", deep, got, len(got))
+	}
+	b, err := Package(s, "", "dana", nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b.Package.Pages) != 3 {
+		t.Fatalf("%d pages brought, not 3", len(b.Package.Pages))
+	}
+	if err := b.Package.Validate(feature.Checks{}); err != nil {
+		t.Errorf("the package refuses the pages it was brought as: %v", err)
+	}
+}
+
 // An export declaring an entity is refused, and says why in words.
 //
 // CVE-2021-29447 and WordPress 5.7's XXE were both this. encoding/xml never

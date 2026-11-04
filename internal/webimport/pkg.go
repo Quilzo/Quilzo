@@ -651,6 +651,14 @@ func pageName(u *url.URL) string {
 	if len(parts) > 4 {
 		parts = parts[len(parts)-4:]
 	}
+	// The parts nearest the page are kept, as above, while they come to 121
+	// characters or fewer: two parts at their longest, with room for the
+	// number a name two pages share is given (-2, -3), under the 128 a
+	// package's page may have. Four parts of up to 60 came to as many as 243,
+	// and the whole package was refused for one page deep in long addresses.
+	for len(parts) > 1 && len(strings.Join(parts, "/")) > 121 {
+		parts = parts[1:]
+	}
 	return strings.Join(parts, "/")
 }
 
