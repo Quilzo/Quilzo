@@ -144,3 +144,66 @@ func TestAStoreWithNoAccessPolicyTakesNoTasks(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 }
+
+// What this program refused is on the record as denied, and what went wrong
+// as a failure. Every error was recorded as denied, so a task whose run
+// could not reach its model read as an attack refused, and a log reader
+// looking for refusals found outages.
+func TestATaskThatFailsIsRecordedAsAFailureAndARefusalAsDenied(t *testing.T) {
+	root, _ := identityStore(t) // dana, an administrator, declared tidy
+	down := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "the model is down", http.StatusBadGateway)
+	}))
+	defer down.Close()
+	t.Setenv("QUILZO_MODEL_URL", down.URL+"/v1")
+	t.Setenv("QUILZO_MODEL", "stand-in")
+	t.Setenv("QUILZO_MODEL_KEY", "")
+	last := func() audit.Event {
+		t.Helper()
+		evs, err := audit.Read(auditPath(root))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := len(evs) - 1; i >= 0; i-- {
+			if evs[i].Action == "a2a.task" {
+				return evs[i]
+			}
+		}
+		t.Fatal("no a2a.task record")
+		return audit.Event{}
+	}
+	app := "https://agents.example.com/meta"
+	for who, h := range map[string]a2a.Host{
+		// Holds nothing here.
+		"somebody with no role": a2aHost(root, a2aCaller("rae", auth.RoleAuthor, "")),
+		// Given read only.
+		"an app given read only": a2aHost(root, a2aCaller("dana", auth.RoleReader, app)),
+	} {
+		if _, err := h.Send(nil, "tidy", "Tidy it"); err == nil {
+			t.Fatalf("%s ran an agent", who)
+		}
+		if r := last(); r.Outcome != audit.Denied {
+			t.Errorf("%s refused is on the record as %s", who, r.Outcome)
+		}
+	}
+	dana := a2aHost(root, a2aCaller("dana", auth.RoleAdmin, app))
+	// The run starts, and the task is the run that failed.
+	if _, err := dana.Send(nil, "tidy", "Tidy the welcome page"); err != nil {
+		t.Fatal(err)
+	}
+	if r := last(); r.Outcome != audit.Failure || r.Detail["error"] == "" {
+		t.Errorf("a run that could not reach its model is on the record as %s: %v", r.Outcome, r.Detail)
+	}
+	// A task that has finished cannot be canceled: nobody refused anybody.
+	done := agent.Record{ID: "run-20261007-0000cc01", Agent: "tidy", Goal: "tidy", By: "dana",
+		Started: time.Now().UTC(), Trace: agent.Trace{Agent: "tidy", Complete: true, Answer: "Tidied."}}
+	if err := writeAgentRun(root, done); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := dana.Cancel(nil, done.ID); err == nil {
+		t.Fatal("a finished task was canceled")
+	}
+	if r := last(); r.Outcome != audit.Failure || r.Detail["method"] != "CancelTask" {
+		t.Errorf("a finished task not canceled is on the record as %s: %v", r.Outcome, r.Detail)
+	}
+}
