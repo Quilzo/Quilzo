@@ -113,6 +113,13 @@ type Server struct {
 	// Audit records what happened, so a recording arriving in the library has
 	// the same trail as a file somebody uploaded.
 	Audit func(action, resource string, detail map[string]string)
+	// OnTokenUsed is told every token that authenticated, so the host can
+	// write down when it was last used. Each request is decided by a copy of
+	// the store read for it (Reload), and the use Authenticate notes in it was
+	// lost with the copy: a token somebody recorded with every day was listed
+	// as used "never", and `token stale` offered it for revocation. Nil tells
+	// nobody.
+	OnTokenUsed func(tok auth.Token)
 	// Now is the clock, for tests.
 	Now func() time.Time
 }
@@ -217,7 +224,15 @@ func (s *Server) caller(r *http.Request, toks *auth.TokenStore) *auth.Token {
 	if err != nil {
 		return nil
 	}
+	s.used(tok)
 	return tok
+}
+
+// used tells the host a token authenticated (OnTokenUsed).
+func (s *Server) used(tok *auth.Token) {
+	if s.OnTokenUsed != nil && tok != nil {
+		s.OnTokenUsed(*tok)
+	}
 }
 
 // mayWrite reports whether this caller may put a recording in the library.
@@ -263,13 +278,15 @@ func (s *Server) signIn(w http.ResponseWriter, r *http.Request) {
 	// never once a 429, while two through the cookie path were enough to
 	// start refusing. A new door with the same shape gets the limiter from
 	// the start.
+	//
+	// The token is looked at all the same: the throttle refuses failures, not
+	// the address. Refusing before looking kept everybody behind one address
+	// out for somebody else's wrong tokens, as the admin's doors did.
 	sub := throttle.Subject{Source: sourceOf(r)}
+	var throttled *throttle.Decision
 	if s.Throttle != nil {
 		if d := s.Throttle.Check(sub); !d.Allowed {
-			http.Error(w, fmt.Sprintf(
-				"too many attempts; try again in %s", d.RetryAfter.Round(time.Second)),
-				http.StatusTooManyRequests)
-			return
+			throttled = &d
 		}
 	}
 
@@ -281,6 +298,12 @@ func (s *Server) signIn(w http.ResponseWriter, r *http.Request) {
 		tok, err = toks.Authenticate(secret, s.now())
 	}
 	if err != nil || !s.mayWrite(tok, pol) {
+		if throttled != nil {
+			http.Error(w, fmt.Sprintf(
+				"too many attempts; try again in %s", throttled.RetryAfter.Round(time.Second)),
+				http.StatusTooManyRequests)
+			return
+		}
 		if s.Throttle != nil {
 			s.Throttle.Fail(sub)
 		}
@@ -295,6 +318,7 @@ func (s *Server) signIn(w http.ResponseWriter, r *http.Request) {
 	if s.Throttle != nil {
 		s.Throttle.Succeed(sub)
 	}
+	s.used(tok)
 
 	http.SetCookie(w, &http.Cookie{
 		Name: CookieName, Value: secret, Path: "/",

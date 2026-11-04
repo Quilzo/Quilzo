@@ -453,6 +453,7 @@ access
                                            the IdP's security events end its sessions here;
                                            the client secret is read from QUILZO_SIGNALS_SECRET
   quilzo signals status | off              what the stream did, or turn it off; denies it added stay
+  quilzo scim map GROUP auditor --until 2026-12-31   a job granted for a time, until a day
   quilzo geo status | help | network add PREFIX NAME --kind office|vpn ... | network remove PREFIX   where sign-ins come from
   quilzo auth deny WHO ROLE [--on PATH]    a deny wins wherever it sits
   quilzo auth explain WHO [ACTION]         why someone can or cannot do a thing

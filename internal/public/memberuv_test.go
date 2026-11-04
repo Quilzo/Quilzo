@@ -4,6 +4,7 @@
 package public
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -87,5 +88,42 @@ func TestAMemberCannotAddAPasskeyWithoutUserVerification(t *testing.T) {
 	}
 	if len(m.Passkeys) != 1 {
 		t.Errorf("the account has %d passkeys", len(m.Passkeys))
+	}
+}
+
+// A member's passkey whose counter has gone back is refused, and the refusal
+// is on the record as what it is, as a passkey of staff's is (internal/admin):
+// the one sign WebAuthn gives that the credential was copied off its
+// authenticator.
+//
+// It was recorded as a failed sign-in and nothing else, which is what a
+// stranger's guess at a credential id leaves, so a copied member key was a
+// line nobody could tell apart from noise.
+func TestAMemberPasskeyWhoseCounterWentBackIsOnTheRecord(t *testing.T) {
+	st, _ := memberSite(t, "open")
+	var records []string
+	st.Members.Audit = func(action, _, _ string, ok bool) {
+		if !ok {
+			records = append(records, action)
+		}
+	}
+	v := &visitor{t: t, st: st, site: "same-origin"}
+	d := newDevice(t)
+	if w, out := signUp(t, v, d, "Ada", ""); w.Code != 200 {
+		t.Fatalf("signing up: %d %v", w.Code, out)
+	}
+	v.form("/account/signout", nil)
+	clone := *d // copied off the authenticator, counter and all
+	if w := signIn(t, v, d); w.Code != 200 {
+		t.Fatalf("the key itself: %d %s", w.Code, w.Body)
+	}
+	v.form("/account/signout", nil)
+
+	records = nil
+	if w := signIn(t, v, &clone); w.Code == 200 || v.cookie != "" {
+		t.Fatalf("the copy signed a member in: %d", w.Code)
+	}
+	if !slices.Contains(records, "member.passkey-counter-refused") {
+		t.Fatalf("the copy is not on the record as one: %v", records)
 	}
 }

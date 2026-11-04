@@ -55,7 +55,34 @@ type need struct {
 	// hint is said after a refusal, where the action alone does not tell
 	// somebody why this command needs it.
 	hint string
+	// or are permissions that let the command run in place of action,
+	// held on the resource or anywhere under it: a permission granted alone
+	// reaches the commands its own work needs. Without them somebody given
+	// approve could not run `agent approve` or `approvals`, and somebody
+	// given install-features could install a feature and not list one,
+	// because those read commands asked to view, which a permission granted
+	// alone does not include. The command still checks the exact agent or
+	// run itself; this only stops the table asking the wrong question.
+	or []auth.Action
+	// orAnywhere takes the or permissions wherever the caller holds them.
+	// For deciding what a run waits for, which the command checks against
+	// the agent and against the page the run would change (mayApprove), and
+	// a page can be anywhere: somebody given approve on /blog alone was
+	// listed a run waiting to change a page there by `approvals`, and
+	// refused `agent approve` for it, because the table asked about the
+	// agents.
+	orAnywhere bool
 }
+
+// installing is the permission whose work the feature commands that read
+// are part of: checking a package before installing it, and seeing what is
+// installed.
+var installing = []auth.Action{auth.ActInstall}
+
+// agentWork is every permission for working with agents: each reaches the
+// commands that read the agents, which is how its holder finds the one to
+// run, change or decide for.
+var agentWork = []auth.Action{auth.ActManageAgents, auth.ActRunAgents, auth.ActApprove}
 
 // commandNeeds is keyed by "command" or by "command subcommand" where the
 // subcommand changes the answer. The more specific key wins, so `auth explain`
@@ -106,14 +133,14 @@ var commandNeeds = map[string]need{
 	// checked by the command against the run's agent: its sponsor, or the
 	// approve permission on it or on what it would change; run-agents to
 	// resume. The table cannot know which agent a run is of.
-	"agent approve": {action: auth.ActView},
-	"agent decline": {action: auth.ActView},
-	"agent answer":  {action: auth.ActView},
-	"agent resume":  {action: auth.ActView},
+	"agent approve": {action: auth.ActView, or: []auth.Action{auth.ActApprove}, orAnywhere: true},
+	"agent decline": {action: auth.ActView, or: []auth.Action{auth.ActApprove}, orAnywhere: true},
+	"agent answer":  {action: auth.ActView, or: []auth.Action{auth.ActApprove}, orAnywhere: true},
+	"agent resume":  {action: auth.ActView, or: []auth.Action{auth.ActRunAgents}},
 	// Authoring an archetype shapes every agent made from it.
 	"agent template save":   {action: auth.ActGrant},
 	"agent template remove": {action: auth.ActGrant},
-	"agent template list":   {action: auth.ActView},
+	"agent template list":   {action: auth.ActView, or: agentWork},
 	"eval":                  {action: auth.ActManageAgents},
 	// Pairing with a peer, and adopting what it sent into the draft. ActGrant
 	// rather than ActEditDraft: adding a peer decides which other store this
@@ -154,14 +181,16 @@ var commandNeeds = map[string]need{
 	"integrations decline":     {action: auth.ActApprove},
 	"integration":              {action: auth.ActView},
 	// Each part of the list is filtered by what the caller may decide; the
-	// list itself needs only that they are somebody here.
-	"approvals":       {action: auth.ActView},
-	"agent templates": {action: auth.ActView},
-	"agent list":      {action: auth.ActView},
-	"agent show":      {action: auth.ActView},
-	"agent export":    {action: auth.ActView},
-	"agent formats":   {action: auth.ActView},
-	"agent check":     {action: auth.ActView},
+	// list itself needs only that they are somebody here, and the runs and
+	// features waiting on whoever holds approve or install-features alone
+	// are listed to them.
+	"approvals":       {action: auth.ActView, or: []auth.Action{auth.ActApprove, auth.ActInstall}},
+	"agent templates": {action: auth.ActView, or: agentWork},
+	"agent list":      {action: auth.ActView, or: agentWork},
+	"agent show":      {action: auth.ActView, or: agentWork},
+	"agent export":    {action: auth.ActView, or: agentWork},
+	"agent formats":   {action: auth.ActView, or: agentWork},
+	"agent check":     {action: auth.ActView, or: agentWork},
 	// Running one acts under the agent's manifest, and the least it can do is
 	// read the store. Author rather than view: a run writes an audit record
 	// attributed to the caller, and an entry somebody could create without
@@ -173,8 +202,8 @@ var commandNeeds = map[string]need{
 	// A run's records from the audit log, with their proofs: what reading
 	// the log needs.
 	"agent receipt":  {action: auth.ActView},
-	"agent backends": {action: auth.ActView},
-	"agent could":    {action: auth.ActView},
+	"agent backends": {action: auth.ActView, or: agentWork},
+	"agent could":    {action: auth.ActView, or: agentWork},
 	// Drafting asks a model, which is spent and recorded under the person,
 	// and saves nothing; declaring saves, as agent new does.
 	"agent draft": {action: auth.ActUseModels},
@@ -641,18 +670,18 @@ var commandNeeds = map[string]need{
 	"pay orders": {action: auth.ActGrant},
 
 	"feature":         {action: auth.ActInstall},
-	"feature example": {action: auth.ActView},
-	"feature check":   {action: auth.ActView},
-	"feature pending": {action: auth.ActView},
+	"feature example": {action: auth.ActView, or: installing},
+	"feature check":   {action: auth.ActView, or: installing},
+	"feature pending": {action: auth.ActView, or: installing},
 	// What agents proposed is read by anybody who may look; setting one
 	// aside is checked again inside, for whoever may install features.
-	"feature proposals": {action: auth.ActView},
-	"feature list":      {action: auth.ActView},
-	"feature show":      {action: auth.ActView},
+	"feature proposals": {action: auth.ActView, or: installing},
+	"feature list":      {action: auth.ActView, or: installing},
+	"feature show":      {action: auth.ActView, or: installing},
 	// Drafting asks a model, which costs what an author's drafting costs;
 	// reading a file into a package changes nothing here.
 	"feature draft": {action: auth.ActUseModels},
-	"feature from":  {action: auth.ActView},
+	"feature from":  {action: auth.ActView, or: installing},
 	// A research project is drafts and computations in a box: an author's
 	// work. Registering or amending a plan is refused to a model inside the
 	// command, and reading is a reader's.
@@ -1196,7 +1225,7 @@ func authoriseCommand(root, cmd string, args []string) error {
 	// the authority for both, and stopping at the first would let a deny on
 	// the second page be worked around by naming a permitted page alongside it.
 	for _, resource := range resources {
-		if err := authorise(root, caller, n.action, resource); err != nil {
+		if err := authorise(root, caller, n.action, resource); err != nil && !mayInstead(root, caller, n, resource) {
 			var u *errUnverified
 			if errors.As(err, &u) {
 				err = u.named(sub)
@@ -1219,6 +1248,36 @@ func authoriseCommand(root, cmd string, args []string) error {
 		}
 	}
 	return nil
+}
+
+// mayInstead reports whether the caller holds one of a row's other
+// permissions (need.or) on the resource or on anything under it, or for a
+// row that takes them anywhere (need.orAnywhere) on anything at all: approve
+// on /@agents/newsletter reaches `agent approve`, which is asked about all
+// the agents because the table cannot know which agent a run is of, and so
+// does approve on /blog, for the runs waiting to change a page there.
+func mayInstead(root string, c *Caller, n need, resource string) bool {
+	if len(n.or) == 0 {
+		return false
+	}
+	p, err := loadPolicy(root)
+	if err != nil {
+		return false
+	}
+	places := []string{resource}
+	for _, b := range p.Snapshot() {
+		if strings.EqualFold(b.Principal, c.Name) && !b.Deny && (n.orAnywhere || auth.Covers(resource, b.Resource)) {
+			places = append(places, b.Resource)
+		}
+	}
+	for _, a := range n.or {
+		for _, at := range places {
+			if authorise(root, c, a, at) == nil {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // bootstrapIssue reports whether this is the first token being issued to a

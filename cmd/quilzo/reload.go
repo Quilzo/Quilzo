@@ -29,20 +29,55 @@ import (
 // decision, and reloads only when the file has actually changed — so the
 // common case costs one syscall and no parsing.
 func tokenReloader(root string, ts *auth.TokenStore) func() {
+	return reloadOnChange(tokensPath(root), func(path string) bool {
+		var fresh auth.TokenStore
+		if err := loadJSON(path, &fresh); err != nil {
+			// A half-written file, most likely: another process is mid-save.
+			// Keeping what we have and trying again next request is right —
+			// the write is atomic, so the next stat will see the finished one.
+			return false
+		}
+		ts.Replace(fresh.Tokens)
+		return true
+	})
+}
+
+// policyReloader is tokenReloader for the access rules, which are the same
+// kind of shared file.
+//
+// The content API was given the policy loaded at startup and nothing else, so
+// under `quilzo serve` a reader granted on the command line was refused at
+// /api/v1 while the admin's screens and /mcp served them, and a revoked grant
+// kept reading pages there until the admin restarted. Found on the reference
+// stack, where every grant had to be followed by a restart before the API
+// could be tested.
+func policyReloader(root string, p *auth.Policy) func() {
+	return reloadOnChange(policyPath(root), func(path string) bool {
+		var fresh auth.Policy
+		if err := loadJSON(path, &fresh); err != nil {
+			return false
+		}
+		p.Replace(fresh.Bindings)
+		return true
+	})
+}
+
+// reloadOnChange calls load when the file at path has changed since it last
+// succeeded, one stat per call otherwise.
+func reloadOnChange(path string, load func(path string) bool) func() {
 	var (
 		mu      sync.Mutex
 		lastMod time.Time
 		lastLen int64
 	)
-	path := tokensPath(root)
 	return func() {
 		mu.Lock()
 		defer mu.Unlock()
 
 		fi, err := os.Stat(path)
 		if err != nil {
-			// Gone or unreadable. Deliberately not clearing the in-memory
-			// set: a store whose token file has been deleted should keep
+			// Gone or unreadable. Deliberately not clearing what is in
+			// memory: a store whose token file has been deleted should keep
 			// enforcing what it last knew, because the alternative is that
 			// removing a file is a way to make every credential invalid and
 			// lock everybody out at once.
@@ -54,14 +89,9 @@ func tokenReloader(root string, ts *auth.TokenStore) func() {
 		if fi.ModTime().Equal(lastMod) && fi.Size() == lastLen {
 			return
 		}
-		var fresh auth.TokenStore
-		if err := loadJSON(path, &fresh); err != nil {
-			// A half-written file, most likely: another process is mid-save.
-			// Keeping what we have and trying again next request is right —
-			// the write is atomic, so the next stat will see the finished one.
+		if !load(path) {
 			return
 		}
 		lastMod, lastLen = fi.ModTime(), fi.Size()
-		ts.Replace(fresh.Tokens)
 	}
 }

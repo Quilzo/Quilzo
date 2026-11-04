@@ -4,11 +4,13 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -19,6 +21,7 @@ import (
 	"github.com/quilzo/quilzo/internal/mail"
 	"github.com/quilzo/quilzo/internal/memory"
 	"github.com/quilzo/quilzo/internal/oauthas"
+	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/scim"
 )
 
@@ -522,5 +525,162 @@ func TestRenamingTheLastAdministratorAsTheyAreDeactivatedLeavesOneWhoCanGrant(t 
 				t.Errorf("the security contact was not told: %+v", mails())
 			}
 		})
+	}
+}
+
+// A group mapped to a job granted only for a time grants it until a day,
+// as granting the job by hand does, and grants nothing without one.
+//
+// `quilzo scim map quilzo-auditors auditor` was accepted, and on the
+// reference stack `auth list` showed auditor@qz.test holding auditor with
+// no until date, while `auth grant x auditor` is refused without --for or
+// --until. An assessor is there for an assessment, and access nobody
+// remembered to remove is the finding they would write; a group nobody
+// remembered to empty is the same finding.
+func TestAProvisionedAuditorsAccessEnds(t *testing.T) {
+	root, c := newSCIM(t)
+	if err := cmdSCIM(root, []string{"map", "Assessors", "auditor"}); err == nil {
+		t.Fatal("a group was mapped to auditor with no day its access ends")
+	}
+	for _, bad := range [][]string{
+		{"map", "Assessors", "auditor", "--until", "2001-01-01"},
+		{"map", "Assessors", "auditor", "--until", "soon"},
+		{"map", "Editors", "publisher", "--for", "30d"},
+		{"map", "Security team", "analyst", "--until", "2099-01-01"},
+	} {
+		if err := cmdSCIM(root, bad); err == nil {
+			t.Errorf("%v was accepted", bad)
+		}
+	}
+
+	day := time.Now().UTC().AddDate(0, 0, 30).Truncate(24 * time.Hour)
+	if err := cmdSCIM(root, []string{"map", "Assessors", "auditor", "--until", day.Format(time.DateOnly)}); err != nil {
+		t.Fatal(err)
+	}
+	_, u := c.do(http.MethodPost, "/Users", `{"userName":"aud@example.com","active":true}`)
+	c.do(http.MethodPost, "/Groups", `{"displayName":"Assessors","members":[{"value":"`+u["id"].(string)+`"}]}`)
+	ends := func() map[string]int64 {
+		t.Helper()
+		p, err := loadPolicy(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]int64{}
+		for _, b := range p.Snapshot() {
+			if b.Principal == "aud@example.com" {
+				out[b.Resource] = b.Expires
+			}
+		}
+		return out
+	}
+	if got := ends(); len(got) != 2 || got[auth.AreaCompliance] != day.Unix() || got[auth.AreaLog] != day.Unix() {
+		t.Fatalf("the auditor's provisioned access does not end on %s: %v", day.Format(time.DateOnly), got)
+	}
+	if p, _ := loadPolicy(root); !p.Evaluate("aud@example.com", auth.ActView, auth.AreaCompliance).Allowed {
+		t.Fatal("until that day, the auditor cannot read the posture")
+	}
+
+	// Mapped again for longer, the access lasts as long: at least sixty
+	// days, to the start of a day.
+	if err := cmdSCIM(root, []string{"map", "Assessors", "auditor", "--for", "60d"}); err != nil {
+		t.Fatal(err)
+	}
+	got := ends()
+	if e := got[auth.AreaLog]; len(got) != 2 || e%86400 != 0 || e < time.Now().Add(60*24*time.Hour).Unix() ||
+		got[auth.AreaCompliance] != e {
+		t.Fatalf("mapped again for 60 days, the access ends at %v", got)
+	}
+
+	// A mapping to it with no day, saved before mappings had to carry one,
+	// or with a day gone by, grants nothing and takes back what it gave,
+	// and the status says why.
+	for _, stale := range []string{"auditor", "auditor until 2001-01-01"} {
+		if err := cmdSCIM(root, []string{"map", "Assessors", "auditor", "--for", "60d"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := scimStore(root).Update(func(st *scim.State) error { st.Mapping["Assessors"] = stale; return nil }); err != nil {
+			t.Fatal(err)
+		}
+		scimHandler(root).SyncAll()
+		if got := ends(); len(got) != 0 {
+			t.Errorf("a group mapped to %q still grants %v", stale, got)
+		}
+		old := w
+		var said bytes.Buffer
+		w = out.New(false)
+		w.Out = &said
+		err := cmdSCIM(root, []string{"status"})
+		w = old
+		if err != nil || !strings.Contains(said.String(), "grants nothing") {
+			t.Errorf("the status of a group mapped to %q does not say it grants nothing (%v):\n%s", stale, err, &said)
+		}
+	}
+}
+
+// A group mapped to auditor before such a mapping had to carry a day takes
+// back what it gave when the admin starts, not whenever the identity
+// provider next happens to send something about its members.
+//
+// Provisioning runs when the provider sends a change, or a group is mapped
+// or unmapped, and only then. On a store upgraded with auditor already
+// mapped, the mapping granted nothing (scim.CheckEnds) and `scim status` said
+// so, while its members went on holding auditor with no end, which for
+// somebody whose groups do not change was for good: the finding the day was
+// added for, left standing on the store it was found on. Only they are
+// synced, so a provisioned grant taken back from somebody else by hand stays
+// taken back.
+func TestAnAuditorMappedWithoutADayIsTakenBackWhenTheAdminStarts(t *testing.T) {
+	root, c := newSCIM(t)
+	if err := cmdSCIM(root, []string{"map", "Assessors", "auditor", "--for", "60d"}); err != nil {
+		t.Fatal(err)
+	}
+	for user, group := range map[string]string{"aud@example.com": "Assessors", "ed@example.com": "Editors"} {
+		_, u := c.do(http.MethodPost, "/Users", `{"userName":"`+user+`","active":true}`)
+		c.do(http.MethodPost, "/Groups", `{"displayName":"`+group+`","members":[{"value":"`+u["id"].(string)+`"}]}`)
+	}
+
+	// As an earlier version left it: mapped with no day, and granted for
+	// good. And an editor's provisioned access taken back by hand.
+	if err := scimStore(root).Update(func(st *scim.State) error { st.Mapping["Assessors"] = "auditor"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := updatePolicy(root, func(p *auth.Policy) error {
+		for i := range p.Bindings {
+			if p.Bindings[i].Principal == "aud@example.com" {
+				p.Bindings[i].Expires = 0
+			}
+		}
+		p.Bindings = slices.DeleteFunc(p.Bindings, func(b auth.Binding) bool { return b.Principal == "ed@example.com" })
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := loadPolicy(root); !p.Evaluate("aud@example.com", auth.ActView, auth.AreaCompliance).Allowed {
+		t.Fatal("the earlier version's grant is not in place to begin with")
+	}
+
+	if err := scimHandler(root).SyncRefused(time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	p, err := loadPolicy(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range p.Snapshot() {
+		switch b.Principal {
+		case "aud@example.com":
+			t.Errorf("a group mapped to auditor with no day still grants %s on %s", b.Role, b.Resource)
+		case "ed@example.com":
+			t.Errorf("starting the admin gave back %s on %s, which was taken back by hand", b.Role, b.Resource)
+		}
+	}
+
+	// And the admin does it as it starts.
+	src, err := os.ReadFile("serve.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src), "scimHandler(root).SyncRefused(") {
+		t.Error("the admin does not take back, as it starts, what a mapping that now grants nothing gave")
 	}
 }

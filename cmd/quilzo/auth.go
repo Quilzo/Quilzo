@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -520,13 +521,44 @@ func authRevoke(root string, args []string) error {
 	return nil
 }
 
+// listedFor is whose rows a list of access shows its caller: everybody's to
+// whoever may act on them (may, on the whole site), and their own to anybody
+// else.
+//
+// `auth list` and `token list` ask only to view, so that somebody refused
+// something can find out why, and they printed everybody's: every binding in
+// the store, and every token's id, name, role and last use, to a reader whose
+// browser was refused People and Security (127 lines on the reference stack).
+// A reader is still answered, with what is theirs; somebody unverified is
+// shown nobody's. Their name is their account's on the machine, which is
+// nobody's identity here, and listing by it listed an account named like a
+// principal that principal's rows.
+func listedFor(root string, may auth.Action) (who string, everybody bool) {
+	c := resolveCaller(root, tokenFromArgs(nil))
+	if authorise(root, c, may, "/") == nil {
+		return "", true
+	}
+	if !c.Verified {
+		return "", false
+	}
+	return c.Name, false
+}
+
+// mine reports whether a row of a list belongs to who.
+func mine(principal, who string) bool { return who != "" && strings.EqualFold(principal, who) }
+
 func authList(root string) error {
 	p, err := loadPolicy(root)
 	if err != nil {
 		return err
 	}
-	rows := make([]map[string]any, 0, len(p.Bindings))
-	for _, b := range p.Bindings {
+	bindings := p.Snapshot()
+	who, everybody := listedFor(root, auth.ActGrant)
+	if !everybody {
+		bindings = slices.DeleteFunc(bindings, func(b auth.Binding) bool { return !mine(b.Principal, who) })
+	}
+	rows := make([]map[string]any, 0, len(bindings))
+	for _, b := range bindings {
 		row := map[string]any{"principal": b.Principal, "role": b.What(),
 			"resource": b.Resource, "deny": b.Deny, "granted_by": b.GrantedBy,
 			"note": b.Note, "expires": nil, "live": b.Live(time.Now())}
@@ -541,7 +573,14 @@ func authList(root string) error {
 	if w.JSON(map[string]any{"bindings": rows}) {
 		return nil
 	}
-	if len(p.Bindings) == 0 {
+	if !everybody {
+		fmt.Printf("  %syour own; everybody's are listed to whoever may grant%s\n", dim, reset)
+		if len(bindings) == 0 {
+			fmt.Println("no bindings name you")
+			return nil
+		}
+	}
+	if len(bindings) == 0 {
 		fmt.Println("no bindings; nobody has access")
 		return nil
 	}
@@ -561,7 +600,7 @@ func authList(root string) error {
 	// row pushed everything after it out of line with the header.
 	const unrecorded = "unrecorded"
 	pw, rw, resw, bw := 18, 10, 16, 14
-	for _, b := range p.Bindings {
+	for _, b := range bindings {
 		by := b.GrantedBy
 		if by == "" {
 			by = unrecorded
@@ -576,7 +615,7 @@ func authList(root string) error {
 	fmt.Printf("  %s %s %s %s\n", strings.Repeat("-", pw),
 		strings.Repeat("-", rw), strings.Repeat("-", resw),
 		strings.Repeat("-", bw))
-	for _, b := range p.Bindings {
+	for _, b := range bindings {
 		mark := ""
 		if b.Deny {
 			mark = red + "DENY" + reset
@@ -655,6 +694,12 @@ func authExplain(root string, args []string) error {
 		return fmt.Errorf("usage: quilzo auth explain <principal> [action] [--on /path]")
 	}
 	principal := rest[0]
+	// One's own, as `auth list` is: what somebody else may do is listed to
+	// whoever may grant (listedFor).
+	if who, everybody := listedFor(root, auth.ActGrant); !everybody && !mine(principal, who) {
+		return fmt.Errorf("what somebody else may do is explained to whoever may grant; "+
+			"you may explain your own: quilzo auth explain %s", who)
+	}
 
 	p, err := loadPolicy(root)
 	if err != nil {
@@ -1046,9 +1091,14 @@ func tokenList(root string) error {
 		return err
 	}
 	now := time.Now()
+	tokens := ts.Snapshot()
+	who, everybody := listedFor(root, auth.ActToken)
+	if !everybody {
+		tokens = slices.DeleteFunc(tokens, func(t auth.Token) bool { return !mine(t.Principal, who) })
+	}
 	// What each token is, and never the hash it is checked against.
-	rows := make([]map[string]any, 0, len(ts.Tokens))
-	for _, t := range ts.Tokens {
+	rows := make([]map[string]any, 0, len(tokens))
+	for _, t := range tokens {
 		row := map[string]any{"id": t.ID, "name": t.Name, "principal": t.Principal,
 			"role": t.Role, "resource": t.Resource,
 			"expires": time.Unix(t.ExpiresAt, 0).UTC().Format(time.RFC3339),
@@ -1061,7 +1111,10 @@ func tokenList(root string) error {
 	if w.JSON(map[string]any{"tokens": rows}) {
 		return nil
 	}
-	if len(ts.Tokens) == 0 {
+	if !everybody {
+		fmt.Printf("  %syour own; everybody's are listed to whoever may manage tokens%s\n", dim, reset)
+	}
+	if len(tokens) == 0 {
 		fmt.Println("no tokens")
 		return nil
 	}
@@ -1069,11 +1122,11 @@ func tokenList(root string) error {
 	// principal: a name is the operator's own words, "ci-deploy-production"
 	// is twenty characters, and a fixed sixteen pushed its row out of line.
 	nw := 16
-	for _, t := range ts.Tokens {
+	for _, t := range tokens {
 		nw = max(nw, utf8.RuneCountInString(t.Name))
 	}
 	fmt.Printf("  %-14s %-*s %-10s %-12s %s\n", "id", nw, "name", "role", "expires", "last used")
-	for _, t := range ts.Tokens {
+	for _, t := range tokens {
 		state := ""
 		switch {
 		case t.Revoked:

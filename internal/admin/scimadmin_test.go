@@ -332,3 +332,47 @@ func TestAProvisioningTokenMadeWhileAMappingWaitsTakesTwoOnTheScreen(t *testing.
 		t.Errorf("the token does not wait for a second administrator: %+v", pend)
 	}
 }
+
+// The Provisioning screen maps a group to a job granted only for a time
+// with the day that time is over, and refuses it without one, as People
+// refuses a hand grant of it.
+//
+// The screen offered "auditor: ... for a set time" and asked for no time,
+// and its members held auditor for as long as they were in the group: on
+// the reference stack, with no until date at all.
+func TestTheProvisioningScreenMapsAnAuditorUntilADay(t *testing.T) {
+	srv, token := setup(t)
+	calls, st := wireSCIM(t, srv)
+	refused := func(form string) {
+		t.Helper()
+		calls.mapped = ""
+		w := postForm(t, srv, "/provisioning/act", token, form)
+		if loc := w.Header().Get("Location"); calls.mapped != "" || !strings.Contains(loc, "e=") {
+			t.Errorf("%s was mapped (%q) and answered %d %s", form, calls.mapped, w.Code, loc)
+		}
+	}
+	refused("do=map&group=Assessors&to=auditor")
+	refused("do=map&group=Assessors&to=auditor&until=2001-01-01")
+	day := time.Now().UTC().AddDate(0, 0, 30).Format(time.DateOnly)
+	// A day for what lasts while somebody is in the group is refused rather
+	// than dropped, which would map it with no end its mapper meant.
+	refused("do=map&group=Editors&to=publisher&until=" + day)
+
+	postForm(t, srv, "/provisioning/act", token, "do=map&group=Assessors&to=auditor&until="+day)
+	if calls.mapped != "Assessors=auditor until "+day {
+		t.Fatalf("mapped with a day, provisioning was told %q", calls.mapped)
+	}
+	body := get(t, srv, "/provisioning", token).Body.String()
+	if !strings.Contains(body, `name="until"`) || !strings.Contains(body, "auditor until "+day) {
+		t.Errorf("the screen does not ask for the day, or show it:\n%s", body)
+	}
+
+	// A mapping to it with no day, saved before one was asked for, is
+	// shown as granting nothing.
+	if err := st.Update(func(s *scim.State) error { s.Mapping["Assessors"] = "auditor"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if body := get(t, srv, "/provisioning", token).Body.String(); !strings.Contains(body, "grants nothing") {
+		t.Errorf("a mapping to auditor with no day is not shown as granting nothing:\n%s", body)
+	}
+}

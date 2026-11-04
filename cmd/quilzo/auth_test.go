@@ -264,7 +264,23 @@ func requiredArgs(synopsis string) int {
 func TestAuthListKeepsEveryRowInItsColumns(t *testing.T) {
 	root := connectStore(t)
 	pol := &auth.Policy{}
+	// Listed by somebody who may grant, who is shown everybody's rows; a
+	// reader is shown only their own (TestAReaderListsTheirOwnGrantsAndTokens).
+	isolateToken(t)
+	ts, err := loadTokens(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret, _, err := ts.Issue("boss-laptop", "boss", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveJSON(tokensPath(root), ts); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("QUILZO_TOKEN", secret)
 	for _, b := range []auth.Binding{
+		{Principal: "boss", Role: auth.RoleAdmin, Resource: "/", GrantedBy: "cli"},
 		{Principal: "claimsadmin@qz.test", Role: auth.RoleAdmin, Resource: "/", GrantedBy: "cli", Deny: true},
 		{Principal: "bo", Role: auth.RoleReader, Resource: "/a-rather-long/section/path", Deny: true},
 		{Principal: "a-principal-of-forty-characters@qz.test", Role: auth.RolePublisher,
@@ -284,14 +300,14 @@ func TestAuthListKeepsEveryRowInItsColumns(t *testing.T) {
 
 	_, read := captureStdout(t)
 	w = out.New(false)
-	err := authList(root)
+	err = authList(root)
 	printed := regexp.MustCompile("\x1b\\[[0-9;]*m").ReplaceAllString(read(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimRight(printed, "\n"), "\n")
-	if len(lines) != 5 {
-		t.Fatalf("expected a header, a rule and three rows:\n%s", printed)
+	if len(lines) != 6 {
+		t.Fatalf("expected a header, a rule and four rows:\n%s", printed)
 	}
 	header := lines[0]
 	for _, col := range []string{"role", "resource", "granted by"} {

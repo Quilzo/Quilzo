@@ -58,10 +58,15 @@ func (s *Server) enrolLink(w http.ResponseWriter, r *http.Request, secret string
 		}
 		return enrol.Link{}, false
 	}
+	// A live link is honoured from a throttled address, and a made-up one
+	// refused for trying too often: the address is shared by everybody
+	// behind it, and a person handed a link was refused it for somebody
+	// else's guesses, as a token was at /mcp (interfaceCaller).
 	sub := throttle.Subject{Source: sourceOf(r), Principal: "enrol"}
+	var throttled *throttle.Decision
 	if s.Throttle != nil {
 		if d := s.Throttle.Check(sub); !d.Allowed {
-			return refuse(http.StatusTooManyRequests, errors.New(d.Why))
+			throttled = &d
 		}
 	}
 	if s.EnrolBlocked != nil {
@@ -71,6 +76,9 @@ func (s *Server) enrolLink(w http.ResponseWriter, r *http.Request, secret string
 	}
 	l, err := s.Enrol.Peek(secret, time.Now())
 	if err != nil {
+		if throttled != nil {
+			return refuse(http.StatusTooManyRequests, errors.New(throttled.Why))
+		}
 		if s.Throttle != nil {
 			if d, alert := s.Throttle.Fail(sub); alert && s.OnAuthFailure != nil {
 				s.OnAuthFailure(sub.Source, d.Failures)

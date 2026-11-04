@@ -106,7 +106,22 @@ func (s *Server) handleTokenExchange(w http.ResponseWriter, r *http.Request) {
 	if s.ReloadTokens != nil {
 		s.ReloadTokens()
 	}
-	if s.Tokens == nil {
+	// As at /mcp (interfaceCaller): ReloadTokens keeps the store the server
+	// started with current, and s.Tokens is the copy refresh read, so a
+	// token revoked on the command line could be exchanged until somebody
+	// opened a screen. The token made here goes into this copy, and this
+	// copy is what is saved (storedTokens).
+	toks := s.storedTokens()
+	save := func() error {
+		if s.SaveTokens == nil {
+			return nil
+		}
+		if err := s.SaveTokens(toks); err != nil {
+			return fmt.Errorf("the change was not saved: %w", err)
+		}
+		return nil
+	}
+	if toks == nil {
 		fail(http.StatusServiceUnavailable, "server_error", "this build was started without a token store")
 		return
 	}
@@ -129,14 +144,21 @@ func (s *Server) handleTokenExchange(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusBadRequest, "invalid_request", "acting for another is not exchanged here")
 		return
 	}
+	// A throttled exchange is still checked, and a valid one let through,
+	// as at /mcp (interfaceCaller): the address is all that is known before
+	// the token is, and refusing on it refused everybody behind it.
 	sub := throttle.Subject{Source: sourceOf(r)}
+	var throttled *throttle.Decision
 	if s.Throttle != nil {
 		if d := s.Throttle.Check(sub); !d.Allowed {
-			fail(http.StatusTooManyRequests, "invalid_request", "too many failed attempts from this address. "+d.Why)
-			return
+			throttled = &d
 		}
 	}
 	failed := func(kind string, err error) {
+		if throttled != nil {
+			fail(http.StatusTooManyRequests, "invalid_request", "too many failed attempts from this address. "+throttled.Why)
+			return
+		}
 		if s.Throttle != nil {
 			if d, alert := s.Throttle.Fail(sub); alert && s.OnAuthFailure != nil {
 				s.OnAuthFailure(sub.Source, d.Failures)
@@ -173,7 +195,7 @@ func (s *Server) handleTokenExchange(w http.ResponseWriter, r *http.Request) {
 	switch f.Get("subject_token_type") {
 	case typeAccessToken:
 		var err error
-		secret, tok, err = s.Tokens.ExchangeProved(f.Get("subject_token"), role, resource, 0, thumb, now)
+		secret, tok, err = toks.ExchangeProved(f.Get("subject_token"), role, resource, 0, thumb, now)
 		if err != nil {
 			failed("invalid_grant", err)
 			return
@@ -212,7 +234,7 @@ func (s *Server) handleTokenExchange(w http.ResponseWriter, r *http.Request) {
 		if run == "<nil>" {
 			run = fmt.Sprint(claims["jti"])
 		}
-		secret, tok, err = s.Tokens.IssueFederated("trust:"+t.Name+" run "+clipText(run, 40), t.Principal, role, resource,
+		secret, tok, err = toks.IssueFederated("trust:"+t.Name+" run "+clipText(run, 40), t.Principal, role, resource,
 			auth.Scope{ReadOnly: t.ReadOnly}, t.Life(), thumb, now)
 		if err != nil {
 			failed("invalid_grant", err)
@@ -233,8 +255,8 @@ func (s *Server) handleTokenExchange(w http.ResponseWriter, r *http.Request) {
 	// before anybody is told its secret.
 	if proof != nil {
 		if err := s.proofs.Spend(*proof, now); err != nil {
-			_, _ = s.Tokens.Revoke(tok.ID)
-			_ = s.save()
+			_, _ = toks.Revoke(tok.ID)
+			_ = save()
 			failed("invalid_dpop_proof", err)
 			return
 		}
@@ -242,7 +264,7 @@ func (s *Server) handleTokenExchange(w http.ResponseWriter, r *http.Request) {
 	if s.Throttle != nil {
 		s.Throttle.Succeed(throttle.Subject{Principal: tok.Principal})
 	}
-	if err := s.save(); err != nil {
+	if err := save(); err != nil {
 		fail(http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}

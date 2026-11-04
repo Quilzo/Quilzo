@@ -149,9 +149,16 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	// Reading which permissions were handed to models is an administrative
-	// question, so it needs the permission that covers administration.
-	if !s.can(w, r, p, auth.ActGrant, "/") {
+	// Reading which permissions were handed to models is the question
+	// managing agents answers, so it needs that permission on the agents,
+	// as its entry in the navigation and every other screen of the studio
+	// do (studioAllowed).
+	//
+	// It asked for grant on the whole site. Somebody granted manage-agents
+	// alone was offered the screen, sent to it by the front door (landing),
+	// and refused it: "this credential carries reader and grant needs
+	// admin", said to a passkey session on the reference stack.
+	if !s.can(w, r, p, auth.ActManageAgents, auth.AreaAgents) {
 		return
 	}
 

@@ -35,6 +35,11 @@ func signInPost(srv *Server, token string) *httptest.ResponseRecorder {
 //
 // So no refusal answers the POST with a page. Each one is a redirect, and a
 // redirect followed by a GET is what a reload repeats.
+//
+// The right token is no longer refused at all while its address is throttled
+// (the throttle refuses failures, not everybody behind an address; see
+// sharedaddress_test.go), so the refusal is a wrong token's, and the right
+// token is answered with a redirect too.
 func TestAThrottledSignInLeavesNothingToResubmit(t *testing.T) {
 	srv, token := setup(t)
 	srv.Throttle = throttle.New(throttle.Default())
@@ -42,7 +47,8 @@ func TestAThrottledSignInLeavesNothingToResubmit(t *testing.T) {
 	for i := 0; i < 30; i++ {
 		signInPost(srv, "qz_wrong")
 	}
-	w := signInPost(srv, token)
+	const wrong = "qz_wrongagain"
+	w := signInPost(srv, wrong)
 	if w.Code != http.StatusSeeOther {
 		t.Fatalf("a throttled sign-in answered %d; any page rendered here "+
 			"is a page the browser will offer to resubmit", w.Code)
@@ -51,11 +57,14 @@ func TestAThrottledSignInLeavesNothingToResubmit(t *testing.T) {
 	if loc != "/signin?e=throttled" {
 		t.Fatalf("redirected to %q", loc)
 	}
-	if strings.Contains(loc, token) || strings.Contains(w.Body.String(), token) {
+	if strings.Contains(loc, wrong) || strings.Contains(w.Body.String(), wrong) {
 		t.Fatal("the token was echoed back")
 	}
 	if len(w.Result().Cookies()) > 0 {
 		t.Fatal("a throttled sign-in set a cookie")
+	}
+	if w := signInPost(srv, token); w.Code != http.StatusSeeOther || cookieFrom(w) == "" {
+		t.Fatalf("the right token from a throttled address answered %d, not a redirect signed in", w.Code)
 	}
 }
 

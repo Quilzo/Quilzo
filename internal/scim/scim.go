@@ -47,6 +47,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
+	"github.com/quilzo/quilzo/internal/auth"
 )
 
 // Schema identifiers, from RFC 7643 and RFC 7644.
@@ -84,8 +85,73 @@ type State struct {
 	Users  []User  `json:"users"`
 	Groups []Group `json:"groups"`
 	// Mapping is what each group means here: a group's display name to a
-	// role ("reader" … "admin") or a job ("analyst" …). Set by a person.
+	// role ("reader" … "admin") or a job ("analyst" …), and for a job
+	// granted only for a time the day that time is over ("auditor until
+	// 2026-12-31", MappedUntil). Set by a person.
 	Mapping map[string]string `json:"mapping"`
+}
+
+// A job granted only for a time (auth.Job.Ends) is mapped with the day its
+// access ends, as granting it by hand is, and what provisioning grants for
+// it ends then. The day is written into the mapping, so it is shown, sent
+// and stored wherever the mapping already is.
+//
+// A group mapped to auditor was accepted with no day, and its members held
+// auditor for as long as they stayed in the group: on the reference stack
+// `auth list` showed the auditor with no until date, while a hand grant of
+// auditor is refused without one. An assessor is there for an assessment,
+// and a group nobody remembered to empty is access nobody remembered to
+// remove.
+const untilWord = " until "
+
+// ErrMustEnd is a mapping to a job granted only for a time with no day its
+// access ends. Each surface says how to give one.
+var ErrMustEnd = errors.New("ends by itself, and a group's lasts while somebody is in the group, so it is " +
+	"mapped with the day it ends")
+
+// MappedUntil is a mapping to what that ends at the start of day.
+func MappedUntil(what string, day time.Time) string {
+	return what + untilWord + day.UTC().Format(time.DateOnly)
+}
+
+// SplitMapping is what a mapping grants and the day that ends, zero for a
+// mapping that lasts while somebody is in the group. what is returned even
+// when the day cannot be read, so a caller asking what a mapping makes
+// somebody still reads it.
+func SplitMapping(mapping string) (what string, until time.Time, err error) {
+	what, day, ok := strings.Cut(mapping, untilWord)
+	if !ok {
+		return mapping, time.Time{}, nil
+	}
+	until, err = time.Parse(time.DateOnly, day)
+	if err != nil {
+		return what, time.Time{}, fmt.Errorf("%q does not end on a day, like 2026-12-31", mapping)
+	}
+	return what, until, nil
+}
+
+// CheckEnds refuses a mapping whose end does not fit what it grants: a job
+// granted only for a time with no day (ErrMustEnd) or with a day gone by,
+// and a day on anything else, which would be dropped rather than kept.
+// Provisioning grants nothing for a mapping it refuses, which is how a
+// mapping saved before mappings carried a day, or whose day has passed,
+// takes back what it gave.
+func CheckEnds(mapping string, now time.Time) error {
+	what, until, err := SplitMapping(mapping)
+	if err != nil {
+		return err
+	}
+	job, isJob := auth.JobNamed(what)
+	switch {
+	case isJob && job.Ends && until.IsZero():
+		return fmt.Errorf("%s access %w", what, ErrMustEnd)
+	case !until.IsZero() && !(isJob && job.Ends):
+		return fmt.Errorf("%s lasts while somebody is in the group; only a job granted for a time is mapped "+
+			"with the day it ends", what)
+	case !until.IsZero() && !now.Before(until):
+		return fmt.Errorf("%s has already ended", mapping)
+	}
+	return nil
 }
 
 // Errors a caller distinguishes.

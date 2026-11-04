@@ -347,6 +347,7 @@ var signalWords = map[string]string{
 	"hosting-network": "hosting provider", "dormant": "back after months", "unusual-hour": "unusual hour",
 	"session-moved": "session moved", "verification-failing": "verification failing",
 	"account-locked": "locked out after failed sign-ins",
+	"passkey-cloned": "passkey copied",
 }
 
 var riskTone = map[string]string{"high": "critical", "medium": "warning", "low": "low", "none": "good", "": "good"}

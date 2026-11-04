@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -41,6 +42,9 @@ type SCIMAdmin struct {
 type scimGroupRow struct {
 	Name, Means string
 	Members     int
+	// Idle says why the mapping grants nothing, when it does not: a job
+	// granted only for a time with no day, or after it (scim.CheckEnds).
+	Idle string
 }
 
 type scimUserRow struct {
@@ -103,6 +107,15 @@ func (s *Server) renderProvisioning(w http.ResponseWriter, r *http.Request, p pr
 		}
 	}
 	sort.Slice(groups, func(i, j int) bool { return groups[i].Name < groups[j].Name })
+	now := time.Now()
+	for i := range groups {
+		if groups[i].Means == "" {
+			continue
+		}
+		if err := scim.CheckEnds(groups[i].Means, now); err != nil {
+			groups[i].Idle = err.Error()
+		}
+	}
 	data["Groups"] = groups
 	var users []scimUserRow
 	for _, u := range st.Users {
@@ -181,6 +194,25 @@ func (s *Server) handleProvisioningAct(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		to := r.FormValue("to")
+		// A job granted only for a time is mapped until a day, as People
+		// grants it by hand, and a day for anything else is refused rather
+		// than dropped (scim.CheckEnds).
+		if u := strings.TrimSpace(r.FormValue("until")); u != "" {
+			day, derr := time.Parse(time.DateOnly, u)
+			if derr != nil {
+				back("e", "Until has to be a day, like 2026-12-31.")
+				return
+			}
+			to = scim.MappedUntil(to, day)
+		}
+		if cerr := scim.CheckEnds(to, time.Now()); cerr != nil {
+			if errors.Is(cerr, scim.ErrMustEnd) {
+				back("e", cerr.Error()+": choose the day in Until.")
+			} else {
+				back("e", cerr.Error()+".")
+			}
+			return
+		}
 		// A group mapped to an administrator's role or job makes whoever the
 		// identity provider puts in it an administrator, so it waits for a
 		// second administrator as making one by hand does.

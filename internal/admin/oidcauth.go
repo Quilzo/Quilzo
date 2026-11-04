@@ -385,6 +385,13 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	// which for a public provider is everybody — becomes a user of this system.
 	// The access policy is the list of who may work here, and it is maintained
 	// deliberately.
+	//
+	// Asked of the policy as it is stored now. The other ways in are posts,
+	// which readOnlyTokens authenticates first and so reads the store again;
+	// this is a GET the provider redirects to, and it asked the copy the last
+	// screen had read, so somebody suspended on the command line since was
+	// given a session here until somebody opened a screen.
+	s.refresh()
 	if s.suspended(principal) {
 		s.refuseSignIn(w, r, principal+" is suspended here: the identity provider deactivated or removed them.", "")
 		return

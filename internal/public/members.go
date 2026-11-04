@@ -492,6 +492,14 @@ func (st *Site) signinFinish(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusUnauthorized, noUserVerification)
 		return
 	}
+	// A counter that went back is refused like any failure, and is on the
+	// record as what it is, as a passkey of staff's is (internal/admin): the
+	// one sign WebAuthn gives that the credential was copied off its
+	// authenticator. It was recorded as a failed sign-in and nothing else,
+	// the line a stranger's guess at a credential id leaves.
+	if errors.Is(err, webauthn.ErrCounterWentBack) {
+		st.audit("member.passkey-counter-refused", m.ID, r, false)
+	}
 	if err != nil || m.Disabled {
 		if err != nil && st.Members.Lockout != nil {
 			if _, ev, lerr := st.Members.Lockout.Fail(m.ID, src, time.Now()); lerr == nil && ev != lockout.NoEvent {

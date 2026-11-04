@@ -849,3 +849,63 @@ func TestTheBearerSchemeIsReadInAnyCase(t *testing.T) {
 		}
 	}
 }
+
+// A grant made and a grant revoked while the server runs both apply at once.
+//
+// The server evaluated the policy it was given at startup. In the admin that
+// meant a reader granted on the command line was refused /api/v1 while /mcp
+// served them, and a revoked reader kept reading pages there until the admin
+// restarted. ReloadPolicy is how a host keeps it current, and it is asked
+// before every decision.
+func TestTheAPISeesTheAccessRulesAsTheyAreNow(t *testing.T) {
+	s, _, _ := setup(t)
+	late, _, err := s.Tokens.Issue("late", "late", auth.RoleReader, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The policy file as another process writes it.
+	disk := &auth.Policy{}
+	for _, b := range s.Policy.Snapshot() {
+		if err := disk.Grant(b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.ReloadPolicy = func() { s.Policy.Replace(disk.Snapshot()) }
+
+	if w := req(t, s, "GET", "/api/v1/pages", late, nil, nil); w.Code != http.StatusForbidden {
+		t.Fatalf("somebody granted nothing read the pages: %d", w.Code)
+	}
+	if err := disk.Grant(auth.Binding{Principal: "late", Role: auth.RoleReader, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	if w := req(t, s, "GET", "/api/v1/pages", late, nil, nil); w.Code != http.StatusOK {
+		t.Fatalf("a reader granted while the server ran was refused: %d %s", w.Code, w.Body.String())
+	}
+	if n := disk.Revoke("late", auth.RoleReader, "/"); n != 1 {
+		t.Fatalf("revoked %d bindings", n)
+	}
+	if w := req(t, s, "GET", "/api/v1/pages", late, nil, nil); w.Code != http.StatusForbidden {
+		t.Fatalf("a reader revoked while the server ran still read the pages: %d", w.Code)
+	}
+}
+
+// Every token that authenticates is told to the host, so the host can write
+// down when it was last used; a token that does not is not.
+//
+// Authenticating notes a use only in this process's copy of the store, and
+// this server never saves it, so a token used daily here was listed as used
+// "never" and offered by `token stale` for revocation.
+func TestATokensUseIsToldToTheHost(t *testing.T) {
+	s, read, _ := setup(t)
+	var used []string
+	s.OnTokenUsed = func(tok auth.Token) { used = append(used, tok.Principal) }
+	if w := req(t, s, "GET", "/api/v1/pages", read, nil, nil); w.Code != http.StatusOK {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	if w := req(t, s, "GET", "/api/v1/pages", "qz_nosuchtokennosuchtoken", nil, nil); w.Code != http.StatusUnauthorized {
+		t.Fatalf("a wrong token: %d", w.Code)
+	}
+	if len(used) != 1 || used[0] != "reader" {
+		t.Fatalf("told of %v", used)
+	}
+}

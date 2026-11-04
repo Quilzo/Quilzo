@@ -208,6 +208,14 @@ func cmdServe(root string, args []string) error {
 	srv.SCIM = scimHooks(root)
 	srv.AccessReview = accessReviewHooks(root)
 	srv.Signals = signalsHooks(root)
+	// What a group's mapping now grants nothing for is taken back as the
+	// admin starts, rather than whenever the identity provider next sends a
+	// change about the people in it: a group mapped to auditor before such
+	// a mapping had to carry the day it ends left them holding auditor with
+	// no end (scim.Handler.SyncRefused).
+	if err := scimHandler(root).SyncRefused(time.Now()); err != nil {
+		fmt.Fprintf(os.Stderr, "  %sprovisioning: %v%s\n", yellow, err, reset)
+	}
 	srv.Memory = memoryAdmin(root)
 	srv.Features = featureHooks(root, signedIn)
 	srv.Pay = payHooks(root, signedIn)
@@ -835,6 +843,10 @@ func cmdServe(root string, args []string) error {
 	srv.Brand = brand
 
 	srv.ReloadTokens = tokenReloader(root, toks)
+	// When a token was last used at /mcp, and below at /api/v1: neither
+	// door saves the store, so `token list` said "never" of tokens used
+	// there every day (useRecorder).
+	srv.OnTokenUsed = useRecorder(root)
 	// The agent interface at /mcp, and the OAuth server apps connect
 	// through. Off until mcp.remote is set. See agentinterface.go.
 	wireInterface(root, s, srv, sh, *tplDir)
@@ -945,8 +957,15 @@ func cmdServe(root string, args []string) error {
 		// until an admin request happened to reload the store.
 		Throttle:     srv.Throttle,
 		ReloadTokens: srv.ReloadTokens,
+		// And the access rules, for the same reason. With only the tokens
+		// reloaded, a grant made while the admin ran was refused here while
+		// its screens and /mcp allowed it, and a revoked grant kept working
+		// here until a restart.
+		ReloadPolicy: policyReloader(root, pol),
 		OnBadToken:   sh.badToken,
-		Shield:       func() (time.Time, bool) { return sh.off("api") },
+		// When each token was last used, which nothing here wrote down.
+		OnTokenUsed: srv.OnTokenUsed,
+		Shield:      func() (time.Time, bool) { return sh.off("api") },
 		// The same cache the admin uses. One process, one decoded copy of a
 		// collection — two would be the same memory spent twice and two
 		// chances for one of them to be built wrong.
