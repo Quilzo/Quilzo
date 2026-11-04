@@ -89,10 +89,14 @@ func ChunkRecords(collection string, records []RecordText) []Passage {
 }
 
 // fieldText is a field's value in words, or nothing for what is not a
-// plain value.
+// plain value. A file in the media library is not words: a product's
+// picture was a passage line of 64 hexadecimal characters.
 func fieldText(v any) string {
 	switch t := v.(type) {
 	case string:
+		if storedFile(t) {
+			return ""
+		}
 		return oneLine(t)
 	case float64:
 		return strings.TrimSuffix(strings.TrimRight(fmt.Sprintf("%.4f", t), "0"), ".")

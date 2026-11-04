@@ -68,6 +68,11 @@ var groups = []string{
 }
 
 // destinations is every screen, in the default order.
+//
+// A label is the screen's name, the one its heading and its tab carry too.
+// Chatbots opened a tab called Assistants, Your accounts a screen called
+// Connected accounts and Log one called Audit log, so somebody following
+// the menu, or a voice reading a screen's name, found a different one.
 var destinations = []destination{
 	// What is waiting and what is happening, for everybody who signs in;
 	// where a sign-in lands unless somebody chose Pages.
@@ -127,7 +132,7 @@ var destinations = []destination{
 	{"provenance", "Provenance", "/provenance", "Assurance", "provenance", auth.ActView},
 	// Reading, on guarded areas: see auth's guardedAreas.
 	{"security", "Security", "/security", "Assurance", "security", auth.ActView},
-	{"logs", "Log", "/logs", "Assurance", "logging", auth.ActView},
+	{"logs", "Audit log", "/logs", "Assurance", "logging", auth.ActView},
 
 	// What Quilzo is doing to protect itself, the playbooks deciding it,
 	// and who signed in from where. The queue a security team works from —
@@ -174,7 +179,7 @@ var destinations = []destination{
 	// is reachable on a narrow window, where the bar has no room for the box.
 	{"find", "Find", "/find", "Reference", "start", auth.ActView},
 	{"start", "Get started", "/start", "Reference", "start", auth.ActView},
-	{"playground", "API", "/playground", "Reference", "api", auth.ActView},
+	{"playground", "API playground", "/playground", "Reference", "api", auth.ActView},
 	{"profile", "You", "/profile", "Reference", "start", auth.ActView},
 }
 

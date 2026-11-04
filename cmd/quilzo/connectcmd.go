@@ -324,7 +324,7 @@ func connectionToken(ctx context.Context, root, provider, person, host string) (
 	err = changeAccounts(root, func(f *accounts, kr *vault.Keyring) error {
 		a, ok := f.Accounts[key]
 		if !ok {
-			return fmt.Errorf("%s has not connected an account at %s: quilzo connect start %s, or Connected accounts", person, p.Title, p.Name)
+			return fmt.Errorf("%s has not connected an account at %s: quilzo connect start %s, or Your accounts in the admin", person, p.Title, p.Name)
 		}
 		tok, err := openToken(kr, key, a.Sealed)
 		if err != nil {

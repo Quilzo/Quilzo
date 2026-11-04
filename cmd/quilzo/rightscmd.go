@@ -317,7 +317,7 @@ func rightsSet(root string, args []string) error {
 		return nil
 	}
 	if *licence != "" {
-		r.Licence = *licence
+		r.Licence = media.LicenceID(*licence)
 	}
 	if *holder != "" {
 		r.Holder = *holder

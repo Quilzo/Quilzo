@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -20,6 +21,8 @@ import (
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/decide"
+	"github.com/quilzo/quilzo/internal/mcp"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 const ticketDecider = `{"name": "ticket", "title": "Ticket triage", "questions": [
@@ -223,6 +226,129 @@ func TestADecidersAndTheReviewersCallsAreChargedToTheRunAndItsPerson(t *testing.
 	for _, consumer := range []string{"decider:refunds", "reviewer:triage"} {
 		if calls, dana := chargedTo(t, root, consumer, "person:dana"); calls == 0 || dana != calls {
 			t.Errorf("of %d calls as %s, %d were charged to the person who started the run", calls, consumer, dana)
+		}
+	}
+	// The run's step is the record of what its decider answered.
+	if asked := auditFor(t, root, "decide.asked"); len(asked) != 0 {
+		t.Errorf("a decide step in a run was recorded twice: %+v", asked)
+	}
+}
+
+// An agent looking for the right operation in plain words is sent to the
+// deciders when what it wants is a judgement. Asked for "triage a support
+// ticket", quilzo_find put agent_activity first: every query word was
+// matched as a substring, so "a" scored on almost every operation, and
+// twice over on one whose name has an "a" in it.
+//
+// And the words it compares keep what a short one says: with only words of
+// three letters counted, the "A/B" of "A/B testing" was nothing, and the
+// chatbots' operation, which mentions testing one, came before the A/B
+// tests' own.
+func TestFindingADecisionInPlainWordsFindsTheDeciders(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := t.TempDir() + "/st"
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := buildMCP(root, s, asAdmin("dana"), "templates")
+	first := regexp.MustCompile(`(?m)^(\S+) — `)
+	for query, want := range map[string]string{
+		"triage a support ticket":     "decide",
+		"classify a comment":          "decide",
+		"route an incoming request":   "decide",
+		"score a lead":                "decide",
+		"which deciders are there":    "list_deciders",
+		"what agents have been doing": "agent_activity",
+		"list the pages":              "list_pages",
+		"a/b test":                    "experiment_report",
+		"A/B testing":                 "experiment_report",
+		"ab test":                     "experiment_report",
+	} {
+		params, _ := json.Marshal(map[string]any{"name": "quilzo_find", "arguments": map[string]any{"query": query}})
+		resp := srv.Handle(mcp.Request{JSONRPC: "2.0", ID: json.RawMessage(`1`), Method: "tools/call", Params: params})
+		if resp.Error != nil {
+			t.Fatal(resp.Error.Message)
+		}
+		b, _ := json.Marshal(resp.Result)
+		var r struct{ Content []struct{ Text string } }
+		_ = json.Unmarshal(b, &r)
+		var got []string
+		for _, m := range first.FindAllStringSubmatch(r.Content[0].Text, 3) {
+			got = append(got, m[1])
+		}
+		if len(got) == 0 || got[0] != want {
+			t.Errorf("%q found %v first, not %s", query, got, want)
+		}
+	}
+}
+
+// A decision asked for outside an agent's run is on the record: which
+// decider, what it answered and how sure it was, whether a person has to
+// decide, and who asked, from the command line, the Decisions screen and
+// the agent interface alike. A single ask wrote nothing, so an automated
+// decision about somebody's ticket left no trace. The state is somebody's
+// words and is never written, only its digest; inside a run, the run's
+// step is the record and nothing is written twice.
+func TestADecisionAskedIsOnTheRecord(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := publishedShop(t)
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"choices":[{"message":{"content":` +
+			`"{\"answers\": {\"queue\": {\"value\": \"returns\", \"confidence\": 0.9}}}"}}]}`))
+	}))
+	defer model.Close()
+	if err := cmdGateway(root, []string{"route", "add", "local", "--url", model.URL + "/v1", "--model", "m"}); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(t.TempDir(), "d.json")
+	os.WriteFile(file, []byte(ticketDecider), 0o600)
+	if err := cmdDecide(root, []string{"set", file}); err != nil {
+		t.Fatal(err)
+	}
+	const state = `{"body": "Refund please, Jo Bloggs, 07700 900123"}`
+	if err := cmdDecide(root, []string{"ask", "ticket", state}); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var st any
+	_ = json.Unmarshal([]byte(state), &st)
+	srv := buildMCP(root, s, asAdmin("dana"), "templates")
+	if _, e := callTool(t, srv, "quilzo_read", "decide", map[string]any{"name": "ticket", "state": st}); e != nil {
+		t.Fatal(e.Message)
+	}
+	screen := decidersCapability(root)
+	d, _ := loadDecider(root, "ticket")
+	m, _ := screen.Model("ticket")
+	res, err := decide.Decide(context.Background(), d, m, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	screen.Asked("dana", res, st)
+
+	got := auditFor(t, root, "decide.asked")
+	if len(got) != 3 {
+		t.Fatalf("%d asks are on the record, not 3: %+v", len(got), got)
+	}
+	digest := got[0].Detail["state_sha256"]
+	for _, r := range got {
+		if r.Resource != "/decide/ticket" || r.Detail["decider"] != "ticket" ||
+			!strings.Contains(r.Detail["answers"], "queue=returns") || r.Detail["confidence"] != "0.90" ||
+			r.Detail["escalated"] != "false" || r.Principal == "" || len(digest) != 64 || r.Detail["state_sha256"] != digest {
+			t.Errorf("the record says %+v", r)
+		}
+		for _, k := range []string{"Refund", "Bloggs", "07700"} {
+			for _, v := range r.Detail {
+				if strings.Contains(v, k) {
+					t.Errorf("the record holds the state: %+v", r.Detail)
+				}
+			}
 		}
 	}
 }

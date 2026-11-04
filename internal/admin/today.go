@@ -304,10 +304,13 @@ func (s *Server) glance(p principal, visible map[string]bool, now time.Time) tod
 			g.Starts = append(g.Starts, glanceItem{Text: text, Href: href})
 		}
 	}
+	// Each lands on the part of its screen that does what it says. They
+	// opened the top of Media, Make and Chatbots, screens with other names,
+	// and on Make the form for a feature was five sections down.
 	start("pages", "Write a page", "/#newpage-name")
-	start("media", "Upload a picture", "/media")
-	start("make", "Add a feature", "/make")
-	start("assistants", "Add a chatbot", "/assistants")
+	start("media", "Upload a picture", "/media#m-file")
+	start("make", "Add a feature", "/make#make-add")
+	start("assistants", "Add a chatbot", "/assistants#new-chatbot")
 	start("review", "Review and publish", "/review")
 	return g
 }

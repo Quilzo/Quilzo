@@ -355,7 +355,7 @@ reference.
 | **Selling to shopping agents** | The catalogue listing as a machine-readable feed, and over the Universal Commerce Protocol: shopping agents search it, look products up and read prices from the published records. Read-only: an agent buys from the product's page. | `site.catalogue`, `ucp.catalogue`; `/catalogue.json`, `/.well-known/ucp` |
 | **Languages** | Locales, stale and missing translations. | `quilzo lang` |
 | **Out and in** | Export to Markdown (Hugo, Astro, Eleventy, Jekyll), WordPress WXR, lossless JSON and RO-Crate; import from WordPress; replicas; the permanent web (IPFS); the fediverse (ActivityPub). | `quilzo export\|import\|peer\|ipfs\|fediverse` |
-| **API** | A content API, read-only or writable with If-Match, and a playground in the admin; it describes itself as OpenAPI 3.1 at `/api/v1/openapi.json`, for client generators and agents. | `quilzo site --api`; API screen |
+| **API** | A content API, read-only or writable with If-Match, and a playground in the admin; it describes itself as OpenAPI 3.1 at `/api/v1/openapi.json`, for client generators and agents. | `quilzo site --api`; API playground screen |
 | **Checks** | XSS, injection and leaked secrets in content; the content security policy your content implies; claims that need substantiating; image licences. | `quilzo scan\|csp\|brand\|rights` |
 | **Extensions** | Your own code that observes or transforms content, run in a sandbox outside the process, pinned by digest. | `quilzo ext list\|add\|pin\|test` |
 
@@ -378,7 +378,7 @@ line and not yet a product of their own.
 | **One binary** | The admin on loopback, the public site on its own listener, installable as an app; the command line does everything the screens do. | `quilzo serve`, `quilzo site` |
 | **Every connection named** | Each outbound connection has a declared purpose and is checked against the address actually dialled, after DNS. Offline mode refuses every connection that would leave the host, and names the feature that wanted it. | `quilzo network`; setting `network.mode` |
 | **Settings that explain themselves** | Every setting with what it is for and what it costs; one that weakens security needs a stated reason. | `quilzo config explain KEY`, `config set … --accept-risk "why"` |
-| **What each part holds** | What each process holds and what running two together costs; what a role can be handed by a situation. | `quilzo boundary show\|credentials`, `standing list` |
+| **What a situation can hand somebody** | What a role can be handed by a situation, and what it cannot. | `quilzo standing list` |
 | **Isolated networks** | A classification marking, and paperwork for carrying an export across, checked on arrival. | `quilzo marking`, `transfer record\|verify` |
 | **Find anything** | A command palette over every screen, page, setting and type. | Ctrl K in the admin; `quilzo find WORDS` |
 | **Exit codes** | 3 when a gate refused, distinct from 1 when the command failed. | `--json` on every command |

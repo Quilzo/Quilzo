@@ -471,13 +471,17 @@ func exportSubscribers(root string, w io.Writer, caller *Caller) (int, error) {
 
 // newsletterProblems is what stops the site taking sign-ups or sending
 // issues, as a person fixes it.
+//
+// What goes in mail.json is said here. The advice pointed at `quilzo help
+// mail`, and there is no mail command: the help printed all of itself, and
+// nothing in it said what the file holds.
 func newsletterProblems(root string) []string {
 	var out []string
 	if m, err := loadMailer(root); err != nil {
 		out = append(out, "Mail is set up wrongly: "+err.Error())
 	} else if m == nil {
 		out = append(out, "No mail is set up, so the site cannot mail a sign-up its link. Put your relay in mail.json "+
-			"(quilzo help mail).")
+			`in the store: {"host": "HOST:PORT", "from": "ADDRESS"}, with "username" and "password" when it asks for them.`)
 	}
 	base := siteBaseURL(root)
 	if u, err := url.Parse(base); base == "" || err != nil || u.Scheme != "https" {

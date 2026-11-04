@@ -391,6 +391,11 @@ func report(lines []string, label, emphasis string) {
 }
 
 // wrapIndent wraps text to a width, indenting continuation lines.
+//
+// The width is the text's, on every line. The indent was counted against
+// it on the lines after the first, so a summary printed at column 38 and
+// wrapped to 44 had six columns left after its first line, and `quilzo
+// theme tokens` put "else", "answers" and "to" on a line each.
 func wrapIndent(s string, width, indent int) string {
 	words := strings.Fields(s)
 	var b strings.Builder
@@ -398,7 +403,7 @@ func wrapIndent(s string, width, indent int) string {
 	for i, word := range words {
 		if col+len(word) > width && i > 0 {
 			b.WriteString("\n" + strings.Repeat(" ", indent))
-			col = indent
+			col = 0
 		} else if i > 0 {
 			b.WriteString(" ")
 			col++

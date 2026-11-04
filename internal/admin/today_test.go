@@ -4,13 +4,16 @@
 package admin
 
 import (
+	"html"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
+	"github.com/quilzo/quilzo/internal/assistant"
 )
 
 // Today lists what waits first, what cannot be taken back before what
@@ -102,4 +105,50 @@ func requestFor(t *testing.T, path string) *http.Request {
 		t.Fatal(err)
 	}
 	return r
+}
+
+// Every way to start something on Today lands where it is done. The
+// buttons say what they do, "Upload a picture" and "Add a feature", and
+// opened the top of Media, Make and Chatbots: a screen with another name,
+// and on Make the form for a feature five sections down. Each now lands
+// on the part of its screen that does it, as Write a page always did, or
+// opens a screen whose name its own begins with.
+func TestEveryStartLandsWhereItIsDone(t *testing.T) {
+	srv, token := fullyWired(t)
+	wireFeatures(srv)
+	srv.Assistants = (&fakeAssistants{set: &assistant.Set{}}).wire()
+	body := get(t, srv, "/today", token).Body.String()
+	nav := regexp.MustCompile(`(?s)<nav class="glance-starts"[^>]*>(.*?)</nav>`).FindStringSubmatch(body)
+	if nav == nil {
+		t.Fatal("Today shows no way to start something")
+	}
+	link := regexp.MustCompile(`<a [^>]*href="([^"]+)"[^>]*>([^<]+)</a>`)
+	heading := regexp.MustCompile(`(?s)<h1[^>]*>(.*?)</h1>`)
+	starts := link.FindAllStringSubmatch(nav[1], -1)
+	for _, m := range starts {
+		href, label := html.UnescapeString(m[1]), html.UnescapeString(m[2])
+		path, frag, _ := strings.Cut(href, "#")
+		w := get(t, srv, path, token)
+		if w.Code != http.StatusOK {
+			t.Errorf("%q goes to %s, which answered %d", label, path, w.Code)
+			continue
+		}
+		page := w.Body.String()
+		if frag != "" {
+			if !strings.Contains(page, `id="`+frag+`"`) {
+				t.Errorf("%q goes to #%s, which %s does not have", label, frag, path)
+			}
+			continue
+		}
+		h1 := ""
+		if h := heading.FindStringSubmatch(page); h != nil {
+			h1 = strings.TrimSpace(h[1])
+		}
+		if h1 == "" || !strings.HasPrefix(label, h1) {
+			t.Errorf("%q opens the top of a screen called %q", label, h1)
+		}
+	}
+	if len(starts) < 5 {
+		t.Fatalf("only %d ways to start something", len(starts))
+	}
 }

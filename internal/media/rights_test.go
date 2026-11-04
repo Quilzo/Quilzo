@@ -183,3 +183,57 @@ func TestAnExpiryReadsBackAsTheDateItWasWritten(t *testing.T) {
 		t.Error("still in term the day after it ended")
 	}
 }
+
+// A licence's address is its identifier. Recording a CC0 asset by the
+// address its pack links to was refused, "use a short name", while a
+// sentence of plain words was taken; the common licences' addresses are
+// read as their SPDX ids now, and an id in another case as the id. What
+// was accepted before still is.
+func TestALicencesAddressIsItsIdentifier(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://creativecommons.org/publicdomain/zero/1.0/":          "CC0-1.0",
+		"http://creativecommons.org/publicdomain/zero/1.0/legalcode":  "CC0-1.0",
+		"creativecommons.org/publicdomain/zero/1.0/deed.en":           "CC0-1.0",
+		"https://creativecommons.org/licenses/by/4.0/":                "CC-BY-4.0",
+		"https://www.creativecommons.org/licenses/by-sa/4.0/deed.fr":  "CC-BY-SA-4.0",
+		"https://creativecommons.org/licenses/by-nc-nd/3.0/legalcode": "CC-BY-NC-ND-3.0",
+		"https://spdx.org/licenses/CC-BY-4.0.html":                    "CC-BY-4.0",
+		"cc0-1.0":                          "CC0-1.0",
+		"cc-by-sa-4.0":                     "CC-BY-SA-4.0",
+		"CC0-1.0":                          "CC0-1.0",
+		"commissioned":                     "commissioned",
+		"Original work made for this site": "Original work made for this site",
+		"https://creativecommons.org/licenses/by/3.0/de/": "https://creativecommons.org/licenses/by/3.0/de/",
+		"https://example.com/licence":                     "https://example.com/licence",
+	} {
+		if got := LicenceID(in); got != want {
+			t.Errorf("%q is read as %q, not %q", in, got, want)
+		}
+	}
+	for _, ok := range []string{"https://creativecommons.org/publicdomain/zero/1.0/", "cc-by-4.0"} {
+		if err := (Rights{Licence: LicenceID(ok)}).Validate(rightsNow); err != nil {
+			t.Errorf("%q was refused: %v", ok, err)
+		}
+	}
+	// An address inside a sentence is still a sentence, and the refusal
+	// names the identifier to record instead.
+	err := (Rights{Licence: "CC0, see https://creativecommons.org/publicdomain/zero/1.0/"}).Validate(rightsNow)
+	if err == nil || !strings.Contains(err.Error(), "CC0-1.0") {
+		t.Errorf("the refusal does not name the licence: %v", err)
+	}
+}
+
+// SPDX's page for a licence is read as the id it is named by, in its own
+// case; an address that is not quite one is left as it was written.
+func TestAnSPDXPageIsItsID(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://spdx.org/licenses/MIT.html":        "MIT",
+		"https://spdx.org/licenses/Apache-2.0.html": "Apache-2.0",
+		"spdx.org/licenses/OFL-1.1":                 "OFL-1.1",
+		"https://spdx.org/licenses/İ.html":          "https://spdx.org/licenses/İ.html",
+	} {
+		if got := LicenceID(in); got != want {
+			t.Errorf("%q is read as %q, not %q", in, got, want)
+		}
+	}
+}

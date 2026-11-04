@@ -159,7 +159,7 @@ func playgroundHTML(nonce, who, theme, home string, routes []Route) string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>API playground</title>
+<title>API playground — Quilzo</title>
 <link rel="stylesheet" href="/style.css">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <style>

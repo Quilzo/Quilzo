@@ -44,11 +44,15 @@ import (
 // site, and this one cannot.
 
 func mediaReplace(root string, args []string) error {
-	pos, flags := leadingArgs(args, 2)
 	fs := flag.NewFlagSet("replace", flag.ContinueOnError)
 	recordOnly := fs.Bool("record-only", false,
 		"note the succession and leave the content pointing at the old file")
-	if err := fs.Parse(flags); err != nil {
+	// The flags on either side of what it acts on, as `media captions` takes
+	// them. Read from the front only,
+	// `quilzo media replace --record-only OLD NEW` was answered with the usage
+	// line.
+	pos, err := parseAnywhere(fs, args)
+	if err != nil {
 		return err
 	}
 	if len(pos) != 2 {

@@ -32,8 +32,12 @@ func mediaFilm(root string, args []string) error {
 	aspect := fs.String("aspect", "16:9", "the shape: 16:9 or 9:16")
 	author := fs.String("author", "", "the person accountable for publishing this")
 	name := fs.String("name", "", "what to call the video in the library")
-	rest, flags := leadingArgs(args, 1)
-	if err := fs.Parse(flags); err != nil {
+	// The flags on either side of what it acts on, as `media captions` takes
+	// them. Read from the front only,
+	// `quilzo media film --author WHO "prompt"` was answered with the usage
+	// line.
+	rest, err := parseAnywhere(fs, args)
+	if err != nil {
 		return err
 	}
 	if len(rest) != 1 {

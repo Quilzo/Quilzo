@@ -48,7 +48,10 @@ func registerDecideOps(srv *mcp.Server, root string, caller *Caller) {
 			"name":  "the decider",
 			"state": "any JSON value: the ticket, the comment, the alert",
 		},
-		Keywords: []string{"decide", "classify", "route", "score", "gate"},
+		// The words somebody uses for a judgement they want made: an agent
+		// asking for "triage a support ticket" was sent to agent_activity.
+		Keywords: []string{"decide", "classify", "route", "score", "gate", "triage",
+			"ticket", "label", "judge", "categorise", "categorize"},
 	}, func(a map[string]any) (any, error) {
 		// A read. What it spends is bounded by the gateway's budget for
 		// "decider:NAME", which is where a cost limit belongs.
@@ -67,6 +70,7 @@ func registerDecideOps(srv *mcp.Server, root string, caller *Caller) {
 		if err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
+		recordAsk(root, caller, res, a["state"])
 		b, err := json.Marshal(res)
 		return string(b), err
 	})

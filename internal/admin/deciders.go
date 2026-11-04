@@ -23,6 +23,11 @@ type Deciders struct {
 	Load  func() (*decide.Set, error)
 	Save  func(set *decide.Set, by, change, name string) error
 	Model func(name string) (decide.Model, string)
+	// Asked records an answer the screen's console was given, and who
+	// asked for it. Trying a decider is asking it: the answer is the one
+	// the command line and the agent interface would have given, and an
+	// ask here left no trace of what was decided or by whom.
+	Asked func(by string, res decide.Result, state any)
 }
 
 // exampleDecider is what the new-decider box starts with, so the shape of a
@@ -113,6 +118,9 @@ func (s *Server) handleDecider(w http.ResponseWriter, r *http.Request) {
 			} else {
 				if res.Note == "" && why != "" {
 					res.Note = why
+				}
+				if s.Deciders.Asked != nil {
+					s.Deciders.Asked(p.Name, res, state)
 				}
 				data["Res"] = res
 			}

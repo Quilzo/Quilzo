@@ -77,7 +77,7 @@ func (s *Server) handleAssistants(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data := map[string]any{
-		"Nav": "assistants", "Title": "Assistants", "Principal": p,
+		"Nav": "assistants", "Title": "Chatbots", "Principal": p,
 		"Message": r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"),
 		"CanSave": s.mayUse(p, auth.ActPublish, "/") && !p.Limits.ReadOnly,
 	}

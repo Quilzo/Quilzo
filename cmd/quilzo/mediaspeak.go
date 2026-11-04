@@ -35,8 +35,11 @@ func mediaSpeak(root string, args []string) error {
 	voice := fs.String("voice", "alloy", "the voice, as the route's model names its voices")
 	author := fs.String("author", "", "the person accountable for publishing this")
 	name := fs.String("name", "", "what to call the recording in the library")
-	rest, flags := leadingArgs(args, 1)
-	if err := fs.Parse(flags); err != nil {
+	// The flags on either side of what it acts on, as `media captions` takes
+	// them. Read from the front only, `quilzo media speak --author WHO "text"`
+	// was answered with the usage line.
+	rest, err := parseAnywhere(fs, args)
+	if err != nil {
 		return err
 	}
 	if len(rest) != 1 {

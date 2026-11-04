@@ -753,6 +753,16 @@ func main() {
 	// did. A command that parses its flags first is let through after the
 	// lines, to list them; anything else stops here.
 	asked := false
+	if _, known := lookupNeed(cmd, cmdArgs); known && helpAfter(cmd, cmdArgs) &&
+		!strings.HasPrefix(cmd, "__") {
+		commandHelp(cmd, cmdArgs[1:])
+		return
+	}
+	if _, known := lookupNeed(cmd, cmdArgs); known && helpAfterSub(cmd, cmdArgs) &&
+		!strings.HasPrefix(cmd, "__") {
+		commandHelp(cmd, cmdArgs[:1])
+		return
+	}
 	if _, known := lookupNeed(cmd, cmdArgs); known && helpAsked(cmdArgs) &&
 		!strings.HasPrefix(cmd, "__") && !helpOrVersion[cmd] {
 		asked = true
