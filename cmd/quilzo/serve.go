@@ -65,6 +65,7 @@ import (
 	"github.com/quilzo/quilzo/internal/shield"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/sitereport"
+	"github.com/quilzo/quilzo/internal/store"
 	"github.com/quilzo/quilzo/internal/taxonomy"
 	"github.com/quilzo/quilzo/internal/upkeep"
 	"github.com/quilzo/quilzo/internal/webhook"
@@ -711,30 +712,7 @@ func cmdServe(root string, args []string) error {
 			Every: func() time.Duration { return reviewEvery(root) },
 		}
 	}
-	srv.Approvals = &admin.Approvals{
-		Policy: func() (collab.Policy, error) { return loadApprovalPolicy(root) },
-		Current: func() (*collab.Proposal, error) {
-			prop, _, err := currentProposal(root, s)
-			return prop, err
-		},
-		For: func(commit string) (*collab.Proposal, error) {
-			prop, _, err := proposalFor(root, s, commit)
-			return prop, err
-		},
-		Save: func(prop *collab.Proposal) error {
-			return saveProposal(root, s, prop)
-		},
-		KindOf: func(principal string) string {
-			return principalKind(root, principal)
-		},
-		Notify: func(prop *collab.Proposal) {
-			notifyProposed(root, prop)
-		},
-		SecondPerson: func(prop collab.Proposal, by string) (bool, error) {
-			// A person signed in to the admin, as sessionCaller makes one.
-			return secondPersonForDraft(root, s, prop, &Caller{Name: by, Kind: audit.KindHuman, Verified: true})
-		},
-	}
+	srv.Approvals = approvalsHooks(root, s)
 	srv.Listings = &admin.Listings{
 		Load: func() (*listing.Set, error) { return loadListings(root) },
 		Save: func(set *listing.Set) error { return saveJSON(listingPath(root), set) },
@@ -1392,4 +1370,38 @@ func retentionJob(root string) (upkeep.Job, bool) {
 			return n + gone, err
 		},
 	}, true
+}
+
+// approvalsHooks gives the admin the approval policy and the proposals the
+// command line and the machine interface read, from the same files.
+//
+// A function of its own, rather than built inline in cmdServe, so a test
+// can put the browser's publish in front of the policy loader the server
+// really uses: the browser published a model's draft that the other two
+// surfaces refused, and only a test against this wiring would have said so.
+func approvalsHooks(root string, s *store.Store) *admin.Approvals {
+	return &admin.Approvals{
+		Policy: func() (collab.Policy, error) { return loadApprovalPolicy(root) },
+		Current: func() (*collab.Proposal, error) {
+			prop, _, err := currentProposal(root, s)
+			return prop, err
+		},
+		For: func(commit string) (*collab.Proposal, error) {
+			prop, _, err := proposalFor(root, s, commit)
+			return prop, err
+		},
+		Save: func(prop *collab.Proposal) error {
+			return saveProposal(root, s, prop)
+		},
+		KindOf: func(principal string) string {
+			return principalKind(root, principal)
+		},
+		Notify: func(prop *collab.Proposal) {
+			notifyProposed(root, prop)
+		},
+		SecondPerson: func(prop collab.Proposal, by string) (bool, error) {
+			// A person signed in to the admin, as sessionCaller makes one.
+			return secondPersonForDraft(root, s, prop, &Caller{Name: by, Kind: audit.KindHuman, Verified: true})
+		},
+	}
 }

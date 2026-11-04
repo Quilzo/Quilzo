@@ -219,6 +219,56 @@ func TestDuplicateSlugsAreMadeUnique(t *testing.T) {
 	if len(rep.Pages) != 3 {
 		t.Errorf("got %d pages", len(rep.Pages))
 	}
+	// Numbered from the name they share, and not each from the one before:
+	// the third was "same-2-3".
+	var names []string
+	for _, p := range rep.Pages {
+		names = append(names, p.Name)
+	}
+	if got := strings.Join(names, ","); got != "same,same-2,same-3" {
+		t.Errorf("the pages are named %s, not same,same-2,same-3", got)
+	}
+}
+
+// Items that would have the same name are numbered from that name, and
+// finding the next number does not start again for each.
+//
+// Each was numbered from the name the one before it was given, so the
+// thousandth of a thousand posts called "same" was same-2-3-4-…-1000,
+// built by walking every name before it: an export of 10,000 same-titled
+// items took seven minutes of CPU to import, and a feed an author brought
+// could hold a CPU for an hour.
+func TestSameTitledItemsAreNumberedFromTheirBaseInTimeInProportionToThem(t *testing.T) {
+	item := func(name string) string {
+		return `<item><title>Same</title><wp:post_name>` + name + `</wp:post_name>` +
+			`<wp:post_type>post</wp:post_type><wp:status>publish</wp:status></item>`
+	}
+	var b strings.Builder
+	b.WriteString(item("same"))
+	b.WriteString(item("same-3"))
+	for i := 0; i < 10000; i++ {
+		b.WriteString(item("same"))
+	}
+	doc := wxrDoc(b.String())
+
+	start := time.Now()
+	rep, err := Import(WordPress, strings.NewReader(doc), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if took := time.Since(start); took > 5*time.Second {
+		t.Errorf("importing %d same-titled items took %v", len(rep.Pages), took)
+	}
+	if len(rep.Pages) != 10002 {
+		t.Fatalf("got %d pages, not 10002", len(rep.Pages))
+	}
+	var first []string
+	for _, p := range rep.Pages[:5] {
+		first = append(first, p.Name)
+	}
+	if got, last := strings.Join(first, ","), rep.Pages[len(rep.Pages)-1].Name; got != "same,same-3,same-2,same-4,same-5" || last != "same-10002" {
+		t.Errorf("the pages are named %s ... %s", got, last)
+	}
 }
 
 // A page name becomes part of a URL and a key in the store, so it has to be

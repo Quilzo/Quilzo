@@ -9,7 +9,6 @@ import (
 	"html/template"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -211,21 +210,15 @@ func (st *Site) newsletterSubscribe(w http.ResponseWriter, r *http.Request) {
 	}
 	now := st.newsletterNow()
 	// The two checks a form makes: a field nobody sees, and a page read by
-	// a person for at least two seconds. No upper bound on the page's age:
-	// a page with a sign-up in its footer is cached, and an old one is
-	// still somebody's page.
+	// a person for at least two seconds (form.CheckHuman). No upper bound
+	// on the page's age: a page with a sign-up in its footer is cached, and
+	// an old one is still somebody's page.
 	//
 	// Said to the shield as "newsletter:signup", with a colon no form's
 	// name can have. It was "newsletter", and the shield took that for a
 	// form of that name: a flood here closed a form called newsletter, if
 	// there was one, and left this open.
-	if strings.TrimSpace(r.PostFormValue(form.Honeypot)) != "" {
-		st.signal(FormSpam, "newsletter:signup", r)
-		fail("refused")
-		return
-	}
-	started, err := strconv.ParseInt(strings.TrimSpace(r.PostFormValue(form.StampField)), 10, 64)
-	if err != nil || now.Unix()-started < form.MinFillSeconds {
+	if form.CheckHuman(r.PostFormValue(form.Honeypot), r.PostFormValue(form.StampField), now, 0) != nil {
 		st.signal(FormSpam, "newsletter:signup", r)
 		fail("refused")
 		return

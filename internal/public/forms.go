@@ -88,6 +88,23 @@ type Forms struct {
 	// Nil means nothing is configured, which is the ordinary case and is not
 	// an error.
 	Notify func(formName string)
+	// Now is the clock; nil is time.Now, as for bookings and the newsletter.
+	//
+	// A test holds it so a page stamped a second ago is judged a second
+	// old. On the real clock a second could tick over between the test
+	// stamping the page and this route reading the time, so a page sent a
+	// second after it was read was judged two seconds old, and a person's,
+	// about once in six hundred tries: the test that the form, a booking
+	// and the sign-up judge alike failed now and then for no fault in any
+	// of them.
+	Now func() time.Time
+}
+
+func (st *Site) formsNow() time.Time {
+	if st.Forms != nil && st.Forms.Now != nil {
+		return st.Forms.Now()
+	}
+	return time.Now()
 }
 
 // submit receives one form.
@@ -183,7 +200,7 @@ func (st *Site) submit(w http.ResponseWriter, r *http.Request) {
 		st.Forms.Limit.Spend(throttle.Subject{Source: source})
 	}
 
-	sub, err := form.AcceptWithFiles(f, values, files, source, time.Now())
+	sub, err := form.AcceptWithFiles(f, values, files, source, st.formsNow())
 	if err != nil {
 		if st.Forms.Audit != nil {
 			st.Forms.Audit(name, source, false)

@@ -39,7 +39,17 @@ func Write(t *schema.Type, recs []collection.Record, opts WriteOptions) []byte {
 	}
 	w := csv.NewWriter(&buf)
 	w.UseCRLF = true
-	_ = w.Write(append([]string{"id"}, cols...))
+	// The headings through the guard as well as the values. A collection
+	// bound to no type takes a record with any field name, and a field
+	// named =HYPERLINK(…) was a formula at the top of the file the owner
+	// opened. A name that is a word, as every declared field is, is
+	// written as it was.
+	head := make([]string, 0, len(cols)+1)
+	head = append(head, "id")
+	for _, c := range cols {
+		head = append(head, guardFormula(c))
+	}
+	_ = w.Write(head)
 	sorted := append([]collection.Record(nil), recs...)
 	sort.SliceStable(sorted, func(i, j int) bool {
 		if sorted[i].Created != sorted[j].Created {
@@ -133,14 +143,5 @@ func cell(v any) string {
 }
 
 // guardFormula keeps a cell from being run as a formula by the spreadsheet
-// it is opened in: one beginning = + - @ or a tab or carriage return, and
-// not a number, is written after an apostrophe, which reading takes off.
-func guardFormula(s string) string {
-	if s == "" || !strings.ContainsRune("=+-@\t\r", rune(s[0])) {
-		return s
-	}
-	if _, err := strconv.ParseFloat(s, 64); err == nil {
-		return s
-	}
-	return "'" + s
-}
+// it is opened in (GuardCell).
+func guardFormula(s string) string { return GuardCell(s) }

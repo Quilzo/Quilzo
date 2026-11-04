@@ -110,6 +110,15 @@ type approvalState struct {
 	// approval a reading rather than a signature.
 	MachineWrote bool
 	Wrote        string
+
+	// Unreadable is why the approval policy could not be read, when it
+	// could not. Not the same as "not configured": that answer let the
+	// browser publish past a damaged approval.json as though nothing were
+	// required, while the machine interface refused.
+	Unreadable string
+	// PersonOnly says no count is set and the one approval needed is a
+	// person's, because a model wrote the change.
+	PersonOnly bool
 }
 
 // approvalFor builds the state for the review screen.
@@ -117,22 +126,59 @@ type approvalState struct {
 // Returns a zero value with Configured false when dual authorisation is off,
 // which is a legitimate configuration for one person running their own site
 // and a terrible one for anybody else — the screen says which.
+//
+// Off means no count of approvals and nothing a model wrote. A person
+// approves what a model wrote whatever the count, and nothing turns that
+// off (cmd/quilzo loadApprovalPolicy), so a policy whose count is zero is
+// still asked about a model's draft. It was not: this answered "not
+// configured" whenever the count was zero, which on a store nobody
+// configured is always, and the browser published an agent's draft that
+// the command line and the machine interface refused.
 func (s *Server) approvalFor(p principal, draft string) approvalState {
 	if s.Approvals == nil || s.Approvals.Policy == nil {
 		return approvalState{}
 	}
 	pol, err := s.Approvals.Policy()
-	if err != nil || pol.Required == 0 {
+	if err != nil {
+		return approvalState{Unreadable: err.Error()}
+	}
+	// How many are needed, counting the people a policy asks for as well
+	// as the approvals. approval.required_humans is a setting of its own
+	// ("set to two, nothing publishes without two people"), and this asked
+	// only about review.required_approvals: with that at zero a person's
+	// draft published from here unapproved while the command line and the
+	// machine interface refused it, and with it below the people asked for
+	// the screen said "1 of 1" beside a refusal.
+	counted := max(pol.Required, pol.RequiredHumans)
+	if counted <= 0 && !pol.RequireHumanForAI {
 		return approvalState{}
 	}
-
-	st := approvalState{Configured: true, Need: pol.Required}
 
 	prop, err := s.Approvals.Current()
 	if s.Approvals.For != nil && draft != s.Store.GetRef(site.RefDraft) {
 		prop, err = s.Approvals.For(draft)
 	}
-	if err != nil || prop == nil {
+	if err != nil {
+		prop = nil
+	}
+
+	need := counted
+	if need <= 0 {
+		// Only the rule about a model's work applies, and only to a model's
+		// work: one person running their own site publishes their own words
+		// with nobody else asked, as before.
+		if !machineWrote(s, draft, prop) {
+			return approvalState{}
+		}
+		// One approval, from a person, is what that rule needs. Said as a
+		// number so the screen does not read "0 of 0 approvals" beside a
+		// refusal, and so Approvals lists it for whoever may give it.
+		need = 1
+	}
+
+	st := approvalState{Configured: true, Need: need, PersonOnly: counted <= 0}
+
+	if prop == nil {
 		st.Why = "Nobody has offered this for review yet."
 		return st
 	}
@@ -185,6 +231,17 @@ func (s *Server) approvalFor(p principal, draft string) approvalState {
 		}
 	}
 	return st
+}
+
+// machineWrote reports whether a model wrote the commit being published:
+// its message says so, or the proposal for exactly these bytes was made as
+// a model's (collab.AuthorKindFor).
+func machineWrote(s *Server, commit string, prop *collab.Proposal) bool {
+	if prop != nil && prop.Content == commit && prop.AuthorKind == "ai" {
+		return true
+	}
+	c, err := s.Store.GetCommit(commit)
+	return err == nil && collab.MachineWrote(c.Message)
 }
 
 // handlePropose offers the current draft for review.
@@ -310,12 +367,25 @@ func (s *Server) handleApprove(w http.ResponseWriter, r *http.Request) {
 // gates accept: an accessibility failure somebody accepts responsibility for is
 // a judgement call, and "publish without the approvals the policy requires" is
 // the thing the policy exists to prevent.
+//
+// A policy that cannot be read refuses, as the machine interface and the
+// command line do: a gate that cannot run must not answer like a gate that
+// passed.
 func (s *Server) blockedByApproval(p principal, draft string) string {
 	st := s.approvalFor(p, draft)
+	if st.Unreadable != "" {
+		return "The approval policy could not be read, so publishing would " +
+			"claim a check that did not happen: " + st.Unreadable
+	}
 	if !st.Configured {
 		return ""
 	}
 	if !st.Proposed {
+		if st.PersonOnly {
+			return "A model wrote this change, so a person approves it before " +
+				"it is published. Offer it for review below, and somebody " +
+				"who may publish approves it here."
+		}
 		return "This store requires approval before publishing, and nothing " +
 			"has been proposed for review."
 	}
@@ -325,6 +395,12 @@ func (s *Server) blockedByApproval(p principal, draft string) string {
 			"names the exact bytes it agreed to."
 	}
 	if !st.Allowed {
+		if st.MachineWrote || st.AuthorKind == "ai" {
+			// Where to give it, beside what is needed: the reason says a
+			// person, and the screen it is shown on is where they approve.
+			return st.Reason + " Somebody who may publish, and did not " +
+				"write it, approves it under Approval on this screen."
+		}
 		return st.Reason
 	}
 	return ""

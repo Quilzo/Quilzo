@@ -267,6 +267,9 @@ func importWXR(body []byte, now time.Time) (*Report, error) {
 	}
 
 	seen := map[string]bool{}
+	// next is, for a name taken, the number to try first: every one below
+	// it is taken (as webimport's postSlugs keeps it).
+	next := map[string]int{}
 	unchanged := 0
 	for _, item := range doc.Channel.Items {
 		if len(rep.Pages) >= MaxPages {
@@ -303,8 +306,14 @@ func importWXR(body []byte, now time.Time) (*Report, error) {
 			rep.Skipped = append(rep.Skipped, "an item with no title or slug")
 			continue
 		}
-		for n := 2; seen[name]; n++ {
-			name = fmt.Sprintf("%s-%d", name, n)
+		// Numbered from the name the items share. Each was numbered from
+		// the name the one before it was given, so the thousandth "same" was
+		// same-2-3-4-…-1000, found by building every name before it: 10,000
+		// same-titled items took seven minutes of CPU to import.
+		base := name
+		for n := max(2, next[base]); seen[name]; n++ {
+			name = fmt.Sprintf("%s-%d", base, n)
+			next[base] = n + 1
 		}
 		seen[name] = true
 

