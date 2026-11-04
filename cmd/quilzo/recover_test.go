@@ -4,9 +4,11 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
@@ -79,11 +81,12 @@ func TestTheFirstAdministratorCanRecover(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("QUILZO_TOKEN", "")
 	root := connectStore(t)
-	_, link := captureStdout(t)
+	// The enrolment link goes to the program's writer, not to the test's
+	// output, where it would be a credential printed.
+	w.Out = &bytes.Buffer{}
 	if err := initAdmin(root, []string{"--admin", "owner"}, true); err != nil {
 		t.Fatal(err)
 	}
-	link()
 	_, printed := captureStdout(t)
 	err := cmdRecover(root, []string{"--principal", "owner", "--reason", "the passkey was lost",
 		"--i-have-filesystem-access"})
@@ -116,5 +119,60 @@ func TestTheFirstAdministratorCanRecover(t *testing.T) {
 	}
 	if got := auditFor(t, root, "auth.break-glass"); len(got) != 1 || got[0].Detail["granted"] == "" {
 		t.Errorf("the recovery is not on the record: %+v", got)
+	}
+}
+
+// An administrator whose grant has ended, or reaches only the pages they
+// created, recovers to the grant the recovery makes. Such a grant matched
+// it, so it was taken as held and left as it was, and the credential the
+// recovery printed could administer nothing: the lockout this command
+// exists to end, reported as ended.
+func TestAnAdministratorWhoseGrantLapsedRecoversTheWholeOfIt(t *testing.T) {
+	for name, limit := range map[string]func(*auth.Binding){
+		"ended":    func(b *auth.Binding) { b.Expires = time.Now().Add(-time.Hour).Unix() },
+		"own only": func(b *auth.Binding) { b.OwnOnly = true },
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("QUILZO_TOKEN", "")
+			root := connectStore(t)
+			w.Out = &bytes.Buffer{}
+			if err := initAdmin(root, []string{"--admin", "owner"}, true); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := updatePolicy(root, func(p *auth.Policy) error {
+				for i := range p.Bindings {
+					if p.Bindings[i].Principal == "owner" {
+						limit(&p.Bindings[i])
+					}
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			_, printed := captureStdout(t)
+			err := cmdRecover(root, []string{"--principal", "owner", "--reason", "the cover ended",
+				"--i-have-filesystem-access"})
+			printed()
+			if err != nil {
+				t.Fatal(err)
+			}
+			pol, err := loadPolicy(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if d := pol.Evaluate("owner", auth.ActGrant, "/"); !d.Allowed || d.OwnsRequired {
+				t.Errorf("after the recovery: %s", d.Reason)
+			}
+			admins := 0
+			for _, b := range pol.Snapshot() {
+				if b.Principal == "owner" && b.Role == auth.RoleAdmin && b.Resource == "/" {
+					admins++
+				}
+			}
+			if admins != 1 {
+				t.Errorf("owner holds the admin grant %d times", admins)
+			}
+		})
 	}
 }

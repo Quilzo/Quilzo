@@ -127,13 +127,28 @@ func cmdRecover(root string, args []string) error {
 	// administrator, made by `quilzo init --admin`, holds it and has a
 	// passkey and no token, and is the person most likely to lose the one
 	// way in; the recovery refused them, "that binding already exists".
+	//
+	// Held means held as the recovery makes it: for good, and over every
+	// page. One that has ended, or that reaches only the pages they
+	// created, is replaced by it. Taken as held, it was left as it was, and
+	// the credential printed could administer nothing.
 	if _, err := updatePolicy(root, func(p *auth.Policy) error {
-		for _, b := range p.Snapshot() {
-			if b.Principal == principal && b.Role == auth.RoleAdmin && b.Permission == "" &&
-				b.Resource == "/" && !b.Deny && b.Via == "" {
+		theGrant := func(b auth.Binding) bool {
+			return b.Principal == principal && b.Role == auth.RoleAdmin && b.Permission == "" &&
+				b.Resource == "/" && !b.Deny && b.Via == ""
+		}
+		for _, b := range p.Bindings {
+			if theGrant(b) && b.Expires == 0 && !b.OwnOnly {
 				return atomicfile.ErrUnchanged
 			}
 		}
+		kept := p.Bindings[:0]
+		for _, b := range p.Bindings {
+			if !theGrant(b) {
+				kept = append(kept, b)
+			}
+		}
+		p.Bindings = kept
 		return p.Grant(auth.Binding{Principal: principal, Role: auth.RoleAdmin, Resource: "/"})
 	}); err != nil {
 		return err
