@@ -469,9 +469,9 @@ func (rl *siteReloader) record(trigger string, outcome audit.Outcome, detail map
 //
 // What is carried is state, not settings: rate limits and their counts, the
 // signals being counted, sign-in ceremonies in progress, the chatbots' keys
-// for the ratings they handed out and the ones already used, the
-// newsletter's count of mail sent this hour, and the fediverse queue with
-// the loop that empties it. A part turned off by the new settings stays off
+// for the ratings they handed out and the ones already used, and which pages
+// are new to them, the newsletter's count of mail sent this hour, and the
+// fediverse queue with the loop that empties it. A part turned off by the new settings stays off
 // (nil): turning something off takes effect at once. A part turned on is
 // new.
 //
@@ -501,8 +501,15 @@ func carrySiteState(prev, next *public.Site) {
 	if next.Newsletter != nil && prev.Newsletter != nil {
 		next.Newsletter = prev.Newsletter
 	}
+	// The chatbots are the new ones, so a guardrail set since screens what
+	// they answer from, carrying on from the previous ones' ratings and new
+	// pages (public.Assistants.Keep) and with their count of questions. They
+	// were kept whole, and with them the guardrail they were built with.
 	if next.Assistants != nil && prev.Assistants != nil {
-		next.Assistants = prev.Assistants
+		next.Assistants.Keep(prev.Assistants)
+		if next.Assistants.Questions != nil && prev.Assistants.Questions != nil {
+			next.Assistants.Questions = prev.Assistants.Questions
+		}
 	}
 	if next.Share != nil && prev.Share != nil && next.Share.Form == prev.Share.Form {
 		next.Share = prev.Share

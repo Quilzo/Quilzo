@@ -7,10 +7,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -19,6 +22,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/admin"
+	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/site"
@@ -259,9 +263,11 @@ func TestAReloadKeepsWhatVisitorsAreInTheMiddleOf(t *testing.T) {
 		"boards":     next.Boards == first.Boards,
 		"bookings":   next.Bookings == first.Bookings,
 		"newsletter": next.Newsletter == first.Newsletter,
-		"chatbots":   next.Assistants == first.Assistants,
-		"signals":    next.Signals == first.Signals,
-		"fediverse":  next.Federation == first.Federation,
+		// The chatbots are built again, for their settings, and carry on
+		// from the ones before: see the guardrail test below.
+		"questions": next.Assistants.Questions == first.Assistants.Questions,
+		"signals":   next.Signals == first.Signals,
+		"fediverse": next.Federation == first.Federation,
 	} {
 		if !same {
 			t.Errorf("the %s state was rebuilt rather than kept", name)
@@ -271,6 +277,101 @@ func TestAReloadKeepsWhatVisitorsAreInTheMiddleOf(t *testing.T) {
 		t.Fatal("the fixture has none of what is meant to be kept, so this checks nothing")
 	}
 }
+
+// A guardrail turned on reaches the site's chatbots with the settings, and a
+// rating handed out before the rebuild still counts once and only once.
+//
+// The rebuilt site took the previous one's chatbots whole, to keep their
+// rating keys, and with them the guardrail they had been built with: an
+// operator who set guardrail.kind was told the site had read its settings
+// again, and no visitor's question reached the classifier until a restart.
+func TestAGuardrailTurnedOnReachesTheChatbotsWithoutARestart(t *testing.T) {
+	root, tpl := fontSite(t)
+	t.Setenv("QUILZO_GUARDRAIL_KEY", "")
+	set, _ := assistant.Load(assistantsPath(root))
+	if err := set.Put(assistant.Assistant{Name: "help", Title: "Ask us", Public: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := assistant.Save(assistantsPath(root), set); err != nil {
+		t.Fatal(err)
+	}
+	// Something it can answer, so the answer is offered for rating.
+	editDraft(t, root, "index", "Our opening hours are nine until five on weekdays.")
+	commitLive(t, root)
+	// The guardrail screens what a chatbot answers from, its knowledge, as
+	// the index is built; so what is counted is that it was asked at all.
+	var mu sync.Mutex
+	heard := 0
+	classifier := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		heard++
+		mu.Unlock()
+		_, _ = w.Write([]byte(`{"flagged": false}`))
+	}))
+	defer classifier.Close()
+	asked := func() int {
+		mu.Lock()
+		defer mu.Unlock()
+		return heard
+	}
+	var rl *siteReloader
+	ask := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/ask/help",
+			strings.NewReader(url.Values{"q": {"what are your opening hours"}}.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.RemoteAddr = "198.51.100.4:1234"
+		w := httptest.NewRecorder()
+		rl.ServeHTTP(w, req)
+		return w
+	}
+
+	rl = servedSite(t, root, tpl)
+	first := ask()
+	if first.Code != http.StatusOK || asked() != 0 {
+		t.Fatalf("before any guardrail: %d, the classifier heard %d", first.Code, asked())
+	}
+	token := reRating.FindStringSubmatch(first.Body.String())
+
+	for k, v := range map[string]string{"guardrail.kind": "generic", "guardrail.url": classifier.URL} {
+		if err := cmdConfig(root, []string{"set", k, v}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if w := ask(); w.Code != http.StatusOK {
+		t.Fatalf("asked after the guardrail was set: %d", w.Code)
+	}
+	recs := actions(t, root, "site.reload")
+	if len(recs) == 0 || recs[len(recs)-1].Detail["settings"] != "changed" {
+		t.Fatalf("the settings were not read again: %+v", recs)
+	}
+	if asked() == 0 {
+		t.Fatal("the site said it had read its settings again, and the guardrail they turn on was never asked")
+	}
+
+	// The rating offered before the rebuild is the rebuilt site's to take,
+	// once.
+	if token == nil {
+		t.Fatal("no rating was offered, so this checks nothing about the ratings")
+	}
+	rate := func() string {
+		v := url.Values{"q": {"what are your opening hours"}, "t": {html.UnescapeString(token[1])}, "helpful": {"yes"}}
+		req := httptest.NewRequest(http.MethodPost, "/ask/help/rate", strings.NewReader(v.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.RemoteAddr = "198.51.100.4:1234"
+		w := httptest.NewRecorder()
+		rl.ServeHTTP(w, req)
+		return w.Header().Get("Location")
+	}
+	if loc := rate(); !strings.Contains(loc, "rated=yes") {
+		t.Errorf("a rating from before the rebuild: %q", loc)
+	}
+	if loc := rate(); !strings.Contains(loc, "rated=late") {
+		t.Errorf("the same rating twice, across a rebuild: %q", loc)
+	}
+}
+
+// reRating is the token an answer's rating form carries.
+var reRating = regexp.MustCompile(`name="t" value="([^"]+)"`)
 
 // The admin sees a face added to templates/fonts/ without a restart.
 //

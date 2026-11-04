@@ -114,7 +114,11 @@ type Assistants struct {
 	Guardrail      func(ctx context.Context, texts []string) (flagged []bool, unanswered int)
 	GuardrailEvent func(name, what string, n int)
 
+	// What the chatbots hold for the visitors they are answering, guarded
+	// by mu. When keep is set (Keep), these are kept by that one instead,
+	// for both, and this one's are unused.
 	mu    sync.Mutex
+	keep  *Assistants
 	cache map[string]cachedIndex
 	// rateKey signs rating tokens; rated are the ones used (askrate.go).
 	rateKey []byte
@@ -125,11 +129,50 @@ type Assistants struct {
 	fresh map[string]map[string]time.Time
 }
 
+// Keep makes these chatbots carry on from prev's, when the site is built
+// again while it runs: the key their ratings are signed with and the ratings
+// already used, which pages are new to each, and the index each answered
+// from, as the one a new page is new against. Everything else, the
+// guardrail included, is as was given here.
+//
+// Shared rather than copied, because prev goes on serving the requests it
+// already has: a rating spent there while this one starts must be spent here
+// too. Called before this one serves anything.
+//
+// The server that rebuilt its site when its settings changed kept the
+// previous chatbots whole, for their ratings, and with them the guardrail
+// they were built with: an operator who turned one on was told the site had
+// read its settings again, and no passage reached the classifier until a
+// restart.
+func (as *Assistants) Keep(prev *Assistants) {
+	if as == nil || prev == nil {
+		return
+	}
+	if o := prev.own(); o != as {
+		as.keep = o
+	}
+}
+
+// own is the chatbots that hold this one's visitor state: itself, or the
+// first of the builds it carries on from. One step, never a chain, because
+// Keep follows prev to its own.
+func (as *Assistants) own() *Assistants {
+	if as.keep != nil {
+		return as.keep
+	}
+	return as
+}
+
 // NewFor is how long a page that entered a chatbot's knowledge counts as new.
 const NewFor = 7 * 24 * time.Hour
 
 type cachedIndex struct {
 	key string
+	// by is the build that made it. The knowledge alone does not decide what
+	// an index holds: the guardrail of the build answering does, so a
+	// rebuilt site's chatbots build their own rather than answer from one
+	// their guardrail never saw.
+	by  *Assistants
 	idx *assistant.Index
 }
 
@@ -351,9 +394,10 @@ func (st *Site) assistantIndex(a assistant.Assistant) (*assistant.Index, error) 
 	key := hex.EncodeToString(h.Sum(nil))
 
 	as := st.Assistants
-	as.mu.Lock()
-	defer as.mu.Unlock()
-	if c, ok := as.cache[a.Name]; ok && c.key == key {
+	o := as.own()
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if c, ok := o.cache[a.Name]; ok && c.key == key && c.by == as {
 		return c.idx, nil
 	}
 	passages := assistant.Chunk(pages, a.Reads)
@@ -383,13 +427,13 @@ func (st *Site) assistantIndex(a assistant.Assistant) (*assistant.Index, error) 
 	if as.Meaning != nil {
 		idx = idx.WithMeaning(as.Meaning(a, idx.Passages))
 	}
-	if as.cache == nil {
-		as.cache = map[string]cachedIndex{}
+	if o.cache == nil {
+		o.cache = map[string]cachedIndex{}
 	}
-	if old, ok := as.cache[a.Name]; ok {
-		as.noteFresh(a.Name, old.idx, idx, time.Now())
+	if old, ok := o.cache[a.Name]; ok {
+		o.noteFresh(a.Name, old.idx, idx, time.Now())
 	}
-	as.cache[a.Name] = cachedIndex{key: key, idx: idx}
+	o.cache[a.Name] = cachedIndex{key: key, by: as, idx: idx}
 	return idx, nil
 }
 
@@ -427,7 +471,7 @@ func (as *Assistants) guard(name string, passages []assistant.Passage) []assista
 }
 
 // noteFresh marks the pages a rebuilt index has that the one before did
-// not. The caller holds the lock.
+// not. Called on own(), with its lock held.
 func (as *Assistants) noteFresh(name string, was, now *assistant.Index, at time.Time) {
 	before := map[string]bool{}
 	for _, p := range was.Passages {
@@ -457,9 +501,10 @@ func (as *Assistants) noteFresh(name string, was, now *assistant.Index, at time.
 
 // isFresh says a page entered a chatbot's knowledge within NewFor.
 func (as *Assistants) isFresh(name, page string, at time.Time) bool {
-	as.mu.Lock()
-	defer as.mu.Unlock()
-	since, ok := as.fresh[name][page]
+	o := as.own()
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	since, ok := o.fresh[name][page]
 	return ok && at.Sub(since) <= NewFor
 }
 
