@@ -15,6 +15,7 @@ import (
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/mcp"
 	"github.com/quilzo/quilzo/internal/newsletter"
+	"github.com/quilzo/quilzo/internal/theme"
 	"github.com/quilzo/quilzo/internal/webimport"
 )
 
@@ -62,15 +63,16 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 			"description": "what the site is for, in a sentence or two",
 			"name":        "what the site is called",
 			"kind":        "optional: business, product, restaurant, portfolio, community or event",
-			"style":       "optional: classic, expressive, glass, editorial, bold, soft or business",
+			"style":       "optional: " + strings.Join(theme.Styles, ", "),
 			"colour":      "optional main colour, as #rrggbb",
+			"scheme":      "optional: both (the default), dark or light; dark draws the site dark for every reader",
 		},
 		Keywords: []string{"website", "site", "build", "create", "new site", "landing", "homepage", "make"},
 	}, func(a map[string]any) (any, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), featureDraftTimeout)
 		defer cancel()
 		built, err := buildSite(ctx, root, feature.SiteBrief{Description: str(a, "description"), Name: str(a, "name"),
-			Kind: str(a, "kind"), Style: str(a, "style"), Colour: str(a, "colour")}, false, agent)
+			Kind: str(a, "kind"), Style: str(a, "style"), Colour: str(a, "colour"), Scheme: str(a, "scheme")}, false, agent)
 		if err != nil {
 			return refuse(err)
 		}
@@ -147,6 +149,14 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 		p, _, err := readFeatureBytes(root, body, "")
 		if err != nil {
 			return refuse(err)
+		}
+		// A site's look in tokens, yes; its CSS, no. A style layer is served
+		// on every page, and the checks hold it to tokens without making it
+		// a person's choice: a layer that hid the privacy notice would pass
+		// them. The site builder leaves one out for the same reason.
+		if p.Site != nil && p.Site.Layer != "" {
+			return refuse(errors.New("a style layer is CSS served on every page, and a person chooses it: " +
+				"propose the look as style, colour, scheme, corner and tokens, and leave the layer out"))
 		}
 		// Written by a model, so its pages say so once installed.
 		by, _ := proposingAgent(caller)

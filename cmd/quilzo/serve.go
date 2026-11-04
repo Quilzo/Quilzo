@@ -27,6 +27,7 @@ import (
 	"github.com/quilzo/quilzo/internal/listen"
 	"github.com/quilzo/quilzo/internal/logd"
 	"github.com/quilzo/quilzo/internal/odp"
+	"github.com/quilzo/quilzo/internal/theme"
 	"github.com/quilzo/quilzo/internal/throttle"
 	"github.com/quilzo/quilzo/internal/travel"
 	"github.com/quilzo/quilzo/internal/webauthn"
@@ -37,6 +38,7 @@ import (
 	"github.com/quilzo/quilzo/internal/agentwatch"
 	"github.com/quilzo/quilzo/internal/aievidence"
 	"github.com/quilzo/quilzo/internal/assist"
+	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/booking"
@@ -769,6 +771,17 @@ func cmdServe(root string, args []string) error {
 		},
 		InstallLayout: func(name string) ([]string, error) {
 			return installStarter(*tplDir, name)
+		},
+		Layer: func() (string, error) { return readLayer(*tplDir) },
+		SaveLayer: func(css string) error {
+			path := filepath.Join(*tplDir, theme.LayerFile)
+			if css == "" {
+				if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+					return err
+				}
+				return nil
+			}
+			return atomicfile.Write(path, []byte(css), 0o600)
 		},
 	}
 	srv.Decentralised = decentralisedFor(root, *tplDir, s, design)

@@ -123,7 +123,8 @@ func (s *Server) handleMediaPick(w http.ResponseWriter, r *http.Request) {
 
 	rows := make([]pickable, 0, len(files))
 	for _, f := range files {
-		if string(f.Kind) != kind {
+		// A backdrop is a picture or a recording; every other field one kind.
+		if string(f.Kind) != kind && !(kind == section.Backdrop && (f.Kind == media.Image || f.Kind == media.Video)) {
 			continue
 		}
 		// A rendition is a narrower copy of a picture that is already in this
@@ -250,6 +251,8 @@ func nounFor(kind string) string {
 		return "a video"
 	case "audio":
 		return "an audio file"
+	case section.Backdrop:
+		return "a picture or a silent video"
 	}
 	return "a file"
 }

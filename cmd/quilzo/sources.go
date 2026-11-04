@@ -9,6 +9,7 @@ import (
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/media"
+	"github.com/quilzo/quilzo/internal/medialib"
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/store"
 )
@@ -67,6 +68,17 @@ func sourcesFor(root string, s *store.Store, commit, siteName string,
 			}
 			return "/media/" + f.Poster
 		}
+		// What a file is, for a backdrop (picture or recording) and for a
+		// silent recording's description. The same answer the public server
+		// gives, so the gate judges the backdrop a reader is served.
+		src.Media = func(id string) (render.MediaInfo, bool) {
+			f, err := lib.Stat(id)
+			if err != nil {
+				return render.MediaInfo{}, false
+			}
+			sound, known := f.SoundKnown()
+			return render.MediaInfo{Kind: string(f.Kind), Sound: sound, SoundKnown: known, Alt: f.Alt}, true
+		}
 		src.Tracks = func(id string) []any {
 			f, err := lib.Stat(id)
 			if err != nil || len(f.Tracks) == 0 {
@@ -113,4 +125,26 @@ func siteName(root string) string {
 		return ""
 	}
 	return cfg.Raw("site.name")
+}
+
+// mediaSound answers the accessibility gate's question about a recording:
+// whether the library recorded it as having sound, and whether it recorded
+// anything. An address that is not one of the library's files is unknown,
+// which the gate treats as sound.
+func mediaSound(root string) func(src string) (bool, bool) {
+	lib, err := openMedia(root)
+	if err != nil {
+		return nil
+	}
+	return func(src string) (bool, bool) {
+		id := strings.TrimPrefix(strings.TrimSpace(src), "/media/")
+		if medialib.ValidID(id) != nil {
+			return false, false
+		}
+		f, err := lib.Stat(id)
+		if err != nil {
+			return false, false
+		}
+		return f.SoundKnown()
+	}
 }

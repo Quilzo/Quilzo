@@ -121,6 +121,18 @@
         <input type="hidden" name="do" value="remove">
         <button type="submit">Remove</button>
       </form>
+      {{if ne .Kind "block"}}{{if ne .Kind "notice"}}
+      <form method="post" action="/sections/edit" class="inline">
+        <input type="hidden" name="page" value="{{$page}}">
+        <input type="hidden" name="base" value="{{$base}}">
+        <input type="hidden" name="at" value="{{.Index}}">
+        <input type="hidden" name="id" value="{{.ID}}">
+        {{if .Backdrop}}<input type="hidden" name="do" value="nobackdrop">
+        <button type="submit">Take the backdrop away<span class="visually-hidden"> from section {{.Index}}</span></button>
+        {{else}}<input type="hidden" name="do" value="backdrop">
+        <button type="submit">Put a backdrop behind it<span class="visually-hidden">: section {{.Index}}</span></button>{{end}}
+      </form>
+      {{end}}{{end}}
     </td>
   </tr>
   {{end}}

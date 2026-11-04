@@ -56,10 +56,56 @@ func cmdSection(root string, args []string) error {
 		return sectionBlock(root, args[1:])
 	case "blocks":
 		return sectionBlocks(root, args[1:])
+	case "backdrop":
+		return sectionBackdrop(root, args[1:])
 	default:
 		return fmt.Errorf("unknown section command %q; try list, kinds, add, "+
-			"move, remove, fields, set, item, reuse, block or blocks", args[0])
+			"move, remove, fields, set, item, reuse, block, blocks or backdrop", args[0])
 	}
+}
+
+// sectionBackdrop puts a picture or a recording behind a section or the
+// hero, or takes it away.
+//
+// A command of its own because `section set` writes only the fields a section
+// already has, so no edit could give one a backdrop. The file is checked when
+// the page is published: a recording has to be one the library knows is
+// silent, and the words over it readable against the worst picture the veil
+// could cover.
+func sectionBackdrop(root string, args []string) error {
+	pos, flags := leadingArgs(args, 3)
+	fs := flag.NewFlagSet("backdrop", flag.ContinueOnError)
+	off := fs.Bool("off", false, "take the backdrop away")
+	if err := fs.Parse(flags); err != nil {
+		return err
+	}
+	if len(pos) < 2 || len(pos) > 3 || (*off && len(pos) == 3) || (!*off && len(pos) != 3) {
+		return fmt.Errorf("usage: quilzo section backdrop <page> <index>|hero /media/ID, or with --off and no file")
+	}
+	at := section.HeroAt
+	where := "the hero"
+	if pos[1] != "hero" {
+		n, err := strconv.Atoi(pos[1])
+		if err != nil {
+			return fmt.Errorf("%q is not a section index or hero", pos[1])
+		}
+		at, where = n, fmt.Sprintf("section %d", n)
+	}
+	media := ""
+	if len(pos) == 3 {
+		media = strings.TrimSpace(pos[2])
+		if !strings.HasPrefix(media, "/media/") {
+			media = "/media/" + media
+		}
+	}
+	return editSections(root, pos[0], func(body any) (map[string]any, string, error) {
+		if *off {
+			next, err := section.ClearBackdrop(body, at)
+			return next, fmt.Sprintf("take the backdrop away from %s of %s", where, pos[0]), err
+		}
+		next, err := section.SetBackdrop(body, at, media)
+		return next, fmt.Sprintf("put a backdrop behind %s of %s", where, pos[0]), err
+	})
 }
 
 // sectionKinds is the catalogue: what a page can be built out of.

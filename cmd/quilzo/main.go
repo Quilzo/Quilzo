@@ -37,8 +37,10 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collab"
 	"github.com/quilzo/quilzo/internal/out"
+	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
+	"github.com/quilzo/quilzo/internal/theme"
 	"github.com/quilzo/quilzo/internal/tmpl"
 )
 
@@ -124,7 +126,7 @@ importing
   quilzo media focus ID --at top-left      which part survives a crop
   quilzo media edit ID --crop 16:9        derive a crop; the original stays
   quilzo media generate "..." --alt "..."  ask a model; marked as generated
-  quilzo media captions VIDEO FILE --lang en  a video will not publish without
+  quilzo media captions VIDEO FILE --lang en  a video with sound will not publish without; a silent one needs its description
   quilzo media transcribe VIDEO --lang en --author WHO  a model drafts them; you attach
   quilzo media speak "text" --voice V --author WHO  read aloud; marked as a synthetic voice
   quilzo media film "prompt" --author WHO [--aspect 9:16]  a video from a prompt; marked as generated
@@ -151,7 +153,12 @@ templates and design
   quilzo theme generate COLOUR             a whole palette from one colour
   quilzo theme set TOKEN VALUE             change one, refused if unreadable
   quilzo theme check | fonts | css         contrast, typefaces, generated CSS
-  quilzo theme styles                      the looks: classic, expressive, glass, editorial, bold, soft, business
+  quilzo theme styles                      the looks: classic, expressive, glass, editorial, bold, soft, business, neon
+                                           (and the corner choice, round or chamfer, and the scheme, both, dark or light)
+  quilzo theme set scheme dark             draw the site in one scheme, checked in that one; light, or both (the default)
+  quilzo theme set scrim-strength 90%      the veil over a backdrop picture or video, checked against the worst picture
+  quilzo theme layer [set FILE | unset]    CSS of your own over the generated stylesheet, every colour a token,
+                                           url() only to /media/ and /fonts/; theme check says what it refuses
   quilzo theme apply STARTER               take a starter's palette, keep your layout
   quilzo theme import FILE --list          what a design token file holds
   quilzo theme import FILE --set T=PATH    fill this site's tokens from it
@@ -165,6 +172,7 @@ templates and design
   quilzo section fields PAGE N             what is editable inside one
   quilzo section set PAGE N path=value     change what a section says
   quilzo section item add PAGE N LIST      add an entry to a list inside one
+  quilzo section backdrop PAGE N|hero ID   a picture or a silent video behind it; --off takes it away
   quilzo section block PAGE [--off]        make a page a reusable block, shown where pages reuse it
   quilzo section reuse PAGE BLOCK [--at N] show a block's sections on a page
   quilzo section blocks                    every block, and the pages that reuse it
@@ -1480,6 +1488,13 @@ func checkAccessibility(root string, s *store.Store, commitID, tplDir string) ([
 		}
 	}
 
+	// The words over a backdrop, judged against the worst picture its veil
+	// could cover — for the pages that have one, and no others.
+	var backdrop []theme.Finding
+	if !design.OwnStylesheet {
+		backdrop = design.Theme.CheckBackdrop()
+	}
+
 	for name, body := range pages {
 		ctx, cerr := src.For(name, body, nil)
 		if cerr != nil {
@@ -1497,8 +1512,18 @@ func checkAccessibility(root string, s *store.Store, commitID, tplDir string) ([
 			return nil, fmt.Errorf("rendering %s: %w", name, err)
 		}
 		rendered[name] = out
+		if render.HasBackdrop(ctx["page"]) {
+			for _, f := range backdrop {
+				if f.Blocking {
+					extra = append(extra, a11y.Blocker(name, "backdrop-contrast", f.Criterion, f.Detail))
+				}
+			}
+		}
 	}
-	return append(a11y.CheckAll(rendered), extra...), nil
+	// Whether a recording has sound is the library's answer, recorded when it
+	// was added: a silent one owes a description rather than captions, and
+	// only a silent one may be a backdrop.
+	return append(a11y.CheckAllWith(rendered, a11y.Options{Sound: mediaSound(root)}), extra...), nil
 }
 
 func cmdPublish(root string, args []string) error {

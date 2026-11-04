@@ -237,11 +237,29 @@ func (s *Server) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
 	if stripped {
 		detail["metadata"] = "stripped"
 	}
+	// Whether a recording has sound, as the probe found it at upload: the
+	// accessibility gate holds a silent one to a description and a loud one
+	// to captions, so what was recorded is part of what was added.
+	sound := ""
+	if f.Kind == media.Video {
+		if stored, serr := lib.Stat(f.ID); serr == nil {
+			sound = stored.SoundWord()
+			detail["sound"] = sound
+		}
+	}
 	s.auditPub(p, "media.add", "/", detail)
 
 	msg := "stored " + f.Name
 	if len(did) > 0 {
 		msg += " — " + strings.Join(did, ", ")
+	}
+	switch sound {
+	case "no":
+		msg += ". It has no sound, so a page showing it needs its description rather than captions, and it may be a backdrop."
+	case "yes":
+		msg += ". It has sound, so a page showing it needs captions."
+	case "unknown":
+		msg += ". Whether it has sound could not be read here, so a page showing it needs captions."
 	}
 	if stripped {
 		msg += ". The original carried metadata; a photograph from a phone " +

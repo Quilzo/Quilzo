@@ -279,6 +279,14 @@ func (s *Server) handleSectionEdit(w http.ResponseWriter, r *http.Request) {
 			next, err = section.InsertBlock(body, block, at)
 		}
 		msg = fmt.Sprintf("reuse the block %s on %s", block, name)
+	case "backdrop":
+		// The field is left empty, so the fields screen shows it with the
+		// picker beside it; choosing the file is the next step there.
+		next, err = section.SetBackdrop(body, at, "")
+		msg = fmt.Sprintf("put a backdrop behind section %d of %s; choose its picture or video under Edit", at, name)
+	case "nobackdrop":
+		next, err = section.ClearBackdrop(body, at)
+		msg = fmt.Sprintf("take the backdrop away from section %d of %s", at, name)
 	case "block", "unblock":
 		on := r.FormValue("do") == "block"
 		if err = site.BlockChange(name, pages, on); err == nil {

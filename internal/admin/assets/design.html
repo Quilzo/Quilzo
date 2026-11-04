@@ -34,6 +34,19 @@
 </div>
 {{end}}
 
+{{if .Veil}}
+<div class="card">
+  <p><strong>Words over a backdrop would be hard to read.</strong> A page with a
+    backdrop picture or video will not publish until this passes; pages
+    without one are not affected.</p>
+  <ul>
+  {{range .Veil}}
+    <li>{{.Scheme}} scheme — {{.Detail}}</li>
+  {{end}}
+  </ul>
+</div>
+{{end}}
+
 {{if .Problems}}
 <div class="card bad">
   <p><strong>{{plural (len .Problems) "value" "values"}} could not be used.</strong></p>
@@ -63,6 +76,21 @@
     <p class="hint">Visitors who ask their system for reduced motion get none, whichever is chosen.</p>
   </fieldset>
   <button type="submit">Use this motion</button>
+</form>
+<form method="post" action="/design/save" class="design-look">
+  <input type="hidden" name="token" value="corner">
+  <fieldset><legend>Corners</legend>
+    {{range .Corners}}<p><label><input type="radio" name="light" value="{{.Name}}"{{if .On}} checked{{end}}> <strong>{{.Label}}</strong> <span class="hint">{{.Words}}</span></label></p>{{end}}
+    <p class="hint">A focused control shows its whole focus ring either way.</p>
+  </fieldset>
+  <button type="submit">Use these corners</button>
+</form>
+<form method="post" action="/design/save" class="design-look">
+  <input type="hidden" name="token" value="scheme">
+  <fieldset><legend>Colour schemes</legend>
+    {{range .DrawnIn}}<p><label><input type="radio" name="light" value="{{.Name}}"{{if .On}} checked{{end}}> <strong>{{.Label}}</strong> <span class="hint">{{.Words}}</span></label></p>{{end}}
+  </fieldset>
+  <button type="submit">Draw the site this way</button>
 </form>
 
 <form method="post" action="/design/save" class="design-look">
@@ -137,6 +165,39 @@
   </tbody>
 </table>
 </div>
+{{end}}
+
+{{if .CanLayer}}
+<h2 id="layer">Style layer</h2>
+<p class="hint">
+  CSS of this site's own, served after the generated stylesheet, for what the
+  settings cannot say. Every colour is a token, written <code>var(--primary)</code>
+  or mixed from tokens with <code>color-mix()</code>; <code>url()</code> reaches only
+  <code>/media/</code> and <code>/fonts/</code>; no <code>@import</code>, no
+  <code>!important</code>, no redefining a token and no removing the focus
+  outline. At most {{.LayerMax}} KiB. Saved to <code>{{.Dir}}/style.css</code>.
+</p>
+{{if .Own}}<p class="notice">It is not served while <code>{{.Dir}}/site.css</code> exists, which replaces everything a layer sits on.</p>{{end}}
+{{if .LayerError}}<p class="notice bad">{{.LayerError}}</p>{{end}}
+{{if .LayerRefused}}
+<div class="card bad">
+  <p><strong>The layer is not served.</strong> {{plural (len .LayerRefused) "rule is" "rules are"}} refused:</p>
+  <ul>{{range .LayerRefused}}<li>{{.Detail}}</li>{{end}}</ul>
+</div>
+{{else}}{{if .Layer}}<p class="notice">The layer is served: {{.LayerBytes}} bytes, every colour a token.</p>{{end}}{{end}}
+{{if .LayerAdvice}}<ul class="hint">{{range .LayerAdvice}}<li>{{.Detail}}</li>{{end}}</ul>{{end}}
+<form method="post" action="/design/layer" class="design-layer">
+  <label for="layer-css">The layer</label>
+  <textarea id="layer-css" name="layer" spellcheck="false" aria-describedby="layer-hint">{{.Layer}}</textarea>
+  <p class="hint" id="layer-hint">Checked before it is saved; a layer with a refused rule is not saved, so the one that is there stays.</p>
+  <button type="submit">Save the layer</button>
+</form>
+{{if .Layer}}
+<form method="post" action="/design/layer" class="inline">
+  <input type="hidden" name="remove" value="1">
+  <button type="submit">Take the layer away</button>
+</form>
+{{end}}
 {{end}}
 
 <h2>Typefaces</h2>

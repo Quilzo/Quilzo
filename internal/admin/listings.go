@@ -16,6 +16,7 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/listing"
+	"github.com/quilzo/quilzo/internal/medialib"
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/site"
 )
@@ -422,7 +423,86 @@ func (s *Server) sources(commit string, pages map[string]any) render.Sources {
 			src.Menus = set
 		}
 	}
+	s.libraryAsks(&src)
 	return src
+}
+
+// libraryAsks wires what the renderer may ask the media library, as the
+// public server and the command line's gate wire it.
+//
+// The preview and this gate asked nothing of the library, so here a
+// captioned video rendered with no <track> and a picture with no narrower
+// copies, and a backdrop would not have been drawn at all — which made the
+// gate in the browser pass a page with a backdrop whose recording has sound,
+// while `quilzo publish` refused it. One document, judged the same way
+// wherever the button is.
+func (s *Server) libraryAsks(src *render.Sources) {
+	if s.Media == nil || s.Media.Library == nil {
+		return
+	}
+	lib, err := s.Media.Library()
+	if err != nil || lib == nil {
+		return
+	}
+	src.SrcSet = func(id string) string {
+		f, err := lib.Stat(id)
+		if err != nil {
+			return ""
+		}
+		return f.SrcSet("/media")
+	}
+	src.Poster = func(id string) string {
+		f, err := lib.Stat(id)
+		if err != nil || f.Poster == "" {
+			return ""
+		}
+		return "/media/" + f.Poster
+	}
+	src.Tracks = func(id string) []any {
+		f, err := lib.Stat(id)
+		if err != nil || len(f.Tracks) == 0 {
+			return nil
+		}
+		out := make([]any, 0, len(f.Tracks))
+		for _, t := range f.Tracks {
+			out = append(out, map[string]any{
+				"src": "/media/" + t.ID, "lang": t.Lang,
+				"label": t.Label, "kind": t.Kind, "default": t.Default,
+			})
+		}
+		return out
+	}
+	src.Media = func(id string) (render.MediaInfo, bool) {
+		f, err := lib.Stat(id)
+		if err != nil {
+			return render.MediaInfo{}, false
+		}
+		sound, known := f.SoundKnown()
+		return render.MediaInfo{Kind: string(f.Kind), Sound: sound, SoundKnown: known, Alt: f.Alt}, true
+	}
+}
+
+// mediaSound is the accessibility gate's question about a recording, from
+// the library: whether it has sound, and whether that was recorded at all.
+func (s *Server) mediaSound() func(src string) (bool, bool) {
+	if s.Media == nil || s.Media.Library == nil {
+		return nil
+	}
+	lib, err := s.Media.Library()
+	if err != nil || lib == nil {
+		return nil
+	}
+	return func(src string) (bool, bool) {
+		id := strings.TrimPrefix(strings.TrimSpace(src), "/media/")
+		if medialib.ValidID(id) != nil {
+			return false, false
+		}
+		f, err := lib.Stat(id)
+		if err != nil {
+			return false, false
+		}
+		return f.SoundKnown()
+	}
 }
 
 // iconStyle is how the preview draws icons: the theme's choice, as the site
