@@ -1343,6 +1343,49 @@ func TestTheStatusSaysWhatTheStreamDid(t *testing.T) {
 	}
 }
 
+// The status's counts in JSON are the ones it prints, and none of the
+// receiver's own bookkeeping: how many refusals wait to be summarised in
+// the audit log, and when the last summary was, are signals.json's to keep
+// and nobody's contract.
+func TestTheStatusCountsAreOnlyTheOnesItSays(t *testing.T) {
+	c := signalsStore(t, "email")
+	c.connect(t, "oidc")
+	c.send(t, caepEvent+"session-revoked", email("nobody@example.com"), nil, time.Now())
+	for i := 0; i < 2; i++ {
+		c.pushWith(t, "Bearer qzsig_a-guess", "application/secevent+jwt", "x")
+	}
+	if n := readSignals(t, c.root).Counts; n.Unnoted == 0 || n.RefusedNoted.IsZero() {
+		t.Fatalf("the receiver kept no bookkeeping to leave out: %+v", n)
+	}
+	var buf bytes.Buffer
+	w = out.New(true)
+	w.Out = &buf
+	if err := cmdSignals(c.root, []string{"status"}); err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Counts map[string]any `json:"counts"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("%s (%v)", buf.Bytes(), err)
+	}
+	want := map[string]bool{"received": true, "acted": true, "unmatched": true, "refused": true, "capped": true,
+		"last_at": true, "last_type": true}
+	for k := range got.Counts {
+		if !want[k] {
+			t.Errorf("the JSON counts carry %q", k)
+		}
+	}
+	for k := range want {
+		if _, ok := got.Counts[k]; !ok {
+			t.Errorf("the JSON counts lost %q", k)
+		}
+	}
+	if got.Counts["refused"] != float64(2) || got.Counts["unmatched"] != float64(1) {
+		t.Errorf("counts %v", got.Counts)
+	}
+}
+
 // The status says what the Sign-ins screen says, in the same words, and
 // answers --json with a time never reached left out rather than written as
 // the year 1. A stream gone a day without an answer is silent on both, as

@@ -123,8 +123,20 @@ func (c *signalsConfig) keep(from *signalsConfig) {
 	c.LastActed, c.LastDisabled, c.LastEnabled = from.LastActed, from.LastDisabled, from.LastEnabled
 }
 
-// signalsCounts are what the stream has sent and what came of it.
+// signalsCounts are what the stream has sent and what came of it, and the
+// receiver's own bookkeeping beside them.
 type signalsCounts struct {
+	signalsTally
+	// Unnoted are refusals since RefusedNoted, when the last summary of
+	// them went to the audit log.
+	Unnoted      int       `json:"unnoted,omitempty"`
+	RefusedNoted time.Time `json:"refused_noted,omitzero"`
+}
+
+// signalsTally is the counts as the status says them, which is all its
+// JSON gives: the bookkeeping beside them in signals.json became part of
+// what `quilzo signals status --json` promised, and nobody meant it to.
+type signalsTally struct {
 	Received  int       `json:"received"`
 	Acted     int       `json:"acted"`
 	Unmatched int       `json:"unmatched"`
@@ -132,10 +144,6 @@ type signalsCounts struct {
 	Capped    int       `json:"capped"`
 	LastAt    time.Time `json:"last_at,omitzero"`
 	LastType  string    `json:"last_type,omitempty"`
-	// Unnoted are refusals since RefusedNoted, when the last summary of
-	// them went to the audit log.
-	Unnoted      int       `json:"unnoted,omitempty"`
-	RefusedNoted time.Time `json:"refused_noted,omitzero"`
 }
 
 // signalsHour is the hour the cap counts in: the digests of the people
@@ -525,7 +533,7 @@ func signalsStatus(root string) error {
 	// which a caller would have to know to read as never.
 	doc := map[string]any{"connected": true, "provider": c.Provider, "issuer": c.Issuer, "audience": c.Audience,
 		"stream": c.Stream, "manual": c.Manual, "status": c.Status, "silent": silent,
-		"connected_at": c.Connected, "counts": c.Counts}
+		"connected_at": c.Connected, "counts": c.Counts.signalsTally}
 	for k, t := range map[string]time.Time{"verified": c.Verified, "asked": c.Asked} {
 		if !t.IsZero() {
 			doc[k] = t
