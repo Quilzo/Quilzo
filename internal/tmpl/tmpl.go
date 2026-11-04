@@ -512,6 +512,15 @@ func stringify(v any) string {
 	}
 }
 
+// Truthy reports whether {% if %} takes a value as true: anything but false,
+// nothing, an empty word, an empty list or map, and zero.
+//
+// Exported for code that has to agree with a layout about what a page draws.
+// The publish gate judges the words over a backdrop only on a page whose
+// layout draws one, and it compared with true while the layout drew one for
+// "yes" — so the two have to ask the same question, and this is the question.
+func Truthy(v any) bool { return truthy(v) }
+
 func truthy(v any) bool {
 	switch t := v.(type) {
 	case nil:

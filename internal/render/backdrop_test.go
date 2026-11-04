@@ -139,3 +139,31 @@ func TestAPageWithABackdropIsKnownToHaveOne(t *testing.T) {
 		t.Errorf("plain %v, hero %v, section %v", HasBackdrop(plain), HasBackdrop(hero), HasBackdrop(section))
 	}
 }
+
+// A page that says it is drawn over its backdrop in a way the layout reads
+// as yes is known to have one.
+//
+// The companions are written only where content has not written them, so a
+// page can say "backdrop_on": "yes" itself. The layouts' {% if %} takes any
+// non-empty word as true and draws the backdrop; this took only true itself,
+// so the gate skipped the words over the veil on a page that had a veil.
+func TestABackdropTheLayoutDrawsIsABackdropTheGateSees(t *testing.T) {
+	for name, on := range map[string]any{"a word": "yes", "a number": float64(1), "a list": []any{"x"}} {
+		hero := pageOf(t, library(), map[string]any{
+			"hero": map[string]any{"title": "Arena", BackdropField: "/media/" + picture, "backdrop_on": on}})
+		if !HasBackdrop(hero) {
+			t.Errorf("%s: a hero the layout draws over its backdrop was not known to have one", name)
+		}
+		section := pageOf(t, library(), map[string]any{"sections": []any{map[string]any{
+			"features": map[string]any{"title": "Games", BackdropField: "/media/" + picture, "backdrop_on": on}}}})
+		if !HasBackdrop(section) {
+			t.Errorf("%s: a section the layout draws over its backdrop was not known to have one", name)
+		}
+	}
+	for name, off := range map[string]any{"false": false, "an empty word": "", "nothing": nil, "zero": float64(0)} {
+		page := pageOf(t, Sources{}, map[string]any{"hero": map[string]any{"title": "Plain", "backdrop_on": off}})
+		if HasBackdrop(page) {
+			t.Errorf("%s: a hero the layout draws plain was taken to have a backdrop", name)
+		}
+	}
+}

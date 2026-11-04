@@ -209,3 +209,35 @@ func TestALayerInsideTheBoundSavesFromTheBrowser(t *testing.T) {
 		t.Error("a layer three times the bound was saved")
 	}
 }
+
+// A page that switches its backdrop on in its own words is judged over the
+// veil like any other. The layout draws a hero over its backdrop for
+// "backdrop_on": "yes" as surely as for true, and the gate took only true.
+func TestTheBrowsersGateSeesABackdropThePageSwitchedOnItself(t *testing.T) {
+	srv, _ := setup(t)
+	id := withLibrary(t, srv)
+	designFake(srv, map[string]string{"scrim-strength": "30%"})
+	pages, err := site.PagesAt(srv.Store, site.RefDraft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages["arena"] = map[string]any{"title": "Arena", "hero": map[string]any{
+		"title": "Arena", "backdrop_url": "/media/" + id, "backdrop_on": "yes"}}
+	commit, err := site.SaveDraft(srv.Store, pages, "a backdrop switched on by hand", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.Layouts = mustLayouts(t)
+	reports, err := srv.checkAll(commit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range reports {
+		for _, f := range r.Findings {
+			if r.Page == "arena" && f.Rule == "backdrop-contrast" && f.Severity == a11y.Blocking {
+				return
+			}
+		}
+	}
+	t.Error("a hero drawn over a backdrop under a 30% veil passed the gate")
+}

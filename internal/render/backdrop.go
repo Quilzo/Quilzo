@@ -3,7 +3,11 @@
 
 package render
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/quilzo/quilzo/internal/tmpl"
+)
 
 // A backdrop: a picture or a recording behind a hero or a section.
 //
@@ -102,12 +106,18 @@ func deriveSilentAlt(m map[string]any, media func(string) (MediaInfo, bool)) {
 // against the worst picture the veil could cover (theme.CheckBackdrop), and
 // that judgement applies to a page that has one and to no other: a site
 // whose veil is too weak is refused only where it is used.
+//
+// Asked as the layout asks it, with the template language's own idea of
+// true. A companion is written only where the content has not written it, so
+// a page may say "backdrop_on": "yes" itself; the layout's {% if %} draws the
+// backdrop for that, and this compared with true, so the gate passed a page
+// under a veil too weak for the words on it.
 func HasBackdrop(page any) bool {
 	m, ok := page.(map[string]any)
 	if !ok {
 		return false
 	}
-	if hero, ok := m["hero"].(map[string]any); ok && hero["backdrop_on"] == true {
+	if hero, ok := m["hero"].(map[string]any); ok && tmpl.Truthy(hero["backdrop_on"]) {
 		return true
 	}
 	list, _ := m["sections"].([]any)
@@ -117,7 +127,7 @@ func HasBackdrop(page any) bool {
 			continue
 		}
 		for _, inner := range e {
-			if fields, ok := inner.(map[string]any); ok && fields["backdrop_on"] == true {
+			if fields, ok := inner.(map[string]any); ok && tmpl.Truthy(fields["backdrop_on"]) {
 				return true
 			}
 		}
