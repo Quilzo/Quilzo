@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/throttle"
@@ -695,6 +696,33 @@ func (h *Handler) SyncAll() {
 		}
 	})
 	_ = h.sync(ids...)
+}
+
+// SyncRefused re-applies the grants of everybody in a group whose mapping
+// CheckEnds now refuses, and nobody else's: for a host as it starts.
+//
+// A sync runs when the identity provider sends a change, or a group is
+// mapped or unmapped, and only then. A group mapped to auditor before a job
+// granted only for a time had to be mapped with its day grants nothing now,
+// and `scim status` says so, while the people it gave the job to went on
+// holding it with no end until the provider next sent a change about them,
+// which for somebody whose groups do not change was never. Only they are
+// synced, so a host starting changes nothing about anybody else.
+func (h *Handler) SyncRefused(now time.Time) error {
+	mu := h.applying()
+	mu.Lock()
+	defer mu.Unlock()
+	var ids []string
+	if err := h.Store.Read(func(st *State) {
+		for _, u := range st.Users {
+			if slices.ContainsFunc(st.Grants(u.ID), func(g string) bool { return CheckEnds(g, now) != nil }) {
+				ids = append(ids, u.ID)
+			}
+		}
+	}); err != nil {
+		return err
+	}
+	return h.sync(ids...)
 }
 
 // -- PATCH ------------------------------------------------------------------

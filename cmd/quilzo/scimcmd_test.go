@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -428,5 +429,73 @@ func TestAProvisionedAuditorsAccessEnds(t *testing.T) {
 		if err != nil || !strings.Contains(said.String(), "grants nothing") {
 			t.Errorf("the status of a group mapped to %q does not say it grants nothing (%v):\n%s", stale, err, &said)
 		}
+	}
+}
+
+// A group mapped to auditor before such a mapping had to carry a day takes
+// back what it gave when the admin starts, not whenever the identity
+// provider next happens to send something about its members.
+//
+// Provisioning runs when the provider sends a change, or a group is mapped
+// or unmapped, and only then. On a store upgraded with auditor already
+// mapped, the mapping granted nothing (scim.CheckEnds) and `scim status` said
+// so, while its members went on holding auditor with no end, which for
+// somebody whose groups do not change was for good: the finding the day was
+// added for, left standing on the store it was found on. Only they are
+// synced, so a provisioned grant taken back from somebody else by hand stays
+// taken back.
+func TestAnAuditorMappedWithoutADayIsTakenBackWhenTheAdminStarts(t *testing.T) {
+	root, c := newSCIM(t)
+	if err := cmdSCIM(root, []string{"map", "Assessors", "auditor", "--for", "60d"}); err != nil {
+		t.Fatal(err)
+	}
+	for user, group := range map[string]string{"aud@example.com": "Assessors", "ed@example.com": "Editors"} {
+		_, u := c.do(http.MethodPost, "/Users", `{"userName":"`+user+`","active":true}`)
+		c.do(http.MethodPost, "/Groups", `{"displayName":"`+group+`","members":[{"value":"`+u["id"].(string)+`"}]}`)
+	}
+
+	// As an earlier version left it: mapped with no day, and granted for
+	// good. And an editor's provisioned access taken back by hand.
+	if err := scimStore(root).Update(func(st *scim.State) error { st.Mapping["Assessors"] = "auditor"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := updatePolicy(root, func(p *auth.Policy) error {
+		for i := range p.Bindings {
+			if p.Bindings[i].Principal == "aud@example.com" {
+				p.Bindings[i].Expires = 0
+			}
+		}
+		p.Bindings = slices.DeleteFunc(p.Bindings, func(b auth.Binding) bool { return b.Principal == "ed@example.com" })
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := loadPolicy(root); !p.Evaluate("aud@example.com", auth.ActView, auth.AreaCompliance).Allowed {
+		t.Fatal("the earlier version's grant is not in place to begin with")
+	}
+
+	if err := scimHandler(root).SyncRefused(time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	p, err := loadPolicy(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range p.Snapshot() {
+		switch b.Principal {
+		case "aud@example.com":
+			t.Errorf("a group mapped to auditor with no day still grants %s on %s", b.Role, b.Resource)
+		case "ed@example.com":
+			t.Errorf("starting the admin gave back %s on %s, which was taken back by hand", b.Role, b.Resource)
+		}
+	}
+
+	// And the admin does it as it starts.
+	src, err := os.ReadFile("serve.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src), "scimHandler(root).SyncRefused(") {
+		t.Error("the admin does not take back, as it starts, what a mapping that now grants nothing gave")
 	}
 }

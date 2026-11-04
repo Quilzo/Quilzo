@@ -206,6 +206,14 @@ func cmdServe(root string, args []string) error {
 	srv.Members = membersHooks(root)
 	srv.Boards = boardsHooks(root)
 	srv.SCIM = scimHooks(root)
+	// What a group's mapping now grants nothing for is taken back as the
+	// admin starts, rather than whenever the identity provider next sends a
+	// change about the people in it: a group mapped to auditor before such
+	// a mapping had to carry the day it ends left them holding auditor with
+	// no end (scim.Handler.SyncRefused).
+	if err := scimHandler(root).SyncRefused(time.Now()); err != nil {
+		fmt.Fprintf(os.Stderr, "  %sprovisioning: %v%s\n", yellow, err, reset)
+	}
 	srv.Memory = memoryAdmin(root)
 	srv.Features = featureHooks(root, signedIn)
 	srv.Pay = payHooks(root, signedIn)
