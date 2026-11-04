@@ -150,6 +150,13 @@ func TestALayerABrowserReadsDifferentlyIsRefused(t *testing.T) {
 		"block in a custom value":       ".a { --x: {} url(https://evil.example/a); background-image: var(--x); }",
 		"a property that is not a name": ".a { b url(//evil.example/x): 1; }",
 		"control character":             ".a::after { content: \"\x1b]0;owned\x07\"; }",
+		// Inside an address with no quotes round it, /* is two characters of
+		// the address, not a comment: a browser applied the second
+		// declaration, which this check had taken out as one.
+		"comment inside an address": ".a { background: url(/media/" + strings.Repeat("a", 64) +
+			"/*); background: url(https://evil.example/x.png); color: #ff0000; */); }",
+		"the same, in capitals":     ".a { background: URL(/media/" + strings.Repeat("a", 64) + "/*); outline: none; */); }",
+		"a quote inside an address": ".a { background: url(/media/x\"); } .b { color: \"; }",
 	} {
 		if !Blocks(CheckLayer(css, th)) {
 			t.Errorf("%s: %q was accepted", name, css)
@@ -157,7 +164,9 @@ func TestALayerABrowserReadsDifferentlyIsRefused(t *testing.T) {
 	}
 	// A rule over several lines, and a string that ends on its own line, are
 	// what every stylesheet is.
-	ok := ".a {\n  content: \"one line\";\n\tcolor: var(--primary);\r\n}\f\n"
+	ok := ".a {\n  content: \"one line\";\n\tcolor: var(--primary);\r\n}\f\n" +
+		".b { background: url(/media/" + strings.Repeat("b", 64) + ") /* a comment after it */; }\n" +
+		".c { background: url( \"/media/" + strings.Repeat("c", 64) + "\" /* inside, between tokens */); }\n"
 	if f := CheckLayer(ok, th); Blocks(f) {
 		t.Errorf("an ordinary layer over several lines was refused: %v", f)
 	}

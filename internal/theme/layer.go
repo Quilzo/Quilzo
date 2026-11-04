@@ -284,6 +284,41 @@ func stripComments(s string) (string, string) {
 			b.WriteByte(ch)
 			continue
 		}
+		// An address with no quotes round it is one token to a browser,
+		// read to its ")" with nothing inside it a comment. This check took
+		// comments out first, so `url(/media/ID/*); background:
+		// url(https://elsewhere/x); */)` was one allowed address to it and,
+		// to a browser, an address and then a picture from another host. So
+		// such an address is copied as it is, for the url() rule to judge
+		// whole — and a quote mark in one, which a browser reads as a broken
+		// address and this check as a string, is refused.
+		if (ch == 'u' || ch == 'U') && i+4 <= len(s) && strings.EqualFold(s[i:i+4], "url(") {
+			j := i + 4
+			for j < len(s) && (s[j] == ' ' || s[j] == '\t' || s[j] == '\n' || s[j] == '\r' || s[j] == '\f') {
+				j++
+			}
+			if j < len(s) && (s[j] == '"' || s[j] == '\'') {
+				// A function with a string in it: tokens, between which a
+				// comment is a comment.
+				b.WriteString(s[i:j])
+				i = j - 1
+				continue
+			}
+			end := strings.IndexByte(s[j:], ')')
+			if end < 0 {
+				return "", "a url( is never closed, so a browser would read the rest of the " +
+					"layer as one address"
+			}
+			address := s[j : j+end]
+			if strings.ContainsAny(address, `"'`) {
+				return "", "a url( has a quote mark inside an address with no quotes round it, " +
+					"which a browser reads as a broken address and this check as the start of " +
+					"a string. Put the whole address in quotes, or none of it"
+			}
+			b.WriteString(s[i : j+end+1])
+			i = j + end
+			continue
+		}
 		if ch == '/' && i+1 < len(s) && s[i+1] == '*' {
 			end := strings.Index(s[i+2:], "*/")
 			if end < 0 {

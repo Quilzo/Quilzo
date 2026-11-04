@@ -332,8 +332,9 @@ forced-colours rules underneath are `!important` so nothing outvotes them), no
 redefining a token, no taking away the focus outline (a zero width in any
 unit, `none` anywhere in it, or a custom property of the layer's that says
 either), and at most 64 KiB. Nor anything a browser would read differently
-from the check: a string that runs over a line break, a `{ }` block in a
-custom property, a declaration whose property is not a name, or a control
+from the check: a string that runs over a line break, a comment or a quote
+mark inside an address with no quotes round it, a `{ }` block in a custom
+property, a declaration whose property is not a name, or a control
 character. A rule that sets both a text colour and its background from tokens has that pair
 checked at 4.5:1 in every scheme the site is served in. A layer with anything
 refused in it is not served at all, and `theme check` names each rule; a
