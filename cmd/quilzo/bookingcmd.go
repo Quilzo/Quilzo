@@ -219,6 +219,12 @@ func bookingSetupCmd(root string, args []string, caller *Caller) error {
 			return err
 		}
 		if s == nil {
+			// null under --json: the setup, which there is none of. The
+			// sentence went through Human, which writes nothing under
+			// --json, so a script was answered with an empty output.
+			if w.JSON(nil) {
+				return nil
+			}
 			w.Human("this site takes no bookings; start from: quilzo booking example > bookings.json\n")
 			return nil
 		}
@@ -246,6 +252,9 @@ func bookingSetupCmd(root string, args []string, caller *Caller) error {
 	}
 	if err := saveBookingSetup(root, &s, caller, "setup"); err != nil {
 		return err
+	}
+	if w.JSON(map[string]any{"services": len(s.Services)}) {
+		return nil
 	}
 	w.Human("the site takes bookings for %d service(s); a page shows them with a booking section naming one\n",
 		len(s.Services))

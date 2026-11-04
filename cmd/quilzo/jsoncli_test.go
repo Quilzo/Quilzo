@@ -40,12 +40,23 @@ func TestEveryListingAnswersInJSON(t *testing.T) {
 	if err := cmdDemo(root, []string{"-publish=false", "-templates", tpl}); err != nil {
 		t.Fatal(err)
 	}
+	bookings := t.TempDir() + "/bookings.json"
+	body, _ := json.Marshal(bookingExample())
+	if err := os.WriteFile(bookings, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	for _, c := range [][]string{
 		{"agent", "list"}, {"agent", "templates"}, {"apps", "list"}, {"audit", tpl},
 		{"auth", "list"}, {"auth", "roles"}, {"brand", "check"}, {"brand", "list"},
 		{"browser", "status"}, {"diff"}, {"inbox", "list"}, {"integrations", "list"},
 		{"log"}, {"peer", "list"}, {"research", "list"}, {"rights"}, {"secret", "list"}, {"signals", "status"},
 		{"token", "list"}, {"version"},
+		// These three printed their prose under --json. A site that takes no
+		// bookings yet, one being set up and one that does, in that order,
+		// because each is a different branch; and an explanation both of
+		// everything a principal may do and of one action, refused.
+		{"auth", "explain", "ada"}, {"auth", "explain", "ada", "publish"}, {"saml", "presets"},
+		{"booking", "setup"}, {"booking", "setup", bookings}, {"booking", "setup"},
 	} {
 		name := strings.Join(c, " ")
 		t.Run(name, func(t *testing.T) {
