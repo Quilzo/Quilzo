@@ -807,6 +807,69 @@ func TestAnEnabledAccountLiftsOnlyThisReceiversDenyAndNeverAnOlderOne(t *testing
 	}
 }
 
+// An account-disabled older than an account-enabled already acted on is a
+// retry that arrived late, and the person the provider enabled since stays
+// enabled, after a restart and with the stream turned off and connected
+// again too. The transmitter sent the disable, which failed once here, then
+// the enable; its retry of the disable came last and suspended the person
+// again. A disable newer than both still suspends.
+func TestAnOlderDisableDoesNotUndoANewerEnable(t *testing.T) {
+	c := signalsStore(t, "email")
+	c.connect(t, "oidc")
+	now := time.Now()
+	disabled := c.tx.event(t, riscEvent+"account-disabled", email("ada@example.com"), nil, now.Add(-10*time.Minute))
+	// The first try fails: the policy cannot be read, so the transmitter is
+	// told to send it again.
+	kept, err := os.ReadFile(policyPath(c.root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(policyPath(c.root), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if w := c.push(t, disabled); w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("with the policy unreadable the disable was answered %d", w.Code)
+	}
+	if err := os.WriteFile(policyPath(c.root), kept, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c.send(t, riscEvent+"account-enabled", email("ada@example.com"), nil, now.Add(-5*time.Minute))
+
+	reads := func(when string) {
+		t.Helper()
+		p, _ := loadPolicy(c.root)
+		if !p.Evaluate("ada@example.com", auth.ActView, "/").Allowed {
+			t.Fatalf("%s, the disable sent before the enable suspended her again", when)
+		}
+	}
+	if w := c.push(t, disabled); w.Code != http.StatusAccepted {
+		t.Fatalf("the late retry was answered %d", w.Code)
+	}
+	reads("retried late")
+	c.restart(t)
+	if w := c.push(t, disabled); w.Code != http.StatusAccepted {
+		t.Fatalf("after a restart the late retry was answered %d", w.Code)
+	}
+	reads("after a restart")
+	if err := cmdSignals(c.root, []string{"off"}); err != nil {
+		t.Fatal(err)
+	}
+	c.connect(t, "oidc")
+	if w := c.push(t, c.tx.event(t, riscEvent+"account-purged", email("ada@example.com"), nil, now.Add(-7*time.Minute))); w.Code != http.StatusAccepted {
+		t.Fatalf("an old purge was answered %d", w.Code)
+	}
+	reads("with the stream connected again")
+	stale := signalsActions(t, c.root)["signals.stale"]
+	if len(stale) != 3 || stale[0].Outcome != audit.Denied || stale[0].Detail["type"] != "account-disabled" {
+		t.Errorf("recorded as stale: %+v", stale)
+	}
+
+	c.send(t, riscEvent+"account-disabled", email("ada@example.com"), nil, now)
+	if p, _ := loadPolicy(c.root); p.Evaluate("ada@example.com", auth.ActView, "/").Allowed {
+		t.Error("a disable newer than the enable did not suspend her")
+	}
+}
+
 // The last person who can grant access is not shut out on the provider's
 // word: their sessions end, no deny is added, and the security contact is
 // told.
@@ -873,7 +936,7 @@ func TestTwoAdministratorsDisabledAtOnceLeaveOneWhoCanGrant(t *testing.T) {
 			t.Fatal(err)
 		}
 		if err := updateSignals(c.root, func(s *signalsConfig) error {
-			s.Hour, s.LastActed = signalsHour{}, nil
+			s.Hour, s.LastActed, s.LastDisabled, s.LastEnabled = signalsHour{}, nil, nil, nil
 			return nil
 		}); err != nil {
 			t.Fatal(err)

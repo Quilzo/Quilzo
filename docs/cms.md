@@ -2141,7 +2141,11 @@ What keeps that from being turned against the site:
   Whoever is told suspends the rest by hand, from the provider's own log of
   whom it disabled.
 - An account-enabled older than the last event acted on for that person is
-  refused, after a restart too, so a replay cannot lift a newer suspension.
+  refused, after a restart too, so a replay cannot lift a newer suspension. An
+  account-disabled or account-purged older than the last account-enabled acted
+  on, or no newer than the last one acted on, is refused the same way, so a
+  late retry cannot suspend again somebody the provider has enabled since. Each
+  is recorded as `signals.stale`.
 - The shield's `signals` feature turns the endpoint off. It answers 503 with
   a time to come back, so a transmitter that retries sends the event again
   later.
@@ -2169,7 +2173,7 @@ With the admin on loopback, publish only `/scim/v2/` and `/sso/signals` through
 the proxy (`deploy/Caddyfile` has the block, commented out). Each act is in the
 audit log as `signals.sessions-ended`, `signals.step-up`, `signals.suspended`,
 `signals.restored`, `signals.verified`, `signals.stream-status`,
-`signals.capped` and, at most once an hour, `signals.refused`. Connecting,
+`signals.stale`, `signals.capped` and, at most once an hour, `signals.refused`. Connecting,
 turning off and each day's request are `signals.connected`,
 `signals.disconnected` and `signals.verify-asked`, and each message to the
 security contact is `signals.told`.

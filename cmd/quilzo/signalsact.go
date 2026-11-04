@@ -148,15 +148,17 @@ func signalsDeliver(root string, set *ssf.SET, now time.Time) error {
 		return count(func(n *signalsCounts) { n.Unmatched++ })
 	}
 	key := signalsKey(principal)
-	// An account-enabled no newer than the last event acted on for them is
-	// one that arrived late or again: a suspension made after it stands.
-	// Kept in the file, so a restart, which forgets the ids already seen,
-	// does not make an old one new.
-	if act == signalsRestore && set.IssuedAt.Unix() <= c.LastActed[key] {
-		if err := count(func(n *signalsCounts) { n.Refused++; n.Unnoted++ }); err != nil {
+	// An account event older than what was done since arrived late or
+	// again (signalsStale), and is recorded and not acted on. Kept in the
+	// file, so a restart, which forgets the ids already seen, does not make
+	// an old one new.
+	if signalsStale(c, act, key, set.IssuedAt.Unix()) {
+		if err := count(func(n *signalsCounts) { n.Refused++ }); err != nil {
 			return err
 		}
-		signalsNoteRefusals(root, now)
+		d := cloneDetail(base)
+		d["subject"] = principal
+		signalsRecord(root, "signals.stale", audit.Denied, d)
 		return nil
 	}
 	if capped, first := signalsOverCap(c, key, now); capped {
@@ -238,11 +240,13 @@ func signalsDeliver(root string, set *ssf.SET, now time.Time) error {
 		s.Counts.Received++
 		s.Counts.Acted++
 		s.Counts.LastAt, s.Counts.LastType = now.UTC(), set.Short
-		if s.LastActed == nil {
-			s.LastActed = map[string]int64{}
-		}
-		if iat := set.IssuedAt.Unix(); iat > s.LastActed[key] {
-			s.LastActed[key] = iat
+		iat := set.IssuedAt.Unix()
+		signalsLater(&s.LastActed, key, iat)
+		switch act {
+		case signalsSuspend:
+			signalsLater(&s.LastDisabled, key, iat)
+		case signalsRestore:
+			signalsLater(&s.LastEnabled, key, iat)
 		}
 		if now.Sub(s.Hour.Start) >= time.Hour {
 			s.Hour = signalsHour{Start: now.UTC()}
@@ -252,6 +256,37 @@ func signalsDeliver(root string, set *ssf.SET, now time.Time) error {
 		}
 		return nil
 	})
+}
+
+// signalsStale reports whether an account event about somebody is older
+// than what was already done about them.
+//
+//	account-enabled    no newer than the last event of any kind acted on:
+//	                   a suspension, or anything else, made after it stands
+//	account-disabled,  older than the last account-enabled, which the
+//	account-purged     provider sent after it, or no newer than the last
+//	                   disable, which was acted on already: a person may
+//	                   have lifted that one since, and its copy is not the
+//	                   provider's word again
+func signalsStale(c *signalsConfig, act signalsAction, key string, iat int64) bool {
+	switch act {
+	case signalsRestore:
+		return iat <= c.LastActed[key]
+	case signalsSuspend:
+		return iat < c.LastEnabled[key] || iat <= c.LastDisabled[key]
+	}
+	return false
+}
+
+// signalsLater keeps, for somebody, the later of an issue time and the one
+// kept.
+func signalsLater(m *map[string]int64, key string, iat int64) {
+	if *m == nil {
+		*m = map[string]int64{}
+	}
+	if iat > (*m)[key] {
+		(*m)[key] = iat
+	}
 }
 
 // signalsOverCap reports whether acting on somebody would pass the hour's

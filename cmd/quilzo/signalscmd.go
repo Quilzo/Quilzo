@@ -106,6 +106,21 @@ type signalsConfig struct {
 	// across restarts, so an older account-enabled cannot lift a newer
 	// suspension by arriving later or again.
 	LastActed map[string]int64 `json:"last_acted,omitempty"`
+	// LastDisabled and LastEnabled are, by the same digest, when the last
+	// account-disabled or account-purged, and the last account-enabled,
+	// acted on for them were issued. Kept the same way, so an older
+	// disable cannot suspend again somebody the provider enabled since:
+	// the transmitter's retry of a disable that failed here once arrived
+	// after the enable it sent next, and the enable was undone.
+	LastDisabled map[string]int64 `json:"last_disabled,omitempty"`
+	LastEnabled  map[string]int64 `json:"last_enabled,omitempty"`
+}
+
+// keep carries over what the receiver remembers about whom it acted on,
+// from the stream that was to the one that is, or to none: what stops an
+// old event undoing a newer one.
+func (c *signalsConfig) keep(from *signalsConfig) {
+	c.LastActed, c.LastDisabled, c.LastEnabled = from.LastActed, from.LastDisabled, from.LastEnabled
 }
 
 // signalsCounts are what the stream has sent and what came of it.
@@ -443,7 +458,7 @@ func signalsConnect(root string, args []string) error {
 // remembers about whom it acted on.
 func signalsSave(root string, cfg signalsConfig) error {
 	return updateSignals(root, func(c *signalsConfig) error {
-		cfg.LastActed = c.LastActed
+		cfg.keep(c)
 		*c = cfg
 		return nil
 	})
@@ -608,7 +623,9 @@ func signalsOff(root string) error {
 	}
 	issuer := c.Issuer
 	if err := updateSignals(root, func(s *signalsConfig) error {
-		*s = signalsConfig{LastActed: s.LastActed}
+		var off signalsConfig
+		off.keep(s)
+		*s = off
 		return nil
 	}); err != nil {
 		return err
