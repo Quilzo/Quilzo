@@ -1098,7 +1098,20 @@ func main() {
 // open is the one place any command gets a store, which is why encryption is
 // wired here: every command inherits it, including the ones added next year by
 // somebody who has not read this file.
-func open(root string) (*store.Store, error) { return openEncrypted(root) }
+//
+// It is also where a store is made, by whichever command comes first, so it
+// is where a store made in a container's own layer is said (ephemeral.go).
+// init said so and nothing else did: `docker run --rm IMAGE demo` with no
+// volume said "Marginalia is installed" and exited 0 into the layer --rm
+// then deleted, the same store made and lost without a word.
+func open(root string) (*store.Store, error) {
+	made := !isStore(root)
+	s, err := openEncrypted(root)
+	if err == nil && made {
+		warnContainerLayer(root)
+	}
+	return s, err
+}
 
 // reorder moves flags ahead of positional arguments.
 //
@@ -1190,8 +1203,9 @@ func cmdInit(root string) error {
 			"moves a pointer%s\n", dim, reset)
 	} else {
 		w.Human("reusing %s\n", s.Root())
+		// open said it of a store it made; of one that was there, this does.
+		warnContainerLayer(root)
 	}
-	warnContainerLayer(root)
 	return nil
 }
 

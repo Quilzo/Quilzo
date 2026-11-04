@@ -58,6 +58,51 @@ func TestInitSaysWhenTheStoreWouldGoWithTheContainer(t *testing.T) {
 	}
 }
 
+// Also finding STACK-F1, reached by the quickstart's next command. Only init
+// said that a store was going into the container's own layer, and any
+// command makes the store when there is none: `docker run --rm IMAGE demo`
+// with no volume said "Marginalia is installed", exited 0, and --rm deleted
+// what it had installed. Whichever command makes the store says so, once,
+// and a command on a store that is already there says nothing.
+func TestEveryCommandThatMakesTheStoreSaysWhenItWouldBeLost(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	saved, savedW := readMountInfo, w
+	t.Cleanup(func() { readMountInfo, w = saved, savedW })
+	readMountInfo = func() ([]byte, error) { return []byte(containerRoot), nil }
+	var stderr bytes.Buffer
+	w = &out.Writer{Out: &bytes.Buffer{}, Err: &stderr}
+	const said = "goes when the container does"
+
+	base := t.TempDir()
+	root := filepath.Join(base, "store")
+	if err := cmdDemo(root, []string{"--templates", filepath.Join(base, "templates"),
+		"--examples", filepath.Join(base, "examples")}); err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(stderr.String(), said); n != 1 {
+		t.Errorf("demo made the store in the container's own layer and said so %d times:\n%s", n, stderr.String())
+	}
+	stderr.Reset()
+	if _, err := open(root); err != nil {
+		t.Fatal(err)
+	}
+	if stderr.Len() > 0 {
+		t.Errorf("a command on a store that is already there was told it again:\n%s", stderr.String())
+	}
+
+	// init says it once as well, when it makes the store and when it finds it.
+	other := filepath.Join(base, "other")
+	for _, run := range []string{"making it", "finding it"} {
+		stderr.Reset()
+		if err := cmdInit(other); err != nil {
+			t.Fatal(err)
+		}
+		if n := strings.Count(stderr.String(), said); n != 1 {
+			t.Errorf("init, %s, said so %d times:\n%s", run, n, stderr.String())
+		}
+	}
+}
+
 // escapeMount writes a path as the mount table does: a space, a tab, a
 // newline and a backslash as octal escapes.
 func escapeMount(p string) string {

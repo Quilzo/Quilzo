@@ -5,6 +5,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -96,8 +97,13 @@ func warnContainerLayer(root string) {
 		return
 	}
 	// Standard error, so it is said in --json mode too and a script reading
-	// the answer does not take it for part of it.
-	fmt.Fprintf(w.Err, "  %sthe store is in this container's own filesystem, which goes when the container does: "+
+	// the answer does not take it for part of it. Every command opens a
+	// store, and a test can open one before anything has made the writer.
+	dst := io.Writer(os.Stderr)
+	if w != nil && w.Err != nil {
+		dst = w.Err
+	}
+	fmt.Fprintf(dst, "  %sthe store is in this container's own filesystem, which goes when the container does: "+
 		"with --rm, as soon as this command ends.\n  Mount a volume on it to keep it: docker run -v quilzo:%s ...%s\n",
 		yellow, abs, reset)
 }
