@@ -34,11 +34,22 @@ import (
 // The veil is uniform for that reason. A gradient from strong to clear is
 // prettier and is unreadable somewhere along it by construction.
 
-// backdropPairs are what sits directly on a backdrop's veil: the words, and
-// the ring that shows where the keyboard is. Links on a veil take the text
-// colour (see the components), so they are the words.
+// backdropPairs are what sits directly on a backdrop's veil: the words, the
+// quieter words, the accent and the ring that shows where the keyboard is.
+// Links on a veil take the text colour (see the components), so they are the
+// words.
+//
+// It was the words and the ring alone. A section over a backdrop keeps its
+// standfirst, its captions and its quotes in the secondary colour and its
+// eyebrow in the accent, straight on the veil, so a mid-grey secondary colour
+// that read at 5.5:1 on the page was 3.6:1 over the shipped veil on a dark
+// picture, and the check said the words over it were fine. A card's border
+// is not here: a card brings its own surface, and the words in it are judged
+// against that.
 var backdropPairs = []Pair{
 	{"on-surface", "scrim", 4.5, "the words over a backdrop picture or video", "WCAG 1.4.3"},
+	{"on-surface-variant", "scrim", 4.5, "secondary text over a backdrop — a standfirst, a caption, a quote", "WCAG 1.4.3"},
+	{"primary", "scrim", 4.5, "an eyebrow over a backdrop, which is in the accent", "WCAG 1.4.3"},
 	{"focus-ring", "scrim", 3.0, "the focus ring over a backdrop picture or video", "WCAG 2.4.11"},
 }
 

@@ -371,7 +371,8 @@ func themeCheck(args []string) error {
 	reportLayer(*dir, d)
 	w.Human("\n  %swhat is not checked: whether the palette is any good, "+
 		"anything a colour outside the theme does, and in a style layer, a "+
-		"colour pair split across two rules or text faded by opacity%s\n", dim, reset)
+		"colour pair split across two rules, text faded by opacity, or a rule "+
+		"that hides the veil over a backdrop%s\n", dim, reset)
 	if blocking > 0 {
 		return fmt.Errorf("%d text pair(s) below the ratio a reader needs", blocking)
 	}

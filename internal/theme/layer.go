@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -46,6 +47,10 @@ import (
 //   - No removing the focus outline.
 //   - No backslash escapes, which can spell any word in a way no pattern
 //     sees, and no "<", which a stylesheet has no use for.
+//   - No string that runs over a line break, no { } block in a custom
+//     property's value, no property that is not a name and no control
+//     character: each is text a browser reads one way and this check
+//     another (see stripComments).
 //   - A rule that sets both a text colour and a background from tokens has
 //     that pair held to 4.5:1 in every scheme the site is served in.
 //   - At most MaxLayer bytes.
@@ -155,6 +160,17 @@ type layerCheck struct {
 	findings []Finding
 	declared map[string]bool
 	read     map[string]bool
+	// custom is every value the layer gives each custom property of its own,
+	// and outlines every outline declaration, judged once the whole layer is
+	// read: `outline: var(--off)` takes the ring away when --off is "none",
+	// and --off may be declared after the rule that reads it.
+	custom   map[string][]string
+	outlines []outlineUse
+}
+
+// outlineUse is one outline declaration, kept to be judged at the end.
+type outlineUse struct {
+	prop, value, where, decl string
 }
 
 func (c *layerCheck) refuse(format string, a ...any) {
@@ -167,7 +183,8 @@ func (c *layerCheck) refuse(format string, a ...any) {
 // schemes the site is served in. Blocking findings mean the layer is not
 // served; nothing in it is applied until all of them are fixed.
 func CheckLayer(css string, t *Theme) []Finding {
-	c := &layerCheck{theme: t, declared: map[string]bool{}, read: map[string]bool{}}
+	c := &layerCheck{theme: t, declared: map[string]bool{}, read: map[string]bool{},
+		custom: map[string][]string{}}
 	if len(css) > MaxLayer {
 		c.refuse("it is %d bytes, and a style layer may be at most %d. It is a layer over "+
 			"a stylesheet, not a second one", len(css), MaxLayer)
@@ -175,6 +192,18 @@ func CheckLayer(css string, t *Theme) []Finding {
 	}
 	if !utf8.ValidString(css) || strings.ContainsRune(css, 0) {
 		c.refuse("it is not UTF-8 text")
+		return c.findings
+	}
+	// A control character has no use in a stylesheet, and a refusal quotes
+	// the rule it is in: printed by `theme check` or `feature install`, an
+	// escape sequence in a layer from somebody else's package is one the
+	// operator's terminal obeys. Tab and the three line breaks are layout.
+	if i := strings.IndexFunc(css, func(r rune) bool {
+		return unicode.IsControl(r) && r != '\t' && r != '\n' && r != '\r' && r != '\f'
+	}); i >= 0 {
+		r, _ := utf8.DecodeRuneInString(css[i:])
+		c.refuse("it holds a control character (U+%04X), which a stylesheet has no use "+
+			"for and which a terminal printing this rule back would act on", r)
 		return c.findings
 	}
 	if strings.Contains(css, `\`) {
@@ -187,13 +216,13 @@ func CheckLayer(css string, t *Theme) []Finding {
 			"inside a page, is how a stylesheet ends its own <style>")
 		return c.findings
 	}
-	body, ok := stripComments(css)
-	if !ok {
-		c.refuse("a comment is opened with /* and never closed, so everything after it " +
-			"would be read as one comment by a browser and as rules by this check")
+	body, problem := stripComments(css)
+	if problem != "" {
+		c.refuse("%s", problem)
 		return c.findings
 	}
 	c.rules(body, nil, false, 0)
+	c.judgeOutlines()
 
 	var unread []string
 	for name := range c.read {
@@ -219,14 +248,31 @@ func knownProperty(name string) bool {
 	return derivedNames[name] || name == "pct"
 }
 
-// stripComments removes /* … */, outside strings. False when one is open at
-// the end.
-func stripComments(s string) (string, bool) {
+// stripComments removes /* … */, outside strings, and says what is wrong
+// when a comment is open at the end or a string runs over a line break.
+//
+// # Why a line break in a string is refused
+//
+// Everything here assumes it reads the layer the way a browser does, and a
+// string is where the two parted. A browser ends a string at a line break:
+// what it had is a broken string, the declaration holding it is dropped, and
+// the next line is read as declarations and applied. This check read on to
+// the next quote mark. So `content: "x`, a line break, and on the next line
+// a picture from another host, a hex colour, `outline: none` and a redefined
+// token went through as the inside of one string, unread. Backslashes are
+// refused already, so there is no way to write a line break inside a string
+// on purpose, and refusing one costs a stylesheet nothing.
+func stripComments(s string) (string, string) {
 	var b strings.Builder
 	quote := byte(0)
 	for i := 0; i < len(s); i++ {
 		ch := s[i]
 		if quote != 0 {
+			if ch == '\n' || ch == '\r' || ch == '\f' {
+				return "", "a string runs over a line break. A browser ends it there and " +
+					"reads the next line as rules, which this check would have read as " +
+					"the words of the string, so close every string on the line it opens"
+			}
 			b.WriteByte(ch)
 			if ch == quote {
 				quote = 0
@@ -241,7 +287,8 @@ func stripComments(s string) (string, bool) {
 		if ch == '/' && i+1 < len(s) && s[i+1] == '*' {
 			end := strings.Index(s[i+2:], "*/")
 			if end < 0 {
-				return "", false
+				return "", "a comment is opened with /* and never closed, so everything " +
+					"after it would be read as one comment by a browser and as rules by this check"
 			}
 			i += end + 3
 			b.WriteByte(' ')
@@ -249,7 +296,11 @@ func stripComments(s string) (string, bool) {
 		}
 		b.WriteByte(ch)
 	}
-	return b.String(), true
+	if quote != 0 {
+		return "", "a string is opened and never closed, so a browser would read the rest " +
+			"of the layer as its words"
+	}
+	return b.String(), ""
 }
 
 // next reads up to the first of ;, { or } outside strings and brackets, and
@@ -361,8 +412,7 @@ func (c *layerCheck) blockRule(prelude, inner string, selectors []string, forced
 			return
 		}
 		c.value(cond, "@"+name, false)
-		lower := strings.ToLower(strings.ReplaceAll(cond, " ", ""))
-		within := forced || name == "media" && strings.Contains(lower, "forced-colors:active")
+		within := forced || name == "media" && forcedOnly(cond)
 		if name == "keyframes" || name == "-webkit-keyframes" {
 			// The steps are named "from", "to" and percentages; each holds
 			// declarations like a rule does.
@@ -376,7 +426,42 @@ func (c *layerCheck) blockRule(prelude, inner string, selectors []string, forced
 		c.refuse("a rule has no selector")
 		return
 	}
+	// A custom property may hold a { } block, and a browser keeps it as the
+	// property's value — while to this check `--x: { … } url(…)` was a rule
+	// whose selector nobody reads, and what followed the block went with it.
+	// No element is called --anything, so no selector starts that way.
+	if strings.HasPrefix(prelude, "--") {
+		c.refuse("%q gives a custom property a { } block, which a browser keeps as its "+
+			"value and this check would read as a rule. A custom property in a layer "+
+			"holds a value: a length, or a mix of tokens", clip(prelude, 60))
+		return
+	}
 	c.rules(inner, append(append([]string(nil), selectors...), prelude), forced, depth+1)
+}
+
+// forcedOnly reports whether an @media condition holds only while forced
+// colours are on: every branch of it asks for (forced-colors: active), and
+// nothing in it is negated or offered as an alternative.
+//
+// It was enough for the words to appear anywhere, so `not (forced-colors:
+// active)` — every reader but the one it is for — and `(forced-colors:
+// active), all` let the operating system's default colours onto every page,
+// where nothing judged them against the palette.
+func forcedOnly(cond string) bool {
+	lower := strings.ToLower(cond)
+	for _, word := range strings.FieldsFunc(lower, func(r rune) bool {
+		return !(r == '-' || r >= 'a' && r <= 'z')
+	}) {
+		if word == "not" || word == "or" {
+			return false
+		}
+	}
+	for _, branch := range strings.Split(lower, ",") {
+		if !strings.Contains(strings.Join(strings.Fields(branch), ""), "(forced-colors:active)") {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *layerCheck) statementAtRule(head string) {
@@ -400,6 +485,15 @@ func (c *layerCheck) declaration(d string, selectors []string, forced bool) {
 	lower := strings.ToLower(prop)
 	value = strings.TrimSpace(value)
 	where := strings.Join(selectors, " ")
+	// Everything before the colon was taken on trust as a property's name,
+	// and nothing in it was read: `b url(//elsewhere/x): 1` passed. A browser
+	// drops a declaration whose name is not a name, so refusing one costs
+	// nothing and leaves no text this check skips.
+	if !isName(prop) {
+		c.refuse("%q is not a property: a declaration starts with a property's name and "+
+			"a colon", clip(d, 60))
+		return
+	}
 	if strings.Contains(outsideStrings(value), "!") {
 		c.refuse("%s { %s } is marked !important. The reduced-motion and forced-colours "+
 			"rules underneath are !important so that nothing outvotes them, and a layer "+
@@ -418,31 +512,127 @@ func (c *layerCheck) declaration(d string, selectors []string, forced bool) {
 			return
 		}
 		c.declared[name] = true
+		c.custom[name] = append(c.custom[name], value)
 	}
-	if strings.HasPrefix(lower, "outline") && removesOutline(lower, value) {
-		c.refuse("%s { %s } takes away the focus outline, which is how anybody not "+
-			"using a mouse knows where they are (WCAG 2.4.7)", clip(where, 40), clip(d, 60))
-		return
+	switch lower {
+	case "outline", "outline-style", "outline-width", "outline-color":
+		c.outlines = append(c.outlines, outlineUse{prop: lower, value: value,
+			where: clip(where, 40), decl: clip(d, 60)})
 	}
 	c.value(value, prop, forced)
 }
 
-// removesOutline is an outline declaration that leaves none to see.
-func removesOutline(prop, value string) bool {
-	v := strings.ToLower(strings.TrimSpace(value))
-	switch prop {
-	case "outline":
-		return v == "none" || v == "0" || v == "0px" || strings.HasPrefix(v, "0 ") ||
-			strings.HasPrefix(v, "none ") || strings.Contains(v, " none") ||
-			strings.Contains(v, "transparent")
-	case "outline-style":
-		return v == "none" || v == "hidden"
-	case "outline-width":
-		return v == "0" || v == "0px"
-	case "outline-color":
-		return v == "transparent"
+// judgeOutlines refuses every outline declaration that takes the focus ring
+// away, once the custom properties it may read are all known.
+//
+// It compared the whole value with "0", "0px" and "none", so `outline: 0px
+// solid`, `outline-width: 0em` and `outline: var(--off)` with --off set to
+// none each left a keyboard reader no ring and passed. So the value is read
+// as words — every word of it, and every word of every value each custom
+// property it names is given here or in the theme — and one that leaves
+// nothing to see is enough.
+func (c *layerCheck) judgeOutlines() {
+	for _, o := range c.outlines {
+		if removesOutline(o.prop, c.outlineWords(o.value, 0, map[string]bool{})) {
+			c.refuse("%s { %s } takes away the focus outline, which is how anybody not "+
+				"using a mouse knows where they are (WCAG 2.4.7)", o.where, o.decl)
+		}
+	}
+}
+
+// outlineWords are the words of a value, its functions opened out, and the
+// words of what each custom property it names may hold.
+func (c *layerCheck) outlineWords(value string, depth int, seen map[string]bool) []string {
+	words := strings.FieldsFunc(strings.ToLower(value), func(r rune) bool {
+		return r == ' ' || r == '\t' || r == '\n' || r == '\r' || r == '\f' ||
+			r == '(' || r == ')' || r == ','
+	})
+	if depth > 8 {
+		return words
+	}
+	out := append([]string(nil), words...)
+	for _, w := range words {
+		name, ok := strings.CutPrefix(w, "--")
+		if !ok || seen[name] {
+			continue
+		}
+		seen[name] = true
+		for _, v := range c.custom[name] {
+			out = append(out, c.outlineWords(v, depth+1, seen)...)
+		}
+		if tok, known := Lookup(name); known && c.theme != nil {
+			out = append(out, c.outlineWords(c.theme.value(tok, false), depth+1, seen)...)
+			out = append(out, c.outlineWords(c.theme.value(tok, true), depth+1, seen)...)
+		}
+	}
+	return out
+}
+
+// removesOutline is an outline declaration whose words leave nothing to see:
+// a style of none or hidden, a width of nothing in any unit, or a colour that
+// is no colour at all.
+func removesOutline(prop string, words []string) bool {
+	if prop == "outline-color" {
+		// Only a colour that is wholly transparent: one mixed with it, a
+		// translucent ring, is still a ring.
+		seen := false
+		for _, w := range words {
+			if w == "var" || strings.HasPrefix(w, "--") {
+				continue
+			}
+			if w != "transparent" {
+				return false
+			}
+			seen = true
+		}
+		return seen
+	}
+	for _, w := range words {
+		switch {
+		case w == "none" || w == "hidden":
+			if prop == "outline" || prop == "outline-style" {
+				return true
+			}
+		case w == "transparent":
+			if prop == "outline" {
+				return true
+			}
+		case reZeroLength.MatchString(w):
+			if prop == "outline" || prop == "outline-width" {
+				return true
+			}
+		}
 	}
 	return false
+}
+
+// reZeroLength is a length of nothing, in any unit or none.
+var reZeroLength = regexp.MustCompile(`^[+-]?(0+(\.0*)?|\.0+)([a-z]+)?$`)
+
+// isName is a property's name: an identifier, or -- and the name of a
+// custom property.
+func isName(s string) bool {
+	if rest, custom := strings.CutPrefix(s, "--"); custom {
+		if rest == "" {
+			return false
+		}
+		for i := 0; i < len(rest); i++ {
+			if !isIdentChar(rest[i]) {
+				return false
+			}
+		}
+		return true
+	}
+	s = strings.TrimPrefix(s, "-")
+	if s == "" || !isIdentStart(s[0]) {
+		return false
+	}
+	for i := 1; i < len(s); i++ {
+		if !isIdentChar(s[i]) {
+			return false
+		}
+	}
+	return true
 }
 
 // value walks one value: its functions, its words and its addresses.

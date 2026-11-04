@@ -128,3 +128,102 @@ func TestALayerPairIsJudgedInTheSchemesServed(t *testing.T) {
 		t.Errorf("a pair readable in the only scheme served was refused: %v", f)
 	}
 }
+
+// A layer that a browser reads differently from this check is refused.
+//
+// Each of these passed. A string with a line break in it is, to a browser, a
+// broken string that ends at the line break, so whatever follows on the next
+// line is a declaration it applies — and to this check it was the inside of
+// a string, so a picture from another host, a hex colour, a removed focus
+// outline and a redefined token all went through unread. A custom property
+// may hold a { } block, which a browser keeps as its value and this check
+// read as a rule whose selector nobody looks at. And a control character is
+// text a terminal obeys when `theme check` prints the rule back.
+func TestALayerABrowserReadsDifferentlyIsRefused(t *testing.T) {
+	th, _ := New(nil, nil)
+	hidden := "; background: url(https://evil.example/x.png); color: #ff0000; " +
+		"outline: none; --on-surface: var(--surface); content: "
+	for name, css := range map[string]string{
+		"line break in a string":        ".a { content: \"x\n" + hidden + "\"; }",
+		"carriage return":               ".a { content: 'x\r" + hidden + "'; }",
+		"form feed":                     ".a { content: \"x\f" + hidden + "\"; }",
+		"block in a custom value":       ".a { --x: {} url(https://evil.example/a); background-image: var(--x); }",
+		"a property that is not a name": ".a { b url(//evil.example/x): 1; }",
+		"control character":             ".a::after { content: \"\x1b]0;owned\x07\"; }",
+	} {
+		if !Blocks(CheckLayer(css, th)) {
+			t.Errorf("%s: %q was accepted", name, css)
+		}
+	}
+	// A rule over several lines, and a string that ends on its own line, are
+	// what every stylesheet is.
+	ok := ".a {\n  content: \"one line\";\n\tcolor: var(--primary);\r\n}\f\n"
+	if f := CheckLayer(ok, th); Blocks(f) {
+		t.Errorf("an ordinary layer over several lines was refused: %v", f)
+	}
+}
+
+// System colours are the reader's own palette only where forced colours are
+// certainly on. A query that also matches without them — negated, or with a
+// second branch — applied the operating system's default colours to every
+// reader, unjudged.
+func TestSystemColoursOnlyWhereForcedColoursAreCertain(t *testing.T) {
+	th, _ := New(nil, nil)
+	for _, query := range []string{
+		"not (forced-colors: active)",
+		"(forced-colors: active), all",
+		"(forced-colors: active), (prefers-contrast: more)",
+		"(forced-colors: active) or (min-width: 0)",
+		"not all and (forced-colors: active)",
+	} {
+		css := "@media " + query + " { .a { color: CanvasText; background: Canvas; } }"
+		if !Blocks(CheckLayer(css, th)) {
+			t.Errorf("system colours under @media %s were accepted", query)
+		}
+	}
+	for _, query := range []string{
+		"(forced-colors: active)",
+		"(forced-colors:active)",
+		"screen and (forced-colors: active)",
+		"(forced-colors: active) and (min-width: 40rem)",
+		"(forced-colors: active), print and (forced-colors: active)",
+	} {
+		css := "@media " + query + " { .a { color: CanvasText; } }"
+		if f := CheckLayer(css, th); Blocks(f) {
+			t.Errorf("system colours under @media %s were refused: %v", query, f)
+		}
+	}
+}
+
+// The focus outline is taken away however it is written: a zero width in
+// any unit, "none" anywhere in the shorthand, or a custom property of the
+// layer's own that says either.
+func TestTheFocusOutlineCannotBeTakenAwayAnyWay(t *testing.T) {
+	th, _ := New(nil, nil)
+	for _, css := range []string{
+		"a:focus-visible { outline: 0px solid var(--primary); }",
+		"a:focus-visible { outline: solid 0 var(--primary); }",
+		"a:focus-visible { outline: 0.0px; }",
+		"a:focus-visible { outline-width: 0em; }",
+		"a:focus-visible { outline-width: 0rem; }",
+		"a:focus-visible { outline: var(--primary) none 2px; }",
+		"a:focus-visible { outline: NONE; }",
+		":root { --off: none; } a:focus-visible { outline: var(--off); }",
+		"a:focus-visible { outline-style: var(--gone); } :root { --gone: none; }",
+		":root { --thin: 0px; } a:focus-visible { outline: var(--thin) solid var(--focus-ring); }",
+	} {
+		if !Blocks(CheckLayer(css, th)) {
+			t.Errorf("%q was accepted", css)
+		}
+	}
+	for _, css := range []string{
+		"a:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 0; }",
+		"a:focus-visible { outline: 0.2rem dashed currentColor; }",
+		":root { --ring: 3px; } a:focus-visible { outline: var(--ring) solid var(--focus-ring); }",
+		"a:focus-visible { outline-width: 2px; outline-style: solid; }",
+	} {
+		if f := CheckLayer(css, th); Blocks(f) {
+			t.Errorf("%q was refused: %v", css, f)
+		}
+	}
+}

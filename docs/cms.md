@@ -329,8 +329,12 @@ named colours, and the system colours only inside
 `@media (forced-colors: active)`. `url()` reaches only `/media/` and
 `/fonts/`, there is no `@import`, no `!important` (the reduced-motion and
 forced-colours rules underneath are `!important` so nothing outvotes them), no
-redefining a token, no taking away the focus outline, and at most 64 KiB. A
-rule that sets both a text colour and its background from tokens has that pair
+redefining a token, no taking away the focus outline (a zero width in any
+unit, `none` anywhere in it, or a custom property of the layer's that says
+either), and at most 64 KiB. Nor anything a browser would read differently
+from the check: a string that runs over a line break, a `{ }` block in a
+custom property, a declaration whose property is not a name, or a control
+character. A rule that sets both a text colour and its background from tokens has that pair
 checked at 4.5:1 in every scheme the site is served in. A layer with anything
 refused in it is not served at all, and `theme check` names each rule; a
 `site.css` still replaces everything, layer included. Changing a layer takes
@@ -346,7 +350,8 @@ quilzo theme layer unset
 ```
 
 What it cannot see is said rather than claimed: a colour pair split across two
-rules, and text faded afterwards by `opacity` or a filter.
+rules, text faded afterwards by `opacity` or a filter, and a rule that hides
+something the layout draws — the veil over a backdrop, or its stop switch.
 
 **A backdrop.** A hero names a picture or a recording from the library as
 `"backdrop_url": "/media/ID"`, and a section does the same with
@@ -358,7 +363,8 @@ background" switch beside it that needs no script (WCAG 2.2.2). Between the
 picture and the words is a veil of one colour at one strength — `scrim`, which
 is the page background unless set, and `scrim-strength`, 82% unless set — and
 the words are checked against the worst picture it could cover: the veil over
-black and over white. A page with a backdrop does not publish while that fails,
+black and over white. All the words that sit on it: the body text, the
+secondary text a standfirst or a caption is in, and the accent of an eyebrow. A page with a backdrop does not publish while that fails,
 and the refusal names the strength that would fix it. A recording with sound
 cannot be a backdrop, because muting it throws away what was said in it.
 

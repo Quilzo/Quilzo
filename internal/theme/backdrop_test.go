@@ -87,3 +87,35 @@ func TestOptInTokensAreWrittenOnlyWhenSet(t *testing.T) {
 		t.Errorf("a set opt-in token was not written:\n%s", css)
 	}
 }
+
+// Everything a page sets on its background is judged over the veil, not only
+// the body text.
+//
+// A section drawn over a backdrop keeps its standfirst, its captions and its
+// quotes in the secondary text colour and its eyebrow in the accent, straight
+// on the veil. Only the body text was judged there, so a mid-grey secondary
+// colour — 5.56:1 on the page, which every check passes, and 3.65:1 over the
+// shipped veil laid on black — published a standfirst nobody could read,
+// with the check saying the words over the picture were fine.
+func TestSecondaryTextOverAVeilIsJudged(t *testing.T) {
+	th, problems := New(map[string]string{"on-surface-variant.light": "#5e666a"}, nil)
+	if Blocks(problems) || Blocks(th.Check()) {
+		t.Fatalf("the palette is meant to pass on the page: %v %v", problems, th.Check())
+	}
+	veil, _ := th.Value("scrim", false)
+	body, _ := th.Value("on-surface", false)
+	if WorstOver(body, veil, 0.82) < 4.5 || WorstOver("#5e666a", veil, 0.82) >= 4.5 {
+		t.Fatalf("the fixture no longer separates the two: body %.2f, secondary %.2f",
+			WorstOver(body, veil, 0.82), WorstOver("#5e666a", veil, 0.82))
+	}
+	f := th.CheckBackdrop()
+	named := false
+	for _, x := range f {
+		if x.Blocking && strings.Contains(x.Detail, "on-surface-variant") {
+			named = true
+		}
+	}
+	if !named {
+		t.Errorf("secondary text below 4.5:1 over the veil passed: %v", f)
+	}
+}
