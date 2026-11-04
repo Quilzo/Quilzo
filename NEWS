@@ -123,6 +123,11 @@ Unreleased
     closes only once its evidence is written.  A posture finding about a
     token names the token, and the Security screen says whose it is.
 
+*** Agents: a decide step takes an object or a list as its state, a
+    person's answer to an escalated question keeps what the decider
+    settled, agent commands take their flags either side of the file or
+    name, and a finished run says what the agent concluded.
+
 ** Installing
 
 *** deploy/compose.yaml is a reference stack that works as written: the
