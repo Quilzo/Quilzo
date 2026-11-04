@@ -243,7 +243,23 @@ func scimSync(root, name string, grants []string, suspended bool) error {
 		note(t.Principal)
 	}
 
-	var want []auth.Binding
+	// What their groups give them. A suspension is sent none, since
+	// scim.State.Grants is nothing while somebody is inactive, so their
+	// groups are read here: what they give is what somebody keeps when
+	// suspending them would leave nobody able to grant (below).
+	var given, want []auth.Binding
+	meant := slices.Clone(grants)
+	if suspended {
+		_ = scimStore(root).Read(func(st *scim.State) {
+			if u, ok := st.UserNamed(name); ok {
+				for _, g := range st.GroupsOf(u.ID) {
+					if m := st.Mapping[g]; m != "" && !slices.Contains(meant, m) {
+						meant = append(meant, m)
+					}
+				}
+			}
+		})
+	}
 	// Read only when a group means one, so a feature whose package cannot
 	// be read stops nobody else's provisioning.
 	var roles []auth.AppRole
@@ -252,28 +268,29 @@ func scimSync(root, name string, grants []string, suspended bool) error {
 			return err
 		}
 	}
+	for _, g := range meant {
+		if job, ok := auth.JobNamed(g); ok {
+			for _, b := range job.Bindings {
+				given = append(given, auth.Binding{Principal: name, Role: b.Role, Resource: b.Resource})
+			}
+		} else if auth.Role(g).Valid() {
+			given = append(given, auth.Binding{Principal: name, Role: auth.Role(g), Resource: "/"})
+		} else if perm, ok := auth.PermissionNamed(g); ok {
+			given = append(given, auth.Binding{Principal: name, Permission: perm.Action, Resource: "/"})
+		} else if i := slices.IndexFunc(roles, func(r auth.AppRole) bool { return r.Name == g }); i >= 0 {
+			for _, b := range roles[i].Bindings {
+				given = append(given, auth.Binding{Principal: name, Role: b.Role, Permission: b.Permission,
+					Resource: b.Resource, Via: auth.ViaApp(g)})
+			}
+		}
+	}
 	if suspended {
 		for _, who := range spellings {
 			want = append(want, auth.Binding{Principal: who, Role: auth.RoleReader, Resource: "/", Deny: true,
 				Note: "suspended: the identity provider deactivated or removed them"})
 		}
 	} else {
-		for _, g := range grants {
-			if job, ok := auth.JobNamed(g); ok {
-				for _, b := range job.Bindings {
-					want = append(want, auth.Binding{Principal: name, Role: b.Role, Resource: b.Resource})
-				}
-			} else if auth.Role(g).Valid() {
-				want = append(want, auth.Binding{Principal: name, Role: auth.Role(g), Resource: "/"})
-			} else if perm, ok := auth.PermissionNamed(g); ok {
-				want = append(want, auth.Binding{Principal: name, Permission: perm.Action, Resource: "/"})
-			} else if i := slices.IndexFunc(roles, func(r auth.AppRole) bool { return r.Name == g }); i >= 0 {
-				for _, b := range roles[i].Bindings {
-					want = append(want, auth.Binding{Principal: name, Role: b.Role, Permission: b.Permission,
-						Resource: b.Resource, Via: auth.ViaApp(g)})
-				}
-			}
-		}
+		want = given
 	}
 	same := func(a, b auth.Binding) bool {
 		return a.Principal == b.Principal && a.Role == b.Role && a.Permission == b.Permission &&
@@ -300,15 +317,30 @@ func scimSync(root, name string, grants []string, suspended bool) error {
 	// administrators deactivated at once cannot each see the other still
 	// able to grant; any spelling of them counts, since the deny covers them
 	// all.
+	//
+	// Nobody at all able to grant is the same moment seen from the other
+	// side. The identity provider renaming the last administrator as it
+	// deactivated them, in one request or one after the other, took what
+	// provisioning gave them from the old name, as a rename does, and then
+	// denied the new one, which held nothing yet: nobody was left who could
+	// grant access, and nobody was told. So a suspension that finds nobody
+	// who can grant, of somebody what their groups give would make able to,
+	// gives them that and no deny, and their access moves with the name. An
+	// app's role is not read for a suspension, and does not count here.
 	var granted, revoked []auth.Binding
 	last := false
 	p, err = updatePolicy(root, func(p *auth.Policy) error {
 		granted, revoked, last = nil, nil, false
+		want := want
 		if suspended && slices.ContainsFunc(p.Principals(), func(who string) bool {
 			return strings.EqualFold(who, name) && lastGranter(p, who)
 		}) {
 			last = true
 			return atomicfile.ErrUnchanged
+		}
+		if suspended && len(given) > 0 && nobodyAdministers(p) &&
+			(&auth.Policy{Bindings: append(p.Snapshot(), given...)}).Evaluate(name, auth.ActGrant, "/").Allowed {
+			last, want = true, given
 		}
 		satisfied := make([]bool, len(want))
 		changed := false

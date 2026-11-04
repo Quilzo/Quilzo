@@ -462,3 +462,65 @@ func TestDeactivatingEveryAdministratorLeavesOneWhoCanGrant(t *testing.T) {
 		t.Errorf("the deletion mailed %d times in all", len(sent))
 	}
 }
+
+// Renaming the last administrator as the identity provider deactivates
+// them, in one request or one after the other, leaves them able to grant
+// under the new name, and the old name holding nothing. The rename took
+// what provisioning gave the old name, as a rename does, and the
+// suspension then denied the new name, which held nothing yet: nobody was
+// left who could grant access, and nobody was told. Somebody else
+// deactivated and renamed while another can grant is suspended as before.
+func TestRenamingTheLastAdministratorAsTheyAreDeactivatedLeavesOneWhoCanGrant(t *testing.T) {
+	for shape, requests := range map[string][]string{
+		"at once": {`{"Operations":[{"op":"replace","value":{"active":false,"userName":"zz-dana@example.com"}}]}`},
+		"one after the other": {`{"Operations":[{"op":"replace","value":{"active":false}}]}`,
+			`{"Operations":[{"op":"replace","path":"userName","value":"zz-dana@example.com"}]}`},
+	} {
+		t.Run(shape, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("QUILZO_TOKEN", "")
+			root := demoStore(t)
+			if err := cmdSCIM(root, []string{"map", "Admins", "admin"}); err != nil {
+				t.Fatal(err)
+			}
+			mails := scimSecurityMail(t, root)
+			token, _, err := newSCIMToken(root, scimTokenDays)
+			if err != nil {
+				t.Fatal(err)
+			}
+			c := scimClient{t: t, h: scimHandler(root), token: token}
+			var ids []string
+			for _, who := range []string{"boss@example.com", "dana@example.com"} {
+				_, u := c.do(http.MethodPost, "/Users", `{"userName":"`+who+`","active":true}`)
+				ids = append(ids, u["id"].(string))
+			}
+			c.do(http.MethodPost, "/Groups", `{"displayName":"Admins","members":[{"value":"`+ids[0]+`"},{"value":"`+ids[1]+`"}]}`)
+			if code, _ := c.do(http.MethodPatch, "/Users/"+ids[0],
+				`{"Operations":[{"op":"replace","value":{"active":false,"userName":"zz-boss@example.com"}}]}`); code != http.StatusOK {
+				t.Fatalf("deactivating and renaming the first answered %d", code)
+			}
+			for _, body := range requests {
+				if code, _ := c.do(http.MethodPatch, "/Users/"+ids[1], body); code != http.StatusOK {
+					t.Fatalf("%s answered %d", body, code)
+				}
+			}
+			p, _ := loadPolicy(root)
+			if p.Evaluate("zz-boss@example.com", auth.ActView, "/").Allowed || p.Evaluate("boss@example.com", auth.ActView, "/").Allowed {
+				t.Error("the first administrator, deactivated and renamed while another could grant, was not suspended")
+			}
+			if !p.Evaluate("zz-dana@example.com", auth.ActGrant, "/").Allowed {
+				t.Fatalf("nobody can grant access: %+v", p.Bindings)
+			}
+			if holdsArea(p, "dana@example.com") || p.Anywhere("dana@example.com", auth.ActView) {
+				t.Errorf("the old name still holds access: %+v", p.Bindings)
+			}
+			told := false
+			for _, m := range mails() {
+				told = told || strings.Contains(m.Body, "zz-dana@example.com is the only person who can grant access")
+			}
+			if !told {
+				t.Errorf("the security contact was not told: %+v", mails())
+			}
+		})
+	}
+}
