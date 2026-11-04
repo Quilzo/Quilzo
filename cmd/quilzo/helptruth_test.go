@@ -305,6 +305,50 @@ func TestEveryCommandTheDocumentationNamesExists(t *testing.T) {
 	}
 }
 
+// Every `quilzo help TOPIC` the program sends somebody to has lines about
+// the topic. `quilzo newsletter status` said "(quilzo help mail)", and
+// there is no mail command: the help printed all of itself, and nothing in
+// it said what goes in mail.json.
+func TestEveryHelpTheProgramPointsAtSaysSomething(t *testing.T) {
+	topic := regexp.MustCompile(`quilzo help ([a-z][a-z0-9-]*)`)
+	seen := 0
+	for _, top := range []string{".", "../../internal"} {
+		err := filepath.WalkDir(top, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return err
+			}
+			f, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+			if err != nil {
+				return err
+			}
+			ast.Inspect(f, func(n ast.Node) bool {
+				if lit, ok := n.(*ast.BasicLit); ok && lit.Kind == token.STRING {
+					seen++
+					for _, m := range topic.FindAllStringSubmatch(lit.Value, -1) {
+						if helpFor(m[1], nil) == "" {
+							t.Errorf("%s sends somebody to `quilzo help %s`, which has nothing about %s",
+								strings.TrimPrefix(filepath.ToSlash(path), "../../"), m[1], m[1])
+						}
+					}
+				}
+				return true
+			})
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if seen < 10000 {
+		t.Fatalf("only %d strings read in the program; the scan is wrong", seen)
+	}
+	for _, p := range newsletterProblems(t.TempDir()) {
+		if strings.HasPrefix(p, "No mail is set up") && (!strings.Contains(p, `"host"`) || !strings.Contains(p, `"from"`)) {
+			t.Errorf("the newsletter's advice does not say what goes in mail.json: %s", p)
+		}
+	}
+}
+
 // notCommands are "quilzo WORD" in the program's text that are not a
 // command somebody is told to run, each with why.
 var notCommands = map[string]bool{
