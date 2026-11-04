@@ -59,7 +59,7 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	data := map[string]any{"Nav": "accounts", "Title": "Connected accounts", "Principal": p,
+	data := map[string]any{"Nav": "accounts", "Title": "Your accounts", "Principal": p,
 		"Message": r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e")}
 	if s.Connections == nil || s.Connections.Providers == nil || s.Connections.Mine == nil {
 		data["Unavailable"] = "This build was started without connected accounts."
