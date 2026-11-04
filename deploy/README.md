@@ -7,6 +7,47 @@ systemd unit.
 
 Anything with 512 MB will do. This is one static binary and a directory.
 
+There are two ways to run it here: with Docker Compose, which is the next
+section, or as a systemd service, which is the one after.
+
+## With Docker Compose
+
+`compose.yaml` runs the admin, the published site and Caddy over one store,
+each container read-only, holding no capability and not running as root. You need Docker with the Compose plugin, and for a real site a
+hostname whose DNS points at this machine (`localhost` works for a trial).
+
+Every command below is run in this directory, in this order:
+
+```bash
+cd deploy
+cp compose.env.example .env    # then set QUILZO_DOMAIN in .env
+docker compose run --rm admin init
+docker compose run --rm admin config set network.trusted_proxies 172.31.250.10
+docker compose run --rm admin init --admin you
+docker compose up -d
+```
+
+What each one is for:
+
+- `init` makes the store, on the `store` volume. Every Quilzo container
+  names `/srv/store` in its entrypoint, so a command given to
+  `docker compose run` cannot lose it; and every one is read-only, so a
+  write anywhere but a volume fails out loud rather than going into a
+  container's own layer, which `--rm` would delete.
+- `network.trusted_proxies` is Caddy's fixed address on the network it
+  shares with the site, the one address the site believes `X-Forwarded-For`
+  from (see the note in `compose.yaml`).
+- `init --admin you` makes `you` the first administrator and prints the link
+  that adds their passkey. Open it once.
+- `up -d` starts everything, and `restart: unless-stopped` brings it back
+  after a reboot.
+
+The store is the `store` volume, and it is kept until you delete it:
+`docker compose down` stops the stack and keeps every volume; only
+`docker compose down -v` throws them away.
+
+## As a systemd service
+
 ### 1. A user and a place
 
 ```bash

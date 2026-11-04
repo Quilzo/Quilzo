@@ -77,5 +77,17 @@ WORKDIR /srv
 # they are two processes. Only one of these should ever be reachable from the
 # internet without something in front of it, and it is not the first.
 EXPOSE 8080 8081
-ENTRYPOINT ["/usr/local/bin/quilzo"]
-CMD ["--root", "/srv/store", "serve", "--addr", "0.0.0.0:8080"]
+
+# The store is named in the entrypoint, not in the command.
+#
+# It was in the command, and the command is what `docker run IMAGE init` and
+# `docker compose run --rm admin init` replace. So the one command that sets a
+# store up was the one that lost where it goes: Quilzo looked for .quilzo in
+# the working directory, which a read-only container refuses ("mkdir .quilzo:
+# read-only file system") and a writable one keeps in its own layer until
+# --rm deletes it. Every step of the reference compose's setup failed that
+# way. Here, whatever command is given runs against /srv/store, the path the
+# volume is mounted on; a --root given after it still wins, because the last
+# one does, so `IMAGE --root /srv/store init` means what it always meant.
+ENTRYPOINT ["/usr/local/bin/quilzo", "--root", "/srv/store"]
+CMD ["serve", "--addr", "0.0.0.0:8080"]

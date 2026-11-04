@@ -1,14 +1,13 @@
 # Quilzo with Docker Compose: the published site on HTTPS, the admin on this
 # machine only.
 #
-#   cp deploy/compose.env.example deploy/.env    # then set QUILZO_DOMAIN
 #   cd deploy
+#   cp compose.env.example .env    # then set QUILZO_DOMAIN
 #   docker compose run --rm admin init
-#   docker compose run --rm admin config set network.trusted_proxies 172.31.250.10
-#   docker compose run --rm admin init --admin you
+#   ...
 #   docker compose up -d
 #
-# deploy/README.md walks through it, and says how to reach the admin.
+# deploy/README.md has every step, and says how to reach the admin.
 #
 # Three services, because there are three exposures:
 #
@@ -29,6 +28,11 @@ name: quilzo
 # What every Quilzo container runs under. The image is one static binary on a
 # distroless base with no shell, so none of this takes anything it needs: it
 # writes only the volumes and /tmp, holds no capability, and cannot gain one.
+#
+# No command here names --root. The image's entrypoint does (/srv/store, where
+# the store volume is mounted), because `docker compose run --rm admin init`
+# replaces a service's command: a --root written in it went with it, and every
+# setup step looked for a store in the read-only working directory instead.
 x-quilzo: &quilzo
   image: ghcr.io/quilzo/quilzo:${QUILZO_VERSION:-latest}
   restart: unless-stopped
@@ -42,7 +46,7 @@ x-quilzo: &quilzo
 services:
   admin:
     <<: *quilzo
-    command: ["--root", "/srv/store", "serve", "--addr", "0.0.0.0:8080"]
+    command: ["serve", "--addr", "0.0.0.0:8080"]
     # Loopback on the host, and only that. 0.0.0.0 inside the container is
     # the container's own interface; what the internet can reach is decided
     # here, and the answer is nothing.
@@ -55,8 +59,6 @@ services:
   site:
     <<: *quilzo
     command:
-      - --root
-      - /srv/store
       - site
       - --addr
       - 0.0.0.0:8081

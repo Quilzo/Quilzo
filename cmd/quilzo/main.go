@@ -1170,6 +1170,7 @@ func cmdInit(root string) error {
 	} else {
 		w.Human("reusing %s\n", s.Root())
 	}
+	warnContainerLayer(root)
 	return nil
 }
 
