@@ -255,6 +255,25 @@ func TestADecidersStateMayBeAnObjectOrAList(t *testing.T) {
 	}
 }
 
+// An object state reaches the decider in the characters it was written in.
+//
+// It was encoded with Marshal, which spells &, < and > as &, <
+// and > for a web page this text is never put in: a ticket from AT&T
+// about a <refund> was asked about, and shown to whoever read the step,
+// as AT&T and <refund>, where the same words given as a
+// string arrived as written.
+func TestADecidersObjectStateKeepsItsCharacters(t *testing.T) {
+	a, err := decide(t, &fakeModel{reply: `{"op":"decide","input":{"name":"support-triage",` +
+		`"state":{"from":"AT&T","subject":"a <refund> over £10 & soon"}}}`}, "decide")(context.Background(), "triage", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"from":"AT&T","subject":"a <refund> over £10 & soon"}`
+	if got, _ := a.Input["state"].(string); got != want {
+		t.Errorf("the state reached the decider as %q, not %q", got, want)
+	}
+}
+
 // Untrusted observations are fenced and labelled.
 //
 // Advice to a model, not a control — the control is the closed vocabulary and

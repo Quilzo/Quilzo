@@ -638,14 +638,21 @@ func parse(raw string, ops map[string]bool) (agent.Action, error) {
 // decider fences as untrusted exactly as it fences a string, spelled one
 // way (keys in order) so the same ticket is the same question. How long it
 // can be is bounded by the answer it came in.
+//
+// In the characters it was written in: Marshal spells &, < and > as
+// &, < and >, for a web page this text is never put in, so
+// a ticket from AT&T reached the decider, and whoever read the step, as
+// AT&T.
 func stateText(v any) (string, bool) {
 	switch v.(type) {
 	case map[string]any, []any:
-		b, err := json.Marshal(v)
-		if err != nil {
+		var b strings.Builder
+		enc := json.NewEncoder(&b)
+		enc.SetEscapeHTML(false)
+		if err := enc.Encode(v); err != nil {
 			return "", false
 		}
-		return string(b), true
+		return strings.TrimSuffix(b.String(), "\n"), true
 	}
 	return "", false
 }
