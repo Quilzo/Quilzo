@@ -87,6 +87,11 @@ func helpGoesToTheCommand(cmd string, args []string) bool {
 // to the command where its help names a subcommand called help (`quilzo geo
 // help` is its own answer), and where a page or a name may go in the same
 // place (`quilzo lock PAGE`), since there "help" is somebody's page.
+//
+// And where CMD takes nothing but flags, since there "help" can be nothing
+// else. Such a command ran with the word left over: `quilzo rollback help`
+// put the live site back a version, `quilzo init help` made a store, and
+// `quilzo serve help` started the admin.
 func helpAfter(cmd string, args []string) bool {
 	if len(args) == 0 || args[0] != "help" {
 		return false
@@ -94,17 +99,27 @@ func helpAfter(cmd string, args []string) bool {
 	if primary, ok := helpAliases[cmd]; ok {
 		cmd = primary
 	}
-	subs := false
+	subs, lines, onlyFlags := false, 0, true
 	for _, line := range strings.Split(usageText, "\n") {
 		rest, ok := strings.CutPrefix(line, "  quilzo "+cmd)
 		if !ok || rest == "" || rest[0] != ' ' {
 			continue
 		}
-		synopsis := strings.TrimLeft(rest, " ")
+		lines++
+		// What comes before the description. A line whose description
+		// follows the command's name has none, and its first word is not
+		// a subcommand.
+		synopsis := rest[1:]
 		if i := helpDescription.FindStringIndex(synopsis); i != nil {
 			synopsis = synopsis[:i[0]]
 		}
+		for _, b := range helpBracketed.FindAllString(synopsis, -1) {
+			onlyFlags = onlyFlags && strings.HasPrefix(b, "[-")
+		}
 		synopsis = helpBracketed.ReplaceAllString(synopsis, " ")
+		for _, f := range strings.Fields(synopsis) {
+			onlyFlags = onlyFlags && strings.HasPrefix(f, "-")
+		}
 		for i, alt := range strings.Split(synopsis, " | ") {
 			fields := strings.Fields(alt)
 			if len(fields) == 0 {
@@ -124,7 +139,7 @@ func helpAfter(cmd string, args []string) bool {
 			}
 		}
 	}
-	return subs
+	return subs || lines > 0 && onlyFlags
 }
 
 // helpSubcommand is how a subcommand is written in the help, a lowercase

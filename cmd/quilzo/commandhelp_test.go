@@ -22,6 +22,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 // Asking any command for help runs nothing, exits 0, and answers about that
@@ -236,6 +239,88 @@ func TestHelpAfterACommandIsItsHelp(t *testing.T) {
 	for _, m := range entry.FindAllStringSubmatch(string(got), -1) {
 		if m[1] != "decide" || m[2] != " ask" {
 			t.Errorf("`quilzo decide help ask` printed `quilzo %s%s`", m[1], m[2])
+		}
+	}
+}
+
+// `quilzo CMD help` is CMD's help where CMD takes nothing but flags, as it
+// is where CMD takes a subcommand. Each of these ran with the word left
+// over: `quilzo rollback help` put the live site back a version, `quilzo
+// init help` made a store in an empty directory, and `quilzo serve help`
+// and `quilzo studio help` started their servers and did not stop.
+//
+// Asked in a process of its own, in an empty directory and in a store with
+// two publications, so a rollback has somewhere to go back to: nothing may
+// be written, the exit is 0, and every line shown is about the command.
+func TestHelpAfterACommandThatTakesOnlyFlagsIsItsHelp(t *testing.T) {
+	handler := dispatchHandlers(t)
+	template := filepath.Join(t.TempDir(), ".quilzo")
+	if err := cmdInit(template); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, title := range []string{"First", "Second"} {
+		if _, err := site.SaveDraft(s, map[string]any{"index": map[string]any{"title": title}}, "test", "dana"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := site.Publish(s, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entry := regexp.MustCompile(`(?m)^  quilzo (\S+)`)
+	for _, c := range []string{"a11y", "analytics", "init", "log", "mcp", "rollback", "scan", "serve", "studio"} {
+		if !helpAfter(c, []string{"help"}) {
+			t.Errorf("`quilzo %s help` is not taken as asking for help", c)
+		}
+		for _, inStore := range []bool{false, true} {
+			where := "an empty directory"
+			if inStore {
+				where = "a store"
+			}
+			t.Run(where+"/"+c, func(t *testing.T) {
+				t.Parallel()
+				dir, home := t.TempDir(), t.TempDir()
+				if inStore {
+					copyTree(t, template, filepath.Join(dir, ".quilzo"))
+				}
+				before := treeState(t, dir) + treeState(t, home)
+				ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+				defer cancel()
+				cmd := exec.CommandContext(ctx, os.Args[0], "quilzo-main", c, "help")
+				cmd.Dir = dir
+				cmd.Env = append(os.Environ(), "HOME="+home, "QUILZO_TOKEN=", "NO_COLOR=1")
+				var stdout, stderr bytes.Buffer
+				cmd.Stdout, cmd.Stderr = &stdout, &stderr
+				err := cmd.Run()
+				said := firstLines(stdout.String()+stderr.String(), 6)
+				if err != nil {
+					t.Errorf("`quilzo %s help` in %s: %v\n%s", c, where, err, said)
+				}
+				if after := treeState(t, dir) + treeState(t, home); after != before {
+					t.Errorf("`quilzo %s help` in %s wrote something:\n%s", c, where, treeDiff(before, after))
+				}
+				lines := entry.FindAllStringSubmatch(stdout.String(), -1)
+				if len(lines) == 0 {
+					t.Errorf("`quilzo %s help` showed no line of the help about it:\n%s", c, said)
+				}
+				for _, m := range lines {
+					if handler[m[1]] != handler[c] {
+						t.Errorf("`quilzo %s help` answered with the help for `quilzo %s`", c, m[1])
+						break
+					}
+				}
+			})
+		}
+	}
+
+	// A command that takes a name where its flags go is left to read
+	// "help" as one: `quilzo links help` is about a page called help.
+	for _, c := range []string{"links", "publish", "rights", "audit", "find", "import"} {
+		if helpAfter(c, []string{"help"}) {
+			t.Errorf("`quilzo %s help` is taken as asking for help", c)
 		}
 	}
 }
