@@ -54,16 +54,15 @@ func checkImported(root string, imp *agentport.Imported) []importedAgent {
 // agentImport is `quilzo agent import FILE [--from F] [--name N] [-o DIR] [--save]`.
 func agentImport(root string, args []string) error {
 	usage := errors.New("quilzo agent import FILE [--from FORMAT] [--name NAME] [-o DIR] [--save]")
-	pos, rest := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("agent import", flag.ContinueOnError)
 	from := fs.String("from", "", "the file's format, when it is not recognised (quilzo agent formats)")
 	name := fs.String("name", "", "what to call the file's only agent here")
 	outDir := fs.String("o", "", "write each declaration, and any document it came with, to this directory")
 	save := fs.Bool("save", false, "declare each agent that checks, as quilzo agent declare would")
-	if err := fs.Parse(rest); err != nil {
+	pos, err := parseAnywhere(fs, args)
+	if err != nil {
 		return err
 	}
-	pos = append(pos, fs.Args()...)
 	if len(pos) != 1 {
 		return usage
 	}
@@ -203,14 +202,13 @@ func writeImported(dir string, a *importedAgent) error {
 
 // agentExport is `quilzo agent export NAME [--to FORMAT] [-o PATH]`.
 func agentExport(root string, args []string) error {
-	pos, rest := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("agent export", flag.ContinueOnError)
 	to := fs.String("to", "quilzo", "the format to write (quilzo agent formats)")
 	dest := fs.String("o", "", "write it to this file, or into this directory; without it, it is printed")
-	if err := fs.Parse(rest); err != nil {
+	pos, err := parseAnywhere(fs, args)
+	if err != nil {
 		return err
 	}
-	pos = append(pos, fs.Args()...)
 	if len(pos) != 1 {
 		return errors.New("quilzo agent export NAME [--to FORMAT] [-o PATH]")
 	}

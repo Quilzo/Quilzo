@@ -70,8 +70,11 @@ type Pending struct {
 	// (empty), a decider's question (question), or an action the reviewer
 	// refused (review). See escalation.go.
 	Kind string `json:",omitempty"`
-	// Questions are what a person answers for a question.
+	// Questions are what a person answers for a question, and Settled what
+	// the decider answered itself in the same step, which the run goes on
+	// with beside the person's answer.
 	Questions []Question `json:",omitempty"`
+	Settled   []Settled  `json:",omitempty"`
 }
 
 // PendingTTL is how long a question stays answerable. After that whatever
@@ -270,11 +273,11 @@ func (r Runner) Continue(ctx context.Context, s *Session, prior Trace,
 		}
 		st := Step{N: w.N, Action: w.Action, Allowed: true, At: now, Tokens: w.Tokens, Cost: w.Cost, DecidedBy: v.By}
 		if v.Approve {
-			text, err := AnswerQuestions(w.Questions, v.Answers)
+			text, err := w.answered(*v)
 			if err != nil {
 				return prior, err
 			}
-			st.Result = by + " answered what the decider was not sure of:\n" + text
+			st.Result = text
 		} else {
 			st.Result = by + " declined to answer, so nothing the decider said is to be acted on"
 		}

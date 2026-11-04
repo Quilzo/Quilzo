@@ -113,6 +113,7 @@ func (dd Deciders) ask(ctx context.Context, s *agent.Session, a agent.Action) (s
 		threshold = 0.8
 	}
 	var questions []agent.Question
+	var settled []agent.Settled
 	var out strings.Builder
 	for _, ans := range res.Answers {
 		s.NoteConfidence(ans.Confidence)
@@ -128,6 +129,7 @@ func (dd Deciders) ask(ctx context.Context, s *agent.Session, a agent.Action) (s
 			continue
 		}
 		fmt.Fprintf(&out, "%s: %v (confidence %.2f)\n", ans.Question, ans.Value, ans.Confidence)
+		settled = append(settled, agent.Settled{Name: ans.Question, Value: ans.Value, Confidence: ans.Confidence})
 		if ans.Why != "" {
 			fmt.Fprintf(&out, "  %s\n", clip(ans.Why, 300))
 		}
@@ -137,7 +139,9 @@ func (dd Deciders) ask(ctx context.Context, s *agent.Session, a agent.Action) (s
 		for _, q := range questions {
 			low = append(low, fmt.Sprintf("%s %.2f", q.Name, q.Confidence))
 		}
-		return "", &agent.Escalation{Questions: questions,
+		// What it was sure of goes with the question, so the run goes on
+		// with every answer once a person has given theirs.
+		return "", &agent.Escalation{Questions: questions, Settled: settled,
 			Why: fmt.Sprintf("%s was not sure enough (%s, under %.2f); a person answers",
 				d.Name, strings.Join(low, ", "), threshold)}
 	}

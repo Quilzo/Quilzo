@@ -616,7 +616,45 @@ func parse(raw string, ops map[string]bool) (agent.Action, error) {
 			in[k] = text
 		}
 	}
+	if op == "decide" {
+		if text, ok := stateText(c.Input["state"]); ok {
+			if in == nil {
+				in = map[string]any{}
+			}
+			in["state"] = text
+		}
+	}
 	return agent.Action{Op: op, Input: in}, nil
+}
+
+// stateText is a decider's state given as an object or a list, as the text
+// the decider is asked about.
+//
+// The prompt offers "state": <any JSON>, and a ticket or an alert is an
+// object more often than a sentence. bounded drops every nested shape, so
+// an object state was dropped and the step failed for having no state:
+// only a string ever reached a decider. Encoded rather than kept as a
+// structure, so what reaches the operation is still flat: text, which the
+// decider fences as untrusted exactly as it fences a string, spelled one
+// way (keys in order) so the same ticket is the same question. How long it
+// can be is bounded by the answer it came in.
+//
+// In the characters it was written in: Marshal spells &, < and > as
+// &, < and >, for a web page this text is never put in, so
+// a ticket from AT&T reached the decider, and whoever read the step, as
+// AT&T.
+func stateText(v any) (string, bool) {
+	switch v.(type) {
+	case map[string]any, []any:
+		var b strings.Builder
+		enc := json.NewEncoder(&b)
+		enc.SetEscapeHTML(false)
+		if err := enc.Encode(v); err != nil {
+			return "", false
+		}
+		return strings.TrimSuffix(b.String(), "\n"), true
+	}
+	return "", false
 }
 
 // bounded caps what an input may carry into an operation.

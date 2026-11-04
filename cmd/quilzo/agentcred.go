@@ -243,19 +243,21 @@ func revokeCredential(root string, caller *Caller, id string) error {
 }
 
 func issueCredential(root string, caller *Caller, args []string) (string, error) {
-	if len(args) < 1 {
-		return "", errors.New("quilzo agent credential issue NAME --grant browser:G [--act] (--holder did:key:… | --generate FILE) [--for 24h]")
-	}
-	name := args[0]
+	usage := errors.New("quilzo agent credential issue NAME --grant browser:G [--act] (--holder did:key:… | --generate FILE) [--for 24h]")
 	fs := flag.NewFlagSet("agent credential issue", flag.ContinueOnError)
 	grant := fs.String("grant", "", "the one grant it may use, as browser:NAME")
 	act := fs.Bool("act", false, "it may act on pages, not only read them")
 	holderDID := fs.String("holder", "", "the agent's own public key, as a did:key")
 	generate := fs.String("generate", "", "make the agent's key here instead, written to this file")
 	lifetime := fs.Duration("for", 24*time.Hour, "how long it is valid, up to 720h")
-	if err := fs.Parse(args[1:]); err != nil {
+	pos, err := parseAnywhere(fs, args)
+	if err != nil {
 		return "", err
 	}
+	if len(pos) != 1 {
+		return "", usage
+	}
+	name := pos[0]
 	if caller.Kind == audit.KindAI {
 		return "", errors.New("a credential is issued by a person: a model that could issue one could give itself a way in")
 	}

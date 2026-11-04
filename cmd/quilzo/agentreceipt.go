@@ -70,11 +70,12 @@ func agentReceipt(root string, args []string) error {
 	fs := flag.NewFlagSet("agent receipt", flag.ContinueOnError)
 	outPath := fs.String("o", "", "write the receipt here instead of printing it")
 	bundle := fs.String("bundle", "", "write a self-contained replay of the run here: steps, pictures, proof")
-	if len(args) < 1 {
-		return fmt.Errorf("quilzo agent receipt RUN [-o FILE] [--bundle FILE]")
-	}
-	if err := fs.Parse(args[1:]); err != nil {
+	args, err := parseAnywhere(fs, args)
+	if err != nil {
 		return err
+	}
+	if len(args) != 1 {
+		return fmt.Errorf("quilzo agent receipt RUN [-o FILE] [--bundle FILE]")
 	}
 	if *bundle != "" {
 		// The bundle opens the pictures the run kept, which the admin shows
@@ -111,11 +112,12 @@ func receiptCmd(root, name, what string, args []string,
 	build func(root, id string, now time.Time) (*agentReceiptFile, error)) error {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	outPath := fs.String("o", "", "write the receipt here instead of printing it")
-	if len(args) < 1 {
-		return fmt.Errorf("quilzo %s %s [-o FILE]", name, what)
-	}
-	if err := fs.Parse(args[1:]); err != nil {
+	args, err := parseAnywhere(fs, args)
+	if err != nil {
 		return err
+	}
+	if len(args) != 1 {
+		return fmt.Errorf("quilzo %s %s [-o FILE]", name, what)
 	}
 	rf, err := build(root, args[0], time.Now())
 	if err != nil {
@@ -302,11 +304,12 @@ func checkReceipt(rf *agentReceiptFile, keys *publishedKeys) receiptCheck {
 func agentVerifyReceipt(root string, args []string) error {
 	fs := flag.NewFlagSet("agent verify-receipt", flag.ContinueOnError)
 	keysPath := fs.String("keys", "", "the public keys you were given (head.pub.json); without it, the receipt's own")
-	if len(args) < 1 {
-		return errors.New("quilzo agent verify-receipt FILE [--keys head.pub.json]")
-	}
-	if err := fs.Parse(args[1:]); err != nil {
+	args, err := parseAnywhere(fs, args)
+	if err != nil {
 		return err
+	}
+	if len(args) != 1 {
+		return errors.New("quilzo agent verify-receipt FILE [--keys head.pub.json]")
 	}
 	body, err := os.ReadFile(args[0])
 	if err != nil {

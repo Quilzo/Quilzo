@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -84,6 +85,65 @@ func TestALiveRunWaitsForTheAnswerAndNeverTakesTheUnsureOne(t *testing.T) {
 	tr, _ = r.Run(context.Background(), NewSession(asker2(), nil), "g")
 	if !strings.Contains(tr.Steps[0].Result, "nobody answered, so nothing the decider said is to be acted on") {
 		t.Fatalf("an unanswered escalation was taken as an answer: %+v", tr.Steps[0])
+	}
+}
+
+// What the decider settled in the step a person was asked about goes on
+// with the person's answer, kept with the question while the run waits.
+//
+// The step's result was the person's answer alone, so a decider that
+// settled desk and urgency and asked about refund_due left a run that
+// knew refund_due and nothing else. Kept through the run's record, as a
+// paused run is kept between its stretches.
+func TestAnAnsweredQuestionCarriesWhatTheDeciderSettled(t *testing.T) {
+	settled := []Settled{{Name: "desk", Value: "refunds", Confidence: 0.96},
+		{Name: "urgency", Value: "0.22", Confidence: 0.83}}
+	sure := func(_ context.Context, a Action) (string, error) {
+		if a.Op == "decide" {
+			return "", &Escalation{Why: "refunds was not sure enough", Questions: refundQuestion, Settled: settled}
+		}
+		return "did " + a.Op, nil
+	}
+	want := []string{"dana answered", "eligible: no", "desk: refunds (confidence 0.96)", "urgency: 0.22 (confidence 0.83)"}
+
+	p := &scripted{plan: []Action{{Op: "decide"}, {Op: "read_page"}}}
+	r := Runner{Decide: p.decide, Perform: sure, Pause: true}
+	first, err := r.Run(context.Background(), NewSession(asker2(), nil), "triage ticket 12")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := json.Marshal(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var kept Trace
+	if err := json.Unmarshal(b, &kept); err != nil {
+		t.Fatal(err)
+	}
+	tr, err := r.Continue(context.Background(), NewSession(asker2(), nil), kept,
+		&Verdict{N: kept.Waiting.N, Approve: true, By: "dana", Answers: map[string]string{"eligible": "no"}}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range want {
+		if !strings.Contains(tr.Steps[0].Result, w) {
+			t.Errorf("continued from its record, the step said %q, without %q", tr.Steps[0].Result, w)
+		}
+	}
+
+	p = &scripted{plan: []Action{{Op: "decide"}}}
+	r = Runner{Decide: p.decide, Perform: sure,
+		Hold: func(_ context.Context, w Pending, _ func()) (Verdict, error) {
+			return Verdict{N: w.N, Approve: true, By: "dana", Answers: map[string]string{"eligible": "no"}}, nil
+		}}
+	tr, err = r.Run(context.Background(), NewSession(asker2(), nil), "g")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range want {
+		if !strings.Contains(tr.Steps[0].Result, w) {
+			t.Errorf("answered while it waited, the step said %q, without %q", tr.Steps[0].Result, w)
+		}
 	}
 }
 

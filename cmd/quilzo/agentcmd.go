@@ -329,21 +329,19 @@ func indented(s string, width int, indent string) string {
 }
 
 func agentNew(root string, args []string) error {
-	if len(args) == 0 {
+	// A flag set rather than a hand-read --kind after the name, so the
+	// kind is read before the name as well: `new --kind task NAME` took
+	// --kind for the name and asked which kind.
+	fs := flag.NewFlagSet("agent new", flag.ContinueOnError)
+	kindFlag := fs.String("kind", "", "the template it is declared from (quilzo agent templates)")
+	args, err := parseAnywhere(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(args) != 1 {
 		return fmt.Errorf("usage: quilzo agent new NAME --kind KIND")
 	}
-	name := args[0]
-	kind := ""
-	for i := 1; i < len(args); i++ {
-		if args[i] == "--kind" && i+1 < len(args) {
-			kind = args[i+1]
-			i++
-			continue
-		}
-		if v, ok := strings.CutPrefix(args[i], "--kind="); ok {
-			kind = v
-		}
-	}
+	name, kind := args[0], *kindFlag
 	if kind == "" {
 		return fmt.Errorf("which kind? one of %s, or a kind this store's "+
 			"templates declare\n  quilzo agent templates — what each one is for",
@@ -563,6 +561,19 @@ func agentCheckRun(root string, args []string) error {
 		return runErr
 	}
 	m, trace, rc := out.Manifest, out.Trace, out.Receipt
+	// With --json, the run's record as agent trace RUN --json shows it,
+	// the agent's final words with it, and no prose beside it: every line
+	// below was printed whatever the mode, so a script got prose.
+	rec := agent.Record{ID: id, Agent: name, Kind: m.Kind, Goal: goal, Model: out.Model,
+		Trace: trace, Receipt: rc}
+	if id != "" {
+		if kept, err := loadAgentRun(root, id); err == nil {
+			rec = kept
+		}
+	}
+	if w.JSON(rec) {
+		return runErr
+	}
 	if out.Model != "" {
 		fmt.Printf("  %sdeciding with %s; the manifest is still the only "+
 			"vocabulary%s\n", dim, out.Model, reset)
@@ -597,9 +608,6 @@ func agentCheckRun(root string, args []string) error {
 	case *program:
 		fmt.Printf("  %sits program chose each action, in its box; each one went "+
 			"through the manifest as a step%s\n", dim, reset)
-		if a := strings.TrimSpace(trace.Answer); a != "" {
-			fmt.Printf("  it said: %s\n", clip(a, 600))
-		}
 	case *withModel:
 		fmt.Printf("  %sa model chose each action from the manifest's "+
 			"capabilities — what it achieved, not what this store can "+
@@ -608,6 +616,14 @@ func agentCheckRun(root string, args []string) error {
 		fmt.Printf("  %severy capability tried once, with no arguments and no "+
 			"model — this reports what this store answers, not what the agent "+
 			"would achieve%s\n", dim, reset)
+	}
+	// What it concluded, when something decided: a program's words were
+	// printed and a model's were not, so whoever ran it with --model had
+	// to find them in agent trace RUN --json. A walk's "checked" is this
+	// command's own word, not the agent's. Printable, because the words
+	// are the model's or the program's to choose and the terminal is not.
+	if a := strings.TrimSpace(trace.Answer); a != "" && (*program || *withModel) {
+		fmt.Printf("  it said: %s\n", clip(printable(a), 600))
 	}
 	fmt.Printf("  did %d, refused %d, failed %d\n", rc.Did, rc.Refused, rc.Failed)
 	// Failures are shown, not only counted. A capability the manifest permits
