@@ -221,7 +221,11 @@ func TestAToolStepItsIntegrationSaysWritesIsNotBatchedAsARead(t *testing.T) {
 	file := agent.Action{Tool: "create_issue", Input: map[string]any{"title": "x"}}
 	waitingRun(st, "run-20261103-000000c1", "filer", file, "it asks first", time.Now())
 	waitingRun(st, "run-20261103-000000c2", "filer", file, "it asks first", time.Now())
-	for _, it := range srv.runApprovals(time.Now()) {
+	items := srv.runApprovalsFor(principal{Name: "editor", Role: auth.RoleAdmin, Scope: "/"}, time.Now())
+	if len(items) != 2 {
+		t.Fatalf("%d runs are listed, not the 2 waiting: %+v", len(items), items)
+	}
+	for _, it := range items {
 		if it.Commits != "writes" || it.Batch != "" {
 			t.Errorf("%s commits to %q and is offered in the batch %q", it.RunID, it.Commits, it.Batch)
 		}
