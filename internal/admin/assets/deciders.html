@@ -4,9 +4,10 @@
 {{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
 <p class="lead">Typed questions a model answers about some state — which
   queue, is it abusive, how urgent — each with a confidence. Anything under
-  the threshold goes to a person. Confidence is not the model's word for it:
-  each question is asked several times, and an answer that changes between
-  asks is not a confident one.</p>
+  the threshold goes to a person. Confidence is not just the model's word for
+  it: each question is asked several times, and the confidence is the lower of
+  what the model says and how often its answers agreed, so an answer that
+  changes between asks is not a confident one.</p>
 {{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
 {{if .List}}
 <div class="table-wrap"><table>
