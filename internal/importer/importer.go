@@ -266,10 +266,7 @@ func importWXR(body []byte, now time.Time) (*Report, error) {
 		return nil, fmt.Errorf("this does not parse as a WordPress export: %w", err)
 	}
 
-	seen := map[string]bool{}
-	// next is, for a name taken, the number to try first: every one below
-	// it is taken (as webimport's postSlugs keeps it).
-	next := map[string]int{}
+	named := newNames()
 	unchanged := 0
 	for _, item := range doc.Channel.Items {
 		if len(rep.Pages) >= MaxPages {
@@ -306,16 +303,7 @@ func importWXR(body []byte, now time.Time) (*Report, error) {
 			rep.Skipped = append(rep.Skipped, "an item with no title or slug")
 			continue
 		}
-		// Numbered from the name the items share. Each was numbered from
-		// the name the one before it was given, so the thousandth "same" was
-		// same-2-3-4-…-1000, found by building every name before it: 10,000
-		// same-titled items took seven minutes of CPU to import.
-		base := name
-		for n := max(2, next[base]); seen[name]; n++ {
-			name = fmt.Sprintf("%s-%d", base, n)
-			next[base] = n + 1
-		}
-		seen[name] = true
+		name = named.claim(name)
 
 		text, links, images, dropped := flattenHTML(item.Content)
 		rep.Media = append(rep.Media, images...)
@@ -534,6 +522,12 @@ func importJSON(body []byte, now time.Time) (*Report, error) {
 		return rec, nil
 	}
 
+	// Every page is numbered from the name it shares with one before it, as
+	// the other formats are. Nothing was: two pages titled "Same" read as two
+	// pages named "same", and both imports write pages by name, so the second
+	// replaced the first and a page was lost without a word.
+	named := newNames()
+
 	var asArray []map[string]any
 	if err := json.Unmarshal(body, &asArray); err == nil {
 		for i, item := range asArray {
@@ -548,7 +542,7 @@ func importJSON(body []byte, now time.Time) (*Report, error) {
 				rep.Skipped = append(rep.Skipped, fmt.Sprintf("item %d: %v", i+1, err))
 				continue
 			}
-			rep.Pages = append(rep.Pages, p)
+			rep.Pages = append(rep.Pages, named.page(p))
 		}
 		if len(rep.Pages) == 0 {
 			return nil, fmt.Errorf("the array contained no importable pages")
@@ -561,7 +555,24 @@ func importJSON(body []byte, now time.Time) (*Report, error) {
 		return nil, fmt.Errorf("this is not JSON: %w", err)
 	}
 	// A map of name -> page is the other common shape.
-	for name, v := range asMap {
+	//
+	// Its keys are unique, but two of them can still come to one name
+	// ("About Us" and "about-us"). A key that is already its own name claims
+	// it first, so the page that was exactly where it said keeps its place
+	// and the other is numbered; each group goes in key order, so which one
+	// is numbered does not change from one run to the next.
+	keys := make([]string, 0, len(asMap))
+	for name := range asMap {
+		keys = append(keys, name)
+	}
+	sort.SliceStable(keys, func(i, j int) bool {
+		if a, b := slug(keys[i]) == keys[i], slug(keys[j]) == keys[j]; a != b {
+			return a
+		}
+		return keys[i] < keys[j]
+	})
+	for _, name := range keys {
+		v := asMap[name]
 		item, ok := v.(map[string]any)
 		if !ok {
 			rep.Skipped = append(rep.Skipped, fmt.Sprintf(
@@ -584,7 +595,7 @@ func importJSON(body []byte, now time.Time) (*Report, error) {
 			rep.Skipped = append(rep.Skipped, fmt.Sprintf("%q: %v", name, err))
 			continue
 		}
-		rep.Pages = append(rep.Pages, p)
+		rep.Pages = append(rep.Pages, named.page(p))
 	}
 	sort.Slice(rep.Pages, func(i, j int) bool {
 		return rep.Pages[i].Name < rep.Pages[j].Name
@@ -638,6 +649,48 @@ func jsonPage(item map[string]any, given string, authoritative bool) (Page, erro
 }
 
 // -- shared ------------------------------------------------------------------
+
+// names gives each page of an import a name no page before it has.
+//
+// A name taken is numbered from the name the pages share: same, same-2,
+// same-3. Each used to be numbered from the name the one before it was given,
+// so the thousandth "same" was same-2-3-4-…-1000, found by building every name
+// before it: 10,000 same-titled items took seven minutes of CPU to import.
+// next keeps, for a name taken, the number to try first, since every one
+// below it is taken (as webimport's postSlugs keeps it).
+type names struct {
+	taken map[string]bool
+	next  map[string]int
+}
+
+func newNames() *names {
+	return &names{taken: map[string]bool{}, next: map[string]int{}}
+}
+
+// claim returns base, or base numbered if a page before it has that name.
+func (n *names) claim(base string) string {
+	name := base
+	for k := max(2, n.next[base]); n.taken[name]; k++ {
+		name = fmt.Sprintf("%s-%d", base, k)
+		n.next[base] = k + 1
+	}
+	n.taken[name] = true
+	return name
+}
+
+// page claims p's name, and when it had to be numbered its own slug field
+// follows it: a page renamed so as not to replace another must not still
+// claim the other's address.
+func (n *names) page(p Page) Page {
+	name := n.claim(p.Name)
+	if name != p.Name {
+		p.Name = name
+		if _, ok := p.Fields["slug"].(string); ok {
+			p.Fields["slug"] = name
+		}
+	}
+	return p
+}
 
 // flattenHTML turns markup into text, pulling out what is worth keeping.
 //

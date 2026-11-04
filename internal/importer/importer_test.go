@@ -362,6 +362,49 @@ func TestJSONArraysAndMapsBothImport(t *testing.T) {
 	}
 }
 
+// Two pages that come to the same name both arrive, numbered from it.
+//
+// The JSON reader numbered nothing. An array of two pages titled "Same" read
+// as two pages both named "same", and `quilzo import` and the browser's
+// import both write pages by name, so the second replaced the first and a
+// page was lost without a word. Every other format numbers the names it
+// shares (same, same-2, same-3), and now this one does too.
+func TestTwoSameNamedPagesInAJSONImportBothArrive(t *testing.T) {
+	arr := `[{"title":"Same","body":"first"},{"title":"Same","body":"second"},
+		{"slug":"same","body":"third"}]`
+	rep, err := Import(JSON, strings.NewReader(arr), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, p := range rep.Pages {
+		got = append(got, p.Name+"="+str(p.Fields["body"]))
+	}
+	if g := strings.Join(got, ","); g != "same=first,same-2=second,same-3=third" {
+		t.Fatalf("the pages arrived as %s, not same, same-2 and same-3 in order", g)
+	}
+	// A page's own link agrees with the name it was given, or the page
+	// numbered so as not to replace another would still claim its address.
+	if s := rep.Pages[2].Fields["slug"]; s != "same-3" {
+		t.Errorf("the third page is named same-3 but its slug says %v", s)
+	}
+
+	// A map's keys are names already, but two of them can come to the same
+	// one. The key that is already its name keeps it; the other is numbered.
+	obj := `{"About Us":{"title":"Numbered"},"about-us":{"title":"Kept"}}`
+	rep, err = Import(JSON, strings.NewReader(obj), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = nil
+	for _, p := range rep.Pages {
+		got = append(got, p.Name+"="+str(p.Fields["title"]))
+	}
+	if g := strings.Join(got, ","); g != "about-us=Kept,about-us-2=Numbered" {
+		t.Fatalf("the pages arrived as %s, not about-us and about-us-2", g)
+	}
+}
+
 // Content types are flat, which is what keeps validation bounded. A nested
 // object has nowhere to go, so it is reported rather than flattened into keys
 // nobody declared.
