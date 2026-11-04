@@ -54,8 +54,9 @@ type PersonDetails struct {
 	// audit record that cannot be checked against the policy.
 	DisplayName string `json:"display_name,omitempty"`
 	// Contact is free text — a room, a handle, a rota. Not validated as an
-	// email address, because validating it would imply this sends mail, and
-	// this program does not send mail.
+	// email address, because validating it would imply mail is sent to it,
+	// and nothing is: the mail this program sends goes to the addresses set
+	// for it, such as the security contact.
 	Contact string `json:"contact,omitempty"`
 	// UpdatedAt is when they last changed it.
 	UpdatedAt int64 `json:"updated_at,omitempty"`
@@ -81,7 +82,7 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 
 	// What this person may do, resolved against the policy as written rather
 	// than inferred from their role. A role is a rung; a binding can be
-	// own-only, scoped to a subtree, or a deny — and only Evaluate knows.
+	// scoped to a subtree, or a deny — and only Evaluate knows.
 	type permission struct {
 		Action  string
 		Allowed bool

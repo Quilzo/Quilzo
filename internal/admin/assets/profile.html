@@ -22,8 +22,9 @@ role <strong>{{.Principal.Role}}</strong>.</p>
     <p><label for="pf-contact">Contact</label>
       <input id="pf-contact" name="contact" maxlength="120"
              value="{{.Details.Contact}}" placeholder="a room, a handle, a rota">
-      <span class="hint">Free text. Nothing here is emailed — this program
-        sends no mail.</span></p>
+      <span class="hint">Free text, for colleagues to read. Nothing is sent to
+        it: the mail this program sends goes only to the addresses set for
+        that, such as the security contact.</span></p>
   </div>
   <button type="submit">Save</button>
 </form>
@@ -31,8 +32,8 @@ role <strong>{{.Principal.Role}}</strong>.</p>
 <h2 id="permissions">What you may do</h2>
 <p class="hint">
   Resolved against the access policy as written, not inferred from your role: a
-  grant can be limited to a subtree or to content you created, and a denial
-  wins wherever it applies. Changing any of this is an administrator's job.
+  grant can be limited to a part of the site, and a denial wins wherever it
+  applies. Changing any of this is an administrator's job.
 </p>
 <div class="table-wrap">
 <table>

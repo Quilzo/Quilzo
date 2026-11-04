@@ -79,3 +79,36 @@ func TestBookingsScreen(t *testing.T) {
 		t.Fatalf("the feed address: %d %q", feed.Code, feed.Header().Get("Location"))
 	}
 }
+
+// Cancelling a booking does not say the site sends no mail.
+//
+// Beside "Cancel this booking" it said "Tell Ann yourself; the site does
+// not send mail." It does: a newsletter's sign-up is mailed its link by the
+// site, and staff are told of bookings made and cancelled. The profile said
+// the same of the whole program, which was corrected; what stays true here
+// is that the person who booked is sent nothing.
+func TestCancellingABookingDoesNotSayNoMailIsSent(t *testing.T) {
+	srv, token := setup(t)
+	at := time.Now().Add(48 * time.Hour).UTC().Truncate(time.Minute)
+	srv.Bookings = &BookingHooks{
+		Setup: func() (*booking.Setup, error) {
+			return &booking.Setup{Zone: "UTC", Services: []booking.Service{{Name: "cut", Title: "Haircut", Minutes: 45}}}, nil
+		},
+		List: func(back, ahead int) ([]booking.Booking, error) {
+			return []booking.Booking{{When: booking.Busy{ID: "20261103-0123456789ab", Service: "cut", Start: at, Minutes: 45,
+				Until: at.Add(time.Hour)}, Who: booking.Details{Name: "Ann Example", Email: "ann@example.com"}}}, nil
+		},
+	}
+	page := strings.Join(strings.Fields(get(t, srv, "/bookings", token).Body.String()), " ")
+	if !strings.Contains(page, "Cancel this booking") {
+		t.Fatal("the booking is not offered for cancelling, so its hint was not read")
+	}
+	for _, claim := range []string{"does not send mail", "sends no mail", "does not send email"} {
+		if strings.Contains(page, claim) {
+			t.Errorf("the bookings screen says the site %q", claim)
+		}
+	}
+	if !strings.Contains(page, "Tell Ann Example yourself") {
+		t.Error("the bookings screen no longer says to tell the person who booked")
+	}
+}

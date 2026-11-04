@@ -658,13 +658,20 @@ func (s *Server) get(w http.ResponseWriter, r *http.Request, name string) {
 	writeJSON(w, http.StatusOK, p)
 }
 
+// writableFix is the command line that turns page writes on, for a refusal
+// of one on a read-only API to name. --api-writable alone serves no API: it
+// takes --api with it. Records are written elsewhere (recordsWritableFix).
+const writableFix = "quilzo site --api --api-writable"
+
 func (s *Server) put(w http.ResponseWriter, r *http.Request, name string) {
 	if !s.Writable {
 		writeError(w, http.StatusMethodNotAllowed, Error{
 			Error: "this API is read-only",
 			Detail: "a read API and a write API are different products with " +
 				"different blast radii, so writes are off unless turned on",
-			Fix: "quilzo serve --api-writable",
+			// The site's flag, with the one that serves the API at all: this
+			// said `quilzo serve --api-writable`, and serve has no such flag.
+			Fix: writableFix,
 		})
 		return
 	}
@@ -959,7 +966,9 @@ func (s *Server) index(w http.ResponseWriter) *vector.Index {
 			Error: "no vector index",
 			Detail: "this server was started without one, so there is nothing " +
 				"to compare against",
-			Fix: "quilzo site --vectors",
+			// The site builds one whenever it serves the API; there is no
+			// --vectors flag, which is what this used to name.
+			Fix: "quilzo site --api",
 		})
 		return nil
 	}

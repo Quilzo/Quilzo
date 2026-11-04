@@ -98,6 +98,10 @@ func TestAskingForHelpDoesNotRunTheCommand(t *testing.T) {
 		{"anchor", "upgrade", "-h"},
 		{"auditlog", "anchor", "--help"},
 		{"auth", "grant", "rae", "admin", "help"},
+		// The flag set's third spelling, which main answers as help too: a
+		// reader's `quilzo publish -help` was shown the help's lines, then
+		// refused, on the record, with exit 1.
+		{"publish", "-help"},
 	}
 
 	t.Setenv("QUILZO_TOKEN", reader)

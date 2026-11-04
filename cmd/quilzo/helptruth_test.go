@@ -276,13 +276,13 @@ func helpText(t *testing.T) string {
 	}
 	// The raw literal, read from the source rather than by capturing stdout:
 	// the point is to check the text somebody edits.
-	const open = "fmt.Print(`"
+	const open = "const usageText = `"
 	i := strings.Index(string(src), open)
 	if i < 0 {
-		t.Fatal("usage() no longer prints a raw string literal")
+		t.Fatal("usageText is no longer a raw string literal")
 	}
 	rest := string(src)[i+len(open):]
-	end := strings.Index(rest, "`)")
+	end := strings.Index(rest, "`")
 	if end < 0 {
 		t.Fatal("the usage literal is not closed")
 	}

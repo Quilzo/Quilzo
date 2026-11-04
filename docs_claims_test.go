@@ -486,3 +486,56 @@ func TestGoModRequiresNothing(t *testing.T) {
 		t.Error("there is a go.sum, so something outside the standard library was fetched")
 	}
 }
+
+// The manual's "Signing in" names every way in the program has, and offers
+// nothing it has withdrawn.
+//
+// It said "Three ways" and listed OpenID Connect, API tokens and roles. SAML,
+// SCIM provisioning and passkeys were not in it, so somebody deciding how
+// their organisation would sign in read that SAML was not offered; and it
+// said a role could be scoped "to a person's own content", which `quilzo
+// auth grant --own-only` refuses, because it was never enforced.
+func TestTheManualSaysHowPeopleSignIn(t *testing.T) {
+	manual := read(t, "docs/cms.md")
+	start := strings.Index(manual, "\n## Signing in\n")
+	if start < 0 {
+		t.Fatal("docs/cms.md has no \"## Signing in\" section")
+	}
+	section := manual[start+1:]
+	if end := strings.Index(section, "\n---\n"); end > 0 {
+		section = section[:end]
+	}
+	flat := strings.ToLower(strings.Join(strings.Fields(section), " "))
+
+	for way, command := range map[string]string{
+		"passkeys":          "quilzo auth enrol",
+		"OpenID Connect":    "quilzo oidc",
+		"SAML":              "quilzo saml",
+		"SCIM provisioning": "quilzo scim",
+		"API tokens":        "quilzo token",
+		"roles on a path":   "quilzo auth explain",
+	} {
+		if !strings.Contains(flat, command) {
+			t.Errorf("\"Signing in\" does not say how to use %s (%s)", way, command)
+		}
+	}
+
+	if strings.Contains(read(t, "cmd/quilzo/auth.go"), "--own-only is withdrawn") {
+		for _, offer := range []string{"own content", "content they created", "content you created"} {
+			if strings.Contains(flat, offer) {
+				t.Errorf("\"Signing in\" offers scoping to %q, and `quilzo auth grant "+
+					"--own-only` refuses it as withdrawn", offer)
+			}
+		}
+	}
+
+	// A count of the ways is the bold paragraphs that are them.
+	leads := len(regexp.MustCompile(`(?m)^\*\*`).FindAllString(section, -1))
+	words := map[string]int{"two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+		"seven": 7, "eight": 8, "nine": 9, "ten": 10}
+	for _, m := range regexp.MustCompile(`\b([a-z]+) ways\b`).FindAllStringSubmatch(flat, -1) {
+		if n, ok := words[m[1]]; ok && n != leads {
+			t.Errorf("\"Signing in\" says %q and describes %d", m[0], leads)
+		}
+	}
+}
