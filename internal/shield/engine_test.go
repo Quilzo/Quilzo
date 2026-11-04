@@ -506,3 +506,17 @@ func TestAWokenPlaybookCountsTheNextSignalAtOnce(t *testing.T) {
 	// Like Observe, a nil engine does nothing.
 	(*Engine)(nil).Wake(Signal{Name: "self-exposure", Subject: "forms"})
 }
+
+// A step may last a minute, and its history said "blocked the source on the
+// site for 1 minutes".
+func TestAMinuteIsOneMinute(t *testing.T) {
+	for d, want := range map[time.Duration]string{
+		time.Minute: "for 1 minute", 70 * time.Second: "for 1 minute", 2 * time.Minute: "for 2 minutes",
+		time.Hour: "for an hour", 4 * time.Hour: "for 4 hours",
+	} {
+		p := Protection{Kind: Block, Target: "source:203.0.113.9", Where: Site, At: t0, Until: t0.Add(d)}
+		if got := Describe(p); !strings.HasSuffix(got, " "+want) {
+			t.Errorf("%s: %q, want it to end %q", d, got, want)
+		}
+	}
+}

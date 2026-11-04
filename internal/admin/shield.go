@@ -288,18 +288,9 @@ func shieldTrigger(pb shield.Playbook) string {
 	return fmt.Sprintf("%s %s within %s.", what, per, roughDuration(time.Duration(pb.On.Within)))
 }
 
-func roughDuration(d time.Duration) string {
-	switch {
-	case d >= time.Hour && d%time.Hour == 0:
-		if d == time.Hour {
-			return "an hour"
-		}
-		return fmt.Sprintf("%d hours", int(d/time.Hour))
-	case d >= time.Minute:
-		return fmt.Sprintf("%d minutes", int(d/time.Minute))
-	}
-	return d.String()
-}
+// roughDuration is a playbook's span in plainDuration's words. Its own copy
+// said "1 minutes" for a one-minute step, and cut 90 seconds to that too.
+func roughDuration(d time.Duration) string { return plainDuration(d) }
 
 func shieldStepWords(st shield.Step) string {
 	where := map[string]string{shield.Admin: "the admin", shield.Site: "the site", shield.All: "the admin and the site"}[st.Where]

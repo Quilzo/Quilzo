@@ -4391,23 +4391,13 @@ func firstOf(v url.Values) map[string]string {
 	return out
 }
 
-// agoAt is a moment as how long before now: "just now", "1 minute ago",
-// "3 days ago"; zero is never.
+// agoAt is a moment as how long before now, in agoText's words: "just
+// now", "1 minute ago", "3 days ago"; zero is never.
 func agoAt(unix int64, now time.Time) string {
 	if unix == 0 {
 		return "never"
 	}
-	d := now.Sub(time.Unix(unix, 0))
-	switch {
-	case d < time.Minute:
-		return "just now"
-	case d < time.Hour:
-		return counted(int(d.Minutes()), "minute", "minutes") + " ago"
-	case d < 24*time.Hour:
-		return counted(int(d.Hours()), "hour", "hours") + " ago"
-	default:
-		return counted(int(d.Hours()/24), "day", "days") + " ago"
-	}
+	return agoText(now.Sub(time.Unix(unix, 0)))
 }
 
 func plural(n int) string {
@@ -4426,7 +4416,7 @@ func initialOf(name string) string {
 	return "?"
 }
 
-// ranAgo is when a scan ran, as a person says it: "just now", "5 min ago".
+// ranAgo is when a scan ran, as a person says it: "just now", "5 minutes ago".
 // The report keeps the exact time; the screen does not need it.
 func ranAgo(at string) string {
 	t, err := time.Parse(time.RFC3339, at)
