@@ -21,6 +21,121 @@ Unreleased
     while such a mapping waits takes two administrators.  A chatbot asked
     inside an agent's run is charged to the run's budget and its person.
 
+** Who has access
+
+*** Quilzo reviews the access only it grants.  Every
+    access.review.every (ninety days, or the organisation's AC-2 period
+    where that is shorter), an administrator keeps or revokes each grant
+    made by hand, what each identity provider group means here, and each
+    long-lived token: quilzo access review start, items, decide and close,
+    or Review who has access on People.  Access unused for ninety days is
+    listed first and proposed for revoke; keeping privileged access needs a
+    reason; nobody decides their own access or a group they are in; the
+    reviewer is a person, signed in with two factors on People; a revoke
+    takes effect at once and never leaves the store without an
+    administrator.  Closing writes the evidence, and the posture finding
+    access.review-due, with a mail to the security contact, says when one
+    is overdue.
+
+*** When the identity provider says a session is over, it is.  quilzo
+    signals connect binds an OpenID Shared Signals stream (CAEP and RISC)
+    from the OIDC or SAML provider people sign in with, received at POST
+    /sso/signals: a revoked session or changed credential ends that
+    provider's sessions, a compromised credential also asks the person to
+    sign in again and tells the security contact, and a disabled account
+    is suspended as SCIM suspends one (and restored when enabled again).
+    The last administrator is never suspended by a signal; at most 20
+    people an hour are acted on, and the rest wait for the provider to
+    send them again.  quilzo signals status and the Sign-ins
+    screen show the stream, and signals.stream-silent says when it has
+    stopped answering.  The shield can contain it ("signals").
+
+** Security
+
+*** A model's draft never goes live unapproved.  The admin's Publish
+    put an agent-written draft live when no approval count was set, and
+    the command line published past an approval policy it could not read;
+    every surface now holds a model's draft for a person, holds any draft
+    for the people approval.required_humans asks for, and refuses to
+    publish when the policy cannot be read.
+
+*** Access is decided as it stands now: both content APIs re-read the
+    access rules, /mcp and token exchange see a revoked token at once, and
+    a token's last use there is written down.  A throttled address slows
+    only its failures, so one guesser behind a proxy locks nobody else
+    out.  A passkey whose counter went back is refused and recorded as a
+    copy.  A permission granted alone reaches the commands its work needs.
+    A group mapped to auditor grants it until a day (scim map --until).  A
+    reader lists their own grants and tokens; whoever may grant, everyone's.
+
+*** SCIM and Shared Signals never leave a store without someone who can
+    grant access, even when the last administrator is deactivated and
+    renamed in one request; events are acted on in the order they were
+    issued, a replayed event touches only sessions open when it was sent,
+    and events past the hourly cap wait instead of being lost.  The scanner
+    finds every kind of secret Quilzo makes.
+
+*** One CSV guard for every CSV Quilzo writes, the subscriber's address
+    included, and an upload check that finds a formula wherever a
+    spreadsheet would run it.  Importing thousands of same-titled items
+    takes time in proportion to them, not minutes.
+
+** Found by using it as people do
+
+
+*** The chatbot shows a sentence as verified only when it says what its
+    passage says: one whose figure, time of day, duration, price, "not"
+    or opposite word turns the passage around is taken out before the
+    visitor sees it.  Research reports are checked the same way.
+
+*** A webhook whose receiver is restarting gets the event: the second and
+    third attempts wait one and then four seconds, and a receiver that
+    answers 429 or 408 is tried again like one that answers 5xx.  An
+    integration tool that says it failed makes quilzo integrations call
+    exit non-zero and is a failure on the record; a call refused before it
+    is sent is recorded as denied.
+
+*** Asking any command for help (-h, -help, --help, --h, with or without
+    a value) prints that command's help and does nothing else; quilzo init
+    --help created a store, and brand init --help and token keygen --help
+    wrote files.  auth revoke's help names both its arguments, auth list,
+    token list and token stale keep long names in their columns, and the
+    read-only API's refusals name the flags that turn writes on.
+
+*** Single sign-on as organisations run it: SAML refuses an address the
+    provider says it has not verified (saml add --verified-attribute; the
+    Keycloak preset asks for email_verified), an identity provider on the
+    organisation's own network is reached where sso.reach declares its
+    range (a weaker setting: a reason and a second administrator), and
+    signing out offers signing out of the OIDC provider too.  The profile
+    says what you hold and where, as your session holds it.  Refusals say
+    why: plain http for what the connection is for, the command that
+    needed a token, a refused SAML response once and by its provider's
+    name, and where oidc status looked for the client secret.
+
+*** The admin says how long ago one way ("3 hours ago", "1 day ago",
+    "1 minute"); the Today screen said "3 h ago" beside "3 hours ago", and
+    "1 minutes" appeared where a minute was meant.  The help lists the
+    public site's API flags under quilzo site, where they work.
+
+*** A duration setting takes days and weeks (90d, 13w), and Quilzo says a
+    duration in days where it said 2160h or 2400h0m0s.  An access review
+    closes only once its evidence is written.  A posture finding about a
+    token names the token, and the Security screen says whose it is.
+
+** Installing
+
+*** deploy/compose.yaml is a reference stack that works as written: the
+    admin over HTTPS from a Caddy of its own on 127.0.0.1, the published
+    site behind Caddy, and a log writer of its own that holds the only
+    writable copy of the audit log.  Following deploy/README.md word for
+    word gives a store on a volume, a design before the site starts, an
+    enrolment link that names the published address, and a first token.
+    The image's entrypoint names its store (/srv/store), so no command can
+    lose it, and any command that would make a store on a container's own
+    layer says it would go with the container.  An image built from a tag
+    says its version.
+
 ** Kept features made right
 
 *** Self-defence tells its owner: a hold on the shield's playbooks no
