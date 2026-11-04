@@ -40,10 +40,17 @@ func registerDecideOps(srv *mcp.Server, root string, caller *Caller) {
 	srv.Register(mcp.Operation{
 		Name: "decide", NeedsRole: "reader",
 		Summary: "answer a decider's typed questions about some state",
-		Detail: "Each answer comes with a confidence and escalate. Where " +
-			"escalate is true a person decides — do not act on that answer. " +
-			"Confidence is agreement across several asks, not the model's own " +
-			"estimate.",
+		// The sentence on confidence says what decide.Decide reports, which
+		// a test holds it to: it once said confidence was agreement alone,
+		// and a client reading that would take a steady model's low stated
+		// number for disagreement between asks.
+		Detail: "Each answer comes with a confidence, an agreement and escalate. " +
+			"Where escalate is true a person decides — do not act on that answer. " +
+			"The question is asked several times; agreement is how far the asks " +
+			"agreed (the share that gave the same answer, or for a score how " +
+			"close the numbers were), and confidence is the lower of that and " +
+			"the model's own stated confidence averaged over those asks, since " +
+			"a model that changes its answer between asks is not as sure as it says.",
 		Args: map[string]string{
 			"name":  "the decider",
 			"state": "any JSON value: the ticket, the comment, the alert",
