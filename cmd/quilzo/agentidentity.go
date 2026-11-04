@@ -114,14 +114,16 @@ func agentIdentityCmdAs(root, verb string, args []string, caller *Caller) error 
 	if verb == "sponsor" {
 		want = 2
 	}
-	if len(args) < want {
+	// The flag on either side: `--for D NAME` named an agent called --for.
+	args, err := parseAnywhere(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(args) != want {
 		if verb == "sponsor" {
 			return errors.New("quilzo agent sponsor NAME PERSON [--for 2160h]")
 		}
 		return errors.New("quilzo agent renew NAME [--for 2160h]")
-	}
-	if err := fs.Parse(args[want:]); err != nil {
-		return err
 	}
 	name := args[0]
 	if caller.Kind == audit.KindAI {

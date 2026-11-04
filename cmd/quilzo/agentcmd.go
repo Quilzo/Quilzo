@@ -329,21 +329,19 @@ func indented(s string, width int, indent string) string {
 }
 
 func agentNew(root string, args []string) error {
-	if len(args) == 0 {
+	// A flag set rather than a hand-read --kind after the name, so the
+	// kind is read before the name as well: `new --kind task NAME` took
+	// --kind for the name and asked which kind.
+	fs := flag.NewFlagSet("agent new", flag.ContinueOnError)
+	kindFlag := fs.String("kind", "", "the template it is declared from (quilzo agent templates)")
+	args, err := parseAnywhere(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(args) != 1 {
 		return fmt.Errorf("usage: quilzo agent new NAME --kind KIND")
 	}
-	name := args[0]
-	kind := ""
-	for i := 1; i < len(args); i++ {
-		if args[i] == "--kind" && i+1 < len(args) {
-			kind = args[i+1]
-			i++
-			continue
-		}
-		if v, ok := strings.CutPrefix(args[i], "--kind="); ok {
-			kind = v
-		}
-	}
+	name, kind := args[0], *kindFlag
 	if kind == "" {
 		return fmt.Errorf("which kind? one of %s, or a kind this store's "+
 			"templates declare\n  quilzo agent templates — what each one is for",

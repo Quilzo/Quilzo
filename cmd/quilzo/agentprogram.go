@@ -460,10 +460,7 @@ func within(dir, path string) bool {
 func agentProgramCmd(root string, args []string) error {
 	usage := errors.New("quilzo agent program NAME [--backend native|openshell] [--image IMG] [--read DIR]... " +
 		"[--env K=V]... [--memory-mb N] -- COMMAND [ARG...]  |  quilzo agent program NAME --remove")
-	if len(args) < 2 {
-		return usage
-	}
-	name, rest := args[0], args[1:]
+	rest := args
 	var command []string
 	for i, a := range rest {
 		if a == "--" {
@@ -479,9 +476,16 @@ func agentProgramCmd(root string, args []string) error {
 	var reads, envs multiFlag
 	fs.Var(&reads, "read", "a further path it may read (repeat)")
 	fs.Var(&envs, "env", "a setting K=V, never a secret (repeat)")
-	if err := fs.Parse(rest); err != nil {
+	// The flags on either side of the name: `--backend native NAME`
+	// named an agent called --backend.
+	pos, err := parseAnywhere(fs, rest)
+	if err != nil {
 		return err
 	}
+	if len(pos) != 1 || (len(command) == 0 && !*remove) {
+		return usage
+	}
+	name := pos[0]
 	caller := resolveCaller(root, flagToken)
 	if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
 		return fmt.Errorf("what an agent's program is, is an administrator's decision: %w", err)

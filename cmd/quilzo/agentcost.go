@@ -31,7 +31,8 @@ func agentCost(root string, args []string) error {
 	fs := flag.NewFlagSet("agent cost", flag.ContinueOnError)
 	by := fs.String("by", "agent", "group by agent, person, goal or day")
 	since := fs.Duration("since", 30*24*time.Hour, "how far back to look")
-	if err := fs.Parse(args); err != nil {
+	pos, err := parseAnywhere(fs, args)
+	if err != nil {
 		return err
 	}
 	switch *by {
@@ -39,10 +40,14 @@ func agentCost(root string, args []string) error {
 	default:
 		return fmt.Errorf("--by is agent, person, goal or day, not %q", *by)
 	}
-	if fs.NArg() > 1 {
+	if len(pos) > 1 {
 		return fmt.Errorf("usage: quilzo agent cost [--by agent|person|goal|day] [--since 720h] [NAME]")
 	}
-	runs, err := listAgentRuns(root, fs.Arg(0), 0)
+	name := ""
+	if len(pos) == 1 {
+		name = pos[0]
+	}
+	runs, err := listAgentRuns(root, name, 0)
 	if err != nil {
 		return err
 	}

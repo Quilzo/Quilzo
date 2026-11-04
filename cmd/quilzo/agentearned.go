@@ -6,6 +6,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -161,7 +162,16 @@ func earnOnAnswer(root string, caller *Caller, prior agent.Record, v agent.Verdi
 
 // agentEarned is `quilzo agent earned NAME [--reset]`.
 func agentEarned(root string, args []string) error {
-	if len(args) < 1 || len(args) > 2 || (len(args) == 2 && args[1] != "--reset") {
+	// A flag set rather than a word in second place, so --reset is read
+	// before the name as well as after it: `earned --reset NAME` was
+	// refused with the usage line.
+	fs := flag.NewFlagSet("agent earned", flag.ContinueOnError)
+	resetAll := fs.Bool("reset", false, "every kind of action it had earned asks again")
+	args, err := parseAnywhere(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(args) != 1 {
 		return fmt.Errorf("usage: quilzo agent earned NAME [--reset]")
 	}
 	name := args[0]
@@ -174,7 +184,7 @@ func agentEarned(root string, args []string) error {
 		return fmt.Errorf("no agent called %s is declared", name)
 	}
 	caller := resolveCaller(root, "")
-	if len(args) == 2 {
+	if *resetAll {
 		unearnHook(root, name, caller)("reset by a person")
 		fmt.Printf("  %severy kind of action %s had earned asks again%s\n", green, name, reset)
 		return nil
