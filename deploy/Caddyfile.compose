@@ -4,8 +4,8 @@
 # for it; with QUILZO_DOMAIN=localhost it uses its own local authority, which
 # is what a trial on one machine wants.
 #
-# The admin is deliberately absent: it is published on the host's loopback
-# only. See deploy/README.md.
+# The admin is deliberately absent: it has a Caddy of its own, published on
+# the host's loopback only (Caddyfile.admin). See deploy/README.md.
 
 {$QUILZO_DOMAIN} {
 	reverse_proxy site:8081

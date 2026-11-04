@@ -512,3 +512,125 @@ func TestComposeRunsAnImageThatKnowsItsVersion(t *testing.T) {
 	}
 }
 
+// networksOf is the networks a service is on, given as a list or as a
+// mapping of each to its settings.
+func networksOf(s map[string]any) []string {
+	if m, ok := s["networks"].(map[string]any); ok {
+		var out []string
+		for k := range m {
+			out = append(out, k)
+		}
+		slices.Sort(out)
+		return out
+	}
+	return strs(s["networks"])
+}
+
+// envDefaults is compose.env.example, the values a reader starts from.
+func envDefaults(t *testing.T) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	for _, line := range strings.Split(read(t, "deploy/compose.env.example"), "\n") {
+		if k, v, ok := strings.Cut(strings.TrimSpace(line), "="); ok && !strings.HasPrefix(k, "#") {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+// stepIndex is the first README step whose arguments, after the service,
+// start with these words; -1 if none does.
+func stepIndex(steps []string, words ...string) int {
+	for i, step := range steps {
+		if _, args, ok := runArgs(step); ok && len(args) >= len(words) && slices.Equal(args[:len(words)], words) {
+			return i
+		}
+	}
+	return -1
+}
+
+// Finding STACK-F10. `init --admin` printed http://localhost:8080/enrol/...
+// whatever the admin was published on, because nothing had told the store
+// where its admin is: with QUILZO_ADMIN_PORT=18092 the link pointed at
+// nothing, and a passkey is made for the address it is made on. The admin
+// is reached through a Caddy of its own, over HTTPS, on this machine's
+// loopback and nowhere else; the README tells the store that address, from
+// the same .env the port is published from, before the link is made.
+func TestComposeEnrolmentLinkNamesThePublishedAdmin(t *testing.T) {
+	svc := services(t)
+	if ports := strs(svc["admin"]["ports"]); len(ports) > 0 {
+		t.Errorf("the admin publishes %v itself; it is reached through its own proxy", ports)
+	}
+	var proxy string
+	for name, s := range svc {
+		for _, v := range strs(s["volumes"]) {
+			if strings.HasPrefix(v, "./Caddyfile.admin:") {
+				proxy = name
+			}
+		}
+	}
+	if proxy == "" {
+		t.Fatal("no service serves the admin over HTTPS (./Caddyfile.admin)")
+	}
+	p := svc[proxy]
+	if nets := networksOf(p); !slices.Equal(nets, []string{"admin"}) {
+		t.Errorf("%s is on %v: the admin's proxy shares a network with the admin and nothing else", proxy, nets)
+	}
+	ports := strs(p["ports"])
+	if len(ports) == 0 {
+		t.Fatalf("%s publishes nothing", proxy)
+	}
+	for _, port := range ports {
+		if !strings.HasPrefix(port, "127.0.0.1:${QUILZO_ADMIN_PORT") {
+			t.Errorf("%s publishes %q: the admin is this machine's, on its loopback, at QUILZO_ADMIN_PORT", proxy, port)
+		}
+	}
+	// One capability at most, the one the image's caddy carries as a file
+	// capability and cannot be run without under no-new-privileges.
+	if !slices.Contains(strs(p["cap_drop"]), "ALL") ||
+		!slices.Contains(strs(p["security_opt"]), "no-new-privileges:true") ||
+		len(strs(p["cap_add"])) > 1 || (len(strs(p["cap_add"])) == 1 && strs(p["cap_add"])[0] != "NET_BIND_SERVICE") {
+		t.Errorf("%s holds more than caddy's one capability, or can gain more", proxy)
+	}
+	if ro, _ := p["read_only"].(bool); !ro {
+		t.Errorf("%s is not read-only", proxy)
+	}
+	caddyfile := read(t, "deploy/Caddyfile.admin")
+	for _, want := range []string{"tls internal", "reverse_proxy admin:8080"} {
+		if !strings.Contains(caddyfile, want) {
+			t.Errorf("Caddyfile.admin has no %q", want)
+		}
+	}
+	// The proxy the internet reaches, and the site behind it, still cannot
+	// reach the admin at all.
+	for _, name := range []string{"caddy", "site"} {
+		if slices.Contains(networksOf(svc[name]), "admin") {
+			t.Errorf("%s is on the admin's network", name)
+		}
+	}
+
+	readme := read(t, "deploy/README.md")
+	if !strings.Contains(readme, "set -a; . ./.env; set +a") {
+		t.Error("the README does not read .env into the shell, so its steps cannot name the addresses .env gives")
+	}
+	steps := composeSteps(t)
+	enrol := stepIndex(steps, "init", "--admin")
+	if enrol < 0 {
+		t.Fatal("the README makes no first administrator")
+	}
+	for _, set := range [][]string{
+		{"config", "set", "admin.base_url", `"https://localhost:$QUILZO_ADMIN_PORT"`},
+		{"config", "set", "admin.behind_tls_proxy", "true"},
+	} {
+		at := stepIndex(steps, set...)
+		if at < 0 {
+			t.Errorf("the README never runs %s", strings.Join(set, " "))
+		} else if at > enrol {
+			t.Errorf("%s comes after init --admin, whose link it decides", strings.Join(set, " "))
+		}
+	}
+	if envDefaults(t)["QUILZO_ADMIN_PORT"] == "" {
+		t.Error("compose.env.example does not set QUILZO_ADMIN_PORT")
+	}
+}
+

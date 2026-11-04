@@ -16,10 +16,11 @@
 #          certificate itself, which is the reason it is Caddy.
 #   site   the published site: anonymous, read-mostly, confined (Landlock) to
 #          the site's own state in the store. Reached only through Caddy.
-#   admin  holds credentials. Published on this machine's loopback and
-#          nowhere else; reach it over SSH. Putting it behind a public
-#          hostname is the change that turns a compromise of the proxy into a
-#          compromise of the store.
+#   admin  holds credentials. Reached over HTTPS through a Caddy of its own,
+#          published on this machine's loopback and nowhere else; reach it
+#          over SSH. Putting it behind a public hostname, or behind the Caddy
+#          the internet reaches, is the change that turns a compromise of the
+#          proxy into a compromise of the store.
 #   logd   writes the audit log, as an account the other three are not, with
 #          no network: they hand it records over a socket and cannot open
 #          the log to rewrite one.
@@ -74,11 +75,11 @@ services:
 
   admin:
     <<: *quilzo
-    command: ["serve", "--addr", "0.0.0.0:8080"]
-    # Loopback on the host, and only that. 0.0.0.0 inside the container is
-    # the container's own interface; what the internet can reach is decided
-    # here, and the answer is nothing.
-    ports: ["127.0.0.1:${QUILZO_ADMIN_PORT:-8080}:8080"]
+    # --behind-proxy because admin-proxy terminates TLS in front of it, which
+    # the posture scan should not report as cleartext.
+    command: ["serve", "--addr", "0.0.0.0:8080", "--behind-proxy"]
+    # No ports of its own: admin-proxy is the way in. 0.0.0.0 inside the
+    # container is the container's own interface, on the admin network.
     volumes:
       - store:/srv/store
       - templates:/srv/templates
@@ -87,6 +88,40 @@ services:
       - audit:/srv/audit:ro
     networks: [admin]
     depends_on: [logd]
+
+  admin-proxy:
+    # The admin over HTTPS, from a Caddy that is not the internet's.
+    #
+    # The admin was published as plain HTTP on the loopback, so its session
+    # cookie could not be Secure and its OAuth address could not be https.
+    # Serving it from the public Caddy would fix that and break the reason
+    # the admin is apart: that Caddy faces the internet, and one that
+    # terminated the admin's TLS would hold every administrator's session in
+    # clear. This one is on the admin's network only, and published on this
+    # machine's loopback only, so what can reach it is what can already
+    # reach this machine. Its certificate comes from its own authority
+    # (Caddyfile.admin).
+    image: caddy:2.11
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    # 8443 needs no privilege, and this is here anyway: the image's caddy
+    # carries NET_BIND_SERVICE as a file capability, and under
+    # no-new-privileges the kernel refuses to run a program whose file
+    # capabilities are not all in the bounding set ("exec /usr/bin/caddy:
+    # operation not permitted"). It is the one capability, as for caddy.
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:size=64m"]
+    # Loopback on the host, and only that: what the internet can reach of
+    # the admin is decided here, and the answer is nothing.
+    ports: ["127.0.0.1:${QUILZO_ADMIN_PORT:-8443}:8443"]
+    volumes:
+      - ./Caddyfile.admin:/etc/caddy/Caddyfile:ro
+      - admin-caddy-data:/data
+      - admin-caddy-config:/config
+    networks: [admin]
+    depends_on: [admin]
 
   site:
     <<: *quilzo
@@ -157,3 +192,5 @@ volumes:
   audit:
   caddy-data:
   caddy-config:
+  admin-caddy-data:
+  admin-caddy-config:

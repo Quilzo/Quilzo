@@ -21,9 +21,12 @@ Every command below is run in this directory, in this order:
 ```bash
 cd deploy
 cp compose.env.example .env    # then set QUILZO_DOMAIN in .env
+set -a; . ./.env; set +a       # so the steps below name the addresses in .env
 docker compose run --rm admin init
 docker compose run --rm admin auditlog dir /srv/audit
 docker compose run --rm admin config set network.trusted_proxies 172.31.250.10
+docker compose run --rm admin config set admin.behind_tls_proxy true
+docker compose run --rm admin config set admin.base_url "https://localhost:$QUILZO_ADMIN_PORT"
 docker compose run --rm admin demo --examples /srv/templates/examples
 docker compose run --rm admin init --admin you
 docker compose up -d
@@ -44,6 +47,11 @@ What each one is for:
 - `network.trusted_proxies` is Caddy's fixed address on the network it
   shares with the site, the one address the site believes `X-Forwarded-For`
   from (see the note in `compose.yaml`).
+- `admin.behind_tls_proxy` and `admin.base_url` say what the admin is: served
+  over HTTPS by `admin-proxy`, at `https://localhost:` and the port in
+  `.env`. The session cookie is Secure because of the first, and the second
+  is the address every link to the admin names, the enrolment link below
+  among them, so both come before it.
 - `demo` installs Marginalia, the demonstration: a design, eleven pages and
   a small shop, published, so the site has something to serve the moment it
   starts. Its design goes to the `templates` volume, which the admin writes
@@ -64,6 +72,27 @@ then name it in `.env`:
 ```bash
 docker build --build-arg VERSION=v0.3.0 -t quilzo:0.3.0 ..
 # and in .env: QUILZO_IMAGE=quilzo and QUILZO_VERSION=0.3.0
+```
+
+### Reaching the admin
+
+The admin is at `https://localhost:8443` (the port is `QUILZO_ADMIN_PORT`),
+on this machine's loopback and nowhere else. It is served by `admin-proxy`, a
+Caddy of its own on a network the internet-facing Caddy and the site are not
+on. From another computer, forward the port over SSH and open the same
+address there:
+
+```bash
+ssh -N -L 8443:127.0.0.1:8443 you@your-server
+```
+
+Its certificate comes from `admin-proxy`'s own authority. Trust it once on the
+computer you sign in from, because a browser will not use a passkey on a page
+whose certificate it does not trust: copy it out, and add it to that
+computer's (or browser's) trusted certificates.
+
+```bash
+docker compose cp admin-proxy:/data/caddy/pki/authorities/local/root.crt quilzo-admin-ca.crt
 ```
 
 ### Commands once there is an administrator
