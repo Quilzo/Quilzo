@@ -5,6 +5,7 @@ package theme
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -74,15 +75,24 @@ func (t *Theme) CheckBackdrop() []Finding {
 			if ratio >= p.Min {
 				continue
 			}
+			// The strength that would fix it, worked out rather than guessed:
+			// the advice was always 90%, which said to set the strength a
+			// site already had, and named a veil that still failed when its
+			// colour was too near the text's for any strength to help.
+			fix := "No strength of this veil is enough, because its colour is too near " +
+				"the text's: give it a colour further from the text"
+			if n, ok := strengthFor(fg, veil, p.Min, strength); ok {
+				fix = fmt.Sprintf("Strengthen the veil to at least %d%% with "+
+					"`quilzo theme set scrim-strength %d%%`, or give it a colour further "+
+					"from the text", n, n)
+			}
 			out = append(out, Finding{
 				Token: "scrim", Blocking: true, Scheme: scheme.name,
 				Ratio: ratio, Needs: p.Min, Criterion: p.Criterion,
 				Detail: fmt.Sprintf("%s over a backdrop is %.2f:1 at worst in the %s "+
 					"scheme — the veil (%s at %s) over the picture least like it — and "+
-					"needs %.1f:1. This is %s. Strengthen the veil with "+
-					"`quilzo theme set scrim-strength 90%%`, or give it a colour further "+
-					"from the text", p.Foreground, ratio, scheme.name, veil,
-					t.valueOf("scrim-strength"), p.Min, p.What),
+					"needs %.1f:1. This is %s. %s", p.Foreground, ratio, scheme.name, veil,
+					t.valueOf("scrim-strength"), p.Min, p.What, fix),
 			})
 		}
 	}
@@ -118,6 +128,18 @@ func WorstOver(text, veil string, strength float64) float64 {
 	default:
 		return (lo + 0.05) / (lt + 0.05)
 	}
+}
+
+// strengthFor is the lowest whole percentage above the strength a veil has
+// at which a text colour reaches min over any picture, or false when even a
+// veil that hides the picture entirely is not enough.
+func strengthFor(text, veil string, min, from float64) (int, bool) {
+	for n := int(math.Floor(from*100)) + 1; n <= 100; n++ {
+		if WorstOver(text, veil, float64(n)/100) >= min {
+			return n, true
+		}
+	}
+	return 0, false
 }
 
 // scrimStrength is the veil's strength as a fraction.

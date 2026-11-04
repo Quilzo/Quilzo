@@ -4,6 +4,7 @@
 package theme
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -117,5 +118,40 @@ func TestSecondaryTextOverAVeilIsJudged(t *testing.T) {
 	}
 	if !named {
 		t.Errorf("secondary text below 4.5:1 over the veil passed: %v", f)
+	}
+}
+
+// The strength a refusal names is one that passes, worked out for the pair
+// that failed, and a veil whose colour no strength can rescue is told so.
+// The advice was always 90%, which told a site already at 90% to set 90%.
+func TestTheVeilAdviceNamesAStrengthThatPasses(t *testing.T) {
+	weak, _ := New(map[string]string{"scrim-strength": "30%"}, nil)
+	re := regexp.MustCompile("scrim-strength (\\d+)%`")
+	for _, f := range weak.CheckBackdrop() {
+		m := re.FindStringSubmatch(f.Detail)
+		if m == nil {
+			t.Fatalf("no strength named: %s", f.Detail)
+		}
+		fixed, _ := New(map[string]string{"scrim-strength": m[1] + "%"}, nil)
+		for _, g := range fixed.CheckBackdrop() {
+			if g.Scheme == f.Scheme && strings.HasPrefix(g.Detail, strings.Fields(f.Detail)[0]+" ") {
+				t.Errorf("the strength named, %s%%, still fails: %s", m[1], g.Detail)
+			}
+		}
+	}
+	// A mid-grey veil under mid-grey words: nothing it could be set to helps.
+	grey, _ := New(map[string]string{"scheme": "light", "scrim": "#777777", "scrim-strength": "90%",
+		"on-surface": "#767676"}, nil)
+	found := false
+	for _, f := range grey.CheckBackdrop() {
+		if strings.HasPrefix(f.Detail, "on-surface ") {
+			found = true
+			if strings.Contains(f.Detail, "scrim-strength 90%") || !strings.Contains(f.Detail, "No strength") {
+				t.Errorf("a veil no strength can rescue was given a strength: %s", f.Detail)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("the fixture no longer fails")
 	}
 }

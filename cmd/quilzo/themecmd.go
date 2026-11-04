@@ -355,7 +355,17 @@ func themeCheck(args []string) error {
 	// whole layer out, which is a thing this site does not have until it is
 	// fixed, and a script reading the answer needs to see it.
 	layerRefused := theme.Blocks(d.LayerFindings) && !d.OwnStylesheet
-	if w.JSON(append(findings, d.LayerFindings...)) {
+	// So do the veil's, which the prose reports and the document left out.
+	// They refuse only a page with a backdrop, which this command cannot
+	// see, so they are advisories here, as the exit status treats them.
+	doc := append(append([]theme.Finding{}, findings...), d.LayerFindings...)
+	for _, f := range d.Theme.CheckBackdrop() {
+		if f.Blocking {
+			f.Blocking = false
+			doc = append(doc, f)
+		}
+	}
+	if w.JSON(doc) {
 		if layerRefused {
 			return fmt.Errorf("the style layer is refused and is not served")
 		}

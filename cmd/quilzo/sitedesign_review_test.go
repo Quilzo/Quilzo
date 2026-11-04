@@ -134,7 +134,30 @@ func TestAWeakVeilIsSaidWhenItIsSet(t *testing.T) {
 	if !strings.Contains(buf.String(), "a page with a backdrop will not publish") {
 		t.Errorf("a veil too weak to read through was set in silence:\n%s", buf.String())
 	}
-	buf.Reset()
+	// A script reading `theme check --json` sees it too, as advice: it
+	// refuses only a page with a backdrop, and the exit status does not
+	// count it.
+	doc := asMachine(t, true)
+	if err := cmdTheme(root, []string{"check", "--dir", tpl}); err != nil {
+		t.Fatalf("a weak veil failed the whole check: %v", err)
+	}
+	var findings []theme.Finding
+	if err := json.Unmarshal(doc.Bytes(), &findings); err != nil {
+		t.Fatalf("%v: %s", err, doc.String())
+	}
+	over := 0
+	for _, f := range findings {
+		if strings.Contains(f.Detail, "over a backdrop") {
+			over++
+			if f.Blocking {
+				t.Errorf("the veil is counted as refusing every page: %s", f.Detail)
+			}
+		}
+	}
+	if over == 0 {
+		t.Errorf("theme check --json does not say the veil is too weak:\n%s", doc.String())
+	}
+	buf = asMachine(t, false)
 	if err := cmdTheme(root, []string{"set", "scrim-strength", "90%", "--dir", tpl}); err != nil {
 		t.Fatal(err)
 	}
