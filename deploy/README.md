@@ -47,7 +47,8 @@ What each one is for:
   container's own layer, which `--rm` would delete.
 - `auditlog dir` points the store at the audit log that `logd` writes. From
   then on the admin and the site hand it their records over a socket and
-  cannot open the log to change one; `quilzo logd status` says whether the
+  cannot open the log to change one, and `logd` signs the log's heads with a
+  key only it holds (below); `quilzo logd status` says whether the
   separation is in force. (`docker compose run` starts `logd` first, so it
   is running for every step after this one.)
 - `network.trusted_proxies` is Caddy's fixed address on the network it
@@ -124,6 +125,28 @@ Tokens are made on the command line, with an administrator's token: the
 admin has no page for it. The first lasts a week (`token.ttl.default`), so
 make the next before it ends, and one for each person or program that needs
 one: `docker compose run --rm -e QUILZO_TOKEN admin token issue NAME --principal WHO`.
+
+### Heads, receipts and the key that signs them
+
+`logd` holds the key that signs the audit log's heads, in the `audit` volume:
+`head.key`, which only `logd` can read, and `head.pub.json`, the public half,
+both made when it first starts. The admin cannot write that volume and never
+holds the key, so `auditlog head --save`, `agent receipt`, `apps receipt`, the
+audit stream, `engagement issue`, `feature export --sign` and research plans
+are all signed by `logd`, over its socket; `logd status` says so. The heads
+`auditlog head --save` keeps are in the store.
+
+Hand `head.pub.json` to whoever checks a head or a receipt, and give them the
+receipt:
+
+```bash
+docker compose cp logd:/srv/audit/head.pub.json .
+docker compose run --rm -T -e QUILZO_TOKEN admin agent receipt RUN > receipt.json
+```
+
+They check it anywhere, against the keys you gave them rather than the ones
+the receipt brought: `quilzo agent verify-receipt receipt.json --keys
+head.pub.json`.
 
 ### What the containers do not do
 
