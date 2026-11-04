@@ -289,3 +289,104 @@ func TestComposeKeepsItsHardening(t *testing.T) {
 		t.Error("the image does not run as nonroot")
 	}
 }
+
+// workdir is the image's working directory, which a relative path in a
+// command is read against.
+func workdir(t *testing.T) string {
+	t.Helper()
+	m := regexp.MustCompile(`(?m)^WORKDIR\s+(\S+)\s*$`).FindAllStringSubmatch(read(t, "Dockerfile"), -1)
+	if len(m) == 0 {
+		t.Fatal("the Dockerfile sets no WORKDIR")
+	}
+	return m[len(m)-1][1]
+}
+
+// writableIn reports whether a service can write path: under a volume it
+// mounts read-write, or the /tmp every Quilzo container has.
+func writableIn(s map[string]any, path string) bool {
+	for at, m := range mounts(s) {
+		if !m.ReadOnly && (path == at || strings.HasPrefix(path, at+"/")) {
+			return true
+		}
+	}
+	return strings.HasPrefix(path, "/tmp/")
+}
+
+// flagValue is the value given to --name in args, or "".
+func flagValue(args []string, name string) string {
+	for i, a := range args {
+		if a == "--"+name && i+1 < len(args) {
+			return args[i+1]
+		}
+		if v, ok := strings.CutPrefix(a, "--"+name+"="); ok {
+			return v
+		}
+	}
+	return ""
+}
+
+// Finding STACK-F2. Following the reference, the public site never started:
+// nothing put a design in the templates volume, so `quilzo site` exited
+// with "no layout in templates", Docker restarted it for ever and Caddy
+// answered 502. A step before `up -d` writes one, where the site reads it.
+func TestComposeSiteHasADesignBeforeItStarts(t *testing.T) {
+	steps := composeSteps(t)
+	up := slices.IndexFunc(steps, func(s string) bool { return strings.HasPrefix(s, "docker compose up") })
+	if up < 0 {
+		t.Fatal("the README never starts the stack")
+	}
+	svc := services(t)
+	wd := workdir(t)
+	designed := false
+	for _, step := range steps[:up] {
+		name, args, ok := runArgs(step)
+		if !ok || len(args) == 0 {
+			continue
+		}
+		isDemo := args[0] == "demo"
+		if !isDemo && !(len(args) > 1 && args[0] == "template" && args[1] == "use") {
+			continue
+		}
+		designed = true
+		// Where it writes, as the command reads its flags: templates
+		// relative to the working directory, and the demonstration's
+		// examples beside them unless told otherwise.
+		tpl := flagValue(args, "templates")
+		if !isDemo {
+			tpl = flagValue(args, "dir")
+		}
+		if tpl == "" {
+			tpl = "templates"
+		}
+		if !strings.HasPrefix(tpl, "/") {
+			tpl = wd + "/" + tpl
+		}
+		dirs := map[string]string{"templates": tpl}
+		if isDemo {
+			ex := flagValue(args, "examples")
+			if ex == "" {
+				ex = tpl[:strings.LastIndex(tpl, "/")] + "/examples"
+			}
+			dirs["examples"] = ex
+		}
+		for what, dir := range dirs {
+			if !writableIn(svc[name], dir) {
+				t.Errorf("%q writes its %s to %s, which %s cannot write: the read-only "+
+					"container refuses it", step, what, dir, name)
+			}
+		}
+		site, ok := svc["site"]
+		if !ok {
+			t.Fatal("there is no site service")
+		}
+		m, found := mounts(site)[tpl]
+		if !found || m.Volume != mounts(svc[name])[tpl].Volume {
+			t.Errorf("%q writes the design to %s, and the site does not read that volume there", step, tpl)
+		}
+	}
+	if !designed {
+		t.Error("nothing before `docker compose up` writes a design, so the site exits " +
+			"with \"no layout in templates\" and Caddy answers 502")
+	}
+}
+

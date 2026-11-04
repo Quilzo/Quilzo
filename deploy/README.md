@@ -23,6 +23,7 @@ cd deploy
 cp compose.env.example .env    # then set QUILZO_DOMAIN in .env
 docker compose run --rm admin init
 docker compose run --rm admin config set network.trusted_proxies 172.31.250.10
+docker compose run --rm admin demo --examples /srv/templates/examples
 docker compose run --rm admin init --admin you
 docker compose up -d
 ```
@@ -37,6 +38,13 @@ What each one is for:
 - `network.trusted_proxies` is Caddy's fixed address on the network it
   shares with the site, the one address the site believes `X-Forwarded-For`
   from (see the note in `compose.yaml`).
+- `demo` installs Marginalia, the demonstration: a design, eleven pages and
+  a small shop, published, so the site has something to serve the moment it
+  starts. Its design goes to the `templates` volume, which the admin writes
+  and the site reads; its example files go there too, because the rest of
+  `/srv` is read-only. For a site of your own from the start, run
+  `docker compose run --rm admin template use sections` instead: it writes a
+  design and a sample page, and the site serves what you publish.
 - `init --admin you` makes `you` the first administrator and prints the link
   that adds their passkey. Open it once.
 - `up -d` starts everything, and `restart: unless-stopped` brings it back
