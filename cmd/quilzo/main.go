@@ -1738,40 +1738,53 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 	// provenance checks should be told that first — asking two colleagues to
 	// approve something the tool is going to refuse anyway wastes their time
 	// and teaches them the approval is a formality.
-	if pol, perr := loadApprovalPolicy(root); perr == nil {
-		if pol.Required > 0 || pol.RequireHumanForAI {
-			// The approvals of what is being published, which is the draft
-			// unless a commit was named (see proposalFor).
-			prop, _, cerr := proposalFor(root, s, target)
-			if cerr != nil {
-				record(root, caller.auditRecord("publish", "/", audit.Denied,
-					map[string]string{"reason": "the approval check could not run",
-						"detail": cerr.Error()}))
-				return errBlocked{fmt.Errorf("the approval check could not run, so "+
-					"publishing would claim a check that did not happen: %v", cerr)}
-			}
-			d := pol.Evaluate(*prop, kindOfPrincipal(root), time.Now())
-			if !d.Allowed {
-				record(root, caller.auditRecord("publish", "/", audit.Denied,
-					map[string]string{
-						// "proposal" and not "content": Append refuses
-						// any key containing "content" and refuses the
-						// whole record with it, so every publish blocked
-						// by dual authorisation went unrecorded — the one
-						// gate whose entire purpose is that somebody
-						// later can see it was tried.
-						"reason":     "dual-authorization",
-						"have":       fmt.Sprintf("%d", d.Have),
-						"need":       fmt.Sprintf("%d", d.Need),
-						"proposal":   prop.Content,
-						"author":     prop.Author,
-						"authorkind": prop.AuthorKind,
-					}))
-				return errBlocked{fmt.Errorf("%s\n  quilzo review status",
-					d.Reason)}
-			}
-			w.Human("  %s%s%s\n", green, d.Reason, reset)
+	//
+	// A policy that cannot be read refuses, as the machine interface does.
+	// This was `perr == nil && ...`, so a damaged or unreadable approval.json
+	// switched the gate off for this command and for every scheduled publish
+	// behind it, which is the shape the other gates above were cured of.
+	pol, perr := loadApprovalPolicy(root)
+	if perr != nil {
+		record(root, caller.auditRecord("publish", "/", audit.Denied,
+			map[string]string{"reason": "the approval policy could not be read",
+				"detail": perr.Error()}))
+		return errBlocked{fmt.Errorf("the approval policy could not be read, so "+
+			"publishing would claim a check that did not happen: %v\n"+
+			"  repair %s, or remove it to fall back to the settings", perr,
+			approvalPolicyPath(root))}
+	}
+	if pol.Required > 0 || pol.RequireHumanForAI {
+		// The approvals of what is being published, which is the draft
+		// unless a commit was named (see proposalFor).
+		prop, _, cerr := proposalFor(root, s, target)
+		if cerr != nil {
+			record(root, caller.auditRecord("publish", "/", audit.Denied,
+				map[string]string{"reason": "the approval check could not run",
+					"detail": cerr.Error()}))
+			return errBlocked{fmt.Errorf("the approval check could not run, so "+
+				"publishing would claim a check that did not happen: %v", cerr)}
 		}
+		d := pol.Evaluate(*prop, kindOfPrincipal(root), time.Now())
+		if !d.Allowed {
+			record(root, caller.auditRecord("publish", "/", audit.Denied,
+				map[string]string{
+					// "proposal" and not "content": Append refuses
+					// any key containing "content" and refuses the
+					// whole record with it, so every publish blocked
+					// by dual authorisation went unrecorded — the one
+					// gate whose entire purpose is that somebody
+					// later can see it was tried.
+					"reason":     "dual-authorization",
+					"have":       fmt.Sprintf("%d", d.Have),
+					"need":       fmt.Sprintf("%d", d.Need),
+					"proposal":   prop.Content,
+					"author":     prop.Author,
+					"authorkind": prop.AuthorKind,
+				}))
+			return errBlocked{fmt.Errorf("%s\n  quilzo review status",
+				d.Reason)}
+		}
+		w.Human("  %s%s%s\n", green, d.Reason, reset)
 	}
 
 	if beforeLiveMoves != nil {
