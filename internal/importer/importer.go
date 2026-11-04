@@ -54,6 +54,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/export"
 	"github.com/quilzo/quilzo/internal/seo"
+	"github.com/quilzo/quilzo/internal/webimport"
 )
 
 // Source is a format that can be imported.
@@ -217,13 +218,8 @@ func importWXR(body []byte, now time.Time) (*Report, error) {
 	// whatever reads its output next.
 	dec.Strict = true
 	if err := dec.Decode(&doc); err != nil {
-		if strings.Contains(err.Error(), "invalid character entity") {
-			return nil, fmt.Errorf("the export declares XML entities, which are "+
-				"not resolved here. If this file is a legitimate export, the "+
-				"entities are being used for text and can be replaced; if it is "+
-				"not, this is the attack that has hit WordPress twice: %w", err)
-		}
-		return nil, fmt.Errorf("this does not parse as a WordPress export: %w", err)
+		// Said as `quilzo site import` says it about the same file.
+		return nil, webimport.NotWordPress(err)
 	}
 
 	named := export.NewNames()
@@ -479,6 +475,17 @@ func importMarkdown(body []byte, now time.Time) (*Report, error) {
 func importJSON(body []byte, now time.Time) (*Report, error) {
 	c, err := export.Read(export.JSON, body)
 	if err != nil {
+		// A Ghost export is JSON too, so it came here and was refused with
+		// "no importable pages found", while the site import reads the same
+		// file into a site with its posts. Said only once this reader has
+		// found nothing, so a page that happens to be called "posts" is
+		// still read as one.
+		if webimport.Detect(body) == webimport.KindGhost {
+			return nil, fmt.Errorf("this is a Ghost export, not pages this "+
+				"reads: bring it as a site, with `quilzo site import FILE` or "+
+				"\"Or the file it exported\" on the Make screen, which read its "+
+				"posts and pages (%w)", err)
+		}
 		return nil, err
 	}
 	return jsonReport(c), nil

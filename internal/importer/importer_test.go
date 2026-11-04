@@ -405,6 +405,32 @@ func TestTwoSameNamedPagesInAJSONImportBothArrive(t *testing.T) {
 	}
 }
 
+// A Ghost export is not read as Quilzo's pages, and the refusal says where it
+// can be brought. It is JSON, so it was read as pages and refused with "no
+// importable pages found", while `quilzo site import` reads the same file
+// into a site with its posts: two readers of one file, and the one that could
+// not read it said there was nothing in it.
+func TestAGhostExportIsNotReadAsQuilzoPages(t *testing.T) {
+	ghost := `{"db":[{"meta":{"exported_on":1761700000000,"version":"5.98.0"},` +
+		`"data":{"posts":[{"id":"1","title":"Hello","slug":"hello","type":"post",` +
+		`"status":"published","html":"<p>Hi.</p>"}]}}]}`
+	src, _ := Detect([]byte(ghost))
+	rep, err := Import(src, strings.NewReader(ghost), now)
+	if err == nil {
+		t.Fatalf("a Ghost export was read as %d Quilzo pages", len(rep.Pages))
+	}
+	if !strings.Contains(err.Error(), "Ghost export") || !strings.Contains(err.Error(), "quilzo site import") {
+		t.Errorf("refused without saying what it is or where it goes: %v", err)
+	}
+
+	// A page called "posts" with a field called "data" is still a page: the
+	// hint is only for a file the page reader found nothing in.
+	rep, err = Import(JSON, strings.NewReader(`{"posts":{"title":"Posts","data":"x","meta":"y"}}`), now)
+	if err != nil || len(rep.Pages) != 1 {
+		t.Fatalf("a page called posts was refused: %v", err)
+	}
+}
+
 // Content types are flat, which is what keeps validation bounded. A nested
 // object has nowhere to go, so it is reported rather than flattened into keys
 // nobody declared.

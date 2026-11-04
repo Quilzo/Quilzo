@@ -130,6 +130,23 @@ func (it wxrItem) encoded(space string) string {
 	return ""
 }
 
+// NotWordPress is why a file that does not parse as a WordPress export is
+// refused, said the same way by every reader of one.
+//
+// An entity the file declares is named for what it is. `quilzo import` said
+// so, and `quilzo site import` said only "invalid character entity" about the
+// same file, which reads as a broken export rather than as the attack that hit
+// WordPress twice (CVE-2021-29447, and again in 5.7).
+func NotWordPress(err error) error {
+	if strings.Contains(err.Error(), "invalid character entity") {
+		return fmt.Errorf("the export declares XML entities, which are "+
+			"not resolved here. If this file is a legitimate export, the "+
+			"entities are being used for text and can be replaced; if it is "+
+			"not, this is the attack that has hit WordPress twice: %w", err)
+	}
+	return fmt.Errorf("this does not read as a WordPress export: %w", err)
+}
+
 // FromWordPress reads a WordPress export (WXR): its published pages and
 // posts, their main pictures, its main menu, and what it left behind.
 func FromWordPress(body []byte, origin string) (*Site, error) {
@@ -143,7 +160,7 @@ func FromWordPress(body []byte, origin string) (*Site, error) {
 	// internal/importer for the attack this is).
 	dec.Strict = true
 	if err := dec.Decode(&doc); err != nil {
-		return nil, fmt.Errorf("this does not read as a WordPress export: %w", err)
+		return nil, NotWordPress(err)
 	}
 	ch := doc.Channel
 	home, err := url.Parse(strings.TrimSpace(ch.Link))
