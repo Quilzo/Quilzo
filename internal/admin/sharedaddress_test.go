@@ -120,3 +120,41 @@ func TestGuessingFromOneAddressLocksNobodyElseOut(t *testing.T) {
 		t.Errorf("a made-up enrolment link was answered %d, not 429", w.Code)
 	}
 }
+
+// The sign-in page tells somebody they tried too often when it was their
+// attempt that was refused for it, and not because of guesses made from their
+// address by somebody else.
+//
+// The form asked the limiter about the address and answered 429, "Too many
+// attempts from this address ... Try again in", to whoever opened it. A right
+// token or passkey is let in from a throttled address now, so that told
+// everybody behind a shared address to wait for a lockout they were not in;
+// on the reference stack, everybody who went to the sign-in page.
+func TestTheSignInPageSaysTooManyOnlyAfterARefusalForIt(t *testing.T) {
+	srv, token := setup(t)
+	srv.Throttle = throttle.New(throttle.Default())
+	refusedTo := ""
+	for i := 0; i < 30; i++ {
+		refusedTo = signInPost(srv, "qz_wrong").Header().Get("Location")
+	}
+	if unsigned(refusedTo) != "/signin?e=throttled" {
+		t.Fatalf("the guessing was not refused for trying too often, but sent to %q", refusedTo)
+	}
+	open := func(path string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.RemoteAddr = "203.0.113.9:5555"
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		return w
+	}
+	if w := open("/signin"); w.Code != http.StatusOK || strings.Contains(w.Body.String(), "Too many attempts") {
+		t.Errorf("somebody opening the sign-in page from the address was answered %d:\n%s", w.Code, w.Body)
+	}
+	if w := signInPost(srv, token); w.Code != http.StatusSeeOther || cookieFrom(w) == "" {
+		t.Fatalf("the right token from the address was not signed in: %d", w.Code)
+	}
+	if w := open(refusedTo); w.Code != http.StatusTooManyRequests || w.Header().Get("Retry-After") == "" ||
+		!strings.Contains(w.Body.String(), "Too many attempts") {
+		t.Errorf("an attempt refused for trying too often was answered %d", w.Code)
+	}
+}

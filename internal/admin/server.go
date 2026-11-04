@@ -1973,6 +1973,13 @@ func signInNext(raw string) string {
 // address: the code in the query string says what happened to the last
 // attempt, and the limiter says what will happen to the next one. The second
 // is the one worth a 429.
+//
+// Only after an attempt refused for it (e=throttled). The limiter refuses a
+// wrong credential from a throttled address and lets a right one in, so
+// answering everybody who opened the form from there "Too many attempts ...
+// try again in" told the people behind a shared address to wait out a
+// lockout that was somebody else's, which on the reference stack was
+// everybody.
 func (s *Server) signInForm(w http.ResponseWriter, r *http.Request) {
 	data := map[string]any{"Title": "Sign in", "OIDC": s.OIDC != nil,
 		"OIDCLabel": s.oidcLabel(), "SSO": s.ssoChoices()}
@@ -1982,7 +1989,7 @@ func (s *Server) signInForm(w http.ResponseWriter, r *http.Request) {
 	if next := signInNext(r.URL.Query().Get("next")); next != "" {
 		data["Next"] = next
 	}
-	if s.Throttle != nil {
+	if s.Throttle != nil && r.URL.Query().Get("e") == "throttled" {
 		sub := throttle.Subject{Source: sourceOf(r)}
 		if d := s.Throttle.Check(sub); !d.Allowed {
 			secs := int(math.Ceil(d.RetryAfter.Seconds()))

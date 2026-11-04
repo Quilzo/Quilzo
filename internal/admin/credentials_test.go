@@ -34,6 +34,7 @@ func TestTheSignInFormIsThrottled(t *testing.T) {
 	srv.OnAuthFailure = func(string, int) { alerts++ }
 
 	codes := map[string]int{}
+	throttledAt := ""
 	for i := 0; i < 25; i++ {
 		req := httptest.NewRequest(http.MethodPost, "/signin",
 			strings.NewReader("token=qz_definitelynotarealtoken"))
@@ -42,7 +43,11 @@ func TestTheSignInFormIsThrottled(t *testing.T) {
 		req.RemoteAddr = "198.51.100.7:4444"
 		w := httptest.NewRecorder()
 		srv.Handler().ServeHTTP(w, req)
-		codes[unsigned(w.Header().Get("Location"))]++
+		loc := w.Header().Get("Location")
+		codes[unsigned(loc)]++
+		if unsigned(loc) == "/signin?e=throttled" {
+			throttledAt = loc
+		}
 	}
 
 	if codes["/signin?e=throttled"] == 0 {
@@ -51,7 +56,7 @@ func TestTheSignInFormIsThrottled(t *testing.T) {
 			"as a cookie are throttled after two", codes)
 	}
 	// And the form, reached by that redirect, says so with a 429.
-	req := httptest.NewRequest(http.MethodGet, "/signin?e=throttled", nil)
+	req := httptest.NewRequest(http.MethodGet, throttledAt, nil)
 	req.RemoteAddr = "198.51.100.7:4444"
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
