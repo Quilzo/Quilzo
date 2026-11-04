@@ -62,6 +62,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"unicode"
@@ -316,7 +317,7 @@ func opSchema(desc string) map[string]any {
 // operation's text, so the "a" of "triage a support ticket" scored on
 // almost every operation, and three more on one with an "a" in its name:
 // agent_activity came first and decide was not among the first six. A word
-// counts once it is three letters or more and not one any sentence has, and
+// counts once it is two letters or more and not one any sentence has, and
 // matches the same word, or one that starts with it either way round, so
 // "deciders" finds decide and "pages" list_pages; the same word counts for
 // more.
@@ -636,20 +637,33 @@ var findStop = map[string]bool{
 	"have": true, "has": true, "been": true, "does": true, "can": true,
 	"its": true, "any": true, "all": true, "some": true, "about": true,
 	"one": true, "our": true, "your": true, "you": true, "please": true,
+	"am": true, "an": true, "as": true, "at": true, "be": true, "by": true,
+	"do": true, "if": true, "in": true, "is": true, "it": true, "me": true,
+	"my": true, "no": true, "of": true, "on": true, "or": true, "so": true,
+	"to": true, "up": true, "us": true, "we": true,
 }
 
 // findWords are the words of a text that find compares.
+//
+// Two letters are a word, and a letter either side of a slash is one. With
+// three letters the least, the "A/B" of "A/B testing" was nothing, so the
+// chatbots' operation, which mentions testing one, came before the A/B
+// tests' own.
 func findWords(s string) []string {
 	var out []string
-	for _, w := range strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
+	s = findLetterPair.ReplaceAllString(strings.ToLower(s), "$1$2")
+	for _, w := range strings.FieldsFunc(s, func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
 	}) {
-		if len(w) >= 3 && !findStop[w] {
+		if len(w) >= 2 && !findStop[w] {
 			out = append(out, w)
 		}
 	}
 	return out
 }
+
+// findLetterPair is a letter either side of a slash, as in "a/b".
+var findLetterPair = regexp.MustCompile(`\b([a-z])/([a-z])\b`)
 
 // findMatch is how well a query word matches a list of words: 2 for the
 // same word, 1 for one that starts with the other, four letters at least.

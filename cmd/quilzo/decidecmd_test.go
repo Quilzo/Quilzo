@@ -239,6 +239,11 @@ func TestADecidersAndTheReviewersCallsAreChargedToTheRunAndItsPerson(t *testing.
 // ticket", quilzo_find put agent_activity first: every query word was
 // matched as a substring, so "a" scored on almost every operation, and
 // twice over on one whose name has an "a" in it.
+//
+// And the words it compares keep what a short one says: with only words of
+// three letters counted, the "A/B" of "A/B testing" was nothing, and the
+// chatbots' operation, which mentions testing one, came before the A/B
+// tests' own.
 func TestFindingADecisionInPlainWordsFindsTheDeciders(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	root := t.TempDir() + "/st"
@@ -259,6 +264,9 @@ func TestFindingADecisionInPlainWordsFindsTheDeciders(t *testing.T) {
 		"which deciders are there":    "list_deciders",
 		"what agents have been doing": "agent_activity",
 		"list the pages":              "list_pages",
+		"a/b test":                    "experiment_report",
+		"A/B testing":                 "experiment_report",
+		"ab test":                     "experiment_report",
 	} {
 		params, _ := json.Marshal(map[string]any{"name": "quilzo_find", "arguments": map[string]any{"query": query}})
 		resp := srv.Handle(mcp.Request{JSONRPC: "2.0", ID: json.RawMessage(`1`), Method: "tools/call", Params: params})
