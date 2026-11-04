@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/icons"
 	"github.com/quilzo/quilzo/internal/section"
 )
@@ -272,5 +273,25 @@ func TestTheSitePromptListsEverySectionKind(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "[[what goes here]]") || !strings.Contains(prompt, "soft") {
 		t.Error("the prompt does not say how to leave a fact out, or which styles there are")
+	}
+}
+
+// A built site's question box answers from what its pages say, never from
+// how they are drawn. Every card the builder writes names an icon, and the
+// chatbot on a site from `quilzo site new` answered "…at their level Icon:
+// groups. [1]".
+func TestABuiltSitesWiringIsNotKnowledge(t *testing.T) {
+	for _, k := range SiteKinds() {
+		p, err := BuildSite(SiteBrief{Description: "Something for " + k.Name, Name: "Hart & Daughters", Kind: k.Name}, "dana", buildTime)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, ps := range assistant.Chunk(pageBodies(p), nil) {
+			for _, wiring := range []string{"Icon:", "Style:", "Surface:", "Columns:", "Head title:"} {
+				if strings.Contains(ps.Text, wiring) {
+					t.Errorf("%s: %s reads %q", k.Name, ps.ID, ps.Text)
+				}
+			}
+		}
 	}
 }
