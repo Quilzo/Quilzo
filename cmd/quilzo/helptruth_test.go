@@ -256,6 +256,55 @@ func TestEveryCommandTheProgramNamesExists(t *testing.T) {
 	}
 }
 
+// Every command the documentation names exists, and so does the
+// subcommand after it. The README's table listed `quilzo boundary
+// show|credentials`, and "there is no "boundary" command": it left with the
+// security operations, and the line stayed.
+func TestEveryCommandTheDocumentationNamesExists(t *testing.T) {
+	dispatched := map[string]bool{}
+	for _, c := range dispatchedCommands(t) {
+		dispatched[c] = true
+	}
+	real := realSubcommands(t)
+	docs, err := filepath.Glob(filepath.Join("..", "..", "docs", "*.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"README.md", "INSTALL", "CONTRIBUTING.md", "SECURITY.md"} {
+		docs = append(docs, filepath.Join("..", "..", f))
+	}
+	// The command, and the word after it when that is a subcommand or a
+	// set of them: "show|credentials", with the pipe escaped in a table.
+	named := regexp.MustCompile("(?:^|[\\s\"'`(>])quilzo ([a-z][a-z0-9-]*)" +
+		"(?: ([a-z][a-z0-9-]*(?:\\\\?\\|[a-z][a-z0-9-]*)*))?")
+	seen := 0
+	for _, f := range docs {
+		body, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		where := strings.TrimPrefix(filepath.ToSlash(f), "../../")
+		for _, m := range named.FindAllStringSubmatch(string(body), -1) {
+			seen++
+			if !dispatched[m[1]] {
+				t.Errorf("%s names `quilzo %s`, and there is no such command", where, m[1])
+				continue
+			}
+			if m[2] == "" || len(real[m[1]]) == 0 {
+				continue
+			}
+			for _, sub := range strings.Split(strings.ReplaceAll(m[2], "\\|", "|"), "|") {
+				if !inAnyGroup(real[m[1]], sub) {
+					t.Errorf("%s names `quilzo %s %s`, and %s has no %s", where, m[1], sub, m[1], sub)
+				}
+			}
+		}
+	}
+	if seen < 50 {
+		t.Fatalf("found %d commands named in the documentation; the scan is wrong", seen)
+	}
+}
+
 // notCommands are "quilzo WORD" in the program's text that are not a
 // command somebody is told to run, each with why.
 var notCommands = map[string]bool{

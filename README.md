@@ -378,7 +378,7 @@ line and not yet a product of their own.
 | **One binary** | The admin on loopback, the public site on its own listener, installable as an app; the command line does everything the screens do. | `quilzo serve`, `quilzo site` |
 | **Every connection named** | Each outbound connection has a declared purpose and is checked against the address actually dialled, after DNS. Offline mode refuses every connection that would leave the host, and names the feature that wanted it. | `quilzo network`; setting `network.mode` |
 | **Settings that explain themselves** | Every setting with what it is for and what it costs; one that weakens security needs a stated reason. | `quilzo config explain KEY`, `config set … --accept-risk "why"` |
-| **What each part holds** | What each process holds and what running two together costs; what a role can be handed by a situation. | `quilzo boundary show\|credentials`, `standing list` |
+| **What a situation can hand somebody** | What a role can be handed by a situation, and what it cannot. | `quilzo standing list` |
 | **Isolated networks** | A classification marking, and paperwork for carrying an export across, checked on arrival. | `quilzo marking`, `transfer record\|verify` |
 | **Find anything** | A command palette over every screen, page, setting and type. | Ctrl K in the admin; `quilzo find WORDS` |
 | **Exit codes** | 3 when a gate refused, distinct from 1 when the command failed. | `--json` on every command |

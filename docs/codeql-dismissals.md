@@ -496,7 +496,7 @@ first, and the analyser closed one alert and kept two, because `forTerminal`
 deliberately keeps a newline and so ran after the step that removed them.
 
 #38 was not the file name. It was the rendered page itself, printed by
-`quilzo preview`. That output is the page, so it cannot be put on one line; it
+`quilzo render`. That output is the page, so it cannot be put on one line; it
 now goes through `writeRendered`, which writes it exactly to a file or a pipe
 and makes control characters visible only when a person is reading it in a
 terminal. An escape sequence in a page somebody else wrote was otherwise able
