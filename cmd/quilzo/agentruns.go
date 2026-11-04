@@ -951,8 +951,12 @@ func printAgentRun(r agent.Record) {
 		return
 	}
 	how := "the declaration was walked, with no model"
-	if r.Model != "" {
+	program := decidedByProgram(r)
+	switch {
+	case r.Model != "":
 		how = "decided by " + r.Model
+	case program:
+		how = "decided by its program, in its box"
 	}
 	fmt.Printf("%s%s%s  %s  %s\n", bold, r.Agent, reset,
 		r.OutcomeAt(time.Now().UTC()), r.Goal)
@@ -993,10 +997,10 @@ func printAgentRun(r agent.Record) {
 		fmt.Printf("  %sspent %d tokens and %s over %d steps%s\n", dim, sp.Tokens,
 			formatCost(sp.Cost, ""), len(r.Trace.Steps), reset)
 	}
-	// What a model concluded. The run that finished once a person had
-	// answered it printed its steps, the last "finished done done", and
-	// not the words that step carried.
-	if a := strings.TrimSpace(r.Trace.Answer); a != "" && r.Model != "" {
+	// What a model or a program concluded. The run that finished once a
+	// person had answered it printed its steps, the last "finished done
+	// done", and not the words that step carried.
+	if a := strings.TrimSpace(r.Trace.Answer); a != "" && (r.Model != "" || program) {
 		fmt.Printf("  it said: %s\n", clip(printable(a), 600))
 	}
 	for _, a := range r.Answers {
@@ -1009,6 +1013,22 @@ func printAgentRun(r agent.Record) {
 	if w := r.Trace.Waiting; w != nil {
 		printPending(r.ID, w)
 	}
+}
+
+// decidedByProgram reports whether a kept run was decided by the agent's
+// own program.
+//
+// Its record names no model, as a walk's names none, so `agent trace RUN`
+// called a program's run a walk and left out what the program concluded.
+// The receipt tells them apart: a program's run notes its program as a
+// source from its first step.
+func decidedByProgram(r agent.Record) bool {
+	for _, s := range r.Receipt.Sources {
+		if s.Kind == agent.FromProgram {
+			return true
+		}
+	}
+	return false
 }
 
 // printable is a string with control characters replaced, so that what an

@@ -826,6 +826,44 @@ func TestARunsFinalWordsArePrintedWhenItFinishes(t *testing.T) {
 	}
 }
 
+// A program's run, read back, says what the program concluded and that
+// the program decided.
+//
+// Found by tracing one: its record names no model, as a walk's does, so
+// `agent trace RUN` said "the declaration was walked, with no model" and
+// left out the program's final words, which were only in agent trace RUN
+// --json. The receipt is what tells the two apart. Kept as a program's run
+// is kept: no model, the program as its first source.
+func TestATracedProgramRunSaysWhatItsProgramConcluded(t *testing.T) {
+	old := w
+	w = out.New(false)
+	t.Cleanup(func() { w = old })
+	const said = "listed=true asked=refused"
+	started := time.Date(2026, 11, 4, 9, 31, 0, 0, time.UTC)
+	program := agent.Record{ID: "run-20261104-0badc0de", Agent: "coder", Goal: "list the pages", By: "dana",
+		Started: started, Trace: agent.Trace{Complete: true, Answer: said,
+			Steps: []agent.Step{{N: 1, Allowed: true, Action: agent.Action{Say: said}}}},
+		Receipt: agent.Receipt{Sources: []agent.Source{{Kind: agent.FromProgram, Name: "/opt/coder/run"}}}}
+	_, read := captureStdout(t)
+	printAgentRun(program)
+	got := read()
+	if !strings.Contains(got, "it said: "+said) {
+		t.Errorf("the program's run did not say what it concluded:\n%s", got)
+	}
+	if strings.Contains(got, "walked") || !strings.Contains(got, "its program") {
+		t.Errorf("the program's run was not said to be its program's:\n%s", got)
+	}
+
+	// A walk's "checked" is this program's own word, and still not shown.
+	walk := program
+	walk.Trace.Answer, walk.Receipt = "checked", agent.Receipt{}
+	_, read = captureStdout(t)
+	printAgentRun(walk)
+	if got := read(); strings.Contains(got, "it said") || !strings.Contains(got, "walked") {
+		t.Errorf("a walk was printed as something that decided:\n%s", got)
+	}
+}
+
 // A page an agent wrote says a model wrote it, and who approved it.
 //
 // The write was stored with no provenance, so the one writer certain to have
