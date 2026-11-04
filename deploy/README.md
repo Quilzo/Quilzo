@@ -12,9 +12,13 @@ section, or as a systemd service, which is the one after.
 
 ## With Docker Compose
 
-`compose.yaml` runs the admin, the published site and Caddy over one store,
-each container read-only, holding no capability and not running as root. You need Docker with the Compose plugin, and for a real site a
-hostname whose DNS points at this machine (`localhost` works for a trial).
+`compose.yaml` runs the admin, the published site and Caddy over one store.
+Every Quilzo container is read-only, holds no capability and does not run as
+root. The two Caddy containers are read-only too, and run as Caddy's image
+does: as root, with the one capability to bind ports, because the caddy binary
+carries it and will not start without it. You need Docker with the Compose
+plugin, and for a real site a hostname whose DNS points at this machine
+(`localhost` works for a trial).
 
 Every command below is run in this directory, in this order:
 

@@ -15,6 +15,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collection"
+	"github.com/quilzo/quilzo/internal/config"
 	"github.com/quilzo/quilzo/internal/export"
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/seo"
@@ -152,7 +153,9 @@ func cmdExport(root string, args []string) error {
 
 	files, err := export.Export(format, export.Site{
 		Banner: banner,
-		Pages:  pages, Name: *name, BaseURL: *baseURL,
+		// The scheme's own port left out, as the site and site.base_url
+		// leave it out: :443 in every link of the export, otherwise.
+		Pages: pages, Name: *name, BaseURL: config.SiteBase(*baseURL),
 		Changed: changed, Redirects: redirects, Collections: colls,
 		Licence: *licence, Publisher: *publisher, Commit: head,
 	}, time.Now())

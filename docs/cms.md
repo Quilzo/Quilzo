@@ -2559,9 +2559,16 @@ nothing else.
 
 ```bash
 docker build -t quilzo .
-docker run --rm -p 8081:8081 -v "$PWD/store:/store" quilzo \
+docker volume create quilzo-store
+docker run --rm -p 8081:8081 -v quilzo-store:/srv/store quilzo \
   site --addr 0.0.0.0:8081 --base-url https://example.org
 ```
+
+The image's store is `/srv/store`, named in its entrypoint, so mount the
+store's volume there; the image runs as uid 65532, which a named volume
+suits and a host folder must be made writable for. `deploy/README.md` has
+the whole stack with Docker Compose: the admin over HTTPS, the site behind
+Caddy, and a log writer of its own.
 
 Behind a reverse proxy every connection is the proxy's, so name it in
 `network.trusted_proxies` by its own address — the proxy, a cluster's ingress
