@@ -243,7 +243,7 @@ func samlAdd(root string, args []string) (*saml.Config, error) {
 	required := fs.Bool("required", false, "people in the domains must sign in this way")
 	breakGlass := fs.String("break-glass", "", "people who may still use a token or passkey, comma-separated")
 	verifiedAttr := fs.String("verified-attribute", "",
-		"the attribute in which the provider says it verified the address; without it saying true, a sign-in is refused")
+		"the attribute in which the provider says it verified the address; a sign-in as an address it does not say true about is refused")
 	allowUnverified := fs.Bool("allow-unverified-email", false,
 		"take the address as the provider sends it, verified or not")
 	fingerprint := fs.String("fingerprint", "", "the SHA-256 fingerprint you checked at the provider")

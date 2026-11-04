@@ -48,13 +48,14 @@ type Config struct {
 	MFAValues    []string `json:"mfa_values,omitempty"`
 	// VerifiedAttribute names the attribute in which this provider says it
 	// verified the address it signs somebody in as, the counterpart of
-	// OIDC's email_verified; a sign-in it does not say "true" about is
-	// refused. Without one, an email_verified attribute saying anything but
-	// true is still believed. SAML has no such notion of its own, and the
-	// NameID was taken as sent: a Keycloak user who set their own address,
-	// unverified, to a colleague's signed in here as that colleague while
-	// OIDC refused them. AllowUnverified takes the address as sent, as
-	// oidc configure --allow-unverified-email does: an operator's decision.
+	// OIDC's email_verified; a sign-in as an address it does not say "true"
+	// about is refused. Without one, an email_verified attribute saying
+	// anything but true is still believed. SAML has no such notion of its
+	// own, and the NameID was taken as sent: a Keycloak user who set their
+	// own address, unverified, to a colleague's signed in here as that
+	// colleague while OIDC refused them. AllowUnverified takes the address
+	// as sent, as oidc configure --allow-unverified-email does: an
+	// operator's decision.
 	VerifiedAttribute string `json:"verified_attribute,omitempty"`
 	AllowUnverified   bool   `json:"allow_unverified,omitempty"`
 
@@ -233,8 +234,15 @@ func (c *Config) PrincipalOf(a *Assertion) (string, error) {
 	if v == "" || len(v) > 254 || strings.ContainsAny(v, " \t\r\n\x00<>\"") {
 		return "", errors.New("the identity provider sent a name that cannot be anybody's")
 	}
-	if err := c.verified(a, v); err != nil {
-		return "", err
+	// Only an address is what a provider verifies. A username or an opaque
+	// NameID is not what email_verified speaks of, and OIDC asks it only of
+	// the email claim: a provider set up with --principal attribute:uid
+	// refused everybody whose address it had not verified, though the
+	// address was not who they became here.
+	if strings.Contains(v, "@") {
+		if err := c.verified(a, v); err != nil {
+			return "", err
+		}
 	}
 	if len(c.Domains) > 0 {
 		local, domain, ok := strings.Cut(v, "@")
