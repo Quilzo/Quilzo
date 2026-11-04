@@ -1,0 +1,16 @@
+# The published site, for deploy/compose.yaml.
+#
+# QUILZO_DOMAIN comes from deploy/.env. Caddy gets and renews the certificate
+# for it; with QUILZO_DOMAIN=localhost it uses its own local authority, which
+# is what a trial on one machine wants.
+#
+# The admin is deliberately absent: it is published on the host's loopback
+# only. See deploy/README.md.
+
+{$QUILZO_DOMAIN} {
+	reverse_proxy site:8081
+	encode zstd gzip
+
+	# Published pages are immutable and addressed by hash, so the ETag the
+	# site sets is exact. Nothing here needs to add caching rules on top.
+}

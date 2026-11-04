@@ -1,0 +1,123 @@
+# Quilzo with Docker Compose: the published site on HTTPS, the admin on this
+# machine only.
+#
+#   cp deploy/compose.env.example deploy/.env    # then set QUILZO_DOMAIN
+#   cd deploy
+#   docker compose run --rm admin init
+#   docker compose run --rm admin config set network.trusted_proxies 172.31.250.10
+#   docker compose run --rm admin init --admin you
+#   docker compose up -d
+#
+# deploy/README.md walks through it, and says how to reach the admin.
+#
+# Three services, because there are three exposures:
+#
+#   caddy  the only one with ports on the internet. It gets and renews the
+#          certificate itself, which is the reason it is Caddy.
+#   site   the published site: anonymous, read-mostly, confined (Landlock) to
+#          the site's own state in the store. Reached only through Caddy.
+#   admin  holds credentials. Published on this machine's loopback and
+#          nowhere else; reach it over SSH. Putting it behind a public
+#          hostname is the change that turns a compromise of the proxy into a
+#          compromise of the store.
+#
+# The site and the admin are two processes over one store, as with systemd
+# (deploy/quilzo-site.service): the store is a directory, and both open it.
+
+name: quilzo
+
+# What every Quilzo container runs under. The image is one static binary on a
+# distroless base with no shell, so none of this takes anything it needs: it
+# writes only the volumes and /tmp, holds no capability, and cannot gain one.
+x-quilzo: &quilzo
+  image: ghcr.io/quilzo/quilzo:${QUILZO_VERSION:-latest}
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs: ["/tmp:size=256m,mode=1777"]
+  pids_limit: 512
+  init: true
+
+services:
+  admin:
+    <<: *quilzo
+    command: ["--root", "/srv/store", "serve", "--addr", "0.0.0.0:8080"]
+    # Loopback on the host, and only that. 0.0.0.0 inside the container is
+    # the container's own interface; what the internet can reach is decided
+    # here, and the answer is nothing.
+    ports: ["127.0.0.1:${QUILZO_ADMIN_PORT:-8080}:8080"]
+    volumes:
+      - store:/srv/store
+      - templates:/srv/templates
+    networks: [admin]
+
+  site:
+    <<: *quilzo
+    command:
+      - --root
+      - /srv/store
+      - site
+      - --addr
+      - 0.0.0.0:8081
+      - --base-url
+      - https://${QUILZO_DOMAIN:?set QUILZO_DOMAIN in deploy/.env}
+    volumes:
+      - store:/srv/store
+      # The site reads the design; only the admin changes it.
+      - templates:/srv/templates:ro
+    # No ports: Caddy is the way in. The edge network is not internal, because
+    # the site's assistant calls its model and federation fetches what it is
+    # sent; Quilzo's own egress rules decide where those may go.
+    networks: [edge]
+    depends_on: [admin]
+
+  caddy:
+    # A minor version rather than a digest, so a patch release (security
+    # fixes included) arrives with `docker compose pull`. Pin a digest instead
+    # if every change must be one you made.
+    image: caddy:2.11
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    # Ports 80 and 443 are below 1024, and binding them is the one privilege
+    # Caddy needs.
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:size=64m"]
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      QUILZO_DOMAIN: ${QUILZO_DOMAIN:?set QUILZO_DOMAIN in deploy/.env}
+    volumes:
+      - ./Caddyfile.compose:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      edge:
+        # A fixed address, because it is the one the site believes.
+        #
+        # Behind a proxy every visitor arrives from the proxy, so every limit
+        # is one bucket for the whole internet and a block of it blocks the
+        # site. The site believes X-Forwarded-For only from an address named
+        # in network.trusted_proxies, and an address on a bridge network is a
+        # place, not a proof: anything else on this network could write the
+        # header too. So the network holds only Caddy and the site, and this
+        # is the address to name.
+        ipv4_address: 172.31.250.10
+    depends_on: [site]
+
+networks:
+  edge:
+    ipam:
+      config:
+        - subnet: 172.31.250.0/28
+  admin: {}
+
+volumes:
+  store:
+  templates:
+  caddy-data:
+  caddy-config:
