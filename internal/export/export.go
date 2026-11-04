@@ -301,8 +301,13 @@ func exportMarkdown(s Site) ([]File, error) {
 		//
 		// `slug` rather than a key of this tool's own invention because Hugo,
 		// Jekyll and Astro all already read it and mean the same thing by it.
+		//
+		// Quoted, as every other value is. It was the one written bare, so a
+		// page called 404 or 2024 had the number for a link, true a yes and
+		// null nothing, and a page read back on its own lost its name to its
+		// title's.
 		if _, already := fields["slug"]; !already {
-			front = append(front, "slug: "+name)
+			front = append(front, "slug: "+quoteYAML(name))
 			sort.Strings(front)
 		}
 

@@ -414,6 +414,46 @@ func TestAPageWithADateOfItsOwnReadsBackFromAMarkdownExport(t *testing.T) {
 	}
 }
 
+// A page whose name reads as a number, a yes or no or nothing comes back from
+// the Markdown export under its own name, with its name as words.
+//
+// The export wrote the name as `slug: 404`, unquoted, the one value it did not
+// quote. Read as YAML, that is the number 404, so the page that shows when
+// nothing is found came back with a number for a link, and a file read on its
+// own came back under its title's name, not-found; `true` came back a yes and
+// `null` as nothing. Hugo and Jekyll read the line the same way.
+func TestAPageNamedLikeANumberKeepsItsNameThroughAMarkdownExport(t *testing.T) {
+	site := export.Site{Pages: map[string]any{}}
+	for _, name := range []string{"404", "2024", "true", "null", "1e3"} {
+		site.Pages[name] = map[string]any{"title": "Page " + name, "body": "Words."}
+	}
+	files, err := export.Export(export.Markdown, site, when)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fsys := fstest.MapFS{}
+	for _, f := range files {
+		fsys[f.Path] = &fstest.MapFile{Data: f.Body}
+	}
+	for name := range site.Pages {
+		c, err := export.Read(export.Markdown, fileNamed(t, files, "content/"+name+".md"))
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if len(c.Pages) != 1 || c.Pages[0].Name != name {
+			t.Errorf("content/%s.md came back as %v", name, c.Pages)
+		}
+	}
+	back, _, err := export.ReadDir(fsys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range site.Pages {
+		got, _ := back.Pages[name].(map[string]any)
+		sameFields(t, name, want.(map[string]any), got)
+	}
+}
+
 // A whole export directory comes back as the site it was made from: its pages,
 // its records, when each page changed, its redirects and its marking.
 func TestAWholeExportDirectoryReImportsToTheSameSite(t *testing.T) {
