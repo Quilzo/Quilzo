@@ -7,7 +7,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/provenance"
@@ -24,12 +23,7 @@ func demoStore(t *testing.T) string {
 	if w == nil {
 		w = out.New(false)
 	}
-	root := t.TempDir() + "/st"
-	// Work a test started in the background (the shield's responses, a
-	// notice) finishes before the store is removed: registered after the
-	// folder, so it runs first. Without it the removal raced the last write
-	// and failed the test with "directory not empty" on a loaded machine.
-	t.Cleanup(func() { finishBackground(10 * time.Second) })
+	root := storeFolder(t) + "/st"
 	if err := cmdInit(root); err != nil {
 		t.Fatal(err)
 	}
