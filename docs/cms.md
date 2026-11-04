@@ -1639,7 +1639,11 @@ MCP, A2A and ACP cannot express: permissions, delegation with accountability,
 budgets, provenance, revocation, and who answers for what an agent did. Six
 gaps. Quilzo's agent card fills all six, published as an A2A governance
 extension at `/.well-known/agent-card.json`, so another system can read what
-this one will and will not allow before it asks for anything.
+this one will and will not allow before it asks for anything. The card's
+description starts with the site's own sentence — `site.description`, or
+`quilzo site --description` for one run — and then says how its skills are
+governed, so an agent choosing between two sites reads what each is for before
+how it is run; a site with no description keeps the governance sentence alone.
 
 The device side is deliberately the boring version. A published site is an
 installable app with a share target: the operating system offers it in the share
