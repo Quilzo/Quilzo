@@ -90,6 +90,41 @@ func TestEverySignInPathMintsASession(t *testing.T) {
 	}
 }
 
+// The OIDC callback reads the access rules as they are stored now before it
+// asks whether somebody is suspended or in the policy, read from the source.
+//
+// It asked the copy the last screen had read. The other ways in are posts,
+// and readOnlyTokens authenticates every post first, which reads the store
+// again; the callback is a GET the identity provider redirects to, which
+// nothing read the store for. So somebody denied the whole site on the
+// command line, or by provisioning through another process, was given a
+// session by single sign-on until somebody opened a screen, which is what
+// suspended exists to stop before a session is made. Checked for the call
+// rather than driven end to end, because driving it needs an identity
+// provider and the defect is a call missing before the first decision.
+func TestTheOIDCCallbackReadsTheStoreBeforeDeciding(t *testing.T) {
+	b, err := os.ReadFile("oidcauth.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(b)
+	start := strings.Index(src, "\nfunc (s *Server) handleOIDCCallback(")
+	if start < 0 {
+		t.Fatal("oidcauth.go has no handleOIDCCallback")
+	}
+	body := src[start:]
+	if end := strings.Index(body, "\n}\n"); end > 0 {
+		body = body[:end]
+	}
+	refresh, decide := strings.Index(body, "s.refresh()"), strings.Index(body, "s.suspended(")
+	if decide < 0 {
+		t.Fatal("the OIDC callback no longer asks whether somebody is suspended")
+	}
+	if refresh < 0 || refresh > decide {
+		t.Fatal("the OIDC callback decides who is suspended from the copy the last screen read")
+	}
+}
+
 // TestSigningOutEndsAnIdentityProviderSession, the path that was broken.
 func TestSigningOutEndsAnIdentityProviderSession(t *testing.T) {
 	srv, _ := setup(t)
