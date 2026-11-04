@@ -445,6 +445,14 @@ func themeLayer(root string, args []string) error {
 	if err := fs.Parse(flags); err != nil {
 		return err
 	}
+	// Words after the flags are a command written flags first, as
+	// `theme layer --dir DIR set FILE`. That used to show the layer that was
+	// there, so somebody who asked to set one read a report of the old one
+	// and the file they meant was never checked or saved.
+	if fs.NArg() > 0 {
+		return fmt.Errorf("%q comes after the flags; write it first: "+
+			"quilzo theme layer [set FILE | unset] [--dir DIR]", strings.Join(fs.Args(), " "))
+	}
 	path := filepath.Join(*dir, theme.LayerFile)
 	// A style layer is CSS served on every page at once, including pages the
 	// person changing it may not edit, so changing one takes the authority

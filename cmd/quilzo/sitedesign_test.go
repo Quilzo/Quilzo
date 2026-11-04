@@ -557,3 +557,28 @@ func TestAnAgentChoosesASchemeAndProposesNoLayer(t *testing.T) {
 		t.Errorf("an agent proposed CSS: %v", refused)
 	}
 }
+
+// A layer command with its flags first is refused, not quietly shown.
+//
+// `theme layer --dir DIR set FILE` read --dir, took the first word as the
+// end of the flags, and showed the layer that was there — so somebody who
+// asked to set one read a report of the old one, nothing said otherwise, and
+// the file they meant was never checked or saved.
+func TestALayerCommandWithItsFlagsFirstIsNotQuietlyShown(t *testing.T) {
+	root, tpl := designStore(t)
+	asPublisher(t, root)
+	good := filepath.Join(t.TempDir(), "good.css")
+	if err := os.WriteFile(good, []byte(".a { color: var(--primary); }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdTheme(root, []string{"layer", "--dir", tpl, "set", good}); err == nil {
+		t.Error("a set with its flags first answered as if it had been asked to show")
+	}
+	if fileExists(filepath.Join(tpl, theme.LayerFile)) {
+		t.Error("a layer was written by a command that should have been refused")
+	}
+	// Flags last is the form, and it still works.
+	if err := cmdTheme(root, []string{"layer", "set", good, "--dir", tpl}); err != nil {
+		t.Fatal(err)
+	}
+}
