@@ -5,9 +5,11 @@ package main
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/out"
 )
@@ -69,5 +71,43 @@ func TestTheMountTableIsReadWithItsEscapes(t *testing.T) {
 	}
 	if !onContainerLayer("/srv/other", []byte(table)) {
 		t.Error("a path beside that volume was taken to be on it")
+	}
+}
+
+// Also finding STACK-F1. In a container the store's directory is there
+// before init runs: the image makes /srv/store so a volume mounted on it is
+// seeded with the right owner, and a mount point is a directory. init took
+// that for a store already there: it said "reusing /srv/store" of the store
+// it was making, and gave the new store an upgraded installation's grace --
+// two weeks in which a token alone reached the admin -- instead of two
+// factors from its first day.
+func TestInitInAnEmptyDirectoryMakesANewStore(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	saved := w
+	t.Cleanup(func() { w = saved })
+	root := filepath.Join(t.TempDir(), "store")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	w = &out.Writer{Out: &stdout, Err: &bytes.Buffer{}}
+	before := time.Now()
+	if err := runInit(root, []string{"--admin", "you"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), "created "+root) {
+		t.Errorf("init in an empty directory did not say it made a store:\n%s", stdout.String())
+	}
+	from, set := mfaFromIfSet(root)
+	if !set || from.After(time.Now()) || from.Before(before.Add(-time.Second)) {
+		t.Errorf("two factors are compulsory from %v (set %v); a new store has them from its first day", from, set)
+	}
+	// And a store that is there is reused, and keeps what it had.
+	stdout.Reset()
+	if err := runInit(root, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), "reusing "+root) {
+		t.Errorf("init on a store did not say it reused it:\n%s", stdout.String())
 	}
 }
