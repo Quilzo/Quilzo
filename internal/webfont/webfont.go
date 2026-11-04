@@ -143,9 +143,7 @@ func Load(dir string) (*Set, error) {
 			continue
 		}
 		if formatOf(name) == "" {
-			set.Warnings = append(set.Warnings, fmt.Sprintf(
-				"%s is not a .woff2 or a .woff and was not served. A .ttf or "+
-					"an .otf becomes one with: quilzo theme font add %s", name, name))
+			set.Warnings = append(set.Warnings, notServed(dir, name))
 			continue
 		}
 		b, rerr := os.ReadFile(filepath.Join(dir, name))
@@ -161,6 +159,32 @@ func Load(dir string) (*Set, error) {
 		set.faces = append(set.faces, face)
 	}
 	return set, nil
+}
+
+// notServed says why a file in the fonts directory is not served, and for a
+// TrueType or OpenType file what makes it one.
+//
+// It named the command with the bare filename, `quilzo theme font add
+// Aster.ttf`, which is run from the site's directory and does not find a
+// file that is in templates/fonts/. So the path is the one the directory was
+// read from, with --dir when that is not the default; and since the source
+// stays where it is after the WOFF is written beside it, and goes on being
+// "not served" every time the directory is read, it says the source may be
+// moved out.
+func notServed(dir, name string) string {
+	msg := name + " is not a .woff2 or a .woff and was not served."
+	ext := strings.ToLower(filepath.Ext(name))
+	if ext != ".ttf" && ext != ".otf" {
+		return msg
+	}
+	cmd := "quilzo theme font add " + filepath.Join(dir, name)
+	if filepath.Base(dir) == "fonts" {
+		if tpl := filepath.Dir(dir); tpl != "templates" {
+			cmd += " --dir " + tpl
+		}
+	}
+	return msg + " A browser is sent a WOFF, and " + cmd + " writes one beside it; the " +
+		ext + " can then be moved out of " + dir + ", where it is never served"
 }
 
 // paperwork reports whether a file is documentation rather than a face.

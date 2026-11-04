@@ -634,7 +634,7 @@ func TestTheAdminSeesANewFaceWithoutARestart(t *testing.T) {
 	}
 
 	// By hand, as somebody copying a file in would.
-	woff, err := addFont(t.TempDir(), "Aster.ttf", trueTypeFace(0), "Aster-400-700", false)
+	woff, err := addFont(t.TempDir(), "Aster.ttf", trueTypeFace(0), "Aster-400-700", false, fontFromCommand)
 	if err != nil {
 		t.Fatal(err)
 	}

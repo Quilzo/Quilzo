@@ -418,8 +418,34 @@ func TestATrueTypeFileInTheDirectorySaysHowToServeIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(set.Warnings) != 1 || !strings.Contains(set.Warnings[0], "quilzo theme font add Aster.ttf") {
+	// The path it was found at, which is what the command is run with from
+	// the site's directory: the bare name finds nothing there.
+	if len(set.Warnings) != 1 || !strings.Contains(set.Warnings[0],
+		"quilzo theme font add "+filepath.Join(dir, "Aster.ttf")) {
 		t.Fatalf("warnings: %v", set.Warnings)
+	}
+	if !strings.Contains(set.Warnings[0], "moved out of") {
+		t.Errorf("it does not say the source may go once it is converted: %s", set.Warnings[0])
+	}
+}
+
+// In a site's own fonts directory the command is the one that works from
+// the site's directory: the path under templates/, with --dir only when the
+// templates are somewhere else.
+func TestTheWayInIsACommandThatRuns(t *testing.T) {
+	for dir, want := range map[string]string{
+		filepath.Join("templates", "fonts"): "quilzo theme font add " +
+			filepath.Join("templates", "fonts", "Aster.ttf") + " writes",
+		filepath.Join("site", "tpl", "fonts"): "quilzo theme font add " +
+			filepath.Join("site", "tpl", "fonts", "Aster.ttf") + " --dir " + filepath.Join("site", "tpl") + " writes",
+	} {
+		if got := notServed(dir, "Aster.ttf"); !strings.Contains(got, want) {
+			t.Errorf("in %s: %s", dir, got)
+		}
+	}
+	// A file that is no face at all is not told to become one.
+	if got := notServed(filepath.Join("templates", "fonts"), "Aster.eot"); strings.Contains(got, "theme font add") {
+		t.Errorf("an .eot was offered the TrueType route: %s", got)
 	}
 }
 

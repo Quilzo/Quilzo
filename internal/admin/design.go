@@ -62,6 +62,12 @@ type Design struct {
 	Layouts func() []string
 	// Fonts lists the typefaces served from this origin.
 	Fonts func() []string
+	// FontNotes says which files in the fonts directory are not served, and
+	// why. The screen said "No typefaces of your own" over a directory with
+	// a renamed .ttf in it and nothing more, so the face somebody had put
+	// there was missing without a word; the reason was on the server's error
+	// output, which the person looking at this screen does not see.
+	FontNotes func() []string
 	// FontFile is one of those typefaces, by the name a stylesheet asks
 	// for, so the preview draws a page in the site's own type.
 	FontFile func(name string) ([]byte, bool)
@@ -96,6 +102,9 @@ type FontAdded struct {
 	// which changes every page that names it without anybody naming it
 	// again, so the record has to be able to say so.
 	Replaced bool `json:"replaced,omitempty"`
+	// NamedFromFace says the served name took its weight or style from the
+	// face's own tables, because the file's name did not say them.
+	NamedFromFace bool `json:"named_from_face,omitempty"`
 }
 
 func (s *Server) handleDesign(w http.ResponseWriter, r *http.Request) {
@@ -250,6 +259,9 @@ func (s *Server) handleDesign(w http.ResponseWriter, r *http.Request) {
 	data["Dir"] = s.DesignSet.Dir
 	data["Layouts"] = s.designLayouts()
 	data["Fonts"] = s.designFonts()
+	if s.DesignSet != nil && s.DesignSet.FontNotes != nil {
+		data["FontNotes"] = s.DesignSet.FontNotes()
+	}
 	data["Starters"] = starter.All()
 	data["Own"] = s.DesignSet.OwnStylesheet != nil && s.DesignSet.OwnStylesheet()
 	data["CanInstall"] = s.DesignSet.InstallLayout != nil
@@ -535,10 +547,16 @@ func (s *Server) handleDesignFont(w http.ResponseWriter, r *http.Request) {
 		detail["replaced"] = "true"
 	}
 	s.auditPub(p, "theme.font.add", "/", detail)
+	named := ""
+	if added.NamedFromFace {
+		// The served name is not the file's, so say where it came from
+		// rather than leave somebody looking for a file they did not name.
+		named = " The weight and style are the ones the face declares, because the file's name does not give them as a served name does (Family-700-italic); give a name under Served as to choose another."
+	}
 	s.designRedirect(w, r, fmt.Sprintf("The typeface is served from this origin at "+
-		"/fonts/%s: family %s, weight %s, %s. Choose %s for a font token below; the "+
+		"/fonts/%s: family %s, weight %s, %s.%s Choose %s for a font token below; the "+
 		"site serves it from its next publish", added.File, added.Family,
-		added.Weight, added.Style, added.Family), "")
+		added.Weight, added.Style, named, added.Family), "")
 }
 
 func (s *Server) designRedirect(w http.ResponseWriter, r *http.Request, msg, errMsg string) {

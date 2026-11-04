@@ -41,6 +41,21 @@ type fontAdded struct {
 	Path string `json:"path"`
 }
 
+// fontSurface is how the place a face is added from asks for the two things
+// a refusal may need from somebody: a name to serve it under, and leave to
+// replace one. addFont said "say so to replace it anyway" on both surfaces,
+// which named neither the flag on the command line nor the checkbox on the
+// Design screen, so the refusal was a riddle on each.
+type fontSurface struct {
+	name, replace string
+}
+
+var (
+	fontFromCommand = fontSurface{name: "--name", replace: "add --force"}
+	fontFromScreen  = fontSurface{name: "Served as",
+		replace: "tick \"Replace a face already served under that name\""}
+)
+
 // fontSourceExts are the extensions a name given for a face may carry; they
 // are dropped, because the served name's extension is the format it is
 // served in, which is decided here.
@@ -49,11 +64,13 @@ var fontSourceExts = []string{".woff2", ".woff", ".ttf", ".otf"}
 // addFont writes a face into DIR/fonts/ from an uploaded or named file.
 //
 // filename is what the file was called, used for the served name when name is
-// empty. replace allows a face already served under the same name to be
-// overwritten; without it, that is refused, because a face is cached for a
-// year under its name (internal/public/fonts.go) and replacing one silently
-// is a change some readers see and others do not.
-func addFont(dir, filename string, body []byte, name string, replace bool) (fontAdded, error) {
+// empty, with the weight and style the face declares wherever the filename
+// does not say them (webfont.Named). replace allows a face already served
+// under the same name to be overwritten; without it, that is refused, because
+// a face is cached for a year under its name (internal/public/fonts.go) and
+// replacing one silently is a change some readers see and others do not.
+// how is how the surface it came from asks for either.
+func addFont(dir, filename string, body []byte, name string, replace bool, how fontSurface) (fontAdded, error) {
 	if len(body) > webfont.MaxSourceBytes {
 		return fontAdded{}, fmt.Errorf("%d bytes, and the most this takes is %d. "+
 			"Subset it to the scripts the site uses first", len(body), webfont.MaxSourceBytes)
@@ -76,13 +93,25 @@ func addFont(dir, filename string, body []byte, name string, replace bool) (font
 	}
 
 	stem := strings.TrimSpace(name)
-	if stem == "" {
+	given := stem != ""
+	if !given {
 		stem = filepath.Base(strings.ReplaceAll(filename, "\\", "/"))
 	}
 	for _, ext := range fontSourceExts {
 		if cut, ok := cutSuffixFold(stem, ext); ok {
 			stem = cut
 			break
+		}
+	}
+	// A name somebody gave is used as given. The file's own name is read
+	// with what the face says of itself, so Family-Regular.ttf, a static
+	// face, is not served as covering every weight (webfont.Named).
+	fromFace := false
+	if !given {
+		if d, ok := webfont.Declares(served); ok {
+			if named := webfont.Named(stem, d); named != stem {
+				stem, fromFace = named, true
+			}
 		}
 	}
 	// A name, not a path: it is joined to the fonts directory, so anything
@@ -94,10 +123,10 @@ func addFont(dir, filename string, body []byte, name string, replace bool) (font
 	file := stem + "." + format
 	face, err := webfont.Check(file, served)
 	if err != nil {
-		if name == "" {
+		if !given {
 			return fontAdded{}, fmt.Errorf("%s: %v. Give it the name to serve it "+
-				"under: the family, then the weight or range and the style, as in "+
-				"Satoshi-400-700", file, err)
+				"under (%s): the family, then the weight or range and the style, as in "+
+				"Satoshi-400-700", file, err, how.name)
 		}
 		return fontAdded{}, fmt.Errorf("%s: %w", file, err)
 	}
@@ -121,7 +150,7 @@ func addFont(dir, filename string, body []byte, name string, replace bool) (font
 	if replaced && !replace {
 		return fontAdded{}, fmt.Errorf("%s is already served. Replacing it changes "+
 			"the face for readers whose browsers fetch it again and not for those "+
-			"holding the old one for a year; say so to replace it anyway", file)
+			"holding the old one for a year; %s to replace it anyway", file, how.replace)
 	}
 	if err := os.MkdirAll(fontsDir, 0o700); err != nil {
 		return fontAdded{}, err
@@ -133,7 +162,8 @@ func addFont(dir, filename string, body []byte, name string, replace bool) (font
 	}
 	return fontAdded{
 		FontAdded: admin.FontAdded{File: face.File, Family: face.Family,
-			Weight: face.Weight, Style: face.Style, From: kind, Replaced: replaced},
+			Weight: face.Weight, Style: face.Style, From: kind, Replaced: replaced,
+			NamedFromFace: fromFace},
 		Source: len(body), Served: len(served), Path: path,
 	}, nil
 }
@@ -178,7 +208,7 @@ func themeFontAdd(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	added, err := addFont(*dir, pos[0], body, *name, *force)
+	added, err := addFont(*dir, pos[0], body, *name, *force, fontFromCommand)
 	if err != nil {
 		return err
 	}
@@ -195,6 +225,11 @@ func themeFontAdd(root string, args []string) error {
 	}
 	w.Human("%s%s%s is served from this origin at /fonts/%s\n", bold, added.File, reset, added.File)
 	w.Human("  %sfamily %s · weight %s · %s%s\n", dim, added.Family, added.Weight, added.Style, reset)
+	if added.NamedFromFace {
+		w.Human("  %snamed with the weight and style the face declares, because %s does not "+
+			"give them as a served name does (Family-700-italic); --name to choose another%s\n",
+			dim, filepath.Base(pos[0]), reset)
+	}
 	if added.From == "truetype" || added.From == "opentype" {
 		w.Human("  %smade from a %s face: %d KiB became %d KiB of WOFF%s\n", dim,
 			map[string]string{"truetype": "TrueType", "opentype": "OpenType"}[added.From],

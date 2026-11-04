@@ -280,6 +280,12 @@ func adminDesignHooks(dir string, dw *designWatch) *admin.Design {
 		Save:    func(values map[string]string) error { return writeThemeFile(dir, values) },
 		Layouts: func() []string { return dw.Current().Layouts.Names() },
 		Fonts:   func() []string { return dw.Current().Fonts.Names() },
+		FontNotes: func() []string {
+			if f := dw.Current().Fonts; f != nil {
+				return f.Warnings
+			}
+			return nil
+		},
 		FontFile: func(name string) ([]byte, bool) {
 			d := dw.Current()
 			if d.Fonts == nil {
@@ -296,7 +302,7 @@ func adminDesignHooks(dir string, dw *designWatch) *admin.Design {
 		// The same operation as `quilzo theme font add` (themefont.go). Read
 		// again straight after, so the screen it returns to lists the face.
 		AddFont: func(filename string, body []byte, name string, replace bool) (admin.FontAdded, error) {
-			added, err := addFont(dir, filename, body, name, replace)
+			added, err := addFont(dir, filename, body, name, replace, fontFromScreen)
 			if err != nil {
 				return admin.FontAdded{}, err
 			}

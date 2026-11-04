@@ -323,18 +323,42 @@ quilzo theme set font-body Satoshi
 ```
 
 It writes `templates/fonts/Satoshi-300-900.woff` and checks it the way every
-face in that directory is checked: the header agrees with the file, every table
+WOFF in that directory is checked: the header agrees with the file, every table
 lies inside it and inflates to exactly the size it declares, the tables a
 browser's font sanitiser refuses a face without are there, and the face's own
 licence flag (OS/2 `fsType`) does not say "restricted licence embedding" — a
-face that may not be embedded may not be served with a page either. A `.woff` or
-a `.woff2` is checked as it is. Nothing is fetched or sent anywhere. The Design
-screen has the same form, through the same code. The licence still travels with
-the face: put its text beside it. Adding or replacing a face takes the authority
-to publish, on the screen and on the command line, as installing a layout does: a
-face is the glyphs every page that names it is drawn with, and no gate reads a
-glyph, so one whose digits are drawn as other digits would change every price on
-the site with no word of any page changed.
+face that may not be embedded may not be served with a page either. A `.woff` is
+checked as it is, in the same way. A `.woff2` is checked only for its signature,
+the length it declares and its size, because its tables are Brotli and nothing
+here can read them. Nothing is fetched or sent anywhere. The Design screen has
+the same form, through the same code.
+
+Without `--name` (on the screen, an empty "Served as"), the face is served under
+the file's own name, with the weight and style the face's own tables declare
+wherever that name does not say them. Foundries name static faces
+`Satoshi-Regular.ttf` and `Satoshi-BoldItalic.ttf`; the first, taken at its
+word, would claim every weight from 100 to 900, so a browser asked for bold
+would draw the regular glyphs, and the second is not a name the contract reads.
+So a static regular of weight 400 is served as `Satoshi-400.woff`, the bold
+italic as `Satoshi-700-italic.woff`, and a variable face as the range of its
+weight axis. A name that does say the weight, such as `Satoshi-Bold.ttf`, is
+kept; a word that is neither a weight nor a style, such as `Condensed`, is
+refused with a request for a name rather than guessed past; and a name given is
+used exactly as given. The output says when the name came from the face.
+
+A face already served under the same name is replaced only when asked, with
+`--force` or the screen's "Replace a face already served under that name",
+because a browser keeps a face for a year under its name. A face is one file: a
+`.woff` beside the `.woff2` of the same face is refused. A file in
+`templates/fonts/` that is not served — a `.ttf` dropped there, a file that is
+not what its name says — is named, with the reason, by `quilzo theme fonts` and
+on the Design screen; for a `.ttf` or `.otf` that includes the command that
+makes a WOFF of it. The licence still travels with the face: put its text
+beside it. Adding or replacing a face takes the authority to publish, on the
+screen and on the command line, as installing a layout does: a face is the
+glyphs every page that names it is drawn with, and no gate reads a glyph, so
+one whose digits are drawn as other digits would change every price on the site
+with no word of any page changed.
 
 The filename is still the contract, and a weight range is written either way:
 `Satoshi-400-700.woff2` and `Satoshi-400..700.woff2` are both 400 to 700. The

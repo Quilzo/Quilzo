@@ -104,6 +104,33 @@ func TestATypefaceIsAddedFromTheDesignScreen(t *testing.T) {
 	}
 }
 
+// A face served under a name nobody typed says where the name came from.
+//
+// Aster-Regular.ttf with "Served as" left empty is served as Aster-400.woff,
+// a file nobody named; a screen that said only "served at /fonts/Aster-400.woff"
+// would leave somebody looking for where that came from, and one that said
+// nothing of it for a name somebody did give would be saying something false.
+func TestTheScreenSaysWhenTheNameCameFromTheFace(t *testing.T) {
+	srv, token := setup(t)
+	designFake(srv, map[string]string{})
+	srv.DesignSet.AddFont = func(filename string, body []byte, name string, replace bool) (FontAdded, error) {
+		return FontAdded{File: "Aster-400.woff", Family: "Aster", Weight: "400",
+			Style: "normal", From: "truetype", NamedFromFace: name == ""}, nil
+	}
+	for name, wantNote := range map[string]bool{"": true, "Aster-400": false} {
+		w := postFont(t, srv, token, "Aster-Regular.ttf", []byte("a face"), map[string]string{"name": name})
+		loc, _ := url.Parse(w.Header().Get("Location"))
+		msg := loc.Query().Get("m")
+		if !strings.Contains(msg, "/fonts/Aster-400.woff") {
+			t.Fatalf("name %q: the screen said %q", name, msg)
+		}
+		if got := strings.Contains(msg, "the ones the face declares") &&
+			strings.Contains(msg, "Served as"); got != wantNote {
+			t.Errorf("name %q: says the name came from the face: %v, want %v (%q)", name, got, wantNote, msg)
+		}
+	}
+}
+
 // Adding a typeface is a change to the design, so somebody who may only read
 // cannot.
 func TestAReaderCannotAddATypeface(t *testing.T) {
@@ -293,4 +320,31 @@ func blocksPage(reports []*a11y.Report, page string) bool {
 		}
 	}
 	return false
+}
+
+// A file in the fonts directory that is not served says why, on the screen.
+//
+// The screen said "No typefaces of your own" over a directory holding a
+// renamed .ttf and nothing else: the face somebody had put there was missing
+// without a word, and the reason was on the server's error output, where the
+// person looking at this screen is not.
+func TestAFaceThatIsNotServedSaysWhyOnTheScreen(t *testing.T) {
+	srv, token := setup(t)
+	designFake(srv, map[string]string{})
+	page := get(t, srv, "/design", token).Body.String()
+	if strings.Contains(page, "not served.") {
+		t.Fatal("a directory with nothing refused in it said something was")
+	}
+	why := "Aster.woff2 was refused: this is not a WOFF2 file"
+	srv.DesignSet.FontNotes = func() []string { return []string{why} }
+	page = get(t, srv, "/design", token).Body.String()
+	whole(t, page)
+	if !strings.Contains(page, "1 file in") || !strings.Contains(page, why) {
+		t.Errorf("the screen does not say which file is not served, or why")
+	}
+	for _, f := range a11y.Check("/design", page).Findings {
+		if f.Severity == a11y.Blocking {
+			t.Errorf("the Design screen with a refused face: %s (%s) — %s", f.Rule, f.Criterion, f.Detail)
+		}
+	}
 }

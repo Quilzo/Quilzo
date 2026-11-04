@@ -362,9 +362,19 @@ func themeFonts(args []string) error {
 	fontsDir := filepath.Join(*dir, "fonts")
 	if len(faces) == 0 {
 		w.Human("%sno fonts of your own%s\n\n", bold, reset)
+		// What is in the directory and not served comes first: it is the
+		// answer to "why is my font not there", which is why somebody runs
+		// this with a file in the directory. It came only after a list of
+		// faces, so a directory whose one file was refused said nothing.
+		for _, note := range set.Warnings {
+			w.Human("  %s%s%s\n", yellow, wrapIndent(note, 70, 2), reset)
+		}
+		if len(set.Warnings) > 0 {
+			w.Human("\n")
+		}
 		w.Human("  %sPut a .woff2 or .woff in %s and it is served from this origin at%s\n",
 			dim, fontsDir, reset)
-		w.Human("  %s/fonts/NAME.woff2, then:  quilzo theme set font-display NAME%s\n",
+		w.Human("  %s/fonts/NAME.woff2 (or .woff), then:  quilzo theme set font-display NAME%s\n",
 			dim, reset)
 		w.Human("  %sA .ttf or .otf is made into a WOFF and checked by:%s\n", dim, reset)
 		w.Human("  %s  quilzo theme font add FILE [--name Satoshi-400-700]%s\n\n", dim, reset)
@@ -389,8 +399,15 @@ func themeFonts(args []string) error {
 	}
 	w.Human("\n  %squilzo theme set font-body %s%s\n", dim, faces[0].Family, reset)
 	w.Human("  %squilzo theme font add FILE   another, from a .ttf, .otf, .woff or .woff2%s\n", dim, reset)
+	// As above, and as loud: a file somebody put here and is not served is
+	// the same news whether or not another face is. It was printed dim and
+	// on one line under the list, the colour of a hint, and a sentence with
+	// a path and a command in it ran far past the edge of the terminal.
+	if len(set.Warnings) > 0 {
+		w.Human("\n")
+	}
 	for _, note := range set.Warnings {
-		w.Human("  %s%s%s\n", dim, note, reset)
+		w.Human("  %s%s%s\n", yellow, wrapIndent(note, 70, 2), reset)
 	}
 	return nil
 }

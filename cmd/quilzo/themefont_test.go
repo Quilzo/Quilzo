@@ -25,12 +25,20 @@ import (
 // trueTypeFace is a TrueType file with every table a browser's sanitiser
 // asks for, laid out as a font tool lays one out. The tables are stand-ins
 // with the fields that are read in the right places; nothing draws a glyph.
-func trueTypeFace(fsType uint16) []byte {
+func trueTypeFace(fsType uint16) []byte { return declaringFace(fsType, 0, false) }
+
+// declaringFace is trueTypeFace with the weight and the italic its OS/2
+// table states, as a foundry's static face states them; weight 0 says none.
+func declaringFace(fsType, weight uint16, italic bool) []byte {
 	be := binary.BigEndian
 	head := make([]byte, 54)
 	be.PutUint32(head[12:16], 0x5F0F3CF5)
 	os2 := make([]byte, 96)
+	be.PutUint16(os2[4:6], weight)
 	be.PutUint16(os2[8:10], fsType)
+	if italic {
+		be.PutUint16(os2[62:64], 0x0001)
+	}
 	tables := map[string][]byte{
 		"cmap": bytes.Repeat([]byte{0, 1, 2, 3}, 64), "glyf": bytes.Repeat([]byte("outline "), 400),
 		"head": head, "hhea": make([]byte, 36), "hmtx": bytes.Repeat([]byte{0, 200}, 100),
@@ -282,6 +290,151 @@ func TestWhatIsNotAServableFaceIsNotWritten(t *testing.T) {
 	}
 	if n := len(actions(t, root, "theme.font.add")); n != 0 {
 		t.Errorf("%d refused faces recorded as added", n)
+	}
+}
+
+// A foundry's files, added as they came, are served at the weights they are.
+//
+// Foundries name static faces Family-Regular.ttf and Family-BoldItalic.ttf.
+// The first was served as covering every weight, because a filename that
+// says no weight is the whole range, so a browser asked for bold drew the
+// regular glyphs; the second was refused for a word the filename contract
+// does not read. Without --name, the face's own tables say what the file's
+// name does not, and the output says that is where the name came from.
+func TestAFoundrysFilesAreServedAtTheirOwnWeights(t *testing.T) {
+	root, tpl := fontSite(t)
+	old := w
+	t.Cleanup(func() { w = old })
+	for _, c := range []struct {
+		file, served, weight, style string
+		face                        []byte
+	}{
+		{"Aster-Regular.ttf", "Aster-400.woff", "400", "normal", declaringFace(0, 400, false)},
+		{"Aster-BoldItalic.ttf", "Aster-700-italic.woff", "700", "italic", declaringFace(0, 700, true)},
+		{"Aster-Bold.ttf", "Aster-Bold.woff", "700", "normal", declaringFace(0, 700, false)},
+	} {
+		var b strings.Builder
+		w = &out.Writer{Mode: out.Human, Out: &b, Err: io.Discard}
+		if err := cmdTheme(root, []string{"font", "add", writeTemp(t, c.file, c.face), "--dir", tpl}); err != nil {
+			t.Fatalf("%s: %v", c.file, err)
+		}
+		said := strings.Contains(b.String(), "named with the weight and style the face declares, because")
+		if renamed := c.served != strings.TrimSuffix(c.file, ".ttf")+".woff"; said != renamed {
+			t.Errorf("%s: the output says it was named from the face: %v, and it was: %v\n%s",
+				c.file, said, renamed, b.String())
+		}
+	}
+	set, err := webfont.Load(filepath.Join(tpl, "fonts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, f := range set.Faces() {
+		got[f.File] = f.Weight + " " + f.Style
+	}
+	for file, want := range map[string]string{"Aster-400.woff": "400 normal",
+		"Aster-700-italic.woff": "700 italic", "Aster-Bold.woff": "700 normal"} {
+		if got[file] != want {
+			t.Errorf("%s is served as %q, want %q (all: %v)", file, got[file], want, got)
+		}
+	}
+
+	// A name somebody gives is used as given.
+	w = &out.Writer{Mode: out.JSON, Out: io.Discard, Err: io.Discard}
+	added, err := addFont(tpl, "Other-Regular.ttf", declaringFace(0, 400, false), "Other", false, fontFromCommand)
+	if err != nil || added.File != "Other.woff" || added.NamedFromFace {
+		t.Errorf("a given name was not used as given: %+v %v", added, err)
+	}
+}
+
+// A refusal names what to do on the surface it was made from: the flag on
+// the command line, the field and the checkbox on the Design screen.
+//
+// Both said "say so to replace it anyway", which is neither.
+func TestARefusalNamesTheWayOnItsOwnSurface(t *testing.T) {
+	_, tpl := fontSite(t)
+	face := declaringFace(0, 700, false)
+	if _, err := addFont(tpl, "Aster-700.ttf", face, "", false, fontFromCommand); err != nil {
+		t.Fatal(err)
+	}
+	_, err := addFont(tpl, "Aster-700.ttf", face, "", false, fontFromCommand)
+	if err == nil || !strings.Contains(err.Error(), "add --force to replace it") {
+		t.Errorf("on the command line: %v", err)
+	}
+	dw := newDesignWatch(tpl, nil, nil)
+	dw.say = func(string, ...any) {}
+	_, err = adminDesignHooks(tpl, dw).AddFont("Aster-700.ttf", face, "", false)
+	if err == nil || !strings.Contains(err.Error(), `tick "Replace a face already served under that name"`) {
+		t.Errorf("on the Design screen: %v", err)
+	}
+	// A name that does not read, from a face that says nothing of itself.
+	_, err = addFont(tpl, "Aster-Wide.ttf", trueTypeFace(0), "", false, fontFromCommand)
+	if err == nil || !strings.Contains(err.Error(), "serve it under (--name)") {
+		t.Errorf("on the command line: %v", err)
+	}
+	_, err = adminDesignHooks(tpl, dw).AddFont("Aster-Wide.ttf", trueTypeFace(0), "", false)
+	if err == nil || !strings.Contains(err.Error(), "serve it under (Served as)") {
+		t.Errorf("on the Design screen: %v", err)
+	}
+}
+
+// A face put in the directory that is not served says why, and what to run,
+// wherever somebody looks: `quilzo theme fonts` and the Design screen.
+//
+// With nothing served, `theme fonts` said "no fonts of your own" and stopped
+// before the reasons, which it printed only under a list of faces; the
+// screen never showed them; and the command it named was the bare filename,
+// which from the site's directory finds nothing.
+func TestAFaceThatIsNotServedSaysWhyWherePeopleLook(t *testing.T) {
+	root, tpl := fontSite(t)
+	fonts := filepath.Join(tpl, "fonts")
+	if err := os.MkdirAll(fonts, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(fonts, "Aster-Regular.ttf")
+	if err := os.WriteFile(src, trueTypeFace(0), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run := "quilzo theme font add " + src + " --dir " + tpl
+	said, err := humanOutput(t, func() error { return cmdTheme(root, []string{"fonts", "--dir", tpl}) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(said, "no fonts of your own") ||
+		!strings.Contains(strings.Join(strings.Fields(said), " "), run) {
+		t.Errorf("theme fonts does not say why, or what to run:\n%s", said)
+	}
+	dw := newDesignWatch(tpl, nil, nil)
+	dw.say = func(string, ...any) {}
+	if err := dw.Reload(); err != nil {
+		t.Fatal(err)
+	}
+	notes := adminDesignHooks(tpl, dw).FontNotes()
+	if len(notes) != 1 || !strings.Contains(notes[0], run) {
+		t.Errorf("the Design screen is told %v", notes)
+	}
+	// And what it says to run, runs.
+	args := strings.Fields(strings.TrimPrefix(run, "quilzo theme "))
+	if err := cmdTheme(root, args); err != nil {
+		t.Fatalf("%s: %v", run, err)
+	}
+	if set, err := webfont.Load(fonts); err != nil || set.Len() != 1 {
+		t.Errorf("after running it: %v %v", set.Faces(), err)
+	}
+	// With a face served, the source left beside it is still named, and
+	// the sentence is wrapped to the terminal rather than run off its edge.
+	said, err = humanOutput(t, func() error { return cmdTheme(root, []string{"fonts", "--dir", tpl}) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(said, "fonts served from this origin") ||
+		!strings.Contains(said, "Aster-Regular.ttf is not a .woff2") {
+		t.Errorf("theme fonts with a face served does not name the source:\n%s", said)
+	}
+	for _, line := range strings.Split(said, "\n") {
+		if strings.Contains(line, "Aster-Regular.ttf is not") && len(line) > 100 {
+			t.Errorf("a note runs to %d columns: %q", len(line), line)
+		}
 	}
 }
 
