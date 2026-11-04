@@ -431,6 +431,43 @@ func TestAGhostExportIsNotReadAsQuilzoPages(t *testing.T) {
 	}
 }
 
+// A Ghost export with no "db" around it is not read as Quilzo's pages either.
+//
+// Ghost writes its export both ways, and the site import reads both. The
+// refusal above came only once the page reader found nothing, and this shape
+// gives it something: its "meta" and its "data" are objects, so it was read
+// as two pages called "data" and "meta", the posts a list in a field, and
+// `quilzo import` and the browser's import wrote them into the draft without
+// a word while `quilzo site import` read the same file as a post.
+func TestAGhostExportWithNoDBAroundItIsNotReadAsQuilzoPages(t *testing.T) {
+	ghost := `{"meta":{"exported_on":1761700000000,"version":"5.98.0"},` +
+		`"data":{"posts":[{"id":"1","title":"Hello","slug":"hello","type":"post",` +
+		`"status":"published","html":"<p>Hi.</p>"}]}}`
+	for _, src := range []Source{"", JSON} {
+		if src == "" {
+			src, _ = Detect([]byte(ghost))
+		}
+		rep, err := Import(src, strings.NewReader(ghost), now)
+		if err == nil {
+			var names []string
+			for _, p := range rep.Pages {
+				names = append(names, p.Name)
+			}
+			t.Fatalf("a Ghost export was read as the Quilzo pages %v", names)
+		}
+		if !strings.Contains(err.Error(), "Ghost export") || !strings.Contains(err.Error(), "quilzo site import") {
+			t.Errorf("refused without saying what it is or where it goes: %v", err)
+		}
+	}
+
+	// Pages that are called data and meta, with nothing of Ghost's in them,
+	// are still pages.
+	rep, err := Import(JSON, strings.NewReader(`{"data":{"title":"Our data"},"meta":{"title":"About this site"}}`), now)
+	if err != nil || len(rep.Pages) != 2 {
+		t.Fatalf("pages called data and meta were refused: %v", err)
+	}
+}
+
 // Content types are flat, which is what keeps validation bounded. A nested
 // object has nowhere to go, so it is reported rather than flattened into keys
 // nobody declared.

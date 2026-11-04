@@ -44,7 +44,9 @@
 package importer
 
 import (
+	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"html"
 	"io"
@@ -474,21 +476,42 @@ func importMarkdown(body []byte, now time.Time) (*Report, error) {
 // that, and the shapes a headless system writes go the same way.
 func importJSON(body []byte, now time.Time) (*Report, error) {
 	c, err := export.Read(export.JSON, body)
-	if err != nil {
-		// A Ghost export is JSON too, so it came here and was refused with
-		// "no importable pages found", while the site import reads the same
-		// file into a site with its posts. Said only once this reader has
-		// found nothing, so a page that happens to be called "posts" is
-		// still read as one.
-		if webimport.Detect(body) == webimport.KindGhost {
-			return nil, fmt.Errorf("this is a Ghost export, not pages this "+
-				"reads: bring it as a site, with `quilzo site import FILE` or "+
-				"\"Or the file it exported\" on the Make screen, which read its "+
-				"posts and pages (%w)", err)
+	// A Ghost export is JSON too, so it came here and was refused with "no
+	// importable pages found", while the site import reads the same file into
+	// a site with its posts. Said once this reader has found nothing, so a
+	// page that happens to be called "posts" is still read as one; or when
+	// the file is Ghost's by its own shape, because the shape with no "db"
+	// around it gave this reader two pages, "data" and "meta", which were
+	// written into the draft without a word.
+	if (err != nil && webimport.Detect(body) == webimport.KindGhost) || ghostWithoutDB(body) {
+		hint := "this is a Ghost export, not pages this reads: bring it as a " +
+			"site, with `quilzo site import FILE` or \"Or the file it exported\" " +
+			"on the Make screen, which read its posts and pages"
+		if err != nil {
+			return nil, fmt.Errorf("%s (%w)", hint, err)
 		}
+		return nil, errors.New(hint)
+	}
+	if err != nil {
 		return nil, err
 	}
 	return jsonReport(c), nil
+}
+
+// ghostWithoutDB says whether body is a Ghost export written with no "db"
+// around it: {"meta": {"exported_on": ...}, "data": {...}}. Ghost writes that
+// key in the meta of every export it makes; pages that are only called data
+// and meta, without it, are still pages.
+func ghostWithoutDB(body []byte) bool {
+	var doc struct {
+		Meta map[string]json.RawMessage `json:"meta"`
+		Data map[string]json.RawMessage `json:"data"`
+	}
+	if json.Unmarshal(body, &doc) != nil || doc.Data == nil {
+		return false
+	}
+	_, ok := doc.Meta["exported_on"]
+	return ok
 }
 
 // jsonReport is what the export read, as this package reports it.
