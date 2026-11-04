@@ -491,6 +491,60 @@ func TestARecordOrAnFAQThatSaysNoIsNotTurnedAround(t *testing.T) {
 	})
 }
 
+// A word that says the opposite of the passage's turns it around as a
+// "not" does. "We are closed on Sundays" was cited for "We are open on
+// Sundays", and "unavailable" for "available", "non-refundable" for
+// "refundable": no "not" was dropped, the one changed word was half of
+// what the overlap test counted at most, and each was shown.
+func TestAnOppositeWordTurnsAPassageAround(t *testing.T) {
+	hit := func(title, text string) []Hit {
+		return []Hit{{Passage: Passage{ID: "p#1", Page: "p", Title: title, Text: text}}}
+	}
+	sundays := hit("Opening hours", "We are open from 9am on weekdays. We are closed on Sundays.")
+	mondays := hit("Opening hours", "The shop is shut on Mondays.")
+	room := hit("Rooms", "The garden room is unavailable in December.")
+	tickets := hit("Tickets", "Tickets are non-refundable. Exchanges are free.")
+	parking := hit("Parking", "Parking is unlimited for guests.")
+	help := hit("Help", "Our staff will help you understand the menu.")
+	members := hit("Membership", "Non-members pay £10 at the door.")
+	lunch := hit("Shop", "We do not close for lunch. We are not open on bank holidays.")
+	faq := hit("FAQ › Is the café open on Sundays?", "No, it is closed on Sundays.")
+	nonEU := hit("Delivery", "Non-EU orders ship in 5 days.")
+	expectVerdicts(t, []verdict{
+		{sundays, "We are open on Sundays [1].", `"open"`},
+		{sundays, "The shop opens on Sundays [1].", `"opens"`},
+		{sundays, "We are closed on Sundays [1].", ""},
+		{sundays, "We are not open on Sundays [1].", ""},
+		{sundays, "We are open from 9am on weekdays [1].", ""},
+		{sundays, "We are not closed on Sundays [1].", `"not"`},
+		{mondays, "The shop is open on Mondays [1].", `"open"`},
+		{mondays, "The shop is closed on Mondays [1].", ""},
+		{room, "The garden room is available in December [1].", `"available"`},
+		{room, "The garden room is not available in December [1].", ""},
+		{room, "The garden room is unavailable in December [1].", ""},
+		{tickets, "Tickets are refundable [1].", `"refundable"`},
+		{tickets, "Tickets are nonrefundable [1].", ""},
+		{tickets, "Exchanges are free [1].", ""},
+		{parking, "Parking is limited for guests [1].", `"limited"`},
+		{parking, "Parking is unlimited for guests [1].", ""},
+		{members, "Members pay £10 at the door [1].", `"members"`},
+		{members, "Non-members pay £10 at the door [1].", ""},
+		// "Non" turns the word after it, not the one after that.
+		{nonEU, "Orders ship in 5 days [1].", ""},
+		{lunch, "We close for lunch [1].", `"not"`},
+		{lunch, "We are open on bank holidays [1].", `"not"`},
+		{lunch, "We are closed on bank holidays [1].", ""},
+		// "No" answers the question, and "closed" says it again.
+		{faq, "The café is open on Sundays [1].", `"no"`},
+		{faq, "The café is not closed on Sundays [1].", `"not closed"`},
+		{faq, "No, the café is closed on Sundays [1].", ""},
+		{faq, "The café is not open on Sundays [1].", ""},
+		{faq, "The café isn’t open on Sundays [1].", ""},
+		// A word that starts as a negation does is not therefore one.
+		{help, "Staff will help you understand the menu [1].", ""},
+	})
+}
+
 func TestAModelThatFailsFallsBack(t *testing.T) {
 	for name, m := range map[string]*scripted{
 		"error":    {err: errors.New("connection refused")},
