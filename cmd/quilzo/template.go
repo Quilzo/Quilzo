@@ -16,6 +16,7 @@ import (
 	"github.com/quilzo/quilzo/internal/foreign"
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/starter"
+	"github.com/quilzo/quilzo/internal/tmpl"
 )
 
 func cmdTemplate(root string, args []string) error {
@@ -150,15 +151,20 @@ func templateLayouts(args []string) error {
 	for _, n := range shipped {
 		isShipped[n] = true
 	}
+	broken := brokenLayouts(*dir, own)
 	for _, n := range own {
 		note := " — written for this site"
 		if isShipped[n] {
 			note = " — a copy of the shipped one, to edit"
 		}
+		if why, bad := broken[n]; bad {
+			w.Human("  %s%-11s%s%s — does not parse: %v%s\n", bold, n, reset, yellow, why, reset)
+			continue
+		}
 		w.Human("  %s%-11s%s%s%s%s\n", bold, n, reset, dim, note, reset)
 	}
-	// A layout that will not parse is named here rather than at the next
-	// start, where it stops the site.
+	// What stops the set being used at all — no page layout — as the site
+	// would say it.
 	if len(own) > 0 {
 		if _, err := loadLayouts(*dir); err != nil {
 			w.Human("\n  %s%v%s\n", yellow, err, reset)
@@ -188,6 +194,29 @@ func siteLayoutNames(dir string) []string {
 		out = append(out, name)
 	}
 	sort.Strings(out)
+	return out
+}
+
+// brokenLayouts are the layouts among names in dir whose markup does not
+// parse, each with what the parser said.
+//
+// loadLayouts reads the files and parses none of them: a layout is parsed
+// when a page is rendered through it. So the listing that said it named a
+// layout that does not parse named none, and the first anybody heard of an
+// unclosed {% if %} was a page that would not render, at the publish gate or
+// in front of a reader.
+func brokenLayouts(dir string, names []string) map[string]error {
+	out := map[string]error{}
+	for _, n := range names {
+		b, err := os.ReadFile(filepath.Join(dir, n+".html"))
+		if err != nil {
+			out[n] = err
+			continue
+		}
+		if _, err := tmpl.Parse(string(b)); err != nil {
+			out[n] = err
+		}
+	}
 	return out
 }
 

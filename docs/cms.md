@@ -350,7 +350,7 @@ the public site until `quilzo site` restarted. Now:
 
 | | the design (`templates/`) | the settings |
 |---|---|---|
-| `quilzo serve`, the admin | when the directory changes, and on SIGHUP | read when used, as before; the interface's brand, the passkey rules and the API's limits still at a restart |
+| `quilzo serve`, the admin | when the directory changes (looked at no more than once a second, as the admin is used), and on SIGHUP | read when used, as before; the interface's brand, the passkey rules and the API's limits still at a restart |
 | `quilzo site`, the public site | with each publish, and on SIGHUP | when the configuration, listings or languages change, with each publish, and on SIGHUP |
 
 The public site takes the design with a publish rather than the moment a file
@@ -377,10 +377,12 @@ keys, the newsletter's hourly count and the fediverse queue. Their settings —
 `auth.throttle.*` for the site's limits, `chatbot.questions.*`, `fediverse.*`, and
 the content API's — take effect at the next restart, because a reload that handed
 every visitor a fresh allowance would be a limit that resets whenever somebody
-publishes. A reload that fails changes nothing: the site serves what it served,
-says why, records `site.reload` as a failure in the audit log, and tries again
-when something changes again. A reload that changed what readers get is recorded
-too, with what triggered it.
+publishes. A reload whose build fails changes nothing: the site serves what it
+served, says why, records `site.reload` as a failure in the audit log, and tries
+again when something changes again. One whose design does not read — a theme
+file that is not JSON, a `page.html` gone — keeps the design it had, takes the
+rest, and records the failure with the reason. A reload that changed what readers
+get is recorded too, with what triggered it.
 
 That includes a `config.json` caught empty. Writing one with `>`, with `cp`, or
 from an editor that writes in place leaves it empty for a moment, and an empty

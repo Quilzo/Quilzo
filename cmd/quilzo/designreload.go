@@ -70,14 +70,20 @@ import (
 //
 // # A reload that fails
 //
-// Changes nothing. A layout that does not parse, a theme file that is not
-// JSON, a setting the site refuses at start, a configuration file caught
-// empty while it is being written (configSays): the site goes on serving what
-// it served, says why on its error output and in the audit log, and does not
-// try again until something changes again. A server that went down because
-// somebody saved a file half-edited would make every save a risk. A publish
-// whose build was refused for any of those but its own design brings that
-// design with the next build that succeeds.
+// Changes nothing. A setting the site refuses at start, a configuration file
+// caught empty while it is being written (configSays): the site goes on
+// serving what it served, says why on its error output and in the audit log,
+// and does not try again until something changes again. A design that does
+// not read — a theme file that is not JSON, a template directory with no
+// page layout — is kept as it was while the rest is taken, and recorded as a
+// failure with the reason. A server that went down because somebody saved a
+// file half-edited would make every save a risk. A publish whose build was
+// refused for any of those but its own design brings that design with the
+// next build that succeeds.
+//
+// A layout is not parsed here: it is parsed when a page is rendered through
+// it, and the publish gate that comes before the design renders every page.
+// `quilzo template layouts` names one that does not parse.
 
 // lookEvery is the most often a server looks at the files on disk. A stat
 // of a handful of files is microseconds; doing it once a second rather than

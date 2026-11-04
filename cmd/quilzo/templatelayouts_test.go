@@ -84,3 +84,42 @@ func TestTemplateLayoutsListsTheSitesOwn(t *testing.T) {
 		t.Errorf("a site with no layouts of its own: %v\n%s", err, said)
 	}
 }
+
+// A layout of the site's own that does not parse is named, with why.
+//
+// The listing's comment said it named one, and it named none: the files are
+// read and not parsed until a page renders through them, so the first word
+// of an unclosed {% if %} was a page that would not render.
+func TestTemplateLayoutsNamesOneThatDoesNotParse(t *testing.T) {
+	tpl := filepath.Join(t.TempDir(), "templates")
+	if err := os.MkdirAll(tpl, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{
+		"page.html":    `<main>{{ page.title }}</main>`,
+		"arena.html":   `<main>{% if page.title %}{{ page.title }}</main>`,
+		"gallery.html": `<main>{% each page.items %}</main>`,
+	} {
+		if err := os.WriteFile(filepath.Join(tpl, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	said, err := humanOutput(t, func() error { return cmdTemplate("", []string{"layouts", "--dir", tpl}) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := map[string]string{}
+	for _, line := range strings.Split(said[strings.Index(said, "this site's own"):], "\n") {
+		if f := strings.Fields(line); len(f) > 0 {
+			lines[f[0]] = line
+		}
+	}
+	for name, want := range map[string]string{"arena": "left open", "gallery": "unknown tag"} {
+		if !strings.Contains(lines[name], "does not parse") || !strings.Contains(lines[name], want) {
+			t.Errorf("%s is listed as %q", name, lines[name])
+		}
+	}
+	if strings.Contains(lines["page"], "does not parse") {
+		t.Errorf("a layout that parses is listed as broken: %q", lines["page"])
+	}
+}
