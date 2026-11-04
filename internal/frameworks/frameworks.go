@@ -209,6 +209,7 @@ var fromRule = map[string][]Ref{
 	"token.admin-role":              {{"gdpr", "Art. 32"}},
 	"sso.cert-expiring":             {{"gdpr", "Art. 32"}},
 	"sso.unusable":                  {{"gdpr", "Art. 32"}},
+	"sso.unverified-addresses":      {{"gdpr", "Art. 32"}},
 	"token.stale":                   {{"gdpr", "Art. 32"}},
 	"token.expired-not-revoked":     {{"gdpr", "Art. 32"}},
 	"audit.chain-broken":            {{"gdpr", "Art. 32(1)(b)"}, {"gdpr", "Art. 5(2)"}},

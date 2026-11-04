@@ -275,6 +275,22 @@ func (c *Config) Called() string {
 	return "the identity provider"
 }
 
+// VerifiedUnasked is the attribute this kind of provider says it verified
+// an address in, when this one was set up without it and nobody decided to
+// take addresses as sent; empty otherwise.
+//
+// A preset is copied when a provider is added, so a Keycloak added before
+// its preset asked for email_verified still signs in an address it has not
+// verified, as long as it says nothing either way. Asking for the attribute
+// now would refuse everybody until the realm sends it, so this is reported
+// (the posture scan's sso.unverified-addresses) rather than imposed.
+func (c *Config) VerifiedUnasked() string {
+	if c.AllowUnverified || c.VerifiedAttribute != "" {
+		return ""
+	}
+	return Presets[c.Preset].VerifiedAttribute
+}
+
 // verified refuses an address the provider has not said it verified, when
 // it was set up to say so, and one it says it has not, whatever it was set
 // up with; see VerifiedAttribute.

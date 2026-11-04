@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/quilzo/quilzo/internal/posture"
 	"github.com/quilzo/quilzo/internal/saml"
 )
 
@@ -85,5 +86,37 @@ func TestAKeycloakProviderSignsInOnlyAddressesItVerified(t *testing.T) {
 	a.Attributes["emailVerified"] = []string{"true"}
 	if p, err := named.PrincipalOf(a); err != nil || p != "unverified@qz.test" {
 		t.Errorf("--verified-attribute emailVerified: %q, %v", p, err)
+	}
+}
+
+// A Keycloak added before its preset asked for email_verified is stored
+// without it, and signs in an address it has not verified while it says
+// nothing either way. The posture scan names it, so the store the finding
+// was reproduced on is told rather than left as it was.
+func TestAKeycloakAddedBeforeItWasAskedIsReported(t *testing.T) {
+	root := connectStore(t)
+	meta, fp := keycloakDescriptor(t)
+	if _, err := samlAdd(root, []string{"kc", "--metadata", meta, "--url", "https://admin.qz.test",
+		"--preset", "keycloak", "--domain", "qz.test", "--fingerprint", fp}); err != nil {
+		t.Fatal(err)
+	}
+	c, err := findSAML(root, "kc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.VerifiedAttribute = "" // as saml add stored it before
+	if err := saveSAML(root, *c); err != nil {
+		t.Fatal(err)
+	}
+	st := Observe(root, t.TempDir(), posture.ServerFacts{})
+	if len(st.SSO.Providers) != 1 || st.SSO.Providers[0].Unverified != "email_verified" {
+		t.Fatalf("%+v", st.SSO.Providers)
+	}
+	found := false
+	for _, f := range posture.Scan(st, nil).Findings {
+		found = found || (f.Rule == "sso.unverified-addresses" && f.Resource == "saml/kc")
+	}
+	if !found {
+		t.Error("the posture scan does not say kc signs in addresses it has not said it verified")
 	}
 }

@@ -57,3 +57,24 @@ func TestOnlyAnAddressIsAskedWhetherItWasVerified(t *testing.T) {
 		t.Errorf("an address the provider says it has not verified signed in as %q", p)
 	}
 }
+
+// A provider of a kind that lets people leave their address unverified,
+// added without the attribute that kind says verification in and with
+// nobody deciding to take addresses as sent, is one to report: a Keycloak
+// added before the preset asked for email_verified.
+func TestAProviderAddedWithoutTheAttributeItsKindNeedsIsKnown(t *testing.T) {
+	for _, c := range []struct {
+		c    Config
+		want string
+	}{
+		{Config{Name: "kc", Preset: "keycloak"}, "email_verified"},
+		{Config{Name: "kc", Preset: "keycloak", VerifiedAttribute: "email_verified"}, ""},
+		{Config{Name: "kc", Preset: "keycloak", AllowUnverified: true}, ""},
+		{Config{Name: "okta", Preset: "okta"}, ""},
+		{Config{Name: "corp"}, ""},
+	} {
+		if got := c.c.VerifiedUnasked(); got != c.want {
+			t.Errorf("%+v: %q, wanted %q", c.c, got, c.want)
+		}
+	}
+}

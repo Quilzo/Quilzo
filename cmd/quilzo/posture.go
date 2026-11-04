@@ -65,7 +65,7 @@ func Observe(root, tplDir string, srv posture.ServerFacts) posture.State {
 	if all, err := loadSAML(root); err == nil {
 		s.SSO.Checked = true
 		for _, c := range all {
-			p := posture.SSOProvider{Name: c.Name}
+			p := posture.SSOProvider{Name: c.Name, Unverified: c.VerifiedUnasked()}
 			if err := c.Validate(); err != nil {
 				p.Problem = err.Error()
 			}
