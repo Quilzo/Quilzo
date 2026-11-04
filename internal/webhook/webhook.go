@@ -344,8 +344,10 @@ func Send(s Sender, e Endpoint, ev Event, now time.Time) []Delivery {
 		}
 		// A 4xx is the receiver saying the request is wrong, and repeating it
 		// will not make it right. Only server errors and transport failures are
-		// worth another attempt.
-		if status >= 400 && status < 500 {
+		// worth another attempt, and the two 4xx that ask for one later: 408,
+		// a receiver that timed out reading the request, and 429, one taking
+		// fewer requests for a moment. Both were dropped on the first answer.
+		if status >= 400 && status < 500 && status != 408 && status != 429 {
 			return out
 		}
 	}

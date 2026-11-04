@@ -4,6 +4,7 @@
 package webhook
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -214,10 +215,12 @@ func TestAClientErrorIsNotRetried(t *testing.T) {
 	}
 }
 
-// restarting is a receiver that answers 503 until a moment has passed on
-// its own clock, which only waiting moves: a receiver being deployed.
+// restarting is a receiver that answers 503, or status, until a moment
+// has passed on its own clock, which only waiting moves: a receiver being
+// deployed.
 type restarting struct {
 	clock, back time.Duration
+	status      int
 	at          []time.Duration
 	stamps      []string
 }
@@ -226,7 +229,7 @@ func (r *restarting) Post(_ string, _ []byte, headers map[string]string) (int, e
 	r.at = append(r.at, r.clock)
 	r.stamps = append(r.stamps, headers["X-Quilzo-Timestamp"])
 	if r.clock < r.back {
-		return 503, nil
+		return cmp.Or(r.status, 503), nil
 	}
 	return 200, nil
 }
@@ -262,6 +265,28 @@ func TestARetryWaitsLongEnoughForAReceiverToRestart(t *testing.T) {
 	}
 	if waited := down.at[len(down.at)-1]; waited > 10*time.Second || waited >= Tolerance {
 		t.Errorf("the last attempt came %s after the first", waited)
+	}
+}
+
+// A receiver that answers 429, taking fewer requests for a moment, or 408,
+// having timed out reading the request, is asking for it again later. Both
+// are 4xx, which was read as the request being wrong, so the event was
+// dropped on the first answer, as an event to a receiver restarting was.
+func TestABusyReceiverIsTriedAgainLater(t *testing.T) {
+	for _, busy := range []int{429, 408} {
+		r := &restarting{back: time.Second, status: busy}
+		deliveries := Send(r, Endpoint{URL: "https://x.example", Secret: "s"}, event(), now)
+		if last := deliveries[len(deliveries)-1]; !last.Succeeded || len(deliveries) != 2 {
+			t.Errorf("a receiver that answered %d for a second: %d attempt(s), made at %v",
+				busy, len(deliveries), r.at)
+		}
+	}
+	// Any other 4xx still says the request is wrong.
+	for _, wrong := range []int{400, 401, 403, 404, 410, 413, 422} {
+		r := &recorder{statuses: []int{wrong, 200}}
+		if got := len(Send(r, Endpoint{URL: "https://x.example", Secret: "s"}, event(), now)); got != 1 {
+			t.Errorf("a %d was attempted %d times", wrong, got)
+		}
 	}
 }
 
