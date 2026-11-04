@@ -258,6 +258,93 @@ func TestAToolThatFailsAndACallRefusedAreToldApart(t *testing.T) {
 	}
 }
 
+// Every call this client will not make is a *Refused, and every one the
+// far side failed is not. Only the allow-list, the integration's kind and
+// a changed pin were typed, so the rest of the refusals made here were
+// recorded as failures of the far side, which nobody had asked anything.
+func TestEveryCallRefusedHereIsARefusal(t *testing.T) {
+	ctx := context.Background()
+	noVault := integration("create_issue")
+	noVault.Secret = "tracker-token"
+	gone := integration("create_issue")
+	gone.Pins = map[string]string{"create_issue": strings.Repeat("ab", 32)}
+	nobody := integration("create_issue")
+	nobody.Connection = "github"
+	private := integration("list_pages")
+	private.Endpoint = "127.0.0.1"
+	restNoVault := billing()
+	restNoVault.Secret = "billing-token"
+	a2aNoVault := travelAgent()
+	a2aNoVault.Secret = "travel-token"
+	rest, _ := restClient(200, `{}`)
+	far, _ := farAgent(travelCard, `{"kind":"message","parts":[]}`)
+	elsewhere, _ := farAgent(strings.Replace(travelCard, "agents.travel.example", "collector.evil.example", 1), `{}`)
+	refused := []struct {
+		name string
+		c    *Client
+		in   agent.Integration
+		tool string
+		args map[string]any
+	}{
+		{"a secret with no vault", &Client{}, noVault, "create_issue", nil},
+		{"a pinned tool the server no longer offers", &Client{Do: via(failingTool{}, nil)}, gone, "create_issue", nil},
+		{"a connected account for nobody", &Client{}, nobody, "create_issue", nil},
+		{"a private address nobody declared", &Client{}, private, "list_pages", nil},
+		{"an argument the declaration does not name", rest, billing(), "getInvoice", map[string]any{"id": "7", "colour": "red"}},
+		{"a path parameter left out", rest, billing(), "getInvoice", nil},
+		{"a path parameter that climbs", rest, billing(), "getInvoice", map[string]any{"id": ".."}},
+		{"a body its schema does not describe", rest, billing(), "createInvoice", map[string]any{"body": map[string]any{"amount": "lots"}}},
+		{"a REST secret with no vault", &Client{DoMethod: rest.DoMethod}, restNoVault, "getInvoice", map[string]any{"id": "7"}},
+		{"nothing to ask another agent", far, travelAgent(), "book-train", nil},
+		{"a card that sends messages elsewhere", elsewhere, travelAgent(), "book-train", map[string]any{"text": "x"}},
+		{"an A2A secret with no vault", &Client{DoMethod: far.DoMethod}, a2aNoVault, "book-train", map[string]any{"text": "x"}},
+	}
+	for _, c := range refused {
+		_, err := c.c.CallStrict(ctx, c.in, c.tool, c.args)
+		var r *Refused
+		if !errors.As(err, &r) {
+			t.Errorf("%s: %v is not a refusal", c.name, err)
+		}
+	}
+
+	broken := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var msg struct {
+			ID json.RawMessage `json:"id"`
+		}
+		json.NewDecoder(r.Body).Decode(&msg)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":"it fell over"}}`, msg.ID)
+	})
+	down := &Client{Do: func(context.Context, string, []byte, map[string]string) (*fetch.Result, error) {
+		return nil, errors.New("dial tcp: connection refused")
+	}}
+	rest500, _ := restClient(500, `{"error":"boom"}`)
+	rejected, _ := farAgent(travelCard, `{"kind":"task","id":"t3","status":{"state":"rejected"}}`)
+	for name, call := range map[string]func() error{
+		"a JSON-RPC error": func() error {
+			_, err := (&Client{Do: via(broken, nil)}).CallStrict(ctx, integration("create_issue"), "create_issue", nil)
+			return err
+		},
+		"a server that is down": func() error {
+			_, err := down.CallStrict(ctx, integration("create_issue"), "create_issue", nil)
+			return err
+		},
+		"a REST 500": func() error {
+			_, err := rest500.CallStrict(ctx, billing(), "getInvoice", map[string]any{"id": "7"})
+			return err
+		},
+		"a task the other agent rejected": func() error {
+			_, err := rejected.CallStrict(ctx, travelAgent(), "book-train", map[string]any{"text": "x"})
+			return err
+		},
+	} {
+		var r *Refused
+		if err := call(); err == nil || errors.As(err, &r) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
 func TestAnUnsupportedRevisionNamingAnOlderOneHandsShakes(t *testing.T) {
 	inits := 0
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -297,10 +297,35 @@ func (e *ToolError) Error() string {
 // Typed so a record of the call can say "denied" for a decision made here
 // and "failure" for everything that went wrong over there. Both were
 // recorded as denied, and a log reader looking for refused calls found
-// outages.
-type Refused struct{ Reason string }
+// outages. Every refusal this package makes before it sends anything is
+// one. Those left untyped were recorded as failures of a far side that
+// had been asked nothing: an argument a declaration does not name, a card
+// that sends its messages to another host, a private address nobody
+// declared.
+type Refused struct {
+	Reason string
+	// err is what the refusal was made from, for errors.Is and errors.As.
+	err error
+}
 
 func (r *Refused) Error() string { return r.Reason }
+
+func (r *Refused) Unwrap() error { return r.err }
+
+// refuse is err as a refusal made here.
+func refuse(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &Refused{Reason: err.Error(), err: err}
+}
+
+// guarded reports whether a request failed because internal/fetch would
+// not make it: an address in a range nobody declared, or a scheme or a
+// host it does not reach. It says so as "refusing to …".
+func guarded(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "refusing to")
+}
 
 // checkPin refuses a tool whose definition is not the one approved.
 func (c *Client) checkPin(ctx context.Context, in agent.Integration, tool, pin string) error {
@@ -323,7 +348,7 @@ func (c *Client) checkPin(ctx context.Context, in agent.Integration, tool, pin s
 			"quilzo integrations tools %s, then quilzo integrations pin %s",
 			in.Name, tool, pin[:12], t.Definition[:12], in.Name, in.Name)}
 	}
-	return fmt.Errorf("%s no longer offers %q, which was approved", in.Name, tool)
+	return refuse(fmt.Errorf("%s no longer offers %q, which was approved", in.Name, tool))
 }
 
 // Definitions are a server's tools with their definitions' digests and
@@ -376,7 +401,7 @@ func (c *Client) Tools(ctx context.Context, in agent.Integration) ([]Tool, error
 			"cannot read: %w", in.Name, err)
 	}
 	if len(out.Tools) > 1000 {
-		return nil, fmt.Errorf("%s offers %d tools; that is not a server anybody reviewed", in.Name, len(out.Tools))
+		return nil, refuse(fmt.Errorf("%s offers %d tools; that is not a server anybody reviewed", in.Name, len(out.Tools)))
 	}
 	for i := range out.Tools {
 		out.Tools[i].Definition = definitionOf(out.Tools[i])
@@ -596,11 +621,11 @@ func (c *Client) post(ctx context.Context, in agent.Integration, msg rpc, versio
 	}
 	if in.Secret != "" {
 		if c.Secrets == nil {
-			return nil, nil, fmt.Errorf(
+			return nil, nil, refuse(fmt.Errorf(
 				"%s authenticates with the secret %q and this process has no "+
 					"vault to read it from. Calling anonymously would report "+
 					"their 401 as a tool that does not work",
-				in.Name, in.Secret)
+				in.Name, in.Secret))
 		}
 		v, serr := c.Secrets(in.Secret)
 		if serr != nil {
@@ -644,9 +669,12 @@ func (c *Client) post(ctx context.Context, in agent.Integration, msg rpc, versio
 	// to choose and there is one right answer.
 	res, err := do(ctx, in.URL(), body, headers)
 	if err != nil {
-		if len(in.Reach) == 0 && strings.Contains(err.Error(), "refusing to") {
-			return nil, nil, fmt.Errorf("%s: %w. If the server is on your own network, "+
-				"name its range in the integration's reach", in.Name, err)
+		if len(in.Reach) == 0 && guarded(err) {
+			return nil, nil, refuse(fmt.Errorf("%s: %w. If the server is on your own network, "+
+				"name its range in the integration's reach", in.Name, err))
+		}
+		if guarded(err) {
+			return nil, nil, refuse(fmt.Errorf("%s: %w", in.Name, err))
 		}
 		return nil, nil, fmt.Errorf("%s: %w", in.Name, err)
 	}
@@ -792,8 +820,8 @@ func clamp(s string, n int) string {
 // connected at the integration's provider.
 func (c *Client) connected(ctx context.Context, in agent.Integration) (string, error) {
 	if c.Connection == nil {
-		return "", fmt.Errorf("%s acts with the connected account of the person an agent acts for, "+
-			"and this call acts for nobody", in.Name)
+		return "", refuse(fmt.Errorf("%s acts with the connected account of the person an agent acts for, "+
+			"and this call acts for nobody", in.Name))
 	}
 	tok, err := c.Connection(ctx, in.Connection, in.Endpoint)
 	if err != nil {
