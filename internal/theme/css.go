@@ -78,11 +78,22 @@ func (t *Theme) fontFaces(b *strings.Builder) {
 	}
 	families := make([]Family, len(t.families))
 	copy(families, t.families)
+	// In a fixed order, down to the file. Name and style alone left two
+	// weights of one family in whichever order the sort happened to leave
+	// them, so the same design could produce two stylesheets, two ETags, and
+	// a reload that thought something had changed when nothing had.
 	sort.Slice(families, func(i, j int) bool {
-		if families[i].Name != families[j].Name {
-			return families[i].Name < families[j].Name
+		a, b := families[i], families[j]
+		if a.Name != b.Name {
+			return a.Name < b.Name
 		}
-		return families[i].Style < families[j].Style
+		if a.Style != b.Style {
+			return a.Style < b.Style
+		}
+		if a.Weight != b.Weight {
+			return a.Weight < b.Weight
+		}
+		return a.Href < b.Href
 	})
 	for _, f := range families {
 		weight := f.Weight
@@ -93,13 +104,19 @@ func (t *Theme) fontFaces(b *strings.Builder) {
 		if style == "" {
 			style = "normal"
 		}
+		// The format the file is, so a browser that is told woff2 is not
+		// handed a WOFF 1.0 face and left to fail on it.
+		format := "woff2"
+		if strings.HasSuffix(strings.ToLower(f.Href), ".woff") {
+			format = "woff"
+		}
 		fmt.Fprintf(b, "@font-face {\n"+
 			"  font-family: %q;\n"+
-			"  src: url(%q) format(\"woff2\");\n"+
+			"  src: url(%q) format(%q);\n"+
 			"  font-weight: %s;\n"+
 			"  font-style: %s;\n"+
 			"  font-display: swap;\n"+
-			"}\n", f.Name, f.Href, weight, style)
+			"}\n", f.Name, f.Href, format, weight, style)
 	}
 }
 

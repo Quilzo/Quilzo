@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/quilzo/quilzo/internal/etag"
+	"github.com/quilzo/quilzo/internal/webfont"
 )
 
 // font serves one typeface from this site's own origin.
@@ -30,8 +31,8 @@ import (
 // cleaning function somebody has to get right forever.
 //
 // So there is no path here. The request's name is looked up in the set that was
-// loaded and validated at startup, and a name that is not in it is a 404. There
-// is nothing to escape, because nothing is joined.
+// loaded and validated when the design was read, and a name that is not in it
+// is a 404. There is nothing to escape, because nothing is joined.
 func (st *Site) font(w http.ResponseWriter, r *http.Request) {
 	if st.Fonts == nil || st.Fonts.Len() == 0 {
 		http.NotFound(w, r)
@@ -56,7 +57,9 @@ func (st *Site) font(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
-	w.Header().Set("Content-Type", "font/woff2")
+	// font/woff for a WOFF 1.0 face, font/woff2 for the rest: the type the
+	// stylesheet's format() promised, so a browser never sniffs one.
+	w.Header().Set("Content-Type", webfont.ContentType(name))
 	w.Header().Set("ETag", tag)
 	// A font is immutable for as long as its filename is: the name carries the
 	// family, the weight and the style, so a changed font is a changed name.
