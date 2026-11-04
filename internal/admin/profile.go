@@ -54,8 +54,9 @@ type PersonDetails struct {
 	// audit record that cannot be checked against the policy.
 	DisplayName string `json:"display_name,omitempty"`
 	// Contact is free text — a room, a handle, a rota. Not validated as an
-	// email address, because validating it would imply this sends mail, and
-	// this program does not send mail.
+	// email address, because validating it would imply mail is sent to it,
+	// and nothing is: the mail this program sends goes to the addresses set
+	// for it, such as the security contact.
 	Contact string `json:"contact,omitempty"`
 	// UpdatedAt is when they last changed it.
 	UpdatedAt int64 `json:"updated_at,omitempty"`
