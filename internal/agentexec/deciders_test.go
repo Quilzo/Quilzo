@@ -181,3 +181,81 @@ func TestADeciderWithNoModelStillEscalates(t *testing.T) {
 		t.Fatalf("with no model the question came back %v", err)
 	}
 }
+
+// After a person answers what a decider was not sure of, the run goes on
+// with every answer the step had, not only theirs.
+//
+// Found by running one: support-triage settled desk and urgency and was
+// not sure of refund_due; the person answered refund_due, and the next
+// prompt said only "ada answered what the decider was not sure of:
+// refund_due: yes". What the decider had settled was thrown away with the
+// escalation, so nothing after the step could use it. Both ways a person
+// answers: the run paused and continued from its record, and the run
+// waiting in its own process.
+func TestAnAnsweredEscalationKeepsWhatTheDeciderSettled(t *testing.T) {
+	d := decide.Decider{Name: "support-triage", Title: "Where a message goes",
+		MinConfidence: 0.8, Samples: 3, Questions: []decide.Question{
+			{Name: "desk", Ask: "which desk", Kind: decide.Choice, Options: []string{"refunds", "events"}},
+			{Name: "refund_due", Ask: "is a refund due", Kind: decide.YesNo},
+			{Name: "urgency", Ask: "how urgent", Kind: decide.Score},
+		}}
+	model := steadyModel{`{"answers":{"desk":{"value":"refunds","confidence":0.96},` +
+		`"refund_due":{"value":"yes","confidence":0.69},"urgency":{"value":0.22,"confidence":0.83}}}`}
+	set := &decide.Set{}
+	if err := set.Put(d); err != nil {
+		t.Fatal(err)
+	}
+	st := searchStore(t)
+	performFor := func(s *agent.Session) func(context.Context, agent.Action) (string, error) {
+		return Dispatch(Reader{Store: st}, Writer{Store: st, Author: "agent/router"}, Tools{}, Delegates{},
+			Deciders{Load: func() (*decide.Set, error) { return set, nil },
+				Model: func(string) decide.Model { return model }}, s)
+	}
+	// The model decides once, then finishes; what it was shown before
+	// finishing is what the run went on with.
+	var shown string
+	decideNext := func(_ context.Context, _ string, seen []agent.Observation) (agent.Action, error) {
+		if len(seen) == 0 {
+			return agent.Action{Op: "decide", Input: map[string]any{"name": "support-triage",
+				"state": "I bought Nightglass on Saturday and it will not start"}}, nil
+		}
+		shown = seen[len(seen)-1].Body
+		return agent.Action{Say: "routed"}, nil
+	}
+	check := func(how string) {
+		t.Helper()
+		for _, want := range []string{"ada answered", "refund_due: yes", "desk: refunds", "urgency: 0.22"} {
+			if !strings.Contains(shown, want) {
+				t.Errorf("%s: the run went on without %q:\n%s", how, want, shown)
+			}
+		}
+	}
+
+	s := agent.NewSession(deciderAgent(), nil)
+	r := agent.Runner{Decide: decideNext, Perform: performFor(s), Pause: true}
+	first, err := r.Run(context.Background(), s, "route the message")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Waiting == nil || len(first.Waiting.Questions) != 1 || first.Waiting.Questions[0].Name != "refund_due" {
+		t.Fatalf("the run did not stop at refund_due alone: %+v", first.Waiting)
+	}
+	s = agent.NewSession(deciderAgent(), nil)
+	r.Perform = performFor(s)
+	if _, err := r.Continue(context.Background(), s, first, &agent.Verdict{N: first.Waiting.N, Approve: true,
+		By: "ada", Answers: map[string]string{"refund_due": "yes"}}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	check("continued from its record")
+
+	shown = ""
+	s = agent.NewSession(deciderAgent(), nil)
+	r = agent.Runner{Decide: decideNext, Perform: performFor(s),
+		Hold: func(_ context.Context, w agent.Pending, _ func()) (agent.Verdict, error) {
+			return agent.Verdict{N: w.N, Approve: true, By: "ada", Answers: map[string]string{"refund_due": "yes"}}, nil
+		}}
+	if _, err := r.Run(context.Background(), s, "route the message"); err != nil {
+		t.Fatal(err)
+	}
+	check("answered while it waited")
+}

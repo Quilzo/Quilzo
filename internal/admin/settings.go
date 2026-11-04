@@ -210,7 +210,8 @@ func (s *Server) handleSettingSave(w http.ResponseWriter, r *http.Request) {
 		detail["accepted_risk"] = reason
 	}
 	s.audit("config.set", "/", detail)
-	s.settingsBack(w, r, key+" is now "+cfg.Raw(key))
+	// As the table under it says it, not as the file holds it.
+	s.settingsBack(w, r, key+" is now "+cfg.Shown(key))
 }
 
 func (s *Server) settingsBack(w http.ResponseWriter, r *http.Request, msg string) {
@@ -336,6 +337,8 @@ func (s *Server) idleFor(name string) time.Duration {
 // rather than to a guess, which is the honest answer for a group added later.
 func settingGroupLabel(key string) string {
 	switch key {
+	case "access":
+		return "Reviewing access"
 	case "backup":
 		return "Backups"
 	case "auth":
@@ -398,6 +401,8 @@ func settingGroupLabel(key string) string {
 		return "Content"
 	case "session":
 		return "Admin sessions"
+	case "sso":
+		return "Single sign-on"
 	case "chatbot":
 		return "Chatbots"
 	case "agents":

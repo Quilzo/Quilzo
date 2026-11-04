@@ -29,7 +29,7 @@
   <thead><tr><th scope="col">Group</th><th scope="col">Means</th><th scope="col">Members</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
   <tbody>{{range .Groups}}<tr>
     <th scope="row">{{.Name}}</th>
-    <td>{{if .Means}}{{.Means}}{{else}}<span class="hint">nothing: not mapped</span>{{end}}</td>
+    <td>{{if .Means}}{{.Means}}{{if .Idle}}<div class="hint"><span class="tag tag-bad">grants nothing</span> {{.Idle}}</div>{{end}}{{else}}<span class="hint">nothing: not mapped</span>{{end}}</td>
     <td>{{.Members}}</td>
     <td>{{if .Means}}<form method="post" action="/provisioning/act"><input type="hidden" name="do" value="unmap"><input type="hidden" name="group" value="{{.Name}}">
       <button type="submit" class="quiet">Unmap<span class="visually-hidden"> {{.Name}}</span></button></form>{{end}}</td>
@@ -44,6 +44,9 @@
       <optgroup label="A job">{{range .Jobs}}<option value="{{.Name}}">{{.Name}}: {{.Summary}}</option>{{end}}</optgroup>
       {{if .AppRoles}}<optgroup label="A role in an app">{{range .AppRoles}}<option value="{{.Name}}">{{.Name}}: {{.Title}}</option>{{end}}</optgroup>{{end}}
     </select></div>
+  <div class="field"><label for="until">Until</label>
+    <input id="until" name="until" type="date" aria-describedby="until-help">
+    <p id="until-help" class="hint">For a job granted for a time, such as auditor: the day its access ends. Anything else lasts while somebody is in the group.</p></div>
   <button type="submit">Save</button>
 </form>
 

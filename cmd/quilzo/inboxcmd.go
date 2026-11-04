@@ -68,7 +68,7 @@ func suggestReply(root, name, question string) (string, []string, error) {
 	if !ok {
 		return "", nil, fmt.Errorf("the chatbot %s no longer exists", name)
 	}
-	idx, _, err := assistantKnowledge(root, a)
+	idx, _, err := assistantKnowledge(root, a, nil)
 	if err != nil {
 		return "", nil, err
 	}

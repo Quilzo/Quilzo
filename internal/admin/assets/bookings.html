@@ -27,7 +27,7 @@
 <form method="post" action="/bookings/act"><input type="hidden" name="do" value="cancel"><input type="hidden" name="id" value="{{.ID}}">
 <p><label><input type="checkbox" name="erase" value="1"> Forget who booked it too</label></p>
 <button type="submit" class="btn-danger">Cancel this booking</button></form>
-<p class="hint">Tell {{.Name}} yourself; the site does not send mail.</p></details>{{end}}{{end}}</td>
+<p class="hint">Tell {{.Name}} yourself: nothing is sent to the person who booked.</p></details>{{end}}{{end}}</td>
 </tr>{{end}}</tbody></table></div>
 <p class="hint">{{.Upcoming}} to come in the next 60 days. Who booked is forgotten {{.Keep}} days after the appointment. <a href="/bookings/calendar.ics">Download them as a calendar file</a>.</p>
 {{else}}<p>Nothing booked in the next 60 days.</p>{{end}}

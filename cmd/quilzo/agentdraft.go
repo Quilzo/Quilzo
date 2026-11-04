@@ -307,14 +307,13 @@ func readDraft(answer, name string, known map[string]bool) (agent.Manifest, []st
 // agentDraft is `quilzo agent draft "DESCRIPTION" [--name NAME] [-o FILE]`.
 func agentDraft(root string, args []string) error {
 	usage := errors.New(`quilzo agent draft "what it is for" [--name NAME] [-o FILE]`)
-	pos, rest := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("agent draft", flag.ContinueOnError)
 	name := fs.String("name", "", "what it is called")
 	outPath := fs.String("o", "", "write the declaration here, to save it with quilzo agent declare")
-	if err := fs.Parse(rest); err != nil {
+	args, err := parseAnywhere(fs, args)
+	if err != nil {
 		return err
 	}
-	args = append(pos, fs.Args()...)
 	if len(args) != 1 {
 		return usage
 	}
@@ -374,13 +373,14 @@ func agentDraft(root string, args []string) error {
 func agentDeclareFile(root string, args []string) error {
 	fs := flag.NewFlagSet("agent declare", flag.ContinueOnError)
 	widen := fs.Bool("widen", false, "allow this amendment to widen what the agent may do, having read what it adds")
-	if err := fs.Parse(args); err != nil {
+	pos, err := parseAnywhere(fs, args)
+	if err != nil {
 		return err
 	}
-	if fs.NArg() != 1 {
+	if len(pos) != 1 {
 		return errors.New("quilzo agent declare FILE [--widen]")
 	}
-	body, err := os.ReadFile(fs.Arg(0))
+	body, err := os.ReadFile(pos[0])
 	if err != nil {
 		return err
 	}
@@ -388,7 +388,7 @@ func agentDeclareFile(root string, args []string) error {
 	dec := json.NewDecoder(strings.NewReader(string(body)))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&m); err != nil {
-		return fmt.Errorf("%s is not a declaration: %w", fs.Arg(0), err)
+		return fmt.Errorf("%s is not a declaration: %w", pos[0], err)
 	}
 	if err := m.ValidateWith(knownCapabilities(root), customKinds(root)); err != nil {
 		return err

@@ -35,6 +35,10 @@ RUN CGO_ENABLED=0 go build -trimpath \
 # so `-v tpl:/srv/templates` hit exactly the failure described above, in the
 # v0.1.0 image, in the sequence the README told people to run.
 RUN mkdir -p /out/store /out/templates
+# And the audit log's, for the writer the reference compose runs as uid
+# 65533 (deploy/compose.yaml, logd): owned by it, readable by nonroot's group
+# and nobody else, so a volume seeded from it is the writer's to write.
+RUN mkdir -p /out/audit && chmod 0750 /out/audit
 
 # Run.
 FROM gcr.io/distroless/static-debian12:nonroot
@@ -58,6 +62,7 @@ COPY --from=build --chown=65532:65532 /out/store /srv/store
 # into the store, so /srv/templates has to be one of those seeded paths or the
 # quickstart cannot keep what it just made.
 COPY --from=build --chown=65532:65532 /out/templates /srv/templates
+COPY --from=build --chown=65533:65532 /out/audit /srv/audit
 USER nonroot:nonroot
 WORKDIR /srv
 # There is deliberately no VOLUME instruction.
@@ -77,5 +82,17 @@ WORKDIR /srv
 # they are two processes. Only one of these should ever be reachable from the
 # internet without something in front of it, and it is not the first.
 EXPOSE 8080 8081
-ENTRYPOINT ["/usr/local/bin/quilzo"]
-CMD ["--root", "/srv/store", "serve", "--addr", "0.0.0.0:8080"]
+
+# The store is named in the entrypoint, not in the command.
+#
+# It was in the command, and the command is what `docker run IMAGE init` and
+# `docker compose run --rm admin init` replace. So the one command that sets a
+# store up was the one that lost where it goes: Quilzo looked for .quilzo in
+# the working directory, which a read-only container refuses ("mkdir .quilzo:
+# read-only file system") and a writable one keeps in its own layer until
+# --rm deletes it. Every step of the reference compose's setup failed that
+# way. Here, whatever command is given runs against /srv/store, the path the
+# volume is mounted on; a --root given after it still wins, because the last
+# one does, so `IMAGE --root /srv/store init` means what it always meant.
+ENTRYPOINT ["/usr/local/bin/quilzo", "--root", "/srv/store"]
+CMD ["serve", "--addr", "0.0.0.0:8080"]

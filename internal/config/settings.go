@@ -14,6 +14,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/clientip"
 	"github.com/quilzo/quilzo/internal/event"
+	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/throttle"
 	"github.com/quilzo/quilzo/internal/websearch"
 )
@@ -90,6 +91,23 @@ var settings = []Setting{
 			"record a SIEM rule can match. Between 1 and 20: above that, a " +
 			"slow credential-stuffing run stays under the alert and is never " +
 			"reported.",
+	},
+
+	// -- reviewing access ----------------------------------------------------
+	{
+		Key: "access.review.every", Kind: Duration, Default: "2160h",
+		Summary:  "how often the access Quilzo grants is reviewed",
+		Controls: []string{"AC-2"},
+		Params:   []string{"ac-02_odp.10"},
+		Why: "Ninety days. A review of the access this store grants (quilzo access review, or " +
+			"Review who has access on People) puts every grant made by hand, what each identity " +
+			"provider group means here and every long-lived token in front of an administrator, " +
+			"who keeps or revokes each one; the posture scan reports access.review-due, and the " +
+			"security contact is told, when none has closed for this long. Between 30 and 365 " +
+			"days. Shorter is stricter, and when the organisation declares ac-02_odp.10 that is the " +
+			"longest it can be.",
+		Weaker: atMostDur(90*24*time.Hour, "a review only every %s leaves a grant nobody needs "+
+			"working that long before anybody is asked about it"),
 	},
 
 	// -- content -------------------------------------------------------------
@@ -169,7 +187,11 @@ var settings = []Setting{
 		Why: "Eight hours: a working day. Whatever signed somebody in — a token, a " +
 			"passkey, single sign-on — the session it starts ends after this, and " +
 			"signing out or revoking the credential ends it sooner. At most twelve " +
-			"hours, the ceiling on any session this program issues.",
+			"hours, the ceiling on any session this program issues.\n\nA single " +
+			"sign-on session also ends sooner when its identity provider says so, " +
+			"once its security event stream is connected (quilzo signals connect): " +
+			"a session it ended there, or a password it saw stolen, ends the " +
+			"sessions it signed in here.",
 		Weaker: atMostDur(8*time.Hour, "a sign-in lasting %s outlives a working day, "+
 			"so a browser left open overnight is still signed in in the morning"),
 	},
@@ -592,6 +614,29 @@ var settings = []Setting{
 			return false, ""
 		},
 		Controls: []string{"SC-7", "AU-3", "AC-7"},
+	},
+	{
+		Key: "sso.reach", Kind: List, Default: "",
+		Summary:  "the private ranges an identity provider may be reached at, e.g. 10.20.0.0/16",
+		Controls: []string{"SC-7", "IA-2"},
+		Why: "An OIDC issuer and a SAML metadata address are fetched by this server, so they are " +
+			"held to the rule every address somebody chose is held to: public, never this machine " +
+			"or the network it is on, because a fetch made from inside is how server-side request " +
+			"forgery reaches what only the inside can. That also refused the usual deployment of an " +
+			"organisation's own identity provider, a Keycloak, AD FS or Authentik on its internal " +
+			"network, and nothing could say otherwise.\n\n" +
+			"Name the ranges it is in, the smallest that hold it, or its one address: 10.20.0.0/16, " +
+			"10.20.3.4. Only private networks and this machine can be named, never link-local, where " +
+			"cloud metadata lives. They open sign-in's own connections (discovery, keys, the token " +
+			"exchange, SAML metadata) and nothing else. Weaker than the default, so it takes a reason " +
+			"and a second administrator: whatever answers at an address named here says who signs in.",
+		Weaker: func(v string) (bool, string) {
+			if strings.TrimSpace(v) == "" {
+				return false, ""
+			}
+			return true, "sign-in reaches " + v + ", inside the network, and whatever answers " +
+				"there says who signs in as anybody"
+		},
 	},
 	{
 		Key: "admin.base_url", Kind: Text, Default: "",
@@ -1048,7 +1093,12 @@ var settings = []Setting{
 			"than being told.\n\nA mailto:, https: or tel: URI; several may " +
 			"be given, comma-separated. Empty publishes no file rather than " +
 			"an empty one — a security.txt with nothing in it answers the " +
-			"scanner that went looking and tells the person nothing.",
+			"scanner that went looking and tells the person nothing.\n\nThe " +
+			"first mailto: address is also who Quilzo tells, through mail.json, " +
+			"what needs a person: what the shield did, a sign-in that had to be " +
+			"confirmed, and the identity provider reporting a credential " +
+			"stolen, disabling the only administrator, or acting on more " +
+			"people in an hour than Quilzo will.",
 	},
 	{
 		Key: "security.expires", Kind: Text, Default: "",
@@ -1495,21 +1545,21 @@ func atMost(limit int, format string) func(string) (bool, string) {
 
 func atMostDur(limit time.Duration, format string) func(string) (bool, string) {
 	return func(v string) (bool, string) {
-		d, err := time.ParseDuration(v)
+		d, err := ParseDuration(v)
 		if err != nil || d <= limit {
 			return false, ""
 		}
-		return true, fmt.Sprintf(format, d)
+		return true, fmt.Sprintf(format, FormatDuration(d))
 	}
 }
 
 func atLeastDur(limit time.Duration, format string) func(string) (bool, string) {
 	return func(v string) (bool, string) {
-		d, err := time.ParseDuration(v)
+		d, err := ParseDuration(v)
 		if err != nil || d >= limit {
 			return false, ""
 		}
-		return true, fmt.Sprintf(format, d)
+		return true, fmt.Sprintf(format, FormatDuration(d))
 	}
 }
 
@@ -1555,6 +1605,7 @@ var hardBounds = map[string][2]int64{
 	"auth.throttle.max":        {int64(throttle.LeastDelay), int64(throttle.LongestDelay)},
 	"auth.lockout.alert":       {1, throttle.LatestAlert},
 	"session.idle":             {int64(5 * time.Minute), int64(time.Hour)},
+	"access.review.every":      {int64(30 * 24 * time.Hour), int64(365 * 24 * time.Hour)},
 	"agents.trigger_runs":      {1, 16},
 }
 
@@ -1567,16 +1618,93 @@ func (e *ErrOutOfBounds) Error() string {
 	return fmt.Sprintf("%s is outside its bounds, %s to %s", e.Value, e.Least, e.Most)
 }
 
-// shortDuration writes a duration as a person would: 1h, not 1h0m0s.
-func shortDuration(d time.Duration) string {
-	s := d.String()
-	if strings.HasSuffix(s, "m0s") {
-		s = strings.TrimSuffix(s, "0s")
+// day and week are the units a duration setting takes beyond Go's own.
+const (
+	day  = 24 * time.Hour
+	week = 7 * day
+)
+
+// ParseDuration reads a duration setting's value: a Go duration (30s,
+// 15m, 36h, 1h30m), or a whole number of days or weeks (90d, 2w).
+//
+// Go's durations stop at hours, so a setting whose explanation says
+// "ninety days" refused 90d as not a duration and had to be given as
+// 2160h, which nobody reading the file later recognises as ninety days.
+// Every value Go's parser accepts is still accepted and means what it
+// did, so no file that loads today stops loading. Days and weeks are
+// whole numbers only: 1.5d is 36h, and saying so is clearer than taking
+// it.
+func ParseDuration(s string) (time.Duration, error) {
+	if d, err := time.ParseDuration(s); err == nil {
+		return d, nil
 	}
-	if strings.HasSuffix(s, "h0m") {
-		s = strings.TrimSuffix(s, "0m")
+	if n := len(s) - 1; n > 0 && (s[n] == 'd' || s[n] == 'w') &&
+		strings.Trim(s[:n], "0123456789") == "" {
+		unit := day
+		if s[n] == 'w' {
+			unit = week
+		}
+		if count, err := strconv.ParseInt(s[:n], 10, 64); err == nil &&
+			count <= int64((1<<63-1)/unit) {
+			return time.Duration(count) * unit, nil
+		}
 	}
-	return s
+	return 0, fmt.Errorf("%q is not a duration", s)
+}
+
+// FormatDuration writes a duration the way a person would, in the largest
+// whole unit it is: 100d, 36h, 90m, 5s. Anything finer is Go's own form.
+//
+// This was time.Duration's String, so a hundred days was "2400h0m0s" in
+// the message telling an administrator what a weaker value costs. Days
+// are the largest unit said, not weeks, so two durations side by side
+// (30d to 365d) can be compared at a glance. Whatever this writes,
+// ParseDuration reads back as the same duration.
+func FormatDuration(d time.Duration) string {
+	switch {
+	case d == 0:
+		return "0s"
+	case d%day == 0:
+		return fmt.Sprintf("%dd", d/day)
+	case d%time.Hour == 0:
+		return fmt.Sprintf("%dh", d/time.Hour)
+	case d%time.Minute == 0:
+		return fmt.Sprintf("%dm", d/time.Minute)
+	}
+	return d.String()
+}
+
+// DefaultShown is the default as the Settings screen and `config` print
+// it: a duration in its largest whole unit (90d rather than 2160h), any
+// other kind as written.
+func (s Setting) DefaultShown() string { return s.show(s.Default) }
+
+// show writes a value of this setting for a person to read.
+func (s Setting) show(v string) string {
+	if s.Kind != Duration {
+		return v
+	}
+	d, err := ParseDuration(v)
+	if err != nil {
+		return v
+	}
+	return FormatDuration(d)
+}
+
+// same reports whether two values of this setting mean the same thing.
+// For a duration that is the duration: 90d is the default 2160h, and
+// storing it as a change from the default would report the setting as
+// changed when it is not.
+func (s Setting) same(a, b string) bool {
+	if a == b {
+		return true
+	}
+	if s.Kind != Duration {
+		return false
+	}
+	x, errA := ParseDuration(a)
+	y, errB := ParseDuration(b)
+	return errA == nil && errB == nil && x == y
 }
 
 func (s Setting) bounds(n int64) error {
@@ -1585,8 +1713,8 @@ func (s Setting) bounds(n int64) error {
 		return nil
 	}
 	if s.Kind == Duration {
-		return &ErrOutOfBounds{Key: s.Key, Value: shortDuration(time.Duration(n)),
-			Least: shortDuration(time.Duration(b[0])), Most: shortDuration(time.Duration(b[1]))}
+		return &ErrOutOfBounds{Key: s.Key, Value: FormatDuration(time.Duration(n)),
+			Least: FormatDuration(time.Duration(b[0])), Most: FormatDuration(time.Duration(b[1]))}
 	}
 	return &ErrOutOfBounds{Key: s.Key, Value: strconv.FormatInt(n, 10),
 		Least: strconv.FormatInt(b[0], 10), Most: strconv.FormatInt(b[1], 10)}
@@ -1607,18 +1735,18 @@ func (s Setting) Validate(v string) error {
 			return err
 		}
 	case Duration:
-		d, err := time.ParseDuration(v)
+		d, err := ParseDuration(v)
 		if err != nil {
-			return fmt.Errorf("%q is not a duration (try 30s, 15m, 720h)", v)
+			return fmt.Errorf("%q is not a duration (try 30s, 15m, 36h, 90d)", v)
 		}
 		if d < 0 {
-			return fmt.Errorf("%s is negative", d)
+			return fmt.Errorf("%s is negative", FormatDuration(d))
 		}
 		if err := s.bounds(int64(d)); err != nil {
 			return err
 		}
 		if s.Key == "session.max" && (d < 5*time.Minute || d > 12*time.Hour) {
-			return fmt.Errorf("a sign-in lasts between 5m and 12h; %s is outside that", d)
+			return fmt.Errorf("a sign-in lasts between 5m and 12h; %s is outside that", FormatDuration(d))
 		}
 	case Bool:
 		if _, err := strconv.ParseBool(v); err != nil {
@@ -1820,6 +1948,11 @@ func (s Setting) Validate(v string) error {
 				if e = strings.TrimSpace(e); e != "" && !event.Known(event.Type(e)) {
 					return fmt.Errorf("%q is not an event; quilzo agent trigger events lists them", e)
 				}
+			}
+		}
+		if s.Key == "sso.reach" && strings.TrimSpace(v) != "" {
+			if _, err := fetch.ParseReach(strings.Split(v, ",")); err != nil {
+				return err
 			}
 		}
 		if s.Key == "network.trusted_proxies" && strings.TrimSpace(v) != "" {

@@ -128,6 +128,10 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 			st.BaseURL = strings.TrimSpace(cfg.Raw("site.base_url"))
 		}
 	}
+	// Without the scheme's own port: the reference compose names the port
+	// it publishes, which on 443 put :443 in every sitemap entry and
+	// canonical link (config.SiteBase).
+	st.BaseURL = config.SiteBase(st.BaseURL)
 	// Submissions are appended to a store that is not the content store. The
 	// site cannot read one back: that is the admin's job, behind
 	// authentication, in a different process.
@@ -218,7 +222,7 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 		VisitorKey: func(a assistant.Assistant) []byte { return visitorKey(root, a) },
 		MeaningKey: func(a assistant.Assistant) string { return meaningKey(root, a) },
 		Meaning: func(a assistant.Assistant, ps []assistant.Passage) *assistant.Meaning {
-			return chatbotMeaning(root, a, ps)
+			return chatbotMeaning(root, a, ps, nil)
 		},
 		RecordsTree: func() string {
 			commit := s.GetRef(site.RefLive)

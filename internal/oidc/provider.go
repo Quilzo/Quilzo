@@ -13,6 +13,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"net/url"
@@ -38,6 +39,10 @@ type Discovery struct {
 	// ClaimsParameterSupported says the provider reads the claims request
 	// parameter, which is how amr and auth_time are asked for by name.
 	ClaimsParameterSupported bool `json:"claims_parameter_supported"`
+	// EndSessionEndpoint is where a browser goes to end its session at the
+	// provider as well (OpenID Connect RP-Initiated Logout 1.0); empty when
+	// the provider offers none.
+	EndSessionEndpoint string `json:"end_session_endpoint"`
 }
 
 // Provider is a configured identity provider with a cached key set.
@@ -76,7 +81,7 @@ const MinRefresh = 30 * time.Second
 // metadata, for verifying tokens that are not ID tokens. get reads the key
 // set's URL, which has already passed the same address rules as any fetch.
 func NewKeySet(jwksURI string, get func(ctx context.Context, url string) ([]byte, error)) (*Provider, error) {
-	if _, err := fetch.ValidateURL(jwksURI); err != nil {
+	if _, err := fetch.For("trust").ValidateURL(jwksURI); err != nil {
 		return nil, fmt.Errorf("the key set URL is not usable: %w", err)
 	}
 	if get == nil {
@@ -166,8 +171,19 @@ func Discover(ctx context.Context, issuer string, client *fetch.Client) (*Provid
 		"token_endpoint":         d.TokenEndpoint,
 		"jwks_uri":               d.JWKSURI,
 	} {
-		if _, err := fetch.ValidateURL(endpoint); err != nil {
+		if _, err := client.ValidateURL(endpoint); err != nil {
 			return nil, fmt.Errorf("the metadata's %s is not usable: %w", name, err)
+		}
+	}
+
+	// The end-session address is optional, and a browser is sent there, not
+	// this server. It is held to the same rule as the others all the same,
+	// so a document cannot make the sign-out page a link to anywhere, and
+	// one that fails it is dropped rather than refusing a provider people
+	// can sign in with: signing out here still works without it.
+	if d.EndSessionEndpoint != "" {
+		if _, err := client.ValidateURL(d.EndSessionEndpoint); err != nil {
+			d.EndSessionEndpoint = ""
 		}
 	}
 
@@ -190,6 +206,28 @@ func Discover(ctx context.Context, issuer string, client *fetch.Client) (*Provid
 				"refuses rather than downgrading", d.Issuer)
 	}
 	return p, nil
+}
+
+// EndSessionURL is where a browser goes to end its session at the provider
+// too (OpenID Connect RP-Initiated Logout 1.0), or empty when the provider
+// offers no such address.
+//
+// Only client_id is sent. id_token_hint would mean keeping every ID token
+// after the sign-in it was for, and a post_logout_redirect_uri the provider
+// has not registered makes it refuse; without them the provider asks the
+// person to confirm, which is the question to put to them anyway.
+func (p *Provider) EndSessionURL(clientID string) string {
+	if p == nil || p.Discovery.EndSessionEndpoint == "" {
+		return ""
+	}
+	u, err := url.Parse(p.Discovery.EndSessionEndpoint)
+	if err != nil || u.Scheme != "https" {
+		return ""
+	}
+	q := u.Query()
+	q.Set("client_id", clientID)
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 func (d Discovery) offersS256() bool {
@@ -236,17 +274,32 @@ func (p *Provider) Key(kid string) (crypto.PublicKey, error) {
 		p.mu.RLock()
 		defer p.mu.RUnlock()
 		if p.keys == nil {
-			return nil, fmt.Errorf("the key set could not be read moments ago; it is not asked for again before %s", MinRefresh)
+			return nil, unread{fmt.Errorf("the key set could not be read moments ago; it is not asked for again before %s", MinRefresh)}
 		}
 		return pick(kid, p.keys[kid], p.keys[kid] != nil, p.singular, len(p.keys))
 	}
 	if err := p.refresh(context.Background()); err != nil {
-		return nil, err
+		return nil, unread{err}
 	}
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return pick(kid, p.keys[kid], p.keys[kid] != nil, p.singular, len(p.keys))
 }
+
+// ErrKeySetUnread is what Key's error wraps when the key set could not be
+// read at all: unreachable, not a key set, or not asked for again so soon
+// after failing. It says nothing about the token the key was wanted for,
+// which is what a caller answering somebody else needs to know. A security
+// event receiver that called this "the wrong key" was telling the
+// transmitter not to send the event again, and a session-revoked sent
+// while the keys were out of reach was lost.
+var ErrKeySetUnread = errors.New("the key set could not be read")
+
+// unread is a failure to read the key set, worded as it was.
+type unread struct{ err error }
+
+func (u unread) Error() string   { return u.err.Error() }
+func (u unread) Unwrap() []error { return []error{ErrKeySetUnread, u.err} }
 
 // pick chooses a key, refusing the ambiguous case.
 //

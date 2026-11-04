@@ -119,6 +119,13 @@ var Params = []Param{
 			"24 hours; a declared period of 30 minutes or less is met"},
 	{ID: "ac-07_odp.05", Control: "AC-7", Label: "delay algorithm", How: Described,
 		Means: "the delay doubles from auth.throttle.base to auth.throttle.max, and nothing is accepted past auth.throttle.ceiling failures in an hour"},
+	// AC-2 j, "Review accounts for compliance with account management
+	// requirements [frequency]": the tenth of AC-2's parameters in the
+	// catalogue (ac-02_odp.01 is group membership's prerequisites and .06
+	// the time to notify when an account is no longer required).
+	{ID: "ac-02_odp.10", Control: "AC-2", Label: "frequency", Kind: Period, How: Set,
+		Setting: "access.review.every", Stricter: "lower",
+		Means: "a review of the access Quilzo grants is due this often, and the posture scan reports one not closed within it"},
 	{ID: "ac-02.05_odp", Control: "AC-2(5)", Label: "time period of expected inactivity or description of when to log out",
 		Kind: Period, How: Set, Setting: "session.idle", Stricter: "lower",
 		Means: "the admin signs a person out after this long with nobody using the page, and after fifteen minutes at most anybody who can grant access"},
@@ -314,7 +321,9 @@ func (p Param) Allows(declared string) func(value string) bool {
 			return func(string) bool { return false }
 		}
 		return func(v string) bool {
-			d, err := time.ParseDuration(v)
+			// Read as the setting reads itself, so a value in days is
+			// measured rather than refused as no period at all.
+			d, err := config.ParseDuration(v)
 			return err == nil && meets(p.Stricter, d, want)
 		}
 	}
@@ -380,6 +389,8 @@ func Effective(p Param, cfg *config.Config) string {
 		return fmt.Sprintf("the delay before the next attempt starts at %s and doubles with each failure up to %s; "+
 			"after %d failures in an hour nothing is accepted until the hour passes",
 			cfg.Dur("auth.throttle.base"), cfg.Dur("auth.throttle.max"), cfg.Int("auth.throttle.ceiling"))
+	case "ac-02_odp.10":
+		return "every " + Words(cfg.Dur("access.review.every")) + ", for the access Quilzo grants"
 	case "ac-02.05_odp":
 		return idleWords(cfg)
 	case "ac-12_odp":

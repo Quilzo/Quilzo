@@ -105,7 +105,7 @@ func (s *Server) handleShield(w http.ResponseWriter, r *http.Request) {
 
 func shieldFeatures() []map[string]string {
 	keys := []string{"chatbots", "search-answers", "forms", "boards", "signup", "bookings", "newsletter", "fediverse",
-		"uploads", "api", "mcp", "scim", "import", "feeds"}
+		"uploads", "api", "mcp", "scim", "signals", "import", "feeds"}
 	var out []map[string]string
 	for _, k := range keys {
 		out = append(out, map[string]string{"Key": k, "Words": shield.Features[k]})
@@ -288,18 +288,9 @@ func shieldTrigger(pb shield.Playbook) string {
 	return fmt.Sprintf("%s %s within %s.", what, per, roughDuration(time.Duration(pb.On.Within)))
 }
 
-func roughDuration(d time.Duration) string {
-	switch {
-	case d >= time.Hour && d%time.Hour == 0:
-		if d == time.Hour {
-			return "an hour"
-		}
-		return fmt.Sprintf("%d hours", int(d/time.Hour))
-	case d >= time.Minute:
-		return fmt.Sprintf("%d minutes", int(d/time.Minute))
-	}
-	return d.String()
-}
+// roughDuration is a playbook's span in plainDuration's words. Its own copy
+// said "1 minutes" for a one-minute step, and cut 90 seconds to that too.
+func roughDuration(d time.Duration) string { return plainDuration(d) }
 
 func shieldStepWords(st shield.Step) string {
 	where := map[string]string{shield.Admin: "the admin", shield.Site: "the site", shield.All: "the admin and the site"}[st.Where]
@@ -494,6 +485,14 @@ func (s *Server) handleShieldAct(w http.ResponseWriter, r *http.Request) {
 		audit("playbook-proposed", map[string]string{"proposal": q.ID, "change": shieldProposalWords(q), "why": why})
 		back("m", shieldProposalWords(q)+": proposed. Another administrator approves it here.")
 	case "approve", "decline":
+		// Their own change, approved alone: not for a day after another
+		// administrator stopped being one.
+		if r.FormValue("do") == "approve" {
+			if rm := s.aloneRefusal(p.Name, now); rm != nil && shieldProposedBy(root, id) == p.Name {
+				back("e", s.refuseAlone(p, rm, map[string]string{"proposal": id}))
+				return
+			}
+		}
 		only := s.ShieldAdmin.OnlyAdmin != nil && s.ShieldAdmin.OnlyAdmin(p.Name)
 		q, err := shield.Decide(root, id, p.Name, r.FormValue("do") == "approve", only, now)
 		if err != nil {
@@ -623,4 +622,18 @@ func shieldFromForm(r *http.Request, by string, now time.Time) (shield.Protectio
 		return x, fmt.Errorf("choose what to do")
 	}
 	return x, nil
+}
+
+// shieldProposedBy is who proposed a change still waiting, or "".
+func shieldProposedBy(root, id string) string {
+	bk, err := shield.LoadBook(root)
+	if err != nil {
+		return ""
+	}
+	for _, q := range bk.Pending {
+		if q.ID == id {
+			return q.By
+		}
+	}
+	return ""
 }

@@ -147,8 +147,8 @@ func configShow(root string) error {
 		if e.Weaker {
 			mark, colour = "!", yellow
 		}
-		w.Human("\n  %s%s %-26s %s%s\n", colour, mark, e.Setting.Key, e.Value, reset)
-		w.Human("      %sdefault %s · %s%s\n", dim, e.Setting.Default,
+		w.Human("\n  %s%s %-26s %s%s\n", colour, mark, e.Setting.Key, e.Shown(), reset)
+		w.Human("      %sdefault %s · %s%s\n", dim, e.Setting.DefaultShown(),
 			e.Setting.Summary, reset)
 		if e.Weaker {
 			w.Human("      %s%s%s\n", yellow, e.Why, reset)
@@ -188,7 +188,7 @@ func configList() error {
 		if s.Weaker != nil {
 			guarded = yellow + " ·" + reset
 		}
-		w.Human("  %-28s %-10s %s%s\n", s.Key, s.Default, s.Summary, guarded)
+		w.Human("  %-28s %-10s %s%s\n", s.Key, s.DefaultShown(), s.Summary, guarded)
 	}
 	w.Human("\n  %s· marked settings give up security if changed; they are "+
 		"still changeable,%s\n", dim, reset)
@@ -210,7 +210,7 @@ func configExplain(args []string) error {
 		return nil
 	}
 	w.Human("%s%s%s  %s\n", bold, s.Key, reset, s.Summary)
-	w.Human("  %sdefault %s · %s%s\n\n", dim, s.Default, s.Kind, reset)
+	w.Human("  %sdefault %s · %s%s\n\n", dim, s.DefaultShown(), s.Kind, reset)
 	w.Human("%s\n", wrapText(s.Why, 74, "  "))
 	if s.Weaker != nil {
 		w.Human("\n  %sthis setting has a security dimension: some values "+
@@ -328,7 +328,8 @@ func configUnset(root string, args []string) error {
 	record(root, caller.auditRecord("config.unset", "/", audit.Success,
 		map[string]string{"setting": args[0], "from": before,
 			"to": c.Raw(args[0])}))
-	w.Human("%s is back to its default, %s\n", args[0], c.Raw(args[0]))
+	// As show, list and explain say the default, not as the file holds it.
+	w.Human("%s is back to its default, %s\n", args[0], c.Shown(args[0]))
 	return nil
 }
 

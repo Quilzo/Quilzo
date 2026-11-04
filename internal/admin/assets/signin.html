@@ -31,6 +31,9 @@
     <h1>Sign in</h1>
 
     {{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+    {{with .SignedOut}}<p class="notice" role="status">You are signed out here. Your session at {{.}}
+      is its own and goes on, so signing in through it again may not ask for your password.
+      {{with $.SignOutAt}}<a href="{{.}}">Sign out of {{$.SignedOut}} too</a>{{end}}</p>{{end}}
     {{with .Continue}}<p class="notice ok" role="status">Taking you to {{.Label}}…
       <a href="{{.Href}}">Continue to {{.Label}}</a> if nothing happens.</p>{{end}}
     {{if .Hint}}<p class="help">{{.Hint}}</p>{{end}}

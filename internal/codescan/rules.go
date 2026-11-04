@@ -125,6 +125,27 @@ var rules = []Rule{
 		Fix: "quilzo token revoke <id>, then issue a new one",
 	},
 	{
+		ID: "secret.quilzo-secret", Severity: Critical,
+		// Every other secret this program makes, each with a prefix of its
+		// own so it is recognisable wherever it ends up, and each written in
+		// the alphabet it is made in: base64url for the push secret
+		// (cmd/quilzo/signalscmd.go), the provisioning token (scimcmd.go)
+		// and an app's refresh token and code (internal/oauthas), lowercase
+		// base32 for an enrolment link's (internal/enrol). The rule above
+		// knew qz_ alone, so a push secret pasted into a page or a chat was
+		// neither flagged nor masked. qzc_ is left out: it names a
+		// registered app, and a client id is public.
+		Pattern:  regexp.MustCompile(`\bqz(?:sig|scim|rt|ac)_[A-Za-z0-9_-]{40,}|\bqzenrol_[a-z2-7]{50,}`),
+		Controls: []string{"IA-5"},
+		Detail: "a secret quilzo made: a push secret for the identity provider's security events (qzsig_), " +
+			"the provisioning token (qzscim_), an app's refresh token or authorization code (qzrt_, qzac_), " +
+			"or an enrolment link's (qzenrol_). Each is shown once and stored as a hash so it does not end " +
+			"up in files",
+		Fix: "replace it where it was made: quilzo signals off, then connect again, for a push secret; " +
+			"quilzo scim token for the provisioning token; quilzo apps disconnect ID for an app's; " +
+			"quilzo auth enrol WHO for a new enrolment link",
+	},
+	{
 		ID: "secret.cloud-key", Severity: Critical,
 		// The formats that are genuinely recognisable. A prefix and a length
 		// is a real signal; "looks random" is not, and the rules below are

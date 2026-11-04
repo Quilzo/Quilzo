@@ -14,6 +14,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/base64"
 	"fmt"
+	"html"
 	"io"
 	"math/big"
 	"net/http"
@@ -146,6 +147,7 @@ func start(t *testing.T, srv *Server) (requestID, relay string, cookie *http.Coo
 type resp struct {
 	who, inResponseTo, audience, context string
 	until                                time.Duration
+	unsigned                             bool // sent as a provider with signing off sends it
 }
 
 var endIssuerRe = regexp.MustCompile(`</saml:Issuer>`)
@@ -174,6 +176,9 @@ func response(t *testing.T, r resp) string {
 		`<saml:Conditions NotBefore="` + ts(-time.Minute) + `" NotOnOrAfter="` + ts(r.until) + `"><saml:AudienceRestriction><saml:Audience>` + r.audience + `</saml:Audience></saml:AudienceRestriction></saml:Conditions>` +
 		`<saml:AuthnStatement AuthnInstant="` + ts(-time.Second) + `"><saml:AuthnContext><saml:AuthnContextClassRef>` + r.context + `</saml:AuthnContextClassRef></saml:AuthnContext></saml:AuthnStatement>` +
 		`</saml:Assertion></samlp:Response>`
+	if r.unsigned {
+		return base64.StdEncoding.EncodeToString([]byte(doc))
+	}
 	return base64.StdEncoding.EncodeToString([]byte(signAssertion(t, doc, k)))
 }
 
@@ -571,5 +576,73 @@ func TestOktasSecondFactorIsReadFromItsAMRAttribute(t *testing.T) {
 	if !c.MFA(&saml.Assertion{Attributes: map[string][]string{"amr": {"pwd", "mfa", "swk"}}}) ||
 		c.MFA(&saml.Assertion{Attributes: map[string][]string{"amr": {"pwd"}}}) || len(p.MFAContexts) != 0 {
 		t.Errorf("the Okta preset: %+v", p)
+	}
+}
+
+// The form takes the Keycloak preset's verified-address rule, as saml add
+// does, and the operator's decision to take addresses unverified.
+func TestTheSSOScreenAsksKeycloakToSayAnAddressIsVerified(t *testing.T) {
+	srv, token := samlServer(t, nil)
+	_, der := testIdP(t)
+	cert, _ := x509.ParseCertificate(der)
+	meta := `<md:EntityDescriptor xmlns:md="` + saml.NSMetadata + `" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" entityID="https://kc.example/realms/r"><md:IDPSSODescriptor protocolSupportEnumeration="` + saml.NSProtocol + `"><md:KeyDescriptor use="signing"><ds:KeyInfo><ds:X509Data><ds:X509Certificate>` +
+		base64.StdEncoding.EncodeToString(der) + `</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor><md:SingleSignOnService Binding="` + saml.BindingRedirect + `" Location="https://kc.example/realms/r/protocol/saml"/></md:IDPSSODescriptor></md:EntityDescriptor>`
+	add := func(name string, more url.Values) saml.Config {
+		t.Helper()
+		form := url.Values{"do": {"add"}, "name": {name}, "url": {tAdmin}, "preset": {"keycloak"},
+			"metadata": {meta}, "fingerprint": {saml.Fingerprint(cert)}}
+		for k, v := range more {
+			form[k] = v
+		}
+		req := httptest.NewRequest("POST", "/sso/act", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.AddCookie(&http.Cookie{Name: "quilzo_token", Value: token})
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		if w.Code != http.StatusSeeOther {
+			t.Fatalf("%s: %d", name, w.Code)
+		}
+		c, err := srv.samlProvider(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return *c
+	}
+	if c := add("kc", nil); c.VerifiedAttribute != "email_verified" || c.AllowUnverified {
+		t.Errorf("the Keycloak preset: %q, allow %v", c.VerifiedAttribute, c.AllowUnverified)
+	}
+	if c := add("kc-open", url.Values{"allow_unverified": {"on"}}); c.VerifiedAttribute != "" || !c.AllowUnverified {
+		t.Errorf("taking addresses unverified: %q, allow %v", c.VerifiedAttribute, c.AllowUnverified)
+	}
+	if g := get(t, srv, "/sso", token); !strings.Contains(g.Body.String(), "taken as sent, verified or not") {
+		t.Error("the screen does not say kc-open takes addresses unverified")
+	}
+}
+
+// An unsigned response, from a provider added without a preset or a label,
+// is refused in one sentence that names the provider. The page said "The
+// response from the identity provider was refused: refused: neither the
+// response nor its assertion is signed": the handler said "was refused" of
+// a reason that already began with the word, and a provider with no label
+// was "the identity provider", here and on its button, so two of them
+// could not be told apart.
+func TestARefusedResponseSaysRefusedOnceAndNamesTheProvider(t *testing.T) {
+	srv, _ := samlServer(t, func(c *saml.Config) { c.Label = "" })
+	id, relay, cookie := start(t, srv)
+	w := postACS(t, srv, relay, response(t, resp{who: "dana.reyes@northwind.example", inResponseTo: id,
+		unsigned: true}), cookie)
+	if sessionOf(w) != nil {
+		t.Fatal("an unsigned response made a session")
+	}
+	page := html.UnescapeString(w.Body.String())
+	want := "The response from corp was refused: neither the response nor its assertion is signed"
+	if w.Code != http.StatusForbidden || !strings.Contains(page, want) {
+		t.Errorf("%d, wanted %q:\n%s", w.Code, want, firstLines(page, 60))
+	}
+	if strings.Contains(page, "refused: refused") {
+		t.Error("the refusal says refused twice")
+	}
+	if !strings.Contains(page, "Sign in with corp") {
+		t.Error("the sign-in button does not name the provider")
 	}
 }

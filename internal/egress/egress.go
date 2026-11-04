@@ -196,6 +196,15 @@ var Purposes = []Purpose{
 		Without: "nothing is exported. A collector on loopback still receives",
 	},
 	{
+		Name: "signals",
+		What: "reading the keys the identity provider signs its security events with, " +
+			"and asking it to start, check or stop the stream it sends them on " +
+			"(OpenID Shared Signals): its configuration, token endpoint and stream API",
+		Without: "security events cannot be verified, so every one is refused and no " +
+			"session ends on the identity provider's word; SCIM still suspends " +
+			"somebody it deactivates, and sessions still end on their own clock",
+	},
+	{
 		Name: "sso",
 		What: "reading a SAML identity provider's metadata, when an " +
 			"administrator gives its address instead of the file",

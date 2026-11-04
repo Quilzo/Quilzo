@@ -46,6 +46,18 @@ type Config struct {
 	MFAContexts  []string `json:"mfa_contexts,omitempty"`
 	MFAAttribute string   `json:"mfa_attribute,omitempty"`
 	MFAValues    []string `json:"mfa_values,omitempty"`
+	// VerifiedAttribute names the attribute in which this provider says it
+	// verified the address it signs somebody in as, the counterpart of
+	// OIDC's email_verified; a sign-in as an address it does not say "true"
+	// about is refused. Without one, an email_verified attribute saying
+	// anything but true is still believed. SAML has no such notion of its
+	// own, and the NameID was taken as sent: a Keycloak user who set their
+	// own address, unverified, to a colleague's signed in here as that
+	// colleague while OIDC refused them. AllowUnverified takes the address
+	// as sent, as oidc configure --allow-unverified-email does: an
+	// operator's decision.
+	VerifiedAttribute string `json:"verified_attribute,omitempty"`
+	AllowUnverified   bool   `json:"allow_unverified,omitempty"`
 
 	NameIDFormat string `json:"name_id_format,omitempty"`
 	ForceAuthn   bool   `json:"force_authn,omitempty"`
@@ -55,14 +67,25 @@ type Config struct {
 }
 
 // Preset is what is known about a kind of identity provider: its name, the
-// attribute that proves more than one factor, and where to set Quilzo up.
+// attribute that proves more than one factor, the one that says an address
+// was verified, and where to set Quilzo up.
 type Preset struct {
 	Label        string
 	MFAContexts  []string
 	MFAAttribute string
 	MFAValues    []string
 	NameIDFormat string
-	Where        string
+	// VerifiedAttribute is set for a provider whose people can change
+	// their own address and leave it unverified.
+	VerifiedAttribute string
+	Where             string
+}
+
+// UsePreset takes what a preset knows. One place for the command line and
+// the admin's form, so a field a preset gains reaches both.
+func (c *Config) UsePreset(p Preset) {
+	c.Label, c.MFAContexts, c.MFAAttribute, c.MFAValues, c.NameIDFormat, c.VerifiedAttribute =
+		p.Label, p.MFAContexts, p.MFAAttribute, p.MFAValues, p.NameIDFormat, p.VerifiedAttribute
 }
 
 const (
@@ -92,8 +115,14 @@ var Presets = map[string]Preset{
 		Where: "Applications > Add Application > SAML Application"},
 	"adfs": {Label: "AD FS", MFAAttribute: msAuthnMethods, MFAValues: []string{msMultipleAuth},
 		NameIDFormat: FormatEmail, Where: "Relying Party Trusts > Add Relying Party Trust"},
+	// Keycloak lets a person change their own address in the account
+	// console, unverified unless the realm verifies email, and signs them in
+	// as it; it says whether it verified the address only when a mapper
+	// sends it.
 	"keycloak": {Label: "Keycloak", MFAContexts: []string{refedsMFA}, NameIDFormat: FormatEmail,
-		Where: "Clients > Create client > SAML"},
+		VerifiedAttribute: "email_verified",
+		Where: "Clients > Create client > SAML; add a User Property mapper, property emailVerified, " +
+			"SAML attribute name email_verified"},
 }
 
 var reName = regexp.MustCompile(`^[a-z][a-z0-9-]{0,39}$`)
@@ -205,6 +234,16 @@ func (c *Config) PrincipalOf(a *Assertion) (string, error) {
 	if v == "" || len(v) > 254 || strings.ContainsAny(v, " \t\r\n\x00<>\"") {
 		return "", errors.New("the identity provider sent a name that cannot be anybody's")
 	}
+	// Only an address is what a provider verifies. A username or an opaque
+	// NameID is not what email_verified speaks of, and OIDC asks it only of
+	// the email claim: a provider set up with --principal attribute:uid
+	// refused everybody whose address it had not verified, though the
+	// address was not who they became here.
+	if strings.Contains(v, "@") {
+		if err := c.verified(a, v); err != nil {
+			return "", err
+		}
+	}
 	if len(c.Domains) > 0 {
 		local, domain, ok := strings.Cut(v, "@")
 		if !ok || local == "" || strings.Contains(domain, "@") {
@@ -219,6 +258,62 @@ func (c *Config) PrincipalOf(a *Assertion) (string, error) {
 		}
 	}
 	return v, nil
+}
+
+// Called is what this provider is called to the people who sign in through
+// it and to whoever reads a refusal: its label, or the name it was added
+// under. A provider added without a preset or a label was "the identity
+// provider" on its sign-in button and in every refusal, so two of them
+// read the same, and a sentence that began with it began in lower case.
+func (c *Config) Called() string {
+	switch {
+	case c.Label != "":
+		return c.Label
+	case c.Name != "":
+		return c.Name
+	}
+	return "the identity provider"
+}
+
+// VerifiedUnasked is the attribute this kind of provider says it verified
+// an address in, when this one was set up without it and nobody decided to
+// take addresses as sent; empty otherwise.
+//
+// A preset is copied when a provider is added, so a Keycloak added before
+// its preset asked for email_verified still signs in an address it has not
+// verified, as long as it says nothing either way. Asking for the attribute
+// now would refuse everybody until the realm sends it, so this is reported
+// (the posture scan's sso.unverified-addresses) rather than imposed.
+func (c *Config) VerifiedUnasked() string {
+	if c.AllowUnverified || c.VerifiedAttribute != "" {
+		return ""
+	}
+	return Presets[c.Preset].VerifiedAttribute
+}
+
+// verified refuses an address the provider has not said it verified, when
+// it was set up to say so, and one it says it has not, whatever it was set
+// up with; see VerifiedAttribute.
+func (c *Config) verified(a *Assertion, who string) error {
+	if c.AllowUnverified {
+		return nil
+	}
+	name := c.VerifiedAttribute
+	if name == "" {
+		name = "email_verified"
+	}
+	said := strings.TrimSpace(a.Attribute(name))
+	if strings.EqualFold(said, "true") || said == "1" || (said == "" && c.VerifiedAttribute == "") {
+		return nil
+	}
+	by := c.Called()
+	if said == "" {
+		return fmt.Errorf("%s did not say whether it verified %s. It is set up to say so in the "+
+			"attribute %s; an unverified address is a claim by whoever set it, and honouring it would "+
+			"let somebody choose which principal to be", by, who, name)
+	}
+	return fmt.Errorf("%s has not verified %s (%s is %q). An unverified address is a claim by "+
+		"whoever set it, and honouring it would let somebody choose which principal to be", by, who, name, said)
 }
 
 // SaysMFA reports whether this provider has a way to say a sign-in used

@@ -15,6 +15,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/form"
+	"github.com/quilzo/quilzo/internal/sheet"
 )
 
 // Reading the postbag, which the public server deliberately cannot.
@@ -450,16 +451,11 @@ func (s *Server) handleFormExport(w http.ResponseWriter, r *http.Request) {
 // typed and is not evaluated. It changes the stored value, which is why it
 // happens here at export rather than at collection — the submission keeps what
 // the person actually wrote.
-func csvSafe(v string) string {
-	if v == "" {
-		return v
-	}
-	switch v[0] {
-	case '=', '+', '-', '@', '\t', '\r':
-		return "'" + v
-	}
-	return v
-}
+//
+// sheet.GuardCell, the one guard every export uses. This copy guarded a
+// negative number the records export left alone, so the same value went
+// out of one site two ways.
+func csvSafe(v string) string { return sheet.GuardCell(v) }
 
 // handleFormExpire runs retention now.
 func (s *Server) handleFormExpire(w http.ResponseWriter, r *http.Request) {

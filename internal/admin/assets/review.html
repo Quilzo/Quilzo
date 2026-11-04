@@ -1,11 +1,23 @@
 {{template "head" .}}
 {{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
-{{with .Approval}}{{if .Configured}}
+{{with .Approval}}{{if .Unreadable}}
+<section class="card bad">
+  <h2>Approval</h2>
+  <p>The approval policy could not be read, so nothing is published from here
+    until it can be: publishing now would claim a check that did not happen.</p>
+  <p class="hint">{{.Unreadable}}</p>
+</section>
+{{else if .Configured}}
 <section class="card {{if .Allowed}}ok{{else}}warn{{end}}">
   <h2>Approval</h2>
   {{if not .Proposed}}
+  {{if .PersonOnly}}
+  <p>A model wrote this change, so <strong>a person approves it</strong> before it
+    is published, and nothing has been offered for review yet.</p>
+  {{else}}
   <p>This store requires <strong>{{plural .Need "approval" "approvals"}}</strong> before anything
     is published, and nothing has been offered for review yet.</p>
+  {{end}}
   {{else}}
   <p>
     <strong>{{.Have}} of {{plural .Need "approval" "approvals"}}</strong>, on the content

@@ -410,28 +410,3 @@ func (s *Server) verifyRedirect(w http.ResponseWriter, r *http.Request, msg, err
 
 // joined renders a source list for the policy page.
 func joined(v []string) string { return strings.Join(v, " ") }
-
-// plainDuration writes a window the way somebody would say it.
-//
-// Go prints 24h0m0s, which is exact and is not English. This screen puts the
-// window in a sentence — "what agents have done in the last ..." — and a
-// sentence with a duration literal in it reads as a value that leaked out of
-// the program rather than as something written for a reader.
-//
-// Only the shapes this is used with: whole hours, whole minutes, and the
-// combination. Anything else keeps Go's rendering, because a wrong-but-tidy
-// number is worse than an ugly exact one.
-func plainDuration(d time.Duration) string {
-	switch {
-	case d >= time.Hour && d%time.Hour == 0:
-		h := int(d / time.Hour)
-		if h == 24 {
-			return "24 hours"
-		}
-		return fmt.Sprintf("%d hour%s", h, plural(h))
-	case d >= time.Minute && d%time.Minute == 0:
-		m := int(d / time.Minute)
-		return fmt.Sprintf("%d minute%s", m, plural(m))
-	}
-	return d.String()
-}

@@ -238,6 +238,41 @@ func TestWritesAreOffByDefault(t *testing.T) {
 	}
 }
 
+// Each refusal that names a command to fix it names one that does.
+//
+// The read-only API's 405 said to run `quilzo serve --api-writable`, and
+// serve has no such flag: it exits "flag provided but not defined". Writes
+// are `quilzo site --api --api-writable`; --api-writable alone serves no API
+// at all. The records API said `quilzo site --api-writable`, and then `quilzo
+// site --api --api-writable`, and the site serves no records with any flags:
+// it answers "this server does not serve records". Records are written
+// through the admin's API, `quilzo serve`. A search for similar pages on a
+// server without a vector index said `quilzo site --vectors`, which is not a
+// flag either: the site builds the index whenever it serves the API.
+func TestARefusalNamesACommandThatWorks(t *testing.T) {
+	s, _, tok := setup(t)
+	s.Records = &Records{Tree: func() (string, error) { return "", nil }}
+	for _, c := range []struct {
+		method, path string
+		body         any
+		fix          string
+	}{
+		{"PUT", "/api/v1/pages/index", map[string]any{"title": "x"}, "quilzo site --api --api-writable"},
+		{"POST", "/api/v1/records/samples", map[string]any{"fields": map[string]any{"a": "b"}},
+			"quilzo serve"},
+		{"DELETE", "/api/v1/records/samples/" + strings.Repeat("a", 32), nil, "quilzo serve"},
+		{"GET", "/api/v1/similar/index", nil, "quilzo site --api"},
+	} {
+		w := req(t, s, c.method, c.path, tok, c.body, map[string]string{"If-Match": "*"})
+		var e Error
+		_ = json.Unmarshal(w.Body.Bytes(), &e)
+		if e.Fix != c.fix {
+			t.Errorf("%s %s answered %d with the fix %q; the command that does it is %q",
+				c.method, c.path, w.Code, e.Fix, c.fix)
+		}
+	}
+}
+
 // -- authorisation -----------------------------------------------------------
 
 func TestNoTokenIsRefusedWithoutHints(t *testing.T) {
@@ -812,5 +847,65 @@ func TestTheBearerSchemeIsReadInAnyCase(t *testing.T) {
 		if w.Code != http.StatusOK {
 			t.Errorf("scheme %q: %d %s", scheme, w.Code, w.Body)
 		}
+	}
+}
+
+// A grant made and a grant revoked while the server runs both apply at once.
+//
+// The server evaluated the policy it was given at startup. In the admin that
+// meant a reader granted on the command line was refused /api/v1 while /mcp
+// served them, and a revoked reader kept reading pages there until the admin
+// restarted. ReloadPolicy is how a host keeps it current, and it is asked
+// before every decision.
+func TestTheAPISeesTheAccessRulesAsTheyAreNow(t *testing.T) {
+	s, _, _ := setup(t)
+	late, _, err := s.Tokens.Issue("late", "late", auth.RoleReader, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The policy file as another process writes it.
+	disk := &auth.Policy{}
+	for _, b := range s.Policy.Snapshot() {
+		if err := disk.Grant(b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.ReloadPolicy = func() { s.Policy.Replace(disk.Snapshot()) }
+
+	if w := req(t, s, "GET", "/api/v1/pages", late, nil, nil); w.Code != http.StatusForbidden {
+		t.Fatalf("somebody granted nothing read the pages: %d", w.Code)
+	}
+	if err := disk.Grant(auth.Binding{Principal: "late", Role: auth.RoleReader, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	if w := req(t, s, "GET", "/api/v1/pages", late, nil, nil); w.Code != http.StatusOK {
+		t.Fatalf("a reader granted while the server ran was refused: %d %s", w.Code, w.Body.String())
+	}
+	if n := disk.Revoke("late", auth.RoleReader, "/"); n != 1 {
+		t.Fatalf("revoked %d bindings", n)
+	}
+	if w := req(t, s, "GET", "/api/v1/pages", late, nil, nil); w.Code != http.StatusForbidden {
+		t.Fatalf("a reader revoked while the server ran still read the pages: %d", w.Code)
+	}
+}
+
+// Every token that authenticates is told to the host, so the host can write
+// down when it was last used; a token that does not is not.
+//
+// Authenticating notes a use only in this process's copy of the store, and
+// this server never saves it, so a token used daily here was listed as used
+// "never" and offered by `token stale` for revocation.
+func TestATokensUseIsToldToTheHost(t *testing.T) {
+	s, read, _ := setup(t)
+	var used []string
+	s.OnTokenUsed = func(tok auth.Token) { used = append(used, tok.Principal) }
+	if w := req(t, s, "GET", "/api/v1/pages", read, nil, nil); w.Code != http.StatusOK {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	if w := req(t, s, "GET", "/api/v1/pages", "qz_nosuchtokennosuchtoken", nil, nil); w.Code != http.StatusUnauthorized {
+		t.Fatalf("a wrong token: %d", w.Code)
+	}
+	if len(used) != 1 || used[0] != "reader" {
+		t.Fatalf("told of %v", used)
 	}
 }

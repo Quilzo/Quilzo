@@ -81,12 +81,16 @@ var version = "dev"
 
 func init() { version = moduleVersion(version, debug.ReadBuildInfo) }
 
-func usage() {
-	// The whole surface, because `--help` is how an agent discovers a CLI. The
-	// measured advantage of a CLI over a tool-schema protocol is that nothing is
-	// loaded until it is needed — which only works if asking is complete when it
-	// happens. Half a help page is a schema with holes in it.
-	fmt.Print(`quilzo — content is immutable, publishing moves a pointer, and
+func usage() { fmt.Print(usageText) }
+
+// usageText is the whole surface, because `--help` is how an agent discovers
+// a CLI. The measured advantage of a CLI over a tool-schema protocol is that
+// nothing is loaded until it is needed — which only works if asking is
+// complete when it happens. Half a help page is a schema with holes in it.
+//
+// A constant rather than a literal inside usage(), so that `quilzo CMD
+// --help` can answer with the lines about CMD (commandhelp.go).
+const usageText = `quilzo — content is immutable, publishing moves a pointer, and
           templates cannot execute anything.
 
 content
@@ -152,6 +156,7 @@ templates and design
   quilzo theme import FILE --list          what a design token file holds
   quilzo theme import FILE --set T=PATH    fill this site's tokens from it
   quilzo theme export [--out FILE]         this site's tokens, as design tokens
+      --tailwind                           or as a Tailwind CSS v4 @theme stylesheet
   quilzo section kinds                     what a page can be built out of
   quilzo section list [PAGE]               the sections on a page, in order
   quilzo section add PAGE KIND             add one, with content that renders
@@ -444,11 +449,16 @@ access
   quilzo auth grant ... --until 2026-12-31 access that ends by itself
   quilzo scim status | token [--revoke]     provisioning from Okta, Entra and others
   quilzo scim map GROUP ROLE|JOB | unmap GROUP   what each of their groups means here
+  quilzo signals connect --provider oidc|saml:NAME --client-id ID | --jwks U [--issuer U] [--audience A]
+                                           the IdP's security events end its sessions here;
+                                           the client secret is read from QUILZO_SIGNALS_SECRET
+  quilzo signals status | off              what the stream did, or turn it off; denies it added stay
+  quilzo scim map GROUP auditor --until 2026-12-31   a job granted for a time, until a day
   quilzo geo status | help | network add PREFIX NAME --kind office|vpn ... | network remove PREFIX   where sign-ins come from
   quilzo auth deny WHO ROLE [--on PATH]    a deny wins wherever it sits
   quilzo auth explain WHO [ACTION]         why someone can or cannot do a thing
   quilzo standing list                     what a situation can hand somebody, and what it cannot
-  quilzo auth revoke WHO [--on PATH]       take a grant back
+  quilzo auth revoke WHO ROLE [--on PATH]  take a grant back
   quilzo auth enrol WHO [--for 24h]        a one-time link that adds their passkey (--revoke ends it)
   quilzo auth unlock WHO                   let them sign in again after a lockout
   quilzo auth recover                      break-glass when every admin token is lost
@@ -457,6 +467,10 @@ access
   quilzo token exchange                    trade a stored token for a short session
   quilzo token keygen FILE | proof --key FILE --url URL   a program's key, and a DPoP proof
   quilzo token list | revoke ID | stale
+  quilzo access review start               review the access Quilzo grants: by hand, by group, by token
+  quilzo access review items [--json]      what to decide, dormant and privileged first
+  quilzo access review decide ITEM keep|revoke [--why TEXT]   a revoke applies at once; keeping privileged access needs --why
+  quilzo access review close               refused while anything is undecided; writes the AC-2 evidence
   quilzo spend grant AGENT --currency USD --per 50 --budget 500 --payee P --purpose WHY | list | revoke ID | receipts
                                            what an agent may pay, within limits a person sets, and what it paid
   quilzo evolve run --program F --evaluator F [--input F]... [--eval-input F]...
@@ -503,7 +517,7 @@ compliance evidence
   quilzo policy show | params              the organisation's NIST parameters, declared and in effect
   quilzo policy propose ac-12_odp="8 hours" --reason "…"   a change, approved by a second administrator
   quilzo policy approve | decline | withdraw ID
-  quilzo pending [list] | approve | decline | withdraw | redeem ID   privileged changes, approved by a second administrator
+  quilzo pending [list] | show | approve | decline | withdraw | redeem ID   privileged changes, approved by a second administrator
   quilzo policy import ssp.json --reason "…" | export   OSCAL in (profile, SSP, component), OSCAL out
 
 agents and integrations
@@ -608,11 +622,11 @@ interface
                                              desktop application
       /playground                            try the API against your own store
   quilzo site  [--addr HOST:PORT]          the published site, PWA-installable, confined (--prepare for systemd)
-  quilzo studio [--addr HOST:PORT]         record the screen into the library
       --api                                 content API at /api/v1, read-only
       --api-writable                        allow PUT; every write needs If-Match
       --base-url https://example.com        needed for /sitemap.xml and /feed.xml
       --redirects redirects.json            keep old URLs working after a move
+  quilzo studio [--addr HOST:PORT]         record the screen into the library
   quilzo audit [DIR]                       templates that disable escaping
   quilzo scan [--fail-on SEV]              XSS, injection and leaked secrets
   quilzo scan --rules                      what is checked, and why
@@ -661,8 +675,7 @@ exit codes
 
 A gate refusing (3) is not the command failing (1). Branch on the code rather
 than on the wording, which is free to improve.
-`)
-}
+`
 
 func main() {
 	compliance.Version = version
@@ -735,6 +748,20 @@ func main() {
 
 	cmd, cmdArgs := rest[0], rest[1:]
 
+	// Help for a command is answered before anything is moved, opened or
+	// authorised, and without running it: commandhelp.go says what running it
+	// did. A command that parses its flags first is let through after the
+	// lines, to list them; anything else stops here.
+	asked := false
+	if _, known := lookupNeed(cmd, cmdArgs); known && helpAsked(cmdArgs) &&
+		!strings.HasPrefix(cmd, "__") && !helpOrVersion[cmd] {
+		asked = true
+		commandHelp(cmd, cmdArgs)
+		if !helpGoesToTheCommand(cmd, cmdArgs) {
+			return
+		}
+	}
+
 	// State the public site writes used to sit at the store's root, and is
 	// kept in directories of its own now so the site can be confined to them
 	// (sitestate.go). Moved by whichever command runs first; a move that
@@ -774,7 +801,9 @@ func main() {
 		if err := authoriseCommand(root, cmd, cmdArgs); errors.Is(err, errHelpOnly) {
 			// Help for somebody who may not run the command, and nothing
 			// else: letting it through to the command ran the command.
-			usage()
+			if !asked {
+				usage()
+			}
 			fmt.Fprintf(os.Stderr, "\n%s%v%s\n", yellow, err, reset)
 			return
 		} else if err != nil {
@@ -786,10 +815,7 @@ func main() {
 	var err error
 	switch cmd {
 	case "init":
-		_, existed := os.Stat(root)
-		if err = cmdInit(root); err == nil {
-			err = initAdmin(root, cmdArgs, existed != nil)
-		}
+		err = runInit(root, cmdArgs)
 	case "add":
 		err = cmdAdd(root, cmdArgs)
 	case "checked":
@@ -937,6 +963,10 @@ func main() {
 		err = cmdMember(root, cmdArgs)
 	case "scim":
 		err = cmdSCIM(root, cmdArgs)
+	case "access":
+		err = cmdAccess(root, cmdArgs)
+	case "signals":
+		err = cmdSignals(root, cmdArgs)
 	case "geo":
 		err = cmdGeo(root, cmdArgs)
 	case "board":
@@ -1063,7 +1093,14 @@ func main() {
 			"<https://www.apache.org/licenses/LICENSE-2.0>.")
 		fmt.Println("There is NO WARRANTY, to the extent permitted by law.")
 	case "help", "-h", "--help":
-		usage()
+		// `quilzo help oidc` is the lines about oidc, as `quilzo oidc --help`
+		// is; it printed the whole help, which has the answer somewhere in
+		// six hundred lines.
+		if len(cmdArgs) > 0 {
+			commandHelp(cmdArgs[0], cmdArgs[1:])
+		} else {
+			usage()
+		}
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n\n", cmd)
 		usage()
@@ -1073,6 +1110,12 @@ func main() {
 	// it exits, or given up on after half a minute rather than hanging.
 	if !finishBackground(30 * time.Second) {
 		fmt.Fprintln(os.Stderr, "a message to the security contact was still being sent after 30s and was abandoned; the audit log has what happened")
+	}
+	// The flag set listed the flags it was asked for, and that is the answer,
+	// not a failure: "flag: help requested" and exit 1 told a script asking
+	// whether the command exists that it does not.
+	if asked && errors.Is(err, flag.ErrHelp) {
+		err = nil
 	}
 	if err != nil {
 		w.Error(err)
@@ -1089,7 +1132,20 @@ func main() {
 // open is the one place any command gets a store, which is why encryption is
 // wired here: every command inherits it, including the ones added next year by
 // somebody who has not read this file.
-func open(root string) (*store.Store, error) { return openEncrypted(root) }
+//
+// It is also where a store is made, by whichever command comes first, so it
+// is where a store made in a container's own layer is said (ephemeral.go).
+// init said so and nothing else did: `docker run --rm IMAGE demo` with no
+// volume said "Marginalia is installed" and exited 0 into the layer --rm
+// then deleted, the same store made and lost without a word.
+func open(root string) (*store.Store, error) {
+	made := !isStore(root)
+	s, err := openEncrypted(root)
+	if err == nil && made {
+		warnContainerLayer(root)
+	}
+	return s, err
+}
 
 // reorder moves flags ahead of positional arguments.
 //
@@ -1141,22 +1197,48 @@ func splitFlags(args []string, valued map[string]bool) (flags, positional []stri
 	return flags, positional
 }
 
+// runInit is `quilzo init [--admin NAME]`.
+func runInit(root string, args []string) error {
+	created := !isStore(root)
+	if err := cmdInit(root); err != nil {
+		return err
+	}
+	return initAdmin(root, args, created)
+}
+
+// isStore reports whether root already holds a store: its objects, which
+// opening a store makes before anything else is written there.
+//
+// It was whether the directory existed, asked twice, and in a container the
+// directory always does: the image makes /srv/store so that a volume mounted
+// on it is seeded with the right owner, and a mount point is a directory
+// before anything is in it. So init there said "reusing /srv/store" of the
+// store it was making, and gave it an upgraded installation's grace -- two
+// weeks in which a token alone reached the admin -- instead of two factors
+// from its first day.
+func isStore(root string) bool {
+	fi, err := os.Stat(filepath.Join(root, "objects"))
+	return err == nil && fi.IsDir()
+}
+
 func cmdInit(root string) error {
 	// main builds the writer; a test calling this first has not.
 	if w == nil {
 		w = out.New(false)
 	}
-	_, existed := os.Stat(root)
+	existed := isStore(root)
 	s, err := open(root)
 	if err != nil {
 		return err
 	}
-	if existed != nil {
+	if !existed {
 		w.Human("created %s\n", s.Root())
 		w.Human("  %scontent is immutable and addressed by hash; publishing "+
 			"moves a pointer%s\n", dim, reset)
 	} else {
 		w.Human("reusing %s\n", s.Root())
+		// open said it of a store it made; of one that was there, this does.
+		warnContainerLayer(root)
 	}
 	return nil
 }
@@ -1480,6 +1562,11 @@ type publishFlags struct {
 	reason, tplDir             string
 }
 
+// beforeLiveMoves, when set, is called after every check a publish makes has
+// passed and before live moves. The tests set it to land a save in exactly
+// that gap (publishrace_test.go); nothing else does.
+var beforeLiveMoves func()
+
 // publishAs publishes on caller's authority, checked here: every gate, the
 // freeze and dual authorisation run for whoever caller is, which is the
 // point of a scheduled publish going through it.
@@ -1510,10 +1597,17 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 	if len(args) > 0 {
 		target = args[0]
 	}
+	// The draft, read once: every gate below is asked about this commit and
+	// this commit is what goes live. Each of them read the draft again, and
+	// so did site.Publish(s, ""), so a save landing between the checks and
+	// the publish went live with none of them having seen it.
+	if target == "" {
+		target = s.GetRef(site.RefDraft)
+	}
 	// Nothing drafted is said as that, before any gate runs: a gate asked
 	// to examine no commit answered "not an object id", which sent a first
 	// publish off looking for a broken image.
-	if target == "" && s.GetRef(site.RefDraft) == "" {
+	if target == "" {
 		return fmt.Errorf("there is nothing to publish: no page has been " +
 			"drafted yet. quilzo add NAME=FILE.json drafts one")
 	}
@@ -1585,11 +1679,7 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 	// The way to satisfy it rather than override it is `quilzo provenance set`
 	// for new content, or `quilzo provenance backfill` for a store that
 	// predates the records.
-	candidateFor := target
-	if candidateFor == "" {
-		candidateFor = s.GetRef(site.RefDraft)
-	}
-	unmarked, uerr := unmarkedAt(root, s, candidateFor)
+	unmarked, uerr := unmarkedAt(root, s, target)
 	if uerr != nil {
 		// A gate that cannot run must not exit like a gate that passed. The
 		// accessibility gate below says this at length; the reasoning is the
@@ -1658,11 +1748,7 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 			"off%s\n", yellow, reset)
 	}
 	if required && !*skip {
-		candidate := target
-		if candidate == "" {
-			candidate = s.GetRef(site.RefDraft)
-		}
-		reports, cerr := checkAccessibility(root, s, candidate, *tplDir)
+		reports, cerr := checkAccessibility(root, s, target, *tplDir)
 		if cerr != nil {
 			// A gate that cannot run must not exit like a gate that passed.
 			//
@@ -1722,42 +1808,58 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 	// provenance checks should be told that first — asking two colleagues to
 	// approve something the tool is going to refuse anyway wastes their time
 	// and teaches them the approval is a formality.
-	if pol, perr := loadApprovalPolicy(root); perr == nil {
-		if pol.Required > 0 || pol.RequireHumanForAI {
-			// The approvals of what is being published, which is the draft
-			// unless a commit was named (see proposalFor).
-			prop, _, cerr := proposalFor(root, s, candidateFor)
-			if cerr != nil {
-				record(root, caller.auditRecord("publish", "/", audit.Denied,
-					map[string]string{"reason": "the approval check could not run",
-						"detail": cerr.Error()}))
-				return errBlocked{fmt.Errorf("the approval check could not run, so "+
-					"publishing would claim a check that did not happen: %v", cerr)}
-			}
-			d := pol.Evaluate(*prop, kindOfPrincipal(root), time.Now())
-			if !d.Allowed {
-				record(root, caller.auditRecord("publish", "/", audit.Denied,
-					map[string]string{
-						// "proposal" and not "content": Append refuses
-						// any key containing "content" and refuses the
-						// whole record with it, so every publish blocked
-						// by dual authorisation went unrecorded — the one
-						// gate whose entire purpose is that somebody
-						// later can see it was tried.
-						"reason":     "dual-authorization",
-						"have":       fmt.Sprintf("%d", d.Have),
-						"need":       fmt.Sprintf("%d", d.Need),
-						"proposal":   prop.Content,
-						"author":     prop.Author,
-						"authorkind": prop.AuthorKind,
-					}))
-				return errBlocked{fmt.Errorf("%s\n  quilzo review status",
-					d.Reason)}
-			}
-			w.Human("  %s%s%s\n", green, d.Reason, reset)
+	//
+	// A policy that cannot be read refuses, as the machine interface does.
+	// This was `perr == nil && ...`, so a damaged or unreadable approval.json
+	// switched the gate off for this command and for every scheduled publish
+	// behind it, which is the shape the other gates above were cured of.
+	pol, perr := loadApprovalPolicy(root)
+	if perr != nil {
+		record(root, caller.auditRecord("publish", "/", audit.Denied,
+			map[string]string{"reason": "the approval policy could not be read",
+				"detail": perr.Error()}))
+		return errBlocked{fmt.Errorf("the approval policy could not be read, so "+
+			"publishing would claim a check that did not happen: %v\n"+
+			"  repair %s, or remove it to fall back to the settings", perr,
+			approvalPolicyPath(root))}
+	}
+	if pol.Required > 0 || pol.RequireHumanForAI {
+		// The approvals of what is being published, which is the draft
+		// unless a commit was named (see proposalFor).
+		prop, _, cerr := proposalFor(root, s, target)
+		if cerr != nil {
+			record(root, caller.auditRecord("publish", "/", audit.Denied,
+				map[string]string{"reason": "the approval check could not run",
+					"detail": cerr.Error()}))
+			return errBlocked{fmt.Errorf("the approval check could not run, so "+
+				"publishing would claim a check that did not happen: %v", cerr)}
 		}
+		d := pol.Evaluate(*prop, kindOfPrincipal(root), time.Now())
+		if !d.Allowed {
+			record(root, caller.auditRecord("publish", "/", audit.Denied,
+				map[string]string{
+					// "proposal" and not "content": Append refuses
+					// any key containing "content" and refuses the
+					// whole record with it, so every publish blocked
+					// by dual authorisation went unrecorded — the one
+					// gate whose entire purpose is that somebody
+					// later can see it was tried.
+					"reason":     "dual-authorization",
+					"have":       fmt.Sprintf("%d", d.Have),
+					"need":       fmt.Sprintf("%d", d.Need),
+					"proposal":   prop.Content,
+					"author":     prop.Author,
+					"authorkind": prop.AuthorKind,
+				}))
+			return errBlocked{fmt.Errorf("%s\n  quilzo review status",
+				d.Reason)}
+		}
+		w.Human("  %s%s%s\n", green, d.Reason, reset)
 	}
 
+	if beforeLiveMoves != nil {
+		beforeLiveMoves()
+	}
 	pub, err := site.Publish(s, target)
 	if err != nil {
 		return err

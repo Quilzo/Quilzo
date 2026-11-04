@@ -51,6 +51,7 @@ var paramTitles = map[string]string{
 	"ac-07_odp.03": "What happens after too many failed sign-ins",
 	"ac-07_odp.04": "How long a lockout lasts",
 	"ac-07_odp.05": "How the delay grows",
+	"ac-02_odp.10": "How often access is reviewed",
 	"ac-02.05_odp": "Sign out after inactivity",
 	"ac-12_odp":    "Longest sign-in",
 	"ia-05_odp.01": "Longest life of a token",
@@ -273,6 +274,11 @@ func (s *Server) handleParametersAct(w http.ResponseWriter, r *http.Request) {
 		})
 		if err != nil {
 			if errors.Is(err, odp.ErrSameAdministrator) {
+				// The only administrator, a moment after another was removed.
+				if rm := s.aloneRefusal(p.Name, now); rm != nil {
+					back("e", s.refuseAlone(p, rm, map[string]string{"proposal": id}))
+					return
+				}
 				s.audit("policy.refused", "/settings", map[string]string{"by": p.Name, "proposal": id, "reason": "proposer approving"})
 			}
 			back("e", err.Error())

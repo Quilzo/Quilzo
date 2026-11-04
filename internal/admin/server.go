@@ -188,6 +188,12 @@ type Server struct {
 	Boards *BoardsAdmin
 	// SCIM is provisioning from an identity provider. See scimadmin.go.
 	SCIM *SCIMAdmin
+	// AccessReview is the review of who has access, on People. See
+	// accessreview.go; nil leaves the section out.
+	AccessReview *AccessReview
+	// Signals is security events from the identity provider, which end the
+	// sessions it vouched for. See signals.go.
+	Signals *SignalsAdmin
 	// SignInRisk judges each sign-in as it is made (see signins.go);
 	// SignIns is where people signed in from. A session it holds back is
 	// confirmed with a passkey or a fresh single sign-on, never a code sent
@@ -329,6 +335,11 @@ type Server struct {
 	// ReloadTokens re-reads the credential store when it has changed on disk.
 	// Nil means never, which is only right for a test.
 	ReloadTokens func()
+	// OnTokenUsed is told every token that authenticated at /mcp, and the
+	// doors that share its check, so the host can write down when it was
+	// last used: the store this server reads is a copy refresh replaces, and
+	// the use noted in it was lost with it. Nil tells nobody.
+	OnTokenUsed func(tok auth.Token)
 	// Throttle slows repeated authentication failures. Nil means no
 	// throttling, which is only right in tests: the host wires one in from
 	// configuration, and a nil check here rather than a panic means a caller
@@ -428,7 +439,8 @@ type Server struct {
 	// admin. Nil tells nobody.
 	OnStrongSignIn func(r *http.Request, principal string)
 	// Shield reports whether the shield has turned one of the admin's
-	// features off: "uploads", "import", "feeds", "scim". Nil means never.
+	// features off: "uploads", "import", "feeds", "scim", "signals". Nil
+	// means never.
 	Shield func(target string) (until time.Time, on bool)
 	// Frozen says why publishing is refused for now, if it is: the shield
 	// froze it. Rolling back is never refused. Nil means never.
@@ -1042,6 +1054,7 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, name string,
 	}
 	if p, ok := data["Principal"].(principal); ok {
 		data["Initial"] = initialOf(p.Name)
+		data["Holding"] = s.holding(p)
 		// The page tells the server somebody is there, warns before the
 		// end and offers to sign in again in place, only where the end
 		// applies (idle.go).
@@ -1217,6 +1230,12 @@ const exportUploadPath = "/make/import-file"
 // collection.
 const recordUploadPath = "/records/import"
 
+// SignalsPath is where the identity provider's transmitter pushes security
+// events (signals.go). Exported because the command that connects a stream
+// tells the transmitter this address, and one spelling of it cannot drift
+// from the route it names.
+const SignalsPath = "/sso/signals"
+
 // sameSiteOnly refuses cross-origin state changes.
 //
 // The admin authenticates with a cookie, and a cookie is sent by the browser on
@@ -1345,6 +1364,12 @@ func (s *Server) readOnlyTokens(next http.Handler) http.Handler {
 		switch r.URL.Path {
 		case "/mcp", "/oauth/token", "/oauth/revoke", "/token/exchange", "/features/check", "/features/install",
 			"/v1/chat/completions", "/v1/responses", "/v1/messages":
+			next.ServeHTTP(w, r)
+			return
+		// A transmitter's push carries the stream's own bearer, which is no
+		// credential of this store's. Looking it up as one would only report
+		// every delivery to the shield as a token nobody issued.
+		case SignalsPath:
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -1560,6 +1585,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/people/enrol", s.handlePeopleEnrol)
 	mux.HandleFunc("/people/enrol/revoke", s.handlePeopleEnrolRevoke)
 	mux.HandleFunc("/people/pending", s.handlePeoplePending)
+	mux.HandleFunc("/people/review/start", s.handleReviewStart)
+	mux.HandleFunc("/people/review/decide", s.handleReviewDecide)
+	mux.HandleFunc("/people/review/close", s.handleReviewClose)
 	mux.HandleFunc("/sessions/revoke", s.handleSessionRevoke)
 	mux.HandleFunc("/provenance", s.handleProvenance)
 	mux.HandleFunc("/provenance/set", s.handleProvenanceSet)
@@ -1653,6 +1681,12 @@ func (s *Server) Handler() http.Handler {
 	if s.SCIM != nil && s.SCIM.Handler != nil {
 		mux.Handle("/scim/v2/", s.shieldable("scim", s.SCIM.Handler))
 	}
+	// And its security events, which take access away on its word; the
+	// transmitter authenticates with the bearer it was given when the
+	// stream was connected. See signals.go and internal/ssf.
+	if s.Signals != nil && s.Signals.Handler != nil {
+		mux.Handle(SignalsPath, s.shieldable("signals", s.Signals.Handler))
+	}
 	// /docs and /docs/img/ used to be served from here. The manual is now
 	// published at DocsBase and the footer links straight to it — deliberately
 	// not redirected from this origin, because a redirect would keep the admin
@@ -1705,14 +1739,15 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 	// counter that protects every other surface, and they never crossed the
 	// threshold that fires OnAuthFailure — so a sustained attempt against the
 	// one door built for people raised no alert at all.
+	//
+	// Checked, and the token looked at all the same: the throttle refuses
+	// failures, not the address (see requireAuth). Refusing here before
+	// looking turned one person's mistakes into everybody's lockout behind a
+	// shared address, which on the reference stack was every client.
 	sub := throttle.Subject{Source: sourceOf(r)}
+	throttled := false
 	if s.Throttle != nil {
-		if d := s.Throttle.Check(sub); !d.Allowed {
-			// Not looked at, so not counted: the token in this request is
-			// neither a failure nor a success.
-			signInAgain(w, r, "throttled")
-			return
-		}
+		throttled = !s.Throttle.Check(sub).Allowed
 	}
 
 	raw := strings.TrimSpace(r.FormValue("token"))
@@ -1726,6 +1761,11 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 		// holding tokens made the day before.
 		if errors.Is(err, auth.ErrLockedDown) {
 			signInAgain(w, r, "lockdown")
+			return
+		}
+		// Refused for trying too often, and not counted again.
+		if throttled {
+			signInAgain(w, r, "throttled")
 			return
 		}
 		if s.Throttle != nil {
@@ -1962,6 +2002,13 @@ func signInNext(raw string) string {
 // address: the code in the query string says what happened to the last
 // attempt, and the limiter says what will happen to the next one. The second
 // is the one worth a 429.
+//
+// Only after an attempt refused for it (e=throttled). The limiter refuses a
+// wrong credential from a throttled address and lets a right one in, so
+// answering everybody who opened the form from there "Too many attempts ...
+// try again in" told the people behind a shared address to wait out a
+// lockout that was somebody else's, which on the reference stack was
+// everybody.
 func (s *Server) signInForm(w http.ResponseWriter, r *http.Request) {
 	data := map[string]any{"Title": "Sign in", "OIDC": s.OIDC != nil,
 		"OIDCLabel": s.oidcLabel(), "SSO": s.ssoChoices()}
@@ -1971,7 +2018,17 @@ func (s *Server) signInForm(w http.ResponseWriter, r *http.Request) {
 	if next := signInNext(r.URL.Query().Get("next")); next != "" {
 		data["Next"] = next
 	}
-	if s.Throttle != nil {
+	// Signed out of a session a provider vouched for (afterSignOut). The
+	// code picks a sentence and the address is this server's own setting,
+	// never anything from the query.
+	switch via := r.URL.Query().Get("out"); via {
+	case "oidc", "saml":
+		data["SignedOut"] = s.idpName(via)
+		if via == "oidc" {
+			data["SignOutAt"] = s.OIDC.signOutURL()
+		}
+	}
+	if s.Throttle != nil && r.URL.Query().Get("e") == "throttled" {
 		sub := throttle.Subject{Source: sourceOf(r)}
 		if d := s.Throttle.Check(sub); !d.Allowed {
 			secs := int(math.Ceil(d.RetryAfter.Seconds()))
@@ -2003,9 +2060,18 @@ func (s *Server) handleSignOut(w http.ResponseWriter, r *http.Request) {
 	// own credential, used deliberately, and revoking it because they closed
 	// a tab would destroy the thing they signed in with.
 	p, err := s.authenticate(r)
+	// Where the session came from, read before it is revoked.
+	via := ""
+	if err == nil && p.Session {
+		via = s.sessionVia(p.TokenID)
+	}
 	if err == nil && !signOutAsked(r, p) {
-		s.render(w, r, "signout.html", map[string]any{
-			"Title": "Sign out", "Who": p.Name})
+		data := map[string]any{"Title": "Sign out", "Who": p.Name}
+		if via != "" {
+			data["IdP"] = s.idpName(via)
+			data["IdPOut"] = via == "oidc" && s.OIDC.signOutURL() != ""
+		}
+		s.render(w, r, "signout.html", data)
 		return
 	}
 	if err == nil && p.TokenID != "" && p.Session {
@@ -2019,7 +2085,52 @@ func (s *Server) handleSignOut(w http.ResponseWriter, r *http.Request) {
 		Name: "quilzo_token", Value: "", Path: "/", MaxAge: -1,
 		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: r.TLS != nil || s.behindTLSProxy(),
 	})
-	http.Redirect(w, r, "/signin", http.StatusSeeOther)
+	http.Redirect(w, r, s.afterSignOut(r, via), http.StatusSeeOther)
+}
+
+// sessionVia is the identity provider a session was signed in through,
+// "oidc" or "saml", or empty for any other.
+func (s *Server) sessionVia(id string) string {
+	for _, t := range s.Tokens.Snapshot() {
+		if t.ID != id {
+			continue
+		}
+		if how, _, _ := strings.Cut(t.Name, ":"); how == "oidc" || how == "saml" {
+			return how
+		}
+		return ""
+	}
+	return ""
+}
+
+// idpName is what the sign-out and sign-in pages call the provider.
+func (s *Server) idpName(via string) string {
+	if l := s.oidcLabel(); via == "oidc" && l != "" {
+		return l
+	}
+	return "your organisation's identity provider"
+}
+
+// afterSignOut is where signing out goes.
+//
+// Signing out of a session an identity provider vouched for left the
+// provider's own session going, so the next sign-in through it skipped the
+// password, and nothing said so; with a provider that says a sign-in used
+// two factors, nothing at all was asked. The sign-in page now says so, and
+// offers the provider's end-session address where it has one; asked for
+// from Sign out? (idp), it goes straight there. Either way the session here
+// has already ended.
+func (s *Server) afterSignOut(r *http.Request, via string) string {
+	switch via {
+	case "oidc":
+		if out := s.OIDC.signOutURL(); out != "" && r.FormValue("idp") == "1" {
+			return out
+		}
+		return "/signin?out=oidc"
+	case "saml":
+		return "/signin?out=saml"
+	}
+	return "/signin"
 }
 
 // signOutAsked reports whether a request to /signout is the person asking,
@@ -2150,7 +2261,10 @@ func (s *Server) requireAuth(w http.ResponseWriter, r *http.Request) (principal,
 
 	p, err := s.authenticate(r)
 	if err != nil {
-		if throttled {
+		// Only a credential that was presented and refused is answered 429.
+		// Somebody arriving signed out presented nothing, and was told "too
+		// many attempts" for guesses somebody else made from their address.
+		if throttled && !errors.Is(err, errNoCredential) {
 			s.tooManyAttempts(w, r, tdec)
 			return principal{}, false
 		}
@@ -2977,7 +3091,34 @@ func (s *Server) handleSecurity(w http.ResponseWriter, r *http.Request) {
 		"Title": "Security", "Principal": p, "Low": low,
 		"Report": rep, "Controls": controls, "Band": band(rep.Score),
 		"Throttled": s.throttled(), "Ran": ranAgo(rep.At),
+		"Holders": s.tokenHolders(rep.Findings),
 	})
+}
+
+// tokenHolders is whose token each finding about a token is about, by the
+// token id that is the finding's resource.
+//
+// A finding names a token by its name and id and not its holder, because
+// it goes into exports, OSCAL and the audit stream and the holder's name
+// went with it in clear. The administrator reading this screen still has
+// to know whom to ask before revoking it, and this screen may show them.
+func (s *Server) tokenHolders(findings []posture.Finding) map[string]string {
+	if s.Tokens == nil || len(findings) == 0 {
+		return nil
+	}
+	about := map[string]bool{}
+	for _, f := range findings {
+		if f.Resource != "" {
+			about[f.Resource] = true
+		}
+	}
+	holders := map[string]string{}
+	for _, t := range s.Tokens.Snapshot() {
+		if about[t.ID] {
+			holders[t.ID] = t.Principal
+		}
+	}
+	return holders
 }
 
 // throttled is who is currently being slowed down, or nothing.
@@ -3071,6 +3212,9 @@ func (s *Server) handleRule(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		data["Checked"], data["Failing"] = true, now
+		// Whose token, as the Security screen says it: the fix here says
+		// --principal HOLDER, and this is where its link leads.
+		data["Holders"] = s.tokenHolders(now)
 	}
 	s.render(w, r, "rules.html", data)
 }
@@ -4363,23 +4507,13 @@ func firstOf(v url.Values) map[string]string {
 	return out
 }
 
-// agoAt is a moment as how long before now: "just now", "1 minute ago",
-// "3 days ago"; zero is never.
+// agoAt is a moment as how long before now, in agoText's words: "just
+// now", "1 minute ago", "3 days ago"; zero is never.
 func agoAt(unix int64, now time.Time) string {
 	if unix == 0 {
 		return "never"
 	}
-	d := now.Sub(time.Unix(unix, 0))
-	switch {
-	case d < time.Minute:
-		return "just now"
-	case d < time.Hour:
-		return counted(int(d.Minutes()), "minute", "minutes") + " ago"
-	case d < 24*time.Hour:
-		return counted(int(d.Hours()), "hour", "hours") + " ago"
-	default:
-		return counted(int(d.Hours()/24), "day", "days") + " ago"
-	}
+	return agoText(now.Sub(time.Unix(unix, 0)))
 }
 
 func plural(n int) string {
@@ -4398,7 +4532,7 @@ func initialOf(name string) string {
 	return "?"
 }
 
-// ranAgo is when a scan ran, as a person says it: "just now", "5 min ago".
+// ranAgo is when a scan ran, as a person says it: "just now", "5 minutes ago".
 // The report keeps the exact time; the screen does not need it.
 func ranAgo(at string) string {
 	t, err := time.Parse(time.RFC3339, at)

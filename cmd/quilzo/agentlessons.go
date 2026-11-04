@@ -121,10 +121,10 @@ func agentLessons(root string, args []string) error {
 		w.Human("  try it against the evaluations: quilzo agent lessons try %s %s\n", l.Agent, l.ID)
 		return nil
 	case "try":
-		pos, flags := leadingArgs(args[1:], 2)
 		fs := flag.NewFlagSet("agent lessons try", flag.ContinueOnError)
 		k := fs.Int("k", 3, "how many times each case runs, each way")
-		if err := fs.Parse(flags); err != nil {
+		pos, err := parseAnywhere(fs, args[1:])
+		if err != nil {
 			return err
 		}
 		if len(pos) != 2 {
@@ -147,10 +147,10 @@ func agentLessons(root string, args []string) error {
 		}
 		return nil
 	case "adopt":
-		pos, flags := leadingArgs(args[1:], 2)
 		fs := flag.NewFlagSet("agent lessons adopt", flag.ContinueOnError)
 		tainted := fs.Bool("tainted-ok", false, "adopt a lesson written from a run that read somebody else's words, having read it")
-		if err := fs.Parse(flags); err != nil {
+		pos, err := parseAnywhere(fs, args[1:])
+		if err != nil {
 			return err
 		}
 		if len(pos) != 2 {
@@ -163,10 +163,10 @@ func agentLessons(root string, args []string) error {
 		w.Human("adopted %s for %s: runs of %s with it read “%s”\n", l.ID, strings.Join(l.AdoptedFor, ", "), l.Agent, l.Text())
 		return nil
 	case "retire":
-		pos, flags := leadingArgs(args[1:], 2)
 		fs := flag.NewFlagSet("agent lessons retire", flag.ContinueOnError)
 		why := fs.String("why", "", "why it is retired")
-		if err := fs.Parse(flags); err != nil {
+		pos, err := parseAnywhere(fs, args[1:])
+		if err != nil {
 			return err
 		}
 		if len(pos) != 2 {

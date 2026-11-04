@@ -10,13 +10,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/config"
 	"github.com/quilzo/quilzo/internal/dual"
 	"github.com/quilzo/quilzo/internal/out"
 )
@@ -174,7 +177,7 @@ func authUsage() error {
   list
   enrol <principal> [--for 24h] [--revoke]   a one-time link that adds their passkey
   unlock <principal>                         let them sign in again after a lockout
-  explain <principal> <action> [--on /path]
+  explain <principal> [action] [--on /path]
   roles
 
 Four roles, in order. Each includes the ones below it:
@@ -518,13 +521,44 @@ func authRevoke(root string, args []string) error {
 	return nil
 }
 
+// listedFor is whose rows a list of access shows its caller: everybody's to
+// whoever may act on them (may, on the whole site), and their own to anybody
+// else.
+//
+// `auth list` and `token list` ask only to view, so that somebody refused
+// something can find out why, and they printed everybody's: every binding in
+// the store, and every token's id, name, role and last use, to a reader whose
+// browser was refused People and Security (127 lines on the reference stack).
+// A reader is still answered, with what is theirs; somebody unverified is
+// shown nobody's. Their name is their account's on the machine, which is
+// nobody's identity here, and listing by it listed an account named like a
+// principal that principal's rows.
+func listedFor(root string, may auth.Action) (who string, everybody bool) {
+	c := resolveCaller(root, tokenFromArgs(nil))
+	if authorise(root, c, may, "/") == nil {
+		return "", true
+	}
+	if !c.Verified {
+		return "", false
+	}
+	return c.Name, false
+}
+
+// mine reports whether a row of a list belongs to who.
+func mine(principal, who string) bool { return who != "" && strings.EqualFold(principal, who) }
+
 func authList(root string) error {
 	p, err := loadPolicy(root)
 	if err != nil {
 		return err
 	}
-	rows := make([]map[string]any, 0, len(p.Bindings))
-	for _, b := range p.Bindings {
+	bindings := p.Snapshot()
+	who, everybody := listedFor(root, auth.ActGrant)
+	if !everybody {
+		bindings = slices.DeleteFunc(bindings, func(b auth.Binding) bool { return !mine(b.Principal, who) })
+	}
+	rows := make([]map[string]any, 0, len(bindings))
+	for _, b := range bindings {
 		row := map[string]any{"principal": b.Principal, "role": b.What(),
 			"resource": b.Resource, "deny": b.Deny, "granted_by": b.GrantedBy,
 			"note": b.Note, "expires": nil, "live": b.Live(time.Now())}
@@ -539,7 +573,14 @@ func authList(root string) error {
 	if w.JSON(map[string]any{"bindings": rows}) {
 		return nil
 	}
-	if len(p.Bindings) == 0 {
+	if !everybody {
+		fmt.Printf("  %syour own; everybody's are listed to whoever may grant%s\n", dim, reset)
+		if len(bindings) == 0 {
+			fmt.Println("no bindings name you")
+			return nil
+		}
+	}
+	if len(bindings) == 0 {
 		fmt.Println("no bindings; nobody has access")
 		return nil
 	}
@@ -552,25 +593,45 @@ func authList(root string) error {
 	// file by hand. For an AC-2 story that is the one field that matters, and
 	// its sibling Note was already on both surfaces, which is what makes this
 	// an oversight rather than a decision.
-	fmt.Printf("  %-18s %-10s %-16s %-14s %s\n",
-		"principal", "role", "resource", "granted by", "")
-	fmt.Printf("  %s %s %s %s\n", strings.Repeat("-", 18),
-		strings.Repeat("-", 10), strings.Repeat("-", 16),
-		strings.Repeat("-", 14))
-	for _, b := range p.Bindings {
+	//
+	// Each column is as wide as its longest entry, and no narrower than it
+	// was. The widths were fixed, and a principal is often an email address:
+	// claimsadmin@qz.test is 19 characters, one more than the column, and its
+	// row pushed everything after it out of line with the header.
+	const unrecorded = "unrecorded"
+	pw, rw, resw, bw := 18, 10, 16, 14
+	for _, b := range bindings {
+		by := b.GrantedBy
+		if by == "" {
+			by = unrecorded
+		}
+		pw = max(pw, utf8.RuneCountInString(b.Principal))
+		rw = max(rw, utf8.RuneCountInString(b.What()))
+		resw = max(resw, utf8.RuneCountInString(b.Resource))
+		bw = max(bw, utf8.RuneCountInString(by))
+	}
+	fmt.Printf("  %-*s %-*s %-*s %-*s %s\n", pw, "principal", rw, "role",
+		resw, "resource", bw, "granted by", "")
+	fmt.Printf("  %s %s %s %s\n", strings.Repeat("-", pw),
+		strings.Repeat("-", rw), strings.Repeat("-", resw),
+		strings.Repeat("-", bw))
+	for _, b := range bindings {
 		mark := ""
 		if b.Deny {
 			mark = red + "DENY" + reset
 		}
-		by := b.GrantedBy
-		if by == "" {
+		// Padded before it is coloured: padding the coloured string counts
+		// the escape codes as width, and on a terminal what followed an
+		// unrecorded grant stood four places left of the rows around it.
+		by := fmt.Sprintf("%-*s", bw, b.GrantedBy)
+		if b.GrantedBy == "" {
 			// A binding from before this was recorded. Said as unknown rather
 			// than left blank, because a blank column reads as "nobody" and
 			// the truthful answer is that nothing wrote it down.
-			by = dim + "unrecorded" + reset
+			by = dim + fmt.Sprintf("%-*s", bw, unrecorded) + reset
 		}
-		fmt.Printf("  %-18s %-10s %-16s %-14s %s",
-			b.Principal, b.What(), b.Resource, by, mark)
+		fmt.Printf("  %-*s %-*s %-*s %s %s",
+			pw, b.Principal, rw, b.What(), resw, b.Resource, by, mark)
 		if b.Expires != 0 {
 			if b.Live(time.Now()) {
 				fmt.Printf("  %suntil %s%s", dim, expiryText(b.Expires), reset)
@@ -633,6 +694,12 @@ func authExplain(root string, args []string) error {
 		return fmt.Errorf("usage: quilzo auth explain <principal> [action] [--on /path]")
 	}
 	principal := rest[0]
+	// One's own, as `auth list` is: what somebody else may do is listed to
+	// whoever may grant (listedFor).
+	if who, everybody := listedFor(root, auth.ActGrant); !everybody && !mine(principal, who) {
+		return fmt.Errorf("what somebody else may do is explained to whoever may grant; "+
+			"you may explain your own: quilzo auth explain %s", who)
+	}
 
 	p, err := loadPolicy(root)
 	if err != nil {
@@ -822,12 +889,14 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 	// The ceiling is checked here rather than inside Issue, because it is a
 	// deployment policy rather than a property of tokens, and the message has
 	// to name the setting that produced it or nobody can find what to change.
+	// Both durations as `config show` says the setting (90d, not 2160h0m0s),
+	// so the ceiling here reads as the one there.
 	if max := cfg.Dur("token.ttl.max"); life > max {
 		return fmt.Errorf(
 			"a %s token is longer than token.ttl.max (%s).\n"+
 				"  Raise the ceiling deliberately if that is right:\n"+
 				"    quilzo config set token.ttl.max %s --accept-risk \"why\"",
-			life, max, life)
+			config.FormatDuration(life), config.FormatDuration(max), config.FormatDuration(life))
 	}
 
 	thumb := ""
@@ -1022,9 +1091,14 @@ func tokenList(root string) error {
 		return err
 	}
 	now := time.Now()
+	tokens := ts.Snapshot()
+	who, everybody := listedFor(root, auth.ActToken)
+	if !everybody {
+		tokens = slices.DeleteFunc(tokens, func(t auth.Token) bool { return !mine(t.Principal, who) })
+	}
 	// What each token is, and never the hash it is checked against.
-	rows := make([]map[string]any, 0, len(ts.Tokens))
-	for _, t := range ts.Tokens {
+	rows := make([]map[string]any, 0, len(tokens))
+	for _, t := range tokens {
 		row := map[string]any{"id": t.ID, "name": t.Name, "principal": t.Principal,
 			"role": t.Role, "resource": t.Resource,
 			"expires": time.Unix(t.ExpiresAt, 0).UTC().Format(time.RFC3339),
@@ -1037,12 +1111,22 @@ func tokenList(root string) error {
 	if w.JSON(map[string]any{"tokens": rows}) {
 		return nil
 	}
-	if len(ts.Tokens) == 0 {
+	if !everybody {
+		fmt.Printf("  %syour own; everybody's are listed to whoever may manage tokens%s\n", dim, reset)
+	}
+	if len(tokens) == 0 {
 		fmt.Println("no tokens")
 		return nil
 	}
-	fmt.Printf("  %-14s %-16s %-10s %-12s %s\n", "id", "name", "role", "expires", "last used")
-	for _, t := range ts.Tokens {
+	// As wide as the longest name, as `auth list` is as wide as its longest
+	// principal: a name is the operator's own words, "ci-deploy-production"
+	// is twenty characters, and a fixed sixteen pushed its row out of line.
+	nw := 16
+	for _, t := range tokens {
+		nw = max(nw, utf8.RuneCountInString(t.Name))
+	}
+	fmt.Printf("  %-14s %-*s %-10s %-12s %s\n", "id", nw, "name", "role", "expires", "last used")
+	for _, t := range tokens {
 		state := ""
 		switch {
 		case t.Revoked:
@@ -1054,7 +1138,7 @@ func tokenList(root string) error {
 		if t.LastUsed > 0 {
 			last = time.Unix(t.LastUsed, 0).UTC().Format("2006-01-02")
 		}
-		fmt.Printf("  %-14s %-16s %-10s %-12s %-10s %s\n", t.ID, t.Name, t.Role,
+		fmt.Printf("  %-14s %-*s %-10s %-12s %-10s %s\n", t.ID, nw, t.Name, t.Role,
 			time.Unix(t.ExpiresAt, 0).UTC().Format("2006-01-02"), last, state)
 	}
 	return nil
@@ -1112,12 +1196,18 @@ func tokenStale(root string, args []string) error {
 		return nil
 	}
 	fmt.Printf("%d token(s) unused for %s and still valid:\n", len(stale), *idle)
+	// As wide as the longest name, as `token list` is: a fixed sixteen put
+	// "ci-deploy-production" out of line with the rows around it.
+	nw := 16
+	for _, t := range stale {
+		nw = max(nw, utf8.RuneCountInString(t.Name))
+	}
 	for _, t := range stale {
 		last := "never used"
 		if t.LastUsed > 0 {
 			last = "last used " + time.Unix(t.LastUsed, 0).UTC().Format("2006-01-02")
 		}
-		fmt.Printf("  %s  %-16s %s\n", t.ID, t.Name, last)
+		fmt.Printf("  %s  %-*s %s\n", t.ID, nw, t.Name, last)
 	}
 	fmt.Printf("\n  %sa credential nobody uses is one nobody notices is still "+
 		"valid%s\n", dim, reset)

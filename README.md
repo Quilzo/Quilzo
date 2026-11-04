@@ -269,7 +269,9 @@ platforms, the organisation's vulnerability management, the estate and
 workforce risk, vendors and notices to customers belong to the security
 operations tooling an organisation already runs. Quilzo keeps what it needs
 to defend itself, below, and hands its audit log to any SIEM that reads
-OCSF, as it is written.
+OCSF, as it is written. Access reviews are split the same way: Quilzo
+reviews the grants only it holds (`quilzo access review`), and the review of
+access to every other system belongs with the tool that reviews those.
 
 ### The shield: Quilzo defends itself
 
@@ -282,7 +284,7 @@ OCSF, as it is written.
 | **Never on this machine** | An administrator's own address keeps the admin; this machine and the networks you declare are never blocked; the command line on the machine always works, and lifts any protection. | Automatic; `quilzo shield trust add`, `shield lift` |
 | **Decoys** | Tokens that open nothing and addresses nothing links to, which tell on whoever presents or asks for them. | `quilzo shield decoy add` |
 | **Risky sign-ins confirm it is them** | Each sign-in judged against the person's own: impossible travel, Tor or a rented server, a session copied to another device or country, an administrator in a new country. A risky one gets no session until a passkey confirms it, and the security contact hears of the worst; on by default (`signin.adaptive`). | Sign-ins screen; `quilzo geo` |
-| **Drift, told at once** | The posture scan runs on the server's schedule; a check that starts failing, and its fix, are written to the audit log, and a high or critical one is mailed to the security contact. | Security screen; `quilzo posture scan` |
+| **Drift, told at once** | The posture scan runs on the server's schedule; a check that starts failing, and its fix, are written to the audit log, and a high or critical one, or an access review falling due, is mailed to the security contact. | Security screen; `quilzo posture scan` |
 | **Its own flaws** | The running binary checked against the Go vulnerability database, by what is actually linked, offline; a flaw reachable through one feature turns that feature off, at once when CISA's catalogue says it is being exploited. | `quilzo self check\|verify\|vex\|kev` |
 | **Its log, to a SIEM** | The audit log streamed as it is written, as signed OCSF batches a receiver can prove complete and unchanged. | Setting `siem.stream.url`; `quilzo siem stream status` |
 
@@ -311,6 +313,7 @@ OCSF, as it is written.
 | **Single sign-on** | OIDC (Google Workspace, Microsoft Entra, any issuer) and SAML (presets for Okta, Entra, Google, JumpCloud, OneLogin, PingOne, AD FS and Keycloak), which can be required, with named break-glass accounts. | `quilzo oidc configure`, `quilzo saml add`; Single sign-on screen |
 | **Credentials for programs** | CI jobs exchange their platform's identity token for a Quilzo token that lasts minutes, so no secret sits in the repository; RFC 8693 exchange narrows any token; a token bound to a program's key (DPoP) works only with that key's proof. | `quilzo trust add NAME --github OWNER/REPO`, `quilzo token keygen`, `token issue --key`; POST /token/exchange |
 | **Provisioning** | SCIM from Okta, Entra and others, with their groups mapped to roles and jobs; deactivation suspends a person at once, and deletion erases what agents remember about them. | `quilzo scim`; Provisioning screen |
+| **Reviewing who has access** | Every grant made by hand, what each identity provider group means here and every long-lived token, put in front of an administrator: dormant ones first, proposed for revoke; a revoke applied at once; nobody deciding their own access; a reason to keep privileged access. Closing one is AC-2 evidence, and one falling due (`access.review.every`, 90 days) is reported and mailed. | `quilzo access review start\|items\|decide\|close`; People screen |
 | **Passkeys and sessions** | Passkeys, idle and absolute session limits, tokens that expire or are exchanged for short sessions, a break-glass when every admin token is lost. | Passkeys screen; `quilzo token issue\|exchange`, `auth recover` |
 
 ### Audit and integrity

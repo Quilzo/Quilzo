@@ -174,7 +174,10 @@ func (s *Server) handleBrowserMCP(w http.ResponseWriter, r *http.Request) {
 	}
 	own := s.ownOrigin(r)
 	e := &mcp.Endpoint{
-		Metadata: metadata, DefaultScope: scope,
+		// DPoP offered in a refusal, as /mcp and the gateway offer it: a
+		// key-bound token is taken here too, through interfaceCaller, and a
+		// refusal that said "Bearer" alone did not tell its client so.
+		Metadata: metadata, DefaultScope: scope, DPoP: dpop.AlgorithmNames(),
 		Authenticate: func(r *http.Request, token string) (*mcp.Caller, error) {
 			// An agent credential is a compact JWS; a token is not.
 			if s.Interface.Credential != nil && strings.Count(token, ".") == 2 && strings.HasPrefix(token, "eyJ") {
@@ -243,13 +246,34 @@ func (s *Server) interfaceCaller(r *http.Request, token, resource string) (*mcp.
 	if s.ReloadTokens != nil {
 		s.ReloadTokens()
 	}
-	if s.Tokens == nil {
+	// And the credentials as they are stored now, as every screen re-reads
+	// them (storedTokens).
+	//
+	// ReloadTokens alone was not enough. It keeps current the store the
+	// server was started with, which the content API reads, but the first
+	// screen anybody opens runs refresh, which takes a copy read from disk as
+	// s.Tokens, and nothing kept that copy current here. So a token issued on
+	// the command line was "no such token" at /mcp, and a token revoked there
+	// kept working at /mcp, until somebody happened to open a screen.
+	toks := s.storedTokens()
+	if toks == nil {
 		return nil, errors.New("no token store")
 	}
+	// The throttle refuses failures, not the address: a throttled request is
+	// still authenticated, and a valid token is let through, as at the
+	// content API and the screens (see requireAuth).
+	//
+	// This refused before looking. Every client behind one address (a NAT,
+	// an office proxy, Docker's port publishing) shares its count, so six
+	// bad tokens from one of them and a valid token from any other was
+	// "too many failed attempts from this address" for up to fifteen
+	// minutes. Found on the reference stack, where every client is one
+	// address.
 	sub := throttle.Subject{Source: sourceOf(r)}
+	var throttled *throttle.Decision
 	if s.Throttle != nil {
 		if d := s.Throttle.Check(sub); !d.Allowed {
-			return nil, errors.New("too many failed attempts from this address. " + d.Why)
+			throttled = &d
 		}
 	}
 	var tok *auth.Token
@@ -261,21 +285,26 @@ func (s *Server) interfaceCaller(r *http.Request, token, resource string) (*mcp.
 		// once the token is accepted, as proofOf says why.
 		var proof dpop.Proof
 		if proof, err = s.proofOf(r, token); err == nil {
-			if tok, err = s.Tokens.AuthenticateProved(token, resource, proof.Thumbprint, time.Now()); err == nil {
+			if tok, err = toks.AuthenticateProved(token, resource, proof.Thumbprint, time.Now()); err == nil {
 				err = s.proofs.Spend(proof, time.Now())
 			}
 		}
 	} else {
-		tok, err = s.Tokens.AuthenticateFor(token, resource, time.Now())
+		tok, err = toks.AuthenticateFor(token, resource, time.Now())
 	}
 	if err != nil {
+		if s.OnBadToken != nil {
+			s.OnBadToken(r, token, err)
+		}
+		// Refused for trying too often, and not counted again: the
+		// address is already being slowed down.
+		if throttled != nil {
+			return nil, errors.New("too many failed attempts from this address. " + throttled.Why)
+		}
 		if s.Throttle != nil {
 			if d, alert := s.Throttle.Fail(sub); alert && s.OnAuthFailure != nil {
 				s.OnAuthFailure(sub.Source, d.Failures)
 			}
-		}
-		if s.OnBadToken != nil {
-			s.OnBadToken(r, token, err)
 		}
 		if errors.Is(err, auth.ErrStepUp) {
 			return nil, errors.New("this session must confirm it is its person first: sign in to the admin")
@@ -285,7 +314,28 @@ func (s *Server) interfaceCaller(r *http.Request, token, resource string) (*mcp.
 	if s.Throttle != nil {
 		s.Throttle.Succeed(throttle.Subject{Principal: tok.Principal})
 	}
+	if s.OnTokenUsed != nil {
+		s.OnTokenUsed(*tok)
+	}
 	return &mcp.Caller{Principal: tok.Principal, Client: tok.Client, Data: *tok}, nil
+}
+
+// storedTokens is the credential store as it is stored now, for a door
+// that decides by a token alone: read as refresh reads it, and kept by the
+// request that asked rather than put in s.Tokens.
+//
+// /mcp and the token exchange ran refresh, which puts what it read in
+// s.Tokens, the field every other request reads. An MCP client calls several
+// tools at once, so each call wrote what the others were reading, a data
+// race; and an exchange could mint its token into one copy and save the copy
+// a request beside it had put in its place, which lacked the token.
+func (s *Server) storedTokens() *auth.TokenStore {
+	if s.Reload != nil {
+		if _, toks, err := s.Reload(); err == nil && toks != nil {
+			return toks
+		}
+	}
+	return s.Tokens
 }
 
 // ownOrigin is this admin's origin as the request reached it.

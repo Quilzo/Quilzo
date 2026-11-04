@@ -195,15 +195,17 @@ func couldIn(root string, set *agentSet, name, what, page string, withModel, pro
 // agentCould is `quilzo agent could NAME [--model | --program] [--as PERSON] WHAT [PAGE]`.
 func agentCould(root string, args []string) error {
 	usage := errors.New("quilzo agent could NAME [--model | --program] [--as PERSON] OPERATION [PAGE] | tool:NAME | host:HOST")
-	pos, rest := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("agent could", flag.ContinueOnError)
 	withModel := fs.Bool("model", false, "a model deciding")
 	program := fs.Bool("program", false, "its program deciding")
 	as := fs.String("as", "", "the person starting the run; you, unless you administer")
-	if err := fs.Parse(rest); err != nil {
+	// Anywhere, not only after the name. A flag after the operation was
+	// not read as one: `could NAME read_page --model` asked about a page
+	// called --model, with no model deciding.
+	args, err := parseAnywhere(fs, args)
+	if err != nil {
 		return err
 	}
-	args = append(pos, fs.Args()...)
 	if len(args) < 2 || len(args) > 3 || (*withModel && *program) {
 		return usage
 	}

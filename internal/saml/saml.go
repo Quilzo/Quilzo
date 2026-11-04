@@ -46,7 +46,9 @@
 // provider's logout request back, which a closed tab never does, so it
 // would promise what it cannot keep. A session ends at session.max, sooner
 // when the provider says its own does, and at once for somebody SCIM
-// deactivates; nothing else from the provider ends one. Inflate is never
+// deactivates or when the provider says so in a security event, through
+// the receiver in internal/ssf bound to that provider: both reach the
+// session without a browser carrying a logout request to it. Inflate is never
 // used on input: responses arrive by POST, base64 only, so there is no
 // decompression bomb to defuse (gosaml2 CVE-2023-26483).
 package saml
@@ -55,6 +57,7 @@ import (
 	"crypto"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/xmldsig"
@@ -104,6 +107,14 @@ func (e *StatusError) Error() string {
 
 func refuse(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrRefused, fmt.Sprintf(format, args...))
+}
+
+// Reason is what a refusal says, without the word that marks it as one,
+// for a sentence that already says the response was refused. The sign-in
+// page said "was refused: refused: neither the response nor its assertion
+// is signed". Anything that is not a refusal is said as it is.
+func Reason(err error) string {
+	return strings.TrimPrefix(err.Error(), ErrRefused.Error()+": ")
 }
 
 // Provider is one identity provider and this service as it knows it.

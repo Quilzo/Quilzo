@@ -91,6 +91,33 @@ func TestEmbeddingsGoThroughTheRouteNamed(t *testing.T) {
 	}
 }
 
+// EmbedCosted says what an embedding used and cost, the same figures the
+// ledger charged, for a caller that keeps a budget of its own: an agent's
+// run, whose chatbot questions were embedded where its budget could not
+// see them.
+func TestAnEmbeddingSaysWhatItCost(t *testing.T) {
+	vectors := &embedding{name: "vectors"}
+	g := embedRig(t, map[string]Model{"vectors": vectors})
+	vecs, used, cost, err := g.EmbedCosted(context.Background(), "vectors",
+		[]string{"chatbot:help", "person:dana"}, []string{"returns"})
+	if err != nil || len(vecs) != 1 {
+		t.Fatalf("%v %v", vecs, err)
+	}
+	if used.In != 2000000 || Money(cost).String() != "0.04" {
+		t.Errorf("an embedding of 2000000 tokens at 0.02 a million said it used %d and cost %s",
+			used.In, Money(cost))
+	}
+	for _, sum := range g.ledger.Summary(withEmbeddings, g.now()) {
+		if sum.Cost != Money(cost) {
+			t.Errorf("%s was charged %s and the call said %s", sum.Consumer, sum.Cost, Money(cost))
+		}
+	}
+	if _, used, cost, err := g.EmbedCosted(context.Background(), "nope", []string{"chatbot:help"},
+		[]string{"x"}); err == nil || used.In != 0 || cost != 0 {
+		t.Errorf("an embedding that was not made said it used %d and cost %d: %v", used.In, cost, err)
+	}
+}
+
 // A route that fails is not stood in for by another: vectors from two
 // models are not comparable, so the caller does without.
 func TestAFailingEmbeddingRouteHasNoFallback(t *testing.T) {

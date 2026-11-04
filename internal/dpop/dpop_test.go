@@ -140,3 +140,75 @@ func TestTheProofsRememberedAreBounded(t *testing.T) {
 		t.Error("no room once the window passed")
 	}
 }
+
+// What a DPoP proof is held to, pinned before it shares a verifier with
+// agent proofs: five minutes old at most and a minute ahead, the address
+// compared as RFC 9449 section 4.3 says (no query or fragment, the scheme
+// and host in any case, a default port the same as none, the path
+// exactly), the method exactly, and a proof remembered for as long as one
+// could still be presented, so even one dated a minute ahead is good once.
+func TestADPoPProofKeepsItsFiveMinuteWindowAndItsRFC9449Address(t *testing.T) {
+	key := newKey(t)
+	now := time.Unix(1787000000, 0)
+	url := "https://admin.example/mcp"
+	at := func(made time.Time, method, url string) string {
+		p, err := Prove(key, method, url, "qz_token", made)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	if Window != 5*time.Minute || Skew != time.Minute {
+		t.Errorf("the window is %s and the skew %s", Window, Skew)
+	}
+	for _, w := range []struct {
+		name string
+		made time.Time
+		ok   bool
+	}{
+		{"five minutes old", now.Add(-Window), true},
+		{"five minutes and a second old", now.Add(-Window - time.Second), false},
+		{"a minute ahead", now.Add(Skew), true},
+		{"a minute and a second ahead", now.Add(Skew + time.Second), false},
+	} {
+		_, err := Check(at(w.made, "POST", url), "POST", url, "qz_token", now, &Replays{})
+		if (err == nil) != w.ok {
+			t.Errorf("a proof %s: %v", w.name, err)
+		}
+	}
+
+	for _, same := range []string{
+		"https://admin.example/mcp?x=1", "https://admin.example/mcp#f", "HTTPS://ADMIN.EXAMPLE/mcp",
+		"https://admin.example:443/mcp",
+	} {
+		if _, err := Check(at(now, "POST", url), "POST", same, "qz_token", now, &Replays{}); err != nil {
+			t.Errorf("a proof for %s was refused at %s: %v", url, same, err)
+		}
+	}
+	for _, other := range []string{
+		"https://admin.example/MCP", "https://admin.example/mcp/", "http://admin.example/mcp",
+		"https://admin.example:8443/mcp", "https://other.example/mcp",
+	} {
+		if _, err := Check(at(now, "POST", url), "POST", other, "qz_token", now, &Replays{}); err == nil {
+			t.Errorf("a proof for %s was accepted at %s", url, other)
+		}
+	}
+	if _, err := Check(at(now, "post", url), "POST", url, "qz_token", now, &Replays{}); err == nil {
+		t.Error("the method is compared exactly, and post was accepted for POST")
+	}
+
+	// Dated a minute ahead, it is in its window until six minutes from
+	// now; the replays remember it that long.
+	replays := &Replays{}
+	ahead := at(now.Add(Skew), "POST", url)
+	if _, err := Check(ahead, "POST", url, "qz_token", now, replays); err != nil {
+		t.Fatal(err)
+	}
+	later := now.Add(Window + Skew)
+	if _, err := Check(ahead, "POST", url, "qz_token", later, &Replays{}); err != nil {
+		t.Fatalf("six minutes on, the proof is out of its window, so this test proves nothing: %v", err)
+	}
+	if _, err := Check(ahead, "POST", url, "qz_token", later, replays); err == nil {
+		t.Error("a proof was accepted twice, the second time on the last moment of its window")
+	}
+}

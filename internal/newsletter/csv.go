@@ -128,11 +128,13 @@ func ReadCSV(r io.Reader) ([]Row, error) {
 	date, status := find(dateCols), find(statusCols)
 	subscribed := find([]string{"subscribed_to_emails", "subscribed_to_newsletter", "newsletter", "opted_in", "opt_in"})
 	disabled := find([]string{"email_disabled", "unsubscribed"})
+	// Each cell with the guard an export put on it taken off, so the list
+	// this package writes comes back in as it went out.
 	cell := func(rec []string, i int) string {
 		if i < 0 || i >= len(rec) {
 			return ""
 		}
-		return strings.TrimSpace(rec[i])
+		return strings.TrimSpace(sheet.UnguardCell(rec[i]))
 	}
 	for {
 		rec, err := cr.Read()
@@ -169,7 +171,7 @@ func ReadCSV(r io.Reader) ([]Row, error) {
 
 func headless(rec []string) (Row, bool) {
 	for _, c := range rec {
-		if c = strings.TrimSpace(c); strings.Contains(c, "@") {
+		if c = strings.TrimSpace(sheet.UnguardCell(c)); strings.Contains(c, "@") {
 			return Row{Email: c}, true
 		}
 	}
@@ -212,8 +214,12 @@ func WriteCSV(w io.Writer, list []Subscriber) error {
 		if s.Confirmed.IsZero() {
 			continue
 		}
-		if err := cw.Write([]string{s.Email, csvSafe(s.Name), s.At.UTC().Format(time.RFC3339),
-			s.Confirmed.UTC().Format(time.RFC3339), s.Source, csvSafe(s.Consent)}); err != nil {
+		// Every text column, the address included: an address is the
+		// visitor's to type, and =HYPERLINK("http://…"&B2)@x.example passes
+		// the address check, so it went out as a formula in the file a site's
+		// owner opens to look at their list.
+		if err := cw.Write([]string{csvSafe(s.Email), csvSafe(s.Name), s.At.UTC().Format(time.RFC3339),
+			s.Confirmed.UTC().Format(time.RFC3339), csvSafe(s.Source), csvSafe(s.Consent)}); err != nil {
 			return err
 		}
 	}
@@ -223,13 +229,9 @@ func WriteCSV(w io.Writer, list []Subscriber) error {
 
 // csvSafe keeps a cell a spreadsheet would read as a formula from being
 // one: a name typed as =HYPERLINK(...) is text in this file, and has to
-// stay text in whatever opens it.
-func csvSafe(s string) string {
-	if s != "" && strings.ContainsRune("=+-@\t\r", rune(s[0])) {
-		return "'" + s
-	}
-	return s
-}
+// stay text in whatever opens it (sheet.GuardCell, the one guard every
+// export uses).
+func csvSafe(s string) string { return sheet.GuardCell(s) }
 
 // Imported is what an import did.
 type Imported struct {

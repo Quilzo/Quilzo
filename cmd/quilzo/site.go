@@ -333,6 +333,9 @@ func cmdSite(root string, args []string) error {
 			MaxBody:      cfg.Int("api.body.max_bytes"),
 			Throttle:     throttle.New(throttlePolicy(cfg)),
 			ReloadTokens: tokenReloader(root, toks),
+			// The access rules too: a grant revoked on the command line
+			// stops working here without waiting for a restart.
+			ReloadPolicy: policyReloader(root, pol),
 			Tokenise:     search.Tokenise,
 			Vectors: func() *vector.Index {
 				live := s.GetRef(st.Ref)

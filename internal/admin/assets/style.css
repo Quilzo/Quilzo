@@ -1988,6 +1988,12 @@ table.queue td:nth-child(5), table.queue td:nth-child(6) {
 .wf-hero-n { font: 600 3.5rem/1 var(--font); color: var(--on-surface); }
 .stats-row > div.serious dd { color: var(--on-surface); }
 .stats-row > div.serious { border-color: var(--viz-serious); }
+/* A figure that is the worst news on its screen: a run's calls that failed,
+   cases an agent was hijacked by, the events the hourly cap left unacted.
+   Three screens marked it critical and nothing drew it, so the worst figure
+   looked like the plainest one. The border, as serious has; the words in its
+   note carry the meaning for anybody who cannot see the colour. */
+.stats-row > div.critical { border-color: var(--viz-critical); }
 .wf-note { font: var(--label-md) !important; color: var(--on-surface-variant); }
 
 .wf-charts { gap: 1.5rem; }
@@ -2719,6 +2725,14 @@ summary > .chev .icon { width: 20px; height: 20px; }
 .auto-card.waiting { background: var(--surface-container-low); outline: 1px solid var(--warning); }
 .auto-card > p { margin: 8px 0; }
 .auto-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font: var(--title-md); }
+/* A card's title may shrink to the card. As a flex item it would not go
+   narrower than its longest word, and the access review's "someone@a
+   client's long domain is publisher on /clients/..." ran out of the card
+   at 390 wide; break-word then breaks only what cannot fit. */
+.auto-head > strong { min-width: 0; }
+/* A card a button returns to (the access review's #item-N) lands with
+   room above it, so its top edge and title read as the start of it. */
+.auto-card[id] { scroll-margin-top: 1rem; }
 .auto-controls { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-top: 8px; }
 .auto-controls form { margin: 0; display: inline-flex; gap: 4px; align-items: center; }
 .auto-steps { margin: 4px 0 0; padding: 0; list-style: none; display: grid; gap: 4px; font: var(--body-sm); }

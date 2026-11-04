@@ -307,6 +307,40 @@ func TestWrongTokensAreThrottled(t *testing.T) {
 	}
 }
 
+// The right token is let in from an address somebody else is guessing from.
+//
+// The studio refused every sign-in from a throttled address before looking at
+// the token, so one person's wrong tokens kept everybody behind the same
+// address (a NAT, an office proxy, Docker's port publishing) out of the
+// recorder. Found on the admin, whose doors had the same shape; a token
+// cannot be guessed, which is why the content API lets a valid one through.
+func TestTheRightTokenIsLetInFromAThrottledAddress(t *testing.T) {
+	srv, secret := wired(t)
+	stopped := time.Now() // so the delay outlasts the test however slow it runs
+	srv.Throttle = throttle.New(throttle.Default()).WithClock(func() time.Time { return stopped })
+	signIn := func(token string) int {
+		req := httptest.NewRequest(http.MethodPost, "/signin", bytes.NewBufferString("token="+token))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.RemoteAddr = "10.1.2.3:5555"
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, req)
+		return rec.Code
+	}
+	limited := false
+	for i := 0; i < 30 && !limited; i++ {
+		limited = signIn("not-a-real-token") == http.StatusTooManyRequests
+	}
+	if !limited {
+		t.Fatal("thirty wrong tokens were never throttled")
+	}
+	if code := signIn("not-a-real-token"); code != http.StatusTooManyRequests {
+		t.Fatalf("a wrong token from the throttled address: %d", code)
+	}
+	if code := signIn(secret); code == http.StatusTooManyRequests || code == http.StatusUnauthorized {
+		t.Fatalf("the right token from the throttled address was refused: %d", code)
+	}
+}
+
 // Each request is decided by the store as it is now.
 //
 // The studio read its tokens and its policy once, at start, so a revoked
@@ -398,4 +432,30 @@ func oneRecording(t *testing.T, name string, payload []byte) (*bytes.Buffer, str
 func webmBytes() []byte {
 	b := append([]byte{0x1A, 0x45, 0xDF, 0xA3}, []byte("webm")...)
 	return append(b, make([]byte, 4096)...)
+}
+
+// Every token that authenticates is told to the host, signing in and on each
+// request after, so the host can write down when it was last used.
+//
+// Nothing was. Each request is decided by a copy of the store read for it,
+// and the use Authenticate notes in the copy was lost with it, so a token
+// somebody recorded with every day was listed as used "never".
+func TestATokensUseIsToldToTheHost(t *testing.T) {
+	srv, secret := wired(t)
+	var told []string
+	srv.OnTokenUsed = func(tok auth.Token) { told = append(told, tok.Principal) }
+	req := httptest.NewRequest(http.MethodPost, "/signin", bytes.NewBufferString("token="+secret))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusSeeOther || len(told) != 1 || told[0] != "ada" {
+		t.Fatalf("signing in (%d) told %v", rec.Code, told)
+	}
+	if w := signedIn(t, srv, secret, "/", nil, ""); w.Code != http.StatusOK || len(told) != 2 {
+		t.Fatalf("a request signed in (%d) told %v", w.Code, told)
+	}
+	signedIn(t, srv, "qz_not-a-token", "/", nil, "")
+	if len(told) != 2 {
+		t.Fatalf("a token that did not authenticate was told: %v", told)
+	}
 }

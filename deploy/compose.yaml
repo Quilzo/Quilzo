@@ -1,0 +1,207 @@
+# Quilzo with Docker Compose: the published site on HTTPS, the admin on this
+# machine only.
+#
+#   cd deploy
+#   cp compose.env.example .env    # then set QUILZO_DOMAIN
+#   docker compose run --rm admin init
+#   ...
+#   docker compose up -d
+#
+# deploy/README.md has every step, and says how to reach the admin.
+#
+# Three services, because there are three exposures, and a fourth that is
+# exposed to nothing:
+#
+#   caddy  the only one with ports on the internet. It gets and renews the
+#          certificate itself, which is the reason it is Caddy.
+#   site   the published site: anonymous, read-mostly, confined (Landlock) to
+#          the site's own state in the store. Reached only through Caddy.
+#   admin  holds credentials. Reached over HTTPS through a Caddy of its own,
+#          published on this machine's loopback and nowhere else; reach it
+#          over SSH. Putting it behind a public hostname, or behind the Caddy
+#          the internet reaches, is the change that turns a compromise of the
+#          proxy into a compromise of the store.
+#   logd   writes the audit log, as an account the other three are not, with
+#          no network: they hand it records over a socket and cannot open
+#          the log to rewrite one.
+#
+# The site and the admin are two processes over one store, as with systemd
+# (deploy/quilzo-site.service): the store is a directory, and both open it.
+
+name: quilzo
+
+# What every Quilzo container runs under. The image is one static binary on a
+# distroless base with no shell, so none of this takes anything it needs: it
+# writes only the volumes and /tmp, holds no capability, and cannot gain one.
+#
+# No command here names --root. The image's entrypoint does (/srv/store, where
+# the store volume is mounted), because `docker compose run --rm admin init`
+# replaces a service's command: a --root written in it went with it, and every
+# setup step looked for a store in the read-only working directory instead.
+x-quilzo: &quilzo
+  # The release's image by default. QUILZO_IMAGE names one you built
+  # yourself (deploy/README.md), under a name of its own: an image built here
+  # and tagged as the release's would be taken for it.
+  image: ${QUILZO_IMAGE:-ghcr.io/quilzo/quilzo}:${QUILZO_VERSION:-latest}
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs: ["/tmp:size=256m,mode=1777"]
+  pids_limit: 512
+  init: true
+
+services:
+  logd:
+    <<: *quilzo
+    # The audit log's writer, so that what publishes content is not what
+    # keeps the record of it.
+    #
+    # Without it the admin and the site wrote their own log, and anything
+    # that could run code as them could rewrite the record of what it did:
+    # `quilzo logd status` answered "no log writer", and the posture scan
+    # "The CMS writes its own audit log". This runs as uid 65533, which is
+    # nobody else here, owns the log and its key, and is the only container
+    # with the audit volume writable. The others are nonroot (65532), in
+    # its group: they read the log, submit records over its socket, and
+    # computing the chain is the writer's alone, so they cannot forge a
+    # history either (internal/logd).
+    user: "65533:65532"
+    command: ["logd", "--log-dir", "/srv/audit", "--allow-uid", "65532"]
+    volumes:
+      - audit:/srv/audit
+    # A socket is all it serves, so it has no network at all.
+    network_mode: none
+
+  admin:
+    <<: *quilzo
+    # --behind-proxy because admin-proxy terminates TLS in front of it, which
+    # the posture scan should not report as cleartext.
+    command: ["serve", "--addr", "0.0.0.0:8080", "--behind-proxy"]
+    # No ports of its own: admin-proxy is the way in. 0.0.0.0 inside the
+    # container is the container's own interface, on the admin network.
+    volumes:
+      - store:/srv/store
+      - templates:/srv/templates
+      # Read-only: records go to the writer's socket, which needs no write
+      # permission on the volume to connect to.
+      - audit:/srv/audit:ro
+    networks: [admin]
+    depends_on: [logd]
+
+  admin-proxy:
+    # The admin over HTTPS, from a Caddy that is not the internet's.
+    #
+    # The admin was published as plain HTTP on the loopback, so its session
+    # cookie could not be Secure and its OAuth address could not be https.
+    # Serving it from the public Caddy would fix that and break the reason
+    # the admin is apart: that Caddy faces the internet, and one that
+    # terminated the admin's TLS would hold every administrator's session in
+    # clear. This one is on the admin's network only, and published on this
+    # machine's loopback only, so what can reach it is what can already
+    # reach this machine. Its certificate comes from its own authority
+    # (Caddyfile.admin).
+    image: caddy:2.11
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    # 8443 needs no privilege, and this is here anyway: the image's caddy
+    # carries NET_BIND_SERVICE as a file capability, and under
+    # no-new-privileges the kernel refuses to run a program whose file
+    # capabilities are not all in the bounding set ("exec /usr/bin/caddy:
+    # operation not permitted"). It is the one capability, as for caddy.
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:size=64m"]
+    # Loopback on the host, and only that: what the internet can reach of
+    # the admin is decided here, and the answer is nothing.
+    ports: ["127.0.0.1:${QUILZO_ADMIN_PORT:-8443}:8443"]
+    volumes:
+      - ./Caddyfile.admin:/etc/caddy/Caddyfile:ro
+      - admin-caddy-data:/data
+      - admin-caddy-config:/config
+    networks: [admin]
+    depends_on: [admin]
+
+  site:
+    <<: *quilzo
+    command:
+      - site
+      - --addr
+      - 0.0.0.0:8081
+      # The address visitors use, port and all: on 443 the site leaves the
+      # port out of its links, and on any other port they name it.
+      - --base-url
+      - https://${QUILZO_DOMAIN:?set QUILZO_DOMAIN in deploy/.env}:${QUILZO_HTTPS_PORT:-443}
+    volumes:
+      - store:/srv/store
+      # The site reads the design; only the admin changes it.
+      - templates:/srv/templates:ro
+      - audit:/srv/audit:ro
+    # No ports: Caddy is the way in. The edge network is not internal, because
+    # the site's assistant calls its model and federation fetches what it is
+    # sent; Quilzo's own egress rules decide where those may go.
+    networks: [edge]
+    depends_on: [admin, logd]
+
+  caddy:
+    # A minor version rather than a digest, so a patch release (security
+    # fixes included) arrives with `docker compose pull`. Pin a digest instead
+    # if every change must be one you made.
+    image: caddy:2.11
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    # Ports 80 and 443 are below 1024, and binding them is the one privilege
+    # Caddy needs (on other ports it needs none, and keeps this all the same).
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:size=64m"]
+    # The same port inside as out. Caddy listens on the ports .env gives
+    # (Caddyfile.compose), so the addresses it names itself -- the redirect
+    # from HTTP, the Alt-Svc offering HTTP/3 -- are ones a browser reaches;
+    # published elsewhere than it listens, they named :443 regardless.
+    ports:
+      - "${QUILZO_HTTP_PORT:-80}:${QUILZO_HTTP_PORT:-80}"
+      - "${QUILZO_HTTPS_PORT:-443}:${QUILZO_HTTPS_PORT:-443}"
+      - "${QUILZO_HTTPS_PORT:-443}:${QUILZO_HTTPS_PORT:-443}/udp"
+    environment:
+      QUILZO_DOMAIN: ${QUILZO_DOMAIN:?set QUILZO_DOMAIN in deploy/.env}
+      QUILZO_HTTP_PORT: ${QUILZO_HTTP_PORT:-80}
+      QUILZO_HTTPS_PORT: ${QUILZO_HTTPS_PORT:-443}
+    volumes:
+      - ./Caddyfile.compose:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      edge:
+        # A fixed address, because it is the one the site believes.
+        #
+        # Behind a proxy every visitor arrives from the proxy, so every limit
+        # is one bucket for the whole internet and a block of it blocks the
+        # site. The site believes X-Forwarded-For only from an address named
+        # in network.trusted_proxies, and an address on a bridge network is a
+        # place, not a proof: anything else on this network could write the
+        # header too. So the network holds only Caddy and the site, and this
+        # is the address to name.
+        #
+        # From .env, as the range is, so the README's trusted_proxies step
+        # names the address Caddy has rather than a copy of it.
+        ipv4_address: ${QUILZO_PROXY_ADDRESS:-172.31.250.10}
+    depends_on: [site]
+
+networks:
+  edge:
+    ipam:
+      config:
+        - subnet: ${QUILZO_EDGE_SUBNET:-172.31.250.0/28}
+  admin: {}
+
+volumes:
+  store:
+  templates:
+  audit:
+  caddy-data:
+  caddy-config:
+  admin-caddy-data:
+  admin-caddy-config:

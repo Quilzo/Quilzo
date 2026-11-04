@@ -4,19 +4,24 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/mail"
 	"github.com/quilzo/quilzo/internal/memory"
 	"github.com/quilzo/quilzo/internal/oauthas"
+	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/scim"
 )
 
@@ -337,5 +342,345 @@ func TestDeletionByTheIdentityProviderErasesWhatAgentsRemember(t *testing.T) {
 	}
 	if left, _ := memoryStore(root).List(memory.Filter{About: "ada@example.com"}); len(left) != 0 {
 		t.Fatal("a deleted person is still remembered")
+	}
+}
+
+// scimSecurityMail sets up the security contact and catches what it is
+// sent.
+func scimSecurityMail(t *testing.T, root string) func() []mail.Message {
+	t.Helper()
+	cfg, err := loadConfig(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Set("security.contact", "mailto:security@example.com", "", "boss@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveConfig(root, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(mailConfigPath(root), []byte(`{"host":"relay.example:587","from":"quilzo@example.com"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	var sent []mail.Message
+	old := deliverMail
+	deliverMail = func(_ *mail.Mailer, m mail.Message) error {
+		mu.Lock()
+		defer mu.Unlock()
+		sent = append(sent, m)
+		return nil
+	}
+	t.Cleanup(func() { deliverMail = old })
+	// Registered last, so it runs first: a message still being sent
+	// finishes before deliverMail is put back.
+	t.Cleanup(func() { finishBackground(10 * time.Second) })
+	return func() []mail.Message {
+		finishBackground(10 * time.Second)
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]mail.Message(nil), sent...)
+	}
+}
+
+// The identity provider deactivating every administrator leaves one who
+// can grant access, by the rule the Shared Signals receiver keeps: the last
+// of them is not denied and keeps what provisioning gave them, their
+// sessions end, the refusal is recorded as a failure, and the security
+// contact is told. Each was denied in turn, by whoever held the
+// provisioning token or a provider set up wrong, and the store's only way
+// back was editing the policy by hand.
+func TestDeactivatingEveryAdministratorLeavesOneWhoCanGrant(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("QUILZO_TOKEN", "")
+	root := demoStore(t)
+	if err := cmdSCIM(root, []string{"map", "Admins", "admin"}); err != nil {
+		t.Fatal(err)
+	}
+	mails := scimSecurityMail(t, root)
+	token, _, err := newSCIMToken(root, scimTokenDays)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := scimClient{t: t, h: scimHandler(root), token: token}
+	var ids []string
+	for _, who := range []string{"boss@example.com", "dana@example.com"} {
+		_, u := c.do(http.MethodPost, "/Users", `{"userName":"`+who+`","active":true}`)
+		ids = append(ids, u["id"].(string))
+	}
+	c.do(http.MethodPost, "/Groups", `{"displayName":"Admins","members":[{"value":"`+ids[0]+`"},{"value":"`+ids[1]+`"}]}`)
+	p, _ := loadPolicy(root)
+	for _, who := range []string{"boss@example.com", "dana@example.com"} {
+		if !p.Evaluate(who, auth.ActGrant, "/").Allowed {
+			t.Fatalf("%s was not made an administrator: %+v", who, p.Bindings)
+		}
+	}
+	sso := session(t, root, "oidc:dana@example.com", "dana@example.com", auth.MethodSSO)
+	laptop := session(t, root, "laptop", "dana@example.com", "")
+
+	for _, id := range ids {
+		if code, _ := c.do(http.MethodPatch, "/Users/"+id, `{"Operations":[{"op":"replace","value":{"active":false}}]}`); code != http.StatusOK {
+			t.Fatalf("deactivating answered %d", code)
+		}
+	}
+	p, _ = loadPolicy(root)
+	if p.Evaluate("boss@example.com", auth.ActView, "/").Allowed {
+		t.Error("the first administrator deactivated was not suspended")
+	}
+	if !p.Evaluate("dana@example.com", auth.ActGrant, "/").Allowed {
+		t.Fatalf("every administrator was suspended, and nobody can grant access: %+v", p.Bindings)
+	}
+	if works(root, sso) {
+		t.Error("the last administrator's session still works")
+	}
+	if !works(root, laptop) {
+		t.Error("the last administrator's long-lived token was revoked, which could leave nobody able to get in")
+	}
+	sent := mails()
+	if len(sent) != 1 || !strings.Contains(sent[0].Body, "only person who can grant access") ||
+		!strings.Contains(sent[0].Body, "dana@example.com") {
+		t.Errorf("mailed %+v", sent)
+	}
+	evs, _ := audit.Read(auditPath(root))
+	var refused []audit.Event
+	for _, e := range evs {
+		if e.Action == "scim.suspended" {
+			refused = append(refused, e)
+		}
+	}
+	if len(refused) != 1 || refused[0].Outcome != audit.Failure || refused[0].Detail["count"] != "1" {
+		t.Errorf("recorded %+v", refused)
+	}
+
+	// Deleted rather than deactivated, the same: a deny for nobody, and
+	// nothing more to tell than the deactivation did.
+	if code, _ := c.do(http.MethodDelete, "/Users/"+ids[1], ""); code != http.StatusNoContent {
+		t.Fatalf("deleting answered %d", code)
+	}
+	p, _ = loadPolicy(root)
+	if !p.Evaluate("dana@example.com", auth.ActGrant, "/").Allowed {
+		t.Fatal("deleted, the last administrator was suspended")
+	}
+	if sent := mails(); len(sent) != 2 {
+		t.Errorf("the deletion mailed %d times in all", len(sent))
+	}
+}
+
+// Renaming the last administrator as the identity provider deactivates
+// them, in one request or one after the other, leaves them able to grant
+// under the new name, and the old name holding nothing. The rename took
+// what provisioning gave the old name, as a rename does, and the
+// suspension then denied the new name, which held nothing yet: nobody was
+// left who could grant access, and nobody was told. Somebody else
+// deactivated and renamed while another can grant is suspended as before.
+func TestRenamingTheLastAdministratorAsTheyAreDeactivatedLeavesOneWhoCanGrant(t *testing.T) {
+	for shape, requests := range map[string][]string{
+		"at once": {`{"Operations":[{"op":"replace","value":{"active":false,"userName":"zz-dana@example.com"}}]}`},
+		"one after the other": {`{"Operations":[{"op":"replace","value":{"active":false}}]}`,
+			`{"Operations":[{"op":"replace","path":"userName","value":"zz-dana@example.com"}]}`},
+	} {
+		t.Run(shape, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("QUILZO_TOKEN", "")
+			root := demoStore(t)
+			if err := cmdSCIM(root, []string{"map", "Admins", "admin"}); err != nil {
+				t.Fatal(err)
+			}
+			mails := scimSecurityMail(t, root)
+			token, _, err := newSCIMToken(root, scimTokenDays)
+			if err != nil {
+				t.Fatal(err)
+			}
+			c := scimClient{t: t, h: scimHandler(root), token: token}
+			var ids []string
+			for _, who := range []string{"boss@example.com", "dana@example.com"} {
+				_, u := c.do(http.MethodPost, "/Users", `{"userName":"`+who+`","active":true}`)
+				ids = append(ids, u["id"].(string))
+			}
+			c.do(http.MethodPost, "/Groups", `{"displayName":"Admins","members":[{"value":"`+ids[0]+`"},{"value":"`+ids[1]+`"}]}`)
+			if code, _ := c.do(http.MethodPatch, "/Users/"+ids[0],
+				`{"Operations":[{"op":"replace","value":{"active":false,"userName":"zz-boss@example.com"}}]}`); code != http.StatusOK {
+				t.Fatalf("deactivating and renaming the first answered %d", code)
+			}
+			for _, body := range requests {
+				if code, _ := c.do(http.MethodPatch, "/Users/"+ids[1], body); code != http.StatusOK {
+					t.Fatalf("%s answered %d", body, code)
+				}
+			}
+			p, _ := loadPolicy(root)
+			if p.Evaluate("zz-boss@example.com", auth.ActView, "/").Allowed || p.Evaluate("boss@example.com", auth.ActView, "/").Allowed {
+				t.Error("the first administrator, deactivated and renamed while another could grant, was not suspended")
+			}
+			if !p.Evaluate("zz-dana@example.com", auth.ActGrant, "/").Allowed {
+				t.Fatalf("nobody can grant access: %+v", p.Bindings)
+			}
+			if holdsArea(p, "dana@example.com") || p.Anywhere("dana@example.com", auth.ActView) {
+				t.Errorf("the old name still holds access: %+v", p.Bindings)
+			}
+			told := false
+			for _, m := range mails() {
+				told = told || strings.Contains(m.Body, "zz-dana@example.com is the only person who can grant access")
+			}
+			if !told {
+				t.Errorf("the security contact was not told: %+v", mails())
+			}
+		})
+	}
+}
+
+// A group mapped to a job granted only for a time grants it until a day,
+// as granting the job by hand does, and grants nothing without one.
+//
+// `quilzo scim map quilzo-auditors auditor` was accepted, and on the
+// reference stack `auth list` showed auditor@qz.test holding auditor with
+// no until date, while `auth grant x auditor` is refused without --for or
+// --until. An assessor is there for an assessment, and access nobody
+// remembered to remove is the finding they would write; a group nobody
+// remembered to empty is the same finding.
+func TestAProvisionedAuditorsAccessEnds(t *testing.T) {
+	root, c := newSCIM(t)
+	if err := cmdSCIM(root, []string{"map", "Assessors", "auditor"}); err == nil {
+		t.Fatal("a group was mapped to auditor with no day its access ends")
+	}
+	for _, bad := range [][]string{
+		{"map", "Assessors", "auditor", "--until", "2001-01-01"},
+		{"map", "Assessors", "auditor", "--until", "soon"},
+		{"map", "Editors", "publisher", "--for", "30d"},
+		{"map", "Security team", "analyst", "--until", "2099-01-01"},
+	} {
+		if err := cmdSCIM(root, bad); err == nil {
+			t.Errorf("%v was accepted", bad)
+		}
+	}
+
+	day := time.Now().UTC().AddDate(0, 0, 30).Truncate(24 * time.Hour)
+	if err := cmdSCIM(root, []string{"map", "Assessors", "auditor", "--until", day.Format(time.DateOnly)}); err != nil {
+		t.Fatal(err)
+	}
+	_, u := c.do(http.MethodPost, "/Users", `{"userName":"aud@example.com","active":true}`)
+	c.do(http.MethodPost, "/Groups", `{"displayName":"Assessors","members":[{"value":"`+u["id"].(string)+`"}]}`)
+	ends := func() map[string]int64 {
+		t.Helper()
+		p, err := loadPolicy(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]int64{}
+		for _, b := range p.Snapshot() {
+			if b.Principal == "aud@example.com" {
+				out[b.Resource] = b.Expires
+			}
+		}
+		return out
+	}
+	if got := ends(); len(got) != 2 || got[auth.AreaCompliance] != day.Unix() || got[auth.AreaLog] != day.Unix() {
+		t.Fatalf("the auditor's provisioned access does not end on %s: %v", day.Format(time.DateOnly), got)
+	}
+	if p, _ := loadPolicy(root); !p.Evaluate("aud@example.com", auth.ActView, auth.AreaCompliance).Allowed {
+		t.Fatal("until that day, the auditor cannot read the posture")
+	}
+
+	// Mapped again for longer, the access lasts as long: at least sixty
+	// days, to the start of a day.
+	if err := cmdSCIM(root, []string{"map", "Assessors", "auditor", "--for", "60d"}); err != nil {
+		t.Fatal(err)
+	}
+	got := ends()
+	if e := got[auth.AreaLog]; len(got) != 2 || e%86400 != 0 || e < time.Now().Add(60*24*time.Hour).Unix() ||
+		got[auth.AreaCompliance] != e {
+		t.Fatalf("mapped again for 60 days, the access ends at %v", got)
+	}
+
+	// A mapping to it with no day, saved before mappings had to carry one,
+	// or with a day gone by, grants nothing and takes back what it gave,
+	// and the status says why.
+	for _, stale := range []string{"auditor", "auditor until 2001-01-01"} {
+		if err := cmdSCIM(root, []string{"map", "Assessors", "auditor", "--for", "60d"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := scimStore(root).Update(func(st *scim.State) error { st.Mapping["Assessors"] = stale; return nil }); err != nil {
+			t.Fatal(err)
+		}
+		scimHandler(root).SyncAll()
+		if got := ends(); len(got) != 0 {
+			t.Errorf("a group mapped to %q still grants %v", stale, got)
+		}
+		old := w
+		var said bytes.Buffer
+		w = out.New(false)
+		w.Out = &said
+		err := cmdSCIM(root, []string{"status"})
+		w = old
+		if err != nil || !strings.Contains(said.String(), "grants nothing") {
+			t.Errorf("the status of a group mapped to %q does not say it grants nothing (%v):\n%s", stale, err, &said)
+		}
+	}
+}
+
+// A group mapped to auditor before such a mapping had to carry a day takes
+// back what it gave when the admin starts, not whenever the identity
+// provider next happens to send something about its members.
+//
+// Provisioning runs when the provider sends a change, or a group is mapped
+// or unmapped, and only then. On a store upgraded with auditor already
+// mapped, the mapping granted nothing (scim.CheckEnds) and `scim status` said
+// so, while its members went on holding auditor with no end, which for
+// somebody whose groups do not change was for good: the finding the day was
+// added for, left standing on the store it was found on. Only they are
+// synced, so a provisioned grant taken back from somebody else by hand stays
+// taken back.
+func TestAnAuditorMappedWithoutADayIsTakenBackWhenTheAdminStarts(t *testing.T) {
+	root, c := newSCIM(t)
+	if err := cmdSCIM(root, []string{"map", "Assessors", "auditor", "--for", "60d"}); err != nil {
+		t.Fatal(err)
+	}
+	for user, group := range map[string]string{"aud@example.com": "Assessors", "ed@example.com": "Editors"} {
+		_, u := c.do(http.MethodPost, "/Users", `{"userName":"`+user+`","active":true}`)
+		c.do(http.MethodPost, "/Groups", `{"displayName":"`+group+`","members":[{"value":"`+u["id"].(string)+`"}]}`)
+	}
+
+	// As an earlier version left it: mapped with no day, and granted for
+	// good. And an editor's provisioned access taken back by hand.
+	if err := scimStore(root).Update(func(st *scim.State) error { st.Mapping["Assessors"] = "auditor"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := updatePolicy(root, func(p *auth.Policy) error {
+		for i := range p.Bindings {
+			if p.Bindings[i].Principal == "aud@example.com" {
+				p.Bindings[i].Expires = 0
+			}
+		}
+		p.Bindings = slices.DeleteFunc(p.Bindings, func(b auth.Binding) bool { return b.Principal == "ed@example.com" })
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := loadPolicy(root); !p.Evaluate("aud@example.com", auth.ActView, auth.AreaCompliance).Allowed {
+		t.Fatal("the earlier version's grant is not in place to begin with")
+	}
+
+	if err := scimHandler(root).SyncRefused(time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	p, err := loadPolicy(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range p.Snapshot() {
+		switch b.Principal {
+		case "aud@example.com":
+			t.Errorf("a group mapped to auditor with no day still grants %s on %s", b.Role, b.Resource)
+		case "ed@example.com":
+			t.Errorf("starting the admin gave back %s on %s, which was taken back by hand", b.Role, b.Resource)
+		}
+	}
+
+	// And the admin does it as it starts.
+	src, err := os.ReadFile("serve.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src), "scimHandler(root).SyncRefused(") {
+		t.Error("the admin does not take back, as it starts, what a mapping that now grants nothing gave")
 	}
 }

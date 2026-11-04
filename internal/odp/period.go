@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/config"
 )
 
 // A time period, as a governance tool or a person writes one.
@@ -51,7 +53,9 @@ func ParsePeriod(s string) (time.Duration, error) {
 	if s == "" {
 		return 0, fmt.Errorf("no period given")
 	}
-	if d, err := time.ParseDuration(s); err == nil && d >= 0 {
+	// As a duration setting is written (8h, 90d), so a period copied from
+	// the setting it governs is declared as it stands.
+	if d, err := config.ParseDuration(s); err == nil && d >= 0 {
 		return d, nil
 	}
 	if strings.HasPrefix(s, "p") {

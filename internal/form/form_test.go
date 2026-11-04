@@ -4,6 +4,7 @@
 package form
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -97,6 +98,56 @@ func TestAStaleFormIsRefused(t *testing.T) {
 	})
 	if _, err := Accept(contact(), v, "", now); err == nil {
 		t.Error("accepted a form opened two days ago")
+	}
+}
+
+// CheckHuman is the one judgement a form, a booking and the newsletter's
+// sign-up make of a page this server rendered. Each made it in a copy of its
+// own; this pins what the one copy answers, so a route can tell a script
+// (ErrSpam, told to the shield) from a page left open (ErrOld, not told)
+// and from a person.
+func TestCheckHumanTellsAScriptFromAnOldPageFromAPerson(t *testing.T) {
+	now := time.Date(2026, 11, 4, 9, 0, 0, 0, time.UTC)
+	ago := func(d time.Duration) string { return fmt.Sprint(now.Add(-d).Unix()) }
+	for _, c := range []struct {
+		what, honeypot, stamp string
+		oldest                time.Duration
+		want                  error
+	}{
+		{"a filled-in honeypot", "http://buy.example", ago(time.Minute), OldestPage, ErrSpam},
+		{"a filled-in honeypot on an old page", "x", ago(48 * time.Hour), OldestPage, ErrSpam},
+		{"a honeypot of spaces", " \t", ago(time.Minute), OldestPage, nil},
+		{"no stamp", "", "", OldestPage, ErrSpam},
+		{"a stamp that is not a number", "", "soon", OldestPage, ErrSpam},
+		{"a stamp of a second ago", "", ago(time.Second), OldestPage, ErrSpam},
+		{"a stamp from the future", "", ago(-time.Minute), OldestPage, ErrSpam},
+		{"the smallest stamp there is", "", "-9223372036854775808", OldestPage, ErrSpam},
+		{"a stamp of two seconds ago", "", ago(2 * time.Second), OldestPage, nil},
+		{"a stamp in spaces", "", " " + ago(time.Minute) + " ", OldestPage, nil},
+		{"a stamp of a day ago", "", ago(24 * time.Hour), OldestPage, nil},
+		{"a stamp of a day and a second ago", "", ago(24*time.Hour + time.Second), OldestPage, ErrOld},
+		{"a stamp of a year ago, with no upper bound", "", ago(365 * 24 * time.Hour), 0, nil},
+		{"a stamp of a second ago, with no upper bound", "", ago(time.Second), 0, ErrSpam},
+	} {
+		if got := CheckHuman(c.honeypot, c.stamp, now, c.oldest); got != c.want {
+			t.Errorf("%s: %v, not %v", c.what, got, c.want)
+		}
+	}
+}
+
+// A form opened more than a day ago still says so in the words it always
+// has, and the route can tell that from spam.
+func TestAStaleFormSaysItWasOpenedMoreThanADayAgo(t *testing.T) {
+	now := time.Now()
+	_, err := Accept(contact(), filled(map[string]string{
+		StampField: fmt.Sprint(now.Add(-48 * time.Hour).Unix()),
+	}), "", now)
+	if !errors.Is(err, ErrOld) || errors.Is(err, ErrSpam) {
+		t.Fatalf("a form opened two days ago was answered %v", err)
+	}
+	if want := "this form was opened more than a day ago. Reload it and send again — " +
+		"the questions may have changed since"; err.Error() != want {
+		t.Errorf("a stale form says %q, not %q", err, want)
 	}
 }
 

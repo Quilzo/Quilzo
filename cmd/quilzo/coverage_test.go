@@ -302,6 +302,16 @@ var coverage = map[string]surfaces{
 		NoMCP: "provisioning decides who holds which role, and its token " +
 			"is a credential; both are an administrator's to handle",
 	},
+	// The Sign-ins screen shows the stream and what it did; connecting
+	// and turning it off stay in the terminal, where the client secret
+	// comes from the environment and never through a form.
+	"signals": {
+		GUI: "/security/signins",
+		NoMCP: "a connected stream ends people's sessions and suspends them on " +
+			"the identity provider's word; choosing whose word that is, or " +
+			"silencing it, decides who keeps access here, which is an " +
+			"administrator's decision and never a model's",
+	},
 
 	"member": {
 		GUI: "/members",
@@ -422,6 +432,9 @@ var coverage = map[string]surfaces{
 	"ext":      {GUI: "/integrations", NoMCP: "registers a process this store executes. Arbitrary code execution, reached by asking"},
 	"research": {GUI: "/research", MCP: []string{"research_projects", "research_project", "research_search",
 		"research_cite", "research_run", "research_claim", "research_write", "research_ideas"}},
+	// The review of who has access, a section of People.
+	"access": {GUI: "/people", NoMCP: "decides who keeps access and revokes it. A model may not be the " +
+		"reviewer, and a list of who holds what, dormant first, is the reconnaissance a review exists to act on"},
 	// An agent proposes a package; installing it stays a person's decision,
 	// one or two of them, made on the Make screen or the command line.
 	"feature": {GUI: "/make", MCP: []string{"propose_feature"}},

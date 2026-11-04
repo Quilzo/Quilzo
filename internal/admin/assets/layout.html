@@ -84,13 +84,13 @@
         opens it, closes it on Escape or a click outside, and returns focus.
       */}}
       <button type="button" class="account" popovertarget="accountmenu"
-              title="{{.Name}} ({{.Role}})">
+              title="{{.Name}} ({{or $.Holding .Role}})">
         <span class="avatar" aria-hidden="true">{{$.Initial}}</span>
-        <span class="visually-hidden">Account: {{.Name}}, {{.Role}}</span>
+        <span class="visually-hidden">Account: {{.Name}}, {{or $.Holding .Role}}</span>
       </button>
       <div id="accountmenu" class="menu" popover>
         <p class="menu-who"><span class="avatar avatar-lg" aria-hidden="true">{{$.Initial}}</span>
-          <span><strong>{{.Name}}</strong><br><span class="hint">Signed in as {{.Role}}</span></span></p>
+          <span><strong>{{.Name}}</strong><br><span class="hint">{{with $.Holding}}{{.}}{{else}}Signed in as {{$.Principal.Role}}{{end}}</span></span></p>
         <a href="/profile">{{icon "account_circle"}}Your profile</a>
         <a href="/signout">{{icon "logout"}}Sign out</a>
       </div>

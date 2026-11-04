@@ -66,6 +66,36 @@ func (c *Cache) First(id string, until, now time.Time) bool {
 	return true
 }
 
+// Seen reports whether id is remembered and its time is not up, without
+// remembering it.
+//
+// For a caller that may remember an identifier only once what it stands
+// for has been done: a security event whose action failed has to come back
+// and be done, and First, which remembers as it answers, would turn the
+// retry into a replay refused for having been seen.
+func (c *Cache) Seen(id string, now time.Time) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	until, ok := c.until[id]
+	return ok && !now.After(until)
+}
+
+// Full reports whether a new identifier would be refused for want of room,
+// so a caller can say "later" rather than act on what it could not then
+// remember.
+func (c *Cache) Full(now time.Time) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for len(c.queue) > 0 && now.After(c.queue[0].until) {
+		delete(c.until, heap.Pop(&c.queue).(entry).id)
+	}
+	max := c.Max
+	if max <= 0 {
+		max = DefaultMax
+	}
+	return len(c.until) >= max
+}
+
 // Len is how many identifiers are remembered now.
 func (c *Cache) Len() int {
 	c.mu.Lock()

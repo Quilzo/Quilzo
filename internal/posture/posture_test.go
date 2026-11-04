@@ -4,6 +4,7 @@
 package posture
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -218,6 +219,87 @@ func TestAnAdminAPITokenIsCritical(t *testing.T) {
 	if f.Severity != Critical {
 		t.Errorf("severity %s: this token can rewrite the policy that would "+
 			"revoke it", f.Severity)
+	}
+}
+
+// A finding about a token names the token, not the person who holds it.
+//
+// token.admin-role said "cli belongs to dana", and token.long-lived and
+// agent.shared-human-credential named the holder the same way, in the
+// detail and in the command to fix it. A finding goes into the posture
+// export, OSCAL assessment results and the audit stream to other systems,
+// so each carried a person's name in clear where the token's id, which is
+// its resource, already says which credential it is. Whoever acts on it
+// is shown the holder from that id, on the Security screen and by
+// quilzo posture.
+func TestATokenFindingNamesTheTokenNotItsHolder(t *testing.T) {
+	s := clean(t)
+	s.Agents.Enabled = true
+	if _, _, err := s.Tokens.Issue("mcp-helper", "dana", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin); err != nil {
+		t.Fatal(err)
+	}
+	tok := s.Tokens.Tokens[len(s.Tokens.Tokens)-1]
+	tok.CreatedAt, tok.ExpiresAt, tok.LastUsed = ago(time.Hour), in(400*24*time.Hour), ago(time.Minute)
+	s.Tokens.Tokens[len(s.Tokens.Tokens)-1] = tok
+
+	rep := Scan(s, nil)
+	for _, rule := range []string{"token.admin-role", "token.long-lived", "agent.shared-human-credential"} {
+		var f *Finding
+		for i := range rep.Findings {
+			if rep.Findings[i].Rule == rule && rep.Findings[i].Resource == tok.ID {
+				f = &rep.Findings[i]
+			}
+		}
+		if f == nil {
+			t.Errorf("%s was not reported about the token %s", rule, tok.ID)
+			continue
+		}
+		if strings.Contains(f.Detail, "dana") || strings.Contains(f.Fix, "dana") {
+			t.Errorf("%s names the token's holder in clear: %q, fix %q", rule, f.Detail, f.Fix)
+		}
+		if !strings.Contains(f.Detail, "mcp-helper") {
+			t.Errorf("%s does not name the token: %q", rule, f.Detail)
+		}
+	}
+}
+
+// A finding whose subject is a person names them and declares them, as
+// access.sole-admin does, so a pseudonymous audit log and the stream from
+// it carry their handle and not their name.
+//
+// access.too-many-admins listed the administrators, agent.sponsor-gone the
+// sponsor, config.weakened and suppression.expired whoever accepted the
+// risk, each in its detail and none in People, so the record of the
+// finding carried every one of them in clear.
+func TestAFindingThatNamesAPersonDeclaresThem(t *testing.T) {
+	s := clean(t)
+	for _, who := range []string{"lee", "rae"} {
+		if err := s.Policy.Grant(auth.Binding{Principal: who, Role: auth.RoleAdmin, Resource: "/"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.AI.Identities = []AgentIdentityFact{{Name: "helper", Sponsor: "kit"}}
+	s.Weakened = []WeakenedSetting{{Key: "token.ttl.max", Value: "9000h", Why: "longer than a year",
+		Accepted: true, By: "sam", Reason: "a migration"}}
+	sup := []Suppression{{ID: "token.never-used:x", Reason: "r", By: "dana", Until: ago(time.Hour), AddedAt: ago(48 * time.Hour)}}
+
+	named := map[string]string{"access.too-many-admins": "rae", "agent.sponsor-gone": "kit",
+		"config.weakened": "sam", "suppression.expired": "dana"}
+	for _, f := range Scan(s, sup).Findings {
+		who, ok := named[f.Rule]
+		if !ok {
+			continue
+		}
+		delete(named, f.Rule)
+		if !strings.Contains(f.Detail, who) {
+			t.Fatalf("control: %s does not name %s: %q", f.Rule, who, f.Detail)
+		}
+		if !slices.Contains(f.People, who) {
+			t.Errorf("%s names %s and does not declare them: %v", f.Rule, who, f.People)
+		}
+	}
+	for rule := range named {
+		t.Errorf("control: %s was not reported", rule)
 	}
 }
 
@@ -842,5 +924,52 @@ func TestApprovalsMadeAloneAreCounted(t *testing.T) {
 	s.Audit = s.Audit[2:3]
 	if got := r.Check(s); len(got) != 0 {
 		t.Errorf("an approval made with somebody else around was counted: %+v", got)
+	}
+}
+
+// A review of the access Quilzo grants falls due a period after the last
+// one closed, or after the oldest grant one would cover; a grant from
+// before grants were dated is owed one at once; and a store nobody looked
+// at is not checked rather than clean.
+func TestAnAccessReviewFallsDueAfterItsPeriod(t *testing.T) {
+	r := ruleByID(t, "access.review-due")
+	const day = 24 * time.Hour
+	at := func(facts ReviewFacts) []Finding { return r.Check(State{Now: now, Reviews: facts}) }
+	if got := at(ReviewFacts{Checked: true, Every: 90 * day, LastClosed: now.Add(-91 * day)}); len(got) != 1 ||
+		!strings.Contains(got[0].Detail, "90 days") || !strings.Contains(got[0].Fix, "access review start") {
+		t.Errorf("ninety-one days after the last close: %+v", got)
+	}
+	if got := at(ReviewFacts{Checked: true, Every: 90 * day, LastClosed: now.Add(-89 * day)}); len(got) != 0 {
+		t.Errorf("eighty-nine days after the last close: %+v", got)
+	}
+	if got := at(ReviewFacts{Checked: true, Every: 30 * day, LastClosed: now.Add(-31 * day)}); len(got) != 1 {
+		t.Error("a shorter period is not the one judged by")
+	}
+	if got := at(ReviewFacts{Checked: true, Every: 90 * day, Owed: now.Add(-91 * day)}); len(got) != 1 {
+		t.Error("a store that never closed one, with grants ninety-one days old")
+	}
+	if got := at(ReviewFacts{Checked: true, Every: 90 * day, Owed: now.Add(-day)}); len(got) != 0 {
+		t.Errorf("due a day after the first grant: %+v", got)
+	}
+	if got := at(ReviewFacts{Checked: true, Every: 90 * day}); len(got) != 0 {
+		t.Errorf("due with nothing to review: %+v", got)
+	}
+	if got := at(ReviewFacts{Checked: true, Every: 90 * day, Undated: true}); len(got) != 1 {
+		t.Error("an undated grant nobody has reviewed is not owed a review")
+	}
+	open := at(ReviewFacts{Checked: true, Every: 90 * day, LastClosed: now.Add(-100 * day), Open: now.Add(-day)})
+	if len(open) != 1 || !strings.Contains(open[0].Fix, "close") || !strings.Contains(open[0].Detail, "still open") {
+		t.Errorf("an open review is not named: %+v", open)
+	}
+	rep := Scan(clean(t), nil)
+	skipped := false
+	for _, id := range rep.Skipped {
+		skipped = skipped || id == "access.review-due"
+	}
+	if !skipped || has(rep, "access.review-due") != nil {
+		t.Error("a scan given no review facts reports the rule as run")
+	}
+	if !Reminds("access.review-due") || Reminds("access.sole-admin") {
+		t.Error("the reminder is not the one the drift check mails")
 	}
 }

@@ -341,7 +341,7 @@ func reviewApprove(root string, args []string) error {
 	if err := authorise(root, caller, auth.ActPublish, "/"); err != nil {
 		return fmt.Errorf("approving a change for publication takes the publish permission: %w", err)
 	}
-	alone, err := secondPersonForDraft(root, s, *prop, caller.Name)
+	alone, err := secondPersonForDraft(root, s, *prop, caller)
 	if err != nil {
 		return errBlocked{err}
 	}

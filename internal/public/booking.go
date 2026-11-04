@@ -281,21 +281,18 @@ func (st *Site) bookingMake(w http.ResponseWriter, r *http.Request, service stri
 		back(w, r, path, url.Values{"booking_error": {code}})
 	}
 	now := st.bookingNow()
-	// The same two checks a form makes: a field nobody sees, and a page
-	// that was read by a person for at least two seconds.
-	if strings.TrimSpace(r.PostFormValue(form.Honeypot)) != "" {
-		st.signal(FormSpam, "booking:"+svc.Name, r)
-		fail("refused")
-		return
-	}
-	started, err := strconv.ParseInt(strings.TrimSpace(r.PostFormValue(form.StampField)), 10, 64)
-	switch {
-	case err != nil || now.Unix()-started < form.MinFillSeconds:
-		st.signal(FormSpam, "booking:"+svc.Name, r)
-		fail("refused")
-		return
-	case now.Unix()-started > int64((24 * time.Hour).Seconds()):
+	// The same two checks a form makes, with the same day's bound: a field
+	// nobody sees, and a page that was read by a person for at least two
+	// seconds (form.CheckHuman). A page opened yesterday is asked to choose
+	// a time again, and is not told to the shield.
+	switch err := form.CheckHuman(r.PostFormValue(form.Honeypot), r.PostFormValue(form.StampField),
+		now, form.OldestPage); {
+	case errors.Is(err, form.ErrOld):
 		fail("old")
+		return
+	case err != nil:
+		st.signal(FormSpam, "booking:"+svc.Name, r)
+		fail("refused")
 		return
 	}
 	at, err := strconv.ParseInt(r.PostFormValue("slot"), 10, 64)

@@ -25,7 +25,7 @@ func publishedShop(t *testing.T) string {
 	if w == nil {
 		w = out.New(false)
 	}
-	root := t.TempDir()
+	root := storeFolder(t)
 	if err := cmdInit(root); err != nil {
 		t.Fatal(err)
 	}

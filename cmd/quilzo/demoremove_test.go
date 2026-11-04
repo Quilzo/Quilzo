@@ -573,12 +573,32 @@ func TestAFailedInstallCanBeTakenBack(t *testing.T) {
 	if err := cmdInit(root); err != nil {
 		t.Fatal(err)
 	}
-	blocked := filepath.Join(base, "examples")
-	if err := os.WriteFile(blocked, []byte("a file where a folder goes"), 0o600); err != nil {
+	// A file where one of the examples' folders goes, inside a folder that
+	// can be written. An examples folder that cannot be written at all is
+	// refused before anything is (TestADemoThatCannotWriteItsFoldersWritesNothing),
+	// so this is the install that stops part of the way.
+	ex := filepath.Join(base, "examples")
+	var sub string
+	for rel := range demo.Marginalia().Examples {
+		if first, _, ok := strings.Cut(rel, "/"); ok {
+			sub = first
+			break
+		}
+	}
+	if sub == "" {
+		t.Fatal("the demonstration has no example in a folder of its own")
+	}
+	if err := os.MkdirAll(ex, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := cmdDemo(root, []string{"--templates", filepath.Join(base, "templates"), "--examples", blocked}); err == nil {
+	if err := os.WriteFile(filepath.Join(ex, sub), []byte("a file where a folder goes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdDemo(root, []string{"--templates", filepath.Join(base, "templates"), "--examples", ex}); err == nil {
 		t.Fatal("the install went ahead with nowhere to put its examples")
+	}
+	if gone(t, demoManifestPath(root)) {
+		t.Fatal("the install stopped before it wrote anything, so this tests nothing")
 	}
 	if err := removeDemo(root, true, resolveCaller(root, "")); err != nil {
 		t.Fatalf("what a failed install wrote cannot be taken back: %v", err)

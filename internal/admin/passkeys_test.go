@@ -535,3 +535,55 @@ func TestAPasskeyChangeLandsOnTheKeyItIsFor(t *testing.T) {
 		t.Fatalf("%d keys kept; 2 and 25 of 50 were left", n)
 	}
 }
+
+// A passkey whose counter has gone back is refused, and the refusal is on the
+// record as what it is: the one sign WebAuthn gives that the credential was
+// copied off its authenticator.
+//
+// It was refused and nothing else. The verification error, which names the
+// counter and says the key should be removed, was dropped; the throttle and
+// the lockout counted it as one more failure; and the audit held only what a
+// mistyped PIN leaves, if anything. Found on the reference stack by putting
+// back an older copy of a key's saved state: three refusals, no record that
+// named the counter, no signal, and the credential still registered.
+func TestAPasskeyWhoseCounterWentBackIsOnTheRecord(t *testing.T) {
+	srv := enrolling(t)
+	var mu sync.Mutex
+	var records []map[string]string
+	var signals []string
+	srv.Audit = func(action, _ string, detail map[string]string) {
+		mu.Lock()
+		defer mu.Unlock()
+		if action == "passkey.counter-refused" {
+			records = append(records, detail)
+		}
+	}
+	srv.SignInSignal = func(principal, kind, _ string) {
+		mu.Lock()
+		defer mu.Unlock()
+		signals = append(signals, principal+" "+kind)
+	}
+	secret, _, err := srv.Enrol.Issue("dana", "editor", time.Hour, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dana := newFake(t, "dana-key")
+	if w := dana.enrol(t, srv, secret); w.Code != http.StatusOK {
+		t.Fatalf("enrolling: %d %s", w.Code, w.Body)
+	}
+	clone := *dana // copied off the authenticator, counter and all
+	if w := dana.signInFrom(t, srv, "192.0.2.10:5000"); w.Code != http.StatusOK {
+		t.Fatalf("the key itself: %d %s", w.Code, w.Body)
+	}
+	if w := clone.signInFrom(t, srv, "203.0.113.7:5000"); w.Code != http.StatusUnauthorized {
+		t.Fatalf("the copy was answered %d", w.Code)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(records) != 1 || records[0]["for"] != "dana" || !strings.Contains(records[0]["why"], "counter") {
+		t.Fatalf("the copy is not on the record as one: %v", records)
+	}
+	if len(signals) != 1 || signals[0] != "dana passkey-cloned" {
+		t.Fatalf("no signal was raised about dana's key: %v", signals)
+	}
+}

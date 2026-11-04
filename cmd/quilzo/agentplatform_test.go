@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -172,5 +173,148 @@ func TestAProposingAgentProposesThroughTheInterface(t *testing.T) {
 	}
 	if strings.Join(called, ",") != "propose_issue" {
 		t.Errorf("%v", called)
+	}
+}
+
+// A chatbot an agent asks in its run is the run's spending, and the
+// person's who started it.
+//
+// ask_assistant is the one operation a run performs through the agent
+// interface that asks a model (site_build drafts without one there, and the
+// research operations read and compute). Its model was charged to the
+// chatbot alone: a run with a money budget could ask a chatbot past it,
+// its receipt priced the agent's own calls only, and the person who started
+// it was not charged either.
+func TestAChatbotAskedInARunIsChargedToTheRunAndItsPerson(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := demoStore(t)
+	declaredAutonomy(t, root)
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Publish(s, ""); err != nil {
+		t.Fatal(err)
+	}
+	var chatbot int
+	models := &pricedModels{choose: func(prompt string) string {
+		if strings.Contains(prompt, "You answer questions for visitors") {
+			chatbot++
+			return `{"answer": "", "action": null}`
+		}
+		return `{"op":"ask_assistant","input":{"name":"help","question":"can I return opened ink"}}`
+	}}
+	pricedGateway(t, root, models, false)
+	if err := cmdAssistant(root, []string{"add", "help", "--title", "Help", "--model"}); err != nil {
+		t.Fatal(err)
+	}
+	asker := agent.Manifest{Name: "asker", Kind: agent.KindTask, Purpose: "Ask the help chatbot",
+		Capabilities: []string{"ask_assistant"}, Autonomy: agent.AutonomyDraft,
+		Budget: agent.Budget{Steps: 6, Tools: 6, Duration: agent.Duration(time.Minute), Money: "0.30"}}
+	if err := declareAgent(root, asker, true, true, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	id, err := runAgentOnce(root, "asker", "see what the help chatbot says about returns", true, asAdmin("dana"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec, _ := loadAgentRun(root, id)
+	if chatbot == 0 {
+		t.Fatalf("control: the run asked no chatbot: %v %+v", models.calls, rec.Trace)
+	}
+	if want := int64(models.total()) * 100_000; rec.Trace.Spent.Cost != want {
+		t.Errorf("%d calls at 0.10 (%d of them the chatbot's) are recorded as a run that cost %d micros",
+			models.total(), chatbot, rec.Trace.Spent.Cost)
+	}
+	if models.total() > 4 {
+		t.Errorf("with a money budget of 0.30, the run made %d calls at 0.10", models.total())
+	}
+	if calls, dana := chargedTo(t, root, "chatbot:help", "person:dana"); calls == 0 || dana != calls {
+		t.Errorf("of %d calls as chatbot:help, %d were charged to the person who started the run", calls, dana)
+	}
+}
+
+// The question a chatbot embeds to find its passages by meaning is a model
+// call too, and asked in a run it is the run's and its person's.
+//
+// ask_assistant's answer was charged to the run and its person, and the
+// vector of the question it was asked, made through the embedding route
+// (chatbot.embeddings), was still charged to the chatbot alone: a run with
+// a money budget did not see it, its receipt left it out, and the person
+// who started the run was not charged for it.
+func TestAChatbotsQuestionEmbeddedInARunIsChargedToTheRunAndItsPerson(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := demoStore(t)
+	declaredAutonomy(t, root)
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Publish(s, ""); err != nil {
+		t.Fatal(err)
+	}
+	models := &pricedModels{choose: func(prompt string) string {
+		if strings.Contains(prompt, "You answer questions for visitors") {
+			return `{"answer": "", "action": null}`
+		}
+		return `{"op":"ask_assistant","input":{"name":"help","question":"can I return opened ink"}}`
+	}}
+	pricedGateway(t, root, models, false)
+	// Every question embedded reports 1000 tokens, which the route's price
+	// makes 0.10, as every other call here costs.
+	var embedded int64
+	vectors := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			Input []string `json:"input"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		atomic.AddInt64(&embedded, int64(len(in.Input)))
+		type item struct {
+			Index     int       `json:"index"`
+			Embedding []float64 `json:"embedding"`
+		}
+		out := struct {
+			Data  []item         `json:"data"`
+			Usage map[string]int `json:"usage"`
+		}{Usage: map[string]int{"prompt_tokens": 1000 * len(in.Input), "total_tokens": 1000 * len(in.Input)}}
+		for i, s := range in.Input {
+			out.Data = append(out.Data, item{i, subjectOf(s)})
+		}
+		_ = json.NewEncoder(w).Encode(out)
+	}))
+	t.Cleanup(vectors.Close)
+	if err := cmdGateway(root, []string{"route", "add", "vectors", "--url", vectors.URL + "/v1",
+		"--model", "embed-small", "--embeds", "--price-in", "100", "--price-out", "100"}); err != nil {
+		t.Fatal(err)
+	}
+	setEmbeddings(t, root, "vectors")
+	if err := cmdAssistant(root, []string{"add", "help", "--title", "Help", "--model"}); err != nil {
+		t.Fatal(err)
+	}
+	asker := agent.Manifest{Name: "asker", Kind: agent.KindTask, Purpose: "Ask the help chatbot",
+		Capabilities: []string{"ask_assistant"}, Autonomy: agent.AutonomyDraft,
+		Budget: agent.Budget{Steps: 3, Tools: 3, Duration: agent.Duration(time.Minute), Money: "5.00"}}
+	if err := declareAgent(root, asker, true, true, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	id, err := runAgentOnce(root, "asker", "see what the help chatbot says about returns", true, asAdmin("dana"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec, _ := loadAgentRun(root, id)
+	questions := atomic.LoadInt64(&embedded)
+	if questions == 0 {
+		t.Fatalf("control: no question was embedded: %v %+v", models.calls, rec.Trace)
+	}
+	if want := (int64(models.total()) + questions) * 100_000; rec.Trace.Spent.Cost != want {
+		t.Errorf("%d calls and %d questions embedded, at 0.10 each, are recorded as a run that cost %d micros, not %d",
+			models.total(), questions, rec.Trace.Spent.Cost, want)
+	}
+	if want := (models.total() + int(questions)) * 1000; rec.Trace.Spent.Tokens != want {
+		t.Errorf("%d calls and %d questions embedded, at 1000 tokens each, are recorded as %d tokens, not %d",
+			models.total(), questions, rec.Trace.Spent.Tokens, want)
+	}
+	if calls, dana := chargedTo(t, root, "chatbot:help", "person:dana"); calls == 0 || dana != calls {
+		t.Errorf("of %d calls as chatbot:help, %d were charged to the person who started the run", calls, dana)
 	}
 }

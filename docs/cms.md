@@ -1965,7 +1965,14 @@ what the keys are**. That boundary is the design, not an unfinished edge.
 
 ## Signing in
 
-Three ways, and the differences matter more than the count.
+People sign in with a passkey or through their organisation's identity
+provider, programs with a token, and a role says what either may do. The
+differences matter more than the count.
+
+**Passkeys**, added through a one-time link — `quilzo auth enrol WHO` — so no
+password is ever set. What the store keeps is public keys, and a copy of it lets
+nobody sign in as anybody. A sign-in unlike the person's own (impossible travel,
+a session copied to another device) gets no session until a passkey confirms it.
 
 **OpenID Connect** against whatever your organisation already runs —
 `quilzo oidc configure --issuer ... --client-id ...`, with PKCE, written from
@@ -1973,13 +1980,24 @@ scratch because there is no dependency to import it from. `quilzo oidc check`
 talks to the provider and reports what it actually offers rather than what the
 documentation claims.
 
+**SAML**, for the providers that speak only that — `quilzo saml add NAME
+--metadata F --url U`, with a preset for each common console (`quilzo saml
+presets`). A response nobody signed is refused. Single sign-on can be required,
+with named break-glass accounts.
+
+**SCIM provisioning** from Okta, Entra and others — `quilzo scim token`, then
+`quilzo scim map GROUP ROLE` for what each of their groups means here. It signs
+nobody in; it decides who exists, and somebody deactivated there is suspended
+here at once.
+
 **API tokens**, shown once, each with a scope **narrower than the principal
 holding it**. That is the part most systems get wrong: a token that inherits its
 owner's authority is a copy of that person, and it lives in a CI variable
 forever. Here a token is issued for a job and can do that job only.
 `quilzo token stale` finds the ones nobody has used.
 
-**Roles**, from reader to admin, scoped to a path or to a person's own content.
+**Roles**, from reader to admin, scoped to a path, and a deny wins wherever it
+sits.
 `quilzo auth explain WHO ACTION` answers *why* somebody can or cannot do a thing,
 which is the question that actually gets asked, and it answers it by evaluating
 the real policy rather than by describing it.
@@ -1987,6 +2005,203 @@ the real policy rather than by describing it.
 Failed authentication is throttled with a soft lockout. The audit log has a
 published commitment to every entry so far, so removing one is detectable rather
 than merely forbidden.
+
+### Reviewing who has access
+
+Access granted to unblock somebody is never taken back by itself. So an
+administrator reviews, every `access.review.every` (ninety days unless the
+organisation declares `ac-02_odp.10`, between 30 and 365), the access only
+Quilzo holds:
+
+- every grant made by hand, a role in an app counted once;
+- what each identity provider group means here, one item however many people
+  are in it;
+- every long-lived token.
+
+Sessions end within a day, an agent's identity is renewed rather than
+reviewed, a grant provisioning made is the identity provider's to review,
+and the site's members hold nothing in the admin, so none of those is in
+it. Access to other systems is reviewed in whatever reviews those.
+
+```
+quilzo access review start               the snapshot: one review open at a time
+quilzo access review items               dormant first, then privileged
+quilzo access review decide 3 revoke     applied at once
+quilzo access review decide 4 keep --why "edits the handbook"
+quilzo access review close
+```
+
+Or Review who has access on People, one card and two buttons per item; a
+button returns to its card, with what it did or why it was refused. Each
+item that is your own says so in both, and waits for another administrator.
+With no review open, both say when the last one closed and when the next is
+due.
+
+Each item says how and when it was granted, by whom where the store recorded
+it (a grant made by hand), until when, and when it was last used: a token's
+last use, or the person's last record in the audit log, which is the one
+lasting record once sessions are pruned. Only a record of the person doing
+something counts, with their identity proved and the act not refused: a
+command refused under their name, or a sign-in to their account held by the
+lockout, is somebody trying. Nothing for ninety days is dormant, listed first
+and proposed for revoke, the same threshold as the posture scan's
+`token.stale`. Privileged means administration, the security, compliance or
+log areas, or a permission only an administrator otherwise holds.
+
+The rules are the ones that make a review one. The reviewer is a person,
+signed in as themselves: a model, a program's token or a name nobody proved
+is refused. On People that means signed in with two factors, even in the
+grace before two factors are compulsory, since a token pasted into the
+sign-in form is how a program would get in; a session with one factor is
+told so in place of the buttons. Nobody decides their own access, however
+their name is spelled, or a group they are in. Keeping privileged access
+needs a reason (Why on People, `--why` on the command line), which is kept
+in the review's file (`access/reviews/ID.json`) and never in the audit log,
+where the record says only that one was given; a reason of more than one
+word goes in quotes, and words left over after a decision are refused rather
+than dropped. There is no "reduce": revoke, then grant the lower role.
+Starting, listing, deciding and closing each take an administrator of the
+whole store; a publisher or an auditor can do none of them.
+
+A revoke goes through the path that granted the access, at once: the binding
+is removed, the token revoked with every session minted from it, the
+group's mapping taken off and its grants with it. What it gave is refused
+from the next request: a revoked token's next request fails outright, and a
+revoked grant leaves the person any other grant they hold, which is an item
+of its own. A revoke that would leave nobody able to administer the store is
+refused, whoever decided it and whenever.
+
+Closing is refused while anything is undecided, and the refusal names which
+of the undecided items are your own. An item whose grant was taken away some
+other way since the start does not hold it open; it is counted as gone.
+Closing reports grants made since the review started as not reviewed by it,
+writes `review.closed` with the counts, and writes evidence for the built-in
+quarterly control
+`quilzo/AC-2 account review`, which `quilzo assurance report` measures like
+any other: one review in a six-month window is unproven, two are covered.
+With one administrator there is nobody else to decide their own access, so
+the review closes alone, says how much of theirs went unreviewed, and
+`approval.alone` counts it; not for a day after another administrator was
+removed, when nothing is approved alone, and the refusal says until when. In the same way, a group every administrator is
+in (the whole staff mapped to reader, say) is everybody's own and nobody's to
+decide: it closes undecided, and `review.closed` counts it as `unreviewable`.
+
+When no review has closed within the period, counted from the last close
+or, before the first, from the oldest grant a review would cover (at once
+for a grant made before grants were dated), the posture scan reports
+`access.review-due`, and drift mails it to the security contact as a
+reminder, though it is Medium.
+
+The records are `review.started`, `review.keep`, `review.revoke` and
+`review.closed`, beside the record the revoked path writes itself
+(`auth.revoke`, `token.revoke`, `scim.unmapped`). A token is named in them as
+a `credential`, and the person under `principal`, which the log
+pseudonymises.
+
+### When the identity provider says a session is over
+
+A session made by single sign-on is Quilzo's own: the provider vouches once, and
+the eight hours after that are local. So when the provider ends somebody's
+session, sees their password stolen or disables their account, nothing reaches
+the session already open here unless the provider can say so. Its security event
+stream (OpenID Shared Signals: CAEP and RISC) is how it says so, and Quilzo
+listens at `/sso/signals` on the admin:
+
+```
+export QUILZO_SIGNALS_SECRET=...      # the stream client's secret; never stored
+quilzo signals connect --provider oidc --client-id quilzo-stream
+quilzo signals status
+```
+
+The stream is bound to one way of signing in, `oidc` or `saml:NAME`, and the
+provider's word reaches only the sessions that provider signed in. Connecting is
+the whole opt-in: there is no rule to write, and every event only takes access
+away, so one administrator connects it, with the authority to grant access.
+
+The provider pushes to `/sso/signals` at the address its sign-in sends people
+back to: the origin of the OIDC redirect URI, or the SAML provider's `--url`.
+That address has to be https and one the provider can reach: connecting refuses
+plain http and a private address written as a number. The `--issuer` is the
+OIDC issuer unless given, and has to be given for SAML.
+
+- **With `--client-id`**, for a provider that publishes a stream API, Quilzo
+  asks it for the stream, gives it a push secret it never shows, and asks it to
+  verify. The client secret is read from `QUILZO_SIGNALS_SECRET`.
+- **With `--jwks URL`**, for a provider whose stream is made in its own console,
+  Quilzo prints the push address, the audience, the authorization and the events
+  to ask for. The authorization is shown once and kept only as a digest.
+
+Give one or the other. The server reads `QUILZO_SIGNALS_SECRET` too, from its
+own environment, to ask for the daily verification below; set it wherever
+`quilzo serve` is started, or each day's request fails and the stream is
+reported as silent.
+
+| The provider says | Quilzo does |
+|---|---|
+| session-revoked, sessions-revoked; credential-change (update, revoke, delete) | ends that provider's sessions for them opened before the event was issued |
+| credential-compromise, account-credential-change-required | the same; every other session they had open then must confirm it is them; the security contact is told |
+| account-disabled, account-purged | suspends them as SCIM does: every token, every app they connected, and a deny over the whole site that passkeys and single sign-on refuse |
+| account-enabled | lifts the deny it added, and no other |
+
+What keeps that from being turned against the site:
+
+- Every event is a token signed by the provider's published key, for this
+  receiver, carrying one event Quilzo asked for. It is pushed with a bearer
+  only the transmitter was given, and Quilzo keeps the bearer's digest.
+- Who an event is about is read the way the provider names people at sign-in,
+  and has to be somebody the access policy already knows. Anything else is
+  counted as unmatched and nothing is done.
+- The last person who can grant access is never suspended this way: their
+  sessions end and the security contact is told.
+- At most twenty people an hour are acted on. Past that the cap is recorded
+  once an hour and the security contact is told; an event about anybody else
+  is answered 503 with a `Retry-After` of when the hour is up, and is not
+  remembered as seen, so the provider sends it again then and it is acted on,
+  twenty people an hour. An offboarding larger than that finishes by itself
+  while the provider keeps retrying; whoever is told can suspend anybody sooner
+  by hand, from the provider's own log of whom it disabled.
+- A session opened after an event was issued, give or take two minutes for
+  the clocks, is one the provider vouched for since, and the event does not
+  reach it; nor does a compromise hold again a session that has confirmed it
+  is its person since. The same event sent again, after a restart has
+  forgotten it was seen, ends and holds nothing new.
+- An account-enabled older than the last event acted on for that person is
+  refused, after a restart too, so a replay cannot lift a newer suspension. An
+  account-disabled or account-purged older than the last account-enabled acted
+  on, or no newer than the last one acted on, is refused the same way, so a
+  late retry cannot suspend again somebody the provider has enabled since. Each
+  is recorded as `signals.stale`.
+- The shield's `signals` feature turns the endpoint off. It answers 503 with
+  a time to come back, so a transmitter that retries sends the event again
+  later.
+
+Once a day the server asks the provider to verify the stream, and the posture
+rule `signals.stream-silent` reports a stream that has not answered for a day: a
+stream gone quiet looks the same as one with nothing to say. A stream made by
+hand in the provider's console (`--jwks`) cannot be asked, and is reported for
+that.
+
+`quilzo signals status` and the Protection > Sign-ins screen say the same
+things: whose sign-ins the stream speaks for, when it last answered a
+verification and whether it has gone silent, why the last request failed if it
+did, whether the provider says the stream is enabled, paused or disabled, the
+last event, and how many events were received, acted on, unmatched and
+refused, and how many deliveries past the hourly cap were told to wait.
+
+`quilzo signals off` turns the stream off here at once, and anything pushed
+after is refused. It asks the provider to delete the stream too, with the client
+secret from `QUILZO_SIGNALS_SECRET`; when it cannot, or the stream was made in
+the provider's console, it says so, and the stream is deleted there by hand.
+Denies it added stay until the account is enabled or a person lifts them.
+
+With the admin on loopback, publish only `/scim/v2/` and `/sso/signals` through
+the proxy (`deploy/Caddyfile` has the block, commented out). Each act is in the
+audit log as `signals.sessions-ended`, `signals.step-up`, `signals.suspended`,
+`signals.restored`, `signals.verified`, `signals.stream-status`,
+`signals.stale`, `signals.capped` and, at most once an hour, `signals.refused`. Connecting,
+turning off and each day's request are `signals.connected`,
+`signals.disconnected` and `signals.verify-asked`, and each message to the
+security contact is `signals.told`.
 
 ---
 
@@ -2355,9 +2570,16 @@ nothing else.
 
 ```bash
 docker build -t quilzo .
-docker run --rm -p 8081:8081 -v "$PWD/store:/store" quilzo \
+docker volume create quilzo-store
+docker run --rm -p 8081:8081 -v quilzo-store:/srv/store quilzo \
   site --addr 0.0.0.0:8081 --base-url https://example.org
 ```
+
+The image's store is `/srv/store`, named in its entrypoint, so mount the
+store's volume there; the image runs as uid 65532, which a named volume
+suits and a host folder must be made writable for. `deploy/README.md` has
+the whole stack with Docker Compose: the admin over HTTPS, the site behind
+Caddy, and a log writer of its own.
 
 Behind a reverse proxy every connection is the proxy's, so name it in
 `network.trusted_proxies` by its own address — the proxy, a cluster's ingress

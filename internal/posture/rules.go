@@ -336,7 +336,7 @@ var rules = []Rule{
 			var out []Finding
 			for _, a := range s.AI.Identities {
 				if a.Sponsor != "" && !a.SponsorActive {
-					out = append(out, Finding{Resource: "agent/" + a.Name,
+					out = append(out, Finding{Resource: "agent/" + a.Name, People: []string{a.Sponsor},
 						Detail: a.Name + "'s sponsor, " + a.Sponsor + ", can no longer act here",
 						Fix:    "quilzo agent sponsor " + a.Name + " PERSON  # or withdraw it"})
 				}
@@ -517,7 +517,10 @@ var rules = []Rule{
 			if len(admins) <= 3 {
 				return nil
 			}
+			// Declared, as access.sole-admin's is, so the record of the
+			// finding carries their handles and not their names.
 			return []Finding{{
+				People: admins,
 				Detail: fmt.Sprintf("%d administrators: %s",
 					len(admins), joinShort(admins, 6)),
 				Fix: "quilzo auth grant WHO publisher  # then revoke the admin role",
@@ -555,6 +558,46 @@ var rules = []Rule{
 			}}
 		},
 	},
+	{
+		ID:       "access.review-due",
+		Title:    "The access Quilzo grants has not been reviewed within its period",
+		Severity: Medium,
+		Controls: []string{"AC-2"},
+		Remind:   true,
+		Why: "AC-2 asks that accounts are reviewed at a set frequency " +
+			"(access.review.every, or the organisation's ac-02_odp.10). " +
+			"Access granted to unblock somebody is never taken back by itself, " +
+			"and a grant nobody has looked at since it was made is the one " +
+			"still working for somebody who left.",
+		Check: func(s State) []Finding {
+			r := s.Reviews
+			if !r.Checked || r.Every <= 0 {
+				return nil
+			}
+			since, what := r.LastClosed, "the last review closed on "+r.LastClosed.UTC().Format("2 Jan 2006")
+			switch {
+			case !since.IsZero():
+			case r.Undated:
+				what = "no review has closed, and a grant one would cover was made before grants were dated"
+			default:
+				since, what = r.Owed, "no review has closed, and the oldest grant one would cover was made on "+
+					r.Owed.UTC().Format("2 Jan 2006")
+				if since.IsZero() {
+					return nil
+				}
+			}
+			if !(r.Undated && r.LastClosed.IsZero()) && s.Now.Sub(since) <= r.Every {
+				return nil
+			}
+			f := Finding{Detail: fmt.Sprintf("%s; a review is due every %s", what, days(r.Every)),
+				Fix: "quilzo access review start  # or People › Review who has access"}
+			if !r.Open.IsZero() {
+				f.Detail += fmt.Sprintf("; the one started on %s is still open", r.Open.UTC().Format("2 Jan 2006"))
+				f.Fix = "quilzo access review items  # then decide each, and quilzo access review close"
+			}
+			return []Finding{f}
+		},
+	},
 
 	// -- credentials --------------------------------------------------------
 
@@ -588,8 +631,9 @@ var rules = []Rule{
 				out = append(out, Finding{
 					Severity: sev,
 					Resource: t.ID,
-					Detail: fmt.Sprintf("%s (%s, %s) is valid for %s, until %s",
-						t.Name, t.Principal, t.Role, days(life),
+					// Its holder is shown from the id, as token.admin-role's is.
+					Detail: fmt.Sprintf("%s (%s) is valid for %s, until %s",
+						t.Name, t.Role, days(life),
 						time.Unix(t.ExpiresAt, 0).UTC().Format("2006-01-02")),
 					Fix: "quilzo token revoke " + t.ID +
 						"  # then issue with --ttl 720h and exchange for sessions",
@@ -772,6 +816,36 @@ var rules = []Rule{
 		},
 	},
 	{
+		ID:       "signals.stream-silent",
+		Title:    "The identity provider's security events have not proved they arrive",
+		Severity: Medium,
+		Controls: []string{"AC-12", "AC-2(3)"},
+		OWASP:    "A07:2025 Authentication Failures",
+		Why: "A stream that has gone quiet looks the same as one with nothing to " +
+			"say. If the identity provider's key, address or secret changed, a " +
+			"session it ends or an account it disables goes on here until it ends " +
+			"by itself, and nothing else says so. A verification answered is the " +
+			"only proof the stream still reaches this server.",
+		Check: func(s State) []Finding {
+			f := s.SSO.Signals
+			if f == nil || !f.Silent(s.Now) {
+				return nil
+			}
+			if f.Manual {
+				return []Finding{{Resource: "signals/stream",
+					Detail: "the stream was made in the identity provider's own console, so it cannot be " +
+						"asked to verify, and its silence cannot be told from having nothing to say",
+					Fix: "quilzo signals off  # then quilzo signals connect with --client-id, if the provider publishes a stream API"}}
+			}
+			detail := "the identity provider has never answered a verification"
+			if !f.Verified.IsZero() {
+				detail = "the identity provider last answered a verification on " + f.Verified.UTC().Format("2 Jan 2006 15:04 UTC")
+			}
+			return []Finding{{Resource: "signals/stream", Detail: detail,
+				Fix: "quilzo signals status  # the server asks once a day, with the client secret in QUILZO_SIGNALS_SECRET"}}
+		},
+	},
+	{
 		ID:       "sso.unusable",
 		Title:    "An identity provider is set up and cannot sign anybody in",
 		Severity: Medium,
@@ -787,6 +861,33 @@ var rules = []Rule{
 					out = append(out, Finding{Resource: "saml/" + p.Name,
 						Detail: p.Name + ": " + p.Problem,
 						Fix:    "quilzo saml show " + p.Name + "  # then add it again with --replace"})
+				}
+			}
+			return out
+		},
+	},
+	{
+		ID:       "sso.unverified-addresses",
+		Title:    "An identity provider signs people in as addresses it has not said it verified",
+		Severity: Medium,
+		Controls: []string{"IA-2", "AC-2"},
+		OWASP:    "A07:2025 Authentication Failures",
+		Why: "Its people can set their own address there and leave it " +
+			"unverified, and it is not asked to say whether it verified one, so " +
+			"whoever sets theirs to a colleague's signs in here as that " +
+			"colleague, where OIDC refuses them. A provider added before saml " +
+			"add asked for the attribute keeps signing them in until it is " +
+			"asked for, because asking for it unannounced would refuse everybody.",
+		Check: func(s State) []Finding {
+			var out []Finding
+			for _, p := range s.SSO.Providers {
+				if p.Unverified != "" {
+					out = append(out, Finding{Resource: "saml/" + p.Name,
+						Detail: p.Name + " is not asked to say in " + p.Unverified +
+							" whether it verified the address it signs somebody in as",
+						Fix: "quilzo saml presets  # how to send " + p.Unverified + "; then quilzo saml add " +
+							p.Name + " --metadata ... --url ... --replace --verified-attribute " + p.Unverified +
+							" (or --allow-unverified-email, to take addresses as sent)"})
 				}
 			}
 			return out
@@ -860,12 +961,15 @@ var rules = []Rule{
 				if t.IsSession() {
 					continue
 				}
+				// The token by its name and id, not its holder: a finding
+				// goes into exports, OSCAL and the audit stream, and the
+				// person's name went with it in clear. The Security screen
+				// and quilzo posture show the holder from the id.
 				out = append(out, Finding{
 					Resource: t.ID,
-					Detail: fmt.Sprintf("%s belongs to %s and can change the "+
-						"access policy itself", t.Name, t.Principal),
+					Detail:   fmt.Sprintf("the token %s can change the access policy itself", t.Name),
 					Fix: "quilzo token issue " + t.Name +
-						" --principal " + t.Principal + " --role publisher",
+						" --principal HOLDER --role publisher",
 				})
 			}
 			return out
@@ -1515,8 +1619,10 @@ var rules = []Rule{
 					f.Severity = High
 					f.Detail += " — accepted by " + wk.By + " (" + wk.Reason +
 						"), and that acceptance has lapsed"
+					f.People = []string{wk.By}
 				default:
 					f.Detail += " — accepted by " + wk.By + ": " + wk.Reason
+					f.People = []string{wk.By}
 				}
 				out = append(out, f)
 			}
@@ -1579,12 +1685,14 @@ var rules = []Rule{
 					!strings.Contains(strings.ToLower(t.Name), "agent") {
 					continue
 				}
+				// The person by the token's id, as token.admin-role names
+				// them: the finding is that a person's name is on an
+				// agent's credential, and it put the name in clear.
 				out = append(out, Finding{
 					Resource: t.ID,
-					Detail: fmt.Sprintf("%s authenticates as %s, who is also a "+
-						"person in the access policy", t.Name, t.Principal),
+					Detail:   fmt.Sprintf("%s authenticates as its holder, who is also a person in the access policy", t.Name),
 					Fix: "quilzo token issue " + t.Name +
-						" --principal svc-" + t.Principal + " --role author",
+						" --principal svc-HOLDER --role author",
 				})
 			}
 			return out

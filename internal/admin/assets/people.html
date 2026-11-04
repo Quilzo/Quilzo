@@ -9,6 +9,11 @@
 <ul class="auto-list">{{range .Pending}}<li class="auto-card waiting">
   <div class="auto-head"><span class="wf-band as-written warning"><span class="wf-icon">{{icon "error"}}</span>Waiting</span><strong>{{.What}}</strong></div>
   <p>Asked by {{.By}} at {{.At.UTC.Format "15:04 2 Jan"}}{{if .Why}}: “{{.Why}}”{{end}}. {{.Words}}.</p>
+  {{if .Mapping}}{{if .TokensUnread}}<p class="notice bad">Approving this lets the provisioning token make administrators, and which tokens work could not be read: {{.TokensUnread}}</p>
+  {{else if .Tokens}}<p>Approving this lets the provisioning token make administrators:</p>
+  <ul>{{range .Tokens}}<li>{{.Words}}.</li>{{end}}</ul>
+  <p class="hint">If that is not who should hold it, decline, or revoke it first on Provisioning.</p>
+  {{else}}<p>No provisioning token works now; one made from now on takes two administrators.</p>{{end}}{{end}}
   <form method="post" action="/people/pending" class="auto-controls"><input type="hidden" name="id" value="{{.ID}}">
     {{if .CanDecide}}<button type="submit" name="do" value="approve" class="btn-tonal">Approve<span class="visually-hidden"> {{.What}}</span></button>
     <button type="submit" name="do" value="decline" class="btn-outlined">Decline<span class="visually-hidden"> {{.What}}</span></button>{{end}}
@@ -16,6 +21,35 @@
     {{if .CanTakeBack}}<button type="submit" name="do" value="withdraw" class="btn-text">Withdraw<span class="visually-hidden"> {{.What}}</span></button>{{end}}
   </form>
 </li>{{end}}</ul>{{end}}
+
+{{with .Review}}<h2 id="review">Review who has access</h2>
+<p class="hint">Every grant made by hand, what each identity provider group means here and every long-lived token, put in front of an administrator who keeps or revokes each one. A revoke applies at once. Nobody decides their own access, and keeping privileged access needs a reason. One is due every {{.Every}}.</p>
+{{if not .At}}{{with .Message}}<p class="notice ok" role="status">{{.}}</p>{{end}}{{with .Error}}<p class="notice bad" role="alert">{{.}}</p>{{end}}{{end}}
+{{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>
+{{else if .Open}}
+<p>Review {{.Open.ID}}, started {{.Open.Started.UTC.Format "2 Jan 2006"}} by {{.Open.StartedBy}}: {{.Undecided}} of {{len .Rows}} undecided. Dormant items come first, then privileged ones.</p>
+{{if not .CanDecide}}<p class="notice warn" role="note">Deciding needs a sign-in with two factors: sign in with your passkey, or decide with <code>quilzo access review</code> and your own token.</p>{{end}}
+<ul class="auto-list">{{range .Rows}}<li class="auto-card{{if not .Decision}} waiting{{end}}" id="item-{{.ID}}">
+  <div class="auto-head">{{if .Dormant}}<span class="tag tag-bad">dormant: proposed revoke</span> {{end}}{{if .Privileged}}<span class="tag tag-warn">privileged</span> {{end}}<strong>{{.ID}}. {{.What}}</strong></div>
+  <p class="hint">{{.Facts}}</p>
+  {{if eq $.Review.At .ID}}{{with $.Review.Message}}<p class="notice ok" role="status">{{.}}</p>{{end}}{{with $.Review.Error}}<p class="notice bad" role="alert">{{.}}</p>{{end}}{{end}}
+  {{if .Decision}}<p>{{sentence .Decision.Verdict.Past}} by {{.Decision.By}} on {{.Decision.At.UTC.Format "2 Jan 2006"}}{{if .Decision.Why}}: &ldquo;{{.Decision.Why}}&rdquo;{{end}}.</p>{{end}}
+  {{if .Own}}<p class="hint">This is your own access, so {{if $.Review.Alone}}with no other administrator to decide it, the review closes without it, and the record says so{{else}}another administrator decides it{{end}}.</p>
+  {{else if and $.Review.CanDecide (not (and .Decision (eq (print .Decision.Verdict) "revoke")))}}<form method="post" action="/people/review/decide" class="auto-controls">
+    <input type="hidden" name="item" value="{{.ID}}">
+    <label for="why-{{.ID}}">Why<span class="visually-hidden"> for item {{.ID}}</span></label>
+    <input id="why-{{.ID}}" name="why" placeholder="{{if .Privileged}}Needed to keep it{{else}}Optional{{end}}">
+    <button type="submit" name="verdict" value="keep" class="btn-tonal">Keep<span class="visually-hidden"> item {{.ID}}</span></button>
+    <button type="submit" name="verdict" value="revoke" class="danger">Revoke<span class="visually-hidden"> item {{.ID}}</span></button>
+  </form>{{end}}
+</li>{{end}}</ul>
+{{with .CloseHint}}<p class="hint">{{.}}</p>{{end}}
+{{if .CanDecide}}<form method="post" action="/people/review/close"><button type="submit">Close the review</button></form>{{end}}
+{{else}}
+<p class="hint">{{if .Last}}The last review closed on {{.Last}}{{if .Due}}, more than {{.Every}} ago: one is due{{else}}; the next is due by {{.Next}}{{end}}.{{else}}No review has closed yet, so one falls due {{.Every}} after the oldest grant it would cover.{{end}}</p>
+{{if .CanDecide}}<form method="post" action="/people/review/start"><button type="submit">Start a review</button></form>
+{{else}}<p class="notice warn" role="note">Starting one needs a sign-in with two factors: sign in with your passkey, or start it with <code>quilzo access review start</code> and your own token.</p>{{end}}
+{{end}}{{end}}
 
 <h2>Add or change access</h2>
 <p class="hint">

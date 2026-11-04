@@ -32,6 +32,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -290,12 +291,13 @@ func (c *Config) Int(key string) int {
 	return n
 }
 
-// Dur returns a setting as a duration.
+// Dur returns a setting as a duration, which may be written in days or
+// weeks (ParseDuration).
 func (c *Config) Dur(key string) time.Duration {
-	d, err := time.ParseDuration(c.Raw(key))
+	d, err := ParseDuration(c.Raw(key))
 	if err != nil {
 		s, _ := Lookup(key)
-		d, _ = time.ParseDuration(s.Default)
+		d, _ = ParseDuration(s.Default)
 	}
 	return d
 }
@@ -360,6 +362,9 @@ func (c *Config) Set(key, value, reason, by string) error {
 		return fmt.Errorf("%q is not a setting; `quilzo config list` shows "+
 			"every one", key)
 	}
+	if key == "site.base_url" {
+		value = SiteBase(value)
+	}
 	if err := s.Validate(value); err != nil {
 		return fmt.Errorf("%s: %w", key, err)
 	}
@@ -387,7 +392,7 @@ func (c *Config) Set(key, value, reason, by string) error {
 		c.dropAcceptance(key)
 	}
 
-	if value == s.Default {
+	if s.same(value, s.Default) {
 		delete(c.file.Values, key)
 		return nil
 	}
@@ -416,7 +421,7 @@ func (c *Config) Put(key, value, reason, by string) error {
 			At: now.UTC().Format(time.RFC3339), Until: now.Add(MaxAcceptance).UTC().Format(time.RFC3339),
 		})
 	}
-	if value == s.Default {
+	if s.same(value, s.Default) {
 		delete(c.file.Values, key)
 		return nil
 	}
@@ -467,6 +472,19 @@ type Effective struct {
 	Floors []Floor
 }
 
+// Shown is the value as the Settings screen and `config show` print it:
+// a duration in its largest whole unit, so 1440h reads as 60d. Value is
+// still what is stored, which is what the JSON carries.
+func (e Effective) Shown() string { return e.Setting.show(e.Value) }
+
+// Shown is a setting's value as Effective.Shown says it, for a message
+// about one setting: Settings said "is now 2160h" under a table saying
+// 90d, to somebody who had typed 90d.
+func (c *Config) Shown(key string) string {
+	s, _ := Lookup(key)
+	return s.show(c.Raw(key))
+}
+
 // Effectives returns every setting, in declaration order.
 func (c *Config) Effectives() []Effective {
 	out := make([]Effective, 0, len(settings))
@@ -508,4 +526,29 @@ func (c *Config) Weakened() []Effective {
 		}
 	}
 	return out
+}
+
+// SiteBase is a site's base URL with the scheme's own port left out.
+//
+// https://example.com:443/about and https://example.com/about are one page,
+// and a sitemap, a canonical link or a newsletter's link should name it the
+// way people do. The reference compose builds the site's address from the
+// port Caddy is published on, so that it is right on any port -- and on 443
+// that address was https://example.com:443, in every link the site made.
+// Any other port, and anything that is not a URL with a host, is left as it
+// was given, for the setting's own check to judge.
+func SiteBase(v string) string {
+	u, err := url.Parse(v)
+	if err != nil || u.Host == "" || u.User != nil {
+		return v
+	}
+	if p := u.Port(); !(u.Scheme == "https" && p == "443") && !(u.Scheme == "http" && p == "80") {
+		return v
+	}
+	host := u.Hostname()
+	if strings.Contains(host, ":") {
+		host = "[" + host + "]"
+	}
+	u.Host = host
+	return u.String()
 }

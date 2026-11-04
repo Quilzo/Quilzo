@@ -347,6 +347,7 @@ var signalWords = map[string]string{
 	"hosting-network": "hosting provider", "dormant": "back after months", "unusual-hour": "unusual hour",
 	"session-moved": "session moved", "verification-failing": "verification failing",
 	"account-locked": "locked out after failed sign-ins",
+	"passkey-cloned": "passkey copied",
 }
 
 var riskTone = map[string]string{"high": "critical", "medium": "warning", "low": "low", "none": "good", "": "good"}
@@ -374,6 +375,7 @@ func (s *Server) handleSignIns(w http.ResponseWriter, r *http.Request) {
 	}
 	data["Waiting"] = waiting
 	data["Held"] = s.heldRows(now)
+	s.signalsData(data, now)
 	if s.SignIns == nil || s.SignIns.Recent == nil {
 		data["NoHistory"] = "This build was started without sign-in checks, so where people signed in from is not kept."
 		s.render(w, r, "signins.html", data)

@@ -216,8 +216,9 @@ type UpkeepFacts struct {
 	// neither is running, or the sweep is failing.
 	ExpiredSubmissions int `json:"expired_submissions"`
 	// OverdueEntries are scheduled publishes whose moment has passed and which
-	// have not fired. Publishing deliberately does not daemonise — see
-	// scheduleRun — so this is the only thing that notices.
+	// have not fired. The admin server publishes them at their time unless
+	// schedule.in_server is off, and then only a timer running `quilzo
+	// schedule run` does; either can be down, and this is what notices.
 	OverdueEntries int `json:"overdue_entries"`
 	// OldestOverdue is how long the oldest of them has been waiting.
 	OldestOverdue time.Duration `json:"oldest_overdue,omitempty"`
@@ -285,6 +286,35 @@ type SSOFacts struct {
 	// nor single sign-on covering their address.
 	MFAFrom        time.Time `json:"mfa_from,omitzero"`
 	NoSecondFactor []string  `json:"no_second_factor,omitempty"`
+	// Signals is the stream of security events from the identity
+	// provider, when one is connected.
+	Signals *SignalsFacts `json:"signals,omitempty"`
+}
+
+// SignalsFacts is the security event stream as connected: when, and when
+// the transmitter last answered a verification. Manual is a stream made in
+// the transmitter's own console, which cannot be asked to verify.
+type SignalsFacts struct {
+	Connected time.Time `json:"connected"`
+	Verified  time.Time `json:"verified,omitzero"`
+	Manual    bool      `json:"manual,omitempty"`
+}
+
+// SignalsSilentAfter is how long a connected stream may go without
+// answering a verification: a day to answer the first, and a day between
+// answers, since the server asks once a day.
+const SignalsSilentAfter = 24 * time.Hour
+
+// Silent reports whether the stream has gone SignalsSilentAfter without
+// proving it still arrives. One judgement, read by the posture rule, the
+// command's status and the Sign-ins screen: each had its own reading of
+// "a day", and the screen could call a stream silent that the status
+// called fine.
+func (f SignalsFacts) Silent(now time.Time) bool {
+	if f.Connected.IsZero() || now.Sub(f.Connected) <= SignalsSilentAfter {
+		return false
+	}
+	return f.Verified.IsZero() || now.Sub(f.Verified) > SignalsSilentAfter
 }
 
 // SSOProvider is one SAML identity provider.
@@ -292,6 +322,10 @@ type SSOProvider struct {
 	Name    string      `json:"name"`
 	Expires []time.Time `json:"expires,omitempty"`
 	Problem string      `json:"problem,omitempty"`
+	// Unverified is the attribute this kind of provider says it verified
+	// an address in, when it is not asked for and nobody decided to take
+	// addresses as sent (saml.Config.VerifiedUnasked).
+	Unverified string `json:"unverified,omitempty"`
 }
 
 // AlertFacts are where the security contact's alerts go. Every one of them
@@ -329,6 +363,26 @@ type StreamFacts struct {
 	Failures int       `json:"failures,omitempty"`
 	Since    time.Time `json:"since,omitzero"`
 	Error    string    `json:"error,omitempty"`
+}
+
+// ReviewFacts is the review of the access Quilzo grants
+// (internal/accessreview): how often one is due, and when one last closed.
+type ReviewFacts struct {
+	Checked bool `json:"checked"`
+	// Every is the period, access.review.every or the organisation's
+	// declared ac-02_odp.10, whichever is stricter.
+	Every time.Duration `json:"every"`
+	// LastClosed is when the latest review closed, zero for never.
+	LastClosed time.Time `json:"last_closed,omitzero"`
+	// Owed is when the oldest grant a review would cover was made, which
+	// is where the period runs from in a store that has never closed one;
+	// zero when there is nothing to review.
+	Owed time.Time `json:"owed,omitzero"`
+	// Undated says a grant a review would cover was made before grants
+	// were dated, and so is owed one already.
+	Undated bool `json:"undated,omitempty"`
+	// Open is when the review still being decided started, zero for none.
+	Open time.Time `json:"open,omitzero"`
 }
 
 // InterfaceFacts is the agent interface as set up: whether it answers, and
@@ -451,6 +505,7 @@ type State struct {
 	SSO        SSOFacts          `json:"sso"`
 	Interface  InterfaceFacts    `json:"interface"`
 	Stream     StreamFacts       `json:"stream"`
+	Reviews    ReviewFacts       `json:"reviews"`
 	Alerts     AlertFacts        `json:"alerts"`
 	Self       SelfFacts         `json:"self"`
 	Now        time.Time         `json:"-"`
@@ -469,6 +524,17 @@ type Rule struct {
 	// act on and one they argue with.
 	Why   string
 	Check func(State) []Finding
+	// Remind says the security contact is told when this starts failing,
+	// whatever its severity. A reminder that something is due is Medium by
+	// what an attacker gains from it, and a reminder nobody receives
+	// reminds nobody: the drift check mailed only high and critical.
+	Remind bool
+}
+
+// Reminds reports whether a rule is a reminder (Rule.Remind).
+func Reminds(id string) bool {
+	r, ok := Explain(id)
+	return ok && r.Remind
 }
 
 // Suppression silences a finding until a date.
@@ -587,7 +653,7 @@ func Scan(s State, suppressions []Suppression) Report {
 				Rule:     "suppression.expired",
 				Title:    "An accepted risk has come back",
 				Severity: Low,
-				Resource: sp.ID,
+				Resource: sp.ID, People: []string{sp.By},
 				Detail: fmt.Sprintf("%q was suppressed by %s until %s; that has passed",
 					sp.ID, sp.By, time.Unix(sp.Until, 0).UTC().Format("2006-01-02")),
 				Fix:      "quilzo posture suppress " + sp.ID + " --days 90 --reason ...",
@@ -735,6 +801,8 @@ func RuleIndex() map[string]Rule {
 // read only one. A rule not listed reads what is always there.
 func inputFor(rule string) string {
 	switch {
+	case rule == "access.review-due":
+		return "reviews"
 	case strings.HasPrefix(rule, "access."):
 		return "policy"
 	case strings.HasPrefix(rule, "token."):
@@ -771,6 +839,8 @@ func supplied(s State, input string) bool {
 		return ok
 	case "ai":
 		return s.AI.Checked
+	case "reviews":
+		return s.Reviews.Checked
 	case "types":
 		return s.Types != nil
 	case "files":

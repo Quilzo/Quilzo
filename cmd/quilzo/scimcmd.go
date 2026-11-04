@@ -54,18 +54,25 @@ const (
 	scimTokenGrace = 30 * 24 * time.Hour
 )
 
-// scimToken is what is kept of the provisioning token: its hash, and when
-// it was made and ends.
+// scimToken is what is kept of the provisioning token: its hash, when it
+// was made and ends, and who made it and how it was approved, which the
+// approval of a mapping that makes administrators shows (liveSCIMTokens).
 type scimToken struct {
 	Hash    string    `json:"hash"`
 	Created time.Time `json:"created"`
 	Expires time.Time `json:"expires"`
+	scim.TokenMade
 }
 
 // newSCIMToken makes the provisioning token, lasting days, keeps its hash,
 // and returns it once. A new one replaces the old: there is one
 // provisioning connection.
 func newSCIMToken(root string, days int) (string, scimToken, error) {
+	return newSCIMTokenMade(root, days, scim.TokenMade{})
+}
+
+// newSCIMTokenMade is newSCIMToken, keeping who made it and how.
+func newSCIMTokenMade(root string, days int, made scim.TokenMade) (string, scimToken, error) {
 	if days <= 0 || days > scimTokenMaxDays {
 		return "", scimToken{}, fmt.Errorf("a provisioning token lasts from 1 to %d days", scimTokenMaxDays)
 	}
@@ -76,7 +83,7 @@ func newSCIMToken(root string, days int) (string, scimToken, error) {
 	token := "qzscim_" + base64.RawURLEncoding.EncodeToString(b)
 	sum := sha256.Sum256([]byte(token))
 	now := time.Now().UTC()
-	kept := scimToken{Hash: hex.EncodeToString(sum[:]), Created: now, Expires: now.AddDate(0, 0, days)}
+	kept := scimToken{Hash: hex.EncodeToString(sum[:]), Created: now, Expires: now.AddDate(0, 0, days), TokenMade: made}
 	if err := saveSCIMToken(root, kept); err != nil {
 		return "", scimToken{}, err
 	}
@@ -89,6 +96,17 @@ func saveSCIMToken(root string, t scimToken) error {
 		return err
 	}
 	return atomicfile.Write(scimTokenPath(root), b, 0o600)
+}
+
+// liveSCIMTokens are the provisioning tokens that work at now: who made
+// each, when, and how it was approved. There is one at most, since a new
+// one replaces the old, and none once it has ended or been revoked.
+func liveSCIMTokens(root string, now time.Time) ([]scim.LiveToken, error) {
+	t, ok, err := readSCIMToken(root, now)
+	if err != nil || !ok || !now.Before(t.Expires) {
+		return nil, err
+	}
+	return []scim.LiveToken{{TokenMade: t.TokenMade, Made: t.Created, Ends: t.Expires}}, nil
 }
 
 // readSCIMToken is the kept token, and whether there is one. A token kept
@@ -140,8 +158,18 @@ func scimAuthenticate(root, token string) bool {
 }
 
 // validMapping reports whether a group may be mapped to this: a role, a
-// permission, a job, or a role an installed feature declares.
-func validMapping(root, to string) error {
+// permission, a job, or a role an installed feature declares, and for a
+// job granted only for a time, until a day to come (scim.CheckEnds).
+func validMapping(root, mapping string) error {
+	to, _, _ := scim.SplitMapping(mapping)
+	if err := grantable(root, to); err != nil {
+		return err
+	}
+	return scim.CheckEnds(mapping, time.Now())
+}
+
+// grantable reports whether a group's mapping may grant this.
+func grantable(root, to string) error {
 	if _, ok := auth.JobNamed(to); ok {
 		return nil
 	}
@@ -171,6 +199,17 @@ func scimMap(root, group, to string) error {
 		return err
 	}
 	if err := scimStore(root).Update(func(st *scim.State) error { st.Mapping[group] = to; return nil }); err != nil {
+		return err
+	}
+	scimHandler(root).SyncAll()
+	return nil
+}
+
+// scimUnmap makes a group mean nothing here, and takes back what it gave
+// everybody in it. The command, the Provisioning screen and an access
+// review that revokes a mapping all come through here.
+func scimUnmap(root, group string) error {
+	if err := scimStore(root).Update(func(st *scim.State) error { delete(st.Mapping, group); return nil }); err != nil {
 		return err
 	}
 	scimHandler(root).SyncAll()
@@ -214,7 +253,23 @@ func scimSync(root, name string, grants []string, suspended bool) error {
 		note(t.Principal)
 	}
 
-	var want []auth.Binding
+	// What their groups give them. A suspension is sent none, since
+	// scim.State.Grants is nothing while somebody is inactive, so their
+	// groups are read here: what they give is what somebody keeps when
+	// suspending them would leave nobody able to grant (below).
+	var given, want []auth.Binding
+	meant := slices.Clone(grants)
+	if suspended {
+		_ = scimStore(root).Read(func(st *scim.State) {
+			if u, ok := st.UserNamed(name); ok {
+				for _, g := range st.GroupsOf(u.ID) {
+					if m := st.Mapping[g]; m != "" && !slices.Contains(meant, m) {
+						meant = append(meant, m)
+					}
+				}
+			}
+		})
+	}
 	// Read only when a group means one, so a feature whose package cannot
 	// be read stops nobody else's provisioning.
 	var roles []auth.AppRole
@@ -223,33 +278,62 @@ func scimSync(root, name string, grants []string, suspended bool) error {
 			return err
 		}
 	}
+	now := time.Now()
+	for _, g := range meant {
+		// A mapping refused now grants nothing, so what it gave is taken
+		// back: a job granted only for a time with no day its access ends,
+		// saved before mappings carried one, or after it.
+		if scim.CheckEnds(g, now) != nil {
+			continue
+		}
+		to, until, _ := scim.SplitMapping(g)
+		var ends int64
+		if !until.IsZero() {
+			ends = until.Unix()
+		}
+		if job, ok := auth.JobNamed(to); ok {
+			for _, b := range job.Bindings {
+				given = append(given, auth.Binding{Principal: name, Role: b.Role, Resource: b.Resource, Expires: ends})
+			}
+		} else if auth.Role(to).Valid() {
+			given = append(given, auth.Binding{Principal: name, Role: auth.Role(to), Resource: "/"})
+		} else if perm, ok := auth.PermissionNamed(to); ok {
+			given = append(given, auth.Binding{Principal: name, Permission: perm.Action, Resource: "/"})
+		} else if i := slices.IndexFunc(roles, func(r auth.AppRole) bool { return r.Name == to }); i >= 0 {
+			for _, b := range roles[i].Bindings {
+				given = append(given, auth.Binding{Principal: name, Role: b.Role, Permission: b.Permission,
+					Resource: b.Resource, Via: auth.ViaApp(to)})
+			}
+		}
+	}
 	if suspended {
 		for _, who := range spellings {
 			want = append(want, auth.Binding{Principal: who, Role: auth.RoleReader, Resource: "/", Deny: true,
 				Note: "suspended: the identity provider deactivated or removed them"})
 		}
 	} else {
-		for _, g := range grants {
-			if job, ok := auth.JobNamed(g); ok {
-				for _, b := range job.Bindings {
-					want = append(want, auth.Binding{Principal: name, Role: b.Role, Resource: b.Resource})
-				}
-			} else if auth.Role(g).Valid() {
-				want = append(want, auth.Binding{Principal: name, Role: auth.Role(g), Resource: "/"})
-			} else if perm, ok := auth.PermissionNamed(g); ok {
-				want = append(want, auth.Binding{Principal: name, Permission: perm.Action, Resource: "/"})
-			} else if i := slices.IndexFunc(roles, func(r auth.AppRole) bool { return r.Name == g }); i >= 0 {
-				for _, b := range roles[i].Bindings {
-					want = append(want, auth.Binding{Principal: name, Role: b.Role, Permission: b.Permission,
-						Resource: b.Resource, Via: auth.ViaApp(g)})
-				}
-			}
-		}
+		want = given
 	}
+	// same is one binding as the policy counts them (Policy.Grant), which
+	// does not count when it ends.
 	same := func(a, b auth.Binding) bool {
 		return a.Principal == b.Principal && a.Role == b.Role && a.Permission == b.Permission &&
 			a.Resource == b.Resource && a.Deny == b.Deny && a.Via == b.Via
 	}
+	// What two groups both give is wanted once, until the later of their
+	// days, and for good if either has none: somebody in two groups mapped
+	// to auditor until different days holds it until the later one.
+	merged := want[:0]
+	for _, x := range want {
+		i := slices.IndexFunc(merged, func(m auth.Binding) bool { return same(m, x) })
+		switch {
+		case i < 0:
+			merged = append(merged, x)
+		case merged[i].Expires != 0 && (x.Expires == 0 || x.Expires > merged[i].Expires):
+			merged[i].Expires = x.Expires
+		}
+	}
+	want = merged
 
 	// Keep what provisioning made and still wants, so a grant's date is the
 	// day it was first made and an unchanged sync writes nothing. Worked out
@@ -259,9 +343,43 @@ func scimSync(root, name string, grants []string, suspended bool) error {
 	// What provisioning gave and took is recorded one by one below: the role
 	// is what a rule about somebody being made an administrator reads, and
 	// a group mapped to admin is a way to make one.
+	//
+	// A suspension leaves the last person who can grant access on the whole
+	// site as they are, by the rule the Shared Signals receiver keeps
+	// (suspendOnSignal, lastGranter): no deny, and nothing provisioning gave
+	// them taken back, since an administrator's role from a mapped group
+	// ending would shut everybody out as surely as the deny. The identity
+	// provider deactivating every administrator, or whoever held the
+	// provisioning token doing it, denied each in turn, and nobody was left
+	// who could grant access to anybody. Decided under the same lock, so two
+	// administrators deactivated at once cannot each see the other still
+	// able to grant; any spelling of them counts, since the deny covers them
+	// all.
+	//
+	// Nobody at all able to grant is the same moment seen from the other
+	// side. The identity provider renaming the last administrator as it
+	// deactivated them, in one request or one after the other, took what
+	// provisioning gave them from the old name, as a rename does, and then
+	// denied the new one, which held nothing yet: nobody was left who could
+	// grant access, and nobody was told. So a suspension that finds nobody
+	// who can grant, of somebody what their groups give would make able to,
+	// gives them that and no deny, and their access moves with the name. An
+	// app's role is not read for a suspension, and does not count here.
 	var granted, revoked []auth.Binding
+	last := false
 	p, err = updatePolicy(root, func(p *auth.Policy) error {
-		granted, revoked = nil, nil
+		granted, revoked, last = nil, nil, false
+		want := want
+		if suspended && slices.ContainsFunc(p.Principals(), func(who string) bool {
+			return strings.EqualFold(who, name) && lastGranter(p, who)
+		}) {
+			last = true
+			return atomicfile.ErrUnchanged
+		}
+		if suspended && len(given) > 0 && nobodyAdministers(p) &&
+			(&auth.Policy{Bindings: append(p.Snapshot(), given...)}).Evaluate(name, auth.ActGrant, "/").Allowed {
+			last, want = true, given
+		}
 		satisfied := make([]bool, len(want))
 		changed := false
 		kept := p.Bindings[:0]
@@ -270,9 +388,12 @@ func scimSync(root, name string, grants []string, suspended bool) error {
 				kept = append(kept, b)
 				continue
 			}
+			// Kept only while it ends when the mapping says, so a group
+			// mapped again with a later day replaces what it gave rather
+			// than keeping the earlier day.
 			keep := false
 			for i, x := range want {
-				if !satisfied[i] && same(b, x) {
+				if !satisfied[i] && same(b, x) && b.Expires == x.Expires {
 					satisfied[i], keep = true, true
 					break
 				}
@@ -337,7 +458,10 @@ func scimSync(root, name string, grants []string, suspended bool) error {
 	}
 	ended := 0
 	for _, t := range ts.Snapshot() {
-		if seen[t.Principal] && !t.Revoked {
+		// The last who can grant keeps their own long-lived token, as the
+		// receiver leaves it: with the provider no longer signing them in,
+		// it may be the one way in left to anybody.
+		if seen[t.Principal] && !t.Revoked && (!last || t.IsSession()) {
 			if _, err := ts.Revoke(t.ID); err == nil {
 				ended++
 			}
@@ -351,6 +475,31 @@ func scimSync(root, name string, grants []string, suspended bool) error {
 			Outcome: audit.Success, Principal: scimBy, Kind: audit.KindService,
 			Verified: true, Detail: map[string]string{"subject": name, "count": fmt.Sprint(ended)}})
 	}
+	exists := false
+	_ = scimStore(root).Read(func(st *scim.State) {
+		for _, u := range st.Users {
+			if strings.EqualFold(u.UserName, name) {
+				exists = true
+			}
+		}
+	})
+	if last {
+		// Not suspended, and recorded as a suspension that failed, so
+		// whoever reads the log sees it was asked for. A person decides the
+		// rest; their apps and what agents remember of them stay until
+		// then. A deletion is told of once: it suspends them first, while
+		// they are still provisioned, and that is what tells.
+		record(root, audit.Record{Action: "scim.suspended", Resource: "/", Outcome: audit.Failure,
+			Principal: scimBy, Kind: audit.KindService, Verified: true,
+			Detail: map[string]string{"subject": name, "count": fmt.Sprint(ended)}})
+		if exists {
+			scimTell(root, name, fmt.Sprintf("The identity provider deactivated or removed %s. %s is the only "+
+				"person who can grant access here, so they were not suspended and keep what provisioning gave "+
+				"them, and %s of theirs ended. Check with them; if it is right, make somebody else an "+
+				"administrator, then suspend them by hand.", name, name, plural2(ended, "the one session", "sessions")))
+		}
+		return nil
+	}
 	// And the apps they connected: an app acting for somebody who is no
 	// longer here is not connected to anybody. Ended after the tokens are
 	// saved, because ending a connection revokes its tokens in the same
@@ -360,14 +509,6 @@ func scimSync(root, name string, grants []string, suspended bool) error {
 		scimBy, "the identity provider suspended or removed them")
 	// Deleted, not suspended: no longer anybody here, so no agent keeps
 	// anything about them.
-	exists := false
-	_ = scimStore(root).Read(func(st *scim.State) {
-		for _, u := range st.Users {
-			if strings.EqualFold(u.UserName, name) {
-				exists = true
-			}
-		}
-	})
 	if !exists {
 		for _, who := range spellings {
 			if _, err := forgetPerson(root, who, scimBy); err != nil {
@@ -376,6 +517,22 @@ func scimSync(root, name string, grants []string, suspended bool) error {
 		}
 	}
 	return nil
+}
+
+// scimTell mails the security contact in the background, so no request
+// from the identity provider waits on a mail server, and records whether
+// it reached them.
+func scimTell(root, subject, summary string) {
+	inBackground(func() {
+		did, err := tellSecurity(root, summary)
+		detail := map[string]string{"did": did, "subject": subject}
+		outcome := audit.Success
+		if err != nil {
+			detail["error"], outcome = onOneLine(err.Error()), audit.Failure
+		}
+		record(root, audit.Record{Action: "scim.told", Resource: "/", Outcome: outcome,
+			Principal: scimBy, Kind: audit.KindService, Verified: true, Detail: detail})
+	})
 }
 
 // holdsArea reports whether somebody holds any grant on an area, which
@@ -411,7 +568,18 @@ func scimHandler(root string) *scim.Handler {
 }
 
 func scimUsage() error {
-	return fmt.Errorf("usage: quilzo scim status | token [--revoke] | map GROUP ROLE|JOB | unmap GROUP")
+	return fmt.Errorf("usage: quilzo scim status | token [--revoke] | map GROUP ROLE|JOB [--until DAY | --for 30d] | " +
+		"unmap GROUP")
+}
+
+// startOfDayAfter is the first start of a day at or after t: a mapping's
+// access ends on a day, and one asked for 30d lasts at least that long.
+func startOfDayAfter(t time.Time) time.Time {
+	day := t.UTC().Truncate(24 * time.Hour)
+	if day.Before(t) {
+		day = day.Add(24 * time.Hour)
+	}
+	return day
 }
 
 func cmdSCIM(root string, args []string) error {
@@ -470,6 +638,11 @@ func cmdSCIM(root string, args []string) error {
 		sort.Strings(names)
 		for _, g := range names {
 			w.Human("  %s%s%s  is  %s\n", bold, onOneLine(g), reset, mapping[g])
+			// Provisioning grants nothing for it (scimSync), which the
+			// line above would not say.
+			if err := scim.CheckEnds(mapping[g], now); err != nil {
+				w.Human("    %sgrants nothing: %v%s\n", yellow, err, reset)
+			}
 		}
 		if len(names) == 0 {
 			w.Human("  %sno group is mapped, so provisioning grants nothing%s\n", dim, reset)
@@ -501,6 +674,7 @@ func cmdSCIM(root string, args []string) error {
 		if err != nil {
 			return err
 		}
+		made := scim.TokenMade{By: caller.Name, Approval: scim.Unasked}
 		if makes {
 			apply, err := proposeSecond(root, caller, dual.SCIMToken,
 				"a new provisioning token, which makes administrators through a mapped group",
@@ -508,43 +682,93 @@ func cmdSCIM(root string, args []string) error {
 			if err != nil || !apply {
 				return err
 			}
+			made.Approval = scim.Alone
 		}
-		return giveSCIMToken(root, *days, caller)
+		return giveSCIMToken(root, *days, caller, made)
 	case "map":
-		if len(args) != 3 {
-			return scimUsage()
-		}
-		if err := validMapping(root, args[2]); err != nil {
+		pos, flags := leadingArgs(args[1:], 2)
+		fs := flag.NewFlagSet("scim map", flag.ContinueOnError)
+		until := fs.String("until", "", "for a job granted for a time: its access ends at the start of this day (YYYY-MM-DD)")
+		forDur := fs.String("for", "", "for a job granted for a time: its access ends after this long, to the day: 30d")
+		if err := fs.Parse(flags); err != nil {
 			return err
 		}
-		if dual.MapsToAdministrator(args[2]) {
-			apply, err := proposeSecond(root, caller, dual.Mapping, scimMappingWhat(args[1], args[2]),
-				dual.MappingChange{Group: args[1], To: args[2]}, "")
+		if len(pos) != 2 || fs.NArg() != 0 {
+			return scimUsage()
+		}
+		group, to := pos[0], pos[1]
+		if *until != "" || *forDur != "" {
+			ends, err := grantExpiry(*until, *forDur, time.Now())
+			if err != nil {
+				return err
+			}
+			to = scim.MappedUntil(to, startOfDayAfter(time.Unix(ends, 0)))
+		}
+		if err := validMapping(root, to); err != nil {
+			if errors.Is(err, scim.ErrMustEnd) {
+				return fmt.Errorf("%w: give --for (30d, say) or --until a day", err)
+			}
+			return err
+		}
+		if dual.MapsToAdministrator(to) {
+			apply, err := proposeSecond(root, caller, dual.Mapping, scimMappingWhat(group, to),
+				dual.MappingChange{Group: group, To: to}, "")
 			if err != nil || !apply {
 				return err
 			}
 		}
-		if err := scimMap(root, args[1], args[2]); err != nil {
+		if err := scimMap(root, group, to); err != nil {
 			return err
 		}
-		w.Human("members of %q are now %s here\n", args[1], args[2])
-		return note("scim.mapped", args[1]+" → "+args[2])
+		w.Human("members of %q are now %s here\n", group, to)
+		if dual.MapsToAdministrator(to) {
+			mappedTokens(root, time.Now())
+		}
+		return note("scim.mapped", group+" → "+to)
 	case "unmap":
 		if len(args) != 2 {
 			return scimUsage()
 		}
-		if err := store.Update(func(st *scim.State) error { delete(st.Mapping, args[1]); return nil }); err != nil {
+		if err := scimUnmap(root, args[1]); err != nil {
 			return err
 		}
-		scimHandler(root).SyncAll()
 		w.Human("%q no longer grants anything here\n", args[1])
 		return note("scim.unmapped", args[1])
 	}
 	return scimUsage()
 }
 
+// mappedTokens tells the only administrator, who has just mapped a group
+// to make administrators and so approved it alone, which provisioning
+// tokens now make them: what `quilzo pending show` lists for a second
+// administrator before approving. Nothing waited here, so nothing was
+// shown, and a token another administrator made before any group made
+// administrators went on working as a way to make them.
+func mappedTokens(root string, now time.Time) {
+	live, err := liveSCIMTokens(root, now)
+	switch {
+	case err != nil:
+		w.Human("  %sthis lets the provisioning token make administrators, and it could not be read: %v%s\n",
+			yellow, err, reset)
+	case len(live) == 0:
+		w.Human("  no provisioning token works now; one made from now on asks a second administrator, when there is one\n")
+	default:
+		w.Human("  %sthis lets the provisioning token make administrators:%s\n", yellow, reset)
+		for _, t := range live {
+			w.Human("    %s\n", t.Words())
+		}
+		w.Human("  %sif that is not who should hold it, revoke it: quilzo scim token --revoke%s\n", dim, reset)
+	}
+}
+
 // scimMakesAdministrators reports whether a group the identity provider
-// sends makes its members administrators of anything.
+// sends makes its members administrators of anything, or will once a
+// mapping waiting for a second administrator is approved.
+//
+// The waiting mapping counts: its approver reads the live tokens with the
+// request, and a token made after that, while no group made
+// administrators yet, was made on one administrator's word and was not
+// among them. Once the mapping was approved it made administrators.
 func scimMakesAdministrators(root string) (bool, error) {
 	makes := false
 	err := scimStore(root).Read(func(st *scim.State) {
@@ -552,13 +776,21 @@ func scimMakesAdministrators(root string) (bool, error) {
 			makes = makes || dual.MapsToAdministrator(to)
 		}
 	})
+	if err != nil || makes {
+		return makes, err
+	}
+	now := time.Now()
+	pend, err := dualStore(root).Pending(now)
+	for _, r := range pend {
+		makes = makes || (r.Kind == dual.Mapping && r.Open(now))
+	}
 	return makes, err
 }
 
 // giveSCIMToken makes the provisioning token, records it (never the
 // secret), and prints it once.
-func giveSCIMToken(root string, days int, caller *Caller) error {
-	token, kept, err := newSCIMToken(root, days)
+func giveSCIMToken(root string, days int, caller *Caller, made scim.TokenMade) error {
+	token, kept, err := newSCIMTokenMade(root, days, made)
 	if err != nil {
 		return err
 	}
@@ -593,19 +825,19 @@ func scimHooks(root string) *admin.SCIMAdmin {
 			return note("scim.mapped", by, group+" → "+to)
 		},
 		Unmap: func(group, by string) error {
-			if err := store.Update(func(st *scim.State) error { delete(st.Mapping, group); return nil }); err != nil {
+			if err := scimUnmap(root, group); err != nil {
 				return err
 			}
-			scimHandler(root).SyncAll()
 			return note("scim.unmapped", by, group)
 		},
-		NewToken: func(by string) (string, error) {
-			t, _, err := newSCIMToken(root, scimTokenDays)
+		NewToken: func(made scim.TokenMade) (string, error) {
+			t, _, err := newSCIMTokenMade(root, scimTokenDays, made)
 			if err != nil {
 				return "", err
 			}
-			return t, note("scim.token-made", by, "")
+			return t, note("scim.token-made", made.By, "")
 		},
+		LiveTokens: func() ([]scim.LiveToken, error) { return liveSCIMTokens(root, time.Now()) },
 		TokenEnds: func() (time.Time, bool, error) {
 			t, ok, err := readSCIMToken(root, time.Now())
 			return t.Expires, ok, err

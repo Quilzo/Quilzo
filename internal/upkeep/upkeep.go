@@ -16,21 +16,22 @@
 // somebody was handed a cron entry, and an operator who had not read that
 // comment had a site that promised to forget and did not.
 //
-// # Why this, and not a daemon for everything
+// # Why in the server, and not on a timer of the operator's
 //
-// `quilzo schedule run` deliberately does not daemonise, and says why: "a
-// scheduler that is also a long-lived process is a second thing that can be
-// down, and the machinery for running something every minute already exists on
-// every system this runs on." That argument is right and this does not
-// contradict it.
+// Scheduled publishing once needed a timer calling `quilzo schedule run`, on
+// the argument that a scheduler which is also a long-lived process is a second
+// thing that can be down. Retention was the first job to come into the server
+// instead: expiring a submission is a delete in a mutable directory the
+// serving process already writes to, it is idempotent, and nothing downstream
+// depends on the minute it happens.
 //
-// It is an argument about publishing, which is a gated write that has to be
-// deterministic and auditable, and where firing late is better than firing from
-// a process nobody is watching. Expiring a submission is neither of those
-// things: it is a delete in a mutable directory the serving process already
-// writes to, it is idempotent, and nothing downstream depends on the minute it
-// happens. So the two get different answers, and scheduled publishing keeps its
-// timer while retention stops needing one.
+// Scheduled publishing has since followed (runScheduler, in cmd/quilzo), for
+// the same reason this exists: an operator who never set up the cron entry had
+// launches that silently did not happen. It keeps a loop of its own rather
+// than joining this one, because a publish goes out within a second of its
+// time and this wakes every quarter of an hour; `quilzo schedule run` remains
+// for a deployment that turns schedule.in_server off and publishes from a
+// timer of its own.
 //
 // # Once at the start, then on the clock
 //

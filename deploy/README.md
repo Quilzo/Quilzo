@@ -7,6 +7,140 @@ systemd unit.
 
 Anything with 512 MB will do. This is one static binary and a directory.
 
+There are two ways to run it here: with Docker Compose, which is the next
+section, or as a systemd service, which is the one after.
+
+## With Docker Compose
+
+`compose.yaml` runs the admin, the published site and Caddy over one store.
+Every Quilzo container is read-only, holds no capability and does not run as
+root. The two Caddy containers are read-only too, and run as Caddy's image
+does: as root, with the one capability to bind ports, because the caddy binary
+carries it and will not start without it. You need Docker with the Compose
+plugin, and for a real site a hostname whose DNS points at this machine
+(`localhost` works for a trial).
+
+Every command below is run in this directory, in this order:
+
+```bash
+cd deploy
+cp compose.env.example .env    # then set QUILZO_DOMAIN in .env
+set -a; . ./.env; set +a       # so the steps below name the addresses in .env
+docker compose run --rm admin init
+docker compose run --rm admin auditlog dir /srv/audit
+docker compose run --rm admin config set network.trusted_proxies "$QUILZO_PROXY_ADDRESS"
+docker compose run --rm admin config set admin.behind_tls_proxy true
+docker compose run --rm admin config set admin.base_url "https://localhost:$QUILZO_ADMIN_PORT"
+docker compose run --rm admin config set site.base_url "https://$QUILZO_DOMAIN:$QUILZO_HTTPS_PORT"
+docker compose run --rm admin demo --examples /srv/templates/examples
+docker compose run --rm admin init --admin you
+docker compose run --rm admin token issue first --principal you   # shown once: keep it
+docker compose up -d
+```
+
+What each one is for:
+
+- `init` makes the store, on the `store` volume. Every Quilzo container
+  names `/srv/store` in its entrypoint, so a command given to
+  `docker compose run` cannot lose it; and every one is read-only, so a
+  write anywhere but a volume fails out loud rather than going into a
+  container's own layer, which `--rm` would delete.
+- `auditlog dir` points the store at the audit log that `logd` writes. From
+  then on the admin and the site hand it their records over a socket and
+  cannot open the log to change one; `quilzo logd status` says whether the
+  separation is in force. (`docker compose run` starts `logd` first, so it
+  is running for every step after this one.)
+- `network.trusted_proxies` is Caddy's fixed address on the network it
+  shares with the site, the one address the site believes `X-Forwarded-For`
+  from (see the note in `compose.yaml`). `.env` gives it, with the network's
+  range, so it can be moved if this machine already uses that range.
+- `admin.behind_tls_proxy` and `admin.base_url` say what the admin is: served
+  over HTTPS by `admin-proxy`, at `https://localhost:` and the port in
+  `.env`. The session cookie is Secure because of the first, and the second
+  is the address every link to the admin names, the enrolment link below
+  among them, so both come before it.
+- `site.base_url` is the site's address, for what the admin sends out:
+  newsletters, share links, booking confirmations. The site itself is given
+  the same one by `compose.yaml`. On 443 the port is left out of both.
+- `demo` installs Marginalia, the demonstration: a design, eleven pages and
+  a small shop, published, so the site has something to serve the moment it
+  starts. Its design goes to the `templates` volume, which the admin writes
+  and the site reads; its example files go there too, because the rest of
+  `/srv` is read-only. For a site of your own from the start, run
+  `docker compose run --rm admin template use sections` instead: it writes a
+  design and a sample page, and the site serves what you publish.
+- `init --admin you` makes `you` the first administrator and prints the link
+  that adds their passkey. Open it once the stack is up; it works once.
+- `token issue first` is `you`'s token for the commands that come after
+  these (below), and is shown once. A store issues a token without being
+  shown one only while it holds none at all, and signing in to the admin
+  makes one, so the first is issued here, before the admin starts.
+- `up -d` starts everything, and `restart: unless-stopped` brings it back
+  after a reboot.
+
+To run an image you built from this checkout rather than a release, build
+it with the version it is, so that `quilzo version` and the bill of
+materials inside it say so (without `--build-arg VERSION` it is "dev"),
+then name it in `.env`:
+
+```bash
+docker build --build-arg VERSION=v0.3.0 -t quilzo:0.3.0 ..
+# and in .env: QUILZO_IMAGE=quilzo and QUILZO_VERSION=0.3.0
+```
+
+### Reaching the admin
+
+The admin is at `https://localhost:8443` (the port is `QUILZO_ADMIN_PORT`),
+on this machine's loopback and nowhere else. It is served by `admin-proxy`, a
+Caddy of its own on a network the internet-facing Caddy and the site are not
+on. From another computer, forward the port over SSH and open the same
+address there:
+
+```bash
+ssh -N -L 8443:127.0.0.1:8443 you@your-server
+```
+
+Its certificate comes from `admin-proxy`'s own authority. Trust it once on the
+computer you sign in from, because a browser will not use a passkey on a page
+whose certificate it does not trust: copy it out, and add it to that
+computer's (or browser's) trusted certificates.
+
+```bash
+docker compose cp admin-proxy:/data/caddy/pki/authorities/local/root.crt quilzo-admin-ca.crt
+```
+
+### Commands once there is an administrator
+
+From `init --admin` on, the store asks every command who is asking. Give a
+command an administrator's token through the environment, never on its
+command line, where anybody on the machine can read it:
+
+```bash
+export QUILZO_TOKEN=...    # the token `token issue first` printed
+docker compose run --rm -e QUILZO_TOKEN admin logd status
+```
+
+Tokens are made on the command line, with an administrator's token: the
+admin has no page for it. The first lasts a week (`token.ttl.default`), so
+make the next before it ends, and one for each person or program that needs
+one: `docker compose run --rm -e QUILZO_TOKEN admin token issue NAME --principal WHO`.
+
+### What the containers do not do
+
+An agent that runs a program (`quilzo agent run --program`) runs it in the
+native agent box, which makes a user namespace of its own, and Docker's
+default system call filter refuses that inside a container: `quilzo agent
+backends` says so and why. Run those agents where Quilzo runs on the machine
+itself, or with a backend that runs the box elsewhere (`agent backends` lists
+them). Every other agent, and the rest of Quilzo, works here as it does
+anywhere.
+
+The store is the `store` volume, and it is kept until you delete it:
+`docker compose down` stops the stack and keeps every volume; only
+`docker compose down -v` throws them away.
+
+## As a systemd service
+
 ### 1. A user and a place
 
 ```bash
@@ -96,3 +230,16 @@ Reach it over SSH instead:
 ssh -N -L 8080:127.0.0.1:8080 you@your-server
 # then open http://127.0.0.1:8080
 ```
+
+### Except what the identity provider calls
+
+Provisioning (`quilzo scim`) and the identity provider's security events
+(`quilzo signals`) are sent by the provider to the admin, so those two paths need
+a public https address while everything else stays on loopback. The `Caddyfile`
+has a block, commented out, that publishes `/scim/v2/` and `/sso/signals` and
+answers 404 for every other path. Each endpoint authenticates the provider with a
+bearer of its own, and the shield can turn either off (`scim`, `signals`).
+
+Give the provider the same hostname the admin's single sign-on uses, since the
+receiver's address is derived from it: the OIDC redirect URI, or the SAML
+provider's `--url`.

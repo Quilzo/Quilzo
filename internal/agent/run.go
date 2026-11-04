@@ -349,15 +349,11 @@ func (r Runner) holdVerdict(ctx context.Context, t *Trace, s *Session, w Pending
 // answered is a person's answer to a question as the text the run goes on
 // with, or why it is not one.
 func answered(w Pending, v Verdict) (string, string) {
-	text, err := AnswerQuestions(w.Questions, v.Answers)
+	text, err := w.answered(v)
 	if err != nil {
 		return "", err.Error()
 	}
-	by := v.By
-	if by == "" {
-		by = "a person"
-	}
-	return by + " answered what the decider was not sure of:\n" + text, ""
+	return text, ""
 }
 
 // ErrNoDecide is returned when a runner has no way to decide anything.
@@ -649,7 +645,7 @@ func (r Runner) run(ctx context.Context, s *Session, t Trace,
 		var esc *Escalation
 		if perr != nil && errors.As(perr, &esc) {
 			w := Pending{N: turn, Action: action, Since: step.At, Kind: WaitQuestion,
-				Why: esc.Why, Questions: esc.Questions}
+				Why: esc.Why, Questions: esc.Questions, Settled: esc.Settled}
 			if r.Pause {
 				w.Tokens, w.Cost = s.TokensUsed()-tokens0, s.Cost()-cost0
 				t.Waiting = &w

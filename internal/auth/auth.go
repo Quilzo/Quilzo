@@ -742,6 +742,15 @@ type Token struct {
 	// it may do anything else: an automation judged a sign-in, or something
 	// seen elsewhere, unlike them (internal/automate). Cleared when they do.
 	StepUp string `json:"step_up,omitempty"`
+	// StepUpAt is when a step-up was last asked for and StepUpCleared when
+	// one was last passed, in nanoseconds. Two copies of the store meet when
+	// each is written (MergeInto), and the later of the two decides. The
+	// flag alone could not: the receiver of the identity provider's security
+	// events holds somebody's sessions in the file while the admin keeps its
+	// own copy, and the admin's next sign-in wrote that copy back with the
+	// hold gone.
+	StepUpAt      int64 `json:"step_up_at,omitempty"`
+	StepUpCleared int64 `json:"step_up_cleared,omitempty"`
 
 	// Audience, when set, is the one resource this token may be presented
 	// to: an access token an app was given through OAuth for the agent
@@ -1582,7 +1591,8 @@ func (ts *TokenStore) RequireStepUp(id, reason string) error {
 			if !ts.Tokens[i].IsSession() {
 				return fmt.Errorf("%s is not a session", id)
 			}
-			ts.Tokens[i].StepUp = reason
+			t := &ts.Tokens[i]
+			t.StepUp, t.StepUpAt = reason, max(time.Now().UnixNano(), t.StepUpCleared+1)
 			return nil
 		}
 	}
@@ -1599,7 +1609,9 @@ func (ts *TokenStore) RequireStepUpFor(principal, reason string, now time.Time) 
 		t := &ts.Tokens[i]
 		if strings.EqualFold(t.Principal, principal) && t.IsSession() && !t.Revoked &&
 			(t.ExpiresAt == 0 || now.Unix() < t.ExpiresAt) {
-			t.StepUp = reason
+			// After any hold this copy saw passed, whatever the clock
+			// says: this is a new one.
+			t.StepUp, t.StepUpAt = reason, max(now.UnixNano(), t.StepUpCleared+1)
 			n++
 		}
 	}
@@ -1611,12 +1623,37 @@ func (ts *TokenStore) ClearStepUp(id string) error {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	for i := range ts.Tokens {
-		if ts.Tokens[i].ID == id {
-			ts.Tokens[i].StepUp = ""
+		if t := &ts.Tokens[i]; t.ID == id {
+			// After the hold it passes, whatever the clock says: what was
+			// cleared is the one this copy saw.
+			t.StepUp, t.StepUpCleared = "", max(time.Now().UnixNano(), t.StepUpAt+1)
 			return nil
 		}
 	}
 	return fmt.Errorf("no token %s", id)
+}
+
+// NoteUsed records that the token id was used at at, when that is later than
+// the use already recorded, and reports whether it was.
+//
+// For a host writing a use down in the stored file. Authenticate notes a use
+// only in the copy of the store held by the process that checked the token,
+// and that note is lost with the copy unless the process saves it: the
+// content API and the admin's /mcp never did, so a token used there every
+// day was listed as used "never", and Stale offered it for revocation.
+func (ts *TokenStore) NoteUsed(id string, at time.Time) bool {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	for i := range ts.Tokens {
+		if ts.Tokens[i].ID == id {
+			if at.Unix() <= ts.Tokens[i].LastUsed {
+				return false
+			}
+			ts.Tokens[i].LastUsed = at.Unix()
+			return true
+		}
+	}
+	return false
 }
 
 // Stale lists tokens that have never been used or have not been used recently.
@@ -1652,6 +1689,19 @@ func (p *Policy) Snapshot() []Binding {
 	return append([]Binding(nil), p.Bindings...)
 }
 
+// Replace swaps the bindings, under the lock.
+//
+// For a host that re-reads the policy from disk because another process may
+// have changed it, as TokenStore.Replace is for credentials. The content API
+// in the admin evaluated the policy it was given at startup: a grant made
+// while it ran was refused there, and a revoked grant kept working there,
+// until the admin restarted.
+func (p *Policy) Replace(bindings []Binding) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.Bindings = bindings
+}
+
 // Snapshot returns a copy of the tokens, hashes included — callers that render
 // these must not print the Hash field, which is why nothing here does.
 func (ts *TokenStore) Snapshot() []Token {
@@ -1673,6 +1723,27 @@ func (ts *TokenStore) Replace(tokens []Token) {
 	ts.Tokens = tokens
 }
 
+// mergeStepUp settles whether a session must prove its person, when two
+// copies of it meet: whichever was later, a hold asked for in either or a
+// hold passed in either. A copy read before a hold was asked for knows
+// nothing of it, and writing that copy is not the person proving anything.
+// With neither time known, as for a store written before they were kept,
+// the copy being written says what was meant, as for everything else.
+func mergeStepUp(m *Token, s Token) {
+	at, reason := m.StepUpAt, m.StepUp
+	if s.StepUpAt > at {
+		at, reason = s.StepUpAt, s.StepUp
+	}
+	cleared := max(m.StepUpCleared, s.StepUpCleared)
+	m.StepUpAt, m.StepUpCleared = at, cleared
+	switch {
+	case at > cleared:
+		m.StepUp = reason
+	case cleared > at:
+		m.StepUp = ""
+	}
+}
+
 // MergeInto folds ts into stored, the store as it is on disk now, so that
 // writing stored undoes nothing another writer did since ts was read.
 //
@@ -1683,7 +1754,8 @@ func (ts *TokenStore) Replace(tokens []Token) {
 // revocation only ever sets a flag, and only sessions that ended long ago
 // are removed, by a sweep that runs again here. So a token either copy has
 // is kept, a token revoked in either stays revoked, a key bound in either
-// stays bound, and the last use is the later one; for everything else ts,
+// stays bound, the last use is the later one, and a step-up is the later of
+// being asked for and being passed (mergeStepUp); for everything else ts,
 // the copy being written, says what was meant.
 func (ts *TokenStore) MergeInto(stored *TokenStore, now time.Time) {
 	ts.mu.Lock()
@@ -1711,6 +1783,7 @@ func (ts *TokenStore) MergeInto(stored *TokenStore, now time.Time) {
 		if s.LastUsed > m.LastUsed {
 			m.LastUsed = s.LastUsed
 		}
+		mergeStepUp(&m, s)
 		stored.Tokens[i] = m
 	}
 	seen := make(map[string]bool, len(stored.Ended))

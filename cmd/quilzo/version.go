@@ -19,17 +19,20 @@ import (
 // release" (internal/compliance/sbom.go, internal/sitereport), and a
 // pseudo-version must keep meaning that.
 //
-// ldflags is the variable as the linker left it: anything but "dev" was set
-// on purpose and wins. read is debug.ReadBuildInfo, a parameter so a test
+// ldflags is the variable as the linker left it: anything but "dev" or
+// nothing was set on purpose and wins. read is debug.ReadBuildInfo, a parameter so a test
 // can be a `go install` without running one.
 func moduleVersion(ldflags string, read func() (*debug.BuildInfo, bool)) string {
-	if ldflags != "dev" {
+	// Empty is what `--build-arg VERSION=` with nothing after it makes of
+	// -X main.version=, and a binary that answers "quilzo " to --version has
+	// no version rather than an empty one.
+	if ldflags != "dev" && ldflags != "" {
 		return ldflags
 	}
 	if bi, ok := read(); ok && bi != nil && isReleaseTag(bi.Main.Version) {
 		return bi.Main.Version
 	}
-	return ldflags
+	return "dev"
 }
 
 var (
@@ -41,4 +44,41 @@ var (
 
 func isReleaseTag(v string) bool {
 	return releaseTag.MatchString(v) && !pseudoTail.MatchString(v)
+}
+
+// selfIdentity is what `quilzo self verify` knows this build by: its
+// version, and for a build with none, the commit it was built from.
+//
+// "dev" alone names no build. Every build from a working tree says it, so
+// the next one had other bytes under the same name and was reported as this
+// one rebuilt or patched in place: self verify exited 1 on every upgrade
+// between two of them. A clean commit names a build as a version does, and
+// two builds of it differ only by being built differently. Uncommitted
+// changes name nothing, and neither does a build with no commit recorded --
+// an image is one, because .git is not in its context -- so those stay
+// "dev", which Verify does not compare.
+func selfIdentity(v string, read func() (*debug.BuildInfo, bool)) string {
+	if v != "dev" {
+		return v
+	}
+	bi, ok := read()
+	if !ok || bi == nil {
+		return v
+	}
+	rev, modified := "", false
+	for _, s := range bi.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			rev = s.Value
+		case "vcs.modified":
+			modified = s.Value == "true"
+		}
+	}
+	if rev == "" || modified {
+		return v
+	}
+	if len(rev) > 12 {
+		rev = rev[:12]
+	}
+	return v + "+" + rev
 }

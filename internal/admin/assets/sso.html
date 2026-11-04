@@ -40,6 +40,7 @@
     <dt>Signs in at</dt><dd><code>{{.SSOURL}}</code></dd>
     <dt>Domains</dt><dd>{{if .Domains}}{{range $i, $d := .Domains}}{{if $i}}, {{end}}{{$d}}{{end}}{{if .Required}}; people in them must sign in this way{{end}}{{else}}<span class="hint">none: anybody it vouches for and the access policy names</span>{{end}}</dd>
     <dt>Becomes</dt><dd>{{if .Principal}}{{.Principal}}{{else}}the NameID{{end}}</dd>
+    <dt>Addresses</dt><dd>{{if .AllowUnverified}}taken as sent, verified or not{{else if .VerifiedAttribute}}only those it says are verified, in <code>{{.VerifiedAttribute}}</code>{{else}}as sent, unless its <code>email_verified</code> says otherwise{{end}}</dd>
     <dt>Second factor</dt><dd>{{if or .MFAContexts .MFAAttribute}}from {{if .Label}}{{.Label}}{{else}}the provider{{end}} when it says so; otherwise a passkey here{{else}}a passkey here: {{if .Label}}{{.Label}}{{else}}the provider{{end}} has no way set up to say it used one{{end}}</dd>
   </dl>
   <h4>Give these to {{if .Label}}{{.Label}}{{else}}the provider{{end}}</h4>
@@ -90,6 +91,7 @@
     <p id="sprincipal-help" class="help"><code>nameid</code>, or <code>attribute:email</code> to use an attribute.</p></div>
   <fieldset><legend>Rules</legend>
     <p><label><input type="checkbox" name="required"> People in these domains must sign in this way</label></p>
+    <p><label><input type="checkbox" name="allow_unverified"> Take addresses as the provider sends them, verified or not</label></p>
     <div class="field"><label for="sglass">Who may still use a token or passkey (break glass)</label>
       <input id="sglass" name="break_glass" placeholder="admin@northwind.example"></div>
     <p><label><input type="checkbox" name="replace"> Replace a provider with this name</label></p>

@@ -45,6 +45,7 @@ func TestTheListIsClosedAndEachDeclarationCanBeKept(t *testing.T) {
 		"ia-05_odp.01": "365 days", "au-11_odp": "6 years", "ac-07_odp.02": "15 minutes",
 		"ac-07_odp.03": "delay next logon prompt per {{ insert: param, ac-07_odp.05 }}\nnotify system administrator",
 		"ac-07_odp.04": "30 minutes",
+		"ac-02_odp.10": "30 days",
 	}
 	for id, v := range ok {
 		p, _ := Lookup(id)
@@ -60,6 +61,7 @@ func TestTheListIsClosedAndEachDeclarationCanBeKept(t *testing.T) {
 		"ac-02.05_odp": "1 minute",    // shorter than the floor on idling
 		"ac-07_odp.03": "lock the account or node until released by an administrator",
 		"ac-07_odp.01": "five",
+		"ac-02_odp.10": "2 years", // longer than a review may wait
 	}
 	for id, v := range refused {
 		p, _ := Lookup(id)
@@ -170,6 +172,27 @@ func TestADeclarationIsAFloorUnderItsSetting(t *testing.T) {
 	}
 	if unmet.Raw("session.idle") != "30m" {
 		t.Fatalf("enforced to %s", unmet.Raw("session.idle"))
+	}
+}
+
+// A setting written in days meets the policy as the same setting in hours
+// does, and a policy may be declared in days the same way.
+//
+// The floor read the setting with Go's parser, so once a duration setting
+// took 90d, a value of 60d under a policy of ninety days read as nothing
+// at all and was refused as below it: a stricter value refused by the
+// policy that asks for it.
+func TestADurationInDaysMeetsThePolicy(t *testing.T) {
+	for _, declared := range []string{"90 days", "90d", "2160h"} {
+		pol := &Policy{Declared: []Declared{{Param: "ac-02_odp.10", Value: declared}}}
+		cfg := config.New().WithFloors(Floors(pol))
+		if err := cfg.Set("access.review.every", "60d", "", "dana"); err != nil {
+			t.Errorf("declared %s: sixty days, which is stricter, was refused: %v", declared, err)
+		}
+		var below *config.ErrBelowPolicy
+		if err := cfg.Set("access.review.every", "13w", "a reason", "dana"); !errors.As(err, &below) {
+			t.Errorf("declared %s: ninety-one days was allowed: %v", declared, err)
+		}
 	}
 }
 

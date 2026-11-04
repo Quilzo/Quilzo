@@ -4,12 +4,14 @@
 package main
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/out"
 )
 
 // A job is granted, works on its area's commands only, and is revoked whole.
@@ -167,5 +169,235 @@ func TestTheOnlyAdministratorGetsTheirFirstToken(t *testing.T) {
 	}
 	if !boot {
 		t.Error("the record does not say the first token was the bootstrap")
+	}
+}
+
+// Each place that says how to run an auth subcommand names the arguments
+// the command needs.
+//
+// `quilzo help` said `quilzo auth revoke WHO [--on PATH]`, and the command
+// needs a principal and a role: a store set up by following the help failed
+// at its first revoke, with a usage line the help had never shown. `quilzo
+// auth`'s own list said explain needs an action, which it does not. So the
+// count of required arguments in both lists is checked against the usage
+// each command answers with when it is given none, which is what the
+// command itself reads.
+func TestEveryAuthSynopsisNamesTheArgumentsTheCommandNeeds(t *testing.T) {
+	root := connectStore(t)
+	help := helpText(t)
+	_, read := captureStdout(t)
+	_ = authUsage()
+	own := read()
+
+	for _, sub := range []string{"grant", "deny", "revoke", "explain", "enrol", "unlock"} {
+		err := cmdAuth(root, []string{sub})
+		if err == nil || !strings.Contains(err.Error(), "usage:") {
+			t.Fatalf("`quilzo auth %s` with nothing else did not answer its usage: %v", sub, err)
+		}
+		codes := synopses(err.Error(), "quilzo auth "+sub)
+		if len(codes) == 0 {
+			t.Fatalf("the usage of auth %s does not name it: %v", sub, err)
+		}
+		need := requiredArgs(codes[0])
+		if len(synopses(help, "quilzo auth "+sub)) == 0 || len(synopses(own, sub)) == 0 {
+			t.Fatalf("auth %s is missing from one of the lists, so nothing was compared", sub)
+		}
+		for _, line := range synopses(help, "quilzo auth "+sub) {
+			if n := requiredArgs(line); n >= 0 && n != need {
+				t.Errorf("`quilzo help` says `quilzo auth %s%s`, which is %d argument(s); "+
+					"the command needs %d: %s", sub, line, n, need, err)
+			}
+		}
+		for _, line := range synopses(own, sub) {
+			if n := requiredArgs(line); n >= 0 && n != need {
+				t.Errorf("`quilzo auth` says `%s%s`, which is %d argument(s); "+
+					"the command needs %d: %s", sub, line, n, need, err)
+			}
+		}
+	}
+}
+
+// synopses finds every place text names the command at the start of a line
+// or of a usage, and returns what follows it up to the description or the
+// next alternative.
+func synopses(text, command string) []string {
+	var out []string
+	pat := regexp.MustCompile(`(?m)(?:^\s*|usage: |or: |\| )` + regexp.QuoteMeta(command) +
+		`((?:[ \t][^\n]*)?)$`)
+	end := regexp.MustCompile(`\s{2,}| \| `)
+	for _, m := range pat.FindAllStringSubmatch(text, -1) {
+		rest := m[1]
+		if i := end.FindStringIndex(strings.TrimLeft(rest, " \t")); i != nil {
+			rest = strings.TrimLeft(rest, " \t")[:i[0]]
+		}
+		out = append(out, " "+strings.TrimSpace(rest))
+	}
+	return out
+}
+
+// requiredArgs counts the placeholders a synopsis requires, stopping at the
+// first optional part or flag. It is -1 for a line that says "as above".
+func requiredArgs(synopsis string) int {
+	placeholder := regexp.MustCompile(`^(<[^>]+>|[A-Z][A-Z0-9_/|]*)$`)
+	n := 0
+	for _, word := range strings.Fields(synopsis) {
+		switch {
+		case word == "...":
+			return -1
+		case placeholder.MatchString(word):
+			n++
+		default:
+			return n
+		}
+	}
+	return n
+}
+
+// Every row of `quilzo auth list` keeps to the columns of its header.
+//
+// The widths were fixed at 18, 10, 16 and 14, and a principal is often an
+// email address: claimsadmin@qz.test is 19 characters, and its row pushed
+// every column after it one place right of the header and of the rows
+// around it. "unrecorded" was padded with its colour codes counted as
+// width, so on a terminal what followed it stood four places left of the
+// same thing on a recorded row.
+func TestAuthListKeepsEveryRowInItsColumns(t *testing.T) {
+	root := connectStore(t)
+	pol := &auth.Policy{}
+	// Listed by somebody who may grant, who is shown everybody's rows; a
+	// reader is shown only their own (TestAReaderListsTheirOwnGrantsAndTokens).
+	isolateToken(t)
+	ts, err := loadTokens(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret, _, err := ts.Issue("boss-laptop", "boss", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveJSON(tokensPath(root), ts); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("QUILZO_TOKEN", secret)
+	for _, b := range []auth.Binding{
+		{Principal: "boss", Role: auth.RoleAdmin, Resource: "/", GrantedBy: "cli"},
+		{Principal: "claimsadmin@qz.test", Role: auth.RoleAdmin, Resource: "/", GrantedBy: "cli", Deny: true},
+		{Principal: "bo", Role: auth.RoleReader, Resource: "/a-rather-long/section/path", Deny: true},
+		{Principal: "a-principal-of-forty-characters@qz.test", Role: auth.RolePublisher,
+			Resource: "/", GrantedBy: "an-administrator-with-a-long-name", Deny: true},
+	} {
+		if err := pol.Grant(b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := saveJSON(policyPath(root), pol); err != nil {
+		t.Fatal(err)
+	}
+	// The table, as a terminal shows it: connectStore asks for JSON.
+	savedDim, savedRed, savedReset := dim, red, reset
+	dim, red, reset = "\x1b[2m", "\x1b[31m", "\x1b[0m"
+	t.Cleanup(func() { dim, red, reset = savedDim, savedRed, savedReset })
+
+	_, read := captureStdout(t)
+	w = out.New(false)
+	err = authList(root)
+	printed := regexp.MustCompile("\x1b\\[[0-9;]*m").ReplaceAllString(read(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimRight(printed, "\n"), "\n")
+	if len(lines) != 6 {
+		t.Fatalf("expected a header, a rule and four rows:\n%s", printed)
+	}
+	header := lines[0]
+	for _, col := range []string{"role", "resource", "granted by"} {
+		at := strings.Index(header, col)
+		for _, row := range lines[2:] {
+			if at > len(row) || row[at-1] != ' ' || row[at] == ' ' {
+				t.Errorf("the %q column starts at %d in the header and not in this row:\n%s\n%s",
+					col, at, header, row)
+			}
+		}
+	}
+	deny := -1
+	for _, row := range lines[2:] {
+		at := strings.Index(row, "DENY")
+		if deny == -1 {
+			deny = at
+		}
+		if at != deny {
+			t.Errorf("DENY stands at %d in one row and %d in another:\n%s", deny, at, printed)
+		}
+	}
+}
+
+// The token list keeps its columns the same way, for a token whose name is
+// longer than the sixteen characters the column used to be.
+func TestTokenListKeepsEveryRowInItsColumns(t *testing.T) {
+	root := connectStore(t)
+	ts, _ := loadTokens(root)
+	for _, name := range []string{"ci-deploy-production", "laptop"} {
+		if _, _, err := ts.Issue(name, "dana", auth.RoleReader, "/", time.Hour, auth.RoleAdmin); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := saveJSON(tokensPath(root), ts); err != nil {
+		t.Fatal(err)
+	}
+	_, read := captureStdout(t)
+	w = out.New(false)
+	err := tokenList(root)
+	printed := read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimRight(printed, "\n"), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("expected a header and two rows:\n%s", printed)
+	}
+	at := strings.Index(lines[0], "role")
+	for _, row := range lines[1:] {
+		if !strings.HasPrefix(row[at:], "reader") {
+			t.Errorf("the role column starts at %d in the header and not in this row:\n%s\n%s",
+				at, lines[0], row)
+		}
+	}
+}
+
+// The stale tokens keep their columns too: the list of tokens nobody uses
+// put each name in a fixed sixteen places, as the token list did, and
+// "ci-deploy-production" pushed its "never used" out of line with the rest.
+func TestTokenStaleKeepsEveryRowInItsColumns(t *testing.T) {
+	root := connectStore(t)
+	ts, _ := loadTokens(root)
+	for _, name := range []string{"ci-deploy-production", "laptop"} {
+		if _, _, err := ts.Issue(name, "dana", auth.RoleReader, "/", time.Hour, auth.RoleAdmin); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := range ts.Tokens {
+		ts.Tokens[i].CreatedAt = time.Now().Add(-48 * time.Hour).Unix()
+	}
+	if err := saveJSON(tokensPath(root), ts); err != nil {
+		t.Fatal(err)
+	}
+	_, read := captureStdout(t)
+	w = out.New(false)
+	err := tokenStale(root, []string{"--idle", "24h"})
+	printed := read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var at []int
+	for _, row := range strings.Split(printed, "\n") {
+		if i := strings.Index(row, "never used"); i >= 0 {
+			at = append(at, i)
+		}
+	}
+	if len(at) != 2 {
+		t.Fatalf("expected two stale tokens:\n%s", printed)
+	}
+	if at[0] != at[1] {
+		t.Errorf("\"never used\" stands at %d in one row and %d in the other:\n%s", at[0], at[1], printed)
 	}
 }

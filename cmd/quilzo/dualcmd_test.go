@@ -379,3 +379,164 @@ func TestAProvisioningTokenThatMakesAdministratorsTakesTwo(t *testing.T) {
 		t.Fatalf("a token with no administrators to make waited: %v", err)
 	}
 }
+
+// removalAt moves the stored record of the last administrator removed to
+// ago, as though it had happened then.
+func removalAt(t *testing.T, root string, ago time.Duration) {
+	t.Helper()
+	var f map[string]any
+	if err := loadJSON(dualStore(root).Path, &f); err != nil {
+		t.Fatal(err)
+	}
+	rm, ok := f["removed"].(map[string]any)
+	if !ok {
+		t.Fatalf("no removal is recorded: %v", f)
+	}
+	rm["at"] = time.Now().Add(-ago).UTC().Format(time.RFC3339Nano)
+	if err := saveJSON(dualStore(root).Path, f); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The administrator left after removing the other does not approve alone
+// for a day.
+//
+// One administrator may remove another, and that is not dual-controlled.
+// The only administrator approves alone, so a store with one is not left
+// unable to change anything. Together those made removing the other the
+// way to approve anything alone: dana asked for pat to be made an
+// administrator, removed lee, who would have decided it, and approved it
+// herself as the only administrator there was.
+func TestRemovingTheOtherAdministratorDoesNotLetTheOneLeftApproveAlone(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root, dana, _ := twoAdmins(t)
+	t.Setenv("QUILZO_TOKEN", dana)
+	isAdmin := func(who string) bool {
+		pol, _ := loadPolicy(root)
+		return pol.Evaluate(who, auth.ActGrant, "/").Allowed
+	}
+	if err := cmdAuth(root, []string{"grant", "pat", "admin"}); err != nil {
+		t.Fatal(err)
+	}
+	r := waiting(t, root)
+	if err := cmdAuth(root, []string{"revoke", "lee", "admin"}); err != nil {
+		t.Fatal(err)
+	}
+
+	err := cmdPending(root, []string{"approve", r.ID})
+	if isAdmin("pat") {
+		t.Fatal("dana removed the other administrator and approved her own request alone")
+	}
+	if err == nil || !strings.Contains(err.Error(), "until") {
+		t.Fatalf("the refusal does not say why and until when: %v", err)
+	}
+	// A change she asks for now waits as well, rather than being approved
+	// as she makes it.
+	if err := cmdConfig(root, []string{"set", "publish.require_a11y", "false", "--accept-risk", "a migration"}); err != nil {
+		t.Fatal(err)
+	}
+	if !mustConfig(root).Bool("publish.require_a11y") {
+		t.Fatal("a weaker setting took effect alone a moment after the other administrator was removed")
+	}
+	body, _ := os.ReadFile(auditPath(root))
+	if !strings.Contains(string(body), "dual.alone-refused") {
+		t.Error("the refusal was not recorded")
+	}
+
+	removalAt(t, root, 23*time.Hour)
+	if err := cmdPending(root, []string{"approve", r.ID}); err == nil || isAdmin("pat") {
+		t.Fatalf("approved alone 23 hours after the removal: %v", err)
+	}
+	removalAt(t, root, 24*time.Hour+time.Minute)
+	if err := cmdPending(root, []string{"approve", r.ID}); err != nil || !isAdmin("pat") {
+		t.Fatalf("still refused a day after the removal: %v", err)
+	}
+}
+
+// Two administrators again, and nobody approves alone: the other decides.
+// The day's wait is for the administrator left alone, and ends as soon as
+// there is a second.
+func TestASecondAdministratorEndsTheWait(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root, dana, _ := twoAdmins(t)
+	t.Setenv("QUILZO_TOKEN", dana)
+	if err := cmdAuth(root, []string{"revoke", "lee", "admin"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdConfig(root, []string{"set", "publish.require_a11y", "false", "--accept-risk", "a migration"}); err != nil {
+		t.Fatal(err)
+	}
+	if !mustConfig(root).Bool("publish.require_a11y") {
+		t.Fatal("control: a change was approved alone straight after a removal")
+	}
+	// sam is enrolled and made an administrator as the identity provider
+	// makes one, by a group already mapped: nobody here approves it.
+	if _, err := updatePolicy(root, func(p *auth.Policy) error {
+		return p.Grant(auth.Binding{Principal: "sam", Role: auth.RoleAdmin, Resource: "/"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var f map[string]any
+	if err := loadJSON(dualStore(root).Path, &f); err != nil || f["removed"] != nil {
+		t.Fatalf("two administrators again, and the removal still holds: %v %v", f["removed"], err)
+	}
+	// sam leaves the same way, by the provider; dana is alone again, and
+	// waits a day from then.
+	if _, err := updatePolicy(root, func(p *auth.Policy) error {
+		p.Revoke("sam", auth.RoleAdmin, "/")
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if onlyAdministrator(root, "dana") {
+		t.Fatal("the second removal did not start a new day's wait")
+	}
+}
+
+// A store that has only ever had one administrator is as it was: they
+// approve alone, even after somebody else's access is removed.
+func TestAStoreWithOneAdministratorStillApprovesAlone(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	if w == nil {
+		w = out.New(false)
+		t.Cleanup(func() { w = nil })
+	}
+	root := t.TempDir()
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := updatePolicy(root, func(p *auth.Policy) error {
+		for _, b := range []auth.Binding{
+			{Principal: "dana", Role: auth.RoleAdmin, Resource: "/"},
+			{Principal: "pat", Role: auth.RolePublisher, Resource: "/"},
+			{Principal: "lee", Role: auth.RoleAdmin, Resource: "/blog"},
+		} {
+			if err := p.Grant(b); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ts, _ := loadTokens(root)
+	dana, _, err := ts.Issue("dana", "dana", auth.RoleAdmin, "", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveJSON(tokensPath(root), ts); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("QUILZO_TOKEN", dana)
+	for _, args := range [][]string{{"revoke", "pat", "publisher"}, {"revoke", "lee", "admin", "--on", "/blog"}} {
+		if err := cmdAuth(root, args); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := cmdConfig(root, []string{"set", "publish.require_a11y", "false", "--accept-risk", "a migration"}); err != nil {
+		t.Fatal(err)
+	}
+	if mustConfig(root).Bool("publish.require_a11y") {
+		t.Fatal("the only administrator there has ever been could not approve alone")
+	}
+}

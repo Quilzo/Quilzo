@@ -112,11 +112,14 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 		if err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
-		idx, err := assistantIndex(root, bot)
+		// Inside an agent's run, the question it embeds and the answer it
+		// asks for are the run's spending and its person's.
+		idx, err := assistantIndexAs(root, bot, caller)
 		if err != nil {
 			return nil, err
 		}
-		m, _ := assistantModelAt(root, bot)
+		m, _ := assistantModelAt(root, bot, caller.runPayers()...)
+		m = caller.chargedToRun(m)
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
 		ans, err := assistant.Respond(ctx, bot, idx, m, q)

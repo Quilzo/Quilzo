@@ -241,3 +241,26 @@ func TestTheStudioRecordsTheTokenHolder(t *testing.T) {
 			e.Principal, e.Outcome, e.Verified)
 	}
 }
+
+// A token used at the studio is written down as used, as one used at the
+// admin's /api/v1 and /mcp is (useRecorder).
+//
+// The studio decides each request by a copy of the store read for it, and
+// the use Authenticate notes was lost with the copy, so a token somebody
+// recorded with every day was listed as used "never" by `token list`, and
+// `token stale` offered it for revocation.
+func TestATokensUseAtTheStudioIsWrittenDown(t *testing.T) {
+	root, secret, id, srv := studioStore(t)
+	if code := uploadAs(t, srv, secret); code != http.StatusOK {
+		t.Fatalf("a recording with a good token answered %d", code)
+	}
+	ts, err := loadTokens(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tok := range ts.Snapshot() {
+		if tok.ID == id && tok.LastUsed == 0 {
+			t.Fatal("a token used at the studio is listed as used never")
+		}
+	}
+}

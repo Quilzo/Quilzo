@@ -4,8 +4,8 @@
 {{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
 {{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
 
-<p class="lead">Signed in as <strong>{{.Principal.Name}}</strong>, holding the
-role <strong>{{.Principal.Role}}</strong>.</p>
+<p class="lead">Signed in as <strong>{{.Principal.Name}}</strong>, holding
+{{if .Holding}}<strong>{{.Holding}}</strong>{{else}}the role <strong>{{.Principal.Role}}</strong>{{end}}.</p>
 
 <h2 id="details">Your details</h2>
 <p class="hint">
@@ -22,8 +22,9 @@ role <strong>{{.Principal.Role}}</strong>.</p>
     <p><label for="pf-contact">Contact</label>
       <input id="pf-contact" name="contact" maxlength="120"
              value="{{.Details.Contact}}" placeholder="a room, a handle, a rota">
-      <span class="hint">Free text. Nothing here is emailed — this program
-        sends no mail.</span></p>
+      <span class="hint">Free text, for colleagues to read. Nothing is sent to
+        it: the mail this program sends goes only to the addresses set for
+        that, such as the security contact.</span></p>
   </div>
   <button type="submit">Save</button>
 </form>
@@ -31,8 +32,10 @@ role <strong>{{.Principal.Role}}</strong>.</p>
 <h2 id="permissions">What you may do</h2>
 <p class="hint">
   Resolved against the access policy as written, not inferred from your role: a
-  grant can be limited to a subtree or to content you created, and a denial
-  wins wherever it applies. Changing any of this is an administrator's job.
+  grant can be limited to a part of the site, and a denial wins wherever it
+  applies. Asked of the whole site and of each place you hold something,
+  through the credential you signed in with. Changing any of this is an
+  administrator's job.
 </p>
 <div class="table-wrap">
 <table>
@@ -43,7 +46,8 @@ role <strong>{{.Principal.Role}}</strong>.</p>
   {{range .May}}
   <tr>
     <th scope="row"><code>{{.Action}}</code></th>
-    <td>{{if .Allowed}}<span class="tag tag-ok">yes</span>
+    <td>{{if .Allowed}}<span class="tag tag-ok">yes</span>{{with .Where}}
+        <span class="hint">on {{.}}</span>{{end}}
         {{else}}<span class="tag tag-bad">no</span>{{end}}</td>
     <td class="hint">{{.Reason}}</td>
   </tr>

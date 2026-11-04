@@ -114,8 +114,9 @@ func featureChecks(root string) feature.Checks {
 	caps, kinds := knownCapabilities(root), customKinds(root)
 	return feature.Checks{
 		Agent: func(m agent.Manifest) error { return m.ValidateWith(caps, kinds) },
+		// A package's URLs are its webhooks' (feature.Package.Webhooks).
 		URL: func(u string) error {
-			_, err := fetch.ValidateURL(u)
+			_, err := fetch.For("webhook").ValidateURL(u)
 			return err
 		},
 		EventType: webhook.KnownType,
@@ -504,6 +505,10 @@ type featureOutcome struct {
 	// Alone is an install two people would approve, approved by the only
 	// administrator there is.
 	Alone bool
+	// AloneRefused is why the only administrator did not approve it alone,
+	// a moment after another administrator was removed, when that is why
+	// it waits.
+	AloneRefused string
 }
 
 // requestFeature installs at once when one approval is enough, and otherwise
@@ -543,6 +548,11 @@ func requestFeature(root string, p *feature.Package, body []byte, caller *Caller
 	// for: an install with one is not left unable to install a contact
 	// form, and the record says the decision was made alone.
 	out.Alone = out.Card.Approvers >= 2 && onlyAdministrator(root, caller.Name)
+	if out.Card.Approvers >= 2 && !out.Alone {
+		if rm := aloneRefusal(root, caller.Name, time.Now()); rm != nil {
+			out.AloneRefused = refuseAlone(root, caller, rm, map[string]string{"feature": out.Card.Name}).Error()
+		}
+	}
 	if out.Card.Approvers < 2 || out.Alone {
 		if out.Alone {
 			if err := recordE(root, caller.auditRecord("feature.approved", "/", audit.Success, map[string]string{
@@ -597,6 +607,9 @@ func printOutcome(p *feature.Package, o featureOutcome, err error, caller *Calle
 		printFeatureCard(o.Card)
 		w.Human("\n%s needs a second person: quilzo feature approve %s, by somebody other than %s\n",
 			p.Name, o.Waiting.ID, caller.Name)
+		if o.AloneRefused != "" {
+			w.Human("  %s%s%s\n", yellow, o.AloneRefused, reset)
+		}
 		return nil
 	}
 	if o.Alone {

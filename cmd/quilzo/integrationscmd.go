@@ -223,10 +223,26 @@ func integrationsCall(root string, args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	out, cerr := newMCPClientFor(root, actingFor(caller)).Call(ctx, in, tool, argv)
+	out, cerr := newMCPClientFor(root, actingFor(caller)).CallStrict(ctx, in, tool, argv)
 	if cerr != nil {
-		record(root, caller.auditRecord("integration.call", name, audit.Denied,
-			map[string]string{"tool": tool, "error": cerr.Error()}))
+		// Denied is for what this install refused. A call the far side
+		// failed — the tool said so, the server answered with an error, or
+		// did not answer in time — is a failure: both were recorded as
+		// denied, and a tool that reported failing as a success, with the
+		// command exiting 0.
+		outcome, why := audit.Failure, cerr.Error()
+		var refused *mcpclient.Refused
+		var reported *mcpclient.ToolError
+		switch {
+		case errors.As(cerr, &refused):
+			outcome = audit.Denied
+		case errors.As(cerr, &reported):
+			// What the tool said is the far side's text, and stays out of
+			// the log as the arguments do; the person who ran this sees it.
+			why = "the tool reported that it failed"
+		}
+		record(root, caller.auditRecord("integration.call", name, outcome,
+			map[string]string{"tool": tool, "error": why}))
 		return cerr
 	}
 	// Recorded whatever it returned. A call into somebody else's system is the

@@ -37,6 +37,7 @@
    "*",
    "chatbots",
    "search-answers",
+   "signals",
    "uploads"
   ],
   "crypto": [
@@ -86,6 +87,7 @@
    "boards",
    "chatbots",
    "forms",
+   "signals",
    "signup",
    "uploads"
   ],
@@ -93,7 +95,8 @@
    "*"
   ],
   "crypto/subtle": [
-   "*"
+   "*",
+   "signals"
   ],
   "crypto/tls": [
    "*"
@@ -130,6 +133,7 @@
    "api",
    "chatbots",
    "mcp",
+   "signals",
    "signup"
   ],
   "encoding/binary": [
@@ -145,6 +149,7 @@
    "chatbots",
    "forms",
    "scim",
+   "signals",
    "signup",
    "uploads"
   ],
@@ -157,6 +162,7 @@
    "import",
    "mcp",
    "scim",
+   "signals",
    "signup",
    "uploads"
   ],
@@ -175,6 +181,7 @@
    "forms",
    "mcp",
    "scim",
+   "signals",
    "signup"
   ],
   "flag": [
@@ -189,6 +196,7 @@
    "import",
    "mcp",
    "scim",
+   "signals",
    "signup",
    "uploads"
   ],
@@ -251,6 +259,7 @@
    "import",
    "mcp",
    "scim",
+   "signals",
    "uploads"
   ],
   "io/fs": [
@@ -295,6 +304,7 @@
    "mcp",
    "scim",
    "search-answers",
+   "signals",
    "signup",
    "uploads"
   ],
@@ -317,6 +327,7 @@
    "chatbots",
    "import",
    "search-answers",
+   "signals",
    "uploads"
   ],
   "os": [
@@ -372,7 +383,8 @@
    "*",
    "chatbots",
    "forms",
-   "scim"
+   "scim",
+   "signals"
   ],
   "sort": [
    "*",
@@ -392,6 +404,7 @@
    "chatbots",
    "forms",
    "scim",
+   "signals",
    "uploads"
   ],
   "strings": [
@@ -404,6 +417,7 @@
    "mcp",
    "scim",
    "search-answers",
+   "signals",
    "signup",
    "uploads"
   ],
@@ -414,6 +428,7 @@
    "chatbots",
    "forms",
    "scim",
+   "signals",
    "signup",
    "uploads"
   ],
@@ -432,6 +447,7 @@
    "import",
    "scim",
    "search-answers",
+   "signals",
    "signup",
    "uploads"
   ],
@@ -442,6 +458,7 @@
    "*",
    "boards",
    "chatbots",
+   "signals",
    "signup"
   ],
   "unicode/utf16": [

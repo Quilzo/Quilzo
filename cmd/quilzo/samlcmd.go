@@ -18,7 +18,6 @@ import (
 
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
-	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/saml"
 )
 
@@ -74,19 +73,24 @@ func removeSAML(root, name string) error {
 	return os.Remove(samlFile(root, name))
 }
 
-// samlFetch reads metadata from an address under the sso purpose.
-func samlFetch(addr string) ([]byte, error) {
-	if _, err := fetch.ValidateURL(addr); err != nil {
+// samlFetch reads metadata from an address under the sso purpose, through
+// sign-in's own client (ssoClient). A refused address says how to reach a
+// provider on the organisation's own network here, because the Single
+// sign-on screen fetches through this too and said nothing of it.
+func samlFetch(root, addr string) ([]byte, error) {
+	c, err := ssoClient(root)
+	if err != nil {
 		return nil, err
 	}
-	c := fetch.New()
-	c.Purpose = "sso"
 	c.UserAgent = "quilzo/1 (+saml metadata)"
+	if _, err := c.ValidateURL(addr); err != nil {
+		return nil, ssoReachHint(err)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	res, err := c.Get(ctx, addr)
 	if err != nil {
-		return nil, err
+		return nil, ssoReachHint(err)
 	}
 	if res.Status != 200 || res.Truncated {
 		return nil, fmt.Errorf("%s answered %d", addr, res.Status)
@@ -97,7 +101,8 @@ func samlFetch(addr string) ([]byte, error) {
 func samlUsage() error {
 	return fmt.Errorf("usage: quilzo saml list | show NAME | metadata NAME | presets | " +
 		"add NAME --metadata FILE|URL --url https://YOUR-ADMIN [--preset okta] " +
-		"[--domain d] [--required] [--fingerprint SHA256] | remove NAME")
+		"[--domain d] [--required] [--verified-attribute NAME | --allow-unverified-email] " +
+		"[--fingerprint SHA256] | remove NAME")
 }
 
 func cmdSAML(root string, args []string) error {
@@ -157,7 +162,8 @@ func cmdSAML(root string, args []string) error {
 		}
 		return recordE(root, caller.auditRecord("saml.add", "/", audit.Success, map[string]string{
 			"provider": c.Name, "entity": c.EntityID, "certs": fmt.Sprint(len(c.Certs)),
-			"domains": strings.Join(c.Domains, ","), "required": fmt.Sprint(c.Required)}))
+			"domains": strings.Join(c.Domains, ","), "required": fmt.Sprint(c.Required),
+			"verified_attribute": c.VerifiedAttribute, "allow_unverified": fmt.Sprint(c.AllowUnverified)}))
 	case "remove":
 		if len(args) < 2 {
 			return samlUsage()
@@ -208,6 +214,14 @@ func samlShow(c *saml.Config) error {
 	if len(c.Domains) > 0 {
 		w.Human("\n  domains %s%s\n", strings.Join(c.Domains, ", "), map[bool]string{true: " (required)"}[c.Required])
 	}
+	switch {
+	case c.AllowUnverified:
+		w.Human("  addresses      taken as %s sends them, verified or not\n", c.Name)
+	case c.VerifiedAttribute != "":
+		w.Human("  addresses      only those %s says are verified, in %s\n", c.Name, c.VerifiedAttribute)
+	default:
+		w.Human("  addresses      as %s sends them, unless its email_verified says otherwise\n", c.Name)
+	}
 	if c.SaysMFA() {
 		w.Human("  second factor  from %s when it says so; otherwise a passkey here\n", c.Name)
 	} else {
@@ -230,6 +244,10 @@ func samlAdd(root string, args []string) (*saml.Config, error) {
 	principal := fs.String("principal", "", `"nameid" (the default) or "attribute:NAME"`)
 	required := fs.Bool("required", false, "people in the domains must sign in this way")
 	breakGlass := fs.String("break-glass", "", "people who may still use a token or passkey, comma-separated")
+	verifiedAttr := fs.String("verified-attribute", "",
+		"the attribute in which the provider says it verified the address; a sign-in as an address it does not say true about is refused")
+	allowUnverified := fs.Bool("allow-unverified-email", false,
+		"take the address as the provider sends it, verified or not")
 	fingerprint := fs.String("fingerprint", "", "the SHA-256 fingerprint you checked at the provider")
 	replace := fs.Bool("replace", false, "replace a provider with this name")
 	if err := fs.Parse(args[1:]); err != nil {
@@ -241,7 +259,7 @@ func samlAdd(root string, args []string) (*saml.Config, error) {
 	var raw []byte
 	var err error
 	if strings.HasPrefix(*meta, "https://") || strings.HasPrefix(*meta, "http://") {
-		raw, err = samlFetch(*meta)
+		raw, err = samlFetch(root, *meta)
 	} else if *meta == "-" {
 		raw, err = io.ReadAll(io.LimitReader(os.Stdin, 1<<20))
 	} else {
@@ -257,10 +275,18 @@ func samlAdd(root string, args []string) (*saml.Config, error) {
 	c := saml.Config{Name: name, URL: strings.TrimRight(*adminURL, "/"), EntityID: m.EntityID,
 		SSOURL: m.SSOURL, Principal: *principal, Required: *required, Preset: *preset}
 	if p, ok := saml.Presets[*preset]; ok {
-		c.Label, c.MFAContexts, c.MFAAttribute, c.MFAValues, c.NameIDFormat =
-			p.Label, p.MFAContexts, p.MFAAttribute, p.MFAValues, p.NameIDFormat
+		c.UsePreset(p)
 	} else if *preset != "" {
 		return nil, fmt.Errorf("%q is not a preset; quilzo saml presets lists them", *preset)
+	}
+	switch {
+	case *verifiedAttr != "" && *allowUnverified:
+		return nil, errors.New("--verified-attribute requires the address to be verified and " +
+			"--allow-unverified-email takes it unverified; give one")
+	case *verifiedAttr != "":
+		c.VerifiedAttribute = strings.TrimSpace(*verifiedAttr)
+	case *allowUnverified:
+		c.VerifiedAttribute, c.AllowUnverified = "", true
 	}
 	if *label != "" {
 		c.Label = *label

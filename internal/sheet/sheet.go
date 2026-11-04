@@ -17,8 +17,9 @@
 // March is asked about rather than read one way.
 //
 // Writing escapes what a spreadsheet would run. A cell beginning = + - or
-// @ is a formula to Excel, so one that is not a number is written with an
-// apostrophe first (OWASP's CSV injection), which reading takes off again.
+// @ is a formula to Excel, so one that is not a plain decimal number is
+// written with an apostrophe first (OWASP's CSV injection), which reading
+// takes off again. guard.go is that rule, for every CSV Quilzo writes.
 package sheet
 
 import (
@@ -426,13 +427,8 @@ func delimiter(text string) (rune, string) {
 }
 
 // unformula takes off the apostrophe a writer put before a cell that would
-// otherwise be a formula.
-func unformula(s string) string {
-	if len(s) > 1 && s[0] == '\'' && strings.ContainsRune("=+-@\t\r", rune(s[1])) {
-		return s[1:]
-	}
-	return s
-}
+// otherwise be a formula (UnguardCell).
+func unformula(s string) string { return UnguardCell(s) }
 
 // -- Which column is which field --------------------------------------------------
 

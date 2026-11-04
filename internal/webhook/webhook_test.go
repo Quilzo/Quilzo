@@ -4,6 +4,7 @@
 package webhook
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -40,6 +41,9 @@ func (r *recorder) Post(url string, body []byte, headers map[string]string) (int
 	r.i++
 	return s, nil
 }
+
+// Wait does not: these tests are about what is sent, not when.
+func (r *recorder) Wait(time.Duration) {}
 
 func TestASignatureVerifies(t *testing.T) {
 	secret, err := NewSecret()
@@ -208,6 +212,81 @@ func TestAClientErrorIsNotRetried(t *testing.T) {
 	if got := len(Send(r, Endpoint{URL: "https://x.example", Secret: "s"},
 		event(), now)); got != MaxAttempts {
 		t.Errorf("a 500 was attempted %d times", got)
+	}
+}
+
+// restarting is a receiver that answers 503, or status, until a moment
+// has passed on its own clock, which only waiting moves: a receiver being
+// deployed.
+type restarting struct {
+	clock, back time.Duration
+	status      int
+	at          []time.Duration
+	stamps      []string
+}
+
+func (r *restarting) Post(_ string, _ []byte, headers map[string]string) (int, error) {
+	r.at = append(r.at, r.clock)
+	r.stamps = append(r.stamps, headers["X-Quilzo-Timestamp"])
+	if r.clock < r.back {
+		return cmp.Or(r.status, 503), nil
+	}
+	return 200, nil
+}
+
+func (r *restarting) Wait(d time.Duration) { r.clock += d }
+
+// A receiver restarting for less than a second still gets the event.
+//
+// The three attempts were made back to back, about 10 ms apart, so a
+// receiver down for a deploy answered all three with 503 and the event was
+// never delivered: "at-least-once" was at most once for anybody who
+// restarts. Each attempt after the first now waits, and is signed for the
+// moment it is sent rather than the moment the first one was.
+func TestARetryWaitsLongEnoughForAReceiverToRestart(t *testing.T) {
+	r := &restarting{back: 800 * time.Millisecond}
+	deliveries := Send(r, Endpoint{URL: "https://x.example", Secret: "s"}, event(), now)
+	last := deliveries[len(deliveries)-1]
+	if !last.Succeeded {
+		t.Fatalf("a receiver back after %s missed every attempt, made at %v", r.back, r.at)
+	}
+	if len(r.at) < 2 || r.at[1]-r.at[0] < r.back {
+		t.Fatalf("the attempts were made at %v", r.at)
+	}
+	if r.stamps[0] == r.stamps[1] {
+		t.Errorf("a retry was signed for the time of the first attempt: %v", r.stamps)
+	}
+	// Bounded still: a receiver that stays down is tried MaxAttempts times,
+	// within the few seconds a receiver is given, and well inside the window
+	// in which a receiver accepts a signed timestamp.
+	down := &restarting{back: time.Hour}
+	if got := len(Send(down, Endpoint{URL: "https://x.example", Secret: "s"}, event(), now)); got != MaxAttempts {
+		t.Fatalf("%d attempts against a receiver that stays down", got)
+	}
+	if waited := down.at[len(down.at)-1]; waited > 10*time.Second || waited >= Tolerance {
+		t.Errorf("the last attempt came %s after the first", waited)
+	}
+}
+
+// A receiver that answers 429, taking fewer requests for a moment, or 408,
+// having timed out reading the request, is asking for it again later. Both
+// are 4xx, which was read as the request being wrong, so the event was
+// dropped on the first answer, as an event to a receiver restarting was.
+func TestABusyReceiverIsTriedAgainLater(t *testing.T) {
+	for _, busy := range []int{429, 408} {
+		r := &restarting{back: time.Second, status: busy}
+		deliveries := Send(r, Endpoint{URL: "https://x.example", Secret: "s"}, event(), now)
+		if last := deliveries[len(deliveries)-1]; !last.Succeeded || len(deliveries) != 2 {
+			t.Errorf("a receiver that answered %d for a second: %d attempt(s), made at %v",
+				busy, len(deliveries), r.at)
+		}
+	}
+	// Any other 4xx still says the request is wrong.
+	for _, wrong := range []int{400, 401, 403, 404, 410, 413, 422} {
+		r := &recorder{statuses: []int{wrong, 200}}
+		if got := len(Send(r, Endpoint{URL: "https://x.example", Secret: "s"}, event(), now)); got != 1 {
+			t.Errorf("a %d was attempted %d times", wrong, got)
+		}
 	}
 }
 

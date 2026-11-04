@@ -1,0 +1,29 @@
+# The admin, over HTTPS, for deploy/compose.yaml.
+#
+# Served by a Caddy of its own (admin-proxy), on the admin's network and
+# published on this machine's loopback only; the Caddy the internet reaches
+# cannot reach it. The certificate is for localhost, from this Caddy's own
+# authority, kept in its data volume. Trust that authority once on the
+# computer you sign in from, because a browser will not use a passkey on a
+# page whose certificate it does not trust:
+#
+#   docker compose cp admin-proxy:/data/caddy/pki/authorities/local/root.crt quilzo-admin-ca.crt
+#
+# deploy/README.md says the rest.
+{
+	# The authority is for the computer you sign in from, not this
+	# container, which has no trust store to put it in.
+	skip_install_trust
+	# HTTPS only: there is no plain-HTTP port here to redirect from.
+	auto_https disable_redirects
+	# TCP only, as it is published; advertising HTTP/3 on a UDP port
+	# nothing forwards would send browsers to try it first.
+	servers {
+		protocols h1 h2
+	}
+}
+
+https://localhost:8443 {
+	tls internal
+	reverse_proxy admin:8080
+}

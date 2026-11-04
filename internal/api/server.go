@@ -74,6 +74,12 @@ type Server struct {
 	// ReloadTokens re-reads the credential store when it has changed on disk.
 	// Nil means never, which is only right for a test.
 	ReloadTokens func()
+	// ReloadPolicy re-reads the access rules when they have changed on disk,
+	// for the same reason. Without it this server decided against the policy
+	// it was started with: a grant made while it ran was refused here while
+	// the admin, the CLI and /mcp allowed it, and a revoked grant kept working
+	// here until a restart. Nil means never, which is only right for a test.
+	ReloadPolicy func()
 	// Throttle slows repeated authentication failures. Nil disables it, which
 	// is for tests; the CLI wires one in from configuration.
 	Throttle *throttle.Limiter
@@ -89,6 +95,12 @@ type Server struct {
 	// authenticate, and why, for the shield's decoys and guess counting
 	// (internal/shield). Nil tells nobody.
 	OnBadToken func(r *http.Request, presented string, err error)
+	// OnTokenUsed is told every token that authenticated, so the host can
+	// write down when it was last used. This server never saves the store,
+	// and the use Authenticate notes in its copy was lost with it: a token
+	// used here every day was listed as used "never", and `token stale`
+	// offered it for revocation. Nil tells nobody.
+	OnTokenUsed func(tok auth.Token)
 	// Shield reports whether the shield has turned the content API off for
 	// a while. Nil means never.
 	Shield func() (until time.Time, on bool)
@@ -231,6 +243,11 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		if s.ReloadTokens != nil {
 			s.ReloadTokens()
 		}
+		// And the access rules, which are the same kind of shared file and
+		// were read once: see ReloadPolicy.
+		if s.ReloadPolicy != nil {
+			s.ReloadPolicy()
+		}
 
 		authSub := throttle.Subject{Source: sourceOf(r)}
 		throttled := false
@@ -284,6 +301,9 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 			// person signing in is not evidence that the guessing from it
 			// stopped.
 			s.Throttle.Succeed(throttle.Subject{Principal: tok.Principal})
+		}
+		if s.OnTokenUsed != nil {
+			s.OnTokenUsed(*tok)
 		}
 
 		// Checked after authentication, not before. A syntactic rejection is
@@ -658,13 +678,20 @@ func (s *Server) get(w http.ResponseWriter, r *http.Request, name string) {
 	writeJSON(w, http.StatusOK, p)
 }
 
+// writableFix is the command line that turns page writes on, for a refusal
+// of one on a read-only API to name. --api-writable alone serves no API: it
+// takes --api with it. Records are written elsewhere (recordsWritableFix).
+const writableFix = "quilzo site --api --api-writable"
+
 func (s *Server) put(w http.ResponseWriter, r *http.Request, name string) {
 	if !s.Writable {
 		writeError(w, http.StatusMethodNotAllowed, Error{
 			Error: "this API is read-only",
 			Detail: "a read API and a write API are different products with " +
 				"different blast radii, so writes are off unless turned on",
-			Fix: "quilzo serve --api-writable",
+			// The site's flag, with the one that serves the API at all: this
+			// said `quilzo serve --api-writable`, and serve has no such flag.
+			Fix: writableFix,
 		})
 		return
 	}
@@ -959,7 +986,9 @@ func (s *Server) index(w http.ResponseWriter) *vector.Index {
 			Error: "no vector index",
 			Detail: "this server was started without one, so there is nothing " +
 				"to compare against",
-			Fix: "quilzo site --vectors",
+			// The site builds one whenever it serves the API; there is no
+			// --vectors flag, which is what this used to name.
+			Fix: "quilzo site --api",
 		})
 		return nil
 	}

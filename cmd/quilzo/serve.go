@@ -46,7 +46,6 @@ import (
 	"github.com/quilzo/quilzo/internal/compliance"
 	"github.com/quilzo/quilzo/internal/csp"
 	"github.com/quilzo/quilzo/internal/ext"
-	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/fleet"
 	"github.com/quilzo/quilzo/internal/form"
 	"github.com/quilzo/quilzo/internal/gate"
@@ -66,6 +65,7 @@ import (
 	"github.com/quilzo/quilzo/internal/shield"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/sitereport"
+	"github.com/quilzo/quilzo/internal/store"
 	"github.com/quilzo/quilzo/internal/taxonomy"
 	"github.com/quilzo/quilzo/internal/upkeep"
 	"github.com/quilzo/quilzo/internal/webhook"
@@ -206,6 +206,16 @@ func cmdServe(root string, args []string) error {
 	srv.Members = membersHooks(root)
 	srv.Boards = boardsHooks(root)
 	srv.SCIM = scimHooks(root)
+	srv.AccessReview = accessReviewHooks(root)
+	srv.Signals = signalsHooks(root)
+	// What a group's mapping now grants nothing for is taken back as the
+	// admin starts, rather than whenever the identity provider next sends a
+	// change about the people in it: a group mapped to auditor before such
+	// a mapping had to carry the day it ends left them holding auditor with
+	// no end (scim.Handler.SyncRefused).
+	if err := scimHandler(root).SyncRefused(time.Now()); err != nil {
+		fmt.Fprintf(os.Stderr, "  %sprovisioning: %v%s\n", yellow, err, reset)
+	}
 	srv.Memory = memoryAdmin(root)
 	srv.Features = featureHooks(root, signedIn)
 	srv.Pay = payHooks(root, signedIn)
@@ -600,7 +610,9 @@ func cmdServe(root string, args []string) error {
 	// Retention. A form declares how long its submissions are kept and, until
 	// this, nothing removed them: the ceiling was a sentence in a policy and
 	// not a thing the program did. See internal/upkeep for why this sweeps
-	// here while scheduled publishing keeps its external timer.
+	// here. Scheduled publishing runs in this server too, on its own timer
+	// below (runScheduler), because it fires to the second and this loop
+	// wakes every quarter of an hour.
 	//
 	// The posture, rescanned on the same schedule, so a check that starts
 	// failing is on the record (and with the security contact) rather than
@@ -708,29 +720,7 @@ func cmdServe(root string, args []string) error {
 			Every: func() time.Duration { return reviewEvery(root) },
 		}
 	}
-	srv.Approvals = &admin.Approvals{
-		Policy: func() (collab.Policy, error) { return loadApprovalPolicy(root) },
-		Current: func() (*collab.Proposal, error) {
-			prop, _, err := currentProposal(root, s)
-			return prop, err
-		},
-		For: func(commit string) (*collab.Proposal, error) {
-			prop, _, err := proposalFor(root, s, commit)
-			return prop, err
-		},
-		Save: func(prop *collab.Proposal) error {
-			return saveProposal(root, s, prop)
-		},
-		KindOf: func(principal string) string {
-			return principalKind(root, principal)
-		},
-		Notify: func(prop *collab.Proposal) {
-			notifyProposed(root, prop)
-		},
-		SecondPerson: func(prop collab.Proposal, by string) (bool, error) {
-			return secondPersonForDraft(root, s, prop, by)
-		},
-	}
+	srv.Approvals = approvalsHooks(root, s)
 	srv.Listings = &admin.Listings{
 		Load: func() (*listing.Set, error) { return loadListings(root) },
 		Save: func(set *listing.Set) error { return saveJSON(listingPath(root), set) },
@@ -853,6 +843,10 @@ func cmdServe(root string, args []string) error {
 	srv.Brand = brand
 
 	srv.ReloadTokens = tokenReloader(root, toks)
+	// When a token was last used at /mcp, and below at /api/v1: neither
+	// door saves the store, so `token list` said "never" of tokens used
+	// there every day (useRecorder).
+	srv.OnTokenUsed = useRecorder(root)
 	// The agent interface at /mcp, and the OAuth server apps connect
 	// through. Off until mcp.remote is set. See agentinterface.go.
 	wireInterface(root, s, srv, sh, *tplDir)
@@ -939,8 +933,8 @@ func cmdServe(root string, args []string) error {
 
 	// The content API, same-origin with the playground. Read-only here: this
 	// is the console, and a console that can rewrite production by accident
-	// is a different product. `quilzo site --api-writable` is where writes
-	// are turned on deliberately.
+	// is a different product. `quilzo site --api --api-writable` is where
+	// writes are turned on deliberately.
 	apiSrv := &api.Server{
 		Store: s, Policy: pol, Tokens: toks,
 		// The admin's own limiter and token reloader, not a second set and
@@ -963,8 +957,15 @@ func cmdServe(root string, args []string) error {
 		// until an admin request happened to reload the store.
 		Throttle:     srv.Throttle,
 		ReloadTokens: srv.ReloadTokens,
+		// And the access rules, for the same reason. With only the tokens
+		// reloaded, a grant made while the admin ran was refused here while
+		// its screens and /mcp allowed it, and a revoked grant kept working
+		// here until a restart.
+		ReloadPolicy: policyReloader(root, pol),
 		OnBadToken:   sh.badToken,
-		Shield:       func() (time.Time, bool) { return sh.off("api") },
+		// When each token was last used, which nothing here wrote down.
+		OnTokenUsed: srv.OnTokenUsed,
+		Shield:      func() (time.Time, bool) { return sh.off("api") },
 		// The same cache the admin uses. One process, one decoded copy of a
 		// collection — two would be the same memory spent twice and two
 		// chances for one of them to be built wrong.
@@ -1112,13 +1113,18 @@ func cmdServe(root string, args []string) error {
 					"that cannot work", cfg.Issuer, oidcSecretEnv)
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		provider, derr := oidc.Discover(ctx, cfg.Issuer, fetch.For("sso"))
+		sso, serr := ssoClient(root)
+		if serr != nil {
+			cancel()
+			return serr
+		}
+		provider, derr := oidc.Discover(ctx, cfg.Issuer, sso)
 		cancel()
 		if derr != nil {
-			return fmt.Errorf("cannot reach the identity provider: %w", derr)
+			return ssoReachHint(fmt.Errorf("cannot reach the identity provider: %w", derr))
 		}
 		if err := provider.Warm(context.Background()); err != nil {
-			return fmt.Errorf("cannot read the provider's signing keys: %w", err)
+			return ssoReachHint(fmt.Errorf("cannot read the provider's signing keys: %w", err))
 		}
 		srv.OIDC = &admin.OIDC{
 			Provider: provider, ClientID: cfg.ClientID, Secret: secret,
@@ -1200,7 +1206,7 @@ func cmdServe(root string, args []string) error {
 	// here, under the person who made them.
 	srv.SAML = &admin.SAMLAdmin{
 		Providers: func() ([]saml.Config, error) { return loadSAML(root) },
-		Fetch:     samlFetch,
+		Fetch:     func(addr string) ([]byte, error) { return samlFetch(root, addr) },
 		Save: func(c saml.Config) error {
 			if err := saveSAML(root, c); err != nil {
 				return err
@@ -1319,6 +1325,9 @@ func upkeepJobs(root string, posture upkeep.Job) []upkeep.Job {
 	jobs = append(jobs, agentwatchJob(root))
 	// And a backup a day, when backup.dir is set.
 	jobs = append(jobs, backupJob(root))
+	// And the identity provider's security event stream asked, once a
+	// day, to prove it still reaches here.
+	jobs = append(jobs, signalsJob(root))
 	// And what agents remember, past its time.
 	jobs = append(jobs, memoryJob(root))
 	// And what was said in a room, past the room's retention. Here and not
@@ -1380,4 +1389,38 @@ func retentionJob(root string) (upkeep.Job, bool) {
 			return n + gone, err
 		},
 	}, true
+}
+
+// approvalsHooks gives the admin the approval policy and the proposals the
+// command line and the machine interface read, from the same files.
+//
+// A function of its own, rather than built inline in cmdServe, so a test
+// can put the browser's publish in front of the policy loader the server
+// really uses: the browser published a model's draft that the other two
+// surfaces refused, and only a test against this wiring would have said so.
+func approvalsHooks(root string, s *store.Store) *admin.Approvals {
+	return &admin.Approvals{
+		Policy: func() (collab.Policy, error) { return loadApprovalPolicy(root) },
+		Current: func() (*collab.Proposal, error) {
+			prop, _, err := currentProposal(root, s)
+			return prop, err
+		},
+		For: func(commit string) (*collab.Proposal, error) {
+			prop, _, err := proposalFor(root, s, commit)
+			return prop, err
+		},
+		Save: func(prop *collab.Proposal) error {
+			return saveProposal(root, s, prop)
+		},
+		KindOf: func(principal string) string {
+			return principalKind(root, principal)
+		},
+		Notify: func(prop *collab.Proposal) {
+			notifyProposed(root, prop)
+		},
+		SecondPerson: func(prop collab.Proposal, by string) (bool, error) {
+			// A person signed in to the admin, as sessionCaller makes one.
+			return secondPersonForDraft(root, s, prop, &Caller{Name: by, Kind: audit.KindHuman, Verified: true})
+		},
+	}
 }

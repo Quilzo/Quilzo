@@ -307,13 +307,18 @@ func TestTheRunsInterfaceIsTheManifest(t *testing.T) {
 // A tunnel nothing goes through is closed, and one where only the far side
 // speaks is not: silence is the tunnel's, not one direction's.
 func TestASilentTunnelIsClosed(t *testing.T) {
+	const talkBytes = 40
 	far, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer far.Close()
-	// The far side: for "talk", a byte every 30ms for 400ms and then
-	// done; otherwise nothing, ever.
+	// The far side: for "talk", a byte every 20ms for 800ms and then
+	// done; otherwise nothing, ever. The gaps are a fifteenth of the idle
+	// limit, so a loaded machine stretching a sleep does not make the far
+	// side fall silent, and the whole talk is well over twice the limit, so
+	// it passes only if the far side's bytes keep the tunnel open. With
+	// 30ms gaps against 120ms, a busy machine cut it after 7 of 13 bytes.
 	go func() {
 		for {
 			c, aerr := far.Accept()
@@ -324,11 +329,11 @@ func TestASilentTunnelIsClosed(t *testing.T) {
 				defer c.Close()
 				line, _ := bufio.NewReader(c).ReadString('\n')
 				if strings.HasPrefix(line, "talk") {
-					for i := 0; i < 13; i++ {
+					for i := 0; i < talkBytes; i++ {
 						if _, werr := c.Write([]byte("x")); werr != nil {
 							return
 						}
-						time.Sleep(30 * time.Millisecond)
+						time.Sleep(20 * time.Millisecond)
 					}
 					return
 				}
@@ -338,7 +343,7 @@ func TestASilentTunnelIsClosed(t *testing.T) {
 	}()
 	var mu sync.Mutex
 	var log []Egress
-	p := &Proxy{Secret: "s3cret", Idle: 120 * time.Millisecond,
+	p := &Proxy{Secret: "s3cret", Idle: 300 * time.Millisecond,
 		Allow: func(string, int) error { return nil },
 		Dial: func(ctx context.Context, _ string, _ int) (net.Conn, error) {
 			var d net.Dialer
@@ -378,8 +383,8 @@ func TestASilentTunnelIsClosed(t *testing.T) {
 	_ = talking.SetReadDeadline(time.Now().Add(3 * time.Second))
 	got, _ := io.ReadAll(talking)
 	talking.Close()
-	if len(got) != 13 {
-		t.Fatalf("a tunnel only the far side spoke on was cut after %d of 13 bytes", len(got))
+	if len(got) != talkBytes {
+		t.Fatalf("a tunnel only the far side spoke on was cut after %d of %d bytes", len(got), talkBytes)
 	}
 
 	deadline := time.Now().Add(2 * time.Second)

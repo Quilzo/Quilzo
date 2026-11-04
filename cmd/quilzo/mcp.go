@@ -424,10 +424,16 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		if err := authorise(root, caller, auth.ActPublish, "/"); err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
-		if err := mayPublishChanges(root, s, caller, ""); err != nil {
+		// The draft, read once: every check below is asked about this commit
+		// and this commit is what goes live. The publish used to read the
+		// draft again, so a save landing after the checks went live unchecked.
+		draft := s.GetRef(site.RefDraft)
+		if draft == "" {
+			return nil, &mcp.Refusal{Reason: "there is nothing to publish: no page has been drafted yet"}
+		}
+		if err := mayPublishChanges(root, s, caller, draft); err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
-		draft := s.GetRef(site.RefDraft)
 
 		// Both gates refuse when they cannot run, rather than when they run
 		// and fail.
@@ -481,7 +487,7 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 				"the approval policy could not be read, so publishing would "+
 					"claim a check that did not happen: %v", perr)}
 		} else if pol.Required > 0 || pol.RequireHumanForAI {
-			prop, _, cerr := currentProposal(root, s)
+			prop, _, cerr := proposalFor(root, s, draft)
 			if cerr != nil {
 				return nil, &mcp.Refusal{Reason: fmt.Sprintf(
 					"the approval check could not run: %v", cerr)}
@@ -498,7 +504,10 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		if ferr := refuseWhileFrozen(root); ferr != nil {
 			return nil, &mcp.Refusal{Reason: ferr.Error()}
 		}
-		pub, err := site.Publish(s, "")
+		if beforeLiveMoves != nil {
+			beforeLiveMoves()
+		}
+		pub, err := site.Publish(s, draft)
 		if err != nil {
 			return nil, err
 		}

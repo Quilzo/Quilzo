@@ -37,7 +37,7 @@ func wireSCIM(t *testing.T, srv *Server) (*scimCalls, *scim.Store) {
 			return st.Update(func(s *scim.State) error { s.Mapping[group] = to; return nil })
 		},
 		Unmap:       func(group, by string) error { calls.unmapped, calls.by = group, by; return nil },
-		NewToken:    func(by string) (string, error) { calls.tokens++; return "qzscim_shown-once", nil },
+		NewToken:    func(scim.TokenMade) (string, error) { calls.tokens++; return "qzscim_shown-once", nil },
 		RevokeToken: func(by string) error { calls.revoked++; return nil },
 	}
 	return calls, st
@@ -227,5 +227,152 @@ func TestAnApprovedProvisioningTokenIsOfferedAsAToken(t *testing.T) {
 	}
 	if !strings.Contains(body, "the provisioning token") {
 		t.Error("the hint does not name the provisioning token among what takes two administrators")
+	}
+}
+
+// Approving on People a group mapping that makes administrators shows the
+// provisioning token it would let make them: who made it, when, and how it
+// was approved.
+//
+// A token made while no group made administrators was made by one person,
+// rightly, and stays valid once such a mapping is approved. Whoever
+// approved the mapping on this screen could not see it.
+func TestAMappingThatMakesAdministratorsShowsTheLiveProvisioningTokensOnPeople(t *testing.T) {
+	srv, editor := setup(t)
+	wireSCIM(t, srv)
+	made := time.Date(2026, 11, 2, 9, 30, 0, 0, time.UTC)
+	tokens := []scim.LiveToken{{TokenMade: scim.TokenMade{By: "editor", Approval: scim.Unasked},
+		Made: made, Ends: made.AddDate(0, 0, 180)}}
+	srv.SCIM.LiveTokens = func() ([]scim.LiveToken, error) { return tokens, nil }
+	if err := srv.Policy.Grant(auth.Binding{Principal: "lee", Role: auth.RoleAdmin, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	lee, _, err := srv.Tokens.IssueSession("lee", "lee", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	postForm(t, srv, "/provisioning/act", editor, "do=map&group=IT+admins&to=admin")
+	if pend, _ := srv.Dual.Store.Pending(time.Now()); len(pend) != 1 || pend[0].Kind != dual.Mapping {
+		t.Fatalf("control: the mapping does not wait: %+v", pend)
+	}
+	page := get(t, srv, "/people", lee).Body.String()
+	for _, want := range []string{"made by editor", "nobody else was asked", "2 Nov 2026"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the mapping waiting on People does not say %q", want)
+		}
+	}
+
+	tokens = nil
+	if page := get(t, srv, "/people", lee).Body.String(); !strings.Contains(page, "No provisioning token works now") {
+		t.Error("with no live token, People does not say so")
+	}
+}
+
+// The only administrator mapping a group to make administrators approves
+// it alone as they make it, and is told which provisioning tokens it now
+// lets make them, as a second administrator is told on People.
+//
+// Nothing waited, so the screen said only that the group's members were
+// administrators now, while a token made before any group made
+// administrators went on working as a way to make them.
+func TestAMappingApprovedAloneOnTheScreenShowsTheLiveProvisioningTokens(t *testing.T) {
+	srv, editor := setup(t)
+	calls, _ := wireSCIM(t, srv)
+	made := time.Date(2026, 11, 2, 9, 30, 0, 0, time.UTC)
+	tokens := []scim.LiveToken{{TokenMade: scim.TokenMade{By: "lee", Approval: scim.Unasked},
+		Made: made, Ends: made.AddDate(0, 0, 180)}}
+	srv.SCIM.LiveTokens = func() ([]scim.LiveToken, error) { return tokens, nil }
+	said := func(form string) string {
+		t.Helper()
+		w := postForm(t, srv, "/provisioning/act", editor, form)
+		loc, _ := url.QueryUnescape(w.Header().Get("Location"))
+		return loc
+	}
+
+	loc := said("do=map&group=IT+admins&to=admin")
+	if calls.mapped != "IT admins=admin" {
+		t.Fatalf("control: the only administrator's mapping was not made as asked: %+v %s", calls, loc)
+	}
+	for _, want := range []string{"provisioning token", "made by lee", "nobody else was asked", "2 Nov 2026", "revoke"} {
+		if !strings.Contains(loc, want) {
+			t.Errorf("the mapping made alone does not say %q: %s", want, loc)
+		}
+	}
+	tokens = nil
+	if loc := said("do=map&group=Ops&to=admin"); !strings.Contains(loc, "No provisioning token works now") {
+		t.Errorf("with no live token, the mapping made alone does not say so: %s", loc)
+	}
+	if loc := said("do=map&group=Writers&to=author"); strings.Contains(loc, "provisioning token") {
+		t.Errorf("a mapping that makes nobody an administrator talks about the token: %s", loc)
+	}
+}
+
+// A provisioning token made on the Provisioning screen while a mapping
+// that makes administrators waits takes two, as one made once it is
+// approved does. Its approver reads the live tokens on People and then
+// approves, and a token made in between, on one administrator's word, was
+// not among them.
+func TestAProvisioningTokenMadeWhileAMappingWaitsTakesTwoOnTheScreen(t *testing.T) {
+	srv, editor := setup(t)
+	calls, _ := wireSCIM(t, srv)
+	if err := srv.Policy.Grant(auth.Binding{Principal: "lee", Role: auth.RoleAdmin, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	postForm(t, srv, "/provisioning/act", editor, "do=map&group=IT+admins&to=admin")
+	if pend, _ := srv.Dual.Store.Pending(time.Now()); len(pend) != 1 || pend[0].Kind != dual.Mapping {
+		t.Fatalf("control: the mapping does not wait: %+v", pend)
+	}
+	w := postForm(t, srv, "/provisioning/act", editor, "do=token")
+	if calls.tokens != 0 {
+		t.Fatalf("a token was made on one administrator's word while the mapping waited: %d %s",
+			w.Code, w.Header().Get("Location"))
+	}
+	pend, _ := srv.Dual.Store.Pending(time.Now())
+	if len(pend) != 2 || pend[1].Kind != dual.SCIMToken {
+		t.Errorf("the token does not wait for a second administrator: %+v", pend)
+	}
+}
+
+// The Provisioning screen maps a group to a job granted only for a time
+// with the day that time is over, and refuses it without one, as People
+// refuses a hand grant of it.
+//
+// The screen offered "auditor: ... for a set time" and asked for no time,
+// and its members held auditor for as long as they were in the group: on
+// the reference stack, with no until date at all.
+func TestTheProvisioningScreenMapsAnAuditorUntilADay(t *testing.T) {
+	srv, token := setup(t)
+	calls, st := wireSCIM(t, srv)
+	refused := func(form string) {
+		t.Helper()
+		calls.mapped = ""
+		w := postForm(t, srv, "/provisioning/act", token, form)
+		if loc := w.Header().Get("Location"); calls.mapped != "" || !strings.Contains(loc, "e=") {
+			t.Errorf("%s was mapped (%q) and answered %d %s", form, calls.mapped, w.Code, loc)
+		}
+	}
+	refused("do=map&group=Assessors&to=auditor")
+	refused("do=map&group=Assessors&to=auditor&until=2001-01-01")
+	day := time.Now().UTC().AddDate(0, 0, 30).Format(time.DateOnly)
+	// A day for what lasts while somebody is in the group is refused rather
+	// than dropped, which would map it with no end its mapper meant.
+	refused("do=map&group=Editors&to=publisher&until=" + day)
+
+	postForm(t, srv, "/provisioning/act", token, "do=map&group=Assessors&to=auditor&until="+day)
+	if calls.mapped != "Assessors=auditor until "+day {
+		t.Fatalf("mapped with a day, provisioning was told %q", calls.mapped)
+	}
+	body := get(t, srv, "/provisioning", token).Body.String()
+	if !strings.Contains(body, `name="until"`) || !strings.Contains(body, "auditor until "+day) {
+		t.Errorf("the screen does not ask for the day, or show it:\n%s", body)
+	}
+
+	// A mapping to it with no day, saved before one was asked for, is
+	// shown as granting nothing.
+	if err := st.Update(func(s *scim.State) error { s.Mapping["Assessors"] = "auditor"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if body := get(t, srv, "/provisioning", token).Body.String(); !strings.Contains(body, "grants nothing") {
+		t.Errorf("a mapping to auditor with no day is not shown as granting nothing:\n%s", body)
 	}
 }

@@ -672,6 +672,9 @@ func describe(p Protection) string {
 	return p.Kind
 }
 
+// roughly is how long a protection lasted, for its history: "an hour",
+// "4 hours", "1 minute". A step may last as little as a minute, and the
+// history of one said "for 1 minutes".
 func roughly(d time.Duration) string {
 	switch {
 	case d >= time.Hour && d%time.Hour == 0:
@@ -680,7 +683,10 @@ func roughly(d time.Duration) string {
 		}
 		return strconv.Itoa(int(d/time.Hour)) + " hours"
 	case d >= time.Minute:
-		return strconv.Itoa(int(d.Round(time.Minute)/time.Minute)) + " minutes"
+		if m := int(d.Round(time.Minute) / time.Minute); m != 1 {
+			return strconv.Itoa(m) + " minutes"
+		}
+		return "1 minute"
 	}
 	return d.Round(time.Second).String()
 }
