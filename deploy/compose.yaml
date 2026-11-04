@@ -9,7 +9,8 @@
 #
 # deploy/README.md has every step, and says how to reach the admin.
 #
-# Three services, because there are three exposures:
+# Three services, because there are three exposures, and a fourth that is
+# exposed to nothing:
 #
 #   caddy  the only one with ports on the internet. It gets and renews the
 #          certificate itself, which is the reason it is Caddy.
@@ -19,6 +20,9 @@
 #          nowhere else; reach it over SSH. Putting it behind a public
 #          hostname is the change that turns a compromise of the proxy into a
 #          compromise of the store.
+#   logd   writes the audit log, as an account the other three are not, with
+#          no network: they hand it records over a socket and cannot open
+#          the log to rewrite one.
 #
 # The site and the admin are two processes over one store, as with systemd
 # (deploy/quilzo-site.service): the store is a directory, and both open it.
@@ -44,6 +48,27 @@ x-quilzo: &quilzo
   init: true
 
 services:
+  logd:
+    <<: *quilzo
+    # The audit log's writer, so that what publishes content is not what
+    # keeps the record of it.
+    #
+    # Without it the admin and the site wrote their own log, and anything
+    # that could run code as them could rewrite the record of what it did:
+    # `quilzo logd status` answered "no log writer", and the posture scan
+    # "The CMS writes its own audit log". This runs as uid 65533, which is
+    # nobody else here, owns the log and its key, and is the only container
+    # with the audit volume writable. The others are nonroot (65532), in
+    # its group: they read the log, submit records over its socket, and
+    # computing the chain is the writer's alone, so they cannot forge a
+    # history either (internal/logd).
+    user: "65533:65532"
+    command: ["logd", "--log-dir", "/srv/audit", "--allow-uid", "65532"]
+    volumes:
+      - audit:/srv/audit
+    # A socket is all it serves, so it has no network at all.
+    network_mode: none
+
   admin:
     <<: *quilzo
     command: ["serve", "--addr", "0.0.0.0:8080"]
@@ -54,7 +79,11 @@ services:
     volumes:
       - store:/srv/store
       - templates:/srv/templates
+      # Read-only: records go to the writer's socket, which needs no write
+      # permission on the volume to connect to.
+      - audit:/srv/audit:ro
     networks: [admin]
+    depends_on: [logd]
 
   site:
     <<: *quilzo
@@ -68,11 +97,12 @@ services:
       - store:/srv/store
       # The site reads the design; only the admin changes it.
       - templates:/srv/templates:ro
+      - audit:/srv/audit:ro
     # No ports: Caddy is the way in. The edge network is not internal, because
     # the site's assistant calls its model and federation fetches what it is
     # sent; Quilzo's own egress rules decide where those may go.
     networks: [edge]
-    depends_on: [admin]
+    depends_on: [admin, logd]
 
   caddy:
     # A minor version rather than a digest, so a patch release (security
@@ -121,5 +151,6 @@ networks:
 volumes:
   store:
   templates:
+  audit:
   caddy-data:
   caddy-config:

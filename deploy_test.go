@@ -201,8 +201,15 @@ func runArgs(step string) (string, []string, bool) {
 	if len(f) < 4 || f[2] != "run" {
 		return "", nil, false
 	}
+	// The run flags that take the next word as their value.
+	valued := map[string]bool{"-e": true, "--env": true, "-v": true, "--volume": true,
+		"-w": true, "--workdir": true, "-u": true, "--user": true, "--name": true,
+		"--entrypoint": true, "-p": true, "--publish": true, "-l": true, "--label": true}
 	i := 3
 	for i < len(f) && strings.HasPrefix(f[i], "-") {
+		if valued[f[i]] {
+			i++
+		}
 		i++
 	}
 	if i >= len(f) {
@@ -387,6 +394,86 @@ func TestComposeSiteHasADesignBeforeItStarts(t *testing.T) {
 	if !designed {
 		t.Error("nothing before `docker compose up` writes a design, so the site exits " +
 			"with \"no layout in templates\" and Caddy answers 502")
+	}
+}
+
+// cmsUID is the account every Quilzo container but the log writer runs as:
+// distroless's nonroot.
+const cmsUID = "65532"
+
+// Finding STACK-F12. The reference ran no separate log writer, so the
+// processes that publish content and face the internet wrote their own
+// audit log, and anything that could run code as them could rewrite the
+// record of it: `quilzo logd status` answered "no log writer", and the
+// posture scan "The CMS writes its own audit log". The writer is its own
+// service, as an account the CMS is not, holding the only writable mount of
+// the log; the CMS reaches it over its socket.
+func TestComposeKeepsTheAuditLogOutOfTheCMSsReach(t *testing.T) {
+	svc := quilzoServices(t)
+	var name string
+	for n, s := range svc {
+		if c := strs(s["command"]); len(c) > 0 && c[0] == "logd" {
+			name = n
+		}
+	}
+	if name == "" {
+		t.Fatal("no service runs `quilzo logd`, so the CMS writes its own audit log")
+	}
+	logd := svc[name]
+	dir := flagValue(strs(logd["command"]), "log-dir")
+	if dir == "" {
+		t.Fatalf("%s names no --log-dir", name)
+	}
+	user, _ := logd["user"].(string)
+	uid := strings.SplitN(user, ":", 2)[0]
+	if uid == "" || uid == "0" || uid == cmsUID {
+		t.Errorf("%s runs as %q: the writer has to be an account the CMS is not, or the CMS can open the log", name, user)
+	}
+	if got := flagValue(strs(logd["command"]), "allow-uid"); got != cmsUID {
+		t.Errorf("%s takes records from uid %q; the CMS is %s", name, got, cmsUID)
+	}
+	if m, ok := mounts(logd)[dir]; !ok || m.ReadOnly {
+		t.Errorf("%s does not mount %s read-write", name, dir)
+	}
+	if nm, _ := logd["network_mode"].(string); nm != "none" {
+		t.Errorf("%s has a network; it needs a socket and nothing else", name)
+	}
+	vol := mounts(logd)[dir].Volume
+	for n, s := range svc {
+		if n == name {
+			continue
+		}
+		m, ok := mounts(s)[dir]
+		if (n == "admin" || n == "site") && !ok {
+			t.Errorf("%s does not mount the log at %s, so it cannot reach the writer's socket", n, dir)
+		}
+		if ok && (m.Volume != vol || !m.ReadOnly) {
+			t.Errorf("%s mounts %s other than read-only, and could write the log itself", n, dir)
+		}
+		if ok && !slices.Contains(strs(s["depends_on"]), name) {
+			t.Errorf("%s starts without waiting for %s, whose socket its records go to", n, name)
+		}
+	}
+	// The volume is seeded from the image, ownership included, so the
+	// directory has to exist there owned by the writer.
+	if !regexp.MustCompile(`(?m)^COPY --from=build --chown=` + uid + `:\d+ \S+ ` + regexp.QuoteMeta(dir) + `\s*$`).
+		MatchString(read(t, "Dockerfile")) {
+		t.Errorf("the image has no %s owned by uid %s, so the volume is made owned by root and the writer cannot use it", dir, uid)
+	}
+	// The store has to say where the log is, as the step right after init,
+	// so everything after it is recorded by the writer.
+	steps := composeSteps(t)
+	at := -1
+	for i, step := range steps {
+		if _, args, ok := runArgs(step); ok && len(args) >= 3 && args[0] == "auditlog" && args[1] == "dir" && args[2] == dir {
+			at = i
+		}
+	}
+	if at < 1 {
+		t.Fatalf("the README never points the store at %s (quilzo auditlog dir %s)", dir, dir)
+	}
+	if _, args, _ := runArgs(steps[at-1]); len(args) != 1 || args[0] != "init" {
+		t.Errorf("the store is pointed at the writer's log after %q rather than right after init", steps[at-1])
 	}
 }
 

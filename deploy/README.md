@@ -22,6 +22,7 @@ Every command below is run in this directory, in this order:
 cd deploy
 cp compose.env.example .env    # then set QUILZO_DOMAIN in .env
 docker compose run --rm admin init
+docker compose run --rm admin auditlog dir /srv/audit
 docker compose run --rm admin config set network.trusted_proxies 172.31.250.10
 docker compose run --rm admin demo --examples /srv/templates/examples
 docker compose run --rm admin init --admin you
@@ -35,6 +36,11 @@ What each one is for:
   `docker compose run` cannot lose it; and every one is read-only, so a
   write anywhere but a volume fails out loud rather than going into a
   container's own layer, which `--rm` would delete.
+- `auditlog dir` points the store at the audit log that `logd` writes. From
+  then on the admin and the site hand it their records over a socket and
+  cannot open the log to change one; `quilzo logd status` says whether the
+  separation is in force. (`docker compose run` starts `logd` first, so it
+  is running for every step after this one.)
 - `network.trusted_proxies` is Caddy's fixed address on the network it
   shares with the site, the one address the site believes `X-Forwarded-For`
   from (see the note in `compose.yaml`).
@@ -49,6 +55,21 @@ What each one is for:
   that adds their passkey. Open it once.
 - `up -d` starts everything, and `restart: unless-stopped` brings it back
   after a reboot.
+
+### Commands once there is an administrator
+
+From `init --admin` on, the store asks every command who is asking. Give a
+command an administrator's token through the environment, never on its
+command line, where anybody on the machine can read it:
+
+```bash
+export QUILZO_TOKEN=...    # an administrator's token
+docker compose run --rm -e QUILZO_TOKEN admin logd status
+```
+
+An administrator makes tokens in the admin. While the store has none at all,
+the first, for the first administrator, is
+`docker compose run --rm admin token issue first --principal you --ttl 1h`.
 
 ### What the containers do not do
 

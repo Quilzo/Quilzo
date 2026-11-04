@@ -35,6 +35,10 @@ RUN CGO_ENABLED=0 go build -trimpath \
 # so `-v tpl:/srv/templates` hit exactly the failure described above, in the
 # v0.1.0 image, in the sequence the README told people to run.
 RUN mkdir -p /out/store /out/templates
+# And the audit log's, for the writer the reference compose runs as uid
+# 65533 (deploy/compose.yaml, logd): owned by it, readable by nonroot's group
+# and nobody else, so a volume seeded from it is the writer's to write.
+RUN mkdir -p /out/audit && chmod 0750 /out/audit
 
 # Run.
 FROM gcr.io/distroless/static-debian12:nonroot
@@ -58,6 +62,7 @@ COPY --from=build --chown=65532:65532 /out/store /srv/store
 # into the store, so /srv/templates has to be one of those seeded paths or the
 # quickstart cannot keep what it just made.
 COPY --from=build --chown=65532:65532 /out/templates /srv/templates
+COPY --from=build --chown=65533:65532 /out/audit /srv/audit
 USER nonroot:nonroot
 WORKDIR /srv
 # There is deliberately no VOLUME instruction.
