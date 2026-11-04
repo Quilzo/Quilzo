@@ -265,7 +265,12 @@ func (s *Server) handleDesign(w http.ResponseWriter, r *http.Request) {
 	data["Starters"] = starter.All()
 	data["Own"] = s.DesignSet.OwnStylesheet != nil && s.DesignSet.OwnStylesheet()
 	data["CanInstall"] = s.DesignSet.InstallLayout != nil
-	data["CanAddFont"] = s.DesignSet.AddFont != nil
+	// The typeface form only for somebody who may use it. An author was
+	// shown it, chose a file, sent it, and was answered with a page saying
+	// the credential could not do that; the screen now says who can before
+	// anybody picks a file.
+	data["CanAddFont"] = s.DesignSet.AddFont != nil && s.allows(p, auth.ActPublish, "/")
+	data["FontNeedsPublish"] = s.DesignSet.AddFont != nil && !s.allows(p, auth.ActPublish, "/")
 	s.render(w, r, "design.html", data)
 }
 

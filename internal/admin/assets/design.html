@@ -147,7 +147,7 @@
 {{else}}
 <p class="hint">
   No typefaces of your own. Put a <code>.woff2</code> or <code>.woff</code> in
-  <code>{{.Dir}}/fonts/</code>, or add one below, and it is served from this
+  <code>{{.Dir}}/fonts/</code>{{if .CanAddFont}}, or add one below,{{end}} and it is served from this
   origin at <code>/fonts/NAME.woff2</code> (or <code>.woff</code>); then set
   <code>font-display</code> to its name. The filename carries the family, the
   weight and the style: <code>Satoshi-600.woff2</code>,
@@ -170,6 +170,8 @@
   <div class="auto-controls"><button type="submit" class="btn-tonal">Add the typeface</button></div>
 </form>
 <p id="design-font-hint" class="hint">A TrueType or OpenType file (.ttf, .otf) is made into a WOFF here, with nothing sent anywhere, and a .woff is checked as it is: refused if it is not a face, is missing a table browsers need, carries a licence flag that forbids embedding it, or is over 512 KiB once made. A .woff2 is checked only for its signature, its length and its size, because its tables are compressed with Brotli and nothing here can read them. Its licence travels with it: put the licence text beside it in <code>{{.Dir}}/fonts/</code>. Adding or replacing a typeface takes the authority to publish, as installing a design does: its glyphs are how every page that names it is drawn, and no check reads a glyph.</p>
+{{else if .FontNeedsPublish}}
+<p class="hint">Adding or replacing a typeface takes the authority to publish, as installing a design does: its glyphs are how every page that names it is drawn, and no check reads a glyph. Somebody who publishes can add one here, or with <code>quilzo theme font add FILE</code>; a face already served can be chosen for a font token below.</p>
 {{end}}
 <fieldset class="whileown"{{if .Own}} disabled{{end}}>
 <legend class="visually-hidden">Design tokens</legend>

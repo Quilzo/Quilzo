@@ -191,6 +191,23 @@ func TestAnAuthorCannotAddATypeface(t *testing.T) {
 	if w := postFont(t, srv, publisher, "Aster.ttf", []byte("a face"), nil); w.Code != http.StatusSeeOther || !called {
 		t.Fatalf("a publisher could not add a typeface: %d, called %v", w.Code, called)
 	}
+
+	// And the screen says so before anybody chooses a file. The author was
+	// shown the form, and learned it was not theirs from the page a refused
+	// upload is answered with.
+	form := `action="/design/font"`
+	authorPage := get(t, srv, "/design", author).Body.String()
+	if strings.Contains(authorPage, form) || strings.Contains(authorPage, "or add one below") {
+		t.Error("an author is offered a typeface form the server will refuse")
+	}
+	if !strings.Contains(authorPage, "Somebody who publishes can add one here") {
+		t.Error("an author is not told who may add a typeface")
+	}
+	whole(t, authorPage)
+	if page := get(t, srv, "/design", publisher).Body.String(); !strings.Contains(page, form) ||
+		strings.Contains(page, "Somebody who publishes can add one here") {
+		t.Error("a publisher is not offered the typeface form")
+	}
 }
 
 // Replacing a face that is served says so in the record, so the moment the
