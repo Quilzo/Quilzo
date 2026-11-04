@@ -841,3 +841,43 @@ func TestTheAgentsPageShowsWhatItHasEarned(t *testing.T) {
 		t.Fatalf("the reset went to %s and did %q", loc, reset)
 	}
 }
+
+// Somebody granted manage-agents alone opens the Agents screen their
+// navigation offers, and the front door that sends them there.
+//
+// The screen asked for grant on the whole site while its navigation entry,
+// and every other screen of the studio, asked for manage-agents on the
+// agents: the reference stack's manage-agents holder signed in, was sent
+// from / to /agents, and was refused it ("this credential carries reader
+// and grant needs admin"), with a passkey session, not a token.
+func TestManagingAgentsAloneOpensTheAgentsScreen(t *testing.T) {
+	srv, _ := setup(t)
+	wireStudio(srv)
+	if err := srv.Policy.Grant(auth.Binding{Principal: "pat", Permission: auth.ActManageAgents, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	pat, _, err := srv.Tokens.IssueSession("passkey:pat", "pat", srv.roleFor("pat"), "/", time.Hour,
+		auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := get(t, srv, "/", pat); w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/agents" {
+		t.Fatalf("the front door: %d to %q", w.Code, w.Header().Get("Location"))
+	}
+	if w := get(t, srv, "/agents", pat); w.Code != http.StatusOK {
+		t.Fatalf("the screen the front door sends them to: %d %s", w.Code, w.Body)
+	}
+
+	// And it is still not somebody else's: a reader is refused it.
+	if err := srv.Policy.Grant(auth.Binding{Principal: "rae", Role: auth.RoleReader, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	rae, _, err := srv.Tokens.IssueSession("passkey:rae", "rae", auth.RoleReader, "/", time.Hour,
+		auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := get(t, srv, "/agents", rae); w.Code != http.StatusForbidden {
+		t.Fatalf("a reader opened the agents: %d", w.Code)
+	}
+}
