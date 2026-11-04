@@ -1160,10 +1160,13 @@ func authoriseCommand(root, cmd string, args []string) error {
 		return nil
 	}
 	// Asking a command for help must not require the authority to run it,
-	// and must not run it for somebody who has none: see errHelpOnly.
+	// and must not run it for somebody who has none: see errHelpOnly. Every
+	// spelling main answers as help (isHelpFlag): -help was left out, so a
+	// reader's `quilzo publish -help` was shown the help and then refused, on
+	// the record.
 	help := false
 	for _, a := range args {
-		if a == "-h" || a == "--help" || a == "help" {
+		if isHelpFlag(a) || a == "help" {
 			help = true
 		}
 	}

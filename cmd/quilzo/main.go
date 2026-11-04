@@ -81,12 +81,16 @@ var version = "dev"
 
 func init() { version = moduleVersion(version, debug.ReadBuildInfo) }
 
-func usage() {
-	// The whole surface, because `--help` is how an agent discovers a CLI. The
-	// measured advantage of a CLI over a tool-schema protocol is that nothing is
-	// loaded until it is needed — which only works if asking is complete when it
-	// happens. Half a help page is a schema with holes in it.
-	fmt.Print(`quilzo — content is immutable, publishing moves a pointer, and
+func usage() { fmt.Print(usageText) }
+
+// usageText is the whole surface, because `--help` is how an agent discovers
+// a CLI. The measured advantage of a CLI over a tool-schema protocol is that
+// nothing is loaded until it is needed — which only works if asking is
+// complete when it happens. Half a help page is a schema with holes in it.
+//
+// A constant rather than a literal inside usage(), so that `quilzo CMD
+// --help` can answer with the lines about CMD (commandhelp.go).
+const usageText = `quilzo — content is immutable, publishing moves a pointer, and
           templates cannot execute anything.
 
 content
@@ -608,11 +612,11 @@ interface
                                              desktop application
       /playground                            try the API against your own store
   quilzo site  [--addr HOST:PORT]          the published site, PWA-installable, confined (--prepare for systemd)
-  quilzo studio [--addr HOST:PORT]         record the screen into the library
       --api                                 content API at /api/v1, read-only
       --api-writable                        allow PUT; every write needs If-Match
       --base-url https://example.com        needed for /sitemap.xml and /feed.xml
       --redirects redirects.json            keep old URLs working after a move
+  quilzo studio [--addr HOST:PORT]         record the screen into the library
   quilzo audit [DIR]                       templates that disable escaping
   quilzo scan [--fail-on SEV]              XSS, injection and leaked secrets
   quilzo scan --rules                      what is checked, and why
@@ -661,8 +665,7 @@ exit codes
 
 A gate refusing (3) is not the command failing (1). Branch on the code rather
 than on the wording, which is free to improve.
-`)
-}
+`
 
 func main() {
 	compliance.Version = version
@@ -735,6 +738,20 @@ func main() {
 
 	cmd, cmdArgs := rest[0], rest[1:]
 
+	// Help for a command is answered before anything is moved, opened or
+	// authorised, and without running it: commandhelp.go says what running it
+	// did. A command that parses its flags first is let through after the
+	// lines, to list them; anything else stops here.
+	asked := false
+	if _, known := lookupNeed(cmd, cmdArgs); known && helpAsked(cmdArgs) &&
+		!strings.HasPrefix(cmd, "__") && !helpOrVersion[cmd] {
+		asked = true
+		commandHelp(cmd, cmdArgs)
+		if !helpGoesToTheCommand(cmd, cmdArgs) {
+			return
+		}
+	}
+
 	// State the public site writes used to sit at the store's root, and is
 	// kept in directories of its own now so the site can be confined to them
 	// (sitestate.go). Moved by whichever command runs first; a move that
@@ -774,7 +791,9 @@ func main() {
 		if err := authoriseCommand(root, cmd, cmdArgs); errors.Is(err, errHelpOnly) {
 			// Help for somebody who may not run the command, and nothing
 			// else: letting it through to the command ran the command.
-			usage()
+			if !asked {
+				usage()
+			}
 			fmt.Fprintf(os.Stderr, "\n%s%v%s\n", yellow, err, reset)
 			return
 		} else if err != nil {
@@ -1063,7 +1082,14 @@ func main() {
 			"<https://www.apache.org/licenses/LICENSE-2.0>.")
 		fmt.Println("There is NO WARRANTY, to the extent permitted by law.")
 	case "help", "-h", "--help":
-		usage()
+		// `quilzo help oidc` is the lines about oidc, as `quilzo oidc --help`
+		// is; it printed the whole help, which has the answer somewhere in
+		// six hundred lines.
+		if len(cmdArgs) > 0 {
+			commandHelp(cmdArgs[0], cmdArgs[1:])
+		} else {
+			usage()
+		}
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n\n", cmd)
 		usage()
@@ -1073,6 +1099,12 @@ func main() {
 	// it exits, or given up on after half a minute rather than hanging.
 	if !finishBackground(30 * time.Second) {
 		fmt.Fprintln(os.Stderr, "a message to the security contact was still being sent after 30s and was abandoned; the audit log has what happened")
+	}
+	// The flag set listed the flags it was asked for, and that is the answer,
+	// not a failure: "flag: help requested" and exit 1 told a script asking
+	// whether the command exists that it does not.
+	if asked && errors.Is(err, flag.ErrHelp) {
+		err = nil
 	}
 	if err != nil {
 		w.Error(err)
