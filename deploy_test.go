@@ -635,6 +635,60 @@ func TestComposeEnrolmentLinkNamesThePublishedAdmin(t *testing.T) {
 	}
 }
 
+// The first token, for the commands that come after the steps.
+//
+// The README gave it as something to run "once there is an administrator",
+// and said an administrator makes the rest in the admin, which has no page
+// for it. The command was the store's one exception, a token issued without
+// one being shown, and the exception holds only while the store has no
+// token at all: signing in with the passkey the enrolment link adds makes
+// one. So by the time anybody followed the README to that command, it was
+// refused, and nothing after the steps could be run. It is a step, after
+// the first administrator is named and before the admin starts; every other
+// token is issued with one.
+func TestComposeIssuesTheFirstTokenBeforeAnybodySignsIn(t *testing.T) {
+	steps := composeSteps(t)
+	up := slices.IndexFunc(steps, func(s string) bool { return strings.HasPrefix(s, "docker compose up") })
+	enrol := stepIndex(steps, "init", "--admin")
+	if up < 0 || enrol < 0 {
+		t.Fatal("the README neither names a first administrator nor starts the stack")
+	}
+	_, enrolArgs, _ := runArgs(steps[enrol])
+	admin := flagValue(enrolArgs, "admin")
+	first := -1
+	for i, step := range steps {
+		_, args, ok := runArgs(step)
+		if !ok || len(args) < 2 || args[0] != "token" || args[1] != "issue" || strings.Contains(step, "QUILZO_TOKEN") {
+			continue
+		}
+		if i < enrol || i > up {
+			t.Errorf("%q issues a token without one where the store has nobody to give it to or has a token already", step)
+		}
+		if who := flagValue(args, "principal"); who != admin {
+			t.Errorf("%q issues the first token to %q, not to the first administrator, %s", step, who, admin)
+		}
+		first = i
+	}
+	if first < 0 {
+		t.Error("the README's steps issue no first token, so no command after them can be run")
+	}
+	// Nor anywhere else in it, in a sentence as much as in a block.
+	setup := map[string]bool{}
+	for _, s := range steps[:up] {
+		setup[s] = true
+	}
+	for _, m := range regexp.MustCompile("docker compose run[^`\n]*token issue[^`\n]*").FindAllString(read(t, "deploy/README.md"), -1) {
+		cmd := m
+		if i := strings.Index(cmd, "  #"); i >= 0 {
+			cmd = cmd[:i]
+		}
+		cmd = strings.TrimSpace(cmd)
+		if !strings.Contains(cmd, "QUILZO_TOKEN") && !setup[cmd] {
+			t.Errorf("the README gives %q, which is refused once anybody has signed in", cmd)
+		}
+	}
+}
+
 // Finding STACK-F11. The site was given --base-url https://DOMAIN, right on
 // 443 only: with Caddy published elsewhere, the sitemap and every canonical
 // link named a port nothing listened on. The port Caddy is published on, the

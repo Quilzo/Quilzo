@@ -30,6 +30,7 @@ docker compose run --rm admin config set admin.base_url "https://localhost:$QUIL
 docker compose run --rm admin config set site.base_url "https://$QUILZO_DOMAIN:$QUILZO_HTTPS_PORT"
 docker compose run --rm admin demo --examples /srv/templates/examples
 docker compose run --rm admin init --admin you
+docker compose run --rm admin token issue first --principal you   # shown once: keep it
 docker compose up -d
 ```
 
@@ -65,7 +66,11 @@ What each one is for:
   `docker compose run --rm admin template use sections` instead: it writes a
   design and a sample page, and the site serves what you publish.
 - `init --admin you` makes `you` the first administrator and prints the link
-  that adds their passkey. Open it once.
+  that adds their passkey. Open it once the stack is up; it works once.
+- `token issue first` is `you`'s token for the commands that come after
+  these (below), and is shown once. A store issues a token without being
+  shown one only while it holds none at all, and signing in to the admin
+  makes one, so the first is issued here, before the admin starts.
 - `up -d` starts everything, and `restart: unless-stopped` brings it back
   after a reboot.
 
@@ -107,13 +112,14 @@ command an administrator's token through the environment, never on its
 command line, where anybody on the machine can read it:
 
 ```bash
-export QUILZO_TOKEN=...    # an administrator's token
+export QUILZO_TOKEN=...    # the token `token issue first` printed
 docker compose run --rm -e QUILZO_TOKEN admin logd status
 ```
 
-An administrator makes tokens in the admin. While the store has none at all,
-the first, for the first administrator, is
-`docker compose run --rm admin token issue first --principal you --ttl 1h`.
+Tokens are made on the command line, with an administrator's token: the
+admin has no page for it. The first lasts a week (`token.ttl.default`), so
+make the next before it ends, and one for each person or program that needs
+one: `docker compose run --rm -e QUILZO_TOKEN admin token issue NAME --principal WHO`.
 
 ### What the containers do not do
 
