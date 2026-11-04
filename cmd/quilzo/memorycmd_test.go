@@ -301,3 +301,64 @@ func TestAPersonRewritesForgetsAndHasAReceipt(t *testing.T) {
 		t.Fatalf("sam has a receipt: %+v %v", rf, err)
 	}
 }
+
+// A read-only credential changes nothing agents remember from the command
+// line, as it changes nothing on the Memory screen. The table asks the
+// memory commands only to view, because each memory is checked against
+// whom it is about, and that check asked only whose it was: a token
+// issued --read-only confirmed, deleted, rewrote and forgot what agents
+// remember about its holder. It still reads, and the holder's ordinary
+// token still decides.
+func TestAReadOnlyTokenChangesNoMemory(t *testing.T) {
+	root, _ := identityStore(t)
+	st := memoryStore(root)
+	hold := func() memory.Entry {
+		e, err := st.Remember(memory.Entry{Agent: "helper", About: "dana", Kind: memory.Semantic,
+			Text: "Dana prefers French", Run: "r1", By: "dana", Held: true}, 30*24*time.Hour, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return e
+	}
+	toks := &auth.TokenStore{}
+	readOnly, _, err := toks.IssueScoped("dana-ro", "dana", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin,
+		auth.Scope{ReadOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	full, _, err := toks.Issue("dana", "dana", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveJSON(tokensPath(root), toks); err != nil {
+		t.Fatal(err)
+	}
+	defer func(old string) { flagToken = old }(flagToken)
+	flagToken = readOnly
+	var tried []memory.Entry
+	for _, args := range [][]string{{"confirm"}, {"delete"}, {"edit", "Dana", "prefers", "Spanish"}, {"forget"}} {
+		e := hold()
+		tried = append(tried, e)
+		if args[0] != "forget" {
+			args = append([]string{args[0], e.ID}, args[1:]...)
+		}
+		if err := cmdMemory(root, args); err == nil || !strings.Contains(err.Error(), "read-only") {
+			t.Errorf("memory %s with a read-only token: %v", args[0], err)
+		}
+	}
+	for _, was := range tried {
+		if e, err := st.Get(was.ID); err != nil || !e.Held || e.Text != was.Text {
+			t.Errorf("a read-only token changed dana's memory %s: %+v %v", was.ID, e, err)
+		}
+	}
+	if err := cmdMemory(root, []string{"list"}); err != nil {
+		t.Fatalf("a read-only token could not list: %v", err)
+	}
+	flagToken = full
+	if err := cmdMemory(root, []string{"confirm", tried[0].ID}); err != nil {
+		t.Fatalf("dana's own token could not confirm: %v", err)
+	}
+	if e, _ := st.Get(tried[0].ID); e.Held {
+		t.Fatal("confirmed, the memory is still held")
+	}
+}
