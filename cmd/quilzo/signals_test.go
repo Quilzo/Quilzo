@@ -967,6 +967,52 @@ func TestAnOlderDisableDoesNotUndoANewerEnable(t *testing.T) {
 	}
 }
 
+// A disable already acted on, sent again after a restart, does not put back
+// a suspension somebody lifted by hand since: it is a copy, not the
+// provider's word again. A disable it sends later still suspends.
+func TestADisableSentAgainDoesNotUndoALiftByHand(t *testing.T) {
+	c := signalsStore(t, "email")
+	c.connect(t, "oidc")
+	disabled := c.tx.event(t, riscEvent+"account-disabled", email("ada@example.com"), nil, time.Now().Add(-time.Hour))
+	if w := c.push(t, disabled); w.Code != http.StatusAccepted {
+		t.Fatalf("%d", w.Code)
+	}
+	can := func() bool {
+		p, _ := loadPolicy(c.root)
+		return p.Evaluate("ada@example.com", auth.ActView, "/").Allowed
+	}
+	if can() {
+		t.Fatal("the disable did not suspend her")
+	}
+	if _, err := updatePolicy(c.root, func(p *auth.Policy) error {
+		kept := p.Bindings[:0]
+		for _, b := range p.Bindings {
+			if !(b.Deny && b.Principal == "ada@example.com") {
+				kept = append(kept, b)
+			}
+		}
+		p.Bindings = kept
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	c.restart(t)
+	if w := c.push(t, disabled); w.Code != http.StatusAccepted {
+		t.Fatalf("sent again: %d", w.Code)
+	}
+	if !can() {
+		t.Error("sent again after a restart, the disable undid the lift made by hand")
+	}
+	if stale := signalsActions(t, c.root)["signals.stale"]; len(stale) != 1 {
+		t.Errorf("recorded as stale: %+v", stale)
+	}
+	c.send(t, riscEvent+"account-disabled", email("ada@example.com"), nil, time.Now())
+	if can() {
+		t.Error("a newer disable did not suspend her")
+	}
+}
+
 // The last person who can grant access is not shut out on the provider's
 // word: their sessions end, no deny is added, and the security contact is
 // told.
