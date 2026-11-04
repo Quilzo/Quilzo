@@ -1528,6 +1528,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/design/save", s.handleDesignSave)
 	mux.HandleFunc("/design/generate", s.handleDesignGenerate)
 	mux.HandleFunc("/design/install", s.handleDesignInstall)
+	mux.HandleFunc("/design/layer", s.handleDesignLayer)
 	mux.HandleFunc("/transfer", s.handleTransfer)
 	mux.HandleFunc("/transfer/export", s.handleExport)
 	mux.HandleFunc("/transfer/import", s.handleImport)
@@ -3442,6 +3443,7 @@ func (s *Server) checkAll(commitID string) ([]*a11y.Report, error) {
 	// which says the publish gate will refuse it, went live from the
 	// browser.
 	extra = append(extra, s.themeBlockers()...)
+	backdrop := s.backdropFindings()
 
 	for name, body := range pages {
 		ctx, cerr := src.For(name, body, nil)
@@ -3460,8 +3462,17 @@ func (s *Server) checkAll(commitID string) ([]*a11y.Report, error) {
 			return nil, fmt.Errorf("rendering %s: %w", name, err)
 		}
 		rendered[name] = out
+		// The words over a backdrop, as `quilzo publish` judges them: for a
+		// page that has one, against the worst picture its veil could cover.
+		if render.HasBackdrop(ctx["page"]) {
+			for _, f := range backdrop {
+				if f.Blocking {
+					extra = append(extra, a11y.Blocker(name, "backdrop-contrast", f.Criterion, f.Detail))
+				}
+			}
+		}
 	}
-	return append(a11y.CheckAll(rendered), extra...), nil
+	return append(a11y.CheckAllWith(rendered, a11y.Options{Sound: s.mediaSound()}), extra...), nil
 }
 
 // deniedChanges are the pages a publish of draft would change that this
@@ -4596,6 +4607,24 @@ func (s *Server) shieldable(target string, next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// backdropFindings is what would be unreadable over a backdrop with this
+// site's veil, or nothing when the theme is not in effect. A theme that cannot
+// be read is refused by themeBlockers, so nothing here passes in its place.
+func (s *Server) backdropFindings() []theme.Finding {
+	if s.DesignSet == nil || s.DesignSet.Tokens == nil {
+		return nil
+	}
+	if s.DesignSet.OwnStylesheet != nil && s.DesignSet.OwnStylesheet() {
+		return nil
+	}
+	overrides, err := s.DesignSet.Tokens()
+	if err != nil {
+		return nil
+	}
+	th, _ := theme.New(overrides, s.siteFamilies())
+	return th.CheckBackdrop()
 }
 
 // themeBlockers are the theme's blocking contrast failures, as reports: the

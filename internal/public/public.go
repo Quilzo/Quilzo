@@ -1699,6 +1699,21 @@ func (st *Site) tracks(id string) []any {
 	return out
 }
 
+// mediaInfo answers what a stored file is: a picture or a recording, whether
+// a recording has sound, and its description. A backdrop is drawn from the
+// first, and a silent recording's text alternative from the other two.
+func (st *Site) mediaInfo(id string) (render.MediaInfo, bool) {
+	if st.MediaStat == nil {
+		return render.MediaInfo{}, false
+	}
+	f, err := st.MediaStat(id)
+	if err != nil {
+		return render.MediaInfo{}, false
+	}
+	sound, known := f.SoundKnown()
+	return render.MediaInfo{Kind: string(f.Kind), Sound: sound, SoundKnown: known, Alt: f.Alt}, true
+}
+
 // poster answers where a still from a recording is served.
 func (st *Site) poster(id string) string {
 	if st.MediaStat == nil {
@@ -1770,7 +1785,7 @@ func (st *Site) formData(name string) map[string]any {
 
 func (st *Site) sources() render.Sources {
 	src := render.Sources{Name: st.Name, IconStyle: st.IconStyle, Listings: st.Listings,
-		SrcSet: st.srcSet, Tracks: st.tracks, Poster: st.poster,
+		SrcSet: st.srcSet, Tracks: st.tracks, Poster: st.poster, Media: st.mediaInfo,
 		Form: st.formData, Thread: st.threadData, Buy: st.Buy, Booking: st.bookingData,
 		Newsletter: st.newsletterData, Events: st.eventsData, Posts: st.postsData}
 	if _, ok := st.iconFile(); ok {

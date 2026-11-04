@@ -69,6 +69,12 @@ type Design struct {
 	// InstallLayout writes a starter's markup and returns what it wrote. This
 	// is the half the browser used to be missing.
 	InstallLayout func(starterName string) ([]string, error)
+	// Layer reads the site's style layer, "" when it has none, and SaveLayer
+	// replaces it, or takes it away when given "". Nil means this build
+	// cannot reach the file, and the screen says so rather than offering a
+	// form that does nothing.
+	Layer     func() (string, error)
+	SaveLayer func(css string) error
 }
 
 func (s *Server) handleDesign(w http.ResponseWriter, r *http.Request) {
@@ -82,22 +88,35 @@ func (s *Server) handleDesign(w http.ResponseWriter, r *http.Request) {
 	if !s.can(w, r, p, auth.ActEditDraft, "/") {
 		return
 	}
+	s.showDesign(w, r, p, nil)
+}
+
+// showDesign draws the Design screen. extra is laid over what the screen
+// would show anyway, for a form that was refused and is given back as it
+// was written (see handleDesignLayer); nil for an ordinary visit.
+func (s *Server) showDesign(w http.ResponseWriter, r *http.Request, p principal, extra map[string]any) {
 	data := map[string]any{
 		"Title": "Design", "Principal": p, "Nav": "design",
 		"Message": r.URL.Query().Get("m"),
 		"Error":   r.URL.Query().Get("e"),
 	}
+	show := func() {
+		for k, v := range extra {
+			data[k] = v
+		}
+		s.render(w, r, "design.html", data)
+	}
 	if s.DesignSet == nil || s.DesignSet.Tokens == nil {
 		data["Unavailable"] = "this server was started without a template " +
 			"directory, so there is no design to show"
-		s.render(w, r, "design.html", data)
+		show()
 		return
 	}
 
 	overrides, err := s.DesignSet.Tokens()
 	if err != nil {
 		data["Unavailable"] = err.Error()
-		s.render(w, r, "design.html", data)
+		show()
 		return
 	}
 	th, problems := theme.New(overrides, s.siteFamilies())
@@ -197,6 +216,29 @@ func (s *Server) handleDesign(w http.ResponseWriter, r *http.Request) {
 		levels = append(levels, choice{Name: l, Label: strings.ToUpper(l[:1]) + l[1:], Words: levelWords[l], On: i == 0})
 	}
 	data["Styles"], data["Motions"], data["Schemes"], data["Levels"] = styles, motions, schemes, levels
+	// The corner and the colour schemes the site is drawn in. "Schemes" is
+	// already the palette generator's, so these are named for what they
+	// choose.
+	var corners, drawn []choice
+	for _, c := range theme.Corners {
+		corners = append(corners, choice{Name: c, Label: strings.ToUpper(c[:1]) + c[1:], Words: theme.CornerWords[c], On: th.Corner() == c})
+	}
+	drawnLabels := map[string]string{"both": "Both", "dark": "Dark only", "light": "Light only"}
+	for _, sc := range theme.SchemeChoices {
+		drawn = append(drawn, choice{Name: sc, Label: drawnLabels[sc], Words: theme.SchemeWords[sc], On: th.Scheme() == sc})
+	}
+	data["Corners"], data["DrawnIn"] = corners, drawn
+	// What a backdrop's veil leaves readable, which refuses only a page with a
+	// backdrop, so it is said here beside the palette rather than counted
+	// with the failures that refuse every page.
+	var veil []theme.Finding
+	for _, f := range th.CheckBackdrop() {
+		if f.Blocking {
+			veil = append(veil, f)
+		}
+	}
+	data["Veil"] = veil
+	s.designLayerData(data, th, p)
 	type iconChoice struct {
 		Name, Label string
 		Preview     template.HTML
@@ -226,7 +268,7 @@ func (s *Server) handleDesign(w http.ResponseWriter, r *http.Request) {
 	data["Starters"] = starter.All()
 	data["Own"] = s.DesignSet.OwnStylesheet != nil && s.DesignSet.OwnStylesheet()
 	data["CanInstall"] = s.DesignSet.InstallLayout != nil
-	s.render(w, r, "design.html", data)
+	show()
 }
 
 func (s *Server) designLayouts() []string {
@@ -333,6 +375,25 @@ func (s *Server) handleDesignSave(w http.ResponseWriter, r *http.Request) {
 		if f.Blocking && f.Token == token {
 			s.designRedirect(w, r, "", f.Detail)
 			return
+		}
+	}
+	// A choice is part of no pair and can still break one: drawing a site in
+	// light alone puts its light palette in front of every reader, and the
+	// neon style's titles are a colour of their own. So a choice is refused
+	// when it makes a pair fail that did not fail before it.
+	if tok, _ := theme.Lookup(baseToken(token)); tok.Kind == theme.Choice {
+		before, _ := theme.New(overrides, s.siteFamilies())
+		had := map[string]bool{}
+		for _, f := range before.Check() {
+			if f.Blocking {
+				had[f.Detail] = true
+			}
+		}
+		for _, f := range th.Check() {
+			if f.Blocking && !had[f.Detail] {
+				s.designRedirect(w, r, "", f.Detail)
+				return
+			}
 		}
 	}
 	if err := s.DesignSet.Save(next); err != nil {
@@ -496,6 +557,8 @@ func designGroupLabel(key string) string {
 		return "Corners and spacing"
 	case "breakpoints":
 		return "Breakpoints"
+	case "effects":
+		return "Glow and backdrops"
 	}
 	return key
 }

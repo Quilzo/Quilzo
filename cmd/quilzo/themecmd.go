@@ -6,11 +6,14 @@ package main
 import (
 	"flag"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 
+	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/starter"
 	"github.com/quilzo/quilzo/internal/theme"
 )
@@ -58,14 +61,36 @@ func cmdTheme(root string, args []string) error {
 	case "export":
 		return themeExport(args[1:])
 	case "styles":
+		// The choices, for a script as well as a person: a site package or a
+		// builder that names a style, a corner or a scheme needs to know
+		// which there are, and this printed nothing under --json.
+		if w.JSON(map[string]any{
+			"styles":  namedChoices(theme.Styles, theme.StyleWords),
+			"corners": namedChoices(theme.Corners, theme.CornerWords),
+			"schemes": namedChoices(theme.SchemeChoices, theme.SchemeWords),
+			"motions": theme.Motions,
+		}) {
+			return nil
+		}
 		for _, st := range theme.Styles {
 			w.Human("  %s%-11s%s %s\n", bold, st, reset, theme.StyleWords[st])
 		}
+		w.Human("\n  %scorners%s\n", bold, reset)
+		for _, c := range theme.Corners {
+			w.Human("  %s%-11s%s %s\n", bold, c, reset, theme.CornerWords[c])
+		}
+		w.Human("\n  %sschemes%s\n", bold, reset)
+		for _, sc := range theme.SchemeChoices {
+			w.Human("  %s%-11s%s %s\n", bold, sc, reset, theme.SchemeWords[sc])
+		}
 		w.Human("\n  quilzo theme set style NAME; quilzo theme set motion subtle|expressive|none\n")
+		w.Human("  quilzo theme set corner round|chamfer; quilzo theme set scheme both|dark|light\n")
 		return nil
+	case "layer":
+		return themeLayer(root, args[1:])
 	default:
 		return fmt.Errorf("unknown theme command %q; try show, tokens, set, "+
-			"unset, check, fonts, css, apply, generate, import, export or styles",
+			"unset, check, fonts, css, apply, generate, import, export, styles or layer",
 			args[0])
 	}
 }
@@ -134,6 +159,10 @@ func themeShow(args []string) error {
 	if d.OwnStylesheet {
 		w.Human("\n  %s%s exists, so it is served as written and none of these "+
 			"values are in effect.%s\n", dim, filepath.Join(*dir, "site.css"), reset)
+	}
+	if d.LayerServed {
+		w.Human("  %sstyle layer: %s, %d bytes, served over the generated stylesheet%s\n",
+			dim, filepath.Join(*dir, theme.LayerFile), len(d.Layer), reset)
 	}
 	for _, note := range d.Notes {
 		w.Human("  %s%s%s\n", dim, note, reset)
@@ -248,8 +277,22 @@ func themeSet(root string, args []string) error {
 		w.Human("\n  %s%d contrast failure(s) saved with --force; the publish "+
 			"gate will refuse them%s\n", bold, blocking, reset)
 	}
-	w.Human("\n  %squilzo theme check   the whole palette, both schemes%s\n",
-		dim, reset)
+	// The veil over a backdrop is judged apart from the palette and refuses
+	// only a page that has a backdrop, so it is not a reason to refuse this
+	// change. It is said here all the same: `theme set scrim-strength 10%`
+	// was answered with the new value and nothing else, and the first anybody
+	// heard of it was a page refused at publish.
+	if theme.Blocks(th.CheckBackdrop()) {
+		w.Human("\n  %swords over a backdrop picture or video are now below their ratio, "+
+			"so a page with a backdrop will not publish; `quilzo theme check` says "+
+			"which and by how much%s\n", bold, reset)
+	}
+	schemes := "both schemes"
+	if sc := th.Scheme(); sc != "both" {
+		schemes = "the " + sc + " scheme it is drawn in"
+	}
+	w.Human("\n  %squilzo theme check   the whole palette, %s%s\n",
+		dim, schemes, reset)
 	return nil
 }
 
@@ -308,7 +351,31 @@ func themeCheck(args []string) error {
 		return err
 	}
 	findings := d.Theme.Check()
-	if w.JSON(findings) {
+	// The layer's findings go with the palette's: a refused rule leaves the
+	// whole layer out, which is a thing this site does not have until it is
+	// fixed, and a script reading the answer needs to see it.
+	layerRefused := theme.Blocks(d.LayerFindings) && !d.OwnStylesheet
+	// So do the veil's, which the prose reports and the document left out.
+	// They refuse only a page with a backdrop, which this command cannot
+	// see, so they are advisories here, as the exit status treats them.
+	doc := append(append([]theme.Finding{}, findings...), d.LayerFindings...)
+	for _, f := range d.Theme.CheckBackdrop() {
+		if f.Blocking {
+			f.Blocking = false
+			doc = append(doc, f)
+		}
+	}
+	if w.JSON(doc) {
+		// The status says what the prose says: a pair below its ratio fails
+		// the check, as a refused layer does. It exited 0 for the first and 1
+		// for the second, so a script reading the status alone passed a
+		// palette the publish gate refuses.
+		if n := blockingCount(findings); n > 0 {
+			return fmt.Errorf("%d text pair(s) below the ratio a reader needs", n)
+		}
+		if layerRefused {
+			return fmt.Errorf("the style layer is refused and is not served")
+		}
 		return nil
 	}
 	if d.OwnStylesheet {
@@ -323,8 +390,12 @@ func themeCheck(args []string) error {
 			blocking++
 		}
 	}
+	schemes := "in both schemes"
+	if sc := d.Theme.Scheme(); sc != "both" {
+		schemes = "in the " + sc + " scheme, the only one this site is drawn in"
+	}
 	if blocking == 0 {
-		w.Human("%severy text pair meets its ratio, in both schemes%s\n", bold, reset)
+		w.Human("%severy text pair meets its ratio, %s%s\n", bold, schemes, reset)
 	} else {
 		w.Human("%s%d contrast failure(s)%s\n\n", bold, blocking, reset)
 		for _, f := range findings {
@@ -334,12 +405,221 @@ func themeCheck(args []string) error {
 		}
 	}
 	reportAdvisories(findings)
-	w.Human("\n  %swhat is not checked: whether the palette is any good, and "+
-		"anything a colour outside the theme does%s\n", dim, reset)
+	reportBackdrop(d.Theme)
+	reportLayer(*dir, d)
+	w.Human("\n  %swhat is not checked: whether the palette is any good, "+
+		"anything a colour outside the theme does, and in a style layer, a "+
+		"colour pair split across two rules, text faded by opacity, or a rule "+
+		"that hides the veil over a backdrop%s\n", dim, reset)
 	if blocking > 0 {
 		return fmt.Errorf("%d text pair(s) below the ratio a reader needs", blocking)
 	}
+	if layerRefused {
+		return fmt.Errorf("the style layer is refused and is not served")
+	}
 	return nil
+}
+
+// reportBackdrop says whether words over a backdrop are readable with this
+// site's veil. Not an error here: it refuses only a page with a backdrop,
+// and the publish gate is what knows which pages those are.
+func reportBackdrop(th *theme.Theme) {
+	over := th.CheckBackdrop()
+	if !theme.Blocks(over) {
+		w.Human("\n  %sover a backdrop picture or video: readable at worst, with the "+
+			"veil at %s%s\n", dim, themeValue(th, "scrim-strength"), reset)
+		return
+	}
+	w.Human("\n%sover a backdrop picture or video%s %s(a page with a backdrop will "+
+		"not publish until this passes)%s\n", bold, reset, dim, reset)
+	for _, f := range over {
+		w.Human("  [%s] %s\n", f.Scheme, wrapIndent(f.Detail, 70, 4))
+	}
+}
+
+// reportLayer says what the style layer is and whether it is served.
+func reportLayer(dir string, d *Design) {
+	if d.Layer == "" {
+		return
+	}
+	path := filepath.Join(dir, theme.LayerFile)
+	switch {
+	case d.OwnStylesheet:
+		w.Human("\n  %s%s is not served: site.css replaces everything it would sit on%s\n", dim, path, reset)
+		return
+	case d.LayerServed:
+		w.Human("\n  %sstyle layer %s: %d bytes, every colour a token, served%s\n", dim, path, len(d.Layer), reset)
+	default:
+		w.Human("\n%sstyle layer %s is refused and not served%s\n", bold, path, reset)
+	}
+	for _, f := range d.LayerFindings {
+		sev := "advisory"
+		if f.Blocking {
+			sev = "refused"
+		}
+		w.Human("  [%s] %s\n", sev, wrapIndent(f.Detail, 70, 4))
+	}
+}
+
+// namedChoices is a list of choices with what each does, in their order.
+func namedChoices(names []string, words map[string]string) []map[string]string {
+	out := make([]map[string]string, 0, len(names))
+	for _, n := range names {
+		out = append(out, map[string]string{"name": n, "words": words[n]})
+	}
+	return out
+}
+
+// layerDoc is what `theme layer --json` answers with: where the layer is,
+// how big, whether it is served, and every finding, as a list even when there
+// are none, so a script reads one shape.
+func layerDoc(path string, size int, served bool, findings []theme.Finding) map[string]any {
+	if findings == nil {
+		findings = []theme.Finding{}
+	}
+	return map[string]any{"path": path, "bytes": size, "served": served,
+		"refused": blockingCount(findings), "findings": findings}
+}
+
+// themeValue is one token's value as a site has it.
+func themeValue(th *theme.Theme, name string) string {
+	v, _ := th.Value(name, false)
+	return v
+}
+
+// themeLayer shows, sets or takes away a site's style layer.
+//
+// The file is the state, as theme.json is: editing templates/style.css by
+// hand is supported, and `theme check` says what is wrong with it. This is
+// the way to put one in that refuses a layer the site would not serve,
+// before it replaces the one that is there.
+func themeLayer(root string, args []string) error {
+	sub := "show"
+	if len(args) > 0 && !reFlag.MatchString(args[0]) {
+		sub, args = args[0], args[1:]
+	}
+	pos, flags := splitThemeArgs(args)
+	fs, dir := dirFlag("layer", flags)
+	if err := fs.Parse(flags); err != nil {
+		return err
+	}
+	// Words after the flags are a command written flags first, as
+	// `theme layer --dir DIR set FILE`. That used to show the layer that was
+	// there, so somebody who asked to set one read a report of the old one
+	// and the file they meant was never checked or saved.
+	if fs.NArg() > 0 {
+		return fmt.Errorf("%q comes after the flags; write it first: "+
+			"quilzo theme layer [set FILE | unset] [--dir DIR]", strings.Join(fs.Args(), " "))
+	}
+	path := filepath.Join(*dir, theme.LayerFile)
+	// A style layer is CSS served on every page at once, including pages the
+	// person changing it may not edit, so changing one takes the authority
+	// installing a design takes — here as on the Design screen. Asked here
+	// rather than in the privilege table, where a subcommand may only narrow
+	// what its command needs; reading the layer is the theme's own.
+	if sub == "set" || sub == "unset" {
+		if err := authorise(root, resolveCaller(root, flagToken), auth.ActPublish, "/"); err != nil {
+			return fmt.Errorf("a style layer is served on every page, which needs whoever may publish: %w", err)
+		}
+	}
+	switch sub {
+	case "show":
+		d, err := loadDesign(*dir)
+		if err != nil {
+			return err
+		}
+		if w.JSON(layerDoc(path, len(d.Layer), d.LayerServed, d.LayerFindings)) {
+			return nil
+		}
+		if d.Layer == "" {
+			w.Human("%sno style layer%s\n\n", bold, reset)
+			w.Human("  %sCSS of this site's own, served after the generated stylesheet and held to%s\n", dim, reset)
+			w.Human("  %sthe rule the shipped styles keep: every colour a token, as var(--primary)%s\n", dim, reset)
+			w.Human("  %sor color-mix() of tokens; url() only to /media/ and /fonts/; no @import,%s\n", dim, reset)
+			w.Human("  %sno !important, no redefining a token, no removing the focus outline.%s\n\n", dim, reset)
+			w.Human("  %squilzo theme layer set FILE   check one and put it in %s%s\n", dim, path, reset)
+			return nil
+		}
+		reportLayer(*dir, d)
+		return nil
+	case "set":
+		if len(pos) != 1 {
+			return fmt.Errorf("usage: quilzo theme layer set FILE [--dir DIR]")
+		}
+		info, err := os.Stat(pos[0])
+		if err != nil {
+			return err
+		}
+		if info.Size() > theme.MaxLayer {
+			return fmt.Errorf("%s is %d bytes, and a style layer may be at most %d",
+				pos[0], info.Size(), theme.MaxLayer)
+		}
+		b, err := os.ReadFile(pos[0])
+		if err != nil {
+			return err
+		}
+		d, err := loadDesign(*dir)
+		if err != nil {
+			return err
+		}
+		findings := theme.CheckLayer(string(b), d.Theme)
+		if theme.Blocks(findings) {
+			// The refused rules are the answer a script needs, so they are the
+			// document on stdout and the refusal is the error, as `theme
+			// check --json` does: an error alone said how many and not which.
+			w.JSON(layerDoc(path, len(b), false, findings))
+			w.Human("%snot saved%s %s(it would not be served)%s\n\n", bold, reset, dim, reset)
+			for _, f := range findings {
+				if f.Blocking {
+					w.Human("  %s\n\n", wrapIndent(f.Detail, 72, 4))
+				}
+			}
+			return fmt.Errorf("%d rule(s) in %s are refused", blockingCount(findings), pos[0])
+		}
+		// Atomically, as the browser and a site package write it: a server
+		// starting while this writes reads the old layer or the new one.
+		if err := atomicfile.Write(path, b, 0o600); err != nil {
+			return err
+		}
+		record(root, resolveCaller(root, "").auditRecord("theme.layer.set", "/",
+			audit.Success, map[string]string{"bytes": fmt.Sprint(len(b))}))
+		doc := layerDoc(path, len(b), !d.OwnStylesheet, findings)
+		doc["saved"] = true
+		if w.JSON(doc) {
+			return nil
+		}
+		w.Human("%sstyle layer saved%s %s(%s, %d bytes)%s\n", bold, reset, dim, path, len(b), reset)
+		for _, f := range findings {
+			w.Human("  %s%s%s\n", dim, wrapIndent(f.Detail, 70, 4), reset)
+		}
+		if d.OwnStylesheet {
+			w.Human("  %sit is not served while %s exists: that file replaces everything a layer sits on%s\n",
+				dim, filepath.Join(*dir, "site.css"), reset)
+		}
+		w.Human("  %sthe site serves it from its next start%s\n", dim, reset)
+		return nil
+	case "unset":
+		if err := os.Remove(path); err != nil {
+			if os.IsNotExist(err) {
+				if w.JSON(map[string]any{"path": path, "removed": false}) {
+					return nil
+				}
+				w.Human("  %sthere is no style layer%s\n", dim, reset)
+				return nil
+			}
+			return err
+		}
+		record(root, resolveCaller(root, "").auditRecord("theme.layer.unset", "/",
+			audit.Success, map[string]string{"layer": theme.LayerFile}))
+		if w.JSON(map[string]any{"path": path, "removed": true}) {
+			return nil
+		}
+		// When, as setting one says: the running site read the layer at its
+		// start and serves it until the next one.
+		w.Human("took the style layer away; the site serves the generated stylesheet alone from its next start\n")
+		return nil
+	}
+	return fmt.Errorf("unknown theme layer command %q; try show, set FILE or unset", sub)
 }
 
 // themeFonts lists the faces this site serves and how to add one.

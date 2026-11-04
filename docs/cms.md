@@ -309,6 +309,142 @@ else's host, because a page that fetches one has handed that host a request on
 every visit and the ability to stall the render — and the policy cannot help,
 because the page asked for it.
 
+### What the tokens cannot say, and how a site says it anyway
+
+A games studio's site wanted a moving picture behind its hero, a glow on its
+headings, section titles running from the text colour into the accent, cut
+corners and capital display type, on a site that is only ever dark. None of
+that was a token, so the only route was a hand-written layout with a `<style>`
+block in it: it worked, nobody could choose it from a screen, and its colours
+were ones the contrast check never saw. Each piece is now something a site
+opts into, held to the same promise as the tokens. A site that opts into none
+of them is drawn as it was: its pages and its token block are the same byte
+for byte, which a test holds, and its stylesheet gains only rules that name the
+new classes a site opts into, and one fix — a centred hero's eyebrow is
+centred now.
+
+**A style layer.** `templates/style.css` is CSS of the site's own, served
+after the generated stylesheet rather than instead of it. It is held to the
+rule the shipped styles keep: every colour is a token, as `var(--primary)`, or
+a mix of tokens with `color-mix()` — no hex, no `rgb()` or its relatives, no
+named colours, and the system colours only inside
+`@media (forced-colors: active)`. `url()` reaches only `/media/` and
+`/fonts/`, there is no `@import`, no `!important` (the reduced-motion and
+forced-colours rules underneath are `!important` so nothing outvotes them), no
+redefining a token, no taking away the focus outline (a zero width in any
+unit, `none` anywhere in it, `initial`, `unset` or `inherit`, an `all` reset,
+or a custom property of the layer's that says any of these), and at most 64 KiB. Nor anything a browser would read differently
+from the check: a string that runs over a line break, a comment or a quote
+mark inside an address with no quotes round it, a `{ }` block in a custom
+property, a declaration whose property is not a name, or a control
+character. A rule that sets both a text colour and its background from tokens has that pair
+checked at 4.5:1 in every scheme the site is served in. A layer with anything
+refused in it is not served at all, and `theme check` names each rule; a
+`site.css` still replaces everything, layer included. Changing a layer takes
+publish authority, in the terminal and on the Design screen alike, because it
+is on every page at once. A site package carries one as `site.layer`, and
+takes it back with the package.
+
+```bash
+quilzo theme layer set arena.css      # checked first; refused rules are named
+quilzo theme layer                    # what is there, and whether it is served
+quilzo theme check                    # the palette, the backdrop veil and the layer
+quilzo theme layer unset
+```
+
+With `--json`, `theme layer`, `set` and `unset` each answer with one document:
+the layer's path, its size, whether it is served, how many rules are refused
+and every finding. A refused `set` prints that document and exits non-zero.
+`theme check --json` is the list of every finding, the layer's and the veil's
+among them, and exits non-zero when a pair fails or the layer is refused.
+
+What it cannot see is said rather than claimed: a colour pair split across two
+rules, text faded afterwards by `opacity` or a filter, and a rule that hides
+something the layout draws — the veil over a backdrop, or its stop switch.
+
+**A backdrop.** A hero names a picture or a recording from the library as
+`"backdrop_url": "/media/ID"`, and a section does the same with
+`"surface": "media"` beside it. It is decoration, and drawn as decoration: an
+`<img alt="">` or a `<video>` that is muted, loops, plays inline and is hidden
+from assistive technology, with its poster underneath it, gone for a reader who
+asked for reduced motion or forced colours, and with a "Stop the moving
+background" switch beside it that needs no script (WCAG 2.2.2). Between the
+picture and the words is a veil of one colour at one strength — `scrim`, which
+is the page background unless set, and `scrim-strength`, 82% unless set — and
+the words are checked against the worst picture it could cover: the veil over
+black and over white. All the words that sit on it: the body text, the
+secondary text a standfirst or a caption is in, and the accent of an eyebrow. A page with a backdrop does not publish while that fails,
+and the refusal names the strength that would fix it. A recording with sound
+cannot be a backdrop, because muting it throws away what was said in it.
+
+```json
+{"hero": {"title": "Games for after dark", "backdrop_url": "/media/ef4b…"},
+ "sections": [{"features": {"surface": "media", "backdrop_url": "/media/4379…", "items": []}}]}
+```
+
+On the Sections screen, "Put a backdrop behind it" gives a section the field,
+and the picker beside it offers the library's pictures and the recordings it
+knows to be silent, and says how many recordings it left out. From the
+terminal it is `quilzo section backdrop PAGE N /media/ID` (or `hero` for N, and
+`--off` to take it away), because an edit writes only the fields a section
+already has; it refuses, before writing anything, a file the library does not
+hold and a recording not known to be silent. A page with a hero shows it there
+above its sections, with "Put a backdrop behind the hero", which opens the same
+picker; the hero's words have no screen of their own. A hero's backdrop is also
+set with that command, in the page's JSON (`quilzo add`, or an agent's
+`write_page`), or by a site package. Under `--json` every `section` edit answers
+with the page, what was done, the draft commit and the sections as they stand.
+
+**Silent recordings.** Whether a recording has sound is recorded when it is
+added, from the same probe that reads its size. One with sound still needs a
+captions track to publish; one with none needs a description instead (WCAG
+1.2.1), which the layout takes from the library — the description written when
+it was added becomes the video's label — or from a caption beside it. A
+recording nothing could listen to, on a machine without ffprobe, is treated as
+having sound. `quilzo media list`, its `--json`, and the `list_media` tool an
+agent reads say which recordings have sound, which have none, and which are
+not known.
+
+**The neon style.** An eighth style: a glow on headings and filled buttons from
+the accent, section titles that run from the text colour into it, chamfered
+corners and capital display type. The glow is the `glow` token (0 turns it
+off). The corners are a choice of their own, `corner`, round or chamfer, which
+neon sets to chamfer and any style can use; a chamfer is drawn with
+`corner-shape`, which keeps the focus ring whole, and a browser that does not
+know it rounds the corner instead. The gradient titles are checked at five
+points along them against the background, because a mix of two readable
+colours can be an unreadable one, and they fall back to the plain text colour
+where the browser cannot clip a background to text, the reader asked for more
+contrast, or forced colours are on.
+
+**One scheme.** `scheme` is both (the default), dark or light. A dark site is
+served its dark palette whatever a reader's system asks, declares
+`color-scheme: dark`, and is checked in dark alone — so it is no longer told
+twenty-three times that each colour is the same in both schemes, and a colour
+it never set is its dark default rather than a light one on a dark page.
+
+```bash
+quilzo theme set style neon
+quilzo theme set scheme dark
+quilzo theme set glow 12px corner round
+```
+
+**A picture on a feature card.** A `features` item takes `image` and `alt`, and
+gets its narrower copies as every other picture does.
+
+All of it is on the Design screen too — the neon style beside the others,
+corners and schemes in the Look section, the veil and the glow in the token
+table, and the layer, with what was refused in it. A layer the screen refuses
+is given back as it was typed, with every refused rule named, and one taken
+away is given back in the box, unsaved, until the screen is left; somebody who may
+edit the design but not publish sees the layer read-only. `quilzo theme
+styles --json` lists the styles, corners and schemes for a script. It is also
+in a site package's `site` block (`style`, `scheme`, `corner`, `tokens`,
+`layer`). The site builder,
+from a sentence or over MCP, can choose the style and the scheme; it never
+writes a layer, because a model writing CSS is the one part of a site nobody
+reads before it is served.
+
 ## Building a whole site from a sentence
 
 A site is a declaration: pages made of sections this program renders, menus,

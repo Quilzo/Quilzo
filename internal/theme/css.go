@@ -44,6 +44,19 @@ func (t *Theme) CSS() string {
 
 	t.fontFaces(&b)
 
+	// A site drawn in one scheme is served that palette on bare :root and
+	// nothing else, so every reader gets it whatever their setting — and the
+	// contrast check, which judges only that scheme, judges what they get.
+	// Writing the other blocks too would hand a reader who asked for light
+	// the shipped light value of every colour this site never set.
+	if s := t.Scheme(); s != "both" {
+		b.WriteString(":root {\n")
+		t.writeTokens(&b, s == "dark")
+		b.WriteString(t.derived())
+		b.WriteString("}\n")
+		return b.String()
+	}
+
 	b.WriteString(":root {\n")
 	t.writeTokens(&b, false)
 	b.WriteString(t.derived())
@@ -111,7 +124,17 @@ func (t *Theme) writeTokens(b *strings.Builder, dark bool) {
 			// rules are in it (see Preset).
 			continue
 		}
-		fmt.Fprintf(b, "  --%s: %s;\n", tok.Name, t.cssValue(tok, dark))
+		if optIn[tok.Name] && !t.isSet(tok.Name) {
+			// Unset, so not written: the rules that read it carry its default
+			// as a fallback, and a site that never asked for it is served the
+			// token block it was served before it existed.
+			continue
+		}
+		// Only a colour has a dark value. Everything else — a radius, the
+		// glow, what a style set — is one value for both schemes and lives
+		// with the light ones, so a site drawn in dark alone still gets the
+		// radius somebody chose.
+		fmt.Fprintf(b, "  --%s: %s;\n", tok.Name, t.cssValue(tok, dark && tok.Kind == Colour))
 	}
 }
 
@@ -122,7 +145,7 @@ func (t *Theme) writeTokens(b *strings.Builder, dark bool) {
 // them ends up stale.
 func (t *Theme) writeColours(b *strings.Builder, dark bool, indent string) {
 	for _, tok := range tokens {
-		if tok.Kind != Colour {
+		if tok.Kind != Colour || optIn[tok.Name] && !t.isSet(tok.Name) {
 			continue
 		}
 		fmt.Fprintf(b, "%s--%s: %s;\n", indent, tok.Name, t.cssValue(tok, dark))

@@ -85,6 +85,7 @@ type Report struct {
 	Findings []Finding `json:"findings"`
 	Checked  []string  `json:"checked"`
 	NotCheck []string  `json:"not_checked"`
+	opt      Options
 }
 
 // Blocks reports whether this page may be published without an override.
@@ -120,6 +121,16 @@ var (
 		"tables have header cells (1.3.1)",
 		"no auto-playing media (1.4.2)",
 		"video carries a captions track (1.2.2)",
+		// Written without the criterion numbers on purpose. The report turns
+		// a number here into a row that says Supports, and 1.2.1 and 2.2.2
+		// are wider than these: a transcript for an audio recording, an
+		// animation in a hand-written layout. A failure still names its
+		// criterion, so a page that fails one of these is reported against
+		// it; a page that passes is not claimed to support all of it.
+		"a video the library recorded as silent carries a text alternative " +
+			"in place of a captions track, from its description or a caption beside it",
+		"a moving backdrop is a silent recording, hidden from assistive " +
+			"technology, and has a control that stops it without script",
 		"iframes are titled (4.1.2)",
 		// Not found by reading a page: the ratio lives in the stylesheet, and
 		// the stylesheet is generated from a theme this program can compute
@@ -136,10 +147,11 @@ var (
 		// program ships a video section kind, and its own VPAT-shaped document
 		// did not acknowledge that time-based media exists.
 		"whether captions are accurate, synchronised, or say who is speaking",
-		"an alternative for a video with no audio, or an audio description of " +
-			"what is only shown (1.2.1, 1.2.3, 1.2.5) — a transcript can be " +
-			"linked from a video section and whether it describes the " +
-			"recording is not a question a parser can answer",
+		"an alternative for a video with no audio that the library did not " +
+			"record as silent, whether a silent video's description says what it " +
+			"shows, or an audio description of what is only shown (1.2.1, 1.2.3, " +
+			"1.2.5) — a transcript can be linked from a video section and whether " +
+			"it describes the recording is not a question a parser can answer",
 		"whether an audio recording has a transcript (1.2.1), which is a link " +
 			"somewhere on the page and not something in the audio element",
 		"colour contrast in a hand-written site.css, which is served as the " +
@@ -168,9 +180,24 @@ var uselessLinkText = map[string]bool{
 	"continue": true, "go": true, "download": true,
 }
 
+// Options are what a check may ask beyond the page itself.
+type Options struct {
+	// Sound answers whether the recording at an address has sound, and
+	// whether anything could tell, from what the media library recorded when
+	// it was added. Nil, or an address it does not know, is unknown — and
+	// unknown is treated as sound, so a page judged without the library is
+	// judged as strictly as it always was.
+	Sound func(src string) (sound, known bool)
+}
+
 // Check runs every check against one rendered page.
 func Check(page, html string) *Report {
-	r := &Report{Page: page, Checked: covered, NotCheck: notCovered}
+	return CheckWith(page, html, Options{})
+}
+
+// CheckWith runs every check against one rendered page, asking what it may.
+func CheckWith(page, html string, opt Options) *Report {
+	r := &Report{Page: page, Checked: covered, NotCheck: notCovered, opt: opt}
 	tags := scan(html)
 
 	r.checkImages(tags)
@@ -182,7 +209,7 @@ func Check(page, html string) *Report {
 	r.checkTabindex(tags)
 	r.checkTables(tags)
 	r.checkAutoplay(tags)
-	r.checkCaptions(tags)
+	r.checkCaptions(tags, html)
 	r.checkFrames(tags)
 
 	sort.SliceStable(r.Findings, func(i, j int) bool {
@@ -569,26 +596,92 @@ func (r *Report) checkTables(tags []tag) {
 // whole of what a deaf reader is missing. Accepting either would make the
 // check unable to tell whether it had been satisfied.
 //
-// # What this cannot tell, and what follows
+// # Silent recordings, and what the page alone cannot tell
 //
 // Whether the recording has any audio at all. A silent video needs an
 // alternative under 1.2.1 rather than captions under 1.2.2, and no parser can
-// see which it is. So the refusal covers both cases with the stricter remedy,
-// and the accessibility override — a written reason, recorded — is what the
-// genuine exception goes through. That is the same shape as every other
-// waivable finding here, and better than a check that guesses.
-func (r *Report) checkCaptions(tags []tag) {
+// see which it is from the page. The media library can: the probe that reads
+// a recording's size at upload lists its streams, and whether one is sound is
+// recorded then. So when the check is given that answer (Options.Sound) and
+// it says silent, the video is held to 1.2.1 instead — a description, as the
+// layout's aria-label from the library's own, or a caption beside it — and
+// not to a captions track of a soundtrack that does not exist.
+//
+// Unknown is sound. A recording nobody listened to keeps the stricter
+// remedy, and the accessibility override — a written reason, recorded — is
+// what a genuine exception goes through, as for every waivable finding here.
+//
+// # Backdrops
+//
+// A video drawn as decoration — muted, with no controls, hidden from
+// assistive technology — is owed neither captions nor a description,
+// because there is nothing in it a reader is meant to follow. That is true
+// only of a silent recording: muting one with sound throws away what was
+// said in it, for everybody. And decoration that moves on its own for more
+// than five seconds has to be stoppable (WCAG 2.2.2), which on a site with no
+// script is a checkbox the stylesheet answers. The shipped layouts write one
+// with data-stop-motion on it, and that is what is looked for.
+func (r *Report) checkCaptions(tags []tag, html string) {
+	stoppable := false
+	for _, t := range tags {
+		if t.name == "input" && !t.closing && t.attrs["type"] == "checkbox" {
+			if _, ok := t.attrs["data-stop-motion"]; ok {
+				stoppable = true
+			}
+		}
+	}
 	for i, t := range tags {
 		if t.closing || t.name != "video" {
 			continue
 		}
-		if _, ok := t.attrs["src"]; !ok && !hasSourceChild(tags, i) {
+		src := videoSource(tags, i)
+		if src == "" {
 			// A video element with nothing to play is what the shipped layout
 			// emits before a file is chosen. There is no recording to caption
 			// and a refusal here would be a refusal about nothing.
 			continue
 		}
+		// A captions track satisfies everything below, as it always has: a
+		// page that passed before these rules existed passes now.
 		if captionedWithin(tags, i) {
+			continue
+		}
+		sound, known := true, false
+		if r.opt.Sound != nil {
+			if s, k := r.opt.Sound(src); k {
+				sound, known = s, true
+			}
+		}
+		if decorative(t) {
+			switch {
+			case !known || sound:
+				r.add("backdrop-has-sound", Blocking, "WCAG 1.2.2",
+					"this video is drawn as a backdrop — muted, with no controls, hidden "+
+						"from assistive technology — and the library does not know it to "+
+						"be silent, so whatever is said in it would be lost to every "+
+						"reader. A backdrop has to be a recording with no sound; one with "+
+						"sound belongs in a video section, with captions",
+					t.raw)
+			case !stoppable && hasAttr(t, "autoplay"):
+				r.add("backdrop-cannot-be-stopped", Blocking, "WCAG 2.2.2",
+					"this backdrop moves on its own and nothing on the page stops it. "+
+						"A reader who is distracted by it, or cannot read past it, needs a "+
+						"way to make it still: the shipped layouts write a checkbox with "+
+						"data-stop-motion and a label beside every moving backdrop",
+					t.raw)
+			}
+			continue
+		}
+		if known && !sound {
+			if describedVideo(tags, html, i) {
+				continue
+			}
+			r.add("silent-video-has-no-alternative", Blocking, "WCAG 1.2.1",
+				"this video has no sound, so it needs no captions — and a reader who "+
+					"cannot see it needs a description of what it shows instead. Give "+
+					"the file a description in the media library, which the layout uses "+
+					"as the video's label, or a caption beside it",
+				t.raw)
 			continue
 		}
 		r.add("video-has-no-captions", Blocking, "WCAG 1.2.2",
@@ -600,15 +693,73 @@ func (r *Report) checkCaptions(tags []tag) {
 	}
 }
 
-// hasSourceChild reports whether a video element is followed by a <source>
-// before it closes.
-func hasSourceChild(tags []tag, from int) bool {
+// videoSource is the address a video element plays: its src, or the first
+// <source> inside it. Empty when it has nothing to play.
+func videoSource(tags []tag, from int) string {
+	if src, ok := tags[from].attrs["src"]; ok && strings.TrimSpace(src) != "" {
+		return strings.TrimSpace(src)
+	}
 	for i := from + 1; i < len(tags); i++ {
 		if tags[i].name == "video" {
-			return false
+			return ""
 		}
 		if tags[i].name == "source" && !tags[i].closing {
-			if _, ok := tags[i].attrs["src"]; ok {
+			if src, ok := tags[i].attrs["src"]; ok && strings.TrimSpace(src) != "" {
+				return strings.TrimSpace(src)
+			}
+		}
+	}
+	return ""
+}
+
+// decorative is a video drawn as a backdrop: muted, without controls, and
+// hidden from assistive technology. All three, because each alone is
+// ordinary on a video somebody is meant to watch.
+func decorative(t tag) bool {
+	return t.attrs["aria-hidden"] == "true" && hasAttr(t, "muted") && !hasAttr(t, "controls")
+}
+
+func hasAttr(t tag, name string) bool {
+	_, ok := t.attrs[name]
+	return ok
+}
+
+// describedVideo reports whether a video carries a text alternative: a label
+// of its own, or a caption in the figure around it.
+func describedVideo(tags []tag, html string, at int) bool {
+	t := tags[at]
+	for _, name := range []string{"aria-label", "aria-labelledby", "aria-describedby", "title"} {
+		if strings.TrimSpace(t.attrs[name]) != "" {
+			return true
+		}
+	}
+	// The figure it sits in: back to the nearest <figure> that is still
+	// open, then forward to where that figure closes.
+	depth := 0
+	inFigure := false
+	for i := at - 1; i >= 0; i-- {
+		if tags[i].name != "figure" {
+			continue
+		}
+		if tags[i].closing {
+			depth++
+			continue
+		}
+		if depth == 0 {
+			inFigure = true
+			break
+		}
+		depth--
+	}
+	if !inFigure {
+		return false
+	}
+	for i := at + 1; i < len(tags); i++ {
+		if tags[i].name == "figure" {
+			return false
+		}
+		if tags[i].name == "figcaption" && !tags[i].closing {
+			if strings.TrimSpace(stripTags(textUntilClose(tags, html, i, "figcaption"))) != "" {
 				return true
 			}
 		}
@@ -673,6 +824,11 @@ func (r *Report) checkFrames(tags []tag) {
 
 // CheckAll runs over a whole site and gathers the reports.
 func CheckAll(pages map[string]string) []*Report {
+	return CheckAllWith(pages, Options{})
+}
+
+// CheckAllWith runs over a whole site, asking what it may.
+func CheckAllWith(pages map[string]string, opt Options) []*Report {
 	names := make([]string, 0, len(pages))
 	for n := range pages {
 		names = append(names, n)
@@ -680,7 +836,7 @@ func CheckAll(pages map[string]string) []*Report {
 	sort.Strings(names)
 	out := make([]*Report, 0, len(names))
 	for _, n := range names {
-		out = append(out, Check(n, pages[n]))
+		out = append(out, CheckWith(n, pages[n], opt))
 	}
 	return out
 }

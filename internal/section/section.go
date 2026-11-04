@@ -69,9 +69,11 @@ var kinds = []Kind{
 		Stub: map[string]any{
 			"title": "What you get", "columns": "3",
 			"items": []any{
-				map[string]any{"icon": "bolt", "title": "First thing", "body": "Say what it is and why it matters."},
-				map[string]any{"icon": "shield", "title": "Second thing", "body": "Two sentences is usually enough."},
-				map[string]any{"icon": "schedule", "title": "Third thing", "body": "Three cards read better than four."},
+				// A picture is optional, and empty here so the field is there
+				// to fill and the picker appears beside it, as on a split.
+				map[string]any{"icon": "bolt", "title": "First thing", "body": "Say what it is and why it matters.", "image": "", "alt": ""},
+				map[string]any{"icon": "shield", "title": "Second thing", "body": "Two sentences is usually enough.", "image": "", "alt": ""},
+				map[string]any{"icon": "schedule", "title": "Third thing", "body": "Three cards read better than four.", "image": "", "alt": ""},
 			},
 		},
 	},
@@ -429,6 +431,9 @@ type Placed struct {
 	Label string `json:"label,omitempty"`
 	// Items is how many entries it holds, for the kinds that hold a list.
 	Items int `json:"items,omitempty"`
+	// Backdrop is true when the section is drawn over a backdrop picture or
+	// video: its surface is "media".
+	Backdrop bool `json:"backdrop,omitempty"`
 	// Unknown is true when the page names a kind the catalogue does not have.
 	// Reported rather than hidden: it is either a kind somebody removed from a
 	// layout or a typo, and both are things to see.
@@ -458,6 +463,7 @@ func On(body any) []Placed {
 			p.Unknown = true
 		}
 		if inner != nil {
+			p.Backdrop = hasBackdrop(inner)
 			p.Label = label(inner)
 			if items, isList := inner["items"].([]any); isList {
 				p.Items = len(items)
@@ -800,8 +806,40 @@ func Validate(body any) (blocking []Problem, advisory []Problem) {
 			}
 		}
 		advisory = append(advisory, unknownFields(i, kind, inner)...)
+		advisory = append(advisory, mediaAdvice(i, kind.Name, inner)...)
 	}
 	return blocking, advisory
+}
+
+// mediaAdvice is what is worth saying about a section's pictures that is not
+// wrong enough to refuse: a media surface with nothing behind it, and a card
+// picture with no description, which the page reads as decoration.
+func mediaAdvice(at int, kind string, inner map[string]any) []Problem {
+	var out []Problem
+	if hasBackdrop(inner) {
+		if v, _ := inner[BackdropField].(string); strings.TrimSpace(v) == "" {
+			out = append(out, Problem{at, fmt.Sprintf("%s asks for a media surface and "+
+				"names no backdrop_url, so it is drawn plain", kind)})
+		}
+	}
+	if kind != "features" {
+		return out
+	}
+	items, _ := inner["items"].([]any)
+	for i, it := range items {
+		m, ok := it.(map[string]any)
+		if !ok {
+			continue
+		}
+		img, _ := m["image"].(string)
+		alt, _ := m["alt"].(string)
+		if strings.TrimSpace(img) != "" && strings.TrimSpace(alt) == "" {
+			out = append(out, Problem{at, fmt.Sprintf("card %d has a picture and no alt, "+
+				"so it is read as decoration. Say what it shows if the card's title "+
+				"does not", i+1)})
+		}
+	}
+	return out
 }
 
 // unknownFields reports fields the stub for this kind does not mention.
@@ -851,4 +889,7 @@ var allowedAnywhere = map[string]bool{
 	"eyebrow": true, "intro": true, "title": true, "cta_label": true,
 	"cta_href": true, "transcript_href": true, "transcript_label": true,
 	"poster": true, "caption": true, "alt": true, "state": true,
+	// A backdrop behind the section: its surface, and the picture or
+	// recording (backdrop.go).
+	"surface": true, BackdropField: true,
 }

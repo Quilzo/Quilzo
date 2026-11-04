@@ -5,6 +5,7 @@ package admin
 
 import (
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -70,6 +71,14 @@ func (s *Server) handleMediaPick(w http.ResponseWriter, r *http.Request) {
 	page := strings.TrimSpace(q.Get("page"))
 	path := strings.TrimSpace(q.Get("path"))
 	at, _ := strconv.Atoi(q.Get("at"))
+	// The hero is named rather than numbered: it is no section, and it has
+	// no fields screen, so the one thing chosen for it here is its backdrop
+	// and the choice goes to the Sections screen's own action.
+	hero := strings.TrimSpace(q.Get("at")) == "hero"
+	atParam := strconv.Itoa(at)
+	if hero {
+		at, atParam = section.HeroAt, "hero"
+	}
 
 	// The field being filled belongs to a page, so this is the page the caller
 	// has to be allowed to edit — not the site. Same reasoning as every other
@@ -78,6 +87,15 @@ func (s *Server) handleMediaPick(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if hero && path != section.BackdropField {
+		s.render(w, r, "message.html", map[string]any{
+			"Title": "Nothing to pick", "Principal": p,
+			"Heading": "Nothing to pick",
+			"Body": "Only the hero's backdrop is chosen here. The rest of a hero is " +
+				"its words, which are written in the page itself.",
+		})
+		return
+	}
 	kind, isFile := section.FileKind(path)
 	if !isFile {
 		s.render(w, r, "message.html", map[string]any{
@@ -103,7 +121,21 @@ func (s *Server) handleMediaPick(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	current, onSection := currentValue(s.Store, page, at, path)
+	var current string
+	var onSection bool
+	if hero {
+		current, onSection = heroValue(s.Store, page)
+	} else {
+		current, onSection = currentValue(s.Store, page, at, path)
+	}
+	if !onSection && hero {
+		s.render(w, r, "message.html", map[string]any{
+			"Title": "Nothing to fill", "Principal": p,
+			"Heading": "Nothing to fill",
+			"Body":    page + " has no hero, so there is nothing to put a backdrop behind.",
+		})
+		return
+	}
 	if !onSection {
 		// Refused rather than drawn. section.Apply will not create a field
 		// that is not already there, so a picker for a path this section does
@@ -122,9 +154,21 @@ func (s *Server) handleMediaPick(w http.ResponseWriter, r *http.Request) {
 	search := strings.ToLower(strings.TrimSpace(q.Get("q")))
 
 	rows := make([]pickable, 0, len(files))
+	heldBack := 0
 	for _, f := range files {
-		if string(f.Kind) != kind {
+		// A backdrop is a picture or a recording; every other field one kind.
+		if string(f.Kind) != kind && !(kind == section.Backdrop && (f.Kind == media.Image || f.Kind == media.Video)) {
 			continue
+		}
+		// A backdrop is muted, so a recording is offered for one only when
+		// the library knows it to be silent. The picker offered every video,
+		// and choosing one with sound looked like it worked until the page
+		// was refused at publish.
+		if kind == section.Backdrop && f.Kind == media.Video && f.RenditionOf == "" {
+			if sound, known := f.SoundKnown(); sound || !known {
+				heldBack++
+				continue
+			}
 		}
 		// A rendition is a narrower copy of a picture that is already in this
 		// list. Offering both would put the same photograph on the screen four
@@ -161,17 +205,24 @@ func (s *Server) handleMediaPick(w http.ResponseWriter, r *http.Request) {
 
 	pg := paginate(r, len(rows), PageSize)
 	from, to := pg.slice(len(rows))
+	back := "/sections/fields?page=" + page + "&at=" + atParam
+	if hero {
+		back = "/sections?page=" + url.QueryEscape(page)
+	}
 
 	s.render(w, r, "mediapick.html", map[string]any{
 		"Title": "Choose a file", "Principal": p, "Nav": "sections",
 		"Page": page, "At": at, "Path": path, "Kind": kind,
 		"Noun":     nounFor(kind),
+		"HeldBack": heldBack,
 		"Shown":    rows[from:to],
 		"Total":    len(rows),
 		"Current":  current,
 		"Query":    q.Get("q"),
 		"Base":     s.Store.GetRef(site.RefDraft),
-		"Back":     "/sections/fields?page=" + page + "&at=" + strconv.Itoa(at),
+		"Back":     back,
+		"Hero":     hero,
+		"AtParam":  atParam,
 		"Paging":   pg,
 		"PagePath": "/media/pick",
 	})
@@ -206,6 +257,23 @@ func currentValue(st *store.Store, page string, at int, path string) (string, bo
 		}
 	}
 	return "", false
+}
+
+// heroValue reads what a page's hero is drawn over now, and says whether the
+// page has a hero at all. From the draft, as currentValue reads a section's.
+func heroValue(st *store.Store, page string) (string, bool) {
+	if st == nil || page == "" {
+		return "", false
+	}
+	pages, err := site.PagesAt(st, site.RefDraft)
+	if err != nil {
+		return "", false
+	}
+	body, ok := pages[page]
+	if !ok {
+		return "", false
+	}
+	return section.HeroBackdrop(body)
 }
 
 // sameAsset reports whether a stored value names this file.
@@ -250,6 +318,8 @@ func nounFor(kind string) string {
 		return "a video"
 	case "audio":
 		return "an audio file"
+	case section.Backdrop:
+		return "a picture or a silent video"
 	}
 	return "a file"
 }

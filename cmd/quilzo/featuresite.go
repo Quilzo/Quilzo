@@ -11,10 +11,12 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/feature"
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/seo"
+	"github.com/quilzo/quilzo/internal/theme"
 )
 
 // The site block of a package that is a whole site: its name, its
@@ -52,6 +54,13 @@ type sitePrior struct {
 	ThemeExisted   bool   `json:"theme_existed,omitempty"`
 	Theme          []byte `json:"theme,omitempty"`
 	LayoutsWritten bool   `json:"layouts_written,omitempty"`
+	// LayerExisted and Layer are the style layer the site had before, and
+	// LayerByPackage says the package has written one since: a package that
+	// never declares a layer never touches the site's, and one that stops
+	// declaring it puts back what was there.
+	LayerExisted   bool   `json:"layer_existed,omitempty"`
+	Layer          []byte `json:"layer,omitempty"`
+	LayerByPackage bool   `json:"layer_by_package,omitempty"`
 	// Redirects are the old addresses the package put in the site's
 	// redirect map, so that they, and only they, go with it.
 	Redirects []string `json:"redirects,omitempty"`
@@ -150,7 +159,8 @@ func siteByHand(root string) bool {
 	if err == nil && cfg.Raw("site.name") != "" {
 		return true
 	}
-	return fileExists(filepath.Join(featureDesignDir, themeFile))
+	return fileExists(filepath.Join(featureDesignDir, themeFile)) ||
+		fileExists(filepath.Join(featureDesignDir, theme.LayerFile))
 }
 
 // siteState puts the site block into a feature state: the site its owning
@@ -223,6 +233,9 @@ func applySite(root string, pkg *feature.Package, action string, caller *Caller)
 	if err := writeThemeFile(featureDesignDir, look); err != nil {
 		return err
 	}
+	if err := applySiteLayer(root, s); err != nil {
+		return err
+	}
 	left := 0
 	if len(s.Redirects) > 0 || fileExists(sitePriorPath(root)) {
 		if err := keepSitePrior(root); err != nil {
@@ -265,6 +278,12 @@ func applySite(root string, pkg *feature.Package, action string, caller *Caller)
 		return err
 	}
 	details := map[string]string{"feature": pkg.Name, "version": pkg.Version, "style": s.Style, "colour": s.Colour}
+	if s.Scheme != "" {
+		details["scheme"] = s.Scheme
+	}
+	if s.Layer != "" {
+		details["layer"] = fmt.Sprint(len(s.Layer))
+	}
 	if len(s.Redirects) > 0 {
 		details["redirects"] = fmt.Sprint(len(s.Redirects) - left)
 		details["redirects_left_out"] = fmt.Sprint(left)
@@ -285,6 +304,11 @@ func keepSitePrior(root string) error {
 	prior := sitePrior{Name: cfg.Raw("site.name"), Description: cfg.Raw("site.description")}
 	if b, err := os.ReadFile(filepath.Join(featureDesignDir, themeFile)); err == nil {
 		prior.ThemeExisted, prior.Theme = true, b
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if b, err := os.ReadFile(filepath.Join(featureDesignDir, theme.LayerFile)); err == nil {
+		prior.LayerExisted, prior.Layer = true, b
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
@@ -329,8 +353,67 @@ func releaseSite(root string, pkg string, caller *Caller) error {
 	} else if err := os.Remove(themePath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
+	if prior.LayerByPackage {
+		if err := restoreLayer(prior); err != nil {
+			return err
+		}
+	}
 	if err := os.Remove(sitePriorPath(root)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	return recordE(root, caller.auditRecord("site.released", "/", audit.Success, map[string]string{"feature": pkg}))
+}
+
+// applySiteLayer writes the style layer a site package declares, or puts back
+// the one the site had when the package stops declaring it.
+//
+// A package that has never declared a layer leaves the site's alone, so a
+// site package written before layers existed installs exactly as it did. The
+// site's own layer is kept in the prior record the first time a package
+// takes the site over, and goes back when the package goes.
+func applySiteLayer(root string, s *feature.Site) error {
+	var prior sitePrior
+	if err := loadJSON(sitePriorPath(root), &prior); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if s.Layer == "" {
+		if !prior.LayerByPackage {
+			return nil
+		}
+		if err := restoreLayer(prior); err != nil {
+			return err
+		}
+		prior.LayerByPackage = false
+		return saveJSON(sitePriorPath(root), prior)
+	}
+	if err := keepSitePrior(root); err != nil {
+		return err
+	}
+	if err := loadJSON(sitePriorPath(root), &prior); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(featureDesignDir, 0o700); err != nil {
+		return err
+	}
+	if err := atomicfile.Write(filepath.Join(featureDesignDir, theme.LayerFile), []byte(s.Layer), 0o600); err != nil {
+		return err
+	}
+	if !prior.LayerByPackage {
+		prior.LayerByPackage = true
+		return saveJSON(sitePriorPath(root), prior)
+	}
+	return nil
+}
+
+// restoreLayer puts the site's own style layer back, or takes the package's
+// away when the site had none.
+func restoreLayer(prior sitePrior) error {
+	path := filepath.Join(featureDesignDir, theme.LayerFile)
+	if prior.LayerExisted {
+		return atomicfile.Write(path, prior.Layer, 0o600)
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }

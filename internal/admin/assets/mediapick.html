@@ -1,9 +1,15 @@
 {{template "head" .}}
-<nav class="crumbs" aria-label="Breadcrumb">{{icon "arrow_back"}}<ol><li><a href="{{.Back}}">The section</a></li></ol></nav>
+<nav class="crumbs" aria-label="Breadcrumb">{{icon "arrow_back"}}<ol><li><a href="{{.Back}}">{{if .Hero}}The page's sections{{else}}The section{{end}}</a></li></ol></nav>
 <h1>Choose {{.Noun}}</h1>
 
-<p class="lead">For <code>{{.Path}}</code> on section {{.At}} of
-  <a href="/page/{{.Page}}">{{.Page}}</a>.</p>
+{{if .Hero}}<p class="lead">For the backdrop behind the hero of
+  <a href="/page/{{.Page}}">{{.Page}}</a>: a picture, or a recording known to
+  be silent, drawn under a veil that keeps the hero's words readable.</p>
+{{else}}<p class="lead">For <code>{{.Path}}</code> on section {{.At}} of
+  <a href="/page/{{.Page}}">{{.Page}}</a>.</p>{{end}}
+{{if .HeldBack}}<p class="hint">{{plural .HeldBack "video is" "videos are"}} not offered: a backdrop
+  is muted, so it has to be a recording the library knows to be silent. One with
+  sound belongs in a video section, with captions.</p>{{end}}
 
 {{/*
   A search box and a grid, because the policy on this response is
@@ -13,7 +19,7 @@
 */}}
 <form method="get" action="/media/pick" class="findform" role="search">
   <input type="hidden" name="page" value="{{.Page}}">
-  <input type="hidden" name="at" value="{{.At}}">
+  <input type="hidden" name="at" value="{{.AtParam}}">
   <input type="hidden" name="path" value="{{.Path}}">
   <label for="mp-q">Search by name or description</label>
   <input id="mp-q" name="q" value="{{.Query}}" spellcheck="false">
@@ -29,26 +35,28 @@
   It posts to /sections/fields, which is where the edit form posts. Carrying
   one value is safe because section.Apply only touches the paths it is given.
 */}}
-<form method="post" action="/sections/fields">
+<form method="post" action="{{if .Hero}}/sections/edit{{else}}/sections/fields{{end}}">
   <input type="hidden" name="page" value="{{.Page}}">
-  <input type="hidden" name="at" value="{{.At}}">
+  {{if .Hero}}<input type="hidden" name="do" value="herobackdrop">
+  {{else}}<input type="hidden" name="at" value="{{.At}}">{{end}}
   <input type="hidden" name="base" value="{{.Base}}">
 
   <fieldset class="pickgrid">
-    <legend class="sr">Which {{.Kind}} goes in {{.Path}}</legend>
+    <legend class="sr">{{if .Hero}}Which picture or recording goes behind the hero{{else}}Which {{.Kind}} goes in {{.Path}}{{end}}</legend>
 
     <label class="pick pick-none">
-      <input type="radio" name="v.{{.Path}}" value=""{{if not .Current}} checked{{end}}>
+      <input type="radio" name="{{if .Hero}}media{{else}}v.{{.Path}}{{end}}" value=""{{if not .Current}} checked{{end}}>
       <span class="pick-body">
         <span class="pick-name">Nothing</span>
-        <span class="hint">Leave this field empty. The section omits the
-          element rather than rendering a broken one.</span>
+        <span class="hint">{{if .Hero}}No backdrop: the hero is drawn on the
+          page's own background.{{else}}Leave this field empty. The section omits the
+          element rather than rendering a broken one.{{end}}</span>
       </span>
     </label>
 
     {{range .Shown}}
     <label class="pick{{if .Current}} pick-on{{end}}">
-      <input type="radio" name="v.{{$.Path}}" value="/media/{{.ID}}"{{if .Current}} checked{{end}}>
+      <input type="radio" name="{{if $.Hero}}media{{else}}v.{{$.Path}}{{end}}" value="/media/{{.ID}}"{{if .Current}} checked{{end}}>
       <span class="pick-body">
         {{if .Viewable}}
         <img class="pick-thumb" src="/media/file/{{.ID}}" alt="{{.Alt}}"
@@ -76,7 +84,7 @@
 {{end}}
 
 <p class="hint">Files are stored under the hash of their own bytes, so the same
-  picture uploaded twice is one file. Choosing here writes the section the same
+  picture uploaded twice is one file. Choosing here writes the {{if .Hero}}page{{else}}section{{end}} the same
   way the edit form does: a draft commit with your name on it, which rolls
   back like any other.</p>
 {{template "foot" .}}

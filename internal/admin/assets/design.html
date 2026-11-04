@@ -4,6 +4,9 @@
 {{if .Unavailable}}<p class="notice">{{.Unavailable}}</p>{{else}}
 {{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
 {{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
+{{if .LayerDraftRefused}}<p class="notice bad" role="alert">The style layer was not saved:
+  {{plural (len .LayerDraftRefused) "rule is" "rules are"}} refused. <a href="#layer">What was
+  refused, with your text kept</a>.</p>{{end}}
 
 <p class="hint">
   Colours, type, spacing and shape for the public site. Files are in
@@ -29,6 +32,19 @@
   <ul>
   {{range .Blocking}}
     <li><code>{{.Token}}</code> ({{.Scheme}} scheme) — {{.Detail}}</li>
+  {{end}}
+  </ul>
+</div>
+{{end}}
+
+{{if .Veil}}
+<div class="notice warn">
+  <p><strong>Words over a backdrop would be hard to read.</strong> A page with a
+    backdrop picture or video will not publish until this passes; pages
+    without one are not affected.</p>
+  <ul>
+  {{range .Veil}}
+    <li>{{.Scheme}} scheme — {{.Detail}}</li>
   {{end}}
   </ul>
 </div>
@@ -63,6 +79,21 @@
     <p class="hint">Visitors who ask their system for reduced motion get none, whichever is chosen.</p>
   </fieldset>
   <button type="submit">Use this motion</button>
+</form>
+<form method="post" action="/design/save" class="design-look">
+  <input type="hidden" name="token" value="corner">
+  <fieldset><legend>Corners</legend>
+    {{range .Corners}}<p><label><input type="radio" name="light" value="{{.Name}}"{{if .On}} checked{{end}}> <strong>{{.Label}}</strong> <span class="hint">{{.Words}}</span></label></p>{{end}}
+    <p class="hint">A focused control shows its whole focus ring either way.</p>
+  </fieldset>
+  <button type="submit">Use these corners</button>
+</form>
+<form method="post" action="/design/save" class="design-look">
+  <input type="hidden" name="token" value="scheme">
+  <fieldset><legend>Colour schemes</legend>
+    {{range .DrawnIn}}<p><label><input type="radio" name="light" value="{{.Name}}"{{if .On}} checked{{end}}> <strong>{{.Label}}</strong> <span class="hint">{{.Words}}</span></label></p>{{end}}
+  </fieldset>
+  <button type="submit">Draw the site this way</button>
 </form>
 
 <form method="post" action="/design/save" class="design-look">
@@ -137,6 +168,57 @@
   </tbody>
 </table>
 </div>
+{{end}}
+
+{{if .CanLayer}}
+<h2 id="layer">Style layer</h2>
+<p class="hint">
+  CSS of this site's own, served after the generated stylesheet, for what the
+  settings cannot say. Every colour is a token, written <code>var(--primary)</code>
+  or mixed from tokens with <code>color-mix()</code>; <code>url()</code> reaches only
+  <code>/media/</code> and <code>/fonts/</code>; no <code>@import</code>, no
+  <code>!important</code>, no redefining a token and no removing the focus
+  outline. At most {{.LayerMax}} KiB. Saved to <code>{{.Dir}}/style.css</code>.
+</p>
+{{if .Own}}<p class="notice">It is not served while <code>{{.Dir}}/site.css</code> exists, which replaces everything a layer sits on.</p>{{end}}
+{{if .LayerError}}<p class="notice bad">{{.LayerError}}</p>{{end}}
+{{if .LayerDraftRefused}}
+<div class="card bad">
+  <p><strong>Not saved.</strong> {{plural (len .LayerDraftRefused) "rule is" "rules are"}} refused, so
+    the layer that was there stays as it was. What you wrote is still in the box
+    below, to fix and save again.</p>
+  <ul>{{range .LayerDraftRefused}}<li>{{.Detail}}</li>{{end}}</ul>
+</div>
+{{end}}
+{{if .LayerRefused}}
+<div class="card bad">
+  <p><strong>The saved layer is not served.</strong> {{plural (len .LayerRefused) "rule is" "rules are"}} refused:</p>
+  <ul>{{range .LayerRefused}}<li>{{.Detail}}</li>{{end}}</ul>
+</div>
+{{else}}{{if .Layer}}<p class="notice">The saved layer is served: {{.LayerBytes}} bytes, every colour a token.</p>{{end}}{{end}}
+{{if .LayerAdvice}}<ul class="hint">{{range .LayerAdvice}}<li>{{.Detail}}</li>{{end}}</ul>{{end}}
+{{if .MayLayer}}
+<form method="post" action="/design/layer" class="design-layer">
+  <label for="layer-css">The layer</label>
+  <textarea id="layer-css" name="layer" spellcheck="false" aria-describedby="layer-hint">{{.LayerText}}</textarea>
+  <p class="hint" id="layer-hint">{{if .LayerRemoved}}This is the layer that was taken away, kept here and not
+    saved: Save the layer puts it back, and leaving this screen lets it go.{{else}}Checked before it is saved; a
+    layer with a refused rule is not saved, so the one that is there stays.{{end}}</p>
+  <button type="submit">Save the layer</button>
+</form>
+{{if .Layer}}
+<form method="post" action="/design/layer" class="inline">
+  <input type="hidden" name="remove" value="1">
+  <button type="submit" class="danger">Take the layer away</button>
+</form>
+{{end}}
+{{else}}
+<div class="design-layer">
+  <label for="layer-css">The layer</label>
+  <textarea id="layer-css" readonly spellcheck="false" aria-describedby="layer-hint">{{.LayerText}}</textarea>
+  <p class="hint" id="layer-hint">Changing the layer takes whoever may publish, because it is on every page at once{{if not .Layer}}; this site has none{{end}}.</p>
+</div>
+{{end}}
 {{end}}
 
 <h2>Typefaces</h2>

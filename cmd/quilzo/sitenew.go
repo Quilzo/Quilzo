@@ -191,7 +191,7 @@ func buildSite(ctx context.Context, root string, b feature.SiteBrief, useModel b
 		name = "Your site"
 	}
 	start, err := feature.BuildSite(feature.SiteBrief{Description: b.Description, Name: name, Kind: b.Kind,
-		Colour: b.Colour, Style: b.Style}, caller.Name, time.Now())
+		Colour: b.Colour, Style: b.Style, Scheme: b.Scheme}, caller.Name, time.Now())
 	if err != nil {
 		if b.Name == "" && useModel {
 			return out, fmt.Errorf("%w; there is no model to suggest one, because %s", err, why)
@@ -247,6 +247,7 @@ func siteNewCmd(root string, args []string) error {
 	kind := fs.String("kind", "", "the kind of site: "+strings.Join(siteKindNames(), ", ")+"; read from the description by default")
 	colour := fs.String("colour", "", "the main colour, as #rrggbb")
 	style := fs.String("style", "", "the style; `quilzo theme styles` lists them")
+	scheme := fs.String("scheme", "", "the colour schemes it is drawn in: both, dark or light")
 	outPath := fs.String("o", "", "where to write the package; NAME.json by default")
 	noModel := fs.Bool("no-model", false, "build from the kind of site only, without asking a model")
 	install := fs.Bool("install", false, "install it as well, as `quilzo feature install` does")
@@ -256,7 +257,7 @@ func siteNewCmd(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 && *name == "" {
-		return errors.New(`usage: quilzo site new "what the site is for" [--name N] [--kind K] [--colour #rrggbb] [--style S] [-o FILE] [--install]`)
+		return errors.New(`usage: quilzo site new "what the site is for" [--name N] [--kind K] [--colour #rrggbb] [--style S] [--scheme both|dark|light] [-o FILE] [--install]`)
 	}
 	brief := ""
 	if len(pos) == 1 {
@@ -271,7 +272,7 @@ func siteNewCmd(root string, args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), featureDraftTimeout)
 	defer cancel()
 	built, err := buildSite(ctx, root, feature.SiteBrief{Description: brief, Name: *name, Kind: *kind,
-		Colour: *colour, Style: *style}, !*noModel, caller)
+		Colour: *colour, Style: *style, Scheme: *scheme}, !*noModel, caller)
 	if err != nil {
 		return err
 	}

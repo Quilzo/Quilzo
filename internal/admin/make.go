@@ -174,6 +174,7 @@ func (s *Server) handleMake(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	data["Kinds"], data["Styles"] = feature.SiteKinds(), theme.Styles
+	data["SiteSchemes"] = theme.SchemeChoices
 	data["CanSite"] = s.Features.Site != nil
 	data["CanImport"] = s.Features.Import != nil
 	data["CanImportFile"] = s.Features.ImportFile != nil
@@ -203,7 +204,8 @@ func (s *Server) handleMakeSite(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 	b := feature.SiteBrief{Description: r.FormValue("description"), Name: r.FormValue("name"),
-		Kind: r.FormValue("kind"), Colour: r.FormValue("colour"), Style: r.FormValue("style")}
+		Kind: r.FormValue("kind"), Colour: r.FormValue("colour"), Style: r.FormValue("style"),
+		Scheme: r.FormValue("scheme")}
 	body, notes, err := s.Features.Site(b, r.FormValue("use_model") == "1", p.actor())
 	if err != nil {
 		makeBack(w, r, "", err)

@@ -528,6 +528,12 @@ func mediaList(root string, args []string) error {
 		if f.Width > 0 {
 			w.Human(" · %dx%d", f.Width, f.Height)
 		}
+		// Whether a recording has sound decides what a page showing it needs
+		// and whether it may be a backdrop, and it was said only once, when
+		// the file was added.
+		if f.Kind == media.Video {
+			w.Human(" · %s", soundPhrase(f))
+		}
 		w.Human("%s\n", reset)
 		if f.Alt != "" {
 			w.Human("  %s%s%s\n", dim, f.Alt, reset)
@@ -672,14 +678,26 @@ func mediaAdd(root string, args []string) error {
 	if err := lib.Put(f, body); err != nil {
 		return fmt.Errorf("%s was accepted and could not be stored: %w", f.Name, err)
 	}
+	// What the probe found when it was stored: whether a recording has sound,
+	// which decides whether a page showing it owes captions or a description.
+	if f.Kind == media.Video {
+		if stored, serr := lib.Stat(f.ID); serr == nil {
+			f.Sound = stored.Sound
+		}
+	}
 
+	// An accepted upload is a file this site will serve to the public.
+	// Recorded before the JSON answer as well as the words, which it was not:
+	// `--json` returned first and the upload went unlogged.
+	detail := map[string]string{"file": f.Name, "id": short(f.ID), "format": string(f.Format)}
+	if f.Kind == media.Video {
+		detail["sound"] = f.SoundWord()
+	}
 	if w.JSON(f) {
+		record(root, resolveCaller(root, "").auditRecord("media.add", "/", audit.Success, detail))
 		return nil
 	}
-	// An accepted upload is a file this site will serve to the public.
-	record(root, resolveCaller(root, "").auditRecord("media.add", "/",
-		audit.Success, map[string]string{"file": f.Name, "id": short(f.ID),
-			"format": string(f.Format)}))
+	record(root, resolveCaller(root, "").auditRecord("media.add", "/", audit.Success, detail))
 	w.Human("stored %s%s%s\n", bold, f.Name, reset)
 	w.Human("  %s%s · %s · %d bytes", dim, f.Format, f.Kind, f.Size)
 	if f.Width > 0 {
@@ -694,6 +712,16 @@ func mediaAdd(root string, args []string) error {
 	// building a demo page from the output and getting four grey boxes.
 	w.Human("  %sid %s%s\n", dim, f.ID, reset)
 	w.Human("  %sin a page: /media/%s%s\n", dim, f.ID, reset)
+	if f.Kind == media.Video {
+		switch f.SoundWord() {
+		case "no":
+			w.Human("  %sno sound: a page showing it needs its description rather than captions, and it may be a backdrop%s\n", dim, reset)
+		case "yes":
+			w.Human("  %shas sound: a page showing it needs captions (quilzo media captions)%s\n", dim, reset)
+		default:
+			w.Human("  %swhether it has sound could not be read (no ffprobe here), so a page showing it needs captions%s\n", dim, reset)
+		}
+	}
 	if !f.Inline() {
 		w.Human("  %sserved as a download, not rendered in the page's origin%s\n",
 			dim, reset)
@@ -890,4 +918,16 @@ func keepFetched(root string, res *fetch.Result, alt string) (media.File, error)
 		return media.File{}, fmt.Errorf("fetched and could not be stored: %w", err)
 	}
 	return f, nil
+}
+
+// soundPhrase says what the library knows of a recording's sound, in the
+// words `media list` and the MCP media list use.
+func soundPhrase(f media.File) string {
+	switch f.SoundWord() {
+	case "no":
+		return "no sound"
+	case "yes":
+		return "has sound"
+	}
+	return "sound not known"
 }

@@ -28,6 +28,11 @@
     <option value="">The kind of site's own</option>
     {{range .Styles}}<option value="{{.}}">{{.}}</option>{{end}}
   </select>
+  <label for="make-site-scheme">Colour schemes</label><select id="make-site-scheme" name="scheme" aria-describedby="make-site-scheme-hint">
+    <option value="">Both, as each reader's system asks</option>
+    {{range .SiteSchemes}}{{if ne . "both"}}<option value="{{.}}">{{.}} only</option>{{end}}{{end}}
+  </select>
+  <span class="hint" id="make-site-scheme-hint">A site drawn dark is dark for every reader, and is checked in dark alone.</span>
   <label for="make-site-colour">Main colour</label><input id="make-site-colour" name="colour" maxlength="7" pattern="#[0-9a-fA-F]{6}" placeholder="#c2410c" aria-describedby="make-site-colour-hint">
   <span class="hint" id="make-site-colour-hint">As #rrggbb. Left empty, the kind of site picks one; every palette is checked for contrast.</span>
   <p><label><input type="checkbox" name="use_model" value="1" checked> A model writes the words, when one is allowed</label></p>
