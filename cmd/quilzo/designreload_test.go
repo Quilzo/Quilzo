@@ -278,6 +278,39 @@ func TestAReloadKeepsWhatVisitorsAreInTheMiddleOf(t *testing.T) {
 	}
 }
 
+// The share target takes its settings with a reload and keeps its count.
+//
+// It was carried whole while share.form was unchanged, field names and all,
+// so a share mapped onto a field renamed in share.text_field arrived with
+// the text in the field the form no longer had until the site restarted.
+func TestAShareTargetTakesItsSettingsAndKeepsItsCount(t *testing.T) {
+	root, tpl := fontSite(t)
+	for _, kv := range [][2]string{{"share.form", "notes"}, {"share.text_field", "message"}} {
+		if err := cmdConfig(root, []string{"set", kv[0], kv[1]}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rl := servedSite(t, root, tpl)
+	first := rl.Site()
+	if first.Share == nil || first.Share.TextField != "message" || first.Share.Limit == nil {
+		t.Fatalf("the fixture has no share target: %+v", first.Share)
+	}
+	if err := cmdConfig(root, []string{"set", "share.text_field", "body"}); err != nil {
+		t.Fatal(err)
+	}
+	served(rl, "/")
+	next := rl.Site()
+	if next == first || next.Share == nil {
+		t.Fatalf("the settings did not build the site again: %+v", next.Share)
+	}
+	if next.Share.TextField != "body" {
+		t.Errorf("the share target still maps the text onto %q", next.Share.TextField)
+	}
+	if next.Share.Limit != first.Share.Limit {
+		t.Error("the share target's limit was handed out again")
+	}
+}
+
 // A guardrail turned on reaches the site's chatbots with the settings, and a
 // rating handed out before the rebuild still counts once and only once.
 //

@@ -558,11 +558,12 @@ func (rl *siteReloader) record(trigger string, outcome audit.Outcome, detail map
 // carrySiteState moves what a running site holds for its visitors from the
 // site it was to the site it is becoming.
 //
-// What is carried is state, not settings: rate limits and their counts, the
-// signals being counted, sign-in ceremonies in progress, the chatbots' keys
-// for the ratings they handed out and the ones already used, and which pages
-// are new to them, the newsletter's count of mail sent this hour, and the
-// fediverse queue with the loop that empties it. A part turned off by the
+// What is carried is state, not settings: rate limits and their counts (the
+// share target's among them), the signals being counted, sign-in ceremonies
+// in progress, the chatbots' keys for the ratings they handed out and the
+// ones already used, and which pages are new to them, the newsletter's count
+// of mail sent this hour, and the fediverse queue with the loop that empties
+// it. A part turned off by the
 // new settings stays off (nil): turning something off takes effect at once.
 // A part turned on is new.
 //
@@ -608,8 +609,13 @@ func carrySiteState(prev, next *public.Site) {
 			next.Assistants.Questions = prev.Assistants.Questions
 		}
 	}
-	if next.Share != nil && prev.Share != nil && next.Share.Form == prev.Share.Form {
-		next.Share = prev.Share
+	// The share target is the new one, so share.title_field and the others
+	// take effect with the settings they were read with, and keeps the
+	// limiter it counted with. It was kept whole while share.form was
+	// unchanged, which kept the field names it was started with too: a
+	// share mapped onto a renamed field arrived empty until a restart.
+	if next.Share != nil && prev.Share != nil && prev.Share.Limit != nil {
+		next.Share.Limit = prev.Share.Limit
 	}
 	if next.Members != nil && prev.Members != nil {
 		if next.Members.Mode == prev.Members.Mode && reflect.DeepEqual(next.Members.Party, prev.Members.Party) {
