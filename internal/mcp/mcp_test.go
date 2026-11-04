@@ -365,3 +365,28 @@ func TestAnAnswerThatIsNotTextIsJSON(t *testing.T) {
 		t.Errorf("a string answered %q", got)
 	}
 }
+
+// find compares words, not letters. Every query word was looked for as a
+// substring, so the "a" of "triage a support ticket" scored on almost every
+// operation and three more on one with an "a" in its name, which came
+// first; the operation the words were about did not.
+func TestFindComparesWords(t *testing.T) {
+	s := NewServer("t", "1")
+	s.Authorise = allowAll
+	ok := func(map[string]any) (any, error) { return "", nil }
+	s.Register(Operation{Name: "agent_activity", Summary: "what agents have been doing",
+		Keywords: []string{"agents", "activity", "audit"}}, ok)
+	s.Register(Operation{Name: "list_deciders", Summary: "the site's typed questions",
+		Keywords: []string{"decide", "classify"}}, ok)
+	s.Register(Operation{Name: "decide", Summary: "answer a decider's typed questions",
+		Keywords: []string{"decide", "classify", "triage"}}, ok)
+	for query, want := range map[string]string{
+		"triage a support ticket":     "decide",
+		"which deciders are there":    "list_deciders",
+		"what agents have been doing": "agent_activity",
+	} {
+		if got := s.find(query); len(got) == 0 || got[0].Name != want {
+			t.Errorf("%q found %v first, not %s", query, got, want)
+		}
+	}
+}

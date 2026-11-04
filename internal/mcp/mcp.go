@@ -64,6 +64,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode"
 )
 
 // Request is a JSON-RPC 2.0 request.
@@ -308,11 +309,19 @@ func opSchema(desc string) map[string]any {
 //
 // A plain keyword score rather than an embedding. The corpus is a dozen
 // operations written by one person; a retrieval model here would add a
-// dependency, a failure mode and a warm-up cost to a lookup that a substring
+// dependency, a failure mode and a warm-up cost to a lookup that a word
 // match answers correctly.
+//
+// Words, not substrings. Every query word was looked for anywhere in the
+// operation's text, so the "a" of "triage a support ticket" scored on
+// almost every operation, and three more on one with an "a" in its name:
+// agent_activity came first and decide was not among the first six. A word
+// counts once it is three letters or more and not one any sentence has, and
+// matches the same word, or one that starts with it either way round, so
+// "deciders" finds decide and "pages" list_pages; the same word counts for
+// more.
 func (s *Server) find(query string) []Operation {
-	q := strings.ToLower(strings.TrimSpace(query))
-	words := strings.Fields(q)
+	words := findWords(query)
 
 	type scored struct {
 		op    Operation
@@ -321,14 +330,11 @@ func (s *Server) find(query string) []Operation {
 	var out []scored
 	for _, op := range s.operations {
 		score := 0
-		hay := strings.ToLower(op.Name + " " + op.Summary + " " + strings.Join(op.Keywords, " "))
+		name := findWords(strings.ReplaceAll(op.Name, "_", " "))
+		hay := findWords(op.Name + " " + op.Summary + " " + strings.Join(op.Keywords, " "))
 		for _, w := range words {
-			if strings.Contains(hay, w) {
-				score += 2
-			}
-			if strings.Contains(strings.ToLower(op.Name), w) {
-				score += 3
-			}
+			score += 2 * findMatch(w, hay)
+			score += 3 * findMatch(w, name)
 		}
 		if score > 0 {
 			out = append(out, scored{op, score})
@@ -618,6 +624,46 @@ func asRefusal(err error, out **Refusal) bool {
 		return true
 	}
 	return false
+}
+
+// findStop are words any request or description may have, which say
+// nothing about which operation is meant.
+var findStop = map[string]bool{
+	"the": true, "and": true, "for": true, "are": true, "was": true, "not": true,
+	"with": true, "this": true, "that": true, "these": true, "those": true,
+	"what": true, "which": true, "who": true, "how": true, "when": true,
+	"where": true, "there": true, "here": true, "from": true, "into": true,
+	"have": true, "has": true, "been": true, "does": true, "can": true,
+	"its": true, "any": true, "all": true, "some": true, "about": true,
+	"one": true, "our": true, "your": true, "you": true, "please": true,
+}
+
+// findWords are the words of a text that find compares.
+func findWords(s string) []string {
+	var out []string
+	for _, w := range strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	}) {
+		if len(w) >= 3 && !findStop[w] {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
+// findMatch is how well a query word matches a list of words: 2 for the
+// same word, 1 for one that starts with the other, four letters at least.
+func findMatch(w string, in []string) int {
+	best := 0
+	for _, h := range in {
+		switch {
+		case h == w:
+			return 2
+		case len(w) >= 4 && len(h) >= 4 && (strings.HasPrefix(h, w) || strings.HasPrefix(w, h)):
+			best = 1
+		}
+	}
+	return best
 }
 
 // describe renders operations for an agent that asked for them.

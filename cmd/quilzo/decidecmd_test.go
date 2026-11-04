@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -20,6 +21,8 @@ import (
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/decide"
+	"github.com/quilzo/quilzo/internal/mcp"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 const ticketDecider = `{"name": "ticket", "title": "Ticket triage", "questions": [
@@ -223,6 +226,50 @@ func TestADecidersAndTheReviewersCallsAreChargedToTheRunAndItsPerson(t *testing.
 	for _, consumer := range []string{"decider:refunds", "reviewer:triage"} {
 		if calls, dana := chargedTo(t, root, consumer, "person:dana"); calls == 0 || dana != calls {
 			t.Errorf("of %d calls as %s, %d were charged to the person who started the run", calls, consumer, dana)
+		}
+	}
+}
+
+// An agent looking for the right operation in plain words is sent to the
+// deciders when what it wants is a judgement. Asked for "triage a support
+// ticket", quilzo_find put agent_activity first: every query word was
+// matched as a substring, so "a" scored on almost every operation, and
+// twice over on one whose name has an "a" in it.
+func TestFindingADecisionInPlainWordsFindsTheDeciders(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := t.TempDir() + "/st"
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := buildMCP(root, s, asAdmin("dana"), "templates")
+	first := regexp.MustCompile(`(?m)^(\S+) — `)
+	for query, want := range map[string]string{
+		"triage a support ticket":     "decide",
+		"classify a comment":          "decide",
+		"route an incoming request":   "decide",
+		"score a lead":                "decide",
+		"which deciders are there":    "list_deciders",
+		"what agents have been doing": "agent_activity",
+		"list the pages":              "list_pages",
+	} {
+		params, _ := json.Marshal(map[string]any{"name": "quilzo_find", "arguments": map[string]any{"query": query}})
+		resp := srv.Handle(mcp.Request{JSONRPC: "2.0", ID: json.RawMessage(`1`), Method: "tools/call", Params: params})
+		if resp.Error != nil {
+			t.Fatal(resp.Error.Message)
+		}
+		b, _ := json.Marshal(resp.Result)
+		var r struct{ Content []struct{ Text string } }
+		_ = json.Unmarshal(b, &r)
+		var got []string
+		for _, m := range first.FindAllStringSubmatch(r.Content[0].Text, 3) {
+			got = append(got, m[1])
+		}
+		if len(got) == 0 || got[0] != want {
+			t.Errorf("%q found %v first, not %s", query, got, want)
 		}
 	}
 }
