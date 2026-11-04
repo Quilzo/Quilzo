@@ -45,7 +45,20 @@ func helpAsked(args []string) bool {
 	return false
 }
 
-func isHelpFlag(a string) bool { return a == "-h" || a == "-help" || a == "--help" }
+// isHelpFlag reports whether a is a spelling a flag set answers as help: -h
+// or -help, with one dash or two, with or without a value after "=". Only
+// three of the eight were taken, and a flag set answered the rest itself,
+// after the command had acted: `quilzo init --h` created a store and then
+// failed, and `quilzo token keygen --help=true` wrote a key to a file of that
+// name.
+func isHelpFlag(a string) bool {
+	name, ok := strings.CutPrefix(a, "-")
+	if !ok {
+		return false
+	}
+	name, _, _ = strings.Cut(strings.TrimPrefix(name, "-"), "=")
+	return name == "h" || name == "help"
+}
 
 // helpGoesToTheCommand reports whether the command answers the help itself:
 // it parses its flags before anything else, and the help flag is the first

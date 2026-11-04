@@ -6,10 +6,13 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
+	"flag"
 	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -238,4 +241,56 @@ func treeDiff(before, after string) string {
 		out = append(out[:8], "  …")
 	}
 	return strings.Join(out, "\n")
+}
+
+// Every spelling a flag set answers as help is help here too.
+//
+// The flag package takes -h and -help with one dash or two, and with a
+// value after an equals sign, and this took three of the eight. `quilzo init
+// --h` in an empty directory created a store and then failed with "flag:
+// help requested", `quilzo token keygen --h` wrote a key to a file called
+// --h, and `quilzo publish --help=true` listed its flags and exited 1. So the
+// spellings are checked against what a flag set does with them, and a
+// command that acts before it parses is asked with each.
+func TestEverySpellingOfHelpIsHelp(t *testing.T) {
+	for _, a := range []string{"-h", "--h", "-help", "--help", "-h=1", "--h=", "-help=false",
+		"--help=true", "---help", "-H", "-hh", "--helpme", "help", "-", "--", "-=h", "--=help"} {
+		fs := flag.NewFlagSet("x", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		flagSays := errors.Is(fs.Parse([]string{a}), flag.ErrHelp)
+		if isHelpFlag(a) != flagSays {
+			t.Errorf("isHelpFlag(%q) is %v, and a flag set's answer to it is help: %v", a, isHelpFlag(a), flagSays)
+		}
+	}
+
+	template := filepath.Join(t.TempDir(), ".quilzo")
+	if err := cmdInit(template); err != nil {
+		t.Fatal(err)
+	}
+	for _, spelling := range []string{"--h", "-h=1", "--help=true"} {
+		for _, args := range [][]string{{"init"}, {"token", "keygen"}, {"brand", "init"},
+			{"fediverse", "init"}, {"publish"}} {
+			for _, store := range []bool{false, true} {
+				args := append(append([]string(nil), args...), spelling)
+				dir, home := t.TempDir(), t.TempDir()
+				if store {
+					copyTree(t, template, filepath.Join(dir, ".quilzo"))
+				}
+				before := treeState(t, dir) + treeState(t, home)
+				cmd := exec.Command(os.Args[0], append([]string{"quilzo-main"}, args...)...)
+				cmd.Dir = dir
+				cmd.Env = append(os.Environ(), "HOME="+home, "QUILZO_TOKEN=", "NO_COLOR=1")
+				said, err := cmd.CombinedOutput()
+				if err != nil {
+					t.Errorf("`quilzo %s` (store: %v): %v\n%s", strings.Join(args, " "), store, err, firstLines(string(said), 6))
+				}
+				if after := treeState(t, dir) + treeState(t, home); after != before {
+					t.Errorf("`quilzo %s` (store: %v) wrote something:\n%s", strings.Join(args, " "), store, treeDiff(before, after))
+				}
+				if strings.Contains(string(said), "flag: help requested") {
+					t.Errorf("`quilzo %s` answered its help as a failure", strings.Join(args, " "))
+				}
+			}
+		}
+	}
 }
