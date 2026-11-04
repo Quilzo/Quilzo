@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -70,10 +71,13 @@ import (
 // # A reload that fails
 //
 // Changes nothing. A layout that does not parse, a theme file that is not
-// JSON, a setting the site refuses at start: the site goes on serving what
+// JSON, a setting the site refuses at start, a configuration file caught
+// empty while it is being written (configSays): the site goes on serving what
 // it served, says why on its error output and in the audit log, and does not
 // try again until something changes again. A server that went down because
-// somebody saved a file half-edited would make every save a risk.
+// somebody saved a file half-edited would make every save a risk. A publish
+// whose build was refused for any of those but its own design brings that
+// design with the next build that succeeds.
 
 // lookEvery is the most often a server looks at the files on disk. A stat
 // of a handful of files is microseconds; doing it once a second rather than
@@ -300,6 +304,9 @@ type siteGen struct {
 	// designSum and settingsSum are what it was built from, so the next
 	// build can say whether anything a reader gets changed.
 	designSum, settingsSum string
+	// configSaid is that it was built from a configuration file that said
+	// something (configSays).
+	configSaid bool
 }
 
 // siteReloader serves the public site and builds it again when its
@@ -324,6 +331,10 @@ type siteReloader struct {
 	live   string
 	files  string
 	looked time.Time
+	// designDue is a publish whose design has not reached readers yet,
+	// because the build it came with was refused for a reason that was not
+	// the design: the next build that succeeds takes it.
+	designDue bool
 }
 
 func newSiteReloader(root, dir string, s *store.Store, ref string, d *Design, st *public.Site,
@@ -333,7 +344,7 @@ func newSiteReloader(root, dir string, s *store.Store, ref string, d *Design, st
 		every: lookEvery, now: time.Now,
 		say: func(format string, a ...any) { fmt.Fprintf(os.Stderr, format, a...) }}
 	rl.gen.Store(&siteGen{st: st, handler: st.Handler(), design: d,
-		designSum: designDigest(d), settingsSum: settingsDigest(root)})
+		designSum: designDigest(d), settingsSum: settingsDigest(root), configSaid: configSays(root)})
 	rl.live = s.GetRef(ref)
 	rl.files = filesState(siteSettingsFiles(root)...)
 	return rl
@@ -397,7 +408,23 @@ func (rl *siteReloader) reload(trigger string) error {
 	var designErr error
 	// The design only with a publish, which the gate has passed, or when
 	// told: see the comment at the top of this file.
-	if trigger != reloadSettings {
+	withDesign := trigger != reloadSettings || rl.designDue
+	refused := func(err error) error {
+		rl.say("  %sthe site was not rebuilt (%s): %v. It is serving what it served "+
+			"before%s\n", yellow, trigger, err, reset)
+		rl.record(trigger, audit.Failure, map[string]string{"why": err.Error()})
+		// The publish's design waits for the next build that succeeds,
+		// rather than for the next publish.
+		rl.designDue = rl.designDue || withDesign
+		return err
+	}
+	says := configSays(rl.root)
+	if cur.configSaid && !says && fileExists(configPath(rl.root)) {
+		return refused(fmt.Errorf("%s is empty, which is how a file looks while it is being "+
+			"written, so the site keeps the settings it has. Write {} to it, or remove it, "+
+			"to put every setting back to its default", configPath(rl.root)))
+	}
+	if withDesign {
 		if d, err := loadDesign(rl.dir); err != nil {
 			designErr = err
 		} else {
@@ -406,14 +433,14 @@ func (rl *siteReloader) reload(trigger string) error {
 	}
 	st, err := rl.build(design, cur.st)
 	if err != nil {
-		rl.say("  %sthe site was not rebuilt (%s): %v. It is serving what it served "+
-			"before%s\n", yellow, trigger, err, reset)
-		rl.record(trigger, audit.Failure, map[string]string{"why": err.Error()})
-		return err
+		return refused(err)
 	}
 	next := &siteGen{st: st, handler: st.Handler(), design: design,
-		designSum: designDigest(design), settingsSum: settingsDigest(rl.root)}
+		designSum: designDigest(design), settingsSum: settingsDigest(rl.root), configSaid: says}
 	rl.gen.Store(next)
+	// Taken, or tried and not readable: a design that does not read waits
+	// for the next publish or SIGHUP, as it did.
+	rl.designDue = false
 
 	detail := map[string]string{
 		"design":   changedOrSame(cur.designSum, next.designSum),
@@ -440,6 +467,23 @@ func (rl *siteReloader) reload(trigger string) error {
 		rl.record(trigger, audit.Success, detail)
 	}
 	return nil
+}
+
+// configSays reports whether the configuration file says anything: it is
+// there and it is not blank.
+//
+// config.Parse reads a blank file as every setting at its default, which is
+// right for a file somebody emptied on purpose and wrong for one caught
+// between being truncated and being written, which is what `>`, `cp` and an
+// editor that writes in place all leave for a moment. A running site that
+// read its settings in that moment lost its classification banner, its
+// Strict-Transport-Security and its security.txt, and recorded the change as
+// a success. So a site built from a configuration that said something does
+// not take a blank one as the next (siteReloader.reload); `{}` or no file at
+// all is how to ask for the defaults.
+func configSays(root string) bool {
+	b, err := os.ReadFile(configPath(root))
+	return err == nil && len(bytes.TrimSpace(b)) > 0
 }
 
 func changedOrSame(before, after string) string {

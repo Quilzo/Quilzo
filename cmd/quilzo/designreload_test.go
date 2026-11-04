@@ -373,6 +373,103 @@ func TestAGuardrailTurnedOnReachesTheChatbotsWithoutARestart(t *testing.T) {
 // reRating is the token an answer's rating form carries.
 var reRating = regexp.MustCompile(`name="t" value="([^"]+)"`)
 
+// A configuration file caught empty is not read as a configuration of
+// nothing but defaults.
+//
+// A file written with `>`, by `cp`, or by an editor that writes in place is
+// empty for a moment before it is whole, and config.Parse reads an empty file
+// as every setting at its default. The site read its settings again whenever
+// the file changed, so a request arriving in that moment rebuilt the site
+// with no classification banner, no Strict-Transport-Security and no
+// security.txt, recorded it as a change of settings that succeeded, and
+// served that until it looked again.
+func TestAConfigurationCaughtEmptyIsNotReadAsNoSettings(t *testing.T) {
+	root, tpl := fontSite(t)
+	for _, kv := range [][2]string{{"site.hsts", "24h"}, {"security.contact", "mailto:security@example.com"},
+		{"marking.levels", "PUBLIC,OFFICIAL"}, {"marking.banner", "OFFICIAL"}} {
+		if err := cmdConfig(root, []string{"set", kv[0], kv[1]}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rl := servedSite(t, root, tpl)
+	protected := func(when string) {
+		t.Helper()
+		w := served(rl, "/")
+		if w.Header().Get("Strict-Transport-Security") != "max-age=86400" ||
+			!strings.Contains(w.Body.String(), "OFFICIAL") ||
+			served(rl, "/.well-known/security.txt").Code != http.StatusOK {
+			t.Fatalf("%s: hsts %q, banner %v, security.txt %d", when,
+				w.Header().Get("Strict-Transport-Security"), strings.Contains(w.Body.String(), "OFFICIAL"),
+				served(rl, "/.well-known/security.txt").Code)
+		}
+	}
+	protected("as started")
+	whole, err := os.ReadFile(configPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Caught empty, and a publish carrying a design arrives meanwhile.
+	if err := os.WriteFile(configPath(root), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	protected("with the file caught empty")
+	if err := cmdTheme(root, []string{"set", "radius", "3px", "--dir", tpl}); err != nil {
+		t.Fatal(err)
+	}
+	editDraft(t, root, "index", "Published while the file was empty.")
+	commitLive(t, root)
+	protected("with a publish while the file was empty")
+	if w := served(rl, "/"); !strings.Contains(w.Body.String(), "Published while the file was empty.") {
+		t.Fatal("the publish was not served while the settings were kept")
+	}
+	recs := actions(t, root, "site.reload")
+	if len(recs) != 2 || recs[0].Outcome != audit.Failure || recs[1].Outcome != audit.Failure ||
+		!strings.Contains(recs[0].Detail["why"], "empty") {
+		t.Fatalf("recorded %+v", recs)
+	}
+
+	// Written whole: the settings are read, and the design the publish
+	// brought comes with them.
+	if err := os.WriteFile(configPath(root), whole, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdConfig(root, []string{"set", "site.hsts", "48h"}); err != nil {
+		t.Fatal(err)
+	}
+	if w := served(rl, "/"); w.Header().Get("Strict-Transport-Security") != "max-age=172800" {
+		t.Fatalf("the settings written whole were not read: %q", w.Header().Get("Strict-Transport-Security"))
+	}
+	if !strings.Contains(served(rl, "/site.css").Body.String(), "--radius: 3px") {
+		t.Fatal("the design published while the settings could not be read never reached readers")
+	}
+
+	// The way back to the defaults, on purpose, still works.
+	if err := os.WriteFile(configPath(root), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if w := served(rl, "/"); w.Header().Get("Strict-Transport-Security") != "" || strings.Contains(w.Body.String(), "OFFICIAL") {
+		t.Fatal("a configuration of {} did not put the settings back to their defaults")
+	}
+}
+
+// A site that started with no settings of its own has none to keep, so an
+// empty configuration file is only what it already had.
+func TestAnEmptyConfigurationIsRefusedOnlyWhenItHidesSettings(t *testing.T) {
+	root, tpl := fontSite(t)
+	_ = os.Remove(configPath(root))
+	rl := servedSite(t, root, tpl)
+	if err := os.WriteFile(configPath(root), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	served(rl, "/")
+	for _, r := range actions(t, root, "site.reload") {
+		if r.Outcome != audit.Success {
+			t.Fatalf("a site with no settings refused an empty file: %+v", r)
+		}
+	}
+}
+
 // The admin sees a face added to templates/fonts/ without a restart.
 //
 // After a face was added, the Design screen said the site "does not serve a

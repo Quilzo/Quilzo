@@ -374,6 +374,16 @@ says why, records `site.reload` as a failure in the audit log, and tries again
 when something changes again. A reload that changed what readers get is recorded
 too, with what triggered it.
 
+That includes a `config.json` caught empty. Writing one with `>`, with `cp`, or
+from an editor that writes in place leaves it empty for a moment, and an empty
+file reads as every setting at its default: the classification banner,
+Strict-Transport-Security and security.txt would go with it. So a site whose
+settings said something does not take an empty file as its next ones; write `{}`
+to it, or remove it, to put every setting back to its default on purpose. The
+chatbots are built again with the settings, so a guardrail set while the site
+runs screens what they answer from at once, and they keep the ratings they
+handed out.
+
 ## Building a whole site from a sentence
 
 A site is a declaration: pages made of sections this program renders, menus,
