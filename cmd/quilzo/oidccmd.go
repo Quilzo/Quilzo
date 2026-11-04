@@ -289,7 +289,8 @@ func oidcStatus(root string) error {
 	}
 	if w.JSON(map[string]any{
 		"configured": true, "issuer": cfg.Issuer, "client_id": cfg.ClientID,
-		"claim": cfg.Claim, "secret_set": secretSet(), "mfa_acr": cfg.MFAACR,
+		"claim": cfg.Claim, "secret_set": secretSet(), "secret_checked_in": secretWhere,
+		"mfa_acr": cfg.MFAACR,
 	}) {
 		return nil
 	}
@@ -301,13 +302,25 @@ func oidcStatus(root string) error {
 		w.Human("  %sunverified addresses are refused%s\n", dim, reset)
 	}
 	w.Human("  %s%s%s\n", dim, secondFactorHint(cfg), reset)
-	if !secretSet() {
-		w.Human("  %s%s is not set%s\n", yellow, oidcSecretEnv, reset)
+	if secretSet() {
+		w.Human("  %s%s is set in this shell; quilzo serve reads it from its own environment%s\n",
+			dim, oidcSecretEnv, reset)
+	} else {
+		w.Human("  %s%s is not set in this shell. quilzo serve reads it from its own environment "+
+			"and does not start without it, so a server started from here would not start%s\n",
+			yellow, oidcSecretEnv, reset)
 	}
 	return nil
 }
 
+// secretSet reports whether the client secret is in this command's
+// environment, which is seldom the server's. oidc status said
+// "QUILZO_OIDC_SECRET is not set" in a shell beside a server that had it
+// and was signing people in, so it says where it looked (secretWhere).
 func secretSet() bool { return os.Getenv(oidcSecretEnv) != "" }
+
+// secretWhere is where secretSet looks, for whoever reads secret_set.
+const secretWhere = "the environment of this command; quilzo serve reads its own"
 
 // oidcCheck talks to the provider and reports what was negotiated.
 //
