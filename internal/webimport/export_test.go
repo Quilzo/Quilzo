@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/feature"
+	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/section"
 )
 
@@ -502,5 +503,71 @@ func TestSameNamesAreNumberedInTimeInProportionToThem(t *testing.T) {
 	}
 	if left != len(s.Pages)-len(p.Pages) || !strings.Contains(strings.Join(b.Notes, "\n"), "page same-9999 was left out") {
 		t.Errorf("%d pages kept, %d named as left out", len(p.Pages), left)
+	}
+}
+
+// A post with a long title is given a link the blog type accepts.
+//
+// The link was clipped at 80 characters by the function that shortens words
+// to read, which ends what it cuts with "…". A post titled at more than 80
+// characters, with no slug of its own, became /post/how-we-rebuilt-…, a link
+// with a character no address should carry, which the blog type's own page
+// link rule refuses: the post could be brought but never saved again.
+func TestALongPostTitleGivesALinkTheBlogTypeAccepts(t *testing.T) {
+	title := "How we rebuilt the oven, the counter and the front window in one winter, " +
+		"and what it taught us about bread"
+	home, _ := url.Parse("https://bakery.example/")
+	old, _ := url.Parse("https://bakery.example/2019/04/oven/")
+	s := &Site{Home: home, Name: "Bakery", From: KindWordPress, Origin: "bakery.xml",
+		Pages: []Page{{URL: home, Title: "Bakery", Blocks: []Block{{Kind: "p", Text: "We bake.", MD: "We bake."}}}},
+		Posts: []Post{{URL: old, Title: title, Published: "2026-10-27",
+			Blocks: []Block{{Kind: "p", Text: "It took a winter.", MD: "It took a winter."}}}}}
+	b, err := Package(s, "", "dana", nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b.Posts) != 1 {
+		t.Fatalf("%d posts brought", len(b.Posts))
+	}
+	post := b.Posts[0].Fields
+	slug, _ := post["slug"].(string)
+	if strings.Contains(slug, "…") || len(slug) > 80 || !strings.HasPrefix(slug, "how-we-rebuilt-the-oven") {
+		t.Errorf("the post's link is %q", slug)
+	}
+	if problems := schema.Validate(feature.BlogPackage().Types[0], post); len(problems) > 0 {
+		t.Errorf("the blog type refuses the post it was brought as: %v", problems)
+	}
+	if len(b.Redirects) == 0 {
+		t.Fatal("no redirect from where the post was")
+	}
+	for _, r := range b.Redirects {
+		if strings.ContainsFunc(r.To, func(c rune) bool { return c > 127 }) {
+			t.Errorf("the post's old address goes to %q", r.To)
+		}
+	}
+}
+
+// A page at a long address is given a name a package may hold.
+//
+// Each part of the address was clipped at 60 characters the same way, ending
+// in "…", so a page at /the-whole-story-of-…-and-more-besides came to a name
+// no page may have.
+func TestALongPageAddressGivesAPageNameAPackageAccepts(t *testing.T) {
+	home, _ := url.Parse("https://bakery.example/")
+	long, _ := url.Parse("https://bakery.example/the-whole-story-of-the-bakery-from-its-first-oven-to-its-latest-loaf/")
+	s := &Site{Home: home, Name: "Bakery", From: KindWordPress, Origin: "bakery.xml",
+		Pages: []Page{
+			{URL: home, Title: "Bakery", Blocks: []Block{{Kind: "p", Text: "We bake.", MD: "We bake."}}},
+			{URL: long, Title: "Our story", Blocks: []Block{{Kind: "p", Text: "Since 1952.", MD: "Since 1952."}}},
+		}}
+	if got := pageName(long); strings.Contains(got, "…") || len(got) > 60 || !strings.HasPrefix(got, "the-whole-story") {
+		t.Errorf("the page at %s is named %q", long, got)
+	}
+	b, err := Package(s, "", "dana", nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Package.Validate(feature.Checks{}); err != nil {
+		t.Errorf("the package refuses the page it was brought as: %v", err)
 	}
 }
