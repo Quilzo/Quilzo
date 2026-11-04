@@ -245,6 +245,74 @@ func TestAModelsDraftNobodyApprovedIsRefusedOnEverySurface(t *testing.T) {
 	}
 }
 
+// A store that asks for two people's approval holds a person's draft on
+// every surface until two people have approved it, and then publishes it
+// on every surface.
+//
+// approval.required_humans is a setting of its own, and its text says "Set
+// to two, nothing publishes without two people". The command line and the
+// machine interface held to it. The browser counted only
+// review.required_approvals, and with that at zero answered "not
+// configured" for anything a person wrote, so Review -> Publish put live a
+// draft nobody had approved.
+func TestTwoPeopleRequiredHoldAPersonsDraftOnEverySurface(t *testing.T) {
+	for _, surface := range publishSurfaces {
+		t.Run(surface.name, func(t *testing.T) {
+			root, tpl, s := approvalDemo(t)
+			if err := cmdConfig(root, []string{"set", "approval.required_humans", "2"}); err != nil {
+				t.Fatal(err)
+			}
+			draft := s.GetRef(site.RefDraft)
+			// Three administrators, people all: dana publishes, and lee and
+			// kim are the two who approve.
+			for _, who := range []string{"dana", "lee", "kim"} {
+				if err := updatePolicyForTest(root, auth.Binding{Principal: who, Role: auth.RoleAdmin, Resource: "/"}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			ts, err := loadTokens(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			secret, _, err := ts.Issue("dana", "dana", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := saveTokens(root, ts); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("QUILZO_TOKEN", secret)
+
+			refusal := surface.publish(t, root, tpl, s)
+			if live := s.GetRef(site.RefLive); live != "" {
+				t.Fatalf("%s put a draft live that the two people the store asks for had not approved", surface.name)
+			}
+			if !strings.Contains(refusal, "approval(s) from people") {
+				t.Fatalf("%s refused, but not for want of two people's approval:\n%s", surface.name, refusal)
+			}
+
+			prop, _, err := proposalFor(root, s, draft)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, who := range []string{"lee", "kim"} {
+				if err := prop.Approve(who, "read it", time.Now()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := saveProposal(root, s, prop); err != nil {
+				t.Fatal(err)
+			}
+			if refusal := surface.publish(t, root, tpl, s); refusal != "" {
+				t.Fatalf("%s refused a draft two people approved:\n%s", surface.name, refusal)
+			}
+			if live := s.GetRef(site.RefLive); live != draft {
+				t.Fatalf("%s: live is %s, not the approved draft %s", surface.name, short(live), short(draft))
+			}
+		})
+	}
+}
+
 // updatePolicyForTest grants a binding in the store's policy file.
 func updatePolicyForTest(root string, b auth.Binding) error {
 	_, err := updatePolicy(root, func(p *auth.Policy) error { return p.Grant(b) })

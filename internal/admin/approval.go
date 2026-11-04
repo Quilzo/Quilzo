@@ -142,7 +142,15 @@ func (s *Server) approvalFor(p principal, draft string) approvalState {
 	if err != nil {
 		return approvalState{Unreadable: err.Error()}
 	}
-	if pol.Required <= 0 && !pol.RequireHumanForAI {
+	// How many are needed, counting the people a policy asks for as well
+	// as the approvals. approval.required_humans is a setting of its own
+	// ("set to two, nothing publishes without two people"), and this asked
+	// only about review.required_approvals: with that at zero a person's
+	// draft published from here unapproved while the command line and the
+	// machine interface refused it, and with it below the people asked for
+	// the screen said "1 of 1" beside a refusal.
+	counted := max(pol.Required, pol.RequiredHumans)
+	if counted <= 0 && !pol.RequireHumanForAI {
 		return approvalState{}
 	}
 
@@ -154,7 +162,7 @@ func (s *Server) approvalFor(p principal, draft string) approvalState {
 		prop = nil
 	}
 
-	need := pol.Required
+	need := counted
 	if need <= 0 {
 		// Only the rule about a model's work applies, and only to a model's
 		// work: one person running their own site publishes their own words
@@ -168,7 +176,7 @@ func (s *Server) approvalFor(p principal, draft string) approvalState {
 		need = 1
 	}
 
-	st := approvalState{Configured: true, Need: need, PersonOnly: pol.Required <= 0}
+	st := approvalState{Configured: true, Need: need, PersonOnly: counted <= 0}
 
 	if prop == nil {
 		st.Why = "Nobody has offered this for review yet."
