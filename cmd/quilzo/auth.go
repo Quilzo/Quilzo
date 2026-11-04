@@ -527,12 +527,17 @@ func authRevoke(root string, args []string) error {
 // something can find out why, and they printed everybody's: every binding in
 // the store, and every token's id, name, role and last use, to a reader whose
 // browser was refused People and Security (127 lines on the reference stack).
-// A reader is still answered, with what is theirs; somebody unverified, whose
-// name is empty, is shown nobody's.
+// A reader is still answered, with what is theirs; somebody unverified is
+// shown nobody's. Their name is their account's on the machine, which is
+// nobody's identity here, and listing by it listed an account named like a
+// principal that principal's rows.
 func listedFor(root string, may auth.Action) (who string, everybody bool) {
 	c := resolveCaller(root, tokenFromArgs(nil))
 	if authorise(root, c, may, "/") == nil {
 		return "", true
+	}
+	if !c.Verified {
+		return "", false
 	}
 	return c.Name, false
 }

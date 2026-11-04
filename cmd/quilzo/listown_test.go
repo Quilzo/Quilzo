@@ -86,3 +86,31 @@ func TestAReaderListsTheirOwnGrantsAndTokens(t *testing.T) {
 		t.Errorf("an administrator's token list:\n%s", out)
 	}
 }
+
+// Somebody who presented no token is listed nobody's rows on a store with
+// access control, whatever their account on the machine is called.
+//
+// listedFor answered with the caller's name, and somebody unverified is named
+// after their account on the machine (resolveCaller), so an account named
+// like a principal was listed that principal's grants and tokens by the
+// lists themselves; only the gate in front of them stopped it.
+func TestSomebodyUnverifiedIsListedNobodysRows(t *testing.T) {
+	isolateToken(t)
+	root := t.TempDir()
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdAuth(root, []string{"grant", "alice", "admin"}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("QUILZO_TOKEN", "")
+	for _, k := range []string{"USER", "USERNAME", "LOGNAME"} {
+		t.Setenv(k, "alice")
+	}
+	if c := resolveCaller(root, ""); c.Verified {
+		t.Fatal("a token was presented after all")
+	}
+	if who, everybody := listedFor(root, auth.ActGrant); everybody || who != "" {
+		t.Fatalf("somebody unverified is listed the rows of %q (everybody's: %v)", who, everybody)
+	}
+}
