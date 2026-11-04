@@ -328,12 +328,13 @@ func TestAHandOffTheReviewerRefusesWaitsForAPerson(t *testing.T) {
 	// Named for the person who decides it, as everything waiting is: a
 	// hand-off has no capability and no tool, which were all a waiting
 	// action was named by, so it was listed, and logged once decided, as
-	// nothing.
+	// nothing. The list says, as the screen does, that the reviewer
+	// refused it.
 	waiting, err := waitingFor(root, asAdmin("dana"), time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(waiting) != 1 || waiting[0].What != "delegate/writer" {
+	if len(waiting) != 1 || waiting[0].What != "delegate/writer, which the reviewer refused" {
 		t.Errorf("the waiting hand-off is listed as %+v", waiting)
 	}
 	_, read := captureStdout(t)

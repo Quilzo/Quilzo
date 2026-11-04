@@ -100,6 +100,7 @@ import (
 	"github.com/quilzo/quilzo/internal/store"
 	"github.com/quilzo/quilzo/internal/theme"
 	"github.com/quilzo/quilzo/internal/tmpl"
+	"github.com/quilzo/quilzo/internal/waiting"
 )
 
 //go:embed assets/*
@@ -271,6 +272,13 @@ type Server struct {
 	// Approvals is dual authorisation: how many people must agree before
 	// anything is published, and who has.
 	Approvals *Approvals
+	// Waiting is everything waiting for a person that the session may
+	// decide, as `quilzo approvals` lists it (internal/waiting): what
+	// Approvals, Today and the assistant's waiting card show. Handed over
+	// so the screens and the command line are one list and not two that
+	// drifted, as they had. Nil builds the list by the same rules from
+	// this server's own hooks.
+	Waiting func(by Actor, now time.Time) ([]waiting.Item, error)
 	// Features reach the feature packages (internal/feature).
 	Features *FeatureHooks
 	// Pay is payments for what the catalogue sells; nil leaves them off.

@@ -221,6 +221,10 @@ func cmdServe(root string, args []string) error {
 	srv.Pay = payHooks(root, signedIn)
 	srv.Bookings = bookingHooks(root, signedIn)
 	srv.Newsletter = newsletterHooks(root, signedIn)
+	// What waits for a person, as `quilzo approvals` lists it for the
+	// session: Approvals, Today and the assistant's waiting card read this
+	// list rather than building one of their own, which drifted from it.
+	srv.Waiting = waitingHook(root, s)
 	srv.FeatureProgram = featureProgram(root)
 	srv.AppRoles = func() ([]auth.AppRole, error) { return appRoles(root) }
 	// Sign-ins are judged as they are made, and the sign-in policy acts on
@@ -1309,6 +1313,15 @@ func cmdServe(root string, args []string) error {
 func sessionCaller(by admin.Actor) *Caller {
 	return &Caller{Name: by.Name, Kind: audit.KindHuman, Verified: true,
 		Role: by.Role, Scope: by.Scope, Limits: by.Limits}
+}
+
+// waitingHook is the command line's list of what waits, for the admin's
+// session, read from the store the server holds rather than one opened
+// again for every page (reviewWaiting says why).
+func waitingHook(root string, s *store.Store) func(admin.Actor, time.Time) ([]waitingItem, error) {
+	return func(by admin.Actor, now time.Time) ([]waitingItem, error) {
+		return waitingIn(root, s, sessionCaller(by), now)
+	}
 }
 
 // upkeepJobs is everything the server does on its timer, around the
