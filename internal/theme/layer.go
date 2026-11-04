@@ -550,7 +550,7 @@ func (c *layerCheck) declaration(d string, selectors []string, forced bool) {
 		c.custom[name] = append(c.custom[name], value)
 	}
 	switch lower {
-	case "outline", "outline-style", "outline-width", "outline-color":
+	case "outline", "outline-style", "outline-width", "outline-color", "all":
 		c.outlines = append(c.outlines, outlineUse{prop: lower, value: value,
 			where: clip(where, 40), decl: clip(d, 60)})
 	}
@@ -606,7 +606,29 @@ func (c *layerCheck) outlineWords(value string, depth int, seen map[string]bool)
 // removesOutline is an outline declaration whose words leave nothing to see:
 // a style of none or hidden, a width of nothing in any unit, or a colour that
 // is no colour at all.
+//
+// And the cascade's own keywords, which do it without saying so: initial and
+// unset give the outline its starting style, which is none; inherit gives it
+// the parent's, which is none on everything that is not focused; and `all`
+// resets the outline along with everything else. `.btn { all: unset }` comes
+// after the shipped :focus-visible rule at the same specificity, and wins.
+// revert goes back to the browser's own, which draws a ring.
 func removesOutline(prop string, words []string) bool {
+	switch prop {
+	case "all":
+		for _, w := range words {
+			if w == "initial" || w == "unset" || w == "inherit" {
+				return true
+			}
+		}
+		return false
+	case "outline", "outline-style":
+		for _, w := range words {
+			if w == "initial" || w == "unset" || w == "inherit" {
+				return true
+			}
+		}
+	}
 	if prop == "outline-color" {
 		// Only a colour that is wholly transparent: one mixed with it, a
 		// translucent ring, is still a ring.

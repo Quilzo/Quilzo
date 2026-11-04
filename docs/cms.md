@@ -330,8 +330,8 @@ named colours, and the system colours only inside
 `/fonts/`, there is no `@import`, no `!important` (the reduced-motion and
 forced-colours rules underneath are `!important` so nothing outvotes them), no
 redefining a token, no taking away the focus outline (a zero width in any
-unit, `none` anywhere in it, or a custom property of the layer's that says
-either), and at most 64 KiB. Nor anything a browser would read differently
+unit, `none` anywhere in it, `initial`, `unset` or `inherit`, an `all` reset,
+or a custom property of the layer's that says any of these), and at most 64 KiB. Nor anything a browser would read differently
 from the check: a string that runs over a line break, a comment or a quote
 mark inside an address with no quotes round it, a `{ }` block in a custom
 property, a declaration whose property is not a name, or a control

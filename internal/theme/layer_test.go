@@ -236,3 +236,35 @@ func TestTheFocusOutlineCannotBeTakenAwayAnyWay(t *testing.T) {
 		}
 	}
 }
+
+// The cascade's own keywords take the ring away as surely as "none" does.
+// initial and unset are the outline's starting value, which is none; inherit
+// is the parent's, which is none on everything not focused; and all resets
+// the outline with everything else — `.btn { all: unset }` comes after the
+// shipped :focus-visible rule at the same specificity, and wins.
+func TestTheCascadeKeywordsCannotTakeTheOutlineAway(t *testing.T) {
+	th, _ := New(nil, nil)
+	for _, css := range []string{
+		"a:focus-visible { outline: initial; }",
+		"a:focus-visible { outline: unset; }",
+		"a:focus-visible { outline: inherit; }",
+		"a:focus-visible { outline-style: unset; }",
+		".btn { all: unset; }",
+		".btn { all: initial; }",
+		".btn { all: inherit; }",
+		":root { --reset: unset; } .btn { all: var(--reset); }",
+	} {
+		if !Blocks(CheckLayer(css, th)) {
+			t.Errorf("%q was accepted", css)
+		}
+	}
+	for _, css := range []string{
+		".btn { all: revert; }",
+		"a:focus-visible { outline: auto; }",
+		"a:focus-visible { outline-color: inherit; outline-width: initial; }",
+	} {
+		if f := CheckLayer(css, th); Blocks(f) {
+			t.Errorf("%q was refused: %v", css, f)
+		}
+	}
+}
