@@ -243,10 +243,12 @@ func TestWritesAreOffByDefault(t *testing.T) {
 // The read-only API's 405 said to run `quilzo serve --api-writable`, and
 // serve has no such flag: it exits "flag provided but not defined". Writes
 // are `quilzo site --api --api-writable`; --api-writable alone serves no API
-// at all. The records API said `quilzo site --api-writable`, and a search
-// for similar pages on a server without a vector index said `quilzo site
-// --vectors`, which is not a flag either: the site builds the index whenever
-// it serves the API.
+// at all. The records API said `quilzo site --api-writable`, and then `quilzo
+// site --api --api-writable`, and the site serves no records with any flags:
+// it answers "this server does not serve records". Records are written
+// through the admin's API, `quilzo serve`. A search for similar pages on a
+// server without a vector index said `quilzo site --vectors`, which is not a
+// flag either: the site builds the index whenever it serves the API.
 func TestARefusalNamesACommandThatWorks(t *testing.T) {
 	s, _, tok := setup(t)
 	s.Records = &Records{Tree: func() (string, error) { return "", nil }}
@@ -257,8 +259,8 @@ func TestARefusalNamesACommandThatWorks(t *testing.T) {
 	}{
 		{"PUT", "/api/v1/pages/index", map[string]any{"title": "x"}, "quilzo site --api --api-writable"},
 		{"POST", "/api/v1/records/samples", map[string]any{"fields": map[string]any{"a": "b"}},
-			"quilzo site --api --api-writable"},
-		{"DELETE", "/api/v1/records/samples/" + strings.Repeat("a", 32), nil, "quilzo site --api --api-writable"},
+			"quilzo serve"},
+		{"DELETE", "/api/v1/records/samples/" + strings.Repeat("a", 32), nil, "quilzo serve"},
 		{"GET", "/api/v1/similar/index", nil, "quilzo site --api"},
 	} {
 		w := req(t, s, c.method, c.path, tok, c.body, map[string]string{"If-Match": "*"})

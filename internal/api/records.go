@@ -37,6 +37,12 @@ type Records struct {
 	Writable bool
 }
 
+// recordsWritableFix is the command line whose API writes records, for a
+// refusal of a record write to name. Not the site's: it serves no records,
+// with --api-writable or without, so the `quilzo site --api --api-writable`
+// this named answered "this server does not serve records".
+const recordsWritableFix = "quilzo serve"
+
 func (s *Server) recordsEnabled(w http.ResponseWriter) bool {
 	if s.Records == nil || s.Records.Tree == nil {
 		writeError(w, http.StatusNotFound, Error{
@@ -246,7 +252,7 @@ func (s *Server) writeRecord(w http.ResponseWriter, r *http.Request, name, id st
 	if !s.Records.Writable {
 		writeError(w, http.StatusMethodNotAllowed, Error{
 			Error: "this API is read-only",
-			Fix:   writableFix,
+			Fix:   recordsWritableFix,
 		})
 		return
 	}
@@ -367,7 +373,7 @@ func (s *Server) writeRecord(w http.ResponseWriter, r *http.Request, name, id st
 func (s *Server) deleteRecord(w http.ResponseWriter, r *http.Request, name, id string) {
 	if !s.Records.Writable {
 		writeError(w, http.StatusMethodNotAllowed, Error{
-			Error: "this API is read-only", Fix: writableFix})
+			Error: "this API is read-only", Fix: recordsWritableFix})
 		return
 	}
 	if err := s.may(r, auth.ActEditDraft, auth.DataResource(name)); err != nil {

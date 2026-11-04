@@ -658,9 +658,9 @@ func (s *Server) get(w http.ResponseWriter, r *http.Request, name string) {
 	writeJSON(w, http.StatusOK, p)
 }
 
-// writableFix is the command line that turns writes on, for every refusal of
-// a write on a read-only API to name. --api-writable alone serves no API: it
-// takes --api with it.
+// writableFix is the command line that turns page writes on, for a refusal
+// of one on a read-only API to name. --api-writable alone serves no API: it
+// takes --api with it. Records are written elsewhere (recordsWritableFix).
 const writableFix = "quilzo site --api --api-writable"
 
 func (s *Server) put(w http.ResponseWriter, r *http.Request, name string) {
