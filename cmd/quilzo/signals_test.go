@@ -866,6 +866,44 @@ func TestAnEventReachesOnlySessionsOpenedBeforeIt(t *testing.T) {
 	}
 }
 
+// A session that proved it is its person after a compromise was reported
+// is not held again when the same event is sent again after a restart. It
+// was held once more, and its person had to prove it again as often as the
+// event was sent in the three days it is accepted.
+func TestACompromiseSentAgainDoesNotHoldASessionThatProvedItSince(t *testing.T) {
+	c := signalsStore(t, "email")
+	c.connect(t, "oidc")
+	iat := time.Now().Add(-time.Hour)
+	passkey := session(t, c.root, "passkey:old", "ada@example.com", auth.MethodPasskey)
+	backdate(t, c.root, "passkey:old", iat.Add(-10*time.Minute))
+	compromised := c.tx.event(t, riscEvent+"credential-compromise", email("ada@example.com"), nil, iat)
+	if w := c.push(t, compromised); w.Code != http.StatusAccepted {
+		t.Fatalf("%d", w.Code)
+	}
+	if stepUpOf(c.root, passkey) == "" {
+		t.Fatal("the passkey session open when it was reported is not held")
+	}
+	ts, _ := loadTokens(c.root)
+	for _, tok := range ts.Snapshot() {
+		if tok.Name == "passkey:old" {
+			if err := ts.ClearStepUp(tok.ID); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := saveTokens(c.root, ts); err != nil {
+		t.Fatal(err)
+	}
+
+	c.restart(t)
+	if w := c.push(t, compromised); w.Code != http.StatusAccepted {
+		t.Fatalf("sent again: %d", w.Code)
+	}
+	if held := stepUpOf(c.root, passkey); held != "" {
+		t.Errorf("sent again after a restart, the compromise held the session that had proved it since: %q", held)
+	}
+}
+
 // An account-disabled older than an account-enabled already acted on is a
 // retry that arrived late, and the person the provider enabled since stays
 // enabled, after a restart and with the stream turned off and connected

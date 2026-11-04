@@ -536,10 +536,20 @@ func endProviderSessions(root, principal, provider string, before, now time.Time
 	return n, saveTokens(root, ts)
 }
 
+// provedSince reports whether a session confirmed it is its person at or
+// after a moment.
+func provedSince(t auth.Token, since time.Time) bool {
+	return t.StepUpCleared >= since.UnixNano()
+}
+
 // stepUpAfterCompromise ends the provider's sessions for somebody whose
 // credential it reports compromised, and holds every other session they
 // had open when it was reported until they prove it is them: a passkey, or
-// a fresh sign-in at a provider that has dealt with it.
+// a fresh sign-in at a provider that has dealt with it. A session that has
+// proved it since is one its person vouched for after the event, as a
+// session opened since is: the same event sent again after a restart held
+// it once more, and its person had to prove it again as often as the event
+// was sent.
 func stepUpAfterCompromise(root, principal, provider string, before, now time.Time) (ended, held int, err error) {
 	if ended, err = endProviderSessions(root, principal, provider, before, now); err != nil {
 		return 0, 0, err
@@ -550,7 +560,7 @@ func stepUpAfterCompromise(root, principal, provider string, before, now time.Ti
 	}
 	for _, t := range ts.Snapshot() {
 		if t.Revoked || !t.IsSession() || t.Expired(now) || !strings.EqualFold(t.Principal, principal) ||
-			!openedBefore(t, before) {
+			!openedBefore(t, before) || provedSince(t, before) {
 			continue
 		}
 		if ts.RequireStepUp(t.ID, "the identity provider reported their credential compromised") == nil {

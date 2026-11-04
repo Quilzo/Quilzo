@@ -2144,8 +2144,9 @@ What keeps that from being turned against the site:
   by hand, from the provider's own log of whom it disabled.
 - A session opened after an event was issued, give or take two minutes for
   the clocks, is one the provider vouched for since, and the event does not
-  reach it: the same event sent again, after a restart has forgotten it was
-  seen, ends nothing new.
+  reach it; nor does a compromise hold again a session that has confirmed it
+  is its person since. The same event sent again, after a restart has
+  forgotten it was seen, ends and holds nothing new.
 - An account-enabled older than the last event acted on for that person is
   refused, after a restart too, so a replay cannot lift a newer suspension. An
   account-disabled or account-purged older than the last account-enabled acted
