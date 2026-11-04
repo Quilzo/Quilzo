@@ -69,7 +69,12 @@ func (s *Server) handleDesignLayer(w http.ResponseWriter, r *http.Request) {
 		s.designRedirect(w, r, "", "this build cannot write the style layer")
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, theme.MaxLayer+16<<10)
+	// Three times the bound, because a form sends a brace, a colon, a
+	// semicolon and a line break as three bytes each, and CSS is mostly
+	// those. At the bound alone a sixty-kibibyte layer the terminal takes was
+	// refused here as too large. The layer itself is held to MaxLayer by
+	// CheckLayer below, so this bounds what is read, not what is allowed.
+	r.Body = http.MaxBytesReader(w, r.Body, 3*theme.MaxLayer+16<<10)
 	if err := r.ParseForm(); err != nil {
 		s.designRedirect(w, r, "", fmt.Sprintf("the layer is too large: at most %d KiB", theme.MaxLayer/1024))
 		return

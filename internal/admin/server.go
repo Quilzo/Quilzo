@@ -4550,11 +4550,9 @@ func (s *Server) shieldable(target string, next http.Handler) http.Handler {
 	})
 }
 
-// themeBlockers are the theme's blocking contrast failures, as reports: the
-// same arithmetic the command line's publish gate runs, skipped only for a
-// hand-written stylesheet this program cannot read.
 // backdropFindings is what would be unreadable over a backdrop with this
-// site's veil, or nothing when the theme is not in effect.
+// site's veil, or nothing when the theme is not in effect. A theme that cannot
+// be read is refused by themeBlockers, so nothing here passes in its place.
 func (s *Server) backdropFindings() []theme.Finding {
 	if s.DesignSet == nil || s.DesignSet.Tokens == nil {
 		return nil
@@ -4570,6 +4568,9 @@ func (s *Server) backdropFindings() []theme.Finding {
 	return th.CheckBackdrop()
 }
 
+// themeBlockers are the theme's blocking contrast failures, as reports: the
+// same arithmetic the command line's publish gate runs, skipped only for a
+// hand-written stylesheet this program cannot read.
 func (s *Server) themeBlockers() []*a11y.Report {
 	if s.DesignSet == nil || s.DesignSet.Tokens == nil {
 		return nil

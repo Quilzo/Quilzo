@@ -16,6 +16,7 @@ import (
 	"github.com/quilzo/quilzo/internal/section"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/starter"
+	"github.com/quilzo/quilzo/internal/theme"
 )
 
 // withLayer gives a faked design a style layer the screen can read and write.
@@ -178,4 +179,33 @@ func mustLayouts(t *testing.T) render.Layouts {
 		t.Fatal(err)
 	}
 	return l
+}
+
+// A layer inside the size bound saves from the browser however much of it a
+// form has to encode.
+//
+// The body was bounded at the layer's size and sixteen kibibytes more, and a
+// form sends every brace, colon, semicolon and line break as three bytes. So
+// a sixty-kibibyte layer that `quilzo theme layer set` takes was refused here
+// as too large, with the screen saying the bound it was inside.
+func TestALayerInsideTheBoundSavesFromTheBrowser(t *testing.T) {
+	srv, token := setup(t)
+	designFake(srv, map[string]string{})
+	layer := ""
+	withLayer(srv, &layer)
+	big := strings.Repeat(".a { color: var(--primary); }\n", 2000)
+	if len(big) > theme.MaxLayer {
+		t.Fatalf("the fixture is %d bytes, over the bound", len(big))
+	}
+	w := postForm(t, srv, "/design/layer", token, "layer="+url.QueryEscape(big))
+	if layer != big {
+		t.Errorf("a %d-byte layer was not saved: %s", len(big), w.Header().Get("Location"))
+	}
+	// Past the bound is still refused, and nothing is read without end.
+	over := strings.Repeat(".a { color: var(--primary); }\n", 3*theme.MaxLayer/30)
+	layer = ""
+	postForm(t, srv, "/design/layer", token, "layer="+url.QueryEscape(over))
+	if layer != "" {
+		t.Error("a layer three times the bound was saved")
+	}
 }
