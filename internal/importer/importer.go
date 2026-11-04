@@ -44,7 +44,6 @@
 package importer
 
 import (
-	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"html"
@@ -53,6 +52,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/export"
 	"github.com/quilzo/quilzo/internal/seo"
 )
 
@@ -73,7 +73,7 @@ const (
 const MaxBytes = 256 << 20
 
 // MaxPages bounds how many pages one import may create.
-const MaxPages = 20000
+const MaxPages = export.MaxPages
 
 // Page is one imported page, in quilzo's own shape.
 type Page struct {
@@ -144,57 +144,17 @@ func Import(src Source, r io.Reader, now time.Time) (*Report, error) {
 	return nil, fmt.Errorf("unknown source %q; try wordpress, markdown or json", src)
 }
 
-// jsonCollection reads the shape the JSON exporter writes for a collection.
+// jsonCollection reads the shape the JSON exporter writes for a collection,
+// and false for anything else.
 //
-// Returns false rather than an error for anything else, so the page shapes
-// below still get their turn. It only claims a document that has both keys and
-// an array of objects carrying ids — a document with a stray "collection"
-// field is not one of these.
+// The export reads its own files now (export.ReadCollection), so this is a
+// wrapper over it, kept for whatever in this package reaches for it.
 func jsonCollection(body []byte) (*Report, bool) {
-	var doc struct {
-		Collection string `json:"collection"`
-		Records    []struct {
-			ID      string         `json:"id"`
-			Fields  map[string]any `json:"fields"`
-			Created int64          `json:"created"`
-			Updated int64          `json:"updated"`
-		} `json:"records"`
-	}
-	if err := json.Unmarshal(body, &doc); err != nil {
+	c, ok := export.ReadCollection(body)
+	if !ok {
 		return nil, false
 	}
-	if doc.Collection == "" || doc.Records == nil {
-		return nil, false
-	}
-
-	rep := &Report{Source: JSON, Collection: doc.Collection}
-	for i, r := range doc.Records {
-		if len(rep.Records) >= MaxPages {
-			rep.Skipped = append(rep.Skipped, "stopped at the record limit")
-			break
-		}
-		if r.ID == "" {
-			// Refused rather than given a fresh id. A record whose identity
-			// was invented on import is no longer the record anything else
-			// links to, and the broken relation is found by a reader.
-			rep.Skipped = append(rep.Skipped, fmt.Sprintf(
-				"record %d has no id, so nothing that links to it would still "+
-					"find it", i+1))
-			continue
-		}
-		if r.Fields == nil {
-			rep.Skipped = append(rep.Skipped, fmt.Sprintf(
-				"record %q has no fields", r.ID))
-			continue
-		}
-		rep.Records = append(rep.Records, Record{
-			ID: r.ID, Fields: r.Fields, Created: r.Created, Updated: r.Updated,
-		})
-	}
-	sort.Slice(rep.Records, func(i, j int) bool {
-		return rep.Records[i].ID < rep.Records[j].ID
-	})
-	return rep, true
+	return jsonReport(c), true
 }
 
 // Detect guesses the format from the bytes, so the common case needs no flag.
@@ -266,7 +226,7 @@ func importWXR(body []byte, now time.Time) (*Report, error) {
 		return nil, fmt.Errorf("this does not parse as a WordPress export: %w", err)
 	}
 
-	named := newNames()
+	named := export.NewNames()
 	unchanged := 0
 	for _, item := range doc.Channel.Items {
 		if len(rep.Pages) >= MaxPages {
@@ -303,7 +263,7 @@ func importWXR(body []byte, now time.Time) (*Report, error) {
 			rep.Skipped = append(rep.Skipped, "an item with no title or slug")
 			continue
 		}
-		name = named.claim(name)
+		name = named.Claim(name)
 
 		text, links, images, dropped := flattenHTML(item.Content)
 		rep.Media = append(rep.Media, images...)
@@ -511,186 +471,43 @@ func importMarkdown(body []byte, now time.Time) (*Report, error) {
 
 // -- JSON --------------------------------------------------------------------
 
+// importJSON reads a JSON array or object of pages, or a collection's file.
+//
+// What the JSON export writes is read by the export itself (export.Read), so
+// the format and its reader are one package's promise; this reads it through
+// that, and the shapes a headless system writes go the same way.
 func importJSON(body []byte, now time.Time) (*Report, error) {
-	rep := &Report{Source: JSON}
+	c, err := export.Read(export.JSON, body)
+	if err != nil {
+		return nil, err
+	}
+	return jsonReport(c), nil
+}
 
-	// A collections file first, because it is unambiguous: nothing else this
-	// importer reads has a top-level "collection" name beside a "records"
-	// array. Checked before the page shapes so a catalogue is never imported
-	// as a set of pages named "collection" and "records".
-	if rec, ok := jsonCollection(body); ok {
-		return rec, nil
+// jsonReport is what the export read, as this package reports it.
+func jsonReport(c *export.Content) *Report {
+	rep := &Report{Source: JSON, Collection: c.Collection, Skipped: c.Skipped}
+	for _, p := range c.Pages {
+		rep.Pages = append(rep.Pages, Page(p))
 	}
-
-	// Every page is numbered from the name it shares with one before it, as
-	// the other formats are. Nothing was: two pages titled "Same" read as two
-	// pages named "same", and both imports write pages by name, so the second
-	// replaced the first and a page was lost without a word.
-	named := newNames()
-
-	var asArray []map[string]any
-	if err := json.Unmarshal(body, &asArray); err == nil {
-		for i, item := range asArray {
-			if len(rep.Pages) >= MaxPages {
-				rep.Skipped = append(rep.Skipped, "stopped at the page limit")
-				break
-			}
-			// An array carries no names, so "page-3" is a last resort and a
-			// title is a better guess than a position.
-			p, err := jsonPage(item, fmt.Sprintf("page-%d", i+1), false)
-			if err != nil {
-				rep.Skipped = append(rep.Skipped, fmt.Sprintf("item %d: %v", i+1, err))
-				continue
-			}
-			rep.Pages = append(rep.Pages, named.page(p))
-		}
-		if len(rep.Pages) == 0 {
-			return nil, fmt.Errorf("the array contained no importable pages")
-		}
-		return rep, nil
+	for _, r := range c.Records {
+		rep.Records = append(rep.Records, Record(r))
 	}
-
-	var asMap map[string]any
-	if err := json.Unmarshal(body, &asMap); err != nil {
-		return nil, fmt.Errorf("this is not JSON: %w", err)
-	}
-	// A map of name -> page is the other common shape.
-	//
-	// Its keys are unique, but two of them can still come to one name
-	// ("About Us" and "about-us"). A key that is already its own name claims
-	// it first, so the page that was exactly where it said keeps its place
-	// and the other is numbered; each group goes in key order, so which one
-	// is numbered does not change from one run to the next.
-	keys := make([]string, 0, len(asMap))
-	for name := range asMap {
-		keys = append(keys, name)
-	}
-	sort.SliceStable(keys, func(i, j int) bool {
-		if a, b := slug(keys[i]) == keys[i], slug(keys[j]) == keys[j]; a != b {
-			return a
-		}
-		return keys[i] < keys[j]
-	})
-	for _, name := range keys {
-		v := asMap[name]
-		item, ok := v.(map[string]any)
-		if !ok {
-			rep.Skipped = append(rep.Skipped, fmt.Sprintf(
-				"%q is a %T, not a page object", name, v))
-			continue
-		}
-		// A map's key is the page's identity, not a fallback.
-		//
-		// This is what makes an export re-importable. The exporter writes
-		// {"index": {"title": "Home"}}, and preferring the title over the key
-		// imported it as "home" — so a round trip renamed every page whose
-		// title was not its name, and the front page in particular became
-		// unreachable because / serves whatever is called "index".
-		//
-		// "there is no lock-in here, and this is how it is proved" is a claim
-		// this tool makes in its own help text. It has to survive the round
-		// trip exactly, or it is not proved.
-		p, err := jsonPage(item, name, true)
-		if err != nil {
-			rep.Skipped = append(rep.Skipped, fmt.Sprintf("%q: %v", name, err))
-			continue
-		}
-		rep.Pages = append(rep.Pages, named.page(p))
-	}
-	sort.Slice(rep.Pages, func(i, j int) bool {
-		return rep.Pages[i].Name < rep.Pages[j].Name
-	})
-	if len(rep.Pages) == 0 {
-		return nil, fmt.Errorf("no importable pages found")
-	}
-	return rep, nil
+	return rep
 }
 
 // jsonPage converts one object. authoritative says whether the given name is
 // the page's identity — true when it came from a map key, false when it is a
 // positional placeholder for an array element.
+//
+// A wrapper over export.ReadPage, which the export's reader names its pages
+// with, kept for whatever in this package reaches for it.
 func jsonPage(item map[string]any, given string, authoritative bool) (Page, error) {
-	fields := map[string]any{}
-	var dropped []string
-	for k, v := range item {
-		switch v.(type) {
-		case string, float64, bool, nil:
-			fields[k] = v
-		case []any:
-			fields[k] = v
-		default:
-			// A nested object has nowhere to go: content types are flat, which
-			// is what keeps validation bounded. Reported rather than flattened
-			// into keys nobody declared.
-			dropped = append(dropped, k+" (nested object)")
-		}
-	}
-	name := ""
-	if authoritative {
-		name = slug(given)
-	}
-	if name == "" {
-		name = slug(str(fields["slug"]))
-	}
-	if name == "" {
-		name = slug(str(fields["name"]))
-	}
-	if name == "" {
-		name = slug(str(fields["title"]))
-	}
-	if name == "" {
-		name = slug(given)
-	}
-	if name == "" {
-		return Page{}, fmt.Errorf("no usable name")
-	}
-	sort.Strings(dropped)
-	return Page{Name: name, Fields: fields, Dropped: dropped}, nil
+	p, err := export.ReadPage(item, given, authoritative)
+	return Page(p), err
 }
 
 // -- shared ------------------------------------------------------------------
-
-// names gives each page of an import a name no page before it has.
-//
-// A name taken is numbered from the name the pages share: same, same-2,
-// same-3. Each used to be numbered from the name the one before it was given,
-// so the thousandth "same" was same-2-3-4-…-1000, found by building every name
-// before it: 10,000 same-titled items took seven minutes of CPU to import.
-// next keeps, for a name taken, the number to try first, since every one
-// below it is taken (as webimport's postSlugs keeps it).
-type names struct {
-	taken map[string]bool
-	next  map[string]int
-}
-
-func newNames() *names {
-	return &names{taken: map[string]bool{}, next: map[string]int{}}
-}
-
-// claim returns base, or base numbered if a page before it has that name.
-func (n *names) claim(base string) string {
-	name := base
-	for k := max(2, n.next[base]); n.taken[name]; k++ {
-		name = fmt.Sprintf("%s-%d", base, k)
-		n.next[base] = k + 1
-	}
-	n.taken[name] = true
-	return name
-}
-
-// page claims p's name, and when it had to be numbered its own slug field
-// follows it: a page renamed so as not to replace another must not still
-// claim the other's address.
-func (n *names) page(p Page) Page {
-	name := n.claim(p.Name)
-	if name != p.Name {
-		p.Name = name
-		if _, ok := p.Fields["slug"].(string); ok {
-			p.Fields["slug"] = name
-		}
-	}
-	return p
-}
 
 // flattenHTML turns markup into text, pulling out what is worth keeping.
 //
@@ -869,28 +686,8 @@ func collapse(s string) string {
 }
 
 // slug produces a name that is safe as a page name and readable as a URL.
-func slug(s string) string {
-	s = strings.ToLower(strings.TrimSpace(s))
-	var b strings.Builder
-	lastDash := true
-	for _, r := range s {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			b.WriteRune(r)
-			lastDash = false
-		case r == '-' || r == ' ' || r == '_' || r == '/' || r == '.':
-			if !lastDash && b.Len() > 0 {
-				b.WriteByte('-')
-				lastDash = true
-			}
-		}
-	}
-	out := strings.Trim(b.String(), "-")
-	if len(out) > 80 {
-		out = strings.Trim(out[:80], "-")
-	}
-	return out
-}
+// It is export.Slug, the one rule every page an import names is held to.
+func slug(s string) string { return export.Slug(s) }
 
 func str(v any) string {
 	s, _ := v.(string)

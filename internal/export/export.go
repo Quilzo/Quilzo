@@ -280,8 +280,14 @@ func exportMarkdown(s Site) ([]File, error) {
 			}
 			front = append(front, k+": "+v)
 		}
-		if t, ok := s.Changed[name]; ok && !t.IsZero() {
-			front = append(front, "date: "+t.UTC().Format("2006-01-02"))
+		// The day it last changed, unless the page has a date of its own: an
+		// event's day, say. Both were written, so the file gave the key twice,
+		// which a YAML reader refuses and the rest read as whichever came
+		// last, and the page could not be read back.
+		if _, own := fields["date"]; !own {
+			if t, ok := s.Changed[name]; ok && !t.IsZero() {
+				front = append(front, "date: "+t.UTC().Format("2006-01-02"))
+			}
 		}
 		// The page's own name, so a re-import gets it back.
 		//
