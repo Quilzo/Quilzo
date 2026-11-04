@@ -477,3 +477,38 @@ func TestComposeKeepsTheAuditLogOutOfTheCMSsReach(t *testing.T) {
 	}
 }
 
+// Finding STACK-F9. An image built as documented answered "quilzo dev": the
+// Dockerfile takes the version as a build argument and passes it to the
+// linker, and nothing that told people how to build one passed it. The
+// reference can run an image built here, under a name of its own rather than
+// the release's, and the README's build passes the version.
+func TestComposeRunsAnImageThatKnowsItsVersion(t *testing.T) {
+	df := read(t, "Dockerfile")
+	stages := regexp.MustCompile(`(?m)^FROM\s`).Split(df, -1)
+	if len(stages) < 3 {
+		t.Fatal("the Dockerfile has no separate build stage")
+	}
+	build := stages[1]
+	arg := strings.Index(build, "ARG VERSION")
+	use := strings.Index(build, "-X main.version=$VERSION")
+	if arg < 0 || use < 0 || use < arg {
+		t.Error("the build stage does not declare ARG VERSION before passing it to -X main.version, " +
+			"and a build argument nothing declares is discarded without a word")
+	}
+	for name, s := range quilzoServices(t) {
+		img, _ := s["image"].(string)
+		if !strings.HasPrefix(img, "${QUILZO_IMAGE:-ghcr.io/quilzo/quilzo}:") || !strings.Contains(img, "${QUILZO_VERSION") {
+			t.Errorf("%s runs %q: an image built here can only be run under the release's own name", name, img)
+		}
+	}
+	readme := read(t, "deploy/README.md")
+	if !regexp.MustCompile(`docker build --build-arg VERSION=\S+ -t \S+`).MatchString(readme) {
+		t.Error("the README does not show how to build an image that knows its version")
+	}
+	for _, v := range []string{"QUILZO_IMAGE", "QUILZO_VERSION"} {
+		if !strings.Contains(read(t, "deploy/compose.env.example"), v+"=") {
+			t.Errorf("compose.env.example does not say %s can be set", v)
+		}
+	}
+}
+

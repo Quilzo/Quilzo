@@ -38,7 +38,10 @@ name: quilzo
 # replaces a service's command: a --root written in it went with it, and every
 # setup step looked for a store in the read-only working directory instead.
 x-quilzo: &quilzo
-  image: ghcr.io/quilzo/quilzo:${QUILZO_VERSION:-latest}
+  # The release's image by default. QUILZO_IMAGE names one you built
+  # yourself (deploy/README.md), under a name of its own: an image built here
+  # and tagged as the release's would be taken for it.
+  image: ${QUILZO_IMAGE:-ghcr.io/quilzo/quilzo}:${QUILZO_VERSION:-latest}
   restart: unless-stopped
   read_only: true
   cap_drop: [ALL]

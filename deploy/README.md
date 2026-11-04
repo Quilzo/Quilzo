@@ -56,6 +56,16 @@ What each one is for:
 - `up -d` starts everything, and `restart: unless-stopped` brings it back
   after a reboot.
 
+To run an image you built from this checkout rather than a release, build
+it with the version it is, so that `quilzo version` and the bill of
+materials inside it say so (without `--build-arg VERSION` it is "dev"),
+then name it in `.env`:
+
+```bash
+docker build --build-arg VERSION=v0.3.0 -t quilzo:0.3.0 ..
+# and in .env: QUILZO_IMAGE=quilzo and QUILZO_VERSION=0.3.0
+```
+
 ### Commands once there is an administrator
 
 From `init --admin` on, the store asks every command who is asking. Give a
