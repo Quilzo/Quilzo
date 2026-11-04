@@ -169,13 +169,24 @@ func (st *Site) actWait(w http.ResponseWriter, r *http.Request, a assistant.Assi
 	h.Set("Cache-Control", "no-store")
 	h.Set("X-Content-Type-Options", "nosniff")
 	allowFraming(h, a.Embed, panel)
-	if !answered || res.State == chatact.Working {
+	switch {
+	case !answered || res.State == chatact.Working:
 		// The page asks again in a few seconds, without script.
 		h.Set("Refresh", "3")
+	case res.State == chatact.Waiting:
+		// A person decides first, which takes minutes or a day rather than
+		// seconds, so it asks less often; and the page links to itself, the
+		// one address that leads to this request's answer, for a visitor
+		// who comes back to it later.
+		h.Set("Refresh", "30")
+	}
+	again := "/ask/" + a.Name + "/act/" + id
+	if embedded {
+		again += "?embed=" + r.URL.Query().Get("embed")
 	}
 	_ = actTemplate.Execute(w, map[string]any{"A": a, "R": res, "Answered": answered && res.State != chatact.Working,
 		"Embedded": embedded, "Person": res.State == chatact.Person, "Failed": res.State == chatact.Failed,
-		"Lang": st.siteLang()})
+		"Waiting": res.State == chatact.Waiting, "Again": again, "Lang": st.siteLang()})
 }
 
 var actTemplate = template.Must(template.New("act").Parse(`<!doctype html>
@@ -189,6 +200,8 @@ var actTemplate = template.Must(template.New("act").Parse(`<!doctype html>
 <body class="qz-ask{{if .Embedded}} qz-embed{{end}}"><main>
 {{if .Embedded}}<p class="qz-embed-title">{{.A.Title}}</p>{{else}}<h1>{{.A.Title}}</h1>{{end}}
 {{if not .Answered}}<p class="qz-waiting" role="status" aria-live="polite">Working on it. This page shows the answer when it is ready.</p>
+{{else if .Waiting}}<p class="qz-greeting" role="status" aria-live="polite">A person needs to look at this, and will. You do not need to ask again: once they have, the answer is shown on this page.</p>
+<p class="qz-actions"><a class="qz-button-quiet" href="{{.Again}}">Check again</a></p>
 {{else if .Person}}<p class="qz-greeting" role="status">A person needs to look at this, and will. You do not need to ask again.</p>
 {{else if .Failed}}<p class="qz-problem" role="alert">This could not be done just now. You could try again later, or ask a person.</p>
 {{else}}<section class="qz-answer" aria-label="Answer"><p>{{.R.Answer}}</p></section>{{end}}
