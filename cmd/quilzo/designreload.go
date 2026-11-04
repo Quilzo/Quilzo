@@ -515,9 +515,15 @@ func (rl *siteReloader) record(trigger string, outcome audit.Outcome, detail map
 // signals being counted, sign-in ceremonies in progress, the chatbots' keys
 // for the ratings they handed out and the ones already used, and which pages
 // are new to them, the newsletter's count of mail sent this hour, and the
-// fediverse queue with the loop that empties it. A part turned off by the new settings stays off
-// (nil): turning something off takes effect at once. A part turned on is
-// new.
+// fediverse queue with the loop that empties it. A part turned off by the
+// new settings stays off (nil): turning something off takes effect at once.
+// A part turned on is new.
+//
+// The fediverse is the exception, and the documentation says so: it is the
+// one started with the process, whatever the settings say now, until a
+// restart. Its loop was started for that queue (cmdSite), and remote servers
+// hold its actor; a site that dropped it would strand the queue mid-delivery,
+// and one that took up a new one would fill a queue nothing empties.
 //
 // The accounts are carried whole only while their mode and their relying
 // party are what they were, because those decide who may sign in; when
