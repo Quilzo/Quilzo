@@ -33,8 +33,11 @@ func mediaOrigin(root string, args []string) error {
 	prompt := fs.String("prompt", "", "what it was asked for")
 	author := fs.String("author", "", "the person accountable")
 	clear := fs.Bool("clear", false, "remove the declaration")
-	rest, flags := leadingArgs(args, 1)
-	if err := fs.Parse(flags); err != nil {
+	// The flags on either side of what it acts on, as `media captions` takes
+	// them. Read from the front only, `quilzo media origin --source-type T ID`
+	// was answered with the usage line.
+	rest, err := parseAnywhere(fs, args)
+	if err != nil {
 		return err
 	}
 	if len(rest) != 1 {

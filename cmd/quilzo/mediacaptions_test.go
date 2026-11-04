@@ -5,6 +5,11 @@ package main
 
 import (
 	"bytes"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -157,4 +162,82 @@ func slicesIndex(xs []string, x string) int {
 		}
 	}
 	return -1
+}
+
+// Every media command takes its flags before what it acts on, as captions
+// does and as it takes them after. `quilzo media add --alt "…" FILE`,
+// `media focus --at top-left ID` and the rest answered with their usage
+// line: each read what it acts on from the front only, and stopped at the
+// first flag. Each is run both ways on a store of its own, and both ways
+// end alike.
+func TestEveryMediaCommandTakesItsFlagsFirst(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("QUILZO_TOKEN", "")
+	file := filepath.Join(t.TempDir(), "c.png")
+	if err := os.WriteFile(file, testPNG("c.png"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		name  string
+		run   func(root string, args []string) error
+		pos   func(a, b string) []string
+		flags []string
+		works bool
+	}{
+		{"add", mediaAdd, func(a, b string) []string { return []string{file} }, []string{"--alt", "a test image"}, true},
+		{"get", mediaGet, func(a, b string) []string { return []string{"https://127.0.0.1:9/c.png"} }, []string{"--alt", "x"}, false},
+		{"remove", mediaRemove, func(a, b string) []string { return []string{a} }, []string{"--force"}, true},
+		{"replace", mediaReplace, func(a, b string) []string { return []string{a, b} }, []string{"--record-only"}, true},
+		{"origin", mediaOrigin, func(a, b string) []string { return []string{a} }, []string{"--source-type", "humanEdits", "--author", "dana"}, true},
+		{"focus", mediaFocus, func(a, b string) []string { return []string{a} }, []string{"--at", "top-left"}, true},
+		{"edit", mediaEdit, func(a, b string) []string { return []string{a} }, []string{"--crop", "1:1", "--grey"}, true},
+		// Without --alt, so it stops before asking a model for anything.
+		{"generate", mediaGenerate, func(a, b string) []string { return []string{"a lighthouse"} }, []string{"--size", "512x512", "--author", "dana"}, false},
+		{"transcribe", mediaTranscribe, func(a, b string) []string { return []string{a} }, []string{"--lang", "en", "--author", "dana"}, false},
+		{"speak", mediaSpeak, func(a, b string) []string { return []string{"Opened ink cannot be returned."} }, []string{"--author", "dana"}, false},
+		{"film", mediaFilm, func(a, b string) []string { return []string{"a lighthouse"} }, []string{"--author", "dana"}, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			outcome := func(flagsFirst bool) (string, string) {
+				root := connectStore(t)
+				w.Out = &bytes.Buffer{}
+				lib, err := openMedia(root)
+				if err != nil {
+					t.Fatal(err)
+				}
+				a := storeImage(t, lib, "a.png", media.Rights{})
+				b := storeImage(t, lib, "b.png", media.Rights{})
+				args := append(append([]string{}, c.pos(a, b)...), c.flags...)
+				if flagsFirst {
+					args = append(append([]string{}, c.flags...), c.pos(a, b)...)
+				}
+				_, printed := captureStdout(t)
+				err = c.run(root, args)
+				printed()
+				said := "done"
+				if err != nil {
+					said = strings.ReplaceAll(err.Error(), root, "ROOT")
+				}
+				files, _ := lib.List()
+				var held []string
+				for _, f := range files {
+					held = append(held, fmt.Sprintf("%s %s %+v %+v", f.ID, f.Alt, f.Focus, f.Origin))
+				}
+				sort.Strings(held)
+				return said, strings.Join(held, "\n")
+			}
+			after, heldAfter := outcome(false)
+			first, heldFirst := outcome(true)
+			if c.works && after != "done" {
+				t.Fatalf("`quilzo media %s` with its flags after failed: %s", c.name, after)
+			}
+			if strings.HasPrefix(first, "usage:") || first != after {
+				t.Errorf("`quilzo media %s` with its flags first: %s\nwith them after: %s", c.name, first, after)
+			}
+			if heldFirst != heldAfter {
+				t.Errorf("`quilzo media %s` left the library\n%s\nwith its flags first, and\n%s\nwith them after",
+					c.name, heldFirst, heldAfter)
+			}
+		})
+	}
 }

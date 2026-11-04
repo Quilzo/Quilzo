@@ -366,11 +366,14 @@ func mediaRenditions(root string, args []string) error {
 // and the check is cheap because `quilzo rights` already walks the content for
 // image references.
 func mediaRemove(root string, args []string) error {
-	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("remove", flag.ContinueOnError)
 	force := fs.Bool("force", false,
 		"remove it even though a published page uses it")
-	if err := fs.Parse(flags); err != nil {
+	// The flags on either side of what it acts on, as `media captions` takes
+	// them. Read from the front only, `quilzo media remove --force ID` was
+	// answered with the usage line.
+	pos, err := parseAnywhere(fs, args)
+	if err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -576,10 +579,13 @@ func mediaFormats() error {
 }
 
 func mediaAdd(root string, args []string) error {
-	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("add", flag.ContinueOnError)
 	alt := fs.String("alt", "", "description, required for images (WCAG 1.1.1)")
-	if err := fs.Parse(flags); err != nil {
+	// The flags on either side of what it acts on, as `media captions` takes
+	// them. Read from the front only, `quilzo media add --alt "…" FILE` was
+	// answered with the usage line.
+	pos, err := parseAnywhere(fs, args)
+	if err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -696,10 +702,13 @@ func mediaAdd(root string, args []string) error {
 }
 
 func mediaGet(root string, args []string) error {
-	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("get", flag.ContinueOnError)
 	alt := fs.String("alt", "", "description, required for images")
-	if err := fs.Parse(flags); err != nil {
+	// The flags on either side of what it acts on, as `media captions` takes
+	// them. Read from the front only, `quilzo media get --alt "…" URL` was
+	// answered with the usage line.
+	pos, err := parseAnywhere(fs, args)
+	if err != nil {
 		return err
 	}
 	if len(pos) != 1 {
