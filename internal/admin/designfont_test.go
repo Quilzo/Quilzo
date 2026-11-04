@@ -17,6 +17,7 @@ import (
 	"github.com/quilzo/quilzo/internal/a11y"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/render"
+	"github.com/quilzo/quilzo/internal/site"
 )
 
 // postFont sends a typeface to the Design screen as its form does.
@@ -222,4 +223,74 @@ func TestADesignHandedOverIsTheOneThePreviewUses(t *testing.T) {
 	if err != nil || !strings.Contains(layout, "Changed:") {
 		t.Errorf("the preview renders through %q (%v)", layout, err)
 	}
+}
+
+// The publish check reads the design once, so a design handed over while it
+// runs cannot leave a page both unreported and unchecked.
+//
+// It read the layouts again for each question it asked of them. The host
+// hands over a new design whenever templates/ changes (SetDesign), so the
+// first question, "is this page's layout there", could be answered by the
+// design that had it and the next, "render the page through it", by the one
+// that had not: the page was then neither reported as asking for a layout
+// the site lacks nor rendered to be checked, and the check passed a page it
+// never looked at.
+func TestThePublishCheckReadsOneDesign(t *testing.T) {
+	srv, _ := setup(t)
+	pages, err := site.PagesAt(srv.Store, site.RefDraft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages["shop"] = map[string]any{"title": "Shop", "body": "x", "layout": "shop"}
+	if _, err := site.SaveDraft(srv.Store, pages, "a page with its own layout", "test"); err != nil {
+		t.Fatal(err)
+	}
+	// The shop layout fails the check: a picture with nothing to say what it is.
+	with, err := render.NewLayouts(map[string]string{"page": siteTemplate,
+		"shop": `<!doctype html><html lang="en"><head><title>{{ page.title }}</title></head>` +
+			`<body><h1>{{ page.title }}</h1><img src="/a.png"></body></html>`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	designFake(srv, map[string]string{})
+	tokens := srv.DesignSet.Tokens
+	// The host reads templates/ again while the check runs, and the shop
+	// layout has gone: at each moment the check asks the host anything, in
+	// turn, which is where a request reading the design again can land.
+	for at := 1; at <= 3; at++ {
+		srv.SetDesign(with, "")
+		calls := 0
+		srv.DesignSet.Tokens = func() (map[string]string, error) {
+			if calls++; calls == at {
+				srv.SetDesign(render.OneLayout(siteTemplate), "")
+			}
+			return tokens()
+		}
+		reports, err := srv.checkAll(srv.Store.GetRef(site.RefDraft))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !blocksPage(reports, "shop") {
+			t.Errorf("with the design changed at the check's question %d, a page whose layout "+
+				"went was neither reported as asking for it nor checked: %+v", at, reports)
+		}
+	}
+}
+
+// blocksPage says the reports hold a blocking finding about a page.
+func blocksPage(reports []*a11y.Report, page string) bool {
+	for _, r := range reports {
+		if !r.Blocks() {
+			continue
+		}
+		if r.Page == page {
+			return true
+		}
+		for _, f := range r.Findings {
+			if f.Severity == a11y.Blocking && f.Page == page {
+				return true
+			}
+		}
+	}
+	return false
 }

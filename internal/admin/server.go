@@ -3337,7 +3337,13 @@ func (s *Server) checkAll(commitID string) ([]*a11y.Report, error) {
 	if commitID == "" {
 		return nil, nil // no draft is nothing to check, not a failure
 	}
-	if s.layouts().Len() == 0 {
+	// The design read once, for every question this asks of it. The host
+	// hands over a new one whenever templates/ changes (SetDesign), and a
+	// check that read it again for each question could be told a page's
+	// layout was there and then, rendering it, that it was not: the page
+	// was then neither reported nor checked, and passed.
+	layouts := s.layouts()
+	if layouts.Len() == 0 {
 		// Not a failure. A server started without a template directory is a
 		// store that renders somewhere else, which the command line treats as
 		// the one legitimate reason to turn this gate off — it has
@@ -3377,12 +3383,12 @@ func (s *Server) checkAll(commitID string) ([]*a11y.Report, error) {
 	// zero to the blocking count, and published cleanly from the browser while
 	// the command line refused it.
 	var extra []*a11y.Report
-	for page, layout := range s.layouts().Missing(pages) {
+	for page, layout := range layouts.Missing(pages) {
 		extra = append(extra, a11y.Blocker(page, "layout-not-found", "",
 			fmt.Sprintf("this page asks for the %q layout, which this site "+
 				"does not have. It would not render for a reader at all. "+
 				"Layouts available: %s", layout,
-				strings.Join(s.layouts().Names(), ", "))))
+				strings.Join(layouts.Names(), ", "))))
 	}
 	// The theme's contrast, as `quilzo publish` checks it. This path did
 	// not: a palette saved below 4.5:1 with `quilzo theme set --force`,
@@ -3395,7 +3401,7 @@ func (s *Server) checkAll(commitID string) ([]*a11y.Report, error) {
 		if cerr != nil {
 			return nil, fmt.Errorf("assembling %s: %w", name, cerr)
 		}
-		_, layout, lerr := s.layouts().For(body)
+		_, layout, lerr := layouts.For(body)
 		if lerr != nil {
 			// Already reported above. Rendering it through something else to
 			// have something to check would be checking a document nobody is
