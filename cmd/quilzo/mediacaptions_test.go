@@ -91,8 +91,8 @@ func TestCaptionsAreRecordedAsTheTokenGiven(t *testing.T) {
 	}
 }
 
-// Captions take their flags before the two ids, between them or after
-// them, as other commands do. With the flags first the command saw no ids
+// Captions take their flags before the two ids, between them, after them
+// or on both sides, as other commands do. With the flags first the command saw no ids
 // and answered with its usage line, because it read its ids only from the
 // front.
 func TestCaptionsTakeTheirFlagsAnywhere(t *testing.T) {
@@ -124,6 +124,8 @@ func TestCaptionsTakeTheirFlagsAnywhere(t *testing.T) {
 		{"--lang", "fr", "--label", "Français", video.ID, track.ID},
 		{video.ID, "--lang", "de", track.ID},
 		{video.ID, track.ID, "--lang", "en", "--label", "English"},
+		// And on both sides: the flags after the ids were taken as ids.
+		{"--lang", "es", video.ID, track.ID, "--default"},
 	} {
 		if err := mediaCaptions(root, args); err != nil {
 			t.Fatalf("quilzo media captions %v: %v", args, err)
@@ -132,7 +134,8 @@ func TestCaptionsTakeTheirFlagsAnywhere(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(got.Tracks) != 1 || got.Tracks[0].Lang != args[slicesIndex(args, "--lang")+1] {
+		if len(got.Tracks) != 1 || got.Tracks[0].Lang != args[slicesIndex(args, "--lang")+1] ||
+			got.Tracks[0].Default != (slicesIndex(args, "--default") >= 0) {
 			t.Errorf("quilzo media captions %v left %+v", args, got.Tracks)
 		}
 	}
