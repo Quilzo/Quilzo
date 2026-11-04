@@ -347,3 +347,41 @@ func TestTokenListKeepsEveryRowInItsColumns(t *testing.T) {
 		}
 	}
 }
+
+// The stale tokens keep their columns too: the list of tokens nobody uses
+// put each name in a fixed sixteen places, as the token list did, and
+// "ci-deploy-production" pushed its "never used" out of line with the rest.
+func TestTokenStaleKeepsEveryRowInItsColumns(t *testing.T) {
+	root := connectStore(t)
+	ts, _ := loadTokens(root)
+	for _, name := range []string{"ci-deploy-production", "laptop"} {
+		if _, _, err := ts.Issue(name, "dana", auth.RoleReader, "/", time.Hour, auth.RoleAdmin); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := range ts.Tokens {
+		ts.Tokens[i].CreatedAt = time.Now().Add(-48 * time.Hour).Unix()
+	}
+	if err := saveJSON(tokensPath(root), ts); err != nil {
+		t.Fatal(err)
+	}
+	_, read := captureStdout(t)
+	w = out.New(false)
+	err := tokenStale(root, []string{"--idle", "24h"})
+	printed := read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var at []int
+	for _, row := range strings.Split(printed, "\n") {
+		if i := strings.Index(row, "never used"); i >= 0 {
+			at = append(at, i)
+		}
+	}
+	if len(at) != 2 {
+		t.Fatalf("expected two stale tokens:\n%s", printed)
+	}
+	if at[0] != at[1] {
+		t.Errorf("\"never used\" stands at %d in one row and %d in the other:\n%s", at[0], at[1], printed)
+	}
+}

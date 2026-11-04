@@ -1140,12 +1140,18 @@ func tokenStale(root string, args []string) error {
 		return nil
 	}
 	fmt.Printf("%d token(s) unused for %s and still valid:\n", len(stale), *idle)
+	// As wide as the longest name, as `token list` is: a fixed sixteen put
+	// "ci-deploy-production" out of line with the rows around it.
+	nw := 16
+	for _, t := range stale {
+		nw = max(nw, utf8.RuneCountInString(t.Name))
+	}
 	for _, t := range stale {
 		last := "never used"
 		if t.LastUsed > 0 {
 			last = "last used " + time.Unix(t.LastUsed, 0).UTC().Format("2006-01-02")
 		}
-		fmt.Printf("  %s  %-16s %s\n", t.ID, t.Name, last)
+		fmt.Printf("  %s  %-*s %s\n", t.ID, nw, t.Name, last)
 	}
 	fmt.Printf("\n  %sa credential nobody uses is one nobody notices is still "+
 		"valid%s\n", dim, reset)
