@@ -388,9 +388,12 @@ knows to be silent, and says how many recordings it left out. From the
 terminal it is `quilzo section backdrop PAGE N /media/ID` (or `hero` for N, and
 `--off` to take it away), because an edit writes only the fields a section
 already has; it refuses, before writing anything, a file the library does not
-hold and a recording not known to be silent. The hero has no screen of its
-own in the admin, so a hero's backdrop is set with that command, in the page's
-JSON (`quilzo add`, or an agent's `write_page`), or by a site package.
+hold and a recording not known to be silent. A page with a hero shows it there
+above its sections, with "Put a backdrop behind the hero", which opens the same
+picker; the hero's words have no screen of their own. A hero's backdrop is also
+set with that command, in the page's JSON (`quilzo add`, or an agent's
+`write_page`), or by a site package. Under `--json` every `section` edit answers
+with the page, what was done, the draft commit and the sections as they stand.
 
 **Silent recordings.** Whether a recording has sound is recorded when it is
 added, from the same probe that reads its size. One with sound still needs a
@@ -432,7 +435,8 @@ gets its narrower copies as every other picture does.
 All of it is on the Design screen too — the neon style beside the others,
 corners and schemes in the Look section, the veil and the glow in the token
 table, and the layer, with what was refused in it. A layer the screen refuses
-is given back as it was typed, with every refused rule named; somebody who may
+is given back as it was typed, with every refused rule named, and one taken
+away is given back in the box, unsaved, until the screen is left; somebody who may
 edit the design but not publish sees the layer read-only. `quilzo theme
 styles --json` lists the styles, corners and schemes for a script. It is also
 in a site package's `site` block (`style`, `scheme`, `corner`, `tokens`,

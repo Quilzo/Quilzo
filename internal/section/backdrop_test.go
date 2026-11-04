@@ -105,3 +105,24 @@ func TestBackdropAndCardPictureFieldsAreKnown(t *testing.T) {
 		t.Errorf("a backdrop field is %q", kind)
 	}
 }
+
+// What a hero is drawn over is read without knowing a page's shape, for a
+// screen that offers a backdrop only where there is a hero to put one behind.
+func TestWhatAHeroIsDrawnOverIsRead(t *testing.T) {
+	if addr, has := HeroBackdrop(heroPage()); !has || addr != "" {
+		t.Errorf("a hero with no backdrop: %q %v", addr, has)
+	}
+	next, err := SetBackdrop(heroPage(), HeroAt, loop)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if addr, has := HeroBackdrop(next); !has || addr != loop {
+		t.Errorf("a hero with a backdrop: %q %v", addr, has)
+	}
+	if _, has := HeroBackdrop(map[string]any{"title": "No hero"}); has {
+		t.Error("a page with no hero has one")
+	}
+	if _, has := HeroBackdrop("not a page"); has {
+		t.Error("something that is not a page has a hero")
+	}
+}

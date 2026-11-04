@@ -99,6 +99,19 @@ func changeBackdrop(body any, at int, change func(map[string]any, bool)) (map[st
 	return page, nil
 }
 
+// HeroBackdrop is what a page's hero is drawn over: the address it names,
+// "" for none, and whether the page has a hero at all. A screen offers the
+// backdrop only where there is a hero to put one behind.
+func HeroBackdrop(body any) (addr string, hasHero bool) {
+	page, _ := body.(map[string]any)
+	hero, ok := page["hero"].(map[string]any)
+	if !ok {
+		return "", false
+	}
+	addr, _ = hero[BackdropField].(string)
+	return strings.TrimSpace(addr), true
+}
+
 // hasBackdrop is a section drawn over a backdrop.
 func hasBackdrop(inner map[string]any) bool {
 	surface, _ := inner["surface"].(string)

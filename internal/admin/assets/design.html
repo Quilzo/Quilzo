@@ -201,7 +201,9 @@
 <form method="post" action="/design/layer" class="design-layer">
   <label for="layer-css">The layer</label>
   <textarea id="layer-css" name="layer" spellcheck="false" aria-describedby="layer-hint">{{.LayerText}}</textarea>
-  <p class="hint" id="layer-hint">Checked before it is saved; a layer with a refused rule is not saved, so the one that is there stays.</p>
+  <p class="hint" id="layer-hint">{{if .LayerRemoved}}This is the layer that was taken away, kept here and not
+    saved: Save the layer puts it back, and leaving this screen lets it go.{{else}}Checked before it is saved; a
+    layer with a refused rule is not saved, so the one that is there stays.{{end}}</p>
   <button type="submit">Save the layer</button>
 </form>
 {{if .Layer}}

@@ -132,8 +132,12 @@ func (s *Server) handleSections(w http.ResponseWriter, r *http.Request) {
 		rows = append(rows, row{Placed: pl, First: i == 0, Last: i == len(placed)-1})
 	}
 
+	// What the hero is drawn over, by the file's name where the library knows
+	// it, since the hero has no screen of its own and this is where a page's
+	// shape is arranged.
+	heroBackdrop, hasHero := section.HeroBackdrop(body)
 	uses := site.BlockUses(pages)
-	s.render(w, r, "sections.html", map[string]any{
+	data := map[string]any{
 		"Title": "Sections", "Principal": p, "Nav": "sections",
 		"IsBlock":  site.IsBlock(body),
 		"UsedOn":   uses[name],
@@ -146,7 +150,9 @@ func (s *Server) handleSections(w http.ResponseWriter, r *http.Request) {
 		"Message":  r.URL.Query().Get("m"),
 		"Error":    r.URL.Query().Get("e"),
 		"Layout":   layoutOf(body),
-	})
+	}
+	data["Hero"], data["HeroBackdrop"], data["HeroBackdropName"] = hasHero, heroBackdrop, s.mediaName(heroBackdrop)
+	s.render(w, r, "sections.html", data)
 }
 
 // layoutOf is shown so somebody reordering sections on a page that renders
@@ -287,6 +293,21 @@ func (s *Server) handleSectionEdit(w http.ResponseWriter, r *http.Request) {
 	case "nobackdrop":
 		next, err = section.ClearBackdrop(body, at)
 		msg = fmt.Sprintf("take the backdrop away from section %d of %s", at, name)
+	case "herobackdrop":
+		// From the picker, with the file chosen; choosing nothing there is
+		// taking the backdrop away. The hero has no fields screen to leave an
+		// empty field on, so the file comes with the request, and
+		// section.SetBackdrop takes only an address in this library.
+		if media := strings.TrimSpace(r.FormValue("media")); media != "" {
+			next, err = section.SetBackdrop(body, section.HeroAt, media)
+			msg = fmt.Sprintf("put a backdrop behind the hero of %s", name)
+		} else {
+			next, err = section.ClearBackdrop(body, section.HeroAt)
+			msg = fmt.Sprintf("take the backdrop away from the hero of %s", name)
+		}
+	case "noherobackdrop":
+		next, err = section.ClearBackdrop(body, section.HeroAt)
+		msg = fmt.Sprintf("take the backdrop away from the hero of %s", name)
 	case "block", "unblock":
 		on := r.FormValue("do") == "block"
 		if err = site.BlockChange(name, pages, on); err == nil {
@@ -684,4 +705,23 @@ func assetIDOf(value string) string {
 		return ""
 	}
 	return id
+}
+
+// mediaName is the name the library knows a /media/ address by, or "" when
+// it is not one of the library's or the library cannot be asked. A screen
+// says "loop.webm" where it would otherwise print sixty-four hex digits.
+func (s *Server) mediaName(addr string) string {
+	id, isMedia := strings.CutPrefix(strings.TrimSpace(addr), "/media/")
+	if !isMedia || s.Media == nil || s.Media.Library == nil {
+		return ""
+	}
+	lib, err := s.Media.Library()
+	if err != nil {
+		return ""
+	}
+	f, err := lib.Stat(id) // Stat refuses anything that is not an id
+	if err != nil {
+		return ""
+	}
+	return f.Name
 }

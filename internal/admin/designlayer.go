@@ -90,12 +90,28 @@ func (s *Server) handleDesignLayer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.FormValue("remove") != "" {
+		// What it held is read first and given back in the box, unsaved, so
+		// that one press of Save undoes this. It was one button with nothing
+		// after it: the file is removed, not kept, and somebody who pressed it
+		// meaning to press Save lost a page of CSS they had no other copy of.
+		was, err := s.DesignSet.Layer()
+		if err != nil {
+			s.designRedirect(w, r, "", err.Error())
+			return
+		}
+		if was == "" {
+			s.designRedirect(w, r, "There is no style layer to take away", "")
+			return
+		}
 		if err := s.DesignSet.SaveLayer(""); err != nil {
 			s.designRedirect(w, r, "", err.Error())
 			return
 		}
 		s.auditPub(p, "theme.layer.unset", "/", map[string]string{"layer": theme.LayerFile})
-		s.designRedirect(w, r, "The style layer is gone; the generated stylesheet is served alone from the site's next start", "")
+		s.showDesign(w, r, p, map[string]any{
+			"Message": "The style layer is gone; the generated stylesheet is served alone from the site's next start",
+			"Error":   "", "LayerText": was, "LayerRemoved": true,
+		})
 		return
 	}
 	// A browser sends a textarea's line breaks as CRLF. Kept as the person
