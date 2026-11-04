@@ -85,6 +85,11 @@ func Verify(root, path, version, startedAs string, now time.Time) (Verdict, erro
 	}
 	v := Verdict{Path: path, Version: version, SHA256: sum}
 	v.Changed = startedAs != "" && startedAs != sum
+	// "dev" is every build from a working tree, so it names none: the next
+	// one has other bytes under the same name, and was reported as this one
+	// patched in place on every upgrade between two of them. A build with no
+	// version is recorded and not compared.
+	unversioned := version == "" || version == "dev"
 	var seen []Seen
 	if b, err := os.ReadFile(SeenPath(root)); err == nil {
 		_ = json.Unmarshal(b, &seen)
@@ -96,7 +101,7 @@ func Verify(root, path, version, startedAs string, now time.Time) (Verdict, erro
 		}
 		if seen[i].SHA256 == sum {
 			seen[i].Last, found = now, true
-		} else {
+		} else if !unversioned {
 			v.Rebuilt = true
 		}
 	}
@@ -128,6 +133,10 @@ func Verify(root, path, version, startedAs string, now time.Time) (Verdict, erro
 		v.Says = "a binary with the same version but other bytes ran here before: rebuilt, or patched in place"
 	case v.Released == "matches":
 		v.Says = "the running binary is one the release published"
+	case unversioned:
+		v.Says = "the running binary has no version, so a rebuild and a patch look the same and it is not " +
+			"compared with what ran here before; a release build names its version, and a build from a clean " +
+			"commit names that"
 	default:
 		v.Says = "the running binary is the one this store has seen with this version; keep the release's SHA256SUMS in " + SumsPath(root) + " to check it against the release"
 	}

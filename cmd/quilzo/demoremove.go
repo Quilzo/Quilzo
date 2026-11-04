@@ -446,7 +446,49 @@ func demoInstallable(root string, s *store.Store, d *demo.Site, tplDir, exDir st
 				exDir, rel)
 		}
 	}
+	// The two folders outside the store are written last, after everything
+	// in it, so one that cannot be written was found with the store already
+	// half-installed: in the reference container /srv is read-only, the
+	// examples default to /srv/examples, and `demo` wrote the pages, records
+	// and settings before "mkdir /srv/examples: read-only file system" --
+	// after which the next `demo` was refused as already installed. Asked
+	// here instead, before anything is written.
+	for _, f := range []struct{ dir, flag string }{{tplDir, "--templates"}, {exDir, "--examples"}} {
+		if err := canWriteUnder(f.dir); err != nil {
+			return fmt.Errorf("the demonstration writes into %s, and cannot: %v.\n"+
+				"  Give it a folder it can write: quilzo demo %s DIR", f.dir, err, f.flag)
+		}
+	}
 	return nil
+}
+
+// canWriteUnder reports whether dir, or the folders that would be made to
+// reach it, can be written: a file is made and removed in the nearest one
+// that exists, which is the question a read-only filesystem, a missing
+// permission and a file in a folder's place all answer the same way.
+func canWriteUnder(dir string) error {
+	at := dir
+	for {
+		fi, err := os.Stat(at)
+		if err == nil {
+			if !fi.IsDir() {
+				return fmt.Errorf("%s is not a folder", at)
+			}
+			break
+		}
+		parent := filepath.Dir(at)
+		if parent == at {
+			return err
+		}
+		at = parent
+	}
+	f, err := os.CreateTemp(at, ".quilzo-demo-*")
+	if err != nil {
+		return err
+	}
+	name := f.Name()
+	f.Close()
+	return os.Remove(name)
 }
 
 // demoRemoval is what removing the demonstration would do, worked out

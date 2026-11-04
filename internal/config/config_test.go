@@ -315,3 +315,30 @@ func as(err error, target **ErrNeedsAcceptance) bool {
 	}
 	return ok
 }
+
+// Finding STACK-F11. Behind a proxy on another port the base URL has to name
+// the port, and the reference compose builds it from the port it publishes;
+// on 443 that is https://example.com:443, and every sitemap entry and
+// canonical link then named a port nobody types. The scheme's own port is
+// the scheme's: it is left out.
+func TestASiteBaseURLLeavesOutItsSchemesOwnPort(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://example.com:443":   "https://example.com",
+		"http://example.com:80":     "http://example.com",
+		"https://[2001:db8::1]:443": "https://[2001:db8::1]",
+		"https://example.com:8443":  "https://example.com:8443",
+		"http://example.com:443":    "http://example.com:443",
+		"https://example.com":       "https://example.com",
+	} {
+		c := fresh()
+		if err := c.Set("site.base_url", in, "", "dana"); err != nil {
+			t.Fatalf("%s: %v", in, err)
+		}
+		if got := c.Raw("site.base_url"); got != want {
+			t.Errorf("%s was kept as %s, want %s", in, got, want)
+		}
+		if got := SiteBase(in); got != want {
+			t.Errorf("SiteBase(%s) = %s, want %s", in, got, want)
+		}
+	}
+}

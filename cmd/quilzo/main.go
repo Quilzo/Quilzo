@@ -814,10 +814,7 @@ func main() {
 	var err error
 	switch cmd {
 	case "init":
-		_, existed := os.Stat(root)
-		if err = cmdInit(root); err == nil {
-			err = initAdmin(root, cmdArgs, existed != nil)
-		}
+		err = runInit(root, cmdArgs)
 	case "add":
 		err = cmdAdd(root, cmdArgs)
 	case "checked":
@@ -1134,7 +1131,20 @@ func main() {
 // open is the one place any command gets a store, which is why encryption is
 // wired here: every command inherits it, including the ones added next year by
 // somebody who has not read this file.
-func open(root string) (*store.Store, error) { return openEncrypted(root) }
+//
+// It is also where a store is made, by whichever command comes first, so it
+// is where a store made in a container's own layer is said (ephemeral.go).
+// init said so and nothing else did: `docker run --rm IMAGE demo` with no
+// volume said "Marginalia is installed" and exited 0 into the layer --rm
+// then deleted, the same store made and lost without a word.
+func open(root string) (*store.Store, error) {
+	made := !isStore(root)
+	s, err := openEncrypted(root)
+	if err == nil && made {
+		warnContainerLayer(root)
+	}
+	return s, err
+}
 
 // reorder moves flags ahead of positional arguments.
 //
@@ -1186,22 +1196,48 @@ func splitFlags(args []string, valued map[string]bool) (flags, positional []stri
 	return flags, positional
 }
 
+// runInit is `quilzo init [--admin NAME]`.
+func runInit(root string, args []string) error {
+	created := !isStore(root)
+	if err := cmdInit(root); err != nil {
+		return err
+	}
+	return initAdmin(root, args, created)
+}
+
+// isStore reports whether root already holds a store: its objects, which
+// opening a store makes before anything else is written there.
+//
+// It was whether the directory existed, asked twice, and in a container the
+// directory always does: the image makes /srv/store so that a volume mounted
+// on it is seeded with the right owner, and a mount point is a directory
+// before anything is in it. So init there said "reusing /srv/store" of the
+// store it was making, and gave it an upgraded installation's grace -- two
+// weeks in which a token alone reached the admin -- instead of two factors
+// from its first day.
+func isStore(root string) bool {
+	fi, err := os.Stat(filepath.Join(root, "objects"))
+	return err == nil && fi.IsDir()
+}
+
 func cmdInit(root string) error {
 	// main builds the writer; a test calling this first has not.
 	if w == nil {
 		w = out.New(false)
 	}
-	_, existed := os.Stat(root)
+	existed := isStore(root)
 	s, err := open(root)
 	if err != nil {
 		return err
 	}
-	if existed != nil {
+	if !existed {
 		w.Human("created %s\n", s.Root())
 		w.Human("  %scontent is immutable and addressed by hash; publishing "+
 			"moves a pointer%s\n", dim, reset)
 	} else {
 		w.Human("reusing %s\n", s.Root())
+		// open said it of a store it made; of one that was there, this does.
+		warnContainerLayer(root)
 	}
 	return nil
 }

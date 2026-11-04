@@ -128,6 +128,10 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 			st.BaseURL = strings.TrimSpace(cfg.Raw("site.base_url"))
 		}
 	}
+	// Without the scheme's own port: the reference compose names the port
+	// it publishes, which on 443 put :443 in every sitemap entry and
+	// canonical link (config.SiteBase).
+	st.BaseURL = config.SiteBase(st.BaseURL)
 	// Submissions are appended to a store that is not the content store. The
 	// site cannot read one back: that is the admin's job, behind
 	// authentication, in a different process.

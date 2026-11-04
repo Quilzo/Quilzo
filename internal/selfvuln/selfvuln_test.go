@@ -221,6 +221,34 @@ func TestTheBinaryIsTheOneItSaysItIs(t *testing.T) {
 	}
 }
 
+// Finding STACK-F9. "dev" is what every build from a working tree says, so
+// it names no build: the next one has other bytes and the same "version",
+// and was reported as a binary rebuilt or patched in place, which made
+// `quilzo self verify` exit 1 on every upgrade between two of them. A build
+// known by its commit is still compared.
+func TestAnUnversionedBuildIsNotCalledPatched(t *testing.T) {
+	root := t.TempDir()
+	bin := filepath.Join(t.TempDir(), "quilzo")
+	os.WriteFile(bin, []byte("one build"), 0o755)
+	if _, err := Verify(root, bin, "dev", "", t0); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(bin, []byte("the next build"), 0o755)
+	v, _ := Verify(root, bin, "dev", "", t0.Add(time.Hour))
+	if v.Rebuilt || v.Suspicious() {
+		t.Fatalf("two unversioned builds were taken for one patched: %+v", v)
+	}
+	if !strings.Contains(v.Says, "no version") {
+		t.Errorf("it does not say why it was not compared: %s", v.Says)
+	}
+	os.WriteFile(bin, []byte("commit a"), 0o755)
+	Verify(root, bin, "dev+ad6e16568ba5", "", t0)
+	os.WriteFile(bin, []byte("commit a, other bytes"), 0o755)
+	if v, _ := Verify(root, bin, "dev+ad6e16568ba5", "", t0.Add(time.Hour)); !v.Rebuilt {
+		t.Fatalf("one commit with other bytes was not noticed: %+v", v)
+	}
+}
+
 func TestADatabaseZipIsReadForTheStandardLibraryOnly(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "vulndb.zip")
 	f, _ := os.Create(path)

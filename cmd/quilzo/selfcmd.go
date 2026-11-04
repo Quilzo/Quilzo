@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"sync"
@@ -197,7 +198,7 @@ func runSelfCheck(root string, now time.Time) (selfReport, error) {
 		rep.Unread = lerr.Error()
 	}
 	if exe, err := os.Executable(); err == nil {
-		if v, err := selfvuln.Verify(root, exe, version, started, now); err == nil {
+		if v, err := selfvuln.Verify(root, exe, selfIdentity(version, debug.ReadBuildInfo), started, now); err == nil {
 			rep.Binary = v
 		}
 	}
@@ -372,7 +373,7 @@ func selfVerify(root string) error {
 		return err
 	}
 	_, started, _ := selfBinary()
-	v, err := selfvuln.Verify(root, exe, version, started, time.Now())
+	v, err := selfvuln.Verify(root, exe, selfIdentity(version, debug.ReadBuildInfo), started, time.Now())
 	if err != nil {
 		return err
 	}

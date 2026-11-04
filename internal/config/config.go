@@ -32,6 +32,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -361,6 +362,9 @@ func (c *Config) Set(key, value, reason, by string) error {
 		return fmt.Errorf("%q is not a setting; `quilzo config list` shows "+
 			"every one", key)
 	}
+	if key == "site.base_url" {
+		value = SiteBase(value)
+	}
 	if err := s.Validate(value); err != nil {
 		return fmt.Errorf("%s: %w", key, err)
 	}
@@ -522,4 +526,29 @@ func (c *Config) Weakened() []Effective {
 		}
 	}
 	return out
+}
+
+// SiteBase is a site's base URL with the scheme's own port left out.
+//
+// https://example.com:443/about and https://example.com/about are one page,
+// and a sitemap, a canonical link or a newsletter's link should name it the
+// way people do. The reference compose builds the site's address from the
+// port Caddy is published on, so that it is right on any port -- and on 443
+// that address was https://example.com:443, in every link the site made.
+// Any other port, and anything that is not a URL with a host, is left as it
+// was given, for the setting's own check to judge.
+func SiteBase(v string) string {
+	u, err := url.Parse(v)
+	if err != nil || u.Host == "" || u.User != nil {
+		return v
+	}
+	if p := u.Port(); !(u.Scheme == "https" && p == "443") && !(u.Scheme == "http" && p == "80") {
+		return v
+	}
+	host := u.Hostname()
+	if strings.Contains(host, ":") {
+		host = "[" + host + "]"
+	}
+	u.Host = host
+	return u.String()
 }
