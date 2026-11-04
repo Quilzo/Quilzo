@@ -152,6 +152,7 @@ templates and design
   quilzo theme import FILE --list          what a design token file holds
   quilzo theme import FILE --set T=PATH    fill this site's tokens from it
   quilzo theme export [--out FILE]         this site's tokens, as design tokens
+      --tailwind                           or as a Tailwind CSS v4 @theme stylesheet
   quilzo section kinds                     what a page can be built out of
   quilzo section list [PAGE]               the sections on a page, in order
   quilzo section add PAGE KIND             add one, with content that renders
@@ -616,11 +617,11 @@ interface
                                              desktop application
       /playground                            try the API against your own store
   quilzo site  [--addr HOST:PORT]          the published site, PWA-installable, confined (--prepare for systemd)
-  quilzo studio [--addr HOST:PORT]         record the screen into the library
       --api                                 content API at /api/v1, read-only
       --api-writable                        allow PUT; every write needs If-Match
       --base-url https://example.com        needed for /sitemap.xml and /feed.xml
       --redirects redirects.json            keep old URLs working after a move
+  quilzo studio [--addr HOST:PORT]         record the screen into the library
   quilzo audit [DIR]                       templates that disable escaping
   quilzo scan [--fail-on SEV]              XSS, injection and leaked secrets
   quilzo scan --rules                      what is checked, and why

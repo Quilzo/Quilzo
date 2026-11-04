@@ -34,7 +34,7 @@
 // enforced one is the whole of the obligation.
 //
 // Both long-running servers now sweep -- see internal/upkeep, which also says
-// why this daemonises while scheduled publishing deliberately does not. Either
+// why this runs in the server rather than on a timer of the operator's. Either
 // server alone is enough; Expire is idempotent and tolerates a submission
 // another sweep has already taken. `quilzo form expire` and the button on the
 // forms screen still work and are still the way to force it.
