@@ -75,4 +75,14 @@ func TestAnIdentityProviderOnThePrivateNetworkIsReachedOnlyWhereDeclared(t *test
 	if err == nil || !strings.Contains(err.Error(), "refusing to") {
 		t.Errorf("metadata outside the declared range: %v", err)
 	}
+	if strings.Count(err.Error(), "sso.reach") != 1 {
+		t.Errorf("the refusal does not say how to reach the provider, once: %v", err)
+	}
+	// The Single sign-on screen fetches through samlFetch, and its refusal
+	// said nothing of sso.reach, so somebody adding a provider there was
+	// refused with no word of the way through.
+	if _, err := samlFetch(root, "https://10.1.2.3/descriptor"); err == nil ||
+		!strings.Contains(err.Error(), "sso.reach") {
+		t.Errorf("the screen's fetch is refused without saying how to reach the provider: %v", err)
+	}
 }

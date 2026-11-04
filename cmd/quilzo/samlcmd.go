@@ -74,7 +74,9 @@ func removeSAML(root, name string) error {
 }
 
 // samlFetch reads metadata from an address under the sso purpose, through
-// sign-in's own client (ssoClient).
+// sign-in's own client (ssoClient). A refused address says how to reach a
+// provider on the organisation's own network here, because the Single
+// sign-on screen fetches through this too and said nothing of it.
 func samlFetch(root, addr string) ([]byte, error) {
 	c, err := ssoClient(root)
 	if err != nil {
@@ -82,13 +84,13 @@ func samlFetch(root, addr string) ([]byte, error) {
 	}
 	c.UserAgent = "quilzo/1 (+saml metadata)"
 	if _, err := c.ValidateURL(addr); err != nil {
-		return nil, err
+		return nil, ssoReachHint(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	res, err := c.Get(ctx, addr)
 	if err != nil {
-		return nil, err
+		return nil, ssoReachHint(err)
 	}
 	if res.Status != 200 || res.Truncated {
 		return nil, fmt.Errorf("%s answered %d", addr, res.Status)
@@ -264,7 +266,7 @@ func samlAdd(root string, args []string) (*saml.Config, error) {
 		raw, err = os.ReadFile(*meta)
 	}
 	if err != nil {
-		return nil, ssoReachHint(fmt.Errorf("reading the metadata: %w", err))
+		return nil, fmt.Errorf("reading the metadata: %w", err)
 	}
 	m, err := saml.ParseMetadata(raw)
 	if err != nil {
