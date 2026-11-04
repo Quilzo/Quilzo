@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/quilzo/quilzo/internal/audit"
@@ -195,8 +196,33 @@ func themeSet(root string, args []string) error {
 	for k, v := range existing {
 		next[k] = v
 	}
+	asked := map[string]string{}
 	for i := 0; i < len(pos); i += 2 {
-		next[strings.TrimSpace(pos[i])] = strings.TrimSpace(pos[i+1])
+		asked[strings.TrimSpace(pos[i])] = strings.TrimSpace(pos[i+1])
+	}
+	// A colour set for both schemes replaces what the file says for either
+	// one. "on-surface.light" and "on-surface.dark" are narrower than
+	// "on-surface" and win over it in the scheme they name, so after
+	// `theme generate`, which writes a key per scheme, `theme set on-surface`
+	// was saved, reported as set and reached neither scheme. A key named in
+	// this same command is kept: `primary X primary.dark Y` means both.
+	replaced := map[string][]string{}
+	for k := range existing {
+		name, light, dark := theme.Scope(k)
+		if light && dark {
+			continue
+		}
+		if _, both := asked[name]; !both {
+			continue
+		}
+		if _, named := asked[k]; named {
+			continue
+		}
+		delete(next, k)
+		replaced[name] = append(replaced[name], k)
+	}
+	for k, v := range asked {
+		next[k] = v
 	}
 
 	fonts, ferr := loadFontsFor(*dir)
@@ -242,6 +268,11 @@ func themeSet(root string, args []string) error {
 
 	for i := 0; i < len(pos); i += 2 {
 		w.Human("%s%s%s = %s\n", bold, pos[i], reset, pos[i+1])
+		if keys := replaced[strings.TrimSpace(pos[i])]; len(keys) > 0 {
+			sort.Strings(keys)
+			w.Human("  %sin both schemes: it replaces %s, which set one scheme each%s\n",
+				dim, strings.Join(keys, " and "), reset)
+		}
 	}
 	reportAdvisories(findings)
 	if blocking > 0 {

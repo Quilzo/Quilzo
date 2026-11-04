@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"net/url"
 	"strings"
 	"testing"
 
@@ -70,5 +71,45 @@ func TestTheLookIsChosenOnTheDesignScreen(t *testing.T) {
 	postForm(t, srv, "/design/generate", token, "seed=%230b57d0&scheme=rainbow")
 	if len(saved) != before {
 		t.Error("an unknown scheme changed the palette")
+	}
+}
+
+// A colour changed on the design screen after a palette was generated is
+// the colour a reader gets, and a reset puts it back in both schemes.
+//
+// A generated palette holds a key per scheme, "on-surface.light" and
+// "on-surface.dark", and the narrower key wins. The screen wrote the light
+// value under the bare "on-surface", where nothing read it, and said it was
+// saved; its reset removed the bare key and the dark one and left the light
+// scheme in the generated colour.
+func TestAColourSetOnTheScreenIsNotShadowedByAGeneratedPalette(t *testing.T) {
+	srv, token := setup(t)
+	saved := map[string]string{}
+	designFake(srv, saved)
+	if w := postForm(t, srv, "/design/generate", token, "seed=%230b57d0"); w.Code >= 400 {
+		t.Fatalf("generating: %d", w.Code)
+	}
+	if _, perScheme := saved["on-surface.light"]; !perScheme {
+		t.Fatalf("the generated palette has no on-surface.light, so this tests nothing: %v", saved)
+	}
+	dark := saved["on-surface.dark"]
+
+	postForm(t, srv, "/design/save", token, "token=on-surface&light=%23111111&dark="+url.QueryEscape(dark))
+	th, problems := theme.New(saved, nil)
+	if theme.Blocks(problems) {
+		t.Fatal(problems)
+	}
+	if v, _ := th.Value("on-surface", false); v != "#111111" {
+		t.Errorf("on-surface in the light scheme is %s after the screen saved #111111", v)
+	}
+	if v, _ := th.Value("on-surface", true); v != dark {
+		t.Errorf("on-surface in the dark scheme moved to %s", v)
+	}
+
+	postForm(t, srv, "/design/save", token, "token=on-surface&reset=1")
+	for k := range saved {
+		if name, _, _ := theme.Scope(k); name == "on-surface" {
+			t.Errorf("after a reset, %s is still set", k)
+		}
 	}
 }
