@@ -12,6 +12,7 @@ import (
 	"github.com/quilzo/quilzo/internal/feature"
 	"github.com/quilzo/quilzo/internal/newsletter"
 	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/store"
 	// Named so, because a test helper in this package is called waiting.
 	waitlist "github.com/quilzo/quilzo/internal/waiting"
 )
@@ -33,13 +34,19 @@ type waitingItem = waitlist.Item
 
 // waitingFor lists what the caller may decide.
 func waitingFor(root string, c *Caller, now time.Time) ([]waitingItem, error) {
-	return waitlist.List(waitingSources(root, c, now), now)
+	return waitingIn(root, nil, c, now)
+}
+
+// waitingIn is waitingFor over the store already open, as the server holds
+// one; nil opens it, as a command does.
+func waitingIn(root string, s *store.Store, c *Caller, now time.Time) ([]waitingItem, error) {
+	return waitlist.List(waitingSources(root, s, c, now), now)
 }
 
 // waitingSources are where this store keeps what waits, asked about the
 // caller through authorise, which is the session's check and not only the
 // person's.
-func waitingSources(root string, c *Caller, now time.Time) waitlist.Sources {
+func waitingSources(root string, s *store.Store, c *Caller, now time.Time) waitlist.Sources {
 	var declared *agentSet
 	return waitlist.Sources{
 		Name:     c.Name,
@@ -77,7 +84,7 @@ func waitingSources(root string, c *Caller, now time.Time) waitlist.Sources {
 			}
 			return out, err
 		},
-		Review: func() (*waitlist.Review, error) { return reviewWaiting(root) },
+		Review: func() (*waitlist.Review, error) { return reviewWaiting(root, s) },
 		Issues: func() ([]newsletter.Issue, error) {
 			list, err := openNewsletter(root)
 			if err != nil {
@@ -129,10 +136,19 @@ func cmdApprovals(root string, args []string) error {
 // proposal for the draft as it stands, when the draft is not what is live,
 // under the policy publishing is asked about. Whether the caller may give
 // an approval is internal/waiting's to say.
-func reviewWaiting(root string) (*waitlist.Review, error) {
-	s, err := open(root)
-	if err != nil {
-		return nil, err
+//
+// It reads the store it is handed, the server's own, and opens one only
+// when it is handed none. Opening the store reads the key to an encrypted
+// one, and the screens ask for this list on every Approvals, Today and
+// assistant page: a server given its key by a command (QUILZO_KEY_COMMAND,
+// a KMS or a password manager) ran that command each time anybody looked,
+// where it had run it once, when it started.
+func reviewWaiting(root string, s *store.Store) (*waitlist.Review, error) {
+	if s == nil {
+		var err error
+		if s, err = open(root); err != nil {
+			return nil, err
+		}
 	}
 	draft := s.GetRef(site.RefDraft)
 	if draft == "" || draft == s.GetRef(site.RefLive) {

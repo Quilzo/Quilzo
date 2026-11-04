@@ -224,7 +224,7 @@ func cmdServe(root string, args []string) error {
 	// What waits for a person, as `quilzo approvals` lists it for the
 	// session: Approvals, Today and the assistant's waiting card read this
 	// list rather than building one of their own, which drifted from it.
-	srv.Waiting = waitingHook(root)
+	srv.Waiting = waitingHook(root, s)
 	srv.FeatureProgram = featureProgram(root)
 	srv.AppRoles = func() ([]auth.AppRole, error) { return appRoles(root) }
 	// Sign-ins are judged as they are made, and the sign-in policy acts on
@@ -1316,10 +1316,11 @@ func sessionCaller(by admin.Actor) *Caller {
 }
 
 // waitingHook is the command line's list of what waits, for the admin's
-// session.
-func waitingHook(root string) func(admin.Actor, time.Time) ([]waitingItem, error) {
+// session, read from the store the server holds rather than one opened
+// again for every page (reviewWaiting says why).
+func waitingHook(root string, s *store.Store) func(admin.Actor, time.Time) ([]waitingItem, error) {
 	return func(by admin.Actor, now time.Time) ([]waitingItem, error) {
-		return waitingFor(root, sessionCaller(by), now)
+		return waitingIn(root, s, sessionCaller(by), now)
 	}
 }
 

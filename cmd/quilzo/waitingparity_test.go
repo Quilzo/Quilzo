@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -25,6 +26,7 @@ import (
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
+	"github.com/quilzo/quilzo/internal/vault"
 )
 
 // What waits for a person is one list, read by the command line, Approvals,
@@ -154,7 +156,7 @@ func approvalsScreens(t *testing.T, root string, s *store.Store) ([]approvalsScr
 		t.Fatal(err)
 	}
 	served := hookedAdmin(t, root, s, pol, toks)
-	served.Waiting = waitingHook(root)
+	served.Waiting = waitingHook(root, s)
 	return []approvalsScreen{{"as quilzo serve builds it", served},
 		{"from its own hooks", hookedAdmin(t, root, s, pol, toks)}}, toks
 }
@@ -478,5 +480,52 @@ func TestTodayApprovalsAndTheCommandLineCountTheSameThingsWaiting(t *testing.T) 
 				t.Errorf("Today counts %d waiting, Approvals lists %d and the command line %d", today, screen, line)
 			}
 		})
+	}
+}
+
+// The screens read what waits from the store the server holds, and do not
+// open it again for every page. Opening it reads the key to an encrypted
+// store, so a server given its key by a command (a KMS, an HSM, a password
+// manager) ran that command whenever anybody opened Approvals, Today or the
+// assistant, where it had run it once, as it started.
+func TestTheScreensListWhatWaitsWithoutAskingForTheKeyAgain(t *testing.T) {
+	root, s, _ := waitingEverywhere(t)
+	kr, err := vault.NewKeyring("k1", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveJSON(keyringPath(root), kr); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	asked, key := filepath.Join(dir, "asked"), filepath.Join(dir, "key")
+	if err := os.WriteFile(key, []byte(vault.EncodeKey(kr.Keys["k1"].Key)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(keyCmdEnv, fmt.Sprintf("echo asked >> '%s'; cat '%s'", asked, key))
+	screens, toks := approvalsScreens(t, root, s)
+	tok := tokenFor(t, toks, waitingSessions[0])
+	for _, path := range []string{"/approvals", "/today"} {
+		body := adminGet(t, screens[0].srv, path, tok)
+		if !strings.Contains(body, "Approve the change to the site") {
+			t.Errorf("%s does not list the change waiting for review", path)
+		}
+	}
+	if b, err := os.ReadFile(asked); err == nil {
+		t.Errorf("listing what waits ran the key command %d times", strings.Count(string(b), "asked"))
+	}
+	// The command line opens the store, and asks for the key, as it always
+	// has: it holds no store until it opens one.
+	items, err := waitingFor(root, asAdmin("dana"), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	review := false
+	for _, it := range items {
+		review = review || it.Source == "review"
+	}
+	if b, _ := os.ReadFile(asked); !review || strings.Count(string(b), "asked") != 1 {
+		t.Errorf("quilzo approvals lists the review: %v, having asked for the key %d times", review,
+			strings.Count(string(b), "asked"))
 	}
 }
