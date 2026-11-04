@@ -121,7 +121,12 @@ func TestTheBrowserEndpointTakesAKeyBoundTokenAndAnAgentCredentialAlike(t *testi
 			}
 		})
 	}
-	if w := call("Bearer", bound, nil); w.Code != http.StatusUnauthorized {
-		t.Errorf("the key-bound token worked as a bearer token: %d", w.Code)
+	// Refused, it is told what the door takes, DPoP and its algorithms
+	// included, as /mcp and the gateway tell it. The browser grant answered
+	// "Bearer" alone, so a client holding a key-bound token was not told
+	// this door takes a proof at all.
+	if w := call("Bearer", bound, nil); w.Code != http.StatusUnauthorized ||
+		!strings.Contains(strings.Join(w.Header().Values("WWW-Authenticate"), " "), `DPoP algs="`) {
+		t.Errorf("the key-bound token's refusal does not offer DPoP: %d %v", w.Code, w.Header().Values("WWW-Authenticate"))
 	}
 }
