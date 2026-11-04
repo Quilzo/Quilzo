@@ -473,6 +473,14 @@ type Effective struct {
 // still what is stored, which is what the JSON carries.
 func (e Effective) Shown() string { return e.Setting.show(e.Value) }
 
+// Shown is a setting's value as Effective.Shown says it, for a message
+// about one setting: Settings said "is now 2160h" under a table saying
+// 90d, to somebody who had typed 90d.
+func (c *Config) Shown(key string) string {
+	s, _ := Lookup(key)
+	return s.show(c.Raw(key))
+}
+
 // Effectives returns every setting, in declaration order.
 func (c *Config) Effectives() []Effective {
 	out := make([]Effective, 0, len(settings))

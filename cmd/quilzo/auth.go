@@ -17,6 +17,7 @@ import (
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/config"
 	"github.com/quilzo/quilzo/internal/dual"
 	"github.com/quilzo/quilzo/internal/out"
 )
@@ -822,12 +823,14 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 	// The ceiling is checked here rather than inside Issue, because it is a
 	// deployment policy rather than a property of tokens, and the message has
 	// to name the setting that produced it or nobody can find what to change.
+	// Both durations as `config show` says the setting (90d, not 2160h0m0s),
+	// so the ceiling here reads as the one there.
 	if max := cfg.Dur("token.ttl.max"); life > max {
 		return fmt.Errorf(
 			"a %s token is longer than token.ttl.max (%s).\n"+
 				"  Raise the ceiling deliberately if that is right:\n"+
 				"    quilzo config set token.ttl.max %s --accept-risk \"why\"",
-			life, max, life)
+			config.FormatDuration(life), config.FormatDuration(max), config.FormatDuration(life))
 	}
 
 	thumb := ""

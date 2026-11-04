@@ -328,7 +328,8 @@ func configUnset(root string, args []string) error {
 	record(root, caller.auditRecord("config.unset", "/", audit.Success,
 		map[string]string{"setting": args[0], "from": before,
 			"to": c.Raw(args[0])}))
-	w.Human("%s is back to its default, %s\n", args[0], c.Raw(args[0]))
+	// As show, list and explain say the default, not as the file holds it.
+	w.Human("%s is back to its default, %s\n", args[0], c.Shown(args[0]))
 	return nil
 }
 

@@ -60,3 +60,37 @@ func TestADurationOnSettingsIsShownAndTakenInDays(t *testing.T) {
 		t.Errorf("60d was not taken: %s", cfg.Raw("access.review.every"))
 	}
 }
+
+// What Settings says after a change gives a duration as the table does.
+//
+// The table said 60d, and the message above it, read from the file, said
+// "access.review.every is now 1440h"; put back to its default it said
+// 2160h, and somebody who had typed 90d was told a number they did not
+// recognise as what they had asked for.
+func TestASavedDurationIsSaidAsTheTableSaysIt(t *testing.T) {
+	srv, editor := setup(t)
+	saved := []byte(`{}`)
+	srv.Settings = &Settings{
+		Load: func() (*config.Config, error) { return config.Parse(saved) },
+		Save: func(c *config.Config) error { b, err := c.Bytes(); saved = b; return err }}
+	for _, c := range []struct {
+		form url.Values
+		want string
+	}{
+		{url.Values{"key": {"access.review.every"}, "value": {"1440h"}}, "access.review.every is now 60d"},
+		{url.Values{"key": {"access.review.every"}, "value": {"90d"}}, "access.review.every is now 90d"},
+		{url.Values{"key": {"access.review.every"}, "value": {"60d"}}, "access.review.every is now 60d"},
+		{url.Values{"key": {"access.review.every"}, "reset": {"1"}}, "access.review.every is now 90d"},
+		{url.Values{"key": {"session.idle"}, "value": {"30m"}}, "session.idle is now 30m"},
+		{url.Values{"key": {"publish.require_a11y"}, "value": {"true"}}, "publish.require_a11y is now true"},
+	} {
+		w := postForm(t, srv, "/settings/save", editor, c.form.Encode())
+		loc, err := url.Parse(w.Header().Get("Location"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := loc.Query().Get("m"); got != c.want {
+			t.Errorf("%v: Settings said %q, want %q", c.form, got, c.want)
+		}
+	}
+}

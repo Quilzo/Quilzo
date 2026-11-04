@@ -210,7 +210,8 @@ func (s *Server) handleSettingSave(w http.ResponseWriter, r *http.Request) {
 		detail["accepted_risk"] = reason
 	}
 	s.audit("config.set", "/", detail)
-	s.settingsBack(w, r, key+" is now "+cfg.Raw(key))
+	// As the table under it says it, not as the file holds it.
+	s.settingsBack(w, r, key+" is now "+cfg.Shown(key))
 }
 
 func (s *Server) settingsBack(w http.ResponseWriter, r *http.Request, msg string) {
