@@ -4,6 +4,9 @@
 {{if .Unavailable}}<p class="notice">{{.Unavailable}}</p>{{else}}
 {{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
 {{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
+{{if .LayerDraftRefused}}<p class="notice bad" role="alert">The style layer was not saved:
+  {{plural (len .LayerDraftRefused) "rule is" "rules are"}} refused. <a href="#layer">What was
+  refused, with your text kept</a>.</p>{{end}}
 
 <p class="hint">
   Colours, type, spacing and shape for the public site. Files are in
@@ -180,7 +183,7 @@
 {{if .Own}}<p class="notice">It is not served while <code>{{.Dir}}/site.css</code> exists, which replaces everything a layer sits on.</p>{{end}}
 {{if .LayerError}}<p class="notice bad">{{.LayerError}}</p>{{end}}
 {{if .LayerDraftRefused}}
-<div class="card bad" role="alert">
+<div class="card bad">
   <p><strong>Not saved.</strong> {{plural (len .LayerDraftRefused) "rule is" "rules are"}} refused, so
     the layer that was there stays as it was. What you wrote is still in the box
     below, to fix and save again.</p>

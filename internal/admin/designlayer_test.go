@@ -269,6 +269,10 @@ func TestARefusedLayerIsGivenBackWithEveryRefusal(t *testing.T) {
 	if !strings.Contains(page, "The saved layer is served") {
 		t.Error("the screen does not say the saved layer is still served")
 	}
+	// The layer is far down a long screen, so the top of it says so too.
+	if !strings.Contains(page, `role="alert">The style layer was not saved`) || !strings.Contains(page, `href="#layer"`) {
+		t.Error("the top of the screen does not say the layer was refused, or where")
+	}
 }
 
 // Somebody who may edit the design but not publish is shown the layer and
