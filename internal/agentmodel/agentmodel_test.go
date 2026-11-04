@@ -215,6 +215,46 @@ func TestAPagesFieldsReachAWriteAndNothingElseNestedDoes(t *testing.T) {
 	}
 }
 
+// A decider is asked about what the agent has in hand, and a ticket or an
+// alert is an object more often than it is a sentence.
+//
+// Found by running one: the prompt offers "state": <any JSON>, the model
+// gave the ticket as an object, the object was dropped here as a nested
+// shape no operation takes, and the step failed "decide needs the state
+// to ask about". Only a string ever reached the decider.
+func TestADecidersStateMayBeAnObjectOrAList(t *testing.T) {
+	for _, c := range []struct{ state, want string }{
+		{`{"subject":"refund","order":12,"paid":true,"lines":[{"sku":"nyx-1"}]}`,
+			`{"lines":[{"sku":"nyx-1"}],"order":12,"paid":true,"subject":"refund"}`},
+		{`["bought on Saturday","played for an hour"]`, `["bought on Saturday","played for an hour"]`},
+		{`"bought on Saturday"`, "bought on Saturday"},
+	} {
+		a, err := decide(t, &fakeModel{reply: `{"op":"decide","input":{"name":"support-triage","state":` +
+			c.state + `}}`}, "decide")(context.Background(), "triage the ticket", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if a.Op != "decide" || a.Input["name"] != "support-triage" {
+			t.Fatalf("%s: the action came through as %+v", c.state, a)
+		}
+		// Text, in one spelling whatever order the model wrote the keys
+		// in: the same ticket is the same question.
+		if got, _ := a.Input["state"].(string); got != c.want {
+			t.Errorf("the state %s reached the decider as %#v, not %s", c.state, a.Input["state"], c.want)
+		}
+	}
+	// Still only the state: an object under any other name of a decide
+	// is not an input.
+	a, err := decide(t, &fakeModel{reply: `{"op":"decide","input":{"name":"support-triage",` +
+		`"state":"x","options":{"desk":"refunds"}}}`}, "decide")(context.Background(), "triage", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, there := a.Input["options"]; there {
+		t.Errorf("an object other than the state survived: %#v", a.Input)
+	}
+}
+
 // Untrusted observations are fenced and labelled.
 //
 // Advice to a model, not a control — the control is the closed vocabulary and
