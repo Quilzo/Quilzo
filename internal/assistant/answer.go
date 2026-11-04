@@ -393,9 +393,10 @@ func Figures(text string) [][2]int {
 //   - It must cite, and only passages it was given. An uncited sentence is
 //     the model speaking for itself.
 //   - Every figure in it must appear in what it cites, whether it is
-//     written in digits or in words. Invented prices, dates, times and
-//     quantities are the most damaging thing a site's assistant can say and
-//     the easiest to check.
+//     written in digits or in words, and count there what it counts in the
+//     sentence: the same half of the day, unit of time and currency.
+//     Invented prices, dates, times and quantities are the most damaging
+//     thing a site's assistant can say and the easiest to check.
 //   - Most of its informative words must appear in what it cites. Not
 //     entailment — a word-overlap test cannot prove a paraphrase is right —
 //     but it catches the sentence that cites passage 2 and is about
@@ -404,11 +405,12 @@ func Figures(text string) [][2]int {
 //     say one that the passage does not. Deleting one keeps every word of
 //     the passage and reverses it.
 //
-// The last two were added after a cited contradiction was shown as
-// verified: "We open at 9am now" cited for "The checker place opens at
-// midnight", and "We do not sell gluten-free bread" for "We sell
-// gluten-free bread". Both kept enough of the passage's words to pass the
-// overlap test, which cannot see a changed value or a dropped negation. A
+// Figures in words, what a figure counts, and the last test were added
+// after cited contradictions were shown as verified: "We open at 9am now"
+// cited for "The checker place opens at midnight" and for "opens at 9pm",
+// and "We do not sell gluten-free bread" for "We sell gluten-free bread".
+// Each kept enough of the passage's words to pass the overlap test, which
+// cannot see a changed value or a dropped negation. A
 // faithful sentence these refuse costs the answer a sentence; one they let
 // through would be the site contradicting itself in its own voice.
 func Verify(sentence string, hits []Hit) Sentence {
@@ -454,6 +456,10 @@ func Verify(sentence string, hits []Hit) Sentence {
 	}
 	if w := wordFigureMissing(out.Text, source); w != "" {
 		out.Why = fmt.Sprintf("says %s, which the cited passage does not", w)
+		return out
+	}
+	if why := unitTurned(out.Text, source); why != "" {
+		out.Why = why
 		return out
 	}
 	have := map[string]bool{}
@@ -533,6 +539,12 @@ func wordFigureMissing(sentence, source string) string {
 	for _, at := range Figures(source) {
 		numerals[strings.ReplaceAll(source[at[0]:at[1]], ",", "")] = true
 	}
+	// "For a month" states one month, so "for one month" is found in it.
+	for _, m := range measures(source) {
+		if m.kind == spanOfTime {
+			numerals[m.key] = true
+		}
+	}
 	for _, t := range search.Tokenise(sentence) {
 		w := t
 		if _, ok := figureWords[w]; !ok {
@@ -549,18 +561,170 @@ func wordFigureMissing(sentence, source string) string {
 	return ""
 }
 
+// What a figure counts, for a sentence that keeps the figure and changes
+// what it counts. "We open at 9am now" was cited for "opens at 9pm" and
+// kept: the 9 is in the passage, and "9pm" was one word of four that the
+// overlap test missed, which is not too many. "Within 2 working days" was
+// cited for "within 2 weeks", and "£12" for "€12", each keeping every
+// other word.
+const (
+	timeOfDay  = "time"
+	spanOfTime = "span"
+	price      = "price"
+)
+
+// measure is a figure with what it counts: the half of the day of a time,
+// the unit of a span of time, or the currency of a price. key is what two
+// measures must share to be about the same figure: a time's hour, so
+// "9am" meets "9.30 a.m.", and otherwise the figure itself.
+type measure struct {
+	text, kind, key, unit string
+}
+
+// reTime finds a time of day or a span of time, written in digits or in
+// words, and rePriceBefore and rePriceAfter a price with its currency.
+var (
+	reTime = regexp.MustCompile(`(?i)(?:\b(\d[\d,]*(?:[.:]\d+)?)[\s-]*|\b(an?|` +
+		numberWords() + `)[\s-]+)(?:(?:working|business|calendar|clear|full|whole)[\s-]+)?` +
+		`(a\.?\s?m|p\.?\s?m|minutes?|mins?|hours?|hrs?|days?|weeks?|fortnights?|months?|years?)\b`)
+	rePriceBefore = regexp.MustCompile(`(?i)(?:([£$€¥])|\b(gbp|usd|eur|jpy)\s?)(\d[\d,]*(?:\.\d+)?)`)
+	rePriceAfter  = regexp.MustCompile(`(?i)\b(\d[\d,]*(?:\.\d+)?)\s?(gbp|usd|eur|jpy|pounds?|dollars?|euros?|pence|cents?|yen)\b`)
+)
+
+// numberWords are the figure words that have a numeral, as alternatives
+// for a pattern, longest first.
+func numberWords() string {
+	var ws []string
+	for w, n := range figureWords {
+		if n != "" {
+			ws = append(ws, w)
+		}
+	}
+	sort.Slice(ws, func(i, j int) bool {
+		if len(ws[i]) != len(ws[j]) {
+			return len(ws[i]) > len(ws[j])
+		}
+		return ws[i] < ws[j]
+	})
+	return strings.Join(ws, "|")
+}
+
+// currencies are the ways a price names its currency, by the currency.
+var currencies = map[string]string{
+	"£": "pound", "gbp": "pound", "pound": "pound", "pounds": "pound",
+	"$": "dollar", "usd": "dollar", "dollar": "dollar", "dollars": "dollar",
+	"€": "euro", "eur": "euro", "euro": "euro", "euros": "euro",
+	"¥": "yen", "jpy": "yen", "yen": "yen",
+	"pence": "pence", "cent": "cent", "cents": "cent",
+}
+
+// measures are the figures a text states with what they count.
+func measures(text string) []measure {
+	var out []measure
+	for _, m := range reTime.FindAllStringSubmatch(text, -1) {
+		figure, unit := strings.ReplaceAll(m[1], ",", ""), strings.ToLower(m[3])
+		if figure == "" {
+			word := strings.ToLower(m[2])
+			figure = figureWords[word]
+			if word == "a" || word == "an" {
+				figure = "1"
+			}
+		}
+		// Only "a.m." and "p.m." start with an a or a p, however they are
+		// spelt.
+		if unit[0] == 'a' || unit[0] == 'p' {
+			// "An a.m. start" says no time.
+			if m[1] == "" && figureWords[strings.ToLower(m[2])] == "" {
+				continue
+			}
+			hour, _, _ := strings.Cut(strings.ReplaceAll(figure, ":", "."), ".")
+			if h, err := strconv.Atoi(hour); err == nil {
+				hour = strconv.Itoa(h)
+			}
+			out = append(out, measure{text: m[0], kind: timeOfDay, key: hour, unit: unit[:1] + "m"})
+			continue
+		}
+		unit = strings.TrimSuffix(unit, "s")
+		switch unit {
+		case "min":
+			unit = "minute"
+		case "hr":
+			unit = "hour"
+		}
+		out = append(out, measure{text: m[0], kind: spanOfTime, key: figure, unit: unit})
+	}
+	for _, m := range rePriceBefore.FindAllStringSubmatch(text, -1) {
+		out = append(out, measure{text: m[0], kind: price,
+			key: strings.ReplaceAll(m[3], ",", ""), unit: currencies[strings.ToLower(m[1]+m[2])]})
+	}
+	for _, m := range rePriceAfter.FindAllStringSubmatch(text, -1) {
+		out = append(out, measure{text: m[0], kind: price,
+			key: strings.ReplaceAll(m[1], ",", ""), unit: currencies[strings.ToLower(m[2])]})
+	}
+	return out
+}
+
+// unitTurned says how a sentence changes what one of its figures counts,
+// or "".
+//
+// A figure the cited passage states only as something else is refused: a
+// time in the other half of the day, a span in other units, a price in
+// another currency. One it states both ways, or without saying what it
+// counts, is left to the other tests; "9 to 5 on Saturdays" says no half
+// of the day, so "open at 9am on Saturdays" does not contradict it.
+func unitTurned(sentence, source string) string {
+	have := measures(source)
+	for _, m := range measures(sentence) {
+		same, other := false, ""
+		for _, h := range have {
+			if h.kind != m.kind || h.key != m.key {
+				continue
+			}
+			if h.unit == m.unit {
+				same = true
+				break
+			}
+			if other == "" {
+				other = h.text
+			}
+		}
+		if !same && other != "" {
+			return fmt.Sprintf("says %s, where what it cites says %s", m.text, other)
+		}
+	}
+	return ""
+}
+
 // reNegation finds a word that turns a statement around: "not" and its
 // contractions, and the words that say none, nowhere or only otherwise.
 // The apostrophe may be typed or typographic, as a page's text has either.
 var reNegation = regexp.MustCompile(`(?i)\b(?:not|no|never|none|nor|neither|nobody|nothing|nowhere|cannot|without|except|unless)\b|n['’]t\b`)
 
-// statements are the pieces of a passage a sentence can rest on: its
-// header, and each sentence of each line, so a record's "gluten free: no"
-// is not read together with the "vegan: yes" under it.
+// statements are the pieces of a passage a sentence can rest on: each
+// sentence of each line, so a record's "gluten free: no" is not read
+// together with the "vegan: yes" under it, and the first sentence of each
+// line read with the passage's header.
+//
+// A header is not a statement of its own. A record's names what its
+// fields are about, an FAQ's asks what its answer says, and a page's says
+// what its text is about. Taken as a statement, it agreed with any
+// sentence that repeated it: "The sourdough loaf is gluten free" shared as
+// many words with "Sourdough loaf › products" as with "gluten free: no",
+// and "We sell gluten-free bread" more with "Do you sell gluten-free
+// bread?" than with its answer, "No, we don't", so each was shown. A
+// field's line and an answer's first sentence, the one that says yes or no
+// to the question, are what the header is about; the sentences after the
+// first say what they are about themselves, as "We only deliver within the
+// UK" does after "No, sorry".
 func statements(h Hit) []string {
-	out := []string{h.Header()}
+	var out []string
 	for _, line := range strings.Split(h.Text, "\n") {
-		out = append(out, sentences(line)...)
+		for i, s := range sentences(line) {
+			if i == 0 {
+				out = append(out, h.Header()+" "+s)
+			}
+			out = append(out, s)
+		}
 	}
 	return out
 }
@@ -572,7 +736,9 @@ func statements(h Hit) []string {
 // says "not" and the sentence does not, or the other way round, the
 // sentence is refused: "We sell gluten-free bread" shares every word with
 // "We do not sell gluten-free bread", and is its opposite. Where several
-// statements share as many words, one that agrees is enough.
+// statements share as many words, one that agrees is enough: "Clear your
+// cookies" rests as well on the answer alone as on "Why can't I sign in?"
+// read with it, and the question's "can't" is not the answer's.
 func turnedAround(sentence string, units []string) string {
 	content := func(s string) map[string]bool {
 		out := map[string]bool{}

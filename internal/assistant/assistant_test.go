@@ -354,6 +354,143 @@ func TestVerifyHoldsWordFiguresAndNegationsToThePassage(t *testing.T) {
 	}
 }
 
+// verdict is a sentence, what it cites, and why Verify should refuse it,
+// or "" when it should keep it.
+type verdict struct {
+	hits     []Hit
+	sentence string
+	why      string
+}
+
+func expectVerdicts(t *testing.T, cases []verdict) {
+	t.Helper()
+	for _, c := range cases {
+		v := Verify(c.sentence, c.hits)
+		switch {
+		case c.why == "" && !v.Supported:
+			t.Errorf("%q was removed: %s", c.sentence, v.Why)
+		case c.why != "" && v.Supported:
+			t.Errorf("%q was kept, though it turns round %q (%s)", c.sentence,
+				c.hits[0].Text, c.hits[0].Header())
+		case c.why != "" && !strings.Contains(v.Why, c.why):
+			t.Errorf("%q: the reason %q does not name %s", c.sentence, v.Why, c.why)
+		}
+	}
+}
+
+// The checker page's "We open at 9am now", cited for "opens at 9pm", was
+// kept: the 9 is in the passage, and pm is no word to count. Nor was the
+// unit after a figure held to it, so "within 2 weeks" passed for "within 2
+// working days". A time keeps its half of the day, and a number of days,
+// weeks or months keeps its unit.
+func TestATimeKeepsItsHalfOfTheDayAndADurationItsUnit(t *testing.T) {
+	pages := map[string]any{
+		"visit": map[string]any{"title": "Visit us", "body": "The checker code word " +
+			"is chkc9d64848a9c8. Parking is by the river gate. We open at 9am now."},
+	}
+	idx := NewIndex(Chunk(pages, nil))
+	m := &scripted{reply: `{"answer": "The checker place opens at 9pm [1].", "action": null}`}
+	ans, err := Respond(context.Background(), helper, idx, m, "When does the checker place open?")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(ans.Text, "9pm") {
+		t.Fatalf("a time the page does not say reached the visitor: %q", ans.Text)
+	}
+
+	hit := func(title, text string) []Hit {
+		return []Hit{{Passage: Passage{ID: "p#1", Page: "p", Title: title, Text: text}}}
+	}
+	visit := hit("Visit us", "We open at 9am now.")
+	hours := hit("Opening hours", "Open 9.30 a.m. to 5.30 p.m. on weekdays, 9 to 5 on Saturdays.")
+	delivery := hit("Delivery", "Orders ship from Leeds within 2 working days. "+
+		"Returns are accepted for a month.")
+	expectVerdicts(t, []verdict{
+		{visit, "We open at 9pm [1].", "9pm"},
+		{visit, "We open at 9 p.m. [1].", "9 p.m"},
+		{visit, "We open at 9 PM [1].", "9 PM"},
+		{visit, "We open at 9am [1].", ""},
+		{visit, "We open at 9 a.m. [1].", ""},
+		{hours, "We open at 9.30pm on weekdays [1].", "9.30pm"},
+		{hours, "We close at 5.30am on weekdays [1].", "5.30am"},
+		{hours, "We open at 9:30am on weekdays [1].", ""},
+		{hours, "We close at 5.30 pm on weekdays [1].", ""},
+		// The page gives Saturday's hours no half of the day, so a sentence
+		// that adds one does not contradict it.
+		{hours, "On Saturdays we open at 9am [1].", ""},
+		{delivery, "Orders ship from Leeds within 2 weeks [1].", "week"},
+		{delivery, "Orders ship from Leeds within two weeks [1].", "week"},
+		{delivery, "Orders ship from Leeds within 2 business months [1].", "month"},
+		{delivery, "Orders ship from Leeds within 2 working days [1].", ""},
+		{delivery, "Orders ship from Leeds within 2 days [1].", ""},
+		{delivery, "Orders ship from Leeds within two days [1].", ""},
+		{delivery, "Returns are accepted for one month [1].", ""},
+		{delivery, "Returns are accepted for one year [1].", "year"},
+	})
+}
+
+// A price keeps its currency. "Delivery to the EU costs £12", cited for
+// "costs €12", kept the 12 and every other word.
+func TestAPriceKeepsItsCurrency(t *testing.T) {
+	eu := []Hit{{Passage: Passage{ID: "p#1", Page: "p", Title: "Delivery",
+		Text: "Delivery to the EU costs £12. Orders over £1,000 ship free."}}}
+	expectVerdicts(t, []verdict{
+		{eu, "Delivery to the EU costs €12 [1].", "€12"},
+		{eu, "Delivery to the EU costs $12 [1].", "$12"},
+		{eu, "Delivery to the EU costs 12 euros [1].", "12 euros"},
+		{eu, "Delivery to the EU costs EUR 12 [1].", "EUR 12"},
+		{eu, "Delivery to the EU costs 12 pence [1].", "12 pence"},
+		{eu, "Orders over €1,000 ship free [1].", "€1,000"},
+		{eu, "Delivery to the EU costs £12 [1].", ""},
+		{eu, "Delivery to the EU costs 12 pounds [1].", ""},
+		{eu, "Delivery to the EU costs GBP 12 [1].", ""},
+		{eu, "Orders over £1000 ship free [1].", ""},
+	})
+}
+
+// A record names what it is about in its header, and an FAQ asks in its
+// header what its answer says. Both headers were statements of their own,
+// with no "not" in them: "The sourdough loaf is gluten free" shared as many
+// words with "Sourdough loaf › products" as with "gluten free: no", and
+// "We sell gluten-free bread" more with "Do you sell gluten-free bread?"
+// than with "No, we don't", and the header agreeing was enough. Each was
+// shown, as the record and the FAQ said the opposite.
+func TestARecordOrAnFAQThatSaysNoIsNotTurnedAround(t *testing.T) {
+	recs := ChunkRecords("products", []RecordText{{ID: "sourdough", Fields: map[string]any{
+		"name": "Sourdough loaf", "gluten_free": false, "vegan": true, "price": "£4"}}})
+	loaf := []Hit{{Passage: recs[0]}}
+	faq := Chunk(map[string]any{"faq": map[string]any{"title": "FAQ", "items": []any{
+		map[string]any{"q": "Do you sell gluten-free bread?", "a": "No, we don't."},
+		map[string]any{"q": "Do you deliver to Ireland?",
+			"a": "No, sorry. We only deliver within the UK, in 2 working days."},
+		map[string]any{"q": "Why can't I sign in?",
+			"a": "Clear your cookies and try again."},
+	}}}, nil)
+	if len(faq) != 3 {
+		t.Fatalf("the FAQ is %d passages", len(faq))
+	}
+	bread := []Hit{{Passage: faq[0]}}
+	ireland := []Hit{{Passage: faq[1]}}
+	signIn := []Hit{{Passage: faq[2]}}
+	expectVerdicts(t, []verdict{
+		{loaf, "The sourdough loaf is gluten free [1].", `"no"`},
+		{loaf, "Yes, the sourdough loaf is gluten free [1].", `"no"`},
+		{loaf, "The sourdough loaf is not gluten free [1].", ""},
+		{loaf, "The sourdough loaf is vegan [1].", ""},
+		{loaf, "The sourdough loaf costs £4 [1].", ""},
+		{bread, "We sell gluten-free bread [1].", `"no"`},
+		{bread, "Yes, we sell gluten-free bread [1].", `"no"`},
+		{bread, "We don't sell gluten-free bread [1].", ""},
+		{ireland, "We deliver to Ireland [1].", `"no"`},
+		{ireland, "We do not deliver to Ireland [1].", ""},
+		{ireland, "We only deliver within the UK [1].", ""},
+		{ireland, "Delivery within the UK takes 2 working days [1].", ""},
+		// The "can't" is the question's, not the answer's.
+		{signIn, "Clear your cookies and try again [1].", ""},
+		{signIn, "If you can't sign in, clear your cookies [1].", ""},
+	})
+}
+
 func TestAModelThatFailsFallsBack(t *testing.T) {
 	for name, m := range map[string]*scripted{
 		"error":    {err: errors.New("connection refused")},
