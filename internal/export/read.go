@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"path"
 	"sort"
 	"strings"
@@ -296,6 +297,14 @@ func readMarkdown(body []byte) (*Content, error) {
 	if rest != "" {
 		front["body"] = rest
 	}
+	// A page's or record's own fields named like what the export says about
+	// a record are written apart, as one map (export.go's ownKey), and go
+	// back among the rest once the export's own are read.
+	var own map[string]any
+	if v := front[ownKey]; isOwn(v) {
+		own = v.(map[string]any)
+		delete(front, ownKey)
+	}
 
 	// A record says which it is and where it belongs, which a page never
 	// does. Read as a page, a product came back as a page named after its
@@ -314,10 +323,12 @@ func readMarkdown(body []byte) (*Content, error) {
 		}
 		delete(front, "id")
 		delete(front, "collection")
+		maps.Copy(front, own)
 		r.Fields = front
 		return &Content{Collection: coll, Records: []Record{r}}, nil
 	}
 
+	maps.Copy(front, own)
 	p, err := ReadPage(front, "", false)
 	if err != nil {
 		return nil, err

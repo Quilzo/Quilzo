@@ -523,3 +523,106 @@ func TestADirectoryThatIsNotAnExportIsRefused(t *testing.T) {
 		t.Errorf("a page with no name was read back as %v, %v", c, err)
 	}
 }
+
+// A record keeps its own fields named like what the export says about it.
+//
+// The record's file wrote its id, collection, created and updated beside its
+// fields, so a product with its own collection ("Spring 2027") or id
+// ("SKU-1") gave the key twice, which the reader refuses, and one with its
+// own created ("5 January") was refused as not a time. Either way the whole
+// export no longer read back.
+func TestARecordKeepsItsOwnFieldsNamedLikeTheExportsBookkeeping(t *testing.T) {
+	site := export.Site{
+		Pages: map[string]any{"index": map[string]any{"title": "Home"}},
+		Collections: map[string][]export.Record{"products": {
+			{ID: "aa11", Fields: map[string]any{"title": "Linen shirt", "collection": "Spring 2027"},
+				Created: 1786000000, Updated: 1786000900},
+			{ID: "bb22", Fields: map[string]any{"title": "Wool coat", "id": "SKU-1"}},
+			{ID: "cc33", Fields: map[string]any{"created": "5 January", "updated": "weekly"},
+				Created: 1786000100},
+			{ID: "dd44", Fields: map[string]any{"id": "SKU-2", "collection": "Autumn",
+				"created": "5 January", "updated": float64(3), "fields": "cotton, linen",
+				"body": "Soft."}, Created: 1786000200, Updated: 1786000300},
+			// A field of the name the others are kept under, holding what
+			// looks like them.
+			{ID: "ee55", Fields: map[string]any{"title": "Silk scarf",
+				"fields": map[string]any{"id": "inner"}}},
+		}},
+		Licence: "https://spdx.org/licenses/CC-BY-4.0",
+	}
+	for _, f := range []export.Format{export.JSON, export.Markdown, export.ROCrate} {
+		t.Run(string(f), func(t *testing.T) {
+			files, err := export.Export(f, site, when)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fsys := fstest.MapFS{}
+			for _, file := range files {
+				fsys[file.Path] = &fstest.MapFile{Data: file.Body}
+			}
+			back, skipped, err := export.ReadDir(fsys)
+			if err != nil {
+				t.Fatalf("this tool could not read its own export: %v", err)
+			}
+			if len(skipped) > 0 {
+				t.Errorf("skipped %v", skipped)
+			}
+			if !reflect.DeepEqual(back.Collections, site.Collections) {
+				t.Errorf("the records %#v came back as %#v", site.Collections, back.Collections)
+			}
+		})
+	}
+}
+
+// A page with its own id and collection comes back as that page. A record's
+// file is told apart by those two, so a lookbook page naming its season's
+// collection and its own id came back as a record of that collection, and
+// the page was gone.
+func TestAPageWithAnIDAndACollectionOfItsOwnIsNotReadAsARecord(t *testing.T) {
+	site := export.Site{Pages: map[string]any{"lookbook": map[string]any{
+		"title": "Lookbook", "id": "SKU-1", "collection": "Spring 2027"}},
+		Licence: "https://spdx.org/licenses/CC-BY-4.0"}
+	for _, f := range []export.Format{export.JSON, export.Markdown, export.ROCrate} {
+		t.Run(string(f), func(t *testing.T) {
+			files, err := export.Export(f, site, when)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fsys := fstest.MapFS{}
+			for _, file := range files {
+				fsys[file.Path] = &fstest.MapFile{Data: file.Body}
+			}
+			back, _, err := export.ReadDir(fsys)
+			if err != nil {
+				t.Fatalf("this tool could not read its own export: %v", err)
+			}
+			if len(back.Collections) != 0 {
+				t.Errorf("the page came back as records: %#v", back.Collections)
+			}
+			got, _ := back.Pages["lookbook"].(map[string]any)
+			sameFields(t, "lookbook", site.Pages["lookbook"].(map[string]any), got)
+		})
+	}
+}
+
+// A record file an earlier export wrote reads as it did: the export's own
+// keys beside the record's fields, and a field called fields that is only a
+// field.
+func TestAnEarlierRecordFileStillReads(t *testing.T) {
+	c, err := export.Read(export.Markdown, []byte("---\n"+
+		"collection: \"products\"\n"+
+		"created: \"2026-08-06T07:06:40Z\"\n"+
+		"fields: \"cotton, linen\"\n"+
+		"id: \"aa11\"\n"+
+		"price: 4200\n"+
+		"title: \"Copper pen\"\n"+
+		"---\n\nSlim.\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := export.Record{ID: "aa11", Created: 1786000000, Fields: map[string]any{
+		"title": "Copper pen", "price": float64(4200), "fields": "cotton, linen", "body": "Slim."}}
+	if c.Collection != "products" || len(c.Records) != 1 || !reflect.DeepEqual(c.Records[0], want) {
+		t.Fatalf("an earlier record file came back as %q %#v", c.Collection, c.Records)
+	}
+}
