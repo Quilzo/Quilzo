@@ -121,9 +121,12 @@ func (s *Server) handleMediaPick(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	current, onSection := currentValue(s.Store, page, at, path)
+	var current string
+	var onSection bool
 	if hero {
 		current, onSection = heroValue(s.Store, page)
+	} else {
+		current, onSection = currentValue(s.Store, page, at, path)
 	}
 	if !onSection && hero {
 		s.render(w, r, "message.html", map[string]any{
