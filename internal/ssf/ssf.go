@@ -55,6 +55,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/quilzo/quilzo/internal/oidc"
 )
@@ -257,7 +258,11 @@ func (r *Receiver) Verify(token string) (*SET, error) {
 			return nil, refuse("invalid_request", "the token has expired")
 		}
 	}
-	if c.JTI == "" || len(c.JTI) > 256 {
+	// Printable, too: the id is written into the audit log's details as it
+	// came, and a line break, a terminal's escape or a mark that reverses
+	// the text after it would be the transmitter's words dressed as the
+	// log's, or move the terminal of whoever reads it.
+	if c.JTI == "" || len(c.JTI) > 256 || strings.IndexFunc(c.JTI, func(r rune) bool { return !unicode.IsPrint(r) }) >= 0 {
 		return nil, refuse("invalid_request", "the token has no usable id (jti)")
 	}
 	if len(c.Events) != 1 {

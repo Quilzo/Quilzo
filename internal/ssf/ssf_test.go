@@ -146,6 +146,13 @@ func TestWhatIsNotAGoodEventIsRefused(t *testing.T) {
 		"an unreadable subject": {k.sign(t, nil, with(func(c map[string]any) { c["sub_id"] = map[string]any{"format": "spaceship"} })), "invalid_request"},
 		"a crit header":         {k.sign(t, map[string]any{"alg": "RS256", "kid": "k1", "typ": "secevent+jwt", "crit": []string{"exp"}}, revoked()), "invalid_request"},
 		"an id over 256 bytes":  {k.sign(t, nil, with(func(c map[string]any) { c["jti"] = strings.Repeat("j", 257) })), "invalid_request"},
+		// The id is written into the audit log's details as it came, where
+		// a line break or a terminal's escape would be somebody else's
+		// line, or move whoever reads it.
+		"a line break in the id":     {k.sign(t, nil, with(func(c map[string]any) { c["jti"] = "a1\nsignals.restored" })), "invalid_request"},
+		"an escape in the id":        {k.sign(t, nil, with(func(c map[string]any) { c["jti"] = "a1\x1b[2J" })), "invalid_request"},
+		"a reversal mark in the id":  {k.sign(t, nil, with(func(c map[string]any) { c["jti"] = "a1\u202ecba" })), "invalid_request"},
+		"a line separator in the id": {k.sign(t, nil, with(func(c map[string]any) { c["jti"] = "a1\u2028b2" })), "invalid_request"},
 		"a type not asked for": {k.sign(t, nil, with(func(c map[string]any) {
 			c["events"] = map[string]any{caepPrefix + "device-compliance-change": map[string]any{"current_status": "not-compliant"}}
 		})), "invalid_request"},
