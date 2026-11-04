@@ -76,6 +76,64 @@ func helpGoesToTheCommand(cmd string, args []string) bool {
 	return len(args) > 0 && isHelpFlag(args[0])
 }
 
+// helpAfter reports whether `quilzo CMD help` asks for CMD's help, as
+// `quilzo help CMD` does: CMD takes a subcommand, so "help" where one goes
+// is a question and not a page's or an assistant's name. `quilzo decide
+// help` answered "unknown decide command "help"", which tells somebody
+// typing the natural thing that the command does not exist, and other
+// commands took the word as one more argument and ran.
+//
+// Read from the help, which a test holds to the code's own switches. Left
+// to the command where its help names a subcommand called help (`quilzo geo
+// help` is its own answer), and where a page or a name may go in the same
+// place (`quilzo lock PAGE`), since there "help" is somebody's page.
+func helpAfter(cmd string, args []string) bool {
+	if len(args) == 0 || args[0] != "help" {
+		return false
+	}
+	if primary, ok := helpAliases[cmd]; ok {
+		cmd = primary
+	}
+	subs := false
+	for _, line := range strings.Split(usageText, "\n") {
+		rest, ok := strings.CutPrefix(line, "  quilzo "+cmd)
+		if !ok || rest == "" || rest[0] != ' ' {
+			continue
+		}
+		synopsis := strings.TrimLeft(rest, " ")
+		if i := helpDescription.FindStringIndex(synopsis); i != nil {
+			synopsis = synopsis[:i[0]]
+		}
+		synopsis = helpBracketed.ReplaceAllString(synopsis, " ")
+		for i, alt := range strings.Split(synopsis, " | ") {
+			fields := strings.Fields(alt)
+			if len(fields) == 0 {
+				continue
+			}
+			for _, w := range strings.Split(fields[0], "|") {
+				switch {
+				case w == "help":
+					return false
+				case helpSubcommand.MatchString(w):
+					subs = true
+				case i == 0 && helpName.MatchString(w):
+					// Read in the first alternative only: after a spaced
+					// pipe a value may stand alone, as "tool:T" does.
+					return false
+				}
+			}
+		}
+	}
+	return subs
+}
+
+// helpSubcommand is how a subcommand is written in the help, a lowercase
+// word, and helpName how a name a command takes is: in capitals, or quoted.
+var (
+	helpSubcommand = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
+	helpName       = regexp.MustCompile(`^["A-Z]`)
+)
+
 // helpOrVersion are the spellings that print the help or the version, which
 // main answers itself.
 var helpOrVersion = map[string]bool{"help": true, "-h": true, "--help": true,

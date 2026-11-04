@@ -147,6 +147,99 @@ func TestHelpForACommandIsAboutThatCommand(t *testing.T) {
 	}
 }
 
+// `quilzo CMD help` is CMD's help wherever CMD takes a subcommand, as
+// `quilzo help CMD` is. `quilzo decide help` answered "unknown decide
+// command "help"", which tells somebody typing the natural thing that the
+// command does not exist.
+//
+// Every command that switches on a subcommand is asked, in a process of its
+// own and a fresh store: nothing may be written, the exit is 0, and every
+// line shown is about the command asked. Two take a page where a
+// subcommand goes, so "help" there is a page's name, and one has a help of
+// its own; those are left to answer as they do.
+func TestHelpAfterACommandIsItsHelp(t *testing.T) {
+	handler := dispatchHandlers(t)
+	real := realSubcommands(t)
+	namesFirst := map[string]bool{handler["lock"]: true, handler["share"]: true}
+
+	template := filepath.Join(t.TempDir(), ".quilzo")
+	if err := cmdInit(template); err != nil {
+		t.Fatal(err)
+	}
+	entry := regexp.MustCompile(`(?m)^  quilzo (\S+)( \S+)?`)
+	asked := 0
+	for _, c := range dispatchedCommands(t) {
+		if strings.HasPrefix(c, "__") || handler[c] == "" || len(real[c]) == 0 || namesFirst[handler[c]] {
+			continue
+		}
+		ownHelp := false
+		for _, g := range real[c] {
+			for _, sub := range g {
+				ownHelp = ownHelp || sub == "help"
+			}
+		}
+		if ownHelp {
+			continue
+		}
+		for _, args := range [][]string{{c, "help"}, {"help", c}} {
+			asked++
+			t.Run(strings.Join(args, " "), func(t *testing.T) {
+				t.Parallel()
+				dir, home := t.TempDir(), t.TempDir()
+				copyTree(t, template, filepath.Join(dir, ".quilzo"))
+				before := treeState(t, dir) + treeState(t, home)
+				cmd := exec.Command(os.Args[0], append([]string{"quilzo-main"}, args...)...)
+				cmd.Dir = dir
+				cmd.Env = append(os.Environ(), "HOME="+home, "QUILZO_TOKEN=", "NO_COLOR=1")
+				var stdout, stderr bytes.Buffer
+				cmd.Stdout, cmd.Stderr = &stdout, &stderr
+				err := cmd.Run()
+				said := firstLines(stdout.String()+stderr.String(), 6)
+				if err != nil {
+					t.Errorf("`quilzo %s`: %v\n%s", strings.Join(args, " "), err, said)
+				}
+				if after := treeState(t, dir) + treeState(t, home); after != before {
+					t.Errorf("`quilzo %s` wrote something:\n%s", strings.Join(args, " "), treeDiff(before, after))
+				}
+				lines := entry.FindAllStringSubmatch(stdout.String(), -1)
+				if len(lines) == 0 {
+					t.Errorf("`quilzo %s` showed no line of the help about it:\n%s", strings.Join(args, " "), said)
+				}
+				for _, m := range lines {
+					if handler[m[1]] != handler[c] {
+						t.Errorf("`quilzo %s` answered with the help for `quilzo %s`", strings.Join(args, " "), m[1])
+						break
+					}
+				}
+			})
+		}
+	}
+	if asked < 150 {
+		t.Fatalf("only %d questions asked; the command list was not read", asked)
+	}
+
+	// Where a page goes, "help" is a page, and geo's help is its own.
+	for _, c := range []string{"lock", "locks", "share", "geo", "add", "publish"} {
+		if helpAfter(c, []string{"help"}) {
+			t.Errorf("`quilzo %s help` is taken as asking for help", c)
+		}
+	}
+
+	// And after it, the subcommand: the lines about that one alone.
+	cmd := exec.Command(os.Args[0], "quilzo-main", "decide", "help", "ask")
+	cmd.Dir = t.TempDir()
+	cmd.Env = append(os.Environ(), "HOME="+t.TempDir(), "QUILZO_TOKEN=", "NO_COLOR=1")
+	got, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("`quilzo decide help ask`: %v\n%s", err, got)
+	}
+	for _, m := range entry.FindAllStringSubmatch(string(got), -1) {
+		if m[1] != "decide" || m[2] != " ask" {
+			t.Errorf("`quilzo decide help ask` printed `quilzo %s%s`", m[1], m[2])
+		}
+	}
+}
+
 // dispatchHandlers maps every command main.go dispatches to the function
 // that runs it, so that two spellings of one command can be told apart from
 // two commands.
