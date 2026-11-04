@@ -4,8 +4,10 @@
 package admin
 
 import (
+	"fmt"
 	"github.com/quilzo/quilzo/internal/icons"
 	"html/template"
+	"io"
 	"net/http"
 	"net/url"
 	"sort"
@@ -14,6 +16,7 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/starter"
 	"github.com/quilzo/quilzo/internal/theme"
+	"github.com/quilzo/quilzo/internal/webfont"
 )
 
 // The design screen: the tokens, the layouts and the typefaces, in the browser.
@@ -69,6 +72,26 @@ type Design struct {
 	// InstallLayout writes a starter's markup and returns what it wrote. This
 	// is the half the browser used to be missing.
 	InstallLayout func(starterName string) ([]string, error)
+	// AddFont makes a typeface this site serves out of an uploaded file: a
+	// .ttf or an .otf made into a WOFF, or a .woff or .woff2 checked as it
+	// is. name, when given, is the served name's contract (Family-400-700);
+	// replace says a face already served under that name may be overwritten.
+	// The same operation as `quilzo theme font add`, so the screen and the
+	// command cannot accept different fonts.
+	AddFont func(filename string, body []byte, name string, replace bool) (FontAdded, error)
+}
+
+// FontAdded is what AddFont wrote.
+type FontAdded struct {
+	// File is the name it is served under, at /fonts/.
+	File string `json:"file"`
+	// Family, Weight and Style are what the filename says, as the
+	// stylesheet will declare them.
+	Family string `json:"family"`
+	Weight string `json:"weight"`
+	Style  string `json:"style"`
+	// From is what the upload was: truetype, opentype, woff or woff2.
+	From string `json:"from"`
 }
 
 func (s *Server) handleDesign(w http.ResponseWriter, r *http.Request) {
@@ -226,6 +249,7 @@ func (s *Server) handleDesign(w http.ResponseWriter, r *http.Request) {
 	data["Starters"] = starter.All()
 	data["Own"] = s.DesignSet.OwnStylesheet != nil && s.DesignSet.OwnStylesheet()
 	data["CanInstall"] = s.DesignSet.InstallLayout != nil
+	data["CanAddFont"] = s.DesignSet.AddFont != nil
 	s.render(w, r, "design.html", data)
 }
 
@@ -446,6 +470,64 @@ func (s *Server) handleDesignInstall(w http.ResponseWriter, r *http.Request) {
 		`"layout": "`+st.LayoutName()+`"`, "")
 }
 
+// handleDesignFont adds a typeface from a file somebody has.
+//
+// The route in for a customer whose foundry sent a TrueType or OpenType
+// file, which there was none of: the screen said to put a .woff2 in a
+// directory, and nothing here could make one. The same authority as setting
+// a token, because a face nobody names changes no page, and naming it is a
+// token.
+func (s *Server) handleDesignFont(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "post only", http.StatusMethodNotAllowed)
+		return
+	}
+	p, ok := s.requireAuth(w, r)
+	if !ok {
+		return
+	}
+	if !s.can(w, r, p, auth.ActEditDraft, "/") {
+		return
+	}
+	if s.DesignSet == nil || s.DesignSet.AddFont == nil {
+		s.designRedirect(w, r, "", "this build cannot add typefaces")
+		return
+	}
+	// The form's own 2 MiB limit holds (limitBody): a face larger than that
+	// cannot become one under the half megabyte a site serves.
+	if err := r.ParseMultipartForm(4 << 20); err != nil {
+		s.designRedirect(w, r, "", fmt.Sprintf("that file could not be read: %v. "+
+			"The most a typeface can be before it is made smaller is %d KiB", err,
+			webfont.MaxSourceBytes>>10))
+		return
+	}
+	defer func() { _ = r.MultipartForm.RemoveAll() }()
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		s.designRedirect(w, r, "", "choose a .ttf, .otf, .woff or .woff2 file")
+		return
+	}
+	defer file.Close()
+	body, err := io.ReadAll(io.LimitReader(file, webfont.MaxSourceBytes+1))
+	if err != nil {
+		s.designRedirect(w, r, "", err.Error())
+		return
+	}
+	added, err := s.DesignSet.AddFont(header.Filename, body,
+		strings.TrimSpace(r.FormValue("name")), r.FormValue("replace") == "1")
+	if err != nil {
+		s.designRedirect(w, r, "", err.Error())
+		return
+	}
+	s.auditPub(p, "theme.font.add", "/", map[string]string{
+		"file": added.File, "family": added.Family, "from": added.From,
+	})
+	s.designRedirect(w, r, fmt.Sprintf("The typeface is served from this origin at "+
+		"/fonts/%s: family %s, weight %s, %s. Choose %s for a font token below; the "+
+		"site serves it from its next publish", added.File, added.Family,
+		added.Weight, added.Style, added.Family), "")
+}
+
 func (s *Server) designRedirect(w http.ResponseWriter, r *http.Request, msg, errMsg string) {
 	u := "/design"
 	switch {
@@ -523,7 +605,7 @@ func (s *Server) handleSiteFont(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	w.Header().Set("Content-Type", "font/woff2")
+	w.Header().Set("Content-Type", webfont.ContentType(name))
 	w.Header().Set("Cache-Control", "private, max-age=3600")
 	w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
 	_, _ = w.Write(body)

@@ -110,8 +110,9 @@
 {{if .CanInstall}}
 <h2>Install a design</h2>
 <p class="hint">
-  Replaces the layout and palette in <code>{{.Dir}}</code>, which changes every
-  page when the site next restarts.
+  Replaces the layout and palette in <code>{{.Dir}}</code>. The preview here
+  shows it at once; the site serves it from its next publish, when the
+  publish checks have read it, or when it is told to reload.
 </p>
 <div class="table-wrap">
 <table>
@@ -139,18 +140,28 @@
 </div>
 {{end}}
 
-<h2>Typefaces</h2>
+<h2 id="design-fonts">Typefaces</h2>
 {{if .Fonts}}
 <p>Served from this origin: {{range .Fonts}}<code>{{.}}</code> {{end}}</p>
 {{else}}
 <p class="hint">
-  No typefaces of your own. Put a <code>.woff2</code> in
-  <code>{{.Dir}}/fonts/</code> and it is served from this origin at
-  <code>/fonts/NAME.woff2</code>, then set <code>font-display</code> to its
-  name. The filename carries the family, the weight and the style:
-  <code>Satoshi-600.woff2</code>, <code>Satoshi-400..700.woff2</code>,
-  <code>Satoshi-italic.woff2</code>.
+  No typefaces of your own. Put a <code>.woff2</code> or <code>.woff</code> in
+  <code>{{.Dir}}/fonts/</code>, or add one below, and it is served from this
+  origin at <code>/fonts/NAME.woff2</code>; then set <code>font-display</code>
+  to its name. The filename carries the family, the weight and the style:
+  <code>Satoshi-600.woff2</code>, <code>Satoshi-400-700.woff2</code> (or
+  <code>Satoshi-400..700.woff2</code>), <code>Satoshi-italic.woff2</code>.
 </p>
+{{end}}
+{{if .CanAddFont}}
+<form method="post" action="/design/font" enctype="multipart/form-data" class="param-form" aria-labelledby="design-fonts">
+  <label for="design-font-file">A typeface {{template "req"}}</label><input id="design-font-file" name="file" type="file" required accept=".ttf,.otf,.woff,.woff2" aria-describedby="design-font-hint">
+  <label for="design-font-name">Served as</label><input id="design-font-name" name="name" maxlength="80" placeholder="Satoshi-400-700" aria-describedby="design-font-name-hint">
+  <p id="design-font-name-hint" class="hint">The family, then the weight or range and the style, with dashes. Left empty, the file's own name.</p>
+  <p><label><input type="checkbox" name="replace" value="1"> Replace a face already served under that name</label></p>
+  <div class="auto-controls"><button type="submit" class="btn-tonal">Add the typeface</button></div>
+</form>
+<p id="design-font-hint" class="hint">A TrueType or OpenType file (.ttf, .otf) is made into a WOFF here, with nothing sent anywhere; a .woff or .woff2 is checked as it is. Refused if it is not a face, is missing a table browsers need, its own licence flag forbids embedding it, or it is over 512 KiB once made. Its licence travels with it: put the licence text beside it in <code>{{.Dir}}/fonts/</code>.</p>
 {{end}}
 <fieldset class="whileown"{{if .Own}} disabled{{end}}>
 <legend class="visually-hidden">Design tokens</legend>

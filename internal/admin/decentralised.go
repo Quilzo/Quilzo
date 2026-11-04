@@ -262,7 +262,7 @@ func (s *Server) bundle() (map[string][]byte, error) {
 				"what is in the draft — a draft made permanent is an " +
 				"unfinished page nobody can withdraw")
 	}
-	if s.Layouts.Len() == 0 {
+	if s.layouts().Len() == 0 {
 		return nil, fmt.Errorf(
 			"there is no page template, so the site cannot be rendered")
 	}
@@ -293,7 +293,7 @@ func (s *Server) bundle() (map[string][]byte, error) {
 	// used to come out with no navigation on any page.
 	src := s.sources(s.Store.GetRef(site.RefLive), pages)
 
-	out, berr := render.Bundle(src, s.Layouts, pages, tmpl.Render)
+	out, berr := render.Bundle(src, s.layouts(), pages, tmpl.Render)
 	if berr != nil {
 		return nil, berr
 	}

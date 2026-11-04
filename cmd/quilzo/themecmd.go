@@ -47,6 +47,8 @@ func cmdTheme(root string, args []string) error {
 		return themeCheck(args[1:])
 	case "fonts":
 		return themeFonts(args[1:])
+	case "font":
+		return themeFont(root, args[1:])
 	case "css":
 		return themeCSS(args[1:])
 	case "apply":
@@ -65,8 +67,8 @@ func cmdTheme(root string, args []string) error {
 		return nil
 	default:
 		return fmt.Errorf("unknown theme command %q; try show, tokens, set, "+
-			"unset, check, fonts, css, apply, generate, import, export or styles",
-			args[0])
+			"unset, check, fonts, font add, css, apply, generate, import, export "+
+			"or styles", args[0])
 	}
 }
 
@@ -359,14 +361,16 @@ func themeFonts(args []string) error {
 	fontsDir := filepath.Join(*dir, "fonts")
 	if len(faces) == 0 {
 		w.Human("%sno fonts of your own%s\n\n", bold, reset)
-		w.Human("  %sPut a .woff2 in %s and it is served from this origin at%s\n",
+		w.Human("  %sPut a .woff2 or .woff in %s and it is served from this origin at%s\n",
 			dim, fontsDir, reset)
-		w.Human("  %s/fonts/NAME.woff2, then:  quilzo theme set font-display NAME%s\n\n",
+		w.Human("  %s/fonts/NAME.woff2, then:  quilzo theme set font-display NAME%s\n",
 			dim, reset)
+		w.Human("  %sA .ttf or .otf is made into a WOFF and checked by:%s\n", dim, reset)
+		w.Human("  %s  quilzo theme font add FILE [--name Satoshi-400-700]%s\n\n", dim, reset)
 		w.Human("  %sThe filename is the contract:%s\n", dim, reset)
 		w.Human("    %sSatoshi.woff2            the family, full variable range%s\n", dim, reset)
 		w.Human("    %sSatoshi-600.woff2        one weight%s\n", dim, reset)
-		w.Human("    %sSatoshi-400..700.woff2   a range%s\n", dim, reset)
+		w.Human("    %sSatoshi-400-700.woff2    a range (Satoshi-400..700.woff2 too)%s\n", dim, reset)
 		w.Human("    %sSatoshi-italic.woff2     the italic%s\n\n", dim, reset)
 		w.Human("  %sThere is no way to name a font on another host. A page that%s\n", dim, reset)
 		w.Human("  %sfetches one has handed that host a request per visit and the%s\n", dim, reset)
@@ -383,6 +387,7 @@ func themeFonts(args []string) error {
 			len(f.Bytes)/1024, f.File, reset)
 	}
 	w.Human("\n  %squilzo theme set font-body %s%s\n", dim, faces[0].Family, reset)
+	w.Human("  %squilzo theme font add FILE   another, from a .ttf, .otf, .woff or .woff2%s\n", dim, reset)
 	for _, note := range set.Warnings {
 		w.Human("  %s%s%s\n", dim, note, reset)
 	}

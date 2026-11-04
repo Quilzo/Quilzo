@@ -309,6 +309,67 @@ else's host, because a page that fetches one has handed that host a request on
 every visit and the ability to stall the render — and the policy cannot help,
 because the page asked for it.
 
+### Typefaces from the file you have
+
+Most foundries send a TrueType or OpenType file, and WOFF2 — the format above —
+compresses its tables with Brotli, which Go's standard library does not have and
+this program will not take a dependency for. So it also serves WOFF 1.0, which
+is the same tables compressed with zlib, and which every browser that reads
+WOFF2 reads too. One command makes one:
+
+```bash
+quilzo theme font add Satoshi-Variable.ttf --name Satoshi-300-900
+quilzo theme set font-body Satoshi
+```
+
+It writes `templates/fonts/Satoshi-300-900.woff` and checks it the way every
+face in that directory is checked: the header agrees with the file, every table
+lies inside it and inflates to exactly the size it declares, the tables a
+browser's font sanitiser refuses a face without are there, and the face's own
+licence flag (OS/2 `fsType`) does not say "restricted licence embedding" — a
+face that may not be embedded may not be served with a page either. A `.woff` or
+a `.woff2` is checked as it is. Nothing is fetched or sent anywhere. The Design
+screen has the same form, through the same code. The licence still travels with
+the face: put its text beside it.
+
+The filename is still the contract, and a weight range is written either way:
+`Satoshi-400-700.woff2` and `Satoshi-400..700.woff2` are both 400 to 700. The
+first used to be read as 700 alone, though this documentation and the program's
+own error message offered it as a range.
+
+### Changes without a restart
+
+Both servers used to read the design and the settings once, when they started:
+a face added to `templates/fonts/` was "not a font this site serves" on the
+Design screen until `quilzo serve` restarted, and `site.events` did nothing on
+the public site until `quilzo site` restarted. Now:
+
+| | the design (`templates/`) | the settings |
+|---|---|---|
+| `quilzo serve`, the admin | when the directory changes, and on SIGHUP | read when used, as before; the interface's brand, the passkey rules and the API's limits still at a restart |
+| `quilzo site`, the public site | with each publish, and on SIGHUP | when the configuration, listings or languages change, with each publish, and on SIGHUP |
+
+The public site takes the design with a publish rather than the moment a file
+changes, on purpose. The publish gate is what holds a design to the standard: it
+computes every contrast pair the theme makes and renders every page through the
+layouts. `quilzo theme set --force` saves a palette that fails, and says the gate
+will refuse it; a site that served `templates/` a second after it was written
+would put that palette in front of readers with no gate at all. So the preview
+shows a change at once, and readers get it with the publish that passed. SIGHUP —
+`systemctl reload` with the unit in [deploy/](../deploy/) — is the operator
+saying so, as a restart was, without dropping a connection.
+
+A rebuilt site keeps what visitors are in the middle of: rate limits and their
+counts, the signals it is counting, sign-ins in progress, the chatbots' rating
+keys, the newsletter's hourly count and the fediverse queue. Their settings —
+`auth.throttle.*` for the site's limits, `chatbot.questions.*`, `fediverse.*`, and
+the content API's — take effect at the next restart, because a reload that handed
+every visitor a fresh allowance would be a limit that resets whenever somebody
+publishes. A reload that fails changes nothing: the site serves what it served,
+says why, records `site.reload` as a failure in the audit log, and tries again
+when something changes again. A reload that changed what readers get is recorded
+too, with what triggered it.
+
 ## Building a whole site from a sentence
 
 A site is a declaration: pages made of sections this program renders, menus,

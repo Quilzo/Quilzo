@@ -77,6 +77,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -366,7 +367,11 @@ type Server struct {
 	// Empty means the preview is unstyled and says so, rather than 404ing a
 	// stylesheet and leaving somebody to work out why.
 	SiteCSS string
-	tpl     *template.Template
+	// live is the design as the host last read it, when it reads it again
+	// while serving (SetDesign); nil until then, and Layouts and SiteCSS are
+	// the design. See livedesign.go.
+	live atomic.Pointer[liveDesign]
+	tpl  *template.Template
 
 	// Provenance is loaded and saved by the host, so the admin does not need to
 	// know where the store keeps it.
@@ -1515,6 +1520,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/design/save", s.handleDesignSave)
 	mux.HandleFunc("/design/generate", s.handleDesignGenerate)
 	mux.HandleFunc("/design/install", s.handleDesignInstall)
+	mux.HandleFunc("/design/font", s.handleDesignFont)
 	mux.HandleFunc("/transfer", s.handleTransfer)
 	mux.HandleFunc("/transfer/export", s.handleExport)
 	mux.HandleFunc("/transfer/import", s.handleImport)
@@ -3331,7 +3337,7 @@ func (s *Server) checkAll(commitID string) ([]*a11y.Report, error) {
 	if commitID == "" {
 		return nil, nil // no draft is nothing to check, not a failure
 	}
-	if s.Layouts.Len() == 0 {
+	if s.layouts().Len() == 0 {
 		// Not a failure. A server started without a template directory is a
 		// store that renders somewhere else, which the command line treats as
 		// the one legitimate reason to turn this gate off — it has
@@ -3371,12 +3377,12 @@ func (s *Server) checkAll(commitID string) ([]*a11y.Report, error) {
 	// zero to the blocking count, and published cleanly from the browser while
 	// the command line refused it.
 	var extra []*a11y.Report
-	for page, layout := range s.Layouts.Missing(pages) {
+	for page, layout := range s.layouts().Missing(pages) {
 		extra = append(extra, a11y.Blocker(page, "layout-not-found", "",
 			fmt.Sprintf("this page asks for the %q layout, which this site "+
 				"does not have. It would not render for a reader at all. "+
 				"Layouts available: %s", layout,
-				strings.Join(s.Layouts.Names(), ", "))))
+				strings.Join(s.layouts().Names(), ", "))))
 	}
 	// The theme's contrast, as `quilzo publish` checks it. This path did
 	// not: a palette saved below 4.5:1 with `quilzo theme set --force`,
@@ -3389,7 +3395,7 @@ func (s *Server) checkAll(commitID string) ([]*a11y.Report, error) {
 		if cerr != nil {
 			return nil, fmt.Errorf("assembling %s: %w", name, cerr)
 		}
-		_, layout, lerr := s.Layouts.For(body)
+		_, layout, lerr := s.layouts().For(body)
 		if lerr != nil {
 			// Already reported above. Rendering it through something else to
 			// have something to check would be checking a document nobody is
@@ -4235,7 +4241,7 @@ func (s *Server) handlePreview(w http.ResponseWriter, r *http.Request) {
 	if record != nil {
 		s.sources(s.Store.GetRef(site.RefDraft), pages).WithRecord(ctx, record)
 	}
-	_, layout, lerr := s.Layouts.For(body)
+	_, layout, lerr := s.layouts().For(body)
 	if lerr != nil {
 		http.Error(w, lerr.Error(), http.StatusUnprocessableEntity)
 		return
@@ -4427,7 +4433,8 @@ func (s *Server) siteCSS(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.requireAuth(w, r); !ok {
 		return
 	}
-	if s.SiteCSS == "" {
+	css := s.siteStylesheet()
+	if css == "" {
 		// 404 rather than empty, because an empty stylesheet is indisting-
 		// uishable from one that loaded and had no rules — and somebody
 		// debugging an unstyled preview would then be looking at the wrong
@@ -4437,7 +4444,7 @@ func (s *Server) siteCSS(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	_, _ = io.WriteString(w, s.SiteCSS)
+	_, _ = io.WriteString(w, css)
 }
 
 // firstOf flattens a query string to one value per name.

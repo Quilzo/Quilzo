@@ -144,13 +144,16 @@ templates and design
   quilzo demo remove [--yes]               take it back out; anything changed stays
   quilzo template list | show NAME         ready-made starting points
   quilzo template use NAME [--dir DIR]     write it, its theme and sample content
-  quilzo template layouts                  which layouts a page may name
+  quilzo template layouts [--dir DIR]      which layouts a page may name: those that ship, and the site's own
   quilzo template adopt FILE               convert a template from another system
   quilzo theme show | tokens               what the design is set to, and the knobs
   quilzo theme unset TOKEN                 put one back to the default
   quilzo theme generate COLOUR             a whole palette from one colour
   quilzo theme set TOKEN VALUE             change one, refused if unreadable
   quilzo theme check | fonts | css         contrast, typefaces, generated CSS
+  quilzo theme font add FILE [--name N]    a .ttf or .otf made into a WOFF and checked, or a .woff
+                                            or .woff2 checked, then served from this origin; N is
+                                            Family-400-700 (--force replaces one of that name)
   quilzo theme styles                      the looks: classic, expressive, glass, editorial, bold, soft, business
   quilzo theme apply STARTER               take a starter's palette, keep your layout
   quilzo theme import FILE --list          what a design token file holds
@@ -620,11 +623,16 @@ interface
                                              browser can install it as a
                                              desktop application
       /playground                            try the API against your own store
+                                             reads templates/ again when it changes,
+                                             and on SIGHUP: no restart for a face
   quilzo site  [--addr HOST:PORT]          the published site, PWA-installable, confined (--prepare for systemd)
       --api                                 content API at /api/v1, read-only
       --api-writable                        allow PUT; every write needs If-Match
       --base-url https://example.com        needed for /sitemap.xml and /feed.xml
       --redirects redirects.json            keep old URLs working after a move
+                                            settings are read again when they change,
+                                            the design with each publish, and both on
+                                            SIGHUP (systemctl reload)
   quilzo studio [--addr HOST:PORT]         record the screen into the library
   quilzo audit [DIR]                       templates that disable escaping
   quilzo scan [--fail-on SEV]              XSS, injection and leaked secrets
