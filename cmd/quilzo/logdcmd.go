@@ -56,6 +56,19 @@ func cmdLogd(root string, args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	// What is left after the flags, answered before anything else. Main
+	// answers `quilzo logd help` itself, and not the service's own command
+	// with help put after it (`logd --log-dir /srv/audit help`): the word
+	// was ignored, so as root the writer refused to run, and as any other
+	// account it started, the help never printed. Help never refuses, and
+	// a word this takes none of is refused rather than ignored.
+	if rest := fs.Args(); len(rest) > 0 {
+		if rest[0] == "help" {
+			commandHelp("logd", nil)
+			return nil
+		}
+		return fmt.Errorf("quilzo logd takes flags and nothing else, and was given %q: quilzo logd help", rest[0])
+	}
 
 	// Refusing to run as root. The writer needs to open one file for appending
 	// and bind one socket; root buys it nothing and costs everything if it is
@@ -260,13 +273,26 @@ func cmdLogdStatus(root string) error {
 
 	if !running {
 		w.Human("no log writer\n")
-		w.Human("  %sthis process writes the audit log itself, so anything that "+
-			"can\n  execute code as this account can rewrite the record of what "+
-			"it did%s\n", yellow, reset)
-		w.Human("\n  %srun `quilzo logd` as a separate account that owns %s%s\n",
-			dim, logPath, reset)
-		w.Human("  %sthat moves the requirement from code execution as the CMS "+
-			"to root%s\n", dim, reset)
+		if separated && !canAppend(logPath) {
+			// The separation in force with its writer stopped, as under the
+			// reference compose with logd down. Said as this account writing
+			// the log itself, which it cannot: what it does goes unrecorded,
+			// and an agent's actions are refused (auditReady), until the
+			// writer runs.
+			w.Human("  %sthe log is another account's, which is the separation in force, and nothing\n"+
+				"  is writing it: this account cannot, so until the writer runs what it does is\n"+
+				"  not recorded, and what an agent would do is refused%s\n", yellow, reset)
+			w.Human("  %s%s%s\n", dim, why, reset)
+			w.Human("\n  %sstart `quilzo logd` as the account that owns %s%s\n", dim, logPath, reset)
+		} else {
+			w.Human("  %sthis process writes the audit log itself, so anything that "+
+				"can\n  execute code as this account can rewrite the record of what "+
+				"it did%s\n", yellow, reset)
+			w.Human("\n  %srun `quilzo logd` as a separate account that owns %s%s\n",
+				dim, logPath, reset)
+			w.Human("  %sthat moves the requirement from code execution as the CMS "+
+				"to root%s\n", dim, reset)
+		}
 		// The log is another account's and its key out of this one's
 		// reach, as under the reference compose with the writer stopped:
 		// every head waits for the writer, which nothing above says, and
@@ -279,6 +305,12 @@ func cmdLogdStatus(root string) error {
 	}
 
 	w.Human("log writer at %s%s%s\n", bold, sock, reset)
+	// A socket left behind is not a writer. Said, since every record goes
+	// to it and is refused while nothing answers.
+	if err := logd.Reachable(sock); err != nil {
+		w.Human("  %snothing answers on it, so no record can be written until the writer runs again:\n"+
+			"  %v%s\n", yellow, err, reset)
+	}
 	if separated {
 		w.Human("  %s%s%s\n", green, why, reset)
 	} else {
@@ -310,4 +342,15 @@ func cmdLogdStatus(root string) error {
 		"deniable is a\n  published tree head — `quilzo auditlog anchor`%s\n",
 		dim, reset)
 	return nil
+}
+
+// canAppend reports whether this account could append to the log at path
+// itself. Opening it to append changes nothing in it.
+func canAppend(path string) bool {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		return false
+	}
+	_ = f.Close()
+	return true
 }

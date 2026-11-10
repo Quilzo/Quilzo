@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"flag"
@@ -85,6 +86,8 @@ func cmdAuditDir(root string, args []string) error {
 	} else if !fi.IsDir() {
 		return fmt.Errorf("%s is not a directory", abs)
 	}
+	// Where the public half of the head keys is now, before anything moves.
+	oldKeys := headKeysPath(root)
 	// Repointing every reader at a different log is the single most sensitive
 	// thing in this command, so it waits for a second administrator, who
 	// moves it on approving (applyDual).
@@ -104,7 +107,30 @@ func cmdAuditDir(root string, args []string) error {
 	w.Human("  the log is now read from %s\n", filepath.Join(abs, "audit.jsonl"))
 	w.Human("  %sstart the writer, unless something runs it already: quilzo --root %s logd --log-dir %s%s\n",
 		dim, root, abs, reset)
+	sayKeysLeftBehind(oldKeys, abs)
 	return nil
+}
+
+// sayKeysLeftBehind says, once the log has moved to dir, that what was
+// signed before the move checks against the public keys it left behind at
+// oldKeys, when there are some and dir does not hold the same.
+//
+// The writer in the new directory makes a key of its own, and every check
+// reads the head.pub.json beside the log: a head, a receipt or a feature
+// package signed before the move stopped checking against it, and nothing
+// said which file still does, at the moment somebody had just moved it.
+func sayKeysLeftBehind(oldKeys, dir string) {
+	old, err := os.ReadFile(oldKeys)
+	if err != nil {
+		return
+	}
+	if now, err := os.ReadFile(filepath.Join(dir, "head.pub.json")); err == nil && bytes.Equal(now, old) {
+		return
+	}
+	w.Human("  %sheads, receipts and statements signed before the move check against %s, not the keys%s\n",
+		yellow, oldKeys, reset)
+	w.Human("  %sthe writer makes in %s: keep that file, and check them with --keys %s%s\n",
+		yellow, dir, oldKeys, reset)
 }
 
 func setAuditDir(root, dir string) error {

@@ -190,6 +190,9 @@ func cmdPending(root string, args []string) error {
 		if err != nil {
 			return err
 		}
+		// Where the head keys were, for a move of the audit log, which the
+		// approver is told of as its proposer would be (sayKeysLeftBehind).
+		oldKeys := headKeysPath(root)
 		if approve {
 			if err := applyDual(root, r, c.Name); err != nil {
 				return fmt.Errorf("approved, and applying it failed: %w", err)
@@ -208,6 +211,9 @@ func cmdPending(root string, args []string) error {
 			return nil
 		}
 		w.Human("%s: %s\n", dual.StateWords(r, now), r.What)
+		if approve && r.Kind == dual.AuditLog {
+			sayKeysLeftBehind(oldKeys, auditDir(root))
+		}
 		if approve && dual.Received(r.Kind) {
 			w.Human("  %s%s receives it with quilzo pending redeem %s, within a day%s\n", dim, r.By, r.ID, reset)
 		}
