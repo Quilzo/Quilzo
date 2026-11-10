@@ -3,7 +3,10 @@
 
 package collab
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // Who wrote a change, as opposed to who is offering it for review.
 //
@@ -68,4 +71,61 @@ func AuthorKindFor(commitMessage, proposerKind string) string {
 		return "human"
 	}
 	return proposerKind
+}
+
+// MachineChange is a commit a machine wrote among those a publish would put
+// live, named so a refusal can say which change a person is being asked to
+// read and who it is recorded as written by.
+//
+// # Why not only the newest commit
+//
+// AuthorKindFor reads one commit message, and every surface handed it the
+// commit being published. A draft is a chain of commits. An agent rewrote
+// the pricing, a person then fixed a typo on another page, and the draft's
+// newest commit was the person's: RequireHumanForAI never applied, and the
+// admin, the command line, the machine interface, scheduled publishing and
+// promotion all put the agent's pricing live with no person having read
+// it. Nothing about the typo made the pricing a person's work, so the
+// question is asked of every commit the publish would put live
+// (site.MachineWroteSince), and this is its answer.
+type MachineChange struct {
+	Commit  string `json:"commit"`
+	Author  string `json:"author,omitempty"`
+	Message string `json:"message,omitempty"`
+	// Unread is why the history was not read to the end, when it was not,
+	// and Commit is then where the reading stopped. Nothing was found and
+	// nothing was ruled out either, and the answer given is the one that
+	// asks a person: a history too long to read, or one holding a commit
+	// that cannot be, is no evidence that a person wrote it.
+	Unread string `json:"unread,omitempty"`
+}
+
+// Describe says, for whoever is refused, which change a person is being
+// asked to read: content is the commit being published, so a model's change
+// further back is said to be one.
+func (m MachineChange) Describe(content string) string {
+	if m.Unread != "" {
+		return fmt.Sprintf("Not all of what this would put live could be read "+
+			"to see who wrote it (%s), so a person reads it first.", m.Unread)
+	}
+	if m.Commit == content {
+		return fmt.Sprintf("It is commit %s, recorded as written by %s: %q.",
+			short(m.Commit), m.Author, m.Message)
+	}
+	// "Not yet published" rather than "since the last publish", which a
+	// first publish has none of.
+	return fmt.Sprintf("A model's change not yet published goes live with it: "+
+		"commit %s, recorded as written by %s: %q.", short(m.Commit), m.Author, m.Message)
+}
+
+// MarkMachine records on a proposal that a machine wrote some of what it
+// would put live, which makes it AI-authored whoever proposed it. A nil
+// change leaves the proposal as it was: finding no machine's commit is no
+// reason to call a proposal a person's when a model is what proposed it.
+func (prop *Proposal) MarkMachine(m *MachineChange) {
+	if m == nil {
+		return
+	}
+	prop.AuthorKind = "ai"
+	prop.Machine = m
 }

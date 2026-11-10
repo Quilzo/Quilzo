@@ -218,13 +218,28 @@ func currentProposal(root string, s *store.Store) (*collab.Proposal, *proposalFi
 // promotion from staging into production) is asked about that commit's
 // approvals. It used to be asked about the draft's, so staging went live on
 // the approval of a later draft that nobody had promoted.
+//
+// AI-authored when a machine wrote any of what publishing these bytes
+// would put live (site.MachineWroteSince), not only the newest commit:
+// read from that one alone, a person's typo fix on top of an agent's
+// change made the agent's change a person's, here and so on every surface
+// that asks here. A proposal already recorded is marked the same way, as
+// one recorded from the newest commit may say "human" of a model's work.
 func proposalFor(root string, s *store.Store, draft string) (*collab.Proposal, *proposalFile, error) {
 	f := &proposalFile{}
 	if err := loadJSON(proposalsPath(root), f); err != nil {
 		return nil, nil, err
 	}
+	machine, merr := site.MachineWroteSince(s, draft)
+	if merr != nil {
+		// The commit itself cannot be read. A new proposal fails below as
+		// it did; a recorded one is judged as a model's, since nothing
+		// shows a person wrote it.
+		machine = &collab.MachineChange{Commit: draft, Unread: merr.Error()}
+	}
 	for i := range f.Proposals {
 		if f.Proposals[i].Content == draft {
+			f.Proposals[i].MarkMachine(machine)
 			return &f.Proposals[i], f, nil
 		}
 	}
@@ -240,7 +255,9 @@ func proposalFor(root string, s *store.Store, draft string) (*collab.Proposal, *
 		Content: draft, Author: commit.Author, AuthorKind: kind,
 		CreatedAt: commit.At, Message: commit.Message,
 	})
-	return &f.Proposals[len(f.Proposals)-1], f, nil
+	prop := &f.Proposals[len(f.Proposals)-1]
+	prop.MarkMachine(machine)
+	return prop, f, nil
 }
 
 func cmdReview(root string, args []string) error {
