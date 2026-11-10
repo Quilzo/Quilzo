@@ -525,8 +525,14 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 				// could not be built, which is a fault; returning the
 				// validation failure as one made it a 500, and a 500 stops
 				// every static copy of the site.
+				//
+				// The site's own sentence leads the card's description: the
+				// configured one, or the one `quilzo site --description`
+				// gave this run, read when the card is asked for so the flag
+				// is honoured too.
 				return a2a.From(set.Agents, knownCapabilities(root), a2a.Options{
 					SiteName:         cfg.Raw("site.name"),
+					Description:      st.Description,
 					BaseURL:          st.BaseURL,
 					Version:          version,
 					DocumentationURL: cfg.Raw("site.docs_url"),

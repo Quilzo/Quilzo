@@ -309,6 +309,66 @@ else's host, because a page that fetches one has handed that host a request on
 every visit and the ability to stall the render — and the policy cannot help,
 because the page asked for it.
 
+### Typefaces from the file you have
+
+Most foundries send a TrueType or OpenType file, and WOFF2 — the format above —
+compresses its tables with Brotli, which Go's standard library does not have and
+this program will not take a dependency for. So it also serves WOFF 1.0, which
+is the same tables compressed with zlib, and which every browser that reads
+WOFF2 reads too. One command makes one:
+
+```bash
+quilzo theme font add Satoshi-Variable.ttf --name Satoshi-300-900
+quilzo theme set font-body Satoshi
+```
+
+It writes `templates/fonts/Satoshi-300-900.woff` and checks it the way every
+WOFF in that directory is checked: the header agrees with the file, every table
+lies inside it and inflates to exactly the size it declares, the tables a
+browser's font sanitiser refuses a face without are there, and the face's own
+licence flag (OS/2 `fsType`) does not say "restricted licence embedding" — a
+face that may not be embedded may not be served with a page either. A `.woff` is
+checked as it is, in the same way. A `.woff2` is checked only for its signature,
+the length it declares and its size, because its tables are Brotli and nothing
+here can read them. Nothing is fetched or sent anywhere. The Design screen has
+the same form, through the same code.
+
+Without `--name` (on the screen, an empty "Served as"), the face is served under
+the file's own name, with the weight and style the face's own tables declare
+wherever that name does not say them. Foundries name static faces
+`Satoshi-Regular.ttf` and `Satoshi-BoldItalic.ttf`; the first, taken at its
+word, would claim every weight from 100 to 900, so a browser asked for bold
+would draw the regular glyphs, and the second is not a name the contract reads.
+So a static regular of weight 400 is served as `Satoshi-400.woff`, the bold
+italic as `Satoshi-700-italic.woff`, and a variable face as the range of its
+weight axis. A name that does say the weight, such as `Satoshi-Bold.ttf`, is
+kept; a word that is neither a weight nor a style, such as `Condensed`, is
+refused with a request for a name rather than guessed past; and a name given is
+used exactly as given. The output says when the name came from the face. A
+`.woff2` cannot be asked: its tables are Brotli, so it is served as its name
+says, and one whose name says no weight is served as every weight, which is
+right for a variable face; the output says so, so a static one can be given a
+name that says its weight.
+
+A face already served under the same name is replaced only when asked, with
+`--force` or the screen's "Replace a face already served under that name",
+because a browser keeps a face for a year under its name. A face is one file: a
+`.woff` beside the `.woff2` of the same face is refused. A file in
+`templates/fonts/` that is not served — a `.ttf` dropped there, a file that is
+not what its name says — is named, with the reason, by `quilzo theme fonts` and
+on the Design screen; for a `.ttf` or `.otf` that includes the command that
+makes a WOFF of it. The licence still travels with the face: put its text
+beside it. Adding or replacing a face takes the authority to publish, on the
+screen and on the command line, as installing a layout does: a face is the
+glyphs every page that names it is drawn with, and no gate reads a glyph, so
+one whose digits are drawn as other digits would change every price on the site
+with no word of any page changed.
+
+The filename is still the contract, and a weight range is written either way:
+`Satoshi-400-700.woff2` and `Satoshi-400..700.woff2` are both 400 to 700. The
+first used to be read as 700 alone, though this documentation and the program's
+own error message offered it as a range.
+
 ### What the tokens cannot say, and how a site says it anyway
 
 A games studio's site wanted a moving picture behind its hero, a glow on its
@@ -444,6 +504,66 @@ in a site package's `site` block (`style`, `scheme`, `corner`, `tokens`,
 from a sentence or over MCP, can choose the style and the scheme; it never
 writes a layer, because a model writing CSS is the one part of a site nobody
 reads before it is served.
+
+### Changes without a restart
+
+Both servers used to read the design and the settings once, when they started:
+a face added to `templates/fonts/` was "not a font this site serves" on the
+Design screen until `quilzo serve` restarted, and `site.events` did nothing on
+the public site until `quilzo site` restarted. Now:
+
+| | the design (`templates/`: the layouts, the theme, the style layer and the faces) | the settings |
+|---|---|---|
+| `quilzo serve`, the admin | when the directory changes (looked at no more than once a second, as the admin is used), and on SIGHUP | read when used, as before; the interface's brand, the passkey rules and the API's limits still at a restart |
+| `quilzo site`, the public site | with each publish, and on SIGHUP | when the configuration, listings or languages change, with each publish, and on SIGHUP |
+
+The public site takes the design with a publish rather than the moment a file
+changes, on purpose. The publish gate is what holds a design to the standard: it
+computes every contrast pair the theme makes and renders every page through the
+layouts. `quilzo theme set --force` saves a palette that fails, and says the gate
+will refuse it; a site that served `templates/` a second after it was written
+would put that palette in front of readers with no gate at all. So the preview
+shows a change at once, and readers get it with the publish that passed. A style
+layer is the same: saved from the Design screen, it is in the preview when the
+screen comes back; set with `theme layer set`, or edited by hand, it is in the
+preview with the admin's next look at `templates/`; and either way readers get it
+with the next publish. A reader's browser asks for `/site.css` again with every
+page, as it does for the page, and is answered "not modified" while it has not
+changed, so somebody who visited an hour before the publish is not handed the
+new page over the old stylesheet. SIGHUP —
+`systemctl reload` with the unit in [deploy/](../deploy/) — is the operator
+saying so, as a restart was, without dropping a connection.
+
+The site looks for a publish once a second whether or not anybody is visiting,
+because it reads the design when it sees one: a site that looked only when
+somebody visited would read, an hour after the gate, whatever had been saved in
+the hour, and a palette forced past the gate after the publish would go to
+readers with it. A publish whose build is refused (below) brings its design with
+the next build that succeeds, unless `templates/` has changed since; then it
+waits for the next publish, as any other change does.
+
+A rebuilt site keeps what visitors are in the middle of: rate limits and their
+counts, the signals it is counting, sign-ins in progress, the chatbots' rating
+keys, the newsletter's hourly count and the fediverse queue. Their settings —
+`auth.throttle.*` for the site's limits, `chatbot.questions.*`, `fediverse.*`, and
+the content API's — take effect at the next restart, because a reload that handed
+every visitor a fresh allowance would be a limit that resets whenever somebody
+publishes. A reload whose build fails changes nothing: the site serves what it
+served, says why, records `site.reload` as a failure in the audit log, and tries
+again when something changes again. One whose design does not read — a theme
+file that is not JSON, a `page.html` gone — keeps the design it had, takes the
+rest, and records the failure with the reason. A reload that changed what readers
+get is recorded too, with what triggered it.
+
+That includes a `config.json` caught empty. Writing one with `>`, with `cp`, or
+from an editor that writes in place leaves it empty for a moment, and an empty
+file reads as every setting at its default: the classification banner,
+Strict-Transport-Security and security.txt would go with it. So a site whose
+settings said something does not take an empty file as its next ones; write `{}`
+to it, or remove it, to put every setting back to its default on purpose. The
+chatbots are built again with the settings, so a guardrail set while the site
+runs screens what they answer from at once, and they keep the ratings they
+handed out.
 
 ## Building a whole site from a sentence
 
@@ -1666,7 +1786,11 @@ MCP, A2A and ACP cannot express: permissions, delegation with accountability,
 budgets, provenance, revocation, and who answers for what an agent did. Six
 gaps. Quilzo's agent card fills all six, published as an A2A governance
 extension at `/.well-known/agent-card.json`, so another system can read what
-this one will and will not allow before it asks for anything.
+this one will and will not allow before it asks for anything. The card's
+description starts with the site's own sentence — `site.description`, or
+`quilzo site --description` for one run — and then says how its skills are
+governed, so an agent choosing between two sites reads what each is for before
+how it is run; a site with no description keeps the governance sentence alone.
 
 The device side is deliberately the boring version. A published site is an
 installable app with a share target: the operating system offers it in the share

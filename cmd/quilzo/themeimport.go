@@ -205,6 +205,7 @@ func themeImport(root string, args []string) error {
 			dim, reset)
 	}
 	w.Human("\n  %ssee it:  quilzo theme show%s\n", dim, reset)
+	sayWhenReadersSeeIt()
 	return nil
 }
 

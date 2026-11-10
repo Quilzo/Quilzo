@@ -341,7 +341,8 @@ type Theme struct {
 type Family struct {
 	// Name is the family as CSS refers to it, taken from the filename.
 	Name string
-	// Href is where the site serves it, e.g. /fonts/Satoshi.woff2.
+	// Href is where the site serves it, e.g. /fonts/Satoshi.woff2. A name
+	// ending .woff is a WOFF 1.0 face and is announced as one.
 	Href string
 	// Weight is the weight or variable range, e.g. "400" or "100 900".
 	Weight string
@@ -493,7 +494,8 @@ func (t *Theme) validate(tok Token, value string) error {
 			}
 		}
 		return fmt.Errorf("%q is not a built-in stack and this site does not "+
-			"serve a font by that name. Put the .woff2 in templates/fonts/ "+
+			"serve a font by that name. Put the .woff2 or .woff in templates/fonts/ "+
+			"(quilzo theme font add FILE makes one from a .ttf or .otf) "+
 			"and it becomes available under its filename. Built in: %s",
 			value, strings.Join(StackNames(), ", "))
 	}

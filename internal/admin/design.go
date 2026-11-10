@@ -4,8 +4,10 @@
 package admin
 
 import (
+	"fmt"
 	"github.com/quilzo/quilzo/internal/icons"
 	"html/template"
+	"io"
 	"net/http"
 	"net/url"
 	"sort"
@@ -14,6 +16,7 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/starter"
 	"github.com/quilzo/quilzo/internal/theme"
+	"github.com/quilzo/quilzo/internal/webfont"
 )
 
 // The design screen: the tokens, the layouts and the typefaces, in the browser.
@@ -59,6 +62,12 @@ type Design struct {
 	Layouts func() []string
 	// Fonts lists the typefaces served from this origin.
 	Fonts func() []string
+	// FontNotes says which files in the fonts directory are not served, and
+	// why. The screen said "No typefaces of your own" over a directory with
+	// a renamed .ttf in it and nothing more, so the face somebody had put
+	// there was missing without a word; the reason was on the server's error
+	// output, which the person looking at this screen does not see.
+	FontNotes func() []string
 	// FontFile is one of those typefaces, by the name a stylesheet asks
 	// for, so the preview draws a page in the site's own type.
 	FontFile func(name string) ([]byte, bool)
@@ -75,6 +84,38 @@ type Design struct {
 	// form that does nothing.
 	Layer     func() (string, error)
 	SaveLayer func(css string) error
+	// AddFont makes a typeface this site serves out of an uploaded file: a
+	// .ttf or an .otf made into a WOFF, or a .woff or .woff2 checked as it
+	// is. name, when given, is the served name's contract (Family-400-700);
+	// replace says a face already served under that name may be overwritten.
+	// The same operation as `quilzo theme font add`, so the screen and the
+	// command cannot accept different fonts.
+	AddFont func(filename string, body []byte, name string, replace bool) (FontAdded, error)
+}
+
+// FontAdded is what AddFont wrote.
+type FontAdded struct {
+	// File is the name it is served under, at /fonts/.
+	File string `json:"file"`
+	// Family, Weight and Style are what the filename says, as the
+	// stylesheet will declare them.
+	Family string `json:"family"`
+	Weight string `json:"weight"`
+	Style  string `json:"style"`
+	// From is what the upload was: truetype, opentype, woff or woff2.
+	From string `json:"from"`
+	// Replaced says a face already served under that name was overwritten,
+	// which changes every page that names it without anybody naming it
+	// again, so the record has to be able to say so.
+	Replaced bool `json:"replaced,omitempty"`
+	// NamedFromFace says the served name took its weight or style from the
+	// face's own tables, because the file's name did not say them.
+	NamedFromFace bool `json:"named_from_face,omitempty"`
+	// WeightUnread says the face is served as every weight because its name
+	// says none and its tables could not be read: a WOFF2, whose tables are
+	// Brotli. That is right for a variable face and wrong for a static one,
+	// and only the person adding it knows which.
+	WeightUnread bool `json:"weight_unread,omitempty"`
 }
 
 func (s *Server) handleDesign(w http.ResponseWriter, r *http.Request) {
@@ -265,9 +306,18 @@ func (s *Server) showDesign(w http.ResponseWriter, r *http.Request, p principal,
 	data["Dir"] = s.DesignSet.Dir
 	data["Layouts"] = s.designLayouts()
 	data["Fonts"] = s.designFonts()
+	if s.DesignSet != nil && s.DesignSet.FontNotes != nil {
+		data["FontNotes"] = s.DesignSet.FontNotes()
+	}
 	data["Starters"] = starter.All()
 	data["Own"] = s.DesignSet.OwnStylesheet != nil && s.DesignSet.OwnStylesheet()
 	data["CanInstall"] = s.DesignSet.InstallLayout != nil
+	// The typeface form only for somebody who may use it. An author was
+	// shown it, chose a file, sent it, and was answered with a page saying
+	// the credential could not do that; the screen now says who can before
+	// anybody picks a file.
+	data["CanAddFont"] = s.DesignSet.AddFont != nil && s.allows(p, auth.ActPublish, "/")
+	data["FontNeedsPublish"] = s.DesignSet.AddFont != nil && !s.allows(p, auth.ActPublish, "/")
 	show()
 }
 
@@ -520,6 +570,85 @@ func (s *Server) handleDesignInstall(w http.ResponseWriter, r *http.Request) {
 		`"layout": "`+st.LayoutName()+`"`, "")
 }
 
+// handleDesignFont adds a typeface from a file somebody has.
+//
+// The route in for a customer whose foundry sent a TrueType or OpenType
+// file, which there was none of: the screen said to put a .woff2 in a
+// directory, and nothing here could make one.
+//
+// Publisher rather than author, as installing a layout is. It took the
+// authority of setting a token, on the reasoning that a face nobody names
+// changes no page; but a replaced face is already named, and an added one is
+// named by a token an author may set. A face is the glyphs every page that
+// names it is drawn with, and they are whatever its maker drew: one whose
+// digits are drawn as other digits changes every price and telephone number
+// at once. No gate reads a glyph, and a publisher reviewing an author's
+// draft sees its words, not the shapes the next publish draws them in.
+func (s *Server) handleDesignFont(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "post only", http.StatusMethodNotAllowed)
+		return
+	}
+	p, ok := s.requireAuth(w, r)
+	if !ok {
+		return
+	}
+	if !s.can(w, r, p, auth.ActPublish, "/") {
+		return
+	}
+	if s.DesignSet == nil || s.DesignSet.AddFont == nil {
+		s.designRedirect(w, r, "", "this build cannot add typefaces")
+		return
+	}
+	// The form's own 2 MiB limit holds (limitBody): a face larger than that
+	// cannot become one under the half megabyte a site serves.
+	if err := r.ParseMultipartForm(4 << 20); err != nil {
+		s.designRedirect(w, r, "", fmt.Sprintf("that file could not be read: %v. "+
+			"The most a typeface can be before it is made smaller is %d KiB", err,
+			webfont.MaxSourceBytes>>10))
+		return
+	}
+	defer func() { _ = r.MultipartForm.RemoveAll() }()
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		s.designRedirect(w, r, "", "choose a .ttf, .otf, .woff or .woff2 file")
+		return
+	}
+	defer file.Close()
+	body, err := io.ReadAll(io.LimitReader(file, webfont.MaxSourceBytes+1))
+	if err != nil {
+		s.designRedirect(w, r, "", err.Error())
+		return
+	}
+	added, err := s.DesignSet.AddFont(header.Filename, body,
+		strings.TrimSpace(r.FormValue("name")), r.FormValue("replace") == "1")
+	if err != nil {
+		s.designRedirect(w, r, "", err.Error())
+		return
+	}
+	detail := map[string]string{"file": added.File, "family": added.Family, "from": added.From}
+	if added.Replaced {
+		detail["replaced"] = "true"
+	}
+	s.auditPub(p, "theme.font.add", "/", detail)
+	named := ""
+	if added.NamedFromFace {
+		// The served name is not the file's, so say where it came from
+		// rather than leave somebody looking for a file they did not name.
+		named = " The weight and style are the ones the face declares, because the file's name does not give them as a served name does (Family-700-italic); give a name under Served as to choose another."
+	}
+	if added.WeightUnread {
+		// The one case the face could not be asked, so the screen says what
+		// was assumed rather than let a static face claim every weight
+		// unnoticed.
+		named = " A .woff2's tables cannot be read here, so it is served as its name says: every weight from 100 to 900, which is right for a variable face. If it is one weight, give the file in " + s.DesignSet.Dir + "/fonts/ a name that says which, such as " + added.Family + "-400.woff2."
+	}
+	s.designRedirect(w, r, fmt.Sprintf("The typeface is served from this origin at "+
+		"/fonts/%s: family %s, weight %s, %s.%s Choose %s for a font token below; the "+
+		"site serves it from its next publish", added.File, added.Family,
+		added.Weight, added.Style, named, added.Family), "")
+}
+
 func (s *Server) designRedirect(w http.ResponseWriter, r *http.Request, msg, errMsg string) {
 	u := "/design"
 	switch {
@@ -599,7 +728,7 @@ func (s *Server) handleSiteFont(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	w.Header().Set("Content-Type", "font/woff2")
+	w.Header().Set("Content-Type", webfont.ContentType(name))
 	w.Header().Set("Cache-Control", "private, max-age=3600")
 	w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
 	_, _ = w.Write(body)

@@ -27,7 +27,6 @@ import (
 	"github.com/quilzo/quilzo/internal/listen"
 	"github.com/quilzo/quilzo/internal/logd"
 	"github.com/quilzo/quilzo/internal/odp"
-	"github.com/quilzo/quilzo/internal/theme"
 	"github.com/quilzo/quilzo/internal/throttle"
 	"github.com/quilzo/quilzo/internal/travel"
 	"github.com/quilzo/quilzo/internal/webauthn"
@@ -38,7 +37,6 @@ import (
 	"github.com/quilzo/quilzo/internal/agentwatch"
 	"github.com/quilzo/quilzo/internal/aievidence"
 	"github.com/quilzo/quilzo/internal/assist"
-	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/booking"
@@ -744,37 +742,13 @@ func cmdServe(root string, args []string) error {
 	// The design screen. The browser could apply a starter's content and not its
 	// markup, which meant somebody who never opened a terminal got the fields of
 	// a design they were not being served.
-	srv.DesignSet = &admin.Design{
-		Dir:     *tplDir,
-		Tokens:  func() (map[string]string, error) { return loadThemeFile(*tplDir) },
-		Save:    func(values map[string]string) error { return writeThemeFile(*tplDir, values) },
-		Layouts: func() []string { return design.Layouts.Names() },
-		Fonts:   func() []string { return design.Fonts.Names() },
-		FontFile: func(name string) ([]byte, bool) {
-			if design.Fonts == nil {
-				return nil, false
-			}
-			return design.Fonts.File(name)
-		},
-		OwnStylesheet: func() bool {
-			return fileExists(filepath.Join(*tplDir, "site.css"))
-		},
-		InstallLayout: func(name string) ([]string, error) {
-			return installStarter(*tplDir, name)
-		},
-		Layer: func() (string, error) { return readLayer(*tplDir) },
-		SaveLayer: func(css string) error {
-			path := filepath.Join(*tplDir, theme.LayerFile)
-			if css == "" {
-				if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-					return err
-				}
-				return nil
-			}
-			return atomicfile.Write(path, []byte(css), 0o600)
-		},
-	}
-	srv.Decentralised = decentralisedFor(root, *tplDir, s, design)
+	//
+	// Each answer is from the design as it is now: it is read again when
+	// templates/ or templates/fonts/ changes and on SIGHUP (designreload.go),
+	// so a face added from this screen, or by hand, is on it at once.
+	dw := newDesignWatch(*tplDir, design, func(d *Design) { srv.SetDesign(d.Layouts, d.Stylesheet) })
+	srv.DesignSet = adminDesignHooks(*tplDir, dw)
+	srv.Decentralised = decentralisedFor(root, *tplDir, s, dw.Current)
 	srv.Transfer = &admin.Transfer{
 		Pages: func() (map[string]any, error) { return draftPages(root) },
 		// Its own Save rather than the shared one, so what it marks is what it
@@ -1281,8 +1255,14 @@ func cmdServe(root string, args []string) error {
 	//
 	// Then the shield's guard, before anything else sees the request: a
 	// blocked source is refused at the door.
+	//
+	// Inside the guard, the design is looked at before each request, so the
+	// preview and the Design screen are of the design on disk (designWatch).
 	httpSrv := &http.Server{Addr: *addr,
-		Handler: edge(root, "admin.trusted_proxy", sh.guard.Wrap(shield.Admin, srv.Handler()))}
+		Handler: edge(root, "admin.trusted_proxy", sh.guard.Wrap(shield.Admin, dw.Wrap(srv.Handler())))}
+	hupCtx, stopHup := context.WithCancel(context.Background())
+	defer stopHup()
+	onHangup(hupCtx, "admin", dw.Reload)
 
 	fmt.Printf("admin on http://%s\n", *addr)
 	if line := assumedProxy(root, "admin.trusted_proxy"); line != "" {

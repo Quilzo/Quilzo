@@ -16,6 +16,7 @@ import (
 	"github.com/quilzo/quilzo/internal/foreign"
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/starter"
+	"github.com/quilzo/quilzo/internal/tmpl"
 )
 
 func cmdTemplate(root string, args []string) error {
@@ -110,29 +111,129 @@ func templateShow(args []string) error {
 	return nil
 }
 
-// templateLayouts lists the layouts that ship, which is what a page's "layout"
-// field may name once they are written out.
+// templateLayouts lists the layouts a page's "layout" field may name: the ones
+// that ship, which are named once they are written out, and the ones in this
+// site's own template directory.
+//
+// It listed only the shipped ones, so a layout written for the site — the
+// arena.html a page was rendering through — was missing from the answer to
+// "which layouts may a page name", which is the one place somebody would look
+// for it.
 func templateLayouts(args []string) error {
-	if len(args) != 0 {
-		return fmt.Errorf("usage: quilzo template layouts")
+	fs := flag.NewFlagSet("layouts", flag.ContinueOnError)
+	dir := fs.String("dir", "templates", "the site's template directory, for its own layouts")
+	if err := fs.Parse(args); err != nil {
+		return err
 	}
-	names := starter.LayoutNames()
-	if w.JSON(names) {
+	if fs.NArg() != 0 {
+		return fmt.Errorf("usage: quilzo template layouts [--dir templates]")
+	}
+	shipped := starter.LayoutNames()
+	own := siteLayoutNames(*dir)
+	// One list of every name a page may use, as before: the shipped ones and
+	// the site's, once each.
+	if w.JSON(unionSorted(shipped, own)) {
 		return nil
 	}
 	w.Human("%slayouts that ship%s\n\n", bold, reset)
-	for _, n := range names {
+	for _, n := range shipped {
 		note := ""
 		if n == render.DefaultLayout {
 			note = " — the default: what a page renders through when it names none"
 		}
 		w.Human("  %s%-11s%s%s%s%s\n", bold, n, reset, dim, note, reset)
 	}
+	w.Human("\n%sthis site's own%s %s(%s)%s\n\n", bold, reset, dim, *dir, reset)
+	if len(own) == 0 {
+		w.Human("  %snone yet; quilzo template use NAME writes one%s\n", dim, reset)
+	}
+	isShipped := map[string]bool{}
+	for _, n := range shipped {
+		isShipped[n] = true
+	}
+	broken := brokenLayouts(*dir, own)
+	for _, n := range own {
+		note := " — written for this site"
+		if isShipped[n] {
+			note = " — a copy of the shipped one, to edit"
+		}
+		if why, bad := broken[n]; bad {
+			w.Human("  %s%-11s%s%s — does not parse: %v%s\n", bold, n, reset, yellow, why, reset)
+			continue
+		}
+		w.Human("  %s%-11s%s%s%s%s\n", bold, n, reset, dim, note, reset)
+	}
+	// What stops the set being used at all — no page layout — as the site
+	// would say it.
+	if len(own) > 0 {
+		if _, err := loadLayouts(*dir); err != nil {
+			w.Human("\n  %s%v%s\n", yellow, err, reset)
+		}
+	}
 	w.Human("\n  %sa page chooses one with a \"layout\" field:%s\n", dim, reset)
 	w.Human("    %s{ \"layout\": \"catalogue\", \"title\": \"Shop\" }%s\n", dim, reset)
 	w.Human("\n  %squilzo template use NAME --all-layouts  writes all of them%s\n",
 		dim, reset)
 	return nil
+}
+
+// siteLayoutNames are the layouts in a template directory: every .html whose
+// name a page could use, as loadLayouts reads them. None for a directory that
+// is not there, which is a site that has not written any yet.
+func siteLayoutNames(dir string) []string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range entries {
+		name, isHTML := strings.CutSuffix(e.Name(), ".html")
+		if e.IsDir() || !isHTML || !render.ValidLayoutName(name) {
+			continue
+		}
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// brokenLayouts are the layouts among names in dir whose markup does not
+// parse, each with what the parser said.
+//
+// loadLayouts reads the files and parses none of them: a layout is parsed
+// when a page is rendered through it. So the listing that said it named a
+// layout that does not parse named none, and the first anybody heard of an
+// unclosed {% if %} was a page that would not render, at the publish gate or
+// in front of a reader.
+func brokenLayouts(dir string, names []string) map[string]error {
+	out := map[string]error{}
+	for _, n := range names {
+		b, err := os.ReadFile(filepath.Join(dir, n+".html"))
+		if err != nil {
+			out[n] = err
+			continue
+		}
+		if _, err := tmpl.Parse(string(b)); err != nil {
+			out[n] = err
+		}
+	}
+	return out
+}
+
+// unionSorted is every name in either list, once, in order.
+func unionSorted(a, b []string) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, list := range [][]string{a, b} {
+		for _, n := range list {
+			if !seen[n] {
+				seen[n] = true
+				out = append(out, n)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func templateUse(root string, args []string) error {
@@ -218,7 +319,8 @@ func templateUse(root string, args []string) error {
 	}
 
 	// A template is what renders every page, so writing one is a change to
-	// what the public sees the moment the server restarts.
+	// what the public sees with the next publish, or when the site is told
+	// to reload (designreload.go).
 	record(root, resolveCaller(root, "").auditRecord("template.use", "/",
 		audit.Success, map[string]string{"starter": t.Name, "dir": *dir}))
 	for _, path := range paths {

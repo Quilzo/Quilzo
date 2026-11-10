@@ -218,6 +218,10 @@ type Memory struct {
 type Options struct {
 	// SiteName is what this deployment calls itself.
 	SiteName string
+	// Description is the site's own sentence about itself (site.description),
+	// which the card's description leads with. Empty leaves the governance
+	// sentence alone, as the card was before it was read.
+	Description string
 	// BaseURL is the origin the card is served from, without a trailing slash.
 	BaseURL string
 	// Version is the build.
@@ -277,6 +281,18 @@ func From(manifests map[string]agent.Manifest, known map[string]bool, o Options)
 			"Each skill below is an enforced manifest: the %s extension states "+
 			"the capabilities, scope, budget and accountability that A2A itself "+
 			"cannot express.", GovernanceExtension)
+	// The site's own sentence first, then the governance one.
+	//
+	// The card said what the store is made of and nothing about what the
+	// site is for, the same paragraph on every deployment, so an agent
+	// choosing between two cards read two identical descriptions. The
+	// governance sentence stays, because it is what the extension below is.
+	if d := strings.TrimSpace(o.Description); d != "" {
+		if !strings.HasSuffix(d, ".") && !strings.HasSuffix(d, "!") && !strings.HasSuffix(d, "?") {
+			d += "."
+		}
+		c.Description = d + " " + c.Description
+	}
 
 	for _, name := range names {
 		m := manifests[name]

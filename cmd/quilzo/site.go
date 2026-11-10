@@ -32,6 +32,7 @@ import (
 	"github.com/quilzo/quilzo/internal/seo"
 	"github.com/quilzo/quilzo/internal/shield"
 	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/store"
 	"github.com/quilzo/quilzo/internal/upkeep"
 )
 
@@ -133,44 +134,6 @@ func cmdSite(root string, args []string) error {
 		w.Human("%s%s%s\n", dim, note, reset)
 	}
 
-	// One builder, shared with the static bundle. See sitebuild.go: the server
-	// and `ipfs write` used to assemble their own idea of what this site is,
-	// and the bundle's was missing the sitemap, the licence, the manifest, the
-	// structured data and the provenance marking.
-	st, serr := siteFor(root, design, siteOpts{
-		BaseURL: *baseURL,
-		Note: func(format string, a ...any) {
-			fmt.Fprintf(os.Stderr, format, a...)
-		},
-	})
-	if serr != nil {
-		return serr
-	}
-
-	// Set before anything reads it. It used to be assigned forty lines below
-	// the startup check that consults it, so --index was applied to the server
-	// and not to the warning: passing --index home still reported that / would
-	// 404, correctly serving the page it had just said was missing.
-	st.Index = *index
-
-	// Languages, if configured. A single-language site never sees this: the
-	// sitemap is byte-identical to what it was before the feature existed.
-	if locales, lerr := loadLocales(root); lerr == nil && locales != nil &&
-		len(locales.Locales) > 1 {
-		st.Locales = locales
-	}
-
-	// The index is built from what is live, at startup, and again from the
-	// live commit after each publish (public.Site.IndexLive). Building it
-	// from the draft would make the search box return pages nobody has
-	// published, which is a content leak however it is labelled.
-	// The vector index is built from what is live at the same moments.
-	// Rebuilding per request would embed every page to answer one query, so
-	// it is rebuilt once per publish, when it is next asked for.
-	var vecIndex *vector.Index
-	var vecMu sync.Mutex
-	st.IndexLive = true
-
 	// Which environment this server is serving. Production unless told
 	// otherwise, so a store that has never configured environments behaves
 	// exactly as it always did.
@@ -186,7 +149,6 @@ func cmdSite(root string, args []string) error {
 		}
 		serving = env
 	}
-	st.Ref = serving.Ref
 	if !serving.Production {
 		// Said loudly. A non-production environment served on a public
 		// address is content somebody believed was not published yet, and the
@@ -194,6 +156,46 @@ func cmdSite(root string, args []string) error {
 		fmt.Fprintf(os.Stderr, "  %sserving the %s environment, which is not "+
 			"production%s\n", yellow, serving.Name, reset)
 	}
+
+	redirects, err := servedRedirects(root, *redirectFile)
+	if err != nil {
+		return err
+	}
+
+	// Counting, once for the process: the counter is what the day's totals
+	// are, and every build of the site counts into it. Written every thirty
+	// seconds: a crash costs at most that much of the day's totals, and the
+	// totals are all there is — see internal/analytics.
+	counter, cerr := analytics.Open(analyticsDir(root), nil)
+	if cerr == nil {
+		go func() {
+			for range time.Tick(30 * time.Second) {
+				_ = counter.Flush()
+			}
+		}()
+	} else {
+		fmt.Fprintf(os.Stderr, "analytics are off: %v\n", cerr)
+	}
+
+	// The shield: every signal the site sees is told to its playbooks, and
+	// a feature it has turned down is turned down here (internal/shield).
+	sh := newShieldHost(root)
+	sh.where = shield.Site
+
+	run := siteRun{root: root, store: s, index: *index, name: *name, description: *desc,
+		baseURL: *baseURL, redirectFile: *redirectFile, ref: serving.Ref,
+		redirects: redirects, counter: counter, shield: sh}
+	build := run.build
+	st, serr := build(design, nil)
+	if serr != nil {
+		return serr
+	}
+
+	// The vector index is built from what is live at the same moments as the
+	// search index. Rebuilding per request would embed every page to answer
+	// one query, so it is rebuilt once per publish, when it is next asked for.
+	var vecIndex *vector.Index
+	var vecMu sync.Mutex
 
 	live := s.GetRef(serving.Ref)
 	if live == "" {
@@ -248,61 +250,18 @@ func cmdSite(root string, args []string) error {
 		}
 	}
 
-	// lastmod is computed per request rather than cached, because it is derived
-	// from history and history only grows. A cached value would go stale
-	// exactly when a page changed, which is the one moment it matters.
-	st.LastChanged = func() (map[string]time.Time, error) {
-		return seo.LastChanged(s, s.GetRef(site.RefLive), 5000)
-	}
-
-	redirects, err := servedRedirects(root, *redirectFile)
-	if err != nil {
-		return err
-	}
-	st.Redirects = redirects
-	st.RedirectsAt = reloadingRedirects(root, *redirectFile, redirects)
-	st.IndexNowKey = servedIndexNowKey(root)
-	if *name != "" {
-		st.Name = *name
-	}
-	if d := strings.TrimSpace(*desc); d != "" {
-		st.Description = d
-	}
-
-	// Counting, before the handler is built around it. Written every thirty
-	// seconds: a crash costs at most that much of the day's totals, and the
-	// totals are all there is — see internal/analytics.
-	if counter, cerr := analytics.Open(analyticsDir(root), nil); cerr == nil {
-		st.Analytics = counter
-		// Read per request, so starting or stopping a test from the admin
-		// takes effect on the next visitor rather than on the next restart.
-		st.Experiments = func() (*experiment.Set, error) {
-			return experiment.Load(experimentsPath(root))
-		}
-		st.Personalise = func() (*personalise.Set, error) {
-			return personalise.Load(personalisePath(root))
-		}
-		go func() {
-			for range time.Tick(30 * time.Second) {
-				_ = counter.Flush()
-			}
-		}()
-	} else {
-		fmt.Fprintf(os.Stderr, "analytics are off: %v\n", cerr)
-	}
-
-	// The shield: every signal the site sees is told to its playbooks, and
-	// a feature it has turned down is turned down here (internal/shield).
-	sh := newShieldHost(root)
-	sh.where = shield.Site
-	st.OnSignal = sh.signal
-	if st.Assistants != nil {
-		st.Assistants.Takeover = sh.takeover
-	}
-	st.Shield = sh.feature
-	st.OnViolation = sh.violation
-
-	handler := st.Handler()
+	// Served through the reloader, which builds the site again when its
+	// settings change, when a publish moves what it serves, and on SIGHUP
+	// (designreload.go), so neither a font nor a setting waits for a restart.
+	reloader := newSiteReloader(root, *tplDir, s, serving.Ref, design, st, build)
+	var handler http.Handler = reloader
+	hupCtx, stopHup := context.WithCancel(context.Background())
+	defer stopHup()
+	onHangup(hupCtx, "site", reloader.Reload)
+	// And once a second without a visitor, so a publish is taken with the
+	// design its check read, not with whatever templates/ holds when
+	// somebody next calls.
+	go reloader.Watch(hupCtx)
 
 	// The API shares the listener but not the routing. Mounted here rather than
 	// inside the public site because it is a different product with different
@@ -338,7 +297,7 @@ func cmdSite(root string, args []string) error {
 			ReloadPolicy: policyReloader(root, pol),
 			Tokenise:     search.Tokenise,
 			Vectors: func() *vector.Index {
-				live := s.GetRef(st.Ref)
+				live := s.GetRef(serving.Ref)
 				vecMu.Lock()
 				defer vecMu.Unlock()
 				if live == "" || (vecIndex != nil && vecIndex.Commit == live) {
@@ -447,7 +406,7 @@ func cmdSite(root string, args []string) error {
 	}
 	fmt.Printf("  %sserving the %s environment; drafts are not public%s\n", dim, serving.Name, reset)
 	fmt.Printf("  %sinstallable: /manifest.webmanifest · offline: /sw.js%s\n", dim, reset)
-	if fp := st.Fingerprint(); fp != "" {
+	if fp := reloader.Site().Fingerprint(); fp != "" {
 		fmt.Printf("  %spublished fingerprint %s%s\n", dim, fp, reset)
 	} else {
 		fmt.Printf("  %snothing is published yet; run quilzo publish%s\n", yellow, reset)
@@ -611,4 +570,106 @@ func servedRedirects(root, file string) (*seo.Map, error) {
 		return nil, fmt.Errorf("the redirects: %w", err)
 	}
 	return m, nil
+}
+
+// siteRun is what one run of `quilzo site` adds to every build of the site:
+// its flags, the environment it serves, the counter and the shield.
+//
+// A type, because the site is built again when its settings change, when a
+// publish moves what it serves and on SIGHUP (designreload.go), and every
+// build has to be this one: a rebuilt site that forgot --index, or the
+// shield, would be a different site from the one that was started.
+type siteRun struct {
+	root  string
+	store *store.Store
+	// index, name and description are the flags of the same names.
+	index, name, description string
+	baseURL, redirectFile    string
+	// ref is the environment being served.
+	ref       string
+	redirects *seo.Map
+	// counter is nil when the counts could not be opened.
+	counter *analytics.Counter
+	shield  *shieldHost
+}
+
+// build makes the site from a design, keeping what the site before it held
+// for its visitors (carrySiteState). prev is nil for the first.
+func (run siteRun) build(d *Design, prev *public.Site) (*public.Site, error) {
+	// One builder, shared with the static bundle. See sitebuild.go: the
+	// server and `ipfs write` used to assemble their own idea of what this
+	// site is, and the bundle's was missing the sitemap, the licence, the
+	// manifest, the structured data and the provenance marking.
+	st, err := siteFor(run.root, d, siteOpts{
+		BaseURL: run.baseURL,
+		Note: func(format string, a ...any) {
+			fmt.Fprintf(os.Stderr, format, a...)
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	run.dress(st)
+	// After dress, which writes to the new site's own parts: the carried
+	// ones are serving requests.
+	carrySiteState(prev, st)
+	return st, nil
+}
+
+// dress sets what this run adds to a site that siteFor built.
+func (run siteRun) dress(st *public.Site) {
+	root, s := run.root, run.store
+	// Set before anything reads it. It used to be assigned forty lines below
+	// the startup check that consults it, so --index was applied to the
+	// server and not to the warning: passing --index home still reported that
+	// / would 404, correctly serving the page it had just said was missing.
+	st.Index = run.index
+	// Languages, if configured. A single-language site never sees this: the
+	// sitemap is byte-identical to what it was before the feature existed.
+	if locales, lerr := loadLocales(root); lerr == nil && locales != nil &&
+		len(locales.Locales) > 1 {
+		st.Locales = locales
+	}
+	// The index is built from what is live, at startup, and again from the
+	// live commit after each publish (public.Site.IndexLive). Building it
+	// from the draft would make the search box return pages nobody has
+	// published, which is a content leak however it is labelled.
+	st.IndexLive = true
+	if run.ref != "" {
+		st.Ref = run.ref
+	}
+	// lastmod is computed per request rather than cached, because it is
+	// derived from history and history only grows. A cached value would go
+	// stale exactly when a page changed, which is the one moment it matters.
+	st.LastChanged = func() (map[string]time.Time, error) {
+		return seo.LastChanged(s, s.GetRef(site.RefLive), 5000)
+	}
+	st.Redirects = run.redirects
+	st.RedirectsAt = reloadingRedirects(root, run.redirectFile, run.redirects)
+	st.IndexNowKey = servedIndexNowKey(root)
+	if run.name != "" {
+		st.Name = run.name
+	}
+	if d := strings.TrimSpace(run.description); d != "" {
+		st.Description = d
+	}
+	if run.counter != nil {
+		st.Analytics = run.counter
+		// Read per request, so starting or stopping a test from the admin
+		// takes effect on the next visitor rather than on the next restart.
+		st.Experiments = func() (*experiment.Set, error) {
+			return experiment.Load(experimentsPath(root))
+		}
+		st.Personalise = func() (*personalise.Set, error) {
+			return personalise.Load(personalisePath(root))
+		}
+	}
+	if sh := run.shield; sh != nil {
+		st.OnSignal = sh.signal
+		if st.Assistants != nil {
+			st.Assistants.Takeover = sh.takeover
+		}
+		st.Shield = sh.feature
+		st.OnViolation = sh.violation
+	}
 }
