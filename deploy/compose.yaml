@@ -136,7 +136,10 @@ services:
     # tell the site from the admin and signs nothing for it. In the
     # writer's group as well, to read the log and reach its socket with
     # its records. A uid of its own would take every file in the store
-    # changing hands, and is not done here.
+    # changing hands, and is not done here. The group holds only while the
+    # site cannot gain privileges (no-new-privileges, in x-quilzo above):
+    # without that, a set-group-ID copy of the binary it made itself
+    # connected as the admin's group and had a head signed.
     user: "65532:65531"
     group_add: ["65532"]
     command:

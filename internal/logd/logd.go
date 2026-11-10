@@ -140,7 +140,9 @@ type Server struct {
 	// reference compose the site and the admin are one uid, so anything that
 	// could run code as the public site could have the writer sign a feature
 	// package. There the site connects in a group of its own and the writer
-	// signs for the admin's (deploy/compose.yaml).
+	// signs for the admin's (deploy/compose.yaml), which holds while the
+	// site runs with no-new-privileges: a set-group-ID program of its own
+	// would otherwise connect as the admin's group (peerCreds).
 	SignUID []int
 	SignGID []int
 

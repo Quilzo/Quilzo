@@ -17,9 +17,17 @@ import (
 // Asked of the kernel rather than of the client, which is the entire point: a
 // uid a client tells you is a claim, and a uid SO_PEERCRED returns is a fact
 // the client cannot influence. The group is the one the process ran as when
-// it connected, which an account with no privilege cannot change to another
-// it is merely a member of; that is what lets the writer tell the public
-// site from the admin where both are one uid (Server.SignGID).
+// it connected: its effective group, which is what lets the writer tell the
+// public site from the admin where both are one uid (Server.SignGID).
+//
+// An account can change its effective group to another it is a member of
+// all the same, by running a set-group-ID program it made itself, unless it
+// runs with no-new-privileges, or where it can write only on file systems
+// mounted nosuid. The site is in the writer's group, so a group named to
+// ask for signatures tells it from the admin only while it cannot gain
+// privileges, as every Quilzo container in the reference compose cannot.
+// Run without it, the site's account made a copy of this program
+// set-group-ID to the admin's group, ran it, and had a head signed.
 //
 // Linux only, and split into its own file for that reason. It used to sit in
 // the package's main file with no build tag, so the whole program failed to

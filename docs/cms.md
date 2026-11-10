@@ -1054,7 +1054,10 @@ site as the admin's uid, since they share the store and every file in it is
 that account's, in a group of its own (65531) with the writer's group
 beside it for its records, and the writer signs for the admin's group
 (65532) only. A uid of the site's own would take every file in the store
-changing hands, and is not done.
+changing hands, and is not done. The group is the one the site connects as,
+which it could change to the admin's, being a member of it, by running a
+set-group-ID program it made itself; it cannot while it runs with
+no-new-privileges, as every Quilzo container in the reference compose does.
 
 The writer signs only with a key that is its own alone: `head.key` owned by
 its account, at 0600. A key another account made, or one other accounts can
