@@ -393,3 +393,45 @@ func TestWhatAMachineWroteForAPersonIsTheirsToRead(t *testing.T) {
 		t.Errorf("a person's commit is written by %q for %q", writer, person)
 	}
 }
+
+// The approval of the person a model wrote a change for stops counting once
+// a count is set, and somebody else's approval is then enough: hers is set
+// aside, not held against everybody else's.
+//
+// Dana read what her client wrote and approved it while no count was set,
+// as the rule allows, and a count of one was set before it was published.
+// Her approval was then reported as a refusal whatever anybody else said:
+// sam's approval was the one the count asked for, and the change still
+// could not be published until the draft itself changed. So was a proposal
+// waiting when the program was upgraded, approved by dana while a person's
+// later commit was all its author said.
+func TestAnApprovalThatNoLongerCountsDoesNotOutvoteOneThatDoes(t *testing.T) {
+	m := &MachineChange{Commit: "aaa", Author: "dana", Message: "mcp: write index"}
+	prop := Proposal{Content: "aaa", Author: m.Writer(), CreatedAt: now.Unix()}
+	prop.MarkMachine(m)
+	if err := prop.Approve("dana", "read it", now); err != nil {
+		t.Fatal(err)
+	}
+	counted := Policy{Required: 1, RequireHumanForAI: true}
+
+	// Hers alone is not enough, and the refusal says why.
+	d := counted.Evaluate(prop, people, now)
+	if d.Allowed || !strings.Contains(d.Reason, "for dana") {
+		t.Fatalf("with a count set, dana's approval of what was written for her: %+v", d)
+	}
+
+	if err := prop.Approve("sam", "read it too", now); err != nil {
+		t.Fatal(err)
+	}
+	if d := counted.Evaluate(prop, people, now); !d.Allowed || d.Have != 1 {
+		t.Fatalf("sam's approval did not count beside dana's: %+v", d)
+	}
+
+	// Where sam's is not enough either, the refusal says what is still
+	// missing as well as why dana's was set aside.
+	two := Policy{Required: 2, RequiredHumans: 2, RequireHumanForAI: true}
+	if d := two.Evaluate(prop, people, now); d.Allowed || !strings.Contains(d.Reason, "for dana") ||
+		!strings.Contains(d.Reason, "from people") {
+		t.Fatalf("with two people asked for, sam's approval and dana's: %+v", d)
+	}
+}

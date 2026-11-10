@@ -845,3 +845,60 @@ func TestAModelsChangeForAPersonGoesToSomebodyElseWhenThereIsOne(t *testing.T) {
 		t.Fatalf("approved by lee, dana's client's change did not publish:\n%s", refusal)
 	}
 }
+
+// What a model wrote for dana, approved by her while she ran the site
+// alone, publishes on lee's approval once lee joins and a count of one is
+// set: her approval stops counting, and his is the one asked for.
+//
+// Her approval was held against his. The change had the approval the count
+// asked for, and publishing still refused it, saying she had asked for it,
+// until the draft itself changed.
+func TestAnApprovalGivenAloneDoesNotHoldBackTheOneACountAsksFor(t *testing.T) {
+	root, tpl, s := approvalDemo(t)
+	if err := updatePolicyForTest(root, auth.Binding{Principal: "dana", Role: auth.RoleAdmin, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	ts, err := loadTokens(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret, _, err := ts.Issue("dana", "dana", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveTokens(root, ts); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("QUILZO_TOKEN", secret)
+	machinesForAPerson[0].write(t, root, tpl, s, "Written for dana")
+	draft := s.GetRef(site.RefDraft)
+	if refusal := approveOnTheCommandLine(t, root, tpl, s); refusal != "" {
+		t.Fatalf("the only person could not approve what her client wrote for her:\n%s", refusal)
+	}
+
+	if err := updatePolicyForTest(root, auth.Binding{Principal: "lee", Role: auth.RoleAdmin, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdConfig(root, []string{"set", "review.required_approvals", "1"}); err != nil {
+		t.Fatal(err)
+	}
+	if refusal := publishOnTheCommandLine(t, root, tpl, s); refusal == "" {
+		t.Fatal("with a count set, dana's own approval of what she asked for published it")
+	}
+	prop, _, err := proposalFor(root, s, draft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := prop.Approve("lee", "read it", time.Now()); err != nil {
+		t.Fatalf("lee may not approve dana's client's change: %v", err)
+	}
+	if err := saveProposal(root, s, prop); err != nil {
+		t.Fatal(err)
+	}
+	if refusal := publishOnTheCommandLine(t, root, tpl, s); refusal != "" {
+		t.Fatalf("approved by lee as the count asks, dana's client's change did not publish:\n%s", refusal)
+	}
+	if live := s.GetRef(site.RefLive); live != draft {
+		t.Fatalf("live is %s, not the approved draft %s", short(live), short(draft))
+	}
+}
