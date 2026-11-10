@@ -133,9 +133,30 @@ func cmdSAML(root string, args []string) error {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
+		// One document under --json, as `saml list` is. This printed only
+		// through Human, so a script asking which providers have a preset
+		// was answered with nothing at all.
+		type row struct {
+			Name              string   `json:"name"`
+			Label             string   `json:"label"`
+			Where             string   `json:"where"`
+			NameIDFormat      string   `json:"name_id_format,omitempty"`
+			MFAContexts       []string `json:"mfa_contexts,omitempty"`
+			MFAAttribute      string   `json:"mfa_attribute,omitempty"`
+			MFAValues         []string `json:"mfa_values,omitempty"`
+			VerifiedAttribute string   `json:"verified_attribute,omitempty"`
+		}
+		rows := []row{}
 		for _, k := range keys {
 			p := saml.Presets[k]
-			w.Human("%-10s %s: %s\n", k, p.Label, p.Where)
+			rows = append(rows, row{k, p.Label, p.Where, p.NameIDFormat,
+				p.MFAContexts, p.MFAAttribute, p.MFAValues, p.VerifiedAttribute})
+		}
+		if w.JSON(map[string]any{"presets": rows}) {
+			return nil
+		}
+		for _, r := range rows {
+			w.Human("%-10s %s: %s\n", r.Name, r.Label, r.Where)
 		}
 		return nil
 	case "show", "metadata":

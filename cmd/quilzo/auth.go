@@ -706,20 +706,50 @@ func authExplain(root string, args []string) error {
 		return err
 	}
 
+	// --json gives the same answer as one document. This printed its prose
+	// whatever was asked for, so a script checking what somebody may do got
+	// "no  view  no binding gives ada any role on /" to parse.
 	if len(rest) == 1 {
-		fmt.Printf("%s%s on %s%s\n\n", bold, principal, *on, reset)
+		type row struct {
+			Action  auth.Action `json:"action"`
+			Allowed bool        `json:"allowed"`
+			Role    auth.Role   `json:"role,omitempty"`
+			Reason  string      `json:"reason"`
+		}
+		rows := []row{}
 		for _, a := range auth.Actions() {
 			d := p.Evaluate(principal, a, *on)
+			rows = append(rows, row{a, d.Allowed, d.Role, d.Reason})
+		}
+		if w.JSON(map[string]any{"principal": principal, "on": *on, "actions": rows}) {
+			return nil
+		}
+		fmt.Printf("%s%s on %s%s\n\n", bold, principal, *on, reset)
+		for _, r := range rows {
 			mark := red + "no " + reset
-			if d.Allowed {
+			if r.Allowed {
 				mark = green + "yes" + reset
 			}
-			fmt.Printf("  %s  %-14s %s%s%s\n", mark, a, dim, d.Reason, reset)
+			fmt.Printf("  %s  %-14s %s%s%s\n", mark, r.Action, dim, r.Reason, reset)
 		}
 		return nil
 	}
 
 	d := p.Evaluate(principal, auth.Action(rest[1]), *on)
+	trail := d.Trail
+	if trail == nil {
+		trail = []string{}
+	}
+	if w.JSON(map[string]any{
+		"principal": principal, "action": rest[1], "on": *on,
+		"allowed": d.Allowed, "role": d.Role, "reason": d.Reason,
+		"binding": d.Binding, "trail": trail,
+	}) {
+		if !d.Allowed {
+			return fmt.Errorf("not permitted")
+		}
+		return nil
+	}
 	verdict := red + "DENIED" + reset
 	if d.Allowed {
 		verdict = green + "ALLOWED" + reset

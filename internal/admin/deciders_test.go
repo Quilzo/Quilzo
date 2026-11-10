@@ -7,6 +7,7 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -106,5 +107,44 @@ func TestADecisionTriedOnTheScreenIsHandedOnToBeRecorded(t *testing.T) {
 	decideForm(t, srv, "/decisions/ticket", token, url.Values{"state": {`not json`}})
 	if len(asked) != 1 {
 		t.Errorf("%d asks handed on", len(asked))
+	}
+}
+
+// The Decisions screen says what a confidence is, as decide.Decide reports
+// it.
+//
+// Its lead said "Confidence is not the model's word for it", while the
+// package reports the lower of the model's stated confidence and how far
+// the asks agreed. A model that says 0.4 and never changes its answer is
+// shown a confidence of 0.40 beside an agreement of 1.00, and a person who
+// had read that sentence would take the 0.40 for asks that disagreed. The
+// MCP decide tool said the same and was corrected; this is the screen.
+func TestTheDecisionsScreenSaysWhatConfidenceIs(t *testing.T) {
+	srv, token := setup(t)
+	d, _ := decidersRig()
+	srv.Deciders = d
+	decl := `{"name": "ticket", "title": "Ticket triage", "questions": [
+	  {"name": "angry", "ask": "Angry?", "kind": "yesno"}]}`
+	if w := decideForm(t, srv, "/decisions/save", token, url.Values{"declaration": {decl}}); w.Code != http.StatusSeeOther {
+		t.Fatalf("declaring: %d", w.Code)
+	}
+	// decidesReturns says "yes" at 0.4, every time it is asked.
+	tried := decideForm(t, srv, "/decisions/ticket", token, url.Values{"state": {`{"body": "refund"}`}}).Body.String()
+	row := regexp.MustCompile(`(?s)<code>angry</code>.*?</tr>`).FindString(tried)
+	if !strings.Contains(row, "0.40") || !strings.Contains(row, "<td>1.00</td>") {
+		t.Fatalf("a steady model stating 0.4 is not shown a confidence of 0.40 and an agreement of 1.00: %s", row)
+	}
+
+	lead := regexp.MustCompile(`(?s)<p class="lead">(.*?)</p>`).FindStringSubmatch(get(t, srv, "/decisions", token).Body.String())
+	if lead == nil {
+		t.Fatal("the Decisions screen has no lead")
+	}
+	for _, want := range []string{"lower", "stated", "agree"} {
+		if !strings.Contains(lead[1], want) {
+			t.Errorf("the lead does not say %q, so it misdescribes that 0.40: %q", want, lead[1])
+		}
+	}
+	if strings.Contains(lead[1], "not the model's word for it") {
+		t.Errorf("the lead says the model's word plays no part, and it does: %q", lead[1])
 	}
 }

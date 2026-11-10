@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -350,5 +351,58 @@ func TestADecisionAskedIsOnTheRecord(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// statedModel gives the same answer every time, at the confidence it is
+// told to state, so agreement is always complete.
+type statedModel struct{ stated float64 }
+
+func (m statedModel) Name() string { return "stated" }
+func (m statedModel) Complete(context.Context, string, string) (string, error) {
+	return fmt.Sprintf(`{"answers": {"queue": {"value": "returns", "confidence": %v}}}`, m.stated), nil
+}
+
+// TestTheDecideToolSaysWhatItsConfidenceIs holds the MCP tool's description
+// to what decide.Decide reports. It once told every client that confidence
+// "is agreement across several asks, not the model's own estimate", while
+// the package reports the lower of the model's stated confidence and the
+// agreement: a model that says 0.5 and never changes its answer has an
+// agreement of 1 and a confidence of 0.5, and an agent reading the old
+// sentence would have taken that 0.5 for disagreement between asks.
+func TestTheDecideToolSaysWhatItsConfidenceIs(t *testing.T) {
+	srv := mcp.NewServer("quilzo", "test")
+	registerDecideOps(srv, t.TempDir(), nil)
+	var detail string
+	for _, op := range srv.Operations() {
+		if op.Name == "decide" {
+			detail = op.Detail
+		}
+	}
+	if detail == "" {
+		t.Fatal("no decide tool is registered")
+	}
+
+	var d decide.Decider
+	if err := json.Unmarshal([]byte(ticketDecider), &d); err != nil {
+		t.Fatal(err)
+	}
+	res, err := decide.Decide(context.Background(), d, statedModel{stated: 0.5}, "refund please")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, _ := res.Get("queue")
+	if a.Agreement != 1 || a.Confidence != 0.5 {
+		t.Fatalf("a steady model stating 0.5: agreement %v, confidence %v; the package's rule "+
+			"is the lower of the two", a.Agreement, a.Confidence)
+	}
+	for _, want := range []string{"lower", "stated", "agree"} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("the decide tool's description does not say %q, so it misdescribes a confidence "+
+				"of %v with an agreement of %v: %q", want, a.Confidence, a.Agreement, detail)
+		}
+	}
+	if strings.Contains(detail, "not the model's own") {
+		t.Errorf("the description says the model's own estimate plays no part, and it does: %q", detail)
 	}
 }

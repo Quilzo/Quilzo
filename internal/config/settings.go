@@ -1416,10 +1416,11 @@ var settings = []Setting{
 			"so it is matched against a pattern rather than cleaned: a " +
 			"sanitiser is a promise about every future CSS grammar. rgb(), a " +
 			"named colour and var() are all refused for that reason and not " +
-			"because they would look wrong. The accent applies alongside the " +
-			"built-in palette rather than replacing it, so the AAA contrast " +
-			"the interface was built for is not something a brand can drop " +
-			"below by accident.",
+			"because they would look wrong. The accent becomes the colour of " +
+			"links and buttons only in a scheme where it keeps the AAA " +
+			"contrast the interface was built for, and the Settings screen " +
+			"says which; elsewhere it tints the logo and the name, so that " +
+			"contrast is not something a brand can drop below by accident.",
 	},
 	{
 		Key: "admin.brand.mark", Kind: Text, Default: "",

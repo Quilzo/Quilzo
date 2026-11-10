@@ -341,7 +341,12 @@ func (s *Server) handleDesignSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.FormValue("reset") != "" {
+		// Every key the token is set under, ".light" among them: a palette
+		// generated here or by `theme generate` writes one per scheme, and a
+		// reset that left that one behind said "back to the shipped value"
+		// with the light scheme still wearing the generated colour.
 		delete(next, token)
+		delete(next, token+".light")
 		delete(next, token+".dark")
 		if err := s.DesignSet.Save(next); err != nil {
 			s.designRedirect(w, r, "", err.Error())
@@ -355,7 +360,15 @@ func (s *Server) handleDesignSave(w http.ResponseWriter, r *http.Request) {
 	light := strings.TrimSpace(r.FormValue("light"))
 	dark := strings.TrimSpace(r.FormValue("dark"))
 	if light != "" {
-		next[token] = light
+		// Into the key that is in charge of the light scheme. A generated
+		// palette holds "primary.light", which wins over "primary", so the
+		// light value went into a key that reached no reader and the screen
+		// said "primary saved".
+		if _, perScheme := next[token+".light"]; perScheme {
+			next[token+".light"] = light
+		} else {
+			next[token] = light
+		}
 	}
 	if dark != "" {
 		next[token+".dark"] = dark

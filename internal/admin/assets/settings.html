@@ -54,6 +54,7 @@
       <code>{{.Setting.Key}}</code>
       <div class="hint">{{.Setting.Summary}}</div>
       {{if .Weaker}}<div class="hint warn">{{.Why}}</div>{{end}}
+      {{if eq .Setting.Key "admin.brand.colour"}}{{with $.BrandAccent}}<div class="hint">{{.}}</div>{{end}}{{end}}
       {{range .Floors}}<div class="hint">{{if .Broken}}Held by the organisation's policy, which cannot be read, so it is not changed.{{else}}Held by the organisation's policy: <a href="/security/parameters">{{.Param}}</a> is {{.Declared}}. It may be stricter, never weaker.{{end}}</div>{{end}}
     </th>
     <td>{{if .Overriden}}<strong>{{.Shown}}</strong>{{else}}{{.Shown}}{{end}}</td>

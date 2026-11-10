@@ -2,11 +2,19 @@
 <h1>Decisions</h1>
 {{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
 {{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
+{{/*
+  What a confidence is, as decide.Decide reports it. This once said
+  "Confidence is not the model's word for it", and a steady model that
+  states 0.4 is shown 0.40 beside an agreement of 1.00: read with that
+  sentence, the 0.40 looked like asks that disagreed.
+*/}}
 <p class="lead">Typed questions a model answers about some state — which
   queue, is it abusive, how urgent — each with a confidence. Anything under
-  the threshold goes to a person. Confidence is not the model's word for it:
-  each question is asked several times, and an answer that changes between
-  asks is not a confident one.</p>
+  the threshold goes to a person. Confidence is not the model's word alone:
+  each question is asked several times, and the confidence is the lower of
+  how far the asks agreed and the confidence the model stated, so an answer
+  that changes between asks is not a confident one, however sure the model
+  says it is.</p>
 {{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
 {{if .List}}
 <div class="table-wrap"><table>

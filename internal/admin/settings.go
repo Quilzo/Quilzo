@@ -127,6 +127,9 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		"Message":  msg,
 		"CanWrite": s.Policy.Evaluate(p.Name, auth.ActGrant, "/").Allowed,
 		"Days":     int(config.MaxAcceptance.Hours() / 24),
+		// What the configured accent does, beside it: whether it is the
+		// links' and buttons' colour, in which scheme, and why not.
+		"BrandAccent": Brand{Colour: cfg.Raw("admin.brand.colour")}.AccentNote(),
 	})
 }
 

@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -183,5 +184,80 @@ func TestTheBrandColourIsAStylesheetThePolicyAllows(t *testing.T) {
 	}
 	if strings.Contains(get(t, srv, "/", token).Body.String(), `href="/brand.css"`) {
 		t.Error("the stylesheet is linked with no colour to give")
+	}
+}
+
+// A brand colour is the links' and buttons' colour in each scheme it is
+// legible in, and the logo's tint only where it is not, with the Settings
+// screen saying which and why.
+//
+// It tinted only the logo, the name and the initial chip, so a deployment
+// could not wear its own accent. It does not simply replace --primary
+// either: a brand would then take this interface below the 7:1 its text is
+// held to, in the scheme fewer people look at.
+func TestABrandColourIsTheAccentWhereItIsLegible(t *testing.T) {
+	for _, c := range []struct {
+		colour, primary string
+		says            []string
+	}{
+		// Dark enough for the light scheme, and nothing like it in the dark.
+		{"#5b1a8c", "--primary: light-dark(#5b1a8c, var(--primary-80))",
+			[]string{"links and buttons in the light scheme", "In the dark one it tints only", "7:1"}},
+		// Pale enough for the dark scheme only.
+		{"#ffd8e4", "--primary: light-dark(var(--primary-30), #ffd8e4)",
+			[]string{"links and buttons in the dark scheme", "In the light one it tints only", "7:1"}},
+		// Under the floor in both: today's tint, and why.
+		{"#0b6fa4", "",
+			[]string{"tints only the logo and the name", "4.25:1", "2.24:1", "7:1"}},
+	} {
+		srv, token := setup(t)
+		srv.Brand = Brand{Colour: c.colour}
+		css := get(t, srv, "/brand.css", "").Body.String()
+		if !strings.Contains(css, "--brand: "+c.colour) {
+			t.Errorf("%s: the tint is gone: %q", c.colour, css)
+		}
+		if c.primary == "" && strings.Contains(css, "--primary") {
+			t.Errorf("%s is under the floor in both schemes and still set --primary: %q", c.colour, css)
+		}
+		if c.primary != "" && !strings.Contains(css, c.primary) {
+			t.Errorf("%s: brand.css is %q, want %q", c.colour, css, c.primary)
+		}
+
+		withSettings(t, srv, map[string]string{"admin.brand.colour": c.colour})
+		page := get(t, srv, "/settings", token).Body.String()
+		for _, want := range c.says {
+			if !strings.Contains(page, want) {
+				t.Errorf("%s: the Settings screen does not say %q", c.colour, want)
+			}
+		}
+	}
+}
+
+// The surfaces and on-primary the accent is checked against are the
+// stylesheet's, in both schemes, and so is the primary it leaves in place:
+// a palette changed in one and not the other would check a brand against
+// colours nobody is shown.
+func TestTheAccentIsCheckedAgainstTheStylesheetsOwnColours(t *testing.T) {
+	for _, dark := range []bool{false, true} {
+		scheme := map[bool]string{false: "light", true: "dark"}[dark]
+		tok := tokens(t, scheme)
+		var want []string
+		for _, role := range []string{"--surface", "--surface-container-lowest", "--surface-container-low",
+			"--surface-container", "--surface-container-high", "--surface-container-highest"} {
+			if !slices.Contains(want, tok[role]) {
+				want = append(want, tok[role])
+			}
+		}
+		if strings.Join(want, " ") != strings.Join(accentSurfaces[dark], " ") {
+			t.Errorf("%s: the accent is checked against %v; the stylesheet's surfaces are %v",
+				scheme, accentSurfaces[dark], want)
+		}
+		if tok["--on-primary"] != accentOnPrimary[dark] {
+			t.Errorf("%s: on-primary is %s in the stylesheet and %s here", scheme, tok["--on-primary"], accentOnPrimary[dark])
+		}
+	}
+	css := string(mustAsset(t, "style.css"))
+	if want := "--primary: light-dark(" + primaryDefault[false] + ", " + primaryDefault[true] + ");"; !strings.Contains(css, want) {
+		t.Errorf("the stylesheet's primary is not %q, which is what a brand leaves in place", want)
 	}
 }

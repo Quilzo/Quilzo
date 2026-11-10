@@ -582,3 +582,72 @@ func TestAChatbotOnTheSiteFindsAPassageByMeaning(t *testing.T) {
 		t.Fatalf("not built again when its vectors changed: %d", built)
 	}
 }
+
+// A request that waits for a person says so, on a page that links to
+// itself and asks again now and then, and shows the outcome there once the
+// person has answered; another visitor's page shows nothing of it.
+//
+// The page stopped at "A person needs to look at this, and will." for
+// good, with nothing to come back to, so a visitor never learnt the outcome
+// on the page they asked on.
+func TestAVisitorWaitingForAPersonSeesTheOutcomeOnTheirOwnPage(t *testing.T) {
+	bot := shopBot
+	bot.Actions = []assistant.Action{
+		{Name: "booking", Kind: assistant.Agent, Target: "bookings", Description: "Move your booking", Fields: []string{"booking_ref"}},
+	}
+	st, _ := askSite(t, bot)
+	var asked []chatact.Request
+	results := map[string]chatact.Result{}
+	st.Assistants.Act = func(r chatact.Request) error { asked = append(asked, r); return nil }
+	st.Assistants.Answer = func(id string) (chatact.Result, bool, bool) {
+		for _, r := range asked {
+			if r.ID == id {
+				res, ok := results[id]
+				return res, ok, true
+			}
+		}
+		return chatact.Result{}, false, false
+	}
+	ask := func(ref, embed string) string {
+		form := url.Values{"action": {"booking"}, "a_booking_ref": {ref}}
+		if embed != "" {
+			form.Set("embed", embed)
+		}
+		req := httptest.NewRequest(http.MethodPost, "/ask/help/act", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.RemoteAddr = "198.51.100.9:1234"
+		w := httptest.NewRecorder()
+		st.Handler().ServeHTTP(w, req)
+		if w.Code != http.StatusSeeOther {
+			t.Fatalf("asking: %d %s", w.Code, w.Body.String())
+		}
+		return w.Header().Get("Location")
+	}
+	mine, theirs := ask("HB-1", ""), ask("HB-2", "1")
+	me, them := asked[0].ID, asked[1].ID
+
+	results[me] = chatact.Result{ID: me, State: chatact.Waiting}
+	g := get(st, mine, nil)
+	body := g.Body.String()
+	if !strings.Contains(body, "A person needs to look at this") || !strings.Contains(body, "shown on this page") {
+		t.Errorf("the waiting page does not say a person will look and the answer comes here:\n%s", body)
+	}
+	if !strings.Contains(body, `href="/ask/help/act/`+me+`">Check again</a>`) {
+		t.Errorf("the waiting page has no link back to itself:\n%s", body)
+	}
+	if g.Header().Get("Refresh") == "" {
+		t.Error("the waiting page never asks again")
+	}
+	results[them] = chatact.Result{ID: them, State: chatact.Waiting}
+	if b := get(st, theirs, nil).Body.String(); !strings.Contains(b, `href="/ask/help/act/`+them+`?embed=1">Check again</a>`) {
+		t.Errorf("an embedded waiting page does not stay embedded:\n%s", b)
+	}
+
+	results[me] = chatact.Result{ID: me, State: chatact.Done, Answer: "HB-1 is moved to Friday at 7pm."}
+	if g := get(st, mine, nil); !strings.Contains(g.Body.String(), "HB-1 is moved to Friday at 7pm.") || g.Header().Get("Refresh") != "" {
+		t.Errorf("the outcome is not shown on the visitor's page:\n%s", g.Body.String())
+	}
+	if b := get(st, theirs, nil).Body.String(); strings.Contains(b, "Friday") {
+		t.Errorf("another visitor's page shows this visitor's outcome:\n%s", b)
+	}
+}

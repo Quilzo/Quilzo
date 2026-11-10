@@ -67,6 +67,8 @@
     <p><label><input type="radio" name="autonomy" value="draft"{{if eq (print .M.Autonomy) "draft"}} checked{{end}}> <strong>Draft</strong> <span class="hint">it writes drafts nobody is served until a person publishes</span></label></p>
     <p><label><input type="radio" name="autonomy" value="publish"{{if eq (print .M.Autonomy) "publish"}} checked{{end}}> <strong>Publish</strong> <span class="hint">what it writes goes live</span></label></p>
     <p><label><input type="checkbox" name="human_approval" value="1"{{if .M.HumanApproval}} checked{{end}}> A person approves before anything it did becomes public</label></p>
+    <p><label>Stop asking about a kind of action after <input type="number" name="earn_after" value="{{if .M.EarnAfter}}{{.M.EarnAfter}}{{end}}" min="{{.EarnMin}}" max="{{.EarnMax}}" inputmode="numeric" placeholder="never"> approvals of it in a row</label>
+      <span class="hint">Optional; empty asks every time. {{.EarnMin}} to {{.EarnMax}}, and only while its evaluations still earn it its autonomy. A decline sends that kind back to asking, and sending, paying, deleting and publishing always ask.</span></p>
   </fieldset>
 
   <fieldset class="caps-set"><legend>What it may do</legend>

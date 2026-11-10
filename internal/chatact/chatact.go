@@ -53,9 +53,16 @@ const (
 	Working = "working"
 	Done    = "done"
 	// Person is an answer a person will give instead: the run read
-	// something not everybody may see, or it waits for a person.
+	// something not everybody may see, or did not finish.
 	Person = "person"
-	Failed = "failed"
+	// Waiting is a run that stopped to ask a person first. A person will
+	// look, as for Person, and when they have and the run has ended, the
+	// answer replaces this one (Done, or Person if its words may not be
+	// shown), so the visitor's page shows the outcome. It was Person, and
+	// final: the run's words after a person let it go on reached its record
+	// and never the visitor who asked.
+	Waiting = "waiting"
+	Failed  = "failed"
 )
 
 // Result is the answer to a request.
@@ -133,12 +140,13 @@ func (q Queue) Pending() ([]Request, error) {
 }
 
 // Answer keeps a request's answer. A request already answered keeps its
-// answer unless this is the run finishing what it started (from Working).
+// answer unless this is the run finishing what it started (from Working),
+// or ending after a person answered what it asked (from Waiting).
 func (q Queue) Answer(r Result) error {
 	if !ValidID(r.ID) {
 		return errors.New("not a request's id")
 	}
-	if prev, ok := q.Result(r.ID); ok && prev.State != Working {
+	if prev, ok := q.Result(r.ID); ok && prev.State != Working && prev.State != Waiting {
 		return fmt.Errorf("request %s is answered already", r.ID)
 	}
 	b, err := json.Marshal(r)

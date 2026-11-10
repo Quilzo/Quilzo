@@ -268,6 +268,7 @@ func (s *Server) editData(data map[string]any, m agent.Manifest, isNew bool,
 
 	data["M"], data["New"] = m, isNew
 	data["Map"] = drawAgent(m)
+	data["EarnMin"], data["EarnMax"] = agent.MinEarnAfter, agent.MaxEarnAfter
 	var known []string
 	if s.Agents.Known != nil {
 		known = s.Agents.Known()
@@ -575,6 +576,21 @@ func manifestFromForm(r *http.Request, base agent.Manifest) (agent.Manifest, err
 	}
 	if _, ok := r.Form["model"]; ok {
 		m.Model = strings.TrimSpace(r.FormValue("model"))
+	}
+	// earn_after, which only the declaration's text could set: the form
+	// keeps what it does not show, so a person using it could neither see
+	// nor change how soon a kind of action stops asking. Empty is 0, asking
+	// every time; the range is the declaration's, checked where it is.
+	if _, ok := r.Form["earn_after"]; ok {
+		m.EarnAfter = 0
+		if v := strings.TrimSpace(r.FormValue("earn_after")); v != "" {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				return m, fmt.Errorf("approvals in a row is a whole number from %d to %d, "+
+					"or empty to ask every time", agent.MinEarnAfter, agent.MaxEarnAfter)
+			}
+			m.EarnAfter = n
+		}
 	}
 	return m, nil
 }
