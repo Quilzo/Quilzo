@@ -478,6 +478,39 @@ func TestComposeKeepsTheAuditLogOutOfTheCMSsReach(t *testing.T) {
 	}
 }
 
+// The admin of the reference compose could not sign a head: it made the
+// head key in the audit volume it mounts read-only, so `auditlog head
+// --save`, every receipt and the audit stream exited 1 with "read-only file
+// system". The writer holds the key in its log directory and publishes the
+// public half beside it, and the README hands that file out from there,
+// where whoever checks a receipt is told to check it against.
+func TestComposeHandsOutTheWritersHeadKeys(t *testing.T) {
+	svc := quilzoServices(t)
+	var name, dir string
+	for n, s := range svc {
+		if c := strs(s["command"]); len(c) > 0 && c[0] == "logd" {
+			name, dir = n, flagValue(c, "log-dir")
+		}
+	}
+	if name == "" || dir == "" {
+		t.Fatal("no service runs `quilzo logd --log-dir`")
+	}
+	want := name + ":" + dir + "/head.pub.json"
+	found := false
+	for _, step := range composeSteps(t) {
+		if strings.HasPrefix(step, "docker compose cp ") && strings.Contains(step, want) {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the README never copies the writer's public keys out of %s", want)
+	}
+	if !strings.Contains(read(t, "deploy/README.md"), "--keys\nhead.pub.json") &&
+		!strings.Contains(read(t, "deploy/README.md"), "--keys head.pub.json") {
+		t.Error("the README never says to check a receipt against the keys handed out")
+	}
+}
+
 // Finding STACK-F9. An image built as documented answered "quilzo dev": the
 // Dockerfile takes the version as a build argument and passes it to the
 // linker, and nothing that told people how to build one passed it. The

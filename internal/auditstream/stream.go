@@ -81,6 +81,13 @@ func KeyID(pub ed25519.PublicKey) string {
 	return "quilzo-stream-" + hex.EncodeToString(sum[:8])
 }
 
+// HeadSigner signs a tree head: the key itself, or the log writer that
+// holds it where the CMS may not (internal/logd). A sender in a separated
+// deployment cannot read the key, and was a sender that could not send.
+type HeadSigner interface {
+	Sign(audit.Head) (audit.SignedHead, error)
+}
+
 // Sender pushes batches.
 type Sender struct {
 	URL    string
@@ -88,7 +95,7 @@ type Sender struct {
 	Client *http.Client
 	// Read is the whole audit log; Heads signs a tree head.
 	Read  func() ([]audit.Event, error)
-	Heads *audit.HeadSigner
+	Heads HeadSigner
 	// CursorPath is where the cursor is kept.
 	CursorPath string
 	// Reveal sends identifiers in the clear instead of pseudonymised.

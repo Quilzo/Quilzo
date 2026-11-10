@@ -14,6 +14,7 @@ import (
 	"syscall"
 
 	"github.com/quilzo/quilzo/internal/logd"
+	"github.com/quilzo/quilzo/internal/research"
 )
 
 // The socket lives beside the log, not inside the store.
@@ -96,7 +97,7 @@ func cmdLogd(root string, args []string) error {
 		uids = append(uids, n)
 	}
 
-	l, err := openAudit(root)
+	srv, err := newLogWriter(root, uids)
 	if err != nil {
 		return err
 	}
@@ -106,21 +107,15 @@ func cmdLogd(root string, args []string) error {
 	}
 	defer listener.Close()
 
-	srv := &logd.Server{
-		Log: l, AllowUID: uids,
-		OnRefusal: func(reason string, uid int) {
-			// Refusals go to stderr rather than into the log. Writing them into
-			// the log would let anybody who can reach the socket fill it with
-			// entries by submitting rubbish, which is a denial of service
-			// against the thing being protected.
-			fmt.Fprintf(os.Stderr, "%srefused (uid %d): %s%s\n",
-				yellow, uid, reason, reset)
-		},
-	}
-
 	fmt.Fprintf(os.Stderr, "%slog writer on %s%s\n", dim, path, reset)
 	fmt.Fprintf(os.Stderr, "  %srunning as uid %d; the CMS submits over this "+
 		"socket and never opens the log%s\n", dim, os.Geteuid(), reset)
+	if srv.Heads != nil {
+		fmt.Fprintf(os.Stderr, "  %sit signs the log's heads; the public keys are at %s%s\n",
+			dim, headKeysPath(root), reset)
+	} else {
+		fmt.Fprintf(os.Stderr, "  %sit signs no heads: %s%s\n", yellow, srv.HeadsWhy, reset)
+	}
 	if len(uids) > 0 {
 		fmt.Fprintf(os.Stderr, "  %saccepting submissions from uid %v only%s\n",
 			dim, uids, reset)
@@ -140,6 +135,52 @@ func cmdLogd(root string, args []string) error {
 	return srv.Serve(listener)
 }
 
+// newLogWriter is the writer cmdLogd serves: the log, its file, and the key
+// that signs its heads, all in the directory this account owns.
+func newLogWriter(root string, uids []int) (*logd.Server, error) {
+	l, err := openAudit(root)
+	if err != nil {
+		return nil, err
+	}
+	// The log file exists from the start, owned by this account, so `logd
+	// status` and every reader can tell the separation is in force before
+	// the first record arrives. Until then there was no file to own, and the
+	// CMS asking for a head was told the log was its own.
+	f, err := os.OpenFile(auditPath(root), os.O_CREATE|os.O_WRONLY|os.O_APPEND, keyMode(root))
+	if err != nil {
+		return nil, err
+	}
+	if err := f.Close(); err != nil {
+		return nil, err
+	}
+	srv := &logd.Server{
+		Log: l, AllowUID: uids,
+		// Every kind of statement this program signs with the log's keys,
+		// and no other: a feature package (feature export --sign) and a
+		// registered research plan.
+		Statements: []string{featureContext, research.PlanContext},
+		OnRefusal: func(reason string, uid int) {
+			// Refusals go to stderr rather than into the log. Writing them into
+			// the log would let anybody who can reach the socket fill it with
+			// entries by submitting rubbish, which is a denial of service
+			// against the thing being protected.
+			fmt.Fprintf(os.Stderr, "%srefused (uid %d): %s%s\n",
+				yellow, uid, reason, reset)
+		},
+	}
+	// The head key, made here on first start: head.key at 0600, this
+	// account's alone, and head.pub.json at 0644 beside it for everybody
+	// who checks a head. A writer that cannot load it, or finds one that
+	// is not its own alone (logd.CheckKey), still writes the log, which
+	// matters more, and says why each signature is refused.
+	if kerr := logd.CheckKey(headKeyPath(root), os.Geteuid()); kerr != nil {
+		srv.HeadsWhy = kerr.Error()
+	} else if srv.Heads, err = localHeadSigner(root); err != nil {
+		srv.Heads, srv.HeadsWhy = nil, err.Error()
+	}
+	return srv, nil
+}
+
 // cmdLogdStatus reports whether the separation is actually in force.
 func cmdLogdStatus(root string) error {
 	sock := logSocketPath(root)
@@ -148,10 +189,23 @@ func cmdLogdStatus(root string) error {
 	_, sockErr := os.Stat(sock)
 	running := sockErr == nil
 	separated, why := logd.CheckOwnership(logPath, os.Geteuid())
+	// Who signs this store's heads, and why none can be made now if none
+	// can: read, and asked of the writer, never loaded (headsSignedBy).
+	byWriter, refuses := headsSignedBy(root)
+	keyID := ""
+	if v, err := publishedVerifier(headKeysPath(root)); err == nil {
+		keyID = v.KeyID()
+	}
+	signer := "this account"
+	if byWriter {
+		signer = "the log writer"
+	}
 
 	if w.JSON(map[string]any{
 		"socket": sock, "writer_present": running,
 		"separated": separated, "detail": why,
+		"heads_signed_by": signer, "head_keys": headKeysPath(root), "head_key_id": keyID,
+		"writer_signs": byWriter && refuses == "", "writer_refuses": refuses,
 	}) {
 		return nil
 	}
@@ -165,6 +219,14 @@ func cmdLogdStatus(root string) error {
 			dim, logPath, reset)
 		w.Human("  %sthat moves the requirement from code execution as the CMS "+
 			"to root%s\n", dim, reset)
+		// The log is another account's and its key out of this one's
+		// reach, as under the reference compose with the writer stopped:
+		// every head waits for the writer, which nothing above says, and
+		// the JSON already reported it as refused.
+		if byWriter {
+			w.Human("\n  %sits heads are the writer's to sign, so no head, receipt or round of the\n"+
+				"  audit stream can be made until it runs:\n  %s%s\n", yellow, refuses, reset)
+		}
 		return nil
 	}
 
@@ -176,6 +238,25 @@ func cmdLogdStatus(root string) error {
 		w.Human("  %sthe writer is running but the separation is not in force, "+
 			"which is\n  worse than not running it: somebody believes it%s\n",
 			yellow, reset)
+	}
+	switch {
+	case byWriter && keyID == "":
+		// Said before the refusal it causes, because the remedy is the
+		// writer's and the refusal names only the file it could not read.
+		// The line said "the writer signs its heads" while no head could
+		// be checked against keys it had not published, so none was made.
+		w.Human("  %sthe writer is to sign this store's heads, and publishes no keys at\n"+
+			"  %s, so none can be made: it predates head signing, or could not\n"+
+			"  make its key. Restart it with this version and read what it prints%s\n",
+			yellow, headKeysPath(root), reset)
+	case byWriter && refuses != "":
+		w.Human("  %sthe writer is to sign this store's heads, and signs none, so no head,\n"+
+			"  receipt or round of the audit stream can be made:\n  %s%s\n", yellow, refuses, reset)
+	case byWriter:
+		w.Human("  %sthe writer signs its heads with key %s, which this account cannot\n"+
+			"  read. The public keys are at %s%s\n", green, keyID, headKeysPath(root), reset)
+	default:
+		w.Human("  %sheads are signed by this account, with the key beside the log%s\n", dim, reset)
 	}
 	w.Human("\n  %sroot can still rewrite the log. What stops that being "+
 		"deniable is a\n  published tree head — `quilzo auditlog anchor`%s\n",

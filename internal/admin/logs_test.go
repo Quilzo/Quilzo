@@ -330,3 +330,47 @@ func TestAPersonInASentenceIsNamedForWhoeverReadsTheScreen(t *testing.T) {
 		t.Error("somebody the store does not know was named, or dropped")
 	}
 }
+
+// Where the writer signs the heads, the page says so and says where the
+// keys that check them are: a receipt handed to somebody is checked against
+// that file, and the page is where an administrator learns it exists.
+func TestTheLogSaysWhoSignsItsHeads(t *testing.T) {
+	events := realLog(t, 2)
+	s, tok := logServer(t, events, true)
+	byWriter := true
+	s.LogHeads = func() (bool, string, string) { return byWriter, "/srv/audit/head.pub.json", "" }
+	body, code := getLogs(t, s, tok, "")
+	if code != http.StatusOK {
+		t.Fatalf("got %d", code)
+	}
+	if !strings.Contains(body, "signed by\n    the writer too") || !strings.Contains(body, "/srv/audit/head.pub.json") {
+		t.Errorf("the page does not say the writer signs the heads:\n%s", body)
+	}
+	byWriter = false
+	if body, _ := getLogs(t, s, tok, ""); strings.Contains(body, "signed by\n    the writer too") {
+		t.Error("the page says the writer signs heads it does not sign")
+	}
+}
+
+// Where the writer is to sign the heads and signs none, the page says so,
+// and why, rather than that it signs them: a writer that cannot use its key
+// goes on writing the log, and the page said the heads were the writer's
+// while the receipt on the apps screen failed with nothing here to say why.
+func TestTheLogSaysWhenTheWriterSignsNoHeads(t *testing.T) {
+	events := realLog(t, 2)
+	s, tok := logServer(t, events, true)
+	s.LogHeads = func() (bool, string, string) {
+		return true, "/srv/audit/head.pub.json", "this writer signs nothing: head.key is not readable"
+	}
+	body, code := getLogs(t, s, tok, "")
+	if code != http.StatusOK {
+		t.Fatalf("got %d", code)
+	}
+	if strings.Contains(body, "signed by\n    the writer too") {
+		t.Errorf("the page says the writer signs heads it refuses:\n%s", body)
+	}
+	if !strings.Contains(body, `<p class="hint warn">Its heads are the writer&rsquo;s to sign, and it signs`) ||
+		!strings.Contains(body, "head.key is not readable") {
+		t.Errorf("the page does not say the writer signs none, and why:\n%s", body)
+	}
+}

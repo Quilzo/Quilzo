@@ -321,7 +321,7 @@ access to every other system belongs with the tool that reviews those.
 | Feature | What it does | How |
 |---|---|---|
 | **A signed log** | Every action, hash-chained, identifiers pseudonymised, a refused secret never written; heads signed with Ed25519 and ML-DSA; inclusion and consistency proofs. | `quilzo auditlog verify\|prove\|consistency\|head` |
-| **Written by its own account** | The log writer can run as a separate user the content platform cannot impersonate. | `quilzo logd` |
+| **Written by its own account** | The log writer can run as a separate user the content platform cannot impersonate, and then holds the key that signs the log's heads and receipts: the platform asks it for a head and cannot choose the root. | `quilzo logd`, `quilzo logd status` |
 | **Anchored in time** | Heads anchored where the operator cannot alter them, and RFC 3161 timestamps of what was published. | `quilzo auditlog anchor`, `quilzo timestamp` |
 | **Encrypted at rest** | Objects sealed on disk with rotatable keys. | `quilzo vault enable\|rotate` |
 

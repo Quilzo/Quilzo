@@ -1012,6 +1012,59 @@ not a script the admin should carry. So the capture surface is its own process:
 **the argument for that header is that the admin's one script does nothing a
 form cannot, not that the policy catches the rest.**
 
+### The log writer, which also signs for the log
+
+`quilzo logd` is a fourth process, run as an account of its own; the
+reference compose runs it as uid 65533 with no network. The admin and the
+site hand it their records over a socket and cannot open the log to rewrite
+one, and it computes the chain itself, so they cannot forge a history either.
+`quilzo logd status` says whether that separation is in force.
+
+It also holds the key that signs the log's tree heads, with Ed25519 and
+ML-DSA-65 as before. On its first start it makes `head.key` (0600, its own)
+and `head.pub.json` (0644, the public half) in the directory `--log-dir`
+names, and from then on every signature the log's keys make is the writer's:
+`quilzo auditlog head`, an agent's or an app's receipt, each round of the
+audit stream, an engagement package, `quilzo feature export --sign` and a
+registered research plan. Until it held the key, the admin of the reference
+compose could make none of them: it tried to create `head.key` in a directory
+it can only read, and every one exited with "read-only file system". Letting
+it write there would let it rename the log.
+
+The admin asks over the same socket, and a request for a head names how many
+entries it covers and nothing else. The writer computes the root over its own
+file and dates the head by its own clock, so an admin that has been taken
+over cannot have a head signed over entries the log never held, or backdated.
+A feature package's or a research plan's signature is made only under the
+contexts this program makes them under, never the head's. The admin checks
+every head it is handed against the root it read itself and against
+`head.pub.json`, and refuses one that disagrees with either rather than
+putting it in a receipt.
+
+The writer signs only with a key that is its own alone: `head.key` owned by
+its account, at 0600. A key another account made, or one other accounts can
+read, is one somebody else may have kept a copy of, and could sign a head
+over any root with; a chown or a chmod cannot take a copy back. So the writer
+signs nothing with it, keeps writing the log, and says to move `head.key` and
+`head.pub.json` aside together (that `head.pub.json` still checks the heads
+the old key signed) and start it again, when it makes a new one. `quilzo logd
+status` asks the writer for a head over no entries rather than assuming it
+signs, and says when it does not, and why (`writer_signs` and
+`writer_refuses` in its `--json`); the audit log screen asks the same on
+every visit. With the writer stopped, and the key out of this account's
+reach as it is under the reference compose, no head can be made: both say
+the heads wait for the writer, and every command that signs says to start
+it, never to take its key.
+
+There is no setting. Where the log is the admin's own (in the store, or a
+writer running as the same account) the key is beside the log and loaded
+there, as it always was. Heads saved with `auditlog head --save` stay in the
+store, in `log-heads.json`. `head.pub.json` is the file to hand whoever
+checks a head or a receipt: `quilzo auditlog verify-head FILE --keys
+head.pub.json`, `quilzo agent verify-receipt FILE --keys head.pub.json`. The
+audit log screen says when the writer signs the heads, and where that file
+is.
+
 ## What is in it
 
 **Content.** Pages and structured records. Content types with typed, validated

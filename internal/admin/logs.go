@@ -216,6 +216,11 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	}
 	sortStrings(names)
 
+	byWriter, keys, refused := false, "", ""
+	if s.LogHeads != nil {
+		byWriter, keys, refused = s.LogHeads()
+	}
+
 	s.render(w, r, "logs.html", map[string]any{
 		"Nav":   "logs",
 		"Title": "Audit log", "Principal": p,
@@ -223,7 +228,8 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		"Offset": offset, "Next": end, "HasNext": end < total,
 		"Intact": intact, "Problems": problems,
 		"Actions": names, "Action": action, "Outcome": outcome, "Who": who,
-		"Separated": s.LogSeparated,
+		"Separated": s.LogSeparated, "HeadsByWriter": byWriter,
+		"HeadsRefused": refused, "HeadKeys": keys,
 	})
 }
 

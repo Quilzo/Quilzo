@@ -716,6 +716,56 @@ func (l *Log) write(b []byte) error {
 	return nil
 }
 
+// Events reads back every entry of this log's own file, as it stood when
+// asked.
+//
+// For the log writer, which signs a tree head over the file it keeps rather
+// than over one a client describes (internal/logd). A line being written is
+// never read half-way: Read reports a line it cannot parse as a finding,
+// and a head refused because a record happened to be arriving at that
+// moment is a head refused for nothing.
+//
+// The locks Append takes are held only to open the file and learn where its
+// last whole line ends, not while it is read. Reading a log of a year or
+// two under them took over a second, and every record submitted meanwhile
+// waited: with a few heads asked for at once, records ran past the writer's
+// timeout and were not written. The file only grows, by whole lines written
+// under those locks, so what lies before that point does not change while
+// it is read.
+func (l *Log) Events() ([]Event, error) {
+	f, size, err := l.whole()
+	if err != nil || f == nil {
+		return nil, err
+	}
+	defer f.Close()
+	return readEvents(io.LimitReader(f, size))
+}
+
+// whole opens the log and says how much of it is whole lines, under the
+// locks Append takes. Nil when there is no log yet.
+func (l *Log) whole() (*os.File, int64, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	unlock, err := atomicfile.Lock(l.path + ".lock")
+	if err != nil {
+		return nil, 0, err
+	}
+	defer unlock()
+	f, err := os.Open(l.path)
+	if os.IsNotExist(err) {
+		return nil, 0, nil
+	}
+	if err != nil {
+		return nil, 0, err
+	}
+	fi, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return nil, 0, err
+	}
+	return f, fi.Size(), nil
+}
+
 // Read loads every event.
 func Read(path string) ([]Event, error) {
 	f, err := os.Open(path)
@@ -726,9 +776,12 @@ func Read(path string) ([]Event, error) {
 		return nil, err
 	}
 	defer f.Close()
+	return readEvents(f)
+}
 
+func readEvents(r io.Reader) ([]Event, error) {
 	var out []Event
-	sc := bufio.NewScanner(f)
+	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())

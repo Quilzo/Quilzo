@@ -134,6 +134,14 @@ type Server struct {
 	// LogSeparated reports whether the writer runs as another account, so the
 	// page can say what the record is worth rather than implying it.
 	LogSeparated bool
+	// LogHeads reports whether that writer also signs the log's heads,
+	// with a key this account cannot read; keys is where it publishes the
+	// public half for whoever checks one, and refused why it signs none,
+	// when it is to and does not. Asked on each visit: a writer that
+	// cannot use its key still writes the log, so a page that read this
+	// once at start said the heads were signed by the writer while every
+	// receipt failed, and never mentioned a writer started after it.
+	LogHeads func() (byWriter bool, keys, refused string)
 
 	// Settings gives the admin the store's configuration.
 	Settings *Settings

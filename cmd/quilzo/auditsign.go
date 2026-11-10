@@ -6,12 +6,16 @@ package main
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/logd"
 )
 
 // The key that signs audit heads, and the file that publishes its public half.
@@ -52,12 +56,126 @@ type publishedKeys struct {
 	Note    string `json:"note"`
 }
 
-// headSigner loads the signing keys, creating them on first use.
+// headSigning is what signs for the log: the key itself, or the log writer
+// that holds it.
+//
+// Every caller signs a head it computed (auditlog head, receipts, the audit
+// stream, engagement packages) or a statement over a digest (feature
+// packages, research plans), and reads the public half to say what checks
+// it. Neither needs to know which of the two is signing.
+type headSigning interface {
+	Sign(audit.Head) (audit.SignedHead, error)
+	SignStatement(context string, msg []byte) (audit.Statement, error)
+	Verifier() *audit.HeadVerifier
+	PostQuantum() bool
+	Why() string
+}
+
+// headSigner is what signs this store's heads.
+//
+// The log writer, where the separation is in force: it holds head.key in
+// the directory it owns and this account cannot write, and in the
+// reference compose cannot write at all, so loading the key here failed
+// with "read-only file system" on every receipt, every head and every
+// round of the audit stream. Where the log is this account's own (in the
+// store, or a writer running as this same account) the key is loaded here,
+// as it always was.
+func headSigner(root string) (headSigning, error) {
+	if sock, ok := writerSigns(root); ok {
+		ws, err := newWriterSigner(root, sock)
+		if err != nil {
+			return nil, err
+		}
+		return ws, nil
+	}
+	s, err := localHeadSigner(root)
+	if err != nil {
+		// The log is another account's and nothing listens for it: the
+		// key is the writer's, and the fix is the writer, not a chown that
+		// would hand this account the key. So the cause is given bare,
+		// without the advice localHeadSigner adds for a log this account
+		// keeps itself: under the reference compose, with the writer
+		// stopped, the message said both to start the writer and to chown
+		// its key over, and only the first is right.
+		if separated, _ := logd.CheckOwnership(auditPath(root), os.Geteuid()); separated {
+			cause := err
+			var pe *fs.PathError
+			if errors.As(err, &pe) {
+				cause = pe
+			}
+			return nil, fmt.Errorf("%s.\n  %v", writerNotRunning(root), cause)
+		}
+		return nil, err
+	}
+	return s, nil
+}
+
+// writerNotRunning is what stops a head being made where the log is
+// another account's and no writer listens for it.
+func writerNotRunning(root string) string {
+	return fmt.Sprintf("the log writer holds this store's head key, and it is not running (%s): "+
+		"start quilzo logd, as the account that owns the log", logSocketPath(root))
+}
+
+// headsSignedBy says who signs this store's heads, as headSigner would
+// choose, and why no head can be made now (empty when one can).
+//
+// Worked out without loading the key, which would make one where there is
+// none: `logd status` and the audit log screen report on the key, and a
+// report that changes what it reports on is not a report. Where the writer
+// is to sign, it is asked, with a head over no entries, rather than
+// assumed to: a writer that cannot use its key still writes the log and
+// says why on its own stderr, which nobody running the CMS reads, and the
+// key it once published says nothing about whether it signs with it now.
+// That head reads nothing and writes nothing, and goes through the checks
+// every caller makes, the root and the published keys.
+func headsSignedBy(root string) (byWriter bool, refused string) {
+	if sock, ok := writerSigns(root); ok {
+		ws, err := newWriterSigner(root, sock)
+		if err != nil {
+			return true, err.Error()
+		}
+		nothing, err := audit.TreeHead(nil, time.Now())
+		if err == nil {
+			_, err = ws.Sign(nothing)
+		}
+		if err != nil {
+			return true, err.Error()
+		}
+		return true, ""
+	}
+	// The log is another account's and no writer listens. headSigner falls
+	// back to a key this account can read, as it did before the writer
+	// held one; without one, the heads wait for the writer.
+	if separated, _ := logd.CheckOwnership(auditPath(root), os.Geteuid()); separated {
+		if f, err := os.Open(headKeyPath(root)); err == nil {
+			_ = f.Close()
+			return false, ""
+		}
+		return true, writerNotRunning(root)
+	}
+	return false, ""
+}
+
+// writerSigns reports whether the log writer signs this store's heads: the
+// separation is in force, as `quilzo logd status` reports it, with a writer
+// on the socket and the log owned by an account this one is not.
+func writerSigns(root string) (string, bool) {
+	sock := logSocketPath(root)
+	if !fileExists(sock) {
+		return "", false
+	}
+	separated, _ := logd.CheckOwnership(auditPath(root), os.Geteuid())
+	return sock, separated
+}
+
+// localHeadSigner loads the signing keys, creating them on first use.
 //
 // Created rather than demanded: an unsigned head is the state this exists to
 // end, and requiring a setup command first would mean the default stayed
-// unsigned for everybody who did not read about it.
-func headSigner(root string) (*audit.HeadSigner, error) {
+// unsigned for everybody who did not read about it. The log writer calls
+// this when it starts, for the directory it owns.
+func localHeadSigner(root string) (*audit.HeadSigner, error) {
 	var seeds storedSeeds
 	body, err := os.ReadFile(headKeyPath(root))
 	switch {
@@ -83,6 +201,16 @@ func headSigner(root string) (*audit.HeadSigner, error) {
 		if werr := os.WriteFile(headKeyPath(root), append(out, '\n'), 0o600); werr != nil {
 			return nil, fmt.Errorf("cannot write the head signing key: %w", werr)
 		}
+	case os.IsPermission(err):
+		// A key this account cannot read beside a log it keeps itself,
+		// made by another account: root running a command, say. The
+		// writer never gets here with another account's key, which it
+		// refuses before reading (logd.CheckKey): a chown would hand it a
+		// key somebody else has held.
+		return nil, fmt.Errorf("cannot read the head signing key at %s: %w\n"+
+			"  it belongs to the account that writes the log, which holds it at 0600:\n"+
+			"    chown <log-account> %s",
+			headKeyPath(root), err, headKeyPath(root))
 	case err != nil:
 		return nil, err
 	default:
@@ -112,6 +240,86 @@ func headSigner(root string) (*audit.HeadSigner, error) {
 		return nil, err
 	}
 	return s, nil
+}
+
+// writerSigner signs through the log writer, which holds the key.
+//
+// It checks what it is handed before handing it on. The writer's head is
+// over the writer's file, and one whose root is not the root this process
+// computed means the two are not reading the same log: a receipt whose
+// proofs resolve against one root under a head naming another proves
+// nothing, so it is refused here rather than found out by whoever checks
+// it. And every signature is checked against the published keys
+// (head.pub.json), so a writer signing with a key other than the one it
+// publishes is caught by the first caller rather than by an auditor.
+type writerSigner struct {
+	socket, keys string
+	// pub is the published verifier, as callers are given it; check is the
+	// same key, accepting a single signature where the writer has no
+	// ML-DSA half to make the second.
+	pub, check *audit.HeadVerifier
+}
+
+func newWriterSigner(root, sock string) (*writerSigner, error) {
+	keys := headKeysPath(root)
+	v, err := publishedVerifier(keys)
+	if err != nil {
+		return nil, fmt.Errorf("the log writer signs this store's heads, and its public keys "+
+			"cannot be read: %w\n  the writer makes them when it starts; restart quilzo logd "+
+			"with this version", err)
+	}
+	check := *v
+	if _, ml := v.PublicKeys(); len(ml) == 0 {
+		check.AcceptSingle = true
+	}
+	return &writerSigner{socket: sock, keys: keys, pub: v, check: &check}, nil
+}
+
+func (s *writerSigner) Sign(h audit.Head) (audit.SignedHead, error) {
+	sh, err := logd.SignHead(s.socket, h.Size)
+	if err != nil {
+		return audit.SignedHead{}, fmt.Errorf("the log writer holds this store's head key "+
+			"and did not sign: %w", err)
+	}
+	if sh.Size != h.Size || sh.Root != h.Root {
+		return audit.SignedHead{}, fmt.Errorf("the log writer's head over the first %d "+
+			"entries has root %s, and this account read root %s from the same entries: the "+
+			"log it reads is not the one the writer keeps (quilzo auditlog verify)",
+			sh.Size, sh.Root, h.Root)
+	}
+	if err := s.check.Verify(*sh); err != nil {
+		return audit.SignedHead{}, fmt.Errorf("the log writer's head does not verify against "+
+			"%s: %w", s.keys, err)
+	}
+	return *sh, nil
+}
+
+func (s *writerSigner) SignStatement(context string, msg []byte) (audit.Statement, error) {
+	st, err := logd.SignStatement(s.socket, context, msg)
+	if err != nil {
+		return audit.Statement{}, fmt.Errorf("the log writer holds this store's signing key "+
+			"and did not sign: %w", err)
+	}
+	if err := s.check.VerifyStatement(context, msg, *st); err != nil {
+		return audit.Statement{}, fmt.Errorf("the log writer's signature does not verify "+
+			"against %s: %w", s.keys, err)
+	}
+	return *st, nil
+}
+
+func (s *writerSigner) Verifier() *audit.HeadVerifier { return s.pub }
+
+func (s *writerSigner) PostQuantum() bool {
+	_, ml := s.pub.PublicKeys()
+	return len(ml) > 0
+}
+
+func (s *writerSigner) Why() string {
+	if s.PostQuantum() {
+		return ""
+	}
+	return "the log writer publishes an Ed25519 key alone (" + s.keys + "), so its heads " +
+		"carry one signature: it was built against a module without ML-DSA"
 }
 
 func writePublishedKeys(root string, s *audit.HeadSigner) error {
