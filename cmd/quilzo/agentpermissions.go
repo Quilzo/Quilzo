@@ -222,14 +222,32 @@ func draftStarters(root string, s *store.Store) []string {
 
 // secondPersonForDraft is the same rule for a draft a model wrote: the
 // person whose run wrote it approves it only when nobody else may publish,
-// and not for a day after another administrator stopped being one.
+// and not for a day after another administrator stopped being one. A
+// change a client or the writing assistant made for a person is theirs in
+// the same way (collab.WrittenFor), and where a count of approvals is set
+// they asked for it and somebody else approves it, said here before the
+// approval is given, on the command line and the review screen alike.
 func secondPersonForDraft(root string, s *store.Store, prop collab.Proposal, c *Caller) (alone bool, err error) {
 	by := c.Name
 	if prop.AuthorKind != "ai" {
 		return false, nil
 	}
+	forMe := prop.OnBehalfOf != "" && prop.OnBehalfOf == by && prop.Author != by
+	if forMe {
+		pol, err := loadApprovalPolicy(root)
+		if err != nil {
+			return false, err
+		}
+		if pol.Requested(prop, by) {
+			return false, fmt.Errorf("%s wrote this change for you, so you asked for it, and with a count "+
+				"of approvals set somebody else approves it", prop.WrittenBy())
+		}
+	}
 	starters := draftStarters(root, s)
-	mine := false
+	// A model's change made for the person approving is theirs as a run
+	// they started is: what a page's provenance does not say, as for a
+	// record their client wrote, the commit does.
+	mine := forMe
 	for _, st := range starters {
 		mine = mine || strings.EqualFold(st, by)
 	}
@@ -248,6 +266,10 @@ func secondPersonForDraft(root string, s *store.Store, prop collab.Proposal, c *
 			return false, refuseAlone(root, c, rm, map[string]string{"proposal": short(prop.Content)})
 		}
 		return true, nil
+	}
+	if forMe {
+		return false, fmt.Errorf("%s wrote this draft for you, so somebody else approves it: %s",
+			prop.WrittenBy(), nameSome(others))
 	}
 	return false, fmt.Errorf("an agent run you started wrote this draft, so somebody else approves it: %s",
 		nameSome(others))

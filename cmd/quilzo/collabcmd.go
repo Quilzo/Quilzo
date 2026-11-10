@@ -224,7 +224,8 @@ func currentProposal(root string, s *store.Store) (*collab.Proposal, *proposalFi
 // read from that one alone, a person's typo fix on top of an agent's
 // change made the agent's change a person's, here and so on every surface
 // that asks here. A proposal already recorded is marked the same way, as
-// one recorded from the newest commit may say "human" of a model's work.
+// one recorded from the newest commit may say "human" of a model's work,
+// and with the person a machine wrote it for (collab.WrittenFor).
 func proposalFor(root string, s *store.Store, draft string) (*collab.Proposal, *proposalFile, error) {
 	f := &proposalFile{}
 	if err := loadJSON(proposalsPath(root), f); err != nil {
@@ -260,8 +261,15 @@ func proposalFor(root string, s *store.Store, draft string) (*collab.Proposal, *
 	// nobody could: the draft never published, where without the typo fix
 	// that person approved it alone. With a count set, the newest commit's
 	// author still waits for somebody else, as their own work did.
-	if machine != nil && machine.Commit != draft && machine.Author != "" && onlyAPersonIsAsked(root) {
-		author = machine.Author
+	//
+	// And a model's change is named by the model that wrote it, not by the
+	// person it was made for (MachineChange.Writer). A change dana's client
+	// made over MCP is recorded under dana, and a proposal named by that
+	// told her she wrote it and could not approve it, so on an installation
+	// run by one person it never published. With a count set she is still
+	// who asked for it (collab.Policy.Requested).
+	if machine != nil && machine.Author != "" && (machine.Commit == draft || onlyAPersonIsAsked(root)) {
+		author = machine.Writer()
 	}
 	f.Proposals = append(f.Proposals, collab.Proposal{
 		Content: draft, Author: author, AuthorKind: kind,
@@ -320,8 +328,12 @@ func reviewStatus(root string) error {
 		return nil
 	}
 
+	by := prop.Author
+	if prop.OnBehalfOf != "" {
+		by += " for " + prop.OnBehalfOf
+	}
 	w.Human("%sdraft %s%s by %s (%s)\n", bold, short(prop.Content), reset,
-		prop.Author, prop.AuthorKind)
+		by, prop.AuthorKind)
 	if prop.Message != "" {
 		w.Human("  %s%s%s\n", dim, prop.Message, reset)
 	}

@@ -58,6 +58,57 @@ func MachineWrote(message string) bool {
 	return false
 }
 
+// # Who a machine wrote for
+//
+// The machine interface and the writing assistant commit under the name of
+// the person they act for: a change a client makes over MCP is recorded as
+// by the person whose token it holds, and one `quilzo assist --author dana`
+// makes as by dana. An agent run commits as the agent ("agent/NAME").
+//
+// Read as written by that person, what dana's client wrote was dana's own
+// work: she was told "dana wrote this change and cannot approve it", it was
+// left out of what waits for her, and on an installation run by one person
+// it could never be published. It is a model's work, made for her, and what
+// the approval gate asks of a model's work is that a person reads it; dana
+// reading what her client wrote is that. So such a commit names the machine
+// as its writer and the person as who it was written for (WrittenFor), and
+// where a count of approvals is set that person is who asked for it, as
+// they are for their own work, and somebody else approves it
+// (Policy.Requested).
+
+// actingFor are the machines that commit under the name of the person they
+// act for: the prefix their commits carry, the name a proposal gives them
+// as its author, and what the person would call them.
+var actingFor = []struct{ prefix, writer, called string }{
+	{"mcp:", "mcp-client", "client"},
+	{"assist:", "assistant", "writing assistant"},
+}
+
+// machineFor is the entry in actingFor a commit was made by, when a
+// machine made it for the person it is recorded under.
+func machineFor(message, author string) (writer, called string, ok bool) {
+	if author == "" {
+		return "", "", false
+	}
+	for _, a := range actingFor {
+		if strings.HasPrefix(message, a.prefix) {
+			return a.writer, a.called, true
+		}
+	}
+	return "", "", false
+}
+
+// WrittenFor reads who wrote a commit, as a proposal names its author, and
+// the person a machine wrote it for: the machine and the person it is
+// recorded under, for a commit a machine made for somebody, and otherwise
+// the author it is recorded under and nobody.
+func WrittenFor(message, author string) (writer, person string) {
+	if w, _, ok := machineFor(message, author); ok {
+		return w, author
+	}
+	return author, ""
+}
+
 // AuthorKindFor decides what a proposal's AuthorKind should be.
 //
 // proposerKind is what the principal offering the change is -- human, service
@@ -110,22 +161,70 @@ func (m MachineChange) Describe(content string) string {
 	}
 	if m.Commit == content {
 		return fmt.Sprintf("It is commit %s, recorded as written by %s: %q.",
-			short(m.Commit), m.Author, m.Message)
+			short(m.Commit), m.writtenBy(), m.Message)
 	}
 	// "Not yet published" rather than "since the last publish", which a
 	// first publish has none of.
 	return fmt.Sprintf("A model's change not yet published goes live with it: "+
-		"commit %s, recorded as written by %s: %q.", short(m.Commit), m.Author, m.Message)
+		"commit %s, recorded as written by %s: %q.", short(m.Commit), m.writtenBy(), m.Message)
+}
+
+// Writer is who wrote the change, as a proposal names its author: the
+// machine, when it was made for the person it is recorded under.
+func (m MachineChange) Writer() string {
+	w, _ := WrittenFor(m.Message, m.Author)
+	return w
+}
+
+// For is the person a machine made the change for, or nobody.
+func (m MachineChange) For() string {
+	_, p := WrittenFor(m.Message, m.Author)
+	return p
+}
+
+// writtenBy is who a refusal says wrote the change. "dana's client" rather
+// than "dana": said as dana's, the person reading a refusal about a model's
+// change was told it was their own.
+func (m MachineChange) writtenBy() string {
+	if _, called, ok := machineFor(m.Message, m.Author); ok {
+		return m.Author + "'s " + called
+	}
+	return m.Author
 }
 
 // MarkMachine records on a proposal that a machine wrote some of what it
-// would put live, which makes it AI-authored whoever proposed it. A nil
-// change leaves the proposal as it was: finding no machine's commit is no
-// reason to call a proposal a person's when a model is what proposed it.
+// would put live, which makes it AI-authored whoever proposed it, and for
+// whom, when the change says. A nil change leaves the proposal as it was:
+// finding no machine's commit is no reason to call a proposal a person's
+// when a model is what proposed it.
 func (prop *Proposal) MarkMachine(m *MachineChange) {
 	if m == nil {
 		return
 	}
 	prop.AuthorKind = "ai"
 	prop.Machine = m
+	if prop.OnBehalfOf == "" {
+		prop.OnBehalfOf = m.For()
+	}
+}
+
+// WrittenBy is who a refusal says wrote the change made for OnBehalfOf:
+// "dana's client", or a model working for them when which is not known.
+func (prop Proposal) WrittenBy() string {
+	if prop.Machine != nil && prop.Machine.For() == prop.OnBehalfOf {
+		return prop.Machine.writtenBy()
+	}
+	return "a model working for " + prop.OnBehalfOf
+}
+
+// Requested reports whether by asked for the change rather than may approve
+// it: its author, always, and the person a machine wrote it for wherever a
+// count of approvals is set, as they would be for their own work. Where
+// none is, the one approval asked for is a person's reading of a model's
+// work, and the person it was written for reading it is that.
+func (p Policy) Requested(prop Proposal, by string) bool {
+	if by == prop.Author {
+		return true
+	}
+	return by != "" && by == prop.OnBehalfOf && max(p.Required, p.RequiredHumans) > 0
 }

@@ -448,6 +448,15 @@ func fillSite(root string, values map[string]string, caller *Caller) (int, []str
 		}
 	}
 	msg := fmt.Sprintf("fill in %d %s", total, map[bool]string{true: "blank", false: "blanks"}[total == 1])
+	// An agent's fill says so in its commit, as its write_page does, for
+	// the reason markFilled marks its pages as an agent's words: the
+	// approval gate reads who wrote a commit from its message
+	// (collab.MachineWrote). Said as a person's fill, under the name of
+	// the person the agent acted for, an agent's facts in the address, the
+	// prices and the hours went live with no person having read them.
+	if caller.Kind == audit.KindAI {
+		msg = "mcp: " + msg
+	}
 	if err := saveDraft(root, s, pages, msg, caller.Name, base); err != nil {
 		return 0, nil, err
 	}

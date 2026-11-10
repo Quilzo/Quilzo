@@ -236,7 +236,13 @@ type Proposal struct {
 	Author string `json:"author"`
 	// AuthorKind is human, service or ai. An AI-authored proposal always needs
 	// a human, whatever the numeric threshold says.
-	AuthorKind string     `json:"author_kind"`
+	AuthorKind string `json:"author_kind"`
+	// OnBehalfOf is the person a machine wrote it for, when its commit
+	// names one (WrittenFor): whose client at the machine interface, or
+	// whose writing assistant. Author is then the machine. They may approve
+	// it where the one approval asked for is a person's reading of a
+	// model's work, and are otherwise who asked for it (Policy.Requested).
+	OnBehalfOf string     `json:"on_behalf_of,omitempty"`
 	CreatedAt  int64      `json:"created_at"`
 	Message    string     `json:"message,omitempty"`
 	Approvals  []Approval `json:"approvals,omitempty"`
@@ -340,7 +346,7 @@ func (p Policy) Evaluate(prop Proposal, kindOf KindOf, now time.Time) Decision {
 		if a.Content != prop.Content {
 			continue // an approval of different bytes
 		}
-		if a.By == prop.Author {
+		if p.Requested(prop, a.By) {
 			continue // self-approval, handled explicitly below
 		}
 		if len(allowed) > 0 && !allowed[a.By] {
@@ -368,6 +374,18 @@ func (p Policy) Evaluate(prop Proposal, kindOf KindOf, now time.Time) Decision {
 						"whole point of requiring a second pair of eyes — an "+
 						"author who can approve their own work is one pair.",
 					prop.Author),
+			}
+		}
+		// And the person a model wrote it for, where a count is set: what
+		// they asked a model to write is theirs to ask for, as their own
+		// work is, and not theirs to count as somebody else's reading.
+		if a.Content == prop.Content && p.Requested(prop, a.By) {
+			return Decision{
+				Have: len(valid), Need: p.Required,
+				Reason: fmt.Sprintf(
+					"%s wrote this change for %s, who asked for it and cannot "+
+						"also approve it: with a count of approvals set, "+
+						"somebody else reads it.", prop.WrittenBy(), a.By),
 			}
 		}
 	}
@@ -412,7 +430,7 @@ func (p Policy) Evaluate(prop Proposal, kindOf KindOf, now time.Time) Decision {
 		}
 		if len(allowed) > 0 {
 			for who := range allowed {
-				if !seen[who] && who != prop.Author {
+				if !seen[who] && !p.Requested(prop, who) {
 					d.Missing = append(d.Missing, who)
 				}
 			}

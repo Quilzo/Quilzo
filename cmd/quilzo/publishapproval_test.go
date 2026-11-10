@@ -650,3 +650,198 @@ func TestTheOnePersonApprovesAModelsChangeTheyCommittedAfter(t *testing.T) {
 		})
 	}
 }
+
+// machinesForAPerson are the ways a model's change reaches the draft under
+// the name of the person it was made for: dana's client at the machine
+// interface writing a page, and the writing assistant dana ran on the
+// command line, which records her as the accountable person (`quilzo
+// assist --author dana`). Each retitles the homepage.
+var machinesForAPerson = []struct {
+	name  string
+	write func(t *testing.T, root, tpl string, s *store.Store, title string)
+}{
+	{"her client", func(t *testing.T, root, tpl string, s *store.Store, title string) {
+		t.Helper()
+		got, rerr := callTool(t, buildMCP(root, s, asAdmin("dana"), tpl), "quilzo_write", "write_page",
+			map[string]any{"page": "index", "fields": map[string]any{"title": title}})
+		if rerr != nil || refused(got) || !strings.Contains(got, "wrote index") {
+			t.Fatalf("dana's client could not write the homepage: %s %v", got, rerr)
+		}
+	}},
+	{"her writing assistant", func(t *testing.T, root, _ string, s *store.Store, title string) {
+		t.Helper()
+		pages, err := site.PagesAt(s, site.RefDraft)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pages["index"].(map[string]any)["title"] = title
+		cid, err := site.SaveDraft(s, pages, "assist: retitle the homepage", "dana")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := markAssisted(root, s, cid, []string{"index"}, map[string]bool{}, "the writing assistant",
+			"retitle the homepage", "dana"); err != nil {
+			t.Fatal(err)
+		}
+	}},
+}
+
+// reviewWaitsFor reports whether the change waiting for approval is in
+// what waits for dana.
+func reviewWaitsFor(t *testing.T, root string) bool {
+	t.Helper()
+	items, err := waitingFor(root, asAdmin("dana"), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range items {
+		if it.Source == "review" {
+			return true
+		}
+	}
+	return false
+}
+
+// The one person running a site approves what their own client or writing
+// assistant wrote for them, and it publishes; with a count of approvals
+// set, they asked for it and somebody else approves it.
+//
+// A change dana's client made at the machine interface was committed under
+// dana's name, as the assistant's is under the person it names, so the
+// proposal named dana as its author: she was told "dana wrote this change
+// and cannot approve it", the change was left out of what waits for her,
+// and on an installation run by one person it could never be published.
+// The rule asks a person to read a model's work, and dana reading what a
+// model wrote for her is that.
+func TestThePersonApprovesWhatTheirClientWroteForThem(t *testing.T) {
+	for _, machine := range machinesForAPerson {
+		for _, approver := range []struct {
+			name    string
+			approve func(t *testing.T, root, tpl string, s *store.Store) string
+		}{
+			{"on the command line", approveOnTheCommandLine},
+			{"in the browser", approveInTheBrowser},
+		} {
+			t.Run(machine.name+" "+approver.name, func(t *testing.T) {
+				root, tpl, s := approvalDemo(t)
+				if err := updatePolicyForTest(root, auth.Binding{Principal: "dana", Role: auth.RoleAdmin, Resource: "/"}); err != nil {
+					t.Fatal(err)
+				}
+				ts, err := loadTokens(root)
+				if err != nil {
+					t.Fatal(err)
+				}
+				secret, _, err := ts.Issue("dana", "dana", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := saveTokens(root, ts); err != nil {
+					t.Fatal(err)
+				}
+				t.Setenv("QUILZO_TOKEN", secret)
+
+				machine.write(t, root, tpl, s, "Written for dana")
+				draft := s.GetRef(site.RefDraft)
+				refusal := publishOnTheCommandLine(t, root, tpl, s)
+				if !strings.Contains(refusal, "needs approval from a person") {
+					t.Fatalf("a model's change for dana was not held for a person:\n%s", refusal)
+				}
+				// Said as what it is: a model's change made for dana, not
+				// dana's own.
+				if !strings.Contains(refusal, "dana's") {
+					t.Errorf("the refusal does not say whose client wrote the change:\n%s", refusal)
+				}
+				prop, _, err := proposalFor(root, s, draft)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if prop.AuthorKind != "ai" || prop.OnBehalfOf != "dana" || prop.Author == "dana" {
+					t.Errorf("the proposal for a model's change made for dana is by %q (%s) for %q",
+						prop.Author, prop.AuthorKind, prop.OnBehalfOf)
+				}
+				if !reviewWaitsFor(t, root) {
+					t.Error("the change waiting for the only person's approval is not in what waits for her")
+				}
+				if refusal := approver.approve(t, root, tpl, s); refusal != "" {
+					t.Fatalf("the only person could not approve what a model wrote for her:\n%s", refusal)
+				}
+				if refusal := publishOnTheCommandLine(t, root, tpl, s); refusal != "" {
+					t.Fatalf("approved by the only person, the draft still did not publish:\n%s", refusal)
+				}
+				if live := s.GetRef(site.RefLive); live != draft {
+					t.Fatalf("live is %s, not the approved draft %s", short(live), short(draft))
+				}
+
+				// With a count of approvals, dana is who asked for her
+				// model's change, as she is for her own, and somebody else
+				// approves it.
+				if err := cmdConfig(root, []string{"set", "review.required_approvals", "1"}); err != nil {
+					t.Fatal(err)
+				}
+				machine.write(t, root, tpl, s, "Written for dana again")
+				if reviewWaitsFor(t, root) {
+					t.Error("with a count of approvals set, dana is asked to approve what she asked for")
+				}
+				refusal = approver.approve(t, root, tpl, s)
+				if !strings.Contains(refusal, "for you") {
+					t.Fatalf("with a count of approvals set, dana approved what a model wrote for her:\n%q", refusal)
+				}
+				prop, _, err = proposalFor(root, s, s.GetRef(site.RefDraft))
+				if err != nil {
+					t.Fatal(err)
+				}
+				pol, err := loadApprovalPolicy(root)
+				if err != nil {
+					t.Fatal(err)
+				}
+				// And an approval she gave anyway does not count.
+				prop.Approvals = append(prop.Approvals, collab.Approval{Content: prop.Content, By: "dana", At: time.Now().Unix()})
+				if d := pol.Evaluate(*prop, kindOfPrincipal(root), time.Now()); d.Allowed {
+					t.Fatalf("with a count of approvals set, dana's approval of what a model wrote for her counted: %+v", d)
+				}
+			})
+		}
+	}
+}
+
+// With somebody else who may publish, a model's change made for dana goes
+// to them, as an agent run she started does: what lets her approve it is
+// that it is no longer recorded as hers, and the rule that a second person
+// lets a model's work for her through, whenever one exists, still holds.
+func TestAModelsChangeForAPersonGoesToSomebodyElseWhenThereIsOne(t *testing.T) {
+	root, tpl, s := approvalDemo(t)
+	for _, who := range []string{"dana", "lee"} {
+		if err := updatePolicyForTest(root, auth.Binding{Principal: who, Role: auth.RoleAdmin, Resource: "/"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ts, err := loadTokens(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret, _, err := ts.Issue("dana", "dana", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveTokens(root, ts); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("QUILZO_TOKEN", secret)
+	machinesForAPerson[0].write(t, root, tpl, s, "Written for dana")
+	if refusal := approveOnTheCommandLine(t, root, tpl, s); !strings.Contains(refusal, "lee") {
+		t.Fatalf("dana approved her client's change with lee there to read it:\n%s", refusal)
+	}
+	prop, _, err := proposalFor(root, s, s.GetRef(site.RefDraft))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := prop.Approve("lee", "read it", time.Now()); err != nil {
+		t.Fatalf("lee may not approve dana's client's change: %v", err)
+	}
+	if err := saveProposal(root, s, prop); err != nil {
+		t.Fatal(err)
+	}
+	if refusal := publishOnTheCommandLine(t, root, tpl, s); refusal != "" {
+		t.Fatalf("approved by lee, dana's client's change did not publish:\n%s", refusal)
+	}
+}

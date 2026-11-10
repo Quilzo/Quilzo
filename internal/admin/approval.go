@@ -237,6 +237,11 @@ func (s *Server) approvalFor(p principal, draft string) approvalState {
 		// The rule that makes the whole thing worth having. Somebody approving
 		// their own work satisfies a counter and reviews nothing.
 		st.Why = "You proposed this, so you cannot also approve it."
+	case pol.Requested(judged, p.Name):
+		// What a model wrote for the person looking, with a count set: they
+		// asked for it, as they would their own work.
+		st.Why = "A model wrote this for you, so you asked for it, and with a " +
+			"count of approvals set somebody else approves it."
 	case !st.Matches:
 		st.Why = "The draft has moved since this was proposed. Propose the " +
 			"current draft before approving it."
