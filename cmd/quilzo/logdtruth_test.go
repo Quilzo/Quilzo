@@ -7,6 +7,9 @@ import (
 	"bytes"
 	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,8 +17,12 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
+	"github.com/quilzo/quilzo/internal/admin"
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/out"
+	"github.com/quilzo/quilzo/internal/render"
 )
 
 // With no log writer running and the log another account's, `logd status`
@@ -219,5 +226,70 @@ func TestApprovingAMoveOfTheAuditLogSaysWhichKeysCheckWhatWasSignedBefore(t *tes
 	}
 	if !strings.Contains(said.String(), old) {
 		t.Errorf("approving the move does not say what was signed before it checks against %s:\n%s", old, said.String())
+	}
+}
+
+// Approved on People, a move of the audit log says the same: the screen's
+// approval moves the log as surely as the command line's does.
+//
+// The command line said which head.pub.json checks what was signed before
+// the move, and the People screen, where an administrator approves it as
+// often, said only "move the audit log to DIR: approved by lee."
+func TestApprovingAMoveOfTheAuditLogOnPeopleSaysWhichKeysCheckWhatWasSignedBefore(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root, boss, _ := twoAdmins(t)
+	if _, err := localHeadSigner(root); err != nil {
+		t.Fatal(err)
+	}
+	old := headKeysPath(root)
+	logs := filepath.Join(t.TempDir(), "audit")
+	if err := os.Mkdir(logs, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("QUILZO_TOKEN", boss)
+	if err := cmdAuditDir(root, []string{logs}); err != nil {
+		t.Fatal(err)
+	}
+	id := waiting(t, root).ID
+
+	s, err := open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pol, err := loadPolicy(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	toks, err := loadTokens(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lee, _, err := toks.IssueSession("passkey:lee", "lee", auth.RoleAdmin, "/", time.Hour,
+		auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv, err := admin.New(s, pol, toks, render.Layouts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.Dual = dualHooks(root)
+	form := url.Values{"id": {id}, "do": {"approve"}}
+	req := httptest.NewRequest(http.MethodPost, "/people/pending", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	req.Header.Set("Authorization", "Bearer "+lee)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	loc, err := url.Parse(rec.Header().Get("Location"))
+	if rec.Code != http.StatusSeeOther || err != nil {
+		t.Fatalf("approving on People: %d %s", rec.Code, rec.Body.String())
+	}
+	if auditDir(root) != logs {
+		t.Fatalf("approved on People, and the log did not move: %s (%s)", auditDir(root), loc.Query().Get("m"))
+	}
+	if said := loc.Query().Get("m"); !strings.Contains(said, old) {
+		t.Errorf("approving the move on People does not say what was signed before it checks against %s: %q",
+			old, said)
 	}
 }

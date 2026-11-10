@@ -120,17 +120,28 @@ func cmdAuditDir(root string, args []string) error {
 // package signed before the move stopped checking against it, and nothing
 // said which file still does, at the moment somebody had just moved it.
 func sayKeysLeftBehind(oldKeys, dir string) {
-	old, err := os.ReadFile(oldKeys)
-	if err != nil {
-		return
-	}
-	if now, err := os.ReadFile(filepath.Join(dir, "head.pub.json")); err == nil && bytes.Equal(now, old) {
+	if keysLeftBehind(oldKeys, dir) == "" {
 		return
 	}
 	w.Human("  %sheads, receipts and statements signed before the move check against %s, not the keys%s\n",
 		yellow, oldKeys, reset)
 	w.Human("  %sthe writer makes in %s: keep that file, and check them with --keys %s%s\n",
 		yellow, dir, oldKeys, reset)
+}
+
+// keysLeftBehind is what sayKeysLeftBehind says, as one sentence, or
+// nothing when there is nothing to say: for the People screen, where
+// approving a move of the log moves it as `quilzo pending approve` does.
+func keysLeftBehind(oldKeys, dir string) string {
+	old, err := os.ReadFile(oldKeys)
+	if err != nil {
+		return ""
+	}
+	if now, err := os.ReadFile(filepath.Join(dir, "head.pub.json")); err == nil && bytes.Equal(now, old) {
+		return ""
+	}
+	return fmt.Sprintf("Heads, receipts and statements signed before the move check against %s, not the "+
+		"keys the writer makes in %s: keep that file, and check them with --keys %s.", oldKeys, dir, oldKeys)
 }
 
 func setAuditDir(root, dir string) error {

@@ -25,8 +25,11 @@ import (
 type Dual struct {
 	Store *dual.Store
 	// Apply makes an approved change of a kind the admin has no part in
-	// (the audit log's directory), as by.
-	Apply func(r dual.Request, by string) error
+	// (the audit log's directory), as by, and says what whoever approved
+	// it is to know of it beside its being made, or nothing: a move of the
+	// audit log says which public keys check what was signed before it, as
+	// `quilzo pending approve` does.
+	Apply func(r dual.Request, by string) (string, error)
 }
 
 // onlyAdministrator reports whether name is the only person who could
@@ -122,15 +125,16 @@ func (s *Server) proposeSecond(p principal, kind, what string, payload any, why 
 	return false, msg, nil
 }
 
-// applyDual makes an approved change, as by.
-func (s *Server) applyDual(r dual.Request, by string) error {
+// applyDual makes an approved change, as by, and says what Dual.Apply
+// says of one the admin has no part in.
+func (s *Server) applyDual(r dual.Request, by string) (string, error) {
 	switch r.Kind {
 	case dual.Grant:
 		var ch dual.GrantChange
 		if err := json.Unmarshal(r.Payload, &ch); err != nil {
-			return err
+			return "", err
 		}
-		return s.changePolicy(func(p *auth.Policy) error {
+		return "", s.changePolicy(func(p *auth.Policy) error {
 			for _, b := range ch.Bindings {
 				if err := p.Grant(b); err != nil {
 					return err
@@ -141,36 +145,36 @@ func (s *Server) applyDual(r dual.Request, by string) error {
 	case dual.Setting:
 		var ch dual.SettingChange
 		if err := json.Unmarshal(r.Payload, &ch); err != nil {
-			return err
+			return "", err
 		}
 		if s.Settings == nil {
-			return errors.New("no configuration")
+			return "", errors.New("no configuration")
 		}
 		cfg, err := s.Settings.Load()
 		if err != nil {
-			return err
+			return "", err
 		}
 		if err := cfg.Set(ch.Key, ch.Value, ch.Reason, r.By); err != nil {
-			return err
+			return "", err
 		}
-		return s.Settings.Save(cfg)
+		return "", s.Settings.Save(cfg)
 	case dual.Mapping:
 		var ch dual.MappingChange
 		if err := json.Unmarshal(r.Payload, &ch); err != nil {
-			return err
+			return "", err
 		}
 		if s.SCIM == nil || s.SCIM.Map == nil {
-			return errors.New("this server has no provisioning")
+			return "", errors.New("this server has no provisioning")
 		}
-		return s.SCIM.Map(ch.Group, ch.To, by)
+		return "", s.SCIM.Map(ch.Group, ch.To, by)
 	case dual.Token, dual.Enrol, dual.SCIMToken:
 		// Issued to whoever asked: a token on the command line (quilzo
 		// pending redeem), a link or a provisioning token there or on
 		// People.
-		return nil
+		return "", nil
 	}
 	if s.Dual.Apply == nil {
-		return fmt.Errorf("request %s is a %s, which this server cannot make", r.ID, r.Kind)
+		return "", fmt.Errorf("request %s is a %s, which this server cannot make", r.ID, r.Kind)
 	}
 	return s.Dual.Apply(r, by)
 }
@@ -276,6 +280,7 @@ func (s *Server) handlePeoplePending(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	var req dual.Request
 	var err error
+	said := ""
 	switch do {
 	case "approve", "decline":
 		// Their own request, approved alone: not for a day after another
@@ -288,7 +293,8 @@ func (s *Server) handlePeoplePending(w http.ResponseWriter, r *http.Request) {
 		}
 		req, err = s.Dual.Store.Decide(id, p.Name, do == "approve", s.onlyAdministrator(p.Name), now)
 		if err == nil && do == "approve" {
-			if aerr := s.applyDual(req, p.Name); aerr != nil {
+			var aerr error
+			if said, aerr = s.applyDual(req, p.Name); aerr != nil {
 				err = fmt.Errorf("approved, and making the change failed: %w", aerr)
 			}
 		}
@@ -311,6 +317,9 @@ func (s *Server) handlePeoplePending(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(map[string]string{"approve": "dual.approved", "decline": "dual.declined", "withdraw": "dual.withdrawn"}[do], "/", detail)
 	msg := req.What + ": " + dual.StateWords(req, now) + "."
+	if said != "" {
+		msg += " " + said
+	}
 	if do == "approve" && req.Kind == dual.Token {
 		msg += " " + req.By + " receives it with quilzo pending redeem " + req.ID + ", within a day."
 	}
