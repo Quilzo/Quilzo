@@ -491,3 +491,84 @@ func TestRemovingTheOtherAdministratorDoesNotLetTheStarterApproveAlone(t *testin
 		t.Errorf("a day after the removal the draft still could not be approved alone: %v %v", alone, err)
 	}
 }
+
+// What an agent run writes is the model's, made for the person who started
+// the run, as the run's record names them: with no count of approvals set
+// their approval counts, and with one set they asked for it and somebody
+// else's does.
+//
+// An agent's commit names the agent and nobody it was written for, so with
+// review.required_approvals at one the approval of the person who started
+// the run counted for what it wrote. The second-person rule saw them only
+// through the page's provenance, which names whoever let the write go
+// ahead: dana started the run, sam let its write through, and dana then
+// approved the draft herself on the command line, with lee there to read
+// it.
+func TestThePersonWhoStartedARunAskedForWhatItWrote(t *testing.T) {
+	root, _ := identityStore(t)
+	if err := updatePolicyForTest(root, auth.Binding{Principal: "lee", Role: auth.RoleAdmin, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	standInModel(t)
+	declaredAutonomy(t, root)
+	id, err := runAgentOnce(root, "tidy", "write a welcome page", true, asAdmin("dana"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec, _ := loadAgentRun(root, id)
+	w := rec.Trace.Waiting
+	if w == nil || w.Action.Op != "write_page" {
+		t.Fatalf("the run did not stop at the write: %+v", rec.Trace)
+	}
+	if _, err := continueAgentRun(context.Background(), root, id,
+		&agent.Verdict{N: w.N, Approve: true}, asAdmin("sam")); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prop, _, err := proposalFor(root, s, s.GetRef(site.RefDraft))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prop.AuthorKind != "ai" || prop.Author != "agent/tidy" {
+		t.Fatalf("the proposal for the run's write is by %q (%s)", prop.Author, prop.AuthorKind)
+	}
+
+	approvedBy := func(who string) collab.Decision {
+		t.Helper()
+		pol, err := loadApprovalPolicy(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		p := *prop
+		p.Approvals = nil
+		if err := p.Approve(who, "read it", time.Now()); err != nil {
+			t.Fatalf("%s may not approve at all: %v", who, err)
+		}
+		return pol.Evaluate(p, kindOfPrincipal(root), time.Now())
+	}
+	// With no count, a person's reading is what is asked, and dana's is one.
+	if d := approvedBy("dana"); !d.Allowed {
+		t.Errorf("with no count set, dana's approval of what her run wrote did not count: %+v", d)
+	}
+
+	if err := cmdConfig(root, []string{"set", "review.required_approvals", "1"}); err != nil {
+		t.Fatal(err)
+	}
+	if d := approvedBy("dana"); d.Allowed {
+		t.Errorf("with a count set, dana's approval of what the run she started wrote counted: %+v", d)
+	}
+	if d := approvedBy("lee"); !d.Allowed {
+		t.Errorf("lee's approval of dana's run's change did not count: %+v", d)
+	}
+	t.Setenv("QUILZO_TOKEN", personToken(t, root, "dana", auth.RoleAdmin))
+	if refusal := approveOnTheCommandLine(t, root, "", s); !strings.Contains(refusal, "for you") {
+		t.Errorf("dana approved, on the command line, what the run she started wrote: %q", refusal)
+	}
+	t.Setenv("QUILZO_TOKEN", personToken(t, root, "lee", auth.RoleAdmin))
+	if refusal := approveOnTheCommandLine(t, root, "", s); refusal != "" {
+		t.Errorf("lee could not approve dana's run's change: %s", refusal)
+	}
+}

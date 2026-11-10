@@ -502,3 +502,36 @@ func TestEverybodyAMachineWroteForAskedForTheChange(t *testing.T) {
 		t.Errorf("the proposal is kept as %s", body)
 	}
 }
+
+// An agent's commit names the person who started its run, and is read back
+// as the agent's, written for them; and only from a commit the agent it
+// names is recorded as making.
+func TestAnAgentsCommitIsWrittenForThePersonWhoStartedTheRun(t *testing.T) {
+	msg := AgentMessage("tidy", "index", "dana")
+	if !MachineWrote(msg) || !strings.HasPrefix(msg, AgentPrefix) {
+		t.Fatalf("%q does not say a machine wrote it", msg)
+	}
+	if writer, person := WrittenFor(msg, "agent/tidy"); writer != "agent/tidy" || person != "dana" {
+		t.Errorf("%q by agent/tidy is written by %q for %q", msg, writer, person)
+	}
+	// Recorded as made by anybody but the agent it names, it is not that
+	// agent's, and names nobody.
+	for _, author := range []string{"lee", "agent/other"} {
+		if _, person := WrittenFor(msg, author); person != "" {
+			t.Errorf("%q by %s is taken as written for %q", msg, author, person)
+		}
+	}
+	// An agent's commit made before the person was named says nobody.
+	if got := AgentMessage("tidy", "index", ""); got != AgentPrefix+"tidy wrote index" {
+		t.Errorf("with nobody to name, the message is %q", got)
+	}
+	m := &MachineChange{Commit: "aaa", Author: "agent/tidy", Message: msg}
+	prop := Proposal{Content: "aaa", Author: m.Writer(), CreatedAt: now.Unix()}
+	prop.MarkMachine(m)
+	if prop.Author != "agent/tidy" || prop.OnBehalfOf != "dana" {
+		t.Fatalf("the proposal for the run's write is by %q for %q", prop.Author, prop.OnBehalfOf)
+	}
+	if !(Policy{Required: 1}).Requested(prop, "dana") || (Policy{RequireHumanForAI: true}).Requested(prop, "dana") {
+		t.Error("dana is not who asked for her run's change with a count set, or is without one")
+	}
+}

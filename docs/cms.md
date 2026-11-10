@@ -1784,7 +1784,13 @@ Two consequences worth stating plainly:
 - **A model cannot approve its own work.** Not a rule bolted on for AI. Approvals
   must come from principals and self-approval is forbidden, and a model is not a
   principal. The rule that stops an editor rubber-stamping herself is the rule
-  that stops a model shipping unreviewed.
+  that stops a model shipping unreviewed. What a run writes is the agent's,
+  made for the person who started the run, as the run's record names them
+  rather than whoever let one of its steps go ahead, and each commit says so.
+  With `review.required_approvals` or `approval.required_humans` set, that
+  person asked for the change, as they would their own, and somebody else
+  approves it; with neither set, they may approve it when nobody else may
+  publish, as before.
 
 This follows CaMeL ([arXiv:2503.18813](https://arxiv.org/abs/2503.18813)), which
 is where the research settled: enforce policy outside the model with a

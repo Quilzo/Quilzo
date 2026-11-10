@@ -923,6 +923,24 @@ type agentResume struct {
 	Since time.Time
 }
 
+// startedBy is who started the run this stretch carries on, as its record
+// names them: the run's own record when this continues it, and otherwise
+// the caller, whom a run starting now (a replay included) is kept as
+// started by.
+//
+// Not the caller alone. A run that waited for a person goes on as whoever
+// answered it, so dana's run, its write let through by sam, wrote as sam's,
+// and what it wrote was dana's to approve with a count of approvals set.
+func (f *agentResume) startedBy(caller *Caller) string {
+	if f.Prior != nil && f.Prior.ID != "" && f.Prior.ID == f.RunID && f.Prior.By != "" {
+		return f.Prior.By
+	}
+	if caller == nil {
+		return ""
+	}
+	return caller.Name
+}
+
 // narrowing is one thing that made a run's manifest narrower than its
 // declaration, and why: the caller, the agent's own standing, or its
 // evaluations.
@@ -1270,7 +1288,10 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 				// Attributed to the agent. A commit signed with whoever
 				// happened to start the run is a history that lies about who
 				// wrote it, and the review queue reads the author.
-				Author:  "agent/" + m.Name,
+				Author: "agent/" + m.Name,
+				// And written for whoever started the run, which the
+				// approval gate reads from the commit.
+				For:     from.startedBy(caller),
 				Gate:    pageGate(root),
 				Propose: proposeCommit(root, s, m.Name, caller),
 				Written: func(page string) {
@@ -1317,6 +1338,7 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 				Run: delegation{
 					root: root, store: s, model: delegateModel,
 					caller: caller, goal: goal, parent: m.Name,
+					startedBy: from.startedBy(caller),
 				},
 			},
 			// The deciders: a typed question with a confidence, asked by

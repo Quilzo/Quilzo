@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
+	"github.com/quilzo/quilzo/internal/collab"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 )
@@ -392,3 +393,29 @@ func TestAnAgentsCommitSaysItWasMachineWritten(t *testing.T) {
 }
 
 var _ = store.Store{}
+
+// The commit names the person the run was for, as the review queue reads
+// it, and an agent's commit made before this, naming nobody, reads as it
+// did.
+//
+// It named the agent alone, so with a count of approvals set the person
+// who started the run approved what it wrote as though somebody else had
+// asked for it.
+func TestAnAgentsCommitNamesWhoTheRunWasFor(t *testing.T) {
+	s := testStore(t)
+	sess := writerSession(t, nil, agent.AutonomyDraft)
+	if _, err := write(t, Writer{Store: s, Author: "agent/" + sess.Manifest().Name, For: "dana"}, sess,
+		"news", map[string]any{"title": "N"}); err != nil {
+		t.Fatal(err)
+	}
+	commit, err := s.GetCommit(s.GetRef(site.RefDraft))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(commit.Message, AgentCommitPrefix) {
+		t.Errorf("the commit message %q no longer says a machine wrote it", commit.Message)
+	}
+	if writer, person := collab.WrittenFor(commit.Message, commit.Author); writer != commit.Author || person != "dana" {
+		t.Errorf("%q by %s reads as written by %q for %q", commit.Message, commit.Author, writer, person)
+	}
+}

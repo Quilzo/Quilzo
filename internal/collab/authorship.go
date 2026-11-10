@@ -64,7 +64,10 @@ func MachineWrote(message string) bool {
 // The machine interface and the writing assistant commit under the name of
 // the person they act for: a change a client makes over MCP is recorded as
 // by the person whose token it holds, and one `quilzo assist --author dana`
-// makes as by dana. An agent run commits as the agent ("agent/NAME").
+// makes as by dana. An agent run commits as the agent ("agent/NAME"), and
+// names the person who started the run in its message (AgentMessage): what
+// a model does for a person is the model's, and that person is who asked
+// for it, whichever way it reached the draft.
 //
 // Read as written by that person, what dana's client wrote was dana's own
 // work: she was told "dana wrote this change and cannot approve it", it was
@@ -101,13 +104,51 @@ func machineFor(message, author string) (writer, called string, ok bool) {
 
 // WrittenFor reads who wrote a commit, as a proposal names its author, and
 // the person a machine wrote it for: the machine and the person it is
-// recorded under, for a commit a machine made for somebody, and otherwise
-// the author it is recorded under and nobody.
+// recorded under, for a commit a machine made for somebody; the agent and
+// the person who started its run, for an agent's (AgentMessage); and
+// otherwise the author it is recorded under and nobody.
 func WrittenFor(message, author string) (writer, person string) {
 	if w, _, ok := machineFor(message, author); ok {
 		return w, author
 	}
+	if p := agentFor(message, author); p != "" {
+		return author, p
+	}
 	return author, ""
+}
+
+// AgentMessage is the message of a commit an agent run makes: the agent,
+// the page, and the person who started the run, as its record names them.
+//
+// An agent commits as itself ("agent/NAME"), so the commit named nobody it
+// was written for, and with a count of approvals set the person who
+// started the run approved what it wrote as though it were somebody else's.
+// The person goes in the message, which every surface that asks who wrote
+// a commit already reads (MachineWrote), and is read back only from a
+// commit the agent it names is recorded as making (agentFor). Made here,
+// where it is read, so the two cannot come to disagree.
+func AgentMessage(agent, page, person string) string {
+	msg := AgentPrefix + agent + " wrote " + page
+	if person != "" {
+		msg += " for " + person
+	}
+	return msg
+}
+
+// agentFor is the person an agent's commit says its run was started by, or
+// nobody: an older commit says none, and a commit whose message names an
+// agent other than the one it is recorded as made by is not that agent's.
+func agentFor(message, author string) string {
+	rest, ok := strings.CutPrefix(message, AgentPrefix)
+	if !ok {
+		return ""
+	}
+	name, after, ok := strings.Cut(rest, " wrote ")
+	if !ok || author != "agent/"+name {
+		return ""
+	}
+	_, person, _ := strings.Cut(after, " for ")
+	return strings.TrimSpace(person)
 }
 
 // AuthorKindFor decides what a proposal's AuthorKind should be.
