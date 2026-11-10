@@ -128,6 +128,9 @@ func TestALimitOrSwitchThatGivesSomethingUpWaitsForASecondAdministrator(t *testi
 	root, boss, lee := twoAdmins(t)
 	for _, tc := range [][2]string{
 		{"api.rate.burst", "500"},
+		{"telemetry.allow_remote", "true"},
+		{"ext.enabled", "true"},
+		{"browser.path", "/opt/chromium/chrome"},
 	} {
 		key, value := tc[0], tc[1]
 		t.Setenv("QUILZO_TOKEN", boss)

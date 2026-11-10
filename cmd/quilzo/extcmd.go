@@ -332,7 +332,7 @@ func extAdd(root string, args []string) error {
 	}
 	cfg, _ := loadConfig(root)
 	if cfg != nil && !cfg.Bool("ext.enabled") {
-		w.Human("  %sextensions are off; quilzo config set ext.enabled true%s\n",
+		w.Human("  %sextensions are off; quilzo config set ext.enabled true --accept-risk \"why\"%s\n",
 			dim, reset)
 	}
 	return nil

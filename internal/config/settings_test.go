@@ -303,3 +303,38 @@ func TestALimitOfZeroIsRefusedRatherThanReadAsTheDefault(t *testing.T) {
 		t.Errorf("the zero was not said: %q", got)
 	}
 }
+
+// Sending agent traces off this network, running third-party code and
+// driving a Chromium nothing checked each give something up, and each was
+// taken from one administrator with nobody asked why, while
+// siem.stream.allow_remote, telemetry.allow_remote's neighbour, asked.
+// Turned on they are weaker, saying what is given up; put back they are not.
+func TestRemoteTelemetryExtensionsAndAnUncheckedBrowserAreWeaker(t *testing.T) {
+	for _, tc := range []struct{ key, weaker, back, risk string }{
+		{"telemetry.allow_remote", "true", "false", "leave this network"},
+		{"ext.enabled", "true", "false", "third-party code"},
+		{"browser.path", "/opt/chromium/chrome", "", "/opt/chromium/chrome, which nothing checks"},
+	} {
+		s, _ := Lookup(tc.key)
+		if weak, why := s.IsWeaker(tc.weaker); !weak || !strings.Contains(why, tc.risk) {
+			t.Errorf("%s = %s: weaker %v, %q", tc.key, tc.weaker, weak, why)
+		}
+		if weak, why := s.IsWeaker(tc.back); weak {
+			t.Errorf("%s = %q, put back, is weaker: %s", tc.key, tc.back, why)
+		}
+		c := fresh()
+		var need *ErrNeedsAcceptance
+		if err := c.Set(tc.key, tc.weaker, "", "dana"); !as(err, &need) {
+			t.Errorf("%s = %s was set with no reason: %v", tc.key, tc.weaker, err)
+		}
+		if err := c.Set(tc.key, tc.weaker, "a reason", "dana"); err != nil {
+			t.Errorf("%s = %s with a reason: %v", tc.key, tc.weaker, err)
+		}
+		if w := c.Weakened(); len(w) != 1 || w[0].Accepted == nil {
+			t.Errorf("%s = %s is not reported with its reason: %+v", tc.key, tc.weaker, w)
+		}
+		if err := c.Set(tc.key, tc.back, "", "dana"); err != nil || len(c.Weakened()) != 0 {
+			t.Errorf("%s put back: %v, still reported %+v", tc.key, err, c.Weakened())
+		}
+	}
+}

@@ -1011,7 +1011,16 @@ var settings = []Setting{
 			"once by quilzo browser install and checked against its SHA-256. A machine that " +
 			"cannot download it names a Chromium of its own here, as an absolute path; the " +
 			"browser is still run in the agent's box and driven the same way, but nothing " +
-			"checks what it is, so it should be one the operator installed on purpose.",
+			"checks what it is, so it should be one the operator installed on purpose. Any " +
+			"path takes a reason, which the posture scan reports: one was taken with nobody " +
+			"asked, and agents drove whatever binary it named.",
+		Weaker: func(v string) (bool, string) {
+			if v == "" {
+				return false, ""
+			}
+			return true, fmt.Sprintf("agents drive %s, which nothing checks, in place of "+
+				"the Chromium this release pins and checks against its SHA-256", v)
+		},
 	},
 	{
 		Key: "browser.sessions", Kind: Int, Default: "2",
@@ -1323,7 +1332,10 @@ var settings = []Setting{
 			"the content types it was scoped to. Sending them to a hosted " +
 			"observability vendor is a disclosure, and it should be a " +
 			"sentence somebody typed rather than a consequence of pasting a " +
-			"URL. Loopback and private addresses need no flag.",
+			"URL. Loopback and private addresses need no flag. It takes a " +
+			"reason, as siem.stream.allow_remote does; it was turned on with " +
+			"nobody asked why.",
+		Weaker: onIsWeaker("agent traces, naming the pages runs read, leave this network"),
 	},
 	{
 		Key: "siem.stream.url", Kind: Text, Default: "",
@@ -1500,7 +1512,9 @@ var settings = []Setting{
 		Controls: []string{"CM-7", "SI-7"},
 		Why: "Off until somebody turns it on. An extension is third-party " +
 			"code running beside the content store, and the honest default " +
-			"for that is not-running.",
+			"for that is not-running. Turning it on takes a reason, which the " +
+			"posture scan reports; it was turned on with nobody asked why.",
+		Weaker: onIsWeaker("third-party code runs beside the content store"),
 	},
 	{
 		Key: "ext.timeout", Kind: Duration, Default: "5s",
