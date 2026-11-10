@@ -341,3 +341,97 @@ func TestTheApprovalCountSurvivesSerialisation(t *testing.T) {
 			back.Have, back.Need, body)
 	}
 }
+
+// A change a machine made for a person is named by the machine, and the
+// person reads it where only a person's reading is asked; where a count of
+// approvals is set they asked for it, as they would their own work.
+//
+// The machine interface and the writing assistant commit under the name of
+// the person they act for, and the proposal was named by that: dana was
+// told she wrote what her client wrote and could not approve it, and on an
+// installation run by one person it could never be published.
+func TestWhatAMachineWroteForAPersonIsTheirsToRead(t *testing.T) {
+	for _, message := range []string{"mcp: write index", "assist: retitle the homepage"} {
+		writer, person := WrittenFor(message, "dana")
+		if writer == "dana" || writer == "" || person != "dana" {
+			t.Fatalf("%q under dana is written by %q for %q", message, writer, person)
+		}
+		m := &MachineChange{Commit: "aaa", Author: "dana", Message: message}
+		if !strings.Contains(m.Describe("aaa"), "dana's") {
+			t.Errorf("a refusal does not say whose machine wrote %q: %s", message, m.Describe("aaa"))
+		}
+
+		prop := Proposal{Content: "aaa", Author: m.Writer(), CreatedAt: now.Unix()}
+		prop.MarkMachine(m)
+		if prop.OnBehalfOf != "dana" || prop.AuthorKind != "ai" {
+			t.Fatalf("a proposal for %q is %q for %q", message, prop.AuthorKind, prop.OnBehalfOf)
+		}
+		if err := prop.Approve("dana", "read it", now); err != nil {
+			t.Fatalf("dana may not read what %s wrote for her: %v", writer, err)
+		}
+		only := Policy{RequireHumanForAI: true}
+		if d := only.Evaluate(prop, people, now); !d.Allowed {
+			t.Errorf("with only a person's reading asked, dana's reading of %q did not count: %s", message, d.Reason)
+		}
+		for _, counted := range []Policy{{Required: 1, RequireHumanForAI: true}, {RequiredHumans: 1, RequireHumanForAI: true}} {
+			if !counted.Requested(prop, "dana") {
+				t.Errorf("with %+v dana is not who asked for %q", counted, message)
+			}
+			d := counted.Evaluate(prop, people, now)
+			if d.Allowed || !strings.Contains(d.Reason, "for dana") {
+				t.Errorf("with %+v dana approved what was written for her: %+v", counted, d)
+			}
+		}
+	}
+
+	// An agent's own commit names the agent, and nobody it was for.
+	if writer, person := WrittenFor(AgentPrefix+"tidy wrote index", "agent/tidy"); writer != "agent/tidy" || person != "" {
+		t.Errorf("an agent's commit is written by %q for %q", writer, person)
+	}
+	// Nor is a person's own commit anybody else's.
+	if writer, person := WrittenFor("fixed a typo", "dana"); writer != "dana" || person != "" {
+		t.Errorf("a person's commit is written by %q for %q", writer, person)
+	}
+}
+
+// The approval of the person a model wrote a change for stops counting once
+// a count is set, and somebody else's approval is then enough: hers is set
+// aside, not held against everybody else's.
+//
+// Dana read what her client wrote and approved it while no count was set,
+// as the rule allows, and a count of one was set before it was published.
+// Her approval was then reported as a refusal whatever anybody else said:
+// sam's approval was the one the count asked for, and the change still
+// could not be published until the draft itself changed. So was a proposal
+// waiting when the program was upgraded, approved by dana while a person's
+// later commit was all its author said.
+func TestAnApprovalThatNoLongerCountsDoesNotOutvoteOneThatDoes(t *testing.T) {
+	m := &MachineChange{Commit: "aaa", Author: "dana", Message: "mcp: write index"}
+	prop := Proposal{Content: "aaa", Author: m.Writer(), CreatedAt: now.Unix()}
+	prop.MarkMachine(m)
+	if err := prop.Approve("dana", "read it", now); err != nil {
+		t.Fatal(err)
+	}
+	counted := Policy{Required: 1, RequireHumanForAI: true}
+
+	// Hers alone is not enough, and the refusal says why.
+	d := counted.Evaluate(prop, people, now)
+	if d.Allowed || !strings.Contains(d.Reason, "for dana") {
+		t.Fatalf("with a count set, dana's approval of what was written for her: %+v", d)
+	}
+
+	if err := prop.Approve("sam", "read it too", now); err != nil {
+		t.Fatal(err)
+	}
+	if d := counted.Evaluate(prop, people, now); !d.Allowed || d.Have != 1 {
+		t.Fatalf("sam's approval did not count beside dana's: %+v", d)
+	}
+
+	// Where sam's is not enough either, the refusal says what is still
+	// missing as well as why dana's was set aside.
+	two := Policy{Required: 2, RequiredHumans: 2, RequireHumanForAI: true}
+	if d := two.Evaluate(prop, people, now); d.Allowed || !strings.Contains(d.Reason, "for dana") ||
+		!strings.Contains(d.Reason, "from people") {
+		t.Fatalf("with two people asked for, sam's approval and dana's: %+v", d)
+	}
+}

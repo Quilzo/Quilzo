@@ -236,7 +236,13 @@ type Proposal struct {
 	Author string `json:"author"`
 	// AuthorKind is human, service or ai. An AI-authored proposal always needs
 	// a human, whatever the numeric threshold says.
-	AuthorKind string     `json:"author_kind"`
+	AuthorKind string `json:"author_kind"`
+	// OnBehalfOf is the person a machine wrote it for, when its commit
+	// names one (WrittenFor): whose client at the machine interface, or
+	// whose writing assistant. Author is then the machine. They may approve
+	// it where the one approval asked for is a person's reading of a
+	// model's work, and are otherwise who asked for it (Policy.Requested).
+	OnBehalfOf string     `json:"on_behalf_of,omitempty"`
 	CreatedAt  int64      `json:"created_at"`
 	Message    string     `json:"message,omitempty"`
 	Approvals  []Approval `json:"approvals,omitempty"`
@@ -340,7 +346,7 @@ func (p Policy) Evaluate(prop Proposal, kindOf KindOf, now time.Time) Decision {
 		if a.Content != prop.Content {
 			continue // an approval of different bytes
 		}
-		if a.By == prop.Author {
+		if p.Requested(prop, a.By) {
 			continue // self-approval, handled explicitly below
 		}
 		if len(allowed) > 0 && !allowed[a.By] {
@@ -359,6 +365,7 @@ func (p Policy) Evaluate(prop Proposal, kindOf KindOf, now time.Time) Decision {
 	// Self-approval is reported specifically, because "you need two approvals"
 	// when somebody has already clicked approve reads as the system being
 	// broken rather than as the rule doing its job.
+	asked := ""
 	for _, a := range prop.Approvals {
 		if a.By == prop.Author && a.Content == prop.Content {
 			return Decision{
@@ -370,6 +377,27 @@ func (p Policy) Evaluate(prop Proposal, kindOf KindOf, now time.Time) Decision {
 					prop.Author),
 			}
 		}
+		if asked == "" && a.Content == prop.Content && p.Requested(prop, a.By) {
+			asked = a.By
+		}
+	}
+	// And the person a model wrote it for, where a count is set: what they
+	// asked a model to write is theirs to ask for, as their own work is, and
+	// not theirs to count as somebody else's reading. Said only when what
+	// is left falls short, and not as the answer whatever else is there:
+	// an approval they gave while no count was set, or before an upgrade
+	// named them, stopped a change somebody else had approved as the count
+	// asked from being published at all. Said before what is still missing
+	// rather than in its place, which somebody else's approval may not have
+	// made up either.
+	refuse := func(d Decision) Decision {
+		if asked != "" {
+			d.Reason = fmt.Sprintf(
+				"%s wrote this change for %s, who asked for it and cannot "+
+					"also approve it: with a count of approvals set, "+
+					"somebody else reads it. Without theirs, %s", prop.WrittenBy(), asked, d.Reason)
+		}
+		return d
 	}
 
 	if p.RequireHumanForAI && prop.AuthorKind == "ai" && humans == 0 {
@@ -381,10 +409,10 @@ func (p Policy) Evaluate(prop Proposal, kindOf KindOf, now time.Time) Decision {
 		if prop.Machine != nil {
 			reason += " " + prop.Machine.Describe(prop.Content)
 		}
-		return Decision{
+		return refuse(Decision{
 			Have: len(valid), Need: p.Required,
 			Reason: reason,
-		}
+		})
 	}
 
 	// Two-person integrity, checked before the count.
@@ -393,7 +421,7 @@ func (p Policy) Evaluate(prop Proposal, kindOf KindOf, now time.Time) Decision {
 	// when two approvals exist and both are machines is a refusal nobody can
 	// act on, and the action needed is a person, not another approval.
 	if p.RequiredHumans > 0 && humans < p.RequiredHumans {
-		return Decision{
+		return refuse(Decision{
 			Have: len(valid), Need: p.Required,
 			Reason: fmt.Sprintf(
 				"this needs %d approval(s) from people and has %d. There "+
@@ -401,7 +429,7 @@ func (p Policy) Evaluate(prop Proposal, kindOf KindOf, now time.Time) Decision {
 					"model accounts, and a change nobody has read is not "+
 					"reviewed however many credentials agreed to it.",
 				p.RequiredHumans, humans, len(valid)),
-		}
+		})
 	}
 
 	if len(valid) < p.Required {
@@ -412,13 +440,13 @@ func (p Policy) Evaluate(prop Proposal, kindOf KindOf, now time.Time) Decision {
 		}
 		if len(allowed) > 0 {
 			for who := range allowed {
-				if !seen[who] && who != prop.Author {
+				if !seen[who] && !p.Requested(prop, who) {
 					d.Missing = append(d.Missing, who)
 				}
 			}
 			sort.Strings(d.Missing)
 		}
-		return d
+		return refuse(d)
 	}
 
 	who := make([]string, 0, len(valid))

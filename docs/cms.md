@@ -615,7 +615,10 @@ Once it is installed, `site_blanks` lists what is left to fill in and
 `site_fill` fills it, with facts the person gave the agent; a blank it cannot
 fill stays one, and keeps its page from being published. A page an agent filled
 in is marked as an agent's words, and a page in a package an agent wrote as a
-model's, so the AI-content disclosure is right either way.
+model's, so the AI-content disclosure is right either way. What an agent fills
+in waits for a person's approval before it is published, as anything a model
+writes does. The person it was filling in for gives it when nobody else may
+publish and no count of approvals is set; otherwise somebody else does.
 
 ## Taking bookings
 
