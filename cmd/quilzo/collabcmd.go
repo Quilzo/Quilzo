@@ -251,13 +251,35 @@ func proposalFor(root string, s *store.Store, draft string) (*collab.Proposal, *
 	// One rule, shared with the admin. This list used to live only here, and
 	// the admin decided authorship a different way — see collab/authorship.go.
 	kind := collab.AuthorKindFor(commit.Message, "human")
+	author := commit.Author
+	// With no count of approvals set, the one approval asked for is a
+	// person's reading of the model's change, so the model's change names
+	// who may not give it. Named by the newest commit, a person's typo fix
+	// on top of an agent's change made that person the one who could not
+	// approve the agent's change, and on an installation run by one person
+	// nobody could: the draft never published, where without the typo fix
+	// that person approved it alone. With a count set, the newest commit's
+	// author still waits for somebody else, as their own work did.
+	if machine != nil && machine.Commit != draft && machine.Author != "" && onlyAPersonIsAsked(root) {
+		author = machine.Author
+	}
 	f.Proposals = append(f.Proposals, collab.Proposal{
-		Content: draft, Author: commit.Author, AuthorKind: kind,
+		Content: draft, Author: author, AuthorKind: kind,
 		CreatedAt: commit.At, Message: commit.Message,
 	})
 	prop := &f.Proposals[len(f.Proposals)-1]
 	prop.MarkMachine(machine)
 	return prop, f, nil
+}
+
+// onlyAPersonIsAsked reports whether the policy sets no count of approvals,
+// so that what it asks of a model's change is one person's reading and
+// nothing of a person's own. A policy that cannot be read answers no, which
+// keeps the newest commit's author from approving: publishing refuses on
+// that policy anyway.
+func onlyAPersonIsAsked(root string) bool {
+	pol, err := loadApprovalPolicy(root)
+	return err == nil && max(pol.Required, pol.RequiredHumans) <= 0
 }
 
 func cmdReview(root string, args []string) error {
