@@ -6,6 +6,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collab"
+	"github.com/quilzo/quilzo/internal/dual"
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
@@ -139,6 +141,18 @@ type proposalFile struct {
 }
 
 func loadApprovalPolicy(root string) (collab.Policy, error) {
+	onDisk := collab.Policy{}
+	if err := loadJSON(approvalPolicyPath(root), &onDisk); err != nil {
+		return approvalPolicyWith(root, collab.Policy{}), err
+	}
+	return approvalPolicyWith(root, onDisk), nil
+}
+
+// approvalPolicyWith is the policy publishing is asked about when
+// approval.json holds onDisk: what `quilzo review require` is about to
+// write is compared as it would apply, not as the file says it, because
+// the settings stand under it.
+func approvalPolicyWith(root string, onDisk collab.Policy) collab.Policy {
 	// The configured floor first.
 	//
 	// review.required_approvals and approval.required_humans were settable,
@@ -170,17 +184,58 @@ func loadApprovalPolicy(root string) (collab.Policy, error) {
 	// more specific answer. Merged rather than replaced: a file written before
 	// these settings existed carries no opinion about them, and reading it as
 	// "zero" would silently undo a configured requirement.
-	onDisk := collab.Policy{}
-	if err := loadJSON(approvalPolicyPath(root), &onDisk); err != nil {
-		return p, err
-	}
 	if onDisk.Required > 0 {
 		p.Required = onDisk.Required
 	}
 	if onDisk.RequiredHumans > 0 {
 		p.RequiredHumans = onDisk.RequiredHumans
 	}
-	return p, nil
+	return p
+}
+
+// approvalNeedsSecond says why the approval policy after a change waits
+// for a second administrator, as dual.SettingNeedsSecond does for the
+// settings: fewer approvals, or fewer of them from people, than apply now.
+//
+// Compared as each applies, settings and file together. Compared as the
+// file says it, `review require 2` under settings asking three lowered
+// what publishing needs and looked like a raise.
+func approvalNeedsSecond(before, after collab.Policy) (bool, string) {
+	const fewer = "fewer people would approve a change"
+	if after.Required < before.Required {
+		return true, fmt.Sprintf("approvals from %d to %d: %s", before.Required, after.Required, fewer)
+	}
+	if after.RequiredHumans < before.RequiredHumans {
+		return true, fmt.Sprintf("approvals from people from %d to %d: %s", before.RequiredHumans,
+			after.RequiredHumans, fewer)
+	}
+	return false, ""
+}
+
+// approvalCountHint is said to somebody refused `quilzo review require`:
+// what to run instead, and who else agrees.
+const approvalCountHint = "how many approvals publishing needs, and whose count, is an administrator's to " +
+	"change, with quilzo config set review.required_approvals N or quilzo review require N; asking " +
+	"fewer people waits for a second administrator to approve it"
+
+// saveApprovalPolicy writes approval.json and records it, with the
+// request a second administrator approved it on, when one did.
+func saveApprovalPolicy(root string, c *Caller, pol collab.Policy, also map[string]string) error {
+	if err := saveJSON(approvalPolicyPath(root), pol); err != nil {
+		return err
+	}
+	detail := map[string]string{
+		"required":  fmt.Sprintf("%d", pol.Required),
+		"humans":    fmt.Sprintf("%d", pol.RequiredHumans),
+		"approvers": strings.Join(pol.Approvers, ","),
+	}
+	maps.Copy(detail, also)
+	// The approvers are people, so the log pseudonymises them: written
+	// in clear, the list went to a SIEM beside each one's pseudonym.
+	r := c.auditRecord("review.policy", "/", audit.Success, detail)
+	r.People = pol.Approvers
+	record(root, r)
+	return nil
 }
 
 // atoiOr parses a whole number, or gives the fallback.
@@ -292,7 +347,7 @@ func onlyAPersonIsAsked(root string) bool {
 
 func cmdReview(root string, args []string) error {
 	if len(args) == 0 {
-		args = []string{"status"}
+		args = []string{bareRuns["review"]}
 	}
 	switch args[0] {
 	case "status":
@@ -468,6 +523,13 @@ func kindOfPrincipal(root string) collab.KindOf {
 // A separate command rather than a JSON file people are expected to find,
 // because a security control that requires reading the source to enable is a
 // control most installations do not have.
+//
+// The policy is the four-eyes rule itself, so changing it takes what
+// `quilzo config set review.required_approvals` takes: an administrator,
+// and a second one to ask fewer people. It took an author's edit-draft and
+// nothing else, so an author ran `review require 0` under a policy of two,
+// and the next publish went live unapproved. Asking more is one
+// administrator's, at once.
 func reviewRequire(root string, args []string) error {
 	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("require", flag.ContinueOnError)
@@ -501,34 +563,71 @@ func reviewRequire(root string, args []string) error {
 			pol.Approvers = append(pol.Approvers, a)
 		}
 	}
-	if err := saveJSON(approvalPolicyPath(root), pol); err != nil {
+
+	// Asked here as well as by the table in front of the command, as
+	// `review approve` asks for publish: this is the control, wherever the
+	// command is reached from.
+	caller := resolveCaller(root, "")
+	if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
+		return fmt.Errorf("%w\n%s", err, approvalCountHint)
+	}
+	// Fewer people than apply now waits for a second administrator, who
+	// writes it on approving (applyDual), by the request `config set` files
+	// for the same count. A policy in force that cannot be read is not
+	// known to be asking more, so asking anything waits.
+	after := approvalPolicyWith(root, pol)
+	second, why := false, ""
+	if before, err := loadApprovalPolicy(root); err != nil {
+		second, why = true, "the approval policy in force could not be read: "+err.Error()
+	} else {
+		second, why = approvalNeedsSecond(before, after)
+	}
+	if second {
+		what := fmt.Sprintf("review require %d", n)
+		if pol.RequiredHumans > 0 {
+			what += fmt.Sprintf(", %d of them from people", pol.RequiredHumans)
+		}
+		if len(pol.Approvers) > 0 {
+			what += fmt.Sprintf(", from the %d named", len(pol.Approvers))
+		}
+		apply, err := proposeSecond(root, caller, dual.Approval, what+": "+why,
+			dual.ApprovalChange{Required: pol.Required, RequiredHumans: pol.RequiredHumans, Approvers: pol.Approvers}, "")
+		if err != nil || !apply {
+			return err
+		}
+	}
+	if err := saveApprovalPolicy(root, caller, pol, nil); err != nil {
 		return err
 	}
 
-	caller := resolveCaller(root, "")
-	record(root, audit.Record{
-		Action: "review.policy", Resource: "/", Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
-		Detail: map[string]string{
-			"required":  fmt.Sprintf("%d", n),
-			"approvers": strings.Join(pol.Approvers, ","),
-		},
-	})
-
-	if w.JSON(pol) {
+	// What applies, settings and file together, and not the file alone:
+	// with the settings at two, `review require 0` said publishing needed
+	// no approvals while two were still asked.
+	if w.JSON(after) {
 		return nil
 	}
-	if n == 0 {
+	settled := func(key string, set, asked int) {
+		if set > asked {
+			w.Human("  %s%s is %d in the settings, which apply where this asks less; "+
+				"quilzo config set %s changes it, and asking fewer people waits for a second administrator%s\n",
+				dim, key, set, key, reset)
+		}
+	}
+	if after.Required == 0 && after.RequiredHumans == 0 {
 		w.Human("publishing needs no approvals, except a person's on anything a model wrote\n")
 		return nil
 	}
-	w.Human("publishing now needs %d approval(s)\n", n)
-	if len(pol.Approvers) > 0 {
-		w.Human("  %sfrom: %s%s\n", dim, strings.Join(pol.Approvers, ", "), reset)
+	// Counted as the approvals screen counts them: people asked for are
+	// approvals asked for (admin approvalFor).
+	w.Human("publishing now needs %d approval(s)\n", max(after.Required, after.RequiredHumans))
+	settled("review.required_approvals", after.Required, n)
+	if len(after.Approvers) > 0 {
+		w.Human("  %sfrom: %s%s\n", dim, strings.Join(after.Approvers, ", "), reset)
 	}
-	if pol.RequiredHumans > 0 {
+	if after.RequiredHumans > 0 {
 		w.Human("  %sat least %d of them from people, not machines%s\n",
-			dim, pol.RequiredHumans, reset)
+			dim, after.RequiredHumans, reset)
+		settled("approval.required_humans", after.RequiredHumans, pol.RequiredHumans)
 	}
 	w.Human("  %sand a person on anything a model wrote%s\n", dim, reset)
 	w.Human("  %san author can never approve their own change%s\n", dim, reset)

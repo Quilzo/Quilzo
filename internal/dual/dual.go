@@ -66,7 +66,19 @@ const (
 	// group it sends makes administrators, given to whoever asked once
 	// another administrator agrees.
 	SCIMToken = "scim-token"
+	// Approval is the approval policy `quilzo review require` writes,
+	// when it asks fewer people, or people the policy in force does not
+	// name, to approve a change.
+	Approval = "approval"
 )
+
+// ApprovalChange is an Approval request: the policy, as approval.json
+// holds it.
+type ApprovalChange struct {
+	Required       int      `json:"required"`
+	RequiredHumans int      `json:"required_humans,omitempty"`
+	Approvers      []string `json:"approvers,omitempty"`
+}
 
 // PayChange is a Pay request: the provider, and how its checkout behaves.
 type PayChange struct {

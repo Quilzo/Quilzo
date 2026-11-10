@@ -14,6 +14,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/collab"
 	"github.com/quilzo/quilzo/internal/dual"
 	"github.com/quilzo/quilzo/internal/scim"
 )
@@ -127,6 +128,14 @@ func applyDual(root string, r dual.Request, by string) error {
 		}
 		syncPayAfterLive(root, caller)
 		return nil
+	case dual.Approval:
+		var ch dual.ApprovalChange
+		if err := json.Unmarshal(r.Payload, &ch); err != nil {
+			return err
+		}
+		return saveApprovalPolicy(root, resolveCaller(root, ""), collab.Policy{Required: ch.Required,
+			RequiredHumans: ch.RequiredHumans, Approvers: ch.Approvers, RequireHumanForAI: true},
+			map[string]string{"request": r.ID, "approved_by": by})
 	case dual.Token, dual.Enrol, dual.SCIMToken:
 		return nil
 	}
