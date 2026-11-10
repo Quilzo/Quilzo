@@ -4,8 +4,10 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -273,7 +275,8 @@ func cmdLogdStatus(root string) error {
 
 	if !running {
 		w.Human("no log writer\n")
-		if separated && !canAppend(logPath) {
+		switch {
+		case separated && !canAppend(logPath):
 			// The separation in force with its writer stopped, as under the
 			// reference compose with logd down. Said as this account writing
 			// the log itself, which it cannot: what it does goes unrecorded,
@@ -284,7 +287,17 @@ func cmdLogdStatus(root string) error {
 				"  not recorded, and what an agent would do is refused%s\n", yellow, reset)
 			w.Human("  %s%s%s\n", dim, why, reset)
 			w.Human("\n  %sstart `quilzo logd` as the account that owns %s%s\n", dim, logPath, reset)
-		} else {
+		case !mayWriteLog(logPath):
+			// A log the writer has not made yet, in its directory, or one
+			// this account cannot so much as look at: not another account's
+			// as far as this account can tell, and not this account's to
+			// write either. Said as this account writing it itself.
+			w.Human("  %snothing is writing the log, and this account cannot: it is not this\n"+
+				"  account's to make or to open, so until the writer runs what it does is\n"+
+				"  not recorded, and what an agent would do is refused%s\n", yellow, reset)
+			w.Human("  %s%s%s\n", dim, why, reset)
+			w.Human("\n  %sstart `quilzo logd` as the account that owns %s%s\n", dim, filepath.Dir(logPath), reset)
+		default:
 			w.Human("  %sthis process writes the audit log itself, so anything that "+
 				"can\n  execute code as this account can rewrite the record of what "+
 				"it did%s\n", yellow, reset)
@@ -353,4 +366,35 @@ func canAppend(path string) bool {
 	}
 	_ = f.Close()
 	return true
+}
+
+// mayWriteLog reports whether this account could write the log at path
+// itself, as it does with no writer running: append to it, or make it in
+// its directory while there is none yet. Asked without writing anything.
+//
+// Not whether the log is another account's alone. A log the writer has not
+// made yet, in a directory that is the writer's, is nobody's, and one in a
+// directory this account may not look into cannot be inspected at all:
+// both were taken for this account's own, and `logd status` and the
+// posture scan said this process writes the log itself of a log it could
+// not open.
+//
+// A directory another account owns is taken as closed to this one unless
+// its mode lets a group or others write in it: the one case where this
+// cannot tell, and the answer that keeps saying the CMS may write its own
+// log is the one that sends somebody to look.
+func mayWriteLog(path string) bool {
+	_, err := os.Stat(path)
+	switch {
+	case err == nil:
+		return canAppend(path)
+	case !errors.Is(err, fs.ErrNotExist):
+		return false
+	}
+	info, err := os.Stat(filepath.Dir(path))
+	if err != nil {
+		return false
+	}
+	theirs, _ := logd.CheckOwnership(filepath.Dir(path), os.Geteuid())
+	return !theirs || os.Geteuid() == 0 || info.Mode().Perm()&0o022 != 0
 }
