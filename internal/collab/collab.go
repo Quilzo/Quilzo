@@ -240,6 +240,12 @@ type Proposal struct {
 	CreatedAt  int64      `json:"created_at"`
 	Message    string     `json:"message,omitempty"`
 	Approvals  []Approval `json:"approvals,omitempty"`
+	// Machine is the change a machine wrote among what this would put live,
+	// when one did (MarkMachine), so a refusal names it.
+	//
+	// Not stored. It is an answer about the history as it stands when the
+	// proposal is read, and AuthorKind is the part of it worth keeping.
+	Machine *MachineChange `json:"-"`
 }
 
 // Policy is how many people must agree, and who counts.
@@ -367,11 +373,17 @@ func (p Policy) Evaluate(prop Proposal, kindOf KindOf, now time.Time) Decision {
 	}
 
 	if p.RequireHumanForAI && prop.AuthorKind == "ai" && humans == 0 {
+		reason := "this change was written by a model, so it needs approval " +
+			"from a person. Two machines agreeing with each other is not " +
+			"review."
+		// Which change, when it is known: the person asked to read it
+		// may be looking at a draft whose newest commit is their own.
+		if prop.Machine != nil {
+			reason += " " + prop.Machine.Describe(prop.Content)
+		}
 		return Decision{
 			Have: len(valid), Need: p.Required,
-			Reason: "this change was written by a model, so it needs approval " +
-				"from a person. Two machines agreeing with each other is not " +
-				"review.",
+			Reason: reason,
 		}
 	}
 

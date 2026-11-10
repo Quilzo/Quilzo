@@ -162,12 +162,18 @@ func (s *Server) approvalFor(p principal, draft string) approvalState {
 		prop = nil
 	}
 
+	// What a model wrote among everything this would put live, and not
+	// only in the newest commit (site.MachineWroteSince): read from that
+	// one alone, a person's typo fix on top of an agent's change made the
+	// agent's change a person's, and Publish put it live unapproved.
+	wrote := machineChange(s, draft)
+
 	need := counted
 	if need <= 0 {
 		// Only the rule about a model's work applies, and only to a model's
 		// work: one person running their own site publishes their own words
 		// with nobody else asked, as before.
-		if !machineWrote(s, draft, prop) {
+		if !machineWrote(wrote, draft, prop) {
 			return approvalState{}
 		}
 		// One approval, from a person, is what that rule needs. Said as a
@@ -191,6 +197,18 @@ func (s *Server) approvalFor(p principal, draft string) approvalState {
 		st.Wrote = c.Message
 		st.MachineWrote = collab.MachineWrote(c.Message)
 	}
+	// And what is behind it: the proposal is judged on everything it
+	// would put live, and named by the model's change when that is not
+	// the newest commit.
+	if prop.Content != draft {
+		wrote = machineChange(s, prop.Content)
+	}
+	if wrote != nil {
+		st.MachineWrote = true
+		if wrote.Message != "" {
+			st.Wrote = wrote.Message
+		}
+	}
 	st.Matches = prop.Content == draft
 	st.Stale = prop.Stale()
 
@@ -204,7 +222,12 @@ func (s *Server) approvalFor(p principal, draft string) approvalState {
 	if kindOf == nil {
 		kindOf = func(string) string { return "human" }
 	}
-	d := pol.Evaluate(*prop, kindOf, time.Now())
+	// A copy, marked: a proposal recorded as a person's is still a
+	// model's when a model wrote some of it, and the hooks' own record is
+	// not this screen's to rewrite.
+	judged := *prop
+	judged.MarkMachine(wrote)
+	d := pol.Evaluate(judged, kindOf, time.Now())
 	st.Allowed, st.Reason, st.Have, st.Missing = d.Allowed, d.Reason, d.Have, d.Missing
 
 	switch {
@@ -233,15 +256,32 @@ func (s *Server) approvalFor(p principal, draft string) approvalState {
 	return st
 }
 
-// machineWrote reports whether a model wrote the commit being published:
-// its message says so, or the proposal for exactly these bytes was made as
-// a model's (collab.AuthorKindFor).
-func machineWrote(s *Server, commit string, prop *collab.Proposal) bool {
+// machineChange is the newest change a model wrote among those publishing
+// commit would put live, or nil when people wrote all of them.
+//
+// A commit that cannot be read is answered as a model's, as the walk
+// answers one behind it: nothing shows a person wrote it, and publishing
+// it fails on its own account anyway. No commit at all, as on a store with
+// no draft yet, is nothing anybody wrote.
+func machineChange(s *Server, commit string) *collab.MachineChange {
+	if commit == "" {
+		return nil
+	}
+	m, err := site.MachineWroteSince(s.Store, commit)
+	if err != nil {
+		return &collab.MachineChange{Commit: commit, Unread: err.Error()}
+	}
+	return m
+}
+
+// machineWrote reports whether a model wrote any of what publishing commit
+// would put live (machineChange), or the proposal for exactly these bytes
+// was made as a model's (collab.AuthorKindFor).
+func machineWrote(m *collab.MachineChange, commit string, prop *collab.Proposal) bool {
 	if prop != nil && prop.Content == commit && prop.AuthorKind == "ai" {
 		return true
 	}
-	c, err := s.Store.GetCommit(commit)
-	return err == nil && collab.MachineWrote(c.Message)
+	return m != nil
 }
 
 // handlePropose offers the current draft for review.
@@ -278,6 +318,12 @@ func (s *Server) handlePropose(w http.ResponseWriter, r *http.Request) {
 		authored = c.Message
 	}
 	kind := collab.AuthorKindFor(authored, proposerKind)
+	// And of every commit behind it that publishing would put live: the
+	// newest being a person's typo fix does not make an agent's change
+	// under it a person's.
+	if machineChange(s, draft) != nil {
+		kind = "ai"
+	}
 	message := strings.TrimSpace(r.FormValue("message"))
 
 	if prop == nil {
@@ -291,6 +337,12 @@ func (s *Server) handlePropose(w http.ResponseWriter, r *http.Request) {
 		// bytes — and they are still the truthful history of who agreed to
 		// what, which is the part an auditor reads.
 		prop.Rebase(draft, p.Name, time.Now())
+		// Moved onto content a model wrote some of, it is a model's. Kept
+		// as it was otherwise: a person re-offering a model's proposal
+		// does not make it theirs.
+		if kind == "ai" {
+			prop.AuthorKind = kind
+		}
 		if message != "" {
 			prop.Message = message
 		}

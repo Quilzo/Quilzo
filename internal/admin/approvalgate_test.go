@@ -145,3 +145,139 @@ func TestTheReviewScreenSaysTheApprovalPolicyCouldNotBeRead(t *testing.T) {
 		t.Error("the review screen does not say the approval policy could not be read")
 	}
 }
+
+// A model's change in the draft does not go live from Review → Publish
+// because a person committed something after it, and offering that draft
+// for review offers it as a model's.
+//
+// The browser asked only the draft's newest commit who wrote it. An agent
+// rewrote the homepage, a person then fixed a typo on About, and the
+// newest commit was the person's: no approval was asked for with no count
+// set, a proposal for the draft was made as the person's, and Publish put
+// the agent's homepage live with nobody having read it.
+func TestTheBrowserRefusesAModelsChangeUnderAPersonsLaterCommit(t *testing.T) {
+	for _, recorded := range []bool{true, false} {
+		srv, token := setup(t)
+		agents := draftWrittenBy(t, srv, collab.AgentPrefix+"rewrote the homepage")
+		pages, err := site.PagesAt(srv.Store, site.RefDraft)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pages["about"] = map[string]any{"title": "About", "body": "Who we are, spelt right."}
+		if _, err := site.SaveDraft(srv.Store, pages, "fixed a typo", "writer"); err != nil {
+			t.Fatal(err)
+		}
+		draft := srv.Store.GetRef(site.RefDraft)
+		// A proposal recorded as the person's, as one made by reading the
+		// newest commit was, or none at all.
+		prop := &collab.Proposal{Content: draft, Author: "writer", AuthorKind: "human",
+			CreatedAt: time.Now().Unix(), Message: "fixed a typo"}
+		srv.Approvals = &Approvals{
+			Policy: defaultStorePolicy,
+			Current: func() (*collab.Proposal, error) {
+				if !recorded {
+					return nil, nil
+				}
+				return prop, nil
+			},
+			Save:   func(p *collab.Proposal) error { prop = p; return nil },
+			KindOf: func(string) string { return "human" },
+		}
+
+		w := postForm(t, srv, "/publish", token, "reason=go")
+		if live := srv.Store.GetRef(site.RefLive); live != "" {
+			t.Fatalf("a model's change went live from the browser because a person committed "+
+				"after it (proposal recorded: %v)", recorded)
+		}
+		if body := w.Body.String(); !strings.Contains(body, "person") {
+			t.Errorf("the refusal does not say a person's approval is what is needed "+
+				"(proposal recorded: %v):\n%s", recorded, body)
+		}
+		page := get(t, srv, "/review", token).Body.String()
+		if !strings.Contains(page, "A model wrote this change") && recorded {
+			t.Error("the review screen does not say a model wrote some of what it refused")
+		}
+		if recorded && !strings.Contains(page, agents[:12]) {
+			t.Errorf("the review screen does not name the model's change %s", agents[:12])
+		}
+
+		if !recorded {
+			// Offered for review from this screen, it is offered as a
+			// model's, whoever presses the button.
+			if w := postForm(t, srv, "/review/propose", token, "message=please+read"); w.Code >= 400 {
+				t.Fatalf("proposing answered %d", w.Code)
+			}
+			if prop.AuthorKind != "ai" {
+				t.Fatalf("a draft holding a model's change was proposed as %q", prop.AuthorKind)
+			}
+			continue
+		}
+
+		// A person approving it is the way through.
+		if w := postForm(t, srv, "/review/approve", token, "note=read+it"); w.Code >= 400 {
+			t.Fatalf("approving answered %d", w.Code)
+		}
+		if w := postForm(t, srv, "/publish", token, "reason=go"); w.Code != http.StatusOK {
+			t.Fatalf("a draft a person approved was refused (%d):\n%s", w.Code, w.Body)
+		}
+		if live := srv.Store.GetRef(site.RefLive); live != draft {
+			t.Fatalf("live is %q, not the approved draft %q", live, draft)
+		}
+
+		// A person's change after that, with no model's change since what
+		// is live, publishes with nobody else asked.
+		pages["about"] = map[string]any{"title": "About", "body": "Who we are, spelt right twice."}
+		if _, err := site.SaveDraft(srv.Store, pages, "fixed another typo", "writer"); err != nil {
+			t.Fatal(err)
+		}
+		mine := srv.Store.GetRef(site.RefDraft)
+		srv.Approvals.Current = func() (*collab.Proposal, error) {
+			return &collab.Proposal{Content: mine, Author: "writer", AuthorKind: "human"}, nil
+		}
+		if w := postForm(t, srv, "/publish", token, "reason=go"); w.Code != http.StatusOK {
+			t.Fatalf("a person's change after an approved one was refused (%d):\n%s", w.Code, w.Body)
+		}
+		if live := srv.Store.GetRef(site.RefLive); live != mine {
+			t.Fatalf("live is %q, not the person's draft %q", live, mine)
+		}
+	}
+}
+
+// Re-offering a draft for review after a model wrote some of it offers it
+// as a model's, though the proposal it moves on from was a person's.
+//
+// Rebase moved the proposal to the new draft and kept its kind, so a
+// person's proposal, re-offered once an agent had changed the draft under
+// a later typo fix of theirs, still said "human": the webhook told nobody
+// a model's work was waiting, and the person whose agent run wrote it was
+// not held to the rule for approving that.
+func TestReofferingADraftAModelWroteSomeOfOffersItAsAModels(t *testing.T) {
+	srv, token := setup(t)
+	before := srv.Store.GetRef(site.RefDraft)
+	draftWrittenBy(t, srv, collab.AgentPrefix+"rewrote the homepage")
+	pages, err := site.PagesAt(srv.Store, site.RefDraft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages["about"] = map[string]any{"title": "About", "body": "Who we are, spelt right."}
+	if _, err := site.SaveDraft(srv.Store, pages, "fixed a typo", "writer"); err != nil {
+		t.Fatal(err)
+	}
+	prop := &collab.Proposal{Content: before, Author: "writer", AuthorKind: "human",
+		CreatedAt: time.Now().Unix(), Message: "the first draft"}
+	srv.Approvals = &Approvals{
+		Policy:  defaultStorePolicy,
+		Current: func() (*collab.Proposal, error) { return prop, nil },
+		Save:    func(p *collab.Proposal) error { prop = p; return nil },
+		KindOf:  func(string) string { return "human" },
+	}
+	if w := postForm(t, srv, "/review/propose", token, "message=please+read"); w.Code >= 400 {
+		t.Fatalf("proposing answered %d", w.Code)
+	}
+	if prop.Content != srv.Store.GetRef(site.RefDraft) {
+		t.Fatal("the proposal did not move to the draft")
+	}
+	if prop.AuthorKind != "ai" {
+		t.Fatalf("a draft holding a model's change was re-offered as %q", prop.AuthorKind)
+	}
+}

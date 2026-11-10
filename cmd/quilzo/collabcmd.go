@@ -218,13 +218,28 @@ func currentProposal(root string, s *store.Store) (*collab.Proposal, *proposalFi
 // promotion from staging into production) is asked about that commit's
 // approvals. It used to be asked about the draft's, so staging went live on
 // the approval of a later draft that nobody had promoted.
+//
+// AI-authored when a machine wrote any of what publishing these bytes
+// would put live (site.MachineWroteSince), not only the newest commit:
+// read from that one alone, a person's typo fix on top of an agent's
+// change made the agent's change a person's, here and so on every surface
+// that asks here. A proposal already recorded is marked the same way, as
+// one recorded from the newest commit may say "human" of a model's work.
 func proposalFor(root string, s *store.Store, draft string) (*collab.Proposal, *proposalFile, error) {
 	f := &proposalFile{}
 	if err := loadJSON(proposalsPath(root), f); err != nil {
 		return nil, nil, err
 	}
+	machine, merr := site.MachineWroteSince(s, draft)
+	if merr != nil {
+		// The commit itself cannot be read. A new proposal fails below as
+		// it did; a recorded one is judged as a model's, since nothing
+		// shows a person wrote it.
+		machine = &collab.MachineChange{Commit: draft, Unread: merr.Error()}
+	}
 	for i := range f.Proposals {
 		if f.Proposals[i].Content == draft {
+			f.Proposals[i].MarkMachine(machine)
 			return &f.Proposals[i], f, nil
 		}
 	}
@@ -236,11 +251,35 @@ func proposalFor(root string, s *store.Store, draft string) (*collab.Proposal, *
 	// One rule, shared with the admin. This list used to live only here, and
 	// the admin decided authorship a different way — see collab/authorship.go.
 	kind := collab.AuthorKindFor(commit.Message, "human")
+	author := commit.Author
+	// With no count of approvals set, the one approval asked for is a
+	// person's reading of the model's change, so the model's change names
+	// who may not give it. Named by the newest commit, a person's typo fix
+	// on top of an agent's change made that person the one who could not
+	// approve the agent's change, and on an installation run by one person
+	// nobody could: the draft never published, where without the typo fix
+	// that person approved it alone. With a count set, the newest commit's
+	// author still waits for somebody else, as their own work did.
+	if machine != nil && machine.Commit != draft && machine.Author != "" && onlyAPersonIsAsked(root) {
+		author = machine.Author
+	}
 	f.Proposals = append(f.Proposals, collab.Proposal{
-		Content: draft, Author: commit.Author, AuthorKind: kind,
+		Content: draft, Author: author, AuthorKind: kind,
 		CreatedAt: commit.At, Message: commit.Message,
 	})
-	return &f.Proposals[len(f.Proposals)-1], f, nil
+	prop := &f.Proposals[len(f.Proposals)-1]
+	prop.MarkMachine(machine)
+	return prop, f, nil
+}
+
+// onlyAPersonIsAsked reports whether the policy sets no count of approvals,
+// so that what it asks of a model's change is one person's reading and
+// nothing of a person's own. A policy that cannot be read answers no, which
+// keeps the newest commit's author from approving: publishing refuses on
+// that policy anyway.
+func onlyAPersonIsAsked(root string) bool {
+	pol, err := loadApprovalPolicy(root)
+	return err == nil && max(pol.Required, pol.RequiredHumans) <= 0
 }
 
 func cmdReview(root string, args []string) error {
