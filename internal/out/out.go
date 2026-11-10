@@ -34,6 +34,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"reflect"
 )
 
 // Mode is how output should be rendered.
@@ -115,6 +116,15 @@ func (w *Writer) Human(format string, args ...any) {
 func (w *Writer) JSON(v any) bool {
 	if w.Mode != JSON {
 		return false
+	}
+	// A list with nothing in it is [], not null. A nil slice is how Go
+	// spells an empty list and encoding/json writes it as null, so thirteen
+	// listings answered `null` on a store with nothing in them, and a script
+	// iterating the answer failed where it had no work to do. Here rather
+	// than at each of them, so the next listing cannot forget. An untyped
+	// nil is left as null: that is a command saying there is no such thing.
+	if rv := reflect.ValueOf(v); rv.Kind() == reflect.Slice && rv.IsNil() {
+		v = reflect.MakeSlice(rv.Type(), 0, 0).Interface()
 	}
 	enc := json.NewEncoder(w.Out)
 	enc.SetIndent("", "  ")

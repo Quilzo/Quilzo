@@ -36,6 +36,35 @@ func TestJSONModeEmitsExactlyOneDocumentOnStdout(t *testing.T) {
 	}
 }
 
+// A list with nothing in it is [], and nothing is null.
+//
+// A nil slice is how Go spells an empty list, and encoding/json writes it
+// as null, so thirteen listings answered `null` on a store with nothing in
+// them and a script iterating the answer failed where it had no work to do.
+// An untyped nil is left alone: it is a command saying there is no such
+// thing, as `booking setup` does for a site that takes no bookings.
+func TestJSONGivesAnEmptyListAsAList(t *testing.T) {
+	for _, c := range []struct {
+		v    any
+		want string
+	}{
+		{[]string(nil), "[]"},
+		{[]map[string]any(nil), "[]"},
+		{[]string{}, "[]"},
+		{[]byte(nil), `""`},
+		{nil, "null"},
+		{(*struct{})(nil), "null"},
+	} {
+		var stdout bytes.Buffer
+		w := &Writer{Mode: JSON, Out: &stdout, Err: &bytes.Buffer{}}
+		w.JSON(c.v)
+		got := strings.Join(strings.Fields(stdout.String()), "")
+		if got != c.want {
+			t.Errorf("%#v was written as %s, not %s", c.v, got, c.want)
+		}
+	}
+}
+
 func TestJSONModeNeverColours(t *testing.T) {
 	w := &Writer{Mode: JSON, Colour: true, Out: &bytes.Buffer{}, Err: &bytes.Buffer{}}
 	// Even if something sets Colour, JSON must not carry escape codes.
