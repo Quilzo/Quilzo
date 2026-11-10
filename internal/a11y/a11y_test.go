@@ -520,3 +520,35 @@ func TestAnImageLinksNameIsReadFromTheMarkupItself(t *testing.T) {
 		t.Errorf("a link holding only a decorative image was not reported: %v", decorative.Findings)
 	}
 }
+
+// A tag or attribute whose name is not ASCII is not the one it would lower
+// to, because HTML lowers only A to Z in a name: a browser reads <scrİpt> as
+// an unknown element and shows what it holds, <tİtle> is no title, and
+// arİa-label names nothing.
+//
+// The scanner lowered names with strings.ToLower, which turns İ into i. It
+// took <scrİpt> for a script and looked for its </script>, which a search
+// folding only ASCII rightly does not find in </scrİpt>, so the scan stopped
+// there and the image after it was passed unread. A page titled only by
+// <tİtle>, and a link named only by arİa-label, passed the same way.
+func TestANameThatIsNotASCIIIsNotTheOneItLowersTo(t *testing.T) {
+	after := Check("p", page(`<scrİpt>x</scrİpt><img src="a.png">`))
+	if !hasRule(after, "image-missing-alt") {
+		t.Errorf("the image after <scrİpt> was not checked: %v", after.Findings)
+	}
+	untitled := Check("p", `<!doctype html><html lang="en"><head><tİtle>A page</tİtle></head>`+
+		`<body><h1>A page</h1></body></html>`)
+	if !hasRule(untitled, "no-title") {
+		t.Errorf("<tİtle> was read as the page's title: %v", untitled.Findings)
+	}
+	unnamed := Check("p", page(`<a href="/" arİa-label="Home"></a>`))
+	if !hasRule(unnamed, "link-has-no-text") {
+		t.Errorf("arİa-label was read as the link's name: %v", unnamed.Findings)
+	}
+	// ASCII in any case is still the element and the attribute.
+	named := Check("p", `<!doctype html><HTML LANG="en"><HEAD><TITLE>A page</TITLE></HEAD>`+
+		`<BODY><H1>A page</H1><SCRIPT>'<img>'</SCRIPT><A HREF="/" ARIA-LABEL="Home"></A></BODY></HTML>`)
+	if len(named.Findings) != 0 {
+		t.Errorf("upper-case ASCII names were misread: %v", named.Findings)
+	}
+}

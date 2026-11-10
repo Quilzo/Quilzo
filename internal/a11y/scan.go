@@ -114,7 +114,7 @@ func scanTag(s string, i int) (tag, int, bool) {
 	if j == nameStart {
 		return tag{}, i, false
 	}
-	t.name = strings.ToLower(s[nameStart:j])
+	t.name = lowerName(s[nameStart:j])
 
 	// Attributes, tracking quotes so a `>` inside a value does not end the tag.
 	for j < n {
@@ -138,7 +138,7 @@ func scanTag(s string, i int) (tag, int, bool) {
 		for j < n && !isSpace(s[j]) && s[j] != '=' && s[j] != '>' && s[j] != '/' {
 			j++
 		}
-		name := strings.ToLower(s[attrStart:j])
+		name := lowerName(s[attrStart:j])
 		if name == "" {
 			j++
 			continue
@@ -241,6 +241,31 @@ func stripTags(s string) string {
 
 func isSpace(c byte) bool {
 	return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f'
+}
+
+// lowerName is a tag or attribute name in lower case the way HTML's own
+// tokeniser lowers one: A to Z, and every other byte left as it is.
+//
+// Not strings.ToLower, which lowers İ to i and the Kelvin sign to k. The
+// scanner read <scrİpt> as a script with it and looked for the </script>
+// that ends one, which asciifold.Index, folding only ASCII, rightly does not
+// find in </scrİpt>: the scan stopped there and every image after it went
+// unchecked. A browser reads <scrİpt> as an element it does not know and
+// shows what is inside, <tİtle> as no title and arİa-label as no name, and
+// so does this.
+func lowerName(s string) string {
+	for i := 0; i < len(s); i++ {
+		if 'A' <= s[i] && s[i] <= 'Z' {
+			b := []byte(s)
+			for j := i; j < len(b); j++ {
+				if 'A' <= b[j] && b[j] <= 'Z' {
+					b[j] += 'a' - 'A'
+				}
+			}
+			return string(b)
+		}
+	}
+	return s
 }
 
 func trimTo(s string, n int) string {
