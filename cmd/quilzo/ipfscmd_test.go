@@ -124,7 +124,7 @@ func TestThePermanentWebScreenGivesTheCommandLinesIdentifier(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv.Decentralised = decentralisedFor(root, tpl, s, design)
+	srv.Decentralised = decentralisedFor(root, tpl, s, func() *Design { return design })
 	get := func(path string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(http.MethodGet, path, nil)
 		r.Header.Set("Authorization", "Bearer "+secret)

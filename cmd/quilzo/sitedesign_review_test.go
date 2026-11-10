@@ -293,7 +293,8 @@ func TestTheCheckFailsAScriptWhenAPairFails(t *testing.T) {
 
 // Taking the layer away says when it takes effect. It said the generated
 // stylesheet "is served alone" while the running site went on serving the
-// layer until its next start, which is what setting one already said.
+// layer until it next read the design, which is with its next publish, as
+// setting one says.
 func TestTakingTheLayerAwaySaysWhenItTakesEffect(t *testing.T) {
 	root, tpl := designStore(t)
 	asPublisher(t, root)
@@ -309,7 +310,7 @@ func TestTakingTheLayerAwaySaysWhenItTakesEffect(t *testing.T) {
 	if err := cmdTheme(root, []string{"layer", "unset", "--dir", tpl}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(buf.String(), "next start") {
+	if !strings.Contains(buf.String(), "next publish") {
 		t.Errorf("taking the layer away does not say when it takes effect:\n%s", buf.String())
 	}
 }

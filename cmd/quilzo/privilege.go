@@ -433,7 +433,33 @@ var commandNeeds = map[string]need{
 	"assurance show":     {action: auth.ActView},
 	"assurance controls": {action: auth.ActView},
 
-	"theme": {action: auth.ActEditDraft},
+	// A typeface is the glyphs every page that names it is drawn with, and no
+	// gate reads a glyph: a face whose digits are drawn as other digits
+	// changes every price on the site at once. The Design screen asks a
+	// publisher for it, as it does for installing a layout, and so does this.
+	//
+	// A strict parent, so a subcommand added later arrives guarded: `theme
+	// font` was given publish under a parent that asked only an author's
+	// authority, which is the shape that lets the next one arrive with less.
+	// The changes an author makes to the theme today step down to edit-draft,
+	// the reads to view (below), and a bare `quilzo theme` is asked as the
+	// `show` it runs (bareRuns).
+	"theme": {action: auth.ActPublish,
+		hint: "adding or replacing a typeface changes how every page that names it is drawn"},
+	"theme font": {action: auth.ActPublish,
+		hint: "adding or replacing a typeface changes how every page that names it is drawn"},
+	"theme set":      {action: auth.ActEditDraft},
+	"theme unset":    {action: auth.ActEditDraft},
+	"theme apply":    {action: auth.ActEditDraft},
+	"theme generate": {action: auth.ActEditDraft},
+	"theme import":   {action: auth.ActEditDraft},
+	"theme styles":   {action: auth.ActEditDraft},
+	// The style layer at the authority it asked while `theme` asked an
+	// author's: showing it is the theme's own, and setting or taking it away
+	// asks for publish inside the command (themeLayer), with a refusal that
+	// says why. Under the strict parent alone an author who could read the
+	// layer could not.
+	"theme layer": {action: auth.ActEditDraft},
 	// Sections are content: adding, moving and removing one writes a draft
 	// commit, so it is the authority an author already has over a page.
 	"section":  {action: auth.ActEditDraft},
@@ -1378,7 +1404,7 @@ func commandArea(cmd string, args []string) (string, bool) {
 // digest out stopped being a reader's act, and their bare forms, which show
 // the proofs and the stamps, would have gone with them: a reader running
 // `quilzo anchor` would have been refused what `quilzo anchor status` shows.
-var bareRuns = map[string]string{"anchor": "status", "timestamp": "list", "stamp": "list"}
+var bareRuns = map[string]string{"anchor": "status", "timestamp": "list", "stamp": "list", "theme": "show"}
 
 func lookupNeed(cmd string, args []string) (need, bool) {
 	if sub, ok := bareRuns[cmd]; ok && len(args) == 0 {

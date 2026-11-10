@@ -280,11 +280,14 @@ func renderBundle(root, tplDir string) (map[string][]byte, error) {
 // site from: renderBundle, the bundle `quilzo ipfs` and the content_id tool
 // use, so the screen's identifier is theirs. The screen rendered a bundle
 // of its own, and gave a different identifier for the same site.
-func decentralisedFor(root, tplDir string, s *store.Store, design *Design) *admin.Decentralised {
+//
+// design is asked each time, because the admin reads the design again when
+// templates/ changes (designreload.go).
+func decentralisedFor(root, tplDir string, s *store.Store, design func() *Design) *admin.Decentralised {
 	return &admin.Decentralised{
 		Bundle:     func() (map[string][]byte, error) { return renderBundle(root, tplDir) },
 		Pages:      func() (map[string]any, error) { return site.PagesAt(s, site.RefLive) },
-		Stylesheet: func() string { return design.Stylesheet },
+		Stylesheet: func() string { return design().Stylesheet },
 		Media: func() (map[string][]byte, error) {
 			lib, err := openMedia(root)
 			if err != nil {

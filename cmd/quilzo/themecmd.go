@@ -35,7 +35,8 @@ import (
 
 func cmdTheme(root string, args []string) error {
 	if len(args) == 0 {
-		args = []string{"show"}
+		// The entry the privilege gate reads for a bare `quilzo theme`.
+		args = []string{bareRuns["theme"]}
 	}
 	switch args[0] {
 	case "show":
@@ -50,6 +51,8 @@ func cmdTheme(root string, args []string) error {
 		return themeCheck(args[1:])
 	case "fonts":
 		return themeFonts(args[1:])
+	case "font":
+		return themeFont(root, args[1:])
 	case "css":
 		return themeCSS(args[1:])
 	case "apply":
@@ -90,8 +93,8 @@ func cmdTheme(root string, args []string) error {
 		return themeLayer(root, args[1:])
 	default:
 		return fmt.Errorf("unknown theme command %q; try show, tokens, set, "+
-			"unset, check, fonts, css, apply, generate, import, export, styles or layer",
-			args[0])
+			"unset, check, fonts, font add, css, apply, generate, import, export, "+
+			"styles or layer", args[0])
 	}
 }
 
@@ -293,7 +296,21 @@ func themeSet(root string, args []string) error {
 	}
 	w.Human("\n  %squilzo theme check   the whole palette, %s%s\n",
 		dim, schemes, reset)
+	sayWhenReadersSeeIt()
 	return nil
+}
+
+// sayWhenReadersSeeIt says when a change to the design reaches readers.
+//
+// The admin's preview reads templates/ again as soon as it changes, and the
+// public site takes the design with its next publish, after the gate has
+// checked it (designreload.go). A command that saved a palette and said
+// nothing more left somebody refreshing the live site for a change that was
+// waiting for them to publish, and the cure people reached for was the one
+// that used to be needed: restarting the server.
+func sayWhenReadersSeeIt() {
+	w.Human("  %sthe admin's preview has it now; the site serves it from its next publish%s\n",
+		dim, reset)
 }
 
 func themeUnset(root string, args []string) error {
@@ -314,6 +331,7 @@ func themeUnset(root string, args []string) error {
 		w.Human("removed every override; the shipped palette is in effect\n")
 		record(root, resolveCaller(root, "").auditRecord("theme.unset", "/",
 			audit.Success, map[string]string{"removed": "all"}))
+		sayWhenReadersSeeIt()
 		return nil
 	}
 	if len(pos) == 0 {
@@ -333,6 +351,7 @@ func themeUnset(root string, args []string) error {
 	}
 	record(root, resolveCaller(root, "").auditRecord("theme.unset", "/",
 		audit.Success, map[string]string{"removed": strings.Join(pos, ",")}))
+	sayWhenReadersSeeIt()
 	return nil
 }
 
@@ -595,8 +614,11 @@ func themeLayer(root string, args []string) error {
 		if d.OwnStylesheet {
 			w.Human("  %sit is not served while %s exists: that file replaces everything a layer sits on%s\n",
 				dim, filepath.Join(*dir, "site.css"), reset)
+			return nil
 		}
-		w.Human("  %sthe site serves it from its next start%s\n", dim, reset)
+		// When, as every change to the design says it: the site reads the
+		// layer with the rest of templates/, with its next publish.
+		sayWhenReadersSeeIt()
 		return nil
 	case "unset":
 		if err := os.Remove(path); err != nil {
@@ -614,9 +636,10 @@ func themeLayer(root string, args []string) error {
 		if w.JSON(map[string]any{"path": path, "removed": true}) {
 			return nil
 		}
-		// When, as setting one says: the running site read the layer at its
-		// start and serves it until the next one.
-		w.Human("took the style layer away; the site serves the generated stylesheet alone from its next start\n")
+		// When, as setting one says: the running site serves the layer it
+		// read with the last publish until the next one.
+		w.Human("took the style layer away; the generated stylesheet is served alone\n")
+		sayWhenReadersSeeIt()
 		return nil
 	}
 	return fmt.Errorf("unknown theme layer command %q; try show, set FILE or unset", sub)
@@ -639,14 +662,26 @@ func themeFonts(args []string) error {
 	fontsDir := filepath.Join(*dir, "fonts")
 	if len(faces) == 0 {
 		w.Human("%sno fonts of your own%s\n\n", bold, reset)
-		w.Human("  %sPut a .woff2 in %s and it is served from this origin at%s\n",
+		// What is in the directory and not served comes first: it is the
+		// answer to "why is my font not there", which is why somebody runs
+		// this with a file in the directory. It came only after a list of
+		// faces, so a directory whose one file was refused said nothing.
+		for _, note := range set.Warnings {
+			w.Human("  %s%s%s\n", yellow, wrapIndent(note, 70, 2), reset)
+		}
+		if len(set.Warnings) > 0 {
+			w.Human("\n")
+		}
+		w.Human("  %sPut a .woff2 or .woff in %s and it is served from this origin at%s\n",
 			dim, fontsDir, reset)
-		w.Human("  %s/fonts/NAME.woff2, then:  quilzo theme set font-display NAME%s\n\n",
+		w.Human("  %s/fonts/NAME.woff2 (or .woff), then:  quilzo theme set font-display NAME%s\n",
 			dim, reset)
+		w.Human("  %sA .ttf or .otf is made into a WOFF and checked by:%s\n", dim, reset)
+		w.Human("  %s  quilzo theme font add FILE [--name Satoshi-400-700]%s\n\n", dim, reset)
 		w.Human("  %sThe filename is the contract:%s\n", dim, reset)
 		w.Human("    %sSatoshi.woff2            the family, full variable range%s\n", dim, reset)
 		w.Human("    %sSatoshi-600.woff2        one weight%s\n", dim, reset)
-		w.Human("    %sSatoshi-400..700.woff2   a range%s\n", dim, reset)
+		w.Human("    %sSatoshi-400-700.woff2    a range (Satoshi-400..700.woff2 too)%s\n", dim, reset)
 		w.Human("    %sSatoshi-italic.woff2     the italic%s\n\n", dim, reset)
 		w.Human("  %sThere is no way to name a font on another host. A page that%s\n", dim, reset)
 		w.Human("  %sfetches one has handed that host a request per visit and the%s\n", dim, reset)
@@ -663,8 +698,16 @@ func themeFonts(args []string) error {
 			len(f.Bytes)/1024, f.File, reset)
 	}
 	w.Human("\n  %squilzo theme set font-body %s%s\n", dim, faces[0].Family, reset)
+	w.Human("  %squilzo theme font add FILE   another, from a .ttf, .otf, .woff or .woff2%s\n", dim, reset)
+	// As above, and as loud: a file somebody put here and is not served is
+	// the same news whether or not another face is. It was printed dim and
+	// on one line under the list, the colour of a hint, and a sentence with
+	// a path and a command in it ran far past the edge of the terminal.
+	if len(set.Warnings) > 0 {
+		w.Human("\n")
+	}
 	for _, note := range set.Warnings {
-		w.Human("  %s%s%s\n", dim, note, reset)
+		w.Human("  %s%s%s\n", yellow, wrapIndent(note, 70, 2), reset)
 	}
 	return nil
 }
@@ -732,6 +775,7 @@ func themeApply(root string, args []string) error {
 	w.Human("applied the %s%s%s theme: %s\n", bold, st.Name, reset, st.Look)
 	w.Human("  %s%d token(s) written to %s%s\n", dim, len(st.Tokens),
 		filepath.Join(*dir, themeFile), reset)
+	sayWhenReadersSeeIt()
 	return nil
 }
 
@@ -895,5 +939,6 @@ func themeGenerate(root string, args []string) error {
 	w.Human("  %slight and dark, and every contrast pair checked%s\n", dim, reset)
 	w.Human("\n  %ssee it:      quilzo theme show%s\n", dim, reset)
 	w.Human("  %schange one:  quilzo theme set primary '#3b6ea5'%s\n", dim, reset)
+	sayWhenReadersSeeIt()
 	return nil
 }

@@ -109,7 +109,7 @@ func (s *Server) handleDesignLayer(w http.ResponseWriter, r *http.Request) {
 		}
 		s.auditPub(p, "theme.layer.unset", "/", map[string]string{"layer": theme.LayerFile})
 		s.showDesign(w, r, p, map[string]any{
-			"Message": "The style layer is gone; the generated stylesheet is served alone from the site's next start",
+			"Message": "The style layer is gone; the preview shows the generated stylesheet alone at once, and the site serves it from its next publish",
 			"Error":   "", "LayerText": was, "LayerRemoved": true,
 		})
 		return
@@ -145,5 +145,5 @@ func (s *Server) handleDesignLayer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.auditPub(p, "theme.layer.set", "/", map[string]string{"bytes": fmt.Sprint(len(css))})
-	s.designRedirect(w, r, "The style layer is saved; the site serves it from its next start", "")
+	s.designRedirect(w, r, "The style layer is saved; the preview shows it at once, and the site serves it from its next publish", "")
 }

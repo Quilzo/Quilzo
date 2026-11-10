@@ -492,10 +492,12 @@ var settings = []Setting{
 	},
 	{
 		Key: "site.description", Kind: Text, Default: "",
-		Summary: "a sentence about this site, for search results and an installed copy of it",
+		Summary: "a sentence about this site, for search results, an installed copy of it and the agent card",
 		Why: "Like the name, it belongs to the site and not to one run of " +
 			"`quilzo site`, so a site package can set it and every page that " +
-			"renders reads the same sentence; the flag still overrides it for one run.",
+			"renders reads the same sentence; the flag still overrides it for one run. " +
+			"The agent card (site.agent_card) leads with it, so an agent choosing " +
+			"between sites reads what this one is for before how it is governed.",
 	},
 	{
 		Key: "site.icon", Kind: Text, Default: "",
@@ -1356,7 +1358,8 @@ var settings = []Setting{
 			"feed follows. What it carries beyond A2A itself is the " +
 			"governance the protocol cannot express: per-skill capabilities, " +
 			"scope, budget, delegation and where the record of what happened " +
-			"lives.",
+			"lives. Its description starts with site.description, then says " +
+			"how the skills are governed.",
 	},
 	{
 		Key: "site.provider", Kind: Text, Default: "",

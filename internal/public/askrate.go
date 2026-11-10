@@ -37,17 +37,18 @@ const maxRated = 20_000
 // rateMAC is the signature on a rating token: this process's key, over
 // the chatbot, the question and when it was answered.
 func (as *Assistants) rateMAC(name, question string, issued int64) []byte {
-	as.mu.Lock()
-	if as.rateKey == nil {
+	o := as.own()
+	o.mu.Lock()
+	if o.rateKey == nil {
 		k := make([]byte, 32)
 		if _, err := rand.Read(k); err != nil {
-			as.mu.Unlock()
+			o.mu.Unlock()
 			return nil
 		}
-		as.rateKey = k
+		o.rateKey = k
 	}
-	key := as.rateKey
-	as.mu.Unlock()
+	key := o.rateKey
+	o.mu.Unlock()
 	m := hmac.New(sha256.New, key)
 	m.Write([]byte(name + "\x00" + question + "\x00" + strconv.FormatInt(issued, 10)))
 	return m.Sum(nil)
@@ -82,25 +83,26 @@ func (as *Assistants) spendRateToken(name, question, token string, now time.Time
 	if err != nil || !hmac.Equal(got, as.rateMAC(name, question, issued)) {
 		return false
 	}
-	as.mu.Lock()
-	defer as.mu.Unlock()
-	if as.rated == nil {
-		as.rated = map[string]time.Time{}
+	o := as.own()
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.rated == nil {
+		o.rated = map[string]time.Time{}
 	}
-	if _, used := as.rated[sig]; used {
+	if _, used := o.rated[sig]; used {
 		return false
 	}
-	if len(as.rated) >= maxRated {
-		for k, t := range as.rated {
+	if len(o.rated) >= maxRated {
+		for k, t := range o.rated {
 			if now.After(t.Add(RateFor)) {
-				delete(as.rated, k)
+				delete(o.rated, k)
 			}
 		}
-		if len(as.rated) >= maxRated {
+		if len(o.rated) >= maxRated {
 			return false
 		}
 	}
-	as.rated[sig] = at
+	o.rated[sig] = at
 	return true
 }
 
