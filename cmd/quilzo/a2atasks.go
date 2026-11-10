@@ -75,19 +75,20 @@ func a2aHost(root string, c *mcp.Caller) a2a.Host {
 			d["grant"] = tok.Grant
 		}
 		// Denied is for what this program refused: a sender who may not
-		// run the agent, or a decision a run was refused. Everything else
-		// that went wrong is a failure, as integrations call and the
-		// gateway record them. Every error was recorded as denied, so a run
-		// that could not reach its model, or a finished task asked to stop,
-		// read as an attack refused, and a log reader looking for refusals
-		// found outages.
+		// run the agent, an agent that may not run (mayNotRun), or a
+		// decision a run was refused. Everything else that went wrong is a
+		// failure, as integrations call and the gateway record them. Every
+		// error was recorded as denied, so a run that could not reach its
+		// model, or a finished task asked to stop, read as an attack
+		// refused, and a log reader looking for refusals found outages.
 		outcome := audit.Success
 		if err != nil {
 			outcome, d["error"] = audit.Failure, clip(err.Error(), 300)
 			var ref *mcp.Refusal
 			var se *mcp.ScopeError
 			var run *agent.Refusal
-			if errors.As(err, &ref) || errors.As(err, &se) || errors.As(err, &run) {
+			var stopped mayNotRun
+			if errors.As(err, &ref) || errors.As(err, &se) || errors.As(err, &run) || errors.As(err, &stopped) {
 				outcome = audit.Denied
 			}
 		}

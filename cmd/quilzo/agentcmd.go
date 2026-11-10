@@ -933,6 +933,17 @@ type narrowing struct {
 	Autonomy string
 }
 
+// mayNotRun is an agent this program will not run at all, whoever asks:
+// paused by the shield, or with nobody left to answer for it. It says what
+// the reason says, so everything that prints it is unchanged; the type is
+// for a record that tells a refusal from a failure (a2atasks.go). Those
+// reasons came back as words alone, so a task sent over A2A for an agent
+// the shield had paused was on the record as a run that broke, and a
+// sender asking again and again for it read as an outage.
+type mayNotRun struct{ error }
+
+func (e mayNotRun) Unwrap() error { return e.error }
+
 // boundManifest is what a run of an agent may do: its declaration, bounded
 // by whoever starts it, by its own standing in the access policy, and, for
 // a model, by what its evaluations earned. One function, used by the run
@@ -954,14 +965,14 @@ func boundManifest(root string, set *agentSet, name string, withModel, eval bool
 	// can be lifted.
 	if !eval {
 		if err := refuseIfPaused(root, name); err != nil {
-			return m, nil, err
+			return m, nil, mayNotRun{err}
 		}
 		// Somebody answers for it, and that person can still act here.
 		// Evaluations run regardless: they change nothing, and are how a
 		// new sponsor finds out what they are taking on.
 		if id := set.identityOf(name); id != nil {
 			if err := id.MayRun(hasStanding(root, id.Sponsor), time.Now()); err != nil {
-				return m, nil, fmt.Errorf("%s does not run: %w", name, err)
+				return m, nil, mayNotRun{fmt.Errorf("%s does not run: %w", name, err)}
 			}
 		}
 	}

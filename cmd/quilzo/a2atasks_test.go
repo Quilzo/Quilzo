@@ -16,6 +16,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/mcp"
+	"github.com/quilzo/quilzo/internal/shield"
 )
 
 func a2aCaller(who string, role auth.Role, client string) *mcp.Caller {
@@ -206,4 +207,58 @@ func TestATaskThatFailsIsRecordedAsAFailureAndARefusalAsDenied(t *testing.T) {
 	if r := last(); r.Outcome != audit.Failure || r.Detail["method"] != "CancelTask" {
 		t.Errorf("a finished task not canceled is on the record as %s: %v", r.Outcome, r.Detail)
 	}
+}
+
+// An agent this program will not run is a task refused, on the record as
+// one. Paused by the shield, or with nobody left to answer for it, the run
+// never starts and the sender is told so with CodeRefused, but the record
+// called it a failure, because the reason came back as words: a sender
+// asking again and again for an agent the shield had stopped read as an
+// outage rather than as what the shield exists to catch.
+func TestATaskForAnAgentThatMayNotRunIsRecordedAsDenied(t *testing.T) {
+	root, _ := identityStore(t) // dana, an administrator, declared tidy
+	t.Setenv("QUILZO_MODEL_URL", "http://127.0.0.1:1/v1")
+	t.Setenv("QUILZO_MODEL", "stand-in")
+	t.Setenv("QUILZO_MODEL_KEY", "")
+	dana := a2aHost(root, a2aCaller("dana", auth.RoleAdmin, "https://agents.example.com/meta"))
+	refused := func(why string) {
+		t.Helper()
+		_, err := dana.Send(nil, "tidy", "Tidy the welcome page")
+		var ae *a2a.Error
+		if !errors.As(err, &ae) || ae.Code != CodeRefused {
+			t.Fatalf("%s, the task was answered %v", why, err)
+		}
+		evs, err := audit.Read(auditPath(root))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := len(evs) - 1; i >= 0; i-- {
+			if evs[i].Action == "a2a.task" {
+				if evs[i].Outcome != audit.Denied {
+					t.Errorf("%s, the task is on the record as %s: %v", why, evs[i].Outcome, evs[i].Detail)
+				}
+				return
+			}
+		}
+		t.Fatal("no a2a.task record")
+	}
+
+	p, _, err := shield.Apply(root, shield.Protection{Kind: shield.Agent, Target: "tidy", Reason: "followed a planted instruction",
+		By: "shield", Auto: true, Until: time.Now().Add(time.Hour)}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	refused("paused by the shield")
+	if _, err := shield.Lift(root, p.ID, "dana", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	set, _ := loadAgents(root)
+	id := set.Identities["tidy"]
+	id.Expires = time.Now().Add(-time.Minute)
+	set.Identities["tidy"] = id
+	if err := saveJSON(agentsPath(root), set); err != nil {
+		t.Fatal(err)
+	}
+	refused("its identity ended")
 }
