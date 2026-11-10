@@ -505,24 +505,31 @@ func (st *Site) licenceURL() string {
 // Served from memory rather than from disk on each request, and never resolved
 // against a caller-supplied path: a public server that maps a URL onto a
 // filename is one traversal bug away from serving the token store. There is one
-// stylesheet, it was loaded at startup, and the route returns it or 404s.
+// stylesheet, read with the design when the site was built, and the route
+// returns it or 404s.
 func (st *Site) stylesheet(w http.ResponseWriter, r *http.Request) {
 	if st.Stylesheet == "" {
 		http.NotFound(w, r)
 		return
 	}
-	// The stylesheet changes only when the operator restarts, so it can be
-	// cached hard — but it is validated by ETag anyway, so a proxy that ignores
-	// max-age still cannot serve a stale one after a redeploy.
+	// Asked for again with every page, as the page is, and answered 304 by
+	// its ETag when it has not changed. It was kept for an hour, on the
+	// reasoning that it changed only when the operator restarted; the site
+	// now takes the design with each publish (designreload.go), and a reader
+	// who had opened a page in the hour before one was handed the published
+	// page over the stylesheet from before it.
+	//
+	// Set before the 304 too, so a browser holding a copy stored under the
+	// hour takes this policy with its next answer.
 	sum := sha256.Sum256([]byte(st.Stylesheet))
 	tag := `"` + hex.EncodeToString(sum[:8]) + `"`
+	w.Header().Set("ETag", tag)
+	w.Header().Set("Cache-Control", "public, max-age=0, must-revalidate")
 	if etag.Matches(r.Header.Get("If-None-Match"), tag) {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
-	w.Header().Set("ETag", tag)
-	w.Header().Set("Cache-Control", "public, max-age=3600")
 	_, _ = io.WriteString(w, st.Stylesheet)
 }
 

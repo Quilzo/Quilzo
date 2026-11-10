@@ -527,7 +527,10 @@ shows a change at once, and readers get it with the publish that passed. A style
 layer is the same: saved from the Design screen, it is in the preview when the
 screen comes back; set with `theme layer set`, or edited by hand, it is in the
 preview with the admin's next look at `templates/`; and either way readers get it
-with the next publish. SIGHUP —
+with the next publish. A reader's browser asks for `/site.css` again with every
+page, as it does for the page, and is answered "not modified" while it has not
+changed, so somebody who visited an hour before the publish is not handed the
+new page over the old stylesheet. SIGHUP —
 `systemctl reload` with the unit in [deploy/](../deploy/) — is the operator
 saying so, as a restart was, without dropping a connection.
 
