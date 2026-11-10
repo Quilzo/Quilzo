@@ -46,6 +46,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/a2a"
+	"github.com/quilzo/quilzo/internal/asciifold"
 	"github.com/quilzo/quilzo/internal/compress"
 	"github.com/quilzo/quilzo/internal/crawl"
 	"github.com/quilzo/quilzo/internal/etag"
@@ -1351,11 +1352,14 @@ func (st *Site) injectHead(html, page, hash string, body any) string {
 // wrong. Prepending when there is no head is worse than nothing — it would put
 // meta tags outside the document — so the page is served as it is and the
 // absence shows up in `provenance check` rather than being papered over.
+//
+// Found in the page itself, not in strings.ToLower of it: a Turkish title
+// lowered a byte shorter for every İ, and the marking went inside </title>.
 func insertBeforeHead(html, markup string) string {
 	if markup == "" {
 		return html
 	}
-	head := strings.Index(strings.ToLower(html), "</head>")
+	head := asciifold.Index(html, "</head>")
 	if head < 0 {
 		return html
 	}

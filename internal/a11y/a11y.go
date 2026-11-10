@@ -49,6 +49,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/quilzo/quilzo/internal/asciifold"
 )
 
 // Severity decides whether a finding blocks a publish.
@@ -866,8 +868,9 @@ func BlockingCount(reports []*Report) int {
 // run something, and pulling in a full parser to read one attribute would be
 // the wrong trade for the one place it is needed.
 func firstImageAlt(fragment string) (string, bool) {
-	low := strings.ToLower(fragment)
-	i := strings.Index(low, "<img")
+	// Both found in the markup itself, not in strings.ToLower of it, whose
+	// offsets drift by a byte for every İ before them.
+	i := asciifold.Index(fragment, "<img")
 	if i < 0 {
 		return "", false
 	}
@@ -876,8 +879,7 @@ func firstImageAlt(fragment string) (string, bool) {
 		return "", true
 	}
 	tagText := fragment[i : i+end]
-	lowTag := strings.ToLower(tagText)
-	j := strings.Index(lowTag, "alt=")
+	j := asciifold.Index(tagText, "alt=")
 	if j < 0 {
 		// No alt at all is not the same as alt="": the image is undescribed,
 		// which its own rule already reports. Here it means the link has no

@@ -3,7 +3,11 @@
 
 package a11y
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/quilzo/quilzo/internal/asciifold"
+)
 
 // A tag scanner rather than an HTML parser.
 //
@@ -73,8 +77,13 @@ func scan(s string) []tag {
 		// script and style hold raw text, so markup inside them is data. Skipping
 		// to the matching close stops a `<` in a script being read as a tag.
 		if !t.closing && !t.selfEnd && (t.name == "script" || t.name == "style") {
+			// The close is found in the page itself. strings.ToLower of the
+			// page is a byte shorter for every İ and two longer for every byte
+			// that is not UTF-8, so its offset resumed the scan inside the
+			// script, reading a string there as markup, or past it, over an
+			// image with no alt.
 			closer := "</" + t.name
-			if e := indexFold(s[i:], closer); e >= 0 {
+			if e := asciifold.Index(s[i:], closer); e >= 0 {
 				i += e
 			} else {
 				break
@@ -232,10 +241,6 @@ func stripTags(s string) string {
 
 func isSpace(c byte) bool {
 	return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f'
-}
-
-func indexFold(s, sub string) int {
-	return strings.Index(strings.ToLower(s), strings.ToLower(sub))
 }
 
 func trimTo(s string, n int) string {

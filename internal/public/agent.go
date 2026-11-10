@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/quilzo/quilzo/internal/asciifold"
 	"github.com/quilzo/quilzo/internal/assistant"
 )
 
@@ -119,7 +120,7 @@ func launcherMarkup(a assistant.Assistant, path string) string {
 // insertBeforeBodyEnd puts markup at the end of the body, where a
 // launcher belongs in the reading order: after everything on the page.
 func insertBeforeBodyEnd(page, markup string) string {
-	at := strings.LastIndex(strings.ToLower(page), "</body>")
+	at := asciifold.LastIndex(page, "</body>")
 	if at < 0 {
 		return page + markup
 	}

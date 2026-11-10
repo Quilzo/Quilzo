@@ -49,6 +49,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/quilzo/quilzo/internal/asciifold"
 )
 
 // Result is a conversion and everything that happened during it.
@@ -345,9 +347,13 @@ func (r *Result) noteExternal(src string) string {
 }
 
 // hrefIn pulls the URL out of one tag, for the message.
+//
+// The attribute is found in the tag itself, not in strings.ToLower of it: a
+// title with İ in it lowered a byte shorter for each one, the address came
+// back as `="https://…`, naming no host, and the stylesheet was kept.
 func hrefIn(tag string) string {
 	for _, attr := range []string{"href", "src"} {
-		i := indexFold(tag, attr+"=")
+		i := asciifold.Index(tag, attr+"=")
 		if i < 0 {
 			continue
 		}
@@ -366,10 +372,6 @@ func hrefIn(tag string) string {
 		return strings.TrimSuffix(value, ">")
 	}
 	return ""
-}
-
-func indexFold(s, sub string) int {
-	return strings.Index(strings.ToLower(s), strings.ToLower(sub))
 }
 
 // noteFrames removes embedded documents.

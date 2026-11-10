@@ -318,3 +318,23 @@ var samples = map[string]string{
 <link rel="stylesheet" href="/site.css"></head>
 <body><main id="main"><h1>Hello</h1><p>Ordinary markup.</p></main></body></html>`,
 }
+
+// A stylesheet from another host is removed and reported, whatever comes
+// before its address in the tag.
+//
+// The address was found in strings.ToLower of the tag and read from the tag
+// at that offset. A title with İ in it, two bytes that lower to one, moved
+// the read a byte early for each İ: the address came back as `="https://…`,
+// which names no host, so a stylesheet the policy would refuse was kept and
+// nothing said so.
+func TestAStylesheetFromElsewhereIsRemovedWhateverItsTitleSays(t *testing.T) {
+	for _, title := range []string{"İstanbul", "Yazı tipi: İnce", "300 \u212A"} {
+		r := Adopt(`<!doctype html><html lang="tr"><head><title>x</title>` +
+			`<link title="` + title + `" rel="stylesheet" href="https://fonts.example/css2.css">` +
+			`</head><body><h1>x</h1></body></html>`)
+		if strings.Contains(r.Template, "fonts.example") ||
+			!strings.Contains(strings.Join(r.Removed, "\n"), "from fonts.example was removed") {
+			t.Errorf("%q: the stylesheet was kept, or not reported:\n%s\n%v", title, r.Template, r.Removed)
+		}
+	}
+}
