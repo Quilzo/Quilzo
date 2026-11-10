@@ -331,11 +331,12 @@ func runItems(src Sources, now time.Time) ([]Item, error) {
 
 // reviewItem is the change waiting for approvals, when name may still give
 // one: never its author or whoever else asked for it (collab.Policy.
-// Requested), nor somebody who already has, and only while the policy is
-// not yet met.
+// Requested), nor somebody who already has, nor somebody the approvers
+// named leave out (collab.Policy.Counts), and only while the policy is not
+// yet met.
 func reviewItem(r Review, name string, now time.Time) (Item, bool) {
 	prop := r.Proposal
-	if r.Policy.Requested(prop, name) {
+	if r.Policy.Requested(prop, name) || !r.Policy.Counts(name) {
 		return Item{}, false
 	}
 	for _, a := range prop.Approvals {

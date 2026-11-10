@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"maps"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -190,12 +191,24 @@ func approvalPolicyWith(root string, onDisk collab.Policy) collab.Policy {
 	if onDisk.RequiredHumans > 0 {
 		p.RequiredHumans = onDisk.RequiredHumans
 	}
+	// And whose approval counts, where the file names anybody. `review
+	// require --approvers dana` wrote the list here and nothing read it
+	// back, so the command said "from: dana" and lee's approval published
+	// the change. No setting offers a list, so an empty one is a file with
+	// no opinion: anybody who may publish, as every file written before
+	// this said.
+	if len(onDisk.Approvers) > 0 {
+		p.Approvers = onDisk.Approvers
+	}
 	return p
 }
 
 // approvalNeedsSecond says why the approval policy after a change waits
 // for a second administrator, as dual.SettingNeedsSecond does for the
-// settings: fewer approvals, or fewer of them from people, than apply now.
+// settings: fewer approvals, or fewer of them from people, than apply now,
+// or approvals counted from somebody the list in force does not name.
+// Naming fewer people does not wait: everybody whose approval counts after
+// it counted before.
 //
 // Compared as each applies, settings and file together. Compared as the
 // file says it, `review require 2` under settings asking three lowered
@@ -208,6 +221,21 @@ func approvalNeedsSecond(before, after collab.Policy) (bool, string) {
 	if after.RequiredHumans < before.RequiredHumans {
 		return true, fmt.Sprintf("approvals from people from %d to %d: %s", before.RequiredHumans,
 			after.RequiredHumans, fewer)
+	}
+	if len(before.Approvers) == 0 {
+		return false, ""
+	}
+	// Said without the names, which the record of the request copies in
+	// clear; the request itself holds them.
+	const more = "somebody nobody chose to read changes could approve one"
+	if len(after.Approvers) == 0 {
+		return true, fmt.Sprintf("whose approval counts, from the %d named to anybody who may publish: %s",
+			len(before.Approvers), more)
+	}
+	for _, a := range after.Approvers {
+		if !slices.Contains(before.Approvers, a) {
+			return true, "whose approval counts, to somebody the list in force does not name: " + more
+		}
 	}
 	return false, ""
 }

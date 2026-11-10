@@ -242,6 +242,12 @@ func (s *Server) approvalFor(p principal, draft string) approvalState {
 		// asked for it, as they would their own work.
 		st.Why = "A model wrote this for you, so you asked for it, and with a " +
 			"count of approvals set somebody else approves it."
+	case !pol.Counts(p.Name):
+		// Asked only who may publish, this offered the approval to
+		// somebody the approvers leave out, and theirs was recorded and
+		// counted for nothing (collab.Policy.Counts).
+		st.Why = "Only approvals from " + strings.Join(pol.Approvers, ", ") +
+			" count towards publishing this, so yours is not asked for."
 	case !st.Matches:
 		st.Why = "The draft has moved since this was proposed. Propose the " +
 			"current draft before approving it."

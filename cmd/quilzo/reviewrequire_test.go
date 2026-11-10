@@ -241,3 +241,69 @@ func TestReviewRequireSaysTheCountThatApplies(t *testing.T) {
 		t.Errorf("--json says publishing needs %d approvals while 2 apply", said2.Required)
 	}
 }
+
+// `review require --approvers` names whose approval counts, and it did
+// not: the list was written to approval.json and never read back, so the
+// command said "from: dana" and lee's approval published the change.
+func TestTheApproversNamedAreTheOnesWhoseApprovalCounts(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root, dana, lee := twoAdmins(t)
+	t.Setenv("QUILZO_TOKEN", dana)
+
+	// From anybody who may publish to dana alone is fewer people: one
+	// administrator's, at once.
+	if err := cmdReview(root, []string{"require", "1", "--approvers", "dana"}); err != nil {
+		t.Fatal(err)
+	}
+	p := appliedPolicy(t, root)
+	if strings.Join(p.Approvers, ",") != "dana" {
+		t.Fatalf("the approvers named are not the policy's: %+v", p)
+	}
+	prop := collab.Proposal{Content: "abc", Author: "kit", AuthorKind: "human"}
+	people := func(string) string { return "human" }
+	byLee := prop
+	if err := byLee.Approve("lee", "", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if d := p.Evaluate(byLee, people, time.Now()); d.Allowed {
+		t.Fatal("lee's approval counted, and only dana's should")
+	}
+	byDana := prop
+	if err := byDana.Approve("dana", "", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if d := p.Evaluate(byDana, people, time.Now()); !d.Allowed {
+		t.Fatalf("dana's approval did not count: %s", d.Reason)
+	}
+
+	// Back to anybody, or to somebody the list does not name, is more
+	// people whose approval counts: two administrators'.
+	for _, args := range [][]string{{"require", "1"}, {"require", "1", "--approvers", "lee"},
+		{"require", "1", "--approvers", "dana,lee"}} {
+		if err := cmdReview(root, args); err != nil {
+			t.Fatal(err)
+		}
+		if got := appliedPolicy(t, root); strings.Join(got.Approvers, ",") != "dana" {
+			t.Fatalf("quilzo review %s widened whose approval counts on one administrator's word: %+v",
+				strings.Join(args, " "), got)
+		}
+		r := waiting(t, root)
+		t.Setenv("QUILZO_TOKEN", lee)
+		if err := cmdPending(root, []string{"decline", r.ID}); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("QUILZO_TOKEN", dana)
+	}
+
+	// A file written with no list, as every one was before, is anybody who
+	// may publish.
+	if err := saveJSON(approvalPolicyPath(root), collab.Policy{Required: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if got := appliedPolicy(t, root); len(got.Approvers) != 0 {
+		t.Fatalf("a file with no approvers names some: %+v", got)
+	}
+	if d := appliedPolicy(t, root).Evaluate(byLee, people, time.Now()); !d.Allowed {
+		t.Fatalf("with no list, a publisher's approval did not count: %s", d.Reason)
+	}
+}
