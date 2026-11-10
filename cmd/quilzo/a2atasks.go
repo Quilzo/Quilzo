@@ -74,9 +74,23 @@ func a2aHost(root string, c *mcp.Caller) a2a.Host {
 		if tok.Grant != "" {
 			d["grant"] = tok.Grant
 		}
+		// Denied is for what this program refused: a sender who may not
+		// run the agent, an agent that may not run (mayNotRun), or a
+		// decision a run was refused. Everything else that went wrong is a
+		// failure, as integrations call and the gateway record them. Every
+		// error was recorded as denied, so a run that could not reach its
+		// model, or a finished task asked to stop, read as an attack
+		// refused, and a log reader looking for refusals found outages.
 		outcome := audit.Success
 		if err != nil {
-			outcome, d["error"] = audit.Denied, clip(err.Error(), 300)
+			outcome, d["error"] = audit.Failure, clip(err.Error(), 300)
+			var ref *mcp.Refusal
+			var se *mcp.ScopeError
+			var run *agent.Refusal
+			var stopped mayNotRun
+			if errors.As(err, &ref) || errors.As(err, &se) || errors.As(err, &run) || errors.As(err, &stopped) {
+				outcome = audit.Denied
+			}
 		}
 		who, kind := tok.Principal, audit.KindHuman
 		if tok.Client != "" {
@@ -84,6 +98,16 @@ func a2aHost(root string, c *mcp.Caller) a2a.Host {
 		}
 		record(root, audit.Record{Action: "a2a.task", Resource: "/a2a", Outcome: outcome,
 			Principal: who, Kind: kind, Model: tok.Client, Verified: true, Detail: d})
+	}
+	// refused is a refusal by the access policy or the credential, for the
+	// record (note): typed, as the gateway types its own, because what
+	// authorise and remoteRefusal return are words.
+	refused := func(err error) error {
+		var se *mcp.ScopeError
+		if errors.As(err, &se) {
+			return err
+		}
+		return &mcp.Refusal{Reason: err.Error()}
 	}
 	mine := func(id string) (agent.Record, error) {
 		rec, err := loadAgentRun(root, id)
@@ -99,11 +123,11 @@ func a2aHost(root string, c *mcp.Caller) a2a.Host {
 			// What running an agent needs anywhere: run-agents on it, and
 			// for an app, a connection given at least authoring.
 			if err := remoteRefusal(root, caller, auth.RoleAuthor); err != nil {
-				note("SendMessage", name, "", err)
+				note("SendMessage", name, "", refused(err))
 				return a2a.Task{}, a2a.Errorf(CodeRefused, err.Error())
 			}
 			if err := authorise(root, caller, auth.ActRunAgents, auth.AgentResource(name)); err != nil {
-				note("SendMessage", name, "", err)
+				note("SendMessage", name, "", refused(err))
 				return a2a.Task{}, a2a.Errorf(CodeRefused, err.Error())
 			}
 			id, err := runAgentOnce(root, name, text, true, caller)

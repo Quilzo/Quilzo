@@ -16,6 +16,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/mcp"
+	"github.com/quilzo/quilzo/internal/shield"
 )
 
 func a2aCaller(who string, role auth.Role, client string) *mcp.Caller {
@@ -143,4 +144,121 @@ func TestAStoreWithNoAccessPolicyTakesNoTasks(t *testing.T) {
 	if _, err := h.Send(nil, "tidy", "Tidy it"); !errors.As(err, &e) || e.Code != CodeRefused || !strings.Contains(e.Message, "access policy") {
 		t.Fatalf("%v", err)
 	}
+}
+
+// What this program refused is on the record as denied, and what went wrong
+// as a failure. Every error was recorded as denied, so a task whose run
+// could not reach its model read as an attack refused, and a log reader
+// looking for refusals found outages.
+func TestATaskThatFailsIsRecordedAsAFailureAndARefusalAsDenied(t *testing.T) {
+	root, _ := identityStore(t) // dana, an administrator, declared tidy
+	down := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "the model is down", http.StatusBadGateway)
+	}))
+	defer down.Close()
+	t.Setenv("QUILZO_MODEL_URL", down.URL+"/v1")
+	t.Setenv("QUILZO_MODEL", "stand-in")
+	t.Setenv("QUILZO_MODEL_KEY", "")
+	last := func() audit.Event {
+		t.Helper()
+		evs, err := audit.Read(auditPath(root))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := len(evs) - 1; i >= 0; i-- {
+			if evs[i].Action == "a2a.task" {
+				return evs[i]
+			}
+		}
+		t.Fatal("no a2a.task record")
+		return audit.Event{}
+	}
+	app := "https://agents.example.com/meta"
+	for who, h := range map[string]a2a.Host{
+		// Holds nothing here.
+		"somebody with no role": a2aHost(root, a2aCaller("rae", auth.RoleAuthor, "")),
+		// Given read only.
+		"an app given read only": a2aHost(root, a2aCaller("dana", auth.RoleReader, app)),
+	} {
+		if _, err := h.Send(nil, "tidy", "Tidy it"); err == nil {
+			t.Fatalf("%s ran an agent", who)
+		}
+		if r := last(); r.Outcome != audit.Denied {
+			t.Errorf("%s refused is on the record as %s", who, r.Outcome)
+		}
+	}
+	dana := a2aHost(root, a2aCaller("dana", auth.RoleAdmin, app))
+	// The run starts, and the task is the run that failed.
+	if _, err := dana.Send(nil, "tidy", "Tidy the welcome page"); err != nil {
+		t.Fatal(err)
+	}
+	if r := last(); r.Outcome != audit.Failure || r.Detail["error"] == "" {
+		t.Errorf("a run that could not reach its model is on the record as %s: %v", r.Outcome, r.Detail)
+	}
+	// A task that has finished cannot be canceled: nobody refused anybody.
+	done := agent.Record{ID: "run-20261007-0000cc01", Agent: "tidy", Goal: "tidy", By: "dana",
+		Started: time.Now().UTC(), Trace: agent.Trace{Agent: "tidy", Complete: true, Answer: "Tidied."}}
+	if err := writeAgentRun(root, done); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := dana.Cancel(nil, done.ID); err == nil {
+		t.Fatal("a finished task was canceled")
+	}
+	if r := last(); r.Outcome != audit.Failure || r.Detail["method"] != "CancelTask" {
+		t.Errorf("a finished task not canceled is on the record as %s: %v", r.Outcome, r.Detail)
+	}
+}
+
+// An agent this program will not run is a task refused, on the record as
+// one. Paused by the shield, or with nobody left to answer for it, the run
+// never starts and the sender is told so with CodeRefused, but the record
+// called it a failure, because the reason came back as words: a sender
+// asking again and again for an agent the shield had stopped read as an
+// outage rather than as what the shield exists to catch.
+func TestATaskForAnAgentThatMayNotRunIsRecordedAsDenied(t *testing.T) {
+	root, _ := identityStore(t) // dana, an administrator, declared tidy
+	t.Setenv("QUILZO_MODEL_URL", "http://127.0.0.1:1/v1")
+	t.Setenv("QUILZO_MODEL", "stand-in")
+	t.Setenv("QUILZO_MODEL_KEY", "")
+	dana := a2aHost(root, a2aCaller("dana", auth.RoleAdmin, "https://agents.example.com/meta"))
+	refused := func(why string) {
+		t.Helper()
+		_, err := dana.Send(nil, "tidy", "Tidy the welcome page")
+		var ae *a2a.Error
+		if !errors.As(err, &ae) || ae.Code != CodeRefused {
+			t.Fatalf("%s, the task was answered %v", why, err)
+		}
+		evs, err := audit.Read(auditPath(root))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := len(evs) - 1; i >= 0; i-- {
+			if evs[i].Action == "a2a.task" {
+				if evs[i].Outcome != audit.Denied {
+					t.Errorf("%s, the task is on the record as %s: %v", why, evs[i].Outcome, evs[i].Detail)
+				}
+				return
+			}
+		}
+		t.Fatal("no a2a.task record")
+	}
+
+	p, _, err := shield.Apply(root, shield.Protection{Kind: shield.Agent, Target: "tidy", Reason: "followed a planted instruction",
+		By: "shield", Auto: true, Until: time.Now().Add(time.Hour)}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	refused("paused by the shield")
+	if _, err := shield.Lift(root, p.ID, "dana", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	set, _ := loadAgents(root)
+	id := set.Identities["tidy"]
+	id.Expires = time.Now().Add(-time.Minute)
+	set.Identities["tidy"] = id
+	if err := saveJSON(agentsPath(root), set); err != nil {
+		t.Fatal(err)
+	}
+	refused("its identity ended")
 }

@@ -71,9 +71,23 @@ func cmdMemory(root string, args []string) error {
 	caller := resolveCaller(root, flagToken)
 	admin := authorise(root, caller, auth.ActGrant, "/") == nil
 	store := memoryStore(root)
+	// A read-only credential changes nothing here, as it changes nothing on
+	// the Memory screen. The table asks these commands only to view,
+	// because each memory is checked against whom it is about, and that
+	// check asked only whose it was: a token issued --read-only confirmed,
+	// deleted, rewrote and forgot what agents remember about its holder.
+	writable := func() error {
+		if caller.Limits.ReadOnly {
+			return errors.New("this credential is read-only, and changing what agents remember is a write")
+		}
+		return nil
+	}
 	// Whose memory a caller may see and change: their own, or anybody's
 	// for an administrator.
 	mayTouch := func(e memory.Entry) error {
+		if err := writable(); err != nil {
+			return err
+		}
 		if admin || (e.About != "" && e.About == caller.Name && caller.Verified) {
 			return nil
 		}
@@ -213,6 +227,9 @@ func cmdMemory(root string, args []string) error {
 		if len(args) < 3 {
 			return errors.New("quilzo memory edit ID TEXT")
 		}
+		if err := writable(); err != nil {
+			return err
+		}
 		e, err := store.Get(args[1])
 		if err != nil {
 			return err
@@ -274,6 +291,9 @@ func cmdMemory(root string, args []string) error {
 		}
 		if *about == "" {
 			*about = caller.Name
+		}
+		if err := writable(); err != nil {
+			return err
 		}
 		if *about != caller.Name && !admin {
 			return errors.New("you can have agents forget you; forgetting somebody else is an administrator's")

@@ -179,7 +179,22 @@ var commandNeeds = map[string]need{
 	"integrations undelivered": {action: auth.ActView},
 	"integrations approve":     {action: auth.ActApprove},
 	"integrations decline":     {action: auth.ActApprove},
-	"integration":              {action: auth.ActView},
+	// The same command spelled singular, asked the same. It had this one
+	// row, view, and none of the narrowing ones above, so everything they
+	// guard fell through to it: a reader, and a token issued --read-only,
+	// pinned what another system's tools are with `quilzo integration pin`
+	// and added integrations with import and template. A bare command, of
+	// either spelling, is asked as the list it runs (bareRuns).
+	"integration":             {action: auth.ActGrant},
+	"integration list":        {action: auth.ActView},
+	"integration tools":       {action: auth.ActView},
+	"integration call":        {action: auth.ActPublish},
+	"integration pin":         {action: auth.ActGrant},
+	"integration gateway":     {action: auth.ActGrant},
+	"integration held":        {action: auth.ActApprove},
+	"integration undelivered": {action: auth.ActView},
+	"integration approve":     {action: auth.ActApprove},
+	"integration decline":     {action: auth.ActApprove},
 	// Each part of the list is filtered by what the caller may decide; the
 	// list itself needs only that they are somebody here, and the runs and
 	// features waiting on whoever holds approve or install-features alone
@@ -220,9 +235,23 @@ var commandNeeds = map[string]need{
 	// administrative: the key is the credential that speaks for the whole site
 	// to everybody following it, and the follower list names people who read
 	// this site, which is not public information.
-	"fediverse":  {action: auth.ActGrant},
-	"provenance": {action: auth.ActView},
-	"prov":       {action: auth.ActView},
+	"fediverse": {action: auth.ActGrant},
+	// Saying where a page's bytes came from writes what its readers are
+	// told about it, and the provenance screen asks to edit the page for
+	// it. Both were view as a whole, so a reader, and a token issued
+	// --read-only, recorded a page as a person's work. Strict parents, so a
+	// subcommand added later arrives guarded; checking steps down, and a
+	// bare command is asked as the check it runs (bareRuns). A backfill
+	// steps down too and asks to edit inside the command, once its flags
+	// are read, because a dry run writes nothing and stays a read.
+	"provenance":          {action: auth.ActEditDraft},
+	"provenance check":    {action: auth.ActView},
+	"provenance status":   {action: auth.ActView},
+	"provenance backfill": {action: auth.ActView},
+	"prov":                {action: auth.ActEditDraft},
+	"prov check":          {action: auth.ActView},
+	"prov status":         {action: auth.ActView},
+	"prov backfill":       {action: auth.ActView},
 	// Strict parent, narrowing children — see the note on posture. Pointing
 	// every reader at a different audit log is an operator act, so the parent
 	// takes that answer and the seven reading subcommands step down from it.
@@ -1378,7 +1407,12 @@ func commandArea(cmd string, args []string) (string, bool) {
 // digest out stopped being a reader's act, and their bare forms, which show
 // the proofs and the stamps, would have gone with them: a reader running
 // `quilzo anchor` would have been refused what `quilzo anchor status` shows.
-var bareRuns = map[string]string{"anchor": "status", "timestamp": "list", "stamp": "list"}
+//
+// `integration` was view as a whole, and its bare form a reader's; strict
+// now, like `integrations`, it keeps that by listing, as `integrations` now
+// does too, since the list is what `integrations list` gives a reader.
+var bareRuns = map[string]string{"anchor": "status", "timestamp": "list", "stamp": "list",
+	"provenance": "check", "prov": "check", "integrations": "list", "integration": "list"}
 
 func lookupNeed(cmd string, args []string) (need, bool) {
 	if sub, ok := bareRuns[cmd]; ok && len(args) == 0 {

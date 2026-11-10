@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 	"path/filepath"
 
 	"github.com/quilzo/quilzo/internal/out"
@@ -40,7 +41,7 @@ func pageHashes(s *store.Store, ref string) (map[string]string, error) {
 
 func cmdProvenance(root string, args []string) error {
 	if len(args) == 0 {
-		return provStatus(root, nil)
+		args = []string{bareRuns["provenance"]}
 	}
 	switch args[0] {
 	case "set":
@@ -292,6 +293,18 @@ func provBackfill(root string, args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	// Writing the records is editing, as setting one is (privilege.go). The
+	// table asks backfill only to view, so that a dry run stays a read, and
+	// nothing else asked: a reader, and a token issued --read-only, wrote
+	// the inferred records.
+	caller := resolveCaller(root, flagToken)
+	if !*dryRun {
+		if err := authorise(root, caller, auth.ActEditDraft, "/"); err != nil {
+			record(root, caller.auditRecord("provenance.backfill", "/"+*ref, audit.Denied,
+				map[string]string{"reason": "authorisation"}))
+			return err
+		}
+	}
 
 	s, err := open(root)
 	if err != nil {
@@ -381,7 +394,6 @@ func provBackfill(root string, args []string) error {
 		return err
 	}
 
-	caller := resolveCaller(root, "")
 	record(root, audit.Record{
 		Action: "provenance.backfill", Resource: "/" + *ref,
 		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
