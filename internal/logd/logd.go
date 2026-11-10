@@ -135,6 +135,11 @@ type Server struct {
 	headSlot chan struct{}
 }
 
+// askPeer is how the writer learns who connected: peerUID, from the
+// kernel. A variable so a test can be a platform where the kernel cannot
+// say, which on Linux it always can.
+var askPeer = peerUID
+
 // Serve accepts connections until the listener closes.
 func (s *Server) Serve(l net.Listener) error {
 	for {
@@ -154,7 +159,9 @@ func (s *Server) handle(conn net.Conn) {
 	_ = conn.SetDeadline(time.Now().Add(SubmitTimeout))
 
 	uid := -1
-	if u, err := peerUID(conn); err == nil {
+	u, err := askPeer(conn)
+	switch {
+	case err == nil:
 		uid = u
 		if !s.allowed(u) {
 			// Refused before anything is read. A connection from an account
@@ -165,6 +172,16 @@ func (s *Server) handle(conn net.Conn) {
 				"uid %d is not permitted to submit audit records", u), u)
 			return
 		}
+	case len(s.AllowUID) > 0:
+		// An account nobody could name, where only some may submit. Taken,
+		// as it was, the list was one nobody was checked against, for
+		// records and for signatures alike, while the writer said it
+		// accepted submissions from those accounts only. Without a list
+		// the account does not matter, and any that can reach the socket
+		// may submit, as ever.
+		s.refuse(conn, "the account connecting cannot be named here, so it cannot be told "+
+			"from the accounts --allow-uid permits: "+err.Error(), uid)
+		return
 	}
 
 	r := bufio.NewReaderSize(conn, MaxRecordBytes)

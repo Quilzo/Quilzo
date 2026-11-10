@@ -6,6 +6,7 @@ package logd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -391,5 +392,40 @@ func TestHeadsAreComputedOneAtATime(t *testing.T) {
 	defer release()
 	if _, ok := s.oneHead(time.Now().Add(50 * time.Millisecond)); ok {
 		t.Error("a second head started while one was being computed")
+	}
+}
+
+// An account the writer cannot name is refused where only some accounts
+// may submit or ask for a signature.
+//
+// Where the kernel cannot say who connected (any platform but Linux), the
+// writer skipped the check and took the record, and now the request for a
+// head or a statement, from whoever connected: --allow-uid was a list
+// nobody was checked against, while the writer said it accepted
+// submissions from those accounts only. Without a list any account that
+// can reach the socket may submit, as it always could, so that stays.
+func TestAnAccountTheWriterCannotNameIsRefusedWhereOnlySomeMay(t *testing.T) {
+	askPeer = func(net.Conn) (int, error) { return -1, errors.New("no peer credentials on this platform") }
+	t.Cleanup(func() { askPeer = peerUID })
+	rec := Submission{Action: "publish", Resource: "/", Outcome: "success",
+		Principal: "dana", Kind: "human", Verified: true}
+
+	sock, _, _, path := signingWriter(t, 0, func(s *Server) { s.AllowUID = []int{os.Geteuid()} })
+	if _, err := Submit(sock, rec); err == nil {
+		t.Error("a record from an account nobody could name was written past --allow-uid")
+	}
+	if _, err := SignHead(sock, 0); err == nil {
+		t.Error("a head was signed for an account nobody could name, past --allow-uid")
+	}
+	if _, err := SignStatement(sock, testContext, []byte("sha256:0123")); err == nil {
+		t.Error("a statement was signed for an account nobody could name, past --allow-uid")
+	}
+	if events, _ := audit.Read(path); len(events) != 0 {
+		t.Errorf("the log holds %d entries", len(events))
+	}
+
+	open, _, _, _ := signingWriter(t, 0)
+	if _, err := Submit(open, rec); err != nil {
+		t.Errorf("a writer with no list refused an account it could not name: %v", err)
 	}
 }
