@@ -120,11 +120,20 @@ type request struct {
 	SignStatement *StatementRequest `json:"sign_statement,omitempty"`
 }
 
-// signing reports whether a line asks for a signature, and answers it.
-func (s *Server) signing(conn net.Conn, line []byte, uid int) bool {
+// signing reports whether a line asks for a signature, and answers it:
+// refused, before anything is signed or read, for an account that may
+// submit records and not ask for signatures (Server.SignUID, SignGID).
+func (s *Server) signing(conn net.Conn, line []byte, uid, gid int, named bool) bool {
 	var req request
 	if err := json.Unmarshal(line, &req); err != nil {
 		return false
+	}
+	if req.SignHead == nil && req.SignStatement == nil {
+		return false
+	}
+	if why := s.maySign(uid, gid, named); why != "" {
+		s.refuse(conn, why, uid)
+		return true
 	}
 	switch {
 	case req.SignHead != nil:

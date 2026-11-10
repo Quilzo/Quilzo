@@ -47,6 +47,12 @@ func cmdLogd(root string, args []string) error {
 	logDir := fs.String("log-dir", "",
 		"directory this account owns, where the log and its key live; "+
 			"recorded in the store so other commands find it")
+	signUID := fs.String("sign-uid", "",
+		"comma-separated uids that may ask for heads and statements; empty "+
+			"means every account that may submit")
+	signGID := fs.String("sign-gid", "",
+		"comma-separated groups an account must connect as to ask for heads "+
+			"and statements; empty means any")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -85,22 +91,28 @@ func cmdLogd(root string, args []string) error {
 		}
 	}
 
-	var uids []int
-	for _, u := range strings.Split(*allow, ",") {
-		if u = strings.TrimSpace(u); u == "" {
-			continue
-		}
-		n, err := strconv.Atoi(u)
-		if err != nil {
-			return fmt.Errorf("%q is not a uid", u)
-		}
-		uids = append(uids, n)
+	uids, err := idList(*allow, "uid")
+	if err != nil {
+		return err
+	}
+	// Who may have the log's key speak, of those who may submit. Every
+	// account that may submit could, so in the reference compose the public
+	// site, which runs as the admin's uid, could have a feature package or
+	// a research plan signed as this site's own.
+	signers, err := idList(*signUID, "uid")
+	if err != nil {
+		return err
+	}
+	signGroups, err := idList(*signGID, "group")
+	if err != nil {
+		return err
 	}
 
 	srv, err := newLogWriter(root, uids)
 	if err != nil {
 		return err
 	}
+	srv.SignUID, srv.SignGID = signers, signGroups
 	listener, err := logd.Listen(path)
 	if err != nil {
 		return err
@@ -123,6 +135,13 @@ func cmdLogd(root string, args []string) error {
 		fmt.Fprintf(os.Stderr, "  %sany account that can reach the socket may "+
 			"submit; --allow-uid narrows that%s\n", yellow, reset)
 	}
+	switch {
+	case len(signers) > 0 || len(signGroups) > 0:
+		fmt.Fprintf(os.Stderr, "  %ssigning for %s only%s\n", dim, signersWords(signers, signGroups), reset)
+	case srv.Heads != nil:
+		fmt.Fprintf(os.Stderr, "  %severy account that may submit may ask it to sign; --sign-uid and "+
+			"--sign-gid narrow that%s\n", dim, reset)
+	}
 
 	// A clean shutdown removes the socket, so the next start is not a stale one
 	// even though Listen handles that case too.
@@ -133,6 +152,35 @@ func cmdLogd(root string, args []string) error {
 		_ = listener.Close()
 	}()
 	return srv.Serve(listener)
+}
+
+// idList reads a comma-separated list of numeric ids, of a kind: uid or
+// group.
+func idList(raw, kind string) ([]int, error) {
+	var out []int
+	for _, v := range strings.Split(raw, ",") {
+		if v = strings.TrimSpace(v); v == "" {
+			continue
+		}
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			return nil, fmt.Errorf("%q is not a %s", v, kind)
+		}
+		out = append(out, n)
+	}
+	return out, nil
+}
+
+// signersWords says who may ask the writer for a signature.
+func signersWords(uids, groups []int) string {
+	var parts []string
+	if len(uids) > 0 {
+		parts = append(parts, fmt.Sprintf("uid %v", uids))
+	}
+	if len(groups) > 0 {
+		parts = append(parts, fmt.Sprintf("accounts connecting as group %v", groups))
+	}
+	return strings.Join(parts, ", and ")
 }
 
 // newLogWriter is the writer cmdLogd serves: the log, its file, and the key

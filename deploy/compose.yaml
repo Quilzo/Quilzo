@@ -66,8 +66,14 @@ services:
     # its group: they read the log, submit records over its socket, and
     # computing the chain is the writer's alone, so they cannot forge a
     # history either (internal/logd).
+    #
+    # It signs heads and statements for the admin only: for an account
+    # connecting as group 65532, which the site does not (below). It signed
+    # for every account that may submit, and the site is the admin's uid,
+    # so anything that could run code as the public site could have a
+    # feature package or a research plan signed with the log's key.
     user: "65533:65532"
-    command: ["logd", "--log-dir", "/srv/audit", "--allow-uid", "65532"]
+    command: ["logd", "--log-dir", "/srv/audit", "--allow-uid", "65532", "--sign-gid", "65532"]
     volumes:
       - audit:/srv/audit
     # A socket is all it serves, so it has no network at all.
@@ -125,6 +131,14 @@ services:
 
   site:
     <<: *quilzo
+    # The admin's uid, as the store is shared and every file in it is the
+    # one account's, and a group of its own, 65531, so the log writer can
+    # tell the site from the admin and signs nothing for it. In the
+    # writer's group as well, to read the log and reach its socket with
+    # its records. A uid of its own would take every file in the store
+    # changing hands, and is not done here.
+    user: "65532:65531"
+    group_add: ["65532"]
     command:
       - site
       - --addr

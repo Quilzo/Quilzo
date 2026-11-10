@@ -56,6 +56,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -127,6 +128,21 @@ type Server struct {
 	// Statements are the contexts a statement may be signed under. Empty
 	// signs none.
 	Statements []string
+	// SignUID and SignGID are who may ask for a head or a statement, of the
+	// accounts AllowUID lets submit: by uid, and by the group the account
+	// connected as. Empty SignUID is every account that may submit, and
+	// empty SignGID any group, as before these existed.
+	//
+	// Records and signatures are not the same trust. Every process that
+	// does something submits a record, the public site among them; a
+	// signature is the log's key speaking, and a feature package or a
+	// research plan the writer signs is taken as this site's own. In the
+	// reference compose the site and the admin are one uid, so anything that
+	// could run code as the public site could have the writer sign a feature
+	// package. There the site connects in a group of its own and the writer
+	// signs for the admin's (deploy/compose.yaml).
+	SignUID []int
+	SignGID []int
 
 	mu sync.Mutex
 	// headSlot is held by the one head being computed (oneHead), and made
@@ -135,10 +151,10 @@ type Server struct {
 	headSlot chan struct{}
 }
 
-// askPeer is how the writer learns who connected: peerUID, from the
-// kernel. A variable so a test can be a platform where the kernel cannot
-// say, which on Linux it always can.
-var askPeer = peerUID
+// askPeer is how the writer learns who connected: peerCreds, from the
+// kernel. A variable so a test can be another account, or a platform where
+// the kernel cannot say, which on Linux it always can.
+var askPeer = peerCreds
 
 // Serve accepts connections until the listener closes.
 func (s *Server) Serve(l net.Listener) error {
@@ -158,11 +174,12 @@ func (s *Server) handle(conn net.Conn) {
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(SubmitTimeout))
 
-	uid := -1
-	u, err := askPeer(conn)
+	uid, gid := -1, -1
+	u, g, err := askPeer(conn)
+	named := err == nil
 	switch {
 	case err == nil:
-		uid = u
+		uid, gid = u, g
 		if !s.allowed(u) {
 			// Refused before anything is read. A connection from an account
 			// that should not be submitting is itself worth knowing about, and
@@ -194,7 +211,7 @@ func (s *Server) handle(conn net.Conn) {
 		return
 	}
 
-	if s.signing(conn, line, uid) {
+	if s.signing(conn, line, uid, gid, named) {
 		return
 	}
 	var sub Submission
@@ -232,6 +249,29 @@ func (s *Server) allowed(uid int) bool {
 		}
 	}
 	return false
+}
+
+// maySign says why the account that connected may not ask for a head or a
+// statement (SignUID, SignGID), or nothing when it may. named is whether
+// the kernel could say who it is: where only some may ask, one nobody can
+// name is refused, as it is where only some may submit.
+func (s *Server) maySign(uid, gid int, named bool) string {
+	if len(s.SignUID) == 0 && len(s.SignGID) == 0 {
+		return ""
+	}
+	if !named {
+		return "the account asking cannot be named here, so it cannot be told from the accounts " +
+			"--sign-uid and --sign-gid let ask for a signature"
+	}
+	if len(s.SignUID) > 0 && !slices.Contains(s.SignUID, uid) {
+		return fmt.Sprintf("uid %d may submit records and may not ask for a signature: only uid %v may",
+			uid, s.SignUID)
+	}
+	if len(s.SignGID) > 0 && !slices.Contains(s.SignGID, gid) {
+		return fmt.Sprintf("uid %d, connecting as group %d, may submit records and may not ask for a "+
+			"signature: only group %v may", uid, gid, s.SignGID)
+	}
+	return ""
 }
 
 func (s *Server) refuse(conn net.Conn, reason string, uid int) {

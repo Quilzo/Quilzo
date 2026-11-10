@@ -657,6 +657,9 @@ log transparency
       --log-dir DIR                         the directory it owns: the log, head.key, head.pub.json
                                             as its own account, it signs every head and receipt,
                                             and the CMS never holds the key
+      --sign-gid GROUPS                     only accounts connecting as these groups may ask it
+                                            to sign (--sign-uid UIDS by uid); records still come
+                                            from every account --allow-uid lets submit
   quilzo logd status                       whether the separation is in force, and who signs heads
   quilzo auditlog dir                      where the log is, and whether it is separate
   quilzo auditlog verify                   recompute the chain over every entry

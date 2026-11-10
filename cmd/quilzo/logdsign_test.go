@@ -37,6 +37,9 @@ import (
 const (
 	writerAccount = 65533
 	cmsAccount    = 65532
+	// siteGroup is the group the site connects to the writer as, so the
+	// writer can tell it from the admin, which is the same uid.
+	siteGroup = 65531
 )
 
 // startWriter points the store at a log directory of its own and serves the
@@ -525,7 +528,8 @@ func TestUnderTheComposeLayoutTheCMSHasItsHeadsSignedByTheWriter(t *testing.T) {
 
 	// The writer, as compose runs it. Its --root is a directory that is not
 	// its own, as /srv/store is in its container. It also takes records from
-	// this test's own account, for the setup below.
+	// this test's own account, for the setup below, and signs for it, for
+	// the forged root further down.
 	writerStore := filepath.Join(base, "writer-root")
 	if err := os.Mkdir(writerStore, 0o755); err != nil {
 		t.Fatal(err)
@@ -535,7 +539,7 @@ func TestUnderTheComposeLayoutTheCMSHasItsHeadsSignedByTheWriter(t *testing.T) {
 		t.Fatal(err)
 	}
 	writer := exec.Command(bin, "quilzo-main", "--root", writerStore, "logd", "--log-dir", dir,
-		"--allow-uid", "65532,0")
+		"--allow-uid", "65532,0", "--sign-gid", "65532,0")
 	writer.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: writerAccount, Gid: cmsAccount}}
 	writer.Stdout, writer.Stderr = logdErr, logdErr
 	if err := writer.Start(); err != nil {
@@ -674,6 +678,17 @@ func TestUnderTheComposeLayoutTheCMSHasItsHeadsSignedByTheWriter(t *testing.T) {
 	}
 	if err := heads.Verify(*resp.Head); err != nil {
 		t.Error(err)
+	}
+
+	// The site, as compose runs it: the admin's uid in a group of its own,
+	// with the writer's beside it. Nothing it asks for is signed, and the
+	// writer says why; it signed for the site as for the admin.
+	site := exec.Command(bin, "quilzo-main", "--root", root, "auditlog", "head")
+	site.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: cmsAccount, Gid: siteGroup,
+		Groups: []uint32{cmsAccount}}}
+	site.Env = append(os.Environ(), "HOME="+home, "QUILZO_TOKEN="+secret, "NO_COLOR=1")
+	if got, err := site.CombinedOutput(); err == nil || !strings.Contains(string(got), "may not ask for a signature") {
+		t.Errorf("a head asked for as the site: %v\n%s", err, got)
 	}
 
 	// The writer stopped: the key is still its own, and asking for a head

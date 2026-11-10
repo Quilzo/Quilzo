@@ -1044,6 +1044,18 @@ every head it is handed against the root it read itself and against
 `head.pub.json`, and refuses one that disagrees with either rather than
 putting it in a receipt.
 
+Every account that may submit a record could ask for a signature too, and a
+record and a signature are not the same trust: the public site submits
+records, and a feature package or a research plan the writer signs is taken
+as this site's own. `--sign-uid` names the uids that may ask, and
+`--sign-gid` the groups an account must connect as; with neither, every
+account that may submit may ask, as before. The reference compose runs the
+site as the admin's uid, since they share the store and every file in it is
+that account's, in a group of its own (65531) with the writer's group
+beside it for its records, and the writer signs for the admin's group
+(65532) only. A uid of the site's own would take every file in the store
+changing hands, and is not done.
+
 The writer signs only with a key that is its own alone: `head.key` owned by
 its account, at 0600. A key another account made, or one other accounts can
 read, is one somebody else may have kept a copy of, and could sign a head
