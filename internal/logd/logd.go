@@ -129,6 +129,10 @@ type Server struct {
 	Statements []string
 
 	mu sync.Mutex
+	// headSlot is held by the one head being computed (oneHead), and made
+	// once, on the first request for one.
+	headOnce sync.Once
+	headSlot chan struct{}
 }
 
 // Serve accepts connections until the listener closes.

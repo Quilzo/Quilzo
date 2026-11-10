@@ -90,8 +90,9 @@ func (s *Server) signing(conn net.Conn, line []byte, uid int) bool {
 	}
 	switch {
 	case req.SignHead != nil:
-		_ = conn.SetDeadline(time.Now().Add(SignTimeout))
-		s.signHead(conn, *req.SignHead, uid)
+		deadline := time.Now().Add(SignTimeout)
+		_ = conn.SetDeadline(deadline)
+		s.signHead(conn, *req.SignHead, uid, deadline)
 	case req.SignStatement != nil:
 		_ = conn.SetDeadline(time.Now().Add(SignTimeout))
 		s.signStatement(conn, *req.SignStatement, uid)
@@ -110,7 +111,29 @@ func (s *Server) noSigner() string {
 	return "this writer signs nothing: " + why
 }
 
-func (s *Server) signHead(conn net.Conn, req HeadRequest, uid int) {
+// oneHead waits, until deadline, for the writer to be computing no other
+// head, and returns what ends this one.
+//
+// One at a time, because a head holds every entry of the log in memory
+// while it is computed. Reading the log once held up every record, which
+// kept heads in single file as a side effect; without that, heads asked for
+// at once each held a copy of their own, and any account that may submit
+// could ask for enough to have the writer killed for its memory, after
+// which nothing is written at all. Records do not wait in this line: only
+// heads do, and a head is worth less than a record.
+func (s *Server) oneHead(deadline time.Time) (func(), bool) {
+	s.headOnce.Do(func() { s.headSlot = make(chan struct{}, 1) })
+	wait := time.NewTimer(time.Until(deadline))
+	defer wait.Stop()
+	select {
+	case s.headSlot <- struct{}{}:
+		return func() { <-s.headSlot }, true
+	case <-wait.C:
+		return nil, false
+	}
+}
+
+func (s *Server) signHead(conn net.Conn, req HeadRequest, uid int, deadline time.Time) {
 	if s.Heads == nil {
 		s.refuse(conn, s.noSigner(), uid)
 		return
@@ -119,6 +142,12 @@ func (s *Server) signHead(conn net.Conn, req HeadRequest, uid int) {
 		s.refuse(conn, "a head covers a number of entries, and that is not one", uid)
 		return
 	}
+	release, ok := s.oneHead(deadline)
+	if !ok {
+		s.refuse(conn, "the writer was computing other heads until this one's time ran out: ask again", uid)
+		return
+	}
+	defer release()
 	// The writer's own file, read back through the handle that appends to
 	// it. Not verified first: a head over a log that has been tampered with
 	// still commits to what the file holds, and that is what makes the

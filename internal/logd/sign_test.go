@@ -4,14 +4,17 @@
 package logd
 
 import (
+	"bytes"
 	"encoding/json"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 )
 
@@ -251,5 +254,133 @@ func TestAHeadAskedForWhileRecordsArriveIsAlwaysSigned(t *testing.T) {
 	}
 	if err := <-done; err != nil {
 		t.Fatal(err)
+	}
+}
+
+// lengthen makes the writer's log n entries long by copying its first line:
+// a long file to read and hash, not a chain, which nothing here verifies.
+// Appending that many records one at a time, each synced, would take
+// minutes.
+func lengthen(t *testing.T, path string, n int) {
+	t.Helper()
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := body[:bytes.IndexByte(body, '\n')+1]
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Write(bytes.Repeat(line, n-1)); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A head is computed over the whole log, and a record does not wait for one.
+//
+// The writer read its log back under the locks every append takes, which
+// for a log of a year or two is over a second, and the stream, a receipt
+// and `auditlog head` each ask for one. A record submitted meanwhile waited
+// for all of them: with eight clients asking, most records ran past the
+// writer's five seconds and were not written, and a record not written is
+// an agent refused until one is (auditReady). Any account that may submit
+// may ask for a head, the public site's included.
+//
+// What is measured is the wait for the lock an append takes, not a
+// record's whole round trip: its own fsync varies on a shared disk by more
+// than the wait is long.
+func TestARecordIsWrittenWhileHeadsAreComputedOverALongLog(t *testing.T) {
+	sock, _, _, path := signingWriter(t, 0)
+	rec := Submission{Action: "publish", Resource: "/about", Outcome: "success",
+		Principal: "dana", Kind: "human", Verified: true,
+		Detail: map[string]string{"why": "a reason of the length people give for a change", "path": "/content/about.md"}}
+	if _, err := Submit(sock, rec); err != nil {
+		t.Fatal(err)
+	}
+	const n = 30000
+	lengthen(t, path, n)
+
+	start := time.Now()
+	if _, err := SignHead(sock, n); err != nil {
+		t.Fatal(err)
+	}
+	alone := time.Since(start)
+
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				_, _ = SignHead(sock, n)
+			}
+		}()
+	}
+	var worst time.Duration
+	for end := time.Now().Add(alone); time.Now().Before(end); {
+		asked := time.Now()
+		unlock, err := atomicfile.Lock(path + ".lock")
+		if err != nil {
+			t.Fatal(err)
+		}
+		worst = max(worst, time.Since(asked))
+		unlock()
+		time.Sleep(time.Millisecond)
+	}
+	if _, err := Submit(sock, rec); err != nil {
+		t.Errorf("a record submitted while heads were computed was not written: %v", err)
+	}
+	close(stop)
+	wg.Wait()
+	if worst > alone/4 {
+		t.Errorf("an append waited %v for its lock while heads were computed, and one head over the log takes %v",
+			worst, alone)
+	}
+}
+
+// One head at a time. A head holds every entry of the log in memory while
+// it is computed, and once reading the log stopped holding up records,
+// heads asked for at once each held a copy of their own: enough of them
+// and the writer is killed for its memory, and then nothing is written.
+func TestHeadsAreComputedOneAtATime(t *testing.T) {
+	sock, s, signer, _ := signingWriter(t, 2)
+	release, ok := s.oneHead(time.Now().Add(time.Second))
+	if !ok {
+		t.Fatal("no head is being computed, and one could not start")
+	}
+	got := make(chan error, 1)
+	go func() {
+		sh, err := SignHead(sock, 2)
+		if err == nil {
+			err = signer.Verifier().Verify(*sh)
+		}
+		got <- err
+	}()
+	select {
+	case err := <-got:
+		t.Fatalf("a head was computed while another was: %v", err)
+	case <-time.After(300 * time.Millisecond):
+	}
+	release()
+	if err := <-got; err != nil {
+		t.Fatalf("the head waiting its turn: %v", err)
+	}
+
+	// A head that cannot start by its deadline is refused rather than
+	// computed for a client that has stopped waiting.
+	release, _ = s.oneHead(time.Now().Add(time.Second))
+	defer release()
+	if _, ok := s.oneHead(time.Now().Add(50 * time.Millisecond)); ok {
+		t.Error("a second head started while one was being computed")
 	}
 }
