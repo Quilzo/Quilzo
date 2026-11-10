@@ -133,7 +133,9 @@ one: `docker compose run --rm -e QUILZO_TOKEN admin token issue NAME --principal
 both made when it first starts. The admin cannot write that volume and never
 holds the key, so `auditlog head --save`, `agent receipt`, `apps receipt`, the
 audit stream, `engagement issue`, `feature export --sign` and research plans
-are all signed by `logd`, over its socket; `logd status` says so. The heads
+are all signed by `logd`, over its socket; `logd status` says so. While
+`logd` is stopped none of them can be made, and each says to start it; so
+does `logd status`, and the admin's audit log screen. The heads
 `auditlog head --save` keeps are in the store.
 
 Hand `head.pub.json` to whoever checks a head or a receipt, and give them the

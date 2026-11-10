@@ -793,7 +793,12 @@ signs nothing with it, keeps writing the log, and says to move `head.key` and
 `head.pub.json` aside together (that `head.pub.json` still checks the heads
 the old key signed) and start it again, when it makes a new one. `quilzo logd
 status` asks the writer for a head over no entries rather than assuming it
-signs, and says when it does not, and why.
+signs, and says when it does not, and why (`writer_signs` and
+`writer_refuses` in its `--json`); the audit log screen asks the same on
+every visit. With the writer stopped, and the key out of this account's
+reach as it is under the reference compose, no head can be made: both say
+the heads wait for the writer, and every command that signs says to start
+it, never to take its key.
 
 There is no setting. Where the log is the admin's own (in the store, or a
 writer running as the same account) the key is beside the log and loaded

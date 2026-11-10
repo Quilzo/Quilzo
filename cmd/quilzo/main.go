@@ -635,7 +635,8 @@ interface
 log transparency
   quilzo logd                              the log writer, run as its own account
       --log-dir DIR                         the directory it owns: the log, head.key, head.pub.json
-                                            it signs every head and receipt; the CMS never holds the key
+                                            as its own account, it signs every head and receipt,
+                                            and the CMS never holds the key
   quilzo logd status                       whether the separation is in force, and who signs heads
   quilzo auditlog dir                      where the log is, and whether it is separate
   quilzo auditlog verify                   recompute the chain over every entry

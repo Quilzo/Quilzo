@@ -12,9 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"time"
 
-	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/logd"
 	"github.com/quilzo/quilzo/internal/research"
 )
@@ -191,10 +189,9 @@ func cmdLogdStatus(root string) error {
 	_, sockErr := os.Stat(sock)
 	running := sockErr == nil
 	separated, why := logd.CheckOwnership(logPath, os.Geteuid())
-	// Who signs this store's heads, read rather than loaded: loading the
-	// key here makes one where there is none, and a status that changes
-	// what it reports on is not a status.
-	_, byWriter := writerSigns(root)
+	// Who signs this store's heads, and why none can be made now if none
+	// can: read, and asked of the writer, never loaded (headsSignedBy).
+	byWriter, refuses := headsSignedBy(root)
 	keyID := ""
 	if v, err := publishedVerifier(headKeysPath(root)); err == nil {
 		keyID = v.KeyID()
@@ -203,28 +200,12 @@ func cmdLogdStatus(root string) error {
 	if byWriter {
 		signer = "the log writer"
 	}
-	// Whether the writer signs, asked rather than assumed. A writer that
-	// cannot use its key still writes the log and says why on its own
-	// stderr, which nobody running the CMS reads, and the key it once
-	// published says nothing about whether it signs with it now. A head
-	// over no entries reads none and writes nothing, and goes through the
-	// checks every caller makes: the root, and the published keys.
-	refuses := ""
-	if byWriter && keyID != "" {
-		if ws, err := newWriterSigner(root, sock); err != nil {
-			refuses = err.Error()
-		} else if nothing, err := audit.TreeHead(nil, time.Now()); err != nil {
-			refuses = err.Error()
-		} else if _, err := ws.Sign(nothing); err != nil {
-			refuses = err.Error()
-		}
-	}
 
 	if w.JSON(map[string]any{
 		"socket": sock, "writer_present": running,
 		"separated": separated, "detail": why,
 		"heads_signed_by": signer, "head_keys": headKeysPath(root), "head_key_id": keyID,
-		"writer_signs": byWriter && keyID != "" && refuses == "", "writer_refuses": refuses,
+		"writer_signs": byWriter && refuses == "", "writer_refuses": refuses,
 	}) {
 		return nil
 	}
@@ -238,6 +219,14 @@ func cmdLogdStatus(root string) error {
 			dim, logPath, reset)
 		w.Human("  %sthat moves the requirement from code execution as the CMS "+
 			"to root%s\n", dim, reset)
+		// The log is another account's and its key out of this one's
+		// reach, as under the reference compose with the writer stopped:
+		// every head waits for the writer, which nothing above says, and
+		// the JSON already reported it as refused.
+		if byWriter {
+			w.Human("\n  %sits heads are the writer's to sign, so no head, receipt or round of the\n"+
+				"  audit stream can be made until it runs:\n  %s%s\n", yellow, refuses, reset)
+		}
 		return nil
 	}
 
@@ -251,16 +240,21 @@ func cmdLogdStatus(root string) error {
 			yellow, reset)
 	}
 	switch {
+	case byWriter && keyID == "":
+		// Said before the refusal it causes, because the remedy is the
+		// writer's and the refusal names only the file it could not read.
+		// The line said "the writer signs its heads" while no head could
+		// be checked against keys it had not published, so none was made.
+		w.Human("  %sthe writer is to sign this store's heads, and publishes no keys at\n"+
+			"  %s, so none can be made: it predates head signing, or could not\n"+
+			"  make its key. Restart it with this version and read what it prints%s\n",
+			yellow, headKeysPath(root), reset)
 	case byWriter && refuses != "":
 		w.Human("  %sthe writer is to sign this store's heads, and signs none, so no head,\n"+
 			"  receipt or round of the audit stream can be made:\n  %s%s\n", yellow, refuses, reset)
-	case byWriter && keyID != "":
+	case byWriter:
 		w.Human("  %sthe writer signs its heads with key %s, which this account cannot\n"+
 			"  read. The public keys are at %s%s\n", green, keyID, headKeysPath(root), reset)
-	case byWriter:
-		w.Human("  %sthe writer signs its heads, and publishes no keys at %s: it predates\n"+
-			"  head signing, or could not make its key. Restart it with this version and\n"+
-			"  read what it prints%s\n", yellow, headKeysPath(root), reset)
 	default:
 		w.Human("  %sheads are signed by this account, with the key beside the log%s\n", dim, reset)
 	}

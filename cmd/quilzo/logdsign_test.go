@@ -22,12 +22,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/admin"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auditstream"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/httpsig"
 	"github.com/quilzo/quilzo/internal/logd"
 	"github.com/quilzo/quilzo/internal/out"
+	"github.com/quilzo/quilzo/internal/render"
 )
 
 // The accounts the reference compose runs the log writer and the CMS as
@@ -676,11 +678,24 @@ func TestUnderTheComposeLayoutTheCMSHasItsHeadsSignedByTheWriter(t *testing.T) {
 
 	// The writer stopped: the key is still its own, and asking for a head
 	// says to start it rather than suggesting this account take the key.
+	// It said both: start the writer, and chown its key over.
 	_ = writer.Process.Signal(syscall.SIGTERM)
 	_ = writer.Wait()
 	stdout, stderr, err := asCMS("auditlog", "head")
-	if err == nil || !strings.Contains(stdout+stderr, "start quilzo logd") {
+	if err == nil || !strings.Contains(stdout+stderr, "start quilzo logd") || strings.Contains(stdout+stderr, "chown") {
 		t.Errorf("a head with the writer stopped: %v\n%s%s", err, stdout, stderr)
+	}
+	// And status says so, rather than that this account signs the heads.
+	status = nil
+	if err := json.Unmarshal([]byte(cms("--json", "logd", "status")), &status); err != nil {
+		t.Fatal(err)
+	}
+	if status["heads_signed_by"] != "the log writer" || status["writer_signs"] != false ||
+		!strings.Contains(statusText(status["writer_refuses"]), "start quilzo logd") {
+		t.Errorf("logd status with the writer stopped, as the CMS: %v", status)
+	}
+	if got := cms("logd", "status"); !strings.Contains(got, "its heads are the writer's to sign") {
+		t.Errorf("logd status with the writer stopped does not say the heads wait for it:\n%s", got)
 	}
 }
 
@@ -829,4 +844,119 @@ func logdStatusHuman(t *testing.T, root string) string {
 	}
 	w = old
 	return buf.String()
+}
+
+// A writer that publishes no keys signs nothing anybody can check, so every
+// head it is asked for is refused here. Status said in yellow that "the
+// writer signs its heads", and its JSON gave writer_refuses as empty: a
+// script reading the field was told nothing was refused while every
+// receipt and every round of the stream failed.
+func TestLogdStatusSaysNoHeadCanBeMadeWhenTheWriterPublishesNoKeys(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := demoStore(t)
+	dir, _ := startWriter(t, root)
+	giveTheLogAway(t, dir)
+	if err := os.Remove(filepath.Join(dir, "head.pub.json")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := headSigner(root); err == nil {
+		t.Fatal("a head was to be signed with no published keys to check it against")
+	}
+
+	st := logdStatusJSON(t, root)
+	if st["heads_signed_by"] != "the log writer" || st["writer_signs"] != false {
+		t.Errorf("status: %v", st)
+	}
+	if !strings.Contains(statusText(st["writer_refuses"]), "public keys cannot be read") {
+		t.Errorf("status did not say why no head can be made: %q", st["writer_refuses"])
+	}
+	human := logdStatusHuman(t, root)
+	if strings.Contains(human, "the writer signs its heads") {
+		t.Errorf("status says the writer signs:\n%s", human)
+	}
+	if !strings.Contains(human, "publishes no keys") || !strings.Contains(human, "none can be made") {
+		t.Errorf("status does not say no head can be made, and why:\n%s", human)
+	}
+}
+
+// The audit log screen says who signs the log's heads as the writer is
+// now, not as it was when the server started.
+//
+// It read both once: a writer that could not use its key went on writing
+// the log, and the page said its heads were signed by the writer while the
+// receipt button on the apps screen failed; a writer started after the
+// server, which compose can do, was never mentioned at all.
+func TestTheAuditLogScreenSaysWhetherTheWriterSignsNow(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	const signs = "signed by\n    the writer too"
+
+	// A writer with no key it may use.
+	root := demoStore(t)
+	dir := filepath.Join(t.TempDir(), "audit")
+	if err := os.Mkdir(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := setAuditDir(root, dir); err != nil {
+		t.Fatal(err)
+	}
+	refusing, err := newLogWriter(root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refusing.Heads, refusing.HeadsWhy = nil, "head.key is not readable"
+	ln, err := logd.Listen(logSocketPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = refusing.Serve(ln) }()
+	t.Cleanup(func() { _ = ln.Close() })
+	giveTheLogAway(t, dir)
+	srv, tok := logScreen(t, root)
+	body := adminGet(t, srv, "/logs", tok)
+	if strings.Contains(body, signs) {
+		t.Errorf("the screen says the writer signs heads it refuses:\n%s", body)
+	}
+	if !strings.Contains(body, "it signs\n    none") || !strings.Contains(body, "head.key is not readable") {
+		t.Errorf("the screen does not say the writer signs none, and why:\n%s", body)
+	}
+
+	// A writer started after the screen was built, that signs.
+	root = demoStore(t)
+	srv, tok = logScreen(t, root)
+	if body := adminGet(t, srv, "/logs", tok); strings.Contains(body, signs) || strings.Contains(body, "signs\n    none") {
+		t.Errorf("with the log in the store the screen names a writer:\n%s", body)
+	}
+	dir, _ = startWriter(t, root)
+	giveTheLogAway(t, dir)
+	body = adminGet(t, srv, "/logs", tok)
+	if !strings.Contains(body, signs) || !strings.Contains(body, filepath.Join(dir, "head.pub.json")) {
+		t.Errorf("the screen does not say the writer started since signs, or where its keys are:\n%s", body)
+	}
+}
+
+// logScreen is the admin as `quilzo serve` builds it for the audit log
+// screen, and an administrator's session.
+func logScreen(t *testing.T, root string) (*admin.Server, string) {
+	t.Helper()
+	seedPolicy(t, root, [2]string{"dana", "admin"})
+	s, err := open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pol, err := loadPolicy(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	toks, err := loadTokens(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv, err := admin.New(s, pol, toks, render.Layouts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.LoadAudit = func() ([]audit.Event, error) { return audit.Read(auditPath(root)) }
+	logHeadsHook(srv, root)
+	tok := tokenFor(t, toks, waitingSession{name: "dana", actor: admin.Actor{Name: "dana", Role: auth.RoleAdmin, Scope: "/"}})
+	return srv, tok
 }

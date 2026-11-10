@@ -6,9 +6,12 @@ package main
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
@@ -89,15 +92,69 @@ func headSigner(root string) (headSigning, error) {
 	if err != nil {
 		// The log is another account's and nothing listens for it: the
 		// key is the writer's, and the fix is the writer, not a chown that
-		// would hand this account the key.
+		// would hand this account the key. So the cause is given bare,
+		// without the advice localHeadSigner adds for a log this account
+		// keeps itself: under the reference compose, with the writer
+		// stopped, the message said both to start the writer and to chown
+		// its key over, and only the first is right.
 		if separated, _ := logd.CheckOwnership(auditPath(root), os.Geteuid()); separated {
-			return nil, fmt.Errorf("the log writer holds this store's head key, and it is not "+
-				"running (%s): start quilzo logd, as the account that owns the log.\n  %v",
-				logSocketPath(root), err)
+			cause := err
+			var pe *fs.PathError
+			if errors.As(err, &pe) {
+				cause = pe
+			}
+			return nil, fmt.Errorf("%s.\n  %v", writerNotRunning(root), cause)
 		}
 		return nil, err
 	}
 	return s, nil
+}
+
+// writerNotRunning is what stops a head being made where the log is
+// another account's and no writer listens for it.
+func writerNotRunning(root string) string {
+	return fmt.Sprintf("the log writer holds this store's head key, and it is not running (%s): "+
+		"start quilzo logd, as the account that owns the log", logSocketPath(root))
+}
+
+// headsSignedBy says who signs this store's heads, as headSigner would
+// choose, and why no head can be made now (empty when one can).
+//
+// Worked out without loading the key, which would make one where there is
+// none: `logd status` and the audit log screen report on the key, and a
+// report that changes what it reports on is not a report. Where the writer
+// is to sign, it is asked, with a head over no entries, rather than
+// assumed to: a writer that cannot use its key still writes the log and
+// says why on its own stderr, which nobody running the CMS reads, and the
+// key it once published says nothing about whether it signs with it now.
+// That head reads nothing and writes nothing, and goes through the checks
+// every caller makes, the root and the published keys.
+func headsSignedBy(root string) (byWriter bool, refused string) {
+	if sock, ok := writerSigns(root); ok {
+		ws, err := newWriterSigner(root, sock)
+		if err != nil {
+			return true, err.Error()
+		}
+		nothing, err := audit.TreeHead(nil, time.Now())
+		if err == nil {
+			_, err = ws.Sign(nothing)
+		}
+		if err != nil {
+			return true, err.Error()
+		}
+		return true, ""
+	}
+	// The log is another account's and no writer listens. headSigner falls
+	// back to a key this account can read, as it did before the writer
+	// held one; without one, the heads wait for the writer.
+	if separated, _ := logd.CheckOwnership(auditPath(root), os.Geteuid()); separated {
+		if f, err := os.Open(headKeyPath(root)); err == nil {
+			_ = f.Close()
+			return false, ""
+		}
+		return true, writerNotRunning(root)
+	}
+	return false, ""
 }
 
 // writerSigns reports whether the log writer signs this store's heads: the

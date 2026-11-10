@@ -912,8 +912,7 @@ func cmdServe(root string, args []string) error {
 		ok, _ := logd.CheckOwnership(auditPath(root), os.Geteuid())
 		return ok
 	}()
-	_, srv.LogHeadsByWriter = writerSigns(root)
-	srv.LogHeadKeys = headKeysPath(root)
+	logHeadsHook(srv, root)
 	// Forward matching only. The HMAC cannot be reversed; this computes the
 	// pseudonym for each principal the store knows and compares, so somebody
 	// the policy has never heard of stays opaque — which is itself worth
@@ -1315,6 +1314,23 @@ func cmdServe(root string, args []string) error {
 func sessionCaller(by admin.Actor) *Caller {
 	return &Caller{Name: by.Name, Kind: audit.KindHuman, Verified: true,
 		Role: by.Role, Scope: by.Scope, Limits: by.Limits}
+}
+
+// logHeadsHook tells the audit log screen who signs the log's heads, and
+// where the keys that check them are.
+//
+// Asked on each visit, as `logd status` asks: whether the separation is in
+// force, whether the writer signs with its key, and where the log is all
+// change while the server runs. The writer under the reference compose can
+// start after this process does, and a writer that cannot use its key goes
+// on writing the log, so a page that read them once at start said the
+// writer signed while every receipt failed, or said nothing of a writer
+// that did sign.
+func logHeadsHook(srv *admin.Server, root string) {
+	srv.LogHeads = func() (bool, string, string) {
+		byWriter, refused := headsSignedBy(root)
+		return byWriter, headKeysPath(root), refused
+	}
 }
 
 // waitingHook is the command line's list of what waits, for the admin's
