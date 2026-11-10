@@ -338,3 +338,41 @@ func TestAStylesheetFromElsewhereIsRemovedWhateverItsTitleSays(t *testing.T) {
 		}
 	}
 }
+
+// The address a stylesheet is judged by is its own href, however the tag is
+// written: spaces around the equals sign, another attribute whose name ends
+// in href, or a title whose words happen to say href=.
+//
+// The address was read from the first "href=" anywhere in the tag. With
+// spaces there was none, and a decoy before the real one gave a local path
+// or the rest of a title, which names no host; either way the stylesheet
+// from elsewhere was kept and nothing said so. The other way round, a decoy
+// naming another host took a local stylesheet out.
+func TestAStylesheetIsJudgedByItsOwnHref(t *testing.T) {
+	adopt := func(link string) *Result {
+		return Adopt(`<!doctype html><html lang="en"><head><title>x</title>` + link +
+			`</head><body><h1>x</h1></body></html>`)
+	}
+	for _, link := range []string{
+		`<link rel="stylesheet" href = "https://fonts.example/a.css">`,
+		`<link rel="stylesheet"` + "\n\t" + `HREF=` + "\n" + `'https://fonts.example/a.css'>`,
+		`<link title="href=x" rel="stylesheet" href="https://fonts.example/a.css">`,
+		`<link data-href="/x.css" rel="stylesheet" href="https://fonts.example/a.css">`,
+		`<link rel=stylesheet href=https://fonts.example/a.css>`,
+	} {
+		r := adopt(link)
+		if strings.Contains(r.Template, "fonts.example") ||
+			!strings.Contains(strings.Join(r.Removed, "\n"), "from fonts.example was removed") {
+			t.Errorf("%s: the stylesheet was kept, or not reported:\n%s\n%v", link, r.Template, r.Removed)
+		}
+	}
+	for _, link := range []string{
+		`<link rel="stylesheet" title="see href=//fonts.example/" href="/site.css">`,
+		`<link rel="stylesheet" data-href="https://fonts.example/a.css" href="/site.css">`,
+	} {
+		r := adopt(link)
+		if !strings.Contains(r.Template, `href="/site.css"`) || len(r.Removed) != 0 {
+			t.Errorf("%s: a stylesheet of this site's own was taken out:\n%s\n%v", link, r.Template, r.Removed)
+		}
+	}
+}
