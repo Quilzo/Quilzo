@@ -5,6 +5,7 @@ package collab
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -149,6 +150,12 @@ type MachineChange struct {
 	// asks a person: a history too long to read, or one holding a commit
 	// that cannot be, is no evidence that a person wrote it.
 	Unread string `json:"unread,omitempty"`
+	// People are everybody a machine wrote for (WrittenFor) among all the
+	// commits the publish would put live, newest first, and not only the
+	// person this one was made for: what a proposal names as who asked for
+	// it (Proposal.MarkMachine). Named by this commit alone, a change dana's
+	// client made was hers to approve once lee's client wrote after it.
+	People []string `json:"people,omitempty"`
 }
 
 // Describe says, for whoever is refused, which change a person is being
@@ -194,37 +201,68 @@ func (m MachineChange) writtenBy() string {
 
 // MarkMachine records on a proposal that a machine wrote some of what it
 // would put live, which makes it AI-authored whoever proposed it, and for
-// whom, when the change says. A nil change leaves the proposal as it was:
-// finding no machine's commit is no reason to call a proposal a person's
-// when a model is what proposed it.
+// whom, when the changes say: every person, added to whoever the proposal
+// already names and never in their place. A nil change leaves the
+// proposal as it was: finding no machine's commit is no reason to call a
+// proposal a person's when a model is what proposed it.
 func (prop *Proposal) MarkMachine(m *MachineChange) {
 	if m == nil {
 		return
 	}
 	prop.AuthorKind = "ai"
 	prop.Machine = m
-	if prop.OnBehalfOf == "" {
-		prop.OnBehalfOf = m.For()
+	people := m.People
+	if len(people) == 0 && m.For() != "" {
+		// A change worked out by somebody who named only its own person.
+		people = []string{m.For()}
+	}
+	for _, person := range people {
+		switch {
+		case person == "" || slices.Contains(prop.ForWhom(), person):
+		case prop.OnBehalfOf == "":
+			prop.OnBehalfOf = person
+		default:
+			// Clipped, so a copy of the proposal marked here (the review
+			// screen judges one) never writes into the list it was copied
+			// from.
+			prop.AlsoOnBehalfOf = append(slices.Clip(prop.AlsoOnBehalfOf), person)
+		}
 	}
 }
 
-// WrittenBy is who a refusal says wrote the change made for OnBehalfOf:
+// ForWhom is everybody a machine wrote some of the change for: OnBehalfOf,
+// and the others after it.
+func (prop Proposal) ForWhom() []string {
+	var out []string
+	if prop.OnBehalfOf != "" {
+		out = append(out, prop.OnBehalfOf)
+	}
+	for _, p := range prop.AlsoOnBehalfOf {
+		if p != "" && !slices.Contains(out, p) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// WrittenBy is who a refusal says wrote the change made for person:
 // "dana's client", or a model working for them when which is not known.
-func (prop Proposal) WrittenBy() string {
-	if prop.Machine != nil && prop.Machine.For() == prop.OnBehalfOf {
+func (prop Proposal) WrittenBy(person string) string {
+	if prop.Machine != nil && prop.Machine.For() == person {
 		return prop.Machine.writtenBy()
 	}
-	return "a model working for " + prop.OnBehalfOf
+	return "a model working for " + person
 }
 
 // Requested reports whether by asked for the change rather than may approve
-// it: its author, always, and the person a machine wrote it for wherever a
-// count of approvals is set, as they would be for their own work. Where
-// none is, the one approval asked for is a person's reading of a model's
-// work, and the person it was written for reading it is that.
+// it: its author, always, and anybody a machine wrote some of it for
+// (ForWhom) wherever a count of approvals is set, as they would be for
+// their own work. Where none is, the one approval asked for is a person's
+// reading of a model's work, and a person it was written for reading it is
+// that.
 func (p Policy) Requested(prop Proposal, by string) bool {
 	if by == prop.Author {
 		return true
 	}
-	return by != "" && by == prop.OnBehalfOf && max(p.Required, p.RequiredHumans) > 0
+	return by != "" && max(p.Required, p.RequiredHumans) > 0 && slices.Contains(prop.ForWhom(), by)
 }

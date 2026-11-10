@@ -6,6 +6,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -227,12 +228,19 @@ func draftStarters(root string, s *store.Store) []string {
 // the same way (collab.WrittenFor), and where a count of approvals is set
 // they asked for it and somebody else approves it, said here before the
 // approval is given, on the command line and the review screen alike.
+//
+// Everybody a model wrote some of the draft for (collab.Proposal.ForWhom)
+// is one of them, and none of them is the second person for another: with
+// two people's clients in one draft, each was the other's, so neither of
+// them could approve it when nobody else could, and with somebody else
+// there, only that somebody reads both.
 func secondPersonForDraft(root string, s *store.Store, prop collab.Proposal, c *Caller) (alone bool, err error) {
 	by := c.Name
 	if prop.AuthorKind != "ai" {
 		return false, nil
 	}
-	forMe := prop.OnBehalfOf != "" && prop.OnBehalfOf == by && prop.Author != by
+	people := prop.ForWhom()
+	forMe := slices.Contains(people, by) && prop.Author != by
 	if forMe {
 		pol, err := loadApprovalPolicy(root)
 		if err != nil {
@@ -240,7 +248,7 @@ func secondPersonForDraft(root string, s *store.Store, prop collab.Proposal, c *
 		}
 		if pol.Requested(prop, by) {
 			return false, fmt.Errorf("%s wrote this change for you, so you asked for it, and with a count "+
-				"of approvals set somebody else approves it", prop.WrittenBy())
+				"of approvals set somebody else approves it", prop.WrittenBy(by))
 		}
 	}
 	starters := draftStarters(root, s)
@@ -260,7 +268,7 @@ func secondPersonForDraft(root string, s *store.Store, prop collab.Proposal, c *
 	}
 	others := othersWho(root, pol, func(name string) bool {
 		return pol.Evaluate(name, auth.ActPublish, "/").Allowed
-	}, append(starters, by)...)
+	}, append(append(starters, people...), by)...)
 	if len(others) == 0 {
 		if rm := aloneRefusal(root, by, time.Now()); rm != nil {
 			return false, refuseAlone(root, c, rm, map[string]string{"proposal": short(prop.Content)})
@@ -269,7 +277,7 @@ func secondPersonForDraft(root string, s *store.Store, prop collab.Proposal, c *
 	}
 	if forMe {
 		return false, fmt.Errorf("%s wrote this draft for you, so somebody else approves it: %s",
-			prop.WrittenBy(), nameSome(others))
+			prop.WrittenBy(by), nameSome(others))
 	}
 	return false, fmt.Errorf("an agent run you started wrote this draft, so somebody else approves it: %s",
 		nameSome(others))

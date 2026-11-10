@@ -5,6 +5,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -900,5 +901,113 @@ func TestAnApprovalGivenAloneDoesNotHoldBackTheOneACountAsksFor(t *testing.T) {
 	}
 	if live := s.GetRef(site.RefLive); live != draft {
 		t.Fatalf("live is %s, not the approved draft %s", short(live), short(draft))
+	}
+}
+
+// With a count of approvals set, nobody a model wrote some of a draft for
+// approves it, however many models wrote in it and whichever wrote last;
+// somebody else does.
+//
+// The proposal named the person the newest model's change was made for
+// and nobody else. Dana's client rewrote the homepage, dana fixed a typo in
+// it by hand, and then lee's client, or an agent lee started, wrote another
+// page: the proposal said lee, or nobody, the homepage's provenance said a
+// person had edited it, and dana's approval counted for what her own
+// client wrote with review.required_approvals at one.
+func TestNobodyAModelWroteForApprovesTheDraftWhenACountIsSet(t *testing.T) {
+	for _, last := range []struct{ name, message, author string }{
+		{"lee's client", "mcp: write %s", "lee"},
+		{"an agent lee started", collab.AgentPrefix + "tidy wrote %s", "agent/tidy"},
+	} {
+		t.Run(last.name+" wrote last", func(t *testing.T) {
+			root, tpl, s := approvalDemo(t)
+			for _, who := range []string{"dana", "lee", "sam"} {
+				if err := updatePolicyForTest(root, auth.Binding{Principal: who, Role: auth.RoleAdmin, Resource: "/"}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := cmdConfig(root, []string{"set", "review.required_approvals", "1"}); err != nil {
+				t.Fatal(err)
+			}
+			edit := func(page, title, message, author, by string, source provenance.SourceType) string {
+				t.Helper()
+				pages, err := site.PagesAt(s, site.RefDraft)
+				if err != nil {
+					t.Fatal(err)
+				}
+				pages[page].(map[string]any)["title"] = title
+				if _, err := site.SaveDraft(s, pages, message, author); err != nil {
+					t.Fatal(err)
+				}
+				if err := runCmd(t, root, "provenance", "set", page,
+					"--source", string(source), "--author", by); err != nil {
+					t.Fatal(err)
+				}
+				return s.GetRef(site.RefDraft)
+			}
+			pages, err := site.PagesAt(s, site.RefDraft)
+			if err != nil {
+				t.Fatal(err)
+			}
+			other := ""
+			for _, name := range sortedKeys(pages) {
+				if name != "index" {
+					other = name
+					break
+				}
+			}
+			edit("index", "Written by dana's client", "mcp: write index", "dana", "dana", provenance.TrainedAlgorithmicMedia)
+			edit("index", "Written by dana's client, a typo fixed", "fixed a typo", "dana", "dana", provenance.HumanEdits)
+			draft := edit(other, "Written last", fmt.Sprintf(last.message, other), last.author, "lee",
+				provenance.TrainedAlgorithmicMedia)
+
+			prop, _, err := proposalFor(root, s, draft)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pol, err := loadApprovalPolicy(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			approvedBy := func(who string) collab.Decision {
+				t.Helper()
+				p := *prop
+				p.Approvals = nil
+				if err := p.Approve(who, "read it", time.Now()); err != nil {
+					t.Fatalf("%s may not approve at all: %v", who, err)
+				}
+				return pol.Evaluate(p, kindOfPrincipal(root), time.Now())
+			}
+			if d := approvedBy("dana"); d.Allowed {
+				t.Errorf("dana's approval counted for what her own client wrote, with %s writing after it: %+v",
+					last.name, d)
+			}
+			if last.author == "lee" {
+				if d := approvedBy("lee"); d.Allowed {
+					t.Errorf("lee's approval counted for what his own client wrote: %+v", d)
+				}
+			}
+			if d := approvedBy("sam"); !d.Allowed {
+				t.Errorf("sam, whom no model wrote for, could not approve it: %+v", d)
+			}
+
+			// And dana is told so when she tries, on the command line.
+			t.Setenv("QUILZO_TOKEN", personToken(t, root, "dana", auth.RoleAdmin))
+			if refusal := approveOnTheCommandLine(t, root, tpl, s); !strings.Contains(refusal, "for you") {
+				t.Fatalf("dana approved, on the command line, a draft holding what her own client wrote: %q", refusal)
+			}
+
+			// Approved by sam, it publishes.
+			t.Setenv("QUILZO_TOKEN", personToken(t, root, "sam", auth.RoleAdmin))
+			if refusal := approveOnTheCommandLine(t, root, tpl, s); refusal != "" {
+				t.Fatalf("sam could not approve it: %s", refusal)
+			}
+			if refusal := publishOnTheCommandLine(t, root, tpl, s); refusal != "" {
+				t.Fatalf("approved by sam, the draft did not publish:\n%s", refusal)
+			}
+			if live := s.GetRef(site.RefLive); live != draft {
+				t.Fatalf("live is %s, not the approved draft %s", short(live), short(draft))
+			}
+		})
 	}
 }

@@ -242,10 +242,18 @@ type Proposal struct {
 	// whose writing assistant. Author is then the machine. They may approve
 	// it where the one approval asked for is a person's reading of a
 	// model's work, and are otherwise who asked for it (Policy.Requested).
-	OnBehalfOf string     `json:"on_behalf_of,omitempty"`
-	CreatedAt  int64      `json:"created_at"`
-	Message    string     `json:"message,omitempty"`
-	Approvals  []Approval `json:"approvals,omitempty"`
+	OnBehalfOf string `json:"on_behalf_of,omitempty"`
+	// AlsoOnBehalfOf are the other people a machine wrote some of it for,
+	// when it wrote for more than one (ForWhom), and each is who asked for
+	// it as OnBehalfOf is. OnBehalfOf names one person, so that a proposal
+	// recorded before this reads as it did: dana's client rewrote the
+	// pricing, lee's client then wrote the about page, the proposal named
+	// lee alone, and with a count of approvals set dana's approval counted
+	// for her own client's prices.
+	AlsoOnBehalfOf []string   `json:"also_on_behalf_of,omitempty"`
+	CreatedAt      int64      `json:"created_at"`
+	Message        string     `json:"message,omitempty"`
+	Approvals      []Approval `json:"approvals,omitempty"`
 	// Machine is the change a machine wrote among what this would put live,
 	// when one did (MarkMachine), so a refusal names it.
 	//
@@ -395,7 +403,7 @@ func (p Policy) Evaluate(prop Proposal, kindOf KindOf, now time.Time) Decision {
 			d.Reason = fmt.Sprintf(
 				"%s wrote this change for %s, who asked for it and cannot "+
 					"also approve it: with a count of approvals set, "+
-					"somebody else reads it. Without theirs, %s", prop.WrittenBy(), asked, d.Reason)
+					"somebody else reads it. Without theirs, %s", prop.WrittenBy(asked), asked, d.Reason)
 		}
 		return d
 	}

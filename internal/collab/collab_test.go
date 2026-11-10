@@ -435,3 +435,70 @@ func TestAnApprovalThatNoLongerCountsDoesNotOutvoteOneThatDoes(t *testing.T) {
 		t.Fatalf("with two people asked for, sam's approval and dana's: %+v", d)
 	}
 }
+
+// Everybody a machine wrote some of a change for asked for it where a count
+// of approvals is set, and may read it where only a person's reading is
+// asked; a proposal recorded with one person still reads as it did.
+//
+// Only the person the newest machine's change was made for was named. Dana's
+// client rewrote the pricing and lee's client then wrote the about page:
+// the proposal named lee, and dana's approval counted for her own client's
+// prices.
+func TestEverybodyAMachineWroteForAskedForTheChange(t *testing.T) {
+	m := &MachineChange{Commit: "aaa", Author: "lee", Message: "mcp: write about", People: []string{"lee", "dana"}}
+	prop := Proposal{Content: "aaa", Author: m.Writer(), CreatedAt: now.Unix()}
+	prop.MarkMachine(m)
+	prop.MarkMachine(m)
+	if prop.OnBehalfOf != "lee" || strings.Join(prop.AlsoOnBehalfOf, ",") != "dana" ||
+		strings.Join(prop.ForWhom(), ",") != "lee,dana" {
+		t.Fatalf("marked twice, the proposal is for %q and also %q", prop.OnBehalfOf, prop.AlsoOnBehalfOf)
+	}
+
+	counted := Policy{Required: 1, RequireHumanForAI: true}
+	only := Policy{RequireHumanForAI: true}
+	for _, who := range []string{"lee", "dana"} {
+		if !counted.Requested(prop, who) {
+			t.Errorf("with a count set, %s is not who asked for a change a machine wrote for them", who)
+		}
+		if only.Requested(prop, who) {
+			t.Errorf("with no count set, %s may not read what a machine wrote for them", who)
+		}
+		p := prop
+		p.Approvals = nil
+		if err := p.Approve(who, "read it", now); err != nil {
+			t.Fatal(err)
+		}
+		if d := counted.Evaluate(p, people, now); d.Allowed || !strings.Contains(d.Reason, "for "+who) {
+			t.Errorf("with a count set, %s's approval counted: %+v", who, d)
+		}
+	}
+	if counted.Requested(prop, "sam") {
+		t.Error("sam, whom no machine wrote for, is taken for who asked for it")
+	}
+
+	// A copy marked again, as the review screen marks one, leaves the
+	// list it was copied from as it was.
+	judged := prop
+	judged.MarkMachine(&MachineChange{Commit: "aaa", Author: "kit", Message: "mcp: write faq", People: []string{"kit"}})
+	if strings.Join(prop.ForWhom(), ",") != "lee,dana" || strings.Join(judged.ForWhom(), ",") != "lee,dana,kit" {
+		t.Errorf("the copy is for %q and the proposal now %q", judged.ForWhom(), prop.ForWhom())
+	}
+
+	// A proposal recorded before the list existed names its one person,
+	// and they are still who asked for it.
+	var old Proposal
+	if err := json.Unmarshal([]byte(`{"content":"aaa","author":"mcp-client","author_kind":"ai",`+
+		`"on_behalf_of":"dana","created_at":1}`), &old); err != nil {
+		t.Fatal(err)
+	}
+	if !counted.Requested(old, "dana") || strings.Join(old.ForWhom(), ",") != "dana" {
+		t.Errorf("an old proposal for dana reads as for %q", old.ForWhom())
+	}
+	body, err := json.Marshal(prop)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"on_behalf_of":"lee"`) || !strings.Contains(string(body), `"also_on_behalf_of":["dana"]`) {
+		t.Errorf("the proposal is kept as %s", body)
+	}
+}

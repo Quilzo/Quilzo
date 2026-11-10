@@ -5,6 +5,7 @@ package site
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/quilzo/quilzo/internal/collab"
 	"github.com/quilzo/quilzo/internal/store"
@@ -44,6 +45,15 @@ var machineWalkLimit = 10000
 // nil and not with an error: nobody can show a person wrote it, and an
 // error would stop a person's approval being the way through. Commit
 // itself not being readable is an error, as it is for publishing it.
+//
+// The walk goes on past the newest machine's commit, to the same bound,
+// for everybody the machines wrote for (MachineChange.People). It stopped
+// there, so a proposal named only the person that one commit was made for:
+// dana's client rewrote the pricing, lee's client then wrote the about
+// page, and with a count of approvals set dana's own approval counted for
+// her client's prices. Past the bound, or at a commit that cannot be read,
+// the newest machine's change is still the answer, as it was, and whoever
+// a machine wrote for further back is not known.
 func MachineWroteSince(s *store.Store, commit string) (*collab.MachineChange, error) {
 	if _, err := s.GetCommit(commit); err != nil {
 		return nil, err
@@ -60,22 +70,35 @@ func MachineWroteSince(s *store.Store, commit string) (*collab.MachineChange, er
 		reviewed[p] = true
 	}
 
+	var found *collab.MachineChange
 	seen := map[string]bool{commit: true}
 	queue := []string{commit}
 	for read := 0; len(queue) > 0; read++ {
 		id := queue[0]
 		queue = queue[1:]
 		if read >= machineWalkLimit {
+			if found != nil {
+				return found, nil
+			}
 			return &collab.MachineChange{Commit: id, Unread: fmt.Sprintf(
 				"more than %d commits since the last publish", machineWalkLimit)}, nil
 		}
 		c, err := s.GetCommit(id)
 		if err != nil {
+			if found != nil {
+				return found, nil
+			}
 			return &collab.MachineChange{Commit: id, Unread: fmt.Sprintf(
 				"commit %s cannot be read: %v", shortID(id), err)}, nil
 		}
 		if collab.MachineWrote(c.Message) {
-			return &collab.MachineChange{Commit: id, Author: c.Author, Message: c.Message}, nil
+			if found == nil {
+				found = &collab.MachineChange{Commit: id, Author: c.Author, Message: c.Message}
+			}
+			if _, person := collab.WrittenFor(c.Message, c.Author); person != "" &&
+				!slices.Contains(found.People, person) {
+				found.People = append(found.People, person)
+			}
 		}
 		// Every parent, not the first alone: a merge brings in the other
 		// side's commits too, and whoever wrote them is asked as well.
@@ -87,5 +110,5 @@ func MachineWroteSince(s *store.Store, commit string) (*collab.MachineChange, er
 			queue = append(queue, p)
 		}
 	}
-	return nil, nil
+	return found, nil
 }

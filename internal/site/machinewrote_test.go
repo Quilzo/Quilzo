@@ -172,3 +172,44 @@ func mustTree(t *testing.T, s *store.Store) string {
 	}
 	return c.Tree
 }
+
+// Everybody a machine wrote for in what a publish would put live is named,
+// not only the person the newest machine's commit was made for, and that
+// commit is still the one the answer is about.
+//
+// The walk stopped at the newest machine's commit. Dana's client rewrote
+// the pricing and lee's client then wrote another page, the answer named
+// lee, and with a count of approvals set dana's own approval counted for
+// her client's prices.
+func TestEverybodyAMachineWroteForIsNamed(t *testing.T) {
+	s := openStore(t)
+	saveAs(t, s, "first", "first", "dana")
+	if _, err := Publish(s, ""); err != nil {
+		t.Fatal(err)
+	}
+	saveAs(t, s, "dana's prices", "mcp: write pricing", "dana")
+	saveAs(t, s, "an agent's prices", collab.AgentPrefix+"tidy wrote pricing", "agent/tidy")
+	saveAs(t, s, "dana's prices again", "assist: tidy the prices", "dana")
+	lees := saveAs(t, s, "lee's about page", "mcp: write about", "lee")
+	draft := saveAs(t, s, "spelt right", "fixed a typo", "sam")
+
+	got, err := MachineWroteSince(s, draft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.Commit != lees || got.Author != "lee" {
+		t.Fatalf("found %+v, want lee's client's commit %s", got, lees[:12])
+	}
+	if strings.Join(got.People, ",") != "lee,dana" {
+		t.Errorf("the machines wrote for lee and dana, and the answer names %q", got.People)
+	}
+
+	// What has been live is not asked again, for whom any more than whether.
+	if _, err := Publish(s, ""); err != nil {
+		t.Fatal(err)
+	}
+	next := saveAs(t, s, "lee's again", "mcp: write about", "lee")
+	if got, err := MachineWroteSince(s, next); err != nil || got == nil || strings.Join(got.People, ",") != "lee" {
+		t.Errorf("after a publish, the answer is %+v (%v), want lee alone", got, err)
+	}
+}
