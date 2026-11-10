@@ -4,6 +4,7 @@
 package config
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -176,5 +177,129 @@ func TestADurationSettingTakesDaysAndSaysThemBack(t *testing.T) {
 		if e.Setting.Key == "publish.require_a11y" && e.Shown() != "true" {
 			t.Errorf("a setting that is not a duration is shown as %q", e.Shown())
 		}
+	}
+}
+
+// Every number that limits how much may be asked for has a ceiling no
+// reason passes, or a point past which raising it takes a reason and a
+// second administrator, so raising it far is never quiet.
+//
+// api.rate.burst had neither: `quilzo config set api.rate.burst 1000000`
+// was accepted at once, nobody was asked why, and the posture scan stayed
+// silent while each token could send a million requests before the rate
+// applied. A number setting added later with neither fails here, unless it
+// is listed below with the reason it needs none.
+func TestEveryLimitThatCanBeRaisedHasABoundOrAWeakerRule(t *testing.T) {
+	exempt := map[string]string{
+		"review.required_approvals": "how many people approve a draft: more is stricter, and fewer waits for a second administrator (internal/dual)",
+		"media.max_width":           "page weight, not a limit on anybody asking: 0 keeps the original, and media.MaxPixels bounds what an upload decodes",
+		"media.max_height":          "the other side of media.max_width, for the same reason",
+	}
+	for _, s := range All() {
+		if s.Kind != Int {
+			continue
+		}
+		b, bounded := hardBounds[s.Key]
+		capped := bounded && b[1] != unbounded
+		why, isExempt := exempt[s.Key]
+		switch {
+		case isExempt && (capped || s.Weaker != nil):
+			t.Errorf("%s is exempt (%s) and has a ceiling or a weaker rule as well; take it off the list", s.Key, why)
+		case isExempt:
+		case !capped && s.Weaker == nil:
+			t.Errorf("%s can be raised as far as anybody likes and nobody is asked why: give it a "+
+				"hard bound or a Weaker rule, or exempt it here with the reason", s.Key)
+		case !capped:
+			// A rule that never fires for a large value is not a rule about
+			// raising it.
+			if weak, _ := s.IsWeaker("1000000000"); !weak {
+				t.Errorf("%s has a weaker rule that a billion does not trip", s.Key)
+			}
+		}
+	}
+	for key, why := range exempt {
+		if s, ok := Lookup(key); !ok || s.Kind != Int || why == "" {
+			t.Errorf("%s is exempt and is not a number setting, or says no reason", key)
+		}
+	}
+}
+
+// The API's burst: up to ten times its default as anybody likes, past
+// that with a reason (and so a second administrator), and never past
+// 6000, a whole minute at the most api.rate.per_minute takes without one.
+func TestTheAPIBurstHasABoundAndALargeOneIsWeaker(t *testing.T) {
+	s, _ := Lookup("api.rate.burst")
+	if weak, why := s.IsWeaker("200"); weak {
+		t.Errorf("a burst of 200, ten times the default, is weaker: %s", why)
+	}
+	if weak, why := s.IsWeaker("201"); !weak || !strings.Contains(why, "201") {
+		t.Errorf("a burst of 201 is not weaker, or the reason does not say it: %v %q", weak, why)
+	}
+
+	c := fresh()
+	var out *ErrOutOfBounds
+	if err := c.Set("api.rate.burst", "1000000", "a load test", "dana"); !errors.As(err, &out) {
+		t.Fatalf("a burst of a million, with a reason: %v", err)
+	}
+	var need *ErrNeedsAcceptance
+	if err := c.Set("api.rate.burst", "500", "", "dana"); !as(err, &need) {
+		t.Fatalf("a burst of 500 was set with no reason: %v", err)
+	}
+	if err := c.Set("api.rate.burst", "500", "a site build fetching in parallel", "dana"); err != nil {
+		t.Fatal(err)
+	}
+	if w := c.Weakened(); len(w) != 1 || w[0].Setting.Key != "api.rate.burst" || w[0].Accepted == nil {
+		t.Errorf("the posture scan is not told about a burst of 500: %+v", w)
+	}
+	if err := c.Set("api.rate.burst", "6000", "the same build", "dana"); err != nil {
+		t.Errorf("6000, the bound, was refused: %v", err)
+	}
+	if err := c.Set("api.rate.burst", "6001", "the same build", "dana"); !errors.As(err, &out) {
+		t.Errorf("6001, past the bound: %v", err)
+	}
+}
+
+// A limit of zero is refused, with the least it takes, rather than taken
+// and read as the default.
+//
+// `quilzo config set api.rate.per_minute 0`, meant as "off", was accepted,
+// and the API went on allowing 120 a minute because it reads zero as unset.
+// The burst, the page size, the body size, the browsers and an extension's
+// output were the same, and a JPEG quality of 0 or 500 was 82. A file
+// written before this still loads: the zero is left out and said, and the
+// default it ran at anyway is what it runs at.
+func TestALimitOfZeroIsRefusedRatherThanReadAsTheDefault(t *testing.T) {
+	c := fresh()
+	var out *ErrOutOfBounds
+	err := c.Set("api.rate.per_minute", "0", "turn it off", "dana")
+	if !errors.As(err, &out) || !strings.Contains(err.Error(), "0 is below 1, the least this takes") {
+		t.Fatalf("a rate of zero: %v", err)
+	}
+	for _, key := range []string{"api.rate.burst", "api.page.max", "api.body.max_bytes",
+		"browser.sessions", "ext.max_output_bytes", "media.jpeg_quality"} {
+		if err := c.Set(key, "0", "a reason", "dana"); !errors.As(err, &out) {
+			t.Errorf("%s = 0: %v", key, err)
+		}
+		if err := c.Set(key, "1", "", "dana"); err != nil {
+			t.Errorf("%s = 1, which is stricter, was refused: %v", key, err)
+		}
+	}
+	if err := c.Set("media.jpeg_quality", "101", "", "dana"); !errors.As(err, &out) {
+		t.Errorf("a JPEG quality of 101: %v", err)
+	}
+	if err := c.Set("media.max_width", "0", "", "dana"); err != nil {
+		t.Errorf("a width of 0, which keeps the original, was refused: %v", err)
+	}
+
+	old, err := Parse([]byte(`{"values":{"api.rate.per_minute":"0","api.rate.burst":"0"}}`))
+	if err != nil {
+		t.Fatalf("a file with a zero rate did not load: %v", err)
+	}
+	if old.Int("api.rate.per_minute") != 120 || old.Int("api.rate.burst") != 20 {
+		t.Errorf("read as %d a minute, burst %d", old.Int("api.rate.per_minute"), old.Int("api.rate.burst"))
+	}
+	if got := strings.Join(old.Dropped(), "\n"); !strings.Contains(got,
+		"api.rate.per_minute: 0 is below 1, the least this takes; 120 is used instead") {
+		t.Errorf("the zero was not said: %q", got)
 	}
 }
