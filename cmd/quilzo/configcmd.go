@@ -256,7 +256,7 @@ func configSet(root string, args []string) error {
 		return err
 	}
 
-	if err := c.Set(key, value, reason, caller.Name); err != nil {
+	if err := c.Set(key, value, reason, caller.accepter()); err != nil {
 		var need *config.ErrNeedsAcceptance
 		if errorsAs(err, &need) {
 			// A gate refusing, not the command breaking. The caller is being

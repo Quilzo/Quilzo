@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
 	"strings"
 	"time"
@@ -182,13 +183,41 @@ func resolveCaller(root, explicitToken string) *Caller {
 	}
 }
 
+// osUser is the name an unverified caller is recorded under: the
+// environment's, and failing that the operating-system account this runs
+// as, which is the one the store's ownership is checked against
+// (storeowner.go).
+//
+// It was the environment's or "unknown-operator", and under a service
+// manager or in a container none of $USER, $USERNAME and $LOGNAME is set,
+// so a risk accepted there was accepted by unknown-operator and the posture
+// scan named nobody. unknown-operator is left for a system that cannot say
+// whose account this is.
 func osUser() string {
 	for _, k := range []string{"USER", "USERNAME", "LOGNAME"} {
 		if v := os.Getenv(k); v != "" {
 			return v
 		}
 	}
+	if u, err := user.Current(); err == nil && u.Username != "" {
+		return u.Username
+	}
 	return "unknown-operator"
+}
+
+// accepter is who a risk this caller accepts is recorded as accepted by:
+// their name, and for a name nobody checked, said to be one.
+//
+// An unverified name, from the environment or the operating system, was
+// recorded as plainly as one a token proved, so `config show` and the
+// posture scan said "accepted by kit" of whatever $USER said, which is the
+// unproven name described as established that resolveCaller exists to
+// prevent.
+func (c *Caller) accepter() string {
+	if c.Verified {
+		return c.Name
+	}
+	return c.Name + " (not verified)"
 }
 
 // policyInUse reports whether anybody has been granted anything.
