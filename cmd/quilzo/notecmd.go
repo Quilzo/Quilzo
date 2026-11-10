@@ -141,15 +141,22 @@ func noteList(root string, args []string) error {
 			return err
 		}
 	}
-	if len(pages) == 0 {
-		w.Human("  %snobody has left a note%s\n", dim, reset)
-		return nil
-	}
-
 	type row struct {
 		Page  string      `json:"page"`
 		Notes []note.Note `json:"notes"`
 	}
+	if len(pages) == 0 {
+		// [] under --json, as below when nothing is outstanding. This wrote
+		// only through Human, so a script asking for the notes on a store
+		// nobody had noted was answered with nothing, exited 0, and took
+		// the empty output for the answer.
+		if w.JSON([]row{}) {
+			return nil
+		}
+		w.Human("  %snobody has left a note%s\n", dim, reset)
+		return nil
+	}
+
 	var out []row
 	for _, page := range pages {
 		notes, lerr := st.List(page)

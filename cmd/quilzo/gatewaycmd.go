@@ -174,6 +174,13 @@ func gatewayStatus(root string) error {
 		return err
 	}
 	if gw == nil {
+		// Under --json, the document a declared gateway answers with, and
+		// empty: no routes, and nothing spent through one today. This wrote
+		// only through Human, so a script asking where model calls go was
+		// answered with nothing and exit 0.
+		if w.JSON(map[string]any{"routes": []gateway.Health{}, "today": []gateway.Spend{}}) {
+			return nil
+		}
 		w.Human("no gateway declared; every model call goes to the one model " +
 			"in QUILZO_MODEL_URL.\n  add a route with quilzo gateway route add NAME --url U --model M\n")
 		return nil
@@ -183,7 +190,16 @@ func gatewayStatus(root string) error {
 		return err
 	}
 	spend := ledger.Summary(*cfg, time.Now())
-	if w.JSON(map[string]any{"routes": gw.Health(), "today": spend}) {
+	routes := gw.Health()
+	// An empty list is [] here too, not null, so the two answers have one
+	// shape.
+	if routes == nil {
+		routes = []gateway.Health{}
+	}
+	if spend == nil {
+		spend = []gateway.Spend{}
+	}
+	if w.JSON(map[string]any{"routes": routes, "today": spend}) {
 		return nil
 	}
 	w.Human("%sroutes, in fallback order%s\n", bold, reset)
