@@ -53,7 +53,7 @@ func loadIntegrations(root string) (*agent.Integrations, error) {
 
 func cmdIntegrations(root string, args []string) error {
 	if len(args) == 0 {
-		args = []string{"list"}
+		args = []string{bareRuns["integrations"]}
 	}
 	switch args[0] {
 	case "list":

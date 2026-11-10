@@ -179,7 +179,22 @@ var commandNeeds = map[string]need{
 	"integrations undelivered": {action: auth.ActView},
 	"integrations approve":     {action: auth.ActApprove},
 	"integrations decline":     {action: auth.ActApprove},
-	"integration":              {action: auth.ActView},
+	// The same command spelled singular, asked the same. It had this one
+	// row, view, and none of the narrowing ones above, so everything they
+	// guard fell through to it: a reader, and a token issued --read-only,
+	// pinned what another system's tools are with `quilzo integration pin`
+	// and added integrations with import and template. A bare command, of
+	// either spelling, is asked as the list it runs (bareRuns).
+	"integration":             {action: auth.ActGrant},
+	"integration list":        {action: auth.ActView},
+	"integration tools":       {action: auth.ActView},
+	"integration call":        {action: auth.ActPublish},
+	"integration pin":         {action: auth.ActGrant},
+	"integration gateway":     {action: auth.ActGrant},
+	"integration held":        {action: auth.ActApprove},
+	"integration undelivered": {action: auth.ActView},
+	"integration approve":     {action: auth.ActApprove},
+	"integration decline":     {action: auth.ActApprove},
 	// Each part of the list is filtered by what the caller may decide; the
 	// list itself needs only that they are somebody here, and the runs and
 	// features waiting on whoever holds approve or install-features alone
@@ -1390,8 +1405,12 @@ func commandArea(cmd string, args []string) (string, bool) {
 // digest out stopped being a reader's act, and their bare forms, which show
 // the proofs and the stamps, would have gone with them: a reader running
 // `quilzo anchor` would have been refused what `quilzo anchor status` shows.
+//
+// `integration` was view as a whole, and its bare form a reader's; strict
+// now, like `integrations`, it keeps that by listing, as `integrations` now
+// does too, since the list is what `integrations list` gives a reader.
 var bareRuns = map[string]string{"anchor": "status", "timestamp": "list", "stamp": "list",
-	"provenance": "check", "prov": "check"}
+	"provenance": "check", "prov": "check", "integrations": "list", "integration": "list"}
 
 func lookupNeed(cmd string, args []string) (need, bool) {
 	if sub, ok := bareRuns[cmd]; ok && len(args) == 0 {
