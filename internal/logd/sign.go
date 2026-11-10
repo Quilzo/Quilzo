@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 	"slices"
 	"time"
 
@@ -42,6 +44,42 @@ import (
 // The time on the head is the writer's clock, for the same reason: a client
 // that chose it could backdate a commitment to entries that did not exist
 // yet.
+
+// CheckKey says why the head key at path is not the writer's alone, or nil
+// when it is, or when there is none yet to make.
+//
+// The writer holding the key is worth something only if nobody else does.
+// A key the CMS made beside the log, before the writer held one, is a key
+// the CMS may have kept; one its group can read is one the CMS can copy.
+// With either it can sign a head over any root it likes, and `logd status`
+// would still say the writer signs with a key the CMS cannot read. The
+// writer took any key it could read, and the advice for one it could not
+// was to chown it over, which hands it a key somebody else has held. So it
+// signs with neither, and says to make a new one: a chown or a chmod
+// cannot take back a copy.
+func CheckKey(path string, uid int) error {
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	why := ""
+	if info.Mode().IsRegular() {
+		why = keyHeldByOthers(info, path, uid)
+	} else {
+		why = fmt.Sprintf("%s is not a plain file (%v), so what it reads is not a key this account made",
+			path, info.Mode().Type())
+	}
+	if why == "" {
+		return nil
+	}
+	return fmt.Errorf("%s. Whoever holds it can sign a head over any root they like: move head.key "+
+		"and head.pub.json in %s aside together (that head.pub.json still checks the heads the old "+
+		"key signed) and start the writer again, which makes a key only it has held",
+		why, filepath.Dir(path))
+}
 
 // SignTimeout bounds a signing request once it has been read.
 //
@@ -142,21 +180,27 @@ func (s *Server) signHead(conn net.Conn, req HeadRequest, uid int, deadline time
 		s.refuse(conn, "a head covers a number of entries, and that is not one", uid)
 		return
 	}
-	release, ok := s.oneHead(deadline)
-	if !ok {
-		s.refuse(conn, "the writer was computing other heads until this one's time ran out: ask again", uid)
-		return
-	}
-	defer release()
-	// The writer's own file, read back through the handle that appends to
-	// it. Not verified first: a head over a log that has been tampered with
-	// still commits to what the file holds, and that is what makes the
-	// tampering provable against a head published before it. A writer that
-	// refused would stop the stream at the moment somebody most needs it.
-	events, err := s.Log.Events()
-	if err != nil {
-		s.refuse(conn, "the log cannot be read back to sign a head over it: "+err.Error(), uid)
-		return
+	// A head over no entries reads none, and so waits for no other head:
+	// it is what `logd status` asks, to learn whether the writer signs.
+	var events []audit.Event
+	if req.Size > 0 {
+		release, ok := s.oneHead(deadline)
+		if !ok {
+			s.refuse(conn, "the writer was computing other heads until this one's time ran out: ask again", uid)
+			return
+		}
+		defer release()
+		// The writer's own file, read back through the handle that appends
+		// to it. Not verified first: a head over a log that has been
+		// tampered with still commits to what the file holds, and that is
+		// what makes the tampering provable against a head published
+		// before it. A writer that refused would stop the stream at the
+		// moment somebody most needs it.
+		var err error
+		if events, err = s.Log.Events(); err != nil {
+			s.refuse(conn, "the log cannot be read back to sign a head over it: "+err.Error(), uid)
+			return
+		}
 	}
 	if req.Size > len(events) {
 		s.refuse(conn, fmt.Sprintf("the log holds %d entries, so there is no head over the first %d",

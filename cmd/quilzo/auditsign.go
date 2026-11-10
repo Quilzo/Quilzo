@@ -145,9 +145,11 @@ func localHeadSigner(root string) (*audit.HeadSigner, error) {
 			return nil, fmt.Errorf("cannot write the head signing key: %w", werr)
 		}
 	case os.IsPermission(err):
-		// A key made by another account, as it was before the writer held
-		// it: the CMS made head.key beside a log it could still write, and
-		// a writer started on that directory afterwards cannot read it.
+		// A key this account cannot read beside a log it keeps itself,
+		// made by another account: root running a command, say. The
+		// writer never gets here with another account's key, which it
+		// refuses before reading (logd.CheckKey): a chown would hand it a
+		// key somebody else has held.
 		return nil, fmt.Errorf("cannot read the head signing key at %s: %w\n"+
 			"  it belongs to the account that writes the log, which holds it at 0600:\n"+
 			"    chown <log-account> %s",

@@ -12,7 +12,9 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
+	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/logd"
 	"github.com/quilzo/quilzo/internal/research"
 )
@@ -170,9 +172,12 @@ func newLogWriter(root string, uids []int) (*logd.Server, error) {
 	}
 	// The head key, made here on first start: head.key at 0600, this
 	// account's alone, and head.pub.json at 0644 beside it for everybody
-	// who checks a head. A writer that cannot load it still writes the
-	// log, which matters more, and says why each signature is refused.
-	if srv.Heads, err = localHeadSigner(root); err != nil {
+	// who checks a head. A writer that cannot load it, or finds one that
+	// is not its own alone (logd.CheckKey), still writes the log, which
+	// matters more, and says why each signature is refused.
+	if kerr := logd.CheckKey(headKeyPath(root), os.Geteuid()); kerr != nil {
+		srv.HeadsWhy = kerr.Error()
+	} else if srv.Heads, err = localHeadSigner(root); err != nil {
 		srv.Heads, srv.HeadsWhy = nil, err.Error()
 	}
 	return srv, nil
@@ -198,11 +203,28 @@ func cmdLogdStatus(root string) error {
 	if byWriter {
 		signer = "the log writer"
 	}
+	// Whether the writer signs, asked rather than assumed. A writer that
+	// cannot use its key still writes the log and says why on its own
+	// stderr, which nobody running the CMS reads, and the key it once
+	// published says nothing about whether it signs with it now. A head
+	// over no entries reads none and writes nothing, and goes through the
+	// checks every caller makes: the root, and the published keys.
+	refuses := ""
+	if byWriter && keyID != "" {
+		if ws, err := newWriterSigner(root, sock); err != nil {
+			refuses = err.Error()
+		} else if nothing, err := audit.TreeHead(nil, time.Now()); err != nil {
+			refuses = err.Error()
+		} else if _, err := ws.Sign(nothing); err != nil {
+			refuses = err.Error()
+		}
+	}
 
 	if w.JSON(map[string]any{
 		"socket": sock, "writer_present": running,
 		"separated": separated, "detail": why,
 		"heads_signed_by": signer, "head_keys": headKeysPath(root), "head_key_id": keyID,
+		"writer_signs": byWriter && keyID != "" && refuses == "", "writer_refuses": refuses,
 	}) {
 		return nil
 	}
@@ -229,6 +251,9 @@ func cmdLogdStatus(root string) error {
 			yellow, reset)
 	}
 	switch {
+	case byWriter && refuses != "":
+		w.Human("  %sthe writer is to sign this store's heads, and signs none, so no head,\n"+
+			"  receipt or round of the audit stream can be made:\n  %s%s\n", yellow, refuses, reset)
 	case byWriter && keyID != "":
 		w.Human("  %sthe writer signs its heads with key %s, which this account cannot\n"+
 			"  read. The public keys are at %s%s\n", green, keyID, headKeysPath(root), reset)

@@ -702,3 +702,131 @@ func copyExecutable(t *testing.T, from, to string) {
 		t.Fatal(err)
 	}
 }
+
+// The writer signs only with a key no other account could have read.
+//
+// A key the CMS made, before the writer held one, is a key the CMS may have
+// kept, and a key its group can read is one the CMS can copy: either way
+// the CMS can sign a head over any root it likes, which is the thing the
+// writer holding the key exists to stop. The writer took any key it could
+// read, and the advice for one it could not was to chown it over, which
+// hands the writer a key somebody else has held.
+func TestTheWriterSignsWithNoKeyAnotherAccountCouldHaveHeld(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := demoStore(t)
+	dir := filepath.Join(t.TempDir(), "audit")
+	if err := os.Mkdir(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := setAuditDir(root, dir); err != nil {
+		t.Fatal(err)
+	}
+	// A key made beside the log before the writer started, as a CMS that
+	// could still write there made one.
+	if _, err := localHeadSigner(root); err != nil {
+		t.Fatal(err)
+	}
+	key := headKeyPath(root)
+
+	if err := os.Chmod(key, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	srv, err := newLogWriter(root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if srv.Heads != nil {
+		t.Error("the writer signs with a key its group can read")
+	}
+	if !strings.Contains(srv.HeadsWhy, "0640") || !strings.Contains(srv.HeadsWhy, "aside") {
+		t.Errorf("the writer did not say why, or what to do: %q", srv.HeadsWhy)
+	}
+
+	if err := os.Chmod(key, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if srv, err = newLogWriter(root, nil); err != nil || srv.Heads == nil {
+		t.Fatalf("the writer does not sign with a key that is its own alone: %v %q", err, srv.HeadsWhy)
+	}
+
+	if os.Geteuid() != 0 {
+		t.Skip("giving the key to another account needs root")
+	}
+	if err := os.Chown(key, cmsAccount, cmsAccount); err != nil {
+		t.Fatal(err)
+	}
+	if srv, err = newLogWriter(root, nil); err != nil {
+		t.Fatal(err)
+	}
+	if srv.Heads != nil {
+		t.Error("the writer signs with a key another account made")
+	}
+	if !strings.Contains(srv.HeadsWhy, "uid 65532") || !strings.Contains(srv.HeadsWhy, "aside") ||
+		strings.Contains(srv.HeadsWhy, "chown") {
+		t.Errorf("the writer did not say to replace a key another account has held: %q", srv.HeadsWhy)
+	}
+}
+
+// `logd status` asks the writer whether it signs rather than assuming so.
+//
+// A writer that cannot use its key still writes the log, and says why on
+// its own stderr, which nobody running the CMS reads. Status read the
+// published keys, found a key id, and said in green that the writer signs
+// its heads with that key: true of no head at all, while every receipt and
+// every round of the stream failed.
+func TestLogdStatusSaysWhenTheWriterDoesNotSign(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := demoStore(t)
+	dir := filepath.Join(t.TempDir(), "audit")
+	if err := os.Mkdir(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := setAuditDir(root, dir); err != nil {
+		t.Fatal(err)
+	}
+	srv, err := newLogWriter(root, nil)
+	if err != nil || srv.Heads == nil {
+		t.Fatalf("%v %q", err, srv.HeadsWhy)
+	}
+	// The key it made, and then could not use.
+	srv.Heads, srv.HeadsWhy = nil, "head.key is not readable"
+	ln, err := logd.Listen(logSocketPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { _ = ln.Close() })
+	giveTheLogAway(t, dir)
+
+	st := logdStatusJSON(t, root)
+	if st["heads_signed_by"] != "the log writer" {
+		t.Fatalf("status says heads are signed by %v", st["heads_signed_by"])
+	}
+	if st["writer_signs"] != false || !strings.Contains(statusText(st["writer_refuses"]), "head.key is not readable") {
+		t.Errorf("status did not say the writer refuses, and why: %v %v", st["writer_signs"], st["writer_refuses"])
+	}
+	human := logdStatusHuman(t, root)
+	if strings.Contains(human, "the writer signs its heads with key") {
+		t.Errorf("status says the writer signs:\n%s", human)
+	}
+	if !strings.Contains(human, "head.key is not readable") {
+		t.Errorf("status does not say why the writer signs nothing:\n%s", human)
+	}
+}
+
+func statusText(v any) string { s, _ := v.(string); return s }
+
+// logdStatusHuman is `quilzo logd status` as a person reads it.
+func logdStatusHuman(t *testing.T, root string) string {
+	t.Helper()
+	old := w
+	t.Cleanup(func() { w = old })
+	w = out.New(false)
+	var buf bytes.Buffer
+	w.Out = &buf
+	if err := cmdLogdStatus(root); err != nil {
+		t.Fatal(err)
+	}
+	w = old
+	return buf.String()
+}

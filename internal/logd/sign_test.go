@@ -371,6 +371,15 @@ func TestHeadsAreComputedOneAtATime(t *testing.T) {
 		t.Fatalf("a head was computed while another was: %v", err)
 	case <-time.After(300 * time.Millisecond):
 	}
+	// A head over no entries reads none, so it waits for nothing: it is
+	// what `logd status` asks to learn whether the writer signs at all.
+	asked := time.Now()
+	if _, err := SignHead(sock, 0); err != nil {
+		t.Fatalf("a head over no entries while another was computed: %v", err)
+	}
+	if waited := time.Since(asked); waited > 200*time.Millisecond {
+		t.Errorf("a head over no entries waited %v for one over the log", waited)
+	}
 	release()
 	if err := <-got; err != nil {
 		t.Fatalf("the head waiting its turn: %v", err)

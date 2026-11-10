@@ -785,6 +785,16 @@ every head it is handed against the root it read itself and against
 `head.pub.json`, and refuses one that disagrees with either rather than
 putting it in a receipt.
 
+The writer signs only with a key that is its own alone: `head.key` owned by
+its account, at 0600. A key another account made, or one other accounts can
+read, is one somebody else may have kept a copy of, and could sign a head
+over any root with; a chown or a chmod cannot take a copy back. So the writer
+signs nothing with it, keeps writing the log, and says to move `head.key` and
+`head.pub.json` aside together (that `head.pub.json` still checks the heads
+the old key signed) and start it again, when it makes a new one. `quilzo logd
+status` asks the writer for a head over no entries rather than assuming it
+signs, and says when it does not, and why.
+
 There is no setting. Where the log is the admin's own (in the store, or a
 writer running as the same account) the key is beside the log and loaded
 there, as it always was. Heads saved with `auditlog head --save` stay in the
