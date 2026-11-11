@@ -1118,6 +1118,22 @@ func boundManifest(root string, set *agentSet, name string, withModel, eval bool
 			"%s holds nothing once bounded by this token: the manifest and "+
 				"the token you are using have no capability in common", name)
 	}
+	// A tool writes when either declaration says so (ToolWrites), and the
+	// run is told: its own label defaults to off, and a tool on an
+	// integration declared as writing was a read to the session, so a
+	// propose-only run called it with nobody asked (agent.Session.AsksFirst).
+	if len(m.Tools) > 0 {
+		var installed agent.Integrations
+		if set, err := loadIntegrations(root); err == nil && set != nil {
+			installed = *set
+		}
+		m.Tools = append([]agent.Tool(nil), m.Tools...)
+		for i := range m.Tools {
+			if !m.Tools[i].Writes && installed.ToolWrites(m, m.Tools[i].Name) {
+				m.Tools[i].Writes = true
+			}
+		}
+	}
 	return m, trail, nil
 }
 

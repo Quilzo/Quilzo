@@ -542,3 +542,52 @@ func TestAnsweringAQuestionChargesItsStepOnce(t *testing.T) {
 		t.Errorf("the run let %d steps through and charged %d", chargedSteps(tr), steps)
 	}
 }
+
+// A tool that writes is asked about first at propose autonomy, whatever the
+// declaration's ask_first says, and is refused where nobody can be asked.
+//
+// Propose writes nothing: write_page is refused at it. A tool marked as
+// changing something on the far side was gated on its host and the budget
+// alone, so a propose-only agent called it with nobody asked. A tool that
+// only reads still goes ahead, and at draft the writing tool does too, as
+// write_page does.
+func TestAWritingToolAsksFirstAtProposeAutonomy(t *testing.T) {
+	m := Manifest{Name: "filer", Kind: KindTask, Purpose: "file issues",
+		Capabilities: []string{"read_page"}, Autonomy: AutonomyPropose,
+		Tools: []Tool{{Name: "notes", Host: "notes.example", Purpose: "read notes"},
+			{Name: "delete_everything", Host: "notes.example", Purpose: "tidy", Writes: true}},
+		Budget: Budget{Steps: 6, Tools: 4, Duration: Duration(time.Minute)}}
+	if err := m.Validate(nil); err != nil {
+		t.Fatal(err)
+	}
+	var did []string
+	called := func(_ context.Context, a Action) (string, error) { did = append(did, a.Tool); return "ok", nil }
+	tools := func() string { return strings.Join(did, ",") }
+	plan := []Action{{Tool: "notes"}, {Tool: "delete_everything"}}
+	reset := func() { did = nil }
+
+	r := Runner{Decide: (&scripted{plan: plan}).decide, Perform: called, Pause: true}
+	tr, err := r.Run(context.Background(), NewSession(m, nil), "g")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tr.Waiting == nil || tr.Waiting.Action.Tool != "delete_everything" || len(did) != 1 {
+		t.Fatalf("the writing tool was not asked about first: did %s, %+v", tools(), tr.Waiting)
+	}
+
+	// With nobody to ask, as a delegate has, it is refused.
+	reset()
+	r = Runner{Decide: (&scripted{plan: plan}).decide, Perform: called}
+	tr, _ = r.Run(context.Background(), NewSession(m, nil), "g")
+	if len(did) != 1 || tr.Steps[1].Allowed || !strings.Contains(tr.Steps[1].Why, "nobody to ask") {
+		t.Fatalf("with nobody to ask the writing tool: did %s, %+v", tools(), tr.Steps[1])
+	}
+
+	// At draft it goes ahead.
+	m.Autonomy = AutonomyDraft
+	reset()
+	r = Runner{Decide: (&scripted{plan: plan}).decide, Perform: called, Pause: true}
+	if tr, _ = r.Run(context.Background(), NewSession(m, nil), "g"); tr.Waiting != nil || len(did) != 2 {
+		t.Fatalf("at draft: did %s, %+v", tools(), tr.Waiting)
+	}
+}
