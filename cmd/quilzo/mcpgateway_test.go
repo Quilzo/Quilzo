@@ -265,4 +265,16 @@ func TestABrandFindingThroughTheGatewayWaitsForAPerson(t *testing.T) {
 	if _, err := gatewayCallAs(t, root, appToken("sam", auth.RoleAuthor)); err == nil || !strings.Contains(err.Error(), "brand.json") {
 		t.Fatalf("a call went through unchecked while the rules could not be read: %v", err)
 	}
+	// And the agent is told so without being told where the store keeps
+	// its files.
+	if err := os.Remove(brandPath(root)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(brandPath(root), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	_, err = gatewayCallAs(t, root, appToken("dana", auth.RoleAuthor))
+	if err == nil || !strings.Contains(err.Error(), "brand.json") || strings.Contains(err.Error(), root) {
+		t.Fatalf("an unreadable rules file: %v", err)
+	}
 }

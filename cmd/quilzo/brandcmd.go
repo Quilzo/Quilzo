@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -69,6 +70,12 @@ func outwardClaims(root, tool string, input map[string]any) string {
 	if err != nil {
 		if inner := errors.Unwrap(err); inner != nil {
 			err = inner
+		}
+		// What went wrong, and not where: an outside agent at the gateway
+		// is told this, and a file's error names the store's own path.
+		var pe *fs.PathError
+		if errors.As(err, &pe) {
+			err = pe.Err
 		}
 		return agent.ClaimsPrefix + ", since brand.json could not be read and nothing it says was checked: " + err.Error()
 	}
