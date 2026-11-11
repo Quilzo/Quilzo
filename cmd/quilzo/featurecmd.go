@@ -785,6 +785,24 @@ func applyFeature(root string, p *feature.Package, digest string, plan feature.P
 	if err := featureNeeds(root, caller, p); err != nil {
 		return nil, err
 	}
+	// The programs its agents run are pinned as the agents are declared,
+	// below. One that cannot be, missing here or not the file the package
+	// names, is refused now, before anything is applied, rather than with
+	// half of the package installed.
+	if len(p.Agents) > 0 {
+		declared, err := loadAgents(root)
+		if err != nil {
+			return nil, err
+		}
+		for _, m := range p.Agents {
+			was := declared.Agents[m.Name].Program
+			if prog := keepPin(was, m.Program); prog != nil && !sameProgram(was, prog) {
+				if err := reviewProgram(m.Name, prog); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
 	act := map[feature.Ref]string{}
 	for _, s := range plan.Steps {
 		act[s.Ref] = s.Action

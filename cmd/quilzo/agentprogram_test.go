@@ -404,3 +404,106 @@ func letApprove(t *testing.T, root, who string) {
 		t.Fatal(err)
 	}
 }
+
+// An agent's program was a path and nothing else: the file at it could be
+// replaced after an administrator set it, and the next run, a triggered one
+// included, ran whatever was there with nothing recorded. It is pinned to the
+// file as it was when it was set, a run of any other file is refused with how
+// to review it again, and the run's receipt says which file decided it.
+func TestAProgramThatChangedAfterReviewIsRefused(t *testing.T) {
+	root := argsStore(t)
+	prog := filepath.Join(t.TempDir(), "tidy-run")
+	if err := os.WriteFile(prog, []byte("#!/bin/sh\necho reviewed\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	_, read := captureStdout(t)
+	err := cmdAgent(root, []string{"program", "tidy", "--", prog})
+	read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviewed, _ := agent.FileDigest(prog)
+	set, _ := loadAgents(root)
+	if p := set.Agents["tidy"].Program; p == nil || p.Digest != reviewed {
+		t.Fatalf("the program was not pinned to the file as it was set: %+v", p)
+	}
+
+	if err := os.WriteFile(prog, []byte("#!/bin/sh\necho replaced\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = runAgentKeptBy(context.Background(), root, "tidy", "tidy the pages", false, true, asAdmin("dana"))
+	if err == nil || !strings.Contains(err.Error(), "changed since it was reviewed") ||
+		!strings.Contains(err.Error(), "quilzo agent program tidy --pin") {
+		t.Fatalf("a replaced program: %v", err)
+	}
+
+	// Looked at, and pinned again, without declaring the rest over.
+	_, read = captureStdout(t)
+	err = cmdAgent(root, []string{"program", "tidy", "--pin"})
+	read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now, _ := agent.FileDigest(prog)
+	set, _ = loadAgents(root)
+	if p := set.Agents["tidy"].Program; p == nil || p.Digest != now || p.Command[0] != prog {
+		t.Fatalf("pinned again: %+v", p)
+	}
+	evs, _ := audit.Read(auditPath(root))
+	pinned := false
+	for _, e := range evs {
+		pinned = pinned || e.Action == "agent.program-set" && e.Detail["pinned"] == now
+	}
+	if !pinned {
+		t.Error("pinning again is not on the record")
+	}
+
+	// A declaration written before pins, or by hand, has none, and is not
+	// run until somebody pins it.
+	if err := updateAgents(root, func(s *agentSet) error {
+		m := s.Agents["tidy"]
+		m.Program = &agent.Program{Command: []string{prog}}
+		s.Agents["tidy"] = m
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := runAgentKeptBy(context.Background(), root, "tidy", "x", false, true, asAdmin("dana")); err == nil ||
+		!strings.Contains(err.Error(), "never pinned") {
+		t.Fatalf("an unpinned program: %v", err)
+	}
+
+	// A declaration naming a digest is held to it: a package's author
+	// pinned the file, and another one here is not the one reviewed.
+	set, _ = loadAgents(root)
+	m := set.Agents["tidy"]
+	m.Program = &agent.Program{Command: []string{prog}, Digest: reviewed}
+	if err := declareAgent(root, m, false, true, asAdmin("dana")); err == nil ||
+		!strings.Contains(err.Error(), "not the program that was reviewed") {
+		t.Fatalf("a declared digest the file does not have: %v", err)
+	}
+	// An edit that leaves the program alone keeps its pin, though the
+	// declaration it was made from carries none; and it does not pin one
+	// that has none, which is an administrator's to do.
+	m.Purpose, m.Program = "Tidy the pages, carefully", &agent.Program{Command: []string{prog}}
+	if err := declareAgent(root, m, false, false, asAdmin("dana")); err != nil {
+		t.Fatalf("an edit to the purpose: %v", err)
+	}
+	if set, _ = loadAgents(root); set.Agents["tidy"].Program.Digest != "" {
+		t.Fatal("an edit to the purpose pinned a program nobody pinned")
+	}
+	_, read = captureStdout(t)
+	err = cmdAgent(root, []string{"program", "tidy", "--pin"})
+	read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Purpose = "Tidy the pages, quickly"
+	if err := declareAgent(root, m, false, false, asAdmin("dana")); err != nil {
+		t.Fatalf("an edit to the purpose: %v", err)
+	}
+	set, _ = loadAgents(root)
+	if p := set.Agents["tidy"].Program; p == nil || p.Digest != now {
+		t.Fatalf("an edit to the purpose lost the pin: %+v", p)
+	}
+}

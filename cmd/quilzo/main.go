@@ -566,7 +566,9 @@ agents and integrations
   quilzo memory history AGENT KEY [--about P]   what a fact was, and when it changed
   quilzo memory forget [--about P]         every agent forgets you (or P, for an administrator)
   quilzo memory receipt [--about P] [-o F] what was forgotten, deleted or rewritten about you, proved
-  quilzo agent program NAME [--backend B] [--read DIR] [--env K=V] -- COMMAND   what its program is
+  quilzo agent program NAME [--backend B] [--read DIR] [--env K=V] -- COMMAND   what its program is,
+                                          pinned to the file as it is now
+  quilzo agent program NAME --pin          pin its program again, once the changed file is reviewed
   quilzo browser status | install | find  the browser agents use, fetching the pinned one, or
                                           finding the Chrome or Chromium this machine has
   quilzo browser grant NAME [--read H,..] [--write H,..] [--ops O,..] [--daily N] [--pictures] | --off

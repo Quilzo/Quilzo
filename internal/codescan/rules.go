@@ -37,7 +37,12 @@ var rules = []Rule{
 		Detail: "an inline event handler runs script. Under the generated " +
 			"Content-Security-Policy it will not execute, which means it is " +
 			"either dead markup or the policy is the only thing stopping it",
-		Fix: "move the behaviour into a script file served from this origin",
+		// The site serves no script of anybody's (the media library refuses
+		// .js and the policy is script-src 'none'), so the advice is what a
+		// page can do without one. It used to be "move the behaviour into a
+		// script file served from this origin", which nobody could follow.
+		Fix: "remove it: the site serves no script of yours, so it can never run; " +
+			"a link, a form or a details element does most of what a handler is for, with no script",
 	},
 	{
 		ID: "xss.script-in-content", Severity: Critical,

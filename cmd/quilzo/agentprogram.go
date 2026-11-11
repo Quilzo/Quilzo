@@ -138,6 +138,13 @@ func (p *programRun) serveUnix(path string, h http.Handler) error {
 func startProgram(ctx context.Context, root string, m agent.Manifest, sess *agent.Session,
 	caller *Caller, goal, runID string, catalog []mcp.Operation) (*programRun, error) {
 
+	// The file first, before anything is opened for it: a program that is
+	// not the one a person reviewed does not run, whatever box it would
+	// have run in. Its digest as it is now goes on the run's receipt.
+	digest, err := m.Program.Check(m.Name)
+	if err != nil {
+		return nil, err
+	}
 	backend := testBackend
 	if backend == nil {
 		var err error
@@ -175,7 +182,7 @@ func startProgram(ctx context.Context, root string, m agent.Manifest, sess *agen
 		return fail(err)
 	}
 
-	sess.DecidedBy(m.Program.Command[0])
+	sess.DecidedBy(m.Program.Command[0], digest)
 	version := "quilzo"
 	runServer := agentbox.RunServer(p.bridge, m, catalog, version)
 	endpoint := &mcp.Endpoint{
@@ -459,7 +466,8 @@ func within(dir, path string) bool {
 // Deciding what runs, with the run's reach, is an administrator's.
 func agentProgramCmd(root string, args []string) error {
 	usage := errors.New("quilzo agent program NAME [--backend native|openshell] [--image IMG] [--read DIR]... " +
-		"[--env K=V]... [--memory-mb N] -- COMMAND [ARG...]  |  quilzo agent program NAME --remove")
+		"[--env K=V]... [--memory-mb N] -- COMMAND [ARG...]  |  quilzo agent program NAME --pin  |  " +
+		"quilzo agent program NAME --remove")
 	rest := args
 	var command []string
 	for i, a := range rest {
@@ -473,6 +481,7 @@ func agentProgramCmd(root string, args []string) error {
 	image := fs.String("image", "", "what an OpenShell sandbox is made from")
 	memory := fs.Int("memory-mb", 0, "the most memory it may use")
 	remove := fs.Bool("remove", false, "the agent has no program any more")
+	pin := fs.Bool("pin", false, "pin its program to the file as it is now, once you have reviewed it")
 	var reads, envs multiFlag
 	fs.Var(&reads, "read", "a further path it may read (repeat)")
 	fs.Var(&envs, "env", "a setting K=V, never a secret (repeat)")
@@ -482,7 +491,7 @@ func agentProgramCmd(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	if len(pos) != 1 || (len(command) == 0 && !*remove) {
+	if len(pos) != 1 || (len(command) == 0 && !*remove && !*pin) {
 		return usage
 	}
 	name := pos[0]
@@ -499,13 +508,28 @@ func agentProgramCmd(root string, args []string) error {
 		return fmt.Errorf("no agent called %s is declared", name)
 	}
 	detail := map[string]string{"agent": name}
-	if *remove {
+	switch {
+	case *remove:
 		m.Program = nil
 		detail["removed"] = "true"
-	} else {
-		if len(command) == 0 {
-			return usage
+	case len(command) == 0:
+		// Pinned again, as declared: a file that changed since it was
+		// reviewed is refused until somebody has looked at it and says so
+		// here, without declaring the rest of the program over again.
+		if m.Program == nil {
+			return fmt.Errorf("%s declares no program to pin", name)
 		}
+		prog := *m.Program
+		if !prog.Pinnable() {
+			return fmt.Errorf("%s's program runs from its OpenShell image, which is what pins it", name)
+		}
+		if err := prog.Pin(); err != nil {
+			return err
+		}
+		m.Program = &prog
+		detail["program"] = clip(strings.Join(prog.Command, " "), 300)
+		detail["pinned"] = prog.Digest
+	default:
 		p := &agent.Program{Command: command, Backend: *backend, Image: *image, Read: reads, MemoryMB: *memory}
 		for _, kv := range envs {
 			k, v, ok := strings.Cut(kv, "=")
@@ -520,9 +544,16 @@ func agentProgramCmd(root string, args []string) error {
 		if err := clearOfStore(root, p); err != nil {
 			return err
 		}
+		// Setting it is reviewing it: the file is pinned as it is now.
+		if err := p.Pin(); err != nil {
+			return err
+		}
 		m.Program = p
 		detail["program"] = clip(strings.Join(command, " "), 300)
 		detail["backend"] = p.Backend
+		if p.Digest != "" {
+			detail["pinned"] = p.Digest
+		}
 	}
 	if err := m.ValidateWith(knownCapabilities(root), customKinds(root)); err != nil {
 		return err
@@ -533,6 +564,11 @@ func agentProgramCmd(root string, args []string) error {
 		stored, ok := set.Agents[name]
 		if !ok {
 			return fmt.Errorf("no agent called %s is declared", name)
+		}
+		// A pin is of the program that was read; one declared meanwhile
+		// is another program, and nobody has looked at it yet.
+		if detail["pinned"] != "" && len(command) == 0 && !sameProgram(unpinned(stored.Program), unpinned(m.Program)) {
+			return fmt.Errorf("%s's program was changed while it was being pinned; look at it again", name)
 		}
 		stored.Program = m.Program
 		if err := stored.ValidateWith(knownCapabilities(root), customKinds(root)); err != nil {
@@ -550,8 +586,62 @@ func agentProgramCmd(root string, args []string) error {
 		fmt.Printf("%s has no program; it runs by walking its manifest, or with --model\n", name)
 		return nil
 	}
-	fmt.Printf("%s runs %s in a box; quilzo agent run %s --program \"what it should do\"\n", name, command[0], name)
+	if p := m.Program; p.Digest != "" {
+		fmt.Printf("%s runs %s in a box, pinned to the file as it is now (%s): once it changes, the program\n"+
+			"  is refused until it is pinned again; quilzo agent run %s --program \"what it should do\"\n",
+			name, p.Command[0], p.Digest, name)
+		return nil
+	}
+	fmt.Printf("%s runs %s in a box; quilzo agent run %s --program \"what it should do\"\n", name, m.Program.Command[0], name)
 	return nil
+}
+
+// reviewProgram pins a program a person is declaring to its file as it is
+// now, or, when the declaration names a digest (a package's author pinned
+// it), refuses a file here that is not that one.
+func reviewProgram(name string, p *agent.Program) error {
+	if !p.Pinnable() {
+		return nil
+	}
+	if p.Digest == "" {
+		return p.Pin()
+	}
+	here, err := agent.FileDigest(p.Command[0])
+	if err != nil {
+		return fmt.Errorf("%s's program %s cannot be read to check it is the one declared: %w", name, p.Command[0], err)
+	}
+	if here != p.Digest {
+		return fmt.Errorf("%s's program is declared as %s, and the file at %s is %s: it is not the program "+
+			"that was reviewed", name, p.Digest, p.Command[0], here)
+	}
+	return nil
+}
+
+// keepPin is a declaration's program with the pin it already has when it
+// is otherwise unchanged: the declaration it was read from may not carry
+// one (a manifest file written before pins, or by hand), and dropping it
+// would make an edit to the purpose read as a new program to approve. A
+// copy, so the caller's declaration is not changed under it.
+func keepPin(was, p *agent.Program) *agent.Program {
+	if p == nil {
+		return nil
+	}
+	c := *p
+	if was != nil && c.Digest == "" && sameProgram(unpinned(was), &c) {
+		c.Digest = was.Digest
+	}
+	return &c
+}
+
+// unpinned is a program's declaration without its pin, to compare what
+// two declarations run apart from which file each was pinned to.
+func unpinned(p *agent.Program) *agent.Program {
+	if p == nil {
+		return nil
+	}
+	c := *p
+	c.Digest = ""
+	return &c
 }
 
 // sameProgram reports whether two declarations run the same thing.

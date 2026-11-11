@@ -62,7 +62,8 @@ type Source struct {
 	Kind SourceKind `json:"kind"`
 	// Name is the page, the ref, the tool or the delegate.
 	Name string `json:"name"`
-	// Where is the host a tool reached, empty for anything in this store.
+	// Where is the host a tool reached, empty for anything in this store,
+	// or the digest of the file a program decided from.
 	Where string `json:"where,omitempty"`
 }
 
@@ -78,6 +79,9 @@ func (s Source) String() string {
 	case FromDelegate:
 		return "delegated to " + s.Name
 	case FromProgram:
+		if s.Where != "" {
+			return "decided by the program " + s.Name + " (" + s.Where + ")"
+		}
 		return "decided by the program " + s.Name
 	case FromMemory:
 		return "the memory " + s.Name + ", kept by somebody else's run"
