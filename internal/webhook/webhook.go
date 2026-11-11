@@ -35,9 +35,12 @@
 // publication twice and nobody knowing why.
 //
 // The retries are spaced over a few seconds, which is what a receiver being
-// restarted needs, and no longer: a delivery that fails every attempt is
-// recorded as failed with the deliveries, for somebody to see, rather than
-// queued to be sent again later.
+// restarted needs, with a little randomness so that deliveries turned away
+// together are not retried together. A receiver can ask for longer with
+// Retry-After, up to MaxRetryAfter, and no longer: a delivery that fails
+// every attempt, or is asked to wait past that, is recorded as failed with
+// the deliveries, for somebody to see, rather than queued to be sent again
+// later.
 package webhook
 
 import (
@@ -49,6 +52,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
+	mrand "math/rand/v2"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -266,13 +272,30 @@ type Sender interface {
 	Post(url string, body []byte, headers map[string]string) (int, error)
 }
 
+// HeaderSender is a Sender that also gives back the receiver's response
+// headers, which is how Send reads a Retry-After. A Sender that is not one is
+// tried again on Send's own schedule alone.
+type HeaderSender interface {
+	PostHeaders(url string, body []byte, headers map[string]string) (int, http.Header, error)
+}
+
+// post makes one attempt, through PostHeaders where s has it.
+func post(s Sender, url string, body []byte, headers map[string]string) (int, http.Header, error) {
+	if hs, ok := s.(HeaderSender); ok {
+		return hs.PostHeaders(url, body, headers)
+	}
+	status, err := s.Post(url, body, headers)
+	return status, nil, err
+}
+
 // MaxAttempts bounds retries.
 //
 // Three. A receiver that is down for longer than a few seconds is down, and
 // retrying for an hour turns one outage into a queue somebody has to drain.
 const MaxAttempts = 3
 
-// retryAfter is how long Send waits before each attempt after the first.
+// retryAfter is how long Send waits, at least, before each attempt after the
+// first.
 //
 // The attempts used to be made back to back, all three within about 10 ms,
 // so a receiver restarting for a deploy — down for well under a second —
@@ -281,6 +304,54 @@ const MaxAttempts = 3
 // seconds MaxAttempts gives a receiver, and keep every attempt's timestamp
 // far inside Tolerance.
 var retryAfter = [MaxAttempts - 1]time.Duration{time.Second, 4 * time.Second}
+
+// backoff is Send's own wait before the attempt after this one: the schedule
+// plus up to half again, at random.
+//
+// Every delivery used to wait exactly the schedule, so a burst that a
+// receiver turned away at once came back at once and was turned away again.
+// The random part is added on top rather than taken off, because the floor
+// is what covers a restart.
+func backoff(attempt int) time.Duration {
+	d := retryAfter[attempt-1]
+	return d + mrand.N(max(d/2, 1))
+}
+
+// MaxRetryAfter is the longest Send waits because a receiver asked it to.
+//
+// A receiver that answers with Retry-After (RFC 9110, section 10.2.3), in
+// seconds or as a date, is waited for as long as it asked, when that is longer
+// than Send's own wait. One asking for longer than this is not tried again
+// sooner than it asked, which would be one more request to a receiver that
+// has said it is taking fewer: the delivery stops there and says why. Ten
+// seconds, as the REST client waits, keeps a publish waiting on its webhooks
+// for seconds rather than minutes, and every attempt far inside Tolerance.
+const MaxRetryAfter = 10 * time.Second
+
+// askedWait is how long a Retry-After value asks for, counted from at, and
+// whether it is one: a number of seconds, or a date in any of the three forms
+// RFC 9110 has a recipient accept. A date already past asks for no wait.
+//
+// at is the clock Send signs with, which runs behind the real one by however
+// long the requests took, so a date is waited for at least as long as asked.
+func askedWait(v string, at time.Time) (time.Duration, bool) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return 0, false
+	}
+	if strings.Trim(v, "0123456789") == "" {
+		s, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || s > math.MaxInt64/int64(time.Second) {
+			// Digits, and too many of them for a Duration: a very long time.
+			return math.MaxInt64, true
+		}
+		return time.Duration(s) * time.Second, true
+	}
+	if t, err := http.ParseTime(v); err == nil {
+		return max(t.Sub(at), 0), true
+	}
+	return 0, false
+}
 
 // Waiter is a Sender that does its own waiting between attempts, which is
 // how a test gives Send a clock of its own. Any other Sender is waited for
@@ -308,16 +379,15 @@ func Send(s Sender, e Endpoint, ev Event, now time.Time) []Delivery {
 	}
 
 	var out []Delivery
-	var waited time.Duration
+	var waited, wait time.Duration
 	for attempt := 1; attempt <= MaxAttempts; attempt++ {
 		if attempt > 1 {
-			d := retryAfter[attempt-2]
 			if w, ok := s.(Waiter); ok {
-				w.Wait(d)
+				w.Wait(wait)
 			} else {
-				time.Sleep(d)
+				time.Sleep(wait)
 			}
-			waited += d
+			waited += wait
 		}
 		// Signed for when it is sent: a retry carrying the first attempt's
 		// timestamp is a few seconds stale before it leaves.
@@ -329,7 +399,7 @@ func Send(s Sender, e Endpoint, ev Event, now time.Time) []Delivery {
 			"X-Quilzo-Timestamp": strconv.FormatInt(at.Unix(), 10),
 			"X-Quilzo-Signature": Sign(e.Secret, at, body),
 		}
-		status, err := s.Post(e.URL, body, headers)
+		status, answer, err := post(s, e.URL, body, headers)
 		d := Delivery{
 			ID: ev.ID, URL: e.URL, Type: ev.Type, Attempt: attempt,
 			Status: status, At: at.UTC().Format(time.RFC3339),
@@ -349,6 +419,21 @@ func Send(s Sender, e Endpoint, ev Event, now time.Time) []Delivery {
 		// fewer requests for a moment. Both were dropped on the first answer.
 		if status >= 400 && status < 500 && status != 408 && status != 429 {
 			return out
+		}
+		if attempt == MaxAttempts {
+			break
+		}
+		// Send's own wait, or the receiver's, when it asked for longer.
+		wait = backoff(attempt)
+		if asked, ok := askedWait(answer.Get("Retry-After"), at); ok {
+			if asked > MaxRetryAfter {
+				out[len(out)-1].Error = fmt.Sprintf("the receiver asked to be "+
+					"tried again in %s (Retry-After), longer than the %s a "+
+					"delivery waits, so it was not tried again",
+					asked.Round(time.Second), MaxRetryAfter)
+				return out
+			}
+			wait = max(wait, asked)
 		}
 	}
 	return out

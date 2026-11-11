@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/collab"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,12 +38,22 @@ type hookFile struct {
 type sender struct{ c *fetch.Client }
 
 func (s sender) Post(url string, body []byte, headers map[string]string) (int, error) {
+	status, _, err := s.PostHeaders(url, body, headers)
+	return status, err
+}
+
+// PostHeaders is Post with the receiver's response headers, which is how a
+// Retry-After reaches webhook.Send. Asserted below: a method that drifted
+// from the interface would leave Send reading no header, and nothing failing.
+func (s sender) PostHeaders(url string, body []byte, headers map[string]string) (int, http.Header, error) {
 	res, err := s.c.PostSigned(context.Background(), url, body, headers)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
-	return res.Status, nil
+	return res.Status, res.Header, nil
 }
+
+var _ webhook.HeaderSender = sender{}
 
 func cmdWebhook(root string, args []string) error {
 	if len(args) == 0 {
