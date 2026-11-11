@@ -454,11 +454,13 @@ func (s Store) Decide(id, by string, approve, alone bool, now time.Time) (Reques
 		if !r.Open(now) {
 			return fmt.Errorf("request %s is %s, not waiting", r.ID, stateWords(*r, now))
 		}
-		if approve && strings.EqualFold(r.By, by) && !alone {
+		// One rule for who is the same person, everywhere a second one is
+		// asked for (auth.SamePerson).
+		if approve && auth.SamePerson(r.By, by) && !alone {
 			return fmt.Errorf("request %s is yours: another administrator approves it", r.ID)
 		}
 		r.DecidedBy, r.DecidedAt = by, now.UTC()
-		r.Alone = alone && strings.EqualFold(r.By, by)
+		r.Alone = alone && auth.SamePerson(r.By, by)
 		switch {
 		case !approve:
 			r.State = Declined

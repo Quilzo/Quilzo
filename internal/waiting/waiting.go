@@ -340,7 +340,7 @@ func reviewItem(r Review, name string, now time.Time) (Item, bool) {
 		return Item{}, false
 	}
 	for _, a := range prop.Approvals {
-		if a.Content == prop.Content && a.By == name {
+		if a.Content == prop.Content && auth.SamePerson(a.By, name) {
 			return Item{}, false
 		}
 	}

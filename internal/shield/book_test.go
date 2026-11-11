@@ -210,3 +210,29 @@ func TestTheLibraryFollowsTheFile(t *testing.T) {
 		}
 	}
 }
+
+// The person who proposed a change is not its second person under another
+// spelling of their name, and approving alone is recorded as alone whatever
+// the case it was approved in.
+//
+// Decide compared the names exactly, so "dana" approved "Dana"'s change as
+// a second administrator, where a privileged request (internal/dual)
+// refused the same two names as one person.
+func TestTheProposerIsNotTheirOwnSecondPersonInAnotherCase(t *testing.T) {
+	root := t.TempDir()
+	pb, _ := inForce(t, root, "chatbot-flood")
+	pb.Mode = "act"
+	p, err := Propose(root, pb, false, "a test", "Dana", t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, by := range []string{"dana", " DANA", "mailto:dana"} {
+		if got, err := Decide(root, p.ID, by, true, false, t0); err == nil {
+			t.Fatalf("%q approved Dana's change as somebody else: %+v", by, got)
+		}
+	}
+	d, err := Decide(root, p.ID, "dana", true, true, t0)
+	if err != nil || !d.Alone {
+		t.Fatalf("the only administrator approving their own change: %+v %v", d, err)
+	}
+}

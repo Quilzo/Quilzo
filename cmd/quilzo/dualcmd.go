@@ -10,7 +10,6 @@ import (
 	"maps"
 	"path/filepath"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
@@ -209,7 +208,7 @@ func cmdPending(root string, args []string) error {
 		}
 		// Their own request, approved alone: not for a day after another
 		// administrator stopped being one.
-		if mine, gerr := store.Get(id); approve && gerr == nil && strings.EqualFold(mine.By, c.Name) {
+		if mine, gerr := store.Get(id); approve && gerr == nil && auth.SamePerson(mine.By, c.Name) {
 			if rm := aloneRefusal(root, c.Name, now); rm != nil {
 				return refuseAlone(root, c, rm, map[string]string{"request": mine.ID, "kind": mine.Kind})
 			}

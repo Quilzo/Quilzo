@@ -535,3 +535,47 @@ func TestAnAgentsCommitIsWrittenForThePersonWhoStartedTheRun(t *testing.T) {
 		t.Error("dana is not who asked for her run's change with a count set, or is without one")
 	}
 }
+
+// The author is the author under any spelling of their name, and so is one
+// approver clicking twice: another case, spaces around it or a mailto: in
+// front is the same person, refused as the author and counted once.
+//
+// Evaluate, Approve and Requested compared names exactly, so "dana"
+// approved "Dana"'s change as the second pair of eyes, and "Sam" and "sam"
+// were two approvals, where a privileged request (internal/dual) refused
+// the same two names as one person.
+func TestTheAuthorIsRecognisedWhateverTheCaseOfTheirName(t *testing.T) {
+	one := Policy{Required: 1}
+	prop := Proposal{Content: "aaa", Author: "Dana", AuthorKind: "human"}
+	for _, by := range []string{"dana", " DANA ", "mailto:dana"} {
+		if err := prop.Approve(by, "", now); err == nil {
+			t.Fatalf("%q approved Dana's change", by)
+		}
+		if !one.Requested(prop, by) {
+			t.Errorf("%q is not who asked for Dana's change", by)
+		}
+	}
+	prop.Approvals = append(prop.Approvals, Approval{Content: "aaa", By: "dana", At: now.Unix()})
+	if d := one.Evaluate(prop, people, now); d.Allowed {
+		t.Fatalf("dana's approval of Dana's change counted: %+v", d)
+	}
+
+	two := Policy{Required: 2}
+	prop = Proposal{Content: "aaa", Author: "dana", AuthorKind: "human"}
+	if err := prop.Approve("Sam", "", now); err != nil {
+		t.Fatal(err)
+	}
+	if err := prop.Approve("sam", "", now); err == nil {
+		t.Error("sam approved again as somebody else")
+	}
+	prop.Approvals = append(prop.Approvals, Approval{Content: "aaa", By: "sam", At: now.Unix()})
+	if d := two.Evaluate(prop, people, now); d.Allowed || d.Have != 1 {
+		t.Fatalf("Sam and sam counted as two people: %+v", d)
+	}
+
+	// Whoever a model wrote it for, likewise.
+	written := Proposal{Content: "aaa", Author: "agent/tidy", AuthorKind: "ai", OnBehalfOf: "Dana"}
+	if !one.Requested(written, "dana") {
+		t.Error("dana is not who asked for what a model wrote for Dana")
+	}
+}

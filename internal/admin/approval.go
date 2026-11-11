@@ -233,7 +233,7 @@ func (s *Server) approvalFor(p principal, draft string) approvalState {
 	switch {
 	case !s.Policy.Evaluate(p.Name, auth.ActPublish, "/").Allowed:
 		st.Why = "Approving is part of publishing, and you cannot publish here."
-	case p.Name == prop.Author:
+	case auth.SamePerson(p.Name, prop.Author):
 		// The rule that makes the whole thing worth having. Somebody approving
 		// their own work satisfies a counter and reviews nothing.
 		st.Why = "You proposed this, so you cannot also approve it."
@@ -254,7 +254,7 @@ func (s *Server) approvalFor(p principal, draft string) approvalState {
 	default:
 		already := false
 		for _, a := range st.Approvals {
-			if a.By == p.Name {
+			if auth.SamePerson(a.By, p.Name) {
 				already = true
 			}
 		}

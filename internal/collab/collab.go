@@ -56,6 +56,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/auth"
 )
 
 // Conflict describes a write that was based on something no longer current.
@@ -367,10 +369,12 @@ func (p Policy) Evaluate(prop Proposal, kindOf KindOf, now time.Time) Decision {
 		if !p.Counts(a.By) {
 			continue
 		}
-		if seen[a.By] {
-			continue // one person, one approval, however many times they click
+		// One person, one approval, however many times they click and
+		// however they spell their name (auth.PersonKey).
+		if seen[auth.PersonKey(a.By)] {
+			continue
 		}
-		seen[a.By] = true
+		seen[auth.PersonKey(a.By)] = true
 		valid = append(valid, a)
 		if kindOf != nil && kindOf(a.By) == "human" {
 			humans++
@@ -382,7 +386,7 @@ func (p Policy) Evaluate(prop Proposal, kindOf KindOf, now time.Time) Decision {
 	// broken rather than as the rule doing its job.
 	asked := ""
 	for _, a := range prop.Approvals {
-		if a.By == prop.Author && a.Content == prop.Content {
+		if auth.SamePerson(a.By, prop.Author) && a.Content == prop.Content {
 			return Decision{
 				Have: len(valid), Need: p.Required,
 				Reason: fmt.Sprintf(
@@ -454,7 +458,7 @@ func (p Policy) Evaluate(prop Proposal, kindOf KindOf, now time.Time) Decision {
 				len(valid), p.Required, p.Required-len(valid)),
 		}
 		for _, who := range p.Approvers {
-			if !seen[who] && !p.Requested(prop, who) && !slices.Contains(d.Missing, who) {
+			if !seen[auth.PersonKey(who)] && !p.Requested(prop, who) && !slices.Contains(d.Missing, who) {
 				d.Missing = append(d.Missing, who)
 			}
 		}
@@ -484,11 +488,14 @@ func (prop *Proposal) Approve(by, note string, now time.Time) error {
 	if strings.TrimSpace(by) == "" {
 		return fmt.Errorf("an approval needs a name")
 	}
-	if by == prop.Author {
+	// The author, and an approver who has, under any spelling of their
+	// name (auth.SamePerson): compared exactly, "dana" approved "Dana"'s
+	// change, and "Sam" and "sam" were two approvals.
+	if auth.SamePerson(by, prop.Author) {
 		return fmt.Errorf("%s wrote this change and cannot approve it", by)
 	}
 	for _, a := range prop.Approvals {
-		if a.By == by && a.Content == prop.Content {
+		if auth.SamePerson(a.By, by) && a.Content == prop.Content {
 			return fmt.Errorf("%s has already approved this", by)
 		}
 	}

@@ -126,7 +126,7 @@ func stepWrites(root string, m agent.Manifest, tool string) bool {
 // secondPerson decides whether caller may let a run's waiting step go
 // ahead given who started it, and whether they would be doing it alone.
 func secondPerson(root string, caller *Caller, rec agent.Record) (alone bool, err error) {
-	if !strings.EqualFold(rec.By, caller.Name) {
+	if !auth.SamePerson(rec.By, caller.Name) {
 		return false, nil
 	}
 	class, risky := riskyStep(root, rec)
@@ -178,7 +178,7 @@ func othersWho(root string, pol *auth.Policy, may func(string) bool, exclude ...
 		}
 		excluded := false
 		for _, x := range exclude {
-			excluded = excluded || strings.EqualFold(x, name)
+			excluded = excluded || auth.SamePerson(x, name)
 		}
 		if !excluded && may(name) {
 			out = append(out, name)
@@ -240,7 +240,8 @@ func secondPersonForDraft(root string, s *store.Store, prop collab.Proposal, c *
 		return false, nil
 	}
 	people := prop.ForWhom()
-	forMe := slices.Contains(people, by) && prop.Author != by
+	forMe := slices.ContainsFunc(people, func(p string) bool { return auth.SamePerson(p, by) }) &&
+		!auth.SamePerson(prop.Author, by)
 	if forMe {
 		pol, err := loadApprovalPolicy(root)
 		if err != nil {
@@ -257,7 +258,7 @@ func secondPersonForDraft(root string, s *store.Store, prop collab.Proposal, c *
 	// record their client wrote, the commit does.
 	mine := forMe
 	for _, st := range starters {
-		mine = mine || strings.EqualFold(st, by)
+		mine = mine || auth.SamePerson(st, by)
 	}
 	if !mine {
 		return false, nil

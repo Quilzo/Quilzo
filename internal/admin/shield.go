@@ -146,7 +146,7 @@ func (s *Server) shieldData(data map[string]any, p principal, try, daysParam str
 		waiting[q.Playbook.Name] = true
 		releaseWaiting = releaseWaiting || q.Release
 		pending = append(pending, shieldProposal{Proposal: q, What: shieldProposalWords(q),
-			When: q.At.UTC().Format("2 Jan 15:04 UTC"), Mine: strings.EqualFold(q.By, p.Name)})
+			When: q.At.UTC().Format("2 Jan 15:04 UTC"), Mine: auth.SamePerson(q.By, p.Name)})
 	}
 	data["Pending"], data["ReleaseWaiting"] = pending, releaseWaiting
 	// How often each playbook responded, and when last: a playbook that
@@ -488,7 +488,7 @@ func (s *Server) handleShieldAct(w http.ResponseWriter, r *http.Request) {
 		// Their own change, approved alone: not for a day after another
 		// administrator stopped being one.
 		if r.FormValue("do") == "approve" {
-			if rm := s.aloneRefusal(p.Name, now); rm != nil && shieldProposedBy(root, id) == p.Name {
+			if rm := s.aloneRefusal(p.Name, now); rm != nil && auth.SamePerson(shieldProposedBy(root, id), p.Name) {
 				back("e", s.refuseAlone(p, rm, map[string]string{"proposal": id}))
 				return
 			}

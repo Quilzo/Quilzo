@@ -257,3 +257,33 @@ func TestAFailedSaveDoesNotInventAProposal(t *testing.T) {
 }
 
 var errSaveFailed = fmt.Errorf("the store is read-only")
+
+// The review screen does not offer the author their own change to approve
+// under another spelling of their name, nor a second approval to somebody
+// who has given one, as the rule that counts approvals does not take them
+// (collab.Policy, auth.SamePerson).
+//
+// It compared the names exactly, so "editor" was offered "Editor"'s change
+// to approve as the second pair of eyes.
+func TestTheReviewScreenKnowsTheAuthorWhateverTheCaseOfTheirName(t *testing.T) {
+	srv, _ := setup(t)
+	if _, err := site.SaveDraft(srv.Store, map[string]any{"index": map[string]any{"title": "New"}},
+		"a person's change", "Editor"); err != nil {
+		t.Fatal(err)
+	}
+	draft := srv.Store.GetRef(site.RefDraft)
+	prop := &collab.Proposal{Content: draft, Author: "Editor", AuthorKind: "human"}
+	srv.Approvals = &Approvals{
+		Policy:  func() (collab.Policy, error) { return collab.Policy{Required: 1}, nil },
+		Current: func() (*collab.Proposal, error) { return prop, nil },
+		Save:    func(p *collab.Proposal) error { prop = p; return nil },
+	}
+	if st := srv.approvalFor(principal{Name: "editor"}, draft); st.CanApprove || !strings.Contains(st.Why, "You proposed this") {
+		t.Fatalf("editor was offered Editor's change to approve: %+v", st)
+	}
+	prop.Author = "pat"
+	prop.Approvals = []collab.Approval{{Content: draft, By: "Editor"}}
+	if st := srv.approvalFor(principal{Name: "editor"}, draft); st.CanApprove || !strings.Contains(st.Why, "already approved") {
+		t.Fatalf("editor was offered a second approval after Editor's: %+v", st)
+	}
+}
