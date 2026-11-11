@@ -5,6 +5,7 @@ package collab
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -63,7 +64,10 @@ func MachineWrote(message string) bool {
 // The machine interface and the writing assistant commit under the name of
 // the person they act for: a change a client makes over MCP is recorded as
 // by the person whose token it holds, and one `quilzo assist --author dana`
-// makes as by dana. An agent run commits as the agent ("agent/NAME").
+// makes as by dana. An agent run commits as the agent ("agent/NAME"), and
+// names the person who started the run in its message (AgentMessage): what
+// a model does for a person is the model's, and that person is who asked
+// for it, whichever way it reached the draft.
 //
 // Read as written by that person, what dana's client wrote was dana's own
 // work: she was told "dana wrote this change and cannot approve it", it was
@@ -100,13 +104,51 @@ func machineFor(message, author string) (writer, called string, ok bool) {
 
 // WrittenFor reads who wrote a commit, as a proposal names its author, and
 // the person a machine wrote it for: the machine and the person it is
-// recorded under, for a commit a machine made for somebody, and otherwise
-// the author it is recorded under and nobody.
+// recorded under, for a commit a machine made for somebody; the agent and
+// the person who started its run, for an agent's (AgentMessage); and
+// otherwise the author it is recorded under and nobody.
 func WrittenFor(message, author string) (writer, person string) {
 	if w, _, ok := machineFor(message, author); ok {
 		return w, author
 	}
+	if p := agentFor(message, author); p != "" {
+		return author, p
+	}
 	return author, ""
+}
+
+// AgentMessage is the message of a commit an agent run makes: the agent,
+// the page, and the person who started the run, as its record names them.
+//
+// An agent commits as itself ("agent/NAME"), so the commit named nobody it
+// was written for, and with a count of approvals set the person who
+// started the run approved what it wrote as though it were somebody else's.
+// The person goes in the message, which every surface that asks who wrote
+// a commit already reads (MachineWrote), and is read back only from a
+// commit the agent it names is recorded as making (agentFor). Made here,
+// where it is read, so the two cannot come to disagree.
+func AgentMessage(agent, page, person string) string {
+	msg := AgentPrefix + agent + " wrote " + page
+	if person != "" {
+		msg += " for " + person
+	}
+	return msg
+}
+
+// agentFor is the person an agent's commit says its run was started by, or
+// nobody: an older commit says none, and a commit whose message names an
+// agent other than the one it is recorded as made by is not that agent's.
+func agentFor(message, author string) string {
+	rest, ok := strings.CutPrefix(message, AgentPrefix)
+	if !ok {
+		return ""
+	}
+	name, after, ok := strings.Cut(rest, " wrote ")
+	if !ok || author != "agent/"+name {
+		return ""
+	}
+	_, person, _ := strings.Cut(after, " for ")
+	return strings.TrimSpace(person)
 }
 
 // AuthorKindFor decides what a proposal's AuthorKind should be.
@@ -149,6 +191,12 @@ type MachineChange struct {
 	// asks a person: a history too long to read, or one holding a commit
 	// that cannot be, is no evidence that a person wrote it.
 	Unread string `json:"unread,omitempty"`
+	// People are everybody a machine wrote for (WrittenFor) among all the
+	// commits the publish would put live, newest first, and not only the
+	// person this one was made for: what a proposal names as who asked for
+	// it (Proposal.MarkMachine). Named by this commit alone, a change dana's
+	// client made was hers to approve once lee's client wrote after it.
+	People []string `json:"people,omitempty"`
 }
 
 // Describe says, for whoever is refused, which change a person is being
@@ -194,37 +242,68 @@ func (m MachineChange) writtenBy() string {
 
 // MarkMachine records on a proposal that a machine wrote some of what it
 // would put live, which makes it AI-authored whoever proposed it, and for
-// whom, when the change says. A nil change leaves the proposal as it was:
-// finding no machine's commit is no reason to call a proposal a person's
-// when a model is what proposed it.
+// whom, when the changes say: every person, added to whoever the proposal
+// already names and never in their place. A nil change leaves the
+// proposal as it was: finding no machine's commit is no reason to call a
+// proposal a person's when a model is what proposed it.
 func (prop *Proposal) MarkMachine(m *MachineChange) {
 	if m == nil {
 		return
 	}
 	prop.AuthorKind = "ai"
 	prop.Machine = m
-	if prop.OnBehalfOf == "" {
-		prop.OnBehalfOf = m.For()
+	people := m.People
+	if len(people) == 0 && m.For() != "" {
+		// A change worked out by somebody who named only its own person.
+		people = []string{m.For()}
+	}
+	for _, person := range people {
+		switch {
+		case person == "" || slices.Contains(prop.ForWhom(), person):
+		case prop.OnBehalfOf == "":
+			prop.OnBehalfOf = person
+		default:
+			// Clipped, so a copy of the proposal marked here (the review
+			// screen judges one) never writes into the list it was copied
+			// from.
+			prop.AlsoOnBehalfOf = append(slices.Clip(prop.AlsoOnBehalfOf), person)
+		}
 	}
 }
 
-// WrittenBy is who a refusal says wrote the change made for OnBehalfOf:
+// ForWhom is everybody a machine wrote some of the change for: OnBehalfOf,
+// and the others after it.
+func (prop Proposal) ForWhom() []string {
+	var out []string
+	if prop.OnBehalfOf != "" {
+		out = append(out, prop.OnBehalfOf)
+	}
+	for _, p := range prop.AlsoOnBehalfOf {
+		if p != "" && !slices.Contains(out, p) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// WrittenBy is who a refusal says wrote the change made for person:
 // "dana's client", or a model working for them when which is not known.
-func (prop Proposal) WrittenBy() string {
-	if prop.Machine != nil && prop.Machine.For() == prop.OnBehalfOf {
+func (prop Proposal) WrittenBy(person string) string {
+	if prop.Machine != nil && prop.Machine.For() == person {
 		return prop.Machine.writtenBy()
 	}
-	return "a model working for " + prop.OnBehalfOf
+	return "a model working for " + person
 }
 
 // Requested reports whether by asked for the change rather than may approve
-// it: its author, always, and the person a machine wrote it for wherever a
-// count of approvals is set, as they would be for their own work. Where
-// none is, the one approval asked for is a person's reading of a model's
-// work, and the person it was written for reading it is that.
+// it: its author, always, and anybody a machine wrote some of it for
+// (ForWhom) wherever a count of approvals is set, as they would be for
+// their own work. Where none is, the one approval asked for is a person's
+// reading of a model's work, and a person it was written for reading it is
+// that.
 func (p Policy) Requested(prop Proposal, by string) bool {
 	if by == prop.Author {
 		return true
 	}
-	return by != "" && by == prop.OnBehalfOf && max(p.Required, p.RequiredHumans) > 0
+	return by != "" && max(p.Required, p.RequiredHumans) > 0 && slices.Contains(prop.ForWhom(), by)
 }

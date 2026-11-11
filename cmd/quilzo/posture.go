@@ -146,9 +146,18 @@ func Observe(root, tplDir string, srv posture.ServerFacts) posture.State {
 		// Reported as three states rather than a boolean, because "configured
 		// and not answering" is worse than "not configured" and collapsing them
 		// would hide the worse one.
+		//
+		// Not answering is a socket nothing answers on, and no socket where
+		// this account cannot write the log itself (mayWriteLog), as under
+		// the reference compose with logd stopped. Neither was asked: with
+		// no socket the scan said the CMS opens the log directly, of a log
+		// it could not open, and a socket left behind read as a writer in
+		// force while every record sent to it was refused.
 		switch sock := logSocketPath(root); {
-		case !fileExists(sock):
+		case !fileExists(sock) && mayWriteLog(auditPath(root)):
 			s.Extra["log_writer"] = "none"
+		case !fileExists(sock) || logd.Reachable(sock) != nil:
+			s.Extra["log_writer"] = "unreachable"
 		default:
 			if ok, _ := logd.CheckOwnership(auditPath(root), os.Geteuid()); ok {
 				s.Extra["log_writer"] = "separated"

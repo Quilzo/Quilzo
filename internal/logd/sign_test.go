@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -405,8 +406,8 @@ func TestHeadsAreComputedOneAtATime(t *testing.T) {
 // submissions from those accounts only. Without a list any account that
 // can reach the socket may submit, as it always could, so that stays.
 func TestAnAccountTheWriterCannotNameIsRefusedWhereOnlySomeMay(t *testing.T) {
-	askPeer = func(net.Conn) (int, error) { return -1, errors.New("no peer credentials on this platform") }
-	t.Cleanup(func() { askPeer = peerUID })
+	askPeer = func(net.Conn) (int, int, error) { return -1, -1, errors.New("no peer credentials on this platform") }
+	t.Cleanup(func() { askPeer = peerCreds })
 	rec := Submission{Action: "publish", Resource: "/", Outcome: "success",
 		Principal: "dana", Kind: "human", Verified: true}
 
@@ -427,5 +428,125 @@ func TestAnAccountTheWriterCannotNameIsRefusedWhereOnlySomeMay(t *testing.T) {
 	open, _, _, _ := signingWriter(t, 0)
 	if _, err := Submit(open, rec); err != nil {
 		t.Errorf("a writer with no list refused an account it could not name: %v", err)
+	}
+}
+
+// The writer takes records from every account that may submit, and signs
+// only for those named to ask for a signature: by uid, and by the group the
+// account connected as.
+//
+// It signed for every account that could submit. In the reference compose
+// the public site and the admin are one uid, so anything that could run
+// code as the public site could have the writer sign a feature package or
+// a research plan with the log's key.
+func TestOnlyTheAccountsNamedMayAskForASignature(t *testing.T) {
+	const account, admins, site = 65532, 65532, 65531
+	// Who connects is changed between connections, never askPeer itself,
+	// which the writers' goroutines read: set once, before any is started.
+	type peer struct {
+		uid, gid int
+		err      error
+	}
+	var who atomic.Pointer[peer]
+	who.Store(&peer{uid: account, gid: site})
+	askPeer = func(net.Conn) (int, int, error) { p := who.Load(); return p.uid, p.gid, p.err }
+	t.Cleanup(func() { askPeer = peerCreds })
+	as := func(uid, gid int) { who.Store(&peer{uid: uid, gid: gid}) }
+	rec := Submission{Action: "publish", Resource: "/", Outcome: "success",
+		Principal: "dana", Kind: "human", Verified: true}
+	msg := []byte("sha256:0123")
+
+	refused := make(chan string, 8)
+	sock, _, signer, path := signingWriter(t, 0, func(s *Server) {
+		s.AllowUID, s.SignGID = []int{account}, []int{admins}
+		s.OnRefusal = func(reason string, uid int) { refused <- reason }
+	})
+
+	// The site: the admin's uid, a group of its own. Its records are
+	// written; it is given no signature.
+	as(account, site)
+	if _, err := Submit(sock, rec); err != nil {
+		t.Fatalf("the site's record was refused: %v", err)
+	}
+	if _, err := SignStatement(sock, testContext, msg); err == nil {
+		t.Error("the site had the writer sign a statement")
+	} else {
+		select {
+		case why := <-refused:
+			if !strings.Contains(why, "may not ask for a signature") {
+				t.Errorf("the refusal says %q", why)
+			}
+		case <-time.After(5 * time.Second):
+			t.Error("the refusal was not reported")
+		}
+	}
+	if _, err := SignHead(sock, 1); err == nil {
+		t.Error("the site had the writer sign a head")
+	}
+
+	// The admin: the same uid, the group named.
+	as(account, admins)
+	st, err := SignStatement(sock, testContext, msg)
+	if err != nil {
+		t.Fatalf("the admin was refused a statement: %v", err)
+	}
+	if err := signer.Verifier().VerifyStatement(testContext, msg, *st); err != nil {
+		t.Error(err)
+	}
+	if _, err := SignHead(sock, 1); err != nil {
+		t.Errorf("the admin was refused a head: %v", err)
+	}
+	if events, _ := audit.Read(path); len(events) != 1 {
+		t.Errorf("the log holds %d entries, not the site's one record", len(events))
+	}
+
+	// By uid as well: an account that may submit, not named to sign.
+	byUID, _, _, _ := signingWriter(t, 0, func(s *Server) { s.AllowUID, s.SignUID = []int{account, 1000}, []int{1000} })
+	if _, err := SignStatement(byUID, testContext, msg); err == nil {
+		t.Error("an account --sign-uid does not name had a statement signed")
+	}
+	as(1000, 1000)
+	if _, err := SignStatement(byUID, testContext, msg); err != nil {
+		t.Errorf("the account --sign-uid names was refused: %v", err)
+	}
+
+	// With neither named, every account that may submit may ask, as before.
+	as(account, site)
+	open, _, _, _ := signingWriter(t, 0, func(s *Server) { s.AllowUID = []int{account} })
+	if _, err := SignStatement(open, testContext, msg); err != nil {
+		t.Errorf("with no list, an account that may submit was refused a statement: %v", err)
+	}
+
+	// And an account nobody can name is refused a signature where only some
+	// may ask, though any account may submit.
+	who.Store(&peer{uid: -1, gid: -1, err: errors.New("no peer credentials on this platform")})
+	unnamed, _, _, _ := signingWriter(t, 0, func(s *Server) { s.SignGID = []int{admins} })
+	if _, err := Submit(unnamed, rec); err != nil {
+		t.Errorf("with no --allow-uid, a record from an account nobody could name was refused: %v", err)
+	}
+	if _, err := SignStatement(unnamed, testContext, msg); err == nil {
+		t.Error("an account nobody could name had a statement signed past --sign-gid")
+	}
+}
+
+// The group is the kernel's answer, as the uid is: this process, connecting
+// as its own group, is signed for where that group is named and refused
+// where another is.
+func TestTheGroupAskingIsTheOneTheKernelNames(t *testing.T) {
+	if _, _, err := peerCreds(nil); err != nil && strings.Contains(err.Error(), "only be read from the kernel on Linux") {
+		t.Skip(err)
+	}
+	msg := []byte("sha256:0123")
+	mine, _, _, _ := signingWriter(t, 0, func(s *Server) { s.SignGID = []int{os.Getegid()} })
+	if _, err := SignStatement(mine, testContext, msg); err != nil {
+		t.Errorf("connecting as group %d, named, was refused: %v", os.Getegid(), err)
+	}
+	other, _, _, _ := signingWriter(t, 0, func(s *Server) { s.SignGID = []int{os.Getegid() + 1} })
+	if _, err := SignStatement(other, testContext, msg); err == nil {
+		t.Errorf("connecting as group %d, with only %d named, had a statement signed", os.Getegid(), os.Getegid()+1)
+	}
+	if _, err := Submit(other, Submission{Action: "publish", Resource: "/", Outcome: "success",
+		Principal: "dana", Kind: "human", Verified: true}); err != nil {
+		t.Errorf("an account that may not ask for a signature could not submit a record: %v", err)
 	}
 }

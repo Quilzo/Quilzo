@@ -457,7 +457,9 @@ func fillSite(root string, values map[string]string, caller *Caller) (int, []str
 	if caller.Kind == audit.KindAI {
 		msg = "mcp: " + msg
 	}
-	if err := saveDraft(root, s, pages, msg, caller.Name, base); err != nil {
+	// Under the person it is written for: in a run, whoever started it
+	// (writesFor), and not whoever let its fill go ahead.
+	if err := saveDraft(root, s, pages, msg, caller.writesFor(), base); err != nil {
 		return 0, nil, err
 	}
 	if err := markFilled(root, s, changed, caller); err != nil {

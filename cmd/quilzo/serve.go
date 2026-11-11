@@ -238,8 +238,7 @@ func cmdServe(root string, args []string) error {
 	// Smart lockout for the failures that belong to an account, kept in the
 	// store so every process and every restart counts the same failures.
 	srv.Lockout = lockoutStore(root)
-	srv.Dual = &admin.Dual{Store: dualStore(root),
-		Apply: func(r dual.Request, by string) error { return applyDual(root, r, by) }}
+	srv.Dual = dualHooks(root)
 	srv.SessionPlace, srv.SessionMovedTo, srv.Reported, srv.SignInSignal = sessionHooks(root)
 	srv.SignIns = &admin.SignInHistory{
 		Recent: (&travel.Store{Dir: signinsPath(root)}).Since,
@@ -1413,6 +1412,29 @@ func retentionJob(root string) (upkeep.Job, bool) {
 			return n + gone, err
 		},
 	}, true
+}
+
+// dualHooks gives the admin the requests that wait for a second
+// administrator, and the way to make one it has no part in.
+//
+// A function of its own, as approvalsHooks is, so a test can approve on
+// People through the wiring the server really uses.
+func dualHooks(root string) *admin.Dual {
+	return &admin.Dual{Store: dualStore(root),
+		Apply: func(r dual.Request, by string) (string, error) {
+			// Where the head keys were, for a move of the audit log: whoever
+			// approves it on People is told which keys check what was signed
+			// before it, as `quilzo pending approve` says (keysLeftBehind).
+			// The screen said only that it was approved.
+			oldKeys := headKeysPath(root)
+			if err := applyDual(root, r, by); err != nil {
+				return "", err
+			}
+			if r.Kind == dual.AuditLog {
+				return keysLeftBehind(oldKeys, auditDir(root)), nil
+			}
+			return "", nil
+		}}
 }
 
 // approvalsHooks gives the admin the approval policy and the proposals the

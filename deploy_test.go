@@ -478,6 +478,63 @@ func TestComposeKeepsTheAuditLogOutOfTheCMSsReach(t *testing.T) {
 	}
 }
 
+// Only the admin may have the log writer sign; the public site still hands
+// it records.
+//
+// The site and the admin both ran as nonroot, uid and group 65532, and the
+// writer took records and requests for a signature alike from that
+// account. Anything that could run code as the public site could have it
+// sign a feature package or a research plan with the log's key, under the
+// contexts it signs for the admin. The two share the store, so they cannot
+// be two uids without the store's every file changing hands (deferred, and
+// said in compose.yaml); the site connects in a group of its own instead,
+// in the writer's group beside it to reach the socket and read the log,
+// and the writer signs for the admin's group only.
+func TestComposeLetsOnlyTheAdminAskTheWriterToSign(t *testing.T) {
+	svc := quilzoServices(t)
+	var logd map[string]any
+	for _, s := range svc {
+		if c := strs(s["command"]); len(c) > 0 && c[0] == "logd" {
+			logd = s
+		}
+	}
+	if logd == nil {
+		t.Fatal("no service runs `quilzo logd`")
+	}
+	command := strs(logd["command"])
+	account := func(name string) (uid, gid string) {
+		// The image runs as nonroot, whose group is its uid, where a
+		// service names no user of its own.
+		u, _ := svc[name]["user"].(string)
+		if u == "" {
+			u = cmsUID + ":" + cmsUID
+		}
+		uid, gid, _ = strings.Cut(u, ":")
+		if gid == "" {
+			gid = uid
+		}
+		return uid, gid
+	}
+	_, adminGroup := account("admin")
+	siteUID, siteGroup := account("site")
+	if got := flagValue(command, "sign-gid"); got != adminGroup {
+		t.Errorf("the writer signs for group %q; only the admin's, %s, should ask it to", got, adminGroup)
+	}
+	if siteGroup == adminGroup {
+		t.Errorf("the site connects as group %s, the admin's, so it may ask the writer to sign anything "+
+			"the admin may", siteGroup)
+	}
+	if !slices.Contains(strings.Split(flagValue(command, "allow-uid"), ","), siteUID) {
+		t.Errorf("the writer no longer takes the site's records (uid %s)", siteUID)
+	}
+	logdUser, _ := logd["user"].(string)
+	_, logGroup, _ := strings.Cut(logdUser, ":")
+	if !slices.Contains(strs(svc["site"]["group_add"]), logGroup) {
+		t.Errorf("the site is not in the writer's group %s, so it can neither reach the socket nor read the log",
+			logGroup)
+	}
+}
+
 // The admin of the reference compose could not sign a head: it made the
 // head key in the audit volume it mounts read-only, so `auditlog head
 // --save`, every receipt and the audit stream exited 1 with "read-only file

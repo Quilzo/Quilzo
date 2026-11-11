@@ -1044,6 +1044,21 @@ every head it is handed against the root it read itself and against
 `head.pub.json`, and refuses one that disagrees with either rather than
 putting it in a receipt.
 
+Every account that may submit a record could ask for a signature too, and a
+record and a signature are not the same trust: the public site submits
+records, and a feature package or a research plan the writer signs is taken
+as this site's own. `--sign-uid` names the uids that may ask, and
+`--sign-gid` the groups an account must connect as; with neither, every
+account that may submit may ask, as before. The reference compose runs the
+site as the admin's uid, since they share the store and every file in it is
+that account's, in a group of its own (65531) with the writer's group
+beside it for its records, and the writer signs for the admin's group
+(65532) only. A uid of the site's own would take every file in the store
+changing hands, and is not done. The group is the one the site connects as,
+which it could change to the admin's, being a member of it, by running a
+set-group-ID program it made itself; it cannot while it runs with
+no-new-privileges, as every Quilzo container in the reference compose does.
+
 The writer signs only with a key that is its own alone: `head.key` owned by
 its account, at 0600. A key another account made, or one other accounts can
 read, is one somebody else may have kept a copy of, and could sign a head
@@ -1784,7 +1799,13 @@ Two consequences worth stating plainly:
 - **A model cannot approve its own work.** Not a rule bolted on for AI. Approvals
   must come from principals and self-approval is forbidden, and a model is not a
   principal. The rule that stops an editor rubber-stamping herself is the rule
-  that stops a model shipping unreviewed.
+  that stops a model shipping unreviewed. What a run writes is the agent's,
+  made for the person who started the run, as the run's record names them
+  rather than whoever let one of its steps go ahead, and each commit says so.
+  With `review.required_approvals` or `approval.required_humans` set, that
+  person asked for the change, as they would their own, and somebody else
+  approves it; with neither set, they may approve it when nobody else may
+  publish, as before.
 
 This follows CaMeL ([arXiv:2503.18813](https://arxiv.org/abs/2503.18813)), which
 is where the research settled: enforce policy outside the model with a

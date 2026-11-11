@@ -1721,6 +1721,10 @@ var rules = []Rule{
 				return nil
 			case "unreachable":
 				return []Finding{{
+					// Its own title: under the rule's, a writer that is
+					// stopped read as the CMS writing its own log, of a
+					// log the CMS cannot open.
+					Title:    "The audit log's writer is not answering",
 					Severity: High,
 					Detail: "a log writer is configured and not answering, so " +
 						"actions are being taken and not recorded",

@@ -412,8 +412,8 @@ func reviewStatus(root string) error {
 	}
 
 	by := prop.Author
-	if prop.OnBehalfOf != "" {
-		by += " for " + prop.OnBehalfOf
+	if people := prop.ForWhom(); len(people) > 0 {
+		by += " for " + strings.Join(people, ", ")
 	}
 	w.Human("%sdraft %s%s by %s (%s)\n", bold, short(prop.Content), reset,
 		by, prop.AuthorKind)

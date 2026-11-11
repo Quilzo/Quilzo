@@ -88,6 +88,10 @@ type Caller struct {
 	// the agent interface, when it is one (agentplatform.go): a model an
 	// operation asks is charged to it.
 	run *agent.Session
+	// runFor is the person who started that run, as its record names them
+	// (agentResume.startedBy): what an operation writes in the draft is
+	// written for them (writesFor).
+	runFor string
 }
 
 // tokenFile is preferred over the environment.

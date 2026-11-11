@@ -372,8 +372,10 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 				return err
 			}
 			out = rec
+			// For whoever the change is written for, which in a run is
+			// the person who started it (writesFor).
 			return commitTreeNoLock(s, next, "mcp: write record in "+name,
-				caller.Name)
+				caller.writesFor())
 		})
 		if err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}

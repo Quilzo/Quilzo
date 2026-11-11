@@ -4,8 +4,10 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -47,8 +49,27 @@ func cmdLogd(root string, args []string) error {
 	logDir := fs.String("log-dir", "",
 		"directory this account owns, where the log and its key live; "+
 			"recorded in the store so other commands find it")
+	signUID := fs.String("sign-uid", "",
+		"comma-separated uids that may ask for heads and statements; empty "+
+			"means every account that may submit")
+	signGID := fs.String("sign-gid", "",
+		"comma-separated groups an account must connect as to ask for heads "+
+			"and statements; empty means any")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	// What is left after the flags, answered before anything else. Main
+	// answers `quilzo logd help` itself, and not the service's own command
+	// with help put after it (`logd --log-dir /srv/audit help`): the word
+	// was ignored, so as root the writer refused to run, and as any other
+	// account it started, the help never printed. Help never refuses, and
+	// a word this takes none of is refused rather than ignored.
+	if rest := fs.Args(); len(rest) > 0 {
+		if rest[0] == "help" {
+			commandHelp("logd", nil)
+			return nil
+		}
+		return fmt.Errorf("quilzo logd takes flags and nothing else, and was given %q: quilzo logd help", rest[0])
 	}
 
 	// Refusing to run as root. The writer needs to open one file for appending
@@ -85,22 +106,28 @@ func cmdLogd(root string, args []string) error {
 		}
 	}
 
-	var uids []int
-	for _, u := range strings.Split(*allow, ",") {
-		if u = strings.TrimSpace(u); u == "" {
-			continue
-		}
-		n, err := strconv.Atoi(u)
-		if err != nil {
-			return fmt.Errorf("%q is not a uid", u)
-		}
-		uids = append(uids, n)
+	uids, err := idList(*allow, "uid")
+	if err != nil {
+		return err
+	}
+	// Who may have the log's key speak, of those who may submit. Every
+	// account that may submit could, so in the reference compose the public
+	// site, which runs as the admin's uid, could have a feature package or
+	// a research plan signed as this site's own.
+	signers, err := idList(*signUID, "uid")
+	if err != nil {
+		return err
+	}
+	signGroups, err := idList(*signGID, "group")
+	if err != nil {
+		return err
 	}
 
 	srv, err := newLogWriter(root, uids)
 	if err != nil {
 		return err
 	}
+	srv.SignUID, srv.SignGID = signers, signGroups
 	listener, err := logd.Listen(path)
 	if err != nil {
 		return err
@@ -123,6 +150,13 @@ func cmdLogd(root string, args []string) error {
 		fmt.Fprintf(os.Stderr, "  %sany account that can reach the socket may "+
 			"submit; --allow-uid narrows that%s\n", yellow, reset)
 	}
+	switch {
+	case len(signers) > 0 || len(signGroups) > 0:
+		fmt.Fprintf(os.Stderr, "  %ssigning for %s only%s\n", dim, signersWords(signers, signGroups), reset)
+	case srv.Heads != nil:
+		fmt.Fprintf(os.Stderr, "  %severy account that may submit may ask it to sign; --sign-uid and "+
+			"--sign-gid narrow that%s\n", dim, reset)
+	}
 
 	// A clean shutdown removes the socket, so the next start is not a stale one
 	// even though Listen handles that case too.
@@ -133,6 +167,35 @@ func cmdLogd(root string, args []string) error {
 		_ = listener.Close()
 	}()
 	return srv.Serve(listener)
+}
+
+// idList reads a comma-separated list of numeric ids, of a kind: uid or
+// group.
+func idList(raw, kind string) ([]int, error) {
+	var out []int
+	for _, v := range strings.Split(raw, ",") {
+		if v = strings.TrimSpace(v); v == "" {
+			continue
+		}
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			return nil, fmt.Errorf("%q is not a %s", v, kind)
+		}
+		out = append(out, n)
+	}
+	return out, nil
+}
+
+// signersWords says who may ask the writer for a signature.
+func signersWords(uids, groups []int) string {
+	var parts []string
+	if len(uids) > 0 {
+		parts = append(parts, fmt.Sprintf("uid %v", uids))
+	}
+	if len(groups) > 0 {
+		parts = append(parts, fmt.Sprintf("accounts connecting as group %v", groups))
+	}
+	return strings.Join(parts, ", and ")
 }
 
 // newLogWriter is the writer cmdLogd serves: the log, its file, and the key
@@ -212,13 +275,37 @@ func cmdLogdStatus(root string) error {
 
 	if !running {
 		w.Human("no log writer\n")
-		w.Human("  %sthis process writes the audit log itself, so anything that "+
-			"can\n  execute code as this account can rewrite the record of what "+
-			"it did%s\n", yellow, reset)
-		w.Human("\n  %srun `quilzo logd` as a separate account that owns %s%s\n",
-			dim, logPath, reset)
-		w.Human("  %sthat moves the requirement from code execution as the CMS "+
-			"to root%s\n", dim, reset)
+		switch {
+		case separated && !canAppend(logPath):
+			// The separation in force with its writer stopped, as under the
+			// reference compose with logd down. Said as this account writing
+			// the log itself, which it cannot: what it does goes unrecorded,
+			// and an agent's actions are refused (auditReady), until the
+			// writer runs.
+			w.Human("  %sthe log is another account's, which is the separation in force, and nothing\n"+
+				"  is writing it: this account cannot, so until the writer runs what it does is\n"+
+				"  not recorded, and what an agent would do is refused%s\n", yellow, reset)
+			w.Human("  %s%s%s\n", dim, why, reset)
+			w.Human("\n  %sstart `quilzo logd` as the account that owns %s%s\n", dim, logPath, reset)
+		case !mayWriteLog(logPath):
+			// A log the writer has not made yet, in its directory, or one
+			// this account cannot so much as look at: not another account's
+			// as far as this account can tell, and not this account's to
+			// write either. Said as this account writing it itself.
+			w.Human("  %snothing is writing the log, and this account cannot: it is not this\n"+
+				"  account's to make or to open, so until the writer runs what it does is\n"+
+				"  not recorded, and what an agent would do is refused%s\n", yellow, reset)
+			w.Human("  %s%s%s\n", dim, why, reset)
+			w.Human("\n  %sstart `quilzo logd` as the account that owns %s%s\n", dim, filepath.Dir(logPath), reset)
+		default:
+			w.Human("  %sthis process writes the audit log itself, so anything that "+
+				"can\n  execute code as this account can rewrite the record of what "+
+				"it did%s\n", yellow, reset)
+			w.Human("\n  %srun `quilzo logd` as a separate account that owns %s%s\n",
+				dim, logPath, reset)
+			w.Human("  %sthat moves the requirement from code execution as the CMS "+
+				"to root%s\n", dim, reset)
+		}
 		// The log is another account's and its key out of this one's
 		// reach, as under the reference compose with the writer stopped:
 		// every head waits for the writer, which nothing above says, and
@@ -231,6 +318,12 @@ func cmdLogdStatus(root string) error {
 	}
 
 	w.Human("log writer at %s%s%s\n", bold, sock, reset)
+	// A socket left behind is not a writer. Said, since every record goes
+	// to it and is refused while nothing answers.
+	if err := logd.Reachable(sock); err != nil {
+		w.Human("  %snothing answers on it, so no record can be written until the writer runs again:\n"+
+			"  %v%s\n", yellow, err, reset)
+	}
 	if separated {
 		w.Human("  %s%s%s\n", green, why, reset)
 	} else {
@@ -262,4 +355,46 @@ func cmdLogdStatus(root string) error {
 		"deniable is a\n  published tree head — `quilzo auditlog anchor`%s\n",
 		dim, reset)
 	return nil
+}
+
+// canAppend reports whether this account could append to the log at path
+// itself. Opening it to append changes nothing in it.
+func canAppend(path string) bool {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		return false
+	}
+	_ = f.Close()
+	return true
+}
+
+// mayWriteLog reports whether this account could write the log at path
+// itself, as it does with no writer running: append to it, or make it in
+// its directory while there is none yet. Asked without writing anything.
+//
+// Not whether the log is another account's alone. A log the writer has not
+// made yet, in a directory that is the writer's, is nobody's, and one in a
+// directory this account may not look into cannot be inspected at all:
+// both were taken for this account's own, and `logd status` and the
+// posture scan said this process writes the log itself of a log it could
+// not open.
+//
+// A directory another account owns is taken as closed to this one unless
+// its mode lets a group or others write in it: the one case where this
+// cannot tell, and the answer that keeps saying the CMS may write its own
+// log is the one that sends somebody to look.
+func mayWriteLog(path string) bool {
+	_, err := os.Stat(path)
+	switch {
+	case err == nil:
+		return canAppend(path)
+	case !errors.Is(err, fs.ErrNotExist):
+		return false
+	}
+	info, err := os.Stat(filepath.Dir(path))
+	if err != nil {
+		return false
+	}
+	theirs, _ := logd.CheckOwnership(filepath.Dir(path), os.Geteuid())
+	return !theirs || os.Geteuid() == 0 || info.Mode().Perm()&0o022 != 0
 }
