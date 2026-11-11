@@ -324,9 +324,24 @@ func (s *Server) handlePropose(w http.ResponseWriter, r *http.Request) {
 	if s.Approvals.KindOf != nil {
 		proposerKind = s.Approvals.KindOf(p.Name)
 	}
-	authored := ""
+	// And named by who wrote it, for the same reason. Propose moved the
+	// proposal onto the draft under the name of whoever pressed it, and
+	// every rule about who may approve a change reads that name: editor
+	// offered dana's change for review, and with one approval asked dana
+	// approved her own change as though editor had written it. The
+	// proposal for these bytes already names who wrote them, read from
+	// the commits as the command line reads them (cmd/quilzo
+	// proposalFor); one for other bytes is named by the draft's newest
+	// commit, and the presser only when that cannot be read.
+	authored, author := "", p.Name
 	if c, cerr := s.Store.GetCommit(draft); cerr == nil {
 		authored = c.Message
+		if c.Author != "" {
+			author, _ = collab.WrittenFor(c.Message, c.Author)
+		}
+	}
+	if prop != nil && prop.Content == draft && prop.Author != "" {
+		author = prop.Author
 	}
 	kind := collab.AuthorKindFor(authored, proposerKind)
 	// And of every commit behind it that publishing would put live: the
@@ -339,7 +354,7 @@ func (s *Server) handlePropose(w http.ResponseWriter, r *http.Request) {
 
 	if prop == nil {
 		prop = &collab.Proposal{
-			Content: draft, Author: p.Name, AuthorKind: kind,
+			Content: draft, Author: author, AuthorKind: kind,
 			CreatedAt: time.Now().Unix(), Message: message,
 		}
 	} else {
@@ -347,7 +362,7 @@ func (s *Server) handlePropose(w http.ResponseWriter, r *http.Request) {
 		// discarding it. Those approvals stop counting — they name different
 		// bytes — and they are still the truthful history of who agreed to
 		// what, which is the part an auditor reads.
-		prop.Rebase(draft, p.Name, time.Now())
+		prop.Rebase(draft, author, time.Now())
 		// Moved onto content a model wrote some of, it is a model's. Kept
 		// as it was otherwise: a person re-offering a model's proposal
 		// does not make it theirs.

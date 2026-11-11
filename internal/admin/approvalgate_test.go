@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collab"
 	"github.com/quilzo/quilzo/internal/site"
 )
@@ -280,6 +281,75 @@ func TestReofferingADraftAModelWroteSomeOfOffersItAsAModels(t *testing.T) {
 	}
 	if prop.AuthorKind != "ai" {
 		t.Fatalf("a draft holding a model's change was re-offered as %q", prop.AuthorKind)
+	}
+}
+
+// Offering somebody else's change for review leaves it theirs: whoever
+// presses Propose is not who wrote it.
+//
+// Propose moved the proposal onto the draft under the name of whoever
+// pressed it, and every rule about who may approve a change reads that
+// name. So editor offered dana's change for review, and with one approval
+// asked dana approved her own change as though editor had written it, and
+// it went live with nobody else having read it. The command line names a
+// proposal by who wrote its commits (cmd/quilzo proposalFor), and so does
+// the stand-in here, which is what Current hands this screen.
+func TestOfferingSomebodysChangeForReviewLeavesItTheirs(t *testing.T) {
+	for _, offered := range []string{"as it is", "moved on from older bytes"} {
+		t.Run(offered, func(t *testing.T) {
+			srv, editor := setup(t)
+			if err := srv.Policy.Grant(auth.Binding{Principal: "dana", Role: auth.RoleAdmin,
+				Resource: "/"}); err != nil {
+				t.Fatal(err)
+			}
+			dana, _, err := srv.Tokens.IssueSession("dana", "dana", auth.RoleAdmin, "/", time.Hour,
+				auth.RoleAdmin, auth.MethodPasskey)
+			if err != nil {
+				t.Fatal(err)
+			}
+			before := srv.Store.GetRef(site.RefDraft)
+			pages := map[string]any{"pricing": map[string]any{"title": "Prices", "body": "cheap"}}
+			if _, err := site.SaveDraft(srv.Store, pages, "the prices", "dana"); err != nil {
+				t.Fatal(err)
+			}
+			draft := srv.Store.GetRef(site.RefDraft)
+
+			// What Current hands the screen: the proposal for the draft,
+			// named by who wrote it, or, moved on from, one for older bytes.
+			prop := &collab.Proposal{Content: draft, Author: "dana", AuthorKind: "human", CreatedAt: 1}
+			if offered != "as it is" {
+				prop = &collab.Proposal{Content: before, Author: "test", AuthorKind: "human", CreatedAt: 1}
+			}
+			srv.Approvals = &Approvals{
+				Policy: func() (collab.Policy, error) {
+					return collab.Policy{Required: 1, RequireHumanForAI: true}, nil
+				},
+				Current: func() (*collab.Proposal, error) { return prop, nil },
+				Save:    func(p *collab.Proposal) error { prop = p; return nil },
+				KindOf:  func(string) string { return "human" },
+			}
+
+			if w := postForm(t, srv, "/review/propose", editor, "message=please+read"); w.Code >= 400 {
+				t.Fatalf("proposing answered %d", w.Code)
+			}
+			if prop.Content != draft {
+				t.Fatal("the proposal did not move to the draft")
+			}
+			if prop.Author != "dana" {
+				t.Errorf("offering dana's change for review made it %s's", prop.Author)
+			}
+			postForm(t, srv, "/review/approve", dana, "note=mine")
+			pol, _ := srv.Approvals.Policy()
+			if d := pol.Evaluate(*prop, srv.Approvals.KindOf, time.Now()); d.Allowed {
+				t.Fatalf("dana approved her own change, offered for review by editor, and it would "+
+					"publish: %s", d.Reason)
+			}
+			// Editor, who offered it and did not write it, is somebody else.
+			postForm(t, srv, "/review/approve", editor, "note=read+it")
+			if d := pol.Evaluate(*prop, srv.Approvals.KindOf, time.Now()); !d.Allowed {
+				t.Errorf("editor's approval of dana's change did not let it through: %s", d.Reason)
+			}
+		})
 	}
 }
 
