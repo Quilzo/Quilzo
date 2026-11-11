@@ -376,19 +376,24 @@ func TestALinkHomeWithAQueryGoesHomeUnlessTheSiteNamesPagesByOne(t *testing.T) {
 	}
 
 	// On plain links a query names a page, so one that was not brought is
-	// not taken for the home.
-	plain := strings.Replace(plainLinks, `<a href="https://old.example.org/?page_id=12">café</a>`,
-		`<a href="https://old.example.org/?page_id=12">café</a> or <a href="https://old.example.org/?page_id=99">a draft</a>`, 1)
-	s, err := FromWordPress([]byte(plain), "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if b, err = Package(s, "", "dana", nil, time.Now()); err != nil {
-		t.Fatal(err)
-	}
-	for _, pg := range b.Package.Pages {
-		if body := fmt.Sprint(pg.Body); pg.Name == "qa-night" && !strings.Contains(body, "[a draft](https://old.example.org/?page_id=99)") {
-			t.Errorf("a link to a page that was not brought went elsewhere: %s", body)
+	// not taken for the home: at the host's root, or in the folder WordPress
+	// was installed in, which is the home's address too.
+	for _, at := range []string{"https://old.example.org", "https://old.example.org/hall"} {
+		plain := strings.ReplaceAll(plainLinks, "https://old.example.org", at)
+		plain = strings.Replace(plain, `<a href="`+at+`/?page_id=12">café</a>`,
+			`<a href="`+at+`/?page_id=12">café</a> or <a href="`+at+`/?page_id=99">a draft</a>`, 1)
+		s, err := FromWordPress([]byte(plain), "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if b, err = Package(s, "", "dana", nil, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		for _, pg := range b.Package.Pages {
+			if body := fmt.Sprint(pg.Body); pg.Name == "qa-night" &&
+				!strings.Contains(body, "[a draft]("+at+"/?page_id=99)") {
+				t.Errorf("%s: a link to a page that was not brought went elsewhere: %s", at, body)
+			}
 		}
 	}
 }

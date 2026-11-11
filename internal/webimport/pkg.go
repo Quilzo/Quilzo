@@ -700,16 +700,21 @@ type addresses map[string]string
 // or nothing, never the home: ?page_id=99 is a page that was not brought.
 // Everywhere else it is the home. It was never the home anywhere, and on a
 // crawled site a link home with ?utm_source= went back to the old site and
-// the menu lost its Home.
+// the menu lost its Home. The home is told by its name, not by a path at
+// the host's root: WordPress installed in a folder has its home there, and
+// sent ?page_id=99 to it.
 func (a addresses) at(u *url.URL, queried bool) (string, bool) {
 	if v, ok := a[addressOf(u)]; ok {
 		return v, true
 	}
-	if u.RawQuery != "" && (!queried || strings.Trim(u.Path, "/") != "") {
-		v, ok := a[keyOf(u)]
-		return v, ok
+	if u.RawQuery == "" {
+		return "", false
 	}
-	return "", false
+	v, ok := a[keyOf(u)]
+	if queried && v == "index" {
+		return "", false
+	}
+	return v, ok
 }
 
 // byQuery says whether a site knows any of its own pages or posts by a
