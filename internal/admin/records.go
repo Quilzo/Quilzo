@@ -233,33 +233,47 @@ func (s *Server) handleRecords(w http.ResponseWriter, r *http.Request) {
 		data["BlankType"] = t.Name
 	}
 
+	// Every record, a page at a time, and Find over all of them.
+	//
+	// It listed the first hundred in id order under the count of all of
+	// them, with no way to the rest, and Find filtered those hundred and put
+	// what it kept where the total was: a record past the hundredth was "0
+	// records", whatever it said.
 	if selected != "" {
-		q := collection.Query{Limit: 100, Sort: r.URL.Query().Get("sort")}
-		if f := strings.TrimSpace(r.URL.Query().Get("find")); f != "" {
-			// One box, matched against every field, because an editor looking
-			// for a record knows what it says and not which column it is in.
-			q.Contains = map[string]string{}
-			data["Find"] = f
+		find := strings.TrimSpace(r.URL.Query().Get("find"))
+		if find != "" {
+			data["Find"] = find
 		}
-		recs, total, err := collection.List(s.Store, tree, selected, q)
-		if err == nil {
-			if f := strings.TrimSpace(r.URL.Query().Get("find")); f != "" {
-				recs = filterAnyField(recs, f)
-				total = len(recs)
+		if idx, err := s.Records.For(s.Store, tree, selected); err == nil {
+			all := idx.Records
+			if find != "" {
+				all = filterAnyField(all, find)
 			}
+			pg := paginate(r, len(all), recordsPageSize)
+			recs, total := collection.Query{Sort: r.URL.Query().Get("sort"),
+				Offset: pg.Offset, Limit: pg.Size}.Apply(all)
 			data["Records"] = recs
 			data["Total"] = total
 			data["Columns"] = columnsOf(recs)
+			data["Paging"], data["PagePath"] = pg, "/records"
 		}
 	}
 	s.render(w, r, "records.html", data)
 }
 
+// recordsPageSize is how many records the Data screen lists at once: the
+// hundred it always showed, now with a way to the next hundred.
+const recordsPageSize = 100
+
 // filterAnyField keeps records where any field contains the text.
 //
-// Done here rather than in the query because Query filters named fields, and
-// widening it to "any field" there would make the query language's cost
-// unpredictable — this is a display convenience over an already-loaded page.
+// One box, matched against every field, because an editor looking for a
+// record knows what it says and not which column it is in. Done here rather
+// than in the query because Query filters named fields, and widening it to
+// "any field" there would make the query language's cost unpredictable. It
+// runs over the whole collection, as decoded by the index, and never over
+// the page on the screen: filtering the hundred already shown is what made
+// Find miss everything after them.
 func filterAnyField(in []collection.Record, find string) []collection.Record {
 	want := strings.ToLower(find)
 	var out []collection.Record
