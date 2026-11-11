@@ -545,6 +545,12 @@ func cmdEval(root string, args []string) error {
 			return err
 		}
 		if len(reps) == 0 {
+			// null under --json: the report, which there is none of. This
+			// wrote only through Human, so a script asking for an agent's
+			// last evaluation was answered with nothing and exit 0.
+			if w.JSON(nil) {
+				return nil
+			}
 			w.Human("%s has not been evaluated\n", args[1])
 			return nil
 		}

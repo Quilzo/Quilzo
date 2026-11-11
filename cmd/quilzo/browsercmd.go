@@ -144,6 +144,17 @@ func cmdBrowserGrant(root string, args []string) error {
 		if err != nil {
 			return err
 		}
+		// The grants as one document under --json, in the order they are
+		// listed. This printed them whatever was asked for, so a script
+		// asking what an outside client's browser may do had prose to parse.
+		if w.Mode == out.JSON {
+			grants := make([]browserGrant, 0, len(set))
+			for _, name := range grantNames(root) {
+				grants = append(grants, set[name])
+			}
+			w.JSON(map[string]any{"grants": grants})
+			return nil
+		}
 		if len(set) == 0 {
 			fmt.Printf("  no browser grants. `quilzo browser grant NAME --read HOST,…` declares one\n")
 			return nil

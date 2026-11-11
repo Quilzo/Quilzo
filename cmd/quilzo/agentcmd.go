@@ -485,6 +485,33 @@ func agentCheck(root string) error {
 	sort.Strings(names)
 
 	customKinds := customKinds(root)
+	if w.Mode == out.JSON {
+		// The same verdicts as one document. This printed them whatever was
+		// asked for, so a pipeline asking whether every agent still
+		// validates was given sentences to parse, and exit 0 to go with
+		// them when they all did.
+		type verdict struct {
+			Name     string         `json:"name"`
+			Kind     agent.Kind     `json:"kind"`
+			Autonomy agent.Autonomy `json:"autonomy"`
+			Problem  string         `json:"problem,omitempty"`
+		}
+		verdicts, bad := make([]verdict, 0, len(names)), 0
+		for _, n := range names {
+			m := set.Agents[n]
+			v := verdict{Name: n, Kind: m.Kind, Autonomy: m.Autonomy}
+			if verr := m.ValidateWith(known, customKinds); verr != nil {
+				bad++
+				v.Problem = verr.Error()
+			}
+			verdicts = append(verdicts, v)
+		}
+		w.JSON(map[string]any{"agents": verdicts, "valid": len(names) - bad})
+		if bad > 0 {
+			return errBlocked{fmt.Errorf("%d agent(s) do not validate against this build", bad)}
+		}
+		return nil
+	}
 	bad := 0
 	for _, n := range names {
 		m := set.Agents[n]

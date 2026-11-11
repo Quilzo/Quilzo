@@ -218,6 +218,12 @@ func cmdInbox(root string, args []string) error {
 		if err != nil {
 			return err
 		}
+		// The conversation itself under --json. This printed its prose
+		// whatever was asked for, so a script reading a handoff got the
+		// terminal's rendering of it to parse.
+		if w.JSON(c) {
+			return nil
+		}
 		fmt.Printf("%s%s/%s%s  opened %s\n", bold, name, id, reset,
 			c.Opened.Format("2 Jan 2006 15:04 UTC"))
 		if c.Question != "" {

@@ -150,6 +150,28 @@ func integrationsTemplate(root string, args []string) error {
 		return err
 	}
 	if len(pos) == 0 {
+		// The templates as one document under --json. This wrote only for a
+		// person, so a script asking which integrations can be declared from
+		// one was answered with nothing and exit 0.
+		type template struct {
+			Name       string   `json:"name"`
+			Title      string   `json:"title"`
+			Provider   string   `json:"provider"`
+			Scopes     string   `json:"scopes"`
+			Operations []string `json:"operations"`
+		}
+		rows := make([]template, 0, len(integrationTemplates))
+		for _, n := range integrationTemplateNames() {
+			t := integrationTemplates[n]
+			row := template{Name: n, Title: t.Title, Provider: t.Provider, Scopes: t.Scopes}
+			for _, o := range t.Integration.Operations {
+				row.Operations = append(row.Operations, o.Name)
+			}
+			rows = append(rows, row)
+		}
+		if w.JSON(map[string]any{"templates": rows}) {
+			return nil
+		}
 		for _, n := range integrationTemplateNames() {
 			t := integrationTemplates[n]
 			var ops []string

@@ -724,6 +724,17 @@ func main() {
 	args = filtered
 
 	w = out.New(jsonMode)
+	// An answer under --json that could not be written is a failure, however
+	// the command that wrote it ended. The writer said so on stderr and the
+	// command returned nil, so this exited 0 with nothing on stdout, and a
+	// script took the empty output for its answer. Deferred, so a command
+	// that returns from main once it has answered, as `version` does, is held
+	// to it too; a failure already leaves through os.Exit, which skips this.
+	defer func() {
+		if w.Failed() {
+			os.Exit(out.ExitFailure)
+		}
+	}()
 	bold, dim = w.Bold(), w.Dim()
 	green, yellow, red, reset = w.Green(), w.Yellow(), w.Red(), w.Reset()
 
@@ -2245,6 +2256,12 @@ func cmdVerify(root string) error {
 	n, err := s.Verify()
 	if err != nil {
 		return fmt.Errorf("%s%v%s", red, err, reset)
+	}
+	// The count under --json, as `auditlog verify` gives its entries. This
+	// printed its prose whatever was asked for, so a script checking that
+	// nothing in the store was altered had a sentence to parse.
+	if w.JSON(map[string]any{"objects": n, "intact": true}) {
+		return nil
 	}
 	fmt.Printf("  %d object(s) intact\n", n)
 	fmt.Printf("  %severy object re-hashed to the id it is filed under%s\n", dim, reset)

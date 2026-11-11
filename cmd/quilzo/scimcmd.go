@@ -794,11 +794,16 @@ func giveSCIMToken(root string, days int, caller *Caller, made scim.TokenMade) e
 	if err != nil {
 		return err
 	}
-	w.Human("%s\n", token)
-	w.Human("  %sgive this to the identity provider as its bearer token, with the URL\n"+
-		"  https://YOUR-ADMIN/scim/v2. Shown once; it replaces any earlier one, and ends on %s:\n"+
-		"  make a new one before then, or provisioning stops, taking access away included%s\n",
-		dim, kept.Expires.Format("2 January 2006"), reset)
+	// The token under --json, with when it ends. This wrote it only for a
+	// person, so `scim token --json` replaced the identity provider's token
+	// with one nobody was shown, and provisioning stopped.
+	if !w.JSON(map[string]any{"token": token, "expires": kept.Expires}) {
+		w.Human("%s\n", token)
+		w.Human("  %sgive this to the identity provider as its bearer token, with the URL\n"+
+			"  https://YOUR-ADMIN/scim/v2. Shown once; it replaces any earlier one, and ends on %s:\n"+
+			"  make a new one before then, or provisioning stops, taking access away included%s\n",
+			dim, kept.Expires.Format("2 January 2006"), reset)
+	}
 	return recordE(root, caller.auditRecord("scim.token-made", "/", audit.Success,
 		map[string]string{"group": ""}))
 }

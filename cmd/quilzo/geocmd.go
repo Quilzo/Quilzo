@@ -168,9 +168,21 @@ func cmdGeo(root string, args []string) error {
 	}
 	switch args[0] {
 	case "status":
-		_, desc, err := loadGeo(root)
+		l, desc, err := loadGeo(root)
 		if err != nil {
 			return err
+		}
+		// One document under --json: the networks named, and which of the
+		// files beside them there are to place the rest. This wrote only
+		// through Human, so a script asking where sign-ins are placed from
+		// was answered with nothing and exit 0.
+		networks := c.Networks
+		if networks == nil {
+			networks = []geo.Network{}
+		}
+		if w.JSON(map[string]any{"networks": networks, "city_database": l.DB != nil,
+			"asn_database": l.ASNDB != nil, "tor_exits": len(l.Tor)}) {
+			return nil
 		}
 		w.Human("  %s\n", desc)
 		for _, n := range c.Networks {
