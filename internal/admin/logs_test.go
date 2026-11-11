@@ -4,8 +4,10 @@
 package admin
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -451,5 +453,115 @@ func TestAFailureLooksLikeAFailureAndCanBeChosen(t *testing.T) {
 	}
 	if !strings.Contains(body, "1 of 4 entries") || !strings.Contains(body, "backup.failed") {
 		t.Errorf("?outcome=failure did not choose the failure")
+	}
+}
+
+// manyPeopleLog is a genuine chain of n entries, each from somebody else, as
+// a log of visitors' form submissions is.
+func manyPeopleLog(t *testing.T, n int) []audit.Event {
+	t.Helper()
+	dir := t.TempDir()
+	key, _ := audit.NewKey()
+	l, err := audit.New(audit.Options{Path: dir + "/a.jsonl", Key: key, Source: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < n; i++ {
+		if _, err := l.Append(audit.Record{Action: "form.submit", Resource: "/contact",
+			Outcome: audit.Success, Principal: fmt.Sprintf("visitor-%d", i), Kind: audit.KindUnknown}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	events, err := audit.Read(dir + "/a.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return events
+}
+
+// A view costs the page it shows. The page built and resolved a row for
+// every entry in the log before it showed two hundred of them, so its cost
+// grew with the log, and every new pseudonym, which visitors make, was one
+// more lookup. Resolving is asked for what is on the page, and the filter on
+// a name is the only thing that looks at everybody.
+func TestAViewResolvesOnlyThePageItShows(t *testing.T) {
+	events := manyPeopleLog(t, 600)
+	s, tok := logServer(t, events, true)
+	asked := map[string]bool{}
+	s.ResolvePrincipal = func(p string) string {
+		asked[p] = true
+		return ""
+	}
+	body, code := getLogs(t, s, tok, "")
+	if code != http.StatusOK {
+		t.Fatalf("got %d", code)
+	}
+	if !strings.Contains(body, "600 of 600 entries") {
+		t.Errorf("the view does not count the whole log")
+	}
+	if len(asked) > 200 {
+		t.Errorf("a view of 200 rows resolved %d people", len(asked))
+	}
+	// The newest page, and the next one from where it ended.
+	if !strings.Contains(body, events[599].Principal) || strings.Contains(body, events[399].Principal) {
+		t.Errorf("the first page is not the newest two hundred")
+	}
+	body, _ = getLogs(t, s, tok, "?offset=200")
+	if !strings.Contains(body, events[399].Principal) || strings.Contains(body, events[400].Principal) ||
+		strings.Contains(body, events[199].Principal) {
+		t.Errorf("the second page is not the next two hundred")
+	}
+	// A name filter still finds somebody wherever they are.
+	body, _ = getLogs(t, s, tok, "?who="+events[3].Principal)
+	if !strings.Contains(body, "1 of 600 entries") {
+		t.Errorf("filtering on a pseudonym did not find its one entry")
+	}
+}
+
+// Where the server indexes the log, the page reads the index and not the
+// whole file, and the index is never believed for having been read before:
+// what is appended shows on the next view, and an entry edited in place,
+// keeping the file's length, is reported as an alteration.
+func TestThePageReadsTheIndexAndStillSaysWhenTheLogWasAltered(t *testing.T) {
+	path := t.TempDir() + "/audit.jsonl"
+	l, err := audit.New(audit.Options{Path: path, Source: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	add := func(resource string) {
+		if _, err := l.Append(audit.Record{Action: "publish", Resource: resource, Outcome: audit.Success,
+			Principal: "dana", Kind: audit.KindHuman, Verified: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add("/first")
+	add("/second")
+	s, tok := logServer(t, nil, true)
+	s.LoadAudit = func() ([]audit.Event, error) {
+		t.Error("the page loaded the whole log with an index to read")
+		return nil, nil
+	}
+	index := audit.NewIndex(path)
+	s.AuditIndex = func() *audit.Index { return index }
+
+	body, _ := getLogs(t, s, tok, "")
+	if !strings.Contains(body, "Chain intact") || !strings.Contains(body, "/second") {
+		t.Fatalf("the indexed log is not shown:\n%s", body)
+	}
+	add("/third")
+	if body, _ = getLogs(t, s, tok, ""); !strings.Contains(body, "/third") || !strings.Contains(body, "3 of 3 entries") {
+		t.Errorf("an entry appended since the last view is not shown")
+	}
+
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(strings.Replace(string(b), "/first", "/FIRST", 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	body, _ = getLogs(t, s, tok, "")
+	if !strings.Contains(body, "has been altered") || strings.Contains(body, "Chain intact") {
+		t.Errorf("an entry edited in place was shown as an intact log:\n%s", body)
 	}
 }

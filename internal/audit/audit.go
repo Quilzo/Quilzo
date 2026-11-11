@@ -826,32 +826,41 @@ func Verify(events []Event) (bool, []Problem) { return VerifyFrom(events, "") }
 // start of the chain, which is what Verify passes.
 func VerifyFrom(events []Event, anchor string) (bool, []Problem) {
 	var problems []Problem
-	prev := anchor
-	var lastSeq int64
-
+	c := link{prev: anchor}
 	for i := range events {
-		e := events[i]
-
-		want, err := e.computeHash()
-		if err != nil {
-			problems = append(problems, Problem{e.Seq, "entry cannot be re-hashed"})
-			continue
-		}
-		if want != e.Hash {
-			problems = append(problems, Problem{e.Seq,
-				"the entry does not match its own hash; it was altered after being written"})
-		}
-		if e.Prev != prev {
-			problems = append(problems, Problem{e.Seq,
-				"the chain does not link to the previous entry; something was inserted or removed"})
-		}
-		if lastSeq != 0 && e.Seq != lastSeq+1 {
-			problems = append(problems, Problem{e.Seq,
-				fmt.Sprintf("sequence jumps from %d; an entry was deleted", lastSeq)})
-		}
-		prev, lastSeq = e.Hash, e.Seq
+		problems = c.check(&events[i], problems)
 	}
 	return len(problems) == 0, problems
+}
+
+// link is what verifying carries from one entry to the next. One check, used
+// by Verify and by an Index reading a log as it grows, so the two cannot come
+// to disagree about what an intact chain is.
+type link struct {
+	prev    string
+	lastSeq int64
+}
+
+// check verifies the next entry and adds what is wrong with it to problems.
+func (c *link) check(e *Event, problems []Problem) []Problem {
+	want, err := e.computeHash()
+	if err != nil {
+		return append(problems, Problem{e.Seq, "entry cannot be re-hashed"})
+	}
+	if want != e.Hash {
+		problems = append(problems, Problem{e.Seq,
+			"the entry does not match its own hash; it was altered after being written"})
+	}
+	if e.Prev != c.prev {
+		problems = append(problems, Problem{e.Seq,
+			"the chain does not link to the previous entry; something was inserted or removed"})
+	}
+	if c.lastSeq != 0 && e.Seq != c.lastSeq+1 {
+		problems = append(problems, Problem{e.Seq,
+			fmt.Sprintf("sequence jumps from %d; an entry was deleted", c.lastSeq)})
+	}
+	c.prev, c.lastSeq = e.Hash, e.Seq
+	return problems
 }
 
 // VerifyFile is Verify over a file on disk.
