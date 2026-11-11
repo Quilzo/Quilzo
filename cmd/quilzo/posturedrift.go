@@ -212,12 +212,31 @@ type Reverted struct {
 
 func revertedPath(root string) string { return filepath.Join(root, "self", "reverted.json") }
 
+// askedLater are settings that took every value with no reason in an
+// earlier version and ask one of some values now. A value set then went
+// through `quilzo config set` like any other, and has no recorded reason
+// because none was asked, which is just how a value edited into the file
+// looks. Put back as one, an upgraded store had its extensions and remote
+// telemetry turned off, its agents sent to a pinned browser the machine may
+// not have, every integration's burst cut to 20, and a case opened about
+// each, on the server's first posture run. Such a value stays, and the
+// posture scan reports it as it reports any weaker value with no reason
+// (config.weakened, high), for a person to give the reason or put it back.
+var askedLater = map[string]bool{
+	"api.rate.burst":         true,
+	"browser.sessions":       true,
+	"ext.max_output_bytes":   true,
+	"telemetry.allow_remote": true,
+	"ext.enabled":            true,
+	"browser.path":           true,
+}
+
 // revertDrift puts back every setting running weaker than its default with
 // no recorded reason: one somebody edited into the file rather than set
 // with --accept-risk, which the program cannot tell from an attacker's
 // edit. What it was is kept, and the security contact is told how to have
 // it again properly; a weaker setting with a reason is a decision and is
-// left alone.
+// left alone, and so is a value of a setting in askedLater.
 func revertDrift(root string, now time.Time) ([]Reverted, error) {
 	cfg, err := loadConfig(root)
 	if err != nil {
@@ -227,7 +246,7 @@ func revertDrift(root string, now time.Time) ([]Reverted, error) {
 	for _, e := range cfg.Weakened() {
 		// A reason was recorded: a decision, even a lapsed one, which the
 		// posture reports for a person to renew or undo.
-		if e.Accepted != nil {
+		if e.Accepted != nil || askedLater[e.Setting.Key] {
 			continue
 		}
 		if err := cfg.Unset(e.Setting.Key); err != nil {
