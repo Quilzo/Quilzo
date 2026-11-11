@@ -114,12 +114,14 @@ func strs(v any) []string {
 	return out
 }
 
-// quilzoServices are the services that run this program's image.
+// quilzoServices are the services that run this program's image: the one
+// .env names in QUILZO_IMAGE. Found by that rather than by the release's
+// name, which an image built here does not carry.
 func quilzoServices(t *testing.T) map[string]map[string]any {
 	t.Helper()
 	out := map[string]map[string]any{}
 	for name, s := range services(t) {
-		if img, _ := s["image"].(string); strings.Contains(img, "quilzo/quilzo") {
+		if img, _ := s["image"].(string); strings.HasPrefix(img, "${QUILZO_IMAGE") {
 			out[name] = s
 		}
 	}
@@ -588,7 +590,7 @@ func TestComposeRunsAnImageThatKnowsItsVersion(t *testing.T) {
 	}
 	for name, s := range quilzoServices(t) {
 		img, _ := s["image"].(string)
-		if !strings.HasPrefix(img, "${QUILZO_IMAGE:-ghcr.io/quilzo/quilzo}:") || !strings.Contains(img, "${QUILZO_VERSION") {
+		if !strings.HasPrefix(img, "${QUILZO_IMAGE") || !strings.Contains(img, "${QUILZO_VERSION") {
 			t.Errorf("%s runs %q: an image built here can only be run under the release's own name", name, img)
 		}
 	}
@@ -600,6 +602,76 @@ func TestComposeRunsAnImageThatKnowsItsVersion(t *testing.T) {
 		if !strings.Contains(read(t, "deploy/compose.env.example"), v+"=") {
 			t.Errorf("compose.env.example does not say %s can be set", v)
 		}
+	}
+}
+
+// The stack runs the image its operator named, and no other.
+//
+// compose.yaml defaulted to ghcr.io/quilzo/quilzo:latest. No release is
+// published, so that is an image the registry refuses to hand anybody, and
+// the README's steps failed at the first of them; and once there is a
+// release, latest is whatever was pushed under that name last, which nobody
+// here checked and which changes under a running stack at the next pull. So
+// the image has no default: compose refuses to start until .env names one.
+// The example names the image the README builds from this checkout, before
+// any step runs it, and an image from a registry is named by its digest.
+func TestComposeRunsOnlyTheImageItsOperatorNamed(t *testing.T) {
+	named := regexp.MustCompile(`^\$\{QUILZO_IMAGE:\?[^}]+\}:\$\{QUILZO_VERSION:\?[^}]+\}$`)
+	for name, s := range quilzoServices(t) {
+		if img, _ := s["image"].(string); !named.MatchString(img) {
+			t.Errorf("%s runs %q: with a default, a stack whose .env names no image runs "+
+				"whatever that default is", name, img)
+		}
+	}
+
+	env := envDefaults(t)
+	img, ver := env["QUILZO_IMAGE"], env["QUILZO_VERSION"]
+	if img == "" || ver == "" {
+		t.Fatalf("compose.env.example names no image (QUILZO_IMAGE=%q, QUILZO_VERSION=%q)", img, ver)
+	}
+	if tag, _, _ := strings.Cut(ver, "@"); tag == "latest" {
+		t.Errorf("compose.env.example runs %s:%s, whatever was last pushed under that name", img, ver)
+	}
+	// A name with a slash in it is somebody's on a registry, and a tag there
+	// is whatever its owner last pushed under it.
+	if strings.Contains(img, "/") && !strings.Contains(ver, "@sha256:") {
+		t.Errorf("compose.env.example runs %s:%s from a registry without its digest", img, ver)
+	}
+
+	// The README builds that image, under the name .env gives it, after .env
+	// is read and before anything runs it.
+	var block []string
+	in := false
+	for _, line := range strings.Split(read(t, "deploy/README.md"), "\n") {
+		if strings.HasPrefix(line, "```") {
+			if in && block != nil && slices.ContainsFunc(block, func(l string) bool {
+				return strings.HasPrefix(l, "docker compose run")
+			}) {
+				break
+			}
+			in, block = !in, nil
+			continue
+		}
+		if in {
+			block = append(block, strings.TrimSpace(line))
+		}
+	}
+	if block == nil {
+		t.Fatal("deploy/README.md has no block of steps")
+	}
+	env0 := slices.IndexFunc(block, func(l string) bool { return strings.HasPrefix(l, "set -a; . ./.env") })
+	built := slices.IndexFunc(block, func(l string) bool {
+		return strings.HasPrefix(l, "docker build ") && strings.Contains(l, `-t "$QUILZO_IMAGE:$QUILZO_VERSION"`)
+	})
+	first := slices.IndexFunc(block, func(l string) bool { return strings.HasPrefix(l, "docker compose ") })
+	switch {
+	case built < 0:
+		t.Error(`the README's steps never build the image .env names (docker build -t "$QUILZO_IMAGE:$QUILZO_VERSION" ..), ` +
+			"so the first of them asks a registry for an image that is not there")
+	case env0 < 0 || built < env0:
+		t.Error("the README builds the image before it reads .env, which names it")
+	case first >= 0 && first < built:
+		t.Errorf("the README runs %q before it builds the image", block[first])
 	}
 }
 

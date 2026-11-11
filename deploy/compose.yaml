@@ -39,10 +39,18 @@ name: quilzo
 # replaces a service's command: a --root written in it went with it, and every
 # setup step looked for a store in the read-only working directory instead.
 x-quilzo: &quilzo
-  # The release's image by default. QUILZO_IMAGE names one you built
-  # yourself (deploy/README.md), under a name of its own: an image built here
-  # and tagged as the release's would be taken for it.
-  image: ${QUILZO_IMAGE:-ghcr.io/quilzo/quilzo}:${QUILZO_VERSION:-latest}
+  # The image .env names, and no default.
+  #
+  # It defaulted to ghcr.io/quilzo/quilzo:latest.
+  # No release is published yet, so that is an image the registry refuses to
+  # hand anybody, and the first setup step failed; and once there is a
+  # release, latest is whatever was pushed under that name last, which
+  # nobody here checked and which changes under a running stack at the next
+  # pull. So compose refuses to start until .env names an image: the one
+  # deploy/README.md builds from this checkout, under a name of its own (an
+  # image built here and tagged as the release's would be taken for it), or
+  # a release's by its digest.
+  image: ${QUILZO_IMAGE:?set QUILZO_IMAGE in deploy/.env}:${QUILZO_VERSION:?set QUILZO_VERSION in deploy/.env}
   restart: unless-stopped
   read_only: true
   cap_drop: [ALL]
