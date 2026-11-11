@@ -41,6 +41,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -193,16 +194,19 @@ func NewID() string {
 }
 
 // Playbook is the advice a run of an agent reads: its lessons adopted for
-// this model, most recently adopted first, within its bounds. ids are the
-// lessons it holds, for the run's record.
-func Playbook(all []Lesson, model string) (lines, ids []string) {
+// this model, by any of the names given for it, most recently adopted
+// first, within its bounds. ids are the lessons it holds, for the run's
+// record. A model has more than one name where a trial and a run name it
+// differently: a trial through the gateway names the model the route
+// reaches, and one before trials did named the gateway's caller.
+func Playbook(all []Lesson, model ...string) (lines, ids []string) {
 	var adopted []Lesson
 	for _, l := range all {
 		if l.State != Adopted {
 			continue
 		}
 		for _, m := range l.AdoptedFor {
-			if m == model {
+			if m != "" && slices.Contains(model, m) {
 				adopted = append(adopted, l)
 				break
 			}

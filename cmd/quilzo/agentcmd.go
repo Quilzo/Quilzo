@@ -1213,7 +1213,13 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 		// stages that do the work cannot choose anything.
 		delegateModel = model
 		tools, delegates := modelChoices(ctx, root, m, set)
-		playbook, playbookIDs := lessonsPlaybook(root, name, out.Model)
+		// Adopted for the model the route reaches, as a trial through the
+		// gateway names it, and so read by that model's runs: they were
+		// looked up by the gateway's caller alone, which such a trial does
+		// not name, and no run read a lesson adopted through the gateway.
+		// Lessons adopted before trials named the model are kept under the
+		// caller, and read as they were.
+		playbook, playbookIDs := lessonsPlaybook(root, name, servedBy(model).Model, out.Model)
 		if from.Eval != nil && from.Eval.Lesson != "" {
 			playbook = append(playbook, from.Eval.Lesson)
 		}

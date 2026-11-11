@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -495,5 +496,71 @@ func TestADeciderEvaluationMeasuresOnlyTheModelItNames(t *testing.T) {
 	}
 	if n := asked.Load(); n != 0 {
 		t.Errorf("an evaluation of model-a, and model-b answered %d call(s) of it", n)
+	}
+}
+
+// A lesson adopted for the model its trial helped is read by that model's
+// runs through the gateway too. A trial names the model an evaluation
+// measured, by the name its provider gives it, and a run looked its
+// lessons up by the gateway's caller, so a lesson adopted through the
+// gateway was read by no run at all.
+func TestALessonAdoptedThroughTheGatewayIsReadThere(t *testing.T) {
+	root, id := wentWrong(t)
+	rec, _ := loadAgentRun(root, id)
+	name := rec.Agent
+	var mu sync.Mutex
+	var prompts []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		prompts = append(prompts, string(b))
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"{\"op\":\"done\",\"say\":\"finished\"}"}}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	routeTo(t, root, srv.URL+"/v1", "main", "model-a")
+	for i := 0; i < evals.DraftCases; i++ {
+		if _, err := addEvalCase(root, name, evals.Case{Goal: fmt.Sprintf("tidy page %d", i),
+			Expect: evals.Expect{Finishes: true}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	withReflection(t, `{"when": "a change waits for a person", "do": "say what will change before asking", "kind": "task"}`)
+	l, err := reflectOnRun(context.Background(), root, id, asAdmin("dana"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The real evaluations, scored so the one with the lesson helped.
+	evaluateForLesson = func(root, name string, o evals.Options, withModel bool, caller *Caller) (evals.Report, error) {
+		r, err := runEvaluationWith(root, name, o, withModel, caller)
+		r.Reliable, r.PassK = 0, 0
+		if o.Lesson != "" {
+			r.Reliable, r.PassK = r.Cases, 1
+		}
+		return r, err
+	}
+	t.Cleanup(func() { evaluateForLesson = runEvaluationWith })
+	if tr, err := tryLesson(root, name, l.ID, 1, asAdmin("dana")); err != nil || !tr.Better || tr.Model != "model-a" {
+		t.Fatalf("the trial: %+v %v", tr, err)
+	}
+	if _, err := adoptLesson(root, name, l.ID, true, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	prompts = nil
+	mu.Unlock()
+	runID, err := runAgentOnce(root, name, "tidy the welcome page", true, asAdmin("dana"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	seen := strings.Join(prompts, "\n")
+	mu.Unlock()
+	if !strings.Contains(seen, "say what will change before asking") {
+		t.Error("model-a's run was not given the lesson adopted for model-a")
+	}
+	if run, _ := loadAgentRun(root, runID); len(run.Trace.Lessons) != 1 || run.Trace.Lessons[0] != l.ID {
+		t.Errorf("the run records lessons %v", run.Trace.Lessons)
 	}
 }
