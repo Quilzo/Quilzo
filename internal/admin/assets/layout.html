@@ -229,11 +229,11 @@
 {{if .Paging.Needed}}
 <nav class="paging" aria-label="Pages of this list">
   {{if .Paging.HasPrev}}
-  <a rel="prev" href="{{.PagePath}}?from={{.Paging.Prev}}{{.Paging.Query}}">{{icon "chevron_left"}}Previous</a>
+  <a rel="prev" href="{{.Paging.Href .PagePath .Paging.Prev}}">{{icon "chevron_left"}}Previous</a>
   {{else}}<span class="paging-off">{{icon "chevron_left"}}Previous</span>{{end}}
   <span class="paging-at">{{.Paging.From}} to {{.Paging.To}} of {{.Paging.Total}}</span>
   {{if .Paging.HasNext}}
-  <a rel="next" href="{{.PagePath}}?from={{.Paging.Next}}{{.Paging.Query}}">Next{{icon "chevron_right"}}</a>
+  <a rel="next" href="{{.Paging.Href .PagePath .Paging.Next}}">Next{{icon "chevron_right"}}</a>
   {{else}}<span class="paging-off">Next{{icon "chevron_right"}}</span>{{end}}
 </nav>
 {{end}}
