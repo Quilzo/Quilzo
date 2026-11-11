@@ -95,3 +95,43 @@ func TestARefusedRecordIsARefusalAndKeepsWhatWasTyped(t *testing.T) {
 		t.Errorf("refusing JSON lost it: %d", w.Code)
 	}
 }
+
+// A record refused for a collection that has nothing in it yet stays with
+// that collection.
+//
+// The JSON form takes a collection's name, and a collection is made by its
+// first record, so a record written for one that is not there yet is not on
+// the screen the refusal answered with. The screen fell back to the first
+// collection there was and put what had been typed into that one's form:
+// the next Save wrote it into the wrong collection. With no collection at all
+// to fall back to, the refusal was not said anywhere.
+func TestARefusedRecordForANewCollectionStaysWithIt(t *testing.T) {
+	srv, token, _ := bulkRecords(t, 3)
+	bad := `{"hostname": "laptop-14"`
+	w := postForm(t, srv, "/records/save", token, url.Values{"collection": {"laptops"}, "id": {""},
+		"fields": {bad}}.Encode())
+	body := w.Body.String()
+	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(body, `role="alert">that is not a JSON object`) {
+		t.Fatalf("the refusal is not said: %d %s", w.Code, w.Header().Get("Location"))
+	}
+	if !strings.Contains(body, `name="collection" value="laptops"`) ||
+		strings.Contains(body, `name="collection" value="bulk"`) {
+		t.Error("what was typed for laptops is in another collection's form")
+	}
+	if !strings.Contains(body, `{&#34;hostname&#34;: &#34;laptop-14&#34;</textarea>`) {
+		t.Error("what was typed is gone")
+	}
+
+	// The same with no collection to fall back to.
+	srv, token = setup(t)
+	tree := ""
+	srv.Data = &Data{Tree: func() (string, error) { return tree, nil },
+		Commit: func(next, msg, by string) error { tree = next; return nil }}
+	w = postForm(t, srv, "/records/save", token, url.Values{"collection": {"laptops"}, "id": {""},
+		"fields": {bad}}.Encode())
+	body = w.Body.String()
+	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(body, `role="alert">that is not a JSON object`) ||
+		!strings.Contains(body, `name="collection" value="laptops"`) {
+		t.Errorf("with no collections yet, the refusal is lost: %d", w.Code)
+	}
+}

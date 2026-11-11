@@ -100,7 +100,10 @@ func (s *Server) handleRecords(w http.ResponseWriter, r *http.Request) {
 // with the form closed: what had been typed was gone, and the refusal looked
 // like success.
 type keptRecord struct {
-	ID string
+	// Collection is the collection it was written for, which may have
+	// nothing in it yet.
+	Collection string
+	ID         string
 	// Fields is what the type's form said, read as each field's kind;
 	// JSON, when it was written as JSON, is the text exactly as typed.
 	Fields map[string]any
@@ -168,6 +171,21 @@ func (s *Server) recordsScreen(w http.ResponseWriter, r *http.Request, p princip
 	if selected != "" && !mayRead[selected] {
 		// One out of reach is answered as one that does not exist.
 		selected = ""
+	}
+	// A record refused for a collection that is not there yet stays with
+	// it. A collection is made by its first record, so the one somebody
+	// named in the JSON form is not among those there are, and the screen
+	// fell back to the first one there was, with what had been typed in
+	// that one's form: the next Save wrote it into the wrong collection.
+	// Nothing is shown that was not already there, because nothing is.
+	if kept != nil && selected == "" && kept.Collection != "" {
+		there := false
+		for _, n := range names {
+			there = there || n == kept.Collection
+		}
+		if !there {
+			selected = kept.Collection
+		}
 	}
 	if selected == "" && len(colls) > 0 {
 		selected = colls[0].Name
@@ -242,11 +260,19 @@ func (s *Server) recordsScreen(w http.ResponseWriter, r *http.Request, p princip
 			}
 		}
 	}
-	// A record that was refused: what was typed, on the record it was typed
-	// for, and the refusal said as one.
-	if kept != nil && selected != "" {
+	// A record that was refused: the refusal said as one, and what was
+	// typed, on the record it was typed for. Said whatever collection the
+	// screen is on, since a refusal that is not said reads as a save; what
+	// was typed only in its own collection's form, where saving it again
+	// writes it where it was meant to go.
+	if kept != nil {
 		data["Problem"] = kept.Problem
 		data["Status"] = http.StatusUnprocessableEntity
+		if kept.Collection != selected {
+			kept = nil
+		}
+	}
+	if kept != nil {
 		data["EditID"] = kept.ID
 		editing = kept.Fields
 		if kept.AsJSON {
@@ -652,6 +678,7 @@ func (s *Server) handleRecordExport(w http.ResponseWriter, r *http.Request) {
 // Answered rather than redirected because what was typed has nowhere to go
 // in an address, and it is what somebody most needs back.
 func (s *Server) recordRefused(w http.ResponseWriter, r *http.Request, p principal, coll string, kept keptRecord) {
+	kept.Collection = coll
 	q := url.Values{"c": {coll}}
 	if kept.ID != "" {
 		q.Set("edit", kept.ID)
