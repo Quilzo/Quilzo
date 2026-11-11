@@ -395,7 +395,7 @@ func (c Config) Validate() error {
 			if pm > 0 && !r.Transcribes {
 				return fmt.Errorf("route %s has a price a minute and does not transcribe", r.Name)
 			}
-			if pm > 0 && !reCurrency.MatchString(c.Currency) {
+			if pm > 0 && !validCurrency(c.Currency) {
 				return fmt.Errorf("route %s has prices and the configuration names no currency (USD, EUR, …)", r.Name)
 			}
 		}
@@ -407,7 +407,7 @@ func (c Config) Validate() error {
 			if perr != nil {
 				return fmt.Errorf("route %s's price of a video: %w", r.Name, perr)
 			}
-			if vid > 0 && !reCurrency.MatchString(c.Currency) {
+			if vid > 0 && !validCurrency(c.Currency) {
 				return fmt.Errorf("route %s has prices and the configuration names no currency (USD, EUR, …)", r.Name)
 			}
 		}
@@ -416,15 +416,15 @@ func (c Config) Validate() error {
 			if perr != nil {
 				return fmt.Errorf("route %s's price of a picture: %w", r.Name, perr)
 			}
-			if pic > 0 && !reCurrency.MatchString(c.Currency) {
+			if pic > 0 && !validCurrency(c.Currency) {
 				return fmt.Errorf("route %s has prices and the configuration names no currency (USD, EUR, …)", r.Name)
 			}
 		}
-		if (in > 0 || out > 0) && !reCurrency.MatchString(c.Currency) {
+		if (in > 0 || out > 0) && !validCurrency(c.Currency) {
 			return fmt.Errorf("route %s has prices and the configuration names no currency (USD, EUR, …)", r.Name)
 		}
 	}
-	if c.Currency != "" && !reCurrency.MatchString(c.Currency) {
+	if c.Currency != "" && !validCurrency(c.Currency) {
 		return fmt.Errorf("%q is not a currency code like USD or EUR", c.Currency)
 	}
 	who := map[string]bool{}
@@ -444,7 +444,7 @@ func (c Config) Validate() error {
 		if err != nil {
 			return err
 		}
-		if (day > 0 || month > 0) && !reCurrency.MatchString(c.Currency) {
+		if (day > 0 || month > 0) && !validCurrency(c.Currency) {
 			return fmt.Errorf("%s has a money budget and the configuration names no currency", b.Consumer)
 		}
 	}

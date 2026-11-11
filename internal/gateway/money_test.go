@@ -77,6 +77,24 @@ func TestPricesAndMoneyBudgetsNeedACurrency(t *testing.T) {
 	}
 }
 
+// The gateway's currency is one ISO 4217 lists, the list a mandate is
+// held to (internal/spend), not three capital letters: ETH passed, and a
+// budget "in ETH" was then compared with prices written in whatever the
+// provider bills in.
+func TestTheGatewaysCurrencyIsACurrencyNotATicker(t *testing.T) {
+	for _, code := range []string{"ETH", "BTC", "SOL", "XAU", "XXX"} {
+		cfg := Config{Currency: code, Budgets: []Budget{{Consumer: "agent:x", MoneyPerDay: "5"}}}
+		if cfg.Validate() == nil {
+			t.Errorf("a gateway priced in %s was accepted", code)
+		}
+	}
+	for _, code := range []string{"USD", "EUR", "JPY"} {
+		if err := (Config{Currency: code}).Validate(); err != nil {
+			t.Errorf("%s: %v", code, err)
+		}
+	}
+}
+
 func TestSpendingIsChargedToEveryPayerAndCapped(t *testing.T) {
 	cfg := Config{Currency: "USD",
 		Routes: []Route{{Name: "hosted", URL: "https://api.example/v1", Model: "m", KeyEnv: "K", PriceIn: "1.00", PriceOut: "2.00"}},

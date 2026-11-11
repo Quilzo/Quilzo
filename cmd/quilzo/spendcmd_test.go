@@ -151,3 +151,27 @@ func TestAMandateThatAsksHoldsAndARevokedOnePaysNothing(t *testing.T) {
 		t.Error("somebody who may not approve the agent gave it spending authority")
 	}
 }
+
+// `spend grant --currency ETH` was granted, and shown as "1.00 ETH in all"
+// while the mandate counted hundredths of whatever the paying tool counts.
+// It is refused at the currency, saying what a crypto asset is here, and
+// nothing is written; a call that pays in ETH is held, not read in cents.
+func TestACryptoTickerIsNotACurrencyToGrantOrPayIn(t *testing.T) {
+	root, _ := payingStore(t)
+	for _, ticker := range []string{"ETH", "btc", "SOL"} {
+		err := spendGrant(root, []string{"buyer", "--currency", ticker, "--per", "0.01", "--budget", "1",
+			"--payee", "0x1111", "--purpose", "test", "--without-asking"}, asAdmin("dana"))
+		if err == nil || !strings.Contains(err.Error(), "--currency") || !strings.Contains(err.Error(), "ISO 4217") ||
+			!strings.Contains(err.Error(), "crypto") || strings.Contains(err.Error(), "decimal places") {
+			t.Errorf("a mandate in %s: %v", ticker, err)
+		}
+	}
+	if b, _ := readBook(root); len(b.Mandates) != 0 {
+		t.Fatalf("a mandate in a crypto ticker was kept: %+v", b.Mandates)
+	}
+	held := agent.Action{Tool: "pay_invoice", Input: map[string]any{
+		"body": map[string]any{"amount": 100.0, "currency": "eth", "payee": "acct_supplies"}}}
+	if why := paymentAsks(root, "buyer")(held); !strings.HasPrefix(why, agent.PaysPrefix) || !strings.Contains(why, "ISO 4217") {
+		t.Errorf("a payment in ETH: %q", why)
+	}
+}

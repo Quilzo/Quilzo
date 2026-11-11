@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/quilzo/quilzo/internal/fetch"
+	"github.com/quilzo/quilzo/internal/spend"
 )
 
 // Integrations: reaching other people's systems, without carrying their code.
@@ -286,8 +287,11 @@ func (p Pays) check(o Operation) error {
 		return fmt.Errorf("%s pays and its amount is not one of its parameters or body fields", o.Name)
 	case p.Currency == "" || !declared(p.Currency):
 		return fmt.Errorf("%s pays and its currency is not one of its arguments, or a fixed code such as =USD", o.Name)
-	case strings.HasPrefix(p.Currency, "=") && !reCurrencyCode.MatchString(strings.TrimPrefix(p.Currency, "=")):
-		return fmt.Errorf("%s pays in %q, which is not a three-letter currency code", o.Name, strings.TrimPrefix(p.Currency, "="))
+	case strings.HasPrefix(p.Currency, "=") && spend.CheckCurrency(strings.TrimPrefix(p.Currency, "=")) != nil:
+		// The list a mandate is checked against, not the shape of a code:
+		// ^[A-Z]{3}$ let =ETH through, and every payment the call made was
+		// then counted in hundredths of a token.
+		return fmt.Errorf("%s pays in a fixed currency: %w", o.Name, spend.CheckCurrency(strings.TrimPrefix(p.Currency, "=")))
 	case p.Payee != "" && !declared(p.Payee):
 		return fmt.Errorf("%s pays someone named in %s, which is not one of its arguments", o.Name, p.Payee)
 	}
@@ -321,11 +325,10 @@ func (in Integration) Operation(tool string) (Operation, bool) {
 const MaxOperations = 200
 
 var (
-	reOperation    = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}$`)
-	reParam        = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_.-]{0,63}$`)
-	reHeader       = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]{0,63}$`)
-	reCurrencyCode = regexp.MustCompile(`^[A-Z]{3}$`)
-	rePlace        = regexp.MustCompile(`\{([^{}/]+)\}`)
+	reOperation = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}$`)
+	reParam     = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_.-]{0,63}$`)
+	reHeader    = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]{0,63}$`)
+	rePlace     = regexp.MustCompile(`\{([^{}/]+)\}`)
 )
 
 // forbiddenAuthHeaders are headers an API key may not be sent as: they

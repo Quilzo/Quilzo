@@ -809,6 +809,23 @@ is retired. A price no link charges yet shows no button at all, so a page
 never offers a checkout at a price it does not show. The site process holds no
 key: the admin makes the links, and the site reads only the list of them.
 
+### Crypto: what Quilzo does and refuses
+
+Quilzo does not hold a wallet, does not hold a key to one and does not sign a
+transaction. The moment it held a key it would become a custodian, and a thing
+worth attacking for a reason unrelated to content.
+
+- **Prices, mandates and paying calls are in currencies.** A currency is one
+  ISO 4217 lists, with the minor units ISO gives it (the list is
+  `internal/spend/iso4217.txt`). ETH, BTC, SOL and every other crypto ticker are
+  refused as one, at `quilzo spend grant`, in a paying tool's declaration and in
+  the gateway's prices, with a message that says why. Three capital letters
+  used to be enough, so a mandate "in ETH" was granted and counted in
+  hundredths, which is neither a token's unit nor its smallest.
+- **Publishing to IPFS needs no wallet.** `quilzo ipfs` computes the content
+  identifier here and hands you a bundle to upload; it holds no pinning token
+  and talks to no pinning service on your behalf.
+
 ## Bringing a site you already have
 
 Most sites somebody wants to move have no export file. What every one has is

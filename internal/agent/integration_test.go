@@ -408,3 +408,27 @@ func TestAToolWritesWhenEitherDeclarationSaysSo(t *testing.T) {
 		}
 	}
 }
+
+// A paying call whose currency is fixed in its declaration names a
+// currency ISO 4217 lists. "=ETH" used to pass, as three capital letters,
+// and every payment it made was then counted in hundredths of a token.
+func TestAPayingCallsFixedCurrencyIsACurrency(t *testing.T) {
+	paying := func(currency string) Integration {
+		return Integration{Name: "payments", Kind: IntegrationHTTP, Enabled: true, Purpose: "pay invoices",
+			Endpoint: "pay.example.com", Writes: true, Uses: []string{"pay"},
+			Operations: []Operation{{Name: "pay", Method: "POST", Path: "/payments",
+				Body: json.RawMessage(`{"type":"object"}`),
+				Pays: &Pays{Amount: "body.amount", Minor: true, Currency: currency, Payee: "body.payee"}}}}
+	}
+	for _, ok := range []string{"=USD", "=JPY", "body.currency"} {
+		if in := paying(ok); in.Validate() != nil {
+			t.Errorf("%s was refused: %v", ok, in.Validate())
+		}
+	}
+	for _, bad := range []string{"=ETH", "=BTC", "=SOL", "=XAU", "=USDC"} {
+		in := paying(bad)
+		if err := in.Validate(); err == nil || !strings.Contains(err.Error(), "ISO 4217") {
+			t.Errorf("%s: %v", bad, err)
+		}
+	}
+}

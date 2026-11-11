@@ -57,8 +57,8 @@ func paymentOf(agentName string, in agent.Integration, op agent.Operation, args 
 	if err != nil {
 		return spend.Payment{}, err
 	}
-	if !spend.ValidCurrency(currency) {
-		return spend.Payment{}, fmt.Errorf("%q is not a currency code", currency)
+	if err := spend.CheckCurrency(currency); err != nil {
+		return spend.Payment{}, err
 	}
 	amount, err := spend.AmountOf(raw, currency, op.Pays.Minor)
 	if err != nil {
@@ -260,6 +260,11 @@ func spendGrant(root string, args []string, caller *Caller) error {
 		return fmt.Errorf("no agent called %s is declared", agentName)
 	}
 	cur := strings.ToUpper(strings.TrimSpace(*currency))
+	// The currency first, so ETH is refused as what it is rather than as
+	// --per 0.001 having "3 decimal places, and ETH has 2".
+	if err := spend.CheckCurrency(cur); err != nil {
+		return fmt.Errorf("--currency: %w", err)
+	}
 	perAmt, err := spend.ParseAmount(*per, cur)
 	if err != nil {
 		return fmt.Errorf("--per: %w", err)

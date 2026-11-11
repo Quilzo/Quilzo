@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/quilzo/quilzo/internal/spend"
 )
 
 // Money, so a budget can say what the organisation actually cares about.
@@ -70,7 +72,9 @@ func (m Money) String() string {
 	return s
 }
 
-var reCurrency = regexp.MustCompile(`^[A-Z]{3}$`)
+// validCurrency is the check a mandate's currency meets (internal/spend):
+// a code ISO 4217 lists. It was ^[A-Z]{3}$, which ETH and BTC pass.
+func validCurrency(c string) bool { return spend.ValidCurrency(c) }
 
 // costOf is what a call cost on a route: tokens times the route's prices
 // per million, rounded up to the next millionth.
