@@ -871,36 +871,40 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 	srv.Register(mcp.Operation{
 		Name: "export_site", NeedsRole: "reader",
 		Summary: "the whole site in a portable format",
+		Detail: "What `quilzo export` writes, built the same way: the pages, every " +
+			"collection's records, when each page last changed and the redirects, " +
+			"of what is published unless ref names another. Refused when a page " +
+			"or a collection in it is not yours to read, and recorded as an export.",
 		Args: map[string]string{
-			"format": "markdown, json or wxr; markdown by default",
+			"format":    "markdown, json, wxr or ro-crate; markdown by default",
+			"ref":       "which ref or commit to export; live by default, draft for the draft",
+			"licence":   "the SPDX URI an ro-crate deposit is under, which it requires",
+			"publisher": "who is depositing an ro-crate",
 		},
 		Keywords: []string{"export", "backup", "migrate", "portable", "leave"},
 	}, func(a map[string]any) (any, error) {
-		f, _ := a["format"].(string)
-		if f == "" {
-			f = string(export.Markdown)
+		opts := exportOptions{Format: export.Markdown, Ref: site.RefLive}
+		if f, _ := a["format"].(string); f != "" {
+			opts.Format = export.Format(f)
 		}
-		pages, err := draftPages(root)
-		if err != nil {
-			return nil, err
+		if r, _ := a["ref"].(string); r != "" {
+			opts.Ref = r
 		}
-		if err := everyPage(root, caller, pages); err != nil {
-			return nil, &mcp.Refusal{Reason: err.Error()}
-		}
-		// The deployment's banner, as `quilzo export` puts it on every file,
-		// and refused when the scheme cannot be read: this export carried
-		// none at all.
-		banner, err := deploymentBanner(root)
+		opts.Licence, _ = a["licence"].(string)
+		opts.Publisher, _ = a["publisher"].(string)
+		// The one export of a whole site (exportsite.go). This built its
+		// own, of the draft's pages and the banner: no collections, no change
+		// dates, no redirects, and no record that the site was taken out.
+		ex, err := exportSite(root, caller, opts)
 		if err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
-		files, err := export.Export(export.Format(f), export.Site{Pages: pages, Banner: banner},
-			time.Now())
-		if err != nil {
-			return nil, &mcp.Refusal{Reason: err.Error()}
-		}
+		recordExport(root, caller, opts, ex, "mcp")
 		var b strings.Builder
-		for _, file := range files {
+		for _, note := range ex.Notes {
+			fmt.Fprintf(&b, "note: %s\n\n", note)
+		}
+		for _, file := range ex.Files {
 			fmt.Fprintf(&b, "===== %s =====\n%s\n\n", file.Path, file.Body)
 		}
 		return strings.TrimSpace(b.String()), nil

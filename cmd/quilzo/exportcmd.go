@@ -13,12 +13,8 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
-	"github.com/quilzo/quilzo/internal/auth"
-	"github.com/quilzo/quilzo/internal/collection"
-	"github.com/quilzo/quilzo/internal/config"
 	"github.com/quilzo/quilzo/internal/export"
 	"github.com/quilzo/quilzo/internal/out"
-	"github.com/quilzo/quilzo/internal/seo"
 	"github.com/quilzo/quilzo/internal/siem"
 	"github.com/quilzo/quilzo/internal/site"
 )
@@ -42,126 +38,19 @@ func cmdExport(root string, args []string) error {
 		format = export.Format(pos[0])
 	}
 
-	s, err := open(root)
-	if err != nil {
-		return err
-	}
-	pages, err := site.PagesAt(s, *ref)
-	if err != nil {
-		return err
-	}
+	// The one export of a whole site (exportsite.go), which MCP's
+	// export_site and the Transfer screen build too.
 	caller := resolveCaller(root, flagToken)
-	if err := everyPage(root, caller, pages); err != nil {
+	opts := exportOptions{Format: format, Ref: *ref, Name: *name, BaseURL: *baseURL,
+		Licence: *licence, Publisher: *publisher}
+	ex, err := exportSite(root, caller, opts)
+	if err != nil {
 		return err
 	}
-
-	head := s.GetRef(*ref)
-
-	// The collections too. Leaving these out was a silent data loss in every
-	// format: the demo shop exported a catalogue page and none of its twelve
-	// products, and nothing said so because the count printed was of pages.
-	colls := map[string][]export.Record{}
-	records := 0
-	tree := ""
-	if head != "" {
-		c, err := s.GetCommit(head)
-		if err != nil {
-			return err
-		}
-		tree = c.Tree
+	for _, note := range ex.Notes {
+		w.Human("  %s%s%s\n", yellow, note, reset)
 	}
-	if tree != "" {
-		names, err := collection.Names(s, tree)
-		if err != nil {
-			return err
-		}
-		// Every collection is in the export, so every one must be the
-		// caller's to read: access is given per collection, and a check on
-		// "/" does not see a deny on one.
-		for _, name := range names {
-			if err := authorise(root, caller, auth.ActView, auth.DataResource(name)); err != nil {
-				return fmt.Errorf("the export holds every collection, and %s is not yours to read: %w", name, err)
-			}
-		}
-		for _, name := range names {
-			// Paged to the end, not one page of it. A listing has a maximum
-			// limit, so taking a single page would export the first thousand
-			// products of a larger catalogue and report success — the same
-			// shape of failure as exporting none of them.
-			for offset := 0; ; {
-				rows, total, err := collection.List(s, tree, name,
-					collection.Query{
-						Limit: collection.MaxLimit, Offset: offset, Sort: "id"})
-				if err != nil {
-					return err
-				}
-				for _, r := range rows {
-					colls[name] = append(colls[name], export.Record{
-						ID: r.ID, Fields: r.Fields,
-						Created: r.Created, Updated: r.Updated,
-					})
-				}
-				offset += len(rows)
-				records += len(rows)
-				if len(rows) == 0 || offset >= total {
-					if offset != total {
-						return errBlocked{fmt.Errorf(
-							"%s holds %d records but only %d could be read; "+
-								"exporting now would drop the rest silently",
-							name, total, offset)}
-					}
-					break
-				}
-			}
-		}
-	}
-	changed, err := seo.LastChanged(s, head, 5000)
-	if err != nil {
-		// A missing history costs the dates, not the export. Refusing to
-		// export because one derived field could not be computed would be the
-		// wrong trade for the one command people run when they are leaving.
-		changed = nil
-		w.Human("  %scould not read history, so change dates are omitted%s\n",
-			yellow, reset)
-	}
-
-	// The site's own redirect map, and the one `quilzo import` writes here,
-	// so the addresses that moved keep moving wherever the site goes next.
-	var redirects []export.Redirect
-	held, err := siteRedirects(root, "redirects.json")
-	if err != nil {
-		w.Human("  %sredirects.json could not be read, so only the site's own redirects are kept: %v%s\n",
-			yellow, err, reset)
-		held, _ = siteRedirects(root)
-	}
-	for _, r := range held {
-		redirects = append(redirects, export.Redirect{
-			From: r.From, To: r.To, Permanent: r.Permanent, Note: r.Note})
-	}
-
-	// The deployment's marking, on every exported file. An export is the copy
-	// that ends up on removable media or in somebody's home directory, and a
-	// file with no marking does not look like one whose marking was lost.
-	// Refused when the configuration cannot be read, which used to write the
-	// export with no banner at all (deploymentMarking).
-	banner := ""
-	if p, perr := deploymentMarking(root); perr != nil {
-		return errBlocked{perr}
-	} else if p != nil {
-		banner = p.Banner
-	}
-
-	files, err := export.Export(format, export.Site{
-		Banner: banner,
-		// The scheme's own port left out, as the site and site.base_url
-		// leave it out: :443 in every link of the export, otherwise.
-		Pages: pages, Name: *name, BaseURL: config.SiteBase(*baseURL),
-		Changed: changed, Redirects: redirects, Collections: colls,
-		Licence: *licence, Publisher: *publisher, Commit: head,
-	}, time.Now())
-	if err != nil {
-		return errBlocked{err}
-	}
+	files := ex.Files
 
 	// Refuse to write into a directory that already has something in it. An
 	// export that half-overwrites a previous one produces a directory that is
@@ -185,26 +74,18 @@ func cmdExport(root string, args []string) error {
 		}
 	}
 
-	record(root, audit.Record{
-		Action: "export", Resource: "/" + *ref, Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
-		Detail: map[string]string{
-			"format": string(format), "pages": fmt.Sprintf("%d", len(pages)),
-			"records": fmt.Sprintf("%d", records),
-			"files":   fmt.Sprintf("%d", len(files)), "to": *dir,
-		},
-	})
+	recordExport(root, caller, opts, ex, *dir)
 
 	if w.JSON(map[string]any{
-		"format": format, "pages": len(pages), "records": records,
-		"collections": len(colls), "files": len(files), "to": *dir,
+		"format": format, "pages": ex.Pages, "records": ex.Records,
+		"collections": ex.Collections, "files": len(files), "to": *dir,
 	}) {
 		return nil
 	}
 	// Records counted out loud, beside the pages. The count is what tells
 	// somebody the catalogue came with them.
 	w.Human("%s%d page(s)%s and %s%d record(s)%s in %d collection(s) as %s into %s%s%s\n",
-		bold, len(pages), reset, bold, records, reset, len(colls),
+		bold, ex.Pages, reset, bold, ex.Records, reset, ex.Collections,
 		format, bold, *dir, reset)
 	for _, f := range files {
 		w.Human("  %s%s%s\n", dim, f.Path, reset)

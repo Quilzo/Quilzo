@@ -84,7 +84,7 @@ func TestADenyOnPartOfTheSiteHoldsOverMCP(t *testing.T) {
 	if got := call("quilzo_read", "diff", nil); strings.Contains(got, " about") {
 		t.Errorf("diff named the denied page: %s", got)
 	}
-	if got := call("quilzo_read", "export_site", nil); !strings.Contains(got, "not pat's to read") {
+	if got := call("quilzo_read", "export_site", map[string]any{"ref": "draft"}); !strings.Contains(got, "not pat's to read") {
 		t.Errorf("export_site exported around a deny: %s", got)
 	}
 }
@@ -152,5 +152,12 @@ func TestAnExportIsRefusedWhenSomethingInItIsNotTheReadersToRead(t *testing.T) {
 	if err := cmdExport(root, []string{"json", "--ref", "draft", "--to", out, "--force"}); err == nil ||
 		!strings.Contains(err.Error(), "products") {
 		t.Errorf("an export went round a deny on a collection: %v", err)
+	}
+	// Over MCP too: export_site left the collections out, and so never
+	// asked whether they were the caller's to read.
+	call := mcpAs(t, root, withRole("rae", auth.RoleReader))
+	if got := call("quilzo_read", "export_site", map[string]any{"ref": "draft", "format": "json"}); !refused(got) ||
+		!strings.Contains(got, "products") {
+		t.Errorf("an export over MCP went round a deny on a collection: %s", got)
 	}
 }

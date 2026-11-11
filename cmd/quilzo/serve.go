@@ -748,25 +748,7 @@ func cmdServe(root string, args []string) error {
 	dw := newDesignWatch(*tplDir, design, func(d *Design) { srv.SetDesign(d.Layouts, d.Stylesheet) })
 	srv.DesignSet = adminDesignHooks(*tplDir, dw)
 	srv.Decentralised = decentralisedFor(root, *tplDir, s, dw.Current)
-	srv.Transfer = &admin.Transfer{
-		Pages: func() (map[string]any, error) { return draftPages(root) },
-		// Its own Save rather than the shared one, so what it marks is what it
-		// brought in. A transfer is content this program converted out of
-		// somebody else's export — a thing it knows — where an ordinary edit
-		// is a person writing, which it does not. Marking through the shared
-		// path would assert the first about the second.
-		Save: func(p map[string]any, msg, by, base string) error {
-			if err := saveDraft(root, s, p, msg, by, base); err != nil {
-				return err
-			}
-			markGeneratedQuietly(root, s, by, "brought in by transfer import")
-			return nil
-		},
-		SiteName: cfg.Raw("site.name"), BaseURL: cfg.Raw("site.base_url"),
-		// Read at each export, so a scheme changed while this runs is the
-		// one an export carries.
-		Banner: func() (string, error) { return deploymentBanner(root) },
-	}
+	srv.Transfer = transferHooks(root, s, cfg, signedIn)
 	srv.Assist = &admin.Assist{
 		Model: func(person string) (assist.Model, error) {
 			m, err := assistModel(root, person)

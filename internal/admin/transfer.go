@@ -53,6 +53,14 @@ type Transfer struct {
 	// removable media, and a file with no marking does not look like one
 	// whose marking was lost.
 	Banner func() (string, error)
+	// Export builds the export a download carries, for the person signed
+	// in, and records it: the one export every surface builds (`quilzo
+	// export` and MCP's export_site), with every collection's records, when
+	// each page last changed and the redirects, which this screen's hint
+	// promised and its own export, of the pages alone, did not carry. Nil
+	// builds that export here from Pages, SiteName, BaseURL and Banner, for
+	// an embedder that wires only those.
+	Export func(format export.Format, by Actor) ([]export.File, error)
 }
 
 // MaxImport bounds an uploaded export.
@@ -159,27 +167,36 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 			"to read, %s among them", len(hidden), hidden[0]))
 		return
 	}
-	// The deployment's banner on every file (see Transfer.Banner).
-	banner := ""
-	if s.Transfer.Banner != nil {
-		b, berr := s.Transfer.Banner()
-		if berr != nil {
-			s.transferRedirect(w, r, "", berr.Error())
+	format := export.Format(r.FormValue("format"))
+	var files []export.File
+	if s.Transfer.Export != nil {
+		// The one export, which records itself as every surface's does.
+		if files, err = s.Transfer.Export(format, p.actor()); err != nil {
+			s.transferRedirect(w, r, "", err.Error())
 			return
 		}
-		banner = b
+	} else {
+		// The deployment's banner on every file (see Transfer.Banner).
+		banner := ""
+		if s.Transfer.Banner != nil {
+			b, berr := s.Transfer.Banner()
+			if berr != nil {
+				s.transferRedirect(w, r, "", berr.Error())
+				return
+			}
+			banner = b
+		}
+		files, err = export.Export(format, export.Site{
+			Pages: pages, Name: s.Transfer.SiteName, BaseURL: s.Transfer.BaseURL,
+			Banner: banner,
+		}, time.Now())
+		if err != nil {
+			s.transferRedirect(w, r, "", err.Error())
+			return
+		}
+		s.auditPub(p, "export", "/", map[string]string{
+			"format": string(format), "files": fmt.Sprint(len(files))})
 	}
-	format := export.Format(r.FormValue("format"))
-	files, err := export.Export(format, export.Site{
-		Pages: pages, Name: s.Transfer.SiteName, BaseURL: s.Transfer.BaseURL,
-		Banner: banner,
-	}, time.Now())
-	if err != nil {
-		s.transferRedirect(w, r, "", err.Error())
-		return
-	}
-	s.auditPub(p, "export", "/", map[string]string{
-		"format": string(format), "files": fmt.Sprint(len(files))})
 
 	// One file is served as itself. Several are concatenated with a header per
 	// file rather than zipped, because zip means an archive writer and this
