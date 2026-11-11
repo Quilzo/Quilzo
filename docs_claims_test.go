@@ -539,3 +539,28 @@ func TestTheManualSaysHowPeopleSignIn(t *testing.T) {
 		}
 	}
 }
+
+// The manual said a declared integration arrives "switched off", for a
+// person to "pin and turn on", and never said how. There is no button for it
+// and no command: the one way is the flag on its entry in integrations.json,
+// and a manual that leaves that out sends people looking for a switch. The
+// flag and the file are read from the code that reads them, so a rename
+// makes the manual wrong here rather than in somebody's change ticket.
+func TestTheManualSaysHowAnIntegrationIsTurnedOn(t *testing.T) {
+	manual := strings.Join(strings.Fields(read(t, "docs/cms.md")), " ")
+	tag := regexp.MustCompile("(?m)^\\s*Enabled\\s+bool\\s+`json:\"(\\w+)\"`").
+		FindStringSubmatch(read(t, "internal/agent/integration.go"))
+	if tag == nil {
+		t.Fatal("agent.Integration has no Enabled field with a json tag; this test cannot check anything")
+	}
+	file := regexp.MustCompile(`func integrationsPath\(root string\) string \{\s*return filepath\.Join\(root, "([\w.-]+)"\)`).
+		FindStringSubmatch(read(t, "cmd/quilzo/integrationscmd.go"))
+	if file == nil {
+		t.Fatal("integrationsPath no longer names its file; this test cannot check anything")
+	}
+	for _, want := range []string{`"` + tag[1] + `": true`, "`" + file[1] + "`"} {
+		if !strings.Contains(manual, want) {
+			t.Errorf("docs/cms.md never says %s, so it does not say how an integration is turned on", want)
+		}
+	}
+}

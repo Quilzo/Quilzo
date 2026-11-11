@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -102,5 +103,60 @@ func TestTheGatewayOffersARESTAPIsPinnedOperations(t *testing.T) {
 	}
 	if sentTo != "GET https://api.billing.example/v1/invoices/7" || key != "k3y" {
 		t.Errorf("sent %q with key %q", sentTo, key)
+	}
+}
+
+// What to do next, after declaring one, ended "then turn it on in
+// Administration › Integrations". That screen lists what is declared and
+// whether it is on, and changes nothing, deliberately; no command turns one
+// on either. Whoever did as they were told found a list and nothing to
+// press. The one way is "enabled": true in integrations.json, so that is what
+// each hint says, naming the file this install reads rather than one the
+// person has to guess the directory of.
+func TestTheHintAfterDeclaringSaysHowItIsTurnedOn(t *testing.T) {
+	root, _ := identityStore(t)
+	doc := filepath.Join(t.TempDir(), "billing.json")
+	if err := os.WriteFile(doc, []byte(billingAPI), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	said := map[string]string{}
+	var err error
+	if said["import"], err = humanOutput(t, func() error {
+		return integrationsImport(root, []string{doc, "--uses", "getInvoice"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if said["template"], err = humanOutput(t, func() error {
+		return integrationsTemplate(root, []string{"github-issues"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for cmd, s := range said {
+		if strings.Contains(s, "Administration › Integrations") {
+			t.Errorf("integrations %s sends people to a screen with no switch:\n%s", cmd, s)
+		}
+		if !strings.Contains(s, `"enabled": true`) || !strings.Contains(s, integrationsPath(root)) {
+			t.Errorf("integrations %s does not say to set \"enabled\": true in %s:\n%s", cmd, integrationsPath(root), s)
+		}
+	}
+
+	// And no hint written since says it again: the sentence was copied
+	// from one command to the next, and a third copy would be as wrong.
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sendsThere := regexp.MustCompile(`\b(turn|switch)\w*\b[^"\n]{0,40}\bon\b[^\n]{0,60}Administration › Integrations`)
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if m := sendsThere.Find(b); m != nil {
+			t.Errorf("%s tells somebody to turn an integration on where there is no switch: %q", f, m)
+		}
 	}
 }

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/agent"
 )
 
 // A call through the gateway that a person approves is shown with its
@@ -41,5 +43,23 @@ func TestAHeldGatewayCallIsDecidedOnTheScreen(t *testing.T) {
 	postForm(t, srv, "/integrations/held", token, url.Values{"id": {"gq_0123456789ab"}, "decision": {"decline"}}.Encode())
 	if len(decided) != 2 || decided[1] != "gq_0123456789ab false editor" {
 		t.Fatalf("%v", decided)
+	}
+}
+
+// The screen said everything is off "until somebody turns it on", and
+// offers nothing that does: it is read-only on purpose (Integrations.Declared
+// says why). Somebody looking at an integration marked off has to be told
+// where it is turned on, or they go looking for the button.
+func TestTheScreenSaysWhereAnIntegrationIsTurnedOn(t *testing.T) {
+	srv, token := setup(t)
+	srv.Integrations = &Integrations{Declared: func() (agent.Integrations, error) {
+		return agent.Integrations{Declared: []agent.Integration{{Name: "tracker", Kind: agent.IntegrationMCP,
+			Purpose: "file issues", Endpoint: "mcp.tracker.example", Uses: []string{"create_issue"}}}}, nil
+	}}
+	body := get(t, srv, "/integrations", token).Body.String()
+	for _, want := range []string{"declared, off", `"enabled": true`, "integrations.json"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the screen lacks %q", want)
+		}
 	}
 }

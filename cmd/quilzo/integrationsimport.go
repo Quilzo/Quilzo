@@ -85,8 +85,8 @@ func integrationsImport(root string, args []string) error {
 	for _, n := range imp.Notes {
 		w.Human("  %s%s%s\n", dim, n, reset)
 	}
-	w.Human("\nnext: quilzo integrations tools %s, quilzo integrations pin %s, then turn it on in Administration › Integrations\n",
-		in.Name, in.Name)
+	w.Human("\nnext: quilzo integrations tools %s, quilzo integrations pin %s, then %s\n",
+		in.Name, in.Name, turnOnHint(root))
 	return nil
 }
 
