@@ -510,8 +510,18 @@ func auditShow(root string, args []string) error {
 		if e.Kind == audit.KindAI && e.Model != "" {
 			who = e.Model
 		}
-		w.Human("  %s  %s%-8s%s %-16s %-22s %s(%s)%s\n",
-			e.At[:19], colour, e.Outcome, reset, e.Action, e.Resource, dim, who, reset)
+		// To the second, which is the first nineteen characters of the time
+		// the log writes, and no more than the entry has. Reading never
+		// checks the shape of "at", and an entry whose time had been cut to
+		// a date stopped this listing with a stack trace just after the
+		// warning that the chain was broken, which is the one listing that
+		// has to reach its end.
+		at := e.At
+		if len(at) > 19 {
+			at = at[:19]
+		}
+		w.Human("  %-19s  %s%-8s%s %-16s %-22s %s(%s)%s\n",
+			at, colour, e.Outcome, reset, e.Action, e.Resource, dim, who, reset)
 	}
 	return nil
 }
