@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/auth"
 )
 
 // Signing out a session nobody is using (session.idle; NIST AC-2(5), the
@@ -18,8 +20,16 @@ import (
 // a person does: a page they open, a form they send, and — while a page is
 // open — a key, a click or a scroll, which the page reports at most once a
 // minute (admin.js, /session/alive). Requests a page makes on its own do
-// not count, and neither does a credential sent in an Authorization header,
-// which is a program, not a browser left open.
+// not count.
+//
+// A sign-in session is idle however it is presented. Its value works in an
+// Authorization header as well as in the cookie, and the clock was kept
+// only for the cookie, so a passkey session copied into a header, which
+// the bearer gate lets through at two factors, lasted the whole of
+// session.max with nobody using it. A program's own long-lived token is not
+// a session and is not signed out for idling; a program using a session
+// keeps it alive by using it, as a person does, since a request with no
+// fetch metadata counts as use.
 //
 // Kept in this process, not in the credential store: the store is reloaded
 // from disk whenever another process writes it, and the last use of every
@@ -31,34 +41,75 @@ type idleClock struct {
 	last map[string]time.Time
 }
 
-// idleOver ends a browser session nobody has used for session.idle and
-// reports whether it did; otherwise it notes this request as use when a
-// person made it.
+// idleOver ends a sign-in session nobody has used for session.idle, in the
+// cookie or in a header, and reports whether it did; otherwise it notes
+// this request as use when a person made it.
 func (s *Server) idleOver(w http.ResponseWriter, r *http.Request, p principal) bool {
-	idle := s.idleFor(p.Name)
-	if !p.Session || p.TokenID == "" || !fromBrowser(r) {
+	if !p.Session || p.TokenID == "" {
 		return false
 	}
+	idle, over := s.idleSpent(r, p.Name, p.TokenID)
+	if !over {
+		return false
+	}
+	s.endIdle(w, r, p, idle)
+	return true
+}
+
+// idleSpent is the clock: whether the session id, name's, has gone unused
+// for longer than name may leave it, and how long that is. A request a
+// person made is noted as use; a session not seen before starts its idle
+// period now.
+func (s *Server) idleSpent(r *http.Request, name, id string) (time.Duration, bool) {
+	idle := s.idleFor(name)
 	now := time.Now()
 	s.idle.mu.Lock()
+	defer s.idle.mu.Unlock()
 	if s.idle.last == nil {
 		s.idle.last = map[string]time.Time{}
 	}
-	last, seen := s.idle.last[p.TokenID]
+	last, seen := s.idle.last[id]
 	switch {
 	case !seen:
-		s.idle.last[p.TokenID] = now
+		s.idle.last[id] = now
 		s.idle.sweep(now, s.sessionMax())
 	case now.Sub(last) > idle:
-		delete(s.idle.last, p.TokenID)
-		s.idle.mu.Unlock()
-		s.endIdle(w, r, p, idle)
-		return true
+		delete(s.idle.last, id)
+		return idle, true
 	case personMade(r):
-		s.idle.last[p.TokenID] = now
+		s.idle.last[id] = now
 	}
-	s.idle.mu.Unlock()
-	return false
+	return idle, false
+}
+
+// IdleEnded is the same clock for a door that does not answer with the
+// admin's screens: the agent interface, and the content API at /api/,
+// which this server mounts and does not authenticate itself, and which
+// takes the session cookie from the admin's own pages and a session in a
+// header from anybody. It ends t, revoked as signing out revokes it, when t is a
+// sign-in session nobody has used for session.idle, and reports whether it
+// did; a long-lived token is nobody's session and is never ended here.
+//
+// Without it a session used only at /api/v1 was never idle: the admin's
+// clock never saw it, and the API keeps none.
+func (s *Server) IdleEnded(r *http.Request, t *auth.Token) bool {
+	if t == nil || t.ID == "" || !t.IsSession() {
+		return false
+	}
+	idle, over := s.idleSpent(r, t.Principal, t.ID)
+	if !over {
+		return false
+	}
+	// The credentials as stored now, as at /mcp (storedTokens): this door
+	// ran no refresh, and saving the copy it would have read could put back
+	// what another process had changed since.
+	if toks := s.storedTokens(); toks != nil {
+		if _, err := toks.Revoke(t.ID); err == nil && s.SaveTokens != nil {
+			_ = s.SaveTokens(toks)
+		}
+	}
+	s.audit("session.idle", "/", map[string]string{"by": t.Principal, "session": t.ID, "after": idle.String()})
+	return true
 }
 
 // sweep forgets sessions that cannot still be alive. Held lock.

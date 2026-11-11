@@ -314,6 +314,12 @@ func (s *Server) interfaceCaller(r *http.Request, token, resource string) (*mcp.
 	if s.Throttle != nil {
 		s.Throttle.Succeed(throttle.Subject{Principal: tok.Principal})
 	}
+	// A person's sign-in session carried here is idle as it is at the
+	// screens (IdleEnded): it never was, so a session nobody used lasted
+	// at /mcp for the whole of session.max.
+	if s.IdleEnded(r, tok) {
+		return nil, errors.New("this session was signed out after a while unused; sign in again")
+	}
 	if s.OnTokenUsed != nil {
 		s.OnTokenUsed(*tok)
 	}

@@ -101,6 +101,12 @@ type Server struct {
 	// used here every day was listed as used "never", and `token stale`
 	// offered it for revocation. Nil tells nobody.
 	OnTokenUsed func(tok auth.Token)
+	// Idle ends a sign-in session nobody has used for a while, and reports
+	// whether it did, for a host that keeps that clock: the admin, which
+	// mounts this server under `quilzo serve`. Without it a session used
+	// only here, in a header or in the cookie, was never idle and lasted
+	// the whole of session.max. Nil ends none.
+	Idle func(r *http.Request, tok *auth.Token) bool
 	// Shield reports whether the shield has turned the content API off for
 	// a while. Nil means never.
 	Shield func() (until time.Time, on bool)
@@ -301,6 +307,13 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 			// person signing in is not evidence that the guessing from it
 			// stopped.
 			s.Throttle.Succeed(throttle.Subject{Principal: tok.Principal})
+		}
+		if s.Idle != nil && s.Idle(r, tok) {
+			writeError(w, http.StatusUnauthorized, Error{
+				Error: "signed out after a while unused",
+				Fix:   "sign in again, or send a token: Authorization: Bearer qz_...",
+			})
+			return
 		}
 		if s.OnTokenUsed != nil {
 			s.OnTokenUsed(*tok)

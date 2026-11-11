@@ -181,3 +181,91 @@ func TestWhoCanGrantAccessIsSignedOutSooner(t *testing.T) {
 		}
 	}
 }
+
+// A sign-in session nobody uses ends after session.idle however it is
+// presented: carried in an Authorization header to the admin's screens or
+// to /mcp, and at the content API the admin mounts (IdleEnded), as well
+// as in the cookie. A long-lived token is not a session, and a program
+// holding one is not signed out for idling.
+//
+// The clock was kept only for a request with the cookie and no header. A
+// passkey session's value sent as "Authorization: Bearer" is a session at
+// two factors, which the bearer gate lets through, and it worked for the
+// rest of session.max with nobody using it, while the same session in a
+// browser was signed out after session.idle.
+func TestASessionNobodyUsesEndsHoweverItIsPresented(t *testing.T) {
+	r := newIfaceRig(t)
+	r.oauth = false
+	srv := r.srv
+	withSettings(t, srv, map[string]string{"session.idle": "10m"})
+	session := func() (string, auth.Token) {
+		t.Helper()
+		secret, tok, err := srv.Tokens.IssueSession("passkey:editor", "editor", auth.RoleAdmin, "/",
+			time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return secret, tok
+	}
+	unused := func(id string) {
+		srv.idle.mu.Lock()
+		if srv.idle.last == nil {
+			srv.idle.last = map[string]time.Time{}
+		}
+		srv.idle.last[id] = time.Now().Add(-11 * time.Minute)
+		srv.idle.mu.Unlock()
+	}
+	ended := func(secret string) bool {
+		_, err := srv.Tokens.Authenticate(secret, time.Now())
+		return err != nil
+	}
+
+	// The admin's screens.
+	secret, tok := session()
+	if w := get(t, srv, "/", secret); w.Code != http.StatusOK {
+		t.Fatalf("first use in a header: %d", w.Code)
+	}
+	unused(tok.ID)
+	if w := get(t, srv, "/", secret); w.Code == http.StatusOK || !ended(secret) {
+		t.Errorf("a session in a header unused for eleven minutes still works at the screens: %d", w.Code)
+	}
+
+	// The agent interface.
+	secret, tok = session()
+	if w := r.mcpCall(t, secret); w.Code != http.StatusOK {
+		t.Fatalf("first use at /mcp: %d %s", w.Code, w.Body)
+	}
+	unused(tok.ID)
+	if w := r.mcpCall(t, secret); w.Code == http.StatusOK || !ended(secret) {
+		t.Errorf("a session unused for eleven minutes still works at /mcp: %d", w.Code)
+	}
+
+	// The content API, which asks the admin's clock.
+	secret, tok = session()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/pages", nil)
+	used, err := srv.Tokens.Authenticate(secret, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if srv.IdleEnded(req, used) {
+		t.Fatal("a session used a moment ago was ended")
+	}
+	unused(tok.ID)
+	if !srv.IdleEnded(req, used) || !ended(secret) {
+		t.Error("a session unused for eleven minutes still works at the content API")
+	}
+
+	// A program's long-lived token is nobody's session.
+	program, ptok, err := srv.Tokens.Issue("ci", "editor", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.mcpCall(t, program)
+	unused(ptok.ID)
+	if w := r.mcpCall(t, program); w.Code != http.StatusOK || ended(program) {
+		t.Errorf("a long-lived token in a header was signed out for idling: %d", w.Code)
+	}
+	if srv.IdleEnded(req, &ptok) {
+		t.Error("the content API ended a long-lived token for idling")
+	}
+}

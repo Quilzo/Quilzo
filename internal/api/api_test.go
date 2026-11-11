@@ -909,3 +909,30 @@ func TestATokensUseIsToldToTheHost(t *testing.T) {
 		t.Fatalf("told of %v", used)
 	}
 }
+
+// A session the host says nobody has used for its idle period is refused
+// here, as it is at the admin's screens; one in use is let through, and
+// every authenticated request is asked about.
+//
+// The admin keeps the idle clock and this server, mounted inside it, never
+// asked it, so a sign-in session used only at /api/v1, in a header or in
+// the cookie, was never idle and lasted the whole of session.max.
+func TestASessionTheHostSaysIsIdleIsRefused(t *testing.T) {
+	s, read, _ := setup(t)
+	var asked []string
+	idle := false
+	s.Idle = func(r *http.Request, tok *auth.Token) bool {
+		asked = append(asked, tok.Principal)
+		return idle
+	}
+	if w := req(t, s, "GET", "/api/v1/pages", read, nil, nil); w.Code != http.StatusOK {
+		t.Fatalf("a session in use: %d %s", w.Code, w.Body)
+	}
+	idle = true
+	if w := req(t, s, "GET", "/api/v1/pages", read, nil, nil); w.Code != http.StatusUnauthorized {
+		t.Fatalf("a session the host ended for idling: %d %s", w.Code, w.Body)
+	}
+	if len(asked) != 2 || asked[0] != "reader" {
+		t.Fatalf("asked about %v", asked)
+	}
+}
