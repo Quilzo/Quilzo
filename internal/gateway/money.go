@@ -76,6 +76,13 @@ func (m Money) String() string {
 // a code ISO 4217 lists. It was ^[A-Z]{3}$, which ETH and BTC pass.
 func validCurrency(c string) bool { return spend.ValidCurrency(c) }
 
+// storedCurrency is the check a declaration already stored is read with: a
+// code's shape, which is all a currency was checked for when it was written.
+// See Load.
+func storedCurrency(c string) bool { return reCodeShape.MatchString(c) }
+
+var reCodeShape = regexp.MustCompile(`^[A-Z]{3}$`)
+
 // costOf is what a call cost on a route: tokens times the route's prices
 // per million, rounded up to the next millionth.
 func costOf(priceIn, priceOut Money, in, out int) Money {

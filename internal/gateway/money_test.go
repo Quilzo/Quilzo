@@ -6,6 +6,9 @@ package gateway
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -92,6 +95,45 @@ func TestTheGatewaysCurrencyIsACurrencyNotATicker(t *testing.T) {
 		if err := (Config{Currency: code}).Validate(); err != nil {
 			t.Errorf("%s: %v", code, err)
 		}
+	}
+}
+
+// A declaration stored when any three capital letters were a currency may
+// name one ISO 4217 does not list: BTC, gold, a currency since withdrawn.
+// Refused when it was read, every model call through the gateway stopped,
+// and so did `quilzo gateway currency USD` and the Models screen, which read
+// the declaration before changing it, so nothing short of editing the file
+// by hand could put it right. It is read as it was, and refused only when it
+// is written again in that currency.
+func TestAGatewayStoredInACodeISODoesNotListStillLoads(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "gateway.json")
+	write := func(s string) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(s), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(`{"currency": "BTC", "routes": [{"name": "hosted", "url": "https://api.example/v1", "model": "m",
+		"key_env": "K", "price_in": "1.00", "price_out": "2.00"}], "budgets": [{"consumer": "*", "money_per_day": "5"}]}`)
+	cfg, err := Load(path)
+	if err != nil || cfg == nil || cfg.Currency != "BTC" {
+		t.Fatalf("a gateway stored in BTC: %+v %v", cfg, err)
+	}
+	err = Save(path, cfg)
+	if err == nil || !strings.Contains(err.Error(), "ISO 4217") || strings.Contains(err.Error(), "names no currency") {
+		t.Errorf("written again in BTC: %v", err)
+	}
+	cfg.Currency = "USD"
+	if err := Save(path, cfg); err != nil {
+		t.Fatalf("put right: %v", err)
+	}
+	if cfg, err = Load(path); err != nil || cfg.Currency != "USD" {
+		t.Fatalf("read back: %+v %v", cfg, err)
+	}
+	// What never had a currency's shape is refused when read, as it was.
+	write(`{"currency": "dollars", "routes": []}`)
+	if _, err := Load(path); err == nil {
+		t.Error("a gateway in dollars was read")
 	}
 }
 

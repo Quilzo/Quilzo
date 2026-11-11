@@ -52,6 +52,7 @@ import (
 	"github.com/quilzo/quilzo/internal/codescan"
 	"github.com/quilzo/quilzo/internal/pii"
 	"github.com/quilzo/quilzo/internal/plaintext"
+	"github.com/quilzo/quilzo/internal/spend"
 )
 
 // Route is one model endpoint.
@@ -326,7 +327,17 @@ var (
 	reProvider = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,40}$`)
 )
 
-func (c Config) Validate() error {
+func (c Config) Validate() error { return c.validate(validCurrency) }
+
+// validate is Validate with the test a currency is held to: the ISO 4217
+// list when a declaration is written, and only a code's shape when one
+// stored before is read (Load).
+func (c Config) validate(isCurrency func(string) bool) error {
+	// The currency first, so a declaration in ETH is told what ETH is, not
+	// that its priced routes name no currency.
+	if c.Currency != "" && !isCurrency(c.Currency) {
+		return fmt.Errorf("the gateway's currency: %w", spend.CheckCurrency(c.Currency))
+	}
 	seen := map[string]bool{}
 	for _, r := range c.Routes {
 		if !reName.MatchString(r.Name) {
@@ -395,7 +406,7 @@ func (c Config) Validate() error {
 			if pm > 0 && !r.Transcribes {
 				return fmt.Errorf("route %s has a price a minute and does not transcribe", r.Name)
 			}
-			if pm > 0 && !validCurrency(c.Currency) {
+			if pm > 0 && !isCurrency(c.Currency) {
 				return fmt.Errorf("route %s has prices and the configuration names no currency (USD, EUR, …)", r.Name)
 			}
 		}
@@ -407,7 +418,7 @@ func (c Config) Validate() error {
 			if perr != nil {
 				return fmt.Errorf("route %s's price of a video: %w", r.Name, perr)
 			}
-			if vid > 0 && !validCurrency(c.Currency) {
+			if vid > 0 && !isCurrency(c.Currency) {
 				return fmt.Errorf("route %s has prices and the configuration names no currency (USD, EUR, …)", r.Name)
 			}
 		}
@@ -416,16 +427,13 @@ func (c Config) Validate() error {
 			if perr != nil {
 				return fmt.Errorf("route %s's price of a picture: %w", r.Name, perr)
 			}
-			if pic > 0 && !validCurrency(c.Currency) {
+			if pic > 0 && !isCurrency(c.Currency) {
 				return fmt.Errorf("route %s has prices and the configuration names no currency (USD, EUR, …)", r.Name)
 			}
 		}
-		if (in > 0 || out > 0) && !validCurrency(c.Currency) {
+		if (in > 0 || out > 0) && !isCurrency(c.Currency) {
 			return fmt.Errorf("route %s has prices and the configuration names no currency (USD, EUR, …)", r.Name)
 		}
-	}
-	if c.Currency != "" && !validCurrency(c.Currency) {
-		return fmt.Errorf("%q is not a currency code like USD or EUR", c.Currency)
 	}
 	who := map[string]bool{}
 	for _, b := range c.Budgets {
@@ -444,7 +452,7 @@ func (c Config) Validate() error {
 		if err != nil {
 			return err
 		}
-		if (day > 0 || month > 0) && !validCurrency(c.Currency) {
+		if (day > 0 || month > 0) && !isCurrency(c.Currency) {
 			return fmt.Errorf("%s has a money budget and the configuration names no currency", b.Consumer)
 		}
 	}
@@ -482,7 +490,14 @@ func Load(path string) (*Config, error) {
 	if err := json.Unmarshal(b, &c); err != nil {
 		return nil, fmt.Errorf("%s is not a gateway declaration: %w", path, err)
 	}
-	if err := c.Validate(); err != nil {
+	// A currency read here is held only to a code's shape. One stored when
+	// any three capital letters passed may be one ISO 4217 does not list
+	// (BTC, XAU, a currency since withdrawn), and refusing to read it
+	// stopped every model call through the gateway, and the commands and
+	// the screen that would put it right, which read the declaration first.
+	// The gateway counts money in millionths whatever the code is; Save
+	// refuses to write such a code again.
+	if err := c.validate(storedCurrency); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	return &c, nil
