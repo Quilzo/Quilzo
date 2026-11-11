@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/guardrail"
 )
 
 // Span is one stretch of transcript: somebody saying something.
@@ -324,34 +326,15 @@ func (m Minutes) Coverage() Coverage {
 	return out
 }
 
-// instructions are the shapes that mean somebody is talking to a machine.
-//
-// Deliberately a short list of phrasings rather than an attempt at
-// completeness. A long list would suggest the detector is the protection,
-// and it is not: the manifest is. This catches the obvious attempt and
-// makes it visible, which is worth having and is not worth overstating.
-var instructions = []string{
-	"ignore previous", "ignore all previous", "ignore your previous",
-	"disregard the above", "disregard previous", "new instructions",
-	"system prompt", "you are now", "from now on you",
-	"forget everything", "override your", "do not tell",
-	"without telling anyone", "send the summary to",
-	"email the transcript", "reveal your instructions",
-	"print your instructions",
-}
-
 // Instructionish reports whether a stretch of speech reads as an
 // instruction to a machine.
-func Instructionish(text string) bool {
-	t := strings.ToLower(text)
-	t = strings.Join(strings.Fields(t), " ")
-	for _, p := range instructions {
-		if strings.Contains(t, p) {
-			return true
-		}
-	}
-	return false
-}
+//
+// The speech view of the one table every surface reads
+// (internal/guardrail), which was a list of its own here. Deliberately
+// short phrasings rather than an attempt at completeness: a long list
+// would suggest the detector is the protection, and it is not: the
+// manifest is. This catches the obvious attempt and makes it visible.
+func Instructionish(text string) bool { return guardrail.LooksInjected(guardrail.Speech, text) }
 
 // Quarantined is every span held as untrusted.
 func (m Minutes) Quarantined() []Span {
