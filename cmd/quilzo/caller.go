@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -191,19 +192,30 @@ func resolveCaller(root, explicitToken string) *Caller {
 // It was the environment's or "unknown-operator", and under a service
 // manager or in a container none of $USER, $USERNAME and $LOGNAME is set,
 // so a risk accepted there was accepted by unknown-operator and the posture
-// scan named nobody. unknown-operator is left for a system that cannot say
-// whose account this is.
+// scan named nobody. An account the system has no name for is named by its
+// number, as the refusal to start a server names it (storeowner_unix.go):
+// a container started as a user id its image has no entry for, as
+// `docker run --user 1000` and an OpenShift pod are, has no $USER and no
+// name to look up, and was unknown-operator though its id was right there.
+// unknown-operator is left for a system with no user ids at all.
 func osUser() string {
 	for _, k := range []string{"USER", "USERNAME", "LOGNAME"} {
 		if v := os.Getenv(k); v != "" {
 			return v
 		}
 	}
-	if u, err := user.Current(); err == nil && u.Username != "" {
+	if u, err := currentAccount(); err == nil && u.Username != "" {
 		return u.Username
+	}
+	if uid := os.Geteuid(); uid >= 0 {
+		return "uid " + strconv.Itoa(uid)
 	}
 	return "unknown-operator"
 }
+
+// currentAccount is the operating-system account this runs as. A variable
+// so a test can run as an account the system has no name for.
+var currentAccount = user.Current
 
 // accepter is who a risk this caller accepts is recorded as accepted by:
 // their name, and for a name nobody checked, said to be one.

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -88,5 +89,49 @@ func TestAnAcceptanceNamesWhoAcceptedIt(t *testing.T) {
 		if err != nil || !strings.Contains(got, "accepted by "+tc.want) {
 			t.Errorf("USER=%q: config show does not name %q: %v\n%s", tc.user, tc.want, err, got)
 		}
+	}
+}
+
+// An account the system has no name for is named by its number, as the
+// refusal to start a server names it (storeowner_unix.go), and is still
+// said to be not verified.
+//
+// A container started with a user id its image has no entry for, as
+// `docker run --user 1000` and every OpenShift pod are, has no $USER and
+// no name to look up, and a risk accepted there was accepted by
+// "unknown-operator" though the id was right there.
+func TestAnAccountWithNoNameIsNamedByItsNumber(t *testing.T) {
+	uid := os.Geteuid()
+	if uid < 0 {
+		t.Skip("this system has no user ids")
+	}
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", t.TempDir())
+	t.Setenv("QUILZO_TOKEN", "")
+	t.Cleanup(func(old string) func() { return func() { flagToken = old } }(flagToken))
+	flagToken = ""
+	for _, k := range []string{"USER", "USERNAME", "LOGNAME"} {
+		t.Setenv(k, "")
+	}
+	t.Cleanup(func(old func() (*user.User, error)) func() {
+		return func() { currentAccount = old }
+	}(currentAccount))
+	currentAccount = func() (*user.User, error) {
+		return nil, user.UnknownUserIdError(uid)
+	}
+	root := t.TempDir()
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdConfig(root, []string{"set", "mcp.remote", "true", "--accept-risk", "agents reach it"}); err != nil {
+		t.Fatal(err)
+	}
+	want := "uid " + strconv.Itoa(uid) + " (not verified)"
+	w := mustConfig(root).Weakened()
+	if len(w) != 1 || w[0].Accepted == nil {
+		t.Fatalf("mcp.remote is not reported as accepted: %d weakened", len(w))
+	}
+	if by := w[0].Accepted.By; by != want {
+		t.Errorf("an account with no name: accepted by %q, not %q", by, want)
 	}
 }
