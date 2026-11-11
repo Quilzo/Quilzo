@@ -4,9 +4,13 @@
 package importer
 
 import (
+	"sort"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/feature"
+	"github.com/quilzo/quilzo/internal/webimport"
 )
 
 var now = time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)
@@ -668,5 +672,65 @@ func TestAnUnusableRedirectMapIsReportedNotShipped(t *testing.T) {
 	if len(rep.Pages) != 2 {
 		t.Errorf("imported %d pages; the content should survive a redirect "+
 			"problem", len(rep.Pages))
+	}
+}
+
+// One WordPress export gives one set of pages with one set of names,
+// whichever command reads it. `quilzo import` named a page from its slug or
+// its title, and `quilzo site import` from its link's path: on plain
+// permalinks (?page_id=) site import named every page alike and refused the
+// export, and on pretty links without a slug the two named the same pages
+// qa-night and qa, nave-caf and naive.
+func TestQuilzoImportAndSiteImportReadTheSameWordPressExportAlike(t *testing.T) {
+	item := func(title, link, slug string) string {
+		s := `<item><title>` + title + `</title><link>` + link + `</link>`
+		if slug != "" {
+			s += `<wp:post_name>` + slug + `</wp:post_name>`
+		}
+		return s + `<wp:post_type>page</wp:post_type><wp:status>publish</wp:status>` +
+			`<content:encoded><![CDATA[<p>Words.</p>]]></content:encoded></item>`
+	}
+	for name, items := range map[string]string{
+		"plain links, as a fresh install has them": item("Q&amp;A night", "https://old.example.org/?page_id=11", "qa-night") +
+			item("Naïve café", "https://old.example.org/?page_id=12", "naive-cafe") +
+			item("Tom &amp; Jerry_v1.2", "https://old.example.org/?page_id=13", "tom-jerry"),
+		"pretty links, with no slugs": item("Q&amp;A night", "https://old.example.org/qa/", "") +
+			item("Naïve café", "https://old.example.org/naive/", "") +
+			item("Tom &amp; Jerry_v1.2", "https://old.example.org/tj/", ""),
+		"pretty links that are not the slugs": item("Q&amp;A night", "https://old.example.org/events/qa/", "qa-night") +
+			item("Naïve café", "https://old.example.org/naive/", "naive-cafe"),
+	} {
+		doc := strings.Replace(wxrDoc(items), "<channel><title>A site</title>",
+			"<channel><title>A site</title><link>https://old.example.org</link>", 1)
+		rep, err := Import(WordPress, strings.NewReader(doc), now)
+		if err != nil {
+			t.Fatalf("%s: quilzo import: %v", name, err)
+		}
+		var imported []string
+		for _, p := range rep.Pages {
+			imported = append(imported, p.Name)
+		}
+		s, err := webimport.FromWordPress([]byte(doc), "")
+		if err != nil {
+			t.Fatalf("%s: site import: %v", name, err)
+		}
+		b, err := webimport.Package(s, "", "dana", nil, now)
+		if err != nil {
+			t.Fatalf("%s: site import: %v", name, err)
+		}
+		if err := b.Package.Validate(feature.Checks{}); err != nil {
+			t.Fatalf("%s: site import: %v", name, err)
+		}
+		var packaged []string
+		for _, p := range b.Package.Pages {
+			if p.Name != "index" {
+				packaged = append(packaged, p.Name)
+			}
+		}
+		sort.Strings(imported)
+		sort.Strings(packaged)
+		if strings.Join(imported, " ") != strings.Join(packaged, " ") {
+			t.Errorf("%s: quilzo import names the pages %v and site import %v", name, imported, packaged)
+		}
 	}
 }

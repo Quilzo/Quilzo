@@ -667,3 +667,54 @@ func TestBillionLaughsCannotExpand(t *testing.T) {
 		t.Fatal("the parser is still expanding after five seconds")
 	}
 }
+
+// plainLinks is a WordPress site on the default "Plain" permalinks, as a
+// fresh install has them: every page's link is the home with ?page_id=.
+const plainLinks = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:wp="http://wordpress.org/export/1.2/">
+<channel><title>Old Hall</title><link>https://old.example.org</link>
+<item><title>Q&amp;A night</title><link>https://old.example.org/?page_id=11</link><wp:post_id>11</wp:post_id>
+ <wp:post_name>qa-night</wp:post_name><wp:post_type>page</wp:post_type><wp:status>publish</wp:status>
+ <content:encoded><![CDATA[<p>Questions on Thursdays. See the <a href="https://old.example.org/?page_id=12">café</a>.</p>]]></content:encoded></item>
+<item><title>Naïve café</title><link>https://old.example.org/?page_id=12</link><wp:post_id>12</wp:post_id>
+ <wp:post_name>naive-cafe</wp:post_name><wp:post_type>page</wp:post_type><wp:status>publish</wp:status>
+ <content:encoded><![CDATA[<p>Coffee and cake.</p>]]></content:encoded></item>
+<item><title>Tom &amp; Jerry_v1.2</title><link>https://old.example.org/?page_id=13</link><wp:post_id>13</wp:post_id>
+ <wp:post_name>tom-jerry</wp:post_name><wp:post_type>page</wp:post_type><wp:status>publish</wp:status>
+ <content:encoded><![CDATA[<p>A play for children.</p>]]></content:encoded></item>
+</channel></rss>`
+
+// A WordPress site on plain permalinks was refused, "page index-3 is
+// declared twice": each page was named from its link's path, which is the
+// home's for all of them, and keyed by an address without its query, so
+// every page shared one name. Each is named by WordPress's own slug for it,
+// and a link to one by ?page_id= goes to it.
+func TestAWordPressSiteOnPlainLinksBecomesAPackage(t *testing.T) {
+	s, err := FromWordPress([]byte(plainLinks), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := Package(s, "", "dana", nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Package.Validate(feature.Checks{}); err != nil {
+		t.Fatalf("the package: %v", err)
+	}
+	var names []string
+	body := ""
+	for _, pg := range b.Package.Pages {
+		names = append(names, pg.Name)
+		if pg.Name == "qa-night" {
+			body = fmt.Sprint(pg.Body)
+		}
+	}
+	for _, want := range []string{"qa-night", "naive-cafe", "tom-jerry"} {
+		if !slices.Contains(names, want) {
+			t.Errorf("no page %s among %v", want, names)
+		}
+	}
+	if !strings.Contains(body, "(/naive-cafe)") {
+		t.Errorf("the link to ?page_id=12 does not go to its page: %s", body)
+	}
+}
