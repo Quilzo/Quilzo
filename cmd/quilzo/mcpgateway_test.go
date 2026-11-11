@@ -6,6 +6,7 @@ package main
 import (
 	"errors"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -223,5 +224,45 @@ func TestTheGatewayIsOffOnlyWhenSomethingSaysSo(t *testing.T) {
 	}
 	if _, err := gatewayCallAs(t, root, appToken("rae", auth.RoleAuthor)); err == nil || !strings.Contains(err.Error(), "turned off") {
 		t.Fatalf("with the interface shielded off: %v", err)
+	}
+}
+
+// An outside agent's call through the gateway answers to the brand rules,
+// as a run's call here does. The rules read what an agent run here writes
+// to another system, and the gateway forwarded the same post from another
+// vendor's agent, a claim the site would refuse to publish, unread.
+func TestABrandFindingThroughTheGatewayWaitsForAPerson(t *testing.T) {
+	root, _ := gatewayRig(t, &agent.GatewayPolicy{Role: "author"})
+	rae := appToken("rae", auth.RoleAuthor)
+	srv, err := gatewayServer(httptest.NewRequest("POST", "/mcp/gateway/tracker", nil), root, "tracker", rae)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim := map[string]any{"title": "Every order guaranteed to arrive by Friday"}
+	out, err := srv.Direct.Call("create_issue", claim)
+	if err == nil || strings.Contains(out, "filed") || !strings.Contains(err.Error(), "held as gq_") ||
+		!strings.Contains(err.Error(), "guaranteed") {
+		t.Fatalf("a claim the site would refuse went through the gateway unread: %q %v", out, err)
+	}
+	held := mustHeld(t, root)
+	if len(held) != 1 || !strings.Contains(held[0].Why, "guarantee_terms") {
+		t.Fatalf("the person deciding is not shown what the rules found: %+v", held)
+	}
+	if err := gatewayDecide(root, held[0].ID, true, asAdmin("dana"), time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := srv.Direct.Call("create_issue", claim); err != nil || !strings.Contains(out, "filed") {
+		t.Fatalf("after a person approved it: %q %v", out, err)
+	}
+	// What says nothing the rules hold goes through as before.
+	if out, err := gatewayCallAs(t, root, rae); err != nil || !strings.Contains(out, "filed") {
+		t.Fatalf("a call with no claim was held: %q %v", out, err)
+	}
+	// Rules that cannot be read hold it too: nothing it says was checked.
+	if err := os.WriteFile(brandPath(root), []byte("{ not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gatewayCallAs(t, root, appToken("sam", auth.RoleAuthor)); err == nil || !strings.Contains(err.Error(), "brand.json") {
+		t.Fatalf("a call went through unchecked while the rules could not be read: %v", err)
 	}
 }

@@ -119,10 +119,11 @@ func (s *Server) handleUndeliveredDismiss(w http.ResponseWriter, r *http.Request
 	back("m", "Taken off the list.")
 }
 
-// GatewayHeld is a call through the gateway waiting for a person.
+// GatewayHeld is a call through the gateway waiting for a person. Why is
+// what was found in what it says, when that is why it waits.
 type GatewayHeld struct {
-	ID, Integration, Tool, For, App, Args string
-	Asked                                 time.Time
+	ID, Integration, Tool, For, App, Args, Why string
+	Asked                                      time.Time
 }
 
 func (s *Server) handleIntegrations(w http.ResponseWriter, r *http.Request) {

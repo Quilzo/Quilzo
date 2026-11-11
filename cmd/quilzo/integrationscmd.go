@@ -552,6 +552,9 @@ func integrationsHeld(root string) error {
 		}
 		w.Human("%s%s%s  %s on %s, asked by %s at %s\n    %s\n", bold, h.ID, reset, h.Tool, h.Integration, by,
 			h.Asked.UTC().Format("2006-01-02 15:04 UTC"), clip(h.Args, 300))
+		if h.Why != "" {
+			w.Human("    %s%s%s\n", yellow, h.Why, reset)
+		}
 	}
 	w.Human("  %squilzo integrations approve ID, or decline ID%s\n", dim, reset)
 	return nil

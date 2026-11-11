@@ -61,6 +61,10 @@ type heldCall struct {
 	By          string    `json:"by,omitempty"`
 	Approved    bool      `json:"approved,omitempty"`
 	Used        bool      `json:"used,omitempty"`
+	// Why is what the person deciding reads beside the arguments when it
+	// was held for what it says, and not because its tool is one they
+	// approve call by call: what the brand rules found (outwardClaims).
+	Why string `json:"why,omitempty"`
 }
 
 // gatewayState is the held calls and each day's counts.
@@ -260,6 +264,14 @@ func gatewayCall(ctx context.Context, root string, in agent.Integration, mc *mcp
 			return refuse(err.Error())
 		}
 	}
+	// What it would say on the far side answers to the brand rules, as an
+	// agent's write from a run here does. The rules read only runs, so a
+	// claim the site refuses to publish went out through the gateway from
+	// another vendor's agent unread. Read before the lock: it reads a file.
+	claims := ""
+	if (agent.Integrations{Declared: []agent.Integration{in}}).ToolWrites(agent.Manifest{}, tool) {
+		claims = outwardClaims(root, tool, args)
+	}
 	who := gatewayCallerKey(tok)
 	gatewayMu.Lock()
 	st, err := loadGatewayState(root)
@@ -276,16 +288,28 @@ func gatewayCall(ctx context.Context, root string, in agent.Integration, mc *mcp
 		gatewayMu.Unlock()
 		return refuse(fmt.Sprintf("this caller has made %d calls to %s today, which is as many as a caller may", st.Days[day][key], in.Name))
 	}
-	if g.Asks(tool) {
+	if g.Asks(tool) || claims != "" {
 		id, ok, why, by := decideHeld(st, in.Name, tool, digest, tok, args, now)
 		held, decidedBy = id, by
+		if why == heldNew && claims != "" {
+			for i := range st.Held {
+				if st.Held[i].ID == id {
+					st.Held[i].Why = claims
+				}
+			}
+		}
 		if !ok {
 			err := saveGatewayState(root, st, now)
 			gatewayMu.Unlock()
 			if err != nil {
 				return "", err
 			}
-			if why == heldNew {
+			switch {
+			case why == heldNew && claims != "":
+				tellHeld(root, in.Name, tool, id, tok)
+				return refuse(claims + ". This call is held as " + id + " for a person, who is shown that: " +
+					"call again with the same arguments once they have decided")
+			case why == heldNew:
 				tellHeld(root, in.Name, tool, id, tok)
 				return refuse("a person approves each call of " + tool + " on " + in.Name + ". This one is held as " + id +
 					": call again with the same arguments once they have decided")
