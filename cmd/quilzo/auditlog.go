@@ -434,7 +434,9 @@ func auditVerify(root string) error {
 	}
 	w.Human("  %s%d problem(s)%s\n", red, len(problems), reset)
 	for _, p := range problems {
-		w.Human("    entry %d: %s\n", p.Seq, p.Reason)
+		// The reason can quote what the file held, for an entry that is not
+		// readable at all; see auditShow.
+		w.Human("    entry %d: %s\n", p.Seq, onOneLine(p.Reason))
 	}
 	// A log that cannot be read is not a log that has been tampered with, and
 	// saying so is worse than saying nothing.
@@ -490,7 +492,7 @@ func auditShow(root string, args []string) error {
 		w.Human("%sthe chain is broken — these entries cannot be trusted%s\n",
 			yellow, reset)
 		for _, p := range problems {
-			w.Human("  %sentry %d: %s%s\n", dim, p.Seq, p.Reason, reset)
+			w.Human("  %sentry %d: %s%s\n", dim, p.Seq, onOneLine(p.Reason), reset)
 		}
 		w.Human("  %squilzo auditlog verify — the whole story%s\n\n", dim, reset)
 	}
@@ -520,8 +522,19 @@ func auditShow(root string, args []string) error {
 		if len(at) > 19 {
 			at = at[:19]
 		}
+		// Every field through onOneLine, because every field is what the file
+		// holds and some of it was written by the people the log is about. A
+		// decoy is presented by an outsider and the path they asked for is
+		// recorded as they sent it, so a path carrying escape sequences
+		// reached the terminal raw from here, erased its own line and the one
+		// above it, and printed a green "all quiet". A doctored entry is no
+		// different: one that could move the cursor could clear the warning
+		// printed above it. JSON and `auditlog export` keep the exact bytes;
+		// this is only what a person is shown. Padding still lines up,
+		// because each control character becomes one visible character.
 		w.Human("  %-19s  %s%-8s%s %-16s %-22s %s(%s)%s\n",
-			at, colour, e.Outcome, reset, e.Action, e.Resource, dim, who, reset)
+			onOneLine(at), colour, onOneLine(string(e.Outcome)), reset,
+			onOneLine(e.Action), onOneLine(e.Resource), dim, onOneLine(who), reset)
 	}
 	return nil
 }
