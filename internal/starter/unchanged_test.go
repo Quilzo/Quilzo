@@ -168,26 +168,163 @@ func TestExistingPagesRenderAsTheyDid(t *testing.T) {
 	}
 }
 
+// The other deliberate changes: motion none stops page transitions, and the
+// components carry one page transition and one reduced-motion block where
+// they carried two of each, the second transition after the block that
+// switched it off (TestNothingMovesWhenMotionIsNone). And the meter's fill
+// is scaled rather than sized (TestTheMeterMovesWithoutLayingThePageOut).
+// Each is put back as it was before the hash is compared, so nothing else
+// can have moved with them.
+const (
+	stilledNavigation = "@view-transition { navigation: none; }\n"
+	transitionsNow    = `/* Page transitions, on a site that runs no script.
+
+   The View Transitions API is usually reached by calling
+   document.startViewTransition. This site sends script-src 'none', so that
+   call never happens — but the cross-document form needs no call at all: two
+   same-origin pages that both carry this at-rule transition between
+   themselves, and the trigger is the navigation itself.
+
+   Which makes it the rare case where the constraint costs nothing. Paired
+   with the speculation rules this site already sends, a link followed on a
+   static page behaves like one in an application, and neither half is a
+   script.
+
+   Chromium and Safari 18.2 do this today; a browser that does not simply
+   navigates, which is what it did before.
+
+   One rule, with only the reduced-motion block below and a site's motion
+   setting after it. There were two, the second after that block, and the
+   last @view-transition is the one a browser uses: a visitor who had asked
+   for less motion was given navigation: auto again. */
+@view-transition { navigation: auto; }
+
+/* The header and footer stay put while the content changes, rather than
+   cross-fading with it. Naming them is what makes the transition read as one
+   page changing instead of two pages dissolving. */
+.site-header { view-transition-name: site-header; }
+.site-footer { view-transition-name: site-footer; }
+
+/* Somebody who has asked for less motion is asking about all of it, and a
+   page transition is animation: the setting is not advisory. The transition
+   is switched off, and its pseudo-elements, which the universal selector
+   does not reach, are stilled for a browser that starts one anyway. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  @view-transition { navigation: none; }
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+
+`
+	transitionsBefore = `/* Cross-document transitions: same-origin navigation crossfades with no script
+   at all. Browsers without it navigate normally. */
+@view-transition { navigation: auto; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  @view-transition { navigation: none; }
+}
+
+`
+	// answerAnchor is where the second copy of the page transition was.
+	answerAnchor     = "/* -- an answer above the search results"
+	transitionsMoved = `/* Page transitions, on a site that runs no script.
+
+   The View Transitions API is usually reached by calling
+   document.startViewTransition. This site sends script-src 'none', so that
+   call never happens — but the cross-document form needs no call at all: two
+   same-origin pages that both carry this at-rule transition between
+   themselves, and the trigger is the navigation itself.
+
+   Which makes it the rare case where the constraint costs nothing. Paired
+   with the speculation rules this site already sends, a link followed on a
+   static page behaves like one in an application, and neither half is a
+   script.
+
+   Chromium and Safari 18.2 do this today; a browser that does not simply
+   navigates, which is what it did before. */
+@view-transition {
+  navigation: auto;
+}
+
+/* The header and footer stay put while the content changes, rather than
+   cross-fading with it. Naming them is what makes the transition read as one
+   page changing instead of two pages dissolving. */
+.site-header { view-transition-name: site-header; }
+.site-footer { view-transition-name: site-footer; }
+
+/* Somebody who has asked for less motion is asking about this.
+   A transition is animation, and the setting is not advisory. */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+
+`
+	meterNote = `
+
+   The fill is the bar's whole width, scaled from the start of the line: a
+   change moves on the compositor, where animating width laid the page out
+   again on every frame of it.`
+	meterFillNow = `.bar > span {
+  display: block; height: 100%;
+  transform: scaleX(calc(clamp(0, var(--pct), 100) / 100));
+  transform-origin: left;
+  border-radius: inherit;
+  background: var(--primary);
+  transition: transform var(--dur) var(--ease);
+}
+.bar > span:dir(rtl) { transform-origin: right; }
+`
+	meterFillBefore = `.bar > span {
+  display: block; height: 100%;
+  width: calc(clamp(0, var(--pct), 100) * 1%);
+  border-radius: inherit;
+  background: var(--primary);
+  transition: width var(--dur) var(--ease);
+}
+`
+)
+
 func TestExistingStylesAreGeneratedAsTheyWere(t *testing.T) {
 	for _, style := range []string{"expressive", "classic", "glass", "editorial", "bold", "soft", "business"} {
 		for _, motion := range theme.Motions {
 			th, _ := theme.New(map[string]string{"style": style, "motion": motion}, nil)
 			key := style + " " + motion
-			if got := sum(th.CSS() + th.Preset() + th.Responsive()); got != cssBefore[key] {
+			css := strings.Replace(th.CSS()+th.Preset()+th.Responsive(), stilledNavigation, "", 1)
+			if got := sum(css); got != cssBefore[key] {
 				t.Errorf("the %s style with %s motion generates differently: %s, was %s", style, motion, got, cssBefore[key])
 			}
 		}
 	}
 	for _, st := range All() {
 		th, _ := st.Theme()
-		if got := sum(th.CSS() + th.Preset() + th.Responsive()); got != cssBefore["starter "+st.Name] {
+		css := strings.Replace(th.CSS()+th.Preset()+th.Responsive(), stilledNavigation, "", 1)
+		if got := sum(css); got != cssBefore["starter "+st.Name] {
 			t.Errorf("the %s starter's theme generates differently: %s", st.Name, got)
 		}
 	}
 }
 
 // The components are what they were, with the opt-in rules after them and
-// the centred eyebrow as the one change.
+// the centred eyebrow, the page transitions and the meter as the changes.
 func TestTheComponentsOnlyGrew(t *testing.T) {
 	c := Components()
 	added := Backdrops()
@@ -195,11 +332,19 @@ func TestTheComponentsOnlyGrew(t *testing.T) {
 		t.Fatal("the opt-in rules are not appended after the components")
 	}
 	before := strings.TrimSuffix(c, added)
-	if !strings.Contains(before, centredEyebrow) {
-		t.Fatal("the centred eyebrow's rule is not where this test expects it")
+	for name, now := range map[string]string{"the centred eyebrow's rule": centredEyebrow,
+		"the page transition": transitionsNow, "the meter's note": meterNote, "the meter's fill": meterFillNow} {
+		if strings.Count(before, now) != 1 {
+			t.Fatalf("%s is not where this test expects it", name)
+		}
 	}
-	if got := sum(strings.Replace(before, centredEyebrow, "", 1)); got != componentsBefore {
-		t.Errorf("the shared components changed beyond the centred eyebrow: %s", got)
+	before = strings.Replace(before, centredEyebrow, "", 1)
+	before = strings.Replace(before, transitionsNow, transitionsBefore, 1)
+	before = strings.Replace(before, answerAnchor, transitionsMoved+answerAnchor, 1)
+	before = strings.Replace(before, meterNote, "", 1)
+	before = strings.Replace(before, meterFillNow, meterFillBefore, 1)
+	if got := sum(before); got != componentsBefore {
+		t.Errorf("the shared components changed beyond the centred eyebrow, the page transitions and the meter: %s", got)
 	}
 }
 

@@ -4,6 +4,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -74,5 +76,43 @@ func TestSettingAColourForBothSchemesIsNotShadowedByOneScheme(t *testing.T) {
 	}
 	if v, _ := th.Value("primary", true); v != "#8ecfe8" {
 		t.Errorf("primary.dark was touched by a set of on-surface: %s", v)
+	}
+}
+
+// `theme set` before any site existed answered "open
+// templates/theme.json: no such file or directory": true, and no help to
+// somebody who has not started a site yet, which is the only way to have no
+// templates directory. It says to start one, and how, and leaves nothing
+// behind; so does `theme generate`, and the Design screen's save, which
+// write the same file.
+func TestThemeSetOnAnEmptyStoreSaysWhatToDo(t *testing.T) {
+	asMachine(t, false)
+	root := t.TempDir()
+	tpl := filepath.Join(t.TempDir(), "templates")
+	for _, args := range [][]string{
+		{"set", "radius", "3px", "--dir", tpl},
+		{"generate", "#0b57d0", "--dir", tpl},
+	} {
+		err := cmdTheme(root, args)
+		if err == nil || !strings.Contains(err.Error(), "quilzo site new") || !strings.Contains(err.Error(), "quilzo demo") ||
+			strings.Contains(err.Error(), "no such file") {
+			t.Errorf("theme %s on an empty store: %v", args[0], err)
+		}
+	}
+	if err := writeThemeFile(tpl, map[string]string{"radius": "3px"}); err == nil || !strings.Contains(err.Error(), "quilzo site new") {
+		t.Errorf("the Design screen's save on an empty store: %v", err)
+	}
+	if _, err := os.Stat(tpl); !os.IsNotExist(err) {
+		t.Errorf("an empty store was given a templates directory: %v", err)
+	}
+	// Where there is a site, it is set as before.
+	if err := os.MkdirAll(tpl, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdTheme(root, []string{"set", "radius", "3px", "--dir", tpl}); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := loadThemeFile(tpl); v["radius"] != "3px" {
+		t.Errorf("saved %v", v)
 	}
 }

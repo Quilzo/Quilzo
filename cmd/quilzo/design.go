@@ -256,6 +256,29 @@ func trimFloat(f float64) string {
 	return s
 }
 
+// siteDesignAt refuses a design directory that is not there yet, saying
+// what to do about it.
+//
+// `theme set` before any site existed answered "open templates/theme.json:
+// no such file or directory": true, and no help to somebody who has not
+// started a site, which is the only way to have no templates directory. Not
+// created here instead: a theme with no layouts beside it is a palette for
+// a site nobody can serve, and the directory a site is started in is the
+// one `site new` and `demo` write.
+func siteDesignAt(dir string) error {
+	st, err := os.Stat(dir)
+	switch {
+	case os.IsNotExist(err):
+		return fmt.Errorf("there is no site design at %s yet: start a site first "+
+			"(quilzo site new or quilzo demo), or give the directory its templates are in with --dir", dir)
+	case err != nil:
+		return err
+	case !st.IsDir():
+		return fmt.Errorf("%s is a file, not the directory a site's templates are in", dir)
+	}
+	return nil
+}
+
 // writeThemeFile saves a token set, sorted so a diff is readable.
 func writeThemeFile(dir string, values map[string]string) error {
 	if len(values) == 0 {
@@ -266,6 +289,9 @@ func writeThemeFile(dir string, values map[string]string) error {
 			return err
 		}
 		return nil
+	}
+	if err := siteDesignAt(dir); err != nil {
+		return err
 	}
 	keys := make([]string, 0, len(values))
 	for k := range values {

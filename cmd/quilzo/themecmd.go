@@ -219,6 +219,11 @@ func themeSet(root string, args []string) error {
 	if len(pos) == 0 || len(pos)%2 != 0 {
 		return fmt.Errorf("usage: quilzo theme set TOKEN VALUE [TOKEN VALUE …]")
 	}
+	// Before the contrast check, which would otherwise be argued with for a
+	// site that is not there to be saved to.
+	if err := siteDesignAt(*dir); err != nil {
+		return err
+	}
 
 	existing, err := loadThemeFile(*dir)
 	if err != nil {
