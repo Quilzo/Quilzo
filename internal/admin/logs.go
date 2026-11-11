@@ -111,7 +111,11 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	// the opposite of what the chain is for.
 	intact, problems := audit.Verify(events)
 
-	action := strings.TrimSpace(r.URL.Query().Get("action"))
+	// An act renamed since some of its entries were written is asked for,
+	// and listed, under the name it has now, and found under either: a
+	// bookmark to ?action=access.grant finds the grants written as
+	// auth.granted since, and the filter for auth.granted the ones before.
+	action := audit.Canonical(strings.TrimSpace(r.URL.Query().Get("action")))
 	outcome := strings.TrimSpace(r.URL.Query().Get("outcome"))
 	who := strings.TrimSpace(r.URL.Query().Get("who"))
 
@@ -133,9 +137,9 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	}
 	for i := len(events) - 1; i >= 0; i-- {
 		e := events[i]
-		actions[e.Action]++
+		actions[audit.Canonical(e.Action)]++
 
-		if action != "" && e.Action != action {
+		if action != "" && audit.Canonical(e.Action) != action {
 			continue
 		}
 		if outcome != "" && string(e.Outcome) != outcome {

@@ -660,3 +660,32 @@ func TestAgentInterfaceCallsExportAsReadsAndWrites(t *testing.T) {
 		t.Error("a person's record names an application")
 	}
 }
+
+// A grant or revocation recorded under the name the People screen used to
+// write, access.grant or access.revoke, exports as identity and access
+// management, as the same act recorded as auth.granted or auth.revoke does.
+// The names the log was written with stay in the export; only what they are
+// filed under follows the act.
+func TestAnActRecordedUnderItsOldNameIsClassifiedAsTheAct(t *testing.T) {
+	var rs []audit.Record
+	for _, a := range []string{"access.grant", "auth.granted", "access.revoke", "auth.revoke"} {
+		rs = append(rs, audit.Record{Action: a, Resource: "/", Outcome: audit.Success,
+			Principal: "dana", Kind: audit.KindHuman, Verified: true})
+	}
+	res, err := Export(OCSF, log(t, nil, rs...), Options{}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string][2]float64{}
+	for _, rec := range records(t, res.Body) {
+		got[rec["activity_name"].(string)] = [2]float64{rec["class_uid"].(float64), rec["activity_id"].(float64)}
+	}
+	for old, now := range map[string]string{"access.grant": "auth.granted", "access.revoke": "auth.revoke"} {
+		if got[old] != got[now] {
+			t.Errorf("%s exports as class and activity %v, and %s as %v", old, got[old], now, got[now])
+		}
+	}
+	if got["access.grant"][0] != classAuthentication {
+		t.Errorf("access.grant is class %v, not identity", got["access.grant"][0])
+	}
+}

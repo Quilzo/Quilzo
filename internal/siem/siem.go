@@ -433,9 +433,14 @@ func apiOf(e audit.Event, opt Options) map[string]any {
 	return api
 }
 
+// classFor files an event by the name its act has now (audit.Canonical), so
+// a grant written as access.grant before it was named auth.granted is
+// identity and access, as the act is. The name it was written with is what
+// the export carries.
 func classFor(e audit.Event) int {
-	if strings.HasPrefix(e.Action, "auth") || strings.HasPrefix(e.Action, "token") ||
-		strings.HasPrefix(e.Action, "signin") {
+	a := audit.Canonical(e.Action)
+	if strings.HasPrefix(a, "auth") || strings.HasPrefix(a, "token") ||
+		strings.HasPrefix(a, "signin") {
 		return classAuthentication
 	}
 	return classAPIActivity
@@ -460,21 +465,23 @@ func activityFor(e audit.Event) int {
 		}
 		return 2
 	}
-	switch e.Action {
+	// By the act's name now, as classFor files it.
+	a := audit.Canonical(e.Action)
+	switch a {
 	case "oauth.consent", "oauth.connected", "oauth.allow-host", "oauth.app-registered":
 		return 1
 	case "oauth.disconnected", "oauth.disallow-host", "oauth.remove-host", "oauth.app-removed", "oauth.refresh-reused":
 		return 4
 	}
 	switch {
-	case strings.Contains(e.Action, "delete"), strings.Contains(e.Action, "revoke"),
-		strings.Contains(e.Action, "rollback"):
+	case strings.Contains(a, "delete"), strings.Contains(a, "revoke"),
+		strings.Contains(a, "rollback"):
 		return 4
-	case strings.Contains(e.Action, "add"), strings.Contains(e.Action, "issue"),
-		strings.Contains(e.Action, "import"), strings.Contains(e.Action, "create"):
+	case strings.Contains(a, "add"), strings.Contains(a, "issue"),
+		strings.Contains(a, "import"), strings.Contains(a, "create"):
 		return 1
-	case strings.Contains(e.Action, "read"), strings.Contains(e.Action, "view"),
-		strings.Contains(e.Action, "export"):
+	case strings.Contains(a, "read"), strings.Contains(a, "view"),
+		strings.Contains(a, "export"):
 		return 2
 	}
 	return 3

@@ -2638,6 +2638,13 @@ than for one that has to be described.
   integrity envelope, so the receiving system can tell whether events were
   removed. Identifiers are pseudonymised unless somebody explicitly asks for
   them, and asking is itself recorded.
+- **One act, one action name**, whichever surface did it: a grant is
+  `auth.granted` (a deny `auth.denied`) and a revocation `auth.revoke`, from
+  the command line, the People screen and the access review alike. Entries
+  written before the names were made one keep the names they were written
+  with, because the chain covers them, and are read as the act's name now by
+  the log screen's filter and the export's classification: `access.grant` as
+  `auth.granted` and `access.revoke` as `auth.revoke`.
 - **GDPR.** Article 20 asks for a structured, machine-readable format; export is
   tested by round trip, which is a higher bar than the law sets. Article 17 is
   why form submissions deliberately do not live in the merkle store — an
