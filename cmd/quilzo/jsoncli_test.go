@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/backup"
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/scim"
 )
@@ -612,7 +613,8 @@ func (l *branchLint) walkStmt(fn string, s ast.Stmt, st pathState) ([]branchHit,
 // 0. That is worse than a read answering nothing: `scim token` replaces the
 // identity provider's working token with one nobody has, so provisioning
 // stops; `webhook add`, and a feature installed or approved with a webhook,
-// leave an endpoint signing with a key its receiver cannot have. Each answer
+// leave an endpoint signing with a key its receiver cannot have; `backup
+// key`, which keeps its key nowhere, printed it in a paragraph. Each answer
 // is held to what the store keeps, so the secret written is the one in
 // force. No secret is put in a failure message.
 func TestASecretShownOnceIsInTheJSONAnswer(t *testing.T) {
@@ -682,6 +684,14 @@ func TestASecretShownOnceIsInTheJSONAnswer(t *testing.T) {
 		}
 		if _, ok := doc["expires"]; !ok {
 			t.Error("the answer does not say when the token ends")
+		}
+	})
+
+	t.Run("backup key", func(t *testing.T) {
+		doc := answer(t, "backup key", func() error { return cmdBackup(root, []string{"key"}) })
+		key, _ := doc["key"].(string)
+		if k, err := backup.DecodeKey(key); err != nil || len(k) == 0 {
+			t.Errorf("backup key did not answer a key that reads back: %v", err)
 		}
 	})
 

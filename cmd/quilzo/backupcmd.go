@@ -146,6 +146,12 @@ func cmdBackup(root string, args []string) error {
 		if err != nil {
 			return err
 		}
+		// The key as one document under --json. This printed its paragraph
+		// whatever was asked for, so a script making a key had to cut the
+		// one thing it needed out of prose.
+		if w.JSON(map[string]string{"key": backup.EncodeKey(k)}) {
+			return nil
+		}
 		fmt.Printf("%s\n\nThis is the backup key. It is shown once and kept nowhere here: keep it where the backups are not,\n"+
 			"and give it to Quilzo as %s or in the file %s names. Without it no backup can be read.\n",
 			backup.EncodeKey(k), backupKeyEnv, backupKeyFileEnv)
