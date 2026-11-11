@@ -377,6 +377,34 @@ var Templates = map[string]Provider{
 		Hosts:  []string{"api.linkedin.com"}},
 }
 
+// PlatformDialect is the dialect of the platform whose site an
+// authorization endpoint is on, as its template says, or empty for any
+// other site. A provider declared by hand at TikTok's address and naming
+// no dialect was asked as plain OAuth 2, and TikTok refused it: that is
+// how the defect was first found, and the template alone did not stop it.
+func PlatformDialect(authURL string) Dialect {
+	u, err := url.Parse(authURL)
+	if err != nil {
+		return ""
+	}
+	host := strings.TrimPrefix(strings.ToLower(strings.TrimSuffix(u.Hostname(), ".")), "www.")
+	for _, name := range TemplateNames() {
+		t := Templates[name]
+		if t.Dialect == "" {
+			continue
+		}
+		at, err := url.Parse(t.AuthURL)
+		if err != nil {
+			continue
+		}
+		site := strings.TrimPrefix(at.Hostname(), "www.")
+		if host == site || strings.HasSuffix(host, "."+site) {
+			return t.Dialect
+		}
+	}
+	return ""
+}
+
 // TemplateNames are the templates, sorted.
 func TemplateNames() []string {
 	out := make([]string, 0, len(Templates))

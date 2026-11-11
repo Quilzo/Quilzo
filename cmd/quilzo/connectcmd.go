@@ -350,10 +350,17 @@ func connectionToken(ctx context.Context, root, provider, person, host string) (
 		}
 		if tok.Due(time.Now()) {
 			secret, err := clientSecret(root, p)
-			if err != nil {
+			if err != nil && tok.Lapsing(time.Now()) {
 				return err
 			}
-			fresh, err := connect.Refresh(ctx, connectPoster, connectGetter, p, secret, tok, time.Now())
+			// A renewal that cannot be asked for, the client secret being
+			// unreadable here (a process started without the variable that
+			// carries it), is one that failed: the call failed a day after
+			// connecting, with a token that worked for weeks more.
+			var fresh connect.Token
+			if err == nil {
+				fresh, err = connect.Refresh(ctx, connectPoster, connectGetter, p, secret, tok, time.Now())
+			}
 			switch {
 			case err != nil && tok.Lapsing(time.Now()):
 				return fmt.Errorf("%s's account at %s could not be refreshed (%v): connect it again", person, p.Title, err)
@@ -528,8 +535,8 @@ func connectProvider(root string, caller *Caller, args []string) error {
 	revokeURL := fs.String("revocation-url", "", "the revocation endpoint, when it has one")
 	clientID := fs.String("client-id", "", "the client id the provider issued")
 	secret := fs.String("client-secret", "", "the sealed credential holding the client secret (quilzo secret set NAME)")
-	dialect := fs.String("dialect", "", "how the provider departs from standard OAuth 2, for one declared without a template: "+
-		strings.Join(connect.DialectNames(), ", "))
+	dialect := fs.String("dialect", "", "how the provider departs from standard OAuth 2, for one declared without a template "+
+		"(by default its platform's, at a social platform's site, and otherwise oauth2): "+strings.Join(connect.DialectNames(), ", "))
 	var scopes, hosts multiFlag
 	fs.Var(&scopes, "scope", "a scope to ask for; repeat for more")
 	fs.Var(&hosts, "host", "an API host its tokens may go to; repeat for more")
@@ -546,6 +553,7 @@ func connectProvider(root string, caller *Caller, args []string) error {
 		return err
 	}
 	var kept []connect.Provider
+	var inferred connect.Dialect
 	for _, p := range set.Providers {
 		if p.Name != name {
 			kept = append(kept, p)
@@ -576,6 +584,13 @@ func connectProvider(root string, caller *Caller, args []string) error {
 		}
 		if d := strings.TrimSpace(*dialect); d != "" {
 			p.Dialect = connect.Dialect(d)
+		} else if *template == "" {
+			// Declared by hand at a social platform's address, it speaks
+			// that platform's dialect, as the template does: named none,
+			// TikTok was asked as plain OAuth 2 and refused the request.
+			// --dialect oauth2 declares it otherwise.
+			p.Dialect = connect.PlatformDialect(p.AuthURL)
+			inferred = p.Dialect
 		}
 		if len(scopes) > 0 {
 			p.Scopes = append(append([]string{}, p.Scopes...), scopes...)
@@ -584,6 +599,9 @@ func connectProvider(root string, caller *Caller, args []string) error {
 			p.Hosts = hosts
 		}
 		if err := p.Check(); err != nil {
+			if inferred != "" {
+				return fmt.Errorf("%w (at its platform's site it speaks %s; --dialect oauth2 declares it otherwise)", err, inferred)
+			}
 			return err
 		}
 		kept = append(kept, p)
@@ -598,6 +616,10 @@ func connectProvider(root string, caller *Caller, args []string) error {
 	}
 	record(root, caller.auditRecord("connect.provider."+verb, "/connections", audit.Success, map[string]string{"provider": name}))
 	if verb == "add" {
+		if inferred != "" {
+			w.Human("  %sit speaks %s, its platform's dialect of OAuth; --dialect oauth2 declares it otherwise%s\n",
+				dim, inferred, reset)
+		}
 		if redirect, err := connectRedirect(root); err == nil {
 			w.Human("  %sregister this address with the provider as the redirect: %s%s\n", dim, redirect, reset)
 		}

@@ -322,6 +322,26 @@ func TestAnInstagramAccountIsRenewedWhereItIsUsed(t *testing.T) {
 	if tok, err := connectionToken(context.Background(), root, "instagram", "dana", "graph.instagram.com"); err != nil || tok != "ig-long-2" {
 		t.Fatalf("a token that works was not used when its renewal failed: %q %v", tok, err)
 	}
+	// Nor when the renewal cannot be asked for, the client secret being
+	// unreadable where the token is used (a process started without the
+	// variable that carries it): the call failed, a day after connecting,
+	// with a token that worked for weeks more.
+	mu.Lock()
+	renewFails = false
+	mu.Unlock()
+	kept, err := loadAgentSecrets(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveAgentSecrets(root, agentSecrets{}); err != nil {
+		t.Fatal(err)
+	}
+	if tok, err := connectionToken(context.Background(), root, "instagram", "dana", "graph.instagram.com"); err != nil || tok != "ig-long-2" {
+		t.Fatalf("a token that works was not used when its client secret could not be read: %q %v", tok, err)
+	}
+	if err := saveAgentSecrets(root, kept); err != nil {
+		t.Fatal(err)
+	}
 	age(func(tok *connect.Token) { tok.Expiry = time.Now().Add(-time.Minute) })
 	if _, err := connectionToken(context.Background(), root, "instagram", "dana", "graph.instagram.com"); err == nil ||
 		!strings.Contains(err.Error(), "connect it again") {
@@ -342,5 +362,85 @@ func TestAnInstagramAccountIsRenewedWhereItIsUsed(t *testing.T) {
 	}
 	if err := cmdConnect(root, []string{"provider", "add", "odd", "--template", "github", "--client-id", "x", "--dialect", "carrier-pigeon"}); err == nil {
 		t.Fatal("a dialect nobody wrote was declared")
+	}
+}
+
+// A provider declared by hand at a social platform's address speaks that
+// platform's dialect, as its template does. Declared so with no --dialect,
+// as the audit declared TikTok, it was asked for client_id and its scopes
+// separated by spaces, and TikTok refused the request; an Instagram one
+// lapsed within the hour. --dialect oauth2 still declares one otherwise,
+// and a provider anywhere else is written and asked as it always was.
+func TestAProviderDeclaredByHandAtAPlatformSpeaksItsDialect(t *testing.T) {
+	root := keyedDemo(t)
+	cfg, err := loadConfig(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Set("admin.base_url", "https://cms.example", "", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveConfig(root, cfg); err != nil {
+		t.Fatal(err)
+	}
+	asks := func(name string) url.Values {
+		t.Helper()
+		to, err := beginConnect(root, name, "dana")
+		if err != nil {
+			t.Fatal(err)
+		}
+		u, err := url.Parse(to)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return u.Query()
+	}
+	tiktok := func(name string, extra ...string) error {
+		return cmdConnect(root, append([]string{"provider", "add", name, "--title", "TikTok",
+			"--auth-url", "https://www.tiktok.com/v2/auth/authorize/", "--token-url", "https://open.tiktokapis.com/v2/oauth/token/",
+			"--client-id", "aw-key", "--scope", "user.info.basic", "--scope", "video.upload", "--host", "open.tiktokapis.com"}, extra...))
+	}
+
+	if err := tiktok("clips", "--client-secret", "tiktok-oauth"); err != nil {
+		t.Fatal(err)
+	}
+	if q := asks("clips"); q.Get("client_key") != "aw-key" || q.Has("client_id") || q.Get("scope") != "user.info.basic,video.upload" ||
+		q.Has("code_challenge") {
+		t.Fatalf("TikTok declared by hand was asked %v", q)
+	}
+	if err := tiktok("nosecret"); err == nil || !strings.Contains(err.Error(), "--client-secret") ||
+		!strings.Contains(err.Error(), "--dialect oauth2") {
+		t.Fatalf("TikTok without its client secret: %v", err)
+	}
+	if err := tiktok("plain", "--dialect", "oauth2"); err != nil {
+		t.Fatal(err)
+	}
+	if q := asks("plain"); q.Get("client_id") != "aw-key" || q.Get("scope") != "user.info.basic video.upload" {
+		t.Fatalf("declared as plain OAuth 2, it was asked %v", q)
+	}
+
+	if err := cmdConnect(root, []string{"provider", "add", "gram", "--title", "Instagram",
+		"--auth-url", "https://www.instagram.com/oauth/authorize", "--token-url", "https://api.instagram.com/oauth/access_token",
+		"--client-id", "ig-app", "--client-secret", "instagram-oauth", "--scope", "instagram_business_basic",
+		"--host", "graph.instagram.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdConnect(root, []string{"provider", "add", "acme", "--title", "Acme",
+		"--auth-url", "https://id.acme.example/authorize", "--token-url", "https://id.acme.example/token",
+		"--client-id", "quilzo", "--scope", "calendar.read", "--host", "api.acme.example"}); err != nil {
+		t.Fatal(err)
+	}
+	set, err := loadConnectProviders(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]connect.Dialect{"clips": connect.TikTok, "plain": connect.OAuth2,
+		"gram": connect.MetaInstagram, "acme": ""} {
+		if p, _ := set.get(name); p.Dialect != want {
+			t.Errorf("%s was declared in %q, not %q", name, p.Dialect, want)
+		}
+	}
+	if q := asks("acme"); q.Get("client_id") != "quilzo" || q.Get("code_challenge_method") != "S256" {
+		t.Fatalf("a provider at no platform was asked %v", q)
 	}
 }

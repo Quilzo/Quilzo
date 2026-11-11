@@ -487,3 +487,26 @@ func TestADeclarationWithoutADialectIsUnchanged(t *testing.T) {
 		}
 	}
 }
+
+// A provider declared by hand at a social platform's site speaks that
+// platform's dialect, whatever its address there; one on any other site,
+// a look-alike's included, speaks the standard.
+func TestAPlatformsSiteSaysItsDialect(t *testing.T) {
+	for raw, want := range map[string]Dialect{
+		"https://www.tiktok.com/v2/auth/authorize/":          TikTok,
+		"https://tiktok.com/v2/auth/authorize/":              TikTok,
+		"https://www.instagram.com/oauth/authorize":          MetaInstagram,
+		"https://api.instagram.com/oauth/authorize":          MetaInstagram,
+		"https://m.facebook.com/dialog/oauth":                MetaFacebook,
+		"https://WWW.LINKEDIN.COM./oauth/v2/authorization":   LinkedIn,
+		"https://accounts.google.com/o/oauth2/v2/auth":       "",
+		"https://id.acme.example/authorize":                  "",
+		"https://eviltiktok.com/v2/auth/authorize/":          "",
+		"https://www.tiktok.com.acme.example/oauth/v2/authz": "",
+		"not an address": "",
+	} {
+		if got := PlatformDialect(raw); got != want {
+			t.Errorf("%s: %q, not %q", raw, got, want)
+		}
+	}
+}

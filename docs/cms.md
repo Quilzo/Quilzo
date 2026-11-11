@@ -2178,9 +2178,11 @@ at once for one that lasts sixty days, and renewed when it is used a day or
 more after the last renewal. LinkedIn's refresh token lapses a year after it
 was first issued however often it is used, and past that the person is told
 to connect again, with the date, rather than LinkedIn being asked. All but
-YouTube need `--client-secret`. A provider declared without a template names
-its dialect with `--dialect`: `oauth2`, the default and what every provider
-declared before speaks, `tiktok`, `meta-instagram`, `meta-facebook` or
+YouTube need `--client-secret`. A provider declared without a template at
+one of those platforms' own sites (`www.tiktok.com`, say) speaks that
+platform's dialect, and says so; anywhere else it speaks `oauth2`, the
+default and what every provider declared before speaks. `--dialect` names
+one instead: `oauth2`, `tiktok`, `meta-instagram`, `meta-facebook` or
 `linkedin`.
 
 An integration that names a connection (`"connection": "google"`) then goes
