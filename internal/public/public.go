@@ -1801,8 +1801,30 @@ func (st *Site) formData(name string) map[string]any {
 	return data
 }
 
+// sources is what a template may see of the site as it is served now.
 func (st *Site) sources() render.Sources {
-	src := render.Sources{Name: st.Name, IconStyle: st.IconStyle, Listings: st.Listings,
+	pages, _, err := st.pages()
+	if err != nil {
+		pages = nil
+	}
+	return st.Sources(pages)
+}
+
+// Sources is what a template may see when it renders one of pages: the one
+// context, which this site serves, `quilzo render` draws, the admin's
+// preview shows and both publish gates judge. Each listing, post and event
+// in it is read where the site's listings read, so one built to render a
+// commit is given listings at that commit's tree (renderSiteFor in
+// cmd/quilzo, and the admin's own when it is not handed this).
+//
+// There were three. The command line's had the icon, members, buttons and
+// pictures and no forms, boards, bookings, newsletter, events or posts; the
+// admin's had menus, listings and pictures only. So on a page naming a form
+// `quilzo render` and the gate in `quilzo publish` drew no form, the preview
+// drew neither the form nor the icon a visitor gets, and no gate ever judged
+// the form markup a visitor is served.
+func (st *Site) Sources(pages map[string]any) render.Sources {
+	src := render.Sources{Name: st.Name, IconStyle: st.IconStyle, Listings: st.Listings, Pages: pages,
 		SrcSet: st.srcSet, Tracks: st.tracks, Poster: st.poster, Media: st.mediaInfo,
 		Form: st.formData, Thread: st.threadData, Buy: st.Buy, Booking: st.bookingData,
 		Newsletter: st.newsletterData, Events: st.eventsData, Posts: st.postsData}
@@ -1818,9 +1840,6 @@ func (st *Site) sources() render.Sources {
 		// A navigation that cannot be read is a site with no navigation, not a
 		// page that fails to render: one unreadable file must not take the
 		// whole site down when the page itself is fine.
-	}
-	if pages, _, err := st.pages(); err == nil {
-		src.Pages = pages
 	}
 	return src
 }

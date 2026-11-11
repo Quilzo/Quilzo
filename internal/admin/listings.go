@@ -17,6 +17,7 @@ import (
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/medialib"
+	"github.com/quilzo/quilzo/internal/public"
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/site"
 )
@@ -415,71 +416,33 @@ func (s *Server) resolverAt(commit string) *listing.Resolver {
 // ref is the commit being rendered and pages is its content — passed in rather
 // than re-read, because the caller already has them and a second read could
 // answer differently.
-func (s *Server) sources(commit string, pages map[string]any) render.Sources {
-	src := render.Sources{Name: s.SiteName, Pages: pages,
-		Listings: s.resolverAt(commit), IconStyle: s.iconStyle()}
-	if s.Structure != nil && s.Structure.Menus != nil {
-		if set, err := s.Structure.Menus(); err == nil {
-			src.Menus = set
-		}
-	}
-	s.libraryAsks(&src)
-	return src
-}
-
-// libraryAsks wires what the renderer may ask the media library, as the
-// public server and the command line's gate wire it.
 //
-// The preview and this gate asked nothing of the library, so here a
-// captioned video rendered with no <track> and a picture with no narrower
-// copies, and a backdrop would not have been drawn at all — which made the
-// gate in the browser pass a page with a backdrop whose recording has sound,
-// while `quilzo publish` refused it. One document, judged the same way
-// wherever the button is.
-func (s *Server) libraryAsks(src *render.Sources) {
-	if s.Media == nil || s.Media.Library == nil {
-		return
+// It is the public site's builder, never one of this server's own: this had
+// one, of the menus, the listings and the library's pictures, so the preview
+// and this gate drew a page without the form it names or the site's icon.
+func (s *Server) sources(commit string, pages map[string]any) render.Sources {
+	if s.Sources != nil {
+		src := s.Sources(commit, pages)
+		src.IconStyle = s.iconStyle()
+		return src
 	}
-	lib, err := s.Media.Library()
-	if err != nil || lib == nil {
-		return
+	st := public.New(s.Store, s.layouts())
+	st.Name, st.IconStyle, st.Listings = s.SiteName, s.iconStyle(), s.resolverAt(commit)
+	if s.Structure != nil && s.Structure.Menus != nil {
+		st.Menus = s.Structure.Menus
 	}
-	src.SrcSet = func(id string) string {
-		f, err := lib.Stat(id)
-		if err != nil {
-			return ""
+	// What the renderer may ask the media library, as the public server
+	// and the command line's gate wire it. The preview and this gate asked
+	// nothing of the library once, so a captioned video rendered here with
+	// no <track>, a picture with no narrower copies and no backdrop at all,
+	// and the gate in the browser passed a backdrop whose recording has
+	// sound while `quilzo publish` refused it.
+	if s.Media != nil && s.Media.Library != nil {
+		if lib, err := s.Media.Library(); err == nil && lib != nil {
+			st.MediaStat = lib.Stat
 		}
-		return f.SrcSet("/media")
 	}
-	src.Poster = func(id string) string {
-		f, err := lib.Stat(id)
-		if err != nil || f.Poster == "" {
-			return ""
-		}
-		return "/media/" + f.Poster
-	}
-	src.Tracks = func(id string) []any {
-		f, err := lib.Stat(id)
-		if err != nil || len(f.Tracks) == 0 {
-			return nil
-		}
-		out := make([]any, 0, len(f.Tracks))
-		for _, t := range f.Tracks {
-			out = append(out, map[string]any{
-				"src": "/media/" + t.ID, "lang": t.Lang,
-				"label": t.Label, "kind": t.Kind, "default": t.Default,
-			})
-		}
-		return out
-	}
-	src.Media = func(id string) (render.MediaInfo, bool) {
-		f, err := lib.Stat(id)
-		if err != nil {
-			return render.MediaInfo{}, false
-		}
-		sound, known := f.SoundKnown()
-		return render.MediaInfo{Kind: string(f.Kind), Sound: sound, SoundKnown: known, Alt: f.Alt}, true
-	}
+	return st.Sources(pages)
 }
 
 // mediaSound is the accessibility gate's question about a recording, from

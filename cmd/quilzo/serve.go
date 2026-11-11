@@ -1022,6 +1022,10 @@ func cmdServe(root string, args []string) error {
 	// The same name the site serves under, so the preview and the publish gate
 	// render the page readers get rather than one with a blank site name.
 	srv.SiteName = siteName(root)
+	// And the context the site draws a page in (renderContext), so the
+	// preview shows the form and the icon a visitor gets and the browser's
+	// gate judges them, as `quilzo render` and `quilzo publish` do.
+	srv.Sources = renderContext(root, s)
 	srv.LoadProvenance = func() (*provenance.Index, error) { return loadProvenance(root) }
 	srv.SaveProvenance = func(i *provenance.Index) error { return saveJSON(provPath(root), i) }
 	// Types are re-read per request rather than captured once. A type added

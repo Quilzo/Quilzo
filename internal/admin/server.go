@@ -175,6 +175,14 @@ type Server struct {
 	// prints it — which is exactly the template that failed the accessibility
 	// gate when it wrapped the name in a link.
 	SiteName string
+	// Sources is what a template may see when this renders pages at a
+	// commit: the preview, the browser's publish gate and the review. It is
+	// the public site's context (public.(*Site).Sources), as `quilzo serve`
+	// hands it over, so a preview shows the form and the icon a visitor
+	// gets and the gate judges them. Nil draws through the public site's
+	// builder all the same, from this server's own hooks: its name, menus,
+	// listings and library.
+	Sources func(commit string, pages map[string]any) render.Sources
 	// Brand is what an operator may change about this interface's appearance:
 	// its name, its accent and its mark. The zero value is Quilzo's own.
 	Brand Brand
