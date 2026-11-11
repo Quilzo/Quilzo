@@ -513,22 +513,28 @@ type State struct {
 }
 
 // Rule is one check.
+//
+// It is written as JSON by `quilzo posture rules --json`, under the names
+// `posture explain --json` gives the same fields.
 type Rule struct {
-	ID       string
-	Title    string
-	Severity Severity
-	Controls []string
-	OWASP    string
+	ID       string   `json:"id"`
+	Title    string   `json:"title"`
+	Severity Severity `json:"severity"`
+	Controls []string `json:"controls"`
+	OWASP    string   `json:"owasp"`
 	// Why explains the consequence, not the rule. It is shown when someone asks
 	// why a finding matters, and it is the difference between a scanner people
 	// act on and one they argue with.
-	Why   string
-	Check func(State) []Finding
+	Why string `json:"why"`
+	// Check is left out of JSON, which has no form for a function:
+	// encoding/json refuses the whole value for one, so `posture rules
+	// --json` wrote nothing and exited 0.
+	Check func(State) []Finding `json:"-"`
 	// Remind says the security contact is told when this starts failing,
 	// whatever its severity. A reminder that something is due is Medium by
 	// what an attacker gains from it, and a reminder nobody receives
 	// reminds nobody: the drift check mailed only high and critical.
-	Remind bool
+	Remind bool `json:"remind"`
 }
 
 // Reminds reports whether a rule is a reminder (Rule.Remind).

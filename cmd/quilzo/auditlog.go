@@ -63,6 +63,12 @@ func auditDir(root string) string {
 func cmdAuditDir(root string, args []string) error {
 	if len(args) == 0 {
 		dir := auditDir(root)
+		// Where the log is under --json, and whether that is in the store.
+		// This wrote only for a person, so a script asking where to read the
+		// log was answered with nothing and exit 0.
+		if w.JSON(map[string]any{"log": auditPath(root), "in_store": dir == root}) {
+			return nil
+		}
 		if dir == root {
 			w.Human("  the log is in the store: %s\n", auditPath(root))
 			w.Human("  %sthat means this account writes its own audit record%s\n",

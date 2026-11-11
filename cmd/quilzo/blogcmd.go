@@ -44,6 +44,12 @@ func blogCmd(root string, args []string, caller *Caller) error {
 	case "setup":
 		return blogSetup(root, caller)
 	case "example":
+		// The package itself under --json. It is JSON for a person too, and
+		// went only to them, so a script asking for it was answered with
+		// nothing and exit 0.
+		if w.JSON(blogPackage()) {
+			return nil
+		}
 		body, _ := json.MarshalIndent(blogPackage(), "", "  ")
 		w.Human("%s\n", body)
 		return nil

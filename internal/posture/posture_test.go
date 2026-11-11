@@ -4,6 +4,7 @@
 package posture
 
 import (
+	"encoding/json"
 	"slices"
 	"strings"
 	"testing"
@@ -971,5 +972,26 @@ func TestAnAccessReviewFallsDueAfterItsPeriod(t *testing.T) {
 	}
 	if !Reminds("access.review-due") || Reminds("access.sole-admin") {
 		t.Error("the reminder is not the one the drift check mails")
+	}
+}
+
+// The rules can be written as JSON, which is what `quilzo posture rules
+// --json` writes, under the names `posture explain --json` gives the same
+// fields. A rule holds its check, a function, and encoding/json refuses the
+// whole value for one, so the command wrote nothing and exited 0, and a
+// script asking what is checked was told nothing is.
+func TestTheRulesCanBeWrittenAsJSON(t *testing.T) {
+	b, err := json.Marshal(Rules())
+	if err != nil {
+		t.Fatalf("the rules cannot be written as JSON: %v", err)
+	}
+	var rules []map[string]any
+	if err := json.Unmarshal(b, &rules); err != nil || len(rules) != len(Rules()) {
+		t.Fatalf("the rules did not read back: %v", err)
+	}
+	for _, k := range []string{"id", "title", "severity", "why", "controls", "owasp", "remind"} {
+		if _, ok := rules[0][k]; !ok {
+			t.Errorf("a rule as JSON has no %q, as posture explain gives it: %.200s", k, b)
+		}
 	}
 }

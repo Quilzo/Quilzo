@@ -2254,6 +2254,12 @@ func cmdVerify(root string) error {
 	if err != nil {
 		return fmt.Errorf("%s%v%s", red, err, reset)
 	}
+	// The count under --json, as `auditlog verify` gives its entries. This
+	// printed its prose whatever was asked for, so a script checking that
+	// nothing in the store was altered had a sentence to parse.
+	if w.JSON(map[string]any{"objects": n, "intact": true}) {
+		return nil
+	}
 	fmt.Printf("  %d object(s) intact\n", n)
 	fmt.Printf("  %severy object re-hashed to the id it is filed under%s\n", dim, reset)
 	return nil

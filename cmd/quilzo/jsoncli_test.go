@@ -94,6 +94,14 @@ func TestEveryListingAnswersInJSON(t *testing.T) {
 		// tokens nobody uses, the operations the agent interface offers,
 		// and a research report checked before it goes out.
 		{"token", "stale"}, {"mcp", "--list"}, {"research", "check", "repeat-orders"},
+		// And these, found by running every command the help names with
+		// --json: `verify` and the grants `browser grant` lists printed
+		// their prose; `auditlog dir`, the templates `integrations template`
+		// lists, and the packages `blog example` and `events example` print
+		// as JSON for a person wrote nothing at all; and `posture rules`
+		// wrote nothing because a rule holds a function, as a setting did.
+		{"verify"}, {"browser", "grant"}, {"auditlog", "dir"}, {"integrations", "template"},
+		{"blog", "example"}, {"events", "example"}, {"posture", "rules"},
 		// These three printed their prose under --json. A site that takes no
 		// bookings yet, one being set up and one that does, in that order,
 		// because each is a different branch; and an explanation both of
