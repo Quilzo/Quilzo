@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/event"
 	"github.com/quilzo/quilzo/internal/mail"
 	"github.com/quilzo/quilzo/internal/newsletter"
 	"github.com/quilzo/quilzo/internal/site"
@@ -274,4 +276,38 @@ func assertNoAddressInAudit(t *testing.T, root string) {
 func stringOf(m map[string]any) string {
 	b, _ := json.Marshal(m)
 	return string(b)
+}
+
+// Somebody the list took before the one address rule is still taken off by
+// their address, though the rule refuses it now.
+//
+// The newsletter took "x4quote"@example.org, which a form and a record's
+// email field refused; now all of them refuse it, and `quilzo newsletter
+// remove "x4quote"@example.org` must still find the person it names.
+func TestAnAddressTakenBeforeTheRuleTightenedIsStillRemoved(t *testing.T) {
+	root, _ := newsletterStore(t)
+	list, _ := openNewsletter(root)
+	legacy := `"x4quote"@example.org`
+	if _, err := newsletter.Normalize(legacy); err == nil {
+		t.Fatal("the address rule takes a quoted local part")
+	}
+	id := list.ID(legacy)
+	b, _ := json.Marshal(newsletter.Subscriber{Email: legacy, ID: id, At: time.Now().UTC(), Confirmed: time.Now().UTC()})
+	if err := os.WriteFile(filepath.Join(newsletterDir(root), "subscribers", id+".json"), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	was, err := removeSubscriber(root, legacy, asAdmin("dana"))
+	if err != nil || !was || list.Has(id) {
+		t.Fatalf("removing %s: was %v, %v; still on the list: %v", legacy, was, err, list.Has(id))
+	}
+	// The leaving is told from a goroutine; wait for it, so it does not
+	// write into a store the test has finished with.
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		if evs, _, _ := adminEvents(root).Read(0, 100); len(evs) > 0 && evs[len(evs)-1].Type == event.SubscriberLeft {
+			break
+		}
+	}
+	if _, err := removeSubscriber(root, "not an address", asAdmin("dana")); !errors.Is(err, newsletter.ErrAddress) {
+		t.Errorf("removing what is not an address: %v", err)
+	}
 }

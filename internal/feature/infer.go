@@ -10,13 +10,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/mail"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/quilzo/quilzo/internal/listing"
+	"github.com/quilzo/quilzo/internal/mailaddr"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/sheet"
 )
@@ -335,10 +335,9 @@ func inferKind(values []string, rows int) (schema.Kind, []string) {
 		return schema.Number, nil
 	case all(func(v string) bool { return reISODate.MatchString(v) }):
 		return schema.Date, nil
-	case all(func(v string) bool {
-		a, err := mail.ParseAddress(v)
-		return err == nil && a.Address == v && !strings.ContainsAny(v, " <>")
-	}):
+	case all(mailaddr.Valid):
+		// The rule the email field will hold the values to, so a column
+		// read as addresses is one the records can then be written from.
 		return schema.Email, nil
 	case all(func(v string) bool { return strings.HasPrefix(v, "https://") || strings.HasPrefix(v, "http://") }):
 		return schema.URL, nil

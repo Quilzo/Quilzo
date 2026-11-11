@@ -395,10 +395,18 @@ func removeSubscriber(root, who string, caller *Caller) (bool, error) {
 	id := who
 	if !newsletter.ValidID(who) {
 		addr, err := newsletter.Normalize(who)
-		if err != nil {
+		switch {
+		case err == nil:
+			id = list.ID(addr)
+		case list.Has(list.ID(strings.ToLower(strings.TrimSpace(who)))):
+			// On the list from before the one address rule, which refuses
+			// it now ("a quote"@example.org): still taken off by the
+			// address it was kept under, because removing somebody must
+			// never depend on a rule tightening after they joined.
+			id = list.ID(strings.ToLower(strings.TrimSpace(who)))
+		default:
 			return false, err
 		}
-		id = list.ID(addr)
 	}
 	was, err := list.Remove(id, time.Now())
 	if err != nil {

@@ -66,6 +66,8 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/quilzo/quilzo/internal/mailaddr"
 )
 
 // Keep is how long an address that has not confirmed is kept.
@@ -114,17 +116,17 @@ var (
 	ErrNoKey    = errors.New("the newsletter's key is not made; the site cannot take sign-ups until it is")
 )
 
-var reEmail = regexp.MustCompile(`^[^@\s]{1,64}@[^@\s]+\.[^@\s]+$`)
-
 // reComment is a comment in an address, (like this), with none inside it:
 // mailbox takes them out innermost first.
 var reComment = regexp.MustCompile(`\([^()]*\)`)
 
 // Normalize checks an address and puts it in the one form the list keeps:
-// trimmed and in lower case, so one inbox is one entry.
+// trimmed and in lower case, so one inbox is one entry. The check is the
+// one a form, a booking and a record's email field make, so an address
+// one of them takes the list takes too.
 func Normalize(addr string) (string, error) {
 	addr = strings.ToLower(strings.TrimSpace(addr))
-	if len(addr) > 254 || !reEmail.MatchString(addr) || strings.IndexFunc(addr, unicode.IsControl) >= 0 {
+	if !mailaddr.Valid(addr) {
 		return "", ErrAddress
 	}
 	return addr, nil
