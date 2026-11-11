@@ -4,6 +4,7 @@
 package sandbox
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,7 +24,7 @@ import (
 // nobody thought to leave out is not.
 //
 // A name with a * in it is a pattern for the versions a runtime keeps its
-// settings under, expanded where it runs.
+// settings under, expanded where it runs (SystemReads says how).
 var systemReads = []string{
 	"/usr", "/lib", "/lib64", "/bin", "/sbin",
 	// The dynamic loader's cache and what it is built from.
@@ -46,23 +47,56 @@ var systemReads = []string{
 	"/etc/system-release", "/etc/mime.types", "/etc/magic", "/etc/magic.mime", "/etc/alternatives",
 	"/etc/gitconfig",
 	// Fonts and terminals, and the runtimes' own settings: a browser draws
-	// text, and Java starts no TLS without its security file.
-	"/etc/fonts", "/etc/terminfo", "/etc/chromium", "/etc/chromium.d", "/etc/java-*", "/etc/python3*",
-	"/etc/perl", "/etc/ImageMagick-*",
+	// text, and Java starts no TLS without its security file, which Debian
+	// keeps under /etc/java-N-openjdk and Fedora and RHEL under /etc/java.
+	"/etc/fonts", "/etc/terminfo", "/etc/chromium", "/etc/chromium.d", "/etc/java", "/etc/java-*",
+	"/etc/python3*", "/etc/perl", "/etc/ImageMagick-*",
+}
+
+// versionsOf are the names a pattern stands for on the systems a sandbox's
+// image is likely to be built from, whatever this machine has.
+//
+// A pattern was expanded on this machine alone, and a policy another
+// machine enforces (OpenShell's) then named this machine's versions and not
+// the image's: Java in an image with another version than here could not
+// read its security file, which the whole of /etc had let it read.
+func versionsOf(pattern string) []string {
+	var out []string
+	switch pattern {
+	case "/etc/java-*":
+		for v := 8; v <= 30; v++ {
+			out = append(out, fmt.Sprintf("/etc/java-%d-openjdk", v))
+		}
+	case "/etc/python3*":
+		out = append(out, "/etc/python3")
+		for v := 6; v <= 20; v++ {
+			out = append(out, fmt.Sprintf("/etc/python3.%d", v))
+		}
+	case "/etc/ImageMagick-*":
+		out = append(out, "/etc/ImageMagick-6", "/etc/ImageMagick-7")
+	}
+	return out
 }
 
 // SystemReads are the system paths every confined program may read, as
-// named, each pattern expanded on this machine: for a policy another
-// machine enforces, which has its own idea of which of them exist.
+// named, each pattern expanded to what it matches on this machine and to
+// the versions an image is likely to have (versionsOf): for a policy
+// another machine enforces, which has its own idea of which of them exist.
 func SystemReads() []string {
 	var out []string
+	seen := map[string]bool{}
 	for _, p := range systemReads {
 		if !strings.Contains(p, "*") {
 			out = append(out, p)
 			continue
 		}
 		matches, _ := filepath.Glob(p)
-		out = append(out, matches...)
+		for _, m := range append(matches, versionsOf(p)...) {
+			if !seen[m] {
+				seen[m] = true
+				out = append(out, m)
+			}
+		}
 	}
 	return out
 }
