@@ -475,6 +475,13 @@ func reviewApprove(root string, args []string) error {
 	if err := authorise(root, caller, auth.ActPublish, "/"); err != nil {
 		return fmt.Errorf("approving a change for publication takes the publish permission: %w", err)
 	}
+	// And only from the approvers named, where the policy names any, as
+	// the review screen offers it (collab.Policy.Counts). Taken from
+	// anybody else, it said "lee approved" and counted for nothing.
+	if pol, perr := loadApprovalPolicy(root); perr == nil && !pol.Counts(caller.Name) {
+		return errBlocked{fmt.Errorf("only approvals from %s count towards publishing this, so yours is not taken",
+			strings.Join(pol.Approvers, ", "))}
+	}
 	alone, err := secondPersonForDraft(root, s, *prop, caller)
 	if err != nil {
 		return errBlocked{err}

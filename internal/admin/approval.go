@@ -401,6 +401,16 @@ func (s *Server) handleApprove(w http.ResponseWriter, r *http.Request) {
 			"proposed, so an approval now would name content nobody offered")
 		return
 	}
+	// And from somebody whose approval counts, re-checked for the same
+	// reason: the screen not offering it is presentation, and a post
+	// recorded an approval that counted for nothing.
+	if s.Approvals.Policy != nil {
+		if pol, perr := s.Approvals.Policy(); perr == nil && !pol.Counts(p.Name) {
+			s.approvalRedirect(w, r, "", "only approvals from "+strings.Join(pol.Approvers, ", ")+
+				" count towards publishing this, so yours is not taken")
+			return
+		}
+	}
 	alone := false
 	if s.Approvals.SecondPerson != nil {
 		var serr error

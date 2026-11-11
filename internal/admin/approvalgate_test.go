@@ -6,6 +6,7 @@ package admin
 import (
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -310,5 +311,28 @@ func TestTheReviewScreenOffersTheApprovalToTheApproversNamed(t *testing.T) {
 	approvers = []string{"editor", "lee"}
 	if page := get(t, srv, "/review", token).Body.String(); !strings.Contains(page, `action="/review/approve"`) {
 		t.Error("the editor, whom the approvers name, is not offered to approve")
+	}
+}
+
+// An approval posted by somebody the approvers leave out is refused, as
+// the screen does not offer it: the button being absent is presentation,
+// and the post recorded an approval that counted for nothing.
+func TestAnApprovalPostedBySomebodyTheApproversLeaveOutIsRefused(t *testing.T) {
+	srv, token := setup(t)
+	draft := draftWrittenBy(t, srv, "opening hours")
+	saved := 0
+	srv.Approvals = &Approvals{
+		Policy: func() (collab.Policy, error) {
+			return collab.Policy{Required: 1, Approvers: []string{"lee"}, RequireHumanForAI: true}, nil
+		},
+		Current: func() (*collab.Proposal, error) {
+			return &collab.Proposal{Content: draft, Author: "writer", AuthorKind: "human"}, nil
+		},
+		Save:   func(*collab.Proposal) error { saved++; return nil },
+		KindOf: func(string) string { return "human" },
+	}
+	w := postForm(t, srv, "/review/approve", token, "note=read+it")
+	if loc, _ := url.QueryUnescape(w.Header().Get("Location")); saved != 0 || !strings.Contains(loc, "lee") {
+		t.Errorf("the editor, whom the approvers leave out, approved: saved %d, %s", saved, loc)
 	}
 }

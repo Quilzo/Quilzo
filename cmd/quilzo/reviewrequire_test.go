@@ -339,3 +339,64 @@ func TestWhoeverDecidesWhoseApprovalCountsReadsWhose(t *testing.T) {
 		t.Errorf("the record of the request names the approvers in clear: %+v", e)
 	}
 }
+
+// An approval from somebody the approvers named leave out is refused, as
+// the review screen does not offer it. `quilzo review approve` took it,
+// said "lee approved", and it counted for nothing.
+func TestAnApprovalTheApproversLeaveOutIsNotTaken(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root, dana, lee := twoAdmins(t)
+	t.Setenv("QUILZO_TOKEN", dana)
+	page := t.TempDir() + "/p.json"
+	if err := os.WriteFile(page, []byte(`{"title":"T","body":"b"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"add", "index=" + page, "-m", "first"},
+		{"provenance", "set", "index", "--source", "humanEdits", "--author", "dana"},
+	} {
+		if err := runCmd(t, root, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := cmdReview(root, []string{"require", "1", "--approvers", "kim"}); err != nil {
+		t.Fatal(err)
+	}
+	approvals := func() int {
+		t.Helper()
+		s, err := open(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		prop, _, err := currentProposal(root, s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(prop.Approvals)
+	}
+
+	t.Setenv("QUILZO_TOKEN", lee)
+	err := cmdReview(root, []string{"approve"})
+	if err == nil || !strings.Contains(err.Error(), "kim") {
+		t.Errorf("lee, whom the approvers leave out, approved: %v", err)
+	}
+	if n := approvals(); n != 0 {
+		t.Fatalf("an approval that counts for nothing was recorded: %d", n)
+	}
+
+	// Named, by two administrators, lee's approval is taken and counts.
+	t.Setenv("QUILZO_TOKEN", dana)
+	if err := cmdReview(root, []string{"require", "1", "--approvers", "kim,lee"}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("QUILZO_TOKEN", lee)
+	if err := cmdPending(root, []string{"approve", waiting(t, root).ID}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdReview(root, []string{"approve"}); err != nil {
+		t.Fatal(err)
+	}
+	if n := approvals(); n != 1 {
+		t.Fatalf("lee, named, approved and %d approvals are recorded", n)
+	}
+}
