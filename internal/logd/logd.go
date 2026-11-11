@@ -53,6 +53,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -203,7 +204,13 @@ func (s *Server) handle(conn net.Conn) {
 		return
 	}
 
-	r := bufio.NewReaderSize(conn, MaxRecordBytes)
+	// Limited as it is read. The size was checked once the line was whole,
+	// and ReadBytes keeps a line until its newline comes: a submitter sending
+	// one without made the writer hold everything it sent until the deadline,
+	// hundreds of megabytes a connection, enough for a compromised site to
+	// have the writer killed for want of memory. Reading stops at the limit,
+	// and what reaches it is refused below.
+	r := bufio.NewReaderSize(io.LimitReader(conn, MaxRecordBytes), MaxRecordBytes)
 	line, err := r.ReadBytes('\n')
 	if err != nil && len(line) == 0 {
 		return
