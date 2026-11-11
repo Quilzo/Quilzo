@@ -167,6 +167,37 @@ type Tool struct {
 	// pin records; Pinned is the pin, when there is one.
 	Definition string `json:"definition"`
 	Pinned     string `json:"pinned,omitempty"`
+	// Annotations are what the server says the tool does. Kept so the
+	// gateway can pass on a tool the server calls destructive as one: it
+	// offered every tool by the integration's one "writes" mark instead,
+	// and a destructive tool on an integration declared without it went to
+	// other systems' agents as read-only. Hints, not promises, and outside
+	// the pinned definition, so a server can change them after a person
+	// approved the tool: whoever reads them may only take them as making a
+	// tool more dangerous than it was said to be.
+	Annotations *Hints `json:"annotations,omitempty"`
+}
+
+// Hints are the four booleans of MCP's tool annotations, and nothing else
+// of them: the title is the far side's words, which a model is never shown
+// from here.
+type Hints struct {
+	ReadOnly    *bool `json:"readOnlyHint,omitempty"`
+	Destructive *bool `json:"destructiveHint,omitempty"`
+	Idempotent  *bool `json:"idempotentHint,omitempty"`
+	OpenWorld   *bool `json:"openWorldHint,omitempty"`
+}
+
+// MayChange reports whether the server says the tool changes something:
+// it says it is not read-only, or that it is destructive.
+func (h *Hints) MayChange() bool {
+	return h != nil && ((h.ReadOnly != nil && !*h.ReadOnly) || (h.Destructive != nil && *h.Destructive))
+}
+
+// SaysDestructive reports whether the server says the tool may destroy
+// what is there.
+func (h *Hints) SaysDestructive() bool {
+	return h != nil && h.Destructive != nil && *h.Destructive
 }
 
 // Matches reports whether a pinned tool is still the tool that was pinned.
