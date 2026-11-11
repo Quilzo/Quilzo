@@ -55,6 +55,9 @@ type Writer struct {
 	Colour bool
 	Out    io.Writer
 	Err    io.Writer
+
+	// failed is whether a document could not be written (Failed).
+	failed bool
 }
 
 // New builds a Writer for the process.
@@ -131,10 +134,23 @@ func (w *Writer) JSON(v any) bool {
 	enc := json.NewEncoder(w.Out)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(v); err != nil {
-		fmt.Fprintf(w.Err, "cannot encode output: %v\n", err)
+		// Said as an error document, as any failure is in JSON mode, and
+		// remembered, so the process fails with it (Failed).
+		w.failed = true
+		w.Error(fmt.Errorf("cannot encode output: %w", err))
 	}
 	return true
 }
+
+// Failed reports whether a document could not be written: the encoder
+// refused it, or stdout would not take it.
+//
+// JSON still reports that it answered, since there is no prose to fall back
+// on, so the command returns nil; the process has to fail instead. It did not,
+// and `config list` and `posture rules`, whose documents held a function, and
+// any command whose stdout was a full disk, exited 0 with nothing written, so
+// a script read the empty output as its answer.
+func (w *Writer) Failed() bool { return w.failed }
 
 var (
 	jsonMarshaler = reflect.TypeFor[json.Marshaler]()

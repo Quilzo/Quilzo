@@ -143,6 +143,31 @@ func TestJSONGivesAnEmptyListInADocumentAsAList(t *testing.T) {
 	}
 }
 
+// A document that could not be written is remembered, so the process can
+// fail with it.
+//
+// JSON said "cannot encode output" on stderr and the command went on to
+// return nil, so the process exited 0 with nothing on stdout: `config list`
+// and `posture rules`, for a function in what they wrote, and every command
+// for a stdout that will not take the document, as a full disk will not.
+func TestJSONThatCannotBeWrittenIsAFailure(t *testing.T) {
+	var stderr bytes.Buffer
+	w := &Writer{Mode: JSON, Out: &bytes.Buffer{}, Err: &stderr}
+	w.JSON(map[string]int{"n": 1})
+	if w.Failed() {
+		t.Fatal("a document that was written is reported as a failure")
+	}
+	w.JSON(map[string]any{"check": func() {}})
+	if !w.Failed() {
+		t.Fatal("a document the encoder refused is not reported as a failure")
+	}
+	// Said in the form the caller reads: an error document, in JSON mode.
+	var e struct{ Error string }
+	if err := json.Unmarshal(stderr.Bytes(), &e); err != nil || !strings.Contains(e.Error, "cannot encode output") {
+		t.Errorf("the failure was said as %q, not as an error document", stderr.String())
+	}
+}
+
 // What a field asks to be left out when it is zero is still left out.
 //
 // An empty list is not a zero one, so making the nil lists in an omitzero

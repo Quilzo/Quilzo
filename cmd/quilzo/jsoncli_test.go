@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -106,6 +107,46 @@ func TestEveryListingAnswersInJSON(t *testing.T) {
 	}
 }
 
+// An answer under --json that could not be written fails the command.
+//
+// The writer said "cannot encode output" on stderr and the command went on
+// to return nil, so a script was told by exit 0 that it had its answer, and
+// read an empty stdout as it. `config list` and `posture rules` did that for
+// a function in what they wrote; every command did it for a stdout that
+// would not take the document, as a full disk will not. `version` is asked
+// as well as `token list` because it answers and returns from main at once,
+// past where main decides how to exit.
+func TestAnAnswerThatCannotBeWrittenFails(t *testing.T) {
+	full, err := os.OpenFile("/dev/full", os.O_WRONLY, 0)
+	if err != nil {
+		t.Skip("no /dev/full to write to here")
+	}
+	defer full.Close()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("QUILZO_TOKEN", "")
+	old := w
+	t.Cleanup(func() { w = old })
+	w = out.New(false)
+	root := t.TempDir() + "/st"
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range [][]string{{"token", "list"}, {"version"}} {
+		cmd := exec.Command(os.Args[0], append(append([]string{"quilzo-main", "--root", root}, c...), "--json")...)
+		cmd.Dir = t.TempDir()
+		cmd.Env = append(os.Environ(), "HOME="+home, "QUILZO_TOKEN=")
+		var stderr bytes.Buffer
+		cmd.Stdout, cmd.Stderr = full, &stderr
+		err := cmd.Run()
+		var exit *exec.ExitError
+		if !errors.As(err, &exit) || exit.ExitCode() != out.ExitFailure {
+			t.Errorf("`quilzo %s --json` with nowhere to write its answer ended %v, not exit %d; stderr: %s",
+				strings.Join(c, " "), err, out.ExitFailure, firstLines(stderr.String(), 2))
+		}
+	}
+}
+
 // answersInJSON runs `quilzo ARGS --json` on a store and holds its stdout to
 // the contract: one document, or — for a command that failed, when always is
 // false — nothing at all, its error being on stderr.
@@ -123,6 +164,11 @@ func answersInJSON(t *testing.T, home, root string, c []string, always bool) {
 	err := cmd.Run() // a refusal still exits non-zero; stdout is the question
 	if ctx.Err() != nil {
 		t.Fatalf("`quilzo %s --json` did not finish", name)
+	}
+	// A document the encoder refused is a failure now, so it would pass
+	// below as a read that cannot run here. It is a read that cannot answer.
+	if strings.Contains(stderr.String(), "cannot encode output") {
+		t.Fatalf("`quilzo %s --json` could not write its answer: %s", name, firstLines(stderr.String(), 2))
 	}
 	if err != nil && !always && strings.TrimSpace(stdout.String()) == "" {
 		return
