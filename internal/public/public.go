@@ -46,6 +46,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/a2a"
+	"github.com/quilzo/quilzo/internal/asciifold"
 	"github.com/quilzo/quilzo/internal/compress"
 	"github.com/quilzo/quilzo/internal/crawl"
 	"github.com/quilzo/quilzo/internal/etag"
@@ -1307,8 +1308,15 @@ func (st *Site) injectHead(html, page, hash string, body any) string {
 	// Where this page lives, and whether a search engine may list it. The
 	// canonical link only when the layout wrote none: a layout that names
 	// one has decided.
+	//
+	// Looked for in the page itself, its ASCII letters folded as HTML folds
+	// them. strings.ToLower of the page copied the whole of every page served
+	// on a site with an address, which was 5 to 7 per cent of the CPU of
+	// serving the fullest starter page once the tag searches stopped lowering
+	// it, and it read rel="canonİcal", which names no canonical, as one, so
+	// the page went out without its address.
 	if c := seo.Canonical(st.BaseURL, page, st.Index, body); c != "" &&
-		!strings.Contains(strings.ToLower(html), `rel="canonical"`) {
+		asciifold.Index(html, `rel="canonical"`) < 0 {
 		b.WriteString(`<link rel="canonical" href="` + escape(c) + `">` + "\n")
 	}
 	if seo.NoIndex(body) {
@@ -1351,11 +1359,14 @@ func (st *Site) injectHead(html, page, hash string, body any) string {
 // wrong. Prepending when there is no head is worse than nothing — it would put
 // meta tags outside the document — so the page is served as it is and the
 // absence shows up in `provenance check` rather than being papered over.
+//
+// Found in the page itself, not in strings.ToLower of it: a Turkish title
+// lowered a byte shorter for every İ, and the marking went inside </title>.
 func insertBeforeHead(html, markup string) string {
 	if markup == "" {
 		return html
 	}
-	head := strings.Index(strings.ToLower(html), "</head>")
+	head := asciifold.Index(html, "</head>")
 	if head < 0 {
 		return html
 	}

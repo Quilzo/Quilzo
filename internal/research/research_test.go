@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -224,6 +225,20 @@ func TestIdentifiersAreReadOrRefused(t *testing.T) {
 	for _, bad := range []string{"Attention is all you need", "doi:11.1/x", "pmid:abc", ""} {
 		if _, err := ParseIdentifier(bad); err == nil {
 			t.Errorf("%q was read as an identifier", bad)
+		}
+	}
+}
+
+// A refused identifier is quoted as it was typed.
+//
+// The scheme was matched in strings.ToLower of the identifier and cut from
+// the identifier itself by the scheme's length. İ is two bytes and lowers to
+// i, one, so "doİ:10.1000/182" lost only "doİ" and was refused as
+// ":10.1000/182", which nobody typed.
+func TestARefusedIdentifierIsQuotedAsTyped(t *testing.T) {
+	for _, in := range []string{"doİ:10.1000/182", "https://doİ.org/10.1000/182", "https://dx.doİ.org/10.1000/182"} {
+		if _, err := ParseIdentifier(in); err == nil || !strings.Contains(err.Error(), strconv.Quote(in)) {
+			t.Errorf("%q: %v", in, err)
 		}
 	}
 }

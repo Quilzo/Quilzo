@@ -17,6 +17,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/quilzo/quilzo/internal/asciifold"
 )
 
 // Literature from open indexes.
@@ -66,11 +68,16 @@ var (
 
 // ParseIdentifier reads doi:10…, a doi.org address, pmid:…, arxiv:… or an
 // OpenAlex W… identifier.
+//
+// A scheme is matched in s itself, so cutting its length from s cuts the
+// scheme and nothing else. It was matched in strings.ToLower(s), where İ is
+// a byte shorter than in s, and "doİ:10.1000/182" was refused as
+// ":10.1000/182", which nobody typed.
 func ParseIdentifier(s string) (Identifier, error) {
 	s = strings.TrimSpace(s)
 	low := strings.ToLower(s)
 	for _, p := range []string{"https://doi.org/", "http://doi.org/", "https://dx.doi.org/", "doi:"} {
-		if strings.HasPrefix(low, p) {
+		if asciifold.HasPrefix(s, p) {
 			s, low = s[len(p):], low[len(p):]
 			if reDOI.MatchString(s) {
 				return Identifier{"doi", strings.ToLower(s)}, nil
@@ -81,11 +88,11 @@ func ParseIdentifier(s string) (Identifier, error) {
 	switch {
 	case reDOI.MatchString(s):
 		return Identifier{"doi", low}, nil
-	case strings.HasPrefix(low, "pmid:") && rePMID.MatchString(strings.TrimSpace(s[5:])):
+	case asciifold.HasPrefix(s, "pmid:") && rePMID.MatchString(strings.TrimSpace(s[5:])):
 		return Identifier{"pmid", strings.TrimSpace(s[5:])}, nil
-	case strings.HasPrefix(low, "arxiv:") && reArxiv.MatchString(strings.TrimSpace(s[6:])):
+	case asciifold.HasPrefix(s, "arxiv:") && reArxiv.MatchString(strings.TrimSpace(s[6:])):
 		return Identifier{"arxiv", strings.TrimSpace(s[6:])}, nil
-	case strings.HasPrefix(low, "openalex:") && reOpenAlex.MatchString(strings.TrimSpace(s[9:])):
+	case asciifold.HasPrefix(s, "openalex:") && reOpenAlex.MatchString(strings.TrimSpace(s[9:])):
 		return Identifier{"openalex", strings.TrimSpace(s[9:])}, nil
 	case reOpenAlex.MatchString(s):
 		return Identifier{"openalex", s}, nil

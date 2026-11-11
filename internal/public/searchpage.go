@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/search"
 	"github.com/quilzo/quilzo/internal/tmpl"
@@ -190,19 +192,56 @@ func snippetFor(body any, fields []string, query string) string {
 		// reading only the field's own top level found nothing to quote and
 		// every result on a real site came out with an empty snippet.
 		for _, text := range search.Strings(m[field]) {
-			lower := strings.ToLower(text)
 			for _, term := range terms {
-				at := strings.Index(lower, term)
+				at, end := indexLower(text, term)
 				if at < 0 {
 					continue
 				}
-				return cutAround(text, at, len(term))
+				return cutAround(text, at, end-at)
 			}
 		}
 	}
 	// A match in a field with no readable text — a boolean, a number — is still
 	// a match, and an empty snippet is better than a misleading one.
 	return ""
+}
+
+// indexLower is where term, already lower case, first appears in text read
+// the way strings.ToLower reads it, as offsets into text itself.
+//
+// Not strings.Index(strings.ToLower(text), term), which answers with an
+// offset into the lowered copy, and the copy is a different length wherever
+// a character's lower case is: İ is two bytes and lowers to i, one, so a
+// Turkish page's snippet was cut a byte early for every İ before the word and
+// sixty of them left the word out of it; Ⱥ lowers a byte longer, and enough
+// of them put the cut past the end of the text, where it panicked. The
+// comparison is still Unicode's, so "école" finds "ÉCOLE" as it did.
+func indexLower(text, term string) (start, end int) {
+	for i := 0; i < len(text); {
+		if n, ok := lowerPrefix(text[i:], term); ok {
+			return i, i + n
+		}
+		_, size := utf8.DecodeRuneInString(text[i:])
+		i += size
+	}
+	return -1, -1
+}
+
+// lowerPrefix reports whether s begins with characters that lower to lower,
+// and how many bytes of s they take.
+func lowerPrefix(s, lower string) (int, bool) {
+	i := 0
+	for _, want := range lower {
+		if i >= len(s) {
+			return 0, false
+		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if unicode.ToLower(r) != want {
+			return 0, false
+		}
+		i += size
+	}
+	return i, true
 }
 
 // cutAround takes about a line of text with the match inside it.
