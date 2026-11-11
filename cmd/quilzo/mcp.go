@@ -427,10 +427,15 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 			return nil, err
 		}
 
+		// Verified as the caller was: a token proves it over HTTP, and the
+		// interface's own record of the call says so. This said false
+		// whoever called, so every write an app made with a token was in
+		// the log as verified and as not, and the agent watch counted the
+		// second as an act nobody verified was behind.
 		record(root, audit.Record{
 			Action: "mcp.write_page", Resource: "/" + name, Outcome: audit.Success,
 			Principal: "mcp-client", Kind: audit.KindAI, Model: "mcp-client",
-			Verified: false, Detail: map[string]string{"on_behalf_of": caller.Name},
+			Verified: caller.Verified, Detail: map[string]string{"on_behalf_of": caller.Name},
 		})
 		return fmt.Sprintf("wrote %s to the draft as %s; it is marked AI-generated "+
 			"and is not public until someone publishes", name, short(cid)), nil
@@ -533,10 +538,11 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		if err != nil {
 			return nil, err
 		}
+		// Verified as the caller was, as mcp.write_page is.
 		record(root, audit.Record{
 			Action: "mcp.publish", Resource: "/", Outcome: audit.Success,
 			Principal: "mcp-client", Kind: audit.KindAI, Model: "mcp-client",
-			Verified: false, Detail: map[string]string{"on_behalf_of": caller.Name},
+			Verified: caller.Verified, Detail: map[string]string{"on_behalf_of": caller.Name},
 		})
 		var changed []string
 		for _, c := range pub.Changes {

@@ -380,10 +380,11 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 		if err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
+		// Verified as the caller was, as mcp.write_page is.
 		record(root, audit.Record{
 			Action: "mcp.write_record", Resource: "/" + name,
 			Outcome: audit.Success, Principal: "mcp-client", Kind: audit.KindAI,
-			Model: "mcp-client", Verified: false,
+			Model: "mcp-client", Verified: caller.Verified,
 			Detail: map[string]string{"on_behalf_of": caller.Name, "id": out.ID},
 		})
 		emitEvent(root, event.Event{Type: event.RecordChanged, Subject: name, Kind: string(audit.KindAI)}, nil)
