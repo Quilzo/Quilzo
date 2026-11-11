@@ -529,6 +529,7 @@ func TestALogReadsBackItsOwnFileWhileItIsWritten(t *testing.T) {
 func TestAnActsOldNamesAreReadAsItsNameNow(t *testing.T) {
 	for old, now := range map[string]string{
 		"access.grant": "auth.granted", "access.revoke": "auth.revoke", "siem.export": "auditlog.export",
+		"memory.deleteed": "memory.deleted", "memory.deleted": "memory.deleted",
 		"auth.granted": "auth.granted", "auth.denied": "auth.denied", "publish": "publish",
 	} {
 		if got := Canonical(old); got != now {

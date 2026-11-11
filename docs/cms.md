@@ -2649,7 +2649,10 @@ than for one that has to be described.
   keep the names they were written with, because the chain covers them, and
   are read as the act's name now by the log screen's filter and the export's
   classification: `access.grant` as `auth.granted`, `access.revoke` as
-  `auth.revoke` and `siem.export` as `auditlog.export`.
+  `auth.revoke` and `siem.export` as `auditlog.export`. A memory deleted from
+  the command line was `memory.deleteed`; it is `memory.deleted`, as on the
+  Memory screen, and the old name is read as it in a person's memory receipt
+  and in the AI evidence.
 - **GDPR.** Article 20 asks for a structured, machine-readable format; export is
   tested by round trip, which is a higher bar than the law sets. Article 17 is
   why form submissions deliberately do not live in the merkle store — an

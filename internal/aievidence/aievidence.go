@@ -96,7 +96,9 @@ func Count(events []audit.Event, from, to time.Time) Counts {
 		if at.Before(from) || at.After(to) {
 			continue
 		}
-		switch e.Action {
+		// By the act's name now (audit.Canonical): a memory deleted from the
+		// command line was recorded as memory.deleteed, and is a deletion.
+		switch audit.Canonical(e.Action) {
 		case "agent.run":
 			c.Runs++
 			if e.Kind == audit.KindAI {
