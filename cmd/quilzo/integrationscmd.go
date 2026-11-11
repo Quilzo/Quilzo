@@ -33,6 +33,19 @@ func integrationsPath(root string) string {
 	return filepath.Join(root, "integrations.json")
 }
 
+// turnOnHint is how a declared integration is turned on, for the line that
+// says what to do next.
+//
+// There is no switch to point at. The Integrations screen shows what is on
+// and changes nothing, on purpose (admin.Integrations.Declared says why), and
+// no command turns one on. The hints said "turn it on in Administration ›
+// Integrations", and whoever did found a list. The path is this install's,
+// because the file is under the store, not in the directory the command was
+// typed in.
+func turnOnHint(root string) string {
+	return fmt.Sprintf(`set "enabled": true on its entry in %s`, integrationsPath(root))
+}
+
 // loadIntegrations reads the declarations.
 //
 // Every declaration is validated on the way in, enabled or not. A declaration

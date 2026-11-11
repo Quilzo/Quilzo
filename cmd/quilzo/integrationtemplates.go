@@ -199,7 +199,7 @@ func integrationsTemplate(root string, args []string) error {
 	w.Human("declared %s%s%s reaching %s with the account each person connects at %s, switched off\n",
 		bold, in.Name, reset, in.Where(), in.Connection)
 	w.Human("  may call %s\n", strings.Join(in.Uses, ", "))
-	w.Human("\nnext: quilzo connect provider add %s --template %s ... (once), quilzo integrations pin %s, "+
-		"then turn it on in Administration › Integrations\n", in.Connection, in.Connection, in.Name)
+	w.Human("\nnext: quilzo connect provider add %s --template %s ... (once), quilzo integrations pin %s, then %s\n",
+		in.Connection, in.Connection, in.Name, turnOnHint(root))
 	return nil
 }
