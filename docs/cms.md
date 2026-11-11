@@ -2637,14 +2637,19 @@ than for one that has to be described.
 - **`quilzo siem`** exports the audit log as OCSF, CEF or JSON Lines with an
   integrity envelope, so the receiving system can tell whether events were
   removed. Identifiers are pseudonymised unless somebody explicitly asks for
-  them, and asking is itself recorded.
+  them, and asking is itself recorded. Every export of the log is recorded the
+  same way, as `auditlog.export` with its format, how many events, their
+  range and whether identifiers were asked for: `quilzo siem`, the export on
+  the Integrations screen, and `quilzo auditlog export -o FILE`, which writes
+  the log as it is stored, even when its chain is broken.
 - **One act, one action name**, whichever surface did it: a grant is
-  `auth.granted` (a deny `auth.denied`) and a revocation `auth.revoke`, from
-  the command line, the People screen and the access review alike. Entries
-  written before the names were made one keep the names they were written
-  with, because the chain covers them, and are read as the act's name now by
-  the log screen's filter and the export's classification: `access.grant` as
-  `auth.granted` and `access.revoke` as `auth.revoke`.
+  `auth.granted` (a deny `auth.denied`), a revocation `auth.revoke` and an
+  export of the log `auditlog.export`, from the command line, the admin and
+  the access review alike. Entries written before the names were made one
+  keep the names they were written with, because the chain covers them, and
+  are read as the act's name now by the log screen's filter and the export's
+  classification: `access.grant` as `auth.granted`, `access.revoke` as
+  `auth.revoke` and `siem.export` as `auditlog.export`.
 - **GDPR.** Article 20 asks for a structured, machine-readable format; export is
   tested by round trip, which is a higher bar than the law sets. Article 17 is
   why form submissions deliberately do not live in the merkle store — an

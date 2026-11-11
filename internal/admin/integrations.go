@@ -523,9 +523,14 @@ func (s *Server) handleSIEMExport(w http.ResponseWriter, r *http.Request) {
 		s.intRedirect(w, r, "", err.Error())
 		return
 	}
-	s.auditPub(p, "siem.export", "/", map[string]string{
-		"format": string(format), "events": fmt.Sprint(res.Count),
-		"revealed": fmt.Sprint(reveal)})
+	// Recorded as every export of the log is, as auditlog.export with
+	// siem.ExportDetail. It was siem.export with the format, the count and
+	// revealed, so a rule or a filter for auditlog.export missed every
+	// export made here, and the range it covered was not recorded at all.
+	// revealed is kept for whatever reads it.
+	detail := siem.ExportDetail(string(format), res.Count, res.Chain.FirstSeq, res.Chain.LastSeq, reveal)
+	detail["revealed"] = fmt.Sprint(reveal)
+	s.auditPub(p, "auditlog.export", "/", detail)
 
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(

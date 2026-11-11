@@ -196,6 +196,7 @@ func TestEveryPrivilegedCommandWritesAnAuditRecord(t *testing.T) {
 		"cmdImport":     "import",
 		"cmdExport":     "export",
 		"cmdSiem":       "auditlog.export",
+		"auditExport":   "auditlog.export",
 	}
 
 	found := map[string]string{}

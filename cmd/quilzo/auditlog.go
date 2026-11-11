@@ -21,6 +21,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/dual"
 	"github.com/quilzo/quilzo/internal/out"
+	"github.com/quilzo/quilzo/internal/siem"
 )
 
 // Where the audit log lives.
@@ -374,7 +375,7 @@ func cmdAuditLog(root string, args []string) error {
 	case "show":
 		return auditShow(root, args[1:])
 	case "export":
-		return auditExport(root)
+		return auditExport(root, args[1:])
 	case "head":
 		return auditHead(root, args[1:])
 	case "verify-head":
@@ -516,12 +517,56 @@ func auditShow(root string, args []string) error {
 	return nil
 }
 
-func auditExport(root string) error {
+// auditExport writes the whole log out as it is stored, unverified, so a
+// log whose chain is broken can still be taken away and examined, which
+// `quilzo siem` refuses to do.
+//
+// It is recorded as every export of the log is, as auditlog.export with
+// siem.ExportDetail. It recorded nothing, and it is the one bulk export the
+// auditor's job reaches, so the record an auditor would look for of the log
+// leaving was missing for exactly the people meant to read it. And it read
+// no flags: `-o FILE`, as the help gives it, wrote the log to the terminal,
+// wrote no file and exited 0, and anything else after it was ignored too.
+func auditExport(root string, args []string) error {
+	fs := flag.NewFlagSet("auditlog export", flag.ContinueOnError)
+	outPath := fs.String("o", "", "write the log here instead of standard output")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() > 0 {
+		return fmt.Errorf("auditlog export takes no %q; to write the log to a file: quilzo auditlog export -o FILE",
+			fs.Arg(0))
+	}
 	events, err := audit.Read(auditPath(root))
 	if err != nil {
 		return err
 	}
-	return audit.Export(events, os.Stdout)
+	var first, last int64
+	if len(events) > 0 {
+		first, last = events[0].Seq, events[len(events)-1].Seq
+	}
+	caller := resolveCaller(root, "")
+	record(root, audit.Record{
+		Action: "auditlog.export", Resource: "/", Outcome: audit.Success,
+		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
+		Detail: siem.ExportDetail("raw", len(events), first, last, false),
+	})
+	if *outPath == "" {
+		return audit.Export(events, os.Stdout)
+	}
+	var b bytes.Buffer
+	if err := audit.Export(events, &b); err != nil {
+		return err
+	}
+	// 0600, as `quilzo siem -o` writes: a copy of the log is the log.
+	if err := os.WriteFile(*outPath, b.Bytes(), 0o600); err != nil {
+		return err
+	}
+	if w.JSON(map[string]any{"events": len(events), "first_seq": first, "last_seq": last, "file": *outPath}) {
+		return nil
+	}
+	fmt.Fprintf(os.Stderr, "%d entr%s, as stored, in %s\n", len(events), entrySuffix(len(events)), *outPath)
+	return nil
 }
 
 // entrySuffix completes "entr-y" or "entr-ies".

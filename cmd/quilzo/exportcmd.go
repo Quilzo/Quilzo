@@ -252,19 +252,12 @@ func cmdSiem(root string, args []string) error {
 	// The export is itself an event. An export that quietly re-identified
 	// people would be a privacy failure with a paper trail pointing the wrong
 	// way, so asking for identifiers is recorded whether or not it worked.
+	// The same record as every other export of the log (siem.ExportDetail).
 	caller := resolveCaller(root, "")
 	record(root, audit.Record{
 		Action: "auditlog.export", Resource: "/", Outcome: audit.Success,
 		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
-		Detail: map[string]string{
-			"format": string(format),
-			"events": fmt.Sprintf("%d", res.Count),
-			"range":  fmt.Sprintf("%d-%d", res.Chain.FirstSeq, res.Chain.LastSeq),
-			// Named plainly, because "reveal=true" in an audit log is the line
-			// somebody needs to find.
-			"identifiers_requested": fmt.Sprintf("%t", *reveal),
-			"pseudonymous":          fmt.Sprintf("%t", res.Chain.Pseudonymous),
-		},
+		Detail: siem.ExportDetail(string(format), res.Count, res.Chain.FirstSeq, res.Chain.LastSeq, *reveal),
 	})
 
 	if *envelopePath != "" {

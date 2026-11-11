@@ -201,6 +201,27 @@ func Export(f Format, events []audit.Event, opt Options, now time.Time) (*Result
 		Redacted: !opt.Reveal}, nil
 }
 
+// ExportDetail is what the record of an export of the audit log says, on
+// every surface that makes one: the format, how many events, the range of
+// sequence numbers they cover, whether identifiers were asked for, and so
+// whether what left is pseudonymous. Recorded as auditlog.export.
+//
+// One function because there were three exports and three records. `quilzo
+// siem` recorded all of this, the admin's export only the format and the
+// count, under another name, and `quilzo auditlog export` nothing, so a rule
+// or a reader looking for the log leaving found one way of it leaving.
+func ExportDetail(format string, count int, first, last int64, reveal bool) map[string]string {
+	return map[string]string{
+		"format": format,
+		"events": fmt.Sprint(count),
+		"range":  fmt.Sprintf("%d-%d", first, last),
+		// Named plainly, because "reveal=true" in an audit log is the line
+		// somebody needs to find.
+		"identifiers_requested": fmt.Sprint(reveal),
+		"pseudonymous":          fmt.Sprint(!reveal),
+	}
+}
+
 // principal returns the identifier to emit.
 //
 // When the log is pseudonymous the stored value is already an HMAC and there is
