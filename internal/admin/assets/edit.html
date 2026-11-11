@@ -242,7 +242,8 @@
 <aside class="preview" aria-labelledby="preview-h">
   <h2 id="preview-h">The page</h2>
   <p class="help">Your page as readers will see it, with what you have typed and not saved yet.
-    <span class="nobreak"><a href="/preview/{{.Name}}" target="_blank" rel="noopener">Open the saved draft{{template "newtab"}}</a>.</span></p>
+    {{if .Previewable}}<span class="nobreak"><a href="/preview/{{.Name}}" target="_blank" rel="noopener">Open the saved draft{{template "newtab"}}</a>.</span>
+    {{else}}Nothing is saved here yet, so it shows what you type, a moment after you stop or when you press Show in the preview.{{end}}</p>
 
   {{/*
     ?plain=1 here and nowhere else. The editing panel is what turns a preview
@@ -250,7 +251,13 @@
     field it is the same links twice. Opened in a tab, where there is no form,
     the panel is the only way back and appears.
   */}}
-  <iframe name="preview-frame" src="/preview/{{.Name}}?plain=1" title="Preview of {{.Name}}" loading="lazy"></iframe>
+  {{/*
+    Without a src until there is something saved to show. /preview/NAME
+    answers 404 for a page with no draft, and a 404 may not be framed, so
+    the pane was a framing error. The frame is still here for the live
+    preview to post what is typed into.
+  */}}
+  <iframe name="preview-frame"{{if .Previewable}} src="/preview/{{.Name}}?plain=1"{{end}} title="Preview of {{.Name}}" loading="lazy"></iframe>
 </aside>
 </div>
 {{else}}

@@ -2692,6 +2692,17 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Whether /preview/NAME has anything to show: the page, or a record at
+	// a detail address. A page nobody has saved has neither, and framing
+	// its preview framed a 404, which carries frame-ancestors 'none' like
+	// every other answer: a blank pane and a framing error on the first
+	// visit to every new page's editor.
+	previewable := exists
+	if !previewable {
+		_, status, _ := s.previewRecord(pages, name)
+		previewable = status == 0
+	}
+
 	// What the screen is to the person looking at it: a reader was shown
 	// "Edit" over a page that said they could not edit it.
 	verb := "Edit"
@@ -2708,7 +2719,7 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 		"NotesOn":    s.Notes != nil && s.Notes.Store != nil,
 		"Notes":      notes,
 		"Title":      verb + " " + name, "Principal": p, "Name": name,
-		"Fields": fields, "Exists": exists, "Type": typeName,
+		"Fields": fields, "Exists": exists, "Type": typeName, "Previewable": previewable,
 		"FormChoices": formChoices,
 		"Incoming":    incoming,
 		"Base":        base, "HeldBy": heldBy,
