@@ -287,7 +287,7 @@ func (s *Server) handlePeoplePending(w http.ResponseWriter, r *http.Request) {
 		// administrator stopped being one.
 		if mine, gerr := s.Dual.Store.Get(id); do == "approve" && gerr == nil && strings.EqualFold(mine.By, p.Name) {
 			if rm := s.aloneRefusal(p.Name, now); rm != nil {
-				s.peopleBack(w, r, s.refuseAlone(p, rm, map[string]string{"request": mine.ID, "kind": mine.Kind}))
+				s.peopleProblem(w, r, s.refuseAlone(p, rm, map[string]string{"request": mine.ID, "kind": mine.Kind}))
 				return
 			}
 		}
@@ -307,7 +307,7 @@ func (s *Server) handlePeoplePending(w http.ResponseWriter, r *http.Request) {
 		err = errors.New("approve, decline or withdraw?")
 	}
 	if err != nil {
-		s.peopleBack(w, r, err.Error())
+		s.peopleProblem(w, r, err.Error())
 		return
 	}
 	detail := map[string]string{"by": p.Name, "request": req.ID, "kind": req.Kind, "what": req.What, "proposed_by": req.By}
@@ -374,7 +374,7 @@ func (s *Server) receiveCredential(w http.ResponseWriter, r *http.Request, p pri
 		req, err = s.Dual.Store.Redeem(id, p.Name, now)
 	}
 	if err != nil {
-		s.peopleBack(w, r, err.Error())
+		s.peopleProblem(w, r, err.Error())
 		return
 	}
 	detail := map[string]string{"by": p.Name, "request": req.ID, "kind": req.Kind, "approved_by": req.DecidedBy}
@@ -390,7 +390,7 @@ func (s *Server) receiveCredential(w http.ResponseWriter, r *http.Request, p pri
 	}
 	token, err := s.SCIM.NewToken(made)
 	if err != nil {
-		s.peopleBack(w, r, err.Error())
+		s.peopleProblem(w, r, err.Error())
 		return
 	}
 	// Shown in this response and never again, as on Provisioning.

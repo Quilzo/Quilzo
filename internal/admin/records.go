@@ -5,6 +5,7 @@ package admin
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -89,6 +90,30 @@ func (s *Server) handleRecords(w http.ResponseWriter, r *http.Request) {
 		s.can(w, r, p, auth.ActView, auth.AreaData)
 		return
 	}
+	s.recordsScreen(w, r, p, nil)
+}
+
+// keptRecord is a record somebody wrote and could not save, kept so the
+// screen they wrote it on gives it back to them with the reason.
+//
+// A refused save went back to the screen as m=, the green "saved" notice,
+// with the form closed: what had been typed was gone, and the refusal looked
+// like success.
+type keptRecord struct {
+	ID string
+	// Fields is what the type's form said, read as each field's kind;
+	// JSON, when it was written as JSON, is the text exactly as typed.
+	Fields map[string]any
+	JSON   string
+	AsJSON bool
+	// Problem is why it was not saved, and Invalid the fields it is about.
+	Problem string
+	Invalid map[string]bool
+}
+
+// recordsScreen is the Data screen, for the collection and record the
+// address names, with a record that could not be saved when there is one.
+func (s *Server) recordsScreen(w http.ResponseWriter, r *http.Request, p principal, kept *keptRecord) {
 	if s.Data == nil {
 		s.render(w, r, "records.html", map[string]any{
 			"Title": "Data", "Principal": p, "Nav": "records",
@@ -217,6 +242,19 @@ func (s *Server) handleRecords(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	// A record that was refused: what was typed, on the record it was typed
+	// for, and the refusal said as one.
+	if kept != nil && selected != "" {
+		data["Problem"] = kept.Problem
+		data["Status"] = http.StatusUnprocessableEntity
+		data["EditID"] = kept.ID
+		editing = kept.Fields
+		if kept.AsJSON {
+			data["Blank"] = kept.JSON
+		} else if body, jerr := json.MarshalIndent(kept.Fields, "", "  "); jerr == nil {
+			data["Blank"] = string(body)
+		}
+	}
 	// A collection whose type is known is written with a form of that type's
 	// fields — a date as a date, a time as a time, a choice as its choices —
 	// rather than as JSON, which only somebody who writes JSON can use. JSON
@@ -229,7 +267,13 @@ func (s *Server) handleRecords(w http.ResponseWriter, r *http.Request) {
 		if editing != nil {
 			body = editing
 		}
-		data["Fields"] = s.withPictures(t, typedFields(t, body, nil))
+		fields := s.withPictures(t, typedFields(t, body, nil))
+		if kept != nil {
+			for i := range fields {
+				fields[i].Invalid = kept.Invalid[fields[i].Key]
+			}
+		}
+		data["Fields"] = fields
 		data["BlankType"] = t.Name
 	}
 
@@ -355,18 +399,20 @@ func (s *Server) handleRecordSave(w http.ResponseWriter, r *http.Request) {
 	}
 	coll := strings.TrimSpace(r.FormValue("collection"))
 	if err := collection.ValidName(coll); err != nil {
-		s.recordsBack(w, r, coll, err.Error())
+		s.recordsProblem(w, r, coll, err.Error())
 		return
 	}
 	id := strings.TrimSpace(r.FormValue("id"))
 
 	var fields map[string]any
-	if r.FormValue("__typed") == "1" {
+	asJSON := r.FormValue("__typed") != "1"
+	raw := strings.TrimSpace(r.FormValue("fields"))
+	if !asJSON {
 		// The type's form: the record as it is, changed by what was typed,
 		// each value read as its field's kind.
 		t, ok := s.recordType(coll)
 		if !ok {
-			s.recordsBack(w, r, coll, "this collection has no type to read the form by")
+			s.recordsProblem(w, r, coll, "this collection has no type to read the form by")
 			return
 		}
 		fields = map[string]any{}
@@ -387,16 +433,17 @@ func (s *Server) handleRecordSave(w http.ResponseWriter, r *http.Request) {
 		}
 		coerceForm(t, form, fields)
 	} else {
-		raw := strings.TrimSpace(r.FormValue("fields"))
 		if raw == "" {
-			s.recordsBack(w, r, coll, "a record with no fields is not a record")
+			s.recordRefused(w, r, p, coll, keptRecord{ID: id, AsJSON: true,
+				Problem: "a record with no fields is not a record"})
 			return
 		}
 		if err := json.Unmarshal([]byte(raw), &fields); err != nil {
 			// The message names the position, because "invalid JSON" in a
 			// textarea somebody has been typing into for five minutes is not
 			// a fix.
-			s.recordsBack(w, r, coll, "that is not a JSON object: "+err.Error())
+			s.recordRefused(w, r, p, coll, keptRecord{ID: id, AsJSON: true, JSON: raw,
+				Problem: "that is not a JSON object: " + err.Error()})
 			return
 		}
 	}
@@ -415,7 +462,15 @@ func (s *Server) handleRecordSave(w http.ResponseWriter, r *http.Request) {
 		return s.Data.Commit(next, "admin: write "+coll, p.Name)
 	})
 	if err != nil {
-		s.recordsBack(w, r, coll, err.Error())
+		kept := keptRecord{ID: id, Fields: fields, AsJSON: asJSON, JSON: raw, Problem: err.Error()}
+		var invalid *schema.Invalid
+		if errors.As(err, &invalid) {
+			kept.Invalid = map[string]bool{}
+			for _, pr := range invalid.Problems {
+				kept.Invalid[pr.Field] = true
+			}
+		}
+		s.recordRefused(w, r, p, coll, kept)
 		return
 	}
 	s.audit("records.write", "/"+coll, map[string]string{
@@ -448,7 +503,7 @@ func (s *Server) handleRecordDelete(w http.ResponseWriter, r *http.Request) {
 		return s.Data.Commit(next, "admin: delete from "+coll, p.Name)
 	})
 	if err != nil {
-		s.recordsBack(w, r, coll, err.Error())
+		s.recordsProblem(w, r, coll, err.Error())
 		return
 	}
 	s.audit("records.delete", "/"+coll, map[string]string{
@@ -590,6 +645,24 @@ func (s *Server) handleRecordExport(w http.ResponseWriter, r *http.Request) {
 	h.Set("Cache-Control", "no-store")
 	h.Set("X-Content-Type-Options", "nosniff")
 	_, _ = w.Write(body)
+}
+
+// recordRefused answers a save that was refused with the Data screen
+// itself, on the collection and record it was for, holding what was typed.
+// Answered rather than redirected because what was typed has nowhere to go
+// in an address, and it is what somebody most needs back.
+func (s *Server) recordRefused(w http.ResponseWriter, r *http.Request, p principal, coll string, kept keptRecord) {
+	q := url.Values{"c": {coll}}
+	if kept.ID != "" {
+		q.Set("edit", kept.ID)
+	}
+	if kept.AsJSON {
+		q.Set("raw", "1")
+	}
+	screen := r.Clone(r.Context())
+	screen.Method = http.MethodGet
+	screen.URL = &url.URL{Path: "/records", RawQuery: q.Encode()}
+	s.recordsScreen(w, screen, p, &kept)
 }
 
 func (s *Server) recordsProblem(w http.ResponseWriter, r *http.Request, coll, msg string) {

@@ -386,20 +386,20 @@
   <div class="field">
     {{if .Checkbox}}
       <input id="f-{{.Key}}" name="{{.Key}}" type="checkbox" value="true"{{if .Checked}} checked{{end}}
-             {{if .Help}}aria-describedby="h-{{.Key}}"{{end}}>
+             {{if .Help}}aria-describedby="h-{{.Key}}"{{end}}{{if .Invalid}} aria-invalid="true"{{end}}>
       <label for="f-{{.Key}}">{{.Label}}</label>
     {{else}}
       <label for="f-{{.Key}}">{{.Label}}{{if .Required}} {{template "req"}}{{end}}</label>
       {{if .Choices}}
         <select id="f-{{.Key}}" name="{{.Key}}"{{if .Required}} required{{end}}
-                {{if .Help}}aria-describedby="h-{{.Key}}"{{end}}>
+                {{if .Help}}aria-describedby="h-{{.Key}}"{{end}}{{if .Invalid}} aria-invalid="true"{{end}}>
           {{if not .Required}}<option value="">— not set —</option>{{end}}
           {{$sel := .Selected}}{{range .Choices}}<option value="{{.}}"{{if index $sel .}} selected{{end}}>{{.}}</option>{{end}}
         </select>
       {{else if .Long}}
         <textarea id="f-{{.Key}}" name="{{.Key}}" rows="8"{{if .Required}} required{{end}}
                   {{if .MaxLen}}maxlength="{{.MaxLen}}"{{end}}
-                  {{if .Help}}aria-describedby="h-{{.Key}}"{{end}}>{{.Value}}</textarea>
+                  {{if .Help}}aria-describedby="h-{{.Key}}"{{end}}{{if .Invalid}} aria-invalid="true"{{end}}>{{.Value}}</textarea>
       {{else}}
         {{/*
           A reference gets the browser's own completion over the pages in the
@@ -416,7 +416,7 @@
                {{if .SuggestID}} list="{{.SuggestID}}"{{end}}
                {{if .MaxLen}}maxlength="{{.MaxLen}}"{{end}}
                {{if .Min}} min="{{.Min}}"{{end}}{{if .Max}} max="{{.Max}}"{{end}}
-               {{if .Help}}aria-describedby="h-{{.Key}}"{{end}}>
+               {{if .Help}}aria-describedby="h-{{.Key}}"{{end}}{{if .Invalid}} aria-invalid="true"{{end}}>
         {{if .SuggestID}}
         <datalist id="{{.SuggestID}}">
           {{range .Suggest}}<option value="{{.}}"></option>{{end}}{{range .Pictures}}<option value="{{.ID}}" label="{{.Alt}}"></option>{{end}}

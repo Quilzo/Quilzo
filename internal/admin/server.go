@@ -2807,6 +2807,10 @@ type field struct {
 	// SuggestID ties the input to its list. Per field, because two inputs
 	// sharing one id is markup a browser resolves by picking the first.
 	SuggestID string
+	// Invalid marks the field a refusal is about, so a screen reader says
+	// which box to fix rather than leaving the person to read the notice
+	// and find it.
+	Invalid bool
 }
 
 // pictureOption is one picture a field can name: its id, and what it shows.
