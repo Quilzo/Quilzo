@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/connect"
 	"github.com/quilzo/quilzo/internal/vault"
 )
 
@@ -200,5 +201,146 @@ func TestAPersonConnectsTheirAccount(t *testing.T) {
 	}
 	if _, err := connectionToken(context.Background(), root, "acme", "dana", "api.acme.example"); err == nil {
 		t.Fatal("a disconnected account still answers")
+	}
+}
+
+// An Instagram account comes with no refresh token. Kept as it came, the
+// token lasted an hour and the next use said "connect again"; it is
+// exchanged for one lasting sixty days when it is connected, at the
+// address Meta documents, and renewed where it is used once it is a day
+// old. A renewal that fails while the token still works uses the token as
+// it is; one that fails once it has lapsed says to connect again. A
+// provider declared by hand names its dialect.
+func TestAnInstagramAccountIsRenewedWhereItIsUsed(t *testing.T) {
+	root := keyedDemo(t)
+	cfg, err := loadConfig(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Set("admin.base_url", "https://cms.example", "", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveConfig(root, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := setAgentSecret(root, "instagram-oauth", "app-secret", "test", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	var (
+		mu         sync.Mutex
+		gets       []*url.URL
+		renewFails bool
+	)
+	wasPost, wasGet := connectPoster, connectGetter
+	t.Cleanup(func() { connectPoster, connectGetter = wasPost, wasGet })
+	connectPoster = func(_ context.Context, to string, form url.Values) ([]byte, error) {
+		if to != "https://api.instagram.com/oauth/access_token" || form.Get("client_secret") != "app-secret" ||
+			form.Get("code") != "the-code" {
+			return []byte(`{"error_type":"OAuthException","code":400,"error_message":"not this"}`), nil
+		}
+		return []byte(`{"data":[{"access_token":"ig-short","user_id":"1","permissions":"instagram_business_basic"}]}`), nil
+	}
+	connectGetter = func(_ context.Context, raw string) (int, http.Header, []byte, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		u, err := url.Parse(raw)
+		if err != nil || u.Host != "graph.instagram.com" {
+			return 0, nil, nil, err
+		}
+		gets = append(gets, u)
+		q := u.Query()
+		switch {
+		case u.Path == "/access_token" && q.Get("grant_type") == "ig_exchange_token" && q.Get("access_token") == "ig-short" &&
+			q.Get("client_secret") == "app-secret":
+			return 200, nil, []byte(`{"access_token":"ig-long-1","token_type":"bearer","expires_in":5184000}`), nil
+		case u.Path == "/refresh_access_token" && q.Get("grant_type") == "ig_refresh_token" && !renewFails:
+			return 200, nil, []byte(`{"access_token":"ig-long-2","token_type":"bearer","expires_in":5184000}`), nil
+		}
+		return 400, nil, []byte(`{"error":{"message":"Session has expired","type":"OAuthException","code":190}}`), nil
+	}
+	asked := func() []*url.URL {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]*url.URL(nil), gets...)
+	}
+	// age changes the sealed token as the passing of time would.
+	age := func(change func(*connect.Token)) {
+		t.Helper()
+		key := accountKey("instagram", "dana")
+		if err := changeAccounts(root, func(f *accounts, kr *vault.Keyring) error {
+			a := f.Accounts[key]
+			tok, err := openToken(kr, key, a.Sealed)
+			if err != nil {
+				return err
+			}
+			change(&tok)
+			a.Sealed, err = sealToken(kr, key, tok)
+			f.Accounts[key] = a
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := cmdConnect(root, []string{"provider", "add", "instagram", "--template", "instagram", "--client-id", "ig-app",
+		"--client-secret", "instagram-oauth"}); err != nil {
+		t.Fatal(err)
+	}
+	to, err := beginConnect(root, "instagram", "dana")
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, _ := url.Parse(to)
+	if u.Query().Get("scope") != "instagram_business_basic,instagram_business_content_publish" {
+		t.Fatalf("%s", to)
+	}
+	if title, err := finishConnect(context.Background(), root, u.Query().Get("state"), "the-code", "dana"); err != nil || title != "Instagram" {
+		t.Fatalf("%q %v", title, err)
+	}
+	if tok, err := connectionToken(context.Background(), root, "instagram", "dana", "graph.instagram.com"); err != nil ||
+		tok != "ig-long-1" || len(asked()) != 1 {
+		t.Fatalf("%q %v %v", tok, err, asked())
+	}
+
+	// A day on, it is renewed where it is used, and not again until the
+	// next day.
+	age(func(tok *connect.Token) { tok.Renew = time.Now().Add(-time.Minute) })
+	if tok, err := connectionToken(context.Background(), root, "instagram", "dana", "graph.instagram.com"); err != nil || tok != "ig-long-2" {
+		t.Fatalf("%q %v", tok, err)
+	}
+	if got := asked(); len(got) != 2 || got[1].Path != "/refresh_access_token" || got[1].Query().Get("access_token") != "ig-long-1" {
+		t.Fatalf("%v", got)
+	}
+	if tok, _ := connectionToken(context.Background(), root, "instagram", "dana", "graph.instagram.com"); tok != "ig-long-2" || len(asked()) != 2 {
+		t.Fatalf("renewed again needlessly: %q", tok)
+	}
+
+	mu.Lock()
+	renewFails = true
+	mu.Unlock()
+	age(func(tok *connect.Token) { tok.Renew = time.Now().Add(-time.Minute) })
+	if tok, err := connectionToken(context.Background(), root, "instagram", "dana", "graph.instagram.com"); err != nil || tok != "ig-long-2" {
+		t.Fatalf("a token that works was not used when its renewal failed: %q %v", tok, err)
+	}
+	age(func(tok *connect.Token) { tok.Expiry = time.Now().Add(-time.Minute) })
+	if _, err := connectionToken(context.Background(), root, "instagram", "dana", "graph.instagram.com"); err == nil ||
+		!strings.Contains(err.Error(), "connect it again") {
+		t.Fatalf("a lapsed token: %v", err)
+	}
+
+	if err := cmdConnect(root, []string{"provider", "add", "clips", "--title", "TikTok", "--auth-url", "https://www.tiktok.com/v2/auth/authorize/",
+		"--token-url", "https://open.tiktokapis.com/v2/oauth/token/", "--client-id", "aw-key", "--client-secret", "tiktok-oauth",
+		"--scope", "user.info.basic", "--scope", "video.upload", "--host", "open.tiktokapis.com", "--dialect", "tiktok"}); err != nil {
+		t.Fatal(err)
+	}
+	to, err = beginConnect(root, "clips", "dana")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u, _ = url.Parse(to); u.Query().Get("client_key") != "aw-key" || u.Query().Get("scope") != "user.info.basic,video.upload" {
+		t.Fatalf("%s", to)
+	}
+	if err := cmdConnect(root, []string{"provider", "add", "odd", "--template", "github", "--client-id", "x", "--dialect", "carrier-pigeon"}); err == nil {
+		t.Fatal("a dialect nobody wrote was declared")
 	}
 }
