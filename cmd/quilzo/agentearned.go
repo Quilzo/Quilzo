@@ -70,19 +70,62 @@ func changeTrack(root, name string, change func(*agent.Track) error) error {
 	return atomicfile.Write(path, b, 0o600)
 }
 
-// evalsStillEarn says whether an agent's evaluations earn it at least
-// draft now, and why not when they do not: earning stops counting the
-// moment an evaluation regresses or its behaviour cost it its trust.
-func evalsStillEarn(root, name string, now time.Time) (bool, string) {
+// servedBy names the model a binding reaches: through the gateway, the
+// route it asks first and the model that route names; otherwise the one
+// model the install configures, by its name. Nil is no model.
+func servedBy(m interface{ Name() string }) evals.Served {
+	if m == nil {
+		return evals.Served{}
+	}
+	if s, ok := m.(interface{ Serves() (string, string) }); ok {
+		route, model := s.Serves()
+		return evals.Served{Model: model, Route: route}
+	}
+	return evals.Served{Model: m.Name()}
+}
+
+// drivingModel is the model an agent's run is driven by now.
+func drivingModel(root, name string) evals.Served {
+	m, _ := agentRunModel(root, name)
+	return servedBy(m)
+}
+
+// evalsEarn is the autonomy an agent's evaluations earn it now, and why:
+// its latest evaluation, of the model that drives it now, unless its
+// behaviour since cost it that trust. A run and the record of what it
+// earned by approvals both ask this, so the two cannot disagree about
+// which model was measured.
+func evalsEarn(root, name string, now time.Time) (agent.Autonomy, string) {
 	var latest *evals.Report
 	if reps, err := evalReports(root, name, 1); err == nil && len(reps) > 0 {
 		latest = &reps[0]
 	}
-	earned, why := evals.Earned(latest, now)
+	// Earned in evaluations, and lost in behaviour until evaluated again.
 	if lost, how := trustLost(root, name); !lost.IsZero() && (latest == nil || !latest.At.After(lost)) {
-		return false, how
+		return agent.AutonomyPropose, how + "; an evaluation since then earns its autonomy back"
 	}
-	if earned == agent.AutonomyPropose {
+	return evals.Earned(latest, drivingModel(root, name), now)
+}
+
+// evalDue says why an agent should be measured again, "" when it need not
+// be: its last evaluation earned it something on a model that no longer
+// drives it. Nothing measures it again by itself, since an evaluation
+// spends on the model; Today, the Evaluations screen, eval show and
+// eval_results say so for a person to.
+func evalDue(root, name string, now time.Time) string {
+	reps, err := evalReports(root, name, 1)
+	if err != nil || len(reps) == 0 {
+		return ""
+	}
+	return evals.Due(&reps[0], drivingModel(root, name), now)
+}
+
+// evalsStillEarn says whether an agent's evaluations earn it at least
+// draft now, and why not when they do not: earning stops counting the
+// moment an evaluation regresses, its behaviour cost it its trust, or
+// another model than the one measured drives it.
+func evalsStillEarn(root, name string, now time.Time) (bool, string) {
+	if earned, why := evalsEarn(root, name, now); earned == agent.AutonomyPropose {
 		return false, why
 	}
 	return true, ""

@@ -30,14 +30,23 @@ type Evals struct {
 	Start   func(agent string, k int, model bool, by Actor) error
 	Running func(agent string) (time.Time, bool)
 	Reports func(agent string, limit int) ([]evals.Report, error)
+	// Due says why an agent should be measured again, "" when it need not
+	// be: what its last evaluation earned was earned on a model that no
+	// longer drives it. Nothing measures it again by itself, since an
+	// evaluation spends on the model, so this screen and Today say so for
+	// a person to. Nil says nothing is due.
+	Due func(agent string) string
 }
 
 type evalRow struct {
 	Agent, Verdict, Tone, When string
-	Cases, K, Reliable         int
-	Planted, Hijacked          int
-	PassK                      int
-	Running                    bool
+	// Model is the model the last evaluation measured, as a person reads
+	// it; Due why it should be measured again.
+	Model, Due         string
+	Cases, K, Reliable int
+	Planted, Hijacked  int
+	PassK              int
+	Running            bool
 }
 
 var verdictTone = map[string]string{"passing": "good", "unreliable": "warning",
@@ -88,6 +97,12 @@ func (s *Server) evalSummary(name string) evalRow {
 		row.Planted, row.Hijacked = rep.Planted, rep.Hijacked
 		row.PassK = int(rep.PassK*100 + 0.5)
 		row.When = rep.At.Format("2 Jan 2006 15:04")
+		if rep.Model != "" {
+			row.Model = rep.Served().String()
+		}
+	}
+	if s.Evals.Due != nil {
+		row.Due = s.Evals.Due(name)
 	}
 	row.Tone = verdictTone[row.Verdict]
 	return row

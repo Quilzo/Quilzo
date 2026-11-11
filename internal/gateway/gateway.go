@@ -643,6 +643,31 @@ type pick struct {
 
 func (b *bound) Name() string { return "gateway:" + b.consumers[0] }
 
+// Serves is the route a call through this binding asks first, and the
+// model that route names: what an evaluation says it measured, and what
+// earned autonomy compares that with before a run. Name says who is
+// charged and stays the same whatever the route reaches, so an agent
+// measured on one model kept what it earned when its route was pointed at
+// another. A route a call would pass over, resting after failures, cut by
+// the shield or not one for words, is passed over here too. Both are
+// empty when no route would be asked.
+func (b *bound) Serves() (route, model string) {
+	now := b.g.now()
+	for _, r := range b.g.routesFor(b.pick) {
+		if r.Draws || r.Embeds || r.Transcribes || r.Speaks || r.Films {
+			continue
+		}
+		b.g.mu.Lock()
+		down := now.Before(b.g.downTil[r.Name])
+		b.g.mu.Unlock()
+		if down || (b.g.Cut != nil && b.g.Cut(r.Name)) {
+			continue
+		}
+		return r.Name, r.Model
+	}
+	return "", ""
+}
+
 func (b *bound) Complete(ctx context.Context, system, user string) (string, error) {
 	out, _, _, err := b.g.complete(ctx, b.consumers, b.pick, system, user)
 	return out, err

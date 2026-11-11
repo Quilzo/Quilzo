@@ -1191,6 +1191,7 @@ func cmdServe(root string, args []string) error {
 		},
 		Running: func(name string) (time.Time, bool) { return evalRunning(root, name) },
 		Reports: func(name string, limit int) ([]evals.Report, error) { return evalReports(root, name, limit) },
+		Due:     func(name string) string { return evalDue(root, name, time.Now().UTC()) },
 	}
 
 	// SAML identity providers, read fresh on every use so one added from the

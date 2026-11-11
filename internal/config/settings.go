@@ -729,7 +729,10 @@ var settings = []Setting{
 			"until an evaluation with planted instructions shows it does the task " +
 			"every time and is not steered, drafting after that, publishing (with " +
 			"a person approving) after a larger one, and back to proposing the " +
-			"moment it follows a planted instruction. Off, the manifest alone " +
+			"moment it follows a planted instruction or another model than the " +
+			"one measured drives it, since models behave differently from one " +
+			"release to the next. Nothing measures it again by itself, because " +
+			"that spends on the model; Today lists the agents due. Off, the manifest alone " +
 			"decides, which is the locked-down-or-fully-trusted choice agents are " +
 			"abandoned over.",
 		Weaker: offIsWeaker("a model drives an agent at the autonomy its manifest declares, whatever its evaluations show"),

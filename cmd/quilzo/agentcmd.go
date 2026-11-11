@@ -28,7 +28,6 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/browser"
 	decidepkg "github.com/quilzo/quilzo/internal/decide"
-	"github.com/quilzo/quilzo/internal/evals"
 	"github.com/quilzo/quilzo/internal/otlp"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/store"
@@ -1021,20 +1020,13 @@ func boundManifest(root string, set *agentSet, name string, withModel, eval bool
 		m = narrowedBy(m, own)
 		note("standing", fmt.Sprintf("%s is granted %s on %s", own.Name, own.Role, own.Scope), before)
 	}
-	// A model drives it only as far as its evaluations have shown it can be
-	// trusted. An evaluation itself runs at the declared autonomy, because
-	// that is what it measures, and changes nothing either way.
+	// A model drives it only as far as its evaluations of that model have
+	// shown it can be trusted. An evaluation itself runs at the declared
+	// autonomy, because that is what it measures, and changes nothing
+	// either way.
 	earnedWhy := ""
 	if withModel && !eval && mustConfig(root).Bool("agents.earned_autonomy") {
-		var latest *evals.Report
-		if reps, err := evalReports(root, name, 1); err == nil && len(reps) > 0 {
-			latest = &reps[0]
-		}
-		earned, why := evals.Earned(latest, time.Now())
-		// Earned in evaluations, and lost in behaviour until evaluated again.
-		if lost, how := trustLost(root, name); !lost.IsZero() && (latest == nil || !latest.At.After(lost)) {
-			earned, why = agent.AutonomyPropose, how+"; an evaluation since then earns its autonomy back"
-		}
+		earned, why := evalsEarn(root, name, time.Now())
 		if !m.Autonomy.AtMost(earned) {
 			earnedWhy = fmt.Sprintf("a model drives %s at %s rather than %s: %s", name, earned, m.Autonomy, why)
 			before = m
