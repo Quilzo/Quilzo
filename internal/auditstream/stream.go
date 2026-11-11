@@ -18,9 +18,10 @@
 //     this alone.
 //
 // Delivery is at least once: the cursor moves only when the receiver takes
-// the batch, and a receiver that says it holds less, or more, moves it
-// there. The same stream suits any SIEM that reads OCSF; Receiver is the
-// receiving half, for one that wants the proofs.
+// the batch, and a receiver that says it holds less, or more up to the end
+// of the log, moves it there. One that says it holds more than the log has
+// is refused, and the round fails. The same stream suits any SIEM that reads
+// OCSF; Receiver is the receiving half, for one that wants the proofs.
 package auditstream
 
 import (
@@ -114,12 +115,7 @@ func (s *Sender) Status() (Cursor, error) {
 
 // Batch builds the batch after the cursor, or nil when nothing is waiting.
 func (s *Sender) Batch(events []audit.Event, sent int64, now time.Time) (*Batch, error) {
-	var last int64
-	for _, e := range events {
-		if e.Seq > last {
-			last = e.Seq
-		}
-	}
+	last := lastSeq(events)
 	if last <= sent {
 		return nil, nil
 	}
@@ -173,14 +169,29 @@ func (s *Sender) Push(ctx context.Context, now time.Time) (int, error) {
 		if err != nil || b == nil {
 			return total, s.note(c.Sent, err, now)
 		}
-		took, err := s.send(ctx, b, now)
+		took, taken, err := s.send(ctx, b, now)
+		if err == nil && took > lastSeq(events) {
+			// Past the end of the log as it was read. Another sender may
+			// have sent what was written since, so the log is read again
+			// before the receiver is disbelieved.
+			if fresh, rerr := s.Read(); rerr == nil {
+				events = fresh
+			}
+			if last := lastSeq(events); took > last {
+				err = fmt.Errorf("the receiver says it holds up to record %d, and this log ends at %d: "+
+					"it holds another log, or has lost track of this one", took, last)
+			}
+		}
 		if err != nil {
 			return total, s.note(c.Sent, err, now)
 		}
 		if err := s.note(took, nil, now); err != nil {
 			return total, err
 		}
-		if took >= b.To {
+		// Counted only when the receiver took the batch. A receiver that
+		// answered it already held them took nothing this round, and
+		// "sent 43 records" said it had.
+		if taken {
 			total += int(b.To - b.From + 1)
 		}
 		if took != b.To {
@@ -212,26 +223,38 @@ func (s *Sender) note(sent int64, failed error, now time.Time) error {
 	return failed
 }
 
+// lastSeq is the last sequence number in a log.
+func lastSeq(events []audit.Event) int64 {
+	var last int64
+	for _, e := range events {
+		if e.Seq > last {
+			last = e.Seq
+		}
+	}
+	return last
+}
+
 // send delivers one batch and returns the last sequence number the
-// receiver holds: the batch's end when it took it, or where it says it is.
-func (s *Sender) send(ctx context.Context, b *Batch, now time.Time) (int64, error) {
+// receiver holds, and whether it took this batch: the batch's end when it
+// took it, or where it says it is when it did not.
+func (s *Sender) send(ctx context.Context, b *Batch, now time.Time) (int64, bool, error) {
 	body, err := json.Marshal(b)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.URL, bytes.NewReader(body))
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	httpsig.SetContentDigest(req, body)
 	pub := s.Key.Public().(ed25519.PublicKey)
 	if err := httpsig.Sign(req, KeyID(pub), httpsig.Ed25519, s.Key, Covered, now); err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	resp, err := s.Client.Do(req)
 	if err != nil {
-		return 0, fmt.Errorf("the receiver could not be reached: %w", err)
+		return 0, false, fmt.Errorf("the receiver could not be reached: %w", err)
 	}
 	defer resp.Body.Close()
 	msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
@@ -242,15 +265,15 @@ func (s *Sender) send(ctx context.Context, b *Batch, now time.Time) (int64, erro
 	_ = json.Unmarshal(msg, &ans)
 	switch {
 	case resp.StatusCode >= 200 && resp.StatusCode < 300:
-		return b.To, nil
+		return b.To, true, nil
 	case resp.StatusCode == http.StatusConflict && ans.Holds != nil && *ans.Holds >= 0:
-		return *ans.Holds, nil
+		return *ans.Holds, false, nil
 	}
 	why := ans.Error
 	if why == "" {
 		why = string(bytes.TrimSpace(msg))
 	}
-	return 0, fmt.Errorf("the receiver answered %d: %s", resp.StatusCode, why)
+	return 0, false, fmt.Errorf("the receiver answered %d: %s", resp.StatusCode, why)
 }
 
 // ErrGap is a batch that does not follow the last one the receiver holds.
