@@ -59,6 +59,26 @@ func MachineWrote(message string) bool {
 	return false
 }
 
+// PersonsMessage refuses a message a person typed for their own change that
+// begins as a machine's does (MachineWrote).
+//
+// What a commit's message says about who wrote it is what every rule here
+// reads, and the surfaces where a person types the message took any:
+// `quilzo add -m "agent: tidy wrote pricing for lee" --author agent/tidy`
+// was read as the agent's change made for lee, so dana, who wrote it,
+// approved it as somebody else's work. The machines write these prefixes
+// themselves (AgentMessage, the writing assistant, the machine interface),
+// never through a person's message.
+func PersonsMessage(message string) error {
+	for _, p := range machinePrefixes {
+		if strings.HasPrefix(message, p) {
+			return fmt.Errorf("a message beginning %q marks a change a machine wrote, and this one "+
+				"is yours; begin it some other way", strings.TrimSpace(p))
+		}
+	}
+	return nil
+}
+
 // # Who a machine wrote for
 //
 // The machine interface and the writing assistant commit under the name of

@@ -30,7 +30,12 @@ func cmdImport(root string, args []string) error {
 	from := fs.String("from", "", "wordpress, markdown or json (detected if omitted)")
 	dryRun := fs.Bool("dry-run", false, "report what would happen and write nothing")
 	prefix := fs.String("prefix", "", "prepend this to every imported page name")
-	author := fs.String("author", "import", "who to record as the author")
+	// Credit, and not who the import is recorded under (recordedAs). It
+	// was the commit's author, "import" unless it named somebody, and
+	// somebody who imported pages under another person's name approved
+	// them as that person's work.
+	author := fs.String("author", "", "who to credit for what is imported; "+
+		"the import is recorded as yours whatever this names")
 	redirectsOut := fs.String("redirects-out", "redirects.json",
 		"where to write the generated redirect map")
 	if err := fs.Parse(flags); err != nil {
@@ -140,8 +145,10 @@ func cmdImport(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	cid, err := site.SaveDraftFrom(s, pages,
-		fmt.Sprintf("import %d page(s) from %s", len(rep.Pages), src), *author, base)
+	// The caller's real identity, for the commit as for the record below.
+	caller := resolveCaller(root, "")
+	who, message := caller.recordedAs(*author, fmt.Sprintf("import %d page(s) from %s", len(rep.Pages), src))
+	cid, err := site.SaveDraftFrom(s, pages, message, who, base)
 	if err != nil {
 		var imported []string
 		for _, pg := range rep.Pages {
@@ -157,7 +164,12 @@ func cmdImport(root string, args []string) error {
 	// out of somebody else's export, which is a thing it knows and the
 	// operator would otherwise have to assert page by page before the first
 	// publish. See markgenerated.go.
-	markGeneratedQuietly(root, s, *author,
+	//
+	// Answered for by whoever imported them, as the transfer screen's are.
+	// Named by --author, the person it named was one of the people whose
+	// model's or program's pages are in the draft (draftStarters), and so
+	// not asked to read anybody else's.
+	markGeneratedQuietly(root, s, who,
 		"imported from "+string(src)+" by quilzo import")
 
 	// The caller's real identity and its real verification state. The first
@@ -165,7 +177,6 @@ func cmdImport(root string, args []string) error {
 	// package refused outright — a service is only a service because a
 	// credential proved it. The record was silently dropped, leaving the least
 	// trustworthy operation in the system as the one with no log entry.
-	caller := resolveCaller(root, "")
 	record(root, audit.Record{
 		Action: "import", Resource: "/", Outcome: audit.Success,
 		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
@@ -173,7 +184,7 @@ func cmdImport(root string, args []string) error {
 			"source": string(src), "pages": fmt.Sprintf("%d", len(rep.Pages)),
 			"skipped":   fmt.Sprintf("%d", len(rep.Skipped)),
 			"redirects": fmt.Sprintf("%d", len(rep.Redirects)),
-			"commit":    short(cid), "author": *author,
+			"commit":    short(cid), "author": who,
 		},
 	})
 
@@ -775,8 +786,11 @@ func mediaGet(root string, args []string) error {
 // The records keep the ids the export gave them. Fresh ids would make every
 // record a different record from the one anything else links to, and the
 // broken relations are found by a reader rather than by this command.
+//
+// named is whoever --author credits, and the records are recorded as the
+// caller's whatever it names (recordedAs), as the pages are.
 func importRecords(root string, s *store.Store, rep *importer.Report,
-	author string) error {
+	named string) error {
 
 	tree, err := draftTree(s)
 	if err != nil {
@@ -817,14 +831,14 @@ func importRecords(root string, s *store.Store, rep *importer.Report,
 	if err != nil {
 		return err
 	}
-	message := fmt.Sprintf("import %d record(s) into %s",
-		len(written), rep.Collection)
+	caller := resolveCaller(root, "")
+	author, message := caller.recordedAs(named, fmt.Sprintf("import %d record(s) into %s",
+		len(written), rep.Collection))
 	if err := commitTree(root, s, next, message, author); err != nil {
 		return err
 	}
 	cid := s.GetRef(site.RefDraft)
 
-	caller := resolveCaller(root, "")
 	record(root, audit.Record{
 		Action: "import", Resource: "/" + rep.Collection, Outcome: audit.Success,
 		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
