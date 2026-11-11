@@ -189,7 +189,12 @@ func fillAggregator(in *agent.Integration, c templateChoice) error {
 		return fmt.Errorf("%s authenticates with the credential %q, which cannot be kept under that name: "+
 			"name it with --secret, in lower-case letters, digits, '.', '_' and '-'", in.Name, in.Secret)
 	}
-	at := site.Scheme + "://" + site.Host + strings.TrimSuffix(site.Path, "/") + "/media/"
+	// The path escaped, as the site writes it: Path is decoded, so a site at
+	// /caf%C3%A9 was described as having its media at /café/media/, and
+	// every address the site gives its own pictures was refused. Without
+	// the user and password a base address may carry, which are no business
+	// of the aggregator's or of the platforms it posts to.
+	at := site.Scheme + "://" + site.Host + strings.TrimSuffix(site.EscapedPath(), "/") + "/media/"
 	body, err := json.Marshal(map[string]any{"type": "object", "required": []string{names["text"]},
 		"properties": map[string]any{
 			names["text"]: map[string]any{"type": "string", "minLength": 1, "description": "what the post says"},

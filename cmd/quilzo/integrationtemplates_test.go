@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/quilzo/quilzo/internal/fetch"
+	"github.com/quilzo/quilzo/internal/jsonschema"
 	"github.com/quilzo/quilzo/internal/mcpclient"
 )
 
@@ -108,6 +109,10 @@ func TestASocialAggregatorIsDeclaredOffAndPostsMediaFromTheSite(t *testing.T) {
 	media := "https://shop.example/media/" + strings.Repeat("ab", 32)
 	post := map[string]any{"post": "The spring range is in", "mediaUrls": []any{media}, "platforms": []any{"instagram", "tiktok"}}
 	keyed := mcpclient.WithIdempotencyKey(context.Background(), "qz-run-7-step-2")
+	// The key is in the vault already, so a call refused here is refused
+	// for being off and not for wanting a key: with the key missing, this
+	// passed whether or not being off stopped anything.
+	t.Setenv("QUILZO_SECRET_SOCIAL_AGGREGATOR_KEY", "agg-k3y")
 	if _, err := newMCPClient(root).Call(keyed, in, "publishPost", map[string]any{"body": post}); err == nil {
 		t.Fatal("an aggregator nobody switched on was called")
 	}
@@ -115,8 +120,7 @@ func TestASocialAggregatorIsDeclaredOffAndPostsMediaFromTheSite(t *testing.T) {
 		t.Fatalf("%d request(s) reached an aggregator that is off", len(fx.got))
 	}
 
-	// The administrator fills it in: the key in the vault, then on.
-	t.Setenv("QUILZO_SECRET_SOCIAL_AGGREGATOR_KEY", "agg-k3y")
+	// The administrator turns it on, and pins what it calls.
 	set.Declared[0].Enabled = true
 	if err := saveJSON(integrationsPath(root), set); err != nil {
 		t.Fatal(err)
@@ -247,5 +251,34 @@ func TestTheAggregatorIsTheClientsChoice(t *testing.T) {
 	}
 	if set, _ := loadIntegrations(root); len(set.Declared) != 2 {
 		t.Errorf("declared %d", len(set.Declared))
+	}
+}
+
+// The media a post may name are this site's own addresses as the site
+// writes them: site.base_url, then /media/ID. The prefix was put back
+// together from the parsed address, which decodes its path, so a site at
+// https://shop.example/caf%C3%A9 was described to the agent as having its
+// media at /café/media/, and every address the site gives its own
+// pictures was refused.
+func TestAnAggregatorTakesTheMediaAddressesTheSiteWrites(t *testing.T) {
+	root, _ := identityStore(t)
+	setConfigs(t, root, map[string]string{"site.base_url": "https://shop.example/caf%C3%A9"})
+	if err := integrationsTemplate(root, []string{"social-aggregator", "--endpoint", "posts.aggregator.example",
+		"--path", "/api/post"}); err != nil {
+		t.Fatal(err)
+	}
+	in, err := oneIntegration(root, "social-aggregator")
+	if err != nil || len(in.Operations) != 1 {
+		t.Fatalf("%v %+v", err, in)
+	}
+	id := strings.Repeat("ab", 32)
+	own := map[string]any{"text": "The spring range is in", "mediaUrls": []any{"https://shop.example/caf%C3%A9/media/" + id}}
+	if err := jsonschema.Check(in.Operations[0].Body, own); err != nil {
+		t.Errorf("the site's own picture was refused: %v", err)
+	}
+	// Outside the site's own path is not the site's.
+	other := map[string]any{"text": "Look", "mediaUrls": []any{"https://shop.example/media/" + id}}
+	if err := jsonschema.Check(in.Operations[0].Body, other); err == nil {
+		t.Error("a picture outside the site's path was taken")
 	}
 }

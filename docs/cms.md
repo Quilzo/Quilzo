@@ -2200,10 +2200,12 @@ body of the text and the media, and stays off until an administrator turns it
 on; agents call it through their declared tools, as any integration. A media
 URL may only be one of this site's own `/media/ID` addresses, which the
 aggregator fetches, so an agent steered by something it read cannot have the
-client's accounts post a picture from somewhere else; a body field the
-declaration does not name is refused before anything is sent. A post is
-tried again, after a busy answer, only when it carries its step's idempotency
-key, as every write is. An aggregator whose post nests its fields deeper is
+client's accounts post a picture from somewhere else. The address is
+`site.base_url` as it was when the aggregator was declared: a site that moves
+edits it in the body schema in `integrations.json` and pins it again. A body
+field the declaration does not name is refused before anything is sent. A
+post is tried again, after a busy answer, only when it carries its step's
+idempotency key, as every write is. An aggregator whose post nests its fields deeper is
 declared the same way and its body schema edited in `integrations.json`, then
 pinned again.
 
