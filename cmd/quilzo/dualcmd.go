@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"maps"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -156,8 +157,23 @@ func cmdPending(root string, args []string) error {
 		if err != nil {
 			return err
 		}
+		// Somebody's own requests, and everybody's to whoever may decide
+		// them, as `auth list` lists grants (listedFor). The list asks only
+		// to view, so that whoever asked for something can watch it wait,
+		// and it printed the whole queue, with each payload under --json,
+		// to a reader refused `pending show` and People for the same
+		// requests: who was about to be made an administrator, which
+		// enrolment links were asked for, which settings were being
+		// weakened.
+		who, everybody := listedFor(root, auth.ActGrant)
+		if !everybody {
+			pend = slices.DeleteFunc(pend, func(r dual.Request) bool { return !mine(r.By, who) })
+		}
 		if w.JSON(pend) {
 			return nil
+		}
+		if !everybody {
+			w.Human("  %syour own; everybody's are listed to whoever may grant%s\n", dim, reset)
 		}
 		if len(pend) == 0 {
 			w.Human("nothing is waiting for a second administrator\n")
