@@ -25,7 +25,11 @@
 // "by any user, including privileged administrators". A file an admin can edit
 // does not meet that on its own, so each entry carries the hash of the one
 // before it. Altering or removing an entry breaks the chain at that point, and
-// `Verify` says exactly where.
+// `Verify` says exactly where — except at the end. Entries removed from the
+// end leave a shorter chain that verifies, so they show only against a head
+// taken while they were there (AgainstHead), and the hashes are not keyed, so
+// whoever can rewrite the file can re-chain what is left: the chain alone
+// proves nothing against them either.
 //
 // The chain is what Verify walks, and it is enough for an operator who reads
 // the log whole. A third party who audits a log they cannot read needs more:

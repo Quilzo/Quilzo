@@ -162,3 +162,65 @@ func scanFinding(st posture.State, rule string) *posture.Finding {
 	}
 	return nil
 }
+
+// keepLines cuts the log back to its first n lines, as somebody removing
+// the newest entries from its end leaves it.
+func keepLines(t *testing.T, root string, n int) {
+	t.Helper()
+	b, err := os.ReadFile(auditPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.SplitAfter(string(b), "\n")
+	if err := os.WriteFile(auditPath(root), []byte(strings.Join(lines[:n], "")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Entries removed from the end of the log are found against the head saved
+// beside it. What is left is a shorter chain that verifies, and the next
+// write takes the first number removed and links to what is left, so not
+// even a gap shows: verify said nothing was removed, "including by an
+// administrator", with a saved head covering more than the log held.
+func TestEntriesRemovedFromTheEndAreFoundAgainstTheSavedHead(t *testing.T) {
+	root := auditedStore(t, 4)
+	human, err := humanOutput(t, func() error { return cmdAuditLog(root, []string{"verify"}) })
+	if err != nil || !strings.Contains(human, "no head is saved") || strings.Contains(human, "including by an administrator") {
+		t.Errorf("with no head saved, verify said:\n%s%v", human, err)
+	}
+	if doc, _ := jsonAnswer(t, func() error { return cmdAuditLog(root, []string{"verify"}) }); doc["intact"] != true || doc["head"] != nil {
+		t.Errorf("verify --json with no head saved: %v", doc)
+	}
+
+	if _, err := jsonAnswer(t, func() error { return cmdAuditLog(root, []string{"head", "--save"}) }); err != nil {
+		t.Fatal(err)
+	}
+	putRecords(t, root, 2)
+	human, err = humanOutput(t, func() error { return cmdAuditLog(root, []string{"verify"}) })
+	if err != nil || !strings.Contains(human, "extends the head saved at 4 entries") {
+		t.Errorf("a log that grew from its saved head: %v\n%s", err, human)
+	}
+
+	// The three newest removed: one of them the head covers.
+	keepLines(t, root, 3)
+	var blocked errBlocked
+	human, err = humanOutput(t, func() error { return cmdAuditLog(root, []string{"verify"}) })
+	if !errors.As(err, &blocked) || strings.Contains(human, "intact") || !strings.Contains(human, "shrunk") {
+		t.Errorf("a log cut back behind its saved head: %v\n%s", err, human)
+	}
+	doc, _ := jsonAnswer(t, func() error { return cmdAuditLog(root, []string{"verify"}) })
+	if head, _ := doc["head"].(map[string]any); doc["intact"] != false || head["size"] != float64(4) {
+		t.Errorf("verify --json: %v", doc)
+	}
+	if f := scanFinding(Observe(root, t.TempDir(), posture.ServerFacts{}), "audit.chain-broken"); f == nil || !strings.Contains(f.Detail, "shrunk") {
+		t.Errorf("posture: %+v", f)
+	}
+
+	// The next write fills the number back in, and the log is the head's
+	// size again, with another entry where the head's last one was.
+	putRecords(t, root, 1)
+	human, err = humanOutput(t, func() error { return cmdAuditLog(root, []string{"verify"}) })
+	if !errors.As(err, &blocked) || strings.Contains(human, "intact") || !strings.Contains(human, "NOT an append-only extension") {
+		t.Errorf("a log rewritten behind its saved head: %v\n%s", err, human)
+	}
+}

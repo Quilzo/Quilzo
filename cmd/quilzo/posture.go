@@ -192,6 +192,13 @@ func Observe(root, tplDir string, srv posture.ServerFacts) posture.State {
 				}
 			}
 		}
+		// And against the head saved beside it, as auditlog verify checks
+		// it: entries removed from the end leave a chain that verifies.
+		if head, err := savedHead(root); err == nil && head != nil {
+			if p := audit.AgainstHead(events, *head); p != nil {
+				s.AuditBreaks = append(s.AuditBreaks, *p)
+			}
+		}
 	}
 
 	// File modes. Only files that hold something worth protecting: listing

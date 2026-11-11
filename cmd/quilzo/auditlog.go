@@ -244,11 +244,12 @@ func openAudit(root string) (*audit.Log, error) {
 // trade: NIST allows for alerting on audit failure, and the alternative — a
 // publish refused because a log file is full — trades an availability problem
 // for an accountability one. Reporting loudly and continuing is the choice
-// for what a person does, and `quilzo auditlog verify` is what catches a gap
-// afterwards. What an agent does is the other way round (SP 800-53 AU-5): it
-// is asked about first (auditReady) and refused while its record could not
-// be written, because an agent acting unrecorded is the gap nobody can
-// explain afterwards.
+// for what a person does, and the message on stderr is all that shows it:
+// a record never written leaves no gap `quilzo auditlog verify` could find,
+// since the next one takes its number. What an agent does is the other way
+// round (SP 800-53 AU-5): it is asked about first (auditReady) and refused
+// while its record could not be written, because an agent acting unrecorded
+// is the gap nobody can explain afterwards.
 func record(root string, r audit.Record) {
 	if err := recordE(root, r); err != nil {
 		fmt.Fprintf(os.Stderr, "%s%v%s\n", red, err, reset)
@@ -422,8 +423,25 @@ func auditVerify(root string) error {
 	events, err := audit.Read(auditPath(root))
 	n := len(events)
 	report, err := audit.Check(events, err)
+	read := err == nil
 	if err != nil {
 		report = audit.Report{Problems: []audit.Problem{{Seq: 0, Reason: err.Error()}}}
+	}
+	// Against the largest head saved beside the log too. The chain cannot
+	// see entries removed from its end: what is left verifies, and the next
+	// write takes the first number removed. This said nothing was removed,
+	// "including by an administrator", with a saved head covering entries
+	// the log no longer held.
+	head, err := savedHead(root)
+	if err != nil {
+		report.Problems = append(report.Problems, audit.Problem{Reason: "the heads saved beside the log " +
+			"cannot be read, so it was not checked against them: " + err.Error()})
+		report.Intact = false
+	} else if head != nil && read {
+		if p := audit.AgainstHead(events, *head); p != nil {
+			report.Problems = append(report.Problems, *p)
+			report.Intact = false
+		}
 	}
 	good, problems := report.Intact, report.Problems
 
@@ -433,7 +451,7 @@ func auditVerify(root string) error {
 			rows = append(rows, map[string]any{"seq": p.Seq, "reason": p.Reason})
 		}
 		w.JSON(map[string]any{"entries": n, "intact": good, "problems": rows,
-			"unfinished": report.Unfinished})
+			"unfinished": report.Unfinished, "head": head})
 		if !good {
 			return errBlocked{fmt.Errorf("%d problem(s)", len(problems))}
 		}
@@ -442,10 +460,21 @@ func auditVerify(root string) error {
 
 	w.Human("%d entr%s\n", n, entrySuffix(n))
 	if good {
+		// What the chain proves, and no more: it says nothing of entries
+		// removed from the end, and its hashes are not keyed, so whoever
+		// can rewrite the file can re-chain what is left.
 		w.Human("  %schain intact%s\n", green, reset)
 		w.Human("  %severy entry re-hashes and links to the one before it, so nothing\n"+
-			"  was altered, inserted or removed — including by an administrator%s\n",
-			dim, reset)
+			"  between entries was altered, inserted or removed%s\n", dim, reset)
+		if head == nil {
+			w.Human("  %sno head is saved, so entries removed from the end would not show here:\n"+
+				"  quilzo auditlog head --save, and keep a copy off this machine%s\n", yellow, reset)
+			return nil
+		}
+		w.Human("  %sand it still extends the head saved at %d entries (%s), so none of\n"+
+			"  those was removed or rewritten since%s\n", dim, head.Size, head.At, reset)
+		w.Human("  %sa head saved here can be rewritten with the log; a copy kept off this\n"+
+			"  machine is the one that counts%s\n", dim, reset)
 		return nil
 	}
 	w.Human("  %s%d problem(s)%s\n", red, len(problems), reset)
@@ -590,6 +619,28 @@ func headsPath(root string) string { return filepath.Join(root, "log-heads.json"
 
 type headFile struct {
 	Heads []audit.Head `json:"heads"`
+}
+
+// savedHead is the largest head saved beside the log, by `auditlog head
+// --save` or `anchor`, or nil when none is: what verify, posture and the
+// audit log screen check the log against, as well as along its chain.
+//
+// The largest rather than the newest, since a head saved after entries were
+// removed covers fewer than one saved before. A head kept here can be
+// rewritten with the log by whoever can rewrite the log, and says so where
+// it is reported; it still catches everybody else.
+func savedHead(root string) (*audit.Head, error) {
+	f := &headFile{}
+	if err := loadJSON(headsPath(root), f); err != nil {
+		return nil, err
+	}
+	var best *audit.Head
+	for i := range f.Heads {
+		if best == nil || f.Heads[i].Size >= best.Size {
+			best = &f.Heads[i]
+		}
+	}
+	return best, nil
 }
 
 // auditHead publishes a commitment to the log as it stands.
@@ -752,15 +803,9 @@ func auditConsistency(root string, args []string) error {
 		}
 	}
 
-	proof, now, err := audit.Consistency(events, oldSize)
+	proof, now, err := audit.Extends(events, published)
 	if err != nil {
 		return errBlocked{err}
-	}
-	if err := audit.VerifyConsistency(published, now, proof); err != nil {
-		return errBlocked{fmt.Errorf(
-			"this log is NOT an append-only extension of the head published at "+
-				"%d entries.\n  %v\n  Entries before that point have been "+
-				"changed, reordered or removed", oldSize, err)}
 	}
 
 	if w.JSON(map[string]any{

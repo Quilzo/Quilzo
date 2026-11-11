@@ -433,3 +433,31 @@ func TestATornLineIsShownInTheLogNotInsteadOfIt(t *testing.T) {
 		t.Errorf("a line nothing cut short is not reported as altering the log:\n%s", body)
 	}
 }
+
+// The page checks the log against the head saved beside it. Entries
+// removed from the end of a log leave a shorter chain that verifies, so the
+// page said "Chain intact" with a saved head covering more than it held.
+func TestTheLogScreenChecksTheLogAgainstTheSavedHead(t *testing.T) {
+	events := realLog(t, 6)
+	head, err := audit.TreeHead(events[:5], time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, tok := logServer(t, events, true)
+	s.SavedHead = func() (*audit.Head, error) { return &head, nil }
+	if body, _ := getLogs(t, s, tok, ""); !strings.Contains(body, "Chain intact") ||
+		!strings.Contains(body, "the head saved at 5 entries") {
+		t.Errorf("a log that grew from its saved head:\n%s", body)
+	}
+
+	s.LoadAudit = func() ([]audit.Event, error) { return events[:3], nil }
+	body, _ := getLogs(t, s, tok, "")
+	if strings.Contains(body, "Chain intact") || !strings.Contains(body, "shrunk") {
+		t.Errorf("a log cut back behind its saved head:\n%s", body)
+	}
+
+	s.SavedHead = func() (*audit.Head, error) { return nil, nil }
+	if body, _ := getLogs(t, s, tok, ""); !strings.Contains(body, "No saved head") {
+		t.Errorf("the page does not say that it had no head to check against:\n%s", body)
+	}
+}

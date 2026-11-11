@@ -126,6 +126,12 @@ type Server struct {
 	// lives, and after the writer was separated out it deliberately must not
 	// open it for writing. Reading is all it is given.
 	LoadAudit func() ([]audit.Event, error)
+	// SavedHead is the largest head saved beside the log, nil when none
+	// is. The page checks the log against it as well as along its chain,
+	// as `auditlog verify` does: entries removed from the end of a log
+	// leave a shorter chain that verifies, and the page said "Chain
+	// intact" with a saved head covering entries the log no longer held.
+	SavedHead func() (*audit.Head, error)
 	// ResolvePrincipal turns a pseudonym back into a name, for principals this
 	// store knows. It cannot reverse the HMAC — it computes forward for each
 	// known principal and matches — so somebody the policy has never heard of

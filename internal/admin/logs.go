@@ -115,6 +115,23 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	// And against the head saved beside it (SavedHead says why).
+	var head *audit.Head
+	if s.SavedHead != nil {
+		h, err := s.SavedHead()
+		switch {
+		case err != nil:
+			report.Problems = append(report.Problems, audit.Problem{Reason: "the heads saved beside " +
+				"the log cannot be read, so it was not checked against them: " + err.Error()})
+			report.Intact = false
+		case h != nil:
+			head = h
+			if p := audit.AgainstHead(events, *h); p != nil {
+				report.Problems = append(report.Problems, *p)
+				report.Intact = false
+			}
+		}
+	}
 	intact, problems := report.Intact, report.Problems
 
 	action := strings.TrimSpace(r.URL.Query().Get("action"))
@@ -232,7 +249,7 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		"Title": "Audit log", "Principal": p,
 		"Rows": page, "Total": total, "Entries": len(events),
 		"Offset": offset, "Next": end, "HasNext": end < total,
-		"Intact": intact, "Problems": problems, "Crashed": report.Crashed(),
+		"Intact": intact, "Problems": problems, "Crashed": report.Crashed(), "Head": head,
 		"Actions": names, "Action": action, "Outcome": outcome, "Who": who,
 		"Separated": s.LogSeparated, "HeadsByWriter": byWriter,
 		"HeadsRefused": refused, "HeadKeys": keys,

@@ -221,6 +221,37 @@ func Consistency(events []Event, oldSize int) ([]string, Head, error) {
 	return proof, Head{Size: head.Size, Root: head.Root}, nil
 }
 
+// Extends proves the log still extends a head taken from it earlier: every
+// entry behind the head is there, unchanged, in the same order. It returns
+// the proof and the log's head now, or what is wrong.
+//
+// The one check against a head, for everything that makes it. The chain
+// cannot: entries removed from the end of a log leave a shorter chain that
+// verifies, and the next write takes the first number removed and links to
+// what is left, so not even a gap shows.
+func Extends(events []Event, old Head) ([]string, Head, error) {
+	proof, now, err := Consistency(events, old.Size)
+	if err != nil {
+		return nil, Head{}, err
+	}
+	if err := VerifyConsistency(old, now, proof); err != nil {
+		return nil, now, fmt.Errorf("this log is NOT an append-only extension of the head at %d "+
+			"entries (%v): entries before that point have been changed, reordered or removed",
+			old.Size, err)
+	}
+	return proof, now, nil
+}
+
+// AgainstHead is what is wrong with a log against a head taken from it
+// earlier, at the last entry the head covers, or nil when the log still
+// extends it (Extends).
+func AgainstHead(events []Event, h Head) *Problem {
+	if _, _, err := Extends(events, h); err != nil {
+		return &Problem{Seq: int64(h.Size), Reason: fmt.Sprintf("against the head saved %s: %v", h.At, err)}
+	}
+	return nil
+}
+
 // VerifyConsistency checks that a new head extends an old one.
 func VerifyConsistency(old, new Head, proof []string) error {
 	oldRoot, err := hex.DecodeString(old.Root)
