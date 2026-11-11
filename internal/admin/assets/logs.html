@@ -43,6 +43,7 @@
         <option value="">any</option>
         <option value="success"{{if eq .Outcome "success"}} selected{{end}}>success</option>
         <option value="denied"{{if eq .Outcome "denied"}} selected{{end}}>denied</option>
+        <option value="failure"{{if eq .Outcome "failure"}} selected{{end}}>failure</option>
       </select>
     </label>
     <label>Who
@@ -72,8 +73,7 @@
     </td>
     <td class="mono">{{.Action}}</td>
     <td class="mono">{{.Resource}}</td>
-    <td>{{if .Failed}}<span class="tag tag-bad">{{.Outcome}}</span>
-        {{else}}<span class="tag tag-ok">{{.Outcome}}</span>{{end}}</td>
+    <td><span class="{{.Tag}}">{{.Outcome}}</span></td>
   </tr>
   {{if .Detail}}
   <tr class="detail">

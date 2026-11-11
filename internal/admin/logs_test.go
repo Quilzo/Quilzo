@@ -374,3 +374,82 @@ func TestTheLogSaysWhenTheWriterSignsNoHeads(t *testing.T) {
 		t.Errorf("the page does not say the writer signs none, and why:\n%s", body)
 	}
 }
+
+// outcomesLog is a genuine chain with one entry of each outcome, and one
+// whose outcome was edited to something the log never writes.
+func outcomesLog(t *testing.T) []audit.Event {
+	t.Helper()
+	dir := t.TempDir()
+	l, err := audit.New(audit.Options{Path: dir + "/a.jsonl", Source: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range []struct {
+		action  string
+		outcome audit.Outcome
+	}{{"publish", audit.Success}, {"auth.grant", audit.Denied}, {"backup.failed", audit.Failure}, {"render", audit.Success}} {
+		if _, err := l.Append(audit.Record{Action: r.action, Resource: "/", Outcome: r.outcome,
+			Principal: "dana", Kind: audit.KindHuman, Verified: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	events, err := audit.Read(dir + "/a.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	events[3].Outcome = "succes"
+	return events
+}
+
+// tagOf is the class of the outcome tag drawn in the row for an action.
+func tagOf(t *testing.T, body, action string) string {
+	t.Helper()
+	i := strings.Index(body, `<td class="mono">`+action+`</td>`)
+	if i < 0 {
+		t.Fatalf("no row for %s:\n%s", action, body)
+	}
+	row := body[i:]
+	if j := strings.Index(row, "</tr>"); j >= 0 {
+		row = row[:j]
+	}
+	k := strings.Index(row, `<span class="`)
+	if k < 0 {
+		t.Fatalf("the row for %s has no outcome tag:\n%s", action, row)
+	}
+	row = row[k+len(`<span class="`):]
+	return row[:strings.Index(row, `"`)]
+}
+
+// Denied is kept apart from Failure in the log (audit.Outcome): being refused
+// is not the same as breaking, and the reader needs to tell them apart. The
+// page drew every outcome that was not "denied" in the success colour, a
+// failed backup included, and its filter offered success and denied only, so
+// ?outcome=failure showed "any" and pressing Filter dropped it. Only a
+// success is drawn as one, and an outcome the log never writes is not.
+func TestAFailureLooksLikeAFailureAndCanBeChosen(t *testing.T) {
+	s, tok := logServer(t, outcomesLog(t), true)
+	body, code := getLogs(t, s, tok, "")
+	if code != http.StatusOK {
+		t.Fatalf("got %d", code)
+	}
+	success, denied, failure, edited := tagOf(t, body, "publish"), tagOf(t, body, "auth.grant"),
+		tagOf(t, body, "backup.failed"), tagOf(t, body, "render")
+	if !strings.Contains(success, "tag-ok") {
+		t.Errorf("a success is drawn as %q", success)
+	}
+	if strings.Contains(failure, "tag-ok") || failure == denied {
+		t.Errorf("a failure is drawn as %q, a success as %q and a refusal as %q; a failure "+
+			"is told apart from both", failure, success, denied)
+	}
+	if strings.Contains(edited, "tag-ok") {
+		t.Errorf("an outcome the log never writes is drawn as a success (%q)", edited)
+	}
+
+	body, _ = getLogs(t, s, tok, "?outcome=failure")
+	if !strings.Contains(body, `<option value="failure" selected>failure</option>`) {
+		t.Errorf("the filter cannot show that it is choosing failures:\n%s", body)
+	}
+	if !strings.Contains(body, "1 of 4 entries") || !strings.Contains(body, "backup.failed") {
+		t.Errorf("?outcome=failure did not choose the failure")
+	}
+}

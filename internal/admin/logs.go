@@ -57,7 +57,29 @@ type logRow struct {
 	Who      string
 	Resolved bool
 	Detail   map[string]string
-	Failed   bool
+	// Failed is whether the outcome was anything but a success.
+	Failed bool
+	// Tag is how the outcome is drawn (outcomeTag).
+	Tag string
+}
+
+// outcomeTag is the class an outcome is drawn with.
+//
+// Denied is kept apart from Failure in the log (audit.Outcome): being refused
+// is not the same as breaking, and the reader needs to tell them apart. The
+// page marked only a refusal, so a failed backup was drawn in the success
+// colour, and an outcome the log never writes, which only an edit can put
+// there, was drawn as a success too. Only a success looks like one.
+func outcomeTag(o audit.Outcome) string {
+	switch o {
+	case audit.Success:
+		return "tag tag-ok"
+	case audit.Denied:
+		return "tag tag-bad"
+	case audit.Failure:
+		return "tag tag-warn"
+	}
+	return "tag"
 }
 
 // handleLogs shows the audit log.
@@ -146,7 +168,8 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 			Seq: e.Seq, At: e.At, Action: e.Action, Resource: e.Resource,
 			Outcome: string(e.Outcome), Kind: string(e.Kind),
 			Verified: e.Verified, Detail: e.Detail,
-			Who: e.Principal, Failed: e.Outcome == audit.Denied,
+			Who: e.Principal, Failed: e.Outcome != audit.Success,
+			Tag: outcomeTag(e.Outcome),
 		}
 		if s.ResolvePrincipal != nil {
 			if name := resolve(e.Principal); name != "" {
