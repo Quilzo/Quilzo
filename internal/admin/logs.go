@@ -96,7 +96,17 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Verified before anything is rendered. A list of events with no statement
+	// about whether the chain holds invites the reader to trust it, which is
+	// the opposite of what the chain is for.
+	//
+	// A line that is not an entry is among what the check found, not instead
+	// of the page. Reading stopped at one, and the page showed that error
+	// alone, with no entries and no banner: one crash part way through a
+	// write took this screen away for good, and every record after it with
+	// it.
 	events, err := s.LoadAudit()
+	report, err := audit.Check(events, err)
 	if err != nil {
 		s.render(w, r, "logs.html", map[string]any{
 			"Nav":   "logs",
@@ -105,11 +115,7 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-
-	// Verified before anything is rendered. A list of events with no statement
-	// about whether the chain holds invites the reader to trust it, which is
-	// the opposite of what the chain is for.
-	intact, problems := audit.Verify(events)
+	intact, problems := report.Intact, report.Problems
 
 	action := strings.TrimSpace(r.URL.Query().Get("action"))
 	outcome := strings.TrimSpace(r.URL.Query().Get("outcome"))
@@ -226,7 +232,7 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		"Title": "Audit log", "Principal": p,
 		"Rows": page, "Total": total, "Entries": len(events),
 		"Offset": offset, "Next": end, "HasNext": end < total,
-		"Intact": intact, "Problems": problems,
+		"Intact": intact, "Problems": problems, "Crashed": report.Crashed(),
 		"Actions": names, "Action": action, "Outcome": outcome, "Who": who,
 		"Separated": s.LogSeparated, "HeadsByWriter": byWriter,
 		"HeadsRefused": refused, "HeadKeys": keys,

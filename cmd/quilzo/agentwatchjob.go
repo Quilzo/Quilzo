@@ -30,7 +30,7 @@ func watchedPath(root string) string { return filepath.Join(root, "self", "agent
 // tellTheShieldOfFlags signals every flagged agent or app whose newest
 // strike is newer than the last one told, and says how many it told.
 func tellTheShieldOfFlags(root string, now time.Time) (int, error) {
-	events, err := audit.Read(auditPath(root))
+	events, err := auditEntries(root)
 	if err != nil {
 		return 0, err
 	}

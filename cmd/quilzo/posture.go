@@ -5,6 +5,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/logd"
@@ -176,8 +177,21 @@ func Observe(root, tplDir string, srv posture.ServerFacts) posture.State {
 	if types, err := schema.Load(root); err == nil {
 		s.Types = types
 	}
-	if events, err := audit.Read(auditPath(root)); err == nil {
+	// Every whole entry, and the lines that are not entries as breaks, unless
+	// a write a crash cut short left them: auditlog verify and the audit log
+	// screen report those, as what they are. Any such line stopped the log
+	// being read here, and the scan then checked nothing about it.
+	events, err := audit.Read(auditPath(root))
+	if _, cerr := audit.Check(events, err); cerr == nil {
 		s.Audit, s.AuditRead = events, true
+		var bad *audit.Unreadable
+		if errors.As(err, &bad) {
+			for i, p := range bad.Problems() {
+				if !bad.Lines[i].Torn {
+					s.AuditBreaks = append(s.AuditBreaks, p)
+				}
+			}
+		}
 	}
 
 	// File modes. Only files that hold something worth protecting: listing

@@ -6,6 +6,7 @@ package admin
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -372,5 +373,63 @@ func TestTheLogSaysWhenTheWriterSignsNoHeads(t *testing.T) {
 	if !strings.Contains(body, `<p class="hint warn">Its heads are the writer&rsquo;s to sign, and it signs`) ||
 		!strings.Contains(body, "head.key is not readable") {
 		t.Errorf("the page does not say the writer signs none, and why:\n%s", body)
+	}
+}
+
+// tornLog is a log a writer died part way through once: an entry, the line
+// it left unfinished, and two entries written after it.
+func tornLog(t *testing.T) string {
+	t.Helper()
+	path := t.TempDir() + "/audit.jsonl"
+	write := func() {
+		l, err := audit.New(audit.Options{Path: path, Source: "test"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := l.Append(audit.Record{Action: "publish", Resource: "/", Outcome: audit.Success,
+			Principal: "dana", Kind: audit.KindHuman, Verified: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write()
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.WriteString(`{"seq":2,"at":"2026-10`)
+	f.Close()
+	write()
+	write()
+	return path
+}
+
+// A line a crash left unfinished is shown where it is, as what it is, with
+// every entry around it. The page showed the reading error alone, with no
+// entries and no banner, for as long as the line stayed: one crash took the
+// screen away for good, and the entries after it were never seen.
+func TestATornLineIsShownInTheLogNotInsteadOfIt(t *testing.T) {
+	path := tornLog(t)
+	s, tok := logServer(t, nil, true)
+	s.LoadAudit = func() ([]audit.Event, error) { return audit.Read(path) }
+	body, code := getLogs(t, s, tok, "")
+	if code != http.StatusOK {
+		t.Fatalf("got %d", code)
+	}
+	if !strings.Contains(body, "3 of 3 entries") {
+		t.Errorf("the entries around the torn line are not shown:\n%s", body)
+	}
+	if !strings.Contains(body, "left unfinished") || strings.Contains(body, "Chain intact") {
+		t.Errorf("the torn line is not shown for what it is:\n%s", body)
+	}
+	if strings.Contains(body, "has been altered") {
+		t.Errorf("a crash is reported as tampering:\n%s", body)
+	}
+
+	// A line that is not an entry and was not cut short is not a crash's.
+	f, _ := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o600)
+	f.WriteString("{not json\n")
+	f.Close()
+	if body, _ := getLogs(t, s, tok, ""); !strings.Contains(body, "has been altered") {
+		t.Errorf("a line nothing cut short is not reported as altering the log:\n%s", body)
 	}
 }

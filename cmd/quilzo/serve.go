@@ -531,7 +531,7 @@ func cmdServe(root string, args []string) error {
 			return saveExts(root, &extFile{Extensions: m})
 		},
 		Pin:    ext.Pin,
-		Events: func() ([]audit.Event, error) { return audit.Read(auditPath(root)) },
+		Events: func() ([]audit.Event, error) { return auditEntries(root) },
 		Provider: func() (string, string, string, string, bool, bool) {
 			c, err := loadOIDC(root)
 			if err != nil || c == nil {
@@ -601,7 +601,7 @@ func cmdServe(root string, args []string) error {
 			return true, kr.Active, kr.IDs()
 		},
 		Agents: func() ([]agentwatch.Report, error) {
-			events, err := audit.Read(auditPath(root))
+			events, err := auditEntries(root)
 			if err != nil {
 				return nil, err
 			}

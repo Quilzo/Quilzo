@@ -81,7 +81,7 @@ func streamSender(root string) (*auditstream.Sender, error) {
 		reach = fetch.Anywhere
 	}
 	return &auditstream.Sender{URL: url, Key: key, Client: fetch.Speaking("siem", reach, 30*time.Second),
-		Read: func() ([]audit.Event, error) { return audit.Read(auditPath(root)) }, Heads: heads,
+		Read: func() ([]audit.Event, error) { return auditEntries(root) }, Heads: heads,
 		CursorPath: streamCursorPath(root), Reveal: cfg.Bool("siem.stream.reveal")}, nil
 }
 

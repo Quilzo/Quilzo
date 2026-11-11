@@ -351,6 +351,24 @@ func TestABrokenAuditChainIsCritical(t *testing.T) {
 	}
 }
 
+// What was wrong with the log besides its chain is a break too, though
+// every entry verifies: a line of it that is not an entry.
+func TestABreakBesidesTheChainIsCritical(t *testing.T) {
+	s := clean(t)
+	s.AuditBreaks = []audit.Problem{{Seq: 4, Reason: "line 5 of the file is not an entry"}}
+	f := has(Scan(s, nil), "audit.chain-broken")
+	if f == nil {
+		t.Fatal("a line that is not an entry was not reported")
+	}
+	if f.Severity != Critical || !strings.Contains(f.Detail, "seq 4: line 5") {
+		t.Errorf("%s: %s", f.Severity, f.Detail)
+	}
+	s.AuditBreaks = nil
+	if f := has(Scan(s, nil), "audit.chain-broken"); f != nil {
+		t.Errorf("a log with nothing wrong is reported: %s", f.Detail)
+	}
+}
+
 func TestMostlyUnverifiedIdentitiesAreReported(t *testing.T) {
 	s := clean(t)
 	s.Audit = chain(t, 20, false)

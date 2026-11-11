@@ -685,7 +685,7 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 			"stop anybody determined from reading the log another way.",
 		Keywords: []string{"agents", "activity", "strikes", "refusals", "audit"},
 	}, func(map[string]any) (any, error) {
-		events, err := audit.Read(auditPath(root))
+		events, err := auditEntries(root)
 		if err != nil {
 			return nil, err
 		}

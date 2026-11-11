@@ -221,7 +221,7 @@ func engagementIssue(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	events, err := audit.Read(auditPath(root))
+	events, err := auditEntries(root)
 	if err != nil {
 		return err
 	}

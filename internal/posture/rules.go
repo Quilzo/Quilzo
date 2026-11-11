@@ -1078,13 +1078,14 @@ var rules = []Rule{
 			"verify, every record in it is an assertion rather than evidence — " +
 			"including the records about whoever broke it.",
 		Check: func(s State) []Finding {
-			if s.Audit == nil {
+			if s.Audit == nil && len(s.AuditBreaks) == 0 {
 				return nil
 			}
-			ok, problems := audit.Verify(s.Audit)
-			if ok {
+			ok, chain := audit.Verify(s.Audit)
+			if ok && len(s.AuditBreaks) == 0 {
 				return nil
 			}
+			problems := append(append([]audit.Problem(nil), s.AuditBreaks...), chain...)
 			var where []string
 			for _, p := range problems {
 				where = append(where, fmt.Sprintf("seq %d: %s", p.Seq, p.Reason))

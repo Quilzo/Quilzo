@@ -182,6 +182,18 @@ func auditKeyPath(root string) string {
 	return filepath.Join(auditDir(root), "audit.key")
 }
 
+// auditEntries is every whole entry of the audit log, for whatever works
+// from the entries: exports, heads, receipts, the stream, agentwatch.
+//
+// A line a crash left unfinished is not an entry, nor part of the chain or
+// the tree, and it stopped every one of them, for good, at the first
+// record after it. It is passed over here (audit.Entries) and reported by
+// what reports on the log: auditlog verify and show, the audit log screen,
+// posture.
+func auditEntries(root string) ([]audit.Event, error) {
+	return audit.Entries(audit.Read(auditPath(root)))
+}
+
 // openAudit returns a log, creating a pseudonymisation key on first use.
 //
 // The key lives beside the log rather than inside it, at 0600. That is the
@@ -407,17 +419,21 @@ func unreadable(problems []audit.Problem) bool {
 }
 
 func auditVerify(root string) error {
-	n, good, problems, err := audit.VerifyFile(auditPath(root))
+	events, err := audit.Read(auditPath(root))
+	n := len(events)
+	report, err := audit.Check(events, err)
 	if err != nil {
-		return err
+		report = audit.Report{Problems: []audit.Problem{{Seq: 0, Reason: err.Error()}}}
 	}
+	good, problems := report.Intact, report.Problems
 
 	if w.Mode == out.JSON {
 		rows := make([]map[string]any, 0, len(problems))
 		for _, p := range problems {
 			rows = append(rows, map[string]any{"seq": p.Seq, "reason": p.Reason})
 		}
-		w.JSON(map[string]any{"entries": n, "intact": good, "problems": rows})
+		w.JSON(map[string]any{"entries": n, "intact": good, "problems": rows,
+			"unfinished": report.Unfinished})
 		if !good {
 			return errBlocked{fmt.Errorf("%d problem(s)", len(problems))}
 		}
@@ -451,6 +467,16 @@ func auditVerify(root string) error {
 				"problem. The log belongs to the account that writes it; this " +
 				"account needs to be in its group")
 	}
+	// Nor is a crash. A write cut short leaves a line that is not an entry,
+	// and the writer carries on past it; called tampering, it was the same
+	// alarm as a chmod, and it rang at "entry 0" of a log it said was one
+	// entry long. Still a finding, so a script sees it: the record that
+	// write was making is lost.
+	if report.Crashed() {
+		return errBlocked{fmt.Errorf("a write to the audit log was left unfinished, as a crash or a full " +
+			"disk leaves one, and the record it was making is lost.\n  Every entry around it " +
+			"re-hashes and links to the one before it, so this is not evidence of tampering")}
+	}
 	return errBlocked{fmt.Errorf("the audit log has been tampered with")}
 }
 
@@ -461,9 +487,6 @@ func auditShow(root string, args []string) error {
 		return err
 	}
 	events, err := audit.Read(auditPath(root))
-	if err != nil {
-		return err
-	}
 	// Verified here, and not only by `auditlog verify`.
 	//
 	// This printed whatever was in the file. Somebody who edits an entry and
@@ -474,8 +497,14 @@ func auditShow(root string, args []string) error {
 	//
 	// The whole chain, not the page. A break before the window would go
 	// unnoticed by a check that only looked at what is on screen, and the
-	// question "has this log been edited" is about the log.
-	intact, problems := audit.Verify(events)
+	// question "has this log been edited" is about the log. A line that is
+	// not an entry is among what it found, and the entries after it are
+	// shown: they were not, for good, after one crash.
+	report, err := audit.Check(events, err)
+	if err != nil {
+		return err
+	}
+	intact, problems := report.Intact, report.Problems
 
 	if len(events) > *limit {
 		events = events[len(events)-*limit:]
@@ -486,7 +515,14 @@ func auditShow(root string, args []string) error {
 	}) {
 		return nil
 	}
-	if !intact {
+	if report.Crashed() {
+		w.Human("%sa write was left unfinished — its record is lost, and every entry "+
+			"around it links up%s\n", yellow, reset)
+		for _, p := range problems {
+			w.Human("  %sentry %d: %s%s\n", dim, p.Seq, p.Reason, reset)
+		}
+		w.Human("  %squilzo auditlog verify — the whole story%s\n\n", dim, reset)
+	} else if !intact {
 		w.Human("%sthe chain is broken — these entries cannot be trusted%s\n",
 			yellow, reset)
 		for _, p := range problems {
@@ -517,7 +553,7 @@ func auditShow(root string, args []string) error {
 }
 
 func auditExport(root string) error {
-	events, err := audit.Read(auditPath(root))
+	events, err := auditEntries(root)
 	if err != nil {
 		return err
 	}
@@ -570,7 +606,7 @@ func auditHead(root string, args []string) error {
 		return err
 	}
 
-	events, err := audit.Read(auditPath(root))
+	events, err := auditEntries(root)
 	if err != nil {
 		return err
 	}
@@ -641,7 +677,7 @@ func auditProve(root string, args []string) error {
 		return fmt.Errorf("%q is not a sequence number", args[0])
 	}
 
-	events, err := audit.Read(auditPath(root))
+	events, err := auditEntries(root)
 	if err != nil {
 		return err
 	}
@@ -682,7 +718,7 @@ func auditConsistency(root string, args []string) error {
 		return err
 	}
 
-	events, err := audit.Read(auditPath(root))
+	events, err := auditEntries(root)
 	if err != nil {
 		return err
 	}
@@ -744,7 +780,7 @@ func auditConsistency(root string, args []string) error {
 // rewriting anything behind it produces a log that cannot pass consistency
 // against a value nobody involved can alter.
 func auditAnchor(root string) error {
-	events, err := audit.Read(auditPath(root))
+	events, err := auditEntries(root)
 	if err != nil {
 		return err
 	}

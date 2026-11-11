@@ -8,13 +8,12 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agentwatch"
-	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/out"
 )
 
 // cmdAgents reports on what models have been doing.
 func cmdAgents(root string, args []string) error {
-	events, err := audit.Read(auditPath(root))
+	events, err := auditEntries(root)
 	if err != nil {
 		return err
 	}
