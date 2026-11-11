@@ -307,3 +307,35 @@ func TestTheApproversNamedAreTheOnesWhoseApprovalCounts(t *testing.T) {
 		t.Fatalf("with no list, a publisher's approval did not count: %s", d.Reason)
 	}
 }
+
+// Whoever decides a request to change whose approval counts reads whom it
+// would count from. It said "to somebody the list in force does not name"
+// and no more, in quilzo pending list and show as on People, so the second
+// administrator let somebody's approval count without being told whose.
+// The names stay out of the record of the request, which copies what it
+// says in clear.
+func TestWhoeverDecidesWhoseApprovalCountsReadsWhose(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root, dana, lee := twoAdmins(t)
+	t.Setenv("QUILZO_TOKEN", dana)
+	if err := cmdReview(root, []string{"require", "1", "--approvers", "lee"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdReview(root, []string{"require", "1", "--approvers", "lee,sam"}); err != nil {
+		t.Fatal(err)
+	}
+	r := waiting(t, root)
+	t.Setenv("QUILZO_TOKEN", lee)
+	for _, args := range [][]string{{"list"}, {"show", r.ID}} {
+		said, err := humanOutput(t, func() error { return cmdPending(root, args) })
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(said, "lee, sam") {
+			t.Errorf("quilzo pending %s does not say whose approval would count:\n%s", args[0], said)
+		}
+	}
+	if e := lastEvent(t, root, "dual.proposed"); e == nil || strings.Contains(e.Detail["what"], "sam") {
+		t.Errorf("the record of the request names the approvers in clear: %+v", e)
+	}
+}

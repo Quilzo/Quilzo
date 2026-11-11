@@ -262,6 +262,27 @@ func (r Request) About() map[string]string {
 	return nil
 }
 
+// Approvers is whose approval an Approval request would count, as whoever
+// decides it reads them, or empty for any other request and for one that
+// counts anybody who may publish, which What says.
+//
+// Beside What rather than in it: every record of a request copies What in
+// clear, with only the one person About names pseudonymised, and a list of
+// people has no one identity key to go under. Left out altogether, the
+// administrator deciding read "to somebody the list in force does not
+// name" on People and in quilzo pending, and let somebody's approval count
+// without being told whose.
+func (r Request) Approvers() string {
+	if r.Kind != Approval {
+		return ""
+	}
+	var ch ApprovalChange
+	if json.Unmarshal(r.Payload, &ch) != nil {
+		return ""
+	}
+	return strings.Join(ch.Approvers, ", ")
+}
+
 // Open reports whether a request still waits for a decision at now.
 func (r Request) Open(now time.Time) bool {
 	return r.State == Waiting && now.Before(r.At.Add(Wait))

@@ -229,3 +229,19 @@ func TestTheApprovalCountOnTheSettingsScreenIsDecidedAsOnTheCommandLine(t *testi
 		t.Errorf("the refusal does not say why and until when: %s", loc)
 	}
 }
+
+// People says whom a request to change whose approval counts would count
+// approvals from. It showed "to somebody the list in force does not name"
+// and no more, so the second administrator approved somebody's approval
+// counting without being told whose.
+func TestPeopleSaysWhoseApprovalARequestWouldCount(t *testing.T) {
+	srv, editor := setup(t)
+	if _, err := srv.Dual.Store.Propose(dual.Approval,
+		"review require 1, from the 2 named: whose approval counts, to somebody the list in force does not name",
+		dual.ApprovalChange{Required: 1, Approvers: []string{"lee", "sam"}}, "", "lee", false, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if page := get(t, srv, "/people", editor).Body.String(); !strings.Contains(page, "lee, sam") {
+		t.Error("People does not say whose approval the request would count")
+	}
+}

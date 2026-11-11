@@ -169,6 +169,9 @@ func cmdPending(root string, args []string) error {
 			if r.Why != "" {
 				w.Human("  %swhy: %s%s\n", dim, r.Why, reset)
 			}
+			if a := r.Approvers(); a != "" {
+				w.Human("  %sapprovals would count only from: %s%s\n", dim, a, reset)
+			}
 			if r.Kind == dual.Mapping && r.Open(now) {
 				w.Human("  %squilzo pending show %s lists the provisioning tokens it lets make administrators%s\n",
 					dim, r.ID, reset)
@@ -301,6 +304,9 @@ func showPending(root, id string, now time.Time) error {
 		r.At.UTC().Format("15:04 2 Jan 2006 UTC"), dual.StateWords(r, now), reset)
 	if r.Why != "" {
 		w.Human("  %swhy: %s%s\n", dim, r.Why, reset)
+	}
+	if a := r.Approvers(); a != "" {
+		w.Human("  %sapprovals would count only from: %s%s\n", dim, a, reset)
 	}
 	if r.Kind != dual.Mapping {
 		return nil
