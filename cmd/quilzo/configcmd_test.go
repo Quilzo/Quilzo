@@ -6,6 +6,8 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"github.com/quilzo/quilzo/internal/config"
 )
 
 // `quilzo config` says a duration in the largest whole unit it is, as the
@@ -72,5 +74,44 @@ func TestATokenOverTheCeilingIsRefusedInDays(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "0m0s") {
 		t.Errorf("the refusal says a duration as time.Duration's String does:\n%v", err)
+	}
+}
+
+// `config list` names each section once, with every setting of it beneath.
+//
+// It printed a heading whenever the section changed from the setting
+// before, in the order the settings are declared, and they are not declared
+// section by section: "agents" came twice, "site" three times and "admin"
+// four, so somebody looking for the agents' settings found half of them and
+// stopped.
+func TestConfigListNamesEachSectionOnce(t *testing.T) {
+	got, err := humanOutput(t, configList)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen, settings := map[string]int{}, 0
+	section := ""
+	for _, line := range strings.Split(got, "\n") {
+		switch {
+		case line != "" && !strings.HasPrefix(line, " "):
+			section = strings.TrimSpace(line)
+			seen[section]++
+		case strings.HasPrefix(line, "  ") && !strings.HasPrefix(line, "   "):
+			key, _, _ := strings.Cut(strings.TrimSpace(line), " ")
+			if g, _, _ := strings.Cut(key, "."); strings.Contains(key, ".") && g != section {
+				t.Errorf("%s is listed under %q", key, section)
+			}
+			if strings.Contains(key, ".") {
+				settings++
+			}
+		}
+	}
+	for s, n := range seen {
+		if n > 1 {
+			t.Errorf("the section %q is headed %d times", s, n)
+		}
+	}
+	if settings != len(config.All()) {
+		t.Errorf("%d settings are listed of %d", settings, len(config.All()))
 	}
 }
