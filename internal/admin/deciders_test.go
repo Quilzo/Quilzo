@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/decide"
 )
@@ -146,5 +147,32 @@ func TestTheDecisionsScreenSaysWhatConfidenceIs(t *testing.T) {
 	}
 	if strings.Contains(lead[1], "not the model's word for it") {
 		t.Errorf("the lead says the model's word plays no part, and it does: %q", lead[1])
+	}
+}
+
+// The Decisions and Chatbots screens say when each was last evaluated and
+// on which model, since what an evaluation found holds only for the model
+// it measured. Neither said anything of either, and a decider's
+// evaluation was not kept at all.
+func TestTheDecisionsAndChatbotsScreensSayWhatWasMeasured(t *testing.T) {
+	srv, token := setup(t)
+	d, set := decidersRig()
+	set.Deciders = []decide.Decider{{Name: "ticket", Title: "Ticket triage"}, {Name: "spam", Title: "Spam"}}
+	d.Measured = func(name string) string {
+		if name == "ticket" {
+			return "measured on model-a (route main), 6 Oct 2026"
+		}
+		return ""
+	}
+	srv.Deciders = d
+	body := get(t, srv, "/decisions", token).Body.String()
+	if !strings.Contains(body, "<td>measured on model-a (route main), 6 Oct 2026</td>") || !strings.Contains(body, `<span class="hint">never</span>`) {
+		t.Errorf("the Decisions screen does not say what was measured:\n%s", firstLines(body[strings.Index(body, "<table"):], 12))
+	}
+	f := &fakeAssistants{set: &assistant.Set{Assistants: []assistant.Assistant{{Name: "help", Title: "Help"}}}}
+	srv.Assistants = f.wire()
+	srv.Assistants.Measured = func(string) string { return "measured on model-b, 7 Oct 2026" }
+	if body := get(t, srv, "/assistants", token).Body.String(); !strings.Contains(body, "<td>measured on model-b, 7 Oct 2026</td>") {
+		t.Errorf("the Chatbots screen does not say what was measured:\n%s", firstLines(body[strings.Index(body, "<table"):], 12))
 	}
 }

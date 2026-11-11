@@ -23,7 +23,11 @@ import (
 func registerDecideOps(srv *mcp.Server, root string, caller *Caller) {
 	srv.Register(mcp.Operation{
 		Name: "list_deciders", NeedsRole: "reader",
-		Summary:  "the site's typed questions, with their options and thresholds",
+		Summary: "the site's typed questions, with their options and thresholds",
+		// What a confidence means is a property of the model answering, so
+		// a client is told which model a decider was last measured on.
+		Detail: "Each decider with its questions, options and threshold, and, once " +
+			"evaluated, measured: when, by whom, and the model and route measured.",
 		Keywords: []string{"decide", "classify", "route", "score", "triage"},
 	}, func(map[string]any) (any, error) {
 		if err := authorise(root, caller, auth.ActView, "/"); err != nil {
@@ -33,7 +37,7 @@ func registerDecideOps(srv *mcp.Server, root string, caller *Caller) {
 		if err != nil {
 			return nil, err
 		}
-		b, err := json.Marshal(set.Deciders)
+		b, err := json.Marshal(listedDeciders(root, set))
 		return string(b), err
 	})
 

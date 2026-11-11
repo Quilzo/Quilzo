@@ -23,6 +23,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auditstream"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/evals"
 	"github.com/quilzo/quilzo/internal/frameworks"
 	"github.com/quilzo/quilzo/internal/memory"
 	"github.com/quilzo/quilzo/internal/oauthas"
@@ -774,6 +775,9 @@ func observeAI(root, tplDir string, events []audit.Event) posture.AIFacts {
 		return facts
 	}
 	lastEval := map[string]time.Time{}
+	// The model each last evaluation measured, as a person reads it; none
+	// for a record from before evaluations named their model.
+	lastModel := map[string]string{}
 	for _, e := range events {
 		if e.Action != "assistant.evaluated" {
 			continue
@@ -782,14 +786,23 @@ func observeAI(root, tplDir string, events []audit.Event) posture.AIFacts {
 			name := strings.TrimPrefix(e.Resource, "/ask/")
 			if at.After(lastEval[name]) {
 				lastEval[name] = at
+				delete(lastModel, name)
+				if model, named := e.Detail["model"]; named {
+					lastModel[name] = evals.Served{Model: model, Route: e.Detail["route"]}.String()
+				}
 			}
 		}
 	}
 	disclosed := askPageDiscloses(root, tplDir)
 	for _, a := range set.Assistants {
-		facts.Chatbots = append(facts.Chatbots, posture.ChatbotFact{
+		f := posture.ChatbotFact{
 			Name: a.Name, Public: a.Public, UseModel: a.UseModel,
-			Disclosed: disclosed, LastEval: lastEval[a.Name]})
+			Disclosed: disclosed, LastEval: lastEval[a.Name], EvalModel: lastModel[a.Name]}
+		if a.UseModel {
+			m, _ := assistantModelAt(root, a)
+			f.Model = servedBy(m).String()
+		}
+		facts.Chatbots = append(facts.Chatbots, f)
 	}
 	if agents, aerr := loadAgents(root); aerr == nil {
 		facts.Agents = len(agents.Agents)

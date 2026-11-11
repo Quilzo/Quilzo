@@ -545,19 +545,30 @@ func assistantEval(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	// Recorded, so "when was this chatbot last measured" has an answer the
-	// posture checks can read. The counts, never the questions.
+	// Recorded, so "when was this chatbot last measured, and on which
+	// model" has an answer the posture checks can read. The counts, never
+	// the questions. The model is the one served, by its provider's name
+	// and the gateway's route: the record named none, so a chatbot measured
+	// on one model counted as measured after it was moved to another.
 	outcome := audit.Success
 	if r.Hallucinated > 0 {
 		outcome = audit.Failure
 	}
+	served := servedBy(m)
 	evalBy := resolveCaller(root, "")
 	record(root, audit.Record{Action: "assistant.evaluated",
 		Resource: "/ask/" + a.Name, Outcome: outcome, Principal: evalBy.Name,
 		Kind: evalBy.Kind, Verified: evalBy.Verified,
 		Detail: map[string]string{"assistant": a.Name,
 			"cases":        fmt.Sprint(r.Cases),
-			"hallucinated": fmt.Sprint(r.Hallucinated)}})
+			"hallucinated": fmt.Sprint(r.Hallucinated),
+			"model":        served.Model, "route": served.Route}})
+	// Kept whole for the Chatbots screen, which says when it was last
+	// measured and on which model without reading the whole log.
+	at := time.Now().UTC()
+	if err := keepMeasurement(root, "chatbot", a.Name, evalBy.Name, served, at, r); err != nil {
+		fmt.Fprintf(os.Stderr, "  the evaluation of %s could not be kept: %v\n", a.Name, err)
+	}
 	if w.JSON(r) {
 		if r.Hallucinated > 0 {
 			return fmt.Errorf("%d unanswerable question(s) answered", r.Hallucinated)
@@ -566,6 +577,7 @@ func assistantEval(root string, args []string) error {
 	}
 	w.Human("%s%d case(s): %d answerable, %d not%s\n", bold, r.Cases,
 		r.Answerable, r.Unanswerable, reset)
+	w.Human("  %s\n", measurement{At: at, Model: served.Model, Route: served.Route})
 	w.Human("  right page first      %d/%d\n", r.HitAt1, r.Answerable)
 	w.Human("  right page retrieved  %d/%d  (MRR %.2f)\n", r.HitAtK, r.Answerable, r.MRR)
 	w.Human("  answered              %d/%d\n", r.Answered, r.Answerable)
@@ -636,6 +648,12 @@ func assistantsCapability(root string) *admin.Assistants {
 			return groups, mustConfig(root).Bool("chatbot.gaps"), err
 		},
 		Ratings: func(name string) (int, int) { return gapRatings(root, name, time.Now()) },
+		Measured: func(name string) string {
+			if m, ok := lastMeasurement(root, "chatbot", name); ok {
+				return m.String()
+			}
+			return ""
+		},
 		CheckGaps: func(ctx context.Context, name, by string) (int, int, error) {
 			r, err := checkGaps(ctx, root, name, by, time.Now())
 			return r.Asked, r.Closed, err

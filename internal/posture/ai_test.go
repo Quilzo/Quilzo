@@ -169,3 +169,29 @@ func TestAnAgentThatFollowedAPlantIsFoundAndAnUnmeasuredOneToo(t *testing.T) {
 		}
 	}
 }
+
+// What a chatbot's evaluation found holds only for the model it measured.
+// One measured on one model counted as measured after it was moved to
+// another nobody had measured, though the rule itself says what a chatbot
+// says changes when its model does.
+func TestAChatbotMeasuredOnAnotherModelIsFound(t *testing.T) {
+	s := clean(t)
+	s.AI.Chatbots[0].EvalModel, s.AI.Chatbots[0].Model = "model-a (route main)", "MODEL-A (route main)"
+	if f, ok := findingFor(Scan(s, nil), "ai.chatbot-unevaluated:help"); ok {
+		t.Errorf("a chatbot measured on the model answering it was found: %+v", f)
+	}
+	s.AI.Chatbots[0].Model = "model-b (route main)"
+	f, ok := findingFor(Scan(s, nil), "ai.chatbot-unevaluated:help")
+	if !ok || f.Detail != "help was last evaluated on model-a (route main); model-b (route main) answers it now" {
+		t.Errorf("one measured on another model was not found: %+v", f)
+	}
+	s.AI.Chatbots[0].EvalModel = ""
+	if f, ok := findingFor(Scan(s, nil), "ai.chatbot-unevaluated:help"); !ok || !strings.Contains(f.Detail, "a model the record does not name") {
+		t.Errorf("one whose evaluation names no model was not found: %+v", f)
+	}
+	// Answering from its pages, no model's behaviour is in question.
+	s.AI.Chatbots[0].UseModel = false
+	if f, ok := findingFor(Scan(s, nil), "ai.chatbot-unevaluated:help"); ok {
+		t.Errorf("an extractive chatbot was found for its model: %+v", f)
+	}
+}

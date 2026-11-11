@@ -11,11 +11,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
+	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/decide"
 	"github.com/quilzo/quilzo/internal/evals"
 	"github.com/quilzo/quilzo/internal/gateway"
 	"github.com/quilzo/quilzo/internal/out"
@@ -157,5 +160,138 @@ func TestAutonomyEarnedOnOneModelDoesNotCarryToAnother(t *testing.T) {
 	if o := run(); o.Manifest.Autonomy != agent.AutonomyPropose ||
 		!strings.Contains(o.Earned, "evaluated on stand-in; stand-in-2 is driving") {
 		t.Fatalf("another configured model kept the autonomy: %s %q", o.Manifest.Autonomy, o.Earned)
+	}
+}
+
+// lastAudited is the latest audit record of an action, nil for none.
+func lastAudited(t *testing.T, root, action string) *audit.Event {
+	t.Helper()
+	evs, err := audit.Read(auditPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var last *audit.Event
+	for i := range evs {
+		if evs[i].Action == action {
+			last = &evs[i]
+		}
+	}
+	return last
+}
+
+// A chatbot's evaluation names the model it measured. It was audited
+// without one, so a public chatbot measured on one model counted as
+// measured once it was moved to another nobody had measured, and nothing
+// could say which model its figures were taken on.
+func TestAChatbotEvaluationNamesItsModel(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := publishedShop(t)
+	url := finishingModel(t)
+	routeTo(t, root, url, "main", "model-a")
+	if err := cmdAssistant(root, []string{"add", "help", "--title", "Help", "--public", "--model"}); err != nil {
+		t.Fatal(err)
+	}
+	cases := filepath.Join(t.TempDir(), "cases.jsonl")
+	if err := os.WriteFile(cases, []byte(`{"question": "can I return opened ink", "page": "returns"}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	b := humanOut(t)
+	// What the stand-in model answers is not what is measured here.
+	_ = cmdAssistant(root, []string{"eval", "help", cases})
+	if !strings.Contains(b.String(), "measured on model-a (route main), ") {
+		t.Errorf("the evaluation does not say what it measured:\n%s", b)
+	}
+	if e := lastAudited(t, root, "assistant.evaluated"); e == nil || e.Detail["model"] != "model-a" || e.Detail["route"] != "main" {
+		t.Fatalf("the record does not name the model measured: %+v", e)
+	}
+	if got := assistantsCapability(root).Measured("help"); !strings.HasPrefix(got, "measured on model-a (route main), ") {
+		t.Errorf("the Chatbots screen is told %q", got)
+	}
+	evs, err := audit.Read(auditPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := observeAI(root, "", evs).Chatbots; len(c) != 1 || c[0].EvalModel != "model-a (route main)" || c[0].Model != c[0].EvalModel {
+		t.Errorf("posture is not told the model measured and the one answering: %+v", c)
+	}
+	// The operator points the route at another model.
+	routeTo(t, root, url, "main", "model-b")
+	if c := observeAI(root, "", evs).Chatbots; len(c) != 1 || c[0].EvalModel != "model-a (route main)" || c[0].Model != "model-b (route main)" {
+		t.Errorf("posture is not told another model answers now: %+v", c)
+	}
+}
+
+// A decider's evaluation is kept, with the model it measured and when. It
+// kept nothing and left no record: what a decider's confidence means is a
+// property of the model answering, and nobody could say when a decider
+// was last measured, or on which model.
+func TestADeciderEvaluationIsKept(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := publishedShop(t)
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"choices":[{"message":{"content":` +
+			`"{\"answers\": {\"queue\": {\"value\": \"returns\", \"confidence\": 0.9}}}"}}]}`))
+	}))
+	t.Cleanup(model.Close)
+	routeTo(t, root, model.URL+"/v1", "main", "model-a")
+	file := filepath.Join(t.TempDir(), "d.json")
+	if err := os.WriteFile(file, []byte(ticketDecider), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdDecide(root, []string{"set", file}); err != nil {
+		t.Fatal(err)
+	}
+	cases := filepath.Join(t.TempDir(), "cases.jsonl")
+	if err := os.WriteFile(cases, []byte(`{"state": {"body": "refund please"}, "expect": {"queue": "returns"}}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	b := humanOut(t)
+	if err := cmdDecide(root, []string{"list"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(b.String(), "never evaluated") {
+		t.Errorf("decide list does not say it was never evaluated:\n%s", b)
+	}
+	if err := cmdDecide(root, []string{"eval", "ticket", cases}); err != nil {
+		t.Fatal(err)
+	}
+	m, ok := lastMeasurement(root, "decider", "ticket")
+	if !ok || m.Model != "model-a" || m.Route != "main" || time.Since(m.At) > time.Minute || len(m.Report) == 0 {
+		t.Fatalf("the evaluation was not kept with its model and date: %+v", m)
+	}
+	var rep decide.Report
+	if err := json.Unmarshal(m.Report, &rep); err != nil || rep.Answers != 1 || rep.AutoRight != 1 {
+		t.Errorf("the report kept is not the evaluation's: %+v %v", rep, err)
+	}
+	if e := lastAudited(t, root, "decider.evaluated"); e == nil || e.Detail["model"] != "model-a" || e.Detail["answers"] != "1" {
+		t.Errorf("the evaluation is not on the record with its model: %+v", e)
+	}
+	want := "measured on model-a (route main), " + m.At.Format("2 Jan 2006")
+	b.Reset()
+	if err := cmdDecide(root, []string{"list"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(b.String(), want) {
+		t.Errorf("decide list does not say %q:\n%s", want, b)
+	}
+	if got := decidersCapability(root).Measured("ticket"); got != want {
+		t.Errorf("the Decisions screen is told %q", got)
+	}
+	st, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, e := callTool(t, buildMCP(root, st, asAdmin("dana"), "templates"), "quilzo_read", "list_deciders", map[string]any{})
+	if e != nil {
+		t.Fatal(e.Message)
+	}
+	var listed []struct {
+		Name     string
+		Measured *struct{ At, By, Model, Route string }
+	}
+	if err := json.Unmarshal([]byte(got), &listed); err != nil || len(listed) != 1 || listed[0].Name != "ticket" ||
+		listed[0].Measured == nil || listed[0].Measured.Model != "model-a" || listed[0].Measured.Route != "main" ||
+		listed[0].Measured.At == "" {
+		t.Errorf("list_deciders does not say when and on which model it was measured: %s", got)
 	}
 }

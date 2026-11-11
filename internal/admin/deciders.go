@@ -28,6 +28,11 @@ type Deciders struct {
 	// the command line and the agent interface would have given, and an
 	// ask here left no trace of what was decided or by whom.
 	Asked func(by string, res decide.Result, state any)
+	// Measured says when a decider was last evaluated and on which model,
+	// "measured on MODEL, DATE", and "" for never. An evaluation kept
+	// nothing, so nobody could say whether a decider's threshold had been
+	// checked on the model answering now. Nil says nothing.
+	Measured func(name string) string
 }
 
 // exampleDecider is what the new-decider box starts with, so the shape of a
@@ -66,6 +71,11 @@ func (s *Server) handleDeciders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data["List"] = set.Deciders
+	names := make([]string, 0, len(set.Deciders))
+	for _, d := range set.Deciders {
+		names = append(names, d.Name)
+	}
+	data["Measured"] = measuredBy(s.Deciders.Measured, names)
 	s.render(w, r, "deciders.html", data)
 }
 
