@@ -14,6 +14,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/collab"
 	"github.com/quilzo/quilzo/internal/dual"
 	"github.com/quilzo/quilzo/internal/scim"
 )
@@ -127,6 +128,14 @@ func applyDual(root string, r dual.Request, by string) error {
 		}
 		syncPayAfterLive(root, caller)
 		return nil
+	case dual.Approval:
+		var ch dual.ApprovalChange
+		if err := json.Unmarshal(r.Payload, &ch); err != nil {
+			return err
+		}
+		return saveApprovalPolicy(root, resolveCaller(root, ""), collab.Policy{Required: ch.Required,
+			RequiredHumans: ch.RequiredHumans, Approvers: ch.Approvers, RequireHumanForAI: true},
+			map[string]string{"request": r.ID, "approved_by": by})
 	case dual.Token, dual.Enrol, dual.SCIMToken:
 		return nil
 	}
@@ -159,6 +168,9 @@ func cmdPending(root string, args []string) error {
 				r.At.UTC().Format("15:04 2 Jan"), dual.StateWords(r, now), reset)
 			if r.Why != "" {
 				w.Human("  %swhy: %s%s\n", dim, r.Why, reset)
+			}
+			if a := r.Approvers(); a != "" {
+				w.Human("  %sapprovals would count only from: %s%s\n", dim, a, reset)
 			}
 			if r.Kind == dual.Mapping && r.Open(now) {
 				w.Human("  %squilzo pending show %s lists the provisioning tokens it lets make administrators%s\n",
@@ -292,6 +304,9 @@ func showPending(root, id string, now time.Time) error {
 		r.At.UTC().Format("15:04 2 Jan 2006 UTC"), dual.StateWords(r, now), reset)
 	if r.Why != "" {
 		w.Human("  %swhy: %s%s\n", dim, r.Why, reset)
+	}
+	if a := r.Approvers(); a != "" {
+		w.Human("  %sapprovals would count only from: %s%s\n", dim, a, reset)
 	}
 	if r.Kind != dual.Mapping {
 		return nil

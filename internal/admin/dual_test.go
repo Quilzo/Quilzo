@@ -5,6 +5,7 @@ package admin
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -155,5 +156,92 @@ func TestRemovingTheOtherAdministratorOnTheScreenDoesNotLetTheOneLeftApproveAlon
 	postForm(t, srv, "/people/pending", sam, url.Values{"id": {pend[0].ID}, "do": {"approve"}}.Encode())
 	if !srv.Policy.Evaluate("pat", auth.ActGrant, "/").Allowed {
 		t.Fatal("a second administrator could not approve")
+	}
+}
+
+// How many approvals publishing needs, set on the Settings screen, is
+// decided as `quilzo config set review.required_approvals` and `quilzo
+// review require` decide it: an administrator's, more at once, fewer when
+// a second administrator agrees, and not alone for a day after the other
+// administrator was removed. An author may not change it at all.
+//
+// `review require` asked an author's edit-draft and no second
+// administrator, so an author set the count to zero; this is the screen
+// held to the same rule.
+func TestTheApprovalCountOnTheSettingsScreenIsDecidedAsOnTheCommandLine(t *testing.T) {
+	srv, editor := setup(t)
+	saved := []byte("{}")
+	srv.Settings = &Settings{
+		Load: func() (*config.Config, error) { return config.Parse(saved) },
+		Save: func(c *config.Config) error { b, err := c.Bytes(); saved = b; return err }}
+	count := func() int {
+		cfg, err := srv.Settings.Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return cfg.Int("review.required_approvals")
+	}
+	set := func(token, value string) *httptest.ResponseRecorder {
+		return postForm(t, srv, "/settings/save", token,
+			url.Values{"key": {"review.required_approvals"}, "value": {value}}.Encode())
+	}
+	for _, b := range []auth.Binding{{Principal: "lee", Role: auth.RoleAdmin, Resource: "/"},
+		{Principal: "carol", Role: auth.RoleAuthor, Resource: "/"}} {
+		if err := srv.Policy.Grant(b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	lee, _, _ := srv.Tokens.IssueSession("lee", "lee", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+	carol, _, _ := srv.Tokens.IssueSession("carol", "carol", auth.RoleAuthor, "/", time.Hour, auth.RoleAdmin, auth.MethodPasskey)
+
+	if set(editor, "2"); count() != 2 {
+		t.Fatal("raising the count waited")
+	}
+	if w := set(carol, "0"); w.Code != http.StatusForbidden || count() != 2 {
+		t.Fatalf("an author changed the count: %d, now %d", w.Code, count())
+	}
+	for _, value := range []string{"1", "0"} {
+		w := set(editor, value)
+		if loc, _ := url.QueryUnescape(w.Header().Get("Location")); !strings.Contains(loc, "waits for a second administrator") {
+			t.Errorf("lowering to %s: %s", value, loc)
+		}
+		if count() != 2 {
+			t.Fatalf("lowered to %s on one administrator's word", value)
+		}
+		pend, _ := srv.Dual.Store.Pending(time.Now())
+		if len(pend) != 1 || pend[0].Kind != dual.Setting {
+			t.Fatalf("pending: %+v", pend)
+		}
+		postForm(t, srv, "/people/pending", lee, url.Values{"id": {pend[0].ID}, "do": {"decline"}}.Encode())
+	}
+	if set(editor, "3"); count() != 3 {
+		t.Fatal("raising the count waited with two administrators")
+	}
+
+	// The administrator left after removing the other does not lower it
+	// alone for a day.
+	postForm(t, srv, "/people/revoke", editor, url.Values{"principal": {"lee"}, "role": {"admin"}, "resource": {"/"}}.Encode())
+	w := set(editor, "0")
+	if count() != 3 {
+		t.Fatal("the count was lowered alone a moment after the other administrator was removed")
+	}
+	if loc, _ := url.QueryUnescape(w.Header().Get("Location")); !strings.Contains(loc, "until") {
+		t.Errorf("the refusal does not say why and until when: %s", loc)
+	}
+}
+
+// People says whom a request to change whose approval counts would count
+// approvals from. It showed "to somebody the list in force does not name"
+// and no more, so the second administrator approved somebody's approval
+// counting without being told whose.
+func TestPeopleSaysWhoseApprovalARequestWouldCount(t *testing.T) {
+	srv, editor := setup(t)
+	if _, err := srv.Dual.Store.Propose(dual.Approval,
+		"review require 1, from the 2 named: whose approval counts, to somebody the list in force does not name",
+		dual.ApprovalChange{Required: 1, Approvers: []string{"lee", "sam"}}, "", "lee", false, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if page := get(t, srv, "/people", editor).Body.String(); !strings.Contains(page, "lee, sam") {
+		t.Error("People does not say whose approval the request would count")
 	}
 }

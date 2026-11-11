@@ -52,6 +52,7 @@ package collab
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -286,6 +287,17 @@ type Policy struct {
 	RequiredHumans int `json:"required_humans,omitempty"`
 }
 
+// Counts reports whether the list of approvers lets name's approval count:
+// any name when the list is empty, and otherwise only the names on it.
+//
+// One answer for every surface that asks. Evaluate kept to the list, and
+// the review screen and the list of what waits asked only who may publish,
+// so with approvers named they offered the approval to somebody it would
+// not count from: recorded, and counted for nothing.
+func (p Policy) Counts(name string) bool {
+	return len(p.Approvers) == 0 || slices.Contains(p.Approvers, name)
+}
+
 // NewPolicy returns the default: two people, and a human on anything a model
 // wrote.
 func NewPolicy() Policy {
@@ -334,11 +346,6 @@ func (p Policy) Evaluate(prop Proposal, kindOf KindOf, now time.Time) Decision {
 		return Decision{Allowed: true, Reason: "dual authorization is not configured"}
 	}
 
-	allowed := map[string]bool{}
-	for _, a := range p.Approvers {
-		allowed[a] = true
-	}
-
 	seen := map[string]bool{}
 	var valid []Approval
 	var humans int
@@ -349,7 +356,7 @@ func (p Policy) Evaluate(prop Proposal, kindOf KindOf, now time.Time) Decision {
 		if p.Requested(prop, a.By) {
 			continue // self-approval, handled explicitly below
 		}
-		if len(allowed) > 0 && !allowed[a.By] {
+		if !p.Counts(a.By) {
 			continue
 		}
 		if seen[a.By] {
@@ -438,14 +445,12 @@ func (p Policy) Evaluate(prop Proposal, kindOf KindOf, now time.Time) Decision {
 			Reason: fmt.Sprintf("%d of %d approvals; %d more needed",
 				len(valid), p.Required, p.Required-len(valid)),
 		}
-		if len(allowed) > 0 {
-			for who := range allowed {
-				if !seen[who] && !p.Requested(prop, who) {
-					d.Missing = append(d.Missing, who)
-				}
+		for _, who := range p.Approvers {
+			if !seen[who] && !p.Requested(prop, who) && !slices.Contains(d.Missing, who) {
+				d.Missing = append(d.Missing, who)
 			}
-			sort.Strings(d.Missing)
 		}
+		sort.Strings(d.Missing)
 		return refuse(d)
 	}
 

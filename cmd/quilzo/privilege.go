@@ -290,7 +290,16 @@ var commandNeeds = map[string]need{
 	"locales":             {action: auth.ActEditDraft},
 	"lock":                {action: auth.ActEditDraft},
 	"locks":               {action: auth.ActEditDraft},
-	"review":              {action: auth.ActEditDraft},
+	// How many approvals publishing needs, and whose count, is the
+	// four-eyes rule itself, and was an author's to set to zero when this
+	// row was edit-draft for the whole command. Grant, as `config set
+	// review.required_approvals` takes, and asking fewer people waits for
+	// a second administrator there too. What an author did here keeps its
+	// row: approving, which asks publish of its own, and reading, which
+	// narrows to view below and is what a bare `quilzo review` runs.
+	"review":         {action: auth.ActGrant},
+	"review approve": {action: auth.ActEditDraft},
+	"review require": {action: auth.ActGrant, hint: approvalCountHint},
 	// Writes content, types, listings, menus and forms, and publishes. That is
 	// the whole store, so it needs the permission that covers the whole store —
 	// and it refuses outright on a store that already has anything in it.
@@ -1439,7 +1448,7 @@ func commandArea(cmd string, args []string) (string, bool) {
 // does too, since the list is what `integrations list` gives a reader.
 var bareRuns = map[string]string{"anchor": "status", "timestamp": "list", "stamp": "list",
 	"provenance": "check", "prov": "check", "integrations": "list", "integration": "list",
-	"theme": "show"}
+	"theme": "show", "review": "status"}
 
 func lookupNeed(cmd string, args []string) (need, bool) {
 	if sub, ok := bareRuns[cmd]; ok && len(args) == 0 {

@@ -150,3 +150,26 @@ func TestTheApprovalsJSONKeepsEveryKeyItHad(t *testing.T) {
 		t.Errorf("the JSON has the keys %v, not %v", got, want)
 	}
 }
+
+// The change waiting for review is offered to the people whose approval
+// counts. Asked only who may publish, the list offered it, with approvers
+// named, to somebody they leave out, whose approval counted for nothing.
+func TestTheReviewIsOfferedOnlyToWhoeverTheApproversNamed(t *testing.T) {
+	now := time.Now()
+	src := everything(now, map[auth.Action]bool{auth.ActPublish: true})
+	src.Review = func() (*Review, error) {
+		return &Review{Policy: collab.Policy{Required: 1, Approvers: []string{"lee"}},
+			Proposal: collab.Proposal{Content: "c1", Author: "sam", CreatedAt: now.Unix()}}, nil
+	}
+	items, err := List(src, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(sourcesOf(items), "review") {
+		t.Error("dana, whom the approvers do not name, is offered the review")
+	}
+	src.Name = "lee"
+	if items, _ := List(src, now); !slices.Contains(sourcesOf(items), "review") {
+		t.Error("lee, whom the approvers name, is not offered the review")
+	}
+}
