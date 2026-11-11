@@ -86,9 +86,10 @@ func (s *Server) idleSpent(r *http.Request, name, id string) (time.Duration, boo
 // admin's screens: the agent interface, and the content API at /api/,
 // which this server mounts and does not authenticate itself, and which
 // takes the session cookie from the admin's own pages and a session in a
-// header from anybody. It ends t, revoked as signing out revokes it, when t is a
-// sign-in session nobody has used for session.idle, and reports whether it
-// did; a long-lived token is nobody's session and is never ended here.
+// header from anybody. It ends t, revoked as signing out revokes it, when
+// t is a sign-in session nobody has used for session.idle, and reports
+// whether it did; a long-lived token is nobody's session and is never
+// ended here.
 //
 // Without it a session used only at /api/v1 was never idle: the admin's
 // clock never saw it, and the API keeps none.
