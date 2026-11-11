@@ -284,7 +284,11 @@
     }
     if (!tooltip.showPopover) return;
     tooltip.textContent = el.dataset.tip;
-    if (!tooltip.matches(":popover-open")) tooltip.showPopover();
+    // A tooltip is never worth an error: one the browser will not show
+    // now (another popover opening or closing) is simply not shown.
+    if (!tooltip.matches(":popover-open")) {
+      try { tooltip.showPopover(); } catch (e) { return; }
+    }
     var r = el.getBoundingClientRect(), t = tooltip.getBoundingClientRect();
     var left = Math.max(8, Math.min(r.left + r.width / 2 - t.width / 2, innerWidth - t.width - 8));
     var top = r.bottom + 4;
@@ -486,7 +490,16 @@
       tipping = setTimeout(function () { tipShow(el); }, 500);
     });
     el.addEventListener("pointerleave", tipHide);
-    el.addEventListener("focus", function () { if (el.matches(":focus-visible")) tipShow(el); });
+    // Once the focus has settled, not while it moves. Escape on a menu
+    // gives focus back to its button while the browser is still closing
+    // the menu, and showing the tooltip then threw ("Invalid to show a
+    // popover during another show operation") and showed nothing.
+    el.addEventListener("focus", function () {
+      clearTimeout(tipping);
+      tipping = setTimeout(function () {
+        if (document.activeElement === el && el.matches(":focus-visible")) tipShow(el);
+      }, 0);
+    });
     el.addEventListener("blur", tipHide);
     el.addEventListener("click", tipHide);
   });
