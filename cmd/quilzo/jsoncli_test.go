@@ -42,7 +42,9 @@ import (
 // anybody adding it here. A read that cannot run there (a `show` with no
 // NAME, a review with no draft) fails, says why on stderr, and writes
 // nothing to stdout; one that succeeds writes one document, and a list with
-// nothing in it is [], not null. The commands after that are the reads the
+// nothing in it is [], not null, whether it is the answer or the list inside
+// it: `board list`, `menu list` and a dozen more answered {"boards": null}
+// once the bare lists were []. The commands after that are the reads the
 // help words otherwise.
 //
 // The real command line, in a process of its own, because most of these
@@ -133,6 +135,13 @@ func answersInJSON(t *testing.T, home, root string, c []string, always bool) {
 	}
 	if c[len(c)-1] == "list" && doc == nil {
 		t.Errorf("`quilzo %s --json` answered null; a list with nothing in it is []", name)
+	}
+	if fields, ok := doc.(map[string]any); ok && c[len(c)-1] == "list" {
+		for k, v := range fields {
+			if v == nil {
+				t.Errorf("`quilzo %s --json` answered %q: null; a list with nothing in it is [] there too", name, k)
+			}
+		}
 	}
 }
 

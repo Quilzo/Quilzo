@@ -30,11 +30,13 @@
 package out
 
 import (
+	"encoding"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"reflect"
+	"strings"
 )
 
 // Mode is how output should be rendered.
@@ -123,8 +125,8 @@ func (w *Writer) JSON(v any) bool {
 	// iterating the answer failed where it had no work to do. Here rather
 	// than at each of them, so the next listing cannot forget. An untyped
 	// nil is left as null: that is a command saying there is no such thing.
-	if rv := reflect.ValueOf(v); rv.Kind() == reflect.Slice && rv.IsNil() {
-		v = reflect.MakeSlice(rv.Type(), 0, 0).Interface()
+	if rv := reflect.ValueOf(v); rv.IsValid() {
+		v = emptyLists(rv, map[onPath]bool{}).Interface()
 	}
 	enc := json.NewEncoder(w.Out)
 	enc.SetIndent("", "  ")
@@ -132,6 +134,144 @@ func (w *Writer) JSON(v any) bool {
 		fmt.Fprintf(w.Err, "cannot encode output: %v\n", err)
 	}
 	return true
+}
+
+var (
+	jsonMarshaler = reflect.TypeFor[json.Marshaler]()
+	textMarshaler = reflect.TypeFor[encoding.TextMarshaler]()
+)
+
+// emptyLists is v with every nil slice in it an empty one, and every nil
+// map, for JSON.
+//
+// Through the whole document, not only its top, because most listings answer
+// one, {"boards": [...]}, and the list inside it went on being null on an
+// empty store after the bare lists were []: `board list`, `booking list`,
+// `lock list`, `menu list`, `spend list`, `trust list` and more, some built
+// as a map and some as a struct. A map is Go's empty collection in the same
+// way, so `type list` answered "broken": null for no broken types.
+//
+// What stays null is what a command means as null: an untyped nil, and a nil
+// pointer, which is how a status says there is no such thing. A []byte is
+// left alone, being a string in JSON rather than a list, and so is a value
+// that writes itself, such as json.RawMessage or net.IP, because its nil means
+// what its MarshalJSON or MarshalText makes of it. So is a field tagged
+// omitzero: an empty list is not a zero one, so emptying the lists in a zero
+// struct would write what the field asks to leave out. Nothing is changed in
+// place, since a command may go on to use its document after writing it.
+//
+// A pointer, map or slice already on the way down is not followed again, so a
+// value that holds itself fails in the encoder, as it did, rather than here.
+// Watching only pointers was not enough: a map holding itself was followed
+// until the stack ran out, which ends the process, not the command.
+func emptyLists(v reflect.Value, above map[onPath]bool) reflect.Value {
+	t := v.Type()
+	for _, m := range []reflect.Type{jsonMarshaler, textMarshaler} {
+		if t.Implements(m) || reflect.PointerTo(t).Implements(m) {
+			return v
+		}
+	}
+	switch v.Kind() {
+	case reflect.Interface:
+		if v.IsNil() {
+			return v
+		}
+		return emptyLists(v.Elem(), above)
+	case reflect.Pointer:
+		if v.IsNil() {
+			return v
+		}
+		at := onPath{v.Pointer(), 0, t}
+		if above[at] {
+			return v
+		}
+		above[at] = true
+		defer delete(above, at)
+		c := reflect.New(t.Elem())
+		c.Elem().Set(emptyLists(v.Elem(), above))
+		return c
+	case reflect.Struct:
+		c := reflect.New(t).Elem()
+		c.Set(v)
+		for i := range c.NumField() {
+			// An unexported field is not written, and cannot be set.
+			if f := c.Field(i); f.CanSet() && !omitsZero(t.Field(i)) {
+				f.Set(emptyLists(v.Field(i), above))
+			}
+		}
+		return c
+	case reflect.Slice:
+		if t.Elem().Kind() == reflect.Uint8 {
+			return v
+		}
+		if v.IsNil() {
+			return reflect.MakeSlice(t, 0, 0)
+		}
+		if !mayHoldNil(t.Elem().Kind()) {
+			return v
+		}
+		// Two slices can start at one element, so the length is part of
+		// where it is.
+		at := onPath{v.Pointer(), v.Len(), t}
+		if above[at] {
+			return v
+		}
+		above[at] = true
+		defer delete(above, at)
+		c := reflect.MakeSlice(t, v.Len(), v.Len())
+		for i := range v.Len() {
+			c.Index(i).Set(emptyLists(v.Index(i), above))
+		}
+		return c
+	case reflect.Map:
+		if v.IsNil() {
+			return reflect.MakeMap(t)
+		}
+		if !mayHoldNil(t.Elem().Kind()) {
+			return v
+		}
+		at := onPath{v.Pointer(), 0, t}
+		if above[at] {
+			return v
+		}
+		above[at] = true
+		defer delete(above, at)
+		c := reflect.MakeMapWithSize(t, v.Len())
+		for it := v.MapRange(); it.Next(); {
+			c.SetMapIndex(it.Key(), emptyLists(it.Value(), above))
+		}
+		return c
+	}
+	return v
+}
+
+// onPath is a pointer, map or slice on the way down through a document: where
+// it points, a slice's length, and its type.
+type onPath struct {
+	at  uintptr
+	len int
+	t   reflect.Type
+}
+
+// omitsZero is whether a field's tag asks for it to be left out when zero.
+func omitsZero(f reflect.StructField) bool {
+	_, opts, _ := strings.Cut(f.Tag.Get("json"), ",")
+	for _, o := range strings.Split(opts, ",") {
+		if o == "omitzero" {
+			return true
+		}
+	}
+	return false
+}
+
+// mayHoldNil is whether a value of this kind can be or hold a nil slice or
+// map, so a list of strings or numbers is not copied for nothing.
+func mayHoldNil(k reflect.Kind) bool {
+	switch k {
+	case reflect.Interface, reflect.Pointer, reflect.Struct, reflect.Slice, reflect.Map:
+		return true
+	}
+	return false
 }
 
 // Error reports a failure in whichever form the caller can read.
