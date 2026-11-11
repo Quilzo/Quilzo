@@ -14,6 +14,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/assistant"
+	"github.com/quilzo/quilzo/internal/connect"
 )
 
 // Today lists what waits first, what cannot be taken back before what
@@ -150,5 +151,36 @@ func TestEveryStartLandsWhereItIsDone(t *testing.T) {
 	}
 	if len(starts) < 5 {
 		t.Fatalf("only %d ways to start something", len(starts))
+	}
+}
+
+// Today counts the person's own connections that stop working within a
+// week, or have stopped, as a link to Your accounts; one whose end is not
+// known, or is further off, is not counted.
+func TestTodayListsConnectionsExpiringWithinAWeek(t *testing.T) {
+	srv, token := setup(t)
+	now := time.Now().UTC()
+	var asked []string
+	srv.Connections = &Connections{
+		Providers: func() ([]connect.Provider, error) { return nil, nil },
+		Mine: func(person string) ([]ConnectedAccount, error) {
+			asked = append(asked, person)
+			return []ConnectedAccount{
+				{Provider: "instagram", Expires: connect.Ends{Access: now.Add(3 * 24 * time.Hour)}},
+				{Provider: "linkedin", Expires: connect.Ends{Access: now.Add(time.Hour), Refresh: now.Add(6 * 24 * time.Hour), Renews: true}},
+				{Provider: "lapsed", Expires: connect.Ends{Access: now.Add(-time.Hour)}},
+				{Provider: "google", Expires: connect.Ends{Access: now.Add(time.Hour), Renews: true}},
+				{Provider: "far", Expires: connect.Ends{Access: now.Add(30 * 24 * time.Hour)}},
+				{Provider: "old"},
+			}, nil
+		},
+	}
+	body := get(t, srv, "/today", token).Body.String()
+	whole(t, body)
+	if !strings.Contains(body, `<dt>Connected accounts to connect again within a week</dt><dd><a href="/connections">3</a></dd>`) {
+		t.Errorf("the connections ending soon are not counted as a link:\n%s", firstLines(body[strings.Index(body, "happening"):], 12))
+	}
+	if len(asked) == 0 || asked[0] != "editor" {
+		t.Errorf("asked about %v", asked)
 	}
 }

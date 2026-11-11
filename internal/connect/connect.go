@@ -277,7 +277,78 @@ type Token struct {
 	Access  string    `json:"access"`
 	Refresh string    `json:"refresh,omitempty"`
 	Expiry  time.Time `json:"expiry,omitempty"`
-	Scope   string    `json:"scope,omitempty"`
+	// RefreshExpiry is when the refresh token ends, where the provider
+	// says: LinkedIn's lives a year from when it was first issued and is
+	// not renewed by using it, so a connection refreshed without fail
+	// still stops on that day.
+	RefreshExpiry time.Time `json:"refresh_expiry,omitzero"`
+	Scope         string    `json:"scope,omitempty"`
+}
+
+// Ends is when a connection's tokens end, as far as the provider said.
+//
+// Nothing in it is secret, so it is kept beside the sealed tokens and shown
+// to the person whose connection it is. Kept only inside them, it was shown
+// nowhere: a connection simply stopped working one day (an Instagram token
+// sixty days old, a LinkedIn refresh token a year old), and the first
+// anybody heard of it was a post that failed. A zero time is one not known:
+// the provider did not say, or the connection was kept before this was.
+type Ends struct {
+	Access  time.Time `json:"access_expires,omitzero"`
+	Refresh time.Time `json:"refresh_expires,omitzero"`
+	// Renews says it has a refresh token, so the access token's end is
+	// not the connection's.
+	Renews bool `json:"renews,omitempty"`
+}
+
+// Ends is when the tokens end.
+func (t Token) Ends() Ends {
+	return Ends{Access: t.Expiry, Refresh: t.RefreshExpiry, Renews: t.Refresh != ""}
+}
+
+// ExpiryNotice is how long before a connection stops working its person
+// is told to connect it again.
+const ExpiryNotice = 7 * 24 * time.Hour
+
+// Lapses is when the connection stops working unless its person connects
+// it again: the refresh token's end when it renews, or else the access
+// token's. Zero is not known.
+func (e Ends) Lapses() time.Time {
+	if e.Renews {
+		return e.Refresh
+	}
+	return e.Access
+}
+
+// LapsesSoon reports whether the connection stops working within
+// ExpiryNotice of now, or already has.
+func (e Ends) LapsesSoon(now time.Time) bool {
+	at := e.Lapses()
+	return !at.IsZero() && at.Before(now.Add(ExpiryNotice))
+}
+
+// Said is when the tokens end, in words, with times in loc: the same on
+// Your accounts and in quilzo connect list.
+func (e Ends) Said(loc *time.Location) string {
+	access := "access token: end not known"
+	if !e.Access.IsZero() {
+		access = "access token until " + e.Access.In(loc).Format("2 Jan 2006 15:04 MST")
+		if e.Renews {
+			access += ", renewed when due"
+		}
+	}
+	var refresh string
+	switch {
+	case e.Renews && !e.Refresh.IsZero():
+		refresh = "refresh token until " + e.Refresh.In(loc).Format("2 Jan 2006")
+	case e.Renews:
+		refresh = "refresh token: end not known"
+	case !e.Access.IsZero():
+		refresh = "no refresh token: connect it again when access ends"
+	default:
+		refresh = "refresh token: not known"
+	}
+	return access + "; " + refresh
 }
 
 // Due reports whether the access token is expired, or will be within a
@@ -340,9 +411,13 @@ func token(ctx context.Context, post Poster, p Provider, form url.Values, keep s
 		Type      string `json:"token_type"`
 		ExpiresIn int64  `json:"expires_in"`
 		Refresh   string `json:"refresh_token"`
-		Scope     string `json:"scope"`
-		Error     string `json:"error"`
-		Desc      string `json:"error_description"`
+		// The refresh token's lifetime, by the two names providers send it
+		// under: LinkedIn's and GitHub's, and TikTok's.
+		RefreshExpiresIn int64  `json:"refresh_token_expires_in"`
+		RefreshIn        int64  `json:"refresh_expires_in"`
+		Scope            string `json:"scope"`
+		Error            string `json:"error"`
+		Desc             string `json:"error_description"`
 	}
 	if err := json.Unmarshal(body, &out); err != nil {
 		return Token{}, fmt.Errorf("%s's token endpoint did not answer in JSON", p.Title)
@@ -362,6 +437,9 @@ func token(ctx context.Context, post Poster, p Provider, form url.Values, keep s
 	}
 	if out.ExpiresIn > 0 {
 		t.Expiry = now.Add(time.Duration(out.ExpiresIn) * time.Second).UTC()
+	}
+	if in := max(out.RefreshExpiresIn, out.RefreshIn); in > 0 && t.Refresh != "" {
+		t.RefreshExpiry = now.Add(time.Duration(in) * time.Second).UTC()
 	}
 	return t, nil
 }

@@ -35,7 +35,7 @@ import (
 //	quilzo connect provider add NAME --template google --client-id ID --client-secret SECRET
 //	quilzo connect provider remove NAME
 //	quilzo connect start NAME                         prints where to sign in
-//	quilzo connect list                               your connected accounts
+//	quilzo connect list                               your connected accounts, and when they end
 //	quilzo connect revoke NAME [--person WHO]
 //
 // Starting from the command line prints the provider's address; the
@@ -82,6 +82,10 @@ type account struct {
 	Connected time.Time       `json:"connected"`
 	Refreshed time.Time       `json:"refreshed,omitempty"`
 	Sealed    json.RawMessage `json:"sealed"`
+	// When its tokens end, beside them rather than in them, so a list
+	// says it without opening them; one kept before this was learns it
+	// the next time it is used.
+	connect.Ends
 }
 
 type accounts struct {
@@ -291,7 +295,7 @@ func finishConnect(ctx context.Context, root, state, code, person string) (strin
 		if err != nil {
 			return err
 		}
-		f.Accounts[key] = account{Provider: p.Name, Scope: tok.Scope, Connected: time.Now().UTC(), Sealed: sealed}
+		f.Accounts[key] = account{Provider: p.Name, Scope: tok.Scope, Connected: time.Now().UTC(), Sealed: sealed, Ends: tok.Ends()}
 		return nil
 	})
 	if err != nil {
@@ -339,13 +343,20 @@ func connectionToken(ctx context.Context, root, provider, person, host string) (
 			if err != nil {
 				return fmt.Errorf("%s's account at %s could not be refreshed (%v): connect it again", person, p.Title, err)
 			}
+			// A refresh token kept as it was ends when it did: the answer
+			// that kept it says nothing new of that (LinkedIn's lives a
+			// year from the first and is not renewed by using it).
+			if fresh.Refresh == tok.Refresh && fresh.RefreshExpiry.IsZero() {
+				fresh.RefreshExpiry = tok.RefreshExpiry
+			}
 			if a.Sealed, err = sealToken(kr, key, fresh); err != nil {
 				return err
 			}
 			a.Refreshed = time.Now().UTC()
-			f.Accounts[key] = a
 			tok = fresh
 		}
+		a.Ends = tok.Ends()
+		f.Accounts[key] = a
 		out = tok.Access
 		return nil
 	})
@@ -449,9 +460,14 @@ func cmdConnect(root string, args []string) error {
 		if len(mine) == 0 {
 			w.Human("  %s%s has connected no account%s\n", dim, caller.Name, reset)
 		}
+		now := time.Now()
 		for _, a := range mine {
-			w.Human("%s%s%s  connected %s%s\n", bold, a.Provider, reset, a.Connected.Local().Format("2 Jan 2006"),
-				map[bool]string{true: ", scopes " + a.Scope, false: ""}[a.Scope != ""])
+			w.Human("%s%s%s  connected %s%s\n    %s\n", bold, a.Provider, reset, a.Connected.Local().Format("2 Jan 2006"),
+				map[bool]string{true: ", scopes " + a.Scope, false: ""}[a.Scope != ""], a.Ends.Said(time.Local))
+			if a.LapsesSoon(now) {
+				w.Human("    %sconnect it again before %s: quilzo connect start %s%s\n", yellow,
+					a.Lapses().Local().Format("2 Jan 2006 15:04"), a.Provider, reset)
+			}
 		}
 		return nil
 	case "revoke":
@@ -600,7 +616,7 @@ func connectionsCapability(root string) *admin.Connections {
 			mine, err := myConnections(root, person)
 			out := make([]admin.ConnectedAccount, 0, len(mine))
 			for _, a := range mine {
-				out = append(out, admin.ConnectedAccount{Provider: a.Provider, Scope: a.Scope, Connected: a.Connected})
+				out = append(out, admin.ConnectedAccount{Provider: a.Provider, Scope: a.Scope, Connected: a.Connected, Expires: a.Ends})
 			}
 			return out, err
 		},

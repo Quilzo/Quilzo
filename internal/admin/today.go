@@ -135,6 +135,21 @@ func (s *Server) handleToday(w http.ResponseWriter, r *http.Request) {
 			add(n, "Visitor waiting for a reply", "Visitors waiting for a reply", "/inbox", false)
 		}
 	}
+	// The person's own connected accounts that stop working within the
+	// week, or have: said here, before a post an agent makes with one
+	// fails, rather than after.
+	if visible["accounts"] && s.Connections != nil && s.Connections.Mine != nil {
+		if mine, err := s.Connections.Mine(p.Name); err == nil {
+			n := 0
+			for _, a := range mine {
+				if a.Expires.LapsesSoon(now) {
+					n++
+				}
+			}
+			add(n, "Connected account to connect again within a week", "Connected accounts to connect again within a week",
+				"/connections", true)
+		}
+	}
 	// What Quilzo is doing to protect itself, and who has to prove it is
 	// them before they can do anything.
 	if visible["shield"] && s.ShieldAdmin != nil && s.ShieldAdmin.Root != "" {

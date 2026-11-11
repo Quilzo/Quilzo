@@ -2233,6 +2233,12 @@ How it is kept safe:
   for, and a token goes to those and nowhere else.
 - **How it is kept:** sealed under the store's keyring, in a file that names
   nobody; refreshed when due, keeping a rotated refresh token.
+- **When it ends:** Your accounts and `quilzo connect list` (and its `--json`,
+  as `access_expires` and `refresh_expires`) say when the access token ends,
+  and the refresh token where the provider says, as LinkedIn's does: a year
+  from the first, not renewed by using it. Today counts your connections that
+  stop working within a week, so you connect them again before a post fails.
+  One connected before this was kept says it is not known until it is next used.
 - **Disconnecting:** revokes at the provider where it offers that (RFC 7009),
   and forgets it here either way.
 
