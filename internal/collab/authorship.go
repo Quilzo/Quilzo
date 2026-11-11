@@ -158,13 +158,24 @@ func AgentMessage(agent, page, person string) string {
 // agentFor is the person an agent's commit says its run was started by, or
 // nobody: an older commit says none, and a commit whose message names an
 // agent other than the one it is recorded as made by is not that agent's.
+//
+// The agent is the one the commit is recorded as made by, looked for at the
+// start of the message, and not whatever comes before its first " wrote ".
+// An agent may be called anything, and one called "tidy wrote up" committed
+// "agent: tidy wrote up wrote pricing for dana", read as an agent called
+// tidy and so as written for nobody: with a count of approvals set, dana
+// approved her own run's change as though somebody else had asked for it.
 func agentFor(message, author string) string {
 	rest, ok := strings.CutPrefix(message, AgentPrefix)
 	if !ok {
 		return ""
 	}
-	name, after, ok := strings.Cut(rest, " wrote ")
-	if !ok || author != "agent/"+name {
+	name, ok := strings.CutPrefix(author, "agent/")
+	if !ok {
+		return ""
+	}
+	after, ok := strings.CutPrefix(rest, name+" wrote ")
+	if !ok {
 		return ""
 	}
 	_, person, _ := strings.Cut(after, " for ")
