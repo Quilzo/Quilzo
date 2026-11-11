@@ -156,15 +156,16 @@ func Package(s *Site, name, by string, picture Picture, now time.Time) (*Brought
 			}
 		}
 	}
+	queried := byQuery(s)
 	link := func(raw string) string {
 		u, err := url.Parse(raw)
 		if err != nil {
 			return raw
 		}
-		if n, ok := names.at(u); ok {
+		if n, ok := names.at(u, queried); ok {
 			return feature.PagePath(n)
 		}
-		if p, ok := posts.at(u); ok {
+		if p, ok := posts.at(u, queried); ok {
 			return p
 		}
 		if u.Host == LocalHost {
@@ -233,7 +234,7 @@ func Package(s *Site, name, by string, picture Picture, now time.Time) (*Brought
 		exists[pg.Name] = true
 	}
 	for _, nav := range home.Navs {
-		m := menuOf(nav, names, exists)
+		m := menuOf(nav, names, exists, queried)
 		if len(m.Items) == 0 {
 			continue
 		}
@@ -554,11 +555,11 @@ func linksIn(md string, link func(string) string) string {
 	}
 }
 
-func menuOf(nav Nav, names addresses, exists map[string]bool) menu.Menu {
+func menuOf(nav Nav, names addresses, exists map[string]bool, queried bool) menu.Menu {
 	var m menu.Menu
 	seen := map[string]bool{}
 	for _, l := range nav.Links {
-		target, ok := names.at(l.URL)
+		target, ok := names.at(l.URL, queried)
 		if !ok || !exists[target] || seen[target] || len(m.Items) >= 12 {
 			continue
 		}
@@ -692,18 +693,39 @@ func addressOf(u *url.URL) string {
 type addresses map[string]string
 
 // at is what a link names: the page or post at its address with its query,
-// or, for a link to a page's path with a query of its own (?utm_source=),
-// the one at that path. A query on the home's address names a page of its
-// own or nothing, never the home.
-func (a addresses) at(u *url.URL) (string, bool) {
+// or, for a link with a query of its own (?utm_source=, ?ref=), the one at
+// its path, as the crawl takes an address with a query for the same page
+// again (pageLike). On a site that knows its own pages or posts by a query
+// (queried, byQuery), a query on the home's address names a page of its own
+// or nothing, never the home: ?page_id=99 is a page that was not brought.
+// Everywhere else it is the home. It was never the home anywhere, and on a
+// crawled site a link home with ?utm_source= went back to the old site and
+// the menu lost its Home.
+func (a addresses) at(u *url.URL, queried bool) (string, bool) {
 	if v, ok := a[addressOf(u)]; ok {
 		return v, true
 	}
-	if u.RawQuery != "" && strings.Trim(u.Path, "/") != "" {
+	if u.RawQuery != "" && (!queried || strings.Trim(u.Path, "/") != "") {
 		v, ok := a[keyOf(u)]
 		return v, ok
 	}
 	return "", false
+}
+
+// byQuery says whether a site knows any of its own pages or posts by a
+// query, as WordPress's plain links do (/?page_id=11, /?p=20).
+func byQuery(s *Site) bool {
+	for _, pg := range s.Pages {
+		if pg.URL != nil && pg.URL.RawQuery != "" {
+			return true
+		}
+	}
+	for _, p := range s.Posts {
+		if p.URL != nil && p.URL.RawQuery != "" {
+			return true
+		}
+	}
+	return false
 }
 
 var hexColour = regexp.MustCompile(`^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$`)

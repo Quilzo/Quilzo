@@ -6,6 +6,7 @@ package webimport
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/url"
 	"strings"
 	"testing"
@@ -337,6 +338,58 @@ func TestAnOldAddressNeverHidesANewPage(t *testing.T) {
 	}
 	if len(b.Package.Pages) < 3 {
 		t.Fatalf("pages %v", b.Package.Pages)
+	}
+}
+
+// A link to the home with a query of its own (?utm_source=, ?ref=) went to
+// the new home, as the crawl takes an address with a query for the same page
+// again. Once plain WordPress links were told apart by their query, it was
+// left pointing at the old site, and the menu lost its Home: a query on the
+// home's address was never the home. It is not the home only on a site that
+// knows its own pages by a query, where ?page_id=99 is a page that was not
+// brought rather than the home.
+func TestALinkHomeWithAQueryGoesHomeUnlessTheSiteNamesPagesByOne(t *testing.T) {
+	bk := bakery()
+	bk.pages["/"] = strings.Replace(bk.pages["/"], `<nav><a href="/">Home</a>`, `<nav><a href="/?ref=nav">Home</a>`, 1)
+	bk.pages["/menu/"] = strings.Replace(bk.pages["/menu/"], "<p>Country sourdough, £4.20.</p>",
+		`<p>Country sourdough, £4.20. Back <a href="https://hartsbakery.example/?utm_source=menu">home</a>.</p>`, 1)
+	b, err := Package(crawlOf(t, bk, 10), "", "dana", nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	menu, home := "", false
+	for _, pg := range b.Package.Pages {
+		if pg.Name == "menu" {
+			menu = fmt.Sprint(pg.Body)
+		}
+	}
+	for _, m := range b.Package.Menus {
+		for _, it := range m.Items {
+			home = home || (m.Name == "main" && it.Label == "Home" && it.Target == "index")
+		}
+	}
+	if !strings.Contains(menu, "[home](/)") {
+		t.Errorf("a link home with a query does not go home: %s", menu)
+	}
+	if !home {
+		t.Errorf("the menu lost its Home, linked with a query: %v", b.Package.Menus)
+	}
+
+	// On plain links a query names a page, so one that was not brought is
+	// not taken for the home.
+	plain := strings.Replace(plainLinks, `<a href="https://old.example.org/?page_id=12">café</a>`,
+		`<a href="https://old.example.org/?page_id=12">café</a> or <a href="https://old.example.org/?page_id=99">a draft</a>`, 1)
+	s, err := FromWordPress([]byte(plain), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, err = Package(s, "", "dana", nil, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	for _, pg := range b.Package.Pages {
+		if body := fmt.Sprint(pg.Body); pg.Name == "qa-night" && !strings.Contains(body, "[a draft](https://old.example.org/?page_id=99)") {
+			t.Errorf("a link to a page that was not brought went elsewhere: %s", body)
+		}
 	}
 }
 
