@@ -288,7 +288,7 @@ func runItems(src Sources, now time.Time) ([]Item, error) {
 		}
 		// One waiting in its own process is listed while that process is
 		// alive to take the answer.
-		if w.Live && (rec.State != agent.Running || now.Sub(rec.Beat) > agent.StaleAfter) {
+		if w.Live && rec.Ended(now) {
 			continue
 		}
 		if src.MayDecide == nil || !src.MayDecide(rec) {
