@@ -178,19 +178,19 @@ func approvalPolicyWith(root string, onDisk collab.Policy) collab.Policy {
 		p.RequiredHumans = atoiOr(cfg.Raw("approval.required_humans"), 0)
 	}
 
-	// Then approval.json, which wins where it says anything.
+	// Then approval.json, where it asks more: the count that applies is the
+	// larger of the two, so neither can ask fewer people than the other.
 	//
-	// `quilzo review require` writes the whole policy, including fields the
-	// settings table does not offer, so a file that exists is the operator's
-	// more specific answer. Merged rather than replaced: a file written before
-	// these settings existed carries no opinion about them, and reading it as
-	// "zero" would silently undo a configured requirement.
-	if onDisk.Required > 0 {
-		p.Required = onDisk.Required
-	}
-	if onDisk.RequiredHumans > 0 {
-		p.RequiredHumans = onDisk.RequiredHumans
-	}
+	// The file won wherever it said anything above zero. An administrator
+	// raised review.required_approvals to five, `config set` said "= 5" and
+	// so did every screen showing the setting, and an earlier `review
+	// require 2` in the file meant two approvals published. Asking fewer
+	// people by either still waits for a second administrator, compared as
+	// it applies (approvalNeedsSecond, dual.SettingNeedsSecond). A file
+	// written before these settings existed asks nothing of them, and zero
+	// never undoes a configured requirement.
+	p.Required = max(p.Required, onDisk.Required)
+	p.RequiredHumans = max(p.RequiredHumans, onDisk.RequiredHumans)
 	// And whose approval counts, where the file names anybody. `review
 	// require --approvers dana` wrote the list here and nothing read it
 	// back, so the command said "from: dana" and lee's approval published
@@ -212,7 +212,8 @@ func approvalPolicyWith(root string, onDisk collab.Policy) collab.Policy {
 //
 // Compared as each applies, settings and file together. Compared as the
 // file says it, `review require 2` under settings asking three lowered
-// what publishing needs and looked like a raise.
+// what publishing needed and looked like a raise, while the file won; now
+// that the larger applies, it asks nobody fewer and is written at once.
 func approvalNeedsSecond(before, after collab.Policy) (bool, string) {
 	const fewer = "fewer people would approve a change"
 	if after.Required < before.Required {

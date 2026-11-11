@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -289,6 +290,7 @@ func configSet(root string, args []string) error {
 	record(root, caller.auditRecord("config.set", "/", outcome, detail))
 
 	w.Human("%s = %s\n", key, value)
+	approvalApplies(root, key)
 	if reason != "" {
 		w.Human("  %srisk accepted for %d days: %q%s\n", yellow,
 			int(config.MaxAcceptance.Hours()/24), reason, reset)
@@ -330,7 +332,29 @@ func configUnset(root string, args []string) error {
 			"to": c.Raw(args[0])}))
 	// As show, list and explain say the default, not as the file holds it.
 	w.Human("%s is back to its default, %s\n", args[0], c.Shown(args[0]))
+	approvalApplies(root, args[0])
 	return nil
+}
+
+// approvalApplies says, after an approval setting is set, the count that
+// applies when approval.json asks more (dual.AppliesAbove): the larger of
+// the two applies, and "= 2" alone was read as two. Any other setting is
+// not asked about, so setting it does not read approval.json.
+func approvalApplies(root, key string) {
+	if !slices.Contains(dual.Lowering, key) {
+		return
+	}
+	c, err := loadConfig(root)
+	if err != nil {
+		return
+	}
+	pol, err := loadApprovalPolicy(root)
+	if err != nil {
+		return
+	}
+	if note, ok := dual.AppliesAbove(c, pol.Required, pol.RequiredHumans)[key]; ok {
+		w.Human("  %s%s%s\n", dim, note, reset)
+	}
 }
 
 func shortDate(rfc string) string {

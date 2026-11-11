@@ -121,9 +121,19 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		groups[i].Interesting = groups[i].HasWeaker || named
 	}
 
+	// The count of approvals that applies, beside a setting that says less
+	// (dual.AppliesAbove): the larger of the setting and approval.json
+	// applies, and the screen said two while five applied.
+	var applies map[string]string
+	if s.Approvals != nil && s.Approvals.Policy != nil {
+		if pol, err := s.Approvals.Policy(); err == nil {
+			applies = dual.AppliesAbove(cfg, pol.Required, pol.RequiredHumans)
+		}
+	}
+
 	s.render(w, r, "settings.html", map[string]any{
 		"Title": "Settings", "Principal": p, "Nav": "settings",
-		"Groups": groups, "Weakened": cfg.Weakened(),
+		"Groups": groups, "Weakened": cfg.Weakened(), "Applies": applies,
 		"Message":  msg,
 		"CanWrite": s.Policy.Evaluate(p.Name, auth.ActGrant, "/").Allowed,
 		"Days":     int(config.MaxAcceptance.Hours() / 24),

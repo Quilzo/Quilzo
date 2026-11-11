@@ -167,6 +167,25 @@ func Privileged(bindings []auth.Binding) bool {
 // administrator, because each is how many people a change needs.
 var Lowering = []string{"review.required_approvals", "approval.required_humans"}
 
+// AppliesAbove is, for each of the Lowering settings, the count that applies
+// where it is more than the setting says: approvals is how many approvals
+// publishing needs and people how many of them from people, as they apply.
+//
+// The count that applies is the larger of the setting and approval.json, which
+// `quilzo review require` writes, so a setting can say less than applies. Said
+// beside it, wherever it is shown or set: `config set review.required_approvals
+// 2` under a file asking five said "= 2", and so did the settings screen.
+func AppliesAbove(c *config.Config, approvals, people int) map[string]string {
+	out := map[string]string{}
+	for key, n := range map[string]int{Lowering[0]: approvals, Lowering[1]: people} {
+		if set, _ := strconv.Atoi(strings.TrimSpace(c.Raw(key))); n > set {
+			out[key] = fmt.Sprintf("%d apply: approval.json, written by quilzo review require, asks "+
+				"more than this, and the larger of the two applies", n)
+		}
+	}
+	return out
+}
+
 // SettingNeedsSecond says why a setting's new value waits for a second
 // administrator: weaker than the default, or fewer people needed for a
 // change than now (c is the configuration as it stands).
