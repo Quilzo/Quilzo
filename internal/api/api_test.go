@@ -936,3 +936,35 @@ func TestASessionTheHostSaysIsIdleIsRefused(t *testing.T) {
 		t.Fatalf("asked about %v", asked)
 	}
 }
+
+// The session cookie is taken from a page of this server's own origin and
+// no other: the scheme as well as the host, the host in any case, and the
+// whole origin rather than its ending (sameorigin.Check).
+//
+// The check asked only whether Origin ended in "//" and this request's
+// Host, so another scheme's pages, and an origin spelled
+// "http://evil.example//h", were this server's own, while this server's
+// own host in capitals was not.
+func TestASessionCookieIsTakenOnlyFromThisServersOwnOrigin(t *testing.T) {
+	s, tok, _ := setup(t)
+	s.SessionAuth = true
+	h := s.Handler()
+	for origin, want := range map[string]int{
+		"http://h":               200,
+		"http://H":               200,
+		"https://h":              401,
+		"http://evil.example//h": 401,
+		"http://h.evil.example":  401,
+		"null":                   401,
+		"http://h:8080":          401,
+	} {
+		r := httptest.NewRequest("GET", "http://h/api/v1/pages", nil)
+		r.AddCookie(&http.Cookie{Name: "quilzo_token", Value: tok})
+		r.Header.Set("Origin", origin)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != want {
+			t.Errorf("Origin %s gave %d, want %d", origin, w.Code, want)
+		}
+	}
+}

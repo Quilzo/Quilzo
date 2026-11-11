@@ -94,6 +94,7 @@ import (
 	"github.com/quilzo/quilzo/internal/public"
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/research"
+	"github.com/quilzo/quilzo/internal/sameorigin"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/seo"
 	"github.com/quilzo/quilzo/internal/sheet"
@@ -1285,7 +1286,7 @@ func (s *Server) reporting(next http.Handler) http.Handler {
 	})
 }
 
-func sameSiteOnly(next http.Handler) http.Handler {
+func (s *Server) sameSiteOnly(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost && r.Method != http.MethodPut &&
 			r.Method != http.MethodDelete {
@@ -1325,33 +1326,32 @@ func sameSiteOnly(next http.Handler) http.Handler {
 		// So Sec-Fetch-Site decides when it is there, and Origin is the
 		// fallback for clients that do not send it. Belt and braces, with the
 		// braces no longer able to drop the trousers.
-		switch r.Header.Get("Sec-Fetch-Site") {
-		case "same-origin", "none":
+		//
+		// The one check every door shares (sameorigin.Check), with what this
+		// one admits beyond its own pages said here: a request a person
+		// started (none), and one that names neither header, which is not a
+		// browser's. Origin is compared by scheme as well as host, and the
+		// host in any case: compared by host alone, exactly, a page on
+		// another scheme of this host was this admin's own, and this admin's
+		// own host in capitals was refused.
+		if sameorigin.Check(r, s.ownOrigin(r), sameorigin.Policy{None: true, Missing: true}) {
 			next.ServeHTTP(w, r)
 			return
-		case "":
-			// Not sent. Fall through to Origin.
-		default:
+		}
+		if r.Header.Get("Sec-Fetch-Site") != "" {
 			http.Error(w, "cross-site requests cannot change anything here",
 				http.StatusForbidden)
 			return
 		}
-
-		if origin := r.Header.Get("Origin"); origin != "" {
-			u, err := url.Parse(origin)
-			if err != nil || u.Host != r.Host {
-				// Named, because "another origin" gives somebody staring at a
-				// blank page nothing to act on. This is the message an
-				// operator behind a proxy that rewrites Host will need.
-				http.Error(w, fmt.Sprintf(
-					"this request says it came from %q and this server is "+
-						"%q. If something in front of this rewrites the Host "+
-						"header, it needs to preserve it.",
-					origin, r.Host), http.StatusForbidden)
-				return
-			}
-		}
-		next.ServeHTTP(w, r)
+		// Named, because "another origin" gives somebody staring at a blank
+		// page nothing to act on. This is the message an operator behind a
+		// proxy that rewrites Host, or ends TLS without
+		// admin.behind_tls_proxy, will need.
+		http.Error(w, fmt.Sprintf(
+			"this request says it came from %q and this server is "+
+				"%q. If something in front of this rewrites the Host "+
+				"header, it needs to preserve it.",
+			r.Header.Get("Origin"), r.Host), http.StatusForbidden)
 	})
 }
 
@@ -1723,7 +1723,7 @@ func (s *Server) Handler() http.Handler {
 	if s.Reports != nil {
 		mux.Handle(public.ReportsPath, s.Reports)
 	}
-	return securityHeaders(s.reporting(s.signedFlash(sameSiteOnly(limitBody(s.readOnlyTokens(mux))))))
+	return securityHeaders(s.reporting(s.signedFlash(s.sameSiteOnly(limitBody(s.readOnlyTokens(mux))))))
 }
 
 // handleSignIn exchanges a pasted token for a session cookie.

@@ -20,6 +20,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collection"
+	"github.com/quilzo/quilzo/internal/sameorigin"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
@@ -1062,22 +1063,23 @@ func (s *Server) answerNeighbours(w http.ResponseWriter, r *http.Request,
 	})
 }
 
-// sameOrigin reports whether a request came from this site's own pages.
+// sameOrigin reports whether a request came from this site's own pages,
+// for taking the admin's session cookie (sameorigin.Check).
 //
 // Sec-Fetch-Site first, because a current browser states the relationship
 // directly and cannot be talked out of it. Origin second, for clients that do
 // not send it. A request with neither is not a browser and therefore not a
-// cross-site request forgery — nothing attached a cookie to it automatically.
+// cross-site request forgery — nothing attached a cookie to it automatically,
+// so this door admits it, and a request a person started (none) too.
+//
+// Origin was asked only whether it ended in "//" and the host, so another
+// scheme's pages and "http://evil.example//h" were this server's own. The
+// scheme is this connection's: behind a proxy that ends TLS a browser
+// speaks HTTPS to it, and sends Sec-Fetch-Site, which decides first.
 func sameOrigin(r *http.Request) bool {
-	switch r.Header.Get("Sec-Fetch-Site") {
-	case "same-origin", "none":
-		return true
-	case "cross-site", "same-site":
-		return false
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
 	}
-	if o := r.Header.Get("Origin"); o != "" {
-		host := r.Host
-		return strings.HasSuffix(o, "//"+host)
-	}
-	return true
+	return sameorigin.Check(r, scheme+"://"+r.Host, sameorigin.Policy{None: true, Missing: true})
 }

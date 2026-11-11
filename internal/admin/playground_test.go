@@ -359,3 +359,31 @@ func TestTheOriginRefusalNamesBothSides(t *testing.T) {
 		t.Errorf("the refusal does not name what it compared: %s", body)
 	}
 }
+
+// A change is taken from a page of this admin's own origin and no other,
+// when the browser says nothing of where it came from: the scheme as well
+// as the host, and the host in any case (sameorigin.Check).
+//
+// The admin compared only the host, exactly, so a page on another scheme
+// of the same host was this admin's own, and this admin's own host in
+// capitals was refused.
+func TestAChangeComesFromThisAdminsOwnOriginWhateverItsCase(t *testing.T) {
+	s, tok := setup(t)
+	for origin, allowed := range map[string]bool{
+		"http://h":      true,
+		"http://H":      true,
+		"https://h":     false,
+		"http://h:81":   false,
+		"null":          false,
+		"http://evil.h": false,
+	} {
+		r := httptest.NewRequest("POST", "http://h/signin", strings.NewReader("token="+tok))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		r.Header.Set("Origin", origin)
+		w := httptest.NewRecorder()
+		s.Handler().ServeHTTP(w, r)
+		if blocked := w.Code == http.StatusForbidden; blocked == allowed {
+			t.Errorf("Origin %s: got %d, allowed=%v", origin, w.Code, !blocked)
+		}
+	}
+}

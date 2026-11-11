@@ -19,6 +19,7 @@ import (
 	"github.com/quilzo/quilzo/internal/dpop"
 	"github.com/quilzo/quilzo/internal/mcp"
 	"github.com/quilzo/quilzo/internal/oauthas"
+	"github.com/quilzo/quilzo/internal/sameorigin"
 	"github.com/quilzo/quilzo/internal/throttle"
 )
 
@@ -111,7 +112,7 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 		Build:  s.Interface.Build,
 		Called: s.Interface.Called,
 		SameOrigin: func(o string) bool {
-			return o == own || (oauth && o == cfg.Issuer)
+			return sameorigin.Same(o, own) || (oauth && sameorigin.Same(o, cfg.Issuer))
 		},
 	}
 	e.ServeHTTP(w, r)
@@ -146,7 +147,7 @@ func (s *Server) handleGateway(w http.ResponseWriter, r *http.Request) {
 			return s.Interface.Gateway(r, c, name)
 		},
 		SameOrigin: func(o string) bool {
-			return o == own || (oauth && o == cfg.Issuer)
+			return sameorigin.Same(o, own) || (oauth && sameorigin.Same(o, cfg.Issuer))
 		},
 	}
 	e.ServeHTTP(w, r)
@@ -196,7 +197,7 @@ func (s *Server) handleBrowserMCP(w http.ResponseWriter, r *http.Request) {
 			return s.Interface.Browser(r, c, name)
 		},
 		SameOrigin: func(o string) bool {
-			return o == own || (oauth && o == cfg.Issuer)
+			return sameorigin.Same(o, own) || (oauth && sameorigin.Same(o, cfg.Issuer))
 		},
 	}
 	e.ServeHTTP(w, r)
@@ -213,7 +214,14 @@ func (s *Server) handleA2A(w http.ResponseWriter, r *http.Request) {
 	if s.shieldedOff(w, "mcp") {
 		return
 	}
-	if o := r.Header.Get("Origin"); o != "" && o != s.ownOrigin(r) && !(oauth && o == cfg.Issuer) {
+	// By Origin alone, as the transport has it at /mcp (mcp.Endpoint): a
+	// request with none is not a page's, and a page's is this admin's or
+	// its OAuth issuer's.
+	also := []string(nil)
+	if oauth {
+		also = []string{cfg.Issuer}
+	}
+	if !sameorigin.Check(r, s.ownOrigin(r), sameorigin.Policy{OriginOnly: true, Missing: true, Also: also}) {
 		http.Error(w, "not from another site's page", http.StatusForbidden)
 		return
 	}

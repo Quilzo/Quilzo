@@ -822,3 +822,33 @@ func TestATokensUseAtTheInterfaceIsToldToTheHost(t *testing.T) {
 		t.Fatalf("told of %v", used)
 	}
 }
+
+// The agent interface takes a page's request from this admin's own origin
+// in any case of the host, and from no other scheme or site
+// (sameorigin.Same).
+//
+// It compared the Origin header with its own origin as a string, so this
+// admin's own host in capitals was another site's page.
+func TestTheAgentInterfaceKnowsItsOwnOriginWhateverItsCase(t *testing.T) {
+	r := newIfaceRig(t)
+	for origin, want := range map[string]int{
+		"http://example.com":   http.StatusOK,
+		"http://EXAMPLE.com":   http.StatusOK,
+		"https://example.com":  http.StatusForbidden,
+		"https://evil.example": http.StatusForbidden,
+	} {
+		body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"quilzo_read","arguments":{"operation":"whoami"},` +
+			`"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`
+		req := httptest.NewRequest("POST", "/mcp", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("MCP-Protocol-Version", "2026-07-28")
+		req.Header.Set("Mcp-Method", "tools/call")
+		req.Header.Set("Mcp-Name", "quilzo_read")
+		req.Header.Set("Origin", origin)
+		w := httptest.NewRecorder()
+		r.srv.Handler().ServeHTTP(w, req)
+		if got := w.Code; (got == http.StatusForbidden) != (want == http.StatusForbidden) {
+			t.Errorf("Origin %s: %d %s", origin, got, w.Body)
+		}
+	}
+}

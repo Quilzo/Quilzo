@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/mcp"
+	"github.com/quilzo/quilzo/internal/sameorigin"
 )
 
 // The site asked in natural language by any agent (NLWeb).
@@ -229,7 +230,10 @@ func (st *Site) nlwebMCP(w http.ResponseWriter, r *http.Request) {
 	}
 	// A browser page on another origin is not who this is for, and a
 	// request from one is what DNS rebinding looks like.
-	if o := r.Header.Get("Origin"); o != "" && (st.BaseURL == "" || !sameOrigin(o, st.BaseURL)) {
+	// By Origin alone (sameorigin.Policy.OriginOnly): a page on a name
+	// rebound to this machine is same-origin to its own browser, and only
+	// its Origin says which site it is. A request with none is not a page's.
+	if !sameorigin.Check(r, st.BaseURL, sameorigin.Policy{OriginOnly: true, Missing: true}) {
 		http.Error(w, "this origin may not call the tool", http.StatusForbidden)
 		return
 	}
@@ -349,11 +353,4 @@ func (st *Site) nlwebMCP(w http.ResponseWriter, r *http.Request) {
 	default:
 		notFound()
 	}
-}
-
-// sameOrigin compares an Origin header with the site's own address.
-func sameOrigin(origin, base string) bool {
-	o, err1 := url.Parse(origin)
-	b, err2 := url.Parse(base)
-	return err1 == nil && err2 == nil && strings.EqualFold(o.Scheme, b.Scheme) && strings.EqualFold(o.Host, b.Host)
 }
