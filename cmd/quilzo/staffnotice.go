@@ -60,7 +60,11 @@ func noticeTypes(root string) map[event.Type]bool {
 	}
 	out := map[event.Type]bool{}
 	for _, t := range mustConfig(root).Strings("notify.events") {
-		out[event.Type(strings.TrimSpace(t))] = true
+		// Read by either spelling, as the setting takes it: "published"
+		// and page.published are one event.
+		if e, ok := event.Parse(strings.TrimSpace(t)); ok {
+			out[e] = true
+		}
 	}
 	return out
 }

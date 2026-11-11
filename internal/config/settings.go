@@ -2006,8 +2006,12 @@ func (s Setting) Validate(v string) error {
 		}
 		if s.Key == "notify.events" {
 			for _, e := range strings.Split(v, ",") {
-				if e = strings.TrimSpace(e); e != "" && !event.Known(event.Type(e)) {
-					return fmt.Errorf("%q is not an event; quilzo agent trigger events lists them", e)
+				// Either spelling: an event's own name, or the one webhooks
+				// are told it by, as a webhook and a trigger take it.
+				if e = strings.TrimSpace(e); e != "" {
+					if _, ok := event.Parse(e); !ok {
+						return fmt.Errorf("%q is not an event; quilzo agent trigger events lists them", e)
+					}
 				}
 			}
 		}

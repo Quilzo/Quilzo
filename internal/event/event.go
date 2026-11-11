@@ -75,10 +75,17 @@ const (
 	// (notify.events); no agent starts from it (Triggerable), since an
 	// agent started by another's waiting is how a queue feeds itself.
 	ApprovalWaiting Type = "approval.waiting"
+	// PublishScheduled is a publish set for a later time. Webhooks were told
+	// of it as "scheduled" before it had a name here, and it is the one of
+	// the nine they are told of that was no event: the table between the
+	// two spellings (names.go) needs it to be one. Staff may be told of it;
+	// no agent starts from it, because whether one should is the owner's to
+	// decide, and an agent that wants a launch starts from page.published.
+	PublishScheduled Type = "publish.scheduled"
 )
 
 // Triggerable reports whether an agent may start from an event.
-func Triggerable(t Type) bool { return Known(t) && t != ApprovalWaiting }
+func Triggerable(t Type) bool { return Known(t) && t != ApprovalWaiting && t != PublishScheduled }
 
 // Source is the process an event was written by, known from its log.
 type Source string
@@ -106,6 +113,7 @@ var producers = map[Type][]Source{
 	SubscriberJoined:  {Site, Admin},
 	SubscriberLeft:    {Site, Admin},
 	ApprovalWaiting:   {Admin},
+	PublishScheduled:  {Admin},
 }
 
 // Types lists every event, for a person choosing one.
@@ -144,6 +152,8 @@ func Describe(t Type) string {
 		return "somebody leaves the newsletter"
 	case ApprovalWaiting:
 		return "an agent waits for a person"
+	case PublishScheduled:
+		return "a publish is scheduled for later"
 	}
 	return string(t)
 }

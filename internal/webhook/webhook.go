@@ -52,6 +52,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	events "github.com/quilzo/quilzo/internal/event"
 )
 
 // MaxBody bounds a payload. A webhook says what happened; it does not carry
@@ -104,40 +106,27 @@ type Event struct {
 	Site    string `json:"site,omitempty"`
 }
 
-// EventTypes is everything this program sends.
+// EventTypes is everything this program sends, by the names webhooks are
+// told events by: the nine they always were, in the same order, taken
+// from the event package's one table between the two spellings.
 //
 // A closed list, because --types took any string and stored it: an endpoint
 // asking for "publish" instead of "published" was configured, reported as
 // configured, and never fired — a silent subscription to an event that does not
 // exist. The same shape as an unchecked crawl-licence term, and the same fix.
-var EventTypes = []string{"published", "rolled-back", "scheduled", "submitted",
-	// A change is waiting for somebody to agree to it.
-	//
-	// Dual authorisation only works if the people it waits on find out they
-	// are being waited on. Without this the approval screen is a page
-	// somebody has to think to open, which means a proposal sits until its
-	// author asks in person -- and the reliable way to stop being asked in
-	// person is to turn the requirement off.
-	//
-	// It carries who proposed and whether a machine wrote it. That second
-	// part is the one that decides whether a person has to read it, so it is
-	// the part worth putting in front of them rather than behind a click.
-	"proposed",
-	// A visitor booked a time, or cancelled one: the moment a business
-	// taking bookings needs to hear about, as a form's "submitted" is.
-	"booked", "booking-cancelled",
-	// Somebody confirmed they want the newsletter, or left it: which, and
-	// never the address.
-	"subscribed", "unsubscribed"}
+var EventTypes = events.WebhookNames()
 
-// KnownType reports whether this program ever sends an event of this type.
+// KnownType reports whether this program ever sends an event of this type,
+// named either way: "published", or "page.published" as an agent's trigger
+// and a staff notice name it. Both were always the same event, and each
+// surface refused the other's spelling.
 func KnownType(t string) bool {
-	for _, known := range EventTypes {
-		if known == t {
-			return true
-		}
+	e, ok := events.Parse(t)
+	if !ok {
+		return false
 	}
-	return false
+	_, sent := events.WebhookName(e)
+	return sent
 }
 
 // Endpoint is somewhere to send them.
@@ -156,6 +145,11 @@ type Endpoint struct {
 }
 
 // Wants reports whether this endpoint should receive an event type.
+//
+// The types are kept as they were typed, by either spelling, and an
+// endpoint subscribed to "page.published" is told "published" as one
+// subscribed to "published" is. A stored name that never was an event
+// matches nothing, as it always did.
 func (e Endpoint) Wants(t string) bool {
 	if e.Disabled {
 		return false
@@ -163,8 +157,12 @@ func (e Endpoint) Wants(t string) bool {
 	if len(e.Types) == 0 {
 		return true
 	}
+	sent, known := events.Parse(t)
 	for _, want := range e.Types {
 		if want == t {
+			return true
+		}
+		if w, ok := events.Parse(want); ok && known && w == sent {
 			return true
 		}
 	}

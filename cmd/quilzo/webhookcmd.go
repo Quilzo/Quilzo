@@ -68,7 +68,7 @@ func hookAdd(root string, args []string) error {
 	fs := flag.NewFlagSet("add", flag.ContinueOnError)
 	types := fs.String("types", "",
 		"comma-separated event types; empty means all. "+
-			strings.Join(webhook.EventTypes, ", "))
+			strings.Join(webhook.EventTypes, ", ")+", or each one's event name (page.published)")
 	note := fs.String("note", "", "what this endpoint is")
 	if err := fs.Parse(flags); err != nil {
 		return err
@@ -91,7 +91,8 @@ func hookAdd(root string, args []string) error {
 		}
 		if !webhook.KnownType(t) {
 			return fmt.Errorf(
-				"%q is not an event this sends. The types are %s — an "+
+				"%q is not an event this sends. The types are %s, or each "+
+					"one's event name (page.published, booking.made) — an "+
 					"endpoint subscribed to something that never happens is "+
 					"configured, reported as configured, and silent",
 				t, strings.Join(webhook.EventTypes, ", "))

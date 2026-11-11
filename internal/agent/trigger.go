@@ -112,10 +112,15 @@ func (t Trigger) Validate() error {
 		}
 		return nil
 	}
-	if !event.Known(event.Type(t.On)) {
+	on, ok := event.Parse(t.On)
+	if !ok {
 		return fmt.Errorf("%q is neither an event nor %q", t.On, OnSchedule)
 	}
-	if !event.Triggerable(event.Type(t.On)) {
+	if on == event.PublishScheduled {
+		return fmt.Errorf("no agent starts from %s: one that wants a launch starts from %s, when it goes out",
+			t.On, event.PagePublished)
+	}
+	if !event.Triggerable(on) {
 		return fmt.Errorf("no agent starts from %s: an agent started by another's waiting is how a queue feeds itself", t.On)
 	}
 	if t.Every != 0 || t.At != "" || t.Zone != "" {
@@ -155,9 +160,12 @@ func (t Trigger) Key() string {
 	return hex.EncodeToString(h[:6])
 }
 
-// Matches reports whether an event starts this trigger.
+// Matches reports whether an event starts this trigger. The event is named
+// either way, as a trigger is kept as it was declared: "published" is
+// page.published, as a webhook knows it.
 func (t Trigger) Matches(e event.Event) bool {
-	return t.On != OnSchedule && event.Type(t.On) == e.Type && e.Within(t.Where)
+	on, ok := event.Parse(t.On)
+	return t.On != OnSchedule && ok && on == e.Type && e.Within(t.Where)
 }
 
 // Next is when a schedule fires next, strictly after after.
@@ -199,7 +207,11 @@ func (t Trigger) Describe() string {
 		}
 		return s
 	}
-	s := "when " + event.Describe(event.Type(t.On))
+	on, ok := event.Parse(t.On)
+	if !ok {
+		on = event.Type(t.On)
+	}
+	s := "when " + event.Describe(on)
 	if t.Where != "" {
 		s += " (" + t.Where + ")"
 	}

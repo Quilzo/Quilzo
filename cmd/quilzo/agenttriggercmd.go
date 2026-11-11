@@ -57,7 +57,7 @@ func agentTriggerEvents() error {
 
 func agentTriggerAdd(root, name string, args []string) error {
 	fs := flag.NewFlagSet("trigger add", flag.ContinueOnError)
-	on := fs.String("on", "", "an event (quilzo agent trigger events), or schedule with --every")
+	on := fs.String("on", "", "an event (quilzo agent trigger events), by its name or a webhook's (published), or schedule with --every")
 	where := fs.String("where", "", "a page path, collection, form, chatbot or service the event is about")
 	every := fs.Duration("every", 0, "how often a schedule repeats (15m at least)")
 	at := fs.String("at", "", "a schedule's time of day, 07:30")
