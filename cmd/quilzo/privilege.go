@@ -1398,6 +1398,14 @@ func bootstrapIssue(root, cmd string, args []string) bool {
 var commandAreas = map[string]string{
 	"siem":          auth.AreaSecurity,
 	"shield status": auth.AreaSecurity, "shield list": auth.AreaSecurity, "shield dry-run": auth.AreaSecurity,
+
+	// Which networks sign-ins are counted as coming from the office or a
+	// VPN, which the sign-in rules treat differently: read where who signed
+	// in from where is (auth.AreaSecurity). Asked of the whole site, a
+	// reader of its pages read the ranges, which no screen shows them, and
+	// the security analyst was refused what their screen summarises.
+	"geo status": auth.AreaSecurity,
+
 	"posture": auth.AreaCompliance, "compliance": auth.AreaCompliance, "self check": auth.AreaCompliance,
 	"policy show": auth.AreaCompliance, "policy params": auth.AreaCompliance, "policy export": auth.AreaCompliance,
 	"self verify": auth.AreaCompliance, "self vex": auth.AreaCompliance,

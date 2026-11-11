@@ -663,3 +663,32 @@ func TestATokenHolderExchangesTheirOwnTokenOnTheCommandLine(t *testing.T) {
 		}
 	}
 }
+
+// What sign-ins are counted as coming from the office or a VPN is read
+// where the security area is, as the shield's own status is: a reader of
+// the site's pages is refused it, and whoever holds the security area is
+// not.
+//
+// `geo status` asked to view the whole site, so a reader of its pages read
+// the office and VPN ranges the sign-in rules treat differently, which no
+// screen shows them, and the security analyst, who holds nothing on the
+// pages, was refused the configuration their screen summarises.
+func TestSignInGeographyIsReadWhereTheSecurityAreaIs(t *testing.T) {
+	root, secrets := storeWithTokenFor(t,
+		auth.Binding{Principal: "alice", Role: auth.RoleAdmin, Resource: "/"},
+		auth.Binding{Principal: "rae", Role: auth.RoleReader, Resource: "/"},
+		auth.Binding{Principal: "sam", Role: auth.RoleAdmin, Resource: auth.AreaSecurity},
+		auth.Binding{Principal: "aud", Role: auth.RoleReader, Resource: auth.AreaSecurity})
+	for who, may := range map[string]bool{"alice": true, "rae": false, "sam": true, "aud": true} {
+		t.Setenv("QUILZO_TOKEN", secrets[who])
+		err := authoriseCommand(root, "geo", []string{"status"})
+		if (err == nil) != may {
+			t.Errorf("%s running geo status: %v", who, err)
+		}
+	}
+	// Changing it is still the whole site's decision.
+	t.Setenv("QUILZO_TOKEN", secrets["sam"])
+	if err := authoriseCommand(root, "geo", []string{"network", "add", "10.0.0.0/8", "office"}); err == nil {
+		t.Error("the security area's administrator declared a network for the whole site")
+	}
+}
