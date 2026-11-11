@@ -244,8 +244,9 @@ func TestWritesAreOffByDefault(t *testing.T) {
 // serve has no such flag: it exits "flag provided but not defined". Writes
 // are `quilzo site --api --api-writable`; --api-writable alone serves no API
 // at all, and confined it refuses to start, since it cannot write the draft:
-// --confine=false is in the line. The records API said `quilzo site --api-writable`, and then `quilzo
-// site --api --api-writable`, and the site serves no records with any flags:
+// --confine=false is in the line. The records API said `quilzo site
+// --api-writable`, and then `quilzo site --api --api-writable`, and the
+// site serves no records with any flags:
 // it answers "this server does not serve records". Records are written
 // through the admin's API, `quilzo serve`. A search for similar pages on a
 // server without a vector index said `quilzo site --vectors`, which is not a

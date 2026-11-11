@@ -41,7 +41,9 @@ func sourcesFor(root string, s *store.Store, commit, siteName string,
 // renders one outside the server: what a page's context reads, wired from
 // the store with the helpers the server's site is wired with (siteFor), and
 // every listing, and so every post and event, read at commit's tree. Nothing
-// a visitor sends is taken here, so no limiter, notice or audit is wired.
+// a visitor sends is taken here: the limiters and audit the boards', the
+// bookings' and the newsletter's helpers wire are never asked, since drawing
+// a page submits nothing.
 func renderSiteFor(root string, s *store.Store, commit, siteName string) *public.Site {
 	st := public.New(s, render.Layouts{})
 	st.Name = siteName

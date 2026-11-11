@@ -62,7 +62,7 @@ func cmdSite(root string, args []string) error {
 	apiEnable := fs.Bool("api", false,
 		"serve the content API at /api/v1")
 	apiWritable := fs.Bool("api-writable", false,
-		"allow PUT; a read API and a write API are different products (with --confine=false: the confined site cannot write the draft)")
+		"allow PUT; a read API and a write API are different products. Needs --confine=false: the confined site cannot write the draft")
 	baseURL := fs.String("base-url", "",
 		"absolute origin, e.g. https://example.com — required for the sitemap")
 	redirectFile := fs.String("redirects", "",
