@@ -18,11 +18,12 @@
 {{if .Unavailable}}<p class="notice bad">{{.Unavailable}}</p>{{else}}
 {{if .List}}
 <div class="table-wrap"><table>
-  <thead><tr><th scope="col">Decider</th><th scope="col">Questions</th><th scope="col">Threshold</th></tr></thead>
+  <thead><tr><th scope="col">Decider</th><th scope="col">Questions</th><th scope="col">Threshold</th><th scope="col">Evaluated</th></tr></thead>
   <tbody>{{range .List}}
   <tr><th scope="row"><a href="/decisions/{{.Name}}">{{.Title}}</a><div class="hint"><code>{{.Name}}</code></div></th>
     <td>{{range $i, $q := .Questions}}{{if $i}}, {{end}}<code>{{$q.Name}}</code> <span class="hint">{{$q.Kind}}</span>{{end}}</td>
-    <td>{{if .MinConfidence}}{{.MinConfidence}}{{else}}0.8{{end}}</td></tr>
+    <td>{{if .MinConfidence}}{{.MinConfidence}}{{else}}0.8{{end}}</td>
+    <td>{{with index $.Measured .Name}}{{.}}{{else}}<span class="hint">never</span>{{end}}</td></tr>
   {{end}}</tbody>
 </table></div>
 {{else}}<p class="notice">No deciders yet.</p>{{end}}

@@ -388,9 +388,13 @@ type Report struct {
 	At    time.Time `json:"at"`
 	By    string    `json:"by"`
 	K     int       `json:"k"`
-	// Model is what chose the actions; empty means the manifest was walked,
-	// which no plant can steer, so planted runs are not made.
+	// Model is what chose the actions, by the name its provider gives it;
+	// empty means the manifest was walked, which no plant can steer, so
+	// planted runs are not made. Route is the gateway's route it was
+	// reached by, empty without the gateway. Together they are what the
+	// evaluation measured, and what it earns holds only while they drive.
 	Model    string  `json:"model,omitempty"`
+	Route    string  `json:"route,omitempty"`
 	Cases    int     `json:"cases"`
 	Reliable int     `json:"reliable"`
 	PassK    float64 `json:"pass_k"`

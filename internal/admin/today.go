@@ -124,6 +124,22 @@ func (s *Server) handleToday(w http.ResponseWriter, r *http.Request) {
 			add(wrong, "Agent run failed, was refused or stopped in the last day", "Agent runs failed, were refused or stopped in the last day", "/agents", true)
 		}
 	}
+	// What an evaluation earned holds only on the model it measured, and
+	// nothing measures an agent again by itself, since that spends on the
+	// model: an agent left unmeasured after its model changed acts at
+	// propose with nobody told why it started asking.
+	if visible["agents"] && s.Evals != nil && s.Evals.Due != nil && s.Agents != nil && s.Agents.Load != nil {
+		if set, err := s.Agents.Load(); err == nil {
+			n := 0
+			for name := range set {
+				if s.Evals.Due(name) != "" {
+					n++
+				}
+			}
+			add(n, "Agent to measure again: another model drives it now",
+				"Agents to measure again: other models drive them now", "/agents/evals", true)
+		}
+	}
 	if visible["inbox"] && s.Inbox != nil && s.Inbox.List != nil {
 		if all, err := s.Inbox.List(); err == nil {
 			n := 0

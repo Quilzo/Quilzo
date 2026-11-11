@@ -54,7 +54,7 @@ func decideList(root string) error {
 	if err != nil {
 		return err
 	}
-	if w.JSON(set.Deciders) {
+	if w.JSON(listedDeciders(root, set)) {
 		return nil
 	}
 	if len(set.Deciders) == 0 {
@@ -63,8 +63,30 @@ func decideList(root string) error {
 	for _, d := range set.Deciders {
 		w.Human("%s%s%s  %s  %s(%d question(s))%s\n", bold, d.Name, reset, d.Title,
 			dim, len(d.Questions), reset)
+		if m, ok := lastMeasurement(root, "decider", d.Name); ok {
+			w.Human("  %s%s%s\n", dim, m, reset)
+		} else {
+			w.Human("  %snever evaluated: quilzo decide eval %s CASES.jsonl%s\n", dim, d.Name, reset)
+		}
 	}
 	return nil
+}
+
+// listedDecider is a decider as a list gives it to a program: its
+// declaration, and when it was last measured and on which model.
+type listedDecider struct {
+	decide.Decider
+	Measured *measuredOn `json:"measured,omitempty"`
+}
+
+// listedDeciders is every decider for a list, the command line's and the
+// machine interface's alike.
+func listedDeciders(root string, set *decide.Set) []listedDecider {
+	out := make([]listedDecider, 0, len(set.Deciders))
+	for _, d := range set.Deciders {
+		out = append(out, listedDecider{Decider: d, Measured: listedMeasurement(root, "decider", d.Name)})
+	}
+	return out
 }
 
 // changeDeciders edits the declarations under the audit log. Publish: a
@@ -240,17 +262,37 @@ func decideEval(root string, args []string) error {
 		return err
 	}
 	m, _ := deciderModel(root, d.Name)
+	// Named before it is measured, and measured through that route alone
+	// (onlyThrough), as a chatbot's evaluation is.
+	served := servedBy(m)
+	if only := onlyThrough(root, served.Route, "decider:"+d.Name); only != nil {
+		m = only
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 	defer cancel()
 	rep, err := decide.Evaluate(ctx, d, m, cases)
 	if err != nil {
 		return err
 	}
+	// Kept, with the model it measured and when, and on the record. It
+	// kept nothing: what a decider's confidence means is a property of the
+	// model answering, and nobody could say when a decider was last
+	// measured, or whether on the model answering now. The counts, never
+	// the states, which are somebody's tickets.
+	at := time.Now().UTC()
+	if err := keepMeasurement(root, "decider", d.Name, caller.Name, served, at, rep); err != nil {
+		return fmt.Errorf("the evaluation of %s could not be kept: %w", d.Name, err)
+	}
+	record(root, caller.auditRecord("decider.evaluated", "/decide/"+d.Name, audit.Success, map[string]string{
+		"decider": d.Name, "answers": fmt.Sprint(rep.Answers), "auto": fmt.Sprint(rep.Auto),
+		"auto_right": fmt.Sprint(rep.AutoRight), "escalated": fmt.Sprint(rep.Escalated),
+		"model": served.Model, "route": served.Route}))
 	if w.JSON(rep) {
 		return nil
 	}
 	w.Human("%s%d answer(s): %d decided alone, %d to a person%s\n", bold,
 		rep.Answers, rep.Auto, rep.Escalated, reset)
+	w.Human("  %s\n", measurement{At: at, Model: served.Model, Route: served.Route})
 	w.Human("  decided alone   %.0f%%\n", rep.Coverage*100)
 	w.Human("  right when alone %.0f%%\n", rep.AutoAccuracy*100)
 	for _, b := range rep.Calibration {
@@ -316,6 +358,12 @@ func decidersCapability(root string) *admin.Deciders {
 		Model: func(name string) (decide.Model, string) { return deciderModel(root, name) },
 		Asked: func(by string, res decide.Result, state any) {
 			recordAsk(root, &Caller{Name: by, Kind: audit.KindHuman, Verified: true}, res, state)
+		},
+		Measured: func(name string) string {
+			if m, ok := lastMeasurement(root, "decider", name); ok {
+				return m.String()
+			}
+			return ""
 		},
 	}
 }

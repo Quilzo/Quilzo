@@ -271,6 +271,12 @@ type ChatbotFact struct {
 	Disclosed bool `json:"disclosed"`
 	// LastEval is when it was last measured, zero for never.
 	LastEval time.Time `json:"last_eval,omitempty"`
+	// EvalModel is the model its last evaluation measured and Model the
+	// one answering now, each as a person reads it; EvalModel is empty for
+	// an evaluation recorded before it was named. What a measurement found
+	// holds only for the model it measured.
+	EvalModel string `json:"eval_model,omitempty"`
+	Model     string `json:"model,omitempty"`
 }
 
 // SSOFacts is single sign-on as set up: each SAML identity provider's

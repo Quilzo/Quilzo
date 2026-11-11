@@ -71,6 +71,17 @@ var rules = []Rule{
 						Detail: fmt.Sprintf("%s was last evaluated %s ago",
 							c.Name, roughly(s.Now.Sub(c.LastEval))),
 						Fix: "quilzo assistant eval " + c.Name + " CASES.jsonl"})
+				// Measured on one model, it counted as measured once moved
+				// to another nobody had measured.
+				case c.UseModel && !strings.EqualFold(c.EvalModel, c.Model):
+					measured := c.EvalModel
+					if measured == "" {
+						measured = "a model the record does not name"
+					}
+					out = append(out, Finding{Resource: c.Name,
+						Detail: fmt.Sprintf("%s was last evaluated on %s; %s answers it now",
+							c.Name, measured, c.Model),
+						Fix: "quilzo assistant eval " + c.Name + " CASES.jsonl"})
 				}
 			}
 			return out

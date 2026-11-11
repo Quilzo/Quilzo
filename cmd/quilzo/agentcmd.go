@@ -28,7 +28,7 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/browser"
 	decidepkg "github.com/quilzo/quilzo/internal/decide"
-	"github.com/quilzo/quilzo/internal/evals"
+	"github.com/quilzo/quilzo/internal/gateway"
 	"github.com/quilzo/quilzo/internal/otlp"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/store"
@@ -1076,20 +1076,13 @@ func boundManifest(root string, set *agentSet, name string, withModel, eval bool
 		m = narrowedBy(m, own)
 		note("standing", fmt.Sprintf("%s is granted %s on %s", own.Name, own.Role, own.Scope), before)
 	}
-	// A model drives it only as far as its evaluations have shown it can be
-	// trusted. An evaluation itself runs at the declared autonomy, because
-	// that is what it measures, and changes nothing either way.
+	// A model drives it only as far as its evaluations of that model have
+	// shown it can be trusted. An evaluation itself runs at the declared
+	// autonomy, because that is what it measures, and changes nothing
+	// either way.
 	earnedWhy := ""
 	if withModel && !eval && mustConfig(root).Bool("agents.earned_autonomy") {
-		var latest *evals.Report
-		if reps, err := evalReports(root, name, 1); err == nil && len(reps) > 0 {
-			latest = &reps[0]
-		}
-		earned, why := evals.Earned(latest, time.Now())
-		// Earned in evaluations, and lost in behaviour until evaluated again.
-		if lost, how := trustLost(root, name); !lost.IsZero() && (latest == nil || !latest.At.After(lost)) {
-			earned, why = agent.AutonomyPropose, how+"; an evaluation since then earns its autonomy back"
-		}
+		earned, why := evalsEarn(root, name, time.Now())
 		if !m.Autonomy.AtMost(earned) {
 			earnedWhy = fmt.Sprintf("a model drives %s at %s rather than %s: %s", name, earned, m.Autonomy, why)
 			before = m
@@ -1261,13 +1254,27 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 					"  without one, the run walks the manifest and needs "+
 					"nothing", why)
 		}
+		// Through the route its evaluation measured and no other, when
+		// what it may do rests on one (measuredRoute).
+		held := measuredRoute(root, name, m, withModel, from.Eval)
+		if only := onlyThrough(root, held, "agent:"+name, payers...); only != nil {
+			model = only
+		} else {
+			held = ""
+		}
 		out.Model = model.Name()
 		// Handed to delegates as well. A supervisor deciding with a model
 		// and children walking their manifests would be a pipeline where the
 		// stages that do the work cannot choose anything.
 		delegateModel = model
 		tools, delegates := modelChoices(ctx, root, m, set)
-		playbook, playbookIDs := lessonsPlaybook(root, name, out.Model)
+		// Adopted for the model the route reaches, as a trial through the
+		// gateway names it, and so read by that model's runs: they were
+		// looked up by the gateway's caller alone, which such a trial does
+		// not name, and no run read a lesson adopted through the gateway.
+		// Lessons adopted before trials named the model are kept under the
+		// caller, and read as they were.
+		playbook, playbookIDs := lessonsPlaybook(root, name, servedBy(model).Model, out.Model)
 		if from.Eval != nil && from.Eval.Lesson != "" {
 			playbook = append(playbook, from.Eval.Lesson)
 		}
@@ -1294,6 +1301,19 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 				return rb.pictures()
 			},
 		}.DecideResettable()
+		if held != "" {
+			// Said, so a run that stops where it used to go on with
+			// another model says why it did not.
+			chose := decide
+			decide = func(ctx context.Context, goal string, seen []agent.Observation) (agent.Action, error) {
+				a, err := chose(ctx, goal, seen)
+				if errors.Is(err, gateway.ErrNoRoute) {
+					err = fmt.Errorf("%w (held to the route %s: what %s may do was measured on its model and no other)",
+						err, held, name)
+				}
+				return a, err
+			}
+		}
 	}
 
 	// The reviewer, when this store names one (reviewedBy).
