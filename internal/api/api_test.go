@@ -243,7 +243,8 @@ func TestWritesAreOffByDefault(t *testing.T) {
 // The read-only API's 405 said to run `quilzo serve --api-writable`, and
 // serve has no such flag: it exits "flag provided but not defined". Writes
 // are `quilzo site --api --api-writable`; --api-writable alone serves no API
-// at all. The records API said `quilzo site --api-writable`, and then `quilzo
+// at all, and confined it refuses to start, since it cannot write the draft:
+// --confine=false is in the line. The records API said `quilzo site --api-writable`, and then `quilzo
 // site --api --api-writable`, and the site serves no records with any flags:
 // it answers "this server does not serve records". Records are written
 // through the admin's API, `quilzo serve`. A search for similar pages on a
@@ -257,7 +258,7 @@ func TestARefusalNamesACommandThatWorks(t *testing.T) {
 		body         any
 		fix          string
 	}{
-		{"PUT", "/api/v1/pages/index", map[string]any{"title": "x"}, "quilzo site --api --api-writable"},
+		{"PUT", "/api/v1/pages/index", map[string]any{"title": "x"}, "quilzo site --api --api-writable --confine=false"},
 		{"POST", "/api/v1/records/samples", map[string]any{"fields": map[string]any{"a": "b"}},
 			"quilzo serve"},
 		{"DELETE", "/api/v1/records/samples/" + strings.Repeat("a", 32), nil, "quilzo serve"},

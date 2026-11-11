@@ -924,8 +924,8 @@ func cmdServe(root string, args []string) error {
 
 	// The content API, same-origin with the playground. Read-only here: this
 	// is the console, and a console that can rewrite production by accident
-	// is a different product. `quilzo site --api --api-writable` is where
-	// writes are turned on deliberately.
+	// is a different product. `quilzo site --api --api-writable
+	// --confine=false` is where writes are turned on deliberately.
 	apiSrv := &api.Server{
 		Store: s, Policy: pol, Tokens: toks,
 		// The admin's own limiter and token reloader, not a second set and

@@ -639,7 +639,9 @@ interface
                                              changes, and on SIGHUP
   quilzo site  [--addr HOST:PORT]          the published site, PWA-installable, confined (--prepare for systemd)
       --api                                 content API at /api/v1, read-only
-      --api-writable                        allow PUT; every write needs If-Match
+      --api-writable                        allow PUT; every write needs If-Match,
+                                            and --confine=false: confined, the site
+                                            cannot write the draft and refuses it
       --base-url https://example.com        needed for /sitemap.xml and /feed.xml
       --redirects redirects.json            keep old URLs working after a move
       without a restart                     settings are read again when they change,
