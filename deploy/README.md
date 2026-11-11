@@ -45,7 +45,8 @@ What each one is for:
   checkout, under the name `.env` gives it (`quilzo:local`). No release is
   published yet, so there is no image to pull, and `compose.yaml` names no
   default: it refuses to start until `.env` names one. Built from `main` it
-  says it is `dev` (`quilzo version`), which is what it is.
+  says it is `dev` (`quilzo version`), which is what it is. For a release's
+  image this step is left out (below).
 - `init` makes the store, on the `store` volume. Every Quilzo container
   names `/srv/store` in its entrypoint, so a command given to
   `docker compose run` cannot lose it; and every one is read-only, so a
@@ -88,11 +89,13 @@ What each one is for:
 Once there is a release, run its image by the digest you checked, as
 [INSTALL](../INSTALL) says, so the stack runs that image and no other: in
 `.env`, `QUILZO_IMAGE=ghcr.io/quilzo/quilzo` and
-`QUILZO_VERSION=1.2.3@sha256:...`. A tag alone, `latest` above all, is
-whatever was pushed under it last. Or build a release's image yourself, from
-its tag and with the version it is, so that `quilzo version` and the bill of
-materials inside it say so (without `--build-arg VERSION` it is "dev"),
-under a name of its own:
+`QUILZO_VERSION=1.2.3@sha256:...`, and leave out the `docker build` step
+above, which would build `main` under the release's name (and is refused
+for a digest). A tag alone, `latest` above all, is whatever was pushed
+under it last. Or build a release's image yourself, from its tag and with
+the version it is, so that `quilzo version` and the bill of materials
+inside it say so (without `--build-arg VERSION` it is "dev"), under a name
+of its own:
 
 ```bash
 git checkout v1.2.3

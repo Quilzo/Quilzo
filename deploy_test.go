@@ -675,6 +675,40 @@ func TestComposeRunsOnlyTheImageItsOperatorNamed(t *testing.T) {
 	}
 }
 
+// A release's image is run as it was published, and never built here under
+// its name.
+//
+// The steps build the image .env names, which is right for the one the
+// example names. The guide then tells somebody running a release to name
+// its image in .env by digest, and the steps, run in order as it says, went
+// on to `docker build -t ghcr.io/quilzo/quilzo:1.2.3@sha256:...`, which
+// Docker refuses ("build tag cannot contain a digest"); named by a tag
+// alone, they built main and tagged it as the release, which compose.yaml
+// says must never happen, because it is then taken for the release's. So
+// wherever the guide names a release's image, it says to leave that step
+// out.
+func TestAReleasesImageIsNotBuiltUnderItsName(t *testing.T) {
+	for _, name := range []string{"deploy/README.md", "deploy/compose.env.example"} {
+		named := 0
+		for _, para := range strings.Split(read(t, name), "\n\n") {
+			// compose.env.example says it in comments, a # to a line.
+			flat := strings.Join(slices.DeleteFunc(strings.Fields(para),
+				func(w string) bool { return w == "#" }), " ")
+			if !strings.Contains(flat, "QUILZO_IMAGE=ghcr.io/") {
+				continue
+			}
+			named++
+			if !strings.Contains(flat, "leave out the `docker build` step") {
+				t.Errorf("%s names a release's image for .env and does not say to leave "+
+					"out the `docker build` step, which builds main under that name:\n%s", name, para)
+			}
+		}
+		if named == 0 {
+			t.Errorf("%s never says how to run a release's image, so this checks nothing", name)
+		}
+	}
+}
+
 // networksOf is the networks a service is on, given as a list or as a
 // mapping of each to its settings.
 func networksOf(s map[string]any) []string {
