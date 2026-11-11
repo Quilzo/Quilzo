@@ -6,6 +6,9 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +18,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collab"
+	"github.com/quilzo/quilzo/internal/feature"
 	"github.com/quilzo/quilzo/internal/mcp"
 	"github.com/quilzo/quilzo/internal/provenance"
 	"github.com/quilzo/quilzo/internal/site"
@@ -570,5 +574,148 @@ func TestThePersonWhoStartedARunAskedForWhatItWrote(t *testing.T) {
 	t.Setenv("QUILZO_TOKEN", personToken(t, root, "lee", auth.RoleAdmin))
 	if refusal := approveOnTheCommandLine(t, root, "", s); refusal != "" {
 		t.Errorf("lee could not approve dana's run's change: %s", refusal)
+	}
+}
+
+// What a run writes through the agent interface (agentplatform.go) is
+// written for the person who started the run, as what it writes with
+// write_page is, and not for whoever let one of its steps go ahead.
+//
+// The interface is built for the run's caller, and a run that waited for a
+// person goes on as whoever answered it. So the record dana's run wrote,
+// let through by sam, was recorded as written for sam, and with
+// review.required_approvals at one dana approved it herself, on the command
+// line, with lee there to read it.
+func TestWhatARunWritesThroughTheInterfaceIsForThePersonWhoStartedIt(t *testing.T) {
+	root, _ := identityStore(t)
+	if err := updatePolicyForTest(root, auth.Binding{Principal: "lee", Role: auth.RoleAdmin, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := putCheckedRecords(root, "samples", []map[string]any{{"name": "first"}}, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		choice := `{"op":"done","say":"finished"}`
+		if strings.Contains(string(b), "Nothing has been done yet") {
+			choice = `{"op":"write_record","input":{"collection":"samples","fields":{"name":"second"}}}`
+		}
+		out, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{
+			"message": map[string]any{"role": "assistant", "content": choice}}}})
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(out)
+	}))
+	t.Cleanup(model.Close)
+	t.Setenv("QUILZO_MODEL_URL", model.URL+"/v1")
+	t.Setenv("QUILZO_MODEL", "stand-in")
+	t.Setenv("QUILZO_MODEL_KEY", "")
+	declaredAutonomy(t, root)
+	m := agent.Manifest{Name: "keeper", Kind: agent.KindTask, Purpose: "Keep the samples",
+		Capabilities: []string{"write_record"}, Autonomy: agent.AutonomyDraft, AskFirst: []string{"write_record"},
+		Budget: agent.Budget{Steps: 6, Tools: 2, Duration: agent.Duration(time.Minute)}}
+	if err := declareAgent(root, m, true, true, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+
+	id, err := runAgentOnce(root, "keeper", "add a sample", true, asAdmin("dana"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec, _ := loadAgentRun(root, id)
+	w := rec.Trace.Waiting
+	if w == nil || w.Action.Op != "write_record" {
+		t.Fatalf("the run did not stop at the record: %s", describeRun(rec.Trace))
+	}
+	if _, err := continueAgentRun(context.Background(), root, id,
+		&agent.Verdict{N: w.N, Approve: true}, asAdmin("sam")); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := s.GetCommit(s.GetRef(site.RefDraft))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, person := collab.WrittenFor(c.Message, c.Author); !collab.MachineWrote(c.Message) || person != "dana" {
+		t.Errorf("the run's record, %q by %s, is written for %q and not dana, who started the run",
+			c.Message, c.Author, person)
+	}
+	prop, _, err := proposalFor(root, s, s.GetRef(site.RefDraft))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := prop.ForWhom(); len(got) != 1 || got[0] != "dana" {
+		t.Errorf("the proposal for the run's record is for %q", got)
+	}
+
+	if err := cmdConfig(root, []string{"set", "review.required_approvals", "1"}); err != nil {
+		t.Fatal(err)
+	}
+	pol, err := loadApprovalPolicy(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	approvedBy := func(who string) collab.Decision {
+		t.Helper()
+		p := *prop
+		p.Approvals = nil
+		if err := p.Approve(who, "read it", time.Now()); err != nil {
+			t.Fatalf("%s may not approve at all: %v", who, err)
+		}
+		return pol.Evaluate(p, kindOfPrincipal(root), time.Now())
+	}
+	if d := approvedBy("dana"); d.Allowed {
+		t.Errorf("with a count set, dana's approval of the record the run she started wrote counted: %+v", d)
+	}
+	if d := approvedBy("lee"); !d.Allowed {
+		t.Errorf("lee's approval of dana's run's record did not count: %+v", d)
+	}
+	t.Setenv("QUILZO_TOKEN", personToken(t, root, "dana", auth.RoleAdmin))
+	if refusal := approveOnTheCommandLine(t, root, "", s); !strings.Contains(refusal, "for you") {
+		t.Errorf("dana approved, on the command line, the record the run she started wrote: %q", refusal)
+	}
+}
+
+// A fill a run makes through the agent interface is a model's, written for
+// the person who started the run, whoever the interface was built for.
+//
+// The same as a record (TestWhatARunWritesThroughTheInterfaceIsForThePersonWhoStartedIt):
+// the fill was saved under the caller, who in a run that waited is whoever
+// let it go ahead. Asked of the interface a run is given, since a model
+// cannot hand site_fill its values today and only a program can.
+func TestARunsFillIsWrittenForThePersonWhoStartedIt(t *testing.T) {
+	root, _ := siteStore(t)
+	builtAndInstalled(t, root, feature.SiteBrief{Description: "A plumber in Leeds", Name: "Leeds Plumbing"}, false)
+	t.Cleanup(func() { finishBackground(10 * time.Second) })
+	pages, err := draftPages(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	known, _ := builderBlanks(root)
+	whats, _ := siteBlanks(pages, known)
+	if len(whats) == 0 {
+		t.Fatal("a built site has nothing to fill in")
+	}
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := agent.Manifest{Name: "filler", Kind: agent.KindTask, Purpose: "Fill in what dana said",
+		Capabilities: []string{"site_fill"}, Autonomy: agent.AutonomyDraft,
+		Budget: agent.Budget{Steps: 6, Tools: 2, Duration: agent.Duration(time.Minute)}}
+	call := platformCall(root, s, asAdmin("sam"), agent.NewSession(m, nil), "dana")
+	if _, err := call(context.Background(), "site_fill", true,
+		map[string]any{"values": map[string]any{whats[0]: "what dana said"}}); err != nil {
+		t.Fatal(err)
+	}
+	c, err := s.GetCommit(s.GetRef(site.RefDraft))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, person := collab.WrittenFor(c.Message, c.Author); !collab.MachineWrote(c.Message) || person != "dana" {
+		t.Errorf("the run's fill, %q by %s, is written for %q and not dana, who started the run",
+			c.Message, c.Author, person)
 	}
 }
