@@ -35,6 +35,7 @@ import (
 	_ "time/tzdata" // rule timezones resolve the same on every host
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 // Field is what a condition reads from the request.
@@ -70,19 +71,32 @@ type Rule struct {
 
 var (
 	reName  = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,39}$`)
-	rePage  = regexp.MustCompile(`^[a-z0-9][a-z0-9/_-]{0,200}$`)
 	reParam = regexp.MustCompile(`^[a-z0-9_]{1,40}$`)
 	reHour  = regexp.MustCompile(`^(\d{1,2})-(\d{1,2})$`)
 	days    = map[string]time.Weekday{"sun": 0, "mon": 1, "tue": 2, "wed": 3, "thu": 4, "fri": 5, "sat": 6}
 )
+
+// maxPage bounds the name of a page a rule names, as it always has.
+const maxPage = 201
+
+// validPage is a page a rule can serve or be served at: one the store can
+// hold, by the store's own rule. This had a rule of its own, lower case and
+// no dot, which refused About_Us and docs/v1.2, and its refusal said the
+// rule needed two different pages when it had two.
+func validPage(p string) bool { return len(p) <= maxPage && store.ValidPath(p) }
 
 // Validate refuses a rule that could not be evaluated.
 func (r Rule) Validate() error {
 	if !reName.MatchString(r.Name) {
 		return fmt.Errorf("%q is not a usable rule name", r.Name)
 	}
-	if !rePage.MatchString(r.Page) || !rePage.MatchString(r.Variant) || r.Page == r.Variant {
+	if r.Page == "" || r.Variant == "" || r.Page == r.Variant {
 		return fmt.Errorf("rule %s needs a page and a different page to serve there", r.Name)
+	}
+	for _, p := range []string{r.Page, r.Variant} {
+		if !validPage(p) {
+			return fmt.Errorf("rule %s: %q is not a page name", r.Name, p)
+		}
 	}
 	if len(r.When) == 0 || len(r.When) > 6 {
 		return fmt.Errorf("rule %s has %d conditions; between 1 and 6 — a rule "+

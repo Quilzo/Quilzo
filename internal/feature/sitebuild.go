@@ -935,7 +935,7 @@ func RepairSite(p *Package, b SiteBrief, start *Package) []string {
 	var pages []Page
 	for _, pg := range p.Pages {
 		switch {
-		case !rePage.MatchString(pg.Name) || strings.Contains(pg.Name, "/") || len(pg.Name) > 64:
+		case !validPage(pg.Name) || strings.Contains(pg.Name, "/") || len(pg.Name) > 64:
 			note("page %q: left out, because that is not a usable page name", pg.Name)
 			continue
 		case byName[pg.Name].Body != nil || pg.Body == nil || pg.Name == "privacy":

@@ -40,6 +40,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/analytics"
 	"github.com/quilzo/quilzo/internal/atomicfile"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 // Variant is one version of the page.
@@ -65,16 +66,33 @@ type Experiment struct {
 
 var (
 	reName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,39}$`)
-	rePage = regexp.MustCompile(`^[a-z0-9][a-z0-9/_-]{0,200}$`)
 	reGoal = regexp.MustCompile(`^(form:[a-z0-9_-]+|chatbot:[a-z0-9-]+|page:/[a-z0-9/_-]*)$`)
 )
+
+// maxPage bounds the name of a page an experiment runs on, as it always has.
+const maxPage = 201
+
+// validPage is a page an experiment can run on: one the store can hold, by
+// the store's own rule. This had a rule of its own, lower case and no dot,
+// and refused About_Us and docs/v1.2, which the store holds.
+func validPage(p string) bool { return len(p) <= maxPage && store.ValidPath(p) }
+
+// validGoal is a goal. Reaching a page is a goal at any page's address, and
+// at any address the goal took before: it is matched against the path a
+// visitor asked for, which may end in a slash.
+func validGoal(g string) bool {
+	if p, ok := strings.CutPrefix(g, "page:/"); ok && validPage(p) {
+		return true
+	}
+	return reGoal.MatchString(g)
+}
 
 // Validate refuses an experiment that could not be run or read.
 func (e Experiment) Validate() error {
 	if !reName.MatchString(e.Name) {
 		return fmt.Errorf("%q is not a usable experiment name", e.Name)
 	}
-	if !rePage.MatchString(e.Page) {
+	if !validPage(e.Page) {
 		return fmt.Errorf("%q is not a page name", e.Page)
 	}
 	if len(e.Variants) < 2 || len(e.Variants) > 4 {
@@ -86,7 +104,7 @@ func (e Experiment) Validate() error {
 			return fmt.Errorf("variant %q is unnamed or named twice", v.Name)
 		}
 		seen[v.Name] = true
-		if !rePage.MatchString(v.Page) || pages[v.Page] {
+		if !validPage(v.Page) || pages[v.Page] {
 			return fmt.Errorf("variant %s's page %q is not a page, or is used twice", v.Name, v.Page)
 		}
 		pages[v.Page] = true
@@ -94,7 +112,7 @@ func (e Experiment) Validate() error {
 			return fmt.Errorf("variant %s has weight %d; between 1 and 100", v.Name, v.Weight)
 		}
 	}
-	if !reGoal.MatchString(e.Goal) {
+	if !validGoal(e.Goal) {
 		return fmt.Errorf("%q is not a goal: use form:NAME, chatbot:NAME or page:/path", e.Goal)
 	}
 	return nil
