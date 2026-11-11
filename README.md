@@ -84,8 +84,9 @@ export QUILZO_MODEL=llama3.1
 ./quilzo agent receipt RUN -o r.json # and proved, against a signed head of the log
 ```
 
-Released binaries trail `main`; everything below is on `main`.
-[Install](#install) has the binaries and the container image.
+No release is published yet; everything below is on `main`.
+[Install](#install) says how to build the container image, and what each
+release will carry.
 
 ## Why Quilzo
 
@@ -299,7 +300,7 @@ access to every other system belongs with the tool that reviews those.
 | **AI evidence** | The EU AI Act's deployer duties, ISO/IEC 42001 Annex A as a statement of applicability, and an AI bill of materials (CycloneDX 1.6), each read from what the agents, chatbots and models did. | Frameworks → AI evidence; `quilzo compliance ai-act\|iso42001\|aibom` |
 | **Quilzo's own controls** | How Quilzo implements each NIST control and who does the rest, as OSCAL; a draft system security plan; FedRAMP 20x indicators; a position on each goal of CISA's Secure by Design pledge. | `quilzo compliance implementation\|component\|ssp\|ksi\|pledge` |
 | **Organisation policy** | The organisation's NIST parameters (session limits and the like) declared, changed by two administrators and enforced as floors. | `quilzo policy show\|propose\|approve` |
-| **Supply chain** | A CycloneDX SBOM from the build, every cryptographic algorithm with its post-quantum status, release binaries with provenance attestations. | `quilzo compliance sbom\|crypto` |
+| **Supply chain** | A CycloneDX SBOM from the build, every cryptographic algorithm with its post-quantum status, and a provenance attestation for each binary a release publishes. | `quilzo compliance sbom\|crypto` |
 | **The published site** | What the law asks of it: accessibility (and a draft statement and conformance report), forms' lawful basis, personal data held back from publishing, AI disclosure, browser protections. | `quilzo compliance site`, `compliance acr` |
 | **Assurance, auditors, groups** | Evidence over a period and the days nobody can speak to; scoped auditor engagements as one verifiable file; controls across a group of companies. | `quilzo assurance`, `engagement`, `entity` |
 

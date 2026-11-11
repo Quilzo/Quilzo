@@ -1,0 +1,28 @@
+{
+  "claims": [
+    {
+      "claim": "No release of Quilzo is published: no tag, no release, and no image anybody can pull. Build it from source, or build its image from this repository.",
+      "source": "GitHub's REST API for Quilzo/Quilzo (GET /repos/Quilzo/Quilzo/tags and /releases, both empty), and ghcr.io, which refuses an anonymous pull of quilzo/quilzo",
+      "date": "2026-11-11",
+      "recheck_by": "2027-02-11",
+      "says": "No release is published yet",
+      "in": [
+        "README.md",
+        "INSTALL",
+        "SECURITY.md",
+        "docs/cms.md",
+        "deploy/README.md",
+        "deploy/compose.yaml",
+        "deploy/compose.env.example"
+      ],
+      "never": [
+        "released binaries",
+        "a release binary",
+        "rather than a release",
+        "the release's image",
+        "latest follows releases",
+        "which release to run"
+      ]
+    }
+  ]
+}
