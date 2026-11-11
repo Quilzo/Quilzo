@@ -28,7 +28,6 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/feature"
-	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/form"
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/menu"
@@ -114,11 +113,9 @@ func featureChecks(root string) feature.Checks {
 	caps, kinds := knownCapabilities(root), customKinds(root)
 	return feature.Checks{
 		Agent: func(m agent.Manifest) error { return m.ValidateWith(caps, kinds) },
-		// A package's URLs are its webhooks' (feature.Package.Webhooks).
-		URL: func(u string) error {
-			_, err := fetch.For("webhook").ValidateURL(u)
-			return err
-		},
+		// A package's URLs are its webhooks' (feature.Package.Webhooks),
+		// held to the rule every endpoint is registered by.
+		URL:       webhook.CheckURL,
 		EventType: webhook.KnownType,
 	}
 }
@@ -988,6 +985,10 @@ func applyFeature(root string, p *feature.Package, digest string, plan feature.P
 	// reason for that to go unseen by whoever watches webhooks.
 	type hookChange struct{ action, url, types string }
 	var hookChanges []hookChange
+	// keys are the stored endpoints' signing keys, for the reference each
+	// record carries (webhook.Ref): those it changes or takes away as they
+	// were stored, and those it adds as they are stored now.
+	keys := map[string]string{}
 	var addHooks []webhook.Endpoint
 	changeHooks := map[string]feature.Webhook{}
 	for _, h := range p.Webhooks {
@@ -1062,6 +1063,7 @@ func applyFeature(root string, p *feature.Package, digest string, plan feature.P
 		if err := updateHooks(root, func(f *hookFile) error {
 			kept := f.Endpoints[:0]
 			for _, e := range f.Endpoints {
+				keys[e.URL] = e.Secret
 				if slices.Contains(goneHooks, e.URL) {
 					continue
 				}
@@ -1074,6 +1076,9 @@ func applyFeature(root string, p *feature.Package, digest string, plan feature.P
 				if !slices.ContainsFunc(kept, func(x webhook.Endpoint) bool { return x.URL == e.URL }) {
 					kept = append(kept, e)
 				}
+			}
+			for _, e := range kept {
+				keys[e.URL] = e.Secret
 			}
 			f.Endpoints = kept
 			return nil
@@ -1216,7 +1221,10 @@ func applyFeature(root string, p *feature.Package, digest string, plan feature.P
 	}
 	pkg := p.Name
 	for _, h := range hookChanges {
-		d := map[string]string{"endpoint": h.url, "feature": pkg}
+		// The host and a reference, as `quilzo webhook add` records an
+		// endpoint, never the address (webhook.LogForm).
+		d := map[string]string{"endpoint": webhook.LogForm(h.url), "feature": pkg,
+			"endpoint_ref": webhook.Ref(webhook.Endpoint{URL: h.url, Secret: keys[h.url]})}
 		if h.types != "" {
 			d["types"] = h.types
 		}

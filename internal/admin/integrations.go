@@ -248,13 +248,20 @@ func (s *Server) handleWebhookSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	target := strings.TrimSpace(r.FormValue("url"))
-	if !strings.HasPrefix(target, "https://") {
-		// http is refused rather than warned about. The payload carries what
-		// changed and the signature proves who sent it; over cleartext both are
-		// readable and the signature is replayable by anyone on the path.
-		s.intRedirect(w, r, "", "a webhook endpoint has to be https. Over "+
-			"cleartext the payload is readable and the signature is replayable "+
-			"by anyone on the path.")
+	e := webhook.Endpoint{URL: target, Note: strings.TrimSpace(r.FormValue("note"))}
+	for _, t := range strings.Split(r.FormValue("types"), ",") {
+		if t = strings.TrimSpace(t); t != "" {
+			e.Types = append(e.Types, t)
+		}
+	}
+	// The rule `quilzo webhook add` holds an endpoint to (webhook.Check),
+	// http refused among the rest. This screen checked only that the
+	// address began with https://, so it stored an address with a password
+	// in it, an address inside the network and a subscription to an event
+	// that is never sent, and showed each as added with a key, though
+	// nothing could ever be delivered to it.
+	if err := webhook.Check(target, e.Types); err != nil {
+		s.intRedirect(w, r, "", err.Error())
 		return
 	}
 	secret, err := webhook.NewSecret()
@@ -262,13 +269,7 @@ func (s *Server) handleWebhookSave(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	e := webhook.Endpoint{URL: target, Secret: secret,
-		Note: strings.TrimSpace(r.FormValue("note"))}
-	for _, t := range strings.Split(r.FormValue("types"), ",") {
-		if t = strings.TrimSpace(t); t != "" {
-			e.Types = append(e.Types, t)
-		}
-	}
+	e.Secret = secret
 	if err := s.Integrations.UpdateWebhooks(func(endpoints []webhook.Endpoint) ([]webhook.Endpoint, error) {
 		for _, x := range endpoints {
 			if x.URL == target {
@@ -278,14 +279,18 @@ func (s *Server) handleWebhookSave(w http.ResponseWriter, r *http.Request) {
 		return append(endpoints, e), nil
 	}); err != nil {
 		if errors.Is(err, errAlreadyRegistered) {
-			s.intRedirect(w, r, "", target+" is already registered")
+			s.intRedirect(w, r, "", webhook.LogForm(target)+" is already registered")
 			return
 		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.auditPub(p, "webhook.add", "/", map[string]string{"url": target,
-		"types": strings.Join(e.Types, ",")})
+	// The host and a reference, never the address (webhook.LogForm): its
+	// path or query can be a credential, and the log is read by people who
+	// may not see this screen and forwarded to systems that are not this
+	// one.
+	s.auditPub(p, "webhook.add", "/", map[string]string{"url": webhook.LogForm(target),
+		"endpoint_ref": webhook.Ref(e), "types": strings.Join(e.Types, ",")})
 
 	// Rendered, not redirected. Every other write on this screen ends in a
 	// redirect so a refresh does not repeat it, and this one deliberately does
@@ -316,6 +321,7 @@ func (s *Server) handleWebhookRemove(w http.ResponseWriter, r *http.Request) {
 	// afterwards, which is what makes people leave it on instead.
 	disable := r.FormValue("disable") != ""
 
+	var changed webhook.Endpoint
 	err := s.Integrations.UpdateWebhooks(func(endpoints []webhook.Endpoint) ([]webhook.Endpoint, error) {
 		kept := make([]webhook.Endpoint, 0, len(endpoints))
 		found := false
@@ -324,7 +330,7 @@ func (s *Server) handleWebhookRemove(w http.ResponseWriter, r *http.Request) {
 				kept = append(kept, e)
 				continue
 			}
-			found = true
+			found, changed = true, e
 			if disable {
 				e.Disabled = !e.Disabled
 				kept = append(kept, e)
@@ -335,19 +341,25 @@ func (s *Server) handleWebhookRemove(w http.ResponseWriter, r *http.Request) {
 		}
 		return kept, nil
 	})
+	// The messages name the endpoint by its host, as the log does. They
+	// travel in a redirect, into the browser's history and the access log,
+	// and carried the whole address there, path and query and all.
+	where := webhook.LogForm(target)
 	if errors.Is(err, errNoEndpoint) {
-		s.intRedirect(w, r, "", "there is no endpoint "+target)
+		s.intRedirect(w, r, "", "there is no endpoint "+where)
 		return
 	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	action, msg := "webhook.remove", "removed "+target
+	action, msg := "webhook.remove", "removed "+where
 	if disable {
-		action, msg = "webhook.toggle", "toggled "+target
+		action, msg = "webhook.toggle", "toggled "+where
 	}
-	s.auditPub(p, action, "/", map[string]string{"url": target})
+	// As webhook.add records it, so the endpoint's records line up by
+	// endpoint_ref.
+	s.auditPub(p, action, "/", map[string]string{"url": where, "endpoint_ref": webhook.Ref(changed)})
 	s.intRedirect(w, r, msg, "")
 }
 

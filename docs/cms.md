@@ -2653,6 +2653,14 @@ than for one that has to be described.
   the command line was `memory.deleteed`; it is `memory.deleted`, as on the
   Memory screen, and the old name is read as it in a person's memory receipt
   and in the AI evidence.
+- **A webhook's address is not in the log.** The path of an incoming-webhook
+  address is a credential, as is a `?token=`, so the record of an endpoint
+  added, changed, turned off or removed names it by its scheme and host, with
+  `/…` for the rest, and an `endpoint_ref` by which its records line up.
+  `quilzo webhook list` and the Integrations screen still show administrators
+  the whole address. The screen registers an endpoint by the rule `quilzo
+  webhook add` does: https, no credentials in the address, an address outside
+  this network, and only event types that are sent.
 - **GDPR.** Article 20 asks for a structured, machine-readable format; export is
   tested by round trip, which is a higher bar than the law sets. Article 17 is
   why form submissions deliberately do not live in the merkle store — an
