@@ -69,9 +69,12 @@ func Formats() []Format { return []Format{OCSF, CEF, JSONL} }
 
 // Options control an export.
 type Options struct {
-	// Reveal turns off pseudonymisation. It cannot recover identifiers that
-	// were never stored in the clear — it only stops this package from
-	// redacting what the log does hold.
+	// Reveal is a request for identifiers. This package withholds nothing:
+	// an export carries identifiers as the log holds them, and a log kept
+	// with a key, which is every log this program keeps, holds pseudonyms
+	// that nothing can turn back into names. On such a log asking changes
+	// nothing in the export, and the envelope says so (Envelope.Pseudonymous);
+	// callers record the request as a request.
 	Reveal bool
 	// Since and Until bound the export by sequence number rather than by time,
 	// because sequence is what the chain is ordered by and a time filter can
@@ -175,7 +178,7 @@ func Export(f Format, events []audit.Event, opt Options, now time.Time) (*Result
 		LastSeq:      selected[len(selected)-1].Seq,
 		FirstHash:    selected[0].Hash,
 		LastHash:     selected[len(selected)-1].Hash,
-		Pseudonymous: !opt.Reveal,
+		Pseudonymous: pseudonymous(selected),
 		ExportedAt:   now.UTC().Format(time.RFC3339),
 	}
 	for _, e := range selected {
@@ -201,17 +204,47 @@ func Export(f Format, events []audit.Event, opt Options, now time.Time) (*Result
 		Redacted: !opt.Reveal}, nil
 }
 
-// principal returns the identifier to emit.
-//
-// When the log is pseudonymous the stored value is already an HMAC and there is
-// nothing to reveal; Reveal only stops this package redacting further. The
-// distinction matters because a caller passing --reveal on a pseudonymous log
-// should not believe they are getting names.
+// principal returns the identifier to emit: the one the log holds, whether
+// or not identifiers were asked for (Options.Reveal). When the log is
+// pseudonymous the stored value is already an HMAC and there is nothing to
+// reveal, and a caller passing --reveal on such a log should not believe they
+// are getting names.
 func principal(e audit.Event, opt Options) string {
-	if opt.Reveal {
-		return e.Principal
-	}
 	return e.Principal
+}
+
+// pseudonymous is whether every identifier the export carries is a handle
+// (audit.Pseudonym) rather than a name: what the envelope tells the receiver
+// about whether it holds personal data.
+//
+// It was the request turned round, "not asked to reveal". Asked on a log kept
+// with a key, the export carried nothing but pseudonyms and an envelope, and
+// OCSF records, saying it was not pseudonymous; asked of nothing on a log kept
+// without one, it carried names and said it was. What was sent is what the
+// envelope describes, so it is read from what was sent.
+func pseudonymous(events []audit.Event) bool {
+	for _, e := range events {
+		if !isHandle(e.Principal) || !isHandle(e.Source) {
+			return false
+		}
+	}
+	return true
+}
+
+// isHandle is whether an identifier is a handle, or absent.
+func isHandle(id string) bool {
+	if id == "" {
+		return true
+	}
+	if len(id) != 34 || !strings.HasPrefix(id, "p_") {
+		return false
+	}
+	for _, c := range id[2:] {
+		if !('0' <= c && c <= '9' || 'a' <= c && c <= 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 // -- OCSF --------------------------------------------------------------------

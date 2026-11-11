@@ -4,6 +4,9 @@
 package admin
 
 import (
+	"archive/zip"
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -497,6 +500,13 @@ func (s *Server) handleExtensionRemove(w http.ResponseWriter, r *http.Request) {
 // It answers as a download rather than rendering into the page. The export
 // carries an integrity envelope over the events it contains, and a copy that
 // went through a browser's rendering is a copy whose bytes nobody can verify.
+//
+// It did not carry it. The envelope was computed and thrown away, and the
+// download held the events alone, while the page promised the receiver could
+// check nothing was added or dropped. Asked for, as the form asks by default,
+// the download is a zip of the export and envelope.json, the same envelope
+// `quilzo siem --envelope` writes; not asked for, it is the export alone, as
+// it always was.
 func (s *Server) handleSIEMExport(w http.ResponseWriter, r *http.Request) {
 	p, ok := s.integrationWriter(w, r)
 	if !ok {
@@ -512,26 +522,70 @@ func (s *Server) handleSIEMExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	format := siem.Format(r.FormValue("format"))
-	// Pseudonyms stay on unless somebody asks otherwise, and asking is
-	// recorded. Revealing cannot recover identifiers the log never stored in
-	// the clear — it only stops this from redacting what the log does hold.
+	// Asking for identifiers is recorded, as asked. It cannot recover what the
+	// log never stored in the clear: a log kept with a key, which is every
+	// log this program keeps, exports the same pseudonyms either way.
 	reveal := r.FormValue("reveal") != ""
+	withEnvelope := r.FormValue("envelope") != ""
 
-	res, err := siem.Export(format, events, siem.Options{Reveal: reveal},
-		time.Now())
+	now := time.Now()
+	res, err := siem.Export(format, events, siem.Options{Reveal: reveal}, now)
 	if err != nil {
 		s.intRedirect(w, r, "", err.Error())
 		return
 	}
+	name := fmt.Sprintf("audit-%s.log", format)
+	body, kind := []byte(res.Body), "application/octet-stream"
+	if withEnvelope {
+		if body, err = envelopeZip(name, res, now); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		name, kind = fmt.Sprintf("audit-%s.zip", format), "application/zip"
+	}
+	// What happened, as the command line records it. "revealed" said true
+	// for every export the box was ticked for, of a log holding nothing but
+	// pseudonyms: it is now whether identifiers left in the clear, and the
+	// request is identifiers_requested.
 	s.auditPub(p, "siem.export", "/", map[string]string{
 		"format": string(format), "events": fmt.Sprint(res.Count),
-		"revealed": fmt.Sprint(reveal)})
+		"range":                 fmt.Sprintf("%d-%d", res.Chain.FirstSeq, res.Chain.LastSeq),
+		"revealed":              fmt.Sprint(!res.Chain.Pseudonymous),
+		"identifiers_requested": fmt.Sprint(reveal),
+		"pseudonymous":          fmt.Sprint(res.Chain.Pseudonymous),
+		"envelope":              fmt.Sprint(withEnvelope)})
 
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(
-		`attachment; filename="audit-%s.log"`, format))
+	w.Header().Set("Content-Type", kind)
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, name))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	_, _ = w.Write([]byte(res.Body))
+	_, _ = w.Write(body)
+}
+
+// envelopeZip is an export and its envelope in one download: the export as it
+// was rendered, and envelope.json as `quilzo siem --envelope` writes it.
+func envelopeZip(name string, res *siem.Result, now time.Time) ([]byte, error) {
+	env, err := json.MarshalIndent(res.Chain, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	var buf bytes.Buffer
+	z := zip.NewWriter(&buf)
+	for _, f := range []struct {
+		name string
+		body []byte
+	}{{name, []byte(res.Body)}, {"envelope.json", append(env, '\n')}} {
+		fw, err := z.CreateHeader(&zip.FileHeader{Name: f.name, Method: zip.Deflate, Modified: now})
+		if err != nil {
+			return nil, err
+		}
+		if _, err := fw.Write(f.body); err != nil {
+			return nil, err
+		}
+	}
+	if err := z.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 func (s *Server) integrationWriter(w http.ResponseWriter, r *http.Request) (principal, bool) {

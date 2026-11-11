@@ -307,14 +307,20 @@ write.</p>
   <select id="s-format" name="format">
     {{range .Formats}}<option value="{{.}}">{{.}}</option>{{end}}
   </select></span>
+  <span class="pair check"><input id="s-envelope" type="checkbox" name="envelope" value="1" checked> <label for="s-envelope">With its envelope</label></span>
   <span class="pair check"><input id="s-reveal" type="checkbox" name="reveal" value="1"> <label for="s-reveal">Show identifiers</label></span>
   <button type="submit">Export</button>
 </form>
 <p class="hint">
-  The export carries an envelope over the events it contains, so the receiver
-  can check that nothing was added or dropped in transit. Identifiers stay
-  pseudonymous unless asked for, and asking is itself recorded — revealing
-  cannot recover what the log never stored in the clear, it only stops this from
-  redacting what the log does hold.
+  With its envelope, the download is a zip of the export and
+  <code>envelope.json</code>, which lists every event&rsquo;s hash in order, so
+  the receiver can check that nothing was added or dropped in transit. A JSON
+  Lines export can be checked whole with <code>quilzo siem verify</code>; an
+  OCSF or CEF one carries each event&rsquo;s hash, to compare with the
+  envelope&rsquo;s. Identifiers are exported as the log holds them, and every
+  log this program keeps holds people as pseudonyms. Showing identifiers cannot
+  recover what the log never stored in the clear, so on such a log the box
+  changes nothing in the export, and the envelope says it is pseudonymous;
+  asking is recorded, as a request.
 </p>
 {{template "foot" .}}

@@ -660,3 +660,35 @@ func TestAgentInterfaceCallsExportAsReadsAndWrites(t *testing.T) {
 		t.Error("a person's record names an application")
 	}
 }
+
+// The envelope says whether the identifiers in the export are protected, so
+// the receiver knows whether it holds personal data, and it said what was
+// asked for rather than what was sent: a log kept with a key, exported with
+// identifiers asked for, carried nothing but pseudonyms and an envelope
+// saying it was not pseudonymous, in the GUI, the CLI and the stream alike.
+// Asking cannot recover what the log never stored in the clear, so the
+// envelope says what the export holds.
+func TestAskingForIdentifiersDoesNotMakeAPseudonymousExportClaimOtherwise(t *testing.T) {
+	key, _ := audit.NewKey()
+	for _, f := range Formats() {
+		res, err := Export(f, log(t, key), Options{Reveal: true}, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !res.Chain.Pseudonymous {
+			t.Errorf("%s: an export of pseudonyms says it is not pseudonymous because identifiers were asked for", f)
+		}
+		if f == OCSF && !strings.Contains(res.Body, `"pseudonymous":true`) {
+			t.Errorf("the OCSF records say otherwise:\n%s", res.Body)
+		}
+	}
+	// And a log that names people as they are does not become pseudonymous
+	// by nobody asking.
+	res, err := Export(JSONL, log(t, nil), Options{}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Chain.Pseudonymous {
+		t.Error("an export that names people in the clear says it is pseudonymous")
+	}
+}
