@@ -154,8 +154,19 @@ func (t Trigger) PerDayOrDefault() int {
 // Key names a trigger for what is kept about it, so changing a trigger is
 // starting a new one: its count for the day and when it next fires begin
 // again.
+//
+// The event is hashed by its own name, whichever name it was declared by.
+// A manifest refuses a trigger whose Key is an earlier one's, and with the
+// name hashed as typed, page.published and published were two triggers on
+// one event: the agent started twice for every publish. A trigger declared
+// by its event's own name, as every one was before the webhook names were
+// taken, keeps the key it had.
 func (t Trigger) Key() string {
-	h := sha256.Sum256([]byte(strings.Join([]string{t.On, t.Where, time.Duration(t.Every).String(),
+	on := t.On
+	if e, ok := event.Parse(t.On); ok {
+		on = string(e)
+	}
+	h := sha256.Sum256([]byte(strings.Join([]string{on, t.Where, time.Duration(t.Every).String(),
 		t.At, t.Zone, t.Goal}, "\x00")))
 	return hex.EncodeToString(h[:6])
 }
