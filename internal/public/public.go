@@ -1308,8 +1308,15 @@ func (st *Site) injectHead(html, page, hash string, body any) string {
 	// Where this page lives, and whether a search engine may list it. The
 	// canonical link only when the layout wrote none: a layout that names
 	// one has decided.
+	//
+	// Looked for in the page itself, its ASCII letters folded as HTML folds
+	// them. strings.ToLower of the page copied the whole of every page served
+	// on a site with an address, which was 5 to 7 per cent of the CPU of
+	// serving the fullest starter page once the tag searches stopped lowering
+	// it, and it read rel="canonİcal", which names no canonical, as one, so
+	// the page went out without its address.
 	if c := seo.Canonical(st.BaseURL, page, st.Index, body); c != "" &&
-		!strings.Contains(strings.ToLower(html), `rel="canonical"`) {
+		asciifold.Index(html, `rel="canonical"`) < 0 {
 		b.WriteString(`<link rel="canonical" href="` + escape(c) + `">` + "\n")
 	}
 	if seo.NoIndex(body) {

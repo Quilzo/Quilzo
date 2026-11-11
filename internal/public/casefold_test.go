@@ -162,6 +162,38 @@ func TestASnippetIsCutAroundTheMatchInTheTextItself(t *testing.T) {
 	}
 }
 
+// A layout that names its own canonical address keeps it, its letters in any
+// ASCII case, and the server adds one only to a page that names none. The
+// question is asked of the page itself, as HTML asks it, A to Z folded and
+// nothing else.
+//
+// It was asked of strings.ToLower of every page served on a site with an
+// address: a whole-page copy left behind when the tag searches beside it
+// stopped lowering the page, 5 to 7 per cent of the CPU of serving the
+// fullest starter page. That copy also turned rel="canonİcal", which a
+// browser and a search engine read as no canonical at all, into one, so the
+// page went out without its address.
+func TestTheCanonicalLinkIsLookedForInThePageItself(t *testing.T) {
+	st := published(t, map[string]any{"index": map[string]any{"title": "Home"}})
+	const added = `<link rel="canonical" href="https://example.org/">`
+	for _, c := range []struct {
+		link string
+		adds bool
+	}{
+		{`<LINK REL="CANONICAL" HREF="https://journal.example/">`, false},
+		{`<link rel="Canonical" href="https://journal.example/">`, false},
+		{`<link rel="canonİcal" href="https://journal.example/">`, true},
+		{`<link rel="alternate" href="https://journal.example/">`, true},
+	} {
+		html := `<!doctype html><html lang="en"><head><title>Home</title>` + c.link +
+			`</head><body><h1>Home</h1></body></html>`
+		out := st.injectHead(html, "index", "", map[string]any{"title": "Home"})
+		if got := strings.Contains(out, added); got != c.adds {
+			t.Errorf("%s: the server's own canonical link added: %v, want %v\n%s", c.link, got, c.adds, out)
+		}
+	}
+}
+
 // BenchmarkAPublicPage serves the sections starter's own sample, the fullest
 // page that ships, the way a visitor's browser asks for it.
 func BenchmarkAPublicPage(b *testing.B) {
@@ -199,7 +231,10 @@ func BenchmarkFindingTagsInAPublicPage(b *testing.B) {
 	}
 }
 
-// sampleSite publishes the sections starter's sample as a site's front page.
+// sampleSite publishes the sections starter's sample as a site's front page,
+// on a site with an address, as every site that is served has. Without one
+// the head is short of its canonical link, and of the search for one that
+// the page was still lowered for.
 func sampleSite(b *testing.B) *Site {
 	b.Helper()
 	s, err := store.Open(b.TempDir())
@@ -218,6 +253,6 @@ func sampleSite(b *testing.B) *Site {
 		b.Fatal(err)
 	}
 	st := New(s, render.OneLayout(html))
-	st.Name, st.Index = "Example", "index"
+	st.Name, st.Index, st.BaseURL = "Example", "index", "https://example.org"
 	return st
 }
