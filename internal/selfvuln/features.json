@@ -122,6 +122,9 @@
    "chatbots",
    "signup"
   ],
+  "encoding": [
+   "*"
+  ],
   "encoding/asn1": [
    "*"
   ],
