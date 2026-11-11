@@ -55,9 +55,13 @@ const (
 	sendWhy    = "asks for something to be sent somewhere"
 )
 
-// injectionRule is one shape of text addressed to a machine: a pattern,
-// matched against the text as written, or a phrase, matched against it in
-// lower case with its spaces run together.
+// injectionRule is one shape of text addressed to a machine: a pattern or a
+// phrase. A phrase is matched against the text in lower case with its spaces
+// run together. So is a pattern, except in the knowledge view, where it is
+// matched against the text as written: a page's lines are its headings and
+// its list items, and one is not the next one's sentence. A visitor's or a
+// speaker's are, and a pattern that stopped at a line's end let "Ignore your
+// previous" and "instructions" on two lines of the chat box go unnoticed.
 type injectionRule struct {
 	why    string
 	re     *regexp.Regexp
@@ -125,13 +129,17 @@ func Injection(v View, text string) []string {
 			continue
 		}
 		hit := false
-		if r.re != nil {
+		if r.re != nil && v&Knowledge != 0 {
 			hit = r.re.MatchString(text)
 		} else {
 			if folded == "" {
 				folded = strings.ToLower(strings.Join(strings.Fields(text), " "))
 			}
-			hit = strings.Contains(folded, r.phrase)
+			if r.re != nil {
+				hit = r.re.MatchString(folded)
+			} else {
+				hit = strings.Contains(folded, r.phrase)
+			}
 		}
 		if hit {
 			out = append(out, r.why)
