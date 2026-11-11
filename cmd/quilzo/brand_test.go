@@ -4,12 +4,14 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/brand"
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/site"
@@ -265,5 +267,53 @@ func TestASentenceCanBeCheckedWithoutSavingIt(t *testing.T) {
 	if !strings.Contains(src, `!strings.HasPrefix(args[0], "-")`) {
 		t.Error("brand check parses flags after a positional ref, so " +
 			"`brand check live --text \"...\"` would silently ignore the flag")
+	}
+}
+
+// A claim the brand rules refuse on the site is not posted to another
+// system either. They ran at publish and nowhere else, so an agent's post
+// saying "guaranteed" went out through a social account's REST API that
+// the site would have refused to publish. Now the write waits for a person
+// with what the rules found, it is not dropped and not sent, and it is
+// never earned away; a person who lets it go ahead has read the finding.
+func TestABrandFindingInAnOutwardWriteAsksAPerson(t *testing.T) {
+	root, posted := postingStore(t)
+	postingModel(t, "Every order guaranteed to arrive by Friday")
+	id, out, err := runAgentKept(context.Background(), root, "poster", "post the news", true, asAdmin("dana"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(*posted) != 0 {
+		t.Fatalf("a claim the site would refuse was posted: %v", *posted)
+	}
+	w := out.Trace.Waiting
+	if w == nil || w.Action.Tool != "post_update" || !strings.Contains(w.Why, "guaranteed") ||
+		!strings.Contains(w.Why, "a promise somebody has to honour") || !strings.Contains(w.Why, "guarantee_terms") {
+		t.Fatalf("the post did not wait with the finding shown: %+v", out.Trace)
+	}
+	if c := agent.CommitOf(w.Action, w.Why, agent.WaitAsk, true); agent.Earnable(w.Action, w.Why, agent.WaitAsk, true) {
+		t.Errorf("a post the brand rules held is classed as %q, which could be earned away", c)
+	}
+	done, err := continueAgentRun(context.Background(), root, id,
+		&agent.Verdict{N: w.N, Approve: true}, asAdmin("sam"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(*posted) != 1 || !done.Trace.Complete {
+		t.Fatalf("after a person approved it: %v %+v", *posted, done.Trace)
+	}
+	// What says nothing the rules hold goes out as before.
+	postingModel(t, "Our new post is up")
+	if _, out, err = runAgentKept(context.Background(), root, "poster", "post the news", true, asAdmin("dana")); err != nil ||
+		len(*posted) != 2 || out.Trace.Waiting != nil {
+		t.Fatalf("a post with no claim was held: %v %v %+v", err, *posted, out.Trace.Waiting)
+	}
+	// Rules that cannot be read hold it too: nothing it says was checked.
+	if err := os.WriteFile(brandPath(root), []byte("{ not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, out, _ = runAgentKept(context.Background(), root, "poster", "post the news", true, asAdmin("dana")); len(*posted) != 2 ||
+		out.Trace.Waiting == nil || !strings.Contains(out.Trace.Waiting.Why, "brand.json") {
+		t.Fatalf("a post went out unchecked while the rules could not be read: %v %+v", *posted, out.Trace.Waiting)
 	}
 }

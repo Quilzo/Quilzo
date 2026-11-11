@@ -26,7 +26,10 @@ import (
 // identity has run out, does not start. It runs capped at the author role
 // whatever its sponsor holds, so nothing that starts unattended can do more
 // than draft and propose: publishing, and anything else that goes out, is
-// still a person's decision. See cmd/quilzo/agenttriggers.go.
+// still a person's decision. A call of a tool that writes to another system
+// waits for a person, whatever the manifest asks first, unless
+// administrators let the agent send through it unattended. See
+// cmd/quilzo/agenttriggers.go and cmd/quilzo/agentsends.go.
 //
 // # It does not run away
 //

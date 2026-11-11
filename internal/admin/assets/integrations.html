@@ -96,8 +96,8 @@ write.</p>
 <h2>Calls waiting for a person</h2>
 {{with .HeldError}}<p class="notice bad">{{.}}</p>{{end}}
 <p class="hint">Other systems' agents asked to call a tool through the gateway that a person
-  approves call by call. Approved, exactly that call goes through once, within the hour.
-  Somebody other than the person it acts for decides.</p>
+  approves call by call, or wrote what the brand rules hold. Approved, exactly that call goes
+  through once, within the hour. Somebody other than the person it acts for decides.</p>
 <div class="table-wrap">
 <table>
   <thead><tr><th scope="col">Call</th><th scope="col">For</th><th scope="col">Arguments</th>
@@ -107,7 +107,7 @@ write.</p>
   <tr>
     <th scope="row"><code>{{.Tool}}</code> on {{.Integration}}<div class="hint"><code>{{.ID}}</code></div></th>
     <td>{{.For}}{{with .App}}<div class="hint">through {{.}}</div>{{end}}</td>
-    <td><code class="cmd">{{.Args}}</code></td>
+    <td><code class="cmd">{{.Args}}</code>{{with .Why}}<div class="hint">{{.}}</div>{{end}}</td>
     <td>{{when .Asked.Unix}}</td>
     <td class="actions">
       <form method="post" action="/integrations/held"><input type="hidden" name="id" value="{{.ID}}"><input type="hidden" name="decision" value="approve"><button type="submit" class="btn-tonal">Approve</button></form>

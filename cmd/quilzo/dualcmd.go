@@ -136,6 +136,12 @@ func applyDual(root string, r dual.Request, by string) error {
 		return saveApprovalPolicy(root, resolveCaller(root, ""), collab.Policy{Required: ch.Required,
 			RequiredHumans: ch.RequiredHumans, Approvers: ch.Approvers, RequireHumanForAI: true},
 			map[string]string{"request": r.ID, "approved_by": by})
+	case dual.Sends:
+		var ch dual.SendsChange
+		if err := json.Unmarshal(r.Payload, &ch); err != nil {
+			return err
+		}
+		return grantSends(root, ch, r.Why, r.By, by, r.Alone, resolveCaller(root, ""))
 	case dual.Token, dual.Enrol, dual.SCIMToken:
 		return nil
 	}

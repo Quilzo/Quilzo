@@ -468,6 +468,10 @@ func prepareReplay(root, id string, n int, caller *Caller) (*keptRun, agent.Reco
 	}
 	from := prior
 	from.Trace = cut
+	// Run again by a person, it is their run and no trigger's, as its own
+	// record says: what it sends is decided as in a run a person starts,
+	// and not held as in one nobody started (agentsends.go).
+	from.Trigger = ""
 	k := &keptRun{root: root, rec: agent.Record{ID: newID, Agent: prior.Agent,
 		Goal: prior.Goal, By: caller.Name, Model: prior.Model, Started: started,
 		From: fmt.Sprintf("%s@%d", id, n)}}
@@ -788,6 +792,9 @@ func withdrawAgent(root, name string, caller *Caller) error {
 		}
 		delete(set.Agents, name)
 		delete(set.Identities, name)
+		// And what it was let send unattended, which another agent given
+		// its name later has not been granted.
+		delete(set.Sends, name)
 		return nil
 	}); err != nil {
 		return err

@@ -478,7 +478,7 @@ func cmdServe(root string, args []string) error {
 			var out []admin.GatewayHeld
 			for _, h := range held {
 				out = append(out, admin.GatewayHeld{ID: h.ID, Integration: h.Integration, Tool: h.Tool,
-					For: h.Principal, App: h.Client, Args: h.Args, Asked: h.Asked})
+					For: h.Principal, App: h.Client, Args: h.Args, Why: h.Why, Asked: h.Asked})
 			}
 			return out, err
 		},

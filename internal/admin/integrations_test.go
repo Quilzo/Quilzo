@@ -43,3 +43,21 @@ func TestAHeldGatewayCallIsDecidedOnTheScreen(t *testing.T) {
 		t.Fatalf("%v", decided)
 	}
 }
+
+// A call held for what it says is shown with what was found, beside its
+// arguments, so the person deciding reads why it waits.
+func TestAGatewayCallHeldForItsWordsShowsWhy(t *testing.T) {
+	srv, token := setup(t)
+	srv.Integrations = &Integrations{
+		Held: func() ([]GatewayHeld, error) {
+			return []GatewayHeld{{ID: "gq_0123456789ab", Integration: "social", Tool: "post_update", For: "rae",
+				Args: `{"text":"Every order guaranteed"}`, Asked: time.Now(),
+				Why: `the brand rules hold it: text: "guaranteed", a guarantee is a promise somebody has to honour`}}, nil
+		},
+		Decide: func(string, bool, Actor) error { return nil },
+	}
+	body := get(t, srv, "/integrations", token).Body.String()
+	if !strings.Contains(body, "the brand rules hold it: text: &#34;guaranteed&#34;") {
+		t.Errorf("the screen does not say what the brand rules found:\n%s", body)
+	}
+}

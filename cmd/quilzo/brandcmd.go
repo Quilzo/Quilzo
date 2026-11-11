@@ -4,12 +4,15 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/brand"
 	"github.com/quilzo/quilzo/internal/collection"
@@ -49,6 +52,48 @@ func loadBrand(root string) (*brand.Rules, error) {
 		return nil, fmt.Errorf("brand.json: %w", err)
 	}
 	return r, nil
+}
+
+// outwardClaims is why a write to another system waits for a person:
+// what it would say there breaks the rules the site is published under,
+// with each finding as the person deciding reads it, or the rules could
+// not be read, so nothing it says was checked. Empty when it says nothing
+// they hold.
+//
+// The rules ran at publish and nowhere else, so a claim the site refuses
+// to publish went out to a social account, a mailing service or a
+// partner's system as soon as an agent wrote it there. Held, and never
+// dropped: what the agent wrote is what the person is shown and lets go,
+// or not. Every string in the call is read, at any depth, as on a page.
+func outwardClaims(root, tool string, input map[string]any) string {
+	rules, err := loadBrand(root)
+	if err != nil {
+		if inner := errors.Unwrap(err); inner != nil {
+			err = inner
+		}
+		// What went wrong, and not where: an outside agent at the gateway
+		// is told this, and a file's error names the store's own path.
+		var pe *fs.PathError
+		if errors.As(err, &pe) {
+			err = pe.Err
+		}
+		return agent.ClaimsPrefix + ", since brand.json could not be read and nothing it says was checked: " + err.Error()
+	}
+	if len(rules.Terms) == 0 || len(input) == 0 {
+		return ""
+	}
+	var found []string
+	for _, f := range rules.Check(tool, input) {
+		line := fmt.Sprintf("%s: %q, %s", f.Field, f.Term, f.Why)
+		if f.Needs != "" {
+			line += " (" + f.Needs + " would substantiate it)"
+		}
+		found = append(found, line)
+	}
+	if len(found) == 0 {
+		return ""
+	}
+	return agent.ClaimsPrefix + ": " + strings.Join(found, "; ")
 }
 
 func cmdBrand(root string, args []string) error {
