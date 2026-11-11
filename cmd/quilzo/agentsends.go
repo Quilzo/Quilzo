@@ -68,10 +68,11 @@ func unattendedRun(caller *Caller, from *agentResume) bool {
 }
 
 // outwardAsks is why a run's action waits for a person beyond what its
-// declaration asks first: then's reason (a payment beyond a mandate), and
-// for a run nobody started, a write to another system it has not been
-// let make unattended. A payment's reason comes first, so the step is
-// classed as one that pays (agent.CommitOf).
+// declaration asks first: then's reason (a payment beyond a mandate); for
+// a run nobody started, a write to another system it has not been let
+// make unattended; and for any run, a write that says what the brand
+// rules hold (outwardClaims). A payment's reason comes first, so the step
+// is classed as one that pays (agent.CommitOf).
 func outwardAsks(root string, m agent.Manifest, unattended bool, then func(agent.Action) string) func(agent.Action) string {
 	return func(a agent.Action) string {
 		var why []string
@@ -80,12 +81,15 @@ func outwardAsks(root string, m agent.Manifest, unattended bool, then func(agent
 				why = append(why, w)
 			}
 		}
-		if unattended && a.Tool != "" && stepWrites(root, m, a.Tool) {
-			host := toolHost(m, a.Tool)
-			if !sendsUnattended(root, m.Name, a.Tool, host) {
-				why = append(why, fmt.Sprintf("%s: %s writes to %s, which is a person's decision unless "+
-					"administrators let %s send through it unattended", agent.UnattendedPrefix, a.Tool, host, m.Name))
-			}
+		if a.Tool == "" || !stepWrites(root, m, a.Tool) {
+			return strings.Join(why, "; and ")
+		}
+		if host := toolHost(m, a.Tool); unattended && !sendsUnattended(root, m.Name, a.Tool, host) {
+			why = append(why, fmt.Sprintf("%s: %s writes to %s, which is a person's decision unless "+
+				"administrators let %s send through it unattended", agent.UnattendedPrefix, a.Tool, host, m.Name))
+		}
+		if c := outwardClaims(root, a.Tool, a.Input); c != "" {
+			why = append(why, c)
 		}
 		return strings.Join(why, "; and ")
 	}

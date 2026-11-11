@@ -1200,9 +1200,11 @@ holds a card it needs a threat model it does not have.
 **Claims and rights.** A publish gate that refuses copy the business cannot
 stand behind — not a blocked-word list, which every team switches off, but a
 claim and its substantiation: "guaranteed" publishes beside the guarantee terms
-and is refused without them. And image licences treated as publish windows,
-because rights *end* — a lapsed stock licence leaves a site infringing with an
-audit trail proving it was deliberate, and nothing notices.
+and is refused without them. The same rules read what an agent writes to
+another system: a post or a message that says what they refuse waits for a
+person, who is shown what they found, every time. And image licences treated
+as publish windows, because rights *end* — a lapsed stock licence leaves a site
+infringing with an audit trail proving it was deliberate, and nothing notices.
 
 **Reaching other systems.** MCP in both directions: a server exposing this
 store, and a client calling servers an operator declared — from the command

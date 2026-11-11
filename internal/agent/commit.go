@@ -47,6 +47,14 @@ func CommitOf(a Action, why, kind string, writes bool) string {
 		if strings.HasPrefix(why, UnattendedPrefix) {
 			return "sends"
 		}
+		// So is a write that says what the brand rules refuse: it carries a
+		// claim to another system's readers, and a person reads what the
+		// rules found each time. As a write it was earnable, so a kind of
+		// call approved often enough for any other reason would have
+		// carried the claim out with nobody shown it.
+		if strings.HasPrefix(why, ClaimsPrefix) {
+			return "sends"
+		}
 		if writes {
 			return "writes"
 		}
@@ -110,3 +118,8 @@ const PaysPrefix = "it pays "
 // person's decision, unless administrators granted the agent that tool's
 // unattended sends (cmd/quilzo agentsends.go).
 const UnattendedPrefix = "it goes out from a run nobody started"
+
+// ClaimsPrefix begins the reason a tool's write waits for a person when
+// what it would say breaks the brand rules the site is published under, or
+// those rules could not be read (cmd/quilzo brandcmd.go).
+const ClaimsPrefix = "the brand rules hold it"

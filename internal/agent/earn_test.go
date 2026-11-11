@@ -77,6 +77,9 @@ func TestWhatCanNeverBeEarned(t *testing.T) {
 	if Earnable(post, UnattendedPrefix+": post_update writes to social.example", WaitAsk, true) {
 		t.Error("a triggered run's send was earnable")
 	}
+	if Earnable(post, ClaimsPrefix+`: text: "guaranteed"`, WaitAsk, true) {
+		t.Error("a write the brand rules held was earnable")
+	}
 }
 
 // In a run: an earned kind of action goes ahead without stopping and says
