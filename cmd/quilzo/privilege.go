@@ -625,6 +625,14 @@ var commandNeeds = map[string]need{
 	"token": {action: auth.ActToken},
 	"oidc":  {action: auth.ActGrant},
 	"saml":  {action: auth.ActGrant},
+
+	// Exchanging the token presented for a short session only narrows it
+	// (auth.TokenStore.Exchange: no wider role, path or scope, and never
+	// longer than the token), so it is whoever holds the token's, wherever
+	// their grant is, as POST /token/exchange has it. Under the parent's
+	// row, `quilzo token exchange`, the documented way to use a stored
+	// credential, refused everybody below an administrator.
+	"token exchange": {action: auth.ActView, or: []auth.Action{auth.ActView}, orAnywhere: true},
 	// The presets are built into the program, the same in every store:
 	// which consoles to set an identity provider up in, and what each says
 	// about a second factor. Nothing of the store's is read.

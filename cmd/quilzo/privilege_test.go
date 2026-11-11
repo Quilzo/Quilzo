@@ -581,3 +581,85 @@ func TestATokenDefaultsToWhatItsPrincipalHolds(t *testing.T) {
 		t.Errorf("an unknown principal got %q", got)
 	}
 }
+
+// storeWithTokenFor makes a store with each grant in it, and a token for
+// each grant's principal as wide as the grant, and returns the tokens by
+// principal.
+func storeWithTokenFor(t *testing.T, grants ...auth.Binding) (string, map[string]string) {
+	t.Helper()
+	isolateToken(t)
+	root := t.TempDir()
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := updatePolicy(root, func(p *auth.Policy) error {
+		for _, b := range grants {
+			if err := p.Grant(b); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ts, _ := loadTokens(root)
+	secrets := map[string]string{}
+	for _, b := range grants {
+		secret, _, err := ts.Issue(b.Principal+"-laptop", b.Principal, b.Role, b.Resource, time.Hour, auth.RoleAdmin)
+		if err != nil {
+			t.Fatal(err)
+		}
+		secrets[b.Principal] = secret
+	}
+	if err := saveJSON(tokensPath(root), ts); err != nil {
+		t.Fatal(err)
+	}
+	return root, secrets
+}
+
+// Whoever holds a token may trade it for a short session on the command
+// line, as POST /token/exchange lets them: an exchange only narrows the
+// token it is given (auth.TokenStore.Exchange). Every other token command
+// is still an administrator's.
+//
+// The whole of `token` asked for manage-tokens, so `quilzo token exchange`,
+// the documented way to use a stored credential, refused a reader and a
+// publisher ("manage-tokens needs admin") that the endpoint answered with a
+// session.
+func TestATokenHolderExchangesTheirOwnTokenOnTheCommandLine(t *testing.T) {
+	root, secrets := storeWithTokenFor(t,
+		auth.Binding{Principal: "alice", Role: auth.RoleAdmin, Resource: "/"},
+		auth.Binding{Principal: "rae", Role: auth.RoleReader, Resource: "/"},
+		auth.Binding{Principal: "doc", Role: auth.RoleAuthor, Resource: "/docs"})
+	for _, who := range []string{"alice", "rae", "doc"} {
+		t.Setenv("QUILZO_TOKEN", secrets[who])
+		if err := authoriseCommand(root, "token", []string{"exchange", "--ttl", "10m"}); err != nil {
+			t.Errorf("%s may not exchange their own token: %v", who, err)
+			continue
+		}
+		_, read := captureStdout(t)
+		err := tokenExchange(root, []string{"--ttl", "10m"})
+		read()
+		if err != nil {
+			t.Errorf("%s exchanging: %v", who, err)
+		}
+	}
+	ts, _ := loadTokens(root)
+	for _, tok := range ts.Snapshot() {
+		if tok.Parent == "" {
+			continue
+		}
+		if tok.Principal == "rae" && tok.Role != auth.RoleReader {
+			t.Errorf("a reader's session is %s", tok.Role)
+		}
+		if tok.Principal == "doc" && tok.Resource != "/docs" {
+			t.Errorf("a session made from a token on /docs is on %s", tok.Resource)
+		}
+	}
+	t.Setenv("QUILZO_TOKEN", secrets["rae"])
+	for _, args := range [][]string{{"issue", "x"}, {"revoke", "x"}, {}} {
+		if err := authoriseCommand(root, "token", args); err == nil {
+			t.Errorf("a reader may run token %v", args)
+		}
+	}
+}
