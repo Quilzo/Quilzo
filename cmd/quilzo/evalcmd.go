@@ -73,6 +73,10 @@ type evalMode struct {
 	// Lesson is a candidate lesson tried on top of the agent's playbook,
 	// when the evaluation is a lesson's trial.
 	Lesson string
+	// Route is the gateway's route the evaluation measures, and the only
+	// one its runs are driven through (measuredRoute); empty without the
+	// gateway.
+	Route string
 }
 
 func (e *evalMode) perform(real agent.Perform) agent.Perform {
@@ -261,7 +265,8 @@ func runEvaluationWith(root, name string, o evals.Options, withModel bool, calle
 		kr := &keptRun{root: root, rec: agent.Record{ID: id, Agent: name, Goal: goal,
 			By: caller.Name, Started: started, Model: rep.Model, Eval: tag, Plant: plant}}
 		out, runErr := executeAgentFrom(ctx, root, name, goal, withModel, caller,
-			&agentResume{Checkpoint: kr.checkpoint, Eval: &evalMode{Plant: plant, Reads: reads, Lesson: o.Lesson}})
+			&agentResume{Checkpoint: kr.checkpoint, Eval: &evalMode{Plant: plant, Reads: reads,
+				Lesson: o.Lesson, Route: rep.Route}})
 		if out.Manifest.Name == "" {
 			return "", agent.Trace{}, runErr
 		}

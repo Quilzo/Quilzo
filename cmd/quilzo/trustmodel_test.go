@@ -8,11 +8,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -293,5 +295,205 @@ func TestADeciderEvaluationIsKept(t *testing.T) {
 		listed[0].Measured == nil || listed[0].Measured.Model != "model-a" || listed[0].Measured.Route != "main" ||
 		listed[0].Measured.At == "" {
 		t.Errorf("list_deciders does not say when and on which model it was measured: %s", got)
+	}
+}
+
+// twoRoutes declares the gateway with two routes in the order it falls
+// back in: main, serving model-a, which finishes every run until it is told
+// to fail and then answers as a provider that is down does; and backup,
+// serving model-b, which writes a page on its first turn and counts what it
+// is asked.
+func twoRoutes(t *testing.T, root string) (mainDown *atomic.Bool, backupAsked *atomic.Int32) {
+	t.Helper()
+	mainDown, backupAsked = new(atomic.Bool), new(atomic.Int32)
+	main := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if mainDown.Load() {
+			http.Error(w, "down", http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"{\"op\":\"done\",\"say\":\"finished\"}"}}]}`))
+	}))
+	t.Cleanup(main.Close)
+	backup := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		backupAsked.Add(1)
+		choice := `{"op":"done","say":"finished"}`
+		if strings.Contains(string(b), "Nothing has been done yet") {
+			choice = `{"op":"write_page","input":{"page":"welcome","fields":` +
+				`{"title":"Welcome","body":"Written by a model nobody measured."}}}`
+		}
+		out, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{
+			"message": map[string]any{"role": "assistant", "content": choice}}}})
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(out)
+	}))
+	t.Cleanup(backup.Close)
+	if err := gateway.Save(gatewayPath(root), &gateway.Config{Routes: []gateway.Route{
+		{Name: "main", URL: main.URL + "/v1", Model: "model-a", Personal: true},
+		{Name: "backup", URL: backup.URL + "/v1", Model: "model-b", Personal: true},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	return mainDown, backupAsked
+}
+
+// eagerTidy is an agent that drafts without asking first, so what earned it
+// draft is all that stands between a model and the draft.
+func eagerTidy(t *testing.T, root string) {
+	t.Helper()
+	m := asker("tidy")
+	m.AskFirst = nil
+	if err := declareAgent(root, m, true, true, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < evals.DraftCases; i++ {
+		if _, err := addEvalCase(root, "tidy", evals.Case{Goal: fmt.Sprintf("tidy page %d", i),
+			Expect: evals.Expect{Finishes: true}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// A model the gateway falls back to does not drive an agent on what
+// another earned. The run was bound at what the evaluation of model-a
+// earned while model-a's route answered, and when that route stopped
+// answering part way, the gateway asked the next, so model-b, which nobody
+// had measured, chose the agent's actions at draft and wrote the page.
+func TestAModelFallenBackToDoesNotDriveOnWhatAnotherEarned(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := demoStore(t)
+	mainDown, backupAsked := twoRoutes(t, root)
+	eagerTidy(t, root)
+	rep, err := runEvaluation(root, "tidy", evals.DraftRuns, true, asAdmin("dana"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Model != "model-a" || rep.Route != "main" || rep.Verdict() != "passing" || backupAsked.Load() != 0 {
+		t.Fatalf("the evaluation did not measure model-a alone: %s, %s, backup asked %d time(s)",
+			rep.Served(), rep.Verdict(), backupAsked.Load())
+	}
+
+	// model-a's provider goes down after the run is bound.
+	mainDown.Store(true)
+	o, _ := executeAgentFrom(context.Background(), root, "tidy", "tidy the pages", true, asAdmin("dana"), nil)
+	if o.Manifest.Autonomy != agent.AutonomyDraft {
+		t.Fatalf("bound while model-a answered, it does not draft: %s %q", o.Manifest.Autonomy, o.Earned)
+	}
+	if n := backupAsked.Load(); n != 0 {
+		t.Errorf("model-b chose %d action(s) of a run at what model-a earned", n)
+	}
+	for _, st := range o.Trace.Steps {
+		if st.Action.Op == "write_page" && st.Allowed {
+			t.Errorf("a model nobody measured wrote at draft: %+v", st)
+		}
+	}
+	if p, ok := draftPage(t, root, "welcome"); ok && strings.Contains(fmt.Sprint(p), "nobody measured") {
+		t.Errorf("the draft holds what model-b wrote: %v", p)
+	}
+	if !strings.Contains(o.Trace.Stopped, "held to the route main") {
+		t.Errorf("the run does not say why it did not go on with another model: %q", o.Trace.Stopped)
+	}
+}
+
+// An evaluation measures the model it names and no other. Its report named
+// the route the gateway would ask first, and every case whose call that
+// route did not answer was answered by the next: model-a was reported
+// passing, and earned draft, on what model-b did.
+func TestAnEvaluationMeasuresOnlyTheModelItNames(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := demoStore(t)
+	mainDown, backupAsked := twoRoutes(t, root)
+	eagerTidy(t, root)
+	mainDown.Store(true)
+	rep, err := runEvaluation(root, "tidy", evals.DraftRuns, true, asAdmin("dana"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := backupAsked.Load(); n != 0 || rep.Verdict() == "passing" {
+		t.Errorf("the evaluation says %s was %s, and model-b answered %d call(s) of it",
+			rep.Served(), rep.Verdict(), n)
+	}
+	if earned, why := evalsEarn(root, "tidy", time.Now()); earned != agent.AutonomyPropose {
+		t.Errorf("model-a earned %s on what model-b did: %s", earned, why)
+	}
+}
+
+// mainDownBackupCounted declares the gateway with a first route, main, serving model-a,
+// whose provider is down, and a second, backup, serving model-b, which
+// answers every call with content and counts them.
+func mainDownBackupCounted(t *testing.T, root, content string) *atomic.Int32 {
+	t.Helper()
+	asked := new(atomic.Int32)
+	main := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "down", http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(main.Close)
+	backup := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked.Add(1)
+		out, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{
+			"message": map[string]any{"role": "assistant", "content": content}}}})
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(out)
+	}))
+	t.Cleanup(backup.Close)
+	if err := gateway.Save(gatewayPath(root), &gateway.Config{Routes: []gateway.Route{
+		{Name: "main", URL: main.URL + "/v1", Model: "model-a", Personal: true},
+		{Name: "backup", URL: backup.URL + "/v1", Model: "model-b", Personal: true},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	return asked
+}
+
+// A chatbot's evaluation measures the model it names and no other. It
+// named the route the gateway would ask first, and was answered by the
+// next whenever that one did not answer, so the figures kept as model-a's
+// were model-b's.
+func TestAChatbotEvaluationMeasuresOnlyTheModelItNames(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := publishedShop(t)
+	humanOut(t)
+	asked := mainDownBackupCounted(t, root, "You can return it within thirty days.")
+	if err := cmdAssistant(root, []string{"add", "help", "--title", "Help", "--public", "--model"}); err != nil {
+		t.Fatal(err)
+	}
+	cases := filepath.Join(t.TempDir(), "cases.jsonl")
+	if err := os.WriteFile(cases, []byte(`{"question": "can I return opened ink", "page": "returns"}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_ = cmdAssistant(root, []string{"eval", "help", cases})
+	m, ok := lastMeasurement(root, "chatbot", "help")
+	if !ok || m.Model != "model-a" || m.Route != "main" {
+		t.Fatalf("the evaluation is not kept as model-a's: %+v", m)
+	}
+	if n := asked.Load(); n != 0 {
+		t.Errorf("kept as model-a's, and model-b answered %d call(s) of it", n)
+	}
+}
+
+// A decider's evaluation, the same.
+func TestADeciderEvaluationMeasuresOnlyTheModelItNames(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := publishedShop(t)
+	humanOut(t)
+	asked := mainDownBackupCounted(t, root, `{"answers": {"queue": {"value": "returns", "confidence": 0.9}}}`)
+	file := filepath.Join(t.TempDir(), "d.json")
+	if err := os.WriteFile(file, []byte(ticketDecider), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdDecide(root, []string{"set", file}); err != nil {
+		t.Fatal(err)
+	}
+	cases := filepath.Join(t.TempDir(), "cases.jsonl")
+	if err := os.WriteFile(cases, []byte(`{"state": {"body": "refund please"}, "expect": {"queue": "returns"}}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_ = cmdDecide(root, []string{"eval", "ticket", cases})
+	if m, ok := lastMeasurement(root, "decider", "ticket"); ok && (m.Model != "model-a" || m.Route != "main") {
+		t.Fatalf("the evaluation is not kept as model-a's: %+v", m)
+	}
+	if n := asked.Load(); n != 0 {
+		t.Errorf("an evaluation of model-a, and model-b answered %d call(s) of it", n)
 	}
 }

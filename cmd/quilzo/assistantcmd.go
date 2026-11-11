@@ -539,6 +539,13 @@ func assistantEval(root string, args []string) error {
 		return err
 	}
 	m, _ := assistantModelAt(root, a)
+	// Named before it is measured, and measured through that route alone
+	// (onlyThrough). Named after, the route a failed call had left resting
+	// was passed over and the next one named instead.
+	served := servedBy(m)
+	if only := onlyThrough(root, served.Route, "chatbot:"+a.Name); only != nil {
+		m = only
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	r, err := assistant.Evaluate(ctx, a, idx, m, cases)
@@ -554,7 +561,6 @@ func assistantEval(root string, args []string) error {
 	if r.Hallucinated > 0 {
 		outcome = audit.Failure
 	}
-	served := servedBy(m)
 	evalBy := resolveCaller(root, "")
 	record(root, audit.Record{Action: "assistant.evaluated",
 		Resource: "/ask/" + a.Name, Outcome: outcome, Principal: evalBy.Name,

@@ -262,6 +262,12 @@ func decideEval(root string, args []string) error {
 		return err
 	}
 	m, _ := deciderModel(root, d.Name)
+	// Named before it is measured, and measured through that route alone
+	// (onlyThrough), as a chatbot's evaluation is.
+	served := servedBy(m)
+	if only := onlyThrough(root, served.Route, "decider:"+d.Name); only != nil {
+		m = only
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 	defer cancel()
 	rep, err := decide.Evaluate(ctx, d, m, cases)
@@ -273,7 +279,7 @@ func decideEval(root string, args []string) error {
 	// model answering, and nobody could say when a decider was last
 	// measured, or whether on the model answering now. The counts, never
 	// the states, which are somebody's tickets.
-	served, at := servedBy(m), time.Now().UTC()
+	at := time.Now().UTC()
 	if err := keepMeasurement(root, "decider", d.Name, caller.Name, served, at, rep); err != nil {
 		return fmt.Errorf("the evaluation of %s could not be kept: %w", d.Name, err)
 	}

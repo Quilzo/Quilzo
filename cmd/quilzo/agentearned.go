@@ -120,6 +120,38 @@ func evalDue(root, name string, now time.Time) string {
 	return evals.Due(&reps[0], drivingModel(root, name), now)
 }
 
+// measuredRoute is the gateway's route a run is driven through and no
+// other, "" for whichever answers: an evaluation's, the route it says it
+// measures; a run acting above propose on what an evaluation earned, the
+// route that evaluation measured.
+//
+// The gateway falls back to the next route when one does not answer,
+// which suits a caller wanting an answer from any model and not one whose
+// trust was measured on a model. An evaluation named the route the gateway
+// would ask first, and every call that route did not answer was answered by
+// the next, so a model was reported passing on what another did. A run
+// bound at what model-a earned was driven at that autonomy by model-b the
+// moment model-a's route stopped answering, with nobody having measured
+// model-b. Held to the route, a call it does not answer fails rather than
+// reach another model; a run started while the route rests is driven by
+// the next at propose, since that model was not measured (evals.Earned).
+func measuredRoute(root, name string, m agent.Manifest, withModel bool, eval *evalMode) string {
+	switch {
+	case !withModel:
+		return ""
+	case eval != nil:
+		return eval.Route
+	case m.Autonomy == agent.AutonomyPropose || !mustConfig(root).Bool("agents.earned_autonomy"):
+		// Nothing it may do rests on an evaluation.
+		return ""
+	}
+	reps, err := evalReports(root, name, 1)
+	if err != nil || len(reps) == 0 {
+		return ""
+	}
+	return reps[0].Route
+}
+
 // evalsStillEarn says whether an agent's evaluations earn it at least
 // draft now, and why not when they do not: earning stops counting the
 // moment an evaluation regresses, its behaviour cost it its trust, or

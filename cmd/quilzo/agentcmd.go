@@ -28,6 +28,7 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/browser"
 	decidepkg "github.com/quilzo/quilzo/internal/decide"
+	"github.com/quilzo/quilzo/internal/gateway"
 	"github.com/quilzo/quilzo/internal/otlp"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/store"
@@ -1198,6 +1199,14 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 					"  without one, the run walks the manifest and needs "+
 					"nothing", why)
 		}
+		// Through the route its evaluation measured and no other, when
+		// what it may do rests on one (measuredRoute).
+		held := measuredRoute(root, name, m, withModel, from.Eval)
+		if only := onlyThrough(root, held, "agent:"+name, payers...); only != nil {
+			model = only
+		} else {
+			held = ""
+		}
 		out.Model = model.Name()
 		// Handed to delegates as well. A supervisor deciding with a model
 		// and children walking their manifests would be a pipeline where the
@@ -1231,6 +1240,19 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 				return rb.pictures()
 			},
 		}.DecideResettable()
+		if held != "" {
+			// Said, so a run that stops where it used to go on with
+			// another model says why it did not.
+			chose := decide
+			decide = func(ctx context.Context, goal string, seen []agent.Observation) (agent.Action, error) {
+				a, err := chose(ctx, goal, seen)
+				if errors.Is(err, gateway.ErrNoRoute) {
+					err = fmt.Errorf("%w (held to the route %s: what %s may do was measured on its model and no other)",
+						err, held, name)
+				}
+				return a, err
+			}
+		}
 	}
 
 	// The reviewer, when this store names one (reviewedBy).

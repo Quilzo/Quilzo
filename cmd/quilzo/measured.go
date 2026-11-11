@@ -13,6 +13,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/evals"
+	"github.com/quilzo/quilzo/internal/gateway"
 )
 
 // The latest measurement of a chatbot or a decider: when, by whom, on
@@ -24,6 +25,25 @@ import (
 // all, so nobody could tell whether the figures on hand were of the model
 // answering now, or say when a decider was last measured. Agents keep their
 // reports with evals.Report, which names its model the same way.
+
+// onlyThrough is the gateway's binding for consumer, charged to payers as
+// well, through route and no other; nil without the gateway or a route.
+// It is what an evaluation is made through, so it measures the model it
+// names, and what a run whose autonomy rests on an evaluation is driven
+// through (measuredRoute). The gateway falls back to the next route when
+// one does not answer, and an evaluation naming the route it would ask
+// first kept as that model's figures what the next route's model answered.
+// A call the route does not answer fails instead.
+func onlyThrough(root, route, consumer string, payers ...string) gateway.Model {
+	if route == "" {
+		return nil
+	}
+	gw, _, err := modelGateway(root)
+	if err != nil || gw == nil {
+		return nil
+	}
+	return gw.ForRoute(route, consumer, payers...)
+}
 
 // measurement is one evaluation of a chatbot or a decider, kept whole.
 type measurement struct {
