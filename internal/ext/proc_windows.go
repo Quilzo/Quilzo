@@ -44,8 +44,8 @@ import (
 //
 // golang.org/x/sys/windows has every call here. This project has no require
 // block and is not getting one, so kernel32 is reached through the standard
-// library's lazy-DLL loading, exactly as internal/store/lock_windows.go does for
-// LockFileEx. It is more code and it is the same syscall.
+// library's lazy-DLL loading, exactly as internal/atomicfile/lock_windows.go
+// does for LockFileEx. It is more code and it is the same syscall.
 
 var (
 	kernel32               = syscall.NewLazyDLL("kernel32.dll")
