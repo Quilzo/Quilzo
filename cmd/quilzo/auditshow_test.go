@@ -186,3 +186,71 @@ func TestAgentsPrintsNoControlCharacterFromTheLog(t *testing.T) {
 		t.Errorf("quilzo agents printed the control character %s from the log:\n%q", c, got)
 	}
 }
+
+// The help is a contract: `auditlog show SEQ` is one entry, in full, and
+// `auditlog export -o FILE` is the whole log in a file. Both arguments were
+// read by nothing. `show 3` printed the last twenty-five entries as though
+// one of them were entry 3, and `export -o archive.jsonl` wrote the whole
+// log to the terminal, made no file and exited 0, so a script shipping the
+// archive it had just written shipped nothing. Run through the dispatcher,
+// as main runs them, so a help line and its dispatch cannot drift apart.
+func TestShowSeqAndExportToAFileDoWhatTheHelpSays(t *testing.T) {
+	second := published("/b")
+	second.Detail = map[string]string{"commit": "c0ffee", "note": "line\x1b[2K"}
+	root := shownLog(t, published("/a"), second, published("/c"))
+
+	got, err := showing(t, root, "2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"entry 2", "/b", "commit", "c0ffee", "hash", "prev"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("show 2 does not show %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "/a") || strings.Contains(got, "/c") {
+		t.Errorf("show 2 showed other entries:\n%s", got)
+	}
+	if c := controlIn(got); c != "" {
+		t.Errorf("show 2 printed the control character %s from a detail:\n%q", c, got)
+	}
+	if _, err := showing(t, root, "9"); err == nil || !strings.Contains(err.Error(), "no entry 9") {
+		t.Errorf("show of an entry that is not there: %v", err)
+	}
+
+	file := t.TempDir() + "/archive.jsonl"
+	_, read := captureStdout(t)
+	err = cmdAuditLog(root, []string{"export", "-o", file})
+	printed := read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, rerr := os.ReadFile(auditPath(root))
+	written, ferr := os.ReadFile(file)
+	if rerr != nil || ferr != nil {
+		t.Fatalf("export -o made no file: %v %v", rerr, ferr)
+	}
+	if string(written) != string(stored) {
+		t.Errorf("the file is not the log as it is stored:\n%s\nwant:\n%s", written, stored)
+	}
+	if strings.Contains(printed, `"seq"`) {
+		t.Errorf("export -o printed the log as well:\n%s", printed)
+	}
+	if info, err := os.Stat(file); err == nil && info.Mode().Perm()&0o077 != 0 {
+		t.Errorf("the export is readable by others: %v", info.Mode())
+	}
+
+	// What neither takes is refused, rather than ignored with success.
+	for _, args := range [][]string{
+		{"show", "2", "3"}, {"show", "two"}, {"show", "--limit", "-1"}, {"export", "archive.jsonl"},
+	} {
+		var panicked any
+		func() {
+			defer func() { panicked = recover() }()
+			_, err = humanOutput(t, func() error { return cmdAuditLog(root, args) })
+		}()
+		if panicked != nil || err == nil {
+			t.Errorf("auditlog %v was not refused: %v %v", args, err, panicked)
+		}
+	}
+}

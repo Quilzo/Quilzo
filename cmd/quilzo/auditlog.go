@@ -7,15 +7,19 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/anchor"
+	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/logd"
 
 	"github.com/quilzo/quilzo/internal/audit"
@@ -374,7 +378,7 @@ func cmdAuditLog(root string, args []string) error {
 	case "show":
 		return auditShow(root, args[1:])
 	case "export":
-		return auditExport(root)
+		return auditExport(root, args[1:])
 	case "head":
 		return auditHead(root, args[1:])
 	case "verify-head":
@@ -456,11 +460,31 @@ func auditVerify(root string) error {
 	return errBlocked{fmt.Errorf("the audit log has been tampered with")}
 }
 
+// auditShow lists the most recent entries, or shows one in full.
+//
+// The help has always offered `auditlog show SEQ` for one entry, and nothing
+// read the argument: `show 3` printed the last twenty-five entries as though
+// one of them were entry 3, and exited 0. Arguments are now read wherever
+// they are, and what is not a sequence number is refused rather than ignored.
 func auditShow(root string, args []string) error {
+	const usage = "usage: quilzo auditlog show [SEQ] [--limit N]"
 	fs := flag.NewFlagSet("show", flag.ContinueOnError)
 	limit := fs.Int("limit", 25, "how many recent entries")
-	if err := fs.Parse(args); err != nil {
+	pos, err := parseAnywhere(fs, args)
+	if err != nil {
 		return err
+	}
+	// A negative limit sliced past the end of the log and panicked.
+	if len(pos) > 1 || *limit < 0 {
+		return errors.New(usage)
+	}
+	var seq int64
+	if len(pos) == 1 {
+		n, err := strconv.ParseInt(pos[0], 10, 64)
+		if err != nil || n < 1 {
+			return fmt.Errorf("%q is not a sequence number; %s", pos[0], usage)
+		}
+		seq = n
 	}
 	events, err := audit.Read(auditPath(root))
 	if err != nil {
@@ -478,6 +502,9 @@ func auditShow(root string, args []string) error {
 	// unnoticed by a check that only looked at what is on screen, and the
 	// question "has this log been edited" is about the log.
 	intact, problems := audit.Verify(events)
+	if seq != 0 {
+		return auditShowEntry(events, seq, intact, problems)
+	}
 
 	if len(events) > *limit {
 		events = events[len(events)-*limit:]
@@ -488,14 +515,7 @@ func auditShow(root string, args []string) error {
 	}) {
 		return nil
 	}
-	if !intact {
-		w.Human("%sthe chain is broken — these entries cannot be trusted%s\n",
-			yellow, reset)
-		for _, p := range problems {
-			w.Human("  %sentry %d: %s%s\n", dim, p.Seq, onOneLine(p.Reason), reset)
-		}
-		w.Human("  %squilzo auditlog verify — the whole story%s\n\n", dim, reset)
-	}
+	warnBroken(intact, problems)
 	if len(events) == 0 {
 		w.Human("no audit entries\n")
 		return nil
@@ -539,12 +559,107 @@ func auditShow(root string, args []string) error {
 	return nil
 }
 
-func auditExport(root string) error {
+// warnBroken says, before any entry is shown, that the chain does not hold.
+func warnBroken(intact bool, problems []audit.Problem) {
+	if intact {
+		return
+	}
+	w.Human("%sthe chain is broken — these entries cannot be trusted%s\n",
+		yellow, reset)
+	for _, p := range problems {
+		w.Human("  %sentry %d: %s%s\n", dim, p.Seq, onOneLine(p.Reason), reset)
+	}
+	w.Human("  %squilzo auditlog verify — the whole story%s\n\n", dim, reset)
+}
+
+// auditShowEntry is `auditlog show SEQ`: one entry, every field of it,
+// after the same statement about the whole chain that the listing makes.
+func auditShowEntry(events []audit.Event, seq int64, intact bool, problems []audit.Problem) error {
+	var entry *audit.Event
+	for i := range events {
+		if events[i].Seq == seq {
+			entry = &events[i]
+			break
+		}
+	}
+	if entry == nil {
+		return fmt.Errorf("there is no entry %d in a log of %d", seq, len(events))
+	}
+	// "entry", as `auditlog prove` names the one it is about.
+	if w.JSON(map[string]any{"entry": entry, "intact": intact, "problems": problems}) {
+		return nil
+	}
+	warnBroken(intact, problems)
+	w.Human("%sentry %d%s\n", bold, entry.Seq, reset)
+	// Every value through onOneLine, as in the listing, and the detail's
+	// keys too: all of it is what the file holds.
+	field := func(name, value string) {
+		if value != "" {
+			w.Human("  %-10s %s\n", name, onOneLine(value))
+		}
+	}
+	field("at", entry.At)
+	field("action", entry.Action)
+	field("resource", entry.Resource)
+	field("outcome", string(entry.Outcome))
+	field("principal", entry.Principal)
+	field("kind", string(entry.Kind))
+	field("verified", strconv.FormatBool(entry.Verified))
+	field("model", entry.Model)
+	field("source", entry.Source)
+	field("prev", entry.Prev)
+	field("hash", entry.Hash)
+	if len(entry.Detail) > 0 {
+		keys := make([]string, 0, len(entry.Detail))
+		for k := range entry.Detail {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		w.Human("  detail\n")
+		for _, k := range keys {
+			w.Human("    %-16s %s\n", onOneLine(k), onOneLine(entry.Detail[k]))
+		}
+	}
+	return nil
+}
+
+// auditExport is the whole log as it is stored, on standard output or, with
+// -o, in a file.
+//
+// The help has always offered `auditlog export -o FILE`, and the dispatcher
+// passed this nothing: the whole log went to the terminal, no file was made,
+// and the exit status was 0, so a script that shipped the archive it had just
+// written shipped nothing. The file is written whole or not at all, and
+// readable by this account only, as the log it copies is.
+func auditExport(root string, args []string) error {
+	fs := flag.NewFlagSet("export", flag.ContinueOnError)
+	to := fs.String("o", "", "write the log to this file instead of printing it")
+	pos, err := parseAnywhere(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(pos) > 0 {
+		return errors.New("usage: quilzo auditlog export [-o FILE]")
+	}
 	events, err := audit.Read(auditPath(root))
 	if err != nil {
 		return err
 	}
-	return audit.Export(events, os.Stdout)
+	if *to == "" {
+		return audit.Export(events, os.Stdout)
+	}
+	var b bytes.Buffer
+	if err := audit.Export(events, &b); err != nil {
+		return err
+	}
+	if err := atomicfile.Write(*to, b.Bytes(), 0o600); err != nil {
+		return err
+	}
+	if w.JSON(map[string]any{"entries": len(events), "file": *to}) {
+		return nil
+	}
+	w.Human("%d entr%s written to %s\n", len(events), entrySuffix(len(events)), *to)
+	return nil
 }
 
 // entrySuffix completes "entr-y" or "entr-ies".
