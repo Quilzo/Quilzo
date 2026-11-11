@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"math"
 	"net/http"
 	"time"
 
@@ -402,5 +403,51 @@ func TestThePlaygroundCanBeSkippedToAndRead(t *testing.T) {
 		if !checked[sel] {
 			t.Errorf("%s is set back with opacity, and nothing checks the text in it", sel)
 		}
+	}
+}
+
+// Every colour the playground gives its own text reads at 4.5:1 on its page,
+// in both schemes.
+//
+// Its status line was drawn in three fixed colours picked for a white page,
+// not the theme's: 200 OK was 3.6:1 in the dark scheme, a 5xx 3.3:1, and a
+// 4xx 4.4:1 there and 4.1:1 in the light scheme, at 16px. The hints were
+// checked and these were not, because only a request sets them.
+func TestThePlaygroundsColoursReadInBothSchemes(t *testing.T) {
+	body, _ := fetchPlayground(t)
+	style := regexp.MustCompile(`(?s)<style>(.*?)</style>`).FindStringSubmatch(body)
+	if style == nil {
+		t.Fatal("the playground has no styles of its own")
+	}
+	css := regexp.MustCompile(`(?s)/\*.*?\*/`).ReplaceAllString(style[1], "")
+	colour := regexp.MustCompile(`(?:^|[;{\s])color\s*:\s*([^;}]+)`)
+	role := regexp.MustCompile(`^var\((--[a-z0-9-]+)`)
+	judged := 0
+	for _, scheme := range []string{"light", "dark"} {
+		tok := tokens(t, scheme)
+		page, _ := luminance(tok["--surface"])
+		for _, m := range regexp.MustCompile(`([^{}]+)\{([^{}]*)\}`).FindAllStringSubmatch(css, -1) {
+			c := colour.FindStringSubmatch(m[2])
+			if c == nil {
+				continue
+			}
+			sel, v := strings.Join(strings.Fields(m[1]), " "), strings.TrimSpace(c[1])
+			hex := v
+			if r := role.FindStringSubmatch(v); r != nil {
+				hex = tok[r[1]]
+			}
+			text, ok := luminance(hex)
+			if !ok {
+				t.Errorf("%s is drawn in %q, which this test cannot judge", sel, v)
+				continue
+			}
+			judged++
+			if r := (math.Max(text, page) + 0.05) / (math.Min(text, page) + 0.05); r < 4.5 {
+				t.Errorf("%s: %s is drawn in %s (%s), %.2f:1 on the page; AA needs 4.5:1", scheme, sel, v, hex, r)
+			}
+		}
+	}
+	if judged < 6 {
+		t.Fatalf("judged %d colours; the parse is wrong", judged)
 	}
 }

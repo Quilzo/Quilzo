@@ -196,7 +196,10 @@ func playgroundHTML(nonce, who, theme, home string, routes []Route) string {
     overflow-x: auto; font-family: ui-monospace, monospace; font-size: .85rem;
     white-space: pre-wrap; word-break: break-word; }
   .pg .status { font-weight: 600; }
-  .pg .ok { color: #2e7d32 } .pg .warn { color: #b26a00 } .pg .err { color: #c62828 }
+  /* The theme's own roles for the three outcomes, which hold in both schemes.
+     Fixed colours picked for a white page were 3.3:1 to 4.4:1 in the dark
+     scheme, and a 4xx 4.1:1 in the light one. */
+  .pg .ok { color: var(--ok) } .pg .warn { color: var(--warning) } .pg .err { color: var(--error) }
   .pg .note { font-size: .875rem; opacity: .8; margin: .4rem 0 0; padding: 0; border: 0 }
   /* Nothing to say yet is nothing on screen: an empty note was a stray dot,
      and two empty boxes under Response looked like a load that never ended. */
