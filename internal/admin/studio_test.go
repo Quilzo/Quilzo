@@ -942,3 +942,40 @@ func TestEarnedAutonomyIsSetOnTheScreenAsInTheDeclaration(t *testing.T) {
 		t.Error("the field does not show what the declaration says")
 	}
 }
+
+// Agents names Agent activity to somebody who manages agents, and links to
+// it only for somebody who may open it.
+//
+// It linked to it for everybody the screen is for, and Agent activity is
+// read on the compliance area: the reference stack's agent manager followed
+// the one link in the screen's opening lines and was told "no binding gives
+// role-manage-agents any role on /@compliance".
+func TestAgentsLinksAgentActivityOnlyForWhoMayOpenIt(t *testing.T) {
+	srv, admin := setup(t)
+	wireStudio(srv)
+	if err := srv.Policy.Grant(auth.Binding{Principal: "mona", Permission: auth.ActManageAgents, Resource: auth.AreaAgents}); err != nil {
+		t.Fatal(err)
+	}
+	mona, _, err := srv.Tokens.IssueSession("passkey:mona", "mona", srv.roleFor("mona"), "/", time.Hour,
+		auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		who, token string
+	}{{"an agent manager", mona}, {"an administrator", admin}} {
+		w := get(t, srv, "/agents", c.token)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s opened Agents and was answered %d", c.who, w.Code)
+		}
+		body := w.Body.String()
+		if !strings.Contains(body, "Agent activity") {
+			t.Errorf("%s is not told Agent activity exists", c.who)
+		}
+		linked := strings.Contains(body, `href="/security/agents"`)
+		opens := get(t, srv, "/security/agents", c.token).Code == http.StatusOK
+		if linked != opens {
+			t.Errorf("%s is linked to Agent activity: %v, and may open it: %v", c.who, linked, opens)
+		}
+	}
+}

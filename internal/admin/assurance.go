@@ -378,6 +378,18 @@ func (s *Server) assuranceReader(w http.ResponseWriter, r *http.Request) (princi
 	return p, true
 }
 
+// readsAssurance is whether somebody may open what assuranceReader guards,
+// asked as it asks, for a screen that names one of those screens in its
+// text: linked for whoever may open it, named for everybody else.
+//
+// Agents linked everybody it is for to Agent activity, and Settings linked
+// a floor to Security parameters, so the reference stack's agent manager,
+// and an author reading Settings, followed a link on a screen they could
+// open and were refused at the end of it.
+func (s *Server) readsAssurance(p principal) bool {
+	return s.allows(p, auth.ActView, auth.AreaCompliance)
+}
+
 // securityReader is assuranceReader for security operations: the findings,
 // events, hunting and cases an analyst works in.
 func (s *Server) securityReader(w http.ResponseWriter, r *http.Request) (principal, bool) {
