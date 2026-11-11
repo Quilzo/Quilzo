@@ -2596,10 +2596,24 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 	pages, _ := site.PagesAt(s.Store, site.RefDraft)
 	body, exists := pages[name]
 
+	// Somebody who may only read is shown the page, and an address with no
+	// page is not one to show them: it rendered as an empty "Edit ghost",
+	// for a page that is not there and that they could not have written.
+	canEdit := s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/"+name).Allowed
+	if !canEdit && !exists {
+		http.NotFound(w, r)
+		return
+	}
+
 	// Claim the page, advisorily. Somebody else holding it does not stop this
 	// edit; it is shown so the two of them can talk before one loses work.
+	//
+	// Only by somebody who may edit it. Every GET claimed it, a reader's
+	// too, so the next editor was told that a person who could not edit the
+	// page "opened this page for editing recently", and an address that was
+	// no page at all was claimed as one.
 	var heldBy *collab.Lock
-	if s.Locks != nil && s.SaveLocks != nil {
+	if canEdit && s.Locks != nil && s.SaveLocks != nil {
 		if locks, err := s.Locks(); err == nil {
 			_, existing := locks.Claim(name, p.Name, "", time.Now())
 			heldBy = existing
@@ -2671,26 +2685,34 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 	// Sections, and is not given fields it never had.
 	bodyMap, _ := body.(map[string]any)
 	_, sectioned := bodyMap[section.Field]
-	if typeName == "" && len(fields) == 0 && !sectioned {
+	if canEdit && typeName == "" && len(fields) == 0 && !sectioned {
 		fields = []field{
 			{Key: "title", Label: "Title", Input: "text"},
 			{Key: "body", Label: "Body", Input: "text", Long: true},
 		}
 	}
 
+	// What the screen is to the person looking at it: a reader was shown
+	// "Edit" over a page that said they could not edit it.
+	verb := "Edit"
+	if !canEdit {
+		verb = "View"
+	}
+
 	s.render(w, r, "edit.html", map[string]any{
+		"Verb":       verb,
 		"PageTitle":  pageTitle,
 		"Nav":        "pages",
 		"CheckedOn":  s.Checked != nil && s.Checked.Store != nil,
 		"CheckedNow": cells[name],
 		"NotesOn":    s.Notes != nil && s.Notes.Store != nil,
 		"Notes":      notes,
-		"Title":      "Edit " + name, "Principal": p, "Name": name,
+		"Title":      verb + " " + name, "Principal": p, "Name": name,
 		"Fields": fields, "Exists": exists, "Type": typeName,
 		"FormChoices": formChoices,
 		"Incoming":    incoming,
 		"Base":        base, "HeldBy": heldBy,
-		"CanEdit":   s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/"+name).Allowed,
+		"CanEdit":   canEdit,
 		"NoIndex":   seo.NoIndex(body),
 		"Canonical": canonicalRaw(body),
 		"CanShare": exists && s.Shares != nil && s.Shares.Create != nil &&

@@ -1,5 +1,5 @@
 {{template "head" .}}
-<h1>Edit {{if .PageTitle}}“{{.PageTitle}}”{{else}}{{.Name}}{{end}}</h1>
+<h1>{{.Verb}} {{if .PageTitle}}“{{.PageTitle}}”{{else}}{{.Name}}{{end}}</h1>
 {{if or .PageTitle .Type}}<p class="help">{{if .PageTitle}}The page <code>{{.Name}}</code>. {{end}}{{if .Type}}It is a <strong>{{.Type}}</strong>, so it must have the fields that type asks for.{{end}}</p>{{end}}
 {{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
 {{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
