@@ -188,6 +188,29 @@ type Hints struct {
 	OpenWorld   *bool `json:"openWorldHint,omitempty"`
 }
 
+// UnmarshalJSON reads the hints a server gives as booleans, and takes one it
+// gives as anything else, or annotations that are not an object, as saying
+// nothing. Read as typed fields, one server writing "readOnlyHint": "false"
+// made its whole answer to tools/list unreadable, and every agent and caller
+// of that integration lost every tool, where the field had been ignored.
+func (h *Hints) UnmarshalJSON(b []byte) error {
+	var raw map[string]json.RawMessage
+	*h = Hints{}
+	if json.Unmarshal(b, &raw) != nil {
+		return nil
+	}
+	flag := func(name string) *bool {
+		var v *bool
+		if json.Unmarshal(raw[name], &v) != nil {
+			return nil
+		}
+		return v
+	}
+	*h = Hints{ReadOnly: flag("readOnlyHint"), Destructive: flag("destructiveHint"),
+		Idempotent: flag("idempotentHint"), OpenWorld: flag("openWorldHint")}
+	return nil
+}
+
 // MayChange reports whether the server says the tool changes something:
 // it says it is not read-only, or that it is destructive.
 func (h *Hints) MayChange() bool {

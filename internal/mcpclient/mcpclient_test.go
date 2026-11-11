@@ -6,6 +6,7 @@ package mcpclient
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -165,5 +166,41 @@ func TestAnUnrecognisedResultShapeIsStillBounded(t *testing.T) {
 	if len(got) > MaxResult+8 {
 		t.Errorf("an unrecognised result came back at %d bytes; the ceiling "+
 			"is what stops a server filling a model's context", len(got))
+	}
+}
+
+// A server's hints that are not the booleans the revision says they are do
+// not cost it its tools.
+//
+// The hints were read so the gateway could pass on a tool a server calls
+// destructive, as typed fields, so one server writing "readOnlyHint": "false"
+// or a number made its whole answer to tools/list unreadable, and every
+// agent and caller of that integration lost every tool, where the field had
+// been ignored before. A hint that is not a boolean says nothing.
+func TestHintsThatAreNotBooleansDoNotLoseTheTools(t *testing.T) {
+	c := &Client{Do: func(context.Context, string, []byte, map[string]string) (*fetch.Result, error) {
+		return &fetch.Result{Status: 200, Header: http.Header{"Content-Type": {"application/json"}},
+			Body: []byte(`{"jsonrpc":"2.0","id":1,"result":{"tools":[` +
+				`{"name":"create_issue","description":"File one.","inputSchema":{"type":"object"},` +
+				`"annotations":{"title":"File","readOnlyHint":"false","destructiveHint":1,"idempotentHint":null}},` +
+				`{"name":"close_issue","description":"Close one.","inputSchema":{"type":"object"},"annotations":"none"},` +
+				`{"name":"delete_issue","description":"Delete one.","inputSchema":{"type":"object"},` +
+				`"annotations":{"readOnlyHint":true,"destructiveHint":true}}]}}`)}, nil
+	}}
+	tools, err := c.Tools(context.Background(), integration("create_issue", "close_issue", "delete_issue"))
+	if err != nil {
+		t.Fatalf("the server's tools could not be read: %v", err)
+	}
+	if len(tools) != 3 {
+		t.Fatalf("read %d tools", len(tools))
+	}
+	for _, tool := range tools[:2] {
+		if tool.Annotations.MayChange() || tool.Annotations.SaysDestructive() {
+			t.Errorf("%s: a hint that is not a boolean was taken as one: %+v", tool.Name, tool.Annotations)
+		}
+	}
+	// What is a boolean is still read.
+	if !tools[2].Annotations.SaysDestructive() || !tools[2].Annotations.MayChange() {
+		t.Errorf("a server's own destructive hint was lost: %+v", tools[2].Annotations)
 	}
 }
