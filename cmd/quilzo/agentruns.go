@@ -673,7 +673,10 @@ func declareAgent(root string, m agent.Manifest, isNew bool, widen bool, caller 
 	// the oldest trick on a tired reader, and the answer to it is the diff
 	// itself, in the reader's words.
 	var delta agent.Delta
-	if !isNew {
+	gate := func() error {
+		if isNew {
+			return nil
+		}
 		delta = agent.DeltaOf(set.Agents[m.Name], m)
 		if delta.Widens && !widen {
 			return fmt.Errorf(
@@ -681,6 +684,10 @@ func declareAgent(root string, m agent.Manifest, isNew bool, widen bool, caller 
 					"read the list, and declare it again with --widen when it is what you mean",
 				m.Name, strings.Join(delta.Added, "\n  "))
 		}
+		return nil
+	}
+	if err := gate(); err != nil {
+		return err
 	}
 	if err := m.ValidateWith(knownCapabilities(root), customKinds(root)); err != nil {
 		return err
@@ -703,6 +710,14 @@ func declareAgent(root string, m agent.Manifest, isNew bool, widen bool, caller 
 		// Declaring it is reviewing it, so the file is pinned as it is now,
 		// or held to the digest the declaration names.
 		if err := reviewProgram(m.Name, m.Program); err != nil {
+			return err
+		}
+		// And read for its reach again, now that the file is: the reach
+		// above was read before it, so an amendment that only narrowed the
+		// program, less memory, pinned whatever had replaced the file since
+		// its review, without --widen and without a word that it was not the
+		// file reviewed. Another file at the same path is another program.
+		if err := gate(); err != nil {
 			return err
 		}
 	}

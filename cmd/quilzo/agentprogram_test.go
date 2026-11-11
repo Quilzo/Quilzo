@@ -507,3 +507,63 @@ func TestAProgramThatChangedAfterReviewIsRefused(t *testing.T) {
 		t.Fatalf("an edit to the purpose lost the pin: %+v", p)
 	}
 }
+
+// Another file at the same path is another program, whatever else an
+// amendment changes. The widening was read before the file was, so an
+// amendment that only narrowed the program, less memory, pinned whatever had
+// replaced the file since its review, and nothing it said told the person
+// declaring it that the file was not the one reviewed: it went through
+// without --widen, and the record named the new digest and no change.
+func TestAnAmendmentThatPinsAReplacedFileSaysSo(t *testing.T) {
+	root := argsStore(t)
+	prog := filepath.Join(t.TempDir(), "tidy-run")
+	if err := os.WriteFile(prog, []byte("#!/bin/sh\necho reviewed\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	_, read := captureStdout(t)
+	err := cmdAgent(root, []string{"program", "tidy", "--memory-mb", "1024", "--", prog})
+	read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviewed, _ := agent.FileDigest(prog)
+	if err := os.WriteFile(prog, []byte("#!/bin/sh\necho replaced\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	replaced, _ := agent.FileDigest(prog)
+
+	// The declaration it is amended from carries no pin, as a manifest
+	// written by hand does not.
+	set, _ := loadAgents(root)
+	m := set.Agents["tidy"]
+	m.Program = &agent.Program{Command: []string{prog}, MemoryMB: 512}
+	err = declareAgent(root, m, false, false, asAdmin("dana"))
+	if err == nil || !strings.Contains(err.Error(), "not the one reviewed") || !strings.Contains(err.Error(), "--widen") {
+		t.Fatalf("less memory, and another file at the same path: %v", err)
+	}
+	if set, _ = loadAgents(root); set.Agents["tidy"].Program.Digest != reviewed {
+		t.Fatalf("the refused amendment pinned the replaced file: %+v", set.Agents["tidy"].Program)
+	}
+
+	// Meant, it is declared, and the record says which file it now is.
+	if err := declareAgent(root, m, false, true, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	if set, _ = loadAgents(root); set.Agents["tidy"].Program.Digest != replaced {
+		t.Fatalf("pinned: %+v", set.Agents["tidy"].Program)
+	}
+	evs, _ := audit.Read(auditPath(root))
+	said := false
+	for _, e := range evs {
+		said = said || e.Action == "agent.changed" && strings.Contains(e.Detail["widened"], "not the one reviewed")
+	}
+	if !said {
+		t.Error("the record does not say the file was not the one reviewed")
+	}
+
+	// The same file, narrowed, is no widening.
+	m.Program = &agent.Program{Command: []string{prog}, MemoryMB: 256}
+	if err := declareAgent(root, m, false, false, asAdmin("dana")); err != nil {
+		t.Fatalf("less memory, the same file: %v", err)
+	}
+}
