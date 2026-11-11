@@ -12,7 +12,8 @@ import (
 	"sort"
 	"strings"
 	"time"
-	"unicode/utf8"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // The loop: mutate, run, judge, record, keep.
@@ -365,15 +366,7 @@ func better(a, b Individual) bool {
 }
 
 // clip cuts text to at most n bytes at a character boundary, saying so.
-func clip(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	for n > 0 && !utf8.RuneStart(s[n]) {
-		n--
-	}
-	return s[:n] + "…"
-}
+func clip(s string, n int) string { return plaintext.Clip(s, n, "…") }
 
 // runNote says why a run did not finish, briefly.
 func runNote(out RunOutcome, err error) string {

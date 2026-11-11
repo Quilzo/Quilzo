@@ -37,6 +37,7 @@ import (
 	"strings"
 
 	"github.com/quilzo/quilzo/internal/agent"
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/yamlite"
 )
 
@@ -352,7 +353,7 @@ func (b *builder) purpose(s string) {
 		return
 	}
 	if len(s) > 300 {
-		s = s[:297] + "..."
+		s = plaintext.Clip(s, 297, "...")
 		b.changed("its description, cut to 300 characters as its purpose")
 	} else {
 		b.kept("its description, as its purpose")
@@ -412,7 +413,7 @@ func (b *builder) tool(name, host, purpose string, writes, ask bool) {
 		purpose = "called by the agent as " + name
 	}
 	if len(purpose) > 300 {
-		purpose = purpose[:297] + "..."
+		purpose = plaintext.Clip(purpose, 297, "...")
 	}
 	if b.tools[name] {
 		return
@@ -684,7 +685,7 @@ func firstSentence(s string) string {
 		}
 	}
 	if len(s) > 300 {
-		s = s[:297] + "..."
+		s = plaintext.Clip(s, 297, "...")
 	}
 	return s
 }

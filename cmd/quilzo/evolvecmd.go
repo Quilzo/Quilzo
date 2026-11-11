@@ -27,6 +27,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/evolve"
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/shell"
 )
 
@@ -402,12 +403,7 @@ func fileDigest(path string) (string, bool) {
 }
 
 // clampStr cuts a string for a record.
-func clampStr(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
-}
+func clampStr(s string, n int) string { return plaintext.Clip(s, n, "…") }
 
 // boxRunner runs candidates and the evaluator in boxes of their own.
 //

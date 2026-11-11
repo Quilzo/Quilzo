@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Your own account, and only your own.
@@ -412,12 +413,7 @@ func presentedToken(r *http.Request) string {
 	return ""
 }
 
-func clip(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n]
-}
+func clip(s string, n int) string { return plaintext.Clip(s, n, "") }
 
 func (s *Server) profileRedirect(w http.ResponseWriter, r *http.Request, msg, errMsg string) {
 	u := "/profile"

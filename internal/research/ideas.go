@@ -646,15 +646,7 @@ func stripFences(s string) string {
 }
 
 // clipUTF8 cuts a string to at most n bytes at a character boundary.
-func clipUTF8(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	for n > 0 && s[n]&0xC0 == 0x80 {
-		n--
-	}
-	return s[:n]
-}
+func clipUTF8(s string, n int) string { return plaintext.Clip(s, n, "") }
 
 // Duplicates names the existing ideas a new one repeats, if any.
 //

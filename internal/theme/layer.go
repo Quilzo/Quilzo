@@ -10,6 +10,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // A style layer: CSS of a site's own, on top of the generated stylesheet.
@@ -863,5 +865,5 @@ func clip(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
-	return s[:n-1] + "…"
+	return plaintext.Clip(s, n-1, "…")
 }

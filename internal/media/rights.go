@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Who may use this picture, and until when.
@@ -274,9 +276,4 @@ func (r Rights) UntilTime() (time.Time, bool) {
 	return time.Unix(r.Until, 0).UTC(), true
 }
 
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
-}
+func truncate(s string, n int) string { return plaintext.Clip(s, n, "…") }

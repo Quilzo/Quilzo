@@ -766,13 +766,7 @@ func stripFence(s string) string {
 	return strings.TrimSpace(t)
 }
 
-func clamp(s string, n int) string {
-	s = strings.TrimSpace(s)
-	if len(s) <= n {
-		return s
-	}
-	return s[:n]
-}
+func clamp(s string, n int) string { return plaintext.Clip(strings.TrimSpace(s), n, "") }
 
 func sorted(m map[string]bool) []string {
 	out := make([]string, 0, len(m))

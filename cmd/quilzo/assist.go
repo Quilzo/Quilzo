@@ -13,6 +13,7 @@ import (
 	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/out"
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/provenance"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
@@ -265,10 +266,9 @@ func changeKind(isNew bool) string {
 	return "changed"
 }
 
+// truncate is text on one line, clipped to n bytes and an ellipsis. It
+// clips with plaintext.Clip because a cut at the nth byte splits a
+// character: `quilzo schedule add` kept half an é in its audit note.
 func truncate(s string, n int) string {
-	s = strings.Join(strings.Fields(s), " ")
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
+	return plaintext.Clip(strings.Join(strings.Fields(s), " "), n, "…")
 }

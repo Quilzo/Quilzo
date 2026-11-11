@@ -55,6 +55,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Expect is what a good run of a case looks like.
@@ -344,11 +345,7 @@ func held(s agent.Step) string {
 }
 
 func oneLine(s string, n int) string {
-	s = strings.Join(strings.Fields(s), " ")
-	if len(s) > n {
-		s = s[:n] + "…"
-	}
-	return s
+	return plaintext.Clip(strings.Join(strings.Fields(s), " "), n, "…")
 }
 
 func nameOr(a agent.Action) string {
