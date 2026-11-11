@@ -46,8 +46,15 @@
   <button type="submit">Save to draft</button>
   <button class="btn tonal" type="submit" formaction="/preview/{{.Name}}?plain=1" formtarget="preview-frame"
     formnovalidate data-preview-now>Show in the preview</button>
+  {{/*
+    The way to Sections, from the page itself. A page that is not saved yet
+    is not there for Sections to open, so it is saved first and Sections
+    opened on it; one that is there is a link away.
+  */}}
+  {{if not .Type}}{{if .Exists}}<a class="btn btn-tonal" href="/sections?page={{.Name}}">Build it from sections</a>
+  {{else}}<button class="btn-tonal" type="submit" name="__then" value="sections">Save, then add sections</button>{{end}}{{end}}
   <p class="help">Saving writes a draft. Nothing is public until someone publishes. The preview shows
-    what you have typed, unsaved.</p>
+    what you have typed, unsaved.{{if not .Type}} Sections put headings, pictures, lists and more on the page.{{end}}</p>
 </form>
 
 <div class="edit-details">
