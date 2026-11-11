@@ -131,6 +131,12 @@ func cmdAgent(root string, args []string) error {
 	switch args[0] {
 	case "templates":
 		return agentTemplates(root)
+	case "template":
+		// This store's own archetypes. Every `agent template` command fell
+		// through to the usage below, so the save the footer of `agent
+		// templates` and NEWS name could only be done by writing the file
+		// into the store by hand, past its grant check and its record.
+		return cmdAgentTemplate(root, args[1:])
 	case "capabilities":
 		return agentCapabilities(root)
 	case "list":
@@ -202,6 +208,8 @@ func agentUsage() error {
 	return fmt.Errorf(`usage: quilzo agent <command>
 
   templates              the archetypes, and when to reach for each
+  template list | save FILE | remove KIND
+                         archetypes of this store's own, which new --kind then knows
   new NAME --kind KIND   declare one from a template
   draft "WHAT IT IS FOR" a model drafts one; the checker says what it could do; nothing is saved
   declare FILE [--widen] save a declaration written out, checked again on the way in; an
