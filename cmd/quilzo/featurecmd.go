@@ -616,8 +616,8 @@ func printOutcome(p *feature.Package, o featureOutcome, err error, caller *Calle
 	// wrote only for a person, so a script installing a feature that sends
 	// to another server was answered with nothing, and the keys, shown once,
 	// were shown to nobody.
-	if w.JSON(map[string]any{"installed": p.Name, "version": p.Version, "alone": o.Alone,
-		"imported": o.Imported, "webhooks": webhookKeys(o.Secrets)}) {
+	if w.JSON(featureInstalled{Installed: p.Name, Version: p.Version, Alone: o.Alone,
+		Imported: o.Imported, Webhooks: webhookKeys(o.Secrets)}) {
 		return nil
 	}
 	if o.Alone {
@@ -632,6 +632,19 @@ func printOutcome(p *feature.Package, o featureOutcome, err error, caller *Calle
 		w.Human("webhook secret, shown once: %s\n", sec)
 	}
 	return nil
+}
+
+// featureInstalled is what --json answers for a feature installed, whether
+// at once or on a second person's approval.
+type featureInstalled struct {
+	Installed string `json:"installed"`
+	Version   string `json:"version"`
+	// Alone is that the one administrator approved it as they made it.
+	Alone       bool                `json:"alone"`
+	RequestedBy string              `json:"requested_by,omitempty"`
+	ApprovedBy  string              `json:"approved_by,omitempty"`
+	Imported    int                 `json:"imported"`
+	Webhooks    []map[string]string `json:"webhooks"`
 }
 
 // webhookKeys are a feature's new webhooks and their keys, as --json gives
@@ -753,8 +766,8 @@ func decideFeature(root, id string, approve bool, caller *Caller) error {
 	// webhook's key. This wrote only for a person, so the keys, shown once,
 	// were shown to nobody. It is written however the records after it fare,
 	// as the keys are for a person, since there is no asking for them again.
-	doc := map[string]any{"installed": p.Name, "version": p.Version, "requested_by": pend.RequestedBy,
-		"approved_by": caller.Name, "imported": 0, "webhooks": webhookKeys(secrets)}
+	doc := featureInstalled{Installed: p.Name, Version: p.Version, RequestedBy: pend.RequestedBy,
+		ApprovedBy: caller.Name, Webhooks: webhookKeys(secrets)}
 	for _, sec := range secrets {
 		w.Human("webhook secret, shown once: %s\n", sec)
 	}
@@ -771,7 +784,7 @@ func decideFeature(root, id string, approve bool, caller *Caller) error {
 			return fmt.Errorf("%s is installed, and its records were not imported: %w", p.Name, err)
 		}
 		_ = os.Remove(featurePendingPath(root, id) + ".rows")
-		doc["imported"] = n
+		doc.Imported = n
 		w.Human("imported %d record(s) into %s\n", n, rows.Collection)
 	}
 	if w.JSON(doc) {
