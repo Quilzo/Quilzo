@@ -1083,6 +1083,13 @@ head.pub.json`, `quilzo agent verify-receipt FILE --keys head.pub.json`. The
 audit log screen says when the writer signs the heads, and where that file
 is.
 
+`verify-head` checks the head against the log as well, where there is one,
+and `quilzo auditlog consistency --head FILE` checks a head kept elsewhere
+against the log. `auditlog verify`, the audit log screen and posture check
+the log against the largest head in `log-heads.json` too: entries removed
+from the end of the log leave a shorter chain that still verifies, so only a
+head taken while they were there shows they are gone.
+
 ## What is in it
 
 **Content.** Pages and structured records. Content types with typed, validated

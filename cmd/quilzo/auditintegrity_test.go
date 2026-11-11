@@ -224,3 +224,87 @@ func TestEntriesRemovedFromTheEndAreFoundAgainstTheSavedHead(t *testing.T) {
 		t.Errorf("a log rewritten behind its saved head: %v\n%s", err, human)
 	}
 }
+
+// exportHead writes the signed head `auditlog head --json` answers to a
+// file, as somebody keeping it off the machine does.
+func exportHead(t *testing.T, root string) string {
+	t.Helper()
+	doc, err := jsonAnswer(t, func() error { return cmdAuditLog(root, []string{"head"}) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "head.json")
+	if err := os.WriteFile(path, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// A head kept off the machine is checked against the log. verify-head said
+// "verified" for a head the log, cut back since, no longer held, and
+// consistency read only the heads saved beside the log, so the one kept
+// elsewhere, which is the one that counts, could not be checked at all: a
+// head file named to it was dropped without a word.
+func TestAHeadKeptElsewhereIsCheckedAgainstTheLog(t *testing.T) {
+	root := auditedStore(t, 4)
+	head := exportHead(t, root)
+	putRecords(t, root, 2)
+
+	human, err := humanOutput(t, func() error { return cmdAuditLog(root, []string{"verify-head", head}) })
+	if err != nil || !strings.Contains(human, "verified") || !strings.Contains(human, "still extends it") {
+		t.Errorf("a head the log grew from: %v\n%s", err, human)
+	}
+	doc, err := jsonAnswer(t, func() error { return cmdAuditLog(root, []string{"verify-head", head}) })
+	if err != nil || doc["verified"] != true || doc["consistent"] != true || doc["log_size"] != float64(6) {
+		t.Errorf("verify-head --json: %v %v", doc, err)
+	}
+	for _, args := range [][]string{{"consistency", head}, {"consistency", "--head", head}, {"consistency", "--head", head, "--since", "4"}} {
+		if human, err := humanOutput(t, func() error { return cmdAuditLog(root, args) }); err != nil || !strings.Contains(human, "4 → 6") {
+			t.Errorf("%v: %v\n%s", args, err, human)
+		}
+	}
+
+	keepLines(t, root, 3)
+	var blocked errBlocked
+	human, err = humanOutput(t, func() error { return cmdAuditLog(root, []string{"verify-head", head}) })
+	if !errors.As(err, &blocked) || strings.Contains(human, "verified") || !strings.Contains(errString(err), "shrunk") {
+		t.Errorf("a head the log no longer holds: %v\n%s", err, human)
+	}
+	doc, err = jsonAnswer(t, func() error { return cmdAuditLog(root, []string{"verify-head", head}) })
+	if !errors.As(err, &blocked) || doc["verified"] != false || doc["consistent"] != false || doc["signed"] != true {
+		t.Errorf("verify-head --json: %v %v", doc, err)
+	}
+	for _, args := range [][]string{{"consistency", head}, {"consistency", "--head", head}} {
+		if _, err := humanOutput(t, func() error { return cmdAuditLog(root, args) }); !errors.As(err, &blocked) || !strings.Contains(errString(err), "shrunk") {
+			t.Errorf("%v: %v", args, err)
+		}
+	}
+
+	// A head of another size than --since, or a second file, is refused
+	// rather than one of them dropped.
+	for _, args := range [][]string{{"consistency", "--head", head, "--since", "3"}, {"consistency", head, head}} {
+		if _, err := humanOutput(t, func() error { return cmdAuditLog(root, args) }); err == nil || errors.As(err, &blocked) {
+			t.Errorf("%v: %v", args, err)
+		}
+	}
+
+	// Somebody holding the head and the keys but not the log checks the
+	// signatures, and is told what is left to check.
+	elsewhere := t.TempDir()
+	human, err = humanOutput(t, func() error {
+		return cmdAuditLog(elsewhere, []string{"verify-head", head, "--keys", headKeysPath(root)})
+	})
+	if err != nil || !strings.Contains(human, "consistency --head") {
+		t.Errorf("without the log: %v\n%s", err, human)
+	}
+	doc, _ = jsonAnswer(t, func() error {
+		return cmdAuditLog(elsewhere, []string{"verify-head", head, "--keys", headKeysPath(root)})
+	})
+	if doc["verified"] != true || doc["consistent"] != nil {
+		t.Errorf("verify-head --json without the log: %v", doc)
+	}
+}

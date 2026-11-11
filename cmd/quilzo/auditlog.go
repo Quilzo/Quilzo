@@ -474,7 +474,7 @@ func auditVerify(root string) error {
 		w.Human("  %sand it still extends the head saved at %d entries (%s), so none of\n"+
 			"  those was removed or rewritten since%s\n", dim, head.Size, head.At, reset)
 		w.Human("  %sa head saved here can be rewritten with the log; a copy kept off this\n"+
-			"  machine is the one that counts%s\n", dim, reset)
+			"  machine is the one that counts: quilzo auditlog consistency --head FILE%s\n", dim, reset)
 		return nil
 	}
 	w.Human("  %s%d problem(s)%s\n", red, len(problems), reset)
@@ -765,8 +765,22 @@ func auditProve(root string, args []string) error {
 func auditConsistency(root string, args []string) error {
 	fs := flag.NewFlagSet("consistency", flag.ContinueOnError)
 	against := fs.Int("since", 0, "the size of a previously published head")
-	if err := fs.Parse(args); err != nil {
+	headPath := fs.String("head", "", "a signed head kept off this machine (auditlog head --json), "+
+		"checked against instead of the heads saved beside the log")
+	keysPath := fs.String("keys", "", "the public keys that check that head (default head.pub.json beside the log)")
+	// A head file may be named on its own as well. It was dropped without a
+	// word, and the heads saved beside the log checked instead: the one
+	// kept off the machine, which is the one that counts, could not be
+	// checked at all.
+	files, err := parseAnywhere(fs, args)
+	if err != nil {
 		return err
+	}
+	switch {
+	case len(files) == 1 && *headPath == "":
+		*headPath = files[0]
+	case len(files) > 0:
+		return fmt.Errorf("usage: quilzo auditlog consistency [--since N] [--head FILE [--keys FILE]]")
 	}
 
 	events, err := auditEntries(root)
@@ -774,34 +788,49 @@ func auditConsistency(root string, args []string) error {
 		return err
 	}
 
-	// Against the most recently saved head if none was named, because that is
-	// the check somebody wants and remembering a number is not.
-	oldSize := *against
+	// The head named, once its signatures check out. Otherwise the most
+	// recently saved head if no size was named, because that is the check
+	// somebody wants and remembering a number is not.
 	var published audit.Head
-	f := &headFile{}
-	if err := loadJSON(headsPath(root), f); err != nil {
-		return err
-	}
-	if oldSize == 0 {
-		if len(f.Heads) == 0 {
-			return fmt.Errorf(
-				"no head has been published, so there is nothing to check " +
-					"against.\n  `quilzo auditlog head --save` records one; a " +
-					"head only proves anything once it exists somewhere the log " +
-					"cannot be quietly rewritten alongside")
+	if *headPath != "" {
+		keys := *keysPath
+		if keys == "" {
+			keys = headKeysPath(root)
 		}
-		published = f.Heads[len(f.Heads)-1]
-		oldSize = published.Size
+		sh, err := loadSignedHead(*headPath, keys)
+		if err != nil {
+			return err
+		}
+		if *against != 0 && *against != sh.Size {
+			return fmt.Errorf("the head in %s covers %d entries, not %d", *headPath, sh.Size, *against)
+		}
+		published = sh.Head
 	} else {
-		for _, h := range f.Heads {
-			if h.Size == oldSize {
-				published = h
+		f := &headFile{}
+		if err := loadJSON(headsPath(root), f); err != nil {
+			return err
+		}
+		if *against == 0 {
+			if len(f.Heads) == 0 {
+				return fmt.Errorf(
+					"no head has been published, so there is nothing to check " +
+						"against.\n  `quilzo auditlog head --save` records one; a " +
+						"head only proves anything once it exists somewhere the log " +
+						"cannot be quietly rewritten alongside")
+			}
+			published = f.Heads[len(f.Heads)-1]
+		} else {
+			for _, h := range f.Heads {
+				if h.Size == *against {
+					published = h
+				}
+			}
+			if published.Root == "" {
+				return fmt.Errorf("no published head covers %d entries", *against)
 			}
 		}
-		if published.Root == "" {
-			return fmt.Errorf("no published head covers %d entries", oldSize)
-		}
 	}
+	oldSize := published.Size
 
 	proof, now, err := audit.Extends(events, published)
 	if err != nil {

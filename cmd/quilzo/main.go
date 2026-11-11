@@ -662,13 +662,17 @@ log transparency
                                             from every account --allow-uid lets submit
   quilzo logd status                       whether the separation is in force, and who signs heads
   quilzo auditlog dir                      where the log is, and whether it is separate
-  quilzo auditlog verify                   recompute the chain over every entry
+  quilzo auditlog verify                   recompute the chain over every entry, and
+                                            check the log against the head saved here
   quilzo auditlog show SEQ                 one entry, in full
   quilzo auditlog export -o FILE           the whole log, as it is stored
   quilzo auditlog head --save              a commitment to every entry so far
-  quilzo auditlog verify-head FILE         check a saved commitment against the log
+  quilzo auditlog verify-head FILE         check a saved commitment's signatures, and
+                                            that the log here still holds it
   quilzo auditlog prove SEQ                one entry is in the log, in ~20 hashes
   quilzo auditlog consistency              nothing before a published head moved
+      --head FILE                           against a head kept off this machine
+                                            (auditlog head --json), checked by --keys FILE
   quilzo auditlog anchor                   put the head in Bitcoin, so rewriting
                                             history contradicts a block
   quilzo timestamp stamp | list | export   RFC 3161 proof of when you published
