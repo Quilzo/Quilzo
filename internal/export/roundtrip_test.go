@@ -89,6 +89,43 @@ func TestAPageKeepsItsNameEvenWhenTheTitleSuggestsAnother(t *testing.T) {
 	}
 }
 
+// A file that names one page twice brings both.
+//
+// Two pages of an array that shared a name were already numbered rather
+// than one replacing the other, and so were two keys that came to one name.
+// The same name written twice as a key was not: the file was read into a
+// map, which keeps the last of a repeated key, so {"same": ..., "same": ...}
+// imported one page, reported one page, and said nothing about the other. A
+// file written by hand, or put together from two, does that.
+func TestAPageNamedTwiceInAJSONFileIsNotLost(t *testing.T) {
+	rep, err := export.Read(export.JSON, []byte(`{"same":{"title":"Same","body":"first"},
+		"other":{"body":"between"},"same":{"title":"Same","body":"second"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, p := range rep.Pages {
+		body, _ := p.Fields["body"].(string)
+		got = append(got, p.Name+"="+body)
+	}
+	if g := strings.Join(got, ","); g != "other=between,same=first,same-2=second" {
+		t.Fatalf("the pages arrived as %s, not other, same and same-2: the page "+
+			"whose name came second was lost", g)
+	}
+
+	// What the map read refused is still refused, and in the same words.
+	for _, bad := range []string{`{"a":{"title":"A"}} trailing`, `{"a":`, `"a page"`} {
+		if _, err := export.Read(export.JSON, []byte(bad)); err == nil ||
+			!strings.Contains(err.Error(), "this is not JSON") {
+			t.Errorf("%s was read, or refused as something else: %v", bad, err)
+		}
+	}
+	if _, err := export.Read(export.JSON, []byte(`null`)); err == nil ||
+		!strings.Contains(err.Error(), "no importable pages") {
+		t.Errorf("null was read as pages, or refused as something else: %v", err)
+	}
+}
+
 // An array has no keys, so a title is still a better name than a position.
 // The fix must not have taken that away.
 func TestAnArrayOfPagesStillTakesItsNamesFromTheContent(t *testing.T) {
