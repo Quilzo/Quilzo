@@ -1221,6 +1221,22 @@ func tokenStale(root string, args []string) error {
 		return err
 	}
 	stale := ts.Stale(time.Now(), *idle)
+	// The tokens under --json, as the prose names them: by id and name, and
+	// when each last worked. This printed "no stale tokens" whatever was
+	// asked for, so a script sweeping for credentials nobody uses was given
+	// a sentence to parse.
+	if w.Mode == out.JSON {
+		rows := make([]map[string]any, 0, len(stale))
+		for _, t := range stale {
+			row := map[string]any{"id": t.ID, "name": t.Name, "last_used": nil}
+			if t.LastUsed > 0 {
+				row["last_used"] = time.Unix(t.LastUsed, 0).UTC().Format(time.RFC3339)
+			}
+			rows = append(rows, row)
+		}
+		w.JSON(map[string]any{"idle": idle.String(), "tokens": rows})
+		return nil
+	}
 	if len(stale) == 0 {
 		fmt.Println("no stale tokens")
 		return nil

@@ -460,6 +460,12 @@ func cmdFleet(root string, args []string) error {
 			if err != nil {
 				return err
 			}
+			// The agents whose cards changed, under --json. This wrote only
+			// through Human, so a script asking whether any card had changed
+			// was answered with nothing and exit 0.
+			if w.JSON(map[string]any{"changed": changed}) {
+				return nil
+			}
 			if len(changed) == 0 {
 				w.Human("no registered agent's card has changed\n")
 			}

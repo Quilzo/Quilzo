@@ -49,6 +49,28 @@ func cmdMCP(root string, args []string) error {
 	srv := buildMCP(root, s, caller, *tplDir)
 
 	if *list {
+		// The operations as one document under --json. This printed its
+		// table whatever was asked for, so a program finding out what the
+		// agent interface offers had columns to cut apart.
+		type operation struct {
+			Name    string `json:"name"`
+			Kind    string `json:"kind"`
+			Summary string `json:"summary"`
+		}
+		ops := make([]operation, 0, len(srv.Operations()))
+		for _, op := range srv.Operations() {
+			kind := "read"
+			if op.Writes {
+				kind = "write"
+			}
+			if op.Publishes {
+				kind = "publish"
+			}
+			ops = append(ops, operation{op.Name, kind, op.Summary})
+		}
+		if w.JSON(map[string]any{"operations": ops, "tools": len(srv.Tools())}) {
+			return nil
+		}
 		for _, op := range srv.Operations() {
 			kind := "read"
 			if op.Writes {

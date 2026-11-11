@@ -37,14 +37,16 @@ import (
 // told there were none by an empty output. `config list` and `config show`
 // did the same, because a setting holds a function JSON cannot write, and
 // thirteen lists answered null when they had nothing in them. So every read
-// the help names — each `status`, `list` and `show` — is asked, in a fresh
-// store and in the demo, and a command added to the help is asked without
-// anybody adding it here. A read that cannot run there (a `show` with no
-// NAME, a review with no draft) fails, says why on stderr, and writes
-// nothing to stdout; one that succeeds writes one document, and a list with
-// nothing in it is [], not null, whether it is the answer or the list inside
-// it: `board list`, `menu list` and a dozen more answered {"boards": null}
-// once the bare lists were []. The commands after that are the reads the
+// the help names — each `status`, `list`, `show` and `check` — is asked, in
+// a fresh store and in the demo, and a command added to the help is asked
+// without anybody adding it here. A read that cannot run there (a `show`
+// with no NAME, a review with no draft) fails, says why on stderr, and
+// writes nothing to stdout; one that succeeds writes one document, and a
+// list with nothing in it is [], not null, whether it is the answer or the
+// list inside it: `board list`, `menu list` and a dozen more answered
+// {"boards": null} once the bare lists were []. `agent check` and `fleet
+// check` were the same defect under another verb, the one printing its
+// verdicts and the other nothing. The commands after that are the reads the
 // help words otherwise.
 //
 // The real command line, in a process of its own, because most of these
@@ -85,8 +87,12 @@ func TestEveryListingAnswersInJSON(t *testing.T) {
 		}
 	}
 	for _, c := range [][]string{
-		{"agent", "templates"}, {"audit", tpl}, {"auth", "roles"}, {"brand", "check"},
+		{"agent", "templates"}, {"audit", tpl}, {"auth", "roles"},
 		{"diff"}, {"log"}, {"rights"}, {"version"},
+		// These three printed their prose under --json too: a sweep for
+		// tokens nobody uses, the operations the agent interface offers,
+		// and a research report checked before it goes out.
+		{"token", "stale"}, {"mcp", "--list"}, {"research", "check", "repeat-orders"},
 		// These three printed their prose under --json. A site that takes no
 		// bookings yet, one being set up and one that does, in that order,
 		// because each is a different branch; and an explanation both of
@@ -146,14 +152,14 @@ func answersInJSON(t *testing.T, home, root string, c []string, always bool) {
 }
 
 // readCommands is every read the help names: each command's `status`,
-// `list` and `show`, read from the help text by helpClaims.
+// `list`, `show` and `check`, read from the help text by helpClaims.
 func readCommands(t *testing.T) [][]string {
 	t.Helper()
 	var reads [][]string
 	for cmd, subs := range helpClaims(t) {
 		seen := map[string]bool{}
 		for _, s := range subs {
-			if (s == "status" || s == "list" || s == "show") && !seen[s] {
+			if (s == "status" || s == "list" || s == "show" || s == "check") && !seen[s] {
 				seen[s] = true
 				reads = append(reads, []string{cmd, s})
 			}

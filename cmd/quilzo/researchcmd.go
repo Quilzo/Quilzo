@@ -324,6 +324,27 @@ func cmdResearch(root string, args []string) error {
 		if err != nil {
 			return err
 		}
+		// The findings as one document under --json, refused as below when
+		// one is a problem. This printed them whatever was asked for, so a
+		// pipeline checking a report before it went out got sentences to
+		// parse, and exit 0 with them when there was nothing wrong.
+		if w.Mode == out.JSON {
+			type finding struct {
+				Problem bool   `json:"problem"`
+				Line    int    `json:"line,omitempty"`
+				What    string `json:"what"`
+			}
+			rows := make([]finding, 0, len(fs))
+			for _, f := range fs {
+				rows = append(rows, finding{f.Problem, f.Line, f.What})
+			}
+			n := research.Problems(fs)
+			w.JSON(map[string]any{"findings": rows, "problems": n})
+			if n > 0 {
+				return fmt.Errorf("%d problem(s): every number linked, every citation resolved and supporting its sentence", n)
+			}
+			return nil
+		}
 		for _, f := range fs {
 			mark := "note "
 			if f.Problem {
