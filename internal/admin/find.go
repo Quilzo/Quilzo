@@ -113,12 +113,15 @@ func (s *Server) findSources(p principal) find.Sources {
 // here for a stronger reason than presentation: a search that returns a screen
 // and then refuses it teaches the searcher that the screen exists, which is
 // the one thing hiding it was for.
+//
+// The menu's own list (visibleTo), not a second copy of its question. The
+// copy asked every screen about the whole site, so it drifted from the menu
+// the first time a screen was shown for an area or a permission instead:
+// somebody administering only the security area had Shield in their menu and
+// no Shield in what they found.
 func (s *Server) navigableTo(p principal) []find.Destination {
 	var out []find.Destination
-	for _, d := range destinations {
-		if !s.mayUse(p, d.Needs, "/") {
-			continue
-		}
+	for _, d := range visibleTo(s, p) {
 		for _, sc := range Screens() {
 			if sc.Path == d.Path {
 				out = append(out, sc)
@@ -129,14 +132,10 @@ func (s *Server) navigableTo(p principal) []find.Destination {
 	return out
 }
 
-// mayUse is the same question the navigation asks, asked the same way.
-//
-// Against "/" rather than the screen's own path, because that is what
-// navigation() does and the two must agree: a screen the menu shows and the
-// search hides, or the reverse, is a difference nobody can account for.
+// mayUse asks the policy what a person may do, as the navigation does.
 //
 // No policy means no access control is configured, which is the single-operator
-// case and permits everything — again matching navigation().
+// case and permits everything, again matching navigation().
 //
 // A question about the person and not about this session, so it is for what
 // the menu shows and nothing else. A gate on an act, or a filter over pages,

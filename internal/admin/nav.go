@@ -503,12 +503,28 @@ func (d destination) resource() string {
 // granted that part: Data, to somebody who may read one collection.
 var underAnywhere = map[string]bool{"records": true}
 
+// approver reports whether somebody may approve something that waits: on
+// content, which is the site and what an agent's step would change, or on
+// the agents or one of them. Approvals is their work screen, and it is in
+// their menu and where their front door goes as well as in a reader's.
+//
+// Approvals asked only for reading the site, so somebody granted approve
+// and nothing else signed in to a menu holding Today alone, and the front
+// door sent them there too, while the screen they decide things on answered
+// them at an address nothing in front of them led to. Not on another area:
+// an administrator of the security area holds approve there, where nothing
+// waits for it.
+func approver(pol *auth.Policy, name string) bool {
+	return pol.Anywhere(name, auth.ActApprove) || pol.AnywhereUnder(name, auth.ActApprove, auth.AreaAgents)
+}
+
 // visibleTo is the destinations a principal may use.
 func visibleTo(s *Server, p principal) []destination {
 	out := make([]destination, 0, len(destinations))
 	for _, d := range destinations {
 		if d.Key != "today" && s.Policy != nil && !s.Policy.Evaluate(p.Name, d.Needs, d.resource()).Allowed &&
-			!(underAnywhere[d.Key] && s.Policy.AnywhereUnder(p.Name, d.Needs, d.resource())) {
+			!(underAnywhere[d.Key] && s.Policy.AnywhereUnder(p.Name, d.Needs, d.resource())) &&
+			!(d.Key == "approvals" && approver(s.Policy, p.Name)) {
 			continue
 		}
 		out = append(out, d)
