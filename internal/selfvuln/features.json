@@ -174,8 +174,7 @@
    "*"
   ],
   "encoding/xml": [
-   "*",
-   "import"
+   "*"
   ],
   "errors": [
    "*",
