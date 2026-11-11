@@ -219,6 +219,10 @@ var commandNeeds = map[string]need{
 	"agent receipt":  {action: auth.ActView},
 	"agent backends": {action: auth.ActView, or: agentWork},
 	"agent could":    {action: auth.ActView, or: agentWork},
+	// Listing what an agent sends from runs nobody started is reading the
+	// agents; granting or taking one back is checked by the command as an
+	// administrator's, and a grant waits for a second one (agentsends.go).
+	"agent sends": {action: auth.ActView, or: agentWork},
 	// Drafting asks a model, which is spent and recorded under the person,
 	// and saves nothing; declaring saves, as agent new does.
 	"agent draft": {action: auth.ActUseModels},

@@ -50,6 +50,11 @@ type agentSet struct {
 	// Identities are who answers for each agent, and until when it may run.
 	// See internal/agent/identity.go.
 	Identities map[string]agent.Identity `json:"identities,omitempty"`
+	// Sends are the tools each agent may send through from runs nobody
+	// started, as two administrators let it (agentsends.go). Kept beside
+	// the declarations and not in them, so nothing that writes a
+	// declaration grants one.
+	Sends map[string][]unattendedSend `json:"unattended_sends,omitempty"`
 }
 
 func loadAgents(root string) (*agentSet, error) {
@@ -171,6 +176,8 @@ func cmdAgent(root string, args []string) error {
 		return agentReplay(root, args[1:])
 	case "sponsor", "renew":
 		return agentIdentityCmd(root, args[0], args[1:])
+	case "sends":
+		return agentSendsCmd(root, args[1:])
 	case "trigger", "triggers":
 		return agentTriggerCmd(root, args[1:])
 	case "backends":
@@ -213,6 +220,9 @@ func agentUsage() error {
   export NAME [--to F] [-o PATH]  the declaration in another platform's format
   formats                what import reads and export writes
   sponsor NAME PERSON    who answers for it; it stops when they can no longer act here
+  sends NAME [grant TOOL --why REASON | revoke TOOL]
+                         the tools it sends through from runs nobody started without a person
+                         deciding each call; granting waits for a second administrator
   renew NAME [--for D]   another stretch before it has to be renewed (90 days unless said)
   receipt RUN [-o FILE] [--bundle F]  what a run did, from the log, with proofs anybody can check;
                          --bundle writes one file that replays it: steps, pictures, proof
@@ -1407,8 +1417,9 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 		}
 	}
 	// A payment beyond the agent's mandates waits for a person as asking
-	// first does: the run pauses and is decided from anywhere.
-	runner.Asks = paymentAsks(root, m.Name)
+	// first does: the run pauses and is decided from anywhere. So does a
+	// write to another system from a run nobody started (agentsends.go).
+	runner.Asks = outwardAsks(root, m, unattendedRun(caller, from), paymentAsks(root, m.Name))
 	var weighs []func(agent.Action) string
 	if holdsBrowser(m) {
 		pictures := false

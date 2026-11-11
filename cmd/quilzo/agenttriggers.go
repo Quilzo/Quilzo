@@ -535,7 +535,7 @@ func triggeredCaller(root string, s triggerStart) (*Caller, error) {
 		runner = s.Runner.Name
 	}
 	return &Caller{Name: id.Sponsor, Kind: audit.KindHuman, Verified: true, Role: auth.RoleAuthor,
-		Via: "trigger", FiredBy: runner, Chain: chain}, nil
+		Via: viaTrigger, FiredBy: runner, Chain: chain}, nil
 }
 
 // triggerGoal is what the run is asked: the trigger's goal, and after it

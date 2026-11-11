@@ -67,6 +67,16 @@ func TestWhatCanNeverBeEarned(t *testing.T) {
 	if Earnable(Action{Op: "decide"}, "", WaitQuestion, false) {
 		t.Error("a decider's question was earnable")
 	}
+	// A tool's write is earnable in a run a person started, and not when
+	// it goes out from one nobody started: approved often enough by hand,
+	// it would have gone out unasked from a run a trigger started.
+	post := Action{Tool: "post_update"}
+	if !Earnable(post, "", WaitAsk, true) {
+		t.Error("a tool's write a person's run asks about was not earnable")
+	}
+	if Earnable(post, UnattendedPrefix+": post_update writes to social.example", WaitAsk, true) {
+		t.Error("a triggered run's send was earnable")
+	}
 }
 
 // In a run: an earned kind of action goes ahead without stopping and says

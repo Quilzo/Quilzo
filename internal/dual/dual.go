@@ -9,7 +9,8 @@
 // provider's group), issuing an administrator's token or an enrolment link
 // that adds a passkey for one, making the provisioning token while a group
 // makes administrators, weakening a setting,
-// lowering how many approvals a change needs and moving the audit log are
+// lowering how many approvals a change needs, moving the audit log and
+// letting an agent send to another system from runs nobody started are
 // each something one person, or whoever has their
 // session, could do to take a store over or to hide that they had. So one
 // administrator proposes and another approves, and the request records
@@ -66,7 +67,22 @@ const (
 	// group it sends makes administrators, given to whoever asked once
 	// another administrator agrees.
 	SCIMToken = "scim-token"
+	// Sends is an agent let send through one tool from the runs nobody
+	// started, without a person deciding each call. A triggered run's
+	// write to another system otherwise waits for one, because what goes
+	// out from a run nobody started is a person's decision; one
+	// administrator lifting that for every run to come is a widening
+	// nobody else saw.
+	Sends = "unattended-sends"
 )
+
+// SendsChange is a Sends request: the agent, the tool, and the host the
+// tool reaches, which the grant is for and only for.
+type SendsChange struct {
+	Agent string `json:"agent"`
+	Tool  string `json:"tool"`
+	Host  string `json:"host"`
+}
 
 // PayChange is a Pay request: the provider, and how its checkout behaves.
 type PayChange struct {

@@ -1890,8 +1890,32 @@ starts:
 - it is capped at authoring, whatever its sponsor holds, so nothing that starts
   unattended can do more than draft and propose; publishing, and anything that
   goes out, is still a person's decision;
+- a call of a tool that writes to another system (a post, a message, an order)
+  waits for a person as asking first does, whatever `ask_first` says, and is
+  decided one call at a time, by somebody other than its sponsor where there is
+  somebody;
 - triggers start it in its sponsor's name, so they are its sponsor's to set, or
   an administrator's. Adding one is a widening, recorded as one.
+
+**Sending unattended.** Administrators may let an agent send through one tool
+from the runs nobody started:
+
+```
+quilzo agent sends tidy grant post_update --why "the shop's updates go out as pages go live"
+quilzo pending approve ID         # a second administrator
+quilzo agent sends tidy           # what it sends unattended, granted by whom and why
+quilzo agent sends tidy revoke post_update
+```
+
+- The grant waits for a second administrator, as other privileged changes do,
+  and is recorded as a widening with who proposed it and who approved it. A
+  store with one administrator has it approved as it is made, and the record
+  says so.
+- It is for that tool at the host it reaches now. A declaration that points the
+  tool somewhere else has not been granted that.
+- It lifts only this hold: what the agent asks first, a payment beyond its
+  mandates and the exfiltration breaker still wait for a person.
+- Taking it back holds the next call at once.
 
 **Safeguards against runaway runs.** Each trigger:
 - starts at most its runs for the day (24 unless it says otherwise);

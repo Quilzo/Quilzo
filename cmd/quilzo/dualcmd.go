@@ -127,6 +127,12 @@ func applyDual(root string, r dual.Request, by string) error {
 		}
 		syncPayAfterLive(root, caller)
 		return nil
+	case dual.Sends:
+		var ch dual.SendsChange
+		if err := json.Unmarshal(r.Payload, &ch); err != nil {
+			return err
+		}
+		return grantSends(root, ch, r.Why, r.By, by, r.Alone, resolveCaller(root, ""))
 	case dual.Token, dual.Enrol, dual.SCIMToken:
 		return nil
 	}
