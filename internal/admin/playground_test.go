@@ -359,3 +359,48 @@ func TestTheOriginRefusalNamesBothSides(t *testing.T) {
 		t.Errorf("the refusal does not name what it compared: %s", body)
 	}
 }
+
+// The playground has what every other screen has: a way past what comes
+// before its content, a main landmark to land on, and hints that can be read.
+//
+// It builds its own document, and its <main> had no skip link and no id for
+// one to name, with the way back to the admin inside the content rather than
+// before it, so the first Tab on the page was Back to Quilzo. Its hints were
+// set back to .7 on 13px text: 4.0:1 in the light scheme, and the way back
+// with them 4.2:1, under the 4.5:1 AA asks.
+func TestThePlaygroundCanBeSkippedToAndRead(t *testing.T) {
+	body, _ := fetchPlayground(t)
+	skip := strings.Index(body, `<a class="skip" href="#main">`)
+	back := strings.Index(body, `>Back to Quilzo</a>`)
+	main := strings.Index(body, `<main id="main"`)
+	switch {
+	case skip < 0:
+		t.Error("the playground has no skip link")
+	case main < 0:
+		t.Error("the playground's main landmark has no id for a skip link to name")
+	case back < 0:
+		t.Error("the playground has no way back to the admin")
+	case !(skip < back && back < main):
+		t.Error("the way back is not between the skip link and the content it skips to")
+	}
+	if !strings.Contains(body, "<header") {
+		t.Error("the way back is not in a header")
+	}
+
+	style := regexp.MustCompile(`(?s)<style>(.*?)</style>`).FindStringSubmatch(body)
+	if style == nil {
+		t.Fatal("the playground has no styles of its own")
+	}
+	fades := opacities(t, style[1])
+	checked := readableSetBack(t, fades, []fade{
+		{"the playground's hints and the way back", []string{".pg .hint"}, "--surface",
+			[]struct{ fg, on string }{{"--on-surface-variant", ""}, {"--primary", ""}}},
+		{"the note on an operation", []string{".pg .note"}, "--surface",
+			[]struct{ fg, on string }{{"--on-surface", ""}}},
+	})
+	for sel := range fades {
+		if !checked[sel] {
+			t.Errorf("%s is set back with opacity, and nothing checks the text in it", sel)
+		}
+	}
+}

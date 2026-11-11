@@ -441,17 +441,7 @@ func TestFocusIsVisible(t *testing.T) {
 // So every opacity in the stylesheet is either checked here, against the text
 // drawn inside it, or named below as not fading text anybody has to read: a
 // fade added later is a failure until somebody says which.
-var setBack = []struct {
-	what string
-	// rules are the selectors whose opacity applies, in the order the
-	// cascade settles them: the last that declares one wins.
-	rules []string
-	// behind is what the faded element is drawn over, and text is each
-	// role drawn inside it, on the background the element gives it ("" is
-	// none of its own, so behind shows through).
-	behind string
-	text   []struct{ fg, on string }
-}{
+var setBack = []fade{
 	{"the count in a filter chip", []string{".chips .count"},
 		"--surface-container-low", []struct{ fg, on string }{{"--on-surface", ""}}},
 	{"the count in the selected filter chip", []string{".chips .count", ".chips a.on .count"},
@@ -469,6 +459,19 @@ var setBack = []struct {
 	}},
 }
 
+// fade is text set back with opacity, and what it is drawn on.
+type fade struct {
+	what string
+	// rules are the selectors whose opacity applies, in the order the
+	// cascade settles them: the last that declares one wins.
+	rules []string
+	// behind is what the faded element is drawn over, and text is each
+	// role drawn inside it, on the background the element gives it ("" is
+	// none of its own, so behind shows through).
+	behind string
+	text   []struct{ fg, on string }
+}
+
 // fadedNotText is each opacity that sets back no text somebody has to read,
 // and why. An inactive control is exempt from 1.4.3.
 var fadedNotText = map[string]string{
@@ -479,10 +482,10 @@ var fadedNotText = map[string]string{
 	".wfbars a:focus-visible path": "a bar of a chart, focused",
 }
 
-// opacities is the opacity each selector in the stylesheet is given.
-func opacities(t *testing.T) map[string]float64 {
+// opacities is the opacity each selector in a stylesheet is given.
+func opacities(t *testing.T, css string) map[string]float64 {
 	t.Helper()
-	css := regexp.MustCompile(`(?s)/\*.*?\*/`).ReplaceAllString(string(mustAsset(t, "style.css")), "")
+	css = regexp.MustCompile(`(?s)/\*.*?\*/`).ReplaceAllString(css, "")
 	decl := regexp.MustCompile(`(?:^|[;{\s])opacity\s*:\s*([0-9.]+)`)
 	out := map[string]float64{}
 	for _, m := range regexp.MustCompile(`([^{}]+)\{([^{}]*)\}`).FindAllStringSubmatch(css, -1) {
@@ -497,9 +500,6 @@ func opacities(t *testing.T) map[string]float64 {
 		for sel := range strings.SplitSeq(m[1], ",") {
 			out[strings.Join(strings.Fields(sel), " ")] = v
 		}
-	}
-	if len(out) < 3 {
-		t.Fatalf("found %d opacities in the stylesheet; the parse is wrong", len(out))
 	}
 	return out
 }
@@ -517,11 +517,26 @@ func mix(t *testing.T, fg, bg string, a float64) string {
 }
 
 func TestTextSetBackStaysReadable(t *testing.T) {
-	fades := opacities(t)
+	fades := opacities(t, string(mustAsset(t, "style.css")))
+	if len(fades) < 3 {
+		t.Fatalf("found %d opacities in the stylesheet; the parse is wrong", len(fades))
+	}
+	checked := readableSetBack(t, fades, setBack)
+	for sel := range fades {
+		if !checked[sel] && fadedNotText[sel] == "" {
+			t.Errorf("%s is set back with opacity, and nothing checks the text in it", sel)
+		}
+	}
+}
+
+// readableSetBack checks each faded text at the colour it is drawn in, in
+// both schemes, and reports which selectors it checked.
+func readableSetBack(t *testing.T, fades map[string]float64, set []fade) map[string]bool {
+	t.Helper()
 	checked := map[string]bool{}
 	for _, scheme := range []string{"light", "dark"} {
 		tok := tokens(t, scheme)
-		for _, f := range setBack {
+		for _, f := range set {
 			a := 1.0
 			for _, sel := range f.rules {
 				checked[sel] = true
@@ -544,9 +559,5 @@ func TestTextSetBackStaysReadable(t *testing.T) {
 			}
 		}
 	}
-	for sel := range fades {
-		if !checked[sel] && fadedNotText[sel] == "" {
-			t.Errorf("%s is set back with opacity, and nothing checks the text in it", sel)
-		}
-	}
+	return checked
 }
