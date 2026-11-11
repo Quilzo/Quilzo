@@ -121,6 +121,12 @@ func hookAdd(root string, args []string) error {
 		Detail: map[string]string{"endpoint": e.URL},
 	})
 
+	// The endpoint and its key under --json. This wrote the key only for a
+	// person, so under --json the endpoint was kept signing with a key its
+	// receiver could not be given.
+	if w.JSON(map[string]any{"url": e.URL, "secret": secret}) {
+		return nil
+	}
 	w.Human("%s%s%s\n", bold, secret, reset)
 	w.Human("\n  %sthis is the signing key, shown once. The receiver needs the\n"+
 		"  same bytes to verify a delivery, so it is a shared value rather\n"+

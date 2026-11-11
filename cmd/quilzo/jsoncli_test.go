@@ -6,6 +6,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"go/ast"
@@ -21,6 +23,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/out"
+	"github.com/quilzo/quilzo/internal/scim"
 )
 
 // Every listing answers --json with one JSON document, and nothing else.
@@ -600,4 +603,140 @@ func (l *branchLint) walkStmt(fn string, s ast.Stmt, st pathState) ([]branchHit,
 	// Whatever the statement wrote, in any of its branches, is on the path
 	// after it: lenient, as above.
 	return hits, l.seen(st, s)
+}
+
+// A secret shown once is shown under --json too.
+//
+// The commands that make a credential and show it once wrote it only for a
+// person, so under --json it was made, kept, and shown to nobody, with exit
+// 0. That is worse than a read answering nothing: `scim token` replaces the
+// identity provider's working token with one nobody has, so provisioning
+// stops; `webhook add`, and a feature installed or approved with a webhook,
+// leave an endpoint signing with a key its receiver cannot have. Each answer
+// is held to what the store keeps, so the secret written is the one in
+// force. No secret is put in a failure message.
+func TestASecretShownOnceIsInTheJSONAnswer(t *testing.T) {
+	root := featureSite(t)
+	old := w
+	t.Cleanup(func() { w = old })
+	answer := func(t *testing.T, what string, run func() error) map[string]any {
+		t.Helper()
+		var stdout, stderr bytes.Buffer
+		w = &out.Writer{Mode: out.JSON, Out: &stdout, Err: &stderr}
+		err := run()
+		w = out.New(false)
+		if err != nil {
+			t.Fatalf("%s: %v", what, err)
+		}
+		var doc map[string]any
+		if json.Unmarshal(stdout.Bytes(), &doc) != nil {
+			t.Fatalf("%s under --json answered %d bytes that are not a JSON document", what, stdout.Len())
+		}
+		return doc
+	}
+	// endpointSecret is the signing key a store keeps for an endpoint.
+	endpointSecret := func(t *testing.T, root, url string) string {
+		t.Helper()
+		f, err := loadHooks(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range f.Endpoints {
+			if e.URL == url {
+				return e.Secret
+			}
+		}
+		t.Fatalf("no endpoint %s was kept", url)
+		return ""
+	}
+	// webhooksAnswered checks a feature's answer gives each new webhook's
+	// key, as the store keeps it.
+	webhooksAnswered := func(t *testing.T, root, what string, doc map[string]any, urls ...string) {
+		t.Helper()
+		hooks, _ := doc["webhooks"].([]any)
+		if len(hooks) != len(urls) {
+			t.Fatalf("%s answered %d webhook(s), not %d", what, len(hooks), len(urls))
+		}
+		for i, h := range hooks {
+			m, _ := h.(map[string]any)
+			if m["url"] != urls[i] {
+				t.Errorf("%s answered webhook %d as %v, not %s", what, i, m["url"], urls[i])
+			}
+			if s, _ := m["secret"].(string); s == "" || s != endpointSecret(t, root, urls[i]) {
+				t.Errorf("%s did not answer the key %s signs with", what, urls[i])
+			}
+		}
+	}
+
+	t.Run("scim token", func(t *testing.T) {
+		doc := answer(t, "scim token", func() error {
+			return giveSCIMToken(root, 30, asAdmin("dana"), scim.TokenMade{By: "dana", Approval: scim.Unasked})
+		})
+		token, _ := doc["token"].(string)
+		kept, ok, err := readSCIMToken(root, time.Now())
+		if err != nil || !ok {
+			t.Fatalf("no token was kept: %v", err)
+		}
+		if sum := sha256.Sum256([]byte(token)); token == "" || hex.EncodeToString(sum[:]) != kept.Hash {
+			t.Error("the token answered is not the one in force")
+		}
+		if _, ok := doc["expires"]; !ok {
+			t.Error("the answer does not say when the token ends")
+		}
+	})
+
+	t.Run("webhook add", func(t *testing.T) {
+		const url = "https://receiver.example/added"
+		doc := answer(t, "webhook add", func() error { return hookAdd(root, []string{url}) })
+		if doc["url"] != url {
+			t.Errorf("webhook add answered the endpoint as %v", doc["url"])
+		}
+		if s, _ := doc["secret"].(string); s == "" || s != endpointSecret(t, root, url) {
+			t.Error("webhook add did not answer the key the endpoint signs with")
+		}
+	})
+
+	// A package that sends to another server installs at once for the one
+	// administrator, and waits for a second where there is one.
+	hooky := func(t *testing.T, url string) string {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), "hooky.json")
+		pkg := `{"format": 1, "name": "hooky", "version": "1.0.0", "title": "Hooky",
+			"purpose": "Tells a receiver when a page is published.", "webhooks": [{"url": "` + url + `"}]}`
+		if err := os.WriteFile(path, []byte(pkg), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+
+	t.Run("feature install", func(t *testing.T) {
+		const url = "https://receiver.example/installed"
+		alone := demoStore(t)
+		seedPolicy(t, alone, [2]string{"dana", "admin"})
+		doc := answer(t, "feature install", func() error {
+			return installFeatureFile(alone, hooky(t, url), "", "", asAdmin("dana"))
+		})
+		if doc["installed"] != "hooky" {
+			t.Fatalf("feature install answered %v installed, not hooky", doc["installed"])
+		}
+		webhooksAnswered(t, alone, "feature install", doc, url)
+	})
+
+	t.Run("feature approve", func(t *testing.T) {
+		const url = "https://receiver.example/approved"
+		answer(t, "feature install", func() error {
+			return installFeatureFile(root, hooky(t, url), "", "", asAdmin("dana"))
+		})
+		pend, err := pendingFeatures(root)
+		if err != nil || len(pend) != 1 {
+			t.Fatalf("%d install(s) waiting for a second person, not 1: %v", len(pend), err)
+		}
+		doc := answer(t, "feature approve", func() error {
+			return decideFeature(root, pend[0].ID, true, asAdmin("sam"))
+		})
+		if doc["installed"] != "hooky" || doc["approved_by"] != "sam" {
+			t.Errorf("feature approve answered %v installed, approved by %v", doc["installed"], doc["approved_by"])
+		}
+		webhooksAnswered(t, root, "feature approve", doc, url)
+	})
 }
