@@ -88,7 +88,8 @@ type Client struct {
 	// such an integration is refused rather than called anonymously.
 	Connection func(ctx context.Context, provider, host string) (string, error)
 
-	// Now is a clock for the definitions' cache.
+	// Now is a clock for the definitions' cache, and for when a far side
+	// that answered Retry-After with a date asked to be tried again.
 	Now func() time.Time
 
 	// Do performs one POST; nil is Fetch's, with every address check. A
@@ -100,7 +101,7 @@ type Client struct {
 	DoMethod func(ctx context.Context, method, url string, body []byte, headers map[string]string) (*fetch.Result, error)
 
 	// Wait is how long to wait before trying a call again; nil waits as
-	// RetryAfter says (rest.go). A test waits for nothing.
+	// RetryAfter says (rest.go), by Now. A test waits for nothing.
 	Wait func(attempt int, retryAfter string) time.Duration
 
 	id atomic.Int64
