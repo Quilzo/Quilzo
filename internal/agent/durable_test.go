@@ -591,3 +591,40 @@ func TestAWritingToolAsksFirstAtProposeAutonomy(t *testing.T) {
 		t.Fatalf("at draft: did %s, %+v", tools(), tr.Waiting)
 	}
 }
+
+// A tool that writes is asked about first by an agent whose declaration
+// says a person agrees before anything it did is public: one declared with
+// human_approval, and one at publish autonomy, which always carries it.
+//
+// Its CMS writes wait for that person, as a draft or as a publish that is
+// refused until somebody approves it, and a tool that writes on the far
+// side has no draft: what it did is there for whoever looks the moment it
+// is called. Asking only at propose left both of these to call it with
+// nobody asked, though each declared that somebody would be.
+func TestAWritingToolAsksFirstWhereAPersonApproves(t *testing.T) {
+	for _, c := range []struct {
+		autonomy Autonomy
+		approval bool
+	}{{AutonomyDraft, true}, {AutonomyPublish, false}} {
+		m := Manifest{Name: "poster", Kind: KindTask, Purpose: "post what was written",
+			Capabilities: []string{"read_page"}, Autonomy: c.autonomy, HumanApproval: c.approval,
+			Tools: []Tool{{Name: "notes", Host: "notes.example", Purpose: "read notes"},
+				{Name: "post_it", Host: "notes.example", Purpose: "post it", Writes: true}},
+			Budget: Budget{Steps: 6, Tools: 4, Duration: Duration(time.Minute)}}
+		if err := m.Validate(nil); err != nil {
+			t.Fatal(err)
+		}
+		var did []string
+		called := func(_ context.Context, a Action) (string, error) { did = append(did, a.Tool); return "ok", nil }
+		r := Runner{Decide: (&scripted{plan: []Action{{Tool: "notes"}, {Tool: "post_it"}}}).decide,
+			Perform: called, Pause: true}
+		tr, err := r.Run(context.Background(), NewSession(m, nil), "g")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if tr.Waiting == nil || tr.Waiting.Action.Tool != "post_it" || len(did) != 1 {
+			t.Errorf("%s autonomy, human approval %v: the writing tool was not asked about first: did %v, %+v",
+				c.autonomy, m.HumanApproval, did, tr.Waiting)
+		}
+	}
+}

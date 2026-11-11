@@ -107,3 +107,36 @@ func TestAWritingToolWaitsForAPersonAtProposeAutonomy(t *testing.T) {
 		t.Fatalf("a draft agent's writing tool was called %d times", far.calls)
 	}
 }
+
+// A tool that writes waits for a person, too, for an agent declared to have
+// one agree before anything it did is public.
+//
+// A draft agent with human_approval called the integration's writing tool
+// with nobody asked: its pages waited for that person as drafts, and what
+// it did on the far side, which has no draft, did not.
+func TestAWritingToolWaitsForThePersonTheAgentDeclares(t *testing.T) {
+	root, far := filingStore(t, agent.AutonomyDraft, false, true)
+	set, err := loadAgents(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := set.Agents["filer"]
+	m.HumanApproval = true
+	if err := declareAgent(root, m, false, true, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	id, err := runAgentOnce(root, "filer", "", false, asAdmin("dana"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if far.calls != 0 {
+		t.Fatalf("the writing tool was called %d time(s) with nobody asked", far.calls)
+	}
+	rec, err := loadAgentRun(root, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := rec.Trace.Waiting; w == nil || w.Action.Tool != "create_issue" {
+		t.Fatalf("the run is not waiting for a person on the tool: %+v", rec.Trace.Waiting)
+	}
+}
