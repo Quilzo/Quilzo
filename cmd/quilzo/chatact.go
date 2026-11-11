@@ -32,7 +32,10 @@ import (
 // author's. An action that does not write runs as a reader: the agent may
 // look things up and changes nothing. One that writes runs at the agent's
 // own autonomy, capped at drafting and proposing, and its asks of a person
-// wait for one.
+// wait for one. Nobody here started it, so a call of a tool that writes to
+// another system waits for a person too, as a trigger's does, unless
+// administrators let the agent send through that tool unattended
+// (agentsends.go).
 //
 // # What the visitor sees
 //

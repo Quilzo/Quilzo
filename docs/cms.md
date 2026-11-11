@@ -1899,6 +1899,10 @@ starts:
 - triggers start it in its sponsor's name, so they are its sponsor's to set, or
   an administrator's. Adding one is a widening, recorded as one.
 
+A run that a visitor's request to a chatbot starts is held in the same way: it
+acts for the agent's sponsor with a stranger's words in its goal, and nobody
+here started it.
+
 **Sending unattended.** Administrators may let an agent send through one tool
 from the runs nobody started:
 

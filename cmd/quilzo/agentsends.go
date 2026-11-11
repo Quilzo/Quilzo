@@ -56,12 +56,19 @@ type unattendedSend struct {
 	At         time.Time `json:"at"`
 }
 
-// unattendedRun reports whether a run is one nobody started: a trigger
-// started it, or it is such a run taken on after a person answered it. A
-// person who lets one step go ahead has decided that step; what the model
-// chooses next was chosen with nobody watching, as the step before was.
+// unattendedRun reports whether a run is one nobody started: it reached
+// its sponsor some other way than at a keyboard (Caller.Via), as a
+// trigger's run does and a visitor's request to a chatbot does, or it is
+// such a run taken on after a person answered it. A person who lets one
+// step go ahead has decided that step; what the model chooses next was
+// chosen with nobody watching, as the step before was.
+//
+// Only a trigger's run was asked about at first, so the post a visitor's
+// request to a chatbot led to went out at once, with a stranger's words
+// in the goal, while the same run's next post, taken on after a person
+// answered something else, waited.
 func unattendedRun(caller *Caller, from *agentResume) bool {
-	if caller != nil && caller.Via == viaTrigger {
+	if caller != nil && caller.Via != "" {
 		return true
 	}
 	return from != nil && from.Prior != nil && from.Prior.Trigger != ""

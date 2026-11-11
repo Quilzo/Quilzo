@@ -15,8 +15,10 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
+	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/chatact"
 	"github.com/quilzo/quilzo/internal/dual"
 	"github.com/quilzo/quilzo/internal/event"
 	"github.com/quilzo/quilzo/internal/fetch"
@@ -280,5 +282,33 @@ func TestAPersonsReplayOfATriggeredRunIsTheirs(t *testing.T) {
 	}
 	if len(*posted) != 1 || again.Trace.Waiting != nil || again.Trigger != "" {
 		t.Fatalf("a person's replay was held as a run nobody started: %v %+v", *posted, again.Trace.Waiting)
+	}
+}
+
+// A visitor's request to a public chatbot starts a run nobody here
+// started either: the agent acts on its sponsor's authority with a
+// stranger's words in its goal, and its record names the chatbot as what
+// started it. Only a stretch taken on after a person answered it was held
+// as one, so the post the visitor's request led to went out at once, and
+// the same run's next post waited.
+func TestAVisitorsRequestDoesNotPostOnItsOwn(t *testing.T) {
+	root, posted := postingStore(t)
+	postingModel(t, "Our new post is up")
+	set, _ := assistant.Load(assistantsPath(root))
+	if err := set.Put(assistant.Assistant{Name: "help", Title: "Help", Public: true,
+		Actions: []assistant.Action{{Name: "share", Kind: assistant.Agent, Target: "poster",
+			Description: "Tell the shop your news", Writes: true}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := assistant.Save(assistantsPath(root), set); err != nil {
+		t.Fatal(err)
+	}
+	res := runChatAction(context.Background(), root, chatact.Request{ID: strings.Repeat("a", 32), Chatbot: "help",
+		Action: "share"})
+	if len(*posted) != 0 {
+		t.Fatalf("a visitor's request posted without a person: %v", *posted)
+	}
+	if res.State != chatact.Waiting {
+		t.Fatalf("the visitor was not told a person decides: %+v", res)
 	}
 }
