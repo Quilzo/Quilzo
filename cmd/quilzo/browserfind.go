@@ -183,7 +183,7 @@ func cmdBrowserFind(root string) error {
 			fmt.Printf("  %s%s%s  %s\n", bold, f.Version, reset, f.Path)
 		}
 	}
-	fmt.Printf("\n  %sto use one: quilzo config set browser.path PATH. The pinned build is what this release is\n"+
+	fmt.Printf("\n  %sto use one: quilzo config set browser.path PATH --accept-risk \"why\". The pinned build is what this release is\n"+
 		"  tested with; another speaks the same DevTools protocol, and may differ in what a newer page needs.%s\n", dim, reset)
 	return nil
 }

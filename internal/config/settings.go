@@ -5,6 +5,7 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"net"
 	"net/url"
 	"regexp"
@@ -229,7 +230,9 @@ var settings = []Setting{
 		Controls: []string{"SC-5"},
 		Why: "Enough for a site build to read every page and its items; not " +
 			"enough for one credential to be the load. Raise it for a busy " +
-			"integration, and prefer raising it to turning it off.",
+			"integration. At least 1: there is no turning it off, and zero " +
+			"was taken and read as the default, so somebody who set it to " +
+			"mean off still had 120.",
 		Weaker: atMost(6000, "%s a minute is high enough that one token can "+
 			"saturate the server, which is a denial of service with a "+
 			"credential attached"),
@@ -238,7 +241,14 @@ var settings = []Setting{
 		Key: "api.rate.burst", Kind: Int, Default: "20",
 		Summary: "how far a client may run ahead of the steady rate",
 		Why: "A client fetching a listing and then its items in parallel is " +
-			"behaving normally and should not be punished for it.",
+			"behaving normally and should not be punished for it. Up to 200 " +
+			"as anybody likes; more takes a reason, because a burst is " +
+			"requests the rate does not slow, and a million was taken with " +
+			"nobody asked. Between 1 and 6000, a whole minute at the most the " +
+			"rate takes without a reason.",
+		Weaker: atMost(200, "a burst of %s lets one token send that many requests "+
+			"at once before the per-minute rate applies, which is a brute-force "+
+			"or scraping run with a credential attached"),
 	},
 	{
 		Key: "api.page.max", Kind: Int, Default: "100",
@@ -1001,7 +1011,16 @@ var settings = []Setting{
 			"once by quilzo browser install and checked against its SHA-256. A machine that " +
 			"cannot download it names a Chromium of its own here, as an absolute path; the " +
 			"browser is still run in the agent's box and driven the same way, but nothing " +
-			"checks what it is, so it should be one the operator installed on purpose.",
+			"checks what it is, so it should be one the operator installed on purpose. Any " +
+			"path takes a reason, which the posture scan reports: one was taken with nobody " +
+			"asked, and agents drove whatever binary it named.",
+		Weaker: func(v string) (bool, string) {
+			if v == "" {
+				return false, ""
+			}
+			return true, fmt.Sprintf("agents drive %s, which nothing checks, in place of "+
+				"the Chromium this release pins and checks against its SHA-256", v)
+		},
 	},
 	{
 		Key: "browser.sessions", Kind: Int, Default: "2",
@@ -1009,7 +1028,10 @@ var settings = []Setting{
 		Why: "Each agent's browser is a Chromium in a box of its own: a few hundred megabytes, " +
 			"and a core while a page loads. A run that would start one more waits for one to " +
 			"finish, for as long as its budget lets it, rather than slowing every run here down. " +
-			"Raise it on a machine with the memory for more.",
+			"Raise it on a machine with the memory for more: past 16 it takes a reason, as a " +
+			"chatbot's visitors can start runs too.",
+		Weaker: atMost(16, "%s browsers at once, a few hundred megabytes each, lets runs "+
+			"started together, a chatbot's visitors' among them, take this machine's memory"),
 	},
 	{
 		Key: "agent.reviewer", Kind: Text, Default: "",
@@ -1310,7 +1332,10 @@ var settings = []Setting{
 			"the content types it was scoped to. Sending them to a hosted " +
 			"observability vendor is a disclosure, and it should be a " +
 			"sentence somebody typed rather than a consequence of pasting a " +
-			"URL. Loopback and private addresses need no flag.",
+			"URL. Loopback and private addresses need no flag. It takes a " +
+			"reason, as siem.stream.allow_remote does; it was turned on with " +
+			"nobody asked why.",
+		Weaker: onIsWeaker("agent traces, naming the pages runs read, leave this network"),
 	},
 	{
 		Key: "siem.stream.url", Kind: Text, Default: "",
@@ -1487,7 +1512,9 @@ var settings = []Setting{
 		Controls: []string{"CM-7", "SI-7"},
 		Why: "Off until somebody turns it on. An extension is third-party " +
 			"code running beside the content store, and the honest default " +
-			"for that is not-running.",
+			"for that is not-running. Turning it on takes a reason, which the " +
+			"posture scan reports; it was turned on with nobody asked why.",
+		Weaker: onIsWeaker("third-party code runs beside the content store"),
 	},
 	{
 		Key: "ext.timeout", Kind: Duration, Default: "5s",
@@ -1501,7 +1528,11 @@ var settings = []Setting{
 	{
 		Key: "ext.max_output_bytes", Kind: Int, Default: "1048576",
 		Summary: "the largest response an extension may return",
-		Why:     "Bounded, because the extension chooses how much to send back.",
+		Why: "Bounded, because the extension chooses how much to send back. Past " +
+			"16 MiB it takes a reason, as the request body does: what an extension " +
+			"sends is held in memory for every call.",
+		Weaker: atMost(16*1024*1024, "an extension may send back %s bytes, which is "+
+			"held in memory for every call it answers"),
 	},
 	{
 		Key: "ext.require_pinned", Kind: Bool, Default: "true",
@@ -1599,6 +1630,12 @@ var reBrandColour = regexp.MustCompile(`^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$`)
 // a count, or a duration in nanoseconds. The throttle's are internal/throttle's;
 // session.idle's are NIST SP 800-63B-4's AAL2 inactivity limit above and,
 // below, the shortest a person reading a page is not interrupted by.
+//
+// A least of 1 is a limit whose reader takes zero as unset and uses the
+// default: api.rate.per_minute 0 was accepted, meant as off, and ran at 120.
+// Refused when it is set, and a file holding a zero loads with it left out,
+// which is the default it ran at anyway. Those with no most are unbounded,
+// and how far they go without a reason is their Weaker rule's to say.
 var hardBounds = map[string][2]int64{
 	"chatbot.gaps_days":        {1, 365},
 	"chatbot.embeddings_floor": {20, 95},
@@ -1611,14 +1648,28 @@ var hardBounds = map[string][2]int64{
 	"session.idle":             {int64(5 * time.Minute), int64(time.Hour)},
 	"access.review.every":      {int64(30 * 24 * time.Hour), int64(365 * 24 * time.Hour)},
 	"agents.trigger_runs":      {1, 16},
+	"api.rate.per_minute":      {1, unbounded},
+	"api.rate.burst":           {1, 6000},
+	"api.page.max":             {1, unbounded},
+	"api.body.max_bytes":       {1, unbounded},
+	"browser.sessions":         {1, unbounded},
+	"ext.max_output_bytes":     {1, unbounded},
+	"media.jpeg_quality":       {1, 100},
 }
 
-// ErrOutOfBounds is a value outside a setting's hard bounds.
+// unbounded is a hard bound's most when there is none.
+const unbounded = math.MaxInt64
+
+// ErrOutOfBounds is a value outside a setting's hard bounds. Most is empty
+// for a setting with a least and no most.
 type ErrOutOfBounds struct {
 	Key, Value, Least, Most string
 }
 
 func (e *ErrOutOfBounds) Error() string {
+	if e.Most == "" {
+		return fmt.Sprintf("%s is below %s, the least this takes", e.Value, e.Least)
+	}
 	return fmt.Sprintf("%s is outside its bounds, %s to %s", e.Value, e.Least, e.Most)
 }
 
@@ -1716,12 +1767,18 @@ func (s Setting) bounds(n int64) error {
 	if !ok || (n >= b[0] && n <= b[1]) {
 		return nil
 	}
+	var e *ErrOutOfBounds
 	if s.Kind == Duration {
-		return &ErrOutOfBounds{Key: s.Key, Value: FormatDuration(time.Duration(n)),
+		e = &ErrOutOfBounds{Key: s.Key, Value: FormatDuration(time.Duration(n)),
 			Least: FormatDuration(time.Duration(b[0])), Most: FormatDuration(time.Duration(b[1]))}
+	} else {
+		e = &ErrOutOfBounds{Key: s.Key, Value: strconv.FormatInt(n, 10),
+			Least: strconv.FormatInt(b[0], 10), Most: strconv.FormatInt(b[1], 10)}
 	}
-	return &ErrOutOfBounds{Key: s.Key, Value: strconv.FormatInt(n, 10),
-		Least: strconv.FormatInt(b[0], 10), Most: strconv.FormatInt(b[1], 10)}
+	if b[1] == unbounded {
+		e.Most = ""
+	}
+	return e
 }
 
 // Validate checks a value against a setting's kind.
