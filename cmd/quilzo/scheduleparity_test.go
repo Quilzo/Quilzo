@@ -152,3 +152,56 @@ func lastScheduleAdd(t *testing.T, root string) map[string]string {
 	t.Fatal("no schedule.add was recorded")
 	return nil
 }
+
+// The two surfaces take the same time and keep the same entry for what
+// was typed with space around it.
+//
+// The Publishing screen trimmed the time and the note before it handed
+// them on, and the command line handed them on as typed: `quilzo schedule
+// add " 240h "` was refused where the form took it, and a note pasted
+// with a line under it was kept with the line by one surface and without
+// it by the other. The one path reads what it is given the one way.
+func TestTheCLIAndTheAdminKeepTheSameEntryForWhatWasTyped(t *testing.T) {
+	root := newStoreWithDraft(t)
+	note := "  launch day\n"
+	if err := cmdSchedule(root, []string{"add", " 240h ", "--note", note}); err != nil {
+		t.Fatalf("the command line refused a time with space around it: %v", err)
+	}
+	sch, err := loadSchedule(root)
+	if err != nil || len(sch.Entries) != 1 {
+		t.Fatalf("%v %+v", err, sch)
+	}
+	cli := sch.Entries[0].Note
+	s, err := open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdSchedule(root, []string{"cancel", s.GetRef(site.RefDraft)[:12]}); err != nil {
+		t.Fatal(err)
+	}
+
+	seedPolicy(t, root, [2]string{"dana", "admin"})
+	srv, tok := scheduleScreen(t, root)
+	form := url.Values{"when": {" 240h "}, "note": {note}}
+	req := httptest.NewRequest(http.MethodPost, "/publishing/schedule", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusSeeOther || strings.Contains(rec.Header().Get("Location"), "e=") {
+		t.Fatalf("the Publishing screen did not schedule the draft: %d %s", rec.Code, rec.Header().Get("Location"))
+	}
+	if sch, err = loadSchedule(root); err != nil {
+		t.Fatal(err)
+	}
+	var browser string
+	for _, e := range sch.Entries {
+		if !e.Done {
+			browser = e.Note
+		}
+	}
+	if cli != browser {
+		t.Errorf("one note was kept two ways:\n  command line %q\n  browser      %q", cli, browser)
+	}
+}

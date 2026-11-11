@@ -33,7 +33,12 @@ const MaxNote = 200
 // Both, because "in 48h" is what somebody types for an embargo and an
 // absolute time is what they type for a launch, and forcing one into the
 // other is how a scheduled publish goes out at the wrong hour.
+//
+// Space around it is not part of it. The Publishing screen trimmed what was
+// typed and the command line did not, so " 48h" was taken by one surface
+// and refused by the other.
 func ParseWhen(s string, now time.Time) (time.Time, error) {
+	s = strings.TrimSpace(s)
 	if t, err := time.Parse(time.RFC3339, s); err == nil {
 		return t, nil
 	}
@@ -56,10 +61,13 @@ func (r *Refused) Error() string { return r.Err.Error() }
 func (r *Refused) Unwrap() error { return r.Err }
 
 // Queue adds commit, to publish at at, to the schedule update changes
-// under the schedule's lock.
+// under the schedule's lock. The note is kept without the space around
+// it, whichever surface it came from: the screen trimmed it and the
+// command line did not, so one note was kept two ways.
 func Queue(update func(func(*Schedule) error) error, commit string, at time.Time, by Who,
 	note string, now time.Time) error {
 
+	note = strings.TrimSpace(note)
 	var refused error
 	if err := update(func(s *Schedule) error {
 		refused = s.Add(commit, at, by, note, now)

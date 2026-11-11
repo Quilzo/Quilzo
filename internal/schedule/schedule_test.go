@@ -253,7 +253,15 @@ func TestWhenIsATimeOrADuration(t *testing.T) {
 	if at, err := ParseWhen("2026-09-01T09:00:00Z", now); err != nil || at.Format(time.RFC3339) != "2026-09-01T09:00:00Z" {
 		t.Errorf("a timestamp: %v %v", at, err)
 	}
-	for _, s := range []string{"0s", "-1h", "soon", ""} {
+	// Space around a time is not part of it, from any surface.
+	if at, err := ParseWhen(" 48h\n", now); err != nil || !at.Equal(now.Add(48*time.Hour)) {
+		t.Errorf("48h with space around it: %v %v", at, err)
+	}
+	sch := &Schedule{}
+	if err := Queue(func(fn func(*Schedule) error) error { return fn(sch) }, c1, now.Add(time.Hour), Who{Name: "sam"}, "  launch\n", now); err != nil || sch.Entries[0].Note != "launch" {
+		t.Errorf("the note was kept as %q: %v", sch.Entries[0].Note, err)
+	}
+	for _, s := range []string{"0s", "-1h", "soon", "", " "} {
 		if _, err := ParseWhen(s, now); err == nil {
 			t.Errorf("%q was read as a time", s)
 		}
