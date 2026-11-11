@@ -236,6 +236,32 @@ func (c *Caller) accepter() string {
 	return c.Name + " (not verified)"
 }
 
+// recordedAs is who a change this caller makes is recorded as written by, and
+// the message it carries, for a command that takes a name to put on it
+// (--author): always the caller (writesFor), and a name other than theirs
+// kept in the message as a credit, which no rule reads.
+//
+// The name was the commit's author. `quilzo add --author lee`, run by dana,
+// recorded dana's change as lee's, and every rule about who wrote a change
+// reads the commit: with one approval asked, dana approved her own change as
+// though it were lee's, and it went live with nobody else having read it.
+// The audit record named dana all along. The flag stays, for when the words
+// are somebody else's, and they are credited for them.
+func (c *Caller) recordedAs(named, message string) (author, msg string) {
+	author = c.writesFor()
+	if named = strings.TrimSpace(named); named == "" || named == author {
+		return author, message
+	}
+	return author, message + " (" + credit(named) + ")"
+}
+
+// credit is how a name somebody gave for the words is kept beside what they
+// were recorded under (recordedAs): said in the message, or in a provenance
+// record's note, and believed by nothing.
+func credit(named string) string {
+	return "credit: " + named
+}
+
 // policyInUse reports whether anybody has been granted anything.
 //
 // This is what decides whether authorisation is enforced, and it needs no

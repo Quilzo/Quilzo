@@ -3292,6 +3292,13 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(msg) == "" {
 		msg = "edit " + name
 	}
+	// A person's change cannot say a machine wrote it, as on the command
+	// line (collab.PersonsMessage): the approval gate reads who wrote a
+	// change from its message.
+	if err := collab.PersonsMessage(msg); err != nil {
+		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+		return
+	}
 	// Content types are enforced here as well as in the CLI. This project has
 	// twice shipped a rule the terminal honoured and the browser did not, and
 	// the browser is where most editing happens.

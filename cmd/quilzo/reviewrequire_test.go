@@ -146,8 +146,10 @@ func TestLoweringTheApprovalCountWaitsForASecondAdministratorOnEveryPath(t *test
 	}
 
 	// The count compared is the one that applies, not the file's: with the
-	// settings at three and the file at nothing, asking for two is asking
-	// fewer people.
+	// settings at three and the file at nothing, asking for two asks nobody
+	// fewer, because the larger of the two applies, so it is written at once
+	// and three still apply. (Lowering what applies, from the file's four to
+	// the settings' three, waits below.)
 	t.Setenv("QUILZO_TOKEN", dana)
 	if err := cmdConfig(root, []string{"set", "review.required_approvals", "3"}); err != nil {
 		t.Fatal(err)
@@ -158,9 +160,8 @@ func TestLoweringTheApprovalCountWaitsForASecondAdministratorOnEveryPath(t *test
 	if p := appliedPolicy(t, root); p.Required != 3 {
 		t.Fatalf("the file lowered what the settings ask on one administrator's word: %+v", p)
 	}
-	r = waiting(t, root)
-	if err := cmdPending(root, []string{"withdraw", r.ID}); err != nil {
-		t.Fatal(err)
+	if pend, err := dualStore(root).Pending(time.Now()); err != nil || len(pend) != 0 {
+		t.Fatalf("asking two under the three that apply waited, and it asks nobody fewer: %+v %v", pend, err)
 	}
 	// And `config set`, the other path, waits as it did.
 	if err := cmdConfig(root, []string{"set", "review.required_approvals", "1"}); err != nil {
@@ -398,5 +399,50 @@ func TestAnApprovalTheApproversLeaveOutIsNotTaken(t *testing.T) {
 	}
 	if n := approvals(); n != 1 {
 		t.Fatalf("lee, named, approved and %d approvals are recorded", n)
+	}
+}
+
+// The count that applies is the larger of the settings and approval.json,
+// so neither can ask fewer people than the other asks, and `config set` says
+// the count that applies when approval.json asks more.
+//
+// approval.json won wherever it said anything above zero. An administrator
+// who raised review.required_approvals to five, with an earlier `review
+// require 2` in the file, was told "= 5", saw five on every screen, and two
+// approvals published.
+func TestRaisingTheApprovalSettingAppliesWhateverTheFileSays(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root, dana, _ := twoAdmins(t)
+	t.Setenv("QUILZO_TOKEN", dana)
+	if err := cmdReview(root, []string{"require", "2", "--humans", "1"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdConfig(root, []string{"set", "review.required_approvals", "5"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdConfig(root, []string{"set", "approval.required_humans", "2"}); err != nil {
+		t.Fatal(err)
+	}
+	if p := appliedPolicy(t, root); p.Required != 5 || p.RequiredHumans != 2 {
+		t.Fatalf("with the settings at five approvals and two people, publishing needs %d and %d",
+			p.Required, p.RequiredHumans)
+	}
+
+	// The file asking more than the settings is what applies, and setting
+	// the count says so rather than only what it set.
+	if err := cmdReview(root, []string{"require", "7"}); err != nil {
+		t.Fatal(err)
+	}
+	said, err := humanOutput(t, func() error {
+		return cmdConfig(root, []string{"set", "review.required_approvals", "6"})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := appliedPolicy(t, root); p.Required != 7 {
+		t.Fatalf("the settings at six lowered the seven approval.json asks: %+v", p)
+	}
+	if !strings.Contains(said, "7") || !strings.Contains(said, "review require") {
+		t.Errorf("config set did not say that seven apply:\n%s", said)
 	}
 }

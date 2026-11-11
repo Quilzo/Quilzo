@@ -4,6 +4,7 @@
 package main
 
 import (
+	"strings"
 	"time"
 
 	"flag"
@@ -62,7 +63,8 @@ func provSet(root string, args []string) error {
 		"humanEdits | trainedAlgorithmicMedia | compositeWithTrainedAlgorithmicMedia | algorithmicMedia")
 	model := fs.String("model", "", "which model, if one was involved")
 	instruction := fs.String("instruction", "", "what it was asked to do")
-	author := fs.String("author", "", "the accountable person (required)")
+	author := fs.String("author", "", "who to credit; whoever records this answers for the page, "+
+		"as on the provenance screen")
 	reviewer := fs.String("reviewed-by", "", "who checked the output, if anyone")
 	ref := fs.String("ref", site.RefDraft, "which ref the page is in")
 	pos, flags := leadingArgs(args, 1)
@@ -91,13 +93,24 @@ func provSet(root string, args []string) error {
 	if err != nil {
 		return err
 	}
+	// Whoever records it answers for it, as the provenance screen has it,
+	// and --author naming somebody else credits them in the note. Named by
+	// --author, the person it named was one of the people whose model wrote
+	// some of the draft (draftStarters), none of whom is asked to read the
+	// others': dana named lee on the page her own run wrote, and approved
+	// it alone with lee there to read it.
+	caller := resolveCaller(root, flagToken)
+	who := caller.Name
 	rec := provenance.Record{
 		ContentHash: hash,
 		SourceType:  provenance.SourceType(*kind),
 		Model:       *model,
 		Instruction: *instruction,
-		Author:      *author,
+		Author:      who,
 		ReviewedBy:  *reviewer,
+	}
+	if named := strings.TrimSpace(*author); named != "" && named != who {
+		rec.Note = credit(named)
 	}
 	if err := idx.Set(page, rec); err != nil {
 		return err

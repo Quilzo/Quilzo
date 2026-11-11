@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/collab"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/site"
 )
@@ -134,6 +135,11 @@ func (s *Server) handlePageDelete(w http.ResponseWriter, r *http.Request) {
 	msg := strings.TrimSpace(r.FormValue("message"))
 	if msg == "" {
 		msg = "remove " + name
+	}
+	// Nor a removal, which is a person's change too (collab.PersonsMessage).
+	if err := collab.PersonsMessage(msg); err != nil {
+		s.pagesBack(w, r, "", err.Error())
+		return
 	}
 	if _, err := site.SaveDraftFrom(s.Store, pages, msg, p.Name,
 		r.FormValue("base")); err != nil {

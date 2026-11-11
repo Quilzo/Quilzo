@@ -5,6 +5,7 @@ package admin
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -128,5 +129,37 @@ func TestRemovingAPageNeedsPermissionToEdit(t *testing.T) {
 	}
 	if _, there := mustPages(t, srv)["about"]; !there {
 		t.Fatal("a reader removed a page")
+	}
+}
+
+// A person's change cannot say a machine wrote it, saved or removed here as
+// on the command line.
+//
+// The approval gate reads who wrote a change from its message
+// (collab.MachineWrote), and both the editor's message and a removal's took
+// any: a page saved with "mcp: write about" was read as a change the
+// person's client made for them, which is not what happened. Only the
+// machines write those prefixes, and they write them themselves.
+func TestAPersonsChangeHereCannotSayAMachineWroteIt(t *testing.T) {
+	srv, token := setup(t)
+	before := srv.Store.GetRef(site.RefDraft)
+
+	w := save(t, srv, token, url.Values{"__name": {"about"}, "title": {"About"}, "body": {"b"},
+		"__message": {"mcp: write about"}})
+	if after := srv.Store.GetRef(site.RefDraft); after != before {
+		c, _ := srv.Store.GetCommit(after)
+		t.Fatalf("a save in the editor was recorded as a machine's: %q (%d)", c.Message, w.Code)
+	}
+	postForm(t, srv, "/page/delete", token, "name=about&message="+url.QueryEscape("agent: tidy wrote about for lee"))
+	if after := srv.Store.GetRef(site.RefDraft); after != before {
+		c, _ := srv.Store.GetCommit(after)
+		t.Fatalf("a removal in the editor was recorded as a machine's: %q", c.Message)
+	}
+
+	// And a message of the person's own is saved as it was.
+	save(t, srv, token, url.Values{"__name": {"about"}, "title": {"About"}, "body": {"b"},
+		"__message": {"tidy the about page"}})
+	if c, err := srv.Store.GetCommit(srv.Store.GetRef(site.RefDraft)); err != nil || c.Message != "tidy the about page" {
+		t.Errorf("an ordinary message was not saved: %q %v", c.Message, err)
 	}
 }

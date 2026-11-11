@@ -4,12 +4,14 @@
 package main
 
 import (
-	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/collab"
+	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 // Saying where a page's bytes came from is a write, on the command line as
@@ -21,15 +23,18 @@ import (
 func TestOnlyAnEditorRecordsProvenance(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	root := t.TempDir() + "/st"
-	page := t.TempDir() + "/p.json"
-	if err := os.WriteFile(page, []byte(`{"title":"T","body":"b"}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	if err := runCmd(t, root, "init"); err != nil {
 		t.Fatal(err)
 	}
-	// Written by an agent, so a backfill has a record to write.
-	if err := runCmd(t, root, "add", "index="+page, "-m", "agent: drafted the home page"); err != nil {
+	// Written by an agent, so a backfill has a record to write: committed
+	// as an agent's run commits, since a person's `quilzo add` cannot say a
+	// machine wrote it (collab.PersonsMessage).
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.SaveDraft(s, map[string]any{"index": map[string]any{"title": "T", "body": "b"}},
+		collab.AgentMessage("drafter", "index", ""), "agent/drafter"); err != nil {
 		t.Fatal(err)
 	}
 	pol := &auth.Policy{}

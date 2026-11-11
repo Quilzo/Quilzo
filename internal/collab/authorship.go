@@ -59,6 +59,26 @@ func MachineWrote(message string) bool {
 	return false
 }
 
+// PersonsMessage refuses a message a person typed for their own change that
+// begins as a machine's does (MachineWrote).
+//
+// What a commit's message says about who wrote it is what every rule here
+// reads, and the surfaces where a person types the message took any:
+// `quilzo add -m "agent: tidy wrote pricing for lee" --author agent/tidy`
+// was read as the agent's change made for lee, so dana, who wrote it,
+// approved it as somebody else's work. The machines write these prefixes
+// themselves (AgentMessage, the writing assistant, the machine interface),
+// never through a person's message.
+func PersonsMessage(message string) error {
+	for _, p := range machinePrefixes {
+		if strings.HasPrefix(message, p) {
+			return fmt.Errorf("a message beginning %q marks a change a machine wrote, and this one "+
+				"is yours; begin it some other way", strings.TrimSpace(p))
+		}
+	}
+	return nil
+}
+
 // # Who a machine wrote for
 //
 // The machine interface and the writing assistant commit under the name of
@@ -138,13 +158,24 @@ func AgentMessage(agent, page, person string) string {
 // agentFor is the person an agent's commit says its run was started by, or
 // nobody: an older commit says none, and a commit whose message names an
 // agent other than the one it is recorded as made by is not that agent's.
+//
+// The agent is the one the commit is recorded as made by, looked for at the
+// start of the message, and not whatever comes before its first " wrote ".
+// An agent may be called anything, and one called "tidy wrote up" committed
+// "agent: tidy wrote up wrote pricing for dana", read as an agent called
+// tidy and so as written for nobody: with a count of approvals set, dana
+// approved her own run's change as though somebody else had asked for it.
 func agentFor(message, author string) string {
 	rest, ok := strings.CutPrefix(message, AgentPrefix)
 	if !ok {
 		return ""
 	}
-	name, after, ok := strings.Cut(rest, " wrote ")
-	if !ok || author != "agent/"+name {
+	name, ok := strings.CutPrefix(author, "agent/")
+	if !ok {
+		return ""
+	}
+	after, ok := strings.CutPrefix(rest, name+" wrote ")
+	if !ok {
 		return ""
 	}
 	_, person, _ := strings.Cut(after, " for ")

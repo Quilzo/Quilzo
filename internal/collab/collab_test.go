@@ -503,6 +503,27 @@ func TestEverybodyAMachineWroteForAskedForTheChange(t *testing.T) {
 	}
 }
 
+// An agent's name cannot hide who its run was started by.
+//
+// The person was read from the message by cutting it at its first
+// " wrote ", and an agent may be called anything: dana's agent "tidy wrote
+// up" committed "agent: tidy wrote up wrote pricing for dana", which was
+// read as an agent called tidy, not the one recorded as making it, and so
+// as written for nobody. With a count of approvals set, dana approved her
+// own run's change as though somebody else had asked for it.
+func TestAnAgentsNameCannotHideWhoItsRunWasFor(t *testing.T) {
+	for _, name := range []string{"tidy wrote up", "tidy for lee", "tidy"} {
+		msg := AgentMessage(name, "pricing", "dana")
+		if writer, person := WrittenFor(msg, "agent/"+name); writer != "agent/"+name || person != "dana" {
+			t.Errorf("%q by agent/%s is written by %q for %q", msg, name, writer, person)
+		}
+		// And still only from a commit that agent is recorded as making.
+		if _, person := WrittenFor(msg, "agent/tidy wrote"); person != "" && name != "tidy" {
+			t.Errorf("%q by agent/tidy wrote is taken as written for %q", msg, person)
+		}
+	}
+}
+
 // An agent's commit names the person who started its run, and is read back
 // as the agent's, written for them; and only from a commit the agent it
 // names is recorded as making.

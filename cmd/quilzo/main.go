@@ -1306,7 +1306,8 @@ func cmdAdd(root string, args []string) error {
 	// Empty by default, filled from the resolved caller below. The literal
 	// "cli" was recorded as the author of every commit, which made a conflict
 	// report that "cli" had changed the draft — true and useless.
-	author := fs.String("author", "", "author; defaults to the caller")
+	author := fs.String("author", "", "who to credit when the words are somebody else's; "+
+		"the change is recorded as yours whatever this names")
 	remove := fs.String("remove", "", "comma-separated page names to drop")
 	basedOn := fs.String("based-on", "",
 		"the draft commit this edit was made against; refuses if it has moved")
@@ -1325,6 +1326,10 @@ func cmdAdd(root string, args []string) error {
 			"--merge needs --based-on: without the commit you were editing " +
 				"there is nothing to merge against, and this would silently " +
 				"overwrite instead")
+	}
+	// A person's change cannot say a machine wrote it (collab.PersonsMessage).
+	if err := collab.PersonsMessage(*msg); err != nil {
+		return err
 	}
 
 	s, err := open(root)
@@ -1395,18 +1400,18 @@ func cmdAdd(root string, args []string) error {
 		return err
 	}
 
+	// Recorded as the caller's, and --author naming somebody else credits
+	// them in the message (recordedAs): recorded under the name given, dana's
+	// change was lee's to every rule about who may approve it.
 	caller := resolveCaller(root, "")
-	who := *author
-	if who == "" {
-		who = caller.Name
-	}
+	who, message := caller.recordedAs(*author, *msg)
 	changed := changedNames(fs.Args())
 	var cid string
 	var merged collab.Merged
 	if *merge {
-		cid, merged, err = site.MergeDraftFrom(s, pages, *msg, who, *basedOn)
+		cid, merged, err = site.MergeDraftFrom(s, pages, message, who, *basedOn)
 	} else {
-		cid, err = site.SaveDraftFrom(s, pages, *msg, who, *basedOn)
+		cid, err = site.SaveDraftFrom(s, pages, message, who, *basedOn)
 	}
 	if err != nil {
 		// A refused write is worth recording. Somebody tried to save over
@@ -1444,6 +1449,10 @@ func cmdAdd(root string, args []string) error {
 			"author": who,
 		}))
 	w.Human("draft %s  %d page(s)\n", short(cid), len(pages))
+	if message != *msg {
+		w.Human("  %srecorded as yours, %s; %s is credited in its message%s\n",
+			dim, who, strings.TrimSpace(*author), reset)
+	}
 	// What the merge took from each side, on success as well as on failure. A
 	// merge reported only when it fails is a merge nobody trusts: silence
 	// after one reads as "nothing happened", and something did.
