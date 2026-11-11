@@ -465,8 +465,14 @@ func cmdConnect(root string, args []string) error {
 			w.Human("%s%s%s  connected %s%s\n    %s\n", bold, a.Provider, reset, a.Connected.Local().Format("2 Jan 2006"),
 				map[bool]string{true: ", scopes " + a.Scope, false: ""}[a.Scope != ""], a.Ends.Said(time.Local))
 			if a.LapsesSoon(now) {
-				w.Human("    %sconnect it again before %s: quilzo connect start %s%s\n", yellow,
-					a.Lapses().Local().Format("2 Jan 2006 15:04"), a.Provider, reset)
+				// One that has stopped says so, as Your accounts does: told to
+				// connect it again "before" a time gone by, a person read a
+				// connection that no longer worked as one that still did.
+				when := "connect it again before " + a.Lapses().Local().Format("2 Jan 2006 15:04")
+				if !a.Lapses().After(now) {
+					when = "it stopped working " + a.Lapses().Local().Format("2 Jan 2006 15:04") + ", so connect it again"
+				}
+				w.Human("    %s%s: quilzo connect start %s%s\n", yellow, when, a.Provider, reset)
 			}
 		}
 		return nil

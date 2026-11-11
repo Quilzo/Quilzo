@@ -340,4 +340,33 @@ func TestConnectListSaysWhenTokensEnd(t *testing.T) {
 	if got := listed()[0]; got["access_expires"] == nil || got["renews"] != true {
 		t.Fatalf("not learnt on use: %v", got)
 	}
+
+	// One that stops within the week says so, and what to run; one that
+	// has stopped says it has. Told to connect it again "before" a time
+	// gone by, a person read a connection that no longer worked as one
+	// that still did.
+	refreshEnds := func(at time.Time) string {
+		t.Helper()
+		raw, _ := os.ReadFile(connectionsPath(root))
+		var file map[string]map[string]map[string]any
+		if err := json.Unmarshal(raw, &file); err != nil {
+			t.Fatal(err)
+		}
+		for _, a := range file["accounts"] {
+			a["refresh_expires"], a["renews"] = at.UTC().Format(time.RFC3339), true
+		}
+		raw, _ = json.Marshal(file)
+		if err := os.WriteFile(connectionsPath(root), raw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return said()
+	}
+	if text := refreshEnds(time.Now().Add(72 * time.Hour)); !strings.Contains(text, "connect it again before") ||
+		!strings.Contains(text, "quilzo connect start acme") {
+		t.Errorf("one that stops within the week does not say so:\n%s", text)
+	}
+	if text := refreshEnds(time.Now().Add(-48 * time.Hour)); strings.Contains(text, "connect it again before") ||
+		!strings.Contains(text, "stopped working") || !strings.Contains(text, "quilzo connect start acme") {
+		t.Errorf("one that has stopped does not say it has:\n%s", text)
+	}
 }

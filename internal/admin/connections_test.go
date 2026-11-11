@@ -97,6 +97,9 @@ func TestConnectedAccountsAreAPersonsOwn(t *testing.T) {
 func TestYourAccountsSaysWhenAConnectionExpires(t *testing.T) {
 	srv, token := setup(t)
 	now := time.Now().UTC()
+	// Counted from now, not fixed dates: a refresh token's fixed end
+	// comes within the week one day, and the test would fail that week.
+	access, refresh := now.Add(50*24*time.Hour), now.Add(300*24*time.Hour)
 	srv.Connections = &Connections{
 		Providers: func() ([]connect.Provider, error) {
 			return []connect.Provider{{Name: "linkedin", Title: "LinkedIn", Hosts: []string{"api.linkedin.com"}},
@@ -106,7 +109,7 @@ func TestYourAccountsSaysWhenAConnectionExpires(t *testing.T) {
 		Mine: func(person string) ([]ConnectedAccount, error) {
 			return []ConnectedAccount{
 				{Provider: "linkedin", Connected: now.AddDate(0, -2, 0), Expires: connect.Ends{
-					Access: time.Date(2027, 1, 10, 9, 30, 0, 0, time.UTC), Refresh: time.Date(2027, 9, 12, 0, 0, 0, 0, time.UTC), Renews: true}},
+					Access: access, Refresh: refresh, Renews: true}},
 				{Provider: "instagram", Connected: now.AddDate(0, -2, 0), Expires: connect.Ends{Access: now.Add(3 * 24 * time.Hour)}},
 				{Provider: "acme", Connected: now.AddDate(-1, 0, 0)},
 			}, nil
@@ -114,7 +117,8 @@ func TestYourAccountsSaysWhenAConnectionExpires(t *testing.T) {
 	}
 	body := get(t, srv, "/connections", token).Body.String()
 	whole(t, body)
-	for _, want := range []string{"10 Jan 2027 09:30", "12 Sep 2027", "no refresh token", "not known",
+	for _, want := range []string{access.Format("2 Jan 2006 15:04"), "refresh token until " + refresh.Format("2 Jan 2006"),
+		"no refresh token", "not known",
 		"Connect it again before " + now.Add(3*24*time.Hour).Format("2 Jan 2006")} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the screen does not say %q", want)
