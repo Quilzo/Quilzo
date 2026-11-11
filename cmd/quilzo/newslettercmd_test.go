@@ -275,3 +275,25 @@ func stringOf(m map[string]any) string {
 	b, _ := json.Marshal(m)
 	return string(b)
 }
+
+// A list an older Excel saved as Windows-1252 came in with each é and ç in
+// a name stored as U+FFFD, and the export carried the broken names on. It is
+// read as records import reads it, and the import says how.
+func TestAListSavedByAnOlderExcelKeepsItsNames(t *testing.T) {
+	root, _ := newsletterStore(t)
+	got, err := importSubscribers(root, strings.NewReader("email,name\r\nrene@example.org,Ren\xe9 Fran\xe7ois\r\n"),
+		"Signed up at the fair", asAdmin("dana"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Added != 1 || !strings.HasPrefix(got.ReadAs, "Windows-1252") {
+		t.Fatalf("the import: %+v", got)
+	}
+	var out bytes.Buffer
+	if _, err := exportSubscribers(root, &out, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "rene@example.org,René François,") {
+		t.Fatalf("the export:\n%s", out.String())
+	}
+}

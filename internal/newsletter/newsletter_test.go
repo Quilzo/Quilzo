@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/sheet"
 )
 
 func openList(t *testing.T) *List {
@@ -602,5 +604,49 @@ func TestAnAddressThatLooksLikeAFormulaIsGuardedInTheSubscriberExport(t *testing
 		if r.Email != list[i].Email || r.Name != list[i].Name {
 			t.Errorf("row %d came back as %q %q, not %q %q", i+1, r.Email, r.Name, list[i].Email, list[i].Name)
 		}
+	}
+}
+
+// A list Excel saved as "Unicode Text" (UTF-16, between tabs) was refused,
+// "no column is an email address", and one an older Excel saved as
+// Windows-1252 came in with each é and ç turned into U+FFFD in the names.
+// records import read both. There is one reader of a CSV's bytes, sheet's,
+// and the newsletter reads through it.
+func TestASubscriberListSavedAsUnicodeTextImports(t *testing.T) {
+	utf16 := func(s string) string {
+		b := []byte{0xFF, 0xFE}
+		for _, u := range []rune(s) {
+			b = append(b, byte(u), byte(u>>8))
+		}
+		return string(b)
+	}
+	for name, file := range map[string]string{
+		"UTF-16, as Excel saves Unicode Text": utf16("email\tname\r\nzoe@example.org\tZoé Müller\r\n"),
+		"Windows-1252, as older Excel saves":  "email,name\r\nzoe@example.org,Zo\xe9 M\xfcller\r\n",
+		"sep=, as Excel writes first":         "sep=;\nemail;name\nzoe@example.org;Zoé Müller\n",
+	} {
+		rows, err := ReadCSV(strings.NewReader(file))
+		if err != nil {
+			t.Errorf("%s: %v", name, err)
+			continue
+		}
+		if len(rows) != 1 || rows[0].Email != "zoe@example.org" || rows[0].Name != "Zoé Müller" {
+			t.Errorf("%s: read as %+v", name, rows)
+		}
+	}
+}
+
+// The newsletter and records import split a CSV's cells alike. The
+// newsletter counted separators on the first line without minding quotes,
+// so a heading with semicolons inside its quotes made it split a comma
+// separated list on semicolons, and no column was the address any more.
+func TestTheNewsletterAndRecordsReadTheSameCSVAlike(t *testing.T) {
+	file := "email,\"note; kept; as; written\",name\nann@example.com,\"met; at; the; fair\",Ann Lee\n"
+	if _, comma := sheet.Text([]byte(file)); comma != ',' {
+		t.Fatalf("records read the cells as split by %q", comma)
+	}
+	rows, err := ReadCSV(strings.NewReader(file))
+	if err != nil || len(rows) != 1 || rows[0].Email != "ann@example.com" || rows[0].Name != "Ann Lee" {
+		t.Fatalf("the newsletter read %v %+v", err, rows)
 	}
 }

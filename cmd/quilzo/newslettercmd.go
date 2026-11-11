@@ -425,7 +425,7 @@ func importSubscribers(root string, r io.Reader, agreed string, caller *Caller) 
 		return newsletter.Imported{}, errors.New("say where these people agreed to get the newsletter, such as " +
 			"\"signed up on our Mailchimp form\": they are added as having said yes, and that is the record of it")
 	}
-	rows, err := newsletter.ReadCSV(io.LimitReader(r, 32<<20))
+	rows, readAs, err := newsletter.ReadCSVAs(io.LimitReader(r, 32<<20))
 	if err != nil {
 		return newsletter.Imported{}, err
 	}
@@ -434,6 +434,7 @@ func importSubscribers(root string, r io.Reader, agreed string, caller *Caller) 
 		return newsletter.Imported{}, err
 	}
 	got, err := list.Import(rows, "Imported "+time.Now().UTC().Format("2 January 2006")+"; "+agreed, time.Now())
+	got.ReadAs = readAs
 	if err != nil {
 		return got, err
 	}
@@ -636,6 +637,9 @@ func newsletterImport(root string, args []string, caller *Caller) error {
 	}
 	if w.JSON(got) {
 		return nil
+	}
+	if got.ReadAs != "" {
+		w.Human("read as %s\n", got.ReadAs)
 	}
 	w.Human("added %d; %d already here; %d kept as having left, so never sent to; %d skipped as never confirmed "+
 		"or not an address\n", got.Added, got.Already, got.Left, got.Skipped+got.Bad)
