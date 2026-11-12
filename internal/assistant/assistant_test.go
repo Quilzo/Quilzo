@@ -448,6 +448,34 @@ func TestAPriceKeepsItsCurrency(t *testing.T) {
 	})
 }
 
+// A figure is held to the passage's figures whole. "Pallet delivery costs
+// £12" was shown, cited for "costs £120", and "within 3 days" for "within
+// 30 days": each figure was looked for as a piece of the passage's text, and
+// 12 is a piece of 120.
+func TestAFigureInsideALongerOneIsNotThatFigure(t *testing.T) {
+	zq := []Hit{{Passage: Passage{ID: "p#1", Page: "p", Title: "Zqvel delivery",
+		Text: "Pallet delivery to Zqvel costs £120. Returns are accepted within 30 days of delivery. " +
+			"Orders over £1,250.50 ship free. We open at 9.30am. Call 0113 496 0000."}}}
+	expectVerdicts(t, []verdict{
+		{zq, "Pallet delivery to Zqvel costs £12 [1].", "12"},
+		{zq, "Pallet delivery to Zqvel costs £20 [1].", "20"},
+		{zq, "Pallet delivery to Zqvel costs £1 [1].", "1"},
+		{zq, "Pallet delivery to Zqvel costs 12 pounds [1].", "12"},
+		{zq, "Returns are accepted within 3 days of delivery [1].", "3"},
+		{zq, "Returns are accepted within 0 days of delivery [1].", "0"},
+		{zq, "Orders over £1,250 ship free [1].", "1,250"},
+		{zq, "Orders over £250.50 ship free [1].", "250.50"},
+		{zq, "We open at 9am [1].", "9"},
+		{zq, "Call 0113 496 000 [1].", "000"},
+		{zq, "Pallet delivery to Zqvel costs £120 [1].", ""},
+		{zq, "Pallet delivery to Zqvel costs £120.00 [1].", ""},
+		{zq, "Returns are accepted within 30 days of delivery [1].", ""},
+		{zq, "Orders over £1250.50 ship free [1].", ""},
+		{zq, "We open at 9:30am [1].", ""},
+		{zq, "Call 0113 496 0000 [1].", ""},
+	})
+}
+
 // A record names what it is about in its header, and an FAQ asks in its
 // header what its answer says. Both headers were statements of their own,
 // with no "not" in them: "The sourdough loaf is gluten free" shared as many

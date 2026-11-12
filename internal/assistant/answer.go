@@ -386,17 +386,48 @@ func Figures(text string) [][2]int {
 	return out
 }
 
+// figure is a figure as a text writes it and the value it states.
+type figure struct{ text, value string }
+
+// figureValues are the figures a text states, each with its value: without
+// the commas that group its thousands, without the zeros that end its
+// decimals, and with a time's colon read as its point, so "£1,000" states
+// what "£1000" does, "£12.00" what "£12" does and "9:30" what "9.30" does.
+//
+// Verify compares them whole. It had looked for each figure of a sentence
+// anywhere in the passage's text, and found "£12" in "£120" and "3 days" in
+// "30 days": a tenth of the price was shown to a visitor with a citation.
+func figureValues(text string) []figure {
+	at := Figures(text)
+	var out []figure
+	for i := 0; i < len(at); i++ {
+		start, end := at[i][0], at[i][1]
+		// "9:30" is two figures to Figures, and one time.
+		for i+1 < len(at) && at[i+1][0] == end+1 && text[end] == ':' {
+			i++
+			end = at[i][1]
+		}
+		f := text[start:end]
+		v := strings.ReplaceAll(strings.ReplaceAll(f, ",", ""), ":", ".")
+		if strings.Contains(v, ".") {
+			v = strings.TrimSuffix(strings.TrimRight(v, "0"), ".")
+		}
+		out = append(out, figure{text: f, value: v})
+	}
+	return out
+}
+
 // Verify checks one sentence against the passages it cites.
 //
 // Four tests, each cheap and each aimed at a failure that has been seen:
 //
 //   - It must cite, and only passages it was given. An uncited sentence is
 //     the model speaking for itself.
-//   - Every figure in it must appear in what it cites, whether it is
-//     written in digits or in words, and count there what it counts in the
-//     sentence: the same half of the day, unit of time and currency.
-//     Invented prices, dates, times and quantities are the most damaging
-//     thing a site's assistant can say and the easiest to check.
+//   - Every figure in it must be one that what it cites states, whole,
+//     whether it is written in digits or in words, and count there what it
+//     counts in the sentence: the same half of the day, unit of time and
+//     currency. Invented prices, dates, times and quantities are the most
+//     damaging thing a site's assistant can say and the easiest to check.
 //   - Most of its informative words must appear in what it cites. Not
 //     entailment — a word-overlap test cannot prove a paraphrase is right —
 //     but it catches the sentence that cites passage 2 and is about
@@ -448,11 +479,13 @@ func Verify(sentence string, hits []Hit) Sentence {
 		units = append(units, statements(hits[n-1])...)
 	}
 	source := cited.String()
-	norm := func(s string) string { return strings.NewReplacer(",", "").Replace(s) }
-	for _, at := range Figures(out.Text) {
-		f := out.Text[at[0]:at[1]]
-		if !strings.Contains(norm(source), norm(f)) {
-			out.Why = fmt.Sprintf("says %s, which the cited passage does not", f)
+	stated := map[string]bool{}
+	for _, f := range figureValues(source) {
+		stated[f.value] = true
+	}
+	for _, f := range figureValues(out.Text) {
+		if !stated[f.value] {
+			out.Why = fmt.Sprintf("says %s, which the cited passage does not", f.text)
 			return out
 		}
 	}
