@@ -504,3 +504,58 @@ to act on the terminal of whoever previewed it. The first two could not have car
 a hash and the other is the operator's own argument — and are changed anyway,
 because a rule that every value printed inside a line is cleaned is easier to
 keep than a list of the ones that did not need it.
+
+---
+
+## `go/clear-text-logging` — `cmd/quilzo/agentcmd.go:628` and `cmd/quilzo/agentearned.go:282`
+
+**To be dismissed** as a *false positive*. The request is filed with the pull
+request that added the two lines (Quilzo/Quilzo#430); the alert numbers are
+the two `go/clear-text-logging` results at those lines.
+
+### The flow, from the SARIF
+
+The CodeQL job prints every result with its whole path ("List the results"),
+so this is read, not guessed. Both alerts share one source and most of one
+path:
+
+- **Source** `internal/assist/assist.go:603`: `APIKey: key`, the model's key
+  written into the `HTTPModel` the direct, non-gateway model is built as.
+  `APIKey` is a field name the rule treats as a password.
+- **The step that matters** `cmd/quilzo/agentearned.go:84`:
+  `evals.Served{Model: m.Name()}` in `servedBy`. `HTTPModel.Name` returns
+  `h.Model`, the model's name. Go's taint tracking takes a read of any field
+  of a struct that holds a tainted field as tainted, so the name is reported
+  as if it were the key.
+- **Sinks**: `internal/evals/earned.go:115` puts the name in "evaluated on
+  X; Y is driving", and the two lines print that reason: `quilzo agent run`'s
+  note that an evaluation no longer earns anything, and `quilzo agent earned`.
+
+### Why the rule's claim does not hold
+
+What reaches the terminal is the name of the model and of the route, the
+same text `quilzo agent show` and the Evaluations screen print. No step on
+the path reads `APIKey`; the only read of it in the program is
+`HTTPModel.prepare`, which puts it in a request's `Authorization` header and
+nowhere else.
+
+### Why it is not changed in code
+
+The path can be cut only by not asking the model object its name: building
+the driving model's identity from configuration instead of from the model
+`agentRunModel` makes. That identity is what earned autonomy compares with the
+model an evaluation measured, and the two agreeing is the point of the
+comparison (see `drivingModel` and the gateway's `Serves`). A second way of
+working out "which model drives this agent" is a second thing that can
+disagree with the first, in a check whose failure grants autonomy nobody
+measured. Renaming the field so the rule no longer recognises a key was
+considered and refused: it would hide the next real flow from the same rule.
+
+### What would make this dismissal wrong
+
+Any code that formats a whole `HTTPModel`, a `gateway.Guarded` or an
+`assist.Model` with `%v` or `%+v`, or that reads `APIKey` anywhere but
+`prepare`. Either would put the key itself on this path. The check is a grep
+for `APIKey` in non-test code: today it finds the field, the two places that
+write it (`assist.NewHTTPModelAt` and the gateway's routes in
+`cmd/quilzo/gatewaycmd.go`) and the reads in `prepare`, and nothing else.
