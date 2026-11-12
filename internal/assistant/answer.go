@@ -14,6 +14,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/quilzo/quilzo/internal/guardrail"
 	"github.com/quilzo/quilzo/internal/search"
 )
 
@@ -474,6 +475,13 @@ func Verify(sentence string, hits []Hit) Sentence {
 	}
 	if len(out.Cites) == 0 {
 		out.Why = "cites nothing"
+		return out
+	}
+	// Whatever it cites: a page that asks for a card number may be the one
+	// somebody planted, and passes every test below because the sentence is
+	// its own.
+	if guardrail.AsksForSecrets(out.Text) {
+		out.Why = "asks the visitor for a card number, bank details, a password or a code"
 		return out
 	}
 	var cited strings.Builder
