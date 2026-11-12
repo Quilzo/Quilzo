@@ -565,3 +565,67 @@ func TestThePageReadsTheIndexAndStillSaysWhenTheLogWasAltered(t *testing.T) {
 		t.Errorf("an entry edited in place was shown as an intact log:\n%s", body)
 	}
 }
+
+// The template escapes what a browser reads as markup and nothing else, so
+// the escape sequences somebody holding a decoy put in the path they asked
+// for reached this page byte for byte, as did every other control character
+// a field of the log can hold. A browser draws them as nothing, and the row
+// read as an ordinary path with stray brackets in it. The command line marks
+// each one, and the page does the same; the filter still takes the action as
+// the log holds it.
+func TestThePageMarksEveryControlCharacterInTheLog(t *testing.T) {
+	const redraw = "\x1b[2K\x1b[1A\x1b[2K\x1b[32mall quiet\x1b[0m"
+	dir := t.TempDir()
+	l, err := audit.New(audit.Options{Path: dir + "/a.jsonl", Source: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range []audit.Record{
+		{Action: "shield.decoy-touched", Resource: "/api/v1/pages" + redraw, Outcome: audit.Denied,
+			Principal: "visitor\x7f", Kind: audit.KindUnknown, Detail: map[string]string{"planted\x1b[2K": "ci\u009b2K vault"}},
+		{Action: "publish\u009b2K", Resource: "/x\rquiet", Outcome: audit.Success, Principal: "dana", Kind: audit.KindHuman, Verified: true},
+		{Action: "render", Resource: "/c", Outcome: audit.Success, Principal: "dana", Kind: audit.KindHuman, Verified: true},
+	} {
+		if _, err := l.Append(r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	events, err := audit.Read(dir + "/a.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A doctored entry is drawn too, under the warning that it was doctored.
+	events[2].At = "2026-11-10T09:00:00\x1b[2K"
+	events[2].Outcome = "success\x1b[5A"
+	s, tok := logServer(t, events, true)
+
+	body, code := getLogs(t, s, tok, "")
+	if code != http.StatusOK || !strings.Contains(body, "has been altered") {
+		t.Fatalf("got %d:\n%s", code, body)
+	}
+	// What is drawn, which is everything outside a tag: the template escapes
+	// every < and > a value holds, so each one left is the page's own. A
+	// filter's option keeps the action as the log holds it, as its value, so
+	// that choosing it finds it.
+	inTag := false
+	for _, r := range body {
+		switch {
+		case r == '<':
+			inTag = true
+		case r == '>':
+			inTag = false
+		case !inTag && (r < 0x20 && r != '\t' && r != '\n' || r == 0x7f || r >= 0x80 && r <= 0x9f):
+			t.Fatalf("the page draws the control character %q from the log:\n%q", r, body)
+		}
+	}
+	for _, want := range []string{"/api/v1/pages\uFFFD[2K", "visitor\uFFFD", "planted\uFFFD[2K", "ci\uFFFD2K vault",
+		"publish\uFFFD2K", "/x\uFFFDquiet", "success\uFFFD[5A"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the page does not show %q", want)
+		}
+	}
+	body, _ = getLogs(t, s, tok, "?action=publish%C2%9B2K")
+	if !strings.Contains(body, "1 of 3 entries") {
+		t.Errorf("the filter no longer finds an action holding a control character")
+	}
+}

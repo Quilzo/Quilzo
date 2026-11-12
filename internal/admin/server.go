@@ -626,6 +626,9 @@ func New(s *store.Store, p *auth.Policy, ts *auth.TokenStore, layouts render.Lay
 		"ago": func(unix int64) string { return agoAt(unix, time.Now()) },
 		// bytes is a file size as a person reads it: "2.4 MB", not 2411954.
 		"bytes": humanBytes,
+		// shown is a value from the audit log with its control characters
+		// made visible (logs.go).
+		"shown": shown,
 	}).ParseFS(assets, "assets/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("admin templates: %w", err)

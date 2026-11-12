@@ -83,6 +83,36 @@ func outcomeTag(o audit.Outcome) string {
 	return "tag"
 }
 
+// shown is a value from the log as the page draws it, with every control
+// character in it replaced by a mark that can be seen, as the command line
+// shows them.
+//
+// The template escapes what a browser would read as markup, and nothing
+// else. The escape sequences somebody holding a decoy put in the path they
+// asked for reached this page byte for byte, and a browser draws them as
+// nothing, so the row read as an ordinary path with stray brackets in it and
+// kept quiet about what had been sent. A control character in an entry is a
+// fact worth seeing. The log, its exports and a filter's own value keep the
+// exact bytes; this is only what a person is shown.
+func shown(s string) string {
+	if !strings.ContainsFunc(s, control) {
+		return s
+	}
+	return strings.Map(func(r rune) rune {
+		if control(r) {
+			return '�'
+		}
+		return r
+	}, s)
+}
+
+// control is a C0 control other than a tab or a line feed, which HTML draws
+// as space, or DEL, or a C1 control, which some terminals take as an escape
+// of its own.
+func control(r rune) bool {
+	return r < 0x20 && r != '\t' && r != '\n' || r == 0x7f || r >= 0x80 && r <= 0x9f
+}
+
 // handleLogs shows the audit log.
 // handles finds a person's handle in the log's text (audit.Pseudonym).
 var handles = regexp.MustCompile(`\bp_[0-9a-f]{32}\b`)
