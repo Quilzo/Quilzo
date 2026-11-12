@@ -463,6 +463,10 @@ func TestDelegatesAreDeclaredFirst(t *testing.T) {
 	}
 }
 
+// raceSlowdown is how many times its budget a timed test is given: once,
+// and ten times when it is built with the race detector (race_test.go).
+var raceSlowdown time.Duration = 1
+
 // An agent file whose OpenAPI document offers many operations is read in
 // time in proportion to them. Each tool looked through all those before it
 // for one of its name: 80,000 operations, a 1.2 MB Bedrock file, took
@@ -495,7 +499,7 @@ func TestAnAgentWithManyOperationsIsReadInTimeInProportion(t *testing.T) {
 		if m := imp.Agents[0].Manifest; len(m.Tools) != 100000 || len(m.AskFirst) != 80000 {
 			t.Errorf("%d tools, %d asked about first", len(m.Tools), len(m.AskFirst))
 		}
-	case <-time.After(8 * time.Second):
+	case <-time.After(8 * time.Second * raceSlowdown):
 		t.Errorf("a %d-byte agent file was not read in %v", len(file), time.Since(start))
 	}
 }
