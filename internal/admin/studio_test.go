@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
+	"github.com/quilzo/quilzo/internal/agentwatch"
 	"github.com/quilzo/quilzo/internal/auth"
 )
 
@@ -940,5 +941,104 @@ func TestEarnedAutonomyIsSetOnTheScreenAsInTheDeclaration(t *testing.T) {
 	}
 	if body := get(t, srv, "/agents/edit/answers", token).Body.String(); !strings.Contains(body, `name="earn_after" value="7"`) {
 		t.Error("the field does not show what the declaration says")
+	}
+}
+
+// Agents names Agent activity to somebody who manages agents, and links to
+// it only for somebody who may open it.
+//
+// It linked to it for everybody the screen is for, and Agent activity is
+// read on the compliance area: the reference stack's agent manager followed
+// the one link in the screen's opening lines and was told "no binding gives
+// role-manage-agents any role on /@compliance".
+func TestAgentsLinksAgentActivityOnlyForWhoMayOpenIt(t *testing.T) {
+	srv, admin := setup(t)
+	wireStudio(srv)
+	if err := srv.Policy.Grant(auth.Binding{Principal: "mona", Permission: auth.ActManageAgents, Resource: auth.AreaAgents}); err != nil {
+		t.Fatal(err)
+	}
+	mona, _, err := srv.Tokens.IssueSession("passkey:mona", "mona", srv.roleFor("mona"), "/", time.Hour,
+		auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		who, token string
+	}{{"an agent manager", mona}, {"an administrator", admin}} {
+		w := get(t, srv, "/agents", c.token)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s opened Agents and was answered %d", c.who, w.Code)
+		}
+		body := w.Body.String()
+		if !strings.Contains(body, "Agent activity") {
+			t.Errorf("%s is not told Agent activity exists", c.who)
+		}
+		linked := strings.Contains(body, `href="/security/agents"`)
+		opens := get(t, srv, "/security/agents", c.token).Code == http.StatusOK
+		if linked != opens {
+			t.Errorf("%s is linked to Agent activity: %v, and may open it: %v", c.who, linked, opens)
+		}
+	}
+}
+
+// The compliance screens link to a screen of another area only for somebody
+// who may open it, and name it for everybody else: Agents and Agent activity
+// the other way round.
+//
+// An auditor, who reads the compliance area and nothing else, was linked from
+// Agent activity to Agents and to the audit log, from Security to Shield and
+// Sign-ins, from Controls and Content policy to Settings, and from the site
+// report to Forms and to each page with personal data on it, and was refused
+// at the end of each: Agents is for whoever manages agents, the log for
+// whoever reads it, Shield and Sign-ins for an administrator of the security
+// area, and the rest for somebody who edits the site.
+func TestComplianceScreensLinkOnlyWhereTheirReaderMayGo(t *testing.T) {
+	srv, admin := fullyWired(t)
+	wireStudio(srv)
+	wirePosture(srv, false)
+	// An agent flagged, so Agent activity points into the log at each strike.
+	srv.Assurance.Agents = func() ([]agentwatch.Report, error) {
+		return []agentwatch.Report{{
+			Principal: "assistant", Actions: 40, Flagged: true, Summary: "refused twice",
+			Counts:  map[string]int{"repeated-refusal": 2},
+			Strikes: []agentwatch.Strike{{Kind: "repeated-refusal", Seq: 7, Action: "publish", Resource: "/"}},
+		}}, nil
+	}
+	if err := srv.Policy.Grant(auth.Binding{Principal: "aud", Role: auth.RoleReader, Resource: auth.AreaCompliance}); err != nil {
+		t.Fatal(err)
+	}
+	aud, _, err := srv.Tokens.IssueSession("passkey:aud", "aud", srv.roleFor("aud"), "/", time.Hour,
+		auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ who, token string }{{"an auditor", aud}, {"an administrator", admin}} {
+		for _, sc := range []struct {
+			path  string
+			links map[string]string
+		}{
+			{"/security/agents", map[string]string{"/agents": "Agents", "/logs?seq=7": "7"}},
+			{"/security", map[string]string{"/security/shield": "Shield", "/security/signins": "Sign-ins"}},
+			{"/security/controls", map[string]string{"/settings": "Settings"}},
+			{"/security/policy", map[string]string{"/settings": "settings"}},
+			{"/security/site", map[string]string{"/forms": "Forms", "/page/refund": "refund"}},
+		} {
+			w := get(t, srv, sc.path, c.token)
+			if w.Code != http.StatusOK {
+				t.Fatalf("%s opened %s and was answered %d", c.who, sc.path, w.Code)
+			}
+			body := w.Body.String()
+			body = strings.Replace(body, menuOf(t, body), "", 1)
+			for to, name := range sc.links {
+				if !strings.Contains(body, name) {
+					t.Errorf("%s is not told on %s that %s exists", c.who, sc.path, name)
+				}
+				linked := strings.Contains(body, `href="`+to+`"`)
+				opens := get(t, srv, to, c.token).Code == http.StatusOK
+				if linked != opens {
+					t.Errorf("on %s, %s is linked to %s: %v, and may open it: %v", sc.path, c.who, name, linked, opens)
+				}
+			}
+		}
 	}
 }

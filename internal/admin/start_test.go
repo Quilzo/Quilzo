@@ -6,8 +6,11 @@ package admin
 import (
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/quilzo/quilzo/internal/auth"
 )
 
 // Signing in for the first time lands on the getting started screen.
@@ -127,6 +130,41 @@ func TestEveryStepOpensAScreen(t *testing.T) {
 		if w := get(t, srv, st.Where, token); w.Code != http.StatusOK &&
 			w.Code != http.StatusServiceUnavailable {
 			t.Errorf("%q links to %s, which answers %d", st.Title, st.Where, w.Code)
+		}
+	}
+}
+
+// Get started links each step to the screen that does it only for somebody
+// who may open that screen, and names the screen for everybody else.
+//
+// Its last step, deciding who else may do what, linked People for every
+// reader, author and publisher the screen is for, and People refused each of
+// them: who may do what is an administrator's to change.
+func TestGetStartedLinksOnlyWhereItsReaderMayGo(t *testing.T) {
+	for _, role := range []auth.Role{auth.RoleReader, auth.RoleAuthor, auth.RolePublisher, auth.RoleAdmin} {
+		srv, token := asRole(t, role)
+		w := get(t, srv, "/start", token)
+		if w.Code != http.StatusOK {
+			t.Fatalf("somebody with the %s role opened Get started and was answered %d", role, w.Code)
+		}
+		steps := regexp.MustCompile(`(?s)<ol class="steps-list">(.*?)</ol>`).FindStringSubmatch(w.Body.String())
+		if steps == nil {
+			t.Fatal("Get started lists no steps")
+		}
+		if !strings.Contains(steps[1], "People") {
+			t.Errorf("somebody with the %s role is not told where who may do what is decided", role)
+		}
+		links := regexp.MustCompile(`href="(/[^"]*)"`).FindAllStringSubmatch(steps[1], -1)
+		if len(links) < 3 {
+			t.Fatalf("only %d steps are linked for somebody with the %s role", len(links), role)
+		}
+		for _, m := range links {
+			if code := get(t, srv, m[1], token).Code; code != http.StatusOK {
+				t.Errorf("somebody with the %s role is linked to %s, which answered them %d", role, m[1], code)
+			}
+		}
+		if role == auth.RoleAdmin && !strings.Contains(steps[1], `href="/people"`) {
+			t.Error("an administrator is not linked to People")
 		}
 	}
 }

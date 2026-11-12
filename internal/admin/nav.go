@@ -503,17 +503,51 @@ func (d destination) resource() string {
 // granted that part: Data, to somebody who may read one collection.
 var underAnywhere = map[string]bool{"records": true}
 
+// approver reports whether somebody may approve something that waits: on
+// content, which is the site and what an agent's step would change, or on
+// the agents or one of them. Approvals is their work screen, and it is in
+// their menu and where their front door goes as well as in a reader's.
+//
+// Approvals asked only for reading the site, so somebody granted approve
+// and nothing else signed in to a menu holding Today alone, and the front
+// door sent them there too, while the screen they decide things on answered
+// them at an address nothing in front of them led to. Not on another area:
+// an administrator of the security area holds approve there, where nothing
+// waits for it.
+func approver(pol *auth.Policy, name string) bool {
+	return pol.Anywhere(name, auth.ActApprove) || pol.AnywhereUnder(name, auth.ActApprove, auth.AreaAgents)
+}
+
 // visibleTo is the destinations a principal may use.
 func visibleTo(s *Server, p principal) []destination {
 	out := make([]destination, 0, len(destinations))
 	for _, d := range destinations {
 		if d.Key != "today" && s.Policy != nil && !s.Policy.Evaluate(p.Name, d.Needs, d.resource()).Allowed &&
-			!(underAnywhere[d.Key] && s.Policy.AnywhereUnder(p.Name, d.Needs, d.resource())) {
+			!(underAnywhere[d.Key] && s.Policy.AnywhereUnder(p.Name, d.Needs, d.resource())) &&
+			!(d.Key == "approvals" && approver(s.Policy, p.Name)) {
 			continue
 		}
 		out = append(out, d)
 	}
 	return out
+}
+
+// opens is whether somebody may open the screen the menu calls key, asked as
+// that screen asks it: the permission its entry needs, on the area it belongs
+// to, and capped by the credential in hand. It is for a link in a screen's
+// text, which goes only where the person reading it may go, and names the
+// screen for everybody else.
+//
+// Agent activity linked an auditor to Agents, Security linked them to Shield
+// and Sign-ins, and Get started linked every reader, author and publisher to
+// People, and each refused them at the end of the link.
+func (s *Server) opens(p principal, key string) bool {
+	for _, d := range destinations {
+		if d.Key == key {
+			return s.allows(p, d.Needs, d.resource())
+		}
+	}
+	return false
 }
 
 // clearCookie expires one of the preference cookies.

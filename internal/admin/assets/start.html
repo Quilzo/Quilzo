@@ -19,7 +19,7 @@ done rather than because you clicked past it.
       {{else}}<span class="tag">not yet</span>{{end}}
     </div>
     <p>{{.Body}}</p>
-    <p><a href="{{.Where}}">{{.What}}</a></p>
+    <p>{{if .Where}}<a href="{{.Where}}">{{.What}}</a>{{else}}{{.What}}{{with .Who}}, which {{.}} looks after{{end}}{{end}}</p>
   </li>
 {{end}}
 </ol>

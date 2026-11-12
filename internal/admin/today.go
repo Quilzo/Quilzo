@@ -207,7 +207,12 @@ func (s *Server) handleToday(w http.ResponseWriter, r *http.Request) {
 		"Waiting": waiting, "WaitingTotal": total, "MoreWaiting": total - len(waiting),
 		"Brief": s.briefFor(p, briefFacts(all, lines, now), now),
 		"Lines": lines, "StartsHere": startPath(r) == "/today",
-		"Date": now.Format("Monday 2 January"),
+		// Starting on Pages is offered only to somebody who may open it. It
+		// was offered to everybody, so an approver could choose to start on
+		// a screen that refuses them, and every screen's way up became a
+		// link called Pages that sent them back to Approvals.
+		"OpensPages": visible["pages"],
+		"Date":       now.Format("Monday 2 January"),
 	})
 }
 
@@ -330,19 +335,38 @@ func (s *Server) glance(p principal, visible map[string]bool, now time.Time) tod
 			}
 		}
 	}
-	start := func(key, text, href string) {
-		if visible[key] {
+	start := func(key string, can bool, text, href string) {
+		if visible[key] && can {
 			g.Starts = append(g.Starts, glanceItem{Text: text, Href: href})
 		}
 	}
 	// Each lands on the part of its screen that does what it says. They
 	// opened the top of Media, Make and Chatbots, screens with other names,
 	// and on Make the form for a feature was five sections down.
-	start("pages", "Write a page", "/#newpage-name")
-	start("media", "Upload a picture", "/media#m-file")
-	start("make", "Add a feature", "/make#make-add")
-	start("assistants", "Add a chatbot", "/assistants#new-chatbot")
-	start("review", "Review and publish", "/review")
+	//
+	// And each is offered only to somebody that screen shows the form to,
+	// asked as the screen asks it. They were offered to whoever could open
+	// the screen, so a reader was given Write a page, which landed on Pages
+	// with no New page box, Upload a picture, on Media with nothing to
+	// choose, and Review and publish, on a screen that said they could
+	// review but not publish; an author was given Review and publish, and
+	// Add a chatbot, on a screen with no form for one.
+	edit := s.mayUse(p, auth.ActEditDraft, "/")
+	publish := s.mayUse(p, auth.ActPublish, "/")
+	start("pages", edit, "Write a page", "/#newpage-name")
+	start("media", edit, "Upload a picture", "/media#m-file")
+	start("make", s.Features != nil, "Add a feature", "/make#make-add")
+	start("assistants", publish && !p.Limits.ReadOnly, "Add a chatbot", "/assistants#new-chatbot")
+	start("review", publish, "Review and publish", "/review")
+	// Somebody who writes and does not publish, in a store that asks for
+	// approval, starts their part of it instead: offering the draft for
+	// review, which Review shows them the form for while nothing, or other
+	// content, is offered.
+	if !publish && edit && visible["review"] {
+		if a := s.approvalFor(p, s.Store.GetRef(site.RefDraft)); a.Configured && (!a.Proposed || !a.Matches) {
+			start("review", true, "Offer for review", "/review#ap-msg")
+		}
+	}
 	return g
 }
 

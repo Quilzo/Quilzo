@@ -132,7 +132,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.render(w, r, "settings.html", map[string]any{
-		"Title": "Settings", "Principal": p, "Nav": "settings",
+		"Title": "Settings", "Principal": p, "Nav": "settings", "ReadsAssurance": s.readsAssurance(p),
 		"Groups": groups, "Weakened": cfg.Weakened(), "Applies": applies,
 		"Message":  msg,
 		"Error":    problem,

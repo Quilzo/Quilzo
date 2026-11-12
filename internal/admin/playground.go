@@ -196,20 +196,33 @@ func playgroundHTML(nonce, who, theme, home string, routes []Route) string {
     overflow-x: auto; font-family: ui-monospace, monospace; font-size: .85rem;
     white-space: pre-wrap; word-break: break-word; }
   .pg .status { font-weight: 600; }
-  .pg .ok { color: #2e7d32 } .pg .warn { color: #b26a00 } .pg .err { color: #c62828 }
+  /* The theme's own roles for the three outcomes, which hold in both schemes.
+     Fixed colours picked for a white page were 3.3:1 to 4.4:1 in the dark
+     scheme, and a 4xx 4.1:1 in the light one. */
+  .pg .ok { color: var(--ok) } .pg .warn { color: var(--warning) } .pg .err { color: var(--error) }
   .pg .note { font-size: .875rem; opacity: .8; margin: .4rem 0 0; padding: 0; border: 0 }
   /* Nothing to say yet is nothing on screen: an empty note was a stray dot,
      and two empty boxes under Response looked like a load that never ended. */
   .pg .note:empty, .pg pre:empty { display: none; }
   .pg .status.waiting { font-weight: 400; color: var(--on-surface-variant, GrayText); }
-  .pg .hint { font-size: .8125rem; opacity: .7 }
+  /* Set back by the hint's own colour, which style.css gives it, and not
+     by fading it as well: at .7 the hints were 4.0:1 in the light scheme,
+     and the way back with them 4.2:1, under the 4.5:1 AA asks. */
+  .pg .hint { font-size: .8125rem }
+  /* The way back sits before the content, in its own header, so the skip
+     link has something to skip; the two read as one column. */
+  .pg-head { padding-bottom: 0; }
+  .pg-head + main.pg { padding-top: 0; }
   /* The way back is the one link on this page, so it is a target a finger
      can find: 24px tall at least (WCAG 2.5.8), not the 17 its line gave. */
   .pg nav.hint a { display: inline-flex; align-items: center; min-height: 24px; }
 </style>
 </head><body>
-<main class="pg">
+<a class="skip" href="#main">Skip to main content</a>
+<header class="pg pg-head">
 <nav class="hint" aria-label="Breadcrumb"><a href="` + html.EscapeString(home) + `">Back to Quilzo</a></nav>
+</header>
+<main id="main" tabindex="-1" class="pg">
 <h1>API playground</h1>
 <p class="hint">Signed in as ` + html.EscapeString(who) + `. Requests go to this
 server, through the same middleware your own code will meet, using your session

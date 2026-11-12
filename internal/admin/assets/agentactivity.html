@@ -25,7 +25,8 @@
 {{else}}
 
 <p class="help">What agents have done in the last {{.Window}}, read from the
-  audit log. <a href="/agents">Agents</a> shows what each one is declared to be
+  audit log. {{if .OpensAgents}}<a href="/agents">Agents</a>{{else}}Agents, which
+  somebody who manages agents reads,{{end}} shows what each one is declared to be
   allowed to do. An agent is listed here once it has {{.Threshold}} or more
   strikes — a strike being a pattern worth a person's attention, not a finding
   and not a decision.</p>
@@ -55,7 +56,7 @@
       <tbody>
       {{range .Strikes}}
       <tr>
-        <th scope="row"><a href="/logs?seq={{.Seq}}">{{.Seq}}</a></th>
+        <th scope="row">{{if $.OpensLogs}}<a href="/logs?seq={{.Seq}}">{{.Seq}}</a>{{else}}{{.Seq}}{{end}}</th>
         <td>{{.At}}</td>
         <td>{{.Kind}}</td>
         <td><code>{{.Action}}</code></td>
@@ -97,7 +98,8 @@
 <p>No agent has acted in the last {{.Window}}. That is a
   statement about this window and not about the store: an agent that ran before
   it is in the audit log, which keeps everything, and
-  <a href="/logs">the log</a> is where to look for it.</p>
+  {{if .OpensLogs}}<a href="/logs">the log</a>{{else}}the log, which somebody with access to the audit
+  log opens,{{end}} is where to look for it.</p>
 {{end}}
 
 {{end}}
