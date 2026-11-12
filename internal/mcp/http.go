@@ -254,7 +254,7 @@ func (e *Endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeRPC(w, http.StatusOK, Response{JSONRPC: "2.0", ID: req.ID, Result: res})
 		return
 	case "tools/call":
-		tool, op := callNames(req.Params)
+		tool, op := CallNames(req.Params)
 		result, rerr := srv.call(req.Params)
 		if e.Called != nil {
 			e.Called(r, caller, tool, op, rerr)
@@ -401,7 +401,10 @@ func stringParam(params json.RawMessage, field string) string {
 	return s
 }
 
-func callNames(params json.RawMessage) (tool, op string) {
+// CallNames are the tool a tools/call names and the operation it asks of
+// it, for the record of the call. Exported for the transport on standard
+// input, so a call is recorded by the same names whichever way it came.
+func CallNames(params json.RawMessage) (tool, op string) {
 	var p callParams
 	_ = json.Unmarshal(params, &p)
 	op, _ = p.Arguments["operation"].(string)

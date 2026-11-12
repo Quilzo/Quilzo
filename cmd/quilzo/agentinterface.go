@@ -235,6 +235,18 @@ func appCallRecord(c *mcp.Caller, tool, op string, rerr *mcp.Error) audit.Record
 	return interfaceCallRecord(who, model, c.Principal, true, d, tool, op, rerr)
 }
 
+// stdioCallRecord is the record of one call to `quilzo mcp` on standard
+// input: the record a call over HTTP gets, for the person whose token the
+// client was started with, and saying so when no token vouched for them.
+func stdioCallRecord(c *Caller, tool, op string, rerr *mcp.Error) audit.Record {
+	d := map[string]string{}
+	if !c.Verified {
+		d["identity"] = "unverified: " + c.Why
+	}
+	who, model := interfaceClient(c.Name, "")
+	return interfaceCallRecord(who, model, c.Name, c.Verified, d, tool, op, rerr)
+}
+
 // interfaceCallRecord is the record of one tools/call at the agent
 // interface, over HTTP or on standard input: the same record on both, so
 // what a client read and what it was refused is in the log whichever way

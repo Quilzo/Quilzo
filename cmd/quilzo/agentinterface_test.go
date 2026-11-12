@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -152,5 +153,62 @@ func TestEachPersonsClientIsAnAgentOfItsOwn(t *testing.T) {
 	s := appCallRecord(&mcp.Caller{Principal: "dana", Data: auth.Token{ID: "s1", Parent: "tok03", Principal: "dana"}}, "quilzo_read", "", nil)
 	if s.Detail["credential"] != "tok03" {
 		t.Errorf("a session is named by the token it was exchanged from: %+v", s.Detail)
+	}
+}
+
+// `quilzo mcp` on standard input records every call as the interface over
+// HTTP does. Only a write left a record there, so what a local agent read,
+// and a publish it was refused, were invisible to the shield and to an
+// auditor, while the same calls at /mcp each had an mcp.call record.
+func TestTheStdioInterfaceRecordsEveryCall(t *testing.T) {
+	root, secrets := storeWithTokenFor(t, auth.Binding{Principal: "ana", Role: auth.RoleAuthor, Resource: "/"})
+	t.Setenv("QUILZO_TOKEN", secrets["ana"])
+	in := strings.Join([]string{
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"desk","version":"1"}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"quilzo_write","arguments":{"operation":"write_page","arguments":{"page":"stdio-page","fields":{"title":"Hello"}}}}}`,
+		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"quilzo_read","arguments":{"operation":"read_page","arguments":{"page":"stdio-page"}}}}`,
+		`{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"quilzo_publish","arguments":{"operation":"publish"}}}`,
+	}, "\n") + "\n"
+	f, err := os.CreateTemp(t.TempDir(), "stdin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(in); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Seek(0, 0); err != nil {
+		t.Fatal(err)
+	}
+	saved := os.Stdin
+	os.Stdin = f
+	defer func() { os.Stdin = saved }()
+	_, out := captureStdout(t)
+	err = cmdMCP(root, nil)
+	replies := out()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(replies, "needs publisher") {
+		t.Fatalf("the publish was not refused: %s", replies)
+	}
+	events, err := audit.Read(auditPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]audit.Event{}
+	for _, e := range events {
+		if e.Action == "mcp.call" {
+			got[e.Detail["operation"]] = e
+		}
+	}
+	read, publish := got["read_page"], got["publish"]
+	if len(got) != 3 || got["write_page"].Outcome != audit.Success ||
+		read.Outcome != audit.Success || read.Detail["tool"] != "quilzo_read" ||
+		publish.Outcome != audit.Denied || !strings.Contains(publish.Detail["error"], "needs publisher") {
+		t.Fatalf("recorded %+v", got)
+	}
+	if read.Kind != audit.KindAI || read.Model != "mcp-client" || !read.Verified || read.Detail["on_behalf_of"] == "" {
+		t.Errorf("recorded as %+v", read)
 	}
 }

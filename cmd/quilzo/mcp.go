@@ -105,6 +105,14 @@ func cmdMCP(root string, args []string) error {
 			continue
 		}
 		resp := srv.Handle(req)
+		// Every call recorded, reads and refusals included, as over HTTP
+		// (wireInterface's Called): on standard input only a write left a
+		// record, so what a local agent read, and a publish it was refused,
+		// were invisible to the shield and to whoever reads the log.
+		if req.Method == "tools/call" {
+			tool, op := mcp.CallNames(req.Params)
+			record(root, stdioCallRecord(caller, tool, op, resp.Error))
+		}
 		// A notification has no id and expects no reply.
 		if len(req.ID) == 0 {
 			continue
