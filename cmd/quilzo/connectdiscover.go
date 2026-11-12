@@ -100,6 +100,14 @@ func connectDiscover(root string, caller *Caller, args []string) error {
 		if id, err = connectDocumentURL(root); err != nil {
 			return err
 		}
+		// And the document is one the admin can serve from there. An admin
+		// at http on this machine was set up with that address as its
+		// client id, which no server takes and none could read, and the
+		// person learned it at the other side's sign-in page.
+		if _, err := connectClientDocument(root); err != nil {
+			return fmt.Errorf("%s takes a client's metadata document and no registrations, and this installation "+
+				"has none to give it: %w. Give --client-id for a client registered there by hand", d.Issuer, err)
+		}
 		byDocument = true
 	default:
 		if id, err = connect.Register(ctx, discoverPost, d, connectClientName(root), redirect); err != nil {

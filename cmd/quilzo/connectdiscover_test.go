@@ -124,3 +124,44 @@ func TestAnotherQuilzoIsConnectedByItsMetadataDocument(t *testing.T) {
 		t.Fatal("a scope that is not one was asked for")
 	}
 }
+
+// Discovery by this installation's metadata document is refused where the
+// document could not be one: an admin at http on this machine, which is
+// the one address an admin may have that is not https, has no address a
+// server may read a client's document from.
+//
+// It was set up all the same, with the http address as the client id, and
+// said so as if it had worked. The other server refuses a client id that
+// is not https, and this admin serves no document it cannot make, so the
+// person found out at the other side's sign-in page, from its words.
+// Registering, the other way in, has always refused such a redirect here.
+func TestAMetadataDocumentNobodyCouldReadIsNotAClientID(t *testing.T) {
+	root := keyedDemo(t)
+	setConfigs(t, root, map[string]string{"admin.base_url": "http://localhost:8080", "site.name": "Hart's"})
+	pages := map[string]string{
+		"https://hub.example/.well-known/oauth-protected-resource/mcp": `{"resource":"https://hub.example/mcp",
+			"authorization_servers":["https://hub.example"],"scopes_supported":["mcp:read"]}`,
+		"https://hub.example/.well-known/oauth-authorization-server": `{"issuer":"https://hub.example",
+			"authorization_endpoint":"https://hub.example/oauth/authorize","token_endpoint":"https://hub.example/oauth/token",
+			"client_id_metadata_document_supported":true,"code_challenge_methods_supported":["S256"]}`,
+	}
+	wasGet := discoverGet
+	defer func() { discoverGet = wasGet }()
+	discoverGet = func(_ context.Context, u string) (int, http.Header, []byte, error) {
+		if b, ok := pages[u]; ok {
+			return 200, http.Header{}, []byte(b), nil
+		}
+		return 404, http.Header{}, nil, nil
+	}
+	err := cmdConnect(root, []string{"provider", "discover", "hub", "https://hub.example/mcp"})
+	if err == nil || !strings.Contains(err.Error(), "https") {
+		t.Fatalf("set up with a document at an http address: %v", err)
+	}
+	set, lerr := loadConnectProviders(root)
+	if lerr != nil {
+		t.Fatal(lerr)
+	}
+	if _, ok := set.get("hub"); ok {
+		t.Fatal("the provider was kept")
+	}
+}
