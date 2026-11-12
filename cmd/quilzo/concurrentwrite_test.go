@@ -4,9 +4,13 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -474,5 +478,48 @@ func TestImportsIntoANewStoreKeepThePagesAddedBesideThem(t *testing.T) {
 	sort.Strings(want)
 	if names := strings.Join(draftNames(t, root), ","); names != strings.Join(want, ",") {
 		t.Fatalf("the draft holds %s, not %s", names, strings.Join(want, ","))
+	}
+}
+
+// A page saved while the assistant thinks, on a store with nothing in it
+// yet, is kept when the proposal is written.
+//
+// `quilzo assist` takes the draft as its base before the model is asked, to
+// guard the seconds the model takes. A store with no draft has no base,
+// which the write took as "whatever the draft is by then", so a page saved
+// in exactly that window was written over by the proposal.
+func TestAnAssistOnANewStoreKeepsAPageSavedWhileItThought(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("QUILZO_TOKEN", "")
+	if w == nil {
+		w = out.New(false)
+	}
+	root := t.TempDir() + "/st"
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	about := fileOf(t, "about.json", `{"title":"About"}`)
+	model := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		// Somebody else's save, made while the model is thinking.
+		if got, err := quilzoAt(t, home, root, "add", "about="+about); err != nil {
+			t.Errorf("the save made while the model thought was refused: %v\n%s", err, got)
+		}
+		reply, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{
+			"message": map[string]any{"role": "assistant", "content": `{"pages":{"pricing":{"title":"Prices"}}}`}}}})
+		rw.Header().Set("Content-Type", "application/json")
+		rw.Write(reply)
+	}))
+	t.Cleanup(model.Close)
+	t.Setenv("QUILZO_MODEL_URL", model.URL+"/v1")
+	t.Setenv("QUILZO_MODEL", "stand-in")
+	t.Setenv("QUILZO_MODEL_KEY", "")
+
+	if err := cmdAssist(root, []string{"write the prices", "--author", "dana", "--templates", filepath.Join(t.TempDir(), "tpl")}); err != nil {
+		t.Fatalf("a proposal touching nothing the other save did was refused: %v", err)
+	}
+	if names := strings.Join(draftNames(t, root), ","); names != "about,pricing" {
+		t.Fatalf("the draft holds %s, not about and pricing: the page saved while the model thought was lost", names)
 	}
 }

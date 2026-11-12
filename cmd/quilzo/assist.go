@@ -69,10 +69,15 @@ func cmdAssist(root string, args []string) error {
 	// Captured before the model is asked, not after. The gap between reading
 	// and writing is however long the model takes to think, which is the whole
 	// window this is protecting.
-	base := s.GetRef(site.RefDraft)
-	current, err := site.PagesAt(s, site.RefDraft)
+	//
+	// The pages and the commit they came from in one read, the draft or else
+	// what is live (site.SaveDraftOver). The base was the draft ref, and a
+	// store with no draft yet had none, which the write took as "whatever the
+	// draft is by then": a page saved while the model thought was written
+	// over by the proposal.
+	base, current, err := draftOrLive(s)
 	if err != nil {
-		current = map[string]any{}
+		return err
 	}
 
 	w.Human("asking %s...\n", model.Name())
@@ -166,7 +171,9 @@ func cmdAssist(root string, args []string) error {
 	// assistant wrote was written for lee, and with one approval asked dana
 	// approved it as somebody else's request.
 	who, message := caller.recordedAs(*author, fmt.Sprintf("assist: %s", truncate(instruction, 60)))
-	cid, err := site.SaveDraftFrom(s, merged, message, who, base)
+	// Merged with whatever landed while the model thought, and refused where
+	// somebody changed a page the proposal changes too (a merge conflict).
+	cid, _, err := site.SaveDraftOver(s, merged, message, who, base)
 	if err != nil {
 		return conflictError(err, names)
 	}
