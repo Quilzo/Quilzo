@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
+	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/feature"
 	"github.com/quilzo/quilzo/internal/mcp"
 	"github.com/quilzo/quilzo/internal/out"
@@ -329,4 +330,96 @@ func TestAWritePageConflictSaysItCanBeRetried(t *testing.T) {
 		}
 	}
 	t.Logf("%d of 10 refused", n)
+}
+
+// Records written from the command line while pages are added keep every
+// page and every record.
+//
+// `quilzo records add` and `delete` read the draft's tree, made their
+// change to it, and only then took the ref lock to make the result the
+// draft: so a page or a record that landed in between was not in the tree
+// they wrote. Ten adds of pages beside ten adds of records left five or six
+// of the ten pages and two to five of the ten records, and every one of the
+// twenty exited 0. The agent interface, the admin and the content API
+// already made the same change under the lock.
+func TestRecordsWrittenBesidePagesKeepEveryOne(t *testing.T) {
+	root, home := concurrentRig(t)
+	if got, err := quilzoAt(t, home, root, "--json", "records", "add", "devices", "hostname=gone"); err != nil {
+		t.Fatalf("%v\n%s", err, got)
+	}
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err := draftTree(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, _, err := collection.List(s, tree, "devices", collection.Query{})
+	if err != nil || len(before) != 1 {
+		t.Fatalf("the record to delete is not there: %v %v", before, err)
+	}
+	gone := before[0].ID
+
+	const writers = 10
+	var wg sync.WaitGroup
+	failed := make([]string, 2*writers+1)
+	for i := range writers {
+		page := fileOf(t, fmt.Sprintf("r%d.json", i), fmt.Sprintf(`{"title":"Page %d"}`, i))
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			if got, err := quilzoAt(t, home, root, "add", fmt.Sprintf("conc-%d=%s", i, page)); err != nil {
+				failed[i] = fmt.Sprintf("add %d: %v\n%s", i, err, got)
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			if got, err := quilzoAt(t, home, root, "records", "add", "devices", fmt.Sprintf("hostname=h%d", i)); err != nil {
+				failed[writers+i] = fmt.Sprintf("records add %d: %v\n%s", i, err, got)
+			}
+		}()
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if got, err := quilzoAt(t, home, root, "records", "delete", "devices", gone); err != nil {
+			failed[2*writers] = fmt.Sprintf("records delete: %v\n%s", err, got)
+		}
+	}()
+	wg.Wait()
+	for _, f := range failed {
+		if f != "" {
+			t.Errorf("a write with nothing in common with the others failed: %s", f)
+		}
+	}
+
+	names := strings.Join(draftNames(t, root), ",")
+	want := []string{"index"}
+	for i := range writers {
+		want = append(want, fmt.Sprintf("conc-%d", i))
+	}
+	sort.Strings(want)
+	if names != strings.Join(want, ",") {
+		t.Errorf("the draft holds the pages %s, not %s", names, strings.Join(want, ","))
+	}
+	if tree, err = draftTree(s); err != nil {
+		t.Fatal(err)
+	}
+	recs, _, err := collection.List(s, tree, "devices", collection.Query{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var hosts []string
+	for _, r := range recs {
+		hosts = append(hosts, fmt.Sprint(r.Fields["hostname"]))
+	}
+	sort.Strings(hosts)
+	var wantHosts []string
+	for i := range writers {
+		wantHosts = append(wantHosts, fmt.Sprintf("h%d", i))
+	}
+	if strings.Join(hosts, ",") != strings.Join(wantHosts, ",") {
+		t.Errorf("the draft holds the records %s, not %s", strings.Join(hosts, ","), strings.Join(wantHosts, ","))
+	}
 }

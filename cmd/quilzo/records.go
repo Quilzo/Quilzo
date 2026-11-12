@@ -70,29 +70,31 @@ func draftTree(s *store.Store) (string, error) {
 	return c.Tree, nil
 }
 
-// commitTree makes a tree the new draft.
+// commitTree makes the draft what change makes of it, under the ref lock:
+// change is handed the draft's tree as it is once the lock is held, and
+// gives back the tree to commit and the commit's message.
 //
-// Under the ref lock and against the draft the caller read, so two people
-// writing records at once cannot silently lose one of the writes — the same
-// compare-and-swap every other write in this program goes through.
-func commitTree(root string, s *store.Store, tree, message, author string) error {
+// The tree is read here, inside the lock, and not by the caller. This took
+// a tree its callers had already read and changed, and said it ran "against
+// the draft the caller read" while checking nothing: whatever landed between
+// their read and this write was not in the tree it made the draft. Ten
+// `quilzo records add` run beside ten `quilzo add` kept two to five of the
+// ten records and five or six of the ten pages, a deleted record came back,
+// and all of them exited 0. write_record, the admin and the content API
+// already read, change and write under the one lock.
+func commitTree(s *store.Store, author string,
+	change func(tree string) (next, message string, err error)) error {
+
 	return s.WithRefLock(func() error {
-		parent := s.GetRef(site.RefDraft)
-		if parent == "" {
-			parent = s.GetRef(site.RefLive)
-		}
-		var parents []string
-		if parent != "" {
-			parents = []string{parent}
-		}
-		cid, err := s.PutCommit(store.Commit{
-			Tree: tree, Parents: parents, Message: message,
-			Author: author, At: time.Now().Unix(),
-		})
+		tree, err := draftTree(s)
 		if err != nil {
 			return err
 		}
-		return s.SetRef(site.RefDraft, cid)
+		next, message, err := change(tree)
+		if err != nil {
+			return err
+		}
+		return commitTreeNoLock(s, next, message, author)
 	})
 }
 
@@ -272,17 +274,14 @@ func recordsAdd(root string, args []string) error {
 		return err
 	}
 	caller := resolveCaller(root, "")
-	tree, err := draftTree(s)
-	if err != nil {
-		return err
-	}
-	next, rec, err := collection.Put(s, tree, coll,
-		collection.Record{ID: *id, Fields: fields}, time.Now(),
-		recordGate(root))
-	if err != nil {
-		return err
-	}
-	if err := commitTree(root, s, next, "records: write "+coll, caller.Name); err != nil {
+	var rec collection.Record
+	if err := commitTree(s, caller.Name, func(tree string) (string, string, error) {
+		next, put, err := collection.Put(s, tree, coll,
+			collection.Record{ID: *id, Fields: fields}, time.Now(),
+			recordGate(root))
+		rec = put
+		return next, "records: write " + coll, err
+	}); err != nil {
 		return err
 	}
 	record(root, caller.auditRecord("records.write", "/"+coll, audit.Success,
@@ -305,16 +304,10 @@ func recordsDelete(root string, args []string) error {
 		return err
 	}
 	caller := resolveCaller(root, "")
-	tree, err := draftTree(s)
-	if err != nil {
-		return err
-	}
-	next, err := collection.Delete(s, tree, args[0], args[1])
-	if err != nil {
-		return err
-	}
-	if err := commitTree(root, s, next, "records: delete "+args[0],
-		caller.Name); err != nil {
+	if err := commitTree(s, caller.Name, func(tree string) (string, string, error) {
+		next, err := collection.Delete(s, tree, args[0], args[1])
+		return next, "records: delete " + args[0], err
+	}); err != nil {
 		return err
 	}
 	record(root, caller.auditRecord("records.delete", "/"+args[0],
@@ -451,21 +444,16 @@ func putCheckedRecords(root, name string, rows []map[string]any, caller *Caller)
 	if err != nil {
 		return 0, err
 	}
-	tree, err := draftTree(s)
-	if err != nil {
-		return 0, err
-	}
 	batch := make([]collection.Record, 0, len(rows))
 	for _, f := range rows {
 		batch = append(batch, collection.Record{Fields: f})
 	}
-	next, out, err := collection.PutMany(s, tree, name, batch, time.Now())
-	if err != nil {
-		return 0, err
-	}
-	if err := commitTree(root, s, next,
-		fmt.Sprintf("records: import %d into %s", len(out), name),
-		caller.Name); err != nil {
+	var out []collection.Record
+	if err := commitTree(s, caller.Name, func(tree string) (string, string, error) {
+		next, put, err := collection.PutMany(s, tree, name, batch, time.Now())
+		out = put
+		return next, fmt.Sprintf("records: import %d into %s", len(put), name), err
+	}); err != nil {
 		return 0, err
 	}
 	record(root, caller.auditRecord("records.import", "/"+name,

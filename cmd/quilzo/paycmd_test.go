@@ -129,11 +129,10 @@ func reprice(t *testing.T, root, slug string, price int) {
 	for _, r := range idx.Records {
 		if r.Fields["slug"] == slug {
 			r.Fields["price"] = float64(price)
-			next, _, err := collection.PutMany(s, tree, "products", []collection.Record{{ID: r.ID, Fields: r.Fields}}, time.Now())
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := commitTree(root, s, next, "reprice "+slug, "dana"); err != nil {
+			if err := commitTree(s, "dana", func(tree string) (string, string, error) {
+				next, _, err := collection.PutMany(s, tree, "products", []collection.Record{{ID: r.ID, Fields: r.Fields}}, time.Now())
+				return next, "reprice " + slug, err
+			}); err != nil {
 				t.Fatal(err)
 			}
 			return
