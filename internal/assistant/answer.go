@@ -836,7 +836,7 @@ func measures(text string) []measure {
 func unitTurned(sentence, source string) string {
 	have := measures(source)
 	var stated []figure
-	for _, m := range measures(sentence) {
+	for _, m := range measures(reAllWeek.ReplaceAllString(sentence, "$1")) {
 		same, other := false, ""
 		for _, h := range have {
 			if h.kind != m.kind || h.key != m.key {
@@ -874,6 +874,11 @@ func unitTurned(sentence, source string) string {
 	}
 	return ""
 }
+
+// reAllWeek finds the two ways of saying every day and all day, whose "a
+// week" and "a day" are no period of their own: "open 7 days a week" says
+// what a passage's "open 7 days" does.
+var reAllWeek = regexp.MustCompile(`(?i)\b((?:7|seven)\s+days|(?:24|twenty[\s-]four)\s+hours)\s+a\s+(?:week|day)\b`)
 
 // oneOf are the words that name one of a unit of time without a figure:
 // the unit, as "per week" and "next-day" say it, and the word for once in

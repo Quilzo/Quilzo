@@ -936,6 +936,7 @@ func TestAPeriodWithoutAFigureIsHeldToThePassageToo(t *testing.T) {
 	}
 	days := hit("Returns are accepted within 30 days of delivery. Dispatch is next-day.")
 	month := hit("Returns are accepted for a month. Pallet delivery is £5 per week, billed monthly.")
+	depot := hit("The Zqvel depot is open 7 days, 24 hours. Storage is £5.")
 	expectVerdicts(t, []verdict{
 		{days, "Returns are accepted within a month of delivery [1].", "a month"},
 		{days, "Returns are accepted within a year of delivery [1].", "a year"},
@@ -949,6 +950,11 @@ func TestAPeriodWithoutAFigureIsHeldToThePassageToo(t *testing.T) {
 		{month, "Returns are accepted for one month [1].", ""},
 		{month, "Pallet delivery is £5 a week [1].", ""},
 		{month, "Pallet delivery is billed once a month [1].", ""},
+		// "Seven days a week" and "24 hours a day" are how every day and all
+		// day are said, and state no week or day of their own.
+		{depot, "The Zqvel depot is open 7 days a week [1].", ""},
+		{depot, "The Zqvel depot is open seven days a week, 24 hours a day [1].", ""},
+		{depot, "Storage is £5 a week [1].", "a week"},
 	})
 }
 
