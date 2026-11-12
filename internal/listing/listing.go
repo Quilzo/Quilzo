@@ -487,7 +487,7 @@ func (l *Listing) query(args map[string]string) (collection.Query, bool, error) 
 		}
 		v, err := coerce(p.Kind, raw)
 		if err != nil {
-			return collection.Query{}, false, fmt.Errorf("%s %w", p.Name, err)
+			return collection.Query{}, false, &BadArg{Param: p.Name, err: err}
 		}
 		values[p.Name] = v
 	}
@@ -630,6 +630,19 @@ func project(l *Listing, r collection.Record) Row {
 	}
 	return row
 }
+
+// BadArg is a value given for a parameter that the parameter's kind
+// refuses. It is the caller's mistake, where every other error a listing
+// returns is its own: a page whose address carries one is a visitor's
+// typing, not a broken page, and is answered as one.
+type BadArg struct {
+	// Param is the parameter, by its declared name.
+	Param string
+	err   error
+}
+
+func (e *BadArg) Error() string { return e.Param + " " + e.err.Error() }
+func (e *BadArg) Unwrap() error { return e.err }
 
 // coerce turns a supplied string into a value of the declared kind.
 //

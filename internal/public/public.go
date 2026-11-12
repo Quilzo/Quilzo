@@ -34,6 +34,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/analytics"
 	"github.com/quilzo/quilzo/internal/experiment"
@@ -1227,8 +1228,7 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 		// showed its listing in preview rendered without it for readers —
 		// silently, because a missing section looks like a section with
 		// nothing in it. Found by publishing the page and looking at it.
-		http.Error(w, "this page could not be assembled",
-			http.StatusInternalServerError)
+		unassembled(w, nil, "this page could not be assembled")
 		return
 	}
 	// One context builder, shared with the accessibility gate, the preview and
@@ -1240,9 +1240,9 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 		// A page whose listings cannot be resolved is a broken page, not a
 		// page with an empty section. Rendering it without them would ship a
 		// listing-shaped hole that nobody notices until somebody asks why the
-		// table is empty.
-		http.Error(w, "this page could not be assembled",
-			http.StatusInternalServerError)
+		// table is empty. A value in the address a listing refuses is not
+		// that: see unassembled.
+		unassembled(w, cerr, "this page could not be assembled")
 		return
 	}
 
@@ -1252,13 +1252,12 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 		// not a page to render through something else. Rendering it through the
 		// default would serve a document nobody designed with no message
 		// anywhere saying so.
-		http.Error(w, "this page could not be assembled",
-			http.StatusInternalServerError)
+		unassembled(w, lerr, "this page could not be assembled")
 		return
 	}
 	html, err := tmpl.Render(layout, ctx)
 	if err != nil {
-		http.Error(w, "template error", http.StatusInternalServerError)
+		unassembled(w, err, "template error")
 		return
 	}
 
@@ -1274,6 +1273,30 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 	st.originTrial(w.Header())
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(html))
+}
+
+// unassembled answers a page that could not be built for this request.
+//
+// A value in the address that a listing on the page refuses, a capital
+// letter or a space in a slug or a stray character, is the visitor's
+// mistake: 400, naming the parameter but not repeating the value, as
+// /catalogue.json already answers it. It was answered 500 "this page could
+// not be assembled", which monitoring counts as the site failing, from a
+// link a newsletter wrote with a capital letter. Anything else is this
+// site's trouble and stays a 500. Neither is kept by any cache or answers
+// to the page's ETag: the headers set for the page it was to be no longer
+// describe what is sent.
+func unassembled(w http.ResponseWriter, err error, problem string) {
+	h := w.Header()
+	h.Del("ETag")
+	h.Set("Cache-Control", "no-store")
+	var bad *listing.BadArg
+	if errors.As(err, &bad) {
+		http.Error(w, "this address gives "+bad.Param+" a value this page cannot use",
+			http.StatusBadRequest)
+		return
+	}
+	http.Error(w, problem, http.StatusInternalServerError)
 }
 
 // injectHead adds the manifest link and the provenance marking.

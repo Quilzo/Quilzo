@@ -125,8 +125,9 @@ func (st *Site) detailRoute(w http.ResponseWriter, r *http.Request,
 		}
 		// A declaration that cannot work is the operator's problem and is
 		// said out loud, because a misconfigured detail route that 404s looks
-		// exactly like a record that is not there.
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		// exactly like a record that is not there. A value in the address
+		// the listing refuses is the visitor's: see unassembled.
+		unassembled(w, err, err.Error())
 		return true
 	}
 	st.renderDetail(w, r, base, body, row)
@@ -145,7 +146,7 @@ func (st *Site) renderDetail(w http.ResponseWriter, r *http.Request,
 
 	ctx, err := st.sources().For(name, body, firstOf(r.URL.Query()))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		unassembled(w, err, err.Error())
 		return
 	}
 	st.sources().WithRecord(ctx, map[string]any(row))
