@@ -206,6 +206,18 @@ type Server struct {
 	// host's to authorise and forward. Nothing runs without Call.
 	Direct *Direct
 
+	// ArgumentsAsGiven hands every operation its arguments as they came,
+	// held only to the tool's own schema and not to what the operation
+	// says it takes (checkArguments). It is for a server whose handlers are
+	// not the operations' own and read arguments by other rules. A run's
+	// interface is one: it lists the store's operations and hands each
+	// call to the run as a step, and the run's executor reads a page from
+	// "page" or "name" and a search from "query", "q" or "text". Held to
+	// the store's names, a program that sent name was answered invalid
+	// params, and the step, with its place in the budget and the record,
+	// never happened.
+	ArgumentsAsGiven bool
+
 	operations map[string]Operation
 	handlers   map[string]Handler
 }
@@ -580,8 +592,10 @@ func (s *Server) call(raw json.RawMessage) (any, *Error) {
 	if args == nil {
 		args = map[string]any{}
 	}
-	if err := op.checkArguments(args); err != nil {
-		return nil, &Error{Code: CodeInvalidParams, Message: fmt.Sprintf("%s: %v", opName, err)}
+	if !s.ArgumentsAsGiven {
+		if err := op.checkArguments(args); err != nil {
+			return nil, &Error{Code: CodeInvalidParams, Message: fmt.Sprintf("%s: %v", opName, err)}
+		}
 	}
 
 	result, err := s.handlers[opName](args)

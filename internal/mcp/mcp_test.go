@@ -524,3 +524,31 @@ func TestADirectToolThatFailedIsAnsweredAsAnError(t *testing.T) {
 		t.Fatalf("%#v", r.Result)
 	}
 }
+
+// A server whose handlers read their arguments by their own rules hands
+// each operation what it was sent, and still holds a call to the tool's own
+// schema.
+//
+// A run's interface lists the store's operations and hands every call to
+// the run, whose executor reads a page from "page" or "name". Held to the
+// store's names, a program that sent name was answered invalid params
+// before its call was a step of the run.
+func TestAServerThatReadsItsOwnArgumentsIsHandedThemAsGiven(t *testing.T) {
+	s := NewServer("run", "1")
+	s.Authorise = allowAll
+	s.ArgumentsAsGiven = true
+	var got map[string]any
+	s.Register(Operation{Name: "read_page", Summary: "read a page", Args: map[string]string{"page": "the page name"}},
+		func(a map[string]any) (any, error) { got = a; return "read", nil })
+	r := call(t, s, "tools/call", callParams{Name: "quilzo_read", Arguments: map[string]any{
+		"operation": "read_page", "arguments": map[string]any{"name": "about", "depth": 2}}})
+	if r.Error != nil || got["name"] != "about" {
+		t.Fatalf("%+v, handed %v", r.Error, got)
+	}
+	// The tool's schema is the same four tools' everywhere.
+	r = call(t, s, "tools/call", callParams{Name: "quilzo_read", Arguments: map[string]any{
+		"operation": "read_page", "arguments": "name=about"}})
+	if r.Error == nil || r.Error.Code != CodeInvalidParams {
+		t.Fatalf("arguments as a string: %+v", r.Error)
+	}
+}
