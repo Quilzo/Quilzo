@@ -807,6 +807,16 @@ func Read(path string) ([]Event, error) {
 		return nil, err
 	}
 	defer f.Close()
+	// Only a regular file has a size to read up to. Whatever else the path
+	// names, a pipe a log is handed over through say, is read to its end,
+	// as every log was before Read stopped where one had settled. Asked its
+	// size, a pipe says none, so Read returned no entries and no error, and
+	// Check called a log nobody had read an empty one that is intact.
+	if fi, err := f.Stat(); err != nil {
+		return nil, err
+	} else if !fi.Mode().IsRegular() {
+		return readEvents(f)
+	}
 	size, err := settled(f, path)
 	if err != nil {
 		return nil, err
