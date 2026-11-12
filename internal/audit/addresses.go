@@ -65,11 +65,49 @@ func addressWithoutCredentials(a string, sep int) string {
 	}
 	if at := strings.LastIndexByte(host, '@'); at >= 0 {
 		host = "…" + host[at:]
+	} else if at := strings.LastIndexByte(tail, '@'); at >= 0 && !hostAndPort(host) {
+		// A password with a "/", a "?" or a "#" in it, typed as it is,
+		// ends what was read as the host early: "user:pa" of
+		// "https://user:pa/ss@host/", which is no host and no port. Up to
+		// the last "@" is taken as the user and password, and the rest
+		// read again from there. Taking the host as it came wrote the
+		// user and the password in clear, and the error that says such an
+		// address does not parse quotes it whole.
+		host, tail = "…@", tail[at+1:]
+		if i := strings.IndexAny(tail, "/?#"); i >= 0 {
+			host, tail = host+tail[:i], tail[i:]
+		} else {
+			host, tail = host+tail, ""
+		}
 	}
 	if i := strings.IndexAny(tail, "?#"); i >= 0 && i+1 < len(tail) {
 		tail = tail[:i+1] + "…"
 	}
 	return head + host + tail
+}
+
+// hostAndPort reports whether s can be a host with an optional port: its
+// colon, outside an IPv6 address's brackets, if it has one, is followed by
+// digits or by nothing.
+func hostAndPort(s string) bool {
+	if strings.HasPrefix(s, "[") {
+		i := strings.IndexByte(s, ']')
+		if i < 0 {
+			return false
+		}
+		s = s[i+1:]
+		if s == "" {
+			return true
+		}
+		if s[0] != ':' {
+			return false
+		}
+	}
+	_, port, ok := strings.Cut(s, ":")
+	if !ok {
+		return true
+	}
+	return strings.Trim(port, "0123456789") == ""
 }
 
 // schemeByte is a byte a URL scheme can be made of (RFC 3986, 3.1).
