@@ -176,7 +176,9 @@ func parseViolations(body []byte, host string) []Violation {
 			}
 			blocked = u.Scheme + "://" + strings.ToLower(u.Host)
 		}
-		page := doc.Path
+		// By the path analytics counts it under: a conversation's page is
+		// reported from an address that is its visitor's key.
+		page := CountedAs(doc.Path)
 		if page == "" {
 			page = "/"
 		}

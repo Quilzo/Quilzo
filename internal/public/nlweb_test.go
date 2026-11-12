@@ -94,6 +94,47 @@ func TestAnAgentAsksTheSite(t *testing.T) {
 	}
 }
 
+// A page on another origin may post its question as JSON, as /ask's answers
+// say any origin may read them.
+//
+// A browser asks first, with OPTIONS, before it posts JSON to another site.
+// /ask had no answer for that: it was redirected to /ask/ and then not
+// found, with no Access-Control headers, so only a GET or a form post ever
+// reached it from a page. Its refusals did not say any origin may read
+// them either, so a page was told only that the request failed.
+func TestABrowserOnAnotherOriginMayPostItsQuestion(t *testing.T) {
+	st := nlwebSite(t)
+	req := httptest.NewRequest(http.MethodOptions, "/ask", nil)
+	req.Header.Set("Origin", "https://agent.example")
+	req.Header.Set("Access-Control-Request-Method", "POST")
+	req.Header.Set("Access-Control-Request-Headers", "content-type")
+	w := httptest.NewRecorder()
+	st.Handler().ServeHTTP(w, req)
+	h := w.Header()
+	if w.Code != http.StatusNoContent || h.Get("Access-Control-Allow-Origin") != "*" ||
+		!strings.Contains(h.Get("Access-Control-Allow-Methods"), "POST") ||
+		!strings.Contains(strings.ToLower(h.Get("Access-Control-Allow-Headers")), "content-type") {
+		t.Fatalf("the preflight was answered %d %v", w.Code, h)
+	}
+	if h.Get("Access-Control-Allow-Credentials") != "" {
+		t.Error("the preflight allows credentials")
+	}
+	// The chatbots under /ask/ are not opened to other origins by it.
+	req = httptest.NewRequest(http.MethodOptions, "/ask/help", nil)
+	req.Header.Set("Origin", "https://agent.example")
+	w = httptest.NewRecorder()
+	st.Handler().ServeHTTP(w, req)
+	if w.Header().Get("Access-Control-Allow-Origin") != "" {
+		t.Errorf("a chatbot answered a preflight with %v", w.Header())
+	}
+	// A refusal is readable by the page that asked, as an answer is.
+	w = httptest.NewRecorder()
+	st.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/ask?streaming=false", nil))
+	if w.Code != http.StatusBadRequest || w.Header().Get("Access-Control-Allow-Origin") != "*" {
+		t.Errorf("a refusal: %d %v", w.Code, w.Header())
+	}
+}
+
 // The same over MCP: one read-only tool, and no browser page on another
 // origin may call it.
 func TestAnAgentAsksOverMCP(t *testing.T) {

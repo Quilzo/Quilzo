@@ -30,7 +30,7 @@ func (st *Site) counted(next http.Handler) http.Handler {
 		// stylesheet says otherwise.
 		revisit := sw.status == http.StatusNotModified &&
 			r.Header.Get("Sec-Fetch-Dest") == "document"
-		path := countedAs(r.URL.Path)
+		path := CountedAs(r.URL.Path)
 		if page || revisit {
 			st.Analytics.Visit(r, path)
 			st.convertPage(r, path)
@@ -45,8 +45,8 @@ func (st *Site) counted(next http.Handler) http.Handler {
 	})
 }
 
-// countedAs is the path a request is counted under: its own, except a
-// shared draft's.
+// CountedAs is the path a request is counted under: its own, except an
+// address that is somebody's key.
 //
 // A shared draft's address is the only key to it (shared.go), and the
 // store keeps a digest of that key so that whoever reads the store, or a
@@ -54,9 +54,30 @@ func (st *Site) counted(next http.Handler) http.Handler {
 // went into the day's totals in clear, on the disk and on the admin's
 // analytics screen, and every ended one into the addresses not found. So
 // they are counted together, under the prefix.
-func countedAs(path string) string {
-	if strings.HasPrefix(path, "/shared/") {
+//
+// A chatbot conversation's address is the same kind of key (handoff.go):
+// whoever has it reads the conversation, writes in it as the visitor and
+// ends it. It went into the totals in clear, where `quilzo analytics`
+// lists it to anybody who may read content. The page an agent request
+// waits on (act.go) shows what was found for one visitor, and its address
+// is the only way to it. Both are counted under the chatbot's prefix, so
+// an owner still sees how much each chatbot's are used.
+//
+// Anything else that names a page by its address, a browser's report of a
+// policy violation among them, names it by this too.
+func CountedAs(path string) string {
+	lower := strings.ToLower(path)
+	if strings.HasPrefix(lower, "/shared/") {
 		return "/shared/"
+	}
+	if rest, ok := strings.CutPrefix(lower, "/ask/"); ok {
+		if name, sub, ok := strings.Cut(rest, "/"); ok {
+			for _, keyed := range []string{"c/", "act/"} {
+				if strings.HasPrefix(sub, keyed) {
+					return "/ask/" + name + "/" + keyed
+				}
+			}
+		}
 	}
 	return path
 }

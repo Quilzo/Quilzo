@@ -171,6 +171,14 @@ func cmdSite(root string, args []string) error {
 	// are, and every build of the site counts into it. Written every thirty
 	// seconds: a crash costs at most that much of the day's totals, and the
 	// totals are all there is — see internal/analytics.
+	//
+	// Days written before an address that is somebody's key was counted
+	// under its prefix are counted again first, so a conversation's secret
+	// a visitor opened last week is not still listed to whoever reads the
+	// totals (public.CountedAs).
+	if err := analytics.Refold(analyticsDir(root), public.CountedAs); err != nil {
+		fmt.Fprintf(os.Stderr, "analytics: the days already kept could not be counted again: %v\n", err)
+	}
 	counter, cerr := analytics.Open(analyticsDir(root), nil)
 	if cerr == nil {
 		go func() {

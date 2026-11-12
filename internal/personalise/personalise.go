@@ -266,6 +266,19 @@ func (s *Set) For(page string, req *http.Request, now time.Time) (Rule, bool) {
 	return Rule{}, false
 }
 
+// On reports whether an enabled rule is on a page, whether or not this
+// request matches it. Such a page's answer depends on who asks, for the
+// visitors it is served to as itself as much as for the ones a rule picks
+// out, which is what a cache in front of the site has to be told.
+func (s *Set) On(page string) bool {
+	for _, r := range s.Rules {
+		if r.Enabled && r.Page == page {
+			return true
+		}
+	}
+	return false
+}
+
 // Put adds or replaces a rule, keeping its place in the order.
 func (s *Set) Put(r Rule) error {
 	if err := r.Validate(); err != nil {
