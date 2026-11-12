@@ -604,7 +604,8 @@ agents and integrations
   quilzo integrations list|tools|call      outside systems this install may reach
   quilzo integrations import FILE [--uses A,B]   an OpenAPI 3 document, an MCP registry server.json or an A2A agent card, declared switched off
   quilzo integrations undelivered [--dismiss N]  writes agents made that did not get through, kept to settle
-  quilzo integrations template [NAME]      a calendar or issues, with each person's connected account, switched off
+  quilzo integrations template [NAME]      a calendar or issues, with each person's connected account, or a social
+                                            media aggregator at the host you name, switched off
   quilzo integrations pin NAME [TOOL...]   approve what a tool is; a server's change to it is refused until pinned again
   quilzo integrations gateway NAME --role R [--daily N] [--ask T,...] | --off
                                            offer an MCP server to other systems' agents through Quilzo, checked and recorded

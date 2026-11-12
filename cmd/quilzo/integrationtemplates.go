@@ -8,6 +8,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -21,6 +23,13 @@ import (
 // imported one is. Each goes with the account the person an agent acts for
 // connected (quilzo connect), at the provider it names.
 //
+// And one whose service the client chooses: a social media aggregator,
+// which holds the platforms' approved apps while the client's own app
+// reviews are pending, so the first platform is reachable in week one. It
+// is one REST integration with one key, at the host the administrator
+// names; which aggregator is the client's decision, on cost, so none is
+// written here.
+//
 // Few operations, on purpose: what an agent acting for somebody needs to
 // read their calendar and put a meeting in it, and no more. A template is
 // where an install starts, not what it may never change.
@@ -30,6 +39,24 @@ type integrationTemplate struct {
 	Provider    string
 	Scopes      string
 	Integration agent.Integration
+	// Fill completes a template whose service the client chooses, from
+	// what the administrator names in declaring it. Nil for one whose
+	// host is fixed, which refuses being pointed anywhere else rather than
+	// ignoring the flags that would.
+	Fill func(in *agent.Integration, c templateChoice) error
+}
+
+// templateChoice is what an administrator names for a template whose
+// service the client chooses, and the site's public address its media is
+// fetched from.
+type templateChoice struct {
+	Endpoint, Path, Fields, Secret, Auth string
+	// Site is site.base_url, where the media a post names is fetched from.
+	Site string
+}
+
+func (c templateChoice) named() bool {
+	return c.Endpoint != "" || c.Path != "" || c.Fields != "" || c.Secret != "" || c.Auth != ""
 }
 
 func bodySchema(s string) json.RawMessage { return json.RawMessage(s) }
@@ -94,6 +121,96 @@ var integrationTemplates = map[string]integrationTemplate{
 						{Name: "issue_number", In: "path", Required: true, Type: "integer"}},
 					Body: bodySchema(`{"type":"object","properties":{"body":{"type":"string"}},"required":["body"]}`)},
 			}}},
+	// No host, no path and no field names: they are the chosen
+	// aggregator's, from its documentation, and fillAggregator refuses a
+	// declaration that leaves any of the first two out.
+	"social-aggregator": {Title: "A social media aggregator the client chooses",
+		Integration: agent.Integration{Kind: agent.IntegrationHTTP,
+			Purpose: "post to the social accounts connected at the aggregator, with pictures and videos from this site", Writes: true,
+			Operations: []agent.Operation{
+				{Name: "publishPost", Method: "POST",
+					Description: "Post to the accounts connected at the aggregator: the text, and pictures or videos " +
+						"from this site by their /media/ID addresses, which the aggregator fetches."},
+			}},
+		Fill: fillAggregator},
+}
+
+// aggregatorFields are the parts of a post, and their names until the
+// administrator gives the aggregator's own (--fields text=post).
+var aggregatorFields = []struct{ part, name string }{{"text", "text"}, {"media", "mediaUrls"}, {"platforms", "platforms"}}
+
+// reBodyField is a field name the aggregator's body may be given.
+var reBodyField = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}$`)
+
+// fillAggregator points the aggregator template at the aggregator the
+// administrator named: its host, the path it takes a post at, its names
+// for the parts of one, and the key it is reached with, from the vault.
+//
+// A media URL may only be one of this site's own /media/ID addresses,
+// checked against the body's schema before anything is sent: an agent
+// steered by something it read could otherwise have the client's accounts
+// post a picture from anywhere, under the client's name.
+func fillAggregator(in *agent.Integration, c templateChoice) error {
+	if c.Endpoint == "" || c.Path == "" {
+		return fmt.Errorf("%s posts through the aggregator the client chooses, and none is written here: name its "+
+			"API's host with --endpoint and where it takes a post with --path, as its documentation gives them", in.Name)
+	}
+	site, err := url.Parse(c.Site)
+	if c.Site == "" || err != nil || (site.Scheme != "https" && site.Scheme != "http") || site.Host == "" ||
+		site.RawQuery != "" || site.Fragment != "" {
+		return fmt.Errorf("the aggregator fetches each picture and video from this site's /media/ID, so it needs " +
+			"the site's public address: quilzo config set site.base_url https://...")
+	}
+	names := map[string]string{}
+	for _, f := range aggregatorFields {
+		names[f.part] = f.name
+	}
+	for _, kv := range strings.Split(c.Fields, ",") {
+		if kv = strings.TrimSpace(kv); kv == "" {
+			continue
+		}
+		part, name, _ := strings.Cut(kv, "=")
+		if _, ok := names[part]; !ok || !reBodyField.MatchString(name) {
+			return fmt.Errorf("--fields takes text=NAME, media=NAME and platforms=NAME, each the aggregator's "+
+				"name for that part of a post; %q is not one", kv)
+		}
+		names[part] = name
+	}
+	if names["text"] == names["media"] || names["text"] == names["platforms"] || names["media"] == names["platforms"] {
+		return fmt.Errorf("--fields gives two parts of a post one name (text %s, media %s, platforms %s); each needs its own",
+			names["text"], names["media"], names["platforms"])
+	}
+	in.Endpoint, in.Auth = c.Endpoint, c.Auth
+	in.Secret = c.Secret
+	if in.Secret == "" {
+		in.Secret = in.Name + "-key"
+	}
+	if !reSecretName.MatchString(in.Secret) {
+		return fmt.Errorf("%s authenticates with the credential %q, which cannot be kept under that name: "+
+			"name it with --secret, in lower-case letters, digits, '.', '_' and '-'", in.Name, in.Secret)
+	}
+	// The path escaped, as the site writes it: Path is decoded, so a site at
+	// /caf%C3%A9 was described as having its media at /café/media/, and
+	// every address the site gives its own pictures was refused. Without
+	// the user and password a base address may carry, which are no business
+	// of the aggregator's or of the platforms it posts to.
+	at := site.Scheme + "://" + site.Host + strings.TrimSuffix(site.EscapedPath(), "/") + "/media/"
+	body, err := json.Marshal(map[string]any{"type": "object", "required": []string{names["text"]},
+		"properties": map[string]any{
+			names["text"]: map[string]any{"type": "string", "minLength": 1, "description": "what the post says"},
+			names["media"]: map[string]any{"type": "array",
+				"description": "pictures and videos on this site, each as " + at + "ID, which the aggregator fetches",
+				"items":       map[string]any{"type": "string", "pattern": "^" + regexp.QuoteMeta(at) + "[0-9a-f]{64}$"}},
+			names["platforms"]: map[string]any{"type": "array", "items": map[string]any{"type": "string"},
+				"description": "where to post, in the aggregator's names for the platforms"},
+		}})
+	if err != nil {
+		return err
+	}
+	for i := range in.Operations {
+		in.Operations[i].Path, in.Operations[i].Body = c.Path, body
+	}
+	return nil
 }
 
 func integrationTemplateNames() []string {
@@ -106,8 +223,9 @@ func integrationTemplateNames() []string {
 }
 
 // integrationFromTemplate is a template as a declaration: switched off,
-// using only what it is asked to, with the account at provider.
-func integrationFromTemplate(tmpl, name, provider string, uses []string) (agent.Integration, error) {
+// using only what it is asked to, with the account at provider, or, for a
+// service the client chooses, where and how the administrator named.
+func integrationFromTemplate(tmpl, name, provider string, uses []string, c templateChoice) (agent.Integration, error) {
 	t, ok := integrationTemplates[tmpl]
 	if !ok {
 		return agent.Integration{}, fmt.Errorf("no template called %s; there are %s", tmpl, strings.Join(integrationTemplateNames(), ", "))
@@ -117,6 +235,18 @@ func integrationFromTemplate(tmpl, name, provider string, uses []string) (agent.
 	in.Name = name
 	if in.Name == "" {
 		in.Name = tmpl
+	}
+	switch {
+	case t.Fill == nil && c.named():
+		return agent.Integration{}, fmt.Errorf("%s reaches %s, which is not a choice: --endpoint, --path, --fields, "+
+			"--secret and --auth are for a service the client chooses (social-aggregator)", tmpl, in.Where())
+	case t.Fill != nil && provider != "":
+		return agent.Integration{}, fmt.Errorf("%s is reached with the one key the client holds there, from the "+
+			"vault (--secret), not with each person's connected account", tmpl)
+	case t.Fill != nil:
+		if err := t.Fill(&in, c); err != nil {
+			return agent.Integration{}, err
+		}
 	}
 	in.Connection = provider
 	if in.Connection == "" {
@@ -139,13 +269,20 @@ func integrationFromTemplate(tmpl, name, provider string, uses []string) (agent.
 }
 
 // integrationsTemplate is quilzo integrations template [NAME [--as N]
-// [--connection PROVIDER] [--uses A,B]].
+// [--connection PROVIDER] [--uses A,B]], and for a service the client
+// chooses, [--endpoint HOST --path PATH [--fields ...] [--secret NAME]
+// [--auth header:NAME]].
 func integrationsTemplate(root string, args []string) error {
 	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("integrations template", flag.ContinueOnError)
 	as := fs.String("as", "", "what to call it; the template's name by default")
 	provider := fs.String("connection", "", "the provider people connect their accounts at; the template's by default")
 	uses := fs.String("uses", "", "the operations it may call, comma-separated; all of the template's by default")
+	endpoint := fs.String("endpoint", "", "the host of the service the client chose, for social-aggregator")
+	path := fs.String("path", "", "where on that host it takes a post, such as /api/post, for social-aggregator")
+	fields := fs.String("fields", "", "its names for the parts of a post: text=NAME,media=NAME,platforms=NAME")
+	secret := fs.String("secret", "", "the credential it authenticates with, as quilzo secret set keeps it; NAME-key by default")
+	authAs := fs.String("auth", "", "how the key is sent: bearer, the default, or header:NAME")
 	if err := fs.Parse(flags); err != nil {
 		return err
 	}
@@ -178,13 +315,21 @@ func integrationsTemplate(root string, args []string) error {
 			for _, o := range t.Integration.Operations {
 				ops = append(ops, o.Name)
 			}
+			if t.Fill != nil {
+				w.Human("%s%-20s%s %s, at the host you name with one key from the vault\n    %s%s; "+
+					"--endpoint HOST --path PATH [--fields text=NAME,media=NAME,platforms=NAME] [--secret NAME] [--auth header:NAME]%s\n",
+					bold, n, reset, t.Title, dim, strings.Join(ops, ", "), reset)
+				continue
+			}
 			w.Human("%s%-20s%s %s, with the account people connect at %s (scopes %s)\n    %s%s%s\n", bold, n, reset, t.Title,
 				t.Provider, t.Scopes, dim, strings.Join(ops, ", "), reset)
 		}
 		return nil
 	}
 	if len(pos) != 1 {
-		return errors.New("usage: quilzo integrations template [NAME [--as N] [--connection PROVIDER] [--uses A,B]]")
+		return errors.New("usage: quilzo integrations template [NAME [--as N] [--connection PROVIDER] [--uses A,B]]\n" +
+			"       quilzo integrations template social-aggregator --endpoint HOST --path PATH " +
+			"[--fields text=NAME,media=NAME,platforms=NAME] [--secret NAME] [--auth header:NAME]")
 	}
 	var only []string
 	for _, u := range strings.Split(*uses, ",") {
@@ -192,7 +337,9 @@ func integrationsTemplate(root string, args []string) error {
 			only = append(only, u)
 		}
 	}
-	in, err := integrationFromTemplate(pos[0], strings.TrimSpace(*as), strings.TrimSpace(*provider), only)
+	in, err := integrationFromTemplate(pos[0], strings.TrimSpace(*as), strings.TrimSpace(*provider), only, templateChoice{
+		Endpoint: strings.TrimSpace(*endpoint), Path: strings.TrimSpace(*path), Fields: *fields,
+		Secret: strings.TrimSpace(*secret), Auth: strings.TrimSpace(*authAs), Site: siteBaseURL(root)})
 	if err != nil {
 		return err
 	}
@@ -214,8 +361,16 @@ func integrationsTemplate(root string, args []string) error {
 	}
 	caller := resolveCaller(root, flagToken)
 	record(root, caller.auditRecord("integration.template", "/", audit.Success, map[string]string{
-		"integration": in.Name, "template": pos[0], "connection": in.Connection, "uses": strings.Join(in.Uses, ",")}))
+		"integration": in.Name, "template": pos[0], "connection": in.Connection, "endpoint": in.Where(),
+		"uses": strings.Join(in.Uses, ",")}))
 	if w.JSON(in) {
+		return nil
+	}
+	if in.Connection == "" {
+		w.Human("declared %s%s%s reaching %s with the key kept as %s, switched off\n", bold, in.Name, reset, in.Where(), in.Secret)
+		w.Human("  may call %s\n", strings.Join(in.Uses, ", "))
+		w.Human("\nnext: quilzo secret set %s < key.txt (the key the aggregator gave the client), quilzo integrations pin %s, "+
+			"then turn it on in Administration › Integrations\n", in.Secret, in.Name)
 		return nil
 	}
 	w.Human("declared %s%s%s reaching %s with the account each person connects at %s, switched off\n",

@@ -2224,6 +2224,38 @@ adding a meeting or an issue), switched off and unpinned for a person to read,
 pin and turn on as an imported one is. An agent acting on its own name, or another vendor's agent through
 the gateway, has no person and is refused.
 
+**A social media aggregator reaches the first platforms while their app
+reviews are pending.** An aggregator holds the platforms' approved apps, and
+each account connects through it, so one REST integration posts to several
+platforms in week one. Which aggregator is the client's decision, on cost, and
+none is written in: its host, the path it takes a post at, and its names for
+the text, the media URLs and the platforms come from its own documentation.
+
+```
+quilzo config set site.base_url https://shop.example
+quilzo integrations template social-aggregator --endpoint api.aggregator.example --path /api/post \
+  --fields text=post,media=mediaUrls,platforms=platforms
+quilzo secret set social-aggregator-key < key.txt
+quilzo integrations pin social-aggregator
+```
+
+`--fields` is needed only where its names differ from `text`, `mediaUrls` and
+`platforms`; `--secret` names the key, `social-aggregator-key` by default, and
+`--auth header:NAME` sends it in a header of its own instead of as a bearer
+token. It is declared switched off, with one operation, `publishPost`, a JSON
+body of the text and the media, and stays off until an administrator turns it
+on; agents call it through their declared tools, as any integration. A media
+URL may only be one of this site's own `/media/ID` addresses, which the
+aggregator fetches, so an agent steered by something it read cannot have the
+client's accounts post a picture from somewhere else. The address is
+`site.base_url` as it was when the aggregator was declared: a site that moves
+edits it in the body schema in `integrations.json` and pins it again. A body
+field the declaration does not name is refused before anything is sent. A
+post is tried again, after a busy answer, only when it carries its step's
+idempotency key, as every write is. An aggregator whose post nests its fields deeper is
+declared the same way and its body schema edited in `integrations.json`, then
+pinned again.
+
 Another vendor's agent is an integration too, spoken to over Agent2Agent:
 `quilzo integrations import agent-card.json` declares it from its card, switched
 off, reaching the host its card says it speaks at. Its skills are the tools,
