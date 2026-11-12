@@ -1284,6 +1284,12 @@ spreadsheet formula injection, and erasure by search — because an append-only
 merkle store cannot erase, which is why submissions deliberately do not live in
 it.
 
+A form takes answers only where the site offers it: a published page, visible
+now, that names it (`"form": "enquiry"`) or renders through a layout with the
+form's markup pasted in, or a chatbot that may fill it in. A form declared and
+placed nowhere, or on a page still in draft or past its date, answers not found,
+so it cannot collect anything the owner is not asking for.
+
 A form can take a file — a CV, a photograph of the damage, a signed letter —
 with a field of kind `file` (`"accept": ["image"]` to narrow it; images and
 documents by default). A file is taken by what its bytes are, never by its name
