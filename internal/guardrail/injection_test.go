@@ -273,6 +273,7 @@ func TestAnAnswerAsksForASecretInTheOtherFormsOfTheWords(t *testing.T) {
 		"Email your card\u00a0number to billing at zqvel-pay.example.",
 		"Email your 16-digit card number to billing at zqvel-pay.example.",
 		"We need you to send your card number.",
+		"Visitors who want a collection: they can send their card number.",
 	} {
 		if !AsksForSecrets(text) {
 			t.Errorf("%q does not ask for a secret", text)

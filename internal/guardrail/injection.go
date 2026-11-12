@@ -237,8 +237,9 @@ var (
 	// warning: "never", "do not", "we will never ask you to".
 	reToldNot = regexp.MustCompile(`(?i)(\bnever|\bnot|n['’]t)\s+(ever\s+)?(ask(s|ed)?\s+(you|anyone|anybody|customers|for)\s+(to\s+)?)?$`)
 	// reWeDo is the end of what comes before a sentence about what the
-	// site does with a secret, not the reader: "We", "We will then".
-	reWeDo = regexp.MustCompile(`(?i)\b(we|they|i)(['’]ll)?(\s+(will|shall|can|may|would|do|did|then|also|only|always|usually|just|now))*\s+$`)
+	// site does with a secret, not the reader: "We", "We will then". Only
+	// "we": "they can send their card number" is said of the visitors.
+	reWeDo = regexp.MustCompile(`(?i)\bwe(['’]ll)?(\s+(will|shall|can|may|would|do|did|then|also|only|always|usually|just|now))*\s+$`)
 	// reNotPayment are the cards whose number is no secret, and reNoSecret
 	// what follows "password" when it is not one: a reset link, a policy.
 	reNotPayment = regexp.MustCompile(`(?i)\b(gift|membership|loyalty|library|store|club|rewards?|points|discount|student|business|id|sim)\s+$`)
