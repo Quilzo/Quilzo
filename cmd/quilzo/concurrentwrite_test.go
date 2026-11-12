@@ -523,3 +523,52 @@ func TestAnAssistOnANewStoreKeepsAPageSavedWhileItThought(t *testing.T) {
 		t.Fatalf("the draft holds %s, not about and pricing: the page saved while the model thought was lost", names)
 	}
 }
+
+// A page added while the demonstration installs is not written over.
+//
+// `quilzo demo` found the store empty, then wrote its media, types, forms
+// and the rest, and only then its pages, with an empty base: "whatever the
+// draft is by then". A `quilzo add` run beside it landed in that time every
+// time it was tried, exited 0, and its page was gone. Either may go first;
+// what must not happen is an add that says it wrote a page nobody can find.
+func TestAnAddBesideTheDemonstrationIsNotWrittenOver(t *testing.T) {
+	for round := range 3 {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("USERPROFILE", home)
+		t.Setenv("QUILZO_TOKEN", "")
+		if w == nil {
+			w = out.New(false)
+		}
+		root := t.TempDir() + "/st"
+		if err := cmdInit(root); err != nil {
+			t.Fatal(err)
+		}
+		page := fileOf(t, "mine.json", `{"title":"Mine"}`)
+		var wg sync.WaitGroup
+		var demoErr, addErr error
+		var demoSaid, addSaid string
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			demoSaid, demoErr = quilzoAt(t, home, root, "demo", "--publish=false",
+				"--templates", filepath.Join(root, "tpl"), "--examples", filepath.Join(root, "ex"))
+		}()
+		go func() {
+			defer wg.Done()
+			time.Sleep(time.Duration(round*20) * time.Millisecond)
+			addSaid, addErr = quilzoAt(t, home, root, "add", "mine="+page)
+		}()
+		wg.Wait()
+		if demoErr != nil && addErr != nil {
+			t.Fatalf("round %d: neither landed:\n%s\n%s", round, demoSaid, addSaid)
+		}
+		names := "," + strings.Join(draftNames(t, root), ",") + ","
+		if addErr == nil && !strings.Contains(names, ",mine,") {
+			t.Errorf("round %d: the add exited 0 and its page is not in the draft (%s)", round, names)
+		}
+		if demoErr == nil && !strings.Contains(names, ",index,") {
+			t.Errorf("round %d: the demonstration said it was installed and its pages are not in the draft (%s)", round, names)
+		}
+	}
+}
