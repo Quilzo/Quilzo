@@ -275,3 +275,21 @@ func mustRead(t testing.TB, s string) *xmldsig.Document {
 	}
 	return d
 }
+
+// What the provider said when it refused is cut where a character starts.
+// It is shown to the person who could not sign in, and a provider set up in
+// their language says it in that language.
+func TestAProvidersLongRefusalIsCutBetweenCharacters(t *testing.T) {
+	kept := strings.Repeat("a", 199)
+	s := good()
+	s.Status = "urn:oasis:names:tc:SAML:2.0:status:Responder"
+	s.StatusMessage = kept + "中文"
+	_, err := testProvider(t).ParseResponse(b64(s.signedResponse(t)), tReq, tNow)
+	var se *StatusError
+	if !errors.As(err, &se) {
+		t.Fatalf("%v", err)
+	}
+	if se.Message != kept {
+		t.Fatalf("%d bytes, ending %q", len(se.Message), se.Message[len(se.Message)-3:])
+	}
+}

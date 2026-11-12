@@ -150,3 +150,26 @@ func TestARESTErrorSaysWhatTheServerAnswered(t *testing.T) {
 		t.Errorf("err %v", err)
 	}
 }
+
+// What a REST call or another agent answered is cut where a character
+// starts. It goes back to the agent that asked, as what its step found, and
+// an answer in Japanese would otherwise end in a byte that is not text.
+func TestALongResultIsCutBetweenCharacters(t *testing.T) {
+	kept := strings.Repeat("a", MaxResult-1)
+	c, _ := restClient(200, kept+"中文")
+	out, err := c.Call(context.Background(), billing(), "getInvoice", map[string]any{"id": "7"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != kept {
+		t.Errorf("REST: %d bytes, ending %q", len(out), out[len(out)-3:])
+	}
+	c, _ = farAgent(travelCard, `{"kind":"message","parts":[{"kind":"text","text":"`+kept+`中文"}]}`)
+	out, err = c.Call(context.Background(), travelAgent(), "book-train", map[string]any{"text": "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != kept {
+		t.Errorf("A2A: %d bytes, ending %q", len(out), out[len(out)-3:])
+	}
+}

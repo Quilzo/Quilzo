@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // What a recording is, when there is something on the machine that can say.
@@ -264,9 +266,7 @@ func SoundFrom(body []byte, max int) ([]byte, error) {
 		if strings.Contains(said, "matches no streams") {
 			return nil, fmt.Errorf("it has no sound to hear")
 		}
-		if len(said) > 200 {
-			said = said[:200]
-		}
+		said = plaintext.Clip(said, 200, "")
 		return nil, fmt.Errorf("ffmpeg could not take its sound out: %v %s", err, said)
 	}
 	// Measured before it is read, so a sound too long for the limit is

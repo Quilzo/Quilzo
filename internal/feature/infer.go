@@ -15,8 +15,11 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/listing"
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/sheet"
 )
@@ -194,17 +197,25 @@ func Infer(name string, body []byte) (*Inferred, error) {
 	return out, nil
 }
 
+// titleOf is name as a title: its words, lower case, the first capitalised.
+//
+// Words are split on what is not a letter, a mark or a digit in any script.
+// They were split on reNonWord, which keeps only a to z and 0 to 9, so
+// "émilie's records" was titled "Milie s records" and a file named in
+// Japanese was titled "Records". That rule is right for the names a store
+// accepts, which is what slug and fieldName make; a title is for people.
 func titleOf(name string) string {
-	words := strings.Fields(reNonWord.ReplaceAllString(strings.ToLower(name), " "))
+	words := strings.FieldsFunc(strings.ToLower(name), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsMark(r) && !unicode.IsDigit(r)
+	})
 	if len(words) == 0 {
 		return "Records"
 	}
-	words[0] = strings.ToUpper(words[0][:1]) + words[0][1:]
-	t := strings.Join(words, " ")
-	if len(t) > 120 {
-		t = t[:120]
-	}
-	return t
+	// The first character, not the first byte: the first byte of é is not
+	// a letter, and upper-casing it alone makes U+FFFD of it.
+	first, size := utf8.DecodeRuneInString(words[0])
+	words[0] = string(unicode.ToTitle(first)) + words[0][size:]
+	return plaintext.Clip(strings.Join(words, " "), 120, "")
 }
 
 // readTable reads CSV or a JSON array of objects into headings and rows.

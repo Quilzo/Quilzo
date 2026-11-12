@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Somebody going after this Quilzo.
@@ -235,10 +237,7 @@ func huntedPath(path string) string {
 		parts = parts[:2]
 	}
 	out := "/" + strings.Join(parts, "/")
-	if len(out) > 64 {
-		out = out[:64]
-	}
-	return out
+	return plaintext.Clip(out, 64, "")
 }
 
 // shielded reports whether the shield has turned a feature down.

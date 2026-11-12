@@ -139,3 +139,15 @@ func TestAMandateIsBoundedByDeclaration(t *testing.T) {
 		}
 	}
 }
+
+// Why a payment failed is cut where a character starts. It is kept on the
+// receipt a person reads to decide whether to grant a new mandate, and a
+// payee's error in their own language is as likely as one in English.
+func TestAFailedPaymentsLongReasonIsCutBetweenCharacters(t *testing.T) {
+	kept := strings.Repeat("a", 199)
+	b := &Book{Receipts: []Receipt{{ID: "r1"}}}
+	b.Settle("r1", errors.New(kept+"中文"))
+	if got := b.Receipts[0].Outcome; got != "failed: "+kept {
+		t.Fatalf("ends %q", got[len(got)-3:])
+	}
+}

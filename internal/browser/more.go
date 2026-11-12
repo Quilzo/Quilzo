@@ -17,6 +17,7 @@ import (
 	"github.com/quilzo/quilzo/internal/a11y"
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/cdp"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // More of the browser: scrolling, keys, going back and forward, waiting
@@ -645,15 +646,22 @@ func (d *Driver) checkAccess(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if len(html) > 4<<20 {
-		html = html[:4<<20]
-	}
 	_, at := d.where(ctx)
+	return accessReport(at, html), nil
+}
+
+// accessReport is what the accessibility checks found in a page's markup.
+//
+// Apart from checkAccess so that markup made to order can be checked
+// without a browser: what is found depends only on the markup, and the
+// bound on it is what a long page is held to.
+func accessReport(at, html string) string {
+	html = plaintext.Clip(html, 4<<20, "")
 	r := a11y.Check(at, html)
 	var b strings.Builder
 	if len(r.Findings) == 0 {
 		fmt.Fprintf(&b, "Accessibility: nothing found by the %d checks run\n", len(r.Checked))
-		return b.String(), nil
+		return b.String()
 	}
 	fmt.Fprintf(&b, "Accessibility: %d found\n", len(r.Findings))
 	for i, f := range r.Findings {
@@ -663,7 +671,7 @@ func (d *Driver) checkAccess(ctx context.Context) (string, error) {
 		}
 		fmt.Fprintf(&b, "  [%s] %s (WCAG %s): %s\n", f.Severity, f.Rule, f.Criterion, clean(f.Detail))
 	}
-	return b.String(), nil
+	return b.String()
 }
 
 func (d *Driver) checkSearch(ctx context.Context) (string, error) {

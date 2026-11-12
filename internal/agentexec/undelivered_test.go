@@ -6,7 +6,9 @@ package agentexec
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/mcpclient"
@@ -59,5 +61,27 @@ func TestAStepsWriteIsNamedAndKeptWhenItFails(t *testing.T) {
 	_, _ = tl.Perform(s)(agent.WithStep(context.Background(), "run-1", 6), act)
 	if len(kept) != 4 {
 		t.Fatal("a call that got through was kept")
+	}
+}
+
+// Why a write did not get through is cut where a character starts. A person
+// reads it to decide whether to send the write again, and an integration's
+// error in its own language would otherwise end in U+FFFD on that screen.
+func TestAnUndeliveredWritesLongErrorIsCutBetweenCharacters(t *testing.T) {
+	// Two errors a byte apart, because what is said around the error is not
+	// this test's to know: wherever the bound falls, it is inside a
+	// character in one of them.
+	for _, said := range []string{strings.Repeat("中", 200), "a" + strings.Repeat("中", 200)} {
+		var kept []Undelivered
+		tl := Tools{Installed: installed("api.example.com"), Call: &keyspy{err: errors.New(said)},
+			Undelivered: func(u Undelivered) { kept = append(kept, u) }}
+		s := agent.NewSession(toolAgent(), nil)
+		_, _ = tl.Perform(s)(context.Background(), agent.Action{Tool: "lookup", Input: map[string]any{"q": "acme"}})
+		if len(kept) != 1 {
+			t.Fatalf("%d kept", len(kept))
+		}
+		if e := kept[0].Error; len(e) > 300 || !utf8.ValidString(e) {
+			t.Fatalf("%d bytes, ending %q", len(e), e[len(e)-3:])
+		}
 	}
 }

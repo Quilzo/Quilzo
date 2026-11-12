@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/assist"
 	publishgate "github.com/quilzo/quilzo/internal/gate"
@@ -235,3 +236,26 @@ func htmlUnescape(s string) string {
 }
 
 func queryEscape(s string) string { return url.QueryEscape(s) }
+
+// A note sent back with a second attempt is cut where a character starts.
+// It goes to the model beside the instruction, and the findings it carries
+// quote pages in whatever language the site is written in.
+func TestALongFixNoteIsCutBetweenCharacters(t *testing.T) {
+	m := &fakeModel{reply: oneProposal}
+	var seen map[string]any
+	srv, token := assistServer(t, m, refusingGate(&seen))
+	kept := strings.Repeat("a", maxFixNote-1)
+	postForm(t, srv, "/assist", token, "instruction=write a prices page&fix="+queryEscape(kept+"中文"))
+	asked := m.lastAsk(t)
+	at := strings.Index(asked, kept)
+	if at < 0 {
+		t.Fatal("the note did not reach the model, so this tests nothing")
+	}
+	// Half a character right after what was kept, or the U+FFFD it becomes
+	// on the way, is what this is about.
+	if after := asked[at+len(kept):]; after != "" {
+		if r, _ := utf8.DecodeRuneInString(after); r == utf8.RuneError {
+			t.Fatalf("the note reached the model ending %q", after[:min(len(after), 3)])
+		}
+	}
+}

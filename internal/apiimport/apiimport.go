@@ -29,6 +29,7 @@ import (
 	"strings"
 
 	"github.com/quilzo/quilzo/internal/agent"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // MaxDocument bounds what is read.
@@ -154,9 +155,7 @@ func OpenAPI(body []byte, opts Options) (*Imported, error) {
 	if desc := firstLine(d.Info.Description); desc != "" {
 		in.Purpose += ": " + desc
 	}
-	if len(in.Purpose) > 300 {
-		in.Purpose = in.Purpose[:300]
-	}
+	in.Purpose = plaintext.Clip(in.Purpose, 300, "")
 
 	server := opts.Endpoint
 	if server == "" && len(d.Servers) > 0 {
@@ -216,9 +215,7 @@ func OpenAPI(body []byte, opts Options) (*Imported, error) {
 			}
 			o := agent.Operation{Name: opName(op.OperationID, method, path, taken, next), Method: strings.ToUpper(method), Path: path,
 				Description: firstLine(nonEmpty(op.Summary, op.Description))}
-			if len(o.Description) > 200 {
-				o.Description = o.Description[:200]
-			}
+			o.Description = plaintext.Clip(o.Description, 200, "")
 			seen := map[string]bool{}
 			for _, praw := range append(append([]json.RawMessage(nil), op.Parameters...), shared...) {
 				p, note := follow.param(praw)

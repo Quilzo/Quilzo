@@ -13,6 +13,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Anthropic's Messages API, spoken natively.
@@ -376,9 +378,7 @@ func (h *HTTPModel) anthropicChat(ctx context.Context, req ChatRequest) (ChatRep
 		var buf bytes.Buffer
 		_, _ = buf.ReadFrom(io.LimitReader(resp.Body, 4<<10))
 		snippet := strings.TrimSpace(buf.String())
-		if len(snippet) > 300 {
-			snippet = snippet[:300]
-		}
+		snippet = plaintext.Clip(snippet, 300, "")
 		return ChatReply{}, &StatusError{Code: resp.StatusCode, Body: snippet}
 	}
 	var r anthropicReply

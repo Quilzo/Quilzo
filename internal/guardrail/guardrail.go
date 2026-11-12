@@ -25,6 +25,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Kinds of service.
@@ -79,9 +81,7 @@ func (s Service) Flagged(ctx context.Context, text string) (bool, error) {
 	if err := s.Check(); err != nil {
 		return false, err
 	}
-	if len(text) > MaxText {
-		text = text[:MaxText]
-	}
+	text = plaintext.Clip(text, MaxText, "")
 	timeout := s.Timeout
 	if timeout <= 0 {
 		timeout = 3 * time.Second

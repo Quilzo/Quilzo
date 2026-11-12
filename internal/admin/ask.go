@@ -20,6 +20,7 @@ import (
 	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/listing"
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/schema"
 )
 
@@ -546,9 +547,7 @@ func (s *Server) handleTodayAsk(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/today", http.StatusSeeOther)
 		return
 	}
-	if len(question) > maxQuestion {
-		question = question[:maxQuestion]
-	}
+	question = plaintext.Clip(question, maxQuestion, "")
 	a := &asked{Question: question}
 	model := s.Ask.Model(p.Name)
 	src := s.sourcesFor(p)

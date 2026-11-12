@@ -19,6 +19,7 @@ import (
 	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/auth"
 	publishgate "github.com/quilzo/quilzo/internal/gate"
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/provenance"
 	"github.com/quilzo/quilzo/internal/site"
 )
@@ -125,9 +126,7 @@ func (s *Server) handleAssist(w http.ResponseWriter, r *http.Request) {
 	// what the person wrote and what they will edit if this goes round again.
 	asked := instruction
 	if fix := strings.TrimSpace(r.FormValue("fix")); fix != "" {
-		if len(fix) > maxFixNote {
-			fix = fix[:maxFixNote]
-		}
+		fix = plaintext.Clip(fix, maxFixNote, "")
 		asked = instruction + "\n\n" + fix
 		data["Retried"] = true
 	}

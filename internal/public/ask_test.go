@@ -582,3 +582,29 @@ func TestAChatbotOnTheSiteFindsAPassageByMeaning(t *testing.T) {
 		t.Fatalf("not built again when its vectors changed: %d", built)
 	}
 }
+
+// What a visitor typed for an action is cut where a character starts. It is
+// handed to the agent that does the action, and a note written in Japanese
+// would otherwise reach it ending in a byte that is not text.
+func TestAVisitorsLongArgumentIsCutBetweenCharacters(t *testing.T) {
+	bot := shopBot
+	bot.Actions = []assistant.Action{
+		{Name: "booking", Kind: assistant.Agent, Target: "bookings", Description: "Look up your booking", Fields: []string{"note"}},
+	}
+	st, _ := askSite(t, bot)
+	var asked []chatact.Request
+	st.Assistants.Act = func(r chatact.Request) error { asked = append(asked, r); return nil }
+	kept := strings.Repeat("a", MaxActArg-1)
+	form := url.Values{"action": {"booking"}, "a_note": {kept + "中文"}}
+	req := httptest.NewRequest(http.MethodPost, "/ask/help/act", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.RemoteAddr = "198.51.100.9:1234"
+	w := httptest.NewRecorder()
+	st.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusSeeOther || len(asked) != 1 {
+		t.Fatalf("%d %+v", w.Code, asked)
+	}
+	if got := asked[0].Args["note"]; got != kept {
+		t.Fatalf("%d bytes, ending %q", len(got), got[len(got)-3:])
+	}
+}

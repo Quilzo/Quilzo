@@ -57,6 +57,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/sheet"
 )
 
@@ -782,10 +783,7 @@ func displayName(name string) string {
 	if out == "" {
 		return "unnamed"
 	}
-	if len(out) > 120 {
-		out = out[:120]
-	}
-	return out
+	return plaintext.Clip(out, 120, "")
 }
 
 // Accepted lists the formats that are allowed.

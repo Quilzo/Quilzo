@@ -13,6 +13,7 @@ import (
 	"unicode"
 
 	"github.com/quilzo/quilzo/internal/fetch"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Asking a transmitter for a stream.
@@ -196,10 +197,7 @@ func oneLine(s string) string {
 		return r
 	}, s)
 	s = strings.Join(strings.Fields(s), " ")
-	if len(s) > 200 {
-		s = s[:200]
-	}
-	return s
+	return plaintext.Clip(s, 200, "")
 }
 
 // Stream is a stream's configuration as the transmitter returns it.

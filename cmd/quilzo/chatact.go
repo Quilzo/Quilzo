@@ -17,6 +17,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/chatact"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // A chatbot's agent actions (internal/chatact): the public site writes a
@@ -170,9 +171,7 @@ func runChatAction(ctx context.Context, root string, r chatact.Request) chatact.
 	args := map[string]string{}
 	for _, f := range action.Fields {
 		v := strings.Join(strings.Fields(r.Args[f]), " ")
-		if len(v) > 300 {
-			v = v[:300]
-		}
+		v = plaintext.Clip(v, 300, "")
 		if v != "" {
 			args[f] = v
 		}

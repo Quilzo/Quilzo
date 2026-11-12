@@ -503,3 +503,12 @@ func FuzzRead(f *testing.F) {
 		}
 	})
 }
+
+// An event's location is cut where a character starts, so a venue named in
+// any script reads as the person who typed it wrote it, up to the bound.
+func TestALongLocationIsCutBetweenCharacters(t *testing.T) {
+	kept := strings.Repeat("a", schema.MaxTextLen-1)
+	if got := oneLine(kept + "中文"); got != kept {
+		t.Fatalf("ends %q", got[len(got)-3:])
+	}
+}

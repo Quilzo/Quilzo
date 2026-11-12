@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/xmldsig"
 )
 
@@ -198,9 +199,7 @@ func statusOf(status *xmldsig.Element) error {
 		return nil
 	}
 	short := func(s string) string { return s[strings.LastIndexByte(s, ':')+1:] }
-	if len(msg) > 200 {
-		msg = msg[:200]
-	}
+	msg = plaintext.Clip(msg, 200, "")
 	return &StatusError{Code: short(code), Second: short(second), Message: strings.TrimSpace(msg)}
 }
 
