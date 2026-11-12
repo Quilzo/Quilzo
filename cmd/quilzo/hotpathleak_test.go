@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/shield"
 	"github.com/quilzo/quilzo/internal/site"
 )
 
@@ -40,6 +41,12 @@ import (
 // still alive once the work has had time to finish is reported with its
 // stack.
 func TestTheHotPathsLeakNoGoroutines(t *testing.T) {
+	// Before any of this test has run, so that what earlier tests left
+	// running is told apart from what this one starts (startedSince). Taken
+	// after the setup below, a worker that building the site or the reloader
+	// started and kept was counted as an earlier test's, and with it every
+	// goroutine it started for a request.
+	origin := goroutineSnapshot()
 	root, tpl, _ := installedDemo(t)
 	design, err := loadDesign(tpl)
 	if err != nil {
@@ -47,11 +54,20 @@ func TestTheHotPathsLeakNoGoroutines(t *testing.T) {
 	}
 	run := testRun(t, root)
 	run.baseURL = "https://shop.example"
+	run.shield.where = shield.Site
 	st, err := run.build(design, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := st.Handler()
+	// Served as `quilzo site` serves it (site.go): the edge, the shield's
+	// guard, and the reloader, which builds the site again on the first
+	// visit after a publish. The site's own handler alone left all three
+	// out, and with them what every publish does to a running server, which
+	// is to build the site again: a goroutine started per rebuild, or per
+	// request by the guard, was never run here, so it passed.
+	rl := newSiteReloader(root, tpl, run.store, site.RefLive, design, st, run.build)
+	rl.say = func(string, ...any) {}
+	h := edge(root, "site.trusted_proxy", run.shield.guard.Wrap(shield.Site, rl))
 
 	// What a visitor reads, as the measurement did: pages, the home page,
 	// the shop, the sitemap, search, the catalogue and a page that is not
@@ -93,17 +109,22 @@ func TestTheHotPathsLeakNoGoroutines(t *testing.T) {
 		}
 		wg.Wait()
 		// A publish with every gate, and the first visit after it, which
-		// builds the search index of the new live commit.
+		// builds the site again and the search index of the new live commit.
 		edits++
+		was := rl.Site()
 		addOwnPage(t, root, tpl, "leak-check", map[string]any{
 			"title": "Leak check", "body": "Edit " + strconv.Itoa(edits) + " of a page about paper.",
 		})
 		visit()
+		if rl.Site() == was {
+			t.Errorf("publish %d was served without building the site again: the rebuild was not measured", edits)
+		}
 	}
 
 	// Once first, so whatever is started once and kept for the life of the
 	// process is running before the count begins and is not mistaken for a
-	// leak.
+	// leak. What it starts later is still counted: origin is the moment
+	// before this test had started anything at all.
 	hotPaths(2, 1)
 	if t.Failed() {
 		t.FailNow()
@@ -117,7 +138,7 @@ func TestTheHotPathsLeakNoGoroutines(t *testing.T) {
 	var started []goroutineRecord
 	for deadline := time.Now().Add(10 * time.Second); ; {
 		after := goroutineSnapshot()
-		started = after.startedSince(before)
+		started = after.startedSince(before, origin)
 		if len(started) == 0 || time.Now().After(deadline) {
 			break
 		}
@@ -206,25 +227,140 @@ func goroutineSnapshot() goroutineState {
 }
 
 // startedSince is the goroutines alive now that the hot paths started after
-// before was taken.
+// before was taken. origin is a snapshot from before the test started
+// anything.
 //
 // One not alive then was started since: a goroutine's id is never given to
 // another. Ids are not in the order goroutines start, because each processor
 // hands them out from a batch of its own, so "higher than any then" would
-// miss some. A new goroutine is the hot paths' if the test started it, or if
-// its parent was itself new. Tests that ran before this one can leave
-// goroutines of their own running, and what those start meanwhile is theirs,
-// not a leak here.
-func (s goroutineState) startedSince(before goroutineState) []goroutineRecord {
+// miss some. A new goroutine is the hot paths' if its line of parents leads
+// to the test before it reaches a goroutine that was already running at
+// origin. Tests that ran before this one can leave goroutines of their own
+// running, and what those start meanwhile, and what that starts, is theirs,
+// not a leak here. A parent seen in no snapshot ended between them, and its
+// line cannot be followed; it is counted as the hot paths', the direction
+// that reports a leak rather than hides one.
+//
+// The whole line, not the parent alone. Asking only whether the parent was
+// new since before hid everything started by a worker the warm-up started
+// and kept, which is where a leak per request is most often started from:
+// such a worker starting one goroutine per request to /sitemap.xml, each
+// sleeping an hour, passed with 75 of them running. It also counted what an
+// earlier test's goroutine started through a goroutine of its own.
+func (s goroutineState) startedSince(before, origin goroutineState) []goroutineRecord {
+	ours := func(id int) bool {
+		// A line ends at the test or at origin; the bound only stops a
+		// dump that could not be read from going round for ever.
+		for range 1000 {
+			if id == s.self {
+				return true
+			}
+			if _, old := origin.all[id]; old {
+				return false
+			}
+			g, ok := s.all[id]
+			if !ok {
+				g, ok = before.all[id]
+			}
+			if !ok {
+				return true
+			}
+			id = g.parent
+		}
+		return true
+	}
 	var out []goroutineRecord
 	for id, g := range s.all {
 		if _, old := before.all[id]; old || id == s.self {
 			continue
 		}
-		if _, oldParent := before.all[g.parent]; g.parent == before.self || !oldParent {
+		if ours(g.parent) {
 			out = append(out, g)
 		}
 	}
 	slices.SortFunc(out, func(a, b goroutineRecord) int { return a.id - b.id })
 	return out
+}
+
+// A goroutine is the hot paths' however many goroutines lie between it and
+// the work that started it, and not theirs when the line leads to one that
+// was running before they began.
+//
+// startedSince asked only whether a goroutine's parent was new since the
+// count began. A worker the warm-up started and kept is not new, so every
+// goroutine it started afterwards went uncounted: one started per request
+// to /sitemap.xml by such a worker, sleeping for an hour, passed the leak
+// test 75 times over. And a goroutine left by an earlier test that started
+// one, which started another, had that last one counted as a leak here.
+func TestALeakIsCountedThroughAWorkerTheWarmUpKept(t *testing.T) {
+	stop := make(chan struct{})
+	defer close(stop)
+	ready := make(chan struct{})
+	block := func() {
+		ready <- struct{}{}
+		<-stop
+	}
+
+	// An earlier test's goroutine, still running, which starts one that
+	// starts another whenever it is told to.
+	start := goroutineSnapshot()
+	theirs := make(chan struct{})
+	defer close(theirs)
+	go func() {
+		for range theirs {
+			go func() {
+				go block()
+				block()
+			}()
+		}
+	}()
+	origin := goroutineSnapshot()
+
+	// The warm-up starts a worker and keeps it.
+	jobs := make(chan struct{})
+	defer close(jobs)
+	go func() {
+		for range jobs {
+			go block()
+		}
+	}()
+	before := goroutineSnapshot()
+
+	// The counted rounds hand the worker two jobs, and the earlier test's
+	// goroutine starts two of its own meanwhile.
+	jobs <- struct{}{}
+	jobs <- struct{}{}
+	theirs <- struct{}{}
+	for range 4 {
+		<-ready
+	}
+	// The one goroutine the test started between two snapshots.
+	startedBetween := func(from, to goroutineState) int {
+		for id, g := range to.all {
+			if _, old := from.all[id]; !old && g.parent == to.self {
+				return id
+			}
+		}
+		t.Fatal("a goroutine the test started is not in the snapshot taken after it")
+		return 0
+	}
+	earlier, worker := startedBetween(start, origin), startedBetween(origin, before)
+
+	// Only these two lines are looked at. Anything else in the process can
+	// start a goroutine meanwhile, a timer's among them, whose line cannot
+	// be followed and is counted, and this asks about the rule, not the
+	// process.
+	now := goroutineSnapshot()
+	mine := 0
+	for _, g := range now.startedSince(before, origin) {
+		if g.parent == worker {
+			mine++
+		}
+		if g.parent == earlier || now.all[g.parent].parent == earlier {
+			t.Errorf("goroutine %d was counted, and the earlier test's goroutine %d started its line", g.id, earlier)
+		}
+	}
+	if mine != 2 {
+		t.Errorf("counted %d of the two goroutines the worker %d started", mine, worker)
+	}
 }
