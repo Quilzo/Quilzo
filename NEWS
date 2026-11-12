@@ -7,6 +7,197 @@ has the rest.
 Unreleased
 ==========
 
+** Security
+
+*** A model's change needs a person's approval however many people
+    committed after it.  Every surface judged a draft by its newest commit,
+    so an agent's change to one page went live unreviewed once a person
+    had edited another.
+*** Read-only means read-only on the command line: a read-only token or a
+    reader could pin, call, approve and decline integrations through the
+    singular `quilzo integration`, and change agents' memories and pages'
+    provenance; each now asks what the plural and the screens ask.
+*** What a model writes for a person is the model's: an AI client's
+    changes over MCP, the assistant's and an agent's fill of a site's
+    blanks all need a person to read them before they go live.  The person
+    it wrote for may approve it when no approval count is set, and is the
+    one asking when a count is.
+*** The four-eyes rule holds on every path (security): `quilzo review
+    require` let any author switch approvals off.  It now needs the right to
+    grant, and asking for fewer approvals than apply waits for a second
+    administrator, as `config set` already did.  The approvers it names are
+    the ones whose approval counts, on every surface; before, the list was
+    saved and never read.  Scripts that ran it as an author are now refused.
+    Approver lists already saved are now enforced, so check `quilzo review
+    status` if a named person has left.
+*** Nobody approves alone what a machine wrote for them (security): when
+    several AI clients or agent runs wrote parts of a draft, only the newest
+    one's person was known, so with an approval count set another of them
+    could approve it.  Everybody a machine wrote for is now named, and none
+    of them counts as the second person.  What an agent run writes is for
+    the person who started it, not whoever answered its question.
+*** The log writer signs for the administration only: in the Docker stack
+    the public site now runs in its own group, and the writer refuses it
+    heads and statements (--sign-uid, --sign-gid).  `quilzo logd status`
+    says when nothing is writing the log, and moving the log says which keys
+    check what was signed before.
+*** A change is recorded as written by whoever made it (security):
+    `quilzo add --author`, imports, assist and provenance could name
+    somebody else as the author, and pressing Propose in the browser made
+    the presser the author, so a writer could approve their own change.
+    Every write now records the person signed in; --author names who to
+    credit and nothing more.  A person's message cannot pass as a machine's.
+    The approval count that applies is the larger of the setting and
+    approval.json.  Imports are now recorded under the person who runs
+    them, not "import".
+*** What goes out from a run nobody started is a person's decision
+    (security): a run a trigger or a visitor's chatbot request started could
+    post to another system with nobody asked.  Each such send now waits for
+    a person; `quilzo agent sends NAME grant TOOL` lifts that for one tool,
+    with a second administrator.  Agents' writes to other systems, and other
+    vendors' agents' writes through the gateway, answer to the brand rules.
+*** A tool that writes waits for a person (security): a tool declared as
+    writing ran with no approval unless it was also listed in ask_first,
+    at any autonomy.  The agent box can no longer read the secrets under
+    /etc.  Each tool forwarded through the gateway keeps the read-only or
+    destructive hint its own server gave.  One list of prompt-injection
+    phrases serves every surface, so the public chatbot notices what the
+    knowledge screen already did.
+*** An idle session ends however it is presented (security): the
+    administrator's inactivity timeout did not apply to a sign-in session
+    sent as a bearer header.  It now does at the admin, /mcp and the content
+    API; a program holding an exchanged session is signed out when it leaves
+    it unused past session.idle.
+*** One rule for who is "the same person" in every four-eyes check
+    (security): "dana" could be the second person for "Dana" in shield,
+    policy and gateway decisions, and Sam and sam counted as two approvals.
+    One check also decides whether a request came from Quilzo's own pages,
+    on every door.  `quilzo pending list` shows a reader only their own
+    requests; `token exchange` is self-service on the command line.
+*** Unattended runs reach nothing on their own: a run a trigger or a
+    visitor started cannot fetch, search, browse, type or run a networked
+    command without a person, and a read-only run is offered no tool that
+    writes.
+*** Go 1.27.4, for an HTTP/1 server crash every server here could reach.
+
+** Agents and connected accounts
+
+*** The confidence a decider reports is said truthfully (the lower of the
+    model's stated confidence and the agreement across asks).  A visitor
+    whose chatbot request waited for a person sees the outcome on their
+    own page.  The admin's brand colour is its accent where it is
+    legible.  The agent editor sets earned autonomy.
+*** Trust is tied to the model that earned it: an agent's earned autonomy
+    holds only while the model it was measured on drives it; after a model
+    change or a fallback it proposes until measured again, and Today says
+    which agents are due.  Chatbot and decider evaluations name their model
+    and date.
+*** Social accounts that stay connected: TikTok, Instagram, Facebook and
+    LinkedIn each sign in the way the platform requires, with templates for
+    them and YouTube; every provider declared before behaves as it did.  A
+    social media aggregator can be declared from a template at the host the
+    client chooses.
+*** Package cards say when an agent starts on its own and which program
+    it runs; programs and the scripts their interpreters run are pinned by
+    digest.  "No motion" stops page transitions too.  Currencies are checked
+    against ISO 4217, so ETH or BTC are not taken as money in hundredths.
+
+** The site and its design
+
+*** A site can add a style layer (templates/style.css, quilzo theme layer
+    set, or the Design screen) on top of what Quilzo generates.  It may
+    use only the theme's colours, so the contrast promise holds; it may
+    not load anything from another host, use !important, redefine a token
+    or take away the focus outline, and a layer with any such rule is not
+    served at all.
+*** A hero or section can have a backdrop: a picture, or a silent looping
+    video, drawn as decoration under a veil the words are judged over,
+    with a stop control and respect for reduced motion and forced colours
+    (quilzo section backdrop, or Put a backdrop behind it on Sections).  A
+    silent video needs words describing it rather than a caption track;
+    whether a recording has sound is read when it is uploaded.
+*** A neon style (glow, gradient titles, capital display type), a choice
+    of round or chamfered corners, and a scheme choice for sites that are
+    only dark or only light.  Features cards can carry a picture.
+*** A typeface from the file you have: quilzo theme font add (or the
+    Design screen) turns a TrueType or OpenType file into a WOFF, checks
+    it and serves it.  Family-400-700 means 400 to 700, as documented.
+*** Changes without a restart: the admin reads the design again when its
+    files change, and the public site with each publish and on SIGHUP.
+    The agent card leads with the site's own description.
+*** A Turkish title no longer breaks the page: twelve places looked for
+    a tag in a lowered copy of the page and cut the page itself at the
+    copy's offsets, so İ, the Kelvin sign or a stray byte could put the
+    manifest link inside the title or stop a page with a panic.  Tags are
+    now found in the page itself, which also makes a public page about a
+    fifth faster to serve.
+
+** Documents, installing and CI
+
+*** Signed log heads and receipts work in the Docker stack: the log
+    writer holds the signing key and signs over its own copy of the log,
+    so a CMS that cannot write the log still hands out heads and receipts
+    anyone can check against head.pub.json.
+*** The documents say what is true: no release has been tagged yet, so the
+    README, INSTALL and the deploy guide no longer offer released binaries,
+    and the Compose stack takes the image you build or name instead of an
+    unverified :latest.  A register of checkable claims carries re-check
+    dates.
+*** Pull requests run the race detector and fuzzing, a nightly run shuffles
+    the whole suite under -race, and a test fails when a request leaves a
+    goroutine behind.
+
+** The admin and the command line
+
+*** Importing keeps every page: a JSON import with pages of the same name
+    numbers them instead of keeping only the last, a long post title or
+    page address gives a link that works, and a Ghost export is never read
+    as junk pages.  An export reads back as it was written: a page with
+    its own date, or called 404, comes back as it went out.
+*** What waits for you is one list: quilzo approvals, the Approvals
+    screen, Today and the assistant show the same items, each to whoever
+    the session may decide it for.  A read-only, path-confined or
+    reader-capped session was offered things it could not decide, and the
+    command line dropped expired questions the screen showed.
+*** Asking for help never does anything else: `quilzo CMD help` and
+    `quilzo CMD SUB help` print that command's help (rollback help rolled
+    the site back, vault enable help sealed the store).  The chatbot reads
+    a page's words, not its wiring.  Every MCP answer that is data is
+    JSON, and quilzo_find matches words.  Each admin screen has one name.
+    A decision asked of a decider is on the record (decide.asked), without
+    the state it was asked about.  The first administrator can recover.
+    Licence URLs are recorded as SPDX ids.
+*** Every limit that can be raised has a ceiling or asks why: an API burst
+    above 200 takes a reason and the second administrator, and outside 1 to
+    6000 is refused; a zero is no longer read as "use the default".  Remote
+    telemetry, extensions and a browser path of your own take a reason.  An
+    accepted risk names the account that accepted it.  Values set before a
+    setting started asking are reported, not quietly put back.
+*** --json means JSON, everywhere the help offers a read: a dozen commands
+    printed prose or nothing, and empty lists came back as null.  Every
+    status, list, show and check now answers with one JSON document, empty
+    lists are [], and an answer that cannot be written fails instead of
+    exiting 0.  `scim token --json` and the webhook key commands now include
+    the new secret, once; before, they replaced a working secret with one
+    nobody was shown.
+*** The admin's core screens: a new page opens with a title and a body to
+    write in; Data pages through every record and Find searches all of them;
+    reading a page no longer claims it; a refused save says so and keeps
+    what was typed; paging survives a message.
+*** One implementation each for reading WordPress exports and CSV files
+    (with encoding detection), building a site export, the template context,
+    the event vocabulary, email addresses, page names, scheduling a publish,
+    clipping text and file locks; every old name is still accepted.
+*** Each role is offered what it can do: approvers find Approvals in their
+    menu, Today's and Get started's buttons appear only for roles that can
+    use them, and the agents, security and compliance screens link only
+    where their reader may go.  Contrast fixes meet WCAG 2.2 AA in light
+    and dark.
+*** The audit log screen and commands are safe and quick: control
+    characters in logged fields are escaped on the terminal and on /logs,
+    failures are shown and can be filtered, `auditlog show SEQ` and `export
+    -o FILE` work as documented, and /logs reads only the page it shows.
+
 ** Governance
 
 *** A publish of the draft, from the command line or over MCP, puts live
@@ -2145,8 +2336,8 @@ Unreleased
     imports nothing.
 
 
-v0.3.0 — 20 September 2026
-==========================
+v0.3.0 — 20 September 2026 (prepared; never tagged)
+===================================================
 
 Ninety changes. Most came out of two sweeps: driving the running program
 through a browser and a terminal rather than reading it, and an audit for
@@ -2485,8 +2676,8 @@ correct about its own job and wrong about what another part was doing with it.
     and fails on a surface that does not.
 
 
-v0.2.2 — 20 September 2026
-==========================
+v0.2.2 — 20 September 2026 (prepared; never tagged)
+===================================================
 
 A backport release. Everything here was fixed on the development branch after
 v0.2.1 and is applied to the v0.2.x line rather than left to wait for the next
@@ -2582,8 +2773,8 @@ feature release.
     added to prevent.
 
 
-v0.2.1 — 8 September 2026
-=========================
+v0.2.1 — 8 September 2026 (prepared; never tagged)
+==================================================
 
 *** The binary in the container image knows which release it is.  The release
     workflow passed `--build-arg VERSION=` and the Dockerfile declared no such
@@ -2603,8 +2794,8 @@ v0.2.1 — 8 September 2026
     kind of mismatch nothing was comparing.
 
 
-v0.2.0 — 8 September 2026
-=========================
+v0.2.0 — 8 September 2026 (prepared; never tagged)
+==================================================
 
 A security release. Everything here was found by testing the program rather
 than by reading it, and each item was reproduced before it was fixed.
@@ -2708,8 +2899,8 @@ than by reading it, and each item was reproduced before it was fixed.
     are different things.
 
 
-v0.1.0 — 7 September 2026
-=========================
+v0.1.0 — 7 September 2026 (prepared; never tagged)
+==================================================
 
 The first tagged release. Everything below is in it; there was no release
 before this one, so nothing here is a change from something you were running.
