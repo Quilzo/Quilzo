@@ -215,9 +215,21 @@ type Direct struct {
 	Instructions string
 	Tools        []Tool
 	// Call authorises and performs one tool. A *Refusal or a *ScopeError
-	// is a decision, answered as one.
+	// is a decision, answered as one; a *ToolFailed is the tool saying it
+	// failed, answered as a result marked isError.
 	Call func(name string, args map[string]any) (string, error)
 }
+
+// ToolFailed is another server's tool that ran and said it failed, with
+// what it said: answered as a result marked isError, as that server
+// answered it, so the agent reading it can tell a failure from what the
+// tool did. A gateway could only answer text or an error, and gave the
+// failure's text as a plain result: an agent read "the partner system
+// answered 503" as the tool's work and carried on as though it had
+// happened.
+type ToolFailed struct{ Text string }
+
+func (e *ToolFailed) Error() string { return e.Text }
 
 func NewServer(name, version string) *Server {
 	return &Server{
@@ -698,7 +710,12 @@ func (s *Server) callDirect(p callParams) (any, *Error) {
 	if err != nil {
 		var se *ScopeError
 		var ref *Refusal
+		var failed *ToolFailed
 		switch {
+		case errors.As(err, &failed):
+			res := textResult(failed.Text)
+			res["isError"] = true
+			return res, nil
 		case errors.As(err, &se):
 			return nil, &Error{Code: CodeRefused, Message: se.Reason,
 				Data: map[string]any{"refused": true, "retryable": false}, cause: err}

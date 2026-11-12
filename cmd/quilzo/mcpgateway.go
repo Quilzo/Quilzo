@@ -349,10 +349,11 @@ func gatewayCall(ctx context.Context, root string, in agent.Integration, mc *mcp
 	out, err = mc.CallStrict(ctx, in, tool, args)
 	var failed *mcpclient.ToolError
 	if errors.As(err, &failed) {
-		// Answered as the server answered, so the caller reads what the
-		// tool said; recorded as the failure it was, not as a success.
+		// Answered as the server answered, what the tool said marked as
+		// its failure, so the caller does not read it as the tool's work;
+		// recorded as the failure it was, not as a success.
 		reported = true
-		return out, nil
+		return out, &mcp.ToolFailed{Text: out}
 	}
 	return out, err
 }

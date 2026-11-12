@@ -500,3 +500,27 @@ func TestADirectToolTakesWhatItsSchemaSays(t *testing.T) {
 		t.Fatalf("%q", got)
 	}
 }
+
+// A tool of another server that ran and said it failed is answered as a
+// result marked isError, as that server answered it.
+//
+// Direct's Call could only answer text or an error, so a gateway gave the
+// failure's text as a plain result: the calling agent read "the partner
+// system answered 503" as what the tool did, and carried on as though the
+// action had happened, while the record said failure and the command line
+// exited 1.
+func TestADirectToolThatFailedIsAnsweredAsAnError(t *testing.T) {
+	s := NewServer("gw", "1")
+	s.Direct = &Direct{Tools: []Tool{{Name: "fail", InputSchema: map[string]any{"type": "object"}}},
+		Call: func(string, map[string]any) (string, error) {
+			return "", &ToolFailed{Text: "the partner system answered 503"}
+		}}
+	r := call(t, s, "tools/call", callParams{Name: "fail"})
+	if r.Error != nil {
+		t.Fatalf("a failure the tool reported is a result, not a protocol error: %+v", r.Error)
+	}
+	m, _ := r.Result.(map[string]any)
+	if m["isError"] != true || !strings.Contains(text(t, r), "the partner system answered 503") {
+		t.Fatalf("%#v", r.Result)
+	}
+}

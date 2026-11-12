@@ -217,12 +217,22 @@ func mustHeld(t *testing.T, root string) []heldCall {
 // recorded as a failure. It was recorded as a success, as it was for
 // `quilzo integrations call`, so the record of a call into somebody
 // else's system said it worked when the tool had said it did not.
+//
+// And answered as a failure: the gateway dropped the far side's isError,
+// so the calling agent read the failure's text as what the tool did and
+// carried on as though it had happened.
 func TestAToolThatFailsThroughTheGatewayIsRecordedAsAFailure(t *testing.T) {
 	root, tr := gatewayRig(t, &agent.GatewayPolicy{Role: "author"})
 	tr.fails = true
-	out, err := gatewayCallAs(t, root, appToken("rae", auth.RoleAuthor))
-	if err != nil || !strings.Contains(out, "no such project") {
-		t.Fatalf("%q %v", out, err)
+	srv, err := gatewayServer(httptest.NewRequest("POST", "/mcp/gateway/tracker", nil), root, "tracker", appToken("rae", auth.RoleAuthor))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := srv.Handle(mcp.Request{JSONRPC: "2.0", ID: json.RawMessage(`1`), Method: "tools/call",
+		Params: json.RawMessage(`{"name":"create_issue","arguments":{"title":"Printer on fire"}}`)})
+	answer, _ := json.Marshal(resp.Result)
+	if resp.Error != nil || !strings.Contains(string(answer), `"isError":true`) || !strings.Contains(string(answer), "no such project") {
+		t.Fatalf("%+v %s", resp.Error, answer)
 	}
 	evs, _ := audit.Read(auditPath(root))
 	var last *audit.Event
