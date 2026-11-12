@@ -233,13 +233,31 @@ func (st *Site) nlwebAsk(w http.ResponseWriter, r *http.Request) {
 // the bound or one that was not JSON was a text/plain 400 that no client
 // can read as an answer. So the request is read by mcp.Accepts and
 // mcp.ReadMessage, as the admin's /mcp reads it, and refused in JSON-RPC.
-// A browser asking for a page the site has at /mcp is still given that
-// page: only a GET that asks for a stream, as the transport has a client
-// ask, is told there is none.
+// What the site has at /mcp is still the site's: a page there is served to
+// whoever asks for it, and a browser asking for a page is told by the
+// site's own page that there is none. Anything else that is not a POST is
+// told the transport takes POST. That was said only to a GET naming
+// text/event-stream, as the transport has a client ask for a stream, so a
+// client probing with a plain GET that accepts anything, or ending a
+// session with DELETE, was still given the 404 page it reads as no server
+// here.
 func (st *Site) nlwebMCP(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost && (st.searchIndex() == nil || !asksForStream(r)) {
-		st.page(w, r)
-		return
+	if r.Method != http.MethodPost {
+		if st.searchIndex() == nil {
+			st.page(w, r)
+			return
+		}
+		if !asksFor(r, "text/event-stream") {
+			if asksFor(r, "text/html") {
+				st.page(w, r)
+				return
+			}
+			held := &notFoundHeld{ResponseWriter: w}
+			st.page(held, r)
+			if !held.held {
+				return
+			}
+		}
 	}
 	if st.searchIndex() == nil {
 		http.NotFound(w, r)
@@ -378,19 +396,47 @@ func (st *Site) nlwebMCP(w http.ResponseWriter, r *http.Request) {
 // mode, which is a few hundred bytes, with room for a client's _meta.
 const nlwebMCPBody = 32 << 10
 
-// asksForStream reports a GET that asks for an event stream, as a client of
-// the Streamable HTTP transport must when it looks for one.
-func asksForStream(r *http.Request) bool {
+// asksFor reports a GET that names a media type among those it accepts:
+// text/event-stream, as a client of the Streamable HTTP transport must when
+// it looks for a stream, or text/html, as a browser opening an address does.
+func asksFor(r *http.Request, want string) bool {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		return false
 	}
 	for _, v := range r.Header.Values("Accept") {
 		for _, part := range strings.Split(v, ",") {
 			media, _, _ := strings.Cut(part, ";")
-			if strings.EqualFold(strings.TrimSpace(media), "text/event-stream") {
+			if strings.EqualFold(strings.TrimSpace(media), want) {
 				return true
 			}
 		}
 	}
 	return false
 }
+
+// notFoundHeld passes on everything a handler answers except a 404, which
+// it keeps back with its body, so that what is written in its place is the
+// caller's to choose: the site's /mcp answers the transport's 405 where the
+// site itself has nothing at that address.
+type notFoundHeld struct {
+	http.ResponseWriter
+	held bool
+}
+
+func (h *notFoundHeld) WriteHeader(code int) {
+	if code == http.StatusNotFound {
+		h.held = true
+		return
+	}
+	h.ResponseWriter.WriteHeader(code)
+}
+
+func (h *notFoundHeld) Write(b []byte) (int, error) {
+	if h.held {
+		return len(b), nil
+	}
+	return h.ResponseWriter.Write(b)
+}
+
+// Unwrap gives http.ResponseController the writer underneath.
+func (h *notFoundHeld) Unwrap() http.ResponseWriter { return h.ResponseWriter }

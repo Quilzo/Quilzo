@@ -329,3 +329,65 @@ func TestTheSitesMCPTakesARequestByTheTransportsRules(t *testing.T) {
 		t.Errorf("the page at /mcp: %d %s", w.Code, w.Body.String())
 	}
 }
+
+// A request to the site's /mcp that is not a POST is told the transport
+// takes POST, whatever it says it accepts, unless the site has something of
+// its own at that address or a browser is asking for a page.
+//
+// Only a GET that named text/event-stream was told so. A client that
+// probed with a plain GET, accepting anything or nothing in particular, as
+// a fetch does by default, was still given the site's 404 page and read it
+// as no server here; so was one ending a session with DELETE.
+func TestARequestToTheSitesMCPThatIsNotAPostIsToldItTakesPost(t *testing.T) {
+	send := func(st *Site, method, accept string) *httptest.ResponseRecorder {
+		t.Helper()
+		r := httptest.NewRequest(method, "/mcp", nil)
+		if accept != "" {
+			r.Header.Set("Accept", accept)
+		}
+		w := httptest.NewRecorder()
+		st.Handler().ServeHTTP(w, r)
+		return w
+	}
+	st := nlwebSite(t)
+	for _, tc := range []struct{ method, accept string }{
+		{http.MethodGet, ""},
+		{http.MethodGet, "*/*"},
+		{http.MethodGet, "application/json"},
+		{http.MethodHead, ""},
+		{http.MethodDelete, ""},
+		{http.MethodPut, "*/*"},
+	} {
+		w := send(st, tc.method, tc.accept)
+		if w.Code != http.StatusMethodNotAllowed || w.Header().Get("Allow") != "POST" || strings.Contains(w.Body.String(), "<html") {
+			t.Errorf("%s accepting %q: %d, Allow %q, %s", tc.method, tc.accept, w.Code, w.Header().Get("Allow"),
+				w.Header().Get("Content-Type"))
+		}
+	}
+	// A browser reading the site is told what it always was: there is no
+	// such page, by the site's own page.
+	if w := send(st, http.MethodGet, "text/html,application/xhtml+xml,*/*;q=0.8"); w.Code != http.StatusNotFound ||
+		!strings.Contains(w.Body.String(), "Page not found") {
+		t.Errorf("a browser at /mcp: %d %s", w.Code, w.Header().Get("Content-Type"))
+	}
+
+	// What the site has at /mcp is the site's, for whoever asks for it and
+	// however; only a client asking for a stream is told there is none.
+	pages := map[string]any{"mcp": map[string]any{"title": "What MCP is"}}
+	st = published(t, pages)
+	st.Search = search.Build(st.Store.GetRef(site.RefLive), pages)
+	for _, accept := range []string{"", "*/*", "text/html"} {
+		if w := send(st, http.MethodGet, accept); w.Code != 200 || !strings.Contains(w.Body.String(), "What MCP is") {
+			t.Errorf("the page at /mcp, accepting %q: %d", accept, w.Code)
+		}
+	}
+	if w := send(st, http.MethodGet, "text/event-stream"); w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("a GET for a stream where there is a page: %d", w.Code)
+	}
+
+	// A site with no tool has no server at /mcp to speak for.
+	st = published(t, map[string]any{"index": map[string]any{"title": "Home"}})
+	if w := send(st, http.MethodGet, "*/*"); w.Code != http.StatusNotFound {
+		t.Errorf("a site with no tool: %d", w.Code)
+	}
+}
