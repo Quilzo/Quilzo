@@ -796,7 +796,8 @@ func (l *Log) whole() (*os.File, int64, error) {
 	return f, fi.Size(), nil
 }
 
-// Read loads every event.
+// Read loads every event, up to where the file stands once no write to it
+// is part way through (settled).
 func Read(path string) ([]Event, error) {
 	f, err := os.Open(path)
 	if os.IsNotExist(err) {
@@ -806,7 +807,93 @@ func Read(path string) ([]Event, error) {
 		return nil, err
 	}
 	defer f.Close()
-	return readEvents(f)
+	// Only a regular file has a size to read up to. Whatever else the path
+	// names, a pipe a log is handed over through say, is read to its end,
+	// as every log was before Read stopped where one had settled. Asked its
+	// size, a pipe says none, so Read returned no entries and no error, and
+	// Check called a log nobody had read an empty one that is intact.
+	if fi, err := f.Stat(); err != nil {
+		return nil, err
+	} else if !fi.Mode().IsRegular() {
+		return readEvents(f)
+	}
+	size, err := settled(f, path)
+	if err != nil {
+		return nil, err
+	}
+	return readEvents(io.LimitReader(f, size))
+}
+
+// writeGrace is how long a reader that may not take the writers' lock
+// waits for a last line with no end to be finished, before taking it for
+// one a crash left (settled). A variable so that a test can be a writer
+// slower than any is.
+var writeGrace = 100 * time.Millisecond
+
+// settled is how much of the log open in f a reader reads: its size, once
+// nobody can still be writing its last line.
+//
+// Every record is one write, made holding the lock every writer takes
+// (Append), and the only newline in it is its last byte. A reader sees a
+// write in progress all the same: the kernel makes the file longer a page
+// at a time as it copies the write in, so a reader could find the first
+// part of a record as the last line, and took it for a write a crash left
+// unfinished. A live, healthy log was then not intact for a moment: the
+// admin's log page and `auditlog verify` called it a crash, and posture
+// raised its finding about the chain during ordinary use. So a last line
+// with no end is judged only once the lock is free: this takes it, looks at
+// the size, and lets it go at once, since every writer waits while it is
+// held. A reader that may not take it waits up to writeGrace for the line
+// to end instead: in a separated deployment the lock is the writer's
+// account's alone, as it has to be, because a reader that could take it
+// could hold it and stop every record.
+func settled(f *os.File, path string) (int64, error) {
+	size, ends, err := lineEnd(f)
+	if err != nil || ends {
+		return size, err
+	}
+	lock, err := os.Open(path + ".lock")
+	if os.IsNotExist(err) {
+		// Every writer makes the lock before it writes, so there is no
+		// write in progress.
+		return size, nil
+	}
+	if err == nil {
+		defer lock.Close()
+		if atomicfile.LockFile(lock) == nil {
+			fi, err := f.Stat()
+			atomicfile.UnlockFile(lock)
+			if err != nil {
+				return 0, err
+			}
+			return fi.Size(), nil
+		}
+	}
+	for deadline := time.Now().Add(writeGrace); time.Now().Before(deadline); {
+		time.Sleep(time.Millisecond)
+		if size, ends, err = lineEnd(f); err != nil || ends {
+			return size, err
+		}
+	}
+	return size, nil
+}
+
+// lineEnd is the size of the file open in f, and whether it is empty or
+// ends a line, as every write leaves it.
+func lineEnd(f *os.File) (int64, bool, error) {
+	fi, err := f.Stat()
+	if err != nil {
+		return 0, false, err
+	}
+	size := fi.Size()
+	if size == 0 {
+		return 0, true, nil
+	}
+	last := make([]byte, 1)
+	if _, err := f.ReadAt(last, size-1); err != nil && err != io.EOF {
+		return 0, false, err
+	}
+	return size, last[0] == '\n', nil
 }
 
 func readEvents(r io.Reader) ([]Event, error) {

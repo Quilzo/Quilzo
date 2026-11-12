@@ -15,6 +15,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/atomicfile"
 )
 
 // sameAsRead fails the test unless a look at the file reports what Read and
@@ -213,6 +215,169 @@ func TestLooksTakenAtOnceAgree(t *testing.T) {
 	appendRecords(t, path, 20, 20)
 	wg.Wait()
 	sameAsRead(t, x, path, "after the looks")
+}
+
+// halfWritten writes the first half of the record the next Append to the
+// log at path would write, as a reader sees a write still in progress, and
+// returns what writes the rest. With locked, it holds the lock every writer
+// takes until then, as a writer does.
+func halfWritten(t *testing.T, path string, locked bool) (rest func()) {
+	t.Helper()
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cp := filepath.Join(t.TempDir(), "audit.jsonl")
+	if err := os.WriteFile(cp, before, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	appendRecords(t, cp, 100, 1)
+	after, err := os.ReadFile(cp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := after[len(before):]
+	unlock := func() {}
+	if locked {
+		if unlock, err = atomicfile.Lock(path + ".lock"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add := func(b []byte) {
+		f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		if _, err := f.Write(b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add(line[:len(line)/2])
+	return func() {
+		add(line[len(line)/2:])
+		unlock()
+	}
+}
+
+// A record still being written as the log is read is not a write a crash
+// left unfinished. The kernel makes the file longer a page at a time as it
+// copies a write in, so a reader can find the first part of a record as
+// the last line, and every reader took it for a crash: the admin's log page
+// and `auditlog verify` called a live, healthy log not intact, and
+// TestLooksTakenAtOnceAgree failed about one run in ten. A last line with
+// no end is judged only once nobody can still be writing it: when the lock
+// every writer takes is free, or, for a reader that may not take it, as in
+// a separated deployment, when it has not ended within writeGrace. A line
+// a crash left is still reported as one, by either.
+func TestARecordBeingWrittenIsNotACrash(t *testing.T) {
+	type found struct {
+		n      int
+		report Report
+		err    error
+	}
+	readers := []struct {
+		name string
+		read func(x *Index, path string) found
+	}{
+		{"a look", func(x *Index, path string) found {
+			s, err := x.Look()
+			if err != nil {
+				return found{err: err}
+			}
+			return found{s.Len(), s.Report(), nil}
+		}},
+		{"Read", func(x *Index, path string) found {
+			events, err := Read(path)
+			r, err := Check(events, err)
+			return found{len(events), r, err}
+		}},
+	}
+	for _, mayLock := range []bool{true, false} {
+		for _, reader := range readers {
+			name := fmt.Sprintf("%s that may take the lock", reader.name)
+			if !mayLock {
+				name = fmt.Sprintf("%s that may not", reader.name)
+			}
+			t.Run(name, func(t *testing.T) {
+				path := filepath.Join(t.TempDir(), "audit.jsonl")
+				appendRecords(t, path, 0, 3)
+				x := NewIndex(path)
+				if _, err := x.Look(); err != nil {
+					t.Fatal(err)
+				}
+				old := writeGrace
+				t.Cleanup(func() { writeGrace = old })
+				if !mayLock {
+					// A lock this reader cannot open, as the writer's own is
+					// to the account that reads the log beside it.
+					if err := os.Remove(path + ".lock"); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.Symlink(filepath.Base(path)+".lock", path+".lock"); err != nil {
+						t.Skipf("no symbolic link to stand for a lock that cannot be opened: %v", err)
+					}
+					writeGrace = time.Minute
+				}
+
+				rest := halfWritten(t, path, mayLock)
+				got := make(chan found, 1)
+				go func() { got <- reader.read(x, path) }()
+				var f found
+				select {
+				case f = <-got:
+					rest()
+				case <-time.After(200 * time.Millisecond):
+					rest()
+					f = <-got
+				}
+				if f.err != nil || f.n != 4 || !f.report.Intact {
+					t.Errorf("a record being written was read as %d entries and %+v: %v", f.n, f.report, f.err)
+				}
+
+				// A line a crash left, which nobody goes on to finish.
+				writeGrace = 10 * time.Millisecond
+				fl, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o600)
+				if err != nil {
+					t.Fatal(err)
+				}
+				fl.WriteString(`{"seq":5,"at":"2026-10`)
+				fl.Close()
+				if f := reader.read(x, path); f.err != nil || f.n != 4 || !f.report.Crashed() {
+					t.Errorf("a line a crash left is read as %d entries and %+v: %v", f.n, f.report, f.err)
+				}
+			})
+		}
+	}
+}
+
+// A reader makes no lock. The lock is the writers' alone, and a reader
+// waits at it only where one is: a log copied somewhere to be checked, or
+// put back from a backup, has none beside it, and a last line cut short in
+// it is the crash it looks like. What a store holds beside a log is also
+// how verify-head tells a log removed whole from one that was never there
+// (logWasHere, in cmd/quilzo), so a reader that made the lock to look at a
+// line with no end would leave that mark wherever it had read.
+func TestAReaderMakesNoLock(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.jsonl")
+	appendRecords(t, path, 0, 3)
+	if err := os.Remove(path + ".lock"); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.WriteString(`{"seq":4,"at":"2026-10`)
+	f.Close()
+
+	s := sameAsRead(t, NewIndex(path), path, "a line a crash left, and no lock beside the log")
+	if s == nil || s.Len() != 3 || !s.Report().Crashed() {
+		t.Errorf("a line a crash left in a log with no lock beside it is not read as one")
+	}
+	if _, err := os.Stat(path + ".lock"); !os.IsNotExist(err) {
+		t.Errorf("reading the log made the writers' lock beside it (%v)", err)
+	}
 }
 
 // A look refuses a line where Read refuses it, to the byte. Read takes a
