@@ -149,7 +149,12 @@ func (st *Site) handoffConversation(w http.ResponseWriter, r *http.Request,
 			http.Error(w, "this conversation could not be read just now", http.StatusServiceUnavailable)
 			return
 		}
-		st.signal(ConversationGuess, a.Name, r)
+		// About which address, by the digest the store files it under and
+		// never the secret: one stale link asked for again is one wrong
+		// address, and the shield counts different ones. Told the chatbot's
+		// name alone, every address was the same, and a visitor reloading
+		// their own expired conversation was slowed as somebody guessing.
+		st.signal(ConversationGuess, a.Name+" "+id[:16], r)
 		st.notFound(w, r)
 		return
 	}
@@ -331,7 +336,13 @@ const askLiveJS = `(function () {
     // that the button on the page still works.
     if (Date.now() - started > 30 * 60 * 1000) return;
     fetch(src + "&after=" + after, { credentials: "omit", cache: "no-store" })
-      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (r) {
+        // Not there any more: it expired or was removed while the page was
+        // open. Asking again for an address that is not there is what
+        // somebody guessing does, and the shield counts it so.
+        if (r.status === 404) { end(); return null; }
+        return r.ok ? r.json() : null;
+      })
       .then(function (d) {
         if (!d) return;
         (d.messages || []).forEach(function (m) {

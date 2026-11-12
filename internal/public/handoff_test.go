@@ -8,6 +8,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -258,6 +261,73 @@ func TestTheLiveScriptOnlyEverWritesText(t *testing.T) {
 	}
 	if !strings.Contains(js, "textContent") || !strings.Contains(js, `credentials: "omit"`) {
 		t.Error("the live script does not write text, or sends credentials")
+	}
+}
+
+// The page's script stops asking once its conversation is not there.
+//
+// It asked every five seconds for half an hour whatever the answer, so a
+// conversation that expired or was removed while its page was open asked
+// for a wrong conversation address three times in fifteen seconds, which is
+// what the shield takes for somebody guessing, and the visitor was slowed on
+// the whole site for leaving a tab open. This runs the shipped script under
+// Node against a site that answers 404.
+func TestTheLiveScriptStopsWhenItsConversationIsGone(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		if os.Getenv("CI") != "" {
+			t.Fatal("node is not installed, and CI must run this test")
+		}
+		t.Skip("node is not installed; CI runs this")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "live.js"), []byte(askLiveJS), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	harness := `const fs = require("fs"), vm = require("vm");
+let fetches = 0, ended = "";
+const timers = [];
+const list = { getAttribute: function (n) { return n === "data-live" ? "/ask/help/c/x?format=json" : "0"; },
+  appendChild: function () {} };
+const waiting = { set textContent(v) { ended = v; } };
+const document = { hidden: false,
+  querySelector: function (s) { return s === "[data-live]" ? list : s === "[data-waiting]" ? waiting : null; },
+  querySelectorAll: function () { return []; },
+  addEventListener: function () {},
+  createElement: function () { return { appendChild: function () {} }; } };
+const ctx = { document: document, window: { fetch: true }, Date: Date,
+  setTimeout: function (f) { timers.push(f); return timers.length; },
+  fetch: function () { fetches++;
+    return Promise.resolve({ ok: false, status: 404, json: function () { return Promise.resolve(null); } }); } };
+vm.createContext(ctx);
+vm.runInContext(fs.readFileSync(process.argv[2], "utf8"), ctx);
+(async function () {
+  for (let i = 0; i < 5 && timers.length; i++) {
+    timers.shift()();
+    for (let j = 0; j < 4; j++) await new Promise(function (r) { setImmediate(r); });
+  }
+  process.stdout.write(JSON.stringify({ fetches: fetches, ended: ended }));
+})();
+`
+	if err := os.WriteFile(filepath.Join(dir, "harness.js"), []byte(harness), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command(node, filepath.Join(dir, "harness.js"), filepath.Join(dir, "live.js")).Output()
+	if err != nil {
+		t.Fatalf("node: %v", err)
+	}
+	var got struct {
+		Fetches int    `json:"fetches"`
+		Ended   string `json:"ended"`
+	}
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("the harness printed %q: %v", out, err)
+	}
+	if got.Fetches != 1 {
+		t.Fatalf("the script asked %d times for a conversation that is not there", got.Fetches)
+	}
+	if got.Ended == "" {
+		t.Error("the page does not say the conversation is over")
 	}
 }
 
