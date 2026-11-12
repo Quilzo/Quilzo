@@ -59,6 +59,7 @@ func registerDecideOps(srv *mcp.Server, root string, caller *Caller) {
 			"name":  "the decider",
 			"state": "any JSON value: the ticket, the comment, the alert",
 		},
+		Types: map[string]string{"state": "any"},
 		// The words somebody uses for a judgement they want made: an agent
 		// asking for "triage a support ticket" was sent to agent_activity.
 		Keywords: []string{"decide", "classify", "route", "score", "gate", "triage",

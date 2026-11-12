@@ -96,6 +96,7 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 			"name":    "optional: what the site is called, when not what it calls itself",
 			"pages":   "optional: how many pages to read, at most 30",
 		},
+		Types:    map[string]string{"pages": "number"},
 		Keywords: []string{"import", "migrate", "move", "bring", "wix", "squarespace", "wordpress", "website"},
 	}, func(a map[string]any) (any, error) {
 		pages := mcpSiteImportPages
@@ -136,6 +137,7 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 			"the format; a bookings block (as `quilzo booking example` prints) sets how the site takes " +
 			"appointments, for pages with a booking section.",
 		Args:     map[string]string{"package": "the package, as a JSON object"},
+		Types:    map[string]string{"package": "any"},
 		Keywords: []string{"feature", "package", "propose", "form", "booking", "directory", "install"},
 	}, func(a map[string]any) (any, error) {
 		raw, ok := a["package"]
@@ -177,6 +179,7 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 			"in the site's time zone. Who booked is not here; a person reads that on the Bookings screen. To change " +
 			"the hours or services, propose a package with a bookings block (propose_feature).",
 		Args:     map[string]string{"days": "optional: how many days ahead, at most 31; 7 by default"},
+		Types:    map[string]string{"days": "number"},
 		Keywords: []string{"booking", "appointment", "availability", "free", "times", "calendar", "slots"},
 	}, func(a map[string]any) (any, error) {
 		setup, err := loadBookingSetup(root)
@@ -356,6 +359,7 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 			"read from a source they pointed you to; a blank you cannot fill stays a blank, which keeps its " +
 			"page from being published. Filled pages are marked as an agent's words.",
 		Args:     map[string]string{"values": "object of blank (as site_blanks names it) to value"},
+		Types:    map[string]string{"values": "object"},
 		Keywords: []string{"fill", "blanks", "address", "hours", "price", "site"},
 	}, func(a map[string]any) (any, error) {
 		raw, _ := a["values"].(map[string]any)

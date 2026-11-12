@@ -137,6 +137,7 @@ func registerResearchOps(srv *mcp.Server, root string, caller *Caller) {
 		Detail: "Cite one with research_cite by the identifier given here, never by a title " +
 			"remembered: a citation is kept only for a work an index returns.",
 		Args:     map[string]string{"query": "the words", "limit": "optional, at most 25"},
+		Types:    map[string]string{"limit": "number"},
 		Keywords: []string{"literature", "papers", "search", "openalex", "pubmed", "arxiv", "citations"},
 	}, func(a map[string]any) (any, error) {
 		n := 10

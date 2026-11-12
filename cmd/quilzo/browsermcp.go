@@ -433,6 +433,17 @@ func grantOperations(g browserGrant) []mcp.Operation {
 		case "browser_check":
 			o.Args = map[string]string{"what": "performance, accessibility, seo or all"}
 		}
+		// What the driver reads as a number, or as true or false, it also
+		// reads from text (internal/browser num and yes), so these take
+		// either; every other argument is text.
+		for _, k := range []string{"amount", "seconds", "width", "height", "reduced_motion"} {
+			if _, ok := o.Args[k]; ok {
+				if o.Types == nil {
+					o.Types = map[string]string{}
+				}
+				o.Types[k] = "any"
+			}
+		}
 		out = append(out, o)
 	}
 	return out

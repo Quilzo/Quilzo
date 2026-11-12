@@ -66,6 +66,8 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+
+	"github.com/quilzo/quilzo/internal/jsonschema"
 )
 
 // Request is a JSON-RPC 2.0 request.
@@ -125,7 +127,14 @@ type Operation struct {
 	Summary string
 	Detail  string
 	Args    map[string]string
-	Writes  bool
+	// Types are the JSON types of the arguments in Args that a handler
+	// takes as something other than text: "number", "boolean", "object",
+	// "array", or "any" for a value it takes as it comes. Every other
+	// argument Args names is a string. An operation that names its
+	// arguments takes those and no others, of those types, and anything
+	// else is invalid params before its handler runs (checkArguments).
+	Types  map[string]string
+	Writes bool
 	// Publishes marks a write that reaches readers. It is called through
 	// quilzo_publish and no other tool, so the tool a host lets an agent
 	// draft with is not the one that makes the draft live.
@@ -158,6 +167,14 @@ type Handler func(args map[string]any) (any, error)
 type Refusal struct{ Reason string }
 
 func (r *Refusal) Error() string { return r.Reason }
+
+// ArgumentError is an argument that is not one its operation can take, as
+// its handler found it: invalid params, as an argument of the wrong type
+// is before any handler runs, so an agent changes the call rather than
+// reading the answer as the content being missing or the action refused.
+type ArgumentError struct{ Reason string }
+
+func (e *ArgumentError) Error() string { return e.Reason }
 
 // Server routes MCP traffic.
 type Server struct {
@@ -452,10 +469,33 @@ type callParams struct {
 func (s *Server) call(raw json.RawMessage) (any, *Error) {
 	var p callParams
 	if err := json.Unmarshal(raw, &p); err != nil {
-		return nil, &Error{Code: CodeInvalidParams, Message: err.Error()}
+		return nil, &Error{Code: CodeInvalidParams,
+			Message: "a tool is called with its name, a string, and its arguments, an object"}
 	}
 	if s.Direct != nil {
 		return s.callDirect(p)
+	}
+
+	var tool *Tool
+	names := make([]string, 0, 5)
+	for _, t := range s.tools() {
+		names = append(names, t.Name)
+		if t.Name == p.Name {
+			tool = &t
+		}
+	}
+	if tool == nil {
+		return nil, &Error{Code: CodeMethodNotFound,
+			Message: fmt.Sprintf("no tool %q; the tools are %s", p.Name,
+				strings.Join(names, ", "))}
+	}
+	// The arguments as the tool's own schema says, before anything reads
+	// them. Read as they came, a query that was a number or missing was no
+	// query, and quilzo_find answered with every operation; an operation's
+	// arguments sent as a string were none, and read_page looked for the
+	// page "".
+	if err := fits(tool.InputSchema, p.Arguments); err != nil {
+		return nil, &Error{Code: CodeInvalidParams, Message: err.Error()}
 	}
 
 	if p.Name == "quilzo_find" {
@@ -467,18 +507,6 @@ func (s *Server) call(raw json.RawMessage) (any, *Error) {
 		"quilzo_read": "read", "quilzo_write": "write", "quilzo_check": "check",
 		"quilzo_publish": "publish",
 	}[p.Name]
-	if kind == "publish" && !s.publishes() {
-		kind = ""
-	}
-	if kind == "" {
-		names := make([]string, 0, 5)
-		for _, t := range s.tools() {
-			names = append(names, t.Name)
-		}
-		return nil, &Error{Code: CodeMethodNotFound,
-			Message: fmt.Sprintf("no tool %q; the tools are %s", p.Name,
-				strings.Join(names, ", "))}
-	}
 
 	opName, _ := p.Arguments["operation"].(string)
 	if opName == "" {
@@ -540,10 +568,17 @@ func (s *Server) call(raw json.RawMessage) (any, *Error) {
 	if args == nil {
 		args = map[string]any{}
 	}
+	if err := op.checkArguments(args); err != nil {
+		return nil, &Error{Code: CodeInvalidParams, Message: fmt.Sprintf("%s: %v", opName, err)}
+	}
 
 	result, err := s.handlers[opName](args)
 	if err != nil {
 		var ref *Refusal
+		var bad *ArgumentError
+		if errors.As(err, &bad) {
+			return nil, &Error{Code: CodeInvalidParams, Message: bad.Reason}
+		}
 		if asRefusal(err, &ref) {
 			// A refusal carries its own code so an agent does not retry a
 			// decision. Retrying a refusal turns one blocked action into many.
@@ -557,6 +592,54 @@ func (s *Server) call(raw json.RawMessage) (any, *Error) {
 		return nil, &Error{Code: CodeInternal, Message: err.Error()}
 	}
 	return textResult(text), nil
+}
+
+// checkArguments holds an operation's arguments to what it says it takes:
+// the names in Args and no others, each of the type Types gives it, text
+// when Types says nothing.
+//
+// Every handler read an argument as name, _ := a["page"].(string), which
+// makes anything that is not a string an empty one: read_page given the
+// page as a number, or under another name, told an agent there is no page
+// "", and it concluded the page was missing. An operation that names no
+// arguments reads none, and is held to nothing.
+func (op Operation) checkArguments(args map[string]any) error {
+	if len(op.Args) == 0 {
+		return nil
+	}
+	props := make(map[string]any, len(op.Args))
+	for name := range op.Args {
+		switch t := op.Types[name]; t {
+		case "any":
+			props[name] = map[string]any{}
+		case "":
+			props[name] = map[string]any{"type": "string"}
+		default:
+			props[name] = map[string]any{"type": t}
+		}
+	}
+	return fits(map[string]any{"type": "object", "properties": props}, args)
+}
+
+// fits checks arguments against a schema, by internal/jsonschema's rules:
+// an object schema that lists its properties takes only those. A null is
+// an argument left out, which is how clients that fill every optional
+// field send one they are not giving.
+func fits(schema map[string]any, args map[string]any) error {
+	if schema == nil {
+		return nil
+	}
+	b, err := json.Marshal(schema)
+	if err != nil {
+		return err
+	}
+	given := make(map[string]any, len(args))
+	for k, v := range args {
+		if v != nil {
+			given[k] = v
+		}
+	}
+	return jsonschema.CheckNamed(b, given, "arguments")
 }
 
 // answerText is an operation's answer as the text an agent reads: a string
@@ -706,7 +789,12 @@ func (s *Server) describe(ops []Operation) string {
 			}
 			sort.Strings(keys)
 			for _, k := range keys {
-				fmt.Fprintf(&b, "    %s: %s\n", k, op.Args[k])
+				switch t := op.Types[k]; t {
+				case "", "any":
+					fmt.Fprintf(&b, "    %s: %s\n", k, op.Args[k])
+				default:
+					fmt.Fprintf(&b, "    %s (%s): %s\n", k, t, op.Args[k])
+				}
 			}
 		}
 		if op.NeedsRole != "" {

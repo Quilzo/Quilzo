@@ -234,6 +234,7 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 			"query": "the words to look for",
 			"limit": "optional, default and maximum 20",
 		},
+		Types:    map[string]string{"limit": "number"},
 		Area:     "/",
 		Keywords: []string{"search", "content", "pages", "words", "which page"},
 	}, func(a map[string]any) (any, error) {
@@ -280,6 +281,7 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 			"page":  "the page to compare against",
 			"limit": "optional, default and maximum 20",
 		},
+		Types:    map[string]string{"limit": "number"},
 		Area:     "/",
 		Keywords: []string{"similar", "related", "like", "nearest", "duplicate"},
 	}, func(a map[string]any) (any, error) {
@@ -360,9 +362,11 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		Detail: "Writes to the draft only. The page is recorded as AI-generated, " +
 			"which the EU AI Act requires and which you cannot opt out of.",
 		Args: map[string]string{
-			"page":   "page name: letters, digits, dot, dash, underscore",
-			"fields": "object of field names to string values",
+			"page": "page name: letters, digits, dot, dash, underscore",
+			"fields": "object of field names to values: text, or a number, true or false or a list " +
+				"where the page's content type takes one",
 		},
+		Types:  map[string]string{"fields": "object"},
 		Writes: true, NeedsRole: "author", Area: "/",
 		Keywords: []string{"write", "edit", "create", "update", "page", "change"},
 	}, func(a map[string]any) (any, error) {
@@ -378,6 +382,20 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		fields, _ := a["fields"].(map[string]any)
 		if len(fields) == 0 {
 			return nil, &mcp.Refusal{Reason: "no fields given; nothing to write"}
+		}
+		// A field with no name, or a null for a value, is in no page any
+		// other door writes and in no content type, and was kept in the
+		// draft as it came. A number, true or false, a list or an object
+		// stays a value: content types declare number, boolean and list
+		// fields, and some pages hold structured ones.
+		for k, v := range fields {
+			if strings.TrimSpace(k) == "" {
+				return nil, &mcp.ArgumentError{Reason: "write_page: a field in arguments.fields has no name"}
+			}
+			if v == nil {
+				return nil, &mcp.ArgumentError{Reason: fmt.Sprintf(
+					"write_page: arguments.fields.%s is null; give it as \"\" to empty it", k)}
+			}
 		}
 
 		base := s.GetRef(site.RefDraft)
@@ -599,6 +617,7 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		Detail: "Read-only. A duty marked clear means the checks found nothing, not that the duty is met. " +
 			"Pass statement=true for the draft accessibility statement as Markdown.",
 		Args:     map[string]string{"statement": "true for only the draft accessibility statement"},
+		Types:    map[string]string{"statement": "boolean"},
 		Keywords: []string{"compliance", "accessibility", "statement", "gdpr", "ai act", "eaa", "headers", "privacy", "site"},
 	}, func(a map[string]any) (any, error) {
 		rep, err := buildSiteReport(root, tplDir, time.Now())
