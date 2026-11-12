@@ -708,7 +708,7 @@ func (st *Site) renderAsk(w http.ResponseWriter, r *http.Request, v askView, sta
 // "ask". Plain data: the template language has no calls, so an owner's
 // layout can arrange this and cannot do anything with it.
 func (st *Site) askThroughLayout(body any, hash string, r *http.Request, v askView) (string, bool) {
-	ctx, err := st.sources().For(askPageName, body, firstOf(r.URL.Query()))
+	ctx, err := st.sourcesFor(r).For(askPageName, body, firstOf(r.URL.Query()))
 	if err != nil {
 		return "", false
 	}

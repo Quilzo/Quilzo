@@ -64,8 +64,11 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Request is a JSON-RPC 2.0 request.
@@ -155,7 +158,15 @@ type Handler func(args map[string]any) (any, error)
 // The distinction is the same one the CLI makes with exit code 3: an agent that
 // reads "denied by policy" as "the server broke" will retry, and retrying a
 // refusal is how an agent turns one blocked action into a hundred.
-type Refusal struct{ Reason string }
+//
+// Retryable marks the one kind a retry can change: a write refused because
+// somebody else's landed first, where the next call reads the draft again.
+// Every refusal said retryable:false, so a client that honoured it gave up
+// on nine of ten writes that a second call would have made.
+type Refusal struct {
+	Reason    string
+	Retryable bool
+}
 
 func (r *Refusal) Error() string { return r.Reason }
 
@@ -476,7 +487,7 @@ func (s *Server) call(raw json.RawMessage) (any, *Error) {
 			names = append(names, t.Name)
 		}
 		return nil, &Error{Code: CodeMethodNotFound,
-			Message: fmt.Sprintf("no tool %q; the tools are %s", p.Name,
+			Message: fmt.Sprintf("no tool %s; the tools are %s", quoteName(p.Name),
 				strings.Join(names, ", "))}
 	}
 
@@ -488,7 +499,7 @@ func (s *Server) call(raw json.RawMessage) (any, *Error) {
 	op, ok := s.operations[opName]
 	if !ok {
 		return nil, &Error{Code: CodeInvalidParams,
-			Message: fmt.Sprintf("no operation %q; call quilzo_find", opName)}
+			Message: fmt.Sprintf("no operation %s; call quilzo_find", quoteName(opName))}
 	}
 
 	// A read tool must not be able to reach a write operation. Without this the
@@ -548,7 +559,7 @@ func (s *Server) call(raw json.RawMessage) (any, *Error) {
 			// A refusal carries its own code so an agent does not retry a
 			// decision. Retrying a refusal turns one blocked action into many.
 			return nil, &Error{Code: CodeRefused, Message: ref.Reason,
-				Data: map[string]any{"refused": true, "retryable": false}}
+				Data: map[string]any{"refused": true, "retryable": ref.Retryable}}
 		}
 		return nil, &Error{Code: CodeInternal, Message: err.Error()}
 	}
@@ -592,7 +603,7 @@ func (s *Server) callDirect(p callParams) (any, *Error) {
 		}
 	}
 	if !known {
-		return nil, &Error{Code: CodeMethodNotFound, Message: fmt.Sprintf("no tool %q here", p.Name)}
+		return nil, &Error{Code: CodeMethodNotFound, Message: fmt.Sprintf("no tool %s here", quoteName(p.Name))}
 	}
 	if s.Direct.Call == nil {
 		return nil, &Error{Code: CodeInternal, Message: fmt.Sprintf(
@@ -612,12 +623,18 @@ func (s *Server) callDirect(p callParams) (any, *Error) {
 				Data: map[string]any{"refused": true, "retryable": false}, cause: err}
 		case errors.As(err, &ref):
 			return nil, &Error{Code: CodeRefused, Message: ref.Reason,
-				Data: map[string]any{"refused": true, "retryable": false}}
+				Data: map[string]any{"refused": true, "retryable": ref.Retryable}}
 		}
 		return nil, &Error{Code: CodeInternal, Message: err.Error()}
 	}
 	return textResult(out), nil
 }
+
+// quoteName is a name a caller sent, as an answer quotes it: enough to say
+// which, and no more. The name is whatever the request held, up to the whole
+// body, and an answer that quoted it whole sent it back and, through the
+// host's record of the call, into the audit log.
+func quoteName(s string) string { return strconv.Quote(plaintext.Clip(s, 80, "…")) }
 
 func asRefusal(err error, out **Refusal) bool {
 	if r, ok := err.(*Refusal); ok {

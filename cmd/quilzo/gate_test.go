@@ -56,11 +56,12 @@ func TestEveryWriteSurfaceConsultsTheTypeGate(t *testing.T) {
 				if !ok || fn.Body == nil {
 					continue
 				}
-				// Both names. The test found only one surface when SaveDraft
+				// Every name. The test found only one surface when SaveDraft
 				// was renamed to SaveDraftFrom at the call sites, which is the
 				// vacuity guard below doing its job — a source-walking test
-				// that silently stops matching passes forever.
-				if !calls(fn, "SaveDraft") && !calls(fn, "SaveDraftFrom") {
+				// that silently stops matching passes forever. SaveDraftOver
+				// is the third, for a writer that read the draft itself.
+				if !calls(fn, "SaveDraft") && !calls(fn, "SaveDraftFrom") && !calls(fn, "SaveDraftOver") {
 					continue
 				}
 				found++
@@ -137,10 +138,11 @@ func mentions(fn *ast.FuncDecl, name string) bool {
 // package exists to make that impossible, and it only does if the callers use
 // it — this project has shipped a library nobody called before.
 //
-// The exception is deliberate and narrow: `quilzo add` without --based-on has
-// nothing to compare against, so it passes an empty base and SaveDraftFrom
-// treats that as "whatever is current". The point is that the call site had to
-// decide.
+// An empty base is allowed, and the point is that the call site had to decide.
+// It is not a way to say "I read the draft myself": `quilzo add` without
+// --based-on passed one for that, and ten adds run at once lost eight pages.
+// A writer that read the draft writes through SaveDraftOver with the commit it
+// read, and is counted here as a write surface like the rest.
 func TestEveryWriteSurfaceUsesCompareAndSwap(t *testing.T) {
 	roots := []string{"..", filepath.Join("..", "..", "internal")}
 	found := 0
@@ -165,7 +167,7 @@ func TestEveryWriteSurfaceUsesCompareAndSwap(t *testing.T) {
 				if !ok || fn.Body == nil {
 					continue
 				}
-				if !calls(fn, "SaveDraft") && !calls(fn, "SaveDraftFrom") {
+				if !calls(fn, "SaveDraft") && !calls(fn, "SaveDraftFrom") && !calls(fn, "SaveDraftOver") {
 					continue
 				}
 				found++

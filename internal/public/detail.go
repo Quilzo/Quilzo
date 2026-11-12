@@ -143,7 +143,7 @@ func (st *Site) detailRoute(w http.ResponseWriter, r *http.Request,
 func (st *Site) renderDetail(w http.ResponseWriter, r *http.Request,
 	name string, body any, row listing.Row) {
 
-	ctx, err := st.sources().For(name, body, firstOf(r.URL.Query()))
+	ctx, err := st.sourcesFor(r).For(name, body, firstOf(r.URL.Query()))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

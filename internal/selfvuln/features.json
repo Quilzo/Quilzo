@@ -408,6 +408,7 @@
    "api",
    "chatbots",
    "forms",
+   "mcp",
    "scim",
    "signals",
    "uploads"
@@ -450,6 +451,7 @@
    "chatbots",
    "forms",
    "import",
+   "mcp",
    "scim",
    "search-answers",
    "signals",

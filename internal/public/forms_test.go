@@ -302,3 +302,56 @@ func TestASubmissionNotifiesWithoutCarryingWhatWasTyped(t *testing.T) {
 		t.Errorf("a refused submission notified as well: %v", told)
 	}
 }
+
+// A page served to a reader carries the time it was served, and the same
+// page taken for a static copy carries the time the version being copied
+// was made, so two copies of one site are the same bytes.
+//
+// Both carried the render time, so every copy of a site with a form on it
+// differed from the last, second by second, and an identifier computed from
+// the copy (`quilzo ipfs id`, content_id) never matched one taken a moment
+// earlier.
+func TestAStaticCopyIsStampedWithItsVersionNotItsRender(t *testing.T) {
+	s, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Published a week ago, so its time cannot be mistaken for this one.
+	tree, err := store.BuildTree(s, map[string]any{"index": map[string]any{"title": "Home"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	made := time.Now().Add(-7 * 24 * time.Hour).Unix()
+	cid, err := s.PutCommit(store.Commit{Tree: tree, Message: "first", Author: "test", At: made})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetRef(site.RefLive, cid); err != nil {
+		t.Fatal(err)
+	}
+	st := New(s, render.OneLayout(`<!doctype html><html lang="en"><head><title>{{ page.title }}</title></head>`+
+		`<body><p id="stamp">{{ stamp }}</p></body></html>`))
+	stampOf := func(copy bool) int64 {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		if copy {
+			req.Header.Set(CopyHeader, "static")
+		}
+		rec := httptest.NewRecorder()
+		st.Handler().ServeHTTP(rec, req)
+		_, rest, ok := strings.Cut(rec.Body.String(), `<p id="stamp">`)
+		v, _, _ := strings.Cut(rest, "<")
+		var n int64
+		if _, err := fmt.Sscan(v, &n); !ok || err != nil {
+			t.Fatalf("no stamp in the page (%d): %s", rec.Code, rec.Body.String())
+		}
+		return n
+	}
+	before := time.Now().Unix()
+	if got := stampOf(false); got < before || got > time.Now().Unix() {
+		t.Errorf("a page served now is stamped %d, not now (%d)", got, before)
+	}
+	if got := stampOf(true); got != made {
+		t.Errorf("a static copy is stamped %d, not when the published version was made (%d)", got, made)
+	}
+}

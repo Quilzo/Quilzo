@@ -23,6 +23,7 @@ import (
 	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/mcp"
 	"github.com/quilzo/quilzo/internal/oauthas"
+	"github.com/quilzo/quilzo/internal/rate"
 	"github.com/quilzo/quilzo/internal/store"
 )
 
@@ -157,11 +158,19 @@ func wireInterface(root string, s *store.Store, srv *admin.Server, sh *shieldHos
 				Principal: principal, Kind: kind, Verified: verified, Detail: d})
 		},
 	}
+	limit := interfaceRate(cc.get())
 	srv.Interface = &admin.AgentInterface{
 		Enabled: func() bool { return cc.get().Bool("mcp.remote") },
 		Config:  cfgOf,
 		OAuth:   oa,
 		Docs:    admin.DocURL("agent-interface"),
+		Limit: func(c *mcp.Caller) (bool, time.Duration) {
+			key := "principal:" + c.Principal
+			if tok, ok := c.Data.(auth.Token); ok && tok.ID != "" {
+				key = tok.ID
+			}
+			return limit.Allow(key, time.Now())
+		},
 		Receipt: func(connection string) ([]byte, error) {
 			rf, err := buildAppReceipt(root, connection, time.Now())
 			if err != nil {
@@ -215,14 +224,41 @@ func wireInterface(root string, s *store.Store, srv *admin.Server, sh *shieldHos
 	srv.Federation = federation(root)
 }
 
+// interfaceRate is how fast one token may call the agent interface: the
+// content API's budget, api.rate.per_minute after a burst of api.rate.burst,
+// read when the server starts as /api/v1 reads it.
+//
+// A count of its own rather than the API's, so an integration busy on one
+// is not stopped on the other, and the same numbers, because the settings
+// say they are what one token may ask of this server and the interface had
+// no limit at all: the reader token /api/v1 cut off after twenty requests
+// was given two hundred concurrent exports of the whole site here.
+func interfaceRate(cfg *config.Config) *rate.Limiter {
+	per, burst := cfg.Int("api.rate.per_minute"), cfg.Int("api.rate.burst")
+	if per < 1 {
+		per = 120
+	}
+	if burst < 1 {
+		burst = 20
+	}
+	return &rate.Limiter{Every: time.Minute / time.Duration(per), Burst: burst, MaxKeys: 65536}
+}
+
 // appCallRecord is the record of one call at the agent interface. It is
 // recorded as the app, acting for the person: the person is who it acts
 // for, and the app is what acted. Which model the app runs is its own
 // business and not something it reports, so the app stands in for it.
+//
+// Bounded, whatever the call carried. The tool and operation are names the
+// request gave, and a refusal quotes what it was asked about: this stored
+// both whole, so a reader's read_page naming a page just under the 2 MiB
+// body limit added 2 MB to the log with each request, 39 MB in a second and
+// a half, in the log that verify, /logs and every export read whole. Clipped
+// as an agent's own records are (actionRecord).
 func appCallRecord(c *mcp.Caller, tool, op string, rerr *mcp.Error) audit.Record {
-	outcome, d := audit.Success, map[string]string{"tool": tool, "on_behalf_of": c.Principal}
+	outcome, d := audit.Success, map[string]string{"tool": clip(tool, 100), "on_behalf_of": c.Principal}
 	if op != "" {
-		d["operation"] = op
+		d["operation"] = clip(op, 100)
 	}
 	// Which connection: what an administrator suspends or ends when one
 	// app misbehaves for one person, and what a receipt is of.
@@ -234,7 +270,7 @@ func appCallRecord(c *mcp.Caller, tool, op string, rerr *mcp.Error) audit.Record
 		who, model = "app:"+c.Client, c.Client
 	}
 	if rerr != nil {
-		outcome, d["error"] = audit.Denied, rerr.Message
+		outcome, d["error"] = audit.Denied, clip(rerr.Message, 300)
 		if rerr.Code != mcp.CodeRefused {
 			outcome = audit.Failure
 		}

@@ -42,6 +42,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Project is one research question and what was done about it.
@@ -335,7 +336,9 @@ func (s *Store) RunDir(name, id string) string { return filepath.Join(s.Dir, nam
 // Load reads a project.
 func (s *Store) Load(name string) (Project, error) {
 	if !ValidName(name) {
-		return Project{}, fmt.Errorf("%q is not a project's name", name)
+		// Quoted short: it is whatever a caller sent, and the agent interface
+		// passes on whatever that was.
+		return Project{}, fmt.Errorf("%q is not a project's name", plaintext.Clip(name, 80, "…"))
 	}
 	b, err := os.ReadFile(s.projectPath(name))
 	if os.IsNotExist(err) {

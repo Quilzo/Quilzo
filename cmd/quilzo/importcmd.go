@@ -110,12 +110,15 @@ func cmdImport(root string, args []string) error {
 		return importRecords(root, s, rep, *author)
 	}
 
-	base := s.GetRef(site.RefDraft)
-	pages := map[string]any{}
-	if base != "" {
-		if existing, err := site.PagesAt(s, base); err == nil {
-			pages = existing
-		}
+	// The page set and the commit it is read from, which the import is
+	// written against (site.SaveDraftOver). The base was the draft ref, so a
+	// store with no draft yet had none, which the write took as "whatever
+	// the draft is by then": on a new store an import beside five adds wrote
+	// its pages over whichever of them landed while it converted the file,
+	// and those adds had exited 0.
+	base, pages, err := draftOrLive(s)
+	if err != nil {
+		return err
 	}
 
 	// Refuse to overwrite. An import that silently replaces a page somebody
@@ -148,7 +151,10 @@ func cmdImport(root string, args []string) error {
 	// The caller's real identity, for the commit as for the record below.
 	caller := resolveCaller(root, "")
 	who, message := caller.recordedAs(*author, fmt.Sprintf("import %d page(s) from %s", len(rep.Pages), src))
-	cid, err := site.SaveDraftFrom(s, pages, message, who, base)
+	// Merged with whatever landed since it was read, and refused where
+	// somebody else wrote a page this brings (a merge conflict), so a page
+	// that arrived meanwhile is neither replaced nor dropped.
+	cid, _, err := site.SaveDraftOver(s, pages, message, who, base)
 	if err != nil {
 		var imported []string
 		for _, pg := range rep.Pages {
@@ -792,49 +798,48 @@ func mediaGet(root string, args []string) error {
 func importRecords(root string, s *store.Store, rep *importer.Report,
 	named string) error {
 
-	tree, err := draftTree(s)
-	if err != nil {
-		return err
-	}
-
-	// Refuse to overwrite, exactly as the page path does. An import that
-	// silently replaced a record somebody edited is the worst way to discover
-	// the ids collided.
-	var clashes []string
-	for _, r := range rep.Records {
-		if _, err := collection.Get(s, tree, rep.Collection, r.ID); err == nil {
-			clashes = append(clashes, r.ID)
-		}
-	}
-	if len(clashes) > 0 {
-		shown := clashes
-		if len(shown) > 5 {
-			shown = shown[:5]
-		}
-		return errBlocked{fmt.Errorf(
-			"%d record(s) already exist in %s and would be replaced: %s",
-			len(clashes), rep.Collection, strings.Join(shown, ", "))}
-	}
-
 	recs := make([]collection.Record, 0, len(rep.Records))
 	for _, r := range rep.Records {
 		recs = append(recs, collection.Record{
 			ID: r.ID, Fields: r.Fields, Created: r.Created, Updated: r.Updated,
 		})
 	}
-	// RestoreMany, not PutMany: the dates the export carried are real
-	// information and no destination can reconstruct them. A catalogue that
-	// arrives with every item created at import time sorts wrongly from its
-	// first day.
-	next, written, err := collection.RestoreMany(s, tree, rep.Collection, recs,
-		time.Now())
-	if err != nil {
-		return err
-	}
 	caller := resolveCaller(root, "")
-	author, message := caller.recordedAs(named, fmt.Sprintf("import %d record(s) into %s",
-		len(written), rep.Collection))
-	if err := commitTree(root, s, next, message, author); err != nil {
+	author, _ := caller.recordedAs(named, "")
+	// Checked and written against the draft as it is under the lock
+	// (commitTree), so a record somebody wrote meanwhile is neither replaced
+	// nor dropped.
+	var written []collection.Record
+	if err := commitTree(s, author, func(tree string) (string, string, error) {
+		// Refuse to overwrite, exactly as the page path does. An import that
+		// silently replaced a record somebody edited is the worst way to
+		// discover the ids collided.
+		var clashes []string
+		for _, r := range rep.Records {
+			if _, err := collection.Get(s, tree, rep.Collection, r.ID); err == nil {
+				clashes = append(clashes, r.ID)
+			}
+		}
+		if len(clashes) > 0 {
+			shown := clashes
+			if len(shown) > 5 {
+				shown = shown[:5]
+			}
+			return "", "", errBlocked{fmt.Errorf(
+				"%d record(s) already exist in %s and would be replaced: %s",
+				len(clashes), rep.Collection, strings.Join(shown, ", "))}
+		}
+		// RestoreMany, not PutMany: the dates the export carried are real
+		// information and no destination can reconstruct them. A catalogue
+		// that arrives with every item created at import time sorts wrongly
+		// from its first day.
+		next, put, err := collection.RestoreMany(s, tree, rep.Collection, recs,
+			time.Now())
+		written = put
+		_, message := caller.recordedAs(named, fmt.Sprintf("import %d record(s) into %s",
+			len(put), rep.Collection))
+		return next, message, err
+	}); err != nil {
 		return err
 	}
 	cid := s.GetRef(site.RefDraft)

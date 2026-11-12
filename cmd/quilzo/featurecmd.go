@@ -943,8 +943,15 @@ func applyFeature(root string, p *feature.Package, digest string, plan feature.P
 		forms.Forms = kept
 	}
 
-	// Pages, staged into the draft together.
-	pages, err := draftPages(root)
+	// Pages, staged into the draft together, against the commit they are
+	// read from: written back with no base, an install lost every page
+	// saved while it was checking and writing everything else
+	// (site.SaveDraftOver).
+	drafts, err := open(root)
+	if err != nil {
+		return nil, err
+	}
+	read, pages, err := draftOrLive(drafts)
 	if err != nil {
 		return nil, err
 	}
@@ -1107,7 +1114,7 @@ func applyFeature(root string, p *feature.Package, digest string, plan feature.P
 		if err != nil {
 			return nil, err
 		}
-		if err := saveDraft(root, s, pages, "feature "+p.Name+" "+p.Version, caller.Name, ""); err != nil {
+		if err := saveDraftOver(root, s, pages, "feature "+p.Name+" "+p.Version, caller.Name, read); err != nil {
 			return nil, err
 		}
 		var written []string
