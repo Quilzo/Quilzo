@@ -134,16 +134,28 @@ func (st *Site) formStyle(w http.ResponseWriter, r *http.Request, name string) {
 // layout that posts to it (the markup the forms screen prints, pasted into
 // a template), or a chatbot that may fill it in. Pages for members count,
 // for a form offered to members.
+//
+// Only what a visitor can reach: pages for members while the site lets
+// anybody be one, as a board counts them, and a chatbot that is on the
+// site, as /ask/NAME serves it. Both counted whatever their state, so a
+// form placed only on a members' page of a site with membership off, or
+// only in the actions of a chatbot still being built, took answers from a
+// script that knew its name.
 func (st *Site) formOffered(name string) bool {
 	if pages, _, err := st.pages(); err == nil && st.pagesOffer(pages, name) {
 		return true
 	}
-	if pages, err := st.membersOnlyPages(); err == nil && st.pagesOffer(pages, name) {
-		return true
+	if st.membersOn() {
+		if pages, err := st.membersOnlyPages(); err == nil && st.pagesOffer(pages, name) {
+			return true
+		}
 	}
 	if st.Assistants != nil && st.Assistants.Set != nil {
 		if set, err := st.Assistants.Set(); err == nil && set != nil {
 			for _, a := range set.Assistants {
+				if !a.Public {
+					continue
+				}
 				for _, ac := range a.Actions {
 					if ac.Kind == assistant.Form && ac.Target == name {
 						return true

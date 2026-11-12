@@ -1286,7 +1286,8 @@ it.
 
 A form takes answers only where the site offers it: a published page, visible
 now, that names it (`"form": "enquiry"`) or renders through a layout with the
-form's markup pasted in, or a chatbot that may fill it in. A form declared and
+form's markup pasted in, or a public chatbot that may fill it in. A page for
+members counts while membership is open or by invitation. A form declared and
 placed nowhere, or on a page still in draft or past its date, answers not found,
 so it cannot collect anything the owner is not asking for.
 

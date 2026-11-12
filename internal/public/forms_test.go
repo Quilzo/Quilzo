@@ -15,6 +15,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/form"
+	"github.com/quilzo/quilzo/internal/member"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 )
@@ -372,7 +373,7 @@ func TestAFormIsAnsweredOnlyWhereTheSiteOffersIt(t *testing.T) {
 	st := New(s, layouts)
 	st.Forms = &Forms{Set: func() (*form.Set, error) { return set, nil }, Store: fs}
 	st.Assistants = &Assistants{Set: func() (*assistant.Set, error) {
-		return &assistant.Set{Assistants: []assistant.Assistant{{Name: "help", Title: "Help",
+		return &assistant.Set{Assistants: []assistant.Assistant{{Name: "help", Title: "Help", Public: true,
 			Actions: []assistant.Action{{Name: "ask", Kind: assistant.Form, Target: "asked", Description: "Ask us"}}}}}, nil
 	}}
 
@@ -397,4 +398,63 @@ func TestAFormIsAnsweredOnlyWhereTheSiteOffersIt(t *testing.T) {
 			t.Errorf("%s's stylesheet answered %d", name, css.Code)
 		}
 	}
+}
+
+// A form offered only where no visitor can reach it is not offered.
+//
+// A page for members counted as offering its form whether or not the site
+// let anybody be a member, and a chatbot counted whether or not it was on
+// the site: one still being built answers only in the admin's test
+// console. So a form placed only on a members' page of a site with
+// membership off, or only in the actions of a chatbot nobody can open,
+// took answers from a script that knew its name, which is the form placed
+// on no page by another route.
+func TestAFormOfferedOnlyWhereNobodyCanReachItIsNotOffered(t *testing.T) {
+	st := published(t, map[string]any{
+		"index":  map[string]any{"title": "Home"},
+		"lounge": map[string]any{"title": "The lounge", "form": "club", MembersOnlyField: true},
+	})
+	fs, err := form.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := &form.Set{}
+	for _, name := range []string{"club", "unlaunched", "asked"} {
+		set.Forms = append(set.Forms, form.Form{Name: name, Notice: "Kept 90 days.",
+			Fields: []form.Field{{Name: "name", Label: "Name", Kind: form.Line, Required: true}}})
+	}
+	st.Forms = &Forms{Set: func() (*form.Set, error) { return set, nil }, Store: fs}
+	st.Assistants = &Assistants{Set: func() (*assistant.Set, error) {
+		return &assistant.Set{Assistants: []assistant.Assistant{
+			{Name: "help", Title: "Help", Public: true,
+				Actions: []assistant.Action{{Name: "ask", Kind: assistant.Form, Target: "asked", Description: "Ask us"}}},
+			{Name: "draft", Title: "Not yet",
+				Actions: []assistant.Action{{Name: "ask", Kind: assistant.Form, Target: "unlaunched", Description: "Ask us"}}},
+		}}, nil
+	}}
+	answers := func(when string, want map[string]bool) {
+		t.Helper()
+		stamp := fmt.Sprint(time.Now().Add(-5 * time.Second).Unix())
+		for name, offered := range want {
+			w := post(t, st, "/form/"+name, url.Values{"name": {"Dana"}, form.StampField: {stamp}})
+			if offered != (w.Code == http.StatusOK) {
+				t.Errorf("%s: %s answered %d, offered %v", when, name, w.Code, offered)
+			}
+			if css := get(st, "/form/"+name+".css", nil); offered != (css.Code == http.StatusOK) {
+				t.Errorf("%s: %s's stylesheet answered %d, offered %v", when, name, css.Code, offered)
+			}
+		}
+	}
+	answers("membership off", map[string]bool{"club": false, "unlaunched": false, "asked": true})
+	for _, name := range []string{"club", "unlaunched"} {
+		if subs, _ := fs.List(name); len(subs) != 0 {
+			t.Errorf("%s kept %d submission(s) nobody was offered the form for", name, len(subs))
+		}
+	}
+	members, err := member.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Members = &Members{Store: members, Mode: "open", Party: memberSiteParty}
+	answers("membership open", map[string]bool{"club": true, "unlaunched": false})
 }
