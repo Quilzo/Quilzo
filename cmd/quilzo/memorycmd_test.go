@@ -424,4 +424,9 @@ func TestAMemoryDeletionRecordedUnderTheOldNameIsInTheReceipt(t *testing.T) {
 	if err != nil || rf == nil || len(rf.Entries) != 1 {
 		t.Fatalf("a deletion recorded as memory.deleteed is not in dana's receipt: %v %+v", err, rf)
 	}
+	// And the receipt that holds it checks: it was refused by its own
+	// check as a record that "is not about dana's memory".
+	if c := checkReceipt(rf, nil); len(c.Problems) != 0 {
+		t.Errorf("the receipt does not check: %v", c.Problems)
+	}
 }
