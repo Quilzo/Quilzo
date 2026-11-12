@@ -95,6 +95,7 @@ import (
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/research"
 	"github.com/quilzo/quilzo/internal/schema"
+	"github.com/quilzo/quilzo/internal/section"
 	"github.com/quilzo/quilzo/internal/seo"
 	"github.com/quilzo/quilzo/internal/sheet"
 	"github.com/quilzo/quilzo/internal/site"
@@ -2595,10 +2596,24 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 	pages, _ := site.PagesAt(s.Store, site.RefDraft)
 	body, exists := pages[name]
 
+	// Somebody who may only read is shown the page, and an address with no
+	// page is not one to show them: it rendered as an empty "Edit ghost",
+	// for a page that is not there and that they could not have written.
+	canEdit := s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/"+name).Allowed
+	if !canEdit && !exists {
+		http.NotFound(w, r)
+		return
+	}
+
 	// Claim the page, advisorily. Somebody else holding it does not stop this
 	// edit; it is shown so the two of them can talk before one loses work.
+	//
+	// Only by somebody who may edit it. Every GET claimed it, a reader's
+	// too, so the next editor was told that a person who could not edit the
+	// page "opened this page for editing recently", and an address that was
+	// no page at all was claimed as one.
 	var heldBy *collab.Lock
-	if s.Locks != nil && s.SaveLocks != nil {
+	if canEdit && s.Locks != nil && s.SaveLocks != nil {
 		if locks, err := s.Locks(); err == nil {
 			_, existing := locks.Claim(name, p.Name, "", time.Now())
 			heldBy = existing
@@ -2662,19 +2677,53 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 		fields = kept
 	}
 
+	// A page with nothing written in it yet is offered a title and a body to
+	// write it with. The editor shows the fields a page already has, and a
+	// page started from Pages has none, so New page opened on a form with no
+	// box to type the page into: saving stored an empty page, and the editor
+	// was as empty afterwards. A page built from sections is written on
+	// Sections, and is not given fields it never had.
+	bodyMap, _ := body.(map[string]any)
+	_, sectioned := bodyMap[section.Field]
+	if canEdit && typeName == "" && len(fields) == 0 && !sectioned {
+		fields = []field{
+			{Key: "title", Label: "Title", Input: "text"},
+			{Key: "body", Label: "Body", Input: "text", Long: true},
+		}
+	}
+
+	// Whether /preview/NAME has anything to show: the page, or a record at
+	// a detail address. A page nobody has saved has neither, and framing
+	// its preview framed a 404, which carries frame-ancestors 'none' like
+	// every other answer: a blank pane and a framing error on the first
+	// visit to every new page's editor.
+	previewable := exists
+	if !previewable {
+		_, status, _ := s.previewRecord(pages, name)
+		previewable = status == 0
+	}
+
+	// What the screen is to the person looking at it: a reader was shown
+	// "Edit" over a page that said they could not edit it.
+	verb := "Edit"
+	if !canEdit {
+		verb = "View"
+	}
+
 	s.render(w, r, "edit.html", map[string]any{
+		"Verb":       verb,
 		"PageTitle":  pageTitle,
 		"Nav":        "pages",
 		"CheckedOn":  s.Checked != nil && s.Checked.Store != nil,
 		"CheckedNow": cells[name],
 		"NotesOn":    s.Notes != nil && s.Notes.Store != nil,
 		"Notes":      notes,
-		"Title":      "Edit " + name, "Principal": p, "Name": name,
-		"Fields": fields, "Exists": exists, "Type": typeName,
+		"Title":      verb + " " + name, "Principal": p, "Name": name,
+		"Fields": fields, "Exists": exists, "Type": typeName, "Previewable": previewable,
 		"FormChoices": formChoices,
 		"Incoming":    incoming,
 		"Base":        base, "HeldBy": heldBy,
-		"CanEdit":   s.Policy.Evaluate(p.Name, auth.ActEditDraft, "/"+name).Allowed,
+		"CanEdit":   canEdit,
 		"NoIndex":   seo.NoIndex(body),
 		"Canonical": canonicalRaw(body),
 		"CanShare": exists && s.Shares != nil && s.Shares.Create != nil &&
@@ -2758,6 +2807,10 @@ type field struct {
 	// SuggestID ties the input to its list. Per field, because two inputs
 	// sharing one id is markup a browser resolves by picking the first.
 	SuggestID string
+	// Invalid marks the field a refusal is about, so a screen reader says
+	// which box to fix rather than leaving the person to read the notice
+	// and find it.
+	Invalid bool
 }
 
 // pictureOption is one picture a field can name: its id, and what it shows.
@@ -2969,7 +3022,10 @@ func flatten(body any) []field {
 		}
 		switch v := m[k].(type) {
 		case string:
-			out = append(out, field{Key: k, Label: keyLabel(k), Value: v, Long: len(v) > 80,
+			// A body is a box to write in however short it is so far: a new
+			// page's editor offers it as one, and "Nine to five." saved into
+			// it came back as a single line.
+			out = append(out, field{Key: k, Label: keyLabel(k), Value: v, Long: len(v) > 80 || k == "body",
 				Input: "text"})
 		case float64:
 			out = append(out, field{Key: k, Label: keyLabel(k), Value: fmt.Sprintf("%v", v),
@@ -3357,6 +3413,15 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 	}
 	// Redirect after post so a refresh does not re-submit, and so the browser's
 	// back button behaves the way the person expects.
+	//
+	// On to Sections when the editor's "Save, then add sections" was pressed:
+	// Sections builds a page that is there, and a page started from Pages is
+	// not there until this save, so a link to it from the new page's editor
+	// would have led to a 404.
+	if r.FormValue("__then") == "sections" {
+		http.Redirect(w, r, "/sections?page="+url.QueryEscape(name), http.StatusSeeOther)
+		return
+	}
 	http.Redirect(w, r, "/review?saved="+name, http.StatusSeeOther)
 }
 

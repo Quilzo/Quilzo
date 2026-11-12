@@ -1,8 +1,8 @@
 {{template "head" .}}
 <h1>People</h1>
 
-{{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
-{{if .Error}}<p class="notice bad">{{.Error}}</p>{{end}}
+{{if .Message}}<p class="notice ok" role="status">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="notice bad" role="alert">{{.Error}}</p>{{end}}
 
 {{if .Pending}}<h2>Waiting for a second administrator</h2>
 <p class="hint">Making somebody an administrator, an administrator's token or passkey enrolment link, the provisioning token while a group makes administrators, a weaker setting, fewer approvers and moving the audit log each take two administrators: one asks, another approves.</p>
