@@ -434,6 +434,52 @@ func (t Tool) takes(args map[string]any) error {
 	return jsonschema.CheckNamed(t.InputSchema, args, "arguments")
 }
 
+// Approved is a pinned tool as its server defines it, when this install
+// may call it and it is still what a person approved; CallStrict holds the
+// tool's arguments to its input schema. For a caller that has an argument
+// as text and needs to know what the tool takes it as (Tool.Typed). It
+// asks the server nothing CallStrict would not ask, and says nothing of a
+// tool that changed: the call that follows refuses that, and reports it.
+func (c *Client) Approved(ctx context.Context, in agent.Integration, tool string) (Tool, bool) {
+	pin := in.Pins[tool]
+	if in.Kind != agent.IntegrationMCP || pin == "" || c.permits(in, tool) != nil {
+		return Tool{}, false
+	}
+	tools, err := c.Definitions(ctx, in)
+	if err != nil {
+		return Tool{}, false
+	}
+	for _, t := range tools {
+		if t.Name == tool && t.Definition == pin {
+			return t, true
+		}
+	}
+	return Tool{}, false
+}
+
+// Typed is an argument a person gave as text, as the tool's input schema
+// takes it: guessed, which is the type the text looks like, where the
+// schema takes that or says nothing of the argument, and the text itself
+// where it takes text and not the guess.
+//
+// A command line has only text, and reads order_id=42 as a number. Sent as
+// one it went out as it was until arguments were held to the schema; then
+// an order id, a postcode or a version that the tool takes as text was
+// refused as a number, and nothing a person could type made it text.
+func (t Tool) Typed(name, text string, guessed any) any {
+	var schema struct {
+		Properties map[string]json.RawMessage `json:"properties"`
+	}
+	if json.Unmarshal(t.InputSchema, &schema) != nil {
+		return guessed
+	}
+	p, ok := schema.Properties[name]
+	if !ok || jsonschema.Check(p, guessed) == nil || jsonschema.Check(p, text) != nil {
+		return guessed
+	}
+	return text
+}
+
 // Definitions are a server's tools with their definitions' digests and
 // this install's pins, kept for a few minutes.
 func (c *Client) Definitions(ctx context.Context, in agent.Integration) ([]Tool, error) {

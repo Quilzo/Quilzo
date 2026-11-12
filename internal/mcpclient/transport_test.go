@@ -502,3 +502,70 @@ func TestAPinnedToolIsSentOnlyWhatItsSchemaTakes(t *testing.T) {
 		t.Fatalf("sent: %v", srv.calls)
 	}
 }
+
+// An argument a person gave as text is what a pinned tool's schema takes:
+// text where it takes text, though the text reads as a number, and the
+// type it looks like everywhere else.
+//
+// A command line reads order_id=42 as the number 42, and once a pinned
+// tool's arguments were held to its schema that was refused, with nothing a
+// person could type to make it the text the tool takes. A tool that is not
+// pinned, or not one this install may call, has no approved schema to read
+// a value by, and its server is not asked for one.
+func TestAnArgumentGivenAsTextIsWhatThePinnedSchemaTakes(t *testing.T) {
+	srv := &schemaTools{}
+	var seen []*http.Request
+	c := &Client{Do: via(srv, &seen)}
+	in := integration("add", "lookup_order", "delete_everything")
+	if _, ok := c.Approved(context.Background(), in, "lookup_order"); ok || len(seen) != 0 {
+		t.Fatalf("a tool nobody pinned has an approved schema, after %d request(s)", len(seen))
+	}
+	tools, err := c.Tools(context.Background(), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in.Pins = map[string]string{}
+	for _, tl := range tools {
+		in.Pins[tl.Name] = tl.Definition
+	}
+	off := in
+	off.Enabled = false
+	asked := len(seen)
+	if _, ok := c.Approved(context.Background(), off, "lookup_order"); ok || len(seen) != asked {
+		t.Fatal("an integration that is not enabled was asked what its tool takes")
+	}
+	changed := in
+	changed.Pins = map[string]string{"lookup_order": strings.Repeat("ab", 32)}
+	if _, ok := c.Approved(context.Background(), changed, "lookup_order"); ok {
+		t.Fatal("a tool that is not what was pinned has an approved schema")
+	}
+	for _, tc := range []struct {
+		tool, name, text string
+		guessed, want    any
+	}{
+		{"lookup_order", "order_id", "42", 42.0, "42"},
+		{"lookup_order", "order_id", "true", true, "true"},
+		{"lookup_order", "order_id", "null", nil, "null"},
+		{"lookup_order", "order_id", "A-17", "A-17", "A-17"},
+		{"add", "a", "2", 2.0, 2.0},
+		// Not a number either way: left as it was read, for the schema to refuse.
+		{"add", "a", "two", "two", "two"},
+		{"delete_everything", "confirm", "true", true, true},
+		// An argument the schema does not name is not read by it.
+		{"delete_everything", "note", "7", 7.0, 7.0},
+	} {
+		tl, ok := c.Approved(context.Background(), in, tc.tool)
+		if !ok {
+			t.Fatalf("%s is pinned and has no approved schema", tc.tool)
+		}
+		if got := tl.Typed(tc.name, tc.text, tc.guessed); got != tc.want {
+			t.Errorf("%s %s=%s is sent as %#v, not %#v", tc.tool, tc.name, tc.text, got, tc.want)
+		}
+	}
+	if out, err := c.CallStrict(context.Background(), in, "lookup_order", map[string]any{"order_id": "42"}); err != nil || out != "done" {
+		t.Fatalf("%q %v", out, err)
+	}
+	if len(srv.calls) != 1 || srv.calls[0] != `lookup_order {"order_id":"42"}` {
+		t.Fatalf("sent: %v", srv.calls)
+	}
+}
