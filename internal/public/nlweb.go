@@ -354,7 +354,7 @@ func (st *Site) nlwebMCP(w http.ResponseWriter, r *http.Request) {
 			"name": "ask",
 			"description": "Ask " + name + " in plain words. Answers with the published pages that match, " +
 				"as schema.org objects, and in summarize or generate mode the site's own answer with its sources.",
-			"inputSchema": map[string]any{"type": "object", "required": []string{"query"},
+			"inputSchema": map[string]any{"type": "object", "required": askTakes["required"],
 				"properties": map[string]any{
 					"query": map[string]any{"type": "string", "description": "The question or the words to look for."},
 					"mode": map[string]any{"type": "string", "enum": []string{"list", "summarize", "generate"},
@@ -367,8 +367,22 @@ func (st *Site) nlwebMCP(w http.ResponseWriter, r *http.Request) {
 			Name      string         `json:"name"`
 			Arguments map[string]any `json:"arguments"`
 		}
-		if err := json.Unmarshal(req.Params, &p); err != nil || p.Name != "ask" {
+		if err := json.Unmarshal(req.Params, &p); err != nil {
+			reply(http.StatusOK, nil, &mcp.Error{Code: mcp.CodeInvalidParams,
+				Message: "a tool is called with its name, a string, and its arguments, an object"})
+			return
+		}
+		if p.Name != "ask" {
 			reply(http.StatusOK, nil, &mcp.Error{Code: mcp.CodeInvalidParams, Message: "the one tool here is ask"})
+			return
+		}
+		// The arguments as the tool's schema says, before they are read, by
+		// the check the admin's /mcp makes of its own. Read as they came, a
+		// query that was a number or under another name was no query, and
+		// the agent that had given one was told a query is required; a mode
+		// that was not text was no mode, and was answered as a list.
+		if bad := mcp.Fits(askTakes, p.Arguments); bad != nil {
+			reply(http.StatusOK, nil, bad)
 			return
 		}
 		v := url.Values{}
@@ -391,6 +405,15 @@ func (st *Site) nlwebMCP(w http.ResponseWriter, r *http.Request) {
 		notFound()
 	}
 }
+
+// askTakes is what the ask tool's arguments are held to: their names and
+// types, and that there is a query. Which mode it is stays the tool's own
+// to say, in words that name the three (readNLWebQuery).
+var askTakes = map[string]any{"type": "object", "required": []string{"query"},
+	"properties": map[string]any{
+		"query": map[string]any{"type": "string"},
+		"mode":  map[string]any{"type": "string"},
+	}}
 
 // nlwebMCPBody bounds a request to the site's /mcp: a question and its
 // mode, which is a few hundred bytes, with room for a client's _meta.

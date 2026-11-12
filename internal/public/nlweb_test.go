@@ -391,3 +391,82 @@ func TestARequestToTheSitesMCPThatIsNotAPostIsToldItTakesPost(t *testing.T) {
 		t.Errorf("a site with no tool: %d", w.Code)
 	}
 }
+
+// The site's one tool takes what its schema says, and a call that does not
+// fit is invalid params naming the argument, as at the admin's /mcp.
+//
+// The arguments were read as they came. A query that was a number, or sent
+// under another name, was no query, and the agent that had given one was
+// told "a query is required"; a mode that was not text was no mode, and
+// was answered as a list without a word; and arguments that were not an
+// object were answered "the one tool here is ask" by a call to ask.
+func TestTheSitesToolTakesWhatItsSchemaSays(t *testing.T) {
+	st := nlwebSite(t)
+	call := func(params string) (int, string, string) {
+		t.Helper()
+		r := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(
+			`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":`+params+`}`))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		st.Handler().ServeHTTP(w, r)
+		var a struct {
+			Error *struct {
+				Code    int    `json:"code"`
+				Message string `json:"message"`
+			} `json:"error"`
+			Result json.RawMessage `json:"result"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &a); err != nil {
+			t.Fatalf("%s: %s", params, w.Body.String())
+		}
+		if a.Error == nil {
+			return 0, "", string(a.Result)
+		}
+		return a.Error.Code, a.Error.Message, ""
+	}
+	for name, tc := range map[string]struct {
+		params string
+		says   []string
+	}{
+		"a query that is a number":    {`{"name":"ask","arguments":{"query":12}}`, []string{"query", "string"}},
+		"no query":                    {`{"name":"ask","arguments":{}}`, []string{"query"}},
+		"no arguments":                {`{"name":"ask"}`, []string{"query"}},
+		"the query under another":     {`{"name":"ask","arguments":{"question":"bread"}}`, []string{"needs query"}},
+		"a mode that is a number":     {`{"name":"ask","arguments":{"query":"bread","mode":5}}`, []string{"mode", "string"}},
+		"arguments that are text":     {`{"name":"ask","arguments":"query=bread"}`, []string{"arguments", "object"}},
+		"arguments that are a list":   {`{"name":"ask","arguments":["bread"]}`, []string{"arguments", "object"}},
+		"an argument it does not":     {`{"name":"ask","arguments":{"query":"bread","site":"elsewhere"}}`, []string{"site"}},
+		"a name that is not a string": {`{"name":5,"arguments":{"query":"bread"}}`, []string{"name"}},
+	} {
+		code, message, result := call(tc.params)
+		if code != mcp.CodeInvalidParams {
+			t.Errorf("%s: %d %q %s", name, code, message, result)
+			continue
+		}
+		for _, w := range tc.says {
+			if !strings.Contains(message, w) {
+				t.Errorf("%s: %q does not say %q", name, message, w)
+			}
+		}
+	}
+	// Which modes there are is still said in the tool's own words, which
+	// name them.
+	if code, message, result := call(`{"name":"ask","arguments":{"query":"bread","mode":"everything"}}`); !strings.Contains(message+result, "list, summarize or generate") {
+		t.Errorf("a mode it does not have: %d %q %s", code, message, result)
+	}
+	// A tool it does not have is still told which it has.
+	if code, message, _ := call(`{"name":"search","arguments":{"query":"bread"}}`); code == 0 || !strings.Contains(message, "ask") {
+		t.Errorf("another tool: %d %q", code, message)
+	}
+	// And a call that fits is answered, a null standing for an argument
+	// left out, as clients that fill every optional field send it.
+	for _, params := range []string{
+		`{"name":"ask","arguments":{"query":"bread"}}`,
+		`{"name":"ask","arguments":{"query":"bread","mode":"list"}}`,
+		`{"name":"ask","arguments":{"query":"bread","mode":null}}`,
+	} {
+		if code, message, result := call(params); code != 0 || !strings.Contains(result, "Hart") {
+			t.Errorf("%s: %d %q %s", params, code, message, result)
+		}
+	}
+}

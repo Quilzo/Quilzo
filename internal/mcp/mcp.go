@@ -668,6 +668,19 @@ func fits(schema map[string]any, args map[string]any) error {
 	return jsonschema.CheckNamed(b, given, "arguments")
 }
 
+// Fits is how a tool call's arguments do not fit the tool's input schema,
+// as invalid params, or nil: the check this server makes of its own tools,
+// exported for a server that answers tools/call without it, the public
+// site's /mcp. That one read its arguments as they came, as the handlers
+// here did, so a query that was a number was no query and its agent was
+// told a query is required.
+func Fits(schema map[string]any, args map[string]any) *Error {
+	if err := fits(schema, args); err != nil {
+		return &Error{Code: CodeInvalidParams, Message: err.Error()}
+	}
+	return nil
+}
+
 // answerText is an operation's answer as the text an agent reads: a string
 // as it is, and anything else as JSON.
 //
