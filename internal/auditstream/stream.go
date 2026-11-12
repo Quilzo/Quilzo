@@ -20,7 +20,8 @@
 // Delivery is at least once: the cursor moves only when the receiver takes
 // the batch, and a receiver that says it holds less, or more up to the end
 // of the log, moves it there. One that says it holds more than the log has
-// is refused, and the round fails. The same stream suits any SIEM that reads
+// is refused, and the round fails, as it does while the cursor itself is
+// past the end of the log. The same stream suits any SIEM that reads
 // OCSF; Receiver is the receiving half, for one that wants the proofs.
 package auditstream
 
@@ -164,6 +165,22 @@ func (s *Sender) Push(ctx context.Context, now time.Time) (int, error) {
 		c, err := s.Status()
 		if err != nil {
 			return total, err
+		}
+		// A cursor past the end of the log is a failure, not nothing to
+		// send. Entries removed from the end, a store put back from an older
+		// copy, or a receiver believed before one past the log was refused,
+		// left it there, and Batch then found nothing waiting: the records
+		// written next took numbers already sent, so none of them went, and
+		// every round reported success. Read again first, as above.
+		if c.Sent > lastSeq(events) {
+			if fresh, rerr := s.Read(); rerr == nil {
+				events = fresh
+			}
+			if last := lastSeq(events); c.Sent > last {
+				return total, s.note(c.Sent, fmt.Errorf("this stream has sent up to record %d, and the log "+
+					"ends at %d: entries were removed from its end, or it is not the log that was streamed",
+					c.Sent, last), now)
+			}
 		}
 		b, err := s.Batch(events, c.Sent, now)
 		if err != nil || b == nil {

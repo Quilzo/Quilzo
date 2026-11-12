@@ -216,6 +216,49 @@ func TestAReceiverClaimingMoreThanTheLogHoldsIsRefused(t *testing.T) {
 	}
 }
 
+// A cursor past the end of the log is a failed round, however it got
+// there: entries removed from the end of the log, a store put back from an
+// older copy, or a receiver believed before it was refused. Batch found
+// nothing waiting, so nothing was sent, ever, the records written next took
+// the numbers already sent, and every round reported success.
+func TestACursorPastTheEndOfTheLogIsAFailure(t *testing.T) {
+	r := newRig(t)
+	r.write(t, 5)
+	if n, err := r.sender.Push(context.Background(), now); err != nil || n != 5 {
+		t.Fatalf("first push: %d %v", n, err)
+	}
+
+	// The two newest removed, and one written after.
+	path := filepath.Join(filepath.Dir(r.sender.CursorPath), "audit.jsonl")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.SplitAfter(string(b), "\n")
+	if err := os.WriteFile(path, []byte(strings.Join(lines[:3], "")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	l, err := audit.New(audit.Options{Path: path, Source: "test-host"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.Append(audit.Record{Action: "publish", Resource: "/", Outcome: audit.Success,
+		Principal: "dana", Kind: audit.KindHuman, Verified: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	n, err := r.sender.Push(context.Background(), now)
+	if err == nil || !strings.Contains(err.Error(), "ends at 4") || n != 0 {
+		t.Errorf("a cursor past the end of the log: %d %v", n, err)
+	}
+	if c, _ := r.sender.Status(); c.Sent != 5 || c.Failures != 1 || c.Error == "" {
+		t.Errorf("cursor %+v", c)
+	}
+	if r.recv.Holds() != 5 || len(r.took) != 1 {
+		t.Errorf("the receiver was sent more: holds %d, %d batches", r.recv.Holds(), len(r.took))
+	}
+}
+
 // A batch changed on the way, signed by a key the receiver does not know,
 // or whose leaves do not rebuild its head, is refused, and the cursor stays.
 func TestAChangedOrStrangeBatchIsRefused(t *testing.T) {
