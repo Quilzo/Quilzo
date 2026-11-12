@@ -3114,7 +3114,8 @@ func (s *Server) handleSecurity(w http.ResponseWriter, r *http.Request) {
 		"Title": "Security", "Principal": p, "Low": low,
 		"Report": rep, "Controls": controls, "Band": band(rep.Score),
 		"Throttled": s.throttled(), "Ran": ranAgo(rep.At),
-		"Holders": s.tokenHolders(rep.Findings),
+		"Holders":     s.tokenHolders(rep.Findings),
+		"OpensShield": s.opens(p, "shield"), "OpensSignins": s.opens(p, "signins"),
 	})
 }
 

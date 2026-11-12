@@ -151,6 +151,7 @@ func (s *Server) handleCSPScreen(w http.ResponseWriter, r *http.Request) {
 	}
 	data := map[string]any{
 		"Nav": "security", "Title": "Content policy", "Principal": p,
+		"OpensSettings": s.opens(p, "settings"),
 	}
 	if s.Assurance == nil || s.Assurance.CSP == nil {
 		data["Unavailable"] = "This build cannot derive a policy."
@@ -207,7 +208,8 @@ func (s *Server) handleSiteReport(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	data := map[string]any{"Nav": "security", "Title": "Site report", "Principal": p}
+	data := map[string]any{"Nav": "security", "Title": "Site report", "Principal": p,
+		"OpensForms": s.opens(p, "forms")}
 	switch {
 	case s.Assurance == nil || s.Assurance.Site == nil:
 		data["Unavailable"] = "This build cannot read the published site."
@@ -218,6 +220,14 @@ func (s *Server) handleSiteReport(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		data["Report"], data["Worst"] = rep, sitereport.Worst(rep.Duties)
+		// Each page linked to its editor only for somebody who may open
+		// it there, asked as the editor asks: an auditor was linked to
+		// every page with personal data on it, and refused at each.
+		opensPage := map[string]bool{}
+		for _, it := range rep.PersonalData {
+			opensPage[it.Page] = s.allows(p, auth.ActView, pageResource(it.Page))
+		}
+		data["OpensPage"] = opensPage
 		data["Markdown"] = rep.Statement.Markdown()
 		var sections []statementSection
 		for _, sec := range rep.Statement.Sections {
@@ -341,6 +351,7 @@ func (s *Server) handleAgentsScreen(w http.ResponseWriter, r *http.Request) {
 	data := map[string]any{
 		"Nav": "security", "Title": "Agent activity", "Principal": p,
 		"Threshold": agentwatch.Threshold, "Window": plainDuration(agentwatch.Window),
+		"OpensAgents": s.opens(p, "agents"), "OpensLogs": s.opens(p, "logs"),
 	}
 	if s.Assurance == nil || s.Assurance.Agents == nil {
 		data["Unavailable"] = "This build has no access to the audit log, so " +
