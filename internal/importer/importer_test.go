@@ -734,3 +734,156 @@ func TestQuilzoImportAndSiteImportReadTheSameWordPressExportAlike(t *testing.T) 
 		}
 	}
 }
+
+// held is an export of one published page and one item of each kind
+// WordPress keeps from the public, each with words of its own.
+func heldDoc() (doc string, markers map[string]string) {
+	item := func(title, slug, status, link, marker, extra string) string {
+		return `<item><title>` + title + `</title><link>` + link + `</link>` +
+			`<wp:post_name>` + slug + `</wp:post_name><wp:post_type>post</wp:post_type>` +
+			`<wp:status>` + status + `</wp:status>` + extra +
+			`<content:encoded><![CDATA[<p>` + marker + `</p>]]></content:encoded></item>`
+	}
+	markers = map[string]string{
+		"private":    "PRIVATE-MARKER",
+		"draft":      "DRAFT-MARKER",
+		"pending":    "PENDING-MARKER",
+		"future":     "FUTURE-MARKER",
+		"auto-draft": "UNSAVED-MARKER",
+	}
+	items := item("About", "about", "publish", "https://kafe.example.com/about/", "PUBLIC-WORDS", "")
+	n := 5
+	for _, status := range []string{"private", "draft", "pending", "future", "auto-draft"} {
+		// WordPress links an item it has not published by its number.
+		items += item("Held "+status, "held-"+status, status,
+			"https://kafe.example.com/?p="+string(rune('0'+n)), markers[status], "")
+		n++
+	}
+	return wxrDoc(items), markers
+}
+
+// What WordPress kept from the public is not imported.
+//
+// A private post, a draft, one waiting for review and one scheduled were each
+// imported as an ordinary page with a field, status: draft, that nothing
+// reads. The owner published, as the import told them to, and a private
+// post's words ("Ayşe earns 40,000") were served to anybody and listed in
+// the sitemap. `quilzo site import` left the same items out of the same
+// file.
+func TestWhatWordPressKeptFromThePublicIsNotImported(t *testing.T) {
+	doc, markers := heldDoc()
+	rep, err := Import(WordPress, strings.NewReader(doc), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Pages) != 1 || rep.Pages[0].Name != "about" {
+		var names []string
+		for _, p := range rep.Pages {
+			names = append(names, p.Name)
+		}
+		t.Errorf("the import brought %v, not only the published page", names)
+	}
+	for status, marker := range markers {
+		for _, p := range rep.Pages {
+			for k, v := range p.Fields {
+				if s, ok := v.(string); ok && strings.Contains(s, marker) {
+					t.Errorf("page %s holds the words of a %s post, in its %s", p.Name, status, k)
+				}
+			}
+		}
+		// And said, by its title and why: a loss nobody was told of is found
+		// months later.
+		said := false
+		for _, s := range rep.Skipped {
+			if strings.Contains(s, "Held "+status) {
+				said = true
+			}
+		}
+		if !said {
+			t.Errorf("nothing says the %s post was left out: %v", status, rep.Skipped)
+		}
+	}
+}
+
+// An item's link with a query is not an address the home page moved from.
+//
+// WordPress links what it has not published, and everything on a site with
+// plain links, as /?p=5. Only the path was read, so the import wrote a
+// permanent redirect from / to the post: served as the import says to,
+// the home page of the new site answered 308 to a private post. Two such
+// links contradicted each other and the import dropped every redirect.
+func TestAnItemLinkedByAQueryDoesNotRedirectTheHomePage(t *testing.T) {
+	item := func(title, slug, link string) string {
+		return `<item><title>` + title + `</title><link>` + link + `</link>` +
+			`<wp:post_name>` + slug + `</wp:post_name><wp:post_type>post</wp:post_type>` +
+			`<wp:status>publish</wp:status><content:encoded>Words.</content:encoded></item>`
+	}
+	for name, doc := range map[string]string{
+		"one plain link": wxrDoc(item("Hello", "hello", "https://kafe.example.com/?p=5") +
+			item("Moved", "moved", "https://kafe.example.com/2019/03/moved/")),
+		"two plain links": wxrDoc(item("Hello", "hello", "https://kafe.example.com/?p=5") +
+			item("Again", "again", "https://kafe.example.com/?p=6") +
+			item("Moved", "moved", "https://kafe.example.com/2019/03/moved/")),
+		"the front page itself": wxrDoc(item("Home", "home", "https://kafe.example.com/") +
+			item("Moved", "moved", "https://kafe.example.com/2019/03/moved/")),
+		"a fragment": wxrDoc(item("Hello", "hello", "https://kafe.example.com/#hello") +
+			item("Moved", "moved", "https://kafe.example.com/2019/03/moved/")),
+	} {
+		rep, err := Import(WordPress, strings.NewReader(doc), now)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		for _, r := range rep.Redirects {
+			if r.From == "/" {
+				t.Errorf("%s: the home page is redirected to %s", name, r.To)
+			}
+		}
+		// The address that did move still does: one link that is no path
+		// must not cost the import every redirect.
+		moved := false
+		for _, r := range rep.Redirects {
+			if r.From == "/2019/03/moved" && r.To == "/moved" {
+				moved = true
+			}
+		}
+		if !moved {
+			t.Errorf("%s: the page that moved has no redirect: %v (%v)", name, rep.Redirects, rep.Notes)
+		}
+	}
+}
+
+// A Markdown file its front matter marks a draft, private or unpublished is
+// not imported.
+//
+// `quilzo import launch.md` of a file with draft: true made a page with a
+// field draft, which nothing reads, and `quilzo publish` put "not for the
+// public yet" live. `quilzo site import` of a folder holding the same file
+// left it out.
+func TestAMarkdownFileMarkedADraftIsNotImported(t *testing.T) {
+	for _, mark := range []string{
+		"draft: true", `draft: "true"`, "draft: yes", "private: true",
+		"published: false", "status: draft", "status: private", "status: pending",
+		"visibility: private", "password: s3cret",
+	} {
+		doc := "---\ntitle: \"Secret launch plan\"\n" + mark + "\n---\n# Secret launch plan\n\nDRAFT-MD-MARKER not for the public yet.\n"
+		rep, err := Import(Markdown, strings.NewReader(doc), now)
+		if err == nil {
+			t.Errorf("%s: imported as %d page(s)", mark, len(rep.Pages))
+			continue
+		}
+		// The refusal says which line, so the owner who does want it public
+		// knows what to take out.
+		key, _, _ := strings.Cut(mark, ":")
+		if !strings.Contains(err.Error(), key) {
+			t.Errorf("%s: the refusal does not name the line that held it back: %v", mark, err)
+		}
+	}
+	// What is not such a mark is still imported.
+	for _, mark := range []string{"draft: false", "published: true", "status: publish", "status: published",
+		"visibility: public", "published: 2026-08-15", "private: false"} {
+		doc := "---\ntitle: A post\n" + mark + "\n---\nWords.\n"
+		if _, err := Import(Markdown, strings.NewReader(doc), now); err != nil {
+			t.Errorf("%s: refused: %v", mark, err)
+		}
+	}
+}

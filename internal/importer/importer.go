@@ -49,6 +49,7 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -197,7 +198,7 @@ func importWXR(body []byte, now time.Time) (*Report, error) {
 	}
 
 	named := export.NewNames()
-	unchanged := 0
+	unchanged, held, unaddressed := 0, 0, 0
 	for _, item := range doc.Channel.Items {
 		if len(rep.Pages) >= MaxPages {
 			rep.Skipped = append(rep.Skipped, fmt.Sprintf(
@@ -219,9 +220,17 @@ func importWXR(body []byte, now time.Time) (*Report, error) {
 				"%q (%s) — a WordPress internal, not content", item.Title, item.Type))
 			continue
 		}
-		if item.Status == "trash" {
+		// What WordPress kept from the public is left out, and named. What an
+		// import brings is published with the rest of the draft, and there is
+		// no page here that is held while the others go out: each of these was
+		// brought as an ordinary page with a field, status: draft, that
+		// nothing reads, and the owner who published as the import said to
+		// put a private post's words on the site and in its sitemap.
+		if why := item.Held(); why != "" {
 			rep.Skipped = append(rep.Skipped, fmt.Sprintf(
-				"%q — in the trash", item.Title))
+				"%q — %s in WordPress, and an import does not make it public",
+				item.Title, why))
+			held++
 			continue
 		}
 
@@ -258,9 +267,6 @@ func importWXR(body []byte, now time.Time) (*Report, error) {
 		if len(tags) > 0 {
 			fields["tags"] = tags
 		}
-		if item.Status != "publish" {
-			fields["status"] = "draft"
-		}
 
 		rep.Pages = append(rep.Pages, Page{Name: name, Fields: fields, Dropped: dropped})
 
@@ -274,23 +280,49 @@ func importWXR(body []byte, now time.Time) (*Report, error) {
 		// real import produce a map full of self-references, and NewMap refuses
 		// those — correctly, since a page redirecting to itself is a loop. The
 		// first version did exactly that and generated no redirects at all.
+		//
+		// And only from an address that is the item's own. WordPress links
+		// what it has not published, and everything on a site with plain
+		// links, by its number: /?p=5. A redirect's source is a path, so only
+		// the path of that link was read, and it is the home page's: the
+		// import wrote a permanent redirect from / to the post, and the new
+		// site's front door answered 308 to it. Two such links contradicted
+		// each other, and the import dropped every redirect it had. The front
+		// page's own link is the same address, and is not redirected either:
+		// redirects are served before pages, so the home page would be gone.
 		if item.Link != "" {
 			if from, err := seo.SourcePath(item.Link); err == nil {
-				if from != "/"+name {
+				switch {
+				case from == "/" || notAPath(item.Link):
+					unaddressed++
+				case from != "/"+name:
 					rep.Redirects = append(rep.Redirects, seo.Redirect{
 						From: item.Link, To: "/" + name, Permanent: true,
 						Note: "imported from WordPress",
 					})
-				} else {
+				default:
 					unchanged++
 				}
 			}
 		}
 	}
 
+	if held > 0 {
+		rep.Notes = append(rep.Notes, fmt.Sprintf(
+			"%d item(s) WordPress kept from the public were not imported "+
+				"(listed above): what an import brings is published with the "+
+				"rest of the site. To bring one, publish it in WordPress and "+
+				"export again.", held))
+	}
 	if unchanged > 0 {
 		rep.Notes = append(rep.Notes, fmt.Sprintf(
 			"%d page(s) kept the same path, so they need no redirect.", unchanged))
+	}
+	if unaddressed > 0 {
+		rep.Notes = append(rep.Notes, fmt.Sprintf(
+			"%d page(s) had no address of their own to redirect from: the "+
+				"export links them at the home page, or by a number after it "+
+				"(/?p=5), which no redirect can match.", unaddressed))
 	}
 
 	// Validated here rather than at write time, so a contradictory or looping
@@ -325,10 +357,24 @@ func importWXR(body []byte, now time.Time) (*Report, error) {
 			len(rep.Media)))
 	}
 	if len(rep.Pages) == 0 {
+		if held > 0 {
+			return nil, fmt.Errorf("no importable content found; %d items were "+
+				"skipped, %d of them because WordPress kept them from the public "+
+				"(drafts, private, waiting for review, scheduled or in the trash), "+
+				"and an import does not make them public",
+				len(rep.Skipped), held)
+		}
 		return nil, fmt.Errorf("no importable content found; %d items were skipped",
 			len(rep.Skipped))
 	}
 	return rep, nil
+}
+
+// notAPath says whether an item's link names it by a query or a fragment
+// rather than by a path: /?p=5, as WordPress links what has no address yet.
+func notAPath(link string) bool {
+	u, err := url.Parse(strings.TrimSpace(link))
+	return err != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != ""
 }
 
 func wpDate(s string) string {
@@ -410,6 +456,19 @@ func importMarkdown(body []byte, now time.Time) (*Report, error) {
 				}
 			}
 		}
+	}
+
+	// A file its front matter holds back is not imported. What is imported is
+	// published with the rest of the draft, and draft: true was read as a
+	// field like any other, which nothing reads: `quilzo publish` put a
+	// launch plan marked "not for the public yet" on the site, while `quilzo
+	// site import` of the folder holding the same file left it out. Refused
+	// naming the line, so somebody who does mean to publish it knows what to
+	// take out.
+	if why := webimport.HeldBack(fields); why != "" {
+		return nil, fmt.Errorf("the file's front matter holds it back (%s), and "+
+			"an import does not make public what its source did not; take that "+
+			"line out to import it", why)
 	}
 
 	if fields["title"] == nil {

@@ -368,6 +368,58 @@ func truthy(m map[string]any, key string) bool {
 	return false
 }
 
+// heldStatuses are the statuses a file's front matter gives what is not
+// published, by the names WordPress and Ghost give them, which exporters to
+// Markdown carry across.
+var heldStatuses = map[string]bool{"draft": true, "auto-draft": true, "private": true, "pending": true,
+	"future": true, "scheduled": true, "trash": true}
+
+// HeldBack says what in a file's front matter keeps it from the public, as
+// the line reads ("draft: true"), or "" when nothing does: a draft or private
+// flag, published: false, a status that is not published, a visibility that
+// is not public, or a password.
+//
+// Both readers of Markdown ask it, a folder's (FromFiles) and `quilzo
+// import` of one file. The folder's knew three of these marks and the other
+// none: a file whose front matter said draft: true was imported as a page
+// with a field, draft, that nothing reads, and the next publish put "not for
+// the public yet" on the site. The password itself is never part of the
+// answer.
+func HeldBack(fm map[string]any) string {
+	word := func(key string) string {
+		s, _ := fm[key].(string)
+		return strings.ToLower(strings.TrimSpace(s))
+	}
+	for _, flag := range []string{"draft", "private"} {
+		if truthy(fm, flag) {
+			return flag + ": true"
+		}
+	}
+	if v, ok := fm["published"].(bool); (ok && !v) || word("published") == "false" || word("published") == "no" {
+		return "published: false"
+	}
+	if s := word("status"); heldStatuses[s] {
+		return "status: " + s
+	}
+	if v := word("visibility"); v != "" && v != "public" {
+		return "visibility: " + clip(v, 40)
+	}
+	switch v := fm["password"].(type) {
+	case nil:
+	case string:
+		if strings.TrimSpace(v) != "" {
+			return "password"
+		}
+	case bool:
+		if v {
+			return "password"
+		}
+	default:
+		return "password"
+	}
+	return ""
+}
+
 // markdown reads a folder of Markdown.
 func (f *folder) markdown(s *Site, files []string) error {
 	// Where the content is: Hugo's content, Astro's src/content or
@@ -413,7 +465,7 @@ func (f *folder) markdown(s *Site, files []string) error {
 		if fm == nil {
 			fm = map[string]any{}
 		}
-		if truthy(fm, "draft") || truthy(fm, "private") || fm["published"] == false {
+		if HeldBack(fm) != "" {
 			drafts++
 			continue
 		}

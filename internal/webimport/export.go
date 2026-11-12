@@ -148,6 +148,36 @@ func (it WordPressItem) Content() string { return it.encoded("content") }
 // Excerpt is the item's excerpt (excerpt:encoded).
 func (it WordPressItem) Excerpt() string { return it.encoded("excerpt") }
 
+// Held says why WordPress did not show the item to everybody, or "" when
+// nothing in the export says it was kept back: its status is anything but
+// published (private, a draft, waiting for review, scheduled, in the trash).
+// An item with no status at all is one WordPress did not write, and nothing
+// marks it.
+//
+// Every reader of an export asks this before it brings an item, because what
+// is brought is published with the rest of the site. `quilzo site import`
+// left such items out; `quilzo import` brought each as an ordinary page with
+// a field, status: draft, that nothing reads, and the owner who published as
+// the import told them to served a private post's words to anybody.
+func (it WordPressItem) Held() string {
+	switch status := strings.TrimSpace(it.Status); status {
+	case "publish", "":
+		return ""
+	case "private":
+		return "private"
+	case "draft", "auto-draft":
+		return "a draft"
+	case "pending":
+		return "waiting for review"
+	case "future":
+		return "scheduled and not yet published"
+	case "trash":
+		return "in the trash"
+	default:
+		return "not published (its status is " + clip(status, 40) + ")"
+	}
+}
+
 // PageName is the name the item's page is given, by every reader of an
 // export: WordPress's own slug for it (post_name); else its link's path,
 // when that names a page rather than the home with a query, as the plain

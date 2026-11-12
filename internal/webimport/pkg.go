@@ -228,9 +228,14 @@ func Package(s *Site, name, by string, picture Picture, now time.Time) (*Brought
 		}
 		p.Pages = append(p.Pages, feature.Page{Name: n, Body: body})
 		// Only where the address changed: /about-us/ is /about-us already.
+		// And only from an address that is a path. A page known by a query
+		// (/hall/?page_id=11, as WordPress's plain links have every page) has
+		// the home's path, and a redirect matches a path alone: each such
+		// page redirected the old home to itself, and the package was
+		// refused, "/hall is redirected to both / and /qa-night".
 		old, now := pg.URL.EscapedPath(), feature.PagePath(n)
 		if trimmed := strings.TrimSuffix(old, "/"); trimmed != "" && trimmed != now && old != "" &&
-			len(out.Redirects) < feature.MaxSiteRedirects {
+			pg.URL.RawQuery == "" && len(out.Redirects) < feature.MaxSiteRedirects {
 			out.Redirects = append(out.Redirects, seo.Redirect{From: old, To: now, Permanent: true})
 		}
 	}

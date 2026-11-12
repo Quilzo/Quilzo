@@ -718,3 +718,78 @@ func TestAWordPressSiteOnPlainLinksBecomesAPackage(t *testing.T) {
 		t.Errorf("the link to ?page_id=12 does not go to its page: %s", body)
 	}
 }
+
+// A folder's file is left out by every mark that holds one back, not three
+// of them.
+//
+// The folder's reader left out draft: true, private: true and published:
+// false. A file an exporter marked by its status (status: draft, as
+// WordPress and Ghost name what is not published), by who may read it, or
+// with a password was brought as a page and published with the site.
+func TestAFolderLeavesOutEveryFileItsFrontMatterHoldsBack(t *testing.T) {
+	fsys := fstest.MapFS{
+		"index.md": {Data: []byte("---\ntitle: Welcome\n---\nBread notes.\n")},
+		"about.md": {Data: []byte("---\ntitle: About\nstatus: published\nvisibility: public\ndraft: false\n---\nWe bake.\n")},
+	}
+	marks := []string{"draft: true", "private: yes", "published: false", `published: "false"`, "status: draft",
+		"status: private", "status: pending", "status: future", "status: trash", "visibility: members",
+		"visibility: private", "password: s3cret"}
+	for i, mark := range marks {
+		fsys[fmt.Sprintf("held-%d.md", i)] = &fstest.MapFile{Data: []byte(
+			"---\ntitle: Held " + mark + "\n" + mark + "\n---\nHELD-MARKER not for the public.\n")}
+	}
+	s, err := FromFiles(fsys, "notes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pg := range s.Pages {
+		for _, b := range pg.Blocks {
+			if strings.Contains(b.Text, "HELD-MARKER") {
+				t.Errorf("page %q was brought, with its words", pg.Title)
+			}
+		}
+	}
+	if len(s.Pages) != 2 {
+		t.Errorf("%d pages were brought, not the home page and the one published", len(s.Pages))
+	}
+	if want := fmt.Sprintf("%d draft(s) were not brought", len(marks)); !strings.Contains(strings.Join(s.Notes, " "), want) {
+		t.Errorf("the notes do not say %q: %v", want, s.Notes)
+	}
+	// The password is not what the reason says.
+	if why := HeldBack(map[string]any{"password": "s3cret"}); why == "" || strings.Contains(why, "s3cret") {
+		t.Errorf("a file with a password is held back for %q", why)
+	}
+}
+
+// A page or post linked by a number is not an address the home moved from.
+//
+// On plain links every page and post is at the home's path with a query
+// (/?page_id=11, /?p=20). The redirect from where each was is made from its
+// path alone, which for a site at the top of its host is / and was left
+// alone, but for one in a folder (https://old.example.org/hall/) is the
+// home's own address: every page and post gave a redirect from /hall to
+// itself, so the old home went to whichever came last and not to the new
+// home.
+func TestAnItemLinkedByANumberDoesNotRedirectTheOldHome(t *testing.T) {
+	doc := strings.ReplaceAll(plainLinks, "https://old.example.org", "https://old.example.org/hall")
+	doc = strings.Replace(doc, "</channel>", `<item><title>First night</title><link>https://old.example.org/hall/?p=20</link>`+
+		`<wp:post_id>20</wp:post_id><wp:post_name>first-night</wp:post_name><wp:post_type>post</wp:post_type>`+
+		`<wp:status>publish</wp:status><wp:post_date>2026-10-27 09:00:00</wp:post_date>`+
+		`<content:encoded><![CDATA[<p>It went well.</p>]]></content:encoded></item></channel>`, 1)
+	s, err := FromWordPress([]byte(doc), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := Package(s, "", "dana", nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Package.Validate(feature.Checks{}); err != nil {
+		t.Fatalf("the package: %v", err)
+	}
+	for _, r := range b.Redirects {
+		if from := strings.TrimSuffix(r.From, "/"); (from == "/hall" || from == "") && r.To != "/" {
+			t.Errorf("the old home %s is redirected to %s", r.From, r.To)
+		}
+	}
+}
