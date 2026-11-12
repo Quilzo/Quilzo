@@ -90,3 +90,29 @@ jobs:
         uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           category: "/language:${{ matrix.language }}"
+
+      # What the analysis found, in the job's log. The pull request's check says
+      # "8 new alerts" and links to the Security tab, which is the only place
+      # the list is kept; a reviewer, or a tool, without access to that tab is
+      # left with a number. The SARIF file the action wrote is read here
+      # instead: one line per result, the rule, where it was reported and where
+      # the data came from, so a fix can be aimed at the line that was found
+      # rather than at a guess. It prints what anyone running CodeQL on this
+      # public code would get, and it runs even when the analysis fails.
+      - name: List the results
+        if: always()
+        shell: bash
+        run: |
+          shopt -s nullglob
+          files=("$GITHUB_WORKSPACE"/../results/*.sarif)
+          if [ ${#files[@]} -eq 0 ]; then echo "no SARIF file was written"; exit 0; fi
+          for f in "${files[@]}"; do
+            echo "== $(basename "$f"): $(jq '[.runs[].results[]] | length' "$f") results"
+            jq -r '.runs[].results[]
+              | [ .ruleId,
+                  ((.locations[0].physicalLocation.artifactLocation.uri // "?") + ":" + ((.locations[0].physicalLocation.region.startLine // 0) | tostring)),
+                  ( (.codeFlows[0].threadFlows[0].locations[0].location.physicalLocation // null)
+                    | if . == null then "-" else (.artifactLocation.uri + ":" + (.region.startLine | tostring)) end ),
+                  (.message.text | gsub("[\r\n\t]"; " ") | .[0:160]) ]
+              | @tsv' "$f" | sort
+          done
