@@ -56,6 +56,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/collection"
+	"github.com/quilzo/quilzo/internal/spend"
 )
 
 // Bounds. Each is a refusal rather than a truncation: a listing that silently
@@ -603,6 +604,9 @@ func project(l *Listing, r collection.Record) Row {
 		for k, v := range r.Fields {
 			row[k] = v
 		}
+		if _, shown := r.Fields[PriceDisplay]; shown {
+			writePrice(row, r.Fields)
+		}
 		return row
 	}
 	for _, f := range l.Fields {
@@ -627,8 +631,49 @@ func project(l *Listing, r collection.Record) Row {
 		if v, ok := r.Fields[f]; ok {
 			row[f] = v
 		}
+		if f == PriceDisplay {
+			writePrice(row, r.Fields)
+		}
 	}
 	return row
+}
+
+// PriceDisplay is the field a row shows its price to a person in.
+const PriceDisplay = "price_display"
+
+// writePrice writes a row's price for a person from the price and currency
+// it is sold at, when the record has a price the Buy button and the
+// catalogue feed can read: a whole number of minor units and an ISO 4217
+// currency, as internal/ucp reads them. The template language has no
+// arithmetic, so a product type kept the written price as a second field,
+// by hand, and nothing wrote it again when the price changed: an owner
+// moved a product from 1200 to 1300 and published, the page said £12.00
+// beside a Buy button that charged £13.00, and /catalogue.json told
+// shopping agents both. Written here, where every record becomes a row,
+// the page, the record's own page, the catalogue feed and a visitor's
+// agent read the price that is charged. The stored text stays what a row
+// shows when there is no such price, such as "Price on request".
+func writePrice(row Row, fields map[string]any) {
+	if text, ok := WrittenPrice(fields); ok {
+		row[PriceDisplay] = text
+	}
+}
+
+// WrittenPrice is a record's price as a shopper reads it, written as its
+// Buy button writes it (spend.Display), and false when the record has no
+// price in whole minor units and a currency to write it in.
+func WrittenPrice(fields map[string]any) (string, bool) {
+	currency, _ := fields["currency"].(string)
+	currency = strings.ToUpper(strings.TrimSpace(currency))
+	if !spend.ValidCurrency(currency) {
+		return "", false
+	}
+	amount, err := spend.AmountOf(fields["price"], currency, true)
+	if err != nil {
+		return "", false
+	}
+	every, _ := fields["interval"].(string)
+	return spend.Display(amount, currency, strings.ToLower(strings.TrimSpace(every))), true
 }
 
 // coerce turns a supplied string into a value of the declared kind.

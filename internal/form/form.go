@@ -689,6 +689,17 @@ func acceptAll(f *Form, values map[string]string, files map[string]Upload, sourc
 			continue
 		}
 		raw := strings.TrimSpace(values[fl.Name])
+		// A browser submits a textarea's line breaks as CR LF, as HTML
+		// form submission requires, and an older one as a lone CR. Both
+		// are the line break a paragraph is for, so they become the one
+		// the rest of the program writes before anything is judged. The
+		// control-character check below refused the CR, and every
+		// multi-line message typed into a browser was lost as "contains a
+		// control character". Before the length check too, so the limit
+		// counts a break once, as it is kept.
+		if fl.Kind == Para {
+			raw = strings.ReplaceAll(strings.ReplaceAll(raw, "\r\n", "\n"), "\r", "\n")
+		}
 		if raw == "" {
 			if fl.Required {
 				return Submission{}, fmt.Errorf("%s is required", fl.Label)

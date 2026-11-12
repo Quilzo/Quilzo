@@ -3835,7 +3835,12 @@ func (s *Server) publishChecks(p principal, draft, reason string) (waived []stri
 	// a month. Publishing it writes content that is invisible from the instant
 	// it goes live, which looks exactly like a broken publish and is very hard
 	// to diagnose from outside.
-	stale := site.AlreadyExpired(site.PagesOf(s.Store, draft), time.Now())
+	//
+	// Only a page this publish puts up or changes: a live page that reached
+	// its date as scheduled asked for a reason on every publish after it.
+	// Unreadable is no pages, as PagesOf answers, for the content gates
+	// above have already refused a draft they cannot read.
+	stale, _ := site.ExpiredOnPublish(s.Store, draft, time.Now())
 	if len(stale) > 0 {
 		waived = append(waived, "expired-pages")
 	}

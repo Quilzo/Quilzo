@@ -13,7 +13,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/form"
+	"github.com/quilzo/quilzo/internal/member"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 )
@@ -24,8 +26,9 @@ func withForm(t *testing.T) (*Site, *form.Store) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The page that offers the form: one nothing offers is not answered.
 	if _, err := site.SaveDraft(s, map[string]any{
-		"index": map[string]any{"title": "Home"}}, "first", "test"); err != nil {
+		"index": map[string]any{"title": "Home", "form": "contact"}}, "first", "test"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := site.Publish(s, ""); err != nil {
@@ -266,12 +269,25 @@ func TestASubmissionNotifiesWithoutCarryingWhatWasTyped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The page that offers the form: one nothing offers is not answered.
+	s, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.SaveDraft(s, map[string]any{
+		"index": map[string]any{"title": "Wholesale", "form": "wholesale"}}, "first", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Publish(s, ""); err != nil {
+		t.Fatal(err)
+	}
 	var told []string
-	st := &Site{Forms: &Forms{
+	st := New(s, render.OneLayout(tpl))
+	st.Forms = &Forms{
 		Set:    func() (*form.Set, error) { return &form.Set{Forms: []form.Form{*f}}, nil },
 		Store:  fs,
 		Notify: func(name string) { told = append(told, name) },
-	}}
+	}
 
 	body := url.Values{
 		"shop":          {"Tolgus Cloth"},
@@ -354,4 +370,144 @@ func TestAStaticCopyIsStampedWithItsVersionNotItsRender(t *testing.T) {
 	if got := stampOf(true); got != made {
 		t.Errorf("a static copy is stamped %d, not when the published version was made (%d)", got, made)
 	}
+}
+
+// A form is answered only where the site offers it.
+//
+// submit took any declared form by name, so a form taken off every page, one
+// on a page still in draft or past its date, or the demonstration's restock
+// form, which is on no page at all, kept collecting personal data, as consent
+// given, from a script that needed only the field names. Boards, bookings and
+// the newsletter already took a post only from a published page that carries
+// them. A form is offered by a published page, visible now, that names it or
+// renders through a layout that posts to it, or by a chatbot that may fill it
+// in; anything else is not found, and so is its stylesheet.
+func TestAFormIsAnsweredOnlyWhereTheSiteOffersIt(t *testing.T) {
+	s, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages := map[string]any{
+		"index":   map[string]any{"title": "Home"},
+		"contact": map[string]any{"title": "Contact", "form": "contact"},
+		"later":   map[string]any{"title": "Soon", "form": "later", "starts": "2099-01-01"},
+		"gone":    map[string]any{"title": "Gone", "form": "gone", "expires": "2020-01-01"},
+		"desk":    map[string]any{"title": "Desk", "layout": "desk"},
+	}
+	if _, err := site.SaveDraft(s, pages, "first", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Publish(s, ""); err != nil {
+		t.Fatal(err)
+	}
+	// A draft that names a form is not offering it yet.
+	pages["draft"] = map[string]any{"title": "Draft", "form": "drafted"}
+	if _, err := site.SaveDraft(s, pages, "second", "test"); err != nil {
+		t.Fatal(err)
+	}
+	fs, err := form.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := &form.Set{}
+	for _, name := range []string{"contact", "restock", "later", "gone", "drafted", "pasted", "asked"} {
+		set.Forms = append(set.Forms, form.Form{Name: name, Notice: "Kept 90 days.",
+			Fields: []form.Field{{Name: "name", Label: "Name", Kind: form.Line, Required: true}}})
+	}
+	layouts, err := render.NewLayouts(map[string]string{
+		"page": tpl,
+		// The markup the forms screen prints, pasted into a layout.
+		"desk": `<!doctype html><html lang="en"><head><title>{{ page.title }}</title></head><body>` +
+			`<form method="post" action="/form/pasted"><input name="name"></form></body></html>`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := New(s, layouts)
+	st.Forms = &Forms{Set: func() (*form.Set, error) { return set, nil }, Store: fs}
+	st.Assistants = &Assistants{Set: func() (*assistant.Set, error) {
+		return &assistant.Set{Assistants: []assistant.Assistant{{Name: "help", Title: "Help", Public: true,
+			Actions: []assistant.Action{{Name: "ask", Kind: assistant.Form, Target: "asked", Description: "Ask us"}}}}}, nil
+	}}
+
+	stamp := fmt.Sprint(time.Now().Add(-5 * time.Second).Unix())
+	for name, offered := range map[string]bool{
+		"contact": true, "pasted": true, "asked": true,
+		"restock": false, "later": false, "gone": false, "drafted": false,
+	} {
+		w := post(t, st, "/form/"+name, url.Values{"name": {"Dana"}, form.StampField: {stamp}})
+		if offered && w.Code != http.StatusOK {
+			t.Errorf("%s, which the site offers, answered %d: %s", name, w.Code, w.Body.String())
+		}
+		if !offered && w.Code != http.StatusNotFound {
+			t.Errorf("%s, which nothing on the site offers, answered %d", name, w.Code)
+		}
+		subs, _ := fs.List(name)
+		if !offered && len(subs) != 0 {
+			t.Errorf("%s kept %d submission(s)", name, len(subs))
+		}
+		css := get(st, "/form/"+name+".css", nil)
+		if offered != (css.Code == http.StatusOK) {
+			t.Errorf("%s's stylesheet answered %d", name, css.Code)
+		}
+	}
+}
+
+// A form offered only where no visitor can reach it is not offered.
+//
+// A page for members counted as offering its form whether or not the site
+// let anybody be a member, and a chatbot counted whether or not it was on
+// the site: one still being built answers only in the admin's test
+// console. So a form placed only on a members' page of a site with
+// membership off, or only in the actions of a chatbot nobody can open,
+// took answers from a script that knew its name, which is the form placed
+// on no page by another route.
+func TestAFormOfferedOnlyWhereNobodyCanReachItIsNotOffered(t *testing.T) {
+	st := published(t, map[string]any{
+		"index":  map[string]any{"title": "Home"},
+		"lounge": map[string]any{"title": "The lounge", "form": "club", MembersOnlyField: true},
+	})
+	fs, err := form.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := &form.Set{}
+	for _, name := range []string{"club", "unlaunched", "asked"} {
+		set.Forms = append(set.Forms, form.Form{Name: name, Notice: "Kept 90 days.",
+			Fields: []form.Field{{Name: "name", Label: "Name", Kind: form.Line, Required: true}}})
+	}
+	st.Forms = &Forms{Set: func() (*form.Set, error) { return set, nil }, Store: fs}
+	st.Assistants = &Assistants{Set: func() (*assistant.Set, error) {
+		return &assistant.Set{Assistants: []assistant.Assistant{
+			{Name: "help", Title: "Help", Public: true,
+				Actions: []assistant.Action{{Name: "ask", Kind: assistant.Form, Target: "asked", Description: "Ask us"}}},
+			{Name: "draft", Title: "Not yet",
+				Actions: []assistant.Action{{Name: "ask", Kind: assistant.Form, Target: "unlaunched", Description: "Ask us"}}},
+		}}, nil
+	}}
+	answers := func(when string, want map[string]bool) {
+		t.Helper()
+		stamp := fmt.Sprint(time.Now().Add(-5 * time.Second).Unix())
+		for name, offered := range want {
+			w := post(t, st, "/form/"+name, url.Values{"name": {"Dana"}, form.StampField: {stamp}})
+			if offered != (w.Code == http.StatusOK) {
+				t.Errorf("%s: %s answered %d, offered %v", when, name, w.Code, offered)
+			}
+			if css := get(st, "/form/"+name+".css", nil); offered != (css.Code == http.StatusOK) {
+				t.Errorf("%s: %s's stylesheet answered %d, offered %v", when, name, css.Code, offered)
+			}
+		}
+	}
+	answers("membership off", map[string]bool{"club": false, "unlaunched": false, "asked": true})
+	for _, name := range []string{"club", "unlaunched"} {
+		if subs, _ := fs.List(name); len(subs) != 0 {
+			t.Errorf("%s kept %d submission(s) nobody was offered the form for", name, len(subs))
+		}
+	}
+	members, err := member.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Members = &Members{Store: members, Mode: "open", Party: memberSiteParty}
+	answers("membership open", map[string]bool{"club": true, "unlaunched": false})
 }
