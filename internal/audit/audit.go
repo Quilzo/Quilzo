@@ -53,7 +53,9 @@
 //
 // Content bodies, tool arguments and token secrets are never written at all.
 // Redaction is for values that must be recorded but not read; the right
-// treatment for a credential is not to log it.
+// treatment for a credential is not to log it. Nor is the user, password,
+// query or fragment of an address a record carries: those are written as
+// "…" wherever the address stands (addresses.go).
 package audit
 
 import (
@@ -503,6 +505,7 @@ func replaceWord(s, word, with string) string {
 // writes them: what anybody reading the log, or a stream of it, sees.
 func AsWritten(key []byte, r Record) (string, map[string]string) {
 	l := &Log{key: key}
+	r.Resource, r.Detail = withoutCredentials(r.Resource), detailWithoutCredentials(r.Detail)
 	people := r.people()
 	return l.namedIn(r.Resource, people), l.pseudonymDetail(r.Detail, people)
 }
@@ -633,6 +636,9 @@ func (l *Log) Append(r Record) (*Event, error) {
 			return nil, fmt.Errorf("%s", why)
 		}
 	}
+	// No address is written with the credentials it can carry, whoever
+	// wrote the record (withoutCredentials).
+	r.Resource, r.Detail = withoutCredentials(r.Resource), detailWithoutCredentials(r.Detail)
 
 	l.mu.Lock()
 	defer l.mu.Unlock()

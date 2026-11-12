@@ -2661,6 +2661,12 @@ than for one that has to be described.
   the whole address. The screen registers an endpoint by the rule `quilzo
   webhook add` does: https, no credentials in the address, an address outside
   this network, and only event types that are sent.
+- **No address is written with its credentials.** Wherever an address stands
+  in a record (a detail of its own, a sentence, an error, the resource), its
+  user and password are written as `…@`, its query as `?…` and its fragment as
+  `#…`, whichever surface wrote the record, so neither the log nor any export
+  of it holds a password, a `?token=` or an `#access_token=`. Entries written
+  before keep what they were written with, because the chain covers them.
 - **GDPR.** Article 20 asks for a structured, machine-readable format; export is
   tested by round trip, which is a higher bar than the law sets. Article 17 is
   why form submissions deliberately do not live in the merkle store — an
