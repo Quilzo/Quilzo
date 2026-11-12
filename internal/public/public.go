@@ -1105,6 +1105,20 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 		if st.detailRoute(w, r, pages, name) {
 			return
 		}
+		// The site's agent interface, asked for by any method but the POST
+		// it takes (nlwebMCP). Its transport has a client open GET /mcp for
+		// messages from the server and requires a server with none to answer
+		// 405, as the admin's endpoint does. This answered the site's HTML
+		// 404, which a client takes for a server that is gone, and counted
+		// the site's own address as somebody hunting for the admin's. Here,
+		// after the redirects and the pages, so a page published at /mcp is
+		// still served there.
+		if r.URL.Path == "/mcp" && st.searchIndex() != nil {
+			w.Header().Set("Allow", http.MethodPost)
+			w.Header().Set("Cache-Control", "no-store")
+			http.Error(w, "the site's agent interface takes POST only", http.StatusMethodNotAllowed)
+			return
+		}
 		// The site's own 404, not Go's plain-text one. This is the route a
 		// visitor reaches from a stale link; the asset and JSON routes above
 		// keep the plain response, because a stylesheet request answered with

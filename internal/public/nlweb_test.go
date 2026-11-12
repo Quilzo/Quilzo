@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/mcp"
 	"github.com/quilzo/quilzo/internal/search"
@@ -247,5 +248,52 @@ func TestTheToolKnowsTheSitesOwnOriginWithItsPortWritten(t *testing.T) {
 		if (w.Code != http.StatusForbidden) != allowed {
 			t.Errorf("Origin %s: %d", origin, w.Code)
 		}
+	}
+}
+
+// The site's agent interface is POST /mcp, and the transport it speaks has a
+// client open GET /mcp for messages from the server and requires a server
+// with none to send to answer 405. Every method but POST fell through to the
+// page handler, which answered the site's HTML 404 (a client takes that for
+// a server that is gone) and counted /mcp as somebody hunting for the admin,
+// so a visitor's agent following the transport was one address from being
+// slowed down. A page published at /mcp is still served there.
+func TestTheSitesAgentInterfaceTakesPOSTAndSaysSo(t *testing.T) {
+	st := nlwebSite(t)
+	clock := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
+	heard := watching(st, &clock)
+	for _, m := range []string{http.MethodGet, http.MethodHead, http.MethodDelete, http.MethodOptions, http.MethodPut} {
+		req := httptest.NewRequest(m, "/mcp", nil)
+		req.Header.Set("Accept", "text/event-stream")
+		req.RemoteAddr = "203.0.113.9:4000"
+		w := httptest.NewRecorder()
+		st.Handler().ServeHTTP(w, req)
+		if w.Code != http.StatusMethodNotAllowed || w.Header().Get("Allow") != "POST" ||
+			strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") {
+			t.Errorf("%s /mcp answered %d, Allow %q, %s", m, w.Code, w.Header().Get("Allow"), w.Header().Get("Content-Type"))
+		}
+	}
+	// Two of the admin's addresses besides, under the threshold of three.
+	from(st, http.MethodGet, "/signin", "203.0.113.9", nil)
+	from(st, http.MethodGet, "/tokens", "203.0.113.9", nil)
+	if len(*heard) != 0 {
+		t.Fatalf("heard %v; the site's own agent interface is no admin address", *heard)
+	}
+	// The interface itself still answers.
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	st.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"result"`) {
+		t.Fatalf("POST /mcp: %d %s", w.Code, w.Body.String())
+	}
+
+	pages := map[string]any{"index": map[string]any{"title": "Home"},
+		"mcp": map[string]any{"title": "Our MCP guide"}}
+	withPage := published(t, pages)
+	withPage.Search = search.Build(withPage.Store.GetRef(site.RefLive), pages)
+	if w := get(withPage, "/mcp", nil); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "Our MCP guide") {
+		t.Fatalf("the page published at /mcp answered %d", w.Code)
 	}
 }
