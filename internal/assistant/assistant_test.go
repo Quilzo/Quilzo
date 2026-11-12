@@ -799,6 +799,7 @@ func TestAnOppositeIsKnownInTheFormsItIsWrittenIn(t *testing.T) {
 	cards := hit("Zqvel tea room", "Card payments are accepted.")
 	loaf := hit("Zqvel bread", "The Zqvel loaf is gluten free and dairy free. Under 12s eat free.")
 	calls := hit("Zqvel help", "Feel free to call the Zqvel help line, where calls are charged at the local rate.")
+	postage := hit("Zqvel returns", "You pay for return postage to the Zqvel depot.")
 	expectVerdicts(t, []verdict{
 		{charged, "Delivery is always free on every order [1].", `"free"`},
 		{charged, "Delivery is completely free on every order [1].", `"free"`},
@@ -814,6 +815,7 @@ func TestAnOppositeIsKnownInTheFormsItIsWrittenIn(t *testing.T) {
 		{vat, "All teas include VAT [1].", `"include"`},
 		{cards, "Card payments are declined [1].", `"declined"`},
 		{calls, "Calls to the Zqvel help line are free [1].", `"free"`},
+		{postage, "Return postage to the Zqvel depot is free [1].", `"free"`},
 		// What the page says, and a "free" that is no price.
 		{charged, "We charge for delivery on every order [1].", ""},
 		{charge, "Delivery is charged on every order [1].", ""},
@@ -824,6 +826,8 @@ func TestAnOppositeIsKnownInTheFormsItIsWrittenIn(t *testing.T) {
 		{loaf, "The Zqvel loaf is gluten free [1].", ""},
 		{loaf, "Under 12s eat free [1].", ""},
 		{calls, "Calls to the Zqvel help line are charged at the local rate [1].", ""},
+		{postage, "You pay for return postage to the Zqvel depot [1].", ""},
+		{postage, "Return postage to the Zqvel depot is paid by you [1].", ""},
 	})
 }
 

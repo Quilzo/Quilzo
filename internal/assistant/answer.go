@@ -1208,12 +1208,14 @@ const (
 //
 // And each in the forms a page writes it in, not only the one a test
 // happened to use: "We charge for delivery", "Delivery charges apply" and
-// "Delivery costs extra" say what "Delivery is charged" does, and "Prices
-// are exclusive of VAT" and "excl. VAT" what "Prices exclude VAT" does;
+// "Delivery costs extra" say what "Delivery is charged" does, "You pay for
+// return postage" what "Return postage is paid" does, and "Prices are
+// exclusive of VAT" and "excl. VAT" what "Prices exclude VAT" does;
 // "Delivery is free" was shown for each.
 var opposites = map[string]string{
 	"clos": "open", "close": "open", "shut": "open",
-	"charg": "free", "charge": "free", "chargeable": "free", "paid": "free", "cost": "free",
+	"charg": "free", "charge": "free", "chargeable": "free", "cost": "free",
+	"pay": "free", "paid": "free",
 	"ban": "allow", "bann": "allow", "forbid": "allow", "forbidden": "allow",
 	"prohibit": "allow", "disallow": "allow",
 	"refus": "accept", "refuse": "accept", "reject": "accept",
