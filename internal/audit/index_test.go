@@ -351,6 +351,35 @@ func TestARecordBeingWrittenIsNotACrash(t *testing.T) {
 	}
 }
 
+// A reader makes no lock. The lock is the writers' alone, and a reader
+// waits at it only where one is: a log copied somewhere to be checked, or
+// put back from a backup, has none beside it, and a last line cut short in
+// it is the crash it looks like. What a store holds beside a log is also
+// how verify-head tells a log removed whole from one that was never there
+// (logWasHere, in cmd/quilzo), so a reader that made the lock to look at a
+// line with no end would leave that mark wherever it had read.
+func TestAReaderMakesNoLock(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.jsonl")
+	appendRecords(t, path, 0, 3)
+	if err := os.Remove(path + ".lock"); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.WriteString(`{"seq":4,"at":"2026-10`)
+	f.Close()
+
+	s := sameAsRead(t, NewIndex(path), path, "a line a crash left, and no lock beside the log")
+	if s == nil || s.Len() != 3 || !s.Report().Crashed() {
+		t.Errorf("a line a crash left in a log with no lock beside it is not read as one")
+	}
+	if _, err := os.Stat(path + ".lock"); !os.IsNotExist(err) {
+		t.Errorf("reading the log made the writers' lock beside it (%v)", err)
+	}
+}
+
 // A look refuses a line where Read refuses it, to the byte. Read takes a
 // line of up to four megabytes with its line end, and a last line without
 // one if it is shorter than that; a look took up to the next 64 KB past
