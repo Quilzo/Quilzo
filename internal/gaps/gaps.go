@@ -122,7 +122,49 @@ var (
 	reNamed      = regexp.MustCompile(`((?i:\bmy name(?: is|'s|’s)\s+))\p{L}[\p{L}'’-]*(?:\s+\p{L}[\p{L}'’-]*)?`)
 	reStreet     = regexp.MustCompile(`\b\d{1,5}[A-Za-z]?,?\s+(?:\p{Lu}[\p{L}'’-]*\s+){1,3}(?:(?i:street|road|lane|avenue|drive|close|way|place|court|crescent|terrace|gardens|grove|square|boulevard|hill|row|mews|walk|park)\b|(?i:st|rd|ln|ave|dr|pl|ct|blvd)\b\.?)`)
 	rePostcode   = regexp.MustCompile(`(?i)\b[a-z]{1,2}\d[a-z\d]?\s*\d[a-z]{2}\b|\b\d{5}-\d{4}\b|\b[A-Z]{2}\s+\d{5}\b`)
+
+	// A name after its title, wherever it stands, and an address typed
+	// without its capitals. "Order for Mr Peter Zqhill has not arrived" says
+	// who without saying "I am", and "i am janet zqwood, 14 rose lane, leeds"
+	// is how an address is typed into a chat box on a telephone: each was
+	// kept whole, and named the page offered for it.
+	//
+	// A title names a person when a forename and a surname follow it, so
+	// "Dr Martens boots" and "Mr Kipling cake" are still what was asked
+	// about. And a figure before a road is a house only before the words
+	// that are a street's and nothing else's, with a name between them:
+	// "3 miles down the road" and "a 5 minute walk" are not addresses
+	// (notAStreet).
+	reTitled      = regexp.MustCompile(`\b(?:Mr|Mrs|Ms|Miss|Dr|Prof|Sir|Dame)\b\.?\s+\p{Lu}[\p{L}'’-]*\s+\p{Lu}[\p{L}'’-]*`)
+	reStreetTyped = regexp.MustCompile(`(?i)\b\d{1,5}[a-z]?,?\s+((?:[\p{L}'’-]+\s+){1,3})(?:street|road|lane|avenue|boulevard|mews)\b`)
 )
+
+// notAStreet are the words between a figure and "road" that make it a
+// distance, a time or a turn of phrase, not a house on one.
+var notAStreet = map[string]bool{
+	"the": true, "a": true, "an": true, "of": true, "for": true, "to": true,
+	"in": true, "on": true, "at": true, "up": true, "down": true, "from": true,
+	"and": true, "or": true, "per": true, "along": true, "off": true,
+	"way": true, "mile": true, "miles": true, "minute": true, "minutes": true,
+	"min": true, "mins": true, "hour": true, "hours": true, "door": true,
+	"doors": true, "yard": true, "yards": true, "metre": true, "metres": true,
+	"meter": true, "meters": true, "km": true,
+}
+
+// typedStreet masks an address reStreetTyped found, unless a word of it
+// says it is none.
+func typedStreet(found string) string {
+	m := reStreetTyped.FindStringSubmatch(found)
+	if m == nil {
+		return found
+	}
+	for _, w := range strings.Fields(strings.ToLower(m[1])) {
+		if notAStreet[w] {
+			return found
+		}
+	}
+	return "[address]"
+}
 
 // Clean is a question as it is kept: personal data masked, whitespace
 // collapsed, cut at MaxQuestion. allowed are the site's own email domains,
@@ -132,7 +174,9 @@ func Clean(q string, allowed []string) string {
 	q = rePlaceholder.ReplaceAllString(m.Mask(q, false), "[$1]")
 	q = reIntroduced.ReplaceAllString(q, "${1}[name]")
 	q = reNamed.ReplaceAllString(q, "${1}[name]")
+	q = reTitled.ReplaceAllString(q, "[name]")
 	q = reStreet.ReplaceAllString(q, "[address]")
+	q = reStreetTyped.ReplaceAllStringFunc(q, typedStreet)
 	q = rePostcode.ReplaceAllString(q, "[postcode]")
 	q = reDigits.ReplaceAllStringFunc(q, func(s string) string {
 		n := 0

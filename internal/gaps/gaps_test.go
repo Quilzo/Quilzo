@@ -65,6 +65,48 @@ func TestAQuestionIsKeptWithoutTheNameAndAddressItGives(t *testing.T) {
 	}
 }
 
+// An address is one without its capitals, as people type into a chat box,
+// and a name is one after its title wherever it stands. "i am janet zqwood,
+// 14 rose lane, leeds ls1 4ab" was kept with its street, and the page
+// offered for "i am janet zqwood of 14 rose lane leeds and i want to know
+// if you ship to zqbarra" was 14-rose-lane-leeds-and-i-want-to; "Order for
+// Mr Peter Zqhill has not arrived" was kept, and named its page, whole.
+func TestAnAddressTypedWithoutCapitalsAndATitledNameAreTakenOut(t *testing.T) {
+	for q, leaks := range map[string][]string{
+		"do you ship to zqbarra island? i am janet zqwood, 14 rose lane, leeds ls1 4ab":     {"14 rose lane", "rose", "ls1 4ab"},
+		"can you deliver to 22b baker street london":                                        {"22b", "baker"},
+		"i am janet zqwood of 14 rose lane leeds and i want to know if you ship to zqbarra": {"14 rose lane", "rose"},
+		"my parcel for 9 mill road never came":                                              {"9 mill road", "mill"},
+		"Order for Mr Peter Zqhill has not arrived":                                         {"Peter", "Zqhill"},
+		"Can Dr. Ana López collect the order for Mrs Janet Zqwood-Smith from the depot?":    {"Ana", "López", "Janet", "Zqwood"},
+	} {
+		got := Clean(q, nil)
+		for _, leak := range leaks {
+			if strings.Contains(got, leak) {
+				t.Errorf("%q kept %q", got, leak)
+			}
+			if name := Topic(got); strings.Contains(name, leak) {
+				t.Errorf("the page for %q is named %q, with %q in it", q, name, leak)
+			}
+		}
+	}
+	// A figure before a road is not always a house, and a title is not
+	// always a person's.
+	for _, q := range []string{
+		"Is it 3 miles down the road?",
+		"is there a 1 way street near you",
+		"are you 10 minutes up the road from the station",
+		"Is it a 5 minute walk from the station?",
+		"do you sell 2 for the road mugs",
+		"Do you sell Dr Martens boots?",
+		"Is Mr Kipling cake vegan?",
+	} {
+		if got := Clean(q, nil); got != q {
+			t.Errorf("Clean(%q) = %q", q, got)
+		}
+	}
+}
+
 // Questions are grouped by what they are about, most asked first; a group
 // closed stays closed until somebody asks again.
 func TestQuestionsAreGroupedAndClosed(t *testing.T) {
