@@ -497,9 +497,17 @@ type State struct {
 	// publish guarded on `s.Audit == nil` and could therefore never fire.
 	// A deployment whose log path is unwritable, which is exactly the
 	// deployment that rule exists for, scored clean on it.
-	AuditRead bool              `json:"-"`
-	Files     []FileFact        `json:"files"`
-	Weakened  []WeakenedSetting `json:"weakened,omitempty"`
+	AuditRead bool `json:"-"`
+	// AuditBreaks are what is wrong with the log besides its chain, which
+	// Verify over Audit cannot see: its lines that are not entries, other
+	// than a write a crash cut short, and a head saved beside it that it no
+	// longer extends. A line like that stopped the log being read at all, so
+	// the scan checked nothing about the log, and called it unchecked,
+	// however it had come to be there; entries removed from the end leave a
+	// chain that verifies, and the scan called the log sound.
+	AuditBreaks []audit.Problem   `json:"-"`
+	Files       []FileFact        `json:"files"`
+	Weakened    []WeakenedSetting `json:"weakened,omitempty"`
 	// Parameters is the organisation's policy and how it is met.
 	Parameters ParameterFacts    `json:"parameters"`
 	Server     ServerFacts       `json:"server"`

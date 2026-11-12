@@ -522,3 +522,19 @@ func TestALogReadsBackItsOwnFileWhileItIsWritten(t *testing.T) {
 		t.Errorf("the chain read back does not verify: %v", problems)
 	}
 }
+
+// An act renamed so that it has one name on every surface is read under its
+// new name, whichever it was written with, and every other name is left as
+// it is.
+func TestAnActsOldNamesAreReadAsItsNameNow(t *testing.T) {
+	for old, now := range map[string]string{
+		"access.grant": "auth.granted", "access.revoke": "auth.revoke", "siem.export": "auditlog.export",
+		"memory.deleteed": "memory.deleted", "memory.deleted": "memory.deleted",
+		"approval.approve": "review.approve", "template.install": "template.use", "ipfs.bundle": "ipfs.write",
+		"auth.granted": "auth.granted", "auth.denied": "auth.denied", "publish": "publish",
+	} {
+		if got := Canonical(old); got != now {
+			t.Errorf("Canonical(%q) = %q, want %q", old, got, now)
+		}
+	}
+}

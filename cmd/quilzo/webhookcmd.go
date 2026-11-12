@@ -76,29 +76,22 @@ func hookAdd(root string, args []string) error {
 	if len(pos) != 1 {
 		return fmt.Errorf("usage: quilzo webhook add https://receiver.example/hook")
 	}
-	if _, err := fetch.For("webhook").ValidateURL(pos[0]); err != nil {
-		return fmt.Errorf("that endpoint is not usable: %w", err)
+	e := webhook.Endpoint{URL: pos[0], Note: *note}
+	for _, t := range strings.Split(*types, ",") {
+		if t = strings.TrimSpace(t); t != "" {
+			e.Types = append(e.Types, t)
+		}
 	}
-
+	// The rule the Integrations screen and a feature's webhooks are held
+	// to as well (webhook.Check).
+	if err := webhook.Check(e.URL, e.Types); err != nil {
+		return err
+	}
 	secret, err := webhook.NewSecret()
 	if err != nil {
 		return err
 	}
-	e := webhook.Endpoint{URL: pos[0], Secret: secret, Note: *note}
-	for _, t := range strings.Split(*types, ",") {
-		if t = strings.TrimSpace(t); t == "" {
-			continue
-		}
-		if !webhook.KnownType(t) {
-			return fmt.Errorf(
-				"%q is not an event this sends. The types are %s, or each "+
-					"one's event name (page.published, booking.made) — an "+
-					"endpoint subscribed to something that never happens is "+
-					"configured, reported as configured, and silent",
-				t, strings.Join(webhook.EventTypes, ", "))
-		}
-		e.Types = append(e.Types, t)
-	}
+	e.Secret = secret
 
 	if err := updateHooks(root, func(f *hookFile) error {
 		for _, existing := range f.Endpoints {
@@ -116,10 +109,12 @@ func hookAdd(root string, args []string) error {
 	record(root, audit.Record{
 		Action: "webhook.add", Resource: "/", Outcome: audit.Success,
 		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
-		// The URL, never the shared value. The audit package refuses any Detail
-		// key containing "secret", which is what stops this being added later
-		// by somebody being helpful.
-		Detail: map[string]string{"endpoint": e.URL},
+		// The host and a reference, never the shared value and never the
+		// whole address (webhook.LogForm): the path or query of an address
+		// can be a credential of its own. The audit package refuses any
+		// Detail key containing "secret", which is what stops the shared
+		// value being added later by somebody being helpful.
+		Detail: map[string]string{"endpoint": webhook.LogForm(e.URL), "endpoint_ref": webhook.Ref(e)},
 	})
 
 	// The endpoint and its key under --json. This wrote the key only for a
@@ -143,12 +138,13 @@ func hookRemove(root string, args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("usage: quilzo webhook remove <url>")
 	}
+	var removed webhook.Endpoint
 	if err := updateHooks(root, func(f *hookFile) error {
 		kept := f.Endpoints[:0]
 		found := false
 		for _, e := range f.Endpoints {
 			if e.URL == args[0] {
-				found = true
+				found, removed = true, e
 				continue
 			}
 			kept = append(kept, e)
@@ -165,7 +161,8 @@ func hookRemove(root string, args []string) error {
 	record(root, audit.Record{
 		Action: "webhook.remove", Resource: "/", Outcome: audit.Success,
 		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
-		Detail: map[string]string{"endpoint": args[0]},
+		// As webhook.add records it, so the two line up by endpoint_ref.
+		Detail: map[string]string{"endpoint": webhook.LogForm(removed.URL), "endpoint_ref": webhook.Ref(removed)},
 	})
 	w.Human("removed\n")
 	return nil

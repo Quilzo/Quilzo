@@ -204,9 +204,11 @@ func (s *Server) signHead(conn net.Conn, req HeadRequest, uid int, deadline time
 		// tampered with still commits to what the file holds, and that is
 		// what makes the tampering provable against a head published
 		// before it. A writer that refused would stop the stream at the
-		// moment somebody most needs it.
+		// moment somebody most needs it. Over the whole entries, as the
+		// client counts them: a line a crash left unfinished is not one,
+		// and it stopped every head after it (audit.Entries).
 		var err error
-		if events, err = s.Log.Events(); err != nil {
+		if events, err = audit.Entries(s.Log.Events()); err != nil {
 			s.refuse(conn, "the log cannot be read back to sign a head over it: "+err.Error(), uid)
 			return
 		}

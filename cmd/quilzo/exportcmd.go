@@ -100,6 +100,21 @@ func cmdExport(root string, args []string) error {
 	return nil
 }
 
+// recordAuditLogExport is how the command line records an export of the
+// audit log, for siem.ExportRecorded: auditlog.export, by whoever ran the
+// command, with the detail every export of the log has. `quilzo siem` and
+// `quilzo auditlog export` both record through it.
+func recordAuditLogExport(root string) func(map[string]string) {
+	return func(detail map[string]string) {
+		caller := resolveCaller(root, "")
+		record(root, audit.Record{
+			Action: "auditlog.export", Resource: "/", Outcome: audit.Success,
+			Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
+			Detail: detail,
+		})
+	}
+}
+
 func cmdSiem(root string, args []string) error {
 	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("siem", flag.ContinueOnError)
@@ -118,35 +133,22 @@ func cmdSiem(root string, args []string) error {
 		format = siem.Format(pos[0])
 	}
 
-	events, err := audit.Read(auditPath(root))
+	events, err := exportedEntries(root)
 	if err != nil {
 		return err
-	}
-
-	res, err := siem.Export(format, events, siem.Options{
-		Reveal: *reveal, Since: *since, Until: *until,
-	}, time.Now())
-	if err != nil {
-		return errBlocked{err}
 	}
 
 	// The export is itself an event. An export that quietly re-identified
 	// people would be a privacy failure with a paper trail pointing the wrong
 	// way, so asking for identifiers is recorded whether or not it worked.
-	caller := resolveCaller(root, "")
-	record(root, audit.Record{
-		Action: "auditlog.export", Resource: "/", Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
-		Detail: map[string]string{
-			"format": string(format),
-			"events": fmt.Sprintf("%d", res.Count),
-			"range":  fmt.Sprintf("%d-%d", res.Chain.FirstSeq, res.Chain.LastSeq),
-			// Named plainly, because "reveal=true" in an audit log is the line
-			// somebody needs to find.
-			"identifiers_requested": fmt.Sprintf("%t", *reveal),
-			"pseudonymous":          fmt.Sprintf("%t", res.Chain.Pseudonymous),
-		},
-	})
+	// Through the one export of the log, which records it as every other
+	// export of the log is (siem.ExportRecorded).
+	res, err := siem.ExportRecorded(format, events, siem.Options{
+		Reveal: *reveal, Since: *since, Until: *until,
+	}, time.Now(), recordAuditLogExport(root))
+	if err != nil {
+		return errBlocked{err}
+	}
 
 	if *envelopePath != "" {
 		body, err := json.MarshalIndent(res.Chain, "", "  ")

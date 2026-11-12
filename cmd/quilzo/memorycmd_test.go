@@ -362,3 +362,71 @@ func TestAReadOnlyTokenChangesNoMemory(t *testing.T) {
 		t.Fatal("confirmed, the memory is still held")
 	}
 }
+
+// A memory deleted from the command line is recorded as memory.deleted, as
+// the Memory screen records it, and is in the person's receipt.
+//
+// The name was made by adding "ed" to the subcommand, so `memory delete`
+// wrote memory.deleteed: the receipt, which proves everything forgotten,
+// deleted or rewritten about somebody, selects memory.deleted, and left out
+// every deletion made from a terminal while saying it was complete.
+func TestAMemoryDeletedFromTheCommandLineIsInTheReceipt(t *testing.T) {
+	root, _ := identityStore(t)
+	st := memoryStore(root)
+	e, err := st.Remember(memory.Entry{Agent: "helper", About: "dana", Kind: memory.Semantic,
+		Text: "Dana prefers French", Run: "r1", By: "dana", Tier: memory.TierPerson}, 30*24*time.Hour, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	toks := &auth.TokenStore{}
+	secret, _, err := toks.Issue("dana", "dana", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveJSON(tokensPath(root), toks); err != nil {
+		t.Fatal(err)
+	}
+	defer func(old string) { flagToken = old }(flagToken)
+	flagToken = secret
+	if err := cmdMemory(root, []string{"delete", e.ID}); err != nil {
+		t.Fatal(err)
+	}
+	events, err := audit.Read(auditPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var actions []string
+	for _, ev := range events {
+		if strings.HasPrefix(ev.Action, "memory.") {
+			actions = append(actions, ev.Action)
+		}
+	}
+	if len(actions) != 1 || actions[0] != "memory.deleted" {
+		t.Errorf("memory delete recorded %v, not memory.deleted", actions)
+	}
+	rf, err := buildMemoryReceipt(root, "dana", time.Now())
+	if err != nil || rf == nil || len(rf.Entries) != 1 {
+		t.Fatalf("the deletion is not in dana's receipt: %v %+v", err, rf)
+	}
+}
+
+// A deletion already recorded under the misspelt name is in the receipt
+// too: the log cannot be rewritten, so the name it was written with is read
+// as the one it should have had.
+func TestAMemoryDeletionRecordedUnderTheOldNameIsInTheReceipt(t *testing.T) {
+	root, _ := identityStore(t)
+	if err := recordE(root, audit.Record{Action: "memory.deleteed", Resource: "/memory", Outcome: audit.Success,
+		Principal: "dana", Kind: audit.KindHuman, Verified: true,
+		Detail: map[string]string{"memory": "m_1", "agent": "helper", "subject": "dana"}}); err != nil {
+		t.Fatal(err)
+	}
+	rf, err := buildMemoryReceipt(root, "dana", time.Now())
+	if err != nil || rf == nil || len(rf.Entries) != 1 {
+		t.Fatalf("a deletion recorded as memory.deleteed is not in dana's receipt: %v %+v", err, rf)
+	}
+	// And the receipt that holds it checks: it was refused by its own
+	// check as a record that "is not about dana's memory".
+	if c := checkReceipt(rf, nil); len(c.Problems) != 0 {
+		t.Errorf("the receipt does not check: %v", c.Problems)
+	}
+}

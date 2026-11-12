@@ -532,7 +532,7 @@ func cmdServe(root string, args []string) error {
 			return saveExts(root, &extFile{Extensions: m})
 		},
 		Pin:    ext.Pin,
-		Events: func() ([]audit.Event, error) { return audit.Read(auditPath(root)) },
+		Events: func() ([]audit.Event, error) { return auditEntries(root) },
 		Provider: func() (string, string, string, string, bool, bool) {
 			c, err := loadOIDC(root)
 			if err != nil || c == nil {
@@ -602,7 +602,7 @@ func cmdServe(root string, args []string) error {
 			return true, kr.Active, kr.IDs()
 		},
 		Agents: func() ([]agentwatch.Report, error) {
-			events, err := audit.Read(auditPath(root))
+			events, err := auditEntries(root)
 			if err != nil {
 				return nil, err
 			}
@@ -1285,6 +1285,9 @@ func logPageHooks(srv *admin.Server, root string, pol *auth.Policy, toks *auth.T
 	srv.LoadAudit = func() ([]audit.Event, error) {
 		return audit.Read(auditPath(root))
 	}
+	// The heads saved beside the log, which the page checks it against as
+	// well as along its chain (admin.Server.SavedHeads).
+	srv.SavedHeads = func() ([]audit.Head, error) { return savedHeads(root) }
 	// Read through an index, so a view reads what was appended since the
 	// last one rather than the whole log (audit.Index). One for each place
 	// the log has been, because `auditlog dir` can move it while this runs.

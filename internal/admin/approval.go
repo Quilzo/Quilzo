@@ -443,7 +443,10 @@ func (s *Server) handleApprove(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.auditPub(p, "approval.approve", "/", map[string]string{
+	// review.approve, as `quilzo review approve` writes it. This wrote
+	// approval.approve, so whatever looked for an approval under the
+	// command line's name missed every one given in the browser.
+	s.auditPub(p, "review.approve", "/", map[string]string{
 		"commit": shortHash(prop.Content), "alone": strconv.FormatBool(alone)})
 	s.approvalRedirect(w, r, "recorded", "")
 }

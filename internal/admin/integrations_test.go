@@ -105,8 +105,10 @@ func TestTheSIEMDownloadCarriesItsEnvelopeAndSaysWhatItReveals(t *testing.T) {
 	events := siemLog(t)
 	srv.Integrations = &Integrations{Events: func() ([]audit.Event, error) { return events, nil }}
 	var recorded []map[string]string
+	// Under the one name the act has on every surface, auditlog.export,
+	// which it was written as siem.export from here before (audit.Canonical).
 	srv.Audit = func(action, resource string, d map[string]string) {
-		if action == "siem.export" {
+		if action == "auditlog.export" {
 			recorded = append(recorded, d)
 		}
 	}
@@ -170,4 +172,73 @@ func keysOf(m map[string][]byte) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// An export of the audit log from the Integrations screen is recorded as
+// auditlog.export, with the detail `quilzo siem` and `quilzo auditlog
+// export` record, and keeps the revealed it was recorded with before.
+//
+// It was siem.export, with only the format, the count and revealed, so a
+// rule or a filter for auditlog.export missed every export made in the
+// browser, and the range the export covered was not recorded at all.
+//
+// The log is kept with a key, as every log this program keeps is, so what
+// leaves is pseudonymous and no identifier is revealed. One kept without a
+// key, which names people as they are, is recorded as revealing them, as
+// the envelope says (TestTheSIEMDownloadCarriesItsEnvelopeAndSaysWhatItReveals).
+func TestAnExportFromTheScreenIsRecordedAsTheCommandLinesAre(t *testing.T) {
+	srv, token := setup(t)
+	dir := t.TempDir()
+	key, _ := audit.NewKey()
+	l, err := audit.New(audit.Options{Path: dir + "/a.jsonl", Key: key, Source: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		if _, err := l.Append(audit.Record{Action: "publish", Resource: "/", Outcome: audit.Success,
+			Principal: "dana", Kind: audit.KindHuman, Verified: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	events, err := audit.Read(dir + "/a.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.Integrations = &Integrations{Events: func() ([]audit.Event, error) { return events, nil }}
+	var action string
+	var detail map[string]string
+	srv.Audit = func(a, _ string, d map[string]string) { action, detail = a, d }
+
+	if w := postForm(t, srv, "/integrations/siem", token, "format=jsonl"); w.Code != http.StatusOK {
+		t.Fatalf("the export answered %d", w.Code)
+	}
+	if action != "auditlog.export" {
+		t.Errorf("the export was recorded as %q", action)
+	}
+	for k, want := range map[string]string{"format": "jsonl", "events": "3", "range": "1-3",
+		"identifiers_requested": "false", "pseudonymous": "true", "revealed": "false"} {
+		if detail[k] != want {
+			t.Errorf("the record's %s is %q, want %q (%v)", k, detail[k], want, detail)
+		}
+	}
+
+	clear := t.TempDir()
+	l, err = audit.New(audit.Options{Path: clear + "/a.jsonl", Source: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.Append(audit.Record{Action: "publish", Resource: "/", Outcome: audit.Success,
+		Principal: "dana", Kind: audit.KindHuman, Verified: true}); err != nil {
+		t.Fatal(err)
+	}
+	if events, err = audit.Read(clear + "/a.jsonl"); err != nil {
+		t.Fatal(err)
+	}
+	if w := postForm(t, srv, "/integrations/siem", token, "format=jsonl"); w.Code != http.StatusOK {
+		t.Fatalf("the export answered %d", w.Code)
+	}
+	if action != "auditlog.export" || detail["pseudonymous"] != "false" || detail["revealed"] != "true" ||
+		detail["identifiers_requested"] != "false" {
+		t.Errorf("an export of a log that names people as they are was recorded as %s %v", action, detail)
+	}
 }

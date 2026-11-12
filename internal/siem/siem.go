@@ -46,6 +46,7 @@
 package siem
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -82,6 +83,12 @@ type Options struct {
 	Since, Until int64
 	// Product identifies this system to the receiving SIEM.
 	Product, Vendor, Version string
+	// AsStored exports every event as the log stores it, in the order it
+	// stores them, without verifying the chain first: what `quilzo auditlog
+	// export` writes, so a log whose chain is broken can still be taken
+	// away and examined, which an export to a SIEM refuses to do. JSON
+	// Lines only, and no range; an empty log is an empty export.
+	AsStored bool
 }
 
 func (o Options) withDefaults() Options {
@@ -141,6 +148,9 @@ type Envelope struct {
 // Export renders events.
 func Export(f Format, events []audit.Event, opt Options, now time.Time) (*Result, error) {
 	opt = opt.withDefaults()
+	if opt.AsStored {
+		return exportAsStored(f, events, opt, now)
+	}
 
 	all := append([]audit.Event{}, events...)
 	sort.Slice(all, func(i, j int) bool { return all[i].Seq < all[j].Seq })
@@ -206,6 +216,76 @@ func Export(f Format, events []audit.Event, opt Options, now time.Time) (*Result
 	}
 	return &Result{Body: body, Chain: env, Count: len(selected),
 		Redacted: env.Pseudonymous}, nil
+}
+
+// exportAsStored is Export with Options.AsStored: the events as they are,
+// unverified and unsorted, through the one serializer.
+func exportAsStored(f Format, events []audit.Event, opt Options, now time.Time) (*Result, error) {
+	if f != JSONL {
+		return nil, fmt.Errorf("the log as it is stored is JSON Lines; %q is not jsonl", f)
+	}
+	if opt.Since > 0 || opt.Until > 0 {
+		return nil, fmt.Errorf("the log as it is stored is the whole log, not a range")
+	}
+	// What was sent, as Export's envelope says it (pseudonymous), and not
+	// what was asked for.
+	env := Envelope{Pseudonymous: pseudonymous(events), ExportedAt: now.UTC().Format(time.RFC3339)}
+	if n := len(events); n > 0 {
+		env.AnchorPrev, env.FirstSeq, env.FirstHash = events[0].Prev, events[0].Seq, events[0].Hash
+		env.LastSeq, env.LastHash = events[n-1].Seq, events[n-1].Hash
+	}
+	for _, e := range events {
+		env.Hashes = append(env.Hashes, e.Hash)
+	}
+	body, err := renderJSONL(events, opt)
+	if err != nil {
+		return nil, err
+	}
+	return &Result{Body: body, Chain: env, Count: len(events), Redacted: env.Pseudonymous}, nil
+}
+
+// ExportRecorded is Export and the record of it: the one way the audit log
+// leaves, on every surface. `quilzo siem`, `quilzo auditlog export` (with
+// AsStored) and the Integrations screen each call it, and record is called
+// once, with the detail every export of the log is recorded with
+// (exportDetail), for an export that was made and never for one that was
+// refused. The caller writes that detail as auditlog.export, under its own
+// identity.
+//
+// There were three exports. `quilzo siem` recorded auditlog.export with the
+// format, the count, the range and whether identifiers were asked for, the
+// screen siem.export with the format and the count, and `quilzo auditlog
+// export`, which wrote the log by another serializer of its own, recorded
+// nothing, so a rule or a reader looking for the log leaving found one way
+// of it leaving.
+func ExportRecorded(f Format, events []audit.Event, opt Options, now time.Time,
+	record func(detail map[string]string)) (*Result, error) {
+	res, err := Export(f, events, opt, now)
+	if err != nil {
+		return nil, err
+	}
+	record(exportDetail(f, res, opt))
+	return res, nil
+}
+
+// exportDetail is what the record of an export of the audit log says: the
+// format ("raw" for the log as it is stored), how many events, the range of
+// sequence numbers they cover, whether identifiers were asked for, and
+// whether what left is pseudonymous.
+func exportDetail(f Format, res *Result, opt Options) map[string]string {
+	format := string(f)
+	if opt.AsStored {
+		format = "raw"
+	}
+	return map[string]string{
+		"format": format,
+		"events": fmt.Sprint(res.Count),
+		"range":  fmt.Sprintf("%d-%d", res.Chain.FirstSeq, res.Chain.LastSeq),
+		// Named plainly, because "reveal=true" in an audit log is the line
+		// somebody needs to find.
+		"identifiers_requested": fmt.Sprint(opt.Reveal),
+		"pseudonymous":          fmt.Sprint(res.Chain.Pseudonymous),
+	}
 }
 
 // principal returns the identifier to emit: the one the log holds, whether
@@ -470,9 +550,14 @@ func apiOf(e audit.Event, opt Options) map[string]any {
 	return api
 }
 
+// classFor files an event by the name its act has now (audit.Canonical), so
+// a grant written as access.grant before it was named auth.granted is
+// identity and access, as the act is. The name it was written with is what
+// the export carries.
 func classFor(e audit.Event) int {
-	if strings.HasPrefix(e.Action, "auth") || strings.HasPrefix(e.Action, "token") ||
-		strings.HasPrefix(e.Action, "signin") {
+	a := audit.Canonical(e.Action)
+	if strings.HasPrefix(a, "auth") || strings.HasPrefix(a, "token") ||
+		strings.HasPrefix(a, "signin") {
 		return classAuthentication
 	}
 	return classAPIActivity
@@ -497,21 +582,23 @@ func activityFor(e audit.Event) int {
 		}
 		return 2
 	}
-	switch e.Action {
+	// By the act's name now, as classFor files it.
+	a := audit.Canonical(e.Action)
+	switch a {
 	case "oauth.consent", "oauth.connected", "oauth.allow-host", "oauth.app-registered":
 		return 1
 	case "oauth.disconnected", "oauth.disallow-host", "oauth.remove-host", "oauth.app-removed", "oauth.refresh-reused":
 		return 4
 	}
 	switch {
-	case strings.Contains(e.Action, "delete"), strings.Contains(e.Action, "revoke"),
-		strings.Contains(e.Action, "rollback"):
+	case strings.Contains(a, "delete"), strings.Contains(a, "revoke"),
+		strings.Contains(a, "rollback"):
 		return 4
-	case strings.Contains(e.Action, "add"), strings.Contains(e.Action, "issue"),
-		strings.Contains(e.Action, "import"), strings.Contains(e.Action, "create"):
+	case strings.Contains(a, "add"), strings.Contains(a, "issue"),
+		strings.Contains(a, "import"), strings.Contains(a, "create"):
 		return 1
-	case strings.Contains(e.Action, "read"), strings.Contains(e.Action, "view"),
-		strings.Contains(e.Action, "export"):
+	case strings.Contains(a, "read"), strings.Contains(a, "view"),
+		strings.Contains(a, "export"):
 		return 2
 	}
 	return 3
@@ -641,17 +728,18 @@ func cefValue(s string) string {
 
 // -- JSON Lines --------------------------------------------------------------
 
+// renderJSONL writes the events through audit.Export, the one JSON Lines
+// serializer, so the export and the log as it is stored are the same bytes
+// wherever nothing in them was changed for the export.
 func renderJSONL(events []audit.Event, opt Options) (string, error) {
-	var b strings.Builder
-	for _, e := range events {
-		out := e
-		out.Principal = principal(e, opt)
-		line, err := json.Marshal(out)
-		if err != nil {
-			return "", err
-		}
-		b.Write(line)
-		b.WriteByte('\n')
+	out := make([]audit.Event, len(events))
+	for i, e := range events {
+		out[i] = e
+		out[i].Principal = principal(e, opt)
+	}
+	var b bytes.Buffer
+	if err := audit.Export(out, &b); err != nil {
+		return "", err
 	}
 	return b.String(), nil
 }

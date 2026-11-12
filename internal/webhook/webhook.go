@@ -48,12 +48,15 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	events "github.com/quilzo/quilzo/internal/event"
+	"github.com/quilzo/quilzo/internal/fetch"
 )
 
 // MaxBody bounds a payload. A webhook says what happened; it does not carry
@@ -366,4 +369,118 @@ func SecretHint(secret string) string {
 		return "(too short)"
 	}
 	return secret[:4] + strings.Repeat("·", 8)
+}
+
+// Check is the one rule an endpoint is registered by, wherever it is
+// registered: `quilzo webhook add`, the Integrations screen and a feature's
+// webhooks. The address is held to CheckURL and every type to KnownType.
+//
+// The screen had a rule of its own, that the address began with https://,
+// and so stored an address with a password in it, an address inside the
+// network and a subscription to an event that is never sent, each of which
+// the command line refused. Each was shown as added, with a new key, and
+// nothing could ever be delivered to it.
+func Check(raw string, types []string) error {
+	if err := CheckURL(raw); err != nil {
+		return fmt.Errorf("that endpoint is not usable: %w", err)
+	}
+	for _, t := range types {
+		if !KnownType(t) {
+			return fmt.Errorf(
+				"%q is not an event this sends. The types are %s, or each "+
+					"one's event name (page.published, booking.made) — an "+
+					"endpoint subscribed to something that never happens is "+
+					"configured, reported as configured, and silent",
+				t, strings.Join(EventTypes, ", "))
+		}
+	}
+	return nil
+}
+
+// CheckURL holds an endpoint's address to the rules its deliveries are
+// sent by, those of the fetch client for webhooks, so an address that is
+// accepted is one that can be delivered to.
+//
+// An address that does not parse is refused without being repeated, in
+// whole or in part. The screen shows a refusal through a redirect, which
+// goes into the browser's history and the access log, and the address may
+// be a credential however badly it was typed. The parser's error quotes the
+// part it could not read, and that part is left out too: for a password
+// with a "/" or a "#" in it, it is what the parser took for the port, the
+// password up to that character.
+func CheckURL(raw string) error {
+	if _, err := url.Parse(strings.TrimSpace(raw)); err != nil {
+		var bad *url.Error
+		if errors.As(err, &bad) {
+			err = bad.Err
+		}
+		return fmt.Errorf("that is not a URL: %s", withoutQuoted(err.Error()))
+	}
+	_, err := fetch.For("webhook").ValidateURL(raw)
+	return err
+}
+
+// withoutQuoted is msg with whatever it quotes written as "…".
+func withoutQuoted(msg string) string {
+	var b strings.Builder
+	for {
+		i := strings.IndexByte(msg, '"')
+		if i < 0 {
+			break
+		}
+		b.WriteString(msg[:i] + `"…"`)
+		j := i + 1
+		for j < len(msg) && msg[j] != '"' {
+			if msg[j] == '\\' {
+				j++
+			}
+			j++
+		}
+		if j >= len(msg) {
+			// Never closed: the rest is all quoted.
+			return b.String()
+		}
+		msg = msg[j+1:]
+	}
+	b.WriteString(msg)
+	return b.String()
+}
+
+// LogForm is how an endpoint's address is written in the audit log and in
+// anything else that is kept: its scheme and host, and "/…" in place of
+// any path or query. Ref is what tells two endpoints on one host apart.
+//
+// Never the address itself. The path of an incoming-webhook address
+// (Slack, Teams, Discord) is the credential, whoever has it posts as the
+// site, and many receivers take ?token= for the same thing. The log held
+// the address in full, so the auditor, who reads the log and should change
+// nothing, and every copy of the log forwarded to a SIEM could post as the
+// site. The administrators who saw the address before still see it in full,
+// in `quilzo webhook list` and on the Integrations screen.
+func LogForm(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" {
+		return "(not an address)"
+	}
+	where := u.Scheme + "://" + u.Host
+	if strings.Trim(u.EscapedPath(), "/") != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		where += "/…"
+	}
+	return where
+}
+
+// Ref is the audit log's reference to an endpoint, by which its addition,
+// changes and removal line up where LogForm alone would make two endpoints
+// on one host look alike.
+//
+// An HMAC of the address under the endpoint's own signing key, rather than
+// a digest of the address: a digest is worked back to a short ?token= by
+// anyone who guesses the rest of the address and tries tokens until one
+// matches, and without the key there is nothing to try. The message starts
+// with "endpoint ", and every message Sign signs starts with a length whose
+// first byte is zero, so a reference is never a signature.
+func Ref(e Endpoint) string {
+	mac := hmac.New(sha256.New, []byte(e.Secret))
+	mac.Write([]byte("endpoint " + e.URL))
+	return hex.EncodeToString(mac.Sum(nil))[:16]
 }

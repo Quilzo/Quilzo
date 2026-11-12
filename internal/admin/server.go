@@ -134,6 +134,14 @@ type Server struct {
 	// on every view took seconds and hundreds of megabytes on a year of it.
 	// A function, so the page follows the log if `auditlog dir` moves it.
 	AuditIndex func() *audit.Index
+	// SavedHeads are the heads saved beside the log. The page checks the
+	// log against every one as well as along its chain, as `auditlog
+	// verify` does: entries removed from the end of a log leave a shorter
+	// chain that verifies, and the page said "Chain intact" with a saved
+	// head covering entries the log no longer held. Every one, and not the
+	// largest alone, since a head saved after a cut is taken from the log
+	// as it was left (audit.AgainstHeads).
+	SavedHeads func() ([]audit.Head, error)
 	// ResolvePrincipal turns a pseudonym back into a name, for principals this
 	// store knows. It cannot reverse the HMAC — it computes forward for each
 	// known principal and matches — so somebody the policy has never heard of

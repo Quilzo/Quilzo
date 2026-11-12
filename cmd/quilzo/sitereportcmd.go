@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/a11y"
-	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/posture"
 	"github.com/quilzo/quilzo/internal/provenance"
 	"github.com/quilzo/quilzo/internal/site"
@@ -91,7 +90,7 @@ func buildSiteReport(root, tplDir string, now time.Time) (sitereport.Report, err
 	}
 
 	rules := posture.RuleIndex()
-	events, _ := audit.Read(auditPath(root))
+	events, _ := auditEntries(root)
 	ai := observeAI(root, tplDir, events)
 	for _, c := range ai.Chatbots {
 		if c.Public {

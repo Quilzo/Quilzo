@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -152,7 +153,11 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := r.URL.Query()
-	action := strings.TrimSpace(q.Get("action"))
+	// An act renamed since some of its entries were written is asked for,
+	// and listed, under the name it has now, and found under either: a
+	// bookmark to ?action=access.grant finds the grants written as
+	// auth.granted since, and the filter for auth.granted the ones before.
+	action := audit.Canonical(strings.TrimSpace(q.Get("action")))
 	outcome := strings.TrimSpace(q.Get("outcome"))
 	who := strings.TrimSpace(q.Get("who"))
 	offset := 0
@@ -211,16 +216,36 @@ func (s *Server) logPage(action, outcome, who string, offset int) (map[string]an
 			return nil, err
 		}
 	} else {
-		events, err := s.LoadAudit()
-		if err != nil {
+		// A line that is not an entry is among what the check found, not
+		// instead of the page. Reading stopped at one, and the page showed
+		// that error alone, with no entries and no banner: one crash part
+		// way through a write took this screen away for good, and every
+		// record after it with it. The index reads past one in the same way.
+		var err error
+		if snap, err = audit.SnapshotOfRead(s.LoadAudit()); err != nil {
 			return nil, err
 		}
-		snap = audit.SnapshotOf(events)
 	}
 	// Verified before anything is rendered, and the whole chain, not the
 	// page: a list of events with no statement about whether the chain holds
 	// invites the reader to trust it, which is the opposite of what the
 	// chain is for. The snapshot holds that answer for the whole log.
+	report := snap.Report()
+	// And against the heads saved beside it (SavedHeads says why). The page
+	// names the largest.
+	var head *audit.Head
+	if s.SavedHeads != nil {
+		heads, err := s.SavedHeads()
+		if err != nil {
+			report.Problems = append(report.Problems, audit.Problem{Reason: "the heads saved beside " +
+				"the log cannot be read, so it was not checked against them: " + err.Error()})
+			report.Intact = false
+		} else if p := snap.AgainstHeads(heads); p != nil {
+			report.Problems = append(report.Problems, *p)
+			report.Intact = false
+		}
+		head = audit.LargestHead(heads)
+	}
 
 	// Each pseudonym resolved once for the page, through one table where
 	// the server offers one (Resolver).
@@ -252,7 +277,7 @@ func (s *Server) logPage(action, outcome, who string, offset int) (map[string]an
 	total := 0
 	for i := snap.Len() - 1; i >= 0; i-- {
 		e := snap.Entry(i)
-		if action != "" && e.Action != action {
+		if action != "" && audit.Canonical(e.Action) != action {
 			continue
 		}
 		if outcome != "" && string(e.Outcome) != outcome {
@@ -290,9 +315,24 @@ func (s *Server) logPage(action, outcome, who string, offset int) (map[string]an
 	return map[string]any{
 		"Rows": rows, "Total": total, "Entries": snap.Len(),
 		"Offset": offset, "Next": end, "HasNext": end < total,
-		"Intact": snap.Intact(), "Problems": snap.Problems(),
-		"Actions": snap.Actions(),
+		"Intact": report.Intact, "Problems": report.Problems, "Crashed": report.Crashed(), "Head": head,
+		"Actions": canonicalActions(snap.Actions()),
 	}, nil
+}
+
+// canonicalActions is the actions a log holds as the filter lists them: each
+// under the name its act has now (audit.Canonical), once, in order.
+func canonicalActions(actions []string) []string {
+	seen := make(map[string]bool, len(actions))
+	out := make([]string, 0, len(actions))
+	for _, a := range actions {
+		if c := audit.Canonical(a); !seen[c] {
+			seen[c] = true
+			out = append(out, c)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // rowOf prepares one entry for the page, naming the people this store knows

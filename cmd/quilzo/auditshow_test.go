@@ -218,6 +218,9 @@ func TestShowSeqAndExportToAFileDoWhatTheHelpSays(t *testing.T) {
 		t.Errorf("show of an entry that is not there: %v", err)
 	}
 
+	// The log as it is stored when it is exported: the export leaves its
+	// own record after it (auditlog.export), as every export of the log does.
+	stored, rerr := os.ReadFile(auditPath(root))
 	file := t.TempDir() + "/archive.jsonl"
 	_, read := captureStdout(t)
 	err = cmdAuditLog(root, []string{"export", "-o", file})
@@ -225,7 +228,6 @@ func TestShowSeqAndExportToAFileDoWhatTheHelpSays(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	stored, rerr := os.ReadFile(auditPath(root))
 	written, ferr := os.ReadFile(file)
 	if rerr != nil || ferr != nil {
 		t.Fatalf("export -o made no file: %v %v", rerr, ferr)
@@ -251,6 +253,37 @@ func TestShowSeqAndExportToAFileDoWhatTheHelpSays(t *testing.T) {
 		}()
 		if panicked != nil || err == nil {
 			t.Errorf("auditlog %v was not refused: %v %v", args, err, panicked)
+		}
+	}
+}
+
+// `auditlog verify` names the head it checked the log against, and when it
+// was saved, from the heads file beside the log, which whoever can rewrite
+// the log can rewrite too: a time in it carrying escape sequences reached
+// the terminal raw, below the line saying the chain is intact. The problem
+// lines, and the audit log screen's line for the same head, mark them.
+func TestVerifyPrintsNoControlCharacterFromTheSavedHeads(t *testing.T) {
+	root := shownLog(t, published("/a"), published("/b"))
+	for i := 0; i < 2; i++ {
+		if _, err := jsonAnswer(t, func() error { return cmdAuditLog(root, []string{"head", "--save"}) }); err != nil {
+			t.Fatal(err)
+		}
+		f := &headFile{}
+		if err := loadJSON(headsPath(root), f); err != nil || len(f.Heads) != i+1 {
+			t.Fatalf("%d heads saved: %v", len(f.Heads), err)
+		}
+		for j := range f.Heads {
+			f.Heads[j].At = "2026-11-10T09:00:00Z" + redraw
+		}
+		if err := saveJSON(headsPath(root), f); err != nil {
+			t.Fatal(err)
+		}
+		got, err := humanOutput(t, func() error { return cmdAuditLog(root, []string{"verify"}) })
+		if err != nil || !strings.Contains(got, "chain intact") || !strings.Contains(got, "all quiet") {
+			t.Fatalf("verify against %d head(s): %v\n%s", i+1, err, got)
+		}
+		if c := controlIn(got); c != "" {
+			t.Errorf("verify against %d head(s) printed the control character %s from the heads file:\n%q", i+1, c, got)
 		}
 	}
 }
