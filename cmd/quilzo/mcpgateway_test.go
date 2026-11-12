@@ -4,7 +4,10 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
@@ -276,5 +279,93 @@ func TestABrandFindingThroughTheGatewayWaitsForAPerson(t *testing.T) {
 	_, err = gatewayCallAs(t, root, appToken("dana", auth.RoleAuthor))
 	if err == nil || !strings.Contains(err.Error(), "brand.json") || strings.Contains(err.Error(), root) {
 		t.Fatalf("an unreadable rules file: %v", err)
+	}
+}
+
+// annotatedServer is a tool server whose tools say what they do: one
+// destructive, one read-only, one that says nothing and one that says
+// nothing and is on the gateway's list of tools a person approves.
+type annotatedServer struct{}
+
+func (annotatedServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var msg struct {
+		ID     json.RawMessage `json:"id"`
+		Method string          `json:"method"`
+	}
+	json.NewDecoder(r.Body).Decode(&msg)
+	w.Header().Set("Content-Type", "application/json")
+	schema := `{"type":"object","properties":{}}`
+	fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"resultType":"complete","tools":[`+
+		`{"name":"delete_everything","description":"Delete it all.","inputSchema":%s,"annotations":{"title":"Delete","readOnlyHint":false,"destructiveHint":true}},`+
+		`{"name":"list_things","description":"List them.","inputSchema":%s,"annotations":{"readOnlyHint":true}},`+
+		`{"name":"count_things","description":"Count them.","inputSchema":%s},`+
+		`{"name":"move_things","description":"Move them.","inputSchema":%s}]}}`, msg.ID, schema, schema, schema, schema)
+}
+
+// What a forwarded tool says it does is the server's to say, and the
+// gateway may only make it sound more dangerous.
+//
+// Every tool was offered as {readOnlyHint: !integration.writes}, whatever
+// the server published, so on an integration declared with a list of tools
+// and no "writes" mark a tool the server called destructive was offered to
+// other systems' agents as read-only, and a client that runs read-only
+// tools without asking would have run it.
+func TestTheGatewayKeepsWhatEachToolSaysItDoes(t *testing.T) {
+	root, pol := identityStore(t)
+	if err := pol.Grant(auth.Binding{Principal: "rae", Role: auth.RoleAuthor, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveJSON(policyPath(root), pol); err != nil {
+		t.Fatal(err)
+	}
+	mcpTransport = viaHandler(annotatedServer{})
+	t.Cleanup(func() { mcpTransport = nil })
+	uses := []string{"count_things", "delete_everything", "list_things", "move_things"}
+	set := agent.Integrations{Declared: []agent.Integration{{Name: "things", Kind: agent.IntegrationMCP, Enabled: true,
+		Purpose: "keep things", Endpoint: "things.example", Uses: uses,
+		Gateway: &agent.GatewayPolicy{Role: "author", Ask: []string{"move_things"}}}}}
+	if err := saveJSON(integrationsPath(root), set); err != nil {
+		t.Fatal(err)
+	}
+	if err := integrationsPin(root, []string{"things"}); err != nil {
+		t.Fatal(err)
+	}
+	srv, err := gatewayServer(httptest.NewRequest("POST", "/mcp/gateway/things", nil), root, "things", appToken("rae", auth.RoleAuthor))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]map[string]any{}
+	for _, tool := range srv.Direct.Tools {
+		got[tool.Name] = tool.Annotations
+	}
+	if len(got) != 4 {
+		t.Fatalf("offered %v", got)
+	}
+	for name, want := range map[string]bool{"delete_everything": false, "list_things": true,
+		"count_things": true, "move_things": false} {
+		if got[name]["readOnlyHint"] != want {
+			t.Errorf("%s is offered with readOnlyHint %v; want %v (%v)", name, got[name]["readOnlyHint"], want, got[name])
+		}
+	}
+	if got["delete_everything"]["destructiveHint"] != true {
+		t.Errorf("the destructive tool is not offered as destructive: %v", got["delete_everything"])
+	}
+	if _, ok := got["delete_everything"]["title"]; ok {
+		t.Errorf("the far side's own words were offered as a hint: %v", got["delete_everything"])
+	}
+	// A server cannot talk the gateway out of what the integration says:
+	// declared as writing, nothing it offers is read-only.
+	set.Declared[0].Writes = true
+	if err := saveJSON(integrationsPath(root), set); err != nil {
+		t.Fatal(err)
+	}
+	srv, err = gatewayServer(httptest.NewRequest("POST", "/mcp/gateway/things", nil), root, "things", appToken("rae", auth.RoleAuthor))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range srv.Direct.Tools {
+		if tool.Annotations["readOnlyHint"] != false {
+			t.Errorf("%s of an integration that writes is offered as read-only", tool.Name)
+		}
 	}
 }

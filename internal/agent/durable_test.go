@@ -542,3 +542,89 @@ func TestAnsweringAQuestionChargesItsStepOnce(t *testing.T) {
 		t.Errorf("the run let %d steps through and charged %d", chargedSteps(tr), steps)
 	}
 }
+
+// A tool that writes is asked about first at propose autonomy, whatever the
+// declaration's ask_first says, and is refused where nobody can be asked.
+//
+// Propose writes nothing: write_page is refused at it. A tool marked as
+// changing something on the far side was gated on its host and the budget
+// alone, so a propose-only agent called it with nobody asked. A tool that
+// only reads still goes ahead, and at draft the writing tool does too, as
+// write_page does.
+func TestAWritingToolAsksFirstAtProposeAutonomy(t *testing.T) {
+	m := Manifest{Name: "filer", Kind: KindTask, Purpose: "file issues",
+		Capabilities: []string{"read_page"}, Autonomy: AutonomyPropose,
+		Tools: []Tool{{Name: "notes", Host: "notes.example", Purpose: "read notes"},
+			{Name: "delete_everything", Host: "notes.example", Purpose: "tidy", Writes: true}},
+		Budget: Budget{Steps: 6, Tools: 4, Duration: Duration(time.Minute)}}
+	if err := m.Validate(nil); err != nil {
+		t.Fatal(err)
+	}
+	var did []string
+	called := func(_ context.Context, a Action) (string, error) { did = append(did, a.Tool); return "ok", nil }
+	tools := func() string { return strings.Join(did, ",") }
+	plan := []Action{{Tool: "notes"}, {Tool: "delete_everything"}}
+	reset := func() { did = nil }
+
+	r := Runner{Decide: (&scripted{plan: plan}).decide, Perform: called, Pause: true}
+	tr, err := r.Run(context.Background(), NewSession(m, nil), "g")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tr.Waiting == nil || tr.Waiting.Action.Tool != "delete_everything" || len(did) != 1 {
+		t.Fatalf("the writing tool was not asked about first: did %s, %+v", tools(), tr.Waiting)
+	}
+
+	// With nobody to ask, as a delegate has, it is refused.
+	reset()
+	r = Runner{Decide: (&scripted{plan: plan}).decide, Perform: called}
+	tr, _ = r.Run(context.Background(), NewSession(m, nil), "g")
+	if len(did) != 1 || tr.Steps[1].Allowed || !strings.Contains(tr.Steps[1].Why, "nobody to ask") {
+		t.Fatalf("with nobody to ask the writing tool: did %s, %+v", tools(), tr.Steps[1])
+	}
+
+	// At draft it goes ahead.
+	m.Autonomy = AutonomyDraft
+	reset()
+	r = Runner{Decide: (&scripted{plan: plan}).decide, Perform: called, Pause: true}
+	if tr, _ = r.Run(context.Background(), NewSession(m, nil), "g"); tr.Waiting != nil || len(did) != 2 {
+		t.Fatalf("at draft: did %s, %+v", tools(), tr.Waiting)
+	}
+}
+
+// A tool that writes is asked about first by an agent whose declaration
+// says a person agrees before anything it did is public: one declared with
+// human_approval, and one at publish autonomy, which always carries it.
+//
+// Its CMS writes wait for that person, as a draft or as a publish that is
+// refused until somebody approves it, and a tool that writes on the far
+// side has no draft: what it did is there for whoever looks the moment it
+// is called. Asking only at propose left both of these to call it with
+// nobody asked, though each declared that somebody would be.
+func TestAWritingToolAsksFirstWhereAPersonApproves(t *testing.T) {
+	for _, c := range []struct {
+		autonomy Autonomy
+		approval bool
+	}{{AutonomyDraft, true}, {AutonomyPublish, false}} {
+		m := Manifest{Name: "poster", Kind: KindTask, Purpose: "post what was written",
+			Capabilities: []string{"read_page"}, Autonomy: c.autonomy, HumanApproval: c.approval,
+			Tools: []Tool{{Name: "notes", Host: "notes.example", Purpose: "read notes"},
+				{Name: "post_it", Host: "notes.example", Purpose: "post it", Writes: true}},
+			Budget: Budget{Steps: 6, Tools: 4, Duration: Duration(time.Minute)}}
+		if err := m.Validate(nil); err != nil {
+			t.Fatal(err)
+		}
+		var did []string
+		called := func(_ context.Context, a Action) (string, error) { did = append(did, a.Tool); return "ok", nil }
+		r := Runner{Decide: (&scripted{plan: []Action{{Tool: "notes"}, {Tool: "post_it"}}}).decide,
+			Perform: called, Pause: true}
+		tr, err := r.Run(context.Background(), NewSession(m, nil), "g")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if tr.Waiting == nil || tr.Waiting.Action.Tool != "post_it" || len(did) != 1 {
+			t.Errorf("%s autonomy, human approval %v: the writing tool was not asked about first: did %v, %+v",
+				c.autonomy, m.HumanApproval, did, tr.Waiting)
+		}
+	}
+}

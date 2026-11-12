@@ -1458,6 +1458,15 @@ func lookupNeed(cmd string, args []string) (need, bool) {
 	if sub, ok := bareRuns[cmd]; ok && len(args) == 0 {
 		args = []string{sub}
 	}
+	// The most specific row first. `agent template save` and its two
+	// siblings had rows of three words that nothing asked, so listing a
+	// store's templates took the manage-agents permission their row said it
+	// did not.
+	if len(args) > 1 && !strings.HasPrefix(args[0], "-") && !strings.HasPrefix(args[1], "-") {
+		if n, ok := commandNeeds[cmd+" "+args[0]+" "+args[1]]; ok {
+			return n, true
+		}
+	}
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		if n, ok := commandNeeds[cmd+" "+args[0]]; ok {
 			return n, true

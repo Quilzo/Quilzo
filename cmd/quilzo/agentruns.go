@@ -116,6 +116,36 @@ const agentRunTime = 3 * time.Minute
 type keptRun struct {
 	root string
 	rec  agent.Record
+	// alive is the lock this process holds while it works on the run
+	// (holdRunAlive), so whoever reads the run can tell when it has ended.
+	alive *os.File
+}
+
+// aliveLock is where a run's lock is kept.
+func aliveLock(root string, rec agent.Record) string {
+	return filepath.Join(runDirFor(root, rec), rec.ID+".alive")
+}
+
+// running takes the run's lock for this process, once, and says in the
+// record whether it holds it. One it could not take leaves the record
+// judged by when it was last written, as every run was.
+func (k *keptRun) running(rec *agent.Record) {
+	if k.alive == nil {
+		if err := os.MkdirAll(runDirFor(k.root, *rec), 0o700); err == nil {
+			k.alive, _ = holdRunAlive(aliveLock(k.root, *rec))
+		}
+	}
+	rec.Held = k.alive != nil
+}
+
+// letGo gives the run's lock up, once the record says the stretch ended.
+func (k *keptRun) letGo() {
+	if k.alive == nil {
+		return
+	}
+	_ = os.Remove(aliveLock(k.root, k.rec))
+	k.alive.Close()
+	k.alive = nil
 }
 
 // checkpoint writes the run as it stands after a step. A write that fails
@@ -125,11 +155,13 @@ func (k *keptRun) checkpoint(t agent.Trace) {
 	rec.Trace = agent.Keep(rec.ID, rec.By, rec.Model, rec.Started, t,
 		rec.Receipt).Trace
 	rec.State = agent.Running
+	k.running(&rec)
 	_ = writeAgentRun(k.root, rec)
 }
 
 // finish writes the run as it ended this stretch.
 func (k *keptRun) finish(out agentOutcome) error {
+	defer k.letGo()
 	started := k.rec.Started
 	if started.IsZero() {
 		started = out.Started
@@ -614,6 +646,11 @@ func loadAgentRun(root, id string) (agent.Record, error) {
 	if rec.ID != id {
 		return rec, fmt.Errorf("the file for %s holds %q", id, rec.ID)
 	}
+	// A run that says it is running, kept by a process holding its lock,
+	// has ended if the lock has been let go of: the process is gone.
+	if rec.State == agent.Running && rec.Held {
+		rec.Gone = runAliveLetGo(aliveLock(root, rec))
+	}
 	return rec, nil
 }
 
@@ -851,7 +888,9 @@ func startAgentRunLive(root, name, goal string, caller *Caller, m agent.Manifest
 	if liveRuns.Load() >= MaxLiveRuns {
 		return "", errTooManyLive
 	}
+	k.running(&k.rec)
 	if err := writeAgentRun(root, k.rec); err != nil {
+		k.letGo()
 		return "", err
 	}
 	err = goLive(time.Duration(m.Budget.Duration), func(ctx context.Context) {
@@ -861,8 +900,9 @@ func startAgentRunLive(root, name, goal string, caller *Caller, m agent.Manifest
 		finishLive(k, out, err)
 	})
 	if err != nil {
-		k.rec.State, k.rec.Trace.Stopped = "", err.Error()
+		k.rec.State, k.rec.Held, k.rec.Trace.Stopped = "", false, err.Error()
 		_ = writeAgentRun(root, k.rec)
+		k.letGo()
 		return "", err
 	}
 	return id, nil

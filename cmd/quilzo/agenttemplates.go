@@ -17,6 +17,7 @@ import (
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/out"
 )
 
 // Templates of this store's own: archetypes a person authors, so the
@@ -152,6 +153,23 @@ func cmdAgentTemplate(root string, args []string) error {
 		set, err := loadCustomTemplates(root)
 		if err != nil {
 			return err
+		}
+		// One document under --json, as `agent templates` answers: reachable
+		// now, this list is a read like the others.
+		if w.Mode == out.JSON {
+			rows := []map[string]any{}
+			var kinds []string
+			for k := range set {
+				kinds = append(kinds, string(k))
+			}
+			sort.Strings(kinds)
+			for _, k := range kinds {
+				t := set[agent.Kind(k)]
+				rows = append(rows, map[string]any{"kind": k, "summary": t.Summary, "when": t.When,
+					"capabilities": t.Manifest.Capabilities, "autonomy": t.Manifest.Autonomy})
+			}
+			w.JSON(map[string]any{"templates": rows})
+			return nil
 		}
 		if len(set) == 0 {
 			fmt.Printf("  no templates of this store's own. `quilzo agent template save FILE` declares one —\n")

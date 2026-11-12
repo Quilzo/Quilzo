@@ -46,6 +46,13 @@ type Record struct {
 	// budget was interrupted.
 	State string    `json:"state,omitempty"`
 	Beat  time.Time `json:"beat,omitzero"`
+	// Held says the process working on the run holds a lock on it that the
+	// kernel lets go of when that process ends, however it ends, and Gone is
+	// set by whoever read the record and found it let go of. A run killed
+	// half way through said it was running until StaleAfter had passed, so
+	// for five minutes it was listed as running and could not be resumed.
+	Held bool `json:"held,omitempty"`
+	Gone bool `json:"-"`
 	// From is the run and step this one was run again from.
 	From string `json:"from,omitempty"`
 	// Trigger is what started it when no person did: a schedule, or an
@@ -124,6 +131,13 @@ func keptAction(a Action) Action {
 	return a
 }
 
+// Ended reports whether the process a run was in has gone: it finished
+// the stretch, its lock was let go of, or it has not written the run for
+// StaleAfter. What is left for a process that has ended is never read.
+func (r Record) Ended(now time.Time) bool {
+	return r.State != Running || r.Gone || now.Sub(r.Beat) > StaleAfter
+}
+
 // Outcome is a run in a word, for a list.
 func (r Record) Outcome() string {
 	return r.OutcomeAt(time.Time{})
@@ -135,7 +149,7 @@ func (r Record) OutcomeAt(now time.Time) string {
 	switch {
 	case r.Trace.Waiting != nil:
 		return "waiting"
-	case r.State == Running && !now.IsZero() && now.Sub(r.Beat) > StaleAfter:
+	case r.State == Running && (r.Gone || !now.IsZero() && now.Sub(r.Beat) > StaleAfter):
 		return "interrupted"
 	case r.State == Running:
 		return "running"

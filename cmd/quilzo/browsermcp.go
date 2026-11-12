@@ -321,7 +321,7 @@ func adoptGrantRuns(root string, now time.Time) {
 		if err != nil || rec.State != agent.Running || rec.Model != "mcp" {
 			continue
 		}
-		if now.Sub(rec.Beat) <= agent.StaleAfter {
+		if !rec.Ended(now) {
 			continue
 		}
 		rec.State = ""

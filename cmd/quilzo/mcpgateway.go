@@ -172,7 +172,7 @@ func gatewayServer(r *http.Request, root, name string, tok auth.Token) (*mcp.Ser
 			schema = map[string]any{"type": "object"}
 		}
 		tools = append(tools, mcp.Tool{Name: t.Name, Description: plaintext.Clean(t.Description), InputSchema: schema,
-			Annotations: map[string]any{"readOnlyHint": !in.Writes, "openWorldHint": true}})
+			Annotations: gatewayHints(in, t)})
 	}
 	caller := remoteCaller(tok)
 	srv := mcp.NewServer("quilzo-gateway-"+name, version)
@@ -187,6 +187,29 @@ func gatewayServer(r *http.Request, root, name string, tok auth.Token) (*mcp.Ser
 		},
 	}
 	return srv, nil
+}
+
+// gatewayHints is what the gateway tells other systems' agents a tool does.
+//
+// Read-only only when everything that could say otherwise does not: the
+// integration is not declared as writing, a person does not approve each
+// call of it, and the server does not say it changes or destroys anything.
+// Every tool was offered by the integration's mark alone, so on one declared
+// with a list of tools and no "writes" mark a tool the server published as
+// destructive was offered as read-only, and a client that runs read-only
+// tools without asking would have run it. The server's hints only ever make
+// a tool sound more dangerous here: they are outside what a person pinned,
+// and a server that changed them to sound safer would otherwise be believed.
+func gatewayHints(in agent.Integration, t mcpclient.Tool) map[string]any {
+	readOnly := !in.Writes && !t.Annotations.MayChange()
+	if in.Gateway != nil && in.Gateway.Asks(t.Name) {
+		readOnly = false
+	}
+	hints := map[string]any{"readOnlyHint": readOnly, "openWorldHint": true}
+	if !readOnly && t.Annotations.SaysDestructive() {
+		hints["destructiveHint"] = true
+	}
+	return hints
 }
 
 // offeredTools are the tools a person agreed to and pinned, and which are

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -179,9 +180,23 @@ func configList() error {
 	if w.JSON(all) {
 		return nil
 	}
-	group := ""
+	// Section by section, in the order each first appears. A heading was
+	// printed whenever the section changed from the setting before, and the
+	// settings are not declared section by section, so "agents" was headed
+	// twice and "admin" four times, and somebody looking for the agents'
+	// settings found half of them.
+	section := func(s config.Setting) string { g, _, _ := strings.Cut(s.Key, "."); return g }
+	order := map[string]int{}
 	for _, s := range all {
-		if g, _, _ := strings.Cut(s.Key, "."); g != group {
+		if _, ok := order[section(s)]; !ok {
+			order[section(s)] = len(order)
+		}
+	}
+	sorted := append([]config.Setting(nil), all...)
+	sort.SliceStable(sorted, func(i, j int) bool { return order[section(sorted[i])] < order[section(sorted[j])] })
+	group := ""
+	for _, s := range sorted {
+		if g := section(s); g != group {
 			group = g
 			w.Human("\n%s%s%s\n", bold, group, reset)
 		}

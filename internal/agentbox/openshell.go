@@ -17,6 +17,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/sandbox"
 )
 
 // OpenShell is NVIDIA OpenShell as a program's box: its sandbox, its
@@ -93,7 +95,7 @@ func Policy(s Spec, reach string, ports map[string]int) []byte {
 	b.WriteString("version: 1\n")
 	b.WriteString("# Compiled by Quilzo from the agent " + q(s.Agent) + " for run " + q(s.Run) + ".\n")
 	b.WriteString("filesystem_policy:\n  include_workdir: true\n  read_only:\n")
-	reads := append(append([]string{}, systemReads...), "/dev/urandom")
+	reads := append(sandbox.SystemReads(), "/dev/urandom")
 	reads = append(reads, s.Read...)
 	for _, r := range dedupe(reads) {
 		b.WriteString("    - " + q(r) + "\n")

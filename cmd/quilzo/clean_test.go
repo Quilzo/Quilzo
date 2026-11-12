@@ -64,6 +64,10 @@ func TestMain(m *testing.M) {
 		case "agentbox-program-calls":
 			programCallsMain(os.Args[2])
 			os.Exit(0)
+		case "agentrun-dies":
+			// A process that dies half way through a run: see runalive_test.go.
+			runDiesMain(os.Args[2], os.Args[3])
+			os.Exit(3)
 		case "quilzo-main":
 			// The command line itself, for a test that needs what a
 			// caller gets on stdout and nothing a function returns.
