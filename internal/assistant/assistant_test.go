@@ -573,6 +573,73 @@ func TestAnOppositeWordTurnsAPassageAround(t *testing.T) {
 	})
 }
 
+// A "not" is held to the words it is before. "Yes, we sell gluten-free
+// bread at the Zqvel bakery, no need to order ahead" was shown for "We do
+// not sell gluten-free bread at the Zqvel bakery": its "no", about ordering,
+// was taken for the passage's "not", about selling.
+func TestAnotherNegationDoesNotStandInForTheDroppedOne(t *testing.T) {
+	hit := func(title, text string) []Hit {
+		return []Hit{{Passage: Passage{ID: "p#1", Page: "p", Title: title, Text: text}}}
+	}
+	bread := hit("Zqvel bread", "We do not sell gluten-free bread at the Zqvel bakery. "+
+		"Our sourdough is baked every morning.")
+	ship := hit("Delivery", "We never ship pallets abroad, whatever the order.")
+	expectVerdicts(t, []verdict{
+		{bread, "Yes, we sell gluten-free bread at the Zqvel bakery, no need to order ahead [1].", `"not"`},
+		{bread, "We sell gluten-free bread at the Zqvel bakery without fuss [1].", `"not"`},
+		{bread, "We sell gluten-free bread at the Zqvel bakery, never stale [1].", `"not"`},
+		{bread, "We never fail to sell gluten-free bread at the Zqvel bakery [1].", `"not"`},
+		{bread, "We sell gluten-free bread at the Zqvel bakery unless it sells out [1].", `"not"`},
+		{bread, "We do not sell gluten-free bread at the Zqvel bakery [1].", ""},
+		{bread, "We don't sell gluten-free bread at the Zqvel bakery, sorry [1].", ""},
+		{bread, "No, we do not sell gluten-free bread at the Zqvel bakery [1].", ""},
+		{ship, "We ship pallets abroad, no questions asked [1].", `"never"`},
+		{ship, "We never ship pallets abroad [1].", ""},
+	})
+}
+
+// A word that says the opposite of the passage's turns it around, and the
+// pairs a shop's or a venue's page uses are known: each of these, with the
+// one word changed, was shown with a citation.
+func TestTheOppositesAPagePutsAreKnown(t *testing.T) {
+	hit := func(title, text string) []Hit {
+		return []Hit{{Passage: Passage{ID: "p#1", Page: "p", Title: title, Text: text}}}
+	}
+	tea := hit("Zqvel tea room", "Dogs are banned in the Zqvel tea room. Prices exclude VAT. "+
+		"Children over 12 pay the full fare.")
+	delivery := hit("Zqvel delivery", "Delivery is charged on every order. "+
+		"Order before 2pm for next-day dispatch. Orders above £50 are checked by hand. "+
+		"The minimum order is 3 bags. Returns are accepted within 30 days. "+
+		"We allow pets in the garden. We serve more than 20 teas.")
+	expectVerdicts(t, []verdict{
+		{delivery, "Delivery is free on every order [1].", `"free"`},
+		{delivery, "Order after 2pm for next-day dispatch [1].", `"after"`},
+		{tea, "Dogs are welcome in the Zqvel tea room [1].", `"welcome"`},
+		{tea, "Dogs are allowed in the Zqvel tea room [1].", `"allowed"`},
+		{tea, "Prices include VAT [1].", `"include"`},
+		{tea, "Children under 12 pay the full fare [1].", `"under"`},
+		{delivery, "Orders below £50 are checked by hand [1].", `"below"`},
+		{delivery, "The maximum order is 3 bags [1].", `"maximum"`},
+		{delivery, "Returns are refused within 30 days [1].", `"refused"`},
+		{delivery, "Returns are rejected within 30 days [1].", `"rejected"`},
+		{delivery, "We forbid pets in the garden [1].", `"forbid"`},
+		{delivery, "We serve less than 20 teas [1].", `"less"`},
+		{delivery, "We serve fewer than 20 teas [1].", `"fewer"`},
+		// What the page says, in its words or the same word's others.
+		{delivery, "Delivery is charged on every order [1].", ""},
+		{delivery, "Delivery is not free on every order [1].", ""},
+		{delivery, "Order before 2pm for next-day dispatch [1].", ""},
+		{tea, "Dogs are banned in the Zqvel tea room [1].", ""},
+		{tea, "Dogs are not allowed in the Zqvel tea room [1].", ""},
+		{tea, "Dogs are not welcome in the Zqvel tea room [1].", ""},
+		{tea, "Prices exclude VAT [1].", ""},
+		{tea, "Children over 12 pay the full fare [1].", ""},
+		{delivery, "Pets are welcome in the garden [1].", ""},
+		{delivery, "Returns are accepted within 30 days [1].", ""},
+		{delivery, "We serve more than 20 teas [1].", ""},
+	})
+}
+
 func TestAModelThatFailsFallsBack(t *testing.T) {
 	for name, m := range map[string]*scripted{
 		"error":    {err: errors.New("connection refused")},
