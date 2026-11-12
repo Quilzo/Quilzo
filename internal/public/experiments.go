@@ -4,12 +4,16 @@
 package public
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/experiment"
 	"github.com/quilzo/quilzo/internal/personalise"
+	"github.com/quilzo/quilzo/internal/seo"
 )
 
 // A/B tests, served. See internal/experiment for the design and its limits.
@@ -115,4 +119,123 @@ func (st *Site) personalFor(r *http.Request, name string, pages map[string]any) 
 		st.Analytics.Convert(r, personalise.SeenKey(rule.Name))
 	}
 	return rule.Variant, body, true
+}
+
+// Variants maps each page that a running experiment or an enabled
+// personalisation rule serves at another page's address to that page, when
+// both are among pages.
+//
+// A variant has to be a published page, so it also answers at its own
+// address, and nothing said it was a version of another: it was in the
+// sitemap and named itself as canonical, so search engines indexed
+// /returns-b as a second copy of /returns, and a visitor from search landed
+// on the variant outside the test. Its address keeps answering; it names
+// the page it is served at instead (Site.canonicalIn) and is not offered by
+// its own (Listed).
+//
+// A page a test or a rule runs on is a page of its own wherever else it is
+// served, since visitors arrive at it by its address: so the control is not
+// a variant of itself, and two rules serving each other's page make no
+// loop of canonical links.
+func Variants(exps *experiment.Set, rules *personalise.Set, pages map[string]any) map[string]string {
+	runs := map[string]bool{}
+	if rules != nil {
+		for _, r := range rules.Rules {
+			if r.Enabled {
+				runs[r.Page] = true
+			}
+		}
+	}
+	if exps != nil {
+		for _, e := range exps.Experiments {
+			if e.Running {
+				runs[e.Page] = true
+			}
+		}
+	}
+	out := map[string]string{}
+	add := func(variant, page string) {
+		_, served := pages[page]
+		_, published := pages[variant]
+		if _, named := out[variant]; named || runs[variant] || !served || !published {
+			return
+		}
+		out[variant] = page
+	}
+	if rules != nil {
+		for _, r := range rules.Rules {
+			if r.Enabled {
+				add(r.Variant, r.Page)
+			}
+		}
+	}
+	if exps != nil {
+		for _, e := range exps.Experiments {
+			if e.Running {
+				for _, v := range e.Variants {
+					add(v.Page, e.Page)
+				}
+			}
+		}
+	}
+	return out
+}
+
+// Listed reports whether a page is offered to search engines and agents by
+// its own address: in the sitemap, in llms.txt and to IndexNow. Not one
+// seo.InSitemap leaves out, nor a variant (Variants), unless the variant
+// names an address of its own, which an editor who set one has decided.
+func Listed(base, name, index string, body any, variants map[string]string) bool {
+	if _, variant := variants[name]; variant {
+		if _, own := seo.CanonicalOf(body); !own {
+			return false
+		}
+	}
+	return seo.InSitemap(base, name, index, body)
+}
+
+// variants is Variants for this site now, by the rules the page handler
+// serves variants by: an experiment only with the counts that assign its
+// visitors, a rule whenever there are rules. Read per call, like them, so
+// starting a test takes effect without a publish.
+func (st *Site) variants(pages map[string]any) map[string]string {
+	var exps *experiment.Set
+	if st.Experiments != nil && st.Analytics != nil {
+		exps, _ = st.Experiments()
+	}
+	var rules *personalise.Set
+	if st.Personalise != nil {
+		rules, _ = st.Personalise()
+	}
+	return Variants(exps, rules, pages)
+}
+
+// canonicalIn is the address name's canonical link names: as seo.Canonical
+// says, except that a variant names the page it is served at.
+func (st *Site) canonicalIn(name string, body any, variants map[string]string) string {
+	if of, ok := variants[name]; ok {
+		name = of
+	}
+	return seo.Canonical(st.BaseURL, name, st.Index, body)
+}
+
+// variantsTag names what variants says, for a tag on a document that
+// depends on it; "" when no page is a variant. A test starts and stops with
+// nothing published, so a tag made from the commit alone would tell a
+// crawler holding the sitemap, or a variant's page, that what they say
+// about the variant had not changed.
+func variantsTag(variants map[string]string) string {
+	if len(variants) == 0 {
+		return ""
+	}
+	names := make([]string, 0, len(variants))
+	for n := range variants {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	h := sha256.New()
+	for _, n := range names {
+		h.Write([]byte(n + "\x00" + variants[n] + "\x00"))
+	}
+	return hex.EncodeToString(h.Sum(nil)[:8])
 }

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/quilzo/quilzo/internal/experiment"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 )
@@ -110,5 +111,77 @@ func TestSearchEnginesAreToldWhatChanged(t *testing.T) {
 	}
 	if info, err := os.Stat(indexNowKeyPath(root)); err != nil || info.Size() == 0 {
 		t.Fatal(err)
+	}
+}
+
+// A page a running test serves at another page's address is a version of
+// that page, which the site's sitemap leaves out and whose canonical link
+// names the page tested. IndexNow sent it by its own address all the same,
+// so a search engine was asked to index /returns-b as a page of its own.
+func TestSearchEnginesAreNotToldOfAVariant(t *testing.T) {
+	root := demoStore(t)
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var m struct {
+			URLs []string `json:"urlList"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&m)
+		got = append(got, m.URLs...)
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer srv.Close()
+	was := indexNowEndpoint
+	indexNowEndpoint = srv.URL
+	defer func() { indexNowEndpoint = was }()
+
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publish := func(words string) {
+		t.Helper()
+		pages, err := site.PagesAt(s, site.RefDraft)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pages["returns"] = map[string]any{"title": "Returns " + words}
+		pages["returns-b"] = map[string]any{"title": "Returns, put simply " + words}
+		if _, err := site.SaveDraft(s, pages, "change", "test"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := site.Publish(s, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	publish("one")
+	setConfigs(t, root, map[string]string{"site.indexnow": "true", "site.base_url": "https://shop.example"})
+	ctx := context.Background()
+	if said := indexNowAfterPublish(ctx, root); said != "" {
+		t.Fatalf("the first publish told: %q", said)
+	}
+	set := &experiment.Set{}
+	if err := set.Put(experiment.Experiment{Name: "retx", Page: "returns", Goal: "page:/delivery",
+		Running: true, Variants: []experiment.Variant{
+			{Name: "a", Page: "returns", Weight: 1}, {Name: "b", Page: "returns-b", Weight: 1}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := experiment.Save(experimentsPath(root), set); err != nil {
+		t.Fatal(err)
+	}
+	publish("two")
+	indexNowAfterPublish(ctx, root)
+	if !slices.Equal(got, []string{"https://shop.example/returns"}) {
+		t.Fatalf("told %v while returns-b is a variant of /returns", got)
+	}
+	// Stopped, it is a page again, and sent when it changes.
+	set.Experiments[0].Running = false
+	if err := experiment.Save(experimentsPath(root), set); err != nil {
+		t.Fatal(err)
+	}
+	got = nil
+	publish("three")
+	indexNowAfterPublish(ctx, root)
+	if !slices.Equal(got, []string{"https://shop.example/returns", "https://shop.example/returns-b"}) {
+		t.Fatalf("told %v once the test stopped", got)
 	}
 }

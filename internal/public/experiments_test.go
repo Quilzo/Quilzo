@@ -6,11 +6,13 @@ package public
 import (
 	"fmt"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/quilzo/quilzo/internal/analytics"
 	"github.com/quilzo/quilzo/internal/experiment"
+	"github.com/quilzo/quilzo/internal/personalise"
 )
 
 func experimentSite(t *testing.T) (*Site, *analytics.Counter) {
@@ -110,5 +112,85 @@ func TestAMissingVariantFallsBackToTheControl(t *testing.T) {
 	}
 	if c.Today().Goals[experiment.SeenKey("price", "b")] != 0 {
 		t.Fatal("exposure was recorded for a variant nobody could see")
+	}
+}
+
+// A page an experiment or a personalisation rule serves at another page's
+// address is a version of that page, not a page of its own. It was listed
+// in the sitemap and in llms.txt and named itself as canonical, so search
+// engines indexed /pricing-b as a second copy of /pricing and a visitor
+// from search landed on the variant outside the test. It still answers at
+// its own address, as every published page does.
+func TestAVariantNamesThePageItIsServedAt(t *testing.T) {
+	st, _ := experimentSite(t)
+	rules := &personalise.Set{}
+	if err := rules.Put(personalise.Rule{Name: "news", Page: "pricing", Variant: "thanks",
+		Enabled: true, When: []personalise.Condition{{Field: personalise.Campaign, Values: []string{"newsletter"}}}}); err != nil {
+		t.Fatal(err)
+	}
+	st.Personalise = func() (*personalise.Set, error) { return rules, nil }
+	canonical := regexp.MustCompile(`<link rel="canonical" href="([^"]*)">`)
+
+	before := visitAs(st, "/pricing-b", "203.0.113.9").Header().Get("ETag")
+	sitemap := get(st, "/sitemap.xml", nil).Body.String()
+	llms := get(st, "/llms.txt", nil).Body.String()
+	for _, variant := range []string{"pricing-b", "thanks"} {
+		w := visitAs(st, "/"+variant, "203.0.113.9")
+		if w.Code != 200 {
+			t.Fatalf("/%s answered %d; a variant still answers at its own address", variant, w.Code)
+		}
+		if m := canonical.FindStringSubmatch(w.Body.String()); m == nil || m[1] != "https://example.org/pricing" {
+			t.Errorf("/%s names %v as canonical, not the page it is served at", variant, m)
+		}
+		if strings.Contains(sitemap, "https://example.org/"+variant+"<") {
+			t.Errorf("the sitemap lists the variant /%s:\n%s", variant, sitemap)
+		}
+		if strings.Contains(llms, "(/"+variant+".md)") {
+			t.Errorf("llms.txt lists the variant /%s:\n%s", variant, llms)
+		}
+		if l := get(st, "/"+variant+".md", nil).Header().Get("Link"); !strings.Contains(l, "<https://example.org/pricing>") {
+			t.Errorf("/%s.md names %q as the address it copies", variant, l)
+		}
+	}
+	// The page itself, the control and the home page are as they were.
+	if !strings.Contains(sitemap, "https://example.org/pricing<") || !strings.Contains(sitemap, "https://example.org/<") {
+		t.Errorf("the sitemap lost the page tested:\n%s", sitemap)
+	}
+	if m := canonical.FindStringSubmatch(visitAs(st, "/pricing", "203.0.113.9").Body.String()); m == nil || m[1] != "https://example.org/pricing" {
+		t.Errorf("/pricing names %v as canonical", m)
+	}
+
+	// Stopping the test and switching the rule off makes the variants pages
+	// again, with nothing published, so a crawler holding /pricing-b is not
+	// told its copy naming /pricing is still current.
+	exps, _ := st.Experiments()
+	exps.Experiments[0].Running = false
+	rules.Rules[0].Enabled = false
+	w := visitAs(st, "/pricing-b", "203.0.113.9")
+	if m := canonical.FindStringSubmatch(w.Body.String()); m == nil || m[1] != "https://example.org/pricing-b" {
+		t.Errorf("/pricing-b names %v as canonical after its test stopped", m)
+	}
+	if w.Header().Get("ETag") == before {
+		t.Error("/pricing-b kept its tag when what its canonical link names changed")
+	}
+	if s := get(st, "/sitemap.xml", nil).Body.String(); !strings.Contains(s, "https://example.org/pricing-b<") ||
+		!strings.Contains(s, "https://example.org/thanks<") {
+		t.Errorf("a page no longer a variant is not listed:\n%s", s)
+	}
+}
+
+// A sitemap whose list changes when a test starts is not the sitemap a
+// crawler holding its tag already has.
+func TestTheSitemapTagMovesWhenATestStarts(t *testing.T) {
+	st, _ := experimentSite(t)
+	running := get(st, "/sitemap.xml", nil).Header().Get("ETag")
+	exps, _ := st.Experiments()
+	exps.Experiments[0].Running = false
+	stopped := get(st, "/sitemap.xml", nil)
+	if stopped.Header().Get("ETag") == running {
+		t.Fatal("the sitemap kept its tag when a variant came back into it")
+	}
+	if again := get(st, "/sitemap.xml", map[string]string{"If-None-Match": running}); again.Code != 200 {
+		t.Fatalf("a crawler holding the sitemap from while the test ran was answered %d", again.Code)
 	}
 }

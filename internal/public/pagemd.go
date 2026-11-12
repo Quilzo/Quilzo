@@ -12,7 +12,6 @@ import (
 
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/render"
-	"github.com/quilzo/quilzo/internal/seo"
 )
 
 // A Markdown copy of every published page, at /NAME.md: what a language
@@ -225,7 +224,7 @@ func (st *Site) pageMarkdown(w http.ResponseWriter, r *http.Request, pages map[s
 	if !ok {
 		return false
 	}
-	markdownHeaders(w, seo.Canonical(st.BaseURL, base, st.Index, body))
+	markdownHeaders(w, st.canonicalIn(base, body, st.variants(pages)))
 	// Drawn with no request arguments: the copy is one document for every
 	// reader, as its cache header says, and a booking's or a sign-up's
 	// arguments are one visitor's. A page that cannot be drawn (a listing

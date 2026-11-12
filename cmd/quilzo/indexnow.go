@@ -21,6 +21,9 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/egress"
+	"github.com/quilzo/quilzo/internal/experiment"
+	"github.com/quilzo/quilzo/internal/personalise"
+	"github.com/quilzo/quilzo/internal/public"
 	"github.com/quilzo/quilzo/internal/seo"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
@@ -85,8 +88,11 @@ type indexNowState struct {
 }
 
 // indexNowChanged are the addresses of the pages that changed from one
-// commit to another and a search engine may list.
-func indexNowChanged(s *store.Store, base, index, from, to string) ([]string, error) {
+// commit to another and a search engine may list: by the sitemap's rule
+// (public.Listed), so not a variant that the running tests in exps or the
+// enabled rules in rules serve at another page's address (either may be
+// nil).
+func indexNowChanged(s *store.Store, base, index, from, to string, exps *experiment.Set, rules *personalise.Set) ([]string, error) {
 	changes, err := site.Diff(s, from, to)
 	if err != nil {
 		return nil, err
@@ -104,10 +110,11 @@ func indexNowChanged(s *store.Store, base, index, from, to string) ([]string, er
 		}
 	}
 	visible := site.Visible(pages, time.Now())
+	variants := public.Variants(exps, rules, visible)
 	var out []string
 	for name := range changed {
 		body, live := visible[name]
-		if live && !seo.InSitemap(base, name, index, body) {
+		if live && !public.Listed(base, name, index, body, variants) {
 			continue
 		}
 		if _, isPage := pages[name]; isPage && !live {
@@ -157,7 +164,11 @@ func indexNowAfterPublish(ctx context.Context, root string) string {
 		save()
 		return ""
 	}
-	urls, err := indexNowChanged(s, base, "index", st.Commit, live)
+	// Unreadable, none: the site serves no test or rule from a file it
+	// cannot read either.
+	exps, _ := experiment.Load(experimentsPath(root))
+	rules, _ := personalise.Load(personalisePath(root))
+	urls, err := indexNowChanged(s, base, "index", st.Commit, live, exps, rules)
 	if err != nil || len(urls) == 0 {
 		save()
 		return ""

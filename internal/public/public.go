@@ -578,6 +578,7 @@ func (st *Site) sitemap(w http.ResponseWriter, r *http.Request) {
 
 	entries := make([]seo.Entry, 0, len(names))
 	var standsFor []string
+	variants := st.variants(pages)
 	for _, name := range names {
 		// A page that stands for records is no address of its own: each
 		// record's page is, and is listed below.
@@ -587,8 +588,9 @@ func (st *Site) sitemap(w http.ResponseWriter, r *http.Request) {
 			}
 			continue
 		}
-		// Not a page that asks to be left out, nor a copy of one elsewhere.
-		if !seo.InSitemap(base, name, st.Index, pages[name]) {
+		// Not a page that asks to be left out, nor a copy of one elsewhere,
+		// nor a version of one here that a test or a rule serves.
+		if !Listed(base, name, st.Index, pages[name], variants) {
 			continue
 		}
 		loc := base + "/" + name
@@ -642,8 +644,9 @@ func (st *Site) sitemap(w http.ResponseWriter, r *http.Request) {
 	// held, like a page, because a new page should be crawlable now and not
 	// in an hour.
 	// And the minute, when what it lists depends on the clock: an event's
-	// page goes when the event is over, with nothing published.
-	if tag := st.timedTag(st.contentTag("sitemap"), timed); tag != "" {
+	// page goes when the event is over, with nothing published. And the
+	// variants, which a test starting or stopping changes the same way.
+	if tag := st.timedTag(st.contentTag("sitemap"+variantsTag(variants)), timed); tag != "" {
 		h.Set("ETag", tag)
 		h.Set("Cache-Control", "public, max-age=0, must-revalidate")
 		if etag.Matches(r.Header.Get("If-None-Match"), tag) {
@@ -1161,6 +1164,11 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 	if signup {
 		tag = strings.TrimSuffix(tag, `"`) + map[bool]string{true: "-nl1", false: "-nl0"}[st.newsletterReady()] + `"`
 	}
+	// A variant's canonical link names the page it is served at, which a
+	// test starting or stopping changes with nothing published.
+	if of, ok := st.variants(pages)[name]; ok {
+		tag = strings.TrimSuffix(tag, `"`) + "-v" + variantsTag(map[string]string{name: of}) + `"`
+	}
 	w.Header().Set("ETag", tag)
 	// Left out of search results when it asks to be, on the response a
 	// crawler reads as well as in the page.
@@ -1323,9 +1331,14 @@ func (st *Site) injectHeadAt(html, page, key, hash string, body any) string {
 	// serving the fullest starter page once the tag searches stopped lowering
 	// it, and it read rel="canonİcal", which names no canonical, as one, so
 	// the page went out without its address.
+	//
+	// A variant names the page a test or a rule serves it at (Variants).
+	pages, _, perr := st.pages()
 	c := seo.Canonical(st.BaseURL, page, st.Index, body)
 	if key != "" {
 		c = st.recordURL(page, key)
+	} else if perr == nil {
+		c = st.canonicalIn(page, body, st.variants(pages))
 	}
 	if c != "" && asciifold.Index(html, `rel="canonical"`) < 0 {
 		b.WriteString(`<link rel="canonical" href="` + escape(c) + `">` + "\n")
@@ -1334,7 +1347,7 @@ func (st *Site) injectHeadAt(html, page, key, hash string, body any) string {
 		b.WriteString(`<meta name="robots" content="noindex">` + "\n")
 	}
 	// Its words alone, for a reader's agent.
-	if pages, _, perr := st.pages(); perr == nil && pages[page] != nil && page != askPageName && page != searchPageName {
+	if perr == nil && pages[page] != nil && page != askPageName && page != searchPageName {
 		mdName := page
 		if page == st.Index {
 			mdName = "index"
@@ -1647,14 +1660,16 @@ func (st *Site) llms(w http.ResponseWriter, r *http.Request) {
 	}
 	fmt.Fprintf(w, "## Pages\n\n")
 	base := strings.TrimSuffix(st.BaseURL, "/")
+	variants := st.variants(pages)
 	for _, n := range names {
 		// What the sitemap lists, by the sitemap's rule. A page records are
 		// drawn with is no page of its own (its copy was a heading or
 		// nothing: /product.md, two bytes), and a page that asks to be left
 		// out of search results, or copies one elsewhere, was listed here
 		// for every model while the sitemap left it out. A record's copy is
-		// linked from the listing that shows it.
-		if _, ok := detailOf(pages[n]); ok || !seo.InSitemap(base, n, st.Index, pages[n]) {
+		// linked from the listing that shows it, and a variant's is the
+		// page it is served at.
+		if _, ok := detailOf(pages[n]); ok || !Listed(base, n, st.Index, pages[n], variants) {
 			continue
 		}
 		title := n
