@@ -124,3 +124,52 @@ func TestAProgramIsPinnedToTheFileAPersonReviewed(t *testing.T) {
 		t.Errorf("a different file at the same path: %+v", d)
 	}
 }
+
+// A script an interpreter runs is the program a person reviewed there. The
+// pin covered only the command's first word, so "/usr/bin/python3
+// /opt/agent/run.py" was pinned to python3, and run.py could be replaced
+// after the review and still run, under a card and a receipt that said the
+// program was pinned. Every file the command line names is pinned with it;
+// a program whose command line names no other file keeps the file's own
+// digest, which its author can work out with sha256sum.
+func TestAScriptAnInterpreterRunsIsPinnedWithIt(t *testing.T) {
+	dir := t.TempDir()
+	interpreter, script := filepath.Join(dir, "interpreter"), filepath.Join(dir, "run.py")
+	write := func(path, body string) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(interpreter, "#!/bin/sh\nexec cat \"$@\"\n")
+	write(script, "print('reviewed')\n")
+	p := &Program{Command: []string{interpreter, "-u", script, "--goal", "tidy"}}
+	if err := p.Pin(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Check("coder"); err != nil {
+		t.Fatalf("the reviewed script was refused: %v", err)
+	}
+	write(script, "print('replaced')\n")
+	if _, err := p.Check("coder"); err == nil || !strings.Contains(err.Error(), "changed since it was reviewed") {
+		t.Errorf("a replaced script: %v", err)
+	}
+	write(script, "print('reviewed')\n")
+	if _, err := p.Check("coder"); err != nil {
+		t.Errorf("the reviewed script, put back: %v", err)
+	}
+	if err := os.Remove(script); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Check("coder"); err == nil {
+		t.Error("a script that is not there any more was let run")
+	}
+
+	alone := &Program{Command: []string{interpreter, "--fast"}}
+	if err := alone.Pin(); err != nil {
+		t.Fatal(err)
+	}
+	if own, _ := FileDigest(interpreter); alone.Digest != own {
+		t.Errorf("a program naming no other file is pinned to %s, not its own digest %s", alone.Digest, own)
+	}
+}

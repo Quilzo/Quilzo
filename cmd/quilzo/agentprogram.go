@@ -606,7 +606,7 @@ func reviewProgram(name string, p *agent.Program) error {
 	if p.Digest == "" {
 		return p.Pin()
 	}
-	here, err := agent.FileDigest(p.Command[0])
+	here, err := p.DigestNow()
 	if err != nil {
 		return fmt.Errorf("%s's program %s cannot be read to check it is the one declared: %w", name, p.Command[0], err)
 	}

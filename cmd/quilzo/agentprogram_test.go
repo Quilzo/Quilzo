@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -565,5 +566,62 @@ func TestAnAmendmentThatPinsAReplacedFileSaysSo(t *testing.T) {
 	m.Program = &agent.Program{Command: []string{prog}, MemoryMB: 256}
 	if err := declareAgent(root, m, false, false, asAdmin("dana")); err != nil {
 		t.Fatalf("less memory, the same file: %v", err)
+	}
+}
+
+// ranBackend is a box that records that it was asked to run something.
+type ranBackend struct{ ran *bool }
+
+func (ranBackend) Name() string                 { return "recorded" }
+func (ranBackend) Check() agentbox.Availability { return agentbox.Availability{OK: true} }
+func (b ranBackend) Run(context.Context, agentbox.Spec) (agentbox.Result, error) {
+	*b.ran = true
+	return agentbox.Result{}, errors.New("not run here")
+}
+
+// A program run by an interpreter, "/bin/sh /opt/tidy/run.sh", was pinned
+// to the interpreter: the script, which is what was reviewed, could be
+// replaced and the next run, a triggered one included, ran it. The script is
+// pinned with it, a run of a replaced one never reaches the box, and a
+// declaration naming the digest it was pinned to is held to both files.
+func TestAScriptAnInterpreterRunsIsRefusedOnceItChanges(t *testing.T) {
+	root := argsStore(t)
+	ran := false
+	testBackend = ranBackend{&ran}
+	t.Cleanup(func() { testBackend = nil })
+	script := filepath.Join(t.TempDir(), "run.sh")
+	if err := os.WriteFile(script, []byte("echo reviewed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, read := captureStdout(t)
+	err := cmdAgent(root, []string{"program", "tidy", "--", "/bin/sh", script})
+	read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, _ := loadAgents(root)
+	pinned := set.Agents["tidy"].Program.Digest
+	if sh, _ := agent.FileDigest("/bin/sh"); pinned == "" || pinned == sh {
+		t.Fatalf("pinned to %q, the interpreter alone", pinned)
+	}
+
+	if err := os.WriteFile(script, []byte("echo replaced\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = runAgentKeptBy(context.Background(), root, "tidy", "tidy the pages", false, true, asAdmin("dana"))
+	if err == nil || !strings.Contains(err.Error(), "changed since it was reviewed") || ran {
+		t.Fatalf("a replaced script: %v (reached the box: %v)", err, ran)
+	}
+	m := set.Agents["tidy"]
+	m.Program = &agent.Program{Command: []string{"/bin/sh", script}, MemoryMB: 256, Digest: pinned}
+	if err := declareAgent(root, m, false, true, asAdmin("dana")); err == nil ||
+		!strings.Contains(err.Error(), "not the program that was reviewed") {
+		t.Fatalf("declared as the reviewed script, with another one there: %v", err)
+	}
+	if err := os.WriteFile(script, []byte("echo reviewed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := declareAgent(root, m, false, true, asAdmin("dana")); err != nil {
+		t.Fatalf("declared as the reviewed script, which is there: %v", err)
 	}
 }

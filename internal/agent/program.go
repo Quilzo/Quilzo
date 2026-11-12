@@ -40,7 +40,9 @@ type Program struct {
 	CPUSeconds int `json:"cpu_seconds,omitempty"`
 	// Digest is the SHA-256 of the program's file as it was when a person
 	// reviewed it ("sha256:" and 64 hex digits), set when the program is
-	// declared. A run whose file is not that one any more is refused.
+	// declared. A run whose file is not that one any more is refused. When
+	// the command line names further files, a script an interpreter runs,
+	// it pins those too: see DigestNow.
 	//
 	// The declaration named a path and nothing else, so the file could be
 	// replaced between the review and the run with nothing recorded, while
@@ -142,14 +144,58 @@ func FileDigest(path string) (string, error) {
 	return "sha256:" + hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// Pin sets the digest to the program's file as it is now: done where a
+// pinnedFiles are the files a pin covers: the program, and each argument
+// that names a file on this machine, in the order the command line gives
+// them.
+//
+// The program alone was the command's first word, so "/usr/bin/python3
+// /opt/agent/run.py" was pinned to python3: the script, which is what a
+// person reviewed there, could be replaced after the review and still run.
+// A path that names no file (a directory, an output not written yet, a
+// word) is not one.
+func (p *Program) pinnedFiles() []string {
+	files := []string{p.Command[0]}
+	for _, a := range p.Command[1:] {
+		if !filepath.IsAbs(a) || filepath.Clean(a) != a {
+			continue
+		}
+		if st, err := os.Stat(a); err == nil && st.Mode().IsRegular() {
+			files = append(files, a)
+		}
+	}
+	return files
+}
+
+// DigestNow is what the program's pin is as its files are now: the
+// program file's own SHA-256 when its command line names no other file,
+// which is what sha256sum says of it, and otherwise the SHA-256 of what
+// sha256sum lists for each of them, in order ("sha256sum FILE... |
+// sha256sum").
+func (p *Program) DigestNow() (string, error) {
+	files := p.pinnedFiles()
+	if len(files) == 1 {
+		return FileDigest(files[0])
+	}
+	var list strings.Builder
+	for _, f := range files {
+		d, err := FileDigest(f)
+		if err != nil {
+			return "", err
+		}
+		list.WriteString(strings.TrimPrefix(d, "sha256:") + "  " + f + "\n")
+	}
+	sum := sha256.Sum256([]byte(list.String()))
+	return "sha256:" + hex.EncodeToString(sum[:]), nil
+}
+
+// Pin sets the digest to the program's files as they are now: done where a
 // person declares or reviews the program, never when it runs, since a run
 // pinning what it found would pin whatever had replaced the file.
 func (p *Program) Pin() error {
 	if !p.Pinnable() || len(p.Command) == 0 {
 		return nil
 	}
-	d, err := FileDigest(p.Command[0])
+	d, err := p.DigestNow()
 	if err != nil {
 		return fmt.Errorf("the program %s cannot be pinned to the file a person reviews: %w", p.Command[0], err)
 	}
@@ -166,7 +212,7 @@ func (p *Program) Check(agentName string) (string, error) {
 	}
 	path := p.Command[0]
 	again := "Review it, then pin it again: quilzo agent program " + agentName + " --pin"
-	now, err := FileDigest(path)
+	now, err := p.DigestNow()
 	switch {
 	case err != nil:
 		return "", fmt.Errorf("%s's program %s cannot be read to check it is the one reviewed, so it is not run: %w",
