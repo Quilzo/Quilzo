@@ -4,8 +4,10 @@
 package admin
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -372,5 +374,258 @@ func TestTheLogSaysWhenTheWriterSignsNoHeads(t *testing.T) {
 	if !strings.Contains(body, `<p class="hint warn">Its heads are the writer&rsquo;s to sign, and it signs`) ||
 		!strings.Contains(body, "head.key is not readable") {
 		t.Errorf("the page does not say the writer signs none, and why:\n%s", body)
+	}
+}
+
+// outcomesLog is a genuine chain with one entry of each outcome, and one
+// whose outcome was edited to something the log never writes.
+func outcomesLog(t *testing.T) []audit.Event {
+	t.Helper()
+	dir := t.TempDir()
+	l, err := audit.New(audit.Options{Path: dir + "/a.jsonl", Source: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range []struct {
+		action  string
+		outcome audit.Outcome
+	}{{"publish", audit.Success}, {"auth.grant", audit.Denied}, {"backup.failed", audit.Failure}, {"render", audit.Success}} {
+		if _, err := l.Append(audit.Record{Action: r.action, Resource: "/", Outcome: r.outcome,
+			Principal: "dana", Kind: audit.KindHuman, Verified: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	events, err := audit.Read(dir + "/a.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	events[3].Outcome = "succes"
+	return events
+}
+
+// tagOf is the class of the outcome tag drawn in the row for an action.
+func tagOf(t *testing.T, body, action string) string {
+	t.Helper()
+	i := strings.Index(body, `<td class="mono">`+action+`</td>`)
+	if i < 0 {
+		t.Fatalf("no row for %s:\n%s", action, body)
+	}
+	row := body[i:]
+	if j := strings.Index(row, "</tr>"); j >= 0 {
+		row = row[:j]
+	}
+	k := strings.Index(row, `<span class="`)
+	if k < 0 {
+		t.Fatalf("the row for %s has no outcome tag:\n%s", action, row)
+	}
+	row = row[k+len(`<span class="`):]
+	return row[:strings.Index(row, `"`)]
+}
+
+// Denied is kept apart from Failure in the log (audit.Outcome): being refused
+// is not the same as breaking, and the reader needs to tell them apart. The
+// page drew every outcome that was not "denied" in the success colour, a
+// failed backup included, and its filter offered success and denied only, so
+// ?outcome=failure showed "any" and pressing Filter dropped it. Only a
+// success is drawn as one, and an outcome the log never writes is not.
+func TestAFailureLooksLikeAFailureAndCanBeChosen(t *testing.T) {
+	s, tok := logServer(t, outcomesLog(t), true)
+	body, code := getLogs(t, s, tok, "")
+	if code != http.StatusOK {
+		t.Fatalf("got %d", code)
+	}
+	success, denied, failure, edited := tagOf(t, body, "publish"), tagOf(t, body, "auth.grant"),
+		tagOf(t, body, "backup.failed"), tagOf(t, body, "render")
+	if !strings.Contains(success, "tag-ok") {
+		t.Errorf("a success is drawn as %q", success)
+	}
+	if strings.Contains(failure, "tag-ok") || failure == denied {
+		t.Errorf("a failure is drawn as %q, a success as %q and a refusal as %q; a failure "+
+			"is told apart from both", failure, success, denied)
+	}
+	if strings.Contains(edited, "tag-ok") {
+		t.Errorf("an outcome the log never writes is drawn as a success (%q)", edited)
+	}
+
+	body, _ = getLogs(t, s, tok, "?outcome=failure")
+	if !strings.Contains(body, `<option value="failure" selected>failure</option>`) {
+		t.Errorf("the filter cannot show that it is choosing failures:\n%s", body)
+	}
+	if !strings.Contains(body, "1 of 4 entries") || !strings.Contains(body, "backup.failed") {
+		t.Errorf("?outcome=failure did not choose the failure")
+	}
+}
+
+// manyPeopleLog is a genuine chain of n entries, each from somebody else, as
+// a log of visitors' form submissions is.
+func manyPeopleLog(t *testing.T, n int) []audit.Event {
+	t.Helper()
+	dir := t.TempDir()
+	key, _ := audit.NewKey()
+	l, err := audit.New(audit.Options{Path: dir + "/a.jsonl", Key: key, Source: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < n; i++ {
+		if _, err := l.Append(audit.Record{Action: "form.submit", Resource: "/contact",
+			Outcome: audit.Success, Principal: fmt.Sprintf("visitor-%d", i), Kind: audit.KindUnknown}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	events, err := audit.Read(dir + "/a.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return events
+}
+
+// A view costs the page it shows. The page built and resolved a row for
+// every entry in the log before it showed two hundred of them, so its cost
+// grew with the log, and every new pseudonym, which visitors make, was one
+// more lookup. Resolving is asked for what is on the page, and the filter on
+// a name is the only thing that looks at everybody.
+func TestAViewResolvesOnlyThePageItShows(t *testing.T) {
+	events := manyPeopleLog(t, 600)
+	s, tok := logServer(t, events, true)
+	asked := map[string]bool{}
+	s.ResolvePrincipal = func(p string) string {
+		asked[p] = true
+		return ""
+	}
+	body, code := getLogs(t, s, tok, "")
+	if code != http.StatusOK {
+		t.Fatalf("got %d", code)
+	}
+	if !strings.Contains(body, "600 of 600 entries") {
+		t.Errorf("the view does not count the whole log")
+	}
+	if len(asked) > 200 {
+		t.Errorf("a view of 200 rows resolved %d people", len(asked))
+	}
+	// The newest page, and the next one from where it ended.
+	if !strings.Contains(body, events[599].Principal) || strings.Contains(body, events[399].Principal) {
+		t.Errorf("the first page is not the newest two hundred")
+	}
+	body, _ = getLogs(t, s, tok, "?offset=200")
+	if !strings.Contains(body, events[399].Principal) || strings.Contains(body, events[400].Principal) ||
+		strings.Contains(body, events[199].Principal) {
+		t.Errorf("the second page is not the next two hundred")
+	}
+	// A name filter still finds somebody wherever they are.
+	body, _ = getLogs(t, s, tok, "?who="+events[3].Principal)
+	if !strings.Contains(body, "1 of 600 entries") {
+		t.Errorf("filtering on a pseudonym did not find its one entry")
+	}
+}
+
+// Where the server indexes the log, the page reads the index and not the
+// whole file, and the index is never believed for having been read before:
+// what is appended shows on the next view, and an entry edited in place,
+// keeping the file's length, is reported as an alteration.
+func TestThePageReadsTheIndexAndStillSaysWhenTheLogWasAltered(t *testing.T) {
+	path := t.TempDir() + "/audit.jsonl"
+	l, err := audit.New(audit.Options{Path: path, Source: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	add := func(resource string) {
+		if _, err := l.Append(audit.Record{Action: "publish", Resource: resource, Outcome: audit.Success,
+			Principal: "dana", Kind: audit.KindHuman, Verified: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add("/first")
+	add("/second")
+	s, tok := logServer(t, nil, true)
+	s.LoadAudit = func() ([]audit.Event, error) {
+		t.Error("the page loaded the whole log with an index to read")
+		return nil, nil
+	}
+	index := audit.NewIndex(path)
+	s.AuditIndex = func() *audit.Index { return index }
+
+	body, _ := getLogs(t, s, tok, "")
+	if !strings.Contains(body, "Chain intact") || !strings.Contains(body, "/second") {
+		t.Fatalf("the indexed log is not shown:\n%s", body)
+	}
+	add("/third")
+	if body, _ = getLogs(t, s, tok, ""); !strings.Contains(body, "/third") || !strings.Contains(body, "3 of 3 entries") {
+		t.Errorf("an entry appended since the last view is not shown")
+	}
+
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(strings.Replace(string(b), "/first", "/FIRST", 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	body, _ = getLogs(t, s, tok, "")
+	if !strings.Contains(body, "has been altered") || strings.Contains(body, "Chain intact") {
+		t.Errorf("an entry edited in place was shown as an intact log:\n%s", body)
+	}
+}
+
+// The template escapes what a browser reads as markup and nothing else, so
+// the escape sequences somebody holding a decoy put in the path they asked
+// for reached this page byte for byte, as did every other control character
+// a field of the log can hold. A browser draws them as nothing, and the row
+// read as an ordinary path with stray brackets in it. The command line marks
+// each one, and the page does the same; the filter still takes the action as
+// the log holds it.
+func TestThePageMarksEveryControlCharacterInTheLog(t *testing.T) {
+	const redraw = "\x1b[2K\x1b[1A\x1b[2K\x1b[32mall quiet\x1b[0m"
+	dir := t.TempDir()
+	l, err := audit.New(audit.Options{Path: dir + "/a.jsonl", Source: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range []audit.Record{
+		{Action: "shield.decoy-touched", Resource: "/api/v1/pages" + redraw, Outcome: audit.Denied,
+			Principal: "visitor\x7f", Kind: audit.KindUnknown, Detail: map[string]string{"planted\x1b[2K": "ci\u009b2K vault"}},
+		{Action: "publish\u009b2K", Resource: "/x\rquiet", Outcome: audit.Success, Principal: "dana", Kind: audit.KindHuman, Verified: true},
+		{Action: "render", Resource: "/c", Outcome: audit.Success, Principal: "dana", Kind: audit.KindHuman, Verified: true},
+	} {
+		if _, err := l.Append(r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	events, err := audit.Read(dir + "/a.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A doctored entry is drawn too, under the warning that it was doctored.
+	events[2].At = "2026-11-10T09:00:00\x1b[2K"
+	events[2].Outcome = "success\x1b[5A"
+	s, tok := logServer(t, events, true)
+
+	body, code := getLogs(t, s, tok, "")
+	if code != http.StatusOK || !strings.Contains(body, "has been altered") {
+		t.Fatalf("got %d:\n%s", code, body)
+	}
+	// What is drawn, which is everything outside a tag: the template escapes
+	// every < and > a value holds, so each one left is the page's own. A
+	// filter's option keeps the action as the log holds it, as its value, so
+	// that choosing it finds it.
+	inTag := false
+	for _, r := range body {
+		switch {
+		case r == '<':
+			inTag = true
+		case r == '>':
+			inTag = false
+		case !inTag && (r < 0x20 && r != '\t' && r != '\n' || r == 0x7f || r >= 0x80 && r <= 0x9f):
+			t.Fatalf("the page draws the control character %q from the log:\n%q", r, body)
+		}
+	}
+	for _, want := range []string{"/api/v1/pages\uFFFD[2K", "visitor\uFFFD", "planted\uFFFD[2K", "ci\uFFFD2K vault",
+		"publish\uFFFD2K", "/x\uFFFDquiet", "success\uFFFD[5A"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the page does not show %q", want)
+		}
+	}
+	body, _ = getLogs(t, s, tok, "?action=publish%C2%9B2K")
+	if !strings.Contains(body, "1 of 3 entries") {
+		t.Errorf("the filter no longer finds an action holding a control character")
 	}
 }

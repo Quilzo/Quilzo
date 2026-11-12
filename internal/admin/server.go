@@ -128,11 +128,23 @@ type Server struct {
 	// lives, and after the writer was separated out it deliberately must not
 	// open it for writing. Reading is all it is given.
 	LoadAudit func() ([]audit.Event, error)
+	// AuditIndex, where it is set, is the log the log page reads in place of
+	// LoadAudit: read once and then only as it grows, with every byte read
+	// before checked again on each view (audit.Index). Loading the whole log
+	// on every view took seconds and hundreds of megabytes on a year of it.
+	// A function, so the page follows the log if `auditlog dir` moves it.
+	AuditIndex func() *audit.Index
 	// ResolvePrincipal turns a pseudonym back into a name, for principals this
 	// store knows. It cannot reverse the HMAC — it computes forward for each
 	// known principal and matches — so somebody the policy has never heard of
 	// stays opaque, which is the right outcome rather than a limitation.
 	ResolvePrincipal func(pseudonym string) string
+	// Resolver, where it is set, is ResolvePrincipal for one view: it reads
+	// the key and the people this store knows once, and answers each
+	// pseudonym from a table. Asked per pseudonym, resolving opened the log
+	// each time, and visitors, who make a new pseudonym each, made a view of
+	// the log as slow as they liked.
+	Resolver func() func(pseudonym string) string
 	// LogSeparated reports whether the writer runs as another account, so the
 	// page can say what the record is worth rather than implying it.
 	LogSeparated bool
@@ -624,6 +636,9 @@ func New(s *store.Store, p *auth.Policy, ts *auth.TokenStore, layouts render.Lay
 		"ago": func(unix int64) string { return agoAt(unix, time.Now()) },
 		// bytes is a file size as a person reads it: "2.4 MB", not 2411954.
 		"bytes": humanBytes,
+		// shown is a value from the audit log with its control characters
+		// made visible (logs.go).
+		"shown": shown,
 	}).ParseFS(assets, "assets/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("admin templates: %w", err)

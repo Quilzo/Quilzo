@@ -43,17 +43,22 @@ func cmdAgents(root string, args []string) error {
 		} else if len(r.Strikes) > 0 {
 			state, colour = "watch", yellow
 		}
-		w.Human("  %s%-8s%s %-18s %s%s%s\n", colour, state, reset, r.Principal,
-			dim, r.Model, reset)
-		w.Human("           %s%s%s\n", dim, r.Summary, reset)
+		// What a report says comes from the log: a model's name is whatever
+		// it was given, the resource is what it asked for, and a refusal's
+		// reason is quoted from the record. Through onOneLine, as auditlog
+		// show does, so none of it can move the cursor or start a line of
+		// its own on the terminal of the person reading the report.
+		w.Human("  %s%-8s%s %-18s %s%s%s\n", colour, state, reset, onOneLine(r.Principal),
+			dim, onOneLine(r.Model), reset)
+		w.Human("           %s%s%s\n", dim, onOneLine(r.Summary), reset)
 
 		for _, s := range r.Strikes {
 			if s.Seq == 0 {
-				w.Human("           %s· %s%s\n", dim, s.Why, reset)
+				w.Human("           %s· %s%s\n", dim, onOneLine(s.Why), reset)
 				continue
 			}
 			w.Human("           %s· seq %d  %s %s — %s%s\n",
-				dim, s.Seq, s.Action, s.Resource, s.Why, reset)
+				dim, s.Seq, onOneLine(s.Action), onOneLine(s.Resource), onOneLine(s.Why), reset)
 		}
 	}
 

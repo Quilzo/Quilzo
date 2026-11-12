@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/api"
@@ -873,35 +874,12 @@ func cmdServe(root string, args []string) error {
 
 	// The audit log, read-only. This process cannot write it where the writer
 	// has been separated out, so there is no edit path to withhold.
-	srv.LoadAudit = func() ([]audit.Event, error) {
-		return audit.Read(auditPath(root))
-	}
+	logPageHooks(srv, root, pol, toks)
 	srv.LogSeparated = func() bool {
 		ok, _ := logd.CheckOwnership(auditPath(root), os.Geteuid())
 		return ok
 	}()
 	logHeadsHook(srv, root)
-	// Forward matching only. The HMAC cannot be reversed; this computes the
-	// pseudonym for each principal the store knows and compares, so somebody
-	// the policy has never heard of stays opaque — which is itself worth
-	// seeing on the page.
-	srv.ResolvePrincipal = func(pseudonym string) string {
-		l, err := openAudit(root)
-		if err != nil {
-			return ""
-		}
-		for _, name := range pol.Principals() {
-			if l.Matches(pseudonym, name) {
-				return name
-			}
-		}
-		for _, t := range toks.Snapshot() {
-			if l.Matches(pseudonym, t.Principal) {
-				return t.Principal
-			}
-		}
-		return ""
-	}
 	srv.Throttle = throttle.New(throttlePolicy(cfg))
 
 	// The content API, same-origin with the playground. Read-only here: this
@@ -1299,6 +1277,69 @@ func cmdServe(root string, args []string) error {
 func sessionCaller(by admin.Actor) *Caller {
 	return &Caller{Name: by.Name, Kind: audit.KindHuman, Verified: true,
 		Role: by.Role, Scope: by.Scope, Limits: by.Limits}
+}
+
+// logPageHooks gives the admin's log page the log, to read, and the means to
+// name the people in it that this store knows.
+func logPageHooks(srv *admin.Server, root string, pol *auth.Policy, toks *auth.TokenStore) {
+	srv.LoadAudit = func() ([]audit.Event, error) {
+		return audit.Read(auditPath(root))
+	}
+	// Read through an index, so a view reads what was appended since the
+	// last one rather than the whole log (audit.Index). One for each place
+	// the log has been, because `auditlog dir` can move it while this runs.
+	var indexes sync.Map
+	srv.AuditIndex = func() *audit.Index {
+		path := auditPath(root)
+		if x, ok := indexes.Load(path); ok {
+			return x.(*audit.Index)
+		}
+		x, _ := indexes.LoadOrStore(path, audit.NewIndex(path))
+		return x.(*audit.Index)
+	}
+	// Forward matching only. The HMAC cannot be reversed; this computes the
+	// pseudonym for each principal the store knows and compares, so somebody
+	// the policy has never heard of stays opaque — which is itself worth
+	// seeing on the page.
+	//
+	// One table for a view. Resolving opened the log for every pseudonym it
+	// was asked about, reading the key, the host name and the end of the
+	// file, and created the key where there was none; a view of a log that
+	// visitors had written to asked about thousands of pseudonyms and took
+	// seconds. The key is read once a view, each known person's handle is
+	// computed once, and each pseudonym is then a lookup.
+	srv.Resolver = func() func(string) string {
+		names := knownHandles(root, pol, toks)
+		return func(pseudonym string) string { return names[pseudonym] }
+	}
+	srv.ResolvePrincipal = func(pseudonym string) string { return srv.Resolver()(pseudonym) }
+}
+
+// knownHandles maps the handle each person this store knows has in its log
+// to their name. Reading the key is all it does to the log; a log with no key
+// yet has no handles to match.
+func knownHandles(root string, pol *auth.Policy, toks *auth.TokenStore) map[string]string {
+	key, err := os.ReadFile(auditKeyPath(root))
+	if err != nil {
+		return nil
+	}
+	handle := func(id string) string { return audit.Pseudonym(key, id) }
+	if len(key) == 0 {
+		// A log kept without a key names people as they are (audit.New).
+		handle = func(id string) string { return id }
+	}
+	names := map[string]string{}
+	for _, t := range toks.Snapshot() {
+		if t.Principal != "" {
+			names[handle(t.Principal)] = t.Principal
+		}
+	}
+	for _, name := range pol.Principals() {
+		if name != "" {
+			names[handle(name)] = name
+		}
+	}
+	return names
 }
 
 // logHeadsHook tells the audit log screen who signs the log's heads, and

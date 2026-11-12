@@ -35,7 +35,7 @@
     <label>Action
       <select name="action">
         <option value="">any</option>
-        {{range .Actions}}<option value="{{.}}"{{if eq . $.Action}} selected{{end}}>{{.}}</option>{{end}}
+        {{range .Actions}}<option value="{{.}}"{{if eq . $.Action}} selected{{end}}>{{shown .}}</option>{{end}}
       </select>
     </label>
     <label>Outcome
@@ -43,6 +43,7 @@
         <option value="">any</option>
         <option value="success"{{if eq .Outcome "success"}} selected{{end}}>success</option>
         <option value="denied"{{if eq .Outcome "denied"}} selected{{end}}>denied</option>
+        <option value="failure"{{if eq .Outcome "failure"}} selected{{end}}>failure</option>
       </select>
     </label>
     <label>Who
@@ -64,21 +65,20 @@
   {{range .Rows}}
   <tr>
     <th scope="row">{{.Seq}}</th>
-    <td class="mono">{{.At}}</td>
+    <td class="mono">{{shown .At}}</td>
     <td>
-      {{if .Resolved}}{{.Who}}{{else}}<span class="mono hint">{{.Who}}</span>{{end}}
+      {{if .Resolved}}{{shown .Who}}{{else}}<span class="mono hint">{{shown .Who}}</span>{{end}}
       {{if not .Verified}}<span class="tag">unverified</span>{{end}}
       {{if eq .Kind "unknown"}}<span class="tag">unknown</span>{{end}}
     </td>
-    <td class="mono">{{.Action}}</td>
-    <td class="mono">{{.Resource}}</td>
-    <td>{{if .Failed}}<span class="tag tag-bad">{{.Outcome}}</span>
-        {{else}}<span class="tag tag-ok">{{.Outcome}}</span>{{end}}</td>
+    <td class="mono">{{shown .Action}}</td>
+    <td class="mono">{{shown .Resource}}</td>
+    <td><span class="{{.Tag}}">{{shown .Outcome}}</span></td>
   </tr>
   {{if .Detail}}
   <tr class="detail">
     <td></td>
-    <td colspan="5">{{range $k, $v := .Detail}}<span class="kv"><b>{{$k}}</b> {{$v}}</span>{{end}}</td>
+    <td colspan="5">{{range $k, $v := .Detail}}<span class="kv"><b>{{shown $k}}</b> {{shown $v}}</span>{{end}}</td>
   </tr>
   {{end}}
   {{end}}
