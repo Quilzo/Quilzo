@@ -925,14 +925,19 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 // for the command line's server, run by whoever owns the machine; from afar
 // the only directory there is to name is this server's own, and the refusal
 // does not say what was asked for.
+//
+// An agent's run is refused alike. It calls these through the same
+// interface with the caller who started it, who is not at the agent
+// interface, so a run's model, choosing its arguments from whatever it had
+// read, could still have the server open any path and say which existed.
 func templatesAsked(a map[string]any, caller *Caller, tplDir string) (string, error) {
 	asked, _ := a["templates"].(string)
 	if asked == "" || filepath.Clean(asked) == filepath.Clean(tplDir) {
 		return tplDir, nil
 	}
-	if caller.Remote {
+	if caller.Remote || caller.run != nil {
 		return "", &mcp.Refusal{Reason: "this reads the templates this server was started with; " +
-			"a caller at the agent interface cannot name another directory"}
+			"a caller at the agent interface or an agent's run cannot name another directory"}
 	}
 	return asked, nil
 }

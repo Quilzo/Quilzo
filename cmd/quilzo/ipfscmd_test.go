@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/admin"
+	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/ipfs"
 	"github.com/quilzo/quilzo/internal/out"
@@ -282,5 +284,42 @@ func TestACopyOfASiteWithAFormIsTheSameEachTimeItIsMade(t *testing.T) {
 	}
 	if a.Block.CID != b.Block.CID {
 		t.Errorf("one published site has two identifiers: %s and %s", a.Block.CID, b.Block.CID)
+	}
+}
+
+// An agent's run cannot name a directory on the server for content_id
+// either.
+//
+// The refusal was asked of a caller at the agent interface only, and a run
+// reaches content_id through the same interface (agentexec.Bridged) with
+// the caller who started it, who is not one: so the model, choosing its
+// own arguments from whatever it had read, could still have the server
+// open any path it named and tell it which existed.
+func TestARunCannotNameTheTemplatesContentIDReads(t *testing.T) {
+	root := publishedShop(t)
+	s, err := open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := agent.Manifest{Name: "pinner", Kind: agent.KindTask, Purpose: "Check what a pinning service holds",
+		Capabilities: []string{"content_id"}, Autonomy: agent.AutonomyDraft,
+		Budget: agent.Budget{Steps: 6, Tools: 4, Duration: agent.Duration(time.Minute)}}
+	call := platformCall(root, s, asAdmin("dana"), agent.NewSession(m, nil), "dana")
+	var answers []string
+	for _, dir := range []string{"/etc/passwd", "/nonexistent", bundleTemplates(t)} {
+		text, err := call(context.Background(), "content_id", false, map[string]any{"templates": dir})
+		if err == nil {
+			t.Errorf("a run had the site rendered with %s, a directory its model chose: %.60s", dir, text)
+			continue
+		}
+		if strings.Contains(err.Error(), dir) {
+			t.Errorf("the refusal names the directory asked about: %v", err)
+		}
+		answers = append(answers, err.Error())
+	}
+	for _, a := range answers {
+		if a != answers[0] {
+			t.Errorf("the refusals tell directories apart:\n  %s\n  %s", answers[0], a)
+		}
 	}
 }
