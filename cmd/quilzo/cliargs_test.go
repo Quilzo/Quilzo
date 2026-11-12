@@ -202,7 +202,8 @@ func TestAWordACommandDoesNotTakeIsRefused(t *testing.T) {
 // addPage drafts a page with the command line, as somebody would.
 func addPage(t *testing.T, root, token, name, title string) {
 	t.Helper()
-	page := filepath.Join(t.TempDir(), name+".json")
+	// A file of its own name, since a page's may hold a slash.
+	page := filepath.Join(t.TempDir(), "page.json")
 	if err := os.WriteFile(page, []byte(`{"title":"`+title+`","body":"b"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -289,6 +290,71 @@ func TestFlagsMayComeBeforeTheNames(t *testing.T) {
 	}
 	if got := bindingsOf(t, root, "gil"); !slices.Equal(got, []string{"author /blog"}) {
 		t.Errorf("gil holds %v, want [author /blog]", got)
+	}
+}
+
+// A flag before the name a command is about does not get it past a deny.
+//
+// Taking flags before the names opened this. The check on a page, a
+// collection of records or an agent is made before the command runs, by a
+// table that says which word names it, and it read the words up to the first
+// flag. With the flag first it found no name and asked about the whole site,
+// which a deny on /legal does not cover: `lock --note x legal/terms` locked
+// a page its caller was denied, and `note add`, `checked set` and
+// `provenance set` wrote to one. So the words after a flag are each asked
+// about too.
+func TestAFlagFirstDoesNotGetPastADeny(t *testing.T) {
+	root, owner := accessStore(t)
+	addPage(t, root, owner, "legal/terms", "v1")
+	addPage(t, root, owner, "index", "v1")
+	for _, line := range [][]string{
+		{"records", "add", "secret", "name=alpha"},
+		{"agent", "new", "bot", "--kind", "retrieval"},
+		{"auth", "grant", "dana", "author"},
+		{"auth", "deny", "dana", "author", "--on", "/legal"},
+		{"auth", "deny", "dana", "author", "--on", "/@data/secret"},
+		{"auth", "deny", "dana", "run-agents", "--on", "/@agents/bot"},
+	} {
+		if _, e, code := cliRun(t, root, owner, line...); code != 0 {
+			t.Fatalf("`quilzo %s`: %s", strings.Join(line, " "), firstLines(e, 3))
+		}
+	}
+	o, e, code := cliRun(t, root, owner, "token", "issue", "danas", "--principal", "dana", "--role", "author", "--json")
+	var tok struct{ Token string }
+	if err := json.Unmarshal([]byte(o), &tok); code != 0 || err != nil || tok.Token == "" {
+		t.Fatalf("token issue for dana: %v %s", err, firstLines(e, 3))
+	}
+	dana := tok.Token
+
+	for _, line := range [][]string{
+		{"lock", "--note", "x", "legal/terms"},
+		{"note", "add", "--field", "title", "legal/terms", "flag first"},
+		{"checked", "set", "--note", "ok", "legal/terms"},
+		{"provenance", "set", "--source", "humanEdits", "--author", "dana", "legal/terms"},
+		{"records", "add", "--id", "0123456789abcdef0123456789abcdef", "secret", "name=gamma"},
+		{"agent", "run", "--", "bot"},
+	} {
+		_, e, code := cliRun(t, root, dana, line...)
+		if code == 0 || !strings.Contains(e, "denied") {
+			t.Errorf("`quilzo %s` by somebody denied it exited %d: %s", strings.Join(line, " "), code, firstLines(e, 3))
+		}
+	}
+	for what, line := range map[string][]string{
+		"legal/terms": {"lock", "list", "--json"},
+		"flag first":  {"note", "list", "--json"},
+		"gamma":       {"records", "list", "secret", "--json"},
+	} {
+		if o, _, _ := cliRun(t, root, owner, line...); strings.Contains(o, what) {
+			t.Errorf("a denied command left %q in `quilzo %s`: %s", what, strings.Join(line, " "), firstLines(o, 6))
+		}
+	}
+	// Somebody nothing denies there still writes flags first, and so does
+	// dana on a page she may edit.
+	if _, e, code := cliRun(t, root, owner, "lock", "--note", "x", "legal/terms"); code != 0 {
+		t.Errorf("the owner's `quilzo lock --note x legal/terms`: %s", firstLines(e, 3))
+	}
+	if _, e, code := cliRun(t, root, dana, "lock", "--note", "x", "index"); code != 0 {
+		t.Errorf("dana's `quilzo lock --note x index`: %s", firstLines(e, 3))
 	}
 }
 
