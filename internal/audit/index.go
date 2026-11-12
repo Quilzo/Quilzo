@@ -174,11 +174,12 @@ func (x *Index) refresh() (*Snapshot, error) {
 		return nil, err
 	}
 	defer f.Close()
-	fi, err := f.Stat()
+	// As far as Read reads it: a record still being written is not a last
+	// line a crash left unfinished (settled).
+	size, err := settled(f, x.path)
 	if err != nil {
 		return nil, err
 	}
-	size := fi.Size()
 
 	// What was read before is read again, as bytes, and believed only if
 	// it is the same bytes.
