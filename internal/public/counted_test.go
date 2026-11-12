@@ -4,9 +4,11 @@
 package public
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/quilzo/quilzo/internal/analytics"
+	"github.com/quilzo/quilzo/internal/experiment"
 )
 
 const browser = "Mozilla/5.0 (X11; Linux x86_64) Chrome/149.0 Safari/537.36"
@@ -57,5 +59,56 @@ func TestARevisitAnswered304IsStillAView(t *testing.T) {
 		"If-None-Match": etag, "Sec-Fetch-Dest": "style"})
 	if d := c.Today(); d.Views != 2 {
 		t.Fatalf("views %d, want 2", d.Views)
+	}
+}
+
+// TestOnePageIsCountedUnderOneAddress — found by driving the site: /about,
+// /about/ and /about%2f are one page with one canonical link, and analytics
+// kept them as three, so the page's views were split and a link brought in
+// from WordPress, which ends in a slash, counted somewhere nobody looked. The
+// home page reached by its own name is the home page too.
+func TestOnePageIsCountedUnderOneAddress(t *testing.T) {
+	st, c := experimentSite(t)
+	for i, path := range []string{"/thanks", "/thanks/", "/thanks%2f", "/", "/index", "/index/"} {
+		if w := visitAs(st, path, fmt.Sprintf("203.0.113.%d", i)); w.Code != 200 {
+			t.Fatalf("%s answered %d", path, w.Code)
+		}
+	}
+	d := c.Today()
+	if d.Pages["/thanks"].Views != 3 || d.Pages["/"].Views != 3 {
+		t.Fatalf("one page counted under several addresses: %+v", d.Pages)
+	}
+	for p := range d.Pages {
+		if p != "/thanks" && p != "/" {
+			t.Errorf("counted under %q", p)
+		}
+	}
+}
+
+// TestAPageGoalIsReachedWithATrailingSlash — found by driving the site: an
+// experiment whose goal was page:/delivery reported nobody converting when
+// every visitor reached /delivery/, the same page; and a goal written with
+// the slash missed every visitor who came without it.
+func TestAPageGoalIsReachedWithATrailingSlash(t *testing.T) {
+	for _, tc := range []struct{ goal, reached string }{
+		{"page:/thanks", "/thanks/"},
+		{"page:/thanks", "/thanks%2f"},
+		{"page:/thanks/", "/thanks"},
+		{"page:/", "/index"},
+		{"page:/index", "/"},
+	} {
+		st, c := experimentSite(t)
+		set, _ := st.Experiments()
+		set.Experiments[0].Goal = tc.goal
+		for i := 0; i < 10; i++ {
+			ip := fmt.Sprintf("198.51.100.%d", i)
+			visitAs(st, "/pricing", ip)
+			visitAs(st, tc.reached, ip)
+		}
+		d := c.Today()
+		won := d.Goals[experiment.WonKey("price", "a")] + d.Goals[experiment.WonKey("price", "b")]
+		if won != 10 {
+			t.Errorf("goal %s reached at %s: %d of 10 converted", tc.goal, tc.reached, won)
+		}
 	}
 }

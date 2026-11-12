@@ -5,6 +5,7 @@ package public
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/experiment"
@@ -67,6 +68,11 @@ func (st *Site) convert(r *http.Request, goal string) {
 // convertPage records reaching a page, for experiments whose goal is it.
 // Only those: a goal per page for every page would fill the day's goals with
 // what the page counts already say.
+//
+// The goal is folded as the path was (countedAs), so page:/delivery/ and
+// page:/delivery name one page, as they always could be written. Each
+// spelling is converted once, because convert credits the experiments whose
+// goal is spelled as it was given.
 func (st *Site) convertPage(r *http.Request, path string) {
 	if st.Experiments == nil || st.Analytics == nil {
 		return
@@ -75,11 +81,14 @@ func (st *Site) convertPage(r *http.Request, path string) {
 	if err != nil {
 		return
 	}
+	done := map[string]bool{}
 	for _, e := range set.Experiments {
-		if e.Running && e.Goal == "page:"+path {
-			st.convert(r, e.Goal)
-			return
+		goal, isPage := strings.CutPrefix(e.Goal, "page:")
+		if !e.Running || !isPage || done[e.Goal] || st.countedAs(goal) != path {
+			continue
 		}
+		done[e.Goal] = true
+		st.convert(r, e.Goal)
 	}
 }
 

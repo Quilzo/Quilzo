@@ -30,7 +30,7 @@ func (st *Site) counted(next http.Handler) http.Handler {
 		// stylesheet says otherwise.
 		revisit := sw.status == http.StatusNotModified &&
 			r.Header.Get("Sec-Fetch-Dest") == "document"
-		path := countedAs(r.URL.Path)
+		path := st.countedAs(r.URL.Path)
 		if page || revisit {
 			st.Analytics.Visit(r, path)
 			st.convertPage(r, path)
@@ -45,8 +45,8 @@ func (st *Site) counted(next http.Handler) http.Handler {
 	})
 }
 
-// countedAs is the path a request is counted under: its own, except a
-// shared draft's.
+// countedAs is the path a request is counted under: the address of the
+// page that answers it, except a shared draft's.
 //
 // A shared draft's address is the only key to it (shared.go), and the
 // store keeps a digest of that key so that whoever reads the store, or a
@@ -54,11 +54,22 @@ func (st *Site) counted(next http.Handler) http.Handler {
 // went into the day's totals in clear, on the disk and on the admin's
 // analytics screen, and every ended one into the addresses not found. So
 // they are counted together, under the prefix.
-func countedAs(path string) string {
+//
+// Any other path is folded the way the page handler reads it and the
+// canonical link names it: /about/, /about%2f and /about are one page, and
+// the home page reached by its own name is /. Counted as asked, they were
+// three rows in analytics, and an experiment whose goal was /delivery saw
+// nobody convert when every visitor came by a link brought in from
+// WordPress, which ends in a slash.
+func (st *Site) countedAs(path string) string {
 	if strings.HasPrefix(path, "/shared/") {
 		return "/shared/"
 	}
-	return path
+	name := strings.Trim(path, "/")
+	if name == "" || name == st.Index {
+		return "/"
+	}
+	return "/" + name
 }
 
 type statusWriter struct {
