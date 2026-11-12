@@ -175,3 +175,48 @@ func TestACryptoTickerIsNotACurrencyToGrantOrPayIn(t *testing.T) {
 		t.Errorf("a payment in ETH: %q", why)
 	}
 }
+
+// A paying call declared with a fixed currency when any three capital
+// letters were one, =ETH, made integrations.json unreadable once a currency
+// was checked against ISO 4217: every integration stopped, the paying one
+// and every other, and so did the commands and the screen that would put it
+// right, which read the file first. It is read as it was written, a call to
+// it is held as a payment in something that is not a currency, and it is
+// refused only when the declaration is written again.
+func TestAPayingCallStoredInATickerDoesNotStopEveryIntegration(t *testing.T) {
+	root, _ := payingStore(t)
+	set, err := loadIntegrations(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	set.Declared[0].Operations[0].Pays.Currency = "=ETH"
+	set.Declared = append(set.Declared, agent.Integration{Name: "tracker", Kind: agent.IntegrationMCP, Enabled: true,
+		Purpose: "files issues", Endpoint: "tracker.example.com", Uses: []string{"create_issue"}})
+	// As an earlier version wrote it, with nothing between it and the file.
+	if err := saveJSON(integrationsPath(root), set); err != nil {
+		t.Fatal(err)
+	}
+	got, err := loadIntegrations(root)
+	if err != nil {
+		t.Fatalf("integrations.json with a call paying in ETH was not read: %v", err)
+	}
+	if in, err := got.Resolve("create_issue"); err != nil || in.Name != "tracker" {
+		t.Errorf("the other integration: %+v %v", in, err)
+	}
+	held := agent.Action{Tool: "pay_invoice", Input: map[string]any{
+		"body": map[string]any{"amount": 100.0, "payee": "acct_supplies"}}}
+	if why := paymentAsks(root, "buyer")(held); !strings.HasPrefix(why, agent.PaysPrefix) || !strings.Contains(why, "ISO 4217") {
+		t.Errorf("a call paying in ETH: %q", why)
+	}
+	if err := got.Validate(); err == nil || !strings.Contains(err.Error(), "ISO 4217") {
+		t.Errorf("written again in ETH: %v", err)
+	}
+	// What never had a code's shape is refused when read, as it was.
+	set.Declared[0].Operations[0].Pays.Currency = "=dollars"
+	if err := saveJSON(integrationsPath(root), set); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadIntegrations(root); err == nil {
+		t.Error("a call paying in dollars was read")
+	}
+}

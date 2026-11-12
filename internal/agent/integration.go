@@ -264,8 +264,11 @@ func (p Pays) Read(args map[string]any, host string) (amount any, currency, paye
 	return amount, strings.ToUpper(strings.TrimSpace(cs)), payee, nil
 }
 
-// check holds a payment declaration to an operation's own arguments.
-func (p Pays) check(o Operation) error {
+// check holds a payment declaration to an operation's own arguments. A
+// fixed currency is held to the list a mandate is, or, for a declaration
+// read back from where it was stored (stored), to a code's shape: see
+// Integrations.ValidateStored.
+func (p Pays) check(o Operation, stored bool) error {
 	declared := func(ref string) bool {
 		if v, fixed := strings.CutPrefix(ref, "="); fixed {
 			return strings.TrimSpace(v) != ""
@@ -287,7 +290,9 @@ func (p Pays) check(o Operation) error {
 		return fmt.Errorf("%s pays and its amount is not one of its parameters or body fields", o.Name)
 	case p.Currency == "" || !declared(p.Currency):
 		return fmt.Errorf("%s pays and its currency is not one of its arguments, or a fixed code such as =USD", o.Name)
-	case strings.HasPrefix(p.Currency, "=") && spend.CheckCurrency(strings.TrimPrefix(p.Currency, "=")) != nil:
+	case strings.HasPrefix(p.Currency, "=") && stored && !reCodeShape.MatchString(strings.TrimPrefix(p.Currency, "=")):
+		return fmt.Errorf("%s pays in %q, which is not a three-letter currency code", o.Name, strings.TrimPrefix(p.Currency, "="))
+	case strings.HasPrefix(p.Currency, "=") && !stored && spend.CheckCurrency(strings.TrimPrefix(p.Currency, "=")) != nil:
 		// The list a mandate is checked against, not the shape of a code:
 		// ^[A-Z]{3}$ let =ETH through, and every payment the call made was
 		// then counted in hundredths of a token.
@@ -329,6 +334,9 @@ var (
 	reParam     = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_.-]{0,63}$`)
 	reHeader    = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]{0,63}$`)
 	rePlace     = regexp.MustCompile(`\{([^{}/]+)\}`)
+	// reCodeShape is what a fixed currency was checked for before the
+	// ISO 4217 list was: a declaration stored then is read with it.
+	reCodeShape = regexp.MustCompile(`^[A-Z]{3}$`)
 )
 
 // forbiddenAuthHeaders are headers an API key may not be sent as: they
@@ -338,7 +346,7 @@ var forbiddenAuthHeaders = map[string]bool{"host": true, "cookie": true, "conten
 
 // checkOperations holds a REST integration's operations to what can be
 // called safely and read by a person.
-func (in *Integration) checkOperations() error {
+func (in *Integration) checkOperations(stored bool) error {
 	if len(in.Operations) == 0 {
 		return fmt.Errorf("%s is a REST integration with no operations; import them with quilzo integrations import", in.Name)
 	}
@@ -395,7 +403,7 @@ func (in *Integration) checkOperations() error {
 			return fmt.Errorf("%s: %s's path names {%s}, which it does not declare", in.Name, o.Name, p)
 		}
 		if o.Pays != nil {
-			if err := o.Pays.check(o); err != nil {
+			if err := o.Pays.check(o, stored); err != nil {
 				return fmt.Errorf("%s: %w", in.Name, err)
 			}
 		}
@@ -464,7 +472,12 @@ func (g GatewayPolicy) Asks(tool string) bool {
 }
 
 // Validate refuses an integration that cannot mean what it appears to.
-func (in *Integration) Validate() error {
+func (in *Integration) Validate() error { return in.validate(false) }
+
+// validate is Validate, or, for a declaration read back from where it was
+// stored, Validate with a paying call's fixed currency held only to the
+// shape it was held to when it was written.
+func (in *Integration) validate(stored bool) error {
 	if strings.TrimSpace(in.Name) == "" {
 		return fmt.Errorf("an integration needs a name, so a log entry can say which one acted")
 	}
@@ -599,7 +612,7 @@ func (in *Integration) Validate() error {
 			return fmt.Errorf("%s is another agent, and the gateway offers MCP servers and REST APIs only", in.Name)
 		}
 	case IntegrationHTTP:
-		if err := in.checkOperations(); err != nil {
+		if err := in.checkOperations(stored); err != nil {
 			return err
 		}
 	default:
@@ -775,11 +788,26 @@ func (s Integrations) Enabled() []Integration {
 // Not only the enabled ones: a declaration that does not validate is a landmine
 // for whoever enables it later, and "it was fine until I turned it on" is the
 // report nobody can act on.
-func (s Integrations) Validate() error {
+func (s Integrations) Validate() error { return s.validate(false) }
+
+// ValidateStored is Validate for the declarations as they were read back
+// from where they are kept, before anything changes them.
+//
+// A paying call's fixed currency is held there to a code's shape, which is
+// all it was held to when it was written. One declared as =ETH or =BTC when
+// three capital letters were enough, refused when it was read, made the
+// whole file unreadable: every integration stopped, not only the paying
+// one, and so did the commands and the screen that would put it right,
+// which read the file first. A call to it is still held, because the
+// payment's currency is checked when it is made; writing it again in that
+// currency is refused by Validate.
+func (s Integrations) ValidateStored() error { return s.validate(true) }
+
+func (s Integrations) validate(stored bool) error {
 	seen := map[string]bool{}
 	for i := range s.Declared {
 		in := &s.Declared[i]
-		if err := in.Validate(); err != nil {
+		if err := in.validate(stored); err != nil {
 			return err
 		}
 		if seen[in.Name] {

@@ -45,7 +45,10 @@ func loadIntegrations(root string) (*agent.Integrations, error) {
 			"integrations.json could not be read, so this install does not "+
 				"know what it may reach: %w", err)
 	}
-	if err := set.Validate(); err != nil {
+	// As it was written: a paying call's fixed currency stored when three
+	// capital letters were one (=ETH) is read, and refused when it is
+	// written again, rather than taking every integration down with it.
+	if err := set.ValidateStored(); err != nil {
 		return nil, fmt.Errorf("integrations.json: %w", err)
 	}
 	return set, nil
