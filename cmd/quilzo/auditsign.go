@@ -406,7 +406,8 @@ func auditVerifyHead(root string, args []string) error {
 	if !verified {
 		w.Human("%s%d entries, root %s%s\n", bold, sh.Size, sh.Root, reset)
 		w.Human("  %ssigned by %s with Ed25519 and ML-DSA-65, and both signatures check out,\n"+
-			"  but the log here, at %d entries, does NOT contain it%s\n", red, sh.KeyID, *logSize, reset)
+			"  but the log at %s, at %d entries, does NOT contain it%s\n",
+			red, sh.KeyID, auditPath(root), *logSize, reset)
 		return errBlocked{against}
 	}
 	w.Human("%sverified%s  %d entries, root %s\n", bold, reset, sh.Size, sh.Root)
