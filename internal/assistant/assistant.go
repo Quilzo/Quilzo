@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Assistant is one chatbot, as its owner declared it.
@@ -524,9 +525,7 @@ func (a Assistant) Propose(call ActionCall) (Proposal, error) {
 					continue
 				}
 				v = oneLine(v)
-				if len(v) > MaxArg {
-					v = v[:MaxArg]
-				}
+				v = plaintext.Clip(v, MaxArg, "")
 				if p.Args == nil {
 					p.Args = map[string]string{}
 				}

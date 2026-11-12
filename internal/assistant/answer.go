@@ -13,6 +13,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/search"
 )
 
@@ -94,9 +95,7 @@ func RespondTo(ctx context.Context, a Assistant, idx *Index, m Model,
 	}
 
 	previous = oneLine(previous)
-	if len(previous) > MaxQuestion {
-		previous = previous[:MaxQuestion]
-	}
+	previous = plaintext.Clip(previous, MaxQuestion, "")
 	asked := question
 	hits := idx.Retrieve(question, a.depth())
 	if len(hits) == 0 && previous != "" {

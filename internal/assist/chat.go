@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // A whole conversation, as OpenAI's chat completions take one.
@@ -316,9 +318,7 @@ func (h *HTTPModel) Chat(ctx context.Context, req ChatRequest) (ChatReply, error
 		var buf bytes.Buffer
 		_, _ = buf.ReadFrom(http.MaxBytesReader(nil, resp.Body, 4<<10))
 		snippet := strings.TrimSpace(buf.String())
-		if len(snippet) > 300 {
-			snippet = snippet[:300]
-		}
+		snippet = plaintext.Clip(snippet, 300, "")
 		return ChatReply{}, &StatusError{Code: resp.StatusCode, Body: snippet}
 	}
 	var out struct {

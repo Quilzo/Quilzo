@@ -185,3 +185,23 @@ func TestAKeptViewFollowsAccessAndAReaderIsNotOfferedAsking(t *testing.T) {
 		t.Errorf("a reader asked: %d", w.Code)
 	}
 }
+
+// The question a person asks of Today is cut where a character starts. It
+// is the answer's title when the model gives none and is kept with the view,
+// and a question in Japanese would otherwise end in U+FFFD on both.
+func TestALongQuestionIsCutBetweenCharacters(t *testing.T) {
+	srv, token := setup(t)
+	labData(t, srv)
+	_, kept := withAsk(srv, `{"title":"Samples","cards":[{"kind":"figure","collection":"samples","op":"count"}]}`)
+	q := strings.Repeat("a", maxQuestion-1)
+	if w := postForm(t, srv, "/today/ask", token, url.Values{"question": {q + "中文"}}.Encode()); w.Code != http.StatusSeeOther {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	postForm(t, srv, "/today/pin", token, "do=pin")
+	if len(kept["editor"]) != 1 {
+		t.Fatalf("kept %+v", kept)
+	}
+	if got := kept["editor"][0].Question; got != q {
+		t.Fatalf("%d bytes, ending %q", len(got), got[len(got)-3:])
+	}
+}

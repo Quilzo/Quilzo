@@ -52,6 +52,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Bounds on what one day holds in memory and on disk. A site with more
@@ -275,10 +276,7 @@ func clean(s string) string {
 		}
 		return r
 	}, s)
-	if len(s) > 80 {
-		s = s[:80]
-	}
-	return s
+	return plaintext.Clip(s, 80, "")
 }
 
 // Convert records that a visitor reached a goal: sent a form, asked a

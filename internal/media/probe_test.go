@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 // aRecording makes a short real video, or skips.
@@ -201,5 +202,32 @@ func TestARecordingsSoundComesOutAlone(t *testing.T) {
 	t.Setenv("PATH", "/nonexistent")
 	if b, err := SoundFrom(video, 25<<20); b != nil || err != nil {
 		t.Errorf("with no ffmpeg: %d bytes, %v", len(b), err)
+	}
+}
+
+// What ffmpeg said when it could not take the sound out is cut where a
+// character starts. Its first line can quote a name from inside the file,
+// here a list of files that names one in Chinese, and the line is shown to
+// the person whose recording it was.
+func TestFFmpegsLongRefusalIsCutBetweenCharacters(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("no ffmpeg here, which is a configuration this supports")
+	}
+	// Two names a byte apart, because how long ffmpeg's own prefix is
+	// differs between builds: wherever the bound falls, it is inside a
+	// character in one of them.
+	for _, name := range []string{strings.Repeat("中", 100), "a" + strings.Repeat("中", 100)} {
+		list := "ffconcat version 1.0\nfile '/" + name + ".m4a'\n"
+		_, err := SoundFrom([]byte(list), 25<<20)
+		if err == nil {
+			t.Fatal("a sound came out of a list of files")
+		}
+		if !strings.Contains(err.Error(), "中") {
+			t.Skipf("this ffmpeg does not quote the name, so the bound is not reached: %v", err)
+		}
+		if !utf8.ValidString(err.Error()) {
+			e := err.Error()
+			t.Fatalf("ends %q", e[len(e)-3:])
+		}
 	}
 }

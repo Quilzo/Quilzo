@@ -68,6 +68,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/foreign"
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/tmpl"
 )
 
@@ -675,9 +676,7 @@ func (h *HTTPModel) CompleteMetered(ctx context.Context, system, user string) (s
 		var buf bytes.Buffer
 		_, _ = buf.ReadFrom(resp.Body)
 		snippet := strings.TrimSpace(buf.String())
-		if len(snippet) > 300 {
-			snippet = snippet[:300]
-		}
+		snippet = plaintext.Clip(snippet, 300, "")
 		return "", Usage{}, &StatusError{Code: resp.StatusCode, Body: snippet}
 	}
 

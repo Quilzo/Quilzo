@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/assistant"
 )
 
@@ -158,5 +159,49 @@ func TestAChatbotFindsAPassageByWhatItMeans(t *testing.T) {
 	})
 	if b, _ := os.ReadFile(usagePath(root)); !strings.Contains(string(b), `"consumer":"embed:help"`) {
 		t.Errorf("embedding was not charged: %s", b)
+	}
+}
+
+// What is embedded is cut where a character starts, for a passage and for a
+// question alike. The provider is sent it as JSON, which carries half a
+// character as U+FFFD, so a page or a question in Japanese was embedded with
+// a character nobody wrote.
+func TestWhatIsEmbeddedIsCutBetweenCharacters(t *testing.T) {
+	p := assistant.Passage{Title: "Returns"}
+	head := p.Header() + "\n"
+	body := strings.Repeat("a", assist.MaxEmbedText-1-len(head))
+	p.Text = body + "中文"
+	if got := embedText(p); got != head+body {
+		t.Errorf("a passage: %d bytes, ending %q", len(got), got[len(got)-3:])
+	}
+
+	root := publishedShop(t)
+	var chatCalls, embedded int64
+	var sent []string
+	chat := modelServer(t, false, &chatCalls)
+	vectors := embeddingServer(t, &embedded, &sent)
+	for _, args := range [][]string{
+		{"route", "add", "words", "--url", chat.URL + "/v1", "--model", "small"},
+		{"route", "add", "vectors", "--url", vectors.URL + "/v1", "--model", "embed-small", "--embeds"},
+	} {
+		if err := cmdGateway(root, args); err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+	}
+	if err := cmdAssistant(root, []string{"add", "help", "--title", "Help", "--model"}); err != nil {
+		t.Fatal(err)
+	}
+	setEmbeddings(t, root, "vectors")
+	a, _ := loadAssistant(root, "help")
+	m := chatbotMeaning(root, a, nil, nil)
+	if m == nil {
+		t.Fatal("the chatbot does not find passages by meaning, so this tests nothing")
+	}
+	q := strings.Repeat("a", assist.MaxEmbedText-1)
+	if _, err := m.Question(q + "中文"); err != nil {
+		t.Fatal(err)
+	}
+	if len(sent) != 1 || sent[0] != q {
+		t.Fatalf("%d sent; the question was %d bytes, ending %q", len(sent), len(sent[0]), sent[0][len(sent[0])-3:])
 	}
 }

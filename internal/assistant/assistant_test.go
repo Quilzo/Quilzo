@@ -956,3 +956,48 @@ func TestASectionsNamesAreNotKnowledge(t *testing.T) {
 		t.Fatalf("words were left out:\n%s", text)
 	}
 }
+
+// An argument the model supplies is cut where a character starts. It is
+// shown to the visitor to confirm, and a reason given in their own language
+// would otherwise end in U+FFFD on the form they are asked to send.
+func TestALongArgumentIsCutBetweenCharacters(t *testing.T) {
+	kept := strings.Repeat("a", MaxArg-1)
+	p, err := withActions().Propose(ActionCall{Name: "start-return",
+		Args: map[string]string{"reason": kept + "中文"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := p.Args["reason"]; got != kept {
+		t.Fatalf("%d bytes, ending %q", len(got), got[len(got)-3:])
+	}
+}
+
+// heard is a model that remembers what it was asked, and answers nothing.
+type heard struct{ user string }
+
+func (h *heard) Complete(_ context.Context, _, user string) (string, error) {
+	h.user = user
+	return "", errors.New("no answer")
+}
+
+func (h *heard) Name() string { return "heard" }
+
+// The question before is cut where a character starts. When a follow-up
+// finds nothing on its own the two are asked together, and the model was
+// handed half a character in the middle of what the visitor said.
+func TestALongQuestionBeforeIsCutBetweenCharacters(t *testing.T) {
+	idx := shopIndex(t, helper)
+	before := "how much does delivery cost "
+	before += strings.Repeat("a", MaxQuestion-1-len(before))
+	m := &heard{}
+	if _, err := RespondTo(context.Background(), helper, idx, m, "and then?", before+"中文"); err != nil {
+		t.Fatal(err)
+	}
+	if m.user == "" {
+		t.Fatal("the model was not asked, so this tests nothing")
+	}
+	if !strings.Contains(m.user, before+" and then?") {
+		at := strings.Index(m.user, "and then?")
+		t.Fatalf("the model was asked %q", m.user[max(0, at-6):at])
+	}
+}

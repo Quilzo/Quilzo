@@ -14,6 +14,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/mcpclient"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // The one thing an agent could be authorised to do and could not do.
@@ -193,9 +194,7 @@ func (t Tools) Perform(s *agent.Session) func(context.Context, agent.Action) (st
 			}
 			run, n, _ := agent.StepOf(ctx)
 			msg := err.Error()
-			if len(msg) > 300 {
-				msg = msg[:300]
-			}
+			msg = plaintext.Clip(msg, 300, "")
 			t.Undelivered(Undelivered{At: time.Now().UTC(), Agent: s.Manifest().Name, Run: run, Step: n,
 				Integration: in.Name, Tool: name, Key: key, Error: msg})
 		}

@@ -248,3 +248,29 @@ func TestAnAIAnswerInSearchCarriesItsDisclosure(t *testing.T) {
 		t.Fatalf("an AI answer without Article 50's disclosure: %v", a)
 	}
 }
+
+// A path somebody hunted for is cut where a character starts. Paths arrive
+// decoded, so /管理/ is three characters to the shield, and a subject that
+// ends in half of one is shown to the owner as U+FFFD.
+func TestAHuntedPathIsCutBetweenCharacters(t *testing.T) {
+	kept := "/" + strings.Repeat("a", 62)
+	if got := huntedPath(kept + "中文"); got != kept {
+		t.Fatalf("ends %q", got[len(got)-3:])
+	}
+}
+
+// The page a violation was on is cut where a character starts. The path is
+// decoded, so /お知らせ is characters to the report the owner reads, not
+// percent signs.
+func TestAViolationsLongPageIsCutBetweenCharacters(t *testing.T) {
+	kept := "/" + strings.Repeat("a", 118)
+	body := `{"csp-report":{"document-uri":"https://shop.example` + kept + `%E4%B8%AD%E6%96%87",` +
+		`"blocked-uri":"inline","violated-directive":"script-src 'none'"}}`
+	v := parseViolations([]byte(body), "shop.example")
+	if len(v) != 1 {
+		t.Fatalf("%+v", v)
+	}
+	if got := v[0].Page; got != kept {
+		t.Fatalf("%d bytes, ending %q", len(got), got[len(got)-3:])
+	}
+}

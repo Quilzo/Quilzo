@@ -43,6 +43,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Who said something.
@@ -184,9 +186,7 @@ func (s Store) Open(assistant, id, question, first string, now time.Time) (Conve
 	if err != nil {
 		return Conversation{}, err
 	}
-	if len(question) > MaxText {
-		question = question[:MaxText]
-	}
+	question = plaintext.Clip(question, MaxText, "")
 	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
 		return Conversation{}, err
 	}

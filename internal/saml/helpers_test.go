@@ -201,7 +201,7 @@ type shape struct {
 	AssertionIssuer, Audience, Recipient, ConfirmationRequest string
 	NotBefore, NotOnOrAfter, ConfirmUntil, AuthnInstant       string
 	SessionUntil, NameID, Method, ExtraCondition, Version     string
-	ExtraAssertionChild, ExtraResponseChild                   string
+	ExtraAssertionChild, ExtraResponseChild, StatusMessage    string
 	NoConditions, NoAuthn, NoConfirmation, OmitDestination    bool
 }
 
@@ -236,7 +236,11 @@ func (s shape) xml() string {
 		b.WriteString(` InResponseTo="` + s.InResponseTo + `"`)
 	}
 	b.WriteString(`><saml:Issuer>` + s.Issuer + `</saml:Issuer>`)
-	b.WriteString(`<samlp:Status><samlp:StatusCode Value="` + s.Status + `"/></samlp:Status>`)
+	b.WriteString(`<samlp:Status><samlp:StatusCode Value="` + s.Status + `"/>`)
+	if s.StatusMessage != "" {
+		b.WriteString(`<samlp:StatusMessage>` + s.StatusMessage + `</samlp:StatusMessage>`)
+	}
+	b.WriteString(`</samlp:Status>`)
 	b.WriteString(s.ExtraResponseChild)
 	b.WriteString(`<saml:Assertion ID="_assert1" Version="` + s.Version + `" IssueInstant="` + ts(0) + `">`)
 	b.WriteString(`<saml:Issuer>` + s.AssertionIssuer + `</saml:Issuer>`)

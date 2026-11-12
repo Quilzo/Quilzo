@@ -12,6 +12,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/chatact"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // A chatbot's agent actions, on the public site: what the visitor is asked
@@ -129,9 +130,7 @@ func (st *Site) actAsk(w http.ResponseWriter, r *http.Request, a assistant.Assis
 			http.Error(w, fieldLabel(f)+" is needed", http.StatusBadRequest)
 			return
 		}
-		if len(v) > MaxActArg {
-			v = v[:MaxActArg]
-		}
+		v = plaintext.Clip(v, MaxActArg, "")
 		args[f] = v
 	}
 	id, err := chatact.NewID()

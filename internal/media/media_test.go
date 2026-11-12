@@ -540,3 +540,13 @@ func TestTheUploadCheckFindsAFormulaWhereverASpreadsheetWouldRunIt(t *testing.T)
 		t.Errorf("a file the records export wrote for Excel was refused: %v\n%q", err, body)
 	}
 }
+
+// A long filename is cut where a character starts. It is shown in the
+// library and sent in Content-Disposition, and a name typed in any script is
+// as ordinary as one in English.
+func TestALongDisplayNameIsCutBetweenCharacters(t *testing.T) {
+	kept := strings.Repeat("a", 119)
+	if got := displayName(kept + "中文.png"); got != kept {
+		t.Fatalf("%d bytes, ending %q", len(got), got[len(got)-3:])
+	}
+}

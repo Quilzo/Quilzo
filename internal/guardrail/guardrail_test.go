@@ -114,3 +114,26 @@ func TestARefusalIsNotAnAnswer(t *testing.T) {
 		t.Fatalf("%v %v", f, err)
 	}
 }
+
+// The text asked about is cut where a character starts. The encoder sends
+// half a character as U+FFFD, so the classifier was asked about a character
+// nobody wrote.
+func TestALongTextIsCutBetweenCharacters(t *testing.T) {
+	kept := strings.Repeat("a", MaxText-1)
+	var asked string
+	s := Service{Kind: Generic, URL: "https://guard.example/check", Key: "k",
+		Post: func(_ context.Context, _ string, body []byte, _ map[string]string) (int, []byte, error) {
+			var req struct {
+				Text string `json:"text"`
+			}
+			_ = json.Unmarshal(body, &req)
+			asked = req.Text
+			return 200, []byte(`{"flagged":false}`), nil
+		}}
+	if _, err := s.Flagged(context.Background(), kept+"中文"); err != nil {
+		t.Fatal(err)
+	}
+	if asked != kept {
+		t.Fatalf("asked about %d bytes, ending %q", len(asked), asked[len(asked)-3:])
+	}
+}

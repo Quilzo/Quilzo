@@ -143,3 +143,24 @@ func TestARequestIsTakenOnceAndAnswered(t *testing.T) {
 		t.Fatalf("run %d times", runs)
 	}
 }
+
+// What a visitor typed for an action is cut where a character starts. It is
+// quoted into the goal of the run that does the action, and a reference
+// typed in Japanese reached the agent with half a character in it.
+func TestAVisitorsLongArgumentReachesTheRunWhole(t *testing.T) {
+	root := chatActStore(t)
+	var goal string
+	old := chatActRun
+	chatActRun = func(_ context.Context, _, _, g string, _ *Caller, _ string) (string, agentOutcome, error) {
+		goal = g
+		return "run-1", agentOutcome{Trace: agent.Trace{Answer: "Found it.", Complete: true}}, nil
+	}
+	t.Cleanup(func() { chatActRun = old })
+	kept := strings.Repeat("a", 299)
+	runChatAction(context.Background(), root, chatact.Request{ID: strings.Repeat("a", 32), Chatbot: "help",
+		Action: "booking", Args: map[string]string{"booking_ref": kept + "中文"}})
+	if !strings.Contains(goal, `booking_ref: "`+kept+`"`) {
+		at := strings.Index(goal, "booking_ref")
+		t.Fatalf("the run was asked %q", goal[max(0, at):min(len(goal), at+20)]+"…"+goal[min(len(goal), at+312):min(len(goal), at+330)])
+	}
+}

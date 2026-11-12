@@ -414,3 +414,13 @@ func TestAStreamStatusIsOnlyOneSSFNames(t *testing.T) {
 		}
 	}
 }
+
+// A transmitter's words are cut where a character starts. They are printed
+// for whoever connected the stream, and a provider writing in their own
+// language would otherwise end every long message in U+FFFD.
+func TestATransmittersLongWordsAreCutBetweenCharacters(t *testing.T) {
+	kept := strings.Repeat("a", 199)
+	if got := oneLine(kept + "中文"); got != kept {
+		t.Fatalf("ends %q", got[len(got)-3:])
+	}
+}

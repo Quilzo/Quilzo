@@ -302,3 +302,25 @@ func TestALongConversationStillGoingIsKept(t *testing.T) {
 		t.Error("a conversation that moved five days ago was deleted")
 	}
 }
+
+// The question a visitor had asked is cut where a character starts. It is
+// the first thing the person who answers reads, and it is as likely to be in
+// Japanese as in English.
+func TestALongQuestionIsCutBetweenCharacters(t *testing.T) {
+	s := Store{Dir: t.TempDir()}
+	_, id, err := NewSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept := strings.Repeat("a", MaxText-1)
+	if _, err := s.Open("help", id, kept+"中文", "may I talk to somebody?", day0); err != nil {
+		t.Fatal(err)
+	}
+	c, err := s.Get("help", id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Question != kept {
+		t.Fatalf("%d bytes, ending %q", len(c.Question), c.Question[len(c.Question)-3:])
+	}
+}

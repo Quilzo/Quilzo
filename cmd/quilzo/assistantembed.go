@@ -16,6 +16,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/gateway"
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/vector"
 )
 
@@ -56,10 +57,7 @@ func meansWithModel(a assistant.Assistant) bool { return a.UseModel && !a.RouteO
 // embedText is what of a passage is embedded: what it is ranked by.
 func embedText(p assistant.Passage) string {
 	t := p.Header() + "\n" + p.Text
-	if len(t) > assist.MaxEmbedText {
-		t = t[:assist.MaxEmbedText]
-	}
-	return t
+	return plaintext.Clip(t, assist.MaxEmbedText, "")
 }
 
 // chatbotMeaning is the ranker by meaning for a chatbot's passages, or
@@ -86,9 +84,7 @@ func chatbotMeaning(root string, a assistant.Assistant, passages []assistant.Pas
 	floor := mustConfig(root).Int("chatbot.embeddings_floor")
 	return &assistant.Meaning{Model: model, Vectors: vecs, Floor: float64(floor) / 100,
 		Question: func(q string) ([]float64, error) {
-			if len(q) > assist.MaxEmbedText {
-				q = q[:assist.MaxEmbedText]
-			}
+			q = plaintext.Clip(q, assist.MaxEmbedText, "")
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			consumers := append([]string{"chatbot:" + a.Name}, c.runPayers()...)
