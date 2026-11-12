@@ -692,3 +692,28 @@ func TestAskingForIdentifiersDoesNotMakeAPseudonymousExportClaimOtherwise(t *tes
 		t.Error("an export that names people in the clear says it is pseudonymous")
 	}
 }
+
+// Result.Redacted says whether identifiers were withheld, and it was the
+// request turned round as the envelope's flag was. Asked for identifiers on
+// a log kept with a key, `quilzo --json siem --reveal` answered
+// "redacted": false beside an envelope saying the export was pseudonymous,
+// while every principal in it was a handle; on a log that names people as
+// they are, asking for nothing answered that they had been withheld, with
+// every name in the export.
+func TestRedactedSaysWhatTheExportHolds(t *testing.T) {
+	key, _ := audit.NewKey()
+	res, err := Export(JSONL, log(t, key), Options{Reveal: true}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Redacted {
+		t.Error("an export of nothing but handles says its identifiers were not withheld, because they were asked for")
+	}
+	res, err = Export(JSONL, log(t, nil), Options{}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Redacted {
+		t.Error("an export that names people as they are says their identifiers were withheld")
+	}
+}

@@ -104,7 +104,11 @@ type Result struct {
 	Chain Envelope
 	// Count is how many events were written.
 	Count int
-	// Redacted says whether identifiers were withheld.
+	// Redacted says whether identifiers were withheld: whether every one the
+	// export carries is a handle rather than a name, as the envelope says
+	// (Envelope.Pseudonymous). It was the request turned round, and said
+	// "not withheld" of an export holding nothing but handles because
+	// identifiers had been asked for, beside an envelope saying they were.
 	Redacted bool
 }
 
@@ -201,7 +205,7 @@ func Export(f Format, events []audit.Event, opt Options, now time.Time) (*Result
 		return nil, err
 	}
 	return &Result{Body: body, Chain: env, Count: len(selected),
-		Redacted: !opt.Reveal}, nil
+		Redacted: env.Pseudonymous}, nil
 }
 
 // principal returns the identifier to emit: the one the log holds, whether
