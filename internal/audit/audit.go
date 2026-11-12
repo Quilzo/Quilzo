@@ -1058,14 +1058,23 @@ func Check(events []Event, readErr error) (Report, error) {
 // are not entries: what Check says, and what an Index's look says of the
 // same bytes (Snapshot.Report), made in one place so the two cannot come to
 // disagree.
+//
+// Where every line is an entry, the problems are the chain's, in the order
+// Verify finds them, which is the order of the file. The lines that are not
+// entries are put among them by number, and only then: sorted by number
+// always, the problems of a log whose lines had been moved, or whose
+// numbers had been edited, came out in an order Verify does not give, and
+// a look at it no longer said what Verify says of the same bytes.
 func reportOf(chain []Problem, bad []BadLine) Report {
 	r := Report{Intact: len(chain) == 0 && len(bad) == 0}
-	if len(bad) > 0 {
-		r.Problems = (&Unreadable{Lines: bad}).Problems()
-		for _, b := range bad {
-			if b.Torn {
-				r.Unfinished++
-			}
+	if len(bad) == 0 {
+		r.Problems = chain
+		return r
+	}
+	r.Problems = (&Unreadable{Lines: bad}).Problems()
+	for _, b := range bad {
+		if b.Torn {
+			r.Unfinished++
 		}
 	}
 	r.Problems = append(r.Problems, chain...)

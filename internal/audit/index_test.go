@@ -401,3 +401,28 @@ func TestASnapshotOfEntriesIsCheckedAgainstHeadsAsTheyAre(t *testing.T) {
 		}
 	}
 }
+
+// Where every line is an entry, a look and Check report the problems Verify
+// reports, in the order Verify reports them, the order of the file, though
+// the entries are not in the order of their numbers. Lines moved within a
+// log, or an entry's number edited, are what puts them out of it, and the
+// look and Check put the problems in the order of the numbers instead,
+// unlike Verify, which the look is held to wherever the log can be read.
+func TestALookOfEntriesOutOfOrderSaysWhatVerifySays(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.jsonl")
+	appendRecords(t, path, 0, 5)
+	rewrite(t, path, func(b []byte) []byte {
+		lines := bytes.SplitAfter(b, []byte("\n"))
+		lines[1], lines[3] = lines[3], lines[1]
+		return bytes.Join(lines, nil)
+	})
+	events, err := Read(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, want := Verify(events)
+	if r, err := Check(events, nil); err != nil || !reflect.DeepEqual(r.Problems, want) {
+		t.Errorf("Check says %+v, Verify %+v", r.Problems, want)
+	}
+	sameAsRead(t, NewIndex(path), path, "two lines swapped")
+}
