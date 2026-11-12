@@ -327,6 +327,20 @@ func (st *Site) answer(w http.ResponseWriter, r *http.Request,
 		st.renderAsk(w, r, *view, http.StatusUnprocessableEntity)
 		return false
 	}
+	// What it offers, before anything is counted: an offer this page cannot
+	// make to this visitor (a form closed since, an action only for somebody
+	// the host site vouches for) is taken off the answer, and an answer
+	// that was only the offer is then the refusal, counted as one.
+	if ans.Proposed != nil {
+		if ans.Proposed.Action.Kind == assistant.Agent {
+			view.Offer = st.agentOffer(*ans.Proposed, view.Visitor, a)
+		} else {
+			view.Offer = st.offerFor(*ans.Proposed)
+		}
+		if view.Offer == nil {
+			ans = a.Unoffered(ans)
+		}
+	}
 	if st.Assistants.Audit != nil {
 		st.Assistants.Audit(a.Name, sourceOf(r), !ans.Refused)
 	}
@@ -348,13 +362,6 @@ func (st *Site) answer(w http.ResponseWriter, r *http.Request,
 	}
 	view.Cards = st.cardsFor(view.Sources, ans)
 	view.FollowUps = followUps(a, view.Question, &ans, view.Sources)
-	if ans.Proposed != nil {
-		if ans.Proposed.Action.Kind == assistant.Agent {
-			view.Offer = st.agentOffer(*ans.Proposed, view.Visitor, a)
-		} else {
-			view.Offer = st.offerFor(*ans.Proposed)
-		}
-	}
 	return true
 }
 
@@ -727,8 +734,12 @@ func (st *Site) askThroughLayout(body any, hash string, r *http.Request, v askVi
 		"disclosure": Disclosure,
 	}
 	if v.Answer != nil {
-		data["answer"] = v.Answer.Text
-		data["refused"] = v.Answer.Refused
+		// The owner's page is given no offer to show, so an answer that is
+		// only an offer is the refusal here: its words alone would promise
+		// something to press that this page does not have.
+		shown := v.Assistant.Unoffered(*v.Answer)
+		data["answer"] = shown.Text
+		data["refused"] = shown.Refused
 		var srcs []any
 		for _, s := range v.Sources {
 			srcs = append(srcs, map[string]any{"n": float64(s.N),
@@ -789,7 +800,7 @@ var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
 </section>
 <section class="qz-turn qz-a{{if .V.Answer.Refused}} qz-refused{{end}}" aria-live="polite" aria-label="Answer">
   {{if .V.Answer.Refused}}<p>{{.V.Answer.Text}}</p>
-  {{else}}{{range .V.Answer.Kept}}<p>{{.Text}}{{range .Cites}} <sup><a href="#src-{{.}}">[{{.}}]</a></sup>{{end}}</p>{{end}}{{end}}
+  {{else}}{{range .V.Answer.Kept}}<p>{{.Text}}{{range .Cites}} <sup><a href="#src-{{.}}">[{{.}}]</a></sup>{{end}}</p>{{else}}<p>{{.V.Answer.Text}}</p>{{end}}{{end}}
   {{if .V.Cards}}
   <ul class="qz-cards" aria-label="Pages this answer draws on">{{range .V.Cards}}<li class="qz-card">
     {{if .Image}}<img src="{{.Image}}" alt="" loading="lazy" decoding="async">{{end}}

@@ -318,3 +318,70 @@ func TestALookUpRunsWhereAccessIsGranted(t *testing.T) {
 		t.Fatalf("a sponsor who may only read ran the agent: %+v", res)
 	}
 }
+
+// bookingOfferModel answers as a chatbot's model that writes no answer and
+// offers to look a booking up, and counts how often it was asked.
+func bookingOfferModel(t *testing.T) *int {
+	t.Helper()
+	asked := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked++
+		out, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{
+			"message": map[string]any{"role": "assistant",
+				"content": `{"answer": "", "action": {"name": "booking", "args": {"booking_ref": "HB-2201"}}}`}}}})
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(out)
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("QUILZO_MODEL_URL", srv.URL+"/v1")
+	t.Setenv("QUILZO_MODEL", "stand-in")
+	t.Setenv("QUILZO_MODEL_KEY", "")
+	return &asked
+}
+
+// A chatbot that offers a visitor something to do, for a request no page
+// is about, offers it to its owner trying it out; and where an offer has no
+// place, nothing is asked for one: a reply drafted for a person to send
+// still says the site does not answer that, and a question the site does
+// not answer is still one no page answers.
+func TestAnOfferIsShownWhereThereIsAPlaceForOne(t *testing.T) {
+	root := chatActStore(t)
+	set, _ := assistant.Load(assistantsPath(root))
+	a, _ := set.Get("help")
+	a.UseModel = true
+	if err := set.Put(a); err != nil {
+		t.Fatal(err)
+	}
+	if err := assistant.Save(assistantsPath(root), set); err != nil {
+		t.Fatal(err)
+	}
+	asked := bookingOfferModel(t)
+	const q = "Please look up HB-2201"
+
+	idx, err := assistantIndex(root, a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, why := assistantModelAt(root, a)
+	if m == nil {
+		t.Fatal(why)
+	}
+	ans, err := assistant.Respond(context.Background(), a, idx, m, q)
+	if err != nil || ans.Refused || ans.Proposed == nil || ans.Proposed.Action.Name != "booking" || *asked != 1 {
+		t.Fatalf("the owner's own question: %+v, %v, the model asked %d times", ans, err, *asked)
+	}
+
+	*asked = 0
+	if draft, _, err := suggestReply(root, "help", q); err == nil {
+		t.Errorf("a draft for a message no page answers: %q", draft)
+	}
+	keepGaps(t, root)
+	gapKeeper(root)("help", q)
+	r, err := checkGaps(context.Background(), root, "help", "dana", time.Now())
+	if err != nil || r.Asked != 1 || r.Closed != 0 {
+		t.Errorf("a question no page answers, checked again: %+v, %v", r, err)
+	}
+	if *asked != 0 {
+		t.Errorf("the model was asked %d times for an offer nobody could be shown", *asked)
+	}
+}

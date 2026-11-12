@@ -513,6 +513,77 @@ func TestAVisitorAsksAChatbotsAgent(t *testing.T) {
 	}
 }
 
+// counting scripts a model that writes no answer and offers one action, and
+// counts how often it was asked.
+type counting struct {
+	action string
+	asked  *int
+}
+
+func (counting) Name() string { return "counting" }
+func (c counting) Complete(context.Context, string, string) (string, error) {
+	*c.asked++
+	return `{"answer": "", "action": {"name": "` + c.action + `", "args": {"booking_ref": "HB-2201"}}}`, nil
+}
+
+// A visitor who asks for something the chatbot can do, in words no page
+// shares, is offered it: the form to check and confirm, filled in. One the
+// page cannot offer them is told the site does not say, not that there is
+// something to press.
+//
+// "Please look up HB-2201" was answered "I could not find that on this
+// site" before the model was asked, so the action was never offered.
+func TestAVisitorIsOfferedAnActionNoPageIsAbout(t *testing.T) {
+	bot := shopBot
+	bot.UseModel = true
+	bot.IdentitySecret = "shop-visitors"
+	bot.Actions = []assistant.Action{
+		{Name: "booking", Kind: assistant.Agent, Target: "bookings", Description: "Look up your booking", Fields: []string{"booking_ref"}},
+		{Name: "orders", Kind: assistant.Agent, Target: "orders", Description: "Check your order", Identity: true, Fields: []string{"booking_ref"}},
+	}
+	st, audited := askSite(t, bot)
+	st.Assistants.Act = func(chatact.Request) error { return nil }
+	st.Assistants.VisitorKey = func(assistant.Assistant) []byte { return []byte("a key the shop and the chatbot share") }
+	asked := 0
+	offers := "booking"
+	st.Assistants.Model = func(assistant.Assistant) assistant.Model { return counting{offers, &asked} }
+	var unanswered []string
+	st.Assistants.Unanswered = func(_, q string) { unanswered = append(unanswered, q) }
+
+	body := askPost(st, "help", "Please look up HB-2201").Body.String()
+	for _, want := range []string{`action="/ask/help/act"`, `name="a_booking_ref"`, `value="HB-2201"`,
+		"Look up your booking", assistant.OfferText, "It only looks things up"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the page lacks %q:\n%s", want, body)
+		}
+	}
+	if asked != 1 || len(unanswered) != 0 || len(*audited) != 1 || !(*audited)[0] {
+		t.Errorf("asked the model %d times, kept %v as unanswered, audited %v", asked, unanswered, *audited)
+	}
+
+	// An action only for a visitor the host site vouches for cannot be
+	// offered to this one, and the page does not say it can.
+	offers = "orders"
+	body = askPost(st, "help", "Please look up HB-2201").Body.String()
+	if strings.Contains(body, assistant.OfferText) || strings.Contains(body, `action="/ask/help/act"`) ||
+		!strings.Contains(body, "I could not find that on this site.") {
+		t.Errorf("an offer the page cannot make:\n%s", body)
+	}
+	if len(unanswered) != 1 {
+		t.Errorf("kept as unanswered: %v", unanswered)
+	}
+
+	// The answer above the search results has no place for an offer, so a
+	// search no page covers asks no model whether there is one.
+	asked = 0
+	if body := get(st, "/search?q=where%20is%20HB-2201%3f", nil).Body.String(); strings.Contains(body, `class="answer"`) {
+		t.Errorf("an answer above the results:\n%s", body)
+	}
+	if asked != 0 {
+		t.Errorf("a search asked the model %d times for an offer it cannot show", asked)
+	}
+}
+
 // A chatbot that reads records answers from them on the site, naming the
 // record it answered from without a link, and reads them again when they
 // change.

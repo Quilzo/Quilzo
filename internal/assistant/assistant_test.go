@@ -649,6 +649,108 @@ func TestAnActionIsOfferedNotTaken(t *testing.T) {
 	}
 }
 
+// A model that does as it is told, and writes no answer because no passage
+// answers a request to do something, has the action it offered shown.
+//
+// The prompt tells it to leave the answer empty when the passages do not
+// answer and to set the action when the visitor asks for one, and a request
+// to act ("I want to return my order") is seldom answered by a page. The
+// action was looked at only when a sentence had been kept, so the reply the
+// prompt asks for had its action thrown away, and the owner was told that
+// "every sentence the model wrote failed verification" of a model that wrote
+// none.
+func TestAnActionOfferedWithNoAnswerIsStillOffered(t *testing.T) {
+	ans, _ := modelAnswer(t, withActions(),
+		`{"answer": "", "action": {"name": "start-return", "args": {"order": "Q-1043"}}}`,
+		"I want to return my order")
+	if ans.Proposed == nil || ans.Proposed.Action.Name != "start-return" || ans.Proposed.Args["order"] != "Q-1043" {
+		t.Fatalf("proposed %+v", ans.Proposed)
+	}
+	if ans.Refused || ans.Text == "" {
+		t.Errorf("an answer that offers something: refused=%v text=%q", ans.Refused, ans.Text)
+	}
+	if strings.Contains(ans.Note, "failed verification") || !strings.Contains(ans.Note, "start-return") {
+		t.Errorf("the owner is told %q", ans.Note)
+	}
+	// One it does not have is still not offered, and the owner is told.
+	ans, _ = modelAnswer(t, withActions(),
+		`{"answer": "", "action": {"name": "refund-everyone"}}`, "I want to return my order")
+	if ans.Proposed != nil || !strings.Contains(ans.Note, "refund-everyone") {
+		t.Errorf("proposed %+v, note %q", ans.Proposed, ans.Note)
+	}
+	// A model that wrote nothing and offered nothing is said to have
+	// written nothing.
+	ans, _ = modelAnswer(t, withActions(), `{"answer": "", "action": null}`, "I want to return my order")
+	if ans.Proposed != nil || ans.Mode != "extractive" || strings.Contains(ans.Note, "failed verification") {
+		t.Errorf("proposed %+v, mode %s, note %q", ans.Proposed, ans.Mode, ans.Note)
+	}
+}
+
+// A request that names an order shares too few words with any page to
+// retrieve one, and is still put to the model when the chatbot has
+// something it can do, so that the action can be offered.
+//
+// "Please look up my order ZQ-5521" was refused with "I could not find that
+// on this site" before the model was asked anything: nothing was retrieved,
+// and only a retrieved passage led to the model. So the requests an action
+// exists for, which carry a reference no page mentions, could never reach
+// it.
+func TestARequestNoPageCoversStillReachesItsAction(t *testing.T) {
+	a := helper
+	a.Actions = []Action{{Name: "lookup", Kind: Agent, Target: "orders",
+		Description: "Look up an order", Fields: []string{"order_ref"}}}
+	idx := shopIndex(t, a)
+	const q = "Please look up ZQ-5521"
+	if hits := idx.Retrieve(q, 5); len(hits) != 0 {
+		t.Fatalf("the question retrieves %d passages; this test needs one that retrieves none", len(hits))
+	}
+	m := &scripted{reply: `{"answer": "I can look that up for you.", "action": {"name": "lookup", "args": {"order_ref": "ZQ-5521", "admin": "yes"}}}`}
+	ans, err := Respond(context.Background(), a, idx, m, q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(m.prompt, "ZQ-5521") || strings.Contains(m.prompt, fence) {
+		t.Fatalf("the model was asked %q", m.prompt)
+	}
+	if ans.Refused || ans.Proposed == nil || ans.Proposed.Action.Name != "lookup" ||
+		ans.Proposed.Args["order_ref"] != "ZQ-5521" || len(ans.Proposed.Args) != 1 {
+		t.Fatalf("refused=%v proposed=%+v note=%q", ans.Refused, ans.Proposed, ans.Note)
+	}
+	// What it wrote rests on no passage, so none of it is shown.
+	if len(ans.Kept) != 0 || strings.Contains(ans.Text, "look that up for you") || ans.Text == "" {
+		t.Errorf("kept %+v, text %q", ans.Kept, ans.Text)
+	}
+
+	// A model that offers nothing leaves the refusal as it was, and so does
+	// one that cannot be reached.
+	for _, m := range []*scripted{
+		{reply: `{"answer": "", "action": null}`},
+		{reply: `{"answer": "Order ZQ-5521 was sent on Monday.", "action": null}`},
+		{reply: `{"answer": "", "action": {"name": "refund-everyone"}}`},
+		{err: context.DeadlineExceeded},
+	} {
+		ans, err := Respond(context.Background(), a, idx, m, q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !ans.Refused || ans.Proposed != nil || ans.Text != a.refusal() {
+			t.Errorf("after %q: refused=%v proposed=%+v text=%q", m.reply, ans.Refused, ans.Proposed, ans.Text)
+		}
+	}
+
+	// A chatbot with nothing it can do asks no model about a question no
+	// page covers: there is nothing a model could add, and a question is a
+	// cost.
+	m = &scripted{reply: `{"answer": "", "action": {"name": "lookup"}}`}
+	if ans, _ := Respond(context.Background(), helper, shopIndex(t, helper), m, q); !ans.Refused || m.prompt != "" {
+		t.Errorf("refused=%v, and the model was asked %q", ans.Refused, m.prompt)
+	}
+	// And one that quotes pages, with no model, refuses as it did.
+	if ans, _ := Respond(context.Background(), a, idx, nil, q); !ans.Refused || ans.Proposed != nil {
+		t.Errorf("refused=%v proposed=%+v", ans.Refused, ans.Proposed)
+	}
+}
+
 // -- declarations -------------------------------------------------------------
 
 func TestDeclarationsAreChecked(t *testing.T) {

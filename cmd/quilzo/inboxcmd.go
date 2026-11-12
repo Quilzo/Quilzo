@@ -78,6 +78,12 @@ func suggestReply(root, name, question string) (string, []string, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
+	// Asked without its actions: a draft is words for a person to send, and
+	// an offer has no place in one. With them, a message no page covers
+	// would come back as an offer and no words (assistant.RespondTo), and
+	// the draft would be empty where it used to say the site does not
+	// answer that.
+	a.Actions = nil
 	ans, err := assistant.RespondTo(ctx, a, idx, m, question, "")
 	if err != nil {
 		return "", nil, err

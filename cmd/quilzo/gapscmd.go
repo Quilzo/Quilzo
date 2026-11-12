@@ -140,6 +140,11 @@ func checkGaps(ctx context.Context, root, name, by string, now time.Time) (gapCh
 		return res, err
 	}
 	m, _ := assistantModelAt(root, a)
+	// Asked without its actions: a group is closed by a page that answers
+	// it. With them, a question no page covers would be put to the model to
+	// see whether it offers something to do (assistant.RespondTo), and an
+	// offer would close the group as answered with no page to name.
+	a.Actions = nil
 	for _, g := range open {
 		if res.Asked >= MaxGapChecks {
 			break
