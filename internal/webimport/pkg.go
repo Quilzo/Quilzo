@@ -279,8 +279,11 @@ func Package(s *Site, name, by string, picture Picture, now time.Time) (*Brought
 	if len(s.Failed) > 0 {
 		note("%d page(s) could not be read: %s", len(s.Failed), strings.Join(first(s.Failed, 3), "; "))
 	}
+	// In words every door can follow: the command line's flag is --pages,
+	// the agent interface's argument is pages, and "read more with
+	// --pages" sent an agent looking for a flag its call does not have.
 	if s.Capped {
-		note("the site has more pages than were read; read more with --pages")
+		note("the site has more pages than were read; ask for more pages, up to %d, to read more of it", MaxPages)
 	}
 
 	// A package a person can read: the pages that fit, the rest named. The
@@ -340,7 +343,8 @@ func Package(s *Site, name, by string, picture Picture, now time.Time) (*Brought
 		note(NotePicturesLeftOut)
 	}
 	if undescribed += undescribedPosts; undescribed > 0 {
-		note("%d picture(s) had no description (alt text), so they were left out rather than given one nobody wrote; add them with quilzo media add FILE --alt", undescribed)
+		note("%d picture(s) had no description (alt text), so they were left out rather than given one nobody wrote; "+
+			"add them to the media library with a description of each", undescribed)
 	}
 	if failed > 0 {
 		note("%d picture(s) could not be fetched or are not a format this keeps", failed)

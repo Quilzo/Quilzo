@@ -714,7 +714,7 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 			"You cannot write one here and cannot widen one: the conditions, " +
 			"the fields it exposes and the row limit are fixed, and a " +
 			"parameter is refused unless its value satisfies the kind the " +
-			"listing declared. Call it with no name to see what exists.",
+			"listing declared. Leave listing out to see what exists.",
 		Args: map[string]string{
 			"listing": "the listing name; omit to list what exists",
 			"args":    "optional object of parameter name to value",

@@ -155,3 +155,31 @@ func TestTheStoresOperationsRefuseArgumentsTheyDoNotTake(t *testing.T) {
 		}
 	}
 }
+
+// What an operation tells an agent to do names its arguments, never a
+// flag or an argument it does not have. run_listing said "call it with no
+// name", where its argument is listing, and an agent sent name, which was
+// ignored, and got the catalogue of listings instead of rows.
+func TestTheOperationsTellAnAgentTheirOwnArguments(t *testing.T) {
+	root := t.TempDir() + "/st"
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := buildMCP(root, s, &Caller{Name: "test"}, "templates")
+	for _, op := range srv.Operations() {
+		said := op.Summary + " " + op.Detail
+		for _, d := range op.Args {
+			said += " " + d
+		}
+		if strings.Contains(said, " --") || strings.Contains(said, "with no name") {
+			t.Errorf("%s tells an agent what its call cannot do: %s", op.Name, said)
+		}
+		if op.Name == "run_listing" && !strings.Contains(op.Detail, "listing out") {
+			t.Errorf("run_listing does not say to leave listing out: %s", op.Detail)
+		}
+	}
+}

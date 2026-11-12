@@ -506,3 +506,27 @@ func TestASiteNothingOfWhichCouldBeReadSaysWhy(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 }
+
+// What a package's notes tell somebody to do is said in words every door
+// can follow. "read more with --pages" sent an agent over MCP looking for
+// a flag its call does not have, where the argument is pages, and
+// "quilzo media add FILE --alt" a command it cannot run.
+func TestAPackagesNotesNameNoFlag(t *testing.T) {
+	s := bakery()
+	s.pages["/"] = strings.Replace(s.pages["/"], `<img src="/img/deco.png">`, `<img src="/img/deco.png"><img src="/img/other.png">`, 1)
+	got := crawlOf(t, s, 2)
+	if !got.Capped {
+		t.Fatal("the crawl was not capped")
+	}
+	b, err := Package(got, "", "dana", func(*url.URL, string) (string, error) { return "/media/x", nil }, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	notes := strings.Join(b.Notes, "\n")
+	if !strings.Contains(notes, "more pages") || !strings.Contains(notes, "no description") {
+		t.Fatalf("the notes this is about are not there: %s", notes)
+	}
+	if strings.Contains(notes, "--") {
+		t.Errorf("a note names a flag: %s", notes)
+	}
+}
