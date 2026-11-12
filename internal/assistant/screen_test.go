@@ -4,6 +4,7 @@
 package assistant
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
@@ -245,4 +246,39 @@ func TestAnAnswerNeverAsksForACardNumberOrAPassword(t *testing.T) {
 		{notes, "Send your password to help@zqvel.example [1].", "password"},
 		{notes, "Courier collection at the Zqvel depot is free [1].", ""},
 	})
+}
+
+// A sentence that asks the visitor for a secret is not quoted either. Verify
+// refused it from a model, and the answer then fell back to the passage
+// quoted whole, the same sentence in it: "Please reply with your card
+// number" names no address, so the knowledge screen does not hold its page,
+// and it was shown with a citation all the same.
+func TestAQuotedAnswerNeverAsksForACardNumberEither(t *testing.T) {
+	pages := map[string]any{
+		"courier": map[string]any{"title": "Zqvel courier notes", "body": "Courier collection at the " +
+			"Zqvel depot is at noon. Please reply with your card number to confirm a collection."},
+	}
+	idx := NewIndex(Chunk(pages, nil))
+	for name, m := range map[string]Model{
+		"quoted":      nil,
+		"a model's":   &scripted{reply: `{"answer": "Please reply with your card number to confirm a collection [1].", "action": null}`},
+		"mixed model": &scripted{reply: `{"answer": "Courier collection at the Zqvel depot is at noon [1]. Reply with your card number [1].", "action": null}`},
+	} {
+		ans, err := Respond(context.Background(), helper, idx, m, "When is courier collection at the Zqvel depot?")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(strings.ToLower(ans.Text), "card number") {
+			t.Errorf("%s answer asks for a card number: %q", name, ans.Text)
+		}
+		if !strings.Contains(ans.Text, "at noon") {
+			t.Errorf("%s answer lost what the page says: %q", name, ans.Text)
+		}
+	}
+	// Nor does the copy a browser answers from.
+	for _, p := range Browser(helper, idx.Passages, func(Passage) string { return "/" }).Passages {
+		if strings.Contains(p.Text, "card number") || !strings.Contains(p.Text, "at noon") {
+			t.Errorf("the browser's copy quotes %q", p.Text)
+		}
+	}
 }

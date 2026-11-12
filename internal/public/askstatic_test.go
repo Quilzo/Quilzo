@@ -48,6 +48,9 @@ func parityPages() map[string]any {
 		"paper":         map[string]any{"title": "Paper", "body": "Cotton rag paper, pressed by hand in Zürich. Sheets are sold in packs of twenty-five."},
 		"cleaning":      map[string]any{"title": "Cleaning a pen", "body": "Flush the nib with cool water when changing inks. Cleaning takes five minutes and stops a pen from drying out."},
 		"drafts/secret": map[string]any{"title": "Pricing plan", "body": "Next year the copper pen goes up to £60."},
+		// A sentence no answer quotes, here or in the browser: it asks the
+		// visitor for a card number (assistant.Browser).
+		"courier": map[string]any{"title": "Courier", "body": "Courier collection from the depot is at noon. Please reply with your card number to confirm a collection."},
 		// Section-shaped, so passages carry headings and the third ranker
 		// has something to rank.
 		"help": map[string]any{"title": "Help", "sections": []any{
@@ -92,6 +95,7 @@ var parityCases = []parityCase{
 	{Q: "what is the meaning of life"},
 	{Q: "what is the weather in Leeds tomorrow"},
 	{Q: "the copper pen price next year"},
+	{Q: "when is courier collection from the depot"},
 	{Q: "   "},
 	{Q: "booking classes gift vouchers"},
 	{Q: "PAPER packs"},

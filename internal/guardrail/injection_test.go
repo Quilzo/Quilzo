@@ -162,6 +162,8 @@ func TestAnAnswerAsksForASecretOnlyWhenItAsksForOne(t *testing.T) {
 		"Please don't email your card number; pay at the till.",
 		"Share the pin on the map with your driver.",
 		"We post pins and badges worldwide.",
+		"Please provide your account number when you contact us.",
+		"Post the form with your account number and sort code to the address above.",
 		"Email your order number to support@shop.example and we will reply.",
 	} {
 		if AsksForSecrets(text) {

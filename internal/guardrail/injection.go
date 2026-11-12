@@ -159,16 +159,21 @@ const reAIReaders = `(ai|llm|chatbot|bot|language model)s?(\s+(agent|assistant|m
 // or set aside.
 const reDictates = `((tell|inform)\s+((every|all|any|the|each|your|our)\s+)?(visitor|user|reader|customer|people|person|everyone|everybody|anyone)s?\b|(say|state|claim|reply|respond|answer)\s+that\b|(always|never|do not|don't)\s+(tell|say|state|inform|recommend|respond|reply|answer|mention|reveal|disclose|claim|use|include|give|offer)\b|(ignore|disregard|recommend)\b)`
 
-// reSecret is what a visitor must never give a chatbot: their card, their
-// bank details, a password or a code.
-const reSecret = `(card numbers?|card details|bank details|account numbers?|sort codes?|cvv|cvc|security codes?|one-time (pass)?codes?|verification codes?|passwords?|passcodes?|pins?)`
+// reOwnSecret is what a visitor gives nobody who asks in a chat: their
+// card, a password or a code. reSecret is those and what names a bank
+// account, which a shop may ask for, "provide your account number when you
+// contact us", and no stranger's address should be sent.
+const (
+	reOwnSecret = `card numbers?|card details|cvv|cvc|security codes?|one-time (pass)?codes?|verification codes?|passwords?|passcodes?|pins?`
+	reSecret    = `(` + reOwnSecret + `|bank details|account numbers?|sort codes?)`
+)
 
 // reSendSecret is one of those sent, given or typed, and reSomewhere an
 // address, a site or a number it goes to. The knowledge screen holds a page
 // that asks for one to be sent somewhere, and AsksForSecrets an answer that
 // does, from the one list.
 const (
-	reSendSecret = `\b(send|e-?mail|forward|text|post|give|share|submit|enter|type|reply with)\b[^.!?\n]{0,40}\b` + reSecret + `\b`
+	reSendSecret = `\b(send|e-?mail|forward|text|post|give|share|submit|enter|type|reply with|provide)\b[^.!?\n]{0,40}\b` + reSecret + `\b`
 	reSomewhere  = `[^.!?\n]{0,40}?\b(to|at)\s+(https?://|[a-z0-9._%+-]+@|[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}\b|\+?\d[\d ]{6,})`
 )
 
@@ -176,7 +181,7 @@ var (
 	reSentSomewhere = regexp.MustCompile(`(?i)` + reSendSecret + reSomewhere)
 	// reHandsOver is a reader told to hand a secret of their own to
 	// somebody; a full stop inside an address does not end the sentence.
-	reHandsOver = regexp.MustCompile(`(?i)\b(send|e-?mail|forward|text|post|give|share|reply with|provide|tell us|tell me)\b([^.!?\n]|\.[a-z0-9]){0,60}?\b(your|their)\s+([a-z-]+\s+){0,2}?` + reSecret + `\b`)
+	reHandsOver = regexp.MustCompile(`(?i)\b(send|e-?mail|forward|text|post|give|share|reply with|provide|tell us|tell me)\b([^.!?\n]|\.[a-z0-9]){0,60}?\b(your|their)\s+([a-z-]+\s+){0,2}?(` + reOwnSecret + `)\b`)
 	// reToldNot is the end of what comes before a request that is a
 	// warning: "never", "do not", "we will never ask you to".
 	reToldNot = regexp.MustCompile(`(?i)(\bnever|\bnot|n['’]t)\s+(ever\s+)?(ask(s|ed)?\s+(you|anyone|anybody|customers|for)\s+(to\s+)?)?$`)
@@ -189,7 +194,7 @@ var (
 // citation would make it the site's own word.
 //
 // Not a sentence that says where a password is typed, gives the site's own
-// account number, or warns against sharing one. Any word for sending or
+// account number or asks for the reader's, or warns against sharing one. Any word for sending or
 // typing before any word for a secret was taken for a request, and "Enter
 // your email address and password to sign in", "send payment to account
 // number 12345678" and "Never share your password with anyone" were

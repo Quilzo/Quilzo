@@ -194,8 +194,9 @@ func extract(question string, hits []Hit) []Sentence {
 		return nil
 	}
 	best := hits[0]
-	all := sentences(best.Text)
-	if len(strings.Fields(best.Text)) <= shortPassage {
+	text := quotable(best.Text)
+	all := sentences(text)
+	if len(strings.Fields(text)) <= shortPassage {
 		out := make([]Sentence, 0, len(all))
 		for _, s := range all {
 			out = append(out, Sentence{Text: s, Cites: []int{1}, Supported: true})
@@ -242,6 +243,24 @@ func extract(question string, hits []Hit) []Sentence {
 		}
 	}
 	return out
+}
+
+// quotable is a passage's text as an answer may quote it: without a
+// sentence that asks the visitor for a card number or a password. Verify
+// refuses one from a model, and when it did the answer fell back to the
+// passage quoted whole, the same sentence in it. The browser's copy quotes
+// this text too (Browser), so it leaves out what the server does.
+func quotable(text string) string {
+	if !guardrail.AsksForSecrets(text) {
+		return text
+	}
+	var keep []string
+	for _, s := range sentences(text) {
+		if !guardrail.AsksForSecrets(s) {
+			keep = append(keep, s)
+		}
+	}
+	return strings.Join(keep, " ")
 }
 
 // shortPassage is the length, in words, under which a passage is quoted
