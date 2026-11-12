@@ -809,6 +809,13 @@ is retired. A price no link charges yet shows no button at all, so a page
 never offers a checkout at a price it does not show. The site process holds no
 key: the admin makes the links, and the site reads only the list of them.
 
+Each sync asks Stripe which links still sell for the key it holds, and a link
+that does not is made again. So when the test key a shop was set up on is
+replaced by the live one, the next `quilzo pay sync` (or publish) makes live
+links and the test-mode ones stop being offered, and a link deleted in Stripe's
+dashboard comes back. A live link a test key cannot see is taken off the site
+and named, to be retired in Stripe's dashboard.
+
 ## Bringing a site you already have
 
 Most sites somebody wants to move have no export file. What every one has is
