@@ -532,6 +532,24 @@ func visibleTo(s *Server, p principal) []destination {
 	return out
 }
 
+// opens is whether somebody may open the screen the menu calls key, asked as
+// that screen asks it: the permission its entry needs, on the area it belongs
+// to, and capped by the credential in hand. It is for a link in a screen's
+// text, which goes only where the person reading it may go, and names the
+// screen for everybody else.
+//
+// Agent activity linked an auditor to Agents, Security linked them to Shield
+// and Sign-ins, and Get started linked every reader, author and publisher to
+// People, and each refused them at the end of the link.
+func (s *Server) opens(p principal, key string) bool {
+	for _, d := range destinations {
+		if d.Key == key {
+			return s.allows(p, d.Needs, d.resource())
+		}
+	}
+	return false
+}
+
 // clearCookie expires one of the preference cookies.
 //
 // A method rather than a free function only so it can ask the server whether

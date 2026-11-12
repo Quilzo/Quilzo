@@ -40,13 +40,18 @@ func (s *Server) handleFind(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.can(w, r, p, auth.ActView, "/") {
-		return
-	}
+	// Whether they may read the site, which decides what they search, not
+	// whether they may search. The box is on every screen, and this refused
+	// everybody who could not read the whole site, so the approver on
+	// Approvals, the analyst on Shield and the agent manager on Agents each
+	// typed into it on their own work screen and were refused. They search
+	// the screens their menu offers, and nothing of the site's.
+	readsSite := s.allows(p, auth.ActView, "/")
 
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	data := map[string]any{
 		"Title": "Find", "Nav": "find", "Principal": p, "Query": query,
+		"ReadsSite": readsSite, "OpensForms": s.opens(p, "forms"),
 	}
 	if query == "" {
 		// No query is not an empty result. A screen that says "nothing
@@ -55,18 +60,21 @@ func (s *Server) handleFind(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hits := find.Search(query, s.findSources(p), 40)
+	hits := find.Search(query, s.findSources(p, readsSite), 40)
 	data["Hits"] = groupHits(hits)
 	data["Count"] = len(hits)
 	s.render(w, r, "find.html", data)
 }
 
-// findSources is what this person may look through.
-func (s *Server) findSources(p principal) find.Sources {
-	src := find.Sources{
-		Commit:  s.Store.GetRef(site.RefDraft),
-		Screens: s.navigableTo(p),
+// findSources is what this person may look through: the screens their menu
+// offers, and for somebody who may read the whole site, its pages, settings,
+// media and types as well.
+func (s *Server) findSources(p principal, readsSite bool) find.Sources {
+	src := find.Sources{Screens: s.navigableTo(p)}
+	if !readsSite {
+		return src
 	}
+	src.Commit = s.Store.GetRef(site.RefDraft)
 	if pages, err := site.PagesAt(s.Store, site.RefDraft); err == nil {
 		src.Pages = pages
 	}
