@@ -9,7 +9,6 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -133,9 +132,12 @@ func (s *Server) handleGateway(w http.ResponseWriter, r *http.Request) {
 	if s.shieldedOff(w, "mcp") {
 		return
 	}
+	// Its own metadata, for its own address: a client connecting here was
+	// sent to /mcp's, whose resource is not this, which RFC 9728 says it
+	// must not use. A token for the interface works here as at /mcp.
 	resource, metadata, scope := "", "", ""
 	if oauth {
-		resource, metadata, scope = cfg.Resource(), cfg.MetadataURL(), oauthas.DefaultScope
+		resource, metadata, scope = cfg.Resource(), cfg.MetadataURLAt("/mcp/gateway/"+name), oauthas.DefaultScope
 	}
 	own := s.ownOrigin(r)
 	e := &mcp.Endpoint{
@@ -169,9 +171,10 @@ func (s *Server) handleBrowserMCP(w http.ResponseWriter, r *http.Request) {
 	if s.shieldedOff(w, "mcp") {
 		return
 	}
+	// Its own metadata, as the gateway's is.
 	resource, metadata, scope := "", "", ""
 	if oauth {
-		resource, metadata, scope = cfg.Resource(), cfg.MetadataURL(), oauthas.DefaultScope
+		resource, metadata, scope = cfg.Resource(), cfg.MetadataURLAt("/mcp/browser/"+name), oauthas.DefaultScope
 	}
 	own := s.ownOrigin(r)
 	e := &mcp.Endpoint{
@@ -248,7 +251,10 @@ func (s *Server) handleA2A(w http.ResponseWriter, r *http.Request) {
 	s.Interface.A2A(c).Serve(w, r)
 }
 
-var gatewayName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+// gatewayName is the name a gateway or a browser grant is reached by, one
+// rule with the authorization server's, which takes their addresses as
+// resources (oauthas.Endpoint).
+var gatewayName = oauthas.EndpointName
 
 func (s *Server) interfaceCaller(r *http.Request, token, resource string) (*mcp.Caller, error) {
 	if s.ReloadTokens != nil {
@@ -399,14 +405,30 @@ func writeMetadata(w http.ResponseWriter, r *http.Request, doc map[string]any) {
 	_ = json.NewEncoder(w).Encode(doc)
 }
 
-// handleResourceMetadata is the interface's RFC 9728 document.
+// handleResourceMetadata is the RFC 9728 document of the interface, and of
+// each gateway and browser grant it offers, at its own address.
 func (s *Server) handleResourceMetadata(w http.ResponseWriter, r *http.Request) {
 	cfg, oauth, _ := s.interfaceOn()
 	if !oauth {
 		http.NotFound(w, r)
 		return
 	}
-	writeMetadata(w, r, cfg.ResourceMetadata(s.Interface.Docs))
+	path := strings.TrimPrefix(r.URL.Path, "/.well-known/oauth-protected-resource")
+	if path == "" {
+		path = "/mcp"
+	}
+	offered := path == "/mcp"
+	if name, ok := strings.CutPrefix(path, "/mcp/gateway/"); ok {
+		offered = s.Interface.Gateway != nil && s.Interface.Offered != nil && s.Interface.Offered(name)
+	}
+	if name, ok := strings.CutPrefix(path, "/mcp/browser/"); ok {
+		offered = s.Interface.Browser != nil && s.Interface.BrowserOffered != nil && s.Interface.BrowserOffered(name)
+	}
+	if !offered || !oauthas.Endpoint(path) {
+		http.NotFound(w, r)
+		return
+	}
+	writeMetadata(w, r, cfg.ResourceMetadataAt(path, s.Interface.Docs))
 }
 
 // handleServerMetadata is the authorization server's RFC 8414 document.

@@ -873,3 +873,99 @@ func TestATooLargeRequestAtTheInterfaceNamesTheAdminsLimit(t *testing.T) {
 		t.Fatalf("%d %s", w.Code, w.Body.String())
 	}
 }
+
+// A client that follows the authorization specification finds how to sign
+// in to the gateway, and to a browser grant, at the endpoint's own
+// address: its 401 names its own protected-resource metadata, that
+// metadata is for it, and the authorization server takes it as the
+// resource a token is asked for. The token works there as one for /mcp
+// does.
+//
+// Each pointed at /mcp's metadata, whose resource is not the address
+// asked about, which RFC 9728 says a client must not use; their own
+// well-known address answered the sign-in page; and an authorization
+// request naming the gateway was refused invalid_target. Only a client
+// that ignored the rules, or was set up by hand for /mcp, got in.
+func TestTheGatewayAndABrowserGrantAreResourcesOfTheirOwn(t *testing.T) {
+	r := newIfaceRig(t)
+	r.srv.Interface.Offered = func(name string) bool { return name == "tracker" }
+	r.srv.Interface.Gateway = func(req *http.Request, c *mcp.Caller, name string) (*mcp.Server, error) {
+		s := mcp.NewServer("gw", "test")
+		s.Direct = &mcp.Direct{Tools: []mcp.Tool{{Name: "create_issue", InputSchema: map[string]any{"type": "object"}}},
+			Call: func(string, map[string]any) (string, error) { return "filed for " + c.Principal, nil }}
+		return s, nil
+	}
+	r.srv.Interface.BrowserOffered = func(name string) bool { return name == "shop" }
+	r.srv.Interface.Browser = func(req *http.Request, c *mcp.Caller, name string) (*mcp.Server, error) {
+		return mcp.NewServer("quilzo-browser-"+name, "test"), nil
+	}
+	list := func(path, bearer string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest("POST", path, strings.NewReader(
+			`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("MCP-Protocol-Version", "2026-07-28")
+		req.Header.Set("Mcp-Method", "tools/list")
+		if bearer != "" {
+			req.Header.Set("Authorization", "Bearer "+bearer)
+		}
+		w := httptest.NewRecorder()
+		r.srv.Handler().ServeHTTP(w, req)
+		return w
+	}
+	for _, path := range []string{"/mcp/gateway/tracker", "/mcp/browser/shop"} {
+		meta := "https://admin.example.org/.well-known/oauth-protected-resource" + path
+		w := list(path, "")
+		if w.Code != 401 || !strings.Contains(w.Header().Get("WWW-Authenticate"), `resource_metadata="`+meta+`"`) {
+			t.Errorf("%s: %d %q", path, w.Code, w.Header().Get("WWW-Authenticate"))
+		}
+		w = r.do(t, "GET", "/.well-known/oauth-protected-resource"+path, "", nil, nil)
+		var doc map[string]any
+		json.Unmarshal(w.Body.Bytes(), &doc)
+		servers, _ := doc["authorization_servers"].([]any)
+		if w.Code != 200 || doc["resource"] != "https://admin.example.org"+path || len(servers) != 1 ||
+			servers[0] != "https://admin.example.org" {
+			t.Errorf("%s's metadata: %d %v", path, w.Code, doc)
+		}
+	}
+	for _, p := range []string{"/.well-known/oauth-protected-resource/mcp/gateway/other",
+		"/.well-known/oauth-protected-resource/mcp/browser/other", "/.well-known/oauth-protected-resource/mcp/elsewhere"} {
+		if w := r.do(t, "GET", p, "", nil, nil); w.Code != 404 {
+			t.Errorf("%s, which is not offered: %d", p, w.Code)
+		}
+	}
+
+	// An app asks for the gateway, and the token it is given works there
+	// and at /mcp.
+	verifier := strings.Repeat("g", 64)
+	sum := sha256.Sum256([]byte(verifier))
+	challenge := base64.RawURLEncoding.EncodeToString(sum[:])
+	target := strings.Replace(authorizeURL(challenge), url.QueryEscape("https://admin.example.org/mcp"),
+		url.QueryEscape("https://admin.example.org/mcp/gateway/tracker"), 1)
+	w := r.do(t, "GET", target, r.token, nil, nil)
+	m := reRequest.FindStringSubmatch(w.Body.String())
+	if w.Code != 200 || m == nil {
+		t.Fatalf("asking for the gateway: %d %s %s", w.Code, w.Header().Get("Location"), w.Body.String())
+	}
+	w = r.do(t, "POST", "/oauth/authorize", r.token,
+		url.Values{"request": {m[1]}, "decision": {"allow"}, "scope": {"mcp:read"}},
+		map[string]string{"Sec-Fetch-Site": "same-origin"})
+	c := reCode.FindStringSubmatch(w.Body.String())
+	if c == nil {
+		t.Fatalf("no code: %s", w.Body.String())
+	}
+	w = r.do(t, "POST", "/oauth/token", "", url.Values{"grant_type": {"authorization_code"}, "code": {c[1]},
+		"client_id": {testApp}, "redirect_uri": {"https://app.example.com/cb"}, "code_verifier": {verifier},
+		"resource": {"https://admin.example.org/mcp/gateway/tracker"}}, nil)
+	var out map[string]any
+	json.Unmarshal(w.Body.Bytes(), &out)
+	access, _ := out["access_token"].(string)
+	if w.Code != 200 || access == "" {
+		t.Fatalf("token: %d %s", w.Code, w.Body.String())
+	}
+	if w := list("/mcp/gateway/tracker", access); w.Code != 200 || !strings.Contains(w.Body.String(), "create_issue") {
+		t.Fatalf("the token at the gateway: %d %s", w.Code, w.Body.String())
+	}
+	if w := r.mcpCall(t, access); w.Code != 200 {
+		t.Fatalf("the token at /mcp: %d %s", w.Code, w.Body.String())
+	}
+}

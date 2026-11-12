@@ -44,6 +44,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -149,8 +150,39 @@ func (c Config) Resource() string { return c.Issuer + "/mcp" }
 
 // MetadataURL is where the resource's metadata is served (RFC 9728, with
 // the resource's path inserted after the well-known prefix).
-func (c Config) MetadataURL() string {
-	return c.Issuer + "/.well-known/oauth-protected-resource/mcp"
+func (c Config) MetadataURL() string { return c.MetadataURLAt("/mcp") }
+
+// MetadataURLAt is where the metadata of one of the interface's endpoints
+// is served: /mcp, or a gateway's or a browser grant's under it, each at
+// its own address as RFC 9728 has it.
+func (c Config) MetadataURLAt(path string) string {
+	return c.Issuer + "/.well-known/oauth-protected-resource" + path
+}
+
+// EndpointName is the name a gateway or a browser grant is reached by,
+// at /mcp/gateway/NAME or /mcp/browser/NAME.
+var EndpointName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+
+// Endpoint reports whether a path is one of the interface's MCP
+// endpoints: /mcp itself, or a gateway or a browser grant under it.
+//
+// Every one of them is the interface, and a token for it works at each;
+// but a client asks for a token by the address it is connecting to, and
+// RFC 9728 has it use metadata only for that address. With /mcp the one
+// resource there was, a standards-following agent connecting to a
+// gateway, which is there for other vendors' agents, was pointed at /mcp's
+// metadata, which it must not use, and refused invalid_target when it
+// asked for the gateway itself.
+func Endpoint(path string) bool {
+	if path == "/mcp" {
+		return true
+	}
+	for _, under := range []string{"/mcp/gateway/", "/mcp/browser/"} {
+		if name, ok := strings.CutPrefix(path, under); ok && EndpointName.MatchString(name) {
+			return true
+		}
+	}
+	return false
 }
 
 func (c Config) accessTTL() time.Duration {
@@ -226,8 +258,14 @@ func (c Config) AuthorizationMetadata(docs string) map[string]any {
 
 // ResourceMetadata is the interface's RFC 9728 document.
 func (c Config) ResourceMetadata(docs string) map[string]any {
+	return c.ResourceMetadataAt("/mcp", docs)
+}
+
+// ResourceMetadataAt is the RFC 9728 document of one of the interface's
+// endpoints (Endpoint), naming it as the resource.
+func (c Config) ResourceMetadataAt(path, docs string) map[string]any {
 	m := map[string]any{
-		"resource":                 c.Resource(),
+		"resource":                 c.Issuer + path,
 		"authorization_servers":    []string{c.Issuer},
 		"scopes_supported":         []string{DefaultScope},
 		"bearer_methods_supported": []string{"header"},
@@ -240,15 +278,17 @@ func (c Config) ResourceMetadata(docs string) map[string]any {
 }
 
 // SameResource compares a resource indicator with the interface's address,
-// accepting a capitalised scheme or host and a trailing slash, as clients
-// are told servers should.
+// or one of its endpoints' (Endpoint), accepting a capitalised scheme or
+// host and a trailing slash, as clients are told servers should. A token
+// asked for any of them is the interface's, named by Resource, and works
+// at each of them, as a token asked for /mcp always has.
 func (c Config) SameResource(given string) bool {
 	u, err := url.Parse(strings.TrimSpace(given))
 	if err != nil || u.Fragment != "" || u.User != nil || u.RawQuery != "" {
 		return false
 	}
-	norm := strings.ToLower(u.Scheme) + "://" + strings.ToLower(u.Host) + strings.TrimSuffix(u.EscapedPath(), "/")
-	return norm == c.Resource()
+	origin := strings.ToLower(u.Scheme) + "://" + strings.ToLower(u.Host)
+	return origin == c.Issuer && Endpoint(strings.TrimSuffix(u.EscapedPath(), "/"))
 }
 
 // HostAllowed reports whether apps published from a host may connect.

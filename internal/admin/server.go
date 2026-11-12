@@ -1693,6 +1693,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/models", s.handleModelDoor)
 	mux.HandleFunc("/.well-known/oauth-protected-resource", s.handleResourceMetadata)
 	mux.HandleFunc("/.well-known/oauth-protected-resource/mcp", s.handleResourceMetadata)
+	// A gateway's and a browser grant's, each at its own address.
+	mux.HandleFunc("/.well-known/oauth-protected-resource/mcp/", s.handleResourceMetadata)
 	mux.HandleFunc("/.well-known/oauth-authorization-server", s.handleServerMetadata)
 	mux.HandleFunc("/oauth/authorize", s.handleAuthorize)
 	mux.HandleFunc("/oauth/token", s.handleOAuthToken)

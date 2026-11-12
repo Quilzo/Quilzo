@@ -843,3 +843,30 @@ func TestACodeRedeemedAfterItsAppWasRemovedConnectsNothing(t *testing.T) {
 		})
 	}
 }
+
+// A token may be asked for by the address of any of the interface's MCP
+// endpoints, a gateway's or a browser grant's as well as /mcp, and by no
+// other: a client connecting to a gateway asks for the gateway, and was
+// refused invalid_target.
+func TestEveryEndpointOfTheInterfaceIsAResource(t *testing.T) {
+	cfg := Config{Issuer: "https://admin.example.org"}
+	for given, want := range map[string]bool{
+		"https://admin.example.org/mcp":                   true,
+		"https://admin.example.org/mcp/gateway/tracker":   true,
+		"HTTPS://Admin.Example.Org/mcp/browser/shop/":     true,
+		"https://admin.example.org/mcp/gateway/":          false,
+		"https://admin.example.org/mcp/gateway/a/b":       false,
+		"https://admin.example.org/mcp/gateway/../oauth":  false,
+		"https://admin.example.org/mcp/elsewhere":         false,
+		"https://other.example/mcp/gateway/tracker":       false,
+		"https://admin.example.org/mcp/gateway/tracker?x": false,
+	} {
+		if cfg.SameResource(given) != want {
+			t.Errorf("%s: %v", given, !want)
+		}
+	}
+	if m := cfg.ResourceMetadataAt("/mcp/gateway/tracker", ""); m["resource"] != "https://admin.example.org/mcp/gateway/tracker" ||
+		cfg.MetadataURLAt("/mcp/gateway/tracker") != "https://admin.example.org/.well-known/oauth-protected-resource/mcp/gateway/tracker" {
+		t.Fatalf("%v", m)
+	}
+}
