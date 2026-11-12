@@ -1534,7 +1534,11 @@ func (st *Site) serviceWorker(w http.ResponseWriter, r *http.Request) {
 // and the site's policy allows none that does (script-src 'none'). A layout
 // that registers it needs a policy that allows that script and worker-src
 // 'self'.
-const CACHE = 'quilzo-v1';
+//
+// quilzo-v2, not v1: the worker that filled quilzo-v1 kept every answer, a
+// booking, a conversation and a members' page among them. Activating deletes
+// every cache but this one, which is how what it kept leaves the device.
+const CACHE = 'quilzo-v2';
 const OFFLINE = '/offline';
 
 self.addEventListener('install', (e) => {
@@ -1584,6 +1588,14 @@ self.addEventListener('fetch', (e) => {
 func (st *Site) offline(w http.ResponseWriter, r *http.Request) {
 	// Plain, self-contained, and accessible: it is shown to somebody who has
 	// already lost the network, so it cannot fetch anything.
+	//
+	// It promises only what the worker that shows it does (serviceWorker).
+	// It said the page asked for "has not been visited on this device" and
+	// that "pages you have already opened remain available": the worker
+	// keeps no booking, conversation, search or members' page, so it shows
+	// this to somebody going back to one they opened a minute ago, and no
+	// page of the site registers the worker, so whoever opens this address
+	// was promised copies that nothing keeps.
 	html := `<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1591,8 +1603,9 @@ func (st *Site) offline(w http.ResponseWriter, r *http.Request) {
 <style>body{font-family:system-ui,sans-serif;max-width:34rem;margin:4rem auto;padding:0 1rem;
 line-height:1.6}h1{font-size:1.5rem}</style></head>
 <body><main><h1>You are offline</h1>
-<p>This page has not been visited on this device, so there is no copy stored here.
-Pages you have already opened remain available.</p>
+<p>No copy of this page is kept on this device. Where this site keeps pages for
+reading offline, it keeps the ones opened here, and never a booking, a
+conversation, a search or a members' page.</p>
 <p><a href="/">Try the home page</a></p></main></body></html>`
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(html))
