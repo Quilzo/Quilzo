@@ -173,3 +173,38 @@ func TestTheReviewIsOfferedOnlyToWhoeverTheApproversNamed(t *testing.T) {
 		t.Error("lee, whom the approvers name, is not offered the review")
 	}
 }
+
+// What was held for a person, or asked for by them, is not offered to that
+// person to decide under another spelling of their name: another case,
+// spaces around it or a mailto: in front (auth.SamePerson). Somebody else
+// is still offered it.
+//
+// A held call compared the names exactly, so "dana" was offered the call
+// held for "Dana" to approve, and an install compared them without case
+// alone, so the install "mailto:dana" asked for was offered to dana.
+func TestWhatWaitsIsNotOfferedToItsOwnPersonUnderAnotherSpelling(t *testing.T) {
+	now := time.Now()
+	src := func(name string) Sources {
+		return Sources{Name: name,
+			May: func(auth.Action, string) bool { return true },
+			Held: func() ([]Held, error) {
+				return []Held{{ID: "h1", Integration: "crm", Tool: "create_contact", For: "Dana", Asked: now}}, nil
+			},
+			Pending: func() ([]feature.Pending, error) {
+				return []feature.Pending{{ID: "f1", Name: "lab", Version: "1.0.0", RequestedBy: "mailto:dana", At: now}}, nil
+			},
+		}
+	}
+	for _, name := range []string{"dana", " DANA "} {
+		items, err := List(src(name), now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(items) != 0 {
+			t.Errorf("%q is offered their own: %+v", name, items)
+		}
+	}
+	if items, _ := List(src("sam"), now); !slices.Equal(sourcesOf(items), []string{"feature", "gateway"}) {
+		t.Errorf("somebody else is offered %v", sourcesOf(items))
+	}
+}

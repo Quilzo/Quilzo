@@ -387,7 +387,10 @@ func gatewayDecide(root, id string, approve bool, by *Caller, now time.Time) err
 			return fmt.Errorf("%s was already decided by %s", id, h.By)
 		case now.Sub(h.Asked) >= heldWaits:
 			return fmt.Errorf("%s waited more than a day and has lapsed; the caller asks again", id)
-		case h.Principal == by.Name:
+		// Under any spelling of their name (auth.SamePerson), as every
+		// second-person check asks it: compared exactly, "dana" approved
+		// the call held for "Dana".
+		case auth.SamePerson(h.Principal, by.Name):
 			return errors.New("a call made for you is decided by somebody else")
 		}
 		h.Decided, h.By, h.Approved = now.UTC(), by.Name, approve
