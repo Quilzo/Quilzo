@@ -221,3 +221,31 @@ func TestAnAgentIsAnsweredInARevisionItSpeaks(t *testing.T) {
 		t.Errorf("a header and a body naming different tools were answered %d %+v", code, a)
 	}
 }
+
+// The tool takes a page's call from the site's own origin, its default port
+// written or not, and refuses another scheme, another port and an Origin
+// with anything after the host (sameorigin.Same).
+//
+// Compared by scheme and host as strings, the site's own origin with its
+// port written was another site.
+func TestTheToolKnowsTheSitesOwnOriginWithItsPortWritten(t *testing.T) {
+	st := nlwebSite(t)
+	st.BaseURL = "https://bakery.example/"
+	for origin, allowed := range map[string]bool{
+		"https://bakery.example":      true,
+		"https://BAKERY.example:443":  true,
+		"http://bakery.example":       false,
+		"https://bakery.example:8443": false,
+		"https://bakery.example/evil": false,
+		"null":                        false,
+	} {
+		r := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("Origin", origin)
+		w := httptest.NewRecorder()
+		st.Handler().ServeHTTP(w, r)
+		if (w.Code != http.StatusForbidden) != allowed {
+			t.Errorf("Origin %s: %d", origin, w.Code)
+		}
+	}
+}

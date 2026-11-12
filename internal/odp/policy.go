@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/config"
 )
 
@@ -237,7 +238,10 @@ func (p *Policy) Decide(id, by string, approve, alone bool, now time.Time) (Prop
 		if pr.ID != id {
 			continue
 		}
-		if approve && pr.By == by && !alone {
+		// Whoever proposed it under another spelling of their name is still
+		// them (auth.SamePerson): compared exactly, "dana" approved "Dana"'s
+		// proposal as a second administrator.
+		if approve && auth.SamePerson(pr.By, by) && !alone {
 			return Proposal{}, ErrSameAdministrator
 		}
 		p.Proposals = append(p.Proposals[:i], p.Proposals[i+1:]...)
@@ -250,7 +254,7 @@ func (p *Policy) Decide(id, by string, approve, alone bool, now time.Time) (Prop
 				continue
 			}
 			p.Declared = append(p.Declared, Declared{Param: c.Param, Value: c.Value, Reason: pr.Reason,
-				By: pr.By, ApprovedBy: by, Alone: alone && pr.By == by, At: now.UTC()})
+				By: pr.By, ApprovedBy: by, Alone: alone && auth.SamePerson(pr.By, by), At: now.UTC()})
 		}
 		return pr, nil
 	}

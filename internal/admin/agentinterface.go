@@ -19,6 +19,7 @@ import (
 	"github.com/quilzo/quilzo/internal/dpop"
 	"github.com/quilzo/quilzo/internal/mcp"
 	"github.com/quilzo/quilzo/internal/oauthas"
+	"github.com/quilzo/quilzo/internal/sameorigin"
 	"github.com/quilzo/quilzo/internal/throttle"
 )
 
@@ -111,7 +112,7 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 		Build:  s.Interface.Build,
 		Called: s.Interface.Called,
 		SameOrigin: func(o string) bool {
-			return o == own || (oauth && o == cfg.Issuer)
+			return sameorigin.Same(o, own) || (oauth && sameorigin.Same(o, cfg.Issuer))
 		},
 	}
 	e.ServeHTTP(w, r)
@@ -146,7 +147,7 @@ func (s *Server) handleGateway(w http.ResponseWriter, r *http.Request) {
 			return s.Interface.Gateway(r, c, name)
 		},
 		SameOrigin: func(o string) bool {
-			return o == own || (oauth && o == cfg.Issuer)
+			return sameorigin.Same(o, own) || (oauth && sameorigin.Same(o, cfg.Issuer))
 		},
 	}
 	e.ServeHTTP(w, r)
@@ -196,7 +197,7 @@ func (s *Server) handleBrowserMCP(w http.ResponseWriter, r *http.Request) {
 			return s.Interface.Browser(r, c, name)
 		},
 		SameOrigin: func(o string) bool {
-			return o == own || (oauth && o == cfg.Issuer)
+			return sameorigin.Same(o, own) || (oauth && sameorigin.Same(o, cfg.Issuer))
 		},
 	}
 	e.ServeHTTP(w, r)
@@ -213,7 +214,14 @@ func (s *Server) handleA2A(w http.ResponseWriter, r *http.Request) {
 	if s.shieldedOff(w, "mcp") {
 		return
 	}
-	if o := r.Header.Get("Origin"); o != "" && o != s.ownOrigin(r) && !(oauth && o == cfg.Issuer) {
+	// By Origin alone, as the transport has it at /mcp (mcp.Endpoint): a
+	// request with none is not a page's, and a page's is this admin's or
+	// its OAuth issuer's.
+	also := []string(nil)
+	if oauth {
+		also = []string{cfg.Issuer}
+	}
+	if !sameorigin.Check(r, s.ownOrigin(r), sameorigin.Policy{OriginOnly: true, Missing: true, Also: also}) {
 		http.Error(w, "not from another site's page", http.StatusForbidden)
 		return
 	}
@@ -314,6 +322,12 @@ func (s *Server) interfaceCaller(r *http.Request, token, resource string) (*mcp.
 	if s.Throttle != nil {
 		s.Throttle.Succeed(throttle.Subject{Principal: tok.Principal})
 	}
+	// A person's sign-in session carried here is idle as it is at the
+	// screens (IdleEnded): it never was, so a session nobody used lasted
+	// at /mcp for the whole of session.max.
+	if s.IdleEnded(r, tok) {
+		return nil, errors.New("this session was signed out after a while unused; sign in again")
+	}
 	if s.OnTokenUsed != nil {
 		s.OnTokenUsed(*tok)
 	}
@@ -337,6 +351,33 @@ func (s *Server) storedTokens() *auth.TokenStore {
 	}
 	return s.Tokens
 }
+
+// storedRules is the access rules and the credentials as they are stored
+// now, read once, for a door that decides by a token alone and also asks
+// who its person is (IdleEnded): storedTokens, with the rules beside it.
+// Either falls back to what this server holds when it cannot be read, as
+// storedTokens does.
+func (s *Server) storedRules() (*auth.Policy, *auth.TokenStore) {
+	var pol *auth.Policy
+	var toks *auth.TokenStore
+	if s.Reload != nil {
+		if p, t, err := s.Reload(); err == nil {
+			pol, toks = p, t
+		}
+	}
+	if pol == nil {
+		pol = s.Policy
+	}
+	if toks == nil {
+		toks = s.Tokens
+	}
+	return pol, toks
+}
+
+// OwnOrigin is this admin's origin as the request reached it (ownOrigin),
+// for the content API it mounts, which takes the session cookie from this
+// admin's own pages and must agree with them which those are.
+func (s *Server) OwnOrigin(r *http.Request) string { return s.ownOrigin(r) }
 
 // ownOrigin is this admin's origin as the request reached it.
 func (s *Server) ownOrigin(r *http.Request) string {

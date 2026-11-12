@@ -15,6 +15,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/config"
 	"github.com/quilzo/quilzo/internal/odp"
 	"github.com/quilzo/quilzo/internal/oscal"
@@ -284,7 +285,7 @@ func policyDecide(root, verb string, args []string) error {
 		action = "policy.approved"
 	}
 	detail := map[string]string{"proposal": pr.ID, "changes": changesText(pr.Changes), "proposed_by": pr.By}
-	if verb == "approve" && pr.By == c.Name {
+	if verb == "approve" && auth.SamePerson(pr.By, c.Name) {
 		detail["alone"] = "true"
 	}
 	record(root, c.auditRecord(action, "/settings", audit.Success, detail))

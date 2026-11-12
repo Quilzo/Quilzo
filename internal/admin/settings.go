@@ -333,10 +333,15 @@ func (s *Server) sessionIdle() time.Duration {
 // idleFor is how long name may leave the admin unused: session.idle, and
 // no more than auth.PrivilegedIdle for anybody who can grant access
 // anywhere.
-func (s *Server) idleFor(name string) time.Duration {
+func (s *Server) idleFor(name string) time.Duration { return s.idleUnder(s.Policy, name) }
+
+// idleUnder is idleFor under the access rules pol, for a door that reads
+// the rules as they are stored rather than the copy a screen's refresh
+// keeps in s.Policy (IdleEnded).
+func (s *Server) idleUnder(pol *auth.Policy, name string) time.Duration {
 	idle := s.sessionIdle()
-	if idle > auth.PrivilegedIdle && s.Policy != nil {
-		if need, _ := auth.Needs(auth.ActGrant); s.Policy.Highest(name).AtLeast(need) {
+	if idle > auth.PrivilegedIdle && pol != nil {
+		if need, _ := auth.Needs(auth.ActGrant); pol.Highest(name).AtLeast(need) {
 			return auth.PrivilegedIdle
 		}
 	}

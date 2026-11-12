@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"maps"
 	"path/filepath"
-	"strings"
+	"slices"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
@@ -162,8 +162,23 @@ func cmdPending(root string, args []string) error {
 		if err != nil {
 			return err
 		}
+		// Somebody's own requests, and everybody's to whoever may decide
+		// them, as `auth list` lists grants (listedFor). The list asks only
+		// to view, so that whoever asked for something can watch it wait,
+		// and it printed the whole queue, with each payload under --json,
+		// to a reader refused `pending show` and People for the same
+		// requests: who was about to be made an administrator, which
+		// enrolment links were asked for, which settings were being
+		// weakened.
+		who, everybody := listedFor(root, auth.ActGrant)
+		if !everybody {
+			pend = slices.DeleteFunc(pend, func(r dual.Request) bool { return !mine(r.By, who) })
+		}
 		if w.JSON(pend) {
 			return nil
+		}
+		if !everybody {
+			w.Human("  %syour own; everybody's are listed to whoever may grant%s\n", dim, reset)
 		}
 		if len(pend) == 0 {
 			w.Human("nothing is waiting for a second administrator\n")
@@ -199,7 +214,7 @@ func cmdPending(root string, args []string) error {
 		}
 		// Their own request, approved alone: not for a day after another
 		// administrator stopped being one.
-		if mine, gerr := store.Get(id); approve && gerr == nil && strings.EqualFold(mine.By, c.Name) {
+		if mine, gerr := store.Get(id); approve && gerr == nil && auth.SamePerson(mine.By, c.Name) {
 			if rm := aloneRefusal(root, c.Name, now); rm != nil {
 				return refuseAlone(root, c, rm, map[string]string{"request": mine.ID, "kind": mine.Kind})
 			}

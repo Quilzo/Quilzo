@@ -646,3 +646,31 @@ func TestPasskeyPromptsHeldAtOnceAreBounded(t *testing.T) {
 		t.Fatalf("expired prompts kept: %d held", held)
 	}
 }
+
+// A member's change is taken from this site's own origin in any case of
+// its host, when the browser sends Origin and not Sec-Fetch-Site; another
+// origin, or none, is refused as before (sameorigin.Check).
+//
+// Origin was compared with the site's origin as a string, so the site's own
+// host in capitals was another site.
+func TestAMembersChangeComesFromTheSitesOwnOriginWhateverItsCase(t *testing.T) {
+	st, _ := memberSite(t, "open")
+	for origin, allowed := range map[string]bool{
+		memberOrigin:               true,
+		"HTTPS://Example.ORG":      true,
+		"https://example.org:443":  true,
+		"http://example.org":       false,
+		"https://evil.example":     false,
+		"https://example.org:8443": false,
+		"null":                     false,
+		"":                         false,
+	} {
+		r := httptest.NewRequest(http.MethodPost, "/account/delete", nil)
+		if origin != "" {
+			r.Header.Set("Origin", origin)
+		}
+		if st.sameSite(r) != allowed {
+			t.Errorf("Origin %q: allowed=%v", origin, !allowed)
+		}
+	}
+}

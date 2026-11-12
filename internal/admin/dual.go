@@ -215,9 +215,12 @@ func (s *Server) pendingRows(p principal, now time.Time) []pendingRow {
 	var unread error
 	read := false
 	for _, r := range pend {
+		// Whose it is to take back or receive is whose dual.Store says;
+		// whether a second administrator is needed asks the one rule for
+		// who is the same person (auth.SamePerson).
 		mine := strings.EqualFold(r.By, p.Name)
 		row := pendingRow{Request: r, Words: dual.StateWords(r, now),
-			CanDecide: r.Open(now) && (!mine || alone), CanTakeBack: mine,
+			CanDecide: r.Open(now) && (!auth.SamePerson(r.By, p.Name) || alone), CanTakeBack: mine,
 			CanReceive: mine && r.Redeemable(now) && receivedHere(r),
 			Gives:      map[bool]string{true: "the link", false: "the token"}[r.Kind == dual.Enrol]}
 		if r.Kind == dual.Mapping {
@@ -285,7 +288,7 @@ func (s *Server) handlePeoplePending(w http.ResponseWriter, r *http.Request) {
 	case "approve", "decline":
 		// Their own request, approved alone: not for a day after another
 		// administrator stopped being one.
-		if mine, gerr := s.Dual.Store.Get(id); do == "approve" && gerr == nil && strings.EqualFold(mine.By, p.Name) {
+		if mine, gerr := s.Dual.Store.Get(id); do == "approve" && gerr == nil && auth.SamePerson(mine.By, p.Name) {
 			if rm := s.aloneRefusal(p.Name, now); rm != nil {
 				s.peopleProblem(w, r, s.refuseAlone(p, rm, map[string]string{"request": mine.ID, "kind": mine.Kind}))
 				return

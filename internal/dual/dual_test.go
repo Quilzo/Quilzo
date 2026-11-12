@@ -181,3 +181,24 @@ func TestARemovedAdministratorStartsADaysWait(t *testing.T) {
 		t.Fatal("writing a request lost the removal")
 	}
 }
+
+// Whoever asked is not the second administrator for their own request
+// under another spelling of their name: another case, spaces around it, or
+// a mailto: in front.
+func TestTheProposerIsNotTheirOwnSecondAdministratorWhateverTheSpelling(t *testing.T) {
+	now := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+	s := Store{Path: filepath.Join(t.TempDir(), "dual.json")}
+	r, err := s.Propose(Grant, "make pat an administrator", map[string]string{"who": "pat"}, "on call", "Dana", false, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, by := range []string{"dana", " DANA ", "mailto:dana"} {
+		if got, err := s.Decide(r.ID, by, true, false, now); err == nil {
+			t.Fatalf("%q approved Dana's request as somebody else: %+v", by, got)
+		}
+	}
+	got, err := s.Decide(r.ID, "mailto:dana", true, true, now)
+	if err != nil || !got.Alone {
+		t.Fatalf("the only administrator approving their own request: %+v %v", got, err)
+	}
+}

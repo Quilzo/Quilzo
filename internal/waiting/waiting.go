@@ -172,12 +172,14 @@ func List(src Sources, now time.Time) ([]Item, error) {
 		errs = append(errs, err)
 	}
 	// A held tool call through the gateway is decided by whoever holds
-	// approve over the store, but never by whoever it was held for.
+	// approve over the store, but never by whoever it was held for, under
+	// any spelling of their name (auth.SamePerson): compared exactly, the
+	// call held for "Dana" was offered to dana.
 	if src.Held != nil && src.may(auth.ActApprove, "/") {
 		held, err := src.Held()
 		errs = append(errs, err)
 		for _, h := range held {
-			if h.For == src.Name {
+			if auth.SamePerson(h.For, src.Name) {
 				continue
 			}
 			out = append(out, Item{Source: "gateway", ID: h.ID, Agent: firstNonEmpty(h.App, h.Integration),
@@ -188,12 +190,13 @@ func List(src Sources, now time.Time) ([]Item, error) {
 	}
 	// An install waiting for a second person, and what agents drafted for
 	// a person to read and install, for whoever may install one. The
-	// person who asked for an install is not its second person.
+	// person who asked for an install is not its second person, by the
+	// rule `quilzo feature approve` refuses them by (auth.SamePerson).
 	if src.may(auth.ActInstall, "/") {
 		if src.Pending != nil {
 			if pend, err := src.Pending(); err == nil {
 				for _, p := range pend {
-					if strings.EqualFold(p.RequestedBy, src.Name) {
+					if auth.SamePerson(p.RequestedBy, src.Name) {
 						continue
 					}
 					title := firstNonEmpty(p.Card.Title, p.Name)
@@ -340,7 +343,7 @@ func reviewItem(r Review, name string, now time.Time) (Item, bool) {
 		return Item{}, false
 	}
 	for _, a := range prop.Approvals {
-		if a.Content == prop.Content && a.By == name {
+		if a.Content == prop.Content && auth.SamePerson(a.By, name) {
 			return Item{}, false
 		}
 	}

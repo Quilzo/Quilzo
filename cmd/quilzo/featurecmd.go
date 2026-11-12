@@ -734,7 +734,7 @@ func decideFeature(root, id string, approve bool, caller *Caller) error {
 		w.Human("declined %s %s\n", pend.Name, pend.Version)
 		return nil
 	}
-	if strings.EqualFold(caller.Name, pend.RequestedBy) {
+	if auth.SamePerson(caller.Name, pend.RequestedBy) {
 		return fmt.Errorf("%s asked for this install, so somebody else approves it", pend.RequestedBy)
 	}
 	p, _, err := loadFeaturePackage(root, pend.Name, pend.Digest)

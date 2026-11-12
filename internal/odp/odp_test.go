@@ -268,3 +268,30 @@ func pad(s string) string {
 	}
 	return strings.Join(parts, ".")
 }
+
+// The administrator who proposed a change to the policy is not its second
+// administrator under another spelling of their name, and approving alone
+// is declared as alone whatever the case it was approved in.
+//
+// Decide compared the names exactly, so "dana" approved "Dana"'s proposal,
+// where a privileged request (internal/dual) refused the same two names as
+// one person.
+func TestTheProposerIsNotTheirOwnSecondAdministratorInAnotherCase(t *testing.T) {
+	now := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+	var pol Policy
+	pr, err := pol.Propose([]Change{{Param: "ac-07_odp.01", Value: "3"}}, "a test", "Dana", "", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, by := range []string{"dana", " DANA", "mailto:dana"} {
+		if _, err := pol.Decide(pr.ID, by, true, false, now); !errors.Is(err, ErrSameAdministrator) {
+			t.Fatalf("%q approved Dana's proposal as somebody else: %v", by, err)
+		}
+	}
+	if _, err := pol.Decide(pr.ID, "dana", true, true, now); err != nil {
+		t.Fatal(err)
+	}
+	if len(pol.Declared) != 1 || !pol.Declared[0].Alone {
+		t.Fatalf("approved alone, and declared as %+v", pol.Declared)
+	}
+}

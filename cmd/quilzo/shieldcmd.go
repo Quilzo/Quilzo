@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/dual"
 	"github.com/quilzo/quilzo/internal/shield"
 )
@@ -518,7 +519,7 @@ func shieldPlaybook(root string, args []string) error {
 		// Their own change, approved alone: not for a day after another
 		// administrator stopped being one.
 		for _, q := range bk.Pending {
-			if q.ID != args[1] || q.By != by || args[0] != "approve" {
+			if q.ID != args[1] || !auth.SamePerson(q.By, by) || args[0] != "approve" {
 				continue
 			}
 			if rm := aloneRefusal(root, by, now); rm != nil {

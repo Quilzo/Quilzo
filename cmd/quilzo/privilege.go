@@ -629,6 +629,14 @@ var commandNeeds = map[string]need{
 	"token": {action: auth.ActToken},
 	"oidc":  {action: auth.ActGrant},
 	"saml":  {action: auth.ActGrant},
+
+	// Exchanging the token presented for a short session only narrows it
+	// (auth.TokenStore.Exchange: no wider role, path or scope, and never
+	// longer than the token), so it is whoever holds the token's, wherever
+	// their grant is, as POST /token/exchange has it. Under the parent's
+	// row, `quilzo token exchange`, the documented way to use a stored
+	// credential, refused everybody below an administrator.
+	"token exchange": {action: auth.ActView, or: []auth.Action{auth.ActView}, orAnywhere: true},
 	// The presets are built into the program, the same in every store:
 	// which consoles to set an identity provider up in, and what each says
 	// about a second factor. Nothing of the store's is read.
@@ -1394,6 +1402,14 @@ func bootstrapIssue(root, cmd string, args []string) bool {
 var commandAreas = map[string]string{
 	"siem":          auth.AreaSecurity,
 	"shield status": auth.AreaSecurity, "shield list": auth.AreaSecurity, "shield dry-run": auth.AreaSecurity,
+
+	// Which networks sign-ins are counted as coming from the office or a
+	// VPN, which the sign-in rules treat differently: read where who signed
+	// in from where is (auth.AreaSecurity). Asked of the whole site, a
+	// reader of its pages read the ranges, which no screen shows them, and
+	// the security analyst was refused what their screen summarises.
+	"geo status": auth.AreaSecurity,
+
 	"posture": auth.AreaCompliance, "compliance": auth.AreaCompliance, "self check": auth.AreaCompliance,
 	"policy show": auth.AreaCompliance, "policy params": auth.AreaCompliance, "policy export": auth.AreaCompliance,
 	"self verify": auth.AreaCompliance, "self vex": auth.AreaCompliance,

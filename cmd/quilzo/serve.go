@@ -939,11 +939,17 @@ func cmdServe(root string, args []string) error {
 		// When each token was last used, which nothing here wrote down.
 		OnTokenUsed: srv.OnTokenUsed,
 		Shield:      func() (time.Time, bool) { return sh.off("api") },
+		// A sign-in session used only here is idle as it is at the
+		// admin's screens, on the admin's clock (admin.Server.IdleEnded).
+		Idle: srv.IdleEnded,
 		// The same cache the admin uses. One process, one decoded copy of a
 		// collection — two would be the same memory spent twice and two
 		// chances for one of them to be built wrong.
 		Index:       srv.Records,
 		SessionAuth: true,
+		// The admin's origin, scheme and all (admin.behind_tls_proxy), so
+		// the two agree which pages the session cookie may come from.
+		Origin: srv.OwnOrigin,
 		Limits: api.Limits{
 			PerMinute: cfg.Int("api.rate.per_minute"),
 			Burst:     cfg.Int("api.rate.burst"),

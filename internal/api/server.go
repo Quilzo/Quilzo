@@ -20,6 +20,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collection"
+	"github.com/quilzo/quilzo/internal/sameorigin"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
@@ -71,6 +72,11 @@ type Server struct {
 	// token, for same-origin requests only. Off unless this server is mounted
 	// inside the admin, which is the one place a session exists.
 	SessionAuth bool
+	// Origin is the admin's own origin as it works it out, for taking its
+	// session cookie (sameOrigin): its scheme behind a proxy that ends TLS
+	// is a setting (admin.behind_tls_proxy), not this connection's. Nil is
+	// this connection's scheme and Host.
+	Origin func(r *http.Request) string
 	// ReloadTokens re-reads the credential store when it has changed on disk.
 	// Nil means never, which is only right for a test.
 	ReloadTokens func()
@@ -101,6 +107,12 @@ type Server struct {
 	// used here every day was listed as used "never", and `token stale`
 	// offered it for revocation. Nil tells nobody.
 	OnTokenUsed func(tok auth.Token)
+	// Idle ends a sign-in session nobody has used for a while, and reports
+	// whether it did, for a host that keeps that clock: the admin, which
+	// mounts this server under `quilzo serve`. Without it a session used
+	// only here, in a header or in the cookie, was never idle and lasted
+	// the whole of session.max. Nil ends none.
+	Idle func(r *http.Request, tok *auth.Token) bool
 	// Shield reports whether the shield has turned the content API off for
 	// a while. Nil means never.
 	Shield func() (until time.Time, on bool)
@@ -302,6 +314,13 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 			// stopped.
 			s.Throttle.Succeed(throttle.Subject{Principal: tok.Principal})
 		}
+		if s.Idle != nil && s.Idle(r, tok) {
+			writeError(w, http.StatusUnauthorized, Error{
+				Error: "signed out after a while unused",
+				Fix:   "sign in again, or send a token: Authorization: Bearer qz_...",
+			})
+			return
+		}
 		if s.OnTokenUsed != nil {
 			s.OnTokenUsed(*tok)
 		}
@@ -425,7 +444,7 @@ func (s *Server) authenticate(r *http.Request) (*auth.Token, error) {
 		// could render perfectly and could not make a single request. Found by
 		// clicking Send in a screenshot; no test asserted that a request
 		// arrived anywhere.
-		if !s.SessionAuth || !sameOrigin(r) {
+		if !s.SessionAuth || !s.sameOrigin(r) {
 			return nil, fmt.Errorf("no bearer token")
 		}
 		c, err := r.Cookie("quilzo_token")
@@ -1051,22 +1070,31 @@ func (s *Server) answerNeighbours(w http.ResponseWriter, r *http.Request,
 	})
 }
 
-// sameOrigin reports whether a request came from this site's own pages.
+// sameOrigin reports whether a request came from this site's own pages,
+// for taking the admin's session cookie (sameorigin.Check).
 //
 // Sec-Fetch-Site first, because a current browser states the relationship
 // directly and cannot be talked out of it. Origin second, for clients that do
 // not send it. A request with neither is not a browser and therefore not a
-// cross-site request forgery — nothing attached a cookie to it automatically.
-func sameOrigin(r *http.Request) bool {
-	switch r.Header.Get("Sec-Fetch-Site") {
-	case "same-origin", "none":
-		return true
-	case "cross-site", "same-site":
-		return false
+// cross-site request forgery — nothing attached a cookie to it automatically,
+// so this door admits it, and a request a person started (none) too.
+//
+// Origin was asked only whether it ended in "//" and the host, so another
+// scheme's pages and "http://evil.example//h" were this server's own. The
+// origin is the admin's, as the admin works it out (Origin), since this
+// server is mounted at it: taken from this connection alone, its scheme
+// behind a proxy that ends TLS was http, so a page the admin's screens
+// took as their own was another site's here, and the other way round.
+func (s *Server) sameOrigin(r *http.Request) bool {
+	own := ""
+	if s.Origin != nil {
+		own = s.Origin(r)
+	} else {
+		scheme := "http"
+		if r.TLS != nil {
+			scheme = "https"
+		}
+		own = scheme + "://" + r.Host
 	}
-	if o := r.Header.Get("Origin"); o != "" {
-		host := r.Host
-		return strings.HasSuffix(o, "//"+host)
-	}
-	return true
+	return sameorigin.Check(r, own, sameorigin.Policy{None: true, Missing: true})
 }

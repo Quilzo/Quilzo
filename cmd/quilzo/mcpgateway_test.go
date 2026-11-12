@@ -177,6 +177,33 @@ func TestAToolAPersonApprovesIsHeldUntilSomebodyElseDecides(t *testing.T) {
 	}
 }
 
+// A call held for a person is not decided by that person under another
+// spelling of their name (auth.SamePerson), as at every other check that
+// a second person is somebody else. Somebody else still decides it.
+//
+// The check compared the names exactly, so "dana" approved the call held
+// for "Dana" as its second person, on the command line and on the
+// Integrations screen alike.
+func TestAHeldCallIsNotDecidedByItsPersonUnderAnotherSpelling(t *testing.T) {
+	root, _ := gatewayRig(t, &agent.GatewayPolicy{Role: "author", Ask: []string{"create_issue"}})
+	if err := updatePolicyForTest(root, auth.Binding{Principal: "Dana", Role: auth.RoleAuthor, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gatewayCallAs(t, root, appToken("Dana", auth.RoleAuthor)); err == nil || !strings.Contains(err.Error(), "held as") {
+		t.Fatalf("Dana's call: %v", err)
+	}
+	held := mustHeld(t, root)
+	if len(held) != 1 || held[0].Principal != "Dana" {
+		t.Fatalf("%+v", held)
+	}
+	if err := gatewayDecide(root, held[0].ID, true, asAdmin("dana"), time.Now()); err == nil || !strings.Contains(err.Error(), "somebody else") {
+		t.Fatalf("dana decided the call held for Dana: %v", err)
+	}
+	if err := gatewayDecide(root, held[0].ID, true, asAdmin("sam"), time.Now()); err != nil {
+		t.Fatalf("somebody else deciding it: %v", err)
+	}
+}
+
 func mustHeld(t *testing.T, root string) []heldCall {
 	t.Helper()
 	held, err := heldCalls(root, time.Now())

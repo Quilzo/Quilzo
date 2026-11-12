@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/quilzo/quilzo/internal/auth"
 )
 
 // Who wrote a change, as opposed to who is offering it for review.
@@ -332,9 +334,13 @@ func (prop Proposal) WrittenBy(person string) string {
 // their own work. Where none is, the one approval asked for is a person's
 // reading of a model's work, and a person it was written for reading it is
 // that.
+//
+// Under any spelling of their name (auth.SamePerson), as every
+// second-person check asks it.
 func (p Policy) Requested(prop Proposal, by string) bool {
-	if by == prop.Author {
+	if auth.SamePerson(by, prop.Author) {
 		return true
 	}
-	return by != "" && max(p.Required, p.RequiredHumans) > 0 && slices.Contains(prop.ForWhom(), by)
+	return by != "" && max(p.Required, p.RequiredHumans) > 0 &&
+		slices.ContainsFunc(prop.ForWhom(), func(who string) bool { return auth.SamePerson(who, by) })
 }
