@@ -176,7 +176,12 @@ func (s *Server) handleToday(w http.ResponseWriter, r *http.Request) {
 		"Waiting": waiting, "WaitingTotal": total, "MoreWaiting": total - len(waiting),
 		"Brief": s.briefFor(p, briefFacts(all, lines, now), now),
 		"Lines": lines, "StartsHere": startPath(r) == "/today",
-		"Date": now.Format("Monday 2 January"),
+		// Starting on Pages is offered only to somebody who may open it. It
+		// was offered to everybody, so an approver could choose to start on
+		// a screen that refuses them, and every screen's way up became a
+		// link called Pages that sent them back to Approvals.
+		"OpensPages": visible["pages"],
+		"Date":       now.Format("Monday 2 January"),
 	})
 }
 

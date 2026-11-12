@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"html"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"regexp"
 	"slices"
@@ -224,5 +225,58 @@ func landsWhereItIsDone(t *testing.T, srv *Server, token, label, href string) {
 	}
 	if h1 == "" || !strings.HasPrefix(label, h1) {
 		t.Errorf("%q opens the top of a screen called %q", label, h1)
+	}
+}
+
+// Today offers to start on Pages only to somebody who may open Pages, and
+// always the way back to starting on Today.
+//
+// It offered "Open Pages first when I sign in" to everybody who signs in,
+// so the approver, on the screen the front door now sends them to, could
+// choose to start on a screen that refuses them: the front door went on
+// sending them to Approvals, and the way up on every screen became a link
+// called Pages that went there too.
+func TestTodayOffersStartingOnPagesOnlyToWhoMayOpenIt(t *testing.T) {
+	srv, _ := setup(t)
+	for _, b := range []auth.Binding{
+		{Principal: "aria", Permission: auth.ActApprove, Resource: "/"},
+		{Principal: "rita", Role: auth.RoleReader, Resource: "/"},
+	} {
+		if err := srv.Policy.Grant(b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	today := func(name, cookie string) string {
+		t.Helper()
+		tok, _, err := srv.Tokens.IssueSession("passkey:"+name, name, srv.roleFor(name), "/", time.Hour,
+			auth.RoleAdmin, auth.MethodPasskey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest(http.MethodGet, "/today", nil)
+		req.Header.Set("Authorization", "Bearer "+tok)
+		if cookie != "" {
+			req.AddCookie(&http.Cookie{Name: StartCookie, Value: cookie})
+		}
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s opened Today and was answered %d", name, w.Code)
+		}
+		return w.Body.String()
+	}
+	const pagesFirst, todayFirst = "Open Pages first when I sign in", "Open Today first when I sign in"
+
+	if body := today("aria", ""); strings.Contains(body, pagesFirst) {
+		t.Error("the approver, who may not open Pages, is offered to start there")
+	}
+	if body := today("rita", ""); !strings.Contains(body, pagesFirst) {
+		t.Error("a reader is no longer offered to start on Pages")
+	}
+	// Chosen before, or by somebody who could then: the way back stays.
+	for _, name := range []string{"aria", "rita"} {
+		if body := today(name, "pages"); !strings.Contains(body, todayFirst) {
+			t.Errorf("%s, starting on Pages, is not offered the way back to Today", name)
+		}
 	}
 }
