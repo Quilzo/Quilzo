@@ -69,6 +69,36 @@ func TestWhatCanNeverBeEarned(t *testing.T) {
 	}
 }
 
+// A command that deletes or rewrites history is deleting and never earned,
+// in the words the shell driver gives it (internal/shell, Weighs): a run of
+// approved git commands that only change the workspace must not earn
+// `git push --force`, nor approved rm commands a later `rm -r`.
+func TestACommandThatDestroysIsNeverEarned(t *testing.T) {
+	for _, c := range []struct {
+		program, why string
+	}{
+		{"git", "it runs git push --force origin main: it deletes or rewrites history, which nothing brings back"},
+		{"git", "it runs git push --force origin main: it deletes or rewrites history, which nothing brings back; " +
+			"and it reaches the network (github.com)"},
+		{"rm", "it runs rm -r src: it deletes or rewrites history, which nothing brings back"},
+	} {
+		a := Action{Op: "shell_run", Input: map[string]any{"program": c.program}}
+		if got := CommitOf(a, c.why, WaitAsk, false); got != "deletes" {
+			t.Errorf("%q commits to %q, not deletes", c.why, got)
+		}
+		if Earnable(a, c.why, WaitAsk, false) {
+			t.Errorf("%q was earnable", c.why)
+		}
+	}
+	// A command that only changes the workspace is still a write, and may
+	// be earned.
+	a := Action{Op: "shell_run", Input: map[string]any{"program": "git"}}
+	why := "it runs git commit -m tidy: it changes the workspace"
+	if got := CommitOf(a, why, WaitAsk, false); got != "writes" || !Earnable(a, why, WaitAsk, false) {
+		t.Errorf("%q commits to %q, not an earnable write", why, got)
+	}
+}
+
 // In a run: an earned kind of action goes ahead without stopping and says
 // so on its step; without earn_after nothing is earned; and the breaker
 // still stops it when the run holds something private.

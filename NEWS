@@ -52,6 +52,13 @@ Unreleased
 
 ** Security
 
+*** A command an agent runs that deletes or rewrites history waits for a
+    person every time, as the shell's ask setting says.  Its reason was
+    read as a write, so an agent with earn_after that had earned git from
+    approved commits could git push --force, and one that had earned rm
+    could rm -r, with nobody asked.  Such a command is now counted as
+    deleting, which is never earned.
+
 *** A model's draft never goes live unapproved.  The admin's Publish
     put an agent-written draft live when no approval count was set, and
     the command line published past an approval policy it could not read;

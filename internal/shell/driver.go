@@ -434,7 +434,7 @@ func (d *Driver) Weighs(a agent.Action) string {
 		kind := Classify(program, args)
 		var why []string
 		if kind.Destroys {
-			why = append(why, "it deletes or rewrites history, which nothing brings back")
+			why = append(why, agent.RewritesHistory)
 		}
 		if kind.Network && len(sh.Hosts) > 0 {
 			if sh.Asks("network") {
