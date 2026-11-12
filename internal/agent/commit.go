@@ -82,9 +82,16 @@ func CommitOf(a Action, why, kind string, writes bool) string {
 		// run does, and so is a send unless it deletes as well: as a write
 		// it was earnable, so a kind of command approved often enough by
 		// hand in runs a person started would have reached out unasked
-		// from one nobody started.
+		// from one nobody started. Whether it deletes is read from what
+		// follows that hold's words, which name the agent and the hosts and
+		// say nothing of the command: a curl to api.remove.bg was shown to
+		// the person deciding it as a deletion.
+		said := why
+		if strings.HasPrefix(why, UnattendedPrefix) {
+			_, said, _ = strings.Cut(why, "; and ")
+		}
 		switch {
-		case reDeletes.MatchString(why):
+		case reDeletes.MatchString(said):
 			return "deletes"
 		case reSends.MatchString(why) || strings.HasPrefix(why, UnattendedPrefix):
 			return "sends"
@@ -106,13 +113,18 @@ func CommitOf(a Action, why, kind string, writes bool) string {
 		return "reads"
 	}
 	switch {
+	case strings.HasPrefix(why, UnattendedPrefix):
+		// What a hand carries out of a run nobody started is a send
+		// whatever else its reason says: a file put into a page, for one.
+		// Read before the words, which name the agent and where the hand
+		// reaches, so an agent called order-desk had its search shown to
+		// the person deciding it as a payment.
+		return "sends"
 	case rePays.MatchString(why):
 		return "pays"
 	case reDeletes.MatchString(why):
 		return "deletes"
-	case reSends.MatchString(why) || strings.HasPrefix(why, UnattendedPrefix):
-		// What a hand carries out of a run nobody started is a send
-		// whatever else its reason says: a file put into a page, for one.
+	case reSends.MatchString(why):
 		return "sends"
 	}
 	return "acts"
