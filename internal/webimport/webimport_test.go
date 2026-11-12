@@ -483,3 +483,92 @@ func TestAPageIsReadInTimeInProportionToIt(t *testing.T) {
 		}
 	}
 }
+
+// A site none of whose pages could be read is refused with why, as the
+// fetcher said it: a private address, the server itself, plain http, or
+// robots.txt asking readers not to. It was refused with only "no page of
+// HOST could be read", so an agent could not tell a refusal by policy
+// from a site that is down, and kept trying or reported the site broken.
+func TestASiteNothingOfWhichCouldBeReadSaysWhy(t *testing.T) {
+	refusing := func(_ context.Context, raw string) (*Fetched, error) {
+		return nil, fmt.Errorf("refusing to fetch: 127.0.0.1 is loopback — the server itself")
+	}
+	_, err := Crawl(context.Background(), "https://127.0.0.1:19044/", Options{Delay: -1, Get: refusing})
+	if err == nil || !strings.Contains(err.Error(), "no page of 127.0.0.1:19044 could be read") ||
+		!strings.Contains(err.Error(), "127.0.0.1 is loopback") {
+		t.Fatalf("%v", err)
+	}
+
+	s := bakery()
+	s.pages["/robots.txt"] = "User-agent: *\nDisallow: /\n"
+	_, err = Crawl(context.Background(), "https://hartsbakery.example/", Options{Delay: -1, Get: s.get})
+	if err == nil || !strings.Contains(err.Error(), "robots.txt") {
+		t.Fatalf("%v", err)
+	}
+}
+
+// What a package's notes tell somebody to do is said in words every door
+// can follow. "read more with --pages" sent an agent over MCP looking for
+// a flag its call does not have, where the argument is pages, and
+// "quilzo media add FILE --alt" a command it cannot run.
+func TestAPackagesNotesNameNoFlag(t *testing.T) {
+	s := bakery()
+	s.pages["/"] = strings.Replace(s.pages["/"], `<img src="/img/deco.png">`, `<img src="/img/deco.png"><img src="/img/other.png">`, 1)
+	got := crawlOf(t, s, 2)
+	if !got.Capped {
+		t.Fatal("the crawl was not capped")
+	}
+	b, err := Package(got, "", "dana", func(*url.URL, string) (string, error) { return "/media/x", nil }, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	notes := strings.Join(b.Notes, "\n")
+	if !strings.Contains(notes, "more pages") || !strings.Contains(notes, "no description") {
+		t.Fatalf("the notes this is about are not there: %s", notes)
+	}
+	if strings.Contains(notes, "--") {
+		t.Errorf("a note names a flag: %s", notes)
+	}
+}
+
+// A site read to the most an import reads is not told to ask for more.
+//
+// The note for a site with more pages than were read said to ask for more,
+// up to MaxPages, whatever had been read: somebody who had asked for all
+// four hundred, or brought in a file of more, was told to ask for up to
+// four hundred, and asking again read the same pages and said the same.
+func TestASiteReadToTheMostIsNotToldToAskForMore(t *testing.T) {
+	s := bakery()
+	var links strings.Builder
+	for i := 0; i < MaxPages+5; i++ {
+		path := fmt.Sprintf("/loaf-%d", i)
+		links.WriteString(`<a href="` + path + `">Loaf</a> `)
+		s.pages[path] = head + `<title>Loaf</title></head><body><main><h1>A loaf</h1><p>Baked today.</p></main></body></html>`
+	}
+	s.pages["/"] = strings.Replace(s.pages["/"], "</main>", links.String()+"</main>", 1)
+	note := func(max int) string {
+		t.Helper()
+		got := crawlOf(t, s, max)
+		if !got.Capped || len(got.Pages) != max {
+			t.Fatalf("asked for %d: read %d, capped %v", max, len(got.Pages), got.Capped)
+		}
+		b, err := Package(got, "", "dana", nil, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, n := range b.Notes {
+			if strings.HasPrefix(n, NoteMorePages) {
+				return n
+			}
+		}
+		t.Fatalf("no note about the pages left unread: %v", b.Notes)
+		return ""
+	}
+	most := fmt.Sprint(MaxPages)
+	if n := note(3); !strings.Contains(n, "ask for more pages") || !strings.Contains(n, most) {
+		t.Errorf("after reading 3: %s", n)
+	}
+	if n := note(MaxPages); strings.Contains(n, "ask for") || strings.Contains(n, "up to") || !strings.Contains(n, most) {
+		t.Errorf("after reading the most: %s", n)
+	}
+}

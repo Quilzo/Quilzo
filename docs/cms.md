@@ -2335,7 +2335,11 @@ with S256 is required, and a server that does not say it supports it is
 refused. This installation registers there as a public client (RFC 7591) when
 the server takes registrations, or uses `--client-id`; a server that answers a
 registration with a secret is refused, so a secret is never kept that nobody
-chose to keep. The metadata has to be for the server asked about, and the
+chose to keep. A server that takes no registrations and takes Client ID
+Metadata Documents, as another Quilzo's does, knows this installation by its
+own document, which the admin serves at `/connections/client.json` for the
+server to read. A connection asks for the scopes the server lists, or those
+`--scope` names. The metadata has to be for the server asked about, and the
 authorization server's for itself: one server cannot speak for another. Every
 request carries the resource indicator (RFC 8707), so a token is for that server
 and is sent to it alone. Then an MCP integration naming the connection reaches

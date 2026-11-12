@@ -81,6 +81,7 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 			"query": "the words to look for",
 			"limit": "optional, default 20",
 		},
+		Types:    map[string]string{"limit": "number"},
 		Area:     "/",
 		Keywords: []string{"find", "search", "where", "lookup", "locate"},
 	}, func(a map[string]any) (any, error) {
@@ -138,6 +139,7 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 			"due":   "optional: true for only what needs attention",
 			"owner": "optional: only pages this person is responsible for",
 		},
+		Types:    map[string]string{"due": "boolean"},
 		Area:     "/",
 		Keywords: []string{"checked", "review", "stale", "accuracy", "audit", "due"},
 	}, func(arg map[string]any) (any, error) {
@@ -213,6 +215,7 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 			"page":     "optional: one page, or every page with notes",
 			"resolved": "optional: true to include the ones somebody dealt with",
 		},
+		Types:    map[string]string{"resolved": "boolean"},
 		Area:     "/",
 		Keywords: []string{"notes", "comments", "review", "feedback", "remarks"},
 	}, func(arg map[string]any) (any, error) {
@@ -309,6 +312,7 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 			"where":      "optional object of field to exact value",
 			"limit":      "optional, at most 1000, default 50",
 		},
+		Types:    map[string]string{"where": "object", "limit": "number"},
 		Keywords: []string{"records", "query", "search", "rows", "find", "data"},
 	}, func(a map[string]any) (any, error) {
 		name, _ := a["collection"].(string)
@@ -347,6 +351,7 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 			"fields":     "object of field names to values",
 			"id":         "optional; omit to create a new record",
 		},
+		Types:  map[string]string{"fields": "object"},
 		Writes: true, NeedsRole: "author", Area: auth.AreaData,
 		Keywords: []string{"record", "write", "create", "update", "data", "row"},
 	}, func(a map[string]any) (any, error) {
@@ -567,6 +572,8 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 		Detail: "Patterns rather than proofs. Nothing matching is not the same " +
 			"as being safe, and a scanner only finds what somebody thought to " +
 			"look for.",
+		Args: map[string]string{"templates": "where page.html lives; defaults to the templates this " +
+			"server was started with, and from the agent interface can be nothing else"},
 		Keywords: []string{"scan", "security", "vulnerability", "secrets", "xss"},
 	}, func(a map[string]any) (any, error) {
 		dir, err := templatesAsked(a, caller, tplDir)
@@ -737,11 +744,12 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 			"You cannot write one here and cannot widen one: the conditions, " +
 			"the fields it exposes and the row limit are fixed, and a " +
 			"parameter is refused unless its value satisfies the kind the " +
-			"listing declared. Call it with no name to see what exists.",
+			"listing declared. Leave listing out to see what exists.",
 		Args: map[string]string{
 			"listing": "the listing name; omit to list what exists",
 			"args":    "optional object of parameter name to value",
 		},
+		Types:    map[string]string{"args": "object"},
 		Keywords: []string{"listing", "query", "view", "rows", "report", "filter"},
 	}, func(a map[string]any) (any, error) {
 		set, err := loadListings(root)

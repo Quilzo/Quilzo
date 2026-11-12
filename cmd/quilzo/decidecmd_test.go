@@ -406,3 +406,48 @@ func TestTheDecideToolSaysWhatItsConfidenceIs(t *testing.T) {
 		t.Errorf("the description says the model's own estimate plays no part, and it does: %q", detail)
 	}
 }
+
+// A decide over MCP with no state, or a null one, is refused and says
+// which arguments it was given, as `quilzo decide ask` refuses one with
+// none. It asked the model about nothing and answered with confidence 0.9
+// and escalate false: an agent that misnamed the field, "ticket" for
+// "state", was handed a decision it could act on with no person involved.
+func TestADecisionAboutNoStateIsRefused(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := publishedShop(t)
+	asked := 0
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked++
+		w.Write([]byte(`{"choices":[{"message":{"content":` +
+			`"{\"answers\": {\"queue\": {\"value\": \"returns\", \"confidence\": 0.9}}}"}}]}`))
+	}))
+	defer model.Close()
+	if err := cmdGateway(root, []string{"route", "add", "local", "--url", model.URL + "/v1", "--model", "m"}); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(t.TempDir(), "d.json")
+	os.WriteFile(file, []byte(ticketDecider), 0o600)
+	if err := cmdDecide(root, []string{"set", file}); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := buildMCP(root, s, asAdmin("dana"), "templates")
+	for name, args := range map[string]map[string]any{
+		"no state":   {"name": "ticket"},
+		"null state": {"name": "ticket", "state": nil},
+	} {
+		_, e := callTool(t, srv, "quilzo_read", "decide", args)
+		if e == nil || e.Code != mcp.CodeRefused || !strings.Contains(e.Message, "state") || !strings.Contains(e.Message, "name") {
+			t.Errorf("%s: %+v", name, e)
+		}
+	}
+	if err := cmdDecide(root, []string{"ask", "ticket", "null"}); err == nil || !strings.Contains(err.Error(), "state") {
+		t.Errorf("the command line decided a null state: %v", err)
+	}
+	if asked != 0 {
+		t.Fatalf("the model was asked %d times about nothing", asked)
+	}
+}

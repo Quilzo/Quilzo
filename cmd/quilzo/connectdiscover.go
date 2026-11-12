@@ -55,11 +55,20 @@ func connectDiscover(root string, caller *Caller, args []string) error {
 	fs := flag.NewFlagSet("provider discover", flag.ContinueOnError)
 	clientID := fs.String("client-id", "", "the client id the server's authorization server issued; registered there when empty and it takes registrations")
 	title := fs.String("title", "", "what people connecting see; the server's host when empty")
+	scope := fs.String("scope", "", "the scopes a connection asks for, separated by spaces; what the server lists when empty")
 	if err := fs.Parse(flags); err != nil {
 		return err
 	}
 	if len(pos) != 2 {
-		return errors.New("usage: quilzo connect provider discover NAME https://SERVER/mcp [--client-id ID] [--title T]")
+		return errors.New("usage: quilzo connect provider discover NAME https://SERVER/mcp [--client-id ID] [--scope S] [--title T]")
+	}
+	// The scopes the person deciding names, when they name any: what a
+	// server lists says what it offers, not what this agent will do there,
+	// and with nothing to say otherwise a connection asked for exactly
+	// what the list said, mcp:read alone at another Quilzo.
+	asked, err := connect.Scopes(*scope)
+	if err != nil {
+		return err
 	}
 	if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
 		return err
@@ -75,10 +84,33 @@ func connectDiscover(root string, caller *Caller, args []string) error {
 	if err != nil {
 		return err
 	}
+	if len(asked) > 0 {
+		d.Scopes = asked
+	}
 	id := strings.TrimSpace(*clientID)
-	registered := false
-	if id == "" {
-		if id, err = connect.Register(ctx, discoverPost, d, "Quilzo at "+siteName(root), redirect); err != nil {
+	registered, byDocument := false, false
+	switch {
+	case id != "":
+	case d.RegisterURL == "" && d.MetadataDocs:
+		// A server that takes Client ID Metadata Documents and no
+		// registrations, as another Quilzo's is: this installation's own
+		// document is its client id. Only where nothing else would do, so
+		// a server that also takes registrations is registered with as
+		// before, which works for an admin it cannot reach.
+		if id, err = connectDocumentURL(root); err != nil {
+			return err
+		}
+		// And the document is one the admin can serve from there. An admin
+		// at http on this machine was set up with that address as its
+		// client id, which no server takes and none could read, and the
+		// person learned it at the other side's sign-in page.
+		if _, err := connectClientDocument(root); err != nil {
+			return fmt.Errorf("%s takes a client's metadata document and no registrations, and this installation "+
+				"has none to give it: %w. Give --client-id for a client registered there by hand", d.Issuer, err)
+		}
+		byDocument = true
+	default:
+		if id, err = connect.Register(ctx, discoverPost, d, connectClientName(root), redirect); err != nil {
 			return err
 		}
 		registered = true
@@ -111,13 +143,18 @@ func connectDiscover(root string, caller *Caller, args []string) error {
 		return err
 	}
 	record(root, caller.auditRecord("connect.provider.discovered", "/connections", audit.Success, map[string]string{
-		"provider": name, "resource": d.Resource, "issuer": d.Issuer, "registered": fmt.Sprint(registered)}))
+		"provider": name, "resource": d.Resource, "issuer": d.Issuer, "registered": fmt.Sprint(registered),
+		"metadata_document": fmt.Sprint(byDocument)}))
 	if w.JSON(p) {
 		return nil
 	}
 	w.Human("%s%s%s: people connect at %s, for %s\n", bold, name, reset, d.Issuer, d.Resource)
 	if registered {
 		w.Human("  %sregistered there as a public client; PKCE protects it%s\n", dim, reset)
+	}
+	if byDocument {
+		w.Human("  %sknown there by this installation's client metadata document, %s, which it reads from the admin%s\n",
+			dim, id, reset)
 	}
 	if len(p.Scopes) > 0 {
 		w.Human("  %sasks for %s%s\n", dim, strings.Join(p.Scopes, " "), reset)

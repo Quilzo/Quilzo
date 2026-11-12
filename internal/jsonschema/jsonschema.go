@@ -31,7 +31,12 @@ const maxDepth = 32
 // Check reports the first way v does not fit schema, or nil. v is a value
 // as encoding/json decodes into any: maps, slices, strings, float64,
 // bool and nil.
-func Check(schema json.RawMessage, v any) error {
+func Check(schema json.RawMessage, v any) error { return CheckNamed(schema, v, "body") }
+
+// CheckNamed is Check, with the value called name in what it says: a
+// request's body is "body", and an MCP tool's arguments are "arguments",
+// which is the field a client sent them in.
+func CheckNamed(schema json.RawMessage, v any, name string) error {
 	if len(schema) == 0 {
 		return nil
 	}
@@ -48,7 +53,7 @@ func Check(schema json.RawMessage, v any) error {
 	if err := json.Unmarshal(b, &norm); err != nil {
 		return err
 	}
-	return check(s, norm, "body", 0)
+	return check(s, norm, name, 0)
 }
 
 func check(schema any, v any, at string, depth int) error {

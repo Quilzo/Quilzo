@@ -4,6 +4,7 @@
 package main
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -174,6 +175,101 @@ func TestAnOperationIsAllowedWhomItsCommandIs(t *testing.T) {
 		// check on the whole site refused them.
 		if err := srv.Authorise(ops["control_implementation"]); err != nil {
 			t.Errorf("%s: control_implementation answers %v", who, err)
+		}
+	}
+}
+
+// An argument of the wrong type, under another name, or that no page could
+// hold is invalid params naming it, from the store's own operations.
+//
+// read_page given its page as a number answered there is no page "", and
+// an agent concluded the page was missing; quilzo_find without its query
+// listed every operation; write_page kept a field with no name and a null
+// in the draft, which no other door can write.
+func TestTheStoresOperationsRefuseArgumentsTheyDoNotTake(t *testing.T) {
+	root := publishedShop(t)
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := buildMCP(root, s, asAdmin("dana"), "templates")
+	invalid := func(name, tool, op string, args map[string]any, says ...string) {
+		t.Helper()
+		_, e := callTool(t, srv, tool, op, args)
+		if e == nil || e.Code != mcp.CodeInvalidParams {
+			t.Errorf("%s: %+v", name, e)
+			return
+		}
+		for _, w := range says {
+			if !strings.Contains(e.Message, w) {
+				t.Errorf("%s: %q does not say %q", name, e.Message, w)
+			}
+		}
+	}
+	invalid("a page by a number", "quilzo_read", "read_page", map[string]any{"page": 12}, "page", "string")
+	invalid("a page under another name", "quilzo_read", "read_page", map[string]any{"name": "returns"}, "name", "page")
+	invalid("a field with no name", "quilzo_write", "write_page",
+		map[string]any{"page": "returns", "fields": map[string]any{"": "x"}}, "no name")
+	invalid("a null field", "quilzo_write", "write_page",
+		map[string]any{"page": "returns", "fields": map[string]any{"title": nil}}, "title", "null")
+	invalid("a listing under another name", "quilzo_read", "run_listing", map[string]any{"name": "in_stock"}, "name", "listing")
+
+	resp := srv.Handle(mcp.Request{JSONRPC: "2.0", ID: json.RawMessage(`1`), Method: "tools/call",
+		Params: json.RawMessage(`{"name":"quilzo_find","arguments":{}}`)})
+	if resp.Error == nil || resp.Error.Code != mcp.CodeInvalidParams || !strings.Contains(resp.Error.Message, "query") {
+		t.Errorf("quilzo_find without a query: %+v", resp.Error)
+	}
+
+	// What a content type may declare is still written: a number, true or
+	// false, a list.
+	if _, e := callTool(t, srv, "quilzo_write", "write_page", map[string]any{"page": "returns",
+		"fields": map[string]any{"title": "Returns", "order": 3, "members_only": false, "tags": []any{"help"}}}); e != nil {
+		t.Fatalf("a page with typed fields: %+v", e)
+	}
+	got, e := callTool(t, srv, "quilzo_read", "read_page", map[string]any{"page": "returns"})
+	if e != nil || !strings.Contains(got, `"order": 3`) {
+		t.Fatalf("%v %s", e, got)
+	}
+
+	// And every type an operation declares is for an argument it names.
+	for _, op := range srv.Operations() {
+		for k, typ := range op.Types {
+			if _, ok := op.Args[k]; !ok {
+				t.Errorf("%s gives %s a type and does not name it", op.Name, k)
+			}
+			switch typ {
+			case "number", "boolean", "object", "array", "any":
+			default:
+				t.Errorf("%s gives %s the type %q, which is not one checked", op.Name, k, typ)
+			}
+		}
+	}
+}
+
+// What an operation tells an agent to do names its arguments, never a
+// flag or an argument it does not have. run_listing said "call it with no
+// name", where its argument is listing, and an agent sent name, which was
+// ignored, and got the catalogue of listings instead of rows.
+func TestTheOperationsTellAnAgentTheirOwnArguments(t *testing.T) {
+	root := t.TempDir() + "/st"
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := buildMCP(root, s, &Caller{Name: "test"}, "templates")
+	for _, op := range srv.Operations() {
+		said := op.Summary + " " + op.Detail
+		for _, d := range op.Args {
+			said += " " + d
+		}
+		if strings.Contains(said, " --") || strings.Contains(said, "with no name") {
+			t.Errorf("%s tells an agent what its call cannot do: %s", op.Name, said)
+		}
+		if op.Name == "run_listing" && !strings.Contains(op.Detail, "listing out") {
+			t.Errorf("run_listing does not say to leave listing out: %s", op.Detail)
 		}
 	}
 }

@@ -72,7 +72,10 @@ func TestADenyOnPartOfTheSiteHoldsOverMCP(t *testing.T) {
 	}
 	for _, c := range []struct{ tool, op string }{{"quilzo_read", "read_page"}, {"quilzo_read", "similar_pages"},
 		{"quilzo_write", "write_page"}} {
-		args := map[string]any{"page": "about", "fields": map[string]any{"title": "changed"}}
+		args := map[string]any{"page": "about"}
+		if c.op == "write_page" {
+			args["fields"] = map[string]any{"title": "changed"}
+		}
 		if got := call(c.tool, c.op, args); !refused(got) {
 			t.Errorf("%s on a denied page: %s", c.op, got)
 		}

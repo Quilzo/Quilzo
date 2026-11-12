@@ -34,6 +34,34 @@ type Connections struct {
 	// Finish completes one, for the person signed in: the provider's title.
 	Finish func(ctx context.Context, state, code, person string) (string, error)
 	Revoke func(ctx context.Context, provider, person string) error
+	// Document is this installation's Client ID Metadata Document, served
+	// at ConnectionsDocumentPath for an authorization server that takes
+	// those in place of registrations; nil serves none.
+	Document func() ([]byte, error)
+}
+
+// handleConnectionsDocument serves the document to anybody: it is read by
+// the authorization server, which signs nobody in here, and says only
+// what the connect command registered there would have.
+func (s *Server) handleConnectionsDocument(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", "GET")
+		http.Error(w, "GET only", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.Connections == nil || s.Connections.Document == nil {
+		http.NotFound(w, r)
+		return
+	}
+	b, err := s.Connections.Document()
+	if err != nil {
+		// No address to serve it at: admin.base_url is not set.
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "public, max-age=300")
+	_, _ = w.Write(b)
 }
 
 // ConnectedAccount is one of a person's connections, as the screen shows it.

@@ -353,8 +353,15 @@ func (ix Index) Search(ctx context.Context, query string, n int) ([]Candidate, e
 	if query == "" || len(query) > 300 {
 		return nil, errors.New("a search is between 1 and 300 characters")
 	}
-	if n <= 0 || n > 25 {
+	// At most 25, as the command line and the agent interface say: one
+	// asked for more is given the most, not the default of ten without a
+	// word, which an agent asking for a thousand took for everything there
+	// was.
+	switch {
+	case n <= 0:
 		n = 10
+	case n > 25:
+		n = 25
 	}
 	q := ix.openAlexQuery()
 	q.Set("search", query)

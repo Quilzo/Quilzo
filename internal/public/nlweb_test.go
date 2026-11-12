@@ -290,3 +290,224 @@ func TestTheToolKnowsTheSitesOwnOriginWithItsPortWritten(t *testing.T) {
 		}
 	}
 }
+
+// The site's /mcp takes a request by the transport's rules, as the admin's
+// does, and answers one it does not take in JSON-RPC.
+//
+// # What this found
+//
+// Only the revision was decided by the admin's rules. A GET looking for a
+// stream was given the site's 404 page, which a client reads as no server
+// here, where the transport answers 405; text/plain, jsonrpc 1.0 or none,
+// an object for an id and data after the message were all answered as if
+// they were right; and a batch, a body over the bound or one that was not
+// JSON was a text/plain 400 a client cannot read as an answer. A page the
+// site has at /mcp is still that page for a browser.
+func TestTheSitesMCPTakesARequestByTheTransportsRules(t *testing.T) {
+	st := nlwebSite(t)
+	type answer struct {
+		Error *struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+		Result map[string]any `json:"result"`
+	}
+	send := func(method, ctype, body string, headers map[string]string) (*httptest.ResponseRecorder, answer) {
+		t.Helper()
+		r := httptest.NewRequest(method, "/mcp", strings.NewReader(body))
+		if ctype != "" {
+			r.Header.Set("Content-Type", ctype)
+		}
+		for k, v := range headers {
+			r.Header.Set(k, v)
+		}
+		w := httptest.NewRecorder()
+		st.Handler().ServeHTTP(w, r)
+		var a answer
+		_ = json.Unmarshal(w.Body.Bytes(), &a)
+		return w, a
+	}
+	list := `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`
+
+	w, _ := send(http.MethodGet, "", "", map[string]string{"Accept": "text/event-stream"})
+	if w.Code != http.StatusMethodNotAllowed || w.Header().Get("Allow") != "POST" {
+		t.Errorf("a GET for a stream: %d %q", w.Code, w.Header().Get("Allow"))
+	}
+	if w, _ := send(http.MethodPost, "text/plain", list, nil); w.Code != http.StatusUnsupportedMediaType {
+		t.Errorf("text/plain: %d", w.Code)
+	}
+	for name, tc := range map[string]struct {
+		body   string
+		status int
+		code   int
+	}{
+		"jsonrpc 1.0":   {strings.Replace(list, `"2.0"`, `"1.0"`, 1), http.StatusBadRequest, mcp.CodeInvalidRequest},
+		"no jsonrpc":    {`{"id":1,"method":"tools/list"}`, http.StatusBadRequest, mcp.CodeInvalidRequest},
+		"object id":     {strings.Replace(list, `"id":1`, `"id":{"x":1}`, 1), http.StatusBadRequest, mcp.CodeInvalidRequest},
+		"trailing data": {list + `{"more":true}`, http.StatusBadRequest, mcp.CodeParse},
+		"batch":         {"[" + list + "]", http.StatusBadRequest, mcp.CodeInvalidRequest},
+		"not JSON":      {"{", http.StatusBadRequest, mcp.CodeParse},
+		"40 KB":         {`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"pad":"` + strings.Repeat("a", 40<<10) + `"}}`, http.StatusRequestEntityTooLarge, mcp.CodeInvalidRequest},
+	} {
+		w, a := send(http.MethodPost, "application/json", tc.body, nil)
+		if w.Code != tc.status || w.Header().Get("Content-Type") != "application/json" || a.Error == nil || a.Error.Code != tc.code {
+			t.Errorf("%s: %d %q %s", name, w.Code, w.Header().Get("Content-Type"), w.Body.String())
+		}
+		if name == "40 KB" && (a.Error == nil || !strings.Contains(a.Error.Message, "at most 32768 bytes")) {
+			t.Errorf("%s does not say the limit: %s", name, w.Body.String())
+		}
+	}
+	// And a request as it should be is still answered.
+	if w, a := send(http.MethodPost, "application/json", list, nil); w.Code != 200 || a.Result["tools"] == nil {
+		t.Errorf("a right request: %d %s", w.Code, w.Body.String())
+	}
+
+	// A page called mcp is the site's, for anybody reading it.
+	pages := map[string]any{"mcp": map[string]any{"title": "What MCP is"}}
+	st = published(t, pages)
+	st.Search = search.Build(st.Store.GetRef(site.RefLive), pages)
+	if w, _ := send(http.MethodGet, "", "", map[string]string{"Accept": "text/html"}); w.Code != 200 || !strings.Contains(w.Body.String(), "What MCP is") {
+		t.Errorf("the page at /mcp: %d %s", w.Code, w.Body.String())
+	}
+}
+
+// A request to the site's /mcp that is not a POST is told the transport
+// takes POST, whatever it says it accepts, unless the site has something of
+// its own at that address or a browser is asking for a page.
+//
+// Only a GET that named text/event-stream was told so. A client that
+// probed with a plain GET, accepting anything or nothing in particular, as
+// a fetch does by default, was still given the site's 404 page and read it
+// as no server here; so was one ending a session with DELETE.
+func TestARequestToTheSitesMCPThatIsNotAPostIsToldItTakesPost(t *testing.T) {
+	send := func(st *Site, method, accept string) *httptest.ResponseRecorder {
+		t.Helper()
+		r := httptest.NewRequest(method, "/mcp", nil)
+		if accept != "" {
+			r.Header.Set("Accept", accept)
+		}
+		w := httptest.NewRecorder()
+		st.Handler().ServeHTTP(w, r)
+		return w
+	}
+	st := nlwebSite(t)
+	for _, tc := range []struct{ method, accept string }{
+		{http.MethodGet, ""},
+		{http.MethodGet, "*/*"},
+		{http.MethodGet, "application/json"},
+		{http.MethodHead, ""},
+		{http.MethodDelete, ""},
+		{http.MethodPut, "*/*"},
+	} {
+		w := send(st, tc.method, tc.accept)
+		if w.Code != http.StatusMethodNotAllowed || w.Header().Get("Allow") != "POST" || strings.Contains(w.Body.String(), "<html") {
+			t.Errorf("%s accepting %q: %d, Allow %q, %s", tc.method, tc.accept, w.Code, w.Header().Get("Allow"),
+				w.Header().Get("Content-Type"))
+		}
+	}
+	// A browser reading the site is told what it always was: there is no
+	// such page, by the site's own page.
+	if w := send(st, http.MethodGet, "text/html,application/xhtml+xml,*/*;q=0.8"); w.Code != http.StatusNotFound ||
+		!strings.Contains(w.Body.String(), "Page not found") {
+		t.Errorf("a browser at /mcp: %d %s", w.Code, w.Header().Get("Content-Type"))
+	}
+
+	// What the site has at /mcp is the site's, for whoever asks for it and
+	// however; only a client asking for a stream is told there is none.
+	pages := map[string]any{"mcp": map[string]any{"title": "What MCP is"}}
+	st = published(t, pages)
+	st.Search = search.Build(st.Store.GetRef(site.RefLive), pages)
+	for _, accept := range []string{"", "*/*", "text/html"} {
+		if w := send(st, http.MethodGet, accept); w.Code != 200 || !strings.Contains(w.Body.String(), "What MCP is") {
+			t.Errorf("the page at /mcp, accepting %q: %d", accept, w.Code)
+		}
+	}
+	if w := send(st, http.MethodGet, "text/event-stream"); w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("a GET for a stream where there is a page: %d", w.Code)
+	}
+
+	// A site with no tool has no server at /mcp to speak for.
+	st = published(t, map[string]any{"index": map[string]any{"title": "Home"}})
+	if w := send(st, http.MethodGet, "*/*"); w.Code != http.StatusNotFound {
+		t.Errorf("a site with no tool: %d", w.Code)
+	}
+}
+
+// The site's one tool takes what its schema says, and a call that does not
+// fit is invalid params naming the argument, as at the admin's /mcp.
+//
+// The arguments were read as they came. A query that was a number, or sent
+// under another name, was no query, and the agent that had given one was
+// told "a query is required"; a mode that was not text was no mode, and
+// was answered as a list without a word; and arguments that were not an
+// object were answered "the one tool here is ask" by a call to ask.
+func TestTheSitesToolTakesWhatItsSchemaSays(t *testing.T) {
+	st := nlwebSite(t)
+	call := func(params string) (int, string, string) {
+		t.Helper()
+		r := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(
+			`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":`+params+`}`))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		st.Handler().ServeHTTP(w, r)
+		var a struct {
+			Error *struct {
+				Code    int    `json:"code"`
+				Message string `json:"message"`
+			} `json:"error"`
+			Result json.RawMessage `json:"result"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &a); err != nil {
+			t.Fatalf("%s: %s", params, w.Body.String())
+		}
+		if a.Error == nil {
+			return 0, "", string(a.Result)
+		}
+		return a.Error.Code, a.Error.Message, ""
+	}
+	for name, tc := range map[string]struct {
+		params string
+		says   []string
+	}{
+		"a query that is a number":    {`{"name":"ask","arguments":{"query":12}}`, []string{"query", "string"}},
+		"no query":                    {`{"name":"ask","arguments":{}}`, []string{"query"}},
+		"no arguments":                {`{"name":"ask"}`, []string{"query"}},
+		"the query under another":     {`{"name":"ask","arguments":{"question":"bread"}}`, []string{"needs query"}},
+		"a mode that is a number":     {`{"name":"ask","arguments":{"query":"bread","mode":5}}`, []string{"mode", "string"}},
+		"arguments that are text":     {`{"name":"ask","arguments":"query=bread"}`, []string{"arguments", "object"}},
+		"arguments that are a list":   {`{"name":"ask","arguments":["bread"]}`, []string{"arguments", "object"}},
+		"an argument it does not":     {`{"name":"ask","arguments":{"query":"bread","site":"elsewhere"}}`, []string{"site"}},
+		"a name that is not a string": {`{"name":5,"arguments":{"query":"bread"}}`, []string{"name"}},
+	} {
+		code, message, result := call(tc.params)
+		if code != mcp.CodeInvalidParams {
+			t.Errorf("%s: %d %q %s", name, code, message, result)
+			continue
+		}
+		for _, w := range tc.says {
+			if !strings.Contains(message, w) {
+				t.Errorf("%s: %q does not say %q", name, message, w)
+			}
+		}
+	}
+	// Which modes there are is still said in the tool's own words, which
+	// name them.
+	if code, message, result := call(`{"name":"ask","arguments":{"query":"bread","mode":"everything"}}`); !strings.Contains(message+result, "list, summarize or generate") {
+		t.Errorf("a mode it does not have: %d %q %s", code, message, result)
+	}
+	// A tool it does not have is still told which it has.
+	if code, message, _ := call(`{"name":"search","arguments":{"query":"bread"}}`); code == 0 || !strings.Contains(message, "ask") {
+		t.Errorf("another tool: %d %q", code, message)
+	}
+	// And a call that fits is answered, a null standing for an argument
+	// left out, as clients that fill every optional field send it.
+	for _, params := range []string{
+		`{"name":"ask","arguments":{"query":"bread"}}`,
+		`{"name":"ask","arguments":{"query":"bread","mode":"list"}}`,
+		`{"name":"ask","arguments":{"query":"bread","mode":null}}`,
+	} {
+		if code, message, result := call(params); code != 0 || !strings.Contains(result, "Hart") {
+			t.Errorf("%s: %d %q %s", params, code, message, result)
+		}
+	}
+}

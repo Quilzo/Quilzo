@@ -142,19 +142,12 @@ func (e *Endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Error: &Error{Code: CodeInvalidRequest, Message: "requests from another site's pages are refused"}})
 		return
 	}
-	if r.Method != http.MethodPost {
-		h.Set("Allow", "POST")
-		http.Error(w, "the agent interface takes POST only", http.StatusMethodNotAllowed)
+	if !Accepts(w, r) {
 		return
 	}
 	if r.URL.Query().Has("access_token") {
 		writeRPC(w, http.StatusBadRequest, Response{JSONRPC: "2.0",
 			Error: &Error{Code: CodeInvalidRequest, Message: "a token goes in the Authorization header, never in the address"}})
-		return
-	}
-	if ct := r.Header.Get("Content-Type"); !strings.HasPrefix(strings.ToLower(strings.TrimSpace(ct)), "application/json") {
-		writeRPC(w, http.StatusUnsupportedMediaType, Response{JSONRPC: "2.0",
-			Error: &Error{Code: CodeInvalidRequest, Message: "the body is JSON-RPC, sent as application/json"}})
 		return
 	}
 
@@ -191,35 +184,8 @@ func (e *Endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, MaxBody))
-	if err != nil {
-		writeRPC(w, http.StatusRequestEntityTooLarge, Response{JSONRPC: "2.0",
-			Error: &Error{Code: CodeInvalidRequest, Message: fmt.Sprintf("a request is at most %d bytes", MaxBody)}})
-		return
-	}
-	body = bytes.TrimSpace(body)
-	if len(body) > 0 && body[0] == '[' {
-		// Batches were removed in 2025-06-18, and a batch is several
-		// requests sharing one set of headers that can match only one.
-		writeRPC(w, http.StatusBadRequest, Response{JSONRPC: "2.0",
-			Error: &Error{Code: CodeInvalidRequest, Message: "one JSON-RPC message per request; batches are not accepted"}})
-		return
-	}
-	var req Request
-	dec := json.NewDecoder(bytes.NewReader(body))
-	if err := dec.Decode(&req); err != nil || dec.More() {
-		writeRPC(w, http.StatusBadRequest, Response{JSONRPC: "2.0",
-			Error: &Error{Code: CodeParse, Message: "the body is not one JSON-RPC message"}})
-		return
-	}
-	if req.JSONRPC != "2.0" || req.Method == "" {
-		writeRPC(w, http.StatusBadRequest, Response{JSONRPC: "2.0", ID: req.ID,
-			Error: &Error{Code: CodeInvalidRequest, Message: "not a JSON-RPC 2.0 request"}})
-		return
-	}
-	if len(req.ID) > 0 && !validID(req.ID) {
-		writeRPC(w, http.StatusBadRequest, Response{JSONRPC: "2.0",
-			Error: &Error{Code: CodeInvalidRequest, Message: "a request id is a string or a number"}})
+	req, ok := ReadMessage(w, r, MaxBody)
+	if !ok {
 		return
 	}
 
@@ -296,6 +262,81 @@ func (e *Endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	e.notFound(w, req, modern)
+}
+
+// Accepts reports whether a request is one the transport takes before
+// its body is read: a POST of application/json. One it does not take is
+// answered here: any other method with a 405 that says POST, which is how
+// a client looking for a stream with GET learns there is none, and any
+// other body with a 415.
+//
+// Exported, with ReadMessage, for a server that answers MCP over HTTP
+// without Endpoint, the public site's /mcp: it shared only Negotiate, so
+// it answered text/plain, jsonrpc 1.0 and an object for an id as if they
+// were right, a GET with its 404 page, and a batch with a text/plain 400
+// no client can read as an answer.
+func Accepts(w http.ResponseWriter, r *http.Request) bool {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		http.Error(w, "the agent interface takes POST only", http.StatusMethodNotAllowed)
+		return false
+	}
+	if ct := r.Header.Get("Content-Type"); !strings.HasPrefix(strings.ToLower(strings.TrimSpace(ct)), "application/json") {
+		writeRPC(w, http.StatusUnsupportedMediaType, Response{JSONRPC: "2.0",
+			Error: &Error{Code: CodeInvalidRequest, Message: "the body is JSON-RPC, sent as application/json"}})
+		return false
+	}
+	return true
+}
+
+// ReadMessage reads the one JSON-RPC 2.0 message a request carries, of at
+// most limit bytes, and answers a body that is not one with the JSON-RPC
+// error that says why: too large, with the limit that stopped it; a batch;
+// not JSON, or more than one message; not JSON-RPC 2.0; an id that is
+// neither a string nor a number.
+func ReadMessage(w http.ResponseWriter, r *http.Request, limit int64) (Request, bool) {
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
+	if err != nil {
+		// The limit that stopped the read, which need not be this one: the
+		// admin bounds every POST at 2 MiB before this reads a byte, and a
+		// refusal naming MaxBody sent an agent writing a 3 MB page back
+		// with 3.5 MB, to be refused again in the same words.
+		var tooBig *http.MaxBytesError
+		if !errors.As(err, &tooBig) {
+			writeRPC(w, http.StatusBadRequest, Response{JSONRPC: "2.0",
+				Error: &Error{Code: CodeInvalidRequest, Message: "the body could not be read"}})
+			return Request{}, false
+		}
+		writeRPC(w, http.StatusRequestEntityTooLarge, Response{JSONRPC: "2.0",
+			Error: &Error{Code: CodeInvalidRequest, Message: fmt.Sprintf("a request is at most %d bytes", tooBig.Limit)}})
+		return Request{}, false
+	}
+	body = bytes.TrimSpace(body)
+	if len(body) > 0 && body[0] == '[' {
+		// Batches were removed in 2025-06-18, and a batch is several
+		// requests sharing one set of headers that can match only one.
+		writeRPC(w, http.StatusBadRequest, Response{JSONRPC: "2.0",
+			Error: &Error{Code: CodeInvalidRequest, Message: "one JSON-RPC message per request; batches are not accepted"}})
+		return Request{}, false
+	}
+	var req Request
+	dec := json.NewDecoder(bytes.NewReader(body))
+	if err := dec.Decode(&req); err != nil || dec.More() {
+		writeRPC(w, http.StatusBadRequest, Response{JSONRPC: "2.0",
+			Error: &Error{Code: CodeParse, Message: "the body is not one JSON-RPC message"}})
+		return Request{}, false
+	}
+	if req.JSONRPC != "2.0" || req.Method == "" {
+		writeRPC(w, http.StatusBadRequest, Response{JSONRPC: "2.0", ID: req.ID,
+			Error: &Error{Code: CodeInvalidRequest, Message: "not a JSON-RPC 2.0 request"}})
+		return Request{}, false
+	}
+	if len(req.ID) > 0 && !validID(req.ID) {
+		writeRPC(w, http.StatusBadRequest, Response{JSONRPC: "2.0",
+			Error: &Error{Code: CodeInvalidRequest, Message: "a request id is a string or a number"}})
+		return Request{}, false
+	}
+	return req, true
 }
 
 // Negotiate decides which revision a request speaks, and checks a modern

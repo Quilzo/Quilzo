@@ -1284,6 +1284,13 @@ const exportUploadPath = "/make/import-file"
 // collection.
 const recordUploadPath = "/records/import"
 
+// ConnectionsDocumentPath is where this installation's Client ID Metadata
+// Document is served (connections.go), and so its client id at a server
+// that takes those: another Quilzo's authorization server registers apps
+// no other way. Exported because the connect command gives that address
+// as the client id, and one spelling of it cannot drift from the route.
+const ConnectionsDocumentPath = "/connections/client.json"
+
 // SignalsPath is where the identity provider's transmitter pushes security
 // events (signals.go). Exported because the command that connects a stream
 // tells the transmitter this address, and one spelling of it cannot drift
@@ -1477,6 +1484,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/connections", s.handleConnections)
 	mux.HandleFunc("/connections/change", s.handleConnectionsChange)
 	mux.HandleFunc("/connections/callback", s.handleConnectionsCallback)
+	mux.HandleFunc(ConnectionsDocumentPath, s.handleConnectionsDocument)
 	mux.HandleFunc("/analytics", s.handleAnalytics)
 	mux.HandleFunc("/analytics/redirect", s.handleAnalyticsRedirect)
 	mux.HandleFunc("/experiments", s.handleExperiments)
@@ -1701,6 +1709,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/models", s.handleModelDoor)
 	mux.HandleFunc("/.well-known/oauth-protected-resource", s.handleResourceMetadata)
 	mux.HandleFunc("/.well-known/oauth-protected-resource/mcp", s.handleResourceMetadata)
+	// A gateway's and a browser grant's, each at its own address.
+	mux.HandleFunc("/.well-known/oauth-protected-resource/mcp/", s.handleResourceMetadata)
 	mux.HandleFunc("/.well-known/oauth-authorization-server", s.handleServerMetadata)
 	mux.HandleFunc("/oauth/authorize", s.handleAuthorize)
 	mux.HandleFunc("/oauth/token", s.handleOAuthToken)

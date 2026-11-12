@@ -6,6 +6,8 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
@@ -59,6 +61,7 @@ func registerDecideOps(srv *mcp.Server, root string, caller *Caller) {
 			"name":  "the decider",
 			"state": "any JSON value: the ticket, the comment, the alert",
 		},
+		Types: map[string]string{"state": "any"},
 		// The words somebody uses for a judgement they want made: an agent
 		// asking for "triage a support ticket" was sent to agent_activity.
 		Keywords: []string{"decide", "classify", "route", "score", "gate", "triage",
@@ -68,6 +71,22 @@ func registerDecideOps(srv *mcp.Server, root string, caller *Caller) {
 		// "decider:NAME", which is where a cost limit belongs.
 		if err := authorise(root, caller, auth.ActView, "/"); err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
+		}
+		// A state that is missing or null is the agent's mistake, not
+		// nothing to decide about: an agent that misnamed the field was
+		// answered with confidence about nothing.
+		if a["state"] == nil {
+			given := make([]string, 0, len(a))
+			for k := range a {
+				given = append(given, k)
+			}
+			sort.Strings(given)
+			said := "none"
+			if len(given) > 0 {
+				said = strings.Join(given, ", ")
+			}
+			return nil, &mcp.Refusal{Reason: "no state given: decide answers its questions about state, " +
+				"any JSON value such as the ticket, the comment or the alert; the arguments given were " + said}
 		}
 		name, _ := a["name"].(string)
 		d, err := loadDecider(root, name)

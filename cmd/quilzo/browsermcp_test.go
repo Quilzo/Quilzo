@@ -21,6 +21,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/cdp"
+	"github.com/quilzo/quilzo/internal/mcp"
 )
 
 // The whole offer, one test: a grant declared, a caller's browser opened
@@ -197,6 +198,61 @@ func TestTheOfferedServerNamesItsActions(t *testing.T) {
 	for _, o := range ops {
 		if o.Summary == "" {
 			t.Errorf("%s is offered with nothing said about it", o.Name)
+		}
+	}
+}
+
+// A grant's actions take what the browser reads, and an argument it does
+// not read is invalid params naming it.
+//
+// Each action became held to the arguments it names, and two the browser
+// reads were not named: a press by a point, which is how an agent that
+// aims at pixels says what it presses, and whether a screen is a phone's.
+// Both had worked through a grant and were refused as arguments the action
+// does not take.
+func TestAGrantsActionsTakeWhatTheBrowserReads(t *testing.T) {
+	g := browserGrant{Name: "codex", Read: []string{"shop.example.com"}, Write: []string{"shop.example.com"}}
+	srv := mcp.NewServer("quilzo-browser-codex", "test")
+	srv.Authorise = func(mcp.Operation) error { return nil }
+	var got map[string]any
+	for _, op := range grantOperations(g) {
+		srv.Register(op, func(args map[string]any) (any, error) { got = args; return "done", nil })
+	}
+	for _, tc := range []struct {
+		tool, op string
+		args     map[string]any
+	}{
+		{"quilzo_write", "browser_click", map[string]any{"at": []any{120.0, 340.5}}},
+		{"quilzo_write", "browser_click", map[string]any{"ref": "e12"}},
+		{"quilzo_read", "browser_emulate", map[string]any{"device": "tablet", "mobile": true}},
+		{"quilzo_read", "browser_emulate", map[string]any{"width": "390", "height": 844, "mobile": "yes", "reduced_motion": true}},
+		{"quilzo_read", "browser_scroll", map[string]any{"direction": "down", "amount": 2}},
+		{"quilzo_read", "browser_wait", map[string]any{"text": "Thank you", "seconds": "5"}},
+	} {
+		got = nil
+		if _, e := callTool(t, srv, tc.tool, tc.op, tc.args); e != nil {
+			t.Errorf("%s %v: %+v", tc.op, tc.args, e)
+			continue
+		}
+		for k := range tc.args {
+			if _, ok := got[k]; !ok {
+				t.Errorf("%s was not handed %s", tc.op, k)
+			}
+		}
+	}
+	for _, tc := range []struct {
+		tool, op string
+		args     map[string]any
+		says     string
+	}{
+		{"quilzo_write", "browser_click", map[string]any{"selector": "#buy"}, "selector"},
+		{"quilzo_write", "browser_click", map[string]any{"at": "120,340"}, "at"},
+		{"quilzo_write", "browser_click", map[string]any{"ref": 12}, "ref"},
+		{"quilzo_read", "browser_open", map[string]any{"address": "https://shop.example.com/"}, "address"},
+	} {
+		_, e := callTool(t, srv, tc.tool, tc.op, tc.args)
+		if e == nil || e.Code != mcp.CodeInvalidParams || !strings.Contains(e.Message, tc.says) {
+			t.Errorf("%s %v: %+v", tc.op, tc.args, e)
 		}
 	}
 }

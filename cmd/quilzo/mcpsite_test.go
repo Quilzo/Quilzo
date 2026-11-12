@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -436,5 +437,149 @@ func approveWaiting(t *testing.T, root, by string) {
 		if err := decideFeature(root, p.ID, true, asAdmin(by)); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+// An agent told a site has more pages than were read is told what its own
+// call can do about it: ask for more with pages, up to the 30 an import
+// over the agent interface reads, and past that, that a person reads more.
+//
+// The note was the importer's one note for every door, and named the most
+// any door reads, 400: an agent that had read the 30 it may was told to
+// ask for up to 400, asked, was given the same 30 without a word, and the
+// same note again. Before that the note named a flag, --pages.
+func TestAnAgentIsToldHowManyPagesItsOwnImportReads(t *testing.T) {
+	root, _ := siteStore(t)
+	siteImportGetSeam = func(_ context.Context, raw string) (*webimport.Fetched, error) {
+		u, _ := url.Parse(raw)
+		if u.Path == "/robots.txt" || strings.HasSuffix(u.Path, ".xml") {
+			return nil, errors.New("404")
+		}
+		var links strings.Builder
+		for i := 1; i <= 45; i++ {
+			links.WriteString(`<a href="/p` + strconv.Itoa(i) + `">Page ` + strconv.Itoa(i) + `</a> `)
+		}
+		return &webimport.Fetched{FinalURL: raw, Status: 200, ContentType: "text/html",
+			Body: []byte(`<html><head><title>Hart's ` + u.Path + `</title></head><body><main><h1>Hart's ` + u.Path +
+				`</h1><p>Bread, baked before dawn.</p>` + links.String() + `</main></body></html>`)}, nil
+	}
+	t.Cleanup(func() { siteImportGetSeam = nil })
+	said := func(args map[string]any) string {
+		t.Helper()
+		got := siteCrew(t, root)("quilzo_write", "site_import", args)
+		notes, _ := got["notes"].([]any)
+		for _, n := range notes {
+			if s, _ := n.(string); strings.Contains(s, "more pages") {
+				return s
+			}
+		}
+		t.Fatalf("no note about the pages left unread: %v", got)
+		return ""
+	}
+	few := said(map[string]any{"address": "https://hartsbakery.example/", "pages": 3})
+	if !strings.Contains(few, "pages") || !strings.Contains(few, "30") || strings.Contains(few, "400") || strings.Contains(few, "--") {
+		t.Errorf("after reading 3: %s", few)
+	}
+	for _, args := range []map[string]any{
+		{"address": "https://hartsbakery.example/"},
+		{"address": "https://hartsbakery.example/", "pages": 400},
+	} {
+		most := said(args)
+		if !strings.Contains(most, "30") || strings.Contains(most, "400") || strings.Contains(most, "--") ||
+			!strings.Contains(most, "a person") {
+			t.Errorf("after reading all it may, asked with %v: %s", args["pages"], most)
+		}
+	}
+}
+
+// An agent that asks for more days than an operation gives is given the
+// most it gives, as a search asked for too many works is, and not the few
+// it gives when asked for none in particular.
+//
+// site_analytics says "1 to 90" and booking_times "at most 31", and each
+// read a number over that as no number: a year of traffic asked for was
+// answered with thirty days of it, with nothing in the answer to say so,
+// and two months of free times with a week's, so an agent told a visitor
+// there was nothing free after it.
+func TestAnAgentAskingForMoreDaysThanAreGivenIsGivenTheMost(t *testing.T) {
+	root, _ := siteStore(t)
+	call := siteCrew(t, root)
+	now := time.Now().UTC()
+
+	// A day of traffic sixty days ago: inside the ninety, outside the thirty.
+	if err := os.MkdirAll(analyticsDir(root), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	date := now.AddDate(0, 0, -60).Format("2006-01-02")
+	if err := os.WriteFile(analyticsDir(root)+"/"+date+".json", []byte(`{"date":"`+date+`","views":7,"visitors":3}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := call("quilzo_read", "site_analytics", nil); got["views"] != float64(0) {
+		t.Fatalf("thirty days by default: %v", got)
+	}
+	for _, days := range []int{90, 365} {
+		if got := call("quilzo_read", "site_analytics", map[string]any{"days": days}); got["views"] != float64(7) {
+			t.Errorf("asked for %d days of traffic: %v", days, got)
+		}
+	}
+
+	// Free times: the example takes bookings sixty days ahead.
+	if err := saveBookingSetup(root, bookingExample(), asAdmin("dana"), "setup"); err != nil {
+		t.Fatal(err)
+	}
+	last := func(args map[string]any) string {
+		t.Helper()
+		got := call("quilzo_read", "booking_times", args)
+		services, _ := got["services"].([]any)
+		if len(services) == 0 {
+			t.Fatalf("no services: %v", got)
+		}
+		free, _ := services[0].(map[string]any)["free"].([]any)
+		if len(free) == 0 {
+			t.Fatalf("no free days: %v", got)
+		}
+		d, _ := free[len(free)-1].(map[string]any)["date"].(string)
+		return d
+	}
+	week, month := now.AddDate(0, 0, 9).Format("2006-01-02"), now.AddDate(0, 0, 33).Format("2006-01-02")
+	if d := last(nil); d > week {
+		t.Fatalf("a week by default, and the last free day is %s", d)
+	}
+	for _, days := range []int{31, 60} {
+		if d := last(map[string]any{"days": days}); d <= week || d > month {
+			t.Errorf("asked for %d days of free times, and the last free day is %s", days, d)
+		}
+	}
+}
+
+// An agent that proposes a signed package is told what can be done about
+// it in words its call can follow: the signature is checked when a person
+// installs the package with its publisher's keys.
+//
+// It was told to "give the publisher's keys with --keys head.pub.json",
+// the command line's words: a flag a call to propose_feature does not
+// have, for a file the agent cannot give.
+func TestAnAgentProposingASignedPackageIsNotToldOfAFlag(t *testing.T) {
+	root, _ := siteStore(t)
+	var pkg map[string]any
+	if err := json.Unmarshal(feature.Example(), &pkg); err != nil {
+		t.Fatal(err)
+	}
+	pkg["signature"] = map[string]any{"key_id": "k1", "ed25519": "AAAA", "algorithms": []any{"ed25519"}}
+	got := siteCrew(t, root)("quilzo_write", "propose_feature", map[string]any{"package": pkg})
+	said, _ := got["error"].(string)
+	if !strings.Contains(said, "signed") || !strings.Contains(said, "a person") {
+		t.Fatalf("a signed package proposed: %v", got)
+	}
+	if strings.Contains(said, "--") || strings.Contains(said, ".json") {
+		t.Errorf("an agent is told of a flag or a file: %s", said)
+	}
+	if list, _ := proposals(root); len(list) != 0 {
+		t.Errorf("a package whose signature nobody checked is waiting: %+v", list)
+	}
+	// The command line still says which flag gives the keys.
+	body, _ := json.Marshal(pkg)
+	if _, _, err := readFeatureBytes(root, body, ""); err == nil || !strings.Contains(err.Error(), "--keys") {
+		t.Errorf("the command line's own words: %v", err)
 	}
 }
