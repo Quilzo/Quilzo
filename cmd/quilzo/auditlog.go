@@ -803,9 +803,12 @@ func auditConsistency(root string, args []string) error {
 		return err
 	}
 
-	// The head named, once its signatures check out. Otherwise the most
-	// recently saved head if no size was named, because that is the check
-	// somebody wants and remembering a number is not.
+	// The head named, once its signatures check out. Otherwise the largest
+	// saved head if no size was named, because that is the check somebody
+	// wants and remembering a number is not. The largest, as verify takes
+	// it, and not the newest: a head saved after entries were removed from
+	// the end covers fewer than one saved before them, and checked against
+	// that, the log was called consistent.
 	var published audit.Head
 	if *headPath != "" {
 		keys := *keysPath
@@ -820,29 +823,31 @@ func auditConsistency(root string, args []string) error {
 			return fmt.Errorf("the head in %s covers %d entries, not %d", *headPath, sh.Size, *against)
 		}
 		published = sh.Head
+	} else if *against == 0 {
+		h, err := savedHead(root)
+		if err != nil {
+			return err
+		}
+		if h == nil {
+			return fmt.Errorf(
+				"no head has been published, so there is nothing to check " +
+					"against.\n  `quilzo auditlog head --save` records one; a " +
+					"head only proves anything once it exists somewhere the log " +
+					"cannot be quietly rewritten alongside")
+		}
+		published = *h
 	} else {
 		f := &headFile{}
 		if err := loadJSON(headsPath(root), f); err != nil {
 			return err
 		}
-		if *against == 0 {
-			if len(f.Heads) == 0 {
-				return fmt.Errorf(
-					"no head has been published, so there is nothing to check " +
-						"against.\n  `quilzo auditlog head --save` records one; a " +
-						"head only proves anything once it exists somewhere the log " +
-						"cannot be quietly rewritten alongside")
+		for _, h := range f.Heads {
+			if h.Size == *against {
+				published = h
 			}
-			published = f.Heads[len(f.Heads)-1]
-		} else {
-			for _, h := range f.Heads {
-				if h.Size == *against {
-					published = h
-				}
-			}
-			if published.Root == "" {
-				return fmt.Errorf("no published head covers %d entries", *against)
-			}
+		}
+		if published.Root == "" {
+			return fmt.Errorf("no published head covers %d entries", *against)
 		}
 	}
 	oldSize := published.Size

@@ -307,6 +307,36 @@ func TestEntriesRemovedFromTheEndAreFoundAgainstTheSavedHead(t *testing.T) {
 	}
 }
 
+// consistency with no head named checks the log against the largest head
+// saved beside it, as verify does. It took the newest, and a head saved
+// after entries were removed from the end covers fewer than one saved
+// before them, so saving one then made consistency call the log consistent.
+func TestConsistencyChecksTheLargestSavedHead(t *testing.T) {
+	root := auditedStore(t, 4)
+	save := func() {
+		t.Helper()
+		if _, err := jsonAnswer(t, func() error { return cmdAuditLog(root, []string{"head", "--save"}) }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	save()
+	keepLines(t, root, 3)
+	save()
+	putRecords(t, root, 1)
+
+	var blocked errBlocked
+	human, err := humanOutput(t, func() error { return cmdAuditLog(root, []string{"consistency"}) })
+	if !errors.As(err, &blocked) || strings.Contains(human, "consistent") ||
+		!strings.Contains(errString(err), "NOT an append-only extension of the head at 4") {
+		t.Errorf("against the heads saved before and after entries were removed: %v\n%s", err, human)
+	}
+	// A size named is still the head of that size.
+	if human, err := humanOutput(t, func() error { return cmdAuditLog(root, []string{"consistency", "--since", "3"}) }); err != nil ||
+		!strings.Contains(human, "3 → 4") {
+		t.Errorf("--since 3: %v\n%s", err, human)
+	}
+}
+
 // exportHead writes the signed head `auditlog head --json` answers to a
 // file, as somebody keeping it off the machine does.
 func exportHead(t *testing.T, root string) string {
