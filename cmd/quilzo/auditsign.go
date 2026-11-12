@@ -380,7 +380,7 @@ func auditVerifyHead(root string, args []string) error {
 	var consistent *bool
 	var logSize *int
 	var against error
-	if _, err := os.Stat(auditPath(root)); err == nil {
+	if _, err := os.Stat(auditPath(root)); err == nil || (os.IsNotExist(err) && logWasHere(root)) {
 		events, err := auditEntries(root)
 		if err != nil {
 			return err
@@ -422,6 +422,21 @@ func auditVerifyHead(root string, args []string) error {
 		"  it describes the log is a separate question, asked where the log is:%s\n", dim, reset)
 	w.Human("    %squilzo auditlog consistency --head %s%s\n", dim, headPath, reset)
 	return nil
+}
+
+// logWasHere says a log that is not there was: its directory holds what a
+// log leaves beside it, the lock every write takes and the key its
+// identifiers are pseudonymised with, or the keys its heads are checked
+// with. A log removed whole is then an empty one, which holds no head of
+// any entries. Taken for somebody holding a head with no log at all, it had
+// the signatures checked alone, and verify-head said "verified".
+func logWasHere(root string) bool {
+	for _, p := range []string{auditPath(root) + ".lock", auditKeyPath(root), headKeysPath(root)} {
+		if _, err := os.Stat(p); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // loadSignedHead reads a signed head from a file and checks both its

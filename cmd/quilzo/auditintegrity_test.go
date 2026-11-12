@@ -492,3 +492,24 @@ func TestAHeadSavedAfterACutDoesNotHideIt(t *testing.T) {
 		t.Errorf("--since 4 with two heads of 4 entries: %v", err)
 	}
 }
+
+// A head is not verified against a log that has been removed altogether.
+// The log's directory still holds what a log leaves beside it, and
+// verify-head took the missing file for somebody holding a head with no log
+// at all: it checked the signatures alone and said "verified".
+func TestAHeadIsNotVerifiedOnceTheLogIsGone(t *testing.T) {
+	root := auditedStore(t, 3)
+	head := exportHead(t, root)
+	if err := os.Remove(auditPath(root)); err != nil {
+		t.Fatal(err)
+	}
+	var blocked errBlocked
+	human, err := humanOutput(t, func() error { return cmdAuditLog(root, []string{"verify-head", head}) })
+	if !errors.As(err, &blocked) || strings.Contains(human, "verified") || !strings.Contains(human, "does NOT contain it") {
+		t.Errorf("verify-head: %v\n%s", err, human)
+	}
+	doc, err := jsonAnswer(t, func() error { return cmdAuditLog(root, []string{"verify-head", head}) })
+	if !errors.As(err, &blocked) || doc["verified"] != false || doc["consistent"] != false || doc["log_size"] != float64(0) {
+		t.Errorf("verify-head --json: %v %v", doc, err)
+	}
+}
