@@ -7,6 +7,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
+	"math/rand/v2"
+	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
@@ -244,18 +247,25 @@ func (c *Client) restCall(ctx context.Context, in agent.Integration, tool string
 	// carries its key.
 	safe := !o.Writes() || keyed
 	var res *fetch.Result
+	retryAfter := ""
 	for attempt := 1; ; attempt++ {
 		res, err = do(ctx, o.Method, u, body, headers)
-		if !safe || attempt >= MaxAttempts || !transient(res, err) || ctx.Err() != nil {
-			break
-		}
-		retryAfter := ""
+		retryAfter = ""
 		if res != nil && res.Header != nil {
 			retryAfter = res.Header.Get("Retry-After")
 		}
+		if !safe || attempt >= MaxAttempts || !transient(res, err) || ctx.Err() != nil {
+			break
+		}
+		// Longer than a run waits in place, and it is neither slept on nor
+		// cut short: tried again before the time asked, it is turned away
+		// again, so the call fails saying when (below).
+		if asked, ok := askedWait(retryAfter, c.now()); ok && asked > MaxWait {
+			break
+		}
 		wait := c.Wait
 		if wait == nil {
-			wait = RetryAfter
+			wait = func(attempt int, header string) time.Duration { return retryWait(attempt, header, c.now()) }
 		}
 		select {
 		case <-ctx.Done():
@@ -273,6 +283,13 @@ func (c *Client) restCall(ctx context.Context, in agent.Integration, tool string
 		text = text[:MaxResult]
 	}
 	if res.Status < 200 || res.Status > 299 {
+		// A far side that said when it will take the call again is said so,
+		// with the time, for a person or a later step to come back then.
+		now := c.now()
+		if asked, ok := askedWait(retryAfter, now); ok && transient(res, nil) {
+			return "", fmt.Errorf("%s %s answered %d and asks to be tried again after %s: %s", in.Name, o.Name,
+				res.Status, now.Add(asked).UTC().Format(time.RFC3339), clamp(text, 300))
+		}
 		return "", fmt.Errorf("%s %s answered %d: %s", in.Name, o.Name, res.Status, clamp(text, 300))
 	}
 	if text == "" {
@@ -308,14 +325,91 @@ func transient(res *fetch.Result, err error) bool {
 	case 408, 425, 429, 502, 503, 504:
 		return true
 	}
+	return rateLimited(res)
+}
+
+// rateLimits are the codes that make a refusal a rate limit though its
+// status says otherwise, by status: TikTok answers rate_limit_exceeded in
+// a 400, and Google's APIs, YouTube's among them, quotaExceeded or
+// rateLimitExceeded in a 403. Read by status alone they were final, and a
+// read that waiting would have let through failed at once.
+var rateLimits = map[int][]string{
+	400: {"rate_limit_exceeded"},
+	403: {"quotaExceeded", "rateLimitExceeded", "userRateLimitExceeded"},
+}
+
+// rateLimited reports whether an answer is one of rateLimits: the code is
+// TikTok's error.code, or one of Google's error.errors[].reason. Only the
+// code is read, never the message, so a refusal that merely quotes the
+// words is still a refusal.
+func rateLimited(res *fetch.Result) bool {
+	codes := rateLimits[res.Status]
+	if len(codes) == 0 {
+		return false
+	}
+	var answer struct {
+		Error struct {
+			Code   json.RawMessage `json:"code"`
+			Errors []struct {
+				Reason string `json:"reason"`
+			} `json:"errors"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(res.Body, &answer) != nil {
+		return false
+	}
+	var said []string
+	var code string
+	if json.Unmarshal(answer.Error.Code, &code) == nil {
+		said = append(said, code)
+	}
+	for _, e := range answer.Error.Errors {
+		said = append(said, e.Reason)
+	}
+	for _, s := range said {
+		for _, c := range codes {
+			if strings.EqualFold(s, c) {
+				return true
+			}
+		}
+	}
 	return false
 }
 
-// RetryAfter is how long to wait before another attempt: what the far side
-// asked, up to ten seconds, or one second and then two.
-func RetryAfter(attempt int, header string) time.Duration {
-	if s, err := strconv.Atoi(strings.TrimSpace(header)); err == nil && s >= 0 {
-		return min(time.Duration(s)*time.Second, 10*time.Second)
+// MaxWait is the longest a call waits in place before trying again. A
+// far side that asks for longer is not tried again in this call.
+const MaxWait = 10 * time.Second
+
+// askedWait is how long the far side asked to be left, from a Retry-After
+// header in either of its forms (RFC 9110 10.2.3): a number of seconds,
+// or a date, which a date gone by makes nothing.
+func askedWait(header string, now time.Time) (time.Duration, bool) {
+	header = strings.TrimSpace(header)
+	if header == "" {
+		return 0, false
 	}
-	return time.Duration(attempt) * time.Second
+	if s, err := strconv.ParseInt(header, 10, 64); err == nil && s >= 0 {
+		return time.Duration(min(s, int64(math.MaxInt64/time.Second))) * time.Second, true
+	}
+	if at, err := http.ParseTime(header); err == nil {
+		return max(at.Sub(now), 0), true
+	}
+	return 0, false
+}
+
+// RetryAfter is how long to wait before another attempt: what the far side
+// asked, up to MaxWait, or else a time drawn at random up to a ceiling of
+// one second that doubles each attempt (full jitter). A fixed wait sent
+// every caller a busy service turned away at once back to it in the same
+// instant, to be turned away together again.
+func RetryAfter(attempt int, header string) time.Duration {
+	return retryWait(attempt, header, time.Now())
+}
+
+func retryWait(attempt int, header string, now time.Time) time.Duration {
+	if asked, ok := askedWait(header, now); ok {
+		return min(asked, MaxWait)
+	}
+	ceiling := min(time.Second<<min(max(attempt-1, 0), 4), MaxWait)
+	return time.Duration(rand.Int64N(int64(ceiling) + 1))
 }

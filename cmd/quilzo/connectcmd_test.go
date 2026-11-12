@@ -4,7 +4,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,18 +19,22 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/connect"
+	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/vault"
 )
 
 // oauthProvider is a provider's token and revocation endpoints: each code
-// once, a refresh rotating its token, every revocation remembered.
+// once, a refresh rotating its token (or, keeping, sending none), every
+// revocation remembered. codeExtra is more of the code's answer.
 type oauthProvider struct {
-	mu       sync.Mutex
-	forms    []url.Values
-	expires  int
-	revoked  []string
-	issued   int
-	verifier string
+	mu        sync.Mutex
+	forms     []url.Values
+	expires   int
+	revoked   []string
+	issued    int
+	verifier  string
+	codeExtra string
+	keeping   bool
 }
 
 func (o *oauthProvider) serve(t *testing.T) *httptest.Server {
@@ -51,8 +58,12 @@ func (o *oauthProvider) serve(t *testing.T) *httptest.Server {
 				}
 				o.verifier = r.PostForm.Get("code_verifier")
 				w.Write([]byte(`{"access_token":"at-1","token_type":"Bearer","expires_in":` + itoa(o.expires) +
-					`,"refresh_token":"rt-1","scope":"calendar"}`))
+					`,"refresh_token":"rt-1","scope":"calendar"` + o.codeExtra + `}`))
 			case "refresh_token":
+				if o.keeping {
+					w.Write([]byte(`{"access_token":"at-2","token_type":"Bearer","expires_in":3600}`))
+					return
+				}
 				w.Write([]byte(`{"access_token":"at-2","token_type":"Bearer","expires_in":3600,"refresh_token":"rt-2"}`))
 			}
 		case "/revoke":
@@ -442,5 +453,162 @@ func TestAProviderDeclaredByHandAtAPlatformSpeaksItsDialect(t *testing.T) {
 	}
 	if q := asks("acme"); q.Get("client_id") != "quilzo" || q.Get("code_challenge_method") != "S256" {
 		t.Fatalf("a provider at no platform was asked %v", q)
+	}
+}
+
+// quilzo connect list, and its --json, say when a connection's tokens end:
+// the access token's, and the refresh token's where the provider says.
+// A refresh that keeps the refresh token keeps when it ends (LinkedIn's
+// lives a year from the first and does not renew). A connection kept
+// before these were is said not to be known, and learns them the next
+// time it is used. Kept only inside the sealed token, they were never
+// shown, and a connection simply stopped one day.
+func TestConnectListSaysWhenTokensEnd(t *testing.T) {
+	root := keyedDemo(t)
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("QUILZO_TOKEN", "")
+	t.Setenv("USER", "dana")
+	op := &oauthProvider{expires: 30, codeExtra: `,"refresh_token_expires_in":31536000`, keeping: true}
+	srv := op.serve(t)
+	cfg, err := loadConfig(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Set("admin.base_url", "https://cms.example", "", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveConfig(root, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := setAgentSecret(root, "acme-oauth", "app-secret", "test", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdConnect(root, []string{"provider", "add", "acme", "--title", "Acme", "--auth-url", srv.URL + "/authorize",
+		"--token-url", srv.URL + "/token", "--client-id", "quilzo", "--client-secret", "acme-oauth", "--host", "api.acme.example"}); err != nil {
+		t.Fatal(err)
+	}
+	to, _ := beginConnect(root, "acme", "dana")
+	u, _ := url.Parse(to)
+	if _, err := finishConnect(context.Background(), root, u.Query().Get("state"), "the-code", "dana"); err != nil {
+		t.Fatal(err)
+	}
+	old := w
+	t.Cleanup(func() { w = old })
+	listed := func() []map[string]any {
+		t.Helper()
+		var doc bytes.Buffer
+		w = out.New(true)
+		w.Out = &doc
+		if err := cmdConnect(root, []string{"list"}); err != nil {
+			t.Fatal(err)
+		}
+		var got []map[string]any
+		if err := json.Unmarshal(doc.Bytes(), &got); err != nil || len(got) != 1 {
+			t.Fatalf("%v %s", err, doc.String())
+		}
+		return got
+	}
+	said := func() string {
+		t.Helper()
+		var doc bytes.Buffer
+		w = out.New(false)
+		w.Out = &doc
+		if err := cmdConnect(root, []string{"list"}); err != nil {
+			t.Fatal(err)
+		}
+		return doc.String()
+	}
+	at := func(doc map[string]any, key string) time.Time {
+		t.Helper()
+		s, _ := doc[key].(string)
+		v, err := time.Parse(time.RFC3339Nano, s)
+		if err != nil {
+			t.Fatalf("%s is %v: %v", key, doc[key], doc)
+		}
+		return v
+	}
+	year := time.Now().Add(365 * 24 * time.Hour)
+	got := listed()[0]
+	if d := at(got, "access_expires").Sub(time.Now()); d < 0 || d > time.Minute {
+		t.Errorf("the access token ends in %s", d)
+	}
+	refresh := at(got, "refresh_expires")
+	if d := refresh.Sub(year); d < -time.Minute || d > time.Minute {
+		t.Errorf("the refresh token ends %s", refresh)
+	}
+	if strings.Contains(fmt.Sprint(got), "at-1") || strings.Contains(fmt.Sprint(got), "rt-1") {
+		t.Fatalf("a token in the list: %v", got)
+	}
+	if text := said(); !strings.Contains(text, "refresh token until "+refresh.Local().Format("2 Jan 2006")) {
+		t.Errorf("connect list does not say when the refresh token ends:\n%s", text)
+	}
+
+	// Due: refreshed, the refresh token kept, and when it ends with it.
+	if tok, err := connectionToken(context.Background(), root, "acme", "dana", "api.acme.example"); err != nil || tok != "at-2" {
+		t.Fatalf("%q %v", tok, err)
+	}
+	got = listed()[0]
+	if d := at(got, "access_expires").Sub(time.Now()); d < 59*time.Minute || d > time.Hour {
+		t.Errorf("the refreshed access token ends in %s", d)
+	}
+	if !at(got, "refresh_expires").Equal(refresh) {
+		t.Errorf("a kept refresh token's end was lost: %v", got)
+	}
+
+	// Kept before its ends were: not known, until it is next used.
+	raw, _ := os.ReadFile(connectionsPath(root))
+	var file map[string]map[string]map[string]any
+	if err := json.Unmarshal(raw, &file); err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range file["accounts"] {
+		delete(a, "access_expires")
+		delete(a, "refresh_expires")
+		delete(a, "renews")
+	}
+	raw, _ = json.Marshal(file)
+	if err := os.WriteFile(connectionsPath(root), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := listed()[0]; got["access_expires"] != nil || got["refresh_expires"] != nil {
+		t.Fatalf("an end made up: %v", got)
+	}
+	if text := said(); !strings.Contains(text, "not known") {
+		t.Errorf("an unknown end is not said so:\n%s", text)
+	}
+	if _, err := connectionToken(context.Background(), root, "acme", "dana", "api.acme.example"); err != nil {
+		t.Fatal(err)
+	}
+	if got := listed()[0]; got["access_expires"] == nil || got["renews"] != true {
+		t.Fatalf("not learnt on use: %v", got)
+	}
+
+	// One that stops within the week says so, and what to run; one that
+	// has stopped says it has. Told to connect it again "before" a time
+	// gone by, a person read a connection that no longer worked as one
+	// that still did.
+	refreshEnds := func(at time.Time) string {
+		t.Helper()
+		raw, _ := os.ReadFile(connectionsPath(root))
+		var file map[string]map[string]map[string]any
+		if err := json.Unmarshal(raw, &file); err != nil {
+			t.Fatal(err)
+		}
+		for _, a := range file["accounts"] {
+			a["refresh_expires"], a["renews"] = at.UTC().Format(time.RFC3339), true
+		}
+		raw, _ = json.Marshal(file)
+		if err := os.WriteFile(connectionsPath(root), raw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return said()
+	}
+	if text := refreshEnds(time.Now().Add(72 * time.Hour)); !strings.Contains(text, "connect it again before") ||
+		!strings.Contains(text, "quilzo connect start acme") {
+		t.Errorf("one that stops within the week does not say so:\n%s", text)
+	}
+	if text := refreshEnds(time.Now().Add(-48 * time.Hour)); strings.Contains(text, "connect it again before") ||
+		!strings.Contains(text, "stopped working") || !strings.Contains(text, "quilzo connect start acme") {
+		t.Errorf("one that has stopped does not say it has:\n%s", text)
 	}
 }

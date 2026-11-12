@@ -2298,9 +2298,13 @@ A write an agent makes elsewhere is named by the step of the run that makes it:
 an `Idempotency-Key` header, the same for that step however often it is sent —
 a run picked up again from its record included — so a service that keeps them
 does it once. A call that met a busy service or no answer at all (408, 425,
-429, 502, 503, 504, or a dropped connection) is tried again, up to three times,
-waiting as `Retry-After` asks (ten seconds at most); a read always, a write only
-when it carries its key. One that still did not get through is kept on the
+429, 502, 503, 504, a rate limit TikTok answers as a 400 or Google's APIs as a
+403, or a dropped connection) is tried again, up to three times; a read always,
+a write only when it carries its key. It waits as `Retry-After` asks, in seconds
+or as a date, or else a random time up to one second and then two, so callers
+turned away together do not all come back together. One that asks for more
+than ten seconds is not tried again within the run: the call fails saying the
+time it may be tried again. One that still did not get through is kept on the
 Integrations screen and by `quilzo integrations undelivered`: which agent, run
 and step, which integration and tool, the key, and what came back — never the
 arguments, which the run's own record holds. Nothing there is sent again by
@@ -2314,6 +2318,12 @@ How it is kept safe:
   for, and a token goes to those and nowhere else.
 - **How it is kept:** sealed under the store's keyring, in a file that names
   nobody; refreshed when due, keeping a rotated refresh token.
+- **When it ends:** Your accounts and `quilzo connect list` (and its `--json`,
+  as `access_expires` and `refresh_expires`) say when the access token ends,
+  and the refresh token where the provider says, as LinkedIn's does: a year
+  from the first, not renewed by using it. Today counts your connections that
+  stop working within a week, so you connect them again before a post fails.
+  One connected before this was kept says it is not known until it is next used.
 - **Disconnecting:** revokes at the provider where it offers that (RFC 7009),
   and forgets it here either way.
 
