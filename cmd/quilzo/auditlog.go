@@ -491,13 +491,16 @@ func auditVerify(root string) error {
 				"  quilzo auditlog head --save, and keep a copy off this machine%s\n", yellow, reset)
 			return nil
 		}
+		// The time through onOneLine, as the problem lines below are: it is
+		// what the heads file holds, and that file can be rewritten with the
+		// log. The audit log screen marks it the same way (shown).
 		if len(heads) > 1 {
 			w.Human("  %sand it still extends each of the %d heads saved beside it, the largest\n"+
 				"  at %d entries (%s), so none of those was removed or rewritten since%s\n",
-				dim, len(heads), head.Size, head.At, reset)
+				dim, len(heads), head.Size, onOneLine(head.At), reset)
 		} else {
 			w.Human("  %sand it still extends the head saved at %d entries (%s), so none of\n"+
-				"  those was removed or rewritten since%s\n", dim, head.Size, head.At, reset)
+				"  those was removed or rewritten since%s\n", dim, head.Size, onOneLine(head.At), reset)
 		}
 		w.Human("  %sa head saved here can be rewritten with the log; a copy kept off this\n"+
 			"  machine is the one that counts: quilzo auditlog consistency --head FILE%s\n", dim, reset)
