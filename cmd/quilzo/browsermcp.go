@@ -453,6 +453,7 @@ func browserGrantCall(ctx context.Context, root string, g browserGrant, m agent.
 		if tok.Grant != "" {
 			d["connection"] = tok.Grant
 		}
+		noteCredential(d, tok)
 		if decidedBy != "" {
 			d["decided_by"] = decidedBy
 		}
@@ -471,12 +472,9 @@ func browserGrantCall(ctx context.Context, root string, g browserGrant, m agent.
 				outcome = audit.Failure
 			}
 		}
-		who, kind, model := tok.Principal, audit.KindHuman, ""
-		if tok.Client != "" {
-			who, kind, model = "app:"+tok.Client, audit.KindAI, tok.Client
-		}
+		who, model := interfaceClient(tok.Principal, tok.Client)
 		record(root, audit.Record{Action: "mcp.browser", Resource: "/mcp/browser/" + grant, Outcome: outcome,
-			Principal: who, Kind: kind, Model: model, Verified: true, Detail: d})
+			Principal: who, Kind: audit.KindAI, Model: model, Verified: true, Detail: d})
 	}()
 
 	if err := authorise(root, caller, auth.ActView, "/mcp/browser/"+grant); err != nil {

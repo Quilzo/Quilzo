@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
+	"github.com/quilzo/quilzo/internal/agentwatch"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/mcp"
@@ -394,5 +395,48 @@ func TestTheGatewayKeepsWhatEachToolSaysItDoes(t *testing.T) {
 		if tool.Annotations["readOnlyHint"] != false {
 			t.Errorf("%s of an integration that writes is offered as read-only", tool.Name)
 		}
+	}
+}
+
+// A call through the gateway made with a person's own token is their
+// client's, recorded as the agent interface records it: kind ai, for the
+// person. It was recorded as the person acting by hand, so the agent watch,
+// which reads what models do, saw none of eight identical refused calls.
+func TestAGatewayCallWithAPersonsTokenIsTheirClients(t *testing.T) {
+	root, _ := gatewayRig(t, &agent.GatewayPolicy{Role: "author"})
+	if _, err := updatePolicy(root, func(p *auth.Policy) error {
+		return p.Grant(auth.Binding{Principal: "lee", Role: auth.RoleReader, Resource: "/"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	tok := auth.Token{ID: "tok_lee", Principal: "lee", Role: auth.RoleReader, Resource: "/"}
+	for range 8 {
+		if _, err := gatewayCallAs(t, root, tok); err == nil {
+			t.Fatal("a reader called a tool offered to authors")
+		}
+	}
+	evs, _ := audit.Read(auditPath(root))
+	n := 0
+	for _, e := range evs {
+		if e.Action != "mcp.gateway" {
+			continue
+		}
+		n++
+		if e.Kind != audit.KindAI || e.Model != "mcp-client" || e.Outcome != audit.Denied ||
+			e.Detail["credential"] != "tok_lee" || e.Detail["on_behalf_of"] == "" {
+			t.Fatalf("%+v", e)
+		}
+	}
+	if n != 8 {
+		t.Fatalf("%d gateway records", n)
+	}
+	var flagged []agentwatch.Report
+	for _, r := range agentwatch.Look(evs, time.Now()) {
+		if r.Counts[agentwatch.RepeatedRefusal] > 0 {
+			flagged = append(flagged, r)
+		}
+	}
+	if len(flagged) != 1 || !flagged[0].Flagged || !strings.HasPrefix(flagged[0].Subject(), "mcp-client for ") {
+		t.Fatalf("eight identical refusals through the gateway: %+v", flagged)
 	}
 }

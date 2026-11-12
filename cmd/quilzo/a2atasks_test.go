@@ -262,3 +262,30 @@ func TestATaskForAnAgentThatMayNotRunIsRecordedAsDenied(t *testing.T) {
 	}
 	refused("its identity ended")
 }
+
+// What another agent asks with a person's own token is that person's
+// client's, recorded as a call at the agent interface is: kind ai, for the
+// person. It was recorded as the person acting by hand.
+func TestATaskAskedWithAPersonsTokenIsTheirClients(t *testing.T) {
+	root, _ := identityStore(t)
+	// Refused before any run starts: lee holds nothing here.
+	c := a2aCaller("lee", auth.RoleAuthor, "")
+	c.Data = auth.Token{ID: "tok_lee", Principal: "lee", Role: auth.RoleAuthor, Resource: "/"}
+	if _, err := a2aHost(root, c).Send(nil, "tidy", "Tidy the welcome page"); err == nil {
+		t.Fatal("somebody with no access here ran an agent")
+	}
+	evs, _ := audit.Read(auditPath(root))
+	n := 0
+	for _, e := range evs {
+		if e.Action != "a2a.task" {
+			continue
+		}
+		n++
+		if e.Kind != audit.KindAI || e.Model != "mcp-client" || e.Detail["credential"] != "tok_lee" {
+			t.Errorf("%+v", e)
+		}
+	}
+	if n == 0 {
+		t.Fatal("nothing was recorded")
+	}
+}
