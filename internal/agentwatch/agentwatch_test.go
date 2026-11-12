@@ -387,4 +387,10 @@ func TestAReportSaysWhoAClientActedFor(t *testing.T) {
 	if s := Look([]audit.Event{g}, now)[0].Subject(); s != "app:https://app.example.com/meta" {
 		t.Errorf("an app through the gateway: %q", s)
 	}
+	// The writing assistant names whom it wrote for, and acts for many:
+	// it is named as itself, not after the last person it wrote for.
+	w := ev(1, "p_assistant", "assist", "/", audit.Success, time.Hour, map[string]string{"on_behalf_of": "p_dana"})
+	if s := Look([]audit.Event{w}, now)[0].Subject(); s != "p_assistant" {
+		t.Errorf("the writing assistant: %q", s)
+	}
 }

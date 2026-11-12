@@ -145,15 +145,21 @@ func Look(events []audit.Event, now time.Time) []Report {
 		if n := e.Detail["agent"]; n != "" {
 			a.name = n
 		}
-		// An app at the agent interface is recorded with itself as the
-		// model, because which model it runs is its own business: on its
+		// An app is recorded with itself as the model, because which model
+		// it runs is its own business, and a client holding a person's own
+		// token as mcp-client, or model-client at the model door: on its
 		// calls, and on what it asks of a tool through the gateway, a
-		// browser or another agent, which are recorded the same way.
-		if interfaceActions[e.Action] && e.Model != "" && e.Model != "mcp-client" {
-			a.app = e.Model
-		}
-		if p := e.Detail["on_behalf_of"]; p != "" {
-			a.onBehalf = p
+		// browser, another agent or a model, which are recorded the same
+		// way. Who such a call was for is whose client it is; the writing
+		// assistant and an agent's run name somebody too, but each acts for
+		// many people and is named as itself.
+		if clientActions[e.Action] {
+			if e.Model != "" && !ownClients[e.Model] {
+				a.app = e.Model
+			}
+			if p := e.Detail["on_behalf_of"]; p != "" {
+				a.onBehalf = p
+			}
 		}
 		a.actions++
 
@@ -263,10 +269,16 @@ func (r Report) Subject() string {
 	return r.Principal
 }
 
-// interfaceActions are the records of what a client asked at the agent
-// interface: its calls, and what it asked of a tool through the gateway,
-// of a browser, and of an agent over A2A.
-var interfaceActions = map[string]bool{"mcp.call": true, "mcp.gateway": true, "mcp.browser": true, "a2a.task": true}
+// clientActions are the records of what a client asked for a person: at
+// the agent interface its calls, and what it asked of a tool through the
+// gateway, of a browser and of an agent over A2A; at the model door its
+// conversations.
+var clientActions = map[string]bool{"mcp.call": true, "mcp.gateway": true, "mcp.browser": true,
+	"a2a.task": true, "model.door": true}
+
+// ownClients are the models a client holding a person's own token is
+// recorded as, where an app is recorded as itself.
+var ownClients = map[string]bool{"mcp-client": true, "model-client": true}
 
 // requestOf is what makes two refusals the same request: the action and
 // where, at the agent interface the tool and the operation called, and the
