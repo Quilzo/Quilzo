@@ -189,3 +189,50 @@ func TestAnAnswerThatDidNotHelpIsAGap(t *testing.T) {
 		t.Error("a name that is not a chatbot's")
 	}
 }
+
+// The page offered for a question is named for what was asked, not for who
+// asked it. Topic took the first sentence and left out what Clean had
+// masked, so a name Clean does not know for one, typed without capitals or
+// before the question, was still the page's name: "i am janet zqwood, do
+// you ship to zqbarra island?" offered i-am-janet-zqwood-do-you-ship-to.
+func TestATopicIsWhatWasAskedNotWhoAsked(t *testing.T) {
+	for q, want := range map[string]string{
+		"Do you ship to Zqbarra island? I am Janet Zqwood, 14 Rose Lane":          "Do you ship to Zqbarra island",
+		"i am janet zqwood, do you ship to zqbarra island?":                       "do you ship to zqbarra island",
+		"my name is janet zqwood. do you ship to zqbarra island?":                 "do you ship to zqbarra island",
+		"Hi, Janet Zqwood here from 14 Rose Lane. Do you ship to Zqbarra island?": "Do you ship to Zqbarra island",
+		"this is janet zqwood from leeds and i want to know if you ship pallets":  "leeds and i want to know if you",
+		"Do you ship to Zqbarra island":                                           "Do you ship to Zqbarra island",
+		"I am looking for the opening hours of the Zqvel bakery on Sundays":       "opening hours of the Zqvel bakery on Sundays",
+	} {
+		if got := Topic(Clean(q, nil)); got != want {
+			t.Errorf("Topic(%q) = %q, not %q", q, got, want)
+		}
+	}
+	for _, q := range []string{
+		"i am janet zqwood, do you ship to zqbarra island?",
+		"my name is janet zqwood and i live in leeds. do you ship?",
+		"I'm Dr. Janet Zqwood, do you ship to Zqbarra island?",
+	} {
+		if got := strings.ToLower(Topic(Clean(q, nil))); strings.Contains(got, "janet") || strings.Contains(got, "zqwood") {
+			t.Errorf("Topic(%q) = %q, which names the visitor", q, got)
+		}
+	}
+}
+
+// A title before a name is part of it, and a name after "my name is" is one
+// without its capitals: "I'm Dr. Janet Zqwood" was kept as "I'm [name].
+// Janet Zqwood", and "my name is janet zqwood" whole.
+func TestANameIsKnownWithItsTitleAndWithoutItsCapitals(t *testing.T) {
+	for q, want := range map[string]string{
+		"I'm Dr. Janet Zqwood and want to know if you ship":   "I'm [name] and want to know if you ship",
+		"I am Mrs Janet Zqwood, do you ship?":                 "I am [name], do you ship?",
+		"my name is janet zqwood and I want to know":          "my name is [name] and I want to know",
+		"My name's janet. Do you ship?":                       "My name's [name]. Do you ship?",
+		"I am looking for gluten-free bread, my name is Sam.": "I am looking for gluten-free bread, my name is [name].",
+	} {
+		if got := Clean(q, nil); got != want {
+			t.Errorf("Clean(%q) = %q, not %q", q, got, want)
+		}
+	}
+}
