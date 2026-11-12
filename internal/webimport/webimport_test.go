@@ -483,3 +483,26 @@ func TestAPageIsReadInTimeInProportionToIt(t *testing.T) {
 		}
 	}
 }
+
+// A site none of whose pages could be read is refused with why, as the
+// fetcher said it: a private address, the server itself, plain http, or
+// robots.txt asking readers not to. It was refused with only "no page of
+// HOST could be read", so an agent could not tell a refusal by policy
+// from a site that is down, and kept trying or reported the site broken.
+func TestASiteNothingOfWhichCouldBeReadSaysWhy(t *testing.T) {
+	refusing := func(_ context.Context, raw string) (*Fetched, error) {
+		return nil, fmt.Errorf("refusing to fetch: 127.0.0.1 is loopback — the server itself")
+	}
+	_, err := Crawl(context.Background(), "https://127.0.0.1:19044/", Options{Delay: -1, Get: refusing})
+	if err == nil || !strings.Contains(err.Error(), "no page of 127.0.0.1:19044 could be read") ||
+		!strings.Contains(err.Error(), "127.0.0.1 is loopback") {
+		t.Fatalf("%v", err)
+	}
+
+	s := bakery()
+	s.pages["/robots.txt"] = "User-agent: *\nDisallow: /\n"
+	_, err = Crawl(context.Background(), "https://hartsbakery.example/", Options{Delay: -1, Get: s.get})
+	if err == nil || !strings.Contains(err.Error(), "robots.txt") {
+		t.Fatalf("%v", err)
+	}
+}
