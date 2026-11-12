@@ -26,6 +26,7 @@ package spend
 
 import (
 	"crypto/rand"
+	_ "embed"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -96,33 +97,78 @@ type Book struct {
 // every one.
 const MaxReceipts = 5000
 
-var (
-	reCurrency = regexp.MustCompile(`^[A-Z]{3}$`)
-	reAmount   = regexp.MustCompile(`^[0-9]{1,15}(\.[0-9]{1,3})?$`)
-)
+// Four places is the most ISO 4217 gives a currency (CLF, UYW).
+var reAmount = regexp.MustCompile(`^[0-9]{1,15}(\.[0-9]{1,4})?$`)
 
-// decimals are the currencies whose minor unit is not a hundredth, from
-// ISO 4217.
-var decimals = map[string]int{
-	"BIF": 0, "CLP": 0, "DJF": 0, "GNF": 0, "ISK": 0, "JPY": 0, "KMF": 0, "KRW": 0, "PYG": 0,
-	"RWF": 0, "UGX": 0, "UYI": 0, "VND": 0, "VUV": 0, "XAF": 0, "XOF": 0, "XPF": 0,
-	"BHD": 3, "IQD": 3, "JOD": 3, "KWD": 3, "LYD": 3, "OMR": 3, "TND": 3,
-}
+// iso4217 is the list a currency is checked against: see the file.
+//
+//go:embed iso4217.txt
+var iso4217 string
 
-// Decimals is how many places a currency's amounts have.
+// currencies are the ISO 4217 codes, each with how many places its amounts
+// have.
+//
+// It used to be the pattern ^[A-Z]{3}$ and a table of the exceptions to two
+// places, so any three capital letters were a currency: a mandate in ETH,
+// BTC or SOL was granted, shown as "1.00 ETH" and counted in hundredths of
+// whatever the paying tool counted, which for a token is neither its own
+// unit nor its smallest.
+var currencies = func() map[string]int {
+	out := map[string]int{}
+	for n, line := range strings.Split(iso4217, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		f := strings.Fields(line)
+		if len(f) < 3 {
+			panic(fmt.Sprintf("iso4217.txt line %d is not CODE PLACES NAME: %q", n+1, line))
+		}
+		places, err := strconv.Atoi(f[1])
+		if len(f[0]) != 3 || strings.ToUpper(f[0]) != f[0] || err != nil || places < 0 || places > 4 {
+			panic(fmt.Sprintf("iso4217.txt line %d is not CODE PLACES NAME: %q", n+1, line))
+		}
+		if _, twice := out[f[0]]; twice {
+			panic(fmt.Sprintf("iso4217.txt lists %s twice", f[0]))
+		}
+		out[f[0]] = places
+	}
+	return out
+}()
+
+// Decimals is how many places a currency's amounts have. A code that is
+// not a currency is written back with two, as it always was; ParseAmount
+// and AmountOf refuse to count in one.
 func Decimals(currency string) int {
-	if d, ok := decimals[currency]; ok {
+	if d, ok := currencies[currency]; ok {
 		return d
 	}
 	return 2
 }
 
-// ValidCurrency reports whether a currency is an ISO 4217 code's shape.
-func ValidCurrency(c string) bool { return reCurrency.MatchString(c) }
+// ValidCurrency reports whether a currency is one ISO 4217 lists.
+func ValidCurrency(c string) bool { _, ok := currencies[c]; return ok }
+
+// CheckCurrency says why a code is not a currency, or nothing. The words
+// name the crypto case, because that is the one that looked like a
+// currency: three capital letters, and a ticker people write after an
+// amount.
+func CheckCurrency(c string) error {
+	if ValidCurrency(c) {
+		return nil
+	}
+	return fmt.Errorf("%q is not an ISO 4217 currency, such as USD or EUR. A crypto asset such as ETH, "+
+		"BTC or SOL is not a currency here: its amounts are not counted in a currency's minor units, "+
+		"and Quilzo holds no wallet and signs no transaction", c)
+}
 
 // ParseAmount reads a written amount, such as 12.50, in minor units, and
-// refuses one with more places than the currency has.
+// refuses one with more places than the currency has, or in something that
+// is not a currency.
 func ParseAmount(s, currency string) (int64, error) {
+	if err := CheckCurrency(currency); err != nil {
+		return 0, err
+	}
 	s = strings.TrimSpace(s)
 	if !reAmount.MatchString(s) {
 		return 0, fmt.Errorf("%q is not an amount, such as 12.50", s)
@@ -143,6 +189,9 @@ func ParseAmount(s, currency string) (int64, error) {
 // AmountOf reads an amount from a tool's argument: a written amount, or a
 // number, in major units, or a whole number of minor units.
 func AmountOf(v any, currency string, minor bool) (int64, error) {
+	if err := CheckCurrency(currency); err != nil {
+		return 0, err
+	}
 	switch x := v.(type) {
 	case string:
 		if minor {
@@ -187,8 +236,8 @@ func (m Mandate) Validate(now time.Time) error {
 	if strings.TrimSpace(m.Agent) == "" {
 		bad("a mandate is for one agent")
 	}
-	if !ValidCurrency(m.Currency) {
-		bad("the currency is a three-letter ISO 4217 code, such as USD")
+	if err := CheckCurrency(m.Currency); err != nil {
+		bad("%v", err)
 	}
 	if m.PerPayment <= 0 || m.Budget <= 0 || m.PerPayment > m.Budget {
 		bad("a payment's limit and the budget are both more than nothing, the limit no more than the budget")

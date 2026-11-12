@@ -261,6 +261,11 @@ func DeltaOf(old, new Manifest) Delta {
 		if np.Image != op.Image && np.Image != "" {
 			add("its program now runs in " + np.Image)
 		}
+		// Another file at the same path is another program: what was
+		// reviewed is the file, and the path only says where it was.
+		if np.Digest != op.Digest && np.Digest != "" && op.Digest != "" {
+			add("its program is now the file " + np.Digest + ", not the one reviewed (" + op.Digest + ")")
+		}
 		for _, r := range hostsGained(op.Read, np.Read) {
 			add("its program may now read " + r)
 		}

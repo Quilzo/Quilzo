@@ -706,6 +706,7 @@ func declareAgent(root string, m agent.Manifest, isNew bool, widen bool, caller 
 	case !isNew && !exists:
 		return fmt.Errorf("no agent called %s is declared", m.Name)
 	}
+	m.Program = keepPin(set.Agents[m.Name].Program, m.Program)
 	// The amendment's reach, computed rather than summarised: what this
 	// agent may now do that it may not before, listed exactly, and gated
 	// where it widens. An amendment that reads as a review of the same
@@ -713,7 +714,10 @@ func declareAgent(root string, m agent.Manifest, isNew bool, widen bool, caller 
 	// the oldest trick on a tired reader, and the answer to it is the diff
 	// itself, in the reader's words.
 	var delta agent.Delta
-	if !isNew {
+	gate := func() error {
+		if isNew {
+			return nil
+		}
 		delta = agent.DeltaOf(set.Agents[m.Name], m)
 		if delta.Widens && !widen {
 			return fmt.Errorf(
@@ -721,6 +725,10 @@ func declareAgent(root string, m agent.Manifest, isNew bool, widen bool, caller 
 					"read the list, and declare it again with --widen when it is what you mean",
 				m.Name, strings.Join(delta.Added, "\n  "))
 		}
+		return nil
+	}
+	if err := gate(); err != nil {
+		return err
 	}
 	if err := m.ValidateWith(knownCapabilities(root), customKinds(root)); err != nil {
 		return err
@@ -738,6 +746,19 @@ func declareAgent(root string, m agent.Manifest, isNew bool, widen bool, caller 
 			return fmt.Errorf("giving an agent a program is an administrator's decision: %w", err)
 		}
 		if err := clearOfStore(root, m.Program); err != nil {
+			return err
+		}
+		// Declaring it is reviewing it, so the file is pinned as it is now,
+		// or held to the digest the declaration names.
+		if err := reviewProgram(m.Name, m.Program); err != nil {
+			return err
+		}
+		// And read for its reach again, now that the file is: the reach
+		// above was read before it, so an amendment that only narrowed the
+		// program, less memory, pinned whatever had replaced the file since
+		// its review, without --widen and without a word that it was not the
+		// file reviewed. Another file at the same path is another program.
+		if err := gate(); err != nil {
 			return err
 		}
 	}
@@ -783,6 +804,11 @@ func declareAgent(root string, m agent.Manifest, isNew bool, widen bool, caller 
 		// The widening that was allowed, in the record, exactly as it was
 		// read: a log that says "3 things changed" is a log nobody audits.
 		detail["widened"] = clip(delta.Lines(), 2000)
+	}
+	// Which file was approved, not only where it was: what a package's
+	// install or a declaration agreed to run.
+	if pr := m.Program; pr != nil && pr.Digest != "" {
+		detail["program"], detail["pinned"] = clip(pr.Command[0], 300), pr.Digest
 	}
 	return recordE(root, caller.auditRecord(did, "/", audit.Success, detail))
 }

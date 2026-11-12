@@ -220,6 +220,11 @@ func themeSet(root string, args []string) error {
 	if len(pos) == 0 || len(pos)%2 != 0 {
 		return fmt.Errorf("usage: quilzo theme set TOKEN VALUE [TOKEN VALUE …]")
 	}
+	// Before the contrast check, which would otherwise be argued with for a
+	// site that is not there to be saved to.
+	if err := siteDesignAt(*dir); err != nil {
+		return err
+	}
 
 	existing, err := loadThemeFile(*dir)
 	if err != nil {
@@ -607,6 +612,11 @@ func themeLayer(root string, args []string) error {
 		}
 		b, err := os.ReadFile(pos[0])
 		if err != nil {
+			return err
+		}
+		// Saved beside theme.json, so a store with no site is told what
+		// `theme set` tells it, rather than that a directory is missing.
+		if err := siteDesignAt(*dir); err != nil {
 			return err
 		}
 		d, err := loadDesign(*dir)

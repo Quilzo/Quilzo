@@ -320,8 +320,30 @@ func agentLine(m agent.Manifest) (Line, []string, bool) {
 	if m.Shell != nil && len(m.Shell.Hosts) > 0 {
 		sends = append(sends, fmt.Sprintf("Agent %q runs commands that reach %s", m.Name, strings.Join(m.Shell.Hosts, ", ")))
 	}
-	if m.Program != nil {
-		text += "; runs its own program, confined"
+	// What starts it, and what it runs, are the two facts a person
+	// approving it most needs, and the card said neither: a daily schedule
+	// and a trigger on every form sent were left out, and the program was
+	// "its own program, confined" with no name.
+	if len(m.Triggers) > 0 {
+		var when []string
+		for _, tr := range m.Triggers {
+			when = append(when, tr.Describe())
+		}
+		text += "; starts on its own " + strings.Join(when, ", and ") + ", with no person asking"
+	}
+	if p := m.Program; p != nil {
+		text += "; runs its own program " + clipCommand(p.Command)
+		switch {
+		case !p.Pinnable() && p.Image != "":
+			text += " in an OpenShell sandbox made from " + p.Image
+		case !p.Pinnable():
+			text += " in an OpenShell sandbox"
+		case p.Digest != "":
+			text += ", pinned to the file " + p.Digest
+		default:
+			text += ", pinned to the file at that path when it is installed, and refused once that file changes"
+		}
+		text += ", confined"
 	}
 	acts := m.Autonomy == agent.AutonomyPublish ||
 		(m.Autonomy == agent.AutonomyDraft && len(m.AskFirst) == 0 && !m.HumanApproval && len(sends) > 0)
@@ -330,6 +352,16 @@ func agentLine(m agent.Manifest) (Line, []string, bool) {
 		line.Flag = "acts"
 	}
 	return line, sends, acts
+}
+
+// clipCommand is a program's command line as the card shows it: whole,
+// unless it is long enough to bury the rest of the card.
+func clipCommand(command []string) string {
+	line := strings.Join(command, " ")
+	if r := []rune(line); len(r) > 200 {
+		return string(r[:199]) + "…"
+	}
+	return line
 }
 
 // signsUp says whether a page has a newsletter section.

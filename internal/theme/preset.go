@@ -194,6 +194,12 @@ h1, h2 { font-weight: 900; }
 // motionCSS is each motion setting's override of the motion tokens. Reduced
 // motion, which the component sheet honours whatever is chosen here, still
 // wins: this decides how much moves for visitors who have not asked.
+//
+// None stops page transitions too. Setting every duration to nothing left
+// the browser cross-fading between pages, since the cross-fade is animated
+// by pseudo-elements the universal selector does not reach; navigation:
+// none is the only thing that says there is no transition at all, and it
+// comes after the components' navigation: auto, so it is the one used.
 var motionCSS = map[string]string{
 	"subtle": "",
 	"expressive": `
@@ -206,6 +212,7 @@ var motionCSS = map[string]string{
 /* motion: none */
 :root { --dur: 0ms; --spring: linear; }
 *, *::before, *::after { transition-duration: 0ms !important; animation-duration: 0ms !important; animation-iteration-count: 1 !important; }
+@view-transition { navigation: none; }
 `,
 }
 

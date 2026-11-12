@@ -595,7 +595,11 @@ pre {
 
 /* The bar. --pct is set inline from a value the template puts through the
    `round` filter, which refuses anything that is not a number — so the only
-   thing that can reach this custom property is a numeral. */
+   thing that can reach this custom property is a numeral.
+
+   The fill is the bar's whole width, scaled from the start of the line: a
+   change moves on the compositor, where animating width laid the page out
+   again on every frame of it. */
 .bar {
   --pct: 0;
   height: 0.5rem;
@@ -605,11 +609,13 @@ pre {
 }
 .bar > span {
   display: block; height: 100%;
-  width: calc(clamp(0, var(--pct), 100) * 1%);
+  transform: scaleX(calc(clamp(0, var(--pct), 100) / 100));
+  transform-origin: left;
   border-radius: inherit;
   background: var(--primary);
-  transition: width var(--dur) var(--ease);
+  transition: transform var(--dur) var(--ease);
 }
+.bar > span:dir(rtl) { transform-origin: right; }
 .bar-positive > span { background: var(--positive); }
 .bar-caution  > span { background: var(--caution); }
 .bar-critical > span { background: var(--critical); }
@@ -936,10 +942,38 @@ figure { margin: 0; }
   }
 }
 
-/* Cross-document transitions: same-origin navigation crossfades with no script
-   at all. Browsers without it navigate normally. */
+/* Page transitions, on a site that runs no script.
+
+   The View Transitions API is usually reached by calling
+   document.startViewTransition. This site sends script-src 'none', so that
+   call never happens — but the cross-document form needs no call at all: two
+   same-origin pages that both carry this at-rule transition between
+   themselves, and the trigger is the navigation itself.
+
+   Which makes it the rare case where the constraint costs nothing. Paired
+   with the speculation rules this site already sends, a link followed on a
+   static page behaves like one in an application, and neither half is a
+   script.
+
+   Chromium and Safari 18.2 do this today; a browser that does not simply
+   navigates, which is what it did before.
+
+   One rule, with only the reduced-motion block below and a site's motion
+   setting after it. There were two, the second after that block, and the
+   last @view-transition is the one a browser uses: a visitor who had asked
+   for less motion was given navigation: auto again. */
 @view-transition { navigation: auto; }
 
+/* The header and footer stay put while the content changes, rather than
+   cross-fading with it. Naming them is what makes the transition read as one
+   page changing instead of two pages dissolving. */
+.site-header { view-transition-name: site-header; }
+.site-footer { view-transition-name: site-footer; }
+
+/* Somebody who has asked for less motion is asking about all of it, and a
+   page transition is animation: the setting is not advisory. The transition
+   is switched off, and its pseudo-elements, which the universal selector
+   does not reach, are stilled for a browser that starts one anyway. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
@@ -948,6 +982,11 @@ figure { margin: 0; }
     scroll-behavior: auto !important;
   }
   @view-transition { navigation: none; }
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
 }
 
 /* -- forced colours -------------------------------------------------------- */
@@ -972,41 +1011,6 @@ figure { margin: 0; }
   .site-header, .site-footer, .skip, .actions { display: none; }
   body { background: #fff; color: #000; }
   a::after { content: " (" attr(href) ")"; font-size: 0.85em; }
-}
-
-/* Page transitions, on a site that runs no script.
-
-   The View Transitions API is usually reached by calling
-   document.startViewTransition. This site sends script-src 'none', so that
-   call never happens — but the cross-document form needs no call at all: two
-   same-origin pages that both carry this at-rule transition between
-   themselves, and the trigger is the navigation itself.
-
-   Which makes it the rare case where the constraint costs nothing. Paired
-   with the speculation rules this site already sends, a link followed on a
-   static page behaves like one in an application, and neither half is a
-   script.
-
-   Chromium and Safari 18.2 do this today; a browser that does not simply
-   navigates, which is what it did before. */
-@view-transition {
-  navigation: auto;
-}
-
-/* The header and footer stay put while the content changes, rather than
-   cross-fading with it. Naming them is what makes the transition read as one
-   page changing instead of two pages dissolving. */
-.site-header { view-transition-name: site-header; }
-.site-footer { view-transition-name: site-footer; }
-
-/* Somebody who has asked for less motion is asking about this.
-   A transition is animation, and the setting is not advisory. */
-@media (prefers-reduced-motion: reduce) {
-  ::view-transition-group(*),
-  ::view-transition-old(*),
-  ::view-transition-new(*) {
-    animation: none !important;
-  }
 }
 
 /* -- an answer above the search results ------------------------------------ */
