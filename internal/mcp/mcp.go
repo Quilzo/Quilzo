@@ -64,8 +64,11 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Request is a JSON-RPC 2.0 request.
@@ -484,7 +487,7 @@ func (s *Server) call(raw json.RawMessage) (any, *Error) {
 			names = append(names, t.Name)
 		}
 		return nil, &Error{Code: CodeMethodNotFound,
-			Message: fmt.Sprintf("no tool %q; the tools are %s", p.Name,
+			Message: fmt.Sprintf("no tool %s; the tools are %s", quoteName(p.Name),
 				strings.Join(names, ", "))}
 	}
 
@@ -496,7 +499,7 @@ func (s *Server) call(raw json.RawMessage) (any, *Error) {
 	op, ok := s.operations[opName]
 	if !ok {
 		return nil, &Error{Code: CodeInvalidParams,
-			Message: fmt.Sprintf("no operation %q; call quilzo_find", opName)}
+			Message: fmt.Sprintf("no operation %s; call quilzo_find", quoteName(opName))}
 	}
 
 	// A read tool must not be able to reach a write operation. Without this the
@@ -600,7 +603,7 @@ func (s *Server) callDirect(p callParams) (any, *Error) {
 		}
 	}
 	if !known {
-		return nil, &Error{Code: CodeMethodNotFound, Message: fmt.Sprintf("no tool %q here", p.Name)}
+		return nil, &Error{Code: CodeMethodNotFound, Message: fmt.Sprintf("no tool %s here", quoteName(p.Name))}
 	}
 	if s.Direct.Call == nil {
 		return nil, &Error{Code: CodeInternal, Message: fmt.Sprintf(
@@ -626,6 +629,12 @@ func (s *Server) callDirect(p callParams) (any, *Error) {
 	}
 	return textResult(out), nil
 }
+
+// quoteName is a name a caller sent, as an answer quotes it: enough to say
+// which, and no more. The name is whatever the request held, up to the whole
+// body, and an answer that quoted it whole sent it back and, through the
+// host's record of the call, into the audit log.
+func quoteName(s string) string { return strconv.Quote(plaintext.Clip(s, 80, "…")) }
 
 func asRefusal(err error, out **Refusal) bool {
 	if r, ok := err.(*Refusal); ok {

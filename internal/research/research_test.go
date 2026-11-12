@@ -395,3 +395,17 @@ func TestARegisteredPlanChecksOnlyAsThePlanThatWasSigned(t *testing.T) {
 		}
 	}
 }
+
+// A name that is not a project's is quoted back short. The agent interface
+// passes whatever a caller sent, and a 100 KB name was answered, and
+// recorded, whole.
+func TestANameThatIsNotAProjectsIsQuotedShort(t *testing.T) {
+	st := &Store{Dir: t.TempDir()}
+	_, err := st.Load("x" + strings.Repeat("y", 100<<10))
+	if err == nil {
+		t.Fatal("a name nobody could have given a project was loaded")
+	}
+	if len(err.Error()) > 512 || !strings.Contains(err.Error(), "xyyy") {
+		t.Errorf("answered %d bytes, not a short form of the name: %.120s", len(err.Error()), err.Error())
+	}
+}

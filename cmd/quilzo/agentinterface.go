@@ -219,10 +219,17 @@ func wireInterface(root string, s *store.Store, srv *admin.Server, sh *shieldHos
 // recorded as the app, acting for the person: the person is who it acts
 // for, and the app is what acted. Which model the app runs is its own
 // business and not something it reports, so the app stands in for it.
+//
+// Bounded, whatever the call carried. The tool and operation are names the
+// request gave, and a refusal quotes what it was asked about: this stored
+// both whole, so a reader's read_page naming a page just under the 2 MiB
+// body limit added 2 MB to the log with each request, 39 MB in a second and
+// a half, in the log that verify, /logs and every export read whole. Clipped
+// as an agent's own records are (actionRecord).
 func appCallRecord(c *mcp.Caller, tool, op string, rerr *mcp.Error) audit.Record {
-	outcome, d := audit.Success, map[string]string{"tool": tool, "on_behalf_of": c.Principal}
+	outcome, d := audit.Success, map[string]string{"tool": clip(tool, 100), "on_behalf_of": c.Principal}
 	if op != "" {
-		d["operation"] = op
+		d["operation"] = clip(op, 100)
 	}
 	// Which connection: what an administrator suspends or ends when one
 	// app misbehaves for one person, and what a receipt is of.
@@ -234,7 +241,7 @@ func appCallRecord(c *mcp.Caller, tool, op string, rerr *mcp.Error) audit.Record
 		who, model = "app:"+c.Client, c.Client
 	}
 	if rerr != nil {
-		outcome, d["error"] = audit.Denied, rerr.Message
+		outcome, d["error"] = audit.Denied, clip(rerr.Message, 300)
 		if rerr.Code != mcp.CodeRefused {
 			outcome = audit.Failure
 		}

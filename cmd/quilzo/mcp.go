@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -117,6 +118,12 @@ func cmdMCP(root string, args []string) error {
 	return in.Err()
 }
 
+// quoteInput is something a caller sent, as a refusal quotes it: enough to
+// say which, and no more. read_page quoted a page name whole, so a reader
+// naming one just under the 2 MiB body limit had it sent back, and stored in
+// the log with the refusal, on every request.
+func quoteInput(s string) string { return strconv.Quote(clip(s, 80)) }
+
 // draftRefusal is what an agent is told when a write to the draft is
 // refused.
 //
@@ -222,7 +229,7 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		}
 		body, ok := pages[name]
 		if !ok {
-			return nil, &mcp.Refusal{Reason: fmt.Sprintf("there is no page %q", name)}
+			return nil, &mcp.Refusal{Reason: "there is no page " + quoteInput(name)}
 		}
 		b, _ := json.MarshalIndent(body, "", "  ")
 		return string(b), nil
@@ -322,8 +329,7 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		idx := vector.Build(s.GetRef(site.RefDraft), pages, search.Tokenise)
 		v, ok := idx.Vectors[name]
 		if !ok {
-			return nil, &mcp.Refusal{
-				Reason: fmt.Sprintf("there is no page %q", name)}
+			return nil, &mcp.Refusal{Reason: "there is no page " + quoteInput(name)}
 		}
 		near, err := idx.Nearest(v, mcpHits(a), name)
 		if err != nil {

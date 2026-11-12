@@ -101,3 +101,50 @@ func TestAnAppsCallIsRecordedWithItsConnection(t *testing.T) {
 		}
 	}
 }
+
+// A call's record is a few hundred bytes whatever the caller sent.
+//
+// A refusal quotes what it was asked about, and this stored the refusal
+// whole: a reader's read_page naming a page just under the 2 MiB body limit
+// added 2 MB to the log with each request, 39 MB in a second and a half,
+// and the log is read whole by verify, /logs and every export. The tool and
+// operation names come from the request too.
+func TestACallsRecordIsBoundedWhateverTheCallerSent(t *testing.T) {
+	huge := "p" + strings.Repeat("x", 2<<20)
+	c := &mcp.Caller{Principal: "rae", Data: auth.Token{Principal: "rae"}}
+	r := appCallRecord(c, "quilzo_read"+huge, huge, &mcp.Error{Code: mcp.CodeRefused,
+		Message: "there is no page " + `"` + huge + `"`})
+	b, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b) > 2048 {
+		t.Fatalf("a refused call made a record of %d bytes", len(b))
+	}
+	if !strings.HasPrefix(r.Detail["error"], "there is no page") {
+		t.Errorf("the record no longer says what was refused: %.80s", r.Detail["error"])
+	}
+}
+
+// A refusal names a page it could not find by a short form of the name.
+//
+// The whole name came back: two megabytes to the caller, and two more into
+// the log until the record was bounded.
+func TestARefusalQuotesAPageNameItCouldNotFindShort(t *testing.T) {
+	root, _ := concurrentRig(t)
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := buildMCP(root, s, asAdmin("rae"), t.TempDir())
+	huge := "p" + strings.Repeat("x", 2<<20)
+	for _, op := range []string{"read_page", "similar_pages"} {
+		_, refused := callTool(t, srv, "quilzo_read", op, map[string]any{"page": huge})
+		if refused == nil {
+			t.Fatalf("%s found a page nobody wrote", op)
+		}
+		if len(refused.Message) > 512 || !strings.Contains(refused.Message, "pxxx") {
+			t.Errorf("%s answered %d bytes, not a short form of the name: %.120s", op, len(refused.Message), refused.Message)
+		}
+	}
+}
