@@ -156,10 +156,18 @@ var chatActRun = func(ctx context.Context, root, agentName, goal string, caller 
 // runChatAction runs one request, and says what the visitor is told.
 func runChatAction(ctx context.Context, root string, r chatact.Request) chatact.Result {
 	now := func() time.Time { return time.Now().UTC() }
+	// sponsor is whose authority the run would have had, once that is known.
+	// A failure after that names them under the key the log pseudonymises,
+	// so that a reason which names them too ("dana is reader on ...; run-agents
+	// needs author") does not leave the name in clear in a sentence.
+	sponsor := ""
 	fail := func(why string) chatact.Result {
+		detail := map[string]string{"assistant": r.Chatbot, "action": r.Action, "request": r.ID, "why": clip(why, 300)}
+		if sponsor != "" {
+			detail["sponsor"] = sponsor
+		}
 		recordE(root, audit.Record{Action: "assistant.act.failed", Resource: "/ask/" + r.Chatbot, Outcome: audit.Failure,
-			Principal: "quilzo", Kind: audit.KindService, Verified: true,
-			Detail: map[string]string{"assistant": r.Chatbot, "action": r.Action, "request": r.ID, "why": clip(why, 300)}})
+			Principal: "quilzo", Kind: audit.KindService, Verified: true, Detail: detail})
 		return chatact.Result{ID: r.ID, State: chatact.Failed, At: now()}
 	}
 	// Everything in a request was written by the public site, so all of it
@@ -210,16 +218,22 @@ func runChatAction(ctx context.Context, root string, r chatact.Request) chatact.
 	if id == nil || id.Sponsor == "" {
 		return fail("the agent has no sponsor to act for")
 	}
+	sponsor = id.Sponsor
 	caller := &Caller{Name: id.Sponsor, Kind: audit.KindHuman, Verified: true, Role: auth.RoleAuthor,
 		Via: "chatbot", FiredBy: "visitor", Chain: []string{action.Target},
 		Untrusted: "a visitor's request to " + a.Name}
+	// Whether the sponsor may run the agent is asked of the sponsor, before
+	// the run is limited to reading. Asked after, a store with a policy
+	// refused every look-up ("this token is read-only and run-agents
+	// writes"): starting a run counts as a write, so the safe kind of action
+	// never ran and only the ones declared to change something did.
+	if err := authorise(root, caller, auth.ActRunAgents, auth.AgentResource(action.Target)); err != nil {
+		return fail("its sponsor may not run it: " + err.Error())
+	}
 	if !action.Writes {
 		// Looks things up, changes nothing: whatever the agent may do
 		// when somebody runs it, a visitor's request is read-only.
 		caller.Limits.ReadOnly = true
-	}
-	if err := authorise(root, caller, auth.ActRunAgents, auth.AgentResource(action.Target)); err != nil {
-		return fail("its sponsor may not run it: " + err.Error())
 	}
 	if m, _ := agentRunModel(root, action.Target); m == nil {
 		return fail("there is no model to decide what it does")

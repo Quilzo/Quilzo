@@ -5,12 +5,17 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/assistant"
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/chatact"
 )
 
@@ -245,5 +250,71 @@ func TestAVisitorIsToldTheOutcomeOnceAPersonHasAnswered(t *testing.T) {
 	})
 	if b, _, _ := answer(theirs); b.Answer != "" {
 		t.Errorf("a run that read something private answered the visitor: %q", b.Answer)
+	}
+}
+
+// lookingUpModel answers as a model that reads the delivery page and then
+// tells the visitor what it says.
+func lookingUpModel(t *testing.T) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		choice := `{"op":"done","say":"UK delivery costs £4.50."}`
+		if strings.Contains(string(b), "Nothing has been done yet") {
+			choice = `{"op":"read_page","input":{"page":"delivery"}}`
+		}
+		out, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{
+			"message": map[string]any{"role": "assistant", "content": choice}}}})
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(out)
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("QUILZO_MODEL_URL", srv.URL+"/v1")
+	t.Setenv("QUILZO_MODEL", "stand-in")
+	t.Setenv("QUILZO_MODEL_KEY", "")
+}
+
+// An action that only looks things up runs in a store where access is
+// granted by a policy, which is every store with a second person in it.
+//
+// It failed for every visitor there, and the visitor who confirmed was told
+// "This could not be done just now": the run was made read-only first and
+// then the policy was asked whether it may start an agent's run, which a
+// read-only credential may not. So the safe kind of action, the one an owner
+// adds first, never ran, and only the ones declared to change something did.
+// The test above did not see it, because its store grants nothing and so
+// enforces nothing. Whether the sponsor may run the agent is a question
+// about the sponsor; that the run then only reads is a limit on the run.
+func TestALookUpRunsWhereAccessIsGranted(t *testing.T) {
+	root := chatActStore(t)
+	lookingUpModel(t)
+	grant := func(role auth.Role) {
+		t.Helper()
+		pol := &auth.Policy{}
+		if err := pol.Grant(auth.Binding{Principal: "dana", Role: role, Resource: "/"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := saveJSON(policyPath(root), pol); err != nil {
+			t.Fatal(err)
+		}
+	}
+	grant(auth.RoleAdmin)
+	res := runChatAction(context.Background(), root, chatact.Request{ID: strings.Repeat("a", 32), Chatbot: "help",
+		Action: "booking", Args: map[string]string{"booking_ref": "HB-2201"}})
+	if res.State != chatact.Done || res.Answer != "UK delivery costs £4.50." {
+		t.Fatalf("a look-up, confirmed by the visitor: %+v", res)
+	}
+	// And the run it started is kept as one that only reads.
+	runs, err := listAgentRuns(root, "bookings", 10)
+	if err != nil || len(runs) != 1 || !runs[0].ReadOnly {
+		t.Fatalf("the look-up's run: %+v, %v", runs, err)
+	}
+
+	// A sponsor who may not start the agent's run is still refused: the
+	// question is asked, of the sponsor.
+	grant(auth.RoleReader)
+	if res := runChatAction(context.Background(), root, chatact.Request{ID: strings.Repeat("b", 32), Chatbot: "help",
+		Action: "booking", Args: map[string]string{"booking_ref": "HB-2201"}}); res.State != chatact.Failed {
+		t.Fatalf("a sponsor who may only read ran the agent: %+v", res)
 	}
 }
