@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/admin"
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -20,6 +21,7 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/gaps"
+	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 )
@@ -355,7 +357,18 @@ func recordPassages(s *store.Store, tree string, collections []string) ([]assist
 		}
 		texts := make([]assistant.RecordText, len(recs))
 		for i, r := range recs {
-			texts[i] = assistant.RecordText{ID: r.ID, Fields: r.Fields}
+			fields := r.Fields
+			// The price a record shows a person is the price it charges,
+			// as on its page (listing.WrittenPrice). The chatbot read the
+			// copy kept by hand, which said £12.00 for a product the Buy
+			// button sold at £13.00 once its price had changed.
+			if _, shown := fields[listing.PriceDisplay]; shown {
+				if text, ok := listing.WrittenPrice(fields); ok {
+					fields = maps.Clone(fields)
+					fields[listing.PriceDisplay] = text
+				}
+			}
+			texts[i] = assistant.RecordText{ID: r.ID, Fields: fields}
 		}
 		out = append(out, assistant.ChunkRecords(name, texts)...)
 	}

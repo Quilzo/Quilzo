@@ -180,6 +180,39 @@ func Format(amount int64, currency string) string {
 	return fmt.Sprintf("%d.%0*d %s", amount/unit, places, amount%unit, currency)
 }
 
+// Display writes an amount in minor units as a shopper reads it: £4.20, or
+// 4.20 SEK for a currency with no symbol everybody agrees on, and £4.20 a
+// month for one charged every month.
+//
+// One writer for the price a page shows and the price its Buy button
+// charges. The page's copy was kept by hand beside the amount and went
+// stale when the amount changed, so the page said £12.00 beside a button
+// that took £13.00; both are now written here, from the same amount.
+func Display(amount int64, currency, every string) string {
+	once := Format(amount, currency)
+	if sym, ok := symbols[currency]; ok {
+		places := Decimals(currency)
+		if places == 0 {
+			once = sym + strconv.FormatInt(amount, 10)
+		} else {
+			unit := int64(math.Pow10(places))
+			once = fmt.Sprintf("%s%d.%0*d", sym, amount/unit, places, amount%unit)
+		}
+	}
+	if every != "" {
+		return once + " a " + every
+	}
+	return once
+}
+
+// symbols are the currency signs a shopper reads without a second look.
+// A dollar sign alone is the United States': "$4.20" on an Australian shop
+// is a price somebody misreads.
+var symbols = map[string]string{
+	"GBP": "£", "EUR": "€", "USD": "$", "JPY": "¥", "INR": "₹",
+	"AUD": "A$", "CAD": "CA$", "NZD": "NZ$", "HKD": "HK$", "SGD": "S$",
+}
+
 // Validate checks a mandate on its own.
 func (m Mandate) Validate(now time.Time) error {
 	var errs []string

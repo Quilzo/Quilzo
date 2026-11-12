@@ -42,11 +42,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"math"
 	"net/url"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -90,34 +88,10 @@ func (o Offer) Terms() string {
 func (o Offer) Price() string { return spend.Format(o.Amount, o.Currency) }
 
 // Display is the offer's price as a shopper reads it: £4.20, or 4.20 SEK
-// for a currency with no symbol everybody agrees on.
-func (o Offer) Display() string {
-	if o.Interval != "" {
-		return o.once() + " a " + o.Interval
-	}
-	return o.once()
-}
-
-func (o Offer) once() string {
-	sym, ok := symbols[o.Currency]
-	if !ok {
-		return o.Price()
-	}
-	places := spend.Decimals(o.Currency)
-	if places == 0 {
-		return sym + strconv.FormatInt(o.Amount, 10)
-	}
-	unit := int64(math.Pow10(places))
-	return fmt.Sprintf("%s%d.%0*d", sym, o.Amount/unit, places, o.Amount%unit)
-}
-
-// symbols are the currency signs a shopper reads without a second look.
-// A dollar sign alone is the United States': "$4.20" on an Australian shop
-// is a price somebody misreads.
-var symbols = map[string]string{
-	"GBP": "£", "EUR": "€", "USD": "$", "JPY": "¥", "INR": "₹",
-	"AUD": "A$", "CAD": "CA$", "NZD": "NZ$", "HKD": "HK$", "SGD": "S$",
-}
+// for a currency with no symbol everybody agrees on. Written by the same
+// function that writes the price a catalogue row shows (internal/listing),
+// so the page and its button say one price.
+func (o Offer) Display() string { return spend.Display(o.Amount, o.Currency, o.Interval) }
 
 // OfferOf reads a catalogue row as an offer, the way the catalogue feed and
 // shopping agents read it (internal/ucp), so the button and the feed cannot

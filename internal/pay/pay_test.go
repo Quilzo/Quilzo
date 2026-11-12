@@ -13,6 +13,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/listing"
 )
 
 const testKey = "rk_test_0123456789abcdef"
@@ -256,6 +258,29 @@ func TestAPriceIsShownTheWayAShopperReadsIt(t *testing.T) {
 	} {
 		if got := o.Display(); got != want {
 			t.Errorf("%d %s reads %q, not %q", o.Amount, o.Currency, got, want)
+		}
+	}
+}
+
+// The price a catalogue row shows and the price its Buy button says are one
+// price, written once. The page's was a copy kept by hand, which said
+// £12.00 beside a button that charged £13.00 once the price had changed.
+func TestThePageAndItsButtonSayOnePrice(t *testing.T) {
+	for _, row := range []map[string]any{
+		{"slug": "ink", "name": "Indigo ink", "price": float64(1300), "currency": "GBP", "price_display": "£12.00"},
+		{"slug": "club", "name": "Ink club", "price": float64(420), "currency": "gbp", "interval": "month", "price_display": "£4.20"},
+		{"slug": "yen", "name": "Yen ink", "price": float64(1500), "currency": "JPY"},
+		{"slug": "krona", "name": "Krona ink", "price": float64(4500), "currency": "SEK"},
+	} {
+		o, ok := OfferOf(row)
+		if !ok {
+			t.Fatalf("%v is no offer", row["slug"])
+		}
+		b := &Book{Links: []Link{{Offer: o, URL: "https://buy.stripe.com/x", Provider: ProviderStripe, Ref: "plink_1"}}}
+		_, charged := b.Buy(row)
+		shown, ok := listing.WrittenPrice(row)
+		if !ok || shown != charged {
+			t.Errorf("%v: the page shows %q and the button charges %q", row["slug"], shown, charged)
 		}
 	}
 }
