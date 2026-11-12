@@ -108,19 +108,16 @@
     return fields(kept).join(" ");
   }
 
-  // Cut at a byte length, never inside a character.
-  function cutBytes(s, max) {
-    var out = "";
-    var n = 0;
-    for (var ch of s) {
-      var w = utf8Length(ch);
-      if (n + w > max) {
-        break;
-      }
-      out += ch;
-      n += w;
-    }
-    return out;
+  // utf8.RuneCountInString: characters, as the question box's maxlength
+  // counts them and the refusal says. Counted in bytes, a question of 400
+  // characters in Japanese was over 1000 here, and answered on the server.
+  function charCount(s) {
+    return Array.from(s).length;
+  }
+
+  // assistant.boundText: cut at a number of characters, between two.
+  function cutChars(s, max) {
+    return Array.from(s).slice(0, max).join("");
   }
 
   // assistant.sentences.
@@ -403,11 +400,11 @@
     if (question === "") {
       return { problem: "Ask a question." };
     }
-    if (utf8Length(question) > k.max_question) {
+    if (charCount(question) > k.max_question) {
       return { problem: "That is over " + k.max_question +
         " characters; ask it more briefly." };
     }
-    previous = cutBytes(oneLine(previous || ""), k.max_question);
+    previous = cutChars(oneLine(previous || ""), k.max_question);
     var asked = question;
     var hits = this.retrieve(question, k.depth);
     if (hits.length === 0 && previous !== "") {

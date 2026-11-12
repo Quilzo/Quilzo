@@ -103,6 +103,14 @@ var parityCases = []parityCase{
 	{Q: "can i visit the workshop"},
 	{Q: "Can I return opened ink?"},
 	{Q: "how do I pay"},
+	// A question and a question before it are bounded in characters, in
+	// the browser as on the server. The browser counted bytes: 400
+	// characters of Japanese were "over 1000 characters" in a static copy
+	// and answered on the live site, and a long question before a
+	// follow-up was cut short of the words that found its answer.
+	{Q: strings.Repeat("\u914d\u9001\u6599\u306f", 100) + " how much is delivery to the EU"},
+	{Q: "and to France?", Prev: strings.Repeat("\u00e9", 800) + " how much is delivery"},
+	{Q: strings.Repeat("\u914d", 1001)},
 }
 
 // The browser answers every question exactly as the server does.
