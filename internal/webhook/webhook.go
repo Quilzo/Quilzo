@@ -403,20 +403,49 @@ func Check(raw string, types []string) error {
 // sent by, those of the fetch client for webhooks, so an address that is
 // accepted is one that can be delivered to.
 //
-// An address that does not parse is refused without being repeated. The
-// screen shows a refusal through a redirect, which goes into the browser's
-// history and the access log, and the address may be a credential however
-// badly it was typed.
+// An address that does not parse is refused without being repeated, in
+// whole or in part. The screen shows a refusal through a redirect, which
+// goes into the browser's history and the access log, and the address may
+// be a credential however badly it was typed. The parser's error quotes the
+// part it could not read, and that part is left out too: for a password
+// with a "/" or a "#" in it, it is what the parser took for the port, the
+// password up to that character.
 func CheckURL(raw string) error {
 	if _, err := url.Parse(strings.TrimSpace(raw)); err != nil {
 		var bad *url.Error
 		if errors.As(err, &bad) {
 			err = bad.Err
 		}
-		return fmt.Errorf("that is not a URL: %v", err)
+		return fmt.Errorf("that is not a URL: %s", withoutQuoted(err.Error()))
 	}
 	_, err := fetch.For("webhook").ValidateURL(raw)
 	return err
+}
+
+// withoutQuoted is msg with whatever it quotes written as "…".
+func withoutQuoted(msg string) string {
+	var b strings.Builder
+	for {
+		i := strings.IndexByte(msg, '"')
+		if i < 0 {
+			break
+		}
+		b.WriteString(msg[:i] + `"…"`)
+		j := i + 1
+		for j < len(msg) && msg[j] != '"' {
+			if msg[j] == '\\' {
+				j++
+			}
+			j++
+		}
+		if j >= len(msg) {
+			// Never closed: the rest is all quoted.
+			return b.String()
+		}
+		msg = msg[j+1:]
+	}
+	b.WriteString(msg)
+	return b.String()
 }
 
 // LogForm is how an endpoint's address is written in the audit log and in

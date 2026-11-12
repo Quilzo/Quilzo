@@ -482,15 +482,23 @@ func TestAnEndpointsReferenceIsItsOwn(t *testing.T) {
 	}
 }
 
-// What Check refuses: an address that does not parse, without repeating it,
-// plain http, a password, an address inside the network, and an event that
-// is never sent.
+// What Check refuses: an address that does not parse, without repeating any
+// of it, plain http, a password, an address inside the network, and an
+// event that is never sent.
+//
+// An address whose password has a "/" or a "#" in it does not parse, and
+// the parser's error quoted what it took for the port, the password up to
+// that character, into the refusal, which the Integrations screen sends in
+// a redirect.
 func TestCheckRefusesWhatCannotBeDeliveredTo(t *testing.T) {
 	for _, c := range []struct {
 		url   string
 		types []string
 	}{
 		{"https://hooks.example.org/%zzSECRET", nil},
+		{"https://hookuser:SECRETpa55/word@hooks.example.org/x", nil},
+		{"https://hookuser:SECRETpa55#word@hooks.example.org/x", nil},
+		{"https://hooks.example.org:SECRET/x", nil},
 		{"http://hooks.example.org/x", nil},
 		{"https://user:pass@hooks.example.org/x", nil},
 		{"https://10.0.0.5/x", nil},
