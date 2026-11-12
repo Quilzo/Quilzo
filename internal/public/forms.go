@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/clientip"
+	"html"
 	"io"
 	"net/http"
 	"strings"
@@ -344,15 +345,19 @@ func (st *Site) formResult(w http.ResponseWriter, r *http.Request,
 		escape(title), escape(title), escape(body))
 }
 
-// escape is enough for the four characters that matter in element content and
+// escape is enough for the five characters that matter in element content and
 // in an attribute value. The result page prints one error string and two fixed
 // titles, so a full context-aware escaper would be more machinery than the
 // surface justifies — and the error strings are ours.
-func escape(s string) string { return formReplacer.Replace(s) }
-
-// Built once. A Replacer compiles a trie on first use and is safe to share.
-var formReplacer = strings.NewReplacer(
-	"&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&#39;")
+//
+// It is the standard library's escaper, not a Replacer of our own. It escapes
+// the same five characters (a double quote is &#34; rather than &quot;, which
+// a browser reads the same), and the head of every page now goes through it:
+// the site's name, its canonical address and the address of its Markdown
+// copy. A Replacer of our own escaped them as well, but code scanning cannot
+// read a Replacer as escaping, so every page served was reported as cross-site
+// scripting from its own address; the analyser can follow this one.
+func escape(s string) string { return html.EscapeString(s) }
 
 // sourceOf is the address a submission came from.
 //

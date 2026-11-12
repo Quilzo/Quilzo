@@ -435,7 +435,10 @@ func (s *Server) complete(m map[string]any) map[string]any { return Complete(m, 
 // 2026-07-28 results do; for a server answering without this package's
 // Server, such as the public site's /mcp.
 func Complete(m map[string]any, name, version string) map[string]any {
-	out := make(map[string]any, len(m)+2)
+	// Sized for m alone. Adding the two keys below may grow it once, which
+	// costs nothing worth measuring, where a sum in the size is one code
+	// scanning reads as a length that could overflow.
+	out := make(map[string]any, len(m))
 	for k, v := range m {
 		out[k] = v
 	}

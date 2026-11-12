@@ -6,6 +6,7 @@ package public
 import (
 	"fmt"
 	"github.com/quilzo/quilzo/internal/render"
+	"html"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -300,5 +301,22 @@ func TestASubmissionNotifiesWithoutCarryingWhatWasTyped(t *testing.T) {
 	st.Handler().ServeHTTP(httptest.NewRecorder(), refused)
 	if len(told) != 1 {
 		t.Errorf("a refused submission notified as well: %v", told)
+	}
+}
+
+// escape is the standard library's HTML escaping, so the five characters
+// that end an attribute or start a tag never reach a page as themselves:
+// the site's name, its canonical address and its Markdown copy's address all
+// go into the head through it.
+func TestEscapeLeavesNothingThatEndsAnAttributeOrStartsATag(t *testing.T) {
+	entities := strings.NewReplacer("&amp;", "", "&lt;", "", "&gt;", "", "&#34;", "", "&#39;", "")
+	for _, in := range []string{`"><script>alert(1)</script>`, `a'b&c<d>e"f`, "&amp;", "plain", ""} {
+		got := escape(in)
+		if got != html.EscapeString(in) {
+			t.Errorf("escape(%q) = %q, not the standard library's %q", in, got, html.EscapeString(in))
+		}
+		if strings.ContainsAny(entities.Replace(got), `<>"'&`) {
+			t.Errorf("escape(%q) = %q still holds a character that matters in HTML", in, got)
+		}
 	}
 }
