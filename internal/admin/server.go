@@ -925,8 +925,22 @@ func (s *Server) canPage(w http.ResponseWriter, r *http.Request, p principal,
 func (s *Server) canAnywhere(w http.ResponseWriter, r *http.Request,
 	p principal, act auth.Action) bool {
 
+	// The decision is allowsAnywhere's, so a screen that offers a link by
+	// asking that and the handler the link opens by asking this cannot come
+	// to different answers. Only the refusal is written here: when the answer
+	// is no, can on "/" is no as well, and it says why.
+	if s.Policy != nil && s.allowsAnywhere(p, act) {
+		return true
+	}
+	return s.can(w, r, p, act, "/")
+}
+
+// allowsAnywhere is canAnywhere without an answer written: whether a person,
+// through this session, may do this somewhere in the site, for deciding
+// whether a screen offers a way into one that canAnywhere gates.
+func (s *Server) allowsAnywhere(p principal, act auth.Action) bool {
 	if s.Policy == nil {
-		return s.can(w, r, p, act, "/")
+		return s.allows(p, act, "/")
 	}
 	// The credential's own limits still apply. Its role cap and its read-only
 	// and type dimensions are site-wide by nature — a read-only token is
@@ -942,7 +956,7 @@ func (s *Server) canAnywhere(w http.ResponseWriter, r *http.Request,
 		auth.CheckCredential(p.Role, p.Scope, p.Limits, act, within) == nil {
 		return true
 	}
-	return s.can(w, r, p, act, "/")
+	return s.allows(p, act, "/")
 }
 
 // pageResource is the resource path for a page name.
@@ -4312,7 +4326,14 @@ func (s *Server) handlePreview(w http.ResponseWriter, r *http.Request) {
 		if s.TypeFor != nil {
 			t, typed = s.TypeFor(name)
 		}
-		out = injectBar(out, previewBar(name, body, t, typed))
+		// The panel links the sections screens, and opening a preview asks
+		// only to view the page. So it is told whether those links would
+		// open, asked the two questions both of those handlers ask: may
+		// this person edit anywhere, and may they edit this page. A reader
+		// was linked to two screens that answered 403.
+		mayEdit := s.allowsAnywhere(p, auth.ActEditDraft) &&
+			s.allows(p, auth.ActEditDraft, "/"+name)
+		out = injectBar(out, previewBar(name, body, t, typed, mayEdit))
 	}
 
 	// The one document this origin may frame, and only this origin: the
