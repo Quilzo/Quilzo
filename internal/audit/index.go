@@ -233,20 +233,30 @@ func (x *Index) read(line []byte, off int64, chain *link, problems []Problem) (*
 var errLineTooLong = errors.New("line too long")
 
 // readLine is the next line with its newline, or what is left at the end.
+//
+// A line Read refuses is refused here, to the byte: one longer than
+// maxEntryLine with its newline, or a last line without one that is
+// maxEntryLine long or more, because Read's scanner has to hold a line whole
+// and still have room to see that it ended. The length was looked at only
+// between reads, so a line up to a buffer's worth past the limit was taken,
+// and the log page called intact a log that `auditlog verify` could not read.
 func readLine(r *bufio.Reader) ([]byte, error) {
 	line, err := r.ReadSlice('\n')
-	if err != bufio.ErrBufferFull {
-		return line, err
-	}
-	long := append([]byte(nil), line...)
-	for err == bufio.ErrBufferFull {
-		if len(long) > maxEntryLine {
-			return nil, errLineTooLong
+	if err == bufio.ErrBufferFull {
+		long := append([]byte(nil), line...)
+		for err == bufio.ErrBufferFull {
+			if len(long) > maxEntryLine {
+				return nil, errLineTooLong
+			}
+			line, err = r.ReadSlice('\n')
+			long = append(long, line...)
 		}
-		line, err = r.ReadSlice('\n')
-		long = append(long, line...)
+		line = long
 	}
-	return long, err
+	if n := len(line); n > maxEntryLine || n == maxEntryLine && line[n-1] != '\n' {
+		return nil, errLineTooLong
+	}
+	return line, err
 }
 
 func (x *Index) snapshot(extra *Entry, problems []Problem) *Snapshot {

@@ -204,3 +204,27 @@ func TestLooksTakenAtOnceAgree(t *testing.T) {
 	wg.Wait()
 	sameAsRead(t, x, path, "after the looks")
 }
+
+// A look refuses a line where Read refuses it, to the byte. Read takes a
+// line of up to four megabytes with its line end, and a last line without
+// one if it is shorter than that; a look took up to the next 64 KB past
+// either, so the admin's log page called intact a log that `auditlog
+// verify`, `show` and the exports could not read at all.
+func TestALookRefusesALineWhereReadDoes(t *testing.T) {
+	head := `{"seq":1,"resource":"`
+	for _, c := range []struct {
+		size int
+		end  string
+	}{
+		{maxEntryLine, "\n"}, {maxEntryLine + 1, "\n"}, {maxEntryLine + 1, "\r\n"},
+		{maxEntryLine - 1, ""}, {maxEntryLine, ""}, {maxEntryLine + 1000, "\n"},
+	} {
+		path := filepath.Join(t.TempDir(), "audit.jsonl")
+		pad := c.size - len(head) - len(`"}`) - len(c.end)
+		line := head + string(bytes.Repeat([]byte("r"), pad)) + `"}` + c.end
+		if err := os.WriteFile(path, []byte(`{"seq":0}`+"\n"+line), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		sameAsRead(t, NewIndex(path), path, fmt.Sprintf("a line of %d bytes ending %q", c.size, c.end))
+	}
+}
