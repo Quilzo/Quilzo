@@ -14,6 +14,8 @@ import (
 	"testing"
 
 	"github.com/quilzo/quilzo/internal/experiment"
+	"github.com/quilzo/quilzo/internal/i18n"
+	"github.com/quilzo/quilzo/internal/personalise"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 )
@@ -183,5 +185,76 @@ func TestSearchEnginesAreNotToldOfAVariant(t *testing.T) {
 	indexNowAfterPublish(ctx, root)
 	if !slices.Equal(got, []string{"https://shop.example/returns", "https://shop.example/returns-b"}) {
 		t.Fatalf("told %v once the test stopped", got)
+	}
+}
+
+// A page in another of the site's languages is a page of its own, though a
+// rule serves it at the default language's address to a browser asking for
+// that language. By the rule for variants a changed translation was left
+// out of the notice, as the site left it out of its sitemap: the French
+// page a search engine had was never refreshed.
+func TestSearchEnginesAreToldOfATranslationARuleServes(t *testing.T) {
+	root := demoStore(t)
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var m struct {
+			URLs []string `json:"urlList"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&m)
+		got = append(got, m.URLs...)
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer srv.Close()
+	was := indexNowEndpoint
+	indexNowEndpoint = srv.URL
+	defer func() { indexNowEndpoint = was }()
+
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publish := func(words string) {
+		t.Helper()
+		pages, err := site.PagesAt(s, site.RefDraft)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pages["returns"] = map[string]any{"title": "Returns " + words}
+		pages["fr/returns"] = map[string]any{"title": "Retours " + words}
+		pages["returns-phone"] = map[string]any{"title": "Returns, briefly " + words}
+		if _, err := site.SaveDraft(s, pages, "change", "test"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := site.Publish(s, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	publish("one")
+	setConfigs(t, root, map[string]string{"site.indexnow": "true", "site.base_url": "https://shop.example"})
+	ctx := context.Background()
+	if said := indexNowAfterPublish(ctx, root); said != "" {
+		t.Fatalf("the first publish told: %q", said)
+	}
+	if err := saveJSON(localesPath(root), &i18n.Config{Default: "en", Locales: []i18n.Locale{"en", "fr"}}); err != nil {
+		t.Fatal(err)
+	}
+	rules := &personalise.Set{}
+	for _, r := range []personalise.Rule{
+		{Name: "returns-fr", Page: "returns", Variant: "fr/returns", Enabled: true,
+			When: []personalise.Condition{{Field: personalise.Language, Values: []string{"fr"}}}},
+		{Name: "returns-phone", Page: "returns", Variant: "returns-phone", Enabled: true,
+			When: []personalise.Condition{{Field: personalise.Device, Values: []string{"phone"}}}},
+	} {
+		if err := rules.Put(r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := personalise.Save(personalisePath(root), rules); err != nil {
+		t.Fatal(err)
+	}
+	publish("two")
+	indexNowAfterPublish(ctx, root)
+	if !slices.Equal(got, []string{"https://shop.example/fr/returns", "https://shop.example/returns"}) {
+		t.Fatalf("told %v; the translation is a page of its own, and returns-phone is a variant of /returns", got)
 	}
 }

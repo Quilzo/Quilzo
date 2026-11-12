@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/experiment"
+	"github.com/quilzo/quilzo/internal/i18n"
 	"github.com/quilzo/quilzo/internal/personalise"
 	"github.com/quilzo/quilzo/internal/seo"
 )
@@ -137,7 +138,23 @@ func (st *Site) personalFor(r *http.Request, name string, pages map[string]any) 
 // served, since visitors arrive at it by its address: so the control is not
 // a variant of itself, and two rules serving each other's page make no
 // loop of canonical links.
-func Variants(exps *experiment.Set, rules *personalise.Set, pages map[string]any) map[string]string {
+//
+// Nor is the home page, the one named index, for the same reason: it is
+// the address every visitor and every crawler arrives at. A test of a
+// landing page against the home page made the home page a variant of
+// /landing, so the site's own address named /landing as canonical and left
+// the sitemap, llms.txt and IndexNow.
+//
+// Nor is a translation of the page it is served at, on a site published in
+// the languages locales names (nil for a site in one). A rule that serves
+// fr/about at /about to a browser asking for French is the page in the
+// visitor's own language, and /fr/about is where everybody else reads it:
+// the sitemap lists it as the French version of /about. Taken for a
+// variant, it named /about as canonical and left the sitemap while the
+// sitemap's own hreflang still pointed at it, which tells a search engine
+// to drop the French page. The home page in another language is a home
+// page too.
+func Variants(exps *experiment.Set, rules *personalise.Set, pages map[string]any, index string, locales *i18n.Config) map[string]string {
 	runs := map[string]bool{}
 	if rules != nil {
 		for _, r := range rules.Rules {
@@ -153,11 +170,24 @@ func Variants(exps *experiment.Set, rules *personalise.Set, pages map[string]any
 			}
 		}
 	}
+	// own reports a page that is one of its own wherever it is served: a
+	// home page, or the page it is served at in another language.
+	own := func(variant, page string) bool {
+		if variant == index {
+			return true
+		}
+		if locales == nil {
+			return false
+		}
+		in, what := locales.Split(variant)
+		at, where := locales.Split(page)
+		return what == index || (what == where && in != at)
+	}
 	out := map[string]string{}
 	add := func(variant, page string) {
 		_, served := pages[page]
 		_, published := pages[variant]
-		if _, named := out[variant]; named || runs[variant] || !served || !published {
+		if _, named := out[variant]; named || runs[variant] || own(variant, page) || !served || !published {
 			return
 		}
 		out[variant] = page
@@ -207,7 +237,7 @@ func (st *Site) variants(pages map[string]any) map[string]string {
 	if st.Personalise != nil {
 		rules, _ = st.Personalise()
 	}
-	return Variants(exps, rules, pages)
+	return Variants(exps, rules, pages, st.Index, st.Locales)
 }
 
 // canonicalIn is the address name's canonical link names: as seo.Canonical

@@ -22,6 +22,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/egress"
 	"github.com/quilzo/quilzo/internal/experiment"
+	"github.com/quilzo/quilzo/internal/i18n"
 	"github.com/quilzo/quilzo/internal/personalise"
 	"github.com/quilzo/quilzo/internal/public"
 	"github.com/quilzo/quilzo/internal/seo"
@@ -91,8 +92,9 @@ type indexNowState struct {
 // commit to another and a search engine may list: by the sitemap's rule
 // (public.Listed), so not a variant that the running tests in exps or the
 // enabled rules in rules serve at another page's address (either may be
-// nil).
-func indexNowChanged(s *store.Store, base, index, from, to string, exps *experiment.Set, rules *personalise.Set) ([]string, error) {
+// nil); the home page, named index, is never one, nor is a translation in
+// one of the site's languages (locales, nil for a site in one).
+func indexNowChanged(s *store.Store, base, index, from, to string, exps *experiment.Set, rules *personalise.Set, locales *i18n.Config) ([]string, error) {
 	changes, err := site.Diff(s, from, to)
 	if err != nil {
 		return nil, err
@@ -110,7 +112,7 @@ func indexNowChanged(s *store.Store, base, index, from, to string, exps *experim
 		}
 	}
 	visible := site.Visible(pages, time.Now())
-	variants := public.Variants(exps, rules, visible)
+	variants := public.Variants(exps, rules, visible, index, locales)
 	var out []string
 	for name := range changed {
 		body, live := visible[name]
@@ -168,7 +170,8 @@ func indexNowAfterPublish(ctx context.Context, root string) string {
 	// cannot read either.
 	exps, _ := experiment.Load(experimentsPath(root))
 	rules, _ := personalise.Load(personalisePath(root))
-	urls, err := indexNowChanged(s, base, "index", st.Commit, live, exps, rules)
+	locales, _ := loadLocales(root)
+	urls, err := indexNowChanged(s, base, "index", st.Commit, live, exps, rules, locales)
 	if err != nil || len(urls) == 0 {
 		save()
 		return ""
