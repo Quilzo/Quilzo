@@ -110,7 +110,11 @@ func Build(e Engagement, controls []assurance.Control,
 			continue
 		}
 		seen[item.Control] = true
-		key := item.Control + "\x00" + item.Ref
+		// The reference as the log wrote it, which is without the
+		// credentials an address carries (audit.WithoutCredentials):
+		// evidence named by a share link with its key was otherwise never
+		// found.
+		key := item.Control + "\x00" + audit.WithoutCredentials(item.Ref)
 		entry, ok := byRef[key]
 		if !ok {
 			// Evidence with no audit entry. Reported rather than dropped:

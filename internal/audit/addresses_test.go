@@ -79,8 +79,8 @@ func TestAnAddressWithoutCredentialsIsWrittenAsItIs(t *testing.T) {
 		"", "/blog/post", "publish 3 pages", "https://example.com", "https://example.com/a/b",
 		"see https://example.com/a and https://other.example/b", "https://example.com/?", "mailto:dana@example.com",
 	} {
-		if got := withoutCredentials(s); got != s {
-			t.Errorf("withoutCredentials(%q) = %q", s, got)
+		if got := WithoutCredentials(s); got != s {
+			t.Errorf("WithoutCredentials(%q) = %q", s, got)
 		}
 	}
 }

@@ -270,8 +270,11 @@ func (p Package) Verify(v *audit.HeadVerifier) error {
 func (i Item) agrees() error {
 	for _, f := range []struct{ name, entry, evidence string }{
 		{"control", i.Entry.Detail["control"], i.Evidence.Control},
-		{"reference", i.Entry.Detail["ref"], i.Evidence.Ref},
-		{"source", i.Entry.Detail["source"], i.Evidence.Source},
+		// As the log wrote them, without the credentials an address
+		// carries (audit.WithoutCredentials), so evidence named by an
+		// address with a key agrees with the entry that recorded it.
+		{"reference", i.Entry.Detail["ref"], audit.WithoutCredentials(i.Evidence.Ref)},
+		{"source", i.Entry.Detail["source"], audit.WithoutCredentials(i.Evidence.Source)},
 	} {
 		if f.entry != f.evidence {
 			return fmt.Errorf(

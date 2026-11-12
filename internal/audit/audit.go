@@ -505,7 +505,7 @@ func replaceWord(s, word, with string) string {
 // writes them: what anybody reading the log, or a stream of it, sees.
 func AsWritten(key []byte, r Record) (string, map[string]string) {
 	l := &Log{key: key}
-	r.Resource, r.Detail = withoutCredentials(r.Resource), detailWithoutCredentials(r.Detail)
+	r.Resource, r.Detail = WithoutCredentials(r.Resource), detailWithoutCredentials(r.Detail)
 	people := r.people()
 	return l.namedIn(r.Resource, people), l.pseudonymDetail(r.Detail, people)
 }
@@ -637,8 +637,8 @@ func (l *Log) Append(r Record) (*Event, error) {
 		}
 	}
 	// No address is written with the credentials it can carry, whoever
-	// wrote the record (withoutCredentials).
-	r.Resource, r.Detail = withoutCredentials(r.Resource), detailWithoutCredentials(r.Detail)
+	// wrote the record (WithoutCredentials).
+	r.Resource, r.Detail = WithoutCredentials(r.Resource), detailWithoutCredentials(r.Detail)
 
 	l.mu.Lock()
 	defer l.mu.Unlock()

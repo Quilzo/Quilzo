@@ -420,3 +420,32 @@ func TestTheNoteSaysWhatIsAndIsNotProved(t *testing.T) {
 		}
 	}
 }
+
+// Evidence named by an address with a query, a share link with its key,
+// is found in the log and checks against its entry, though the log writes
+// the address without its query (audit.WithoutCredentials).
+//
+// The entry and the evidence were compared as written, so once the log
+// stopped keeping the credentials an address carries, evidence named by
+// such an address had "no entry in the audit log" and the package could
+// not be built.
+func TestEvidenceNamedByAnAddressWithAKeyIsFoundInTheLog(t *testing.T) {
+	s, v := keys(t)
+	controls := []assurance.Control{control("mfa", "acme-us")}
+	item := ev("mfa", "acme-us", "https://drive.example/export.csv?sig=sh4reKEY", 0, 182)
+	item.Source = "https://grc.example/connector?token=c0nnKEY"
+	evidence := []assurance.Evidence{item}
+	events := logged(t, evidence)
+	for _, e := range events {
+		if strings.Contains(e.Detail["ref"]+e.Detail["source"], "KEY") {
+			t.Fatalf("the log holds the key: %v", e.Detail)
+		}
+	}
+	p, err := Build(engaged(), controls, evidence, events, inUS, signer{s}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Verify(v); err != nil {
+		t.Fatal(err)
+	}
+}

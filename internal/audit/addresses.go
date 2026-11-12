@@ -5,7 +5,7 @@ package audit
 
 import "strings"
 
-// withoutCredentials is s with every address in it written without the
+// WithoutCredentials is s with every address in it written without the
 // credentials an address can carry: a user and password become "…@", a
 // query "?…" and a fragment "#…". The scheme, the host and the path stay,
 // so the record still says where.
@@ -23,7 +23,11 @@ import "strings"
 // A secret that is the path itself, as in a Slack, Teams or Discord
 // incoming-webhook address, looks like any other path and is the writer's
 // to leave out: internal/webhook's LogForm is how an endpoint is written.
-func withoutCredentials(s string) string {
+//
+// Exported for whatever compares a value with the record of it, as
+// internal/engagement compares evidence with its entry: the value as the
+// log wrote it is this.
+func WithoutCredentials(s string) string {
 	if !strings.Contains(s, "://") {
 		return s
 	}
@@ -80,12 +84,12 @@ func endsAddress(c byte) bool {
 	return c <= ' ' || c == 0x7f || c == '"' || c == '\'' || c == '`' || c == '<' || c == '>'
 }
 
-// detailWithoutCredentials is d with withoutCredentials applied to every
+// detailWithoutCredentials is d with WithoutCredentials applied to every
 // value, leaving the caller's map alone.
 func detailWithoutCredentials(d map[string]string) map[string]string {
 	var out map[string]string
 	for k, v := range d {
-		clean := withoutCredentials(v)
+		clean := WithoutCredentials(v)
 		if clean == v {
 			continue
 		}
