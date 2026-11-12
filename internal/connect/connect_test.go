@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"net/url"
 	"strings"
 	"testing"
@@ -138,5 +139,50 @@ func TestADeclarationIsChecked(t *testing.T) {
 	}
 	if !calendar.Allows("API.acme.example.") || calendar.Allows("evil.example") || calendar.Allows("acme.example") {
 		t.Error("a token's hosts")
+	}
+}
+
+// When a connection's tokens end is kept, refresh token included where the
+// provider says (LinkedIn's refresh_token_expires_in, TikTok's
+// refresh_expires_in), and when the connection stops working follows from
+// it: the refresh token's end when it renews, the access token's when it
+// cannot. Kept without it, a LinkedIn connection a year old or an
+// Instagram token sixty days old stopped one day with nothing said before.
+func TestWhenAConnectionsTokensEndIsKept(t *testing.T) {
+	now := time.Date(2026, 11, 11, 10, 0, 0, 0, time.UTC)
+	pd, _, _ := Begin(calendar, "https://cms.example/connections/callback", "dana", now)
+	day := 24 * time.Hour
+	answer := ""
+	post := func(context.Context, string, url.Values) ([]byte, error) { return []byte(answer), nil }
+	for _, field := range []string{"refresh_token_expires_in", "refresh_expires_in"} {
+		answer = `{"access_token":"at","token_type":"Bearer","expires_in":5184000,"refresh_token":"rt","` + field + `":31536000}`
+		tok, err := Exchange(context.Background(), post, nil, calendar, "", pd, "c", now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ends := tok.Ends()
+		if !tok.RefreshExpiry.Equal(now.Add(365*day)) || !ends.Access.Equal(now.Add(60*day)) || !ends.Renews ||
+			!ends.Lapses().Equal(now.Add(365*day)) || ends.LapsesSoon(now.Add(300*day)) || !ends.LapsesSoon(now.Add(359*day)) {
+			t.Fatalf("%s: %+v %+v", field, tok, ends)
+		}
+	}
+	// No refresh token: the access token's end is the connection's.
+	answer = `{"access_token":"at","token_type":"Bearer","expires_in":5184000}`
+	tok, _ := Exchange(context.Background(), post, nil, calendar, "", pd, "c", now)
+	if ends := tok.Ends(); ends.Renews || !ends.Lapses().Equal(now.Add(60*day)) || ends.LapsesSoon(now.Add(50*day)) ||
+		!ends.LapsesSoon(now.Add(54*day)) || !ends.LapsesSoon(now.Add(61*day)) {
+		t.Fatalf("%+v", ends)
+	}
+	if said := tok.Ends().Said(time.UTC); !strings.Contains(said, "10 Jan 2027") || !strings.Contains(said, "no refresh token") {
+		t.Errorf("said %q", said)
+	}
+	// A token kept before its ends were: not known, so never said to be soon.
+	var old Token
+	_ = json.Unmarshal([]byte(`{"access":"at","refresh":"rt"}`), &old)
+	if ends := old.Ends(); !ends.Lapses().IsZero() || ends.LapsesSoon(now) || !strings.Contains(ends.Said(time.UTC), "not known") {
+		t.Fatalf("%+v %q", ends, ends.Said(time.UTC))
+	}
+	if said := (Ends{}).Said(time.UTC); strings.Contains(said, "0001") || !strings.Contains(said, "not known") {
+		t.Errorf("an unknown end said as %q", said)
 	}
 }

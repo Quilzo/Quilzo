@@ -88,3 +88,43 @@ func TestConnectedAccountsAreAPersonsOwn(t *testing.T) {
 		t.Error("the screen answered somebody not signed in")
 	}
 }
+
+// Your accounts says when each connection's tokens end, and which have to
+// be connected again soon; one kept before its ends were says it does not
+// know. Showing only when it was connected, a connection simply stopped
+// one day (a LinkedIn refresh token a year old, an Instagram token sixty
+// days old), and the first anybody heard was a post that failed.
+func TestYourAccountsSaysWhenAConnectionExpires(t *testing.T) {
+	srv, token := setup(t)
+	now := time.Now().UTC()
+	// Counted from now, not fixed dates: a refresh token's fixed end
+	// comes within the week one day, and the test would fail that week.
+	access, refresh := now.Add(50*24*time.Hour), now.Add(300*24*time.Hour)
+	srv.Connections = &Connections{
+		Providers: func() ([]connect.Provider, error) {
+			return []connect.Provider{{Name: "linkedin", Title: "LinkedIn", Hosts: []string{"api.linkedin.com"}},
+				{Name: "instagram", Title: "Instagram", Hosts: []string{"graph.instagram.com"}},
+				{Name: "acme", Title: "Acme", Hosts: []string{"api.acme.example"}}}, nil
+		},
+		Mine: func(person string) ([]ConnectedAccount, error) {
+			return []ConnectedAccount{
+				{Provider: "linkedin", Connected: now.AddDate(0, -2, 0), Expires: connect.Ends{
+					Access: access, Refresh: refresh, Renews: true}},
+				{Provider: "instagram", Connected: now.AddDate(0, -2, 0), Expires: connect.Ends{Access: now.Add(3 * 24 * time.Hour)}},
+				{Provider: "acme", Connected: now.AddDate(-1, 0, 0)},
+			}, nil
+		},
+	}
+	body := get(t, srv, "/connections", token).Body.String()
+	whole(t, body)
+	for _, want := range []string{access.Format("2 Jan 2006 15:04"), "refresh token until " + refresh.Format("2 Jan 2006"),
+		"no refresh token", "not known",
+		"Connect it again before " + now.Add(3*24*time.Hour).Format("2 Jan 2006")} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the screen does not say %q", want)
+		}
+	}
+	if strings.Count(body, "Connect it again before") != 1 {
+		t.Error("a connection that does not end within the week is said to")
+	}
+}

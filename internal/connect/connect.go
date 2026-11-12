@@ -506,8 +506,9 @@ type Token struct {
 	Expiry  time.Time `json:"expiry,omitempty"`
 	Scope   string    `json:"scope,omitempty"`
 	// RefreshExpiry is when the refresh token itself lapses, where the
-	// provider's dialect says: TikTok's a year from when it was issued,
-	// LinkedIn's a year from the first issue, never moved by a refresh.
+	// provider says: TikTok's a year from when it was issued, LinkedIn's
+	// a year from the first issue, never moved by a refresh, and a
+	// standard provider's when it says (GitHub's refresh_token_expires_in).
 	// Past it a refresh cannot work, and the person is told to connect
 	// again, with the date, rather than the provider being asked.
 	RefreshExpiry time.Time `json:"refresh_expiry,omitempty"`
@@ -517,6 +518,72 @@ type Token struct {
 	// it was about to expire would be one failed renewal from somebody
 	// having to connect again.
 	Renew time.Time `json:"renew,omitempty"`
+}
+
+// Ends is when a connection's tokens end, as far as the provider said.
+//
+// Nothing in it is secret, so it is kept beside the sealed tokens and shown
+// to the person whose connection it is. Kept only inside them, it was shown
+// nowhere: a connection simply stopped working one day (an Instagram token
+// sixty days old, a LinkedIn refresh token a year old), and the first
+// anybody heard of it was a post that failed. A zero time is one not known:
+// the provider did not say, or the connection was kept before this was.
+type Ends struct {
+	Access  time.Time `json:"access_expires,omitzero"`
+	Refresh time.Time `json:"refresh_expires,omitzero"`
+	// Renews says it has a refresh token, so the access token's end is
+	// not the connection's.
+	Renews bool `json:"renews,omitempty"`
+}
+
+// Ends is when the tokens end.
+func (t Token) Ends() Ends {
+	return Ends{Access: t.Expiry, Refresh: t.RefreshExpiry, Renews: t.Refresh != ""}
+}
+
+// ExpiryNotice is how long before a connection stops working its person
+// is told to connect it again.
+const ExpiryNotice = 7 * 24 * time.Hour
+
+// Lapses is when the connection stops working unless its person connects
+// it again: the refresh token's end when it renews, or else the access
+// token's. Zero is not known.
+func (e Ends) Lapses() time.Time {
+	if e.Renews {
+		return e.Refresh
+	}
+	return e.Access
+}
+
+// LapsesSoon reports whether the connection stops working within
+// ExpiryNotice of now, or already has.
+func (e Ends) LapsesSoon(now time.Time) bool {
+	at := e.Lapses()
+	return !at.IsZero() && at.Before(now.Add(ExpiryNotice))
+}
+
+// Said is when the tokens end, in words, with times in loc: the same on
+// Your accounts and in quilzo connect list.
+func (e Ends) Said(loc *time.Location) string {
+	access := "access token: end not known"
+	if !e.Access.IsZero() {
+		access = "access token until " + e.Access.In(loc).Format("2 Jan 2006 15:04 MST")
+		if e.Renews {
+			access += ", renewed when due"
+		}
+	}
+	var refresh string
+	switch {
+	case e.Renews && !e.Refresh.IsZero():
+		refresh = "refresh token until " + e.Refresh.In(loc).Format("2 Jan 2006")
+	case e.Renews:
+		refresh = "refresh token: end not known"
+	case !e.Access.IsZero():
+		refresh = "no refresh token: connect it again when access ends"
+	default:
+		refresh = "refresh token: not known"
+	}
+	return access + "; " + refresh
 }
 
 // Due reports whether the token is refreshed before it is used: its
@@ -730,19 +797,24 @@ func answer(p Provider, body []byte, old Token, now time.Time) (Token, error) {
 	if out.ExpiresIn > 0 {
 		t.Expiry = now.Add(time.Duration(out.ExpiresIn) * time.Second).UTC()
 	}
-	// What each dialect says beside the standard is read for that dialect
-	// alone, so a standard provider's answer is read exactly as it was.
+	// What each dialect says beside the standard's fields is read for that
+	// dialect alone: the same refresh_token_expires_in is a standard
+	// provider's lifetime for its refresh token (GitHub's), but under
+	// LinkedIn's year from the first issue only a nearer end, never a new
+	// year.
 	var extra struct {
-		TikTokRefresh   int64           `json:"refresh_expires_in"`
-		LinkedInRefresh int64           `json:"refresh_token_expires_in"`
-		Permissions     json.RawMessage `json:"permissions"`
+		// The refresh token's lifetime, by the two names providers send it
+		// under: TikTok's, and LinkedIn's and GitHub's.
+		RefreshIn      int64           `json:"refresh_expires_in"`
+		RefreshTokenIn int64           `json:"refresh_token_expires_in"`
+		Permissions    json.RawMessage `json:"permissions"`
 	}
 	_ = json.Unmarshal(body, &extra)
 	switch p.dialect() {
 	case TikTok:
 		t.RefreshExpiry = old.RefreshExpiry
-		if extra.TikTokRefresh > 0 {
-			t.RefreshExpiry = now.Add(time.Duration(extra.TikTokRefresh) * time.Second).UTC()
+		if extra.RefreshIn > 0 {
+			t.RefreshExpiry = now.Add(time.Duration(extra.RefreshIn) * time.Second).UTC()
 		}
 	case LinkedIn:
 		// A year from the first issue, and never later: LinkedIn counts
@@ -752,8 +824,8 @@ func answer(p Provider, body []byte, old Token, now time.Time) (Token, error) {
 			if at.IsZero() {
 				at = now.Add(365 * 24 * time.Hour).UTC()
 			}
-			if extra.LinkedInRefresh > 0 {
-				if said := now.Add(time.Duration(extra.LinkedInRefresh) * time.Second).UTC(); said.Before(at) {
+			if extra.RefreshTokenIn > 0 {
+				if said := now.Add(time.Duration(extra.RefreshTokenIn) * time.Second).UTC(); said.Before(at) {
 					at = said
 				}
 			}
@@ -762,6 +834,15 @@ func answer(p Provider, body []byte, old Token, now time.Time) (Token, error) {
 	case MetaInstagram:
 		if t.Scope == "" {
 			t.Scope = clip(permissions(extra.Permissions), 2000)
+		}
+	case OAuth2:
+		// The standard says nothing of when a refresh token lapses; a
+		// provider that does (GitHub's refresh_token_expires_in, or
+		// refresh_expires_in) is taken at its word. A refresh that keeps
+		// the refresh token and says nothing of its end leaves it zero
+		// here, and the caller that keeps the token keeps the end it knew.
+		if in := max(extra.RefreshTokenIn, extra.RefreshIn); in > 0 && t.Refresh != "" {
+			t.RefreshExpiry = now.Add(time.Duration(in) * time.Second).UTC()
 		}
 	}
 	return t, nil
