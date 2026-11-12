@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/note"
 	"github.com/quilzo/quilzo/internal/site"
 )
@@ -141,6 +142,21 @@ func noteList(root string, args []string) error {
 			return err
 		}
 	}
+	// Only the pages the caller may read, as list_notes answers over MCP.
+	// A reader may run this (privilege.go), and it listed every page with
+	// notes: a reader denied a page was shown its name and what colleagues
+	// had written about it, which the deny was there to keep from them.
+	may, err := pageCheck(root, resolveCaller(root, ""), auth.ActView)
+	if err != nil {
+		return err
+	}
+	kept := pages[:0]
+	for _, page := range pages {
+		if may(page) {
+			kept = append(kept, page)
+		}
+	}
+	pages = kept
 	type row struct {
 		Page  string      `json:"page"`
 		Notes []note.Note `json:"notes"`

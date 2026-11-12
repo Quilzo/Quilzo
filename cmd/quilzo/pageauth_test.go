@@ -12,6 +12,8 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/mcp"
+	"github.com/quilzo/quilzo/internal/note"
+	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 )
 
@@ -205,5 +207,61 @@ func TestARefusalDoesNotNameAPageOutOfReach(t *testing.T) {
 	if err := mayPublishChanges(root, s, withRole("pat", auth.RolePublisher), ""); err == nil ||
 		strings.Contains(err.Error(), "redundancy") || !strings.Contains(err.Error(), "one page that is not pat's to read") {
 		t.Errorf("a publish: %v", err)
+	}
+}
+
+// The notes and the checks a reader lists on the command line are of the
+// pages they may read, as list_notes and list_checked answer them over MCP.
+// `note list`, `checked list` and `checked due` were opened to a reader so
+// the command answered whom the operation does, and they listed every page:
+// a reader denied redundancy-plan was shown its name, and what colleagues
+// had written about it, by the command its deny was meant to hold against.
+func TestAReadersNotesAndChecksAreOfThePagesTheyMayRead(t *testing.T) {
+	root, secrets := storeWithTokenFor(t, auth.Binding{Principal: "rae", Role: auth.RoleReader, Resource: "/"})
+	if _, err := updatePolicy(root, func(p *auth.Policy) error {
+		return p.Grant(auth.Binding{Principal: "rae", Role: auth.RoleReader, Resource: "/redundancy-plan", Deny: true})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.SaveDraft(s, map[string]any{
+		"index":           map[string]any{"title": "Home"},
+		"redundancy-plan": map[string]any{"title": "Who goes"},
+	}, "test", "dana"); err != nil {
+		t.Fatal(err)
+	}
+	st, err := openNotes(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []note.Note{{Page: "index", Author: "dana", Text: "The welcome is warm"},
+		{Page: "redundancy-plan", Author: "dana", Text: "Tell the night shift last"}} {
+		if _, err := st.Add(n, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("QUILZO_TOKEN", secrets["rae"])
+	for _, args := range [][]string{{"note", "list"}, {"notes", "list"}, {"checked", "list"}, {"checked", "due"}} {
+		if err := authoriseCommand(root, args[0], args[1:]); err != nil {
+			t.Fatalf("a reader may not run %v: %v", args, err)
+		}
+		got, err := humanOutput(t, func() error {
+			if args[0] == "checked" {
+				return cmdChecked(root, args[1:])
+			}
+			return cmdNote(root, args[1:])
+		})
+		if err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+		if strings.Contains(got, "redundancy") || strings.Contains(got, "night shift") {
+			t.Errorf("%v named the page out of reach: %s", args, got)
+		}
+		if !strings.Contains(got, "index") {
+			t.Errorf("%v left out the page the reader may read: %s", args, got)
+		}
 	}
 }
