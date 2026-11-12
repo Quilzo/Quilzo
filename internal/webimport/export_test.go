@@ -793,3 +793,57 @@ func TestAnItemLinkedByANumberDoesNotRedirectTheOldHome(t *testing.T) {
 		}
 	}
 }
+
+// A post WordPress showed only to somebody with its password is not brought.
+//
+// Its status is publish, which is all either reader asked, so a members-only
+// recipe came in as a public post: its words in the page, its description,
+// its structured data, the blog's listing and the feed. A post password is
+// the same kind of keeping back as a private status, and the Ghost reader
+// already leaves a members' post behind.
+func TestAPasswordProtectedWordPressPostIsNotBrought(t *testing.T) {
+	doc := strings.Replace(wxr, "<item><title>Not yet</title>",
+		`<item><title>Members only recipe</title><link>https://oldbakery.example/members-only-recipe/</link>`+
+			`<wp:post_id>22</wp:post_id><wp:post_name>members-only-recipe</wp:post_name><wp:post_type>post</wp:post_type>`+
+			`<wp:status>publish</wp:status><wp:post_password><![CDATA[s3cret]]></wp:post_password>`+
+			`<wp:post_date>2026-10-20 09:00:00</wp:post_date>`+
+			`<content:encoded><![CDATA[<p>PROTECTED-MARKER The secret recipe.</p>]]></content:encoded></item>`+
+			`<item><title>Members page</title><link>https://oldbakery.example/members/</link>`+
+			`<wp:post_id>23</wp:post_id><wp:post_name>members</wp:post_name><wp:post_type>page</wp:post_type>`+
+			`<wp:status>publish</wp:status><wp:post_password>s3cret</wp:post_password>`+
+			`<content:encoded><![CDATA[<p>PROTECTED-MARKER The members' page.</p>]]></content:encoded></item>`+
+			`<item><title>Not yet</title>`, 1)
+	s, err := FromWordPress([]byte(doc), "bakery.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pst := range s.Posts {
+		if pst.Slug == "members-only-recipe" {
+			t.Errorf("the post behind a password was brought: %q", pst.Title)
+		}
+	}
+	for _, pg := range s.Pages {
+		if pg.Name == "members" {
+			t.Errorf("the page behind a password was brought: %q", pg.Title)
+		}
+	}
+	b, err := Package(s, "", "dana", nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body := fmt.Sprint(b.Package.Pages, b.Posts, b.Redirects); strings.Contains(body, "PROTECTED-MARKER") ||
+		strings.Contains(body, "members-only-recipe") {
+		t.Error("the package holds the words or the address of what was behind a password")
+	}
+	// Said, and apart from the drafts: the owner decides about these.
+	notes := strings.Join(s.Notes, " | ")
+	if !strings.Contains(notes, "2 password-protected") {
+		t.Errorf("nothing says two items behind a password were left out: %s", notes)
+	}
+	if strings.Contains(notes, "s3cret") {
+		t.Errorf("the notes carry the password: %s", notes)
+	}
+	if !strings.Contains(notes, "1 draft, private, pending or scheduled") {
+		t.Errorf("the draft is no longer counted on its own: %s", notes)
+	}
+}

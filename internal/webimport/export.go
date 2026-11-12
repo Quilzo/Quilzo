@@ -101,11 +101,14 @@ type WordPressItem struct {
 		XMLName xml.Name
 		Value   string `xml:",chardata"`
 	} `xml:"encoded"`
-	ID         string `xml:"post_id"`
-	Date       string `xml:"post_date"`
-	Modified   string `xml:"post_modified"`
-	Name       string `xml:"post_name"`
-	Status     string `xml:"status"`
+	ID       string `xml:"post_id"`
+	Date     string `xml:"post_date"`
+	Modified string `xml:"post_modified"`
+	Name     string `xml:"post_name"`
+	Status   string `xml:"status"`
+	// Password is the password WordPress asked a reader for before it
+	// showed the item (post_password), "" when it asked for none.
+	Password   string `xml:"post_password"`
 	Parent     string `xml:"post_parent"`
 	MenuOrder  int    `xml:"menu_order"`
 	Type       string `xml:"post_type"`
@@ -150,18 +153,24 @@ func (it WordPressItem) Excerpt() string { return it.encoded("excerpt") }
 
 // Held says why WordPress did not show the item to everybody, or "" when
 // nothing in the export says it was kept back: its status is anything but
-// published (private, a draft, waiting for review, scheduled, in the trash).
-// An item with no status at all is one WordPress did not write, and nothing
-// marks it.
+// published (private, a draft, waiting for review, scheduled, in the trash),
+// or it is published behind a password. An item with no status at all is one
+// WordPress did not write, and nothing marks it.
 //
 // Every reader of an export asks this before it brings an item, because what
 // is brought is published with the rest of the site. `quilzo site import`
 // left such items out; `quilzo import` brought each as an ordinary page with
 // a field, status: draft, that nothing reads, and the owner who published as
-// the import told them to served a private post's words to anybody.
+// the import told them to served a private post's words to anybody. Neither
+// read the password: a members-only recipe behind one has the status publish,
+// and came in as a public post through both. The password itself is never
+// part of the answer.
 func (it WordPressItem) Held() string {
 	switch status := strings.TrimSpace(it.Status); status {
 	case "publish", "":
+		if it.Protected() {
+			return "behind a password"
+		}
 		return ""
 	case "private":
 		return "private"
@@ -177,6 +186,10 @@ func (it WordPressItem) Held() string {
 		return "not published (its status is " + clip(status, 40) + ")"
 	}
 }
+
+// Protected says whether WordPress asked a reader for a password before it
+// showed the item.
+func (it WordPressItem) Protected() bool { return strings.TrimSpace(it.Password) != "" }
 
 // PageName is the name the item's page is given, by every reader of an
 // export: WordPress's own slug for it (post_name); else its link's path,
@@ -283,7 +296,7 @@ func FromWordPress(body []byte, origin string) (*Site, error) {
 		}
 		titles[it.ID] = it.Title
 	}
-	held, other, comments, shortcodes := 0, map[string]int{}, 0, 0
+	held, protected, other, comments, shortcodes := 0, 0, map[string]int{}, 0, 0
 	var pages []Page
 	homeAt := -1
 	type menuItem struct {
@@ -326,6 +339,13 @@ func FromWordPress(body []byte, origin string) (*Site, error) {
 		}
 		if it.Status != "publish" {
 			held++
+			continue
+		}
+		// Published, to whoever has its password: the same kind of keeping
+		// back as a private status, and moving it must not undo it. Counted
+		// apart, because the owner may not know which posts these are.
+		if it.Protected() {
+			protected++
 			continue
 		}
 		comments += len(it.Comments)
@@ -429,6 +449,10 @@ func FromWordPress(body []byte, origin string) (*Site, error) {
 	if held > 0 {
 		s.Notes = append(s.Notes, fmt.Sprintf("%d draft, private, pending or scheduled post(s) and page(s) were not "+
 			"brought: only what was published", held))
+	}
+	if protected > 0 {
+		s.Notes = append(s.Notes, fmt.Sprintf("%d password-protected post(s) and page(s) were not brought: a page here "+
+			"is public, and moving them must not make them so", protected))
 	}
 	if comments > 0 {
 		s.Notes = append(s.Notes, fmt.Sprintf("%d comment(s) were not brought: posts here take none yet", comments))

@@ -360,8 +360,8 @@ func importWXR(body []byte, now time.Time) (*Report, error) {
 		if held > 0 {
 			return nil, fmt.Errorf("no importable content found; %d items were "+
 				"skipped, %d of them because WordPress kept them from the public "+
-				"(drafts, private, waiting for review, scheduled or in the trash), "+
-				"and an import does not make them public",
+				"(drafts, private, waiting for review, scheduled, in the trash "+
+				"or behind a password), and an import does not make them public",
 				len(rep.Skipped), held)
 		}
 		return nil, fmt.Errorf("no importable content found; %d items were skipped",

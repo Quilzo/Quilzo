@@ -887,3 +887,40 @@ func TestAMarkdownFileMarkedADraftIsNotImported(t *testing.T) {
 		}
 	}
 }
+
+// A post WordPress showed only to somebody with its password is not
+// imported.
+//
+// Its status is publish, and the status was all that was read: a
+// members-only recipe behind a post password was imported as an ordinary
+// page, and published with the rest.
+func TestAPasswordProtectedWordPressPostIsNotImported(t *testing.T) {
+	doc := wxrDoc(`<item><title>About</title><wp:post_name>about</wp:post_name>
+	  <wp:post_type>page</wp:post_type><wp:status>publish</wp:status>
+	  <wp:post_password></wp:post_password>
+	  <content:encoded>We bake.</content:encoded></item>
+	<item><title>Members only recipe</title><link>https://kafe.example.com/members-only-recipe/</link>
+	  <wp:post_name>members-only-recipe</wp:post_name>
+	  <wp:post_type>post</wp:post_type><wp:status>publish</wp:status>
+	  <wp:post_password><![CDATA[s3cret]]></wp:post_password>
+	  <content:encoded>PROTECTED-MARKER The secret recipe.</content:encoded></item>`)
+	rep, err := Import(WordPress, strings.NewReader(doc), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Pages) != 1 || rep.Pages[0].Name != "about" {
+		t.Errorf("imported %d pages, not only the one anybody could read", len(rep.Pages))
+	}
+	for _, p := range rep.Pages {
+		if strings.Contains(str(p.Fields["body"]), "PROTECTED-MARKER") {
+			t.Errorf("page %s holds the words that were behind a password", p.Name)
+		}
+	}
+	said := strings.Join(rep.Skipped, " | ")
+	if !strings.Contains(said, "Members only recipe") || !strings.Contains(said, "password") {
+		t.Errorf("nothing says the post behind a password was left out: %v", rep.Skipped)
+	}
+	if strings.Contains(said+strings.Join(rep.Notes, " "), "s3cret") {
+		t.Error("the report carries the password")
+	}
+}
