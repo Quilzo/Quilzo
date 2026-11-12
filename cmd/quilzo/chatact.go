@@ -33,9 +33,9 @@ import (
 // look things up and changes nothing. One that writes runs at the agent's
 // own autonomy, capped at drafting and proposing, and its asks of a person
 // wait for one. Nobody here started it, so a call of a tool that writes to
-// another system waits for a person too, as a trigger's does, unless
-// administrators let the agent send through that tool unattended
-// (agentsends.go).
+// another system, and what its hands carry out to one, waits for a person
+// too, as a trigger's does, unless administrators let the agent send
+// through that tool or that hand unattended (agentsends.go).
 //
 // # What the visitor sees
 //

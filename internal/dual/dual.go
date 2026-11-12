@@ -71,9 +71,10 @@ const (
 	// when it asks fewer people, or people the policy in force does not
 	// name, to approve a change.
 	Approval = "approval"
-	// Sends is an agent let send through one tool from the runs nobody
-	// started, without a person deciding each call. A triggered run's
-	// write to another system otherwise waits for one, because what goes
+	// Sends is an agent let send through one tool, or one of its hands'
+	// actions, from the runs nobody started, without a person deciding
+	// each call. A triggered run's write to another system, or its hand's
+	// reach out to one, otherwise waits for one, because what goes
 	// out from a run nobody started is a person's decision; one
 	// administrator lifting that for every run to come is a widening
 	// nobody else saw.
@@ -88,8 +89,9 @@ type ApprovalChange struct {
 	Approvers      []string `json:"approvers,omitempty"`
 }
 
-// SendsChange is a Sends request: the agent, the tool, and the host the
-// tool reaches, which the grant is for and only for.
+// SendsChange is a Sends request: the agent, the tool or the hand's
+// action, and the host it reaches (for a hand, every host it may reach),
+// which the grant is for and only for.
 type SendsChange struct {
 	Agent string `json:"agent"`
 	Tool  string `json:"tool"`

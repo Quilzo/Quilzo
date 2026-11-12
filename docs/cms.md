@@ -1918,6 +1918,11 @@ starts:
   waits for a person as asking first does, whatever `ask_first` says, and is
   decided one call at a time, by somebody other than its sponsor where there is
   somebody;
+- so does what its hands carry out to another system, whatever the
+  declaration asks about: an address read with `web_fetch` or opened in its
+  browser, a search, words typed into a page or a desktop app, a file put into
+  a page, and a command that reaches the network. Reading this store and
+  working in its workspace are not held;
 - triggers start it in its sponsor's name, so they are its sponsor's to set, or
   an administrator's. Adding one is a widening, recorded as one.
 
@@ -1925,8 +1930,9 @@ A run that a visitor's request to a chatbot starts is held in the same way: it
 acts for the agent's sponsor with a stranger's words in its goal, and nobody
 here started it.
 
-**Sending unattended.** Administrators may let an agent send through one tool
-from the runs nobody started:
+**Sending unattended.** Administrators may let an agent send through one tool,
+or one of its hands named by its action (`web_fetch`, `shell_run`,
+`browser_open` and the like), from the runs nobody started:
 
 ```
 quilzo agent sends tidy grant post_update --why "the shop's updates go out as pages go live"
@@ -1939,8 +1945,9 @@ quilzo agent sends tidy revoke post_update
   and is recorded as a widening with who proposed it and who approved it. A
   store with one administrator has it approved as it is made, and the record
   says so.
-- It is for that tool at the host it reaches now. A declaration that points the
-  tool somewhere else has not been granted that.
+- It is for that tool at the host it reaches now, or for that hand at every
+  host it may reach now. A declaration that points it somewhere else, or
+  further, has not been granted that.
 - It lifts only this hold: what the agent asks first, a payment beyond its
   mandates and the exfiltration breaker still wait for a person.
 - Taking it back holds the next call at once.

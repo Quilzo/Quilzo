@@ -50,8 +50,9 @@ type agentSet struct {
 	// Identities are who answers for each agent, and until when it may run.
 	// See internal/agent/identity.go.
 	Identities map[string]agent.Identity `json:"identities,omitempty"`
-	// Sends are the tools each agent may send through from runs nobody
-	// started, as two administrators let it (agentsends.go). Kept beside
+	// Sends are the tools, and the hands' actions, each agent may send
+	// through from runs nobody started, as two administrators let it
+	// (agentsends.go). Kept beside
 	// the declarations and not in them, so nothing that writes a
 	// declaration grants one.
 	Sends map[string][]unattendedSend `json:"unattended_sends,omitempty"`

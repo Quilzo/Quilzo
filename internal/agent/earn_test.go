@@ -80,6 +80,33 @@ func TestWhatCanNeverBeEarned(t *testing.T) {
 	if Earnable(post, ClaimsPrefix+`: text: "guaranteed"`, WaitAsk, true) {
 		t.Error("a write the brand rules held was earnable")
 	}
+	// Nor is what a hand carries out of a run nobody started, whatever
+	// words its reason happens to use: a command that would reach a host,
+	// or a file put into a page.
+	for _, a := range []Action{
+		{Op: "shell_run", Input: map[string]any{"program": "curl"}},
+		{Op: "browser_upload", Input: map[string]any{"ref": "e2"}},
+	} {
+		why := UnattendedPrefix + ": " + a.Op + " carries what the model chose to api.example.com"
+		if Earnable(a, why, WaitAsk, false) {
+			t.Errorf("%s from a run nobody started was earnable", a.Op)
+		}
+		if c := CommitOf(a, why, WaitAsk, false); c != "sends" {
+			t.Errorf("%s from a run nobody started is classed as %q", a.Op, c)
+		}
+	}
+	// What the breaker reads as carrying the model's words out is one list,
+	// read the same way by whatever else holds them.
+	for _, op := range []string{"browser_open", "browser_type", "browser_upload", "desktop_type", "web_fetch", "web_search"} {
+		if _, sends := HandSends(Action{Op: op}); !sends {
+			t.Errorf("%s is not read as carrying the model's words out", op)
+		}
+	}
+	for _, a := range []Action{{Op: "browser_read"}, {Op: "file_read"}, {Op: "web_fetch", Tool: "lookup"}} {
+		if _, sends := HandSends(a); sends {
+			t.Errorf("%+v is read as carrying the model's words out", a)
+		}
+	}
 }
 
 // In a run: an earned kind of action goes ahead without stopping and says
