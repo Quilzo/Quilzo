@@ -258,3 +258,21 @@ func TestAWaitingHandOffShowsWhoAndWhatIsHandedOn(t *testing.T) {
 		t.Error("the approvals do not say which agent the waiting hand-off goes to")
 	}
 }
+
+// Why a run waits is shown cut where a character starts, and still comes to
+// 240 bytes with its mark. It is what the person deciding reads first, in
+// whatever language the agent was asked to work in.
+func TestWhyARunWaitsIsCutBetweenCharacters(t *testing.T) {
+	srv, _ := setup(t)
+	st := wireStudio(srv)
+	kept := strings.Repeat("a", 237)
+	look := agent.Action{Op: "browser_click", Input: map[string]any{"ref": "e4"}}
+	waitingRun(st, "run-20261013-000000a1", "buyer", look, kept+"中文", time.Now())
+	items := srv.runApprovals(time.Now())
+	if len(items) != 1 {
+		t.Fatalf("%d waiting", len(items))
+	}
+	if got := items[0].Detail; got != kept+"…" {
+		t.Errorf("%d bytes, ending %q", len(got), got[max(0, len(got)-6):])
+	}
+}

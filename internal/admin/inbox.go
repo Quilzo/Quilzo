@@ -12,6 +12,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/handoff"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // The inbox: conversations a site's assistant handed to a person.
@@ -93,7 +94,7 @@ func (s *Server) handleInbox(w http.ResponseWriter, r *http.Request) {
 			row.Title = c.Assistant
 		}
 		if n := len(c.Messages); n > 0 {
-			row.Preview = clipText(c.Messages[n-1].Text, 140)
+			row.Preview = plaintext.Clip(c.Messages[n-1].Text, 140, "…")
 		}
 		switch {
 		case c.Waiting():

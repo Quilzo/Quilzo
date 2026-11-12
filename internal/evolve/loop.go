@@ -12,7 +12,8 @@ import (
 	"sort"
 	"strings"
 	"time"
-	"unicode/utf8"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // The loop: mutate, run, judge, record, keep.
@@ -190,7 +191,7 @@ func (s *Search) generation(ctx context.Context, gen int) error {
 		_ = s.write(e)
 		return fmt.Errorf("the model did not answer in generation %d: %w", gen, err)
 	}
-	e.Diff = clip(answer, MaxDiffKept)
+	e.Diff = plaintext.Clip(answer, MaxDiffKept, "…")
 	diffs, derr := ParseDiff(answer)
 	if derr != nil {
 		e.Note = derr.Error()
@@ -303,7 +304,7 @@ func (s *Search) judge(ctx context.Context, candidate RunOutcome, test bool) (ma
 	}
 	if out.Exit != 0 {
 		return nil, fmt.Errorf("the evaluator exited %d: %s", out.Exit,
-			clip(strings.TrimSpace(out.Text), 400))
+			plaintext.Clip(strings.TrimSpace(out.Text), 400, "…"))
 	}
 	data, ok := out.Outputs["metrics.json"]
 	if !ok {
@@ -364,17 +365,6 @@ func better(a, b Individual) bool {
 	return a.Digest < b.Digest
 }
 
-// clip cuts text to at most n bytes at a character boundary, saying so.
-func clip(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	for n > 0 && !utf8.RuneStart(s[n]) {
-		n--
-	}
-	return s[:n] + "…"
-}
-
 // runNote says why a run did not finish, briefly.
 func runNote(out RunOutcome, err error) string {
 	if err != nil {
@@ -383,7 +373,7 @@ func runNote(out RunOutcome, err error) string {
 	if out.Stopped != "" {
 		return out.Stopped
 	}
-	txt := clip(strings.TrimSpace(out.Text), 400)
+	txt := plaintext.Clip(strings.TrimSpace(out.Text), 400, "…")
 	if txt == "" {
 		return fmt.Sprintf("it exited %d and said nothing", out.Exit)
 	}

@@ -215,3 +215,18 @@ func TestAnOverlappingSecondMatchIsRefused(t *testing.T) {
 		t.Error("an ambiguous, overlapping search was applied")
 	}
 }
+
+// A search that matches nothing is quoted cut where a character starts, and
+// still comes to 80 bytes with its mark. Each new line in it is shown as ␤,
+// which is three bytes, so a search of blank lines was quoted ending in part
+// of one.
+func TestAnUnmatchedSearchIsQuotedBetweenCharacters(t *testing.T) {
+	code := []byte("# EVOLVE-BLOCK-START\nreturn 1\n# EVOLVE-BLOCK-END\n")
+	_, err := Apply(regionOf(code), []Diff{{Search: strings.Repeat("\n", 30), Replace: "x"}})
+	if err == nil {
+		t.Fatal("a search for blank lines matched")
+	}
+	if want := `no text matches "` + strings.Repeat("␤", 25) + `…"`; err.Error() != want {
+		t.Errorf("%s", err)
+	}
+}

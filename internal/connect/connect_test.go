@@ -7,10 +7,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"net/url"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 var calendar = Provider{Name: "acme", Title: "Acme", AuthURL: "https://id.acme.example/authorize",
@@ -131,5 +133,21 @@ func TestADeclarationIsChecked(t *testing.T) {
 	}
 	if !calendar.Allows("API.acme.example.") || calendar.Allows("evil.example") || calendar.Allows("acme.example") {
 		t.Error("a token's hosts")
+	}
+}
+
+// Why a provider refused a token is quoted cut where a character starts.
+// It is shown to the person connecting, in whatever language the provider
+// explains itself.
+func TestARefusalIsQuotedBetweenCharacters(t *testing.T) {
+	kept := strings.Repeat("a", 199)
+	answer, err := json.Marshal(map[string]string{"error": "invalid_grant", "error_description": kept + "中文"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	post := func(context.Context, string, url.Values) ([]byte, error) { return answer, nil }
+	_, err = Refresh(context.Background(), post, calendar, "", "rt-1", time.Now())
+	if err == nil || !utf8.ValidString(err.Error()) || !strings.HasSuffix(err.Error(), "invalid_grant "+kept) {
+		t.Fatalf("%q", err)
 	}
 }

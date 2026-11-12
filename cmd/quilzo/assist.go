@@ -13,6 +13,7 @@ import (
 	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/out"
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/provenance"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
@@ -265,10 +266,8 @@ func changeKind(isNew bool) string {
 	return "changed"
 }
 
+// truncate is s on one line, at most n bytes with the mark that says it was
+// cut.
 func truncate(s string, n int) string {
-	s = strings.Join(strings.Fields(s), " ")
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
+	return plaintext.Clip(strings.Join(strings.Fields(s), " "), n, "…")
 }

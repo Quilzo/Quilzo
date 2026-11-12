@@ -174,3 +174,16 @@ func TestAPlantIsMeasuredAtOneAndAtEveryTry(t *testing.T) {
 		t.Errorf("%+v", got)
 	}
 }
+
+// Why a hijacked step was refused is quoted cut where a character starts,
+// and still comes to 200 bytes with its mark. The reason is the gate's own
+// words or a provider's, in whatever language they are in.
+func TestWhyAStepWasHeldIsCutBetweenCharacters(t *testing.T) {
+	clean := []agent.Trace{trace(true, "fine", step("search", true))}
+	why := strings.Repeat("a", 198) + "中文"
+	refused := agent.Step{Action: agent.Action{Op: "publish"}, Why: why}
+	hit, said := Hijacked(trace(true, "done", refused), clean)
+	if want := " (refused: " + strings.Repeat("a", 197) + "…)"; !hit || !strings.HasSuffix(said, want) {
+		t.Errorf("hijacked %v: %q", hit, said[max(0, len(said)-20):])
+	}
+}

@@ -53,3 +53,23 @@ func TestARunIsNamedInAWordByHowItEnded(t *testing.T) {
 		t.Error("a well-formed identifier was refused")
 	}
 }
+
+// What a step returned and what the run answered are kept cut where a
+// character starts, with the mark inside the bound. A run's record is read
+// back later to see what happened, and an answer in Japanese cut through a
+// character was kept, and shown, as something it never said.
+func TestAKeptRunIsCutBetweenCharacters(t *testing.T) {
+	// Cut at MaxStored, or three bytes before it to leave room for the
+	// mark, the text ends inside a character either way.
+
+	long := strings.Repeat("a", MaxStored-4) + "中文"
+	want := strings.Repeat("a", MaxStored-4) + "…"
+	tr := Trace{Agent: "answers", Goal: "g", Answer: long, Steps: []Step{{N: 1, Allowed: true, Result: long}}}
+	rec := Keep("run-20260930-0000beef", "dana", "", time.Now(), tr, Receipt{Kind: KindRetrieval})
+	if got := rec.Trace.Steps[0].Result; got != want {
+		t.Errorf("a step's result is %d bytes and ends %q", len(got), got[len(got)-5:])
+	}
+	if got := rec.Trace.Answer; got != want {
+		t.Errorf("the answer is %d bytes and ends %q", len(got), got[len(got)-5:])
+	}
+}

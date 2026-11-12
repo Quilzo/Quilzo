@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/form"
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/throttle"
 )
 
@@ -170,7 +171,7 @@ func (st *Site) handleShare(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if v := strings.TrimSpace(r.FormValue(shared)); v != "" {
-			values[field] = clampShare(v)
+			values[field] = plaintext.Clip(v, maxShareField, "")
 		}
 	}
 	if len(values) == 0 {
@@ -217,13 +218,6 @@ const maxShareBytes = 512 << 10
 
 // maxShareField bounds one shared value.
 const maxShareField = 8 << 10
-
-func clampShare(s string) string {
-	if len(s) <= maxShareField {
-		return s
-	}
-	return s[:maxShareField]
-}
 
 // storeShare writes the submission through the form pipeline.
 //

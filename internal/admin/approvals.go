@@ -17,6 +17,7 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/memory"
 	"github.com/quilzo/quilzo/internal/newsletter"
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/site"
 )
 
@@ -135,7 +136,7 @@ func (s *Server) runApprovals(now time.Time) []approvalItem {
 		default:
 			it.Title = what
 		}
-		it.Detail = clipText(firstNonEmpty(w.Why, rec.Goal), 240)
+		it.Detail = plaintext.Clip(firstNonEmpty(w.Why, rec.Goal), 240, "…")
 		if agent.Batchable(it.Commits) && w.Kind == agent.WaitAsk && !it.Expired {
 			it.Batch = batchKey(rec.Agent, w)
 		}
@@ -166,7 +167,7 @@ func (s *Server) otherApprovals(p principal, now time.Time) []approvalItem {
 			if st := s.approvalFor(p, draft); st.Configured && st.Proposed && st.Matches && st.CanApprove && st.Have < st.Need {
 				out = append(out, approvalItem{Source: "review", Agent: firstNonEmpty(st.Author, "content"),
 					Title: "Approve the change to the site", Commits: "publishes", Href: "/review",
-					Detail: fmt.Sprintf("%d of %d approvals; %s", st.Have, st.Need, clipText(st.Message, 160)),
+					Detail: fmt.Sprintf("%d of %d approvals; %s", st.Have, st.Need, plaintext.Clip(st.Message, 160, "…")),
 					Since:  now})
 			}
 		}

@@ -238,3 +238,18 @@ func TestItFindsEverySecretQuilzoMakes(t *testing.T) {
 		t.Errorf("a client id was taken for a secret: %v", spans)
 	}
 }
+
+// What a finding quotes is cut where a character starts, and still comes to
+// 90 bytes with its mark. A template is quoted as its author wrote it, in
+// whatever language, so the line can be found by what it says.
+func TestALongExcerptIsCutBetweenCharacters(t *testing.T) {
+	// The cut at 87 bytes falls on the second byte of 中.
+	head := "{% raw " + strings.Repeat("a", 79)
+	f := has(scan(Template, head+"中文 %}"), "xss.raw-output")
+	if f == nil {
+		t.Fatal("the raw output was not found")
+	}
+	if f.Excerpt != head+"..." {
+		t.Errorf("the excerpt is %d bytes and ends %q", len(f.Excerpt), f.Excerpt[len(f.Excerpt)-6:])
+	}
+}

@@ -15,6 +15,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // The brief: a few sentences on Today saying what matters most.
@@ -347,7 +348,7 @@ func (s *Server) writeBrief(person string, e *briefEntry, model assist.Model, fa
 
 	detail := map[string]string{"by": person, "model": e.Model, "dropped": fmt.Sprint(dropped)}
 	if err != nil {
-		detail["error"] = clipText(err.Error(), 200)
+		detail["error"] = plaintext.Clip(err.Error(), 200, "…")
 	}
 	s.audit("today.brief", "/", detail)
 }

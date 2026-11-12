@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Tasks: other agents handing work to this one, over A2A 1.0.
@@ -274,7 +276,7 @@ func (h Host) call(r *http.Request, req rpcRequest) (any, *Error) {
 	case "GetExtendedAgentCard":
 		return nil, Errorf(CodeExtendedCardNone, "the public card is the whole card")
 	}
-	return nil, Errorf(codeMethodNotFound, "no method "+clampName(req.Method))
+	return nil, Errorf(codeMethodNotFound, "no method "+plaintext.Clip(req.Method, 60, ""))
 }
 
 // pick is the agent a message is for: named in its metadata as "agent",
@@ -295,7 +297,7 @@ func (h Host) pick(metas ...map[string]any) (string, *Error) {
 					return a, nil
 				}
 			}
-			return "", Errorf(codeInvalidParams, "no agent here is called "+clampName(name))
+			return "", Errorf(codeInvalidParams, "no agent here is called "+plaintext.Clip(name, 60, ""))
 		}
 	}
 	if len(agents) == 1 {
@@ -322,13 +324,6 @@ func asError(err error) *Error {
 		return e
 	}
 	return Errorf(codeInternal, err.Error())
-}
-
-func clampName(s string) string {
-	if len(s) > 60 {
-		return s[:60]
-	}
-	return s
 }
 
 func reply(w http.ResponseWriter, id json.RawMessage, result any, err *Error) {

@@ -40,6 +40,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Severity orders findings.
@@ -177,11 +179,7 @@ func excerpt(r Rule, m string) string {
 		}
 		return "<redacted>"
 	}
-	m = strings.TrimSpace(m)
-	if len(m) > 90 {
-		return m[:87] + "..."
-	}
-	return m
+	return plaintext.Clip(strings.TrimSpace(m), 90, "...")
 }
 
 // Worst returns the highest severity present, for an exit code.

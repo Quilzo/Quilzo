@@ -3,7 +3,11 @@
 
 package a11y
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
+)
 
 // A tag scanner rather than an HTML parser.
 //
@@ -238,12 +242,10 @@ func indexFold(s, sub string) int {
 	return strings.Index(strings.ToLower(s), strings.ToLower(sub))
 }
 
+// trimTo is s on one line, at most n bytes with the mark that says it was
+// cut.
 func trimTo(s string, n int) string {
-	s = strings.Join(strings.Fields(s), " ")
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
+	return plaintext.Clip(strings.Join(strings.Fields(s), " "), n, "…")
 }
 
 func min(a, b int) int {

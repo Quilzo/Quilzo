@@ -519,10 +519,9 @@ func (d *Driver) watchConsole(ctx context.Context, b *cdp.Browser, p *cdp.Page) 
 				}
 				line = consoleLine{"request failed", strings.TrimSpace(nonEmpty(urls[r.ID], "a request") + ": " + nonEmpty(r.Blocked, r.Error))}
 			}
+			// clean bounds it, and more tightly than a console line was
+			// bounded here once.
 			line.Text = clean(line.Text)
-			if len(line.Text) > 300 {
-				line.Text = line.Text[:300] + "…"
-			}
 			d.nmu.Lock()
 			if len(d.console) < MaxConsole {
 				d.console = append(d.console, line)

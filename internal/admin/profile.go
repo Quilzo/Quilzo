@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Your own account, and only your own.
@@ -299,8 +300,8 @@ func (s *Server) saveProfile(w http.ResponseWriter, r *http.Request, p principal
 	// from the form. A profile screen that accepts "which account am I editing"
 	// as a parameter is a profile screen that edits somebody else's.
 	d := all[p.Name]
-	d.DisplayName = clip(strings.TrimSpace(r.FormValue("display_name")), MaxDetail)
-	d.Contact = clip(strings.TrimSpace(r.FormValue("contact")), MaxDetail)
+	d.DisplayName = plaintext.Clip(strings.TrimSpace(r.FormValue("display_name")), MaxDetail, "")
+	d.Contact = plaintext.Clip(strings.TrimSpace(r.FormValue("contact")), MaxDetail, "")
 	d.UpdatedAt = time.Now().Unix()
 	all[p.Name] = d
 
@@ -410,13 +411,6 @@ func presentedToken(r *http.Request) string {
 		return c.Value
 	}
 	return ""
-}
-
-func clip(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n]
 }
 
 func (s *Server) profileRedirect(w http.ResponseWriter, r *http.Request, msg, errMsg string) {

@@ -412,3 +412,12 @@ func TestTheDemoResearchProjectRunsAndTakesIdeas(t *testing.T) {
 		t.Errorf("%d ideas, %d matches, after data %v", len(p.Ideas), len(p.Matches), p.Ideas[0].AfterData)
 	}
 }
+
+// An idea's hypothesis is listed on one line cut where a character starts,
+// and still comes to its width with the mark.
+func TestAnIdeaLineIsCutBetweenCharacters(t *testing.T) {
+	line := ideaLine(strings.Repeat("a", 98)+"中文\nand more", 100)
+	if line != strings.Repeat("a", 97)+"…" {
+		t.Errorf("%d bytes, ending %q", len(line), line[max(0, len(line)-6):])
+	}
+}

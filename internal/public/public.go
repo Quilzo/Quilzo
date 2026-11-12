@@ -55,6 +55,7 @@ import (
 	"github.com/quilzo/quilzo/internal/marking"
 	"github.com/quilzo/quilzo/internal/media"
 	"github.com/quilzo/quilzo/internal/menu"
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/provenance"
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/search"
@@ -1367,7 +1368,7 @@ func firstColour(configured, fallback string) string {
 func (st *Site) manifest(w http.ResponseWriter, r *http.Request) {
 	doc := map[string]any{
 		"name":             st.Name,
-		"short_name":       shorten(st.Name),
+		"short_name":       plaintext.Clip(st.Name, 12, ""),
 		"description":      st.Description,
 		"start_url":        "/",
 		"scope":            "/",
@@ -1604,13 +1605,6 @@ func (st *Site) llms(w http.ResponseWriter, r *http.Request) {
 		}
 		fmt.Fprintf(w, "- [%s](/%s.md)\n", title, md)
 	}
-}
-
-func shorten(name string) string {
-	if len(name) <= 12 {
-		return name
-	}
-	return name[:12]
 }
 
 func escapeText(s string) string { return textReplacer.Replace(s) }

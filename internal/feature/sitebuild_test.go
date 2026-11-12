@@ -274,3 +274,20 @@ func TestTheSitePromptListsEverySectionKind(t *testing.T) {
 		t.Error("the prompt does not say how to leave a fact out, or which styles there are")
 	}
 }
+
+// A site's title and what it was made from are kept cut where a character
+// starts. Both are the person's own words, and a café's name or a brief in
+// Japanese was kept, and shown, ending in half a character.
+func TestALongNameAndBriefAreCutBetweenCharacters(t *testing.T) {
+	name, brief := strings.Repeat("a", 119), strings.Repeat("a", 599)
+	p, err := BuildSite(SiteBrief{Description: brief + "中文", Name: name + "中文", Kind: SiteKinds()[0].Name}, "dana", buildTime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Title != name {
+		t.Errorf("the title is %d bytes and ends %q", len(p.Title), p.Title[len(p.Title)-3:])
+	}
+	if p.Made == nil || p.Made.From != brief {
+		t.Errorf("made %+v", p.Made)
+	}
+}

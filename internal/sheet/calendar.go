@@ -84,7 +84,7 @@ func FromCalendar(body []byte, opts CalendarOptions) ([]Row, []string, error) {
 			return nil, nil, fmt.Errorf("it has more than %d events: bring it in parts", MaxRows)
 		}
 		f := eventFields(o, title, zone)
-		row := Row{Line: i + 1, Where: fmt.Sprintf("%q on %s", clip(title), f["date"]),
+		row := Row{Line: i + 1, Where: fmt.Sprintf("%q on %s", plaintext.Clip(title, maxQuoted, "…"), f["date"]),
 			ID: occurrenceID(opts.Collection, o), Fields: map[string]any{}}
 		for _, k := range calendarFields {
 			if !declared[k] {

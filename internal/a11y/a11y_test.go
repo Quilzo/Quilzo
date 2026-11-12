@@ -480,3 +480,18 @@ func TestANewTabIsAnnounced(t *testing.T) {
 		t.Error("a named target opens a new window the first time, and was not reported")
 	}
 }
+
+// The markup a finding quotes is cut where a character starts, and still
+// comes to 120 bytes with its mark. It is quoted so the element can be found
+// in the page, by a name written in whatever language the page is in.
+func TestALongExcerptIsCutBetweenCharacters(t *testing.T) {
+	// The cut at 120 bytes falls inside 中.
+	head := `<img src="/` + strings.Repeat("a", 106)
+	r := Check("/", head+"a中文.png\">")
+	if len(r.Findings) != 1 {
+		t.Fatalf("%+v", r.Findings)
+	}
+	if got := r.Findings[0].Excerpt; got != head+"…" {
+		t.Errorf("the excerpt is %d bytes and ends %q", len(got), got[max(0, len(got)-6):])
+	}
+}

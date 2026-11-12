@@ -512,3 +512,15 @@ func TestALongLocationIsCutBetweenCharacters(t *testing.T) {
 		t.Fatalf("ends %q", got[len(got)-3:])
 	}
 }
+
+// A cell quoted in a problem is cut where a character starts, and still
+// comes to 40 bytes with its mark. The quote is how somebody finds the cell
+// to fix it, in whatever script they typed it.
+func TestAQuotedCellIsCutBetweenCharacters(t *testing.T) {
+	kept := strings.Repeat("a", 36)
+	sh := read(t, "name,price\nRye,"+kept+"中文\n", Options{Type: product()})
+	plan := Merge{Collection: "products", Check: check(product())}.Plan(sh.Rows)
+	if s := plan.Summary(); !strings.Contains(s, `price: "`+kept+`…" is not a number`) {
+		t.Errorf("%s", s)
+	}
+}

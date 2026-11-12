@@ -41,6 +41,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Variant is one D-Bus variant: a signature and the value it describes.
@@ -111,7 +113,7 @@ func dialSessionBus() (*conn, error) {
 		}
 	}
 	if path == "" {
-		return nil, fmt.Errorf("the session bus address %q names no socket path", clipStr(addr, 80))
+		return nil, fmt.Errorf("the session bus address %q names no socket path", plaintext.Clip(addr, 80, "…"))
 	}
 	c, err := netDial("unix", path)
 	if err != nil {
@@ -584,11 +586,4 @@ func decodeStrings(body []byte) ([]string, error) {
 	}
 	s, _ := v.(string)
 	return []string{s}, nil
-}
-
-func clipStr(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
 }

@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -488,4 +489,22 @@ func splitArgs(s string) []string {
 		out = append(out, cur.String())
 	}
 	return out
+}
+
+// Why a search failed is recorded cut where a character starts, and still
+// comes to 300 bytes with its mark. It is often a program's own output, in
+// whatever language its messages are written.
+func TestAFailedSearchIsRecordedBetweenCharacters(t *testing.T) {
+	root, _ := identityStore(t)
+	kept := strings.Repeat("a", 297)
+	search := &evolve.Search{Journal: evolve.Journal{Path: filepath.Join(t.TempDir(), "journal.jsonl")}}
+	_ = evolveFinish(root, dana(), t.TempDir(), "run-1", 1, "", ".py", search, evolve.Individual{},
+		errors.New(kept+"a中文"))
+	e := lastEvent(t, root, "evolve.done")
+	if e == nil {
+		t.Fatal("the search was not recorded")
+	}
+	if got := e.Detail["error"]; got != kept+"…" {
+		t.Errorf("%d bytes, ending %q", len(got), got[max(0, len(got)-6):])
+	}
 }

@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Who may use this picture, and until when.
@@ -116,7 +118,7 @@ func (r Rights) Validate(now time.Time) error {
 			"%q is not a licence identifier. Use a short name — an SPDX id, "+
 				"a supplier, \"commissioned\" — and put the terms in the note; "+
 				"a licence field full of prose is one nothing can report on",
-			truncate(lic, 40))
+			plaintext.Clip(lic, 40, "…"))
 	}
 	if r.Until != 0 {
 		until := time.Unix(r.Until, 0).UTC()
@@ -175,11 +177,4 @@ func (r Rights) UntilTime() (time.Time, bool) {
 		return time.Time{}, false
 	}
 	return time.Unix(r.Until, 0).UTC(), true
-}
-
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
 }

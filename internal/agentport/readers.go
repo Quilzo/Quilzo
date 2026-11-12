@@ -16,6 +16,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/apiimport"
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/yamlite"
 )
 
@@ -913,10 +914,8 @@ func readCrewAI(data []byte) (*Imported, error) {
 		// Your personal goal is: {goal}".
 		b.instructions(fmt.Sprintf("You are %s. %s\nYour personal goal is: %s", role, story, goal))
 		b.changed("its role, goal and backstory, put together as CrewAI puts them to its model")
-		b.m.Purpose = oneLine(goal)
-		if len(b.m.Purpose) > 300 {
-			b.m.Purpose = b.m.Purpose[:297] + "..."
-		}
+		b.m.Purpose = plaintext.Clip(oneLine(goal), 300, "...")
+
 		if vars := reCrewVar.FindAllString(role+" "+goal+" "+story, -1); len(vars) > 0 {
 			b.decide("its text has %s, which CrewAI fills in when the crew starts: write the values in, or "+
 				"say them in each goal", names(uniq(vars)))

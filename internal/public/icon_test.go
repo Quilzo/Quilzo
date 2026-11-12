@@ -91,3 +91,21 @@ func TestALayoutCanShowTheIcon(t *testing.T) {
 		t.Error("the layout did not get the icon")
 	}
 }
+
+// The name a phone shows under an installed site's icon is cut where a
+// character starts. It is the site's own name, and a café's or a shop's in
+// Japanese was declared with half a character, which a browser shows as
+// a replacement mark.
+func TestAShortNameIsCutBetweenCharacters(t *testing.T) {
+	st := published(t, map[string]any{"index": map[string]any{"title": "Home"}})
+	st.Name = strings.Repeat("a", 11) + "中文"
+	var doc struct {
+		ShortName string `json:"short_name"`
+	}
+	if err := json.Unmarshal(get(st, "/manifest.webmanifest", nil).Body.Bytes(), &doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc.ShortName != strings.Repeat("a", 11) {
+		t.Errorf("short_name %q", doc.ShortName)
+	}
+}

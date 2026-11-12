@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/event"
@@ -183,5 +184,20 @@ func TestAWebhooksAddressStaysSealed(t *testing.T) {
 	t.Setenv("QUILZO_SECRET_PLAIN", "http://hooks.example.com/x")
 	if err := hookNotice(root, "plain", "x"); err == nil {
 		t.Fatal("posted over plain http")
+	}
+}
+
+// A notice's subject is cut where a character starts, and still comes to 120
+// bytes with its mark. It names the form or the chatbot as its owner named
+// it, and a mail client shows a subject ending in half a character as a
+// replacement mark, or refuses the header.
+func TestALongSubjectIsCutBetweenCharacters(t *testing.T) {
+	// The lengths take the cut across every byte of the first characters.
+	for n := 66; n < 78; n++ {
+		events := []event.Event{{Type: event.FormSubmitted, Subject: strings.Repeat("a", n) + strings.Repeat("中", 30)}}
+		subject, _ := staffNotice(events, 0, "")
+		if !utf8.ValidString(subject) || len(subject) > 120 || !strings.HasSuffix(subject, "...") {
+			t.Errorf("%d bytes, ending %q", len(subject), subject[max(0, len(subject)-6):])
+		}
 	}
 }

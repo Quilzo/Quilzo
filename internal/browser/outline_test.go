@@ -5,11 +5,13 @@ package browser
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/cdp"
 )
@@ -74,5 +76,22 @@ func TestALongPageIsCutAndSaysSo(t *testing.T) {
 	o := Build(append([]cdp.AXNode{root}, nodes...))
 	if len(o.Text) > MaxOutline+200 || o.Omitted == 0 || !strings.Contains(o.Text, "left out") {
 		t.Errorf("%d bytes, %d omitted", len(o.Text), o.Omitted)
+	}
+}
+
+// A name in the outline is cut where a character starts, and still comes to
+// 200 bytes with its mark. Names are the page's own words, in whatever
+// language it is in, and an agent acts on a control by what it is called.
+func TestALongNameIsCutBetweenCharacters(t *testing.T) {
+	name, err := json.Marshal(strings.Repeat("a", 198) + "中文")
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := cdp.AXNode{NodeID: "1", Role: &cdp.AXValue{Value: []byte(`"RootWebArea"`)}, ChildIDs: []string{"2"}}
+	text := cdp.AXNode{NodeID: "2", ParentID: "1", Role: &cdp.AXValue{Value: []byte(`"StaticText"`)},
+		Name: &cdp.AXValue{Value: name}}
+	o := Build([]cdp.AXNode{root, text})
+	if !utf8.ValidString(o.Text) || !strings.Contains(o.Text, strings.Repeat("a", 197)+"…") {
+		t.Errorf("%q", o.Text)
 	}
 }

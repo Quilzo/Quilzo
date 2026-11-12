@@ -16,6 +16,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/event"
 	"github.com/quilzo/quilzo/internal/fetch"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Telling staff what visitors are waiting on.
@@ -130,10 +131,7 @@ func staffNotice(events []event.Event, held int, admin string) (subject, body st
 		lines = append(lines, "", "Open the admin: "+admin)
 	}
 	lines = append(lines, "", "Sent by Quilzo. It says which chatbot or form, never who or what they wrote.")
-	subject = "Quilzo: " + onOneLine(lines[0])
-	if len(subject) > 120 {
-		subject = subject[:117] + "..."
-	}
+	subject = plaintext.Clip("Quilzo: "+onOneLine(lines[0]), 120, "...")
 	return subject, strings.Join(lines, "\n")
 }
 

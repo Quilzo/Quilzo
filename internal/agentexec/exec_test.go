@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/site"
@@ -204,11 +205,30 @@ func TestTheDefaultRefIsLive(t *testing.T) {
 	}
 }
 
-// Output is bounded.
+// What a read returns is bounded, with the note that says it was cut inside
+// the bound, and cut where a character starts. A page in Chinese reached the
+// model longer than MaxBody and ending in half a character.
 func TestAPageIsTruncated(t *testing.T) {
-	if got := truncate(strings.Repeat("x", MaxBody+500)); len(got) <= MaxBody {
-		t.Errorf("truncate produced %d bytes", len(got))
-	} else if !strings.Contains(got, "truncated") {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	long := map[string]any{"index": map[string]any{"title": "Home", "body": strings.Repeat("中", MaxBody)}}
+	if _, err := site.SaveDraft(st, long, "first", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Publish(st, ""); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Reader{Store: st}.Perform(liveSession(t))(context.Background(), agent.Action{
+		Op: "read_page", Input: map[string]any{"page": "index"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !utf8.ValidString(got) || len(got) > MaxBody {
+		t.Errorf("the read is %d bytes, ending %q", len(got), got[max(0, len(got)-40):])
+	}
+	if !strings.Contains(got, "truncated") {
 		t.Error("truncation is silent, so the model cannot tell it was cut")
 	}
 }

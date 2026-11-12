@@ -766,12 +766,10 @@ func stripFence(s string) string {
 	return strings.TrimSpace(t)
 }
 
+// clamp is s without the space around it, cut to at most n bytes where a
+// character starts.
 func clamp(s string, n int) string {
-	s = strings.TrimSpace(s)
-	if len(s) <= n {
-		return s
-	}
-	return s[:n]
+	return plaintext.Clip(strings.TrimSpace(s), n, "")
 }
 
 func sorted(m map[string]bool) []string {

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // The workspace's actions, performed for a run. Each is one step: the
@@ -155,13 +156,10 @@ func argv(a agent.Action) (string, []string, error) {
 // MaxCommand bounds a command's program and arguments together.
 const MaxCommand = 4096
 
-// Line is a command as a person reads it, cut for a list.
+// Line is a command as a person reads it, cut for a list to at most 300
+// bytes with the mark that says it was cut.
 func Line(program string, args []string) string {
-	s := FullLine(program, args)
-	if len(s) > 300 {
-		s = s[:300] + "…"
-	}
-	return s
+	return plaintext.Clip(FullLine(program, args), 300, "…")
 }
 
 // FullLine is a command as a person reads it, whole: what they are asked

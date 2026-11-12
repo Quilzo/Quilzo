@@ -433,7 +433,7 @@ func researchList(root string, caller *Caller) error {
 			plan = "plan registered " + p.Plan.Registered.Format("2 Jan 2006")
 		}
 		fmt.Printf("%-24s %s; %d claims, %d sources\n  %s\n", p.Name, plan, len(p.Claims), len(p.Sources),
-			clampString(p.Question, 100))
+			plaintext.Clip(p.Question, 100, "…"))
 	}
 	return nil
 }
@@ -612,7 +612,7 @@ func researchSetPlan(root, name, text, why string, caller *Caller) (*research.Am
 	}
 	if amended != nil {
 		researchRecord(root, caller, "research.amended", name, map[string]string{"from": amended.From,
-			"to": amended.To, "why": clampString(amended.Why, 300), "after_data": strconv.FormatBool(amended.AfterData)})
+			"to": amended.To, "why": plaintext.Clip(amended.Why, 300, "…"), "after_data": strconv.FormatBool(amended.AfterData)})
 	} else {
 		researchRecord(root, caller, "research.planned", name, map[string]string{"digest": research.Digest(p.Plan.Text)})
 	}
@@ -967,7 +967,7 @@ func researchClaim(root, name, runID string, values []string, caller *Caller) ([
 		return nil, err
 	}
 	researchRecord(root, caller, "research.claimed", name, map[string]string{"run": runID,
-		"values": clampString(strings.Join(values, " "), 300)})
+		"values": plaintext.Clip(strings.Join(values, " "), 300, "…")})
 	return out, nil
 }
 

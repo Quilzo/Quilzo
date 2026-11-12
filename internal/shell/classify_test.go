@@ -129,3 +129,16 @@ func TestEachCommandIsAKind(t *testing.T) {
 		}
 	}
 }
+
+// A command as a list shows it is cut where a character starts, and still
+// comes to 300 bytes with its mark. Arguments are a person's words as often
+// as they are flags: a commit message, a file named in their language.
+func TestALongCommandLineIsCutBetweenCharacters(t *testing.T) {
+	at := strings.Index(FullLine("git", []string{"中"}), "中")
+	// The cut at 297 bytes falls on the second byte of 中.
+	arg := strings.Repeat("a", 296-at) + "中文"
+	full := FullLine("git", []string{arg})
+	if got, want := Line("git", []string{arg}), full[:296]+"…"; got != want {
+		t.Errorf("the line is %d bytes and ends %q", len(got), got[len(got)-5:])
+	}
+}

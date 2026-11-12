@@ -44,6 +44,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Provider is an OAuth provider somebody may connect an account at.
@@ -381,6 +383,8 @@ func Revoke(ctx context.Context, post Poster, p Provider, secret, tok string) er
 	return err
 }
 
+// clip is s with its control characters made spaces, cut to at most n bytes
+// where a character starts.
 func clip(s string, n int) string {
 	s = strings.Map(func(r rune) rune {
 		if r < 0x20 || r == 0x7f {
@@ -388,8 +392,5 @@ func clip(s string, n int) string {
 		}
 		return r
 	}, s)
-	if len(s) > n {
-		return s[:n]
-	}
-	return s
+	return plaintext.Clip(s, n, "")
 }

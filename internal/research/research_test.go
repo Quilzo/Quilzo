@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/assistant"
 )
@@ -377,6 +378,31 @@ func TestARegisteredPlanChecksOnlyAsThePlanThatWasSigned(t *testing.T) {
 		tamper(&p)
 		if err := CheckPlan(p, verify); err == nil {
 			t.Errorf("%s changed and the plan still checks", name)
+		}
+	}
+}
+
+// An abstract is cut at the last space before its bound when there is one
+// late enough, and where a character starts when there is not, and comes to
+// at most 8,000 bytes with its mark either way. Chinese and Japanese are
+// written without spaces, so an abstract in either was cut at the byte, and
+// the work was kept quoting itself with half a character.
+func TestALongAbstractIsCutBetweenCharacters(t *testing.T) {
+	for _, c := range []struct{ name, abstract, ends string }{
+		{"without spaces", strings.Repeat("中", 3000), "中…"},
+		{"with spaces", strings.Repeat("words ", 2000), "words…"},
+	} {
+		ix := Index{Get: func(ctx context.Context, u string) ([]byte, int, error) {
+			return []byte(`<feed xmlns="http://www.w3.org/2005/Atom"><entry><id>http://arxiv.org/abs/2401.01234v1</id>
+				<title>A long abstract</title><summary>` + c.abstract + `</summary>
+				<published>2024-01-02T00:00:00Z</published><author><name>Ana Diaz</name></author></entry></feed>`), 200, nil
+		}}
+		src, err := ix.Resolve(context.Background(), Identifier{"arxiv", "2401.01234"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if a := src.Abstract; !utf8.ValidString(a) || len(a) > 8000 || !strings.HasSuffix(a, c.ends) {
+			t.Errorf("%s: %d bytes, ending %q", c.name, len(a), a[max(0, len(a)-8):])
 		}
 	}
 }

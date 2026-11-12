@@ -11,6 +11,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/mcp"
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/research"
 )
 
@@ -71,7 +72,7 @@ func registerResearchOps(srv *mcp.Server, root string, caller *Caller) {
 			runs = runs[:20]
 		}
 		for i := range runs {
-			runs[i].Log = clampString(runs[i].Log, 2000)
+			runs[i].Log = plaintext.Clip(runs[i].Log, 2000, "…")
 		}
 		type finding struct {
 			Problem bool   `json:"problem"`
@@ -125,7 +126,7 @@ func registerResearchOps(srv *mcp.Server, root string, caller *Caller) {
 		}
 		out := []idea{}
 		for _, s := range proj.Standings(runs) {
-			out = append(out, idea{s.ID, s.Title, clampString(s.Hypothesis, 600), clampString(s.Critique, 400),
+			out = append(out, idea{s.ID, s.Title, plaintext.Clip(s.Hypothesis, 600, "…"), plaintext.Clip(s.Critique, 400, "…"),
 				s.Rating, s.Played, s.Ranked, s.AfterData, s.Held, s.Outcome, s.Verdict})
 		}
 		return asJSON(map[string]any{"project": proj.Name, "matches": len(proj.Matches), "ideas": out})
@@ -193,7 +194,7 @@ func registerResearchOps(srv *mcp.Server, root string, caller *Caller) {
 		if err != nil {
 			return refuse(err)
 		}
-		r.Log = clampString(r.Log, 4000)
+		r.Log = plaintext.Clip(r.Log, 4000, "…")
 		return asJSON(r)
 	})
 

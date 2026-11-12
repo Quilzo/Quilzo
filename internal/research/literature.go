@@ -17,6 +17,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Literature from open indexes.
@@ -379,15 +381,19 @@ func cleanText(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }
 
+// limit is s cut to at most n bytes with the mark that says it was cut: at
+// the last space, if there is one in the second half of what fits, and
+// otherwise where a character starts.
 func limit(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
-	cut := strings.LastIndexFunc(s[:n], unicode.IsSpace)
-	if cut < n/2 {
-		cut = n
+	const mark = "…"
+	kept := plaintext.Clip(s, n-len(mark), "")
+	if cut := strings.LastIndexFunc(kept, unicode.IsSpace); cut >= n/2 {
+		kept = kept[:cut]
 	}
-	return s[:cut] + "…"
+	return kept + mark
 }
 
 // SuggestKey is a key for a work: its first author's family name and its

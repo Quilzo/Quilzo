@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/schema"
 )
 
@@ -22,25 +23,29 @@ func value(f schema.Field, cell, order string, decimalComma bool) (any, string) 
 	case schema.Number:
 		n, ok := number(s, decimalComma)
 		if !ok {
-			return nil, fmt.Sprintf("%q is not a number", clip(s))
+			return nil, fmt.Sprintf("%q is not a number", plaintext.Clip(s, maxQuoted, "…"))
+
 		}
 		return n, ""
 	case schema.Boolean:
 		b, ok := yesNo(s)
 		if !ok {
-			return nil, fmt.Sprintf("%q is not yes or no", clip(s))
+			return nil, fmt.Sprintf("%q is not yes or no", plaintext.Clip(s, maxQuoted, "…"))
+
 		}
 		return b, ""
 	case schema.Date:
 		d, ok := date(s, order)
 		if !ok {
-			return nil, fmt.Sprintf("%q is not a date", clip(s))
+			return nil, fmt.Sprintf("%q is not a date", plaintext.Clip(s, maxQuoted, "…"))
+
 		}
 		return d, ""
 	case schema.Time:
 		t, ok := clock(s)
 		if !ok {
-			return nil, fmt.Sprintf("%q is not a time of day", clip(s))
+			return nil, fmt.Sprintf("%q is not a time of day", plaintext.Clip(s, maxQuoted, "…"))
+
 		}
 		return t, ""
 	case schema.List:
@@ -107,12 +112,9 @@ func plainNumber(s string) bool {
 	return true
 }
 
-func clip(s string) string {
-	if len(s) > 40 {
-		return s[:37] + "…"
-	}
-	return s
-}
+// maxQuoted is how much of a cell a problem quotes, in bytes with its mark:
+// enough to find the cell by, not the whole of it again.
+const maxQuoted = 40
 
 func reSlug(s string) bool {
 	if s == "" || s[0] == '-' || s[len(s)-1] == '-' || strings.Contains(s, "--") {

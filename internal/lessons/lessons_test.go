@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/agent"
 )
@@ -110,5 +111,16 @@ func TestAReflectionIsReadAsALesson(t *testing.T) {
 	}
 	if _, _, _, err := ReadReflection(`{"when": "", "do": "", "kind": "other"}`); err == nil {
 		t.Error("nothing to learn was read as a lesson")
+	}
+}
+
+// Why a step was refused is quoted cut where a character starts. It is the
+// gate's words or a provider's, in whatever language, and a model reflecting
+// on the run reads it to say what to do differently.
+func TestWhyAStepWentWrongIsCutBetweenCharacters(t *testing.T) {
+	kept := strings.Repeat("a", 199)
+	tr := agent.Trace{Complete: true, Steps: []agent.Step{{Action: agent.Action{Op: "write_page"}, Why: kept + "中文"}}}
+	if why := WentWrong(tr); !utf8.ValidString(why) || !strings.Contains(why, "step 1 was refused: "+kept) {
+		t.Errorf("%q", why[max(0, len(why)-12):])
 	}
 }

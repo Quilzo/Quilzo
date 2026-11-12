@@ -14,6 +14,7 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/dpop"
 	"github.com/quilzo/quilzo/internal/federate"
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/throttle"
 )
 
@@ -234,7 +235,7 @@ func (s *Server) handleTokenExchange(w http.ResponseWriter, r *http.Request) {
 		if run == "<nil>" {
 			run = fmt.Sprint(claims["jti"])
 		}
-		secret, tok, err = toks.IssueFederated("trust:"+t.Name+" run "+clipText(run, 40), t.Principal, role, resource,
+		secret, tok, err = toks.IssueFederated("trust:"+t.Name+" run "+plaintext.Clip(run, 40, "…"), t.Principal, role, resource,
 			auth.Scope{ReadOnly: t.ReadOnly}, t.Life(), thumb, now)
 		if err != nil {
 			failed("invalid_grant", err)
@@ -243,7 +244,7 @@ func (s *Server) handleTokenExchange(w http.ResponseWriter, r *http.Request) {
 		detail["how"], detail["trust"] = "federated", t.Name
 		for _, k := range []string{"repository", "ref", "environment", "project_path", "run_id"} {
 			if v, ok := claims[k].(string); ok {
-				detail[k] = clipText(v, 120)
+				detail[k] = plaintext.Clip(v, 120, "…")
 			}
 		}
 	default:
