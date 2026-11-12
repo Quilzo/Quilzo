@@ -319,6 +319,7 @@ func (st *Site) answer(w http.ResponseWriter, r *http.Request,
 		said = append(said, view.Previous+" "+view.Question)
 	}
 	if LooksLikeInjection(view.Question) || LooksLikeInjection(said[len(said)-1]) {
+		view.Attempt = true
 		st.signal(ChatbotInjection, a.Name, r)
 	} else if g := st.Assistants.Guardrail; g != nil {
 		// A second look, counted the same way: a flagged question is a
@@ -328,6 +329,7 @@ func (st *Site) answer(w http.ResponseWriter, r *http.Request,
 		gcancel()
 		for _, f := range flagged {
 			if f {
+				view.Attempt = true
 				st.signal(ChatbotInjection, a.Name, r)
 				break
 			}
@@ -541,7 +543,12 @@ type askView struct {
 	Greeting  string
 	Question  string
 	Previous  string
-	Embedded  bool
+	// Attempt is a question noticed as an attempt on the chatbot. The page
+	// does not carry it into the next one as the question before: carried,
+	// it was screened again beside an honest follow-up, and one attempt was
+	// counted twice.
+	Attempt  bool
+	Embedded bool
 	// Panel is the conversation opened beside a page of this site by its
 	// launcher: framed by this site only, and its links go to the page.
 	Panel bool
@@ -900,7 +907,7 @@ var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
 </details>
 {{end}}
 <form method="post" action="/ask/{{.V.Assistant.Name}}" class="qz-ask-form"{{if and .Tools (not .V.Embedded)}} toolname="ask-{{.V.Assistant.Name}}" tooldescription="{{.V.Assistant.Title}}: answers a question from this site's published pages only, and every sentence links to the page it came from." toolautosubmit{{end}}>
-  {{if .V.Answer}}<input type="hidden" name="prev" value="{{.V.Question}}">{{end}}
+  {{if and .V.Answer (not .V.Attempt)}}<input type="hidden" name="prev" value="{{.V.Question}}">{{end}}
   {{if .V.Visitor}}<input type="hidden" name="v" value="{{.V.Visitor}}">{{end}}
   {{if .V.Embedded}}<input type="hidden" name="embed" value="{{.V.EmbedValue}}">{{end}}
   <label for="q">{{if .V.Answer}}Ask another question{{else}}Your question{{end}}</label>
