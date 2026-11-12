@@ -249,3 +249,83 @@ func TestTheToolKnowsTheSitesOwnOriginWithItsPortWritten(t *testing.T) {
 		}
 	}
 }
+
+// The site's /mcp takes a request by the transport's rules, as the admin's
+// does, and answers one it does not take in JSON-RPC.
+//
+// # What this found
+//
+// Only the revision was decided by the admin's rules. A GET looking for a
+// stream was given the site's 404 page, which a client reads as no server
+// here, where the transport answers 405; text/plain, jsonrpc 1.0 or none,
+// an object for an id and data after the message were all answered as if
+// they were right; and a batch, a body over the bound or one that was not
+// JSON was a text/plain 400 a client cannot read as an answer. A page the
+// site has at /mcp is still that page for a browser.
+func TestTheSitesMCPTakesARequestByTheTransportsRules(t *testing.T) {
+	st := nlwebSite(t)
+	type answer struct {
+		Error *struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+		Result map[string]any `json:"result"`
+	}
+	send := func(method, ctype, body string, headers map[string]string) (*httptest.ResponseRecorder, answer) {
+		t.Helper()
+		r := httptest.NewRequest(method, "/mcp", strings.NewReader(body))
+		if ctype != "" {
+			r.Header.Set("Content-Type", ctype)
+		}
+		for k, v := range headers {
+			r.Header.Set(k, v)
+		}
+		w := httptest.NewRecorder()
+		st.Handler().ServeHTTP(w, r)
+		var a answer
+		_ = json.Unmarshal(w.Body.Bytes(), &a)
+		return w, a
+	}
+	list := `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`
+
+	w, _ := send(http.MethodGet, "", "", map[string]string{"Accept": "text/event-stream"})
+	if w.Code != http.StatusMethodNotAllowed || w.Header().Get("Allow") != "POST" {
+		t.Errorf("a GET for a stream: %d %q", w.Code, w.Header().Get("Allow"))
+	}
+	if w, _ := send(http.MethodPost, "text/plain", list, nil); w.Code != http.StatusUnsupportedMediaType {
+		t.Errorf("text/plain: %d", w.Code)
+	}
+	for name, tc := range map[string]struct {
+		body   string
+		status int
+		code   int
+	}{
+		"jsonrpc 1.0":   {strings.Replace(list, `"2.0"`, `"1.0"`, 1), http.StatusBadRequest, mcp.CodeInvalidRequest},
+		"no jsonrpc":    {`{"id":1,"method":"tools/list"}`, http.StatusBadRequest, mcp.CodeInvalidRequest},
+		"object id":     {strings.Replace(list, `"id":1`, `"id":{"x":1}`, 1), http.StatusBadRequest, mcp.CodeInvalidRequest},
+		"trailing data": {list + `{"more":true}`, http.StatusBadRequest, mcp.CodeParse},
+		"batch":         {"[" + list + "]", http.StatusBadRequest, mcp.CodeInvalidRequest},
+		"not JSON":      {"{", http.StatusBadRequest, mcp.CodeParse},
+		"40 KB":         {`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"pad":"` + strings.Repeat("a", 40<<10) + `"}}`, http.StatusRequestEntityTooLarge, mcp.CodeInvalidRequest},
+	} {
+		w, a := send(http.MethodPost, "application/json", tc.body, nil)
+		if w.Code != tc.status || w.Header().Get("Content-Type") != "application/json" || a.Error == nil || a.Error.Code != tc.code {
+			t.Errorf("%s: %d %q %s", name, w.Code, w.Header().Get("Content-Type"), w.Body.String())
+		}
+		if name == "40 KB" && (a.Error == nil || !strings.Contains(a.Error.Message, "at most 32768 bytes")) {
+			t.Errorf("%s does not say the limit: %s", name, w.Body.String())
+		}
+	}
+	// And a request as it should be is still answered.
+	if w, a := send(http.MethodPost, "application/json", list, nil); w.Code != 200 || a.Result["tools"] == nil {
+		t.Errorf("a right request: %d %s", w.Code, w.Body.String())
+	}
+
+	// A page called mcp is the site's, for anybody reading it.
+	pages := map[string]any{"mcp": map[string]any{"title": "What MCP is"}}
+	st = published(t, pages)
+	st.Search = search.Build(st.Store.GetRef(site.RefLive), pages)
+	if w, _ := send(http.MethodGet, "", "", map[string]string{"Accept": "text/html"}); w.Code != 200 || !strings.Contains(w.Body.String(), "What MCP is") {
+		t.Errorf("the page at /mcp: %d %s", w.Code, w.Body.String())
+	}
+}

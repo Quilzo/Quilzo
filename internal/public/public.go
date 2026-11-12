@@ -385,7 +385,10 @@ func (st *Site) Handler() http.Handler {
 	// nlweb.go. Exact patterns, so they sit beside the chatbots at /ask/.
 	mux.HandleFunc("GET /ask", st.nlwebAsk)
 	mux.HandleFunc("POST /ask", st.nlwebAsk)
-	mux.HandleFunc("POST /mcp", st.nlwebMCP)
+	// Every method, so a GET looking for a stream is told there is none
+	// rather than given a page; a page the site has at /mcp is still
+	// served to whoever asks for a page (nlwebMCP).
+	mux.HandleFunc("/mcp", st.nlwebMCP)
 	mux.HandleFunc("/ask.css", st.askStylesheet)
 	mux.HandleFunc("/agent.css", st.agentStylesheet)
 	mux.HandleFunc("/ask-live.js", st.askLiveScript)

@@ -223,7 +223,24 @@ func (st *Site) nlwebAsk(w http.ResponseWriter, r *http.Request) {
 // marked final, and any other with a 400 that names those it speaks. Not
 // that endpoint itself, because it is for credentials and this is for
 // anybody; the tool and its answers are as they were.
+//
+// # A request is taken by the transport's rules too
+//
+// Only the revision was the admin's rules here. A GET looking for a stream
+// was given the site's 404 page, which a client reads as no server here;
+// text/plain, jsonrpc 1.0 or none, an object for an id and data after the
+// message were answered as if they were right; and a batch, a body over
+// the bound or one that was not JSON was a text/plain 400 that no client
+// can read as an answer. So the request is read by mcp.Accepts and
+// mcp.ReadMessage, as the admin's /mcp reads it, and refused in JSON-RPC.
+// A browser asking for a page the site has at /mcp is still given that
+// page: only a GET that asks for a stream, as the transport has a client
+// ask, is told there is none.
 func (st *Site) nlwebMCP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost && (st.searchIndex() == nil || !asksForStream(r)) {
+		st.page(w, r)
+		return
+	}
 	if st.searchIndex() == nil {
 		http.NotFound(w, r)
 		return
@@ -237,9 +254,11 @@ func (st *Site) nlwebMCP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "this origin may not call the tool", http.StatusForbidden)
 		return
 	}
-	var req mcp.Request
-	if err := json.NewDecoder(io.LimitReader(r.Body, 32<<10)).Decode(&req); err != nil {
-		http.Error(w, "not JSON-RPC", http.StatusBadRequest)
+	if !mcp.Accepts(w, r) {
+		return
+	}
+	req, ok := mcp.ReadMessage(w, r, nlwebMCPBody)
+	if !ok {
 		return
 	}
 	reply := func(status int, result any, rpcErr *mcp.Error) {
@@ -353,4 +372,25 @@ func (st *Site) nlwebMCP(w http.ResponseWriter, r *http.Request) {
 	default:
 		notFound()
 	}
+}
+
+// nlwebMCPBody bounds a request to the site's /mcp: a question and its
+// mode, which is a few hundred bytes, with room for a client's _meta.
+const nlwebMCPBody = 32 << 10
+
+// asksForStream reports a GET that asks for an event stream, as a client of
+// the Streamable HTTP transport must when it looks for one.
+func asksForStream(r *http.Request) bool {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return false
+	}
+	for _, v := range r.Header.Values("Accept") {
+		for _, part := range strings.Split(v, ",") {
+			media, _, _ := strings.Cut(part, ";")
+			if strings.EqualFold(strings.TrimSpace(media), "text/event-stream") {
+				return true
+			}
+		}
+	}
+	return false
 }
