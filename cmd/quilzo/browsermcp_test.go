@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
+	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/cdp"
 )
@@ -261,4 +262,37 @@ func heldID(t *testing.T, err error) string {
 		t.Fatalf("no held id in %q", err)
 	}
 	return m[1]
+}
+
+// What a person's own token asks of the governed browser is their client's,
+// recorded as a call at the agent interface is: kind ai, for the person. It
+// was recorded as the person acting by hand, which the agent watch, reading
+// what models do, never sees.
+func TestABrowserCallWithAPersonsTokenIsTheirClients(t *testing.T) {
+	// Refused before any browser starts: lee holds nothing here.
+	root, _ := identityStore(t)
+	g := browserGrant{Name: "small", Read: []string{"shop.example.com"}}
+	m, err := g.manifest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok := auth.Token{ID: "tok_lee", Principal: "lee", Role: auth.RoleAuthor}
+	if _, err := browserGrantCall(context.Background(), root, g, m, "small", "browser_open",
+		map[string]any{"url": "https://shop.example.com/"}, remoteCaller(tok), tok, time.Now()); err == nil {
+		t.Fatal("somebody with no access here opened a page")
+	}
+	evs, _ := audit.Read(auditPath(root))
+	n := 0
+	for _, e := range evs {
+		if e.Action != "mcp.browser" {
+			continue
+		}
+		n++
+		if e.Kind != audit.KindAI || e.Model != "mcp-client" || e.Detail["credential"] != "tok_lee" {
+			t.Errorf("%+v", e)
+		}
+	}
+	if n != 1 {
+		t.Fatalf("%d browser records", n)
+	}
 }

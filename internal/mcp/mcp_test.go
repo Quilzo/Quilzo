@@ -150,6 +150,22 @@ func TestFindDescribesOnlyWhatWasAskedFor(t *testing.T) {
 	}
 }
 
+// An operation asked in an area of the admin says so: "needs role:
+// reader" alone told an agent that any reader may, where the role is asked
+// of the compliance area, which a reader of the site is not.
+func TestFindNamesTheAreaARoleIsAskedIn(t *testing.T) {
+	s := testServer()
+	s.Register(Operation{
+		Name: "site_report", Summary: "what the law asks of the site", NeedsRole: "reader",
+		Area: "/@compliance", Keywords: []string{"compliance"},
+	}, func(a map[string]any) (any, error) { return "clear", nil })
+	out := text(t, call(t, s, "tools/call", callParams{
+		Name: "quilzo_find", Arguments: map[string]any{"query": "compliance"}}))
+	if !strings.Contains(out, "needs role: reader on /@compliance") {
+		t.Errorf("the area is not named: %q", out)
+	}
+}
+
 func TestFindWithNoMatchReturnsTheMenu(t *testing.T) {
 	s := testServer()
 	out := text(t, call(t, s, "tools/call", callParams{

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/checked"
 	"github.com/quilzo/quilzo/internal/site"
 )
@@ -25,7 +26,7 @@ import (
 
 func cmdChecked(root string, args []string) error {
 	if len(args) == 0 {
-		args = []string{"list"}
+		args = []string{bareRuns["checked"]}
 	}
 	switch args[0] {
 	case "set":
@@ -160,6 +161,22 @@ func checkedList(root string, args []string, dueOnly bool) error {
 	}
 	pages, hashes := draftPageIDs(root)
 	rows := checked.Survey(pages, hashes, records, reviewEvery(root), time.Now())
+
+	// Only the pages the caller may read, as list_checked answers over MCP.
+	// A reader may run this (privilege.go), and it listed every page in the
+	// draft, so a reader denied a page was told its name here though every
+	// list of pages they are shown leaves it out.
+	may, err := pageCheck(root, resolveCaller(root, ""), auth.ActView)
+	if err != nil {
+		return err
+	}
+	readable := rows[:0]
+	for _, r := range rows {
+		if may(r.Page) {
+			readable = append(readable, r)
+		}
+	}
+	rows = readable
 
 	if dueOnly {
 		kept := rows[:0]

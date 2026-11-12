@@ -344,6 +344,11 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 		if err != nil {
 			return nil, err
 		}
+		// The pages the caller may read, as list_pages has them: every page
+		// each blank is on was named, a page a deny kept from them included.
+		if pages, err = visiblePages(root, caller, pages); err != nil {
+			return nil, err
+		}
 		whats, on := siteBlanks(pages, known)
 		b, err := json.Marshal(map[string]any{"blanks": whats, "on": on})
 		return string(b), err
