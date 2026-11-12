@@ -380,10 +380,13 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 		if err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
+		// By the client that wrote it, the app when it was one, as a page's
+		// write is (interfaceClient).
+		who, model := interfaceClient(caller.Name, caller.Client)
 		record(root, audit.Record{
 			Action: "mcp.write_record", Resource: "/" + name,
-			Outcome: audit.Success, Principal: "mcp-client", Kind: audit.KindAI,
-			Model: "mcp-client", Verified: false,
+			Outcome: audit.Success, Principal: who, Kind: audit.KindAI,
+			Model: model, Verified: false,
 			Detail: map[string]string{"on_behalf_of": caller.Name, "id": out.ID},
 		})
 		emitEvent(root, event.Event{Type: event.RecordChanged, Subject: name, Kind: string(audit.KindAI)}, nil)

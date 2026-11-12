@@ -183,10 +183,13 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 		if err := assistant.Save(path, set); err != nil {
 			return nil, err
 		}
+		// By the client that declared it, the app when it was one, as a
+		// page's write is (interfaceClient).
+		who, model := interfaceClient(caller.Name, caller.Client)
 		if err := recordE(root, audit.Record{
 			Action: "assistant.declare", Resource: "/ask/" + name,
-			Outcome: audit.Success, Principal: "mcp-client", Kind: audit.KindAI,
-			Model: "mcp-client", Detail: map[string]string{
+			Outcome: audit.Success, Principal: who, Kind: audit.KindAI,
+			Model: model, Detail: map[string]string{
 				"assistant": name, "on_behalf_of": caller.Name},
 		}); err != nil {
 			return nil, err

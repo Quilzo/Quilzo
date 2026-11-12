@@ -212,3 +212,44 @@ func TestTheStdioInterfaceRecordsEveryCall(t *testing.T) {
 		t.Errorf("recorded as %+v", read)
 	}
 }
+
+// A page an app connected through OAuth writes is marked, and recorded, as
+// the app's. Every page written over MCP was marked as by mcp-client, and
+// its write recorded so, whichever app wrote it: with two apps connected for
+// one person the AI-content mark could not say which, and only the
+// neighbouring call record named the app.
+func TestAPageAnAppWritesIsMarkedAsTheApps(t *testing.T) {
+	root, _ := identityStore(t)
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok := appToken("dana", auth.RoleAuthor)
+	srv := buildMCP(root, s, remoteCaller(tok), "templates")
+	params, _ := json.Marshal(map[string]any{"name": "quilzo_write", "arguments": map[string]any{
+		"operation": "write_page", "arguments": map[string]any{"page": "oauth-page", "fields": map[string]any{"title": "From the app"}}}})
+	if resp := srv.Handle(mcp.Request{JSONRPC: "2.0", ID: json.RawMessage("1"), Method: "tools/call", Params: params}); resp.Error != nil {
+		t.Fatal(resp.Error.Message)
+	}
+	if r := provenanceOf(t, root, "oauth-page"); r.Model != tok.Client {
+		t.Errorf("the page is marked as written by %q", r.Model)
+	}
+	events, _ := audit.Read(auditPath(root))
+	var wrote *audit.Event
+	for i := range events {
+		if events[i].Action == "mcp.write_page" {
+			wrote = &events[i]
+		}
+	}
+	if wrote == nil || wrote.Model != tok.Client || wrote.Kind != audit.KindAI {
+		t.Errorf("the write was recorded as %+v", wrote)
+	}
+	// What the app's own acts are recorded as decided by is the app.
+	if c := remoteCaller(tok); c.Model != tok.Client || c.Client != tok.Client {
+		t.Errorf("%+v", c)
+	}
+	// A person's own token is still their client's, which says no model.
+	if c := remoteCaller(auth.Token{Principal: "dana"}); c.Model != "mcp-client" || c.Client != "" {
+		t.Errorf("%+v", c)
+	}
+}

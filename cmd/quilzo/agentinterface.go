@@ -312,11 +312,13 @@ func noteCredential(d map[string]string, tok auth.Token) {
 
 // remoteCaller is the caller a token at the agent interface stands for:
 // the person it acts for, with the token's own limits, recorded as a model
-// acting, because that is what calls an interface built for agents.
+// acting, because that is what calls an interface built for agents. The
+// model is the app, when the token was given to one (interfaceClient).
 func remoteCaller(tok auth.Token) *Caller {
 	life, bound := tok.Assurance()
+	_, model := interfaceClient(tok.Principal, tok.Client)
 	return &Caller{Name: tok.Principal, Role: tok.Role, Scope: tok.Resource, Limits: tok.Scope,
-		Kind: audit.KindAI, Model: "mcp-client", Verified: true, Remote: true, Grant: tok.Grant,
+		Kind: audit.KindAI, Model: model, Client: tok.Client, Verified: true, Remote: true, Grant: tok.Grant,
 		Bound: bound, Life: life}
 }
 

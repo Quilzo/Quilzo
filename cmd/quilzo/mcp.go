@@ -425,8 +425,15 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		// a page is exactly what Article 50 is about — leaving this to the
 		// caller would mean the one interface built for agents is the one that
 		// forgets.
+		//
+		// By the client that wrote it (interfaceClient): the app, when an app
+		// was given the token. Every page was marked as written by
+		// mcp-client, so with two apps connected for one person the mark
+		// could not say which wrote it, and only the call's own record named
+		// the app.
+		who, model := interfaceClient(caller.Name, caller.Client)
 		if err := markAssisted(root, s, cid, []string{name},
-			map[string]bool{name: isNew}, "mcp-client", "written over MCP",
+			map[string]bool{name: isNew}, model, "written over MCP",
 			caller.Name); err != nil {
 			return nil, fmt.Errorf("the page was written but not marked: %w", err)
 		}
@@ -437,7 +444,7 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 
 		record(root, audit.Record{
 			Action: "mcp.write_page", Resource: "/" + name, Outcome: audit.Success,
-			Principal: "mcp-client", Kind: audit.KindAI, Model: "mcp-client",
+			Principal: who, Kind: audit.KindAI, Model: model,
 			Verified: false, Detail: map[string]string{"on_behalf_of": caller.Name},
 		})
 		return fmt.Sprintf("wrote %s to the draft as %s; it is marked AI-generated "+
@@ -541,9 +548,10 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		if err != nil {
 			return nil, err
 		}
+		who, model := interfaceClient(caller.Name, caller.Client)
 		record(root, audit.Record{
 			Action: "mcp.publish", Resource: "/", Outcome: audit.Success,
-			Principal: "mcp-client", Kind: audit.KindAI, Model: "mcp-client",
+			Principal: who, Kind: audit.KindAI, Model: model,
 			Verified: false, Detail: map[string]string{"on_behalf_of": caller.Name},
 		})
 		var changed []string

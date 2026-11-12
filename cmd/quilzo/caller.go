@@ -65,10 +65,15 @@ type Caller struct {
 	Bound bool
 	Life  time.Duration
 	// Model is what an AI caller's acts are recorded as having been decided
-	// by: the app at the agent interface (mcp-client), which does not say
-	// which model it runs, or an agent acting under its own identity.
-	// Empty for a person or a service.
+	// by: the client at the agent interface (mcp-client, or the app a
+	// token was given to), which does not say which model it runs, or an
+	// agent acting under its own identity. Empty for a person or a service.
 	Model string
+	// Client is the app a token at the agent interface was given to
+	// through OAuth, when it was one: what its acts are recorded as done
+	// by, and what the pages it writes are marked as written by
+	// (interfaceClient).
+	Client string
 	// Via says how an act reached this caller when it was not them at a
 	// keyboard ("schedule" for a publish somebody scheduled), and FiredBy
 	// whose identity set it off. The act is still theirs and on their
