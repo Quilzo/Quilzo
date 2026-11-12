@@ -40,11 +40,6 @@ type Connections struct {
 	Document func() ([]byte, error)
 }
 
-// ConnectionsDocumentPath is where this installation's Client ID Metadata
-// Document is served, and so its client id at such a server: another
-// Quilzo's authorization server registers apps no other way.
-const ConnectionsDocumentPath = "/connections/client.json"
-
 // handleConnectionsDocument serves the document to anybody: it is read by
 // the authorization server, which signs nobody in here, and says only
 // what the connect command registered there would have.

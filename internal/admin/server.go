@@ -1276,6 +1276,13 @@ const exportUploadPath = "/make/import-file"
 // collection.
 const recordUploadPath = "/records/import"
 
+// ConnectionsDocumentPath is where this installation's Client ID Metadata
+// Document is served (connections.go), and so its client id at a server
+// that takes those: another Quilzo's authorization server registers apps
+// no other way. Exported because the connect command gives that address
+// as the client id, and one spelling of it cannot drift from the route.
+const ConnectionsDocumentPath = "/connections/client.json"
+
 // SignalsPath is where the identity provider's transmitter pushes security
 // events (signals.go). Exported because the command that connects a stream
 // tells the transmitter this address, and one spelling of it cannot drift
