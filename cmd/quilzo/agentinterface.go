@@ -216,22 +216,36 @@ func wireInterface(root string, s *store.Store, srv *admin.Server, sh *shieldHos
 }
 
 // appCallRecord is the record of one call at the agent interface. It is
-// recorded as the app, acting for the person: the person is who it acts
-// for, and the app is what acted. Which model the app runs is its own
-// business and not something it reports, so the app stands in for it.
+// recorded as the client, acting for the person: the person is who it acts
+// for, and the client is what acted (interfaceClient). Which model an app
+// runs is its own business and not something it reports, so the app
+// stands in for it.
 func appCallRecord(c *mcp.Caller, tool, op string, rerr *mcp.Error) audit.Record {
-	outcome, d := audit.Success, map[string]string{"tool": tool, "on_behalf_of": c.Principal}
+	d := map[string]string{}
+	// Which connection: what an administrator suspends or ends when one
+	// app misbehaves for one person, and what a receipt is of; or which of
+	// a person's own tokens, which is what they revoke.
+	if tok, ok := c.Data.(auth.Token); ok {
+		if tok.Grant != "" {
+			d["grant"] = tok.Grant
+		}
+		noteCredential(d, tok)
+	}
+	who, model := interfaceClient(c.Principal, c.Client)
+	return interfaceCallRecord(who, model, c.Principal, true, d, tool, op, rerr)
+}
+
+// interfaceCallRecord is the record of one tools/call at the agent
+// interface, over HTTP or on standard input: the same record on both, so
+// what a client read and what it was refused is in the log whichever way
+// it connected.
+func interfaceCallRecord(who, model, person string, verified bool, d map[string]string,
+	tool, op string, rerr *mcp.Error) audit.Record {
+
+	outcome := audit.Success
+	d["tool"], d["on_behalf_of"] = tool, person
 	if op != "" {
 		d["operation"] = op
-	}
-	// Which connection: what an administrator suspends or ends when one
-	// app misbehaves for one person, and what a receipt is of.
-	if tok, ok := c.Data.(auth.Token); ok && tok.Grant != "" {
-		d["grant"] = tok.Grant
-	}
-	who, model := "mcp-client", "mcp-client"
-	if c.Client != "" {
-		who, model = "app:"+c.Client, c.Client
 	}
 	if rerr != nil {
 		outcome, d["error"] = audit.Denied, rerr.Message
@@ -240,7 +254,48 @@ func appCallRecord(c *mcp.Caller, tool, op string, rerr *mcp.Error) audit.Record
 		}
 	}
 	return audit.Record{Action: "mcp.call", Resource: "/mcp", Outcome: outcome,
-		Principal: who, Kind: audit.KindAI, Model: model, Verified: true, Detail: d}
+		Principal: who, Kind: audit.KindAI, Model: model, Verified: verified, Detail: d}
+}
+
+// interfaceClient is who an act at the agent interface is recorded as
+// done by, and the model recorded as deciding it: the app, for a token an
+// app was given through OAuth, and otherwise the person whose own token
+// the client holds, with mcp-client for the model, since which model a
+// person's own client runs is not something it says.
+//
+// Every call made with a person's own token was recorded as one principal,
+// mcp-client, so the agent watch saw thirteen people's clients finding out
+// what they might do as one agent with five hundred refusals, the shield
+// case it opened named nobody, and a client that really would not stop
+// could not be told from the rest. The gateway, the governed browser and
+// A2A recorded the same calls as the person acting by hand, so the agent
+// watch, which reads what models do, never saw them at all. Recorded under
+// the person, as kind ai, as the operations' own records already were
+// (Caller.auditRecord), each person's client is its own agent wherever it
+// called, and a case says whose it was.
+func interfaceClient(person, client string) (principal, model string) {
+	if client != "" {
+		return "app:" + client, client
+	}
+	return person, "mcp-client"
+}
+
+// noteCredential names, in a record's detail, the person's own token a
+// call was made with, when no app was given it: what they revoke when
+// their client misbehaves, and what tells two of one person's clients
+// apart. A session exchanged from a token is named by that token, whose
+// revocation ends it.
+func noteCredential(d map[string]string, tok auth.Token) {
+	if tok.Grant != "" || tok.Client != "" {
+		return
+	}
+	id := tok.Parent
+	if id == "" {
+		id = tok.ID
+	}
+	if id != "" {
+		d["credential"] = id
+	}
 }
 
 // remoteCaller is the caller a token at the agent interface stands for:

@@ -36,6 +36,7 @@ package agentwatch
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -91,8 +92,12 @@ type Report struct {
 	// Agent is the declared agent the actions were a run of, and App the
 	// connected app that made them, when the log says: what a person can
 	// pause or disconnect, where Principal is the log's handle.
-	Agent   string   `json:"agent,omitempty"`
-	App     string   `json:"app,omitempty"`
+	Agent string `json:"agent,omitempty"`
+	App   string `json:"app,omitempty"`
+	// For is who a client at the agent interface acted for, as the log
+	// names them (on_behalf_of): what says whose client it was, where the
+	// handle alone says nothing to whoever reads the case it opens.
+	For     string   `json:"for,omitempty"`
 	Strikes []Strike `json:"strikes"`
 	// Counts group the strikes, because "twelve refusals" is a different
 	// situation from "twelve different things" and a flat list hides which.
@@ -113,9 +118,10 @@ func Look(events []audit.Event, now time.Time) []Report {
 		model    string
 		name     string
 		app      string
+		onBehalf string
 		actions  int
 		strikes  []Strike
-		refusals map[string]int // action+resource -> times refused
+		refusals map[string]int // requestOf -> times refused
 	}
 	agents := map[string]*agent{}
 
@@ -140,9 +146,14 @@ func Look(events []audit.Event, now time.Time) []Report {
 			a.name = n
 		}
 		// An app at the agent interface is recorded with itself as the
-		// model, because which model it runs is its own business.
-		if e.Action == "mcp.call" && e.Model != "" && e.Model != "mcp-client" {
+		// model, because which model it runs is its own business: on its
+		// calls, and on what it asks of a tool through the gateway, a
+		// browser or another agent, which are recorded the same way.
+		if interfaceActions[e.Action] && e.Model != "" && e.Model != "mcp-client" {
 			a.app = e.Model
+		}
+		if p := e.Detail["on_behalf_of"]; p != "" {
+			a.onBehalf = p
 		}
 		a.actions++
 
@@ -165,7 +176,7 @@ func Look(events []audit.Event, now time.Time) []Report {
 			continue
 		}
 
-		key := e.Action + " " + e.Resource
+		key := requestOf(e)
 		a.refusals[key]++
 
 		s := Strike{
@@ -180,7 +191,8 @@ func Look(events []audit.Event, now time.Time) []Report {
 					"answer", a.refusals[key])
 		case strings.Contains(reason, "authorisation"),
 			strings.Contains(reason, "role"),
-			strings.Contains(reason, "permit"):
+			strings.Contains(reason, "permit"),
+			needsRole.MatchString(reason):
 			s.Kind = Escalation
 			s.Why = "reached for something above the role it holds"
 		case strings.Contains(reason, "accessibility"),
@@ -212,7 +224,7 @@ func Look(events []audit.Event, now time.Time) []Report {
 	var out []Report
 	for principal, a := range agents {
 		r := Report{
-			Principal: principal, Model: a.model, Agent: a.name, App: a.app, Strikes: a.strikes,
+			Principal: principal, Model: a.model, Agent: a.name, App: a.app, For: a.onBehalf, Strikes: a.strikes,
 			Actions: a.actions, Counts: map[string]int{},
 		}
 		for _, s := range a.strikes {
@@ -232,17 +244,60 @@ func Look(events []audit.Event, now time.Time) []Report {
 }
 
 // Subject is what the report is about, as the shield names it: agent:NAME
-// for a declared agent, app:CLIENT for a connected app, and otherwise the
-// log's handle.
+// for a declared agent, app:CLIENT for a connected app, a client and the
+// person it acted for ("mcp-client for p_3f2a...") for a client holding a
+// person's own token, and otherwise the log's handle.
+//
+// The client's handle alone said nothing about whose client it was: every
+// such call was recorded as one principal, mcp-client, and the case the
+// shield opened named that and nobody.
 func (r Report) Subject() string {
 	switch {
 	case r.Agent != "":
 		return "agent:" + r.Agent
 	case r.App != "":
 		return "app:" + r.App
+	case r.For != "" && r.Model != "":
+		return r.Model + " for " + r.For
 	}
 	return r.Principal
 }
+
+// interfaceActions are the records of what a client asked at the agent
+// interface: its calls, and what it asked of a tool through the gateway,
+// of a browser, and of an agent over A2A.
+var interfaceActions = map[string]bool{"mcp.call": true, "mcp.gateway": true, "mcp.browser": true, "a2a.task": true}
+
+// requestOf is what makes two refusals the same request: the action and
+// where, at the agent interface the tool and the operation called, and the
+// person it was asked for.
+//
+// Every call there is recorded as one action on one resource, mcp.call on
+// /mcp, so keyed on those alone a client that tried six different
+// operations once each was told "the same request has now been refused 6
+// times; ... one that has not accepted the answer", and every person's
+// client exploring what it may do looked like one that would not stop. An
+// app connected by many people asks for each of them, and the same
+// operation refused to two of them is not one request asked twice.
+func requestOf(e audit.Event) string {
+	key := e.Action + " " + e.Resource
+	for _, k := range []string{"tool", "operation", "on_behalf_of"} {
+		if v := e.Detail[k]; v != "" {
+			key += " " + k + "=" + v
+		}
+	}
+	return key
+}
+
+// needsRole is a refusal saying the caller holds one role and the request
+// needs another, in the words the access policy, a credential's limits and
+// an app's consent use ("dana is author on /; grant needs admin", "this
+// credential carries reader and edit-draft needs author", "this app was
+// given reader access, and this needs author"). Those name the roles, not
+// the word role, so reaching above the one held was read as an ordinary
+// refusal. A refusal that names only the role needed, such as a bearer
+// token too long-lived for a publish, is not about the role held.
+var needsRole = regexp.MustCompile(`\b(?:is|carries|was given) (?:reader|author|publisher|admin)\b.*\bneeds (?:reader|author|publisher|admin)\b`)
 
 // Latest is the newest strike's place in the log: a report whose latest
 // strike is one already acted on has nothing new to say.

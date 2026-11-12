@@ -6,9 +6,12 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/quilzo/quilzo/internal/agentwatch"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/mcp"
@@ -90,14 +93,64 @@ func TestAnAppsCallIsRecordedWithItsConnection(t *testing.T) {
 	if r := appCallRecord(c, "tools/call", "", &mcp.Error{Code: -32603, Message: "broke"}); r.Outcome != audit.Failure {
 		t.Errorf("a failure recorded as %s", r.Outcome)
 	}
-	// Quilzo's own token: no connection, and no app to name.
+	// Quilzo's own token: no connection, and no app to name. The person's
+	// client, recorded under the person.
 	own := appCallRecord(&mcp.Caller{Principal: "dana", Data: auth.Token{Principal: "dana"}}, "tools/list", "", nil)
-	if _, has := own.Detail["grant"]; has || own.Principal != "mcp-client" || own.Outcome != audit.Success {
+	if _, has := own.Detail["grant"]; has || own.Principal != "dana" || own.Model != "mcp-client" ||
+		own.Kind != audit.KindAI || own.Outcome != audit.Success {
 		t.Errorf("%+v", own)
 	}
 	for k := range r.Detail {
 		if why := audit.ForbiddenKey(k); why != "" {
 			t.Error(why)
 		}
+	}
+}
+
+// Each person's client is an agent of its own. Every call made with a
+// person's own token was recorded as one principal, mcp-client, so thirteen
+// people's clients each finding out once what they might do were one agent
+// to the agent watch, with hundreds of "the same request has now been
+// refused" strikes, and the shield case it opened named nobody.
+func TestEachPersonsClientIsAnAgentOfItsOwn(t *testing.T) {
+	root := t.TempDir() + "/st"
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	people := []string{"ana", "bo", "cy", "dana", "eli", "fay", "gus", "hal", "ivy", "jo", "kai", "lee", "mo"}
+	for i, who := range people {
+		tok := auth.Token{ID: fmt.Sprintf("tok%02d", i), Principal: who}
+		c := &mcp.Caller{Principal: who, Data: tok}
+		for _, op := range []string{"verify_store", "inventory", "policy_status", "agent_activity", "site_report"} {
+			record(root, appCallRecord(c, "quilzo_read", op,
+				&mcp.Error{Code: mcp.CodeRefused, Message: who + " is author on /; grant needs admin"}))
+		}
+	}
+	events, err := audit.Read(auditPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reports := agentwatch.Look(events, time.Now())
+	if len(reports) != len(people) {
+		t.Fatalf("%d people's clients were seen as %d agent(s)", len(people), len(reports))
+	}
+	for _, r := range reports {
+		if r.Actions != 5 || r.Counts[agentwatch.RepeatedRefusal] != 0 {
+			t.Errorf("%s: %d actions, %v", r.Principal, r.Actions, r.Counts)
+		}
+		// The case names the client and whose it is.
+		if s := r.Subject(); !strings.HasPrefix(s, "mcp-client for ") {
+			t.Errorf("subject %q", s)
+		}
+	}
+	// And the record says which of the person's tokens it was.
+	r := appCallRecord(&mcp.Caller{Principal: "dana", Data: auth.Token{ID: "tok03", Principal: "dana"}}, "quilzo_read", "list_pages", nil)
+	if r.Principal != "dana" || r.Kind != audit.KindAI || r.Model != "mcp-client" ||
+		r.Detail["credential"] != "tok03" || r.Detail["on_behalf_of"] != "dana" {
+		t.Errorf("%+v", r)
+	}
+	s := appCallRecord(&mcp.Caller{Principal: "dana", Data: auth.Token{ID: "s1", Parent: "tok03", Principal: "dana"}}, "quilzo_read", "", nil)
+	if s.Detail["credential"] != "tok03" {
+		t.Errorf("a session is named by the token it was exchanged from: %+v", s.Detail)
 	}
 }
