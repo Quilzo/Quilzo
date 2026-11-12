@@ -86,24 +86,29 @@ func (st *Site) convertPage(r *http.Request, path string) {
 // personalFor returns the page a personalisation rule serves at name for this
 // request, if one matches and its page is published. See
 // internal/personalise: only what the request says is looked at.
-func (st *Site) personalFor(r *http.Request, name string, pages map[string]any) (string, any, bool) {
+//
+// ruled is whether an enabled rule is on the page at all, matched or not:
+// the page as itself is then the answer for the visitors no rule picks out,
+// not for everybody, and must not be kept by a shared cache as if it were.
+func (st *Site) personalFor(r *http.Request, name string, pages map[string]any) (variant string, body any, ok, ruled bool) {
 	if st.Personalise == nil {
-		return "", nil, false
+		return "", nil, false, false
 	}
 	set, err := st.Personalise()
 	if err != nil {
-		return "", nil, false
+		return "", nil, false, false
 	}
+	ruled = set.On(name)
 	rule, ok := set.For(name, r, time.Now())
 	if !ok {
-		return "", nil, false
+		return "", nil, false, ruled
 	}
 	body, published := pages[rule.Variant]
 	if !published {
-		return "", nil, false
+		return "", nil, false, ruled
 	}
 	if st.Analytics != nil {
 		st.Analytics.Convert(r, personalise.SeenKey(rule.Name))
 	}
-	return rule.Variant, body, true
+	return rule.Variant, body, true, ruled
 }

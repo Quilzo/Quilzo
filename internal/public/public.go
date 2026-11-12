@@ -1111,17 +1111,21 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 
 	// An experiment on this page serves the variant's content at this
 	// address. See experiments.go.
-	served, inExperiment := name, false
+	served, inExperiment, personal := name, false, false
 	if forMembers {
 		// No experiment and no personalisation on a members' page: both
 		// choose between public pages.
-	} else if v, vbody, ok := st.personalFor(r, name, pages); ok {
+	} else if v, vbody, ok, ruled := st.personalFor(r, name, pages); ok {
 		// A rule decides first. An experiment on the same page is not run
 		// for this visitor: their version was chosen by who they are, and
 		// counting them in a random split would bias it.
 		served, body, inExperiment = v, vbody, true
 	} else if v, vbody, ok := st.variantFor(r, name, pages); ok {
 		served, body, inExperiment = v, vbody, true
+	} else {
+		// No rule picked this visitor out, but one is on the page: what
+		// they are served is the page for those it does not pick out.
+		personal = ruled
 	}
 
 	// The ETag is the content hash. Not derived from it — it is it.
@@ -1199,9 +1203,15 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Vary", "Cookie")
 		w.Header().Set("X-Robots-Tag", "noindex")
-	} else if inExperiment {
+	} else if inExperiment || personal {
 		// Private: a shared cache holding one visitor's variant would hand
 		// it to everybody, which ends the experiment and ruins its data.
+		//
+		// And on a page a rule is on, for the visitors it does not pick out
+		// too. Their answer was "public", with nothing saying it depended on
+		// their language, device, referrer or the hour, so a CDN in front of
+		// the site kept the first one and handed it to the French, the phone
+		// and the out-of-hours visitors after it, and no rule was ever seen.
 		w.Header().Set("Cache-Control", "private, max-age=0, must-revalidate")
 	} else {
 		w.Header().Set("Cache-Control", "public, max-age=0, must-revalidate")
