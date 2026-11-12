@@ -870,3 +870,17 @@ func TestEveryEndpointOfTheInterfaceIsAResource(t *testing.T) {
 		t.Fatalf("%v", m)
 	}
 }
+
+// The resource's metadata lists every scope a token for it is asked for
+// with, as RFC 9728 has scopes_supported, and the 401 still names the
+// least. It listed mcp:read alone, so a client that asks for what the
+// resource lists asked for reading only, and every write it tried was
+// refused.
+func TestTheResourceListsEveryScope(t *testing.T) {
+	cfg := Config{Issuer: "https://admin.example.org"}
+	for _, m := range []map[string]any{cfg.ResourceMetadata(""), cfg.ResourceMetadataAt("/mcp/gateway/tracker", "")} {
+		if got, _ := m["scopes_supported"].([]string); strings.Join(got, " ") != strings.Join(ScopeNames(), " ") {
+			t.Errorf("%v", m["scopes_supported"])
+		}
+	}
+}

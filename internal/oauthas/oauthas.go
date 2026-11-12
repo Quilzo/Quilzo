@@ -265,9 +265,13 @@ func (c Config) ResourceMetadata(docs string) map[string]any {
 // endpoints (Endpoint), naming it as the resource.
 func (c Config) ResourceMetadataAt(path, docs string) map[string]any {
 	m := map[string]any{
-		"resource":                 c.Issuer + path,
-		"authorization_servers":    []string{c.Issuer},
-		"scopes_supported":         []string{DefaultScope},
+		"resource":              c.Issuer + path,
+		"authorization_servers": []string{c.Issuer},
+		// Every scope a token for it is asked for with, as RFC 9728 has
+		// scopes_supported; the 401 names the least (DefaultScope). It
+		// listed mcp:read alone, and a client that asks for what the
+		// resource lists asked to read and was refused every write.
+		"scopes_supported":         ScopeNames(),
 		"bearer_methods_supported": []string{"header"},
 		"resource_name":            "Quilzo agent interface",
 	}

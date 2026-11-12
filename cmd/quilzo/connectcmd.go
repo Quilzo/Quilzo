@@ -544,7 +544,7 @@ func connectProvider(root string, caller *Caller, args []string) error {
 			"] --client-id ID [--client-secret SECRET] [--scope S]... [--host H]... " +
 			"[--auth-url URL --token-url URL --revocation-url URL --title T] [--dialect " + strings.Join(connect.DialectNames(), "|") + "]\n" +
 			"       quilzo connect provider remove NAME\n" +
-			"       quilzo connect provider discover NAME https://SERVER/mcp [--client-id ID] [--title T]")
+			"       quilzo connect provider discover NAME https://SERVER/mcp [--client-id ID] [--scope S] [--title T]")
 	}
 	if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
 		return err
@@ -682,5 +682,41 @@ func connectionsCapability(root string) *admin.Connections {
 		Revoke: func(ctx context.Context, provider, person string) error {
 			return revokeConnection(ctx, root, provider, person)
 		},
+		Document: func() ([]byte, error) { return connectClientDocument(root) },
 	}
+}
+
+// connectDocumentURL is the address of this installation's Client ID
+// Metadata Document, and so its client id at a server that takes those:
+// the admin's, as the redirect is (connectRedirect). The server fetches it
+// from there, so the admin must be reachable from it.
+func connectDocumentURL(root string) (string, error) {
+	base := strings.TrimRight(mustConfig(root).Raw("admin.base_url"), "/")
+	if base == "" {
+		return "", errors.New("set admin.base_url to the admin's address first: a server that takes client " +
+			"metadata documents reads this installation's from there")
+	}
+	return base + admin.ConnectionsDocumentPath, nil
+}
+
+// connectClientDocument is the document served at connectDocumentURL.
+func connectClientDocument(root string) ([]byte, error) {
+	id, err := connectDocumentURL(root)
+	if err != nil {
+		return nil, err
+	}
+	redirect, err := connectRedirect(root)
+	if err != nil {
+		return nil, err
+	}
+	return connect.ClientDocument(id, connectClientName(root), redirect)
+}
+
+// connectClientName is what a provider's consent screen calls this
+// installation.
+func connectClientName(root string) string {
+	if n := strings.TrimSpace(siteName(root)); n != "" {
+		return "Quilzo at " + n
+	}
+	return "Quilzo"
 }
