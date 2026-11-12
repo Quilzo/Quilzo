@@ -667,6 +667,66 @@ func TestTheOppositesAPagePutsAreKnown(t *testing.T) {
 	})
 }
 
+// A figure the passage states is not thereby the price or the period a
+// sentence states with it. "Pallet delivery to Zqvel costs £12" was shown
+// for "costs £120. Returns are accepted within 12 days": the 12 is in the
+// passage, whole, and it is a number of days there. A figure the passage
+// counts only as something else is refused, as one it counts in another
+// unit is; one it also states without saying what it counts is left to the
+// other tests.
+func TestAFigureThePassageCountsAsSomethingElseIsNotTheSentences(t *testing.T) {
+	hit := func(text string) []Hit {
+		return []Hit{{Passage: Passage{ID: "p#1", Page: "p", Title: "Zqvel delivery", Text: text}}}
+	}
+	days := hit("Pallet delivery to Zqvel costs £120. Returns are accepted within 12 days of delivery.")
+	takes := hit("Pallet delivery to Zqvel costs £120 and takes 3 days.")
+	price := hit("Pallet delivery to Zqvel costs £30. Returns are accepted within 120 days of delivery.")
+	hours := hit("We are open 9 to 5 on Saturdays. Lunch is £9 and delivery takes 5 days.")
+	expectVerdicts(t, []verdict{
+		{days, "Pallet delivery to Zqvel costs £12 [1].", "12 days"},
+		{days, "Pallet delivery to Zqvel costs 12 pounds [1].", "12 days"},
+		{takes, "Pallet delivery to Zqvel costs £3 [1].", "3 days"},
+		{price, "Returns are accepted within 30 days of delivery [1].", "£30"},
+		{hours, "Lunch is £5 [1].", ""},
+		{hours, "We are open at 9am on Saturdays [1].", ""},
+		{days, "Pallet delivery to Zqvel costs £120 [1].", ""},
+		{days, "Returns are accepted within 12 days of delivery [1].", ""},
+		{takes, "Pallet delivery to Zqvel takes 3 days [1].", ""},
+	})
+}
+
+// A figure is the passage's when it is that figure, however each writes
+// it, and not when it only looks like part of it. "Open until 30.1" was
+// shown for "open until 30.10", because the zeros that end a decimal were
+// dropped from both; only a fraction that is all zeros says nothing. Digits
+// that are not ASCII were no figures at all, so "£１２" passed for "£120"
+// unread. And a list written "4,6,8" was one figure, 468, so the sentence
+// that names its sizes was refused.
+func TestAFigureIsReadAsItIsWritten(t *testing.T) {
+	hit := func(text string) []Hit {
+		return []Hit{{Passage: Passage{ID: "p#1", Page: "p", Title: "Zqvel delivery", Text: text}}}
+	}
+	until := hit("The Zqvel depot is open until 30.10 this year.")
+	zq := hit("Pallet delivery to Zqvel costs £120. Pallet delivery to Zqvel Islands costs £12.50.")
+	sizes := hit("Zqvel boots in sizes 4,6,8 are in stock, 1,250 pairs in all.")
+	wide := hit("Zqvel への配送料は１２０円です。")
+	expectVerdicts(t, []verdict{
+		{until, "The Zqvel depot is open until 30.1 this year [1].", "30.1"},
+		{until, "The Zqvel depot is open until 30.10 this year [1].", ""},
+		{zq, "Pallet delivery to Zqvel costs £１２ [1].", "12"},
+		{zq, "Pallet delivery to Zqvel costs £１２０ [1].", ""},
+		{zq, "Pallet delivery to Zqvel costs £120.00 [1].", ""},
+		{zq, "Pallet delivery to Zqvel Islands costs £12.5 [1].", "12.5"},
+		{zq, "Pallet delivery to Zqvel Islands costs £12.50 [1].", ""},
+		{sizes, "Zqvel boots in sizes 4, 6 and 8 are in stock [1].", ""},
+		{sizes, "Zqvel boots in sizes 46 are in stock [1].", "46"},
+		{sizes, "Zqvel boots are in stock, 1250 pairs in all [1].", ""},
+		{sizes, "Zqvel boots are in stock, 250 pairs in all [1].", "250"},
+		{wide, "Zqvel への配送料は120円です [1]。", ""},
+		{wide, "Zqvel への配送料は12円です [1]。", "12"},
+	})
+}
+
 func TestAModelThatFailsFallsBack(t *testing.T) {
 	for name, m := range map[string]*scripted{
 		"error":    {err: errors.New("connection refused")},

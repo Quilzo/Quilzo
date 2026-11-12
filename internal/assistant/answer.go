@@ -397,17 +397,26 @@ func Figures(text string) [][2]int {
 	return out
 }
 
-// figure is a figure as a text writes it and the value it states.
-type figure struct{ text, value string }
+// figure is a figure as a text writes it, where it starts, and the value
+// it states.
+type figure struct {
+	text, value string
+	at          int
+}
 
 // figureValues are the figures a text states, each with its value: without
-// the commas that group its thousands, without the zeros that end its
-// decimals, and with a time's colon read as its point, so "£1,000" states
-// what "£1000" does, "£12.00" what "£12" does and "9:30" what "9.30" does.
+// the commas that group its thousands, without a fraction that is all
+// zeros, and with a time's colon read as its point, so "£1,000" states what
+// "£1000" does, "£12.00" what "£12" does and "9:30" what "9.30" does.
 //
 // Verify compares them whole. It had looked for each figure of a sentence
 // anywhere in the passage's text, and found "£12" in "£120" and "3 days" in
 // "30 days": a tenth of the price was shown to a visitor with a citation.
+//
+// Only a fraction of nothing but zeros is dropped. Every zero that ended a
+// decimal was, and "open until 30.1" was then the passage's "30.10". And a
+// comma groups thousands only where three digits follow it: "sizes 4,6,8"
+// is three figures, not 468, which no sentence naming a size could match.
 func figureValues(text string) []figure {
 	at := Figures(text)
 	var out []figure
@@ -419,13 +428,56 @@ func figureValues(text string) []figure {
 			end = at[i][1]
 		}
 		f := text[start:end]
-		v := strings.ReplaceAll(strings.ReplaceAll(f, ",", ""), ":", ".")
-		if strings.Contains(v, ".") {
-			v = strings.TrimSuffix(strings.TrimRight(v, "0"), ".")
+		if strings.Contains(f, ",") && !reGrouped.MatchString(f) {
+			for _, part := range strings.Split(f, ",") {
+				if part != "" {
+					out = append(out, figure{text: part, value: figureValue(part), at: start})
+				}
+				start += len(part) + 1
+			}
+			continue
 		}
-		out = append(out, figure{text: f, value: v})
+		out = append(out, figure{text: f, value: figureValue(f), at: start})
 	}
 	return out
+}
+
+// reGrouped is a figure whose commas group its digits, in threes or as the
+// lakh and the crore are written: "1,250.50", "12,000,000" and "1,00,000".
+var reGrouped = regexp.MustCompile(`^\d{1,3}(,\d{2,3})*,\d{3}([.:]\d+)*$`)
+
+// figureValue is the value one figure states, as figureValues compares it.
+func figureValue(f string) string {
+	v := strings.ReplaceAll(strings.ReplaceAll(f, ",", ""), ":", ".")
+	if i := strings.LastIndexByte(v, '.'); i >= 0 && strings.Trim(v[i+1:], "0") == "" {
+		v = v[:i]
+	}
+	return v
+}
+
+// asciiDigits is text with every decimal digit of another script written
+// as the ASCII digit it is. Figures knows only those, so a sentence that
+// said "£１２" in full-width digits stated no figure that Verify could hold
+// to the passage's "£120", and a page written with them had none either.
+func asciiDigits(text string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 0x80 || !unicode.IsDigit(r) {
+			return r
+		}
+		// Every script's digits are ten in a row from its zero, and the
+		// table's ranges start at a zero.
+		for _, r16 := range unicode.Nd.R16 {
+			if rune(r16.Lo) <= r && r <= rune(r16.Hi) {
+				return '0' + (r-rune(r16.Lo))%10
+			}
+		}
+		for _, r32 := range unicode.Nd.R32 {
+			if rune(r32.Lo) <= r && r <= rune(r32.Hi) {
+				return '0' + (r-rune(r32.Lo))%10
+			}
+		}
+		return r
+	}, text)
 }
 
 // Verify checks one sentence against the passages it cites.
@@ -497,22 +549,24 @@ func Verify(sentence string, hits []Hit) Sentence {
 		cited.WriteByte(' ')
 		units = append(units, statements(hits[n-1])...)
 	}
-	source := cited.String()
+	// Figures are read with every digit in ASCII, in the sentence and in
+	// what it cites; the words are compared as they are written.
+	source, said := asciiDigits(cited.String()), asciiDigits(out.Text)
 	stated := map[string]bool{}
 	for _, f := range figureValues(source) {
 		stated[f.value] = true
 	}
-	for _, f := range figureValues(out.Text) {
+	for _, f := range figureValues(said) {
 		if !stated[f.value] {
 			out.Why = fmt.Sprintf("says %s, which the cited passage does not", f.text)
 			return out
 		}
 	}
-	if w := wordFigureMissing(out.Text, source); w != "" {
+	if w := wordFigureMissing(said, source); w != "" {
 		out.Why = fmt.Sprintf("says %s, which the cited passage does not", w)
 		return out
 	}
-	if why := unitTurned(out.Text, source); why != "" {
+	if why := unitTurned(said, source); why != "" {
 		out.Why = why
 		return out
 	}
@@ -590,8 +644,8 @@ func wordFigureMissing(sentence, source string) string {
 		words[t] = true
 	}
 	numerals := map[string]bool{}
-	for _, at := range Figures(source) {
-		numerals[strings.ReplaceAll(source[at[0]:at[1]], ",", "")] = true
+	for _, f := range figureValues(source) {
+		numerals[f.value] = true
 	}
 	// "For a month" states one month, so "for one month" is found in it.
 	for _, m := range measures(source) {
@@ -630,9 +684,13 @@ const (
 // measure is a figure with what it counts: the half of the day of a time,
 // the unit of a span of time, or the currency of a price. key is what two
 // measures must share to be about the same figure: a time's hour, so
-// "9am" meets "9.30 a.m.", and otherwise the figure itself.
+// "9am" meets "9.30 a.m.", and otherwise the figure itself. value is the
+// figure as figureValues reads it and at where its digits start, or -1 for
+// one written in words.
 type measure struct {
 	text, kind, key, unit string
+	value                 string
+	at                    int
 }
 
 // reTime finds a time of day or a span of time, written in digits or in
@@ -675,10 +733,21 @@ var currencies = map[string]string{
 // measures are the figures a text states with what they count.
 func measures(text string) []measure {
 	var out []measure
-	for _, m := range reTime.FindAllStringSubmatch(text, -1) {
-		figure, unit := strings.ReplaceAll(m[1], ",", ""), strings.ToLower(m[3])
+	// group is what a pattern's nth group matched, and where.
+	group := func(loc []int, n int) (string, int) {
+		if loc[2*n] < 0 {
+			return "", -1
+		}
+		return text[loc[2*n]:loc[2*n+1]], loc[2*n]
+	}
+	for _, loc := range reTime.FindAllStringSubmatchIndex(text, -1) {
+		digits, at := group(loc, 1)
+		word, _ := group(loc, 2)
+		unit, _ := group(loc, 3)
+		whole := text[loc[0]:loc[1]]
+		figure, unit := strings.ReplaceAll(digits, ",", ""), strings.ToLower(unit)
 		if figure == "" {
-			word := strings.ToLower(m[2])
+			word = strings.ToLower(word)
 			figure = figureWords[word]
 			if word == "a" || word == "an" {
 				figure = "1"
@@ -688,14 +757,15 @@ func measures(text string) []measure {
 		// spelt.
 		if unit[0] == 'a' || unit[0] == 'p' {
 			// "An a.m. start" says no time.
-			if m[1] == "" && figureWords[strings.ToLower(m[2])] == "" {
+			if digits == "" && figureWords[word] == "" {
 				continue
 			}
 			hour, _, _ := strings.Cut(strings.ReplaceAll(figure, ":", "."), ".")
 			if h, err := strconv.Atoi(hour); err == nil {
 				hour = strconv.Itoa(h)
 			}
-			out = append(out, measure{text: m[0], kind: timeOfDay, key: hour, unit: unit[:1] + "m"})
+			out = append(out, measure{text: whole, kind: timeOfDay, key: hour, unit: unit[:1] + "m",
+				value: figureValue(figure), at: at})
 			continue
 		}
 		unit = strings.TrimSuffix(unit, "s")
@@ -705,15 +775,23 @@ func measures(text string) []measure {
 		case "hr":
 			unit = "hour"
 		}
-		out = append(out, measure{text: m[0], kind: spanOfTime, key: figure, unit: unit})
+		out = append(out, measure{text: whole, kind: spanOfTime, key: figure, unit: unit,
+			value: figureValue(figure), at: at})
 	}
-	for _, m := range rePriceBefore.FindAllStringSubmatch(text, -1) {
-		out = append(out, measure{text: m[0], kind: price,
-			key: strings.ReplaceAll(m[3], ",", ""), unit: currencies[strings.ToLower(m[1]+m[2])]})
+	for _, loc := range rePriceBefore.FindAllStringSubmatchIndex(text, -1) {
+		sign, _ := group(loc, 1)
+		code, _ := group(loc, 2)
+		digits, at := group(loc, 3)
+		out = append(out, measure{text: text[loc[0]:loc[1]], kind: price,
+			key: strings.ReplaceAll(digits, ",", ""), unit: currencies[strings.ToLower(sign+code)],
+			value: figureValue(digits), at: at})
 	}
-	for _, m := range rePriceAfter.FindAllStringSubmatch(text, -1) {
-		out = append(out, measure{text: m[0], kind: price,
-			key: strings.ReplaceAll(m[1], ",", ""), unit: currencies[strings.ToLower(m[2])]})
+	for _, loc := range rePriceAfter.FindAllStringSubmatchIndex(text, -1) {
+		digits, at := group(loc, 1)
+		name, _ := group(loc, 2)
+		out = append(out, measure{text: text[loc[0]:loc[1]], kind: price,
+			key: strings.ReplaceAll(digits, ",", ""), unit: currencies[strings.ToLower(name)],
+			value: figureValue(digits), at: at})
 	}
 	return out
 }
@@ -726,8 +804,13 @@ func measures(text string) []measure {
 // another currency. One it states both ways, or without saying what it
 // counts, is left to the other tests; "9 to 5 on Saturdays" says no half
 // of the day, so "open at 9am on Saturdays" does not contradict it.
+//
+// So is a figure it states only as another kind of thing. "Pallet delivery
+// costs £12" was shown for "costs £120. Returns are accepted within 12
+// days": the 12 is in the passage, and is no price there.
 func unitTurned(sentence, source string) string {
 	have := measures(source)
+	var stated []figure
 	for _, m := range measures(sentence) {
 		same, other := false, ""
 		for _, h := range have {
@@ -742,11 +825,45 @@ func unitTurned(sentence, source string) string {
 				other = h.text
 			}
 		}
+		if !same && other == "" {
+			if stated == nil {
+				stated = figureValues(source)
+			}
+			other = countedOtherwise(m, have, stated)
+		}
 		if !same && other != "" {
 			return fmt.Sprintf("says %s, where what it cites says %s", m.text, other)
 		}
 	}
 	return ""
+}
+
+// countedOtherwise is how a passage states a sentence's figure when every
+// time it states it, it counts something of another kind with it: the "12
+// days" that a sentence's "£12" was taken from. "" when the passage states
+// the figure as the sentence's kind of thing, without saying what it
+// counts, or not in digits at all.
+func countedOtherwise(m measure, have []measure, stated []figure) string {
+	counted := map[int]measure{}
+	for _, h := range have {
+		if h.at >= 0 {
+			counted[h.at] = h
+		}
+	}
+	other := ""
+	for _, f := range stated {
+		if f.value != m.value {
+			continue
+		}
+		h, ok := counted[f.at]
+		if !ok || h.kind == m.kind {
+			return ""
+		}
+		if other == "" {
+			other = h.text
+		}
+	}
+	return other
 }
 
 // reNegation finds a word that turns a statement around: "not" and its
