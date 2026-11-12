@@ -95,10 +95,11 @@ jobs:
       # "8 new alerts" and links to the Security tab, which is the only place
       # the list is kept; a reviewer, or a tool, without access to that tab is
       # left with a number. The SARIF file the action wrote is read here
-      # instead: one line per result, the rule, where it was reported and where
-      # the data came from, so a fix can be aimed at the line that was found
-      # rather than at a guess. It prints what anyone running CodeQL on this
-      # public code would get, and it runs even when the analysis fails.
+      # instead: one line per result, the rule, where it was reported, where the
+      # data came from, the message and every step between, so a fix can be
+      # aimed at the step that was found rather than at a guess. It prints
+      # what anyone running CodeQL on this public code would get, and it runs
+      # even when the analysis fails.
       - name: List the results
         if: always()
         shell: bash
@@ -113,6 +114,9 @@ jobs:
                   ((.locations[0].physicalLocation.artifactLocation.uri // "?") + ":" + ((.locations[0].physicalLocation.region.startLine // 0) | tostring)),
                   ( (.codeFlows[0].threadFlows[0].locations[0].location.physicalLocation // null)
                     | if . == null then "-" else (.artifactLocation.uri + ":" + (.region.startLine | tostring)) end ),
-                  (.message.text | gsub("[\r\n\t]"; " ") | .[0:160]) ]
+                  (.message.text | gsub("[\r\n\t]"; " ") | .[0:160]),
+                  ( [ .codeFlows[0].threadFlows[0].locations[]?.location.physicalLocation
+                      | (.artifactLocation.uri + ":" + (.region.startLine | tostring)) ]
+                    | join(" > ") ) ]
               | @tsv' "$f" | sort
           done
