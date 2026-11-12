@@ -62,7 +62,7 @@ func cmdSite(root string, args []string) error {
 	apiEnable := fs.Bool("api", false,
 		"serve the content API at /api/v1")
 	apiWritable := fs.Bool("api-writable", false,
-		"allow PUT; a read API and a write API are different products")
+		"allow PUT; a read API and a write API are different products. Needs --confine=false: the confined site cannot write the draft")
 	baseURL := fs.String("base-url", "",
 		"absolute origin, e.g. https://example.com — required for the sitemap")
 	redirectFile := fs.String("redirects", "",
@@ -101,6 +101,11 @@ func cmdSite(root string, args []string) error {
 	// What happens here is the site's to record, in its own log: it may not
 	// write the admin's (agenttriggers.go).
 	eventSource = event.Site
+	// A writable API is refused before anything is confined: the confined
+	// site cannot write the draft it writes (errWritableAPIConfined).
+	if writableAPIConfined(*apiEnable && *apiWritable, *confine) {
+		return errWritableAPIConfined
+	}
 	// The public site runs confined (siteconfine.go): re-executed under
 	// Landlock before it opens anything, and checked once it is.
 	switch {

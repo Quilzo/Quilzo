@@ -7,9 +7,12 @@ import (
 	"strings"
 
 	"github.com/quilzo/quilzo/internal/collection"
+	"github.com/quilzo/quilzo/internal/config"
+	"github.com/quilzo/quilzo/internal/form"
 	"github.com/quilzo/quilzo/internal/listing"
-	"github.com/quilzo/quilzo/internal/media"
 	"github.com/quilzo/quilzo/internal/medialib"
+	"github.com/quilzo/quilzo/internal/menu"
+	"github.com/quilzo/quilzo/internal/public"
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/store"
 )
@@ -22,22 +25,32 @@ import (
 // nobody is served — a link wrapping the site name looked empty and blocked
 // the publish, and a real failure inside a menu would have been invisible. For
 // the export it means shipping a static site with no navigation on any page.
+//
+// And then this was a builder of its own beside the public site's and the
+// admin's: it had no forms, boards, bookings, newsletter, events or posts, so
+// `quilzo render` and the gate in `quilzo publish` drew a page naming a form
+// without it. The context is the public site's now (public.(*Site).Sources),
+// of a site wired here as the server wires it; the admin's preview and its
+// gate are handed the same (renderContext).
 func sourcesFor(root string, s *store.Store, commit, siteName string,
 	pages map[string]any) render.Sources {
+	return renderSiteFor(root, s, commit, siteName).Sources(pages)
+}
 
-	src := render.Sources{Name: siteName, Pages: pages}
-	// The icon, so a layout showing it beside the name is judged and
-	// exported as it is served. Only an id the library holds as a picture.
-	if cfg, err := loadConfig(root); err == nil {
-		src.Members = membersMode(cfg) != "off"
-		if id := strings.TrimSpace(cfg.Raw("site.icon")); id != "" {
-			if lib, lerr := openMedia(root); lerr == nil {
-				if f, _, gerr := lib.Get(id); gerr == nil && f.Kind == media.Image {
-					src.Icon = "/media/" + id
-					src.IconInitial = cfg.Bool("site.icon_initial")
-				}
-			}
-		}
+// renderSiteFor is the site as its pages are drawn at commit, for whatever
+// renders one outside the server: what a page's context reads, wired from
+// the store with the helpers the server's site is wired with (siteFor), and
+// every listing, and so every post and event, read at commit's tree. Nothing
+// a visitor sends is taken here: the limiters and audit the boards', the
+// bookings' and the newsletter's helpers wire are never asked, since drawing
+// a page submits nothing.
+func renderSiteFor(root string, s *store.Store, commit, siteName string) *public.Site {
+	st := public.New(s, render.Layouts{})
+	st.Name = siteName
+	cfg, cerr := loadConfig(root)
+	if cerr == nil {
+		// The newsletter's form is open only on a site with an address.
+		st.BaseURL = config.SiteBase(strings.TrimSpace(cfg.Raw("site.base_url")))
 	}
 
 	// What the asset library can be asked, wired here too.
@@ -52,51 +65,13 @@ func sourcesFor(root string, s *store.Store, commit, siteName string,
 	// The srcset goes with it for the reason this function exists at all. Its
 	// own comment says pages are "rendered the way the site serves them", and
 	// without this the pictures in the judged document carried no narrower
-	// copies while the served ones did.
+	// copies while the served ones did. The icon is one of the library's
+	// pictures too.
 	if lib, lerr := openMedia(root); lerr == nil {
-		src.SrcSet = func(id string) string {
-			f, err := lib.Stat(id)
-			if err != nil {
-				return ""
-			}
-			return f.SrcSet("/media")
-		}
-		src.Poster = func(id string) string {
-			f, err := lib.Stat(id)
-			if err != nil || f.Poster == "" {
-				return ""
-			}
-			return "/media/" + f.Poster
-		}
-		// What a file is, for a backdrop (picture or recording) and for a
-		// silent recording's description. The same answer the public server
-		// gives, so the gate judges the backdrop a reader is served.
-		src.Media = func(id string) (render.MediaInfo, bool) {
-			f, err := lib.Stat(id)
-			if err != nil {
-				return render.MediaInfo{}, false
-			}
-			sound, known := f.SoundKnown()
-			return render.MediaInfo{Kind: string(f.Kind), Sound: sound, SoundKnown: known, Alt: f.Alt}, true
-		}
-		src.Tracks = func(id string) []any {
-			f, err := lib.Stat(id)
-			if err != nil || len(f.Tracks) == 0 {
-				return nil
-			}
-			out := make([]any, 0, len(f.Tracks))
-			for _, t := range f.Tracks {
-				out = append(out, map[string]any{
-					"src": "/media/" + t.ID, "lang": t.Lang,
-					"label": t.Label, "kind": t.Kind, "default": t.Default,
-				})
-			}
-			return out
-		}
+		st.Media = lib.Get
+		st.MediaStat = lib.Stat
 	}
-	if set, err := loadMenus(root); err == nil {
-		src.Menus = set
-	}
+	st.Menus = func() (*menu.Set, error) { return loadMenus(root) }
 	if set, err := loadListings(root); err == nil {
 		tree := ""
 		if commit != "" {
@@ -104,13 +79,41 @@ func sourcesFor(root string, s *store.Store, commit, siteName string,
 				tree = c.Tree
 			}
 		}
-		src.Listings = &listing.Resolver{
+		st.Listings = &listing.Resolver{
 			Store: s, Index: collection.NewCache(), Tree: tree, Set: set}
 	}
+	// The forms a page names, read from the set the site's submit handler
+	// validates against, so what is drawn is what is accepted.
+	st.Forms = &public.Forms{Set: func() (*form.Set, error) { return loadForms(root) }}
+	st.Boards = siteBoards(root)
+	st.Bookings = publicBookings(root)
+	st.Newsletter = publicNewsletter(root)
 	// Buy buttons as the site shows them, so a preview and the gate see the
 	// page a visitor gets.
-	src.Buy = (&payReader{root: root}).Buy
-	return src
+	st.Buy = (&payReader{root: root}).Buy
+	if cerr == nil {
+		st.Icon = strings.TrimSpace(cfg.Raw("site.icon"))
+		st.IconInitial = cfg.Bool("site.icon_initial")
+		st.Events = strings.TrimSpace(cfg.Raw("site.events"))
+		st.Blog = strings.TrimSpace(cfg.Raw("site.blog"))
+		// Whether visitors have accounts, for the links a layout shows them.
+		// The site's own carries its passkey party and limits, which drawing
+		// a page needs none of.
+		if mode := membersMode(cfg); mode != "off" {
+			if ms, merr := openMembers(root); merr == nil {
+				st.Members = &public.Members{Store: ms, Mode: mode}
+			}
+		}
+	}
+	return st
+}
+
+// renderContext is the admin's Sources hook: the one context, so the
+// preview and the browser's publish gate draw the page the site serves.
+func renderContext(root string, s *store.Store) func(commit string, pages map[string]any) render.Sources {
+	return func(commit string, pages map[string]any) render.Sources {
+		return sourcesFor(root, s, commit, siteName(root), pages)
+	}
 }
 
 // siteName is what this site calls itself.

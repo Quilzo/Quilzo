@@ -45,7 +45,6 @@ package importer
 
 import (
 	"encoding/json"
-	"encoding/xml"
 	"errors"
 	"fmt"
 	"html"
@@ -181,47 +180,20 @@ func Detect(body []byte) (Source, bool) {
 
 // -- WordPress ---------------------------------------------------------------
 
-type wxr struct {
-	Channel struct {
-		Title string    `xml:"title"`
-		Items []wxrItem `xml:"item"`
-	} `xml:"channel"`
-}
-
-type wxrItem struct {
-	Title    string `xml:"title"`
-	Link     string `xml:"link"`
-	PostName string `xml:"post_name"`
-	PostType string `xml:"post_type"`
-	Status   string `xml:"status"`
-	PostDate string `xml:"post_date"`
-	Creator  string `xml:"creator"`
-	// Namespaced explicitly. WXR has both content:encoded and excerpt:encoded,
-	// and an unqualified `encoded` tag matches whichever appears first — which
-	// silently imports excerpts as bodies on exports that order them the other
-	// way.
-	Content    string `xml:"http://purl.org/rss/1.0/modules/content/ encoded"`
-	Excerpt    string `xml:"http://wordpress.org/export/1.2/excerpt/ encoded"`
-	AttachURL  string `xml:"attachment_url"`
-	Categories []struct {
-		Domain string `xml:"domain,attr"`
-		Value  string `xml:",chardata"`
-	} `xml:"category"`
-}
-
+// importWXR makes pages of a WordPress export, read as `quilzo site import`
+// reads it (webimport.ReadWordPress) and each named as it names it
+// (webimport.WordPressItem.PageName). This had a parser of its own, which
+// named a page from its slug or its title while site import named it from its
+// link: one file came in as qa-night through one and qa through the other.
+// Reading the content by its namespace (WordPressItem.Content) keeps an
+// excerpt from being imported as a body on an export that orders the two the
+// other way.
 func importWXR(body []byte, now time.Time) (*Report, error) {
 	rep := &Report{Source: WordPress}
 
-	var doc wxr
-	dec := xml.NewDecoder(strings.NewReader(string(body)))
-	// Strict is the default and stays on. It is what makes an undeclared entity
-	// an error rather than something passed through as literal text — and a
-	// parser that passes &xxe; through is a parser handing the payload to
-	// whatever reads its output next.
-	dec.Strict = true
-	if err := dec.Decode(&doc); err != nil {
-		// Said as `quilzo site import` says it about the same file.
-		return nil, webimport.NotWordPress(err)
+	doc, err := webimport.ReadWordPress(body)
+	if err != nil {
+		return nil, err
 	}
 
 	named := export.NewNames()
@@ -234,17 +206,17 @@ func importWXR(body []byte, now time.Time) (*Report, error) {
 		}
 		// Attachments are references, not pages. Their URLs are collected so
 		// the operator can decide whether to pull them down.
-		if item.PostType == "attachment" {
+		if item.Type == "attachment" {
 			if item.AttachURL != "" {
 				rep.Media = append(rep.Media, item.AttachURL)
 			}
 			continue
 		}
-		switch item.PostType {
+		switch item.Type {
 		case "nav_menu_item", "revision", "custom_css", "customize_changeset",
 			"wp_global_styles", "wp_template", "wp_template_part", "wp_block":
 			rep.Skipped = append(rep.Skipped, fmt.Sprintf(
-				"%q (%s) — a WordPress internal, not content", item.Title, item.PostType))
+				"%q (%s) — a WordPress internal, not content", item.Title, item.Type))
 			continue
 		}
 		if item.Status == "trash" {
@@ -253,17 +225,14 @@ func importWXR(body []byte, now time.Time) (*Report, error) {
 			continue
 		}
 
-		name := slug(item.PostName)
-		if name == "" {
-			name = slug(item.Title)
-		}
+		name := item.PageName()
 		if name == "" {
 			rep.Skipped = append(rep.Skipped, "an item with no title or slug")
 			continue
 		}
 		name = named.Claim(name)
 
-		text, links, images, dropped := flattenHTML(item.Content)
+		text, links, images, dropped := flattenHTML(item.Content())
 		rep.Media = append(rep.Media, images...)
 
 		fields := map[string]any{
@@ -271,7 +240,7 @@ func importWXR(body []byte, now time.Time) (*Report, error) {
 			"body":  text,
 			"slug":  name,
 		}
-		if d := wpDate(item.PostDate); d != "" {
+		if d := wpDate(item.Date); d != "" {
 			fields["published"] = d
 		}
 		if item.Creator != "" {

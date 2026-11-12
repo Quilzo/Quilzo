@@ -748,25 +748,7 @@ func cmdServe(root string, args []string) error {
 	dw := newDesignWatch(*tplDir, design, func(d *Design) { srv.SetDesign(d.Layouts, d.Stylesheet) })
 	srv.DesignSet = adminDesignHooks(*tplDir, dw)
 	srv.Decentralised = decentralisedFor(root, *tplDir, s, dw.Current)
-	srv.Transfer = &admin.Transfer{
-		Pages: func() (map[string]any, error) { return draftPages(root) },
-		// Its own Save rather than the shared one, so what it marks is what it
-		// brought in. A transfer is content this program converted out of
-		// somebody else's export — a thing it knows — where an ordinary edit
-		// is a person writing, which it does not. Marking through the shared
-		// path would assert the first about the second.
-		Save: func(p map[string]any, msg, by, base string) error {
-			if err := saveDraft(root, s, p, msg, by, base); err != nil {
-				return err
-			}
-			markGeneratedQuietly(root, s, by, "brought in by transfer import")
-			return nil
-		},
-		SiteName: cfg.Raw("site.name"), BaseURL: cfg.Raw("site.base_url"),
-		// Read at each export, so a scheme changed while this runs is the
-		// one an export carries.
-		Banner: func() (string, error) { return deploymentBanner(root) },
-	}
+	srv.Transfer = transferHooks(root, s, cfg, signedIn)
 	srv.Assist = &admin.Assist{
 		Model: func(person string) (assist.Model, error) {
 			m, err := assistModel(root, person)
@@ -924,8 +906,8 @@ func cmdServe(root string, args []string) error {
 
 	// The content API, same-origin with the playground. Read-only here: this
 	// is the console, and a console that can rewrite production by accident
-	// is a different product. `quilzo site --api --api-writable` is where
-	// writes are turned on deliberately.
+	// is a different product. `quilzo site --api --api-writable
+	// --confine=false` is where writes are turned on deliberately.
 	apiSrv := &api.Server{
 		Store: s, Policy: pol, Tokens: toks,
 		// The admin's own limiter and token reloader, not a second set and
@@ -1040,6 +1022,10 @@ func cmdServe(root string, args []string) error {
 	// The same name the site serves under, so the preview and the publish gate
 	// render the page readers get rather than one with a blank site name.
 	srv.SiteName = siteName(root)
+	// And the context the site draws a page in (renderContext), so the
+	// preview shows the form and the icon a visitor gets and the browser's
+	// gate judges them, as `quilzo render` and `quilzo publish` do.
+	srv.Sources = renderContext(root, s)
 	srv.LoadProvenance = func() (*provenance.Index, error) { return loadProvenance(root) }
 	srv.SaveProvenance = func(i *provenance.Index) error { return saveJSON(provPath(root), i) }
 	// Types are re-read per request rather than captured once. A type added

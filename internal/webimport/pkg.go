@@ -112,14 +112,23 @@ func Package(s *Site, name, by string, picture Picture, now time.Time) (*Brought
 	}
 	out.Notes = append(out.Notes, s.Notes...)
 
-	// Each page gets a name from its address, and keeps it if it can.
-	names := map[string]string{}
+	// Each page gets the name its source gives it, or one from its address,
+	// and keeps it if it can. Each is kept by the page's place, not by its
+	// address: the address without its query, which this was keyed by, is
+	// the home's for every page of a WordPress site on plain links
+	// (/?page_id=11), so they all took the last name given and the package
+	// was refused, "page index-3 is declared twice".
+	names := addresses{}
+	given := make([]string, len(s.Pages))
 	// Each post's page is the blog's, by this name.
 	taken := map[string]bool{postPage: len(s.Posts) > 0}
 	// next is, for a name taken, the number to try first, as in postSlugs.
 	next := map[string]int{}
 	for i, pg := range s.Pages {
-		n := pageName(pg.URL)
+		n := pg.Name
+		if n == "" {
+			n = pageName(pg.URL)
+		}
 		if i == 0 {
 			n = "index"
 		}
@@ -129,32 +138,34 @@ func Package(s *Site, name, by string, picture Picture, now time.Time) (*Brought
 			next[base] = k + 1
 		}
 		taken[n] = true
-		names[keyOf(pg.URL)] = n
+		given[i] = n
+		names[addressOf(pg.URL)] = n
 	}
 
 	// A link to one of the site's own pages or posts goes to where it is
 	// now; one into a folder that names nothing there, to its path.
-	posts := map[string]string{}
+	posts := addresses{}
 	for i, slug := range postSlugs(s.Posts) {
 		if slug != "" && s.Posts[i].URL != nil {
-			posts[keyOf(s.Posts[i].URL)] = feature.PagePath(postPage) + "/" + slug
+			posts[addressOf(s.Posts[i].URL)] = feature.PagePath(postPage) + "/" + slug
 			// The folder the posts were in listed them, as the blog does.
 			up := *s.Posts[i].URL
-			up.Path = path.Dir(strings.TrimSuffix(up.Path, "/"))
+			up.Path, up.RawQuery = path.Dir(strings.TrimSuffix(up.Path, "/")), ""
 			if k := keyOf(&up); posts[k] == "" && up.Path != "/" && names[k] == "" {
 				posts[k] = feature.PagePath("blog")
 			}
 		}
 	}
+	queried := byQuery(s)
 	link := func(raw string) string {
 		u, err := url.Parse(raw)
 		if err != nil {
 			return raw
 		}
-		if n, ok := names[keyOf(u)]; ok {
+		if n, ok := names.at(u, queried); ok {
 			return feature.PagePath(n)
 		}
-		if p, ok := posts[keyOf(u)]; ok {
+		if p, ok := posts.at(u, queried); ok {
 			return p
 		}
 		if u.Host == LocalHost {
@@ -163,8 +174,8 @@ func Package(s *Site, name, by string, picture Picture, now time.Time) (*Brought
 		return raw
 	}
 	pictures, undescribed, failed, undescribedPosts := 0, 0, 0, 0
-	for _, pg := range s.Pages {
-		n := names[keyOf(pg.URL)]
+	for i, pg := range s.Pages {
+		n := given[i]
 		body, empty := pageBody(pg, siteName, func(src *url.URL, alt string) string {
 			if picture == nil {
 				return ""
@@ -223,7 +234,7 @@ func Package(s *Site, name, by string, picture Picture, now time.Time) (*Brought
 		exists[pg.Name] = true
 	}
 	for _, nav := range home.Navs {
-		m := menuOf(nav, names, exists)
+		m := menuOf(nav, names, exists, queried)
 		if len(m.Items) == 0 {
 			continue
 		}
@@ -544,11 +555,11 @@ func linksIn(md string, link func(string) string) string {
 	}
 }
 
-func menuOf(nav Nav, names map[string]string, exists map[string]bool) menu.Menu {
+func menuOf(nav Nav, names addresses, exists map[string]bool, queried bool) menu.Menu {
 	var m menu.Menu
 	seen := map[string]bool{}
 	for _, l := range nav.Links {
-		target, ok := names[keyOf(l.URL)]
+		target, ok := names.at(l.URL, queried)
 		if !ok || !exists[target] || seen[target] || len(m.Items) >= 12 {
 			continue
 		}
@@ -665,6 +676,61 @@ func pageName(u *url.URL) string {
 // keyOf is a page's address as the crawl knows it.
 func keyOf(u *url.URL) string {
 	return strings.TrimPrefix(strings.ToLower(u.Host), "www.") + strings.TrimSuffix(u.EscapedPath(), "/")
+}
+
+// addressOf is keyOf with the address's query, for a page or post only a
+// query names: WordPress's plain links are the home's address with
+// ?page_id= or ?p=.
+func addressOf(u *url.URL) string {
+	if u.RawQuery == "" {
+		return keyOf(u)
+	}
+	return keyOf(u) + "?" + u.RawQuery
+}
+
+// addresses are pages' and posts' names, or where they are now, by
+// addressOf.
+type addresses map[string]string
+
+// at is what a link names: the page or post at its address with its query,
+// or, for a link with a query of its own (?utm_source=, ?ref=), the one at
+// its path, as the crawl takes an address with a query for the same page
+// again (pageLike). On a site that knows its own pages or posts by a query
+// (queried, byQuery), a query on the home's address names a page of its own
+// or nothing, never the home: ?page_id=99 is a page that was not brought.
+// Everywhere else it is the home. It was never the home anywhere, and on a
+// crawled site a link home with ?utm_source= went back to the old site and
+// the menu lost its Home. The home is told by its name, not by a path at
+// the host's root: WordPress installed in a folder has its home there, and
+// sent ?page_id=99 to it.
+func (a addresses) at(u *url.URL, queried bool) (string, bool) {
+	if v, ok := a[addressOf(u)]; ok {
+		return v, true
+	}
+	if u.RawQuery == "" {
+		return "", false
+	}
+	v, ok := a[keyOf(u)]
+	if queried && v == "index" {
+		return "", false
+	}
+	return v, ok
+}
+
+// byQuery says whether a site knows any of its own pages or posts by a
+// query, as WordPress's plain links do (/?page_id=11, /?p=20).
+func byQuery(s *Site) bool {
+	for _, pg := range s.Pages {
+		if pg.URL != nil && pg.URL.RawQuery != "" {
+			return true
+		}
+	}
+	for _, p := range s.Posts {
+		if p.URL != nil && p.URL.RawQuery != "" {
+			return true
+		}
+	}
+	return false
 }
 
 var hexColour = regexp.MustCompile(`^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$`)

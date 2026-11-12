@@ -111,6 +111,31 @@ func prepareSite(root string, strict bool) ([]string, error) {
 	return append(made, files...), nil
 }
 
+// errWritableAPIConfined refuses a writable content API on a site that is
+// confined. A PUT writes the draft: the object store, the refs, the ref lock
+// and types.json, at or under the store's root, none of which the site may
+// write. The site started anyway, announced "api: /api/v1, writable", and
+// answered every write "cannot open the ref lock: permission denied", a mode
+// that could never work. Letting it write there is no fix: a site that can
+// rename files into the root can replace policy.json, and one that can write
+// refs can move live, which is what the confinement is for. The flag still
+// writes unconfined, where whoever runs it has taken that on.
+var errWritableAPIConfined = errors.New("--api-writable writes the store's draft (its objects, refs and " +
+	"types.json), which the confined site cannot reach, so every write would fail; to write through this " +
+	"API, run the site unconfined and take that on (quilzo site --api --api-writable --confine=false), " +
+	"or write through the admin (quilzo serve, MCP)")
+
+// writableAPIConfined says whether a site with a writable content API would
+// run confined: it is the confined child, or it is to become one on a kernel
+// with Landlock. A kernel without it runs the site unconfined (confineSite),
+// and there the writes work, so that is not refused.
+func writableAPIConfined(apiWritable, confine bool) bool {
+	if !apiWritable {
+		return false
+	}
+	return os.Getenv(siteConfinedEnv) != "" || (confine && sandbox.ABI() != 0)
+}
+
 // confineSite re-executes the site confined, and returns only when it did
 // not: the kernel has no Landlock, which it says.
 func confineSite(root string) error {

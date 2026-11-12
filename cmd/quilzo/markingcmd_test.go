@@ -191,11 +191,14 @@ func TestAnExportOverMCPCarriesTheBanner(t *testing.T) {
 		t.Fatal(err)
 	}
 	call := mcpAs(t, root, withRole("dana", auth.RoleAdmin))
-	if got := call("quilzo_read", "export_site", nil); refused(got) || !strings.Contains(got, "OFFICIAL") {
+	// Of the draft: export_site is of what is published unless it is told
+	// otherwise, and nothing is.
+	draft := map[string]any{"ref": "draft"}
+	if got := call("quilzo_read", "export_site", draft); refused(got) || !strings.Contains(got, "OFFICIAL") {
 		t.Errorf("an export over MCP carries no banner: %s", got)
 	}
 	breakConfig(t, root)
-	if got := call("quilzo_read", "export_site", nil); !refused(got) {
+	if got := call("quilzo_read", "export_site", draft); !refused(got) {
 		t.Errorf("an export over MCP went out with the configuration unreadable, so "+
 			"with no banner: %s", got)
 	}

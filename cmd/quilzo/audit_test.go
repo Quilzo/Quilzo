@@ -194,8 +194,10 @@ func TestEveryPrivilegedCommandWritesAnAuditRecord(t *testing.T) {
 		"tokenExchange": "token.exchange",
 		"tokenRevoke":   "token.revoke",
 		"cmdImport":     "import",
-		"cmdExport":     "export",
-		"cmdSiem":       "auditlog.export",
+		// The record every export writes, `quilzo export`'s, export_site's
+		// and the Transfer screen's alike (exportsite.go).
+		"recordExport": "export",
+		"cmdSiem":      "auditlog.export",
 	}
 
 	found := map[string]string{}

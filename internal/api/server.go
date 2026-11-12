@@ -680,8 +680,10 @@ func (s *Server) get(w http.ResponseWriter, r *http.Request, name string) {
 
 // writableFix is the command line that turns page writes on, for a refusal
 // of one on a read-only API to name. --api-writable alone serves no API: it
-// takes --api with it. Records are written elsewhere (recordsWritableFix).
-const writableFix = "quilzo site --api --api-writable"
+// takes --api with it. And --confine=false: the confined site cannot write
+// the draft, so it refuses a writable API, and the line this named without
+// it did not start. Records are written elsewhere (recordsWritableFix).
+const writableFix = "quilzo site --api --api-writable --confine=false"
 
 func (s *Server) put(w http.ResponseWriter, r *http.Request, name string) {
 	if !s.Writable {

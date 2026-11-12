@@ -1001,7 +1001,10 @@ start and refuses to run if they are not. `quilzo site --prepare` makes and
 lists those paths, for a service manager that makes the store read-only
 (see [deploy/](../deploy/)); run it again after an upgrade that adds one, or
 the site starts with that feature off and says which. `--confine=false` runs it
-unconfined and says so.
+unconfined and says so. A writable content API (`--api --api-writable`) writes
+the draft, its objects, refs and `types.json`, which the confined site cannot
+reach, so the site refuses to start with one and says to add `--confine=false`,
+which takes that reach on; write through the admin otherwise.
 It cannot read a submission back: reading the postbag happens in the admin,
 behind authentication.
 
