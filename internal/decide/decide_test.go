@@ -184,3 +184,17 @@ func TestEvaluationSeparatesCoverageFromAccuracy(t *testing.T) {
 		t.Fatalf("coverage %.2f accuracy %.2f", rep.Coverage, rep.AutoAccuracy)
 	}
 }
+
+// There is no answer about nothing. A decide asked with no state, or a
+// JSON null, asked the model its questions about nothing and came back
+// with confident answers and escalate false, which may drive things with
+// no person involved.
+func TestNoStateIsNotDecided(t *testing.T) {
+	m := &seq{replies: []string{reply("billing", 0.95, "no", 0.2)}}
+	if _, err := Decide(context.Background(), triage, m, nil); err == nil || !strings.Contains(err.Error(), "state") {
+		t.Fatalf("decided about nothing: %v", err)
+	}
+	if m.n != 0 {
+		t.Fatalf("the model was asked %d times about nothing", m.n)
+	}
+}

@@ -45,6 +45,7 @@ package decide
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -247,6 +248,13 @@ func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
 // state is any JSON value. m may be nil, in which case everything escalates.
 func Decide(ctx context.Context, d Decider, m Model, state any) (Result, error) {
 	res := Result{Decider: d.Name}
+	// Nothing to decide about is not a question: asked about it, a model
+	// answers with confidence all the same, and a confident answer with no
+	// escalation may drive things with no person involved.
+	if state == nil {
+		return res, errors.New("there is no state to decide about: give the JSON the questions are about, " +
+			"such as the ticket, the comment or the alert")
+	}
 	raw, err := json.Marshal(state)
 	if err != nil {
 		return res, fmt.Errorf("the state is not JSON: %w", err)
