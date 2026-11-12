@@ -15,6 +15,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/feature"
+	"github.com/quilzo/quilzo/internal/mcp"
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/site"
@@ -250,4 +251,82 @@ func TestAFeatureInstallKeepsAPageAddedWhileItRan(t *testing.T) {
 	if names := strings.Join(draftNames(t, root), ","); names != "about,index,samples" {
 		t.Fatalf("the draft holds %s, not about, index and samples", names)
 	}
+}
+
+// writePagesAtOnce calls write_page from n agents at once, each through a
+// server of its own as /mcp builds one per request, and returns what each
+// was told: "" for a write that landed.
+func writePagesAtOnce(t *testing.T, root string, n int, args func(i int) map[string]any) []*mcp.Error {
+	t.Helper()
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refused := make([]*mcp.Error, n)
+	var wg sync.WaitGroup
+	for i := range n {
+		srv := buildMCP(root, s, asAdmin(fmt.Sprintf("agent%d", i)), t.TempDir())
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, refused[i] = callTool(t, srv, "quilzo_write", "write_page", args(i))
+		}()
+	}
+	wg.Wait()
+	return refused
+}
+
+// Ten agents writing ten different pages at once all land.
+//
+// write_page read the draft itself and wrote against what it read, so the
+// first write to land made every other one in flight fail with "the draft
+// moved while you were working", naming a page it had not touched, and
+// marked retryable:false, so a well-behaved client gave up: one write of
+// ten, from agents whose work did not overlap at all.
+func TestConcurrentWritePagesToDifferentPagesAllLand(t *testing.T) {
+	root, _ := concurrentRig(t)
+	const writers = 10
+	refused := writePagesAtOnce(t, root, writers, func(i int) map[string]any {
+		return map[string]any{"page": fmt.Sprintf("conc-%d", i),
+			"fields": map[string]any{"title": fmt.Sprintf("Page %d", i)}}
+	})
+	for i, r := range refused {
+		if r != nil {
+			t.Errorf("writer %d, whose page nobody else wrote, was refused: %s %v", i, r.Message, r.Data)
+		}
+	}
+	names := draftNames(t, root)
+	if len(names) != writers+1 {
+		t.Fatalf("the draft holds %d pages, not %d: %s", len(names), writers+1, strings.Join(names, ", "))
+	}
+}
+
+// Agents that really do collide, on one field of one page, are told to read
+// again and retry, which is now true: each call reads the draft itself.
+//
+// Every refusal carried retryable:false, beside a comment saying a retry
+// against the same stale base fails forever. There is no stale base to
+// retry against: the next call reads the draft as it is then.
+func TestAWritePageConflictSaysItCanBeRetried(t *testing.T) {
+	root, _ := concurrentRig(t)
+	refused := writePagesAtOnce(t, root, 10, func(i int) map[string]any {
+		return map[string]any{"page": "index",
+			"fields": map[string]any{"title": fmt.Sprintf("Home, as agent %d has it", i)}}
+	})
+	n := 0
+	for i, r := range refused {
+		if r == nil {
+			continue
+		}
+		n++
+		data, _ := r.Data.(map[string]any)
+		if data["retryable"] != true {
+			t.Errorf("writer %d was refused a write that would land if read and sent again, as not retryable: %s %v",
+				i, r.Message, r.Data)
+		}
+		if !strings.Contains(r.Message, "again and send what you still mean to") {
+			t.Errorf("writer %d is not told what to do before retrying: %s", i, r.Message)
+		}
+	}
+	t.Logf("%d of 10 refused", n)
 }

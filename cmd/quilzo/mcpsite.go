@@ -372,7 +372,7 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 		}
 		n, changed, err := fillSite(root, values, agent)
 		if err != nil {
-			return refuse(err)
+			return nil, draftRefusal(err)
 		}
 		b, err := json.Marshal(map[string]any{"filled": n, "pages": changed,
 			"next": "The pages are in the draft, marked as an agent's words; a person publishes them."})

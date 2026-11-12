@@ -155,7 +155,15 @@ type Handler func(args map[string]any) (any, error)
 // The distinction is the same one the CLI makes with exit code 3: an agent that
 // reads "denied by policy" as "the server broke" will retry, and retrying a
 // refusal is how an agent turns one blocked action into a hundred.
-type Refusal struct{ Reason string }
+//
+// Retryable marks the one kind a retry can change: a write refused because
+// somebody else's landed first, where the next call reads the draft again.
+// Every refusal said retryable:false, so a client that honoured it gave up
+// on nine of ten writes that a second call would have made.
+type Refusal struct {
+	Reason    string
+	Retryable bool
+}
 
 func (r *Refusal) Error() string { return r.Reason }
 
@@ -548,7 +556,7 @@ func (s *Server) call(raw json.RawMessage) (any, *Error) {
 			// A refusal carries its own code so an agent does not retry a
 			// decision. Retrying a refusal turns one blocked action into many.
 			return nil, &Error{Code: CodeRefused, Message: ref.Reason,
-				Data: map[string]any{"refused": true, "retryable": false}}
+				Data: map[string]any{"refused": true, "retryable": ref.Retryable}}
 		}
 		return nil, &Error{Code: CodeInternal, Message: err.Error()}
 	}
@@ -612,7 +620,7 @@ func (s *Server) callDirect(p callParams) (any, *Error) {
 				Data: map[string]any{"refused": true, "retryable": false}, cause: err}
 		case errors.As(err, &ref):
 			return nil, &Error{Code: CodeRefused, Message: ref.Reason,
-				Data: map[string]any{"refused": true, "retryable": false}}
+				Data: map[string]any{"refused": true, "retryable": ref.Retryable}}
 		}
 		return nil, &Error{Code: CodeInternal, Message: err.Error()}
 	}

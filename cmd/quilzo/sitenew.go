@@ -421,8 +421,11 @@ func fillSite(root string, values map[string]string, caller *Caller) (int, []str
 	if err != nil {
 		return 0, nil, err
 	}
-	base := s.GetRef(site.RefDraft)
-	pages, err := draftPages(root)
+	// The page set and the commit it is read from (site.SaveDraftOver). The
+	// base was the draft ref and the pages the draft or else what was live,
+	// so on a store with nothing drafted the base was empty and the fill
+	// wrote over whatever landed meanwhile.
+	base, pages, err := draftOrLive(s)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -459,7 +462,7 @@ func fillSite(root string, values map[string]string, caller *Caller) (int, []str
 	}
 	// Under the person it is written for: in a run, whoever started it
 	// (writesFor), and not whoever let its fill go ahead.
-	if err := saveDraft(root, s, pages, msg, caller.writesFor(), base); err != nil {
+	if err := saveDraftOver(root, s, pages, msg, caller.writesFor(), base); err != nil {
 		return 0, nil, err
 	}
 	if err := markFilled(root, s, changed, caller); err != nil {
