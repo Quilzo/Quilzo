@@ -1992,8 +1992,11 @@ notice is posted with the site's webhook client, which will not reach this
 machine or its network and does not follow redirects.
 
 `notify.events` says what staff are told about: a visitor asking for a person
-and a form sent, by default, and any event an agent can start from. A notice says
-which chatbot or form and how many, never who or what they wrote:
+and a form sent, by default, and any event an agent can start from. An event is
+named either way, by its own name (`page.published`) or by the one webhooks are
+told it by (`published`), and so it is in `quilzo webhook add --types` and an
+agent's `--on`. A notice says which chatbot or form and how many, never who or
+what they wrote:
 
 > 2 visitors asked the chatbot "help" for a person. They are waiting in the Inbox.
 

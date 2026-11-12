@@ -319,9 +319,5 @@ func ReadReflection(answer string) (when, do, kind string, err error) {
 }
 
 func clip(s string, n int) string {
-	s = strings.Join(strings.Fields(s), " ")
-	if len(s) <= n {
-		return s
-	}
-	return s[:n]
+	return plaintext.Clip(strings.Join(strings.Fields(s), " "), n, "")
 }

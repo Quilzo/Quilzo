@@ -19,6 +19,7 @@ import (
 	"unicode"
 
 	"github.com/quilzo/quilzo/internal/asciifold"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Literature from open indexes.
@@ -390,11 +391,10 @@ func limit(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
-	cut := strings.LastIndexFunc(s[:n], unicode.IsSpace)
-	if cut < n/2 {
-		cut = n
+	if cut := strings.LastIndexFunc(s[:n], unicode.IsSpace); cut >= n/2 {
+		n = cut // at a space, which no character runs across
 	}
-	return s[:cut] + "…"
+	return plaintext.Clip(s, n, "…")
 }
 
 // SuggestKey is a key for a work: its first author's family name and its

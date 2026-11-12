@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/schema"
 )
 
@@ -109,7 +110,7 @@ func plainNumber(s string) bool {
 
 func clip(s string) string {
 	if len(s) > 40 {
-		return s[:37] + "…"
+		return plaintext.Clip(s, 37, "…")
 	}
 	return s
 }

@@ -36,7 +36,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/auth"
@@ -44,6 +43,7 @@ import (
 	"github.com/quilzo/quilzo/internal/feature"
 	"github.com/quilzo/quilzo/internal/memory"
 	"github.com/quilzo/quilzo/internal/newsletter"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Item is one thing waiting for a person to decide.
@@ -377,9 +377,5 @@ func clip(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
-	s = s[:n-len("…")]
-	for len(s) > 0 && !utf8.ValidString(s) {
-		s = s[:len(s)-1]
-	}
-	return s + "…"
+	return plaintext.Clip(s, n-len("…"), "…")
 }

@@ -4,9 +4,11 @@
 package schedule
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 var now = time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)
@@ -200,5 +202,68 @@ func TestAClaimedEntryIsNotFiredTwice(t *testing.T) {
 	s.Complete(c, "published", at)
 	if s.Entries[0].Claimed != 0 || len(s.Due(at.Add(ClaimFor))) != 0 {
 		t.Fatalf("%+v", s.Entries[0])
+	}
+}
+
+// What an audit record of scheduling says is one line, clipped whole: the
+// command line cut it at a byte through an é, and the browser not at all.
+func TestTheRecordOfSchedulingKeepsTheNoteWhole(t *testing.T) {
+	note := "launch\n" + strings.Repeat("a", 192) + "é" + strings.Repeat("b", 100)
+	d := Detail(c1, now.Add(time.Hour), note, "sam")
+	got := d["note"]
+	if !utf8.ValidString(got) || len(got) > MaxNote+len("…") || !strings.HasSuffix(got, "a…") || strings.Contains(got, "\n") {
+		t.Errorf("the note was kept as %q (%d bytes)", got, len(got))
+	}
+	if d["scheduled"] != c1 || d["by"] != "sam" || d["at"] != "2026-08-15T13:00:00Z" {
+		t.Errorf("%v", d)
+	}
+	if d := Detail(c1, now, "short", "sam"); d["note"] != "short" {
+		t.Errorf("a short note was changed to %q", d["note"])
+	}
+}
+
+// Queue tells a refusal, which is the person's to put right, from a
+// schedule that could not be written, which is not.
+func TestQueueTellsARefusalFromAFailure(t *testing.T) {
+	sch := &Schedule{}
+	update := func(fn func(*Schedule) error) error { return fn(sch) }
+	if err := Queue(update, c1, now.Add(time.Hour), Who{Name: "sam"}, "", now); err != nil {
+		t.Fatal(err)
+	}
+	var refused *Refused
+	if err := Queue(update, c1, now.Add(2*time.Hour), Who{Name: "sam"}, "", now); !errors.As(err, &refused) {
+		t.Errorf("scheduling one commit twice was %v, not a refusal", err)
+	}
+	broken := errors.New("disk full")
+	if err := Queue(func(func(*Schedule) error) error { return broken }, c2, now.Add(time.Hour), Who{}, "", now); errors.As(err, &refused) || !errors.Is(err, broken) {
+		t.Errorf("a schedule that could not be written was %v", err)
+	}
+	if err := Withdraw(update, c1[:12]); err != nil || len(sch.Pending(now)) != 0 {
+		t.Errorf("withdrawing: %v, %d pending", err, len(sch.Pending(now)))
+	}
+	if err := Withdraw(update, c1[:12]); !errors.Is(err, ErrNothingPending) {
+		t.Errorf("withdrawing what is not there: %v", err)
+	}
+}
+
+func TestWhenIsATimeOrADuration(t *testing.T) {
+	if at, err := ParseWhen("48h", now); err != nil || !at.Equal(now.Add(48*time.Hour)) {
+		t.Errorf("48h: %v %v", at, err)
+	}
+	if at, err := ParseWhen("2026-09-01T09:00:00Z", now); err != nil || at.Format(time.RFC3339) != "2026-09-01T09:00:00Z" {
+		t.Errorf("a timestamp: %v %v", at, err)
+	}
+	// Space around a time is not part of it, from any surface.
+	if at, err := ParseWhen(" 48h\n", now); err != nil || !at.Equal(now.Add(48*time.Hour)) {
+		t.Errorf("48h with space around it: %v %v", at, err)
+	}
+	sch := &Schedule{}
+	if err := Queue(func(fn func(*Schedule) error) error { return fn(sch) }, c1, now.Add(time.Hour), Who{Name: "sam"}, "  launch\n", now); err != nil || sch.Entries[0].Note != "launch" {
+		t.Errorf("the note was kept as %q: %v", sch.Entries[0].Note, err)
+	}
+	for _, s := range []string{"0s", "-1h", "soon", "", " "} {
+		if _, err := ParseWhen(s, now); err == nil {
+			t.Errorf("%q was read as a time", s)
+		}
 	}
 }

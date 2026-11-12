@@ -86,6 +86,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/mailaddr"
 )
 
 // Bounds. Every one of these is a refusal with a reason attached.
@@ -109,10 +111,7 @@ const (
 	MaxRetentionDays = 1825
 )
 
-var (
-	reName  = regexp.MustCompile(`^[a-z][a-z0-9_]{0,47}$`)
-	reEmail = regexp.MustCompile(`^[^@\s]+@[^@\s.]+\.[^@\s]+$`)
-)
+var reName = regexp.MustCompile(`^[a-z][a-z0-9_]{0,47}$`)
 
 // Kind is what a field accepts. A closed set, for the same reason everything
 // else here has one: a value that does not satisfy its kind is refused before
@@ -727,7 +726,10 @@ func check(fl Field, raw string) (string, error) {
 	}
 	switch fl.Kind {
 	case Email:
-		if !reEmail.MatchString(raw) {
+		// The one address rule, which a booking, the newsletter and a
+		// record's email field share: this form's own took a local part of
+		// any length, which the newsletter then refused.
+		if !mailaddr.Valid(raw) {
 			return "", fmt.Errorf("does not look like an address")
 		}
 	case Number:

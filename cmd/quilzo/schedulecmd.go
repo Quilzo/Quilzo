@@ -88,7 +88,7 @@ func scheduleAdd(root string, args []string) error {
 				"  when is RFC 3339 (2026-09-01T09:00:00Z) or a duration (48h)")
 	}
 
-	when, err := parseWhen(pos[0], time.Now())
+	when, err := schedule.ParseWhen(pos[0], time.Now())
 	if err != nil {
 		return err
 	}
@@ -107,13 +107,11 @@ func scheduleAdd(root string, args []string) error {
 	// file named, which is not always who was let in.
 	caller := resolveCaller(root, flagToken)
 	who := schedule.Who{Name: caller.Name, Kind: string(caller.Kind), Verified: caller.Verified}
-	var refused error
-	if err := updateSchedule(root, func(sch *schedule.Schedule) error {
-		refused = sch.Add(draft, when, who, *note, time.Now())
-		return refused
-	}); err != nil {
-		if refused != nil {
-			return errBlocked{refused}
+	update := func(fn func(*schedule.Schedule) error) error { return updateSchedule(root, fn) }
+	if err := schedule.Queue(update, draft, when, who, *note, time.Now()); err != nil {
+		var refused *schedule.Refused
+		if errors.As(err, &refused) {
+			return errBlocked{refused.Err}
 		}
 		return err
 	}
@@ -121,10 +119,7 @@ func scheduleAdd(root string, args []string) error {
 	record(root, audit.Record{
 		Action: "schedule.add", Resource: "/", Outcome: audit.Success,
 		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
-		Detail: map[string]string{
-			"scheduled": draft, "at": when.UTC().Format(time.RFC3339),
-			"note": truncate(*note, 200),
-		},
+		Detail: schedule.Detail(draft, when, *note, caller.Name),
 	})
 	fireWebhooks(root, "scheduled", draft, nil)
 
@@ -137,42 +132,22 @@ func scheduleAdd(root string, args []string) error {
 	return nil
 }
 
-// parseWhen accepts a timestamp or a duration.
-//
-// Both, because "in 48h" is what somebody types for an embargo and an absolute
-// time is what they type for a launch, and forcing one into the other is how a
-// scheduled publish goes out at the wrong hour.
-func parseWhen(s string, now time.Time) (time.Time, error) {
-	if t, err := time.Parse(time.RFC3339, s); err == nil {
-		return t, nil
-	}
-	if d, err := time.ParseDuration(s); err == nil {
-		if d <= 0 {
-			return time.Time{}, fmt.Errorf("%q is not in the future", s)
-		}
-		return now.Add(d), nil
-	}
-	return time.Time{}, fmt.Errorf(
-		"%q is neither a time (2026-09-01T09:00:00Z) nor a duration (48h)", s)
-}
-
 func scheduleCancel(root string, args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("usage: quilzo schedule cancel <commit>")
 	}
-	if err := updateSchedule(root, func(sch *schedule.Schedule) error {
-		if !sch.Cancel(args[0]) {
+	update := func(fn func(*schedule.Schedule) error) error { return updateSchedule(root, fn) }
+	if err := schedule.Withdraw(update, args[0]); err != nil {
+		if errors.Is(err, schedule.ErrNothingPending) {
 			return fmt.Errorf("nothing pending matches %q", args[0])
 		}
-		return nil
-	}); err != nil {
 		return err
 	}
 	caller := resolveCaller(root, flagToken)
 	record(root, audit.Record{
 		Action: "schedule.cancel", Resource: "/", Outcome: audit.Success,
 		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
-		Detail: map[string]string{"cancelled": args[0]},
+		Detail: schedule.CancelDetail(args[0], caller.Name),
 	})
 	w.Human("cancelled\n")
 	return nil

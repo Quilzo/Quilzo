@@ -15,6 +15,7 @@ import (
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/starter"
 	"github.com/quilzo/quilzo/internal/theme"
 )
@@ -869,7 +870,7 @@ func trim(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
-	return s[:n-1] + "…"
+	return plaintext.Clip(s, n-1, "…")
 }
 
 // themeGenerate builds a whole palette from one colour.

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/quilzo/quilzo/internal/asciifold"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // A tag scanner rather than an HTML parser.
@@ -269,11 +270,7 @@ func lowerName(s string) string {
 }
 
 func trimTo(s string, n int) string {
-	s = strings.Join(strings.Fields(s), " ")
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
+	return plaintext.Clip(strings.Join(strings.Fields(s), " "), n, "…")
 }
 
 func min(a, b int) int {

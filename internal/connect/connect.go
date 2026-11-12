@@ -62,6 +62,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Provider is an OAuth provider somebody may connect an account at.
@@ -833,8 +835,5 @@ func clip(s string, n int) string {
 		}
 		return r
 	}, s)
-	if len(s) > n {
-		return s[:n]
-	}
-	return s
+	return plaintext.Clip(s, n, "")
 }

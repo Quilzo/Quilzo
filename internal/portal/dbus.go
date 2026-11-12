@@ -41,6 +41,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Variant is one D-Bus variant: a signature and the value it describes.
@@ -586,9 +588,4 @@ func decodeStrings(body []byte) ([]string, error) {
 	return []string{s}, nil
 }
 
-func clipStr(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
-}
+func clipStr(s string, n int) string { return plaintext.Clip(s, n, "…") }

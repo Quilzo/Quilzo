@@ -16,6 +16,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/event"
 	"github.com/quilzo/quilzo/internal/fetch"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Telling staff what visitors are waiting on.
@@ -59,7 +60,11 @@ func noticeTypes(root string) map[event.Type]bool {
 	}
 	out := map[event.Type]bool{}
 	for _, t := range mustConfig(root).Strings("notify.events") {
-		out[event.Type(strings.TrimSpace(t))] = true
+		// Read by either spelling, as the setting takes it: "published"
+		// and page.published are one event.
+		if e, ok := event.Parse(strings.TrimSpace(t)); ok {
+			out[e] = true
+		}
 	}
 	return out
 }
@@ -132,7 +137,7 @@ func staffNotice(events []event.Event, held int, admin string) (subject, body st
 	lines = append(lines, "", "Sent by Quilzo. It says which chatbot or form, never who or what they wrote.")
 	subject = "Quilzo: " + onOneLine(lines[0])
 	if len(subject) > 120 {
-		subject = subject[:117] + "..."
+		subject = plaintext.Clip(subject, 117, "...")
 	}
 	return subject, strings.Join(lines, "\n")
 }

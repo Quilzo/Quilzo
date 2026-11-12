@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/event"
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -67,7 +68,7 @@ type agentMap struct {
 
 func clipText(s string, n int) string {
 	if len(s) > n {
-		return s[:n-1] + "…"
+		return plaintext.Clip(s, n-1, "…")
 	}
 	return s
 }

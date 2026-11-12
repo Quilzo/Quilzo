@@ -17,6 +17,7 @@ import (
 	"github.com/quilzo/quilzo/internal/a11y"
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/cdp"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // More of the browser: scrolling, keys, going back and forward, waiting
@@ -518,10 +519,7 @@ func (d *Driver) watchConsole(ctx context.Context, b *cdp.Browser, p *cdp.Page) 
 				}
 				line = consoleLine{"request failed", strings.TrimSpace(nonEmpty(urls[r.ID], "a request") + ": " + nonEmpty(r.Blocked, r.Error))}
 			}
-			line.Text = clean(line.Text)
-			if len(line.Text) > 300 {
-				line.Text = line.Text[:300] + "…"
-			}
+			line.Text = plaintext.Clip(clean(line.Text), 300, "…")
 			d.nmu.Lock()
 			if len(d.console) < MaxConsole {
 				d.console = append(d.console, line)

