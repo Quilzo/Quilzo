@@ -374,6 +374,11 @@ func (s *Server) storedRules() (*auth.Policy, *auth.TokenStore) {
 	return pol, toks
 }
 
+// OwnOrigin is this admin's origin as the request reached it (ownOrigin),
+// for the content API it mounts, which takes the session cookie from this
+// admin's own pages and must agree with them which those are.
+func (s *Server) OwnOrigin(r *http.Request) string { return s.ownOrigin(r) }
+
 // ownOrigin is this admin's origin as the request reached it.
 func (s *Server) ownOrigin(r *http.Request) string {
 	scheme := "http"

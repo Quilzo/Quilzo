@@ -965,6 +965,9 @@ func cmdServe(root string, args []string) error {
 		// chances for one of them to be built wrong.
 		Index:       srv.Records,
 		SessionAuth: true,
+		// The admin's origin, scheme and all (admin.behind_tls_proxy), so
+		// the two agree which pages the session cookie may come from.
+		Origin: srv.OwnOrigin,
 		Limits: api.Limits{
 			PerMinute: cfg.Int("api.rate.per_minute"),
 			Burst:     cfg.Int("api.rate.burst"),

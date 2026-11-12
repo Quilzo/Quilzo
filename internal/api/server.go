@@ -72,6 +72,11 @@ type Server struct {
 	// token, for same-origin requests only. Off unless this server is mounted
 	// inside the admin, which is the one place a session exists.
 	SessionAuth bool
+	// Origin is the admin's own origin as it works it out, for taking its
+	// session cookie (sameOrigin): its scheme behind a proxy that ends TLS
+	// is a setting (admin.behind_tls_proxy), not this connection's. Nil is
+	// this connection's scheme and Host.
+	Origin func(r *http.Request) string
 	// ReloadTokens re-reads the credential store when it has changed on disk.
 	// Nil means never, which is only right for a test.
 	ReloadTokens func()
@@ -439,7 +444,7 @@ func (s *Server) authenticate(r *http.Request) (*auth.Token, error) {
 		// could render perfectly and could not make a single request. Found by
 		// clicking Send in a screenshot; no test asserted that a request
 		// arrived anywhere.
-		if !s.SessionAuth || !sameOrigin(r) {
+		if !s.SessionAuth || !s.sameOrigin(r) {
 			return nil, fmt.Errorf("no bearer token")
 		}
 		c, err := r.Cookie("quilzo_token")
@@ -1074,12 +1079,20 @@ func (s *Server) answerNeighbours(w http.ResponseWriter, r *http.Request,
 //
 // Origin was asked only whether it ended in "//" and the host, so another
 // scheme's pages and "http://evil.example//h" were this server's own. The
-// scheme is this connection's: behind a proxy that ends TLS a browser
-// speaks HTTPS to it, and sends Sec-Fetch-Site, which decides first.
-func sameOrigin(r *http.Request) bool {
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
+// origin is the admin's, as the admin works it out (Origin), since this
+// server is mounted at it: taken from this connection alone, its scheme
+// behind a proxy that ends TLS was http, so a page the admin's screens
+// took as their own was another site's here, and the other way round.
+func (s *Server) sameOrigin(r *http.Request) bool {
+	own := ""
+	if s.Origin != nil {
+		own = s.Origin(r)
+	} else {
+		scheme := "http"
+		if r.TLS != nil {
+			scheme = "https"
+		}
+		own = scheme + "://" + r.Host
 	}
-	return sameorigin.Check(r, scheme+"://"+r.Host, sameorigin.Policy{None: true, Missing: true})
+	return sameorigin.Check(r, own, sameorigin.Policy{None: true, Missing: true})
 }

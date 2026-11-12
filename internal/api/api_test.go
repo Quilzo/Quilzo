@@ -968,3 +968,32 @@ func TestASessionCookieIsTakenOnlyFromThisServersOwnOrigin(t *testing.T) {
 		}
 	}
 }
+
+// Mounted inside the admin, the session cookie is taken from a page of the
+// admin's own origin as the admin works it out (Server.Origin), so the two
+// agree about one request behind a proxy that ends TLS.
+//
+// The scheme was this connection's alone. Behind such a proxy, with
+// admin.behind_tls_proxy set, a browser that sends Origin and no fetch
+// metadata had a page of https://h refused here while the admin's screens
+// took it, and a page of http://h taken here while the admin refused it.
+func TestTheSessionCookieIsTakenFromTheOriginTheAdminSaysIsItsOwn(t *testing.T) {
+	s, tok, _ := setup(t)
+	s.SessionAuth = true
+	s.Origin = func(*http.Request) string { return "https://h" }
+	h := s.Handler()
+	for origin, want := range map[string]int{
+		"https://h": 200,
+		"https://H": 200,
+		"http://h":  401,
+	} {
+		r := httptest.NewRequest("GET", "http://h/api/v1/pages", nil)
+		r.AddCookie(&http.Cookie{Name: "quilzo_token", Value: tok})
+		r.Header.Set("Origin", origin)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != want {
+			t.Errorf("Origin %s gave %d, want %d", origin, w.Code, want)
+		}
+	}
+}
