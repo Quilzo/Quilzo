@@ -72,6 +72,9 @@ func cmdFeature(root string, args []string) error {
 	rest := args[1:]
 	switch args[0] {
 	case "example":
+		if err := noArguments(rest); err != nil {
+			return err
+		}
 		_, err := os.Stdout.Write(feature.Example())
 		return err
 	case "check":

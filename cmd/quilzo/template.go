@@ -25,6 +25,9 @@ func cmdTemplate(root string, args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return templateList()
 	case "show":
 		return templateShow(args[1:])

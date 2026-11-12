@@ -446,6 +446,9 @@ func cmdConnect(root string, args []string) error {
 	caller := resolveCaller(root, flagToken)
 	switch args[0] {
 	case "providers":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		set, err := loadConnectProviders(root)
 		if err != nil {
 			return err
@@ -478,6 +481,9 @@ func cmdConnect(root string, args []string) error {
 		w.Human("Open this in the browser where you are signed in to the admin as %s, within ten minutes:\n\n  %s\n", caller.Name, to)
 		return nil
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		mine, err := myConnections(root, caller.Name)
 		if err != nil {
 			return err

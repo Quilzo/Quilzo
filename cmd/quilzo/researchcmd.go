@@ -117,11 +117,14 @@ func cmdResearch(root string, args []string) error {
 	usage := func(u string) error { return errors.New("usage: quilzo research " + u) }
 	switch args[0] {
 	case "list":
+		if err := noArguments(rest); err != nil {
+			return err
+		}
 		return researchList(root, caller())
 	case "ideas":
 		pos, flags := leadingArgs(rest, 1)
 		var o ideasOptions
-		if err := ideaFlagSet(&o).Parse(flags); err != nil {
+		if err := parseFlags(ideaFlagSet(&o), flags, &pos, 1); err != nil {
 			return err
 		}
 		if len(pos) != 1 {

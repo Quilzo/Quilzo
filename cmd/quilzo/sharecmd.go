@@ -351,6 +351,9 @@ func cmdShare(root string, args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		if err := authorise(root, caller, auth.ActEditDraft, "/"); err != nil {
 			return err
 		}

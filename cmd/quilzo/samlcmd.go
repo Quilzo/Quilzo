@@ -112,6 +112,9 @@ func cmdSAML(root string, args []string) error {
 	caller := resolveCaller(root, "")
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		all, err := loadSAML(root)
 		if err != nil {
 			return err
@@ -128,6 +131,9 @@ func cmdSAML(root string, args []string) error {
 		}
 		return nil
 	case "presets":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		keys := make([]string, 0, len(saml.Presets))
 		for k := range saml.Presets {
 			keys = append(keys, k)

@@ -52,7 +52,7 @@ func themeImport(root string, args []string) error {
 	var one stringList
 	fs.Var(&one, "set",
 		"token=path, repeatable, for a mapping too short to be worth a file")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, nil, 0); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -491,7 +491,7 @@ func themeExport(args []string) error {
 		"write here rather than to standard output")
 	tailwind := fs.Bool("tailwind", false,
 		"write a Tailwind CSS v4 @theme stylesheet instead of design tokens")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	values, err := loadThemeFile(*dir)

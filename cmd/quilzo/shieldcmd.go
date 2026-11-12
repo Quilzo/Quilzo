@@ -780,8 +780,8 @@ func shieldDryRun(root string, args []string) error {
 	fs := flag.NewFlagSet("shield dry-run", flag.ContinueOnError)
 	days := fs.Int("days", 30, "how far back to look")
 	file := fs.String("file", "", "a playbook to try, as JSON, instead of one in force")
-	pos, err := parseAnywhere(fs, args)
-	if err != nil {
+	var pos []string
+	if err := parseFlags(fs, args, &pos, 1); err != nil {
 		return err
 	}
 	if *days < 1 || *days > 400 {

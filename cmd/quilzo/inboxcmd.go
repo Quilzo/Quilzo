@@ -166,6 +166,9 @@ func cmdInbox(root string, args []string) error {
 	st := handoffStore(root)
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		all, err := st.List()
 		if err != nil {
 			return err

@@ -456,6 +456,9 @@ func cmdFleet(root string, args []string) error {
 			}
 			return fleetUnregister(root, args[1], resolveCaller(root, flagToken))
 		case "check":
+			if err := noArguments(args[1:]); err != nil {
+				return err
+			}
 			changed, err := fleetCheck(root, time.Now())
 			if err != nil {
 				return err

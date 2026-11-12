@@ -75,7 +75,10 @@ func cmdTrust(root string, args []string) error {
 	case "remove":
 		return trustRemove(root, args[1:])
 	}
-	return trustUsage()
+	// A word that is none of them is refused, with the commands there are:
+	// it printed them and exited 0.
+	_ = trustUsage()
+	return errMisused{fmt.Errorf("unknown trust command %q", args[0])}
 }
 
 type claimFlags map[string]string

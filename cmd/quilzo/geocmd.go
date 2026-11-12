@@ -168,6 +168,9 @@ func cmdGeo(root string, args []string) error {
 	}
 	switch args[0] {
 	case "status":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		l, desc, err := loadGeo(root)
 		if err != nil {
 			return err
@@ -190,6 +193,9 @@ func cmdGeo(root string, args []string) error {
 		}
 		return nil
 	case "help":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		w.Human("  Sign-ins are placed from networks you name first, then a city database.\n"+
 			"  The database: download DB-IP's free IP to City Lite in MMDB form from\n"+
 			"  https://db-ip.com/db/download/ip-to-city-lite (CC BY 4.0), unpack it, and put it at\n"+

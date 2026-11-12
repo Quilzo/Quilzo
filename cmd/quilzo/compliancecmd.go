@@ -35,8 +35,14 @@ func cmdCompliance(root string, args []string) error {
 	case "sbom":
 		return complianceSBOM(args[1:])
 	case "crypto":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return complianceCrypto()
 	case "controls":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return complianceControls()
 	case "accessibility", "acr":
 		return complianceACR(root, args[1:])
@@ -52,6 +58,9 @@ func cmdCompliance(root string, args []string) error {
 	case "component":
 		return complianceComponent(root, args[1:])
 	case "pledge":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return compliancePledge()
 	case "ssp":
 		return complianceSSP(root, args[1:])
@@ -66,6 +75,10 @@ func cmdCompliance(root string, args []string) error {
 }
 
 func complianceSBOM(args []string) error {
+	args, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	s, err := compliance.Generate(time.Now())
 	if err != nil {
 		return err
@@ -341,6 +354,10 @@ func complianceACR(root string, args []string) error {
 // complianceImplementation prints how Quilzo implements each control, or
 // one control in full (internal/controls).
 func complianceImplementation(args []string) error {
+	args, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	all := controls.All()
 	if len(args) == 1 {
 		im, ok := controls.Lookup(args[0])

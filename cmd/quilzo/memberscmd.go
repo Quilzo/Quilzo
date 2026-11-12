@@ -40,6 +40,9 @@ func cmdMember(root string, args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		all, err := store.List()
 		if err != nil {
 			return err
@@ -131,6 +134,9 @@ func cmdMember(root string, args []string) error {
 		}
 		return done("member.invited", inv.Hash[:12])
 	case "invites":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		all := store.Invites()
 		if w.JSON(map[string]any{"invites": all}) {
 			return nil

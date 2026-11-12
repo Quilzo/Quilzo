@@ -70,6 +70,9 @@ func cmdBoard(root string, args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		set, err := loadBoards(root)
 		if err != nil {
 			return err
@@ -131,6 +134,9 @@ func cmdBoard(root string, args []string) error {
 		w.Human("removed %s; its posts stay until deleted, and no page shows them\n", args[1])
 		return note("board.remove", args[1])
 	case "held", "recent":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		list := posts.Held()
 		if args[0] == "recent" {
 			list = posts.Recent(50)

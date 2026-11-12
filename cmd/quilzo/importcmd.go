@@ -253,6 +253,9 @@ func cmdMedia(root string, args []string) error {
 	case "verify":
 		return cmdMediaVerify(root, args[1:])
 	case "formats":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return mediaFormats()
 	default:
 		return fmt.Errorf("unknown media command %q; try add, get, list, "+

@@ -28,6 +28,9 @@ func agentTriggerCmd(root string, args []string) error {
 		return fmt.Errorf("usage: quilzo agent trigger NAME [add|remove N], or quilzo agent trigger events")
 	}
 	if args[0] == "events" {
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return agentTriggerEvents()
 	}
 	name, rest := args[0], args[1:]

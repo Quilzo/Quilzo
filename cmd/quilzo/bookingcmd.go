@@ -116,6 +116,9 @@ func cmdBooking(root string, args []string) error {
 	case "setup":
 		return bookingSetupCmd(root, args[1:], caller)
 	case "example":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		body, _ := json.MarshalIndent(bookingExample(), "", "  ")
 		_, err := os.Stdout.Write(append(body, '\n'))
 		return err

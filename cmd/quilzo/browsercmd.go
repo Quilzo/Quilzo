@@ -61,6 +61,9 @@ func cmdBrowser(root string, args []string) error {
 	}
 	switch args[0] {
 	case "status":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		path, from, err := browserPath(root)
 		if w.Mode == out.JSON {
 			doc := map[string]any{"browser": nil, "from": nil}
@@ -102,6 +105,9 @@ func cmdBrowser(root string, args []string) error {
 		}
 		return nil
 	case "install":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 		defer cancel()
 		d, err := browser.Pinned.ForThisMachine()

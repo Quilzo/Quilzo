@@ -142,6 +142,9 @@ func cmdBackup(root string, args []string) error {
 	caller := resolveCaller(root, flagToken)
 	switch args[0] {
 	case "key":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		k, err := backup.NewKey()
 		if err != nil {
 			return err

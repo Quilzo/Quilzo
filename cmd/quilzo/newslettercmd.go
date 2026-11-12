@@ -661,6 +661,10 @@ func newsletterImport(root string, args []string, caller *Caller) error {
 }
 
 func newsletterExport(root string, args []string, caller *Caller) error {
+	args, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	var buf bytes.Buffer
 	n, err := exportSubscribers(root, &buf, caller)
 	if err != nil {

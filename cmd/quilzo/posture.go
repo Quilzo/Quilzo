@@ -476,6 +476,9 @@ func cmdPosture(root string, args []string) error {
 	case "explain":
 		return postureExplain(args[1:])
 	case "rules":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return postureRules()
 	case "suppress":
 		return postureSuppress(root, args[1:])

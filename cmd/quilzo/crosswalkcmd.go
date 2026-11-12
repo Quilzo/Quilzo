@@ -60,6 +60,9 @@ func cmdFramework(root string, args []string) error {
 	case "map":
 		return frameworkMap(root, args[1:])
 	case "relations":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return frameworkRelations()
 	default:
 		return fmt.Errorf("unknown framework command %q; try list, status, "+

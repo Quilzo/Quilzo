@@ -51,6 +51,9 @@ func cmdSite(root string, args []string) error {
 		case "fill":
 			return siteFillCmd(root, args[1:])
 		case "kinds":
+			if err := noArguments(args[1:]); err != nil {
+				return err
+			}
 			return siteKindsCmd()
 		case "import":
 			return siteImportCmd(root, args[1:])

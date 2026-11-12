@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -196,6 +197,166 @@ func TestAWordACommandDoesNotTakeIsRefused(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
 		t.Errorf("`quilzo init mysite` made %s", entries[0].Name())
+	}
+}
+
+// No command runs on words it does not take.
+//
+// The rule was made in the helpers and a script moved the commands over to
+// them, and the commands it did not reach went on as before: `agents today`
+// and `audit pages`, two of the commands the report named, `log 5`, `publish
+// COMMIT extra`, `scim token 30`, and some fifty that list or show something
+// and take nothing. A test of the lines in the report passes with every one
+// of those still dropping its words. So every command the program
+// dispatches, and every subcommand its code switches on, is given six words
+// that mean nothing, on the real command line in a store of its own, and
+// has to refuse. The few that take as many words as they are given are
+// named here, each with what its words are.
+func TestNoCommandRunsOnWordsItDoesNotTake(t *testing.T) {
+	takesAny := map[string]string{
+		"find":        "its words are what is searched for",
+		"theme unset": "each word is a token to put back, and one that was not set is said, not refused",
+	}
+
+	handler := dispatchHandlers(t)
+	real := realSubcommands(t)
+	// A store with a page in it, published, so that a command about a page
+	// or about what is live gets as far as its words.
+	template := filepath.Join(t.TempDir(), ".quilzo")
+	if _, e, code := cliRun(t, template, "", "init"); code != 0 {
+		t.Fatalf("init: %s", e)
+	}
+	addPage(t, template, "", "index", "v1")
+	for _, line := range [][]string{
+		{"provenance", "set", "index", "--source", "humanEdits", "--author", "owner"},
+		{"publish", "--no-a11y-check"},
+	} {
+		if _, e, code := cliRun(t, template, "", line...); code != 0 {
+			t.Fatalf("`quilzo %s`: %s", strings.Join(line, " "), firstLines(e, 3))
+		}
+	}
+	strays := []string{"zzw1", "zzw2", "zzw3", "zzw4", "zzw5", "zzw6"}
+
+	// One spelling of each command: `forms` and `form` are one function.
+	var asks [][]string
+	asked, tried := map[string]bool{}, map[string]bool{}
+	for _, c := range dispatchedCommands(t) {
+		if strings.HasPrefix(c, "__") || handler[c] == "" || asked[handler[c]] {
+			continue // the re-executed shims, and help and version, answered inline
+		}
+		asked[handler[c]] = true
+		asks, tried[c] = append(asks, []string{c}), true
+		for _, g := range real[c] {
+			asks, tried[c+" "+g[0]] = append(asks, []string{c, g[0]}), true
+		}
+	}
+	// And the subcommands the help names, for the commands whose switch is
+	// in a function the dispatch does not call directly, as blog's is.
+	for _, m := range regexp.MustCompile(`(?m)^  quilzo (\S+) ([a-z][a-z0-9-]*)(?: |$)`).FindAllStringSubmatch(usageText, -1) {
+		if c, sub := m[1], m[2]; tried[c] && !tried[c+" "+sub] {
+			asks, tried[c+" "+sub] = append(asks, []string{c, sub}), true
+		}
+	}
+	if len(asks) < 400 {
+		t.Fatalf("only %d commands to try; the command list was not read", len(asks))
+	}
+	used := map[string]bool{}
+	for _, a := range asks {
+		name := strings.Join(a, " ")
+		if takesAny[name] != "" {
+			used[name] = true
+			continue
+		}
+		// The words alone, and after the page: a command that takes a page
+		// refuses the first for not being one, and says nothing of the rest.
+		for _, words := range [][]string{strays, append([]string{"index"}, strays...)} {
+			line := strings.Join(append(append([]string{}, a...), words...), " ")
+			t.Run(line, func(t *testing.T) {
+				t.Parallel()
+				dir := t.TempDir()
+				copyTree(t, template, filepath.Join(dir, ".quilzo"))
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				cmd := exec.CommandContext(ctx, os.Args[0], append(append([]string{"quilzo-main"}, a...), words...)...)
+				cmd.Dir = dir
+				cmd.Env = append(os.Environ(), "HOME="+t.TempDir(), "QUILZO_TOKEN=", "NO_COLOR=1")
+				var said bytes.Buffer
+				cmd.Stdout, cmd.Stderr = &said, &said
+				err := cmd.Run()
+				if ctx.Err() != nil {
+					t.Fatalf("`quilzo %s` did not refuse them and went on running", line)
+				}
+				if err == nil {
+					t.Errorf("`quilzo %s` exited 0:\n%s", line, firstLines(said.String(), 3))
+				}
+			})
+		}
+	}
+	for name := range takesAny {
+		if !used[name] {
+			t.Errorf("%q is listed as taking any words and is not a command that was tried", name)
+		}
+	}
+}
+
+// A word after a name the command does take is refused too, and a flag
+// after it is read.
+//
+// These get past the test above, which gives a command words that are not
+// names: the first is refused for what it is, and nothing is learnt of the
+// rest. `publish COMMIT --no-a11y-check` stopped parsing at the commit and
+// ran the check it was told to skip, `scim token now --revoke` made the
+// identity provider a new token when asked to take its token away,
+// `fediverse block a.example b.example` refused one instance and said
+// nothing of the other, `auth dny dana publisher` printed the commands
+// there are and exited 0, and `audit pages` reported no template with
+// escaping off, of a directory that was not there.
+func TestAWordAfterANameIsRefused(t *testing.T) {
+	root, token := accessStore(t)
+	addPage(t, root, token, "index", "v1")
+	if _, e, code := cliRun(t, root, token, "provenance", "set", "index", "--source", "humanEdits", "--author", "owner"); code != 0 {
+		t.Fatalf("provenance: %s", e)
+	}
+	o, _, _ := cliRun(t, root, token, "log", "--json")
+	var hist struct{ Commits []struct{ ID string } }
+	if err := json.Unmarshal([]byte(o), &hist); err != nil || len(hist.Commits) == 0 {
+		t.Fatalf("log --json: %v\n%s", err, firstLines(o, 4))
+	}
+	commit := hist.Commits[0].ID
+
+	for _, line := range [][]string{
+		{"publish", commit, "extra"},
+		{"render", "index", "page.html", "extra"},
+		{"log", "5"},
+		{"agents", "today"},
+		{"scim", "token", "now", "--revoke"},
+		{"fediverse", "block", "a.example", "b.example"},
+		{"auth", "dny", "dana", "publisher"},
+		{"audit", "pages"},
+		{"spend", "lst"},
+		{"compliance", "sbom", "a.json", "b.json"},
+		{"theme", "show", "extra"},
+	} {
+		if _, e, code := cliRun(t, root, token, line...); code == 0 {
+			t.Errorf("`quilzo %s` exited 0: %s", strings.Join(line, " "), firstLines(e, 3))
+		}
+	}
+	if o, _, _ := cliRun(t, root, token, "log", "--ref", "live", "--json"); strings.Contains(o, commit) {
+		t.Errorf("the refused publish went live: %s", firstLines(o, 6))
+	}
+	if _, err := os.Stat(scimTokenPath(root)); err == nil {
+		t.Error("`quilzo scim token now --revoke` made a provisioning token")
+	}
+	if o, _, _ := cliRun(t, root, token, "fediverse", "blocked", "--json"); strings.Contains(o, "a.example") {
+		t.Errorf("the refused block was made of its first word: %s", firstLines(o, 6))
+	}
+
+	// The flag after the commit is read, and --revoke wherever it stands.
+	if _, e, code := cliRun(t, root, token, "publish", commit, "--no-a11y-check"); code != 0 {
+		t.Errorf("`quilzo publish COMMIT --no-a11y-check`: %s", firstLines(e, 4))
+	}
+	if _, e, code := cliRun(t, root, token, "scim", "token", "--days", "3", "--revoke"); code != 0 {
+		t.Errorf("`quilzo scim token --days 3 --revoke`: %s", firstLines(e, 3))
 	}
 }
 

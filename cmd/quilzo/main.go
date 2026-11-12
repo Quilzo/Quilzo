@@ -1722,10 +1722,14 @@ func cmdPublish(root string, args []string) error {
 	skip := fs.Bool("no-a11y-check", false, "skip the check entirely")
 	forceUnmarked := fs.Bool("force-unmarked", false,
 		"publish pages that declare no provenance (needs --reason)")
-	if err := fs.Parse(args); err != nil {
+	// One commit, and the flags on either side of it. Parsing stopped at the
+	// commit, so `publish COMMIT --no-a11y-check` ran the check it was told
+	// to skip, and a second word was dropped.
+	var pos []string
+	if err := parseFlags(fs, args, &pos, 1); err != nil {
 		return err
 	}
-	return publishAs(root, fs.Args(), resolveCaller(root, flagToken), publishFlags{
+	return publishAs(root, pos, resolveCaller(root, flagToken), publishFlags{
 		force: *force, reason: *reason, tplDir: *tplDir, skip: *skip, forceUnmarked: *forceUnmarked,
 	})
 }
@@ -2114,8 +2118,7 @@ func cmdLog(root string, args []string) error {
 	fs := flag.NewFlagSet("log", flag.ContinueOnError)
 	ref := fs.String("ref", site.RefDraft, "which ref to walk")
 	limit := fs.Int("limit", 20, "how many commits")
-	if err := fs.Parse(reorder(args, map[string]bool{
-		"ref": true, "limit": true})); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	s, err := open(root)
@@ -2154,14 +2157,14 @@ func cmdRender(root string, args []string) error {
 	fs := flag.NewFlagSet("render", flag.ContinueOnError)
 	ref := fs.String("ref", site.RefLive, "which ref to read")
 	out := fs.String("o", "", "write here instead of stdout")
-	if err := fs.Parse(reorder(args, map[string]bool{
-		"ref": true, "o": true})); err != nil {
+	var pos []string
+	if err := parseFlags(fs, args, &pos, 2); err != nil {
 		return err
 	}
-	if fs.NArg() < 2 {
+	if len(pos) < 2 {
 		return fmt.Errorf("usage: quilzo render PAGE TEMPLATE")
 	}
-	pageName, templatePath := fs.Arg(0), fs.Arg(1)
+	pageName, templatePath := pos[0], pos[1]
 
 	s, err := open(root)
 	if err != nil {
@@ -2238,12 +2241,22 @@ func writeRendered(out *os.File, html string) {
 
 func cmdAudit(args []string) error {
 	dir := "templates"
-	if len(args) > 0 {
-		dir = args[0]
+	pos, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
+	if len(pos) > 0 {
+		dir = pos[0]
+		// A directory that was named and is not there is not one with
+		// nothing to report. `audit pages`, for the templates of some pages,
+		// walked nothing and said "no template opts out of escaping".
+		if fi, serr := os.Stat(dir); serr != nil || !fi.IsDir() {
+			return fmt.Errorf("%s is not a directory of templates: quilzo audit [DIR]", dir)
+		}
 	}
 	total := 0
 	raw := []map[string]any{}
-	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+	err = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() || filepath.Ext(path) != ".html" {
 			return nil
 		}

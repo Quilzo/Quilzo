@@ -66,6 +66,9 @@ func cmdTheme(root string, args []string) error {
 	case "export":
 		return themeExport(args[1:])
 	case "styles":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		// The choices, for a script as well as a person: a site package or a
 		// builder that names a style, a corner or a scheme needs to know
 		// which there are, and this printed nothing under --json.
@@ -110,7 +113,7 @@ func dirFlag(name string, args []string) (*flag.FlagSet, *string) {
 func themeShow(args []string) error {
 	fs, dir := dirFlag("show", args)
 	dark := fs.Bool("dark", false, "show the dark scheme's values")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	d, err := loadDesign(*dir)
@@ -214,7 +217,7 @@ func themeSet(root string, args []string) error {
 	fs, dir := dirFlag("set", flags)
 	force := fs.Bool("force", false,
 		"save even though the result fails the contrast check")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, nil, 0); err != nil {
 		return err
 	}
 	if len(pos) == 0 || len(pos)%2 != 0 {
@@ -354,7 +357,7 @@ func themeUnset(root string, args []string) error {
 	pos, flags := splitThemeArgs(args)
 	fs, dir := dirFlag("unset", flags)
 	all := fs.Bool("all", false, "remove every override, back to the shipped palette")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, nil, 0); err != nil {
 		return err
 	}
 	existing, err := loadThemeFile(*dir)
@@ -399,7 +402,7 @@ func themeUnset(root string, args []string) error {
 // looking at.
 func themeCheck(args []string) error {
 	fs, dir := dirFlag("check", args)
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	d, err := loadDesign(*dir)
@@ -690,7 +693,7 @@ func themeLayer(root string, args []string) error {
 // themeFonts lists the faces this site serves and how to add one.
 func themeFonts(args []string) error {
 	fs, dir := dirFlag("fonts", args)
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	set, err := loadFontSet(*dir)
@@ -758,7 +761,7 @@ func themeFonts(args []string) error {
 func themeCSS(args []string) error {
 	fs, dir := dirFlag("css", args)
 	tokensOnly := fs.Bool("tokens", false, "just the generated token block")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	d, err := loadDesign(*dir)
@@ -782,7 +785,7 @@ func themeApply(root string, args []string) error {
 	pos, flags := splitThemeArgs(args)
 	fs, dir := dirFlag("apply", flags)
 	force := fs.Bool("force", false, "replace the theme that is there")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, nil, 0); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -903,7 +906,7 @@ func themeGenerate(root string, args []string) error {
 		"how colourful: tonal, vibrant, expressive, neutral or monochrome")
 	contrast := fs.String("contrast", "standard",
 		"standard (WCAG AA), medium (6:1 text) or high (7:1 text, AAA)")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, nil, 0); err != nil {
 		return err
 	}
 	if len(pos) != 1 {

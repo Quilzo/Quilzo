@@ -215,6 +215,9 @@ func cmdAgent(root string, args []string) error {
 	case "export":
 		return agentExport(root, args[1:])
 	case "formats":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return agentFormats()
 	case "program":
 		return agentProgramCmd(root, args[1:])

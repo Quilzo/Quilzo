@@ -139,6 +139,9 @@ func eventsCmd(root string, args []string, caller *Caller) error {
 	case "import":
 		return eventsImport(root, args[1:], caller)
 	case "example":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		// The package itself under --json, as `blog example` gives its own:
 		// it went only to a person, so a script was answered with nothing.
 		if w.JSON(eventsPackage()) {

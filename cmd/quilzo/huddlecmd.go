@@ -33,6 +33,9 @@ func cmdHuddle(args []string) error {
 	case "demo":
 		return huddleDemo(args[1:])
 	case "controls":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return huddleControls()
 	default:
 		return fmt.Errorf("unknown huddle command %q; try demo or controls",

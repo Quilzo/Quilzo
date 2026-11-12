@@ -212,7 +212,10 @@ func cmdSpend(root string, args []string) error {
 	case "receipts":
 		return spendReceipts(root, args[1:])
 	}
-	return spendUsage()
+	// A word that is none of them is refused, with the commands there are:
+	// it printed them and exited 0.
+	_ = spendUsage()
+	return errMisused{fmt.Errorf("unknown spend command %q", args[0])}
 }
 
 type listFlag []string
@@ -307,6 +310,10 @@ func spendGrant(root string, args []string, caller *Caller) error {
 }
 
 func spendList(root string, args []string) error {
+	args, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	b, err := readBook(root)
 	if err != nil {
 		return err
@@ -374,6 +381,10 @@ func spendRevoke(root string, args []string, caller *Caller) error {
 }
 
 func spendReceipts(root string, args []string) error {
+	args, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	b, err := readBook(root)
 	if err != nil {
 		return err

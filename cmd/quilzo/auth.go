@@ -178,8 +178,11 @@ func cmdAuth(root string, args []string) error {
 		}
 		return authRoles(root)
 	default:
-		fmt.Fprintf(os.Stderr, "unknown auth command %q\n\n", args[0])
-		return authUsage()
+		// Refused, with the commands there are. It printed them and exited
+		// 0, so a script that wrote `auth dny dana publisher` was told its
+		// deny had been made.
+		_ = authUsage()
+		return errMisused{fmt.Errorf("unknown auth command %q", args[0])}
 	}
 }
 

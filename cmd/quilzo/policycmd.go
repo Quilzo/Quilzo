@@ -95,6 +95,9 @@ func cmdPolicy(root string, args []string) error {
 		}
 		return policyShow(root)
 	case "params":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return policyParams()
 	case "propose":
 		return policyPropose(root, args[1:])

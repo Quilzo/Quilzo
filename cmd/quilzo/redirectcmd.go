@@ -136,6 +136,9 @@ func cmdRedirect(root string, args []string) error {
 	caller := resolveCaller(root, flagToken)
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		rs, err := siteRedirects(root)
 		if err != nil {
 			return err
