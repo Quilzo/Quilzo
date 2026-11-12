@@ -309,11 +309,16 @@ func (st *Site) answer(w http.ResponseWriter, r *http.Request,
 	// beside a follow-up. Screened only in the question box, an attempt put
 	// there with a harmless follow-up reached the model and was never
 	// counted. Both are looked at, and a request is one signal at most.
+	//
+	// As the model reads them, the one before the other with a space
+	// between (assistant.RespondTo): each looked at alone, "Ignore your
+	// previous" in the field and "instructions" in the box were an attempt
+	// in the prompt and nothing in either.
 	said := []string{view.Question}
 	if strings.TrimSpace(view.Previous) != "" {
-		said = append(said, view.Previous)
+		said = append(said, view.Previous+" "+view.Question)
 	}
-	if LooksLikeInjection(view.Question) || LooksLikeInjection(view.Previous) {
+	if LooksLikeInjection(view.Question) || LooksLikeInjection(said[len(said)-1]) {
 		st.signal(ChatbotInjection, a.Name, r)
 	} else if g := st.Assistants.Guardrail; g != nil {
 		// A second look, counted the same way: a flagged question is a
