@@ -218,6 +218,9 @@ func TestShowSeqAndExportToAFileDoWhatTheHelpSays(t *testing.T) {
 		t.Errorf("show of an entry that is not there: %v", err)
 	}
 
+	// The log as it is stored when it is exported: the export leaves its
+	// own record after it (auditlog.export), as every export of the log does.
+	stored, rerr := os.ReadFile(auditPath(root))
 	file := t.TempDir() + "/archive.jsonl"
 	_, read := captureStdout(t)
 	err = cmdAuditLog(root, []string{"export", "-o", file})
@@ -225,7 +228,6 @@ func TestShowSeqAndExportToAFileDoWhatTheHelpSays(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	stored, rerr := os.ReadFile(auditPath(root))
 	written, ferr := os.ReadFile(file)
 	if rerr != nil || ferr != nil {
 		t.Fatalf("export -o made no file: %v %v", rerr, ferr)

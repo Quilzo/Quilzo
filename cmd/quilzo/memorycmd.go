@@ -178,7 +178,12 @@ func cmdMemory(root string, args []string) error {
 		} else if _, err := store.Delete(e.ID); err != nil {
 			return err
 		}
-		if err := recordE(root, caller.auditRecord("memory."+args[0]+"ed", "/memory", audit.Success,
+		// Named, not made by adding "ed": "delete" became memory.deleteed,
+		// which the receipt and the evidence did not count, so a memory
+		// deleted here went missing from the person's proof of what was
+		// deleted about them. The names are the Memory screen's.
+		action := map[string]string{"confirm": "memory.confirmed", "delete": "memory.deleted"}[args[0]]
+		if err := recordE(root, caller.auditRecord(action, "/memory", audit.Success,
 			memoryDetail(e))); err != nil {
 			return err
 		}
@@ -416,8 +421,10 @@ func buildMemoryReceipt(root, about string, now time.Time) (*agentReceiptFile, e
 		handle = audit.Pseudonym(log.Key(), about)
 	}
 	rf := &agentReceiptFile{Format: memoryReceiptFormat, Subject: handle, Person: about, Made: now.UTC()}
+	// By the act's name now, so a deletion recorded as memory.deleteed
+	// before the name was corrected is in the receipt as well.
 	err = proveRecords(root, rf, now, func(e audit.Event) bool {
-		return memoryReceiptAction[e.Action] && e.Detail["subject"] == handle
+		return memoryReceiptAction[audit.Canonical(e.Action)] && e.Detail["subject"] == handle
 	})
 	if err != nil || len(rf.Entries) == 0 {
 		return nil, err

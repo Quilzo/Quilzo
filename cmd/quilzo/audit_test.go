@@ -197,7 +197,9 @@ func TestEveryPrivilegedCommandWritesAnAuditRecord(t *testing.T) {
 		// The record every export writes, `quilzo export`'s, export_site's
 		// and the Transfer screen's alike (exportsite.go).
 		"recordExport": "export",
-		"cmdSiem":      "auditlog.export",
+		// `quilzo siem` and `quilzo auditlog export` record through it
+		// (TestEveryAuditLogExportIsRecordedWithTheSameDetail runs both).
+		"recordAuditLogExport": "auditlog.export",
 	}
 
 	found := map[string]string{}

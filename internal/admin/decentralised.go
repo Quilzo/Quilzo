@@ -223,7 +223,10 @@ func (s *Server) handleBundleDownload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	s.auditPub(p, "ipfs.bundle", "/", map[string]string{
+	// ipfs.write, with the detail `quilzo ipfs write` records for the same
+	// bundle written to a folder. This wrote ipfs.bundle, so the bundle
+	// taken from here was missed by whatever looked for the command line's.
+	s.auditPub(p, "ipfs.write", "/", map[string]string{
 		"cid": root.Block.CID, "files": fmt.Sprint(len(paths))})
 }
 

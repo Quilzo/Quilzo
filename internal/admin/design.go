@@ -561,7 +561,11 @@ func (s *Server) handleDesignInstall(w http.ResponseWriter, r *http.Request) {
 		s.designRedirect(w, r, "", err.Error())
 		return
 	}
-	s.auditPub(p, "template.install", "/", map[string]string{
+	// template.use, as `quilzo template use` writes the same starter's
+	// markup and palette. This wrote template.install, so a change of the
+	// site's design made here was missed by whatever looked for the
+	// command line's name.
+	s.auditPub(p, "template.use", "/", map[string]string{
 		"starter": st.Name, "layout": st.LayoutName(),
 	})
 	sort.Strings(written)

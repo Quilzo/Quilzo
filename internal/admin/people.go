@@ -302,7 +302,7 @@ func (s *Server) handlePeopleGrant(w http.ResponseWriter, r *http.Request) {
 			s.peopleProblem(w, r, err.Error())
 			return
 		}
-		s.audit("access.grant", "/", map[string]string{"subject": who, "role": ar.Name, "resource": "its feature", "by": p.Name})
+		s.audit("auth.granted", "/", map[string]string{"subject": who, "role": ar.Name, "resource": "its feature", "by": p.Name})
 		s.peopleBack(w, r, fmt.Sprintf("%s is now %s: %s", who, ar.Name, strings.Join(ar.Grants, "; ")))
 		return
 	}
@@ -352,8 +352,18 @@ func (s *Server) handlePeopleGrant(w http.ResponseWriter, r *http.Request) {
 	}
 	// Who was granted it is the subject, which the log pseudonymises; as
 	// the record's resource, "/lee", they were written in clear.
-	s.audit("access.grant", "/", map[string]string{
+	//
+	// Under the names `quilzo auth grant` writes, auth.granted or
+	// auth.denied. This wrote access.grant for both, so a rule or a filter
+	// on the command line's names missed every grant made here, and a deny
+	// could not be told from a grant without reading the policy.
+	action := "auth.granted"
+	if base.Deny {
+		action = "auth.denied"
+	}
+	s.audit(action, "/", map[string]string{
 		"subject": who, "role": string(role), "resource": on, "by": p.Name,
+		"deny": fmt.Sprint(base.Deny),
 	})
 	s.peopleBack(w, r, fmt.Sprintf("%s is now %s on %s", who, role, on))
 }
@@ -507,7 +517,8 @@ func (s *Server) handlePeopleRevoke(w http.ResponseWriter, r *http.Request) {
 		s.peopleProblem(w, r, err.Error())
 		return
 	}
-	s.audit("access.revoke", "/", map[string]string{
+	// auth.revoke, as `quilzo auth revoke` and the access review write it.
+	s.audit("auth.revoke", "/", map[string]string{
 		"subject": who, "role": string(role), "resource": on, "by": p.Name,
 		"removed": fmt.Sprintf("%d", n),
 	})

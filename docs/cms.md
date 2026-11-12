@@ -2765,7 +2765,42 @@ than for one that has to be described.
 - **`quilzo siem`** exports the audit log as OCSF, CEF or JSON Lines with an
   integrity envelope, so the receiving system can tell whether events were
   removed. Identifiers are pseudonymised unless somebody explicitly asks for
-  them, and asking is itself recorded.
+  them, and asking is itself recorded. Every export of the log is recorded the
+  same way, as `auditlog.export` with its format, how many events, their
+  range and whether identifiers were asked for: `quilzo siem`, the export on
+  the Integrations screen, and `quilzo auditlog export -o FILE`, which writes
+  the log as it is stored, even when its chain is broken. They are one
+  export, recorded once each time: for a log that verifies, `quilzo auditlog
+  export` and `quilzo siem jsonl` write the same bytes.
+- **One act, one action name**, whichever surface did it: a grant is
+  `auth.granted` (a deny `auth.denied`), a revocation `auth.revoke` and an
+  export of the log `auditlog.export`, from the command line, the admin and
+  the access review alike. Entries written before the names were made one
+  keep the names they were written with, because the chain covers them, and
+  are read as the act's name now by the log screen's filter and the export's
+  classification: `access.grant` as `auth.granted`, `access.revoke` as
+  `auth.revoke` and `siem.export` as `auditlog.export`. A memory deleted from
+  the command line was `memory.deleteed`; it is `memory.deleted`, as on the
+  Memory screen, and the old name is read as it in a person's memory receipt
+  and in the AI evidence. Approving a change for publication is
+  `review.approve`, installing a starter's design `template.use` and taking
+  the site's IPFS bundle `ipfs.write`, on the screens as on the command line;
+  the screens' old `approval.approve`, `template.install` and `ipfs.bundle`
+  are read as those.
+- **A webhook's address is not in the log.** The path of an incoming-webhook
+  address is a credential, as is a `?token=`, so the record of an endpoint
+  added, changed, turned off or removed names it by its scheme and host, with
+  `/…` for the rest, and an `endpoint_ref` by which its records line up.
+  `quilzo webhook list` and the Integrations screen still show administrators
+  the whole address. The screen registers an endpoint by the rule `quilzo
+  webhook add` does: https, no credentials in the address, an address outside
+  this network, and only event types that are sent.
+- **No address is written with its credentials.** Wherever an address stands
+  in a record (a detail of its own, a sentence, an error, the resource), its
+  user and password are written as `…@`, its query as `?…` and its fragment as
+  `#…`, whichever surface wrote the record, so neither the log nor any export
+  of it holds a password, a `?token=` or an `#access_token=`. Entries written
+  before keep what they were written with, because the chain covers them.
 - **GDPR.** Article 20 asks for a structured, machine-readable format; export is
   tested by round trip, which is a higher bar than the law sets. Article 17 is
   why form submissions deliberately do not live in the merkle store — an

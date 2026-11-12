@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -152,7 +153,11 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := r.URL.Query()
-	action := strings.TrimSpace(q.Get("action"))
+	// An act renamed since some of its entries were written is asked for,
+	// and listed, under the name it has now, and found under either: a
+	// bookmark to ?action=access.grant finds the grants written as
+	// auth.granted since, and the filter for auth.granted the ones before.
+	action := audit.Canonical(strings.TrimSpace(q.Get("action")))
 	outcome := strings.TrimSpace(q.Get("outcome"))
 	who := strings.TrimSpace(q.Get("who"))
 	offset := 0
@@ -272,7 +277,7 @@ func (s *Server) logPage(action, outcome, who string, offset int) (map[string]an
 	total := 0
 	for i := snap.Len() - 1; i >= 0; i-- {
 		e := snap.Entry(i)
-		if action != "" && e.Action != action {
+		if action != "" && audit.Canonical(e.Action) != action {
 			continue
 		}
 		if outcome != "" && string(e.Outcome) != outcome {
@@ -311,8 +316,23 @@ func (s *Server) logPage(action, outcome, who string, offset int) (map[string]an
 		"Rows": rows, "Total": total, "Entries": snap.Len(),
 		"Offset": offset, "Next": end, "HasNext": end < total,
 		"Intact": report.Intact, "Problems": report.Problems, "Crashed": report.Crashed(), "Head": head,
-		"Actions": snap.Actions(),
+		"Actions": canonicalActions(snap.Actions()),
 	}, nil
+}
+
+// canonicalActions is the actions a log holds as the filter lists them: each
+// under the name its act has now (audit.Canonical), once, in order.
+func canonicalActions(actions []string) []string {
+	seen := make(map[string]bool, len(actions))
+	out := make([]string, 0, len(actions))
+	for _, a := range actions {
+		if c := audit.Canonical(a); !seen[c] {
+			seen[c] = true
+			out = append(out, c)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // rowOf prepares one entry for the page, naming the people this store knows

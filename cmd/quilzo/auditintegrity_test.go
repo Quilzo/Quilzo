@@ -112,10 +112,13 @@ func TestATornLineIsReportedAsAnUnfinishedWriteAndHidesNothing(t *testing.T) {
 		t.Errorf("auditlog export: %v\n%s", err, exported)
 	}
 
+	// Every entry, the record the export above left of itself among them
+	// (auditlog.export).
 	jsonl := filepath.Join(t.TempDir(), "siem.jsonl")
 	if err := cmdSiem(root, []string{"jsonl", "-o", jsonl}); err != nil {
 		t.Errorf("siem export: %v", err)
-	} else if b, _ := os.ReadFile(jsonl); bytes.Count(b, []byte("\n")) != 3 {
+	} else if b, _ := os.ReadFile(jsonl); bytes.Count(b, []byte("\n")) != 4 ||
+		!bytes.Contains(b, []byte(`"action":"auditlog.export"`)) {
 		t.Errorf("siem export wrote:\n%s", b)
 	}
 

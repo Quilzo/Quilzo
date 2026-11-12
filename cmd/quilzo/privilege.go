@@ -72,6 +72,16 @@ type need struct {
 	// refused `agent approve` for it, because the table asked about the
 	// agents.
 	orAnywhere bool
+	// alsoIn are areas where holding action itself also admits the caller,
+	// for a read of the site's whole store that is also what an area's
+	// screen shows. `logd status` and `anchor status` asked for view on
+	// "/", which the analyst, compliance and auditor jobs never hold, since
+	// they are granted areas and nothing else: they were refused how the
+	// log is protected and its anchors from a terminal while /logs and
+	// Integrity showed them the same, and any reader of the content ran
+	// them. Taking the area in addition, and not in place of "/", keeps
+	// every reader who ran them before.
+	alsoIn []string
 }
 
 // installing is the permission whose work the feature commands that read
@@ -267,15 +277,19 @@ var commandNeeds = map[string]need{
 	// so a subcommand added later arrives guarded; reading and exporting
 	// what is kept step down, and a bare command is asked as the read it
 	// runs (bareRuns).
+	//
+	// What is kept is read in the areas that show it as well (need.alsoIn):
+	// the anchors, of the log's heads among them, where the log is read and
+	// on Integrity, and the timestamps on Integrity.
 	"anchor":           {action: auth.ActGrant},
-	"anchor status":    {action: auth.ActView},
-	"anchor export":    {action: auth.ActView},
+	"anchor status":    {action: auth.ActView, alsoIn: []string{auth.AreaLog, auth.AreaCompliance}},
+	"anchor export":    {action: auth.ActView, alsoIn: []string{auth.AreaLog, auth.AreaCompliance}},
 	"timestamp":        {action: auth.ActGrant},
-	"timestamp list":   {action: auth.ActView},
-	"timestamp export": {action: auth.ActView},
+	"timestamp list":   {action: auth.ActView, alsoIn: []string{auth.AreaCompliance}},
+	"timestamp export": {action: auth.ActView, alsoIn: []string{auth.AreaCompliance}},
 	"stamp":            {action: auth.ActGrant},
-	"stamp list":       {action: auth.ActView},
-	"stamp export":     {action: auth.ActView},
+	"stamp list":       {action: auth.ActView, alsoIn: []string{auth.AreaCompliance}},
+	"stamp export":     {action: auth.ActView, alsoIn: []string{auth.AreaCompliance}},
 
 	// -- writing content
 	"add": {action: auth.ActEditDraft},
@@ -597,7 +611,8 @@ var commandNeeds = map[string]need{
 	"webhook list":       {action: auth.ActView},
 	"webhooks list":      {action: auth.ActView},
 	"oidc check":         {action: auth.ActView},
-	"logd status":        {action: auth.ActView},
+	// How the log is protected, which /logs shows whoever reads the log.
+	"logd status": {action: auth.ActView, alsoIn: []string{auth.AreaLog}},
 
 	"auditlog verify":      {action: auth.ActView},
 	"auditlog show":        {action: auth.ActView},
@@ -1303,7 +1318,8 @@ func authoriseCommand(root, cmd string, args []string) error {
 	// the authority for both, and stopping at the first would let a deny on
 	// the second page be worked around by naming a permitted page alongside it.
 	for _, resource := range resources {
-		if err := authorise(root, caller, n.action, resource); err != nil && !mayInstead(root, caller, n, resource) {
+		if err := authorise(root, caller, n.action, resource); err != nil && !mayInstead(root, caller, n, resource) &&
+			!mayInArea(root, caller, n) {
 			var u *errUnverified
 			if errors.As(err, &u) {
 				err = u.named(sub)
@@ -1353,6 +1369,18 @@ func mayInstead(root string, c *Caller, n need, resource string) bool {
 			if authorise(root, c, a, at) == nil {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+// mayInArea reports whether the caller holds a row's own action in one of
+// the areas it is also read in (need.alsoIn). The refusal, when there is
+// one, is still the one for the resource the row asks about.
+func mayInArea(root string, c *Caller, n need) bool {
+	for _, area := range n.alsoIn {
+		if authorise(root, c, n.action, area) == nil {
+			return true
 		}
 	}
 	return false

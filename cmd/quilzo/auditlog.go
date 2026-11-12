@@ -25,6 +25,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/dual"
 	"github.com/quilzo/quilzo/internal/out"
+	"github.com/quilzo/quilzo/internal/siem"
 )
 
 // Where the audit log lives.
@@ -721,41 +722,52 @@ func auditShowEntry(events []audit.Event, seq int64, intact, crashed bool, probl
 }
 
 // auditExport is the whole log as it is stored, on standard output or, with
-// -o, in a file.
+// -o, in a file, unverified, so a log whose chain is broken can still be
+// taken away and examined, which `quilzo siem` refuses to do.
 //
 // The help has always offered `auditlog export -o FILE`, and the dispatcher
 // passed this nothing: the whole log went to the terminal, no file was made,
 // and the exit status was 0, so a script that shipped the archive it had just
 // written shipped nothing. The file is written whole or not at all, and
 // readable by this account only, as the log it copies is.
+//
+// Through the one export of the log, as the log stores it
+// (siem.Options.AsStored), and recorded as every export of the log is
+// (siem.ExportRecorded). It was an exporter of its own that recorded
+// nothing, and it is the one bulk export the auditor's job reaches, so the
+// record an auditor would look for of the log leaving was missing for
+// exactly the people meant to read it.
 func auditExport(root string, args []string) error {
-	fs := flag.NewFlagSet("export", flag.ContinueOnError)
+	fs := flag.NewFlagSet("auditlog export", flag.ContinueOnError)
 	to := fs.String("o", "", "write the log to this file instead of printing it")
 	pos, err := parseAnywhere(fs, args)
 	if err != nil {
 		return err
 	}
 	if len(pos) > 0 {
-		return errors.New("usage: quilzo auditlog export [-o FILE]")
+		return fmt.Errorf("auditlog export takes no %q; usage: quilzo auditlog export [-o FILE]", pos[0])
 	}
 	events, err := exportedEntries(root)
 	if err != nil {
 		return err
 	}
+	res, err := siem.ExportRecorded(siem.JSONL, events, siem.Options{AsStored: true}, time.Now(),
+		recordAuditLogExport(root))
+	if err != nil {
+		return err
+	}
 	if *to == "" {
-		return audit.Export(events, os.Stdout)
-	}
-	var b bytes.Buffer
-	if err := audit.Export(events, &b); err != nil {
+		_, err := os.Stdout.WriteString(res.Body)
 		return err
 	}
-	if err := atomicfile.Write(*to, b.Bytes(), 0o600); err != nil {
+	if err := atomicfile.Write(*to, []byte(res.Body), 0o600); err != nil {
 		return err
 	}
-	if w.JSON(map[string]any{"entries": len(events), "file": *to}) {
+	if w.JSON(map[string]any{"entries": res.Count, "events": res.Count, "first_seq": res.Chain.FirstSeq,
+		"last_seq": res.Chain.LastSeq, "file": *to}) {
 		return nil
 	}
-	w.Human("%d entr%s written to %s\n", len(events), entrySuffix(len(events)), *to)
+	w.Human("%d entr%s written to %s\n", res.Count, entrySuffix(res.Count), *to)
 	return nil
 }
 

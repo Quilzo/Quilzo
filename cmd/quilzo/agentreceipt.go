@@ -271,12 +271,16 @@ func checkReceipt(rf *agentReceiptFile, keys *publishedKeys) receiptCheck {
 	seen := map[int]bool{}
 	max := 0
 	for _, e := range rf.Entries {
+		// A memory's records by the act's name now (audit.Canonical), as
+		// buildMemoryReceipt chose them: a deletion recorded as
+		// memory.deleteed was put in the receipt and then refused by this
+		// check as a record not about the person's memory.
 		switch {
 		case rf.Format == appReceiptFormat && (e.Entry.Action != "mcp.call" || e.Entry.Detail["grant"] != rf.Connection):
 			c.Problems = append(c.Problems, fmt.Sprintf("record %d is not a call through %s", e.Entry.Seq, rf.Connection))
 		case rf.Format == receiptFormat && e.Entry.Detail["run"] != rf.Run:
 			c.Problems = append(c.Problems, fmt.Sprintf("record %d belongs to another run", e.Entry.Seq))
-		case rf.Format == memoryReceiptFormat && (!memoryReceiptAction[e.Entry.Action] || e.Entry.Detail["subject"] != rf.Subject):
+		case rf.Format == memoryReceiptFormat && (!memoryReceiptAction[audit.Canonical(e.Entry.Action)] || e.Entry.Detail["subject"] != rf.Subject):
 			c.Problems = append(c.Problems, fmt.Sprintf("record %d is not about %s's memory", e.Entry.Seq, rf.Subject))
 		}
 		if err := audit.VerifyInclusion(e.Entry, e.Index, e.Proof, rf.Head.Head); err != nil {

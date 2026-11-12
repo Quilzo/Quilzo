@@ -183,10 +183,12 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 		if err := assistant.Save(path, set); err != nil {
 			return nil, err
 		}
+		// Verified as the caller was, as mcp.write_page is; left out, it
+		// was false whoever called.
 		if err := recordE(root, audit.Record{
 			Action: "assistant.declare", Resource: "/ask/" + name,
 			Outcome: audit.Success, Principal: "mcp-client", Kind: audit.KindAI,
-			Model: "mcp-client", Detail: map[string]string{
+			Model: "mcp-client", Verified: caller.Verified, Detail: map[string]string{
 				"assistant": name, "on_behalf_of": caller.Name},
 		}); err != nil {
 			return nil, err
