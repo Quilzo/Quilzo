@@ -442,18 +442,19 @@ func auditVerify(root string) error {
 	if err != nil {
 		report = audit.Report{Problems: []audit.Problem{{Seq: 0, Reason: err.Error()}}}
 	}
-	// Against the largest head saved beside the log too. The chain cannot
-	// see entries removed from its end: what is left verifies, and the next
+	// Against every head saved beside the log too. The chain cannot see
+	// entries removed from its end: what is left verifies, and the next
 	// write takes the first number removed. This said nothing was removed,
 	// "including by an administrator", with a saved head covering entries
 	// the log no longer held.
-	head, err := savedHead(root)
+	heads, err := savedHeads(root)
+	head := audit.LargestHead(heads)
 	if err != nil {
 		report.Problems = append(report.Problems, audit.Problem{Reason: "the heads saved beside the log " +
 			"cannot be read, so it was not checked against them: " + err.Error()})
 		report.Intact = false
-	} else if head != nil && read {
-		if p := audit.AgainstHead(events, *head); p != nil {
+	} else if read {
+		if p := audit.AgainstHeads(events, heads); p != nil {
 			report.Problems = append(report.Problems, *p)
 			report.Intact = false
 		}
@@ -486,8 +487,14 @@ func auditVerify(root string) error {
 				"  quilzo auditlog head --save, and keep a copy off this machine%s\n", yellow, reset)
 			return nil
 		}
-		w.Human("  %sand it still extends the head saved at %d entries (%s), so none of\n"+
-			"  those was removed or rewritten since%s\n", dim, head.Size, head.At, reset)
+		if len(heads) > 1 {
+			w.Human("  %sand it still extends each of the %d heads saved beside it, the largest\n"+
+				"  at %d entries (%s), so none of those was removed or rewritten since%s\n",
+				dim, len(heads), head.Size, head.At, reset)
+		} else {
+			w.Human("  %sand it still extends the head saved at %d entries (%s), so none of\n"+
+				"  those was removed or rewritten since%s\n", dim, head.Size, head.At, reset)
+		}
 		w.Human("  %sa head saved here can be rewritten with the log; a copy kept off this\n"+
 			"  machine is the one that counts: quilzo auditlog consistency --head FILE%s\n", dim, reset)
 		return nil
@@ -547,6 +554,17 @@ func auditShow(root string, args []string) error {
 	report, err := audit.Check(events, err)
 	if err != nil {
 		return err
+	}
+	// And against the heads saved beside it, as verify and the audit log
+	// screen check it. Along its chain alone, a log cut back was shown as
+	// intact while verify said it had shrunk.
+	if heads, err := savedHeads(root); err != nil {
+		report.Problems = append(report.Problems, audit.Problem{Reason: "the heads saved beside the log " +
+			"cannot be read, so it was not checked against them: " + err.Error()})
+		report.Intact = false
+	} else if p := audit.AgainstHeads(events, heads); p != nil {
+		report.Problems = append(report.Problems, *p)
+		report.Intact = false
 	}
 	intact, problems := report.Intact, report.Problems
 
@@ -636,26 +654,20 @@ type headFile struct {
 	Heads []audit.Head `json:"heads"`
 }
 
-// savedHead is the largest head saved beside the log, by `auditlog head
-// --save` or `anchor`, or nil when none is: what verify, posture and the
-// audit log screen check the log against, as well as along its chain.
+// savedHeads is every head saved beside the log, by `auditlog head --save`
+// or `anchor`: what verify, posture, consistency and the audit log screen
+// check the log against, as well as along its chain (audit.AgainstHeads).
 //
-// The largest rather than the newest, since a head saved after entries were
-// removed covers fewer than one saved before. A head kept here can be
-// rewritten with the log by whoever can rewrite the log, and says so where
-// it is reported; it still catches everybody else.
-func savedHead(root string) (*audit.Head, error) {
+// Every one, not the largest alone: a log cut back and grown again extends
+// the next head saved, and only one saved before the cut shows it. A head
+// kept here can be rewritten with the log by whoever can rewrite the log,
+// and says so where it is reported; it still catches everybody else.
+func savedHeads(root string) ([]audit.Head, error) {
 	f := &headFile{}
 	if err := loadJSON(headsPath(root), f); err != nil {
 		return nil, err
 	}
-	var best *audit.Head
-	for i := range f.Heads {
-		if best == nil || f.Heads[i].Size >= best.Size {
-			best = &f.Heads[i]
-		}
-	}
-	return best, nil
+	return f.Heads, nil
 }
 
 // auditHead publishes a commitment to the log as it stands.
@@ -803,12 +815,13 @@ func auditConsistency(root string, args []string) error {
 		return err
 	}
 
-	// The head named, once its signatures check out. Otherwise the largest
-	// saved head if no size was named, because that is the check somebody
-	// wants and remembering a number is not. The largest, as verify takes
-	// it, and not the newest: a head saved after entries were removed from
-	// the end covers fewer than one saved before them, and checked against
-	// that, the log was called consistent.
+	// The head named, once its signatures check out. Otherwise the heads
+	// saved beside the log if no size was named, because that is the check
+	// somebody wants and remembering a number is not: every one, as verify
+	// checks them, with the proof from the largest. The largest and not the
+	// newest: a head saved after entries were removed from the end covers
+	// fewer than one saved before them, and checked against that, the log
+	// was called consistent.
 	var published audit.Head
 	if *headPath != "" {
 		keys := *keysPath
@@ -824,10 +837,11 @@ func auditConsistency(root string, args []string) error {
 		}
 		published = sh.Head
 	} else if *against == 0 {
-		h, err := savedHead(root)
+		heads, err := savedHeads(root)
 		if err != nil {
 			return err
 		}
+		h := audit.LargestHead(heads)
 		if h == nil {
 			return fmt.Errorf(
 				"no head has been published, so there is nothing to check " +
@@ -835,19 +849,33 @@ func auditConsistency(root string, args []string) error {
 					"head only proves anything once it exists somewhere the log " +
 					"cannot be quietly rewritten alongside")
 		}
+		// And every other head saved: the largest was taken from the log as
+		// it is if it was saved after a cut, and one saved before is what
+		// shows the cut.
+		if p := audit.AgainstHeads(events, heads); p != nil {
+			return errBlocked{errors.New(p.Reason)}
+		}
 		published = *h
 	} else {
 		f := &headFile{}
 		if err := loadJSON(headsPath(root), f); err != nil {
 			return err
 		}
+		var named []audit.Head
 		for _, h := range f.Heads {
 			if h.Size == *against {
 				published = h
+				named = append(named, h)
 			}
 		}
 		if published.Root == "" {
 			return fmt.Errorf("no published head covers %d entries", *against)
+		}
+		// Every head of that size, not the newest alone: two of one size
+		// with different roots are one taken before a cut and one after it,
+		// and the one after was the one checked.
+		if p := audit.AgainstHeads(events, named); p != nil {
+			return errBlocked{errors.New(p.Reason)}
 		}
 	}
 	oldSize := published.Size

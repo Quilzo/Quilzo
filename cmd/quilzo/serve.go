@@ -894,7 +894,7 @@ func cmdServe(root string, args []string) error {
 	srv.LoadAudit = func() ([]audit.Event, error) {
 		return audit.Read(auditPath(root))
 	}
-	srv.SavedHead = func() (*audit.Head, error) { return savedHead(root) }
+	srv.SavedHeads = func() ([]audit.Head, error) { return savedHeads(root) }
 	srv.LogSeparated = func() bool {
 		ok, _ := logd.CheckOwnership(auditPath(root), os.Geteuid())
 		return ok

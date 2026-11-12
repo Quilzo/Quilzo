@@ -294,6 +294,10 @@ func TestEntriesRemovedFromTheEndAreFoundAgainstTheSavedHead(t *testing.T) {
 	if head, _ := doc["head"].(map[string]any); doc["intact"] != false || head["size"] != float64(4) {
 		t.Errorf("verify --json: %v", doc)
 	}
+	// show says what verify does: it showed a log cut back as intact.
+	if doc, _ := jsonAnswer(t, func() error { return cmdAuditLog(root, []string{"show"}) }); doc["intact"] != false {
+		t.Errorf("show --json of a log cut back behind its saved head: %v", doc)
+	}
 	if f := scanFinding(Observe(root, t.TempDir(), posture.ServerFacts{}), "audit.chain-broken"); f == nil || !strings.Contains(f.Detail, "shrunk") {
 		t.Errorf("posture: %+v", f)
 	}
@@ -418,5 +422,73 @@ func TestAHeadKeptElsewhereIsCheckedAgainstTheLog(t *testing.T) {
 	})
 	if doc["verified"] != true || doc["consistent"] != nil {
 		t.Errorf("verify-head --json without the log: %v", doc)
+	}
+}
+
+// Every head saved beside the log is checked, not the largest alone. A log
+// cut back and grown again past its largest head extends the next head
+// saved, `auditlog anchor` or `head --save` as routinely as anything,
+// because that head was taken from the log as it was left: verify, posture
+// and consistency then called the log intact, with the head saved before
+// the cut, which shows it, beside the log.
+func TestAHeadSavedAfterACutDoesNotHideIt(t *testing.T) {
+	root := auditedStore(t, 4)
+	save := func() {
+		t.Helper()
+		if _, err := jsonAnswer(t, func() error { return cmdAuditLog(root, []string{"head", "--save"}) }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	save()
+	putRecords(t, root, 1)
+	save()
+	human, err := humanOutput(t, func() error { return cmdAuditLog(root, []string{"verify"}) })
+	if err != nil || !strings.Contains(human, "each of the 2 heads saved beside it, the largest\n  at 5 entries") {
+		t.Errorf("a log that grew from both its heads: %v\n%s", err, human)
+	}
+
+	keepLines(t, root, 3)
+	putRecords(t, root, 3)
+	save()
+
+	var blocked errBlocked
+	human, err = humanOutput(t, func() error { return cmdAuditLog(root, []string{"verify"}) })
+	if !errors.As(err, &blocked) || strings.Contains(human, "intact") ||
+		!strings.Contains(human, "NOT an append-only extension of the head at 4") {
+		t.Errorf("verify: %v\n%s", err, human)
+	}
+	doc, _ := jsonAnswer(t, func() error { return cmdAuditLog(root, []string{"verify"}) })
+	if head, _ := doc["head"].(map[string]any); doc["intact"] != false || head["size"] != float64(6) {
+		t.Errorf("verify --json: %v", doc)
+	}
+	doc, _ = jsonAnswer(t, func() error { return cmdAuditLog(root, []string{"show"}) })
+	if entries, _ := doc["entries"].([]any); doc["intact"] != false || len(entries) != 6 {
+		t.Errorf("show --json: %v", doc)
+	}
+	if human, _ := humanOutput(t, func() error { return cmdAuditLog(root, []string{"show"}) }); !strings.Contains(human, "head at 4") {
+		t.Errorf("show:\n%s", human)
+	}
+	if f := scanFinding(Observe(root, t.TempDir(), posture.ServerFacts{}), "audit.chain-broken"); f == nil ||
+		!strings.Contains(f.Detail, "head at 4") {
+		t.Errorf("posture: %+v", f)
+	}
+	human, err = humanOutput(t, func() error { return cmdAuditLog(root, []string{"consistency"}) })
+	if !errors.As(err, &blocked) || strings.Contains(human, "consistent") ||
+		!strings.Contains(errString(err), "head at 4") {
+		t.Errorf("consistency: %v\n%s", err, human)
+	}
+	// A size named is still the heads of that size alone.
+	if human, err := humanOutput(t, func() error { return cmdAuditLog(root, []string{"consistency", "--since", "6"}) }); err != nil ||
+		!strings.Contains(human, "6 → 6") {
+		t.Errorf("--since 6: %v\n%s", err, human)
+	}
+	// Cut back and grown again to the very size of a head saved before:
+	// the head of that size saved after the cut does not stand in for it.
+	keepLines(t, root, 3)
+	putRecords(t, root, 1)
+	save()
+	if _, err := humanOutput(t, func() error { return cmdAuditLog(root, []string{"consistency", "--since", "4"}) }); !errors.As(err, &blocked) ||
+		!strings.Contains(errString(err), "head at 4") {
+		t.Errorf("--since 4 with two heads of 4 entries: %v", err)
 	}
 }

@@ -663,7 +663,7 @@ log transparency
   quilzo logd status                       whether the separation is in force, and who signs heads
   quilzo auditlog dir                      where the log is, and whether it is separate
   quilzo auditlog verify                   recompute the chain over every entry, and
-                                            check the log against the head saved here
+                                            check the log against the heads saved here
   quilzo auditlog show SEQ                 one entry, in full
   quilzo auditlog export -o FILE           the whole log, as it is stored
   quilzo auditlog head --save              a commitment to every entry so far

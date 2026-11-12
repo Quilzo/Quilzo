@@ -115,22 +115,20 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	// And against the head saved beside it (SavedHead says why).
+	// And against the heads saved beside it (SavedHeads says why). The page
+	// names the largest.
 	var head *audit.Head
-	if s.SavedHead != nil {
-		h, err := s.SavedHead()
-		switch {
-		case err != nil:
+	if s.SavedHeads != nil {
+		heads, err := s.SavedHeads()
+		if err != nil {
 			report.Problems = append(report.Problems, audit.Problem{Reason: "the heads saved beside " +
 				"the log cannot be read, so it was not checked against them: " + err.Error()})
 			report.Intact = false
-		case h != nil:
-			head = h
-			if p := audit.AgainstHead(events, *h); p != nil {
-				report.Problems = append(report.Problems, *p)
-				report.Intact = false
-			}
+		} else if p := audit.AgainstHeads(events, heads); p != nil {
+			report.Problems = append(report.Problems, *p)
+			report.Intact = false
 		}
+		head = audit.LargestHead(heads)
 	}
 	intact, problems := report.Intact, report.Problems
 

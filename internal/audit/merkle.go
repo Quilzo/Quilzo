@@ -4,11 +4,13 @@
 package audit
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"io"
+	"sort"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/translog"
@@ -250,6 +252,125 @@ func AgainstHead(events []Event, h Head) *Problem {
 		return &Problem{Seq: int64(h.Size), Reason: fmt.Sprintf("against the head saved %s: %v", h.At, err)}
 	}
 	return nil
+}
+
+// AgainstHeads is what is wrong with a log against every head taken from it
+// earlier: nil when it still extends each one, or a problem at the smallest
+// it does not (AgainstHead), saying how many more it does not extend either.
+//
+// Every head, not the largest alone. A log cut back and grown again past
+// its largest head extends the next head saved, by `auditlog head --save`
+// or `anchor` as routinely as anything, because that head was taken from
+// the log as it was left. Checked against the largest only, it was then
+// called intact, and the head saved before the cut, which is the one that
+// shows it, was never looked at again.
+func AgainstHeads(events []Event, heads []Head) *Problem {
+	if len(heads) == 0 {
+		return nil
+	}
+	sizes := map[int]bool{}
+	for _, h := range heads {
+		if h.Size >= 0 && h.Size <= len(events) {
+			sizes[h.Size] = true
+		}
+	}
+	roots, err := rootsAt(events, sizes)
+	if err != nil {
+		return &Problem{Reason: fmt.Sprintf("the log cannot be checked against the heads saved from it: %v", err)}
+	}
+	var bad []Head
+	for _, h := range heads {
+		if !extendsAt(roots, h) {
+			bad = append(bad, h)
+		}
+	}
+	if len(bad) == 0 {
+		return nil
+	}
+	sort.SliceStable(bad, func(i, j int) bool { return bad[i].Size < bad[j].Size })
+	p := AgainstHead(events, bad[0])
+	if p == nil {
+		// The one-pass roots and the proof disagree, which they cannot unless
+		// one of them is wrong: said so rather than passed over.
+		p = &Problem{Seq: int64(bad[0].Size), Reason: fmt.Sprintf("against the head saved %s: the root "+
+			"of the first %d entries is not the head's", bad[0].At, bad[0].Size)}
+	}
+	if more := len(bad) - 1; more > 0 {
+		p.Reason += fmt.Sprintf("; and it does not extend %d more of the heads saved from it, "+
+			"the largest at %d entries", more, bad[len(bad)-1].Size)
+	}
+	return p
+}
+
+// extendsAt says whether a log whose roots at each size are roots holds a
+// head: the root of its first Size entries is the head's. Every tree extends
+// the empty one, as VerifyConsistency has it.
+func extendsAt(roots map[int][]byte, h Head) bool {
+	if h.Size == 0 {
+		return true
+	}
+	root, ok := roots[h.Size]
+	if !ok {
+		return false // more entries than the log has, or a size no log has
+	}
+	want, err := hex.DecodeString(h.Root)
+	return err == nil && bytes.Equal(root, want)
+}
+
+// rootsAt is the tree's root over the first n entries of a log, for each n
+// asked for, in one pass over it.
+//
+// One pass, because the log is checked against every head saved from it,
+// as often as the audit log screen is opened: a root over n entries
+// computed afresh for each head is n hashes a head, and a log of a million
+// entries with a year of heads saved beside it would take minutes. The
+// tree over n leaves is the run of perfect subtrees that n's binary digits
+// give, largest first, folded from the right (RFC 6962 splits at the
+// largest power of two below n, and so on down), which is what is kept
+// here as the leaves go by. The test checks it against the tree's own root
+// at every size up to past 64.
+func rootsAt(events []Event, sizes map[int]bool) (map[int][]byte, error) {
+	roots := map[int][]byte{}
+	last := 0
+	for n := range sizes {
+		last = max(last, n)
+	}
+	var peaks [][]byte
+	for i := 0; i < last; i++ {
+		leaf, err := LeafHash(events[i])
+		if err != nil {
+			return nil, err
+		}
+		h := translog.HashLeaf(leaf)
+		// Two subtrees of a size merge into one of twice it: as many times
+		// as the count of leaves so far ends in zeros in binary.
+		for n := i + 1; n&1 == 0; n >>= 1 {
+			h = translog.HashNode(peaks[len(peaks)-1], h)
+			peaks = peaks[:len(peaks)-1]
+		}
+		peaks = append(peaks, h)
+		if sizes[i+1] {
+			root := peaks[len(peaks)-1]
+			for j := len(peaks) - 2; j >= 0; j-- {
+				root = translog.HashNode(peaks[j], root)
+			}
+			roots[i+1] = root
+		}
+	}
+	return roots, nil
+}
+
+// LargestHead is the head covering the most entries, the one saved last of
+// those that cover as many, or nil when there is none: the one a check
+// against saved heads names.
+func LargestHead(heads []Head) *Head {
+	var best *Head
+	for i := range heads {
+		if best == nil || heads[i].Size >= best.Size {
+			best = &heads[i]
+		}
+	}
+	return best
 }
 
 // VerifyConsistency checks that a new head extends an old one.

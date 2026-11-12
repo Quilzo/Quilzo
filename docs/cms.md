@@ -1085,10 +1085,11 @@ is.
 
 `verify-head` checks the head against the log as well, where there is one,
 and `quilzo auditlog consistency --head FILE` checks a head kept elsewhere
-against the log. `auditlog verify`, the audit log screen and posture check
-the log against the largest head in `log-heads.json` too: entries removed
-from the end of the log leave a shorter chain that still verifies, so only a
-head taken while they were there shows they are gone.
+against the log. `auditlog verify`, `auditlog consistency`, the audit log
+screen and posture check the log against every head in `log-heads.json`
+too: entries removed from the end of the log leave a shorter chain that
+still verifies, so only a head taken while they were there shows they are
+gone, and a head saved after they went does not stand in for it.
 
 ## What is in it
 

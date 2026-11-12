@@ -478,7 +478,7 @@ func TestTheLogScreenChecksTheLogAgainstTheSavedHead(t *testing.T) {
 		t.Fatal(err)
 	}
 	s, tok := logServer(t, events, true)
-	s.SavedHead = func() (*audit.Head, error) { return &head, nil }
+	s.SavedHeads = func() ([]audit.Head, error) { return []audit.Head{head}, nil }
 	if body, _ := getLogs(t, s, tok, ""); !strings.Contains(body, "Chain intact") ||
 		!strings.Contains(body, "the head saved at 5 entries") {
 		t.Errorf("a log that grew from its saved head:\n%s", body)
@@ -490,8 +490,51 @@ func TestTheLogScreenChecksTheLogAgainstTheSavedHead(t *testing.T) {
 		t.Errorf("a log cut back behind its saved head:\n%s", body)
 	}
 
-	s.SavedHead = func() (*audit.Head, error) { return nil, nil }
+	s.SavedHeads = func() ([]audit.Head, error) { return nil, nil }
 	if body, _ := getLogs(t, s, tok, ""); !strings.Contains(body, "No saved head") {
 		t.Errorf("the page does not say that it had no head to check against:\n%s", body)
+	}
+}
+
+// The page checks the log against every head saved beside it. A log cut
+// back and grown again past the largest head extends a head saved after
+// the cut, and the page said "Chain intact" with the head saved before it,
+// which shows the cut, beside the log.
+func TestTheLogScreenChecksEveryHeadSaved(t *testing.T) {
+	path := t.TempDir() + "/audit.jsonl"
+	write := func(n int) {
+		l, err := audit.New(audit.Options{Path: path, Source: "test"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := 0; i < n; i++ {
+			if _, err := l.Append(audit.Record{Action: "publish", Resource: "/", Outcome: audit.Success,
+				Principal: "dana", Kind: audit.KindHuman, Verified: true}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	write(5)
+	events, _ := audit.Read(path)
+	before, _ := audit.TreeHead(events, time.Now())
+	b, _ := os.ReadFile(path)
+	lines := strings.SplitAfter(string(b), "\n")
+	if err := os.WriteFile(path, []byte(strings.Join(lines[:3], "")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	write(4)
+	events, _ = audit.Read(path)
+	after, _ := audit.TreeHead(events, time.Now())
+
+	s, tok := logServer(t, nil, true)
+	s.LoadAudit = func() ([]audit.Event, error) { return audit.Read(path) }
+	s.SavedHeads = func() ([]audit.Head, error) { return []audit.Head{after}, nil }
+	if body, _ := getLogs(t, s, tok, ""); !strings.Contains(body, "Chain intact") {
+		t.Fatalf("against the head saved after the cut alone:\n%s", body)
+	}
+	s.SavedHeads = func() ([]audit.Head, error) { return []audit.Head{before, after}, nil }
+	body, _ := getLogs(t, s, tok, "")
+	if strings.Contains(body, "Chain intact") || !strings.Contains(body, "NOT an append-only extension of the head at 5") {
+		t.Errorf("a log cut back behind a head saved before the cut:\n%s", body)
 	}
 }
