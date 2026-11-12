@@ -28,16 +28,20 @@ func registerAnalyticsOps(srv *mcp.Server, root string, caller *Caller) {
 		if err := authorise(root, caller, auth.ActView, "/"); err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
+		// As many as asked for, up to the most, and the answer says how
+		// many: a number over ninety was read as no number, so a year of
+		// traffic asked for was answered with thirty days of it, and
+		// nothing in the answer said which it was.
 		days := 30
-		if n, ok := a["days"].(float64); ok && n >= 1 && n <= 90 {
-			days = int(n)
+		if n, ok := a["days"].(float64); ok && n >= 1 {
+			days = int(min(n, 90))
 		}
 		d, err := analytics.Read(analyticsDir(root), days, time.Now())
 		if err != nil {
 			return nil, err
 		}
 		s := analytics.Summarise(d)
-		b, err := json.Marshal(map[string]any{"views": s.Views, "visitors": s.Visitors,
+		b, err := json.Marshal(map[string]any{"days": days, "views": s.Views, "visitors": s.Visitors,
 			"prefetched": s.Prefetch, "pages": s.Pages, "referrers": s.Referrers,
 			"goals": s.Goals})
 		return string(b), err

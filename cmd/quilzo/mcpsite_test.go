@@ -445,3 +445,63 @@ func TestAnAgentIsToldHowManyPagesItsOwnImportReads(t *testing.T) {
 		}
 	}
 }
+
+// An agent that asks for more days than an operation gives is given the
+// most it gives, as a search asked for too many works is, and not the few
+// it gives when asked for none in particular.
+//
+// site_analytics says "1 to 90" and booking_times "at most 31", and each
+// read a number over that as no number: a year of traffic asked for was
+// answered with thirty days of it, with nothing in the answer to say so,
+// and two months of free times with a week's, so an agent told a visitor
+// there was nothing free after it.
+func TestAnAgentAskingForMoreDaysThanAreGivenIsGivenTheMost(t *testing.T) {
+	root, _ := siteStore(t)
+	call := siteCrew(t, root)
+	now := time.Now().UTC()
+
+	// A day of traffic sixty days ago: inside the ninety, outside the thirty.
+	if err := os.MkdirAll(analyticsDir(root), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	date := now.AddDate(0, 0, -60).Format("2006-01-02")
+	if err := os.WriteFile(analyticsDir(root)+"/"+date+".json", []byte(`{"date":"`+date+`","views":7,"visitors":3}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := call("quilzo_read", "site_analytics", nil); got["views"] != float64(0) {
+		t.Fatalf("thirty days by default: %v", got)
+	}
+	for _, days := range []int{90, 365} {
+		if got := call("quilzo_read", "site_analytics", map[string]any{"days": days}); got["views"] != float64(7) {
+			t.Errorf("asked for %d days of traffic: %v", days, got)
+		}
+	}
+
+	// Free times: the example takes bookings sixty days ahead.
+	if err := saveBookingSetup(root, bookingExample(), asAdmin("dana"), "setup"); err != nil {
+		t.Fatal(err)
+	}
+	last := func(args map[string]any) string {
+		t.Helper()
+		got := call("quilzo_read", "booking_times", args)
+		services, _ := got["services"].([]any)
+		if len(services) == 0 {
+			t.Fatalf("no services: %v", got)
+		}
+		free, _ := services[0].(map[string]any)["free"].([]any)
+		if len(free) == 0 {
+			t.Fatalf("no free days: %v", got)
+		}
+		d, _ := free[len(free)-1].(map[string]any)["date"].(string)
+		return d
+	}
+	week, month := now.AddDate(0, 0, 9).Format("2006-01-02"), now.AddDate(0, 0, 33).Format("2006-01-02")
+	if d := last(nil); d > week {
+		t.Fatalf("a week by default, and the last free day is %s", d)
+	}
+	for _, days := range []int{31, 60} {
+		if d := last(map[string]any{"days": days}); d <= week || d > month {
+			t.Errorf("asked for %d days of free times, and the last free day is %s", days, d)
+		}
+	}
+}

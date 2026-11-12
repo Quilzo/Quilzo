@@ -204,9 +204,12 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 		if setup == nil {
 			return `{"bookings":false,"note":"this site takes no bookings"}`, nil
 		}
+		// As many as asked for, up to the most: a number over it was read
+		// as no number, so two months of free times asked for were a
+		// week's, and an agent told a visitor nothing was free after it.
 		days := 7
-		if n, ok := a["days"].(float64); ok && n >= 1 && n <= 31 {
-			days = int(n)
+		if n, ok := a["days"].(float64); ok && n >= 1 {
+			days = int(min(n, 31))
 		}
 		book, err := openBookings(root)
 		if err != nil {
@@ -249,7 +252,7 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 			out = append(out, entry)
 		}
 		b, err := json.Marshal(map[string]any{"bookings": true, "zone": setup.Zone, "paused": setup.Paused,
-			"services": out})
+			"days": days, "services": out})
 		return string(b), err
 	})
 
