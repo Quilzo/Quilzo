@@ -324,7 +324,7 @@ func trustedManifest(root string) (*demoManifest, error) {
 	if err != nil {
 		return nil, err
 	}
-	events, err := audit.Read(auditPath(root))
+	events, err := auditEntries(root)
 	if err != nil {
 		return nil, fmt.Errorf("the audit log could not be read, and it is what shows "+
 			"demo.json is the one the install wrote: %w", err)

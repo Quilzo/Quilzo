@@ -706,7 +706,7 @@ func shieldRepair(root string) error {
 // in the same window; past eight that is close to what the engine saw
 // rather than the same, and the run says so.
 func history(root string, days int, now time.Time) ([]shield.Signal, error) {
-	evs, err := audit.Read(auditPath(root))
+	evs, err := auditEntries(root)
 	if err != nil {
 		return nil, err
 	}

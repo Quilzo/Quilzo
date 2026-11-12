@@ -25,7 +25,11 @@
 // "by any user, including privileged administrators". A file an admin can edit
 // does not meet that on its own, so each entry carries the hash of the one
 // before it. Altering or removing an entry breaks the chain at that point, and
-// `Verify` says exactly where.
+// `Verify` says exactly where — except at the end. Entries removed from the
+// end leave a shorter chain that verifies, so they show only against a head
+// taken while they were there (AgainstHead), and the hashes are not keyed, so
+// whoever can rewrite the file can re-chain what is left: the chain alone
+// proves nothing against them either.
 //
 // The chain is what Verify walks, and it is enough for an operator who reads
 // the log whole. A third party who audits a log they cannot read needs more:
@@ -63,6 +67,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -288,12 +293,13 @@ func (l *Log) resync() error {
 
 // tail reads the last complete entry of a log, the file's size, and whether
 // the file ends part way through a line, as a writer that died mid-write
-// leaves it.
+// leaves it. A line still open that is a whole entry, missing only its
+// newline, is the last entry, as it is to Read.
 //
 // It reads backwards from the end in growing windows, so its cost is the
 // length of the last line, not of the log. A last complete line that is not
-// an entry is an error, as it is to Read: the chain cannot be continued
-// from something that is not part of it.
+// an entry, and is not a write left unfinished, is an error: the chain
+// cannot be continued from something that is not part of it.
 func tail(path string) (*Event, int64, bool, error) {
 	f, err := os.Open(path)
 	if os.IsNotExist(err) {
@@ -323,10 +329,22 @@ func tail(path string) (*Event, int64, bool, error) {
 		torn := buf[len(buf)-1] != '\n'
 		body := buf
 		if i := strings.LastIndexByte(string(body), '\n'); i >= 0 {
+			// A line still open that is a whole entry is the last entry: the
+			// write reached the disk but for its newline. Every reader takes
+			// it for one, and the chain carries on from it. Passed over as
+			// unfinished, it was not, and the next write took its number and
+			// linked to the entry before it: two entries of one number, a
+			// fork, reported as tampering after a crash.
+			if torn {
+				if e := wholeEntry(body[i+1:]); e != nil {
+					return e, size, true, nil
+				}
+			}
 			body = body[:i]
 		} else if window == size {
-			// One line, never finished: nothing complete to continue from.
-			return nil, size, true, nil
+			// One line, never finished: nothing complete to continue from,
+			// unless all that is missing is its newline.
+			return wholeEntry(body), size, true, nil
 		} else {
 			continue
 		}
@@ -338,7 +356,13 @@ func tail(path string) (*Event, int64, bool, error) {
 				break // the line may begin before the window
 			}
 			line := strings.TrimSpace(string(body[start:]))
-			if line == "" {
+			// A line a write left unfinished, closed off by Append, is passed
+			// over like a blank one: the chain carries on from the entry
+			// before it, as it does past one still open. A full disk cut a
+			// record short and let the next write close it and no more, and
+			// then nothing could be written, because the last line was not
+			// an entry.
+			if line == "" || unfinished(line) {
 				if start == 0 {
 					return nil, size, torn, nil
 				}
@@ -781,9 +805,10 @@ func Read(path string) ([]Event, error) {
 
 func readEvents(r io.Reader) ([]Event, error) {
 	var out []Event
+	var bad []BadLine
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-	for sc.Scan() {
+	for n := 1; sc.Scan(); n++ {
 		line := strings.TrimSpace(sc.Text())
 		if line == "" {
 			continue
@@ -792,12 +817,130 @@ func readEvents(r io.Reader) ([]Event, error) {
 		if err := json.Unmarshal([]byte(line), &e); err != nil {
 			// A malformed line is itself a finding. Reporting it as an error
 			// rather than skipping it is the point: silent tolerance of
-			// unreadable entries is how a tampered log passes review.
-			return out, fmt.Errorf("entry %d is not readable: %w", len(out)+1, err)
+			// unreadable entries is how a tampered log passes review. It is
+			// not the end of the log, though: what follows it is read too
+			// (Unreadable says why).
+			b := BadLine{Line: n, Torn: unfinished(line), Err: err}
+			if len(out) > 0 {
+				b.After = out[len(out)-1].Seq
+			}
+			bad = append(bad, b)
+			continue
 		}
 		out = append(out, e)
 	}
-	return out, sc.Err()
+	if err := sc.Err(); err != nil {
+		return out, err
+	}
+	if len(bad) > 0 {
+		return out, &Unreadable{Lines: bad}
+	}
+	return out, nil
+}
+
+// unfinished says a line stops part way through a JSON value, as a write
+// cut short leaves it, rather than holding something that is not one.
+//
+// Zeros at its end are what was not written. A filesystem that put the
+// file's new size on disk before the data leaves the rest of the write as
+// zeros after a crash. A line of them, a record that stops in them, or a
+// whole record whose newline is one of them was called tampering, and such
+// a line, closed off by the next write with nothing after it, stopped the
+// log opening at all.
+func unfinished(line string) bool {
+	if strings.TrimRight(line, "\x00") != line {
+		return true
+	}
+	return errors.Is(json.NewDecoder(strings.NewReader(line)).Decode(new(json.RawMessage)),
+		io.ErrUnexpectedEOF)
+}
+
+// wholeEntry is a line still open at the end of a log, if it is an entry, as
+// Read takes it: nil when it is not.
+func wholeEntry(b []byte) *Event {
+	line := strings.TrimSpace(string(b))
+	if line == "" {
+		return nil
+	}
+	var e Event
+	if json.Unmarshal([]byte(line), &e) != nil {
+		return nil
+	}
+	return &e
+}
+
+// Unreadable is the lines of a log that are not entries. Read and Events
+// return it, with every whole entry, when those lines are all that was
+// wrong.
+//
+// Reading stopped at the first one. Append is built to carry on past a line
+// a writer died part way through, closing it off and chaining from the last
+// whole entry, and every reader then stopped there: one crash or full disk
+// blanked the audit log screen, `auditlog show` and every export, stopped
+// the stream, the heads and agentwatch, and was reported by `auditlog
+// verify` as tampering, with every record written after it unreadable for
+// good. The lines are still reported, where they are; a reader that works
+// from the entries takes them (Entries), and one that reports on the log
+// says what the lines are (Check).
+type Unreadable struct {
+	Lines []BadLine
+}
+
+// BadLine is one line of a log that is not an entry.
+type BadLine struct {
+	// Line is its line number in the file, from 1.
+	Line int
+	// After is the sequence number of the last whole entry before it, 0
+	// when there is none.
+	After int64
+	// Torn says it stops part way through an entry, as a write a crash or a
+	// full disk cut short leaves it.
+	Torn bool
+	Err  error
+}
+
+func (u *Unreadable) Error() string {
+	b := u.Lines[0]
+	msg := fmt.Sprintf("line %d of the log is not an entry: %v", b.Line, b.Err)
+	if b.Torn {
+		msg = fmt.Sprintf("line %d of the log is a write left unfinished (%v)", b.Line, b.Err)
+	}
+	if more := len(u.Lines) - 1; more > 0 {
+		msg += fmt.Sprintf(", and %d more line(s) are not entries", more)
+	}
+	return msg
+}
+
+// Problems are the lines as problems, each at the entry before it.
+func (u *Unreadable) Problems() []Problem {
+	out := make([]Problem, 0, len(u.Lines))
+	for _, b := range u.Lines {
+		where := fmt.Sprintf("line %d of the file, after this entry,", b.Line)
+		if b.After == 0 {
+			where = fmt.Sprintf("line %d of the file, before the first entry,", b.Line)
+		}
+		why := fmt.Sprintf("%s is not an entry: %v", where, b.Err)
+		if b.Torn {
+			why = fmt.Sprintf("%s is a write left unfinished, as a crash or a full disk leaves "+
+				"one: it is not an entry, and the record it was making is lost", where)
+		}
+		out = append(out, Problem{Seq: b.After, Reason: why})
+	}
+	return out
+}
+
+// Entries is what Read or Events returned, for a reader that works from the
+// entries: every whole entry, and the error only when it is something other
+// than lines that are not entries. Those lines are not part of the chain or
+// the tree, so heads, exports and the stream over the whole entries are
+// what they would have been without them; the views that report on the log
+// report them (Check).
+func Entries(events []Event, err error) ([]Event, error) {
+	var bad *Unreadable
+	if errors.As(err, &bad) {
+		return events, nil
+	}
+	return events, err
 }
 
 // Problem is a break in the chain.
@@ -844,6 +987,13 @@ type link struct {
 // check verifies the next entry and adds what is wrong with it to problems.
 func (c *link) check(e *Event, problems []Problem) []Problem {
 	want, err := e.computeHash()
+	return c.checkHashed(e, want, err, problems)
+}
+
+// checkHashed is check given what computeHash made of the entry, for a
+// reader that needs the hash again: an Index takes the entry's leaf from it
+// (leafOf) rather than hashing every entry twice.
+func (c *link) checkHashed(e *Event, want string, err error, problems []Problem) []Problem {
 	if err != nil {
 		return append(problems, Problem{e.Seq, "entry cannot be re-hashed"})
 	}
@@ -863,14 +1013,69 @@ func (c *link) check(e *Event, problems []Problem) []Problem {
 	return problems
 }
 
-// VerifyFile is Verify over a file on disk.
+// Report is what checking a log found.
+type Report struct {
+	// Intact says nothing was: every line is an entry, and every entry
+	// re-hashes and links to the one before it.
+	Intact   bool
+	Problems []Problem
+	// Unfinished is how many of the problems are writes left unfinished
+	// (BadLine.Torn).
+	Unfinished int
+}
+
+// Crashed says the only problems are writes left unfinished: every whole
+// entry re-hashes and links up around them, so nothing a crash would not do
+// is evident. A crash is not tampering, and calling it that is the alarm
+// that teaches whoever hears it to ignore the next one.
+func (r Report) Crashed() bool {
+	return len(r.Problems) > 0 && r.Unfinished == len(r.Problems)
+}
+
+// Check is what can be said of a log from what Read or Events returned:
+// its chain, and its lines that are not entries. Any other error reading
+// it is returned, since then nothing can be said.
+func Check(events []Event, readErr error) (Report, error) {
+	var bad *Unreadable
+	if readErr != nil && !errors.As(readErr, &bad) {
+		return Report{}, readErr
+	}
+	_, problems := Verify(events)
+	var lines []BadLine
+	if bad != nil {
+		lines = bad.Lines
+	}
+	return reportOf(problems, lines), nil
+}
+
+// reportOf is a Report from the breaks in a log's chain and its lines that
+// are not entries: what Check says, and what an Index's look says of the
+// same bytes (Snapshot.Report), made in one place so the two cannot come to
+// disagree.
+func reportOf(chain []Problem, bad []BadLine) Report {
+	r := Report{Intact: len(chain) == 0 && len(bad) == 0}
+	if len(bad) > 0 {
+		r.Problems = (&Unreadable{Lines: bad}).Problems()
+		for _, b := range bad {
+			if b.Torn {
+				r.Unfinished++
+			}
+		}
+	}
+	r.Problems = append(r.Problems, chain...)
+	sort.SliceStable(r.Problems, func(i, j int) bool { return r.Problems[i].Seq < r.Problems[j].Seq })
+	return r
+}
+
+// VerifyFile is Verify over a file on disk, with its lines that are not
+// entries among the problems (Check).
 func VerifyFile(path string) (int, bool, []Problem, error) {
 	events, err := Read(path)
+	r, err := Check(events, err)
 	if err != nil {
 		return len(events), false, []Problem{{0, err.Error()}}, nil
 	}
-	ok, problems := Verify(events)
-	return len(events), ok, problems, nil
+	return len(events), r.Intact, r.Problems, nil
 }
 
 // Export writes events out for a SIEM, one JSON object per line.

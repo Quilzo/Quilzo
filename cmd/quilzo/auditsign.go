@@ -367,51 +367,113 @@ func auditVerifyHead(root string, args []string) error {
 			keysPath = args[i+1]
 		}
 	}
-
-	body, err := os.ReadFile(headPath)
+	sh, err := loadSignedHead(headPath, keysPath)
 	if err != nil {
 		return err
 	}
-	var sh audit.SignedHead
-	if err := json.Unmarshal(body, &sh); err != nil {
-		return fmt.Errorf("%s is not a signed head: %w", headPath, err)
-	}
 
-	kb, err := os.ReadFile(keysPath)
-	if err != nil {
-		return fmt.Errorf("cannot read the public keys at %s: %w", keysPath, err)
-	}
-	var pub publishedKeys
-	if err := json.Unmarshal(kb, &pub); err != nil {
-		return fmt.Errorf("%s is not a published key file: %w", keysPath, err)
-	}
-	ed, err := base64.StdEncoding.DecodeString(pub.Ed25519)
-	if err != nil {
-		return fmt.Errorf("the published Ed25519 key is not base64: %w", err)
-	}
-	ml, err := base64.StdEncoding.DecodeString(pub.MLDSA)
-	if err != nil {
-		return fmt.Errorf("the published ML-DSA key is not base64: %w", err)
-	}
-	v, err := audit.NewHeadVerifier(ed, ml)
-	if err != nil {
+	// Against the log here too, where there is one. Only the signatures
+	// were checked, and it said "verified" of a head the log, cut back
+	// since, no longer held, while its help said it checked the head
+	// against the log. Somebody holding the head and the keys but not the
+	// log still has the signatures checked, and is told what is left.
+	var consistent *bool
+	var logSize *int
+	var against error
+	if _, err := os.Stat(auditPath(root)); err == nil || (os.IsNotExist(err) && logWasHere(root)) {
+		events, err := auditEntries(root)
+		if err != nil {
+			return err
+		}
+		_, _, against = audit.Extends(events, sh.Head)
+		ok, n := against == nil, len(events)
+		consistent, logSize = &ok, &n
+	} else if !os.IsNotExist(err) {
 		return err
 	}
-	if err := v.Verify(sh); err != nil {
-		return fmt.Errorf("this head does not verify: %w", err)
-	}
+	verified := against == nil
 
 	if w.JSON(map[string]any{
-		"verified": true, "size": sh.Size, "root": sh.Root,
+		"verified": verified, "signed": true, "consistent": consistent, "log_size": logSize,
+		"size": sh.Size, "root": sh.Root,
 		"key_id": sh.KeyID, "algorithms": []string{"ed25519", "ml-dsa-65"},
 	}) {
+		if !verified {
+			return errBlocked{against}
+		}
 		return nil
+	}
+	if !verified {
+		w.Human("%s%d entries, root %s%s\n", bold, sh.Size, sh.Root, reset)
+		w.Human("  %ssigned by %s with Ed25519 and ML-DSA-65, and both signatures check out,\n"+
+			"  but the log at %s, at %d entries, does NOT contain it%s\n",
+			red, sh.KeyID, auditPath(root), *logSize, reset)
+		return errBlocked{against}
 	}
 	w.Human("%sverified%s  %d entries, root %s\n", bold, reset, sh.Size, sh.Root)
 	w.Human("  %ssigned by %s with Ed25519 and ML-DSA-65, and both check out%s\n",
 		dim, sh.KeyID, reset)
-	w.Human("\n  %sthis says the head came from that key. Whether it describes\n"+
-		"  the log you hold is a separate question:%s\n", dim, reset)
-	w.Human("    %squilzo auditlog consistency%s\n", dim, reset)
+	if consistent != nil {
+		w.Human("  %sand the log here, at %d entries, still extends it: nothing it covers\n"+
+			"  was removed or rewritten%s\n", dim, *logSize, reset)
+		return nil
+	}
+	w.Human("\n  %sthis says the head came from that key. There is no log here, so whether\n"+
+		"  it describes the log is a separate question, asked where the log is:%s\n", dim, reset)
+	w.Human("    %squilzo auditlog consistency --head %s%s\n", dim, headPath, reset)
 	return nil
+}
+
+// logWasHere says a log that is not there was: its directory holds what a
+// log leaves beside it, the lock every write takes and the key its
+// identifiers are pseudonymised with, or the keys its heads are checked
+// with. A log removed whole is then an empty one, which holds no head of
+// any entries. Taken for somebody holding a head with no log at all, it had
+// the signatures checked alone, and verify-head said "verified".
+func logWasHere(root string) bool {
+	for _, p := range []string{auditPath(root) + ".lock", auditKeyPath(root), headKeysPath(root)} {
+		if _, err := os.Stat(p); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// loadSignedHead reads a signed head from a file and checks both its
+// signatures against the published keys at keysPath: verify-head's check,
+// and consistency's for a head kept off the machine.
+func loadSignedHead(headPath, keysPath string) (audit.SignedHead, error) {
+	body, err := os.ReadFile(headPath)
+	if err != nil {
+		return audit.SignedHead{}, err
+	}
+	var sh audit.SignedHead
+	if err := json.Unmarshal(body, &sh); err != nil {
+		return audit.SignedHead{}, fmt.Errorf("%s is not a signed head: %w", headPath, err)
+	}
+
+	kb, err := os.ReadFile(keysPath)
+	if err != nil {
+		return audit.SignedHead{}, fmt.Errorf("cannot read the public keys at %s: %w", keysPath, err)
+	}
+	var pub publishedKeys
+	if err := json.Unmarshal(kb, &pub); err != nil {
+		return audit.SignedHead{}, fmt.Errorf("%s is not a published key file: %w", keysPath, err)
+	}
+	ed, err := base64.StdEncoding.DecodeString(pub.Ed25519)
+	if err != nil {
+		return audit.SignedHead{}, fmt.Errorf("the published Ed25519 key is not base64: %w", err)
+	}
+	ml, err := base64.StdEncoding.DecodeString(pub.MLDSA)
+	if err != nil {
+		return audit.SignedHead{}, fmt.Errorf("the published ML-DSA key is not base64: %w", err)
+	}
+	v, err := audit.NewHeadVerifier(ed, ml)
+	if err != nil {
+		return audit.SignedHead{}, err
+	}
+	if err := v.Verify(sh); err != nil {
+		return audit.SignedHead{}, fmt.Errorf("this head does not verify: %w", err)
+	}
+	return sh, nil
 }

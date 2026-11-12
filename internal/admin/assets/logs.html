@@ -8,10 +8,21 @@
 <div class="card {{if .Intact}}ok{{else}}bad{{end}}">
   {{if .Intact}}
     <p><strong>Chain intact</strong> &mdash; {{.Entries}} entries, each one
-    re-hashed and linked to the one before it.</p>
+    re-hashed and linked to the one before it{{with .Head}}, and the log still
+    extends the head saved at {{.Size}} entries ({{shown .At}}){{end}}.</p>
+    {{if not .Head}}<p class="hint warn">No saved head was checked against, so
+    entries removed from the end of the log would not show here:
+    <code>quilzo auditlog head --save</code> saves one, and a copy kept off this
+    machine is the one that counts.</p>{{end}}
+  {{else if .Crashed}}
+    <p><strong>A write to this log was left unfinished</strong>, as a crash or
+    a full disk leaves one. The record it was making is lost; every entry
+    around it re-hashes and links to the one before it, so this is not
+    evidence that the log was altered.</p>
+    <ul>{{range .Problems}}<li>Entry {{.Seq}}: {{shown .Reason}}</li>{{end}}</ul>
   {{else}}
     <p><strong>This log has been altered.</strong></p>
-    <ul>{{range .Problems}}<li>Entry {{.Seq}}: {{.Reason}}</li>{{end}}</ul>
+    <ul>{{range .Problems}}<li>Entry {{.Seq}}: {{shown .Reason}}</li>{{end}}</ul>
   {{end}}
   <p class="hint">
     {{if .Separated}}Written by a separate account, so code running as this one

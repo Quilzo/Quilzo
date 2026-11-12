@@ -211,16 +211,36 @@ func (s *Server) logPage(action, outcome, who string, offset int) (map[string]an
 			return nil, err
 		}
 	} else {
-		events, err := s.LoadAudit()
-		if err != nil {
+		// A line that is not an entry is among what the check found, not
+		// instead of the page. Reading stopped at one, and the page showed
+		// that error alone, with no entries and no banner: one crash part
+		// way through a write took this screen away for good, and every
+		// record after it with it. The index reads past one in the same way.
+		var err error
+		if snap, err = audit.SnapshotOfRead(s.LoadAudit()); err != nil {
 			return nil, err
 		}
-		snap = audit.SnapshotOf(events)
 	}
 	// Verified before anything is rendered, and the whole chain, not the
 	// page: a list of events with no statement about whether the chain holds
 	// invites the reader to trust it, which is the opposite of what the
 	// chain is for. The snapshot holds that answer for the whole log.
+	report := snap.Report()
+	// And against the heads saved beside it (SavedHeads says why). The page
+	// names the largest.
+	var head *audit.Head
+	if s.SavedHeads != nil {
+		heads, err := s.SavedHeads()
+		if err != nil {
+			report.Problems = append(report.Problems, audit.Problem{Reason: "the heads saved beside " +
+				"the log cannot be read, so it was not checked against them: " + err.Error()})
+			report.Intact = false
+		} else if p := snap.AgainstHeads(heads); p != nil {
+			report.Problems = append(report.Problems, *p)
+			report.Intact = false
+		}
+		head = audit.LargestHead(heads)
+	}
 
 	// Each pseudonym resolved once for the page, through one table where
 	// the server offers one (Resolver).
@@ -290,7 +310,7 @@ func (s *Server) logPage(action, outcome, who string, offset int) (map[string]an
 	return map[string]any{
 		"Rows": rows, "Total": total, "Entries": snap.Len(),
 		"Offset": offset, "Next": end, "HasNext": end < total,
-		"Intact": snap.Intact(), "Problems": snap.Problems(),
+		"Intact": report.Intact, "Problems": report.Problems, "Crashed": report.Crashed(), "Head": head,
 		"Actions": snap.Actions(),
 	}, nil
 }

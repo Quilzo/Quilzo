@@ -59,7 +59,7 @@ func accessReviewEvery(root string) time.Duration {
 // events is the log already read, or nil to read it here.
 func auditActivity(root string, events []audit.Event) (func(string) time.Time, map[string]time.Time) {
 	if events == nil {
-		events, _ = audit.Read(auditPath(root))
+		events, _ = auditEntries(root)
 	}
 	key, _ := os.ReadFile(auditKeyPath(root))
 	latest := map[string]time.Time{}

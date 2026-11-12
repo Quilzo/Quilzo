@@ -303,7 +303,7 @@ func buildFleet(root string, days int, now time.Time) (fleet.View, error) {
 	touch := func(id, kind, name string, at time.Time) {
 		v.Touch(id, kind, name, at)
 	}
-	if events, err := audit.Read(auditPath(root)); err == nil {
+	if events, err := auditEntries(root); err == nil {
 		for _, e := range events {
 			at, err := time.Parse(time.RFC3339, e.At)
 			if err != nil || at.Before(since) {
@@ -412,7 +412,7 @@ func recentUsage(root string, since time.Time) []gateway.Usage {
 // shadowAI is agents' own programs reaching AI services directly, from the
 // log's records of where each reached (agent.egress).
 func shadowAI(root string, since, now time.Time) []fleet.Sighting {
-	recs, err := audit.Read(auditPath(root))
+	recs, err := auditEntries(root)
 	if err != nil {
 		return nil
 	}

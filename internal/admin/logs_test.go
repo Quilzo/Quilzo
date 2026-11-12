@@ -629,3 +629,267 @@ func TestThePageMarksEveryControlCharacterInTheLog(t *testing.T) {
 		t.Errorf("the filter no longer finds an action holding a control character")
 	}
 }
+
+// tornLog is a log a writer died part way through once: an entry, the line
+// it left unfinished, and two entries written after it.
+func tornLog(t *testing.T) string {
+	t.Helper()
+	path := t.TempDir() + "/audit.jsonl"
+	write := func() {
+		l, err := audit.New(audit.Options{Path: path, Source: "test"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := l.Append(audit.Record{Action: "publish", Resource: "/", Outcome: audit.Success,
+			Principal: "dana", Kind: audit.KindHuman, Verified: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write()
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.WriteString(`{"seq":2,"at":"2026-10`)
+	f.Close()
+	write()
+	write()
+	return path
+}
+
+// A line a crash left unfinished is shown where it is, as what it is, with
+// every entry around it. The page showed the reading error alone, with no
+// entries and no banner, for as long as the line stayed: one crash took the
+// screen away for good, and the entries after it were never seen.
+func TestATornLineIsShownInTheLogNotInsteadOfIt(t *testing.T) {
+	path := tornLog(t)
+	s, tok := logServer(t, nil, true)
+	s.LoadAudit = func() ([]audit.Event, error) { return audit.Read(path) }
+	body, code := getLogs(t, s, tok, "")
+	if code != http.StatusOK {
+		t.Fatalf("got %d", code)
+	}
+	if !strings.Contains(body, "3 of 3 entries") {
+		t.Errorf("the entries around the torn line are not shown:\n%s", body)
+	}
+	if !strings.Contains(body, "left unfinished") || strings.Contains(body, "Chain intact") {
+		t.Errorf("the torn line is not shown for what it is:\n%s", body)
+	}
+	if strings.Contains(body, "has been altered") {
+		t.Errorf("a crash is reported as tampering:\n%s", body)
+	}
+
+	// A line that is not an entry and was not cut short is not a crash's.
+	f, _ := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o600)
+	f.WriteString("{not json\n")
+	f.Close()
+	if body, _ := getLogs(t, s, tok, ""); !strings.Contains(body, "has been altered") {
+		t.Errorf("a line nothing cut short is not reported as altering the log:\n%s", body)
+	}
+}
+
+// A crash with nothing written after it leaves the line it cut short last
+// in the log. The page shows every entry before it, and the line as what
+// it is: not the reading error alone, and not tampering.
+func TestATornLastLineIsShownAsACrash(t *testing.T) {
+	path := t.TempDir() + "/audit.jsonl"
+	l, err := audit.New(audit.Options{Path: path, Source: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if _, err := l.Append(audit.Record{Action: "publish", Resource: "/", Outcome: audit.Success,
+			Principal: "dana", Kind: audit.KindHuman, Verified: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.WriteString(`{"seq":3,"at":"2026-10`)
+	f.Close()
+
+	s, tok := logServer(t, nil, true)
+	s.LoadAudit = func() ([]audit.Event, error) { return audit.Read(path) }
+	body, code := getLogs(t, s, tok, "")
+	if code != http.StatusOK || !strings.Contains(body, "2 of 2 entries") {
+		t.Errorf("the entries before the torn line are not shown (%d):\n%s", code, body)
+	}
+	if !strings.Contains(body, "left unfinished") || strings.Contains(body, "Chain intact") ||
+		strings.Contains(body, "has been altered") {
+		t.Errorf("the torn line is not shown as a crash:\n%s", body)
+	}
+}
+
+// The page checks the log against the head saved beside it. Entries
+// removed from the end of a log leave a shorter chain that verifies, so the
+// page said "Chain intact" with a saved head covering more than it held.
+func TestTheLogScreenChecksTheLogAgainstTheSavedHead(t *testing.T) {
+	events := realLog(t, 6)
+	head, err := audit.TreeHead(events[:5], time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, tok := logServer(t, events, true)
+	s.SavedHeads = func() ([]audit.Head, error) { return []audit.Head{head}, nil }
+	if body, _ := getLogs(t, s, tok, ""); !strings.Contains(body, "Chain intact") ||
+		!strings.Contains(body, "the head saved at 5 entries") {
+		t.Errorf("a log that grew from its saved head:\n%s", body)
+	}
+
+	s.LoadAudit = func() ([]audit.Event, error) { return events[:3], nil }
+	body, _ := getLogs(t, s, tok, "")
+	if strings.Contains(body, "Chain intact") || !strings.Contains(body, "shrunk") {
+		t.Errorf("a log cut back behind its saved head:\n%s", body)
+	}
+
+	s.SavedHeads = func() ([]audit.Head, error) { return nil, nil }
+	if body, _ := getLogs(t, s, tok, ""); !strings.Contains(body, "No saved head") {
+		t.Errorf("the page does not say that it had no head to check against:\n%s", body)
+	}
+}
+
+// The page checks the log against every head saved beside it. A log cut
+// back and grown again past the largest head extends a head saved after
+// the cut, and the page said "Chain intact" with the head saved before it,
+// which shows the cut, beside the log.
+func TestTheLogScreenChecksEveryHeadSaved(t *testing.T) {
+	path := t.TempDir() + "/audit.jsonl"
+	write := func(n int) {
+		l, err := audit.New(audit.Options{Path: path, Source: "test"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := 0; i < n; i++ {
+			if _, err := l.Append(audit.Record{Action: "publish", Resource: "/", Outcome: audit.Success,
+				Principal: "dana", Kind: audit.KindHuman, Verified: true}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	write(5)
+	events, _ := audit.Read(path)
+	before, _ := audit.TreeHead(events, time.Now())
+	b, _ := os.ReadFile(path)
+	lines := strings.SplitAfter(string(b), "\n")
+	if err := os.WriteFile(path, []byte(strings.Join(lines[:3], "")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	write(4)
+	events, _ = audit.Read(path)
+	after, _ := audit.TreeHead(events, time.Now())
+
+	s, tok := logServer(t, nil, true)
+	s.LoadAudit = func() ([]audit.Event, error) { return audit.Read(path) }
+	s.SavedHeads = func() ([]audit.Head, error) { return []audit.Head{after}, nil }
+	if body, _ := getLogs(t, s, tok, ""); !strings.Contains(body, "Chain intact") {
+		t.Fatalf("against the head saved after the cut alone:\n%s", body)
+	}
+	s.SavedHeads = func() ([]audit.Head, error) { return []audit.Head{before, after}, nil }
+	body, _ := getLogs(t, s, tok, "")
+	if strings.Contains(body, "Chain intact") || !strings.Contains(body, "NOT an append-only extension of the head at 5") {
+		t.Errorf("a log cut back behind a head saved before the cut:\n%s", body)
+	}
+}
+
+// indexedLogServer is logServer reading the log at path through an index, as
+// `quilzo serve` has it read, and never loading it whole.
+func indexedLogServer(t *testing.T, path string) (*Server, string) {
+	t.Helper()
+	s, tok := logServer(t, nil, true)
+	s.LoadAudit = func() ([]audit.Event, error) {
+		t.Error("the page loaded the whole log with an index to read")
+		return nil, nil
+	}
+	index := audit.NewIndex(path)
+	s.AuditIndex = func() *audit.Index { return index }
+	return s, tok
+}
+
+// Read through its index, as the server reads it, the page shows a line a
+// crash left unfinished where it is, as what it is, with every entry around
+// it, and a line nothing cut short as an alteration: the index reads past
+// such a line as Read does, rather than taking the screen away.
+func TestTheIndexedPageShowsATornLineInTheLog(t *testing.T) {
+	path := tornLog(t)
+	s, tok := indexedLogServer(t, path)
+	body, code := getLogs(t, s, tok, "")
+	if code != http.StatusOK || !strings.Contains(body, "3 of 3 entries") {
+		t.Errorf("the entries around the torn line are not shown (%d):\n%s", code, body)
+	}
+	if !strings.Contains(body, "left unfinished") || strings.Contains(body, "Chain intact") ||
+		strings.Contains(body, "has been altered") {
+		t.Errorf("the torn line is not shown as a crash:\n%s", body)
+	}
+	f, _ := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o600)
+	f.WriteString(`{"seq":4,"at":"2026-10`)
+	f.Close()
+	if body, _ := getLogs(t, s, tok, ""); !strings.Contains(body, "3 of 3 entries") ||
+		!strings.Contains(body, "left unfinished") || strings.Contains(body, "has been altered") {
+		t.Errorf("a torn last line too:\n%s", body)
+	}
+	f, _ = os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o600)
+	f.WriteString("\n{not json\n")
+	f.Close()
+	if body, _ := getLogs(t, s, tok, ""); !strings.Contains(body, "has been altered") {
+		t.Errorf("a line nothing cut short is not reported as altering the log:\n%s", body)
+	}
+}
+
+// Read through its index, the page checks the log against every head saved
+// beside it, as it does a log it loads whole: one cut back behind a head is
+// not intact, and neither is one grown again past the head saved after the
+// cut.
+func TestTheIndexedPageChecksEveryHeadSaved(t *testing.T) {
+	path := t.TempDir() + "/audit.jsonl"
+	write := func(n int) {
+		l, err := audit.New(audit.Options{Path: path, Source: "test"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := 0; i < n; i++ {
+			if _, err := l.Append(audit.Record{Action: "publish", Resource: "/", Outcome: audit.Success,
+				Principal: "dana", Kind: audit.KindHuman, Verified: true}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	write(5)
+	events, _ := audit.Read(path)
+	before, _ := audit.TreeHead(events, time.Now())
+	s, tok := indexedLogServer(t, path)
+	s.SavedHeads = func() ([]audit.Head, error) { return []audit.Head{before}, nil }
+	for i := 0; i < 2; i++ {
+		if body, _ := getLogs(t, s, tok, ""); !strings.Contains(body, "Chain intact") ||
+			!strings.Contains(body, "the head saved at 5 entries") {
+			t.Fatalf("a log at its saved head, view %d:\n%s", i, body)
+		}
+	}
+
+	b, _ := os.ReadFile(path)
+	lines := strings.SplitAfter(string(b), "\n")
+	if err := os.WriteFile(path, []byte(strings.Join(lines[:3], "")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if body, _ := getLogs(t, s, tok, ""); strings.Contains(body, "Chain intact") || !strings.Contains(body, "shrunk") {
+		t.Errorf("a log cut back behind its saved head:\n%s", body)
+	}
+	write(4)
+	events, _ = audit.Read(path)
+	after, _ := audit.TreeHead(events, time.Now())
+	s.SavedHeads = func() ([]audit.Head, error) { return []audit.Head{after}, nil }
+	if body, _ := getLogs(t, s, tok, ""); !strings.Contains(body, "Chain intact") {
+		t.Fatalf("against the head saved after the cut alone:\n%s", body)
+	}
+	s.SavedHeads = func() ([]audit.Head, error) { return []audit.Head{before, after}, nil }
+	if body, _ := getLogs(t, s, tok, ""); strings.Contains(body, "Chain intact") ||
+		!strings.Contains(body, "NOT an append-only extension of the head at 5") {
+		t.Errorf("a log cut back behind a head saved before the cut:\n%s", body)
+	}
+	s.SavedHeads = func() ([]audit.Head, error) { return nil, os.ErrPermission }
+	if body, _ := getLogs(t, s, tok, ""); strings.Contains(body, "Chain intact") ||
+		!strings.Contains(body, "cannot be read") {
+		t.Errorf("heads that cannot be read:\n%s", body)
+	}
+}

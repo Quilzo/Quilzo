@@ -192,7 +192,7 @@ var reConnection = regexp.MustCompile(`^gr_[0-9a-f]{16}$`)
 // proveRecords puts the log's records that belong in a receipt into it,
 // each with its proof, and signs a head they are proved against.
 func proveRecords(root string, rf *agentReceiptFile, now time.Time, belongs func(audit.Event) bool) error {
-	events, err := audit.Read(auditPath(root))
+	events, err := auditEntries(root)
 	if err != nil {
 		return err
 	}
