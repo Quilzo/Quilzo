@@ -844,6 +844,18 @@ func unitTurned(sentence, source string) string {
 				other = h.text
 			}
 		}
+		// "A month" has no figure of the passage's to be held to, and a
+		// passage's "a week" is not what it is held to: one of a unit is the
+		// passage's when the passage names one of that unit, however it
+		// writes it.
+		if !same && m.kind == spanOfTime && m.at < 0 && m.key == "1" {
+			if saysOne(source, m.unit) {
+				continue
+			}
+			if other == "" {
+				return fmt.Sprintf("says %s, which the cited passage does not", m.text)
+			}
+		}
 		if !same && other == "" {
 			if stated == nil {
 				stated = figureValues(source)
@@ -855,6 +867,32 @@ func unitTurned(sentence, source string) string {
 		}
 	}
 	return ""
+}
+
+// oneOf are the words that name one of a unit of time without a figure:
+// the unit, as "per week" and "next-day" say it, and the word for once in
+// each.
+var oneOf = map[string][]string{
+	"minute": {"minute", "min"}, "hour": {"hour", "hr", "hourly"},
+	"day": {"day", "daily"}, "week": {"week", "weekly"},
+	"fortnight": {"fortnight", "fortnightly"}, "month": {"month", "monthly"},
+	"year": {"year", "yearly", "annual", "annually"},
+}
+
+// saysOne reports whether a text names one of a unit of time. "Returns are
+// accepted within a month" and "within a year" were shown for "within 30
+// days": a period written without a figure was held to nothing, and its
+// unit was one word of many that the overlap test did not miss. "30 days"
+// names no one day; "next-day dispatch" and "£5 per week" each name one.
+func saysOne(text, unit string) bool {
+	for _, t := range search.Tokenise(text) {
+		for _, w := range oneOf[unit] {
+			if t == w {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // countedOtherwise is how a passage states a sentence's figure when every
@@ -888,7 +926,54 @@ func countedOtherwise(m measure, have []measure, stated []figure) string {
 // reNegation finds a word that turns a statement around: "not" and its
 // contractions, and the words that say none, nowhere or only otherwise.
 // The apostrophe may be typed or typographic, as a page's text has either.
-var reNegation = regexp.MustCompile(`(?i)\b(?:not|no|never|none|nor|neither|nobody|nothing|nowhere|cannot|without|except|unless)\b|n['’]t\b`)
+//
+// "Unable" is one: it is how a shop says it cannot. "We are unable to
+// deliver to the Zqvel Highlands" was shown as "We deliver to the Zqvel
+// Highlands", nothing the check knew having been left out.
+var reNegation = regexp.MustCompile(`(?i)\b(?:not|no|never|none|nor|neither|nobody|nothing|nowhere|cannot|without|except|unless|unable)\b|n['’]t\b`)
+
+// phrases are what a text says in more than one word, each as the one
+// word readText knows it by, and written is that word back as the text
+// wrote it, for the reason a sentence is refused with.
+//
+// "Not only" and "not merely" take nothing back, so their "not" is none:
+// "We not only sell gluten-free bread" was shown for "We do not sell
+// gluten-free bread", a "not" before the same word in each, and a page's
+// "Not only do we sell" refused the plain "We sell". Not "not just": "you
+// can't just turn up" says you cannot.
+//
+// The others are opposites that no one word of theirs says: "sold out" and
+// "out of stock" of "available" and "in stock", "check-out" of "check-in",
+// and "up to" of "over".
+var phrases = []struct {
+	re *regexp.Regexp
+	as string
+}{
+	{regexp.MustCompile(`(?i)(?:\bnot|n['’]t)\s+(only|merely)\b`), " $1"},
+	{regexp.MustCompile(`(?i)\bsold[\s-]+out\b`), "soldout"},
+	{regexp.MustCompile(`(?i)\bout[\s-]+of[\s-]+stock\b`), "outofstock"},
+	{regexp.MustCompile(`(?i)\bin[\s-]+stock\b`), "instock"},
+	{regexp.MustCompile(`(?i)\bcheck[\s-]?in\b`), "checkin"},
+	{regexp.MustCompile(`(?i)\bcheck[\s-]?out\b`), "checkout"},
+	{regexp.MustCompile(`(?i)\bup\s+to\b`), "upto"},
+}
+
+var written = map[string]string{
+	"soldout": "sold out", "outofstock": "out of stock", "instock": "in stock",
+	"checkin": "check-in", "checkout": "check-out", "upto": "up to",
+}
+
+// inWords is a text with each of phrases as its one word.
+func inWords(s string) string {
+	for _, p := range phrases {
+		s = p.re.ReplaceAllString(s, p.as)
+	}
+	return s
+}
+
+// negations are the words of a text that turn it around, in the order it
+// says them.
+func negations(s string) []string { return reNegation.FindAllString(inWords(s), -1) }
 
 // statements are the pieces of a passage a sentence can rest on: each
 // sentence of each line, so a record's "gluten free: no" is not read
@@ -961,7 +1046,7 @@ func (st statement) words() reading {
 // the answer's.
 func turnedAround(sentence string, units []statement) string {
 	want := readText(sentence)
-	says := reNegation.FindAllString(sentence, -1)
+	says := negations(sentence)
 	best, agrees, why := 0, false, ""
 	for _, u := range units {
 		have := u.words()
@@ -977,7 +1062,7 @@ func turnedAround(sentence string, units []statement) string {
 		if n > best {
 			best, agrees, why = n, false, ""
 		}
-		neg := reNegation.FindAllString(u.about+" "+u.says, -1)
+		neg := negations(u.about + " " + u.says)
 		if ok, reason := agree(want, have, says, neg); ok {
 			agrees = true
 		} else if why == "" {
@@ -1212,6 +1297,16 @@ const (
 // return postage" what "Return postage is paid" does, and "Prices are
 // exclusive of VAT" and "excl. VAT" what "Prices exclude VAT" does;
 // "Delivery is free" was shown for each.
+//
+// And the other end of what a venue's page states, each shown for its
+// opposite with every other word kept: "available" for "sold out" and "in
+// stock" for "out of stock" (phrases makes one word of each), "possible"
+// for "impossible", "optional" for "required", "ends on 1 June" for
+// "starts on 1 June", "check-out" for "check-in", "at most 4" for "at
+// least 4", and "up to 12" and "12 and younger" for "over 12". A sentence
+// that says one of a pair where the passage says neither is not held by
+// this; the test that most of its words are the passage's is all that
+// holds it.
 var opposites = map[string]string{
 	"clos": "open", "close": "open", "shut": "open",
 	"charg": "free", "charge": "free", "chargeable": "free", "cost": "free",
@@ -1221,9 +1316,15 @@ var opposites = map[string]string{
 	"refus": "accept", "refuse": "accept", "reject": "accept",
 	"declin": "accept", "decline": "accept",
 	"exclud": "include", "exclude": "include", "exclusive": "include", "excl": "include",
-	"after": "before",
+	"after": "before", "later": "before",
 	"under": "over", "below": "over", "less": "over", "fewer": "over",
-	"maximum": "minimum",
+	"younger": "over", "upto": "over",
+	"maximum": "minimum", "most": "least",
+	"soldout": "available", "outofstock": "available",
+	"impossible": "possible", "ineligible": "eligible", "invalid": "valid",
+	"inaccessible": "accessible", "optional": "requir",
+	"end": "start", "ended": "start", "ending": "start",
+	"finish": "start", "finishe": "start", "checkout": "checkin",
 }
 
 // sameAs are words that say what another of the pairs in opposites does,
@@ -1232,7 +1333,13 @@ var opposites = map[string]string{
 var sameAs = map[string]string{
 	"welcome": "allow", "welcom": "allow", "permit": "allow", "permitt": "allow",
 	"includ": "include", "inclusive": "include", "incl": "include", "inc": "include",
-	"above": "over", "more": "over",
+	"above": "over", "more": "over", "older": "over",
+	"until": "before", "till": "before", "earlier": "before",
+	"instock": "available",
+	"require": "requir", "mandatory": "requir", "compulsory": "requir",
+	"essential": "requir", "necessary": "requir",
+	"begin": "start", "beginn": "start", "began": "start", "begun": "start",
+	"complimentary": "free",
 }
 
 // isOpposite are the words opposites names an opposite of.
@@ -1276,10 +1383,12 @@ var reClause = regexp.MustCompile(`[,.;:!?()]+`)
 // readText is a text's informative words, the negations aside, each under
 // the word it says or says the opposite of, and its "not"s.
 //
-// "Un" and "non" make an opposite of a word of five letters or more, so
+// "Un" and "non" make an opposite of a word of four letters or more, so
 // "unavailable" is read as the opposite of "available" and "non-refundable"
 // and "nonrefundable" of "refundable". Only ever against the word itself:
-// "understand" is the opposite of "derstand", which no text says.
+// "understand" is the opposite of "derstand", which no text says. Four,
+// not five: "The Zqvel tap water is safe to drink" was shown for "unsafe to
+// drink", and "unpaid", "unsold" and "untrue" are as short.
 //
 // A word is negated when a "not" comes at most two words before it in the
 // same clause, as in "is not open" and "will not be open". "No, it is
@@ -1292,7 +1401,7 @@ var reClause = regexp.MustCompile(`[,.;:!?()]+`)
 // "longer" are; held to the first word alone, each let "we sell" through.
 func readText(s string) reading {
 	out := reading{words: map[string]read{}}
-	for _, clause := range reClause.Split(s, -1) {
+	for _, clause := range reClause.Split(inWords(s), -1) {
 		lastNot, not, opposeNext := -3, "", false
 		// pending is a "not" that has not yet been before a word.
 		pending, before, before2 := false, "", ""
@@ -1347,7 +1456,7 @@ func readText(s string) reading {
 					side = oppositeSide
 				default:
 					for _, prefix := range []string{"un", "non"} {
-						if rest, ok := strings.CutPrefix(t, prefix); ok && len(rest) >= 5 {
+						if rest, ok := strings.CutPrefix(t, prefix); ok && len(rest) >= 4 {
 							w, side = rest, oppositeSide
 							break
 						}
@@ -1356,6 +1465,9 @@ func readText(s string) reading {
 				r := out.words[w]
 				if r.word == "" {
 					r.word = raw
+					if p, ok := written[raw]; ok {
+						r.word = p
+					}
 				}
 				if i-lastNot <= 2 {
 					r.negated |= side

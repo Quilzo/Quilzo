@@ -831,6 +831,127 @@ func TestAnOppositeIsKnownInTheFormsItIsWrittenIn(t *testing.T) {
 	})
 }
 
+// A page says "not" in words that are not "not". "We are unable to deliver
+// to the Zqvel Highlands" was shown as "We deliver to the Zqvel Highlands":
+// "unable" was no negation, so nothing had been left out. And "not only"
+// takes nothing back: "We not only sell gluten-free bread" was shown for
+// "We do not sell gluten-free bread", its "not" before the same word, while
+// a page's "Not only do we sell" refused the plain "We sell".
+func TestANotIsKnownInTheWordsAPageSaysItIn(t *testing.T) {
+	hit := func(title, text string) []Hit {
+		return []Hit{{Passage: Passage{ID: "p#1", Page: "p", Title: title, Text: text}}}
+	}
+	unable := hit("Zqvel delivery", "We are unable to deliver to the Zqvel Highlands.")
+	able := hit("Zqvel delivery", "We are able to deliver to the Zqvel Highlands.")
+	bread := hit("Zqvel bread", "We do not sell gluten-free bread at the Zqvel bakery.")
+	only := hit("Zqvel bread", "Not only do we sell gluten-free bread at the Zqvel bakery, we bake it daily.")
+	expectVerdicts(t, []verdict{
+		{unable, "We deliver to the Zqvel Highlands [1].", `"unable"`},
+		{unable, "We are able to deliver to the Zqvel Highlands [1].", `"unable"`},
+		{unable, "Yes, we deliver to the Zqvel Highlands, no need to ask [1].", `"unable"`},
+		{able, "We are unable to deliver to the Zqvel Highlands [1].", `"unable"`},
+		{bread, "We not only sell gluten-free bread at the Zqvel bakery [1].", `"not"`},
+		{bread, "We don't only sell gluten-free bread at the Zqvel bakery [1].", `"not"`},
+		{bread, "Not only do we sell gluten-free bread at the Zqvel bakery, it is fresh [1].", `"not"`},
+		{only, "We do not sell gluten-free bread at the Zqvel bakery [1].", `"not"`},
+		// The passage's "not", in the sentence's own words.
+		{unable, "We are unable to deliver to the Zqvel Highlands [1].", ""},
+		{unable, "We cannot deliver to the Zqvel Highlands [1].", ""},
+		{unable, "We do not deliver to the Zqvel Highlands [1].", ""},
+		{able, "We deliver to the Zqvel Highlands [1].", ""},
+		{only, "We sell gluten-free bread at the Zqvel bakery [1].", ""},
+		{only, "Not only do we sell gluten-free bread at the Zqvel bakery, we bake it daily [1].", ""},
+	})
+}
+
+// An opposite is known when it is written in two words, with a prefix on a
+// short word, or as the other end of what a venue's page states. "The
+// Zqvel loaf is available today" was shown for "sold out today" and "in
+// stock" for "out of stock"; "safe to drink" for "unsafe to drink", "un"
+// making an opposite only of a word of five letters; and "Booking is
+// optional" for "Booking is required", "The sale ends on 1 June" for
+// "starts on 1 June", "Check-out is at 3pm" for "Check-in is at 3pm",
+// "at most 4" for "at least 4" and "up to 12" for "over 12", each keeping
+// every other word.
+func TestAnOppositeIsKnownInTwoWordsAndAtTheOtherEnd(t *testing.T) {
+	hit := func(title, text string) []Hit {
+		return []Hit{{Passage: Passage{ID: "p#1", Page: "p", Title: title, Text: text}}}
+	}
+	sold := hit("Zqvel bread", "The Zqvel loaf is sold out today.")
+	out := hit("Zqvel bread", "The Zqvel loaf is out of stock.")
+	in := hit("Zqvel bread", "The Zqvel loaf is in stock.")
+	water := hit("Zqvel water", "The Zqvel tap water is unsafe to drink.")
+	parking := hit("Zqvel tea room", "It is impossible to park at the Zqvel tea room.")
+	booking := hit("Zqvel tea room", "Booking is required for the Zqvel tea room.")
+	essential := hit("Zqvel tea room", "Booking is essential for the Zqvel tea room.")
+	sale := hit("Zqvel sale", "The Zqvel sale starts on 1 June.")
+	rooms := hit("Zqvel rooms", "Check-in at the Zqvel rooms is at 3pm.")
+	tables := hit("Zqvel tea room", "Tables seat at least 4 people in the Zqvel tea room.")
+	fare := hit("Zqvel tea room", "Children over 12 pay the full fare.")
+	order := hit("Zqvel delivery", "Order before 2pm for next-day dispatch.")
+	charged := hit("Zqvel delivery", "Delivery is charged on every order.")
+	expectVerdicts(t, []verdict{
+		{sold, "The Zqvel loaf is available today [1].", `"available"`},
+		{sold, "The Zqvel loaf is in stock today [1].", `"in stock"`},
+		{out, "The Zqvel loaf is in stock [1].", `"in stock"`},
+		{in, "The Zqvel loaf is out of stock [1].", `"out of stock"`},
+		{in, "The Zqvel loaf is sold out [1].", `"sold out"`},
+		{water, "The Zqvel tap water is safe to drink [1].", `"safe"`},
+		{parking, "It is possible to park at the Zqvel tea room [1].", `"possible"`},
+		{booking, "Booking is optional for the Zqvel tea room [1].", `"optional"`},
+		{essential, "Booking is optional for the Zqvel tea room [1].", `"optional"`},
+		{sale, "The Zqvel sale ends on 1 June [1].", `"ends"`},
+		{sale, "The Zqvel sale finishes on 1 June [1].", `"finishes"`},
+		{rooms, "Check-out at the Zqvel rooms is at 3pm [1].", `"check-out"`},
+		{tables, "Tables seat at most 4 people in the Zqvel tea room [1].", `"most"`},
+		{fare, "Children up to 12 pay the full fare [1].", `"up to"`},
+		{fare, "Children 12 and younger pay the full fare [1].", `"younger"`},
+		{order, "Order later than 2pm for next-day dispatch [1].", `"later"`},
+		{charged, "Delivery is complimentary on every order [1].", `"complimentary"`},
+		// What the page says, in the sentence's own words.
+		{sold, "The Zqvel loaf is sold out today [1].", ""},
+		{sold, "The Zqvel loaf is not available today [1].", ""},
+		{sold, "The Zqvel loaf is unavailable today [1].", ""},
+		{out, "The Zqvel loaf is sold out [1].", ""},
+		{in, "The Zqvel loaf is available [1].", ""},
+		{water, "The Zqvel tap water is not safe to drink [1].", ""},
+		{parking, "It is not possible to park at the Zqvel tea room [1].", ""},
+		{booking, "Booking is essential for the Zqvel tea room [1].", ""},
+		{essential, "Booking is required for the Zqvel tea room [1].", ""},
+		{sale, "The Zqvel sale begins on 1 June [1].", ""},
+		{rooms, "You can check in at the Zqvel rooms at 3pm [1].", ""},
+		{tables, "Tables seat at least 4 people in the Zqvel tea room [1].", ""},
+		{fare, "Children older than 12 pay the full fare [1].", ""},
+		{order, "Order until 2pm for next-day dispatch [1].", ""},
+	})
+}
+
+// A period is the passage's when the passage states it. "Returns are
+// accepted within a month" and "within a year" were shown for "within 30
+// days": "a month" has no figure to hold to the passage's, and its unit was
+// one word of many that the overlap test did not miss.
+func TestAPeriodWithoutAFigureIsHeldToThePassageToo(t *testing.T) {
+	hit := func(text string) []Hit {
+		return []Hit{{Passage: Passage{ID: "p#1", Page: "p", Title: "Zqvel delivery", Text: text}}}
+	}
+	days := hit("Returns are accepted within 30 days of delivery. Dispatch is next-day.")
+	month := hit("Returns are accepted for a month. Pallet delivery is £5 per week, billed monthly.")
+	expectVerdicts(t, []verdict{
+		{days, "Returns are accepted within a month of delivery [1].", "a month"},
+		{days, "Returns are accepted within a year of delivery [1].", "a year"},
+		{days, "Returns are accepted within a week of delivery [1].", "a week"},
+		{days, "Returns are accepted within an hour of delivery [1].", "an hour"},
+		{days, "Returns are accepted within one month of delivery [1].", "one"},
+		// A period the passage states, as it or the sentence writes it.
+		{days, "Returns are accepted within 30 days of delivery [1].", ""},
+		{days, "Dispatch takes a day [1].", ""},
+		{month, "Returns are accepted for a month [1].", ""},
+		{month, "Returns are accepted for one month [1].", ""},
+		{month, "Pallet delivery is £5 a week [1].", ""},
+		{month, "Pallet delivery is billed once a month [1].", ""},
+	})
+}
+
 func TestAModelThatFailsFallsBack(t *testing.T) {
 	for name, m := range map[string]*scripted{
 		"error":    {err: errors.New("connection refused")},
