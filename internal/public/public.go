@@ -1225,7 +1225,7 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 	// every export. They used to build their own and disagree: the gate that
 	// refuses a publish was judging a page with no navigation and no listings
 	// in it, which is not the page anybody is served.
-	ctx, cerr := st.sources().For(name, body, args)
+	ctx, cerr := st.sourcesFor(r).For(name, body, args)
 	if cerr != nil {
 		// A page whose listings cannot be resolved is a broken page, not a
 		// page with an empty section. Rendering it without them would ship a
@@ -1808,6 +1808,29 @@ func (st *Site) sources() render.Sources {
 		pages = nil
 	}
 	return st.Sources(pages)
+}
+
+// sourcesFor is sources for one request: for a static copy's (CopyHeader),
+// a form's stamp is when the version being copied was made rather than when
+// this page was rendered.
+//
+// The stamp is the time a page was served, for a form's timing check, and a
+// static copy has no server to serve it or to take what its forms send. As
+// the render time it made every copy of a site with a form different bytes,
+// every second: `quilzo ipfs verify` told somebody a correct upload made two
+// seconds earlier did not match, and content_id gave three identifiers in
+// three seconds for one site, the opposite of what an identifier computed
+// from the content is for.
+func (st *Site) sourcesFor(r *http.Request) render.Sources {
+	src := st.sources()
+	if r.Header.Get(CopyHeader) != "" {
+		at := time.Unix(0, 0)
+		if c, err := st.Store.GetCommit(st.Store.GetRef(st.ref())); err == nil {
+			at = time.Unix(c.At, 0)
+		}
+		src.Now = func() time.Time { return at }
+	}
+	return src
 }
 
 // Sources is what a template may see when it renders one of pages: the one

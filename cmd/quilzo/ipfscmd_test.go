@@ -15,6 +15,8 @@ import (
 	"github.com/quilzo/quilzo/internal/admin"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/ipfs"
+	"github.com/quilzo/quilzo/internal/out"
+	"github.com/quilzo/quilzo/internal/site"
 )
 
 // bundleTemplates is a template directory of one layout, for rendering a
@@ -216,5 +218,69 @@ func TestContentIDReadsOnlyTheAdminsOwnTemplatesFromAfar(t *testing.T) {
 	}
 	if text, merr := callTool(t, admin, "quilzo_read", "scan_content", map[string]any{"templates": other}); merr == nil {
 		t.Errorf("a directory a remote caller chose was scanned: %s", text)
+	}
+}
+
+// A copy of a site with a form on it is the same bytes each time it is made,
+// so `quilzo ipfs verify` and content_id agree with what was uploaded.
+//
+// Every render wrote the time it was made into the form's form_started
+// field, so the demonstration's wholesale page, and with it the site's
+// identifier, changed every second with nothing changed: an upload checked
+// two seconds after `ipfs id` was "does not match", and content_id gave
+// three identifiers in three seconds for one draft.
+func TestACopyOfASiteWithAFormIsTheSameEachTimeItIsMade(t *testing.T) {
+	if w == nil {
+		w = out.New(false)
+	}
+	root := storeFolder(t) + "/st"
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	tpl := t.TempDir() + "/tpl"
+	if err := cmdDemo(root, []string{"-publish=false", "-templates", tpl}); err != nil {
+		t.Fatal(err)
+	}
+	s, err := open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Publish(s, ""); err != nil {
+		t.Fatal(err)
+	}
+	first, err := renderBundle(root, tpl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stamped := false
+	for _, body := range first {
+		if strings.Contains(string(body), `name="form_started"`) {
+			stamped = true
+		}
+	}
+	if !stamped {
+		t.Fatal("the demonstration's copy carries no form, so this proves nothing")
+	}
+	// Across a second, which is what the stamp counts in.
+	time.Sleep(1100 * time.Millisecond)
+	second, err := renderBundle(root, tpl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, body := range first {
+		if string(second[path]) != string(body) {
+			t.Errorf("%s differs between two copies of one published site", path)
+		}
+	}
+	a, err := ipfs.Tree(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := ipfs.Tree(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Block.CID != b.Block.CID {
+		t.Errorf("one published site has two identifiers: %s and %s", a.Block.CID, b.Block.CID)
 	}
 }
