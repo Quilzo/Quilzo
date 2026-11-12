@@ -237,7 +237,7 @@ func cmdSiem(root string, args []string) error {
 		format = siem.Format(pos[0])
 	}
 
-	events, err := auditEntries(root)
+	events, err := exportedEntries(root)
 	if err != nil {
 		return err
 	}

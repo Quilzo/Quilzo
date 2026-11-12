@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -192,6 +193,20 @@ func auditKeyPath(root string) string {
 // posture.
 func auditEntries(root string) ([]audit.Event, error) {
 	return audit.Entries(audit.Read(auditPath(root)))
+}
+
+// exportedEntries is auditEntries for an export, which says on stderr which
+// lines of the log it leaves out. The system an export goes to cannot tell
+// that anything else was in the log, so passed over without a word, a line
+// somebody added to it would leave no trace there.
+func exportedEntries(root string) ([]audit.Event, error) {
+	events, err := audit.Read(auditPath(root))
+	var bad *audit.Unreadable
+	if errors.As(err, &bad) {
+		fmt.Fprintf(w.Err, "%s%v: not in this export, which holds every entry and only entries;\n"+
+			"  quilzo auditlog verify says what is there%s\n", yellow, bad, reset)
+	}
+	return audit.Entries(events, err)
 }
 
 // openAudit returns a log, creating a pseudonymisation key on first use.
@@ -582,7 +597,7 @@ func auditShow(root string, args []string) error {
 }
 
 func auditExport(root string) error {
-	events, err := auditEntries(root)
+	events, err := exportedEntries(root)
 	if err != nil {
 		return err
 	}

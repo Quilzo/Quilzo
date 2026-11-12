@@ -124,6 +124,45 @@ func TestATornLineIsReportedAsAnUnfinishedWriteAndHidesNothing(t *testing.T) {
 	}
 }
 
+// An export holds every entry, and says where its summary goes which lines
+// of the log it left out: they are not entries, and the system it goes to
+// cannot tell that anything was there. The export stopped at the first, so
+// nothing after a crash could be exported; passed over without a word, a
+// line somebody added would leave no trace in what the SIEM holds.
+func TestAnExportSaysWhichLinesItLeftOut(t *testing.T) {
+	root := auditedStore(t, 1)
+	tearLog(t, root)
+	putRecords(t, root, 1)
+	old := w
+	t.Cleanup(func() { w = old })
+	var errs bytes.Buffer
+	w = &out.Writer{Mode: out.Human, Out: io.Discard, Err: &errs}
+
+	_, done := captureStdout(t)
+	err := cmdAuditLog(root, []string{"export"})
+	exported := done()
+	if err != nil || strings.Count(exported, "\n") != 2 || !strings.Contains(errs.String(), "line 2") ||
+		!strings.Contains(errs.String(), "not in this export") {
+		t.Errorf("auditlog export: %v\n%s\nsaid: %s", err, exported, errs.String())
+	}
+
+	errs.Reset()
+	jsonl := filepath.Join(t.TempDir(), "siem.jsonl")
+	if err := cmdSiem(root, []string{"jsonl", "-o", jsonl}); err != nil || !strings.Contains(errs.String(), "not in this export") {
+		t.Errorf("siem export: %v\nsaid: %s", err, errs.String())
+	}
+
+	// A log with nothing else in it says nothing more.
+	clean := auditedStore(t, 2)
+	errs.Reset()
+	_, done = captureStdout(t)
+	err = cmdAuditLog(clean, []string{"export"})
+	done()
+	if err != nil || errs.Len() != 0 {
+		t.Errorf("a whole log: %v, said %q", err, errs.String())
+	}
+}
+
 // A line in the log that is not an entry, and that no write cut short, is
 // reported as what it is everywhere the log is reported on, while every
 // entry around it is still read. Posture stopped at it and checked nothing
