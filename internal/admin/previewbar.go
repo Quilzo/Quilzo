@@ -74,7 +74,14 @@ func urlArg(s string) string { return html.EscapeString(url.QueryEscape(s)) }
 // It is built from what the page actually carries: its type's fields when it
 // has a type, and its sections when it has sections. A page with neither gets
 // the page-level links and nothing invented.
-func previewBar(page string, body any, t schema.Type, typed bool) string {
+//
+// mayEdit says whether the person looking may edit the draft, as the sections
+// screens decide it. Somebody who may not is still shown what the page is
+// made of, but the arrangement and each section are text rather than links,
+// because both screens are for editing and would refuse them. The page and
+// its fields stay linked: the editor opens read-only for a reader, and is
+// where they can see a field in full.
+func previewBar(page string, body any, t schema.Type, typed, mayEdit bool) string {
 	var b strings.Builder
 
 	// A pill in the corner that opens a panel, rather than a panel across
@@ -104,12 +111,16 @@ func previewBar(page string, body any, t schema.Type, typed bool) string {
 	b.WriteString(`<div class="qz-body">`)
 
 	// The page as a whole, first and always.
+	arrange := `Arrange sections`
+	if mayEdit {
+		arrange = fmt.Sprintf(`<a href="/sections?page=%s">Arrange sections</a>`,
+			urlArg(page))
+	}
 	fmt.Fprintf(&b,
-		`<p class="qz-row"><a href="/page/%s">Edit this page</a> · `+
-			`<a href="/sections?page=%s">Arrange sections</a> · `+
+		`<p class="qz-row"><a href="/page/%s">Edit this page</a> · %s · `+
 			`<a href="/">All pages</a> · `+
 			`<a href="/preview/%s?plain=1">Hide this panel</a></p>`,
-		urlArg(page), urlArg(page), urlArg(page))
+		urlArg(page), arrange, urlArg(page))
 
 	if fields := previewFields(body, t, typed); len(fields) > 0 {
 		b.WriteString(`<p class="qz-what">Fields</p><ul class="qz-list">`)
@@ -135,9 +146,13 @@ func previewBar(page string, body any, t schema.Type, typed bool) string {
 	if placed := section.On(body); len(placed) > 0 {
 		b.WriteString(`<p class="qz-what">Sections</p><ol class="qz-list">`)
 		for _, sec := range placed {
-			fmt.Fprintf(&b,
-				`<li><a href="/sections/fields?page=%s&amp;at=%d">%s</a>`,
-				urlArg(page), sec.Index, esc(sec.Kind))
+			if mayEdit {
+				fmt.Fprintf(&b,
+					`<li><a href="/sections/fields?page=%s&amp;at=%d">%s</a>`,
+					urlArg(page), sec.Index, esc(sec.Kind))
+			} else {
+				fmt.Fprintf(&b, `<li>%s`, esc(sec.Kind))
+			}
 			if sec.Unknown {
 				b.WriteString(` <span class="qz-peek">not a kind this build ` +
 					`knows, so it renders as nothing</span>`)

@@ -4,10 +4,14 @@
 package admin
 
 import (
+	"html"
+	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/schema"
+	"github.com/quilzo/quilzo/internal/site"
 )
 
 // The panel is built from content, so content cannot build the panel.
@@ -42,23 +46,29 @@ func TestNothingInAPageCanWriteMarkupIntoThePanel(t *testing.T) {
 			"sections": []any{map[string]any{nasty: map[string]any{}}},
 		}},
 	} {
-		bar := previewBar(c.page, c.body, schema.Type{}, false)
-		if tag, ok := onlyPanelTags(bar); !ok {
-			t.Errorf("%s: the panel emitted <%s>, which it does not write:\n  %s",
-				c.name, tag, bar)
-		}
-		// On the hrefs, not on the whole string. Every one of these values
-		// appears in the panel as escaped text, so searching for
-		// "javascript:" as a substring finds &#34;javascript:… — which is the
-		// escaping working, not failing. The same mistake the prose transform's
-		// test records making, which is a good reason to record it twice.
-		for _, href := range hrefsIn(bar) {
-			low := strings.ToLower(href)
-			if !strings.HasPrefix(href, "/") ||
-				strings.HasPrefix(low, "//") ||
-				strings.Contains(low, ":") {
-				t.Errorf("%s: the panel linked to %q, which is not a rooted "+
-					"path on this server", c.name, href)
+		// Both ways, because somebody who may not edit is shown a section's
+		// kind as text rather than inside a link, and that is content written
+		// into the panel by a different line.
+		for _, mayEdit := range []bool{true, false} {
+			bar := previewBar(c.page, c.body, schema.Type{}, false, mayEdit)
+			if tag, ok := onlyPanelTags(bar); !ok {
+				t.Errorf("%s (may edit: %v): the panel emitted <%s>, which it "+
+					"does not write:\n  %s", c.name, mayEdit, tag, bar)
+			}
+			// On the hrefs, not on the whole string. Every one of these
+			// values appears in the panel as escaped text, so searching for
+			// "javascript:" as a substring finds &#34;javascript:… — which is
+			// the escaping working, not failing. The same mistake the prose
+			// transform's test records making, which is a good reason to
+			// record it twice.
+			for _, href := range hrefsIn(bar) {
+				low := strings.ToLower(href)
+				if !strings.HasPrefix(href, "/") ||
+					strings.HasPrefix(low, "//") ||
+					strings.Contains(low, ":") {
+					t.Errorf("%s (may edit: %v): the panel linked to %q, which "+
+						"is not a rooted path on this server", c.name, mayEdit, href)
+				}
 			}
 		}
 	}
@@ -216,4 +226,93 @@ func hrefsIn(s string) []string {
 		}
 	}
 	return out
+}
+
+// The panel links only where the person looking at it may go.
+//
+// Opening a preview asks only to view the page, so a reader may open one, and
+// the panel linked every reader to "Arrange sections" and to each section's
+// own screen. Both are for editing and both answered 403: a door drawn on a
+// wall, on the screen that exists to be the way into the page. A reader is
+// still shown what the page is made of, as text; an administrator is still
+// linked to all of it. And every link the panel does show is opened as the
+// person it was shown to, so a link that would be refused fails here whoever
+// it was offered to.
+func TestThePreviewPanelLinksOnlyWhereItsReaderMayGo(t *testing.T) {
+	for _, c := range []struct {
+		role     auth.Role
+		arranges bool
+	}{
+		{auth.RoleReader, false},
+		{auth.RoleAdmin, true},
+	} {
+		t.Run(string(c.role), func(t *testing.T) {
+			srv, token := asRole(t, c.role)
+			pages, err := site.PagesAt(srv.Store, site.RefDraft)
+			if err != nil {
+				t.Fatal(err)
+			}
+			index, _ := pages["index"].(map[string]any)
+			if index == nil {
+				t.Fatal("the test site has no index page to preview")
+			}
+			index["sections"] = []any{map[string]any{"quote": map[string]any{
+				"text": "Words worth keeping.", "who": "Somebody"}}}
+			if _, err := site.SaveDraft(srv.Store, pages, "sections", "test"); err != nil {
+				t.Fatal(err)
+			}
+
+			w := get(t, srv, "/preview/index", token)
+			if w.Code != http.StatusOK {
+				t.Fatalf("a %s could not open the preview (%d)", c.role, w.Code)
+			}
+			bar := panelIn(t, w.Body.String())
+
+			linked := false
+			for _, href := range hrefsIn(bar) {
+				if strings.HasPrefix(href, "/sections") {
+					linked = true
+				}
+			}
+			if linked != c.arranges {
+				t.Errorf("a %s is linked to the sections screens: %v, want %v\n  %s",
+					c.role, linked, c.arranges, bar)
+			}
+			// Text where a link would be refused, rather than nothing: the
+			// panel still says what the page is made of.
+			for _, want := range []string{"Arrange sections", ">quote"} {
+				if !strings.Contains(bar, want) {
+					t.Errorf("a %s is not shown %q in the panel:\n  %s",
+						c.role, want, bar)
+				}
+			}
+
+			for _, href := range hrefsIn(bar) {
+				// The attribute's own escaping undone, and the fragment
+				// dropped, because a browser sends neither.
+				target, _, _ := strings.Cut(html.UnescapeString(href), "#")
+				if got := get(t, srv, target, token); got.Code != http.StatusOK {
+					t.Errorf("the panel shows a %s a link to %s, which answers "+
+						"them %d", c.role, target, got.Code)
+				}
+			}
+		})
+	}
+}
+
+// panelIn is the part of a preview the panel wrote, up to its closing note.
+//
+// The page around it is the layout's, with links of its own that are the
+// site's business and not the panel's.
+func panelIn(t *testing.T, doc string) string {
+	t.Helper()
+	start := strings.Index(doc, `<div class="qz-bar">`)
+	if start < 0 {
+		t.Fatalf("the preview has no panel:\n  %s", doc)
+	}
+	end := strings.Index(doc[start:], `class="qz-note"`)
+	if end < 0 {
+		t.Fatalf("the panel has no closing note:\n  %s", doc[start:])
+	}
+	return doc[start : start+end]
 }
