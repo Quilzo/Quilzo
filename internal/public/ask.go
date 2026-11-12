@@ -304,16 +304,28 @@ func (st *Site) answer(w http.ResponseWriter, r *http.Request,
 		st.renderAsk(w, r, *view, http.StatusTooManyRequests)
 		return false
 	}
-	if LooksLikeInjection(view.Question) {
+	// The previous question is the visitor's text too: it comes back in a
+	// hidden field, which a script fills as it likes, and goes to the model
+	// beside a follow-up. Screened only in the question box, an attempt put
+	// there with a harmless follow-up reached the model and was never
+	// counted. Both are looked at, and a request is one signal at most.
+	said := []string{view.Question}
+	if strings.TrimSpace(view.Previous) != "" {
+		said = append(said, view.Previous)
+	}
+	if LooksLikeInjection(view.Question) || LooksLikeInjection(view.Previous) {
 		st.signal(ChatbotInjection, a.Name, r)
 	} else if g := st.Assistants.Guardrail; g != nil {
 		// A second look, counted the same way: a flagged question is a
 		// signal, never a refusal on a classifier's word.
 		gctx, gcancel := context.WithTimeout(r.Context(), 3*time.Second)
-		flagged, missed := g(gctx, []string{view.Question})
+		flagged, missed := g(gctx, said)
 		gcancel()
-		if len(flagged) == 1 && flagged[0] {
-			st.signal(ChatbotInjection, a.Name, r)
+		for _, f := range flagged {
+			if f {
+				st.signal(ChatbotInjection, a.Name, r)
+				break
+			}
 		}
 		if missed > 0 && st.Assistants.GuardrailEvent != nil {
 			st.Assistants.GuardrailEvent(a.Name, "unanswered", missed)
