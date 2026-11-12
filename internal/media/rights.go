@@ -194,8 +194,25 @@ var spdxCase = func() map[string]string {
 	return out
 }()
 
-// reLicenceAddress finds a licence's address inside a longer value.
-var reLicenceAddress = regexp.MustCompile(`(?i)(?:https?://)?(?:www\.)?(?:creativecommons|spdx)\.org/\S+`)
+// licenceAddressIn finds a licence's address among the words of a longer
+// value: a word whose host is creativecommons.org or spdx.org, with or
+// without its scheme and "www.", less the punctuation a sentence puts round
+// it. Each word is compared from its start, so a host that only ends in one
+// of those names is not taken for it.
+func licenceAddressIn(s string) string {
+	for _, w := range strings.Fields(s) {
+		w = strings.Trim(w, `"'()<>[].,;:`)
+		host := strings.ToLower(w)
+		for _, scheme := range []string{"https://", "http://"} {
+			host = strings.TrimPrefix(host, scheme)
+		}
+		host = strings.TrimPrefix(host, "www.")
+		if strings.HasPrefix(host, "creativecommons.org/") || strings.HasPrefix(host, "spdx.org/") {
+			return w
+		}
+	}
+	return ""
+}
 
 // Validate refuses rights that cannot mean what they appear to.
 func (r Rights) Validate(now time.Time) error {
@@ -203,8 +220,8 @@ func (r Rights) Validate(now time.Time) error {
 	if lic != "" && !reLicence.MatchString(lic) {
 		// A sentence with a licence's address in it: say which licence, so
 		// that recording it is one word away.
-		if m := reLicenceAddress.FindString(lic); m != "" {
-			if id := LicenceID(strings.TrimRight(m, ".,;:)")); id != strings.TrimRight(m, ".,;:)") {
+		if m := licenceAddressIn(lic); m != "" {
+			if id := LicenceID(m); id != m {
 				return fmt.Errorf(
 					"%q is not a licence identifier. That address is %s: record the "+
 						"licence as %s and put the rest in the note",

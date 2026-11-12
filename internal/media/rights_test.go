@@ -221,6 +221,29 @@ func TestALicencesAddressIsItsIdentifier(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "CC0-1.0") {
 		t.Errorf("the refusal does not name the licence: %v", err)
 	}
+	err = (Rights{Licence: "CC BY (https://creativecommons.org/licenses/by/4.0/)."}).Validate(rightsNow)
+	if err == nil || !strings.Contains(err.Error(), "CC-BY-4.0") {
+		t.Errorf("an address in brackets is not named: %v", err)
+	}
+}
+
+// Only a word whose host is the licence's own is read as its address: one
+// that merely ends in that name is somebody else's page, and naming a
+// licence from it would put words in the supplier's mouth.
+func TestAHostThatEndsInALicenceSiteIsNotItsAddress(t *testing.T) {
+	for _, lic := range []string{
+		"CC BY, see https://notcreativecommons.org/licenses/by/4.0/",
+		"see https://creativecommons.org.example/licenses/by/4.0/",
+		"see https://example.com/creativecommons.org/licenses/by/4.0/",
+	} {
+		err := (Rights{Licence: lic}).Validate(rightsNow)
+		if err == nil {
+			t.Fatalf("%q was accepted", lic)
+		}
+		if strings.Contains(err.Error(), "CC-BY-4.0") {
+			t.Errorf("%q was read as CC BY 4.0: %v", lic, err)
+		}
+	}
 }
 
 // SPDX's page for a licence is read as the id it is named by, in its own
