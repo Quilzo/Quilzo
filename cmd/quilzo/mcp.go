@@ -661,7 +661,7 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 	// Records, types, media, the pipeline and the read-only assurance
 	// operations. In another file because this one was already the length where
 	// somebody adding an operation stops reading the gates at the top.
-	registerContentOps(srv, root, s, caller)
+	registerContentOps(srv, root, s, caller, tplDir)
 	registerShieldOps(srv, root, caller)
 	registerEvalOps(srv, root, caller)
 	registerAssistantOps(srv, root, caller)

@@ -144,3 +144,77 @@ func TestThePermanentWebScreenGivesTheCommandLinesIdentifier(t *testing.T) {
 		t.Errorf("the Permanent web screen does not show %s, the identifier quilzo ipfs id gives", cli)
 	}
 }
+
+// A caller at the agent interface gets the identifier of the site this
+// admin serves, rendered with its own templates, and cannot choose which
+// directory on the server is read instead.
+//
+// content_id took a templates argument and opened whatever it named, so a
+// reader's token was a probe of the server's filesystem ("not a
+// directory", "no such file", "no layout in") and a way to render the site
+// with another store's templates. And it ignored the templates the admin
+// was started with, reading ./templates of wherever the process ran.
+// scan_content took the same argument, and scanned whatever it named.
+func TestContentIDReadsOnlyTheAdminsOwnTemplatesFromAfar(t *testing.T) {
+	root := publishedShop(t)
+	tpl := bundleTemplates(t)
+	seedPolicy(t, root, [2]string{"rae", "reader"}, [2]string{"dana", "admin"})
+	files, err := renderBundle(root, tpl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	node, err := ipfs.Tree(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := buildMCP(root, s, remoteCaller(auth.Token{Principal: "rae", Role: auth.RoleReader, Resource: "/"}), tpl)
+
+	text, merr := callTool(t, srv, "quilzo_read", "content_id", map[string]any{})
+	if merr != nil {
+		t.Fatalf("the admin's own site could not be identified: %s", merr.Message)
+	}
+	if got, _, _ := strings.Cut(text, "\n"); got != node.Block.CID {
+		t.Errorf("content_id says %s, and the site rendered with the admin's templates is %s", got, node.Block.CID)
+	}
+	// Naming the admin's own directory is naming nothing new.
+	if _, merr := callTool(t, srv, "quilzo_read", "content_id", map[string]any{"templates": tpl}); merr != nil {
+		t.Errorf("naming the admin's own templates was refused: %s", merr.Message)
+	}
+
+	var answers []string
+	for _, dir := range []string{"/etc/passwd", "/nonexistent", t.TempDir(), root, bundleTemplates(t), "../" + filepath.Base(tpl)} {
+		_, merr := callTool(t, srv, "quilzo_read", "content_id", map[string]any{"templates": dir})
+		if merr == nil {
+			t.Errorf("the site was rendered with %s, a directory a remote caller chose", dir)
+			continue
+		}
+		if strings.Contains(merr.Message, dir) {
+			t.Errorf("the refusal names the directory asked about: %s", merr.Message)
+		}
+		answers = append(answers, merr.Message)
+	}
+	for _, a := range answers[1:] {
+		if a != answers[0] {
+			t.Errorf("the refusals tell directories apart:\n  %s\n  %s", answers[0], a)
+		}
+	}
+
+	// The scan, by an administrator from afar with an hour's token.
+	now := time.Now().Unix()
+	admin := buildMCP(root, s, remoteCaller(auth.Token{Principal: "dana", Role: auth.RoleAdmin, Resource: "/",
+		CreatedAt: now, ExpiresAt: now + 3600}), tpl)
+	if _, merr := callTool(t, admin, "quilzo_read", "scan_content", map[string]any{}); merr != nil {
+		t.Errorf("the scan of the admin's own templates was refused: %s", merr.Message)
+	}
+	other := t.TempDir()
+	if err := os.WriteFile(filepath.Join(other, "page.html"), []byte(`<script>eval(location.hash)</script>`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if text, merr := callTool(t, admin, "quilzo_read", "scan_content", map[string]any{"templates": other}); merr == nil {
+		t.Errorf("a directory a remote caller chose was scanned: %s", text)
+	}
+}
