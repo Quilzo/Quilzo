@@ -84,7 +84,7 @@ func cmdMove(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	pages, err := site.PagesAt(s, site.RefDraft)
+	base, pages, err := draftRead(s)
 	if err != nil {
 		return err
 	}
@@ -146,8 +146,12 @@ func cmdMove(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	commit, err := site.SaveDraftFrom(s, next, fmt.Sprintf("move %s to %s",
-		from, to), caller.Name, s.GetRef(site.RefDraft))
+	// Against the draft the move was worked out from. A page somebody
+	// changed while it was being moved is refused (the merge cannot say
+	// whether the old name or the new one was meant), and anything else they
+	// did is kept.
+	commit, _, err := site.SaveDraftOver(s, next, fmt.Sprintf("move %s to %s",
+		from, to), caller.Name, base)
 	if err != nil {
 		return err
 	}

@@ -17,6 +17,7 @@ import (
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 func cmdTypes(root string, args []string) error {
@@ -354,14 +355,46 @@ func draftPages(root string) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	_, pages, err := draftOrLive(s)
+	return pages, err
+}
+
+// draftOrLive is draftPages with the commit the pages were read from, the
+// empty string for a store with neither a draft nor anything live, for a
+// writer that changes some of them and writes the set back
+// (site.SaveDraftOver).
+func draftOrLive(s *store.Store) (string, map[string]any, error) {
 	ref := s.GetRef(site.RefDraft)
 	if ref == "" {
 		ref = s.GetRef(site.RefLive)
 	}
 	if ref == "" {
-		return map[string]any{}, nil
+		return "", map[string]any{}, nil
 	}
-	return site.PagesAt(s, ref)
+	pages, err := site.PagesAt(s, ref)
+	return ref, pages, err
+}
+
+// draftRead is the draft's pages and the commit they were read from, for a
+// command that changes some of them and writes the set back
+// (site.SaveDraftOver).
+//
+// One read of the ref for both. The section and move commands read the
+// pages and then took the draft as it was when they wrote as their base,
+// which checks nothing: a save that landed in between was simply dropped by
+// the write, and the command said it had done what it was asked.
+//
+// No draft is the error reading one gives (site.PagesAt), which says how to
+// start one; these commands change a draft, so what is live does not stand
+// in for it.
+func draftRead(s *store.Store) (string, map[string]any, error) {
+	base := s.GetRef(site.RefDraft)
+	if base == "" {
+		_, err := site.PagesAt(s, site.RefDraft)
+		return "", nil, err
+	}
+	pages, err := site.PagesAt(s, base)
+	return base, pages, err
 }
 
 // recordGate is gateWrite's counterpart for records.
