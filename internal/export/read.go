@@ -4,6 +4,7 @@
 package export
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -165,23 +166,29 @@ func readJSON(body []byte) (*Content, error) {
 	}
 	// A map of name -> page is what the export writes.
 	//
-	// Its keys are unique, but two of them can still come to one name
-	// ("About Us" and "about-us"). A key that is already its own name claims
-	// it first, so the page that was exactly where it said keeps its place
-	// and the other is numbered; each group goes in key order, so which one
-	// is numbered does not change from one run to the next.
-	keys := make([]string, 0, len(asMap))
-	for name := range asMap {
-		keys = append(keys, name)
+	// Read as the file has it rather than from the map, because a map keeps
+	// the last of a key written twice: {"same": ..., "same": ...} brought one
+	// page, said it had brought one, and lost the other without a word. The
+	// second is numbered, as two pages of an array that share a name are.
+	members, err := objectMembers(body)
+	if err != nil {
+		return nil, fmt.Errorf("this is not JSON: %w", err)
 	}
-	sort.SliceStable(keys, func(i, j int) bool {
-		if a, b := Slug(keys[i]) == keys[i], Slug(keys[j]) == keys[j]; a != b {
+	// Two different keys can still come to one name ("About Us" and
+	// "about-us"). A key that is already its own name claims it first, so
+	// the page that was exactly where it said keeps its place and the other
+	// is numbered; each group goes in key order, so which one is numbered
+	// does not change from one run to the next, and a key written twice
+	// goes in the order the file has it.
+	sort.SliceStable(members, func(i, j int) bool {
+		ki, kj := members[i].name, members[j].name
+		if a, b := Slug(ki) == ki, Slug(kj) == kj; a != b {
 			return a
 		}
-		return keys[i] < keys[j]
+		return ki < kj
 	})
-	for _, name := range keys {
-		v := asMap[name]
+	for _, m := range members {
+		name, v := m.name, m.value
 		item, ok := v.(map[string]any)
 		if !ok {
 			c.Skipped = append(c.Skipped, fmt.Sprintf(
@@ -213,6 +220,40 @@ func readJSON(body []byte) (*Content, error) {
 		return nil, fmt.Errorf("no importable pages found")
 	}
 	return c, nil
+}
+
+// member is one name of a JSON object and its value.
+type member struct {
+	name  string
+	value any
+}
+
+// objectMembers is every member of the JSON object body holds, in the order
+// the file has them, a name written twice as many times as it is written;
+// none for null.
+func objectMembers(body []byte) ([]member, error) {
+	dec := json.NewDecoder(bytes.NewReader(body))
+	tok, err := dec.Token()
+	if err != nil || tok == nil {
+		return nil, err
+	}
+	if tok != json.Delim('{') {
+		return nil, fmt.Errorf("a %v is not an object of pages", tok)
+	}
+	var out []member
+	for dec.More() {
+		tok, err := dec.Token()
+		if err != nil {
+			return nil, err
+		}
+		name, _ := tok.(string)
+		var v any
+		if err := dec.Decode(&v); err != nil {
+			return nil, err
+		}
+		out = append(out, member{name: name, value: v})
+	}
+	return out, nil
 }
 
 // ReadPage reads one page object. authoritative says whether the given name

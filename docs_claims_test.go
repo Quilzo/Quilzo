@@ -4,11 +4,14 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The README described a container this project does not build.
@@ -536,6 +539,197 @@ func TestTheManualSaysHowPeopleSignIn(t *testing.T) {
 	for _, m := range regexp.MustCompile(`\b([a-z]+) ways\b`).FindAllStringSubmatch(flat, -1) {
 		if n, ok := words[m[1]]; ok && n != leads {
 			t.Errorf("\"Signing in\" says %q and describes %d", m[0], leads)
+		}
+	}
+}
+
+// A claim about something no file in this repository holds, written down
+// once with where it was checked, when, and when it must be checked again.
+//
+// The documents said there were released binaries and a release's image to
+// run: "Released binaries trail `main`", "Or take a release binary", and a
+// compose stack that pulled ghcr.io/quilzo/quilzo:latest unless told
+// otherwise. The repository had no tag and no release, and the registry
+// refused to hand anybody that image. No test could see it, because a release
+// is not a file: every sentence was checked against nothing. So such a claim
+// goes in docs/claims.json, with the words every document makes it in and the
+// words that would contradict it, and it lapses: a claim nobody has looked at
+// again by its date fails here, rather than staying true in the documents
+// after it stopped being true in the world.
+type claim struct {
+	// Claim is what is asserted, as a sentence.
+	Claim string `json:"claim"`
+	// Source is where it was checked, so the next person can check it the
+	// same way.
+	Source string `json:"source"`
+	// Date is the day it was checked, and RecheckBy the last day it may go
+	// unchecked; both YYYY-MM-DD.
+	Date      string `json:"date"`
+	RecheckBy string `json:"recheck_by"`
+	// Says are the words each document in In makes the claim with, and Never
+	// the words none of them may say while it holds. Matched without regard
+	// to case or to how the lines are wrapped.
+	Says  string   `json:"says"`
+	In    []string `json:"in"`
+	Never []string `json:"never"`
+}
+
+const claimsFile = "docs/claims.json"
+
+func loadClaims(t *testing.T) []claim {
+	t.Helper()
+	var doc struct {
+		Claims []claim `json:"claims"`
+	}
+	dec := json.NewDecoder(strings.NewReader(read(t, claimsFile)))
+	// A misspelt key would be a check silently not made.
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&doc); err != nil {
+		t.Fatalf("%s: %v", claimsFile, err)
+	}
+	if len(doc.Claims) == 0 {
+		t.Fatalf("%s holds no claims", claimsFile)
+	}
+	return doc.Claims
+}
+
+// flatText is s as a claim is matched in it: lower case, every run of
+// spaces and line breaks one space, so a sentence wrapped at another column
+// is the same sentence.
+func flatText(s string) string {
+	return strings.ToLower(strings.Join(strings.Fields(s), " "))
+}
+
+// claimProblems is everything wrong with one claim on the day now: a field
+// missing, a date that is not one, a check dated after now, a re-check date
+// gone by, a document that no longer makes the claim, or one that says what
+// contradicts it.
+func claimProblems(c claim, now time.Time, readDoc func(string) (string, error)) []string {
+	var out []string
+	if strings.TrimSpace(c.Claim) == "" || strings.TrimSpace(c.Source) == "" {
+		out = append(out, "it names no claim or no source to check it against")
+	}
+	// Compared as YYYY-MM-DD, which orders as the days do: a claim due
+	// today still holds today.
+	today := now.Format(time.DateOnly)
+	if _, err := time.Parse(time.DateOnly, c.Date); err != nil {
+		out = append(out, fmt.Sprintf("date %q is not a date (YYYY-MM-DD)", c.Date))
+	} else if c.Date > today {
+		out = append(out, fmt.Sprintf("it says it was checked on %s, which has not come yet", c.Date))
+	}
+	if _, err := time.Parse(time.DateOnly, c.RecheckBy); err != nil {
+		out = append(out, fmt.Sprintf("recheck_by %q is not a date (YYYY-MM-DD)", c.RecheckBy))
+	} else if c.RecheckBy < today {
+		out = append(out, fmt.Sprintf("it was to be checked again by %s: check it as %q says, "+
+			"then move date and recheck_by, or change every document that makes it", c.RecheckBy, c.Source))
+	}
+	if c.Says != "" && len(c.In) == 0 {
+		out = append(out, "it names no document that makes it")
+	}
+	for _, name := range c.In {
+		body, err := readDoc(name)
+		if err != nil {
+			out = append(out, fmt.Sprintf("%s: %v", name, err))
+			continue
+		}
+		body = flatText(body)
+		if c.Says != "" && !strings.Contains(body, flatText(c.Says)) {
+			out = append(out, fmt.Sprintf("%s does not say %q", name, c.Says))
+		}
+		for _, never := range c.Never {
+			if strings.Contains(body, flatText(never)) {
+				out = append(out, fmt.Sprintf("%s says %q, which the claim contradicts", name, never))
+			}
+		}
+	}
+	return out
+}
+
+func mentions(problems []string, want string) bool {
+	for _, p := range problems {
+		if strings.Contains(p, want) {
+			return true
+		}
+	}
+	return false
+}
+
+// The mechanism, on claims made up for it: one checked today and due today
+// holds, one whose date has gone by fails, and so do a document that stopped
+// making the claim and one that contradicts it.
+func TestAClaimPastItsRecheckDateFails(t *testing.T) {
+	now := time.Date(2026, 11, 11, 15, 0, 0, 0, time.UTC)
+	docs := map[string]string{
+		"a.md": "Nothing is\npublished YET, so build it.",
+		"b.md": "Build it, or take a release binary.",
+		"c.md": "Something else entirely.",
+	}
+	readDoc := func(name string) (string, error) {
+		if body, ok := docs[name]; ok {
+			return body, nil
+		}
+		return "", os.ErrNotExist
+	}
+	base := claim{Claim: "Nothing is published.", Source: "the registry",
+		Date: "2026-11-01", RecheckBy: "2026-11-11",
+		Says: "nothing is published yet", In: []string{"a.md"}, Never: []string{"a release binary"}}
+
+	if p := claimProblems(base, now, readDoc); len(p) != 0 {
+		t.Errorf("a claim checked, made where it says and due today fails: %q", p)
+	}
+
+	lapsed := base
+	lapsed.RecheckBy = "2026-11-10"
+	if p := claimProblems(lapsed, now, readDoc); !mentions(p, "checked again by 2026-11-10") {
+		t.Errorf("a claim past its re-check date passes: %q", p)
+	}
+
+	for _, c := range []struct {
+		why, doc, want string
+	}{
+		{"a document that contradicts the claim", "b.md", `b.md says "a release binary"`},
+		{"a document that stopped making the claim", "c.md", `c.md does not say`},
+		{"a document that is not there", "gone.md", "gone.md"},
+	} {
+		bad := base
+		bad.In = []string{"a.md", c.doc}
+		if p := claimProblems(bad, now, readDoc); !mentions(p, c.want) {
+			t.Errorf("%s passes: %q", c.why, p)
+		}
+	}
+
+	for _, c := range []struct {
+		why  string
+		edit func(*claim)
+		want string
+	}{
+		{"a check dated in the future", func(c *claim) { c.Date = "2026-11-12" }, "has not come yet"},
+		{"a date that is not one", func(c *claim) { c.RecheckBy = "next spring" }, "not a date"},
+		{"a claim with no source", func(c *claim) { c.Source = " " }, "no source"},
+	} {
+		bad := base
+		c.edit(&bad)
+		if p := claimProblems(bad, now, readDoc); !mentions(p, c.want) {
+			t.Errorf("%s passes: %q", c.why, p)
+		}
+	}
+}
+
+// The register itself, today: every claim in docs/claims.json is checked,
+// not past its date, made in every document it names, and contradicted by
+// none of them.
+func TestEveryClaimInTheRegisterHoldsToday(t *testing.T) {
+	readDoc := func(name string) (string, error) {
+		b, err := os.ReadFile(name)
+		return string(b), err
+	}
+	for i, c := range loadClaims(t) {
+		name := c.Says
+		if name == "" {
+			name = c.Claim
+		}
+		for _, p := range claimProblems(c, time.Now(), readDoc) {
+			t.Errorf("%s, claim %d (%q): %s", claimsFile, i+1, name, p)
 		}
 	}
 }

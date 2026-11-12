@@ -26,6 +26,7 @@ Every command below is run in this directory, in this order:
 cd deploy
 cp compose.env.example .env    # then set QUILZO_DOMAIN in .env
 set -a; . ./.env; set +a       # so the steps below name the addresses in .env
+docker build -t "$QUILZO_IMAGE:$QUILZO_VERSION" ..   # the image .env names, from this checkout
 docker compose run --rm admin init
 docker compose run --rm admin auditlog dir /srv/audit
 docker compose run --rm admin config set network.trusted_proxies "$QUILZO_PROXY_ADDRESS"
@@ -40,6 +41,12 @@ docker compose up -d
 
 What each one is for:
 
+- `docker build` makes the image every Quilzo container runs, from this
+  checkout, under the name `.env` gives it (`quilzo:local`). No release is
+  published yet, so there is no image to pull, and `compose.yaml` names no
+  default: it refuses to start until `.env` names one. Built from `main` it
+  says it is `dev` (`quilzo version`), which is what it is. For a release's
+  image this step is left out (below).
 - `init` makes the store, on the `store` volume. Every Quilzo container
   names `/srv/store` in its entrypoint, so a command given to
   `docker compose run` cannot lose it; and every one is read-only, so a
@@ -79,14 +86,21 @@ What each one is for:
 - `up -d` starts everything, and `restart: unless-stopped` brings it back
   after a reboot.
 
-To run an image you built from this checkout rather than a release, build
-it with the version it is, so that `quilzo version` and the bill of
-materials inside it say so (without `--build-arg VERSION` it is "dev"),
-then name it in `.env`:
+Once there is a release, run its image by the digest you checked, as
+[INSTALL](../INSTALL) says, so the stack runs that image and no other: in
+`.env`, `QUILZO_IMAGE=ghcr.io/quilzo/quilzo` and
+`QUILZO_VERSION=1.2.3@sha256:...`, and leave out the `docker build` step
+above, which would build `main` under the release's name (and is refused
+for a digest). A tag alone, `latest` above all, is whatever was pushed
+under it last. Or build a release's image yourself, from its tag and with
+the version it is, so that `quilzo version` and the bill of materials
+inside it say so (without `--build-arg VERSION` it is "dev"), under a name
+of its own:
 
 ```bash
-docker build --build-arg VERSION=v0.3.0 -t quilzo:0.3.0 ..
-# and in .env: QUILZO_IMAGE=quilzo and QUILZO_VERSION=0.3.0
+git checkout v1.2.3
+docker build --build-arg VERSION=v1.2.3 -t quilzo:1.2.3 ..
+# and in .env: QUILZO_IMAGE=quilzo and QUILZO_VERSION=1.2.3
 ```
 
 ### Reaching the admin
@@ -182,8 +196,8 @@ make build
 sudo install -m 0755 bin/quilzo /usr/local/bin/quilzo
 ```
 
-Or take a release binary — it is static, so there is nothing to install
-alongside it.
+Once there is a release, its binary for this machine does as well: it is
+static, so there is nothing to install alongside it.
 
 ### 3. The store
 
