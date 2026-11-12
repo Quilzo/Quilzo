@@ -48,20 +48,18 @@ func (s *Server) idleOver(w http.ResponseWriter, r *http.Request, p principal) b
 	if !p.Session || p.TokenID == "" {
 		return false
 	}
-	idle, over := s.idleSpent(r, p.Name, p.TokenID)
-	if !over {
+	idle := s.idleFor(p.Name)
+	if !s.idleSpent(r, p.TokenID, idle) {
 		return false
 	}
 	s.endIdle(w, r, p, idle)
 	return true
 }
 
-// idleSpent is the clock: whether the session id, name's, has gone unused
-// for longer than name may leave it, and how long that is. A request a
-// person made is noted as use; a session not seen before starts its idle
-// period now.
-func (s *Server) idleSpent(r *http.Request, name, id string) (time.Duration, bool) {
-	idle := s.idleFor(name)
+// idleSpent is the clock: whether the session id has gone unused for
+// longer than idle, what its person may leave it. A request a person made
+// is noted as use; a session not seen before starts its idle period now.
+func (s *Server) idleSpent(r *http.Request, id string, idle time.Duration) bool {
 	now := time.Now()
 	s.idle.mu.Lock()
 	defer s.idle.mu.Unlock()
@@ -75,11 +73,11 @@ func (s *Server) idleSpent(r *http.Request, name, id string) (time.Duration, boo
 		s.idle.sweep(now, s.sessionMax())
 	case now.Sub(last) > idle:
 		delete(s.idle.last, id)
-		return idle, true
+		return true
 	case personMade(r):
 		s.idle.last[id] = now
 	}
-	return idle, false
+	return false
 }
 
 // IdleEnded is the same clock for a door that does not answer with the
@@ -97,14 +95,20 @@ func (s *Server) IdleEnded(r *http.Request, t *auth.Token) bool {
 	if t == nil || t.ID == "" || !t.IsSession() {
 		return false
 	}
-	idle, over := s.idleSpent(r, t.Principal, t.ID)
-	if !over {
+	// The access rules and the credentials as they are stored now, as at
+	// /mcp (storedTokens), and not s.Policy and s.Tokens: this door ran no
+	// refresh, and those are the copies a screen's refresh puts in place.
+	// The rules were read from s.Policy, so a call here while a screen
+	// opened read the field the screen was replacing, and somebody made an
+	// administrator elsewhere kept the whole of session.idle until a
+	// screen was opened. Saving the token copy could likewise put back
+	// what another process had changed since.
+	pol, toks := s.storedRules()
+	idle := s.idleUnder(pol, t.Principal)
+	if !s.idleSpent(r, t.ID, idle) {
 		return false
 	}
-	// The credentials as stored now, as at /mcp (storedTokens): this door
-	// ran no refresh, and saving the copy it would have read could put back
-	// what another process had changed since.
-	if toks := s.storedTokens(); toks != nil {
+	if toks != nil {
 		if _, err := toks.Revoke(t.ID); err == nil && s.SaveTokens != nil {
 			_ = s.SaveTokens(toks)
 		}

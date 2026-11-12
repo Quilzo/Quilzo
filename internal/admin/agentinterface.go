@@ -352,6 +352,28 @@ func (s *Server) storedTokens() *auth.TokenStore {
 	return s.Tokens
 }
 
+// storedRules is the access rules and the credentials as they are stored
+// now, read once, for a door that decides by a token alone and also asks
+// who its person is (IdleEnded): storedTokens, with the rules beside it.
+// Either falls back to what this server holds when it cannot be read, as
+// storedTokens does.
+func (s *Server) storedRules() (*auth.Policy, *auth.TokenStore) {
+	var pol *auth.Policy
+	var toks *auth.TokenStore
+	if s.Reload != nil {
+		if p, t, err := s.Reload(); err == nil {
+			pol, toks = p, t
+		}
+	}
+	if pol == nil {
+		pol = s.Policy
+	}
+	if toks == nil {
+		toks = s.Tokens
+	}
+	return pol, toks
+}
+
 // ownOrigin is this admin's origin as the request reached it.
 func (s *Server) ownOrigin(r *http.Request) string {
 	scheme := "http"
