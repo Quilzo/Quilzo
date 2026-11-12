@@ -141,6 +141,20 @@ func TestAListingPagesCopyHasItsRows(t *testing.T) {
 	if strings.Contains(blog, "do not publish") {
 		t.Errorf("/blog.md carries a field the listing keeps private:\n%s", blog)
 	}
+	// The blog has twenty-five posts and its page shows ten, with the way to
+	// the older ones. The copy had the ten and no word of the rest, so an
+	// agent took the newest ten for the whole blog.
+	if !strings.Contains(blog, "[Older posts](/blog?page=2)") {
+		t.Errorf("/blog.md does not say where the older posts are:\n%s", blog)
+	}
+	// A section's own field called older is its words or nothing, not a way
+	// to more rows.
+	plain := published(t, map[string]any{"index": map[string]any{"title": "Home", "sections": []any{
+		map[string]any{"features": map[string]any{"title": "Then and now", "older": "/archive",
+			"items": []any{map[string]any{"title": "Then"}}}}}}})
+	if md := get(plain, "/index.md", nil).Body.String(); strings.Contains(md, "Older posts") {
+		t.Errorf("a section with no pager is given one:\n%s", md)
+	}
 
 	ev, _ := eventsSite(t)
 	events := get(ev, "/events.md", nil).Body.String()

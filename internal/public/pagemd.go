@@ -121,6 +121,18 @@ func mdSection(b *strings.Builder, m map[string]any, depth int) {
 			b.WriteString("\n")
 		}
 	}
+	// The way to the rows this page of them leaves out, as the page offers
+	// it (postsData). A blog's page shows ten posts and a link to the older
+	// ones; the copy had the ten and no word of the rest, so an agent took
+	// the newest ten for the whole blog. Only where the drawing says there
+	// is a pager: a section's own field called older is not one.
+	if pager, _ := m["pager"].(bool); pager {
+		for _, way := range [][2]string{{"newer", "Newer posts"}, {"older", "Older posts"}} {
+			if href, _ := m[way[0]].(string); safeHref(strings.TrimSpace(href)) {
+				fmt.Fprintf(b, "[%s](%s)\n\n", way[1], strings.TrimSpace(href))
+			}
+		}
+	}
 }
 
 // mdWords writes the prose fields of a map, in a fixed order.

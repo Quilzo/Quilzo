@@ -1680,9 +1680,9 @@ func (st *Site) llms(w http.ResponseWriter, r *http.Request) {
 		// drawn with is no page of its own (its copy was a heading or
 		// nothing: /product.md, two bytes), and a page that asks to be left
 		// out of search results, or copies one elsewhere, was listed here
-		// for every model while the sitemap left it out. A record's copy is
-		// linked from the listing that shows it, and a variant's is the
-		// page it is served at.
+		// for every model while the sitemap left it out. A record's page is
+		// linked from the copy of the listing that shows it, and offers its
+		// own copy there; a variant's is the page it is served at.
 		if _, ok := detailOf(pages[n]); ok || !Listed(base, n, st.Index, pages[n], variants) {
 			continue
 		}
