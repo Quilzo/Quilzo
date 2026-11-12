@@ -668,13 +668,13 @@ func answerText(v any) (string, error) {
 
 // callDirect performs one of another server's tools, through the host.
 func (s *Server) callDirect(p callParams) (any, *Error) {
-	known := false
+	var tool *Tool
 	for _, t := range s.Direct.Tools {
 		if t.Name == p.Name {
-			known = true
+			tool = &t
 		}
 	}
-	if !known {
+	if tool == nil {
 		return nil, &Error{Code: CodeMethodNotFound, Message: fmt.Sprintf("no tool %q here", p.Name)}
 	}
 	if s.Direct.Call == nil {
@@ -684,6 +684,15 @@ func (s *Server) callDirect(p callParams) (any, *Error) {
 	args := p.Arguments
 	if args == nil {
 		args = map[string]any{}
+	}
+	// As the schema the tool is offered with says, nulls and all, since
+	// they are sent on as they came. A gateway forwarded whatever it was
+	// given: a field the tool does not name was held for a person as an
+	// ordinary call, and once approved went out with it.
+	if b, err := json.Marshal(tool.InputSchema); err == nil && tool.InputSchema != nil {
+		if err := jsonschema.CheckNamed(b, args, "arguments"); err != nil {
+			return nil, &Error{Code: CodeInvalidParams, Message: err.Error()}
+		}
 	}
 	out, err := s.Direct.Call(p.Name, args)
 	if err != nil {

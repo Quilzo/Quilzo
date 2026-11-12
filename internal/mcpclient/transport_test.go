@@ -415,3 +415,90 @@ func TestStreamsAndHeaderValues(t *testing.T) {
 		}
 	}
 }
+
+// schemaTools is a 2026-07-28 server whose tools say what they take, and
+// which keeps every call it is sent.
+type schemaTools struct {
+	mu    sync.Mutex
+	calls []string
+}
+
+func (s *schemaTools) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var msg struct {
+		ID     json.RawMessage `json:"id"`
+		Method string          `json:"method"`
+		Params struct {
+			Name      string          `json:"name"`
+			Arguments json.RawMessage `json:"arguments"`
+		} `json:"params"`
+	}
+	json.NewDecoder(r.Body).Decode(&msg)
+	w.Header().Set("Content-Type", "application/json")
+	switch msg.Method {
+	case "tools/list":
+		fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"tools":[`+
+			`{"name":"add","inputSchema":{"type":"object","properties":{"a":{"type":"number"},"b":{"type":"number"}},`+
+			`"required":["a","b"],"additionalProperties":false}},`+
+			`{"name":"lookup_order","inputSchema":{"type":"object","properties":{"order_id":{"type":"string"}},`+
+			`"required":["order_id"],"additionalProperties":false}},`+
+			`{"name":"delete_everything","inputSchema":{"type":"object","properties":{"confirm":{"type":"boolean"}},`+
+			`"required":["confirm"]},"annotations":{"destructiveHint":true}}]}}`, msg.ID)
+	case "tools/call":
+		s.mu.Lock()
+		s.calls = append(s.calls, msg.Params.Name+" "+string(msg.Params.Arguments))
+		s.mu.Unlock()
+		fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"content":[{"type":"text","text":"done"}]}}`, msg.ID)
+	default:
+		fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{}}`, msg.ID)
+	}
+}
+
+// What a pinned tool is sent fits the input schema a person approved with
+// it, or is refused here and sent nowhere.
+//
+// The schema was pinned and never read: a model's arguments, which are what
+// something it read may have steered, went out as given, a string for a
+// number, an id the tool does not name, and a destructive tool's required
+// confirm left out. The REST path already holds a body to its declaration
+// for the same reason.
+func TestAPinnedToolIsSentOnlyWhatItsSchemaTakes(t *testing.T) {
+	srv := &schemaTools{}
+	c := &Client{Do: via(srv, nil)}
+	in := integration("add", "lookup_order", "delete_everything")
+	tools, err := c.Tools(context.Background(), in)
+	if err != nil || len(tools) != 3 {
+		t.Fatalf("%v %+v", err, tools)
+	}
+	in.Pins = map[string]string{}
+	for _, tl := range tools {
+		in.Pins[tl.Name] = tl.Definition
+	}
+	var refused *Refused
+	for _, tc := range []struct {
+		tool string
+		args map[string]any
+		says string
+	}{
+		{"add", map[string]any{"a": "two", "b": 3}, "a"},
+		{"lookup_order", map[string]any{"id": 42}, "id"},
+		{"delete_everything", map[string]any{}, "confirm"},
+		{"delete_everything", nil, "confirm"},
+	} {
+		_, err := c.CallStrict(context.Background(), in, tc.tool, tc.args)
+		if !errors.As(err, &refused) || !strings.Contains(err.Error(), tc.says) {
+			t.Errorf("%s %v: %v", tc.tool, tc.args, err)
+		}
+	}
+	if len(srv.calls) != 0 {
+		t.Fatalf("sent: %v", srv.calls)
+	}
+	if out, err := c.CallStrict(context.Background(), in, "add", map[string]any{"a": 2, "b": 3}); err != nil || out != "done" {
+		t.Fatalf("%q %v", out, err)
+	}
+	if out, err := c.Call(context.Background(), in, "delete_everything", map[string]any{"confirm": true}); err != nil || out != "done" {
+		t.Fatalf("%q %v", out, err)
+	}
+	if len(srv.calls) != 2 {
+		t.Fatalf("sent: %v", srv.calls)
+	}
+}

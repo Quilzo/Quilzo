@@ -465,3 +465,38 @@ func TestArgumentsThatAreNotWhatIsTakenAreInvalidParams(t *testing.T) {
 		Arguments: map[string]any{"operation": "list_pages", "arguments": map[string]any{"anything": 1}}})
 	ok("find with a query", callParams{Name: "quilzo_find", Arguments: map[string]any{"query": "pages"}})
 }
+
+// Another server's tool, offered as it is, takes what its input schema
+// says, and anything else is invalid params here and never sent on.
+//
+// A gateway listed the schema a person pinned and forwarded whatever came:
+// a field the tool does not name was held for a person's approval as an
+// ordinary call, and once approved went out with it.
+func TestADirectToolTakesWhatItsSchemaSays(t *testing.T) {
+	s := NewServer("gw", "1")
+	var sent []map[string]any
+	s.Direct = &Direct{Tools: []Tool{{Name: "delete_everything", InputSchema: map[string]any{
+		"type": "object", "properties": map[string]any{"confirm": map[string]any{"type": "boolean"}},
+		"required": []any{"confirm"}}}},
+		Call: func(tool string, args map[string]any) (string, error) {
+			sent = append(sent, args)
+			return "deleted", nil
+		}}
+	for name, args := range map[string]map[string]any{
+		"without confirm":         {},
+		"confirm as text":         {"confirm": "yes"},
+		"with a field it has not": {"confirm": true, "note": "x"},
+	} {
+		r := call(t, s, "tools/call", callParams{Name: "delete_everything", Arguments: args})
+		if r.Error == nil || r.Error.Code != CodeInvalidParams {
+			t.Errorf("%s: %+v", name, r.Error)
+		}
+	}
+	if len(sent) != 0 {
+		t.Fatalf("sent on: %v", sent)
+	}
+	if got := text(t, call(t, s, "tools/call", callParams{Name: "delete_everything",
+		Arguments: map[string]any{"confirm": true}})); got != "deleted" {
+		t.Fatalf("%q", got)
+	}
+}
