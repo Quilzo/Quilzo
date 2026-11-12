@@ -1286,16 +1286,6 @@ func sessionCaller(by admin.Actor) *Caller {
 		Role: by.Role, Scope: by.Scope, Limits: by.Limits}
 }
 
-// logHeadsHook tells the audit log screen who signs the log's heads, and
-// where the keys that check them are.
-//
-// Asked on each visit, as `logd status` asks: whether the separation is in
-// force, whether the writer signs with its key, and where the log is all
-// change while the server runs. The writer under the reference compose can
-// start after this process does, and a writer that cannot use its key goes
-// on writing the log, so a page that read them once at start said the
-// writer signed while every receipt failed, or said nothing of a writer
-// that did sign.
 // logPageHooks gives the admin's log page the log, to read, and the means to
 // name the people in it that this store knows.
 func logPageHooks(srv *admin.Server, root string, pol *auth.Policy, toks *auth.TokenStore) {
@@ -1359,6 +1349,16 @@ func knownHandles(root string, pol *auth.Policy, toks *auth.TokenStore) map[stri
 	return names
 }
 
+// logHeadsHook tells the audit log screen who signs the log's heads, and
+// where the keys that check them are.
+//
+// Asked on each visit, as `logd status` asks: whether the separation is in
+// force, whether the writer signs with its key, and where the log is all
+// change while the server runs. The writer under the reference compose can
+// start after this process does, and a writer that cannot use its key goes
+// on writing the log, so a page that read them once at start said the
+// writer signed while every receipt failed, or said nothing of a writer
+// that did sign.
 func logHeadsHook(srv *admin.Server, root string) {
 	srv.LogHeads = func() (bool, string, string) {
 		byWriter, refused := headsSignedBy(root)
