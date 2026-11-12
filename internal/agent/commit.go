@@ -60,8 +60,10 @@ func CommitOf(a Action, why, kind string, writes bool) string {
 		}
 		return "writes"
 	case op == "shell_run" || op == "code_run":
+		// A command that destroys says so in why (internal/shell), and is
+		// deleting whatever else it does: it may also reach the network.
 		switch {
-		case reDeletes.MatchString(why):
+		case strings.Contains(why, RewritesHistory), reDeletes.MatchString(why):
 			return "deletes"
 		case reSends.MatchString(why):
 			return "sends"
@@ -95,3 +97,10 @@ func CommitOf(a Action, why, kind string, writes bool) string {
 
 // PaysPrefix begins the reason a paying tool call waits for a person.
 const PaysPrefix = "it pays "
+
+// RewritesHistory is the reason a command that deletes or rewrites history
+// waits for a person (internal/shell). The command is classed by these
+// exact words, not by reDeletes, so that the driver's wording and the class
+// cannot drift apart: a command that destroys is deleting, whatever else it
+// does, and deleting is never earned away.
+const RewritesHistory = "it deletes or rewrites history, which nothing brings back"
