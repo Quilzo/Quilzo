@@ -316,6 +316,9 @@ func adminDesignHooks(dir string, dw *designWatch) *admin.Design {
 				if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 					return err
 				}
+			} else if err := siteDesignAt(dir); err != nil {
+				// With no site, what `theme set` says, not "no such file".
+				return err
 			} else if err := atomicfile.Write(path, []byte(css), 0o600); err != nil {
 				return err
 			}

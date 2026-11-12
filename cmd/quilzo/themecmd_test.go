@@ -116,3 +116,27 @@ func TestThemeSetOnAnEmptyStoreSaysWhatToDo(t *testing.T) {
 		t.Errorf("saved %v", v)
 	}
 }
+
+// A style layer is saved into the same directory as theme.json, and on a
+// store with no site it answered "preparing to write templates/style.css:
+// ... no such file or directory", from `theme layer set` and from the Design
+// screen alike: the answer `theme set` gave before it said to start a site.
+// It says so too, and leaves nothing behind.
+func TestALayerSetOnAnEmptyStoreSaysWhatToDo(t *testing.T) {
+	root, _ := designStore(t)
+	asPublisher(t, root)
+	tpl := filepath.Join(t.TempDir(), "templates")
+	css := writeTemp(t, "arena.css", []byte(".card { border-color: var(--outline); }\n"))
+	err := cmdTheme(root, []string{"layer", "set", css, "--dir", tpl})
+	if err == nil || !strings.Contains(err.Error(), "quilzo site new") || strings.Contains(err.Error(), "no such file") {
+		t.Errorf("theme layer set on an empty store: %v", err)
+	}
+	dw := newDesignWatch(tpl, nil, func(*Design) {})
+	err = adminDesignHooks(tpl, dw).SaveLayer(".card { border-color: var(--outline); }\n")
+	if err == nil || !strings.Contains(err.Error(), "quilzo site new") || strings.Contains(err.Error(), "no such file") {
+		t.Errorf("the Design screen's layer on an empty store: %v", err)
+	}
+	if _, err := os.Stat(tpl); !os.IsNotExist(err) {
+		t.Errorf("an empty store was given a templates directory: %v", err)
+	}
+}

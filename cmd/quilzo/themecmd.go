@@ -613,6 +613,11 @@ func themeLayer(root string, args []string) error {
 		if err != nil {
 			return err
 		}
+		// Saved beside theme.json, so a store with no site is told what
+		// `theme set` tells it, rather than that a directory is missing.
+		if err := siteDesignAt(*dir); err != nil {
+			return err
+		}
 		d, err := loadDesign(*dir)
 		if err != nil {
 			return err
