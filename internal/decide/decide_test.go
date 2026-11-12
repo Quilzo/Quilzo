@@ -198,3 +198,43 @@ func TestNoStateIsNotDecided(t *testing.T) {
 		t.Fatalf("the model was asked %d times about nothing", m.n)
 	}
 }
+
+// A state with nothing in it is no state either, however it is written.
+//
+// Only a missing state and a JSON null were refused. An agent that fills
+// every field it is asked for sends "" or {} where it has nothing to give,
+// and a run hands a model's object on written out as text, "{}": each was
+// put to the model as a state, which answered about nothing with the same
+// confidence, and nobody was asked.
+func TestAStateWithNothingInItIsNotDecided(t *testing.T) {
+	for name, state := range map[string]any{
+		"empty text":                  "",
+		"blank text":                  " \n\t",
+		"an empty object":             map[string]any{},
+		"an empty list":               []any{},
+		"an empty object written out": "{}",
+		"an empty list written out":   " [] ",
+		"a null written out":          "null",
+	} {
+		m := &seq{replies: []string{reply("billing", 0.95, "no", 0.2)}}
+		if _, err := Decide(context.Background(), triage, m, state); err == nil || !strings.Contains(err.Error(), "state") {
+			t.Errorf("%s: decided about nothing: %v", name, err)
+		}
+		if m.n != 0 {
+			t.Errorf("%s: the model was asked %d times about nothing", name, m.n)
+		}
+	}
+	// What says something is still a state, short as it is: a number, a
+	// word, false, an object with one field.
+	for name, state := range map[string]any{
+		"a number": float64(0), "a word": "refund", "false": false, "an object": map[string]any{"body": ""},
+	} {
+		m := &seq{replies: []string{reply("billing", 0.95, "no", 0.2)}}
+		if _, err := Decide(context.Background(), triage, m, state); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+		if m.n == 0 {
+			t.Errorf("%s: the model was not asked", name)
+		}
+	}
+}
