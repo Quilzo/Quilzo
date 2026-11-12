@@ -717,3 +717,24 @@ func TestAReaderMayStartTheMachineInterface(t *testing.T) {
 		t.Fatalf("a reader wrote through the interface: %+v", resp)
 	}
 }
+
+// A reader may list the notes and the checks however the list is asked for.
+// `quilzo checked`, `quilzo note` and `quilzo notes` run the list, as
+// `checked list` and `note list` do, and when the lists were opened to a
+// reader the bare commands still asked for authoring, so the same list was
+// refused a reader under its shortest spelling.
+func TestAReaderMayListNotesAndChecksByTheBareCommand(t *testing.T) {
+	root, secrets := storeWithTokenFor(t, auth.Binding{Principal: "rae", Role: auth.RoleReader, Resource: "/"})
+	t.Setenv("QUILZO_TOKEN", secrets["rae"])
+	for _, cmd := range []string{"checked", "note", "notes"} {
+		if err := authoriseCommand(root, cmd, nil); err != nil {
+			t.Errorf("a reader running %s: %v", cmd, err)
+		}
+	}
+	// What a reader may not do is still refused.
+	for _, args := range [][]string{{"checked", "set", "index"}, {"note", "add", "index", "hello"}, {"notes", "resolve", "index", "n1"}} {
+		if err := authoriseCommand(root, args[0], args[1:]); err == nil {
+			t.Errorf("a reader ran %v", args)
+		}
+	}
+}

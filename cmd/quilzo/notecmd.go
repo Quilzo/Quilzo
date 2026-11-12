@@ -26,7 +26,7 @@ import (
 
 func cmdNote(root string, args []string) error {
 	if len(args) == 0 {
-		args = []string{"list"}
+		args = []string{bareRuns["note"]}
 	}
 	switch args[0] {
 	case "add":

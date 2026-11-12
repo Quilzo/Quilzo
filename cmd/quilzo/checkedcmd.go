@@ -26,7 +26,7 @@ import (
 
 func cmdChecked(root string, args []string) error {
 	if len(args) == 0 {
-		args = []string{"list"}
+		args = []string{bareRuns["checked"]}
 	}
 	switch args[0] {
 	case "set":
