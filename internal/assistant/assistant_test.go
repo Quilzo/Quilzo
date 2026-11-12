@@ -952,6 +952,27 @@ func TestAPeriodWithoutAFigureIsHeldToThePassageToo(t *testing.T) {
 	})
 }
 
+// A model's sentence is read as its reader sees it. "Within 30 hours",
+// written with the no-break space a model sets between a figure and its
+// unit, was shown for "within 30 days": the patterns that find a period or
+// a time take an ordinary space, so the sentence stated no period to hold
+// to the passage's. A page's text has had such spaces made ordinary since
+// it was chunked; a model's reply had not.
+func TestASentenceIsReadThroughTheSpacesAModelWrites(t *testing.T) {
+	hit := func(text string) []Hit {
+		return []Hit{{Passage: Passage{ID: "p#1", Page: "p", Title: "Zqvel delivery", Text: text}}}
+	}
+	days := hit("Returns are accepted within 30 days of delivery. We open at 9pm. The Zqvel loaf is sold out.")
+	expectVerdicts(t, []verdict{
+		{days, "Returns are accepted within 30\u00a0hours of delivery [1].", "30 days"},
+		{days, "Returns are accepted within 30\u202fhours of delivery [1].", "30 days"},
+		{days, "We open at 9\u00a0am [1].", "9pm"},
+		{days, "The Zqvel loaf is in\u00a0stock [1].", `"in stock"`},
+		{days, "Returns are accepted within 30\u00a0days of delivery [1].", ""},
+		{days, "We open at 9\u00a0pm [1].", ""},
+	})
+}
+
 func TestAModelThatFailsFallsBack(t *testing.T) {
 	for name, m := range map[string]*scripted{
 		"error":    {err: errors.New("connection refused")},

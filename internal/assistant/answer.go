@@ -548,10 +548,16 @@ func Verify(sentence string, hits []Hit) Sentence {
 		out.Why = "cites nothing"
 		return out
 	}
+	// The sentence is tested as its reader sees it, every space an ordinary
+	// one, as a page's text has been since it was chunked. A model sets a
+	// no-break space between a figure and its unit, and "within 30 hours"
+	// written so stated no period that the patterns below could hold to the
+	// passage's "30 days".
+	text := oneLine(out.Text)
 	// Whatever it cites: a page that asks for a card number may be the one
 	// somebody planted, and passes every test below because the sentence is
 	// its own.
-	if guardrail.AsksForSecrets(out.Text) {
+	if guardrail.AsksForSecrets(text) {
 		out.Why = "asks the visitor for a card number, bank details, a password or a code"
 		return out
 	}
@@ -570,7 +576,7 @@ func Verify(sentence string, hits []Hit) Sentence {
 	}
 	// Figures are read with every digit in ASCII, in the sentence and in
 	// what it cites; the words are compared as they are written.
-	source, said := asciiDigits(cited.String()), asciiDigits(out.Text)
+	source, said := asciiDigits(cited.String()), asciiDigits(text)
 	stated := map[string]bool{}
 	for _, f := range figureValues(source) {
 		stated[f.value] = true
@@ -594,7 +600,7 @@ func Verify(sentence string, hits []Hit) Sentence {
 		have[t] = true
 	}
 	var content, found int
-	for _, t := range tokens(out.Text) {
+	for _, t := range tokens(text) {
 		if stopword[t] || len([]rune(t)) < 3 {
 			continue
 		}
@@ -608,7 +614,7 @@ func Verify(sentence string, hits []Hit) Sentence {
 			found, content)
 		return out
 	}
-	if why := turnedAround(out.Text, units); why != "" {
+	if why := turnedAround(text, units); why != "" {
 		out.Why = why
 		return out
 	}
