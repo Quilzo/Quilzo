@@ -260,7 +260,7 @@ func (st *Site) ask(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	case http.MethodPost:
-		r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
+		r.Body = http.MaxBytesReader(w, r.Body, questionForm)
 		if err := r.ParseForm(); err != nil {
 			view.Problem = "That question could not be read."
 			st.renderAsk(w, r, view, http.StatusBadRequest)
@@ -280,6 +280,17 @@ func (st *Site) ask(w http.ResponseWriter, r *http.Request) {
 	}
 	st.renderAsk(w, r, view, http.StatusOK)
 }
+
+// questionForm bounds the body of a form that carries a question: the
+// question and the previous one, each of assistant.MaxQuestion characters
+// at up to four bytes, each written as three in a form's encoding. At 8 KiB
+// a question of 1000 characters in Japanese, which the box takes, could not
+// be read.
+const questionForm = 2*assistant.MaxQuestion*4*3 + 8<<10
+
+// handoffForm bounds the body of a form that carries a message to a person,
+// and the question it follows, in the same way.
+const handoffForm = (handoff.MaxText+assistant.MaxQuestion)*4*3 + 8<<10
 
 // answer puts the view's question to the assistant and fills in the answer.
 // False means a response has already been written.

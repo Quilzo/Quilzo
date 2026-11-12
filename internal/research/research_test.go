@@ -409,3 +409,18 @@ func TestANameThatIsNotAProjectsIsQuotedShort(t *testing.T) {
 		t.Errorf("answered %d bytes, not a short form of the name: %.120s", len(err.Error()), err.Error())
 	}
 }
+
+// A project's question is bounded in characters, as the refusal says: a
+// question of 400 characters in Japanese, 1200 bytes, was refused as over
+// 1000 characters.
+func TestAProjectsQuestionIsBoundedInCharacters(t *testing.T) {
+	st := &Store{Dir: t.TempDir()}
+	q := strings.Repeat("配送料はいくらですか", 40)
+	if err := st.Create(Project{Name: "jp", Question: q, By: "d", Created: time.Now()}); err != nil {
+		t.Fatalf("a 400-character question was refused: %v", err)
+	}
+	if err := st.Create(Project{Name: "jp2", Question: strings.Repeat("配", MaxQuestion+1), By: "d",
+		Created: time.Now()}); err == nil {
+		t.Fatal("a question over the bound in characters was accepted")
+	}
+}

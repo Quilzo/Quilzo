@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // shop is a small, realistic site: the pages a shop's assistant is asked
@@ -186,6 +187,32 @@ func TestAQuestionIsBounded(t *testing.T) {
 		strings.Repeat("ink ", MaxQuestion))
 	if err == nil {
 		t.Fatal("an oversized question was answered")
+	}
+}
+
+// The bound is in characters, as the question box's maxlength counts and
+// as the refusal says: a 400-character question in Japanese, 1200 bytes,
+// was refused as over 1000 characters. And a previous question cut to the
+// bound is cut between characters, not inside one.
+func TestAQuestionIsBoundedInCharacters(t *testing.T) {
+	q := strings.Repeat("配送料はいくらですか", 40)
+	if _, err := Respond(context.Background(), helper, shopIndex(t, helper), nil, q); err != nil {
+		t.Fatalf("a 400-character question was refused: %v", err)
+	}
+	q = strings.Repeat("配", MaxQuestion+1)
+	if _, err := Respond(context.Background(), helper, shopIndex(t, helper), nil, q); err == nil {
+		t.Fatal("a question over the bound in characters was answered")
+	}
+	prev := "ink " + strings.Repeat("配", MaxQuestion)
+	ans, err := RespondTo(context.Background(), helper, shopIndex(t, helper), nil, "zzqx", prev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !utf8.ValidString(ans.Note + ans.Text) {
+		t.Fatalf("the previous question was cut inside a character")
+	}
+	if got := boundText(prev, MaxQuestion); !utf8.ValidString(got) || utf8.RuneCountInString(got) != MaxQuestion {
+		t.Fatalf("cut to %d characters", utf8.RuneCountInString(got))
 	}
 }
 

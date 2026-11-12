@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/search"
 )
@@ -24,10 +25,22 @@ type Model interface {
 	Name() string
 }
 
-// MaxQuestion bounds a visitor's message. A question is a question; a
-// megabyte pasted into a public box is a cost somebody else is choosing for
-// this site.
+// MaxQuestion bounds a visitor's message, in characters. A question is a
+// question; a megabyte pasted into a public box is a cost somebody else is
+// choosing for this site.
+//
+// Characters, not bytes, as the question box's maxlength counts them and
+// as the refusal says: counted in bytes, a 400-character question in
+// Japanese was refused as over 1000 characters.
 const MaxQuestion = 1000
+
+// boundText is s cut to at most n characters, between two of them.
+func boundText(s string, n int) string {
+	if utf8.RuneCountInString(s) <= n {
+		return s
+	}
+	return string([]rune(s)[:n])
+}
 
 // Sentence is one sentence of an answer and what supports it.
 type Sentence struct {
@@ -88,15 +101,12 @@ func RespondTo(ctx context.Context, a Assistant, idx *Index, m Model,
 	if question == "" {
 		return ans, fmt.Errorf("ask a question")
 	}
-	if len(question) > MaxQuestion {
+	if utf8.RuneCountInString(question) > MaxQuestion {
 		return ans, fmt.Errorf("that is over %d characters; ask it more briefly",
 			MaxQuestion)
 	}
 
-	previous = oneLine(previous)
-	if len(previous) > MaxQuestion {
-		previous = previous[:MaxQuestion]
-	}
+	previous = boundText(oneLine(previous), MaxQuestion)
 	asked := question
 	hits := idx.Retrieve(question, a.depth())
 	if len(hits) == 0 && previous != "" {
