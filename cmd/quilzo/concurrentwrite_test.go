@@ -423,3 +423,56 @@ func TestRecordsWrittenBesidePagesKeepEveryOne(t *testing.T) {
 		t.Errorf("the draft holds the records %s, not %s", strings.Join(hosts, ","), strings.Join(wantHosts, ","))
 	}
 }
+
+// Pages imported into a store with nothing in it yet, while others add
+// pages, keep every page.
+//
+// `quilzo import` took the draft ref as its base, and a store with no draft
+// has none, which SaveDraftFrom reads as "whatever the draft is now": so
+// on a new store, an import beside five adds wrote its pages over whichever
+// add had landed while it converted the file, and that add had exited 0.
+func TestImportsIntoANewStoreKeepThePagesAddedBesideThem(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("QUILZO_TOKEN", "")
+	if w == nil {
+		w = out.New(false)
+	}
+	root := t.TempDir() + "/st"
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	const writers = 5
+	var wg sync.WaitGroup
+	failed := make([]string, 2*writers)
+	var want []string
+	for i := range writers {
+		md := fileOf(t, fmt.Sprintf("e%d.md", i), fmt.Sprintf("---\ntitle: Imported %d\nslug: imp-%d\n---\nbody\n", i, i))
+		page := fileOf(t, fmt.Sprintf("a%d.json", i), fmt.Sprintf(`{"title":"Added %d"}`, i))
+		want = append(want, fmt.Sprintf("add-%d", i), fmt.Sprintf("imp-%d", i))
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			if got, err := quilzoAt(t, home, root, "import", md); err != nil {
+				failed[i] = fmt.Sprintf("import %d: %v\n%s", i, err, got)
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			if got, err := quilzoAt(t, home, root, "add", fmt.Sprintf("add-%d=%s", i, page)); err != nil {
+				failed[writers+i] = fmt.Sprintf("add %d: %v\n%s", i, err, got)
+			}
+		}()
+	}
+	wg.Wait()
+	for _, f := range failed {
+		if f != "" {
+			t.Errorf("a write with nothing in common with the others failed: %s", f)
+		}
+	}
+	sort.Strings(want)
+	if names := strings.Join(draftNames(t, root), ","); names != strings.Join(want, ",") {
+		t.Fatalf("the draft holds %s, not %s", names, strings.Join(want, ","))
+	}
+}

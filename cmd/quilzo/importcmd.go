@@ -110,12 +110,15 @@ func cmdImport(root string, args []string) error {
 		return importRecords(root, s, rep, *author)
 	}
 
-	base := s.GetRef(site.RefDraft)
-	pages := map[string]any{}
-	if base != "" {
-		if existing, err := site.PagesAt(s, base); err == nil {
-			pages = existing
-		}
+	// The page set and the commit it is read from, which the import is
+	// written against (site.SaveDraftOver). The base was the draft ref, so a
+	// store with no draft yet had none, which the write took as "whatever
+	// the draft is by then": on a new store an import beside five adds wrote
+	// its pages over whichever of them landed while it converted the file,
+	// and those adds had exited 0.
+	base, pages, err := draftOrLive(s)
+	if err != nil {
+		return err
 	}
 
 	// Refuse to overwrite. An import that silently replaces a page somebody
@@ -148,7 +151,10 @@ func cmdImport(root string, args []string) error {
 	// The caller's real identity, for the commit as for the record below.
 	caller := resolveCaller(root, "")
 	who, message := caller.recordedAs(*author, fmt.Sprintf("import %d page(s) from %s", len(rep.Pages), src))
-	cid, err := site.SaveDraftFrom(s, pages, message, who, base)
+	// Merged with whatever landed since it was read, and refused where
+	// somebody else wrote a page this brings (a merge conflict), so a page
+	// that arrived meanwhile is neither replaced nor dropped.
+	cid, _, err := site.SaveDraftOver(s, pages, message, who, base)
 	if err != nil {
 		var imported []string
 		for _, pg := range rep.Pages {
