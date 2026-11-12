@@ -66,7 +66,7 @@ func TestTokensAreExchangedAndRefreshed(t *testing.T) {
 		sent = form
 		return []byte(answer), nil
 	}
-	tok, err := Exchange(context.Background(), post, calendar, "s3cret", pd, "the-code", now)
+	tok, err := Exchange(context.Background(), post, nil, calendar, "s3cret", pd, "the-code", now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,22 +78,22 @@ func TestTokensAreExchangedAndRefreshed(t *testing.T) {
 		t.Fatalf("%+v", tok)
 	}
 	answer = `{"access_token":"at-2","expires_in":3600}`
-	again, err := Refresh(context.Background(), post, calendar, "s3cret", tok.Refresh, now.Add(time.Hour))
+	again, err := Refresh(context.Background(), post, nil, calendar, "s3cret", tok, now.Add(time.Hour))
 	if err != nil || again.Access != "at-2" || again.Refresh != "rt-1" || sent.Get("grant_type") != "refresh_token" {
 		t.Fatalf("%+v %v %v", again, err, sent)
 	}
 	answer = `{"access_token":"at-3","refresh_token":"rt-2"}`
-	if rotated, _ := Refresh(context.Background(), post, calendar, "", "rt-1", now); rotated.Refresh != "rt-2" || !rotated.Expiry.IsZero() {
+	if rotated, _ := Refresh(context.Background(), post, nil, calendar, "", Token{Refresh: "rt-1"}, now); rotated.Refresh != "rt-2" || !rotated.Expiry.IsZero() {
 		t.Fatalf("%+v", rotated)
 	}
 	for _, bad := range []string{`{"error":"invalid_grant","error_description":"code used"}`, `{"token_type":"bearer"}`,
 		`{"access_token":"x","token_type":"mac"}`, `not json`} {
 		answer = bad
-		if _, err := Exchange(context.Background(), post, calendar, "", pd, "c", now); err == nil {
+		if _, err := Exchange(context.Background(), post, nil, calendar, "", pd, "c", now); err == nil {
 			t.Errorf("accepted %s", bad)
 		}
 	}
-	if _, err := Exchange(context.Background(), post, calendar, "", pd, "c", now.Add(MaxPending+time.Second)); err == nil {
+	if _, err := Exchange(context.Background(), post, nil, calendar, "", pd, "c", now.Add(MaxPending+time.Second)); err == nil {
 		t.Error("an expired connection finished")
 	}
 	answer = `{}`
@@ -103,8 +103,9 @@ func TestTokensAreExchangedAndRefreshed(t *testing.T) {
 }
 
 // A declaration that could send a code, a secret or a token somewhere it
-// should not is refused; the templates are whole once given a client id;
-// a token goes only to the hosts its provider names.
+// should not is refused; the templates are whole once given a client id,
+// and the social platforms' once given the client secret's name too; a
+// token goes only to the hosts its provider names.
 func TestADeclarationIsChecked(t *testing.T) {
 	for name, edit := range map[string]func(*Provider){
 		"plain http":     func(p *Provider) { p.TokenURL = "http://id.acme.example/token" },
@@ -125,6 +126,12 @@ func TestADeclarationIsChecked(t *testing.T) {
 	for _, name := range TemplateNames() {
 		p := Templates[name]
 		p.ClientID = "id"
+		if p.Dialect != "" {
+			if p.Check() == nil {
+				t.Errorf("%s: whole without the client secret its tokens are issued with", name)
+			}
+			p.Secret = name + "-oauth"
+		}
 		if err := p.Check(); err != nil {
 			t.Errorf("%s: %v", name, err)
 		}

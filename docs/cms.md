@@ -2200,6 +2200,22 @@ quilzo connect provider add google --template google --client-id ID --client-sec
   --scope https://www.googleapis.com/auth/calendar.events
 ```
 
+The social platforms each speak OAuth their own way, and their templates know
+how: `youtube`, `tiktok`, `instagram`, `facebook` and `linkedin` start from the
+documented endpoints and the scopes posting needs. TikTok is asked for
+`client_key` and its scopes separated by commas. Instagram and Facebook issue
+no refresh token, so the token a code buys, which lasts an hour, is exchanged
+at once for one that lasts sixty days, and renewed when it is used a day or
+more after the last renewal. LinkedIn's refresh token lapses a year after it
+was first issued however often it is used, and past that the person is told
+to connect again, with the date, rather than LinkedIn being asked. All but
+YouTube need `--client-secret`. A provider declared without a template at
+one of those platforms' own sites (`www.tiktok.com`, say) speaks that
+platform's dialect, and says so; anywhere else it speaks `oauth2`, the
+default and what every provider declared before speaks. `--dialect` names
+one instead: `oauth2`, `tiktok`, `meta-instagram`, `meta-facebook` or
+`linkedin`.
+
 An integration that names a connection (`"connection": "google"`) then goes
 with the account of the person the agent acts for, its sponsor, and nobody
 else's. Three come ready-made: `quilzo integrations template` declares
