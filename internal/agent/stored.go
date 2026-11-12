@@ -51,6 +51,13 @@ type Record struct {
 	// Trigger is what started it when no person did: a schedule, or an
 	// event and what it was about.
 	Trigger string `json:"trigger,omitempty"`
+	// ReadOnly is a run whoever started it could only read for: a
+	// read-only credential, or a chatbot's request that only looks things
+	// up. Kept because a run that waited goes on as whoever answered it,
+	// and was bounded by them as well, so a read-only token's run that an
+	// administrator let read went on offered, and making, a post to
+	// another system.
+	ReadOnly bool `json:"read_only,omitempty"`
 	// Answers are what people decided about the actions it stopped at.
 	Answers []Answer `json:"answers,omitempty"`
 	// Eval names the evaluation this run was made for, and Plant the

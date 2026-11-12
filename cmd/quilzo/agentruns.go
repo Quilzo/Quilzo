@@ -142,7 +142,7 @@ func (k *keptRun) finish(out agentOutcome) error {
 	if rec.Agent == "" {
 		rec.Agent = k.rec.Agent
 	}
-	rec.From, rec.Answers, rec.Trigger = k.rec.From, k.rec.Answers, k.rec.Trigger
+	rec.From, rec.Answers, rec.Trigger, rec.ReadOnly = k.rec.From, k.rec.Answers, k.rec.Trigger, k.rec.ReadOnly
 	rec.Eval, rec.Plant = k.rec.Eval, k.rec.Plant
 	k.rec = rec
 	if err := writeAgentRun(k.root, rec); err != nil {
@@ -180,7 +180,7 @@ func runAgentKeptFor(ctx context.Context, root, name, goal string, withModel, pr
 		return "", agentOutcome{}, err
 	}
 	k := &keptRun{root: root, rec: agent.Record{ID: id, Agent: name,
-		Goal: goal, By: caller.Name, Started: started, Trigger: trigger}}
+		Goal: goal, By: caller.Name, Started: started, Trigger: trigger, ReadOnly: caller.Limits.ReadOnly}}
 	if withModel {
 		if m, _ := agentRunModel(root, name); m != nil {
 			k.rec.Model = m.Name()
@@ -844,7 +844,7 @@ func startAgentRunLive(root, name, goal string, caller *Caller, m agent.Manifest
 		return "", err
 	}
 	k := &keptRun{root: root, rec: agent.Record{ID: id, Agent: name, Goal: goal, By: caller.Name,
-		Started: started, State: agent.Running}}
+		Started: started, State: agent.Running, ReadOnly: caller.Limits.ReadOnly}}
 	if mm, _ := agentRunModel(root, name); mm != nil {
 		k.rec.Model = mm.Name()
 	}

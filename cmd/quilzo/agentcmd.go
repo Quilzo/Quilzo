@@ -1140,6 +1140,14 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 	if from == nil {
 		from = &agentResume{}
 	}
+	// A run whoever started it could only read for goes on reading only,
+	// whoever takes it on (agent.Record's ReadOnly): letting one step go
+	// ahead decides that step, and lends the run nothing more.
+	if from.Prior != nil && from.Prior.ReadOnly && caller != nil && !caller.Limits.ReadOnly {
+		c := *caller
+		c.Limits.ReadOnly = true
+		caller = &c
+	}
 	set, err := loadAgents(root)
 	if err != nil {
 		return out, err

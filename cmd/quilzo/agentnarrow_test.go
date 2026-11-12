@@ -417,11 +417,87 @@ func TestAReadOnlyChatbotRequestIsOfferedNoToolThatWrites(t *testing.T) {
 	if len(runs) != 1 || runs[0].Trace.Waiting != nil || res.State == chatact.Waiting {
 		t.Fatalf("a read-only request's post waited for a person rather than being refused: %+v %+v", res, runs)
 	}
+	// And its run is kept as one, so whoever takes it on reads only too.
+	if !runs[0].ReadOnly {
+		t.Error("a read-only request's run is not kept as read-only")
+	}
 	refused := false
 	for _, st := range runs[0].Trace.Steps {
 		refused = refused || (st.Action.Tool == "post_update" && !st.Allowed && strings.Contains(st.Why, "only reads"))
 	}
 	if !refused {
 		t.Fatalf("the post was not refused as one a read-only run may not make:\n%s", describeRun(runs[0].Trace))
+	}
+}
+
+// A read-only caller's run stays read-only when a person takes it on. A run
+// that waited goes on as whoever answered it, and was bounded by them too:
+// a token issued read-only started a run that asked first before reading,
+// an administrator let the read go ahead, and the run went on offered the
+// post, and made it, with the administrator's reach.
+func TestAReadOnlyRunTakenOnStaysReadOnly(t *testing.T) {
+	root, posted, token := readOnlyStore(t)
+	set, _ := loadAgents(root)
+	m := set.Agents["poster"]
+	m.AskFirst = []string{"list_pages"}
+	if err := declareAgent(root, m, false, true, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	// Reads the pages first, then posts, offered it or not, then is done.
+	var mu sync.Mutex
+	after := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		choice := `{"op":"list_pages"}`
+		if !strings.Contains(string(b), "Nothing has been done yet") {
+			mu.Lock()
+			after++
+			choice = `{"op":"done","say":"posted"}`
+			if after == 1 {
+				choice = `{"op":"tool:post_update","input":{"text":"Our new post is up"}}`
+			}
+			mu.Unlock()
+		}
+		out, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{
+			"message": map[string]any{"role": "assistant", "content": choice}}}})
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(out)
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("QUILZO_MODEL_URL", srv.URL+"/v1")
+	t.Setenv("QUILZO_MODEL", "stand-in")
+	t.Setenv("QUILZO_MODEL_KEY", "")
+
+	id, out, err := runAgentKept(context.Background(), root, "poster", "what is new?", true, resolveCaller(root, token))
+	w := out.Trace.Waiting
+	if err != nil || w == nil || w.Action.Op != "list_pages" {
+		t.Fatalf("the run did not wait to read: %v\n%s", err, describeRun(out.Trace))
+	}
+	done, err := continueAgentRun(context.Background(), root, id, &agent.Verdict{N: w.N, Approve: true}, asAdmin("sam"))
+	if err != nil {
+		t.Fatalf("%v\n%s", err, describeRun(done.Trace))
+	}
+	if len(*posted) != 0 {
+		t.Fatalf("a read-only caller's run posted once a person took it on: %v\n%s", *posted, describeRun(done.Trace))
+	}
+	refused := false
+	for _, st := range done.Trace.Steps {
+		refused = refused || (st.Action.Tool == "post_update" && !st.Allowed && strings.Contains(st.Why, "only reads"))
+	}
+	if !refused || !done.Trace.Complete {
+		t.Fatalf("the post was not refused as one a read-only run may not make:\n%s", describeRun(done.Trace))
+	}
+	// A run a caller who may write started is taken on as before.
+	*posted = (*posted)[:0]
+	mu.Lock()
+	after = 0
+	mu.Unlock()
+	id, out, err = runAgentKept(context.Background(), root, "poster", "post the news", true, asAdmin("dana"))
+	if w = out.Trace.Waiting; err != nil || w == nil {
+		t.Fatalf("%v\n%s", err, describeRun(out.Trace))
+	}
+	if done, err = continueAgentRun(context.Background(), root, id, &agent.Verdict{N: w.N, Approve: true},
+		asAdmin("sam")); err != nil || len(*posted) != 1 {
+		t.Fatalf("a run a writer started did not post once taken on: %v %v\n%s", err, *posted, describeRun(done.Trace))
 	}
 }
