@@ -434,6 +434,40 @@ func TestATornLineIsShownInTheLogNotInsteadOfIt(t *testing.T) {
 	}
 }
 
+// A crash with nothing written after it leaves the line it cut short last
+// in the log. The page shows every entry before it, and the line as what
+// it is: not the reading error alone, and not tampering.
+func TestATornLastLineIsShownAsACrash(t *testing.T) {
+	path := t.TempDir() + "/audit.jsonl"
+	l, err := audit.New(audit.Options{Path: path, Source: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if _, err := l.Append(audit.Record{Action: "publish", Resource: "/", Outcome: audit.Success,
+			Principal: "dana", Kind: audit.KindHuman, Verified: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.WriteString(`{"seq":3,"at":"2026-10`)
+	f.Close()
+
+	s, tok := logServer(t, nil, true)
+	s.LoadAudit = func() ([]audit.Event, error) { return audit.Read(path) }
+	body, code := getLogs(t, s, tok, "")
+	if code != http.StatusOK || !strings.Contains(body, "2 of 2 entries") {
+		t.Errorf("the entries before the torn line are not shown (%d):\n%s", code, body)
+	}
+	if !strings.Contains(body, "left unfinished") || strings.Contains(body, "Chain intact") ||
+		strings.Contains(body, "has been altered") {
+		t.Errorf("the torn line is not shown as a crash:\n%s", body)
+	}
+}
+
 // The page checks the log against the head saved beside it. Entries
 // removed from the end of a log leave a shorter chain that verifies, so the
 // page said "Chain intact" with a saved head covering more than it held.

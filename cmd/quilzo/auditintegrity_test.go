@@ -124,6 +124,49 @@ func TestATornLineIsReportedAsAnUnfinishedWriteAndHidesNothing(t *testing.T) {
 	}
 }
 
+// A crash with nothing written after it leaves the line it cut short last
+// in the log, still open. That is a crash as well, not tampering, and it
+// blanks nothing: verify says so and still finds it, the log still extends
+// the head saved before it, and every view and export has every entry.
+func TestATornLastLineIsACrashAndBlanksNothing(t *testing.T) {
+	root := auditedStore(t, 3)
+	if _, err := jsonAnswer(t, func() error { return cmdAuditLog(root, []string{"head", "--save"}) }); err != nil {
+		t.Fatal(err)
+	}
+	head := exportHead(t, root)
+	tearLog(t, root)
+
+	var blocked errBlocked
+	human, err := humanOutput(t, func() error { return cmdAuditLog(root, []string{"verify"}) })
+	if !errors.As(err, &blocked) || strings.Contains(errString(err), "tampered") ||
+		!strings.Contains(human+errString(err), "unfinished") || strings.Contains(human, "intact") {
+		t.Errorf("verify: %v\n%s", err, human)
+	}
+	doc, _ := jsonAnswer(t, func() error { return cmdAuditLog(root, []string{"verify"}) })
+	if hd, _ := doc["head"].(map[string]any); doc["entries"] != float64(3) || doc["intact"] != false ||
+		doc["unfinished"] != float64(1) || hd["size"] != float64(3) {
+		t.Errorf("verify --json: %v", doc)
+	}
+	doc, err = jsonAnswer(t, func() error { return cmdAuditLog(root, []string{"show"}) })
+	if entries, _ := doc["entries"].([]any); err != nil || len(entries) != 3 || doc["intact"] != false {
+		t.Errorf("show --json: %d entries, intact %v: %v", len(entries), doc["intact"], err)
+	}
+	if f := scanFinding(Observe(root, t.TempDir(), posture.ServerFacts{}), "audit.chain-broken"); f != nil {
+		t.Errorf("posture calls a crash a broken chain: %s", f.Detail)
+	}
+	if doc, err := jsonAnswer(t, func() error { return cmdAuditLog(root, []string{"verify-head", head}) }); err != nil || doc["verified"] != true {
+		t.Errorf("verify-head of a head the log still holds: %v %v", doc, err)
+	}
+	if _, err := humanOutput(t, func() error { return cmdAuditLog(root, []string{"consistency"}) }); err != nil {
+		t.Errorf("consistency: %v", err)
+	}
+	_, done := captureStdout(t)
+	err = cmdAuditLog(root, []string{"export"})
+	if exported := done(); err != nil || strings.Count(exported, "\n") != 3 {
+		t.Errorf("auditlog export: %v\n%s", err, exported)
+	}
+}
+
 // An export holds every entry, and says where its summary goes which lines
 // of the log it left out: they are not entries, and the system it goes to
 // cannot tell that anything was there. The export stopped at the first, so
