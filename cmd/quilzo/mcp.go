@@ -606,10 +606,14 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 			len(unmarked), strings.Join(unmarked, ", ")), nil
 	})
 
-	// What the law asks of the published site, read-only. Admin, as the
-	// inventory is: it names the forms and where personal data sits.
+	// What the law asks of the published site, read-only. Asked in the
+	// compliance area, as `quilzo compliance site` is: it names the forms
+	// and where personal data sits, so a role over the site reaches it only
+	// as administrator (auth's guarded areas), and the compliance officer
+	// and the auditor, whose jobs are granted there, reach it too. Asked of
+	// the whole site, it refused them the report their command gives them.
 	srv.Register(mcp.Operation{
-		Name: "site_report", NeedsRole: "admin",
+		Name: "site_report", NeedsRole: "reader", Area: auth.AreaCompliance,
 		Summary: "what the law asks of the published site and where it stands: " +
 			"accessibility, the statement, forms, personal data, AI disclosure and marking, browser protections",
 		Detail: "Read-only. A duty marked clear means the checks found nothing, not that the duty is met. " +
@@ -712,11 +716,14 @@ func actionForRole(role string) (auth.Action, error) {
 	case "publisher":
 		return auth.ActPublish, nil
 	case "admin":
-		// The posture, inventory, integrity and agent-activity reports. The
-		// admin restricts these screens to an administrator on the grounds
-		// that a detailed list of where this system's defences are thin is a
-		// target list, and this surface handed the same list to anybody who
-		// could start the process.
+		// The agent-activity, evaluation and scanning reports. The admin
+		// restricts these screens to an administrator on the grounds that a
+		// detailed list of where this system's defences are thin is a target
+		// list, and this surface handed the same list to anybody who could
+		// start the process. The posture, the inventory, the shield and the
+		// site report are asked in their own areas instead (Operation.Area),
+		// which a role over the site reaches only as administrator, as
+		// their commands are.
 		return auth.ActGrant, nil
 	}
 	return "", fmt.Errorf("%q is not a role this program has", role)

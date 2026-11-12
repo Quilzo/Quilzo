@@ -709,7 +709,12 @@ func (s *Server) describe(ops []Operation) string {
 				fmt.Fprintf(&b, "    %s: %s\n", k, op.Args[k])
 			}
 		}
-		if op.NeedsRole != "" {
+		// The area too, when it is one of the admin's: "reader" alone told
+		// an agent that any reader may, where the role is asked of the
+		// security or compliance area, which a reader of the site is not.
+		if op.NeedsRole != "" && strings.HasPrefix(op.Area, "/@") {
+			fmt.Fprintf(&b, "    needs role: %s on %s\n", op.NeedsRole, op.Area)
+		} else if op.NeedsRole != "" {
 			fmt.Fprintf(&b, "    needs role: %s\n", op.NeedsRole)
 		}
 		if op.Detail != "" {

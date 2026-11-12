@@ -523,6 +523,13 @@ var commandNeeds = map[string]need{
 	"checked": {action: auth.ActEditDraft},
 	"note":    {action: auth.ActEditDraft},
 	"notes":   {action: auth.ActEditDraft},
+	// Reading them is reading about the draft, which a reader may: the
+	// machine interface's list_checked and list_notes answer a reader, and
+	// these refused the same token on the command line.
+	"checked list": {action: auth.ActView},
+	"checked due":  {action: auth.ActView},
+	"note list":    {action: auth.ActView},
+	"notes list":   {action: auth.ActView},
 
 	// -- content types gate every write, so changing one is a change to what
 	// every author may store. Publisher, not author.

@@ -573,8 +573,10 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 		return strings.TrimSpace(b.String()), nil
 	})
 
+	// A reader's, as `quilzo verify` is: whether each object is still what
+	// its name says reveals nothing the reader cannot read already.
 	srv.Register(mcp.Operation{
-		Name: "verify_store", NeedsRole: "admin",
+		Name: "verify_store", NeedsRole: "reader",
 		Summary:  "re-hash every object and report whether each is still what its name says",
 		Keywords: []string{"verify", "integrity", "corruption", "check", "hash"},
 	}, func(map[string]any) (any, error) {
@@ -585,8 +587,10 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 		return fmt.Sprintf("%d object(s) verified; every one matched its address", n), nil
 	})
 
+	// Asked in the compliance area, as `quilzo compliance inventory` is,
+	// which a role over the site reaches only as administrator.
 	srv.Register(mcp.Operation{
-		Name: "inventory", NeedsRole: "admin",
+		Name: "inventory", NeedsRole: "reader", Area: auth.AreaCompliance,
 		Summary: "the bill of materials, the cryptographic algorithms in use, " +
 			"and the known flaws in this build",
 		Keywords: []string{"sbom", "compliance", "dependencies", "crypto",
@@ -615,8 +619,12 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 		return strings.TrimSpace(b.String()), nil
 	})
 
+	// Anybody who may read anything here, the site or an area of the admin:
+	// the statements are public in the source, and asked of the whole site
+	// only, the compliance officer and the auditor, whose jobs are granted
+	// on the compliance area and nowhere else, were refused them.
 	srv.Register(mcp.Operation{
-		Name: "control_implementation", NeedsRole: "reader",
+		Name: "control_implementation", NeedsRole: "reader", Area: "/",
 		Summary: "how Quilzo implements a NIST SP 800-53 control and who does the rest; " +
 			"with no control, the list of all of them",
 		Detail:   "Read-only. The statements are the software's own and public in its source; a reader may see them.",
@@ -647,8 +655,10 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 		return strings.TrimSpace(b.String()), nil
 	})
 
+	// Asked in the compliance area, as `quilzo policy show` is, which a
+	// role over the site reaches only as administrator.
 	srv.Register(mcp.Operation{
-		Name: "policy_status", NeedsRole: "admin",
+		Name: "policy_status", NeedsRole: "reader", Area: auth.AreaCompliance,
 		Summary: "the organisation's NIST organisation-defined parameters: which are declared, " +
 			"what the deployment does, whether each is met, and what is waiting for approval",
 		Detail: "Read-only. Proposing and approving a value takes two administrators, on the " +
