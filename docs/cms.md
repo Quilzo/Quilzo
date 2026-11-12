@@ -1899,6 +1899,10 @@ description starts with the site's own sentence — `site.description`, or
 `quilzo site --description` for one run — and then says how its skills are
 governed, so an agent choosing between two sites reads what each is for before
 how it is run; a site with no description keeps the governance sentence alone.
+The extension is declared by its address in the card's `capabilities.extensions`,
+where A2A lists extensions. The card is read, not sent to: a site that takes no
+tasks from other agents says so on it, and its address answers anything but a
+read with 405; one that takes them names the address they are taken at.
 
 The device side is deliberately the boring version. A published site is an
 installable app with a share target: the operating system offers it in the share
