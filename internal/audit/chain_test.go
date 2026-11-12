@@ -225,3 +225,82 @@ func TestATornLineHidesNoEntryAfterIt(t *testing.T) {
 		t.Errorf("a log that could not be read was checked: %v", err)
 	}
 }
+
+// A write that reached the disk whole but for its newline is the last
+// entry, and the next write carries on from it. Every reader took it for an
+// entry and the writer did not: the next record took its number and linked
+// to the entry before it, and the fork was reported as tampering.
+func TestAnEntryMissingOnlyItsNewlineIsCarriedOnFrom(t *testing.T) {
+	for _, n := range []int{1, 2} {
+		path := filepath.Join(t.TempDir(), "audit.jsonl")
+		l, _ := New(Options{Path: path, Source: "test"})
+		var last *Event
+		for i := 1; i <= n; i++ {
+			e, err := l.Append(rec(i))
+			if err != nil {
+				t.Fatal(err)
+			}
+			last = e
+		}
+		raw, _ := os.ReadFile(path)
+		if err := os.WriteFile(path, []byte(strings.TrimSuffix(string(raw), "\n")), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		m, err := New(Options{Path: path, Source: "test"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		next, err := m.Append(rec(9))
+		if err != nil || next.Seq != int64(n+1) || next.Prev != last.Hash {
+			t.Fatalf("%d entries: the next write did not carry on from the last: %+v %v", n, next, err)
+		}
+		events, err := Read(path)
+		if ok, problems := Verify(events); err != nil || !ok || len(events) != n+1 {
+			t.Errorf("%d entries: read %d, %v, %v", n, len(events), problems, err)
+		}
+	}
+}
+
+// A write a crash left as zeros is a write left unfinished too: a
+// filesystem that put the file's new size on disk before its data leaves
+// the rest as zeros, and the line was called tampering. So is a record that
+// is whole but for its newline, written as a zero, and so is a line of
+// zeros the next write closed off with nothing after it, which stopped the
+// log opening at all, so that nothing more could be written to it.
+func TestARecordEndingInZerosIsAnUnfinishedWrite(t *testing.T) {
+	for _, torn := range []string{`{"seq":2,"at":"2026` + "\x00\x00\x00\x00", "\x00\x00\x00\x00",
+		`{"seq":2,"at":"2026-10-21T12:00:00Z"}` + "\x00\x00\x00\x00"} {
+		for _, closed := range []bool{false, true} {
+			path := filepath.Join(t.TempDir(), "audit.jsonl")
+			l, _ := New(Options{Path: path, Source: "test"})
+			first, err := l.Append(rec(1))
+			if err != nil {
+				t.Fatal(err)
+			}
+			f, _ := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o600)
+			f.WriteString(torn)
+			if closed {
+				f.WriteString("\n")
+			}
+			f.Close()
+			m, err := New(Options{Path: path, Source: "test"})
+			if err != nil {
+				t.Errorf("%q, closed off %v: the log does not open: %v", torn, closed, err)
+				continue
+			}
+			next, err := m.Append(rec(2))
+			if err != nil || next.Seq != 2 || next.Prev != first.Hash {
+				t.Errorf("%q, closed off %v: the chain did not carry on from the last whole entry: %+v %v",
+					torn, closed, next, err)
+				continue
+			}
+			if _, err := m.Append(rec(3)); err != nil {
+				t.Fatal(err)
+			}
+			r, err := Check(Read(path))
+			if err != nil || !r.Crashed() || r.Unfinished != 1 {
+				t.Errorf("%q, closed off %v: %+v %v", torn, closed, r, err)
+			}
+		}
+	}
+}

@@ -293,7 +293,8 @@ func (l *Log) resync() error {
 
 // tail reads the last complete entry of a log, the file's size, and whether
 // the file ends part way through a line, as a writer that died mid-write
-// leaves it.
+// leaves it. A line still open that is a whole entry, missing only its
+// newline, is the last entry, as it is to Read.
 //
 // It reads backwards from the end in growing windows, so its cost is the
 // length of the last line, not of the log. A last complete line that is not
@@ -328,10 +329,22 @@ func tail(path string) (*Event, int64, bool, error) {
 		torn := buf[len(buf)-1] != '\n'
 		body := buf
 		if i := strings.LastIndexByte(string(body), '\n'); i >= 0 {
+			// A line still open that is a whole entry is the last entry: the
+			// write reached the disk but for its newline. Every reader takes
+			// it for one, and the chain carries on from it. Passed over as
+			// unfinished, it was not, and the next write took its number and
+			// linked to the entry before it: two entries of one number, a
+			// fork, reported as tampering after a crash.
+			if torn {
+				if e := wholeEntry(body[i+1:]); e != nil {
+					return e, size, true, nil
+				}
+			}
 			body = body[:i]
 		} else if window == size {
-			// One line, never finished: nothing complete to continue from.
-			return nil, size, true, nil
+			// One line, never finished: nothing complete to continue from,
+			// unless all that is missing is its newline.
+			return wholeEntry(body), size, true, nil
 		} else {
 			continue
 		}
@@ -827,9 +840,33 @@ func readEvents(r io.Reader) ([]Event, error) {
 
 // unfinished says a line stops part way through a JSON value, as a write
 // cut short leaves it, rather than holding something that is not one.
+//
+// Zeros at its end are what was not written. A filesystem that put the
+// file's new size on disk before the data leaves the rest of the write as
+// zeros after a crash. A line of them, a record that stops in them, or a
+// whole record whose newline is one of them was called tampering, and such
+// a line, closed off by the next write with nothing after it, stopped the
+// log opening at all.
 func unfinished(line string) bool {
+	if strings.TrimRight(line, "\x00") != line {
+		return true
+	}
 	return errors.Is(json.NewDecoder(strings.NewReader(line)).Decode(new(json.RawMessage)),
 		io.ErrUnexpectedEOF)
+}
+
+// wholeEntry is a line still open at the end of a log, if it is an entry, as
+// Read takes it: nil when it is not.
+func wholeEntry(b []byte) *Event {
+	line := strings.TrimSpace(string(b))
+	if line == "" {
+		return nil
+	}
+	var e Event
+	if json.Unmarshal([]byte(line), &e) != nil {
+		return nil
+	}
+	return &e
 }
 
 // Unreadable is the lines of a log that are not entries. Read and Events
