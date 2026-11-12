@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 // Every command the dispatcher can reach must declare what it needs.
@@ -690,5 +691,29 @@ func TestSignInGeographyIsReadWhereTheSecurityAreaIs(t *testing.T) {
 	t.Setenv("QUILZO_TOKEN", secrets["sam"])
 	if err := authoriseCommand(root, "geo", []string{"network", "add", "10.0.0.0/8", "office"}); err == nil {
 		t.Error("the security area's administrator declared a network for the whole site")
+	}
+}
+
+// A reader may start `quilzo mcp`, and list what it offers, as the same
+// token may use /mcp: each operation is authorised when it is called, and
+// that is the control. The command asked for edit-draft, so a reviewer's
+// local AI app could not search or read the site through it, and a script
+// could not list the operations, although every read was a reader's.
+func TestAReaderMayStartTheMachineInterface(t *testing.T) {
+	root, secrets := storeWithTokenFor(t, auth.Binding{Principal: "rae", Role: auth.RoleReader, Resource: "/"})
+	t.Setenv("QUILZO_TOKEN", secrets["rae"])
+	for _, args := range [][]string{nil, {"--list"}} {
+		if err := authoriseCommand(root, "mcp", args); err != nil {
+			t.Errorf("a reader running mcp %v: %v", args, err)
+		}
+	}
+	// What a reader may not do is still refused, when it is asked for.
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := callOp(t, buildMCP(root, s, resolveCaller(root, ""), "templates"), "quilzo_write", "write_page")
+	if resp.Error == nil || !strings.Contains(resp.Error.Message, "needs author") {
+		t.Fatalf("a reader wrote through the interface: %+v", resp)
 	}
 }

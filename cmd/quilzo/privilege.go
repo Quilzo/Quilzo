@@ -813,7 +813,12 @@ var commandNeeds = map[string]need{
 	// script on a writable origin. Deciding to open that at all is the
 	// operator act, so it is held to the same bar as opening the admin.
 	"studio": {action: auth.ActPublish},
-	"mcp":    {action: auth.ActEditDraft},
+	// Starting the machine interface, or listing what it offers, is a
+	// reader's, as the same token at /mcp is: every operation is authorised
+	// when it is called (buildMCP), and that is the control. Asked for
+	// edit-draft here, a reviewer's token could search and read the site
+	// over HTTP and not through `quilzo mcp`, nor list the operations.
+	"mcp": {action: auth.ActView},
 
 	// -- deliberately unauthenticated, each with the reason.
 	"__sandbox": {why: "is the sandbox shim this program re-executes itself as: " +
