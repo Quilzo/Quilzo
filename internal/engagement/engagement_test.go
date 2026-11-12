@@ -4,6 +4,9 @@
 package engagement
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -440,6 +443,48 @@ func TestEvidenceNamedByAnAddressWithAKeyIsFoundInTheLog(t *testing.T) {
 		if strings.Contains(e.Detail["ref"]+e.Detail["source"], "KEY") {
 			t.Fatalf("the log holds the key: %v", e.Detail)
 		}
+	}
+	p, err := Build(engaged(), controls, evidence, events, inUS, signer{s}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Verify(v); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Evidence named by an address with a key is found, and checks, against an
+// entry written before the log left the key out, as well as against one
+// written since.
+//
+// The package looked the evidence up by its address as the log writes it
+// now, and an entry written before holds the address as it was given, so in
+// a log kept from before the change every such piece of evidence had "no
+// entry in the audit log" and no package could be built for it any more.
+func TestEvidenceRecordedBeforeTheLogLeftKeysOutIsStillFound(t *testing.T) {
+	s, v := keys(t)
+	controls := []assurance.Control{control("mfa", "acme-us")}
+	item := ev("mfa", "acme-us", "https://drive.example/export.csv?sig=sh4reKEY", 0, 182)
+	item.Source = "https://grc.example/connector?token=c0nnKEY"
+	evidence := []assurance.Evidence{item}
+	events := logged(t, evidence)
+	// The entry as a log written before the change holds it: the address
+	// as given, and a hash over that.
+	last := &events[len(events)-1]
+	if !strings.HasPrefix(last.Action, "control.") {
+		t.Fatalf("the evidence's entry is %s", last.Action)
+	}
+	last.Detail["ref"], last.Detail["source"] = item.Ref, item.Source
+	c := *last
+	c.Hash = ""
+	b, err := json.Marshal(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(b)
+	last.Hash = hex.EncodeToString(sum[:])
+	if ok, problems := audit.Verify(events); !ok {
+		t.Fatalf("the log as it was written before does not verify: %v", problems)
 	}
 	p, err := Build(engaged(), controls, evidence, events, inUS, signer{s}, now)
 	if err != nil {

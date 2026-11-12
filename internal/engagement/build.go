@@ -113,9 +113,16 @@ func Build(e Engagement, controls []assurance.Control,
 		// The reference as the log wrote it, which is without the
 		// credentials an address carries (audit.WithoutCredentials):
 		// evidence named by a share link with its key was otherwise never
-		// found.
-		key := item.Control + "\x00" + audit.WithoutCredentials(item.Ref)
+		// found. And as it was given, which is how an entry written before
+		// the log left them out holds it: looked up only as the log writes
+		// it now, every such piece of evidence in a log kept from before had
+		// no entry, and no package could be built for it.
+		key := item.Control + "\x00" + item.Ref
 		entry, ok := byRef[key]
+		if !ok {
+			key = item.Control + "\x00" + audit.WithoutCredentials(item.Ref)
+			entry, ok = byRef[key]
+		}
 		if !ok {
 			// Evidence with no audit entry. Reported rather than dropped:
 			// it is either evidence added by hand outside the recorded path
