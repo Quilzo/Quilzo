@@ -3,7 +3,11 @@
 
 package audit
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
+)
 
 // WithoutCredentials is s with every address in it written without the
 // credentials an address can carry: a user and password become "…@", a
@@ -81,7 +85,7 @@ func addressWithoutCredentials(a string, sep int) string {
 		}
 	}
 	if i := strings.IndexAny(tail, "?#"); i >= 0 && i+1 < len(tail) {
-		tail = tail[:i+1] + "…"
+		tail = plaintext.Clip(tail, i+1, "…")
 	}
 	return head + host + tail
 }

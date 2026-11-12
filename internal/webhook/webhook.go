@@ -428,7 +428,10 @@ func withoutQuoted(msg string) string {
 		if i < 0 {
 			break
 		}
-		b.WriteString(msg[:i] + `"…"`)
+		// Two writes, not a cut with an ellipsis: what comes before the
+		// quote is kept whole, and only what the quote held is replaced.
+		b.WriteString(msg[:i])
+		b.WriteString(`"…"`)
 		j := i + 1
 		for j < len(msg) && msg[j] != '"' {
 			if msg[j] == '\\' {
