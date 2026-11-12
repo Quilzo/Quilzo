@@ -162,6 +162,52 @@ func TestAFillRespectsADenyOnThePage(t *testing.T) {
 	}
 }
 
+// A blank on a page the caller may not read is not named to them, nor is
+// the page. site_blanks named every page each blank is on, and site_fill
+// refused a fill by naming the page it could not change, so somebody denied
+// a page learned its name from both, where list_pages leaves it out.
+func TestABlankOnAPageOutOfReachIsNotNamed(t *testing.T) {
+	root, _ := siteStore(t)
+	builtAndInstalled(t, root, feature.SiteBrief{Description: "A plumber in Leeds", Name: "Leeds Plumbing"}, false)
+	pages, err := draftPages(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	known, _ := builderBlanks(root)
+	whats, on := siteBlanks(pages, known)
+	what, page := "", ""
+	for _, w := range whats {
+		if len(on[w]) > 1 {
+			what, page = w, on[w][len(on[w])-1]
+			break
+		}
+	}
+	if what == "" {
+		t.Fatalf("no blank is on two pages: %v", on)
+	}
+	if _, err := updatePolicy(root, func(p *auth.Policy) error {
+		if err := p.Grant(auth.Binding{Principal: "rae", Role: auth.RoleAuthor, Resource: "/"}); err != nil {
+			return err
+		}
+		return p.Grant(auth.Binding{Principal: "rae", Role: auth.RoleReader, Resource: "/" + page, Deny: true})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	call := mcpAs(t, root, withRole("rae", auth.RoleAuthor))
+	if got := call("quilzo_read", "list_pages", nil); strings.Contains(got, page) {
+		t.Fatalf("list_pages named the page out of reach: %s", got)
+	}
+	got := call("quilzo_read", "site_blanks", nil)
+	if strings.Contains(got, `\"`+page+`\"`) || !strings.Contains(got, what) {
+		t.Errorf("site_blanks: %s", got)
+	}
+	got = call("quilzo_write", "site_fill", map[string]any{"values": map[string]any{what: "x"}})
+	if !refused(got) || strings.Contains(got, "/"+page) || strings.Contains(got, " "+page+" ") ||
+		!strings.Contains(got, "not yours to change") {
+		t.Errorf("site_fill: %s", got)
+	}
+}
+
 // filledByAnAgent is a site a person built and published, whose blanks an
 // agent at the machine interface then filled in for dana, with dana's
 // token where a command asks for one. It answers the store, its

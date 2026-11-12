@@ -529,7 +529,21 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 				sources[page] = oid
 			}
 		}
+		// The pages the caller may read, as list_pages has them: every page
+		// wanting a translation was named, a page a deny kept from them
+		// included.
+		may, err := pageCheck(root, caller, auth.ActView)
+		if err != nil {
+			return nil, err
+		}
 		states := cfg.Check(sources, present)
+		kept := states[:0]
+		for _, st := range states {
+			if may(st.Page) {
+				kept = append(kept, st)
+			}
+		}
+		states = kept
 		counts := i18n.Counts(states)
 		var b strings.Builder
 		fmt.Fprintf(&b, "%d current, %d stale, %d missing, %d untracked\n",

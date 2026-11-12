@@ -11,6 +11,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/i18n"
 	"github.com/quilzo/quilzo/internal/mcp"
 	"github.com/quilzo/quilzo/internal/note"
 	"github.com/quilzo/quilzo/internal/site"
@@ -263,5 +264,30 @@ func TestAReadersNotesAndChecksAreOfThePagesTheyMayRead(t *testing.T) {
 		if !strings.Contains(got, "index") {
 			t.Errorf("%v left out the page the reader may read: %s", args, got)
 		}
+	}
+}
+
+// The check of translations names only the pages the caller may read. It
+// named every page missing a translation, so a reader denied a page that
+// list_pages leaves out was told its name by asking which pages want
+// translating.
+func TestTheTranslationsCheckDoesNotNameAPageOutOfReach(t *testing.T) {
+	root, pol := identityStore(t)
+	if got := mcpAs(t, root, asAdmin("dana"))("quilzo_write", "write_page", map[string]any{
+		"page": "redundancy-plan", "fields": map[string]any{"title": "Who goes"}}); refused(got) {
+		t.Fatal(got)
+	}
+	grantAll(t, root, pol,
+		auth.Binding{Principal: "rae", Role: auth.RoleReader, Resource: "/"},
+		auth.Binding{Principal: "rae", Role: auth.RoleReader, Resource: "/redundancy-plan", Deny: true})
+	if err := saveJSON(localesPath(root), i18n.Config{Default: "en", Locales: []i18n.Locale{"en", "fr"}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := mcpAs(t, root, asAdmin("dana"))("quilzo_read", "check_translations", nil); !strings.Contains(got, "redundancy-plan") {
+		t.Fatalf("an administrator was not told the page wants translating: %s", got)
+	}
+	got := mcpAs(t, root, withRole("rae", auth.RoleReader))("quilzo_read", "check_translations", nil)
+	if strings.Contains(got, "redundancy") || !strings.Contains(got, "missing index fr") {
+		t.Errorf("check_translations: %s", got)
 	}
 }
