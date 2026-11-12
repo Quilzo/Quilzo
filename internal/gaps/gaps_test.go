@@ -29,6 +29,42 @@ func TestAQuestionIsKeptWithoutAnybodysDetails(t *testing.T) {
 	}
 }
 
+// A visitor who says who and where they are is kept without it: "I am
+// Janet Zqwood, ..., 14 Rose Lane, Leeds LS1 4AB" was kept whole, shown to
+// staff and offered as the name of the page to write, under a promise that
+// anything that could name the visitor is taken out.
+func TestAQuestionIsKeptWithoutTheNameAndAddressItGives(t *testing.T) {
+	for q, leaks := range map[string][]string{
+		"Do you ship to Zqbarra island? I am Janet Zqwood, janet.zqwood@gmail.com, 14 Rose Lane, Leeds LS1 4AB, card 4111 1111 1111 1111": {
+			"Janet", "Zqwood", "14 Rose Lane", "LS1 4AB", "4111"},
+		"Do you deliver to Zqmoor farm? I am Peter Zqhill of 9 Mill Road, York YO1 7HH": {"Peter", "Zqhill", "9 Mill Road", "YO1 7HH"},
+		"Hi, my name is Ana María López and I live at 221B Baker Street":                {"Ana", "López", "221B Baker Street"},
+		"This is Tom Brady from 1600 Pennsylvania Avenue, Washington DC 20500-0003":     {"Tom Brady", "1600 Pennsylvania", "20500"},
+		"I'm Sam O'Neill, can you post to SW1A 1AA?":                                    {"Sam", "O'Neill", "SW1A 1AA"},
+	} {
+		got := Clean(q, nil)
+		for _, leak := range leaks {
+			if strings.Contains(got, leak) {
+				t.Errorf("%q kept %q", got, leak)
+			}
+		}
+	}
+	if got := Clean("Hi, I'm Sam O'Neill. Delivered to 9 Mill Road, YO1 7HH?", nil); got != "Hi, I'm [name]. Delivered to [address], [postcode]?" {
+		t.Errorf("masked as %q", got)
+	}
+	// What a question is about is kept.
+	for q, want := range map[string]string{
+		"I am looking for gluten-free bread":               "I am looking for gluten-free bread",
+		"Do you ship to Zqbarra island? I am Janet Zqwood": "Do you ship to Zqbarra island? I am [name]",
+		"Is Rose Lane car park open on Sundays?":           "Is Rose Lane car park open on Sundays?",
+		"Do you have 3 bags of flour?":                     "Do you have 3 bags of flour?",
+	} {
+		if got := Clean(q, nil); !strings.Contains(got, want) {
+			t.Errorf("Clean(%q) = %q, which lost %q", q, got, want)
+		}
+	}
+}
+
 // Questions are grouped by what they are about, most asked first; a group
 // closed stays closed until somebody asks again.
 func TestQuestionsAreGroupedAndClosed(t *testing.T) {

@@ -904,8 +904,9 @@ var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
 </form>
 <p class="qz-small">{{.Disclosure}} Answers come from this site's pages, and
   every sentence links to where it came from. {{if .V.Keeps}}A question it cannot answer, or whose
-  answer you say did not help, is kept for a while with anything that could name you taken out, so the
-  site can say it better; nothing else you ask is stored.{{else}}Nothing you ask is stored.{{end}}</p>
+  answer you say did not help, is kept for a while
+  with email addresses, telephone and card numbers, and the names and street addresses it recognises taken out,
+  so the site can say it better; nothing else you ask is stored.{{else}}Nothing you ask is stored.{{end}}</p>
 </main>{{.Voice}}</body></html>`))
 
 // askCSS is the built-in page's stylesheet, served at /ask.css. Small and

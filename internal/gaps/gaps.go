@@ -101,6 +101,18 @@ var (
 	// telephone number written the way a country writes its own, an
 	// account or an order number. None says what a question is about.
 	reDigits = regexp.MustCompile(`\+?\(?\d[\d ().-]{6,}\d`)
+
+	// Who and where a visitor says they are. Visitors type it into a
+	// chatbot as they would into a letter, "I am Janet Zqwood, 14 Rose
+	// Lane, Leeds LS1 4AB", and it was kept whole, shown to staff and
+	// offered as the name of the page to write, under a promise that
+	// anything that could name them is taken out. A name is the
+	// capitalised words after "I am", "my name is" or "this is"; a street
+	// address a house number, capitalised words and a street's word; a
+	// postcode a British one, or an American ZIP after its state.
+	reIntroduced = regexp.MustCompile(`((?i:\b(?:i am|i'm|i’m|my name is|my name's|my name’s|this is|name is)\s+))\p{Lu}[\p{L}'’-]*(?:\s+\p{Lu}[\p{L}'’-]*){0,3}`)
+	reStreet     = regexp.MustCompile(`\b\d{1,5}[A-Za-z]?,?\s+(?:\p{Lu}[\p{L}'’-]*\s+){1,3}(?i:street|st|road|rd|lane|ln|avenue|ave|drive|dr|close|way|place|pl|court|ct|crescent|terrace|gardens|grove|square|boulevard|blvd|hill|row|mews|walk|park)\b\.?`)
+	rePostcode   = regexp.MustCompile(`(?i)\b[a-z]{1,2}\d[a-z\d]?\s*\d[a-z]{2}\b|\b\d{5}-\d{4}\b|\b[A-Z]{2}\s+\d{5}\b`)
 )
 
 // Clean is a question as it is kept: personal data masked, whitespace
@@ -109,6 +121,9 @@ var (
 func Clean(q string, allowed []string) string {
 	m := &pii.Masker{Allowed: allowed}
 	q = rePlaceholder.ReplaceAllString(m.Mask(q, false), "[$1]")
+	q = reIntroduced.ReplaceAllString(q, "${1}[name]")
+	q = reStreet.ReplaceAllString(q, "[address]")
+	q = rePostcode.ReplaceAllString(q, "[postcode]")
 	q = reDigits.ReplaceAllStringFunc(q, func(s string) string {
 		n := 0
 		for _, r := range s {
@@ -126,6 +141,25 @@ func Clean(q string, allowed []string) string {
 		q = strings.ToValidUTF8(q[:MaxQuestion], "")
 	}
 	return q
+}
+
+// reMasked is what Clean put in place of something personal.
+var reMasked = regexp.MustCompile(`\[[a-z]+\]`)
+
+// Topic is what a kept question is about, to name the page that answers
+// it: its first sentence, without what Clean took out, in at most eight
+// words. The name had been the whole question, so a page offered to be
+// written for "Do you ship to Zqbarra island? I am Janet Zqwood, 14 Rose
+// Lane" would have published a visitor's name and street in its address.
+func Topic(q string) string {
+	if i := strings.IndexAny(q, "?!.\n"); i > 0 {
+		q = q[:i]
+	}
+	words := strings.Fields(reMasked.ReplaceAllString(q, " "))
+	if len(words) > 8 {
+		words = words[:8]
+	}
+	return strings.Join(words, " ")
 }
 
 // Add keeps one unanswered question, already Clean.
