@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -850,5 +851,25 @@ func TestTheAgentInterfaceKnowsItsOwnOriginWhateverItsCase(t *testing.T) {
 		if got := w.Code; (got == http.StatusForbidden) != (want == http.StatusForbidden) {
 			t.Errorf("Origin %s: %d %s", origin, got, w.Body)
 		}
+	}
+}
+
+// A request larger than the admin takes is told the admin's limit.
+//
+// Every POST here is bounded at MaxRequestBody before the interface reads
+// it, and the interface's refusal named its own larger bound: an agent
+// writing a 3 MB page was told 4194304 bytes was the limit, tried again
+// under it, and was refused again with the same words.
+func TestATooLargeRequestAtTheInterfaceNamesTheAdminsLimit(t *testing.T) {
+	r := newIfaceRig(t)
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"pad":"` + strings.Repeat("a", 3<<20) + `"}}`
+	req := httptest.NewRequest("POST", "/mcp", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+r.token)
+	w := httptest.NewRecorder()
+	r.srv.Handler().ServeHTTP(w, req)
+	want := "at most " + strconv.Itoa(MaxRequestBody) + " bytes"
+	if w.Code != http.StatusRequestEntityTooLarge || !strings.Contains(w.Body.String(), want) {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
 	}
 }

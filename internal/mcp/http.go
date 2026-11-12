@@ -173,8 +173,18 @@ func (e *Endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, MaxBody))
 	if err != nil {
+		// The limit that stopped the read, which need not be this one: the
+		// admin bounds every POST at 2 MiB before this reads a byte, and a
+		// refusal naming MaxBody sent an agent writing a 3 MB page back
+		// with 3.5 MB, to be refused again in the same words.
+		var tooBig *http.MaxBytesError
+		if !errors.As(err, &tooBig) {
+			writeRPC(w, http.StatusBadRequest, Response{JSONRPC: "2.0",
+				Error: &Error{Code: CodeInvalidRequest, Message: "the body could not be read"}})
+			return
+		}
 		writeRPC(w, http.StatusRequestEntityTooLarge, Response{JSONRPC: "2.0",
-			Error: &Error{Code: CodeInvalidRequest, Message: fmt.Sprintf("a request is at most %d bytes", MaxBody)}})
+			Error: &Error{Code: CodeInvalidRequest, Message: fmt.Sprintf("a request is at most %d bytes", tooBig.Limit)}})
 		return
 	}
 	body = bytes.TrimSpace(body)
