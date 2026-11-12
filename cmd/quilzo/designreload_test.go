@@ -17,7 +17,6 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 
@@ -175,7 +174,7 @@ func TestSIGHUPReadsTheDesignAgain(t *testing.T) {
 			done <- err
 			return err
 		})
-		if err := syscall.Kill(os.Getpid(), syscall.SIGHUP); err != nil {
+		if err := hangup(); err != nil {
 			t.Fatal(err)
 		}
 		select {

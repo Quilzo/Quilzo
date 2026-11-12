@@ -11,11 +11,8 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -25,66 +22,6 @@ import (
 	"github.com/quilzo/quilzo/internal/posture"
 	"github.com/quilzo/quilzo/internal/render"
 )
-
-// With no log writer running and the log another account's, `logd status`
-// says that nothing can write the log, not that this account writes it.
-//
-// It said "this process writes the audit log itself, so anything that can
-// execute code as this account can rewrite the record", which is the
-// opposite of the truth there: the separation is in force, this account
-// cannot open the log at all, and what it does goes unrecorded, an agent's
-// actions refused, until the writer runs. That is the moment somebody is
-// diagnosing the audit log, under the reference compose with logd stopped.
-func TestLogdStatusSaysNothingWritesALogThatIsAnotherAccounts(t *testing.T) {
-	if runtime.GOOS != "linux" || os.Geteuid() != 0 {
-		t.Skip("needs root on Linux, to give the log to another account and ask as the CMS")
-	}
-	t.Setenv("HOME", t.TempDir())
-	base := sharedTempDir(t)
-	bin := filepath.Join(base, "quilzo")
-	copyExecutable(t, os.Args[0], bin)
-	if w == nil {
-		w = out.New(false)
-	}
-	root := filepath.Join(base, "store")
-	if err := cmdInit(root); err != nil {
-		t.Fatal(err)
-	}
-	dir := filepath.Join(base, "audit")
-	if err := os.Mkdir(dir, 0o750); err != nil {
-		t.Fatal(err)
-	}
-	if err := setAuditDir(root, dir); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "audit.jsonl"), nil, 0o640); err != nil {
-		t.Fatal(err)
-	}
-	home := filepath.Join(base, "home")
-	if err := os.Mkdir(home, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	chownTree(t, dir, writerAccount, cmsAccount)
-	chownTree(t, root, cmsAccount, cmsAccount)
-	chownTree(t, home, cmsAccount, cmsAccount)
-
-	status := exec.Command(bin, "quilzo-main", "--root", root, "logd", "status")
-	status.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: cmsAccount, Gid: cmsAccount}}
-	status.Env = append(os.Environ(), "HOME="+home, "NO_COLOR=1")
-	got, err := status.CombinedOutput()
-	if err != nil {
-		t.Fatalf("logd status, as the CMS: %v\n%s", err, got)
-	}
-	text := string(got)
-	if strings.Contains(text, "writes the audit log itself") {
-		t.Errorf("with the log another account's and no writer, status says this account writes it:\n%s", text)
-	}
-	for _, want := range []string{"another account's", "until the writer runs"} {
-		if !strings.Contains(text, want) {
-			t.Errorf("status does not say %q:\n%s", want, text)
-		}
-	}
-}
 
 // `quilzo logd` asked for help after its flags prints the help, as root or
 // not, and starts nothing; a word it does not take is refused rather than
@@ -292,102 +229,6 @@ func TestApprovingAMoveOfTheAuditLogOnPeopleSaysWhichKeysCheckWhatWasSignedBefor
 	if said := loc.Query().Get("m"); !strings.Contains(said, old) {
 		t.Errorf("approving the move on People does not say what was signed before it checks against %s: %q",
 			old, said)
-	}
-}
-
-// With no log writer running, `logd status` and the posture scan say that
-// nothing can write the log wherever this account cannot write it: where
-// the log is another account's, before the writer has made it in a
-// directory that is the writer's, and where this account cannot so much as
-// look at it.
-//
-// Status was asked whether the log was another account's, which a log
-// nobody has made yet, or one this account cannot inspect, is not, and so
-// said "this process writes the audit log itself" of a log it could not
-// open. The posture scan said "The CMS writes its own audit log ... the
-// CMS opens the audit log directly" wherever no socket was there, as under
-// the reference compose with logd stopped, when the CMS could not open it
-// at all.
-func TestNothingWritingTheLogIsSaidWhereverThisAccountCannotWriteIt(t *testing.T) {
-	if runtime.GOOS != "linux" || os.Geteuid() != 0 {
-		t.Skip("needs root on Linux, to give the log to another account and ask as the CMS")
-	}
-	t.Setenv("HOME", t.TempDir())
-	if w == nil {
-		w = out.New(false)
-	}
-	for _, c := range []struct {
-		name string
-		// lay gives the log's directory to the writer as this case has it.
-		lay func(t *testing.T, dir string)
-	}{
-		{"the writer's", func(t *testing.T, dir string) {
-			if err := os.WriteFile(filepath.Join(dir, "audit.jsonl"), nil, 0o640); err != nil {
-				t.Fatal(err)
-			}
-			chownTree(t, dir, writerAccount, cmsAccount)
-		}},
-		{"not made yet", func(t *testing.T, dir string) {
-			chownTree(t, dir, writerAccount, cmsAccount)
-		}},
-		{"out of reach", func(t *testing.T, dir string) {
-			if err := os.WriteFile(filepath.Join(dir, "audit.jsonl"), nil, 0o600); err != nil {
-				t.Fatal(err)
-			}
-			chownTree(t, dir, writerAccount, writerAccount)
-			if err := os.Chmod(dir, 0o700); err != nil {
-				t.Fatal(err)
-			}
-		}},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			base := sharedTempDir(t)
-			bin := filepath.Join(base, "quilzo")
-			copyExecutable(t, os.Args[0], bin)
-			root := filepath.Join(base, "store")
-			if err := cmdInit(root); err != nil {
-				t.Fatal(err)
-			}
-			dir := filepath.Join(base, "audit")
-			if err := os.Mkdir(dir, 0o750); err != nil {
-				t.Fatal(err)
-			}
-			if err := setAuditDir(root, dir); err != nil {
-				t.Fatal(err)
-			}
-			home := filepath.Join(base, "home")
-			if err := os.Mkdir(home, 0o700); err != nil {
-				t.Fatal(err)
-			}
-			c.lay(t, dir)
-			chownTree(t, root, cmsAccount, cmsAccount)
-			chownTree(t, home, cmsAccount, cmsAccount)
-
-			asCMS := func(args ...string) string {
-				t.Helper()
-				cmd := exec.Command(bin, append([]string{"quilzo-main", "--root", root}, args...)...)
-				cmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: cmsAccount, Gid: cmsAccount}}
-				cmd.Env = append(os.Environ(), "HOME="+home, "NO_COLOR=1")
-				got, _ := cmd.CombinedOutput()
-				return string(got)
-			}
-			status := asCMS("logd", "status")
-			if strings.Contains(status, "writes the audit log itself") {
-				t.Errorf("with a log this account cannot write and no writer, status says this account writes it:\n%s",
-					status)
-			}
-			if !strings.Contains(status, "until the writer runs") {
-				t.Errorf("status does not say nothing is recorded until the writer runs:\n%s", status)
-			}
-			scan := asCMS("posture")
-			if strings.Contains(scan, "opens the audit log directly") || strings.Contains(scan, "writes its own audit log") {
-				t.Errorf("with a log this account cannot write and no writer, the posture scan says the CMS "+
-					"opens it directly:\n%s", scan)
-			}
-			if !strings.Contains(scan, "not answering") {
-				t.Errorf("the posture scan does not say the writer is not answering:\n%s", scan)
-			}
-		})
 	}
 }
 
