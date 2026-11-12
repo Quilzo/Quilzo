@@ -386,6 +386,7 @@ func (st *Site) Handler() http.Handler {
 	// nlweb.go. Exact patterns, so they sit beside the chatbots at /ask/.
 	mux.HandleFunc("GET /ask", st.nlwebAsk)
 	mux.HandleFunc("POST /ask", st.nlwebAsk)
+	mux.HandleFunc("OPTIONS /ask", st.nlwebPreflight)
 	mux.HandleFunc("POST /mcp", st.nlwebMCP)
 	mux.HandleFunc("/ask.css", st.askStylesheet)
 	mux.HandleFunc("/agent.css", st.agentStylesheet)
