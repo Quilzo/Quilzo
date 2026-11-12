@@ -1151,7 +1151,12 @@ in the editor) in its head, its headers and the sitemap. And every page has a
 Markdown copy of its words at `/NAME.md`, made from the content rather than
 scraped from the markup, linked from the page and from `llms.txt`, for a
 language model or a reader's agent; the copy is never indexed and names the
-page as canonical.
+page as canonical. It has what a visitor is shown: a listing's rows, a blog's
+posts and the events still to come, each as a list item with its link, its
+date and its price. A product, a post or an event with a page of its own has
+its copy at that page's address with `.md` added (`/post/rye.md`). `llms.txt`
+lists what the sitemap lists, so not the page records are drawn with nor one
+left out of results.
 
 **What people looked for and did not find.** The cookieless count of views
 also counts addresses people asked for that are not on the site, and searches

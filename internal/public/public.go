@@ -40,6 +40,7 @@ import (
 	"github.com/quilzo/quilzo/internal/personalise"
 	"io"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -1272,6 +1273,13 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 // legal marking that depends on every template remembering to include a partial
 // is a marking that will be missing from the one template nobody checked.
 func (st *Site) injectHead(html, page, hash string, body any) string {
+	return st.injectHeadAt(html, page, "", hash, body)
+}
+
+// injectHeadAt is injectHead for the page of one record that page draws,
+// the record named by key in its address (/page/key); "" for the page
+// itself.
+func (st *Site) injectHeadAt(html, page, key, hash string, body any) string {
 	var b strings.Builder
 	b.WriteString(`<link rel="manifest" href="/manifest.webmanifest">` + "\n")
 	b.WriteString(st.iconLink())
@@ -1315,8 +1323,11 @@ func (st *Site) injectHead(html, page, hash string, body any) string {
 	// serving the fullest starter page once the tag searches stopped lowering
 	// it, and it read rel="canonİcal", which names no canonical, as one, so
 	// the page went out without its address.
-	if c := seo.Canonical(st.BaseURL, page, st.Index, body); c != "" &&
-		asciifold.Index(html, `rel="canonical"`) < 0 {
+	c := seo.Canonical(st.BaseURL, page, st.Index, body)
+	if key != "" {
+		c = st.recordURL(page, key)
+	}
+	if c != "" && asciifold.Index(html, `rel="canonical"`) < 0 {
 		b.WriteString(`<link rel="canonical" href="` + escape(c) + `">` + "\n")
 	}
 	if seo.NoIndex(body) {
@@ -1327,6 +1338,9 @@ func (st *Site) injectHead(html, page, hash string, body any) string {
 		mdName := page
 		if page == st.Index {
 			mdName = "index"
+		}
+		if key != "" {
+			mdName = page + "/" + url.PathEscape(key)
 		}
 		b.WriteString(`<link rel="alternate" type="text/markdown" href="/` + escape(mdName) + `.md">` + "\n")
 	}
@@ -1632,7 +1646,17 @@ func (st *Site) llms(w http.ResponseWriter, r *http.Request) {
 			"each event's own page carries schema.org Event data.\n\n")
 	}
 	fmt.Fprintf(w, "## Pages\n\n")
+	base := strings.TrimSuffix(st.BaseURL, "/")
 	for _, n := range names {
+		// What the sitemap lists, by the sitemap's rule. A page records are
+		// drawn with is no page of its own (its copy was a heading or
+		// nothing: /product.md, two bytes), and a page that asks to be left
+		// out of search results, or copies one elsewhere, was listed here
+		// for every model while the sitemap left it out. A record's copy is
+		// linked from the listing that shows it.
+		if _, ok := detailOf(pages[n]); ok || !seo.InSitemap(base, n, st.Index, pages[n]) {
+			continue
+		}
 		title := n
 		if m, ok := pages[n].(map[string]any); ok {
 			if t, ok := m["title"].(string); ok && t != "" {

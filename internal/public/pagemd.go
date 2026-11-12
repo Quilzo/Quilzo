@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/quilzo/quilzo/internal/listing"
+	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/seo"
 )
 
@@ -21,21 +23,31 @@ import (
 // headings, a section's items become a list, links keep their address. It
 // is never indexed, and names the page it copies as canonical, so it does
 // not compete with the page in search results.
+//
+// The content as the page is drawn with it (Sources.For), not as it is
+// stored. A listing's rows, a blog's posts and the events still to come are
+// not in the page's own fields: they are read when the page is asked for.
+// Made from the stored page, /shop.md was the shop's heading and intro and
+// not one product, /blog.md not one post and /events.md not one event, and
+// an agent that llms.txt sent there was told the shop sold nothing. A record
+// that has a page of its own has a copy too (recordMarkdown).
 
 // mdKeys are the fields read as a section's words, in order.
 var mdKeys = []string{"eyebrow", "lead", "subtitle", "intro", "summary", "description", "text", "body", "quote", "caption"}
 
-// mdSkip are fields that are never words.
+// mdSkip are fields that are never words. Not "listing": drawn, a listing
+// section carries its rows.
 var mdSkip = map[string]bool{"id": true, "icon": true, "image": true, "images": true, "video": true, "layout": true,
-	"form": true, "style": true, "variant": true, "slug": true, "listing": true, "block": true,
+	"form": true, "style": true, "variant": true, "slug": true, "block": true,
 	"noindex": true, "canonical": true, "members_only": true, "expires": true, "starts": true}
 
 var reMediaID = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 const mdMaxDepth = 6
 
-// markdownOf is a page's content as Markdown.
-func markdownOf(body any) string {
+// markdownOf is a page's content as Markdown: the page as it is drawn, and
+// the listings it names by its page field, which a layout draws after it.
+func markdownOf(body any, feeds []any) string {
 	m, ok := body.(map[string]any)
 	if !ok {
 		return ""
@@ -67,6 +79,11 @@ func markdownOf(body any) string {
 			}
 		}
 	}
+	for _, f := range feeds {
+		if feed, ok := f.(map[string]any); ok {
+			mdSection(&b, feed, 0)
+		}
+	}
 	return strings.TrimSpace(b.String()) + "\n"
 }
 
@@ -80,8 +97,10 @@ func mdSection(b *strings.Builder, m map[string]any, depth int) {
 	}
 	mdWords(b, m, depth)
 	for _, k := range sortedKeys(m) {
+		// A video's caption tracks are a list the drawing adds, and are
+		// files, not words.
 		items, ok := m[k].([]any)
-		if !ok || mdSkip[k] || k == "body_paragraphs" {
+		if !ok || mdSkip[k] || k == "body_paragraphs" || strings.HasSuffix(k, "_tracks") {
 			continue
 		}
 		wrote := false
@@ -119,8 +138,8 @@ func mdWords(b *strings.Builder, m map[string]any, depth int) {
 	}
 }
 
-// mdItem is one list item: its title or label, a link when it has one, and
-// its text.
+// mdItem is one list item: its title or label, a link when it has one, when
+// and where it is and what it costs, and its text.
 func mdItem(m map[string]any) string {
 	label := ""
 	for _, k := range []string{"title", "label", "name", "question", "value"} {
@@ -132,6 +151,9 @@ func mdItem(m map[string]any) string {
 	href, _ := m["href"].(string)
 	if href = strings.TrimSpace(href); label != "" && safeHref(href) {
 		label = "[" + label + "](" + href + ")"
+	}
+	if d := mdDetails(m); d != "" && label != "" {
+		label += " (" + d + ")"
 	}
 	text := ""
 	for _, k := range []string{"text", "answer", "summary", "description", "body"} {
@@ -147,6 +169,26 @@ func mdItem(m map[string]any) string {
 		return label
 	}
 	return text
+}
+
+// mdDetails is what a row says beside its name, as the page shows it: an
+// event's or a post's date in words, an event's place, and a price as
+// written out. A price stored as a number (pence) is not one a reader can
+// read, and the page shows the written one.
+func mdDetails(m map[string]any) string {
+	var out []string
+	for _, k := range []string{"when", "place"} {
+		if s, ok := m[k].(string); ok && oneLine(s) != "" {
+			out = append(out, oneLine(s))
+		}
+	}
+	for _, k := range []string{"price_display", "buy_price", "price"} {
+		if s, ok := m[k].(string); ok && oneLine(s) != "" {
+			out = append(out, oneLine(s))
+			break
+		}
+	}
+	return strings.Join(out, " · ")
 }
 
 // safeHref is a link worth keeping in Markdown: a path on this site or an
@@ -183,14 +225,73 @@ func (st *Site) pageMarkdown(w http.ResponseWriter, r *http.Request, pages map[s
 	if !ok {
 		return false
 	}
+	markdownHeaders(w, seo.Canonical(st.BaseURL, base, st.Index, body))
+	// Drawn with no request arguments: the copy is one document for every
+	// reader, as its cache header says, and a booking's or a sign-up's
+	// arguments are one visitor's. A page that cannot be drawn (a listing
+	// that does not resolve) still has its own words.
+	page, feeds := body, []any(nil)
+	if ctx, err := st.sources().For(base, body, nil); err == nil {
+		page = ctx["page"]
+		feeds, _ = ctx[render.Feeds].([]any)
+	}
+	_, _ = w.Write([]byte(markdownOf(page, feeds)))
+	return true
+}
+
+// markdownHeaders are a copy's headers: never indexed, and naming the
+// address it copies.
+func markdownHeaders(w http.ResponseWriter, canonical string) {
 	h := w.Header()
 	h.Set("Content-Type", "text/markdown; charset=utf-8")
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("X-Robots-Tag", "noindex")
 	h.Set("Cache-Control", "public, max-age=0, must-revalidate")
-	if c := seo.Canonical(st.BaseURL, base, st.Index, body); c != "" {
-		h.Set("Link", "<"+c+`>; rel="canonical"`)
+	if canonical != "" {
+		h.Set("Link", "<"+canonical+`>; rel="canonical"`)
 	}
-	_, _ = w.Write([]byte(markdownOf(body)))
-	return true
+}
+
+// recordMarkdown serves the copy of one record's page, at /PAGE/KEY.md:
+// its name, when and where it is, what it costs and who wrote it, as its
+// page says them, then its words. Only the fields the listing exposes,
+// because the row is the listing's (findRecord).
+func (st *Site) recordMarkdown(w http.ResponseWriter, name, key string, d Detail, row listing.Row) {
+	rec := map[string]any(row)
+	var view map[string]any
+	switch {
+	case st.Events != "" && d.Listing == st.Events:
+		view = st.eventView(row)
+	case st.Blog != "" && d.Listing == st.Blog:
+		view = postView(row, st.linksFor(st.Blog))
+	}
+	var b strings.Builder
+	for _, k := range []string{"title", "name"} {
+		if t, ok := rec[k].(string); ok && oneLine(t) != "" {
+			fmt.Fprintf(&b, "# %s\n\n", oneLine(t))
+			break
+		}
+	}
+	about := map[string]any{}
+	for k, v := range rec {
+		about[k] = v
+	}
+	for k, v := range view {
+		about[k] = v
+	}
+	var said []string
+	if d := mdDetails(about); d != "" {
+		said = append(said, d)
+	}
+	for _, k := range []string{"address", "byline"} {
+		if s, ok := about[k].(string); ok && oneLine(s) != "" {
+			said = append(said, oneLine(s))
+		}
+	}
+	if len(said) > 0 {
+		b.WriteString(strings.Join(said, " · ") + "\n\n")
+	}
+	mdWords(&b, rec, 0)
+	markdownHeaders(w, st.recordURL(name, key))
+	_, _ = w.Write([]byte(strings.TrimSpace(b.String()) + "\n"))
 }
