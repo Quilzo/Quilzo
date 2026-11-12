@@ -1920,7 +1920,8 @@ starts:
   somebody;
 - so does what its hands carry out to another system, whatever the
   declaration asks about: an address read with `web_fetch` or opened in its
-  browser, a search, words typed into a page or a desktop app, a file put into
+  browser, a search of the web or of the open research indexes, a citation
+  looked up there, words typed into a page or a desktop app, a file put into
   a page, and a command that reaches the network. Reading this store and
   working in its workspace are not held;
 - triggers start it in its sponsor's name, so they are its sponsor's to set, or

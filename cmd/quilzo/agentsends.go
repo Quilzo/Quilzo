@@ -118,21 +118,37 @@ func outwardAsks(root string, m agent.Manifest, unattended bool, then func(agent
 
 // handReachesOut says whether an action of an agent's hands carries the
 // model's words out to another system, and where: what the exfiltration
-// breaker reads as sending (agent.HandSends), and a command that reaches
-// the network (shell.ReachesOut). Reading this store and working in the
-// workspace reach nothing outside, and are not held.
+// breaker reads as sending (agent.HandSends), a command that reaches the
+// network (shell.ReachesOut), and a search or citation looked up at the
+// open research indexes (researchReach). Reading this store and working in
+// the workspace reach nothing outside, and are not held.
 func handReachesOut(m agent.Manifest, a agent.Action) (string, bool) {
 	if shell.ReachesOut(a, m.Shell) {
 		return "the network (" + hostList(m.Shell.Hosts) + ")", true
 	}
+	if researchReach[a.Op] && a.Tool == "" && a.Delegate == "" {
+		return researchIndexes, true
+	}
 	return agent.HandSends(a)
 }
+
+// researchReach are the actions the agent interface performs for a run
+// (agentexec.Bridged) that carry the model's words to the open research
+// indexes: a search's query, and the identifier a citation is looked up
+// by. They are no hand's, so neither the breaker's list nor the
+// workspace's had them, and a triggered run's search with the draft in its
+// query went to the index with nobody asked while its web_search waited.
+var researchReach = map[string]bool{"research_search": true, "research_cite": true}
+
+// researchIndexes is where researchReach goes (research.Index), as a grant
+// for it names it.
+const researchIndexes = "the open research indexes"
 
 // handSends reports whether an action of the hands is one that may reach
 // out of a run nobody started, and so one a grant may name.
 func handSends(op string) bool {
 	_, sends := agent.HandSends(agent.Action{Op: op})
-	return sends || op == "shell_run"
+	return sends || op == "shell_run" || researchReach[op]
 }
 
 // handReach is what one of an agent's hands' actions may reach, as its
@@ -171,6 +187,8 @@ func handReach(root string, m agent.Manifest, op string) string {
 			return ""
 		}
 		return "its desktop cell"
+	case researchReach[op]:
+		return researchIndexes
 	}
 	return ""
 }

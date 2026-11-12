@@ -26,6 +26,7 @@ import (
 	"github.com/quilzo/quilzo/internal/dual"
 	"github.com/quilzo/quilzo/internal/event"
 	"github.com/quilzo/quilzo/internal/fetch"
+	"github.com/quilzo/quilzo/internal/research"
 	"github.com/quilzo/quilzo/internal/shell"
 	"github.com/quilzo/quilzo/internal/web"
 )
@@ -548,5 +549,96 @@ func TestATriggeredRunsCommandDoesNotReachTheNetworkOnItsOwn(t *testing.T) {
 	}
 	if !asked {
 		t.Fatalf("the command was not put to a person:\n%s", describeRun(rec.Trace))
+	}
+}
+
+// A run nobody started does not search the open research indexes with the
+// model's words on its own either. research_search carries its query to
+// OpenAlex as web_search carries one to the search provider, and
+// research_cite an identifier the model chose, and both went out at once
+// from a run a page going live had started, as reading the store does.
+func TestATriggeredRunsResearchDoesNotReachOutOnItsOwn(t *testing.T) {
+	root, _ := identityStore(t)
+	declaredAutonomy(t, root)
+	m := agent.Manifest{Name: "librarian", Kind: agent.KindTask, Purpose: "Finds work on what the shop writes about",
+		Capabilities: []string{"list_pages", "research_search"}, Autonomy: agent.AutonomyDraft,
+		Budget: agent.Budget{Steps: 6, Tools: 1, Duration: agent.Duration(time.Minute)}}
+	if err := declareAgent(root, m, true, true, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	asked := []string{}
+	old := researchIndex
+	researchIndex = func(string) research.Index {
+		return research.Index{OpenAlex: "https://index.example", Get: func(_ context.Context, u string) ([]byte, int, error) {
+			mu.Lock()
+			asked = append(asked, u)
+			mu.Unlock()
+			return []byte(`{"results":[]}`), 200, nil
+		}}
+	}
+	t.Cleanup(func() { researchIndex = old })
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		choice := `{"op":"done","say":"searched"}`
+		if strings.Contains(string(b), "Nothing has been done yet") {
+			choice = `{"op":"research_search","input":{"query":"the draft of blog/hello"}}`
+		}
+		out, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{
+			"message": map[string]any{"role": "assistant", "content": choice}}}})
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(out)
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("QUILZO_MODEL_URL", srv.URL+"/v1")
+	t.Setenv("QUILZO_MODEL", "stand-in")
+	t.Setenv("QUILZO_MODEL_KEY", "")
+	count := func() int {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(asked)
+	}
+
+	rec := startOnBlog(t, root, "librarian")
+	if count() != 0 {
+		t.Fatalf("a run nobody started searched the indexes without a person: %v\n%s", asked, describeRun(rec.Trace))
+	}
+	w := rec.Trace.Waiting
+	if w == nil || w.Action.Op != "research_search" || !strings.HasPrefix(w.Why, agent.UnattendedPrefix) {
+		t.Fatalf("the run did not wait at the search:\n%s", describeRun(rec.Trace))
+	}
+	if c := agent.CommitOf(w.Action, w.Why, agent.WaitAsk, false); c != "sends" {
+		t.Errorf("a triggered run's search is classed as %q", c)
+	}
+	done, err := continueAgentRun(context.Background(), root, rec.ID, &agent.Verdict{N: w.N, Approve: true}, asAdmin("sam"))
+	if err != nil || count() != 1 || !done.Trace.Complete {
+		t.Fatalf("after approval: %v %v\n%s", err, asked, describeRun(done.Trace))
+	}
+	// A citation is looked up at the index too.
+	cite := agent.Action{Op: "research_cite", Input: map[string]any{"name": "p", "id": "doi:10.1/the-draft"}}
+	if why := outwardAsks(root, m, true, nil)(cite); !strings.HasPrefix(why, agent.UnattendedPrefix) {
+		t.Errorf("a triggered run's citation went ahead: %q", why)
+	}
+	// A run a person starts is not changed.
+	if _, out, err := runAgentKept(context.Background(), root, "librarian", "what is written about rye?", true,
+		asAdmin("dana")); err != nil || count() != 2 || out.Trace.Waiting != nil {
+		t.Fatalf("a run a person started was held: %v %v\n%s", err, asked, describeRun(out.Trace))
+	}
+	// And it may be let go unattended as any hand may.
+	if err := agentSendsCmdAs(root, []string{"librarian", "grant", "research_search", "--why", "it reads as posts go live"},
+		asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	pend, err := dualStore(root).Pending(time.Now())
+	if err != nil || len(pend) != 1 {
+		t.Fatalf("%v %+v", err, pend)
+	}
+	t.Cleanup(func(old string) func() { return func() { flagToken = old } }(flagToken))
+	flagToken = personToken(t, root, "sam", auth.RoleAdmin)
+	if err := cmdPending(root, []string{"approve", pend[0].ID}); err != nil {
+		t.Fatal(err)
+	}
+	if rec := startOnBlog(t, root, "librarian"); count() != 3 || rec.Trace.Waiting != nil {
+		t.Fatalf("a granted search still waited: %v\n%s", asked, describeRun(rec.Trace))
 	}
 }
