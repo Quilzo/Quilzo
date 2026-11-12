@@ -293,6 +293,43 @@ func TestFlagsMayComeBeforeTheNames(t *testing.T) {
 	}
 }
 
+// A command that takes as many names as it is given takes them.
+//
+// `research add NAME FILE…` gathers every leading word and was told it took
+// one name, so with a project and a file in hand it went to refuse the
+// second of no words after the flags and the program stopped on an index
+// out of range: `quilzo research add proj notes.txt`, the command the line
+// before it prints, was a panic. `research claim NAME VALUE… --run RUN` was
+// too.
+func TestACommandThatTakesManyNamesTakesThem(t *testing.T) {
+	root, token := accessStore(t)
+	dir := t.TempDir()
+	for _, name := range []string{"a.txt", "b.txt", "c.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(name), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a, b, c := filepath.Join(dir, "a.txt"), filepath.Join(dir, "b.txt"), filepath.Join(dir, "c.txt")
+	if _, e, code := cliRun(t, root, token, "research", "new", "proj", "--question", "does it hold"); code != 0 {
+		t.Fatalf("research new: %s", firstLines(e, 3))
+	}
+	for _, line := range [][]string{
+		{"research", "add", "proj", a},
+		{"research", "add", "proj", a, b, "--to", "data"},
+		{"research", "add", "proj", "--to", "more", c},
+	} {
+		o, e, code := cliRun(t, root, token, line...)
+		if code != 0 || !strings.Contains(o, "added") {
+			t.Errorf("`quilzo %s` exited %d: %s", strings.Join(line[:3], " ")+" …", code, firstLines(e, 3))
+		}
+	}
+	// No such run, which is an answer; the panic was not.
+	_, e, code := cliRun(t, root, token, "research", "claim", "proj", "mean", "median", "--run", "r1")
+	if code != 1 || strings.Contains(e, "panic") {
+		t.Errorf("`quilzo research claim proj mean median --run r1` exited %d: %s", code, firstLines(e, 3))
+	}
+}
+
 // A flag before the name a command is about does not get it past a deny.
 //
 // Taking flags before the names opened this. The check on a page, a

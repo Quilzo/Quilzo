@@ -152,7 +152,8 @@ func cmdResearch(root string, args []string) error {
 		pos, flags := leadingArgs(rest, len(rest))
 		fs := flag.NewFlagSet("research add", flag.ContinueOnError)
 		to := fs.String("to", "", "the folder in the project to put them in")
-		if err := parseFlags(fs, flags, &pos, 1); err != nil {
+		// As many files as are given, so every word may be a name.
+		if err := parseFlags(fs, flags, &pos, len(rest)); err != nil {
 			return err
 		}
 		if len(pos) < 2 {
@@ -238,7 +239,8 @@ func cmdResearch(root string, args []string) error {
 		pos, flags := leadingArgs(rest, len(rest))
 		fs := flag.NewFlagSet("research claim", flag.ContinueOnError)
 		run := fs.String("run", "", "the computation the numbers come from")
-		if err := parseFlags(fs, flags, &pos, 2); err != nil {
+		// As many values as are given, so every word may be a name.
+		if err := parseFlags(fs, flags, &pos, len(rest)); err != nil {
 			return err
 		}
 		if len(pos) < 1 || *run == "" {

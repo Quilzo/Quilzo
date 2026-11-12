@@ -55,8 +55,12 @@ func parseFlags(fs *flag.FlagSet, args []string, pos *[]string, n int) error {
 	if pos != nil {
 		have = len(*pos)
 	}
-	if have+len(got) > n {
-		i := max(n-have, 0)
+	// The first word past the n is the one refused. A caller that came with
+	// more than n names of its own has none here to refuse and counts them
+	// itself: `research add NAME FILE…` did, was told it took one name, and
+	// the refusal reached for a word that was not there and stopped the
+	// program.
+	if i := max(n-have, 0); i < len(got) {
 		return strayWord(fs, args, at[i], have > 0 || i > 0)
 	}
 	if pos != nil {
