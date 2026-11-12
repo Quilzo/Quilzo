@@ -3592,7 +3592,9 @@ func (s *Server) checkAll(commitID string) ([]*a11y.Report, error) {
 }
 
 // deniedChanges are the pages a publish of draft would change that this
-// session may not publish, at most a few of them, named.
+// session may not publish, at most a few of them, named, and those it may
+// not read counted: the page list leaves those out, so a refusal naming
+// one told the reader what a deny was there to keep from them.
 func (s *Server) deniedChanges(p principal, draft string) []string {
 	if s.Policy == nil || draft == "" {
 		return nil
@@ -3602,6 +3604,7 @@ func (s *Server) deniedChanges(p principal, draft string) []string {
 		return []string{"(the changes could not be read: " + err.Error() + ")"}
 	}
 	var out []string
+	hidden := 0
 	for _, c := range changes {
 		id := c.After
 		if id == "" {
@@ -3610,9 +3613,16 @@ func (s *Server) deniedChanges(p principal, draft string) []string {
 		if s.Store.IsTree(id) || s.allows(p, auth.ActPublish, pageResource(c.Path)) {
 			continue
 		}
-		if out = append(out, c.Path); len(out) == 5 {
-			break
+		if !s.allows(p, auth.ActView, pageResource(c.Path)) {
+			hidden++
+			continue
 		}
+		if len(out) < 5 {
+			out = append(out, c.Path)
+		}
+	}
+	if hidden > 0 {
+		out = append(out, plural2(hidden, "one page", fmt.Sprintf("%d pages", hidden))+" you may not read")
 	}
 	return out
 }

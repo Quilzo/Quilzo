@@ -149,15 +149,61 @@ func TestAnExportIsRefusedWhenSomethingInItIsNotTheReadersToRead(t *testing.T) {
 	}
 	t.Setenv("QUILZO_TOKEN", secret)
 	out := t.TempDir()
+	// Refused, counting the collection and not naming it: the list of
+	// collections leaves out one the caller may not read.
 	if err := cmdExport(root, []string{"json", "--ref", "draft", "--to", out, "--force"}); err == nil ||
-		!strings.Contains(err.Error(), "products") {
+		!strings.Contains(err.Error(), "every collection, and one of them is not") || strings.Contains(err.Error(), "products") {
 		t.Errorf("an export went round a deny on a collection: %v", err)
 	}
 	// Over MCP too: export_site left the collections out, and so never
 	// asked whether they were the caller's to read.
 	call := mcpAs(t, root, withRole("rae", auth.RoleReader))
 	if got := call("quilzo_read", "export_site", map[string]any{"ref": "draft", "format": "json"}); !refused(got) ||
-		!strings.Contains(got, "products") {
+		!strings.Contains(got, "every collection") || strings.Contains(got, "products") {
 		t.Errorf("an export over MCP went round a deny on a collection: %s", got)
+	}
+}
+
+// A refusal over many pages counts the pages out of the caller's reach and
+// does not name them. list_pages, find and search leave such a page out as
+// though it were not there, and export_site, check_provenance,
+// check_accessibility and a publish refused by naming it, so a reader
+// denied a page learned its name: often what the page is about, and the
+// one thing the deny was for.
+func TestARefusalDoesNotNameAPageOutOfReach(t *testing.T) {
+	root, pol := identityStore(t)
+	if got := mcpAs(t, root, asAdmin("dana"))("quilzo_write", "write_page", map[string]any{
+		"page": "redundancy-plan", "fields": map[string]any{"title": "Who goes"}}); refused(got) {
+		t.Fatal(got)
+	}
+	grantAll(t, root, pol,
+		auth.Binding{Principal: "rae", Role: auth.RoleReader, Resource: "/"},
+		auth.Binding{Principal: "rae", Role: auth.RoleReader, Resource: "/redundancy-plan", Deny: true},
+		auth.Binding{Principal: "pat", Role: auth.RolePublisher, Resource: "/"},
+		auth.Binding{Principal: "pat", Role: auth.RoleReader, Resource: "/redundancy-plan", Deny: true})
+	call := mcpAs(t, root, withRole("rae", auth.RoleReader))
+	if got := call("quilzo_read", "list_pages", nil); strings.Contains(got, "redundancy") {
+		t.Fatalf("list_pages named the denied page: %s", got)
+	}
+	for _, c := range []struct{ tool, op string }{{"quilzo_read", "export_site"},
+		{"quilzo_check", "check_provenance"}, {"quilzo_check", "check_accessibility"}} {
+		got := call(c.tool, c.op, map[string]any{"ref": "draft"})
+		if !refused(got) || !strings.Contains(got, "one of them is not rae's to read") || strings.Contains(got, "redundancy") {
+			t.Errorf("%s: %s", c.op, got)
+		}
+	}
+	// The command line's export is the same check.
+	if _, err := exportSite(root, withRole("rae", auth.RoleReader), exportOptions{Ref: "draft"}); err == nil ||
+		strings.Contains(err.Error(), "redundancy") {
+		t.Errorf("the command line's export: %v", err)
+	}
+	// A publish names the pages the publisher may read and counts the rest.
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mayPublishChanges(root, s, withRole("pat", auth.RolePublisher), ""); err == nil ||
+		strings.Contains(err.Error(), "redundancy") || !strings.Contains(err.Error(), "one page that is not pat's to read") {
+		t.Errorf("a publish: %v", err)
 	}
 }

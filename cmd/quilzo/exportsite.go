@@ -90,11 +90,18 @@ func exportSite(root string, caller *Caller, opts exportOptions) (*exported, err
 		}
 		// Every collection is in the export, so every one must be the
 		// caller's to read: access is given per collection, and a check on
-		// "/" does not see a deny on one.
+		// "/" does not see a deny on one. Counted and not named, as pages
+		// are (everyPage): the list of collections leaves out one the
+		// caller may not read.
+		hidden := 0
 		for _, name := range names {
-			if err := authorise(root, caller, auth.ActView, auth.DataResource(name)); err != nil {
-				return nil, fmt.Errorf("the export holds every collection, and %s is not yours to read: %w", name, err)
+			if authorise(root, caller, auth.ActView, auth.DataResource(name)) != nil {
+				hidden++
 			}
+		}
+		if hidden > 0 {
+			return nil, fmt.Errorf("the export holds every collection, and %s not %s's to read; "+
+				"an administrator can say which", plural2(hidden, "one of them is", "of them are"), caller.Name)
 		}
 		for _, name := range names {
 			// Paged to the end, not one page of it. A listing has a maximum

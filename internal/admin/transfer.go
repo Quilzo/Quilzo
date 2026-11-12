@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"sort"
 	"strings"
 	"time"
 
@@ -154,17 +153,18 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 	// An export is every page, so every page must be this session's to
 	// read; a deny on part of the site is not seen by the check on "/".
 	// Refused rather than left out, so nobody keeps a copy believing it
-	// whole.
-	var hidden []string
+	// whole. Counted and not named: the page list leaves out a page this
+	// session may not read, and naming one here ("hr/salaries among them")
+	// told the reader what the deny was for.
+	hidden := 0
 	for name := range pages {
 		if !s.allows(p, auth.ActView, pageResource(name)) {
-			hidden = append(hidden, name)
+			hidden++
 		}
 	}
-	if len(hidden) > 0 {
-		sort.Strings(hidden)
-		s.transferRedirect(w, r, "", fmt.Sprintf("an export holds every page, and %d of them are not yours "+
-			"to read, %s among them", len(hidden), hidden[0]))
+	if hidden > 0 {
+		s.transferRedirect(w, r, "", fmt.Sprintf("an export holds every page, and %s not yours "+
+			"to read; an administrator can say which", plural2(hidden, "one of them is", fmt.Sprintf("%d of them are", hidden))))
 		return
 	}
 	format := export.Format(r.FormValue("format"))
