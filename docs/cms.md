@@ -2654,7 +2654,11 @@ than for one that has to be described.
   `auth.revoke` and `siem.export` as `auditlog.export`. A memory deleted from
   the command line was `memory.deleteed`; it is `memory.deleted`, as on the
   Memory screen, and the old name is read as it in a person's memory receipt
-  and in the AI evidence.
+  and in the AI evidence. Approving a change for publication is
+  `review.approve`, installing a starter's design `template.use` and taking
+  the site's IPFS bundle `ipfs.write`, on the screens as on the command line;
+  the screens' old `approval.approve`, `template.install` and `ipfs.bundle`
+  are read as those.
 - **A webhook's address is not in the log.** The path of an incoming-webhook
   address is a credential, as is a `?token=`, so the record of an endpoint
   added, changed, turned off or removed names it by its scheme and host, with

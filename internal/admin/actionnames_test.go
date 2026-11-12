@@ -9,8 +9,12 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/collab"
+	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/starter"
 )
 
 // A grant, a deny and a revocation from the People screen are recorded
@@ -89,6 +93,62 @@ func TestTheLogFilterFindsAnActUnderItsOldAndNewNames(t *testing.T) {
 		}
 		if n := strings.Count(body, `<option value="access.grant"`); n != 0 {
 			t.Errorf("the filter offers the old name beside the new one")
+		}
+	}
+}
+
+// Approving a change for publication, installing a starter's design and
+// taking the site's IPFS bundle are recorded on these screens under the
+// names `quilzo review approve`, `quilzo template use` and `quilzo ipfs
+// write` write for the same acts: review.approve, template.use and
+// ipfs.write.
+//
+// The screens wrote approval.approve, template.install and ipfs.bundle, so
+// whatever looked for an approval, a change of the site's design or the
+// bundle leaving under the command line's name missed every one made in the
+// browser.
+func TestTheseActsInTheBrowserAreRecordedUnderTheCommandLinesNames(t *testing.T) {
+	srv, token := setup(t)
+	var got []string
+	srv.Audit = func(action, _ string, _ map[string]string) { got = append(got, action) }
+
+	draft := draftWrittenBy(t, srv, "a person's change")
+	prop := &collab.Proposal{Content: draft, Author: "writer", AuthorKind: "human", CreatedAt: time.Now().Unix()}
+	srv.Approvals = &Approvals{
+		Policy:  defaultStorePolicy,
+		Current: func() (*collab.Proposal, error) { return prop, nil },
+		Save:    func(p *collab.Proposal) error { prop = p; return nil },
+		KindOf:  func(string) string { return "human" },
+	}
+	if w := postForm(t, srv, "/review/approve", token, "note=read+it"); w.Code >= 400 {
+		t.Fatalf("approving answered %d", w.Code)
+	}
+
+	srv.DesignSet = &Design{InstallLayout: func(string) ([]string, error) { return []string{"page.html"}, nil }}
+	if w := postForm(t, srv, "/design/install", token, "starter="+starter.Names()[0]); w.Code >= 400 {
+		t.Fatalf("installing a starter answered %d", w.Code)
+	}
+
+	if _, err := site.Publish(srv.Store, srv.Store.GetRef(site.RefDraft)); err != nil {
+		t.Fatal(err)
+	}
+	bundle := map[string][]byte{"index.html": []byte("<!doctype html><title>Home</title>")}
+	srv.Decentralised = &Decentralised{
+		Pages:  func() (map[string]any, error) { return map[string]any{"index": map[string]any{}}, nil },
+		Bundle: func() (map[string][]byte, error) { return bundle, nil },
+	}
+	if w := get(t, srv, "/decentralised/bundle", token); w.Code != http.StatusOK {
+		t.Fatalf("the bundle answered %d", w.Code)
+	}
+
+	for _, want := range []string{"review.approve", "template.use", "ipfs.write"} {
+		if !slices.Contains(got, want) {
+			t.Errorf("recorded %v, and not %s", got, want)
+		}
+	}
+	for _, old := range []string{"approval.approve", "template.install", "ipfs.bundle"} {
+		if slices.Contains(got, old) {
+			t.Errorf("recorded %s, the name the command line does not write", old)
 		}
 	}
 }

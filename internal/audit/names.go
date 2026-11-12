@@ -28,6 +28,12 @@ var renamed = map[string]string{
 	"siem.export":   "auditlog.export",
 	// The command line's memory delete.
 	"memory.deleteed": "memory.deleted",
+	// The admin's Review, Design and Permanent web screens, for the acts
+	// `quilzo review approve`, `quilzo template use` and `quilzo ipfs
+	// write` record.
+	"approval.approve": "review.approve",
+	"template.install": "template.use",
+	"ipfs.bundle":      "ipfs.write",
 }
 
 // Canonical is the name an act is recorded under now: action itself, or the
