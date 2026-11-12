@@ -41,6 +41,7 @@ import (
 	"github.com/quilzo/quilzo/internal/personalise"
 	"io"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -582,6 +583,7 @@ func (st *Site) sitemap(w http.ResponseWriter, r *http.Request) {
 
 	entries := make([]seo.Entry, 0, len(names))
 	var standsFor []string
+	variants := st.variants(pages)
 	for _, name := range names {
 		// A page that stands for records is no address of its own: each
 		// record's page is, and is listed below.
@@ -591,8 +593,9 @@ func (st *Site) sitemap(w http.ResponseWriter, r *http.Request) {
 			}
 			continue
 		}
-		// Not a page that asks to be left out, nor a copy of one elsewhere.
-		if !seo.InSitemap(base, name, st.Index, pages[name]) {
+		// Not a page that asks to be left out, nor a copy of one elsewhere,
+		// nor a version of one here that a test or a rule serves.
+		if !Listed(base, name, st.Index, pages[name], variants) {
 			continue
 		}
 		loc := base + "/" + name
@@ -646,8 +649,9 @@ func (st *Site) sitemap(w http.ResponseWriter, r *http.Request) {
 	// held, like a page, because a new page should be crawlable now and not
 	// in an hour.
 	// And the minute, when what it lists depends on the clock: an event's
-	// page goes when the event is over, with nothing published.
-	if tag := st.timedTag(st.contentTag("sitemap"), timed); tag != "" {
+	// page goes when the event is over, with nothing published. And the
+	// variants, which a test starting or stopping changes the same way.
+	if tag := st.timedTag(st.contentTag("sitemap"+variantsTag(variants)), timed); tag != "" {
 		h.Set("ETag", tag)
 		h.Set("Cache-Control", "public, max-age=0, must-revalidate")
 		if etag.Matches(r.Header.Get("If-None-Match"), tag) {
@@ -1106,6 +1110,28 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 		if st.detailRoute(w, r, pages, name) {
 			return
 		}
+		// The site's agent interface, asked for by any method but the POST
+		// it takes (nlwebMCP). Its transport has a client open GET /mcp for
+		// messages from the server and requires a server with none to answer
+		// 405, as the admin's endpoint does. This answered the site's HTML
+		// 404, which a client takes for a server that is gone, and counted
+		// the site's own address as somebody hunting for the admin's. Here,
+		// after the redirects and the pages, so a page published at /mcp is
+		// still served there.
+		//
+		// A browser asking for a page is still told there is none by the
+		// site's own page (nlwebMCP), and is not counted as hunting either:
+		// while the site has the tool, the address is its own.
+		if r.URL.Path == "/mcp" && st.searchIndex() != nil {
+			if asksFor(r, "text/html") && !asksFor(r, "text/event-stream") {
+				st.notFoundPage(w, r)
+				return
+			}
+			w.Header().Set("Allow", http.MethodPost)
+			w.Header().Set("Cache-Control", "no-store")
+			http.Error(w, "the site's agent interface takes POST only", http.StatusMethodNotAllowed)
+			return
+		}
 		// The site's own 404, not Go's plain-text one. This is the route a
 		// visitor reaches from a stale link; the asset and JSON routes above
 		// keep the plain response, because a stylesheet request answered with
@@ -1168,6 +1194,11 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 	_, signup := newsletterSection(body)
 	if signup {
 		tag = strings.TrimSuffix(tag, `"`) + map[bool]string{true: "-nl1", false: "-nl0"}[st.newsletterReady()] + `"`
+	}
+	// A variant's canonical link names the page it is served at, which a
+	// test starting or stopping changes with nothing published.
+	if of, ok := st.variants(pages)[name]; ok {
+		tag = strings.TrimSuffix(tag, `"`) + "-v" + variantsTag(map[string]string{name: of}) + `"`
 	}
 	w.Header().Set("ETag", tag)
 	// Left out of search results when it asks to be, on the response a
@@ -1309,6 +1340,13 @@ func unassembled(w http.ResponseWriter, err error, problem string) {
 // legal marking that depends on every template remembering to include a partial
 // is a marking that will be missing from the one template nobody checked.
 func (st *Site) injectHead(html, page, hash string, body any) string {
+	return st.injectHeadAt(html, page, "", hash, body)
+}
+
+// injectHeadAt is injectHead for the page of one record that page draws,
+// the record named by key in its address (/page/key); "" for the page
+// itself.
+func (st *Site) injectHeadAt(html, page, key, hash string, body any) string {
 	var b strings.Builder
 	b.WriteString(`<link rel="manifest" href="/manifest.webmanifest">` + "\n")
 	b.WriteString(st.iconLink())
@@ -1352,18 +1390,29 @@ func (st *Site) injectHead(html, page, hash string, body any) string {
 	// serving the fullest starter page once the tag searches stopped lowering
 	// it, and it read rel="canonİcal", which names no canonical, as one, so
 	// the page went out without its address.
-	if c := seo.Canonical(st.BaseURL, page, st.Index, body); c != "" &&
-		asciifold.Index(html, `rel="canonical"`) < 0 {
+	//
+	// A variant names the page a test or a rule serves it at (Variants).
+	pages, _, perr := st.pages()
+	c := seo.Canonical(st.BaseURL, page, st.Index, body)
+	if key != "" {
+		c = st.recordURL(page, key)
+	} else if perr == nil {
+		c = st.canonicalIn(page, body, st.variants(pages))
+	}
+	if c != "" && asciifold.Index(html, `rel="canonical"`) < 0 {
 		b.WriteString(`<link rel="canonical" href="` + escape(c) + `">` + "\n")
 	}
 	if seo.NoIndex(body) {
 		b.WriteString(`<meta name="robots" content="noindex">` + "\n")
 	}
 	// Its words alone, for a reader's agent.
-	if pages, _, perr := st.pages(); perr == nil && pages[page] != nil && page != askPageName && page != searchPageName {
+	if perr == nil && pages[page] != nil && page != askPageName && page != searchPageName {
 		mdName := page
 		if page == st.Index {
 			mdName = "index"
+		}
+		if key != "" {
+			mdName = page + "/" + url.PathEscape(key)
 		}
 		b.WriteString(`<link rel="alternate" type="text/markdown" href="/` + escape(mdName) + `.md">` + "\n")
 	}
@@ -1429,8 +1478,9 @@ func (st *Site) manifest(w http.ResponseWriter, r *http.Request) {
 		"display":          "standalone",
 		"background_color": firstColour(st.Background, "#ffffff"),
 		"theme_color":      firstColour(st.ThemeColour, "#0b5c6b"),
-		// An installable app has to work offline, and this is the page that
-		// makes that true rather than a promise.
+		// What an installed site is shown as, so it is not a letter on a
+		// tile the platform chose (icon.go). The comment here said this made
+		// the app work offline; nothing here does (serviceWorker).
 		"icons": st.iconManifest(),
 	}
 	// Shortcuts, from the site's own navigation.
@@ -1500,7 +1550,17 @@ func (st *Site) shortcuts() []map[string]any {
 	return out
 }
 
-// serviceWorker caches published pages so the site survives losing the network.
+// serviceWorker is the worker a page may register to keep the pages it has
+// read for when the network is lost.
+//
+// No page of this site registers it. A worker runs only once a page calls
+// navigator.serviceWorker.register, which takes a script, and the site's
+// policy allows none that does (script-src 'none'; worker-src falls back to
+// it). The site and its start banner offered this address as the offline
+// mode, and a visitor who lost the network got the browser's error, never a
+// page they had read nor /offline. The address keeps answering, and says so
+// in its first lines, for a layout that registers it under a policy that
+// allows that script and worker-src 'self'.
 //
 // Deliberately small and deliberately conservative. A service worker is the one
 // piece of script a quilzo site ships, and a caching bug in one is uniquely
@@ -1514,7 +1574,16 @@ func (st *Site) shortcuts() []map[string]any {
 func (st *Site) serviceWorker(w http.ResponseWriter, r *http.Request) {
 	js := `// quilzo service worker. Network-first: publishing must take effect at once,
 // and a stale page is worse than a slow one.
-const CACHE = 'quilzo-v1';
+//
+// No page of this site registers this worker: registering one takes a script,
+// and the site's policy allows none that does (script-src 'none'). A layout
+// that registers it needs a policy that allows that script and worker-src
+// 'self'.
+//
+// quilzo-v2, not v1: the worker that filled quilzo-v1 kept every answer, a
+// booking, a conversation and a members' page among them. Activating deletes
+// every cache but this one, which is how what it kept leaves the device.
+const CACHE = 'quilzo-v2';
 const OFFLINE = '/offline';
 
 self.addEventListener('install', (e) => {
@@ -1537,7 +1606,14 @@ self.addEventListener('fetch', (e) => {
   e.respondWith(
     fetch(e.request)
       .then((res) => {
-        if (res.ok) {
+        // An answer the site marks no-store or private (a booking with its
+        // cancel link, a conversation, a shared draft, a members' page) and
+        // an address with a query (one visitor's search or sign-up) are
+        // that visitor's alone, and are not kept on a device the next
+        // person may open.
+        const cc = (res.headers.get('Cache-Control') || '').toLowerCase();
+        const mine = cc.includes('no-store') || cc.includes('private') || url.search !== '';
+        if (res.ok && !mine) {
           const copy = res.clone();
           caches.open(CACHE).then((c) => c.put(e.request, copy));
         }
@@ -1557,6 +1633,14 @@ self.addEventListener('fetch', (e) => {
 func (st *Site) offline(w http.ResponseWriter, r *http.Request) {
 	// Plain, self-contained, and accessible: it is shown to somebody who has
 	// already lost the network, so it cannot fetch anything.
+	//
+	// It promises only what the worker that shows it does (serviceWorker).
+	// It said the page asked for "has not been visited on this device" and
+	// that "pages you have already opened remain available": the worker
+	// keeps no booking, conversation, search or members' page, so it shows
+	// this to somebody going back to one they opened a minute ago, and no
+	// page of the site registers the worker, so whoever opens this address
+	// was promised copies that nothing keeps.
 	html := `<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1564,8 +1648,9 @@ func (st *Site) offline(w http.ResponseWriter, r *http.Request) {
 <style>body{font-family:system-ui,sans-serif;max-width:34rem;margin:4rem auto;padding:0 1rem;
 line-height:1.6}h1{font-size:1.5rem}</style></head>
 <body><main><h1>You are offline</h1>
-<p>This page has not been visited on this device, so there is no copy stored here.
-Pages you have already opened remain available.</p>
+<p>No copy of this page is kept on this device. Where this site keeps pages for
+reading offline, it keeps the ones opened here, and never a booking, a
+conversation, a search or a members' page.</p>
 <p><a href="/">Try the home page</a></p></main></body></html>`
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(html))
@@ -1646,7 +1731,19 @@ func (st *Site) llms(w http.ResponseWriter, r *http.Request) {
 			"each event's own page carries schema.org Event data.\n\n")
 	}
 	fmt.Fprintf(w, "## Pages\n\n")
+	base := strings.TrimSuffix(st.BaseURL, "/")
+	variants := st.variants(pages)
 	for _, n := range names {
+		// What the sitemap lists, by the sitemap's rule. A page records are
+		// drawn with is no page of its own (its copy was a heading or
+		// nothing: /product.md, two bytes), and a page that asks to be left
+		// out of search results, or copies one elsewhere, was listed here
+		// for every model while the sitemap left it out. A record's page is
+		// linked from the copy of the listing that shows it, and offers its
+		// own copy there; a variant's is the page it is served at.
+		if _, ok := detailOf(pages[n]); ok || !Listed(base, n, st.Index, pages[n], variants) {
+			continue
+		}
 		title := n
 		if m, ok := pages[n].(map[string]any); ok {
 			if t, ok := m["title"].(string); ok && t != "" {

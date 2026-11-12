@@ -212,6 +212,50 @@ func TestServiceWorkerIsNetworkFirst(t *testing.T) {
 	}
 }
 
+// TestTheServiceWorkerKeepsNoPrivateAnswer — found by reading the worker:
+// it put every 200 GET in the cache, so on a site whose layout registers it
+// a booking page with its cancel link, a conversation at /ask/NAME/c/SECRET,
+// a shared draft and a members' page after sign-out stayed on the device for
+// whoever opened the browser next, though each was answered no-store. And
+// no page of the site registers it, which the worker has to say: the site
+// served it as its offline mode while its policy runs no script that could
+// switch it on.
+func TestTheServiceWorkerKeepsNoPrivateAnswer(t *testing.T) {
+	st, _ := setup(t)
+	js := get(st, "/sw.js", nil).Body.String()
+	put := strings.Index(js, "c.put(")
+	if put < 0 {
+		t.Fatal("the worker caches nothing; this test is out of date")
+	}
+	before := js[:put]
+	for _, want := range []string{"Cache-Control", "no-store", "private", "url.search"} {
+		if !strings.Contains(before, want) {
+			t.Errorf("the worker caches an answer without looking at %q first", want)
+		}
+	}
+	if !strings.Contains(js, "No page of this site registers this worker") {
+		t.Error("the worker does not say that no page of the site registers it")
+	}
+}
+
+// TestTheServiceWorkerDropsWhatAnEarlierOneKept — found by reading the
+// worker beside its fix. It stopped keeping answers marked no-store or
+// private, and went on reading the cache the worker before it had filled:
+// on a device where that one ran, the booking with its cancel link and the
+// members' page it kept were still there, and still what the worker showed
+// when the network was lost. A worker throws a cache away by not naming it:
+// activate deletes every cache but its own, so the name has to change.
+func TestTheServiceWorkerDropsWhatAnEarlierOneKept(t *testing.T) {
+	st, _ := setup(t)
+	js := get(st, "/sw.js", nil).Body.String()
+	if strings.Contains(js, "'quilzo-v1'") {
+		t.Error("the worker reads the cache that kept every answer, private ones among them")
+	}
+	if !strings.Contains(js, "keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))") {
+		t.Error("the worker no longer deletes the caches that are not its own; this test is out of date")
+	}
+}
+
 func TestOfflinePageIsSelfContained(t *testing.T) {
 	st, _ := setup(t)
 	body := get(st, "/offline", nil).Body.String()
@@ -509,5 +553,28 @@ func TestRobotsAdvertisesTheSitemapOnlyWhenThereIsOne(t *testing.T) {
 	st.BaseURL = "https://example.org/"
 	if body = get(st, "/robots.txt", nil).Body.String(); strings.Contains(body, "org//sitemap") {
 		t.Errorf("a trailing slash produced a doubled path:\n%s", body)
+	}
+}
+
+// TestTheOfflinePagePromisesNoCopyThatIsNotKept — found by reading it beside
+// the worker that shows it. It said "This page has not been visited on this
+// device" and "Pages you have already opened remain available". The worker
+// keeps no answer marked no-store or private and no address with a query, so
+// it shows this page to a visitor going back to a booking they opened a
+// minute ago; and on a site whose pages do not register the worker, which is
+// every site as it is set up, somebody who opens /offline is promised copies
+// that nothing keeps.
+func TestTheOfflinePagePromisesNoCopyThatIsNotKept(t *testing.T) {
+	st, _ := setup(t)
+	body := strings.Join(strings.Fields(get(st, "/offline", nil).Body.String()), " ")
+	for _, promise := range []string{"has not been visited on this device", "already opened remain available"} {
+		if strings.Contains(body, promise) {
+			t.Errorf("the offline page says %q, which the worker does not make true", promise)
+		}
+	}
+	for _, want := range []string{"You are offline", "No copy of this page is kept on this device", "never a booking"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the offline page does not say %q:\n%s", want, body)
+		}
 	}
 }

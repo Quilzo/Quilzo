@@ -120,6 +120,17 @@ func (st *Site) detailRoute(w http.ResponseWriter, r *http.Request,
 	}
 
 	row, err := st.findRecord(d, key, firstOf(r.URL.Query()))
+	if err == errNoRecord {
+		// The record's Markdown copy, when KEY.md is not a record's own key:
+		// a page of its own has one, as every page does. Answered 404, an
+		// agent that followed a listing's link to the copy found nothing.
+		if slug, isCopy := strings.CutSuffix(key, ".md"); isCopy && slug != "" {
+			if row, err := st.findRecord(d, slug, firstOf(r.URL.Query())); err == nil {
+				st.recordMarkdown(w, base, slug, d, row)
+				return true
+			}
+		}
+	}
 	if err != nil {
 		if err == errNoRecord {
 			st.notFound(w, r)
@@ -192,7 +203,12 @@ func (st *Site) renderDetail(w http.ResponseWriter, r *http.Request,
 	// manifest link, the catalogue pointer and the provenance marking. A
 	// legal marking present on the shop page and missing from the product
 	// page is a marking that is missing where the product actually is.
-	out = st.injectHead(out, name, "", body)
+	//
+	// At the record's own address: its canonical link and its Markdown copy
+	// named the page it is drawn with, so every post said it was a copy of
+	// /post, and the copy offered an agent was /post.md, which is empty.
+	key, _ := row[d.Key].(string)
+	out = st.injectHeadAt(out, name, key, "", body)
 	// The structured data, injected like the rest of the head so it cannot be
 	// missing from the one template nobody checked.
 	ld := productLD(row, st.Name)
@@ -325,6 +341,16 @@ func numberOf(v any) (float64, bool) {
 		return float64(t), true
 	}
 	return 0, false
+}
+
+// recordURL is the address of one record's page on this site, as the
+// sitemap lists it; "" when the site has no address.
+func (st *Site) recordURL(name, key string) string {
+	base := strings.TrimSuffix(st.BaseURL, "/")
+	if strings.TrimSpace(base) == "" {
+		return ""
+	}
+	return base + "/" + name + "/" + url.PathEscape(key)
 }
 
 // recordEntries is a sitemap entry for each record a page stands for, at

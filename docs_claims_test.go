@@ -82,6 +82,44 @@ func TestTheReadmeDoesNotClaimTheImageIsEmpty(t *testing.T) {
 	}
 }
 
+// The offline mode the manual and `quilzo site` promised does not exist
+// while no page registers the worker.
+//
+// The manual called a published site "an installable app with an offline
+// page and a network-first service worker", and the start banner said
+// "offline: /sw.js". A service worker runs only once a page calls
+// navigator.serviceWorker.register, nothing here ever did, and the site's
+// policy (script-src 'none') would refuse the call if something tried: a
+// visitor who lost the network got the browser's error, never the page they
+// had read nor /offline. So, while no page of the site registers it, every
+// paragraph of the manual that names the worker has to say so, and the banner
+// may not offer it as the offline mode.
+func TestNothingPromisesAnOfflineModeNoPageSwitchesOn(t *testing.T) {
+	entries, err := os.ReadDir("internal/public")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		if strings.Contains(read(t, "internal/public/"+name), "serviceWorker.register(") {
+			t.Skip("a page registers the worker now; what is promised is for another test")
+		}
+	}
+	for _, para := range strings.Split(read(t, "docs/cms.md"), "\n\n") {
+		flat := strings.Join(strings.Fields(para), " ")
+		if strings.Contains(strings.ToLower(flat), "service worker") &&
+			!strings.Contains(flat, "no page registers") && !strings.Contains(flat, "no service worker in the path") {
+			t.Errorf("docs/cms.md names the service worker and not that no page registers it: %.120q", flat)
+		}
+	}
+	if strings.Contains(read(t, "cmd/quilzo/site.go"), "offline: /sw.js") {
+		t.Error("`quilzo site` offers /sw.js as the offline mode, and no page registers it")
+	}
+}
+
 func read(t *testing.T, name string) string {
 	t.Helper()
 	b, err := os.ReadFile(name)

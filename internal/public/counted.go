@@ -30,7 +30,7 @@ func (st *Site) counted(next http.Handler) http.Handler {
 		// stylesheet says otherwise.
 		revisit := sw.status == http.StatusNotModified &&
 			r.Header.Get("Sec-Fetch-Dest") == "document"
-		path := CountedAs(r.URL.Path)
+		path := st.countedAs(r.URL.Path)
 		if page || revisit {
 			st.Analytics.Visit(r, path)
 			st.convertPage(r, path)
@@ -66,20 +66,50 @@ func (st *Site) counted(next http.Handler) http.Handler {
 // Anything else that names a page by its address, a browser's report of a
 // policy violation among them, names it by this too.
 func CountedAs(path string) string {
+	if keyed, ok := keyedAs(path); ok {
+		return keyed
+	}
+	return path
+}
+
+// keyedAs is the prefix an address that is somebody's key is counted
+// under, and whether path is such an address (CountedAs).
+func keyedAs(path string) (string, bool) {
 	lower := strings.ToLower(path)
 	if strings.HasPrefix(lower, "/shared/") {
-		return "/shared/"
+		return "/shared/", true
 	}
 	if rest, ok := strings.CutPrefix(lower, "/ask/"); ok {
 		if name, sub, ok := strings.Cut(rest, "/"); ok {
 			for _, keyed := range []string{"c/", "act/"} {
 				if strings.HasPrefix(sub, keyed) {
-					return "/ask/" + name + "/" + keyed
+					return "/ask/" + name + "/" + keyed, true
 				}
 			}
 		}
 	}
-	return path
+	return "", false
+}
+
+// countedAs is the path a request to this site is counted under: the
+// address of the page that answers it, except an address that is
+// somebody's key, which is counted under its prefix (CountedAs).
+//
+// Any other path is folded the way the page handler reads it and the
+// canonical link names it: /about/, /about%2f and /about are one page, and
+// the home page reached by its own name is /. Counted as asked, they were
+// three rows in analytics, and an experiment whose goal was /delivery saw
+// nobody convert when every visitor came by a link brought in from
+// WordPress, which ends in a slash.
+func (st *Site) countedAs(path string) string {
+	if keyed, ok := keyedAs(path); ok {
+		return keyed
+	}
+	name := strings.Trim(path, "/")
+	if name == "" || name == st.Index {
+		return "/"
+	}
+	return "/" + name
 }
 
 type statusWriter struct {
