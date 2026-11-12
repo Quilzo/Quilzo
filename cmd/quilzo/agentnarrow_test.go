@@ -4,12 +4,20 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
+	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/chatact"
 	"github.com/quilzo/quilzo/internal/site"
 )
 
@@ -248,7 +256,9 @@ func TestACallerDoesNotStripAnAgentsTools(t *testing.T) {
 		}
 	}
 	// And a read-only token still keeps them: a tool call is not a write to
-	// this store, and whether it may happen is autonomy's question.
+	// this store, and whether it may happen is autonomy's question. (A tool
+	// that writes to another system is withheld from such a caller's run
+	// by withholdWrites, which knows the store's integrations.)
 	got := narrowedBy(m, asToken(auth.RolePublisher, auth.Scope{ReadOnly: true}))
 	if len(got.Tools) != len(m.Tools) {
 		t.Errorf("a read-only token stripped %d of %d tool(s)",
@@ -283,5 +293,135 @@ func TestKeepingInstructionsIsTheDeclarationsChoice(t *testing.T) {
 		if got := narrowedBy(m, asToken(auth.RolePublisher, auth.Scope{})).Retrieval.KeepInstructions; got != keep {
 			t.Errorf("declared %v, ran with %v", keep, got)
 		}
+	}
+}
+
+// offeringModel stands in for a model that asks for post_update first,
+// offered it or not, and is finished after. Whether a run's first prompt
+// offered it is in offered.
+func offeringModel(t *testing.T) (offered *bool) {
+	t.Helper()
+	var mu sync.Mutex
+	was := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		choice := `{"op":"done","say":"looked"}`
+		if strings.Contains(string(b), "Nothing has been done yet") {
+			choice = `{"op":"tool:post_update","input":{"text":"Our new post is up"}}`
+			mu.Lock()
+			was = was || strings.Contains(string(b), "tool:post_update")
+			mu.Unlock()
+		}
+		out, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{
+			"message": map[string]any{"role": "assistant", "content": choice}}}})
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(out)
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("QUILZO_MODEL_URL", srv.URL+"/v1")
+	t.Setenv("QUILZO_MODEL", "stand-in")
+	t.Setenv("QUILZO_MODEL_KEY", "")
+	return &was
+}
+
+// readOnlyStore is postingStore with an access policy that grants nothing,
+// as a store one person keeps has, where nothing refuses a read-only
+// credential the run of an agent and its bound (boundManifest) is all that
+// holds it to reading; and a token of dana's issued read-only.
+func readOnlyStore(t *testing.T) (root string, posted *[]string, token string) {
+	t.Helper()
+	root, posted = postingStore(t)
+	if err := saveJSON(policyPath(root), &auth.Policy{}); err != nil {
+		t.Fatal(err)
+	}
+	toks, err := loadTokens(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, _, err = toks.IssueScoped("dana-ro", "dana", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin,
+		auth.Scope{ReadOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveTokens(root, toks); err != nil {
+		t.Fatal(err)
+	}
+	return root, posted, token
+}
+
+// A read-only caller is offered no tool that writes to another system, and
+// one asked for anyway is refused, saying the run only reads. A tool call
+// is not a write to this store, so the manifest's tools were kept whole for
+// such a caller: a token issued read-only ran an agent whose model posted
+// to a social account, with nobody asked.
+func TestAReadOnlyCallerIsOfferedNoToolThatWrites(t *testing.T) {
+	root, posted, token := readOnlyStore(t)
+	offered := offeringModel(t)
+	readOnly := resolveCaller(root, token)
+	if !readOnly.Limits.ReadOnly {
+		t.Fatalf("the token is not read-only: %+v", readOnly)
+	}
+	_, out, err := runAgentKept(context.Background(), root, "poster", "what is new?", true, readOnly)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, describeRun(out.Trace))
+	}
+	if len(*posted) != 0 {
+		t.Fatalf("a read-only caller's run posted: %v", *posted)
+	}
+	if *offered {
+		t.Error("a read-only caller's run was offered a tool that writes")
+	}
+	refused := false
+	for _, st := range out.Trace.Steps {
+		refused = refused || (st.Action.Tool == "post_update" && !st.Allowed && strings.Contains(st.Why, "only reads"))
+	}
+	if !refused || !out.Trace.Complete {
+		t.Fatalf("the write was not refused as one a read-only run may not make:\n%s", describeRun(out.Trace))
+	}
+	// Asked what such a run could do, the answer is the run's.
+	if a, err := could(root, "poster", "tool:post_update", "", true, false, readOnly); err != nil || a.Could ||
+		!strings.Contains(a.Why, "only reads") {
+		t.Errorf("could: %v %+v", err, a)
+	}
+	// A caller who may write is offered it, as declared.
+	*offered = false
+	if _, out, err := runAgentKept(context.Background(), root, "poster", "post the news", true, asAdmin("dana")); err != nil ||
+		len(*posted) != 1 || !*offered {
+		t.Fatalf("a caller who may write was not offered the tool: %v %v %v\n%s", err, *posted, *offered,
+			describeRun(out.Trace))
+	}
+}
+
+// A chatbot's request that only looks things up is read-only too, and its
+// run is offered no tool that writes. It was offered them, and a post the
+// model chose waited for a person as a send from a run nobody started,
+// though the request was one that changes nothing.
+func TestAReadOnlyChatbotRequestIsOfferedNoToolThatWrites(t *testing.T) {
+	root, posted, _ := readOnlyStore(t)
+	offered := offeringModel(t)
+	set, _ := assistant.Load(assistantsPath(root))
+	if err := set.Put(assistant.Assistant{Name: "help", Title: "Help", Public: true,
+		Actions: []assistant.Action{{Name: "news", Kind: assistant.Agent, Target: "poster",
+			Description: "What the shop has posted"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := assistant.Save(assistantsPath(root), set); err != nil {
+		t.Fatal(err)
+	}
+	res := runChatAction(context.Background(), root, chatact.Request{ID: strings.Repeat("b", 32), Chatbot: "help",
+		Action: "news"})
+	if len(*posted) != 0 || *offered {
+		t.Fatalf("a read-only request's run posted or was offered a write: %v %v", *posted, *offered)
+	}
+	runs, _ := listAgentRuns(root, "poster", 0)
+	if len(runs) != 1 || runs[0].Trace.Waiting != nil || res.State == chatact.Waiting {
+		t.Fatalf("a read-only request's post waited for a person rather than being refused: %+v %+v", res, runs)
+	}
+	refused := false
+	for _, st := range runs[0].Trace.Steps {
+		refused = refused || (st.Action.Tool == "post_update" && !st.Allowed && strings.Contains(st.Why, "only reads"))
+	}
+	if !refused {
+		t.Fatalf("the post was not refused as one a read-only run may not make:\n%s", describeRun(runs[0].Trace))
 	}
 }

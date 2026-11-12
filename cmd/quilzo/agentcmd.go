@@ -1050,6 +1050,11 @@ func boundManifest(root string, set *agentSet, name string, withModel, eval bool
 				n.Lost = append(n.Lost, c)
 			}
 		}
+		for _, t := range before.Tools {
+			if toolHost(m, t.Name) == "" {
+				n.Lost = append(n.Lost, "tool:"+t.Name)
+			}
+		}
 		if m.Autonomy != before.Autonomy {
 			n.Autonomy = string(before.Autonomy) + " to " + string(m.Autonomy)
 		}
@@ -1067,6 +1072,7 @@ func boundManifest(root string, set *agentSet, name string, withModel, eval bool
 	// API. See agentnarrow.go.
 	before := m
 	m = narrowedBy(m, caller)
+	withheld := withholdWrites(root, &m, caller)
 	note("caller", fmt.Sprintf("%s holds %s on %s", caller.Name, caller.Role, nonEmpty(caller.Scope, "/")), before)
 	// And by its own standing, when the access policy gives it one: an
 	// agent granted reader on /docs reads /docs, whoever starts it.
@@ -1106,6 +1112,9 @@ func boundManifest(root string, set *agentSet, name string, withModel, eval bool
 			m.Shell = m.Shell.ReadOnlyCopy()
 		}
 	}
+	// Said after every narrowing, each of which builds a manifest of its
+	// own and keeps nothing a run alone holds.
+	m.Withheld = withheld
 	if len(m.Capabilities) == 0 {
 		if earnedWhy != "" {
 			return m, trail, fmt.Errorf("%s holds nothing it may do yet: %s (quilzo eval run %s)", name, earnedWhy, name)

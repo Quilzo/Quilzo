@@ -191,6 +191,12 @@ type vocab struct {
 	shell     *agent.Shell
 	cell      *agent.Cell
 	web       *agent.Web
+	// withholds says whether a tool the declaration names is withheld from
+	// the run (agent.Manifest.Withheld): never offered, and asked for
+	// anyway handed to the gate, which refuses it saying why. As a tool
+	// nobody offered it ended the run, and the reason (whoever started the
+	// run may only read) was nowhere in what it said.
+	withholds func(string) bool
 }
 
 // choice is what the model is asked to return.
@@ -403,6 +409,7 @@ func (d Decider) vocabulary() vocab {
 		v.ops[c] = true
 	}
 	v.browser, v.shell, v.cell, v.web = m.Browser, m.Shell, m.Cell, m.Web
+	v.withholds = d.Session.Withholds
 	for _, t := range d.Tools {
 		if _, ok := d.Session.ToolFor(t.Name); ok && reChoiceName.MatchString(t.Name) {
 			v.tools[t.Name] = t
@@ -531,6 +538,9 @@ func (v vocab) parse(raw string) (agent.Action, error) {
 		op := strings.TrimSpace(c.Op)
 		if name, ok := strings.CutPrefix(op, "tool:"); ok {
 			t, known := v.tools[name]
+			if !known && v.withholds != nil && v.withholds(name) {
+				return agent.Action{Tool: name}, nil
+			}
 			if !known {
 				return agent.Action{}, fmt.Errorf("the model asked for tool %q, which is not one it was offered", clamp(name, 60))
 			}
