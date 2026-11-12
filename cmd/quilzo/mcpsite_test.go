@@ -505,3 +505,35 @@ func TestAnAgentAskingForMoreDaysThanAreGivenIsGivenTheMost(t *testing.T) {
 		}
 	}
 }
+
+// An agent that proposes a signed package is told what can be done about
+// it in words its call can follow: the signature is checked when a person
+// installs the package with its publisher's keys.
+//
+// It was told to "give the publisher's keys with --keys head.pub.json",
+// the command line's words: a flag a call to propose_feature does not
+// have, for a file the agent cannot give.
+func TestAnAgentProposingASignedPackageIsNotToldOfAFlag(t *testing.T) {
+	root, _ := siteStore(t)
+	var pkg map[string]any
+	if err := json.Unmarshal(feature.Example(), &pkg); err != nil {
+		t.Fatal(err)
+	}
+	pkg["signature"] = map[string]any{"key_id": "k1", "ed25519": "AAAA", "algorithms": []any{"ed25519"}}
+	got := siteCrew(t, root)("quilzo_write", "propose_feature", map[string]any{"package": pkg})
+	said, _ := got["error"].(string)
+	if !strings.Contains(said, "signed") || !strings.Contains(said, "a person") {
+		t.Fatalf("a signed package proposed: %v", got)
+	}
+	if strings.Contains(said, "--") || strings.Contains(said, ".json") {
+		t.Errorf("an agent is told of a flag or a file: %s", said)
+	}
+	if list, _ := proposals(root); len(list) != 0 {
+		t.Errorf("a package whose signature nobody checked is waiting: %+v", list)
+	}
+	// The command line still says which flag gives the keys.
+	body, _ := json.Marshal(pkg)
+	if _, _, err := readFeatureBytes(root, body, ""); err == nil || !strings.Contains(err.Error(), "--keys") {
+		t.Errorf("the command line's own words: %v", err)
+	}
+}

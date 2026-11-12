@@ -164,6 +164,14 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 			return nil, err
 		}
 		p, _, err := readFeatureBytes(root, body, "")
+		// In words this call can follow. The refusal was the command line's,
+		// "give the publisher's keys with --keys head.pub.json": a flag this
+		// call does not have, for a file an agent cannot give.
+		if errors.Is(err, errSignedPackage) {
+			return refuse(errors.New("this package is signed, and a signature is checked against its publisher's " +
+				"keys when a person installs the package: propose it without its signature, or leave it to a person " +
+				"to install"))
+		}
 		if err != nil {
 			return refuse(err)
 		}
