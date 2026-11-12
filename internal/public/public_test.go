@@ -212,6 +212,32 @@ func TestServiceWorkerIsNetworkFirst(t *testing.T) {
 	}
 }
 
+// TestTheServiceWorkerKeepsNoPrivateAnswer — found by reading the worker:
+// it put every 200 GET in the cache, so on a site whose layout registers it
+// a booking page with its cancel link, a conversation at /ask/NAME/c/SECRET,
+// a shared draft and a members' page after sign-out stayed on the device for
+// whoever opened the browser next, though each was answered no-store. And
+// no page of the site registers it, which the worker has to say: the site
+// served it as its offline mode while its policy runs no script that could
+// switch it on.
+func TestTheServiceWorkerKeepsNoPrivateAnswer(t *testing.T) {
+	st, _ := setup(t)
+	js := get(st, "/sw.js", nil).Body.String()
+	put := strings.Index(js, "c.put(")
+	if put < 0 {
+		t.Fatal("the worker caches nothing; this test is out of date")
+	}
+	before := js[:put]
+	for _, want := range []string{"Cache-Control", "no-store", "private", "url.search"} {
+		if !strings.Contains(before, want) {
+			t.Errorf("the worker caches an answer without looking at %q first", want)
+		}
+	}
+	if !strings.Contains(js, "No page of this site registers this worker") {
+		t.Error("the worker does not say that no page of the site registers it")
+	}
+}
+
 func TestOfflinePageIsSelfContained(t *testing.T) {
 	st, _ := setup(t)
 	body := get(st, "/offline", nil).Body.String()

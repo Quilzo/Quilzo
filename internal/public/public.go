@@ -1392,8 +1392,9 @@ func (st *Site) manifest(w http.ResponseWriter, r *http.Request) {
 		"display":          "standalone",
 		"background_color": firstColour(st.Background, "#ffffff"),
 		"theme_color":      firstColour(st.ThemeColour, "#0b5c6b"),
-		// An installable app has to work offline, and this is the page that
-		// makes that true rather than a promise.
+		// What an installed site is shown as, so it is not a letter on a
+		// tile the platform chose (icon.go). The comment here said this made
+		// the app work offline; nothing here does (serviceWorker).
 		"icons": st.iconManifest(),
 	}
 	// Shortcuts, from the site's own navigation.
@@ -1463,7 +1464,17 @@ func (st *Site) shortcuts() []map[string]any {
 	return out
 }
 
-// serviceWorker caches published pages so the site survives losing the network.
+// serviceWorker is the worker a page may register to keep the pages it has
+// read for when the network is lost.
+//
+// No page of this site registers it. A worker runs only once a page calls
+// navigator.serviceWorker.register, which takes a script, and the site's
+// policy allows none that does (script-src 'none'; worker-src falls back to
+// it). The site and its start banner offered this address as the offline
+// mode, and a visitor who lost the network got the browser's error, never a
+// page they had read nor /offline. The address keeps answering, and says so
+// in its first lines, for a layout that registers it under a policy that
+// allows that script and worker-src 'self'.
 //
 // Deliberately small and deliberately conservative. A service worker is the one
 // piece of script a quilzo site ships, and a caching bug in one is uniquely
@@ -1477,6 +1488,11 @@ func (st *Site) shortcuts() []map[string]any {
 func (st *Site) serviceWorker(w http.ResponseWriter, r *http.Request) {
 	js := `// quilzo service worker. Network-first: publishing must take effect at once,
 // and a stale page is worse than a slow one.
+//
+// No page of this site registers this worker: registering one takes a script,
+// and the site's policy allows none that does (script-src 'none'). A layout
+// that registers it needs a policy that allows that script and worker-src
+// 'self'.
 const CACHE = 'quilzo-v1';
 const OFFLINE = '/offline';
 
@@ -1500,7 +1516,14 @@ self.addEventListener('fetch', (e) => {
   e.respondWith(
     fetch(e.request)
       .then((res) => {
-        if (res.ok) {
+        // An answer the site marks no-store or private (a booking with its
+        // cancel link, a conversation, a shared draft, a members' page) and
+        // an address with a query (one visitor's search or sign-up) are
+        // that visitor's alone, and are not kept on a device the next
+        // person may open.
+        const cc = (res.headers.get('Cache-Control') || '').toLowerCase();
+        const mine = cc.includes('no-store') || cc.includes('private') || url.search !== '';
+        if (res.ok && !mine) {
           const copy = res.clone();
           caches.open(CACHE).then((c) => c.put(e.request, copy));
         }

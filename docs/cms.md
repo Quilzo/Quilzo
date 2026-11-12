@@ -1397,10 +1397,13 @@ covering the same ground. An agent interface over MCP covering everything that
 reads or authors content — and deliberately not covering anything that changes
 who may do what, what code runs, or what the keys are.
 
-**On a device.** The published site is an installable app with an offline page
-and a network-first service worker, and it can register as a share target so the
-operating system offers it in the share sheet — a share arriving as an ordinary
-form POST with no script in the path.
+**On a device.** The published site is an installable app, and it can register
+as a share target so the operating system offers it in the share sheet — a share
+arriving as an ordinary form POST with no script in the path. It serves a
+network-first service worker at `/sw.js` and an offline page, but no page
+registers the worker: registering one takes a script, and the site's policy
+allows none that does (`script-src 'none'`), so a visitor who loses the network
+sees the browser's own error rather than a page they have read.
 
 **Decentralised publication.** Content-addressed storage maps onto IPFS
 naturally: `quilzo ipfs` computes CIDv1 identifiers and produces a bundle that
@@ -2717,10 +2720,16 @@ editing the page takes. Both are in the audit log.
 
 ## On a phone
 
-A published site is a progressive web app: a manifest, a display mode, an
-offline page, and a service worker that is network-first because publishing has
-to take effect at once and a cache that serves yesterday's page is a rollback
-nobody asked for.
+A published site is installable: a manifest and a display mode. It also serves
+an offline page and a service worker that is network-first, because publishing
+has to take effect at once and a cache that serves yesterday's page is a
+rollback nobody asked for — but no page registers that worker, so the site does
+not work offline. A worker runs only once a page's script registers it, and the
+site's policy allows no script that does (`script-src 'none'`, which
+`worker-src` falls back to). A layout that registers `/sw.js` needs a policy
+that allows that script and `worker-src 'self'`; the worker keeps no answer
+marked `no-store` or `private` and no address with a query, so a booking, a
+conversation or a members' page is not left on the device.
 
 Point `share.form` at one of your forms and it registers as a share target, so
 the operating system offers your site in the share sheet. A share arrives as an ordinary form POST and becomes a submission —
