@@ -292,6 +292,17 @@ func interfaceClient(person, client string) (principal, model string) {
 	return person, "mcp-client"
 }
 
+// appOf is the app a record's model names: nothing for a client holding a
+// person's own token, which interfaceClient records with mcp-client for the
+// model, and the model door with model-client. Read as an app's name, every
+// person's client was one app, drawn calling every tool anybody called.
+func appOf(model string) string {
+	if model == "mcp-client" || model == "model-client" {
+		return ""
+	}
+	return model
+}
+
 // noteCredential names, in a record's detail, the person's own token a
 // call was made with, when no app was given it: what they revoke when
 // their client misbehaves, and what tells two of one person's clients
