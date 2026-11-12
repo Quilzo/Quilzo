@@ -294,7 +294,11 @@ func assistantIndexAs(root string, a assistant.Assistant, c *Caller) (*assistant
 // not be used, for the owner's console. c is as in assistantIndexAs, and nil
 // when the index is asked in no run.
 func assistantKnowledge(root string, a assistant.Assistant, c *Caller) (*assistant.Index, []string, error) {
-	s, err := store.Open(root)
+	// With the keyring, as every command opens the store. Opened without
+	// it, an encrypted store's live commit could not be read, and every
+	// owner-side chatbot path said nothing was published while the public
+	// site went on answering from it.
+	s, err := openEncrypted(root)
 	if err != nil {
 		return nil, nil, err
 	}

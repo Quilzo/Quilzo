@@ -15,7 +15,6 @@ import (
 	"github.com/quilzo/quilzo/internal/odp"
 	"github.com/quilzo/quilzo/internal/oscal"
 	"github.com/quilzo/quilzo/internal/site"
-	"github.com/quilzo/quilzo/internal/store"
 	"os"
 	"path/filepath"
 	"sort"
@@ -282,7 +281,7 @@ func complianceACR(root string, args []string) error {
 		return err
 	}
 
-	s, err := store.Open(root)
+	s, err := openEncrypted(root)
 	if err != nil {
 		return err
 	}
