@@ -97,15 +97,31 @@ func (s *Session) Inherit(parent *Session) {
 // holds private material and has read somebody else's words, and why.
 func (s *Session) Breaks(a Action) (string, bool) {
 	if strings.TrimSpace(a.Tool) == "" {
-		if to, sends := browserSends(a); sends {
-			return s.breaksTo(to, "")
-		}
-		if to, sends := webSends(a); sends {
+		if to, sends := HandSends(a); sends {
 			return s.breaksTo(to, "")
 		}
 		return "", false
 	}
 	return s.breaksTo(s.HostFor(a.Tool), a.Tool)
+}
+
+// HandSends says where an action of the agent's hands would carry words
+// the model chose out to another system: an address its browser opens or
+// it reads on the web, text it types into a page or an app, a file it puts
+// into a page, a query it asks a search provider (browserSends, webSends).
+// The breaker's own reading, said once for whatever else holds such an
+// action: a run nobody started holds it for a person as it holds a tool's
+// write (cmd/quilzo agentsends.go), and a second list there would be one
+// a new hand could be added to this one and missing from. A command that
+// reaches the network is the workspace's to say (internal/shell).
+func HandSends(a Action) (string, bool) {
+	if strings.TrimSpace(a.Tool) != "" || a.Delegate != "" {
+		return "", false
+	}
+	if to, sends := browserSends(a); sends {
+		return to, true
+	}
+	return webSends(a)
 }
 
 // BreaksTo is Breaks for a connection to a host, as a program's proxy asks.

@@ -4,12 +4,14 @@
 package main
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
-	"strings"
 )
 
 // Bounding an agent by whoever started it.
@@ -143,6 +145,42 @@ func boundOf(m agent.Manifest, c *Caller) agent.Manifest {
 		b.Retrieval.Path = "/" + sc
 	}
 	return b
+}
+
+// withholdWrites takes out of a run's manifest the tools that write to
+// another system when its caller may only read (a read-only credential,
+// or a chatbot's request that only looks things up), and says why each
+// went, for the gate to refuse one asked for anyway (agent.Manifest's
+// Withheld).
+//
+// boundOf keeps the manifest's tools whatever the caller, since a tool
+// call is not a write to this store, and a caller's silence about hosts
+// is not a caller forbidding them; that is right for the tools that read.
+// For the ones that write it let a token issued read-only run an agent
+// that posted to another system, and a chatbot's read-only request
+// offered its model the same post. Done here and not in boundOf, because
+// whether a tool writes is the integration's to say as well as the
+// manifest's (stepWrites), and only the store knows its integrations.
+func withholdWrites(root string, m *agent.Manifest, c *Caller) map[string]string {
+	if c == nil || !c.Limits.ReadOnly {
+		return nil
+	}
+	var withheld map[string]string
+	kept := m.Tools[:0:0]
+	for _, t := range m.Tools {
+		if !stepWrites(root, *m, t.Name) {
+			kept = append(kept, t)
+			continue
+		}
+		if withheld == nil {
+			withheld = map[string]string{}
+		}
+		withheld[strings.ToLower(strings.TrimSpace(t.Name))] = fmt.Sprintf("%s writes to %s, and this run only "+
+			"reads: whoever started it may not change anything (a read-only credential, or a chatbot's "+
+			"request that only looks things up)", t.Name, t.Host)
+	}
+	m.Tools = kept
+	return withheld
 }
 
 // mayCall keeps the capabilities an agent at this autonomy could use.

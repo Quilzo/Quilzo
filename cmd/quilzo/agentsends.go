@@ -15,6 +15,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/dual"
+	"github.com/quilzo/quilzo/internal/shell"
 )
 
 // Sends from runs nobody started.
@@ -29,22 +30,28 @@ import (
 //
 // So a triggered run's call of a tool that writes waits for a person, as
 // asking first does. (Its delegates choose no tools: a model deciding for
-// a delegate is offered none.) Administrators may lift the hold for one
-// tool of one agent: one proposes it with a reason, a second approves it
-// (internal/dual), and the record says what it widened. Lifting it takes
-// nothing else away: what the declaration asks first, a payment beyond a
-// mandate and the exfiltration breaker still wait for a person.
+// a delegate is offered none.) So does what its hands carry out to another
+// system: an address read or opened, words typed into a page or an app, a
+// search, a command that reaches the network. Only the tools were held at
+// first, so the same run's curl to a declared host, or its web_fetch with
+// the draft in the query, went out with nobody asked unless the
+// declaration happened to ask about the network. Administrators may lift
+// the hold for one tool, or one hand's action, of one agent: one proposes
+// it with a reason, a second approves it (internal/dual), and the record
+// says what it widened. Lifting it takes nothing else away: what the
+// declaration asks first, a payment beyond a mandate and the exfiltration
+// breaker still wait for a person.
 
 // viaTrigger is a triggered run's Caller.Via.
 const viaTrigger = "trigger"
 
 // unattendedSend is one tool an agent may send through from runs nobody
-// started.
+// started, or one of its hands' actions (handSends).
 type unattendedSend struct {
 	Tool string `json:"tool"`
-	// Host is where the tool reached when the grant was made. A
-	// declaration that points the tool somewhere else afterwards has not
-	// been granted that.
+	// Host is where the tool reached when the grant was made, or what the
+	// hand might reach (handReach). A declaration that points it somewhere
+	// else afterwards has not been granted that.
 	Host string `json:"host"`
 	// Why is the reason it was proposed with, By who proposed it, and
 	// ApprovedBy who approved it: the same person, Alone, when nobody else
@@ -76,16 +83,23 @@ func unattendedRun(caller *Caller, from *agentResume) bool {
 
 // outwardAsks is why a run's action waits for a person beyond what its
 // declaration asks first: then's reason (a payment beyond a mandate); for
-// a run nobody started, a write to another system it has not been let
-// make unattended; and for any run, a write that says what the brand
-// rules hold (outwardClaims). A payment's reason comes first, so the step
-// is classed as one that pays (agent.CommitOf).
+// a run nobody started, a write to another system, or a hand's reach out
+// to one, it has not been let make unattended; and for any run, a write
+// that says what the brand rules hold (outwardClaims). A payment's reason
+// comes first, so the step is classed as one that pays (agent.CommitOf).
 func outwardAsks(root string, m agent.Manifest, unattended bool, then func(agent.Action) string) func(agent.Action) string {
 	return func(a agent.Action) string {
 		var why []string
 		if then != nil {
 			if w := then(a); w != "" {
 				why = append(why, w)
+			}
+		}
+		if a.Tool == "" && a.Delegate == "" && unattended {
+			if to, out := handReachesOut(m, a); out && !sendsUnattended(root, m.Name, a.Op, handReach(root, m, a.Op)) {
+				why = append(why, fmt.Sprintf("%s: %s carries what the model chose to %s, which is a person's "+
+					"decision unless administrators let %s send through it unattended", agent.UnattendedPrefix,
+					a.Op, to, m.Name))
 			}
 		}
 		if a.Tool == "" || !stepWrites(root, m, a.Tool) {
@@ -102,6 +116,93 @@ func outwardAsks(root string, m agent.Manifest, unattended bool, then func(agent
 	}
 }
 
+// handReachesOut says whether an action of an agent's hands carries the
+// model's words out to another system, and where: what the exfiltration
+// breaker reads as sending (agent.HandSends), a command that reaches the
+// network (shell.ReachesOut), and a search or citation looked up at the
+// open research indexes (researchReach). Reading this store and working in
+// the workspace reach nothing outside, and are not held.
+func handReachesOut(m agent.Manifest, a agent.Action) (string, bool) {
+	if shell.ReachesOut(a, m.Shell) {
+		return "the network (" + hostList(m.Shell.Hosts) + ")", true
+	}
+	if researchReach[a.Op] && a.Tool == "" && a.Delegate == "" {
+		return researchIndexes, true
+	}
+	return agent.HandSends(a)
+}
+
+// researchReach are the actions the agent interface performs for a run
+// (agentexec.Bridged) that carry the model's words to the open research
+// indexes: a search's query, and the identifier a citation is looked up
+// by. They are no hand's, so neither the breaker's list nor the
+// workspace's had them, and a triggered run's search with the draft in its
+// query went to the index with nobody asked while its web_search waited.
+var researchReach = map[string]bool{"research_search": true, "research_cite": true}
+
+// researchIndexes is where researchReach goes (research.Index), as a grant
+// for it names it.
+const researchIndexes = "the open research indexes"
+
+// handSends reports whether an action of the hands is one that may reach
+// out of a run nobody started, and so one a grant may name.
+func handSends(op string) bool {
+	_, sends := agent.HandSends(agent.Action{Op: op})
+	return sends || op == "shell_run" || researchReach[op]
+}
+
+// handReach is what one of an agent's hands' actions may reach, as its
+// declaration says now: what a grant for it is for, as a tool's host is,
+// so a declaration that points the hand further afterwards has not been
+// granted that. Empty is a hand that reaches nothing outside.
+func handReach(root string, m agent.Manifest, op string) string {
+	switch {
+	case op == "shell_run":
+		if m.Shell == nil || m.Shell.ReadOnly {
+			return ""
+		}
+		return hostList(m.Shell.Hosts)
+	case op == "web_fetch":
+		switch {
+		case m.Web == nil:
+			return ""
+		case m.Web.Any:
+			return "any public host"
+		}
+		return hostList(m.Web.Fetch)
+	case op == "web_search":
+		// The provider is the store's (agents.search), and another one is
+		// somewhere else.
+		if p := strings.TrimSpace(mustConfig(root).Raw("agents.search")); p != "" {
+			return "the search provider " + p
+		}
+		return ""
+	case agent.IsBrowser(op):
+		if m.Browser == nil {
+			return ""
+		}
+		return hostList(append(slices.Clone(m.Browser.Read), m.Browser.Write...))
+	case agent.IsDesktop(op):
+		if m.Cell == nil {
+			return ""
+		}
+		return "its desktop cell"
+	case researchReach[op]:
+		return researchIndexes
+	}
+	return ""
+}
+
+// hostList is hosts in one order, each once, as a grant compares them.
+func hostList(hosts []string) string {
+	out := make([]string, 0, len(hosts))
+	for _, h := range hosts {
+		out = append(out, strings.ToLower(strings.TrimSpace(h)))
+	}
+	slices.Sort(out)
+	return strings.Join(slices.Compact(out), ", ")
+}
+
 // toolHost is the host a manifest says a tool reaches.
 func toolHost(m agent.Manifest, tool string) string {
 	for _, t := range m.Tools {
@@ -113,8 +214,8 @@ func toolHost(m agent.Manifest, tool string) string {
 }
 
 // sendsUnattended reports whether administrators let an agent send through
-// a tool, at the host it reaches now, from runs nobody started. Read at
-// each call, so a grant taken back holds the next one.
+// a tool, or a hand's action, at what it reaches now, from runs nobody
+// started. Read at each call, so a grant taken back holds the next one.
 func sendsUnattended(root, name, tool, host string) bool {
 	set, err := loadAgents(root)
 	if err != nil || host == "" {
@@ -171,10 +272,21 @@ func agentSendsCmdAs(root string, args []string, caller *Caller) error {
 		return revokeSends(root, name, tool, caller)
 	}
 	host := toolHost(m, tool)
+	// Or one of its hands, named by the action: a tool of that name is the
+	// tool.
+	hand := host == "" && handSends(tool)
+	if hand {
+		host = handReach(root, m, tool)
+	}
 	switch {
+	case hand && !slices.Contains(m.Capabilities, tool):
+		return fmt.Errorf("%s does not hold %s", name, tool)
+	case hand && host == "":
+		return fmt.Errorf("%s's %s reaches nothing outside as it is declared, so it does not wait for a "+
+			"person in runs nobody started and there is nothing to grant", name, tool)
 	case host == "":
 		return fmt.Errorf("%s declares no tool called %s", name, tool)
-	case !stepWrites(root, m, tool):
+	case !hand && !stepWrites(root, m, tool):
 		return fmt.Errorf("%s does not write to another system, so its calls from runs nobody started do "+
 			"not wait for a person and there is nothing to grant", tool)
 	case strings.TrimSpace(*why) == "":

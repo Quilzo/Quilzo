@@ -80,6 +80,54 @@ func TestWhatCanNeverBeEarned(t *testing.T) {
 	if Earnable(post, ClaimsPrefix+`: text: "guaranteed"`, WaitAsk, true) {
 		t.Error("a write the brand rules held was earnable")
 	}
+	// Nor is what a hand carries out of a run nobody started, whatever
+	// words its reason happens to use: a command that would reach a host,
+	// or a file put into a page.
+	for _, a := range []Action{
+		{Op: "shell_run", Input: map[string]any{"program": "curl"}},
+		{Op: "browser_upload", Input: map[string]any{"ref": "e2"}},
+	} {
+		why := UnattendedPrefix + ": " + a.Op + " carries what the model chose to api.example.com"
+		if Earnable(a, why, WaitAsk, false) {
+			t.Errorf("%s from a run nobody started was earnable", a.Op)
+		}
+		if c := CommitOf(a, why, WaitAsk, false); c != "sends" {
+			t.Errorf("%s from a run nobody started is classed as %q", a.Op, c)
+		}
+	}
+	// Whatever the reason's other words are: it names the agent and where
+	// the hand reaches, and an agent called order-desk, or a page on
+	// pay.example.com, had its file put into a page, or its search, shown
+	// to the person deciding it as a payment.
+	for _, a := range []Action{{Op: "browser_upload"}, {Op: "research_search"}, {Op: "research_cite"}} {
+		why := UnattendedPrefix + ": " + a.Op + " carries what the model chose to pay.example.com, which is a " +
+			"person's decision unless administrators let order-desk send through it unattended"
+		if c := CommitOf(a, why, WaitAsk, false); c != "sends" {
+			t.Errorf("%s from a run nobody started is classed as %q", a.Op, c)
+		}
+	}
+	// A command's too, which deletes only when the command does.
+	curl := Action{Op: "shell_run", Input: map[string]any{"program": "curl"}}
+	held := UnattendedPrefix + ": shell_run carries what the model chose to the network (api.remove.bg), which " +
+		"is a person's decision unless administrators let cancel-desk send through it unattended"
+	if c := CommitOf(curl, held, WaitAsk, false); c != "sends" {
+		t.Errorf("a command from a run nobody started is classed as %q", c)
+	}
+	if c := CommitOf(curl, held+"; and it destroys: rm", WaitAsk, false); c != "deletes" {
+		t.Errorf("a command that destroys, from a run nobody started, is classed as %q", c)
+	}
+	// What the breaker reads as carrying the model's words out is one list,
+	// read the same way by whatever else holds them.
+	for _, op := range []string{"browser_open", "browser_type", "browser_upload", "desktop_type", "web_fetch", "web_search"} {
+		if _, sends := HandSends(Action{Op: op}); !sends {
+			t.Errorf("%s is not read as carrying the model's words out", op)
+		}
+	}
+	for _, a := range []Action{{Op: "browser_read"}, {Op: "file_read"}, {Op: "web_fetch", Tool: "lookup"}} {
+		if _, sends := HandSends(a); sends {
+			t.Errorf("%+v is read as carrying the model's words out", a)
+		}
+	}
 }
 
 // In a run: an earned kind of action goes ahead without stopping and says

@@ -50,8 +50,9 @@ type agentSet struct {
 	// Identities are who answers for each agent, and until when it may run.
 	// See internal/agent/identity.go.
 	Identities map[string]agent.Identity `json:"identities,omitempty"`
-	// Sends are the tools each agent may send through from runs nobody
-	// started, as two administrators let it (agentsends.go). Kept beside
+	// Sends are the tools, and the hands' actions, each agent may send
+	// through from runs nobody started, as two administrators let it
+	// (agentsends.go). Kept beside
 	// the declarations and not in them, so nothing that writes a
 	// declaration grants one.
 	Sends map[string][]unattendedSend `json:"unattended_sends,omitempty"`
@@ -1057,6 +1058,11 @@ func boundManifest(root string, set *agentSet, name string, withModel, eval bool
 				n.Lost = append(n.Lost, c)
 			}
 		}
+		for _, t := range before.Tools {
+			if toolHost(m, t.Name) == "" {
+				n.Lost = append(n.Lost, "tool:"+t.Name)
+			}
+		}
 		if m.Autonomy != before.Autonomy {
 			n.Autonomy = string(before.Autonomy) + " to " + string(m.Autonomy)
 		}
@@ -1074,6 +1080,7 @@ func boundManifest(root string, set *agentSet, name string, withModel, eval bool
 	// API. See agentnarrow.go.
 	before := m
 	m = narrowedBy(m, caller)
+	withheld := withholdWrites(root, &m, caller)
 	note("caller", fmt.Sprintf("%s holds %s on %s", caller.Name, caller.Role, nonEmpty(caller.Scope, "/")), before)
 	// And by its own standing, when the access policy gives it one: an
 	// agent granted reader on /docs reads /docs, whoever starts it.
@@ -1113,6 +1120,9 @@ func boundManifest(root string, set *agentSet, name string, withModel, eval bool
 			m.Shell = m.Shell.ReadOnlyCopy()
 		}
 	}
+	// Said after every narrowing, each of which builds a manifest of its
+	// own and keeps nothing a run alone holds.
+	m.Withheld = withheld
 	if len(m.Capabilities) == 0 {
 		if earnedWhy != "" {
 			return m, trail, fmt.Errorf("%s holds nothing it may do yet: %s (quilzo eval run %s)", name, earnedWhy, name)
@@ -1153,6 +1163,14 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 	var out agentOutcome
 	if from == nil {
 		from = &agentResume{}
+	}
+	// A run whoever started it could only read for goes on reading only,
+	// whoever takes it on (agent.Record's ReadOnly): letting one step go
+	// ahead decides that step, and lends the run nothing more.
+	if from.Prior != nil && from.Prior.ReadOnly && caller != nil && !caller.Limits.ReadOnly {
+		c := *caller
+		c.Limits.ReadOnly = true
+		caller = &c
 	}
 	set, err := loadAgents(root)
 	if err != nil {

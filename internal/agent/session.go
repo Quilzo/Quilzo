@@ -5,6 +5,7 @@ package agent
 
 import (
 	"fmt"
+	"maps"
 	"sort"
 	"strconv"
 	"strings"
@@ -141,6 +142,7 @@ func NewSession(m Manifest, now Clock) *Session {
 	copied := m
 	copied.Capabilities = append([]string(nil), m.Capabilities...)
 	copied.Tools = append([]Tool(nil), m.Tools...)
+	copied.Withheld = maps.Clone(m.Withheld)
 
 	return &Session{
 		manifest: copied, capabilities: caps, hosts: hosts,
@@ -709,6 +711,11 @@ func allowedLocale(list []string, v string) bool {
 // asked may be empty, which is the ordinary case: a model that names the tool
 // and leaves the host alone is behaving correctly.
 func (s *Session) MayCallTool(tool, asked string) error {
+	if why, ok := s.withheld(tool); ok {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.refuse("fetch", why)
+	}
 	declared := s.HostFor(tool)
 	if asked != "" && !strings.EqualFold(
 		strings.TrimSpace(asked), strings.TrimSpace(declared)) {
@@ -732,6 +739,23 @@ func (s *Session) MayCallTool(tool, asked string) error {
 	// a provenance line nobody can act on without the manifest open beside it.
 	s.noteTool(tool, declared)
 	return nil
+}
+
+// withheld is why a tool the declaration names may not be called in this
+// run (Manifest.Withheld), if it may not.
+func (s *Session) withheld(tool string) (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	why, ok := s.manifest.Withheld[strings.ToLower(strings.TrimSpace(tool))]
+	return why, ok
+}
+
+// Withholds reports whether a tool the declaration names is withheld from
+// this run (Manifest.Withheld): one a model asks for anyway goes to the
+// gate, which refuses it saying why.
+func (s *Session) Withholds(tool string) bool {
+	_, ok := s.withheld(tool)
+	return ok
 }
 
 // HostFor is the host a named tool is declared to reach.

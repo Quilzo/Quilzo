@@ -77,10 +77,23 @@ func CommitOf(a Action, why, kind string, writes bool) string {
 		}
 		return "writes"
 	case op == "shell_run" || op == "code_run":
+		// A command that would reach the network from a run nobody
+		// started waits because it goes out, as a tool's write from such a
+		// run does, and so is a send unless it deletes as well: as a write
+		// it was earnable, so a kind of command approved often enough by
+		// hand in runs a person started would have reached out unasked
+		// from one nobody started. Whether it deletes is read from what
+		// follows that hold's words, which name the agent and the hosts and
+		// say nothing of the command: a curl to api.remove.bg was shown to
+		// the person deciding it as a deletion.
+		said := why
+		if strings.HasPrefix(why, UnattendedPrefix) {
+			_, said, _ = strings.Cut(why, "; and ")
+		}
 		switch {
-		case reDeletes.MatchString(why):
+		case reDeletes.MatchString(said):
 			return "deletes"
-		case reSends.MatchString(why):
+		case reSends.MatchString(why) || strings.HasPrefix(why, UnattendedPrefix):
 			return "sends"
 		}
 		return "writes"
@@ -100,6 +113,13 @@ func CommitOf(a Action, why, kind string, writes bool) string {
 		return "reads"
 	}
 	switch {
+	case strings.HasPrefix(why, UnattendedPrefix):
+		// What a hand carries out of a run nobody started is a send
+		// whatever else its reason says: a file put into a page, for one.
+		// Read before the words, which name the agent and where the hand
+		// reaches, so an agent called order-desk had its search shown to
+		// the person deciding it as a payment.
+		return "sends"
 	case rePays.MatchString(why):
 		return "pays"
 	case reDeletes.MatchString(why):
@@ -114,9 +134,10 @@ func CommitOf(a Action, why, kind string, writes bool) string {
 const PaysPrefix = "it pays "
 
 // UnattendedPrefix begins the reason a triggered run's write to another
-// system waits for a person: what goes out from a run nobody started is a
-// person's decision, unless administrators granted the agent that tool's
-// unattended sends (cmd/quilzo agentsends.go).
+// system, or its hands' reach out to one, waits for a person: what goes
+// out from a run nobody started is a person's decision, unless
+// administrators granted the agent that tool's or that hand's unattended
+// sends (cmd/quilzo agentsends.go).
 const UnattendedPrefix = "it goes out from a run nobody started"
 
 // ClaimsPrefix begins the reason a tool's write waits for a person when
