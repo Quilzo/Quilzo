@@ -151,7 +151,7 @@ func bookingList(root string, args []string, caller *Caller) error {
 	fs := flag.NewFlagSet("booking list", flag.ContinueOnError)
 	days := fs.Int("days", 14, "how many days ahead")
 	past := fs.Int("past", 0, "how many days back as well")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	if err := authorise(root, caller, auth.ActEditDraft, "/"); err != nil {
@@ -265,7 +265,7 @@ func bookingCancelCmd(root string, args []string, caller *Caller) error {
 	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("booking cancel", flag.ContinueOnError)
 	erase := fs.Bool("erase", false, "forget who booked as well, as somebody asking to be forgotten is owed")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -336,7 +336,7 @@ func bookingPause(root string, pause bool, caller *Caller) error {
 func bookingFeedCmd(root string, args []string, caller *Caller) error {
 	fs := flag.NewFlagSet("booking feed", flag.ContinueOnError)
 	off := fs.Bool("off", false, "turn the feed off")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	s, err := loadBookingSetup(root)

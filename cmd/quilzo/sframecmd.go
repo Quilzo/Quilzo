@@ -40,7 +40,7 @@ func sframeSuites(args []string) error {
 	fs := flag.NewFlagSet("suites", flag.ContinueOnError)
 	fps := fs.Int("fps", 30, "frames a second, for the overhead arithmetic")
 	streams := fs.Int("streams", 1, "how many streams")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	// A two-byte header is the ordinary case: a key identifier under eight
@@ -91,7 +91,7 @@ func sframeCheck(args []string) error {
 	fs := flag.NewFlagSet("check", flag.ContinueOnError)
 	which := fs.Int("suite", int(sframe.AES128GCMSHA256128),
 		"which cipher suite to exercise")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	suite := sframe.Suite(*which)

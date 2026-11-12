@@ -102,8 +102,14 @@ func cmdBrand(root string, args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return brandList(root)
 	case "init":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return brandInit(root)
 	case "check":
 		return brandCheck(root, args[1:])
@@ -186,7 +192,7 @@ func brandCheck(root string, args []string) error {
 	fs := flag.NewFlagSet("brand check", flag.ContinueOnError)
 	text := fs.String("text", "",
 		"check this sentence instead of the store, for copy not yet written")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 

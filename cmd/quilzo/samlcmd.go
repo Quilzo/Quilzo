@@ -271,7 +271,7 @@ func samlAdd(root string, args []string) (*saml.Config, error) {
 		"take the address as the provider sends it, verified or not")
 	fingerprint := fs.String("fingerprint", "", "the SHA-256 fingerprint you checked at the provider")
 	replace := fs.Bool("replace", false, "replace a provider with this name")
-	if err := fs.Parse(args[1:]); err != nil {
+	if err := parseFlags(fs, args[1:], nil, 0); err != nil {
 		return nil, err
 	}
 	if *meta == "" || *adminURL == "" {

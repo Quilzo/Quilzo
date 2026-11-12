@@ -406,7 +406,7 @@ func cmdShare(root string, args []string) error {
 	fs := flag.NewFlagSet("share", flag.ContinueOnError)
 	days := fs.Int("days", 7, "how many days the link lives, up to 30")
 	rest, flags := leadingArgs(args, 1)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &rest, 1); err != nil {
 		return err
 	}
 	if len(rest) != 1 {
@@ -415,6 +415,11 @@ func cmdShare(root string, args []string) error {
 	// Sharing a draft shows it to somebody outside: whoever may publish the
 	// page may, since publishing shows it to everybody.
 	if err := authorise(root, caller, auth.ActPublish, "/"+rest[0]); err != nil {
+		return err
+	}
+	// Opened here rather than with open, and so refused here too when
+	// --root holds no store, rather than made.
+	if err := needStore(root); err != nil {
 		return err
 	}
 	s, err := store.Open(root)

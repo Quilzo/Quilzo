@@ -95,7 +95,7 @@ func cmdBoard(root string, args []string) error {
 		mod := fs.String("moderation", "post", "pre: held until a person approves; post: shown at once")
 		max := fs.Int("max", 0, fmt.Sprintf("longest post in characters (default %d)", board.DefaultLength))
 		closed := fs.Bool("closed", false, "keep what is there and take nothing new")
-		if err := fs.Parse(flags); err != nil {
+		if err := parseFlags(fs, flags, &pos, 1); err != nil {
 			return err
 		}
 		if len(pos) != 1 {

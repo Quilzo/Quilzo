@@ -211,7 +211,7 @@ func assistantGaps(root string, args []string) error {
 	fs := flag.NewFlagSet("assistant gaps", flag.ContinueOnError)
 	check := fs.Bool("check", false, "ask the chatbot each open group's questions again, and close those it answers")
 	closeKey := fs.String("close", "", "close a group by its key: it needs no page")
-	if err := fs.Parse(rest); err != nil {
+	if err := parseFlags(fs, rest, &pos, 1); err != nil {
 		return err
 	}
 	caller := resolveCaller(root, flagToken)

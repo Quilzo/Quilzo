@@ -160,7 +160,7 @@ func cmdRedirect(root string, args []string) error {
 		temporary := fs.Bool("temporary", false, "a temporary redirect (307) rather than a permanent one (308)")
 		note := fs.String("note", "", "why it is there, for whoever finds it later")
 		pos, flags := leadingArgs(args[1:], 2)
-		if err := fs.Parse(flags); err != nil {
+		if err := parseFlags(fs, flags, &pos, 2); err != nil {
 			return err
 		}
 		if len(pos) != 2 {

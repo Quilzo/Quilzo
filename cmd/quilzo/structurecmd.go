@@ -53,8 +53,14 @@ func cmdTerms(root string, args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return termsList(root)
 	case "check":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return termsCheck(root)
 	default:
 		return fmt.Errorf("unknown terms command %q; try list or check", args[0])
@@ -160,8 +166,14 @@ func cmdMenus(root string, args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return menusList(root)
 	case "check":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return menusCheck(root)
 	case "add", "set":
 		return menuItemSet(root, args[1:])
@@ -445,6 +457,9 @@ func cmdListings(root string, args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return listingsList(root)
 	case "run":
 		return listingsRun(root, args[1:])
@@ -489,7 +504,7 @@ func listingsRun(root string, args []string) error {
 	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	arg := fs.String("arg", "", "parameter values, as name=value,name=value")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {

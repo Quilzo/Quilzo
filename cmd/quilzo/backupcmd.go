@@ -160,11 +160,16 @@ func cmdBackup(root string, args []string) error {
 		fs := flag.NewFlagSet("backup create", flag.ContinueOnError)
 		templates := fs.String("templates", "templates", "the layouts beside the store")
 		rest, flags := leadingArgs(args[1:], 1)
-		if err := fs.Parse(flags); err != nil {
+		if err := parseFlags(fs, flags, &rest, 1); err != nil {
 			return err
 		}
 		if len(rest) != 1 {
 			return errors.New("usage: quilzo backup create FILE [--templates DIR]")
+		}
+		// A backup of a --root that is no store, an unmounted volume's, was
+		// "backed up and checked: 0 files".
+		if err := needStore(root); err != nil {
+			return err
 		}
 		if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
 			return err
@@ -212,7 +217,7 @@ func cmdBackup(root string, args []string) error {
 		fs := flag.NewFlagSet("backup restore", flag.ContinueOnError)
 		into := fs.String("into", "", "an empty directory to restore into")
 		rest, flags := leadingArgs(args[1:], 1)
-		if err := fs.Parse(flags); err != nil {
+		if err := parseFlags(fs, flags, &rest, 1); err != nil {
 			return err
 		}
 		if len(rest) != 1 || *into == "" {

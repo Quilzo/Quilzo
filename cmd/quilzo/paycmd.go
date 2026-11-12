@@ -302,10 +302,16 @@ func cmdPay(root string, args []string) error {
 	caller := resolveCaller(root, flagToken)
 	switch args[0] {
 	case "status":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return payStatus(root)
 	case "enable":
 		return payEnable(root, args[1:], caller)
 	case "disable":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return payDisable(root, caller)
 	case "sync":
 		made, retired, err := syncPay(root, caller)
@@ -386,7 +392,7 @@ func payEnable(root string, args []string, caller *Caller) error {
 	shipTo := fs.String("ship-to", "", "countries to deliver to, as ISO codes (GB,IE); none asks for no address")
 	done := fs.String("done", "", "what the checkout says once somebody has paid")
 	why := fs.String("reason", "", "why, for the record")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -523,7 +529,7 @@ func payDisable(root string, caller *Caller) error {
 func payOrders(root string, args []string, caller *Caller) error {
 	fs := flag.NewFlagSet("pay orders", flag.ContinueOnError)
 	limit := fs.Int("limit", 25, "how many, newest first (at most 100)")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	orders, err := readOrders(root, *limit, caller)

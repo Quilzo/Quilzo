@@ -38,7 +38,7 @@ func cmdImport(root string, args []string) error {
 		"the import is recorded as yours whatever this names")
 	redirectsOut := fs.String("redirects-out", "redirects.json",
 		"where to write the generated redirect map")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -274,7 +274,7 @@ func cmdMedia(root string, args []string) error {
 func mediaRenditions(root string, args []string) error {
 	fs := flag.NewFlagSet("renditions", flag.ContinueOnError)
 	dry := fs.Bool("dry-run", false, "say what would be made, and make nothing")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	lib, err := openMedia(root)
@@ -487,7 +487,7 @@ func mediaList(root string, args []string) error {
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
 	all := fs.Bool("all", false,
 		"include the narrower copies made for phones")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	lib, err := openMedia(root)

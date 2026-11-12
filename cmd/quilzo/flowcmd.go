@@ -39,7 +39,7 @@ func cmdFlow(args []string) error {
 
 func flowDemo(args []string) error {
 	fs := flag.NewFlagSet("demo", flag.ContinueOnError)
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	at := time.Now().UTC().Truncate(time.Hour)

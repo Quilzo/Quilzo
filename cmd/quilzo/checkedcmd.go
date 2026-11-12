@@ -91,7 +91,7 @@ func checkedSet(root string, args []string) error {
 	note := fs.String("note", "", "what the next person should know")
 	by := fs.String("by", "", "who checked it")
 	rest, flags := leadingArgs(args, 1)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &rest, 1); err != nil {
 		return err
 	}
 	if len(rest) != 1 {
@@ -143,7 +143,7 @@ func checkedList(root string, args []string, dueOnly bool) error {
 	owner := fs.String("owner", "",
 		"only pages this person is responsible for")
 	unowned := fs.Bool("unowned", false, "only pages nobody is responsible for")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	if *unowned && strings.TrimSpace(*owner) != "" {

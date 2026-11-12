@@ -50,6 +50,9 @@ func cmdWebhook(root string, args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return hookList(root)
 	case "add":
 		return hookAdd(root, args[1:])
@@ -70,7 +73,7 @@ func hookAdd(root string, args []string) error {
 		"comma-separated event types; empty means all. "+
 			strings.Join(webhook.EventTypes, ", ")+", or each one's event name (page.published)")
 	note := fs.String("note", "", "what this endpoint is")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {

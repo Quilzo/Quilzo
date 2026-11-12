@@ -30,6 +30,9 @@ func cmdPersonalise(root string, args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return personaliseList(root)
 	case "add":
 		return personaliseAdd(root, args[1:])
@@ -115,7 +118,7 @@ func personaliseAdd(root string, args []string) error {
 	tz := fs.String("timezone", "", "for day and hour conditions, like Europe/London")
 	var when multi
 	fs.Var(&when, "when", "a condition: campaign=, referrer=, language=, device=, weekday=, hour=9-17, param:NAME=")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -173,7 +176,7 @@ func personaliseTest(root string, args []string) error {
 	lang := fs.String("language", "", "Accept-Language")
 	device := fs.String("device", "desktop", "phone or desktop")
 	at := fs.String("at", "", "a time, as 2026-09-29T20:30:00Z (default now)")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {

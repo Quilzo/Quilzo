@@ -99,7 +99,7 @@ func cmdMemory(root string, args []string) error {
 		agentName := fs.String("agent", "", "one agent's")
 		about := fs.String("about", "", "about one person (yourself, unless you administer)")
 		held := fs.Bool("held", false, "only what waits for a person to confirm it")
-		if err := fs.Parse(args[1:]); err != nil {
+		if err := parseFlags(fs, args[1:], nil, 0); err != nil {
 			return err
 		}
 		if !admin {
@@ -193,7 +193,7 @@ func cmdMemory(root string, args []string) error {
 		fs := flag.NewFlagSet("memory history", flag.ContinueOnError)
 		about := fs.String("about", "", "about one person (yourself, unless you administer)")
 		pos, flags := leadingArgs(args[1:], 2)
-		if err := fs.Parse(flags); err != nil {
+		if err := parseFlags(fs, flags, &pos, 2); err != nil {
 			return err
 		}
 		if len(pos) != 2 {
@@ -257,7 +257,7 @@ func cmdMemory(root string, args []string) error {
 		fs := flag.NewFlagSet("memory receipt", flag.ContinueOnError)
 		about := fs.String("about", "", "the person; yourself unless you administer")
 		out := fs.String("o", "", "write it here instead of printing it")
-		if err := fs.Parse(args[1:]); err != nil {
+		if err := parseFlags(fs, args[1:], nil, 0); err != nil {
 			return err
 		}
 		if *about == "" {
@@ -291,7 +291,7 @@ func cmdMemory(root string, args []string) error {
 	case "forget":
 		fs := flag.NewFlagSet("memory forget", flag.ContinueOnError)
 		about := fs.String("about", "", "the person; yourself unless you administer")
-		if err := fs.Parse(args[1:]); err != nil {
+		if err := parseFlags(fs, args[1:], nil, 0); err != nil {
 			return err
 		}
 		if *about == "" {

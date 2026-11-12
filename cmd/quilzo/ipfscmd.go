@@ -47,7 +47,7 @@ func cmdIPFS(root string, args []string) error {
 func ipfsID(root string, args []string) error {
 	fs := flag.NewFlagSet("id", flag.ContinueOnError)
 	tplDir := fs.String("templates", "templates", "where page.html lives")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	files, err := renderBundle(root, *tplDir)
@@ -88,7 +88,7 @@ func ipfsWrite(root string, args []string) error {
 	dir := fs.String("o", "site", "write the rendered site here")
 	basePath := fs.String("base-path", "",
 		"serve the bundle from this subdirectory, e.g. /demo")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	files, err := renderBundle(root, *tplDir)
@@ -154,7 +154,7 @@ func ipfsVerify(root string, args []string) error {
 	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
 	tplDir := fs.String("templates", "templates", "where page.html lives")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {

@@ -99,6 +99,9 @@ func cmdConfig(root string, args []string) error {
 	}
 	switch args[0] {
 	case "show":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return configShow(root)
 	case "list":
 		return configList()

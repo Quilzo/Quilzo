@@ -31,7 +31,7 @@ import (
 func cmdStudio(root string, args []string) error {
 	fs := flag.NewFlagSet("studio", flag.ContinueOnError)
 	addr := fs.String("addr", "127.0.0.1:8084", "listen address")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 

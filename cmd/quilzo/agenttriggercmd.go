@@ -64,7 +64,7 @@ func agentTriggerAdd(root, name string, args []string) error {
 	zone := fs.String("zone", "", "the time zone of --at, Europe/London (UTC when not given)")
 	goal := fs.String("goal", "", "what each run is to do")
 	perDay := fs.Int("per-day", 0, fmt.Sprintf("the most runs it starts in a day (%d when not given)", agent.DefaultPerDay))
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	t := agent.Trigger{On: *on, Where: *where, Every: agent.Duration(*every), At: *at, Zone: *zone,

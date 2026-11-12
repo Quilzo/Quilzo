@@ -72,7 +72,7 @@ func noteAdd(root string, args []string) error {
 	field := fs.String("field", "", "which field this is about")
 	author := fs.String("author", "", "who is saying it")
 	rest, flags := leadingArgs(args, 2)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &rest, 2); err != nil {
 		return err
 	}
 	if len(rest) < 2 {
@@ -125,7 +125,7 @@ func noteList(root string, args []string) error {
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
 	all := fs.Bool("all", false, "include notes somebody has resolved")
 	rest, flags := leadingArgs(args, 1)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &rest, 1); err != nil {
 		return err
 	}
 

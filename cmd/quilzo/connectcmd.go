@@ -508,7 +508,7 @@ func cmdConnect(root string, args []string) error {
 		fs := flag.NewFlagSet("revoke", flag.ContinueOnError)
 		person := fs.String("person", "", "another person's account: an administrator's to disconnect")
 		rest, flags := leadingArgs(args[1:], 1)
-		if err := fs.Parse(flags); err != nil {
+		if err := parseFlags(fs, flags, &rest, 1); err != nil {
 			return err
 		}
 		if len(rest) != 1 {
@@ -563,7 +563,7 @@ func connectProvider(root string, caller *Caller, args []string) error {
 	var scopes, hosts multiFlag
 	fs.Var(&scopes, "scope", "a scope to ask for; repeat for more")
 	fs.Var(&hosts, "host", "an API host its tokens may go to; repeat for more")
-	if err := fs.Parse(args[2:]); err != nil {
+	if err := parseFlags(fs, args[2:], nil, 0); err != nil {
 		return err
 	}
 	unlock, err := atomicfile.Lock(connectProvidersPath(root) + ".lock")

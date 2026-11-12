@@ -111,7 +111,7 @@ func huddleDemo(args []string) error {
 	fs := flag.NewFlagSet("demo", flag.ContinueOnError)
 	suiteID := fs.Int("suite", int(sframe.AES128GCMSHA256128),
 		"which SFrame cipher suite the media goes out under")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	suite := sframe.Suite(*suiteID)

@@ -136,6 +136,9 @@ func cmdAgent(root string, args []string) error {
 	}
 	switch args[0] {
 	case "templates":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return agentTemplates(root)
 	case "template":
 		// This store's own archetypes. Every `agent template` command fell
@@ -144,8 +147,14 @@ func cmdAgent(root string, args []string) error {
 		// into the store by hand, past its grant check and its record.
 		return cmdAgentTemplate(root, args[1:])
 	case "capabilities":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return agentCapabilities(root)
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return agentList(root)
 	case "show":
 		return agentShow(root, args[1:])
@@ -154,6 +163,9 @@ func cmdAgent(root string, args []string) error {
 	case "probe":
 		return agentProbe(args[1:])
 	case "check":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return agentCheck(root)
 	case "run":
 		return agentCheckRun(root, args[1:])
@@ -188,6 +200,9 @@ func cmdAgent(root string, args []string) error {
 	case "trigger", "triggers":
 		return agentTriggerCmd(root, args[1:])
 	case "backends":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return agentBackends(root)
 	case "could":
 		return agentCould(root, args[1:])

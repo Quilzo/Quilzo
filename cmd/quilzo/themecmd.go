@@ -179,7 +179,7 @@ func themeShow(args []string) error {
 // documented elsewhere, because a knob nobody can find is a knob nobody uses.
 func themeTokens(args []string) error {
 	fs := flag.NewFlagSet("tokens", flag.ContinueOnError)
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	tokens := theme.Tokens()

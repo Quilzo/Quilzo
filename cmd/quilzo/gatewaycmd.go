@@ -143,6 +143,9 @@ func cmdGateway(root string, args []string) error {
 	}
 	switch args[0] {
 	case "status":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return gatewayStatus(root)
 	case "route":
 		return gatewayRoute(root, args[1:])
@@ -333,7 +336,7 @@ func gatewayRoute(root string, args []string) error {
 	keySecret := fs.String("key-secret", "", "the sealed credential holding the key (quilzo secret set NAME)")
 	var provParams multiFlag
 	fs.Var(&provParams, "param", "a provider's parameter, name=value (an Azure resource, an AWS region)")
-	if err := fs.Parse(args[2:]); err != nil {
+	if err := parseFlags(fs, args[2:], nil, 0); err != nil {
 		return err
 	}
 	params, err := routeParams(*maxField, *temperature, *topP, *timeout, *autoTool)
@@ -441,7 +444,7 @@ func gatewayBudget(root string, args []string) error {
 	moneyDay := fs.String("money-per-day", "", "spending a day, in the gateway's currency, like 5.00")
 	moneyMonth := fs.String("money-per-month", "", "spending a calendar month, in the gateway's currency")
 	drop := fs.Bool("remove", false, "remove this caller's budget")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {

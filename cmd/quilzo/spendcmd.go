@@ -244,7 +244,7 @@ func spendGrant(root string, args []string, caller *Caller) error {
 	fs.Var(&payees, "payee", "who may be paid, as the paying tool names them; repeat for more")
 	fs.Var(&tools, "tool", "a paying tool the mandate covers; repeat for more; any by default")
 	rest, flags := leadingArgs(args, 1)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &rest, 1); err != nil {
 		return err
 	}
 	if len(rest) != 1 {

@@ -40,8 +40,14 @@ func blogCmd(root string, args []string, caller *Caller) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return blogList(root, caller)
 	case "setup":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return blogSetup(root, caller)
 	case "example":
 		// The package itself under --json. It is JSON for a person too, and

@@ -117,7 +117,7 @@ func cmdMember(root string, args []string) error {
 	case "invite":
 		fs := flag.NewFlagSet("member invite", flag.ContinueOnError)
 		note := fs.String("note", "", "who it is for, to recognise it in the list")
-		if err := fs.Parse(args[1:]); err != nil {
+		if err := parseFlags(fs, args[1:], nil, 0); err != nil {
 			return err
 		}
 		code, inv, err := store.NewInvite(caller.Name, *note)

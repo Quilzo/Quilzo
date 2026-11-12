@@ -77,6 +77,9 @@ func cmdPeer(root string, args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return peerList(root)
 	case "add":
 		return peerAdd(root, args[1:])

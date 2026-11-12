@@ -127,8 +127,14 @@ func eventsCmd(root string, args []string, caller *Caller) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return eventsList(root, caller)
 	case "setup":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return eventsSetup(root, caller)
 	case "import":
 		return eventsImport(root, args[1:], caller)
@@ -301,7 +307,7 @@ func eventsImport(root string, args []string, caller *Caller) error {
 	fs := flag.NewFlagSet("events import", flag.ContinueOnError)
 	dryRun := fs.Bool("dry-run", false, "say what would be brought, and write nothing")
 	flags, rest := splitFlags(args, nil)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, nil, 0); err != nil {
 		return err
 	}
 	if len(rest) != 1 {

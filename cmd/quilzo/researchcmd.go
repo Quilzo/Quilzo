@@ -132,7 +132,7 @@ func cmdResearch(root string, args []string) error {
 		pos, flags := leadingArgs(rest, 1)
 		fs := flag.NewFlagSet("research new", flag.ContinueOnError)
 		question := fs.String("question", "", "the question the project answers")
-		if err := fs.Parse(flags); err != nil {
+		if err := parseFlags(fs, flags, &pos, 1); err != nil {
 			return err
 		}
 		if len(pos) != 1 || *question == "" {
@@ -152,7 +152,7 @@ func cmdResearch(root string, args []string) error {
 		pos, flags := leadingArgs(rest, len(rest))
 		fs := flag.NewFlagSet("research add", flag.ContinueOnError)
 		to := fs.String("to", "", "the folder in the project to put them in")
-		if err := fs.Parse(flags); err != nil {
+		if err := parseFlags(fs, flags, &pos, 1); err != nil {
 			return err
 		}
 		if len(pos) < 2 {
@@ -167,7 +167,7 @@ func cmdResearch(root string, args []string) error {
 		pos, flags := leadingArgs(rest, 2)
 		fs := flag.NewFlagSet("research plan", flag.ContinueOnError)
 		why := fs.String("why", "", "why a registered plan changes")
-		if err := fs.Parse(flags); err != nil {
+		if err := parseFlags(fs, flags, &pos, 2); err != nil {
 			return err
 		}
 		if len(pos) != 2 {
@@ -206,7 +206,7 @@ func cmdResearch(root string, args []string) error {
 		var inputs multiFlag
 		fs.Var(&inputs, "input", "a file in the project the script reads (repeat for each)")
 		idea := fs.String("idea", "", "the idea this computation executes, by id (quilzo research ideas lists them)")
-		if err := fs.Parse(flags); err != nil {
+		if err := parseFlags(fs, flags, &pos, 2); err != nil {
 			return err
 		}
 		if len(pos) != 2 {
@@ -238,7 +238,7 @@ func cmdResearch(root string, args []string) error {
 		pos, flags := leadingArgs(rest, len(rest))
 		fs := flag.NewFlagSet("research claim", flag.ContinueOnError)
 		run := fs.String("run", "", "the computation the numbers come from")
-		if err := fs.Parse(flags); err != nil {
+		if err := parseFlags(fs, flags, &pos, 2); err != nil {
 			return err
 		}
 		if len(pos) < 1 || *run == "" {
@@ -253,7 +253,7 @@ func cmdResearch(root string, args []string) error {
 		pos, flags := leadingArgs(rest, 1)
 		fs := flag.NewFlagSet("research search", flag.ContinueOnError)
 		n := fs.Int("limit", 10, "how many")
-		if err := fs.Parse(flags); err != nil {
+		if err := parseFlags(fs, flags, &pos, 1); err != nil {
 			return err
 		}
 		if len(pos) != 1 {
@@ -281,7 +281,7 @@ func cmdResearch(root string, args []string) error {
 		pos, flags := leadingArgs(rest, 2)
 		fs := flag.NewFlagSet("research cite", flag.ContinueOnError)
 		key := fs.String("key", "", "how the report cites it, as [@KEY]")
-		if err := fs.Parse(flags); err != nil {
+		if err := parseFlags(fs, flags, &pos, 2); err != nil {
 			return err
 		}
 		if len(pos) != 2 {
@@ -365,7 +365,7 @@ func cmdResearch(root string, args []string) error {
 		pos, flags := leadingArgs(rest, 1)
 		fs := flag.NewFlagSet("research report", flag.ContinueOnError)
 		outPath := fs.String("o", "", "write it to a file")
-		if err := fs.Parse(flags); err != nil {
+		if err := parseFlags(fs, flags, &pos, 1); err != nil {
 			return err
 		}
 		if len(pos) != 1 {

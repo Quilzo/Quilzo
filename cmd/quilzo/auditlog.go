@@ -398,10 +398,24 @@ func cmdAuditLog(root string, args []string) error {
 	if len(args) == 0 {
 		args = []string{"show"}
 	}
+	// A log is a store's, and a --root with neither a store nor a log has
+	// none: `auditlog verify` of a mistyped path said "0 entries, chain
+	// intact" of a log it had just begun there. A log copied out on its own
+	// is still read where it is. `dir` is about a directory of logs and
+	// `verify-head` about a head and its keys, wherever they are, and help is
+	// answered wherever it is asked.
+	if args[0] != "dir" && args[0] != "verify-head" && !helpAsked(args[1:]) && !fileExists(auditPath(root)) {
+		if err := needStore(root); err != nil {
+			return err
+		}
+	}
 	switch args[0] {
 	case "dir":
 		return cmdAuditDir(root, args[1:])
 	case "verify":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return auditVerify(root)
 	case "show":
 		return auditShow(root, args[1:])
@@ -416,6 +430,9 @@ func cmdAuditLog(root string, args []string) error {
 	case "consistency":
 		return auditConsistency(root, args[1:])
 	case "anchor":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return auditAnchor(root)
 	default:
 		return fmt.Errorf("unknown auditlog command %q; try show, verify, "+
@@ -832,7 +849,7 @@ func savedHeads(root string) ([]audit.Head, error) {
 func auditHead(root string, args []string) error {
 	fs := flag.NewFlagSet("head", flag.ContinueOnError)
 	save := fs.Bool("save", false, "record this head locally as well")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 

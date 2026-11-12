@@ -68,6 +68,9 @@ func cmdTrust(root string, args []string) error {
 	case "add":
 		return trustAdd(root, args[1:])
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return trustList(root)
 	case "remove":
 		return trustRemove(root, args[1:])
@@ -103,7 +106,7 @@ func trustAdd(root string, args []string) error {
 	claims := claimFlags{}
 	fs.Var(claims, "claim", "a claim the token must carry, NAME=VALUE; repeat for more")
 	rest, flags := leadingArgs(args, 1)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &rest, 1); err != nil {
 		return err
 	}
 	if len(rest) != 1 {

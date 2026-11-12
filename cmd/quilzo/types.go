@@ -27,6 +27,9 @@ func cmdTypes(root string, args []string) error {
 	rest := args[1:]
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return typesList(root)
 	case "add":
 		return typesAdd(root, rest)
@@ -41,6 +44,9 @@ func cmdTypes(root string, args []string) error {
 	case "stub":
 		return cmdTypeStub(root, args[1:])
 	case "check":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return typesCheck(root)
 	default:
 		return fmt.Errorf("unknown type command %q; try list, add, show, bind, bind-collection or check",
@@ -219,7 +225,7 @@ func num(v *float64) string {
 func typesBindCollection(root string, args []string) error {
 	pos, flags := leadingArgs(args, 2)
 	fs := flag.NewFlagSet("bind-collection", flag.ContinueOnError)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 2); err != nil {
 		return err
 	}
 	if len(pos) != 2 {
@@ -251,7 +257,7 @@ func typesBindCollection(root string, args []string) error {
 func typesBind(root string, args []string) error {
 	pos, flags := leadingArgs(args, 2)
 	fs := flag.NewFlagSet("bind", flag.ContinueOnError)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 2); err != nil {
 		return err
 	}
 	if len(pos) != 2 {

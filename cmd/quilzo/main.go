@@ -726,7 +726,13 @@ func main() {
 	args := os.Args[1:]
 	jsonMode := false
 	filtered := args[:0]
-	for _, a := range args {
+	for i, a := range args {
+		// What follows "--" is a program's own command line, as it is for the
+		// --root and --token below.
+		if a == "--" {
+			filtered = append(filtered, args[i:]...)
+			break
+		}
 		if a == "--json" {
 			jsonMode = true
 			continue
@@ -768,8 +774,18 @@ func main() {
 	//
 	// Stripping it here makes the sentence true everywhere, and the seven
 	// local declarations are gone rather than left to shadow it.
+	//
+	// It stops at "--". What follows is the command line of a program the
+	// command runs, and was read as Quilzo's: `agent program bot -- tool
+	// --root /data` looked for the agent in /data, and the program's own
+	// `--token X` became the caller's credential and was gone from the
+	// program's line. helpAsked stops there too.
 	var rest []string
 	for i := 0; i < len(args); i++ {
+		if args[i] == "--" {
+			rest = append(rest, args[i:]...)
+			break
+		}
 		if args[i] == "--root" && i+1 < len(args) {
 			root = args[i+1]
 			i++
@@ -796,6 +812,7 @@ func main() {
 	}
 
 	cmd, cmdArgs := rest[0], rest[1:]
+	invoked.cmd, invoked.args = cmd, cmdArgs
 
 	// Help for a command is answered before anything is moved, opened or
 	// authorised, and without running it: commandhelp.go says what running it
@@ -888,7 +905,9 @@ func main() {
 	case "move":
 		err = cmdMove(root, cmdArgs)
 	case "diff":
-		err = cmdDiff(root)
+		if err = noArguments(cmdArgs); err == nil {
+			err = cmdDiff(root)
+		}
 	case "publish":
 		err = cmdPublish(root, cmdArgs)
 	case "rollback":
@@ -944,7 +963,9 @@ func main() {
 		err = cmdWebhook(root, cmdArgs)
 	case "logd":
 		if len(cmdArgs) > 0 && cmdArgs[0] == "status" {
-			err = cmdLogdStatus(root)
+			if err = noArguments(cmdArgs[1:]); err == nil {
+				err = cmdLogdStatus(root)
+			}
 		} else {
 			err = cmdLogd(root, cmdArgs)
 		}
@@ -1131,7 +1152,9 @@ func main() {
 	case "config":
 		err = cmdConfig(root, cmdArgs)
 	case "verify":
-		err = cmdVerify(root)
+		if err = noArguments(cmdArgs); err == nil {
+			err = cmdVerify(root)
+		}
 	case "approvals":
 		err = cmdApprovals(root, cmdArgs)
 	// --version and --help as well as the subcommands.
@@ -1184,6 +1207,13 @@ func main() {
 		if errors.As(err, &blocked) {
 			os.Exit(out.ExitBlocked)
 		}
+		var misused errMisused
+		if errors.As(err, &misused) {
+			os.Exit(out.ExitUsage)
+		}
+		if errors.Is(err, errNoStore) {
+			os.Exit(out.ExitNotFound)
+		}
 		os.Exit(out.ExitFailure)
 	}
 }
@@ -1192,12 +1222,41 @@ func main() {
 // wired here: every command inherits it, including the ones added next year by
 // somebody who has not read this file.
 //
-// It is also where a store is made, by whichever command comes first, so it
-// is where a store made in a container's own layer is said (ephemeral.go).
+// It refuses a root that holds no store. It made one wherever it was pointed,
+// by whichever command came first, so a nightly `backup create` of a volume
+// that was not mounted wrote a backup of nothing and said "backed up and
+// checked", and `verify` of a mistyped --root said "0 object(s) intact" of
+// the empty store it had just made there. A check that cannot fail on the
+// wrong directory is how an empty backup is found on the day it is needed.
+// Only init makes a store (makeStore).
+func open(root string) (*store.Store, error) {
+	if err := needStore(root); err != nil {
+		return nil, err
+	}
+	return makeStore(root)
+}
+
+// errNoStore is a --root that holds no store. It exits 4, "not found".
+var errNoStore = errors.New("no store")
+
+// needStore refuses a root that is not a store, saying how one is made. For
+// the commands that read a store's files without opening it, as `auth list`
+// and `auditlog verify` do, as well as for open.
+func needStore(root string) error {
+	if isStore(root) {
+		return nil
+	}
+	return fmt.Errorf("%w at %s; quilzo --root %s init makes one", errNoStore, root, root)
+}
+
+// makeStore opens the store at root, making it if it is not there: init's,
+// and open's once it has found one.
+//
+// It is where a store made in a container's own layer is said (ephemeral.go).
 // init said so and nothing else did: `docker run --rm IMAGE demo` with no
 // volume said "Marginalia is installed" and exited 0 into the layer --rm
 // then deleted, the same store made and lost without a word.
-func open(root string) (*store.Store, error) {
+func makeStore(root string) (*store.Store, error) {
 	made := !isStore(root)
 	s, err := openEncrypted(root)
 	if err == nil && made {
@@ -1257,7 +1316,20 @@ func splitFlags(args []string, valued map[string]bool) (flags, positional []stri
 }
 
 // runInit is `quilzo init [--admin NAME]`.
+//
+// The line is read before anything is made. `quilzo init mysite`, as git
+// takes a directory, made ./.quilzo and said so, and the store was not where
+// the next command, `quilzo --root mysite serve`, looked for it.
 func runInit(root string, args []string) error {
+	fs, _ := initFlags()
+	var pos []string
+	if err := parseFlags(fs, args, &pos, 1); err != nil {
+		return err
+	}
+	if len(pos) > 0 {
+		return errMisused{fmt.Errorf("usage: quilzo init [--admin NAME]\n"+
+			"  the store goes where --root says, not where a word after init does: quilzo --root %s init", pos[0])}
+	}
 	created := !isStore(root)
 	if err := cmdInit(root); err != nil {
 		return err
@@ -1286,7 +1358,7 @@ func cmdInit(root string) error {
 		w = out.New(false)
 	}
 	existed := isStore(root)
-	s, err := open(root)
+	s, err := makeStore(root)
 	if err != nil {
 		return err
 	}
@@ -2002,7 +2074,7 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 func cmdRollback(root string, args []string) error {
 	fs := flag.NewFlagSet("rollback", flag.ContinueOnError)
 	steps := fs.Int("steps", 1, "how many earlier publications to go back")
-	if err := fs.Parse(reorder(args, map[string]bool{"steps": true})); err != nil {
+	if err := parseFlags(fs, reorder(args, map[string]bool{"steps": true}), nil, 0); err != nil {
 		return err
 	}
 	s, err := open(root)
@@ -2233,7 +2305,7 @@ func cmdA11y(root string, args []string) error {
 	fs := flag.NewFlagSet("a11y", flag.ContinueOnError)
 	ref := fs.String("ref", site.RefDraft, "which ref to check")
 	tplDir := fs.String("templates", "templates", "where page.html lives")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	s, err := open(root)
