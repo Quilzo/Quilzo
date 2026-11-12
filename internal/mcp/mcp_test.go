@@ -390,3 +390,23 @@ func TestFindComparesWords(t *testing.T) {
 		}
 	}
 }
+
+// A tool or operation nobody has is named back by a short form of what was
+// asked for, not by all of it: the name is whatever the caller sent, up to
+// the whole body, and the answer went into the log as well.
+func TestAnUnknownNameIsQuotedShort(t *testing.T) {
+	s := testServer()
+	huge := "x" + strings.Repeat("y", 1<<20)
+	for name, args := range map[string]map[string]any{
+		huge:          {"operation": "list_pages"},
+		"quilzo_read": {"operation": huge},
+	} {
+		r := call(t, s, "tools/call", map[string]any{"name": name, "arguments": args})
+		if r.Error == nil {
+			t.Fatal("a name nobody has was answered")
+		}
+		if len(r.Error.Message) > 512 || !strings.Contains(r.Error.Message, "xyyy") {
+			t.Errorf("answered %d bytes, not a short form of the name: %.120s", len(r.Error.Message), r.Error.Message)
+		}
+	}
+}

@@ -678,6 +678,14 @@ func (st *Site) renderAsk(w http.ResponseWriter, r *http.Request, v askView, sta
 	// Never cached: an answer is to one person's question.
 	h.Set("Cache-Control", "no-store")
 	h.Set("X-Content-Type-Options", "nosniff")
+	// Nor indexed, when it shows one. The question comes from the address
+	// (?q=), and the page prints it back: indexable, it let anybody link to
+	// the site with their own words in the address for a crawler to file
+	// under the business's name, running the chatbot each time it looked.
+	// The chatbot's own page, with no question, is the owner's to be found.
+	if v.Question != "" {
+		h.Set("X-Robots-Tag", "noindex, nofollow")
+	}
 	allowFraming(h, v.Assistant.Embed, v.Panel)
 	st.originTrial(h)
 	if wantsVoice(v.Assistant) {
@@ -708,7 +716,7 @@ func (st *Site) renderAsk(w http.ResponseWriter, r *http.Request, v askView, sta
 // "ask". Plain data: the template language has no calls, so an owner's
 // layout can arrange this and cannot do anything with it.
 func (st *Site) askThroughLayout(body any, hash string, r *http.Request, v askView) (string, bool) {
-	ctx, err := st.sources().For(askPageName, body, firstOf(r.URL.Query()))
+	ctx, err := st.sourcesFor(r).For(askPageName, body, firstOf(r.URL.Query()))
 	if err != nil {
 		return "", false
 	}

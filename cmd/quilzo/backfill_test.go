@@ -175,21 +175,12 @@ func TestARecordsCollectionIsNotAPage(t *testing.T) {
 
 	// A record, written through the real API, which puts a tree beside the
 	// pages.
-	base := ""
-	if cid := s.GetRef(site.RefDraft); cid != "" {
-		c, cerr := s.GetCommit(cid)
-		if cerr != nil {
-			t.Fatal(cerr)
-		}
-		base = c.Tree
-	}
-	tree, _, err := collection.Put(s, base, "cloth", collection.Record{
-		Fields: map[string]any{"slug": "indigo-linen", "name": "Indigo linen"},
-	}, time.Unix(1787000000, 0), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := commitTree(t.TempDir(), s, tree, "add a record", "dana"); err != nil {
+	if err := commitTree(s, "dana", func(base string) (string, string, error) {
+		tree, _, err := collection.Put(s, base, "cloth", collection.Record{
+			Fields: map[string]any{"slug": "indigo-linen", "name": "Indigo linen"},
+		}, time.Unix(1787000000, 0), nil)
+		return tree, "add a record", err
+	}); err != nil {
 		t.Fatal(err)
 	}
 

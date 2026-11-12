@@ -274,3 +274,50 @@ func TestNoMenuMeansNoShortcuts(t *testing.T) {
 		t.Errorf("%d shortcuts with no menu configured", len(got))
 	}
 }
+
+// A filter value a visitor put in the address that a listing refuses is
+// the visitor's mistake, said as one, and not the site failing.
+//
+// A link with a capital letter in it (/ranges?range=Correspondence, as a
+// newsletter writes it), a space or a stray character was answered 500
+// "this page could not be assembled", which monitoring counts as the site
+// being down, and with public caching on it. The catalogue already answers
+// the same refusal as the caller's error.
+func TestARefusedFilterValueIsTheVisitorsMistake(t *testing.T) {
+	st := published(t, map[string]any{
+		"index":  map[string]any{"title": "Home"},
+		"ranges": map[string]any{"title": "Ranges", "listings": []any{"by_range"}},
+		"item":   map[string]any{"detail": "by_range", "detail_key": "slug"},
+	})
+	tree, _, err := collection.PutMany(st.Store, "", "products", []collection.Record{
+		{ID: "0123456789abcdef0123456789abcdef", Fields: map[string]any{"title": "Laid paper", "slug": "laid", "range": "correspondence"}},
+	}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := &listing.Set{}
+	if err := set.Add(listing.Listing{Name: "by_range", Collection: "products", Fields: []string{"title", "slug", "range"},
+		Params: []listing.Param{{Name: "range", Kind: listing.Slug}},
+		Where:  []listing.Condition{{Field: "range", Match: listing.Is, Param: "range"}}}); err != nil {
+		t.Fatal(err)
+	}
+	st.Listings = &listing.Resolver{Store: st.Store, Set: set, Live: func() string { return tree }}
+	for _, p := range []string{"/ranges?range=correspondence", "/ranges?range=nothing", "/item/laid?range=correspondence"} {
+		if w := get(st, p, nil); w.Code != http.StatusOK {
+			t.Fatalf("%s answered %d: %s", p, w.Code, w.Body.String())
+		}
+	}
+	for _, p := range []string{"/ranges?range=Correspondence", "/ranges?range=a%20b", "/ranges?range=..",
+		"/ranges?range=%3C", "/item/laid?range=Correspondence"} {
+		w := get(st, p, nil)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("%s answered %d: %s", p, w.Code, w.Body.String())
+		}
+		if cc := w.Header().Get("Cache-Control"); strings.Contains(cc, "public") {
+			t.Errorf("%s was refused with %q", p, cc)
+		}
+		if strings.Contains(w.Body.String(), "<") {
+			t.Errorf("%s was refused with markup: %s", p, w.Body.String())
+		}
+	}
+}

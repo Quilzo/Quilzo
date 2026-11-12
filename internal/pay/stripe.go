@@ -22,9 +22,10 @@ import (
 //
 // It asks for four things and no more, so the key it is given can be a
 // restricted key allowed exactly those: write Prices and Products (a price
-// is made with its product), write Payment Links, and read Checkout
-// Sessions. A restricted key is what the command line asks for, because a
-// secret key can also refund, pay out and read every customer.
+// is made with its product), write Payment Links (which reads them too: a
+// sync asks which still sell), and read Checkout Sessions. A restricted
+// key is what the command line asks for, because a secret key can also
+// refund, pay out and read every customer.
 //
 // The API version is pinned, so a change Stripe makes to a response's shape
 // reaches this code when somebody moves the pin, not on a Tuesday.
@@ -54,6 +55,14 @@ func (s *Stripe) Live() bool {
 	return strings.HasPrefix(s.Key, "sk_live_") || strings.HasPrefix(s.Key, "rk_live_")
 }
 
+// Mode is the mode of the key: ModeLive when it takes real money.
+func (s *Stripe) Mode() string {
+	if s.Live() {
+		return ModeLive
+	}
+	return ModeTest
+}
+
 func (s *Stripe) base() string {
 	if s.Base != "" {
 		return strings.TrimSuffix(s.Base, "/")
@@ -77,6 +86,27 @@ type stripeError struct {
 		Type    string `json:"type"`
 		Code    string `json:"code"`
 	} `json:"error"`
+}
+
+// refusal is an answer Stripe gave that was not a yes: its status, its
+// code, and what it said.
+type refusal struct {
+	status        int
+	code, message string
+}
+
+func (r *refusal) Error() string {
+	if r.message == "" {
+		return fmt.Sprintf("Stripe refused it (%d)", r.status)
+	}
+	return fmt.Sprintf("Stripe refused it (%d): %s", r.status, r.message)
+}
+
+// missing reports whether Stripe has no such object for this key: deleted,
+// lost with a test account's data, or of the other mode.
+func missing(err error) bool {
+	var r *refusal
+	return errors.As(err, &r) && r.status == http.StatusNotFound && r.code == "resource_missing"
 }
 
 // call makes one request. A POST carries an idempotency key, so a request
@@ -117,10 +147,8 @@ func (s *Stripe) call(ctx context.Context, method, path string, form url.Values,
 	}
 	if res.StatusCode/100 != 2 {
 		var e stripeError
-		if json.Unmarshal(raw, &e) == nil && e.Error.Message != "" {
-			return fmt.Errorf("Stripe refused it (%d): %s", res.StatusCode, e.Error.Message)
-		}
-		return fmt.Errorf("Stripe refused it (%d)", res.StatusCode)
+		_ = json.Unmarshal(raw, &e)
+		return &refusal{status: res.StatusCode, code: e.Error.Code, message: e.Error.Message}
 	}
 	if out != nil {
 		if err := json.Unmarshal(raw, out); err != nil {
@@ -181,15 +209,70 @@ func (s *Stripe) Make(ctx context.Context, o Offer, opts Options) (Link, error) 
 	if l.ID == "" || !Checkout(ProviderStripe, l.URL) {
 		return Link{}, fmt.Errorf("Stripe's payment link %q is not at its own checkout", l.URL)
 	}
-	return Link{Offer: o, URL: l.URL, Provider: ProviderStripe, Ref: l.ID, Made: time.Now().UTC()}, nil
+	return Link{Offer: o, URL: l.URL, Provider: ProviderStripe, Ref: l.ID, Made: time.Now().UTC(), Mode: s.Mode()}, nil
 }
 
 // Retire stops a payment link selling. Its orders stay at Stripe.
+//
+// A link Stripe has no record of, in this key's mode, is retired already:
+// deleted, or lost with a test account's data. That was a refusal, and
+// one that could never clear: every sync after ended "Stripe refused it
+// (404): No such payment_link", and turning payments off left such links
+// in the book as selling. A link of the other mode is a refusal still,
+// because this key cannot see it, which says nothing about whether it
+// sells.
 func (s *Stripe) Retire(ctx context.Context, l Link) error {
 	if !strings.HasPrefix(l.Ref, "plink_") || strings.ContainsAny(l.Ref, "/?#") {
 		return fmt.Errorf("%q is not a Stripe payment link", l.Ref)
 	}
-	return s.call(ctx, http.MethodPost, "/v1/payment_links/"+l.Ref, url.Values{"active": {"false"}}, "", nil)
+	err := s.call(ctx, http.MethodPost, "/v1/payment_links/"+l.Ref, url.Values{"active": {"false"}}, "", nil)
+	if missing(err) && l.InMode() == s.Mode() {
+		return nil
+	}
+	return err
+}
+
+// maxSellingPages bounds how far the list of what sells is read: a hundred
+// links a page, so a hundred thousand links, well past the most a book
+// keeps, with room for links somebody made at Stripe by hand.
+const maxSellingPages = 1000
+
+// Selling is the ids of the payment links that sell at Stripe for this key.
+//
+// One list of every active link, a hundred at a time, rather than a
+// question for each link: a sync runs after every publish, and a shop of a
+// thousand products would otherwise ask a thousand times. A key sees only
+// its own account and mode, so a link the test key made is not on the list
+// the live key reads, and is made again.
+func (s *Stripe) Selling(ctx context.Context) (map[string]bool, error) {
+	out := map[string]bool{}
+	after := ""
+	for range maxSellingPages {
+		q := url.Values{"active": {"true"}, "limit": {"100"}}
+		if after != "" {
+			q.Set("starting_after", after)
+		}
+		var page struct {
+			Data []struct {
+				ID     string `json:"id"`
+				Active bool   `json:"active"`
+			} `json:"data"`
+			HasMore bool `json:"has_more"`
+		}
+		if err := s.call(ctx, http.MethodGet, "/v1/payment_links", q, "", &page); err != nil {
+			return nil, err
+		}
+		for _, d := range page.Data {
+			if d.Active {
+				out[d.ID] = true
+			}
+		}
+		if !page.HasMore || len(page.Data) == 0 {
+			return out, nil
+		}
+		after = page.Data[len(page.Data)-1].ID
+	}
+	return nil, fmt.Errorf("more than %d payment links sell at Stripe, which is more than this reads to find its own", maxSellingPages*100)
 }
 
 // Orders are the most recent completed checkouts, newest first.

@@ -1348,6 +1348,8 @@ func cmdAdd(root string, args []string) error {
 	if err != nil {
 		return err
 	}
+	// The commit every page below is read from, which is what this edit is
+	// made against whether or not --based-on says so (SaveDraftOver).
 	parent := s.GetRef(site.RefDraft)
 	if parent == "" {
 		parent = s.GetRef(site.RefLive)
@@ -1420,17 +1422,27 @@ func cmdAdd(root string, args []string) error {
 	changed := changedNames(fs.Args())
 	var cid string
 	var merged collab.Merged
-	if *merge {
+	switch {
+	case *merge:
 		cid, merged, err = site.MergeDraftFrom(s, pages, message, who, *basedOn)
-	} else {
+	case *basedOn != "":
 		cid, err = site.SaveDraftFrom(s, pages, message, who, *basedOn)
+	default:
+		// No base named, and still one read: the draft the pages above came
+		// from. This wrote them back with an empty base, which takes whatever
+		// the draft is by then as the parent, so ten adds run at once left
+		// two of their ten pages in the draft and all ten said they had
+		// written theirs. Merged with whatever landed since, as --merge does,
+		// because an add that touched nothing anybody else did has nothing
+		// to be refused for.
+		cid, merged, err = site.SaveDraftOver(s, pages, message, who, parent)
 	}
 	if err != nil {
 		// A refused write is worth recording. Somebody tried to save over
 		// somebody else's edit, and the fact that the store stopped them is
 		// exactly the sort of thing a log exists to preserve.
 		reason := "conflict"
-		if *merge {
+		if *merge || *basedOn == "" {
 			// Named apart in the log, because they are different events. A
 			// refused save means the ref moved; a refused merge means two
 			// people disagreed about a specific field, and only the second
@@ -1460,7 +1472,13 @@ func cmdAdd(root string, args []string) error {
 			"pages":  strings.Join(changed, ","),
 			"author": who,
 		}))
-	w.Human("draft %s  %d page(s)\n", short(cid), len(pages))
+	// The draft's pages as written, which after a merge includes what landed
+	// while this was working, not only what it read.
+	written := len(pages)
+	if merged.Pages != nil {
+		written = len(merged.Pages)
+	}
+	w.Human("draft %s  %d page(s)\n", short(cid), written)
 	if message != *msg {
 		w.Human("  %srecorded as yours, %s; %s is credited in its message%s\n",
 			dim, who, strings.TrimSpace(*author), reset)
@@ -1468,7 +1486,7 @@ func cmdAdd(root string, args []string) error {
 	// What the merge took from each side, on success as well as on failure. A
 	// merge reported only when it fails is a merge nobody trusts: silence
 	// after one reads as "nothing happened", and something did.
-	if *merge && len(merged.TookTheirs) > 0 {
+	if len(merged.TookTheirs) > 0 {
 		w.Human("\n  %smerged with %d change(s) made while you were working%s\n",
 			dim, len(merged.TookTheirs), reset)
 		for _, t := range merged.TookTheirs {

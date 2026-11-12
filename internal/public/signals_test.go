@@ -89,6 +89,40 @@ func TestGuessingConversationAddressesIsNoticed(t *testing.T) {
 	}
 }
 
+// What the shield is told a wrong conversation address was about tells one
+// address asked for again from several, without the address itself.
+//
+// It was told the chatbot's name, the same for every address, so the
+// shield could not tell a visitor reloading their own expired link from
+// somebody trying secrets, and slowed both on the whole site.
+func TestAWrongConversationAddressIsToldApartWithoutItsSecret(t *testing.T) {
+	st, _, _ := handoffSite(t)
+	heard := tellingTheShield(st)
+	stale, _, _ := handoff.NewSecret()
+	other, _, _ := handoff.NewSecret()
+	for _, s := range []string{stale, stale, stale, other} {
+		if code := from(st, http.MethodGet, "/ask/help/c/"+s, "203.0.113.9", nil); code != http.StatusNotFound {
+			t.Fatalf("a wrong address answered %d", code)
+		}
+	}
+	if len(*heard) != 4 {
+		t.Fatalf("told %v", *heard)
+	}
+	subjects := map[string]bool{}
+	for _, h := range *heard {
+		if h.kind != ConversationGuess || !strings.HasPrefix(h.subject, "help ") {
+			t.Errorf("told %+v", h)
+		}
+		if strings.Contains(h.subject, stale) || strings.Contains(h.subject, other) {
+			t.Error("the shield was told a conversation's secret")
+		}
+		subjects[h.subject] = true
+	}
+	if len(subjects) != 2 {
+		t.Fatalf("two different addresses were told as %d", len(subjects))
+	}
+}
+
 func TestAnInjectionAttemptAtAChatbotIsNoticedAndAnsweredAsUsual(t *testing.T) {
 	st, _ := askSite(t, shopBot)
 	clock := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)

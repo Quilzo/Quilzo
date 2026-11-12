@@ -90,10 +90,9 @@ func (st *Site) searchPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cerr := st.sources().For(searchPageName, body, firstOf(r.URL.Query()))
+	ctx, cerr := st.sourcesFor(r).For(searchPageName, body, firstOf(r.URL.Query()))
 	if cerr != nil {
-		http.Error(w, "this page could not be assembled",
-			http.StatusInternalServerError)
+		unassembled(w, cerr, "this page could not be assembled")
 		return
 	}
 	data := st.searchData(query, pages, hashes)

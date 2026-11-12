@@ -6,10 +6,12 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -116,6 +118,33 @@ func cmdMCP(root string, args []string) error {
 	return in.Err()
 }
 
+// quoteInput is something a caller sent, as a refusal quotes it: enough to
+// say which, and no more. read_page quoted a page name whole, so a reader
+// naming one just under the 2 MiB body limit had it sent back, and stored in
+// the log with the refusal, on every request.
+func quoteInput(s string) string { return strconv.Quote(clip(s, 80)) }
+
+// draftRefusal is what an agent is told when a write to the draft is
+// refused.
+//
+// A refusal, not a failure: an agent that reads "conflict" as "the server
+// broke" will retry blindly. And a retryable one when somebody else's write
+// got there first and changed the same thing, because every write here
+// reads the draft itself, so the next call is made against the draft as it
+// is then rather than against the one this call read. It said otherwise,
+// retryable:false beside a comment that a retry "fails identically forever",
+// and a client that believed it gave up on writes a second call would make.
+func draftRefusal(err error) *mcp.Refusal {
+	var moved *site.Conflict
+	var disagreed *site.MergeConflict
+	if errors.As(err, &moved) || errors.As(err, &disagreed) {
+		return &mcp.Refusal{Retryable: true, Reason: err.Error() +
+			"\n  read what you were changing again and send what you still mean to: " +
+			"the next call is made against the draft as it is then"}
+	}
+	return &mcp.Refusal{Reason: err.Error()}
+}
+
 func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.Server {
 	srv := mcp.NewServer("quilzo", version)
 
@@ -200,7 +229,7 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		}
 		body, ok := pages[name]
 		if !ok {
-			return nil, &mcp.Refusal{Reason: fmt.Sprintf("there is no page %q", name)}
+			return nil, &mcp.Refusal{Reason: "there is no page " + quoteInput(name)}
 		}
 		b, _ := json.MarshalIndent(body, "", "  ")
 		return string(b), nil
@@ -300,8 +329,7 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		idx := vector.Build(s.GetRef(site.RefDraft), pages, search.Tokenise)
 		v, ok := idx.Vectors[name]
 		if !ok {
-			return nil, &mcp.Refusal{
-				Reason: fmt.Sprintf("there is no page %q", name)}
+			return nil, &mcp.Refusal{Reason: "there is no page " + quoteInput(name)}
 		}
 		near, err := idx.Nearest(v, mcpHits(a), name)
 		if err != nil {
@@ -380,10 +408,13 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 			return nil, &mcp.Refusal{Reason: "no fields given; nothing to write"}
 		}
 
-		base := s.GetRef(site.RefDraft)
-		pages, err := site.PagesAt(s, site.RefDraft)
+		// The page set and the commit it is read from, which is what this
+		// write is made against (site.SaveDraftOver). An unreadable draft is
+		// an error rather than an empty site: written over, it would have
+		// become a draft holding this one page.
+		base, pages, err := draftOrLive(s)
 		if err != nil {
-			pages = map[string]any{}
+			return nil, err
 		}
 		existing, _ := pages[name].(map[string]any)
 		body := map[string]any{}
@@ -404,13 +435,14 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
 
-		cid, err := site.SaveDraftFrom(s, pages, "mcp: write "+name,
+		// Merged with whatever landed since it was read. Checked against the
+		// base alone, the first of ten agents writing ten different pages at
+		// once landed and the other nine were refused, each told the draft
+		// had moved because of a page it never touched.
+		cid, _, err := site.SaveDraftOver(s, pages, "mcp: write "+name,
 			caller.Name, base)
 		if err != nil {
-			// A refusal, not a failure. An agent that reads "conflict" as "the
-			// server broke" will retry, and retrying a conflict against the
-			// same stale base fails identically forever.
-			return nil, &mcp.Refusal{Reason: err.Error()}
+			return nil, draftRefusal(err)
 		}
 
 		// Marked without being asked. An agent is a model, and a model writing
@@ -635,7 +667,7 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 	// Records, types, media, the pipeline and the read-only assurance
 	// operations. In another file because this one was already the length where
 	// somebody adding an operation stops reading the gates at the top.
-	registerContentOps(srv, root, s, caller)
+	registerContentOps(srv, root, s, caller, tplDir)
 	registerShieldOps(srv, root, caller)
 	registerEvalOps(srv, root, caller)
 	registerAssistantOps(srv, root, caller)

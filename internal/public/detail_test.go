@@ -135,6 +135,36 @@ func TestProductStructuredDataCarriesOnlyWhatTheListingExposed(t *testing.T) {
 	}
 }
 
+// The structured data states the price the Buy button charges, in the
+// currency's own minor unit.
+//
+// It divided every price by a hundred, so a yen product sold at ¥1500 told
+// crawlers and shopping surfaces it cost 15.00, and a dinar price came out
+// ten times too large: the page's metadata said one price and its button
+// charged another, for every currency whose minor unit is not a hundredth.
+// A currency written in lower case, which the Buy button and the catalogue
+// feed read as the code it is, went out in lower case, which is no ISO 4217
+// code.
+func TestProductStructuredDataStatesThePriceInTheCurrencysOwnUnit(t *testing.T) {
+	for _, c := range []struct {
+		price    float64
+		currency string
+		want     []string
+	}{
+		{4200, "GBP", []string{`"price":"42.00"`, `"priceCurrency":"GBP"`}},
+		{1500, "JPY", []string{`"price":"1500"`, `"priceCurrency":"JPY"`}},
+		{12500, "KWD", []string{`"price":"12.500"`, `"priceCurrency":"KWD"`}},
+		{950, "eur", []string{`"price":"9.50"`, `"priceCurrency":"EUR"`}},
+	} {
+		got := productLD(listing.Row{"name": "Ink", "price": c.price, "currency": c.currency}, "Shop")
+		for _, want := range c.want {
+			if !strings.Contains(got, want) {
+				t.Errorf("%v %s: the structured data lacks %s:\n  %s", c.price, c.currency, want, got)
+			}
+		}
+	}
+}
+
 // An unknown availability maps to nothing rather than to InStock.
 //
 // Guessing in the available direction is how a sold-out product stays listed

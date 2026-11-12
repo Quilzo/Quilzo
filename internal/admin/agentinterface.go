@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -49,6 +50,10 @@ type AgentInterface struct {
 	// every tool call, for the audit log.
 	Build  func(r *http.Request, c *mcp.Caller) (*mcp.Server, error)
 	Called func(r *http.Request, c *mcp.Caller, tool, operation string, err *mcp.Error)
+	// Limit says whether a caller may make another request now, and if not
+	// how long until it may, at every door of the interface: /mcp, a
+	// gateway, a browser grant and A2A. Nil limits nothing.
+	Limit func(c *mcp.Caller) (bool, time.Duration)
 	// Docs is the manual's page about it.
 	Docs string
 	// Receipt is every call made through one connection, with proofs of
@@ -111,11 +116,25 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 		},
 		Build:  s.Interface.Build,
 		Called: s.Interface.Called,
+		Allow:  s.interfaceAllow,
 		SameOrigin: func(o string) bool {
 			return sameorigin.Same(o, own) || (oauth && sameorigin.Same(o, cfg.Issuer))
 		},
 	}
 	e.ServeHTTP(w, r)
+}
+
+// interfaceAllow is the interface's limit on how fast one caller may go.
+//
+// /mcp had none. The reader token the content API cut off after a burst of
+// twenty got two hundred concurrent whole-site exports here, and this is
+// the door to model calls and outbound fetches as well, so nothing bounded
+// what one credential could make the server do or spend.
+func (s *Server) interfaceAllow(_ *http.Request, c *mcp.Caller) (bool, time.Duration) {
+	if s.Interface == nil || s.Interface.Limit == nil {
+		return true, 0
+	}
+	return s.Interface.Limit(c)
 }
 
 // interfaceCaller authenticates a bearer token at the interface: through
@@ -146,6 +165,7 @@ func (s *Server) handleGateway(w http.ResponseWriter, r *http.Request) {
 		Build: func(r *http.Request, c *mcp.Caller) (*mcp.Server, error) {
 			return s.Interface.Gateway(r, c, name)
 		},
+		Allow: s.interfaceAllow,
 		SameOrigin: func(o string) bool {
 			return sameorigin.Same(o, own) || (oauth && sameorigin.Same(o, cfg.Issuer))
 		},
@@ -196,6 +216,7 @@ func (s *Server) handleBrowserMCP(w http.ResponseWriter, r *http.Request) {
 		Build: func(r *http.Request, c *mcp.Caller) (*mcp.Server, error) {
 			return s.Interface.Browser(r, c, name)
 		},
+		Allow: s.interfaceAllow,
 		SameOrigin: func(o string) bool {
 			return sameorigin.Same(o, own) || (oauth && sameorigin.Same(o, cfg.Issuer))
 		},
@@ -243,6 +264,11 @@ func (s *Server) handleA2A(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		tokenChallenge(w, "", err)
 		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+	if ok, wait := s.interfaceAllow(r, c); !ok {
+		w.Header().Set("Retry-After", fmt.Sprint(int(wait/time.Second)+1))
+		http.Error(w, "too many requests with this token", http.StatusTooManyRequests)
 		return
 	}
 	s.Interface.A2A(c).Serve(w, r)

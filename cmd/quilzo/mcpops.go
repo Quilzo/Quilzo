@@ -6,6 +6,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -54,7 +55,7 @@ import (
 // keys are, is not. That is a decision rather than an omission, which is the
 // distinction this project keeps having to make explicit.
 
-func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Caller) {
+func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Caller, tplDir string) {
 	// -- finding anything ---------------------------------------------------
 
 	// Why an agent gets this at all
@@ -551,9 +552,9 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 			"look for.",
 		Keywords: []string{"scan", "security", "vulnerability", "secrets", "xss"},
 	}, func(a map[string]any) (any, error) {
-		dir, _ := a["templates"].(string)
-		if dir == "" {
-			dir = "templates"
+		dir, err := templatesAsked(a, caller, tplDir)
+		if err != nil {
+			return nil, err
 		}
 		inputs, err := collectInputs(root, dir, site.RefDraft)
 		if err != nil {
@@ -847,12 +848,13 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 			"service. Use it to check what a pinning service claims: a " +
 			"service that returns a different identifier stored something " +
 			"other than what it was given.",
-		Args:     map[string]string{"templates": "where page.html lives; defaults to templates"},
+		Args: map[string]string{"templates": "where page.html lives; defaults to the templates this " +
+			"server was started with, and from the agent interface can be nothing else"},
 		Keywords: []string{"ipfs", "cid", "permanent", "decentralised", "hash", "web3"},
 	}, func(a map[string]any) (any, error) {
-		dir, _ := a["templates"].(string)
-		if dir == "" {
-			dir = "templates"
+		dir, err := templatesAsked(a, caller, tplDir)
+		if err != nil {
+			return nil, err
 		}
 		if err := everyDraftPage(root, s, caller); err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
@@ -910,6 +912,35 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 		}
 		return strings.TrimSpace(b.String()), nil
 	})
+}
+
+// templatesAsked is the templates directory an operation reads: the one this
+// server was started with, as check_accessibility and publish use, unless
+// the command line's own server is asked for another.
+//
+// content_id and scan_content read ./templates of wherever the process ran,
+// or any directory their argument named. From the agent interface that made
+// a reader's token a probe of the server's filesystem, told a file from a
+// missing path from a directory with no page.html, rendered the site with
+// another store's templates, and scanned what it liked. The argument stays
+// for the command line's server, run by whoever owns the machine; from afar
+// the only directory there is to name is this server's own, and the refusal
+// does not say what was asked for.
+//
+// An agent's run is refused alike. It calls these through the same
+// interface with the caller who started it, who is not at the agent
+// interface, so a run's model, choosing its arguments from whatever it had
+// read, could still have the server open any path and say which existed.
+func templatesAsked(a map[string]any, caller *Caller, tplDir string) (string, error) {
+	asked, _ := a["templates"].(string)
+	if asked == "" || filepath.Clean(asked) == filepath.Clean(tplDir) {
+		return tplDir, nil
+	}
+	if caller.Remote || caller.run != nil {
+		return "", &mcp.Refusal{Reason: "this reads the templates this server was started with; " +
+			"a caller at the agent interface or an agent's run cannot name another directory"}
+	}
+	return asked, nil
 }
 
 // oneLine folds a note onto one line for a tab-separated listing.

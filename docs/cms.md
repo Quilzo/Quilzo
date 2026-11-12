@@ -809,6 +809,13 @@ is retired. A price no link charges yet shows no button at all, so a page
 never offers a checkout at a price it does not show. The site process holds no
 key: the admin makes the links, and the site reads only the list of them.
 
+Each sync asks Stripe which links still sell for the key it holds, and a link
+that does not is made again. So when the test key a shop was set up on is
+replaced by the live one, the next `quilzo pay sync` (or publish) makes live
+links and the test-mode ones stop being offered, and a link deleted in Stripe's
+dashboard comes back. A live link a test key cannot see is taken off the site
+and named, to be retired in Stripe's dashboard.
+
 ### Crypto: what Quilzo does and refuses
 
 Quilzo does not hold a wallet, does not hold a key to one and does not sign a
@@ -1301,6 +1308,13 @@ period with a ceiling, honeypot and timing checks, CSV export that neutralises
 spreadsheet formula injection, and erasure by search — because an append-only
 merkle store cannot erase, which is why submissions deliberately do not live in
 it.
+
+A form takes answers only where the site offers it: a published page, visible
+now, that names it (`"form": "enquiry"`) or renders through a layout with the
+form's markup pasted in, or a public chatbot that may fill it in. A page for
+members counts while membership is open or by invitation. A form declared and
+placed nowhere, or on a page still in draft or past its date, answers not found,
+so it cannot collect anything the owner is not asking for.
 
 A form can take a file — a CV, a photograph of the damage, a signed letter —
 with a field of kind `file` (`"accept": ["image"]` to narrow it; images and

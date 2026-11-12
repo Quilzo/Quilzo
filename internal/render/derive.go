@@ -32,8 +32,9 @@ import (
 //
 // # The answer this project already uses
 //
-// Compute it in Go. The demo does exactly this for prices: the language has no
-// arithmetic, so price_display is written into the record before rendering. The
+// Compute it in Go. Prices are done this way: the language has no arithmetic,
+// so a row's price_display is written from its price and currency where a
+// record becomes a row (internal/listing), not kept by hand beside them. The
 // same argument applies to negation, and to anything else a layout needs that
 // is a pure function of the content.
 //

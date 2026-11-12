@@ -367,7 +367,9 @@ func editSections(root, page string,
 	// none. Repeating it here would be a second copy of the rule to drift.
 	caller := resolveCaller(root, "")
 
-	pages, err := site.PagesAt(s, site.RefDraft)
+	// The commit the pages are read from, which is what the change is made
+	// against (draftRead).
+	base, pages, err := draftRead(s)
 	if err != nil {
 		return err
 	}
@@ -391,7 +393,7 @@ func editSections(root, page string,
 	if err != nil {
 		return err
 	}
-	cid, err := site.SaveDraftFrom(s, pages, msg, caller.Name, s.GetRef(site.RefDraft))
+	cid, _, err := site.SaveDraftOver(s, pages, msg, caller.Name, base)
 	if err != nil {
 		return err
 	}

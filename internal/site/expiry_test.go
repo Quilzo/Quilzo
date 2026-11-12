@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 func at(s string) time.Time {
@@ -152,6 +154,45 @@ func TestPublishingAnAlreadyExpiredPageIsRefused(t *testing.T) {
 	}
 	if !strings.Contains(got[0], "stale") {
 		t.Errorf("named the wrong page: %s", got[0])
+	}
+}
+
+// The publish gate reads only what the publish puts up or changes. A live
+// page that reached its date as scheduled refused every publish after it.
+func TestOnlyWhatAPublishChangesIsCheckedForExpiry(t *testing.T) {
+	now := at("2026-08-16T12:00:00Z")
+	s, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	offer := doc(map[string]any{"title": "Offer", Expires: "2026-08-01"})
+	pages := map[string]any{"index": doc(map[string]any{"title": "Home"}), "offer": offer}
+	first, err := SaveDraft(s, pages, "first", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Nothing live yet: every page is what the publish puts up.
+	if got, err := ExpiredOnPublish(s, first, now); err != nil || len(got) != 1 || !strings.Contains(got[0], "offer") {
+		t.Fatalf("before anything is live: %v %v", got, err)
+	}
+	if _, err := Publish(s, first); err != nil {
+		t.Fatal(err)
+	}
+	pages["post"] = doc(map[string]any{"title": "Post"})
+	next, err := SaveDraft(s, pages, "a post", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := ExpiredOnPublish(s, next, now); err != nil || len(got) != 0 {
+		t.Fatalf("a live page that expired on schedule: %v %v", got, err)
+	}
+	pages["offer"] = doc(map[string]any{"title": "Offer, changed", Expires: "2026-08-01"})
+	changed, err := SaveDraft(s, pages, "the offer again", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := ExpiredOnPublish(s, changed, now); err != nil || len(got) != 1 || !strings.Contains(got[0], "offer") {
+		t.Fatalf("a changed page past its date: %v %v", got, err)
 	}
 }
 

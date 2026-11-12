@@ -286,12 +286,9 @@ func applyRecords(root string, p *feature.Package, firstInstall bool, caller *Ca
 	if err != nil {
 		return err
 	}
-	tree, err := draftTree(s)
-	if err != nil {
-		return err
-	}
 	total := 0
-	for _, set := range p.Records {
+	batches := make([][]collection.Record, len(p.Records))
+	for n, set := range p.Records {
 		rows, err := readStaged(root, set)
 		if err != nil {
 			return err
@@ -303,12 +300,20 @@ func applyRecords(root string, p *feature.Package, firstInstall bool, caller *Ca
 			}
 			batch = append(batch, collection.Record{ID: r.ID, Fields: r.Fields})
 		}
-		if tree, _, err = collection.PutMany(s, tree, set.Collection, batch, time.Now()); err != nil {
-			return err
-		}
+		batches[n] = batch
 		total += len(batch)
 	}
-	if err := commitTree(root, s, tree, fmt.Sprintf("feature %s: bring %d record(s)", p.Name, total), caller.Name); err != nil {
+	// Into the draft as it is under the lock (commitTree), so what was
+	// saved while the rows were read and checked is kept.
+	if err := commitTree(s, caller.Name, func(tree string) (string, string, error) {
+		for n, set := range p.Records {
+			var err error
+			if tree, _, err = collection.PutMany(s, tree, set.Collection, batches[n], time.Now()); err != nil {
+				return "", "", err
+			}
+		}
+		return tree, fmt.Sprintf("feature %s: bring %d record(s)", p.Name, total), nil
+	}); err != nil {
 		return err
 	}
 	for _, set := range p.Records {

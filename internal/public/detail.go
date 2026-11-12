@@ -6,6 +6,7 @@ package public
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/seo"
+	"github.com/quilzo/quilzo/internal/spend"
 	"github.com/quilzo/quilzo/internal/tmpl"
 )
 
@@ -125,8 +127,9 @@ func (st *Site) detailRoute(w http.ResponseWriter, r *http.Request,
 		}
 		// A declaration that cannot work is the operator's problem and is
 		// said out loud, because a misconfigured detail route that 404s looks
-		// exactly like a record that is not there.
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		// exactly like a record that is not there. A value in the address
+		// the listing refuses is the visitor's: see unassembled.
+		unassembled(w, err, err.Error())
 		return true
 	}
 	st.renderDetail(w, r, base, body, row)
@@ -143,9 +146,9 @@ func (st *Site) detailRoute(w http.ResponseWriter, r *http.Request,
 func (st *Site) renderDetail(w http.ResponseWriter, r *http.Request,
 	name string, body any, row listing.Row) {
 
-	ctx, err := st.sources().For(name, body, firstOf(r.URL.Query()))
+	ctx, err := st.sourcesFor(r).For(name, body, firstOf(r.URL.Query()))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		unassembled(w, err, err.Error())
 		return
 	}
 	st.sources().WithRecord(ctx, map[string]any(row))
@@ -268,11 +271,19 @@ func productLD(row listing.Row, siteName string) string {
 	// The offer. Price is the number, not the written-out string: a consumer
 	// of structured data has to compare it, and "£24.00" is not a number in
 	// any locale's arithmetic.
-	if pence, ok := numberOf(row["price"]); ok {
+	//
+	// In the currency's own minor unit, and its code as the Buy button and
+	// the catalogue feed read it. Every price was divided by a hundred, so a
+	// yen product sold at ¥1500 told crawlers it cost 15.00 and a dinar
+	// price came out ten times too large, and "eur" went out as no ISO 4217
+	// code at all.
+	if minor, ok := numberOf(row["price"]); ok {
+		currency := strings.ToUpper(strings.TrimSpace(str("currency")))
+		places := spend.Decimals(currency)
 		offer := map[string]any{
 			"@type":         "Offer",
-			"price":         fmt.Sprintf("%.2f", pence/100),
-			"priceCurrency": str("currency"),
+			"price":         fmt.Sprintf("%.*f", places, minor/math.Pow10(places)),
+			"priceCurrency": currency,
 			"availability":  availabilityLD(str("availability")),
 		}
 		doc["offers"] = offer

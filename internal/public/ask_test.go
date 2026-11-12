@@ -651,3 +651,30 @@ func TestAVisitorWaitingForAPersonSeesTheOutcomeOnTheirOwnPage(t *testing.T) {
 		t.Errorf("another visitor's page shows this visitor's outcome:\n%s", b)
 	}
 }
+
+// A chatbot's page showing a question from its address is not offered to
+// search engines.
+//
+// /ask/NAME?q=ANYTHING prints the question back, as a heading and in the
+// hand-off form, and was indexable: anybody could link to the site's
+// address with their own words in it, for a crawler to fetch and file under
+// the business's name, running the chatbot each time. Every other page
+// made from what a request says is marked not to be indexed.
+func TestAChatbotsAnswerPageIsNotIndexed(t *testing.T) {
+	st, _ := askSite(t, shopBot)
+	const pitch = "Cheap pills at spam dot example"
+	w := get(st, "/ask/help?q="+url.QueryEscape(pitch), nil)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), pitch) {
+		t.Fatalf("the question was not answered: %d", w.Code)
+	}
+	if got := w.Header().Get("X-Robots-Tag"); !strings.Contains(got, "noindex") || !strings.Contains(got, "nofollow") {
+		t.Errorf("a question from the address was answered with X-Robots-Tag %q", got)
+	}
+	if got := askPost(st, "help", pitch).Header().Get("X-Robots-Tag"); !strings.Contains(got, "noindex") {
+		t.Errorf("an asked question was answered with X-Robots-Tag %q", got)
+	}
+	// The chatbot's own page, with no question, is the owner's to have found.
+	if got := get(st, "/ask/help", nil).Header().Get("X-Robots-Tag"); got != "" {
+		t.Errorf("the chatbot's page was answered with X-Robots-Tag %q", got)
+	}
+}

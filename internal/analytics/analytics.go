@@ -401,6 +401,75 @@ func Read(dir string, days int, now time.Time) ([]Day, error) {
 	return out, nil
 }
 
+var reDayFile = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}\.json$`)
+
+// Refold counts every day kept in dir again, each page and each address not
+// found under the name fold gives it, adding together what it makes one.
+//
+// For pages the site came to count under another name: an address that is
+// somebody's key, a chatbot conversation's or a shared draft's, which the
+// site now counts under its prefix. The days written before it did kept
+// each one in clear, for as long as the files are kept, where anybody who
+// may read the totals lists them; counting only today's under the prefix
+// left every earlier day's where it was. A day's views and visitors are
+// unchanged. A page's visitors, added together, are at most the sum of its
+// parts and never more than the day's, because the sets they were counted
+// from are never kept. A day nothing changes in is not written again.
+func Refold(dir string, fold func(string) string) error {
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if e.IsDir() || !reDayFile.MatchString(e.Name()) {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		var d Day
+		if json.Unmarshal(b, &d) != nil {
+			continue
+		}
+		changed := false
+		pages := make(map[string]Page, len(d.Pages))
+		for p, v := range d.Pages {
+			to := fold(p)
+			changed = changed || to != p
+			got := pages[to]
+			got.Views += v.Views
+			got.Visitors = min(got.Visitors+v.Visitors, max(d.Visitors, v.Visitors))
+			pages[to] = got
+		}
+		missing := make(map[string]int, len(d.Missing))
+		for p, n := range d.Missing {
+			to := fold(p)
+			changed = changed || to != p
+			missing[to] += n
+		}
+		if !changed {
+			continue
+		}
+		d.Pages = pages
+		if d.Missing != nil {
+			d.Missing = missing
+		}
+		out, err := json.Marshal(d)
+		if err != nil {
+			return err
+		}
+		if err := atomicfile.Write(path, out, 0o600); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Ranked is a name and a count, for a table.
 type Ranked struct {
 	Name  string
