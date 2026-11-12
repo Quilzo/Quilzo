@@ -6,12 +6,17 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/quilzo/quilzo/internal/admin"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/mcp"
+	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/store"
 )
 
@@ -146,5 +151,74 @@ func TestARefusalQuotesAPageNameItCouldNotFindShort(t *testing.T) {
 		if len(refused.Message) > 512 || !strings.Contains(refused.Message, "pxxx") {
 			t.Errorf("%s answered %d bytes, not a short form of the name: %.120s", op, len(refused.Message), refused.Message)
 		}
+	}
+}
+
+// The agent interface holds a token to the same budget the content API
+// does: a burst of api.rate.burst, then api.rate.per_minute, then 429 with
+// how long to wait.
+//
+// It had none. The reader token /api/v1 cut off after twenty requests got
+// two hundred concurrent whole-site exports at /mcp, and the same door
+// reaches model calls and outbound fetches, so nothing bounded what one
+// credential could make this server do or spend.
+func TestTheAgentInterfaceHoldsATokenToTheAPIsRate(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("QUILZO_TOKEN", "")
+	old := flagToken
+	flagToken = ""
+	t.Cleanup(func() { flagToken = old })
+	root := t.TempDir() + "/st"
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdConfig(root, []string{"set", "mcp.remote", "true", "--accept-risk", "agents reach it"}); err != nil {
+		t.Fatal(err)
+	}
+	seedPolicy(t, root, [2]string{"rae", "reader"})
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pol, err := loadPolicy(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	toks, err := loadTokens(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret, _, err := toks.Issue("cli", "rae", auth.RoleReader, "/", 72*time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv, err := admin.New(s, pol, toks, render.Layouts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wireInterface(root, s, srv, nil, t.TempDir())
+	h := srv.Handler()
+
+	got := map[int]int{}
+	var refused *httptest.ResponseRecorder
+	for range 30 {
+		req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+secret)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		got[rec.Code]++
+		if rec.Code == http.StatusTooManyRequests && refused == nil {
+			refused = rec
+		}
+	}
+	if got[http.StatusOK] != 20 || got[http.StatusTooManyRequests] != 10 {
+		t.Fatalf("thirty calls with one token, against a burst of twenty, were answered %v", got)
+	}
+	if refused.Header().Get("Retry-After") == "" {
+		t.Error("a refusal for going too fast does not say when to come back")
+	}
+	if !strings.Contains(refused.Body.String(), `"retryable":true`) {
+		t.Errorf("a refusal for going too fast is not marked retryable: %s", refused.Body.String())
 	}
 }

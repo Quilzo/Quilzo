@@ -23,6 +23,7 @@ import (
 	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/mcp"
 	"github.com/quilzo/quilzo/internal/oauthas"
+	"github.com/quilzo/quilzo/internal/rate"
 	"github.com/quilzo/quilzo/internal/store"
 )
 
@@ -157,11 +158,19 @@ func wireInterface(root string, s *store.Store, srv *admin.Server, sh *shieldHos
 				Principal: principal, Kind: kind, Verified: verified, Detail: d})
 		},
 	}
+	limit := interfaceRate(cc.get())
 	srv.Interface = &admin.AgentInterface{
 		Enabled: func() bool { return cc.get().Bool("mcp.remote") },
 		Config:  cfgOf,
 		OAuth:   oa,
 		Docs:    admin.DocURL("agent-interface"),
+		Limit: func(c *mcp.Caller) (bool, time.Duration) {
+			key := "principal:" + c.Principal
+			if tok, ok := c.Data.(auth.Token); ok && tok.ID != "" {
+				key = tok.ID
+			}
+			return limit.Allow(key, time.Now())
+		},
 		Receipt: func(connection string) ([]byte, error) {
 			rf, err := buildAppReceipt(root, connection, time.Now())
 			if err != nil {
@@ -213,6 +222,26 @@ func wireInterface(root string, s *store.Store, srv *admin.Server, sh *shieldHos
 	srv.Brief = todayBrief(root, cc)
 	srv.Ask = todayAsk(root, cc)
 	srv.Federation = federation(root)
+}
+
+// interfaceRate is how fast one token may call the agent interface: the
+// content API's budget, api.rate.per_minute after a burst of api.rate.burst,
+// read when the server starts as /api/v1 reads it.
+//
+// A count of its own rather than the API's, so an integration busy on one
+// is not stopped on the other, and the same numbers, because the settings
+// say they are what one token may ask of this server and the interface had
+// no limit at all: the reader token /api/v1 cut off after twenty requests
+// was given two hundred concurrent exports of the whole site here.
+func interfaceRate(cfg *config.Config) *rate.Limiter {
+	per, burst := cfg.Int("api.rate.per_minute"), cfg.Int("api.rate.burst")
+	if per < 1 {
+		per = 120
+	}
+	if burst < 1 {
+		burst = 20
+	}
+	return &rate.Limiter{Every: time.Minute / time.Duration(per), Burst: burst, MaxKeys: 65536}
 }
 
 // appCallRecord is the record of one call at the agent interface. It is
