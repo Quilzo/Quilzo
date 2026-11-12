@@ -104,6 +104,25 @@ func TestAPostWithNothingVisibleIsRefusedAndCannotReverseText(t *testing.T) {
 	}
 }
 
+// A post of blank Braille cells is an empty one too.
+//
+// U+2800 is a letter to Unicode, so it is neither white space nor ignorable,
+// but it draws nothing: it is what people paste to post a blank message
+// where zero-width characters are refused, and it was accepted and shown as
+// an empty comment under the member's name. In Braille it is the space
+// between words, and is kept there.
+func TestAPostOfBlankBrailleIsRefused(t *testing.T) {
+	for _, in := range []string{"⠀", "⠀ ⠀\n⠀", "​⠀"} {
+		if got, err := CleanBody(in, 100); err == nil {
+			t.Errorf("%+q was posted as %+q", in, got)
+		}
+	}
+	const hello = "⠓⠑⠇⠇⠕⠀⠺⠕⠗⠇⠙"
+	if got, err := CleanBody(hello, 100); err != nil || got != hello {
+		t.Errorf("Braille became %+q (%v)", got, err)
+	}
+}
+
 func TestAPostIsShownOrHeldAsTheBoardSays(t *testing.T) {
 	s := store(t)
 	a, err := s.Add(open, "index", "m1", "Ada", "First!")

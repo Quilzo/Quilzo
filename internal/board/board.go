@@ -272,9 +272,14 @@ func turnsText(r rune) bool {
 // fillers such as U+3164. Each is kept inside a post, where joiners and tags
 // make Persian words, emoji and flags; only a post of nothing else is
 // refused.
+//
+// And the blank Braille cell, U+2800, which Unicode calls a letter but which
+// draws nothing: it is what people paste for an empty message where the
+// zero-width characters are refused, and a post of only those was shown as
+// a blank comment. Between Braille words it is their space, and is kept.
 func invisible(r rune) bool {
 	return unicode.IsSpace(r) || unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Variation_Selector, r) ||
-		unicode.Is(unicode.Other_Default_Ignorable_Code_Point, r)
+		unicode.Is(unicode.Other_Default_Ignorable_Code_Point, r) || r == '⠀'
 }
 
 // Add stores a post. Its state comes from the board's moderation.
