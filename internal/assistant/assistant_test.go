@@ -727,6 +727,106 @@ func TestAFigureIsReadAsItIsWritten(t *testing.T) {
 	})
 }
 
+// A "not" is the passage's when it is before a word the passage's is
+// before, whatever comes between them. "Yes, we sell gluten-free bread at
+// the Zqvel bakery, no need to order ahead" was still shown for "We no
+// longer sell gluten-free bread" and "We do not currently sell": the first
+// word after each "not" is "longer" and "currently", and only that word was
+// held to it. So was "No, we sell gluten-free bread", whose "No" is before
+// nothing, and a sentence that changed the verb, "We stock gluten-free
+// bread, no need to order ahead". And a sentence that added "no longer"
+// passed beside a passage's "no nuts".
+func TestANotIsHeldToEveryWordItIsBefore(t *testing.T) {
+	hit := func(title, text string) []Hit {
+		return []Hit{{Passage: Passage{ID: "p#1", Page: "p", Title: title, Text: text}}}
+	}
+	longer := hit("Zqvel bread", "We no longer sell gluten-free bread at the Zqvel bakery.")
+	currently := hit("Zqvel bread", "We do not currently sell gluten-free bread at the Zqvel bakery.")
+	yet := hit("Zqvel bread", "We do not yet sell gluten-free bread at the Zqvel bakery.")
+	bread := hit("Zqvel bread", "We do not sell gluten-free bread at the Zqvel bakery.")
+	aside := hit("Zqvel bread", "We do not, at present, sell gluten-free bread at the Zqvel bakery.")
+	nuts := hit("Zqvel bread", "We sell gluten-free bread and cakes at the Zqvel bakery, with no nuts.")
+	offer := hit("Zqvel delivery", "We do not offer delivery to the Channel Islands, whatever the order.")
+	dogs := hit("Zqvel tea room", "Dogs are not allowed inside, but they are welcome in the garden.")
+	faq := Chunk(map[string]any{"faq": map[string]any{"title": "FAQ", "items": []any{
+		map[string]any{"q": "Do you sell gluten-free bread at the Zqvel bakery?", "a": "No, we don't."},
+	}}}, nil)
+	asked := []Hit{{Passage: faq[0]}}
+	const ahead = "Yes, we sell gluten-free bread at the Zqvel bakery, no need to order ahead [1]."
+	expectVerdicts(t, []verdict{
+		{longer, ahead, `"no"`},
+		{currently, ahead, `"not"`},
+		{yet, "We sell gluten-free bread at the Zqvel bakery without fuss [1].", `"not"`},
+		{bread, "We stock gluten-free bread at the Zqvel bakery, no need to order ahead [1].", `"not"`},
+		{bread, "No, we sell gluten-free bread at the Zqvel bakery [1].", `"not"`},
+		{bread, "We sell gluten-free bread at the Zqvel bakery, don't you know [1].", `"not"`},
+		{aside, ahead, `"not"`},
+		{asked, ahead, `"no"`},
+		{nuts, "We no longer sell gluten-free bread at the Zqvel bakery [1].", `"no"`},
+		{nuts, "We do not currently sell gluten-free bread at the Zqvel bakery [1].", `"not"`},
+		{offer, "We deliver to the Channel Islands, no problem [1].", `"no"`},
+		{dogs, "Dogs are allowed inside, not in the garden [1].", `"not"`},
+		// The passage's "not", in the sentence's own words.
+		{longer, "We no longer sell gluten-free bread at the Zqvel bakery [1].", ""},
+		{longer, "We do not sell gluten-free bread at the Zqvel bakery any more [1].", ""},
+		{currently, "We don't sell gluten-free bread at the Zqvel bakery [1].", ""},
+		{bread, "The Zqvel bakery does not sell gluten-free bread [1].", ""},
+		{bread, "There is no gluten-free bread at the Zqvel bakery [1].", ""},
+		{asked, "No, we do not sell gluten-free bread at the Zqvel bakery [1].", ""},
+		{nuts, "We sell gluten-free bread at the Zqvel bakery, with no nuts [1].", ""},
+		{offer, "We do not offer delivery to the Channel Islands [1].", ""},
+		{dogs, "Dogs are not allowed inside [1].", ""},
+		{dogs, "Dogs are welcome in the garden but not inside [1].", ""},
+	})
+}
+
+// The opposites are known in the forms a page and a model write them in.
+// "Delivery is always free on every order" and "Every order ships free"
+// were shown for "Delivery is charged on every order", because "free" was
+// read as a price only straight after "is"; and "Delivery is free" for "We
+// charge for delivery", "Delivery charges apply" and "Delivery costs
+// extra", because only "charged" was known.
+func TestAnOppositeIsKnownInTheFormsItIsWrittenIn(t *testing.T) {
+	hit := func(title, text string) []Hit {
+		return []Hit{{Passage: Passage{ID: "p#1", Page: "p", Title: title, Text: text}}}
+	}
+	charged := hit("Zqvel delivery", "Delivery is charged on every order.")
+	charge := hit("Zqvel delivery", "We charge for delivery on every order.")
+	charges := hit("Zqvel delivery", "Delivery charges apply on every order.")
+	costs := hit("Zqvel delivery", "Delivery costs extra on every order.")
+	free := hit("Zqvel delivery", "Delivery is free on every order.")
+	vat := hit("Zqvel tea room", "Prices are exclusive of VAT. All teas excl. VAT.")
+	cards := hit("Zqvel tea room", "Card payments are accepted.")
+	loaf := hit("Zqvel bread", "The Zqvel loaf is gluten free and dairy free. Under 12s eat free.")
+	calls := hit("Zqvel help", "Feel free to call the Zqvel help line, where calls are charged at the local rate.")
+	expectVerdicts(t, []verdict{
+		{charged, "Delivery is always free on every order [1].", `"free"`},
+		{charged, "Delivery is completely free on every order [1].", `"free"`},
+		{charged, "Delivery free on every order [1].", `"free"`},
+		{charged, "Every order ships free [1].", `"free"`},
+		{charged, "Delivery is free of charge on every order [1].", `"free"`},
+		{charge, "Delivery is free on every order [1].", `"free"`},
+		{charges, "Delivery is free on every order [1].", `"free"`},
+		{costs, "Delivery is free on every order [1].", `"free"`},
+		{free, "We charge for delivery on every order [1].", `"charge"`},
+		{free, "Delivery costs extra on every order [1].", `"costs"`},
+		{vat, "Prices are inclusive of VAT [1].", `"inclusive"`},
+		{vat, "All teas include VAT [1].", `"include"`},
+		{cards, "Card payments are declined [1].", `"declined"`},
+		{calls, "Calls to the Zqvel help line are free [1].", `"free"`},
+		// What the page says, and a "free" that is no price.
+		{charged, "We charge for delivery on every order [1].", ""},
+		{charge, "Delivery is charged on every order [1].", ""},
+		{free, "Every order has free delivery [1].", ""},
+		{free, "Delivery is free of charge on every order [1].", ""},
+		{vat, "Prices exclude VAT [1].", ""},
+		{loaf, "The Zqvel loaf is gluten-free and dairy-free [1].", ""},
+		{loaf, "The Zqvel loaf is gluten free [1].", ""},
+		{loaf, "Under 12s eat free [1].", ""},
+		{calls, "Calls to the Zqvel help line are charged at the local rate [1].", ""},
+	})
+}
+
 func TestAModelThatFailsFallsBack(t *testing.T) {
 	for name, m := range map[string]*scripted{
 		"error":    {err: errors.New("connection refused")},

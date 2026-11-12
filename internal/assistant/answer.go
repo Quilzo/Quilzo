@@ -908,15 +908,24 @@ type statement struct{ about, says string }
 // header gives only the words the sentence does not: the section "Opening
 // hours" does not say a shop is open on the Mondays its text says it is
 // shut.
-func (st statement) words() (map[string]read, int) {
-	out, bare := readText(st.says)
-	about, aboutBare := readText(st.about)
-	for w, r := range about {
-		if _, ok := out[w]; !ok {
-			out[w] = r
+func (st statement) words() reading {
+	out, about := readText(st.says), readText(st.about)
+	for w, r := range about.words {
+		if _, ok := out.words[w]; !ok {
+			// The header's "not"s are counted after the sentence's.
+			by := r.by
+			r.by = 0
+			for k := range about.nots {
+				if by&notBit(k) != 0 {
+					r.by |= notBit(len(out.nots) + k)
+				}
+			}
+			out.words[w] = r
 		}
 	}
-	return out, bare + aboutBare
+	out.nots = append(out.nots, about.nots...)
+	out.bare = append(out.bare, about.bare...)
+	return out
 }
 
 // turnedAround says why a sentence reverses what it rests on, or "".
@@ -932,14 +941,14 @@ func (st statement) words() (map[string]read, int) {
 // "Why can't I sign in?" read with it, and the question's "can't" is not
 // the answer's.
 func turnedAround(sentence string, units []statement) string {
-	want, wantBare := readText(sentence)
+	want := readText(sentence)
 	says := reNegation.FindAllString(sentence, -1)
 	best, agrees, why := 0, false, ""
 	for _, u := range units {
-		have, haveBare := u.words()
+		have := u.words()
 		n := 0
-		for w := range want {
-			if _, ok := have[w]; ok {
+		for w := range want.words {
+			if _, ok := have.words[w]; ok {
 				n++
 			}
 		}
@@ -950,7 +959,7 @@ func turnedAround(sentence string, units []statement) string {
 			best, agrees, why = n, false, ""
 		}
 		neg := reNegation.FindAllString(u.about+" "+u.says, -1)
-		if ok, reason := agree(want, have, says, neg, wantBare, haveBare); ok {
+		if ok, reason := agree(want, have, says, neg); ok {
 			agrees = true
 		} else if why == "" {
 			why = reason
@@ -974,22 +983,33 @@ func turnedAround(sentence string, units []statement) string {
 // whose "No" answers the question. A "not" anywhere else is the
 // statement's.
 //
-// A "not" is held to the word it is before, whether or not that word has
-// an opposite: when one side says "not" just before a word they share and
-// the other says the word plainly, they disagree, though the other has a
-// "not" of its own somewhere. "Yes, we sell gluten-free bread, no need to
+// A "not" is held to the words it is before, whether or not they have an
+// opposite: when the statement says "not" before words they share, and the
+// sentence says none of those words under a "not" of its own, they
+// disagree, though the sentence has a "not" somewhere else; and a "not" of
+// the sentence's is one the statement says of the same word, or it is the
+// sentence's own (unsaid). "Yes, we sell gluten-free bread, no need to
 // order ahead" was shown for "We do not sell gluten-free bread": its "no"
-// is about ordering. Only a "not" that is before no word at all, as the
-// "No" of "No, we don't" is, may be the one the other side says, because
-// it says nothing of which word it turns; wantBare and haveBare count them.
-func agree(want, have map[string]read, says, neg []string, wantBare, haveBare int) (bool, string) {
+// is about ordering.
+//
+// A "not" that is before no word at all, as the "No" of "No, we don't" is,
+// says nothing of which word it turns. In what is cited it may be the one
+// a sentence says before a word of the question, "We do not sell
+// gluten-free bread"; a sentence must then say one so, or a bare one of its
+// own. In a sentence it stands for no "not" the passage is before a word
+// with: "No, we sell gluten-free bread" was shown for "We do not sell
+// gluten-free bread".
+func agree(want, have reading, says, neg []string) (bool, string) {
 	opposed, written, turned := "", true, true
 	turnedHere, turnedThere := 0, 0
-	dropped := ""
-	for w, r := range want {
-		h, ok := have[w]
+	under := false
+	for w, r := range want.words {
+		h, ok := have.words[w]
 		if !ok {
 			continue
+		}
+		if r.by != 0 {
+			under = true
 		}
 		if r.sides()&h.sides() == 0 {
 			written = false
@@ -997,17 +1017,8 @@ func agree(want, have map[string]read, says, neg []string, wantBare, haveBare in
 				opposed = r.word
 			}
 		}
-		if !isOpposite[w] && (r.sides()|h.sides())&oppositeSide == 0 {
-			// A word with no opposite is not turned by a "not"; it is said,
-			// or it is not.
-			switch {
-			case dropped != "":
-			case h.led != 0 && h.plain == 0 && r.plain != 0 && wantBare == 0:
-				dropped = fmt.Sprintf("leaves out the %q in what it cites", strings.ToLower(h.not))
-			case r.led != 0 && h.negated == 0 && haveBare == 0:
-				dropped = fmt.Sprintf("says %q, where what it cites does not", strings.ToLower(r.not))
-			}
-			continue
+		if !hasOpposite(w, r, h) {
+			continue // a word with no opposite is not turned by a "not"
 		}
 		if (r.negated != 0) != (h.negated != 0) {
 			written = false
@@ -1025,6 +1036,14 @@ func agree(want, have map[string]read, says, neg []string, wantBare, haveBare in
 			turnedThere++
 		}
 	}
+	dropped := ""
+	if not := unsaid(have, want, false); not != "" {
+		dropped = fmt.Sprintf("leaves out the %q in what it cites", strings.ToLower(not))
+	} else if not := unsaid(want, have, true); not != "" && len(have.bare) == 0 {
+		dropped = fmt.Sprintf("says %q, where what it cites does not", strings.ToLower(not))
+	} else if len(have.bare) > 0 && len(want.bare) == 0 && !under {
+		dropped = fmt.Sprintf("leaves out the %q in what it cites", strings.ToLower(have.bare[0]))
+	}
 	sameNot := (len(says) > 0) == (len(neg) > 0)
 	leftNot := (len(says) > turnedHere) == (len(neg) > turnedThere)
 	switch {
@@ -1040,17 +1059,98 @@ func agree(want, have map[string]read, says, neg []string, wantBare, haveBare in
 	return false, fmt.Sprintf("says %q, where what it cites says the opposite", strings.ToLower(opposed))
 }
 
+// hasOpposite says whether a word two texts share is one of a pair of
+// opposites, as either says it.
+func hasOpposite(w string, r, h read) bool {
+	return isOpposite[w] || (r.sides()|h.sides())&oppositeSide != 0
+}
+
+// unsaid is the first "not" of one text that another does not say, or "".
+//
+// The other says it when it says one of the words this one is before only
+// under a "not" of its own, or says the opposite of one, as "closed" says
+// "not open". The "not" of "We do not currently sell gluten-free bread" is
+// before "currently" and "sell", and "Yes, we sell gluten-free bread, no
+// need to order ahead" says "sell" under none.
+//
+// What is cited may say "not" about something a sentence does not repeat,
+// so one of its "not"s is unsaid only when the sentence says a word it is
+// before, one the passage says only under it. A sentence may not: every
+// "not" of its own is held to the passage (whole). "We deliver to the
+// Channel Islands, no problem" was shown for "We do not offer delivery to
+// the Channel Islands", neither "not" being before a word the other text
+// has.
+func unsaid(a, b reading, whole bool) string {
+	for k, not := range a.nots {
+		before, plainly, said, pair := false, false, false, false
+		for w, x := range a.words {
+			if x.by&notBit(k) == 0 {
+				continue
+			}
+			before = true
+			y, ok := b.words[w]
+			if !ok {
+				continue
+			}
+			// Only under one: "We sell it unless it sells out" says "sell"
+			// plainly too.
+			if y.by != 0 && !y.clear {
+				said = true
+				break
+			}
+			if hasOpposite(w, x, y) {
+				if x.turned()&y.turned() != 0 {
+					said = true
+					break
+				}
+				pair = true // left to what agree makes of the pair
+				continue
+			}
+			if !x.clear {
+				plainly = true
+			}
+		}
+		switch {
+		case said || pair || !before:
+		case plainly || whole:
+			return not
+		}
+	}
+	return ""
+}
+
 // read is an informative word as turnedAround compares it: on which sides
 // of a pair of opposites a text says it, as written (plain) and just
 // after a "not" (negated), and how it first says it.
 type read struct {
 	plain, negated int
-	// led is the sides it is said on as the first informative word after
-	// a "not", which is the word that "not" turns.
-	led  int
-	word string
+	word           string
 	// not is the "not" before it, when it is negated.
 	not string
+	// by is the "not"s of its text that it is under, a bit for each in the
+	// order the text says them (notBit): the ones at most two words before
+	// it, and the one it is the first informative word after, however far.
+	// clear is whether the text also says it under none.
+	by    uint64
+	clear bool
+}
+
+// reading is a text as turnedAround compares it: its informative words,
+// each of its "not"s in the order it says them, and the ones among them
+// that are before no informative word in their clause, as the "No" and the
+// "don't" of "No, we don't" are.
+type reading struct {
+	words      map[string]read
+	nots, bare []string
+}
+
+// notBit is the bit a text's kth "not" has in read.by. A text of more than
+// sixty-four shares the last between the rest.
+func notBit(k int) uint64 {
+	if k > 63 {
+		k = 63
+	}
+	return 1 << uint(k)
 }
 
 // sides are the sides a word is said on, as written.
@@ -1086,13 +1186,20 @@ const (
 // VAT" for "Prices exclude VAT" and "Children under 12" for "Children over
 // 12", each keeping every other word. Each form is as fold leaves it, so
 // "charged" is "charg" and "banned" "bann".
+//
+// And each in the forms a page writes it in, not only the one a test
+// happened to use: "We charge for delivery", "Delivery charges apply" and
+// "Delivery costs extra" say what "Delivery is charged" does, and "Prices
+// are exclusive of VAT" and "excl. VAT" what "Prices exclude VAT" does;
+// "Delivery is free" was shown for each.
 var opposites = map[string]string{
 	"clos": "open", "close": "open", "shut": "open",
-	"charg": "free", "chargeable": "free", "paid": "free",
+	"charg": "free", "charge": "free", "chargeable": "free", "paid": "free", "cost": "free",
 	"ban": "allow", "bann": "allow", "forbid": "allow", "forbidden": "allow",
 	"prohibit": "allow", "disallow": "allow",
 	"refus": "accept", "refuse": "accept", "reject": "accept",
-	"exclud": "include", "exclude": "include",
+	"declin": "accept", "decline": "accept",
+	"exclud": "include", "exclude": "include", "exclusive": "include", "excl": "include",
 	"after": "before",
 	"under": "over", "below": "over", "less": "over", "fewer": "over",
 	"maximum": "minimum",
@@ -1103,7 +1210,7 @@ var opposites = map[string]string{
 // says, and its "over 12" what "above 12" or "more than 12" says.
 var sameAs = map[string]string{
 	"welcome": "allow", "welcom": "allow", "permit": "allow", "permitt": "allow",
-	"includ": "include", "inclusive": "include",
+	"includ": "include", "inclusive": "include", "incl": "include", "inc": "include",
 	"above": "over", "more": "over",
 }
 
@@ -1116,20 +1223,37 @@ var isOpposite = func() map[string]bool {
 	return out
 }()
 
-// priceFree says whether "free", after the word before it in its clause,
-// is the opposite of "charged": "Delivery is free", "for free" and "free
-// delivery" are, and "gluten-free" and "gluten free" are not, which say
-// what a thing is made without. Only after a word that says nothing of
-// its own, or none, so a "free" it cannot tell is read as it always was.
-func priceFree(before string) bool {
-	return before == "" || stopword[before] || reNegation.FindString(before) == before
+// notAPrice are the words "free" comes after when it is no price, as fold
+// leaves them: what a thing is made or kept without, as in "gluten free"
+// and "smoke free", and the "feel" of "feel free to call". "Gluten-free",
+// written as one word, is known without this list.
+var notAPrice = map[string]bool{
+	"gluten": true, "dairy": true, "sugar": true, "nut": true, "peanut": true,
+	"lactose": true, "wheat": true, "egg": true, "soy": true, "soya": true,
+	"meat": true, "fat": true, "salt": true, "oil": true, "alcohol": true,
+	"caffeine": true, "allergen": true, "additive": true, "fragrance": true,
+	"scent": true, "smoke": true, "plastic": true, "cruelty": true, "lead": true,
+	"car": true, "traffic": true, "step": true, "hands": true, "hassle": true,
+	"stress": true, "trouble": true, "risk": true, "feel": true,
 }
+
+// priceFree says whether "free", after the word before it in its clause,
+// is the opposite of "charged". It is unless that word is one of
+// notAPrice: "Delivery is free", "ships free", "always free" and "free
+// delivery" are, and "gluten free" says what a thing is made without.
+//
+// It had been a price only after a word that says nothing of its own, so
+// "Delivery is always free on every order" and "Every order ships free"
+// were shown for "Delivery is charged on every order". A "free" this
+// cannot tell is now read as a price, which can cost a faithful sentence
+// and cannot show a charge as free.
+func priceFree(before string) bool { return !notAPrice[fold(before)] }
 
 // reClause splits a text where a "not" stops reaching the words after it.
 var reClause = regexp.MustCompile(`[,.;:!?()]+`)
 
-// readWords are a text's informative words, the negations aside, each
-// under the word it says or says the opposite of.
+// readText is a text's informative words, the negations aside, each under
+// the word it says or says the opposite of, and its "not"s.
 //
 // "Un" and "non" make an opposite of a word of five letters or more, so
 // "unavailable" is read as the opposite of "available" and "non-refundable"
@@ -1139,40 +1263,36 @@ var reClause = regexp.MustCompile(`[,.;:!?()]+`)
 // A word is negated when a "not" comes at most two words before it in the
 // same clause, as in "is not open" and "will not be open". "No, it is
 // closed" does not negate "closed": the "No" answers a question.
-func readWords(s string) map[string]read {
-	out, _ := readText(s)
-	return out
-}
-
-// readText is readWords, and how many of the text's "not"s have no
-// informative word after them in their clause, as the "No" and the "don't"
-// of "No, we don't" have not. One with a word after it is about that word,
-// however far after it is: the "no" of "no need to order ahead" is about
-// ordering.
-func readText(s string) (map[string]read, int) {
-	out := map[string]read{}
-	bare := 0
+//
+// A word is under a "not" (read.by) when it is negated by it, or is the
+// first informative word after it, however far: the "no" of "no need to
+// order ahead" is about ordering. So "sell" is under the "not" of "do not
+// currently sell" and the "no" of "no longer sell", as "currently" and
+// "longer" are; held to the first word alone, each let "we sell" through.
+func readText(s string) reading {
+	out := reading{words: map[string]read{}}
 	for _, clause := range reClause.Split(s, -1) {
 		lastNot, not, opposeNext := -3, "", false
 		// pending is a "not" that has not yet been before a word.
-		pending, before := false, ""
+		pending, before, before2 := false, "", ""
 		negation := func(i int, word string) {
 			if pending {
-				bare++
+				out.bare = append(out.bare, not)
 			}
 			lastNot, not, pending = i, word, true
+			out.nots = append(out.nots, word)
 		}
 		for i, field := range strings.Fields(clause) {
 			// The tokeniser makes "isn't" a word of its own, "isnt", so a
 			// contraction is found in the text before it.
 			if reContraction.MatchString(field) {
 				negation(i, field)
-				before = ""
+				before, before2 = "", ""
 				continue
 			}
 			for j, raw := range search.Tokenise(field) {
-				prev := before
-				before = raw
+				prev, prev2 := before, before2
+				before, before2 = raw, prev
 				if reNegation.FindString(raw) == raw {
 					negation(i, raw)
 					continue
@@ -1186,6 +1306,10 @@ func readText(s string) (map[string]read, int) {
 				opposeNext = false
 				t := fold(raw)
 				if stopword[t] || len([]rune(t)) < 3 {
+					continue
+				}
+				// "Free of charge" names no charge.
+				if prev2 == "free" && prev == "of" && opposites[t] == "free" {
 					continue
 				}
 				w, side := t, plainSide
@@ -1208,7 +1332,7 @@ func readText(s string) (map[string]read, int) {
 						}
 					}
 				}
-				r := out[w]
+				r := out.words[w]
 				if r.word == "" {
 					r.word = raw
 				}
@@ -1217,21 +1341,23 @@ func readText(s string) (map[string]read, int) {
 					if r.not == "" {
 						r.not = not
 					}
-					if pending {
-						r.led |= side
-					}
 				} else {
 					r.plain |= side
 				}
+				if i-lastNot <= 2 || pending {
+					r.by |= notBit(len(out.nots) - 1)
+				} else {
+					r.clear = true
+				}
 				pending = false
-				out[w] = r
+				out.words[w] = r
 			}
 		}
 		if pending {
-			bare++
+			out.bare = append(out.bare, not)
 		}
 	}
-	return out, bare
+	return out
 }
 
 // reContraction finds a "not" made part of the word before it.
