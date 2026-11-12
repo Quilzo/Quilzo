@@ -27,6 +27,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/evolve"
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/shell"
 )
 
@@ -316,7 +317,7 @@ func evolveFinish(root string, caller *Caller, dir, id string, seed int64, out, 
 	outcome := audit.Success
 	if runErr != nil {
 		outcome = audit.Failure
-		details["error"] = clampStr(runErr.Error(), 300)
+		details["error"] = plaintext.Clip(runErr.Error(), 300, "…")
 	}
 	if best.Digest != "" {
 		details["best"], details["digest"] = best.ID, best.Digest
@@ -399,14 +400,6 @@ func fileDigest(path string) (string, bool) {
 		return "", false
 	}
 	return evolve.DigestOf(data), true
-}
-
-// clampStr cuts a string for a record.
-func clampStr(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
 }
 
 // boxRunner runs candidates and the evaluator in boxes of their own.

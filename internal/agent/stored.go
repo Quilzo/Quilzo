@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"regexp"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // A run, kept.
@@ -23,7 +25,9 @@ import (
 // can be stored and read back. What a step returned is bounded: a record is
 // for seeing what happened, and is not a second copy of the content.
 
-// MaxStored is how much of one step's result is kept.
+// MaxStored is how much of one step's result is kept, in bytes, with the
+// mark that says it was cut.
+
 const MaxStored = 4000
 
 // Record is one run as it is kept.
@@ -88,9 +92,7 @@ func Keep(id, by, model string, started time.Time, t Trace, r Receipt) Record {
 	kept := t
 	kept.Steps = append([]Step(nil), t.Steps...)
 	for i := range kept.Steps {
-		if len(kept.Steps[i].Result) > MaxStored {
-			kept.Steps[i].Result = kept.Steps[i].Result[:MaxStored] + "…"
-		}
+		kept.Steps[i].Result = plaintext.Clip(kept.Steps[i].Result, MaxStored, "…")
 		kept.Steps[i].Action = keptAction(kept.Steps[i].Action)
 	}
 	if kept.Waiting != nil {
@@ -98,9 +100,7 @@ func Keep(id, by, model string, started time.Time, t Trace, r Receipt) Record {
 		w.Action = keptAction(w.Action)
 		kept.Waiting = &w
 	}
-	if len(kept.Answer) > MaxStored {
-		kept.Answer = kept.Answer[:MaxStored] + "…"
-	}
+	kept.Answer = plaintext.Clip(kept.Answer, MaxStored, "…")
 	return Record{ID: id, Agent: t.Agent, Kind: r.Kind, Goal: t.Goal, By: by,
 		Model: model, Started: started.UTC(), Trace: kept, Receipt: r}
 }

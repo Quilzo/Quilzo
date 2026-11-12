@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/section"
 	"github.com/quilzo/quilzo/internal/site"
 )
@@ -155,7 +156,7 @@ func sectionList(root string, args []string) error {
 			mark = "!"
 		}
 		w.Human("  %s %2d  %s%-10s%s %s\n", mark, pl.Index, bold, pl.Kind, reset,
-			trim(pl.Label, 44))
+			plaintext.Clip(pl.Label, 44, "…"))
 		if pl.Items > 0 {
 			w.Human("          %s%d item(s)%s\n", dim, pl.Items, reset)
 		}
@@ -363,7 +364,7 @@ func sectionFields(root string, args []string) error {
 		if f.Number {
 			mark = "#"
 		}
-		w.Human("  %s %-28s %s\n", mark, f.Path, trim(f.Value, 44))
+		w.Human("  %s %-28s %s\n", mark, f.Path, plaintext.Clip(f.Value, 44, "…"))
 	}
 	if lists := section.Lists(body, index); len(lists) > 0 {
 		w.Human("\n  %slists: %s%s\n", dim, strings.Join(lists, ", "), reset)

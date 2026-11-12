@@ -175,3 +175,36 @@ func TestAProvidersLongRefusalIsCutBetweenCharacters(t *testing.T) {
 		}
 	}
 }
+
+// The same, on the ways a request is made for something other than words:
+// an embedding, speech, a transcript, a film.
+func TestAProvidersLongRefusalOfMediaIsCutBetweenCharacters(t *testing.T) {
+	kept := strings.Repeat("a", 299)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		io.WriteString(w, kept+"中文")
+	}))
+	t.Cleanup(srv.Close)
+	h := &HTTPModel{BaseURL: srv.URL, Model: "m", Client: srv.Client()}
+	ctx := context.Background()
+	for name, call := range map[string]func() error{
+		"embed":      func() error { _, _, err := h.Embed(ctx, []string{"a question"}); return err },
+		"speak":      func() error { _, _, err := h.Speak(ctx, "hello", "alloy"); return err },
+		"transcribe": func() error { _, _, err := h.Transcribe(ctx, []byte("RIFF"), "a.wav", "en"); return err },
+		"film": func() error {
+			veo := *h
+			veo.Wire = WireVeo
+			_, _, err := veo.Film(ctx, "a lighthouse", "16:9")
+			return err
+		},
+	} {
+		var se *StatusError
+		if err := call(); !errors.As(err, &se) {
+			t.Errorf("%s: %v", name, err)
+			continue
+		}
+		if se.Body != kept {
+			t.Errorf("%s: %d bytes, ending %q", name, len(se.Body), se.Body[len(se.Body)-3:])
+		}
+	}
+}

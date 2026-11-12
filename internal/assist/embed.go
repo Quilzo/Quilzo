@@ -13,6 +13,8 @@ import (
 	"math"
 	"net/http"
 	"strings"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Embeddings, from an endpoint that serves OpenAI's /embeddings: OpenAI,
@@ -72,7 +74,7 @@ func (h *HTTPModel) Embed(ctx context.Context, texts []string) ([][]float64, Usa
 	if resp.StatusCode != http.StatusOK {
 		var buf bytes.Buffer
 		_, _ = buf.ReadFrom(io.LimitReader(resp.Body, 4<<10))
-		return nil, Usage{}, &StatusError{Code: resp.StatusCode, Body: clip300(strings.TrimSpace(buf.String()))}
+		return nil, Usage{}, &StatusError{Code: resp.StatusCode, Body: plaintext.Clip(strings.TrimSpace(buf.String()), 300, "")}
 	}
 	var out struct {
 		Data []struct {

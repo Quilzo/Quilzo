@@ -20,6 +20,7 @@ import (
 	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/mcpclient"
 	"github.com/quilzo/quilzo/internal/out"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Declaring the outside systems this install may reach, and reaching them.
@@ -356,7 +357,7 @@ func integrationsPin(root string, args []string) error {
 			fmt.Printf("  %s\n", wrapIndent(t.Description, 70, 2))
 		}
 		if len(t.InputSchema) > 0 {
-			fmt.Printf("  %sinput: %s%s\n", dim, clampString(string(t.InputSchema), 400), reset)
+			fmt.Printf("  %sinput: %s%s\n", dim, plaintext.Clip(string(t.InputSchema), 400, "…"), reset)
 		}
 		if old := in.Pins[t.Name]; old != t.Definition {
 			in.Pins[t.Name] = t.Definition
@@ -388,13 +389,6 @@ func integrationsPin(root string, args []string) error {
 	}
 	fmt.Printf("\npinned %d definition(s) of %s; a change by the server is refused until pinned again\n", pinned, in.Name)
 	return nil
-}
-
-func clampString(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
 }
 
 // readSecret resolves a credential name to its value, from the environment.

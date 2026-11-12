@@ -37,6 +37,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/assistant"
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 )
@@ -48,6 +49,9 @@ import (
 // a way it usually is not, because the alternative is a run that fails on a
 // page nobody thought was large.
 const MaxBody = 8 << 10
+
+// truncated ends a read that was cut, inside MaxBody, so the model can tell.
+var truncated = fmt.Sprintf("\n…truncated at %d bytes", MaxBody)
 
 // Reader performs the read operations an agent holds.
 type Reader struct {
@@ -172,7 +176,7 @@ func (r Reader) readPage(s *agent.Session, ref, name string) (string, error) {
 	if !s.Manifest().Retrieval.KeepInstructions {
 		text, _ = assistant.Redact(text)
 	}
-	return truncate(text), nil
+	return plaintext.Clip(text, MaxBody, truncated), nil
 }
 
 // allowed reports whether the scope lets this agent see a page, without
@@ -258,11 +262,4 @@ func render(page any) string {
 		fmt.Fprintf(&b, "%s: %v\n", k, fields[k])
 	}
 	return b.String()
-}
-
-func truncate(s string) string {
-	if len(s) <= MaxBody {
-		return s
-	}
-	return s[:MaxBody] + "\n…truncated at " + fmt.Sprint(MaxBody) + " bytes"
 }

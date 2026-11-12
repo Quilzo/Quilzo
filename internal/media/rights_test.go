@@ -183,3 +183,14 @@ func TestAnExpiryReadsBackAsTheDateItWasWritten(t *testing.T) {
 		t.Error("still in term the day after it ended")
 	}
 }
+
+// Prose refused as a licence is quoted cut where a character starts, and
+// still comes to 40 bytes with its mark: the quote is how the author knows
+// which field to move it from, in whatever language they wrote it.
+func TestRefusedLicenceProseIsQuotedBetweenCharacters(t *testing.T) {
+	kept := strings.Repeat("a", 37)
+	err := (Rights{Licence: kept + "a中文"}).Validate(rightsNow)
+	if err == nil || !strings.Contains(err.Error(), `"`+kept+`…" is not a licence identifier`) {
+		t.Fatalf("%v", err)
+	}
+}

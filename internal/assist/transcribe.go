@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Speech to text, from an endpoint that serves OpenAI's
@@ -91,7 +93,7 @@ func (h *HTTPModel) Transcribe(ctx context.Context, audio []byte, name, lang str
 	if resp.StatusCode != http.StatusOK {
 		var buf bytes.Buffer
 		_, _ = buf.ReadFrom(io.LimitReader(resp.Body, 4<<10))
-		return "", Usage{}, &StatusError{Code: resp.StatusCode, Body: clip300(strings.TrimSpace(buf.String()))}
+		return "", Usage{}, &StatusError{Code: resp.StatusCode, Body: plaintext.Clip(strings.TrimSpace(buf.String()), 300, "")}
 	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, MaxTranscript+1))
 	if err != nil {

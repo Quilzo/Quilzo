@@ -348,3 +348,16 @@ func TestThePromptTeachesTheDialectItDeclares(t *testing.T) {
 		t.Error("a model with no dialect declared was taught a shape")
 	}
 }
+
+// A name the model asked for, refused because it is not a capability, is
+// quoted cut where a character starts: the refusal goes back to the model
+// and into the run's record, and a name can be in any script.
+func TestARefusedNameIsQuotedBetweenCharacters(t *testing.T) {
+	name := strings.Repeat("a", 59)
+	m := &fakeModel{reply: `{"name":"` + name + `中文","input":{}}`}
+	d := Decider{Model: m, Session: browserSession("browser_read"), Dialect: "anthropic-computer"}.Decide()
+	_, err := d(context.Background(), "buy paper", nil)
+	if err == nil || !strings.Contains(err.Error(), `asked for "`+name+`", which`) {
+		t.Fatalf("%v", err)
+	}
+}

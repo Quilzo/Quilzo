@@ -344,3 +344,16 @@ func TestADeeplyNestedValueIsRefused(t *testing.T) {
 		t.Fatalf("a value nested ten thousand deep was read: %v", err)
 	}
 }
+
+// A session bus address quoted because it names no socket is cut where a
+// character starts, and still comes to 80 bytes with its mark. An abstract
+// socket's name can be anything its program chose.
+func TestABusAddressIsQuotedBetweenCharacters(t *testing.T) {
+	// The cut at 80 bytes falls inside 中.
+	head := "unix:abstract=" + strings.Repeat("a", 63)
+	t.Setenv("DBUS_SESSION_BUS_ADDRESS", head+"a中文")
+	_, err := Consent(context.Background())
+	if err == nil || !strings.Contains(err.Error(), `"`+head+`…"`) {
+		t.Fatalf("%v", err)
+	}
+}

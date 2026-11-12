@@ -6,6 +6,7 @@ package foreign
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/a11y"
 	"github.com/quilzo/quilzo/internal/tmpl"
@@ -317,4 +318,24 @@ var samples = map[string]string{
 <html lang="en"><head><title>A page</title>
 <link rel="stylesheet" href="/site.css"></head>
 <body><main id="main"><h1>Hello</h1><p>Ordinary markup.</p></main></body></html>`,
+}
+
+// A construct quoted in what could not be converted is cut where a
+// character starts, and still comes to 90 bytes with its mark. A theme's
+// fields are named in its author's language, and the quote is how somebody
+// finds the place to change by hand.
+func TestALongConstructIsQuotedBetweenCharacters(t *testing.T) {
+	// The lengths take the cut across every byte of the first characters,
+	// whatever the quote starts with.
+	for n := 66; n < 78; n++ {
+		r := Adopt("{% unless page." + strings.Repeat("a", n) + "中文中文 %}x{% endunless %}")
+		if len(r.Unsupported) == 0 {
+			t.Fatalf("an unless was converted with nothing reported")
+		}
+		said := r.Unsupported[0]
+		quoted := said[1 : 1+strings.IndexByte(said[1:], '`')]
+		if !utf8.ValidString(quoted) || len(quoted) > 90 || !strings.HasSuffix(quoted, "…") {
+			t.Errorf("quoted %d bytes ending %q", len(quoted), quoted[max(0, len(quoted)-6):])
+		}
+	}
 }

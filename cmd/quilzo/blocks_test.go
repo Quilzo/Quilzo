@@ -5,9 +5,11 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"strings"
 	"testing"
 
+	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 )
@@ -59,5 +61,33 @@ func TestABlockIsReusedFromTheCommandLine(t *testing.T) {
 	b, _ := json.Marshal(read["index"])
 	if !strings.Contains(strings.ToLower(string(b)), "open nine to five") {
 		t.Fatal("the page does not read as the block")
+	}
+}
+
+// A section is listed by a line of its own content, cut where a character
+// starts and to 44 bytes with its mark, so the list stays one row a section.
+func TestASectionIsListedByItsWordsCutBetweenCharacters(t *testing.T) {
+	root := demoStore(t)
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages, err := site.PagesAt(s, site.RefDraft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept := strings.Repeat("a", 41)
+	pages["hours"] = map[string]any{"title": "Opening hours", "sections": []any{
+		map[string]any{"prose": map[string]any{"title": kept + "a中文"}}}}
+	if _, err := site.SaveDraft(s, pages, "hours", "test"); err != nil {
+		t.Fatal(err)
+	}
+	saved := w
+	t.Cleanup(func() { w = saved })
+	stdout, read := captureStdout(t)
+	w = &out.Writer{Out: stdout, Err: io.Discard}
+	err = cmdSection(root, []string{"list", "hours"})
+	if listed := read(); err != nil || !strings.Contains(listed, " "+kept+"…\n") {
+		t.Fatalf("%v\n%q", err, listed)
 	}
 }

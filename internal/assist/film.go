@@ -14,6 +14,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Video from a prompt, by the two asynchronous shapes the providers serve
@@ -155,7 +157,7 @@ func (h *HTTPModel) doFollowing(ctx context.Context, method, u string, body any,
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		var buf bytes.Buffer
 		_, _ = buf.ReadFrom(io.LimitReader(resp.Body, 4<<10))
-		return nil, &StatusError{Code: resp.StatusCode, Body: clip300(strings.TrimSpace(buf.String()))}
+		return nil, &StatusError{Code: resp.StatusCode, Body: plaintext.Clip(strings.TrimSpace(buf.String()), 300, "")}
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, max+1))
 	if err != nil {
@@ -225,7 +227,7 @@ func (h *HTTPModel) veo(ctx context.Context, prompt, aspect string) ([]byte, err
 			return nil, errors.New("the provider's answer about the video is not one this can read")
 		}
 		if st.Error != nil {
-			return nil, fmt.Errorf("the provider did not make the video: %s", clip300(st.Error.Message))
+			return nil, fmt.Errorf("the provider did not make the video: %s", plaintext.Clip(st.Error.Message, 300, ""))
 		}
 		if !st.Done {
 			if err := h.wait(ctx); err != nil {
@@ -236,13 +238,13 @@ func (h *HTTPModel) veo(ctx context.Context, prompt, aspect string) ([]byte, err
 		g := st.Response.GenerateVideoResponse
 		if len(g.GeneratedSamples) == 0 {
 			if len(g.RaiFilteredReasons) > 0 {
-				return nil, &Declined{Model: h.Model, Category: clip300(strings.Join(g.RaiFilteredReasons, "; "))}
+				return nil, &Declined{Model: h.Model, Category: plaintext.Clip(strings.Join(g.RaiFilteredReasons, "; "), 300, "")}
 			}
 			return nil, errors.New("the provider finished and made no video")
 		}
 		uri := g.GeneratedSamples[0].Video.URI
 		if !h.onHost(uri) {
-			return nil, fmt.Errorf("the video is at %q, which is not https on the provider's host", clip300(uri))
+			return nil, fmt.Errorf("the video is at %q, which is not https on the provider's host", plaintext.Clip(uri, 300, ""))
 		}
 		return h.fetchFile(ctx, uri, true)
 	}
@@ -275,13 +277,13 @@ func (h *HTTPModel) fal(ctx context.Context, prompt, aspect string) ([]byte, err
 			return nil, errors.New("the queue's answer about the video is not one this can read")
 		}
 		if st.Error != "" {
-			return nil, fmt.Errorf("the provider did not make the video: %s", clip300(st.Error))
+			return nil, fmt.Errorf("the provider did not make the video: %s", plaintext.Clip(st.Error, 300, ""))
 		}
 		if st.Status == "COMPLETED" {
 			break
 		}
 		if st.Status != "IN_QUEUE" && st.Status != "IN_PROGRESS" {
-			return nil, fmt.Errorf("the queue says %q", clip300(st.Status))
+			return nil, fmt.Errorf("the queue says %q", plaintext.Clip(st.Status, 300, ""))
 		}
 		if err := h.wait(ctx); err != nil {
 			return nil, err
@@ -301,7 +303,7 @@ func (h *HTTPModel) fal(ctx context.Context, prompt, aspect string) ([]byte, err
 	}
 	u, err := url.Parse(out.Video.URL)
 	if err != nil || u.Scheme != "https" || u.User != nil {
-		return nil, fmt.Errorf("the video is at %q, which is not https", clip300(out.Video.URL))
+		return nil, fmt.Errorf("the video is at %q, which is not https", plaintext.Clip(out.Video.URL, 300, ""))
 	}
 	// On fal's storage, a public address: fetched without the key, by the
 	// checked client, which refuses this network.

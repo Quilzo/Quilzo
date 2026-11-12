@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"net/url"
 	"strings"
 	"testing"
 
@@ -56,5 +57,25 @@ func TestTheProfileDoesNotSayNoMailIsSent(t *testing.T) {
 	}
 	if !strings.Contains(page, "Nothing is sent to it") {
 		t.Error("the profile no longer says the contact field is not written to")
+	}
+}
+
+// A display name is kept cut where a character starts. It is how somebody
+// asked to be named, in their own script, and it is shown on every screen
+// that says who did something.
+func TestALongDisplayNameIsCutBetweenCharacters(t *testing.T) {
+	srv, token := asRole(t, auth.RoleReader)
+	saved := map[string]PersonDetails{}
+	srv.Profile = &Profile{
+		Load: func() (map[string]PersonDetails, error) { return saved, nil },
+		Save: func(all map[string]PersonDetails) error { saved = all; return nil },
+	}
+	name := strings.Repeat("a", MaxDetail-1)
+	body := url.Values{"display_name": {name + "中文"}, "contact": {name + "中文"}}.Encode()
+	if w := postForm(t, srv, "/profile", token, body); w.Code >= 400 {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	if d := saved["someone"]; d.DisplayName != name || d.Contact != name {
+		t.Errorf("kept %q and %q", d.DisplayName[max(0, len(d.DisplayName)-3):], d.Contact[max(0, len(d.Contact)-3):])
 	}
 }

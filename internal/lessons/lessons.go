@@ -314,10 +314,7 @@ func ReadReflection(answer string) (when, do, kind string, err error) {
 	return r.When, r.Do, r.Kind, nil
 }
 
+// clip is s on one line, cut to at most n bytes where a character starts.
 func clip(s string, n int) string {
-	s = strings.Join(strings.Fields(s), " ")
-	if len(s) <= n {
-		return s
-	}
-	return s[:n]
+	return plaintext.Clip(strings.Join(strings.Fields(s), " "), n, "")
 }

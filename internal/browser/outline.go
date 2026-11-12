@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/quilzo/quilzo/internal/cdp"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // What an agent reads of a page: its outline.
@@ -158,15 +159,12 @@ func Build(nodes []cdp.AXNode) Outline {
 // fakeRef is page text dressed as one of the outline's references.
 var fakeRef = regexp.MustCompile(`\[(e\d+)\]`)
 
-// clean is a name as one line, not too long, and never looking like a
-// reference: only a control the outline wrote has one.
+// clean is a name as one line, at most 200 bytes with the mark that says it
+// was cut, and never looking like a reference: only a control the outline
+// wrote has one.
 func clean(s string) string {
 	s = strings.Join(strings.Fields(s), " ")
-	s = fakeRef.ReplaceAllString(s, "($1)")
-	if len(s) > 200 {
-		s = s[:200] + "…"
-	}
-	return s
+	return plaintext.Clip(fakeRef.ReplaceAllString(s, "($1)"), 200, "…")
 }
 
 // consequentialWords are what a control is called when pressing it does

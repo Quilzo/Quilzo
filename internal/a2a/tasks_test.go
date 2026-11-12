@@ -151,3 +151,21 @@ func TestTheCardSaysWhereTasksAreTaken(t *testing.T) {
 		t.Fatal("a plain http task address validated")
 	}
 }
+
+// A method or an agent the sender named and this host does not have is
+// quoted back cut where a character starts. A sender's names can be in any
+// script, and the refusal is read by whoever wrote the sender.
+func TestANameThatIsNotHereIsQuotedBetweenCharacters(t *testing.T) {
+	h, _ := taskHost("tidy", "support")
+	name := strings.Repeat("a", 59)
+	for what, body := range map[string]string{
+		"method": `{"jsonrpc":"2.0","id":1,"method":"` + name + `中文","params":{}}`,
+		"agent":  strings.Replace(send, `"agent":"tidy"`, `"agent":"`+name+`中文"`, 1),
+	} {
+		got := rpc(t, h, "1.0", body)
+		e, _ := got["error"].(map[string]any)
+		if said, _ := e["message"].(string); !strings.HasSuffix(said, " "+name) {
+			t.Errorf("%s: %q", what, said)
+		}
+	}
+}

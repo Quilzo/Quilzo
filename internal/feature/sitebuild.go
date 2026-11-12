@@ -13,6 +13,7 @@ import (
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/form"
 	"github.com/quilzo/quilzo/internal/menu"
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/section"
 	"github.com/quilzo/quilzo/internal/theme"
 )
@@ -538,9 +539,9 @@ func BuildSite(b SiteBrief, by string, now time.Time) (*Package, error) {
 		s.Colour = b.Colour
 	}
 	p := &Package{
-		Format: Format, Name: PackageName(b.Name), Version: "1.0.0", Title: clip(b.Name, 120),
-		Purpose: clip("The whole website of "+b.Name+": its pages, menus, forms, question box and look.", 600),
-		Made:    &Made{By: by, From: clip(b.Description, 600), At: now.UTC()},
+		Format: Format, Name: PackageName(b.Name), Version: "1.0.0", Title: plaintext.Clip(b.Name, 120, ""),
+		Purpose: plaintext.Clip("The whole website of "+b.Name+": its pages, menus, forms, question box and look.", 600, ""),
+		Made:    &Made{By: by, From: plaintext.Clip(b.Description, 600, ""), At: now.UTC()},
 		Site:    s,
 	}
 	main := menu.Menu{Name: "main", Label: "Main"}
@@ -850,7 +851,7 @@ func RepairSite(p *Package, b SiteBrief, start *Package) []string {
 		p.Name = PackageName(s.Name)
 	}
 	if t := strings.TrimSpace(p.Title); t == "" || len(t) > 120 {
-		p.Title = clip(s.Name, 120)
+		p.Title = plaintext.Clip(s.Name, 120, "")
 	}
 	if t := strings.TrimSpace(p.Purpose); t == "" || len(t) > 600 {
 		p.Purpose = start.Purpose

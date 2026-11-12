@@ -183,3 +183,16 @@ func doorRig(t *testing.T, turns ...string) (string, func() []string) {
 	}
 	return root, func() []string { mu.Lock(); defer mu.Unlock(); return append([]string(nil), seen...) }
 }
+
+// An agent asked for at the door and not declared here is quoted back cut
+// where a character starts, and still comes to 60 bytes with its mark. The
+// name is whatever the caller sent, in any script.
+func TestAnAgentNotHereIsQuotedBetweenCharacters(t *testing.T) {
+	root, _ := doorRig(t, answerTurn)
+	name := strings.Repeat("a", 57)
+	_, err := doorChat(context.Background(), root, dana(), "", "openai", "agent/"+name+"a中文", say("Hello"))
+	var refused *admin.ModelRefusal
+	if !errors.As(err, &refused) || !strings.Contains(refused.Why, `no agent called "`+name+`…" here`) {
+		t.Fatalf("%v", err)
+	}
+}
