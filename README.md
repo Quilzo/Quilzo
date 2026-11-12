@@ -5,11 +5,11 @@
   </picture>
 </h1>
 
-<p align="center"><strong>The self-hosted control plane for your AI agents, and the content they produce.</strong></p>
+<p align="center"><strong>The self-hosted CMS for websites, chatbots and AI agents, with the governance built in.</strong></p>
 
 <p align="center">
-  One binary that gives every agent an identity, a policy, a budget and a signed record,<br>
-  whichever model or sandbox it runs on, and asks a person before the actions that matter.
+  One binary to build and run a website, the chatbots that answer its visitors and the agents that work on it.<br>
+  Every agent has an identity, a policy, a budget and a signed record, and a person approves the actions that matter.
 </p>
 
 <p align="center">
@@ -44,11 +44,13 @@ agent's own program or another vendor's agent is deciding. A hijacked agent can
 still only do what it declared before anybody talked to it, and what it read,
 remembered, spent and was refused is in a signed log you can prove things from.
 
-Around that gate is everything an organisation running agents needs: a model
-gateway that masks personal data, chatbots that cite their sources, a governed
-MCP gateway in front of your own tool servers, a map of every agent and what it
-called, evidence for the EU AI Act and ISO/IEC 42001, a shield that defends
-the installation itself, and the content platform the agents read and write.
+Around that gate is a complete content platform and everything an organisation
+running agents needs: pages, structured types and media, a website builder with
+themes, forms, bookings, newsletters, payments and events, chatbots that cite
+their sources, a model gateway that masks personal data, a governed MCP gateway
+in front of your own tool servers, a map of every agent and what it called,
+evidence for the EU AI Act and ISO/IEC 42001, and a shield that defends the
+installation itself.
 A security team's own tools — the finding queue, cases, vulnerabilities, the
 estate — are not part of it: Quilzo streams its audit log, as it is written,
 to whichever SIEM the organisation already runs.
