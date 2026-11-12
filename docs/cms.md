@@ -2641,7 +2641,9 @@ than for one that has to be described.
   same way, as `auditlog.export` with its format, how many events, their
   range and whether identifiers were asked for: `quilzo siem`, the export on
   the Integrations screen, and `quilzo auditlog export -o FILE`, which writes
-  the log as it is stored, even when its chain is broken.
+  the log as it is stored, even when its chain is broken. They are one
+  export, recorded once each time: for a log that verifies, `quilzo auditlog
+  export` and `quilzo siem jsonl` write the same bytes.
 - **One act, one action name**, whichever surface did it: a grant is
   `auth.granted` (a deny `auth.denied`), a revocation `auth.revoke` and an
   export of the log `auditlog.export`, from the command line, the admin and

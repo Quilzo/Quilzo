@@ -195,8 +195,9 @@ func TestEveryPrivilegedCommandWritesAnAuditRecord(t *testing.T) {
 		"tokenRevoke":   "token.revoke",
 		"cmdImport":     "import",
 		"cmdExport":     "export",
-		"cmdSiem":       "auditlog.export",
-		"auditExport":   "auditlog.export",
+		// `quilzo siem` and `quilzo auditlog export` record through it
+		// (TestEveryAuditLogExportIsRecordedWithTheSameDetail runs both).
+		"recordAuditLogExport": "auditlog.export",
 	}
 
 	found := map[string]string{}

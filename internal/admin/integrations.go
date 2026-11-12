@@ -529,20 +529,21 @@ func (s *Server) handleSIEMExport(w http.ResponseWriter, r *http.Request) {
 	// the clear — it only stops this from redacting what the log does hold.
 	reveal := r.FormValue("reveal") != ""
 
-	res, err := siem.Export(format, events, siem.Options{Reveal: reveal},
-		time.Now())
+	// Through the one export of the log, and recorded as every export of
+	// it is, as auditlog.export with the detail the command line records
+	// (siem.ExportRecorded). It was siem.export with the format, the count
+	// and revealed, so a rule or a filter for auditlog.export missed every
+	// export made here, and the range it covered was not recorded at all.
+	// revealed is kept for whatever reads it.
+	res, err := siem.ExportRecorded(format, events, siem.Options{Reveal: reveal}, time.Now(),
+		func(detail map[string]string) {
+			detail["revealed"] = fmt.Sprint(reveal)
+			s.auditPub(p, "auditlog.export", "/", detail)
+		})
 	if err != nil {
 		s.intRedirect(w, r, "", err.Error())
 		return
 	}
-	// Recorded as every export of the log is, as auditlog.export with
-	// siem.ExportDetail. It was siem.export with the format, the count and
-	// revealed, so a rule or a filter for auditlog.export missed every
-	// export made here, and the range it covered was not recorded at all.
-	// revealed is kept for whatever reads it.
-	detail := siem.ExportDetail(string(format), res.Count, res.Chain.FirstSeq, res.Chain.LastSeq, reveal)
-	detail["revealed"] = fmt.Sprint(reveal)
-	s.auditPub(p, "auditlog.export", "/", detail)
 
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(

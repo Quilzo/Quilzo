@@ -145,3 +145,32 @@ func TestAuditLogExportRefusesWhatItDoesNotTake(t *testing.T) {
 		t.Errorf("a refused export was recorded as %d export(s)", n)
 	}
 }
+
+// `quilzo auditlog export` and `quilzo siem jsonl` are one export of a log
+// that verifies: the same bytes, over the same events.
+//
+// They were two exporters, each with a serializer of its own, and only one
+// of them recorded what it wrote.
+func TestAuditlogExportAndSiemJSONLinesWriteTheSameBytes(t *testing.T) {
+	root, stored := exportStore(t)
+	dir := t.TempDir()
+	raw, sm := filepath.Join(dir, "raw.jsonl"), filepath.Join(dir, "siem.jsonl")
+	if err := cmdAuditLog(root, []string{"export", "-o", raw}); err != nil {
+		t.Fatal(err)
+	}
+	// The events the first export wrote, without the record of it.
+	if err := cmdSiem(root, []string{"jsonl", "--until", "2", "-o", sm}); err != nil {
+		t.Fatal(err)
+	}
+	a, err := os.ReadFile(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(sm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(a, stored) || !bytes.Equal(a, b) {
+		t.Errorf("auditlog export and siem jsonl wrote different bytes:\n%s\n%s", a, b)
+	}
+}
