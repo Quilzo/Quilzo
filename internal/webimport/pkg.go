@@ -28,6 +28,12 @@ import (
 // pictures.
 const NotePicturesLeftOut = "pictures were left out, as asked; import again with pictures to keep the ones the site describes"
 
+// NoteMorePages starts the note for a site with more pages than were read.
+// What follows it says what can be done about that, which is not the same
+// at every door: an import over the agent interface reads fewer pages than
+// MaxPages, and says so in its own words (site_import).
+const NoteMorePages = "the site has more pages than were read"
+
 // Picture stores a picture a page shows, with the description the page gave
 // it, and answers the path a page refers to it by. Nil leaves pictures out.
 type Picture func(src *url.URL, alt string) (path string, err error)
@@ -282,8 +288,14 @@ func Package(s *Site, name, by string, picture Picture, now time.Time) (*Brought
 	// In words every door can follow: the command line's flag is --pages,
 	// the agent interface's argument is pages, and "read more with
 	// --pages" sent an agent looking for a flag its call does not have.
-	if s.Capped {
-		note("the site has more pages than were read; ask for more pages, up to %d, to read more of it", MaxPages)
+	// And only where asking would read more: a site read to the most an
+	// import reads was told to ask for up to that many, and asking again
+	// read the same pages and said the same.
+	switch {
+	case s.Capped && len(s.Pages) >= MaxPages:
+		note(NoteMorePages+": %d is the most an import reads", MaxPages)
+	case s.Capped:
+		note(NoteMorePages+"; ask for more pages, up to %d, to read more of it", MaxPages)
 	}
 
 	// A package a person can read: the pages that fit, the rest named. The

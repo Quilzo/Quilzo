@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -389,6 +390,58 @@ func approveWaiting(t *testing.T, root, by string) {
 	for _, p := range pend {
 		if err := decideFeature(root, p.ID, true, asAdmin(by)); err != nil {
 			t.Fatal(err)
+		}
+	}
+}
+
+// An agent told a site has more pages than were read is told what its own
+// call can do about it: ask for more with pages, up to the 30 an import
+// over the agent interface reads, and past that, that a person reads more.
+//
+// The note was the importer's one note for every door, and named the most
+// any door reads, 400: an agent that had read the 30 it may was told to
+// ask for up to 400, asked, was given the same 30 without a word, and the
+// same note again. Before that the note named a flag, --pages.
+func TestAnAgentIsToldHowManyPagesItsOwnImportReads(t *testing.T) {
+	root, _ := siteStore(t)
+	siteImportGetSeam = func(_ context.Context, raw string) (*webimport.Fetched, error) {
+		u, _ := url.Parse(raw)
+		if u.Path == "/robots.txt" || strings.HasSuffix(u.Path, ".xml") {
+			return nil, errors.New("404")
+		}
+		var links strings.Builder
+		for i := 1; i <= 45; i++ {
+			links.WriteString(`<a href="/p` + strconv.Itoa(i) + `">Page ` + strconv.Itoa(i) + `</a> `)
+		}
+		return &webimport.Fetched{FinalURL: raw, Status: 200, ContentType: "text/html",
+			Body: []byte(`<html><head><title>Hart's ` + u.Path + `</title></head><body><main><h1>Hart's ` + u.Path +
+				`</h1><p>Bread, baked before dawn.</p>` + links.String() + `</main></body></html>`)}, nil
+	}
+	t.Cleanup(func() { siteImportGetSeam = nil })
+	said := func(args map[string]any) string {
+		t.Helper()
+		got := siteCrew(t, root)("quilzo_write", "site_import", args)
+		notes, _ := got["notes"].([]any)
+		for _, n := range notes {
+			if s, _ := n.(string); strings.Contains(s, "more pages") {
+				return s
+			}
+		}
+		t.Fatalf("no note about the pages left unread: %v", got)
+		return ""
+	}
+	few := said(map[string]any{"address": "https://hartsbakery.example/", "pages": 3})
+	if !strings.Contains(few, "pages") || !strings.Contains(few, "30") || strings.Contains(few, "400") || strings.Contains(few, "--") {
+		t.Errorf("after reading 3: %s", few)
+	}
+	for _, args := range []map[string]any{
+		{"address": "https://hartsbakery.example/"},
+		{"address": "https://hartsbakery.example/", "pages": 400},
+	} {
+		most := said(args)
+		if !strings.Contains(most, "30") || strings.Contains(most, "400") || strings.Contains(most, "--") ||
+			!strings.Contains(most, "a person") {
+			t.Errorf("after reading all it may, asked with %v: %s", args["pages"], most)
 		}
 	}
 }

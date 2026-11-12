@@ -530,3 +530,45 @@ func TestAPackagesNotesNameNoFlag(t *testing.T) {
 		t.Errorf("a note names a flag: %s", notes)
 	}
 }
+
+// A site read to the most an import reads is not told to ask for more.
+//
+// The note for a site with more pages than were read said to ask for more,
+// up to MaxPages, whatever had been read: somebody who had asked for all
+// four hundred, or brought in a file of more, was told to ask for up to
+// four hundred, and asking again read the same pages and said the same.
+func TestASiteReadToTheMostIsNotToldToAskForMore(t *testing.T) {
+	s := bakery()
+	var links strings.Builder
+	for i := 0; i < MaxPages+5; i++ {
+		path := fmt.Sprintf("/loaf-%d", i)
+		links.WriteString(`<a href="` + path + `">Loaf</a> `)
+		s.pages[path] = head + `<title>Loaf</title></head><body><main><h1>A loaf</h1><p>Baked today.</p></main></body></html>`
+	}
+	s.pages["/"] = strings.Replace(s.pages["/"], "</main>", links.String()+"</main>", 1)
+	note := func(max int) string {
+		t.Helper()
+		got := crawlOf(t, s, max)
+		if !got.Capped || len(got.Pages) != max {
+			t.Fatalf("asked for %d: read %d, capped %v", max, len(got.Pages), got.Capped)
+		}
+		b, err := Package(got, "", "dana", nil, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, n := range b.Notes {
+			if strings.HasPrefix(n, NoteMorePages) {
+				return n
+			}
+		}
+		t.Fatalf("no note about the pages left unread: %v", b.Notes)
+		return ""
+	}
+	most := fmt.Sprint(MaxPages)
+	if n := note(3); !strings.Contains(n, "ask for more pages") || !strings.Contains(n, most) {
+		t.Errorf("after reading 3: %s", n)
+	}
+	if n := note(MaxPages); strings.Contains(n, "ask for") || strings.Contains(n, "up to") || !strings.Contains(n, most) {
+		t.Errorf("after reading the most: %s", n)
+	}
+}

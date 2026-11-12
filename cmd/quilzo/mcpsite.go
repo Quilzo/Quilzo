@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -116,6 +117,20 @@ func registerSiteOps(srv *mcp.Server, root string, caller *Caller) {
 				b.Notes[i] = "pictures stay behind when an agent brings a site in, since nothing it brings is kept " +
 					"before a person decides; bring the site in from Make › Bring your site, or with quilzo site " +
 					"import, to keep the ones it describes"
+			}
+			// How many pages this call reads, not how many any door does.
+			// The importer's note named its own most, 400: an agent that had
+			// read the 30 it may was told to ask for up to 400, asked, was
+			// given the same 30 without a word, and the same note again.
+			if strings.HasPrefix(n, webimport.NoteMorePages) {
+				if len(s.Pages) < mcpSiteImportPages {
+					b.Notes[i] = fmt.Sprintf("%s; ask for more with pages, up to the %d an import over the agent "+
+						"interface reads", webimport.NoteMorePages, mcpSiteImportPages)
+				} else {
+					b.Notes[i] = fmt.Sprintf("%s: %d is the most an import over the agent interface reads, and a person "+
+						"reads more by bringing the site in from Make › Bring your site, or with quilzo site import",
+						webimport.NoteMorePages, mcpSiteImportPages)
+				}
 			}
 		}
 		body, err := json.MarshalIndent(b.Package, "", "  ")
