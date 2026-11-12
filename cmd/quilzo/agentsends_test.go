@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -20,6 +21,7 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/chatact"
 	"github.com/quilzo/quilzo/internal/dual"
+	"github.com/quilzo/quilzo/internal/evals"
 	"github.com/quilzo/quilzo/internal/event"
 	"github.com/quilzo/quilzo/internal/fetch"
 )
@@ -53,6 +55,19 @@ func postingStore(t *testing.T) (root string, posted *[]string) {
 		Tools:  []agent.Tool{{Name: "post_update", Host: "social.example", Purpose: "post an update"}},
 		Budget: agent.Budget{Steps: 6, Tools: 3, Duration: agent.Duration(time.Minute)}}
 	if err := declareAgent(root, m, true, false, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	// It has earned the draft its declaration asks for, on the model that
+	// drives it here (postingModel's stand-in). Without an evaluation it
+	// would run at propose, where a tool that writes asks its person first
+	// whoever started the run (TestAnAgentThatEarnedNothingAsksItsPersonBeforeItPosts),
+	// and these tests are about what is held because nobody started a run.
+	earned := evals.Report{Agent: "poster", At: time.Now().UTC(), K: 3, Model: "stand-in",
+		Cases: 3, Reliable: 3, Planted: 3}
+	if err := os.MkdirAll(evalResultsDir(root, "poster"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveEvalReport(root, earned); err != nil {
 		t.Fatal(err)
 	}
 	sent := []string{}
@@ -133,6 +148,40 @@ func TestATriggeredRunsOutwardWriteWaitsForAPerson(t *testing.T) {
 	}
 	if len(*posted) != 1 || !strings.Contains((*posted)[0], "Our+new+post+is+up") || !done.Trace.Complete {
 		t.Fatalf("after approval: %v %+v", *posted, done.Trace)
+	}
+}
+
+// An agent that has earned nothing runs at propose, and at propose a tool
+// that writes to another system asks first, whoever started the run: a
+// person decides on the post before it goes out (somebody other than the one
+// who started the run, as for every step of a run that writes).
+// Before, propose held only what an agent wrote to the site, so an agent
+// nobody had evaluated posted to a social account the moment its model
+// chose to, although its every write here waited to be proposed.
+func TestAnAgentThatEarnedNothingAsksItsPersonBeforeItPosts(t *testing.T) {
+	root, posted := postingStore(t)
+	if err := os.RemoveAll(evalResultsDir(root, "poster")); err != nil {
+		t.Fatal(err)
+	}
+	postingModel(t, "Our new post is up")
+	id, out, err := runAgentKept(context.Background(), root, "poster", "post the news", true, asAdmin("dana"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := out.Trace.Waiting
+	if len(*posted) != 0 || w == nil || w.Action.Tool != "post_update" {
+		t.Fatalf("an agent that earned nothing posted without asking: %v %+v", *posted, out.Trace)
+	}
+	if strings.Contains(w.Why, "nobody started") {
+		t.Errorf("a run a person started was held as one nobody started: %q", w.Why)
+	}
+	done, err := continueAgentRun(context.Background(), root, id,
+		&agent.Verdict{N: w.N, Approve: true}, asAdmin("sam"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(*posted) != 1 || !done.Trace.Complete {
+		t.Fatalf("after a person agreed: %v %+v", *posted, done.Trace)
 	}
 }
 
