@@ -364,6 +364,33 @@ func TestTheStdioInterfaceRecordsEveryCall(t *testing.T) {
 	}
 }
 
+// A call on standard input is recorded at a bounded size, as one over HTTP
+// is: the two records are one record now, and a line on standard input may
+// be eight megabytes, its tool, its operation and the refusal that quotes
+// them the caller's as they are at /mcp. For a caller no token vouched
+// for, too, whose record says so.
+func TestACallOnStandardInputIsRecordedAtABoundedSize(t *testing.T) {
+	huge := "p" + strings.Repeat("x", 2<<20)
+	for _, c := range []*Caller{
+		{Name: "rae", Verified: true},
+		{Name: "rae", Why: "no token was given"},
+	} {
+		r := stdioCallRecord(c, "quilzo_read"+huge, huge, &mcp.Error{Code: mcp.CodeRefused,
+			Message: "there is no page " + `"` + huge + `"`})
+		b, err := json.Marshal(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(b) > 2048 {
+			t.Fatalf("a refused call on standard input made a record of %d bytes", len(b))
+		}
+		if !strings.HasPrefix(r.Detail["error"], "there is no page") || !strings.HasPrefix(r.Detail["tool"], "quilzo_read") ||
+			r.Verified != c.Verified || (r.Detail["identity"] == "") == !c.Verified {
+			t.Errorf("the record no longer says what was refused, or for whom: %.200s", b)
+		}
+	}
+}
+
 // A page an app connected through OAuth writes is marked, and recorded, as
 // the app's. Every page written over MCP was marked as by mcp-client, and
 // its write recorded so, whichever app wrote it: with two apps connected for
