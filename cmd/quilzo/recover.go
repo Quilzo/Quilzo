@@ -69,15 +69,28 @@ func cmdRecover(root string, args []string) error {
 		return err
 	}
 
-	// Usable means: not revoked, not expired, carrying admin, and not
-	// refused by a lockdown in force, which would refuse it at the admin
-	// however alive it is here.
+	// Usable means: not revoked, not expired, carrying admin, held by
+	// somebody the policy still lets administer, and not refused by a
+	// lockdown in force, which would refuse it at the admin however alive
+	// it is here.
+	//
+	// The policy is asked because a token carries a ceiling, not a grant.
+	// One carrying admin for somebody whose admin binding had gone was
+	// counted, and the recovery answered a store nobody could administer
+	// with "an admin token is still usable, ask whoever holds one".
+	pol, err := loadPolicy(root)
+	if err != nil {
+		return err
+	}
 	usable := 0
 	now := time.Now()
 	lock, locked := shield.Find(root, shield.Lockdown, "", now)
 	for i := range toks.Tokens {
 		t := &toks.Tokens[i]
 		if ok, _ := t.Usable(now); !ok || t.Role != auth.RoleAdmin {
+			continue
+		}
+		if !pol.Evaluate(t.Principal, auth.ActGrant, "/").Allowed {
 			continue
 		}
 		if locked && shield.LockedOut(lock, t.CreatedAt, t.Session) {

@@ -32,7 +32,13 @@ func updatePolicy(root string, change func(*auth.Policy) error) (*auth.Policy, e
 	err := atomicfile.Update(policyPath(root), func(p *auth.Policy) error {
 		out = p
 		before := dual.Administrators(p)
+		// Nobody left able to administer a store somebody did is refused
+		// here, for every surface at once (dual.ErrLastAdministrator).
+		was := dual.Administered(p)
 		if err := change(p); err != nil {
+			return err
+		}
+		if err := dual.KeepsAnAdministrator(was, p); err != nil {
 			return err
 		}
 		return dualStore(root).NoteAdministrators(before, dual.Administrators(p), time.Now())

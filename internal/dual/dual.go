@@ -394,6 +394,44 @@ func Administrators(pol *auth.Policy) map[string]bool {
 	return out
 }
 
+// Administered reports whether anybody at all may grant access on the whole
+// site under pol, by any binding: a role, a permission or a job. Wider than
+// Administrators, which counts who could approve a request, because the
+// question here is whether the store can be administered at all.
+func Administered(pol *auth.Policy) bool {
+	if pol == nil {
+		return false
+	}
+	for _, who := range pol.Principals() {
+		if pol.Evaluate(who, auth.ActGrant, "/").Allowed {
+			return true
+		}
+	}
+	return false
+}
+
+// ErrLastAdministrator is a change to the access policy that would leave a
+// store somebody administered with nobody able to administer it.
+//
+// Refused wherever the policy is written, rather than by each command that
+// can take access away. People refused revoking your own last admin
+// binding, and the access review a revoke that left nobody; `quilzo auth
+// revoke` and `auth deny` asked nothing, so the only administrator tidying
+// up a binding locked the store, and the break-glass then refused to
+// help. One rule in the one place every change passes cannot be forgotten
+// by the next command that removes access.
+var ErrLastAdministrator = errors.New("that would leave nobody able to administer this store, so it is refused; " +
+	"grant another administrator first")
+
+// KeepsAnAdministrator is ErrLastAdministrator when a store that was
+// administered (was, asked before the change) is not after it.
+func KeepsAnAdministrator(was bool, after *auth.Policy) error {
+	if was && !Administered(after) {
+		return ErrLastAdministrator
+	}
+	return nil
+}
+
 // NoteAdministrators records a change to who administers the whole site,
 // from before to after, at now. Somebody who stopped being one while
 // another still was starts a day in which the administrator left does not

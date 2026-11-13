@@ -140,18 +140,23 @@ func TestAnAdministratorWhoseGrantLapsedRecoversTheWholeOfIt(t *testing.T) {
 			if err := initAdmin(root, []string{"--admin", "owner"}, true); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := updatePolicy(root, func(p *auth.Policy) error {
-				for i := range p.Bindings {
-					if p.Bindings[i].Principal == "owner" {
-						limit(&p.Bindings[i])
-					}
+			// Written straight to the file: a grant ends by the clock, which
+			// no command does, and every command refuses to leave the store
+			// with nobody able to administer it (dual.ErrLastAdministrator).
+			p, err := loadPolicy(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i := range p.Bindings {
+				if p.Bindings[i].Principal == "owner" {
+					limit(&p.Bindings[i])
 				}
-				return nil
-			}); err != nil {
+			}
+			if err := saveJSON(policyPath(root), p); err != nil {
 				t.Fatal(err)
 			}
 			_, printed := captureStdout(t)
-			err := cmdRecover(root, []string{"--principal", "owner", "--reason", "the cover ended",
+			err = cmdRecover(root, []string{"--principal", "owner", "--reason", "the cover ended",
 				"--i-have-filesystem-access"})
 			printed()
 			if err != nil {

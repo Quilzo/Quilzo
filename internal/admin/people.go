@@ -661,10 +661,19 @@ func (s *Server) save() error {
 // takes the result as this server's policy.
 func (s *Server) changePolicy(change func(*auth.Policy) error) error {
 	if s.UpdatePolicy == nil {
+		// Made on a copy, so a change that would leave nobody able to
+		// administer the store is refused before anybody is shut out
+		// (dual.ErrLastAdministrator), as UpdatePolicy refuses it on disk.
 		before := dual.Administrators(s.Policy)
-		if err := change(s.Policy); err != nil {
+		was := dual.Administered(s.Policy)
+		trial := &auth.Policy{Bindings: s.Policy.Snapshot()}
+		if err := change(trial); err != nil {
 			return err
 		}
+		if err := dual.KeepsAnAdministrator(was, trial); err != nil {
+			return err
+		}
+		s.Policy.Replace(trial.Bindings)
 		return s.noteAdministrators(before)
 	}
 	pol, err := s.UpdatePolicy(change)
