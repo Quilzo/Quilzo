@@ -418,6 +418,9 @@ func editSections(root, page string,
 		w.Human("  %2d  %s\n", pl.Index, pl.Kind)
 	}
 	w.Human("\n  %sthe draft moved; `quilzo publish` puts it live%s\n", dim, reset)
+	for _, l := range claimsByOthers(root, caller.Name, []string{page}) {
+		w.Human("  %s%s%s\n", yellow, claimNotice(l), reset)
+	}
 	return nil
 }
 

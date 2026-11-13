@@ -1521,6 +1521,9 @@ func cmdAdd(root string, args []string) error {
 		written = len(merged.Pages)
 	}
 	w.Human("draft %s  %d page(s)\n", short(cid), written)
+	for _, l := range claimsByOthers(root, caller.Name, append(changed, strings.Split(*remove, ",")...)) {
+		w.Human("  %s%s%s\n", yellow, claimNotice(l), reset)
+	}
 	if message != *msg {
 		w.Human("  %srecorded as yours, %s; %s is credited in its message%s\n",
 			dim, who, strings.TrimSpace(*author), reset)

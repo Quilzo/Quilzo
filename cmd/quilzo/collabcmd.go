@@ -29,6 +29,37 @@ func loadLocks(root string) (*collab.Locks, error) {
 	return l, loadJSON(locksPath(root), l)
 }
 
+// claimsByOthers are the live claims somebody other than who holds on any
+// of pages, for a writer to be told about. The browser's editor said "pat
+// opened this page for editing" and every other surface that writes a page
+// said nothing, so a claim stopped two people spending an afternoon on the
+// same page only if both of them used the browser. Advisory, like the claim:
+// an unreadable locks file is no claim, and the write goes ahead either way.
+func claimsByOthers(root, who string, pages []string) []collab.Lock {
+	locks, err := loadLocks(root)
+	if err != nil {
+		return nil
+	}
+	now := time.Now()
+	var out []collab.Lock
+	for _, page := range pages {
+		if l, held := locks.Holder(page, now); held && l.Holder != who {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+// claimNotice is one sentence saying who holds a page that was just written.
+func claimNotice(l collab.Lock) string {
+	msg := fmt.Sprintf("%s has claimed %s until %s", l.Holder, l.Page,
+		time.Unix(l.Until, 0).Format("15:04"))
+	if l.Note != "" {
+		msg += " (" + l.Note + ")"
+	}
+	return msg + "; the write went ahead, so talk to them before either of you loses work"
+}
+
 func cmdLock(root string, args []string) error {
 	if len(args) == 0 {
 		return lockList(root)

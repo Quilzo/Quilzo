@@ -469,8 +469,44 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 			Principal: "mcp-client", Kind: audit.KindAI, Model: "mcp-client",
 			Verified: caller.Verified, Detail: map[string]string{"on_behalf_of": caller.Name},
 		})
-		return fmt.Sprintf("wrote %s to the draft as %s; it is marked AI-generated "+
-			"and is not public until someone publishes", name, short(cid)), nil
+		said := fmt.Sprintf("wrote %s to the draft as %s; it is marked AI-generated "+
+			"and is not public until someone publishes", name, short(cid))
+		// Somebody's claim on the page, as the browser's editor shows it: an
+		// agent writing over an afternoon's rewrite was told nothing.
+		for _, l := range claimsByOthers(root, caller.Name, []string{name}) {
+			said += ". " + claimNotice(l)
+		}
+		return said, nil
+	})
+
+	srv.Register(mcp.Operation{
+		Name: "list_locks", NeedsRole: "reader",
+		Summary: "who has claimed which pages for editing, and why",
+		Detail: "Claims are advisory: they never stop a write. Check them before " +
+			"rewriting a page, as a person would look before starting on it.",
+		Area:     "/",
+		Keywords: []string{"lock", "locks", "claim", "claimed", "editing", "busy", "who"},
+	}, func(map[string]any) (any, error) {
+		locks, err := loadLocks(root)
+		if err != nil {
+			return nil, err
+		}
+		may, err := pageCheck(root, caller, auth.ActView)
+		if err != nil {
+			return nil, err
+		}
+		var b strings.Builder
+		for _, l := range locks.Active(time.Now()) {
+			if !may(l.Page) {
+				continue
+			}
+			fmt.Fprintf(&b, "%s\t%s\tuntil %s\t%s\n", l.Page, l.Holder,
+				time.Unix(l.Until, 0).Format("15:04"), l.Note)
+		}
+		if b.Len() == 0 {
+			return "nobody has claimed anything", nil
+		}
+		return strings.TrimSpace(b.String()), nil
 	})
 
 	srv.Register(mcp.Operation{
