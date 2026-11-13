@@ -2643,12 +2643,29 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 	// too, so the next editor was told that a person who could not edit the
 	// page "opened this page for editing recently", and an address that was
 	// no page at all was claimed as one.
+	//
+	// And only when nobody else holds it. Opening the editor used to claim
+	// the page whoever held it, so pat's claim and his note were replaced by
+	// the claim of somebody who only looked: pat could no longer release it,
+	// and the next person was warned about the wrong one. Somebody else's
+	// claim is shown and left alone; taking it over is an act (`quilzo lock
+	// PAGE`), not a visit.
 	var heldBy *collab.Lock
 	if canEdit && s.Locks != nil && s.SaveLocks != nil {
 		if locks, err := s.Locks(); err == nil {
-			_, existing := locks.Claim(name, p.Name, "", time.Now())
-			heldBy = existing
-			_ = s.SaveLocks(locks)
+			now := time.Now()
+			l, held := locks.Holder(name, now)
+			switch {
+			case held && l.Holder != p.Name:
+				heldBy = &l
+			case held:
+				// Their own claim, renewed with the note they gave it.
+				locks.Claim(name, p.Name, l.Note, now)
+				_ = s.SaveLocks(locks)
+			default:
+				locks.Claim(name, p.Name, "", now)
+				_ = s.SaveLocks(locks)
+			}
 		}
 	}
 

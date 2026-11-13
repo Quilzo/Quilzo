@@ -77,3 +77,28 @@ func TestAReaderOpeningAPageClaimsNothing(t *testing.T) {
 		t.Errorf("an editor opening the page did not claim it: %+v %v", l, held)
 	}
 }
+
+// Opening the editor of a page somebody else holds shows their claim and
+// leaves it in place. Every editor GET used to claim the page for the
+// visitor: pat's claim and its note were replaced by whoever merely looked,
+// pat could no longer release it, and the next person was warned about the
+// wrong one. Taking a claim over is an act (`quilzo lock PAGE`), not a visit.
+func TestOpeningTheEditorLeavesSomebodyElsesClaim(t *testing.T) {
+	srv, admin, _, _ := readerOf(t)
+	locks, _ := srv.Locks()
+	locks.Claim("about", "pat", "pat: rewriting about, please wait", time.Now())
+
+	body := get(t, srv, "/page/about", admin).Body.String()
+	if !strings.Contains(body, "pat: rewriting about, please wait") {
+		t.Error("the editor does not show pat's claim")
+	}
+	locks, _ = srv.Locks()
+	l, held := locks.Holder("about", time.Now())
+	if !held || l.Holder != "pat" || l.Note != "pat: rewriting about, please wait" {
+		t.Fatalf("opening the editor took pat's claim: %+v", l)
+	}
+	// And the next visit is still told it is pat's.
+	if body := get(t, srv, "/page/about", admin).Body.String(); !strings.Contains(body, "pat") {
+		t.Error("the second visit is not told pat holds the page")
+	}
+}
