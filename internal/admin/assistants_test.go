@@ -227,3 +227,42 @@ func TestAChatbotsModelIsChosenOnItsPage(t *testing.T) {
 		t.Error("a chatbot kept to no route was saved")
 	}
 }
+
+// The console numbers what it retrieved as the answer cites it.
+//
+// The answer says [1] for the first passage, and the table numbered that
+// row 0, so with more than one passage every citation pointed at the row
+// below the one it meant: the console exists to show which passage a
+// sentence came from, and it showed the wrong one.
+func TestTheConsoleNumbersPassagesAsTheAnswerCitesThem(t *testing.T) {
+	srv, token, fa := chatbots(t)
+	fa.set.Put(assistant.Assistant{Name: "help", Title: "Help", UseModel: true})
+	fa.model = unfaithful{}
+	body := get(t, srv, "/assistants/help?q="+url.QueryEscape("can I return opened ink"), token).Body.String()
+	if !strings.Contains(body, "<td>1</td>") || strings.Contains(body, "<td>0</td>") {
+		t.Fatal("the first passage retrieved is not numbered 1, as the answer cites it")
+	}
+}
+
+// Creating a chatbot under a name in use says so and changes nothing.
+//
+// The New chatbot form posts to the same save as an edit, so entering the
+// name of an existing chatbot, a public one perhaps, retitled it and said
+// "Saved." instead of saying the name was taken.
+func TestANewChatbotUnderANameInUseIsRefused(t *testing.T) {
+	srv, token, fa := chatbots(t)
+	fa.set.Put(assistant.Assistant{Name: "help", Title: "Ask the shop", Public: true})
+	w := decideForm(t, srv, "/assistants/save", token, url.Values{"name": {"help"}, "title": {"Something else"}})
+	loc := w.Header().Get("Location")
+	if a, _ := fa.set.Get("help"); a.Title != "Ask the shop" || !a.Public {
+		t.Fatalf("a chatbot in use was changed by creating one under its name: %+v", a)
+	}
+	if !strings.Contains(loc, "e=") || !strings.Contains(loc, "/assistants/help") {
+		t.Fatalf("the refusal does not say so or lead to the chatbot: %q", loc)
+	}
+	// Its own settings form still saves it.
+	decideForm(t, srv, "/assistants/save", token, url.Values{"name": {"help"}, "full": {"1"}, "title": {"Ask us"}})
+	if a, _ := fa.set.Get("help"); a.Title != "Ask us" {
+		t.Fatalf("the settings form no longer saves: %+v", a)
+	}
+}

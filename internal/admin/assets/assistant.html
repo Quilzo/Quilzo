@@ -50,7 +50,7 @@
   <tbody>
   {{range $i, $h := .Sources}}
   <tr>
-    <td>{{$i}}</td>
+    <td>{{cite $i}}</td>
     <th scope="row">{{$h.Header}}{{if $h.Doc}} <span class="tag">document</span>{{end}}<div class="hint">{{$h.Text}}</div></th>
     <td>{{if $h.BM25Rank}}{{$h.BM25Rank}}{{else}}—{{end}}</td>
     <td>{{if $h.VectorRank}}{{$h.VectorRank}}{{else}}—{{end}}</td>

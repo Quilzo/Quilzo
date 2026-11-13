@@ -289,12 +289,21 @@ func (s *Server) handleAssistantSave(w http.ResponseWriter, r *http.Request) {
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
 	back := "/assistants"
+	full := r.FormValue("full") == "1"
 	err := s.changeAssistants(p, "declare", name, func(set *assistant.Set) error {
 		a, existed := set.Get(name)
+		if existed && !full {
+			// The New chatbot form posts here without full=1, as an edit
+			// would; on a name in use it retitled that chatbot, a public
+			// one perhaps, and said "Saved.". It is refused, and the owner
+			// is taken to the chatbot that has the name.
+			back = "/assistants/" + url.PathEscape(name)
+			return fmt.Errorf("a chatbot called %s exists already; change it here, or choose another name for a new one", name)
+		}
 		if !existed {
 			a = assistant.Assistant{Name: name}
 		}
-		if r.FormValue("full") == "1" {
+		if full {
 			a.Title = strings.TrimSpace(r.FormValue("title"))
 			a.Greeting = strings.TrimSpace(r.FormValue("greeting"))
 			a.Instructions = strings.TrimSpace(r.FormValue("instructions"))

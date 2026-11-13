@@ -595,6 +595,10 @@ func New(s *store.Store, p *auth.Policy, ts *auth.TokenStore, layouts render.Lay
 			return template.URL("data:image/svg+xml," + url.PathEscape(MarkSVG("#0842a0")))
 		},
 		"pct": func(f float64) float64 { return f * 100 },
+		// cite is a passage's number as an answer cites it: [1] is the
+		// first. The console numbered its passages from 0, so every
+		// citation pointed at the row below the one it meant.
+		"cite": func(i int) int { return i + 1 },
 		// measure is a research value as a report states it.
 		"measure": research.Format,
 		// sentence capitalises the first letter, for a word stored in
