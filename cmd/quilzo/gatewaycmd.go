@@ -450,20 +450,95 @@ func gatewayBudget(root string, args []string) error {
 			"  CALLER is chatbot:NAME, assist, agent:NAME, person:NAME, or * for everybody else")
 	}
 	who := pos[0]
+	// Only the limits named change; the others are kept as they are.
+	//
+	// The budget was rebuilt from the flags given, zero meaning unlimited,
+	// so `gateway budget chatbot:help`, typed to see it, wiped every limit
+	// on the public chatbot and said nothing, and `--per-minute 10` alone
+	// dropped its character and token caps. Asked with nothing to change,
+	// it shows the budget; --remove is how one goes.
+	set := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
+	if !*drop && len(set) == 0 {
+		return showBudget(root, who)
+	}
 	return changeGateway(root, "budget", who, func(c *gateway.Config) error {
 		var kept []gateway.Budget
-		for _, b := range c.Budgets {
-			if b.Consumer != who {
-				kept = append(kept, b)
+		b := gateway.Budget{Consumer: who}
+		for _, old := range c.Budgets {
+			if old.Consumer == who {
+				b = old
+				continue
 			}
+			kept = append(kept, old)
 		}
 		if !*drop {
-			kept = append(kept, gateway.Budget{Consumer: who, PerMinute: *perMinute,
-				CharsPerDay: *perDay, TokensPerDay: *tokens, MoneyPerDay: *moneyDay, MoneyPerMonth: *moneyMonth})
+			if set["per-minute"] {
+				b.PerMinute = *perMinute
+			}
+			if set["chars-per-day"] {
+				b.CharsPerDay = *perDay
+			}
+			if set["tokens-per-day"] {
+				b.TokensPerDay = *tokens
+			}
+			if set["money-per-day"] {
+				b.MoneyPerDay = *moneyDay
+			}
+			if set["money-per-month"] {
+				b.MoneyPerMonth = *moneyMonth
+			}
+			kept = append(kept, b)
 		}
 		c.Budgets = kept
 		return c.Validate()
 	})
+}
+
+// showBudget is `quilzo gateway budget CALLER` with nothing to change: the
+// caller's own budget, or that it has none, under the same authority that
+// changes one, since a budget says what a caller is allowed to spend.
+func showBudget(root, who string) error {
+	caller := resolveCaller(root, flagToken)
+	if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
+		return err
+	}
+	cfg, err := gateway.Load(gatewayPath(root))
+	if err != nil {
+		return err
+	}
+	b, found := gateway.Budget{Consumer: who}, false
+	if cfg != nil {
+		for _, x := range cfg.Budgets {
+			if x.Consumer == who {
+				b, found = x, true
+			}
+		}
+	}
+	if w.JSON(b) {
+		return nil
+	}
+	if !found {
+		w.Human("%s has no budget of its own; the one for * applies, if there is one\n", who)
+		return nil
+	}
+	limit := func(n int, what string) string {
+		if n == 0 {
+			return "unlimited " + what
+		}
+		return fmt.Sprintf("%d %s", n, what)
+	}
+	money := func(m string) string {
+		if m == "" {
+			return "unlimited"
+		}
+		return m
+	}
+	w.Human("%s%s%s\n", bold, who, reset)
+	w.Human("  %s, %s, %s\n", limit(b.PerMinute, "calls a minute"), limit(b.CharsPerDay, "characters a day"),
+		limit(b.TokensPerDay, "tokens a day"))
+	w.Human("  money %s a day, %s a month\n", money(b.MoneyPerDay), money(b.MoneyPerMonth))
+	return nil
 }
 
 // gatewayCapability is the gateway for the admin's Models screen.

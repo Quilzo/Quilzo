@@ -5,11 +5,13 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/gateway"
 	"github.com/quilzo/quilzo/internal/out"
 )
 
@@ -191,5 +193,58 @@ func TestAnyNameTypedAfterByIsCreditedNotRecorded(t *testing.T) {
 	r, err := st.Get(pages[0])
 	if err != nil || r.By != "dana" || !strings.Contains(r.Note, "Priya (Compliance)") {
 		t.Errorf("the check is recorded as %+v %v", r, err)
+	}
+}
+
+func TestAGatewayBudgetIsShownAndChangedOneLimitAtATime(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := connectStore(t)
+	var buf bytes.Buffer
+	w.Out = &buf
+	budget := func() gateway.Budget {
+		t.Helper()
+		cfg, err := gateway.Load(gatewayPath(root))
+		if err != nil || cfg == nil {
+			t.Fatalf("%v %v", cfg, err)
+		}
+		for _, b := range cfg.Budgets {
+			if b.Consumer == "chatbot:help" {
+				return b
+			}
+		}
+		return gateway.Budget{}
+	}
+	if err := cmdGateway(root, []string{"budget", "chatbot:help", "--per-minute", "5",
+		"--chars-per-day", "20000", "--tokens-per-day", "9000"}); err != nil {
+		t.Fatal(err)
+	}
+	set := gateway.Budget{Consumer: "chatbot:help", PerMinute: 5, CharsPerDay: 20000, TokensPerDay: 9000}
+	if budget() != set {
+		t.Fatalf("the budget set is %+v", budget())
+	}
+	buf.Reset()
+	if err := cmdGateway(root, []string{"budget", "chatbot:help"}); err != nil {
+		t.Fatal(err)
+	}
+	if budget() != set {
+		t.Errorf("asking for the budget changed it to %+v", budget())
+	}
+	var shown gateway.Budget
+	if err := json.Unmarshal(buf.Bytes(), &shown); err != nil || shown != set {
+		t.Errorf("the budget shown is %q (%v)", buf.String(), err)
+	}
+	if err := cmdGateway(root, []string{"budget", "chatbot:help", "--per-minute", "10"}); err != nil {
+		t.Fatal(err)
+	}
+	set.PerMinute = 10
+	if budget() != set {
+		t.Errorf("one limit changed left %+v", budget())
+	}
+	if err := cmdGateway(root, []string{"budget", "chatbot:help", "--tokens-per-day", "0"}); err != nil {
+		t.Fatal(err)
+	}
+	set.TokensPerDay = 0
+	if budget() != set {
+		t.Errorf("a limit set to unlimited left %+v", budget())
 	}
 }
