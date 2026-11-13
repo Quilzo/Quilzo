@@ -95,3 +95,34 @@ func TestTheBreakerWatchesWhatTheWebIsSent(t *testing.T) {
 		t.Error("a search after holding something private was not held")
 	}
 }
+
+// A search of the research indexes, and the identifier a citation is
+// looked up by, are the model's words carried to a host, as a web search
+// is: once a run holds something private and has read somebody else's
+// words, both wait for a person.
+//
+// Found by an audit: the breaker's list had the web's hands and the
+// browser's, and not the research operations a run performs through the
+// agent interface, so a tainted run's research_search with a private
+// balance in its query went to the index while its web_search was held.
+func TestTheBreakerWatchesWhatTheResearchIndexesAreSent(t *testing.T) {
+	s := NewSession(webbed([]string{"web_search"}, nil), nil)
+	search := Action{Op: "research_search", Input: map[string]any{"query": "balance 4210"}}
+	cite := Action{Op: "research_cite", Input: map[string]any{"id": "10.1000/balance-4210"}}
+	if _, breaks := s.Breaks(search); breaks {
+		t.Fatal("a run holding nothing private was held")
+	}
+	s.ReadWeb("hartsbakery.co.uk", "https://hartsbakery.co.uk/")
+	s.HoldsPrivate("the draft of the price list")
+	for _, a := range []Action{search, cite} {
+		why, breaks := s.Breaks(a)
+		if !breaks || !strings.Contains(why, "research") {
+			t.Errorf("%s after holding something private: %q %v", a.Op, why, breaks)
+		}
+	}
+	// A tool that happens to share the name is the tool's, and its host is
+	// read as a tool's is.
+	if to, sends := HandSends(Action{Op: "research_search", Tool: "lookup"}); sends {
+		t.Errorf("a tool's call was read as the research hand's, to %q", to)
+	}
+}
