@@ -231,8 +231,11 @@ func (s Store) Say(assistant, id, from, by, text string, now time.Time) (Message
 		return Message{}, fmt.Errorf("this conversation has reached %d "+
 			"messages; start another", MaxMessages)
 	}
-	if err := s.append(assistant, id, event{Kind: "say", At: now.UTC(),
-		From: from, By: by, Text: text}); err != nil {
+	e := event{Kind: "say", At: now.UTC(), From: from, By: by, Text: text}
+	if err := s.fits(assistant, id, e); err != nil {
+		return Message{}, err
+	}
+	if err := s.append(assistant, id, e); err != nil {
 		return Message{}, err
 	}
 	return Message{N: len(c.Messages) + 1, At: now.UTC(), From: from, By: by,
@@ -250,6 +253,41 @@ func (s Store) Close(assistant, id, by string, now time.Time) error {
 		return nil
 	}
 	return s.append(assistant, id, event{Kind: "close", At: now.UTC(), By: by})
+}
+
+// closeRoom is what a conversation keeps free for the line that ends it,
+// so that it can always be ended, by the visitor or by whoever answered.
+const closeRoom = 4 << 10
+
+// fits refuses a message that would take a conversation's file past
+// MaxFile. MaxText and MaxMessages alone did not keep it under: a message
+// of '<' is stored six bytes to the character, so at about 88 such
+// messages the file passed the limit Get reads to, and from then on the
+// visitor's page answered 503, the Inbox left the conversation out and
+// nobody could answer it. The visitor is told to start another, as at
+// MaxMessages.
+func (s Store) fits(assistant, id string, e event) error {
+	p, err := s.path(assistant, id)
+	if err != nil {
+		return err
+	}
+	line, err := json.Marshal(e)
+	if err != nil {
+		return err
+	}
+	fi, err := os.Stat(p)
+	if os.IsNotExist(err) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	// The leading and trailing newline writeEvents adds, then the room
+	// kept for the end.
+	if fi.Size()+int64(len(line))+2+closeRoom > MaxFile {
+		return fmt.Errorf("this conversation is as long as one can be; start another")
+	}
+	return nil
 }
 
 func (s Store) append(assistant, id string, e event) error {
@@ -353,33 +391,17 @@ func (s Store) Get(assistant, id string) (Conversation, error) {
 // List is every conversation: open ones waiting for a reply first, then the
 // rest by when they last moved.
 func (s Store) List() ([]Conversation, error) {
-	assistants, err := os.ReadDir(s.Dir)
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
+	var out []Conversation
+	err := s.walk(func(assistant, id string, _ os.DirEntry) error {
+		c, err := s.Get(assistant, id)
+		if err != nil {
+			return nil
+		}
+		out = append(out, c)
+		return nil
+	})
 	if err != nil {
 		return nil, err
-	}
-	var out []Conversation
-	for _, a := range assistants {
-		if !a.IsDir() || !reAssistant.MatchString(a.Name()) {
-			continue
-		}
-		files, err := os.ReadDir(filepath.Join(s.Dir, a.Name()))
-		if err != nil {
-			return nil, err
-		}
-		for _, f := range files {
-			id, ok := strings.CutSuffix(f.Name(), ".jsonl")
-			if !ok || !ValidID(id) || !f.Type().IsRegular() {
-				continue
-			}
-			c, err := s.Get(a.Name(), id)
-			if err != nil {
-				continue
-			}
-			out = append(out, c)
-		}
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		wi, wj := out[i].Waiting(), out[j].Waiting()
@@ -397,25 +419,65 @@ func (s Store) List() ([]Conversation, error) {
 // Expire deletes conversations that have not moved for longer than their
 // assistant keeps them. keep returns that period for an assistant, or zero
 // for one that no longer exists, whose conversations go at the default.
+//
+// A conversation Get cannot read goes by when its file last changed. Expire
+// walked List, which leaves such a conversation out, so one written past
+// the read limit was kept for ever, although its visitor had been told it
+// is deleted after the period.
 func (s Store) Expire(keep func(assistant string) time.Duration, now time.Time) (int, error) {
-	all, err := s.List()
-	if err != nil {
-		return 0, err
-	}
 	n := 0
-	for _, c := range all {
-		d := keep(c.Assistant)
+	err := s.walk(func(assistant, id string, f os.DirEntry) error {
+		var last time.Time
+		if c, err := s.Get(assistant, id); err == nil {
+			last = c.Last
+		} else if fi, ferr := f.Info(); ferr == nil {
+			last = fi.ModTime()
+		} else {
+			return nil
+		}
+		d := keep(assistant)
 		if d <= 0 {
 			d = DefaultDays * 24 * time.Hour
 		}
-		if now.Sub(c.Last) <= d {
-			continue
+		if now.Sub(last) <= d {
+			return nil
 		}
-		p, _ := s.path(c.Assistant, c.ID)
+		p, _ := s.path(assistant, id)
 		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
-			return n, err
+			return err
 		}
 		n++
+		return nil
+	})
+	return n, err
+}
+
+// walk calls fn for every file that can be a conversation.
+func (s Store) walk(fn func(assistant, id string, f os.DirEntry) error) error {
+	assistants, err := os.ReadDir(s.Dir)
+	if os.IsNotExist(err) {
+		return nil
 	}
-	return n, nil
+	if err != nil {
+		return err
+	}
+	for _, a := range assistants {
+		if !a.IsDir() || !reAssistant.MatchString(a.Name()) {
+			continue
+		}
+		files, err := os.ReadDir(filepath.Join(s.Dir, a.Name()))
+		if err != nil {
+			return err
+		}
+		for _, f := range files {
+			id, ok := strings.CutSuffix(f.Name(), ".jsonl")
+			if !ok || !ValidID(id) || !f.Type().IsRegular() {
+				continue
+			}
+			if err := fn(a.Name(), id, f); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

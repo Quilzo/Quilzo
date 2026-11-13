@@ -4,6 +4,7 @@
 package handoff
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -300,5 +301,79 @@ func TestALongConversationStillGoingIsKept(t *testing.T) {
 	keep := func(string) time.Duration { return 30 * 24 * time.Hour }
 	if n, _ := s.Expire(keep, day0.Add(45*24*time.Hour)); n != 0 {
 		t.Error("a conversation that moved five days ago was deleted")
+	}
+}
+
+// A conversation the store takes stays one it can read.
+//
+// A message may be MaxText long and a conversation MaxMessages long, but a
+// message of '<' is stored six bytes to the character, so at about 88 of
+// them the file passed MaxFile, which is checked only when reading. From
+// then on the visitor's page answered 503, the conversation vanished from
+// the Inbox (List skipped it) and staff could not reply. The message that
+// would take it past is refused now, as the 201st is, and the conversation
+// can still be read, answered by nobody else and ended.
+func TestAConversationIsNeverWrittenPastWhatCanBeRead(t *testing.T) {
+	s, _, id := opened(t)
+	long := strings.Repeat("<", MaxText)
+	refused := false
+	for i := 0; i < MaxMessages; i++ {
+		if _, err := s.Say("help", id, Visitor, "", long, day0); err != nil {
+			if !strings.Contains(err.Error(), "start another") {
+				t.Fatalf("message %d was refused with %v", i+1, err)
+			}
+			refused = true
+			break
+		}
+	}
+	if !refused {
+		t.Fatal("no message was refused, so the test did not reach the read limit")
+	}
+	if _, err := s.Get("help", id); err != nil {
+		t.Fatalf("a conversation the store took cannot be read: %v", err)
+	}
+	if all, _ := s.List(); len(all) != 1 {
+		t.Fatal("the conversation is not in the list")
+	}
+	if err := s.Close("help", id, "Ada", day0); err != nil {
+		t.Fatal(err)
+	}
+	if c, err := s.Get("help", id); err != nil || !c.Closed {
+		t.Fatalf("ending it left it unreadable or open: %v", err)
+	}
+}
+
+// A conversation the store cannot read is still deleted on time.
+//
+// Expire walked List, which leaves out what Get cannot read, so a
+// conversation written past the read limit (as they were before the limit
+// was kept on writing) was kept for ever although the visitor was told it
+// is deleted. It goes by when its file last changed.
+func TestAConversationThatCannotBeReadIsStillDeletedOnTime(t *testing.T) {
+	s, _, id := opened(t)
+	p := filepath.Join(s.Dir, "help", id+".jsonl")
+	f, err := os.OpenFile(p, os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Write(bytes.Repeat([]byte("x"), MaxFile+1)); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	if err := os.Chtimes(p, day0, day0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Get("help", id); err == nil || err == ErrNotFound {
+		t.Fatalf("the test needs a conversation that cannot be read: %v", err)
+	}
+	keep := func(string) time.Duration { return 20 * 24 * time.Hour }
+	if n, err := s.Expire(keep, day0.Add(10*24*time.Hour)); err != nil || n != 0 {
+		t.Fatalf("one inside its period was deleted: %d %v", n, err)
+	}
+	if n, err := s.Expire(keep, day0.Add(21*24*time.Hour)); err != nil || n != 1 {
+		t.Fatalf("one past its period was not deleted: %d %v", n, err)
+	}
+	if _, err := os.Stat(p); !os.IsNotExist(err) {
+		t.Fatal("the file is still there")
 	}
 }
