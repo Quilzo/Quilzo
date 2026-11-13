@@ -1611,14 +1611,14 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 	}
 
 	if len(weighs) > 0 {
-		runner.Weighs = func(a agent.Action) string {
+		runner.Weighs = unattendedWeighs(unattendedRun(caller, from), func(a agent.Action) string {
 			for _, w := range weighs {
 				if why := w(a); why != "" {
 					return why
 				}
 			}
 			return ""
-		}
+		})
 	}
 	// What its browser, its commands or its desktop ask a person waits in
 	// this process, where the page, the workspace and the cell are, as a

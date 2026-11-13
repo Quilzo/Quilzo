@@ -690,3 +690,77 @@ func TestATriggeredRunsResearchDoesNotReachOutOnItsOwn(t *testing.T) {
 		t.Fatalf("a granted search still waited: %v\n%s", asked, describeRun(rec.Trace))
 	}
 }
+
+// In a run nobody started, a press that commits to something is decided by
+// a person each time, however neutral the control's name: a click that
+// submits a form, Enter in one, and any press on the desktop, whose
+// outline cannot say what a button sends. Each is a send there, and so is
+// never earned away nor approved in a batch.
+//
+// Found by an audit: the browser weighed a "Continue" button in a form as
+// "it submits a form", which reads as merely acting, so once that kind of
+// press had been approved often enough by hand it went ahead from a run a
+// trigger started with nobody asked. A press on the desktop was not
+// weighed at all unless its name said what it does.
+func TestARunNobodyStartedDoesNotEarnAPressThatSends(t *testing.T) {
+	root, _ := identityStore(t)
+	m := agent.Manifest{Name: "clerk", Browser: &agent.Browser{Read: []string{"shop.example"}},
+		Cell: &agent.Cell{}}
+	// What the browser's driver says of these presses (browser.Driver.weigh).
+	weighed := map[string]string{
+		"browser_click": `it presses button "Continue" on shop.example, and it submits a form`,
+		"browser_key":   `it presses Enter in textbox "Email" on shop.example, and it submits a form`,
+		"browser_choose": `it chooses in combobox "Plan" on shop.example, and the list belongs to a form ` +
+			`that sends, or acts as soon as it changes`,
+	}
+	weigh := func(a agent.Action) string { return weighed[a.Op] }
+	for _, unattended := range []bool{true, false} {
+		w := unattendedWeighs(unattended, weigh)
+		for op := range weighed {
+			a := agent.Action{Op: op, Input: map[string]any{"ref": "e2"}}
+			why := w(a)
+			earnable := agent.Earnable(a, why, agent.WaitAsk, false)
+			if unattended && (earnable || agent.CommitOf(a, why, agent.WaitAsk, false) != "sends") {
+				t.Errorf("%s from a run nobody started is %q and earnable %v: %q", op,
+					agent.CommitOf(a, why, agent.WaitAsk, false), earnable, why)
+			}
+			if !unattended && why != weighed[op] {
+				t.Errorf("%s from a run a person started is weighed %q", op, why)
+			}
+		}
+		// What a press already commits to is said as it was.
+		pay := agent.Action{Op: "browser_click"}
+		paying := unattendedWeighs(unattended, func(agent.Action) string {
+			return `it presses button "Pay now" on shop.example, and it is called "Pay now"`
+		})(pay)
+		if c := agent.CommitOf(pay, paying, agent.WaitAsk, false); c != "pays" {
+			t.Errorf("a payment is shown as %q", c)
+		}
+		// And nothing is weighed that was not.
+		if why := unattendedWeighs(unattended, weigh)(agent.Action{Op: "browser_scroll"}); why != "" {
+			t.Errorf("a scroll is weighed: %q", why)
+		}
+	}
+	// A press on the desktop, and Enter there, wait in a run nobody started
+	// whatever the button is called, and are sends.
+	unattended, attended := outwardAsks(root, m, true, nil), outwardAsks(root, m, false, nil)
+	for _, a := range []agent.Action{
+		{Op: "desktop_press", Input: map[string]any{"ref": "e2"}},
+		{Op: "desktop_key", Input: map[string]any{"key": "Enter"}},
+	} {
+		why := unattended(a)
+		if !strings.HasPrefix(why, agent.UnattendedPrefix) || agent.CommitOf(a, why, agent.WaitAsk, false) != "sends" {
+			t.Errorf("%v from a run nobody started: %q", a, why)
+		}
+		if why := attended(a); why != "" {
+			t.Errorf("%v from a run a person started waits: %q", a, why)
+		}
+		if !handSends(a.Op) {
+			t.Errorf("%s cannot be granted unattended as the other hands can", a.Op)
+		}
+	}
+	// A key that moves or deletes in a field sends nothing.
+	if why := unattended(agent.Action{Op: "desktop_key", Input: map[string]any{"key": "Tab"}}); why != "" {
+		t.Errorf("Tab on the desktop waits: %q", why)
+	}
+}

@@ -130,14 +130,56 @@ func handReachesOut(m agent.Manifest, a agent.Action) (string, bool) {
 	if shell.ReachesOut(a, m.Shell) {
 		return "the network (" + hostList(m.Shell.Hosts) + ")", true
 	}
+	if desktopCommits(a) {
+		return "an app in its desktop cell", true
+	}
 	return agent.HandSends(a)
+}
+
+// desktopCommits says whether a press on the desktop may commit to
+// something the outline cannot name: any press, and Enter. The cell reads
+// what a control is called and not what it does, so a button called
+// "Continue" that sends the form it is in was weighed as nothing, and in a
+// run nobody started it went ahead, or was earned away, with nobody asked.
+// Tab, Escape and Backspace move or take back, and send nothing.
+func desktopCommits(a agent.Action) bool {
+	if a.Tool != "" || a.Delegate != "" {
+		return false
+	}
+	key, _ := a.Input["key"].(string)
+	return a.Op == "desktop_press" || (a.Op == "desktop_key" && strings.TrimSpace(key) == "Enter")
+}
+
+// unattendedWeighs is what the browser and the desktop weigh of a press,
+// for a run nobody started: a press that commits to something, which as
+// weighed reads as merely acting, is a send there, so it is decided by a
+// person each time, never in a batch and never earned away. What already
+// reads as paying, deleting or sending is said as it was.
+//
+// The browser weighs a button in a form as "it submits a form", which is
+// what a click on "Continue" says. Read as acting, that kind of press was
+// earned by being approved often enough in runs a person started, and then
+// went ahead from a run a trigger started, sending the form with nobody
+// asked.
+func unattendedWeighs(unattended bool, weigh func(agent.Action) string) func(agent.Action) string {
+	if !unattended {
+		return weigh
+	}
+	return func(a agent.Action) string {
+		why := weigh(a)
+		if why == "" || !agent.Earnable(a, why, agent.WaitAsk, false) {
+			return why
+		}
+		return fmt.Sprintf("%s: %s, which in a run nobody started a person decides each time",
+			agent.UnattendedPrefix, why)
+	}
 }
 
 // handSends reports whether an action of the hands is one that may reach
 // out of a run nobody started, and so one a grant may name.
 func handSends(op string) bool {
 	_, sends := agent.HandSends(agent.Action{Op: op})
-	return sends || op == "shell_run"
+	return sends || op == "shell_run" || op == "desktop_press" || op == "desktop_key"
 }
 
 // handReach is what one of an agent's hands' actions may reach, as its
