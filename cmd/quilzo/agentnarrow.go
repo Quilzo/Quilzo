@@ -5,6 +5,7 @@ package main
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/quilzo/quilzo/internal/agent"
@@ -119,6 +120,12 @@ func boundOf(m agent.Manifest, c *Caller) agent.Manifest {
 		// And what it may read on the web: a token says nothing of hosts.
 		Web: m.Web,
 
+		// And its desktop cell, whose one setting is pictures, of which a
+		// token says nothing either. Left out, every run's cell narrowed
+		// to none, and desktop_look was refused for an agent declared to
+		// see the screen whoever ran it.
+		Cell: m.Cell,
+
 		// Memory is the agent's, and a token says nothing about it.
 		Memory: agent.Memory{
 			Episodic: true, Semantic: true, Procedural: true,
@@ -138,6 +145,12 @@ func boundOf(m agent.Manifest, c *Caller) agent.Manifest {
 		if m.Shell != nil || holdsShell(m) {
 			b.Shell = m.Shell.ReadOnlyCopy()
 		}
+		// And its desktop the same: the screen read and looked at, and
+		// nothing typed, pressed or keyed into an app. The cell has no
+		// host to read only from, as the browser does, so the acts are
+		// what is taken away; without this, a read-only token's run typed
+		// into the desktop and pressed its buttons as any other run did.
+		b.Capabilities = slices.DeleteFunc(slices.Clone(b.Capabilities), desktopActs)
 	}
 	// A caller confined to part of the site confines the agent to it: a
 	// token issued --on /docs, or an agent granted a role on /docs only.
@@ -145,6 +158,12 @@ func boundOf(m agent.Manifest, c *Caller) agent.Manifest {
 		b.Retrieval.Path = "/" + sc
 	}
 	return b
+}
+
+// desktopActs says whether a capability works the desktop rather than
+// reading it: what a read-only caller's run does not hold.
+func desktopActs(c string) bool {
+	return agent.IsDesktop(c) && c != "desktop_read" && c != "desktop_look"
 }
 
 // withholdWrites takes out of a run's manifest the tools that write to

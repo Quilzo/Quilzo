@@ -501,3 +501,39 @@ func TestAReadOnlyRunTakenOnStaysReadOnly(t *testing.T) {
 		t.Fatalf("a run a writer started did not post once taken on: %v %v\n%s", err, *posted, describeRun(done.Trace))
 	}
 }
+
+// A read-only caller's run reads the desktop and does not work it: no
+// typing into an app, no pressing what the app shows, no key that sends.
+//
+// The browser was made read-only for such a caller and the desktop cell
+// had no read-only mode, so a token issued read-only ran an agent that
+// typed into an app and pressed its buttons. The cell's own declaration
+// is kept as the browser's is: a caller says nothing about pictures.
+func TestAReadOnlyCallerDoesNotWorkTheDesktop(t *testing.T) {
+	m := wideAgent()
+	m.Capabilities = append(m.Capabilities, agent.CellCapabilities[:]...)
+	m.Cell = &agent.Cell{Pictures: true}
+	got := narrowedBy(m, asToken(auth.RolePublisher, auth.Scope{ReadOnly: true}))
+	held := map[string]bool{}
+	for _, c := range got.Capabilities {
+		held[c] = true
+	}
+	for _, c := range []string{"desktop_type", "desktop_press", "desktop_key"} {
+		if held[c] {
+			t.Errorf("a read-only caller's run holds %s", c)
+		}
+	}
+	for _, c := range []string{"desktop_read", "desktop_look"} {
+		if !held[c] {
+			t.Errorf("a read-only caller's run lost %s, which only reads", c)
+		}
+	}
+	if got.Cell == nil || !got.Cell.Pictures {
+		t.Errorf("a read-only caller's run lost the cell's declaration: %+v", got.Cell)
+	}
+	// A caller who may write keeps the desktop as declared.
+	wide := narrowedBy(m, asAdmin("dana"))
+	if len(wide.Capabilities) != len(m.Capabilities) || wide.Cell == nil || !wide.Cell.Pictures {
+		t.Errorf("a caller who may write was narrowed on the desktop: %v %+v", wide.Capabilities, wide.Cell)
+	}
+}
