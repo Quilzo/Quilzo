@@ -395,10 +395,18 @@ func removeSubscriber(root, who string, caller *Caller) (bool, error) {
 	id := who
 	if !newsletter.ValidID(who) {
 		addr, err := newsletter.Normalize(who)
-		if err != nil {
+		switch {
+		case err == nil:
+			id = list.ID(addr)
+		case list.Has(list.ID(strings.ToLower(strings.TrimSpace(who)))):
+			// On the list from before the one address rule, which refuses
+			// it now ("a quote"@example.org): still taken off by the
+			// address it was kept under, because removing somebody must
+			// never depend on a rule tightening after they joined.
+			id = list.ID(strings.ToLower(strings.TrimSpace(who)))
+		default:
 			return false, err
 		}
-		id = list.ID(addr)
 	}
 	was, err := list.Remove(id, time.Now())
 	if err != nil {
@@ -425,7 +433,7 @@ func importSubscribers(root string, r io.Reader, agreed string, caller *Caller) 
 		return newsletter.Imported{}, errors.New("say where these people agreed to get the newsletter, such as " +
 			"\"signed up on our Mailchimp form\": they are added as having said yes, and that is the record of it")
 	}
-	rows, err := newsletter.ReadCSV(io.LimitReader(r, 32<<20))
+	rows, readAs, err := newsletter.ReadCSVAs(io.LimitReader(r, 32<<20))
 	if err != nil {
 		return newsletter.Imported{}, err
 	}
@@ -434,6 +442,7 @@ func importSubscribers(root string, r io.Reader, agreed string, caller *Caller) 
 		return newsletter.Imported{}, err
 	}
 	got, err := list.Import(rows, "Imported "+time.Now().UTC().Format("2 January 2006")+"; "+agreed, time.Now())
+	got.ReadAs = readAs
 	if err != nil {
 		return got, err
 	}
@@ -471,13 +480,17 @@ func exportSubscribers(root string, w io.Writer, caller *Caller) (int, error) {
 
 // newsletterProblems is what stops the site taking sign-ups or sending
 // issues, as a person fixes it.
+//
+// What goes in mail.json is said here. The advice pointed at `quilzo help
+// mail`, and there is no mail command: the help printed all of itself, and
+// nothing in it said what the file holds.
 func newsletterProblems(root string) []string {
 	var out []string
 	if m, err := loadMailer(root); err != nil {
 		out = append(out, "Mail is set up wrongly: "+err.Error())
 	} else if m == nil {
 		out = append(out, "No mail is set up, so the site cannot mail a sign-up its link. Put your relay in mail.json "+
-			"(quilzo help mail).")
+			`in the store: {"host": "HOST:PORT", "from": "ADDRESS"}, with "username" and "password" when it asks for them.`)
 	}
 	base := siteBaseURL(root)
 	if u, err := url.Parse(base); base == "" || err != nil || u.Scheme != "https" {
@@ -498,6 +511,9 @@ func newsletterCmd(root string, args []string, caller *Caller) error {
 	}
 	switch args[0] {
 	case "status":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return newsletterStatus(root, caller)
 	case "list":
 		return newsletterList(root, args[1:], caller)
@@ -533,6 +549,9 @@ func newsletterCmd(root string, args []string, caller *Caller) error {
 	case "send":
 		return newsletterSend(root, args[1:], caller)
 	case "issues":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return newsletterIssues(root, caller)
 	case "dismiss":
 		if len(args) != 2 {
@@ -574,7 +593,7 @@ func newsletterStatus(root string, caller *Caller) error {
 func newsletterList(root string, args []string, caller *Caller) error {
 	fs := flag.NewFlagSet("newsletter list", flag.ContinueOnError)
 	all := fs.Bool("all", false, "those waiting to confirm as well")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	if err := authorise(root, caller, auth.ActEditDraft, "/"); err != nil {
@@ -615,7 +634,7 @@ func newsletterImport(root string, args []string, caller *Caller) error {
 	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("newsletter import", flag.ContinueOnError)
 	agreed := fs.String("agreed", "", "where these people agreed to get the newsletter")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -633,12 +652,19 @@ func newsletterImport(root string, args []string, caller *Caller) error {
 	if w.JSON(got) {
 		return nil
 	}
+	if got.ReadAs != "" {
+		w.Human("read as %s\n", got.ReadAs)
+	}
 	w.Human("added %d; %d already here; %d kept as having left, so never sent to; %d skipped as never confirmed "+
 		"or not an address\n", got.Added, got.Already, got.Left, got.Skipped+got.Bad)
 	return nil
 }
 
 func newsletterExport(root string, args []string, caller *Caller) error {
+	args, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	var buf bytes.Buffer
 	n, err := exportSubscribers(root, &buf, caller)
 	if err != nil {
@@ -660,7 +686,7 @@ func newsletterTest(root string, args []string, caller *Caller) error {
 	fs := flag.NewFlagSet("newsletter test", flag.ContinueOnError)
 	to := fs.String("to", "", "the address to send the test to")
 	subject := fs.String("subject", "", "the subject; the page's title when not given")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 || *to == "" {
@@ -679,7 +705,7 @@ func newsletterSend(root string, args []string, caller *Caller) error {
 	subject := fs.String("subject", "", "the subject; the page's title when not given")
 	issue := fs.String("issue", "", "send an issue an agent proposed, or carry on with one that stopped")
 	yes := fs.Bool("yes", false, "send it; without this, only say who it would go to")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 && *issue == "" {

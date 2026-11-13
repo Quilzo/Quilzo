@@ -73,7 +73,7 @@ func cmdDemo(root string, args []string) (err error) {
 		"publish the draft, so the site serves immediately")
 	exDir := fs.String("examples", "",
 		"where to write the example files features are tried with (default: examples, beside the templates)")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 
@@ -96,6 +96,9 @@ func cmdDemo(root string, args []string) (err error) {
 		return err
 	}
 	d := demo.Marginalia()
+	// The store as it was found empty, for the write of the pages to check
+	// under the ref lock that it still is.
+	draft, live := s.GetRef(site.RefDraft), s.GetRef(site.RefLive)
 	if err := demoInstallable(root, s, d, tplAbs, exAbs); err != nil {
 		return err
 	}
@@ -192,12 +195,23 @@ func cmdDemo(root string, args []string) (err error) {
 		return fmt.Errorf("the demonstration does not satisfy its own types, "+
 			"which is a bug in it and not in your store:\n  %v", lines)
 	}
-	// An empty base, stated rather than defaulted. This command has already
-	// refused to run unless the draft and the live site are empty, so there is
-	// provably nothing to collide with — which is the one case where an empty
-	// base is a decision and not an omission.
-	if _, serr := site.SaveDraftFrom(s, d.Pages, "the Marginalia demonstration",
-		"demo", ""); serr != nil {
+	// Written only into the store that was found empty. This command refused
+	// to run unless the draft and the live site were empty, and that was
+	// found before the media, the types and the rest above were written: it
+	// wrote with an empty base, "whatever the draft is by then", so a page
+	// somebody added in that time was written over by the demonstration's,
+	// after their add had exited 0. So the refs are asked again under the
+	// lock the write takes, and a store that has changed is refused.
+	if serr := s.WithRefLock(func() error {
+		if s.GetRef(site.RefDraft) != draft || s.GetRef(site.RefLive) != live {
+			return fmt.Errorf("something was saved in the store while the " +
+				"demonstration was being installed, so its pages were not " +
+				"written; it installs only into an empty store")
+		}
+		_, err := site.SaveDraftLocked(s, d.Pages, "the Marginalia demonstration",
+			"demo", draft)
+		return err
+	}); serr != nil {
 		return serr
 	}
 
@@ -232,17 +246,17 @@ func cmdDemo(root string, args []string) (err error) {
 			}
 		}
 	}
+	// Into the draft's tree as it is under the lock (commitTree): read
+	// outside it, a page saved between the read and the write was not in
+	// the tree this made the draft.
 	for name, recs := range d.Records {
-		c, cerr := s.GetCommit(s.GetRef(site.RefDraft))
-		if cerr != nil {
-			return cerr
-		}
-		next, _, perr := collection.PutMany(s, c.Tree, name, recs, time.Now())
-		if perr != nil {
-			return fmt.Errorf("collection %s: %w", name, perr)
-		}
-		if cerr := commitTreeNoLock(s, next, "records for "+name,
-			"demo"); cerr != nil {
+		if cerr := commitTree(s, "demo", func(tree string) (string, string, error) {
+			next, _, perr := collection.PutMany(s, tree, name, recs, time.Now())
+			if perr != nil {
+				return "", "", fmt.Errorf("collection %s: %w", name, perr)
+			}
+			return next, "records for " + name, nil
+		}); cerr != nil {
 			return cerr
 		}
 	}

@@ -60,7 +60,8 @@
   </div>
   <p class="help">The delay doubles and decays, and the ceiling holds until the
      hour passes. An account's own lockouts are on the
-     <a href="/security/signins">Sign-ins</a> screen.</p>
+     {{if .OpensSignins}}<a href="/security/signins">Sign-ins</a> screen{{else}}Sign-ins
+     screen, which an administrator of the security area reads{{end}}.</p>
 </div>
 {{end}}
 
@@ -156,11 +157,14 @@
     <span class="hint">every object re-hashed, and the anchors that witness it</span></li>
   <li><a href="/security/agents">Agent activity</a>
     <span class="hint">what agents have done, as opposed to what they may do</span></li>
-  <li><a href="/security/shield">Shield</a>
+  {{/* Shield and Sign-ins are the security area's, not this one's: linked
+       for an administrator of it, and named for an auditor, who was linked
+       to both and refused at each. */}}
+  <li>{{if .OpensShield}}<a href="/security/shield">Shield</a>{{else}}Shield{{end}}
     <span class="hint">what Quilzo is doing to protect itself right now, and the
-      playbooks that decide it</span></li>
-  <li><a href="/security/signins">Sign-ins</a>
-    <span class="hint">where people signed in from, and who has to confirm it is them</span></li>
+      playbooks that decide it{{if not .OpensShield}}; an administrator of the security area reads it{{end}}</span></li>
+  <li>{{if .OpensSignins}}<a href="/security/signins">Sign-ins</a>{{else}}Sign-ins{{end}}
+    <span class="hint">where people signed in from, and who has to confirm it is them{{if not .OpensSignins}}; an administrator of the security area reads it{{end}}</span></li>
 </ul>
 
 <h2>Coverage</h2>

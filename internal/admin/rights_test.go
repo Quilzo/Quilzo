@@ -166,3 +166,24 @@ func pixelPNG() []byte {
 		0, 0, 0, 0, 'I', 'E', 'N', 'D', 0xae, 0x42, 0x60, 0x82,
 	}
 }
+
+// A licence given by its address is recorded by its identifier: the CC0
+// address a pack of pictures links to was refused, "use a short name".
+func TestALicencesAddressIsRecordedAsItsIdentifier(t *testing.T) {
+	srv, token, id := mediaServer(t)
+	res := postForm(t, srv, "/media/rights", token, url.Values{
+		"id":      {id},
+		"licence": {"https://creativecommons.org/publicdomain/zero/1.0/"},
+		"holder":  {"Kenney"},
+	}.Encode())
+	if res.Code != http.StatusSeeOther && res.Code != http.StatusFound {
+		t.Fatalf("recording rights answered %d: %s", res.Code, res.Body.String())
+	}
+	f, err := libraryOf(t, srv).Stat(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.Rights.Licence != "CC0-1.0" {
+		t.Fatalf("the licence was stored as %q (%s)", f.Rights.Licence, res.Header().Get("Location"))
+	}
+}

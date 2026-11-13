@@ -86,6 +86,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/mailaddr"
 )
 
 // Bounds. Every one of these is a refusal with a reason attached.
@@ -109,10 +111,7 @@ const (
 	MaxRetentionDays = 1825
 )
 
-var (
-	reName  = regexp.MustCompile(`^[a-z][a-z0-9_]{0,47}$`)
-	reEmail = regexp.MustCompile(`^[^@\s]+@[^@\s.]+\.[^@\s]+$`)
-)
+var reName = regexp.MustCompile(`^[a-z][a-z0-9_]{0,47}$`)
 
 // Kind is what a field accepts. A closed set, for the same reason everything
 // else here has one: a value that does not satisfy its kind is refused before
@@ -690,6 +689,17 @@ func acceptAll(f *Form, values map[string]string, files map[string]Upload, sourc
 			continue
 		}
 		raw := strings.TrimSpace(values[fl.Name])
+		// A browser submits a textarea's line breaks as CR LF, as HTML
+		// form submission requires, and an older one as a lone CR. Both
+		// are the line break a paragraph is for, so they become the one
+		// the rest of the program writes before anything is judged. The
+		// control-character check below refused the CR, and every
+		// multi-line message typed into a browser was lost as "contains a
+		// control character". Before the length check too, so the limit
+		// counts a break once, as it is kept.
+		if fl.Kind == Para {
+			raw = strings.ReplaceAll(strings.ReplaceAll(raw, "\r\n", "\n"), "\r", "\n")
+		}
 		if raw == "" {
 			if fl.Required {
 				return Submission{}, fmt.Errorf("%s is required", fl.Label)
@@ -727,7 +737,10 @@ func check(fl Field, raw string) (string, error) {
 	}
 	switch fl.Kind {
 	case Email:
-		if !reEmail.MatchString(raw) {
+		// The one address rule, which a booking, the newsletter and a
+		// record's email field share: this form's own took a local part of
+		// any length, which the newsletter then refused.
+		if !mailaddr.Valid(raw) {
 			return "", fmt.Errorf("does not look like an address")
 		}
 	case Number:

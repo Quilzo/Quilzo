@@ -476,3 +476,65 @@ func TestAPersonIsPseudonymisedWhereverTheRecordNamesThem(t *testing.T) {
 		t.Errorf("an unkeyed log changed %q %v", e.Resource, e.Detail)
 	}
 }
+
+// The writer signs heads over what its own handle reads back, and reads it
+// while records arrive: every entry so far, in order, and never a line half
+// written, which Read would report as unreadable.
+func TestALogReadsBackItsOwnFileWhileItIsWritten(t *testing.T) {
+	l, path := newLog(t, nil)
+	r := Record{Action: "publish", Resource: "/", Outcome: Success,
+		Principal: "dana", Kind: KindHuman, Verified: true}
+	done := make(chan error, 1)
+	go func() {
+		other, err := New(Options{Path: path, Source: "other"})
+		if err != nil {
+			done <- err
+			return
+		}
+		for i := 0; i < 50; i++ {
+			if _, err := other.Append(r); err != nil {
+				done <- err
+				return
+			}
+		}
+		done <- nil
+	}()
+	last := 0
+	for i := 0; i < 50; i++ {
+		ok(t, l, r)
+		events, err := l.Events()
+		if err != nil {
+			t.Fatalf("read back while written: %v", err)
+		}
+		if len(events) < last {
+			t.Fatalf("read back %d entries after %d", len(events), last)
+		}
+		last = len(events)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	events, err := l.Events()
+	if err != nil || len(events) != 100 {
+		t.Fatalf("%d entries, %v", len(events), err)
+	}
+	if good, problems := Verify(events); !good {
+		t.Errorf("the chain read back does not verify: %v", problems)
+	}
+}
+
+// An act renamed so that it has one name on every surface is read under its
+// new name, whichever it was written with, and every other name is left as
+// it is.
+func TestAnActsOldNamesAreReadAsItsNameNow(t *testing.T) {
+	for old, now := range map[string]string{
+		"access.grant": "auth.granted", "access.revoke": "auth.revoke", "siem.export": "auditlog.export",
+		"memory.deleteed": "memory.deleted", "memory.deleted": "memory.deleted",
+		"approval.approve": "review.approve", "template.install": "template.use", "ipfs.bundle": "ipfs.write",
+		"auth.granted": "auth.granted", "auth.denied": "auth.denied", "publish": "publish",
+	} {
+		if got := Canonical(old); got != now {
+			t.Errorf("Canonical(%q) = %q, want %q", old, got, now)
+		}
+	}
+}

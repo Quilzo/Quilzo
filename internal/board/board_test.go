@@ -70,6 +70,59 @@ func TestAPostIsCleanedAndBounded(t *testing.T) {
 	}
 }
 
+// A post with nothing to see is refused as an empty one, and what a member
+// writes cannot turn the text after it round.
+//
+// Format characters were kept: a post of zero-width spaces and word
+// joiners was accepted and shown as a blank comment under the member's
+// name, and a right-to-left override showed "hello \u202egnp.exe" as
+// "hello exe.png". The same form refuses both in a member's name.
+func TestAPostWithNothingVisibleIsRefusedAndCannotReverseText(t *testing.T) {
+	for _, in := range []string{"\u200b\u200b \u2060", "\ufeff", "\u202e\u2066\u2069", "\u200b\n\u200d\u00ad",
+		"\u3164\u115f"} {
+		if got, err := CleanBody(in, 100); err == nil {
+			t.Errorf("%+q was posted as %+q", in, got)
+		}
+	}
+	for in, want := range map[string]string{
+		"hello \u202egnp.exe":           "hello gnp.exe",
+		"\u2067abc\u2069 \u202aq\u202c": "abc q",
+		"\u202dx\u202b":                 "x",
+	} {
+		if got, err := CleanBody(in, 100); err != nil || got != want {
+			t.Errorf("%+q became %+q (%v), want %+q", in, got, err, want)
+		}
+	}
+	// What people write in their own scripts keeps the marks it needs:
+	// joiners in Persian and in emoji, the marks that order Arabic and
+	// Hebrew beside Latin, a subdivision's flag.
+	for _, in := range []string{"می\u200cخواهم", "\U0001F469\u200d\U0001F4BB", "שלום\u200f!", "مرحبا\u061c 1",
+		"\U0001F3F4\U000E0067\U000E0062\U000E0065\U000E006E\U000E0067\U000E007F"} {
+		if got, err := CleanBody(in, 100); err != nil || got != in {
+			t.Errorf("%+q became %+q (%v)", in, got, err)
+		}
+	}
+}
+
+// A post of blank Braille cells is an empty one too.
+//
+// U+2800 is a letter to Unicode, so it is neither white space nor ignorable,
+// but it draws nothing: it is what people paste to post a blank message
+// where zero-width characters are refused, and it was accepted and shown as
+// an empty comment under the member's name. In Braille it is the space
+// between words, and is kept there.
+func TestAPostOfBlankBrailleIsRefused(t *testing.T) {
+	for _, in := range []string{"⠀", "⠀ ⠀\n⠀", "​⠀"} {
+		if got, err := CleanBody(in, 100); err == nil {
+			t.Errorf("%+q was posted as %+q", in, got)
+		}
+	}
+	const hello = "⠓⠑⠇⠇⠕⠀⠺⠕⠗⠇⠙"
+	if got, err := CleanBody(hello, 100); err != nil || got != hello {
+		t.Errorf("Braille became %+q (%v)", got, err)
+	}
+}
+
 func TestAPostIsShownOrHeldAsTheBoardSays(t *testing.T) {
 	s := store(t)
 	a, err := s.Add(open, "index", "m1", "Ada", "First!")

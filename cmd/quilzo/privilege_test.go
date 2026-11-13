@@ -116,6 +116,114 @@ func TestReadOnlySubcommandsAreMoreNarrowThanTheirParents(t *testing.T) {
 	}
 }
 
+// A second spelling of a command runs the same code, so it asks no less.
+//
+// The table is keyed by what was typed, and `integration` had one row of its
+// own, view, with none of the rows `integrations` narrows to. So everything
+// the plural guards fell through to that row for the singular: a reader, or
+// a token issued --read-only, approved what another system's tools are with
+// `quilzo integration pin`, added integrations with `import` and `template`,
+// and listed the calls held for a person with `held`. Every subcommand either
+// spelling names is asked both ways, the bare command, and one added later.
+func TestASecondSpellingAsksNoLessThanTheFirst(t *testing.T) {
+	order := map[auth.Role]int{auth.RoleReader: 1, auth.RoleAuthor: 2, auth.RolePublisher: 3, auth.RoleAdmin: 4}
+	rank := map[auth.Action]int{}
+	for _, a := range auth.Actions() {
+		need, _ := auth.Needs(a)
+		rank[a] = order[need]
+	}
+	aliases := aliasesOf(t)
+	if aliases["integration"] != "integrations" {
+		t.Fatalf("the dispatch's second spellings were not read: %v", aliases)
+	}
+	for second, first := range aliases {
+		subs := map[string]bool{"": true, "a-subcommand-added-later": true}
+		for key := range commandNeeds {
+			for _, c := range []string{first, second} {
+				if sub, ok := strings.CutPrefix(key, c+" "); ok {
+					subs[sub] = true
+				}
+			}
+		}
+		for sub := range subs {
+			var args []string
+			if sub != "" {
+				args = strings.Fields(sub)
+			}
+			want, _ := lookupNeed(first, args)
+			got, _ := lookupNeed(second, args)
+			if rank[got.action] < rank[want.action] || (len(got.or) > 0 && len(want.or) == 0) {
+				t.Errorf("`quilzo %s %s` needs %s%v but `quilzo %s %s` needs %s%v",
+					second, sub, got.action, got.or, first, sub, want.action, want.or)
+			}
+		}
+	}
+}
+
+// And as main runs it: a reader, and a token issued --read-only, are refused
+// what `integration` guards, and still read what it reads.
+func TestTheSingularIntegrationIsGuardedAsThePluralIs(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := t.TempDir() + "/st"
+	if err := runCmd(t, root, "init"); err != nil {
+		t.Fatal(err)
+	}
+	pol := &auth.Policy{}
+	for who, role := range map[string]auth.Role{"dana": auth.RoleAdmin, "rita": auth.RoleReader} {
+		if err := pol.Grant(auth.Binding{Principal: who, Role: role, Resource: "/"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := saveJSON(policyPath(root), pol); err != nil {
+		t.Fatal(err)
+	}
+	toks := &auth.TokenStore{}
+	readOnly, _, err := toks.IssueScoped("dana-ro", "dana", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin,
+		auth.Scope{ReadOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, _, err := toks.Issue("rita", "rita", auth.RoleReader, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	full, _, err := toks.Issue("dana", "dana", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveJSON(tokensPath(root), toks); err != nil {
+		t.Fatal(err)
+	}
+	defer func(old string) { flagToken = old }(flagToken)
+
+	guarded := [][]string{{"pin", "crm"}, {"import", "servers.json"}, {"template", "github"}, {"held"},
+		{"gateway", "crm"}, {"call", "crm", "lookup"}, {"approve", "h1"}, {"decline", "h1"}}
+	reads := [][]string{nil, {"list"}, {"tools", "crm"}, {"undelivered"}}
+	for name, tok := range map[string]string{"a read-only token": readOnly, "a reader": reader} {
+		flagToken = tok
+		for _, cmd := range []string{"integrations", "integration"} {
+			for _, args := range guarded {
+				if err := authoriseCommand(root, cmd, args); err == nil {
+					t.Errorf("%s was let run quilzo %s %s", name, cmd, strings.Join(args, " "))
+				}
+			}
+			for _, args := range reads {
+				if err := authoriseCommand(root, cmd, args); err != nil {
+					t.Errorf("%s could not run quilzo %s %s: %v", name, cmd, strings.Join(args, " "), err)
+				}
+			}
+		}
+	}
+	flagToken = full
+	for _, cmd := range []string{"integrations", "integration"} {
+		for _, args := range append(guarded, reads...) {
+			if err := authoriseCommand(root, cmd, args); err != nil {
+				t.Errorf("dana's own token could not run quilzo %s %s: %v", cmd, strings.Join(args, " "), err)
+			}
+		}
+	}
+}
+
 // dispatchedCommands reads the case labels out of main's command switch.
 func dispatchedCommands(t *testing.T) []string {
 	t.Helper()
@@ -471,5 +579,116 @@ func TestATokenDefaultsToWhatItsPrincipalHolds(t *testing.T) {
 	// applies to a principal the policy has never heard of.
 	if got := strongestRole(pol, "nobody", "/"); got != auth.RoleNone {
 		t.Errorf("an unknown principal got %q", got)
+	}
+}
+
+// storeWithTokenFor makes a store with each grant in it, and a token for
+// each grant's principal as wide as the grant, and returns the tokens by
+// principal.
+func storeWithTokenFor(t *testing.T, grants ...auth.Binding) (string, map[string]string) {
+	t.Helper()
+	isolateToken(t)
+	root := t.TempDir()
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := updatePolicy(root, func(p *auth.Policy) error {
+		for _, b := range grants {
+			if err := p.Grant(b); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ts, _ := loadTokens(root)
+	secrets := map[string]string{}
+	for _, b := range grants {
+		secret, _, err := ts.Issue(b.Principal+"-laptop", b.Principal, b.Role, b.Resource, time.Hour, auth.RoleAdmin)
+		if err != nil {
+			t.Fatal(err)
+		}
+		secrets[b.Principal] = secret
+	}
+	if err := saveJSON(tokensPath(root), ts); err != nil {
+		t.Fatal(err)
+	}
+	return root, secrets
+}
+
+// Whoever holds a token may trade it for a short session on the command
+// line, as POST /token/exchange lets them: an exchange only narrows the
+// token it is given (auth.TokenStore.Exchange). Every other token command
+// is still an administrator's.
+//
+// The whole of `token` asked for manage-tokens, so `quilzo token exchange`,
+// the documented way to use a stored credential, refused a reader and a
+// publisher ("manage-tokens needs admin") that the endpoint answered with a
+// session.
+func TestATokenHolderExchangesTheirOwnTokenOnTheCommandLine(t *testing.T) {
+	root, secrets := storeWithTokenFor(t,
+		auth.Binding{Principal: "alice", Role: auth.RoleAdmin, Resource: "/"},
+		auth.Binding{Principal: "rae", Role: auth.RoleReader, Resource: "/"},
+		auth.Binding{Principal: "doc", Role: auth.RoleAuthor, Resource: "/docs"})
+	for _, who := range []string{"alice", "rae", "doc"} {
+		t.Setenv("QUILZO_TOKEN", secrets[who])
+		if err := authoriseCommand(root, "token", []string{"exchange", "--ttl", "10m"}); err != nil {
+			t.Errorf("%s may not exchange their own token: %v", who, err)
+			continue
+		}
+		_, read := captureStdout(t)
+		err := tokenExchange(root, []string{"--ttl", "10m"})
+		read()
+		if err != nil {
+			t.Errorf("%s exchanging: %v", who, err)
+		}
+	}
+	ts, _ := loadTokens(root)
+	for _, tok := range ts.Snapshot() {
+		if tok.Parent == "" {
+			continue
+		}
+		if tok.Principal == "rae" && tok.Role != auth.RoleReader {
+			t.Errorf("a reader's session is %s", tok.Role)
+		}
+		if tok.Principal == "doc" && tok.Resource != "/docs" {
+			t.Errorf("a session made from a token on /docs is on %s", tok.Resource)
+		}
+	}
+	t.Setenv("QUILZO_TOKEN", secrets["rae"])
+	for _, args := range [][]string{{"issue", "x"}, {"revoke", "x"}, {}} {
+		if err := authoriseCommand(root, "token", args); err == nil {
+			t.Errorf("a reader may run token %v", args)
+		}
+	}
+}
+
+// What sign-ins are counted as coming from the office or a VPN is read
+// where the security area is, as the shield's own status is: a reader of
+// the site's pages is refused it, and whoever holds the security area is
+// not.
+//
+// `geo status` asked to view the whole site, so a reader of its pages read
+// the office and VPN ranges the sign-in rules treat differently, which no
+// screen shows them, and the security analyst, who holds nothing on the
+// pages, was refused the configuration their screen summarises.
+func TestSignInGeographyIsReadWhereTheSecurityAreaIs(t *testing.T) {
+	root, secrets := storeWithTokenFor(t,
+		auth.Binding{Principal: "alice", Role: auth.RoleAdmin, Resource: "/"},
+		auth.Binding{Principal: "rae", Role: auth.RoleReader, Resource: "/"},
+		auth.Binding{Principal: "sam", Role: auth.RoleAdmin, Resource: auth.AreaSecurity},
+		auth.Binding{Principal: "aud", Role: auth.RoleReader, Resource: auth.AreaSecurity})
+	for who, may := range map[string]bool{"alice": true, "rae": false, "sam": true, "aud": true} {
+		t.Setenv("QUILZO_TOKEN", secrets[who])
+		err := authoriseCommand(root, "geo", []string{"status"})
+		if (err == nil) != may {
+			t.Errorf("%s running geo status: %v", who, err)
+		}
+	}
+	// Changing it is still the whole site's decision.
+	t.Setenv("QUILZO_TOKEN", secrets["sam"])
+	if err := authoriseCommand(root, "geo", []string{"network", "add", "10.0.0.0/8", "office"}); err == nil {
+		t.Error("the security area's administrator declared a network for the whole site")
 	}
 }

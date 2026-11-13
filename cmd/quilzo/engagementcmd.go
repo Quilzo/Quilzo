@@ -41,6 +41,9 @@ func cmdEngagement(root string, args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return engagementList(root)
 	case "open":
 		return engagementOpen(root, args[1:])
@@ -103,7 +106,7 @@ func engagementOpen(root string, args []string) error {
 	until := fs.String("until", "", "when the access ends, as 2026-12-31")
 	frameworks := fs.String("frameworks", "", "comma-separated")
 	because := fs.String("because", "", "what the audit is, in one line")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -188,7 +191,7 @@ func engagementIssue(root string, args []string) error {
 	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("issue", flag.ContinueOnError)
 	out := fs.String("o", "", "where to write it; standard output otherwise")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -221,7 +224,7 @@ func engagementIssue(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	events, err := audit.Read(auditPath(root))
+	events, err := auditEntries(root)
 	if err != nil {
 		return err
 	}
@@ -310,7 +313,7 @@ func engagementCheck(root string, args []string) error {
 	fs := flag.NewFlagSet("check", flag.ContinueOnError)
 	keys := fs.String("keys", "",
 		"the published verifying keys; this store's own otherwise")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {

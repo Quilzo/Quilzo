@@ -4,6 +4,7 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -251,6 +252,28 @@ func TestEverySettingExplainsItself(t *testing.T) {
 		if weak, why := s.IsWeaker(s.Default); weak {
 			t.Errorf("%s ships weaker than itself: %s", s.Key, why)
 		}
+	}
+}
+
+// The table and the effective values can be written as JSON, which is what
+// `quilzo config list --json` and `config show --json` write. A function in
+// a setting made encoding/json refuse the whole document, so both wrote
+// nothing and exited 0, and a script asking for the settings was told none.
+func TestTheSettingsCanBeWrittenAsJSON(t *testing.T) {
+	c := fresh().WithFloors(map[string][]Floor{"token.ttl.default": {{
+		Param: "ia-05_odp.01", Declared: "720h", Allows: func(string) bool { return true },
+	}}})
+	for name, v := range map[string]any{"All": All(), "Effectives": c.Effectives()} {
+		b, err := json.Marshal(v)
+		if err != nil {
+			t.Fatalf("%s cannot be written as JSON: %v", name, err)
+		}
+		if !strings.Contains(string(b), `"token.ttl.default"`) {
+			t.Errorf("%s as JSON leaves the settings out: %.200s", name, b)
+		}
+	}
+	if b, _ := json.Marshal(c.Effectives()); !strings.Contains(string(b), `"720h"`) {
+		t.Error("the policy under a setting is left out of its JSON")
 	}
 }
 

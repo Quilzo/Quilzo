@@ -28,6 +28,7 @@
    "*"
   ],
   "compress/zlib": [
+   "*",
    "chatbots"
   ],
   "container/heap": [
@@ -121,6 +122,9 @@
    "chatbots",
    "signup"
   ],
+  "encoding": [
+   "*"
+  ],
   "encoding/asn1": [
    "*"
   ],
@@ -170,8 +174,7 @@
    "*"
   ],
   "encoding/xml": [
-   "*",
-   "import"
+   "*"
   ],
   "errors": [
    "*",
@@ -179,6 +182,7 @@
    "boards",
    "chatbots",
    "forms",
+   "import",
    "mcp",
    "scim",
    "signals",
@@ -369,6 +373,7 @@
    "boards",
    "chatbots",
    "forms",
+   "mcp",
    "scim",
    "signup",
    "uploads"
@@ -403,6 +408,7 @@
    "api",
    "chatbots",
    "forms",
+   "mcp",
    "scim",
    "signals",
    "uploads"
@@ -445,6 +451,7 @@
    "chatbots",
    "forms",
    "import",
+   "mcp",
    "scim",
    "search-answers",
    "signals",
@@ -458,6 +465,7 @@
    "*",
    "boards",
    "chatbots",
+   "mcp",
    "signals",
    "signup"
   ],
@@ -467,6 +475,7 @@
   "unicode/utf8": [
    "*",
    "boards",
+   "chatbots",
    "mcp",
    "signup",
    "uploads"

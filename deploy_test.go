@@ -114,12 +114,14 @@ func strs(v any) []string {
 	return out
 }
 
-// quilzoServices are the services that run this program's image.
+// quilzoServices are the services that run this program's image: the one
+// .env names in QUILZO_IMAGE. Found by that rather than by the release's
+// name, which an image built here does not carry.
 func quilzoServices(t *testing.T) map[string]map[string]any {
 	t.Helper()
 	out := map[string]map[string]any{}
 	for name, s := range services(t) {
-		if img, _ := s["image"].(string); strings.Contains(img, "quilzo/quilzo") {
+		if img, _ := s["image"].(string); strings.HasPrefix(img, "${QUILZO_IMAGE") {
 			out[name] = s
 		}
 	}
@@ -478,6 +480,96 @@ func TestComposeKeepsTheAuditLogOutOfTheCMSsReach(t *testing.T) {
 	}
 }
 
+// Only the admin may have the log writer sign; the public site still hands
+// it records.
+//
+// The site and the admin both ran as nonroot, uid and group 65532, and the
+// writer took records and requests for a signature alike from that
+// account. Anything that could run code as the public site could have it
+// sign a feature package or a research plan with the log's key, under the
+// contexts it signs for the admin. The two share the store, so they cannot
+// be two uids without the store's every file changing hands (deferred, and
+// said in compose.yaml); the site connects in a group of its own instead,
+// in the writer's group beside it to reach the socket and read the log,
+// and the writer signs for the admin's group only.
+func TestComposeLetsOnlyTheAdminAskTheWriterToSign(t *testing.T) {
+	svc := quilzoServices(t)
+	var logd map[string]any
+	for _, s := range svc {
+		if c := strs(s["command"]); len(c) > 0 && c[0] == "logd" {
+			logd = s
+		}
+	}
+	if logd == nil {
+		t.Fatal("no service runs `quilzo logd`")
+	}
+	command := strs(logd["command"])
+	account := func(name string) (uid, gid string) {
+		// The image runs as nonroot, whose group is its uid, where a
+		// service names no user of its own.
+		u, _ := svc[name]["user"].(string)
+		if u == "" {
+			u = cmsUID + ":" + cmsUID
+		}
+		uid, gid, _ = strings.Cut(u, ":")
+		if gid == "" {
+			gid = uid
+		}
+		return uid, gid
+	}
+	_, adminGroup := account("admin")
+	siteUID, siteGroup := account("site")
+	if got := flagValue(command, "sign-gid"); got != adminGroup {
+		t.Errorf("the writer signs for group %q; only the admin's, %s, should ask it to", got, adminGroup)
+	}
+	if siteGroup == adminGroup {
+		t.Errorf("the site connects as group %s, the admin's, so it may ask the writer to sign anything "+
+			"the admin may", siteGroup)
+	}
+	if !slices.Contains(strings.Split(flagValue(command, "allow-uid"), ","), siteUID) {
+		t.Errorf("the writer no longer takes the site's records (uid %s)", siteUID)
+	}
+	logdUser, _ := logd["user"].(string)
+	_, logGroup, _ := strings.Cut(logdUser, ":")
+	if !slices.Contains(strs(svc["site"]["group_add"]), logGroup) {
+		t.Errorf("the site is not in the writer's group %s, so it can neither reach the socket nor read the log",
+			logGroup)
+	}
+}
+
+// The admin of the reference compose could not sign a head: it made the
+// head key in the audit volume it mounts read-only, so `auditlog head
+// --save`, every receipt and the audit stream exited 1 with "read-only file
+// system". The writer holds the key in its log directory and publishes the
+// public half beside it, and the README hands that file out from there,
+// where whoever checks a receipt is told to check it against.
+func TestComposeHandsOutTheWritersHeadKeys(t *testing.T) {
+	svc := quilzoServices(t)
+	var name, dir string
+	for n, s := range svc {
+		if c := strs(s["command"]); len(c) > 0 && c[0] == "logd" {
+			name, dir = n, flagValue(c, "log-dir")
+		}
+	}
+	if name == "" || dir == "" {
+		t.Fatal("no service runs `quilzo logd --log-dir`")
+	}
+	want := name + ":" + dir + "/head.pub.json"
+	found := false
+	for _, step := range composeSteps(t) {
+		if strings.HasPrefix(step, "docker compose cp ") && strings.Contains(step, want) {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the README never copies the writer's public keys out of %s", want)
+	}
+	if !strings.Contains(read(t, "deploy/README.md"), "--keys\nhead.pub.json") &&
+		!strings.Contains(read(t, "deploy/README.md"), "--keys head.pub.json") {
+		t.Error("the README never says to check a receipt against the keys handed out")
+	}
+}
+
 // Finding STACK-F9. An image built as documented answered "quilzo dev": the
 // Dockerfile takes the version as a build argument and passes it to the
 // linker, and nothing that told people how to build one passed it. The
@@ -498,7 +590,7 @@ func TestComposeRunsAnImageThatKnowsItsVersion(t *testing.T) {
 	}
 	for name, s := range quilzoServices(t) {
 		img, _ := s["image"].(string)
-		if !strings.HasPrefix(img, "${QUILZO_IMAGE:-ghcr.io/quilzo/quilzo}:") || !strings.Contains(img, "${QUILZO_VERSION") {
+		if !strings.HasPrefix(img, "${QUILZO_IMAGE") || !strings.Contains(img, "${QUILZO_VERSION") {
 			t.Errorf("%s runs %q: an image built here can only be run under the release's own name", name, img)
 		}
 	}
@@ -509,6 +601,110 @@ func TestComposeRunsAnImageThatKnowsItsVersion(t *testing.T) {
 	for _, v := range []string{"QUILZO_IMAGE", "QUILZO_VERSION"} {
 		if !strings.Contains(read(t, "deploy/compose.env.example"), v+"=") {
 			t.Errorf("compose.env.example does not say %s can be set", v)
+		}
+	}
+}
+
+// The stack runs the image its operator named, and no other.
+//
+// compose.yaml defaulted to ghcr.io/quilzo/quilzo:latest. No release is
+// published, so that is an image the registry refuses to hand anybody, and
+// the README's steps failed at the first of them; and once there is a
+// release, latest is whatever was pushed under that name last, which nobody
+// here checked and which changes under a running stack at the next pull. So
+// the image has no default: compose refuses to start until .env names one.
+// The example names the image the README builds from this checkout, before
+// any step runs it, and an image from a registry is named by its digest.
+func TestComposeRunsOnlyTheImageItsOperatorNamed(t *testing.T) {
+	named := regexp.MustCompile(`^\$\{QUILZO_IMAGE:\?[^}]+\}:\$\{QUILZO_VERSION:\?[^}]+\}$`)
+	for name, s := range quilzoServices(t) {
+		if img, _ := s["image"].(string); !named.MatchString(img) {
+			t.Errorf("%s runs %q: with a default, a stack whose .env names no image runs "+
+				"whatever that default is", name, img)
+		}
+	}
+
+	env := envDefaults(t)
+	img, ver := env["QUILZO_IMAGE"], env["QUILZO_VERSION"]
+	if img == "" || ver == "" {
+		t.Fatalf("compose.env.example names no image (QUILZO_IMAGE=%q, QUILZO_VERSION=%q)", img, ver)
+	}
+	if tag, _, _ := strings.Cut(ver, "@"); tag == "latest" {
+		t.Errorf("compose.env.example runs %s:%s, whatever was last pushed under that name", img, ver)
+	}
+	// A name with a slash in it is somebody's on a registry, and a tag there
+	// is whatever its owner last pushed under it.
+	if strings.Contains(img, "/") && !strings.Contains(ver, "@sha256:") {
+		t.Errorf("compose.env.example runs %s:%s from a registry without its digest", img, ver)
+	}
+
+	// The README builds that image, under the name .env gives it, after .env
+	// is read and before anything runs it.
+	var block []string
+	in := false
+	for _, line := range strings.Split(read(t, "deploy/README.md"), "\n") {
+		if strings.HasPrefix(line, "```") {
+			if in && block != nil && slices.ContainsFunc(block, func(l string) bool {
+				return strings.HasPrefix(l, "docker compose run")
+			}) {
+				break
+			}
+			in, block = !in, nil
+			continue
+		}
+		if in {
+			block = append(block, strings.TrimSpace(line))
+		}
+	}
+	if block == nil {
+		t.Fatal("deploy/README.md has no block of steps")
+	}
+	env0 := slices.IndexFunc(block, func(l string) bool { return strings.HasPrefix(l, "set -a; . ./.env") })
+	built := slices.IndexFunc(block, func(l string) bool {
+		return strings.HasPrefix(l, "docker build ") && strings.Contains(l, `-t "$QUILZO_IMAGE:$QUILZO_VERSION"`)
+	})
+	first := slices.IndexFunc(block, func(l string) bool { return strings.HasPrefix(l, "docker compose ") })
+	switch {
+	case built < 0:
+		t.Error(`the README's steps never build the image .env names (docker build -t "$QUILZO_IMAGE:$QUILZO_VERSION" ..), ` +
+			"so the first of them asks a registry for an image that is not there")
+	case env0 < 0 || built < env0:
+		t.Error("the README builds the image before it reads .env, which names it")
+	case first >= 0 && first < built:
+		t.Errorf("the README runs %q before it builds the image", block[first])
+	}
+}
+
+// A release's image is run as it was published, and never built here under
+// its name.
+//
+// The steps build the image .env names, which is right for the one the
+// example names. The guide then tells somebody running a release to name
+// its image in .env by digest, and the steps, run in order as it says, went
+// on to `docker build -t ghcr.io/quilzo/quilzo:1.2.3@sha256:...`, which
+// Docker refuses ("build tag cannot contain a digest"); named by a tag
+// alone, they built main and tagged it as the release, which compose.yaml
+// says must never happen, because it is then taken for the release's. So
+// wherever the guide names a release's image, it says to leave that step
+// out.
+func TestAReleasesImageIsNotBuiltUnderItsName(t *testing.T) {
+	for _, name := range []string{"deploy/README.md", "deploy/compose.env.example"} {
+		named := 0
+		for _, para := range strings.Split(read(t, name), "\n\n") {
+			// compose.env.example says it in comments, a # to a line.
+			flat := strings.Join(slices.DeleteFunc(strings.Fields(para),
+				func(w string) bool { return w == "#" }), " ")
+			if !strings.Contains(flat, "QUILZO_IMAGE=ghcr.io/") {
+				continue
+			}
+			named++
+			if !strings.Contains(flat, "leave out the `docker build` step") {
+				t.Errorf("%s names a release's image for .env and does not say to leave "+
+					"out the `docker build` step, which builds main under that name:\n%s", name, para)
+			}
+		}
+		if named == 0 {
+			t.Errorf("%s never says how to run a release's image, so this checks nothing", name)
 		}
 	}
 }

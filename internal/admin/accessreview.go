@@ -203,7 +203,7 @@ func (s *Server) reviewPost(w http.ResponseWriter, r *http.Request) (principal, 
 		return principal{}, false
 	}
 	if s.AccessReview == nil {
-		s.peopleBack(w, r, "this server was started without access reviews")
+		s.peopleProblem(w, r, "this server was started without access reviews")
 		return principal{}, false
 	}
 	if !canReview(p) {

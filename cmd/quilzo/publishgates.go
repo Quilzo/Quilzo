@@ -315,6 +315,10 @@ func contentGates(root string, s *store.Store, ref string) gate.Set {
 		//
 		// This one the browser had and the command line did not, so the
 		// divergence ran both ways.
+		//
+		// Only the pages this publish puts up or changes. A live page that
+		// reached its date as scheduled is the window working, and checking
+		// it refused every publish after it (site.ExpiredOnPublish).
 		{
 			Name: "expiry",
 			Refusal: func(n int) string {
@@ -323,11 +327,11 @@ func contentGates(root string, s *store.Store, ref string) gate.Set {
 					"nobody can see: move the date, or take the page out", n)
 			},
 			Run: func() (blocking, advisory []gate.Finding, err error) {
-				pages, perr := pagesAt()
-				if perr != nil {
-					return nil, nil, perr
+				expired, eerr := site.ExpiredOnPublish(s, at(), time.Now())
+				if eerr != nil {
+					return nil, nil, eerr
 				}
-				for _, stale := range site.AlreadyExpired(pages, time.Now()) {
+				for _, stale := range expired {
 					blocking = append(blocking, gate.Finding{Detail: stale})
 				}
 				return blocking, nil, nil

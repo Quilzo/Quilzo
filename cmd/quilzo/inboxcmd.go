@@ -166,6 +166,9 @@ func cmdInbox(root string, args []string) error {
 	st := handoffStore(root)
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		all, err := st.List()
 		if err != nil {
 			return err
@@ -217,6 +220,12 @@ func cmdInbox(root string, args []string) error {
 		c, err := st.Get(name, id)
 		if err != nil {
 			return err
+		}
+		// The conversation itself under --json. This printed its prose
+		// whatever was asked for, so a script reading a handoff got the
+		// terminal's rendering of it to parse.
+		if w.JSON(c) {
+			return nil
 		}
 		fmt.Printf("%s%s/%s%s  opened %s\n", bold, name, id, reset,
 			c.Opened.Format("2 Jan 2006 15:04 UTC"))

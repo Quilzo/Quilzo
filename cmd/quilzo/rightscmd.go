@@ -231,17 +231,16 @@ func printRights(rep RightsReport, at time.Time) {
 // person who may see that a licence is lapsing is not thereby a person who may
 // change the date it lapses on.
 func rightsSet(root string, args []string) error {
-	// The id comes off the front before the flags are parsed.
+	// The id is read wherever it stands among the flags.
 	//
 	// Go's flag package stops at the first non-flag argument, so
 	// `rights set ID --until ...` parses zero flags and hands back three
 	// positionals — silently, with every flag left at its default. That is
 	// how the first live run of this recorded nothing and reported success.
-	var id string
-	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-		id, args = args[0], args[1:]
-	}
-
+	//
+	// It was taken off the front by hand, so `rights set --licence CC0 ID`
+	// was answered "one id, and the flags after it"; parseFlags reads both
+	// orders, as it does for every command that shares it.
 	fs := flag.NewFlagSet("rights set", flag.ContinueOnError)
 	licence := fs.String("licence", "", "what permits publishing this")
 	holder := fs.String("holder", "", "who owns the underlying work")
@@ -249,17 +248,19 @@ func rightsSet(root string, args []string) error {
 	note := fs.String("note", "", "restrictions that do not fit a field")
 	clear := fs.Bool("clear", false,
 		"remove the record entirely, leaving the asset undeclared")
-	if err := fs.Parse(args); err != nil {
+	// Anything past the one id is a second id, or a typo. Refused rather
+	// than ignored: "rights set A B --until X" silently recording against
+	// only A is the kind of half-done write nobody notices.
+	var pos []string
+	if err := parseFlags(fs, args, &pos, 1); err != nil {
 		return err
 	}
-	// Anything left over is a second id, or a typo. Refused rather than
-	// ignored: "rights set A B --until X" silently recording against only A
-	// is the kind of half-done write nobody notices.
-	if id == "" || len(fs.Args()) > 0 {
+	if len(pos) != 1 {
 		return fmt.Errorf(
 			"quilzo rights set ID --licence NAME --holder WHO " +
-				"--until YYYY-MM-DD\n  one id, and the flags after it")
+				"--until YYYY-MM-DD\n  one id, with its flags")
 	}
+	id := pos[0]
 	caller := resolveCaller(root, flagToken)
 	if err := authorise(root, caller, auth.ActEditDraft, "/"); err != nil {
 		record(root, caller.auditRecord("rights.set", id, audit.Denied,
@@ -317,7 +318,7 @@ func rightsSet(root string, args []string) error {
 		return nil
 	}
 	if *licence != "" {
-		r.Licence = *licence
+		r.Licence = media.LicenceID(*licence)
 	}
 	if *holder != "" {
 		r.Holder = *holder

@@ -42,7 +42,7 @@ func annotateFollow(args []string) error {
 	height := fs.Int("height", 720, "its height")
 	scroll := fs.Int("scroll", screen.TileSize*2,
 		"how far the presenter scrolls, in pixels, after the marks are made")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	if *scroll < 0 {

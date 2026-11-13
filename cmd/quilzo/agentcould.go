@@ -103,7 +103,7 @@ func couldIn(root string, set *agentSet, name, what, page string, withModel, pro
 	}
 	s := agent.NewSession(m, nil)
 	if program {
-		s.DecidedBy(decl.Program.Command[0])
+		s.DecidedBy(decl.Program.Command[0], decl.Program.Digest)
 	}
 	unpublished := m.Retrieval.Ref != "" && !strings.EqualFold(m.Retrieval.Ref, "live")
 

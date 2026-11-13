@@ -40,13 +40,18 @@ func (s *Server) handleFind(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.can(w, r, p, auth.ActView, "/") {
-		return
-	}
+	// Whether they may read the site, which decides what they search, not
+	// whether they may search. The box is on every screen, and this refused
+	// everybody who could not read the whole site, so the approver on
+	// Approvals, the analyst on Shield and the agent manager on Agents each
+	// typed into it on their own work screen and were refused. They search
+	// the screens their menu offers, and nothing of the site's.
+	readsSite := s.allows(p, auth.ActView, "/")
 
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	data := map[string]any{
 		"Title": "Find", "Nav": "find", "Principal": p, "Query": query,
+		"ReadsSite": readsSite, "OpensForms": s.opens(p, "forms"),
 	}
 	if query == "" {
 		// No query is not an empty result. A screen that says "nothing
@@ -55,18 +60,21 @@ func (s *Server) handleFind(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hits := find.Search(query, s.findSources(p), 40)
+	hits := find.Search(query, s.findSources(p, readsSite), 40)
 	data["Hits"] = groupHits(hits)
 	data["Count"] = len(hits)
 	s.render(w, r, "find.html", data)
 }
 
-// findSources is what this person may look through.
-func (s *Server) findSources(p principal) find.Sources {
-	src := find.Sources{
-		Commit:  s.Store.GetRef(site.RefDraft),
-		Screens: s.navigableTo(p),
+// findSources is what this person may look through: the screens their menu
+// offers, and for somebody who may read the whole site, its pages, settings,
+// media and types as well.
+func (s *Server) findSources(p principal, readsSite bool) find.Sources {
+	src := find.Sources{Screens: s.navigableTo(p)}
+	if !readsSite {
+		return src
 	}
+	src.Commit = s.Store.GetRef(site.RefDraft)
 	if pages, err := site.PagesAt(s.Store, site.RefDraft); err == nil {
 		src.Pages = pages
 	}
@@ -113,12 +121,15 @@ func (s *Server) findSources(p principal) find.Sources {
 // here for a stronger reason than presentation: a search that returns a screen
 // and then refuses it teaches the searcher that the screen exists, which is
 // the one thing hiding it was for.
+//
+// The menu's own list (visibleTo), not a second copy of its question. The
+// copy asked every screen about the whole site, so it drifted from the menu
+// the first time a screen was shown for an area or a permission instead:
+// somebody administering only the security area had Shield in their menu and
+// no Shield in what they found.
 func (s *Server) navigableTo(p principal) []find.Destination {
 	var out []find.Destination
-	for _, d := range destinations {
-		if !s.mayUse(p, d.Needs, "/") {
-			continue
-		}
+	for _, d := range visibleTo(s, p) {
 		for _, sc := range Screens() {
 			if sc.Path == d.Path {
 				out = append(out, sc)
@@ -129,14 +140,10 @@ func (s *Server) navigableTo(p principal) []find.Destination {
 	return out
 }
 
-// mayUse is the same question the navigation asks, asked the same way.
-//
-// Against "/" rather than the screen's own path, because that is what
-// navigation() does and the two must agree: a screen the menu shows and the
-// search hides, or the reverse, is a difference nobody can account for.
+// mayUse asks the policy what a person may do, as the navigation does.
 //
 // No policy means no access control is configured, which is the single-operator
-// case and permits everything — again matching navigation().
+// case and permits everything, again matching navigation().
 //
 // A question about the person and not about this session, so it is for what
 // the menu shows and nothing else. A gate on an act, or a filter over pages,

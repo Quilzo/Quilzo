@@ -243,8 +243,10 @@ func TestWritesAreOffByDefault(t *testing.T) {
 // The read-only API's 405 said to run `quilzo serve --api-writable`, and
 // serve has no such flag: it exits "flag provided but not defined". Writes
 // are `quilzo site --api --api-writable`; --api-writable alone serves no API
-// at all. The records API said `quilzo site --api-writable`, and then `quilzo
-// site --api --api-writable`, and the site serves no records with any flags:
+// at all, and confined it refuses to start, since it cannot write the draft:
+// --confine=false is in the line. The records API said `quilzo site
+// --api-writable`, and then `quilzo site --api --api-writable`, and the
+// site serves no records with any flags:
 // it answers "this server does not serve records". Records are written
 // through the admin's API, `quilzo serve`. A search for similar pages on a
 // server without a vector index said `quilzo site --vectors`, which is not a
@@ -257,7 +259,7 @@ func TestARefusalNamesACommandThatWorks(t *testing.T) {
 		body         any
 		fix          string
 	}{
-		{"PUT", "/api/v1/pages/index", map[string]any{"title": "x"}, "quilzo site --api --api-writable"},
+		{"PUT", "/api/v1/pages/index", map[string]any{"title": "x"}, "quilzo site --api --api-writable --confine=false"},
 		{"POST", "/api/v1/records/samples", map[string]any{"fields": map[string]any{"a": "b"}},
 			"quilzo serve"},
 		{"DELETE", "/api/v1/records/samples/" + strings.Repeat("a", 32), nil, "quilzo serve"},
@@ -907,5 +909,93 @@ func TestATokensUseIsToldToTheHost(t *testing.T) {
 	}
 	if len(used) != 1 || used[0] != "reader" {
 		t.Fatalf("told of %v", used)
+	}
+}
+
+// A session the host says nobody has used for its idle period is refused
+// here, as it is at the admin's screens; one in use is let through, and
+// every authenticated request is asked about.
+//
+// The admin keeps the idle clock and this server, mounted inside it, never
+// asked it, so a sign-in session used only at /api/v1, in a header or in
+// the cookie, was never idle and lasted the whole of session.max.
+func TestASessionTheHostSaysIsIdleIsRefused(t *testing.T) {
+	s, read, _ := setup(t)
+	var asked []string
+	idle := false
+	s.Idle = func(r *http.Request, tok *auth.Token) bool {
+		asked = append(asked, tok.Principal)
+		return idle
+	}
+	if w := req(t, s, "GET", "/api/v1/pages", read, nil, nil); w.Code != http.StatusOK {
+		t.Fatalf("a session in use: %d %s", w.Code, w.Body)
+	}
+	idle = true
+	if w := req(t, s, "GET", "/api/v1/pages", read, nil, nil); w.Code != http.StatusUnauthorized {
+		t.Fatalf("a session the host ended for idling: %d %s", w.Code, w.Body)
+	}
+	if len(asked) != 2 || asked[0] != "reader" {
+		t.Fatalf("asked about %v", asked)
+	}
+}
+
+// The session cookie is taken from a page of this server's own origin and
+// no other: the scheme as well as the host, the host in any case, and the
+// whole origin rather than its ending (sameorigin.Check).
+//
+// The check asked only whether Origin ended in "//" and this request's
+// Host, so another scheme's pages, and an origin spelled
+// "http://evil.example//h", were this server's own, while this server's
+// own host in capitals was not.
+func TestASessionCookieIsTakenOnlyFromThisServersOwnOrigin(t *testing.T) {
+	s, tok, _ := setup(t)
+	s.SessionAuth = true
+	h := s.Handler()
+	for origin, want := range map[string]int{
+		"http://h":               200,
+		"http://H":               200,
+		"https://h":              401,
+		"http://evil.example//h": 401,
+		"http://h.evil.example":  401,
+		"null":                   401,
+		"http://h:8080":          401,
+	} {
+		r := httptest.NewRequest("GET", "http://h/api/v1/pages", nil)
+		r.AddCookie(&http.Cookie{Name: "quilzo_token", Value: tok})
+		r.Header.Set("Origin", origin)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != want {
+			t.Errorf("Origin %s gave %d, want %d", origin, w.Code, want)
+		}
+	}
+}
+
+// Mounted inside the admin, the session cookie is taken from a page of the
+// admin's own origin as the admin works it out (Server.Origin), so the two
+// agree about one request behind a proxy that ends TLS.
+//
+// The scheme was this connection's alone. Behind such a proxy, with
+// admin.behind_tls_proxy set, a browser that sends Origin and no fetch
+// metadata had a page of https://h refused here while the admin's screens
+// took it, and a page of http://h taken here while the admin refused it.
+func TestTheSessionCookieIsTakenFromTheOriginTheAdminSaysIsItsOwn(t *testing.T) {
+	s, tok, _ := setup(t)
+	s.SessionAuth = true
+	s.Origin = func(*http.Request) string { return "https://h" }
+	h := s.Handler()
+	for origin, want := range map[string]int{
+		"https://h": 200,
+		"https://H": 200,
+		"http://h":  401,
+	} {
+		r := httptest.NewRequest("GET", "http://h/api/v1/pages", nil)
+		r.AddCookie(&http.Cookie{Name: "quilzo_token", Value: tok})
+		r.Header.Set("Origin", origin)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != want {
+			t.Errorf("Origin %s gave %d, want %d", origin, w.Code, want)
+		}
 	}
 }

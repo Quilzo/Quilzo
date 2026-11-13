@@ -28,16 +28,14 @@ func cmdLinks(root string, args []string) error {
 	from := fs.Bool("from", false,
 		"what the page names, instead of what names it")
 	broken := fs.Bool("broken", false, "only the ones pointing at nothing")
-	rest, flags := leadingArgs(args, 1)
-	if err := fs.Parse(flags); err != nil {
-		return err
-	}
 	// `links --broken PAGE` puts the flag first, and leadingArgs stops at the
 	// first thing beginning with a dash — so the page would be invisible and
 	// the command would answer about the whole site instead of saying it did
-	// not understand. Whatever the flag set did not consume is the page.
-	if len(rest) == 0 {
-		rest = fs.Args()
+	// not understand. parseFlags takes the page wherever it is, and refuses
+	// a second, which was dropped.
+	rest, flags := leadingArgs(args, 1)
+	if err := parseFlags(fs, flags, &rest, 1); err != nil {
+		return err
 	}
 
 	s, err := open(root)

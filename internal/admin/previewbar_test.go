@@ -217,3 +217,30 @@ func hrefsIn(s string) []string {
 	}
 	return out
 }
+
+// A preview whose title is Turkish has its stylesheet just inside the head
+// and its panel just inside the body.
+//
+// Both tags were found in strings.ToLower(page), and İ is two bytes that
+// lower to one: every İ before a tag put the insertion a byte early, so the
+// stylesheet and the panel landed in the markup before the tag rather than
+// after it. A character that grows when lowered moved them the other way.
+func TestAPreviewWithATurkishTitleKeepsBothHalvesInPlace(t *testing.T) {
+	for _, x := range []string{"İstanbul, İzmir ve İzmit", "300 \u212A",
+		strings.Repeat("\u023A", 40), "caf\xe9 cr\xe8me"} {
+		page := `<!doctype html><html lang="tr" title="` + x + `"><HEAD><title>` + x +
+			`</title></HEAD><Body class="x"><h1>` + x + `</h1></Body></html>`
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("%q: injecting the panel panicked: %v", x, r)
+				}
+			}()
+			out := injectBar(page, `<div class="qz-bar">panel</div>`)
+			if !strings.Contains(out, `<HEAD><link rel="stylesheet" href="/preview.css">`) ||
+				!strings.Contains(out, `<Body class="x"><div class="qz-bar">panel</div>`) {
+				t.Errorf("%q: the halves are not just inside their tags:\n  %s", x, out)
+			}
+		}()
+	}
+}

@@ -8,10 +8,21 @@
 <div class="card {{if .Intact}}ok{{else}}bad{{end}}">
   {{if .Intact}}
     <p><strong>Chain intact</strong> &mdash; {{.Entries}} entries, each one
-    re-hashed and linked to the one before it.</p>
+    re-hashed and linked to the one before it{{with .Head}}, and the log still
+    extends the head saved at {{.Size}} entries ({{shown .At}}){{end}}.</p>
+    {{if not .Head}}<p class="hint warn">No saved head was checked against, so
+    entries removed from the end of the log would not show here:
+    <code>quilzo auditlog head --save</code> saves one, and a copy kept off this
+    machine is the one that counts.</p>{{end}}
+  {{else if .Crashed}}
+    <p><strong>A write to this log was left unfinished</strong>, as a crash or
+    a full disk leaves one. The record it was making is lost; every entry
+    around it re-hashes and links to the one before it, so this is not
+    evidence that the log was altered.</p>
+    <ul>{{range .Problems}}<li>Entry {{.Seq}}: {{shown .Reason}}</li>{{end}}</ul>
   {{else}}
     <p><strong>This log has been altered.</strong></p>
-    <ul>{{range .Problems}}<li>Entry {{.Seq}}: {{.Reason}}</li>{{end}}</ul>
+    <ul>{{range .Problems}}<li>Entry {{.Seq}}: {{shown .Reason}}</li>{{end}}</ul>
   {{end}}
   <p class="hint">
     {{if .Separated}}Written by a separate account, so code running as this one
@@ -19,6 +30,15 @@
     running as this account could rewrite it.{{end}}
     Nothing here can edit or delete an entry.
   </p>
+  {{if .HeadsByWriter}}{{with .HeadsRefused}}
+  <p class="hint warn">Its heads are the writer&rsquo;s to sign, and it signs
+    none, so no head, receipt or round of the audit stream can be made:
+    {{.}}</p>
+  {{else}}
+  <p class="hint">Its heads, and every receipt made from them, are signed by
+    the writer too, with a key this account cannot read. The public keys that
+    check them are at <code>{{.HeadKeys}}</code>.</p>
+  {{end}}{{end}}
 </div>
 
 <form method="get" action="/logs" class="stack">
@@ -26,7 +46,7 @@
     <label>Action
       <select name="action">
         <option value="">any</option>
-        {{range .Actions}}<option value="{{.}}"{{if eq . $.Action}} selected{{end}}>{{.}}</option>{{end}}
+        {{range .Actions}}<option value="{{.}}"{{if eq . $.Action}} selected{{end}}>{{shown .}}</option>{{end}}
       </select>
     </label>
     <label>Outcome
@@ -34,6 +54,7 @@
         <option value="">any</option>
         <option value="success"{{if eq .Outcome "success"}} selected{{end}}>success</option>
         <option value="denied"{{if eq .Outcome "denied"}} selected{{end}}>denied</option>
+        <option value="failure"{{if eq .Outcome "failure"}} selected{{end}}>failure</option>
       </select>
     </label>
     <label>Who
@@ -55,21 +76,20 @@
   {{range .Rows}}
   <tr>
     <th scope="row">{{.Seq}}</th>
-    <td class="mono">{{.At}}</td>
+    <td class="mono">{{shown .At}}</td>
     <td>
-      {{if .Resolved}}{{.Who}}{{else}}<span class="mono hint">{{.Who}}</span>{{end}}
+      {{if .Resolved}}{{shown .Who}}{{else}}<span class="mono hint">{{shown .Who}}</span>{{end}}
       {{if not .Verified}}<span class="tag">unverified</span>{{end}}
       {{if eq .Kind "unknown"}}<span class="tag">unknown</span>{{end}}
     </td>
-    <td class="mono">{{.Action}}</td>
-    <td class="mono">{{.Resource}}</td>
-    <td>{{if .Failed}}<span class="tag tag-bad">{{.Outcome}}</span>
-        {{else}}<span class="tag tag-ok">{{.Outcome}}</span>{{end}}</td>
+    <td class="mono">{{shown .Action}}</td>
+    <td class="mono">{{shown .Resource}}</td>
+    <td><span class="{{.Tag}}">{{shown .Outcome}}</span></td>
   </tr>
   {{if .Detail}}
   <tr class="detail">
     <td></td>
-    <td colspan="5">{{range $k, $v := .Detail}}<span class="kv"><b>{{$k}}</b> {{$v}}</span>{{end}}</td>
+    <td colspan="5">{{range $k, $v := .Detail}}<span class="kv"><b>{{shown $k}}</b> {{shown $v}}</span>{{end}}</td>
   </tr>
   {{end}}
   {{end}}

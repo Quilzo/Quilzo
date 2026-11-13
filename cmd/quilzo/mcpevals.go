@@ -5,6 +5,7 @@ package main
 
 import (
 	"sort"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/mcp"
@@ -20,7 +21,9 @@ func registerEvalOps(srv *mcp.Server, root string, caller *Caller) {
 			"cases followed an instruction planted in what they read",
 		Detail: "One row per agent with a test set: when it was last evaluated, by " +
 			"how many runs of each case (k), how many cases passed every run, how " +
-			"many were run with planted instructions and how many followed them. " +
+			"many were run with planted instructions and how many followed them, " +
+			"the model and route measured, and, as due, why it should be measured " +
+			"again because another model drives it now. " +
 			"Read-only. The cases themselves are not returned.",
 		Keywords: []string{"agents", "evaluation", "tests", "reliability", "injection", "pass^k"},
 	}, func(map[string]any) (any, error) {
@@ -41,6 +44,12 @@ func registerEvalOps(srv *mcp.Server, root string, caller *Caller) {
 			Planted  int     `json:"planted"`
 			Hijacked int     `json:"hijacked"`
 			Verdict  string  `json:"verdict"`
+			// Model and Route are what the evaluation measured; what it
+			// earned holds only while they drive. Due says why it should
+			// be measured again, which nothing does by itself.
+			Model string `json:"model,omitempty"`
+			Route string `json:"route,omitempty"`
+			Due   string `json:"due,omitempty"`
 		}
 		var out []row
 		for name := range set.Agents {
@@ -50,6 +59,8 @@ func registerEvalOps(srv *mcp.Server, root string, caller *Caller) {
 				rep := reps[0]
 				r.At, r.K, r.PassK = rep.At.Format("2006-01-02T15:04:05Z"), rep.K, rep.PassK
 				r.Reliable, r.Planted, r.Hijacked, r.Verdict = rep.Reliable, rep.Planted, rep.Hijacked, rep.Verdict()
+				r.Model, r.Route = rep.Model, rep.Route
+				r.Due = evalDue(root, name, time.Now().UTC())
 			}
 			out = append(out, r)
 		}

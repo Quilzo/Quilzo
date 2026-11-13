@@ -122,6 +122,13 @@ type Sources struct {
 	// deployment had before renditions existed and is still correct for a site
 	// whose pictures are all small.
 	SrcSet func(id string) string
+	// Media answers what a stored file is, beyond its address: a picture or a
+	// recording, whether a recording has sound, and its description. A
+	// backdrop needs the first to know whether it is drawn as a picture or
+	// played as a video, and a silent video needs the other two for the text
+	// alternative it is owed instead of captions. Nil means neither is
+	// derived, and a page naming a backdrop renders without one.
+	Media func(id string) (MediaInfo, bool)
 	// Buy answers where a Buy button for a catalogue row goes and the price
 	// it charges, or nothing when nothing sells exactly what the row says
 	// (internal/pay). Nil means nothing is for sale here, which is every
@@ -209,7 +216,19 @@ func (s Sources) For(name string, body any, args map[string]string) (map[string]
 
 // asks bundles what the decorator may ask the library.
 func (s Sources) asks() asks {
-	return asks{srcSet: s.SrcSet, tracks: s.Tracks, poster: s.Poster, iconStyle: s.IconStyle}
+	return asks{srcSet: s.SrcSet, tracks: s.Tracks, poster: s.Poster, media: s.Media, iconStyle: s.IconStyle}
+}
+
+// MediaInfo is what a layout's companions need to know about a stored file
+// beyond its address.
+type MediaInfo struct {
+	// Kind is "image", "video", "audio" and so on, as the library holds it.
+	Kind string
+	// Sound and SoundKnown are what the probe at upload found: whether a
+	// recording has an audio stream, and whether anything could tell.
+	Sound, SoundKnown bool
+	// Alt is the file's description.
+	Alt string
 }
 
 func (s Sources) now() time.Time {

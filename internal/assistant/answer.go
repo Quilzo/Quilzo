@@ -12,7 +12,9 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
+	"github.com/quilzo/quilzo/internal/guardrail"
 	"github.com/quilzo/quilzo/internal/search"
 )
 
@@ -24,10 +26,22 @@ type Model interface {
 	Name() string
 }
 
-// MaxQuestion bounds a visitor's message. A question is a question; a
-// megabyte pasted into a public box is a cost somebody else is choosing for
-// this site.
+// MaxQuestion bounds a visitor's message, in characters. A question is a
+// question; a megabyte pasted into a public box is a cost somebody else is
+// choosing for this site.
+//
+// Characters, not bytes, as the question box's maxlength counts them and
+// as the refusal says: counted in bytes, a 400-character question in
+// Japanese was refused as over 1000 characters.
 const MaxQuestion = 1000
+
+// boundText is s cut to at most n characters, between two of them.
+func boundText(s string, n int) string {
+	if utf8.RuneCountInString(s) <= n {
+		return s
+	}
+	return string([]rune(s)[:n])
+}
 
 // Sentence is one sentence of an answer and what supports it.
 type Sentence struct {
@@ -88,15 +102,12 @@ func RespondTo(ctx context.Context, a Assistant, idx *Index, m Model,
 	if question == "" {
 		return ans, fmt.Errorf("ask a question")
 	}
-	if len(question) > MaxQuestion {
+	if utf8.RuneCountInString(question) > MaxQuestion {
 		return ans, fmt.Errorf("that is over %d characters; ask it more briefly",
 			MaxQuestion)
 	}
 
-	previous = oneLine(previous)
-	if len(previous) > MaxQuestion {
-		previous = previous[:MaxQuestion]
-	}
+	previous = boundText(oneLine(previous), MaxQuestion)
 	asked := question
 	hits := idx.Retrieve(question, a.depth())
 	if len(hits) == 0 && previous != "" {
@@ -183,8 +194,9 @@ func extract(question string, hits []Hit) []Sentence {
 		return nil
 	}
 	best := hits[0]
-	all := sentences(best.Text)
-	if len(strings.Fields(best.Text)) <= shortPassage {
+	text := quotable(best.Text)
+	all := sentences(text)
+	if len(strings.Fields(text)) <= shortPassage {
 		out := make([]Sentence, 0, len(all))
 		for _, s := range all {
 			out = append(out, Sentence{Text: s, Cites: []int{1}, Supported: true})
@@ -231,6 +243,24 @@ func extract(question string, hits []Hit) []Sentence {
 		}
 	}
 	return out
+}
+
+// quotable is a passage's text as an answer may quote it: without a
+// sentence that asks the visitor for a card number or a password. Verify
+// refuses one from a model, and when it did the answer fell back to the
+// passage quoted whole, the same sentence in it. The browser's copy quotes
+// this text too (Browser), so it leaves out what the server does.
+func quotable(text string) string {
+	if !guardrail.AsksForSecrets(text) {
+		return text
+	}
+	var keep []string
+	for _, s := range sentences(text) {
+		if !guardrail.AsksForSecrets(s) {
+			keep = append(keep, s)
+		}
+	}
+	return strings.Join(keep, " ")
 }
 
 // shortPassage is the length, in words, under which a passage is quoted
@@ -386,25 +416,109 @@ func Figures(text string) [][2]int {
 	return out
 }
 
+// figure is a figure as a text writes it, where it starts, and the value
+// it states.
+type figure struct {
+	text, value string
+	at          int
+}
+
+// figureValues are the figures a text states, each with its value: without
+// the commas that group its thousands, without a fraction that is all
+// zeros, and with a time's colon read as its point, so "£1,000" states what
+// "£1000" does, "£12.00" what "£12" does and "9:30" what "9.30" does.
+//
+// Verify compares them whole. It had looked for each figure of a sentence
+// anywhere in the passage's text, and found "£12" in "£120" and "3 days" in
+// "30 days": a tenth of the price was shown to a visitor with a citation.
+//
+// Only a fraction of nothing but zeros is dropped. Every zero that ended a
+// decimal was, and "open until 30.1" was then the passage's "30.10". And a
+// comma groups thousands only where three digits follow it: "sizes 4,6,8"
+// is three figures, not 468, which no sentence naming a size could match.
+func figureValues(text string) []figure {
+	at := Figures(text)
+	var out []figure
+	for i := 0; i < len(at); i++ {
+		start, end := at[i][0], at[i][1]
+		// "9:30" is two figures to Figures, and one time.
+		for i+1 < len(at) && at[i+1][0] == end+1 && text[end] == ':' {
+			i++
+			end = at[i][1]
+		}
+		f := text[start:end]
+		if strings.Contains(f, ",") && !reGrouped.MatchString(f) {
+			for _, part := range strings.Split(f, ",") {
+				if part != "" {
+					out = append(out, figure{text: part, value: figureValue(part), at: start})
+				}
+				start += len(part) + 1
+			}
+			continue
+		}
+		out = append(out, figure{text: f, value: figureValue(f), at: start})
+	}
+	return out
+}
+
+// reGrouped is a figure whose commas group its digits, in threes or as the
+// lakh and the crore are written: "1,250.50", "12,000,000" and "1,00,000".
+var reGrouped = regexp.MustCompile(`^\d{1,3}(,\d{2,3})*,\d{3}([.:]\d+)*$`)
+
+// figureValue is the value one figure states, as figureValues compares it.
+func figureValue(f string) string {
+	v := strings.ReplaceAll(strings.ReplaceAll(f, ",", ""), ":", ".")
+	if i := strings.LastIndexByte(v, '.'); i >= 0 && strings.Trim(v[i+1:], "0") == "" {
+		v = v[:i]
+	}
+	return v
+}
+
+// asciiDigits is text with every decimal digit of another script written
+// as the ASCII digit it is. Figures knows only those, so a sentence that
+// said "£１２" in full-width digits stated no figure that Verify could hold
+// to the passage's "£120", and a page written with them had none either.
+func asciiDigits(text string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 0x80 || !unicode.IsDigit(r) {
+			return r
+		}
+		// Every script's digits are ten in a row from its zero, and the
+		// table's ranges start at a zero.
+		for _, r16 := range unicode.Nd.R16 {
+			if rune(r16.Lo) <= r && r <= rune(r16.Hi) {
+				return '0' + (r-rune(r16.Lo))%10
+			}
+		}
+		for _, r32 := range unicode.Nd.R32 {
+			if rune(r32.Lo) <= r && r <= rune(r32.Hi) {
+				return '0' + (r-rune(r32.Lo))%10
+			}
+		}
+		return r
+	}, text)
+}
+
 // Verify checks one sentence against the passages it cites.
 //
 // Four tests, each cheap and each aimed at a failure that has been seen:
 //
 //   - It must cite, and only passages it was given. An uncited sentence is
 //     the model speaking for itself.
-//   - Every figure in it must appear in what it cites, whether it is
-//     written in digits or in words, and count there what it counts in the
-//     sentence: the same half of the day, unit of time and currency.
-//     Invented prices, dates, times and quantities are the most damaging
-//     thing a site's assistant can say and the easiest to check.
+//   - Every figure in it must be one that what it cites states, whole,
+//     whether it is written in digits or in words, and count there what it
+//     counts in the sentence: the same half of the day, unit of time and
+//     currency. Invented prices, dates, times and quantities are the most
+//     damaging thing a site's assistant can say and the easiest to check.
 //   - Most of its informative words must appear in what it cites. Not
 //     entailment — a word-overlap test cannot prove a paraphrase is right —
 //     but it catches the sentence that cites passage 2 and is about
 //     something passage 2 never mentions.
 //   - It must not leave out a "not" that the passage it rests on says, nor
 //     say one that the passage does not, nor say "open" where the passage
-//     says "closed" or "available" where it says "unavailable". Each keeps
-//     every other word of the passage and reverses it.
+//     says "closed", "available" where it says "unavailable" or "free"
+//     where it says "charged". Each keeps every other word of the passage
+//     and reverses it.
 //
 // Figures in words, what a figure counts, and the last test were added
 // after cited contradictions were shown as verified: "We open at 9am now"
@@ -434,6 +548,19 @@ func Verify(sentence string, hits []Hit) Sentence {
 		out.Why = "cites nothing"
 		return out
 	}
+	// The sentence is tested as its reader sees it, every space an ordinary
+	// one, as a page's text has been since it was chunked. A model sets a
+	// no-break space between a figure and its unit, and "within 30 hours"
+	// written so stated no period that the patterns below could hold to the
+	// passage's "30 days".
+	text := oneLine(out.Text)
+	// Whatever it cites: a page that asks for a card number may be the one
+	// somebody planted, and passes every test below because the sentence is
+	// its own.
+	if guardrail.AsksForSecrets(text) {
+		out.Why = "asks the visitor for a card number, bank details, a password or a code"
+		return out
+	}
 	var cited strings.Builder
 	var units []statement
 	for _, n := range out.Cites {
@@ -447,20 +574,24 @@ func Verify(sentence string, hits []Hit) Sentence {
 		cited.WriteByte(' ')
 		units = append(units, statements(hits[n-1])...)
 	}
-	source := cited.String()
-	norm := func(s string) string { return strings.NewReplacer(",", "").Replace(s) }
-	for _, at := range Figures(out.Text) {
-		f := out.Text[at[0]:at[1]]
-		if !strings.Contains(norm(source), norm(f)) {
-			out.Why = fmt.Sprintf("says %s, which the cited passage does not", f)
+	// Figures are read with every digit in ASCII, in the sentence and in
+	// what it cites; the words are compared as they are written.
+	source, said := asciiDigits(cited.String()), asciiDigits(text)
+	stated := map[string]bool{}
+	for _, f := range figureValues(source) {
+		stated[f.value] = true
+	}
+	for _, f := range figureValues(said) {
+		if !stated[f.value] {
+			out.Why = fmt.Sprintf("says %s, which the cited passage does not", f.text)
 			return out
 		}
 	}
-	if w := wordFigureMissing(out.Text, source); w != "" {
+	if w := wordFigureMissing(said, source); w != "" {
 		out.Why = fmt.Sprintf("says %s, which the cited passage does not", w)
 		return out
 	}
-	if why := unitTurned(out.Text, source); why != "" {
+	if why := unitTurned(said, source); why != "" {
 		out.Why = why
 		return out
 	}
@@ -469,7 +600,7 @@ func Verify(sentence string, hits []Hit) Sentence {
 		have[t] = true
 	}
 	var content, found int
-	for _, t := range tokens(out.Text) {
+	for _, t := range tokens(text) {
 		if stopword[t] || len([]rune(t)) < 3 {
 			continue
 		}
@@ -483,7 +614,7 @@ func Verify(sentence string, hits []Hit) Sentence {
 			found, content)
 		return out
 	}
-	if why := turnedAround(out.Text, units); why != "" {
+	if why := turnedAround(text, units); why != "" {
 		out.Why = why
 		return out
 	}
@@ -538,8 +669,8 @@ func wordFigureMissing(sentence, source string) string {
 		words[t] = true
 	}
 	numerals := map[string]bool{}
-	for _, at := range Figures(source) {
-		numerals[strings.ReplaceAll(source[at[0]:at[1]], ",", "")] = true
+	for _, f := range figureValues(source) {
+		numerals[f.value] = true
 	}
 	// "For a month" states one month, so "for one month" is found in it.
 	for _, m := range measures(source) {
@@ -578,9 +709,13 @@ const (
 // measure is a figure with what it counts: the half of the day of a time,
 // the unit of a span of time, or the currency of a price. key is what two
 // measures must share to be about the same figure: a time's hour, so
-// "9am" meets "9.30 a.m.", and otherwise the figure itself.
+// "9am" meets "9.30 a.m.", and otherwise the figure itself. value is the
+// figure as figureValues reads it and at where its digits start, or -1 for
+// one written in words.
 type measure struct {
 	text, kind, key, unit string
+	value                 string
+	at                    int
 }
 
 // reTime finds a time of day or a span of time, written in digits or in
@@ -623,10 +758,21 @@ var currencies = map[string]string{
 // measures are the figures a text states with what they count.
 func measures(text string) []measure {
 	var out []measure
-	for _, m := range reTime.FindAllStringSubmatch(text, -1) {
-		figure, unit := strings.ReplaceAll(m[1], ",", ""), strings.ToLower(m[3])
+	// group is what a pattern's nth group matched, and where.
+	group := func(loc []int, n int) (string, int) {
+		if loc[2*n] < 0 {
+			return "", -1
+		}
+		return text[loc[2*n]:loc[2*n+1]], loc[2*n]
+	}
+	for _, loc := range reTime.FindAllStringSubmatchIndex(text, -1) {
+		digits, at := group(loc, 1)
+		word, _ := group(loc, 2)
+		unit, _ := group(loc, 3)
+		whole := text[loc[0]:loc[1]]
+		figure, unit := strings.ReplaceAll(digits, ",", ""), strings.ToLower(unit)
 		if figure == "" {
-			word := strings.ToLower(m[2])
+			word = strings.ToLower(word)
 			figure = figureWords[word]
 			if word == "a" || word == "an" {
 				figure = "1"
@@ -636,14 +782,15 @@ func measures(text string) []measure {
 		// spelt.
 		if unit[0] == 'a' || unit[0] == 'p' {
 			// "An a.m. start" says no time.
-			if m[1] == "" && figureWords[strings.ToLower(m[2])] == "" {
+			if digits == "" && figureWords[word] == "" {
 				continue
 			}
 			hour, _, _ := strings.Cut(strings.ReplaceAll(figure, ":", "."), ".")
 			if h, err := strconv.Atoi(hour); err == nil {
 				hour = strconv.Itoa(h)
 			}
-			out = append(out, measure{text: m[0], kind: timeOfDay, key: hour, unit: unit[:1] + "m"})
+			out = append(out, measure{text: whole, kind: timeOfDay, key: hour, unit: unit[:1] + "m",
+				value: figureValue(figure), at: at})
 			continue
 		}
 		unit = strings.TrimSuffix(unit, "s")
@@ -653,15 +800,23 @@ func measures(text string) []measure {
 		case "hr":
 			unit = "hour"
 		}
-		out = append(out, measure{text: m[0], kind: spanOfTime, key: figure, unit: unit})
+		out = append(out, measure{text: whole, kind: spanOfTime, key: figure, unit: unit,
+			value: figureValue(figure), at: at})
 	}
-	for _, m := range rePriceBefore.FindAllStringSubmatch(text, -1) {
-		out = append(out, measure{text: m[0], kind: price,
-			key: strings.ReplaceAll(m[3], ",", ""), unit: currencies[strings.ToLower(m[1]+m[2])]})
+	for _, loc := range rePriceBefore.FindAllStringSubmatchIndex(text, -1) {
+		sign, _ := group(loc, 1)
+		code, _ := group(loc, 2)
+		digits, at := group(loc, 3)
+		out = append(out, measure{text: text[loc[0]:loc[1]], kind: price,
+			key: strings.ReplaceAll(digits, ",", ""), unit: currencies[strings.ToLower(sign+code)],
+			value: figureValue(digits), at: at})
 	}
-	for _, m := range rePriceAfter.FindAllStringSubmatch(text, -1) {
-		out = append(out, measure{text: m[0], kind: price,
-			key: strings.ReplaceAll(m[1], ",", ""), unit: currencies[strings.ToLower(m[2])]})
+	for _, loc := range rePriceAfter.FindAllStringSubmatchIndex(text, -1) {
+		digits, at := group(loc, 1)
+		name, _ := group(loc, 2)
+		out = append(out, measure{text: text[loc[0]:loc[1]], kind: price,
+			key: strings.ReplaceAll(digits, ",", ""), unit: currencies[strings.ToLower(name)],
+			value: figureValue(digits), at: at})
 	}
 	return out
 }
@@ -674,9 +829,14 @@ func measures(text string) []measure {
 // another currency. One it states both ways, or without saying what it
 // counts, is left to the other tests; "9 to 5 on Saturdays" says no half
 // of the day, so "open at 9am on Saturdays" does not contradict it.
+//
+// So is a figure it states only as another kind of thing. "Pallet delivery
+// costs £12" was shown for "costs £120. Returns are accepted within 12
+// days": the 12 is in the passage, and is no price there.
 func unitTurned(sentence, source string) string {
 	have := measures(source)
-	for _, m := range measures(sentence) {
+	var stated []figure
+	for _, m := range measures(reAllWeek.ReplaceAllString(sentence, "$1")) {
 		same, other := false, ""
 		for _, h := range have {
 			if h.kind != m.kind || h.key != m.key {
@@ -690,6 +850,24 @@ func unitTurned(sentence, source string) string {
 				other = h.text
 			}
 		}
+		// "A month" has no figure of the passage's to be held to, and a
+		// passage's "a week" is not what it is held to: one of a unit is the
+		// passage's when the passage names one of that unit, however it
+		// writes it.
+		if !same && m.kind == spanOfTime && m.at < 0 && m.key == "1" {
+			if saysOne(source, m.unit) {
+				continue
+			}
+			if other == "" {
+				return fmt.Sprintf("says %s, which the cited passage does not", m.text)
+			}
+		}
+		if !same && other == "" {
+			if stated == nil {
+				stated = figureValues(source)
+			}
+			other = countedOtherwise(m, have, stated)
+		}
 		if !same && other != "" {
 			return fmt.Sprintf("says %s, where what it cites says %s", m.text, other)
 		}
@@ -697,10 +875,116 @@ func unitTurned(sentence, source string) string {
 	return ""
 }
 
+// reAllWeek finds the two ways of saying every day and all day, whose "a
+// week" and "a day" are no period of their own: "open 7 days a week" says
+// what a passage's "open 7 days" does.
+var reAllWeek = regexp.MustCompile(`(?i)\b((?:7|seven)\s+days|(?:24|twenty[\s-]four)\s+hours)\s+a\s+(?:week|day)\b`)
+
+// oneOf are the words that name one of a unit of time without a figure:
+// the unit, as "per week" and "next-day" say it, and the word for once in
+// each.
+var oneOf = map[string][]string{
+	"minute": {"minute", "min"}, "hour": {"hour", "hr", "hourly"},
+	"day": {"day", "daily"}, "week": {"week", "weekly"},
+	"fortnight": {"fortnight", "fortnightly"}, "month": {"month", "monthly"},
+	"year": {"year", "yearly", "annual", "annually"},
+}
+
+// saysOne reports whether a text names one of a unit of time. "Returns are
+// accepted within a month" and "within a year" were shown for "within 30
+// days": a period written without a figure was held to nothing, and its
+// unit was one word of many that the overlap test did not miss. "30 days"
+// names no one day; "next-day dispatch" and "£5 per week" each name one.
+func saysOne(text, unit string) bool {
+	for _, t := range search.Tokenise(text) {
+		for _, w := range oneOf[unit] {
+			if t == w {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// countedOtherwise is how a passage states a sentence's figure when every
+// time it states it, it counts something of another kind with it: the "12
+// days" that a sentence's "£12" was taken from. "" when the passage states
+// the figure as the sentence's kind of thing, without saying what it
+// counts, or not in digits at all.
+func countedOtherwise(m measure, have []measure, stated []figure) string {
+	counted := map[int]measure{}
+	for _, h := range have {
+		if h.at >= 0 {
+			counted[h.at] = h
+		}
+	}
+	other := ""
+	for _, f := range stated {
+		if f.value != m.value {
+			continue
+		}
+		h, ok := counted[f.at]
+		if !ok || h.kind == m.kind {
+			return ""
+		}
+		if other == "" {
+			other = h.text
+		}
+	}
+	return other
+}
+
 // reNegation finds a word that turns a statement around: "not" and its
 // contractions, and the words that say none, nowhere or only otherwise.
 // The apostrophe may be typed or typographic, as a page's text has either.
-var reNegation = regexp.MustCompile(`(?i)\b(?:not|no|never|none|nor|neither|nobody|nothing|nowhere|cannot|without|except|unless)\b|n['’]t\b`)
+//
+// "Unable" is one: it is how a shop says it cannot. "We are unable to
+// deliver to the Zqvel Highlands" was shown as "We deliver to the Zqvel
+// Highlands", nothing the check knew having been left out.
+var reNegation = regexp.MustCompile(`(?i)\b(?:not|no|never|none|nor|neither|nobody|nothing|nowhere|cannot|without|except|unless|unable)\b|n['’]t\b`)
+
+// phrases are what a text says in more than one word, each as the one
+// word readText knows it by, and written is that word back as the text
+// wrote it, for the reason a sentence is refused with.
+//
+// "Not only" and "not merely" take nothing back, so their "not" is none:
+// "We not only sell gluten-free bread" was shown for "We do not sell
+// gluten-free bread", a "not" before the same word in each, and a page's
+// "Not only do we sell" refused the plain "We sell". Not "not just": "you
+// can't just turn up" says you cannot.
+//
+// The others are opposites that no one word of theirs says: "sold out" and
+// "out of stock" of "available" and "in stock", "check-out" of "check-in",
+// and "up to" of "over".
+var phrases = []struct {
+	re *regexp.Regexp
+	as string
+}{
+	{regexp.MustCompile(`(?i)(?:\bnot|n['’]t)\s+(only|merely)\b`), " $1"},
+	{regexp.MustCompile(`(?i)\bsold[\s-]+out\b`), "soldout"},
+	{regexp.MustCompile(`(?i)\bout[\s-]+of[\s-]+stock\b`), "outofstock"},
+	{regexp.MustCompile(`(?i)\bin[\s-]+stock\b`), "instock"},
+	{regexp.MustCompile(`(?i)\bcheck[\s-]?in\b`), "checkin"},
+	{regexp.MustCompile(`(?i)\bcheck[\s-]?out\b`), "checkout"},
+	{regexp.MustCompile(`(?i)\bup\s+to\b`), "upto"},
+}
+
+var written = map[string]string{
+	"soldout": "sold out", "outofstock": "out of stock", "instock": "in stock",
+	"checkin": "check-in", "checkout": "check-out", "upto": "up to",
+}
+
+// inWords is a text with each of phrases as its one word.
+func inWords(s string) string {
+	for _, p := range phrases {
+		s = p.re.ReplaceAllString(s, p.as)
+	}
+	return s
+}
+
+// negations are the words of a text that turn it around, in the order it
+// says them.
+func negations(s string) []string { return reNegation.FindAllString(inWords(s), -1) }
 
 // statements are the pieces of a passage a sentence can rest on: each
 // sentence of each line, so a record's "gluten free: no" is not read
@@ -739,13 +1023,23 @@ type statement struct{ about, says string }
 // header gives only the words the sentence does not: the section "Opening
 // hours" does not say a shop is open on the Mondays its text says it is
 // shut.
-func (st statement) words() map[string]read {
-	out := readWords(st.says)
-	for w, r := range readWords(st.about) {
-		if _, ok := out[w]; !ok {
-			out[w] = r
+func (st statement) words() reading {
+	out, about := readText(st.says), readText(st.about)
+	for w, r := range about.words {
+		if _, ok := out.words[w]; !ok {
+			// The header's "not"s are counted after the sentence's.
+			by := r.by
+			r.by = 0
+			for k := range about.nots {
+				if by&notBit(k) != 0 {
+					r.by |= notBit(len(out.nots) + k)
+				}
+			}
+			out.words[w] = r
 		}
 	}
+	out.nots = append(out.nots, about.nots...)
+	out.bare = append(out.bare, about.bare...)
 	return out
 }
 
@@ -762,14 +1056,14 @@ func (st statement) words() map[string]read {
 // "Why can't I sign in?" read with it, and the question's "can't" is not
 // the answer's.
 func turnedAround(sentence string, units []statement) string {
-	want := readWords(sentence)
-	says := reNegation.FindAllString(sentence, -1)
+	want := readText(sentence)
+	says := negations(sentence)
 	best, agrees, why := 0, false, ""
 	for _, u := range units {
 		have := u.words()
 		n := 0
-		for w := range want {
-			if _, ok := have[w]; ok {
+		for w := range want.words {
+			if _, ok := have.words[w]; ok {
 				n++
 			}
 		}
@@ -779,7 +1073,7 @@ func turnedAround(sentence string, units []statement) string {
 		if n > best {
 			best, agrees, why = n, false, ""
 		}
-		neg := reNegation.FindAllString(u.about+" "+u.says, -1)
+		neg := negations(u.about + " " + u.says)
 		if ok, reason := agree(want, have, says, neg); ok {
 			agrees = true
 		} else if why == "" {
@@ -803,13 +1097,34 @@ func turnedAround(sentence string, units []statement) string {
 // Sundays", and with "Is the café open on Sundays? No, it is closed",
 // whose "No" answers the question. A "not" anywhere else is the
 // statement's.
-func agree(want, have map[string]read, says, neg []string) (bool, string) {
+//
+// A "not" is held to the words it is before, whether or not they have an
+// opposite: when the statement says "not" before words they share, and the
+// sentence says none of those words under a "not" of its own, they
+// disagree, though the sentence has a "not" somewhere else; and a "not" of
+// the sentence's is one the statement says of the same word, or it is the
+// sentence's own (unsaid). "Yes, we sell gluten-free bread, no need to
+// order ahead" was shown for "We do not sell gluten-free bread": its "no"
+// is about ordering.
+//
+// A "not" that is before no word at all, as the "No" of "No, we don't" is,
+// says nothing of which word it turns. In what is cited it may be the one
+// a sentence says before a word of the question, "We do not sell
+// gluten-free bread"; a sentence must then say one so, or a bare one of its
+// own. In a sentence it stands for no "not" the passage is before a word
+// with: "No, we sell gluten-free bread" was shown for "We do not sell
+// gluten-free bread".
+func agree(want, have reading, says, neg []string) (bool, string) {
 	opposed, written, turned := "", true, true
 	turnedHere, turnedThere := 0, 0
-	for w, r := range want {
-		h, ok := have[w]
+	under := false
+	for w, r := range want.words {
+		h, ok := have.words[w]
 		if !ok {
 			continue
+		}
+		if r.by != 0 {
+			under = true
 		}
 		if r.sides()&h.sides() == 0 {
 			written = false
@@ -817,7 +1132,7 @@ func agree(want, have map[string]read, says, neg []string) (bool, string) {
 				opposed = r.word
 			}
 		}
-		if !isOpposite[w] && (r.sides()|h.sides())&oppositeSide == 0 {
+		if !hasOpposite(w, r, h) {
 			continue // a word with no opposite is not turned by a "not"
 		}
 		if (r.negated != 0) != (h.negated != 0) {
@@ -836,9 +1151,19 @@ func agree(want, have map[string]read, says, neg []string) (bool, string) {
 			turnedThere++
 		}
 	}
+	dropped := ""
+	if not := unsaid(have, want, false); not != "" {
+		dropped = fmt.Sprintf("leaves out the %q in what it cites", strings.ToLower(not))
+	} else if not := unsaid(want, have, true); not != "" && len(have.bare) == 0 {
+		dropped = fmt.Sprintf("says %q, where what it cites does not", strings.ToLower(not))
+	} else if len(have.bare) > 0 && len(want.bare) == 0 && !under {
+		dropped = fmt.Sprintf("leaves out the %q in what it cites", strings.ToLower(have.bare[0]))
+	}
 	sameNot := (len(says) > 0) == (len(neg) > 0)
 	leftNot := (len(says) > turnedHere) == (len(neg) > turnedThere)
 	switch {
+	case dropped != "" && sameNot:
+		return false, dropped
 	case written && sameNot, turned && (sameNot || leftNot):
 		return true, ""
 	case !sameNot && len(says) > 0:
@@ -849,6 +1174,66 @@ func agree(want, have map[string]read, says, neg []string) (bool, string) {
 	return false, fmt.Sprintf("says %q, where what it cites says the opposite", strings.ToLower(opposed))
 }
 
+// hasOpposite says whether a word two texts share is one of a pair of
+// opposites, as either says it.
+func hasOpposite(w string, r, h read) bool {
+	return isOpposite[w] || (r.sides()|h.sides())&oppositeSide != 0
+}
+
+// unsaid is the first "not" of one text that another does not say, or "".
+//
+// The other says it when it says one of the words this one is before only
+// under a "not" of its own, or says the opposite of one, as "closed" says
+// "not open". The "not" of "We do not currently sell gluten-free bread" is
+// before "currently" and "sell", and "Yes, we sell gluten-free bread, no
+// need to order ahead" says "sell" under none.
+//
+// What is cited may say "not" about something a sentence does not repeat,
+// so one of its "not"s is unsaid only when the sentence says a word it is
+// before, one the passage says only under it. A sentence may not: every
+// "not" of its own is held to the passage (whole). "We deliver to the
+// Channel Islands, no problem" was shown for "We do not offer delivery to
+// the Channel Islands", neither "not" being before a word the other text
+// has.
+func unsaid(a, b reading, whole bool) string {
+	for k, not := range a.nots {
+		before, plainly, said, pair := false, false, false, false
+		for w, x := range a.words {
+			if x.by&notBit(k) == 0 {
+				continue
+			}
+			before = true
+			y, ok := b.words[w]
+			if !ok {
+				continue
+			}
+			// Only under one: "We sell it unless it sells out" says "sell"
+			// plainly too.
+			if y.by != 0 && !y.clear {
+				said = true
+				break
+			}
+			if hasOpposite(w, x, y) {
+				if x.turned()&y.turned() != 0 {
+					said = true
+					break
+				}
+				pair = true // left to what agree makes of the pair
+				continue
+			}
+			if !x.clear {
+				plainly = true
+			}
+		}
+		switch {
+		case said || pair || !before:
+		case plainly || whole:
+			return not
+		}
+	}
+	return ""
+}
+
 // read is an informative word as turnedAround compares it: on which sides
 // of a pair of opposites a text says it, as written (plain) and just
 // after a "not" (negated), and how it first says it.
@@ -857,6 +1242,30 @@ type read struct {
 	word           string
 	// not is the "not" before it, when it is negated.
 	not string
+	// by is the "not"s of its text that it is under, a bit for each in the
+	// order the text says them (notBit): the ones at most two words before
+	// it, and the one it is the first informative word after, however far.
+	// clear is whether the text also says it under none.
+	by    uint64
+	clear bool
+}
+
+// reading is a text as turnedAround compares it: its informative words,
+// each of its "not"s in the order it says them, and the ones among them
+// that are before no informative word in their clause, as the "No" and the
+// "don't" of "No, we don't" are.
+type reading struct {
+	words      map[string]read
+	nots, bare []string
+}
+
+// notBit is the bit a text's kth "not" has in read.by. A text of more than
+// sixty-four shares the last between the rest.
+func notBit(k int) uint64 {
+	if k > 63 {
+		k = 63
+	}
+	return 1 << uint(k)
 }
 
 // sides are the sides a word is said on, as written.
@@ -885,8 +1294,64 @@ const (
 // opposites are the words that say another's opposite without a "not", as
 // tokens reads them, by the word they are the opposite of. Kept to what a
 // site's visitors ask about, opening times first: "We are closed on
-// Sundays" was cited for "We are open on Sundays".
-var opposites = map[string]string{"clos": "open", "close": "open", "shut": "open"}
+// Sundays" was cited for "We are open on Sundays". Then the pairs a shop's
+// or a venue's page says what it charges, allows and counts by: "Delivery
+// is free" was cited for "Delivery is charged", "Dogs are welcome" for "Dogs
+// are banned", "Order after 2pm" for "Order before 2pm", "Prices include
+// VAT" for "Prices exclude VAT" and "Children under 12" for "Children over
+// 12", each keeping every other word. Each form is as fold leaves it, so
+// "charged" is "charg" and "banned" "bann".
+//
+// And each in the forms a page writes it in, not only the one a test
+// happened to use: "We charge for delivery", "Delivery charges apply" and
+// "Delivery costs extra" say what "Delivery is charged" does, "You pay for
+// return postage" what "Return postage is paid" does, and "Prices are
+// exclusive of VAT" and "excl. VAT" what "Prices exclude VAT" does;
+// "Delivery is free" was shown for each.
+//
+// And the other end of what a venue's page states, each shown for its
+// opposite with every other word kept: "available" for "sold out" and "in
+// stock" for "out of stock" (phrases makes one word of each), "possible"
+// for "impossible", "optional" for "required", "ends on 1 June" for
+// "starts on 1 June", "check-out" for "check-in", "at most 4" for "at
+// least 4", and "up to 12" and "12 and younger" for "over 12". A sentence
+// that says one of a pair where the passage says neither is not held by
+// this; the test that most of its words are the passage's is all that
+// holds it.
+var opposites = map[string]string{
+	"clos": "open", "close": "open", "shut": "open",
+	"charg": "free", "charge": "free", "chargeable": "free", "cost": "free",
+	"pay": "free", "paid": "free",
+	"ban": "allow", "bann": "allow", "forbid": "allow", "forbidden": "allow",
+	"prohibit": "allow", "disallow": "allow",
+	"refus": "accept", "refuse": "accept", "reject": "accept",
+	"declin": "accept", "decline": "accept",
+	"exclud": "include", "exclude": "include", "exclusive": "include", "excl": "include",
+	"after": "before", "later": "before",
+	"under": "over", "below": "over", "less": "over", "fewer": "over",
+	"younger": "over", "upto": "over",
+	"maximum": "minimum", "most": "least",
+	"soldout": "available", "outofstock": "available",
+	"impossible": "possible", "ineligible": "eligible", "invalid": "valid",
+	"inaccessible": "accessible", "optional": "requir",
+	"end": "start", "ended": "start", "ending": "start",
+	"finish": "start", "finishe": "start", "checkout": "checkin",
+}
+
+// sameAs are words that say what another of the pairs in opposites does,
+// by that word: a page's "Dogs are allowed" is what "Dogs are welcome"
+// says, and its "over 12" what "above 12" or "more than 12" says.
+var sameAs = map[string]string{
+	"welcome": "allow", "welcom": "allow", "permit": "allow", "permitt": "allow",
+	"includ": "include", "inclusive": "include", "incl": "include", "inc": "include",
+	"above": "over", "more": "over", "older": "over",
+	"until": "before", "till": "before", "earlier": "before",
+	"instock": "available",
+	"require": "requir", "mandatory": "requir", "compulsory": "requir",
+	"essential": "requir", "necessary": "requir",
+	"begin": "start", "beginn": "start", "began": "start", "begun": "start",
+	"complimentary": "free",
+}
 
 // isOpposite are the words opposites names an opposite of.
 var isOpposite = func() map[string]bool {
@@ -897,34 +1362,80 @@ var isOpposite = func() map[string]bool {
 	return out
 }()
 
+// notAPrice are the words "free" comes after when it is no price, as fold
+// leaves them: what a thing is made or kept without, as in "gluten free"
+// and "smoke free", and the "feel" of "feel free to call". "Gluten-free",
+// written as one word, is known without this list.
+var notAPrice = map[string]bool{
+	"gluten": true, "dairy": true, "sugar": true, "nut": true, "peanut": true,
+	"lactose": true, "wheat": true, "egg": true, "soy": true, "soya": true,
+	"meat": true, "fat": true, "salt": true, "oil": true, "alcohol": true,
+	"caffeine": true, "allergen": true, "additive": true, "fragrance": true,
+	"scent": true, "smoke": true, "plastic": true, "cruelty": true, "lead": true,
+	"car": true, "traffic": true, "step": true, "hands": true, "hassle": true,
+	"stress": true, "trouble": true, "risk": true, "feel": true,
+}
+
+// priceFree says whether "free", after the word before it in its clause,
+// is the opposite of "charged". It is unless that word is one of
+// notAPrice: "Delivery is free", "ships free", "always free" and "free
+// delivery" are, and "gluten free" says what a thing is made without.
+//
+// It had been a price only after a word that says nothing of its own, so
+// "Delivery is always free on every order" and "Every order ships free"
+// were shown for "Delivery is charged on every order". A "free" this
+// cannot tell is now read as a price, which can cost a faithful sentence
+// and cannot show a charge as free.
+func priceFree(before string) bool { return !notAPrice[fold(before)] }
+
 // reClause splits a text where a "not" stops reaching the words after it.
 var reClause = regexp.MustCompile(`[,.;:!?()]+`)
 
-// readWords are a text's informative words, the negations aside, each
-// under the word it says or says the opposite of.
+// readText is a text's informative words, the negations aside, each under
+// the word it says or says the opposite of, and its "not"s.
 //
-// "Un" and "non" make an opposite of a word of five letters or more, so
+// "Un" and "non" make an opposite of a word of four letters or more, so
 // "unavailable" is read as the opposite of "available" and "non-refundable"
 // and "nonrefundable" of "refundable". Only ever against the word itself:
-// "understand" is the opposite of "derstand", which no text says.
+// "understand" is the opposite of "derstand", which no text says. Four,
+// not five: "The Zqvel tap water is safe to drink" was shown for "unsafe to
+// drink", and "unpaid", "unsold" and "untrue" are as short.
 //
 // A word is negated when a "not" comes at most two words before it in the
 // same clause, as in "is not open" and "will not be open". "No, it is
 // closed" does not negate "closed": the "No" answers a question.
-func readWords(s string) map[string]read {
-	out := map[string]read{}
-	for _, clause := range reClause.Split(s, -1) {
+//
+// A word is under a "not" (read.by) when it is negated by it, or is the
+// first informative word after it, however far: the "no" of "no need to
+// order ahead" is about ordering. So "sell" is under the "not" of "do not
+// currently sell" and the "no" of "no longer sell", as "currently" and
+// "longer" are; held to the first word alone, each let "we sell" through.
+func readText(s string) reading {
+	out := reading{words: map[string]read{}}
+	for _, clause := range reClause.Split(inWords(s), -1) {
 		lastNot, not, opposeNext := -3, "", false
+		// pending is a "not" that has not yet been before a word.
+		pending, before, before2 := false, "", ""
+		negation := func(i int, word string) {
+			if pending {
+				out.bare = append(out.bare, not)
+			}
+			lastNot, not, pending = i, word, true
+			out.nots = append(out.nots, word)
+		}
 		for i, field := range strings.Fields(clause) {
 			// The tokeniser makes "isn't" a word of its own, "isnt", so a
 			// contraction is found in the text before it.
 			if reContraction.MatchString(field) {
-				lastNot, not = i, field
+				negation(i, field)
+				before, before2 = "", ""
 				continue
 			}
-			for _, raw := range search.Tokenise(field) {
+			for j, raw := range search.Tokenise(field) {
+				prev, prev2 := before, before2
+				before, before2 = raw, prev
 				if reNegation.FindString(raw) == raw {
-					lastNot, not = i, raw
+					negation(i, raw)
 					continue
 				}
 				if raw == "non" {
@@ -938,23 +1449,36 @@ func readWords(s string) map[string]read {
 				if stopword[t] || len([]rune(t)) < 3 {
 					continue
 				}
+				// "Free of charge" names no charge.
+				if prev2 == "free" && prev == "of" && opposites[t] == "free" {
+					continue
+				}
 				w, side := t, plainSide
+				if s, ok := sameAs[t]; ok {
+					w = s
+				}
 				switch o, ok := opposites[t]; {
+				case t == "free" && (j > 0 || !priceFree(prev)):
+					// Made without something, not given without charge.
+					w = "free-of"
 				case ok:
 					w, side = o, oppositeSide
 				case oppose:
 					side = oppositeSide
 				default:
 					for _, prefix := range []string{"un", "non"} {
-						if rest, ok := strings.CutPrefix(t, prefix); ok && len(rest) >= 5 {
+						if rest, ok := strings.CutPrefix(t, prefix); ok && len(rest) >= 4 {
 							w, side = rest, oppositeSide
 							break
 						}
 					}
 				}
-				r := out[w]
+				r := out.words[w]
 				if r.word == "" {
 					r.word = raw
+					if p, ok := written[raw]; ok {
+						r.word = p
+					}
 				}
 				if i-lastNot <= 2 {
 					r.negated |= side
@@ -964,8 +1488,17 @@ func readWords(s string) map[string]read {
 				} else {
 					r.plain |= side
 				}
-				out[w] = r
+				if i-lastNot <= 2 || pending {
+					r.by |= notBit(len(out.nots) - 1)
+				} else {
+					r.clear = true
+				}
+				pending = false
+				out.words[w] = r
 			}
+		}
+		if pending {
+			out.bare = append(out.bare, not)
 		}
 	}
 	return out

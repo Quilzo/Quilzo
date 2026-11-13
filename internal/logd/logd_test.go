@@ -221,6 +221,66 @@ func TestAnOversizedSubmissionIsRefused(t *testing.T) {
 	}
 }
 
+// The limit is applied as the submission is read, not after it. Submit
+// checks the size before sending, so only a raw connection reaches the
+// writer's own check, and that check ran once the whole line was in memory:
+// a submitter sending a line with no newline made the writer hold all of it,
+// hundreds of megabytes a connection, until its deadline.
+func TestASubmissionPastTheLimitIsRefusedBeforeItIsRead(t *testing.T) {
+	sock, _, path := writer(t)
+
+	// Just past the limit and never finished: refused at once, without a
+	// newline and without waiting out the deadline.
+	conn, err := net.Dial("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := conn.Write([]byte(strings.Repeat("x", MaxRecordBytes+1))); err != nil {
+		t.Fatal(err)
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(SubmitTimeout / 2))
+	var resp Response
+	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
+		t.Fatalf("no answer to a submission past the limit: %v", err)
+	}
+	if !strings.Contains(resp.Error, "too large") {
+		t.Errorf("answered %+v", resp)
+	}
+
+	// A client that keeps sending is cut off near the limit, not read for as
+	// long as it sends.
+	flood, err := net.Dial("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer flood.Close()
+	_ = flood.SetWriteDeadline(time.Now().Add(SubmitTimeout / 2))
+	chunk := []byte(strings.Repeat("x", 64<<10))
+	sent := 0
+	for sent < 16<<20 {
+		n, err := flood.Write(chunk)
+		sent += n
+		if err != nil {
+			break
+		}
+	}
+	if sent >= 16<<20 {
+		t.Errorf("the writer read %d bytes of one submission", sent)
+	}
+
+	// A record under the limit is still taken.
+	if _, err := Submit(sock, Submission{
+		Action: "publish", Resource: "/", Outcome: "success",
+		Principal: "dana", Kind: "human", Verified: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if events, err := audit.Read(path); err != nil || len(events) != 1 {
+		t.Errorf("%d entries, %v", len(events), err)
+	}
+}
+
 // The socket path is configuration. Deleting whatever happens to be there is
 // how a writer overwrites something it should not.
 func TestListenRefusesToRemoveSomethingThatIsNotASocket(t *testing.T) {

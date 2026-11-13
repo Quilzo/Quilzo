@@ -141,3 +141,85 @@ jobs:
         run: go test -count=1 ./...
       - name: The image must build and stay static
         run: docker build -t quilzo:ci .
+
+  # The race detector, on every pull request.
+  #
+  # The suite above runs without it, and until November 2026 nothing here
+  # ran it at all, so a data race passed every pull request: a test that
+  # drives two goroutines at the same field passes unless something is
+  # watching for it. The store, the audit log, logd, the public site and the
+  # agent executor share memory between goroutines, and a race there is a
+  # torn audit record or a page served from half of two publishes, which no
+  # assertion is written to look for.
+  #
+  # Over the packages that start goroutines, take locks, serve HTTP in their
+  # tests or run tests in parallel, found from the source on every run rather
+  # than listed here: a list is the thing a new concurrent package is missing
+  # from. -race instruments every package a test binary links, so what those
+  # packages call (MCP, webhooks, the schedule) is checked through them. The
+  # whole suite runs raced and shuffled every night (nightly.yml); this is
+  # the part worth a pull request's wait. workflows_test.go runs the search
+  # and fails if it misses a package that starts a goroutine or imports sync.
+  #
+  # The timeout is the race detector's: it makes cmd/quilzo several times
+  # slower, and go test's default of ten minutes a package would end the run
+  # with a panic that reads like a hang.
+  race:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: No data races in the concurrent packages
+        run: |
+          # go list failing fails the step, rather than racing fewer packages.
+          set -o pipefail
+          pkgs=$(go list -f '{{.ImportPath}} {{.Dir}}' ./... | while read -r pkg dir; do
+            if grep -qE '(^|[;{])[[:space:]]*go [A-Za-z_(]|"sync"|"sync/atomic"|\.Parallel\(\)|httptest\.New(TLS|Unstarted)?Server|time\.AfterFunc|io\.Pipe\(' "$dir"/*.go; then
+              echo "$pkg"
+            fi
+          done)
+          # An empty list would test the repository's root package and pass.
+          test -n "$pkgs" || { echo "found no concurrent packages, so the search is wrong"; exit 1; }
+          echo "$pkgs"
+          go test -race -count=1 -timeout=60m $pkgs
+
+  # Thirty seconds of fuzzing for every fuzz target, on every pull request.
+  #
+  # The targets were written and then only ever run as unit tests: go test
+  # without -fuzz replays the seed corpus and stops, so a parser that panics
+  # on the first input nobody thought of passed for as long as nobody thought
+  # of it. Several of them read bytes from outside before anybody has signed
+  # in (OIDC tokens, SAML's XML signatures, client addresses), which is where
+  # such input arrives first.
+  #
+  # The targets are found from the source each run, so one added later is
+  # fuzzed without anybody editing this file; workflows_test.go fails if the
+  # search misses one. One target at a time, because -fuzz takes one target
+  # in one package. A failure prints the input it wrote under testdata/fuzz,
+  # so it can be replayed from the log without the runner's disk.
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Every fuzz target survives thirty seconds
+        run: |
+          targets=$(grep -rE --include='*_test.go' --exclude-dir=testdata '^func Fuzz[A-Za-z0-9_]*\(' . |
+            sed -E 's#^\./(.*)/[^/]*:func (Fuzz[A-Za-z0-9_]*)\(.*#\1 \2#' | sort -u)
+          test -n "$targets" || { echo "found no fuzz targets, so the search is wrong"; exit 1; }
+          failed=0
+          while read -r dir name; do
+            echo "--- $dir $name"
+            if ! go test -run='^$' -fuzz="^${name}\$" -fuzztime=30s "./$dir"; then
+              failed=1
+              git ls-files --others --exclude-standard -- "$dir/testdata/fuzz/$name" | while read -r f; do
+                echo "$f:"
+                cat "$f"
+              done
+            fi
+          done <<< "$targets"
+          exit "$failed"

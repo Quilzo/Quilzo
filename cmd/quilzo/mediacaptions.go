@@ -46,8 +46,13 @@ func mediaCaptions(root string, args []string) error {
 	asDefault := fs.Bool("default", false,
 		"show this one without being asked")
 	remove := fs.String("remove", "", "take a track off instead")
-	rest, flags := leadingArgs(args, 2)
-	if err := fs.Parse(flags); err != nil {
+	// The flags wherever they are: before the ids, between them, after
+	// them or on both sides. The ids were read from the front only, so with
+	// the flags first, as most commands take them, the command saw no ids
+	// and answered with its usage line; and then, with flags after the ids
+	// too, it took those for ids.
+	rest, err := parseAnywhere(fs, args)
+	if err != nil {
 		return err
 	}
 
@@ -57,7 +62,10 @@ func mediaCaptions(root string, args []string) error {
 	}
 
 	if id := strings.TrimSpace(*remove); id != "" {
-		if len(rest) < 1 {
+		// One video. A second word was not looked at, so `media captions
+		// VIDEO OTHER --remove TRACK` took the track off the first and said
+		// nothing of the other.
+		if len(rest) != 1 {
 			return fmt.Errorf("usage: quilzo media captions VIDEO --remove TRACK")
 		}
 		return removeTrack(root, rest[0], id)

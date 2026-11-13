@@ -49,13 +49,9 @@ func sandboxWrap() func([]string) []string {
 	// extension is handed its input on stdin and answers on stdout, so it has
 	// no reason to open the content store, and the store is where the tokens
 	// and the key file live.
-	allow := []string{"/usr", "/lib", "/lib64", "/bin", "/sbin", "/etc"}
-	var reads []string
-	for _, p := range allow {
-		if _, err := os.Stat(p); err == nil {
-			reads = append(reads, p)
-		}
-	}
+	// Of /etc, only what a C library reads there (sandbox.SystemReads):
+	// the whole directory was granted, and as root that was /etc/shadow.
+	reads := sandbox.SystemReadsHere()
 
 	return func(argv []string) []string {
 		out := []string{self, sandboxCmd}

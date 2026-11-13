@@ -117,11 +117,14 @@ func cmdResearch(root string, args []string) error {
 	usage := func(u string) error { return errors.New("usage: quilzo research " + u) }
 	switch args[0] {
 	case "list":
+		if err := noArguments(rest); err != nil {
+			return err
+		}
 		return researchList(root, caller())
 	case "ideas":
 		pos, flags := leadingArgs(rest, 1)
 		var o ideasOptions
-		if err := ideaFlagSet(&o).Parse(flags); err != nil {
+		if err := parseFlags(ideaFlagSet(&o), flags, &pos, 1); err != nil {
 			return err
 		}
 		if len(pos) != 1 {
@@ -132,7 +135,7 @@ func cmdResearch(root string, args []string) error {
 		pos, flags := leadingArgs(rest, 1)
 		fs := flag.NewFlagSet("research new", flag.ContinueOnError)
 		question := fs.String("question", "", "the question the project answers")
-		if err := fs.Parse(flags); err != nil {
+		if err := parseFlags(fs, flags, &pos, 1); err != nil {
 			return err
 		}
 		if len(pos) != 1 || *question == "" {
@@ -152,7 +155,8 @@ func cmdResearch(root string, args []string) error {
 		pos, flags := leadingArgs(rest, len(rest))
 		fs := flag.NewFlagSet("research add", flag.ContinueOnError)
 		to := fs.String("to", "", "the folder in the project to put them in")
-		if err := fs.Parse(flags); err != nil {
+		// As many files as are given, so every word may be a name.
+		if err := parseFlags(fs, flags, &pos, len(rest)); err != nil {
 			return err
 		}
 		if len(pos) < 2 {
@@ -167,7 +171,7 @@ func cmdResearch(root string, args []string) error {
 		pos, flags := leadingArgs(rest, 2)
 		fs := flag.NewFlagSet("research plan", flag.ContinueOnError)
 		why := fs.String("why", "", "why a registered plan changes")
-		if err := fs.Parse(flags); err != nil {
+		if err := parseFlags(fs, flags, &pos, 2); err != nil {
 			return err
 		}
 		if len(pos) != 2 {
@@ -206,7 +210,7 @@ func cmdResearch(root string, args []string) error {
 		var inputs multiFlag
 		fs.Var(&inputs, "input", "a file in the project the script reads (repeat for each)")
 		idea := fs.String("idea", "", "the idea this computation executes, by id (quilzo research ideas lists them)")
-		if err := fs.Parse(flags); err != nil {
+		if err := parseFlags(fs, flags, &pos, 2); err != nil {
 			return err
 		}
 		if len(pos) != 2 {
@@ -238,7 +242,8 @@ func cmdResearch(root string, args []string) error {
 		pos, flags := leadingArgs(rest, len(rest))
 		fs := flag.NewFlagSet("research claim", flag.ContinueOnError)
 		run := fs.String("run", "", "the computation the numbers come from")
-		if err := fs.Parse(flags); err != nil {
+		// As many values as are given, so every word may be a name.
+		if err := parseFlags(fs, flags, &pos, len(rest)); err != nil {
 			return err
 		}
 		if len(pos) < 1 || *run == "" {
@@ -253,7 +258,7 @@ func cmdResearch(root string, args []string) error {
 		pos, flags := leadingArgs(rest, 1)
 		fs := flag.NewFlagSet("research search", flag.ContinueOnError)
 		n := fs.Int("limit", 10, "how many")
-		if err := fs.Parse(flags); err != nil {
+		if err := parseFlags(fs, flags, &pos, 1); err != nil {
 			return err
 		}
 		if len(pos) != 1 {
@@ -281,7 +286,7 @@ func cmdResearch(root string, args []string) error {
 		pos, flags := leadingArgs(rest, 2)
 		fs := flag.NewFlagSet("research cite", flag.ContinueOnError)
 		key := fs.String("key", "", "how the report cites it, as [@KEY]")
-		if err := fs.Parse(flags); err != nil {
+		if err := parseFlags(fs, flags, &pos, 2); err != nil {
 			return err
 		}
 		if len(pos) != 2 {
@@ -324,6 +329,27 @@ func cmdResearch(root string, args []string) error {
 		if err != nil {
 			return err
 		}
+		// The findings as one document under --json, refused as below when
+		// one is a problem. This printed them whatever was asked for, so a
+		// pipeline checking a report before it went out got sentences to
+		// parse, and exit 0 with them when there was nothing wrong.
+		if w.Mode == out.JSON {
+			type finding struct {
+				Problem bool   `json:"problem"`
+				Line    int    `json:"line,omitempty"`
+				What    string `json:"what"`
+			}
+			rows := make([]finding, 0, len(fs))
+			for _, f := range fs {
+				rows = append(rows, finding{f.Problem, f.Line, f.What})
+			}
+			n := research.Problems(fs)
+			w.JSON(map[string]any{"findings": rows, "problems": n})
+			if n > 0 {
+				return fmt.Errorf("%d problem(s): every number linked, every citation resolved and supporting its sentence", n)
+			}
+			return nil
+		}
 		for _, f := range fs {
 			mark := "note "
 			if f.Problem {
@@ -344,7 +370,7 @@ func cmdResearch(root string, args []string) error {
 		pos, flags := leadingArgs(rest, 1)
 		fs := flag.NewFlagSet("research report", flag.ContinueOnError)
 		outPath := fs.String("o", "", "write it to a file")
-		if err := fs.Parse(flags); err != nil {
+		if err := parseFlags(fs, flags, &pos, 1); err != nil {
 			return err
 		}
 		if len(pos) != 1 {
@@ -443,6 +469,16 @@ func researchShow(root, name string, caller *Caller) error {
 	if err != nil {
 		return err
 	}
+	runs, _ := researchStore(root).Runs(name)
+	// The project, its computations and how many problems its report has,
+	// as one document under --json. This printed its prose whatever was
+	// asked for, so a script reading a project got sentences to parse.
+	if runs == nil {
+		runs = []research.Run{}
+	}
+	if w.JSON(map[string]any{"project": p, "runs": runs, "problems": research.Problems(fs)}) {
+		return nil
+	}
 	fmt.Printf("%s\n  %s\n", p.Name, p.Question)
 	switch {
 	case p.Registered():
@@ -455,7 +491,6 @@ func researchShow(root, name string, caller *Caller) error {
 	for _, a := range p.Amendments {
 		fmt.Printf("  amended %s by %s: %s\n", a.At.Format("2 Jan 2006"), a.By, a.Why)
 	}
-	runs, _ := researchStore(root).Runs(name)
 	if len(runs) > 0 {
 		fmt.Println("computations:")
 	}

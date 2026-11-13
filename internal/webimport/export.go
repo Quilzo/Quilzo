@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/quilzo/quilzo/internal/export"
 )
 
 // A site brought from the file its last home exported.
@@ -63,23 +65,33 @@ func Detect(head []byte) string {
 
 // -- WordPress ----------------------------------------------------------------
 
-type wxrDoc struct {
+// WordPressExport is a WordPress export (WXR) as it is written, read here
+// for every reader of one: `quilzo site import`, which makes a site of it
+// (FromWordPress), and `quilzo import`, which makes pages of it
+// (internal/importer). Each had a parser of its own, and they named the same
+// pages differently: on WordPress's default plain links (/?page_id=11) site
+// import named every page alike and refused the export, while quilzo import
+// read it.
+type WordPressExport struct {
 	Channel struct {
-		Title       string      `xml:"title"`
-		Link        string      `xml:"link"`
-		Description string      `xml:"description"`
-		BaseSite    string      `xml:"base_site_url"`
-		Authors     []wxrAuthor `xml:"author"`
-		Items       []wxrItem   `xml:"item"`
+		Title       string            `xml:"title"`
+		Link        string            `xml:"link"`
+		Description string            `xml:"description"`
+		BaseSite    string            `xml:"base_site_url"`
+		Authors     []WordPressAuthor `xml:"author"`
+		Items       []WordPressItem   `xml:"item"`
 	} `xml:"channel"`
 }
 
-type wxrAuthor struct {
+// WordPressAuthor is an author an export names.
+type WordPressAuthor struct {
 	Login   string `xml:"author_login"`
 	Display string `xml:"author_display_name"`
 }
 
-type wxrItem struct {
+// WordPressItem is one item of an export: a page, a post, an attachment, a
+// menu entry or one of WordPress's internals.
+type WordPressItem struct {
 	Title   string `xml:"title"`
 	Link    string `xml:"link"`
 	Creator string `xml:"creator"`
@@ -112,7 +124,7 @@ type wxrItem struct {
 	} `xml:"comment"`
 }
 
-func (it wxrItem) meta(key string) string {
+func (it WordPressItem) meta(key string) string {
 	for _, m := range it.Meta {
 		if m.Key == key {
 			return strings.TrimSpace(m.Value)
@@ -121,7 +133,7 @@ func (it wxrItem) meta(key string) string {
 	return ""
 }
 
-func (it wxrItem) encoded(space string) string {
+func (it WordPressItem) encoded(space string) string {
 	for _, e := range it.Encoded {
 		if strings.Contains(e.XMLName.Space, space) {
 			return e.Value
@@ -130,20 +142,80 @@ func (it wxrItem) encoded(space string) string {
 	return ""
 }
 
+// Content is the item's content, as HTML (content:encoded).
+func (it WordPressItem) Content() string { return it.encoded("content") }
+
+// Excerpt is the item's excerpt (excerpt:encoded).
+func (it WordPressItem) Excerpt() string { return it.encoded("excerpt") }
+
+// PageName is the name the item's page is given, by every reader of an
+// export: WordPress's own slug for it (post_name); else its link's path,
+// when that names a page rather than the home with a query, as the plain
+// links of a fresh install do (/?page_id=11); else its title. Each is made a
+// page name by export.Slug, the rule every page an import names is held to,
+// and a path as a crawled page's is (pageName). It is "" for an item with
+// none of the three.
+//
+// Unifying that rule with sheet.Slug, which a sheet's rows and a crawled
+// page's address are named by, changes names `quilzo import` gives today
+// ("Naïve café" is nave-caf by one and na-ve-caf by the other), and is the
+// owner's to decide.
+func (it WordPressItem) PageName() string {
+	if n := export.Slug(it.Name); n != "" {
+		return n
+	}
+	if u, err := url.Parse(strings.TrimSpace(it.Link)); err == nil && strings.Trim(u.Path, "/") != "" {
+		if n := pageName(u); n != "index" && n != "page" {
+			return n
+		}
+	}
+	return export.Slug(html.UnescapeString(it.Title))
+}
+
+// ReadWordPress reads a WordPress export, and refuses one that does not
+// parse as one (NotWordPress). How large an export may be is the reader's
+// to bound.
+func ReadWordPress(body []byte) (*WordPressExport, error) {
+	var doc WordPressExport
+	dec := xml.NewDecoder(bytes.NewReader(body))
+	// Strict, and with no entity table: an entity the document declares is
+	// an error, never text expanded from somewhere else (see
+	// internal/importer for the attack this is). A parser that passes &xxe;
+	// through is a parser handing the payload to whatever reads its output
+	// next.
+	dec.Strict = true
+	if err := dec.Decode(&doc); err != nil {
+		return nil, NotWordPress(err)
+	}
+	return &doc, nil
+}
+
+// NotWordPress is why a file that does not parse as a WordPress export is
+// refused, said the same way by every reader of one.
+//
+// An entity the file declares is named for what it is. `quilzo import` said
+// so, and `quilzo site import` said only "invalid character entity" about the
+// same file, which reads as a broken export rather than as the attack that hit
+// WordPress twice (CVE-2021-29447, and again in 5.7).
+func NotWordPress(err error) error {
+	if strings.Contains(err.Error(), "invalid character entity") {
+		return fmt.Errorf("the export declares XML entities, which are "+
+			"not resolved here. If this file is a legitimate export, the "+
+			"entities are being used for text and can be replaced; if it is "+
+			"not, this is the attack that has hit WordPress twice: %w", err)
+	}
+	return fmt.Errorf("this does not read as a WordPress export: %w", err)
+}
+
 // FromWordPress reads a WordPress export (WXR): its published pages and
 // posts, their main pictures, its main menu, and what it left behind.
 func FromWordPress(body []byte, origin string) (*Site, error) {
 	if len(body) > MaxExportBytes {
 		return nil, fmt.Errorf("the export is larger than %d MB", MaxExportBytes>>20)
 	}
-	var doc wxrDoc
-	dec := xml.NewDecoder(bytes.NewReader(body))
-	// Strict, and with no entity table: an entity the document declares is
-	// an error, never text expanded from somewhere else (see
-	// internal/importer for the attack this is).
-	dec.Strict = true
-	if err := dec.Decode(&doc); err != nil {
-		return nil, fmt.Errorf("this does not read as a WordPress export: %w", err)
+	doc, err := ReadWordPress(body)
+	if err != nil {
+		return nil, err
 	}
 	ch := doc.Channel
 	home, err := url.Parse(strings.TrimSpace(ch.Link))
@@ -231,17 +303,19 @@ func FromWordPress(body []byte, origin string) (*Site, error) {
 		if err != nil || link.Host == "" {
 			link = home.ResolveReference(&url.URL{Path: "/" + it.Name + "/"})
 		}
-		content, n := wpContent(it.encoded("content"))
+		content, n := wpContent(it.Content())
 		shortcodes += n
 		read := Read([]byte("<main>"+content+"</main>"), link)
 		if it.Type == "page" {
-			pg := Page{URL: link, Title: title, Blocks: append([]Block{{Kind: "h1", Text: title}}, read.Blocks...),
-				Left: read.Left}
-			if excerpt := plainText(it.encoded("excerpt")); excerpt != "" {
+			pg := Page{URL: link, Name: it.PageName(), Title: title,
+				Blocks: append([]Block{{Kind: "h1", Text: title}}, read.Blocks...), Left: read.Left}
+			if excerpt := plainText(it.Excerpt()); excerpt != "" {
 				pg.Description = clip(excerpt, 300)
 			}
 			pages = append(pages, pg)
-			if homeAt < 0 && (strings.TrimSuffix(link.Path, "/") == strings.TrimSuffix(home.Path, "/") ||
+			// The home's address, without a query: on plain links every
+			// page is at the home's path, and the first was taken for it.
+			if homeAt < 0 && ((link.RawQuery == "" && strings.TrimSuffix(link.Path, "/") == strings.TrimSuffix(home.Path, "/")) ||
 				it.Name == "home" || strings.EqualFold(title, "home")) {
 				homeAt = len(pages) - 1
 			}
@@ -262,7 +336,7 @@ func FromWordPress(body []byte, origin string) (*Site, error) {
 		if m := day(it.Modified); m > pst.Published {
 			pst.Revised = m
 		}
-		pst.Summary = clip(plainText(it.encoded("excerpt")), 300)
+		pst.Summary = clip(plainText(it.Excerpt()), 300)
 		if a, ok := attachments[it.meta("_thumbnail_id")]; ok {
 			if u, err := link.Parse(a.url); err == nil {
 				pst.Image, pst.Alt = u, a.alt

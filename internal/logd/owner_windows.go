@@ -26,3 +26,11 @@ func checkOwner(_ fs.FileInfo, logPath string, _ int) (bool, string) {
 			"duties that has not been checked would be worse than saying so",
 		logPath)
 }
+
+// Who can read a key is the same question as who owns the log, and is
+// answered the same way: not known here, and said, rather than a key
+// reported as the writer's alone when nobody has checked.
+func keyHeldByOthers(_ fs.FileInfo, path string, _ int) string {
+	return fmt.Sprintf("this build cannot tell who can read %s: Windows expresses that through "+
+		"ACLs rather than a uid and a mode", path)
+}

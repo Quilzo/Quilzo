@@ -312,3 +312,34 @@ func clone(t *testing.T, c Card) Card {
 }
 
 var _ = strings.TrimSpace
+
+// The card leads with what the site says it is.
+//
+// Its description was one fixed paragraph about a merkle store, the same on
+// every deployment, so an agent choosing between two cards read two identical
+// descriptions and learnt nothing about either site. The site's own sentence
+// comes first now, and the governance sentence after it, because that is
+// what the extension on the card is.
+func TestTheCardLeadsWithTheSitesOwnSentence(t *testing.T) {
+	o := opts()
+	o.Description = "An independent games studio making fast, bright games set after dark"
+	c := From(map[string]agent.Manifest{"support": retrieval(t)}, known(), o)
+	if !strings.HasPrefix(c.Description, o.Description+". Content held in a merkle store") {
+		t.Errorf("the card says %q", c.Description)
+	}
+	if !strings.Contains(c.Description, GovernanceExtension) {
+		t.Error("the governance sentence went missing")
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	// A sentence that already ends is not given a second full stop.
+	o.Description = "Night games, made in Leeds!"
+	if c := From(nil, known(), o); !strings.HasPrefix(c.Description, "Night games, made in Leeds! Content") {
+		t.Errorf("the card says %q", c.Description)
+	}
+	// And a site with no sentence keeps the card it had.
+	if c := From(nil, known(), opts()); !strings.HasPrefix(c.Description, "Content held in a merkle store") {
+		t.Errorf("with no description the card says %q", c.Description)
+	}
+}

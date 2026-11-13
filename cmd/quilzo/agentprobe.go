@@ -100,7 +100,7 @@ func agentProbe(args []string) error {
 	fs := flag.NewFlagSet("probe", flag.ContinueOnError)
 	file := fs.String("file", "-",
 		"a JSON question; - reads standard input")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 

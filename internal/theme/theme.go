@@ -88,6 +88,27 @@ type Token struct {
 	Group string
 }
 
+// follows names the token another takes its value from when nobody set it.
+//
+// The scrim is the page background unless somebody chose a veil of another
+// colour, and a default written as a second hex would stop following the
+// moment the background changed. A table beside the list rather than a
+// field on Token, because every token is written positionally and a sixth
+// field would be fifty lines changed to say nothing about forty-nine of them.
+var follows = map[string]string{"scrim": "surface"}
+
+// optIn are the tokens added after sites already existed.
+//
+// Each is written into the stylesheet only when the site or its style sets
+// it, so a site that never asked for a glow or a backdrop is served the
+// token block it was served before, byte for byte. The rules that read one
+// carry the same default as a fallback — var(--scrim-strength, 82%) — and a
+// test holds the two equal.
+var optIn = map[string]bool{"glow": true, "scrim": true, "scrim-strength": true}
+
+// OptIn reports whether a token is written out only when it is set.
+func OptIn(name string) bool { return optIn[name] }
+
 // Pair is a foreground token that has to stay legible against a background one.
 //
 // Written out rather than inferred from the naming convention. The convention
@@ -207,9 +228,26 @@ var tokens = []Token{
 	{"border", Length, "1px", "", "hairline thickness; 0 removes every card and table border", "shape"},
 
 	// -- style ----------------------------------------------------------------
-	{"style", Choice, "expressive", "", "the overall look: expressive (Material 3 Expressive, the default), classic, glass, editorial, bold, soft or business; it sets corners, density and type, and never colour", "style"},
+	{"style", Choice, "expressive", "", "the overall look: expressive (Material 3 Expressive, the default), classic, glass, editorial, bold, soft, business or neon; it sets corners, density and type, and never colour", "style"},
 	{"motion", Choice, "subtle", "", "how much moves: subtle, expressive (springy) or none; reduced motion is honoured whatever is chosen", "style"},
 	{"icons", Choice, "rounded", "", "how every icon is drawn: rounded, outlined or sharp, each plain or filled", "style"},
+	// The three below came later than the rest, and each is a choice
+	// rather than a value: the stylesheet does not read them, they decide
+	// which rules are in it (see Preset), so none of them is a property.
+	{Name: "corner", Kind: Choice, Light: "round", Summary: "how corners are made: round (the radius above, the default) or chamfer (cut off at an angle, as the neon style has them); a focused control shows its whole ring either way", Group: "style"},
+	{Name: "scheme", Kind: Choice, Light: "both", Summary: "which colour schemes the site is drawn in: both (it follows the reader's setting, the default), dark or light; a site drawn in one scheme is served and checked in that one, whatever the reader's setting", Group: "style"},
+
+	// -- glow and backdrops ---------------------------------------------------
+	//
+	// Opt-in, all three: a site that never asked for a glow or a backdrop
+	// is served the stylesheet it had before they existed.
+	{Name: "glow", Kind: Length, Light: "0px", Summary: "how far the neon style's glow spreads round headings and filled buttons; 0 turns it off, and no other style draws one", Group: "effects"},
+	// The veil between a backdrop picture or video and the words on it. Its
+	// own colour rather than an opacity on the page, so the contrast check
+	// can compute the worst case: the veil over the darkest and the
+	// lightest picture it could ever cover.
+	{Name: "scrim", Kind: Colour, Light: "#f8f9fa", Dark: "#121414", Summary: "the veil laid over a backdrop picture or video so the words on it stay readable; it is the page background unless set", Group: "effects"},
+	{Name: "scrim-strength", Kind: Length, Light: "82%", Summary: "how opaque that veil is, as a percentage: 100% hides the backdrop, and text on it is checked against the worst picture it could cover", Group: "effects"},
 }
 
 // stacks are the built-in font stacks.
@@ -303,7 +341,8 @@ type Theme struct {
 type Family struct {
 	// Name is the family as CSS refers to it, taken from the filename.
 	Name string
-	// Href is where the site serves it, e.g. /fonts/Satoshi.woff2.
+	// Href is where the site serves it, e.g. /fonts/Satoshi.woff2. A name
+	// ending .woff is a WOFF 1.0 face and is announced as one.
 	Href string
 	// Weight is the weight or variable range, e.g. "400" or "100 900".
 	Weight string
@@ -426,6 +465,9 @@ func (t *Theme) validate(tok Token, value string) error {
 			return fmt.Errorf("%q is not a length. A number with rem, em, px, "+
 				"ch or %% — no calc(), no var()", value)
 		}
+		if err := lengthBounds(tok.Name, value); err != nil {
+			return err
+		}
 	case Ratio:
 		n, err := strconv.ParseFloat(value, 64)
 		if err != nil || !reRatio.MatchString(value) {
@@ -452,11 +494,51 @@ func (t *Theme) validate(tok Token, value string) error {
 			}
 		}
 		return fmt.Errorf("%q is not a built-in stack and this site does not "+
-			"serve a font by that name. Put the .woff2 in templates/fonts/ "+
+			"serve a font by that name. Put the .woff2 or .woff in templates/fonts/ "+
+			"(quilzo theme font add FILE makes one from a .ttf or .otf) "+
 			"and it becomes available under its filename. Built in: %s",
 			value, strings.Join(StackNames(), ", "))
 	}
 	return nil
+}
+
+// lengthBounds holds the two lengths whose sensible range is narrower than
+// the pattern's.
+//
+// A glow is a blur radius, so a percentage or a measure in characters means
+// nothing and a negative one is not a glow; past four rem it is a fog over
+// the words it was meant to light. The veil is a proportion of opacity, so
+// only a percentage says it, and a hundred is the most there is.
+func lengthBounds(name, value string) error {
+	n, unit := splitNumber(value)
+	switch name {
+	case "glow":
+		if unit == "%" || unit == "ch" || n < 0 {
+			return fmt.Errorf("%q is not a glow. A blur in px, rem or em, at "+
+				"least 0 (which turns it off)", value)
+		}
+		if (unit == "px" || unit == "") && n > 64 || (unit == "rem" || unit == "em") && n > 4 {
+			return fmt.Errorf("%q is more glow than there are words under it. "+
+				"At most 64px or 4rem", value)
+		}
+	case "scrim-strength":
+		if unit != "%" || n < 0 || n > 100 {
+			return fmt.Errorf("%q is not a strength. A percentage from 0%% to "+
+				"100%%; the veil is checked against the worst picture it covers, "+
+				"so a weak one is refused where it is used", value)
+		}
+	}
+	return nil
+}
+
+// splitNumber cuts a length into its number and its unit.
+func splitNumber(value string) (float64, string) {
+	i := 0
+	for i < len(value) && (value[i] == '-' || value[i] == '.' || (value[i] >= '0' && value[i] <= '9')) {
+		i++
+	}
+	n, _ := strconv.ParseFloat(value[:i], 64)
+	return n, value[i:]
 }
 
 // value resolves a token in one scheme, falling back to the shipped default.
@@ -470,10 +552,26 @@ func (t *Theme) value(tok Token, dark bool) string {
 			return v
 		}
 	}
+	if name := follows[tok.Name]; name != "" {
+		if from, ok := Lookup(name); ok {
+			return t.value(from, dark)
+		}
+	}
 	if dark && tok.Dark != "" {
 		return tok.Dark
 	}
 	return tok.Light
+}
+
+// isSet reports whether the site or its style set a token in either scheme,
+// which is what decides whether an opt-in token is written out at all.
+func (t *Theme) isSet(name string) bool {
+	if t == nil {
+		return false
+	}
+	_, light := t.light[name]
+	_, dark := t.dark[name]
+	return light || dark
 }
 
 // Value resolves one token by name, for use by a screen showing what is in
@@ -507,15 +605,16 @@ func (t *Theme) Overrides() map[string]string {
 
 // Check reports contrast failures in both schemes.
 //
-// Both, always. A site checked in light and served in dark to half its readers
-// is checked for half its readers, and the dark palette is the one people get
-// wrong — it is the one that gets less looking at.
+// Both, always — unless the site is drawn in one. A site checked in light and
+// served in dark to half its readers is checked for half its readers, and the
+// dark palette is the one people get wrong, because it is the one that gets
+// less looking at. A site whose scheme is dark is served its dark palette
+// whatever the reader's setting (see CSS), so the dark scheme is every scheme
+// it has and checking a light one nobody is served would refuse a site over
+// colours no reader sees.
 func (t *Theme) Check() []Finding {
 	var out []Finding
-	for _, scheme := range []struct {
-		name string
-		dark bool
-	}{{"light", false}, {"dark", true}} {
+	for _, scheme := range t.checkedSchemes() {
 		for _, p := range pairs {
 			fg, okF := Lookup(p.Foreground)
 			bg, okB := Lookup(p.Background)
@@ -536,8 +635,14 @@ func (t *Theme) Check() []Finding {
 			})
 		}
 	}
+	out = append(out, t.checkNeon()...)
 	// A colour changed in one scheme and not the other is legal and is almost
-	// always an oversight, so it is said out loud without blocking.
+	// always an oversight, so it is said out loud without blocking. Not for a
+	// site drawn in one scheme: there it is the whole point, and saying so
+	// twenty-three times buried anything else worth reading.
+	if t.Scheme() != "both" {
+		return out
+	}
 	for name := range t.light {
 		tok, ok := Lookup(name)
 		if !ok || tok.Kind != Colour {

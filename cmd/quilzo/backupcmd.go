@@ -142,9 +142,18 @@ func cmdBackup(root string, args []string) error {
 	caller := resolveCaller(root, flagToken)
 	switch args[0] {
 	case "key":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		k, err := backup.NewKey()
 		if err != nil {
 			return err
+		}
+		// The key as one document under --json. This printed its paragraph
+		// whatever was asked for, so a script making a key had to cut the
+		// one thing it needed out of prose.
+		if w.JSON(map[string]string{"key": backup.EncodeKey(k)}) {
+			return nil
 		}
 		fmt.Printf("%s\n\nThis is the backup key. It is shown once and kept nowhere here: keep it where the backups are not,\n"+
 			"and give it to Quilzo as %s or in the file %s names. Without it no backup can be read.\n",
@@ -154,11 +163,16 @@ func cmdBackup(root string, args []string) error {
 		fs := flag.NewFlagSet("backup create", flag.ContinueOnError)
 		templates := fs.String("templates", "templates", "the layouts beside the store")
 		rest, flags := leadingArgs(args[1:], 1)
-		if err := fs.Parse(flags); err != nil {
+		if err := parseFlags(fs, flags, &rest, 1); err != nil {
 			return err
 		}
 		if len(rest) != 1 {
 			return errors.New("usage: quilzo backup create FILE [--templates DIR]")
+		}
+		// A backup of a --root that is no store, an unmounted volume's, was
+		// "backed up and checked: 0 files".
+		if err := needStore(root); err != nil {
+			return err
 		}
 		if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
 			return err
@@ -206,7 +220,7 @@ func cmdBackup(root string, args []string) error {
 		fs := flag.NewFlagSet("backup restore", flag.ContinueOnError)
 		into := fs.String("into", "", "an empty directory to restore into")
 		rest, flags := leadingArgs(args[1:], 1)
-		if err := fs.Parse(flags); err != nil {
+		if err := parseFlags(fs, flags, &rest, 1); err != nil {
 			return err
 		}
 		if len(rest) != 1 || *into == "" {

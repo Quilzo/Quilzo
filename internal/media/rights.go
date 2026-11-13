@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Who may use this picture, and until when.
@@ -108,10 +110,124 @@ func (r Rights) Lapsing(now time.Time, within time.Duration) bool {
 	return time.Unix(r.Until, 0).UTC().Sub(now) <= within
 }
 
+// LicenceID is the identifier a licence is recorded by: the SPDX id of a
+// common licence given by its address or in another case, and anything
+// else as it was written.
+//
+// A licence is mostly copied from where the work was found, and that is an
+// address: a pack of pictures links to the CC0 deed. The address was
+// refused, "use a short name", while a sentence of plain words was taken,
+// so the one value that named the licence exactly was the one that could
+// not be recorded. Read as its id, it groups with every other CC0 file.
+// Only the Creative Commons licences and deeds, without a country's port,
+// and SPDX's own pages: an address this does not know stays as it is and is
+// refused as before, since guessing at one would record a licence nobody
+// granted.
+func LicenceID(s string) string {
+	v := strings.TrimSpace(s)
+	if id, ok := spdxCase[strings.ToLower(v)]; ok {
+		return id
+	}
+	u := strings.ToLower(v)
+	for _, scheme := range []string{"https://", "http://"} {
+		u = strings.TrimPrefix(u, scheme)
+	}
+	u = strings.TrimPrefix(u, "www.")
+	if i := strings.IndexAny(u, "?#"); i >= 0 {
+		u = u[:i]
+	}
+	parts := strings.Split(strings.Trim(u, "/"), "/")
+	switch {
+	case len(parts) >= 4 && parts[0] == "creativecommons.org" && parts[1] == "publicdomain" &&
+		parts[2] == "zero" && parts[3] == "1.0" && ccRest(parts[4:]):
+		return "CC0-1.0"
+	case len(parts) >= 4 && parts[0] == "creativecommons.org" && parts[1] == "licenses" &&
+		ccKinds[parts[2]] && ccVersions[parts[3]] && ccRest(parts[4:]):
+		return "CC-" + strings.ToUpper(parts[2]) + "-" + parts[3]
+	case len(parts) == 3 && parts[0] == "spdx.org" && parts[1] == "licenses":
+		id := strings.TrimSuffix(strings.TrimSuffix(parts[2], ".html"), ".json")
+		if known, ok := spdxCase[id]; ok {
+			return known
+		}
+		// SPDX's pages are named by the id in its own case, so the id is
+		// the last part of the address as it was written.
+		segs := strings.Split(strings.TrimRight(v, "/"), "/")
+		raw := strings.TrimSuffix(strings.TrimSuffix(segs[len(segs)-1], ".html"), ".json")
+		if strings.EqualFold(raw, id) && reSPDX.MatchString(raw) {
+			return raw
+		}
+	}
+	return v
+}
+
+// ccRest reports whether what follows a Creative Commons licence's version
+// is a page of that licence (its deed, in a language, or its legal code)
+// rather than a country's port of it, which has an id of its own.
+func ccRest(rest []string) bool {
+	switch len(rest) {
+	case 0:
+		return true
+	case 1:
+		return rest[0] == "legalcode" || strings.HasPrefix(rest[0], "deed") ||
+			strings.HasPrefix(rest[0], "legalcode.")
+	}
+	return false
+}
+
+var (
+	ccKinds    = map[string]bool{"by": true, "by-sa": true, "by-nd": true, "by-nc": true, "by-nc-sa": true, "by-nc-nd": true}
+	ccVersions = map[string]bool{"1.0": true, "2.0": true, "2.5": true, "3.0": true, "4.0": true}
+	reSPDX     = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.+-]{0,63}$`)
+)
+
+// spdxCase is the SPDX ids of the licences pictures, sound and video are
+// most often published under, by their lower case, so "cc0-1.0" is
+// recorded as the CC0-1.0 every other file says.
+var spdxCase = func() map[string]string {
+	out := map[string]string{"cc0-1.0": "CC0-1.0"}
+	for kind := range ccKinds {
+		for version := range ccVersions {
+			id := "CC-" + strings.ToUpper(kind) + "-" + version
+			out[strings.ToLower(id)] = id
+		}
+	}
+	return out
+}()
+
+// licenceAddressIn finds a licence's address among the words of a longer
+// value: a word whose host is creativecommons.org or spdx.org, with or
+// without its scheme and "www.", less the punctuation a sentence puts round
+// it. Each word is compared from its start, so a host that only ends in one
+// of those names is not taken for it.
+func licenceAddressIn(s string) string {
+	for _, w := range strings.Fields(s) {
+		w = strings.Trim(w, `"'()<>[].,;:`)
+		host := strings.ToLower(w)
+		for _, scheme := range []string{"https://", "http://"} {
+			host = strings.TrimPrefix(host, scheme)
+		}
+		host = strings.TrimPrefix(host, "www.")
+		if strings.HasPrefix(host, "creativecommons.org/") || strings.HasPrefix(host, "spdx.org/") {
+			return w
+		}
+	}
+	return ""
+}
+
 // Validate refuses rights that cannot mean what they appear to.
 func (r Rights) Validate(now time.Time) error {
 	lic := strings.TrimSpace(r.Licence)
 	if lic != "" && !reLicence.MatchString(lic) {
+		// A sentence with a licence's address in it: say which licence, so
+		// that recording it is one word away.
+		if m := licenceAddressIn(lic); m != "" {
+			if id := LicenceID(m); id != m {
+				return fmt.Errorf(
+					"%q is not a licence identifier. That address is %s: record the "+
+						"licence as %s and put the rest in the note",
+					truncate(lic, 40), id, id)
+			}
+		}
 		return fmt.Errorf(
 			"%q is not a licence identifier. Use a short name — an SPDX id, "+
 				"a supplier, \"commissioned\" — and put the terms in the note; "+
@@ -177,9 +293,4 @@ func (r Rights) UntilTime() (time.Time, bool) {
 	return time.Unix(r.Until, 0).UTC(), true
 }
 
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
-}
+func truncate(s string, n int) string { return plaintext.Clip(s, n, "…") }

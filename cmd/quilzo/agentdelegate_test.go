@@ -12,6 +12,8 @@ import (
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 // boss hands pages to the agents it names, and handedWriter writes them.
@@ -328,12 +330,13 @@ func TestAHandOffTheReviewerRefusesWaitsForAPerson(t *testing.T) {
 	// Named for the person who decides it, as everything waiting is: a
 	// hand-off has no capability and no tool, which were all a waiting
 	// action was named by, so it was listed, and logged once decided, as
-	// nothing.
+	// nothing. The list says, as the screen does, that the reviewer
+	// refused it.
 	waiting, err := waitingFor(root, asAdmin("dana"), time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(waiting) != 1 || waiting[0].What != "delegate/writer" {
+	if len(waiting) != 1 || waiting[0].What != "delegate/writer, which the reviewer refused" {
 		t.Errorf("the waiting hand-off is listed as %+v", waiting)
 	}
 	_, read := captureStdout(t)
@@ -362,5 +365,44 @@ func TestAHandOffTheReviewerRefusesWaitsForAPerson(t *testing.T) {
 	}
 	if approved != "delegate/writer" {
 		t.Errorf("the log says dana let %q go ahead", approved)
+	}
+}
+
+// What a delegate writes is written for the person who started the run it
+// was handed on from, as its supervisor's writes are, so with a count of
+// approvals set that person asked for it.
+//
+// The delegate's writer named the delegate and nobody it wrote for, so
+// dana, who started the supervisor's run, approved what its delegate wrote
+// as though somebody else had asked for it.
+func TestADelegatesWriteIsForThePersonWhoStartedTheRun(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := demoStore(t)
+	declaredAutonomy(t, root)
+	pricedGateway(t, root, &pricedModels{choose: writesPages()}, false)
+	declareBoss(t, root, boss("writer"), handedWriter())
+	if _, err := runAgentOnce(root, "boss", "make the pages through the writer", true, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	if pagesWritten(t, root) == 0 {
+		t.Fatal("the delegate wrote nothing")
+	}
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := s.GetCommit(s.GetRef(site.RefDraft))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Author != "agent/writer" || !strings.HasSuffix(c.Message, " for dana") {
+		t.Errorf("the delegate's commit is %q by %s, and names nobody it was written for", c.Message, c.Author)
+	}
+	prop, _, err := proposalFor(root, s, s.GetRef(site.RefDraft))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := prop.ForWhom(); len(got) != 1 || got[0] != "dana" {
+		t.Errorf("the proposal for the delegate's write is for %q", got)
 	}
 }

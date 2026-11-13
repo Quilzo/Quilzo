@@ -37,8 +37,10 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collab"
 	"github.com/quilzo/quilzo/internal/out"
+	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
+	"github.com/quilzo/quilzo/internal/theme"
 	"github.com/quilzo/quilzo/internal/tmpl"
 )
 
@@ -124,7 +126,7 @@ importing
   quilzo media focus ID --at top-left      which part survives a crop
   quilzo media edit ID --crop 16:9        derive a crop; the original stays
   quilzo media generate "..." --alt "..."  ask a model; marked as generated
-  quilzo media captions VIDEO FILE --lang en  a video will not publish without
+  quilzo media captions VIDEO FILE --lang en  a video with sound will not publish without; a silent one needs its description
   quilzo media transcribe VIDEO --lang en --author WHO  a model drafts them; you attach
   quilzo media speak "text" --voice V --author WHO  read aloud; marked as a synthetic voice
   quilzo media film "prompt" --author WHO [--aspect 9:16]  a video from a prompt; marked as generated
@@ -144,14 +146,25 @@ templates and design
   quilzo demo remove [--yes]               take it back out; anything changed stays
   quilzo template list | show NAME         ready-made starting points
   quilzo template use NAME [--dir DIR]     write it, its theme and sample content
-  quilzo template layouts                  which layouts a page may name
+  quilzo template layouts [--dir DIR]      which layouts a page may name: those that ship, and the site's own,
+                                            saying which of those do not parse
   quilzo template adopt FILE               convert a template from another system
   quilzo theme show | tokens               what the design is set to, and the knobs
   quilzo theme unset TOKEN                 put one back to the default
   quilzo theme generate COLOUR             a whole palette from one colour
   quilzo theme set TOKEN VALUE             change one, refused if unreadable
   quilzo theme check | fonts | css         contrast, typefaces, generated CSS
-  quilzo theme styles                      the looks: classic, expressive, glass, editorial, bold, soft, business
+  quilzo theme font add FILE [--name N]    a .ttf or .otf made into a WOFF and checked, or a .woff
+                                            or .woff2 checked, then served from this origin; N is
+                                            Family-400-700, and without it the file's own name with
+                                            the weight and style a .ttf, .otf or .woff declares
+                                            (--force replaces one of that name)
+  quilzo theme styles                      the looks: classic, expressive, glass, editorial, bold, soft, business, neon
+                                           (and the corner choice, round or chamfer, and the scheme, both, dark or light)
+  quilzo theme set scheme dark             draw the site in one scheme, checked in that one; light, or both (the default)
+  quilzo theme set scrim-strength 90%      the veil over a backdrop picture or video, checked against the worst picture
+  quilzo theme layer [set FILE | unset]    CSS of your own over the generated stylesheet, every colour a token,
+                                           url() only to /media/ and /fonts/; theme check says what it refuses
   quilzo theme apply STARTER               take a starter's palette, keep your layout
   quilzo theme import FILE --list          what a design token file holds
   quilzo theme import FILE --set T=PATH    fill this site's tokens from it
@@ -165,6 +178,7 @@ templates and design
   quilzo section fields PAGE N             what is editable inside one
   quilzo section set PAGE N path=value     change what a section says
   quilzo section item add PAGE N LIST      add an entry to a list inside one
+  quilzo section backdrop PAGE N|hero ID   a picture or a silent video behind it; --off takes it away
   quilzo section block PAGE [--off]        make a page a reusable block, shown where pages reuse it
   quilzo section reuse PAGE BLOCK [--at N] show a block's sections on a page
   quilzo section blocks                    every block, and the pages that reuse it
@@ -456,7 +470,7 @@ access
   quilzo scim map GROUP auditor --until 2026-12-31   a job granted for a time, until a day
   quilzo geo status | help | network add PREFIX NAME --kind office|vpn ... | network remove PREFIX   where sign-ins come from
   quilzo auth deny WHO ROLE [--on PATH]    a deny wins wherever it sits
-  quilzo auth explain WHO [ACTION]         why someone can or cannot do a thing
+  quilzo auth explain WHO [ACTION] [--on PATH]   why someone can or cannot do a thing
   quilzo standing list                     what a situation can hand somebody, and what it cannot
   quilzo auth revoke WHO ROLE [--on PATH]  take a grant back
   quilzo auth enrol WHO [--for 24h]        a one-time link that adds their passkey (--revoke ends it)
@@ -522,6 +536,7 @@ compliance evidence
 
 agents and integrations
   quilzo agent templates                    the agent archetypes, and when to use each
+  quilzo agent template [list|save FILE|remove KIND]   archetypes of this store's own, which new --kind knows
   quilzo agent capabilities                 everything an agent may be declared to do, by where it happens
   quilzo agent new NAME --kind KIND         declare what an agent may do
   quilzo agent draft "what it is for" [-o F] a model drafts a declaration; the checker says what it could do; nothing is saved
@@ -533,6 +548,8 @@ agents and integrations
   quilzo agent list | show NAME | check     what is declared, and whether it still validates
   quilzo agent sponsor NAME PERSON         who answers for it; it stops running when they can no longer act here
   quilzo agent renew NAME [--for 2160h]    another stretch before it has to be renewed
+  quilzo agent sends NAME [grant TOOL --why R | revoke TOOL]   what it sends from runs nobody started without
+                                           a person deciding each call; a grant waits for a second administrator
   quilzo agent trigger NAME [add|remove N] what starts it on its own: an event, or --every 24h --at 07:30
   quilzo agent trigger events              the events an agent can start from
   quilzo agent receipt RUN [-o FILE]       every action of a run from the log, with proofs and a signed head
@@ -552,7 +569,9 @@ agents and integrations
   quilzo memory history AGENT KEY [--about P]   what a fact was, and when it changed
   quilzo memory forget [--about P]         every agent forgets you (or P, for an administrator)
   quilzo memory receipt [--about P] [-o F] what was forgotten, deleted or rewritten about you, proved
-  quilzo agent program NAME [--backend B] [--read DIR] [--env K=V] -- COMMAND   what its program is
+  quilzo agent program NAME [--backend B] [--read DIR] [--env K=V] -- COMMAND   what its program is,
+                                          pinned to the file as it is now
+  quilzo agent program NAME --pin          pin its program again, once the changed file is reviewed
   quilzo browser status | install | find  the browser agents use, fetching the pinned one, or
                                           finding the Chrome or Chromium this machine has
   quilzo browser grant NAME [--read H,..] [--write H,..] [--ops O,..] [--daily N] [--pictures] | --off
@@ -587,7 +606,8 @@ agents and integrations
   quilzo integrations list|tools|call      outside systems this install may reach
   quilzo integrations import FILE [--uses A,B]   an OpenAPI 3 document, an MCP registry server.json or an A2A agent card, declared switched off
   quilzo integrations undelivered [--dismiss N]  writes agents made that did not get through, kept to settle
-  quilzo integrations template [NAME]      a calendar or issues, with each person's connected account, switched off
+  quilzo integrations template [NAME]      a calendar or issues, with each person's connected account, or a social
+                                            media aggregator at the host you name, switched off
   quilzo integrations pin NAME [TOOL...]   approve what a tool is; a server's change to it is refused until pinned again
   quilzo integrations gateway NAME --role R [--daily N] [--ask T,...] | --off
                                            offer an MCP server to other systems' agents through Quilzo, checked and recorded
@@ -621,11 +641,19 @@ interface
                                              browser can install it as a
                                              desktop application
       /playground                            try the API against your own store
+      without a restart                      templates/ is read again when it
+                                             changes, and on SIGHUP
   quilzo site  [--addr HOST:PORT]          the published site, PWA-installable, confined (--prepare for systemd)
       --api                                 content API at /api/v1, read-only
-      --api-writable                        allow PUT; every write needs If-Match
+      --api-writable                        allow PUT; every write needs If-Match.
+                                            Needs --confine=false: the confined site
+                                            cannot write the draft, so it refuses this
       --base-url https://example.com        needed for /sitemap.xml and /feed.xml
       --redirects redirects.json            keep old URLs working after a move
+      without a restart                     settings are read again when they change,
+                                            the design with each publish, and both on
+                                            SIGHUP (systemctl reload); the rate limits
+                                            and the fediverse still wait for one
   quilzo studio [--addr HOST:PORT]         record the screen into the library
   quilzo audit [DIR]                       templates that disable escaping
   quilzo scan [--fail-on SEV]              XSS, injection and leaked secrets
@@ -634,15 +662,25 @@ interface
 
 log transparency
   quilzo logd                              the log writer, run as its own account
-  quilzo logd status                       whether the separation is in force
+      --log-dir DIR                         the directory it owns: the log, head.key, head.pub.json
+                                            as its own account, it signs every head and receipt,
+                                            and the CMS never holds the key
+      --sign-gid GROUPS                     only accounts connecting as these groups may ask it
+                                            to sign (--sign-uid UIDS by uid); records still come
+                                            from every account --allow-uid lets submit
+  quilzo logd status                       whether the separation is in force, and who signs heads
   quilzo auditlog dir                      where the log is, and whether it is separate
-  quilzo auditlog verify                   recompute the chain over every entry
+  quilzo auditlog verify                   recompute the chain over every entry, and
+                                            check the log against the heads saved here
   quilzo auditlog show SEQ                 one entry, in full
   quilzo auditlog export -o FILE           the whole log, as it is stored
   quilzo auditlog head --save              a commitment to every entry so far
-  quilzo auditlog verify-head FILE         check a saved commitment against the log
+  quilzo auditlog verify-head FILE         check a saved commitment's signatures, and
+                                            that the log here still holds it
   quilzo auditlog prove SEQ                one entry is in the log, in ~20 hashes
   quilzo auditlog consistency              nothing before a published head moved
+      --head FILE                           against a head kept off this machine
+                                            (auditlog head --json), checked by --keys FILE
   quilzo auditlog anchor                   put the head in Bitcoin, so rewriting
                                             history contradicts a block
   quilzo timestamp stamp | list | export   RFC 3161 proof of when you published
@@ -688,7 +726,13 @@ func main() {
 	args := os.Args[1:]
 	jsonMode := false
 	filtered := args[:0]
-	for _, a := range args {
+	for i, a := range args {
+		// What follows "--" is a program's own command line, as it is for the
+		// --root and --token below.
+		if a == "--" {
+			filtered = append(filtered, args[i:]...)
+			break
+		}
 		if a == "--json" {
 			jsonMode = true
 			continue
@@ -698,6 +742,17 @@ func main() {
 	args = filtered
 
 	w = out.New(jsonMode)
+	// An answer under --json that could not be written is a failure, however
+	// the command that wrote it ended. The writer said so on stderr and the
+	// command returned nil, so this exited 0 with nothing on stdout, and a
+	// script took the empty output for its answer. Deferred, so a command
+	// that returns from main once it has answered, as `version` does, is held
+	// to it too; a failure already leaves through os.Exit, which skips this.
+	defer func() {
+		if w.Failed() {
+			os.Exit(out.ExitFailure)
+		}
+	}()
 	bold, dim = w.Bold(), w.Dim()
 	green, yellow, red, reset = w.Green(), w.Yellow(), w.Red(), w.Reset()
 
@@ -719,8 +774,18 @@ func main() {
 	//
 	// Stripping it here makes the sentence true everywhere, and the seven
 	// local declarations are gone rather than left to shadow it.
+	//
+	// It stops at "--". What follows is the command line of a program the
+	// command runs, and was read as Quilzo's: `agent program bot -- tool
+	// --root /data` looked for the agent in /data, and the program's own
+	// `--token X` became the caller's credential and was gone from the
+	// program's line. helpAsked stops there too.
 	var rest []string
 	for i := 0; i < len(args); i++ {
+		if args[i] == "--" {
+			rest = append(rest, args[i:]...)
+			break
+		}
 		if args[i] == "--root" && i+1 < len(args) {
 			root = args[i+1]
 			i++
@@ -747,18 +812,52 @@ func main() {
 	}
 
 	cmd, cmdArgs := rest[0], rest[1:]
+	invoked.cmd, invoked.args = cmd, cmdArgs
 
 	// Help for a command is answered before anything is moved, opened or
 	// authorised, and without running it: commandhelp.go says what running it
 	// did. A command that parses its flags first is let through after the
 	// lines, to list them; anything else stops here.
 	asked := false
+	if _, known := lookupNeed(cmd, cmdArgs); known && helpAfter(cmd, cmdArgs) &&
+		!strings.HasPrefix(cmd, "__") {
+		commandHelp(cmd, cmdArgs[1:])
+		return
+	}
+	if _, known := lookupNeed(cmd, cmdArgs); known && helpAfterSub(cmd, cmdArgs) &&
+		!strings.HasPrefix(cmd, "__") {
+		commandHelp(cmd, cmdArgs[:1])
+		return
+	}
 	if _, known := lookupNeed(cmd, cmdArgs); known && helpAsked(cmdArgs) &&
 		!strings.HasPrefix(cmd, "__") && !helpOrVersion[cmd] {
 		asked = true
 		commandHelp(cmd, cmdArgs)
 		if !helpGoesToTheCommand(cmd, cmdArgs) {
 			return
+		}
+	}
+
+	// A --root that holds no store is refused here, once, for every command
+	// but init and the few that are not about a store (storeless), before
+	// anything below reads it or makes it.
+	//
+	// open refuses one, and that covered the commands that open a store. The
+	// rest read its files for themselves and answered of nothing: `token
+	// list` of a mistyped --root said "no tokens", `scan` of an unmounted
+	// volume "0 finding(s)" and `vault status` that the objects are stored in
+	// the clear, each exit 0; `member invite` made the directory and wrote
+	// an invitation into it, and `studio` started its server there. Asked
+	// here for the reason authorisation is: a command inherits it, including
+	// the one added next year. Help is answered wherever it is asked, and a
+	// command nobody has is said to be that, below.
+	if _, known := lookupNeed(cmd, cmdArgs); known && !asked && !runsWithoutAStore(cmd, cmdArgs) {
+		if err := needStore(root); err != nil {
+			w.Error(err)
+			if errors.Is(err, errNoStore) {
+				os.Exit(out.ExitNotFound)
+			}
+			os.Exit(out.ExitFailure)
 		}
 	}
 
@@ -829,7 +928,9 @@ func main() {
 	case "move":
 		err = cmdMove(root, cmdArgs)
 	case "diff":
-		err = cmdDiff(root)
+		if err = noArguments(cmdArgs); err == nil {
+			err = cmdDiff(root)
+		}
 	case "publish":
 		err = cmdPublish(root, cmdArgs)
 	case "rollback":
@@ -885,7 +986,9 @@ func main() {
 		err = cmdWebhook(root, cmdArgs)
 	case "logd":
 		if len(cmdArgs) > 0 && cmdArgs[0] == "status" {
-			err = cmdLogdStatus(root)
+			if err = noArguments(cmdArgs[1:]); err == nil {
+				err = cmdLogdStatus(root)
+			}
 		} else {
 			err = cmdLogd(root, cmdArgs)
 		}
@@ -1072,7 +1175,9 @@ func main() {
 	case "config":
 		err = cmdConfig(root, cmdArgs)
 	case "verify":
-		err = cmdVerify(root)
+		if err = noArguments(cmdArgs); err == nil {
+			err = cmdVerify(root)
+		}
 	case "approvals":
 		err = cmdApprovals(root, cmdArgs)
 	// --version and --help as well as the subcommands.
@@ -1082,6 +1187,10 @@ func main() {
 	// tries `--version` and nothing else. `quilzo version` printed the same
 	// string and was unreachable to everything that looks for it.
 	case "version", "--version", "-V":
+		// It takes nothing, as the commands that go through noArguments do.
+		if err = noArguments(cmdArgs); err != nil {
+			break
+		}
 		if w.JSON(map[string]any{"name": "quilzo", "version": version,
 			"go": runtime.Version(), "os": runtime.GOOS, "arch": runtime.GOARCH,
 			"license": "Apache-2.0"}) {
@@ -1125,6 +1234,13 @@ func main() {
 		if errors.As(err, &blocked) {
 			os.Exit(out.ExitBlocked)
 		}
+		var misused errMisused
+		if errors.As(err, &misused) {
+			os.Exit(out.ExitUsage)
+		}
+		if errors.Is(err, errNoStore) {
+			os.Exit(out.ExitNotFound)
+		}
 		os.Exit(out.ExitFailure)
 	}
 }
@@ -1133,12 +1249,142 @@ func main() {
 // wired here: every command inherits it, including the ones added next year by
 // somebody who has not read this file.
 //
-// It is also where a store is made, by whichever command comes first, so it
-// is where a store made in a container's own layer is said (ephemeral.go).
+// It refuses a root that holds no store. It made one wherever it was pointed,
+// by whichever command came first, so a nightly `backup create` of a volume
+// that was not mounted wrote a backup of nothing and said "backed up and
+// checked", and `verify` of a mistyped --root said "0 object(s) intact" of
+// the empty store it had just made there. A check that cannot fail on the
+// wrong directory is how an empty backup is found on the day it is needed.
+// Only init makes a store (makeStore).
+func open(root string) (*store.Store, error) {
+	if err := needStore(root); err != nil {
+		return nil, err
+	}
+	return makeStore(root)
+}
+
+// errNoStore is a --root that holds no store. It exits 4, "not found".
+var errNoStore = errors.New("no store")
+
+// needStore refuses a root that is not a store, saying how one is made.
+// main asks it of every command not listed as storeless. open asks again,
+// and so do the commands that read a store's files without opening it, as
+// `auth list` and `auditlog verify` do, for a caller that is not main.
+//
+// A root it cannot look into is said to be that. Asked only whether objects/
+// could be found, a store its caller may not read answered as an empty
+// directory does, and somebody who had left off `sudo -u quilzo` was told to
+// make a store where one already was.
+func needStore(root string) error {
+	fi, err := os.Stat(filepath.Join(root, "objects"))
+	if err == nil && fi.IsDir() {
+		return nil
+	}
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("the store at %s cannot be looked into: %w", root, err)
+	}
+	return fmt.Errorf("%w at %s; quilzo --root %s init makes one", errNoStore, root, root)
+}
+
+// storeless is the commands that are not about a store, by the command and
+// subcommand the help spells them with, or the command alone for its bare
+// form. They run where --root holds none; every other command is refused
+// there before it reads or makes anything (main).
+//
+// A list of what is let through, so a command added tomorrow is refused on
+// the wrong directory until somebody says it need not be. The other way
+// round was how it stood: only the commands that open a store refused, and
+// the hundred that read its files for themselves answered of a mistyped
+// --root that there were no tokens, no credentials kept and no findings.
+//
+// What is here says nothing of a store. It describes this build, which the
+// release asks of the binary in a checkout with no store in it; or it lists
+// what ships in every copy; or it works on a file its own line names, as a
+// restore does on the day the store is gone.
+var storeless = map[string]bool{
+	// The log's writer runs as an account that cannot reach the store, in a
+	// container the store is not mounted in. `logd status`, which compares
+	// the two, is the store owner's and is not here.
+	"logd": true,
+
+	// This build: its bill of materials, its algorithms and its controls.
+	"compliance": true, "compliance summary": true, "compliance sbom": true,
+	"compliance crypto": true, "compliance controls": true,
+	"compliance implementation": true, "compliance pledge": true,
+
+	// A file the line names: a backup read or restored, a key made, and a
+	// receipt or a transfer checked by somebody who was sent it.
+	"backup key": true, "backup verify": true, "backup restore": true,
+	"token keygen": true, "token proof": true,
+	"agent verify-receipt": true, "transfer verify": true,
+	// A declaration and its calls on standard input, and nothing of a store.
+	"agent probe": true,
+
+	// What ships in every copy: the roles, the rules, the formats, the
+	// layouts and the examples to start from.
+	"auth roles":    true,
+	"agent formats": true,
+	"config list":   true, "config explain": true,
+	"policy params": true,
+	"posture rules": true, "posture explain": true,
+	"framework relations": true,
+	"media":               true, "media formats": true,
+	"section kinds": true, "site kinds": true,
+	"template": true, "template list": true, "template show": true, "template layouts": true,
+	"type example": true, "feature example": true,
+	"blog example": true, "booking example": true, "events example": true,
+
+	// The design is the templates directory's, beside the store, and these
+	// read it and write nothing.
+	"theme": true, "theme show": true, "theme tokens": true, "theme check": true,
+	"theme fonts": true, "theme css": true, "theme export": true, "theme styles": true,
+}
+
+// storelessWhole is the commands that run without a store whatever follows
+// them, having no subcommand that is about one.
+//
+// init, which makes the store, and says of a word after it where a store
+// goes. The demonstrations and the calculators, which the dispatch hands no
+// root to, and `audit`, which reads a directory of templates. `auditlog`
+// asks for itself, since a log copied out stands without its store
+// (cmdAuditLog); its `dir` does not stand without one, and is not let
+// through (runsWithoutAStore).
+var storelessWhole = map[string]bool{
+	"init":  true,
+	"audit": true, "auditlog": true,
+	"annotate": true, "call": true, "errand": true, "flow": true, "huddle": true,
+	"screen": true, "scribe": true, "sframe": true, "standing": true,
+}
+
+// runsWithoutAStore reports whether a command runs where --root holds no
+// store: help and the version, the shims this program runs itself as, and
+// what the two lists above name.
+func runsWithoutAStore(cmd string, args []string) bool {
+	if helpOrVersion[cmd] || strings.HasPrefix(cmd, "__") {
+		return true
+	}
+	if primary, ok := helpAliases[cmd]; ok {
+		cmd = primary
+	}
+	// `auditlog dir` is the one of auditlog's that is the store's: it says
+	// and sets where the store's log is kept. Let through with the rest,
+	// `auditlog dir /srv/audit` of a mistyped --root made the directory,
+	// began a log and a key in it, and said the log had moved, of a store
+	// that was not there.
+	if cmd == "auditlog" && len(args) > 0 && args[0] == "dir" {
+		return false
+	}
+	return storelessWhole[cmd] || storeless[helpKey(cmd, args)]
+}
+
+// makeStore opens the store at root, making it if it is not there: init's,
+// and open's once it has found one.
+//
+// It is where a store made in a container's own layer is said (ephemeral.go).
 // init said so and nothing else did: `docker run --rm IMAGE demo` with no
 // volume said "Marginalia is installed" and exited 0 into the layer --rm
 // then deleted, the same store made and lost without a word.
-func open(root string) (*store.Store, error) {
+func makeStore(root string) (*store.Store, error) {
 	made := !isStore(root)
 	s, err := openEncrypted(root)
 	if err == nil && made {
@@ -1198,7 +1444,20 @@ func splitFlags(args []string, valued map[string]bool) (flags, positional []stri
 }
 
 // runInit is `quilzo init [--admin NAME]`.
+//
+// The line is read before anything is made. `quilzo init mysite`, as git
+// takes a directory, made ./.quilzo and said so, and the store was not where
+// the next command, `quilzo --root mysite serve`, looked for it.
 func runInit(root string, args []string) error {
+	fs, _ := initFlags()
+	var pos []string
+	if err := parseFlags(fs, args, &pos, 1); err != nil {
+		return err
+	}
+	if len(pos) > 0 {
+		return errMisused{fmt.Errorf("usage: quilzo init [--admin NAME]\n"+
+			"  the store goes where --root says, not where a word after init does: quilzo --root %s init", pos[0])}
+	}
 	created := !isStore(root)
 	if err := cmdInit(root); err != nil {
 		return err
@@ -1227,7 +1486,7 @@ func cmdInit(root string) error {
 		w = out.New(false)
 	}
 	existed := isStore(root)
-	s, err := open(root)
+	s, err := makeStore(root)
 	if err != nil {
 		return err
 	}
@@ -1259,7 +1518,8 @@ func cmdAdd(root string, args []string) error {
 	// Empty by default, filled from the resolved caller below. The literal
 	// "cli" was recorded as the author of every commit, which made a conflict
 	// report that "cli" had changed the draft — true and useless.
-	author := fs.String("author", "", "author; defaults to the caller")
+	author := fs.String("author", "", "who to credit when the words are somebody else's; "+
+		"the change is recorded as yours whatever this names")
 	remove := fs.String("remove", "", "comma-separated page names to drop")
 	basedOn := fs.String("based-on", "",
 		"the draft commit this edit was made against; refuses if it has moved")
@@ -1279,11 +1539,17 @@ func cmdAdd(root string, args []string) error {
 				"there is nothing to merge against, and this would silently " +
 				"overwrite instead")
 	}
+	// A person's change cannot say a machine wrote it (collab.PersonsMessage).
+	if err := collab.PersonsMessage(*msg); err != nil {
+		return err
+	}
 
 	s, err := open(root)
 	if err != nil {
 		return err
 	}
+	// The commit every page below is read from, which is what this edit is
+	// made against whether or not --based-on says so (SaveDraftOver).
 	parent := s.GetRef(site.RefDraft)
 	if parent == "" {
 		parent = s.GetRef(site.RefLive)
@@ -1348,25 +1614,35 @@ func cmdAdd(root string, args []string) error {
 		return err
 	}
 
+	// Recorded as the caller's, and --author naming somebody else credits
+	// them in the message (recordedAs): recorded under the name given, dana's
+	// change was lee's to every rule about who may approve it.
 	caller := resolveCaller(root, "")
-	who := *author
-	if who == "" {
-		who = caller.Name
-	}
+	who, message := caller.recordedAs(*author, *msg)
 	changed := changedNames(fs.Args())
 	var cid string
 	var merged collab.Merged
-	if *merge {
-		cid, merged, err = site.MergeDraftFrom(s, pages, *msg, who, *basedOn)
-	} else {
-		cid, err = site.SaveDraftFrom(s, pages, *msg, who, *basedOn)
+	switch {
+	case *merge:
+		cid, merged, err = site.MergeDraftFrom(s, pages, message, who, *basedOn)
+	case *basedOn != "":
+		cid, err = site.SaveDraftFrom(s, pages, message, who, *basedOn)
+	default:
+		// No base named, and still one read: the draft the pages above came
+		// from. This wrote them back with an empty base, which takes whatever
+		// the draft is by then as the parent, so ten adds run at once left
+		// two of their ten pages in the draft and all ten said they had
+		// written theirs. Merged with whatever landed since, as --merge does,
+		// because an add that touched nothing anybody else did has nothing
+		// to be refused for.
+		cid, merged, err = site.SaveDraftOver(s, pages, message, who, parent)
 	}
 	if err != nil {
 		// A refused write is worth recording. Somebody tried to save over
 		// somebody else's edit, and the fact that the store stopped them is
 		// exactly the sort of thing a log exists to preserve.
 		reason := "conflict"
-		if *merge {
+		if *merge || *basedOn == "" {
 			// Named apart in the log, because they are different events. A
 			// refused save means the ref moved; a refused merge means two
 			// people disagreed about a specific field, and only the second
@@ -1396,11 +1672,21 @@ func cmdAdd(root string, args []string) error {
 			"pages":  strings.Join(changed, ","),
 			"author": who,
 		}))
-	w.Human("draft %s  %d page(s)\n", short(cid), len(pages))
+	// The draft's pages as written, which after a merge includes what landed
+	// while this was working, not only what it read.
+	written := len(pages)
+	if merged.Pages != nil {
+		written = len(merged.Pages)
+	}
+	w.Human("draft %s  %d page(s)\n", short(cid), written)
+	if message != *msg {
+		w.Human("  %srecorded as yours, %s; %s is credited in its message%s\n",
+			dim, who, strings.TrimSpace(*author), reset)
+	}
 	// What the merge took from each side, on success as well as on failure. A
 	// merge reported only when it fails is a merge nobody trusts: silence
 	// after one reads as "nothing happened", and something did.
-	if *merge && len(merged.TookTheirs) > 0 {
+	if len(merged.TookTheirs) > 0 {
 		w.Human("\n  %smerged with %d change(s) made while you were working%s\n",
 			dim, len(merged.TookTheirs), reset)
 		for _, t := range merged.TookTheirs {
@@ -1517,6 +1803,13 @@ func checkAccessibility(root string, s *store.Store, commitID, tplDir string) ([
 		}
 	}
 
+	// The words over a backdrop, judged against the worst picture its veil
+	// could cover — for the pages that have one, and no others.
+	var backdrop []theme.Finding
+	if !design.OwnStylesheet {
+		backdrop = design.Theme.CheckBackdrop()
+	}
+
 	for name, body := range pages {
 		ctx, cerr := src.For(name, body, nil)
 		if cerr != nil {
@@ -1534,8 +1827,18 @@ func checkAccessibility(root string, s *store.Store, commitID, tplDir string) ([
 			return nil, fmt.Errorf("rendering %s: %w", name, err)
 		}
 		rendered[name] = out
+		if render.HasBackdrop(ctx["page"]) {
+			for _, f := range backdrop {
+				if f.Blocking {
+					extra = append(extra, a11y.Blocker(name, "backdrop-contrast", f.Criterion, f.Detail))
+				}
+			}
+		}
 	}
-	return append(a11y.CheckAll(rendered), extra...), nil
+	// Whether a recording has sound is the library's answer, recorded when it
+	// was added: a silent one owes a description rather than captions, and
+	// only a silent one may be a backdrop.
+	return append(a11y.CheckAllWith(rendered, a11y.Options{Sound: mediaSound(root)}), extra...), nil
 }
 
 func cmdPublish(root string, args []string) error {
@@ -1547,10 +1850,14 @@ func cmdPublish(root string, args []string) error {
 	skip := fs.Bool("no-a11y-check", false, "skip the check entirely")
 	forceUnmarked := fs.Bool("force-unmarked", false,
 		"publish pages that declare no provenance (needs --reason)")
-	if err := fs.Parse(args); err != nil {
+	// One commit, and the flags on either side of it. Parsing stopped at the
+	// commit, so `publish COMMIT --no-a11y-check` ran the check it was told
+	// to skip, and a second word was dropped.
+	var pos []string
+	if err := parseFlags(fs, args, &pos, 1); err != nil {
 		return err
 	}
-	return publishAs(root, fs.Args(), resolveCaller(root, flagToken), publishFlags{
+	return publishAs(root, pos, resolveCaller(root, flagToken), publishFlags{
 		force: *force, reason: *reason, tplDir: *tplDir, skip: *skip, forceUnmarked: *forceUnmarked,
 	})
 }
@@ -1899,7 +2206,7 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 func cmdRollback(root string, args []string) error {
 	fs := flag.NewFlagSet("rollback", flag.ContinueOnError)
 	steps := fs.Int("steps", 1, "how many earlier publications to go back")
-	if err := fs.Parse(reorder(args, map[string]bool{"steps": true})); err != nil {
+	if err := parseFlags(fs, reorder(args, map[string]bool{"steps": true}), nil, 0); err != nil {
 		return err
 	}
 	s, err := open(root)
@@ -1939,8 +2246,7 @@ func cmdLog(root string, args []string) error {
 	fs := flag.NewFlagSet("log", flag.ContinueOnError)
 	ref := fs.String("ref", site.RefDraft, "which ref to walk")
 	limit := fs.Int("limit", 20, "how many commits")
-	if err := fs.Parse(reorder(args, map[string]bool{
-		"ref": true, "limit": true})); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	s, err := open(root)
@@ -1979,14 +2285,14 @@ func cmdRender(root string, args []string) error {
 	fs := flag.NewFlagSet("render", flag.ContinueOnError)
 	ref := fs.String("ref", site.RefLive, "which ref to read")
 	out := fs.String("o", "", "write here instead of stdout")
-	if err := fs.Parse(reorder(args, map[string]bool{
-		"ref": true, "o": true})); err != nil {
+	var pos []string
+	if err := parseFlags(fs, args, &pos, 2); err != nil {
 		return err
 	}
-	if fs.NArg() < 2 {
+	if len(pos) < 2 {
 		return fmt.Errorf("usage: quilzo render PAGE TEMPLATE")
 	}
-	pageName, templatePath := fs.Arg(0), fs.Arg(1)
+	pageName, templatePath := pos[0], pos[1]
 
 	s, err := open(root)
 	if err != nil {
@@ -2063,12 +2369,22 @@ func writeRendered(out *os.File, html string) {
 
 func cmdAudit(args []string) error {
 	dir := "templates"
-	if len(args) > 0 {
-		dir = args[0]
+	pos, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
+	if len(pos) > 0 {
+		dir = pos[0]
+		// A directory that was named and is not there is not one with
+		// nothing to report. `audit pages`, for the templates of some pages,
+		// walked nothing and said "no template opts out of escaping".
+		if fi, serr := os.Stat(dir); serr != nil || !fi.IsDir() {
+			return fmt.Errorf("%s is not a directory of templates: quilzo audit [DIR]", dir)
+		}
 	}
 	total := 0
 	raw := []map[string]any{}
-	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+	err = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() || filepath.Ext(path) != ".html" {
 			return nil
 		}
@@ -2130,7 +2446,7 @@ func cmdA11y(root string, args []string) error {
 	fs := flag.NewFlagSet("a11y", flag.ContinueOnError)
 	ref := fs.String("ref", site.RefDraft, "which ref to check")
 	tplDir := fs.String("templates", "templates", "where page.html lives")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	s, err := open(root)
@@ -2192,6 +2508,12 @@ func cmdVerify(root string) error {
 	n, err := s.Verify()
 	if err != nil {
 		return fmt.Errorf("%s%v%s", red, err, reset)
+	}
+	// The count under --json, as `auditlog verify` gives its entries. This
+	// printed its prose whatever was asked for, so a script checking that
+	// nothing in the store was altered had a sentence to parse.
+	if w.JSON(map[string]any{"objects": n, "intact": true}) {
+		return nil
 	}
 	fmt.Printf("  %d object(s) intact\n", n)
 	fmt.Printf("  %severy object re-hashed to the id it is filed under%s\n", dim, reset)

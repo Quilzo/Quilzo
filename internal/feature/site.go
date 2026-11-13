@@ -44,8 +44,19 @@ type Site struct {
 	Style  string `json:"style,omitempty"`
 	Colour string `json:"colour,omitempty"`
 	Motion string `json:"motion,omitempty"`
+	// Scheme and Corner are the theme's two later choices: the colour
+	// schemes the site is drawn in (both, dark or light) and how its corners
+	// are made (round or chamfer). Empty leaves the theme's own.
+	Scheme string `json:"scheme,omitempty"`
+	Corner string `json:"corner,omitempty"`
 	// Tokens are any other theme tokens, by name, applied after the rest.
 	Tokens map[string]string `json:"tokens,omitempty"`
+	// Layer is the site's style layer: CSS over the generated stylesheet,
+	// held to the rule the shipped styles keep (theme.CheckLayer), written to
+	// the templates directory when the package is installed and taken back
+	// with it. A package whose layer would not be served is refused here,
+	// rather than installed to serve a site without it.
+	Layer string `json:"layer,omitempty"`
 	// Redirects keep a site's old addresses working: a site brought from
 	// elsewhere had other paths, and links and search results point at
 	// them. Only to this site's own pages; installed into the site's
@@ -83,6 +94,12 @@ func (s *Site) Look() (map[string]string, error) {
 	}
 	if s.Motion != "" {
 		over["motion"] = s.Motion
+	}
+	if s.Scheme != "" {
+		over["scheme"] = s.Scheme
+	}
+	if s.Corner != "" {
+		over["corner"] = s.Corner
 	}
 	for k, v := range s.Tokens {
 		over[k] = v
@@ -150,6 +167,15 @@ func (s *Site) lookRefused() []string {
 			refused = append(refused, "the look is refused: "+f.String())
 		}
 	}
+	// The layer is judged against the look it comes with, so a pair it names
+	// is checked in the schemes this site will be served in.
+	if s.Layer != "" {
+		for _, f := range theme.CheckLayer(s.Layer, th) {
+			if f.Blocking {
+				refused = append(refused, "the style layer is refused: "+f.Detail)
+			}
+		}
+	}
 	sort.Strings(refused)
 	return refused
 }
@@ -176,8 +202,20 @@ func (s *Site) siteLine() Line {
 	if s.Motion != "" {
 		look = append(look, s.Motion+" motion")
 	}
+	switch s.Scheme {
+	case "dark", "light":
+		look = append(look, "drawn in "+s.Scheme+" alone")
+	case "both":
+		look = append(look, "both colour schemes")
+	}
+	if s.Corner != "" {
+		look = append(look, s.Corner+" corners")
+	}
 	if n := len(s.Tokens); n > 0 {
 		look = append(look, fmt.Sprintf("%d more theme %s", n, map[bool]string{true: "token", false: "tokens"}[n == 1]))
+	}
+	if s.Layer != "" {
+		look = append(look, fmt.Sprintf("a style layer of its own (%d bytes of CSS, every colour a token)", len(s.Layer)))
 	}
 	text := fmt.Sprintf("Names the site %q", strings.TrimSpace(s.Name))
 	if len(look) > 0 {

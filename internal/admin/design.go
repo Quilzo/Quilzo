@@ -4,8 +4,10 @@
 package admin
 
 import (
+	"fmt"
 	"github.com/quilzo/quilzo/internal/icons"
 	"html/template"
+	"io"
 	"net/http"
 	"net/url"
 	"sort"
@@ -14,6 +16,7 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/starter"
 	"github.com/quilzo/quilzo/internal/theme"
+	"github.com/quilzo/quilzo/internal/webfont"
 )
 
 // The design screen: the tokens, the layouts and the typefaces, in the browser.
@@ -59,6 +62,12 @@ type Design struct {
 	Layouts func() []string
 	// Fonts lists the typefaces served from this origin.
 	Fonts func() []string
+	// FontNotes says which files in the fonts directory are not served, and
+	// why. The screen said "No typefaces of your own" over a directory with
+	// a renamed .ttf in it and nothing more, so the face somebody had put
+	// there was missing without a word; the reason was on the server's error
+	// output, which the person looking at this screen does not see.
+	FontNotes func() []string
 	// FontFile is one of those typefaces, by the name a stylesheet asks
 	// for, so the preview draws a page in the site's own type.
 	FontFile func(name string) ([]byte, bool)
@@ -69,6 +78,44 @@ type Design struct {
 	// InstallLayout writes a starter's markup and returns what it wrote. This
 	// is the half the browser used to be missing.
 	InstallLayout func(starterName string) ([]string, error)
+	// Layer reads the site's style layer, "" when it has none, and SaveLayer
+	// replaces it, or takes it away when given "". Nil means this build
+	// cannot reach the file, and the screen says so rather than offering a
+	// form that does nothing.
+	Layer     func() (string, error)
+	SaveLayer func(css string) error
+	// AddFont makes a typeface this site serves out of an uploaded file: a
+	// .ttf or an .otf made into a WOFF, or a .woff or .woff2 checked as it
+	// is. name, when given, is the served name's contract (Family-400-700);
+	// replace says a face already served under that name may be overwritten.
+	// The same operation as `quilzo theme font add`, so the screen and the
+	// command cannot accept different fonts.
+	AddFont func(filename string, body []byte, name string, replace bool) (FontAdded, error)
+}
+
+// FontAdded is what AddFont wrote.
+type FontAdded struct {
+	// File is the name it is served under, at /fonts/.
+	File string `json:"file"`
+	// Family, Weight and Style are what the filename says, as the
+	// stylesheet will declare them.
+	Family string `json:"family"`
+	Weight string `json:"weight"`
+	Style  string `json:"style"`
+	// From is what the upload was: truetype, opentype, woff or woff2.
+	From string `json:"from"`
+	// Replaced says a face already served under that name was overwritten,
+	// which changes every page that names it without anybody naming it
+	// again, so the record has to be able to say so.
+	Replaced bool `json:"replaced,omitempty"`
+	// NamedFromFace says the served name took its weight or style from the
+	// face's own tables, because the file's name did not say them.
+	NamedFromFace bool `json:"named_from_face,omitempty"`
+	// WeightUnread says the face is served as every weight because its name
+	// says none and its tables could not be read: a WOFF2, whose tables are
+	// Brotli. That is right for a variable face and wrong for a static one,
+	// and only the person adding it knows which.
+	WeightUnread bool `json:"weight_unread,omitempty"`
 }
 
 func (s *Server) handleDesign(w http.ResponseWriter, r *http.Request) {
@@ -82,22 +129,35 @@ func (s *Server) handleDesign(w http.ResponseWriter, r *http.Request) {
 	if !s.can(w, r, p, auth.ActEditDraft, "/") {
 		return
 	}
+	s.showDesign(w, r, p, nil)
+}
+
+// showDesign draws the Design screen. extra is laid over what the screen
+// would show anyway, for a form that was refused and is given back as it
+// was written (see handleDesignLayer); nil for an ordinary visit.
+func (s *Server) showDesign(w http.ResponseWriter, r *http.Request, p principal, extra map[string]any) {
 	data := map[string]any{
 		"Title": "Design", "Principal": p, "Nav": "design",
 		"Message": r.URL.Query().Get("m"),
 		"Error":   r.URL.Query().Get("e"),
 	}
+	show := func() {
+		for k, v := range extra {
+			data[k] = v
+		}
+		s.render(w, r, "design.html", data)
+	}
 	if s.DesignSet == nil || s.DesignSet.Tokens == nil {
 		data["Unavailable"] = "this server was started without a template " +
 			"directory, so there is no design to show"
-		s.render(w, r, "design.html", data)
+		show()
 		return
 	}
 
 	overrides, err := s.DesignSet.Tokens()
 	if err != nil {
 		data["Unavailable"] = err.Error()
-		s.render(w, r, "design.html", data)
+		show()
 		return
 	}
 	th, problems := theme.New(overrides, s.siteFamilies())
@@ -197,6 +257,29 @@ func (s *Server) handleDesign(w http.ResponseWriter, r *http.Request) {
 		levels = append(levels, choice{Name: l, Label: strings.ToUpper(l[:1]) + l[1:], Words: levelWords[l], On: i == 0})
 	}
 	data["Styles"], data["Motions"], data["Schemes"], data["Levels"] = styles, motions, schemes, levels
+	// The corner and the colour schemes the site is drawn in. "Schemes" is
+	// already the palette generator's, so these are named for what they
+	// choose.
+	var corners, drawn []choice
+	for _, c := range theme.Corners {
+		corners = append(corners, choice{Name: c, Label: strings.ToUpper(c[:1]) + c[1:], Words: theme.CornerWords[c], On: th.Corner() == c})
+	}
+	drawnLabels := map[string]string{"both": "Both", "dark": "Dark only", "light": "Light only"}
+	for _, sc := range theme.SchemeChoices {
+		drawn = append(drawn, choice{Name: sc, Label: drawnLabels[sc], Words: theme.SchemeWords[sc], On: th.Scheme() == sc})
+	}
+	data["Corners"], data["DrawnIn"] = corners, drawn
+	// What a backdrop's veil leaves readable, which refuses only a page with a
+	// backdrop, so it is said here beside the palette rather than counted
+	// with the failures that refuse every page.
+	var veil []theme.Finding
+	for _, f := range th.CheckBackdrop() {
+		if f.Blocking {
+			veil = append(veil, f)
+		}
+	}
+	data["Veil"] = veil
+	s.designLayerData(data, th, p)
 	type iconChoice struct {
 		Name, Label string
 		Preview     template.HTML
@@ -223,10 +306,19 @@ func (s *Server) handleDesign(w http.ResponseWriter, r *http.Request) {
 	data["Dir"] = s.DesignSet.Dir
 	data["Layouts"] = s.designLayouts()
 	data["Fonts"] = s.designFonts()
+	if s.DesignSet != nil && s.DesignSet.FontNotes != nil {
+		data["FontNotes"] = s.DesignSet.FontNotes()
+	}
 	data["Starters"] = starter.All()
 	data["Own"] = s.DesignSet.OwnStylesheet != nil && s.DesignSet.OwnStylesheet()
 	data["CanInstall"] = s.DesignSet.InstallLayout != nil
-	s.render(w, r, "design.html", data)
+	// The typeface form only for somebody who may use it. An author was
+	// shown it, chose a file, sent it, and was answered with a page saying
+	// the credential could not do that; the screen now says who can before
+	// anybody picks a file.
+	data["CanAddFont"] = s.DesignSet.AddFont != nil && s.allows(p, auth.ActPublish, "/")
+	data["FontNeedsPublish"] = s.DesignSet.AddFont != nil && !s.allows(p, auth.ActPublish, "/")
+	show()
 }
 
 func (s *Server) designLayouts() []string {
@@ -299,7 +391,12 @@ func (s *Server) handleDesignSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.FormValue("reset") != "" {
+		// Every key the token is set under, ".light" among them: a palette
+		// generated here or by `theme generate` writes one per scheme, and a
+		// reset that left that one behind said "back to the shipped value"
+		// with the light scheme still wearing the generated colour.
 		delete(next, token)
+		delete(next, token+".light")
 		delete(next, token+".dark")
 		if err := s.DesignSet.Save(next); err != nil {
 			s.designRedirect(w, r, "", err.Error())
@@ -313,7 +410,15 @@ func (s *Server) handleDesignSave(w http.ResponseWriter, r *http.Request) {
 	light := strings.TrimSpace(r.FormValue("light"))
 	dark := strings.TrimSpace(r.FormValue("dark"))
 	if light != "" {
-		next[token] = light
+		// Into the key that is in charge of the light scheme. A generated
+		// palette holds "primary.light", which wins over "primary", so the
+		// light value went into a key that reached no reader and the screen
+		// said "primary saved".
+		if _, perScheme := next[token+".light"]; perScheme {
+			next[token+".light"] = light
+		} else {
+			next[token] = light
+		}
 	}
 	if dark != "" {
 		next[token+".dark"] = dark
@@ -333,6 +438,25 @@ func (s *Server) handleDesignSave(w http.ResponseWriter, r *http.Request) {
 		if f.Blocking && f.Token == token {
 			s.designRedirect(w, r, "", f.Detail)
 			return
+		}
+	}
+	// A choice is part of no pair and can still break one: drawing a site in
+	// light alone puts its light palette in front of every reader, and the
+	// neon style's titles are a colour of their own. So a choice is refused
+	// when it makes a pair fail that did not fail before it.
+	if tok, _ := theme.Lookup(baseToken(token)); tok.Kind == theme.Choice {
+		before, _ := theme.New(overrides, s.siteFamilies())
+		had := map[string]bool{}
+		for _, f := range before.Check() {
+			if f.Blocking {
+				had[f.Detail] = true
+			}
+		}
+		for _, f := range th.Check() {
+			if f.Blocking && !had[f.Detail] {
+				s.designRedirect(w, r, "", f.Detail)
+				return
+			}
 		}
 	}
 	if err := s.DesignSet.Save(next); err != nil {
@@ -437,13 +561,96 @@ func (s *Server) handleDesignInstall(w http.ResponseWriter, r *http.Request) {
 		s.designRedirect(w, r, "", err.Error())
 		return
 	}
-	s.auditPub(p, "template.install", "/", map[string]string{
+	// template.use, as `quilzo template use` writes the same starter's
+	// markup and palette. This wrote template.install, so a change of the
+	// site's design made here was missed by whatever looked for the
+	// command line's name.
+	s.auditPub(p, "template.use", "/", map[string]string{
 		"starter": st.Name, "layout": st.LayoutName(),
 	})
 	sort.Strings(written)
 	s.designRedirect(w, r, "installed the "+st.Name+" design: "+
 		strings.Join(written, ", ")+". A page renders through it with "+
 		`"layout": "`+st.LayoutName()+`"`, "")
+}
+
+// handleDesignFont adds a typeface from a file somebody has.
+//
+// The route in for a customer whose foundry sent a TrueType or OpenType
+// file, which there was none of: the screen said to put a .woff2 in a
+// directory, and nothing here could make one.
+//
+// Publisher rather than author, as installing a layout is. It took the
+// authority of setting a token, on the reasoning that a face nobody names
+// changes no page; but a replaced face is already named, and an added one is
+// named by a token an author may set. A face is the glyphs every page that
+// names it is drawn with, and they are whatever its maker drew: one whose
+// digits are drawn as other digits changes every price and telephone number
+// at once. No gate reads a glyph, and a publisher reviewing an author's
+// draft sees its words, not the shapes the next publish draws them in.
+func (s *Server) handleDesignFont(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "post only", http.StatusMethodNotAllowed)
+		return
+	}
+	p, ok := s.requireAuth(w, r)
+	if !ok {
+		return
+	}
+	if !s.can(w, r, p, auth.ActPublish, "/") {
+		return
+	}
+	if s.DesignSet == nil || s.DesignSet.AddFont == nil {
+		s.designRedirect(w, r, "", "this build cannot add typefaces")
+		return
+	}
+	// The form's own 2 MiB limit holds (limitBody): a face larger than that
+	// cannot become one under the half megabyte a site serves.
+	if err := r.ParseMultipartForm(4 << 20); err != nil {
+		s.designRedirect(w, r, "", fmt.Sprintf("that file could not be read: %v. "+
+			"The most a typeface can be before it is made smaller is %d KiB", err,
+			webfont.MaxSourceBytes>>10))
+		return
+	}
+	defer func() { _ = r.MultipartForm.RemoveAll() }()
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		s.designRedirect(w, r, "", "choose a .ttf, .otf, .woff or .woff2 file")
+		return
+	}
+	defer file.Close()
+	body, err := io.ReadAll(io.LimitReader(file, webfont.MaxSourceBytes+1))
+	if err != nil {
+		s.designRedirect(w, r, "", err.Error())
+		return
+	}
+	added, err := s.DesignSet.AddFont(header.Filename, body,
+		strings.TrimSpace(r.FormValue("name")), r.FormValue("replace") == "1")
+	if err != nil {
+		s.designRedirect(w, r, "", err.Error())
+		return
+	}
+	detail := map[string]string{"file": added.File, "family": added.Family, "from": added.From}
+	if added.Replaced {
+		detail["replaced"] = "true"
+	}
+	s.auditPub(p, "theme.font.add", "/", detail)
+	named := ""
+	if added.NamedFromFace {
+		// The served name is not the file's, so say where it came from
+		// rather than leave somebody looking for a file they did not name.
+		named = " The weight and style are the ones the face declares, because the file's name does not give them as a served name does (Family-700-italic); give a name under Served as to choose another."
+	}
+	if added.WeightUnread {
+		// The one case the face could not be asked, so the screen says what
+		// was assumed rather than let a static face claim every weight
+		// unnoticed.
+		named = " A .woff2's tables cannot be read here, so it is served as its name says: every weight from 100 to 900, which is right for a variable face. If it is one weight, give the file in " + s.DesignSet.Dir + "/fonts/ a name that says which, such as " + added.Family + "-400.woff2."
+	}
+	s.designRedirect(w, r, fmt.Sprintf("The typeface is served from this origin at "+
+		"/fonts/%s: family %s, weight %s, %s.%s Choose %s for a font token below; the "+
+		"site serves it from its next publish", added.File, added.Family,
+		added.Weight, added.Style, named, added.Family), "")
 }
 
 func (s *Server) designRedirect(w http.ResponseWriter, r *http.Request, msg, errMsg string) {
@@ -496,6 +703,8 @@ func designGroupLabel(key string) string {
 		return "Corners and spacing"
 	case "breakpoints":
 		return "Breakpoints"
+	case "effects":
+		return "Glow and backdrops"
 	}
 	return key
 }
@@ -523,7 +732,7 @@ func (s *Server) handleSiteFont(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	w.Header().Set("Content-Type", "font/woff2")
+	w.Header().Set("Content-Type", webfont.ContentType(name))
 	w.Header().Set("Cache-Control", "private, max-age=3600")
 	w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
 	_, _ = w.Write(body)

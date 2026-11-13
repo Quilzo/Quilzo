@@ -322,3 +322,91 @@ func TestStandardInputAnswersTheRevisionAskedFor(t *testing.T) {
 		}
 	}
 }
+
+// What an operation answers with is text an agent can read: a string as it
+// is, and anything else as JSON. shield_status answered with a map, and the
+// text was Go's own notation for one, "map[active:[] held:false ...]",
+// which no client can parse.
+func TestAnAnswerThatIsNotTextIsJSON(t *testing.T) {
+	type entry struct {
+		Name  string `json:"name"`
+		Count int    `json:"count"`
+	}
+	answers := map[string]any{
+		"a_map":    map[string]any{"active": []any{}, "held": false, "count": 2},
+		"a_struct": entry{Name: "lockdown", Count: 3},
+		"a_list":   []entry{{Name: "freeze", Count: 1}},
+		"nothing":  nil,
+	}
+	s := NewServer("t", "1")
+	s.Authorise = allowAll
+	for name, answer := range answers {
+		s.Register(Operation{Name: name, Summary: "answers"},
+			func(map[string]any) (any, error) { return answer, nil })
+	}
+	s.Register(Operation{Name: "words", Summary: "answers"},
+		func(map[string]any) (any, error) { return "no blocking failures", nil })
+	for name, answer := range answers {
+		got := text(t, call(t, s, "tools/call", callParams{
+			Name: "quilzo_read", Arguments: map[string]any{"operation": name}}))
+		var back, want any
+		if err := json.Unmarshal([]byte(got), &back); err != nil {
+			t.Errorf("%s answered %q, which is not JSON", name, got)
+			continue
+		}
+		raw, _ := json.Marshal(answer)
+		_ = json.Unmarshal(raw, &want)
+		if a, b := fmt.Sprint(back), fmt.Sprint(want); a != b {
+			t.Errorf("%s answered %s, not %s", name, got, raw)
+		}
+	}
+	if got := text(t, call(t, s, "tools/call", callParams{
+		Name: "quilzo_read", Arguments: map[string]any{"operation": "words"}})); got != "no blocking failures" {
+		t.Errorf("a string answered %q", got)
+	}
+}
+
+// find compares words, not letters. Every query word was looked for as a
+// substring, so the "a" of "triage a support ticket" scored on almost every
+// operation and three more on one with an "a" in its name, which came
+// first; the operation the words were about did not.
+func TestFindComparesWords(t *testing.T) {
+	s := NewServer("t", "1")
+	s.Authorise = allowAll
+	ok := func(map[string]any) (any, error) { return "", nil }
+	s.Register(Operation{Name: "agent_activity", Summary: "what agents have been doing",
+		Keywords: []string{"agents", "activity", "audit"}}, ok)
+	s.Register(Operation{Name: "list_deciders", Summary: "the site's typed questions",
+		Keywords: []string{"decide", "classify"}}, ok)
+	s.Register(Operation{Name: "decide", Summary: "answer a decider's typed questions",
+		Keywords: []string{"decide", "classify", "triage"}}, ok)
+	for query, want := range map[string]string{
+		"triage a support ticket":     "decide",
+		"which deciders are there":    "list_deciders",
+		"what agents have been doing": "agent_activity",
+	} {
+		if got := s.find(query); len(got) == 0 || got[0].Name != want {
+			t.Errorf("%q found %v first, not %s", query, got, want)
+		}
+	}
+}
+
+// A tool or operation nobody has is named back by a short form of what was
+// asked for, not by all of it: the name is whatever the caller sent, up to
+// the whole body, and the answer went into the log as well.
+func TestAnUnknownNameIsQuotedShort(t *testing.T) {
+	s := testServer()
+	huge := "x" + strings.Repeat("y", 1<<20)
+	for name, args := range map[string]map[string]any{
+		huge:          {"operation": "list_pages"},
+		"quilzo_read": {"operation": huge},
+	} {
+		r := call(t, s, "tools/call", map[string]any{"name": name, "arguments": args})
+		if r.Error == nil {
+			t.Fatal("a name nobody has was answered")
+		}
+		if len(r.Error.Message) > 512 || !strings.Contains(r.Error.Message, "xyyy") {
+			t.Errorf("answered %d bytes, not a short form of the name: %.120s", len(r.Error.Message), r.Error.Message)
+		}
+	}
+}

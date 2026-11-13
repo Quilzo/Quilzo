@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/quilzo/quilzo/internal/asciifold"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/section"
 )
@@ -333,8 +334,12 @@ func injectBar(page, bar string) string {
 
 // insertAfterTag puts s just after the opening tag named by open, or returns
 // the input unchanged when there is none.
+//
+// The tag is found in the page itself rather than in strings.ToLower of it,
+// whose offsets are not the page's once a character lowers to a different
+// number of bytes: a Turkish title put the stylesheet before <head>.
 func insertAfterTag(doc, open, s string) string {
-	i := strings.Index(strings.ToLower(doc), open)
+	i := asciifold.Index(doc, open)
 	if i < 0 {
 		return doc
 	}

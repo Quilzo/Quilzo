@@ -13,13 +13,27 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/form"
+	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/throttle"
 )
 
 // rateSite is a site with one form and a limiter, and nothing else.
 func rateSite(t *testing.T, policy throttle.Policy) (*Site, *form.Store) {
 	t.Helper()
-	st, _ := setup(t)
+	st, s := setup(t)
+	// A published page that offers the form: one nothing offers is not
+	// answered at all.
+	pages, err := site.PagesAt(s, site.RefLive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages["enquiry"] = map[string]any{"title": "Enquiries", "form": "enquiry"}
+	if _, err := site.SaveDraft(s, pages, "the enquiry page", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Publish(s, ""); err != nil {
+		t.Fatal(err)
+	}
 	f := &form.Form{
 		Name: "enquiry", Label: "Enquiry",
 		Notice: "What you send is kept for thirty days and read by one person.",

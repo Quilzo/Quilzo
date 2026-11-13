@@ -58,6 +58,11 @@ type Assistants struct {
 	Ratings   func(name string) (helped, didNot int)
 	CheckGaps func(ctx context.Context, name, by string) (asked, closed int, err error)
 	CloseGap  func(name, key, by string) error
+	// Measured says when a chatbot was last evaluated and on which model,
+	// "measured on MODEL, DATE", and "" for never. What an evaluation
+	// found holds only for the model it measured, and the screen said
+	// nothing of either. Nil says nothing.
+	Measured func(name string) string
 }
 
 func (s *Server) assistantsReady(w http.ResponseWriter, r *http.Request) (principal, bool) {
@@ -77,7 +82,7 @@ func (s *Server) handleAssistants(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data := map[string]any{
-		"Nav": "assistants", "Title": "Assistants", "Principal": p,
+		"Nav": "assistants", "Title": "Chatbots", "Principal": p,
 		"Message": r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"),
 		"CanSave": s.mayUse(p, auth.ActPublish, "/") && !p.Limits.ReadOnly,
 	}
@@ -94,7 +99,26 @@ func (s *Server) handleAssistants(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data["List"] = set.Assistants
+	names := make([]string, 0, len(set.Assistants))
+	for _, a := range set.Assistants {
+		names = append(names, a.Name)
+	}
+	data["Measured"] = measuredBy(s.Assistants.Measured, names)
 	s.render(w, r, "assistants.html", data)
+}
+
+// measuredBy is what measured says of each name, for a list.
+func measuredBy(measured func(string) string, names []string) map[string]string {
+	out := map[string]string{}
+	if measured == nil {
+		return out
+	}
+	for _, name := range names {
+		if m := measured(name); m != "" {
+			out[name] = m
+		}
+	}
+	return out
 }
 
 // handleAssistant shows one assistant: its settings, its actions, and the
@@ -161,7 +185,9 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request) {
 		if groups, on, gerr := s.Assistants.Gaps(a.Name); gerr == nil {
 			var rows []gapRow
 			for _, g := range groups {
-				rows = append(rows, gapRow{Group: g, Write: "/pages/new?name=" + url.QueryEscape(sheet.Slug(g.Questions[0]))})
+				// Named for what it is about, not for all the visitor wrote,
+				// which may say who and where they are (gaps.Topic).
+				rows = append(rows, gapRow{Group: g, Write: "/pages/new?name=" + url.QueryEscape(sheet.Slug(gaps.Topic(g.Questions[0])))})
 			}
 			data["Gaps"], data["GapsOn"] = rows, on
 		}

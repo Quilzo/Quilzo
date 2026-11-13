@@ -4,11 +4,13 @@
 package main
 
 import (
+	"strings"
 	"time"
 
 	"flag"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 	"path/filepath"
 
 	"github.com/quilzo/quilzo/internal/out"
@@ -40,7 +42,7 @@ func pageHashes(s *store.Store, ref string) (map[string]string, error) {
 
 func cmdProvenance(root string, args []string) error {
 	if len(args) == 0 {
-		return provStatus(root, nil)
+		args = []string{bareRuns["provenance"]}
 	}
 	switch args[0] {
 	case "set":
@@ -61,11 +63,12 @@ func provSet(root string, args []string) error {
 		"humanEdits | trainedAlgorithmicMedia | compositeWithTrainedAlgorithmicMedia | algorithmicMedia")
 	model := fs.String("model", "", "which model, if one was involved")
 	instruction := fs.String("instruction", "", "what it was asked to do")
-	author := fs.String("author", "", "the accountable person (required)")
+	author := fs.String("author", "", "who to credit; whoever records this answers for the page, "+
+		"as on the provenance screen")
 	reviewer := fs.String("reviewed-by", "", "who checked the output, if anyone")
 	ref := fs.String("ref", site.RefDraft, "which ref the page is in")
 	pos, flags := leadingArgs(args, 1)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -90,13 +93,24 @@ func provSet(root string, args []string) error {
 	if err != nil {
 		return err
 	}
+	// Whoever records it answers for it, as the provenance screen has it,
+	// and --author naming somebody else credits them in the note. Named by
+	// --author, the person it named was one of the people whose model wrote
+	// some of the draft (draftStarters), none of whom is asked to read the
+	// others': dana named lee on the page her own run wrote, and approved
+	// it alone with lee there to read it.
+	caller := resolveCaller(root, flagToken)
+	who := caller.Name
 	rec := provenance.Record{
 		ContentHash: hash,
 		SourceType:  provenance.SourceType(*kind),
 		Model:       *model,
 		Instruction: *instruction,
-		Author:      *author,
+		Author:      who,
 		ReviewedBy:  *reviewer,
+	}
+	if named := strings.TrimSpace(*author); named != "" && named != who {
+		rec.Note = credit(named)
 	}
 	if err := idx.Set(page, rec); err != nil {
 		return err
@@ -116,7 +130,7 @@ func provSet(root string, args []string) error {
 func provStatus(root string, args []string) error {
 	fs := flag.NewFlagSet("check", flag.ContinueOnError)
 	ref := fs.String("ref", site.RefDraft, "which ref to check")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 
@@ -289,8 +303,20 @@ func provBackfill(root string, args []string) error {
 	ref := fs.String("ref", site.RefDraft, "which ref to mark")
 	dryRun := fs.Bool("dry-run", false, "report what would happen, write nothing")
 	limit := fs.Int("history", 5000, "how many commits back to read for evidence")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
+	}
+	// Writing the records is editing, as setting one is (privilege.go). The
+	// table asks backfill only to view, so that a dry run stays a read, and
+	// nothing else asked: a reader, and a token issued --read-only, wrote
+	// the inferred records.
+	caller := resolveCaller(root, flagToken)
+	if !*dryRun {
+		if err := authorise(root, caller, auth.ActEditDraft, "/"); err != nil {
+			record(root, caller.auditRecord("provenance.backfill", "/"+*ref, audit.Denied,
+				map[string]string{"reason": "authorisation"}))
+			return err
+		}
 	}
 
 	s, err := open(root)
@@ -381,7 +407,6 @@ func provBackfill(root string, args []string) error {
 		return err
 	}
 
-	caller := resolveCaller(root, "")
 	record(root, audit.Record{
 		Action: "provenance.backfill", Resource: "/" + *ref,
 		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,

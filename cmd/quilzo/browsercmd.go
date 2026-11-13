@@ -61,6 +61,9 @@ func cmdBrowser(root string, args []string) error {
 	}
 	switch args[0] {
 	case "status":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		path, from, err := browserPath(root)
 		if w.Mode == out.JSON {
 			doc := map[string]any{"browser": nil, "from": nil}
@@ -102,6 +105,9 @@ func cmdBrowser(root string, args []string) error {
 		}
 		return nil
 	case "install":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 		defer cancel()
 		d, err := browser.Pinned.ForThisMachine()
@@ -130,6 +136,9 @@ func cmdBrowser(root string, args []string) error {
 	case "grant", "grants":
 		return cmdBrowserGrant(root, args[1:])
 	case "find":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return cmdBrowserFind(root)
 	}
 	return fmt.Errorf("unknown browser command %q; try status, install, find or grant", args[0])
@@ -143,6 +152,17 @@ func cmdBrowserGrant(root string, args []string) error {
 		set, err := loadBrowserGrants(root)
 		if err != nil {
 			return err
+		}
+		// The grants as one document under --json, in the order they are
+		// listed. This printed them whatever was asked for, so a script
+		// asking what an outside client's browser may do had prose to parse.
+		if w.Mode == out.JSON {
+			grants := make([]browserGrant, 0, len(set))
+			for _, name := range grantNames(root) {
+				grants = append(grants, set[name])
+			}
+			w.JSON(map[string]any{"grants": grants})
+			return nil
 		}
 		if len(set) == 0 {
 			fmt.Printf("  no browser grants. `quilzo browser grant NAME --read HOST,…` declares one\n")
@@ -180,7 +200,7 @@ func cmdBrowserGrant(root string, args []string) error {
 	pictures := fs.Bool("pictures", false, "allow browser_look, which carries a picture of the page")
 	daily := fs.Int("daily", 0, "calls one caller may make a day")
 	off := fs.Bool("off", false, "withdraw the grant")
-	if err := fs.Parse(args[1:]); err != nil {
+	if err := parseFlags(fs, args[1:], nil, 0); err != nil {
 		return err
 	}
 	caller := resolveCaller(root, "")

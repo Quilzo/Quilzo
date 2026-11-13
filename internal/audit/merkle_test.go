@@ -315,3 +315,57 @@ func TestAnInclusionProofChecksTheEntryNotItsSelfDeclaredHash(t *testing.T) {
 		t.Fatal("an auditor was shown an altered entry and its proof verified")
 	}
 }
+
+// A log is checked against every head taken from it, not the largest
+// alone. Cut back and grown again past the largest, a log extends the next
+// head saved, which was taken from it as it was left; the head saved before
+// the cut is the one that shows it, and it was no longer looked at.
+func TestALogIsCheckedAgainstEveryHeadTakenFromIt(t *testing.T) {
+	events := logOf(t, 12)
+	before, _ := TreeHead(events[:8], time.Now())
+	altered := append(append([]Event(nil), events[:6]...), logOf(t, 12)[6:]...)
+	after, _ := TreeHead(altered, time.Now())
+	if p := AgainstHead(altered, after); p != nil {
+		t.Fatalf("the head taken after the cut: %v", p.Reason)
+	}
+	p := AgainstHeads(altered, []Head{after, before})
+	if p == nil || p.Seq != 8 || !strings.Contains(p.Reason, "NOT an append-only extension of the head at 8") {
+		t.Fatalf("against every head: %+v", p)
+	}
+	shrunk := AgainstHeads(altered[:7], []Head{before, after})
+	if shrunk == nil || shrunk.Seq != 8 || !strings.Contains(shrunk.Reason, "shrunk") ||
+		!strings.Contains(shrunk.Reason, "1 more") {
+		t.Errorf("a log shorter than both: %+v", shrunk)
+	}
+	if LargestHead([]Head{before, after}).Size != 12 || LargestHead(nil) != nil {
+		t.Error("the largest head is not the one covering the most entries")
+	}
+}
+
+// The roots against which the heads are checked, made in one pass, are the
+// tree's own at every size, so no log is called altered that is not, and a
+// head whose root is not the log's is found at any size.
+func TestTheHeadsAreCheckedAtEverySize(t *testing.T) {
+	events := logOf(t, 70)
+	var heads []Head
+	for n := 0; n <= len(events); n++ {
+		h, err := TreeHead(events[:n], time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		heads = append(heads, h)
+		if p := AgainstHeads(events, []Head{h}); p != nil {
+			t.Errorf("a log does not extend its own head at %d: %v", n, p.Reason)
+		}
+	}
+	if p := AgainstHeads(events, heads); p != nil {
+		t.Errorf("against every head at once: %v", p.Reason)
+	}
+	for n := 1; n <= len(events); n++ {
+		wrong := heads[n]
+		wrong.Root = heads[n-1].Root
+		if p := AgainstHeads(events, append(append([]Head(nil), heads...), wrong)); p == nil || p.Seq != int64(n) {
+			t.Errorf("a head at %d whose root is not the log's: %+v", n, p)
+		}
+	}
+}

@@ -25,8 +25,14 @@ func cmdForms(root string, args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return formsList(root)
 	case "expire":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return formsExpire(root)
 	case "erase":
 		return formsErase(root, args[1:])
@@ -114,7 +120,7 @@ func formsErase(root string, args []string) error {
 	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("erase", flag.ContinueOnError)
 	dry := fs.Bool("dry-run", false, "report what would go and remove nothing")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {

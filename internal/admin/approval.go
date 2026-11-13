@@ -162,12 +162,18 @@ func (s *Server) approvalFor(p principal, draft string) approvalState {
 		prop = nil
 	}
 
+	// What a model wrote among everything this would put live, and not
+	// only in the newest commit (site.MachineWroteSince): read from that
+	// one alone, a person's typo fix on top of an agent's change made the
+	// agent's change a person's, and Publish put it live unapproved.
+	wrote := machineChange(s, draft)
+
 	need := counted
 	if need <= 0 {
 		// Only the rule about a model's work applies, and only to a model's
 		// work: one person running their own site publishes their own words
 		// with nobody else asked, as before.
-		if !machineWrote(s, draft, prop) {
+		if !machineWrote(wrote, draft, prop) {
 			return approvalState{}
 		}
 		// One approval, from a person, is what that rule needs. Said as a
@@ -191,6 +197,18 @@ func (s *Server) approvalFor(p principal, draft string) approvalState {
 		st.Wrote = c.Message
 		st.MachineWrote = collab.MachineWrote(c.Message)
 	}
+	// And what is behind it: the proposal is judged on everything it
+	// would put live, and named by the model's change when that is not
+	// the newest commit.
+	if prop.Content != draft {
+		wrote = machineChange(s, prop.Content)
+	}
+	if wrote != nil {
+		st.MachineWrote = true
+		if wrote.Message != "" {
+			st.Wrote = wrote.Message
+		}
+	}
 	st.Matches = prop.Content == draft
 	st.Stale = prop.Stale()
 
@@ -204,23 +222,39 @@ func (s *Server) approvalFor(p principal, draft string) approvalState {
 	if kindOf == nil {
 		kindOf = func(string) string { return "human" }
 	}
-	d := pol.Evaluate(*prop, kindOf, time.Now())
+	// A copy, marked: a proposal recorded as a person's is still a
+	// model's when a model wrote some of it, and the hooks' own record is
+	// not this screen's to rewrite.
+	judged := *prop
+	judged.MarkMachine(wrote)
+	d := pol.Evaluate(judged, kindOf, time.Now())
 	st.Allowed, st.Reason, st.Have, st.Missing = d.Allowed, d.Reason, d.Have, d.Missing
 
 	switch {
 	case !s.Policy.Evaluate(p.Name, auth.ActPublish, "/").Allowed:
 		st.Why = "Approving is part of publishing, and you cannot publish here."
-	case p.Name == prop.Author:
+	case auth.SamePerson(p.Name, prop.Author):
 		// The rule that makes the whole thing worth having. Somebody approving
 		// their own work satisfies a counter and reviews nothing.
 		st.Why = "You proposed this, so you cannot also approve it."
+	case pol.Requested(judged, p.Name):
+		// What a model wrote for the person looking, with a count set: they
+		// asked for it, as they would their own work.
+		st.Why = "A model wrote this for you, so you asked for it, and with a " +
+			"count of approvals set somebody else approves it."
+	case !pol.Counts(p.Name):
+		// Asked only who may publish, this offered the approval to
+		// somebody the approvers leave out, and theirs was recorded and
+		// counted for nothing (collab.Policy.Counts).
+		st.Why = "Only approvals from " + strings.Join(pol.Approvers, ", ") +
+			" count towards publishing this, so yours is not asked for."
 	case !st.Matches:
 		st.Why = "The draft has moved since this was proposed. Propose the " +
 			"current draft before approving it."
 	default:
 		already := false
 		for _, a := range st.Approvals {
-			if a.By == p.Name {
+			if auth.SamePerson(a.By, p.Name) {
 				already = true
 			}
 		}
@@ -233,15 +267,32 @@ func (s *Server) approvalFor(p principal, draft string) approvalState {
 	return st
 }
 
-// machineWrote reports whether a model wrote the commit being published:
-// its message says so, or the proposal for exactly these bytes was made as
-// a model's (collab.AuthorKindFor).
-func machineWrote(s *Server, commit string, prop *collab.Proposal) bool {
+// machineChange is the newest change a model wrote among those publishing
+// commit would put live, or nil when people wrote all of them.
+//
+// A commit that cannot be read is answered as a model's, as the walk
+// answers one behind it: nothing shows a person wrote it, and publishing
+// it fails on its own account anyway. No commit at all, as on a store with
+// no draft yet, is nothing anybody wrote.
+func machineChange(s *Server, commit string) *collab.MachineChange {
+	if commit == "" {
+		return nil
+	}
+	m, err := site.MachineWroteSince(s.Store, commit)
+	if err != nil {
+		return &collab.MachineChange{Commit: commit, Unread: err.Error()}
+	}
+	return m
+}
+
+// machineWrote reports whether a model wrote any of what publishing commit
+// would put live (machineChange), or the proposal for exactly these bytes
+// was made as a model's (collab.AuthorKindFor).
+func machineWrote(m *collab.MachineChange, commit string, prop *collab.Proposal) bool {
 	if prop != nil && prop.Content == commit && prop.AuthorKind == "ai" {
 		return true
 	}
-	c, err := s.Store.GetCommit(commit)
-	return err == nil && collab.MachineWrote(c.Message)
+	return m != nil
 }
 
 // handlePropose offers the current draft for review.
@@ -273,16 +324,37 @@ func (s *Server) handlePropose(w http.ResponseWriter, r *http.Request) {
 	if s.Approvals.KindOf != nil {
 		proposerKind = s.Approvals.KindOf(p.Name)
 	}
-	authored := ""
+	// And named by who wrote it, for the same reason. Propose moved the
+	// proposal onto the draft under the name of whoever pressed it, and
+	// every rule about who may approve a change reads that name: editor
+	// offered dana's change for review, and with one approval asked dana
+	// approved her own change as though editor had written it. The
+	// proposal for these bytes already names who wrote them, read from
+	// the commits as the command line reads them (cmd/quilzo
+	// proposalFor); one for other bytes is named by the draft's newest
+	// commit, and the presser only when that cannot be read.
+	authored, author := "", p.Name
 	if c, cerr := s.Store.GetCommit(draft); cerr == nil {
 		authored = c.Message
+		if c.Author != "" {
+			author, _ = collab.WrittenFor(c.Message, c.Author)
+		}
+	}
+	if prop != nil && prop.Content == draft && prop.Author != "" {
+		author = prop.Author
 	}
 	kind := collab.AuthorKindFor(authored, proposerKind)
+	// And of every commit behind it that publishing would put live: the
+	// newest being a person's typo fix does not make an agent's change
+	// under it a person's.
+	if machineChange(s, draft) != nil {
+		kind = "ai"
+	}
 	message := strings.TrimSpace(r.FormValue("message"))
 
 	if prop == nil {
 		prop = &collab.Proposal{
-			Content: draft, Author: p.Name, AuthorKind: kind,
+			Content: draft, Author: author, AuthorKind: kind,
 			CreatedAt: time.Now().Unix(), Message: message,
 		}
 	} else {
@@ -290,7 +362,13 @@ func (s *Server) handlePropose(w http.ResponseWriter, r *http.Request) {
 		// discarding it. Those approvals stop counting — they name different
 		// bytes — and they are still the truthful history of who agreed to
 		// what, which is the part an auditor reads.
-		prop.Rebase(draft, p.Name, time.Now())
+		prop.Rebase(draft, author, time.Now())
+		// Moved onto content a model wrote some of, it is a model's. Kept
+		// as it was otherwise: a person re-offering a model's proposal
+		// does not make it theirs.
+		if kind == "ai" {
+			prop.AuthorKind = kind
+		}
 		if message != "" {
 			prop.Message = message
 		}
@@ -338,6 +416,16 @@ func (s *Server) handleApprove(w http.ResponseWriter, r *http.Request) {
 			"proposed, so an approval now would name content nobody offered")
 		return
 	}
+	// And from somebody whose approval counts, re-checked for the same
+	// reason: the screen not offering it is presentation, and a post
+	// recorded an approval that counted for nothing.
+	if s.Approvals.Policy != nil {
+		if pol, perr := s.Approvals.Policy(); perr == nil && !pol.Counts(p.Name) {
+			s.approvalRedirect(w, r, "", "only approvals from "+strings.Join(pol.Approvers, ", ")+
+				" count towards publishing this, so yours is not taken")
+			return
+		}
+	}
 	alone := false
 	if s.Approvals.SecondPerson != nil {
 		var serr error
@@ -355,7 +443,10 @@ func (s *Server) handleApprove(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.auditPub(p, "approval.approve", "/", map[string]string{
+	// review.approve, as `quilzo review approve` writes it. This wrote
+	// approval.approve, so whatever looked for an approval under the
+	// command line's name missed every one given in the browser.
+	s.auditPub(p, "review.approve", "/", map[string]string{
 		"commit": shortHash(prop.Content), "alone": strconv.FormatBool(alone)})
 	s.approvalRedirect(w, r, "recorded", "")
 }

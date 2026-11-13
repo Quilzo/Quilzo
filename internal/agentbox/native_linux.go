@@ -240,7 +240,8 @@ func (n Native) Run(ctx context.Context, s Spec) (Result, error) {
 	if s.ReadOnlyWorkdir {
 		ss.ReadWrite, ss.Read = append([]string(nil), s.Write...), []string{s.Workdir}
 	}
-	for _, p := range append(append([]string(nil), systemReads...), s.Read...) {
+	ss.Read = append(ss.Read, sandbox.SystemReadsHere()...)
+	for _, p := range s.Read {
 		if _, err := os.Stat(p); err == nil {
 			ss.Read = append(ss.Read, p)
 		}

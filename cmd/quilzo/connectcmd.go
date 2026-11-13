@@ -11,6 +11,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -35,7 +36,7 @@ import (
 //	quilzo connect provider add NAME --template google --client-id ID --client-secret SECRET
 //	quilzo connect provider remove NAME
 //	quilzo connect start NAME                         prints where to sign in
-//	quilzo connect list                               your connected accounts
+//	quilzo connect list                               your connected accounts, and when they end
 //	quilzo connect revoke NAME [--person WHO]
 //
 // Starting from the command line prints the provider's address; the
@@ -82,6 +83,10 @@ type account struct {
 	Connected time.Time       `json:"connected"`
 	Refreshed time.Time       `json:"refreshed,omitempty"`
 	Sealed    json.RawMessage `json:"sealed"`
+	// When its tokens end, beside them rather than in them, so a list
+	// says it without opening them; one kept before this was learns it
+	// the next time it is used.
+	connect.Ends
 }
 
 type accounts struct {
@@ -190,6 +195,20 @@ var connectPoster connect.Poster = func(ctx context.Context, to string, form url
 	return res.Body, nil
 }
 
+// connectGetter makes the GET that Meta's dialects exchange and renew
+// their tokens with, through the checked client. The address carries the
+// client secret and the token, so no redirect is followed with it, and
+// the answer is bounded as a token endpoint's is.
+var connectGetter connect.Getter = func(ctx context.Context, u string) (int, http.Header, []byte, error) {
+	c := fetch.For("accounts")
+	c.Limits = fetch.Limits{MaxBytes: 64 << 10, Timeout: 15 * time.Second, MaxRedirects: -1}
+	res, err := c.Do(ctx, http.MethodGet, u, nil, map[string]string{"Accept": "application/json"})
+	if err != nil {
+		return 0, nil, nil, err
+	}
+	return res.Status, res.Header, res.Body, nil
+}
+
 // clientSecret is a provider's client secret, when it has one.
 func clientSecret(root string, p connect.Provider) (string, error) {
 	if p.Secret == "" {
@@ -279,7 +298,7 @@ func finishConnect(ctx context.Context, root, state, code, person string) (strin
 	if err != nil {
 		return "", err
 	}
-	tok, err := connect.Exchange(ctx, connectPoster, p, secret, pd, code, time.Now())
+	tok, err := connect.Exchange(ctx, connectPoster, connectGetter, p, secret, pd, code, time.Now())
 	if err != nil {
 		recordE(root, audit.Record{Action: "connect.failed", Resource: "/connections", Outcome: audit.Failure,
 			Principal: person, Kind: audit.KindHuman, Detail: map[string]string{"provider": pd.Provider, "why": clip(err.Error(), 200)}})
@@ -291,7 +310,7 @@ func finishConnect(ctx context.Context, root, state, code, person string) (strin
 		if err != nil {
 			return err
 		}
-		f.Accounts[key] = account{Provider: p.Name, Scope: tok.Scope, Connected: time.Now().UTC(), Sealed: sealed}
+		f.Accounts[key] = account{Provider: p.Name, Scope: tok.Scope, Connected: time.Now().UTC(), Sealed: sealed, Ends: tok.Ends()}
 		return nil
 	})
 	if err != nil {
@@ -303,7 +322,10 @@ func finishConnect(ctx context.Context, root, state, code, person string) (strin
 }
 
 // connectionToken is the access token of a person's account at a
-// provider, refreshed when due, for a call to host.
+// provider, refreshed when due, for a call to host. A token that was only
+// due to be renewed (Meta's, a day after the last renewal) and could not
+// be still works, and is used as it is: the renewal is tried again at the
+// next use, rather than the call failing while the token is good.
 func connectionToken(ctx context.Context, root, provider, person, host string) (string, error) {
 	set, err := loadConnectProviders(root)
 	if err != nil {
@@ -324,7 +346,7 @@ func connectionToken(ctx context.Context, root, provider, person, host string) (
 	err = changeAccounts(root, func(f *accounts, kr *vault.Keyring) error {
 		a, ok := f.Accounts[key]
 		if !ok {
-			return fmt.Errorf("%s has not connected an account at %s: quilzo connect start %s, or Connected accounts", person, p.Title, p.Name)
+			return fmt.Errorf("%s has not connected an account at %s: quilzo connect start %s, or Your accounts in the admin", person, p.Title, p.Name)
 		}
 		tok, err := openToken(kr, key, a.Sealed)
 		if err != nil {
@@ -332,20 +354,37 @@ func connectionToken(ctx context.Context, root, provider, person, host string) (
 		}
 		if tok.Due(time.Now()) {
 			secret, err := clientSecret(root, p)
-			if err != nil {
+			if err != nil && tok.Lapsing(time.Now()) {
 				return err
 			}
-			fresh, err := connect.Refresh(ctx, connectPoster, p, secret, tok.Refresh, time.Now())
-			if err != nil {
+			// A renewal that cannot be asked for, the client secret being
+			// unreadable here (a process started without the variable that
+			// carries it), is one that failed: the call failed a day after
+			// connecting, with a token that worked for weeks more.
+			var fresh connect.Token
+			if err == nil {
+				fresh, err = connect.Refresh(ctx, connectPoster, connectGetter, p, secret, tok, time.Now())
+			}
+			switch {
+			case err != nil && tok.Lapsing(time.Now()):
 				return fmt.Errorf("%s's account at %s could not be refreshed (%v): connect it again", person, p.Title, err)
+			case err == nil:
+				// A refresh token kept as it was ends when it did: the
+				// answer that kept it says nothing new of that. (LinkedIn's
+				// dialect keeps its own year from the first issue, which
+				// using it does not renew.)
+				if fresh.Refresh == tok.Refresh && fresh.RefreshExpiry.IsZero() {
+					fresh.RefreshExpiry = tok.RefreshExpiry
+				}
+				if a.Sealed, err = sealToken(kr, key, fresh); err != nil {
+					return err
+				}
+				a.Refreshed = time.Now().UTC()
+				tok = fresh
 			}
-			if a.Sealed, err = sealToken(kr, key, fresh); err != nil {
-				return err
-			}
-			a.Refreshed = time.Now().UTC()
-			f.Accounts[key] = a
-			tok = fresh
 		}
+		a.Ends = tok.Ends()
+		f.Accounts[key] = a
 		out = tok.Access
 		return nil
 	})
@@ -407,6 +446,9 @@ func cmdConnect(root string, args []string) error {
 	caller := resolveCaller(root, flagToken)
 	switch args[0] {
 	case "providers":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		set, err := loadConnectProviders(root)
 		if err != nil {
 			return err
@@ -439,6 +481,9 @@ func cmdConnect(root string, args []string) error {
 		w.Human("Open this in the browser where you are signed in to the admin as %s, within ten minutes:\n\n  %s\n", caller.Name, to)
 		return nil
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		mine, err := myConnections(root, caller.Name)
 		if err != nil {
 			return err
@@ -449,16 +494,27 @@ func cmdConnect(root string, args []string) error {
 		if len(mine) == 0 {
 			w.Human("  %s%s has connected no account%s\n", dim, caller.Name, reset)
 		}
+		now := time.Now()
 		for _, a := range mine {
-			w.Human("%s%s%s  connected %s%s\n", bold, a.Provider, reset, a.Connected.Local().Format("2 Jan 2006"),
-				map[bool]string{true: ", scopes " + a.Scope, false: ""}[a.Scope != ""])
+			w.Human("%s%s%s  connected %s%s\n    %s\n", bold, a.Provider, reset, a.Connected.Local().Format("2 Jan 2006"),
+				map[bool]string{true: ", scopes " + a.Scope, false: ""}[a.Scope != ""], a.Ends.Said(time.Local))
+			if a.LapsesSoon(now) {
+				// One that has stopped says so, as Your accounts does: told to
+				// connect it again "before" a time gone by, a person read a
+				// connection that no longer worked as one that still did.
+				when := "connect it again before " + a.Lapses().Local().Format("2 Jan 2006 15:04")
+				if !a.Lapses().After(now) {
+					when = "it stopped working " + a.Lapses().Local().Format("2 Jan 2006 15:04") + ", so connect it again"
+				}
+				w.Human("    %s%s: quilzo connect start %s%s\n", yellow, when, a.Provider, reset)
+			}
 		}
 		return nil
 	case "revoke":
 		fs := flag.NewFlagSet("revoke", flag.ContinueOnError)
 		person := fs.String("person", "", "another person's account: an administrator's to disconnect")
 		rest, flags := leadingArgs(args[1:], 1)
-		if err := fs.Parse(flags); err != nil {
+		if err := parseFlags(fs, flags, &rest, 1); err != nil {
 			return err
 		}
 		if len(rest) != 1 {
@@ -490,8 +546,9 @@ func connectProvider(root string, caller *Caller, args []string) error {
 		return connectDiscover(root, caller, args[1:])
 	}
 	if len(args) < 2 || (args[0] != "add" && args[0] != "remove") {
-		return errors.New("usage: quilzo connect provider add NAME [--template google|microsoft|github] --client-id ID " +
-			"[--client-secret SECRET] [--scope S]... [--host H]... [--auth-url URL --token-url URL --revocation-url URL --title T]\n" +
+		return errors.New("usage: quilzo connect provider add NAME [--template " + strings.Join(connect.TemplateNames(), "|") +
+			"] --client-id ID [--client-secret SECRET] [--scope S]... [--host H]... " +
+			"[--auth-url URL --token-url URL --revocation-url URL --title T] [--dialect " + strings.Join(connect.DialectNames(), "|") + "]\n" +
 			"       quilzo connect provider remove NAME\n" +
 			"       quilzo connect provider discover NAME https://SERVER/mcp [--client-id ID] [--title T]")
 	}
@@ -507,10 +564,12 @@ func connectProvider(root string, caller *Caller, args []string) error {
 	revokeURL := fs.String("revocation-url", "", "the revocation endpoint, when it has one")
 	clientID := fs.String("client-id", "", "the client id the provider issued")
 	secret := fs.String("client-secret", "", "the sealed credential holding the client secret (quilzo secret set NAME)")
+	dialect := fs.String("dialect", "", "how the provider departs from standard OAuth 2, for one declared without a template "+
+		"(by default its platform's, at a social platform's site, and otherwise oauth2): "+strings.Join(connect.DialectNames(), ", "))
 	var scopes, hosts multiFlag
 	fs.Var(&scopes, "scope", "a scope to ask for; repeat for more")
 	fs.Var(&hosts, "host", "an API host its tokens may go to; repeat for more")
-	if err := fs.Parse(args[2:]); err != nil {
+	if err := parseFlags(fs, args[2:], nil, 0); err != nil {
 		return err
 	}
 	unlock, err := atomicfile.Lock(connectProvidersPath(root) + ".lock")
@@ -523,6 +582,7 @@ func connectProvider(root string, caller *Caller, args []string) error {
 		return err
 	}
 	var kept []connect.Provider
+	var inferred connect.Dialect
 	for _, p := range set.Providers {
 		if p.Name != name {
 			kept = append(kept, p)
@@ -551,6 +611,16 @@ func connectProvider(root string, caller *Caller, args []string) error {
 				*f.into = strings.TrimSpace(f.v)
 			}
 		}
+		if d := strings.TrimSpace(*dialect); d != "" {
+			p.Dialect = connect.Dialect(d)
+		} else if *template == "" {
+			// Declared by hand at a social platform's address, it speaks
+			// that platform's dialect, as the template does: named none,
+			// TikTok was asked as plain OAuth 2 and refused the request.
+			// --dialect oauth2 declares it otherwise.
+			p.Dialect = connect.PlatformDialect(p.AuthURL)
+			inferred = p.Dialect
+		}
 		if len(scopes) > 0 {
 			p.Scopes = append(append([]string{}, p.Scopes...), scopes...)
 		}
@@ -558,6 +628,9 @@ func connectProvider(root string, caller *Caller, args []string) error {
 			p.Hosts = hosts
 		}
 		if err := p.Check(); err != nil {
+			if inferred != "" {
+				return fmt.Errorf("%w (at its platform's site it speaks %s; --dialect oauth2 declares it otherwise)", err, inferred)
+			}
 			return err
 		}
 		kept = append(kept, p)
@@ -572,6 +645,10 @@ func connectProvider(root string, caller *Caller, args []string) error {
 	}
 	record(root, caller.auditRecord("connect.provider."+verb, "/connections", audit.Success, map[string]string{"provider": name}))
 	if verb == "add" {
+		if inferred != "" {
+			w.Human("  %sit speaks %s, its platform's dialect of OAuth; --dialect oauth2 declares it otherwise%s\n",
+				dim, inferred, reset)
+		}
 		if redirect, err := connectRedirect(root); err == nil {
 			w.Human("  %sregister this address with the provider as the redirect: %s%s\n", dim, redirect, reset)
 		}
@@ -600,7 +677,7 @@ func connectionsCapability(root string) *admin.Connections {
 			mine, err := myConnections(root, person)
 			out := make([]admin.ConnectedAccount, 0, len(mine))
 			for _, a := range mine {
-				out = append(out, admin.ConnectedAccount{Provider: a.Provider, Scope: a.Scope, Connected: a.Connected})
+				out = append(out, admin.ConnectedAccount{Provider: a.Provider, Scope: a.Scope, Connected: a.Connected, Expires: a.Ends})
 			}
 			return out, err
 		},

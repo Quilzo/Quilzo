@@ -98,7 +98,7 @@ func callDemo(args []string) error {
 	fs := flag.NewFlagSet("demo", flag.ContinueOnError)
 	suiteID := fs.Int("suite", int(sframe.AES128GCMSHA256128),
 		"which SFrame cipher suite the media goes out under")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	suite := sframe.Suite(*suiteID)
@@ -215,7 +215,7 @@ func firstLine(err error) string {
 func callCost(args []string) error {
 	fs := flag.NewFlagSet("cost", flag.ContinueOnError)
 	upto := fs.Int("members", 100, "the largest call to measure")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	if *upto < 2 || *upto > 256 {

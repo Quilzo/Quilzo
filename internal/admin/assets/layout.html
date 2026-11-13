@@ -229,11 +229,11 @@
 {{if .Paging.Needed}}
 <nav class="paging" aria-label="Pages of this list">
   {{if .Paging.HasPrev}}
-  <a rel="prev" href="{{.PagePath}}?from={{.Paging.Prev}}{{.Paging.Query}}">{{icon "chevron_left"}}Previous</a>
+  <a rel="prev" href="{{.Paging.Href .PagePath .Paging.Prev}}">{{icon "chevron_left"}}Previous</a>
   {{else}}<span class="paging-off">{{icon "chevron_left"}}Previous</span>{{end}}
   <span class="paging-at">{{.Paging.From}} to {{.Paging.To}} of {{.Paging.Total}}</span>
   {{if .Paging.HasNext}}
-  <a rel="next" href="{{.PagePath}}?from={{.Paging.Next}}{{.Paging.Query}}">Next{{icon "chevron_right"}}</a>
+  <a rel="next" href="{{.Paging.Href .PagePath .Paging.Next}}">Next{{icon "chevron_right"}}</a>
   {{else}}<span class="paging-off">Next{{icon "chevron_right"}}</span>{{end}}
 </nav>
 {{end}}
@@ -376,7 +376,7 @@
 <footer class="shell">
   <p><a href="{{.DocURL}}" target="_blank" rel="noopener noreferrer">Help with this screen{{template "newtab"}}</a>
     — the same link, in the same place, on every page.
-    <a href="{{.DocsBase}}" target="_blank" rel="noopener noreferrer">All documentation{{template "newtab"}}</a>.</p>
+    <span class="nobreak"><a href="{{.DocsBase}}" target="_blank" rel="noopener noreferrer">All documentation{{template "newtab"}}</a>.</span></p>
 </footer>
 </body>
 </html>
@@ -386,20 +386,20 @@
   <div class="field">
     {{if .Checkbox}}
       <input id="f-{{.Key}}" name="{{.Key}}" type="checkbox" value="true"{{if .Checked}} checked{{end}}
-             {{if .Help}}aria-describedby="h-{{.Key}}"{{end}}>
+             {{if .Help}}aria-describedby="h-{{.Key}}"{{end}}{{if .Invalid}} aria-invalid="true"{{end}}>
       <label for="f-{{.Key}}">{{.Label}}</label>
     {{else}}
       <label for="f-{{.Key}}">{{.Label}}{{if .Required}} {{template "req"}}{{end}}</label>
       {{if .Choices}}
         <select id="f-{{.Key}}" name="{{.Key}}"{{if .Required}} required{{end}}
-                {{if .Help}}aria-describedby="h-{{.Key}}"{{end}}>
+                {{if .Help}}aria-describedby="h-{{.Key}}"{{end}}{{if .Invalid}} aria-invalid="true"{{end}}>
           {{if not .Required}}<option value="">— not set —</option>{{end}}
           {{$sel := .Selected}}{{range .Choices}}<option value="{{.}}"{{if index $sel .}} selected{{end}}>{{.}}</option>{{end}}
         </select>
       {{else if .Long}}
         <textarea id="f-{{.Key}}" name="{{.Key}}" rows="8"{{if .Required}} required{{end}}
                   {{if .MaxLen}}maxlength="{{.MaxLen}}"{{end}}
-                  {{if .Help}}aria-describedby="h-{{.Key}}"{{end}}>{{.Value}}</textarea>
+                  {{if .Help}}aria-describedby="h-{{.Key}}"{{end}}{{if .Invalid}} aria-invalid="true"{{end}}>{{.Value}}</textarea>
       {{else}}
         {{/*
           A reference gets the browser's own completion over the pages in the
@@ -416,7 +416,7 @@
                {{if .SuggestID}} list="{{.SuggestID}}"{{end}}
                {{if .MaxLen}}maxlength="{{.MaxLen}}"{{end}}
                {{if .Min}} min="{{.Min}}"{{end}}{{if .Max}} max="{{.Max}}"{{end}}
-               {{if .Help}}aria-describedby="h-{{.Key}}"{{end}}>
+               {{if .Help}}aria-describedby="h-{{.Key}}"{{end}}{{if .Invalid}} aria-invalid="true"{{end}}>
         {{if .SuggestID}}
         <datalist id="{{.SuggestID}}">
           {{range .Suggest}}<option value="{{.}}"></option>{{end}}{{range .Pictures}}<option value="{{.ID}}" label="{{.Alt}}"></option>{{end}}

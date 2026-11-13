@@ -13,6 +13,7 @@ import (
 	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/out"
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/provenance"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
@@ -33,11 +34,12 @@ import (
 
 func cmdAssist(root string, args []string) error {
 	fs := flag.NewFlagSet("assist", flag.ContinueOnError)
-	author := fs.String("author", "", "the accountable person (required)")
+	author := fs.String("author", "", "the accountable person (required); what the model writes is "+
+		"recorded as made for you, and a name other than yours is credited")
 	dryRun := fs.Bool("dry-run", false, "show the proposal without writing anything")
 	tplDir := fs.String("templates", "templates", "where proposed templates would go")
 	pos, flags := leadingArgs(args, 1)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -54,7 +56,8 @@ func cmdAssist(root string, args []string) error {
 				"model writes, and that is never the tool")
 	}
 
-	model, err := assistModel(root, resolveCaller(root, flagToken).Name)
+	caller := resolveCaller(root, flagToken)
+	model, err := assistModel(root, caller.Name)
 	if err != nil {
 		return err
 	}
@@ -66,10 +69,15 @@ func cmdAssist(root string, args []string) error {
 	// Captured before the model is asked, not after. The gap between reading
 	// and writing is however long the model takes to think, which is the whole
 	// window this is protecting.
-	base := s.GetRef(site.RefDraft)
-	current, err := site.PagesAt(s, site.RefDraft)
+	//
+	// The pages and the commit they came from in one read, the draft or else
+	// what is live (site.SaveDraftOver). The base was the draft ref, and a
+	// store with no draft yet had none, which the write took as "whatever the
+	// draft is by then": a page saved while the model thought was written
+	// over by the proposal.
+	base, current, err := draftOrLive(s)
 	if err != nil {
-		current = map[string]any{}
+		return err
 	}
 
 	w.Human("asking %s...\n", model.Name())
@@ -157,8 +165,15 @@ func cmdAssist(root string, args []string) error {
 	// The draft this proposal was computed against. An assistant that read the
 	// draft, thought for twenty seconds and wrote back is the most likely
 	// concurrent writer in the system, and the least likely to notice.
-	cid, err := site.SaveDraftFrom(s, merged,
-		fmt.Sprintf("assist: %s", truncate(instruction, 60)), *author, base)
+	//
+	// Made for the caller, who asked for it, and --author naming somebody
+	// else credits them (recordedAs). Made for the name given, what dana's
+	// assistant wrote was written for lee, and with one approval asked dana
+	// approved it as somebody else's request.
+	who, message := caller.recordedAs(*author, fmt.Sprintf("assist: %s", truncate(instruction, 60)))
+	// Merged with whatever landed while the model thought, and refused where
+	// somebody changed a page the proposal changes too (a merge conflict).
+	cid, _, err := site.SaveDraftOver(s, merged, message, who, base)
 	if err != nil {
 		return conflictError(err, names)
 	}
@@ -176,7 +191,11 @@ func cmdAssist(root string, args []string) error {
 		}
 	}
 
-	if err := markAssisted(root, s, cid, names, added, model.Name(), instruction, *author); err != nil {
+	// Answered for by the person it was made for, as the admin's assistant
+	// records whoever is signed in. Named by --author, that person was one of
+	// the people whose model's pages are in the draft (draftStarters), and so
+	// not asked to read them, which left dana to approve her own alone.
+	if err := markAssisted(root, s, cid, names, added, model.Name(), instruction, who); err != nil {
 		// The draft is written but unmarked, which is the state this command
 		// exists to prevent. Say so loudly rather than reporting success.
 		return fmt.Errorf(
@@ -193,7 +212,7 @@ func cmdAssist(root string, args []string) error {
 		Detail: map[string]string{
 			"pages":        fmt.Sprintf("%d", len(names)),
 			"commit":       short(cid),
-			"on_behalf_of": *author,
+			"on_behalf_of": who,
 		},
 	})
 
@@ -265,10 +284,9 @@ func changeKind(isNew bool) string {
 	return "changed"
 }
 
+// truncate is text on one line, clipped to n bytes and an ellipsis. It
+// clips with plaintext.Clip because a cut at the nth byte splits a
+// character: `quilzo schedule add` kept half an é in its audit note.
 func truncate(s string, n int) string {
-	s = strings.Join(strings.Fields(s), " ")
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
+	return plaintext.Clip(strings.Join(strings.Fields(s), " "), n, "…")
 }

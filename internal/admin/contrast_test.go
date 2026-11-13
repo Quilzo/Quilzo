@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"fmt"
 	"math"
 	"regexp"
 	"strconv"
@@ -425,4 +426,138 @@ func TestFocusIsVisible(t *testing.T) {
 	if !strings.Contains(body, "focus-visible") {
 		t.Error("the playground has no focus style")
 	}
+}
+
+// Text set back with opacity is checked at the colour it is drawn in.
+//
+// The pairs above are each role at full strength, and a rule that fades an
+// element draws its text nearer its background than either role says. The
+// count in the selected filter chip, on Data, Security controls and nine more
+// screens, was 12px of on-secondary-container at .7 over secondary-container:
+// 4.4:1 in the dark scheme, under the 4.5:1 AA asks of text that size, while
+// every pair here passed. A note somebody had dealt with, and a playbook that
+// is off, faded their hints the same way, below AA in the light scheme.
+//
+// So every opacity in the stylesheet is either checked here, against the text
+// drawn inside it, or named below as not fading text anybody has to read: a
+// fade added later is a failure until somebody says which.
+var setBack = []fade{
+	{"the count in a filter chip", []string{".chips .count"},
+		"--surface-container-low", []struct{ fg, on string }{{"--on-surface", ""}}},
+	{"the count in the selected filter chip", []string{".chips .count", ".chips a.on .count"},
+		"--secondary-container", []struct{ fg, on string }{{"--on-secondary-container", ""}}},
+	{"a note somebody dealt with", []string{".note.done"}, "--surface", []struct{ fg, on string }{
+		{"--on-surface", ""}, {"--on-surface-variant", ""},
+		{"--on-surface-variant", "--surface-container-high"}, // the field it is about
+		{"--on-warning-container", "--warning-container"},    // the page changed since
+	}},
+	{"a playbook that is off", []string{".auto-card.off"}, "--surface", []struct{ fg, on string }{
+		{"--on-surface", "--surface-container-lowest"},
+		{"--on-surface-variant", "--surface-container-lowest"},
+		{"--primary", "--surface-container-lowest"},
+		{"--on-surface-variant", "--surface-container-high"}, // the Off band, and the choices
+	}},
+}
+
+// fade is text set back with opacity, and what it is drawn on.
+type fade struct {
+	what string
+	// rules are the selectors whose opacity applies, in the order the
+	// cascade settles them: the last that declares one wins.
+	rules []string
+	// behind is what the faded element is drawn over, and text is each
+	// role drawn inside it, on the background the element gives it ("" is
+	// none of its own, so behind shows through).
+	behind string
+	text   []struct{ fg, on string }
+}
+
+// fadedNotText is each opacity that sets back no text somebody has to read,
+// and why. An inactive control is exempt from 1.4.3.
+var fadedNotText = map[string]string{
+	".paging-off":                  "the end of the pages, which cannot be turned to",
+	"fieldset.whileown:disabled":   "settings switched off while the site's own stylesheet is in use",
+	"from":                         "where the menu's entrance starts",
+	".wfbars .bar:hover path":      "a bar of a chart, pointed at",
+	".wfbars a:focus-visible path": "a bar of a chart, focused",
+}
+
+// opacities is the opacity each selector in a stylesheet is given.
+func opacities(t *testing.T, css string) map[string]float64 {
+	t.Helper()
+	css = regexp.MustCompile(`(?s)/\*.*?\*/`).ReplaceAllString(css, "")
+	decl := regexp.MustCompile(`(?:^|[;{\s])opacity\s*:\s*([0-9.]+)`)
+	out := map[string]float64{}
+	for _, m := range regexp.MustCompile(`([^{}]+)\{([^{}]*)\}`).FindAllStringSubmatch(css, -1) {
+		d := decl.FindStringSubmatch(m[2])
+		if d == nil {
+			continue
+		}
+		v, err := strconv.ParseFloat(d[1], 64)
+		if err != nil {
+			t.Fatalf("opacity %q in %q", d[1], m[1])
+		}
+		for sel := range strings.SplitSeq(m[1], ",") {
+			out[strings.Join(strings.Fields(sel), " ")] = v
+		}
+	}
+	return out
+}
+
+// mix is fg drawn at opacity a over bg.
+func mix(t *testing.T, fg, bg string, a float64) string {
+	t.Helper()
+	r1, g1, b1, ok1 := rgb(fg)
+	r2, g2, b2, ok2 := rgb(bg)
+	if !ok1 || !ok2 {
+		t.Fatalf("cannot mix %q over %q", fg, bg)
+	}
+	c := func(x, y float64) int { return int(math.Round((a*x + (1-a)*y) * 255)) }
+	return fmt.Sprintf("#%02x%02x%02x", c(r1, r2), c(g1, g2), c(b1, b2))
+}
+
+func TestTextSetBackStaysReadable(t *testing.T) {
+	fades := opacities(t, string(mustAsset(t, "style.css")))
+	if len(fades) < 3 {
+		t.Fatalf("found %d opacities in the stylesheet; the parse is wrong", len(fades))
+	}
+	checked := readableSetBack(t, fades, setBack)
+	for sel := range fades {
+		if !checked[sel] && fadedNotText[sel] == "" {
+			t.Errorf("%s is set back with opacity, and nothing checks the text in it", sel)
+		}
+	}
+}
+
+// readableSetBack checks each faded text at the colour it is drawn in, in
+// both schemes, and reports which selectors it checked.
+func readableSetBack(t *testing.T, fades map[string]float64, set []fade) map[string]bool {
+	t.Helper()
+	checked := map[string]bool{}
+	for _, scheme := range []string{"light", "dark"} {
+		tok := tokens(t, scheme)
+		for _, f := range set {
+			a := 1.0
+			for _, sel := range f.rules {
+				checked[sel] = true
+				if v, ok := fades[sel]; ok {
+					a = v
+				}
+			}
+			for _, p := range f.text {
+				on := f.behind
+				if p.on != "" {
+					on = p.on
+				}
+				fg, bg := mix(t, tok[p.fg], tok[f.behind], a), mix(t, tok[on], tok[f.behind], a)
+				lf, _ := luminance(fg)
+				lb, _ := luminance(bg)
+				if r := (math.Max(lf, lb) + 0.05) / (math.Min(lf, lb) + 0.05); r < 4.5 {
+					t.Errorf("%s/%s: %s on %s at %.2f is %.2f:1 (%s on %s); AA needs 4.5:1",
+						scheme, f.what, p.fg, on, a, r, fg, bg)
+				}
+			}
+		}
+	}
+	return checked
 }

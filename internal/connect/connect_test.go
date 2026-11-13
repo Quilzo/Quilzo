@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"net/url"
 	"strings"
 	"testing"
@@ -66,7 +67,7 @@ func TestTokensAreExchangedAndRefreshed(t *testing.T) {
 		sent = form
 		return []byte(answer), nil
 	}
-	tok, err := Exchange(context.Background(), post, calendar, "s3cret", pd, "the-code", now)
+	tok, err := Exchange(context.Background(), post, nil, calendar, "s3cret", pd, "the-code", now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,22 +79,22 @@ func TestTokensAreExchangedAndRefreshed(t *testing.T) {
 		t.Fatalf("%+v", tok)
 	}
 	answer = `{"access_token":"at-2","expires_in":3600}`
-	again, err := Refresh(context.Background(), post, calendar, "s3cret", tok.Refresh, now.Add(time.Hour))
+	again, err := Refresh(context.Background(), post, nil, calendar, "s3cret", tok, now.Add(time.Hour))
 	if err != nil || again.Access != "at-2" || again.Refresh != "rt-1" || sent.Get("grant_type") != "refresh_token" {
 		t.Fatalf("%+v %v %v", again, err, sent)
 	}
 	answer = `{"access_token":"at-3","refresh_token":"rt-2"}`
-	if rotated, _ := Refresh(context.Background(), post, calendar, "", "rt-1", now); rotated.Refresh != "rt-2" || !rotated.Expiry.IsZero() {
+	if rotated, _ := Refresh(context.Background(), post, nil, calendar, "", Token{Refresh: "rt-1"}, now); rotated.Refresh != "rt-2" || !rotated.Expiry.IsZero() {
 		t.Fatalf("%+v", rotated)
 	}
 	for _, bad := range []string{`{"error":"invalid_grant","error_description":"code used"}`, `{"token_type":"bearer"}`,
 		`{"access_token":"x","token_type":"mac"}`, `not json`} {
 		answer = bad
-		if _, err := Exchange(context.Background(), post, calendar, "", pd, "c", now); err == nil {
+		if _, err := Exchange(context.Background(), post, nil, calendar, "", pd, "c", now); err == nil {
 			t.Errorf("accepted %s", bad)
 		}
 	}
-	if _, err := Exchange(context.Background(), post, calendar, "", pd, "c", now.Add(MaxPending+time.Second)); err == nil {
+	if _, err := Exchange(context.Background(), post, nil, calendar, "", pd, "c", now.Add(MaxPending+time.Second)); err == nil {
 		t.Error("an expired connection finished")
 	}
 	answer = `{}`
@@ -103,8 +104,9 @@ func TestTokensAreExchangedAndRefreshed(t *testing.T) {
 }
 
 // A declaration that could send a code, a secret or a token somewhere it
-// should not is refused; the templates are whole once given a client id;
-// a token goes only to the hosts its provider names.
+// should not is refused; the templates are whole once given a client id,
+// and the social platforms' once given the client secret's name too; a
+// token goes only to the hosts its provider names.
 func TestADeclarationIsChecked(t *testing.T) {
 	for name, edit := range map[string]func(*Provider){
 		"plain http":     func(p *Provider) { p.TokenURL = "http://id.acme.example/token" },
@@ -125,11 +127,62 @@ func TestADeclarationIsChecked(t *testing.T) {
 	for _, name := range TemplateNames() {
 		p := Templates[name]
 		p.ClientID = "id"
+		if p.Dialect != "" {
+			if p.Check() == nil {
+				t.Errorf("%s: whole without the client secret its tokens are issued with", name)
+			}
+			p.Secret = name + "-oauth"
+		}
 		if err := p.Check(); err != nil {
 			t.Errorf("%s: %v", name, err)
 		}
 	}
 	if !calendar.Allows("API.acme.example.") || calendar.Allows("evil.example") || calendar.Allows("acme.example") {
 		t.Error("a token's hosts")
+	}
+}
+
+// When a connection's tokens end is kept, refresh token included where the
+// provider says (LinkedIn's refresh_token_expires_in, TikTok's
+// refresh_expires_in), and when the connection stops working follows from
+// it: the refresh token's end when it renews, the access token's when it
+// cannot. Kept without it, a LinkedIn connection a year old or an
+// Instagram token sixty days old stopped one day with nothing said before.
+func TestWhenAConnectionsTokensEndIsKept(t *testing.T) {
+	now := time.Date(2026, 11, 11, 10, 0, 0, 0, time.UTC)
+	pd, _, _ := Begin(calendar, "https://cms.example/connections/callback", "dana", now)
+	day := 24 * time.Hour
+	answer := ""
+	post := func(context.Context, string, url.Values) ([]byte, error) { return []byte(answer), nil }
+	for _, field := range []string{"refresh_token_expires_in", "refresh_expires_in"} {
+		answer = `{"access_token":"at","token_type":"Bearer","expires_in":5184000,"refresh_token":"rt","` + field + `":31536000}`
+		tok, err := Exchange(context.Background(), post, nil, calendar, "", pd, "c", now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ends := tok.Ends()
+		if !tok.RefreshExpiry.Equal(now.Add(365*day)) || !ends.Access.Equal(now.Add(60*day)) || !ends.Renews ||
+			!ends.Lapses().Equal(now.Add(365*day)) || ends.LapsesSoon(now.Add(300*day)) || !ends.LapsesSoon(now.Add(359*day)) {
+			t.Fatalf("%s: %+v %+v", field, tok, ends)
+		}
+	}
+	// No refresh token: the access token's end is the connection's.
+	answer = `{"access_token":"at","token_type":"Bearer","expires_in":5184000}`
+	tok, _ := Exchange(context.Background(), post, nil, calendar, "", pd, "c", now)
+	if ends := tok.Ends(); ends.Renews || !ends.Lapses().Equal(now.Add(60*day)) || ends.LapsesSoon(now.Add(50*day)) ||
+		!ends.LapsesSoon(now.Add(54*day)) || !ends.LapsesSoon(now.Add(61*day)) {
+		t.Fatalf("%+v", ends)
+	}
+	if said := tok.Ends().Said(time.UTC); !strings.Contains(said, "10 Jan 2027") || !strings.Contains(said, "no refresh token") {
+		t.Errorf("said %q", said)
+	}
+	// A token kept before its ends were: not known, so never said to be soon.
+	var old Token
+	_ = json.Unmarshal([]byte(`{"access":"at","refresh":"rt"}`), &old)
+	if ends := old.Ends(); !ends.Lapses().IsZero() || ends.LapsesSoon(now) || !strings.Contains(ends.Said(time.UTC), "not known") {
+		t.Fatalf("%+v %q", ends, ends.Said(time.UTC))
+	}
+	if said := (Ends{}).Said(time.UTC); strings.Contains(said, "0001") || !strings.Contains(said, "not known") {
+		t.Errorf("an unknown end said as %q", said)
 	}
 }

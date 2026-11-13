@@ -4,9 +4,15 @@
 package admin
 
 import (
+	"fmt"
+	"html"
 	"net/http/httptest"
+	"net/url"
+	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/quilzo/quilzo/internal/site"
 )
 
 // The arithmetic, which is the whole of this.
@@ -202,4 +208,71 @@ func itoa(n int) string {
 		n /= 10
 	}
 	return string(b)
+}
+
+// nextLink is where a screen's Next link goes, as it is written in the page.
+var nextLink = regexp.MustCompile(`<a rel="next" href="([^"]*)"`)
+
+// Next goes to the next page whatever else is in the address.
+//
+// The rest of the query was joined on as a string already encoded,
+// "&e=…&fs=…", and the template escaped it a second time, so after any
+// action that came back with a message Next was /?from=50%26e%3d…: the
+// server read from as "50&e=…", which is not a number, and showed the first
+// page again until somebody cleared the address bar. A filter went the same
+// way. The one-shot message is not carried at all: it was about the action,
+// not about the page somebody turns to.
+func TestNextMovesOnAfterAMessage(t *testing.T) {
+	srv, token := setup(t)
+	pages, err := site.PagesAt(srv.Store, site.RefDraft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 120; i++ {
+		pages[fmt.Sprintf("bulk-%03d", i)] = map[string]any{"title": fmt.Sprintf("Bulk page %d", i)}
+	}
+	if _, err := site.SaveDraft(srv.Store, pages, "many pages", "test"); err != nil {
+		t.Fatal(err)
+	}
+
+	at := signFlash(srv.flashKey, "/?e="+url.QueryEscape("about is still used by two pages"))
+	body := get(t, srv, at, token).Body.String()
+	if !strings.Contains(body, "about is still used by two pages") {
+		t.Fatal("the message did not show, so this is not testing what it says")
+	}
+	m := nextLink.FindStringSubmatch(body)
+	if m == nil {
+		t.Fatal("the list has no Next")
+	}
+	next := html.UnescapeString(m[1])
+	u, err := url.Parse(next)
+	if err != nil || u.Path != "/" || u.Query().Get("from") != "50" {
+		t.Fatalf("Next goes to %q", next)
+	}
+	for _, p := range []string{"e", "m", "fs"} {
+		if u.Query().Has(p) {
+			t.Errorf("Next carries the message's %s: %s", p, next)
+		}
+	}
+	if body := get(t, srv, next, token).Body.String(); !strings.Contains(body, "51 to 100 of 122") {
+		t.Errorf("Next showed the first page again")
+	}
+
+	// And whatever else the reader had set comes along, once: choosing a
+	// picture always has the page and the place in its address, so its
+	// Next never moved at all.
+	p := paginate(httptest.NewRequest("GET", "/media/pick?page=about&at=0&from=50&m=x&fs=y", nil), 312, 50)
+	var out strings.Builder
+	if err := srv.tpl.ExecuteTemplate(&out, "paging", map[string]any{"Paging": p, "PagePath": "/media/pick"}); err != nil {
+		t.Fatal(err)
+	}
+	m = nextLink.FindStringSubmatch(out.String())
+	if m == nil {
+		t.Fatalf("no Next in %s", out.String())
+	}
+	got, _ := url.Parse(html.UnescapeString(m[1]))
+	if q := got.Query(); got.Path != "/media/pick" || q.Get("page") != "about" || q.Get("at") != "0" ||
+		q.Get("from") != "100" || q.Has("m") || q.Has("fs") || len(q["from"]) != 1 {
+		t.Errorf("a page link is %s", got)
+	}
 }

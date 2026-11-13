@@ -226,13 +226,19 @@ func (s *Store) now() time.Time {
 // CleanBody is a post as it will be kept: trimmed, controls removed but for
 // line breaks, runs of blank lines collapsed. It returns why a body cannot
 // be posted at all.
+//
+// The controls include the ones that turn round the direction of the text
+// after them (see turnsText): "hello \u202egnp.exe" was shown as "hello
+// exe.png". And a post with nothing to see is an empty one: zero-width
+// spaces and word joiners were posted, and shown as a blank comment under
+// a member's name. A member's name refuses both already.
 func CleanBody(body string, limit int) (string, error) {
 	body = strings.ReplaceAll(body, "\r\n", "\n")
 	body = strings.Map(func(r rune) rune {
 		if r == '\n' || r == '\t' {
 			return r
 		}
-		if unicode.IsControl(r) || r == ' ' || r == ' ' {
+		if unicode.IsControl(r) || r == ' ' || r == ' ' || turnsText(r) {
 			return -1
 		}
 		return r
@@ -241,13 +247,39 @@ func CleanBody(body string, limit int) (string, error) {
 		body = strings.ReplaceAll(body, "\n\n\n", "\n\n")
 	}
 	body = strings.TrimSpace(body)
-	if body == "" {
+	if strings.IndexFunc(body, func(r rune) bool { return !invisible(r) }) < 0 {
 		return "", fmt.Errorf("write something first")
 	}
 	if n := utf8.RuneCountInString(body); n > limit {
 		return "", fmt.Errorf("that is %d characters; this board takes %d", n, limit)
 	}
 	return body, nil
+}
+
+// turnsText reports the bidirectional controls that open a run of text in
+// a direction of their own, and the ones that close it: embeddings,
+// overrides and isolates. Nobody types them in a comment; a post carries
+// them to make what follows read as something else. The marks that only
+// order the characters beside them (U+200E, U+200F, U+061C) are kept,
+// because Arabic and Hebrew beside Latin and numbers need them.
+func turnsText(r rune) bool {
+	return (r >= '\u202a' && r <= '\u202e') || (r >= '\u2066' && r <= '\u2069')
+}
+
+// invisible reports a character that shows nothing: white space, and what
+// Unicode says is drawn as nothing at all (Default_Ignorable_Code_Point):
+// format characters such as the zero-width space, variation selectors, and
+// fillers such as U+3164. Each is kept inside a post, where joiners and tags
+// make Persian words, emoji and flags; only a post of nothing else is
+// refused.
+//
+// And the blank Braille cell, U+2800, which Unicode calls a letter but which
+// draws nothing: it is what people paste for an empty message where the
+// zero-width characters are refused, and a post of only those was shown as
+// a blank comment. Between Braille words it is their space, and is kept.
+func invisible(r rune) bool {
+	return unicode.IsSpace(r) || unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Variation_Selector, r) ||
+		unicode.Is(unicode.Other_Default_Ignorable_Code_Point, r) || r == '⠀'
 }
 
 // Add stores a post. Its state comes from the board's moderation.

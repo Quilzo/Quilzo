@@ -80,7 +80,7 @@ func appendPersonNote(root string, rec agent.Record, n personNote, now time.Time
 	switch {
 	case w == nil || !w.Live:
 		return agent.ErrNotWaiting
-	case rec.State != agent.Running || now.Sub(rec.Beat) > agent.StaleAfter:
+	case rec.Ended(now):
 		return fmt.Errorf("%s was waiting in a process that has ended, so nothing would act on "+
 			"what you did; run it again", rec.ID)
 	}
@@ -223,7 +223,7 @@ func answerLive(root string, rec agent.Record, v agent.Verdict, by string, now t
 		return agent.ErrNotWaiting
 	case v.N != w.N:
 		return fmt.Errorf("the run is waiting at step %d and this answers step %d", w.N, v.N)
-	case rec.State != agent.Running || now.Sub(rec.Beat) > agent.StaleAfter:
+	case rec.Ended(now):
 		return fmt.Errorf("%s was waiting in a process that has ended, so nothing would act on "+
 			"this answer; run it again", rec.ID)
 	}

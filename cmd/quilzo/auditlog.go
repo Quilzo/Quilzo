@@ -4,22 +4,28 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/anchor"
+	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/logd"
 
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/dual"
 	"github.com/quilzo/quilzo/internal/out"
+	"github.com/quilzo/quilzo/internal/siem"
 )
 
 // Where the audit log lives.
@@ -61,8 +67,20 @@ func auditDir(root string) string {
 // account that writes the log. That asymmetry is the reason this is a command
 // rather than something logd does at startup.
 func cmdAuditDir(root string, args []string) error {
+	// One directory, and a second word is not dropped: this moves where
+	// every reader finds the log.
+	args, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	if len(args) == 0 {
 		dir := auditDir(root)
+		// Where the log is under --json, and whether that is in the store.
+		// This wrote only for a person, so a script asking where to read the
+		// log was answered with nothing and exit 0.
+		if w.JSON(map[string]any{"log": auditPath(root), "in_store": dir == root}) {
+			return nil
+		}
 		if dir == root {
 			w.Human("  the log is in the store: %s\n", auditPath(root))
 			w.Human("  %sthat means this account writes its own audit record%s\n",
@@ -85,6 +103,8 @@ func cmdAuditDir(root string, args []string) error {
 	} else if !fi.IsDir() {
 		return fmt.Errorf("%s is not a directory", abs)
 	}
+	// Where the public half of the head keys is now, before anything moves.
+	oldKeys := headKeysPath(root)
 	// Repointing every reader at a different log is the single most sensitive
 	// thing in this command, so it waits for a second administrator, who
 	// moves it on approving (applyDual).
@@ -104,7 +124,41 @@ func cmdAuditDir(root string, args []string) error {
 	w.Human("  the log is now read from %s\n", filepath.Join(abs, "audit.jsonl"))
 	w.Human("  %sstart the writer, unless something runs it already: quilzo --root %s logd --log-dir %s%s\n",
 		dim, root, abs, reset)
+	sayKeysLeftBehind(oldKeys, abs)
 	return nil
+}
+
+// sayKeysLeftBehind says, once the log has moved to dir, that what was
+// signed before the move checks against the public keys it left behind at
+// oldKeys, when there are some and dir does not hold the same.
+//
+// The writer in the new directory makes a key of its own, and every check
+// reads the head.pub.json beside the log: a head, a receipt or a feature
+// package signed before the move stopped checking against it, and nothing
+// said which file still does, at the moment somebody had just moved it.
+func sayKeysLeftBehind(oldKeys, dir string) {
+	if keysLeftBehind(oldKeys, dir) == "" {
+		return
+	}
+	w.Human("  %sheads, receipts and statements signed before the move check against %s, not the keys%s\n",
+		yellow, oldKeys, reset)
+	w.Human("  %sthe writer makes in %s: keep that file, and check them with --keys %s%s\n",
+		yellow, dir, oldKeys, reset)
+}
+
+// keysLeftBehind is what sayKeysLeftBehind says, as one sentence, or
+// nothing when there is nothing to say: for the People screen, where
+// approving a move of the log moves it as `quilzo pending approve` does.
+func keysLeftBehind(oldKeys, dir string) string {
+	old, err := os.ReadFile(oldKeys)
+	if err != nil {
+		return ""
+	}
+	if now, err := os.ReadFile(filepath.Join(dir, "head.pub.json")); err == nil && bytes.Equal(now, old) {
+		return ""
+	}
+	return fmt.Sprintf("Heads, receipts and statements signed before the move check against %s, not the "+
+		"keys the writer makes in %s: keep that file, and check them with --keys %s.", oldKeys, dir, oldKeys)
 }
 
 func setAuditDir(root, dir string) error {
@@ -137,6 +191,32 @@ func auditPath(root string) string {
 
 func auditKeyPath(root string) string {
 	return filepath.Join(auditDir(root), "audit.key")
+}
+
+// auditEntries is every whole entry of the audit log, for whatever works
+// from the entries: exports, heads, receipts, the stream, agentwatch.
+//
+// A line a crash left unfinished is not an entry, nor part of the chain or
+// the tree, and it stopped every one of them, for good, at the first
+// record after it. It is passed over here (audit.Entries) and reported by
+// what reports on the log: auditlog verify and show, the audit log screen,
+// posture.
+func auditEntries(root string) ([]audit.Event, error) {
+	return audit.Entries(audit.Read(auditPath(root)))
+}
+
+// exportedEntries is auditEntries for an export, which says on stderr which
+// lines of the log it leaves out. The system an export goes to cannot tell
+// that anything else was in the log, so passed over without a word, a line
+// somebody added to it would leave no trace there.
+func exportedEntries(root string) ([]audit.Event, error) {
+	events, err := audit.Read(auditPath(root))
+	var bad *audit.Unreadable
+	if errors.As(err, &bad) {
+		fmt.Fprintf(w.Err, "%s%v: not in this export, which holds every entry and only entries;\n"+
+			"  quilzo auditlog verify says what is there%s\n", yellow, bad, reset)
+	}
+	return audit.Entries(events, err)
 }
 
 // openAudit returns a log, creating a pseudonymisation key on first use.
@@ -189,11 +269,12 @@ func openAudit(root string) (*audit.Log, error) {
 // trade: NIST allows for alerting on audit failure, and the alternative — a
 // publish refused because a log file is full — trades an availability problem
 // for an accountability one. Reporting loudly and continuing is the choice
-// for what a person does, and `quilzo auditlog verify` is what catches a gap
-// afterwards. What an agent does is the other way round (SP 800-53 AU-5): it
-// is asked about first (auditReady) and refused while its record could not
-// be written, because an agent acting unrecorded is the gap nobody can
-// explain afterwards.
+// for what a person does, and the message on stderr is all that shows it:
+// a record never written leaves no gap `quilzo auditlog verify` could find,
+// since the next one takes its number. What an agent does is the other way
+// round (SP 800-53 AU-5): it is asked about first (auditReady) and refused
+// while its record could not be written, because an agent acting unrecorded
+// is the gap nobody can explain afterwards.
 func record(root string, r audit.Record) {
 	if err := recordE(root, r); err != nil {
 		fmt.Fprintf(os.Stderr, "%s%v%s\n", red, err, reset)
@@ -323,15 +404,33 @@ func cmdAuditLog(root string, args []string) error {
 	if len(args) == 0 {
 		args = []string{"show"}
 	}
+	// A log is a store's, and a --root with neither a store nor a log has
+	// none: `auditlog verify` of a mistyped path said "0 entries, chain
+	// intact" of a log it had just begun there. A log copied out on its own
+	// is still read where it is. `verify-head` is about a head and its keys,
+	// wherever they are, and help is answered wherever it is asked.
+	//
+	// `dir` is where a store's log is kept, so it needs the store whether or
+	// not a log is there: it was let through as being about a directory of
+	// logs, and `auditlog dir /srv/audit` of a mistyped --root made that
+	// root, began a log and a key in it, and said the log had moved.
+	if args[0] != "verify-head" && !helpAsked(args[1:]) && (args[0] == "dir" || !fileExists(auditPath(root))) {
+		if err := needStore(root); err != nil {
+			return err
+		}
+	}
 	switch args[0] {
 	case "dir":
 		return cmdAuditDir(root, args[1:])
 	case "verify":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return auditVerify(root)
 	case "show":
 		return auditShow(root, args[1:])
 	case "export":
-		return auditExport(root)
+		return auditExport(root, args[1:])
 	case "head":
 		return auditHead(root, args[1:])
 	case "verify-head":
@@ -341,6 +440,9 @@ func cmdAuditLog(root string, args []string) error {
 	case "consistency":
 		return auditConsistency(root, args[1:])
 	case "anchor":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return auditAnchor(root)
 	default:
 		return fmt.Errorf("unknown auditlog command %q; try show, verify, "+
@@ -364,17 +466,39 @@ func unreadable(problems []audit.Problem) bool {
 }
 
 func auditVerify(root string) error {
-	n, good, problems, err := audit.VerifyFile(auditPath(root))
+	events, err := audit.Read(auditPath(root))
+	n := len(events)
+	report, err := audit.Check(events, err)
+	read := err == nil
 	if err != nil {
-		return err
+		report = audit.Report{Problems: []audit.Problem{{Seq: 0, Reason: err.Error()}}}
 	}
+	// Against every head saved beside the log too. The chain cannot see
+	// entries removed from its end: what is left verifies, and the next
+	// write takes the first number removed. This said nothing was removed,
+	// "including by an administrator", with a saved head covering entries
+	// the log no longer held.
+	heads, err := savedHeads(root)
+	head := audit.LargestHead(heads)
+	if err != nil {
+		report.Problems = append(report.Problems, audit.Problem{Reason: "the heads saved beside the log " +
+			"cannot be read, so it was not checked against them: " + err.Error()})
+		report.Intact = false
+	} else if read {
+		if p := audit.AgainstHeads(events, heads); p != nil {
+			report.Problems = append(report.Problems, *p)
+			report.Intact = false
+		}
+	}
+	good, problems := report.Intact, report.Problems
 
 	if w.Mode == out.JSON {
 		rows := make([]map[string]any, 0, len(problems))
 		for _, p := range problems {
 			rows = append(rows, map[string]any{"seq": p.Seq, "reason": p.Reason})
 		}
-		w.JSON(map[string]any{"entries": n, "intact": good, "problems": rows})
+		w.JSON(map[string]any{"entries": n, "intact": good, "problems": rows,
+			"unfinished": report.Unfinished, "head": head})
 		if !good {
 			return errBlocked{fmt.Errorf("%d problem(s)", len(problems))}
 		}
@@ -383,15 +507,37 @@ func auditVerify(root string) error {
 
 	w.Human("%d entr%s\n", n, entrySuffix(n))
 	if good {
+		// What the chain proves, and no more: it says nothing of entries
+		// removed from the end, and its hashes are not keyed, so whoever
+		// can rewrite the file can re-chain what is left.
 		w.Human("  %schain intact%s\n", green, reset)
 		w.Human("  %severy entry re-hashes and links to the one before it, so nothing\n"+
-			"  was altered, inserted or removed — including by an administrator%s\n",
-			dim, reset)
+			"  between entries was altered, inserted or removed%s\n", dim, reset)
+		if head == nil {
+			w.Human("  %sno head is saved, so entries removed from the end would not show here:\n"+
+				"  quilzo auditlog head --save, and keep a copy off this machine%s\n", yellow, reset)
+			return nil
+		}
+		// The time through onOneLine, as the problem lines below are: it is
+		// what the heads file holds, and that file can be rewritten with the
+		// log. The audit log screen marks it the same way (shown).
+		if len(heads) > 1 {
+			w.Human("  %sand it still extends each of the %d heads saved beside it, the largest\n"+
+				"  at %d entries (%s), so none of those was removed or rewritten since%s\n",
+				dim, len(heads), head.Size, onOneLine(head.At), reset)
+		} else {
+			w.Human("  %sand it still extends the head saved at %d entries (%s), so none of\n"+
+				"  those was removed or rewritten since%s\n", dim, head.Size, onOneLine(head.At), reset)
+		}
+		w.Human("  %sa head saved here can be rewritten with the log; a copy kept off this\n"+
+			"  machine is the one that counts: quilzo auditlog consistency --head FILE%s\n", dim, reset)
 		return nil
 	}
 	w.Human("  %s%d problem(s)%s\n", red, len(problems), reset)
 	for _, p := range problems {
-		w.Human("    entry %d: %s\n", p.Seq, p.Reason)
+		// The reason can quote what the file held, for an entry that is not
+		// readable at all; see auditShow.
+		w.Human("    entry %d: %s\n", p.Seq, onOneLine(p.Reason))
 	}
 	// A log that cannot be read is not a log that has been tampered with, and
 	// saying so is worse than saying nothing.
@@ -408,19 +554,46 @@ func auditVerify(root string) error {
 				"problem. The log belongs to the account that writes it; this " +
 				"account needs to be in its group")
 	}
+	// Nor is a crash. A write cut short leaves a line that is not an entry,
+	// and the writer carries on past it; called tampering, it was the same
+	// alarm as a chmod, and it rang at "entry 0" of a log it said was one
+	// entry long. Still a finding, so a script sees it: the record that
+	// write was making is lost.
+	if report.Crashed() {
+		return errBlocked{fmt.Errorf("a write to the audit log was left unfinished, as a crash or a full " +
+			"disk leaves one, and the record it was making is lost.\n  Every entry around it " +
+			"re-hashes and links to the one before it, so this is not evidence of tampering")}
+	}
 	return errBlocked{fmt.Errorf("the audit log has been tampered with")}
 }
 
+// auditShow lists the most recent entries, or shows one in full.
+//
+// The help has always offered `auditlog show SEQ` for one entry, and nothing
+// read the argument: `show 3` printed the last twenty-five entries as though
+// one of them were entry 3, and exited 0. Arguments are now read wherever
+// they are, and what is not a sequence number is refused rather than ignored.
 func auditShow(root string, args []string) error {
+	const usage = "usage: quilzo auditlog show [SEQ] [--limit N]"
 	fs := flag.NewFlagSet("show", flag.ContinueOnError)
 	limit := fs.Int("limit", 25, "how many recent entries")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	events, err := audit.Read(auditPath(root))
+	pos, err := parseAnywhere(fs, args)
 	if err != nil {
 		return err
 	}
+	// A negative limit sliced past the end of the log and panicked.
+	if len(pos) > 1 || *limit < 0 {
+		return errors.New(usage)
+	}
+	var seq int64
+	if len(pos) == 1 {
+		n, err := strconv.ParseInt(pos[0], 10, 64)
+		if err != nil || n < 1 {
+			return fmt.Errorf("%q is not a sequence number; %s", pos[0], usage)
+		}
+		seq = n
+	}
+	events, err := audit.Read(auditPath(root))
 	// Verified here, and not only by `auditlog verify`.
 	//
 	// This printed whatever was in the file. Somebody who edits an entry and
@@ -431,8 +604,28 @@ func auditShow(root string, args []string) error {
 	//
 	// The whole chain, not the page. A break before the window would go
 	// unnoticed by a check that only looked at what is on screen, and the
-	// question "has this log been edited" is about the log.
-	intact, problems := audit.Verify(events)
+	// question "has this log been edited" is about the log. A line that is
+	// not an entry is among what it found, and the entries after it are
+	// shown: they were not, for good, after one crash.
+	report, err := audit.Check(events, err)
+	if err != nil {
+		return err
+	}
+	// And against the heads saved beside it, as verify and the audit log
+	// screen check it. Along its chain alone, a log cut back was shown as
+	// intact while verify said it had shrunk.
+	if heads, err := savedHeads(root); err != nil {
+		report.Problems = append(report.Problems, audit.Problem{Reason: "the heads saved beside the log " +
+			"cannot be read, so it was not checked against them: " + err.Error()})
+		report.Intact = false
+	} else if p := audit.AgainstHeads(events, heads); p != nil {
+		report.Problems = append(report.Problems, *p)
+		report.Intact = false
+	}
+	intact, problems := report.Intact, report.Problems
+	if seq != 0 {
+		return auditShowEntry(events, seq, intact, report.Crashed(), problems)
+	}
 
 	if len(events) > *limit {
 		events = events[len(events)-*limit:]
@@ -443,14 +636,7 @@ func auditShow(root string, args []string) error {
 	}) {
 		return nil
 	}
-	if !intact {
-		w.Human("%sthe chain is broken — these entries cannot be trusted%s\n",
-			yellow, reset)
-		for _, p := range problems {
-			w.Human("  %sentry %d: %s%s\n", dim, p.Seq, p.Reason, reset)
-		}
-		w.Human("  %squilzo auditlog verify — the whole story%s\n\n", dim, reset)
-	}
+	warnBroken(intact, report.Crashed(), problems)
 	if len(events) == 0 {
 		w.Human("no audit entries\n")
 		return nil
@@ -467,18 +653,152 @@ func auditShow(root string, args []string) error {
 		if e.Kind == audit.KindAI && e.Model != "" {
 			who = e.Model
 		}
-		w.Human("  %s  %s%-8s%s %-16s %-22s %s(%s)%s\n",
-			e.At[:19], colour, e.Outcome, reset, e.Action, e.Resource, dim, who, reset)
+		// To the second, which is the first nineteen characters of the time
+		// the log writes, and no more than the entry has. Reading never
+		// checks the shape of "at", and an entry whose time had been cut to
+		// a date stopped this listing with a stack trace just after the
+		// warning that the chain was broken, which is the one listing that
+		// has to reach its end.
+		at := e.At
+		if len(at) > 19 {
+			at = at[:19]
+		}
+		// Every field through onOneLine, because every field is what the file
+		// holds and some of it was written by the people the log is about. A
+		// decoy is presented by an outsider and the path they asked for is
+		// recorded as they sent it, so a path carrying escape sequences
+		// reached the terminal raw from here, erased its own line and the one
+		// above it, and printed a green "all quiet". A doctored entry is no
+		// different: one that could move the cursor could clear the warning
+		// printed above it. JSON and `auditlog export` keep the exact bytes;
+		// this is only what a person is shown. Padding still lines up,
+		// because each control character becomes one visible character.
+		w.Human("  %-19s  %s%-8s%s %-16s %-22s %s(%s)%s\n",
+			onOneLine(at), colour, onOneLine(string(e.Outcome)), reset,
+			onOneLine(e.Action), onOneLine(e.Resource), dim, onOneLine(who), reset)
 	}
 	return nil
 }
 
-func auditExport(root string) error {
-	events, err := audit.Read(auditPath(root))
+// warnBroken says, before any entry is shown, that the chain does not hold,
+// or, when crashed, that all it found is a write a crash left unfinished
+// (audit.Report.Crashed), which is not tampering.
+func warnBroken(intact, crashed bool, problems []audit.Problem) {
+	if intact {
+		return
+	}
+	if crashed {
+		w.Human("%sa write was left unfinished — its record is lost, and every entry "+
+			"around it links up%s\n", yellow, reset)
+	} else {
+		w.Human("%sthe chain is broken — these entries cannot be trusted%s\n",
+			yellow, reset)
+	}
+	for _, p := range problems {
+		w.Human("  %sentry %d: %s%s\n", dim, p.Seq, onOneLine(p.Reason), reset)
+	}
+	w.Human("  %squilzo auditlog verify — the whole story%s\n\n", dim, reset)
+}
+
+// auditShowEntry is `auditlog show SEQ`: one entry, every field of it,
+// after the same statement about the whole chain that the listing makes.
+func auditShowEntry(events []audit.Event, seq int64, intact, crashed bool, problems []audit.Problem) error {
+	var entry *audit.Event
+	for i := range events {
+		if events[i].Seq == seq {
+			entry = &events[i]
+			break
+		}
+	}
+	if entry == nil {
+		return fmt.Errorf("there is no entry %d in a log of %d", seq, len(events))
+	}
+	// "entry", as `auditlog prove` names the one it is about.
+	if w.JSON(map[string]any{"entry": entry, "intact": intact, "problems": problems}) {
+		return nil
+	}
+	warnBroken(intact, crashed, problems)
+	w.Human("%sentry %d%s\n", bold, entry.Seq, reset)
+	// Every value through onOneLine, as in the listing, and the detail's
+	// keys too: all of it is what the file holds.
+	field := func(name, value string) {
+		if value != "" {
+			w.Human("  %-10s %s\n", name, onOneLine(value))
+		}
+	}
+	field("at", entry.At)
+	field("action", entry.Action)
+	field("resource", entry.Resource)
+	field("outcome", string(entry.Outcome))
+	field("principal", entry.Principal)
+	field("kind", string(entry.Kind))
+	field("verified", strconv.FormatBool(entry.Verified))
+	field("model", entry.Model)
+	field("source", entry.Source)
+	field("prev", entry.Prev)
+	field("hash", entry.Hash)
+	if len(entry.Detail) > 0 {
+		keys := make([]string, 0, len(entry.Detail))
+		for k := range entry.Detail {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		w.Human("  detail\n")
+		for _, k := range keys {
+			w.Human("    %-16s %s\n", onOneLine(k), onOneLine(entry.Detail[k]))
+		}
+	}
+	return nil
+}
+
+// auditExport is the whole log as it is stored, on standard output or, with
+// -o, in a file, unverified, so a log whose chain is broken can still be
+// taken away and examined, which `quilzo siem` refuses to do.
+//
+// The help has always offered `auditlog export -o FILE`, and the dispatcher
+// passed this nothing: the whole log went to the terminal, no file was made,
+// and the exit status was 0, so a script that shipped the archive it had just
+// written shipped nothing. The file is written whole or not at all, and
+// readable by this account only, as the log it copies is.
+//
+// Through the one export of the log, as the log stores it
+// (siem.Options.AsStored), and recorded as every export of the log is
+// (siem.ExportRecorded). It was an exporter of its own that recorded
+// nothing, and it is the one bulk export the auditor's job reaches, so the
+// record an auditor would look for of the log leaving was missing for
+// exactly the people meant to read it.
+func auditExport(root string, args []string) error {
+	fs := flag.NewFlagSet("auditlog export", flag.ContinueOnError)
+	to := fs.String("o", "", "write the log to this file instead of printing it")
+	pos, err := parseAnywhere(fs, args)
 	if err != nil {
 		return err
 	}
-	return audit.Export(events, os.Stdout)
+	if len(pos) > 0 {
+		return fmt.Errorf("auditlog export takes no %q; usage: quilzo auditlog export [-o FILE]", pos[0])
+	}
+	events, err := exportedEntries(root)
+	if err != nil {
+		return err
+	}
+	res, err := siem.ExportRecorded(siem.JSONL, events, siem.Options{AsStored: true}, time.Now(),
+		recordAuditLogExport(root))
+	if err != nil {
+		return err
+	}
+	if *to == "" {
+		_, err := os.Stdout.WriteString(res.Body)
+		return err
+	}
+	if err := atomicfile.Write(*to, []byte(res.Body), 0o600); err != nil {
+		return err
+	}
+	if w.JSON(map[string]any{"entries": res.Count, "events": res.Count, "first_seq": res.Chain.FirstSeq,
+		"last_seq": res.Chain.LastSeq, "file": *to}) {
+		return nil
+	}
+	w.Human("%d entr%s written to %s\n", res.Count, entrySuffix(res.Count), *to)
+	return nil
 }
 
 // entrySuffix completes "entr-y" or "entr-ies".
@@ -513,6 +833,22 @@ type headFile struct {
 	Heads []audit.Head `json:"heads"`
 }
 
+// savedHeads is every head saved beside the log, by `auditlog head --save`
+// or `anchor`: what verify, posture, consistency and the audit log screen
+// check the log against, as well as along its chain (audit.AgainstHeads).
+//
+// Every one, not the largest alone: a log cut back and grown again extends
+// the next head saved, and only one saved before the cut shows it. A head
+// kept here can be rewritten with the log by whoever can rewrite the log,
+// and says so where it is reported; it still catches everybody else.
+func savedHeads(root string) ([]audit.Head, error) {
+	f := &headFile{}
+	if err := loadJSON(headsPath(root), f); err != nil {
+		return nil, err
+	}
+	return f.Heads, nil
+}
+
 // auditHead publishes a commitment to the log as it stands.
 //
 // Publishing is the whole mechanism. A head kept on the same machine as the log
@@ -523,11 +859,11 @@ type headFile struct {
 func auditHead(root string, args []string) error {
 	fs := flag.NewFlagSet("head", flag.ContinueOnError)
 	save := fs.Bool("save", false, "record this head locally as well")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 
-	events, err := audit.Read(auditPath(root))
+	events, err := auditEntries(root)
 	if err != nil {
 		return err
 	}
@@ -598,7 +934,7 @@ func auditProve(root string, args []string) error {
 		return fmt.Errorf("%q is not a sequence number", args[0])
 	}
 
-	events, err := audit.Read(auditPath(root))
+	events, err := auditEntries(root)
 	if err != nil {
 		return err
 	}
@@ -635,53 +971,97 @@ func auditProve(root string, args []string) error {
 func auditConsistency(root string, args []string) error {
 	fs := flag.NewFlagSet("consistency", flag.ContinueOnError)
 	against := fs.Int("since", 0, "the size of a previously published head")
-	if err := fs.Parse(args); err != nil {
+	headPath := fs.String("head", "", "a signed head kept off this machine (auditlog head --json), "+
+		"checked against instead of the heads saved beside the log")
+	keysPath := fs.String("keys", "", "the public keys that check that head (default head.pub.json beside the log)")
+	// A head file may be named on its own as well. It was dropped without a
+	// word, and the heads saved beside the log checked instead: the one
+	// kept off the machine, which is the one that counts, could not be
+	// checked at all.
+	files, err := parseAnywhere(fs, args)
+	if err != nil {
 		return err
 	}
+	switch {
+	case len(files) == 1 && *headPath == "":
+		*headPath = files[0]
+	case len(files) > 0:
+		return fmt.Errorf("usage: quilzo auditlog consistency [--since N] [--head FILE [--keys FILE]]")
+	}
 
-	events, err := audit.Read(auditPath(root))
+	events, err := auditEntries(root)
 	if err != nil {
 		return err
 	}
 
-	// Against the most recently saved head if none was named, because that is
-	// the check somebody wants and remembering a number is not.
-	oldSize := *against
+	// The head named, once its signatures check out. Otherwise the heads
+	// saved beside the log if no size was named, because that is the check
+	// somebody wants and remembering a number is not: every one, as verify
+	// checks them, with the proof from the largest. The largest and not the
+	// newest: a head saved after entries were removed from the end covers
+	// fewer than one saved before them, and checked against that, the log
+	// was called consistent.
 	var published audit.Head
-	f := &headFile{}
-	if err := loadJSON(headsPath(root), f); err != nil {
-		return err
-	}
-	if oldSize == 0 {
-		if len(f.Heads) == 0 {
+	if *headPath != "" {
+		keys := *keysPath
+		if keys == "" {
+			keys = headKeysPath(root)
+		}
+		sh, err := loadSignedHead(*headPath, keys)
+		if err != nil {
+			return err
+		}
+		if *against != 0 && *against != sh.Size {
+			return fmt.Errorf("the head in %s covers %d entries, not %d", *headPath, sh.Size, *against)
+		}
+		published = sh.Head
+	} else if *against == 0 {
+		heads, err := savedHeads(root)
+		if err != nil {
+			return err
+		}
+		h := audit.LargestHead(heads)
+		if h == nil {
 			return fmt.Errorf(
 				"no head has been published, so there is nothing to check " +
 					"against.\n  `quilzo auditlog head --save` records one; a " +
 					"head only proves anything once it exists somewhere the log " +
 					"cannot be quietly rewritten alongside")
 		}
-		published = f.Heads[len(f.Heads)-1]
-		oldSize = published.Size
+		// And every other head saved: the largest was taken from the log as
+		// it is if it was saved after a cut, and one saved before is what
+		// shows the cut.
+		if p := audit.AgainstHeads(events, heads); p != nil {
+			return errBlocked{errors.New(p.Reason)}
+		}
+		published = *h
 	} else {
+		f := &headFile{}
+		if err := loadJSON(headsPath(root), f); err != nil {
+			return err
+		}
+		var named []audit.Head
 		for _, h := range f.Heads {
-			if h.Size == oldSize {
+			if h.Size == *against {
 				published = h
+				named = append(named, h)
 			}
 		}
 		if published.Root == "" {
-			return fmt.Errorf("no published head covers %d entries", oldSize)
+			return fmt.Errorf("no published head covers %d entries", *against)
+		}
+		// Every head of that size, not the newest alone: two of one size
+		// with different roots are one taken before a cut and one after it,
+		// and the one after was the one checked.
+		if p := audit.AgainstHeads(events, named); p != nil {
+			return errBlocked{errors.New(p.Reason)}
 		}
 	}
+	oldSize := published.Size
 
-	proof, now, err := audit.Consistency(events, oldSize)
+	proof, now, err := audit.Extends(events, published)
 	if err != nil {
 		return errBlocked{err}
-	}
-	if err := audit.VerifyConsistency(published, now, proof); err != nil {
-		return errBlocked{fmt.Errorf(
-			"this log is NOT an append-only extension of the head published at "+
-				"%d entries.\n  %v\n  Entries before that point have been "+
-				"changed, reordered or removed", oldSize, err)}
 	}
 
 	if w.JSON(map[string]any{
@@ -701,7 +1081,7 @@ func auditConsistency(root string, args []string) error {
 // rewriting anything behind it produces a log that cannot pass consistency
 // against a value nobody involved can alter.
 func auditAnchor(root string) error {
-	events, err := audit.Read(auditPath(root))
+	events, err := auditEntries(root)
 	if err != nil {
 		return err
 	}

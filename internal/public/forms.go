@@ -7,11 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/clientip"
+	"html"
 	"io"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/form"
 	"github.com/quilzo/quilzo/internal/throttle"
 )
@@ -117,7 +119,7 @@ func (st *Site) formStyle(w http.ResponseWriter, r *http.Request, name string) {
 		return
 	}
 	f, known := set.Get(name)
-	if !known {
+	if !known || !st.formOffered(f.Name) {
 		http.NotFound(w, r)
 		return
 	}
@@ -126,6 +128,87 @@ func (st *Site) formStyle(w http.ResponseWriter, r *http.Request, name string) {
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Cache-Control", "public, max-age=300")
 	_, _ = w.Write([]byte(f.StyleSheet()))
+}
+
+// formOffered reports whether anything the site shows a visitor offers a
+// form: a published page, visible now, that names it or renders through a
+// layout that posts to it (the markup the forms screen prints, pasted into
+// a template), or a chatbot that may fill it in. Pages for members count,
+// for a form offered to members.
+//
+// Only what a visitor can reach: pages for members while the site lets
+// anybody be one, as a board counts them, and a chatbot that is on the
+// site, as /ask/NAME serves it. Both counted whatever their state, so a
+// form placed only on a members' page of a site with membership off, or
+// only in the actions of a chatbot still being built, took answers from a
+// script that knew its name.
+func (st *Site) formOffered(name string) bool {
+	if pages, _, err := st.pages(); err == nil && st.pagesOffer(pages, name) {
+		return true
+	}
+	if st.membersOn() {
+		if pages, err := st.membersOnlyPages(); err == nil && st.pagesOffer(pages, name) {
+			return true
+		}
+	}
+	if st.Assistants != nil && st.Assistants.Set != nil {
+		if set, err := st.Assistants.Set(); err == nil && set != nil {
+			for _, a := range set.Assistants {
+				if !a.Public {
+					continue
+				}
+				for _, ac := range a.Actions {
+					if ac.Kind == assistant.Form && ac.Target == name {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
+// pagesOffer reports whether one of these pages carries the form.
+func (st *Site) pagesOffer(pages map[string]any, name string) bool {
+	posting := map[string]bool{}
+	for _, l := range st.Layouts.Names() {
+		if src, ok := st.Layouts.Source(l); ok && postsTo(src, "/form/"+name) {
+			posting[l] = true
+		}
+	}
+	for _, body := range pages {
+		if m, ok := body.(map[string]any); ok {
+			if named, _ := m["form"].(string); strings.TrimSpace(named) == name {
+				return true
+			}
+		}
+		if len(posting) > 0 {
+			if l, _, err := st.Layouts.For(body); err == nil && posting[l] {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// postsTo reports whether markup names this action as a whole path, so
+// /form/contact is not found in /form/contact_us.
+func postsTo(src, action string) bool {
+	for i := strings.Index(src, action); i >= 0; {
+		end := i + len(action)
+		if end == len(src) {
+			return true
+		}
+		if c := src[end]; !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '_') {
+			return true
+		}
+		next := strings.Index(src[end:], action)
+		if next < 0 {
+			return false
+		}
+		i = end + next
+	}
+	return false
 }
 
 func (st *Site) submit(w http.ResponseWriter, r *http.Request) {
@@ -150,9 +233,17 @@ func (st *Site) submit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f, known := set.Get(name)
-	if !known {
+	if !known || !st.formOffered(f.Name) {
 		// Not found rather than a message naming what does exist. An
 		// enumerable list of forms is a list of things to spam.
+		//
+		// And not found for a form nothing on the site offers. This took
+		// any declared form by name, so one taken off every page, one on
+		// a page still in draft or past its date, or a form placed on no
+		// page at all kept collecting personal data, as consent given,
+		// from a script that needed only the field names. Boards,
+		// bookings and the newsletter already take a post only from a
+		// published page that carries them.
 		http.NotFound(w, r)
 		return
 	}
@@ -344,15 +435,19 @@ func (st *Site) formResult(w http.ResponseWriter, r *http.Request,
 		escape(title), escape(title), escape(body))
 }
 
-// escape is enough for the four characters that matter in element content and
+// escape is enough for the five characters that matter in element content and
 // in an attribute value. The result page prints one error string and two fixed
 // titles, so a full context-aware escaper would be more machinery than the
 // surface justifies — and the error strings are ours.
-func escape(s string) string { return formReplacer.Replace(s) }
-
-// Built once. A Replacer compiles a trie on first use and is safe to share.
-var formReplacer = strings.NewReplacer(
-	"&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&#39;")
+//
+// It is the standard library's escaper, not a Replacer of our own. It escapes
+// the same five characters (a double quote is &#34; rather than &quot;, which
+// a browser reads the same), and the head of every page now goes through it:
+// the site's name, its canonical address and the address of its Markdown
+// copy. A Replacer of our own escaped them as well, but code scanning cannot
+// read a Replacer as escaping, so every page served was reported as cross-site
+// scripting from its own address; the analyser can follow this one.
+func escape(s string) string { return html.EscapeString(s) }
 
 // sourceOf is the address a submission came from.
 //

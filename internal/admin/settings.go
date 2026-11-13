@@ -105,15 +105,15 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			groups[i].HasWeaker = true
 		}
 	}
-	msg := r.URL.Query().Get("m")
+	msg, problem := r.URL.Query().Get("m"), r.URL.Query().Get("e")
 	for i := range groups {
 		// Open when something in here is weaker than its default, or when the
 		// message that brought you back names a key in this group — landing
 		// on a confirmation whose subject is inside a closed section is worse
-		// than no confirmation.
+		// than no confirmation, and on a refusal worse still.
 		named := false
 		for _, e := range groups[i].Items {
-			if msg != "" && strings.Contains(msg, e.Setting.Key) {
+			if said := msg + "\n" + problem; strings.Contains(said, e.Setting.Key) {
 				named = true
 				break
 			}
@@ -121,12 +121,26 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		groups[i].Interesting = groups[i].HasWeaker || named
 	}
 
+	// The count of approvals that applies, beside a setting that says less
+	// (dual.AppliesAbove): the larger of the setting and approval.json
+	// applies, and the screen said two while five applied.
+	var applies map[string]string
+	if s.Approvals != nil && s.Approvals.Policy != nil {
+		if pol, err := s.Approvals.Policy(); err == nil {
+			applies = dual.AppliesAbove(cfg, pol.Required, pol.RequiredHumans)
+		}
+	}
+
 	s.render(w, r, "settings.html", map[string]any{
-		"Title": "Settings", "Principal": p, "Nav": "settings",
-		"Groups": groups, "Weakened": cfg.Weakened(),
+		"Title": "Settings", "Principal": p, "Nav": "settings", "ReadsAssurance": s.readsAssurance(p),
+		"Groups": groups, "Weakened": cfg.Weakened(), "Applies": applies,
 		"Message":  msg,
+		"Error":    problem,
 		"CanWrite": s.Policy.Evaluate(p.Name, auth.ActGrant, "/").Allowed,
 		"Days":     int(config.MaxAcceptance.Hours() / 24),
+		// What the configured accent does, beside it: whether it is the
+		// links' and buttons' colour, in which scheme, and why not.
+		"BrandAccent": Brand{Colour: cfg.Raw("admin.brand.colour")}.AccentNote(),
 	})
 }
 
@@ -145,7 +159,7 @@ func (s *Server) handleSettingSave(w http.ResponseWriter, r *http.Request) {
 
 	cfg, err := s.Settings.Load()
 	if err != nil {
-		s.settingsBack(w, r, err.Error())
+		s.settingsProblem(w, r, err.Error())
 		return
 	}
 	before := cfg.Raw(key)
@@ -161,7 +175,7 @@ func (s *Server) handleSettingSave(w http.ResponseWriter, r *http.Request) {
 
 	if r.FormValue("reset") == "1" {
 		if err := cfg.Unset(key); err != nil {
-			s.settingsBack(w, r, err.Error())
+			s.settingsProblem(w, r, err.Error())
 			return
 		}
 	} else if err := cfg.Set(key, value, reason, p.Name); err != nil {
@@ -171,27 +185,27 @@ func (s *Server) handleSettingSave(w http.ResponseWriter, r *http.Request) {
 		var below *config.ErrBelowPolicy
 		if errors.As(err, &below) {
 			if below.Floor.Broken != "" {
-				s.settingsBack(w, r, key+" is held by the organisation's policy, which cannot be read, so it is not changed until the policy is repaired")
+				s.settingsProblem(w, r, key+" is held by the organisation's policy, which cannot be read, so it is not changed until the policy is repaired")
 				return
 			}
-			s.settingsBack(w, r, key+" = "+value+" is below the organisation's policy: "+below.Floor.Param+
+			s.settingsProblem(w, r, key+" = "+value+" is below the organisation's policy: "+below.Floor.Param+
 				" is "+below.Floor.Declared+". It may be stricter, never weaker; changing the policy is on the Organisation policy screen and takes two administrators")
 			return
 		}
 		var need *config.ErrNeedsAcceptance
 		if asAcceptance(err, &need) {
-			s.settingsBack(w, r, need.Why+
+			s.settingsProblem(w, r, need.Why+
 				" — supply a reason to make this change")
 			return
 		}
-		s.settingsBack(w, r, err.Error())
+		s.settingsProblem(w, r, err.Error())
 		return
 	}
 	if second {
 		apply, msg, err := s.proposeSecond(p, dual.Setting, fmt.Sprintf("set %s to %s: %s", key, next, why),
 			dual.SettingChange{Key: key, Value: next, Reason: reason}, reason)
 		if err != nil {
-			s.settingsBack(w, r, err.Error())
+			s.settingsProblem(w, r, err.Error())
 			return
 		}
 		if !apply {
@@ -200,7 +214,7 @@ func (s *Server) handleSettingSave(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := s.Settings.Save(cfg); err != nil {
-		s.settingsBack(w, r, err.Error())
+		s.settingsProblem(w, r, err.Error())
 		return
 	}
 	detail := map[string]string{
@@ -216,6 +230,12 @@ func (s *Server) handleSettingSave(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) settingsBack(w http.ResponseWriter, r *http.Request, msg string) {
 	http.Redirect(w, r, "/settings?m="+urlQueryEscape(msg), http.StatusSeeOther)
+}
+
+// settingsProblem goes back to Settings with a refusal, said as one rather
+// than in the notice a change that was made is said in.
+func (s *Server) settingsProblem(w http.ResponseWriter, r *http.Request, msg string) {
+	http.Redirect(w, r, "/settings?e="+urlQueryEscape(msg), http.StatusSeeOther)
 }
 
 func asAcceptance(err error, target **config.ErrNeedsAcceptance) bool {
@@ -313,10 +333,15 @@ func (s *Server) sessionIdle() time.Duration {
 // idleFor is how long name may leave the admin unused: session.idle, and
 // no more than auth.PrivilegedIdle for anybody who can grant access
 // anywhere.
-func (s *Server) idleFor(name string) time.Duration {
+func (s *Server) idleFor(name string) time.Duration { return s.idleUnder(s.Policy, name) }
+
+// idleUnder is idleFor under the access rules pol, for a door that reads
+// the rules as they are stored rather than the copy a screen's refresh
+// keeps in s.Policy (IdleEnded).
+func (s *Server) idleUnder(pol *auth.Policy, name string) time.Duration {
 	idle := s.sessionIdle()
-	if idle > auth.PrivilegedIdle && s.Policy != nil {
-		if need, _ := auth.Needs(auth.ActGrant); s.Policy.Highest(name).AtLeast(need) {
+	if idle > auth.PrivilegedIdle && pol != nil {
+		if need, _ := auth.Needs(auth.ActGrant); pol.Highest(name).AtLeast(need) {
 			return auth.PrivilegedIdle
 		}
 	}

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/config"
 )
 
 // Each role gets what it needs to do its job, and nothing above it.
@@ -318,5 +319,37 @@ func TestATokenScopedToASubtreeDoesNotReachTheWholeStore(t *testing.T) {
 	if w := get(t, srv, "/people", scoped); w.Code != http.StatusForbidden {
 		t.Errorf("a token scoped to /blog reached /people with %d, want 403",
 			w.Code)
+	}
+}
+
+// Settings links a setting's floor to the organisation's policy only for
+// somebody who may open the policy.
+//
+// An author may read Settings, and a floor linked them to Security
+// parameters, which is read on the compliance area and refused them.
+func TestSettingsLinksTheOrganisationsPolicyOnlyForWhoMayOpenIt(t *testing.T) {
+	for _, role := range []auth.Role{auth.RoleAuthor, auth.RolePublisher, auth.RoleAdmin} {
+		srv, token := asRole(t, role)
+		srv.Settings = &Settings{Load: func() (*config.Config, error) {
+			c, err := config.Parse([]byte("{}"))
+			if err != nil {
+				return nil, err
+			}
+			return c.WithFloors(map[string][]config.Floor{"publish.require_a11y": {{
+				Param: "si-10_odp", Declared: "true", Allows: func(string) bool { return true }}}}), nil
+		}}
+		w := get(t, srv, "/settings", token)
+		if w.Code != http.StatusOK {
+			t.Fatalf("somebody with the %s role opened Settings and was answered %d", role, w.Code)
+		}
+		body := w.Body.String()
+		if !strings.Contains(body, "si-10_odp") {
+			t.Fatalf("somebody with the %s role is not shown the floor at all", role)
+		}
+		linked := strings.Contains(body, `href="/security/parameters"`)
+		opens := get(t, srv, "/security/parameters", token).Code == http.StatusOK
+		if linked != opens {
+			t.Errorf("somebody with the %s role is linked to the policy: %v, and may open it: %v", role, linked, opens)
+		}
 	}
 }

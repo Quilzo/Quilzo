@@ -61,6 +61,8 @@ import (
 	"sort"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/quilzo/quilzo/internal/mailaddr"
 )
 
 // Limits, all fixed. None of these is configurable, because a bound somebody can
@@ -523,26 +525,11 @@ func checkString(f Field, s string) []Problem {
 	return nil
 }
 
-// looksLikeEmail is a scan rather than a pattern.
-//
-// The usual email regex is both wrong and a ReDoS candidate, and the ones that
-// are correct are unreadable. This checks the properties that matter for a
-// content field and terminates in one pass.
-func looksLikeEmail(s string) bool {
-	at := strings.IndexByte(s, '@')
-	if at <= 0 || at == len(s)-1 {
-		return false
-	}
-	if strings.IndexByte(s[at+1:], '@') >= 0 {
-		return false
-	}
-	domain := s[at+1:]
-	dot := strings.IndexByte(domain, '.')
-	if dot <= 0 || dot == len(domain)-1 {
-		return false
-	}
-	return !strings.ContainsAny(s, " \t\r\n<>\"")
-}
+// looksLikeEmail is the one address rule, mailaddr.Valid, which a form, a
+// booking and the newsletter share. This was a scan of its own that took a
+// local part of any length, so a record held an address the newsletter
+// refused.
+func looksLikeEmail(s string) bool { return mailaddr.Valid(s) }
 
 // badURL rejects anything that is not plainly a web address.
 //

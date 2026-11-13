@@ -177,6 +177,9 @@ func cmdExt(root string, args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return extList(root)
 	case "add":
 		return extAdd(root, args[1:])
@@ -332,7 +335,7 @@ func extAdd(root string, args []string) error {
 	}
 	cfg, _ := loadConfig(root)
 	if cfg != nil && !cfg.Bool("ext.enabled") {
-		w.Human("  %sextensions are off; quilzo config set ext.enabled true%s\n",
+		w.Human("  %sextensions are off; quilzo config set ext.enabled true --accept-risk \"why\"%s\n",
 			dim, reset)
 	}
 	return nil

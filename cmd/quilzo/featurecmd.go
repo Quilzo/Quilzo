@@ -28,7 +28,6 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/feature"
-	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/form"
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/menu"
@@ -73,6 +72,9 @@ func cmdFeature(root string, args []string) error {
 	rest := args[1:]
 	switch args[0] {
 	case "example":
+		if err := noArguments(rest); err != nil {
+			return err
+		}
 		_, err := os.Stdout.Write(feature.Example())
 		return err
 	case "check":
@@ -84,10 +86,16 @@ func cmdFeature(root string, args []string) error {
 	case "decline":
 		return featureDecide(root, rest, false)
 	case "pending":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return featurePendingList(root)
 	case "proposals":
 		return featureProposalsCmd(root, rest)
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return featureList(root)
 	case "show":
 		return featureShow(root, rest)
@@ -114,11 +122,9 @@ func featureChecks(root string) feature.Checks {
 	caps, kinds := knownCapabilities(root), customKinds(root)
 	return feature.Checks{
 		Agent: func(m agent.Manifest) error { return m.ValidateWith(caps, kinds) },
-		// A package's URLs are its webhooks' (feature.Package.Webhooks).
-		URL: func(u string) error {
-			_, err := fetch.For("webhook").ValidateURL(u)
-			return err
-		},
+		// A package's URLs are its webhooks' (feature.Package.Webhooks),
+		// held to the rule every endpoint is registered by.
+		URL:       webhook.CheckURL,
 		EventType: webhook.KnownType,
 	}
 }
@@ -344,7 +350,7 @@ func featureCheck(root string, args []string) error {
 	keys := fs.String("keys", "", "the publisher's head.pub.json, to check a signed package")
 	fs.StringVar(&featureDesignDir, "templates", featureDesignDir, "the site's templates directory, for a site package")
 	takeSite := fs.Bool("take-site", false, "as install would with --take-site")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -432,7 +438,7 @@ func featureInstall(root string, args []string) error {
 	rowsPath := fs.String("rows", "", "records to import into one of its collections, as quilzo feature from writes them")
 	fs.StringVar(&featureDesignDir, "templates", featureDesignDir, "where a site package writes its look and layouts: the site's templates directory")
 	takeSite := fs.Bool("take-site", false, "let a site package own a site whose name or look somebody set by hand; it is put back if the package is removed")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -612,6 +618,14 @@ func printOutcome(p *feature.Package, o featureOutcome, err error, caller *Calle
 		}
 		return nil
 	}
+	// What was installed under --json, with each new webhook's key. This
+	// wrote only for a person, so a script installing a feature that sends
+	// to another server was answered with nothing, and the keys, shown once,
+	// were shown to nobody.
+	if w.JSON(featureInstalled{Installed: p.Name, Version: p.Version, Alone: o.Alone,
+		Imported: o.Imported, Webhooks: webhookKeys(o.Secrets)}) {
+		return nil
+	}
 	if o.Alone {
 		w.Human("%syou are the only administrator, so this is approved as you make it; the record says so%s\n",
 			yellow, reset)
@@ -624,6 +638,30 @@ func printOutcome(p *feature.Package, o featureOutcome, err error, caller *Calle
 		w.Human("webhook secret, shown once: %s\n", sec)
 	}
 	return nil
+}
+
+// featureInstalled is what --json answers for a feature installed, whether
+// at once or on a second person's approval.
+type featureInstalled struct {
+	Installed string `json:"installed"`
+	Version   string `json:"version"`
+	// Alone is that the one administrator approved it as they made it.
+	Alone       bool                `json:"alone"`
+	RequestedBy string              `json:"requested_by,omitempty"`
+	ApprovedBy  string              `json:"approved_by,omitempty"`
+	Imported    int                 `json:"imported"`
+	Webhooks    []map[string]string `json:"webhooks"`
+}
+
+// webhookKeys are a feature's new webhooks and their keys, as --json gives
+// them, from the "URL  KEY" lines a person is shown.
+func webhookKeys(secrets []string) []map[string]string {
+	keys := make([]map[string]string, 0, len(secrets))
+	for _, s := range secrets {
+		url, key, _ := strings.Cut(s, "  ")
+		keys = append(keys, map[string]string{"url": url, "secret": key})
+	}
+	return keys
 }
 
 func keepFeaturePackage(root, name, digest string, body []byte) error {
@@ -702,7 +740,7 @@ func decideFeature(root, id string, approve bool, caller *Caller) error {
 		w.Human("declined %s %s\n", pend.Name, pend.Version)
 		return nil
 	}
-	if strings.EqualFold(caller.Name, pend.RequestedBy) {
+	if auth.SamePerson(caller.Name, pend.RequestedBy) {
 		return fmt.Errorf("%s asked for this install, so somebody else approves it", pend.RequestedBy)
 	}
 	p, _, err := loadFeaturePackage(root, pend.Name, pend.Digest)
@@ -730,6 +768,12 @@ func decideFeature(root, id string, approve bool, caller *Caller) error {
 	if err != nil {
 		return err
 	}
+	// Under --json, one document: what was installed, by whom, and each new
+	// webhook's key. This wrote only for a person, so the keys, shown once,
+	// were shown to nobody. It is written however the records after it fare,
+	// as the keys are for a person, since there is no asking for them again.
+	doc := featureInstalled{Installed: p.Name, Version: p.Version, RequestedBy: pend.RequestedBy,
+		ApprovedBy: caller.Name, Webhooks: webhookKeys(secrets)}
 	for _, sec := range secrets {
 		w.Human("webhook secret, shown once: %s\n", sec)
 	}
@@ -737,14 +781,20 @@ func decideFeature(root, id string, approve bool, caller *Caller) error {
 	if pend.Rows > 0 {
 		var rows feature.Rows
 		if err := loadJSON(featurePendingPath(root, id)+".rows", &rows); err != nil {
+			w.JSON(doc)
 			return fmt.Errorf("%s is installed, and its records could not be read: %w", p.Name, err)
 		}
 		n, err := putCheckedRecords(root, rows.Collection, rows.Records, caller)
 		if err != nil {
+			w.JSON(doc)
 			return fmt.Errorf("%s is installed, and its records were not imported: %w", p.Name, err)
 		}
 		_ = os.Remove(featurePendingPath(root, id) + ".rows")
+		doc.Imported = n
 		w.Human("imported %d record(s) into %s\n", n, rows.Collection)
+	}
+	if w.JSON(doc) {
+		return nil
 	}
 	w.Human("installed %s %s, asked for by %s and approved by %s; its pages are in the draft\n",
 		p.Name, p.Version, pend.RequestedBy, caller.Name)
@@ -784,6 +834,24 @@ func featureNeeds(root string, caller *Caller, p *feature.Package) error {
 func applyFeature(root string, p *feature.Package, digest string, plan feature.Plan, caller *Caller, by []string) ([]string, error) {
 	if err := featureNeeds(root, caller, p); err != nil {
 		return nil, err
+	}
+	// The programs its agents run are pinned as the agents are declared,
+	// below. One that cannot be, missing here or not the file the package
+	// names, is refused now, before anything is applied, rather than with
+	// half of the package installed.
+	if len(p.Agents) > 0 {
+		declared, err := loadAgents(root)
+		if err != nil {
+			return nil, err
+		}
+		for _, m := range p.Agents {
+			was := declared.Agents[m.Name].Program
+			if prog := keepPin(was, m.Program); prog != nil && !sameProgram(was, prog) {
+				if err := reviewProgram(m.Name, prog); err != nil {
+					return nil, err
+				}
+			}
+		}
 	}
 	act := map[feature.Ref]string{}
 	for _, s := range plan.Steps {
@@ -881,8 +949,15 @@ func applyFeature(root string, p *feature.Package, digest string, plan feature.P
 		forms.Forms = kept
 	}
 
-	// Pages, staged into the draft together.
-	pages, err := draftPages(root)
+	// Pages, staged into the draft together, against the commit they are
+	// read from: written back with no base, an install lost every page
+	// saved while it was checking and writing everything else
+	// (site.SaveDraftOver).
+	drafts, err := open(root)
+	if err != nil {
+		return nil, err
+	}
+	read, pages, err := draftOrLive(drafts)
 	if err != nil {
 		return nil, err
 	}
@@ -944,6 +1019,10 @@ func applyFeature(root string, p *feature.Package, digest string, plan feature.P
 	// reason for that to go unseen by whoever watches webhooks.
 	type hookChange struct{ action, url, types string }
 	var hookChanges []hookChange
+	// keys are the stored endpoints' signing keys, for the reference each
+	// record carries (webhook.Ref): those it changes or takes away as they
+	// were stored, and those it adds as they are stored now.
+	keys := map[string]string{}
 	var addHooks []webhook.Endpoint
 	changeHooks := map[string]feature.Webhook{}
 	for _, h := range p.Webhooks {
@@ -1018,6 +1097,7 @@ func applyFeature(root string, p *feature.Package, digest string, plan feature.P
 		if err := updateHooks(root, func(f *hookFile) error {
 			kept := f.Endpoints[:0]
 			for _, e := range f.Endpoints {
+				keys[e.URL] = e.Secret
 				if slices.Contains(goneHooks, e.URL) {
 					continue
 				}
@@ -1030,6 +1110,9 @@ func applyFeature(root string, p *feature.Package, digest string, plan feature.P
 				if !slices.ContainsFunc(kept, func(x webhook.Endpoint) bool { return x.URL == e.URL }) {
 					kept = append(kept, e)
 				}
+			}
+			for _, e := range kept {
+				keys[e.URL] = e.Secret
 			}
 			f.Endpoints = kept
 			return nil
@@ -1045,7 +1128,7 @@ func applyFeature(root string, p *feature.Package, digest string, plan feature.P
 		if err != nil {
 			return nil, err
 		}
-		if err := saveDraft(root, s, pages, "feature "+p.Name+" "+p.Version, caller.Name, ""); err != nil {
+		if err := saveDraftOver(root, s, pages, "feature "+p.Name+" "+p.Version, caller.Name, read); err != nil {
 			return nil, err
 		}
 		var written []string
@@ -1172,7 +1255,10 @@ func applyFeature(root string, p *feature.Package, digest string, plan feature.P
 	}
 	pkg := p.Name
 	for _, h := range hookChanges {
-		d := map[string]string{"endpoint": h.url, "feature": pkg}
+		// The host and a reference, as `quilzo webhook add` records an
+		// endpoint, never the address (webhook.LogForm).
+		d := map[string]string{"endpoint": webhook.LogForm(h.url), "feature": pkg,
+			"endpoint_ref": webhook.Ref(webhook.Endpoint{URL: h.url, Secret: keys[h.url]})}
 		if h.types != "" {
 			d["types"] = h.types
 		}
@@ -1414,7 +1500,7 @@ func featureExport(root string, args []string) error {
 	fs := flag.NewFlagSet("feature export", flag.ContinueOnError)
 	outPath := fs.String("o", "", "write to this file instead of standard output")
 	sign := fs.Bool("sign", false, "sign it with this installation's log keys (Ed25519 and ML-DSA)")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -1491,7 +1577,7 @@ func featureCapture(root string, args []string) error {
 	fs.Var(&bots, "chatbot", "a chatbot")
 	fs.Var(&agents, "agent", "an agent declaration")
 	fs.Var(&hooks, "webhook", "a webhook, by URL; its secret is not included")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {

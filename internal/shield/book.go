@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
+	"github.com/quilzo/quilzo/internal/auth"
 )
 
 // The playbooks in force, and the changes waiting for a second person.
@@ -234,13 +235,16 @@ func Decide(root, id, by string, approve, onlyAdmin bool, now time.Time) (Propos
 			if p.ID != id {
 				continue
 			}
-			if approve && p.By == by && !onlyAdmin {
+			// Whoever proposed it under another spelling of their name is
+			// still them (auth.SamePerson): compared exactly, "dana"
+			// approved "Dana"'s change as the second person.
+			if approve && auth.SamePerson(p.By, by) && !onlyAdmin {
 				return errors.New("a change is approved by somebody other than the person who proposed it")
 			}
 			p.DecidedBy, p.Decided = by, now
 			p.Outcome = "declined"
 			if approve {
-				p.Outcome, p.Alone = "approved", p.By == by
+				p.Outcome, p.Alone = "approved", auth.SamePerson(p.By, by)
 				if p.Release {
 					if err := release(root, now); err != nil {
 						return err

@@ -100,6 +100,22 @@ func payProvider(root, name string) (pay.Provider, error) {
 	return &pay.Stripe{Key: key}, nil
 }
 
+// payKeyMode is the mode of the provider's key, ModeLive or ModeTest, or
+// "" while payments are off or the key cannot be read. The status plans by
+// it as a sync does: counted without it, every link a test key made was
+// "selling" once the live key was set, though a customer could pay
+// through none of them.
+func payKeyMode(root, provider string) string {
+	if provider == "" {
+		return ""
+	}
+	prov, err := payProvider(root, provider)
+	if err != nil {
+		return ""
+	}
+	return prov.Mode()
+}
+
 // liveOffers are what the published catalogue sells: every row of the
 // listing site.catalogue names, at the live site, that is an offer.
 func liveOffers(root string) ([]pay.Offer, error) {
@@ -286,12 +302,21 @@ func cmdPay(root string, args []string) error {
 	caller := resolveCaller(root, flagToken)
 	switch args[0] {
 	case "status":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return payStatus(root)
 	case "enable":
 		return payEnable(root, args[1:], caller)
 	case "disable":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return payDisable(root, caller)
 	case "sync":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		made, retired, err := syncPay(root, caller)
 		if err != nil {
 			return err
@@ -326,13 +351,9 @@ func payStatus(root string) error {
 		return err
 	}
 	offers, oerr := liveOffers(root)
-	missing, stale := book.Plan(offers)
-	live := 0
-	for _, l := range book.Links {
-		if l.Live() {
-			live++
-		}
-	}
+	mode := payKeyMode(root, st.Provider)
+	missing, stale := book.PlanFor(offers, mode)
+	live := book.SellingIn(mode)
 	_, kerr := readSecret(root, paySecret)
 	out := map[string]any{"provider": st.Provider, "options": st.Options, "by": st.By, "at": st.At,
 		"synced": st.Synced, "problem": st.Problem, "offers": len(offers), "live_links": live,
@@ -374,7 +395,7 @@ func payEnable(root string, args []string, caller *Caller) error {
 	shipTo := fs.String("ship-to", "", "countries to deliver to, as ISO codes (GB,IE); none asks for no address")
 	done := fs.String("done", "", "what the checkout says once somebody has paid")
 	why := fs.String("reason", "", "why, for the record")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -511,7 +532,7 @@ func payDisable(root string, caller *Caller) error {
 func payOrders(root string, args []string, caller *Caller) error {
 	fs := flag.NewFlagSet("pay orders", flag.ContinueOnError)
 	limit := fs.Int("limit", 25, "how many, newest first (at most 100)")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	orders, err := readOrders(root, *limit, caller)
@@ -592,13 +613,10 @@ func payHooks(root string, signedIn func(admin.Actor) *Caller) *admin.PayHooks {
 			if oerr != nil {
 				out.Catalogue = oerr.Error()
 			}
-			missing, stale := book.Plan(offers)
+			mode := payKeyMode(root, st.Provider)
+			missing, stale := book.PlanFor(offers, mode)
 			out.Offers, out.ToMake, out.ToRetire = len(offers), len(missing), len(stale)
-			for _, l := range book.Links {
-				if l.Live() {
-					out.Live++
-				}
-			}
+			out.Live = book.SellingIn(mode)
 			return out, nil
 		},
 		Enable: func(shipTo []string, done string, by admin.Actor) (bool, error) {

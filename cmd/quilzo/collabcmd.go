@@ -6,7 +6,9 @@ package main
 import (
 	"flag"
 	"fmt"
+	"maps"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -14,6 +16,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collab"
+	"github.com/quilzo/quilzo/internal/dual"
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
@@ -32,6 +35,9 @@ func cmdLock(root string, args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return lockList(root)
 	case "release":
 		return lockRelease(root, args[1:])
@@ -45,7 +51,7 @@ func lockClaim(root string, args []string) error {
 	fs := flag.NewFlagSet("lock", flag.ContinueOnError)
 	note := fs.String("note", "", "what you are doing, so somebody can decide "+
 		"whether to interrupt")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -139,6 +145,18 @@ type proposalFile struct {
 }
 
 func loadApprovalPolicy(root string) (collab.Policy, error) {
+	onDisk := collab.Policy{}
+	if err := loadJSON(approvalPolicyPath(root), &onDisk); err != nil {
+		return approvalPolicyWith(root, collab.Policy{}), err
+	}
+	return approvalPolicyWith(root, onDisk), nil
+}
+
+// approvalPolicyWith is the policy publishing is asked about when
+// approval.json holds onDisk: what `quilzo review require` is about to
+// write is compared as it would apply, not as the file says it, because
+// the settings stand under it.
+func approvalPolicyWith(root string, onDisk collab.Policy) collab.Policy {
 	// The configured floor first.
 	//
 	// review.required_approvals and approval.required_humans were settable,
@@ -163,24 +181,93 @@ func loadApprovalPolicy(root string) (collab.Policy, error) {
 		p.RequiredHumans = atoiOr(cfg.Raw("approval.required_humans"), 0)
 	}
 
-	// Then approval.json, which wins where it says anything.
+	// Then approval.json, where it asks more: the count that applies is the
+	// larger of the two, so neither can ask fewer people than the other.
 	//
-	// `quilzo review require` writes the whole policy, including fields the
-	// settings table does not offer, so a file that exists is the operator's
-	// more specific answer. Merged rather than replaced: a file written before
-	// these settings existed carries no opinion about them, and reading it as
-	// "zero" would silently undo a configured requirement.
-	onDisk := collab.Policy{}
-	if err := loadJSON(approvalPolicyPath(root), &onDisk); err != nil {
-		return p, err
+	// The file won wherever it said anything above zero. An administrator
+	// raised review.required_approvals to five, `config set` said "= 5" and
+	// so did every screen showing the setting, and an earlier `review
+	// require 2` in the file meant two approvals published. Asking fewer
+	// people by either still waits for a second administrator, compared as
+	// it applies (approvalNeedsSecond, dual.SettingNeedsSecond). A file
+	// written before these settings existed asks nothing of them, and zero
+	// never undoes a configured requirement.
+	p.Required = max(p.Required, onDisk.Required)
+	p.RequiredHumans = max(p.RequiredHumans, onDisk.RequiredHumans)
+	// And whose approval counts, where the file names anybody. `review
+	// require --approvers dana` wrote the list here and nothing read it
+	// back, so the command said "from: dana" and lee's approval published
+	// the change. No setting offers a list, so an empty one is a file with
+	// no opinion: anybody who may publish, as every file written before
+	// this said.
+	if len(onDisk.Approvers) > 0 {
+		p.Approvers = onDisk.Approvers
 	}
-	if onDisk.Required > 0 {
-		p.Required = onDisk.Required
+	return p
+}
+
+// approvalNeedsSecond says why the approval policy after a change waits
+// for a second administrator, as dual.SettingNeedsSecond does for the
+// settings: fewer approvals, or fewer of them from people, than apply now,
+// or approvals counted from somebody the list in force does not name.
+// Naming fewer people does not wait: everybody whose approval counts after
+// it counted before.
+//
+// Compared as each applies, settings and file together. Compared as the
+// file says it, `review require 2` under settings asking three lowered
+// what publishing needed and looked like a raise, while the file won; now
+// that the larger applies, it asks nobody fewer and is written at once.
+func approvalNeedsSecond(before, after collab.Policy) (bool, string) {
+	const fewer = "fewer people would approve a change"
+	if after.Required < before.Required {
+		return true, fmt.Sprintf("approvals from %d to %d: %s", before.Required, after.Required, fewer)
 	}
-	if onDisk.RequiredHumans > 0 {
-		p.RequiredHumans = onDisk.RequiredHumans
+	if after.RequiredHumans < before.RequiredHumans {
+		return true, fmt.Sprintf("approvals from people from %d to %d: %s", before.RequiredHumans,
+			after.RequiredHumans, fewer)
 	}
-	return p, nil
+	if len(before.Approvers) == 0 {
+		return false, ""
+	}
+	// Said without the names, which the record of the request copies in
+	// clear; the request itself holds them.
+	const more = "somebody nobody chose to read changes could approve one"
+	if len(after.Approvers) == 0 {
+		return true, fmt.Sprintf("whose approval counts, from the %d named to anybody who may publish: %s",
+			len(before.Approvers), more)
+	}
+	for _, a := range after.Approvers {
+		if !slices.Contains(before.Approvers, a) {
+			return true, "whose approval counts, to somebody the list in force does not name: " + more
+		}
+	}
+	return false, ""
+}
+
+// approvalCountHint is said to somebody refused `quilzo review require`:
+// what to run instead, and who else agrees.
+const approvalCountHint = "how many approvals publishing needs, and whose count, is an administrator's to " +
+	"change, with quilzo config set review.required_approvals N or quilzo review require N; asking " +
+	"fewer people waits for a second administrator to approve it"
+
+// saveApprovalPolicy writes approval.json and records it, with the
+// request a second administrator approved it on, when one did.
+func saveApprovalPolicy(root string, c *Caller, pol collab.Policy, also map[string]string) error {
+	if err := saveJSON(approvalPolicyPath(root), pol); err != nil {
+		return err
+	}
+	detail := map[string]string{
+		"required":  fmt.Sprintf("%d", pol.Required),
+		"humans":    fmt.Sprintf("%d", pol.RequiredHumans),
+		"approvers": strings.Join(pol.Approvers, ","),
+	}
+	maps.Copy(detail, also)
+	// The approvers are people, so the log pseudonymises them: written
+	// in clear, the list went to a SIEM beside each one's pseudonym.
+	r := c.auditRecord("review.policy", "/", audit.Success, detail)
+	r.People = pol.Approvers
+	record(root, r)
+	return nil
 }
 
 // atoiOr parses a whole number, or gives the fallback.
@@ -218,13 +305,29 @@ func currentProposal(root string, s *store.Store) (*collab.Proposal, *proposalFi
 // promotion from staging into production) is asked about that commit's
 // approvals. It used to be asked about the draft's, so staging went live on
 // the approval of a later draft that nobody had promoted.
+//
+// AI-authored when a machine wrote any of what publishing these bytes
+// would put live (site.MachineWroteSince), not only the newest commit:
+// read from that one alone, a person's typo fix on top of an agent's
+// change made the agent's change a person's, here and so on every surface
+// that asks here. A proposal already recorded is marked the same way, as
+// one recorded from the newest commit may say "human" of a model's work,
+// and with the person a machine wrote it for (collab.WrittenFor).
 func proposalFor(root string, s *store.Store, draft string) (*collab.Proposal, *proposalFile, error) {
 	f := &proposalFile{}
 	if err := loadJSON(proposalsPath(root), f); err != nil {
 		return nil, nil, err
 	}
+	machine, merr := site.MachineWroteSince(s, draft)
+	if merr != nil {
+		// The commit itself cannot be read. A new proposal fails below as
+		// it did; a recorded one is judged as a model's, since nothing
+		// shows a person wrote it.
+		machine = &collab.MachineChange{Commit: draft, Unread: merr.Error()}
+	}
 	for i := range f.Proposals {
 		if f.Proposals[i].Content == draft {
+			f.Proposals[i].MarkMachine(machine)
 			return &f.Proposals[i], f, nil
 		}
 	}
@@ -236,19 +339,53 @@ func proposalFor(root string, s *store.Store, draft string) (*collab.Proposal, *
 	// One rule, shared with the admin. This list used to live only here, and
 	// the admin decided authorship a different way — see collab/authorship.go.
 	kind := collab.AuthorKindFor(commit.Message, "human")
+	author := commit.Author
+	// With no count of approvals set, the one approval asked for is a
+	// person's reading of the model's change, so the model's change names
+	// who may not give it. Named by the newest commit, a person's typo fix
+	// on top of an agent's change made that person the one who could not
+	// approve the agent's change, and on an installation run by one person
+	// nobody could: the draft never published, where without the typo fix
+	// that person approved it alone. With a count set, the newest commit's
+	// author still waits for somebody else, as their own work did.
+	//
+	// And a model's change is named by the model that wrote it, not by the
+	// person it was made for (MachineChange.Writer). A change dana's client
+	// made over MCP is recorded under dana, and a proposal named by that
+	// told her she wrote it and could not approve it, so on an installation
+	// run by one person it never published. With a count set she is still
+	// who asked for it (collab.Policy.Requested).
+	if machine != nil && machine.Author != "" && (machine.Commit == draft || onlyAPersonIsAsked(root)) {
+		author = machine.Writer()
+	}
 	f.Proposals = append(f.Proposals, collab.Proposal{
-		Content: draft, Author: commit.Author, AuthorKind: kind,
+		Content: draft, Author: author, AuthorKind: kind,
 		CreatedAt: commit.At, Message: commit.Message,
 	})
-	return &f.Proposals[len(f.Proposals)-1], f, nil
+	prop := &f.Proposals[len(f.Proposals)-1]
+	prop.MarkMachine(machine)
+	return prop, f, nil
+}
+
+// onlyAPersonIsAsked reports whether the policy sets no count of approvals,
+// so that what it asks of a model's change is one person's reading and
+// nothing of a person's own. A policy that cannot be read answers no, which
+// keeps the newest commit's author from approving: publishing refuses on
+// that policy anyway.
+func onlyAPersonIsAsked(root string) bool {
+	pol, err := loadApprovalPolicy(root)
+	return err == nil && max(pol.Required, pol.RequiredHumans) <= 0
 }
 
 func cmdReview(root string, args []string) error {
 	if len(args) == 0 {
-		args = []string{"status"}
+		args = []string{bareRuns["review"]}
 	}
 	switch args[0] {
 	case "status":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return reviewStatus(root)
 	case "approve":
 		return reviewApprove(root, args[1:])
@@ -281,8 +418,12 @@ func reviewStatus(root string) error {
 		return nil
 	}
 
+	by := prop.Author
+	if people := prop.ForWhom(); len(people) > 0 {
+		by += " for " + strings.Join(people, ", ")
+	}
 	w.Human("%sdraft %s%s by %s (%s)\n", bold, short(prop.Content), reset,
-		prop.Author, prop.AuthorKind)
+		by, prop.AuthorKind)
 	if prop.Message != "" {
 		w.Human("  %s%s%s\n", dim, prop.Message, reset)
 	}
@@ -322,7 +463,7 @@ func reviewApprove(root string, args []string) error {
 	_ = pos
 	fs := flag.NewFlagSet("approve", flag.ContinueOnError)
 	note := fs.String("note", "", "why you agree, which is what an auditor reads")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 0); err != nil {
 		return err
 	}
 
@@ -340,6 +481,13 @@ func reviewApprove(root string, args []string) error {
 	// screen already required. Anybody's approval used to count here.
 	if err := authorise(root, caller, auth.ActPublish, "/"); err != nil {
 		return fmt.Errorf("approving a change for publication takes the publish permission: %w", err)
+	}
+	// And only from the approvers named, where the policy names any, as
+	// the review screen offers it (collab.Policy.Counts). Taken from
+	// anybody else, it said "lee approved" and counted for nothing.
+	if pol, perr := loadApprovalPolicy(root); perr == nil && !pol.Counts(caller.Name) {
+		return errBlocked{fmt.Errorf("only approvals from %s count towards publishing this, so yours is not taken",
+			strings.Join(pol.Approvers, ", "))}
 	}
 	alone, err := secondPersonForDraft(root, s, *prop, caller)
 	if err != nil {
@@ -417,6 +565,13 @@ func kindOfPrincipal(root string) collab.KindOf {
 // A separate command rather than a JSON file people are expected to find,
 // because a security control that requires reading the source to enable is a
 // control most installations do not have.
+//
+// The policy is the four-eyes rule itself, so changing it takes what
+// `quilzo config set review.required_approvals` takes: an administrator,
+// and a second one to ask fewer people. It took an author's edit-draft and
+// nothing else, so an author ran `review require 0` under a policy of two,
+// and the next publish went live unapproved. Asking more is one
+// administrator's, at once.
 func reviewRequire(root string, args []string) error {
 	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("require", flag.ContinueOnError)
@@ -425,7 +580,7 @@ func reviewRequire(root string, args []string) error {
 			"who can publish")
 	people := fs.Int("humans", 0,
 		"how many of the approvals must come from people, not machines")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -450,34 +605,71 @@ func reviewRequire(root string, args []string) error {
 			pol.Approvers = append(pol.Approvers, a)
 		}
 	}
-	if err := saveJSON(approvalPolicyPath(root), pol); err != nil {
+
+	// Asked here as well as by the table in front of the command, as
+	// `review approve` asks for publish: this is the control, wherever the
+	// command is reached from.
+	caller := resolveCaller(root, "")
+	if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
+		return fmt.Errorf("%w\n%s", err, approvalCountHint)
+	}
+	// Fewer people than apply now waits for a second administrator, who
+	// writes it on approving (applyDual), by the request `config set` files
+	// for the same count. A policy in force that cannot be read is not
+	// known to be asking more, so asking anything waits.
+	after := approvalPolicyWith(root, pol)
+	second, why := false, ""
+	if before, err := loadApprovalPolicy(root); err != nil {
+		second, why = true, "the approval policy in force could not be read: "+err.Error()
+	} else {
+		second, why = approvalNeedsSecond(before, after)
+	}
+	if second {
+		what := fmt.Sprintf("review require %d", n)
+		if pol.RequiredHumans > 0 {
+			what += fmt.Sprintf(", %d of them from people", pol.RequiredHumans)
+		}
+		if len(pol.Approvers) > 0 {
+			what += fmt.Sprintf(", from the %d named", len(pol.Approvers))
+		}
+		apply, err := proposeSecond(root, caller, dual.Approval, what+": "+why,
+			dual.ApprovalChange{Required: pol.Required, RequiredHumans: pol.RequiredHumans, Approvers: pol.Approvers}, "")
+		if err != nil || !apply {
+			return err
+		}
+	}
+	if err := saveApprovalPolicy(root, caller, pol, nil); err != nil {
 		return err
 	}
 
-	caller := resolveCaller(root, "")
-	record(root, audit.Record{
-		Action: "review.policy", Resource: "/", Outcome: audit.Success,
-		Principal: caller.Name, Kind: caller.Kind, Model: caller.Model, Verified: caller.Verified,
-		Detail: map[string]string{
-			"required":  fmt.Sprintf("%d", n),
-			"approvers": strings.Join(pol.Approvers, ","),
-		},
-	})
-
-	if w.JSON(pol) {
+	// What applies, settings and file together, and not the file alone:
+	// with the settings at two, `review require 0` said publishing needed
+	// no approvals while two were still asked.
+	if w.JSON(after) {
 		return nil
 	}
-	if n == 0 {
+	settled := func(key string, set, asked int) {
+		if set > asked {
+			w.Human("  %s%s is %d in the settings, which apply where this asks less; "+
+				"quilzo config set %s changes it, and asking fewer people waits for a second administrator%s\n",
+				dim, key, set, key, reset)
+		}
+	}
+	if after.Required == 0 && after.RequiredHumans == 0 {
 		w.Human("publishing needs no approvals, except a person's on anything a model wrote\n")
 		return nil
 	}
-	w.Human("publishing now needs %d approval(s)\n", n)
-	if len(pol.Approvers) > 0 {
-		w.Human("  %sfrom: %s%s\n", dim, strings.Join(pol.Approvers, ", "), reset)
+	// Counted as the approvals screen counts them: people asked for are
+	// approvals asked for (admin approvalFor).
+	w.Human("publishing now needs %d approval(s)\n", max(after.Required, after.RequiredHumans))
+	settled("review.required_approvals", after.Required, n)
+	if len(after.Approvers) > 0 {
+		w.Human("  %sfrom: %s%s\n", dim, strings.Join(after.Approvers, ", "), reset)
 	}
-	if pol.RequiredHumans > 0 {
+	if after.RequiredHumans > 0 {
 		w.Human("  %sat least %d of them from people, not machines%s\n",
-			dim, pol.RequiredHumans, reset)
+			dim, after.RequiredHumans, reset)
+		settled("approval.required_humans", after.RequiredHumans, pol.RequiredHumans)
 	}
 	w.Human("  %sand a person on anything a model wrote%s\n", dim, reset)
 	w.Human("  %san author can never approve their own change%s\n", dim, reset)

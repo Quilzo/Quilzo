@@ -3,7 +3,12 @@
 
 package a11y
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/quilzo/quilzo/internal/asciifold"
+	"github.com/quilzo/quilzo/internal/plaintext"
+)
 
 // A tag scanner rather than an HTML parser.
 //
@@ -73,8 +78,13 @@ func scan(s string) []tag {
 		// script and style hold raw text, so markup inside them is data. Skipping
 		// to the matching close stops a `<` in a script being read as a tag.
 		if !t.closing && !t.selfEnd && (t.name == "script" || t.name == "style") {
+			// The close is found in the page itself. strings.ToLower of the
+			// page is a byte shorter for every İ and two longer for every byte
+			// that is not UTF-8, so its offset resumed the scan inside the
+			// script, reading a string there as markup, or past it, over an
+			// image with no alt.
 			closer := "</" + t.name
-			if e := indexFold(s[i:], closer); e >= 0 {
+			if e := asciifold.Index(s[i:], closer); e >= 0 {
 				i += e
 			} else {
 				break
@@ -105,7 +115,7 @@ func scanTag(s string, i int) (tag, int, bool) {
 	if j == nameStart {
 		return tag{}, i, false
 	}
-	t.name = strings.ToLower(s[nameStart:j])
+	t.name = lowerName(s[nameStart:j])
 
 	// Attributes, tracking quotes so a `>` inside a value does not end the tag.
 	for j < n {
@@ -129,7 +139,7 @@ func scanTag(s string, i int) (tag, int, bool) {
 		for j < n && !isSpace(s[j]) && s[j] != '=' && s[j] != '>' && s[j] != '/' {
 			j++
 		}
-		name := strings.ToLower(s[attrStart:j])
+		name := lowerName(s[attrStart:j])
 		if name == "" {
 			j++
 			continue
@@ -234,16 +244,33 @@ func isSpace(c byte) bool {
 	return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f'
 }
 
-func indexFold(s, sub string) int {
-	return strings.Index(strings.ToLower(s), strings.ToLower(sub))
+// lowerName is a tag or attribute name in lower case the way HTML's own
+// tokeniser lowers one: A to Z, and every other byte left as it is.
+//
+// Not strings.ToLower, which lowers İ to i and the Kelvin sign to k. The
+// scanner read <scrİpt> as a script with it and looked for the </script>
+// that ends one, which asciifold.Index, folding only ASCII, rightly does not
+// find in </scrİpt>: the scan stopped there and every image after it went
+// unchecked. A browser reads <scrİpt> as an element it does not know and
+// shows what is inside, <tİtle> as no title and arİa-label as no name, and
+// so does this.
+func lowerName(s string) string {
+	for i := 0; i < len(s); i++ {
+		if 'A' <= s[i] && s[i] <= 'Z' {
+			b := []byte(s)
+			for j := i; j < len(b); j++ {
+				if 'A' <= b[j] && b[j] <= 'Z' {
+					b[j] += 'a' - 'A'
+				}
+			}
+			return string(b)
+		}
+	}
+	return s
 }
 
 func trimTo(s string, n int) string {
-	s = strings.Join(strings.Fields(s), " ")
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
+	return plaintext.Clip(strings.Join(strings.Fields(s), " "), n, "…")
 }
 
 func min(a, b int) int {

@@ -30,25 +30,40 @@ func cmdDesktop(root string, args []string) error {
 	}
 	switch args[0] {
 	case "status":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return desktopStatus(root)
 	case "consent":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return desktopConsent(root)
 	}
 	return fmt.Errorf("unknown desktop command %q; try status or consent", args[0])
 }
 
 func desktopStatus(root string) error {
+	// Whether a session bus is addressed, as one document under --json.
+	// This printed its prose whatever was asked for, so a script asking
+	// whether a desktop could be reached was given sentences to parse.
 	if os.Getenv("DBUS_SESSION_BUS_ADDRESS") == "" {
+		if w.JSON(map[string]bool{"session_bus": false}) {
+			return nil
+		}
 		fmt.Printf("  %sno session bus is addressed here, so no desktop can be reached%s\n", yellow, reset)
 		fmt.Printf("  the sixth tier is off for everyone, which is its default and its design\n")
+		return nil
+	}
+	caller := resolveCaller(root, "")
+	record(root, caller.auditRecord("desktop.status", "/", audit.Success,
+		map[string]string{"bus": "addressed"}))
+	if w.JSON(map[string]bool{"session_bus": true}) {
 		return nil
 	}
 	fmt.Printf("  %sa session bus is addressed here%s\n", green, reset)
 	fmt.Printf("  whether the desktop's portal answers, and whether a person consents,\n")
 	fmt.Printf("  is `quilzo desktop consent`, which shows the desktop's own dialog\n")
-	caller := resolveCaller(root, "")
-	record(root, caller.auditRecord("desktop.status", "/", audit.Success,
-		map[string]string{"bus": "addressed"}))
 	return nil
 }
 

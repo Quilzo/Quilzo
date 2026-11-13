@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/mcp"
+	"github.com/quilzo/quilzo/internal/sameorigin"
 )
 
 // The site asked in natural language by any agent (NLWeb).
@@ -167,12 +168,32 @@ func (st *Site) absoluteURL(path string) string {
 	return strings.TrimSuffix(st.BaseURL, "/") + path
 }
 
+// nlwebPreflight answers the question a browser asks before a page on
+// another origin posts JSON to /ask: whether it may.
+//
+// It may, as /ask's answers say any origin may read them, and with no
+// credentials: nothing /ask answers depends on who is asking. Without this
+// the browser's OPTIONS was redirected to /ask/, the chatbots, and not
+// found there, so a page could only ever GET.
+func (st *Site) nlwebPreflight(w http.ResponseWriter, r *http.Request) {
+	h := w.Header()
+	h.Set("Access-Control-Allow-Origin", "*")
+	h.Set("Access-Control-Allow-Methods", "GET, POST")
+	h.Set("Access-Control-Allow-Headers", "Content-Type")
+	h.Set("Access-Control-Max-Age", "86400")
+	h.Set("Allow", "GET, POST, OPTIONS")
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // nlwebAsk answers GET or POST /ask.
 func (st *Site) nlwebAsk(w http.ResponseWriter, r *http.Request) {
 	if st.searchIndex() == nil {
 		http.NotFound(w, r)
 		return
 	}
+	// Any origin may read what /ask says, its refusals as well as its
+	// answers: a page told only that its request failed cannot say why.
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 	q, problem := readNLWebQuery(r)
 	if problem != "" {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -184,7 +205,6 @@ func (st *Site) nlwebAsk(w http.ResponseWriter, r *http.Request) {
 	h := w.Header()
 	h.Set("Cache-Control", "no-store")
 	h.Set("X-Robots-Tag", "noindex")
-	h.Set("Access-Control-Allow-Origin", "*")
 	if !q.Streaming {
 		h.Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(w).Encode(answer)
@@ -229,7 +249,10 @@ func (st *Site) nlwebMCP(w http.ResponseWriter, r *http.Request) {
 	}
 	// A browser page on another origin is not who this is for, and a
 	// request from one is what DNS rebinding looks like.
-	if o := r.Header.Get("Origin"); o != "" && (st.BaseURL == "" || !sameOrigin(o, st.BaseURL)) {
+	// By Origin alone (sameorigin.Policy.OriginOnly): a page on a name
+	// rebound to this machine is same-origin to its own browser, and only
+	// its Origin says which site it is. A request with none is not a page's.
+	if !sameorigin.Check(r, st.BaseURL, sameorigin.Policy{OriginOnly: true, Missing: true}) {
 		http.Error(w, "this origin may not call the tool", http.StatusForbidden)
 		return
 	}
@@ -349,11 +372,4 @@ func (st *Site) nlwebMCP(w http.ResponseWriter, r *http.Request) {
 	default:
 		notFound()
 	}
-}
-
-// sameOrigin compares an Origin header with the site's own address.
-func sameOrigin(origin, base string) bool {
-	o, err1 := url.Parse(origin)
-	b, err2 := url.Parse(base)
-	return err1 == nil && err2 == nil && strings.EqualFold(o.Scheme, b.Scheme) && strings.EqualFold(o.Host, b.Host)
 }

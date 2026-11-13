@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/odp"
 	"github.com/quilzo/quilzo/internal/oscal"
 )
@@ -145,7 +146,7 @@ func (s *Server) handleParameters(w http.ResponseWriter, r *http.Request) {
 	}
 	var pending []paramProposal
 	for _, pr := range pol.Pending(time.Now()) {
-		pp := paramProposal{Proposal: pr, Mine: pr.By == p.Name, Expires: pr.Expires.Format("2 January 15:04")}
+		pp := paramProposal{Proposal: pr, Mine: auth.SamePerson(pr.By, p.Name), Expires: pr.Expires.Format("2 January 15:04")}
 		for _, c := range pr.Changes {
 			if c.Value == "" {
 				pp.Lines = append(pp.Lines, c.Param+": take the declaration away")
@@ -290,7 +291,7 @@ func (s *Server) handleParametersAct(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		detail := map[string]string{"by": p.Name, "proposal": pr.ID, "proposed_by": pr.By}
-		if pr.By == p.Name {
+		if auth.SamePerson(pr.By, p.Name) {
 			detail["alone"] = "true"
 		}
 		s.audit("policy.approved", "/settings", detail)

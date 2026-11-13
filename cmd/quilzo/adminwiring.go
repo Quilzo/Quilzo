@@ -100,6 +100,22 @@ func saveDraft(root string, s *store.Store, pages map[string]any,
 	return types.Save()
 }
 
+// saveDraftOver is saveDraft for a writer that read the draft itself:
+// merged with whatever landed since the commit it read, rather than checked
+// against a base somebody else handed it (site.SaveDraftOver).
+func saveDraftOver(root string, s *store.Store, pages map[string]any,
+	message, author, read string) error {
+
+	types, err := gateWrite(root, pages)
+	if err != nil {
+		return err
+	}
+	if _, _, err := site.SaveDraftOver(s, pages, message, author, read); err != nil {
+		return err
+	}
+	return types.Save()
+}
+
 // recordAssisted marks pages as model-generated.
 //
 // Called after the assistant's proposal is accepted, so the pages carry the

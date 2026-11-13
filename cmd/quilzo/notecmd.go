@@ -72,7 +72,7 @@ func noteAdd(root string, args []string) error {
 	field := fs.String("field", "", "which field this is about")
 	author := fs.String("author", "", "who is saying it")
 	rest, flags := leadingArgs(args, 2)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &rest, 2); err != nil {
 		return err
 	}
 	if len(rest) < 2 {
@@ -125,7 +125,7 @@ func noteList(root string, args []string) error {
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
 	all := fs.Bool("all", false, "include notes somebody has resolved")
 	rest, flags := leadingArgs(args, 1)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &rest, 1); err != nil {
 		return err
 	}
 
@@ -141,15 +141,22 @@ func noteList(root string, args []string) error {
 			return err
 		}
 	}
-	if len(pages) == 0 {
-		w.Human("  %snobody has left a note%s\n", dim, reset)
-		return nil
-	}
-
 	type row struct {
 		Page  string      `json:"page"`
 		Notes []note.Note `json:"notes"`
 	}
+	if len(pages) == 0 {
+		// [] under --json, as below when nothing is outstanding. This wrote
+		// only through Human, so a script asking for the notes on a store
+		// nobody had noted was answered with nothing, exited 0, and took
+		// the empty output for the answer.
+		if w.JSON([]row{}) {
+			return nil
+		}
+		w.Human("  %snobody has left a note%s\n", dim, reset)
+		return nil
+	}
+
 	var out []row
 	for _, page := range pages {
 		notes, lerr := st.List(page)
@@ -209,6 +216,11 @@ func noteList(root string, args []string) error {
 }
 
 func noteResolve(root string, args []string) error {
+	// The page and the note, and a word after them is not dropped.
+	args, err := positionals(args, 2)
+	if err != nil {
+		return err
+	}
 	if len(args) < 2 {
 		return fmt.Errorf("usage: quilzo note resolve PAGE ID")
 	}
@@ -234,6 +246,10 @@ func noteResolve(root string, args []string) error {
 }
 
 func noteRemove(root string, args []string) error {
+	args, err := positionals(args, 2)
+	if err != nil {
+		return err
+	}
 	if len(args) < 2 {
 		return fmt.Errorf("usage: quilzo note remove PAGE ID\n" +
 			"  to finish with a note and keep the conversation readable, " +

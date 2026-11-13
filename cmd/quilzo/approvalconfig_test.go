@@ -107,9 +107,10 @@ func TestAnUnconfiguredStoreHasNoApprovalRequirement(t *testing.T) {
 	}
 }
 
-// approval.json is the operator's more specific answer and wins where it says
-// anything — but a file written before these settings existed carries no
-// opinion about them, and reading it as zero would silently undo a configured
+// approval.json applies where it asks more than the settings, as the larger
+// of the two does (TestRaisingTheApprovalSettingAppliesWhateverTheFileSays)
+// — and a file written before these settings existed carries no opinion
+// about them, and reading it as zero would silently undo a configured
 // requirement.
 func TestTheFileWinsWhereItSpeaksAndNotWhereItIsSilent(t *testing.T) {
 	root := configured(t, "approval.required_humans", "2",

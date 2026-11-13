@@ -84,6 +84,25 @@ func TestAPlaybookHoldsWhatWasAdoptedForThisModelWithinItsBounds(t *testing.T) {
 	}
 }
 
+// A model is found by any of the names given for it, and by no empty one.
+// A trial through the gateway names the model its route reaches and a run
+// named only the gateway's caller, so a lesson adopted there was in no
+// run's playbook.
+func TestAPlaybookFindsAModelByAnyOfItsNames(t *testing.T) {
+	all := []Lesson{
+		{ID: "ls_named", When: "w", Do: "d", Kind: "other", State: Adopted, AdoptedFor: []string{"model-a"}},
+		{ID: "ls_caller", When: "w", Do: "e", Kind: "other", State: Adopted, AdoptedFor: []string{"gateway:agent:tidy"}},
+		{ID: "ls_unnamed", When: "w", Do: "f", Kind: "other", State: Adopted, AdoptedFor: []string{""}},
+	}
+	_, ids := Playbook(all, "model-a", "gateway:agent:tidy")
+	if strings.Join(ids, ",") != "ls_named,ls_caller" {
+		t.Errorf("the playbook holds %v", ids)
+	}
+	if _, ids := Playbook(all, "", "gateway:agent:tidy"); strings.Join(ids, ",") != "ls_caller" {
+		t.Errorf("a model with no name read %v", ids)
+	}
+}
+
 func TestWhatWentWrongIsReadFromTheRunAndItsTextIsNotQuoted(t *testing.T) {
 	tr := agent.Trace{Goal: "answer about refunds", Steps: []agent.Step{
 		{Action: agent.Action{Op: "read_page", Input: map[string]any{"page": "refunds"}}, Allowed: true,

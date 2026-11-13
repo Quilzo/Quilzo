@@ -90,8 +90,13 @@ your PATH can call a file clean that CI then rejects.
 
 CI runs formatting and vet, a build for every released platform, the published
 injection figure, govulncheck against the toolchain, the full suite, and a
-container build. All of them must pass, and code scanning (CodeQL) must find
-nothing new. There is no separate lint step and no configuration to learn.
+container build; beside them, the race detector over every package that starts
+goroutines, and thirty seconds of fuzzing for every fuzz target. All of them
+must pass, and code scanning (CodeQL) must find nothing new. There is no
+separate lint step and no configuration to learn. Every night the whole suite
+runs again under the race detector in a shuffled order; a failing package
+prints the seed it was shuffled with, and `go test -race -shuffle=N` on that
+package repeats the order.
 
 ## The one rule that will surprise you
 

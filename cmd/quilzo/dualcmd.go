@@ -9,11 +9,12 @@ import (
 	"fmt"
 	"maps"
 	"path/filepath"
-	"strings"
+	"slices"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/collab"
 	"github.com/quilzo/quilzo/internal/dual"
 	"github.com/quilzo/quilzo/internal/scim"
 )
@@ -127,6 +128,20 @@ func applyDual(root string, r dual.Request, by string) error {
 		}
 		syncPayAfterLive(root, caller)
 		return nil
+	case dual.Approval:
+		var ch dual.ApprovalChange
+		if err := json.Unmarshal(r.Payload, &ch); err != nil {
+			return err
+		}
+		return saveApprovalPolicy(root, resolveCaller(root, ""), collab.Policy{Required: ch.Required,
+			RequiredHumans: ch.RequiredHumans, Approvers: ch.Approvers, RequireHumanForAI: true},
+			map[string]string{"request": r.ID, "approved_by": by})
+	case dual.Sends:
+		var ch dual.SendsChange
+		if err := json.Unmarshal(r.Payload, &ch); err != nil {
+			return err
+		}
+		return grantSends(root, ch, r.Why, r.By, by, r.Alone, resolveCaller(root, ""))
 	case dual.Token, dual.Enrol, dual.SCIMToken:
 		return nil
 	}
@@ -143,12 +158,33 @@ func cmdPending(root string, args []string) error {
 	c := resolveCaller(root, "")
 	now := time.Now()
 	if args[0] == "list" {
+		// Reached by this `if` and not by the switch below, and written in
+		// brackets in the help, so the test of every command did not find
+		// it: `pending list mine` listed everybody's.
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		pend, err := store.Pending(now)
 		if err != nil {
 			return err
 		}
+		// Somebody's own requests, and everybody's to whoever may decide
+		// them, as `auth list` lists grants (listedFor). The list asks only
+		// to view, so that whoever asked for something can watch it wait,
+		// and it printed the whole queue, with each payload under --json,
+		// to a reader refused `pending show` and People for the same
+		// requests: who was about to be made an administrator, which
+		// enrolment links were asked for, which settings were being
+		// weakened.
+		who, everybody := listedFor(root, auth.ActGrant)
+		if !everybody {
+			pend = slices.DeleteFunc(pend, func(r dual.Request) bool { return !mine(r.By, who) })
+		}
 		if w.JSON(pend) {
 			return nil
+		}
+		if !everybody {
+			w.Human("  %syour own; everybody's are listed to whoever may grant%s\n", dim, reset)
 		}
 		if len(pend) == 0 {
 			w.Human("nothing is waiting for a second administrator\n")
@@ -159,6 +195,9 @@ func cmdPending(root string, args []string) error {
 				r.At.UTC().Format("15:04 2 Jan"), dual.StateWords(r, now), reset)
 			if r.Why != "" {
 				w.Human("  %swhy: %s%s\n", dim, r.Why, reset)
+			}
+			if a := r.Approvers(); a != "" {
+				w.Human("  %sapprovals would count only from: %s%s\n", dim, a, reset)
 			}
 			if r.Kind == dual.Mapping && r.Open(now) {
 				w.Human("  %squilzo pending show %s lists the provisioning tokens it lets make administrators%s\n",
@@ -181,7 +220,7 @@ func cmdPending(root string, args []string) error {
 		}
 		// Their own request, approved alone: not for a day after another
 		// administrator stopped being one.
-		if mine, gerr := store.Get(id); approve && gerr == nil && strings.EqualFold(mine.By, c.Name) {
+		if mine, gerr := store.Get(id); approve && gerr == nil && auth.SamePerson(mine.By, c.Name) {
 			if rm := aloneRefusal(root, c.Name, now); rm != nil {
 				return refuseAlone(root, c, rm, map[string]string{"request": mine.ID, "kind": mine.Kind})
 			}
@@ -190,6 +229,9 @@ func cmdPending(root string, args []string) error {
 		if err != nil {
 			return err
 		}
+		// Where the head keys were, for a move of the audit log, which the
+		// approver is told of as its proposer would be (sayKeysLeftBehind).
+		oldKeys := headKeysPath(root)
 		if approve {
 			if err := applyDual(root, r, c.Name); err != nil {
 				return fmt.Errorf("approved, and applying it failed: %w", err)
@@ -208,6 +250,9 @@ func cmdPending(root string, args []string) error {
 			return nil
 		}
 		w.Human("%s: %s\n", dual.StateWords(r, now), r.What)
+		if approve && r.Kind == dual.AuditLog {
+			sayKeysLeftBehind(oldKeys, auditDir(root))
+		}
 		if approve && dual.Received(r.Kind) {
 			w.Human("  %s%s receives it with quilzo pending redeem %s, within a day%s\n", dim, r.By, r.ID, reset)
 		}
@@ -292,6 +337,9 @@ func showPending(root, id string, now time.Time) error {
 		r.At.UTC().Format("15:04 2 Jan 2006 UTC"), dual.StateWords(r, now), reset)
 	if r.Why != "" {
 		w.Human("  %swhy: %s%s\n", dim, r.Why, reset)
+	}
+	if a := r.Approvers(); a != "" {
+		w.Human("  %sapprovals would count only from: %s%s\n", dim, a, reset)
 	}
 	if r.Kind != dual.Mapping {
 		return nil

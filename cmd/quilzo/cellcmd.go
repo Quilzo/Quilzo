@@ -32,6 +32,9 @@ func cmdCell(root string, args []string) error {
 	}
 	switch args[0] {
 	case "status":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return cellStatus(root)
 	case "warm":
 		return cellWarm(root, args[1:])
@@ -145,7 +148,17 @@ func cellStatus(root string) error {
 		return err
 	}
 	backend := c.Raw("cell.backend")
+	snap, mem, vsock := c.Raw("cell.snapshot"), c.Raw("cell.memory"), c.Raw("cell.vsock")
+	// The same answer as one document under --json. This printed its prose
+	// whatever was asked for, so a script asking whether this machine has
+	// desktop cells was given sentences to parse.
+	doc := map[string]any{"backend": backend, "available": false,
+		"snapshot": snap, "memory": mem, "vsock": vsock}
 	if backend == "" {
+		doc["why"] = "no cell backend configured (cell.backend)"
+		if w.JSON(doc) {
+			return nil
+		}
 		fmt.Println("  no cell backend configured (cell.backend). Desktop cells are off;")
 		fmt.Println("  an agent's browser and workspace are all this store offers")
 		return nil
@@ -155,12 +168,21 @@ func cellStatus(root string) error {
 		return err
 	}
 	a, _ := b.Check()
+	caller := resolveCaller(root, "")
+	record(root, caller.auditRecord("cell.status", "/", audit.Success,
+		map[string]string{"backend": backend, "ok": fmt.Sprintf("%v", a.OK)}))
+	doc["available"] = a.OK
+	if !a.OK {
+		doc["why"] = a.Why
+	}
+	if w.JSON(doc) {
+		return nil
+	}
 	if a.OK {
 		fmt.Printf("  %s%s cells run on this machine%s\n", green, b.Name(), reset)
 	} else {
 		fmt.Printf("  %sno %s cells on this machine: %s%s\n", yellow, b.Name(), a.Why, reset)
 	}
-	snap, mem, vsock := c.Raw("cell.snapshot"), c.Raw("cell.memory"), c.Raw("cell.vsock")
 	if snap != "" {
 		fmt.Printf("  warm snapshot %s", snap)
 		if mem != "" {
@@ -178,8 +200,5 @@ func cellStatus(root string) error {
 	}
 	fmt.Printf("  %sexperimental: the helper inside the image is the operator's to build, and the%s\n", dim, reset)
 	fmt.Printf("  %smicroVM runs as this program's user, without Firecracker's jailer%s\n", dim, reset)
-	caller := resolveCaller(root, "")
-	record(root, caller.auditRecord("cell.status", "/", audit.Success,
-		map[string]string{"backend": backend, "ok": fmt.Sprintf("%v", a.OK)}))
 	return nil
 }

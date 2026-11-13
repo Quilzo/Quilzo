@@ -16,6 +16,10 @@
 // It fails open, and says so. A classifier that does not answer in time
 // leaves the text as Quilzo's own checks left it, and the miss is counted,
 // so an outage is a number somebody sees rather than an outage of the site.
+//
+// Quilzo's own first look is here too (injection.go): the one table of
+// text addressed to a machine that the knowledge screen, the public chatbot
+// and the meeting scribe each read their part of.
 package guardrail
 
 import (

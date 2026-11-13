@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -122,6 +123,10 @@ type Endpoint struct {
 	// Called is told about each tools/call, for the audit log: the tool, the
 	// operation, and the error the caller was given, or nil.
 	Called func(r *http.Request, c *Caller, tool, operation string, err *Error)
+	// Allow says whether an authenticated caller may make another request
+	// now, and if not how long until it may: a 429 with Retry-After, before
+	// the body is read. Nil limits nothing.
+	Allow func(r *http.Request, c *Caller) (bool, time.Duration)
 }
 
 // ServeHTTP answers one request.
@@ -169,6 +174,21 @@ func (e *Endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		e.challenge(w, "invalid_token", err.Error())
 		return
+	}
+	// The caller's budget, before the body is read, so a request over it
+	// costs a lookup rather than a parse, a server and whatever it asked for.
+	// Retryable, as nothing else refused here is: the same request is
+	// answered once the budget has refilled.
+	if e.Allow != nil {
+		if ok, wait := e.Allow(r, caller); !ok {
+			secs := int(wait/time.Second) + 1
+			h.Set("Retry-After", fmt.Sprint(secs))
+			writeRPC(w, http.StatusTooManyRequests, Response{JSONRPC: "2.0",
+				Error: &Error{Code: CodeRefused, Message: fmt.Sprintf(
+					"too many requests with this token; try again in %d second(s)", secs),
+					Data: map[string]any{"refused": true, "retryable": true}}})
+			return
+		}
 	}
 
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, MaxBody))

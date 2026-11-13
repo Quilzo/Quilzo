@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/assist"
 	"github.com/quilzo/quilzo/internal/auth"
@@ -102,6 +103,36 @@ func TestAnAnswerIsHeldToTheCardsAndWhatThePersonMayRead(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(notes, "\n"), `"payroll" is not a collection you may read`) {
 		t.Errorf("%v", notes)
+	}
+}
+
+// The question box takes 300 characters, and so does the server. It cut at
+// 300 bytes: a question of 200 characters in Japanese reached the model as
+// its first 100, and one cut inside a character as text that is not text.
+func TestAQuestionIsBoundedInCharactersAsItsBoxIs(t *testing.T) {
+	srv, token := setup(t)
+	labData(t, srv)
+	m, _ := withAsk(srv, `{"title":"Samples","cards":[{"kind":"figure","collection":"samples","op":"count"}]}`)
+	long := strings.Repeat("\u691c\u4f53", 100)
+	mixed := "a" + strings.Repeat("\u00e9", 250)
+	for _, q := range []string{long, mixed} {
+		if w := postForm(t, srv, "/today/ask", token, url.Values{"question": {q}}.Encode()); w.Code != http.StatusSeeOther {
+			t.Fatalf("%d %s", w.Code, w.Body)
+		}
+		m.mu.Lock()
+		told := m.asked[len(m.asked)-1]
+		m.mu.Unlock()
+		if !strings.Contains(told, q) || !utf8.ValidString(told) {
+			t.Errorf("a question of %d characters did not reach the model whole", utf8.RuneCountInString(q))
+		}
+	}
+	over := strings.Repeat("\u691c", 400)
+	postForm(t, srv, "/today/ask", token, url.Values{"question": {over}}.Encode())
+	m.mu.Lock()
+	told := m.asked[len(m.asked)-1]
+	m.mu.Unlock()
+	if strings.Contains(told, over) || !strings.Contains(told, over[:3*maxQuestion]) || !utf8.ValidString(told) {
+		t.Errorf("a question of 400 characters was not cut to %d", maxQuestion)
 	}
 }
 

@@ -27,6 +27,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/evolve"
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/shell"
 )
 
@@ -109,7 +110,7 @@ func evolveRun(root string, args []string, caller *Caller) (err error) {
 	fs.Var(&testEvalInputs, "test-eval-input",
 		"a file the evaluator receives for the test set, never used to choose (repeatable)")
 	fs.Var(&weights, "weight", "NAME=NUMBER, how a metric counts; negative counts against (repeatable; default: the mean)")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	// Both: a search runs programs in the box, as a research run does, and
@@ -402,12 +403,7 @@ func fileDigest(path string) (string, bool) {
 }
 
 // clampStr cuts a string for a record.
-func clampStr(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
-}
+func clampStr(s string, n int) string { return plaintext.Clip(s, n, "…") }
 
 // boxRunner runs candidates and the evaluator in boxes of their own.
 //

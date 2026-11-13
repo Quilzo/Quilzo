@@ -20,6 +20,7 @@ import (
 	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/mcpclient"
 	"github.com/quilzo/quilzo/internal/out"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Declaring the outside systems this install may reach, and reaching them.
@@ -45,7 +46,10 @@ func loadIntegrations(root string) (*agent.Integrations, error) {
 			"integrations.json could not be read, so this install does not "+
 				"know what it may reach: %w", err)
 	}
-	if err := set.Validate(); err != nil {
+	// As it was written: a paying call's fixed currency stored when three
+	// capital letters were one (=ETH) is read, and refused when it is
+	// written again, rather than taking every integration down with it.
+	if err := set.ValidateStored(); err != nil {
 		return nil, fmt.Errorf("integrations.json: %w", err)
 	}
 	return set, nil
@@ -53,10 +57,13 @@ func loadIntegrations(root string) (*agent.Integrations, error) {
 
 func cmdIntegrations(root string, args []string) error {
 	if len(args) == 0 {
-		args = []string{"list"}
+		args = []string{bareRuns["integrations"]}
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return integrationsList(root)
 	case "tools":
 		return integrationsTools(root, args[1:])
@@ -67,6 +74,9 @@ func cmdIntegrations(root string, args []string) error {
 	case "gateway":
 		return integrationsGateway(root, args[1:])
 	case "held":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return integrationsHeld(root)
 	case "import":
 		return integrationsImport(root, args[1:])
@@ -390,12 +400,7 @@ func integrationsPin(root string, args []string) error {
 	return nil
 }
 
-func clampString(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
-}
+func clampString(s string, n int) string { return plaintext.Clip(s, n, "…") }
 
 // readSecret resolves a credential name to its value, from the environment.
 //
@@ -468,7 +473,7 @@ func integrationsGateway(root string, args []string) error {
 	daily := fs.Int("daily", 0, "calls one caller may make a day")
 	ask := fs.String("ask", "", "tools a person approves call by call, separated by commas")
 	off := fs.Bool("off", false, "offer it no longer")
-	if err := fs.Parse(rest); err != nil {
+	if err := parseFlags(fs, rest, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 || (*off == (*role != "")) {
@@ -552,6 +557,9 @@ func integrationsHeld(root string) error {
 		}
 		w.Human("%s%s%s  %s on %s, asked by %s at %s\n    %s\n", bold, h.ID, reset, h.Tool, h.Integration, by,
 			h.Asked.UTC().Format("2006-01-02 15:04 UTC"), clip(h.Args, 300))
+		if h.Why != "" {
+			w.Human("    %s%s%s\n", yellow, h.Why, reset)
+		}
 	}
 	w.Human("  %squilzo integrations approve ID, or decline ID%s\n", dim, reset)
 	return nil

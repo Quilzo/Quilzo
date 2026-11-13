@@ -6,6 +6,8 @@ package evolve
 import (
 	"fmt"
 	"strings"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // The evolved region, and the diff grammar that changes it.
@@ -171,9 +173,6 @@ func Apply(r region, diffs []Diff) (string, error) {
 // notFound says what a diff searched for, bounded: the journal quotes
 // enough to recognise the failure, not the whole model answer again.
 func notFound(d Diff) error {
-	s := strings.ReplaceAll(d.Search, "\n", "␤")
-	if len(s) > 80 {
-		s = s[:80] + "…"
-	}
+	s := plaintext.Clip(strings.ReplaceAll(d.Search, "\n", "␤"), 80, "…")
 	return fmt.Errorf("no text matches %q", s)
 }

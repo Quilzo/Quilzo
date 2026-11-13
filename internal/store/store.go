@@ -309,6 +309,30 @@ func CheckTreeEntries(entries map[string]string) error {
 	return nil
 }
 
+// ValidPath reports whether name is a path the store can hold: at most
+// MaxPathSegments segments joined by "/", each of letters, digits, dot,
+// dash and underscore, starting with a letter or digit, at most 64 bytes.
+//
+// It is the one page-name rule. An experiment, a personalisation rule, a
+// feature package and the assistant each had their own, and each refused
+// pages the store holds: `quilzo add About_Us=…` worked and `quilzo
+// experiment add x --page About_Us` said it was not a page name. A surface
+// that needs less than every path (no folders, a shorter name) asks this
+// and then its own question, so no surface can accept what the store
+// refuses or refuse what it holds for want of a character.
+func ValidPath(name string) bool {
+	segs := strings.Split(name, "/")
+	if len(segs) > MaxPathSegments {
+		return false
+	}
+	for _, seg := range segs {
+		if !reSegment.MatchString(seg) {
+			return false
+		}
+	}
+	return true
+}
+
 // checkTreeEntry validates one name and the id it points at.
 //
 // A key may be a path of segments, each of which must still be a usable

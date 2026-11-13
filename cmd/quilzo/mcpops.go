@@ -6,6 +6,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -25,6 +26,7 @@ import (
 	"github.com/quilzo/quilzo/internal/ipfs"
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/mcp"
+	"github.com/quilzo/quilzo/internal/media"
 	"github.com/quilzo/quilzo/internal/odp"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/site"
@@ -53,7 +55,7 @@ import (
 // keys are, is not. That is a decision rather than an omission, which is the
 // distinction this project keeps having to make explicit.
 
-func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Caller) {
+func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Caller, tplDir string) {
 	// -- finding anything ---------------------------------------------------
 
 	// Why an agent gets this at all
@@ -371,16 +373,19 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 				return err
 			}
 			out = rec
+			// For whoever the change is written for, which in a run is
+			// the person who started it (writesFor).
 			return commitTreeNoLock(s, next, "mcp: write record in "+name,
-				caller.Name)
+				caller.writesFor())
 		})
 		if err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
+		// Verified as the caller was, as mcp.write_page is.
 		record(root, audit.Record{
 			Action: "mcp.write_record", Resource: "/" + name,
 			Outcome: audit.Success, Principal: "mcp-client", Kind: audit.KindAI,
-			Model: "mcp-client", Verified: false,
+			Model: "mcp-client", Verified: caller.Verified,
 			Detail: map[string]string{"on_behalf_of": caller.Name, "id": out.ID},
 		})
 		emitEvent(root, event.Event{Type: event.RecordChanged, Subject: name, Kind: string(audit.KindAI)}, nil)
@@ -448,8 +453,15 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 			// The path, not a short id. Whatever reads this list is going to
 			// put the answer in a page, and a shortened id resolves to nothing
 			// — so the useful form is the one a page can carry.
-			fmt.Fprintf(&b, "/media/%s %s %s %dx%d %q\n", f.ID, f.Name,
+			fmt.Fprintf(&b, "/media/%s %s %s %dx%d %q", f.ID, f.Name,
 				f.Format, f.Width, f.Height, f.Alt)
+			// A recording's sound, because it decides what a page showing it
+			// needs and whether it can be a backdrop: an agent choosing one
+			// for write_page could not tell.
+			if f.Kind == media.Video {
+				fmt.Fprintf(&b, " (%s)", soundPhrase(f))
+			}
+			b.WriteByte('\n')
 		}
 		return strings.TrimSpace(b.String()), nil
 	})
@@ -540,9 +552,9 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 			"look for.",
 		Keywords: []string{"scan", "security", "vulnerability", "secrets", "xss"},
 	}, func(a map[string]any) (any, error) {
-		dir, _ := a["templates"].(string)
-		if dir == "" {
-			dir = "templates"
+		dir, err := templatesAsked(a, caller, tplDir)
+		if err != nil {
+			return nil, err
 		}
 		inputs, err := collectInputs(root, dir, site.RefDraft)
 		if err != nil {
@@ -675,7 +687,7 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 			"stop anybody determined from reading the log another way.",
 		Keywords: []string{"agents", "activity", "strikes", "refusals", "audit"},
 	}, func(map[string]any) (any, error) {
-		events, err := audit.Read(auditPath(root))
+		events, err := auditEntries(root)
 		if err != nil {
 			return nil, err
 		}
@@ -836,12 +848,13 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 			"service. Use it to check what a pinning service claims: a " +
 			"service that returns a different identifier stored something " +
 			"other than what it was given.",
-		Args:     map[string]string{"templates": "where page.html lives; defaults to templates"},
+		Args: map[string]string{"templates": "where page.html lives; defaults to the templates this " +
+			"server was started with, and from the agent interface can be nothing else"},
 		Keywords: []string{"ipfs", "cid", "permanent", "decentralised", "hash", "web3"},
 	}, func(a map[string]any) (any, error) {
-		dir, _ := a["templates"].(string)
-		if dir == "" {
-			dir = "templates"
+		dir, err := templatesAsked(a, caller, tplDir)
+		if err != nil {
+			return nil, err
 		}
 		if err := everyDraftPage(root, s, caller); err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
@@ -861,40 +874,73 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 	srv.Register(mcp.Operation{
 		Name: "export_site", NeedsRole: "reader",
 		Summary: "the whole site in a portable format",
+		Detail: "What `quilzo export` writes, built the same way: the pages, every " +
+			"collection's records, when each page last changed and the redirects, " +
+			"of what is published unless ref names another. Refused when a page " +
+			"or a collection in it is not yours to read, and recorded as an export.",
 		Args: map[string]string{
-			"format": "markdown, json or wxr; markdown by default",
+			"format":    "markdown, json, wxr or ro-crate; markdown by default",
+			"ref":       "which ref or commit to export; live by default, draft for the draft",
+			"licence":   "the SPDX URI an ro-crate deposit is under, which it requires",
+			"publisher": "who is depositing an ro-crate",
 		},
 		Keywords: []string{"export", "backup", "migrate", "portable", "leave"},
 	}, func(a map[string]any) (any, error) {
-		f, _ := a["format"].(string)
-		if f == "" {
-			f = string(export.Markdown)
+		opts := exportOptions{Format: export.Markdown, Ref: site.RefLive}
+		if f, _ := a["format"].(string); f != "" {
+			opts.Format = export.Format(f)
 		}
-		pages, err := draftPages(root)
-		if err != nil {
-			return nil, err
+		if r, _ := a["ref"].(string); r != "" {
+			opts.Ref = r
 		}
-		if err := everyPage(root, caller, pages); err != nil {
-			return nil, &mcp.Refusal{Reason: err.Error()}
-		}
-		// The deployment's banner, as `quilzo export` puts it on every file,
-		// and refused when the scheme cannot be read: this export carried
-		// none at all.
-		banner, err := deploymentBanner(root)
+		opts.Licence, _ = a["licence"].(string)
+		opts.Publisher, _ = a["publisher"].(string)
+		// The one export of a whole site (exportsite.go). This built its
+		// own, of the draft's pages and the banner: no collections, no change
+		// dates, no redirects, and no record that the site was taken out.
+		ex, err := exportSite(root, caller, opts)
 		if err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
-		files, err := export.Export(export.Format(f), export.Site{Pages: pages, Banner: banner},
-			time.Now())
-		if err != nil {
-			return nil, &mcp.Refusal{Reason: err.Error()}
-		}
+		recordExport(root, caller, opts, ex, "mcp")
 		var b strings.Builder
-		for _, file := range files {
+		for _, note := range ex.Notes {
+			fmt.Fprintf(&b, "note: %s\n\n", note)
+		}
+		for _, file := range ex.Files {
 			fmt.Fprintf(&b, "===== %s =====\n%s\n\n", file.Path, file.Body)
 		}
 		return strings.TrimSpace(b.String()), nil
 	})
+}
+
+// templatesAsked is the templates directory an operation reads: the one this
+// server was started with, as check_accessibility and publish use, unless
+// the command line's own server is asked for another.
+//
+// content_id and scan_content read ./templates of wherever the process ran,
+// or any directory their argument named. From the agent interface that made
+// a reader's token a probe of the server's filesystem, told a file from a
+// missing path from a directory with no page.html, rendered the site with
+// another store's templates, and scanned what it liked. The argument stays
+// for the command line's server, run by whoever owns the machine; from afar
+// the only directory there is to name is this server's own, and the refusal
+// does not say what was asked for.
+//
+// An agent's run is refused alike. It calls these through the same
+// interface with the caller who started it, who is not at the agent
+// interface, so a run's model, choosing its arguments from whatever it had
+// read, could still have the server open any path and say which existed.
+func templatesAsked(a map[string]any, caller *Caller, tplDir string) (string, error) {
+	asked, _ := a["templates"].(string)
+	if asked == "" || filepath.Clean(asked) == filepath.Clean(tplDir) {
+		return tplDir, nil
+	}
+	if caller.Remote || caller.run != nil {
+		return "", &mcp.Refusal{Reason: "this reads the templates this server was started with; " +
+			"a caller at the agent interface or an agent's run cannot name another directory"}
+	}
+	return asked, nil
 }
 
 // oneLine folds a note onto one line for a tab-separated listing.

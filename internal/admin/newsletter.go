@@ -278,8 +278,14 @@ func (s *Server) newsletterList(w http.ResponseWriter, r *http.Request, p princi
 		}
 		defer f.Close()
 		got, err := n.Import(f, r.FormValue("agreed"), p.actor())
-		newsletterBack(w, r, fmt.Sprintf("Added %d; %d already here; %d kept as having left elsewhere, so never "+
-			"sent to; %d skipped as never confirmed or not an address.", got.Added, got.Already, got.Left,
+		// How the file was read, when that was not UTF-8, as records
+		// import says it: a list saved as Unicode Text is read as such.
+		readAs := ""
+		if got.ReadAs != "" {
+			readAs = "Read as " + got.ReadAs + ". "
+		}
+		newsletterBack(w, r, fmt.Sprintf("%sAdded %d; %d already here; %d kept as having left elsewhere, so never "+
+			"sent to; %d skipped as never confirmed or not an address.", readAs, got.Added, got.Already, got.Left,
 			got.Skipped+got.Bad), err)
 	}
 }

@@ -191,7 +191,7 @@ func buildSite(ctx context.Context, root string, b feature.SiteBrief, useModel b
 		name = "Your site"
 	}
 	start, err := feature.BuildSite(feature.SiteBrief{Description: b.Description, Name: name, Kind: b.Kind,
-		Colour: b.Colour, Style: b.Style}, caller.Name, time.Now())
+		Colour: b.Colour, Style: b.Style, Scheme: b.Scheme}, caller.Name, time.Now())
 	if err != nil {
 		if b.Name == "" && useModel {
 			return out, fmt.Errorf("%w; there is no model to suggest one, because %s", err, why)
@@ -247,16 +247,17 @@ func siteNewCmd(root string, args []string) error {
 	kind := fs.String("kind", "", "the kind of site: "+strings.Join(siteKindNames(), ", ")+"; read from the description by default")
 	colour := fs.String("colour", "", "the main colour, as #rrggbb")
 	style := fs.String("style", "", "the style; `quilzo theme styles` lists them")
+	scheme := fs.String("scheme", "", "the colour schemes it is drawn in: both, dark or light")
 	outPath := fs.String("o", "", "where to write the package; NAME.json by default")
 	noModel := fs.Bool("no-model", false, "build from the kind of site only, without asking a model")
 	install := fs.Bool("install", false, "install it as well, as `quilzo feature install` does")
 	takeSite := fs.Bool("take-site", false, "with --install: let it take over a site somebody set up by hand")
 	fs.StringVar(&featureDesignDir, "templates", featureDesignDir, "the site's templates directory, for --install")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 && *name == "" {
-		return errors.New(`usage: quilzo site new "what the site is for" [--name N] [--kind K] [--colour #rrggbb] [--style S] [-o FILE] [--install]`)
+		return errors.New(`usage: quilzo site new "what the site is for" [--name N] [--kind K] [--colour #rrggbb] [--style S] [--scheme both|dark|light] [-o FILE] [--install]`)
 	}
 	brief := ""
 	if len(pos) == 1 {
@@ -271,7 +272,7 @@ func siteNewCmd(root string, args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), featureDraftTimeout)
 	defer cancel()
 	built, err := buildSite(ctx, root, feature.SiteBrief{Description: brief, Name: *name, Kind: *kind,
-		Colour: *colour, Style: *style}, !*noModel, caller)
+		Colour: *colour, Style: *style, Scheme: *scheme}, !*noModel, caller)
 	if err != nil {
 		return err
 	}
@@ -420,8 +421,11 @@ func fillSite(root string, values map[string]string, caller *Caller) (int, []str
 	if err != nil {
 		return 0, nil, err
 	}
-	base := s.GetRef(site.RefDraft)
-	pages, err := draftPages(root)
+	// The page set and the commit it is read from (site.SaveDraftOver). The
+	// base was the draft ref and the pages the draft or else what was live,
+	// so on a store with nothing drafted the base was empty and the fill
+	// wrote over whatever landed meanwhile.
+	base, pages, err := draftOrLive(s)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -447,7 +451,18 @@ func fillSite(root string, values map[string]string, caller *Caller) (int, []str
 		}
 	}
 	msg := fmt.Sprintf("fill in %d %s", total, map[bool]string{true: "blank", false: "blanks"}[total == 1])
-	if err := saveDraft(root, s, pages, msg, caller.Name, base); err != nil {
+	// An agent's fill says so in its commit, as its write_page does, for
+	// the reason markFilled marks its pages as an agent's words: the
+	// approval gate reads who wrote a commit from its message
+	// (collab.MachineWrote). Said as a person's fill, under the name of
+	// the person the agent acted for, an agent's facts in the address, the
+	// prices and the hours went live with no person having read them.
+	if caller.Kind == audit.KindAI {
+		msg = "mcp: " + msg
+	}
+	// Under the person it is written for: in a run, whoever started it
+	// (writesFor), and not whoever let its fill go ahead.
+	if err := saveDraftOver(root, s, pages, msg, caller.writesFor(), base); err != nil {
 		return 0, nil, err
 	}
 	if err := markFilled(root, s, changed, caller); err != nil {
@@ -507,7 +522,7 @@ func markFilled(root string, s *store.Store, pages []string, caller *Caller) err
 func siteFillCmd(root string, args []string) error {
 	pos, flags := leadingArgs(args, 999)
 	fs := flag.NewFlagSet("site fill", flag.ContinueOnError)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 999); err != nil {
 		return err
 	}
 	caller := resolveCaller(root, flagToken)

@@ -291,3 +291,56 @@ func TestThePickerIsScopedToThePage(t *testing.T) {
 			"scope; the deny binds on the form and not on the screen", w.Code)
 	}
 }
+
+// A backdrop is muted, so the picker offers a recording for one only when
+// the library knows it to be silent, and says how many it held back and why.
+// It offered every video, and one with sound looked chosen until the page
+// was refused at publish.
+func TestTheBackdropPickerOffersOnlySilentRecordings(t *testing.T) {
+	// Nothing on this machine reads a recording, so the sound written on
+	// each record is the one the library keeps.
+	t.Setenv("PATH", "/nonexistent")
+	srv, token := setup(t)
+	withLibrary(t, srv)
+	lib, err := srv.Media.Library()
+	if err != nil {
+		t.Fatal(err)
+	}
+	clip := func(name string, sound *bool, fill byte) string {
+		body := append([]byte{0x1A, 0x45, 0xDF, 0xA3}, []byte("webm")...)
+		body = append(body, bytes.Repeat([]byte{fill}, 2048)...)
+		f, err := media.Accept(name, body, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.Sound = sound
+		if err := lib.Put(f, body); err != nil {
+			t.Fatal(err)
+		}
+		return f.ID
+	}
+	yes, no := true, false
+	silent := clip("silent.webm", &no, 1)
+	loud := clip("loud.webm", &yes, 2)
+	unknown := clip("unknown.webm", nil, 3)
+
+	base := srv.Store.GetRef(site.RefDraft)
+	postForm(t, srv, "/sections/edit", token, "page=index&at=0&do=backdrop&base="+base)
+	html := get(t, srv, "/media/pick?page=index&at=0&path=backdrop_url", token).Body.String()
+	if !strings.Contains(html, `value="/media/`+silent+`"`) {
+		t.Error("a silent recording is not offered for a backdrop")
+	}
+	for name, id := range map[string]string{"with sound": loud, "of unknown sound": unknown} {
+		if strings.Contains(html, `value="/media/`+id+`"`) {
+			t.Errorf("a recording %s is offered for a backdrop", name)
+		}
+	}
+	if !strings.Contains(html, "2 videos are not offered") {
+		t.Error("the picker does not say it held two recordings back")
+	}
+	// A video field is not a backdrop: every recording is offered there.
+	html = get(t, srv, "/media/pick?page=index&at=0&path=src", token).Body.String()
+	if !strings.Contains(html, `value="/media/`+loud+`"`) {
+		t.Error("a recording with sound is no longer offered for a video section")
+	}
+}

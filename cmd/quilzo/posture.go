@@ -5,6 +5,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/logd"
@@ -23,6 +24,7 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auditstream"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/evals"
 	"github.com/quilzo/quilzo/internal/frameworks"
 	"github.com/quilzo/quilzo/internal/memory"
 	"github.com/quilzo/quilzo/internal/oauthas"
@@ -146,9 +148,18 @@ func Observe(root, tplDir string, srv posture.ServerFacts) posture.State {
 		// Reported as three states rather than a boolean, because "configured
 		// and not answering" is worse than "not configured" and collapsing them
 		// would hide the worse one.
+		//
+		// Not answering is a socket nothing answers on, and no socket where
+		// this account cannot write the log itself (mayWriteLog), as under
+		// the reference compose with logd stopped. Neither was asked: with
+		// no socket the scan said the CMS opens the log directly, of a log
+		// it could not open, and a socket left behind read as a writer in
+		// force while every record sent to it was refused.
 		switch sock := logSocketPath(root); {
-		case !fileExists(sock):
+		case !fileExists(sock) && mayWriteLog(auditPath(root)):
 			s.Extra["log_writer"] = "none"
+		case !fileExists(sock) || logd.Reachable(sock) != nil:
+			s.Extra["log_writer"] = "unreachable"
 		default:
 			if ok, _ := logd.CheckOwnership(auditPath(root), os.Geteuid()); ok {
 				s.Extra["log_writer"] = "separated"
@@ -167,8 +178,28 @@ func Observe(root, tplDir string, srv posture.ServerFacts) posture.State {
 	if types, err := schema.Load(root); err == nil {
 		s.Types = types
 	}
-	if events, err := audit.Read(auditPath(root)); err == nil {
+	// Every whole entry, and the lines that are not entries as breaks, unless
+	// a write a crash cut short left them: auditlog verify and the audit log
+	// screen report those, as what they are. Any such line stopped the log
+	// being read here, and the scan then checked nothing about it.
+	events, err := audit.Read(auditPath(root))
+	if _, cerr := audit.Check(events, err); cerr == nil {
 		s.Audit, s.AuditRead = events, true
+		var bad *audit.Unreadable
+		if errors.As(err, &bad) {
+			for i, p := range bad.Problems() {
+				if !bad.Lines[i].Torn {
+					s.AuditBreaks = append(s.AuditBreaks, p)
+				}
+			}
+		}
+		// And against every head saved beside it, as auditlog verify checks
+		// it: entries removed from the end leave a chain that verifies.
+		if heads, err := savedHeads(root); err == nil {
+			if p := audit.AgainstHeads(events, heads); p != nil {
+				s.AuditBreaks = append(s.AuditBreaks, *p)
+			}
+		}
 	}
 
 	// File modes. Only files that hold something worth protecting: listing
@@ -445,6 +476,9 @@ func cmdPosture(root string, args []string) error {
 	case "explain":
 		return postureExplain(args[1:])
 	case "rules":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return postureRules()
 	case "suppress":
 		return postureSuppress(root, args[1:])
@@ -468,7 +502,11 @@ func postureScan(root string, args []string) error {
 	proxy := fs.Bool("behind-proxy", false, "a reverse proxy terminates TLS")
 	asOSCAL := fs.Bool("oscal", false,
 		"emit OSCAL assessment results instead of a report")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 0); err != nil {
+		return err
+	}
+	// Observing made the store it was looking for, and the scan was of that.
+	if err := needStore(root); err != nil {
 		return err
 	}
 
@@ -668,7 +706,7 @@ func postureSuppress(root string, args []string) error {
 	reason := fs.String("reason", "", "why this is being accepted")
 	by := fs.String("by", "", "who is accepting it")
 	daysFor := fs.Int("days", 30, "how long, at most 90")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -774,6 +812,9 @@ func observeAI(root, tplDir string, events []audit.Event) posture.AIFacts {
 		return facts
 	}
 	lastEval := map[string]time.Time{}
+	// The model each last evaluation measured, as a person reads it; none
+	// for a record from before evaluations named their model.
+	lastModel := map[string]string{}
 	for _, e := range events {
 		if e.Action != "assistant.evaluated" {
 			continue
@@ -782,14 +823,23 @@ func observeAI(root, tplDir string, events []audit.Event) posture.AIFacts {
 			name := strings.TrimPrefix(e.Resource, "/ask/")
 			if at.After(lastEval[name]) {
 				lastEval[name] = at
+				delete(lastModel, name)
+				if model, named := e.Detail["model"]; named {
+					lastModel[name] = evals.Served{Model: model, Route: e.Detail["route"]}.String()
+				}
 			}
 		}
 	}
 	disclosed := askPageDiscloses(root, tplDir)
 	for _, a := range set.Assistants {
-		facts.Chatbots = append(facts.Chatbots, posture.ChatbotFact{
+		f := posture.ChatbotFact{
 			Name: a.Name, Public: a.Public, UseModel: a.UseModel,
-			Disclosed: disclosed, LastEval: lastEval[a.Name]})
+			Disclosed: disclosed, LastEval: lastEval[a.Name], EvalModel: lastModel[a.Name]}
+		if a.UseModel {
+			m, _ := assistantModelAt(root, a)
+			f.Model = servedBy(m).String()
+		}
+		facts.Chatbots = append(facts.Chatbots, f)
 	}
 	if agents, aerr := loadAgents(root); aerr == nil {
 		facts.Agents = len(agents.Agents)
@@ -1011,7 +1061,7 @@ func postureFrameworks(root string, args []string) error {
 	fs := flag.NewFlagSet("posture frameworks", flag.ContinueOnError)
 	tplDir := fs.String("templates", "templates", "template directory")
 	pos, flags := leadingArgs(args, 1)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	sup, _ := loadSuppressions(root)

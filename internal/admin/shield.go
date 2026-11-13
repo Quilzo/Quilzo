@@ -146,7 +146,7 @@ func (s *Server) shieldData(data map[string]any, p principal, try, daysParam str
 		waiting[q.Playbook.Name] = true
 		releaseWaiting = releaseWaiting || q.Release
 		pending = append(pending, shieldProposal{Proposal: q, What: shieldProposalWords(q),
-			When: q.At.UTC().Format("2 Jan 15:04 UTC"), Mine: strings.EqualFold(q.By, p.Name)})
+			When: q.At.UTC().Format("2 Jan 15:04 UTC"), Mine: auth.SamePerson(q.By, p.Name)})
 	}
 	data["Pending"], data["ReleaseWaiting"] = pending, releaseWaiting
 	// How often each playbook responded, and when last: a playbook that
@@ -403,6 +403,35 @@ func (s *Server) handleShieldAct(w http.ResponseWriter, r *http.Request) {
 		detail["by"] = p.Name
 		s.audit("shield."+action, "/security/shield", detail)
 	}
+	// A change its proposer made as the only administrator there is, done
+	// at once and recorded as approved alone, as the command line does it
+	// (shieldAloneOr in cmd/quilzo); otherwise it waits for another, and
+	// the only administrator a day after another stopped being one is told
+	// why it waits. The screen always proposed, and told somebody with no
+	// other administrator that another one approves it here.
+	proposed := func(q shield.Proposal) {
+		if s.ShieldAdmin.OnlyAdmin == nil || !s.ShieldAdmin.OnlyAdmin(p.Name) {
+			msg := shieldProposalWords(q) + ": proposed. Another administrator approves it here."
+			if rm := s.aloneRefusal(p.Name, now); rm != nil {
+				msg += " " + s.refuseAlone(p, rm, map[string]string{"proposal": q.ID})
+			}
+			back("m", msg)
+			return
+		}
+		d, err := shield.Decide(root, q.ID, p.Name, true, true, now)
+		if err != nil {
+			back("e", err.Error())
+			return
+		}
+		audit("playbook-"+d.Outcome, map[string]string{"proposal": d.ID, "change": shieldProposalWords(d),
+			"proposed_by": d.By, "alone": "true"})
+		changed()
+		if d.Release && d.Outcome == "approved" && s.ShieldAdmin.TellHold != nil {
+			s.ShieldAdmin.TellHold(false, p.Name, d.Why)
+		}
+		back("m", shieldProposalWords(d)+": "+d.Outcome+". You are the only administrator, "+
+			"and the record says it was approved alone.")
+	}
 	id := strings.TrimSpace(r.FormValue("id"))
 	why := strings.TrimSpace(r.FormValue("why"))
 	switch r.FormValue("do") {
@@ -458,7 +487,7 @@ func (s *Server) handleShieldAct(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		audit("release-proposed", map[string]string{"proposal": q.ID, "why": why})
-		back("m", "Proposed. Another administrator approves it here.")
+		proposed(q)
 	case "mode":
 		bk, err := shield.LoadBook(root)
 		if err != nil {
@@ -483,12 +512,12 @@ func (s *Server) handleShieldAct(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		audit("playbook-proposed", map[string]string{"proposal": q.ID, "change": shieldProposalWords(q), "why": why})
-		back("m", shieldProposalWords(q)+": proposed. Another administrator approves it here.")
+		proposed(q)
 	case "approve", "decline":
 		// Their own change, approved alone: not for a day after another
 		// administrator stopped being one.
 		if r.FormValue("do") == "approve" {
-			if rm := s.aloneRefusal(p.Name, now); rm != nil && shieldProposedBy(root, id) == p.Name {
+			if rm := s.aloneRefusal(p.Name, now); rm != nil && auth.SamePerson(shieldProposedBy(root, id), p.Name) {
 				back("e", s.refuseAlone(p, rm, map[string]string{"proposal": id}))
 				return
 			}

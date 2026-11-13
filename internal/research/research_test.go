@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -228,6 +229,20 @@ func TestIdentifiersAreReadOrRefused(t *testing.T) {
 	}
 }
 
+// A refused identifier is quoted as it was typed.
+//
+// The scheme was matched in strings.ToLower of the identifier and cut from
+// the identifier itself by the scheme's length. İ is two bytes and lowers to
+// i, one, so "doİ:10.1000/182" lost only "doİ" and was refused as
+// ":10.1000/182", which nobody typed.
+func TestARefusedIdentifierIsQuotedAsTyped(t *testing.T) {
+	for _, in := range []string{"doİ:10.1000/182", "https://doİ.org/10.1000/182", "https://dx.doİ.org/10.1000/182"} {
+		if _, err := ParseIdentifier(in); err == nil || !strings.Contains(err.Error(), strconv.Quote(in)) {
+			t.Errorf("%q: %v", in, err)
+		}
+	}
+}
+
 func indexes(t *testing.T) (Index, *[]string) {
 	t.Helper()
 	var asked []string
@@ -378,5 +393,34 @@ func TestARegisteredPlanChecksOnlyAsThePlanThatWasSigned(t *testing.T) {
 		if err := CheckPlan(p, verify); err == nil {
 			t.Errorf("%s changed and the plan still checks", name)
 		}
+	}
+}
+
+// A name that is not a project's is quoted back short. The agent interface
+// passes whatever a caller sent, and a 100 KB name was answered, and
+// recorded, whole.
+func TestANameThatIsNotAProjectsIsQuotedShort(t *testing.T) {
+	st := &Store{Dir: t.TempDir()}
+	_, err := st.Load("x" + strings.Repeat("y", 100<<10))
+	if err == nil {
+		t.Fatal("a name nobody could have given a project was loaded")
+	}
+	if len(err.Error()) > 512 || !strings.Contains(err.Error(), "xyyy") {
+		t.Errorf("answered %d bytes, not a short form of the name: %.120s", len(err.Error()), err.Error())
+	}
+}
+
+// A project's question is bounded in characters, as the refusal says: a
+// question of 400 characters in Japanese, 1200 bytes, was refused as over
+// 1000 characters.
+func TestAProjectsQuestionIsBoundedInCharacters(t *testing.T) {
+	st := &Store{Dir: t.TempDir()}
+	q := strings.Repeat("配送料はいくらですか", 40)
+	if err := st.Create(Project{Name: "jp", Question: q, By: "d", Created: time.Now()}); err != nil {
+		t.Fatalf("a 400-character question was refused: %v", err)
+	}
+	if err := st.Create(Project{Name: "jp2", Question: strings.Repeat("配", MaxQuestion+1), By: "d",
+		Created: time.Now()}); err == nil {
+		t.Fatal("a question over the bound in characters was accepted")
 	}
 }

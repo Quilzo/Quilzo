@@ -32,8 +32,9 @@ import (
 //
 // # The answer this project already uses
 //
-// Compute it in Go. The demo does exactly this for prices: the language has no
-// arithmetic, so price_display is written into the record before rendering. The
+// Compute it in Go. Prices are done this way: the language has no arithmetic,
+// so a row's price_display is written from its price and currency where a
+// record becomes a row (internal/listing), not kept by hand beside them. The
 // same argument applies to negation, and to anything else a layout needs that
 // is a pure function of the content.
 //
@@ -69,9 +70,23 @@ import (
 // at "this id, 480 wide" and emitting a candidate the browser may choose and
 // then fail to fetch.
 //
+// For an object naming a backdrop — a picture or a recording from this
+// library under "backdrop_url" — additionally (backdrop.go):
+//
+//	backdrop_image   true when it is a picture
+//	backdrop_video   true when it is a recording
+//	backdrop_poster  a still from the recording, when it has one
+//	backdrop_on      true when the object is drawn over it: the hero always,
+//	                 a section when its surface is "media"
+//
+// And for an object holding a video under "src" that is known to be silent:
+//
+//	src_alt    the recording's description, which is its text alternative
+//
 // For the hero, additionally:
 //
 //	title      the page's own title, when the hero did not set one
+//	backdrop_on, as above
 //
 // For each item of a list, additionally:
 //
@@ -96,6 +111,7 @@ type asks struct {
 	srcSet func(string) string
 	tracks func(string) []any
 	poster func(string) string
+	media  func(string) (MediaInfo, bool)
 	// iconStyle draws every "icon" a page names; see deriveIcon.
 	iconStyle string
 }
@@ -123,9 +139,13 @@ func decorate(v any, depth int, ask asks) any {
 			out[k] = decorate(vv, depth+1, ask)
 		}
 		derive(out)
+		// Before the srcsets, so a backdrop's poster gets its narrower copies
+		// like any other picture on the page.
+		deriveBackdrop(out, ask)
 		deriveSrcSets(out, ask.srcSet)
 		deriveTracks(out, ask.tracks)
 		derivePoster(out, ask.poster)
+		deriveSilentAlt(out, ask.media)
 		deriveIcon(out, ask.iconStyle)
 		return out
 	case []any:
@@ -325,6 +345,12 @@ func decoratePage(body any, ask asks) any {
 	title, _ := m["title"].(string)
 	if hero, isMap := m["hero"].(map[string]any); isMap && title != "" {
 		setIfAbsent(hero, "title", title)
+	}
+	// The hero is drawn over its backdrop without being asked twice: a hero
+	// is one surface, and backdrop_url is the whole of saying so. A section
+	// says "surface": "media" as well, because a section has other surfaces.
+	if hero, isMap := m["hero"].(map[string]any); isMap && (hero["backdrop_image"] == true || hero["backdrop_video"] == true) {
+		setIfAbsent(hero, "backdrop_on", true)
 	}
 	return out
 }

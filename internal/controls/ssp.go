@@ -122,8 +122,8 @@ func SystemSecurityPlan(in SSPInput) (oscal.SSP, error) {
 		SystemCharacteristics: oscal.SystemCharacteristics{
 			SystemIDs:  []oscal.SystemID{{IdentifierType: "https://ietf.org/rfc/rfc4122", ID: in.SystemID}},
 			SystemName: name,
-			Description: "A Quilzo deployment: the self-hosted control plane for the organisation's AI agents and the " +
-				"content they produce — the published site, the admin, the agents and the security console, as one binary.",
+			Description: "A Quilzo deployment: the self-hosted CMS for the organisation's websites, chatbots and AI agents, " +
+				"with their governance — the published site, the admin, the chatbots, the agents and the security console, as one binary.",
 			SecuritySensitivityLevel: level,
 			SystemInformation: oscal.SystemInformation{InformationTypes: []oscal.InformationType{{
 				UUID: infoID, Title: "Published content and its administration",

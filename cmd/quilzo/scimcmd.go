@@ -594,6 +594,9 @@ func cmdSCIM(root string, args []string) error {
 	store := scimStore(root)
 	switch args[0] {
 	case "status":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		var users, active, groups int
 		var mapping map[string]string
 		if err := store.Read(func(st *scim.State) {
@@ -649,17 +652,22 @@ func cmdSCIM(root string, args []string) error {
 		}
 		return nil
 	case "token":
-		if len(args) > 1 && args[1] == "--revoke" {
+		// --revoke is a flag like the other, read wherever it stands. It was
+		// looked for as the first word alone, and parsing stopped at a word
+		// that was no flag, so `scim token now --revoke` made a new token
+		// for the identity provider when it was asked to take the token away.
+		fs := flag.NewFlagSet("scim token", flag.ContinueOnError)
+		days := fs.Int("days", scimTokenDays, fmt.Sprintf("how many days it works, at most %d", scimTokenMaxDays))
+		revoke := fs.Bool("revoke", false, "take the token back, so the identity provider can change nothing")
+		if err := parseFlags(fs, args[1:], nil, 0); err != nil {
+			return err
+		}
+		if *revoke {
 			if err := os.Remove(scimTokenPath(root)); err != nil && !errors.Is(err, os.ErrNotExist) {
 				return err
 			}
 			w.Human("the provisioning token is revoked; the identity provider can change nothing\n")
 			return note("scim.token-revoked", "")
-		}
-		fs := flag.NewFlagSet("scim token", flag.ContinueOnError)
-		days := fs.Int("days", scimTokenDays, fmt.Sprintf("how many days it works, at most %d", scimTokenMaxDays))
-		if err := fs.Parse(args[1:]); err != nil {
-			return err
 		}
 		if *days <= 0 || *days > scimTokenMaxDays {
 			return fmt.Errorf("a provisioning token lasts from 1 to %d days", scimTokenMaxDays)
@@ -794,11 +802,16 @@ func giveSCIMToken(root string, days int, caller *Caller, made scim.TokenMade) e
 	if err != nil {
 		return err
 	}
-	w.Human("%s\n", token)
-	w.Human("  %sgive this to the identity provider as its bearer token, with the URL\n"+
-		"  https://YOUR-ADMIN/scim/v2. Shown once; it replaces any earlier one, and ends on %s:\n"+
-		"  make a new one before then, or provisioning stops, taking access away included%s\n",
-		dim, kept.Expires.Format("2 January 2006"), reset)
+	// The token under --json, with when it ends. This wrote it only for a
+	// person, so `scim token --json` replaced the identity provider's token
+	// with one nobody was shown, and provisioning stopped.
+	if !w.JSON(map[string]any{"token": token, "expires": kept.Expires}) {
+		w.Human("%s\n", token)
+		w.Human("  %sgive this to the identity provider as its bearer token, with the URL\n"+
+			"  https://YOUR-ADMIN/scim/v2. Shown once; it replaces any earlier one, and ends on %s:\n"+
+			"  make a new one before then, or provisioning stops, taking access away included%s\n",
+			dim, kept.Expires.Format("2 January 2006"), reset)
+	}
 	return recordE(root, caller.auditRecord("scim.token-made", "/", audit.Success,
 		map[string]string{"group": ""}))
 }

@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"math"
 	"net/http"
 	"time"
 
@@ -357,5 +358,124 @@ func TestTheOriginRefusalNamesBothSides(t *testing.T) {
 	body := w.Body.String()
 	if !strings.Contains(body, "evil.example") || !strings.Contains(body, "\"h\"") {
 		t.Errorf("the refusal does not name what it compared: %s", body)
+	}
+}
+
+// The playground has what every other screen has: a way past what comes
+// before its content, a main landmark to land on, and hints that can be read.
+//
+// It builds its own document, and its <main> had no skip link and no id for
+// one to name, with the way back to the admin inside the content rather than
+// before it, so the first Tab on the page was Back to Quilzo. Its hints were
+// set back to .7 on 13px text: 4.0:1 in the light scheme, and the way back
+// with them 4.2:1, under the 4.5:1 AA asks.
+func TestThePlaygroundCanBeSkippedToAndRead(t *testing.T) {
+	body, _ := fetchPlayground(t)
+	skip := strings.Index(body, `<a class="skip" href="#main">`)
+	back := strings.Index(body, `>Back to Quilzo</a>`)
+	main := strings.Index(body, `<main id="main"`)
+	switch {
+	case skip < 0:
+		t.Error("the playground has no skip link")
+	case main < 0:
+		t.Error("the playground's main landmark has no id for a skip link to name")
+	case back < 0:
+		t.Error("the playground has no way back to the admin")
+	case !(skip < back && back < main):
+		t.Error("the way back is not between the skip link and the content it skips to")
+	}
+	if !strings.Contains(body, "<header") {
+		t.Error("the way back is not in a header")
+	}
+
+	style := regexp.MustCompile(`(?s)<style>(.*?)</style>`).FindStringSubmatch(body)
+	if style == nil {
+		t.Fatal("the playground has no styles of its own")
+	}
+	fades := opacities(t, style[1])
+	checked := readableSetBack(t, fades, []fade{
+		{"the playground's hints and the way back", []string{".pg .hint"}, "--surface",
+			[]struct{ fg, on string }{{"--on-surface-variant", ""}, {"--primary", ""}}},
+		{"the note on an operation", []string{".pg .note"}, "--surface",
+			[]struct{ fg, on string }{{"--on-surface", ""}}},
+	})
+	for sel := range fades {
+		if !checked[sel] {
+			t.Errorf("%s is set back with opacity, and nothing checks the text in it", sel)
+		}
+	}
+}
+
+// Every colour the playground gives its own text reads at 4.5:1 on its page,
+// in both schemes.
+//
+// Its status line was drawn in three fixed colours picked for a white page,
+// not the theme's: 200 OK was 3.6:1 in the dark scheme, a 5xx 3.3:1, and a
+// 4xx 4.4:1 there and 4.1:1 in the light scheme, at 16px. The hints were
+// checked and these were not, because only a request sets them.
+func TestThePlaygroundsColoursReadInBothSchemes(t *testing.T) {
+	body, _ := fetchPlayground(t)
+	style := regexp.MustCompile(`(?s)<style>(.*?)</style>`).FindStringSubmatch(body)
+	if style == nil {
+		t.Fatal("the playground has no styles of its own")
+	}
+	css := regexp.MustCompile(`(?s)/\*.*?\*/`).ReplaceAllString(style[1], "")
+	colour := regexp.MustCompile(`(?:^|[;{\s])color\s*:\s*([^;}]+)`)
+	role := regexp.MustCompile(`^var\((--[a-z0-9-]+)`)
+	judged := 0
+	for _, scheme := range []string{"light", "dark"} {
+		tok := tokens(t, scheme)
+		page, _ := luminance(tok["--surface"])
+		for _, m := range regexp.MustCompile(`([^{}]+)\{([^{}]*)\}`).FindAllStringSubmatch(css, -1) {
+			c := colour.FindStringSubmatch(m[2])
+			if c == nil {
+				continue
+			}
+			sel, v := strings.Join(strings.Fields(m[1]), " "), strings.TrimSpace(c[1])
+			hex := v
+			if r := role.FindStringSubmatch(v); r != nil {
+				hex = tok[r[1]]
+			}
+			text, ok := luminance(hex)
+			if !ok {
+				t.Errorf("%s is drawn in %q, which this test cannot judge", sel, v)
+				continue
+			}
+			judged++
+			if r := (math.Max(text, page) + 0.05) / (math.Min(text, page) + 0.05); r < 4.5 {
+				t.Errorf("%s: %s is drawn in %s (%s), %.2f:1 on the page; AA needs 4.5:1", scheme, sel, v, hex, r)
+			}
+		}
+	}
+	if judged < 6 {
+		t.Fatalf("judged %d colours; the parse is wrong", judged)
+	}
+}
+
+// A change is taken from a page of this admin's own origin and no other,
+// when the browser says nothing of where it came from: the scheme as well
+// as the host, and the host in any case (sameorigin.Check).
+//
+// The admin compared only the host, exactly, so a page on another scheme
+// of the same host was this admin's own, and this admin's own host in
+// capitals was refused.
+func TestAChangeComesFromThisAdminsOwnOriginWhateverItsCase(t *testing.T) {
+	s, tok := setup(t)
+	for origin, allowed := range map[string]bool{
+		"http://h":      true,
+		"http://H":      true,
+		"https://h":     false,
+		"http://h:81":   false,
+		"null":          false,
+		"http://evil.h": false,
+	} {
+		r := httptest.NewRequest("POST", "http://h/signin", strings.NewReader("token="+tok))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		r.Header.Set("Origin", origin)
+		w := httptest.NewRecorder()
+		s.Handler().ServeHTTP(w, r)
+		if blocked := w.Code == http.StatusForbidden; blocked == allowed {
+			t.Errorf("Origin %s: got %d, allowed=%v", origin, w.Code, !blocked)
+		}
 	}
 }

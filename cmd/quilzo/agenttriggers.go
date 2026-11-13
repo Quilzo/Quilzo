@@ -81,27 +81,22 @@ func emitEvent(root string, e event.Event, c *Caller) {
 
 // eventOfWebhook is the event a webhook's names, for the acts that already
 // tell webhooks: so every place that does is a place agents can start from.
+//
+// The names are read through the event package's one table between the two
+// spellings. This was a switch of its own, the only bridge between them, and
+// it had no case for "scheduled": a scheduled publish told the webhooks and
+// was no event.
 func eventOfWebhook(ev webhook.Event) (event.Event, bool) {
-	e := event.Event{Commit: ev.Commit, Pages: ev.Pages}
-	switch ev.Type {
-	case "published":
-		e.Type = event.PagePublished
-	case "rolled-back":
-		e.Type = event.PageRolledBack
-	case "proposed":
-		e.Type = event.DraftProposed
-	case "submitted":
-		e.Type, e.Subject = event.FormSubmitted, ev.Form
-	case "booked":
-		e.Type, e.Subject = event.BookingMade, ev.Service
-	case "booking-cancelled":
-		e.Type, e.Subject = event.BookingCancelled, ev.Service
-	case "subscribed":
-		e.Type = event.SubscriberJoined
-	case "unsubscribed":
-		e.Type = event.SubscriberLeft
-	default:
-		return e, false
+	t, ok := event.Parse(ev.Type)
+	if _, told := event.WebhookName(t); !ok || !told {
+		return event.Event{}, false
+	}
+	e := event.Event{Type: t, Commit: ev.Commit, Pages: ev.Pages}
+	switch t {
+	case event.FormSubmitted:
+		e.Subject = ev.Form
+	case event.BookingMade, event.BookingCancelled:
+		e.Subject = ev.Service
 	}
 	return e, true
 }
@@ -535,7 +530,7 @@ func triggeredCaller(root string, s triggerStart) (*Caller, error) {
 		runner = s.Runner.Name
 	}
 	return &Caller{Name: id.Sponsor, Kind: audit.KindHuman, Verified: true, Role: auth.RoleAuthor,
-		Via: "trigger", FiredBy: runner, Chain: chain}, nil
+		Via: viaTrigger, FiredBy: runner, Chain: chain}, nil
 }
 
 // triggerGoal is what the run is asked: the trigger's goal, and after it

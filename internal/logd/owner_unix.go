@@ -33,3 +33,22 @@ func checkOwner(info fs.FileInfo, logPath string, cmsUID int) (bool, string) {
 		"%s is owned by uid %d, which is not the account running the CMS",
 		logPath, st.Uid)
 }
+
+// keyHeldByOthers says why the key info describes may be in hands other
+// than uid's: another account owns it, or its mode lets others read it.
+// Empty when it is uid's alone.
+func keyHeldByOthers(info fs.FileInfo, path string, uid int) string {
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fmt.Sprintf("this platform does not report who owns %s", path)
+	}
+	if int(st.Uid) != uid {
+		return fmt.Sprintf("%s belongs to uid %d, not this account (uid %d), and the account that "+
+			"made a key may have kept a copy of it", path, st.Uid, uid)
+	}
+	if perm := info.Mode().Perm(); perm&0o077 != 0 {
+		return fmt.Sprintf("%s can be read by accounts other than this one (mode %04o), and any of "+
+			"them may have kept a copy of it", path, perm)
+	}
+	return ""
+}

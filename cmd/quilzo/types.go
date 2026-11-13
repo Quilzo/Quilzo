@@ -17,6 +17,7 @@ import (
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/site"
+	"github.com/quilzo/quilzo/internal/store"
 )
 
 func cmdTypes(root string, args []string) error {
@@ -26,6 +27,9 @@ func cmdTypes(root string, args []string) error {
 	rest := args[1:]
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return typesList(root)
 	case "add":
 		return typesAdd(root, rest)
@@ -40,6 +44,9 @@ func cmdTypes(root string, args []string) error {
 	case "stub":
 		return cmdTypeStub(root, args[1:])
 	case "check":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return typesCheck(root)
 	default:
 		return fmt.Errorf("unknown type command %q; try list, add, show, bind, bind-collection or check",
@@ -218,7 +225,7 @@ func num(v *float64) string {
 func typesBindCollection(root string, args []string) error {
 	pos, flags := leadingArgs(args, 2)
 	fs := flag.NewFlagSet("bind-collection", flag.ContinueOnError)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 2); err != nil {
 		return err
 	}
 	if len(pos) != 2 {
@@ -250,7 +257,7 @@ func typesBindCollection(root string, args []string) error {
 func typesBind(root string, args []string) error {
 	pos, flags := leadingArgs(args, 2)
 	fs := flag.NewFlagSet("bind", flag.ContinueOnError)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 2); err != nil {
 		return err
 	}
 	if len(pos) != 2 {
@@ -354,14 +361,46 @@ func draftPages(root string) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	_, pages, err := draftOrLive(s)
+	return pages, err
+}
+
+// draftOrLive is draftPages with the commit the pages were read from, the
+// empty string for a store with neither a draft nor anything live, for a
+// writer that changes some of them and writes the set back
+// (site.SaveDraftOver).
+func draftOrLive(s *store.Store) (string, map[string]any, error) {
 	ref := s.GetRef(site.RefDraft)
 	if ref == "" {
 		ref = s.GetRef(site.RefLive)
 	}
 	if ref == "" {
-		return map[string]any{}, nil
+		return "", map[string]any{}, nil
 	}
-	return site.PagesAt(s, ref)
+	pages, err := site.PagesAt(s, ref)
+	return ref, pages, err
+}
+
+// draftRead is the draft's pages and the commit they were read from, for a
+// command that changes some of them and writes the set back
+// (site.SaveDraftOver).
+//
+// One read of the ref for both. The section and move commands read the
+// pages and then took the draft as it was when they wrote as their base,
+// which checks nothing: a save that landed in between was simply dropped by
+// the write, and the command said it had done what it was asked.
+//
+// No draft is the error reading one gives (site.PagesAt), which says how to
+// start one; these commands change a draft, so what is live does not stand
+// in for it.
+func draftRead(s *store.Store) (string, map[string]any, error) {
+	base := s.GetRef(site.RefDraft)
+	if base == "" {
+		_, err := site.PagesAt(s, site.RefDraft)
+		return "", nil, err
+	}
+	pages, err := site.PagesAt(s, base)
+	return base, pages, err
 }
 
 // recordGate is gateWrite's counterpart for records.
@@ -446,6 +485,10 @@ func gateWrite(root string, pages map[string]any) (*schema.Store, error) {
 //	quilzo type stub product > new.json
 //	quilzo records add products --from new.json
 func cmdTypeStub(root string, args []string) error {
+	args, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	if len(args) == 0 {
 		return fmt.Errorf("usage: quilzo type stub <type>\n" +
 			"  quilzo type list  names them")
@@ -486,8 +529,13 @@ func cmdTypeStub(root string, args []string) error {
 }
 
 func cmdTypeExample(args []string) error {
+	// One name for the type, and a word after it is not dropped.
+	args, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	name := "article"
-	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+	if len(args) > 0 {
 		name = args[0]
 	}
 	t := schema.Type{

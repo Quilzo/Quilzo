@@ -77,9 +77,11 @@ func deploymentMarking(root string) (*marking.Policy, error) {
 // deployment that does not mark, and an error when its scheme cannot be read
 // or does not parse (deploymentMarking).
 //
-// For the exports that are not `quilzo export`: the machine interface's
-// export_site and the admin's Transfer screen put no banner on anything,
-// whatever the scheme said, while the command line's did.
+// For every export: the machine interface's export_site and the admin's
+// Transfer screen put no banner on anything, whatever the scheme said,
+// while the command line's did. All three build the one export now
+// (exportsite.go), and the screen's banner hook, for an embedder that wires
+// no export of its own, is this too.
 func deploymentBanner(root string) (string, error) {
 	p, err := deploymentMarking(root)
 	if err != nil || p == nil {
@@ -277,7 +279,7 @@ func transferRecord(root string, args []string) error {
 	from := fs.String("from", "", "the network it leaves")
 	to := fs.String("to", "", "the network it arrives on")
 	rest, flags := leadingArgs(args, 1)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &rest, 1); err != nil {
 		return err
 	}
 	if len(rest) != 1 {

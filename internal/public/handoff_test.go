@@ -8,6 +8,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -261,6 +264,73 @@ func TestTheLiveScriptOnlyEverWritesText(t *testing.T) {
 	}
 }
 
+// The page's script stops asking once its conversation is not there.
+//
+// It asked every five seconds for half an hour whatever the answer, so a
+// conversation that expired or was removed while its page was open asked
+// for a wrong conversation address three times in fifteen seconds, which is
+// what the shield takes for somebody guessing, and the visitor was slowed on
+// the whole site for leaving a tab open. This runs the shipped script under
+// Node against a site that answers 404.
+func TestTheLiveScriptStopsWhenItsConversationIsGone(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		if os.Getenv("CI") != "" {
+			t.Fatal("node is not installed, and CI must run this test")
+		}
+		t.Skip("node is not installed; CI runs this")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "live.js"), []byte(askLiveJS), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	harness := `const fs = require("fs"), vm = require("vm");
+let fetches = 0, ended = "";
+const timers = [];
+const list = { getAttribute: function (n) { return n === "data-live" ? "/ask/help/c/x?format=json" : "0"; },
+  appendChild: function () {} };
+const waiting = { set textContent(v) { ended = v; } };
+const document = { hidden: false,
+  querySelector: function (s) { return s === "[data-live]" ? list : s === "[data-waiting]" ? waiting : null; },
+  querySelectorAll: function () { return []; },
+  addEventListener: function () {},
+  createElement: function () { return { appendChild: function () {} }; } };
+const ctx = { document: document, window: { fetch: true }, Date: Date,
+  setTimeout: function (f) { timers.push(f); return timers.length; },
+  fetch: function () { fetches++;
+    return Promise.resolve({ ok: false, status: 404, json: function () { return Promise.resolve(null); } }); } };
+vm.createContext(ctx);
+vm.runInContext(fs.readFileSync(process.argv[2], "utf8"), ctx);
+(async function () {
+  for (let i = 0; i < 5 && timers.length; i++) {
+    timers.shift()();
+    for (let j = 0; j < 4; j++) await new Promise(function (r) { setImmediate(r); });
+  }
+  process.stdout.write(JSON.stringify({ fetches: fetches, ended: ended }));
+})();
+`
+	if err := os.WriteFile(filepath.Join(dir, "harness.js"), []byte(harness), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command(node, filepath.Join(dir, "harness.js"), filepath.Join(dir, "live.js")).Output()
+	if err != nil {
+		t.Fatalf("node: %v", err)
+	}
+	var got struct {
+		Fetches int    `json:"fetches"`
+		Ended   string `json:"ended"`
+	}
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("the harness printed %q: %v", out, err)
+	}
+	if got.Fetches != 1 {
+		t.Fatalf("the script asked %d times for a conversation that is not there", got.Fetches)
+	}
+	if got.Ended == "" {
+		t.Error("the page does not say the conversation is over")
+	}
+}
+
 // The page's one script runs under a site policy that runs none, by a nonce
 // that is this response's alone, and nothing else is let in.
 func TestTheLiveScriptRunsOnlyOnItsOwnPageAndOnlyItself(t *testing.T) {
@@ -299,5 +369,29 @@ func TestTheLiveScriptRunsOnlyOnItsOwnPageAndOnlyItself(t *testing.T) {
 	// And the site's other pages keep the site's policy.
 	if other := send(st, http.MethodGet, "/ask/help", nil).Header().Get("Content-Security-Policy"); !strings.Contains(other, "script-src 'none'") {
 		t.Errorf("another page's policy changed: %s", other)
+	}
+}
+
+// The question box takes 1000 characters and the message box 2000, as
+// their maxlength counts them, and the server takes as many: a question in
+// Japanese was refused as over 1000 characters at a third of that, and one
+// of 1000 characters was too long for the form to be read at all.
+func TestTheBoxesTakeAsManyCharactersAsTheySay(t *testing.T) {
+	st, _, _ := handoffSite(t)
+	q := strings.Repeat("配", assistant.MaxQuestion)
+	w := send(st, http.MethodPost, "/ask/help", url.Values{"q": {q}, "prev": {q}})
+	if w.Code != http.StatusOK {
+		t.Fatalf("a %d-character question answered %d: %s", assistant.MaxQuestion, w.Code, w.Body.String())
+	}
+	if w := send(st, http.MethodPost, "/ask/help", url.Values{"q": {q + "配"}}); w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("a question over the bound answered %d", w.Code)
+	}
+	m := strings.Repeat("返", handoff.MaxText)
+	w = send(st, http.MethodPost, "/ask/help/handoff", url.Values{"q": {q}, "message": {m}})
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("a %d-character message answered %d: %s", handoff.MaxText, w.Code, w.Body.String())
+	}
+	if w := send(st, http.MethodPost, w.Header().Get("Location"), url.Values{"message": {m}}); w.Code >= 400 {
+		t.Fatalf("a %d-character reply answered %d: %s", handoff.MaxText, w.Code, w.Body.String())
 	}
 }

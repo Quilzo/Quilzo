@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/admin"
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -20,6 +21,8 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/gaps"
+	"github.com/quilzo/quilzo/internal/listing"
+	"github.com/quilzo/quilzo/internal/public"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 )
@@ -38,6 +41,9 @@ func cmdAssistant(root string, args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return assistantList(root)
 	case "add":
 		return assistantAdd(root, args[1:])
@@ -149,7 +155,7 @@ func assistantAdd(root string, args []string) error {
 	nudgePages := fs.String("nudge-pages", "", "comma-separated page prefixes the nudge may show on")
 	route := fs.String("route", "", "the gateway route, or the model a route serves, that answers first")
 	routeOnly := fs.Bool("route-only", false, "keep it to that route alone: no other route answers for it")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -222,7 +228,7 @@ func assistantAction(root string, args []string) error {
 	identity := fs.Bool("identity", false, "an agent action only for a visitor the site vouches for")
 	signer := fs.String("identity-secret", "", "the sealed credential the site signs visitors with (the assistant's)")
 	remove := fs.Bool("remove", false, "remove this action instead")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 2); err != nil {
 		return err
 	}
 	if len(pos) != 2 {
@@ -257,7 +263,10 @@ func assistantAction(root string, args []string) error {
 }
 
 func assistantRemove(root string, args []string) error {
-	pos, _ := leadingArgs(args, 1)
+	pos, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	if len(pos) != 1 {
 		return fmt.Errorf("usage: quilzo assistant remove NAME")
 	}
@@ -292,6 +301,14 @@ func assistantIndexAs(root string, a assistant.Assistant, c *Caller) (*assistant
 // not be used, for the owner's console. c is as in assistantIndexAs, and nil
 // when the index is asked in no run.
 func assistantKnowledge(root string, a assistant.Assistant, c *Caller) (*assistant.Index, []string, error) {
+	return assistantKnowledgeOf(root, a, c, true)
+}
+
+// assistantKnowledgeOf is assistantKnowledge, reading only what a visitor
+// sees now when visible is true, and every published page when it is
+// false: embedding reads them all, so a page whose window opens later is
+// found by meaning from the moment it does.
+func assistantKnowledgeOf(root string, a assistant.Assistant, c *Caller, visible bool) (*assistant.Index, []string, error) {
 	s, err := store.Open(root)
 	if err != nil {
 		return nil, nil, err
@@ -301,7 +318,14 @@ func assistantKnowledge(root string, a assistant.Assistant, c *Caller) (*assista
 		return nil, nil, fmt.Errorf("nothing is published yet, so there is "+
 			"nothing to answer from: %w", err)
 	}
-	passages := assistant.Chunk(site.WithBlocks(pages), a.Reads)
+	// What the visitors' chatbot reads, and no more: what the owner tests,
+	// measures and closes gaps against is then what visitors are answered
+	// from.
+	read := site.WithBlocks(pages)
+	if visible {
+		read = public.VisibleAt(pages, time.Now())
+	}
+	passages := assistant.Chunk(read, a.Reads)
 	var warnings []string
 	recs, rerr := assistantRecords(s, a)
 	if rerr != nil {
@@ -355,7 +379,18 @@ func recordPassages(s *store.Store, tree string, collections []string) ([]assist
 		}
 		texts := make([]assistant.RecordText, len(recs))
 		for i, r := range recs {
-			texts[i] = assistant.RecordText{ID: r.ID, Fields: r.Fields}
+			fields := r.Fields
+			// The price a record shows a person is the price it charges,
+			// as on its page (listing.WrittenPrice). The chatbot read the
+			// copy kept by hand, which said £12.00 for a product the Buy
+			// button sold at £13.00 once its price had changed.
+			if _, shown := fields[listing.PriceDisplay]; shown {
+				if text, ok := listing.WrittenPrice(fields); ok {
+					fields = maps.Clone(fields)
+					fields[listing.PriceDisplay] = text
+				}
+			}
+			texts[i] = assistant.RecordText{ID: r.ID, Fields: fields}
 		}
 		out = append(out, assistant.ChunkRecords(name, texts)...)
 	}
@@ -458,7 +493,10 @@ func loadAssistant(root, name string) (assistant.Assistant, error) {
 }
 
 func assistantAsk(root string, args []string) error {
-	pos, _ := leadingArgs(args, 2)
+	pos, err := positionals(args, 2)
+	if err != nil {
+		return err
+	}
 	if len(pos) != 2 {
 		return fmt.Errorf("usage: quilzo assistant ask NAME \"question\"")
 	}
@@ -506,7 +544,10 @@ func assistantAsk(root string, args []string) error {
 }
 
 func assistantEval(root string, args []string) error {
-	pos, _ := leadingArgs(args, 2)
+	pos, err := positionals(args, 2)
+	if err != nil {
+		return err
+	}
 	if len(pos) != 2 {
 		return fmt.Errorf("usage: quilzo assistant eval NAME CASES.jsonl\n" +
 			"  one case per line: {\"question\": \"...\", \"page\": \"returns\"}\n" +
@@ -539,14 +580,24 @@ func assistantEval(root string, args []string) error {
 		return err
 	}
 	m, _ := assistantModelAt(root, a)
+	// Named before it is measured, and measured through that route alone
+	// (onlyThrough). Named after, the route a failed call had left resting
+	// was passed over and the next one named instead.
+	served := servedBy(m)
+	if only := onlyThrough(root, served.Route, "chatbot:"+a.Name); only != nil {
+		m = only
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	r, err := assistant.Evaluate(ctx, a, idx, m, cases)
 	if err != nil {
 		return err
 	}
-	// Recorded, so "when was this chatbot last measured" has an answer the
-	// posture checks can read. The counts, never the questions.
+	// Recorded, so "when was this chatbot last measured, and on which
+	// model" has an answer the posture checks can read. The counts, never
+	// the questions. The model is the one served, by its provider's name
+	// and the gateway's route: the record named none, so a chatbot measured
+	// on one model counted as measured after it was moved to another.
 	outcome := audit.Success
 	if r.Hallucinated > 0 {
 		outcome = audit.Failure
@@ -557,7 +608,14 @@ func assistantEval(root string, args []string) error {
 		Kind: evalBy.Kind, Verified: evalBy.Verified,
 		Detail: map[string]string{"assistant": a.Name,
 			"cases":        fmt.Sprint(r.Cases),
-			"hallucinated": fmt.Sprint(r.Hallucinated)}})
+			"hallucinated": fmt.Sprint(r.Hallucinated),
+			"model":        served.Model, "route": served.Route}})
+	// Kept whole for the Chatbots screen, which says when it was last
+	// measured and on which model without reading the whole log.
+	at := time.Now().UTC()
+	if err := keepMeasurement(root, "chatbot", a.Name, evalBy.Name, served, at, r); err != nil {
+		fmt.Fprintf(os.Stderr, "  the evaluation of %s could not be kept: %v\n", a.Name, err)
+	}
 	if w.JSON(r) {
 		if r.Hallucinated > 0 {
 			return fmt.Errorf("%d unanswerable question(s) answered", r.Hallucinated)
@@ -566,6 +624,7 @@ func assistantEval(root string, args []string) error {
 	}
 	w.Human("%s%d case(s): %d answerable, %d not%s\n", bold, r.Cases,
 		r.Answerable, r.Unanswerable, reset)
+	w.Human("  %s\n", measurement{At: at, Model: served.Model, Route: served.Route})
 	w.Human("  right page first      %d/%d\n", r.HitAt1, r.Answerable)
 	w.Human("  right page retrieved  %d/%d  (MRR %.2f)\n", r.HitAtK, r.Answerable, r.MRR)
 	w.Human("  answered              %d/%d\n", r.Answered, r.Answerable)
@@ -636,6 +695,12 @@ func assistantsCapability(root string) *admin.Assistants {
 			return groups, mustConfig(root).Bool("chatbot.gaps"), err
 		},
 		Ratings: func(name string) (int, int) { return gapRatings(root, name, time.Now()) },
+		Measured: func(name string) string {
+			if m, ok := lastMeasurement(root, "chatbot", name); ok {
+				return m.String()
+			}
+			return ""
+		},
 		CheckGaps: func(ctx context.Context, name, by string) (int, int, error) {
 			r, err := checkGaps(ctx, root, name, by, time.Now())
 			return r.Asked, r.Closed, err

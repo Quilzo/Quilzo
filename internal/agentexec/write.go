@@ -90,6 +90,13 @@ type Writer struct {
 	// commit attributed to whoever happened to start the run is a commit whose
 	// history lies about who wrote it.
 	Author string
+	// For is the person who started the run, as its record names them, and
+	// the commit's message says so (collab.AgentMessage). Not the author:
+	// the agent wrote it. But it was written for them, and with a count of
+	// approvals set the approval of the person who started the run counted
+	// for its change while nothing said whose run it was. Empty says
+	// nobody, as a commit made before this does.
+	For string
 
 	// Propose records a proposal for a commit, for the publish operation. Nil
 	// means this deployment has no review queue wired in, and publish is then
@@ -207,7 +214,7 @@ func (wr Writer) writePage(s *agent.Session, base string, a agent.Action) (strin
 	// whatever the numeric threshold says. A commit message that did not say
 	// so would put an agent's work in front of reviewers labelled as somebody's
 	// own — which is the one thing that rule exists to prevent.
-	msg := fmt.Sprintf("%s%s wrote %s", AgentCommitPrefix, s.Manifest().Name, name)
+	msg := collab.AgentMessage(s.Manifest().Name, name, wr.For)
 	cid, err := site.SaveDraftFrom(wr.Store, pages, msg, wr.Author, base)
 	if err != nil {
 		// A conflict is returned as it is. The model does not get a retry

@@ -81,7 +81,7 @@ func streamSender(root string) (*auditstream.Sender, error) {
 		reach = fetch.Anywhere
 	}
 	return &auditstream.Sender{URL: url, Key: key, Client: fetch.Speaking("siem", reach, 30*time.Second),
-		Read: func() ([]audit.Event, error) { return audit.Read(auditPath(root)) }, Heads: heads,
+		Read: func() ([]audit.Event, error) { return auditEntries(root) }, Heads: heads,
 		CursorPath: streamCursorPath(root), Reveal: cfg.Bool("siem.stream.reveal")}, nil
 }
 
@@ -104,6 +104,15 @@ func streamJob(root string) upkeep.Job {
 func cmdSiemStream(root string, args []string) error {
 	if len(args) == 0 {
 		args = []string{"status"}
+	}
+	// None of the three takes anything after it, and nothing looked:
+	// `siem stream send now` sent, and `siem stream key siem2` printed the
+	// one key there is as though it were that receiver's.
+	switch args[0] {
+	case "key", "status", "send":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 	}
 	switch args[0] {
 	case "key":

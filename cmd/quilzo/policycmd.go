@@ -15,6 +15,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/config"
 	"github.com/quilzo/quilzo/internal/odp"
 	"github.com/quilzo/quilzo/internal/oscal"
@@ -89,8 +90,14 @@ func cmdPolicy(root string, args []string) error {
 	}
 	switch args[0] {
 	case "show":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return policyShow(root)
 	case "params":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return policyParams()
 	case "propose":
 		return policyPropose(root, args[1:])
@@ -284,7 +291,7 @@ func policyDecide(root, verb string, args []string) error {
 		action = "policy.approved"
 	}
 	detail := map[string]string{"proposal": pr.ID, "changes": changesText(pr.Changes), "proposed_by": pr.By}
-	if verb == "approve" && pr.By == c.Name {
+	if verb == "approve" && auth.SamePerson(pr.By, c.Name) {
 		detail["alone"] = "true"
 	}
 	record(root, c.auditRecord(action, "/settings", audit.Success, detail))
@@ -382,7 +389,7 @@ func policyImport(root string, args []string) error {
 func policyExport(root string, args []string) error {
 	fs := flag.NewFlagSet("policy export", flag.ContinueOnError)
 	out := fs.String("o", "", "write to this file instead of standard output")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	pol, err := odp.Load(paramsPath(root))

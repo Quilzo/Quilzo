@@ -6,6 +6,7 @@ package main
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -75,6 +76,133 @@ func helpGoesToTheCommand(cmd string, args []string) bool {
 	}
 	return len(args) > 0 && isHelpFlag(args[0])
 }
+
+// helpAfter reports whether `quilzo CMD help` asks for CMD's help, as
+// `quilzo help CMD` does: CMD takes a subcommand, so "help" where one goes
+// is a question and not a page's or an assistant's name. `quilzo decide
+// help` answered "unknown decide command "help"", which tells somebody
+// typing the natural thing that the command does not exist, and other
+// commands took the word as one more argument and ran.
+//
+// Read from the help, which a test holds to the code's own switches. Left
+// to the command where its help names a subcommand called help (`quilzo geo
+// help` is its own answer), and where a page or a name may go in the same
+// place (`quilzo lock PAGE`), since there "help" is somebody's page.
+//
+// And where CMD takes nothing but flags, since there "help" can be nothing
+// else. Such a command ran with the word left over: `quilzo rollback help`
+// put the live site back a version, `quilzo init help` made a store, and
+// `quilzo serve help` started the admin.
+func helpAfter(cmd string, args []string) bool {
+	if len(args) == 0 || args[0] != "help" {
+		return false
+	}
+	if primary, ok := helpAliases[cmd]; ok {
+		cmd = primary
+	}
+	subs, lines, onlyFlags := false, 0, true
+	for _, line := range strings.Split(usageText, "\n") {
+		rest, ok := strings.CutPrefix(line, "  quilzo "+cmd)
+		if !ok || rest == "" || rest[0] != ' ' {
+			continue
+		}
+		lines++
+		// What comes before the description. A line whose description
+		// follows the command's name has none, and its first word is not
+		// a subcommand.
+		synopsis := rest[1:]
+		if i := helpDescription.FindStringIndex(synopsis); i != nil {
+			synopsis = synopsis[:i[0]]
+		}
+		for _, b := range helpBracketed.FindAllString(synopsis, -1) {
+			onlyFlags = onlyFlags && strings.HasPrefix(b, "[-")
+		}
+		synopsis = helpBracketed.ReplaceAllString(synopsis, " ")
+		for _, f := range strings.Fields(synopsis) {
+			onlyFlags = onlyFlags && strings.HasPrefix(f, "-")
+		}
+		for i, alt := range strings.Split(synopsis, " | ") {
+			fields := strings.Fields(alt)
+			if len(fields) == 0 {
+				continue
+			}
+			for _, w := range strings.Split(fields[0], "|") {
+				switch {
+				case w == "help":
+					return false
+				case helpSubcommand.MatchString(w):
+					subs = true
+				case i == 0 && helpName.MatchString(w):
+					// Read in the first alternative only: after a spaced
+					// pipe a value may stand alone, as "tool:T" does.
+					return false
+				}
+			}
+		}
+	}
+	return subs || lines > 0 && onlyFlags
+}
+
+// helpAfterSub reports whether `quilzo CMD SUB help` asks for the help of
+// CMD SUB: everywhere the help names SUB, it takes nothing after it but
+// flags and their values, so "help" there can be nothing but a question.
+// Such a subcommand ran with the word left over, as `quilzo rollback help`
+// did a level up: `quilzo vault enable help` sealed the store and printed
+// its key, `quilzo memory forget help` made every agent forget the
+// operator, `quilzo fediverse init help` wrote a signing key, and `quilzo
+// review approve help` approved the draft for anybody but its author.
+//
+// Where SUB takes a name, "help" is left to be one: `quilzo decide ask
+// help` asks the decider called help.
+func helpAfterSub(cmd string, args []string) bool {
+	if len(args) < 2 || args[1] != "help" || !helpSubcommand.MatchString(args[0]) {
+		return false
+	}
+	if primary, ok := helpAliases[cmd]; ok {
+		cmd = primary
+	}
+	named := false
+	for _, line := range strings.Split(usageText, "\n") {
+		rest, ok := strings.CutPrefix(line, "  quilzo "+cmd)
+		if !ok || rest == "" || rest[0] != ' ' {
+			continue
+		}
+		synopsis := rest[1:]
+		if i := helpDescription.FindStringIndex(synopsis); i != nil {
+			synopsis = synopsis[:i[0]]
+		}
+		for _, alt := range strings.Split(synopsis, " | ") {
+			fields := strings.Fields(alt)
+			if len(fields) == 0 || !slices.Contains(strings.Split(fields[0], "|"), args[0]) {
+				continue
+			}
+			named = true
+			after := strings.Join(fields[1:], " ")
+			for _, b := range helpBracketed.FindAllString(after, -1) {
+				if !strings.HasPrefix(b, "[-") {
+					return false
+				}
+			}
+			// A flag's value follows it, written as a name: the FILE of
+			// `auditlog export -o FILE`.
+			prev := ""
+			for _, f := range strings.Fields(helpBracketed.ReplaceAllString(after, " ")) {
+				if !strings.HasPrefix(f, "-") && !(strings.HasPrefix(prev, "-") && helpName.MatchString(f)) {
+					return false
+				}
+				prev = f
+			}
+		}
+	}
+	return named
+}
+
+// helpSubcommand is how a subcommand is written in the help, a lowercase
+// word, and helpName how a name a command takes is: in capitals, or quoted.
+var (
+	helpSubcommand = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
+	helpName       = regexp.MustCompile(`^["A-Z]`)
+)
 
 // helpOrVersion are the spellings that print the help or the version, which
 // main answers itself.
@@ -154,13 +282,13 @@ func init() {
 		"review require", "rollback", "room open", "room react", "room read",
 		"room remove", "room say", "scan", "schedule add", "schedule run",
 		"scim token", "screen cost", "scribe demo", "section add", "section block",
-		"section blocks", "section fields", "section kinds", "section list",
+		"section backdrop", "section blocks", "section fields", "section kinds", "section list",
 		"section move", "section reuse", "serve", "sframe check", "sframe suites",
 		"share", "shield block", "shield dry-run", "shield hold", "shield lift",
 		"shield list", "shield release", "siem", "site", "site fill", "site import",
 		"site new", "spend grant", "studio", "template adopt", "template use",
 		"theme apply", "theme check", "theme css", "theme export", "theme fonts",
-		"theme generate", "theme import", "theme set", "theme show", "theme tokens",
+		"theme generate", "theme import", "theme layer", "theme set", "theme show", "theme tokens",
 		"theme unset", "timestamp export", "timestamp stamp", "token exchange",
 		"token issue", "token proof", "token stale", "transfer record", "trust add",
 		"type bind", "type bind-collection", "vault enable", "vault rewrap",

@@ -59,7 +59,7 @@ func accessReviewEvery(root string) time.Duration {
 // events is the log already read, or nil to read it here.
 func auditActivity(root string, events []audit.Event) (func(string) time.Time, map[string]time.Time) {
 	if events == nil {
-		events, _ = audit.Read(auditPath(root))
+		events, _ = auditEntries(root)
 	}
 	key, _ := os.ReadFile(auditKeyPath(root))
 	latest := map[string]time.Time{}
@@ -585,6 +585,15 @@ func cmdAccessReview(root string, args []string) error {
 		return nil
 	}
 	c := resolveCaller(root, flagToken)
+	// start, items and close take nothing after them, and nothing looked:
+	// `access review close q3` closed the review that was open, whichever
+	// it was.
+	switch args[0] {
+	case "start", "items", "close":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
+	}
 	switch sub := args[0]; sub {
 	case "start":
 		r, err := reviewStart(root, c)

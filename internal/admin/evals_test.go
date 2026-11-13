@@ -5,6 +5,7 @@ package admin
 
 import (
 	"fmt"
+	"html"
 	"net/url"
 	"strings"
 	"sync"
@@ -140,5 +141,48 @@ func TestAnEvaluationIsStartedRemovedAndShown(t *testing.T) {
 	}
 	if w := get(t, srv, "/agents/evals/nobody", token); w.Code != 404 {
 		t.Errorf("an undeclared agent's page: %d", w.Code)
+	}
+}
+
+// What an evaluation earned holds only on the model it measured. The
+// screens said when an agent was last evaluated and not on which model,
+// and nothing said an agent driven by another model since was due to be
+// measured again, so it went on asking at propose with nobody told why.
+// The list and the agent's page say what was measured and what is due,
+// and Today counts the agents due, since nothing measures them again by
+// itself.
+func TestAnAgentDueToBeMeasuredAgainIsShown(t *testing.T) {
+	srv, token := setup(t)
+	st := wireStudio(srv)
+	f := wireEvals(srv)
+	st.declared["answers"] = agent.Manifest{Name: "answers"}
+	st.declared["tidy"] = agent.Manifest{Name: "tidy"}
+	at := time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+	f.reports["answers"] = []evals.Report{{Agent: "answers", At: at, K: 3, Model: "model-a", Route: "main", Cases: 3, Reliable: 3, Planted: 3}}
+	due := "evaluated on model-a (route main); model-b (route main) is driving"
+	srv.Evals.Due = func(a string) string {
+		if a == "answers" {
+			return due
+		}
+		return ""
+	}
+	list := get(t, srv, "/agents/evals", token).Body.String()
+	for _, want := range []string{"on model-a (route main), 6 Oct 2026 12:00", "measure again", html.EscapeString(due)} {
+		if !strings.Contains(list, want) {
+			t.Errorf("the overview lacks %q", want)
+		}
+	}
+	page := get(t, srv, "/agents/evals/answers", token).Body.String()
+	for _, want := range []string{"measured on model-a (route main), 6 Oct 2026", "Measure it again: " + html.EscapeString(due)} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the agent's page lacks %q", want)
+		}
+	}
+	if tidy := get(t, srv, "/agents/evals/tidy", token).Body.String(); strings.Contains(tidy, "Measure it again") {
+		t.Error("an agent with nothing due is told to measure again")
+	}
+	today := get(t, srv, "/today", token).Body.String()
+	if !strings.Contains(today, `<dt>Agent to measure again: another model drives it now</dt><dd><a href="/agents/evals">1</a></dd>`) {
+		t.Errorf("Today does not count the agent due:\n%s", firstLines(today[strings.Index(today, "happening"):], 12))
 	}
 }

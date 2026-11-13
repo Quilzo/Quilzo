@@ -4,11 +4,13 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/shield"
@@ -48,20 +50,18 @@ import (
 // different account.
 
 func cmdRecover(root string, args []string) error {
-	var principal, reason string
-	confirmed := false
-	for i := 0; i < len(args); i++ {
-		switch {
-		case args[i] == "--principal" && i+1 < len(args):
-			principal = args[i+1]
-			i++
-		case args[i] == "--reason" && i+1 < len(args):
-			reason = args[i+1]
-			i++
-		case args[i] == "--i-have-filesystem-access":
-			confirmed = true
-		}
+	// A flag set, so what is not one of the three is refused. The words
+	// were walked by hand and anything else passed over: `--reason locked
+	// out` went on with the reason "locked", which is what the log then
+	// keeps of why somebody broke the glass.
+	fs := flag.NewFlagSet("auth recover", flag.ContinueOnError)
+	principalFlag := fs.String("principal", "", "who the new administrator token is for")
+	reasonFlag := fs.String("reason", "", "why, for the audit log")
+	confirmedFlag := fs.Bool("i-have-filesystem-access", false, "say that you can already edit the store's files")
+	if err := parseFlags(fs, args, nil, 0); err != nil {
+		return err
 	}
+	principal, reason, confirmed := *principalFlag, *reasonFlag, *confirmedFlag
 
 	toks, err := loadTokens(root)
 	if err != nil {
@@ -121,7 +121,33 @@ func cmdRecover(root string, args []string) error {
 
 	// The grant, and a token to use it with. Both, because granting a role to
 	// somebody who then cannot authenticate is the lockout this exists to end.
+	//
+	// The grant only when they do not hold it. The store's first
+	// administrator, made by `quilzo init --admin`, holds it and has a
+	// passkey and no token, and is the person most likely to lose the one
+	// way in; the recovery refused them, "that binding already exists".
+	//
+	// Held means held as the recovery makes it: for good, and over every
+	// page. One that has ended, or that reaches only the pages they
+	// created, is replaced by it. Taken as held, it was left as it was, and
+	// the credential printed could administer nothing.
 	if _, err := updatePolicy(root, func(p *auth.Policy) error {
+		theGrant := func(b auth.Binding) bool {
+			return b.Principal == principal && b.Role == auth.RoleAdmin && b.Permission == "" &&
+				b.Resource == "/" && !b.Deny && b.Via == ""
+		}
+		for _, b := range p.Bindings {
+			if theGrant(b) && b.Expires == 0 && !b.OwnOnly {
+				return atomicfile.ErrUnchanged
+			}
+		}
+		kept := p.Bindings[:0]
+		for _, b := range p.Bindings {
+			if !theGrant(b) {
+				kept = append(kept, b)
+			}
+		}
+		p.Bindings = kept
 		return p.Grant(auth.Binding{Principal: principal, Role: auth.RoleAdmin, Resource: "/"})
 	}); err != nil {
 		return err

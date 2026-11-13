@@ -33,6 +33,10 @@ import (
 type Page struct {
 	// URL is where it was read from, after redirects.
 	URL *url.URL
+	// Name is the name the source gives the page, when it gives one: a
+	// WordPress page's (WordPressItem.PageName). Empty names it from its
+	// address.
+	Name string
 	// Title is the document's title, Description its meta description,
 	// Lang its language.
 	Title, Description, Lang string

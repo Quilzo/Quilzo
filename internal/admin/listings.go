@@ -16,6 +16,8 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/listing"
+	"github.com/quilzo/quilzo/internal/medialib"
+	"github.com/quilzo/quilzo/internal/public"
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/site"
 )
@@ -414,15 +416,56 @@ func (s *Server) resolverAt(commit string) *listing.Resolver {
 // ref is the commit being rendered and pages is its content — passed in rather
 // than re-read, because the caller already has them and a second read could
 // answer differently.
+//
+// It is the public site's builder, never one of this server's own: this had
+// one, of the menus, the listings and the library's pictures, so the preview
+// and this gate drew a page without the form it names or the site's icon.
 func (s *Server) sources(commit string, pages map[string]any) render.Sources {
-	src := render.Sources{Name: s.SiteName, Pages: pages,
-		Listings: s.resolverAt(commit), IconStyle: s.iconStyle()}
+	if s.Sources != nil {
+		src := s.Sources(commit, pages)
+		src.IconStyle = s.iconStyle()
+		return src
+	}
+	st := public.New(s.Store, s.layouts())
+	st.Name, st.IconStyle, st.Listings = s.SiteName, s.iconStyle(), s.resolverAt(commit)
 	if s.Structure != nil && s.Structure.Menus != nil {
-		if set, err := s.Structure.Menus(); err == nil {
-			src.Menus = set
+		st.Menus = s.Structure.Menus
+	}
+	// What the renderer may ask the media library, as the public server
+	// and the command line's gate wire it. The preview and this gate asked
+	// nothing of the library once, so a captioned video rendered here with
+	// no <track>, a picture with no narrower copies and no backdrop at all,
+	// and the gate in the browser passed a backdrop whose recording has
+	// sound while `quilzo publish` refused it.
+	if s.Media != nil && s.Media.Library != nil {
+		if lib, err := s.Media.Library(); err == nil && lib != nil {
+			st.MediaStat = lib.Stat
 		}
 	}
-	return src
+	return st.Sources(pages)
+}
+
+// mediaSound is the accessibility gate's question about a recording, from
+// the library: whether it has sound, and whether that was recorded at all.
+func (s *Server) mediaSound() func(src string) (bool, bool) {
+	if s.Media == nil || s.Media.Library == nil {
+		return nil
+	}
+	lib, err := s.Media.Library()
+	if err != nil || lib == nil {
+		return nil
+	}
+	return func(src string) (bool, bool) {
+		id := strings.TrimPrefix(strings.TrimSpace(src), "/media/")
+		if medialib.ValidID(id) != nil {
+			return false, false
+		}
+		f, err := lib.Stat(id)
+		if err != nil {
+			return false, false
+		}
+		return f.SoundKnown()
+	}
 }
 
 // iconStyle is how the preview draws icons: the theme's choice, as the site

@@ -96,6 +96,27 @@ type Verdict struct {
 var ErrNotWaiting = errors.New("this run is not waiting for anybody")
 
 // AsksFirst reports whether the manifest asks a person about this action.
+//
+// A tool that writes asks at propose autonomy whatever ask_first says.
+// Propose writes nothing: write_page is refused at it, and the browser and
+// the workspace read only. A tool declared as changing something on the far
+// side was gated on its host, the budget and the breaker alone, so a
+// propose-only agent that read a planted instruction in one tool's answer
+// called the destructive tool beside it with nobody asked; so did every run
+// a reader or a read-only token started, and every run of an agent its
+// evaluations had put back to proposing, since each of those runs at
+// propose. Asked rather than refused, because an agent brought in from
+// another platform proposes and asks before its tools that write, and a
+// person may still agree to one; where nobody can be asked, it is refused.
+//
+// So does a tool that writes for an agent whose declaration says a person
+// agrees before anything it did is public: one declared with
+// human_approval, and one at publish autonomy, which always carries it.
+// Their CMS writes wait for that person, as a draft or as a publish that is
+// refused until somebody approves it, and a far-side write has no draft:
+// what it did is there for whoever looks the moment it is called. Asking
+// only at propose left both to call it with nobody asked. A draft agent
+// that declares no person still goes ahead, as its writes to the draft do.
 func (s *Session) AsksFirst(a Action) bool {
 	name := a.Op
 	if a.Tool != "" {
@@ -106,6 +127,12 @@ func (s *Session) AsksFirst(a Action) bool {
 	}
 	for _, x := range s.manifest.AskFirst {
 		if x == name {
+			return true
+		}
+	}
+	if a.Tool != "" && (s.manifest.Autonomy == AutonomyPropose || s.manifest.Autonomy == AutonomyPublish ||
+		s.manifest.HumanApproval) {
+		if t, ok := s.ToolFor(a.Tool); ok && t.Writes {
 			return true
 		}
 	}

@@ -11,12 +11,15 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/collab"
 	"github.com/quilzo/quilzo/internal/feature"
 	"github.com/quilzo/quilzo/internal/mcp"
 	"github.com/quilzo/quilzo/internal/provenance"
+	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 	"github.com/quilzo/quilzo/internal/webimport"
 )
@@ -157,6 +160,125 @@ func TestAFillRespectsADenyOnThePage(t *testing.T) {
 	if _, _, err := fillSite(root, map[string]string{whats[0]: "x"}, rae); err == nil || !strings.Contains(err.Error(), "not yours") {
 		t.Fatalf("rae filled a page denied to her: %v", err)
 	}
+}
+
+// filledByAnAgent is a site a person built and published, whose blanks an
+// agent at the machine interface then filled in for dana, with dana's
+// token where a command asks for one. It answers the store, its
+// templates and the draft the agent's fill made.
+func filledByAnAgent(t *testing.T) (root, tpl string, s *store.Store, agents string) {
+	t.Helper()
+	root, tpl = siteStore(t)
+	builtAndInstalled(t, root, feature.SiteBrief{Description: "A plumber in Leeds", Name: "Leeds Plumbing"}, false)
+	t.Cleanup(func() { finishBackground(10 * time.Second) })
+	ts, err := loadTokens(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret, _, err := ts.Issue("dana", "dana", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveTokens(root, ts); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("QUILZO_TOKEN", secret)
+	if s, err = store.Open(root); err != nil {
+		t.Fatal(err)
+	}
+	// What a person installed is live, so the agent's fill is all a
+	// publish would be asked about.
+	if _, err := site.Publish(s, ""); err != nil {
+		t.Fatal(err)
+	}
+	pages, err := draftPages(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	known, _ := builderBlanks(root)
+	whats, _ := siteBlanks(pages, known)
+	if len(whats) == 0 {
+		t.Fatal("a built site has nothing to fill in")
+	}
+	values := map[string]any{}
+	for _, what := range whats {
+		values[what] = "what dana said"
+	}
+	if got := siteCrew(t, root)("quilzo_write", "site_fill", map[string]any{"values": values}); got["error"] != nil {
+		t.Fatalf("the agent's fill: %v", got)
+	}
+	return root, tpl, s, s.GetRef(site.RefDraft)
+}
+
+// A fill an agent makes over the machine interface waits for a person's
+// approval on every surface that publishes, as its write_page does, and a
+// person's own fill is theirs and asks nobody.
+//
+// Its commit said "fill in N blanks" under the name of the person the agent
+// acted for, as a person's own fill does, and the approval gate reads who
+// wrote a commit from its message. So the agent's facts in the address, the
+// prices and the hours were taken for a person's, and published from the
+// command line, the machine interface and the browser with no person having
+// read them, though the pages themselves said an agent wrote them.
+func TestAFillAnAgentMakesWaitsForAPerson(t *testing.T) {
+	for _, surface := range publishSurfaces {
+		t.Run(surface.name, func(t *testing.T) {
+			root, tpl, s, agents := filledByAnAgent(t)
+			c, err := s.GetCommit(agents)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !collab.MachineWrote(c.Message) {
+				t.Errorf("the agent's fill is committed as %q, which says nothing of a machine", c.Message)
+			}
+			refusal := surface.publish(t, root, tpl, s)
+			if s.GetRef(site.RefLive) == agents {
+				t.Fatalf("%s put an agent's fill live that no person approved", surface.name)
+			}
+			if !strings.Contains(refusal, "needs approval from a person") {
+				t.Fatalf("%s refused an agent's fill, but not for want of a person's approval:\n%s",
+					surface.name, refusal)
+			}
+		})
+	}
+
+	t.Run("a person's own fill", func(t *testing.T) {
+		root, _ := siteStore(t)
+		builtAndInstalled(t, root, feature.SiteBrief{Description: "A plumber in Leeds", Name: "Leeds Plumbing"}, false)
+		s, err := store.Open(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := site.Publish(s, ""); err != nil {
+			t.Fatal(err)
+		}
+		pages, err := draftPages(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		known, _ := builderBlanks(root)
+		whats, _ := siteBlanks(pages, known)
+		if len(whats) == 0 {
+			t.Fatal("a built site has nothing to fill in")
+		}
+		if _, _, err := fillSite(root, map[string]string{whats[0]: "Monday to Friday"}, asAdmin("dana")); err != nil {
+			t.Fatal(err)
+		}
+		prop, _, err := proposalFor(root, s, s.GetRef(site.RefDraft))
+		if err != nil {
+			t.Fatal(err)
+		}
+		pol, err := loadApprovalPolicy(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if prop.AuthorKind != "human" {
+			t.Fatalf("a person's own fill is proposed as %q", prop.AuthorKind)
+		}
+		if d := pol.Evaluate(*prop, kindOfPrincipal(root), time.Now()); !d.Allowed {
+			t.Fatalf("a person's own fill waits for an approval: %+v", d)
+		}
+	})
 }
 
 // An agent brings a site in by its address, and it waits like any other

@@ -9,7 +9,8 @@
 // provider's group), issuing an administrator's token or an enrolment link
 // that adds a passkey for one, making the provisioning token while a group
 // makes administrators, weakening a setting,
-// lowering how many approvals a change needs and moving the audit log are
+// lowering how many approvals a change needs, moving the audit log and
+// letting an agent send to another system from runs nobody started are
 // each something one person, or whoever has their
 // session, could do to take a store over or to hide that they had. So one
 // administrator proposes and another approves, and the request records
@@ -66,7 +67,36 @@ const (
 	// group it sends makes administrators, given to whoever asked once
 	// another administrator agrees.
 	SCIMToken = "scim-token"
+	// Approval is the approval policy `quilzo review require` writes,
+	// when it asks fewer people, or people the policy in force does not
+	// name, to approve a change.
+	Approval = "approval"
+	// Sends is an agent let send through one tool, or one of its hands'
+	// actions, from the runs nobody started, without a person deciding
+	// each call. A triggered run's write to another system, or its hand's
+	// reach out to one, otherwise waits for one, because what goes
+	// out from a run nobody started is a person's decision; one
+	// administrator lifting that for every run to come is a widening
+	// nobody else saw.
+	Sends = "unattended-sends"
 )
+
+// ApprovalChange is an Approval request: the policy, as approval.json
+// holds it.
+type ApprovalChange struct {
+	Required       int      `json:"required"`
+	RequiredHumans int      `json:"required_humans,omitempty"`
+	Approvers      []string `json:"approvers,omitempty"`
+}
+
+// SendsChange is a Sends request: the agent, the tool or the hand's
+// action, and the host it reaches (for a hand, every host it may reach),
+// which the grant is for and only for.
+type SendsChange struct {
+	Agent string `json:"agent"`
+	Tool  string `json:"tool"`
+	Host  string `json:"host"`
+}
 
 // PayChange is a Pay request: the provider, and how its checkout behaves.
 type PayChange struct {
@@ -154,6 +184,25 @@ func Privileged(bindings []auth.Binding) bool {
 // Lowering are the settings whose every decrease waits for a second
 // administrator, because each is how many people a change needs.
 var Lowering = []string{"review.required_approvals", "approval.required_humans"}
+
+// AppliesAbove is, for each of the Lowering settings, the count that applies
+// where it is more than the setting says: approvals is how many approvals
+// publishing needs and people how many of them from people, as they apply.
+//
+// The count that applies is the larger of the setting and approval.json, which
+// `quilzo review require` writes, so a setting can say less than applies. Said
+// beside it, wherever it is shown or set: `config set review.required_approvals
+// 2` under a file asking five said "= 2", and so did the settings screen.
+func AppliesAbove(c *config.Config, approvals, people int) map[string]string {
+	out := map[string]string{}
+	for key, n := range map[string]int{Lowering[0]: approvals, Lowering[1]: people} {
+		if set, _ := strconv.Atoi(strings.TrimSpace(c.Raw(key))); n > set {
+			out[key] = fmt.Sprintf("%d apply: approval.json, written by quilzo review require, asks "+
+				"more than this, and the larger of the two applies", n)
+		}
+	}
+	return out
+}
 
 // SettingNeedsSecond says why a setting's new value waits for a second
 // administrator: weaker than the default, or fewer people needed for a
@@ -248,6 +297,27 @@ func (r Request) About() map[string]string {
 		}
 	}
 	return nil
+}
+
+// Approvers is whose approval an Approval request would count, as whoever
+// decides it reads them, or empty for any other request and for one that
+// counts anybody who may publish, which What says.
+//
+// Beside What rather than in it: every record of a request copies What in
+// clear, with only the one person About names pseudonymised, and a list of
+// people has no one identity key to go under. Left out altogether, the
+// administrator deciding read "to somebody the list in force does not
+// name" on People and in quilzo pending, and let somebody's approval count
+// without being told whose.
+func (r Request) Approvers() string {
+	if r.Kind != Approval {
+		return ""
+	}
+	var ch ApprovalChange
+	if json.Unmarshal(r.Payload, &ch) != nil {
+		return ""
+	}
+	return strings.Join(ch.Approvers, ", ")
 }
 
 // Open reports whether a request still waits for a decision at now.
@@ -421,11 +491,13 @@ func (s Store) Decide(id, by string, approve, alone bool, now time.Time) (Reques
 		if !r.Open(now) {
 			return fmt.Errorf("request %s is %s, not waiting", r.ID, stateWords(*r, now))
 		}
-		if approve && strings.EqualFold(r.By, by) && !alone {
+		// One rule for who is the same person, everywhere a second one is
+		// asked for (auth.SamePerson).
+		if approve && auth.SamePerson(r.By, by) && !alone {
 			return fmt.Errorf("request %s is yours: another administrator approves it", r.ID)
 		}
 		r.DecidedBy, r.DecidedAt = by, now.UTC()
-		r.Alone = alone && strings.EqualFold(r.By, by)
+		r.Alone = alone && auth.SamePerson(r.By, by)
 		switch {
 		case !approve:
 			r.State = Declined

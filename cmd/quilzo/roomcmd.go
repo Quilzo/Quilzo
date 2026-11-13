@@ -63,6 +63,9 @@ func cmdRoom(root string, args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return roomList(root)
 	case "open":
 		return roomOpen(root, args[1:])
@@ -342,7 +345,7 @@ func roomOpen(root string, args []string) error {
 	retention := fs.Duration("retention", 0,
 		"how long the text is kept, enforced by quilzo serve's sweep; "+
 			"indefinitely otherwise")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -402,7 +405,7 @@ func roomSay(root string, args []string) error {
 	reply := fs.String("reply", "", "the message this answers")
 	anyway := fs.Bool("anyway", false,
 		"send a broadcast that would interrupt a large room")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 2); err != nil {
 		return err
 	}
 	if len(pos) != 2 {
@@ -467,7 +470,7 @@ func roomRead(root string, args []string) error {
 	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("read", flag.ContinueOnError)
 	thread := fs.String("thread", "", "one thread rather than the room")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -578,7 +581,7 @@ func roomReact(root string, args []string) error {
 	pos, flags := leadingArgs(args, 3)
 	fs := flag.NewFlagSet("react", flag.ContinueOnError)
 	off := fs.Bool("off", false, "take the reaction back")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 3); err != nil {
 		return err
 	}
 	if len(pos) != 3 {
@@ -623,7 +626,10 @@ func roomReact(root string, args []string) error {
 }
 
 func roomEdit(root string, args []string) error {
-	pos, _ := leadingArgs(args, 3)
+	pos, err := positionals(args, 3)
+	if err != nil {
+		return err
+	}
 	if len(pos) != 3 {
 		return fmt.Errorf("usage: quilzo room edit ROOM MESSAGE \"...\"")
 	}
@@ -662,7 +668,7 @@ func roomRemove(root string, args []string) error {
 		"why, which taking down somebody else's words requires")
 	erase := fs.Bool("erase", false,
 		"an Article 17 erasure: the words go from the log as well")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 2); err != nil {
 		return err
 	}
 	if len(pos) != 2 {
@@ -743,7 +749,10 @@ func roomRemove(root string, args []string) error {
 }
 
 func roomHistory(root string, args []string) error {
-	pos, _ := leadingArgs(args, 2)
+	pos, err := positionals(args, 2)
+	if err != nil {
+		return err
+	}
 	if len(pos) != 2 {
 		return fmt.Errorf("usage: quilzo room history ROOM MESSAGE")
 	}

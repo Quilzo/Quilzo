@@ -56,6 +56,9 @@ type SiteBrief struct {
 	// Colour and Style are the look, when the person chose one.
 	Colour string `json:"colour,omitempty"`
 	Style  string `json:"style,omitempty"`
+	// Scheme is the colour schemes the site is drawn in, when the person
+	// chose: both, dark or light.
+	Scheme string `json:"scheme,omitempty"`
 }
 
 // MaxBrief bounds a brief: a paragraph, not a document.
@@ -537,6 +540,12 @@ func BuildSite(b SiteBrief, by string, now time.Time) (*Package, error) {
 	if b.Colour != "" {
 		s.Colour = b.Colour
 	}
+	if b.Scheme != "" {
+		if !contains(theme.SchemeChoices, b.Scheme) {
+			return nil, fmt.Errorf("there is no scheme called %q; one of %s", b.Scheme, strings.Join(theme.SchemeChoices, ", "))
+		}
+		s.Scheme = b.Scheme
+	}
 	p := &Package{
 		Format: Format, Name: PackageName(b.Name), Version: "1.0.0", Title: clip(b.Name, 120),
 		Purpose: clip("The whole website of "+b.Name+": its pages, menus, forms, question box and look.", 600),
@@ -746,7 +755,7 @@ Rules:
 - Keep these keys and add no others: format, name, version, title, purpose, site, forms, pages, menus, chatbots.
 - Write the words for this brief: headings, leads, cards, steps, questions and answers. Plain, warm and specific, in the language of the brief. No hype, no lorem ipsum.
 - Never make up a fact. A price, an address, a phone number, an email address, opening hours, a date, a person's name, a quote, a review, a figure, a client, an award: when the brief does not give it, write [[what goes here]] instead, such as [[your opening hours]]. The owner fills these in, and the site cannot be published until they do. Use the same words for the same blank everywhere.
-- site: name is what the site is called; keep it if the brief names the site. description is one sentence for search results. style is one of ` + strings.Join(theme.Styles, ", ") + `; colour is the main colour as #rrggbb; motion is one of ` + strings.Join(theme.Motions, ", ") + `.
+- site: name is what the site is called; keep it if the brief names the site. description is one sentence for search results. style is one of ` + strings.Join(theme.Styles, ", ") + `; colour is the main colour as #rrggbb; motion is one of ` + strings.Join(theme.Motions, ", ") + `; scheme is one of ` + strings.Join(theme.SchemeChoices, ", ") + ` (dark draws the site dark for every reader); corner is one of ` + strings.Join(theme.Corners, ", ") + `. Write no layer: the site's CSS is not yours to write.
 - pages: [{name, body}]. Keep the pages index, contact and privacy. You may add, remove and rename the others; at most ` + fmt.Sprint(maxSitePages) + ` pages. A page name is lower-case words joined by hyphens. A body has a title, a hero {eyebrow, lead, cta_label, cta_href, secondary_label, secondary_href} and sections. A section is an object with one key, its kind. A link to a page of the site is "/" and the page name, or "/" for index; link to nothing else.
 - A page shows one of the site's forms with "form": "FORM". The privacy page is written for you from the forms; leave it as it is.
 - forms: you may reword the contact form and add fields or forms the brief needs, at most ` + fmt.Sprint(maxSiteForms) + `. Field kinds: line, para, email, number, choice (with choices), agree. Each form has a notice, a purpose and a basis (consent, contract, legitimate-interests); consent needs a required agree field. Ask only for what the form is for.
@@ -829,18 +838,34 @@ func RepairSite(p *Package, b SiteBrief, start *Package) []string {
 	if len([]rune(s.Description)) > MaxSiteDescription || !printable(s.Description) || len(section.Unfilled(s.Description)) > 0 {
 		s.Description = ""
 	}
-	s.Starter, s.Tokens = "sections", nil
+	// No tokens and no layer from a model, whatever it wrote. A layer is CSS
+	// served on every page, and the one part of a drafted site the person
+	// approving it is least likely to read line by line; the checks would
+	// hold it to tokens, and a person still did not choose it.
+	if s.Layer != "" {
+		note("site: the style layer the model wrote is left out; a site's CSS is chosen by a person")
+	}
+	s.Starter, s.Tokens, s.Layer = "sections", nil, ""
 	if b.Style != "" {
 		s.Style = b.Style
 	}
 	if b.Colour != "" {
 		s.Colour = b.Colour
 	}
+	if b.Scheme != "" {
+		s.Scheme = b.Scheme
+	}
 	if !contains(theme.Styles, s.Style) {
 		s.Style = start.Site.Style
 	}
 	if s.Motion != "" && !contains(theme.Motions, s.Motion) {
 		s.Motion = ""
+	}
+	if s.Scheme != "" && !contains(theme.SchemeChoices, s.Scheme) {
+		s.Scheme = start.Site.Scheme
+	}
+	if s.Corner != "" && !contains(theme.Corners, s.Corner) {
+		s.Corner = ""
 	}
 	if siteRefused(s) {
 		note("site: the look the model chose is hard to read, so the site keeps %s", start.Site.Colour)
@@ -910,7 +935,7 @@ func RepairSite(p *Package, b SiteBrief, start *Package) []string {
 	var pages []Page
 	for _, pg := range p.Pages {
 		switch {
-		case !rePage.MatchString(pg.Name) || strings.Contains(pg.Name, "/") || len(pg.Name) > 64:
+		case !validPage(pg.Name) || strings.Contains(pg.Name, "/") || len(pg.Name) > 64:
 			note("page %q: left out, because that is not a usable page name", pg.Name)
 			continue
 		case byName[pg.Name].Body != nil || pg.Body == nil || pg.Name == "privacy":

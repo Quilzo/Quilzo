@@ -309,6 +309,262 @@ else's host, because a page that fetches one has handed that host a request on
 every visit and the ability to stall the render — and the policy cannot help,
 because the page asked for it.
 
+### Typefaces from the file you have
+
+Most foundries send a TrueType or OpenType file, and WOFF2 — the format above —
+compresses its tables with Brotli, which Go's standard library does not have and
+this program will not take a dependency for. So it also serves WOFF 1.0, which
+is the same tables compressed with zlib, and which every browser that reads
+WOFF2 reads too. One command makes one:
+
+```bash
+quilzo theme font add Satoshi-Variable.ttf --name Satoshi-300-900
+quilzo theme set font-body Satoshi
+```
+
+It writes `templates/fonts/Satoshi-300-900.woff` and checks it the way every
+WOFF in that directory is checked: the header agrees with the file, every table
+lies inside it and inflates to exactly the size it declares, the tables a
+browser's font sanitiser refuses a face without are there, and the face's own
+licence flag (OS/2 `fsType`) does not say "restricted licence embedding" — a
+face that may not be embedded may not be served with a page either. A `.woff` is
+checked as it is, in the same way. A `.woff2` is checked only for its signature,
+the length it declares and its size, because its tables are Brotli and nothing
+here can read them. Nothing is fetched or sent anywhere. The Design screen has
+the same form, through the same code.
+
+Without `--name` (on the screen, an empty "Served as"), the face is served under
+the file's own name, with the weight and style the face's own tables declare
+wherever that name does not say them. Foundries name static faces
+`Satoshi-Regular.ttf` and `Satoshi-BoldItalic.ttf`; the first, taken at its
+word, would claim every weight from 100 to 900, so a browser asked for bold
+would draw the regular glyphs, and the second is not a name the contract reads.
+So a static regular of weight 400 is served as `Satoshi-400.woff`, the bold
+italic as `Satoshi-700-italic.woff`, and a variable face as the range of its
+weight axis. A name that does say the weight, such as `Satoshi-Bold.ttf`, is
+kept; a word that is neither a weight nor a style, such as `Condensed`, is
+refused with a request for a name rather than guessed past; and a name given is
+used exactly as given. The output says when the name came from the face. A
+`.woff2` cannot be asked: its tables are Brotli, so it is served as its name
+says, and one whose name says no weight is served as every weight, which is
+right for a variable face; the output says so, so a static one can be given a
+name that says its weight.
+
+A face already served under the same name is replaced only when asked, with
+`--force` or the screen's "Replace a face already served under that name",
+because a browser keeps a face for a year under its name. A face is one file: a
+`.woff` beside the `.woff2` of the same face is refused. A file in
+`templates/fonts/` that is not served — a `.ttf` dropped there, a file that is
+not what its name says — is named, with the reason, by `quilzo theme fonts` and
+on the Design screen; for a `.ttf` or `.otf` that includes the command that
+makes a WOFF of it. The licence still travels with the face: put its text
+beside it. Adding or replacing a face takes the authority to publish, on the
+screen and on the command line, as installing a layout does: a face is the
+glyphs every page that names it is drawn with, and no gate reads a glyph, so
+one whose digits are drawn as other digits would change every price on the site
+with no word of any page changed.
+
+The filename is still the contract, and a weight range is written either way:
+`Satoshi-400-700.woff2` and `Satoshi-400..700.woff2` are both 400 to 700. The
+first used to be read as 700 alone, though this documentation and the program's
+own error message offered it as a range.
+
+### What the tokens cannot say, and how a site says it anyway
+
+A games studio's site wanted a moving picture behind its hero, a glow on its
+headings, section titles running from the text colour into the accent, cut
+corners and capital display type, on a site that is only ever dark. None of
+that was a token, so the only route was a hand-written layout with a `<style>`
+block in it: it worked, nobody could choose it from a screen, and its colours
+were ones the contrast check never saw. Each piece is now something a site
+opts into, held to the same promise as the tokens. A site that opts into none
+of them is drawn as it was: its pages and its token block are the same byte
+for byte, which a test holds, and its stylesheet gains only rules that name the
+new classes a site opts into, and one fix — a centred hero's eyebrow is
+centred now.
+
+**A style layer.** `templates/style.css` is CSS of the site's own, served
+after the generated stylesheet rather than instead of it. It is held to the
+rule the shipped styles keep: every colour is a token, as `var(--primary)`, or
+a mix of tokens with `color-mix()` — no hex, no `rgb()` or its relatives, no
+named colours, and the system colours only inside
+`@media (forced-colors: active)`. `url()` reaches only `/media/` and
+`/fonts/`, there is no `@import`, no `!important` (the reduced-motion and
+forced-colours rules underneath are `!important` so nothing outvotes them), no
+redefining a token, no taking away the focus outline (a zero width in any
+unit, `none` anywhere in it, `initial`, `unset` or `inherit`, an `all` reset,
+or a custom property of the layer's that says any of these), and at most 64 KiB. Nor anything a browser would read differently
+from the check: a string that runs over a line break, a comment or a quote
+mark inside an address with no quotes round it, a `{ }` block in a custom
+property, a declaration whose property is not a name, or a control
+character. A rule that sets both a text colour and its background from tokens has that pair
+checked at 4.5:1 in every scheme the site is served in. A layer with anything
+refused in it is not served at all, and `theme check` names each rule; a
+`site.css` still replaces everything, layer included. Changing a layer takes
+publish authority, in the terminal and on the Design screen alike, because it
+is on every page at once. A site package carries one as `site.layer`, and
+takes it back with the package.
+
+```bash
+quilzo theme layer set arena.css      # checked first; refused rules are named
+quilzo theme layer                    # what is there, and whether it is served
+quilzo theme check                    # the palette, the backdrop veil and the layer
+quilzo theme layer unset
+```
+
+With `--json`, `theme layer`, `set` and `unset` each answer with one document:
+the layer's path, its size, whether it is served, how many rules are refused
+and every finding. A refused `set` prints that document and exits non-zero.
+`theme check --json` is the list of every finding, the layer's and the veil's
+among them, and exits non-zero when a pair fails or the layer is refused.
+
+What it cannot see is said rather than claimed: a colour pair split across two
+rules, text faded afterwards by `opacity` or a filter, and a rule that hides
+something the layout draws — the veil over a backdrop, or its stop switch.
+
+**A backdrop.** A hero names a picture or a recording from the library as
+`"backdrop_url": "/media/ID"`, and a section does the same with
+`"surface": "media"` beside it. It is decoration, and drawn as decoration: an
+`<img alt="">` or a `<video>` that is muted, loops, plays inline and is hidden
+from assistive technology, with its poster underneath it, gone for a reader who
+asked for reduced motion or forced colours, and with a "Stop the moving
+background" switch beside it that needs no script (WCAG 2.2.2). Between the
+picture and the words is a veil of one colour at one strength — `scrim`, which
+is the page background unless set, and `scrim-strength`, 82% unless set — and
+the words are checked against the worst picture it could cover: the veil over
+black and over white. All the words that sit on it: the body text, the
+secondary text a standfirst or a caption is in, and the accent of an eyebrow. A page with a backdrop does not publish while that fails,
+and the refusal names the strength that would fix it. A recording with sound
+cannot be a backdrop, because muting it throws away what was said in it.
+
+```json
+{"hero": {"title": "Games for after dark", "backdrop_url": "/media/ef4b…"},
+ "sections": [{"features": {"surface": "media", "backdrop_url": "/media/4379…", "items": []}}]}
+```
+
+On the Sections screen, "Put a backdrop behind it" gives a section the field,
+and the picker beside it offers the library's pictures and the recordings it
+knows to be silent, and says how many recordings it left out. From the
+terminal it is `quilzo section backdrop PAGE N /media/ID` (or `hero` for N, and
+`--off` to take it away), because an edit writes only the fields a section
+already has; it refuses, before writing anything, a file the library does not
+hold and a recording not known to be silent. A page with a hero shows it there
+above its sections, with "Put a backdrop behind the hero", which opens the same
+picker; the hero's words have no screen of their own. A hero's backdrop is also
+set with that command, in the page's JSON (`quilzo add`, or an agent's
+`write_page`), or by a site package. Under `--json` every `section` edit answers
+with the page, what was done, the draft commit and the sections as they stand.
+
+**Silent recordings.** Whether a recording has sound is recorded when it is
+added, from the same probe that reads its size. One with sound still needs a
+captions track to publish; one with none needs a description instead (WCAG
+1.2.1), which the layout takes from the library — the description written when
+it was added becomes the video's label — or from a caption beside it. A
+recording nothing could listen to, on a machine without ffprobe, is treated as
+having sound. `quilzo media list`, its `--json`, and the `list_media` tool an
+agent reads say which recordings have sound, which have none, and which are
+not known.
+
+**The neon style.** An eighth style: a glow on headings and filled buttons from
+the accent, section titles that run from the text colour into it, chamfered
+corners and capital display type. The glow is the `glow` token (0 turns it
+off). The corners are a choice of their own, `corner`, round or chamfer, which
+neon sets to chamfer and any style can use; a chamfer is drawn with
+`corner-shape`, which keeps the focus ring whole, and a browser that does not
+know it rounds the corner instead. The gradient titles are checked at five
+points along them against the background, because a mix of two readable
+colours can be an unreadable one, and they fall back to the plain text colour
+where the browser cannot clip a background to text, the reader asked for more
+contrast, or forced colours are on.
+
+**One scheme.** `scheme` is both (the default), dark or light. A dark site is
+served its dark palette whatever a reader's system asks, declares
+`color-scheme: dark`, and is checked in dark alone — so it is no longer told
+twenty-three times that each colour is the same in both schemes, and a colour
+it never set is its dark default rather than a light one on a dark page.
+
+```bash
+quilzo theme set style neon
+quilzo theme set scheme dark
+quilzo theme set glow 12px corner round
+```
+
+**A picture on a feature card.** A `features` item takes `image` and `alt`, and
+gets its narrower copies as every other picture does.
+
+All of it is on the Design screen too — the neon style beside the others,
+corners and schemes in the Look section, the veil and the glow in the token
+table, and the layer, with what was refused in it. A layer the screen refuses
+is given back as it was typed, with every refused rule named, and one taken
+away is given back in the box, unsaved, until the screen is left; somebody who may
+edit the design but not publish sees the layer read-only. `quilzo theme
+styles --json` lists the styles, corners and schemes for a script. It is also
+in a site package's `site` block (`style`, `scheme`, `corner`, `tokens`,
+`layer`). The site builder,
+from a sentence or over MCP, can choose the style and the scheme; it never
+writes a layer, because a model writing CSS is the one part of a site nobody
+reads before it is served.
+
+### Changes without a restart
+
+Both servers used to read the design and the settings once, when they started:
+a face added to `templates/fonts/` was "not a font this site serves" on the
+Design screen until `quilzo serve` restarted, and `site.events` did nothing on
+the public site until `quilzo site` restarted. Now:
+
+| | the design (`templates/`: the layouts, the theme, the style layer and the faces) | the settings |
+|---|---|---|
+| `quilzo serve`, the admin | when the directory changes (looked at no more than once a second, as the admin is used), and on SIGHUP | read when used, as before; the interface's brand, the passkey rules and the API's limits still at a restart |
+| `quilzo site`, the public site | with each publish, and on SIGHUP | when the configuration, listings or languages change, with each publish, and on SIGHUP |
+
+The public site takes the design with a publish rather than the moment a file
+changes, on purpose. The publish gate is what holds a design to the standard: it
+computes every contrast pair the theme makes and renders every page through the
+layouts. `quilzo theme set --force` saves a palette that fails, and says the gate
+will refuse it; a site that served `templates/` a second after it was written
+would put that palette in front of readers with no gate at all. So the preview
+shows a change at once, and readers get it with the publish that passed. A style
+layer is the same: saved from the Design screen, it is in the preview when the
+screen comes back; set with `theme layer set`, or edited by hand, it is in the
+preview with the admin's next look at `templates/`; and either way readers get it
+with the next publish. A reader's browser asks for `/site.css` again with every
+page, as it does for the page, and is answered "not modified" while it has not
+changed, so somebody who visited an hour before the publish is not handed the
+new page over the old stylesheet. SIGHUP —
+`systemctl reload` with the unit in [deploy/](../deploy/) — is the operator
+saying so, as a restart was, without dropping a connection.
+
+The site looks for a publish once a second whether or not anybody is visiting,
+because it reads the design when it sees one: a site that looked only when
+somebody visited would read, an hour after the gate, whatever had been saved in
+the hour, and a palette forced past the gate after the publish would go to
+readers with it. A publish whose build is refused (below) brings its design with
+the next build that succeeds, unless `templates/` has changed since; then it
+waits for the next publish, as any other change does.
+
+A rebuilt site keeps what visitors are in the middle of: rate limits and their
+counts, the signals it is counting, sign-ins in progress, the chatbots' rating
+keys, the newsletter's hourly count and the fediverse queue. Their settings —
+`auth.throttle.*` for the site's limits, `chatbot.questions.*`, `fediverse.*`, and
+the content API's — take effect at the next restart, because a reload that handed
+every visitor a fresh allowance would be a limit that resets whenever somebody
+publishes. A reload whose build fails changes nothing: the site serves what it
+served, says why, records `site.reload` as a failure in the audit log, and tries
+again when something changes again. One whose design does not read — a theme
+file that is not JSON, a `page.html` gone — keeps the design it had, takes the
+rest, and records the failure with the reason. A reload that changed what readers
+get is recorded too, with what triggered it.
+
+That includes a `config.json` caught empty. Writing one with `>`, with `cp`, or
+from an editor that writes in place leaves it empty for a moment, and an empty
+file reads as every setting at its default: the classification banner,
+Strict-Transport-Security and security.txt would go with it. So a site whose
+settings said something does not take an empty file as its next ones; write `{}`
+to it, or remove it, to put every setting back to its default on purpose. The
+chatbots are built again with the settings, so a guardrail set while the site
+runs screens what they answer from at once, and they keep the ratings they
+handed out.
+
 ## Building a whole site from a sentence
 
 A site is a declaration: pages made of sections this program renders, menus,
@@ -359,7 +615,10 @@ Once it is installed, `site_blanks` lists what is left to fill in and
 `site_fill` fills it, with facts the person gave the agent; a blank it cannot
 fill stays one, and keeps its page from being published. A page an agent filled
 in is marked as an agent's words, and a page in a package an agent wrote as a
-model's, so the AI-content disclosure is right either way.
+model's, so the AI-content disclosure is right either way. What an agent fills
+in waits for a person's approval before it is published, as anything a model
+writes does. The person it was filling in for gives it when nobody else may
+publish and no count of approvals is set; otherwise somebody else does.
 
 ## Taking bookings
 
@@ -549,6 +808,30 @@ The links follow publishing. A new price gets a new link, and then the old one
 is retired. A price no link charges yet shows no button at all, so a page
 never offers a checkout at a price it does not show. The site process holds no
 key: the admin makes the links, and the site reads only the list of them.
+
+Each sync asks Stripe which links still sell for the key it holds, and a link
+that does not is made again. So when the test key a shop was set up on is
+replaced by the live one, the next `quilzo pay sync` (or publish) makes live
+links and the test-mode ones stop being offered, and a link deleted in Stripe's
+dashboard comes back. A live link a test key cannot see is taken off the site
+and named, to be retired in Stripe's dashboard.
+
+### Crypto: what Quilzo does and refuses
+
+Quilzo does not hold a wallet, does not hold a key to one and does not sign a
+transaction. The moment it held a key it would become a custodian, and a thing
+worth attacking for a reason unrelated to content.
+
+- **Prices, mandates and paying calls are in currencies.** A currency is one
+  ISO 4217 lists, with the minor units ISO gives it (the list is
+  `internal/spend/iso4217.txt`). ETH, BTC, SOL and every other crypto ticker are
+  refused as one, at `quilzo spend grant`, in a paying tool's declaration and in
+  the gateway's prices, with a message that says why. Three capital letters
+  used to be enough, so a mandate "in ETH" was granted and counted in
+  hundredths, which is neither a token's unit nor its smallest.
+- **Publishing to IPFS needs no wallet.** `quilzo ipfs` computes the content
+  identifier here and hands you a bundle to upload; it holds no pinning token
+  and talks to no pinning service on your behalf.
 
 ## Bringing a site you already have
 
@@ -742,7 +1025,10 @@ start and refuses to run if they are not. `quilzo site --prepare` makes and
 lists those paths, for a service manager that makes the store read-only
 (see [deploy/](../deploy/)); run it again after an upgrade that adds one, or
 the site starts with that feature off and says which. `--confine=false` runs it
-unconfined and says so.
+unconfined and says so. A writable content API (`--api --api-writable`) writes
+the draft, its objects, refs and `types.json`, which the confined site cannot
+reach, so the site refuses to start with one and says to add `--confine=false`,
+which takes that reach on; write through the admin otherwise.
 It cannot read a submission back: reading the postbag happens in the admin,
 behind authentication.
 
@@ -755,6 +1041,82 @@ APIs with no form post behind them, and capturing a screen or a microphone is
 not a script the admin should carry. So the capture surface is its own process:
 **the argument for that header is that the admin's one script does nothing a
 form cannot, not that the policy catches the rest.**
+
+### The log writer, which also signs for the log
+
+`quilzo logd` is a fourth process, run as an account of its own; the
+reference compose runs it as uid 65533 with no network. The admin and the
+site hand it their records over a socket and cannot open the log to rewrite
+one, and it computes the chain itself, so they cannot forge a history either.
+`quilzo logd status` says whether that separation is in force.
+
+It also holds the key that signs the log's tree heads, with Ed25519 and
+ML-DSA-65 as before. On its first start it makes `head.key` (0600, its own)
+and `head.pub.json` (0644, the public half) in the directory `--log-dir`
+names, and from then on every signature the log's keys make is the writer's:
+`quilzo auditlog head`, an agent's or an app's receipt, each round of the
+audit stream, an engagement package, `quilzo feature export --sign` and a
+registered research plan. Until it held the key, the admin of the reference
+compose could make none of them: it tried to create `head.key` in a directory
+it can only read, and every one exited with "read-only file system". Letting
+it write there would let it rename the log.
+
+The admin asks over the same socket, and a request for a head names how many
+entries it covers and nothing else. The writer computes the root over its own
+file and dates the head by its own clock, so an admin that has been taken
+over cannot have a head signed over entries the log never held, or backdated.
+A feature package's or a research plan's signature is made only under the
+contexts this program makes them under, never the head's. The admin checks
+every head it is handed against the root it read itself and against
+`head.pub.json`, and refuses one that disagrees with either rather than
+putting it in a receipt.
+
+Every account that may submit a record could ask for a signature too, and a
+record and a signature are not the same trust: the public site submits
+records, and a feature package or a research plan the writer signs is taken
+as this site's own. `--sign-uid` names the uids that may ask, and
+`--sign-gid` the groups an account must connect as; with neither, every
+account that may submit may ask, as before. The reference compose runs the
+site as the admin's uid, since they share the store and every file in it is
+that account's, in a group of its own (65531) with the writer's group
+beside it for its records, and the writer signs for the admin's group
+(65532) only. A uid of the site's own would take every file in the store
+changing hands, and is not done. The group is the one the site connects as,
+which it could change to the admin's, being a member of it, by running a
+set-group-ID program it made itself; it cannot while it runs with
+no-new-privileges, as every Quilzo container in the reference compose does.
+
+The writer signs only with a key that is its own alone: `head.key` owned by
+its account, at 0600. A key another account made, or one other accounts can
+read, is one somebody else may have kept a copy of, and could sign a head
+over any root with; a chown or a chmod cannot take a copy back. So the writer
+signs nothing with it, keeps writing the log, and says to move `head.key` and
+`head.pub.json` aside together (that `head.pub.json` still checks the heads
+the old key signed) and start it again, when it makes a new one. `quilzo logd
+status` asks the writer for a head over no entries rather than assuming it
+signs, and says when it does not, and why (`writer_signs` and
+`writer_refuses` in its `--json`); the audit log screen asks the same on
+every visit. With the writer stopped, and the key out of this account's
+reach as it is under the reference compose, no head can be made: both say
+the heads wait for the writer, and every command that signs says to start
+it, never to take its key.
+
+There is no setting. Where the log is the admin's own (in the store, or a
+writer running as the same account) the key is beside the log and loaded
+there, as it always was. Heads saved with `auditlog head --save` stay in the
+store, in `log-heads.json`. `head.pub.json` is the file to hand whoever
+checks a head or a receipt: `quilzo auditlog verify-head FILE --keys
+head.pub.json`, `quilzo agent verify-receipt FILE --keys head.pub.json`. The
+audit log screen says when the writer signs the heads, and where that file
+is.
+
+`verify-head` checks the head against the log as well, where there is one,
+and `quilzo auditlog consistency --head FILE` checks a head kept elsewhere
+against the log. `auditlog verify`, `auditlog consistency`, the audit log
+screen and posture check the log against every head in `log-heads.json`
+too: entries removed from the end of the log leave a shorter chain that
+still verifies, so only a head taken while they were there shows they are
+gone, and a head saved after they went does not stand in for it.
 
 ## What is in it
 
@@ -888,9 +1250,12 @@ holds a card it needs a threat model it does not have.
 **Claims and rights.** A publish gate that refuses copy the business cannot
 stand behind — not a blocked-word list, which every team switches off, but a
 claim and its substantiation: "guaranteed" publishes beside the guarantee terms
-and is refused without them. And image licences treated as publish windows,
-because rights *end* — a lapsed stock licence leaves a site infringing with an
-audit trail proving it was deliberate, and nothing notices.
+and is refused without them. The same rules read what an agent writes to
+another system, from a run here or through the MCP gateway: a post or a message
+that says what they refuse waits for a person, who is shown what they found,
+every time. And image licences treated as publish windows, because rights *end*
+— a lapsed stock licence leaves a site infringing with an audit trail proving
+it was deliberate, and nothing notices.
 
 **Reaching other systems.** MCP in both directions: a server exposing this
 store, and a client calling servers an operator declared — from the command
@@ -943,6 +1308,13 @@ period with a ceiling, honeypot and timing checks, CSV export that neutralises
 spreadsheet formula injection, and erasure by search — because an append-only
 merkle store cannot erase, which is why submissions deliberately do not live in
 it.
+
+A form takes answers only where the site offers it: a published page, visible
+now, that names it (`"form": "enquiry"`) or renders through a layout with the
+form's markup pasted in, or a public chatbot that may fill it in. A page for
+members counts while membership is open or by invitation. A form declared and
+placed nowhere, or on a page still in draft or past its date, answers not found,
+so it cannot collect anything the owner is not asking for.
 
 A form can take a file — a CV, a photograph of the damage, a signed letter —
 with a field of kind `file` (`"accept": ["image"]` to narrow it; images and
@@ -1472,7 +1844,13 @@ Two consequences worth stating plainly:
 - **A model cannot approve its own work.** Not a rule bolted on for AI. Approvals
   must come from principals and self-approval is forbidden, and a model is not a
   principal. The rule that stops an editor rubber-stamping herself is the rule
-  that stops a model shipping unreviewed.
+  that stops a model shipping unreviewed. What a run writes is the agent's,
+  made for the person who started the run, as the run's record names them
+  rather than whoever let one of its steps go ahead, and each commit says so.
+  With `review.required_approvals` or `approval.required_humans` set, that
+  person asked for the change, as they would their own, and somebody else
+  approves it; with neither set, they may approve it when nobody else may
+  publish, as before.
 
 This follows CaMeL ([arXiv:2503.18813](https://arxiv.org/abs/2503.18813)), which
 is where the research settled: enforce policy outside the model with a
@@ -1530,7 +1908,11 @@ MCP, A2A and ACP cannot express: permissions, delegation with accountability,
 budgets, provenance, revocation, and who answers for what an agent did. Six
 gaps. Quilzo's agent card fills all six, published as an A2A governance
 extension at `/.well-known/agent-card.json`, so another system can read what
-this one will and will not allow before it asks for anything.
+this one will and will not allow before it asks for anything. The card's
+description starts with the site's own sentence — `site.description`, or
+`quilzo site --description` for one run — and then says how its skills are
+governed, so an agent choosing between two sites reads what each is for before
+how it is run; a site with no description keeps the governance sentence alone.
 
 The device side is deliberately the boring version. A published site is an
 installable app with a share target: the operating system offers it in the share
@@ -1574,8 +1956,44 @@ starts:
 - it is capped at authoring, whatever its sponsor holds, so nothing that starts
   unattended can do more than draft and propose; publishing, and anything that
   goes out, is still a person's decision;
+- a call of a tool that writes to another system (a post, a message, an order)
+  waits for a person as asking first does, whatever `ask_first` says, and is
+  decided one call at a time, by somebody other than its sponsor where there is
+  somebody;
+- so does what its hands carry out to another system, whatever the
+  declaration asks about: an address read with `web_fetch` or opened in its
+  browser, a search of the web or of the open research indexes, a citation
+  looked up there, words typed into a page or a desktop app, a file put into
+  a page, and a command that reaches the network. Reading this store and
+  working in its workspace are not held;
 - triggers start it in its sponsor's name, so they are its sponsor's to set, or
   an administrator's. Adding one is a widening, recorded as one.
+
+A run that a visitor's request to a chatbot starts is held in the same way: it
+acts for the agent's sponsor with a stranger's words in its goal, and nobody
+here started it.
+
+**Sending unattended.** Administrators may let an agent send through one tool,
+or one of its hands named by its action (`web_fetch`, `shell_run`,
+`browser_open` and the like), from the runs nobody started:
+
+```
+quilzo agent sends tidy grant post_update --why "the shop's updates go out as pages go live"
+quilzo pending approve ID         # a second administrator
+quilzo agent sends tidy           # what it sends unattended, granted by whom and why
+quilzo agent sends tidy revoke post_update
+```
+
+- The grant waits for a second administrator, as other privileged changes do,
+  and is recorded as a widening with who proposed it and who approved it. A
+  store with one administrator has it approved as it is made, and the record
+  says so.
+- It is for that tool at the host it reaches now, or for that hand at every
+  host it may reach now. A declaration that points it somewhere else, or
+  further, has not been granted that.
+- It lifts only this hold: what the agent asks first, a payment beyond its
+  mandates and the exfiltration breaker still wait for a person.
+- Taking it back holds the next call at once.
 
 **Safeguards against runaway runs.** Each trigger:
 - starts at most its runs for the day (24 unless it says otherwise);
@@ -1621,8 +2039,11 @@ notice is posted with the site's webhook client, which will not reach this
 machine or its network and does not follow redirects.
 
 `notify.events` says what staff are told about: a visitor asking for a person
-and a form sent, by default, and any event an agent can start from. A notice says
-which chatbot or form and how many, never who or what they wrote:
+and a form sent, by default, and any event an agent can start from. An event is
+named either way, by its own name (`page.published`) or by the one webhooks are
+told it by (`published`), and so it is in `quilzo webhook add --types` and an
+agent's `--on`. A notice says which chatbot or form and how many, never who or
+what they wrote:
 
 > 2 visitors asked the chatbot "help" for a person. They are waiting in the Inbox.
 
@@ -1832,6 +2253,22 @@ quilzo connect provider add google --template google --client-id ID --client-sec
   --scope https://www.googleapis.com/auth/calendar.events
 ```
 
+The social platforms each speak OAuth their own way, and their templates know
+how: `youtube`, `tiktok`, `instagram`, `facebook` and `linkedin` start from the
+documented endpoints and the scopes posting needs. TikTok is asked for
+`client_key` and its scopes separated by commas. Instagram and Facebook issue
+no refresh token, so the token a code buys, which lasts an hour, is exchanged
+at once for one that lasts sixty days, and renewed when it is used a day or
+more after the last renewal. LinkedIn's refresh token lapses a year after it
+was first issued however often it is used, and past that the person is told
+to connect again, with the date, rather than LinkedIn being asked. All but
+YouTube need `--client-secret`. A provider declared without a template at
+one of those platforms' own sites (`www.tiktok.com`, say) speaks that
+platform's dialect, and says so; anywhere else it speaks `oauth2`, the
+default and what every provider declared before speaks. `--dialect` names
+one instead: `oauth2`, `tiktok`, `meta-instagram`, `meta-facebook` or
+`linkedin`.
+
 An integration that names a connection (`"connection": "google"`) then goes
 with the account of the person the agent acts for, its sponsor, and nobody
 else's. Three come ready-made: `quilzo integrations template` declares
@@ -1839,6 +2276,38 @@ Google Calendar, a Microsoft 365 calendar or GitHub issues (reading, and
 adding a meeting or an issue), switched off and unpinned for a person to read,
 pin and turn on as an imported one is. An agent acting on its own name, or another vendor's agent through
 the gateway, has no person and is refused.
+
+**A social media aggregator reaches the first platforms while their app
+reviews are pending.** An aggregator holds the platforms' approved apps, and
+each account connects through it, so one REST integration posts to several
+platforms in week one. Which aggregator is the client's decision, on cost, and
+none is written in: its host, the path it takes a post at, and its names for
+the text, the media URLs and the platforms come from its own documentation.
+
+```
+quilzo config set site.base_url https://shop.example
+quilzo integrations template social-aggregator --endpoint api.aggregator.example --path /api/post \
+  --fields text=post,media=mediaUrls,platforms=platforms
+quilzo secret set social-aggregator-key < key.txt
+quilzo integrations pin social-aggregator
+```
+
+`--fields` is needed only where its names differ from `text`, `mediaUrls` and
+`platforms`; `--secret` names the key, `social-aggregator-key` by default, and
+`--auth header:NAME` sends it in a header of its own instead of as a bearer
+token. It is declared switched off, with one operation, `publishPost`, a JSON
+body of the text and the media, and stays off until an administrator turns it
+on; agents call it through their declared tools, as any integration. A media
+URL may only be one of this site's own `/media/ID` addresses, which the
+aggregator fetches, so an agent steered by something it read cannot have the
+client's accounts post a picture from somewhere else. The address is
+`site.base_url` as it was when the aggregator was declared: a site that moves
+edits it in the body schema in `integrations.json` and pins it again. A body
+field the declaration does not name is refused before anything is sent. A
+post is tried again, after a busy answer, only when it carries its step's
+idempotency key, as every write is. An aggregator whose post nests its fields deeper is
+declared the same way and its body schema edited in `integrations.json`, then
+pinned again.
 
 Another vendor's agent is an integration too, spoken to over Agent2Agent:
 `quilzo integrations import agent-card.json` declares it from its card, switched
@@ -1876,9 +2345,13 @@ A write an agent makes elsewhere is named by the step of the run that makes it:
 an `Idempotency-Key` header, the same for that step however often it is sent —
 a run picked up again from its record included — so a service that keeps them
 does it once. A call that met a busy service or no answer at all (408, 425,
-429, 502, 503, 504, or a dropped connection) is tried again, up to three times,
-waiting as `Retry-After` asks (ten seconds at most); a read always, a write only
-when it carries its key. One that still did not get through is kept on the
+429, 502, 503, 504, a rate limit TikTok answers as a 400 or Google's APIs as a
+403, or a dropped connection) is tried again, up to three times; a read always,
+a write only when it carries its key. It waits as `Retry-After` asks, in seconds
+or as a date, or else a random time up to one second and then two, so callers
+turned away together do not all come back together. One that asks for more
+than ten seconds is not tried again within the run: the call fails saying the
+time it may be tried again. One that still did not get through is kept on the
 Integrations screen and by `quilzo integrations undelivered`: which agent, run
 and step, which integration and tool, the key, and what came back — never the
 arguments, which the run's own record holds. Nothing there is sent again by
@@ -1892,6 +2365,12 @@ How it is kept safe:
   for, and a token goes to those and nowhere else.
 - **How it is kept:** sealed under the store's keyring, in a file that names
   nobody; refreshed when due, keeping a rotated refresh token.
+- **When it ends:** Your accounts and `quilzo connect list` (and its `--json`,
+  as `access_expires` and `refresh_expires`) say when the access token ends,
+  and the refresh token where the provider says, as LinkedIn's does: a year
+  from the first, not renewed by using it. Today counts your connections that
+  stop working within a week, so you connect them again before a post fails.
+  One connected before this was kept says it is not known until it is next used.
 - **Disconnecting:** revokes at the provider where it offers that (RFC 7009),
   and forgets it here either way.
 
@@ -2300,7 +2779,42 @@ than for one that has to be described.
 - **`quilzo siem`** exports the audit log as OCSF, CEF or JSON Lines with an
   integrity envelope, so the receiving system can tell whether events were
   removed. Identifiers are pseudonymised unless somebody explicitly asks for
-  them, and asking is itself recorded.
+  them, and asking is itself recorded. Every export of the log is recorded the
+  same way, as `auditlog.export` with its format, how many events, their
+  range and whether identifiers were asked for: `quilzo siem`, the export on
+  the Integrations screen, and `quilzo auditlog export -o FILE`, which writes
+  the log as it is stored, even when its chain is broken. They are one
+  export, recorded once each time: for a log that verifies, `quilzo auditlog
+  export` and `quilzo siem jsonl` write the same bytes.
+- **One act, one action name**, whichever surface did it: a grant is
+  `auth.granted` (a deny `auth.denied`), a revocation `auth.revoke` and an
+  export of the log `auditlog.export`, from the command line, the admin and
+  the access review alike. Entries written before the names were made one
+  keep the names they were written with, because the chain covers them, and
+  are read as the act's name now by the log screen's filter and the export's
+  classification: `access.grant` as `auth.granted`, `access.revoke` as
+  `auth.revoke` and `siem.export` as `auditlog.export`. A memory deleted from
+  the command line was `memory.deleteed`; it is `memory.deleted`, as on the
+  Memory screen, and the old name is read as it in a person's memory receipt
+  and in the AI evidence. Approving a change for publication is
+  `review.approve`, installing a starter's design `template.use` and taking
+  the site's IPFS bundle `ipfs.write`, on the screens as on the command line;
+  the screens' old `approval.approve`, `template.install` and `ipfs.bundle`
+  are read as those.
+- **A webhook's address is not in the log.** The path of an incoming-webhook
+  address is a credential, as is a `?token=`, so the record of an endpoint
+  added, changed, turned off or removed names it by its scheme and host, with
+  `/…` for the rest, and an `endpoint_ref` by which its records line up.
+  `quilzo webhook list` and the Integrations screen still show administrators
+  the whole address. The screen registers an endpoint by the rule `quilzo
+  webhook add` does: https, no credentials in the address, an address outside
+  this network, and only event types that are sent.
+- **No address is written with its credentials.** Wherever an address stands
+  in a record (a detail of its own, a sentence, an error, the resource), its
+  user and password are written as `…@`, its query as `?…` and its fragment as
+  `#…`, whichever surface wrote the record, so neither the log nor any export
+  of it holds a password, a `?token=` or an `#access_token=`. Entries written
+  before keep what they were written with, because the chain covers them.
 - **GDPR.** Article 20 asks for a structured, machine-readable format; export is
   tested by round trip, which is a higher bar than the law sets. Article 17 is
   why form submissions deliberately do not live in the merkle store — an

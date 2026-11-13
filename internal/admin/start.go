@@ -50,9 +50,12 @@ type step struct {
 	// Body says what the step is for. Never what to click — a screen that
 	// narrates its own buttons goes stale the moment one is renamed.
 	Body string
-	// Where is the screen that does it, and What names the link.
+	// Where is the screen that does it, and What names the link. Where is
+	// empty for somebody that screen would refuse, who is told What it is
+	// called and Who looks after it instead.
 	Where string
 	What  string
+	Who   string
 	// Done is read from the store at request time.
 	Done bool
 	// DoneNote states what was found, so a tick is evidence rather than a
@@ -89,7 +92,7 @@ func (s *Server) startState(p principal) []step {
 		}
 	}
 
-	return []step{
+	steps := []step{
 		{
 			Title: "Write something",
 			Body: "A page is fields, not markup. What it looks like is the " +
@@ -122,10 +125,21 @@ func (s *Server) startState(p principal) []step {
 				"token can carry less than the person holding it and never " +
 				"more, so a credential for a script is narrower than the " +
 				"person who issued it.",
-			Where: "/people", What: "People",
+			Where: "/people", What: "People", Who: "an administrator",
 			Done: others > 0, DoneNote: counted(others, "other person", "other people"),
 		},
 	}
+	// Each step links to its screen only for somebody who may open it. People
+	// was linked for every reader, author and publisher this screen is for,
+	// and refused each of them at the end of the link.
+	for i := range steps {
+		for _, d := range destinations {
+			if d.Path == steps[i].Where && !s.opens(p, d.Key) {
+				steps[i].Where = ""
+			}
+		}
+	}
+	return steps
 }
 
 // counted renders "1 page" or "3 pages", so a completed step states what was

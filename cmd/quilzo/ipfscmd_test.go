@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,8 +14,11 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/admin"
+	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/ipfs"
+	"github.com/quilzo/quilzo/internal/out"
+	"github.com/quilzo/quilzo/internal/site"
 )
 
 // bundleTemplates is a template directory of one layout, for rendering a
@@ -124,7 +128,7 @@ func TestThePermanentWebScreenGivesTheCommandLinesIdentifier(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv.Decentralised = decentralisedFor(root, tpl, s, design)
+	srv.Decentralised = decentralisedFor(root, tpl, s, func() *Design { return design })
 	get := func(path string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(http.MethodGet, path, nil)
 		r.Header.Set("Authorization", "Bearer "+secret)
@@ -142,5 +146,180 @@ func TestThePermanentWebScreenGivesTheCommandLinesIdentifier(t *testing.T) {
 	}
 	if page := get("/decentralised"); !strings.Contains(page.Body.String(), cli) {
 		t.Errorf("the Permanent web screen does not show %s, the identifier quilzo ipfs id gives", cli)
+	}
+}
+
+// A caller at the agent interface gets the identifier of the site this
+// admin serves, rendered with its own templates, and cannot choose which
+// directory on the server is read instead.
+//
+// content_id took a templates argument and opened whatever it named, so a
+// reader's token was a probe of the server's filesystem ("not a
+// directory", "no such file", "no layout in") and a way to render the site
+// with another store's templates. And it ignored the templates the admin
+// was started with, reading ./templates of wherever the process ran.
+// scan_content took the same argument, and scanned whatever it named.
+func TestContentIDReadsOnlyTheAdminsOwnTemplatesFromAfar(t *testing.T) {
+	root := publishedShop(t)
+	tpl := bundleTemplates(t)
+	seedPolicy(t, root, [2]string{"rae", "reader"}, [2]string{"dana", "admin"})
+	files, err := renderBundle(root, tpl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	node, err := ipfs.Tree(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := buildMCP(root, s, remoteCaller(auth.Token{Principal: "rae", Role: auth.RoleReader, Resource: "/"}), tpl)
+
+	text, merr := callTool(t, srv, "quilzo_read", "content_id", map[string]any{})
+	if merr != nil {
+		t.Fatalf("the admin's own site could not be identified: %s", merr.Message)
+	}
+	if got, _, _ := strings.Cut(text, "\n"); got != node.Block.CID {
+		t.Errorf("content_id says %s, and the site rendered with the admin's templates is %s", got, node.Block.CID)
+	}
+	// Naming the admin's own directory is naming nothing new.
+	if _, merr := callTool(t, srv, "quilzo_read", "content_id", map[string]any{"templates": tpl}); merr != nil {
+		t.Errorf("naming the admin's own templates was refused: %s", merr.Message)
+	}
+
+	var answers []string
+	for _, dir := range []string{"/etc/passwd", "/nonexistent", t.TempDir(), root, bundleTemplates(t), "../" + filepath.Base(tpl)} {
+		_, merr := callTool(t, srv, "quilzo_read", "content_id", map[string]any{"templates": dir})
+		if merr == nil {
+			t.Errorf("the site was rendered with %s, a directory a remote caller chose", dir)
+			continue
+		}
+		if strings.Contains(merr.Message, dir) {
+			t.Errorf("the refusal names the directory asked about: %s", merr.Message)
+		}
+		answers = append(answers, merr.Message)
+	}
+	for _, a := range answers[1:] {
+		if a != answers[0] {
+			t.Errorf("the refusals tell directories apart:\n  %s\n  %s", answers[0], a)
+		}
+	}
+
+	// The scan, by an administrator from afar with an hour's token.
+	now := time.Now().Unix()
+	admin := buildMCP(root, s, remoteCaller(auth.Token{Principal: "dana", Role: auth.RoleAdmin, Resource: "/",
+		CreatedAt: now, ExpiresAt: now + 3600}), tpl)
+	if _, merr := callTool(t, admin, "quilzo_read", "scan_content", map[string]any{}); merr != nil {
+		t.Errorf("the scan of the admin's own templates was refused: %s", merr.Message)
+	}
+	other := t.TempDir()
+	if err := os.WriteFile(filepath.Join(other, "page.html"), []byte(`<script>eval(location.hash)</script>`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if text, merr := callTool(t, admin, "quilzo_read", "scan_content", map[string]any{"templates": other}); merr == nil {
+		t.Errorf("a directory a remote caller chose was scanned: %s", text)
+	}
+}
+
+// A copy of a site with a form on it is the same bytes each time it is made,
+// so `quilzo ipfs verify` and content_id agree with what was uploaded.
+//
+// Every render wrote the time it was made into the form's form_started
+// field, so the demonstration's wholesale page, and with it the site's
+// identifier, changed every second with nothing changed: an upload checked
+// two seconds after `ipfs id` was "does not match", and content_id gave
+// three identifiers in three seconds for one draft.
+func TestACopyOfASiteWithAFormIsTheSameEachTimeItIsMade(t *testing.T) {
+	if w == nil {
+		w = out.New(false)
+	}
+	root := storeFolder(t) + "/st"
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	tpl := t.TempDir() + "/tpl"
+	if err := cmdDemo(root, []string{"-publish=false", "-templates", tpl}); err != nil {
+		t.Fatal(err)
+	}
+	s, err := open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Publish(s, ""); err != nil {
+		t.Fatal(err)
+	}
+	first, err := renderBundle(root, tpl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stamped := false
+	for _, body := range first {
+		if strings.Contains(string(body), `name="form_started"`) {
+			stamped = true
+		}
+	}
+	if !stamped {
+		t.Fatal("the demonstration's copy carries no form, so this proves nothing")
+	}
+	// Across a second, which is what the stamp counts in.
+	time.Sleep(1100 * time.Millisecond)
+	second, err := renderBundle(root, tpl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, body := range first {
+		if string(second[path]) != string(body) {
+			t.Errorf("%s differs between two copies of one published site", path)
+		}
+	}
+	a, err := ipfs.Tree(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := ipfs.Tree(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Block.CID != b.Block.CID {
+		t.Errorf("one published site has two identifiers: %s and %s", a.Block.CID, b.Block.CID)
+	}
+}
+
+// An agent's run cannot name a directory on the server for content_id
+// either.
+//
+// The refusal was asked of a caller at the agent interface only, and a run
+// reaches content_id through the same interface (agentexec.Bridged) with
+// the caller who started it, who is not one: so the model, choosing its
+// own arguments from whatever it had read, could still have the server
+// open any path it named and tell it which existed.
+func TestARunCannotNameTheTemplatesContentIDReads(t *testing.T) {
+	root := publishedShop(t)
+	s, err := open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := agent.Manifest{Name: "pinner", Kind: agent.KindTask, Purpose: "Check what a pinning service holds",
+		Capabilities: []string{"content_id"}, Autonomy: agent.AutonomyDraft,
+		Budget: agent.Budget{Steps: 6, Tools: 4, Duration: agent.Duration(time.Minute)}}
+	call := platformCall(root, s, asAdmin("dana"), agent.NewSession(m, nil), "dana")
+	var answers []string
+	for _, dir := range []string{"/etc/passwd", "/nonexistent", bundleTemplates(t)} {
+		text, err := call(context.Background(), "content_id", false, map[string]any{"templates": dir})
+		if err == nil {
+			t.Errorf("a run had the site rendered with %s, a directory its model chose: %.60s", dir, text)
+			continue
+		}
+		if strings.Contains(err.Error(), dir) {
+			t.Errorf("the refusal names the directory asked about: %v", err)
+		}
+		answers = append(answers, err.Error())
+	}
+	for _, a := range answers {
+		if a != answers[0] {
+			t.Errorf("the refusals tell directories apart:\n  %s\n  %s", answers[0], a)
+		}
 	}
 }

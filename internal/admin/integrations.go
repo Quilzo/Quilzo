@@ -4,6 +4,9 @@
 package admin
 
 import (
+	"archive/zip"
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -119,10 +122,11 @@ func (s *Server) handleUndeliveredDismiss(w http.ResponseWriter, r *http.Request
 	back("m", "Taken off the list.")
 }
 
-// GatewayHeld is a call through the gateway waiting for a person.
+// GatewayHeld is a call through the gateway waiting for a person. Why is
+// what was found in what it says, when that is why it waits.
 type GatewayHeld struct {
-	ID, Integration, Tool, For, App, Args string
-	Asked                                 time.Time
+	ID, Integration, Tool, For, App, Args, Why string
+	Asked                                      time.Time
 }
 
 func (s *Server) handleIntegrations(w http.ResponseWriter, r *http.Request) {
@@ -248,13 +252,20 @@ func (s *Server) handleWebhookSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	target := strings.TrimSpace(r.FormValue("url"))
-	if !strings.HasPrefix(target, "https://") {
-		// http is refused rather than warned about. The payload carries what
-		// changed and the signature proves who sent it; over cleartext both are
-		// readable and the signature is replayable by anyone on the path.
-		s.intRedirect(w, r, "", "a webhook endpoint has to be https. Over "+
-			"cleartext the payload is readable and the signature is replayable "+
-			"by anyone on the path.")
+	e := webhook.Endpoint{URL: target, Note: strings.TrimSpace(r.FormValue("note"))}
+	for _, t := range strings.Split(r.FormValue("types"), ",") {
+		if t = strings.TrimSpace(t); t != "" {
+			e.Types = append(e.Types, t)
+		}
+	}
+	// The rule `quilzo webhook add` holds an endpoint to (webhook.Check),
+	// http refused among the rest. This screen checked only that the
+	// address began with https://, so it stored an address with a password
+	// in it, an address inside the network and a subscription to an event
+	// that is never sent, and showed each as added with a key, though
+	// nothing could ever be delivered to it.
+	if err := webhook.Check(target, e.Types); err != nil {
+		s.intRedirect(w, r, "", err.Error())
 		return
 	}
 	secret, err := webhook.NewSecret()
@@ -262,13 +273,7 @@ func (s *Server) handleWebhookSave(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	e := webhook.Endpoint{URL: target, Secret: secret,
-		Note: strings.TrimSpace(r.FormValue("note"))}
-	for _, t := range strings.Split(r.FormValue("types"), ",") {
-		if t = strings.TrimSpace(t); t != "" {
-			e.Types = append(e.Types, t)
-		}
-	}
+	e.Secret = secret
 	if err := s.Integrations.UpdateWebhooks(func(endpoints []webhook.Endpoint) ([]webhook.Endpoint, error) {
 		for _, x := range endpoints {
 			if x.URL == target {
@@ -278,14 +283,18 @@ func (s *Server) handleWebhookSave(w http.ResponseWriter, r *http.Request) {
 		return append(endpoints, e), nil
 	}); err != nil {
 		if errors.Is(err, errAlreadyRegistered) {
-			s.intRedirect(w, r, "", target+" is already registered")
+			s.intRedirect(w, r, "", webhook.LogForm(target)+" is already registered")
 			return
 		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.auditPub(p, "webhook.add", "/", map[string]string{"url": target,
-		"types": strings.Join(e.Types, ",")})
+	// The host and a reference, never the address (webhook.LogForm): its
+	// path or query can be a credential, and the log is read by people who
+	// may not see this screen and forwarded to systems that are not this
+	// one.
+	s.auditPub(p, "webhook.add", "/", map[string]string{"url": webhook.LogForm(target),
+		"endpoint_ref": webhook.Ref(e), "types": strings.Join(e.Types, ",")})
 
 	// Rendered, not redirected. Every other write on this screen ends in a
 	// redirect so a refresh does not repeat it, and this one deliberately does
@@ -316,6 +325,7 @@ func (s *Server) handleWebhookRemove(w http.ResponseWriter, r *http.Request) {
 	// afterwards, which is what makes people leave it on instead.
 	disable := r.FormValue("disable") != ""
 
+	var changed webhook.Endpoint
 	err := s.Integrations.UpdateWebhooks(func(endpoints []webhook.Endpoint) ([]webhook.Endpoint, error) {
 		kept := make([]webhook.Endpoint, 0, len(endpoints))
 		found := false
@@ -324,7 +334,7 @@ func (s *Server) handleWebhookRemove(w http.ResponseWriter, r *http.Request) {
 				kept = append(kept, e)
 				continue
 			}
-			found = true
+			found, changed = true, e
 			if disable {
 				e.Disabled = !e.Disabled
 				kept = append(kept, e)
@@ -335,19 +345,25 @@ func (s *Server) handleWebhookRemove(w http.ResponseWriter, r *http.Request) {
 		}
 		return kept, nil
 	})
+	// The messages name the endpoint by its host, as the log does. They
+	// travel in a redirect, into the browser's history and the access log,
+	// and carried the whole address there, path and query and all.
+	where := webhook.LogForm(target)
 	if errors.Is(err, errNoEndpoint) {
-		s.intRedirect(w, r, "", "there is no endpoint "+target)
+		s.intRedirect(w, r, "", "there is no endpoint "+where)
 		return
 	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	action, msg := "webhook.remove", "removed "+target
+	action, msg := "webhook.remove", "removed "+where
 	if disable {
-		action, msg = "webhook.toggle", "toggled "+target
+		action, msg = "webhook.toggle", "toggled "+where
 	}
-	s.auditPub(p, action, "/", map[string]string{"url": target})
+	// As webhook.add records it, so the endpoint's records line up by
+	// endpoint_ref.
+	s.auditPub(p, action, "/", map[string]string{"url": where, "endpoint_ref": webhook.Ref(changed)})
 	s.intRedirect(w, r, msg, "")
 }
 
@@ -497,6 +513,13 @@ func (s *Server) handleExtensionRemove(w http.ResponseWriter, r *http.Request) {
 // It answers as a download rather than rendering into the page. The export
 // carries an integrity envelope over the events it contains, and a copy that
 // went through a browser's rendering is a copy whose bytes nobody can verify.
+//
+// It did not carry it. The envelope was computed and thrown away, and the
+// download held the events alone, while the page promised the receiver could
+// check nothing was added or dropped. Asked for, as the form asks by default,
+// the download is a zip of the export and envelope.json, the same envelope
+// `quilzo siem --envelope` writes; not asked for, it is the export alone, as
+// it always was.
 func (s *Server) handleSIEMExport(w http.ResponseWriter, r *http.Request) {
 	p, ok := s.integrationWriter(w, r)
 	if !ok {
@@ -512,26 +535,75 @@ func (s *Server) handleSIEMExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	format := siem.Format(r.FormValue("format"))
-	// Pseudonyms stay on unless somebody asks otherwise, and asking is
-	// recorded. Revealing cannot recover identifiers the log never stored in
-	// the clear — it only stops this from redacting what the log does hold.
+	// Asking for identifiers is recorded, as asked. It cannot recover what the
+	// log never stored in the clear: a log kept with a key, which is every
+	// log this program keeps, exports the same pseudonyms either way.
 	reveal := r.FormValue("reveal") != ""
+	withEnvelope := r.FormValue("envelope") != ""
 
-	res, err := siem.Export(format, events, siem.Options{Reveal: reveal},
-		time.Now())
+	// Through the one export of the log, and recorded as every export of
+	// it is, as auditlog.export with the detail the command line records
+	// (siem.ExportRecorded). It was siem.export with the format, the count
+	// and revealed, so a rule or a filter for auditlog.export missed every
+	// export made here, and the range it covered was not recorded at all.
+	// The record is written once the download is made, below.
+	now := time.Now()
+	var detail map[string]string
+	res, err := siem.ExportRecorded(format, events, siem.Options{Reveal: reveal}, now,
+		func(d map[string]string) { detail = d })
 	if err != nil {
 		s.intRedirect(w, r, "", err.Error())
 		return
 	}
-	s.auditPub(p, "siem.export", "/", map[string]string{
-		"format": string(format), "events": fmt.Sprint(res.Count),
-		"revealed": fmt.Sprint(reveal)})
+	name := fmt.Sprintf("audit-%s.log", format)
+	body, kind := []byte(res.Body), "application/octet-stream"
+	if withEnvelope {
+		if body, err = envelopeZip(name, res, now); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		name, kind = fmt.Sprintf("audit-%s.zip", format), "application/zip"
+	}
+	// What happened, as the command line records it, and what the screen
+	// adds to it. "revealed" said true for every export the box was ticked
+	// for, of a log holding nothing but pseudonyms: it is kept, and is now
+	// whether identifiers left in the clear; the request is
+	// identifiers_requested.
+	detail["revealed"] = fmt.Sprint(!res.Chain.Pseudonymous)
+	detail["envelope"] = fmt.Sprint(withEnvelope)
+	s.auditPub(p, "auditlog.export", "/", detail)
 
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(
-		`attachment; filename="audit-%s.log"`, format))
+	w.Header().Set("Content-Type", kind)
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, name))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	_, _ = w.Write([]byte(res.Body))
+	_, _ = w.Write(body)
+}
+
+// envelopeZip is an export and its envelope in one download: the export as it
+// was rendered, and envelope.json as `quilzo siem --envelope` writes it.
+func envelopeZip(name string, res *siem.Result, now time.Time) ([]byte, error) {
+	env, err := json.MarshalIndent(res.Chain, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	var buf bytes.Buffer
+	z := zip.NewWriter(&buf)
+	for _, f := range []struct {
+		name string
+		body []byte
+	}{{name, []byte(res.Body)}, {"envelope.json", append(env, '\n')}} {
+		fw, err := z.CreateHeader(&zip.FileHeader{Name: f.name, Method: zip.Deflate, Modified: now})
+		if err != nil {
+			return nil, err
+		}
+		if _, err := fw.Write(f.body); err != nil {
+			return nil, err
+		}
+	}
+	if err := z.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 func (s *Server) integrationWriter(w http.ResponseWriter, r *http.Request) (principal, bool) {

@@ -34,6 +34,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/analytics"
 	"github.com/quilzo/quilzo/internal/experiment"
@@ -46,6 +47,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/a2a"
+	"github.com/quilzo/quilzo/internal/asciifold"
 	"github.com/quilzo/quilzo/internal/compress"
 	"github.com/quilzo/quilzo/internal/crawl"
 	"github.com/quilzo/quilzo/internal/etag"
@@ -384,6 +386,7 @@ func (st *Site) Handler() http.Handler {
 	// nlweb.go. Exact patterns, so they sit beside the chatbots at /ask/.
 	mux.HandleFunc("GET /ask", st.nlwebAsk)
 	mux.HandleFunc("POST /ask", st.nlwebAsk)
+	mux.HandleFunc("OPTIONS /ask", st.nlwebPreflight)
 	mux.HandleFunc("POST /mcp", st.nlwebMCP)
 	mux.HandleFunc("/ask.css", st.askStylesheet)
 	mux.HandleFunc("/agent.css", st.agentStylesheet)
@@ -505,24 +508,31 @@ func (st *Site) licenceURL() string {
 // Served from memory rather than from disk on each request, and never resolved
 // against a caller-supplied path: a public server that maps a URL onto a
 // filename is one traversal bug away from serving the token store. There is one
-// stylesheet, it was loaded at startup, and the route returns it or 404s.
+// stylesheet, read with the design when the site was built, and the route
+// returns it or 404s.
 func (st *Site) stylesheet(w http.ResponseWriter, r *http.Request) {
 	if st.Stylesheet == "" {
 		http.NotFound(w, r)
 		return
 	}
-	// The stylesheet changes only when the operator restarts, so it can be
-	// cached hard — but it is validated by ETag anyway, so a proxy that ignores
-	// max-age still cannot serve a stale one after a redeploy.
+	// Asked for again with every page, as the page is, and answered 304 by
+	// its ETag when it has not changed. It was kept for an hour, on the
+	// reasoning that it changed only when the operator restarted; the site
+	// now takes the design with each publish (designreload.go), and a reader
+	// who had opened a page in the hour before one was handed the published
+	// page over the stylesheet from before it.
+	//
+	// Set before the 304 too, so a browser holding a copy stored under the
+	// hour takes this policy with its next answer.
 	sum := sha256.Sum256([]byte(st.Stylesheet))
 	tag := `"` + hex.EncodeToString(sum[:8]) + `"`
+	w.Header().Set("ETag", tag)
+	w.Header().Set("Cache-Control", "public, max-age=0, must-revalidate")
 	if etag.Matches(r.Header.Get("If-None-Match"), tag) {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
-	w.Header().Set("ETag", tag)
-	w.Header().Set("Cache-Control", "public, max-age=3600")
 	_, _ = io.WriteString(w, st.Stylesheet)
 }
 
@@ -1103,17 +1113,21 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 
 	// An experiment on this page serves the variant's content at this
 	// address. See experiments.go.
-	served, inExperiment := name, false
+	served, inExperiment, personal := name, false, false
 	if forMembers {
 		// No experiment and no personalisation on a members' page: both
 		// choose between public pages.
-	} else if v, vbody, ok := st.personalFor(r, name, pages); ok {
+	} else if v, vbody, ok, ruled := st.personalFor(r, name, pages); ok {
 		// A rule decides first. An experiment on the same page is not run
 		// for this visitor: their version was chosen by who they are, and
 		// counting them in a random split would bias it.
 		served, body, inExperiment = v, vbody, true
 	} else if v, vbody, ok := st.variantFor(r, name, pages); ok {
 		served, body, inExperiment = v, vbody, true
+	} else {
+		// No rule picked this visitor out, but one is on the page: what
+		// they are served is the page for those it does not pick out.
+		personal = ruled
 	}
 
 	// The ETag is the content hash. Not derived from it — it is it.
@@ -1191,9 +1205,15 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Vary", "Cookie")
 		w.Header().Set("X-Robots-Tag", "noindex")
-	} else if inExperiment {
+	} else if inExperiment || personal {
 		// Private: a shared cache holding one visitor's variant would hand
 		// it to everybody, which ends the experiment and ruins its data.
+		//
+		// And on a page a rule is on, for the visitors it does not pick out
+		// too. Their answer was "public", with nothing saying it depended on
+		// their language, device, referrer or the hour, so a CDN in front of
+		// the site kept the first one and handed it to the French, the phone
+		// and the out-of-hours visitors after it, and no rule was ever seen.
 		w.Header().Set("Cache-Control", "private, max-age=0, must-revalidate")
 	} else {
 		w.Header().Set("Cache-Control", "public, max-age=0, must-revalidate")
@@ -1209,22 +1229,21 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 		// showed its listing in preview rendered without it for readers —
 		// silently, because a missing section looks like a section with
 		// nothing in it. Found by publishing the page and looking at it.
-		http.Error(w, "this page could not be assembled",
-			http.StatusInternalServerError)
+		unassembled(w, nil, "this page could not be assembled")
 		return
 	}
 	// One context builder, shared with the accessibility gate, the preview and
 	// every export. They used to build their own and disagree: the gate that
 	// refuses a publish was judging a page with no navigation and no listings
 	// in it, which is not the page anybody is served.
-	ctx, cerr := st.sources().For(name, body, args)
+	ctx, cerr := st.sourcesFor(r).For(name, body, args)
 	if cerr != nil {
 		// A page whose listings cannot be resolved is a broken page, not a
 		// page with an empty section. Rendering it without them would ship a
 		// listing-shaped hole that nobody notices until somebody asks why the
-		// table is empty.
-		http.Error(w, "this page could not be assembled",
-			http.StatusInternalServerError)
+		// table is empty. A value in the address a listing refuses is not
+		// that: see unassembled.
+		unassembled(w, cerr, "this page could not be assembled")
 		return
 	}
 
@@ -1234,13 +1253,12 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 		// not a page to render through something else. Rendering it through the
 		// default would serve a document nobody designed with no message
 		// anywhere saying so.
-		http.Error(w, "this page could not be assembled",
-			http.StatusInternalServerError)
+		unassembled(w, lerr, "this page could not be assembled")
 		return
 	}
 	html, err := tmpl.Render(layout, ctx)
 	if err != nil {
-		http.Error(w, "template error", http.StatusInternalServerError)
+		unassembled(w, err, "template error")
 		return
 	}
 
@@ -1256,6 +1274,30 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 	st.originTrial(w.Header())
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(html))
+}
+
+// unassembled answers a page that could not be built for this request.
+//
+// A value in the address that a listing on the page refuses, a capital
+// letter or a space in a slug or a stray character, is the visitor's
+// mistake: 400, naming the parameter but not repeating the value, as
+// /catalogue.json already answers it. It was answered 500 "this page could
+// not be assembled", which monitoring counts as the site failing, from a
+// link a newsletter wrote with a capital letter. Anything else is this
+// site's trouble and stays a 500. Neither is kept by any cache or answers
+// to the page's ETag: the headers set for the page it was to be no longer
+// describe what is sent.
+func unassembled(w http.ResponseWriter, err error, problem string) {
+	h := w.Header()
+	h.Del("ETag")
+	h.Set("Cache-Control", "no-store")
+	var bad *listing.BadArg
+	if errors.As(err, &bad) {
+		http.Error(w, "this address gives "+bad.Param+" a value this page cannot use",
+			http.StatusBadRequest)
+		return
+	}
+	http.Error(w, problem, http.StatusInternalServerError)
 }
 
 // injectHead adds the manifest link and the provenance marking.
@@ -1300,8 +1342,15 @@ func (st *Site) injectHead(html, page, hash string, body any) string {
 	// Where this page lives, and whether a search engine may list it. The
 	// canonical link only when the layout wrote none: a layout that names
 	// one has decided.
+	//
+	// Looked for in the page itself, its ASCII letters folded as HTML folds
+	// them. strings.ToLower of the page copied the whole of every page served
+	// on a site with an address, which was 5 to 7 per cent of the CPU of
+	// serving the fullest starter page once the tag searches stopped lowering
+	// it, and it read rel="canonİcal", which names no canonical, as one, so
+	// the page went out without its address.
 	if c := seo.Canonical(st.BaseURL, page, st.Index, body); c != "" &&
-		!strings.Contains(strings.ToLower(html), `rel="canonical"`) {
+		asciifold.Index(html, `rel="canonical"`) < 0 {
 		b.WriteString(`<link rel="canonical" href="` + escape(c) + `">` + "\n")
 	}
 	if seo.NoIndex(body) {
@@ -1344,11 +1393,14 @@ func (st *Site) injectHead(html, page, hash string, body any) string {
 // wrong. Prepending when there is no head is worse than nothing — it would put
 // meta tags outside the document — so the page is served as it is and the
 // absence shows up in `provenance check` rather than being papered over.
+//
+// Found in the page itself, not in strings.ToLower of it: a Turkish title
+// lowered a byte shorter for every İ, and the marking went inside </title>.
 func insertBeforeHead(html, markup string) string {
 	if markup == "" {
 		return html
 	}
-	head := strings.Index(strings.ToLower(html), "</head>")
+	head := asciifold.Index(html, "</head>")
 	if head < 0 {
 		return html
 	}
@@ -1699,6 +1751,21 @@ func (st *Site) tracks(id string) []any {
 	return out
 }
 
+// mediaInfo answers what a stored file is: a picture or a recording, whether
+// a recording has sound, and its description. A backdrop is drawn from the
+// first, and a silent recording's text alternative from the other two.
+func (st *Site) mediaInfo(id string) (render.MediaInfo, bool) {
+	if st.MediaStat == nil {
+		return render.MediaInfo{}, false
+	}
+	f, err := st.MediaStat(id)
+	if err != nil {
+		return render.MediaInfo{}, false
+	}
+	sound, known := f.SoundKnown()
+	return render.MediaInfo{Kind: string(f.Kind), Sound: sound, SoundKnown: known, Alt: f.Alt}, true
+}
+
 // poster answers where a still from a recording is served.
 func (st *Site) poster(id string) string {
 	if st.MediaStat == nil {
@@ -1768,9 +1835,54 @@ func (st *Site) formData(name string) map[string]any {
 	return data
 }
 
+// sources is what a template may see of the site as it is served now.
 func (st *Site) sources() render.Sources {
-	src := render.Sources{Name: st.Name, IconStyle: st.IconStyle, Listings: st.Listings,
-		SrcSet: st.srcSet, Tracks: st.tracks, Poster: st.poster,
+	pages, _, err := st.pages()
+	if err != nil {
+		pages = nil
+	}
+	return st.Sources(pages)
+}
+
+// sourcesFor is sources for one request: for a static copy's (CopyHeader),
+// a form's stamp is when the version being copied was made rather than when
+// this page was rendered.
+//
+// The stamp is the time a page was served, for a form's timing check, and a
+// static copy has no server to serve it or to take what its forms send. As
+// the render time it made every copy of a site with a form different bytes,
+// every second: `quilzo ipfs verify` told somebody a correct upload made two
+// seconds earlier did not match, and content_id gave three identifiers in
+// three seconds for one site, the opposite of what an identifier computed
+// from the content is for.
+func (st *Site) sourcesFor(r *http.Request) render.Sources {
+	src := st.sources()
+	if r.Header.Get(CopyHeader) != "" {
+		at := time.Unix(0, 0)
+		if c, err := st.Store.GetCommit(st.Store.GetRef(st.ref())); err == nil {
+			at = time.Unix(c.At, 0)
+		}
+		src.Now = func() time.Time { return at }
+	}
+	return src
+}
+
+// Sources is what a template may see when it renders one of pages: the one
+// context, which this site serves, `quilzo render` draws, the admin's
+// preview shows and both publish gates judge. Each listing, post and event
+// in it is read where the site's listings read, so one built to render a
+// commit is given listings at that commit's tree (renderSiteFor in
+// cmd/quilzo, and the admin's own when it is not handed this).
+//
+// There were three. The command line's had the icon, members, buttons and
+// pictures and no forms, boards, bookings, newsletter, events or posts; the
+// admin's had menus, listings and pictures only. So on a page naming a form
+// `quilzo render` and the gate in `quilzo publish` drew no form, the preview
+// drew neither the form nor the icon a visitor gets, and no gate ever judged
+// the form markup a visitor is served.
+func (st *Site) Sources(pages map[string]any) render.Sources {
+	src := render.Sources{Name: st.Name, IconStyle: st.IconStyle, Listings: st.Listings, Pages: pages,
+		SrcSet: st.srcSet, Tracks: st.tracks, Poster: st.poster, Media: st.mediaInfo,
 		Form: st.formData, Thread: st.threadData, Buy: st.Buy, Booking: st.bookingData,
 		Newsletter: st.newsletterData, Events: st.eventsData, Posts: st.postsData}
 	if _, ok := st.iconFile(); ok {
@@ -1785,9 +1897,6 @@ func (st *Site) sources() render.Sources {
 		// A navigation that cannot be read is a site with no navigation, not a
 		// page that fails to render: one unreadable file must not take the
 		// whole site down when the page itself is fine.
-	}
-	if pages, _, err := st.pages(); err == nil {
-		src.Pages = pages
 	}
 	return src
 }

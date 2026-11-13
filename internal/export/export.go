@@ -47,6 +47,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"mime"
 	"path"
 	"sort"
@@ -257,6 +258,14 @@ func exportMarkdown(s Site) ([]File, error) {
 		if !ok {
 			return nil, fmt.Errorf("page %q is not an object", name)
 		}
+		// A page's own id and collection, together, are what tells a
+		// record's file from a page's, so a lookbook page naming its own id
+		// and its season's collection came back as a record of that
+		// collection, and the page was gone. They are set apart as a
+		// record's are.
+		_, id := fields["id"]
+		_, coll := fields["collection"]
+		fields = apart(fields, func(k string) bool { return id && coll && (k == "id" || k == "collection") })
 
 		var body string
 		var front []string
@@ -280,8 +289,14 @@ func exportMarkdown(s Site) ([]File, error) {
 			}
 			front = append(front, k+": "+v)
 		}
-		if t, ok := s.Changed[name]; ok && !t.IsZero() {
-			front = append(front, "date: "+t.UTC().Format("2006-01-02"))
+		// The day it last changed, unless the page has a date of its own: an
+		// event's day, say. Both were written, so the file gave the key twice,
+		// which a YAML reader refuses and the rest read as whichever came
+		// last, and the page could not be read back.
+		if _, own := fields["date"]; !own {
+			if t, ok := s.Changed[name]; ok && !t.IsZero() {
+				front = append(front, "date: "+t.UTC().Format("2006-01-02"))
+			}
 		}
 		// The page's own name, so a re-import gets it back.
 		//
@@ -295,8 +310,13 @@ func exportMarkdown(s Site) ([]File, error) {
 		//
 		// `slug` rather than a key of this tool's own invention because Hugo,
 		// Jekyll and Astro all already read it and mean the same thing by it.
+		//
+		// Quoted, as every other value is. It was the one written bare, so a
+		// page called 404 or 2024 had the number for a link, true a yes and
+		// null nothing, and a page read back on its own lost its name to its
+		// title's.
 		if _, already := fields["slug"]; !already {
-			front = append(front, "slug: "+name)
+			front = append(front, "slug: "+quoteYAML(name))
 			sort.Strings(front)
 		}
 
@@ -334,6 +354,64 @@ func exportMarkdown(s Site) ([]File, error) {
 	return out, nil
 }
 
+// bookkeeping is what a record's file says about the record beside its
+// fields: which it is, the collection it belongs to, and when it was made
+// and last changed.
+var bookkeeping = map[string]bool{"id": true, "collection": true, "created": true, "updated": true}
+
+// ownKey is where a page's or record's own fields of those names are
+// written, as one map.
+//
+// They were written beside the export's own, so a product with its own
+// collection ("Spring 2027") or id ("SKU-1") gave the key twice, which a
+// YAML reader refuses, and one with its own created ("5 January") was
+// refused as not a time: one such record and the whole export no longer
+// read back. A field of this name goes with them, and so does one holding
+// what reads as them, so the reader can always tell the two apart. A page
+// or record with none of them is written as it always was, so an earlier
+// export reads as it did.
+const ownKey = "fields"
+
+// apart returns fields with those clash names moved under ownKey, and a
+// field called ownKey with them, or on its own when it reads as such a set
+// (isOwn). It returns fields itself when nothing moves, and a copy when
+// something does: the site's page or record is not the export's to change.
+func apart(fields map[string]any, clash func(string) bool) map[string]any {
+	own := map[string]any{}
+	for k, v := range fields {
+		if clash(k) {
+			own[k] = v
+		}
+	}
+	if v, ok := fields[ownKey]; ok && (len(own) > 0 || isOwn(v)) {
+		own[ownKey] = v
+	}
+	if len(own) == 0 {
+		return fields
+	}
+	out := maps.Clone(fields)
+	for k := range own {
+		delete(out, k)
+	}
+	out[ownKey] = own
+	return out
+}
+
+// isOwn says whether a value under ownKey is fields set apart: a map of
+// nothing but the names apart moves.
+func isOwn(v any) bool {
+	m, ok := v.(map[string]any)
+	if !ok || len(m) == 0 {
+		return false
+	}
+	for k := range m {
+		if !bookkeeping[k] && k != ownKey {
+			return false
+		}
+	}
+	return true
+}
+
 // recordFile writes one collection record as markdown with front matter.
 func recordFile(coll string, r Record) (File, error) {
 	fields := map[string]any{}
@@ -345,6 +423,7 @@ func recordFile(coll string, r Record) (File, error) {
 		body = b
 		delete(fields, "body")
 	}
+	fields = apart(fields, func(k string) bool { return bookkeeping[k] })
 
 	keys := make([]string, 0, len(fields))
 	for k := range fields {

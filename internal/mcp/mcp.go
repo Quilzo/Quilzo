@@ -58,11 +58,17 @@
 package mcp
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+	"unicode"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // Request is a JSON-RPC 2.0 request.
@@ -152,7 +158,15 @@ type Handler func(args map[string]any) (any, error)
 // The distinction is the same one the CLI makes with exit code 3: an agent that
 // reads "denied by policy" as "the server broke" will retry, and retrying a
 // refusal is how an agent turns one blocked action into a hundred.
-type Refusal struct{ Reason string }
+//
+// Retryable marks the one kind a retry can change: a write refused because
+// somebody else's landed first, where the next call reads the draft again.
+// Every refusal said retryable:false, so a client that honoured it gave up
+// on nine of ten writes that a second call would have made.
+type Refusal struct {
+	Reason    string
+	Retryable bool
+}
 
 func (r *Refusal) Error() string { return r.Reason }
 
@@ -307,11 +321,19 @@ func opSchema(desc string) map[string]any {
 //
 // A plain keyword score rather than an embedding. The corpus is a dozen
 // operations written by one person; a retrieval model here would add a
-// dependency, a failure mode and a warm-up cost to a lookup that a substring
+// dependency, a failure mode and a warm-up cost to a lookup that a word
 // match answers correctly.
+//
+// Words, not substrings. Every query word was looked for anywhere in the
+// operation's text, so the "a" of "triage a support ticket" scored on
+// almost every operation, and three more on one with an "a" in its name:
+// agent_activity came first and decide was not among the first six. A word
+// counts once it is two letters or more and not one any sentence has, and
+// matches the same word, or one that starts with it either way round, so
+// "deciders" finds decide and "pages" list_pages; the same word counts for
+// more.
 func (s *Server) find(query string) []Operation {
-	q := strings.ToLower(strings.TrimSpace(query))
-	words := strings.Fields(q)
+	words := findWords(query)
 
 	type scored struct {
 		op    Operation
@@ -320,14 +342,11 @@ func (s *Server) find(query string) []Operation {
 	var out []scored
 	for _, op := range s.operations {
 		score := 0
-		hay := strings.ToLower(op.Name + " " + op.Summary + " " + strings.Join(op.Keywords, " "))
+		name := findWords(strings.ReplaceAll(op.Name, "_", " "))
+		hay := findWords(op.Name + " " + op.Summary + " " + strings.Join(op.Keywords, " "))
 		for _, w := range words {
-			if strings.Contains(hay, w) {
-				score += 2
-			}
-			if strings.Contains(strings.ToLower(op.Name), w) {
-				score += 3
-			}
+			score += 2 * findMatch(w, hay)
+			score += 3 * findMatch(w, name)
 		}
 		if score > 0 {
 			out = append(out, scored{op, score})
@@ -427,7 +446,10 @@ func (s *Server) complete(m map[string]any) map[string]any { return Complete(m, 
 // 2026-07-28 results do; for a server answering without this package's
 // Server, such as the public site's /mcp.
 func Complete(m map[string]any, name, version string) map[string]any {
-	out := make(map[string]any, len(m)+2)
+	// Sized for m alone. Adding the two keys below may grow it once, which
+	// costs nothing worth measuring, where a sum in the size is one code
+	// scanning reads as a length that could overflow.
+	out := make(map[string]any, len(m))
 	for k, v := range m {
 		out[k] = v
 	}
@@ -468,7 +490,7 @@ func (s *Server) call(raw json.RawMessage) (any, *Error) {
 			names = append(names, t.Name)
 		}
 		return nil, &Error{Code: CodeMethodNotFound,
-			Message: fmt.Sprintf("no tool %q; the tools are %s", p.Name,
+			Message: fmt.Sprintf("no tool %s; the tools are %s", quoteName(p.Name),
 				strings.Join(names, ", "))}
 	}
 
@@ -480,7 +502,7 @@ func (s *Server) call(raw json.RawMessage) (any, *Error) {
 	op, ok := s.operations[opName]
 	if !ok {
 		return nil, &Error{Code: CodeInvalidParams,
-			Message: fmt.Sprintf("no operation %q; call quilzo_find", opName)}
+			Message: fmt.Sprintf("no operation %s; call quilzo_find", quoteName(opName))}
 	}
 
 	// A read tool must not be able to reach a write operation. Without this the
@@ -540,11 +562,39 @@ func (s *Server) call(raw json.RawMessage) (any, *Error) {
 			// A refusal carries its own code so an agent does not retry a
 			// decision. Retrying a refusal turns one blocked action into many.
 			return nil, &Error{Code: CodeRefused, Message: ref.Reason,
-				Data: map[string]any{"refused": true, "retryable": false}}
+				Data: map[string]any{"refused": true, "retryable": ref.Retryable}}
 		}
 		return nil, &Error{Code: CodeInternal, Message: err.Error()}
 	}
-	return textResult(fmt.Sprintf("%v", result)), nil
+	text, err := answerText(result)
+	if err != nil {
+		return nil, &Error{Code: CodeInternal, Message: err.Error()}
+	}
+	return textResult(text), nil
+}
+
+// answerText is an operation's answer as the text an agent reads: a string
+// as it is, and anything else as JSON.
+//
+// It was fmt's %v of whatever came back, so an operation that answered with
+// a map or a struct, as shield_status and eval_results do, gave Go's own
+// notation for it, "map[active:[] held:false ...]", which no client can
+// parse. Without HTML escaping, since nobody renders it as a page and a
+// "<" written as \u003c is one more thing for an agent to undo.
+func answerText(v any) (string, error) {
+	switch t := v.(type) {
+	case string:
+		return t, nil
+	case fmt.Stringer:
+		return t.String(), nil
+	}
+	var b bytes.Buffer
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return "", fmt.Errorf("the answer could not be written as JSON: %w", err)
+	}
+	return strings.TrimSuffix(b.String(), "\n"), nil
 }
 
 // callDirect performs one of another server's tools, through the host.
@@ -556,7 +606,7 @@ func (s *Server) callDirect(p callParams) (any, *Error) {
 		}
 	}
 	if !known {
-		return nil, &Error{Code: CodeMethodNotFound, Message: fmt.Sprintf("no tool %q here", p.Name)}
+		return nil, &Error{Code: CodeMethodNotFound, Message: fmt.Sprintf("no tool %s here", quoteName(p.Name))}
 	}
 	if s.Direct.Call == nil {
 		return nil, &Error{Code: CodeInternal, Message: fmt.Sprintf(
@@ -576,12 +626,18 @@ func (s *Server) callDirect(p callParams) (any, *Error) {
 				Data: map[string]any{"refused": true, "retryable": false}, cause: err}
 		case errors.As(err, &ref):
 			return nil, &Error{Code: CodeRefused, Message: ref.Reason,
-				Data: map[string]any{"refused": true, "retryable": false}}
+				Data: map[string]any{"refused": true, "retryable": ref.Retryable}}
 		}
 		return nil, &Error{Code: CodeInternal, Message: err.Error()}
 	}
 	return textResult(out), nil
 }
+
+// quoteName is a name a caller sent, as an answer quotes it: enough to say
+// which, and no more. The name is whatever the request held, up to the whole
+// body, and an answer that quoted it whole sent it back and, through the
+// host's record of the call, into the audit log.
+func quoteName(s string) string { return strconv.Quote(plaintext.Clip(s, 80, "…")) }
 
 func asRefusal(err error, out **Refusal) bool {
 	if r, ok := err.(*Refusal); ok {
@@ -589,6 +645,59 @@ func asRefusal(err error, out **Refusal) bool {
 		return true
 	}
 	return false
+}
+
+// findStop are words any request or description may have, which say
+// nothing about which operation is meant.
+var findStop = map[string]bool{
+	"the": true, "and": true, "for": true, "are": true, "was": true, "not": true,
+	"with": true, "this": true, "that": true, "these": true, "those": true,
+	"what": true, "which": true, "who": true, "how": true, "when": true,
+	"where": true, "there": true, "here": true, "from": true, "into": true,
+	"have": true, "has": true, "been": true, "does": true, "can": true,
+	"its": true, "any": true, "all": true, "some": true, "about": true,
+	"one": true, "our": true, "your": true, "you": true, "please": true,
+	"am": true, "an": true, "as": true, "at": true, "be": true, "by": true,
+	"do": true, "if": true, "in": true, "is": true, "it": true, "me": true,
+	"my": true, "no": true, "of": true, "on": true, "or": true, "so": true,
+	"to": true, "up": true, "us": true, "we": true,
+}
+
+// findWords are the words of a text that find compares.
+//
+// Two letters are a word, and a letter either side of a slash is one. With
+// three letters the least, the "A/B" of "A/B testing" was nothing, so the
+// chatbots' operation, which mentions testing one, came before the A/B
+// tests' own.
+func findWords(s string) []string {
+	var out []string
+	s = findLetterPair.ReplaceAllString(strings.ToLower(s), "$1$2")
+	for _, w := range strings.FieldsFunc(s, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	}) {
+		if len(w) >= 2 && !findStop[w] {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
+// findLetterPair is a letter either side of a slash, as in "a/b".
+var findLetterPair = regexp.MustCompile(`\b([a-z])/([a-z])\b`)
+
+// findMatch is how well a query word matches a list of words: 2 for the
+// same word, 1 for one that starts with the other, four letters at least.
+func findMatch(w string, in []string) int {
+	best := 0
+	for _, h := range in {
+		switch {
+		case h == w:
+			return 2
+		case len(w) >= 4 && len(h) >= 4 && (strings.HasPrefix(h, w) || strings.HasPrefix(w, h)):
+			best = 1
+		}
+	}
+	return best
 }
 
 // describe renders operations for an agent that asked for them.

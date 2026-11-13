@@ -68,6 +68,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/foreign"
+	"github.com/quilzo/quilzo/internal/store"
 	"github.com/quilzo/quilzo/internal/tmpl"
 )
 
@@ -82,10 +83,13 @@ const (
 	RequestTimeout = 120 * time.Second
 )
 
-// Page names must be usable as tree entries. Kept in step with the store's own
-// rule deliberately — a name the store would reject should be refused here, with
-// a message about the model rather than about the filesystem.
-var rePageName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
+// Page names must be usable as tree entries: the store's own rule, asked of
+// the store, so a name the store would reject is refused here with a message
+// about the model rather than about the filesystem. The copy that was "kept
+// in step" took 128 characters to the store's 64.
+//
+// Template names are files, not tree entries, and keep their own pattern.
+var reTemplateName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 
 // ValidPageName reports whether a model-supplied name may be written.
 //
@@ -97,7 +101,7 @@ var rePageName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 // Which is the property worth stating: no "/", so nothing an agent names can
 // reach outside the page namespace into the records under data/, and no
 // leading dot, so nothing it names is hidden from whoever reviews the diff.
-func ValidPageName(name string) bool { return rePageName.MatchString(name) }
+func ValidPageName(name string) bool { return !strings.Contains(name, "/") && store.ValidPath(name) }
 
 // Proposal is what the assistant returns, before anyone accepts it.
 type Proposal struct {
@@ -138,7 +142,7 @@ func Validate(p *Proposal) error {
 
 	total := 0
 	for name, body := range p.Pages {
-		if !rePageName.MatchString(name) {
+		if !ValidPageName(name) {
 			return &Rejection{
 				Reason: "the model proposed an unusable page name",
 				Detail: fmt.Sprintf("%q — letters, digits, dot, dash and underscore, "+
@@ -163,7 +167,7 @@ func Validate(p *Proposal) error {
 	}
 
 	for name, src := range p.Templates {
-		if !rePageName.MatchString(strings.TrimSuffix(name, ".html")) {
+		if !reTemplateName.MatchString(strings.TrimSuffix(name, ".html")) {
 			return &Rejection{Reason: "the model proposed an unusable template name",
 				Detail: name}
 		}

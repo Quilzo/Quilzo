@@ -75,13 +75,14 @@ func changeLessons(root, name string, change func([]lessons.Lesson) ([]lessons.L
 	return atomicfile.Write(path, b, 0o600)
 }
 
-// lessonsPlaybook is what a run of an agent with this model reads.
-func lessonsPlaybook(root, name, model string) ([]string, []string) {
+// lessonsPlaybook is what a run of an agent with this model, by any of
+// its names, reads.
+func lessonsPlaybook(root, name string, model ...string) ([]string, []string) {
 	all, err := loadLessons(root, name)
 	if err != nil {
 		return nil, nil
 	}
-	return lessons.Playbook(all, model)
+	return lessons.Playbook(all, model...)
 }
 
 func findLesson(all []lessons.Lesson, id string) (int, error) {

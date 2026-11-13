@@ -71,6 +71,17 @@ var rules = []Rule{
 						Detail: fmt.Sprintf("%s was last evaluated %s ago",
 							c.Name, roughly(s.Now.Sub(c.LastEval))),
 						Fix: "quilzo assistant eval " + c.Name + " CASES.jsonl"})
+				// Measured on one model, it counted as measured once moved
+				// to another nobody had measured.
+				case c.UseModel && !strings.EqualFold(c.EvalModel, c.Model):
+					measured := c.EvalModel
+					if measured == "" {
+						measured = "a model the record does not name"
+					}
+					out = append(out, Finding{Resource: c.Name,
+						Detail: fmt.Sprintf("%s was last evaluated on %s; %s answers it now",
+							c.Name, measured, c.Model),
+						Fix: "quilzo assistant eval " + c.Name + " CASES.jsonl"})
 				}
 			}
 			return out
@@ -1078,13 +1089,14 @@ var rules = []Rule{
 			"verify, every record in it is an assertion rather than evidence — " +
 			"including the records about whoever broke it.",
 		Check: func(s State) []Finding {
-			if s.Audit == nil {
+			if s.Audit == nil && len(s.AuditBreaks) == 0 {
 				return nil
 			}
-			ok, problems := audit.Verify(s.Audit)
-			if ok {
+			ok, chain := audit.Verify(s.Audit)
+			if ok && len(s.AuditBreaks) == 0 {
 				return nil
 			}
+			problems := append(append([]audit.Problem(nil), s.AuditBreaks...), chain...)
 			var where []string
 			for _, p := range problems {
 				where = append(where, fmt.Sprintf("seq %d: %s", p.Seq, p.Reason))
@@ -1721,6 +1733,10 @@ var rules = []Rule{
 				return nil
 			case "unreachable":
 				return []Finding{{
+					// Its own title: under the rule's, a writer that is
+					// stopped read as the CMS writing its own log, of a
+					// log the CMS cannot open.
+					Title:    "The audit log's writer is not answering",
 					Severity: High,
 					Detail: "a log writer is configured and not answering, so " +
 						"actions are being taken and not recorded",

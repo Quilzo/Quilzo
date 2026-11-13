@@ -5,11 +5,11 @@
   </picture>
 </h1>
 
-<p align="center"><strong>The self-hosted control plane for your AI agents, and the content they produce.</strong></p>
+<p align="center"><strong>The self-hosted CMS for websites, chatbots and AI agents, with the governance built in.</strong></p>
 
 <p align="center">
-  One binary that gives every agent an identity, a policy, a budget and a signed record,<br>
-  whichever model or sandbox it runs on, and asks a person before the actions that matter.
+  One binary to build and run a website, the chatbots that answer its visitors and the agents that work on it.<br>
+  Every agent has an identity, a policy, a budget and a signed record, and a person approves the actions that matter.
 </p>
 
 <p align="center">
@@ -44,11 +44,13 @@ agent's own program or another vendor's agent is deciding. A hijacked agent can
 still only do what it declared before anybody talked to it, and what it read,
 remembered, spent and was refused is in a signed log you can prove things from.
 
-Around that gate is everything an organisation running agents needs: a model
-gateway that masks personal data, chatbots that cite their sources, a governed
-MCP gateway in front of your own tool servers, a map of every agent and what it
-called, evidence for the EU AI Act and ISO/IEC 42001, a shield that defends
-the installation itself, and the content platform the agents read and write.
+Around that gate is a complete content platform and everything an organisation
+running agents needs: pages, structured types and media, a website builder with
+themes, forms, bookings, newsletters, payments and events, chatbots that cite
+their sources, a model gateway that masks personal data, a governed MCP gateway
+in front of your own tool servers, a map of every agent and what it called,
+evidence for the EU AI Act and ISO/IEC 42001, and a shield that defends the
+installation itself.
 A security team's own tools — the finding queue, cases, vulnerabilities, the
 estate — are not part of it: Quilzo streams its audit log, as it is written,
 to whichever SIEM the organisation already runs.
@@ -84,8 +86,9 @@ export QUILZO_MODEL=llama3.1
 ./quilzo agent receipt RUN -o r.json # and proved, against a signed head of the log
 ```
 
-Released binaries trail `main`; everything below is on `main`.
-[Install](#install) has the binaries and the container image.
+No release is published yet; everything below is on `main`.
+[Install](#install) says how to build the container image, and what each
+release will carry.
 
 ## Why Quilzo
 
@@ -299,7 +302,7 @@ access to every other system belongs with the tool that reviews those.
 | **AI evidence** | The EU AI Act's deployer duties, ISO/IEC 42001 Annex A as a statement of applicability, and an AI bill of materials (CycloneDX 1.6), each read from what the agents, chatbots and models did. | Frameworks → AI evidence; `quilzo compliance ai-act\|iso42001\|aibom` |
 | **Quilzo's own controls** | How Quilzo implements each NIST control and who does the rest, as OSCAL; a draft system security plan; FedRAMP 20x indicators; a position on each goal of CISA's Secure by Design pledge. | `quilzo compliance implementation\|component\|ssp\|ksi\|pledge` |
 | **Organisation policy** | The organisation's NIST parameters (session limits and the like) declared, changed by two administrators and enforced as floors. | `quilzo policy show\|propose\|approve` |
-| **Supply chain** | A CycloneDX SBOM from the build, every cryptographic algorithm with its post-quantum status, release binaries with provenance attestations. | `quilzo compliance sbom\|crypto` |
+| **Supply chain** | A CycloneDX SBOM from the build, every cryptographic algorithm with its post-quantum status, and a provenance attestation for each binary a release publishes. | `quilzo compliance sbom\|crypto` |
 | **The published site** | What the law asks of it: accessibility (and a draft statement and conformance report), forms' lawful basis, personal data held back from publishing, AI disclosure, browser protections. | `quilzo compliance site`, `compliance acr` |
 | **Assurance, auditors, groups** | Evidence over a period and the days nobody can speak to; scoped auditor engagements as one verifiable file; controls across a group of companies. | `quilzo assurance`, `engagement`, `entity` |
 
@@ -321,7 +324,7 @@ access to every other system belongs with the tool that reviews those.
 | Feature | What it does | How |
 |---|---|---|
 | **A signed log** | Every action, hash-chained, identifiers pseudonymised, a refused secret never written; heads signed with Ed25519 and ML-DSA; inclusion and consistency proofs. | `quilzo auditlog verify\|prove\|consistency\|head` |
-| **Written by its own account** | The log writer can run as a separate user the content platform cannot impersonate. | `quilzo logd` |
+| **Written by its own account** | The log writer can run as a separate user the content platform cannot impersonate, and then holds the key that signs the log's heads and receipts: the platform asks it for a head and cannot choose the root. | `quilzo logd`, `quilzo logd status` |
 | **Anchored in time** | Heads anchored where the operator cannot alter them, and RFC 3161 timestamps of what was published. | `quilzo auditlog anchor`, `quilzo timestamp` |
 | **Encrypted at rest** | Objects sealed on disk with rotatable keys. | `quilzo vault enable\|rotate` |
 
@@ -355,7 +358,7 @@ reference.
 | **Selling to shopping agents** | The catalogue listing as a machine-readable feed, and over the Universal Commerce Protocol: shopping agents search it, look products up and read prices from the published records. Read-only: an agent buys from the product's page. | `site.catalogue`, `ucp.catalogue`; `/catalogue.json`, `/.well-known/ucp` |
 | **Languages** | Locales, stale and missing translations. | `quilzo lang` |
 | **Out and in** | Export to Markdown (Hugo, Astro, Eleventy, Jekyll), WordPress WXR, lossless JSON and RO-Crate; import from WordPress; replicas; the permanent web (IPFS); the fediverse (ActivityPub). | `quilzo export\|import\|peer\|ipfs\|fediverse` |
-| **API** | A content API, read-only or writable with If-Match, and a playground in the admin; it describes itself as OpenAPI 3.1 at `/api/v1/openapi.json`, for client generators and agents. | `quilzo site --api`; API screen |
+| **API** | A content API, read-only or writable with If-Match, and a playground in the admin; it describes itself as OpenAPI 3.1 at `/api/v1/openapi.json`, for client generators and agents. | `quilzo site --api`; API playground screen |
 | **Checks** | XSS, injection and leaked secrets in content; the content security policy your content implies; claims that need substantiating; image licences. | `quilzo scan\|csp\|brand\|rights` |
 | **Extensions** | Your own code that observes or transforms content, run in a sandbox outside the process, pinned by digest. | `quilzo ext list\|add\|pin\|test` |
 
@@ -378,7 +381,7 @@ line and not yet a product of their own.
 | **One binary** | The admin on loopback, the public site on its own listener, installable as an app; the command line does everything the screens do. | `quilzo serve`, `quilzo site` |
 | **Every connection named** | Each outbound connection has a declared purpose and is checked against the address actually dialled, after DNS. Offline mode refuses every connection that would leave the host, and names the feature that wanted it. | `quilzo network`; setting `network.mode` |
 | **Settings that explain themselves** | Every setting with what it is for and what it costs; one that weakens security needs a stated reason. | `quilzo config explain KEY`, `config set … --accept-risk "why"` |
-| **What each part holds** | What each process holds and what running two together costs; what a role can be handed by a situation. | `quilzo boundary show\|credentials`, `standing list` |
+| **What a situation can hand somebody** | What a role can be handed by a situation, and what it cannot. | `quilzo standing list` |
 | **Isolated networks** | A classification marking, and paperwork for carrying an export across, checked on arrival. | `quilzo marking`, `transfer record\|verify` |
 | **Find anything** | A command palette over every screen, page, setting and type. | Ctrl K in the admin; `quilzo find WORDS` |
 | **Exit codes** | 3 when a gate refused, distinct from 1 when the command failed. | `--json` on every command |

@@ -122,6 +122,15 @@ func (t Template) CSS() string {
 // accident, and there is no gate a free-form stylesheet can be held to.
 func Components() string {
 	b, _ := assets.ReadFile("assets/components.css")
+	return string(b) + Backdrops()
+}
+
+// Backdrops is the part of the components a page opts into: a backdrop
+// behind a hero or a section, and a picture on a feature card. A file of its
+// own so that what it adds can be read apart from what was there, and a test
+// can hold every rule in it to a class only an opting-in page carries.
+func Backdrops() string {
+	b, _ := assets.ReadFile("assets/backdrop.css")
 	return string(b)
 }
 
@@ -131,6 +140,18 @@ func Components() string {
 // `template use` cannot disagree about what a site's stylesheet is. They used to
 // read a file each.
 func Stylesheet(th *theme.Theme) string {
+	return WithLayer(th, "")
+}
+
+// WithLayer is the stylesheet with a site's own style layer on top.
+//
+// The layer comes last, after everything this program generates, because it
+// is the site's own word on how the site looks: it is for what the tokens
+// cannot say, and it says it over the components rather than instead of
+// them. It must already have passed theme.CheckLayer — the caller holds it to
+// the rule, since only the caller knows which file it came from and has to
+// say why one was not served.
+func WithLayer(th *theme.Theme, layer string) string {
 	if th == nil {
 		th, _ = theme.New(nil, nil)
 	}
@@ -139,7 +160,12 @@ func Stylesheet(th *theme.Theme) string {
 	// query cannot read a custom property.
 	// The style's layer sits between: after the components it adjusts,
 	// before the arrangement that has to win over both.
-	return th.CSS() + "\n" + Components() + th.Preset() + th.Responsive()
+	css := th.CSS() + "\n" + Components() + th.Preset() + th.Responsive()
+	if layer == "" {
+		return css
+	}
+	return css + "\n/* style layer: this site's own " + theme.LayerFile +
+		", every colour a token (see quilzo theme check) */\n" + layer
 }
 
 // CSS is the default stylesheet: the shipped palette and the components.

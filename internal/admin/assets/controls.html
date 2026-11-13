@@ -31,13 +31,13 @@
   <p>{{.Statement}}</p>
   {{if .Customer}}<p><span class="param-k">Your part</span> {{.Customer}}</p>{{end}}
   {{if .Rules}}<p class="hint"><span class="param-k">Checked by</span> {{range $i, $r := .Rules}}{{if $i}}, {{end}}<a href="/security/rule/{{$r}}"><code>{{$r}}</code></a>{{end}}</p>{{end}}
-  {{if .Settings}}<p class="hint"><span class="param-k">Set by</span> {{range $i, $k := .Settings}}{{if $i}}, {{end}}<code>{{$k}}</code>{{end}} — <a href="/settings">Settings</a></p>{{end}}
+  {{if .Settings}}<p class="hint"><span class="param-k">Set by</span> {{range $i, $k := .Settings}}{{if $i}}, {{end}}<code>{{$k}}</code>{{end}} — {{if $.OpensSettings}}<a href="/settings">Settings</a>{{else}}Settings, which somebody who edits the site reads{{end}}</p>{{end}}
   {{if .Params}}<p class="hint"><span class="param-k">Parameters</span> {{range $i, $k := .Params}}{{if $i}}, {{end}}<code>{{$k}}</code>{{end}} — <a href="/security/parameters">Organisation policy</a></p>{{end}}
 </li>{{end}}</ul>
 {{end}}
 
 <h2 id="secure-by-design">Secure by Design</h2>
-<p>Where Quilzo stands on each goal of <a href="{{.PledgeURL}}" target="_blank" rel="noopener noreferrer">CISA's Secure by Design pledge{{template "newtab"}}</a>, with what is not done said as plainly as what is.</p>
+<p>Where Quilzo stands on each goal of <span class="nobreak"><a href="{{.PledgeURL}}" target="_blank" rel="noopener noreferrer">CISA's Secure by Design pledge{{template "newtab"}}</a>,</span> with what is not done said as plainly as what is.</p>
 <ul class="auto-list">{{range .Pledge}}<li class="auto-card">
   <div class="auto-head"><strong>{{.N}}. {{.Title}}</strong>
     {{if eq (print .Standing) "met"}}<span class="wf-band as-written good"><span class="wf-icon">{{icon "check_circle"}}</span>Met</span>

@@ -238,3 +238,26 @@ func TestItFindsEverySecretQuilzoMakes(t *testing.T) {
 		t.Errorf("a client id was taken for a secret: %v", spans)
 	}
 }
+
+// An inline handler was answered with "move the behaviour into a script file
+// served from this origin", and the site serves no script of anybody's: the
+// media library refuses .js, no route serves one, and the policy is
+// script-src 'none'. Advice nobody can follow sent people looking for a way
+// to upload JavaScript; the advice is what the site can do instead.
+func TestScanAdvisesOnlyWhatTheSiteCanServe(t *testing.T) {
+	f := has(scan(Template, `<button onclick="buy()">Buy</button>`), "xss.event-handler")
+	if f == nil {
+		t.Fatal("an inline handler was not found")
+	}
+	if !strings.Contains(f.Fix, "no script") || !strings.Contains(f.Fix, "a link, a form") {
+		t.Errorf("the advice for an inline handler: %s", f.Fix)
+	}
+	for _, r := range Rules() {
+		fix := strings.ToLower(r.Fix)
+		for _, impossible := range []string{"script file", "served from this origin", ".js"} {
+			if strings.Contains(fix, impossible) {
+				t.Errorf("%s advises %q, which the site can never serve: %s", r.ID, impossible, r.Fix)
+			}
+		}
+	}
+}

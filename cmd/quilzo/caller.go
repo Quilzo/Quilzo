@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -86,6 +88,10 @@ type Caller struct {
 	// the agent interface, when it is one (agentplatform.go): a model an
 	// operation asks is charged to it.
 	run *agent.Session
+	// runFor is the person who started that run, as its record names them
+	// (agentResume.startedBy): what an operation writes in the draft is
+	// written for them (writesFor).
+	runFor string
 }
 
 // tokenFile is preferred over the environment.
@@ -182,13 +188,78 @@ func resolveCaller(root, explicitToken string) *Caller {
 	}
 }
 
+// osUser is the name an unverified caller is recorded under: the
+// environment's, and failing that the operating-system account this runs
+// as, which is the one the store's ownership is checked against
+// (storeowner.go).
+//
+// It was the environment's or "unknown-operator", and under a service
+// manager or in a container none of $USER, $USERNAME and $LOGNAME is set,
+// so a risk accepted there was accepted by unknown-operator and the posture
+// scan named nobody. An account the system has no name for is named by its
+// number, as the refusal to start a server names it (storeowner_unix.go):
+// a container started as a user id its image has no entry for, as
+// `docker run --user 1000` and an OpenShift pod are, has no $USER and no
+// name to look up, and was unknown-operator though its id was right there.
+// unknown-operator is left for a system with no user ids at all.
 func osUser() string {
 	for _, k := range []string{"USER", "USERNAME", "LOGNAME"} {
 		if v := os.Getenv(k); v != "" {
 			return v
 		}
 	}
+	if u, err := currentAccount(); err == nil && u.Username != "" {
+		return u.Username
+	}
+	if uid := os.Geteuid(); uid >= 0 {
+		return "uid " + strconv.Itoa(uid)
+	}
 	return "unknown-operator"
+}
+
+// currentAccount is the operating-system account this runs as. A variable
+// so a test can run as an account the system has no name for.
+var currentAccount = user.Current
+
+// accepter is who a risk this caller accepts is recorded as accepted by:
+// their name, and for a name nobody checked, said to be one.
+//
+// An unverified name, from the environment or the operating system, was
+// recorded as plainly as one a token proved, so `config show` and the
+// posture scan said "accepted by kit" of whatever $USER said, which is the
+// unproven name described as established that resolveCaller exists to
+// prevent.
+func (c *Caller) accepter() string {
+	if c.Verified {
+		return c.Name
+	}
+	return c.Name + " (not verified)"
+}
+
+// recordedAs is who a change this caller makes is recorded as written by, and
+// the message it carries, for a command that takes a name to put on it
+// (--author): always the caller (writesFor), and a name other than theirs
+// kept in the message as a credit, which no rule reads.
+//
+// The name was the commit's author. `quilzo add --author lee`, run by dana,
+// recorded dana's change as lee's, and every rule about who wrote a change
+// reads the commit: with one approval asked, dana approved her own change as
+// though it were lee's, and it went live with nobody else having read it.
+// The audit record named dana all along. The flag stays, for when the words
+// are somebody else's, and they are credited for them.
+func (c *Caller) recordedAs(named, message string) (author, msg string) {
+	author = c.writesFor()
+	if named = strings.TrimSpace(named); named == "" || named == author {
+		return author, message
+	}
+	return author, message + " (" + credit(named) + ")"
+}
+
+// credit is how a name somebody gave for the words is kept beside what they
+// were recorded under (recordedAs): said in the message, or in a provenance
+// record's note, and believed by nothing.
+func credit(named string) string {
+	return "credit: " + named
 }
 
 // policyInUse reports whether anybody has been granted anything.

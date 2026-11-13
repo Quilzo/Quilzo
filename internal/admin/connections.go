@@ -41,6 +41,25 @@ type ConnectedAccount struct {
 	Provider  string
 	Scope     string
 	Connected time.Time
+	// Expires is when its tokens end, as far as is known: never a token.
+	Expires connect.Ends
+}
+
+// EndsSaid is when its tokens end, in words, in UTC as the screen's other
+// dates are.
+func (a ConnectedAccount) EndsSaid() string { return a.Expires.Said(time.UTC) }
+
+// Notice is what the screen says of a connection that stops working within
+// connect.ExpiryNotice of now, or has stopped; empty for any other.
+func (a ConnectedAccount) Notice(now time.Time) string {
+	if !a.Expires.LapsesSoon(now) {
+		return ""
+	}
+	at := a.Expires.Lapses().UTC()
+	if at.After(now) {
+		return "Connect it again before " + at.Format("2 Jan 2006 15:04 MST") + ": it stops working then."
+	}
+	return "It stopped working " + at.Format("2 Jan 2006") + ": connect it again."
 }
 
 func (s *Server) connectionsReady(w http.ResponseWriter, r *http.Request) (principal, bool) {
@@ -59,7 +78,7 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	data := map[string]any{"Nav": "accounts", "Title": "Connected accounts", "Principal": p,
+	data := map[string]any{"Nav": "accounts", "Title": "Your accounts", "Principal": p,
 		"Message": r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e")}
 	if s.Connections == nil || s.Connections.Providers == nil || s.Connections.Mine == nil {
 		data["Unavailable"] = "This build was started without connected accounts."
@@ -82,7 +101,7 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 	for _, a := range mine {
 		connected[a.Provider] = a
 	}
-	data["Providers"], data["Connected"] = providers, connected
+	data["Providers"], data["Connected"], data["Now"] = providers, connected, time.Now().UTC()
 	s.render(w, r, "connections.html", data)
 }
 

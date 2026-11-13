@@ -385,7 +385,7 @@ func (s *Server) handleScheduleAdd(w http.ResponseWriter, r *http.Request) {
 		s.pubRedirect(w, r, "", "there is no draft to schedule")
 		return
 	}
-	when, err := parseWhen(strings.TrimSpace(r.FormValue("when")), time.Now())
+	when, err := schedule.ParseWhen(strings.TrimSpace(r.FormValue("when")), time.Now())
 	if err != nil {
 		s.pubRedirect(w, r, "", err.Error())
 		return
@@ -394,20 +394,16 @@ func (s *Server) handleScheduleAdd(w http.ResponseWriter, r *http.Request) {
 	// Signed in, so verified: the publish goes out on this person's
 	// authority when it fires, checked again then.
 	who := schedule.Who{Name: p.Name, Kind: "human", Verified: true}
-	var refused error
-	if err := s.Publishing.UpdateSchedule(func(sch *schedule.Schedule) error {
-		refused = sch.Add(draft, when, who, note, time.Now())
-		return refused
-	}); err != nil {
-		if refused != nil {
+	if err := schedule.Queue(s.Publishing.UpdateSchedule, draft, when, who, note, time.Now()); err != nil {
+		var refused *schedule.Refused
+		if errors.As(err, &refused) {
 			s.pubRedirect(w, r, "", refused.Error())
 			return
 		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.auditPub(p, "schedule.add", "/", map[string]string{
-		"scheduled": draft, "at": when.UTC().Format(time.RFC3339), "note": note})
+	s.auditPub(p, "schedule.add", "/", schedule.Detail(draft, when, note, p.Name))
 	if s.Told != nil {
 		go s.Told("scheduled", draft, nil)
 	}
@@ -427,21 +423,15 @@ func (s *Server) handleScheduleCancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	commit := r.FormValue("commit")
-	errNone := errors.New("nothing pending matches " + shortHash(commit))
-	if err := s.Publishing.UpdateSchedule(func(sch *schedule.Schedule) error {
-		if !sch.Cancel(commit) {
-			return errNone
-		}
-		return nil
-	}); err != nil {
-		if errors.Is(err, errNone) {
-			s.pubRedirect(w, r, "", err.Error())
+	if err := schedule.Withdraw(s.Publishing.UpdateSchedule, commit); err != nil {
+		if errors.Is(err, schedule.ErrNothingPending) {
+			s.pubRedirect(w, r, "", "nothing pending matches "+shortHash(commit))
 			return
 		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.auditPub(p, "schedule.cancel", "/", map[string]string{"cancelled": commit})
+	s.auditPub(p, "schedule.cancel", "/", schedule.CancelDetail(commit, p.Name))
 	s.pubRedirect(w, r, "cancelled", "")
 }
 
@@ -486,25 +476,6 @@ func (s *Server) handleLockRelease(w http.ResponseWriter, r *http.Request) {
 	s.auditPub(p, "lock.release", "/"+page,
 		map[string]string{"held_by": holder})
 	s.pubRedirect(w, r, "released "+page, "")
-}
-
-// parseWhen accepts a timestamp or a duration.
-//
-// Both, because "in 48h" is what somebody types for an embargo and an absolute
-// time is what they type for a launch. Forcing one into the other is how a
-// scheduled publish goes out at the wrong hour.
-func parseWhen(s string, now time.Time) (time.Time, error) {
-	if t, err := time.Parse(time.RFC3339, s); err == nil {
-		return t, nil
-	}
-	if d, err := time.ParseDuration(s); err == nil {
-		if d <= 0 {
-			return time.Time{}, fmt.Errorf("%q is not in the future", s)
-		}
-		return now.Add(d), nil
-	}
-	return time.Time{}, fmt.Errorf(
-		"%q is neither a time (2026-09-01T09:00:00Z) nor a duration (48h)", s)
 }
 
 // publishWriterScoped is publishWriter for a handler that acts on one page and

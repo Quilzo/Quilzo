@@ -108,7 +108,7 @@ func Browser(a Assistant, ps []Passage, href func(Passage) string) BrowserKnowle
 			}
 		}
 		k.Passages = append(k.Passages, BrowserPassage{
-			ID: p.ID, Header: p.Header(), Href: href(p), Text: p.Text,
+			ID: p.ID, Header: p.Header(), Href: href(p), Text: quotable(p.Text),
 			Terms: tf, Len: n, Head: head,
 		})
 	}

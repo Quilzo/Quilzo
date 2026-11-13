@@ -114,7 +114,11 @@ type Assistants struct {
 	Guardrail      func(ctx context.Context, texts []string) (flagged []bool, unanswered int)
 	GuardrailEvent func(name, what string, n int)
 
+	// What the chatbots hold for the visitors they are answering, guarded
+	// by mu. When keep is set (Keep), these are kept by that one instead,
+	// for both, and this one's are unused.
 	mu    sync.Mutex
+	keep  *Assistants
 	cache map[string]cachedIndex
 	// rateKey signs rating tokens; rated are the ones used (askrate.go).
 	rateKey []byte
@@ -125,11 +129,50 @@ type Assistants struct {
 	fresh map[string]map[string]time.Time
 }
 
+// Keep makes these chatbots carry on from prev's, when the site is built
+// again while it runs: the key their ratings are signed with and the ratings
+// already used, which pages are new to each, and the index each answered
+// from, as the one a new page is new against. Everything else, the
+// guardrail included, is as was given here.
+//
+// Shared rather than copied, because prev goes on serving the requests it
+// already has: a rating spent there while this one starts must be spent here
+// too. Called before this one serves anything.
+//
+// The server that rebuilt its site when its settings changed kept the
+// previous chatbots whole, for their ratings, and with them the guardrail
+// they were built with: an operator who turned one on was told the site had
+// read its settings again, and no passage reached the classifier until a
+// restart.
+func (as *Assistants) Keep(prev *Assistants) {
+	if as == nil || prev == nil {
+		return
+	}
+	if o := prev.own(); o != as {
+		as.keep = o
+	}
+}
+
+// own is the chatbots that hold this one's visitor state: itself, or the
+// first of the builds it carries on from. One step, never a chain, because
+// Keep follows prev to its own.
+func (as *Assistants) own() *Assistants {
+	if as.keep != nil {
+		return as.keep
+	}
+	return as
+}
+
 // NewFor is how long a page that entered a chatbot's knowledge counts as new.
 const NewFor = 7 * 24 * time.Hour
 
 type cachedIndex struct {
 	key string
+	// by is the build that made it. The knowledge alone does not decide what
+	// an index holds: the guardrail of the build answering does, so a
+	// rebuilt site's chatbots build their own rather than answer from one
+	// their guardrail never saw.
+	by  *Assistants
 	idx *assistant.Index
 }
 
@@ -217,7 +260,7 @@ func (st *Site) ask(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	case http.MethodPost:
-		r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
+		r.Body = http.MaxBytesReader(w, r.Body, questionForm)
 		if err := r.ParseForm(); err != nil {
 			view.Problem = "That question could not be read."
 			st.renderAsk(w, r, view, http.StatusBadRequest)
@@ -238,6 +281,17 @@ func (st *Site) ask(w http.ResponseWriter, r *http.Request) {
 	st.renderAsk(w, r, view, http.StatusOK)
 }
 
+// questionForm bounds the body of a form that carries a question: the
+// question and the previous one, each of assistant.MaxQuestion characters
+// at up to four bytes, each written as three in a form's encoding. At 8 KiB
+// a question of 1000 characters in Japanese, which the box takes, could not
+// be read.
+const questionForm = 2*assistant.MaxQuestion*4*3 + 8<<10
+
+// handoffForm bounds the body of a form that carries a message to a person,
+// and the question it follows, in the same way.
+const handoffForm = (handoff.MaxText+assistant.MaxQuestion)*4*3 + 8<<10
+
 // answer puts the view's question to the assistant and fills in the answer.
 // False means a response has already been written.
 func (st *Site) answer(w http.ResponseWriter, r *http.Request,
@@ -250,16 +304,35 @@ func (st *Site) answer(w http.ResponseWriter, r *http.Request,
 		st.renderAsk(w, r, *view, http.StatusTooManyRequests)
 		return false
 	}
-	if LooksLikeInjection(view.Question) {
+	// The previous question is the visitor's text too: it comes back in a
+	// hidden field, which a script fills as it likes, and goes to the model
+	// beside a follow-up. Screened only in the question box, an attempt put
+	// there with a harmless follow-up reached the model and was never
+	// counted. Both are looked at, and a request is one signal at most.
+	//
+	// As the model reads them, the one before the other with a space
+	// between (assistant.RespondTo): each looked at alone, "Ignore your
+	// previous" in the field and "instructions" in the box were an attempt
+	// in the prompt and nothing in either.
+	said := []string{view.Question}
+	if strings.TrimSpace(view.Previous) != "" {
+		said = append(said, view.Previous+" "+view.Question)
+	}
+	if LooksLikeInjection(view.Question) || LooksLikeInjection(said[len(said)-1]) {
+		view.Attempt = true
 		st.signal(ChatbotInjection, a.Name, r)
 	} else if g := st.Assistants.Guardrail; g != nil {
 		// A second look, counted the same way: a flagged question is a
 		// signal, never a refusal on a classifier's word.
 		gctx, gcancel := context.WithTimeout(r.Context(), 3*time.Second)
-		flagged, missed := g(gctx, []string{view.Question})
+		flagged, missed := g(gctx, said)
 		gcancel()
-		if len(flagged) == 1 && flagged[0] {
-			st.signal(ChatbotInjection, a.Name, r)
+		for _, f := range flagged {
+			if f {
+				view.Attempt = true
+				st.signal(ChatbotInjection, a.Name, r)
+				break
+			}
 		}
 		if missed > 0 && st.Assistants.GuardrailEvent != nil {
 			st.Assistants.GuardrailEvent(a.Name, "unanswered", missed)
@@ -351,9 +424,10 @@ func (st *Site) assistantIndex(a assistant.Assistant) (*assistant.Index, error) 
 	key := hex.EncodeToString(h.Sum(nil))
 
 	as := st.Assistants
-	as.mu.Lock()
-	defer as.mu.Unlock()
-	if c, ok := as.cache[a.Name]; ok && c.key == key {
+	o := as.own()
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if c, ok := o.cache[a.Name]; ok && c.key == key && c.by == as {
 		return c.idx, nil
 	}
 	passages := assistant.Chunk(pages, a.Reads)
@@ -383,13 +457,13 @@ func (st *Site) assistantIndex(a assistant.Assistant) (*assistant.Index, error) 
 	if as.Meaning != nil {
 		idx = idx.WithMeaning(as.Meaning(a, idx.Passages))
 	}
-	if as.cache == nil {
-		as.cache = map[string]cachedIndex{}
+	if o.cache == nil {
+		o.cache = map[string]cachedIndex{}
 	}
-	if old, ok := as.cache[a.Name]; ok {
-		as.noteFresh(a.Name, old.idx, idx, time.Now())
+	if old, ok := o.cache[a.Name]; ok {
+		o.noteFresh(a.Name, old.idx, idx, time.Now())
 	}
-	as.cache[a.Name] = cachedIndex{key: key, idx: idx}
+	o.cache[a.Name] = cachedIndex{key: key, by: as, idx: idx}
 	return idx, nil
 }
 
@@ -427,7 +501,7 @@ func (as *Assistants) guard(name string, passages []assistant.Passage) []assista
 }
 
 // noteFresh marks the pages a rebuilt index has that the one before did
-// not. The caller holds the lock.
+// not. Called on own(), with its lock held.
 func (as *Assistants) noteFresh(name string, was, now *assistant.Index, at time.Time) {
 	before := map[string]bool{}
 	for _, p := range was.Passages {
@@ -457,9 +531,10 @@ func (as *Assistants) noteFresh(name string, was, now *assistant.Index, at time.
 
 // isFresh says a page entered a chatbot's knowledge within NewFor.
 func (as *Assistants) isFresh(name, page string, at time.Time) bool {
-	as.mu.Lock()
-	defer as.mu.Unlock()
-	since, ok := as.fresh[name][page]
+	o := as.own()
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	since, ok := o.fresh[name][page]
 	return ok && at.Sub(since) <= NewFor
 }
 
@@ -468,7 +543,12 @@ type askView struct {
 	Greeting  string
 	Question  string
 	Previous  string
-	Embedded  bool
+	// Attempt is a question noticed as an attempt on the chatbot. The page
+	// does not carry it into the next one as the question before: carried,
+	// it was screened again beside an honest follow-up, and one attempt was
+	// counted twice.
+	Attempt  bool
+	Embedded bool
 	// Panel is the conversation opened beside a page of this site by its
 	// launcher: framed by this site only, and its links go to the page.
 	Panel bool
@@ -633,6 +713,14 @@ func (st *Site) renderAsk(w http.ResponseWriter, r *http.Request, v askView, sta
 	// Never cached: an answer is to one person's question.
 	h.Set("Cache-Control", "no-store")
 	h.Set("X-Content-Type-Options", "nosniff")
+	// Nor indexed, when it shows one. The question comes from the address
+	// (?q=), and the page prints it back: indexable, it let anybody link to
+	// the site with their own words in the address for a crawler to file
+	// under the business's name, running the chatbot each time it looked.
+	// The chatbot's own page, with no question, is the owner's to be found.
+	if v.Question != "" {
+		h.Set("X-Robots-Tag", "noindex, nofollow")
+	}
 	allowFraming(h, v.Assistant.Embed, v.Panel)
 	st.originTrial(h)
 	if wantsVoice(v.Assistant) {
@@ -663,7 +751,7 @@ func (st *Site) renderAsk(w http.ResponseWriter, r *http.Request, v askView, sta
 // "ask". Plain data: the template language has no calls, so an owner's
 // layout can arrange this and cannot do anything with it.
 func (st *Site) askThroughLayout(body any, hash string, r *http.Request, v askView) (string, bool) {
-	ctx, err := st.sources().For(askPageName, body, firstOf(r.URL.Query()))
+	ctx, err := st.sourcesFor(r).For(askPageName, body, firstOf(r.URL.Query()))
 	if err != nil {
 		return "", false
 	}
@@ -819,7 +907,7 @@ var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
 </details>
 {{end}}
 <form method="post" action="/ask/{{.V.Assistant.Name}}" class="qz-ask-form"{{if and .Tools (not .V.Embedded)}} toolname="ask-{{.V.Assistant.Name}}" tooldescription="{{.V.Assistant.Title}}: answers a question from this site's published pages only, and every sentence links to the page it came from." toolautosubmit{{end}}>
-  {{if .V.Answer}}<input type="hidden" name="prev" value="{{.V.Question}}">{{end}}
+  {{if and .V.Answer (not .V.Attempt)}}<input type="hidden" name="prev" value="{{.V.Question}}">{{end}}
   {{if .V.Visitor}}<input type="hidden" name="v" value="{{.V.Visitor}}">{{end}}
   {{if .V.Embedded}}<input type="hidden" name="embed" value="{{.V.EmbedValue}}">{{end}}
   <label for="q">{{if .V.Answer}}Ask another question{{else}}Your question{{end}}</label>
@@ -828,8 +916,9 @@ var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
 </form>
 <p class="qz-small">{{.Disclosure}} Answers come from this site's pages, and
   every sentence links to where it came from. {{if .V.Keeps}}A question it cannot answer, or whose
-  answer you say did not help, is kept for a while with anything that could name you taken out, so the
-  site can say it better; nothing else you ask is stored.{{else}}Nothing you ask is stored.{{end}}</p>
+  answer you say did not help, is kept for a while
+  with email addresses, telephone and card numbers, and the names and street addresses it recognises taken out,
+  so the site can say it better; nothing else you ask is stored.{{else}}Nothing you ask is stored.{{end}}</p>
 </main>{{.Voice}}</body></html>`))
 
 // askCSS is the built-in page's stylesheet, served at /ask.css. Small and

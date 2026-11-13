@@ -4,12 +4,14 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
 
+	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/site"
 )
 
@@ -137,5 +139,74 @@ func TestAGateThatCannotRunRefuses(t *testing.T) {
 	}
 	if !strings.Contains(gerr.Error(), "could not run") {
 		t.Errorf("the error does not say the check could not run: %v", gerr)
+	}
+}
+
+// A page that reaches its expires date while live, as it was told to, does
+// not stop the next publish of something else.
+//
+// The expiry gate read every page in the draft, so once an offer's date had
+// passed every later publish, of a blog post or a price, was refused with
+// "oldoffer expired ..., so publishing it would put up a page nobody can
+// see", until somebody edited or removed a page that was doing exactly what
+// it was set to. A page the publish puts up or changes is still refused.
+func TestAPageThatExpiresWhileLiveDoesNotStopTheNextPublish(t *testing.T) {
+	root := newStoreWithDraft(t)
+	dir := t.TempDir()
+	put := func(name, body string) {
+		t.Helper()
+		file := filepath.Join(dir, name+".json")
+		if err := os.WriteFile(file, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := runCmd(t, root, "add", name+"="+file, "-m", name); err != nil {
+			t.Fatal(err)
+		}
+		if err := runCmd(t, root, "provenance", "set", name, "--source", "humanEdits", "--author", "someone"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := runCmd(t, root, "provenance", "set", "index", "--source", "humanEdits", "--author", "someone"); err != nil {
+		t.Fatal(err)
+	}
+	// Live while its window was open, which a test cannot wait for: put
+	// live as it stood then, and its date is now in the past.
+	put("oldoffer", `{"title":"Old offer","body":"Ten per cent off.","expires":"2026-01-01T00:00:00Z"}`)
+	s, err := open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Publish(s, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	put("post", `{"title":"A new post","body":"Something unrelated."}`)
+	if err := runPublish(t, root, "--no-a11y-check"); err != nil {
+		t.Fatalf("a page that expired on schedule stopped an unrelated publish: %v", err)
+	}
+
+	// Changed, and still past its date: that would put up a page nobody
+	// can see, and is refused, naming it.
+	refused := func() string {
+		t.Helper()
+		old := w
+		defer func() { w = old }()
+		var buf bytes.Buffer
+		w = out.New(false)
+		w.Out = &buf
+		if err := runPublish(t, root, "--no-a11y-check"); err == nil || !strings.Contains(err.Error(), "already past the date") {
+			t.Fatalf("published a page already past its date: %v\n%s", err, buf.String())
+		}
+		return buf.String()
+	}
+	put("oldoffer", `{"title":"Old offer","body":"Fifteen per cent off.","expires":"2026-01-01T00:00:00Z"}`)
+	if said := refused(); !strings.Contains(said, "oldoffer expired") {
+		t.Fatalf("the refusal does not name the changed page:\n%s", said)
+	}
+	// And so is a new one, and only it.
+	put("oldoffer", `{"title":"Old offer","body":"Ten per cent off.","expires":"2026-01-01T00:00:00Z"}`)
+	put("lateoffer", `{"title":"Late offer","body":"Gone already.","expires":"2026-02-01T00:00:00Z"}`)
+	if said := refused(); !strings.Contains(said, "lateoffer expired") || strings.Contains(said, "oldoffer expired") {
+		t.Fatalf("the refusal of a new page already past its date says:\n%s", said)
 	}
 }

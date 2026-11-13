@@ -7,9 +7,11 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/decide"
 )
@@ -70,5 +72,107 @@ func TestOnlyAPublisherDeclaresADecider(t *testing.T) {
 		`{"name": "t", "title": "T", "questions": [{"name": "q", "ask": "?", "kind": "yesno"}]}`}})
 	if len(set.Deciders) != 0 {
 		t.Fatal("an author declared a decider")
+	}
+}
+
+// Trying a decider on the screen is asking it, and what it answered is
+// handed on to be recorded, with who asked: an answer given on the
+// Decisions screen left no trace of what was decided or by whom.
+func TestADecisionTriedOnTheScreenIsHandedOnToBeRecorded(t *testing.T) {
+	srv, token := setup(t)
+	d, _ := decidersRig()
+	type ask struct {
+		by    string
+		res   decide.Result
+		state any
+	}
+	var asked []ask
+	d.Asked = func(by string, res decide.Result, state any) { asked = append(asked, ask{by, res, state}) }
+	srv.Deciders = d
+	decl := `{"name": "ticket", "title": "Ticket triage", "questions": [
+	  {"name": "queue", "ask": "Which team?", "kind": "choice", "options": ["billing", "returns"]}]}`
+	if w := decideForm(t, srv, "/decisions/save", token, url.Values{"declaration": {decl}}); w.Code != http.StatusSeeOther {
+		t.Fatal(w.Code)
+	}
+	decideForm(t, srv, "/decisions/ticket", token, url.Values{"state": {`{"body": "refund"}`}})
+	if len(asked) != 1 || asked[0].by == "" || asked[0].res.Decider != "ticket" {
+		t.Fatalf("handed on %+v", asked)
+	}
+	if a, _ := asked[0].res.Get("queue"); a.Value != "returns" {
+		t.Errorf("the answer handed on is %+v", asked[0].res)
+	}
+	if m, _ := asked[0].state.(map[string]any); m["body"] != "refund" {
+		t.Errorf("the state handed on is %v", asked[0].state)
+	}
+	// A state that is not JSON is not asked about, and nothing is handed on.
+	decideForm(t, srv, "/decisions/ticket", token, url.Values{"state": {`not json`}})
+	if len(asked) != 1 {
+		t.Errorf("%d asks handed on", len(asked))
+	}
+}
+
+// The Decisions screen says what a confidence is, as decide.Decide reports
+// it.
+//
+// Its lead said "Confidence is not the model's word for it", while the
+// package reports the lower of the model's stated confidence and how far
+// the asks agreed. A model that says 0.4 and never changes its answer is
+// shown a confidence of 0.40 beside an agreement of 1.00, and a person who
+// had read that sentence would take the 0.40 for asks that disagreed. The
+// MCP decide tool said the same and was corrected; this is the screen.
+func TestTheDecisionsScreenSaysWhatConfidenceIs(t *testing.T) {
+	srv, token := setup(t)
+	d, _ := decidersRig()
+	srv.Deciders = d
+	decl := `{"name": "ticket", "title": "Ticket triage", "questions": [
+	  {"name": "angry", "ask": "Angry?", "kind": "yesno"}]}`
+	if w := decideForm(t, srv, "/decisions/save", token, url.Values{"declaration": {decl}}); w.Code != http.StatusSeeOther {
+		t.Fatalf("declaring: %d", w.Code)
+	}
+	// decidesReturns says "yes" at 0.4, every time it is asked.
+	tried := decideForm(t, srv, "/decisions/ticket", token, url.Values{"state": {`{"body": "refund"}`}}).Body.String()
+	row := regexp.MustCompile(`(?s)<code>angry</code>.*?</tr>`).FindString(tried)
+	if !strings.Contains(row, "0.40") || !strings.Contains(row, "<td>1.00</td>") {
+		t.Fatalf("a steady model stating 0.4 is not shown a confidence of 0.40 and an agreement of 1.00: %s", row)
+	}
+
+	lead := regexp.MustCompile(`(?s)<p class="lead">(.*?)</p>`).FindStringSubmatch(get(t, srv, "/decisions", token).Body.String())
+	if lead == nil {
+		t.Fatal("the Decisions screen has no lead")
+	}
+	for _, want := range []string{"lower", "stated", "agree"} {
+		if !strings.Contains(lead[1], want) {
+			t.Errorf("the lead does not say %q, so it misdescribes that 0.40: %q", want, lead[1])
+		}
+	}
+	if strings.Contains(lead[1], "not the model's word for it") {
+		t.Errorf("the lead says the model's word plays no part, and it does: %q", lead[1])
+	}
+}
+
+// The Decisions and Chatbots screens say when each was last evaluated and
+// on which model, since what an evaluation found holds only for the model
+// it measured. Neither said anything of either, and a decider's
+// evaluation was not kept at all.
+func TestTheDecisionsAndChatbotsScreensSayWhatWasMeasured(t *testing.T) {
+	srv, token := setup(t)
+	d, set := decidersRig()
+	set.Deciders = []decide.Decider{{Name: "ticket", Title: "Ticket triage"}, {Name: "spam", Title: "Spam"}}
+	d.Measured = func(name string) string {
+		if name == "ticket" {
+			return "measured on model-a (route main), 6 Oct 2026"
+		}
+		return ""
+	}
+	srv.Deciders = d
+	body := get(t, srv, "/decisions", token).Body.String()
+	if !strings.Contains(body, "<td>measured on model-a (route main), 6 Oct 2026</td>") || !strings.Contains(body, `<span class="hint">never</span>`) {
+		t.Errorf("the Decisions screen does not say what was measured:\n%s", firstLines(body[strings.Index(body, "<table"):], 12))
+	}
+	f := &fakeAssistants{set: &assistant.Set{Assistants: []assistant.Assistant{{Name: "help", Title: "Help"}}}}
+	srv.Assistants = f.wire()
+	srv.Assistants.Measured = func(string) string { return "measured on model-b, 7 Oct 2026" }
+	if body := get(t, srv, "/assistants", token).Body.String(); !strings.Contains(body, "<td>measured on model-b, 7 Oct 2026</td>") {
+		t.Errorf("the Chatbots screen does not say what was measured:\n%s", firstLines(body[strings.Index(body, "<table"):], 12))
 	}
 }

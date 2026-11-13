@@ -4,12 +4,15 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http/httptest"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -17,20 +20,32 @@ import (
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/dual"
+	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/pay"
 	"github.com/quilzo/quilzo/internal/render"
 )
 
-// shopProvider is a payment provider in memory.
+// shopProvider is a payment provider in memory. Its key is in test mode
+// until live is set; like Stripe, a key sells through and sees only the
+// links made in its own mode.
 type shopProvider struct {
 	n       int
 	made    []pay.Offer
 	retired []string
 	orders  []pay.Order
 	fail    error
+	live    bool
+	modes   map[string]string
 }
 
 func (p *shopProvider) Name() string { return pay.ProviderStripe }
+
+func (p *shopProvider) Mode() string {
+	if p.live {
+		return pay.ModeLive
+	}
+	return pay.ModeTest
+}
 
 func (p *shopProvider) Make(_ context.Context, o pay.Offer, _ pay.Options) (pay.Link, error) {
 	if p.fail != nil {
@@ -38,8 +53,13 @@ func (p *shopProvider) Make(_ context.Context, o pay.Offer, _ pay.Options) (pay.
 	}
 	p.n++
 	p.made = append(p.made, o)
+	ref := fmt.Sprintf("plink_%d", p.n)
+	if p.modes == nil {
+		p.modes = map[string]string{}
+	}
+	p.modes[ref] = p.Mode()
 	return pay.Link{Offer: o, URL: fmt.Sprintf("https://buy.stripe.com/t_%d", p.n), Provider: pay.ProviderStripe,
-		Ref: fmt.Sprintf("plink_%d", p.n), Made: time.Now()}, nil
+		Ref: ref, Made: time.Now(), Mode: p.Mode()}, nil
 }
 
 func (p *shopProvider) Retire(_ context.Context, l pay.Link) error {
@@ -48,6 +68,19 @@ func (p *shopProvider) Retire(_ context.Context, l pay.Link) error {
 	}
 	p.retired = append(p.retired, l.Ref)
 	return nil
+}
+
+func (p *shopProvider) Selling(context.Context) (map[string]bool, error) {
+	if p.fail != nil {
+		return nil, p.fail
+	}
+	out := map[string]bool{}
+	for ref, mode := range p.modes {
+		if mode == p.Mode() && !slices.Contains(p.retired, ref) {
+			out[ref] = true
+		}
+	}
+	return out, nil
 }
 
 func (p *shopProvider) Orders(context.Context, int) ([]pay.Order, error) { return p.orders, nil }
@@ -129,11 +162,10 @@ func reprice(t *testing.T, root, slug string, price int) {
 	for _, r := range idx.Records {
 		if r.Fields["slug"] == slug {
 			r.Fields["price"] = float64(price)
-			next, _, err := collection.PutMany(s, tree, "products", []collection.Record{{ID: r.ID, Fields: r.Fields}}, time.Now())
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := commitTree(root, s, next, "reprice "+slug, "dana"); err != nil {
+			if err := commitTree(s, "dana", func(tree string) (string, string, error) {
+				next, _, err := collection.PutMany(s, tree, "products", []collection.Record{{ID: r.ID, Fields: r.Fields}}, time.Now())
+				return next, "reprice " + slug, err
+			}); err != nil {
 				t.Fatal(err)
 			}
 			return
@@ -269,6 +301,59 @@ func TestAShopSellsAtExactlyThePublishedPrice(t *testing.T) {
 		if l.Live() {
 			t.Fatalf("%s still sells with payments off", l.ID)
 		}
+	}
+}
+
+// A shop given its live key sells through links the live key made.
+//
+// A link was taken as selling for as long as its price was unchanged, so a
+// shop set up on a test key and then given its live key kept every Buy
+// button on test-mode checkout, where real cards are refused: pay sync said
+// the links matched, and pay status counted them all as selling.
+func TestALiveKeySellsThroughLinksTheLiveKeyMade(t *testing.T) {
+	root, prov := shopStore(t)
+	if on, err := requestPay(root, dual.PayChange{Provider: pay.ProviderStripe}, "", asAdmin("dana")); err != nil || !on {
+		t.Fatalf("turning payments on: %v %v", on, err)
+	}
+	made, _, err := syncPay(root, asAdmin("dana"))
+	if err != nil || len(made) == 0 {
+		t.Fatalf("the first sync made %d: %v", len(made), err)
+	}
+	testLinks := map[string]bool{}
+	for _, l := range made {
+		testLinks[l.URL] = true
+	}
+
+	prov.live = true
+	old := w
+	t.Cleanup(func() { w = old })
+	status := func() map[string]any {
+		t.Helper()
+		var buf bytes.Buffer
+		w = out.New(true)
+		w.Out = &buf
+		err := payStatus(root)
+		w = old
+		var doc map[string]any
+		if err != nil || json.Unmarshal(buf.Bytes(), &doc) != nil {
+			t.Fatalf("pay status: %v\n%s", err, buf.String())
+		}
+		return doc
+	}
+	if st := status(); st["live_links"] != 0.0 || st["to_make"] != float64(len(made)) || st["to_retire"] != float64(len(made)) {
+		t.Fatalf("with the live key and only test links, the status says %v", st)
+	}
+	again, retired, err := syncPay(root, asAdmin("dana"))
+	if err != nil || len(again) != len(made) || len(retired) != len(made) {
+		t.Fatalf("with the live key a sync made %d and retired %d: %v", len(again), len(retired), err)
+	}
+	for slug, v := range shopPage(t, root) {
+		if testLinks[v[1]] {
+			t.Errorf("%s's Buy button still goes to the test-mode link %s", slug, v[1])
+		}
+	}
+	if st := status(); st["live_links"] != float64(len(made)) || st["to_make"] != 0.0 || st["to_retire"] != 0.0 {
+		t.Fatalf("after the sync the status says %v", st)
 	}
 }
 

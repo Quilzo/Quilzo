@@ -143,6 +143,9 @@ func cmdGateway(root string, args []string) error {
 	}
 	switch args[0] {
 	case "status":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return gatewayStatus(root)
 	case "route":
 		return gatewayRoute(root, args[1:])
@@ -174,6 +177,13 @@ func gatewayStatus(root string) error {
 		return err
 	}
 	if gw == nil {
+		// Under --json, the document a declared gateway answers with, and
+		// empty: no routes, and nothing spent through one today. This wrote
+		// only through Human, so a script asking where model calls go was
+		// answered with nothing and exit 0.
+		if w.JSON(map[string]any{"routes": []gateway.Health{}, "today": []gateway.Spend{}}) {
+			return nil
+		}
 		w.Human("no gateway declared; every model call goes to the one model " +
 			"in QUILZO_MODEL_URL.\n  add a route with quilzo gateway route add NAME --url U --model M\n")
 		return nil
@@ -183,7 +193,16 @@ func gatewayStatus(root string) error {
 		return err
 	}
 	spend := ledger.Summary(*cfg, time.Now())
-	if w.JSON(map[string]any{"routes": gw.Health(), "today": spend}) {
+	routes := gw.Health()
+	// An empty list is [] here too, not null, so the two answers have one
+	// shape.
+	if routes == nil {
+		routes = []gateway.Health{}
+	}
+	if spend == nil {
+		spend = []gateway.Spend{}
+	}
+	if w.JSON(map[string]any{"routes": routes, "today": spend}) {
 		return nil
 	}
 	w.Human("%sroutes, in fallback order%s\n", bold, reset)
@@ -317,7 +336,7 @@ func gatewayRoute(root string, args []string) error {
 	keySecret := fs.String("key-secret", "", "the sealed credential holding the key (quilzo secret set NAME)")
 	var provParams multiFlag
 	fs.Var(&provParams, "param", "a provider's parameter, name=value (an Azure resource, an AWS region)")
-	if err := fs.Parse(args[2:]); err != nil {
+	if err := parseFlags(fs, args[2:], nil, 0); err != nil {
 		return err
 	}
 	params, err := routeParams(*maxField, *temperature, *topP, *timeout, *autoTool)
@@ -425,7 +444,7 @@ func gatewayBudget(root string, args []string) error {
 	moneyDay := fs.String("money-per-day", "", "spending a day, in the gateway's currency, like 5.00")
 	moneyMonth := fs.String("money-per-month", "", "spending a calendar month, in the gateway's currency")
 	drop := fs.Bool("remove", false, "remove this caller's budget")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -679,6 +698,11 @@ func providerMaxTokens(root string, r gateway.Route) string {
 
 // gatewayProviders lists the providers a route can name, or one of them.
 func gatewayProviders(root string, args []string) error {
+	// One provider, or all of them: a second was not read.
+	args, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	cat, err := loadProviders(root)
 	if err != nil {
 		return err

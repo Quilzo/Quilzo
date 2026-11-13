@@ -303,7 +303,7 @@ func buildFleet(root string, days int, now time.Time) (fleet.View, error) {
 	touch := func(id, kind, name string, at time.Time) {
 		v.Touch(id, kind, name, at)
 	}
-	if events, err := audit.Read(auditPath(root)); err == nil {
+	if events, err := auditEntries(root); err == nil {
 		for _, e := range events {
 			at, err := time.Parse(time.RFC3339, e.At)
 			if err != nil || at.Before(since) {
@@ -412,7 +412,7 @@ func recentUsage(root string, since time.Time) []gateway.Usage {
 // shadowAI is agents' own programs reaching AI services directly, from the
 // log's records of where each reached (agent.egress).
 func shadowAI(root string, since, now time.Time) []fleet.Sighting {
-	recs, err := audit.Read(auditPath(root))
+	recs, err := auditEntries(root)
 	if err != nil {
 		return nil
 	}
@@ -438,7 +438,7 @@ func cmdFleet(root string, args []string) error {
 			fs := flag.NewFlagSet("fleet add", flag.ContinueOnError)
 			name := fs.String("name", "", "what it is called here")
 			pos, rest := leadingArgs(args[1:], 1)
-			if err := fs.Parse(rest); err != nil {
+			if err := parseFlags(fs, rest, &pos, 1); err != nil {
 				return err
 			}
 			if len(pos) != 1 {
@@ -456,9 +456,18 @@ func cmdFleet(root string, args []string) error {
 			}
 			return fleetUnregister(root, args[1], resolveCaller(root, flagToken))
 		case "check":
+			if err := noArguments(args[1:]); err != nil {
+				return err
+			}
 			changed, err := fleetCheck(root, time.Now())
 			if err != nil {
 				return err
+			}
+			// The agents whose cards changed, under --json. This wrote only
+			// through Human, so a script asking whether any card had changed
+			// was answered with nothing and exit 0.
+			if w.JSON(map[string]any{"changed": changed}) {
+				return nil
 			}
 			if len(changed) == 0 {
 				w.Human("no registered agent's card has changed\n")
@@ -470,7 +479,7 @@ func cmdFleet(root string, args []string) error {
 		case "shadow":
 			fs := flag.NewFlagSet("fleet shadow", flag.ContinueOnError)
 			days := fs.Int("days", 30, "how far back")
-			if err := fs.Parse(args[1:]); err != nil {
+			if err := parseFlags(fs, args[1:], nil, 0); err != nil {
 				return err
 			}
 			now := time.Now()
@@ -492,7 +501,7 @@ func cmdFleet(root string, args []string) error {
 	}
 	fs := flag.NewFlagSet("fleet", flag.ContinueOnError)
 	days := fs.Int("days", 30, "how far back calls are read")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	v, err := buildFleet(root, *days, time.Now())

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1088,4 +1089,56 @@ func decideForm(t *testing.T, srv *Server, path, token string, form url.Values) 
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 	return w
+}
+
+// A page that reaches its expires date while live, as it was told to, is
+// not a gate the next publish has to be given a reason to clear.
+//
+// The check read every page in the draft, so once an offer's date had
+// passed every later publish from this screen, of anything, was refused as
+// "1 page already past the date it stops being public" until somebody wrote
+// a reason or removed a page that was doing what it was set to. A page the
+// publish puts up or changes past its date is still caught.
+func TestAPageThatExpiredWhileLiveIsNotAWaiverForTheNextPublish(t *testing.T) {
+	srv, _ := setup(t)
+	p := principal{Name: "editor", Role: auth.RoleAdmin, Scope: "/"}
+	pages, err := site.PagesAt(srv.Store, site.RefDraft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Live while its window was open: its date is now in the past.
+	pages["oldoffer"] = map[string]any{"title": "Old offer", "body": "Ten per cent off.", "expires": "2026-01-01T00:00:00Z"}
+	if _, err := site.SaveDraft(srv.Store, pages, "an offer", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Publish(srv.Store, ""); err != nil {
+		t.Fatal(err)
+	}
+	waivedFor := func(change func(map[string]any)) []string {
+		t.Helper()
+		next := map[string]any{}
+		for k, v := range pages {
+			next[k] = v
+		}
+		change(next)
+		draft, err := site.SaveDraft(srv.Store, next, "next", "test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		waived, refusal := srv.publishChecks(p, draft, "a reason for whatever needs one")
+		if refusal != nil {
+			t.Fatalf("refused: %+v", refusal)
+		}
+		return waived
+	}
+	if waived := waivedFor(func(m map[string]any) {
+		m["post"] = map[string]any{"title": "A new post", "body": "Something unrelated."}
+	}); slices.Contains(waived, "expired-pages") {
+		t.Fatalf("a page that expired on schedule had to be waived to publish a post: %v", waived)
+	}
+	if waived := waivedFor(func(m map[string]any) {
+		m["oldoffer"] = map[string]any{"title": "Old offer", "body": "Fifteen per cent off.", "expires": "2026-01-01T00:00:00Z"}
+	}); !slices.Contains(waived, "expired-pages") {
+		t.Fatalf("a changed page already past its date was not caught: %v", waived)
+	}
 }

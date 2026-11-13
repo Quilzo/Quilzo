@@ -22,10 +22,20 @@
 // A font is not markup and a browser does not execute it, but font parsers are
 // a historically rich source of memory-safety bugs and the honest position is
 // that this program cannot audit one. What it can do is refuse anything that is
-// not what it claims: the WOFF2 signature is checked, the length field has to
-// agree with the file, the size is bounded, and the name has to be a name. An
-// operator putting a font here is making a decision about their own readers;
-// this makes sure they are making it about a font.
+// not what it claims: the signature is checked, the length field has to agree
+// with the file, the size is bounded, and the name has to be a name. A WOFF 1.0
+// file is read further, because it can be: every table is inflated and the
+// tables a browser needs are looked for (woff.go). An operator putting a font
+// here is making a decision about their own readers; this makes sure they are
+// making it about a font.
+//
+// # Why WOFF 1.0 as well as WOFF2
+//
+// Because WOFF2's tables are Brotli and the standard library has no Brotli, so
+// nothing here could make one, and a customer whose foundry sent a .ttf or an
+// .otf had no way in. WOFF 1.0 is zlib, which the standard library has, and
+// `quilzo theme font add` writes one from either (Convert). Every browser that
+// reads WOFF2 reads WOFF too.
 //
 // # Why the filename is the contract
 //
@@ -33,7 +43,9 @@
 // the style, because a manifest is a second place for the truth to live and the
 // first thing to go stale when somebody adds a file. Satoshi.woff2 is the family
 // Satoshi across the full variable range; Satoshi-600.woff2 is one weight;
-// Satoshi-400-700.woff2 is a range; Satoshi-italic.woff2 is the italic.
+// Satoshi-400-700.woff2 is a range, and so is Satoshi-400..700.woff2;
+// Satoshi-italic.woff2 is the italic. The same names with .woff are the same
+// faces in WOFF 1.0.
 package webfont
 
 import (
@@ -57,7 +69,7 @@ import (
 // discovering it in somebody's field report.
 const MaxBytes = 512 << 10
 
-// signature is the WOFF2 magic: "wOF2".
+// signature is the WOFF2 magic: "wOF2". WOFF 1.0's is in woff.go.
 var signature = []byte{0x77, 0x4F, 0x46, 0x32}
 
 // A family name has to be a name. It lands in a CSS font-family value and in a
@@ -75,6 +87,9 @@ type Face struct {
 	Weight string
 	// Style is "normal" or "italic".
 	Style string
+	// Format is "woff2" or "woff", what the browser is told in @font-face
+	// and in the Content-Type, so it does not have to guess.
+	Format string
 	// Bytes is the file, held in memory. Fonts are small and read once, and a
 	// per-request read would be a filesystem call on the hot path for a file
 	// that never changes while the process is running.
@@ -90,7 +105,7 @@ type Set struct {
 	Warnings []string
 }
 
-// Load reads every .woff2 in a directory.
+// Load reads every .woff2 and .woff in a directory.
 //
 // A missing directory is not an error: most sites have no fonts of their own and
 // the built-in stacks are a complete answer. An unreadable one is, because that
@@ -127,11 +142,8 @@ func Load(dir string) (*Set, error) {
 			// produces a warning.
 			continue
 		}
-		if !strings.HasSuffix(strings.ToLower(name), ".woff2") {
-			set.Warnings = append(set.Warnings, fmt.Sprintf(
-				"%s is not a .woff2 and was not served. WOFF2 only: it is the "+
-					"one format every browser in use reads, so shipping a "+
-					"second is bytes nobody downloads", name))
+		if formatOf(name) == "" {
+			set.Warnings = append(set.Warnings, notServed(dir, name))
 			continue
 		}
 		b, rerr := os.ReadFile(filepath.Join(dir, name))
@@ -149,10 +161,36 @@ func Load(dir string) (*Set, error) {
 	return set, nil
 }
 
+// notServed says why a file in the fonts directory is not served, and for a
+// TrueType or OpenType file what makes it one.
+//
+// It named the command with the bare filename, `quilzo theme font add
+// Aster.ttf`, which is run from the site's directory and does not find a
+// file that is in templates/fonts/. So the path is the one the directory was
+// read from, with --dir when that is not the default; and since the source
+// stays where it is after the WOFF is written beside it, and goes on being
+// "not served" every time the directory is read, it says the source may be
+// moved out.
+func notServed(dir, name string) string {
+	msg := name + " is not a .woff2 or a .woff and was not served."
+	ext := strings.ToLower(filepath.Ext(name))
+	if ext != ".ttf" && ext != ".otf" {
+		return msg
+	}
+	cmd := "quilzo theme font add " + filepath.Join(dir, name)
+	if filepath.Base(dir) == "fonts" {
+		if tpl := filepath.Dir(dir); tpl != "templates" {
+			cmd += " --dir " + tpl
+		}
+	}
+	return msg + " A browser is sent a WOFF, and " + cmd + " writes one beside it; the " +
+		ext + " can then be moved out of " + dir + ", where it is never served"
+}
+
 // paperwork reports whether a file is documentation rather than a face.
 //
 // Deliberately narrow: text and markdown, or one of the conventional licence
-// names. A .ttf or a .woff still earns its warning, because that is somebody
+// names. A .ttf or an .otf still earns its warning, because that is somebody
 // expecting a font to be served and it will not be.
 func paperwork(name string) bool {
 	lower := strings.ToLower(name)
@@ -170,28 +208,67 @@ func paperwork(name string) bool {
 	return false
 }
 
+// formatOf is the format a filename says it holds, or "" for neither.
+func formatOf(name string) string {
+	lower := strings.ToLower(name)
+	switch {
+	case strings.HasSuffix(lower, ".woff2"):
+		return "woff2"
+	case strings.HasSuffix(lower, ".woff"):
+		return "woff"
+	}
+	return ""
+}
+
+// Check validates one file under the name it will be served as, exactly as
+// Load does, so a command writing a face into templates/fonts/ can refuse it
+// before it is there rather than leave a warning for the next start.
+func Check(name string, b []byte) (Face, error) {
+	if formatOf(name) == "" {
+		return Face{}, fmt.Errorf("%s is not named .woff2 or .woff", name)
+	}
+	return parse(name, b)
+}
+
 // parse validates one file and reads its contract off the filename.
 func parse(name string, b []byte) (Face, error) {
 	if len(b) > MaxBytes {
 		return Face{}, fmt.Errorf("%d bytes, and the limit is %d. Subset it to "+
 			"the scripts the site actually uses", len(b), MaxBytes)
 	}
-	if len(b) < 48 || string(b[:4]) != string(signature) {
+	format := formatOf(name)
+	// The bytes have to be the format the name says. A WOFF2 named .woff
+	// would be announced to the browser as the wrong thing, and a .ttf
+	// renamed is the commonest way a font arrives broken.
+	switch got := Sniff(b); {
+	case format == "woff2" && got != "woff2", format == "woff" && got != "woff":
+		what := "a " + got + " file"
+		if got == "" {
+			what = "not a font this recognises"
+		}
 		return Face{}, fmt.Errorf(
-			"this is not a WOFF2 file — the signature is missing. A .ttf or " +
-				"an .otf renamed does not become one; convert it")
+			"this is not a %s file — the signature is missing, and it is %s. "+
+				"A .ttf or an .otf renamed does not become one; convert it with "+
+				"quilzo theme font add", strings.ToUpper(format), what)
 	}
-	// Bytes 8..12 are the total length the file declares. A file that disagrees
-	// with itself is either truncated or is not what it says, and both are
-	// reasons to refuse rather than hand it to a parser.
-	declared := binary.BigEndian.Uint32(b[8:12])
-	if int(declared) != len(b) {
-		return Face{}, fmt.Errorf(
-			"the file declares %d bytes and is %d. It is truncated or it is "+
-				"not the file it claims to be", declared, len(b))
+	if format == "woff2" {
+		if len(b) < 48 {
+			return Face{}, fmt.Errorf("this is too short to be a WOFF2 file")
+		}
+		// Bytes 8..12 are the total length the file declares. A file that
+		// disagrees with itself is either truncated or is not what it says,
+		// and both are reasons to refuse rather than hand it to a parser.
+		declared := binary.BigEndian.Uint32(b[8:12])
+		if int(declared) != len(b) {
+			return Face{}, fmt.Errorf(
+				"the file declares %d bytes and is %d. It is truncated or it is "+
+					"not the file it claims to be", declared, len(b))
+		}
+	} else if _, err := checkWOFF(b); err != nil {
+		return Face{}, err
 	}
 
-	stem := strings.TrimSuffix(strings.TrimSuffix(name, ".woff2"), ".WOFF2")
+	stem := name[:len(name)-len(format)-1]
 	parts := strings.Split(stem, "-")
 	family := strings.TrimSpace(parts[0])
 	if !reFamily.MatchString(family) {
@@ -201,8 +278,11 @@ func parse(name string, b []byte) (Face, error) {
 				"family and part of a URL", family)
 	}
 
-	face := Face{File: name, Family: family, Weight: "100 900", Style: "normal", Bytes: b}
-	for _, part := range parts[1:] {
+	face := Face{File: name, Family: family, Weight: "100 900", Style: "normal",
+		Format: format, Bytes: b}
+	rest := parts[1:]
+	for i := 0; i < len(rest); i++ {
+		part := rest[i]
 		p := strings.ToLower(strings.TrimSpace(part))
 		switch {
 		case p == "italic" || p == "oblique":
@@ -210,6 +290,23 @@ func parse(name string, b []byte) (Face, error) {
 		case p == "" || p == "regular" || p == "normal" || p == "variable" || p == "vf":
 			// Nothing to say: the defaults already cover these.
 		default:
+			// Two weights in a row are a range: Satoshi-400-700 is 400 to
+			// 700. It used to keep the last number, so the range this
+			// package's own documentation and its own error message offered
+			// was served as font-weight 700 — every lighter weight drawn
+			// synthesised from the boldest, and only the ".." spelling worked.
+			if lo, ok := single(p); ok && i+1 < len(rest) {
+				if hi, ok := single(strings.ToLower(strings.TrimSpace(rest[i+1]))); ok {
+					if lo > hi {
+						return Face{}, fmt.Errorf(
+							"%s-%s runs from heavier to lighter. A range is "+
+								"written lightest first: Family-%d-%d", part, rest[i+1], hi, lo)
+					}
+					face.Weight = rangeOf(lo, hi)
+					i++
+					continue
+				}
+			}
 			if w, ok := weight(p); ok {
 				face.Weight = w
 				continue
@@ -223,37 +320,48 @@ func parse(name string, b []byte) (Face, error) {
 	return face, nil
 }
 
-// weight reads a single weight or a range.
+// rangeOf is a weight range as CSS writes it, or one weight when both ends
+// are the same.
+func rangeOf(lo, hi int) string {
+	if lo == hi {
+		return strconv.Itoa(lo)
+	}
+	return strconv.Itoa(lo) + " " + strconv.Itoa(hi)
+}
+
+// weight reads a single weight or a range written with "..".
 func weight(s string) (string, bool) {
 	if lo, hi, isRange := strings.Cut(s, ".."); isRange {
-		a, aok := number(lo)
-		b, bok := number(hi)
+		a, aok := single(lo)
+		b, bok := single(hi)
 		if aok && bok && a <= b {
-			return a + " " + b, true
+			return rangeOf(a, b), true
 		}
 		return "", false
 	}
-	if n, ok := number(s); ok {
-		return n, true
-	}
-	// Named weights, because "Satoshi-bold.woff2" is what somebody will write.
-	named := map[string]string{
-		"thin": "100", "extralight": "200", "light": "300", "book": "400",
-		"medium": "500", "semibold": "600", "bold": "700", "extrabold": "800",
-		"black": "900",
-	}
-	if n, ok := named[s]; ok {
-		return n, true
+	if n, ok := single(s); ok {
+		return strconv.Itoa(n), true
 	}
 	return "", false
 }
 
-func number(s string) (string, bool) {
-	n, err := strconv.Atoi(strings.TrimSpace(s))
-	if err != nil || n < 1 || n > 1000 {
-		return "", false
+// single reads one weight: a number from 1 to 1000, or its name, because
+// "Satoshi-bold.woff2" is what somebody will write.
+func single(s string) (int, bool) {
+	s = strings.TrimSpace(s)
+	if n, err := strconv.Atoi(s); err == nil {
+		if n < 1 || n > 1000 {
+			return 0, false
+		}
+		return n, true
 	}
-	return strconv.Itoa(n), true
+	named := map[string]int{
+		"thin": 100, "extralight": 200, "light": 300, "book": 400,
+		"medium": 500, "semibold": 600, "bold": 700, "extrabold": 800,
+		"black": 900,
+	}
+	n, ok := named[s]
+	return n, ok
 }
 
 // Faces returns every loaded face.
@@ -324,4 +432,17 @@ func (s *Set) Len() int {
 		return 0
 	}
 	return len(s.faces)
+}
+
+// ContentType is the media type a face is served as, read off its name.
+//
+// From the name rather than the bytes because only names Load validated are
+// ever served, and it checked that the bytes are what the name says.
+// font/woff2 for anything else, which is what every face was served as before
+// WOFF 1.0 was accepted.
+func ContentType(name string) string {
+	if formatOf(name) == "woff" {
+		return "font/woff"
+	}
+	return "font/woff2"
 }

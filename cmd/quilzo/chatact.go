@@ -5,13 +5,16 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
@@ -29,16 +32,37 @@ import (
 // author's. An action that does not write runs as a reader: the agent may
 // look things up and changes nothing. One that writes runs at the agent's
 // own autonomy, capped at drafting and proposing, and its asks of a person
-// wait for one.
+// wait for one. Nobody here started it, so a call of a tool that writes to
+// another system, and what its hands carry out to one, waits for a person
+// too, as a trigger's does, unless administrators let the agent send
+// through that tool or that hand unattended (agentsends.go).
 //
 // # What the visitor sees
 //
 // The agent's answer, when its run read nothing private. A run that read
 // something not everybody may see (a signed-in page, personal data a tool
-// returned), or that waits for a person, is not answered by the agent: the
-// visitor is told a person will look at it.
+// returned) is not answered by the agent: the visitor is told a person will
+// look at it. A run that stops to ask a person first tells the visitor the
+// same, and its final words once the person has answered and it has ended,
+// on the same page, by the same rule.
 
 func chatActDir(root string) string { return filepath.Join(root, "chatact") }
+
+// chatActWaitingDir keeps which run each waiting request is waiting on.
+//
+// Apart from chatActDir, which the confined public site writes: the run is
+// what the admin server reads the visitor's answer from, and a run named in
+// a file the site could write would let a compromised site have any run's
+// final words copied to a request of its own.
+func chatActWaitingDir(root string) string { return filepath.Join(root, "chatact-waiting") }
+
+// chatActWait is one request waiting on a run that asked a person.
+type chatActWait struct {
+	Request string `json:"request"`
+	Run     string `json:"run"`
+	Chatbot string `json:"chatbot"`
+	Action  string `json:"action"`
+}
 
 func chatActQueue(root string) chatact.Queue { return chatact.Queue{Dir: chatActDir(root)} }
 
@@ -114,6 +138,7 @@ func runChatActions(ctx context.Context, root string, say func(string)) {
 				_ = q.Answer(res)
 			}(r)
 		}
+		settleChatActions(root, q, time.Now())
 		select {
 		case <-ctx.Done():
 			return
@@ -213,19 +238,120 @@ func runChatAction(ctx context.Context, root string, r chatact.Request) chatact.
 		held = "the run did not finish"
 	case out.Trace.Waiting != nil:
 		held = "it waits for a person"
-	case len(out.Receipt.Private) > 0:
-		held = "it read what not everybody may see"
-	case answer == "":
-		held = "it said nothing"
+	default:
+		held = chatActHeld(out.Receipt, answer)
 	}
 	detail := map[string]string{"assistant": a.Name, "action": action.Name, "request": r.ID, "run": runID}
 	if held != "" {
 		detail["held"] = held
 		recordE(root, caller.auditRecord("assistant.act.held", "/ask/"+a.Name, audit.Success, detail))
+		// Waiting for a person, with nothing private read so far: the
+		// visitor is told the outcome once the person has answered and the
+		// run has ended (settleChatActions). Kept as Person, final, when
+		// the run cannot be named where the site cannot write.
+		if runErr == nil && out.Trace.Waiting != nil && len(out.Receipt.Private) == 0 &&
+			keepChatActWait(root, chatActWait{Request: r.ID, Run: runID, Chatbot: a.Name, Action: action.Name}) == nil {
+			return chatact.Result{ID: r.ID, State: chatact.Waiting, At: now()}
+		}
 		return chatact.Result{ID: r.ID, State: chatact.Person, At: now()}
 	}
 	recordE(root, caller.auditRecord("assistant.act.answered", "/ask/"+a.Name, audit.Success, detail))
 	return chatact.Result{ID: r.ID, State: chatact.Done, Answer: clip(answer, 2000), At: now()}
+}
+
+// chatActHeld says why a finished run's final words are not shown to the
+// visitor, or "" when they are. One rule for a run that ended at once and
+// one that ended after a person answered it.
+func chatActHeld(rc agent.Receipt, answer string) string {
+	switch {
+	case len(rc.Private) > 0:
+		return "it read what not everybody may see"
+	case answer == "":
+		return "it said nothing"
+	}
+	return ""
+}
+
+// keepChatActWait notes that a request waits on a run.
+func keepChatActWait(root string, wt chatActWait) error {
+	if !chatact.ValidID(wt.Request) || !agent.ValidRecordID(wt.Run) {
+		return fmt.Errorf("not a request and a run: %q, %q", wt.Request, wt.Run)
+	}
+	dir := chatActWaitingDir(root)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	b, err := json.Marshal(wt)
+	if err != nil {
+		return err
+	}
+	return atomicfile.Write(filepath.Join(dir, wt.Request+".json"), b, 0o600)
+}
+
+// settleChatActions answers the requests whose runs have ended since they
+// stopped to ask a person, by the rule a run that ended at once is
+// answered by. A run still waiting, running or interrupted (which a person
+// may take on again) is left; a request the site no longer keeps is
+// forgotten.
+func settleChatActions(root string, q chatact.Queue, now time.Time) {
+	dir := chatActWaitingDir(root)
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range ents {
+		id, ok := strings.CutSuffix(e.Name(), ".json")
+		if !ok || !chatact.ValidID(id) {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		var wt chatActWait
+		b, err := readBounded(path, 4<<10)
+		if err != nil || json.Unmarshal(b, &wt) != nil || wt.Request != id || !q.Exists(id) {
+			_ = os.Remove(path)
+			continue
+		}
+		// Only from Waiting, which the run's own worker writes after this
+		// note: settling a request that still says Working could be
+		// overwritten by that worker a moment later, and the visitor would
+		// wait for good.
+		if cur, ok := q.Result(id); !ok || cur.State != chatact.Waiting {
+			if ok && cur.State != chatact.Working {
+				_ = os.Remove(path)
+			}
+			continue
+		}
+		res := chatact.Result{ID: id, State: chatact.Person, At: now.UTC()}
+		detail := map[string]string{"assistant": wt.Chatbot, "action": wt.Action, "request": id, "run": wt.Run}
+		rec, err := loadAgentRun(root, wt.Run)
+		switch outcome := rec.OutcomeAt(now); {
+		case err != nil:
+			detail["held"] = "the run is not kept any more"
+		case outcome == "waiting" || outcome == "running" || outcome == "interrupted":
+			continue
+		case outcome == "stopped":
+			detail["held"] = "the run did not finish"
+		default:
+			answer := strings.TrimSpace(rec.Trace.Answer)
+			if held := chatActHeld(rec.Receipt, answer); held != "" {
+				detail["held"] = held
+			} else {
+				res.State, res.Answer = chatact.Done, clip(answer, 2000)
+			}
+		}
+		if err := q.Answer(res); err != nil {
+			// Answered already: nothing more to tell the visitor.
+			_ = os.Remove(path)
+			continue
+		}
+		did := "assistant.act.answered"
+		if res.State != chatact.Done {
+			did = "assistant.act.held"
+		}
+		recordE(root, audit.Record{Action: did, Resource: "/ask/" + wt.Chatbot, Outcome: audit.Success,
+			Principal: "quilzo", Kind: audit.KindService, Verified: true, Detail: detail})
+		_ = os.Remove(path)
+	}
 }
 
 // chatActGoal is what the agent is asked: the action, what the visitor

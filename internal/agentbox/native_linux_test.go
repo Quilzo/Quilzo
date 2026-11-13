@@ -267,3 +267,44 @@ func BenchmarkABoxRunsAProgram(b *testing.B) {
 		}
 	}
 }
+
+// A box reads what a C library reads from /etc, and not the host's
+// credentials.
+//
+// The whole of /etc was granted so that libc could start, and a box's /etc
+// is the host's, read as the host account. Quilzo run as root (the default
+// for a single binary started by an init system) let an agent holding
+// shell_run and the program head read /etc/shadow. A dynamically linked
+// program still starts, and still reads the account and resolver files.
+func TestABoxDoesNotReadTheHostsCredentials(t *testing.T) {
+	n := native(t)
+	head := "/usr/bin/head"
+	if _, err := os.Stat(head); err != nil {
+		t.Skip("no head here")
+	}
+	run := func(path string) (int, string) {
+		var out, errs bytes.Buffer
+		res, err := n.Run(context.Background(), Spec{Program: head, Args: []string{"-c", "4", path},
+			Workdir: t.TempDir(), Wall: 30 * time.Second, Stdout: &out, Stderr: &errs})
+		if err != nil {
+			t.Fatalf("%s: %v %s", path, err, errs.String())
+		}
+		return res.Exit, out.String()
+	}
+	for _, p := range []string{"/etc/passwd", "/etc/nsswitch.conf"} {
+		if _, err := os.Stat(p); err != nil {
+			continue
+		}
+		if exit, out := run(p); exit != 0 || out == "" {
+			t.Errorf("a program in the box could not read %s: exit %d", p, exit)
+		}
+	}
+	for _, p := range []string{"/etc/shadow", "/etc/gshadow", "/etc/sudoers"} {
+		if _, err := os.Stat(p); err != nil {
+			continue
+		}
+		if exit, out := run(p); exit == 0 || out != "" {
+			t.Errorf("a program in the box read %s (exit %d, %d bytes)", p, exit, len(out))
+		}
+	}
+}

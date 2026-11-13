@@ -73,6 +73,10 @@ type evalMode struct {
 	// Lesson is a candidate lesson tried on top of the agent's playbook,
 	// when the evaluation is a lesson's trial.
 	Lesson string
+	// Route is the gateway's route the evaluation measures, and the only
+	// one its runs are driven through (measuredRoute); empty without the
+	// gateway.
+	Route string
 }
 
 func (e *evalMode) perform(real agent.Perform) agent.Perform {
@@ -228,7 +232,14 @@ func runEvaluationWith(root, name string, o evals.Options, withModel bool, calle
 		if m == nil {
 			return rep, fmt.Errorf("evaluating with a model needs one configured: %s", why)
 		}
-		rep.Model = m.Name()
+		// The model as served, not the caller the gateway charges, which
+		// stays the same whatever the route reaches: what this earns holds
+		// only while the same model drives.
+		served := servedBy(m)
+		rep.Model, rep.Route = served.Model, served.Route
+		if rep.Model == "" {
+			return rep, fmt.Errorf("evaluating with a model needs one configured: no route of the gateway would answer")
+		}
 	}
 	dir := evalResultsDir(root, name)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -254,7 +265,8 @@ func runEvaluationWith(root, name string, o evals.Options, withModel bool, calle
 		kr := &keptRun{root: root, rec: agent.Record{ID: id, Agent: name, Goal: goal,
 			By: caller.Name, Started: started, Model: rep.Model, Eval: tag, Plant: plant}}
 		out, runErr := executeAgentFrom(ctx, root, name, goal, withModel, caller,
-			&agentResume{Checkpoint: kr.checkpoint, Eval: &evalMode{Plant: plant, Reads: reads, Lesson: o.Lesson}})
+			&agentResume{Checkpoint: kr.checkpoint, Eval: &evalMode{Plant: plant, Reads: reads,
+				Lesson: o.Lesson, Route: rep.Route}})
 		if out.Manifest.Name == "" {
 			return "", agent.Trace{}, runErr
 		}
@@ -282,7 +294,7 @@ func runEvaluationWith(root, name string, o evals.Options, withModel bool, calle
 	record(root, caller.auditRecord("agent.evaluated", "/agents/"+name, outcome, map[string]string{
 		"agent": name, "cases": fmt.Sprint(rep.Cases), "k": fmt.Sprint(rep.K),
 		"reliable": fmt.Sprint(rep.Reliable), "planted": fmt.Sprint(rep.Planted),
-		"hijacked": fmt.Sprint(rep.Hijacked), "model": rep.Model, "verdict": rep.Verdict()}))
+		"hijacked": fmt.Sprint(rep.Hijacked), "model": rep.Model, "route": rep.Route, "verdict": rep.Verdict()}))
 	// An agent that followed a planted instruction is the shield's to act
 	// on, as its playbook says: by default it is paused until somebody
 	// narrows what it may do.
@@ -452,7 +464,7 @@ func cmdEval(root string, args []string) error {
 		fs := flag.NewFlagSet("eval "+args[0], flag.ContinueOnError)
 		goal := fs.String("goal", "", "what the agent is asked")
 		expect := expectFlags(fs)
-		if err := fs.Parse(args[2:]); err != nil {
+		if err := parseFlags(fs, args[2:], nil, 0); err != nil {
 			return err
 		}
 		var c evals.Case
@@ -515,7 +527,7 @@ func cmdEval(root string, args []string) error {
 		k := fs.Int("k", 3, "how many times each case is run")
 		model := fs.Bool("model", false, "let the configured model choose, and plant instructions")
 		attempts := fs.Int("attempts", 1, "how many times each planted instruction is tried; a plant that works once in several tries works")
-		if err := fs.Parse(args[2:]); err != nil {
+		if err := parseFlags(fs, args[2:], nil, 0); err != nil {
 			return err
 		}
 		if err := known(args[1]); err != nil {
@@ -545,10 +557,22 @@ func cmdEval(root string, args []string) error {
 			return err
 		}
 		if len(reps) == 0 {
+			// null under --json: the report, which there is none of. This
+			// wrote only through Human, so a script asking for an agent's
+			// last evaluation was answered with nothing and exit 0.
+			if w.JSON(nil) {
+				return nil
+			}
 			w.Human("%s has not been evaluated\n", args[1])
 			return nil
 		}
 		printEvalReport(reps[0])
+		// Said beside the report, since what it earned holds only on the
+		// model it measured, and nothing measures it again by itself.
+		if due := evalDue(root, args[1], time.Now().UTC()); due != "" {
+			w.Human("  %s%s drives it now: what it earned does not count until it is measured again "+
+				"(quilzo eval run %s --model)%s\n", yellow, drivingModel(root, args[1]), args[1], reset)
+		}
 		return nil
 	}
 	return evalUsage()
@@ -590,6 +614,9 @@ func printEvalReport(r evals.Report) {
 	}
 	w.Human("%s%s%s, %s, %s, k=%d (%s)\n", bold, r.Agent, reset, r.Verdict(),
 		r.At.Format("2 Jan 15:04"), r.K, how)
+	if r.Model != "" {
+		w.Human("  measured on %s, %s\n", r.Served(), r.At.Format("2 Jan 2006"))
+	}
 	w.Human("  pass^%d   %d of %d cases (%.0f%%)\n", r.K, r.Reliable, r.Cases, r.PassK*100)
 	if r.Planted > 0 && r.Attempts > 1 {
 		w.Human("  planted  %d of %d cases followed an instruction planted in what they read on the first try, "+

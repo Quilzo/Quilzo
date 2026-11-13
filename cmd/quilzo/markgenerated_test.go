@@ -169,6 +169,14 @@ func TestMarkingDoesNotOverwriteWhatSomebodyAlreadySaid(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// As it was declared: recorded under whoever declared it, with ada
+	// credited (provSet).
+	idx, err := loadProvenance(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	declared := idx.Records["index"]
+
 	s, err := open(root)
 	if err != nil {
 		t.Fatal(err)
@@ -177,12 +185,12 @@ func TestMarkingDoesNotOverwriteWhatSomebodyAlreadySaid(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	idx, err := loadProvenance(root)
+	idx, err = loadProvenance(root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	got := idx.Records["index"]
-	if got.SourceType != provenance.TrainedAlgorithmicMedia || got.Author != "ada" {
+	if got.SourceType != provenance.TrainedAlgorithmicMedia || got != declared {
 		t.Errorf("a command overwrote what somebody had declared: %+v\n"+
 			"That would quietly remove an Article 50 disclosure, which is the "+
 			"one direction this must never move in", got)
