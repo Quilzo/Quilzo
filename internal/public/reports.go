@@ -69,12 +69,21 @@ func isNoise(s string) bool {
 }
 
 // reportsHandler receives violation reports.
+//
+// Each names its page by the address this site counts the page under
+// (countedAs), which is one address for one page: /about/ and /about, and
+// the home page by its name and by /. A report kept the address as asked,
+// so the same violation on the same page was told to the shield as two
+// things, each reported by some of the networks that saw it.
 func (st *Site) reportsHandler(w http.ResponseWriter, r *http.Request) {
 	if st.OnViolation == nil {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	ReportsHandler(st.OnViolation).ServeHTTP(w, r)
+	ReportsHandler(func(v Violation, r *http.Request) {
+		v.Page = st.countedAs(v.Page)
+		st.OnViolation(v, r)
+	}).ServeHTTP(w, r)
 }
 
 // ReportsHandler receives violation reports for any server: always 204,

@@ -64,7 +64,9 @@ func (st *Site) counted(next http.Handler) http.Handler {
 // an owner still sees how much each chatbot's are used.
 //
 // Anything else that names a page by its address, a browser's report of a
-// policy violation among them, names it by this too.
+// policy violation among them, names it by this too. A site folds what is
+// left as its page handler reads it (Site.countedAs), for a request and
+// for a report on one of its pages alike.
 func CountedAs(path string) string {
 	if keyed, ok := keyedAs(path); ok {
 		return keyed

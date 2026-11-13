@@ -6,6 +6,7 @@ package public
 import (
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -152,6 +153,35 @@ func TestAViolationOnAConversationsPageDoesNotNameItsSecret(t *testing.T) {
 	got := parseViolations([]byte(body), "shop.example")
 	if len(got) != 1 || got[0].Page != "/ask/help/c/" {
 		t.Fatalf("kept %+v", got)
+	}
+}
+
+// A browser's report of a policy violation on this site names its page by
+// the address analytics counts the page under, which is one for one page.
+//
+// A report named its page by the path analytics counts it under, and
+// analytics came to count /about/ and /about as the one page they are, and
+// the home page reached by its name as /: the two rules were written apart
+// and a report kept the address as asked. A violation is counted by how
+// many networks report the same thing on the same page, so one page's was
+// two things, each reported by some of them.
+func TestAViolationIsOnThePageAnalyticsCountsItUnder(t *testing.T) {
+	st := published(t, map[string]any{"index": map[string]any{"title": "Home"},
+		"about": map[string]any{"title": "About"}})
+	var got []string
+	st.OnViolation = func(v Violation, r *http.Request) { got = append(got, v.Group()) }
+	secret, _, _ := handoff.NewSecret()
+	for _, at := range []string{"/about", "/about/", "/", "/index", "/index/", "/ask/help/c/" + secret} {
+		req := httptest.NewRequest(http.MethodPost, "http://shop.example"+ReportsPath, strings.NewReader(
+			`{"csp-report":{"document-uri":"https://shop.example`+at+
+				`","blocked-uri":"inline","violated-directive":"script-src 'none'"}}`))
+		req.Header.Set("Content-Type", "application/csp-report")
+		st.Handler().ServeHTTP(httptest.NewRecorder(), req)
+	}
+	want := []string{"script-src inline /about", "script-src inline /about", "script-src inline /",
+		"script-src inline /", "script-src inline /", "script-src inline /ask/help/c/"}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("reported on %q, want %q", got, want)
 	}
 }
 
