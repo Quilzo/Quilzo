@@ -180,3 +180,55 @@ func TestACalendarNeedsEventsSetUp(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 }
+
+// A record's own field named id goes out and comes back with it, in a
+// spreadsheet and in JSON. The id column is the store's id, which bringing
+// a file in matches records by, so the record's own id was left out of
+// both: `records add things id=mine` and an export and an import lost
+// "mine". It goes out in a column of its own, field:id (in JSON, under
+// fields), and an export with none is brought in as before.
+func TestARecordsOwnIdFieldGoesOutAndComesBack(t *testing.T) {
+	root, _ := siteStore(t)
+	ctx := context.Background()
+	if err := recordsAdd(root, []string{"things", "id=mine", "title=A thing"}); err != nil {
+		t.Fatal(err)
+	}
+	before := draftRecords(t, root, "things")
+	if len(before) != 1 || before[0].Fields["id"] != "mine" {
+		t.Fatalf("added as %+v", before)
+	}
+	storeID := before[0].ID
+	for _, format := range []string{"csv", "json"} {
+		out, n, err := sheetOf(root, "things", format, false)
+		if err != nil || n != 1 {
+			t.Fatalf("%s: %d records: %v", format, n, err)
+		}
+		if !strings.Contains(string(out), "mine") || !strings.Contains(string(out), storeID) {
+			t.Fatalf("%s: the export lost the record's own id or the store's:\n%s", format, out)
+		}
+		// Changed in the file and brought back: the same record, its own id
+		// as the file says.
+		changed := strings.Replace(string(out), "mine", "yours", 1)
+		b, err := bringFile(ctx, root, "things", "things."+format, []byte(changed), bringOptions{}, asAdmin("dana"))
+		if err != nil || b.New != 0 || b.Updated != 1 {
+			t.Fatalf("%s: brought as %+v: %v\n%s", format, b, err, changed)
+		}
+		after := draftRecords(t, root, "things")
+		if len(after) != 1 || after[0].ID != storeID || after[0].Fields["id"] != "yours" {
+			t.Fatalf("%s: brought back as %+v", format, after)
+		}
+		if err := recordsAdd(root, []string{"things", "--id", storeID, "id=mine", "title=A thing"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A file written before, with the store's id alone, is brought in as
+	// it was: matched by that id, and the record's own id left as it is.
+	old := "id,title\r\n" + storeID + ",Renamed\r\n"
+	if b, err := bringFile(ctx, root, "things", "old.csv", []byte(old), bringOptions{}, asAdmin("dana")); err != nil ||
+		b.Updated != 1 || b.New != 0 {
+		t.Fatalf("an older export: %+v %v", b, err)
+	}
+	if after := draftRecords(t, root, "things"); len(after) != 1 || after[0].Fields["title"] != "Renamed" {
+		t.Fatalf("an older export was brought as %+v", after)
+	}
+}

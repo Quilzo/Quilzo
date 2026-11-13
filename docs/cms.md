@@ -917,7 +917,10 @@ alt column says it shows. One row the type refuses refuses the sheet, unless
 commit, in the draft until it is published.
 
 `records export` writes the id first and the type's fields in order, so the
-sheet comes back in as the same records, and each picture as the address the
+sheet comes back in as the same records. A record with a field of its own
+called `id` has it in a column headed `field:id` (in JSON, as
+`id` inside `fields`), since the `id` column is the store's, and import
+reads it back into that field. Each picture is written as the address the
 site serves it at, so another site can bring it in too. A cell beginning
 `=`, `+`, `-` or `@` that is not a number is written after an apostrophe, so
 a spreadsheet opening it does not run it as a formula. `--format json`

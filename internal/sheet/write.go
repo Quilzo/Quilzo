@@ -26,12 +26,27 @@ type WriteOptions struct {
 	Picture func(id string) string
 }
 
+// OwnID is the heading of the column a record's own field named id is
+// written under. The id column is the record's id in the store, which
+// reading matches records by, so a record's own id was left out of every
+// sheet, and a sheet taken out and brought back lost it. A heading no
+// field can have, since a field's name holds no colon, read back as the
+// field id (match).
+const OwnID = "field:id"
+
 // Write writes records as a sheet: their ids first, then the type's
 // fields in the order it declares them, then any other field a record
 // has. Headings are field names, which is what reading matches first, so a
-// sheet written here comes back in as it went out.
+// sheet written here comes back in as it went out. A record's own field
+// named id goes under OwnID, after the ids.
 func Write(t *schema.Type, recs []collection.Record, opts WriteOptions) []byte {
 	cols := columns(t, recs)
+	for _, r := range recs {
+		if _, ok := r.Fields["id"]; ok {
+			cols = append([]string{OwnID}, cols...)
+			break
+		}
+	}
 	pictures := Pictures(t)
 	var buf bytes.Buffer
 	if opts.BOM {
@@ -62,6 +77,9 @@ func Write(t *schema.Type, recs []collection.Record, opts WriteOptions) []byte {
 		row[0] = r.ID
 		for i, c := range cols {
 			v := r.Fields[c]
+			if c == OwnID {
+				v = r.Fields["id"]
+			}
 			if _, isPicture := pictures[c]; isPicture && opts.Picture != nil {
 				if id, ok := v.(string); ok && IsMediaID(id) {
 					v = opts.Picture(id)

@@ -167,7 +167,9 @@ func declares(t *schema.Type, field string) bool {
 }
 
 // jsonRows reads a JSON list of records. An "id" the type does not declare
-// is the record's id, as a JSON export writes it.
+// is the record's id, as a JSON export writes it; and so is any "id" of a
+// record that gives its own id as well, under "fields" (an object holding
+// id alone) or under sheet.OwnID, as an export writes that.
 func jsonRows(body []byte, t *schema.Type) ([]sheet.Row, error) {
 	var list []map[string]any
 	if err := json.Unmarshal(body, &list); err != nil {
@@ -180,9 +182,13 @@ func jsonRows(body []byte, t *schema.Type) ([]sheet.Row, error) {
 	rows := make([]sheet.Row, 0, len(list))
 	for i, f := range list {
 		row := sheet.Row{Where: fmt.Sprintf("record %d", i+1), Fields: f}
-		if id, ok := f["id"].(string); ok && !idIsField {
+		own, hasOwn := ownID(f)
+		if id, ok := f["id"].(string); ok && (!idIsField || hasOwn) {
 			row.ID = id
 			delete(f, "id")
+		}
+		if hasOwn {
+			f["id"] = own
 		}
 		if f == nil {
 			row.Problems = []string{"it is not a record"}
@@ -193,6 +199,24 @@ func jsonRows(body []byte, t *schema.Type) ([]sheet.Row, error) {
 		return nil, errors.New("it holds no records")
 	}
 	return rows, nil
+}
+
+// ownID takes out of a JSON record the record's own field named id, as an
+// export writes it beside the store's id: under "fields", an object that
+// holds id alone, or under sheet.OwnID when the record has a field of its
+// own called fields.
+func ownID(f map[string]any) (any, bool) {
+	if v, ok := f[sheet.OwnID]; ok {
+		delete(f, sheet.OwnID)
+		return v, true
+	}
+	if nest, ok := f["fields"].(map[string]any); ok && len(nest) == 1 {
+		if v, ok := nest["id"]; ok {
+			delete(f, "fields")
+			return v, true
+		}
+	}
+	return nil, false
 }
 
 // bringFile brings a spreadsheet, a JSON list or a calendar into a
@@ -357,6 +381,15 @@ func sheetOf(root, coll, format string, bom bool) ([]byte, int, error) {
 			for k, v := range r.Fields {
 				if k != "id" {
 					row[k] = v
+				}
+			}
+			// The record's own id, which the store's took the place of:
+			// it was left out, and an export brought back lost it.
+			if own, ok := r.Fields["id"]; ok {
+				if _, taken := row["fields"]; taken {
+					row[sheet.OwnID] = own
+				} else {
+					row["fields"] = map[string]any{"id": own}
 				}
 			}
 			list = append(list, row)
