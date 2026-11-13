@@ -999,3 +999,39 @@ func TestTheSessionCookieIsTakenFromTheOriginTheAdminSaysIsItsOwn(t *testing.T) 
 		}
 	}
 }
+
+// A sign-in session is refused by a server that keeps no idle clock for it,
+// saying what to send instead; a token, and a session a program exchanged
+// from one, are taken as before; and the admin, which keeps the clock,
+// takes sign-in sessions as it did.
+//
+// The idle timeout is kept by the admin's process (session.idle), and
+// `quilzo site --api` is another process with no such clock: a person's
+// sign-in session copied into a header went on working there for the
+// whole of session.max after the admin would have signed it out.
+func TestASignInSessionIsRefusedWhereNoIdleClockIsKept(t *testing.T) {
+	s, read, _ := setup(t)
+	signedIn, _, err := s.Tokens.IssueSession("passkey:reader", "reader", auth.RoleReader, "/", time.Hour,
+		auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := req(t, s, "GET", "/api/v1/pages", signedIn, nil, nil)
+	if w.Code != http.StatusUnauthorized || !strings.Contains(w.Body.String(), "quilzo token") {
+		t.Fatalf("a sign-in session at a server with no idle clock: %d %s", w.Code, w.Body)
+	}
+	exchanged, _, err := s.Tokens.Exchange(read, auth.RoleNone, "", time.Hour, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tok := range []string{read, exchanged} {
+		if w := req(t, s, "GET", "/api/v1/pages", tok, nil, nil); w.Code != http.StatusOK {
+			t.Fatalf("a token was refused: %d %s", w.Code, w.Body)
+		}
+	}
+	// The admin keeps the clock, and asks it.
+	s.Idle = func(*http.Request, *auth.Token) bool { return false }
+	if w := req(t, s, "GET", "/api/v1/pages", signedIn, nil, nil); w.Code != http.StatusOK {
+		t.Fatalf("a sign-in session at the admin: %d %s", w.Code, w.Body)
+	}
+}

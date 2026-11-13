@@ -738,6 +738,13 @@ type Token struct {
 	// that set a parent.
 	Session bool `json:"session,omitempty"`
 
+	// SignIn marks a session the admin exchanged from a token somebody
+	// signed in to it with: the admin's own door, as a passkey's or an
+	// identity provider's session is, and kept to its idle clock there
+	// (SignedIn). A session a program exchanged for itself with `quilzo
+	// token exchange` is not one, and is bounded by its own few minutes.
+	SignIn bool `json:"sign_in,omitempty"`
+
 	// StepUp, when set, says why this session must prove its person before
 	// it may do anything else: an automation judged a sign-in, or something
 	// seen elsewhere, unlike them (internal/automate). Cleared when they do.
@@ -880,6 +887,35 @@ func (ts *TokenStore) BindSession(id, bound string) error {
 // than somebody's own long-lived token: exchanged from one, or minted for a
 // sign-in an identity provider or passkey vouched for.
 func (t *Token) IsSession() bool { return t.Parent != "" || t.Session }
+
+// SignedIn reports whether this is a session somebody signed in to the
+// admin with, by passkey, identity provider or token: what the admin
+// signs out once nobody has used it for session.idle. That clock is kept
+// in the admin's process, so a server elsewhere that keeps none refuses
+// these, and takes tokens: a sign-in session copied into a header worked
+// at the public site's content API, and pasted into the studio, for the
+// whole of session.max after the admin would have signed it out.
+func (t *Token) SignedIn() bool { return t.Session || t.SignIn }
+
+// MarkSignIn marks a session as one somebody signed in to the admin with
+// (Token's SignIn).
+func (ts *TokenStore) MarkSignIn(id string) error {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	for i := range ts.Tokens {
+		if ts.Tokens[i].ID == id {
+			ts.Tokens[i].SignIn = true
+			return nil
+		}
+	}
+	return fmt.Errorf("no token %s", id)
+}
+
+// SignInElsewhere is what a server that keeps no idle clock says to a
+// sign-in session it refuses, and what to send instead.
+const SignInElsewhere = "a session somebody signed in to the admin with is taken by the admin alone, " +
+	"which signs it out once it is left unused; send a token: quilzo token issue, or a session " +
+	"exchanged from one with quilzo token exchange"
 
 // MaxSessionTTL caps an exchanged credential. A session that can outlive a
 // working day is not doing the job a session exists for.

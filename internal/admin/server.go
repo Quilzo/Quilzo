@@ -1880,6 +1880,11 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 			signInAgain(w, r, "refused")
 			return
 		}
+		// A session for this door, which keeps its idle clock: a server
+		// that keeps none refuses it (auth.Token's SignedIn).
+		if merr := s.Tokens.MarkSignIn(sess.ID); merr == nil {
+			sess.SignIn = true
+		}
 		if s.SaveTokens != nil {
 			if serr := s.SaveTokens(s.Tokens); serr != nil {
 				http.Error(w, "the session could not be stored: "+serr.Error(),

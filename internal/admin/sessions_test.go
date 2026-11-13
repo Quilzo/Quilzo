@@ -47,6 +47,18 @@ func TestTheCookieNeverHoldsThePastedToken(t *testing.T) {
 	if !tok.IsSession() {
 		t.Fatal("the cookie's credential is not a session")
 	}
+	// And one for this door, kept to its idle clock, which a server that
+	// keeps no such clock refuses (auth.Token's SignedIn). Unmarked, it was
+	// a session like any a program exchanges, and the public site's content
+	// API took it for its whole eight hours.
+	if !tok.SignedIn() {
+		t.Fatal("the cookie's session is not marked as one somebody signed in with")
+	}
+	if pasted, _, err := srv.Tokens.Exchange(token, auth.RoleNone, "", time.Minute, time.Now()); err != nil {
+		t.Fatal(err)
+	} else if p, err := srv.Tokens.Authenticate(pasted, time.Now()); err != nil || p.SignedIn() {
+		t.Fatalf("a session a program exchanged is marked as signed in: %v %+v", err, p)
+	}
 	if life := time.Until(time.Unix(tok.ExpiresAt, 0)); life > DefaultSessionTTL+time.Minute {
 		t.Fatalf("the session lasts %s", life)
 	}

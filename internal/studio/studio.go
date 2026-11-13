@@ -221,7 +221,8 @@ func (s *Server) caller(r *http.Request, toks *auth.TokenStore) *auth.Token {
 		return nil
 	}
 	tok, err := toks.Authenticate(c.Value, s.now())
-	if err != nil {
+	if err != nil || tok.SignedIn() {
+		// Not a sign-in session either, for the reason signIn refuses one.
 		return nil
 	}
 	s.used(tok)
@@ -296,6 +297,19 @@ func (s *Server) signIn(w http.ResponseWriter, r *http.Request) {
 	err := errNoStore
 	if toks != nil {
 		tok, err = toks.Authenticate(secret, s.now())
+	}
+	// A session somebody signed in to the admin with is signed out there
+	// once it is left unused, by a clock the admin keeps in its own
+	// process; this one keeps none, so such a session pasted here put
+	// recordings in the library for the whole of session.max. A token is
+	// what this door takes, and the refusal says so.
+	if err == nil && tok.SignedIn() {
+		if s.Audit != nil {
+			s.Audit("studio.signin.refused", "/", map[string]string{
+				"source": sourceOf(r), "why": "a sign-in session"})
+		}
+		http.Error(w, auth.SignInElsewhere, http.StatusUnauthorized)
+		return
 	}
 	if err != nil || !s.mayWrite(tok, pol) {
 		if throttled != nil {
