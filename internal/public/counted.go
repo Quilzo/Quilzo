@@ -46,7 +46,7 @@ func (st *Site) counted(next http.Handler) http.Handler {
 }
 
 // countedAs is the path a request is counted under: its own, except a
-// shared draft's.
+// shared draft's or a conversation with a person's.
 //
 // A shared draft's address is the only key to it (shared.go), and the
 // store keeps a digest of that key so that whoever reads the store, or a
@@ -54,9 +54,21 @@ func (st *Site) counted(next http.Handler) http.Handler {
 // went into the day's totals in clear, on the disk and on the admin's
 // analytics screen, and every ended one into the addresses not found. So
 // they are counted together, under the prefix.
+//
+// A conversation with a person, /ask/NAME/c/SECRET, is the same: its
+// address is the only way back to it (handoff.go), and whoever read the
+// analytics could have opened what the visitor and the business said to
+// each other. Each assistant's are counted together, under
+// /ask/NAME/c/, whatever follows: a wrong or ended key, or one with more
+// after it, is the key still.
 func countedAs(path string) string {
 	if strings.HasPrefix(path, "/shared/") {
 		return "/shared/"
+	}
+	if rest, ok := strings.CutPrefix(path, "/ask/"); ok {
+		if name, conv, ok := strings.Cut(rest, "/"); ok && strings.HasPrefix(conv, "c/") {
+			return "/ask/" + name + "/c/"
+		}
 	}
 	return path
 }
