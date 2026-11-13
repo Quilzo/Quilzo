@@ -22,6 +22,7 @@ import (
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/gaps"
 	"github.com/quilzo/quilzo/internal/listing"
+	"github.com/quilzo/quilzo/internal/public"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 )
@@ -294,6 +295,14 @@ func assistantIndexAs(root string, a assistant.Assistant, c *Caller) (*assistant
 // not be used, for the owner's console. c is as in assistantIndexAs, and nil
 // when the index is asked in no run.
 func assistantKnowledge(root string, a assistant.Assistant, c *Caller) (*assistant.Index, []string, error) {
+	return assistantKnowledgeOf(root, a, c, true)
+}
+
+// assistantKnowledgeOf is assistantKnowledge, reading only what a visitor
+// sees now when visible is true, and every published page when it is
+// false: embedding reads them all, so a page whose window opens later is
+// found by meaning from the moment it does.
+func assistantKnowledgeOf(root string, a assistant.Assistant, c *Caller, visible bool) (*assistant.Index, []string, error) {
 	s, err := store.Open(root)
 	if err != nil {
 		return nil, nil, err
@@ -303,7 +312,14 @@ func assistantKnowledge(root string, a assistant.Assistant, c *Caller) (*assista
 		return nil, nil, fmt.Errorf("nothing is published yet, so there is "+
 			"nothing to answer from: %w", err)
 	}
-	passages := assistant.Chunk(site.WithBlocks(pages), a.Reads)
+	// What the visitors' chatbot reads, and no more: what the owner tests,
+	// measures and closes gaps against is then what visitors are answered
+	// from.
+	read := site.WithBlocks(pages)
+	if visible {
+		read = public.VisibleAt(pages, time.Now())
+	}
+	passages := assistant.Chunk(read, a.Reads)
 	var warnings []string
 	recs, rerr := assistantRecords(s, a)
 	if rerr != nil {

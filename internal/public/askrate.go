@@ -122,7 +122,7 @@ func (st *Site) rate(w http.ResponseWriter, r *http.Request, a assistant.Assista
 		http.Error(w, "You have asked a lot in a short time. You can try again "+inAbout(wait)+".", http.StatusTooManyRequests)
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
+	r.Body = http.MaxBytesReader(w, r.Body, questionForm)
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "that could not be read", http.StatusBadRequest)
 		return

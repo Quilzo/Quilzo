@@ -475,6 +475,7 @@
   "unicode/utf8": [
    "*",
    "boards",
+   "chatbots",
    "mcp",
    "signup",
    "uploads"

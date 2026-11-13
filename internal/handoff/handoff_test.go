@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 var day0 = time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
@@ -300,5 +301,28 @@ func TestALongConversationStillGoingIsKept(t *testing.T) {
 	keep := func(string) time.Duration { return 30 * 24 * time.Hour }
 	if n, _ := s.Expire(keep, day0.Add(45*24*time.Hour)); n != 0 {
 		t.Error("a conversation that moved five days ago was deleted")
+	}
+}
+
+// A message's bound is in characters, as the message box's maxlength
+// counts them and as the refusal says: 1000 characters of Japanese, 3000
+// bytes, were refused as over 2000 characters. The question a conversation
+// starts from is cut between characters, not inside one.
+func TestAMessageIsBoundedInCharacters(t *testing.T) {
+	s, _, id := opened(t)
+	if _, err := s.Say("help", id, Visitor, "", strings.Repeat("返品", MaxText/2), day0); err != nil {
+		t.Fatalf("a %d-character message was refused: %v", MaxText, err)
+	}
+	if _, err := s.Say("help", id, Visitor, "", strings.Repeat("返", MaxText+1), day0); err == nil {
+		t.Fatal("a message over the bound in characters was accepted")
+	}
+	_, id2, _ := NewSecret()
+	c, err := s.Open("help", id2, "x"+strings.Repeat("返", MaxText), "hello", day0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !utf8.ValidString(c.Question) || utf8.RuneCountInString(c.Question) != MaxText {
+		t.Fatalf("the question was cut to %d characters, valid %v",
+			utf8.RuneCountInString(c.Question), utf8.ValidString(c.Question))
 	}
 }

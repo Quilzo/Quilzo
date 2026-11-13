@@ -40,6 +40,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/plaintext"
@@ -365,7 +366,9 @@ func (s *Store) Create(p Project) error {
 		return fmt.Errorf("%q is not a project's name: lower-case letters, digits and hyphens", p.Name)
 	}
 	p.Question = strings.TrimSpace(p.Question)
-	if p.Question == "" || len(p.Question) > MaxQuestion {
+	// Characters, as the refusal says: counted in bytes, a question of 400
+	// characters in Japanese was over 1000.
+	if p.Question == "" || utf8.RuneCountInString(p.Question) > MaxQuestion {
 		return fmt.Errorf("a project starts from a question of at most %d characters", MaxQuestion)
 	}
 	if _, err := os.Stat(s.projectPath(p.Name)); err == nil {

@@ -88,7 +88,7 @@ func (st *Site) handoffOpen(w http.ResponseWriter, r *http.Request, a assistant.
 	if !st.handoffAllowed(w, r) {
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
+	r.Body = http.MaxBytesReader(w, r.Body, handoffForm)
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "that could not be read", http.StatusBadRequest)
 		return
@@ -182,7 +182,7 @@ func (st *Site) handoffConversation(w http.ResponseWriter, r *http.Request,
 		if !st.handoffAllowed(w, r) {
 			return
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
+		r.Body = http.MaxBytesReader(w, r.Body, handoffForm)
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, "that could not be read", http.StatusBadRequest)
 			return

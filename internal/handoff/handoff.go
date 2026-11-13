@@ -43,6 +43,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // Who said something.
@@ -56,7 +57,11 @@ const (
 const (
 	MaxText     = 2000
 	MaxMessages = 200
-	MaxFile     = 1 << 20
+	// MaxFile holds MaxMessages of MaxText characters each, at up to the
+	// six bytes a character takes in a line of JSON ("<" is "\u003c"):
+	// the bound is in characters, and at 1 MiB a conversation in Japanese
+	// could grow past what it may be read back from.
+	MaxFile = 4 << 20
 	// DefaultDays is how long a conversation is kept after it last moved,
 	// unless the assistant says otherwise; MaxDays is the most it may say.
 	DefaultDays = 30
@@ -168,7 +173,9 @@ func clean(text string) (string, error) {
 	if text == "" {
 		return "", fmt.Errorf("there is nothing to send")
 	}
-	if len(text) > MaxText {
+	// Characters, as the message box's maxlength counts them: counted in
+	// bytes, 1000 characters of Japanese were over 2000.
+	if utf8.RuneCountInString(text) > MaxText {
 		return "", fmt.Errorf("a message is at most %d characters", MaxText)
 	}
 	return text, nil
@@ -184,8 +191,8 @@ func (s Store) Open(assistant, id, question, first string, now time.Time) (Conve
 	if err != nil {
 		return Conversation{}, err
 	}
-	if len(question) > MaxText {
-		question = question[:MaxText]
+	if utf8.RuneCountInString(question) > MaxText {
+		question = string([]rune(question)[:MaxText])
 	}
 	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
 		return Conversation{}, err
