@@ -101,7 +101,70 @@ var (
 	// telephone number written the way a country writes its own, an
 	// account or an order number. None says what a question is about.
 	reDigits = regexp.MustCompile(`\+?\(?\d[\d ().-]{6,}\d`)
+
+	// Who and where a visitor says they are. Visitors type it into a
+	// chatbot as they would into a letter, "I am Janet Zqwood, 14 Rose
+	// Lane, Leeds LS1 4AB", and it was kept whole, shown to staff and
+	// offered as the name of the page to write, under a promise that
+	// anything that could name them is taken out. A name is the
+	// capitalised words after "I am", "my name is" or "this is", with the
+	// title before them; a street address a house number, capitalised
+	// words and a street's word; a postcode a British one, or an American
+	// ZIP after its state.
+	//
+	// After "my name is" a name is one without its capitals, as people
+	// type into a chat box: nothing else follows those words. After "I am"
+	// it is not, or "I am looking for bread" would lose what it asks. And
+	// the full stop after a street's word is the address's only when the
+	// word is short for one, "St." or "Rd.": taken after "Lane" as well,
+	// it ran the sentence that gives an address into the one that asks.
+	reIntroduced = regexp.MustCompile(`((?i:\b(?:i am|i'm|i’m|my name is|my name's|my name’s|this is|name is)\s+))(?:(?i:dr|mr|mrs|ms|miss|prof|sir|dame)\b\.?\s+)?\p{Lu}[\p{L}'’-]*(?:\s+\p{Lu}[\p{L}'’-]*){0,3}`)
+	reNamed      = regexp.MustCompile(`((?i:\bmy name(?: is|'s|’s)\s+))\p{L}[\p{L}'’-]*(?:\s+\p{L}[\p{L}'’-]*)?`)
+	reStreet     = regexp.MustCompile(`\b\d{1,5}[A-Za-z]?,?\s+(?:\p{Lu}[\p{L}'’-]*\s+){1,3}(?:(?i:street|road|lane|avenue|drive|close|way|place|court|crescent|terrace|gardens|grove|square|boulevard|hill|row|mews|walk|park)\b|(?i:st|rd|ln|ave|dr|pl|ct|blvd)\b\.?)`)
+	rePostcode   = regexp.MustCompile(`(?i)\b[a-z]{1,2}\d[a-z\d]?\s*\d[a-z]{2}\b|\b\d{5}-\d{4}\b|\b[A-Z]{2}\s+\d{5}\b`)
+
+	// A name after its title, wherever it stands, and an address typed
+	// without its capitals. "Order for Mr Peter Zqhill has not arrived" says
+	// who without saying "I am", and "i am janet zqwood, 14 rose lane, leeds"
+	// is how an address is typed into a chat box on a telephone: each was
+	// kept whole, and named the page offered for it.
+	//
+	// A title names a person when a forename and a surname follow it, so
+	// "Dr Martens boots" and "Mr Kipling cake" are still what was asked
+	// about. And a figure before a road is a house only before the words
+	// that are a street's and nothing else's, with a name between them:
+	// "3 miles down the road" and "a 5 minute walk" are not addresses
+	// (notAStreet).
+	reTitled      = regexp.MustCompile(`\b(?:Mr|Mrs|Ms|Miss|Dr|Prof|Sir|Dame)\b\.?\s+\p{Lu}[\p{L}'’-]*\s+\p{Lu}[\p{L}'’-]*`)
+	reStreetTyped = regexp.MustCompile(`(?i)\b\d{1,5}[a-z]?,?\s+((?:[\p{L}'’-]+\s+){1,3})(?:street|road|lane|avenue|boulevard|mews)\b`)
 )
+
+// notAStreet are the words between a figure and "road" that make it a
+// distance, a time or a turn of phrase, not a house on one.
+var notAStreet = map[string]bool{
+	"the": true, "a": true, "an": true, "of": true, "for": true, "to": true,
+	"in": true, "on": true, "at": true, "up": true, "down": true, "from": true,
+	"and": true, "or": true, "per": true, "along": true, "off": true,
+	"way": true, "mile": true, "miles": true, "minute": true, "minutes": true,
+	"min": true, "mins": true, "hour": true, "hours": true, "door": true,
+	"doors": true, "yard": true, "yards": true, "metre": true, "metres": true,
+	"meter": true, "meters": true, "km": true,
+}
+
+// typedStreet masks an address reStreetTyped found, unless a word of it
+// says it is none.
+func typedStreet(found string) string {
+	m := reStreetTyped.FindStringSubmatch(found)
+	if m == nil {
+		return found
+	}
+	for _, w := range strings.Fields(strings.ToLower(m[1])) {
+		if notAStreet[w] {
+			return found
+		}
+	}
+	return "[address]"
+}
 
 // Clean is a question as it is kept: personal data masked, whitespace
 // collapsed, cut at MaxQuestion. allowed are the site's own email domains,
@@ -109,6 +172,12 @@ var (
 func Clean(q string, allowed []string) string {
 	m := &pii.Masker{Allowed: allowed}
 	q = rePlaceholder.ReplaceAllString(m.Mask(q, false), "[$1]")
+	q = reIntroduced.ReplaceAllString(q, "${1}[name]")
+	q = reNamed.ReplaceAllString(q, "${1}[name]")
+	q = reTitled.ReplaceAllString(q, "[name]")
+	q = reStreet.ReplaceAllString(q, "[address]")
+	q = reStreetTyped.ReplaceAllStringFunc(q, typedStreet)
+	q = rePostcode.ReplaceAllString(q, "[postcode]")
 	q = reDigits.ReplaceAllStringFunc(q, func(s string) string {
 		n := 0
 		for _, r := range s {
@@ -126,6 +195,58 @@ func Clean(q string, allowed []string) string {
 		q = strings.ToValidUTF8(q[:MaxQuestion], "")
 	}
 	return q
+}
+
+// reMasked is what Clean put in place of something personal.
+var reMasked = regexp.MustCompile(`\[[a-z]+\]`)
+
+// reSentenceEnd ends a sentence of a question, and reIntroduces is where
+// its writer says who they are: the words that say so and the three after
+// them at most, to the end of their clause.
+var (
+	reSentenceEnd = regexp.MustCompile(`[.?!]+(\s+|$)|\n+`)
+	reIntroduces  = regexp.MustCompile(`(?i)\b(?:i am|i'm|i’m|my name is|my name's|my name’s|this is|name is)(?:\s+[^\s,;:]+){0,3}[,;:]?`)
+)
+
+// Topic is what a kept question is about, to name the page that answers
+// it: the sentence that asks, or its first, without what Clean took out
+// and without where the writer says who they are, in at most eight words.
+// The name had been the whole question, so a page offered to be written
+// for "Do you ship to Zqbarra island? I am Janet Zqwood, 14 Rose Lane"
+// would have published a visitor's name and street in its address.
+//
+// Not the first sentence whatever it is, and not trusting Clean to have
+// known the name: "i am janet zqwood, do you ship to zqbarra island?" is
+// one sentence, with a name Clean cannot tell from "i am looking for
+// bread", and the page offered for it was i-am-janet-zqwood-do-you-ship-to.
+// What follows "I am" is left out of a page's name either way; it is
+// seldom what a question asks.
+func Topic(q string) string {
+	asked := ""
+	for rest := q; rest != ""; {
+		s, end := rest, ""
+		if at := reSentenceEnd.FindStringIndex(rest); at != nil {
+			s, end, rest = rest[:at[0]], rest[at[0]:at[1]], rest[at[1]:]
+		} else {
+			rest = ""
+		}
+		if strings.TrimSpace(s) == "" {
+			continue
+		}
+		if asked == "" {
+			asked = s
+		}
+		if strings.Contains(end, "?") {
+			asked = s
+			break
+		}
+	}
+	asked = reIntroduces.ReplaceAllString(asked, " ")
+	words := strings.Fields(reMasked.ReplaceAllString(asked, " "))
+	if len(words) > 8 {
+		words = words[:8]
+	}
+	return strings.Join(words, " ")
 }
 
 // Add keeps one unanswered question, already Clean.

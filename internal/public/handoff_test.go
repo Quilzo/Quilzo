@@ -371,3 +371,27 @@ func TestTheLiveScriptRunsOnlyOnItsOwnPageAndOnlyItself(t *testing.T) {
 		t.Errorf("another page's policy changed: %s", other)
 	}
 }
+
+// The question box takes 1000 characters and the message box 2000, as
+// their maxlength counts them, and the server takes as many: a question in
+// Japanese was refused as over 1000 characters at a third of that, and one
+// of 1000 characters was too long for the form to be read at all.
+func TestTheBoxesTakeAsManyCharactersAsTheySay(t *testing.T) {
+	st, _, _ := handoffSite(t)
+	q := strings.Repeat("配", assistant.MaxQuestion)
+	w := send(st, http.MethodPost, "/ask/help", url.Values{"q": {q}, "prev": {q}})
+	if w.Code != http.StatusOK {
+		t.Fatalf("a %d-character question answered %d: %s", assistant.MaxQuestion, w.Code, w.Body.String())
+	}
+	if w := send(st, http.MethodPost, "/ask/help", url.Values{"q": {q + "配"}}); w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("a question over the bound answered %d", w.Code)
+	}
+	m := strings.Repeat("返", handoff.MaxText)
+	w = send(st, http.MethodPost, "/ask/help/handoff", url.Values{"q": {q}, "message": {m}})
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("a %d-character message answered %d: %s", handoff.MaxText, w.Code, w.Body.String())
+	}
+	if w := send(st, http.MethodPost, w.Header().Get("Location"), url.Values{"message": {m}}); w.Code >= 400 {
+		t.Fatalf("a %d-character reply answered %d: %s", handoff.MaxText, w.Code, w.Body.String())
+	}
+}

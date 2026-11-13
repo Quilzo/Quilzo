@@ -12,6 +12,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/gaps"
 )
 
 type fakeAssistants struct {
@@ -225,5 +226,27 @@ func TestAChatbotsModelIsChosenOnItsPage(t *testing.T) {
 		"route_only": {"1"}})
 	if !strings.Contains(w.Header().Get("Location"), "e=") {
 		t.Error("a chatbot kept to no route was saved")
+	}
+}
+
+// The page offered to answer a gap is named for what the question is
+// about, not for everything the visitor wrote: it had been the whole
+// question, so accepting it would have put a visitor's name and street in
+// a public address.
+func TestAGapsPageIsNamedForItsTopicNotTheVisitor(t *testing.T) {
+	srv, token, fa := chatbots(t)
+	fa.set = &assistant.Set{Assistants: []assistant.Assistant{{Name: "help", Title: "Help"}}}
+	srv.Assistants.Gaps = func(string) ([]gaps.Group, bool, error) {
+		return []gaps.Group{{Key: "zqbarra", Count: 2, Questions: []string{
+			"Do you ship to Zqbarra island? I am Janet Zqwood, 14 Rose Lane, Leeds"}}}, true, nil
+	}
+	body := get(t, srv, "/assistants/help", token).Body.String()
+	if !strings.Contains(body, "/pages/new?name=do-you-ship-to-zqbarra-island") {
+		t.Fatalf("no page is offered for the gap:\n%s", body)
+	}
+	for _, leak := range []string{"janet", "zqwood", "rose-lane", "leeds"} {
+		if strings.Contains(body, "name=do-you-ship-to-zqbarra-island-"+leak) || strings.Contains(body, "island-i-am") {
+			t.Fatalf("the page offered is named with the visitor's %s", leak)
+		}
 	}
 }

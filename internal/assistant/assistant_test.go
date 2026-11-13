@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // shop is a small, realistic site: the pages a shop's assistant is asked
@@ -186,6 +187,32 @@ func TestAQuestionIsBounded(t *testing.T) {
 		strings.Repeat("ink ", MaxQuestion))
 	if err == nil {
 		t.Fatal("an oversized question was answered")
+	}
+}
+
+// The bound is in characters, as the question box's maxlength counts and
+// as the refusal says: a 400-character question in Japanese, 1200 bytes,
+// was refused as over 1000 characters. And a previous question cut to the
+// bound is cut between characters, not inside one.
+func TestAQuestionIsBoundedInCharacters(t *testing.T) {
+	q := strings.Repeat("配送料はいくらですか", 40)
+	if _, err := Respond(context.Background(), helper, shopIndex(t, helper), nil, q); err != nil {
+		t.Fatalf("a 400-character question was refused: %v", err)
+	}
+	q = strings.Repeat("配", MaxQuestion+1)
+	if _, err := Respond(context.Background(), helper, shopIndex(t, helper), nil, q); err == nil {
+		t.Fatal("a question over the bound in characters was answered")
+	}
+	prev := "ink " + strings.Repeat("配", MaxQuestion)
+	ans, err := RespondTo(context.Background(), helper, shopIndex(t, helper), nil, "zzqx", prev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !utf8.ValidString(ans.Note + ans.Text) {
+		t.Fatalf("the previous question was cut inside a character")
+	}
+	if got := boundText(prev, MaxQuestion); !utf8.ValidString(got) || utf8.RuneCountInString(got) != MaxQuestion {
+		t.Fatalf("cut to %d characters", utf8.RuneCountInString(got))
 	}
 }
 
@@ -448,6 +475,34 @@ func TestAPriceKeepsItsCurrency(t *testing.T) {
 	})
 }
 
+// A figure is held to the passage's figures whole. "Pallet delivery costs
+// £12" was shown, cited for "costs £120", and "within 3 days" for "within
+// 30 days": each figure was looked for as a piece of the passage's text, and
+// 12 is a piece of 120.
+func TestAFigureInsideALongerOneIsNotThatFigure(t *testing.T) {
+	zq := []Hit{{Passage: Passage{ID: "p#1", Page: "p", Title: "Zqvel delivery",
+		Text: "Pallet delivery to Zqvel costs £120. Returns are accepted within 30 days of delivery. " +
+			"Orders over £1,250.50 ship free. We open at 9.30am. Call 0113 496 0000."}}}
+	expectVerdicts(t, []verdict{
+		{zq, "Pallet delivery to Zqvel costs £12 [1].", "12"},
+		{zq, "Pallet delivery to Zqvel costs £20 [1].", "20"},
+		{zq, "Pallet delivery to Zqvel costs £1 [1].", "1"},
+		{zq, "Pallet delivery to Zqvel costs 12 pounds [1].", "12"},
+		{zq, "Returns are accepted within 3 days of delivery [1].", "3"},
+		{zq, "Returns are accepted within 0 days of delivery [1].", "0"},
+		{zq, "Orders over £1,250 ship free [1].", "1,250"},
+		{zq, "Orders over £250.50 ship free [1].", "250.50"},
+		{zq, "We open at 9am [1].", "9"},
+		{zq, "Call 0113 496 000 [1].", "000"},
+		{zq, "Pallet delivery to Zqvel costs £120 [1].", ""},
+		{zq, "Pallet delivery to Zqvel costs £120.00 [1].", ""},
+		{zq, "Returns are accepted within 30 days of delivery [1].", ""},
+		{zq, "Orders over £1250.50 ship free [1].", ""},
+		{zq, "We open at 9:30am [1].", ""},
+		{zq, "Call 0113 496 0000 [1].", ""},
+	})
+}
+
 // A record names what it is about in its header, and an FAQ asks in its
 // header what its answer says. Both headers were statements of their own,
 // with no "not" in them: "The sourdough loaf is gluten free" shared as many
@@ -542,6 +597,385 @@ func TestAnOppositeWordTurnsAPassageAround(t *testing.T) {
 		{faq, "The café isn’t open on Sundays [1].", ""},
 		// A word that starts as a negation does is not therefore one.
 		{help, "Staff will help you understand the menu [1].", ""},
+	})
+}
+
+// A "not" is held to the words it is before. "Yes, we sell gluten-free
+// bread at the Zqvel bakery, no need to order ahead" was shown for "We do
+// not sell gluten-free bread at the Zqvel bakery": its "no", about ordering,
+// was taken for the passage's "not", about selling.
+func TestAnotherNegationDoesNotStandInForTheDroppedOne(t *testing.T) {
+	hit := func(title, text string) []Hit {
+		return []Hit{{Passage: Passage{ID: "p#1", Page: "p", Title: title, Text: text}}}
+	}
+	bread := hit("Zqvel bread", "We do not sell gluten-free bread at the Zqvel bakery. "+
+		"Our sourdough is baked every morning.")
+	ship := hit("Delivery", "We never ship pallets abroad, whatever the order.")
+	expectVerdicts(t, []verdict{
+		{bread, "Yes, we sell gluten-free bread at the Zqvel bakery, no need to order ahead [1].", `"not"`},
+		{bread, "We sell gluten-free bread at the Zqvel bakery without fuss [1].", `"not"`},
+		{bread, "We sell gluten-free bread at the Zqvel bakery, never stale [1].", `"not"`},
+		{bread, "We never fail to sell gluten-free bread at the Zqvel bakery [1].", `"not"`},
+		{bread, "We sell gluten-free bread at the Zqvel bakery unless it sells out [1].", `"not"`},
+		{bread, "We do not sell gluten-free bread at the Zqvel bakery [1].", ""},
+		{bread, "We don't sell gluten-free bread at the Zqvel bakery, sorry [1].", ""},
+		{bread, "No, we do not sell gluten-free bread at the Zqvel bakery [1].", ""},
+		{ship, "We ship pallets abroad, no questions asked [1].", `"never"`},
+		{ship, "We never ship pallets abroad [1].", ""},
+	})
+}
+
+// A word that says the opposite of the passage's turns it around, and the
+// pairs a shop's or a venue's page uses are known: each of these, with the
+// one word changed, was shown with a citation.
+func TestTheOppositesAPagePutsAreKnown(t *testing.T) {
+	hit := func(title, text string) []Hit {
+		return []Hit{{Passage: Passage{ID: "p#1", Page: "p", Title: title, Text: text}}}
+	}
+	tea := hit("Zqvel tea room", "Dogs are banned in the Zqvel tea room. Prices exclude VAT. "+
+		"Children over 12 pay the full fare.")
+	delivery := hit("Zqvel delivery", "Delivery is charged on every order. "+
+		"Order before 2pm for next-day dispatch. Orders above £50 are checked by hand. "+
+		"The minimum order is 3 bags. Returns are accepted within 30 days. "+
+		"We allow pets in the garden. We serve more than 20 teas.")
+	expectVerdicts(t, []verdict{
+		{delivery, "Delivery is free on every order [1].", `"free"`},
+		{delivery, "Order after 2pm for next-day dispatch [1].", `"after"`},
+		{tea, "Dogs are welcome in the Zqvel tea room [1].", `"welcome"`},
+		{tea, "Dogs are allowed in the Zqvel tea room [1].", `"allowed"`},
+		{tea, "Prices include VAT [1].", `"include"`},
+		{tea, "Children under 12 pay the full fare [1].", `"under"`},
+		{delivery, "Orders below £50 are checked by hand [1].", `"below"`},
+		{delivery, "The maximum order is 3 bags [1].", `"maximum"`},
+		{delivery, "Returns are refused within 30 days [1].", `"refused"`},
+		{delivery, "Returns are rejected within 30 days [1].", `"rejected"`},
+		{delivery, "We forbid pets in the garden [1].", `"forbid"`},
+		{delivery, "We serve less than 20 teas [1].", `"less"`},
+		{delivery, "We serve fewer than 20 teas [1].", `"fewer"`},
+		// What the page says, in its words or the same word's others.
+		{delivery, "Delivery is charged on every order [1].", ""},
+		{delivery, "Delivery is not free on every order [1].", ""},
+		{delivery, "Order before 2pm for next-day dispatch [1].", ""},
+		{tea, "Dogs are banned in the Zqvel tea room [1].", ""},
+		{tea, "Dogs are not allowed in the Zqvel tea room [1].", ""},
+		{tea, "Dogs are not welcome in the Zqvel tea room [1].", ""},
+		{tea, "Prices exclude VAT [1].", ""},
+		{tea, "Children over 12 pay the full fare [1].", ""},
+		{delivery, "Pets are welcome in the garden [1].", ""},
+		{delivery, "Returns are accepted within 30 days [1].", ""},
+		{delivery, "We serve more than 20 teas [1].", ""},
+	})
+}
+
+// A figure the passage states is not thereby the price or the period a
+// sentence states with it. "Pallet delivery to Zqvel costs £12" was shown
+// for "costs £120. Returns are accepted within 12 days": the 12 is in the
+// passage, whole, and it is a number of days there. A figure the passage
+// counts only as something else is refused, as one it counts in another
+// unit is; one it also states without saying what it counts is left to the
+// other tests.
+func TestAFigureThePassageCountsAsSomethingElseIsNotTheSentences(t *testing.T) {
+	hit := func(text string) []Hit {
+		return []Hit{{Passage: Passage{ID: "p#1", Page: "p", Title: "Zqvel delivery", Text: text}}}
+	}
+	days := hit("Pallet delivery to Zqvel costs £120. Returns are accepted within 12 days of delivery.")
+	takes := hit("Pallet delivery to Zqvel costs £120 and takes 3 days.")
+	price := hit("Pallet delivery to Zqvel costs £30. Returns are accepted within 120 days of delivery.")
+	hours := hit("We are open 9 to 5 on Saturdays. Lunch is £9 and delivery takes 5 days.")
+	expectVerdicts(t, []verdict{
+		{days, "Pallet delivery to Zqvel costs £12 [1].", "12 days"},
+		{days, "Pallet delivery to Zqvel costs 12 pounds [1].", "12 days"},
+		{takes, "Pallet delivery to Zqvel costs £3 [1].", "3 days"},
+		{price, "Returns are accepted within 30 days of delivery [1].", "£30"},
+		{hours, "Lunch is £5 [1].", ""},
+		{hours, "We are open at 9am on Saturdays [1].", ""},
+		{days, "Pallet delivery to Zqvel costs £120 [1].", ""},
+		{days, "Returns are accepted within 12 days of delivery [1].", ""},
+		{takes, "Pallet delivery to Zqvel takes 3 days [1].", ""},
+	})
+}
+
+// A figure is the passage's when it is that figure, however each writes
+// it, and not when it only looks like part of it. "Open until 30.1" was
+// shown for "open until 30.10", because the zeros that end a decimal were
+// dropped from both; only a fraction that is all zeros says nothing. Digits
+// that are not ASCII were no figures at all, so "£１２" passed for "£120"
+// unread. And a list written "4,6,8" was one figure, 468, so the sentence
+// that names its sizes was refused.
+func TestAFigureIsReadAsItIsWritten(t *testing.T) {
+	hit := func(text string) []Hit {
+		return []Hit{{Passage: Passage{ID: "p#1", Page: "p", Title: "Zqvel delivery", Text: text}}}
+	}
+	until := hit("The Zqvel depot is open until 30.10 this year.")
+	zq := hit("Pallet delivery to Zqvel costs £120. Pallet delivery to Zqvel Islands costs £12.50.")
+	sizes := hit("Zqvel boots in sizes 4,6,8 are in stock, 1,250 pairs in all.")
+	wide := hit("Zqvel への配送料は１２０円です。")
+	expectVerdicts(t, []verdict{
+		{until, "The Zqvel depot is open until 30.1 this year [1].", "30.1"},
+		{until, "The Zqvel depot is open until 30.10 this year [1].", ""},
+		{zq, "Pallet delivery to Zqvel costs £１２ [1].", "12"},
+		{zq, "Pallet delivery to Zqvel costs £１２０ [1].", ""},
+		{zq, "Pallet delivery to Zqvel costs £120.00 [1].", ""},
+		{zq, "Pallet delivery to Zqvel Islands costs £12.5 [1].", "12.5"},
+		{zq, "Pallet delivery to Zqvel Islands costs £12.50 [1].", ""},
+		{sizes, "Zqvel boots in sizes 4, 6 and 8 are in stock [1].", ""},
+		{sizes, "Zqvel boots in sizes 46 are in stock [1].", "46"},
+		{sizes, "Zqvel boots are in stock, 1250 pairs in all [1].", ""},
+		{sizes, "Zqvel boots are in stock, 250 pairs in all [1].", "250"},
+		{wide, "Zqvel への配送料は120円です [1]。", ""},
+		{wide, "Zqvel への配送料は12円です [1]。", "12"},
+	})
+}
+
+// A "not" is the passage's when it is before a word the passage's is
+// before, whatever comes between them. "Yes, we sell gluten-free bread at
+// the Zqvel bakery, no need to order ahead" was still shown for "We no
+// longer sell gluten-free bread" and "We do not currently sell": the first
+// word after each "not" is "longer" and "currently", and only that word was
+// held to it. So was "No, we sell gluten-free bread", whose "No" is before
+// nothing, and a sentence that changed the verb, "We stock gluten-free
+// bread, no need to order ahead". And a sentence that added "no longer"
+// passed beside a passage's "no nuts".
+func TestANotIsHeldToEveryWordItIsBefore(t *testing.T) {
+	hit := func(title, text string) []Hit {
+		return []Hit{{Passage: Passage{ID: "p#1", Page: "p", Title: title, Text: text}}}
+	}
+	longer := hit("Zqvel bread", "We no longer sell gluten-free bread at the Zqvel bakery.")
+	currently := hit("Zqvel bread", "We do not currently sell gluten-free bread at the Zqvel bakery.")
+	yet := hit("Zqvel bread", "We do not yet sell gluten-free bread at the Zqvel bakery.")
+	bread := hit("Zqvel bread", "We do not sell gluten-free bread at the Zqvel bakery.")
+	aside := hit("Zqvel bread", "We do not, at present, sell gluten-free bread at the Zqvel bakery.")
+	nuts := hit("Zqvel bread", "We sell gluten-free bread and cakes at the Zqvel bakery, with no nuts.")
+	offer := hit("Zqvel delivery", "We do not offer delivery to the Channel Islands, whatever the order.")
+	dogs := hit("Zqvel tea room", "Dogs are not allowed inside, but they are welcome in the garden.")
+	faq := Chunk(map[string]any{"faq": map[string]any{"title": "FAQ", "items": []any{
+		map[string]any{"q": "Do you sell gluten-free bread at the Zqvel bakery?", "a": "No, we don't."},
+	}}}, nil)
+	asked := []Hit{{Passage: faq[0]}}
+	const ahead = "Yes, we sell gluten-free bread at the Zqvel bakery, no need to order ahead [1]."
+	expectVerdicts(t, []verdict{
+		{longer, ahead, `"no"`},
+		{currently, ahead, `"not"`},
+		{yet, "We sell gluten-free bread at the Zqvel bakery without fuss [1].", `"not"`},
+		{bread, "We stock gluten-free bread at the Zqvel bakery, no need to order ahead [1].", `"not"`},
+		{bread, "No, we sell gluten-free bread at the Zqvel bakery [1].", `"not"`},
+		{bread, "We sell gluten-free bread at the Zqvel bakery, don't you know [1].", `"not"`},
+		{aside, ahead, `"not"`},
+		{asked, ahead, `"no"`},
+		{nuts, "We no longer sell gluten-free bread at the Zqvel bakery [1].", `"no"`},
+		{nuts, "We do not currently sell gluten-free bread at the Zqvel bakery [1].", `"not"`},
+		{offer, "We deliver to the Channel Islands, no problem [1].", `"no"`},
+		{dogs, "Dogs are allowed inside, not in the garden [1].", `"not"`},
+		// The passage's "not", in the sentence's own words.
+		{longer, "We no longer sell gluten-free bread at the Zqvel bakery [1].", ""},
+		{longer, "We do not sell gluten-free bread at the Zqvel bakery any more [1].", ""},
+		{currently, "We don't sell gluten-free bread at the Zqvel bakery [1].", ""},
+		{bread, "The Zqvel bakery does not sell gluten-free bread [1].", ""},
+		{bread, "There is no gluten-free bread at the Zqvel bakery [1].", ""},
+		{asked, "No, we do not sell gluten-free bread at the Zqvel bakery [1].", ""},
+		{nuts, "We sell gluten-free bread at the Zqvel bakery, with no nuts [1].", ""},
+		{offer, "We do not offer delivery to the Channel Islands [1].", ""},
+		{dogs, "Dogs are not allowed inside [1].", ""},
+		{dogs, "Dogs are welcome in the garden but not inside [1].", ""},
+	})
+}
+
+// The opposites are known in the forms a page and a model write them in.
+// "Delivery is always free on every order" and "Every order ships free"
+// were shown for "Delivery is charged on every order", because "free" was
+// read as a price only straight after "is"; and "Delivery is free" for "We
+// charge for delivery", "Delivery charges apply" and "Delivery costs
+// extra", because only "charged" was known.
+func TestAnOppositeIsKnownInTheFormsItIsWrittenIn(t *testing.T) {
+	hit := func(title, text string) []Hit {
+		return []Hit{{Passage: Passage{ID: "p#1", Page: "p", Title: title, Text: text}}}
+	}
+	charged := hit("Zqvel delivery", "Delivery is charged on every order.")
+	charge := hit("Zqvel delivery", "We charge for delivery on every order.")
+	charges := hit("Zqvel delivery", "Delivery charges apply on every order.")
+	costs := hit("Zqvel delivery", "Delivery costs extra on every order.")
+	free := hit("Zqvel delivery", "Delivery is free on every order.")
+	vat := hit("Zqvel tea room", "Prices are exclusive of VAT. All teas excl. VAT.")
+	cards := hit("Zqvel tea room", "Card payments are accepted.")
+	loaf := hit("Zqvel bread", "The Zqvel loaf is gluten free and dairy free. Under 12s eat free.")
+	calls := hit("Zqvel help", "Feel free to call the Zqvel help line, where calls are charged at the local rate.")
+	postage := hit("Zqvel returns", "You pay for return postage to the Zqvel depot.")
+	expectVerdicts(t, []verdict{
+		{charged, "Delivery is always free on every order [1].", `"free"`},
+		{charged, "Delivery is completely free on every order [1].", `"free"`},
+		{charged, "Delivery free on every order [1].", `"free"`},
+		{charged, "Every order ships free [1].", `"free"`},
+		{charged, "Delivery is free of charge on every order [1].", `"free"`},
+		{charge, "Delivery is free on every order [1].", `"free"`},
+		{charges, "Delivery is free on every order [1].", `"free"`},
+		{costs, "Delivery is free on every order [1].", `"free"`},
+		{free, "We charge for delivery on every order [1].", `"charge"`},
+		{free, "Delivery costs extra on every order [1].", `"costs"`},
+		{vat, "Prices are inclusive of VAT [1].", `"inclusive"`},
+		{vat, "All teas include VAT [1].", `"include"`},
+		{cards, "Card payments are declined [1].", `"declined"`},
+		{calls, "Calls to the Zqvel help line are free [1].", `"free"`},
+		{postage, "Return postage to the Zqvel depot is free [1].", `"free"`},
+		// What the page says, and a "free" that is no price.
+		{charged, "We charge for delivery on every order [1].", ""},
+		{charge, "Delivery is charged on every order [1].", ""},
+		{free, "Every order has free delivery [1].", ""},
+		{free, "Delivery is free of charge on every order [1].", ""},
+		{vat, "Prices exclude VAT [1].", ""},
+		{loaf, "The Zqvel loaf is gluten-free and dairy-free [1].", ""},
+		{loaf, "The Zqvel loaf is gluten free [1].", ""},
+		{loaf, "Under 12s eat free [1].", ""},
+		{calls, "Calls to the Zqvel help line are charged at the local rate [1].", ""},
+		{postage, "You pay for return postage to the Zqvel depot [1].", ""},
+		{postage, "Return postage to the Zqvel depot is paid by you [1].", ""},
+	})
+}
+
+// A page says "not" in words that are not "not". "We are unable to deliver
+// to the Zqvel Highlands" was shown as "We deliver to the Zqvel Highlands":
+// "unable" was no negation, so nothing had been left out. And "not only"
+// takes nothing back: "We not only sell gluten-free bread" was shown for
+// "We do not sell gluten-free bread", its "not" before the same word, while
+// a page's "Not only do we sell" refused the plain "We sell".
+func TestANotIsKnownInTheWordsAPageSaysItIn(t *testing.T) {
+	hit := func(title, text string) []Hit {
+		return []Hit{{Passage: Passage{ID: "p#1", Page: "p", Title: title, Text: text}}}
+	}
+	unable := hit("Zqvel delivery", "We are unable to deliver to the Zqvel Highlands.")
+	able := hit("Zqvel delivery", "We are able to deliver to the Zqvel Highlands.")
+	bread := hit("Zqvel bread", "We do not sell gluten-free bread at the Zqvel bakery.")
+	only := hit("Zqvel bread", "Not only do we sell gluten-free bread at the Zqvel bakery, we bake it daily.")
+	expectVerdicts(t, []verdict{
+		{unable, "We deliver to the Zqvel Highlands [1].", `"unable"`},
+		{unable, "We are able to deliver to the Zqvel Highlands [1].", `"unable"`},
+		{unable, "Yes, we deliver to the Zqvel Highlands, no need to ask [1].", `"unable"`},
+		{able, "We are unable to deliver to the Zqvel Highlands [1].", `"unable"`},
+		{bread, "We not only sell gluten-free bread at the Zqvel bakery [1].", `"not"`},
+		{bread, "We don't only sell gluten-free bread at the Zqvel bakery [1].", `"not"`},
+		{bread, "Not only do we sell gluten-free bread at the Zqvel bakery, it is fresh [1].", `"not"`},
+		{only, "We do not sell gluten-free bread at the Zqvel bakery [1].", `"not"`},
+		// The passage's "not", in the sentence's own words.
+		{unable, "We are unable to deliver to the Zqvel Highlands [1].", ""},
+		{unable, "We cannot deliver to the Zqvel Highlands [1].", ""},
+		{unable, "We do not deliver to the Zqvel Highlands [1].", ""},
+		{able, "We deliver to the Zqvel Highlands [1].", ""},
+		{only, "We sell gluten-free bread at the Zqvel bakery [1].", ""},
+		{only, "Not only do we sell gluten-free bread at the Zqvel bakery, we bake it daily [1].", ""},
+	})
+}
+
+// An opposite is known when it is written in two words, with a prefix on a
+// short word, or as the other end of what a venue's page states. "The
+// Zqvel loaf is available today" was shown for "sold out today" and "in
+// stock" for "out of stock"; "safe to drink" for "unsafe to drink", "un"
+// making an opposite only of a word of five letters; and "Booking is
+// optional" for "Booking is required", "The sale ends on 1 June" for
+// "starts on 1 June", "Check-out is at 3pm" for "Check-in is at 3pm",
+// "at most 4" for "at least 4" and "up to 12" for "over 12", each keeping
+// every other word.
+func TestAnOppositeIsKnownInTwoWordsAndAtTheOtherEnd(t *testing.T) {
+	hit := func(title, text string) []Hit {
+		return []Hit{{Passage: Passage{ID: "p#1", Page: "p", Title: title, Text: text}}}
+	}
+	sold := hit("Zqvel bread", "The Zqvel loaf is sold out today.")
+	out := hit("Zqvel bread", "The Zqvel loaf is out of stock.")
+	in := hit("Zqvel bread", "The Zqvel loaf is in stock.")
+	water := hit("Zqvel water", "The Zqvel tap water is unsafe to drink.")
+	parking := hit("Zqvel tea room", "It is impossible to park at the Zqvel tea room.")
+	booking := hit("Zqvel tea room", "Booking is required for the Zqvel tea room.")
+	essential := hit("Zqvel tea room", "Booking is essential for the Zqvel tea room.")
+	sale := hit("Zqvel sale", "The Zqvel sale starts on 1 June.")
+	rooms := hit("Zqvel rooms", "Check-in at the Zqvel rooms is at 3pm.")
+	tables := hit("Zqvel tea room", "Tables seat at least 4 people in the Zqvel tea room.")
+	fare := hit("Zqvel tea room", "Children over 12 pay the full fare.")
+	order := hit("Zqvel delivery", "Order before 2pm for next-day dispatch.")
+	charged := hit("Zqvel delivery", "Delivery is charged on every order.")
+	expectVerdicts(t, []verdict{
+		{sold, "The Zqvel loaf is available today [1].", `"available"`},
+		{sold, "The Zqvel loaf is in stock today [1].", `"in stock"`},
+		{out, "The Zqvel loaf is in stock [1].", `"in stock"`},
+		{in, "The Zqvel loaf is out of stock [1].", `"out of stock"`},
+		{in, "The Zqvel loaf is sold out [1].", `"sold out"`},
+		{water, "The Zqvel tap water is safe to drink [1].", `"safe"`},
+		{parking, "It is possible to park at the Zqvel tea room [1].", `"possible"`},
+		{booking, "Booking is optional for the Zqvel tea room [1].", `"optional"`},
+		{essential, "Booking is optional for the Zqvel tea room [1].", `"optional"`},
+		{sale, "The Zqvel sale ends on 1 June [1].", `"ends"`},
+		{sale, "The Zqvel sale finishes on 1 June [1].", `"finishes"`},
+		{rooms, "Check-out at the Zqvel rooms is at 3pm [1].", `"check-out"`},
+		{tables, "Tables seat at most 4 people in the Zqvel tea room [1].", `"most"`},
+		{fare, "Children up to 12 pay the full fare [1].", `"up to"`},
+		{fare, "Children 12 and younger pay the full fare [1].", `"younger"`},
+		{order, "Order later than 2pm for next-day dispatch [1].", `"later"`},
+		{charged, "Delivery is complimentary on every order [1].", `"complimentary"`},
+		// What the page says, in the sentence's own words.
+		{sold, "The Zqvel loaf is sold out today [1].", ""},
+		{sold, "The Zqvel loaf is not available today [1].", ""},
+		{sold, "The Zqvel loaf is unavailable today [1].", ""},
+		{out, "The Zqvel loaf is sold out [1].", ""},
+		{in, "The Zqvel loaf is available [1].", ""},
+		{water, "The Zqvel tap water is not safe to drink [1].", ""},
+		{parking, "It is not possible to park at the Zqvel tea room [1].", ""},
+		{booking, "Booking is essential for the Zqvel tea room [1].", ""},
+		{essential, "Booking is required for the Zqvel tea room [1].", ""},
+		{sale, "The Zqvel sale begins on 1 June [1].", ""},
+		{rooms, "You can check in at the Zqvel rooms at 3pm [1].", ""},
+		{tables, "Tables seat at least 4 people in the Zqvel tea room [1].", ""},
+		{fare, "Children older than 12 pay the full fare [1].", ""},
+		{order, "Order until 2pm for next-day dispatch [1].", ""},
+	})
+}
+
+// A period is the passage's when the passage states it. "Returns are
+// accepted within a month" and "within a year" were shown for "within 30
+// days": "a month" has no figure to hold to the passage's, and its unit was
+// one word of many that the overlap test did not miss.
+func TestAPeriodWithoutAFigureIsHeldToThePassageToo(t *testing.T) {
+	hit := func(text string) []Hit {
+		return []Hit{{Passage: Passage{ID: "p#1", Page: "p", Title: "Zqvel delivery", Text: text}}}
+	}
+	days := hit("Returns are accepted within 30 days of delivery. Dispatch is next-day.")
+	month := hit("Returns are accepted for a month. Pallet delivery is £5 per week, billed monthly.")
+	depot := hit("The Zqvel depot is open 7 days, 24 hours. Storage is £5.")
+	expectVerdicts(t, []verdict{
+		{days, "Returns are accepted within a month of delivery [1].", "a month"},
+		{days, "Returns are accepted within a year of delivery [1].", "a year"},
+		{days, "Returns are accepted within a week of delivery [1].", "a week"},
+		{days, "Returns are accepted within an hour of delivery [1].", "an hour"},
+		{days, "Returns are accepted within one month of delivery [1].", "one"},
+		// A period the passage states, as it or the sentence writes it.
+		{days, "Returns are accepted within 30 days of delivery [1].", ""},
+		{days, "Dispatch takes a day [1].", ""},
+		{month, "Returns are accepted for a month [1].", ""},
+		{month, "Returns are accepted for one month [1].", ""},
+		{month, "Pallet delivery is £5 a week [1].", ""},
+		{month, "Pallet delivery is billed once a month [1].", ""},
+		// "Seven days a week" and "24 hours a day" are how every day and all
+		// day are said, and state no week or day of their own.
+		{depot, "The Zqvel depot is open 7 days a week [1].", ""},
+		{depot, "The Zqvel depot is open seven days a week, 24 hours a day [1].", ""},
+		{depot, "Storage is £5 a week [1].", "a week"},
+	})
+}
+
+// A model's sentence is read as its reader sees it. "Within 30 hours",
+// written with the no-break space a model sets between a figure and its
+// unit, was shown for "within 30 days": the patterns that find a period or
+// a time take an ordinary space, so the sentence stated no period to hold
+// to the passage's. A page's text has had such spaces made ordinary since
+// it was chunked; a model's reply had not.
+func TestASentenceIsReadThroughTheSpacesAModelWrites(t *testing.T) {
+	hit := func(text string) []Hit {
+		return []Hit{{Passage: Passage{ID: "p#1", Page: "p", Title: "Zqvel delivery", Text: text}}}
+	}
+	days := hit("Returns are accepted within 30 days of delivery. We open at 9pm. The Zqvel loaf is sold out.")
+	expectVerdicts(t, []verdict{
+		{days, "Returns are accepted within 30\u00a0hours of delivery [1].", "30 days"},
+		{days, "Returns are accepted within 30\u202fhours of delivery [1].", "30 days"},
+		{days, "We open at 9\u00a0am [1].", "9pm"},
+		{days, "The Zqvel loaf is in\u00a0stock [1].", `"in stock"`},
+		{days, "Returns are accepted within 30\u00a0days of delivery [1].", ""},
+		{days, "We open at 9\u00a0pm [1].", ""},
 	})
 }
 

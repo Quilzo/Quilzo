@@ -260,7 +260,7 @@ func (st *Site) ask(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	case http.MethodPost:
-		r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
+		r.Body = http.MaxBytesReader(w, r.Body, questionForm)
 		if err := r.ParseForm(); err != nil {
 			view.Problem = "That question could not be read."
 			st.renderAsk(w, r, view, http.StatusBadRequest)
@@ -281,6 +281,17 @@ func (st *Site) ask(w http.ResponseWriter, r *http.Request) {
 	st.renderAsk(w, r, view, http.StatusOK)
 }
 
+// questionForm bounds the body of a form that carries a question: the
+// question and the previous one, each of assistant.MaxQuestion characters
+// at up to four bytes, each written as three in a form's encoding. At 8 KiB
+// a question of 1000 characters in Japanese, which the box takes, could not
+// be read.
+const questionForm = 2*assistant.MaxQuestion*4*3 + 8<<10
+
+// handoffForm bounds the body of a form that carries a message to a person,
+// and the question it follows, in the same way.
+const handoffForm = (handoff.MaxText+assistant.MaxQuestion)*4*3 + 8<<10
+
 // answer puts the view's question to the assistant and fills in the answer.
 // False means a response has already been written.
 func (st *Site) answer(w http.ResponseWriter, r *http.Request,
@@ -293,16 +304,35 @@ func (st *Site) answer(w http.ResponseWriter, r *http.Request,
 		st.renderAsk(w, r, *view, http.StatusTooManyRequests)
 		return false
 	}
-	if LooksLikeInjection(view.Question) {
+	// The previous question is the visitor's text too: it comes back in a
+	// hidden field, which a script fills as it likes, and goes to the model
+	// beside a follow-up. Screened only in the question box, an attempt put
+	// there with a harmless follow-up reached the model and was never
+	// counted. Both are looked at, and a request is one signal at most.
+	//
+	// As the model reads them, the one before the other with a space
+	// between (assistant.RespondTo): each looked at alone, "Ignore your
+	// previous" in the field and "instructions" in the box were an attempt
+	// in the prompt and nothing in either.
+	said := []string{view.Question}
+	if strings.TrimSpace(view.Previous) != "" {
+		said = append(said, view.Previous+" "+view.Question)
+	}
+	if LooksLikeInjection(view.Question) || LooksLikeInjection(said[len(said)-1]) {
+		view.Attempt = true
 		st.signal(ChatbotInjection, a.Name, r)
 	} else if g := st.Assistants.Guardrail; g != nil {
 		// A second look, counted the same way: a flagged question is a
 		// signal, never a refusal on a classifier's word.
 		gctx, gcancel := context.WithTimeout(r.Context(), 3*time.Second)
-		flagged, missed := g(gctx, []string{view.Question})
+		flagged, missed := g(gctx, said)
 		gcancel()
-		if len(flagged) == 1 && flagged[0] {
-			st.signal(ChatbotInjection, a.Name, r)
+		for _, f := range flagged {
+			if f {
+				view.Attempt = true
+				st.signal(ChatbotInjection, a.Name, r)
+				break
+			}
 		}
 		if missed > 0 && st.Assistants.GuardrailEvent != nil {
 			st.Assistants.GuardrailEvent(a.Name, "unanswered", missed)
@@ -513,7 +543,12 @@ type askView struct {
 	Greeting  string
 	Question  string
 	Previous  string
-	Embedded  bool
+	// Attempt is a question noticed as an attempt on the chatbot. The page
+	// does not carry it into the next one as the question before: carried,
+	// it was screened again beside an honest follow-up, and one attempt was
+	// counted twice.
+	Attempt  bool
+	Embedded bool
 	// Panel is the conversation opened beside a page of this site by its
 	// launcher: framed by this site only, and its links go to the page.
 	Panel bool
@@ -872,7 +907,7 @@ var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
 </details>
 {{end}}
 <form method="post" action="/ask/{{.V.Assistant.Name}}" class="qz-ask-form"{{if and .Tools (not .V.Embedded)}} toolname="ask-{{.V.Assistant.Name}}" tooldescription="{{.V.Assistant.Title}}: answers a question from this site's published pages only, and every sentence links to the page it came from." toolautosubmit{{end}}>
-  {{if .V.Answer}}<input type="hidden" name="prev" value="{{.V.Question}}">{{end}}
+  {{if and .V.Answer (not .V.Attempt)}}<input type="hidden" name="prev" value="{{.V.Question}}">{{end}}
   {{if .V.Visitor}}<input type="hidden" name="v" value="{{.V.Visitor}}">{{end}}
   {{if .V.Embedded}}<input type="hidden" name="embed" value="{{.V.EmbedValue}}">{{end}}
   <label for="q">{{if .V.Answer}}Ask another question{{else}}Your question{{end}}</label>
@@ -881,8 +916,9 @@ var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
 </form>
 <p class="qz-small">{{.Disclosure}} Answers come from this site's pages, and
   every sentence links to where it came from. {{if .V.Keeps}}A question it cannot answer, or whose
-  answer you say did not help, is kept for a while with anything that could name you taken out, so the
-  site can say it better; nothing else you ask is stored.{{else}}Nothing you ask is stored.{{end}}</p>
+  answer you say did not help, is kept for a while
+  with email addresses, telephone and card numbers, and the names and street addresses it recognises taken out,
+  so the site can say it better; nothing else you ask is stored.{{else}}Nothing you ask is stored.{{end}}</p>
 </main>{{.Voice}}</body></html>`))
 
 // askCSS is the built-in page's stylesheet, served at /ask.css. Small and

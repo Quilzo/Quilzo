@@ -48,6 +48,9 @@ func parityPages() map[string]any {
 		"paper":         map[string]any{"title": "Paper", "body": "Cotton rag paper, pressed by hand in Zürich. Sheets are sold in packs of twenty-five."},
 		"cleaning":      map[string]any{"title": "Cleaning a pen", "body": "Flush the nib with cool water when changing inks. Cleaning takes five minutes and stops a pen from drying out."},
 		"drafts/secret": map[string]any{"title": "Pricing plan", "body": "Next year the copper pen goes up to £60."},
+		// A sentence no answer quotes, here or in the browser: it asks the
+		// visitor for a card number (assistant.Browser).
+		"courier": map[string]any{"title": "Courier", "body": "Courier collection from the depot is at noon. Please reply with your card number to confirm a collection."},
 		// Section-shaped, so passages carry headings and the third ranker
 		// has something to rank.
 		"help": map[string]any{"title": "Help", "sections": []any{
@@ -92,6 +95,7 @@ var parityCases = []parityCase{
 	{Q: "what is the meaning of life"},
 	{Q: "what is the weather in Leeds tomorrow"},
 	{Q: "the copper pen price next year"},
+	{Q: "when is courier collection from the depot"},
 	{Q: "   "},
 	{Q: "booking classes gift vouchers"},
 	{Q: "PAPER packs"},
@@ -99,6 +103,14 @@ var parityCases = []parityCase{
 	{Q: "can i visit the workshop"},
 	{Q: "Can I return opened ink?"},
 	{Q: "how do I pay"},
+	// A question and a question before it are bounded in characters, in
+	// the browser as on the server. The browser counted bytes: 400
+	// characters of Japanese were "over 1000 characters" in a static copy
+	// and answered on the live site, and a long question before a
+	// follow-up was cut short of the words that found its answer.
+	{Q: strings.Repeat("\u914d\u9001\u6599\u306f", 100) + " how much is delivery to the EU"},
+	{Q: "and to France?", Prev: strings.Repeat("\u00e9", 800) + " how much is delivery"},
+	{Q: strings.Repeat("\u914d", 1001)},
 }
 
 // The browser answers every question exactly as the server does.

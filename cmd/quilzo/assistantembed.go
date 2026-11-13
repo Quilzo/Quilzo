@@ -153,7 +153,7 @@ func embedChatbots(ctx context.Context, root, only string) (embedReport, error) 
 		if (only != "" && a.Name != only) || !meansWithModel(a) {
 			continue
 		}
-		idx, err := assistantIndex(root, a)
+		idx, _, err := assistantKnowledgeOf(root, a, nil, false)
 		if err != nil {
 			return rep, err
 		}

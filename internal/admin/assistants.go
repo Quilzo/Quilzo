@@ -185,7 +185,9 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request) {
 		if groups, on, gerr := s.Assistants.Gaps(a.Name); gerr == nil {
 			var rows []gapRow
 			for _, g := range groups {
-				rows = append(rows, gapRow{Group: g, Write: "/pages/new?name=" + url.QueryEscape(sheet.Slug(g.Questions[0]))})
+				// Named for what it is about, not for all the visitor wrote,
+				// which may say who and where they are (gaps.Topic).
+				rows = append(rows, gapRow{Group: g, Write: "/pages/new?name=" + url.QueryEscape(sheet.Slug(gaps.Topic(g.Questions[0])))})
 			}
 			data["Gaps"], data["GapsOn"] = rows, on
 		}
