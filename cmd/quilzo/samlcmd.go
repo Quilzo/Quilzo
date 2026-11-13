@@ -169,6 +169,9 @@ func cmdSAML(root string, args []string) error {
 		if len(args) < 2 {
 			return samlUsage()
 		}
+		if _, err := positionals(args[1:], 1); err != nil {
+			return err
+		}
 		c, err := findSAML(root, args[1])
 		if err != nil {
 			return err
@@ -194,6 +197,11 @@ func cmdSAML(root string, args []string) error {
 	case "remove":
 		if len(args) < 2 {
 			return samlUsage()
+		}
+		// One provider. `saml remove okta azure` took okta away and said
+		// nothing of azure, which people went on signing in through.
+		if _, err := positionals(args[1:], 1); err != nil {
+			return err
 		}
 		if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
 			return fmt.Errorf("removing single sign-on is for an administrator of the whole site: %w", err)

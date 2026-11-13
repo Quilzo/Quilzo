@@ -212,6 +212,11 @@ func hookList(root string) error {
 // hookTest sends a delivery now, so a misconfigured receiver is found
 // deliberately rather than by a publication going unnoticed.
 func hookTest(root string, args []string) error {
+	// It takes nothing: the test goes to every endpoint. `webhook test ID`
+	// read as a test of that one, and sent to them all.
+	if err := noArguments(args); err != nil {
+		return err
+	}
 	f := &hookFile{}
 	if err := loadJSON(hooksPath(root), f); err != nil {
 		return err

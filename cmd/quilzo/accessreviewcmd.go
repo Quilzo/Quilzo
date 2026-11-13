@@ -585,6 +585,15 @@ func cmdAccessReview(root string, args []string) error {
 		return nil
 	}
 	c := resolveCaller(root, flagToken)
+	// start, items and close take nothing after them, and nothing looked:
+	// `access review close q3` closed the review that was open, whichever
+	// it was.
+	switch args[0] {
+	case "start", "items", "close":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
+	}
 	switch sub := args[0]; sub {
 	case "start":
 		r, err := reviewStart(root, c)

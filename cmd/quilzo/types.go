@@ -485,6 +485,10 @@ func gateWrite(root string, pages map[string]any) (*schema.Store, error) {
 //	quilzo type stub product > new.json
 //	quilzo records add products --from new.json
 func cmdTypeStub(root string, args []string) error {
+	args, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	if len(args) == 0 {
 		return fmt.Errorf("usage: quilzo type stub <type>\n" +
 			"  quilzo type list  names them")
@@ -525,8 +529,13 @@ func cmdTypeStub(root string, args []string) error {
 }
 
 func cmdTypeExample(args []string) error {
+	// One name for the type, and a word after it is not dropped.
+	args, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	name := "article"
-	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+	if len(args) > 0 {
 		name = args[0]
 	}
 	t := schema.Type{

@@ -143,6 +143,9 @@ func agentCredentialCmd(root string, args []string) error {
 	caller := resolveCaller(root, flagToken)
 	switch args[0] {
 	case "keys":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		if _, err := credIssuer(root); err != nil {
 			return err
 		}
@@ -153,6 +156,10 @@ func agentCredentialCmd(root string, args []string) error {
 		fmt.Print(string(b))
 		return nil
 	case "list":
+		// One agent's, or everybody's: a second name was not read.
+		if _, err := positionals(args[1:], 1); err != nil {
+			return err
+		}
 		reg, err := loadCredRegister(root)
 		if err != nil {
 			return err

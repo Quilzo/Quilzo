@@ -9,6 +9,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"flag"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -218,8 +220,7 @@ func TestNoCommandRunsOnWordsItDoesNotTake(t *testing.T) {
 		"theme unset": "each word is a token to put back, and one that was not set is said, not refused",
 	}
 
-	handler := dispatchHandlers(t)
-	real := realSubcommands(t)
+	asks := everyCommandLine(t)
 	// A store with a page in it, published, so that a command about a page
 	// or about what is live gets as far as its words.
 	template := filepath.Join(t.TempDir(), ".quilzo")
@@ -237,29 +238,6 @@ func TestNoCommandRunsOnWordsItDoesNotTake(t *testing.T) {
 	}
 	strays := []string{"zzw1", "zzw2", "zzw3", "zzw4", "zzw5", "zzw6"}
 
-	// One spelling of each command: `forms` and `form` are one function.
-	var asks [][]string
-	asked, tried := map[string]bool{}, map[string]bool{}
-	for _, c := range dispatchedCommands(t) {
-		if strings.HasPrefix(c, "__") || handler[c] == "" || asked[handler[c]] {
-			continue // the re-executed shims, and help and version, answered inline
-		}
-		asked[handler[c]] = true
-		asks, tried[c] = append(asks, []string{c}), true
-		for _, g := range real[c] {
-			asks, tried[c+" "+g[0]] = append(asks, []string{c, g[0]}), true
-		}
-	}
-	// And the subcommands the help names, for the commands whose switch is
-	// in a function the dispatch does not call directly, as blog's is.
-	for _, m := range regexp.MustCompile(`(?m)^  quilzo (\S+) ([a-z][a-z0-9-]*)(?: |$)`).FindAllStringSubmatch(usageText, -1) {
-		if c, sub := m[1], m[2]; tried[c] && !tried[c+" "+sub] {
-			asks, tried[c+" "+sub] = append(asks, []string{c, sub}), true
-		}
-	}
-	if len(asks) < 400 {
-		t.Fatalf("only %d commands to try; the command list was not read", len(asks))
-	}
 	used := map[string]bool{}
 	for _, a := range asks {
 		name := strings.Join(a, " ")
@@ -299,6 +277,62 @@ func TestNoCommandRunsOnWordsItDoesNotTake(t *testing.T) {
 	}
 }
 
+// everyCommandLine is every command the program dispatches, alone and with
+// each subcommand its code switches on or its help names: the lines a rule
+// for the whole command line is tried on.
+func everyCommandLine(t *testing.T) [][]string {
+	t.Helper()
+	handler := dispatchHandlers(t)
+	real := realSubcommands(t)
+	// One spelling of each command: `forms` and `form` are one function.
+	var asks [][]string
+	asked, tried := map[string]bool{}, map[string]bool{}
+	for _, c := range dispatchedCommands(t) {
+		if strings.HasPrefix(c, "__") || handler[c] == "" || asked[handler[c]] {
+			continue // the re-executed shims, and help and version, answered inline
+		}
+		asked[handler[c]] = true
+		asks, tried[c] = append(asks, []string{c}), true
+		for _, g := range real[c] {
+			asks, tried[c+" "+g[0]] = append(asks, []string{c, g[0]}), true
+		}
+	}
+	// And the subcommands the help names, for the commands whose switch is
+	// in a function the dispatch does not call directly, as blog's is.
+	for _, m := range regexp.MustCompile(`(?m)^  quilzo (\S+) ([a-z][a-z0-9-]*)(?: |$)`).FindAllStringSubmatch(usageText, -1) {
+		if c, sub := m[1], m[2]; tried[c] && !tried[c+" "+sub] {
+			asks, tried[c+" "+sub] = append(asks, []string{c, sub}), true
+		}
+	}
+	// And a subcommand's own subcommands, which only the help names: `geo
+	// network remove` is the third word of an alternative on geo's line, and
+	// it dropped a second prefix while every line above refused.
+	deeper := 0
+	for _, m := range regexp.MustCompile(`(?m)^  quilzo (\S+) (.+?)(?:   .*)?$`).FindAllStringSubmatch(usageText, -1) {
+		c := m[1]
+		if !tried[c] {
+			continue
+		}
+		for _, alternative := range strings.Split(m[2], " | ") {
+			line := []string{c}
+			for _, word := range strings.Fields(alternative) {
+				if !helpSubcommand.MatchString(word) {
+					break
+				}
+				line = append(line, word)
+			}
+			if name := strings.Join(line, " "); len(line) > 2 && !tried[name] {
+				asks, tried[name] = append(asks, line), true
+				deeper++
+			}
+		}
+	}
+	if len(asks) < 400 || deeper < 10 {
+		t.Fatalf("only %d commands to try, %d of them three words deep; the command list was not read", len(asks), deeper)
+	}
+	return asks
+}
+
 // A word after a name the command does take is refused too, and a flag
 // after it is read.
 //
@@ -336,6 +370,7 @@ func TestAWordAfterANameIsRefused(t *testing.T) {
 		{"spend", "lst"},
 		{"compliance", "sbom", "a.json", "b.json"},
 		{"theme", "show", "extra"},
+		{"version", "now"},
 	} {
 		if _, e, code := cliRun(t, root, token, line...); code == 0 {
 			t.Errorf("`quilzo %s` exited 0: %s", strings.Join(line, " "), firstLines(e, 3))
@@ -357,6 +392,286 @@ func TestAWordAfterANameIsRefused(t *testing.T) {
 	}
 	if _, e, code := cliRun(t, root, token, "scim", "token", "--days", "3", "--revoke"); code != 0 {
 		t.Errorf("`quilzo scim token --days 3 --revoke`: %s", firstLines(e, 3))
+	}
+}
+
+// A word after the names a command reads by hand is refused too.
+//
+// These read their names by index, args[0] and args[1], and looked at
+// nothing after them. The test of every command gives each one words that
+// are not names, so the first is refused for what it is and the rest are
+// never reached; with the names right, the word after them was dropped.
+// `auditlog verify-head head.json keys.json`, the --keys forgotten, checked
+// the head against this machine's own keys and said it was verified. `peer
+// add stage https://stage.example draft` paired with what is live there, not
+// the draft. `saml remove okta azure` took one provider away and said
+// nothing of the other, and `auth recover --reason locked out` went on with
+// the reason "locked".
+func TestAWordAfterNamesReadByHandIsRefused(t *testing.T) {
+	root, token := accessStore(t)
+	addPage(t, root, token, "index", "v1")
+	dir := t.TempDir()
+	for _, line := range [][]string{
+		{"agent", "new", "bot", "--kind", "retrieval"},
+		{"note", "add", "index", "the price is wrong"},
+		{"peer", "add", "mirror", "https://mirror.example"},
+	} {
+		if _, e, code := cliRun(t, root, token, line...); code != 0 {
+			t.Fatalf("`quilzo %s`: %s", strings.Join(line, " "), firstLines(e, 3))
+		}
+	}
+	o, _, _ := cliRun(t, root, token, "note", "list", "--json")
+	var pages []struct{ Notes []struct{ ID string } }
+	if err := json.Unmarshal([]byte(o), &pages); err != nil || len(pages) != 1 || len(pages[0].Notes) != 1 {
+		t.Fatalf("note list --json: %v\n%s", err, firstLines(o, 4))
+	}
+	note := pages[0].Notes[0].ID
+	written := func(name string, args ...string) string {
+		t.Helper()
+		o, e, code := cliRun(t, root, token, args...)
+		if code != 0 {
+			t.Fatalf("`quilzo %s`: %s", strings.Join(args, " "), firstLines(e, 3))
+		}
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(o), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	head := written("head.json", "auditlog", "head", "--json")
+	bookings := written("bookings.json", "booking", "example")
+	logs := filepath.Join(dir, "audit")
+	if err := os.Mkdir(logs, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, line := range [][]string{
+		{"agent", "show", "bot", "extra"},
+		{"auditlog", "dir", logs, "extra"},
+		{"auditlog", "verify-head", head, filepath.Join(dir, "keys.json")},
+		{"booking", "setup", bookings, "extra"},
+		{"note", "resolve", "index", note, "extra"},
+		{"note", "remove", "index", note, "extra"},
+		{"peer", "add", "stage", "https://stage.example", "draft"},
+		{"peer", "remove", "mirror", "extra"},
+		{"peer", "pull", "mirror", "extra"},
+		{"peer", "adopt", "mirror", "extra"},
+		{"saml", "show", "okta", "extra"},
+		{"saml", "metadata", "okta", "extra"},
+		{"saml", "remove", "okta", "azure"},
+		{"type", "stub", "article", "extra"},
+		{"auth", "recover", "--principal", "owner", "--reason", "locked", "out", "--i-have-filesystem-access"},
+	} {
+		_, e, code := cliRun(t, root, token, line...)
+		if code != 2 || !strings.Contains(e, "does not take") {
+			t.Errorf("`quilzo %s` exited %d, want 2 and the word it does not take: %s", strings.Join(line[:2], " ")+" …", code, firstLines(e, 3))
+		}
+	}
+	// And none of them was done with the words that came first.
+	if o, _, _ := cliRun(t, root, token, "note", "list", "--json"); !strings.Contains(o, note) {
+		t.Errorf("a refused line resolved or removed the note: %s", firstLines(o, 6))
+	}
+	if o, _, _ := cliRun(t, root, token, "peer", "list", "--json"); !strings.Contains(o, "mirror") || strings.Contains(o, "stage") {
+		t.Errorf("a refused line changed the peers: %s", firstLines(o, 8))
+	}
+	if o, _, _ := cliRun(t, root, token, "auditlog", "dir", "--json"); !strings.Contains(o, `"in_store": true`) {
+		t.Errorf("the refused line moved the audit log: %s", firstLines(o, 4))
+	}
+	if o, _, _ := cliRun(t, root, token, "booking", "setup", "--json"); strings.TrimSpace(o) != "null" {
+		t.Errorf("the refused line set bookings up: %s", firstLines(o, 4))
+	}
+
+	// The lines as the help writes them still run.
+	for _, line := range [][]string{
+		{"agent", "show", "bot"},
+		{"auditlog", "verify-head", head},
+		{"auditlog", "verify-head", head, "--keys", filepath.Join(root, "head.pub.json")},
+		{"peer", "add", "stage", "https://stage.example", "--ref", "draft"},
+		{"peer", "remove", "stage"},
+		{"note", "resolve", "index", note},
+		{"booking", "setup", bookings},
+	} {
+		if _, e, code := cliRun(t, root, token, line...); code != 0 {
+			t.Errorf("`quilzo %s` exited %d: %s", strings.Join(line[:2], " ")+" …", code, firstLines(e, 3))
+		}
+	}
+}
+
+// A named network is taken away or added whole, or not at all.
+//
+// `geo network` reads its words by hand, three deep, where the helpers and
+// the test of every command did not reach. `geo network remove 10.0.0.0/8
+// 192.168.0.0/16` took the first away, said nothing of the second and exited
+// 0, and the office that was meant to stop being trusted still was. `geo
+// network add PREFIX NAME --kind`, with the value forgotten, added the
+// network with no kind at all, and a word after the last value was dropped.
+func TestGeoNetworkRefusesAWordItDoesNotTake(t *testing.T) {
+	root, token := accessStore(t)
+	for _, line := range [][]string{
+		{"geo", "network", "add", "10.0.0.0/8", "office", "--kind", "office"},
+		{"geo", "network", "add", "192.168.0.0/16", "tunnel", "--kind", "vpn"},
+	} {
+		if _, e, code := cliRun(t, root, token, line...); code != 0 {
+			t.Fatalf("`quilzo %s`: %s", strings.Join(line, " "), firstLines(e, 3))
+		}
+	}
+	for _, line := range [][]string{
+		{"geo", "network", "remove", "10.0.0.0/8", "192.168.0.0/16"},
+		{"geo", "network", "add", "10.2.0.0/16", "lab", "--kind"},
+		{"geo", "network", "add", "10.3.0.0/16", "annex", "--kind", "office", "now"},
+	} {
+		_, e, code := cliRun(t, root, token, line...)
+		if code != 2 || !strings.Contains(e, "usage") {
+			t.Errorf("`quilzo %s` exited %d, want 2 and its usage: %s", strings.Join(line, " "), code, firstLines(e, 3))
+		}
+	}
+	o, _, _ := cliRun(t, root, token, "geo", "status", "--json")
+	for _, prefix := range []string{"10.0.0.0/8", "192.168.0.0/16"} {
+		if !strings.Contains(o, prefix) {
+			t.Errorf("the refused removal took %s away: %s", prefix, firstLines(o, 8))
+		}
+	}
+	for _, prefix := range []string{"10.2.0.0/16", "10.3.0.0/16"} {
+		if strings.Contains(o, prefix) {
+			t.Errorf("the refused line added %s: %s", prefix, firstLines(o, 8))
+		}
+	}
+	// One prefix is still taken away.
+	if _, e, code := cliRun(t, root, token, "geo", "network", "remove", "10.0.0.0/8"); code != 0 {
+		t.Fatalf("`quilzo geo network remove 10.0.0.0/8`: %s", firstLines(e, 3))
+	}
+	if o, _, _ := cliRun(t, root, token, "geo", "status", "--json"); strings.Contains(o, "10.0.0.0/8") {
+		t.Errorf("the network was not taken away: %s", firstLines(o, 8))
+	}
+}
+
+// A word after a subcommand the list of every command does not find is
+// refused too.
+//
+// That list reads the switch of the function the dispatch calls, and the
+// subcommands the help spells out. A subcommand reached by an `if`, by a
+// switch a function further down, or written in brackets in the help is in
+// neither, and these went on dropping their words while every line the list
+// held refused. `access review close q3` closed whichever review was open,
+// `webhook test ID` sent the test to every endpoint and not to the one,
+// `pending list mine` listed everybody's, and `siem stream send now`, `pay
+// sync all` and `booking pause friday` did what they do with the word
+// unread.
+func TestAWordAfterASubcommandTheListMissesIsRefused(t *testing.T) {
+	root, token := accessStore(t)
+	if _, e, code := cliRun(t, root, token, "agent", "new", "bot", "--kind", "retrieval"); code != 0 {
+		t.Fatalf("agent new: %s", firstLines(e, 3))
+	}
+	for _, line := range [][]string{
+		{"access", "review", "start", "extra"},
+		{"access", "review", "items", "extra"},
+		{"access", "review", "close", "extra"},
+		{"agent", "credential", "keys", "extra"},
+		{"agent", "credential", "list", "bot", "extra"},
+		{"agent", "template", "list", "extra"},
+		{"agent", "trigger", "bot", "list", "extra"},
+		{"booking", "pause", "extra"},
+		{"booking", "resume", "extra"},
+		{"gateway", "providers", "anthropic", "extra"},
+		{"network", "show", "extra"},
+		{"pay", "sync", "extra"},
+		{"pending", "list", "extra"},
+		{"shield", "decoy", "list", "extra"},
+		{"shield", "playbook", "list", "extra"},
+		{"shield", "trust", "list", "extra"},
+		{"siem", "stream", "key", "extra"},
+		{"siem", "stream", "send", "extra"},
+		{"siem", "stream", "status", "extra"},
+		{"theme", "layer", "show", "extra"},
+		{"theme", "layer", "unset", "extra"},
+		{"type", "example", "article", "extra"},
+		{"webhook", "test", "extra"},
+	} {
+		_, e, code := cliRun(t, root, token, line...)
+		if code != 2 || !strings.Contains(e, "does not take") {
+			t.Errorf("`quilzo %s` exited %d, want 2 and the word it does not take: %s", strings.Join(line, " "), code, firstLines(e, 3))
+		}
+	}
+	// One video has a caption track taken off it, and a second was not
+	// looked at.
+	if _, e, _ := cliRun(t, root, token, "media", "captions", "v1", "v2", "--remove", "t1"); !strings.Contains(e, "usage: quilzo media captions VIDEO --remove TRACK") {
+		t.Errorf("`quilzo media captions v1 v2 --remove t1` did not refuse the second video: %s", firstLines(e, 3))
+	}
+	// Without the word they answer as they did.
+	for _, line := range [][]string{
+		{"agent", "credential", "list", "bot"},
+		{"agent", "template", "list"},
+		{"agent", "trigger", "bot"},
+		{"agent", "trigger", "bot", "list"},
+		{"gateway", "providers", "anthropic"},
+		{"network"},
+		{"network", "show"},
+		{"pending", "list"},
+		{"shield", "decoy", "list"},
+		{"shield", "playbook", "list"},
+		{"shield", "trust", "list"},
+		{"siem", "stream", "status"},
+	} {
+		if _, e, code := cliRun(t, root, token, line...); code != 0 {
+			t.Errorf("`quilzo %s` exited %d: %s", strings.Join(line, " "), code, firstLines(e, 3))
+		}
+	}
+}
+
+// A flag a command does not take is refused the way a word is.
+//
+// The commands that take no flags hand their words to a flag set with none
+// in it, and the flag package answered for them: `verify --all` said "flag
+// provided but not defined: -all", then "Usage of arguments:" with nothing
+// under it, then the error again, and exited 1, which is a command that ran
+// and failed. It is the command's own usage and exit 2, as for a word.
+func TestAFlagACommandDoesNotTakeIsRefusedWithItsUsage(t *testing.T) {
+	root, token := accessStore(t)
+	for _, line := range [][]string{
+		{"verify", "--all"},
+		{"diff", "-p"},
+		{"auth", "list", "--all"},
+		{"config", "show", "--key", "site.name"},
+		{"token", "list", "-x"},
+	} {
+		_, e, code := cliRun(t, root, token, line...)
+		if code != 2 || !strings.Contains(e, "does not take") || !strings.Contains(e, "  quilzo "+line[0]) {
+			t.Errorf("`quilzo %s` exited %d, want 2 and its usage: %s", strings.Join(line, " "), code, firstLines(e, 4))
+		}
+		if strings.Contains(e, "Usage of arguments") || strings.Count(e, "not defined") > 0 {
+			t.Errorf("`quilzo %s` was answered by the flag package: %s", strings.Join(line, " "), firstLines(e, 4))
+		}
+	}
+	// What follows "--" is not a flag, and is refused as the word it is.
+	if _, e, code := cliRun(t, root, token, "verify", "--", "--all"); code != 2 || !strings.Contains(e, "does not take") {
+		t.Errorf("`quilzo verify -- --all` exited %d: %s", code, firstLines(e, 3))
+	}
+}
+
+// A protection that is about no one thing takes no word.
+//
+// The shield's commands gather every word after their flags as the target,
+// and lockdown and freeze, which have none, never looked at what was
+// gathered. `shield freeze 6h --reason "…"`, the --for forgotten, froze
+// publishing for the hour that is the default and said so in a line nobody
+// reads twice during an incident: the protection ended five hours before it
+// was meant to. The test of every command passed, since six words with no
+// --reason are refused for the reason.
+func TestShieldLockdownAndFreezeTakeNoWord(t *testing.T) {
+	root, token := accessStore(t)
+	for _, kind := range []string{"freeze", "lockdown"} {
+		_, e, code := cliRun(t, root, token, "shield", kind, "6h", "--reason", "an incident")
+		if code != 2 || !strings.Contains(e, "does not take") {
+			t.Errorf("`quilzo shield %s 6h --reason …` exited %d, want 2 and the word it does not take: %s", kind, code, firstLines(e, 3))
+		}
+	}
+	if o, _, _ := cliRun(t, root, token, "shield", "list", "--json"); strings.Contains(o, "sh-") {
+		t.Errorf("a refused line put a protection in force: %s", firstLines(o, 8))
+	}
+	// With --for it is taken for as long as was asked.
+	o, e, code := cliRun(t, root, token, "shield", "freeze", "--for", "6h", "--reason", "an incident")
+	if code != 0 || !strings.Contains(o, "6 hours") {
+		t.Errorf("`quilzo shield freeze --for 6h --reason …` exited %d: %s", code, firstLines(o+e, 3))
 	}
 }
 
@@ -454,6 +769,74 @@ func TestFlagsMayComeBeforeTheNames(t *testing.T) {
 	}
 }
 
+// The two commands that took their name off the front by hand take it after
+// their flags as well.
+//
+// `menu add --label Home --target index foot` is one of the lines the report
+// gave, and it went on answering "one menu name, and the flags after it"
+// once every command built on leadingArgs took the order: menu add and
+// rights set read their first word for themselves, so the helper never saw
+// them. A word past the name is refused as it is everywhere else.
+func TestFlagsMayComeBeforeTheNameReadByHand(t *testing.T) {
+	root, token := accessStore(t)
+	addPage(t, root, token, "index", "v1")
+	id := strings.Repeat("ab", 32)
+	for _, line := range [][]string{
+		{"menu", "add", "--label", "Home", "--target", "index", "foot"},
+		{"menu", "add", "foot", "--label", "Start", "--target", "index", "--order", "2"},
+	} {
+		if _, e, code := cliRun(t, root, token, line...); code != 0 {
+			t.Errorf("`quilzo %s` exited %d: %s", strings.Join(line, " "), code, firstLines(e, 3))
+		}
+	}
+	if o, _, _ := cliRun(t, root, token, "menu", "list", "--json"); !strings.Contains(o, "Home") || !strings.Contains(o, "Start") {
+		t.Errorf("the menu does not hold both entries: %s", firstLines(o, 20))
+	}
+	// No file has this id, and in either order that is the answer.
+	for _, line := range [][]string{
+		{"rights", "set", "--licence", "CC0", "--holder", "Ada", id},
+		{"rights", "set", id, "--licence", "CC0", "--holder", "Ada"},
+	} {
+		if _, e, code := cliRun(t, root, token, line...); code != 1 || !strings.Contains(e, "there is no file") {
+			t.Errorf("`quilzo %s` exited %d: %s", strings.Join(line[:3], " ")+" …", code, firstLines(e, 3))
+		}
+	}
+	for _, line := range [][]string{
+		{"menu", "add", "foot", "--label", "Our", "shop", "--target", "index"},
+		{"menu", "add", "foot", "side", "--label", "Shop", "--target", "index"},
+		{"menu", "remove", "foot", "m1", "m2"},
+		{"rights", "set", id, strings.Repeat("cd", 32), "--licence", "CC0"},
+	} {
+		_, e, code := cliRun(t, root, token, line...)
+		if code != 2 || !strings.Contains(e, "does not take") {
+			t.Errorf("`quilzo %s` exited %d, want 2 and the word it does not take: %s", strings.Join(line, " "), code, firstLines(e, 3))
+		}
+	}
+	if o, _, _ := cliRun(t, root, token, "menu", "list", "--json"); strings.Contains(o, "Our") || strings.Contains(o, "Shop") {
+		t.Errorf("a refused line added to the menu: %s", firstLines(o, 12))
+	}
+}
+
+// The refusal of a path written after `auth explain` says where a path goes.
+//
+// `auth explain dana publish /blog` answered about the whole site and said
+// nothing of /blog. It is refused now, with the help's line for the command,
+// and that line was "WHO [ACTION]": whoever typed the path was told it is not
+// taken and not that --on takes it.
+func TestAuthExplainSaysWhereThePathGoes(t *testing.T) {
+	root, token := accessStore(t)
+	_, e, code := cliRun(t, root, token, "auth", "explain", "dana", "publish", "/blog")
+	if code != 2 || !strings.Contains(e, "--on PATH") {
+		t.Errorf("`quilzo auth explain dana publish /blog` exited %d and did not name --on PATH: %s", code, firstLines(e, 3))
+	}
+	// Nobody has given dana anything, which is the answer about /blog and
+	// exits 1 as a refusal does.
+	o, e, code := cliRun(t, root, token, "auth", "explain", "dana", "publish", "--on", "/blog")
+	if code == 2 || !strings.Contains(o+e, "dana publish on /blog") {
+		t.Errorf("`quilzo auth explain dana publish --on /blog` exited %d: %s", code, firstLines(o+e, 3))
+	}
+}
+
 // A command that takes as many names as it is given takes them.
 //
 // `research add NAME FILE…` gathers every leading word and was told it took
@@ -488,6 +871,45 @@ func TestACommandThatTakesManyNamesTakesThem(t *testing.T) {
 	_, e, code := cliRun(t, root, token, "research", "claim", "proj", "mean", "median", "--run", "r1")
 	if code != 1 || strings.Contains(e, "panic") {
 		t.Errorf("`quilzo research claim proj mean median --run r1` exited %d: %s", code, firstLines(e, 3))
+	}
+}
+
+// A "--" that is a flag's value is the value, and the flags go on after it.
+//
+// The loop took a "--" before the word it stopped at for the end of the
+// flags, whichever it was. In `auth grant --note -- dana publisher --on
+// /legal` the note is "--", and every word after it was taken for a name, the
+// --on and its path among them: a flag read as a name, and the line refused
+// for a word it does take.
+func TestADoubleDashThatIsAValueDoesNotEndTheFlags(t *testing.T) {
+	flags := func() (*flag.FlagSet, *string, *string, *bool) {
+		fs := flag.NewFlagSet("grant", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		return fs, fs.String("note", "", ""), fs.String("on", "/", ""), fs.Bool("deny", false, "")
+	}
+	fs, note, on, deny := flags()
+	var pos []string
+	if err := parseFlags(fs, []string{"--note", "--", "dana", "publisher", "--on", "/legal", "--deny"}, &pos, 2); err != nil {
+		t.Fatal(err)
+	}
+	if *note != "--" || *on != "/legal" || !*deny || !slices.Equal(pos, []string{"dana", "publisher"}) {
+		t.Errorf("read note %q, on %q, deny %v and the names %q", *note, *on, *deny, pos)
+	}
+	// The "--" that does end the flags still does, after a flag that takes
+	// no value and after one whose value is beside it.
+	for _, line := range [][]string{
+		{"dana", "--deny", "--", "--on"},
+		{"dana", "--note=x", "--", "--on"},
+		{"--note", "--", "dana", "--", "--on"},
+	} {
+		fs, _, on, _ := flags()
+		pos = nil
+		if err := parseFlags(fs, line, &pos, 2); err != nil {
+			t.Fatalf("%q: %v", line, err)
+		}
+		if *on != "/" || !slices.Equal(pos, []string{"dana", "--on"}) {
+			t.Errorf("%q: read on %q and the names %q", line, *on, pos)
+		}
 	}
 }
 
@@ -604,6 +1026,190 @@ func TestARootThatIsNotAStoreIsRefused(t *testing.T) {
 	}
 	if _, e, code := cliRun(t, root, "", "verify"); code != 0 {
 		t.Fatalf("verify after init: %s", e)
+	}
+}
+
+// A root that cannot be looked into is said to be that, and not to hold no
+// store.
+//
+// The refusal asked only whether objects/ could be found, so a store its
+// caller may not read answered as an empty directory does: somebody who left
+// off `sudo -u quilzo` was told "no store at /srv/quilzo/.quilzo; quilzo
+// --root /srv/quilzo/.quilzo init makes one", of a store that was there. So
+// did a --root that runs through a file.
+func TestARootThatCannotBeLookedIntoIsNotSaidToBeEmpty(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "notes.txt")
+	if err := os.WriteFile(file, []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	roots := map[string]string{"through a file": filepath.Join(file, "store")}
+	// An account that is not root is stopped by a directory's mode; root is
+	// not, so there the file stands for both.
+	if os.Geteuid() != 0 {
+		locked := filepath.Join(dir, "locked")
+		if err := os.MkdirAll(filepath.Join(locked, "objects"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(locked, 0); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(locked, 0o700) })
+		roots["another account's"] = locked
+	}
+	for what, root := range roots {
+		err := needStore(root)
+		if err == nil || errors.Is(err, errNoStore) || strings.Contains(err.Error(), "init makes one") {
+			t.Errorf("a root %s: %v", what, err)
+		}
+	}
+	// One with nothing at it is still no store, and says how one is made.
+	if err := needStore(filepath.Join(dir, "qulizo")); !errors.Is(err, errNoStore) || !strings.Contains(err.Error(), "init makes one") {
+		t.Errorf("a root with nothing at it: %v", err)
+	}
+	// On the command line it is a failure, 1, where no store is "not found".
+	_, e, code := cliRun(t, roots["through a file"], "", "token", "list")
+	if code != 1 || strings.Contains(e, "init makes one") {
+		t.Errorf("`quilzo token list` of a root through a file exited %d: %s", code, firstLines(e, 3))
+	}
+}
+
+// Only init runs on a --root that holds no store, and nothing is made there.
+//
+// open refuses such a root, and the commands that open a store went with it.
+// The ones that read a store's files for themselves did not, and there are
+// more of those: `token list` of a mistyped --root said "no tokens", `secret
+// list` that no credentials are kept, `scan` "0 finding(s)" and `vault
+// status` that the objects are stored in the clear, each exit 0, as `verify`
+// had said "0 object(s) intact". `member invite` made the directory and
+// wrote an invitation into it, and `studio` started its server there. The
+// test of the six lines the report named passed with all of them.
+//
+// So every command the program dispatches, and every subcommand, is run on a
+// root with nothing at it, and has to refuse with how a store is made and
+// make nothing. The ones that are not about a store are listed (storeless),
+// and the list is held to commands there are.
+func TestOnlyInitRunsOnARootThatIsNotAStore(t *testing.T) {
+	tried := map[string]bool{}
+	for _, a := range everyCommandLine(t) {
+		line := strings.Join(a, " ")
+		tried[line] = true
+		if runsWithoutAStore(a[0], a[1:]) {
+			continue
+		}
+		t.Run(line, func(t *testing.T) {
+			t.Parallel()
+			root := filepath.Join(t.TempDir(), "qulizo")
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, os.Args[0], append([]string{"quilzo-main", "--root", root}, a...)...)
+			cmd.Dir = t.TempDir()
+			cmd.Env = append(os.Environ(), "HOME="+t.TempDir(), "QUILZO_TOKEN=", "NO_COLOR=1")
+			var said bytes.Buffer
+			cmd.Stdout, cmd.Stderr = &said, &said
+			err := cmd.Run()
+			if ctx.Err() != nil {
+				t.Fatalf("`quilzo --root qulizo %s` did not refuse and went on running: %s", line, firstLines(said.String(), 3))
+			}
+			var exit *exec.ExitError
+			if !errors.As(err, &exit) || exit.ExitCode() != 4 || !strings.Contains(said.String(), "init makes one") {
+				t.Errorf("`quilzo --root qulizo %s` did not refuse the root (%v):\n%s", line, err, firstLines(said.String(), 3))
+			}
+			if _, err := os.Stat(root); err == nil {
+				t.Errorf("`quilzo --root qulizo %s` made the directory", line)
+			}
+		})
+	}
+	// A command listed as not about a store is one there is, under the
+	// spelling the help has: a line that names nothing lets nothing through,
+	// and reads as though it did.
+	for key := range storeless {
+		if !tried[key] {
+			t.Errorf("storeless lists %q, which is not a command there is", key)
+		}
+	}
+	// init is not among the lines tried, being the one that is to make a
+	// store there; it is among the commands dispatched.
+	dispatched := dispatchedCommands(t)
+	for c := range storelessWhole {
+		if !slices.Contains(dispatched, c) {
+			t.Errorf("storelessWhole lists %q, which is not a command there is", c)
+		}
+	}
+}
+
+// What is not about a store runs where there is none.
+//
+// The release is built this way: the bill of materials, the algorithms and
+// the count of third-party components are asked of the binary in a checkout
+// with no store in it, and a store that is lost is restored from its backup
+// by a command whose --root has nothing at it. Refusing every command there
+// would have stopped the release and the restore.
+func TestWhatIsNotAboutAStoreRunsWithoutOne(t *testing.T) {
+	key := filepath.Join(t.TempDir(), "bk.key")
+	if err := os.WriteFile(key, []byte(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte("k"), 32))), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(backupKeyFileEnv, key)
+	// A store, backed up, for the two that read a backup.
+	store := filepath.Join(t.TempDir(), "st")
+	if _, e, code := cliRun(t, store, "", "init"); code != 0 {
+		t.Fatalf("init: %s", e)
+	}
+	addPage(t, store, "", "index", "v1")
+	dir := t.TempDir()
+	file := filepath.Join(dir, "b.qzb")
+	if _, e, code := cliRun(t, store, "", "backup", "create", file); code != 0 {
+		t.Fatalf("backup create: %s", firstLines(e, 3))
+	}
+	restored := filepath.Join(dir, "restored")
+
+	for _, line := range [][]string{
+		{"version"},
+		{"help"},
+		{"compliance", "sbom", filepath.Join(dir, "sbom.json")},
+		{"compliance", "crypto", "--json"},
+		{"--json", "compliance", "summary"},
+		{"backup", "key"},
+		{"backup", "verify", file},
+		{"backup", "restore", file, "--into", restored},
+		{"token", "keygen", filepath.Join(dir, "dpop.jwk")},
+		{"auth", "roles"},
+		{"posture", "rules"},
+		{"template", "list"},
+		{"templates", "layouts"},
+		{"sframe", "suites"},
+		{"theme", "styles"},
+	} {
+		root := filepath.Join(t.TempDir(), "qulizo")
+		_, e, code := cliRun(t, root, "", line...)
+		if code != 0 {
+			t.Errorf("`quilzo --root qulizo %s` exited %d: %s", strings.Join(line, " "), code, firstLines(e, 3))
+		}
+		if _, err := os.Stat(root); err == nil {
+			t.Errorf("`quilzo --root qulizo %s` made the directory", strings.Join(line, " "))
+		}
+	}
+	if !isStore(filepath.Join(restored, "store")) {
+		t.Error("the backup was not restored into a store")
+	}
+	// `auditlog dir` is not among them, though the rest of auditlog asks for
+	// itself: it made the root, began a log and a key there, and said the
+	// log had moved.
+	typo, logs := filepath.Join(t.TempDir(), "qulizo"), t.TempDir()
+	if _, e, code := cliRun(t, typo, "", "auditlog", "dir", logs); code != 4 || !strings.Contains(e, "init makes one") {
+		t.Errorf("`quilzo --root qulizo auditlog dir DIR` exited %d: %s", code, firstLines(e, 3))
+	}
+	if _, err := os.Stat(typo); err == nil {
+		t.Error("`quilzo --root qulizo auditlog dir DIR` made the directory")
+	}
+	if entries, _ := os.ReadDir(logs); len(entries) != 0 {
+		t.Errorf("`quilzo --root qulizo auditlog dir DIR` wrote %s into DIR", entries[0].Name())
+	}
+	// A command nobody has is said to be that, and not to want a store.
+	_, e, code := cliRun(t, filepath.Join(t.TempDir(), "qulizo"), "", "tokens")
+	if code == 0 || strings.Contains(e, "init makes one") {
+		t.Errorf("`quilzo --root qulizo tokens` exited %d: %s", code, firstLines(e, 3))
 	}
 }
 

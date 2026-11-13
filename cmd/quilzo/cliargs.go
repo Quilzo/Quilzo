@@ -4,8 +4,10 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"strings"
 )
 
@@ -81,7 +83,7 @@ func parseInterspersed(fs *flag.FlagSet, args []string) (pos []string, at []int,
 		next := len(args) - len(rest)
 		// "--" ends the flags: what follows belongs to whatever the command
 		// hands it to, a program's own --root among it, and is not parsed.
-		if next > off && args[next-1] == "--" {
+		if next > off && args[next-1] == "--" && endsTheFlags(fs, args[off:next]) {
 			for i := next; i < len(args); i++ {
 				pos, at = append(pos, args[i]), append(at, i)
 			}
@@ -94,6 +96,34 @@ func parseInterspersed(fs *flag.FlagSet, args []string) (pos []string, at []int,
 		off = next + 1
 	}
 	return pos, at, nil
+}
+
+// endsTheFlags reports whether the "--" that read ends with, the words Parse
+// has just taken, ended the flags, and was not the value of the flag before
+// it. In `auth grant --note -- dana publisher --on /legal` the note is "--";
+// taken for the end of the flags, it made a name of every word after it, the
+// --on and its path among them.
+//
+// Every word of read is a flag, a flag's value or the "--" that stopped the
+// parse, so walking the flags and stepping over their values finds which.
+func endsTheFlags(fs *flag.FlagSet, read []string) bool {
+	for i := 0; i < len(read); i++ {
+		if read[i] == "--" {
+			return true
+		}
+		name, _, beside := strings.Cut(strings.TrimLeft(read[i], "-"), "=")
+		if f := fs.Lookup(name); f != nil && !beside && !isBoolFlag(f) {
+			i++
+		}
+	}
+	return false
+}
+
+// isBoolFlag reports whether a flag takes no value, as the flag package
+// asks it.
+func isBoolFlag(f *flag.Flag) bool {
+	b, ok := f.Value.(interface{ IsBoolFlag() bool })
+	return ok && b.IsBoolFlag()
 }
 
 // strayWord is the refusal of args[i], a word the command does not take.
@@ -149,7 +179,7 @@ func valueBefore(fs *flag.FlagSet, args []string, i int) (int, []string) {
 		if f == nil {
 			return -1, nil
 		}
-		if b, ok := f.Value.(interface{ IsBoolFlag() bool }); ok && b.IsBoolFlag() {
+		if isBoolFlag(f) {
 			return -1, nil
 		}
 		// The flag's own value, then the words between it and args[i]; any
@@ -173,12 +203,36 @@ func valueBefore(fs *flag.FlagSet, args []string, i int) (int, []string) {
 // names, and a word or a flag past them refused. The commands that read
 // names with leadingArgs and threw the rest away took `assistant remove
 // help now` as `assistant remove help`.
+//
+// A flag is refused the way a word is. Left to the flag package, `verify
+// --all` was answered "flag provided but not defined: -all", then "Usage of
+// arguments:" with nothing under it, since the set has no flags to list, then
+// the error again from main, and exit 1, which is a command that ran and
+// failed. So the set is silent, and the flag is named with the help's lines
+// for the command and exit 2.
 func positionals(args []string, n int) ([]string, error) {
+	fs := flag.NewFlagSet("arguments", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
 	var pos []string
-	if err := parseFlags(flag.NewFlagSet("arguments", flag.ContinueOnError), args, &pos, n); err != nil {
+	err := parseFlags(fs, args, &pos, n)
+	var misused errMisused
+	switch {
+	case err == nil:
+		return pos, nil
+	case errors.As(err, &misused), errors.Is(err, flag.ErrHelp):
 		return nil, err
 	}
-	return pos, nil
+	// The set has no flags, so the first word written as one is the one the
+	// parse stopped at.
+	for i, a := range args {
+		if a == "--" {
+			break
+		}
+		if len(a) > 1 && a[0] == '-' {
+			return nil, strayWord(fs, args, i, false)
+		}
+	}
+	return nil, err
 }
 
 // noArguments refuses anything after a subcommand that takes nothing. Such a

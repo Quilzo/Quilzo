@@ -314,6 +314,9 @@ func cmdPay(root string, args []string) error {
 		}
 		return payDisable(root, caller)
 	case "sync":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		made, retired, err := syncPay(root, caller)
 		if err != nil {
 			return err

@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -142,20 +143,22 @@ func peerList(root string) error {
 }
 
 func peerAdd(root string, args []string) error {
-	if len(args) < 2 {
+	// A flag set, so a word that is not --ref is refused. The words after
+	// the address were walked by hand for "--ref" and the rest passed over:
+	// `peer add stage https://stage.example draft`, the flag forgotten,
+	// paired with what is live there and not with the draft, and said
+	// nothing of the word.
+	fs := flag.NewFlagSet("peer add", flag.ContinueOnError)
+	refFlag := fs.String("ref", site.RefLive, "which of its refs to read: live or draft")
+	var pos []string
+	if err := parseFlags(fs, args, &pos, 2); err != nil {
+		return err
+	}
+	if len(pos) < 2 {
 		return fmt.Errorf(
 			"usage: quilzo peer add NAME https://host [--ref draft]")
 	}
-	name, url := args[0], args[1]
-	ref := site.RefLive
-	for i := 2; i < len(args); i++ {
-		if args[i] == "--ref" && i+1 < len(args) {
-			ref = args[i+1]
-		}
-		if v, ok := strings.CutPrefix(args[i], "--ref="); ok {
-			ref = v
-		}
-	}
+	name, url, ref := pos[0], pos[1], *refFlag
 	if err := replica.ValidPeerName(name); err != nil {
 		return err
 	}
@@ -193,6 +196,11 @@ func peerAdd(root string, args []string) error {
 }
 
 func peerRemove(root string, args []string) error {
+	// One name, as pull and adopt take: a second was not looked at.
+	args, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	if len(args) == 0 {
 		return fmt.Errorf("usage: quilzo peer remove NAME")
 	}
@@ -228,6 +236,10 @@ func peerRemove(root string, args []string) error {
 }
 
 func peerPull(root string, args []string) error {
+	args, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	if len(args) == 0 {
 		return fmt.Errorf("usage: quilzo peer pull NAME")
 	}
@@ -307,6 +319,10 @@ func peerPull(root string, args []string) error {
 // this install requires, because content arriving over a wire is not a reason
 // to skip the step that content typed into a form cannot skip.
 func peerAdopt(root string, args []string) error {
+	args, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	if len(args) == 0 {
 		return fmt.Errorf("usage: quilzo peer adopt NAME")
 	}

@@ -216,6 +216,11 @@ func noteList(root string, args []string) error {
 }
 
 func noteResolve(root string, args []string) error {
+	// The page and the note, and a word after them is not dropped.
+	args, err := positionals(args, 2)
+	if err != nil {
+		return err
+	}
 	if len(args) < 2 {
 		return fmt.Errorf("usage: quilzo note resolve PAGE ID")
 	}
@@ -241,6 +246,10 @@ func noteResolve(root string, args []string) error {
 }
 
 func noteRemove(root string, args []string) error {
+	args, err := positionals(args, 2)
+	if err != nil {
+		return err
+	}
 	if len(args) < 2 {
 		return fmt.Errorf("usage: quilzo note remove PAGE ID\n" +
 			"  to finish with a note and keep the conversation readable, " +

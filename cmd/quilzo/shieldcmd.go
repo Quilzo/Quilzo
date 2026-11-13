@@ -241,6 +241,15 @@ func shieldApply(root, kind string, args []string) error {
 	if err != nil {
 		return err
 	}
+	// The two that are about no one thing take no word, and the words were
+	// gathered for a target and not looked at: `shield freeze 6h --reason
+	// "…"`, the --for forgotten, froze publishing for the hour that is the
+	// default, and the protection ended five hours before it was meant to.
+	if kind == "lockdown" || kind == "freeze" {
+		if err := noArguments(pos); err != nil {
+			return err
+		}
+	}
 	c, by := shieldBy(root)
 	now := time.Now()
 	p := shield.Protection{Reason: *reason, By: by, Until: now.Add(*dur)}
@@ -358,6 +367,12 @@ func shieldJudge(root string, args []string) error {
 
 func shieldTrust(root string, args []string) error {
 	if len(args) == 0 || args[0] == "list" {
+		// Nothing after list: `shield trust list office` listed them all.
+		if len(args) > 0 {
+			if err := noArguments(args[1:]); err != nil {
+				return err
+			}
+		}
 		st, err := shield.Load(root)
 		if err != nil {
 			return err
@@ -393,6 +408,9 @@ func shieldDecoy(root string, args []string) error {
 	now := time.Now()
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		st, err := shield.Load(root)
 		if err != nil {
 			return err
@@ -459,6 +477,9 @@ func shieldPlaybook(root string, args []string) error {
 	now := time.Now()
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		pbs := bk.InForce()
 		if w.JSON(pbs) {
 			return nil

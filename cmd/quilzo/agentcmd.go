@@ -484,6 +484,11 @@ func agentList(root string) error {
 }
 
 func agentShow(root string, args []string) error {
+	// One name. It was read as args[0] and nothing after it was looked at.
+	args, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	if len(args) == 0 {
 		return fmt.Errorf("usage: quilzo agent show NAME")
 	}

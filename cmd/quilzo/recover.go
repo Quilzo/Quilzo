@@ -4,6 +4,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"strings"
@@ -49,20 +50,18 @@ import (
 // different account.
 
 func cmdRecover(root string, args []string) error {
-	var principal, reason string
-	confirmed := false
-	for i := 0; i < len(args); i++ {
-		switch {
-		case args[i] == "--principal" && i+1 < len(args):
-			principal = args[i+1]
-			i++
-		case args[i] == "--reason" && i+1 < len(args):
-			reason = args[i+1]
-			i++
-		case args[i] == "--i-have-filesystem-access":
-			confirmed = true
-		}
+	// A flag set, so what is not one of the three is refused. The words
+	// were walked by hand and anything else passed over: `--reason locked
+	// out` went on with the reason "locked", which is what the log then
+	// keeps of why somebody broke the glass.
+	fs := flag.NewFlagSet("auth recover", flag.ContinueOnError)
+	principalFlag := fs.String("principal", "", "who the new administrator token is for")
+	reasonFlag := fs.String("reason", "", "why, for the audit log")
+	confirmedFlag := fs.Bool("i-have-filesystem-access", false, "say that you can already edit the store's files")
+	if err := parseFlags(fs, args, nil, 0); err != nil {
+		return err
 	}
+	principal, reason, confirmed := *principalFlag, *reasonFlag, *confirmedFlag
 
 	toks, err := loadTokens(root)
 	if err != nil {

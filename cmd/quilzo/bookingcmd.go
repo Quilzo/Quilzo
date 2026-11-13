@@ -125,6 +125,9 @@ func cmdBooking(root string, args []string) error {
 	case "cancel":
 		return bookingCancelCmd(root, args[1:], caller)
 	case "pause", "resume":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return bookingPause(root, args[0] == "pause", caller)
 	case "feed":
 		return bookingFeedCmd(root, args[1:], caller)
@@ -213,6 +216,11 @@ func phoneSuffix(p string) string {
 }
 
 func bookingSetupCmd(root string, args []string, caller *Caller) error {
+	// One file, read as args[0]; a word after it was not looked at.
+	args, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	if len(args) == 0 {
 		if err := authorise(root, caller, auth.ActView, "/"); err != nil {
 			return err

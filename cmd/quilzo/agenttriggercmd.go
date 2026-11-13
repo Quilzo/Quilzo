@@ -35,6 +35,12 @@ func agentTriggerCmd(root string, args []string) error {
 	}
 	name, rest := args[0], args[1:]
 	if len(rest) == 0 || rest[0] == "list" {
+		// Nothing after list: a word there was not read.
+		if len(rest) > 0 {
+			if err := noArguments(rest[1:]); err != nil {
+				return err
+			}
+		}
 		return agentTriggerList(root, name)
 	}
 	switch rest[0] {

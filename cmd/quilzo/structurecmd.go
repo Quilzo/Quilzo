@@ -200,18 +200,18 @@ func cmdMenus(root string, args []string) error {
 // this command exists to avoid needing.
 
 func menuItemSet(root string, args []string) error {
-	// The menu name comes off the front before the flags are parsed.
+	// The menu name is read wherever it stands among the flags.
 	//
 	// Go's flag package stops at the first non-flag argument, so
 	// `menu add main --label X` parses zero flags and hands back four
 	// positionals — every flag left at its default, silently. This is the
 	// second command in this tree to be written with that bug; the first was
 	// `rights set`, and it was found the same way, by running it.
-	var name string
-	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-		name, args = args[0], args[1:]
-	}
-
+	//
+	// It was taken off the front by hand, which read the line as written
+	// and no other: `menu add --label Home --target index foot` was answered
+	// "one menu name, and the flags after it" when every command that
+	// shares parseFlags had come to take that order.
 	fs := flag.NewFlagSet("menu add", flag.ContinueOnError)
 	id := fs.String("id", "", "item id; generated when absent, and the way to edit an existing one")
 	label := fs.String("label", "", "what the entry says")
@@ -220,14 +220,16 @@ func menuItemSet(root string, args []string) error {
 	parent := fs.String("parent", "", "id of the item this nests under")
 	order := fs.Int("order", 0, "position among its siblings; lower first")
 	note := fs.String("note", "", "why this entry exists, for whoever finds it in two years")
-	if err := fs.Parse(args); err != nil {
+	var pos []string
+	if err := parseFlags(fs, args, &pos, 1); err != nil {
 		return err
 	}
-	if name == "" || len(fs.Args()) > 0 {
+	if len(pos) != 1 {
 		return fmt.Errorf(
 			"quilzo menu add NAME --label \"Shop\" --target shop --order 10\n" +
-				"  one menu name, and the flags after it")
+				"  one menu name, with its flags")
 	}
+	name := pos[0]
 	if strings.TrimSpace(*label) == "" {
 		return fmt.Errorf("an entry with no label is an entry nobody can read")
 	}
@@ -301,23 +303,16 @@ func menuItemSet(root string, args []string) error {
 }
 
 func menuItemRemove(root string, args []string) error {
-	// The two positionals come off the front, for the reason above.
-	var name, id string
-	for len(args) > 0 && !strings.HasPrefix(args[0], "-") && id == "" {
-		if name == "" {
-			name = args[0]
-		} else {
-			id = args[0]
-		}
-		args = args[1:]
-	}
-	fs := flag.NewFlagSet("menu remove", flag.ContinueOnError)
-	if err := fs.Parse(args); err != nil {
+	// The menu and the item, and a third word refused as menu add refuses
+	// a second.
+	pos, err := positionals(args, 2)
+	if err != nil {
 		return err
 	}
-	if name == "" || id == "" || len(fs.Args()) > 0 {
+	if len(pos) != 2 {
 		return fmt.Errorf("quilzo menu remove NAME ITEM-ID")
 	}
+	name, id := pos[0], pos[1]
 
 	caller := resolveCaller(root, flagToken)
 	if err := authorise(root, caller, auth.ActEditDraft, "/"); err != nil {

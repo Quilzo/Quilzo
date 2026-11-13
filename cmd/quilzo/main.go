@@ -470,7 +470,7 @@ access
   quilzo scim map GROUP auditor --until 2026-12-31   a job granted for a time, until a day
   quilzo geo status | help | network add PREFIX NAME --kind office|vpn ... | network remove PREFIX   where sign-ins come from
   quilzo auth deny WHO ROLE [--on PATH]    a deny wins wherever it sits
-  quilzo auth explain WHO [ACTION]         why someone can or cannot do a thing
+  quilzo auth explain WHO [ACTION] [--on PATH]   why someone can or cannot do a thing
   quilzo standing list                     what a situation can hand somebody, and what it cannot
   quilzo auth revoke WHO ROLE [--on PATH]  take a grant back
   quilzo auth enrol WHO [--for 24h]        a one-time link that adds their passkey (--revoke ends it)
@@ -838,6 +838,29 @@ func main() {
 		}
 	}
 
+	// A --root that holds no store is refused here, once, for every command
+	// but init and the few that are not about a store (storeless), before
+	// anything below reads it or makes it.
+	//
+	// open refuses one, and that covered the commands that open a store. The
+	// rest read its files for themselves and answered of nothing: `token
+	// list` of a mistyped --root said "no tokens", `scan` of an unmounted
+	// volume "0 finding(s)" and `vault status` that the objects are stored in
+	// the clear, each exit 0; `member invite` made the directory and wrote
+	// an invitation into it, and `studio` started its server there. Asked
+	// here for the reason authorisation is: a command inherits it, including
+	// the one added next year. Help is answered wherever it is asked, and a
+	// command nobody has is said to be that, below.
+	if _, known := lookupNeed(cmd, cmdArgs); known && !asked && !runsWithoutAStore(cmd, cmdArgs) {
+		if err := needStore(root); err != nil {
+			w.Error(err)
+			if errors.Is(err, errNoStore) {
+				os.Exit(out.ExitNotFound)
+			}
+			os.Exit(out.ExitFailure)
+		}
+	}
+
 	// State the public site writes used to sit at the store's root, and is
 	// kept in directories of its own now so the site can be confined to them
 	// (sitestate.go). Moved by whichever command runs first; a move that
@@ -1164,6 +1187,10 @@ func main() {
 	// tries `--version` and nothing else. `quilzo version` printed the same
 	// string and was unreachable to everything that looks for it.
 	case "version", "--version", "-V":
+		// It takes nothing, as the commands that go through noArguments do.
+		if err = noArguments(cmdArgs); err != nil {
+			break
+		}
 		if w.JSON(map[string]any{"name": "quilzo", "version": version,
 			"go": runtime.Version(), "os": runtime.GOOS, "arch": runtime.GOARCH,
 			"license": "Apache-2.0"}) {
@@ -1239,14 +1266,115 @@ func open(root string) (*store.Store, error) {
 // errNoStore is a --root that holds no store. It exits 4, "not found".
 var errNoStore = errors.New("no store")
 
-// needStore refuses a root that is not a store, saying how one is made. For
-// the commands that read a store's files without opening it, as `auth list`
-// and `auditlog verify` do, as well as for open.
+// needStore refuses a root that is not a store, saying how one is made.
+// main asks it of every command not listed as storeless. open asks again,
+// and so do the commands that read a store's files without opening it, as
+// `auth list` and `auditlog verify` do, for a caller that is not main.
+//
+// A root it cannot look into is said to be that. Asked only whether objects/
+// could be found, a store its caller may not read answered as an empty
+// directory does, and somebody who had left off `sudo -u quilzo` was told to
+// make a store where one already was.
 func needStore(root string) error {
-	if isStore(root) {
+	fi, err := os.Stat(filepath.Join(root, "objects"))
+	if err == nil && fi.IsDir() {
 		return nil
 	}
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("the store at %s cannot be looked into: %w", root, err)
+	}
 	return fmt.Errorf("%w at %s; quilzo --root %s init makes one", errNoStore, root, root)
+}
+
+// storeless is the commands that are not about a store, by the command and
+// subcommand the help spells them with, or the command alone for its bare
+// form. They run where --root holds none; every other command is refused
+// there before it reads or makes anything (main).
+//
+// A list of what is let through, so a command added tomorrow is refused on
+// the wrong directory until somebody says it need not be. The other way
+// round was how it stood: only the commands that open a store refused, and
+// the hundred that read its files for themselves answered of a mistyped
+// --root that there were no tokens, no credentials kept and no findings.
+//
+// What is here says nothing of a store. It describes this build, which the
+// release asks of the binary in a checkout with no store in it; or it lists
+// what ships in every copy; or it works on a file its own line names, as a
+// restore does on the day the store is gone.
+var storeless = map[string]bool{
+	// The log's writer runs as an account that cannot reach the store, in a
+	// container the store is not mounted in. `logd status`, which compares
+	// the two, is the store owner's and is not here.
+	"logd": true,
+
+	// This build: its bill of materials, its algorithms and its controls.
+	"compliance": true, "compliance summary": true, "compliance sbom": true,
+	"compliance crypto": true, "compliance controls": true,
+	"compliance implementation": true, "compliance pledge": true,
+
+	// A file the line names: a backup read or restored, a key made, and a
+	// receipt or a transfer checked by somebody who was sent it.
+	"backup key": true, "backup verify": true, "backup restore": true,
+	"token keygen": true, "token proof": true,
+	"agent verify-receipt": true, "transfer verify": true,
+	// A declaration and its calls on standard input, and nothing of a store.
+	"agent probe": true,
+
+	// What ships in every copy: the roles, the rules, the formats, the
+	// layouts and the examples to start from.
+	"auth roles":    true,
+	"agent formats": true,
+	"config list":   true, "config explain": true,
+	"policy params": true,
+	"posture rules": true, "posture explain": true,
+	"framework relations": true,
+	"media":               true, "media formats": true,
+	"section kinds": true, "site kinds": true,
+	"template": true, "template list": true, "template show": true, "template layouts": true,
+	"type example": true, "feature example": true,
+	"blog example": true, "booking example": true, "events example": true,
+
+	// The design is the templates directory's, beside the store, and these
+	// read it and write nothing.
+	"theme": true, "theme show": true, "theme tokens": true, "theme check": true,
+	"theme fonts": true, "theme css": true, "theme export": true, "theme styles": true,
+}
+
+// storelessWhole is the commands that run without a store whatever follows
+// them, having no subcommand that is about one.
+//
+// init, which makes the store, and says of a word after it where a store
+// goes. The demonstrations and the calculators, which the dispatch hands no
+// root to, and `audit`, which reads a directory of templates. `auditlog`
+// asks for itself, since a log copied out stands without its store
+// (cmdAuditLog); its `dir` does not stand without one, and is not let
+// through (runsWithoutAStore).
+var storelessWhole = map[string]bool{
+	"init":  true,
+	"audit": true, "auditlog": true,
+	"annotate": true, "call": true, "errand": true, "flow": true, "huddle": true,
+	"screen": true, "scribe": true, "sframe": true, "standing": true,
+}
+
+// runsWithoutAStore reports whether a command runs where --root holds no
+// store: help and the version, the shims this program runs itself as, and
+// what the two lists above name.
+func runsWithoutAStore(cmd string, args []string) bool {
+	if helpOrVersion[cmd] || strings.HasPrefix(cmd, "__") {
+		return true
+	}
+	if primary, ok := helpAliases[cmd]; ok {
+		cmd = primary
+	}
+	// `auditlog dir` is the one of auditlog's that is the store's: it says
+	// and sets where the store's log is kept. Let through with the rest,
+	// `auditlog dir /srv/audit` of a mistyped --root made the directory,
+	// began a log and a key in it, and said the log had moved, of a store
+	// that was not there.
+	if cmd == "auditlog" && len(args) > 0 && args[0] == "dir" {
+		return false
+	}
+	return storelessWhole[cmd] || storeless[helpKey(cmd, args)]
 }
 
 // makeStore opens the store at root, making it if it is not there: init's,

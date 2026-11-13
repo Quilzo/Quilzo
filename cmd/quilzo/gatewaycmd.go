@@ -698,6 +698,11 @@ func providerMaxTokens(root string, r gateway.Route) string {
 
 // gatewayProviders lists the providers a route can name, or one of them.
 func gatewayProviders(root string, args []string) error {
+	// One provider, or all of them: a second was not read.
+	args, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	cat, err := loadProviders(root)
 	if err != nil {
 		return err

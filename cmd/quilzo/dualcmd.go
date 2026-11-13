@@ -158,6 +158,12 @@ func cmdPending(root string, args []string) error {
 	c := resolveCaller(root, "")
 	now := time.Now()
 	if args[0] == "list" {
+		// Reached by this `if` and not by the switch below, and written in
+		// brackets in the help, so the test of every command did not find
+		// it: `pending list mine` listed everybody's.
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		pend, err := store.Pending(now)
 		if err != nil {
 			return err

@@ -570,6 +570,13 @@ func themeLayer(root string, args []string) error {
 		return fmt.Errorf("%q comes after the flags; write it first: "+
 			"quilzo theme layer [set FILE | unset] [--dir DIR]", strings.Join(fs.Args(), " "))
 	}
+	// Only set takes a word, its file. `theme layer unset old.css` took the
+	// one layer there is away whatever it was called.
+	if sub == "show" || sub == "unset" {
+		if err := noArguments(pos); err != nil {
+			return err
+		}
+	}
 	path := filepath.Join(*dir, theme.LayerFile)
 	// A style layer is CSS served on every page at once, including pages the
 	// person changing it may not edit, so changing one takes the authority
