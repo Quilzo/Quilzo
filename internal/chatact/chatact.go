@@ -67,10 +67,15 @@ const (
 
 // Result is the answer to a request.
 type Result struct {
-	ID     string    `json:"id"`
-	State  string    `json:"state"`
-	Answer string    `json:"answer,omitempty"`
-	At     time.Time `json:"at"`
+	ID     string `json:"id"`
+	State  string `json:"state"`
+	Answer string `json:"answer,omitempty"`
+	// Conversation is, for Person, the secret of the conversation in the
+	// Inbox where a person answers the request (internal/handoff): the
+	// visitor's way to that answer. A request held for a person used to
+	// reach nobody, while the visitor was told a person would look.
+	Conversation string    `json:"conversation,omitempty"`
+	At           time.Time `json:"at"`
 }
 
 // Queue is the folder requests and answers are kept in.
@@ -189,6 +194,22 @@ func (q Queue) Result(id string) (Result, bool) {
 	var r Result
 	if json.Unmarshal(b, &r) != nil || r.ID != id {
 		return Result{}, false
+	}
+	return r, true
+}
+
+// Request is a request as it was kept, answered or not.
+func (q Queue) Request(id string) (Request, bool) {
+	if !ValidID(id) {
+		return Request{}, false
+	}
+	b, err := os.ReadFile(q.req(id))
+	if err != nil {
+		return Request{}, false
+	}
+	var r Request
+	if json.Unmarshal(b, &r) != nil || r.ID != id {
+		return Request{}, false
 	}
 	return r, true
 }

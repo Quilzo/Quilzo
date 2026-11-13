@@ -184,9 +184,23 @@ func (st *Site) actWait(w http.ResponseWriter, r *http.Request, a assistant.Assi
 	if embedded {
 		again += "?embed=" + r.URL.Query().Get("embed")
 	}
+	// Where a person answers a request held for one: the conversation the
+	// admin opened for it in the Inbox. The page said a person would look
+	// when nothing had put the request in front of anybody; it now leads
+	// there, and says plainly when there is nowhere. The secret is checked
+	// as a conversation's address checks it, since this folder is one the
+	// site writes.
+	conversation := ""
+	if res.State == chatact.Person && validSecret(res.Conversation) {
+		conversation = "/ask/" + a.Name + "/c/" + res.Conversation
+		if embedded {
+			conversation += "?embed=" + r.URL.Query().Get("embed")
+		}
+	}
 	_ = actTemplate.Execute(w, map[string]any{"A": a, "R": res, "Answered": answered && res.State != chatact.Working,
 		"Embedded": embedded, "Person": res.State == chatact.Person, "Failed": res.State == chatact.Failed,
-		"Waiting": res.State == chatact.Waiting, "Again": again, "Lang": st.siteLang()})
+		"Waiting": res.State == chatact.Waiting, "Again": again, "Lang": st.siteLang(),
+		"Conversation": conversation, "Days": a.Keep()})
 }
 
 var actTemplate = template.Must(template.New("act").Parse(`<!doctype html>
@@ -202,7 +216,10 @@ var actTemplate = template.Must(template.New("act").Parse(`<!doctype html>
 {{if not .Answered}}<p class="qz-waiting" role="status" aria-live="polite">Working on it. This page shows the answer when it is ready.</p>
 {{else if .Waiting}}<p class="qz-greeting" role="status" aria-live="polite">A person needs to look at this, and will. You do not need to ask again: once they have, the answer is shown on this page.</p>
 <p class="qz-actions"><a class="qz-button-quiet" href="{{.Again}}">Check again</a></p>
-{{else if .Person}}<p class="qz-greeting" role="status">A person needs to look at this, and will. You do not need to ask again.</p>
+{{else if .Person}}{{if .Conversation}}<p class="qz-greeting" role="status">A person needs to look at this, and will. You do not need to ask again: they answer you in a conversation of your own.</p>
+<p class="qz-actions"><a class="qz-button" href="{{.Conversation}}" rel="noreferrer">Go to your conversation</a></p>
+<p class="qz-small"><strong>Keep that conversation's address</strong> to come back to it; it is the only way back. It is kept for {{.Days}} days after it last moves, then deleted.</p>
+{{else}}<p class="qz-problem" role="alert">This could not be answered here, and nobody has been asked to look at it. You could try again later, or contact the business another way.</p>{{end}}
 {{else if .Failed}}<p class="qz-problem" role="alert">This could not be done just now. You could try again later, or ask a person.</p>
 {{else}}<section class="qz-answer" aria-label="Answer"><p>{{.R.Answer}}</p></section>{{end}}
 <p class="qz-actions"><a class="qz-button-quiet" href="/ask/{{.A.Name}}{{if .Embedded}}?embed=1{{end}}">Ask something else</a></p>

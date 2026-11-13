@@ -16,6 +16,7 @@ import (
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/chatact"
 	"github.com/quilzo/quilzo/internal/form"
+	"github.com/quilzo/quilzo/internal/handoff"
 	"github.com/quilzo/quilzo/internal/rate"
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/site"
@@ -488,7 +489,8 @@ func TestAVisitorAsksAChatbotsAgent(t *testing.T) {
 	if !strings.Contains(g.Body.String(), "Your table is at 7pm &lt;b&gt;tonight&lt;/b&gt;.") || g.Header().Get("Refresh") != "" {
 		t.Fatalf("%s", g.Body.String())
 	}
-	results[asked[0].ID] = chatact.Result{ID: asked[0].ID, State: chatact.Person}
+	secret, _, _ := handoff.NewSecret()
+	results[asked[0].ID] = chatact.Result{ID: asked[0].ID, State: chatact.Person, Conversation: secret}
 	if g := get(st, where, nil); !strings.Contains(g.Body.String(), "A person needs to look at this") {
 		t.Fatalf("%s", g.Body.String())
 	}
@@ -747,5 +749,42 @@ func TestAChatbotsAnswerPageIsNotIndexed(t *testing.T) {
 	// The chatbot's own page, with no question, is the owner's to have found.
 	if got := get(st, "/ask/help", nil).Header().Get("X-Robots-Tag"); got != "" {
 		t.Errorf("the chatbot's page was answered with X-Robots-Tag %q", got)
+	}
+}
+
+// A visitor whose request is held for a person is told where the person
+// answers, and is not told a person will look when nobody was asked to.
+//
+// The page said "A person needs to look at this, and will. You do not need
+// to ask again." and nothing put the request in front of anybody, and the
+// visitor had no way back to an answer. The admin now opens a conversation
+// in the Inbox for it, and the page leads to that conversation.
+func TestAVisitorHeldForAPersonIsToldWhereTheyAreAnswered(t *testing.T) {
+	bot := shopBot
+	bot.Actions = []assistant.Action{
+		{Name: "booking", Kind: assistant.Agent, Target: "bookings", Description: "Move your booking", Fields: []string{"booking_ref"}},
+	}
+	st, _ := askSite(t, bot)
+	id, _ := chatact.NewID()
+	var res chatact.Result
+	st.Assistants.Act = func(chatact.Request) error { return nil }
+	st.Assistants.Answer = func(got string) (chatact.Result, bool, bool) { return res, got == id, got == id }
+
+	secret, _, _ := handoff.NewSecret()
+	res = chatact.Result{ID: id, State: chatact.Person, Conversation: secret}
+	body := get(st, "/ask/help/act/"+id+"?embed=1", nil).Body.String()
+	if !strings.Contains(body, `href="/ask/help/c/`+secret+`?embed=1"`) || !strings.Contains(body, "Keep") {
+		t.Errorf("the page does not lead to where a person answers:\n%s", body)
+	}
+	// Nobody was asked: the page says so, rather than that a person will.
+	res = chatact.Result{ID: id, State: chatact.Person}
+	body = get(st, "/ask/help/act/"+id, nil).Body.String()
+	if strings.Contains(body, "and will") || !strings.Contains(body, "could not be answered here") {
+		t.Errorf("a visitor nobody will answer is told a person will:\n%s", body)
+	}
+	// Nor is a conversation that is not one linked to.
+	res = chatact.Result{ID: id, State: chatact.Person, Conversation: "../../admin"}
+	if body = get(st, "/ask/help/act/"+id, nil).Body.String(); strings.Contains(body, "/c/") {
+		t.Errorf("the page links to a conversation that is not one:\n%s", body)
 	}
 }

@@ -128,6 +128,13 @@ func (st *Site) handoffOpen(w http.ResponseWriter, r *http.Request, a assistant.
 	http.Redirect(w, r, to, http.StatusSeeOther)
 }
 
+// validSecret reports whether s can be a conversation's secret: URL-safe
+// base64 of 24 bytes.
+func validSecret(s string) bool {
+	return len(s) == 32 && strings.Trim(s,
+		"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_") == ""
+}
+
 // conversationView is what the visitor's page shows.
 type conversationView struct {
 	Assistant assistant.Assistant
@@ -148,10 +155,8 @@ func (st *Site) handoffConversation(w http.ResponseWriter, r *http.Request,
 	a assistant.Assistant, secret string) {
 
 	store, ok := st.conversationStore()
-	// A secret is URL-safe base64 of 24 bytes; anything else is not one, and
-	// is answered exactly as a wrong secret is.
-	if !ok || len(secret) != 32 || strings.Trim(secret,
-		"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_") != "" {
+	// Anything that is not a secret is answered exactly as a wrong secret is.
+	if !ok || !validSecret(secret) {
 		st.notFound(w, r)
 		return
 	}

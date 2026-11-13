@@ -98,15 +98,16 @@ const (
 )
 
 // producers says which sources may write which events. The admin may write
-// a site's kind too (a booking cancelled from the admin, a form imported);
-// the site may write only what visitors do.
+// a site's kind too (a booking cancelled from the admin, a form imported, a
+// chatbot's request it holds for a person and puts in the Inbox); the site
+// may write only what visitors do.
 var producers = map[Type][]Source{
 	PagePublished:     {Admin},
 	PageRolledBack:    {Admin},
 	DraftProposed:     {Admin},
 	RecordChanged:     {Admin},
 	FormSubmitted:     {Site, Admin},
-	HandoffRequested:  {Site},
+	HandoffRequested:  {Site, Admin},
 	ChatbotUnanswered: {Site},
 	BookingMade:       {Site, Admin},
 	BookingCancelled:  {Site, Admin},

@@ -17,6 +17,8 @@ import (
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/chatact"
+	"github.com/quilzo/quilzo/internal/event"
+	"github.com/quilzo/quilzo/internal/handoff"
 )
 
 // chatActStore has a public chatbot whose actions ask an agent, a key the
@@ -251,6 +253,12 @@ func TestAVisitorIsToldTheOutcomeOnceAPersonHasAnswered(t *testing.T) {
 	if b, _, _ := answer(theirs); b.Answer != "" {
 		t.Errorf("a run that read something private answered the visitor: %q", b.Answer)
 	}
+	// And it reaches that person, in the Inbox, with what was asked.
+	b, _, _ := answer(theirs)
+	if c, err := handoffStore(root).Get("help", handoff.IDFor(b.Conversation)); err != nil ||
+		!strings.Contains(c.Messages[0].Text, "HB-2") {
+		t.Errorf("the request held after a person answered is not in the Inbox: %v", err)
+	}
 }
 
 // lookingUpModel answers as a model that reads the delivery page and then
@@ -383,5 +391,53 @@ func TestAnOfferIsShownWhereThereIsAPlaceForOne(t *testing.T) {
 	}
 	if *asked != 0 {
 		t.Errorf("the model was asked %d times for an offer nobody could be shown", *asked)
+	}
+}
+
+// A request held for a person reaches one: it is a conversation in the
+// Inbox, staff are told as for any visitor asking for a person, and the
+// visitor is given the conversation's address to be answered at.
+//
+// The visitor was told "A person needs to look at this, and will. You do
+// not need to ask again." and nothing put the request in front of anybody:
+// no Inbox conversation, no approval, no notice, only an audit record, and
+// the visitor had no way back to an answer.
+func TestARequestHeldForAPersonReachesOne(t *testing.T) {
+	root := chatActStore(t)
+	answer := agentOutcome{Trace: agent.Trace{Answer: "HB-2201 is booked by somebody at 12 Hill Street.", Complete: true},
+		Receipt: agent.Receipt{Private: []string{"personal data (address) returned by crm"}}}
+	old := chatActRun
+	chatActRun = func(context.Context, string, string, string, *Caller, string) (string, agentOutcome, error) {
+		return "run-1", answer, nil
+	}
+	t.Cleanup(func() { chatActRun = old })
+
+	res := runChatAction(context.Background(), root, chatact.Request{ID: strings.Repeat("b", 32), Chatbot: "help",
+		Action: "booking", Args: map[string]string{"booking_ref": "HB-2201"}})
+	if res.State != chatact.Person || res.Answer != "" {
+		t.Fatalf("%+v", res)
+	}
+	if res.Conversation == "" {
+		t.Fatal("the visitor was told a person will look, and given nowhere to be answered")
+	}
+	c, err := handoffStore(root).Get("help", handoff.IDFor(res.Conversation))
+	if err != nil {
+		t.Fatalf("the held request is not in the Inbox: %v", err)
+	}
+	if !c.Waiting() || !strings.Contains(c.Question, "Look up your booking") ||
+		!strings.Contains(c.Messages[0].Text, "HB-2201") {
+		t.Errorf("the Inbox does not say what was asked: %+v", c)
+	}
+	// What the run read stays out of it: a person looks that up.
+	if strings.Contains(c.Question+c.Messages[0].Text, "Hill Street") {
+		t.Error("what the run read reached the conversation")
+	}
+	evs, _, _ := adminEvents(root).Read(0, 100)
+	told := false
+	for _, e := range evs {
+		told = told || (e.Type == event.HandoffRequested && e.Subject == "help")
+	}
+	if !told {
+		t.Error("staff are not told a visitor is waiting")
 	}
 }
