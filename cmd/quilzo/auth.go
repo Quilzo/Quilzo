@@ -519,9 +519,17 @@ func authRevoke(root string, args []string) error {
 	fmt.Printf("removed %d binding(s)\n", n)
 	// Inherited access survives revoking a narrow binding, and someone who does
 	// not notice will think they removed access they did not.
+	//
+	// Where it comes from only when that is somewhere else: from a binding
+	// on the same place the reason restated the line ("theo still has admin
+	// on / — theo is admin on /, granted at /").
 	if d := p.Evaluate(rest[0], auth.ActView, *on); d.Allowed {
-		fmt.Printf("  %s%s still has %s on %s — %s%s\n",
-			yellow, rest[0], d.Role, *on, d.Reason, reset)
+		why := ""
+		if d.Binding == nil || strings.Trim(d.Binding.Resource, "/") != strings.Trim(*on, "/") {
+			why = " — " + d.Reason
+		}
+		fmt.Printf("  %s%s still has %s on %s%s%s\n",
+			yellow, rest[0], d.Role, *on, why, reset)
 	}
 	return nil
 }

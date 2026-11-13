@@ -16,6 +16,8 @@ import (
 	"github.com/quilzo/quilzo/internal/out"
 )
 
+// onlyOwner is a store whose one administrator is owner, acting with a
+// token of their own, beside dana, who is an author.
 func onlyOwner(t *testing.T) string {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
@@ -40,6 +42,15 @@ func administers(t *testing.T, root, who string) bool {
 	return pol.Evaluate(who, auth.ActGrant, "/").Allowed
 }
 
+// The last administrator is never revoked or denied from the command line,
+// as the People screen and the access review already refuse it.
+//
+// `quilzo auth revoke owner admin`, run by the only administrator, said
+// "removed 1 binding(s)" and left nobody able to grant anything: the grant
+// back and a new token were refused, and the break-glass refused too,
+// because the token that could no longer administer still counted as "an
+// admin token still usable". With no other binding the policy was left
+// empty, and an empty policy switches access control off.
 func TestTheLastAdministratorIsNeverRevokedOrDeniedFromTheCommandLine(t *testing.T) {
 	root := onlyOwner(t)
 	if err := cmdAuth(root, []string{"revoke", "owner", "admin"}); err == nil {
@@ -76,6 +87,10 @@ func TestTheLastAdministratorIsNeverRevokedOrDeniedFromTheCommandLine(t *testing
 	}
 }
 
+// The break-glass counts an admin token as a way in only while the policy
+// still lets its holder administer. A token that carries admin for
+// somebody the policy no longer lets grant reaches nothing, and counting it
+// refused the one recovery there was.
 func TestARecoveryIsNotRefusedOverATokenThatCanNoLongerAdminister(t *testing.T) {
 	root := onlyOwner(t)
 	// Written by hand, as a store would be left by anything that took the
@@ -98,6 +113,14 @@ func TestARecoveryIsNotRefusedOverATokenThatCanNoLongerAdminister(t *testing.T) 
 	}
 }
 
+// A store nobody has ever had access to is new, whichever command made
+// its folders, so `init --admin` on it gives two factors from now, not the
+// fortnight's grace an upgraded installation gets.
+//
+// `quilzo demo`, or `quilzo init --admni owner` with a typo, made the store,
+// and the `init --admin owner` after it found one there and wrote nothing:
+// the first `quilzo serve` then wrote the grace, and for two weeks a token
+// alone opened the admin of a store that was a day old.
 func TestAStoreNobodyHasEnteredGetsTwoFactorsFromInit(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("QUILZO_TOKEN", "")
@@ -139,6 +162,13 @@ func TestAStoreNobodyHasEnteredGetsTwoFactorsFromInit(t *testing.T) {
 	}
 }
 
+// A name typed after --by is credited and never recorded in place of the
+// verified caller who acted.
+//
+// `posture suppress --by 'Dana (CISO)'` wrote the risk acceptance to the
+// audit log under Dana, unverified, and left out the administrator who ran
+// it; `auth grant --by` set "granted by" to the name typed; and `checked set
+// --by` let an author record somebody else's confirmation.
 func TestAnyNameTypedAfterByIsCreditedNotRecorded(t *testing.T) {
 	root := onlyOwner(t)
 	granted := auditFor(t, root, "auth.granted")
@@ -197,6 +227,12 @@ func TestAnyNameTypedAfterByIsCreditedNotRecorded(t *testing.T) {
 	}
 }
 
+// `gateway budget CALLER` with no change to make shows the budget and
+// keeps it, and one limit changed keeps the others.
+//
+// Asked with no flags, it wrote the caller a budget of zeros, which is
+// unlimited, and said nothing; `--per-minute 10` alone dropped the
+// character and token caps.
 func TestAGatewayBudgetIsShownAndChangedOneLimitAtATime(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	root := connectStore(t)
@@ -250,6 +286,7 @@ func TestAGatewayBudgetIsShownAndChangedOneLimitAtATime(t *testing.T) {
 	}
 }
 
+// adminSafetyToken gives who a token as asOnly does, without acting as them.
 func adminSafetyToken(t *testing.T, root, who string, role auth.Role) string {
 	t.Helper()
 	ts, _ := loadTokens(root)
@@ -263,6 +300,13 @@ func adminSafetyToken(t *testing.T, root, who string, role auth.Role) string {
 	return secret
 }
 
+// A second administrator can be set up in either order: granted admin and
+// then given a passkey or a token, or given a passkey as an author and then
+// granted admin. Granted first, every way they could sign in waited for a
+// second administrator, and the only other one was them, with no way in.
+//
+// Once they have a way in, there are two, and one asks while the other
+// decides: one administrator does not give herself the other's sign-in.
 func TestASecondAdministratorIsSetUpInEitherOrder(t *testing.T) {
 	root := onlyOwner(t)
 	if err := cmdAuth(root, []string{"grant", "theo", "admin"}); err != nil {
@@ -333,6 +377,12 @@ func TestASecondAdministratorIsSetUpInEitherOrder(t *testing.T) {
 	}
 }
 
+// A token carries at most its holder's role, when it is issued and when it
+// is listed.
+//
+// `token issue jun-pub --principal jun --role publisher`, for jun the
+// author, issued it and listed it as publisher, and everything it was used
+// for was refused: "jun is author on /; publish needs publisher".
 func TestATokenCarriesNoMoreThanItsHoldersRole(t *testing.T) {
 	root := onlyOwner(t)
 	_, printed := captureStdout(t)
@@ -365,6 +415,8 @@ func TestATokenCarriesNoMoreThanItsHoldersRole(t *testing.T) {
 	}
 }
 
+// Before anybody administers the store, a change that would wait for a
+// second administrator is not said to be the only administrator's.
 func TestTheBootstrapDoesNotNameAnAdministratorNobodyIs(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("QUILZO_TOKEN", "")
@@ -380,5 +432,37 @@ func TestTheBootstrapDoesNotNameAnAdministratorNobodyIs(t *testing.T) {
 	}
 	if strings.Contains(buf.String(), "only administrator") {
 		t.Errorf("before anybody administers the store, it says: %s", buf.String())
+	}
+}
+
+// Revoking a lesser grant from an administrator says what they still have
+// once, not again in the words of the binding that gives it.
+func TestARevokeSaysWhatIsLeftOnce(t *testing.T) {
+	root := onlyOwner(t)
+	seedPolicy(t, root, [2]string{"theo", "author"}, [2]string{"theo", "admin"})
+	_, printed := captureStdout(t)
+	err := cmdAuth(root, []string{"revoke", "theo", "author"})
+	said := printed()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(said, "theo still has admin on /") || strings.Contains(said, "granted at") {
+		t.Errorf("the revoke said:\n%s", said)
+	}
+	// From a wider grant, where it comes from is still said.
+	seedPolicy(t, root, [2]string{"kim", "reader"})
+	if _, err := updatePolicy(root, func(p *auth.Policy) error {
+		return p.Grant(auth.Binding{Principal: "kim", Role: auth.RoleAuthor, Resource: "/blog"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, printed = captureStdout(t)
+	err = cmdAuth(root, []string{"revoke", "kim", "author", "--on", "/blog"})
+	said = printed()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(said, "granted at /") {
+		t.Errorf("an inherited grant left does not say where it comes from:\n%s", said)
 	}
 }
