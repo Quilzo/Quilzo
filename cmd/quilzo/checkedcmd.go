@@ -89,7 +89,7 @@ func checkedSet(root string, args []string) error {
 		"how long until this page is wanted again, e.g. 168h; "+
 			"omit for the site's own answer")
 	note := fs.String("note", "", "what the next person should know")
-	by := fs.String("by", "", "who checked it")
+	by := fs.String("by", "", "who to credit for the check; it is recorded as the signed-in principal's")
 	rest, flags := leadingArgs(args, 1)
 	if err := fs.Parse(flags); err != nil {
 		return err
@@ -100,10 +100,14 @@ func checkedSet(root string, args []string) error {
 	}
 	page := rest[0]
 
-	who := strings.TrimSpace(*by)
+	// Recorded as the verified caller's, with a name typed after --by
+	// credited in the note (Caller.namedBy).
+	caller := resolveCaller(root, "")
+	who, credited := caller.namedBy(*by)
 	if who == "" {
-		who = resolveCaller(root, "").Name
+		who = caller.Name
 	}
+	*note = withCredit(*note, credited)
 	if who == "" {
 		return fmt.Errorf("who checked it? Pass --by, or sign in")
 	}

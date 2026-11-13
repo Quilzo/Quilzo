@@ -135,3 +135,61 @@ func TestAStoreNobodyHasEnteredGetsTwoFactorsFromInit(t *testing.T) {
 		t.Error("init wrote a date for a store people already sign in to")
 	}
 }
+
+func TestAnyNameTypedAfterByIsCreditedNotRecorded(t *testing.T) {
+	root := onlyOwner(t)
+	granted := auditFor(t, root, "auth.granted")
+	if len(granted) == 0 {
+		t.Fatal("no grant on the record to compare with")
+	}
+	owner := granted[0].Principal
+
+	if err := postureSuppress(root, []string{"mfa.no-second-factor", "--reason", "accepted by the board",
+		"--by", "Dana (CISO)", "--days", "90"}); err != nil {
+		t.Fatal(err)
+	}
+	got := auditFor(t, root, "posture.suppress")
+	if len(got) != 1 || got[0].Principal != owner || !got[0].Verified {
+		t.Errorf("the suppression is recorded as %+v, not as the administrator who made it", got)
+	}
+	f := &suppressionFile{}
+	_ = loadJSON(suppressPath(root), f)
+	if len(f.Suppressions) != 1 || !strings.HasPrefix(f.Suppressions[0].By, "owner") ||
+		!strings.Contains(f.Suppressions[0].By, "Dana (CISO)") {
+		t.Errorf("the suppression is by %+v", f.Suppressions)
+	}
+
+	if err := cmdAuth(root, []string{"grant", "mallory", "reader", "--by", "Dana (CISO)"}); err != nil {
+		t.Fatal(err)
+	}
+	pol, _ := loadPolicy(root)
+	for _, b := range pol.Snapshot() {
+		if b.Principal == "mallory" && (b.GrantedBy != "owner" || !strings.Contains(b.Note, "Dana (CISO)")) {
+			t.Errorf("mallory's grant is by %q, noted %q", b.GrantedBy, b.Note)
+		}
+	}
+
+	pages, _ := draftPageIDs(root)
+	if len(pages) == 0 {
+		// The store has no draft pages; a demonstration gives it some.
+		if err := cmdDemo(root, []string{"-publish=false", "-templates", t.TempDir() + "/tpl"}); err != nil {
+			t.Fatal(err)
+		}
+		pages, _ = draftPageIDs(root)
+	}
+	ts, _ := loadTokens(root)
+	dana, _, err := ts.Issue("dana", "dana", auth.RoleAuthor, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = saveJSON(tokensPath(root), ts)
+	t.Setenv("QUILZO_TOKEN", dana)
+	if err := checkedSet(root, []string{pages[0], "--by", "Priya (Compliance)", "--note", "legal reviewed"}); err != nil {
+		t.Fatal(err)
+	}
+	st, _ := openChecked(root)
+	r, err := st.Get(pages[0])
+	if err != nil || r.By != "dana" || !strings.Contains(r.Note, "Priya (Compliance)") {
+		t.Errorf("the check is recorded as %+v %v", r, err)
+	}
+}

@@ -272,7 +272,7 @@ func authGrant(root string, args []string) error {
 	// GrantedBy exists to answer "who gave this principal admin?", and "cli"
 	// is not an answer; it is the same non-answer for every operator who has
 	// ever run the command.
-	by := fs.String("by", "", "who granted it; the signed-in principal by default")
+	by := fs.String("by", "", "who to credit for the decision; the grant is recorded as the signed-in principal's")
 	// Withdrawn rather than quietly dropped, so a script that passes it stops
 	// with a reason instead of silently granting something wider than it asked
 	// for — which is what it had been doing all along.
@@ -330,9 +330,15 @@ func authGrant(root string, args []string) error {
 	if perm, ok := auth.PermissionNamed(rest[1]); ok {
 		bindings[0].Role, bindings[0].Permission = "", perm.Action
 	}
+	// Granted by the verified caller, with a name typed after --by kept in
+	// the note as a credit (Caller.namedBy).
+	by2 := grantedBy(root, *by)
+	if _, credited := resolveCaller(root, "").namedBy(*by); credited != "" {
+		*note = withCredit(*note, credited)
+	}
 	if auth.IsAppRoleName(rest[1]) {
 		return grantAppRole(root, rest[0], rest[1], *on, *deny, auth.Binding{
-			GrantedBy: grantedBy(root, *by), Note: *note, Expires: expires})
+			GrantedBy: by2, Note: *note, Expires: expires})
 	}
 	if job, ok := auth.JobNamed(rest[1]); ok {
 		if *on != "/" || *deny {
@@ -347,7 +353,6 @@ func authGrant(root string, args []string) error {
 			bindings = append(bindings, jb)
 		}
 	}
-	by2 := grantedBy(root, *by)
 	// Making somebody an administrator of anything waits for a second
 	// administrator, who applies it on approving.
 	if !*deny && dual.Privileged(bindings) {
@@ -1275,21 +1280,25 @@ func splitList(s string) []string {
 
 // grantedBy is who to record as having made a grant.
 //
-// The flag wins, because an operator scripting a migration may legitimately
-// be recording somebody else's decision. Otherwise the caller, if this store
-// knows who they are.
+// The caller, if this store knows who they are: a name typed after --by is
+// credited in the note (Caller.namedBy), and no longer recorded as the
+// granter in their place, because "who gave this person access?" is the
+// question the field exists to answer. Where nobody is verified, on a
+// store with no access control, the flag is the only name there is, kept
+// for an operator scripting a migration who records somebody else's
+// decision.
 //
 // The last resort is "cli", which is what the flag used to default to for
 // everybody. It is kept only for a store with no access control at all, where
 // there is genuinely no identity to record — and it is the honest answer
 // there, rather than a made-up name.
 func grantedBy(root, flag string) string {
-	if strings.TrimSpace(flag) != "" {
-		return flag
-	}
 	if c := resolveCaller(root, ""); c != nil && c.Verified &&
 		strings.TrimSpace(c.Name) != "" {
 		return c.Name
+	}
+	if strings.TrimSpace(flag) != "" {
+		return flag
 	}
 	return "cli"
 }
