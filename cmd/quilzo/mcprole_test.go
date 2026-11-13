@@ -183,3 +183,37 @@ func TestTheOperationsTellAnAgentTheirOwnArguments(t *testing.T) {
 		}
 	}
 }
+
+// read_page with no page is invalid params naming the argument, not an
+// answer that there is no page "".
+//
+// A page of the wrong type or under another name was refused as invalid
+// params, and one left out, or given as "" or null as clients that fill
+// every field send it, still read as the empty name: an agent was told
+// there is no page "" and concluded the content was missing, as it had
+// been told for a number.
+func TestReadPageWithNoPageIsToldItNeedsOne(t *testing.T) {
+	root := publishedShop(t)
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := buildMCP(root, s, asAdmin("dana"), "templates")
+	for name, args := range map[string]map[string]any{
+		"no page":    {},
+		"an empty":   {"page": ""},
+		"blank":      {"page": "  "},
+		"a null one": {"page": nil},
+	} {
+		_, e := callTool(t, srv, "quilzo_read", "read_page", args)
+		if e == nil || e.Code != mcp.CodeInvalidParams || !strings.Contains(e.Message, "page") ||
+			strings.Contains(e.Message, `no page ""`) {
+			t.Errorf("%s: %+v", name, e)
+		}
+	}
+	// A page that is not there is still said not to be there.
+	if _, e := callTool(t, srv, "quilzo_read", "read_page", map[string]any{"page": "nowhere"}); e == nil ||
+		e.Code != mcp.CodeRefused || !strings.Contains(e.Message, `there is no page "nowhere"`) {
+		t.Errorf("a page that is not there: %+v", e)
+	}
+}
