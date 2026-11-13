@@ -34,6 +34,9 @@ func cmdStanding(args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return standingList()
 	default:
 		return fmt.Errorf("unknown standing command %q; try list", args[0])

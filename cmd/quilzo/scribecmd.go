@@ -38,6 +38,9 @@ func cmdScribe(args []string) error {
 	case "demo":
 		return scribeDemo(args[1:])
 	case "law":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return scribeLaw()
 	default:
 		return fmt.Errorf("unknown scribe command %q; try demo or law",
@@ -106,7 +109,7 @@ func scribeLaw() error {
 
 func scribeDemo(args []string) error {
 	fs := flag.NewFlagSet("demo", flag.ContinueOnError)
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	at := time.Now().UTC()

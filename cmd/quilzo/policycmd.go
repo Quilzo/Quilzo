@@ -90,8 +90,14 @@ func cmdPolicy(root string, args []string) error {
 	}
 	switch args[0] {
 	case "show":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return policyShow(root)
 	case "params":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return policyParams()
 	case "propose":
 		return policyPropose(root, args[1:])
@@ -383,7 +389,7 @@ func policyImport(root string, args []string) error {
 func policyExport(root string, args []string) error {
 	fs := flag.NewFlagSet("policy export", flag.ContinueOnError)
 	out := fs.String("o", "", "write to this file instead of standard output")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	pol, err := odp.Load(paramsPath(root))

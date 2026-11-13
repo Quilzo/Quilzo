@@ -190,6 +190,9 @@ func cmdVault(root string, args []string) error {
 	}
 	switch args[0] {
 	case "status":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return vaultStatus(root)
 	case "enable":
 		return vaultEnable(root, args[1:])
@@ -257,7 +260,7 @@ func vaultStatus(root string) error {
 func vaultEnable(root string, args []string) error {
 	fs := flag.NewFlagSet("enable", flag.ContinueOnError)
 	id := fs.String("id", "k1", "an id for the first key")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	if _, err := os.Stat(keyringPath(root)); err == nil {
@@ -304,7 +307,7 @@ func vaultEnable(root string, args []string) error {
 func vaultRotate(root string, args []string) error {
 	fs := flag.NewFlagSet("rotate", flag.ContinueOnError)
 	id := fs.String("id", "", "an id for the new key")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	if *id == "" {
@@ -367,7 +370,7 @@ func vaultRotate(root string, args []string) error {
 // rewrap that stops half way is finished by running it again.
 func vaultRewrap(root string, args []string) error {
 	fs := flag.NewFlagSet("rewrap", flag.ContinueOnError)
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	kr, err := loadKeyring(root)

@@ -39,7 +39,7 @@ func cmdAssist(root string, args []string) error {
 	dryRun := fs.Bool("dry-run", false, "show the proposal without writing anything")
 	tplDir := fs.String("templates", "templates", "where proposed templates would go")
 	pos, flags := leadingArgs(args, 1)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {

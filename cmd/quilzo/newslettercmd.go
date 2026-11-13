@@ -511,6 +511,9 @@ func newsletterCmd(root string, args []string, caller *Caller) error {
 	}
 	switch args[0] {
 	case "status":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return newsletterStatus(root, caller)
 	case "list":
 		return newsletterList(root, args[1:], caller)
@@ -546,6 +549,9 @@ func newsletterCmd(root string, args []string, caller *Caller) error {
 	case "send":
 		return newsletterSend(root, args[1:], caller)
 	case "issues":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return newsletterIssues(root, caller)
 	case "dismiss":
 		if len(args) != 2 {
@@ -587,7 +593,7 @@ func newsletterStatus(root string, caller *Caller) error {
 func newsletterList(root string, args []string, caller *Caller) error {
 	fs := flag.NewFlagSet("newsletter list", flag.ContinueOnError)
 	all := fs.Bool("all", false, "those waiting to confirm as well")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	if err := authorise(root, caller, auth.ActEditDraft, "/"); err != nil {
@@ -628,7 +634,7 @@ func newsletterImport(root string, args []string, caller *Caller) error {
 	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("newsletter import", flag.ContinueOnError)
 	agreed := fs.String("agreed", "", "where these people agreed to get the newsletter")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -655,6 +661,10 @@ func newsletterImport(root string, args []string, caller *Caller) error {
 }
 
 func newsletterExport(root string, args []string, caller *Caller) error {
+	args, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	var buf bytes.Buffer
 	n, err := exportSubscribers(root, &buf, caller)
 	if err != nil {
@@ -676,7 +686,7 @@ func newsletterTest(root string, args []string, caller *Caller) error {
 	fs := flag.NewFlagSet("newsletter test", flag.ContinueOnError)
 	to := fs.String("to", "", "the address to send the test to")
 	subject := fs.String("subject", "", "the subject; the page's title when not given")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 || *to == "" {
@@ -695,7 +705,7 @@ func newsletterSend(root string, args []string, caller *Caller) error {
 	subject := fs.String("subject", "", "the subject; the page's title when not given")
 	issue := fs.String("issue", "", "send an issue an agent proposed, or carry on with one that stopped")
 	yes := fs.Bool("yes", false, "send it; without this, only say who it would go to")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 && *issue == "" {

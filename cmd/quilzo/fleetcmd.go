@@ -438,7 +438,7 @@ func cmdFleet(root string, args []string) error {
 			fs := flag.NewFlagSet("fleet add", flag.ContinueOnError)
 			name := fs.String("name", "", "what it is called here")
 			pos, rest := leadingArgs(args[1:], 1)
-			if err := fs.Parse(rest); err != nil {
+			if err := parseFlags(fs, rest, &pos, 1); err != nil {
 				return err
 			}
 			if len(pos) != 1 {
@@ -456,6 +456,9 @@ func cmdFleet(root string, args []string) error {
 			}
 			return fleetUnregister(root, args[1], resolveCaller(root, flagToken))
 		case "check":
+			if err := noArguments(args[1:]); err != nil {
+				return err
+			}
 			changed, err := fleetCheck(root, time.Now())
 			if err != nil {
 				return err
@@ -476,7 +479,7 @@ func cmdFleet(root string, args []string) error {
 		case "shadow":
 			fs := flag.NewFlagSet("fleet shadow", flag.ContinueOnError)
 			days := fs.Int("days", 30, "how far back")
-			if err := fs.Parse(args[1:]); err != nil {
+			if err := parseFlags(fs, args[1:], nil, 0); err != nil {
 				return err
 			}
 			now := time.Now()
@@ -498,7 +501,7 @@ func cmdFleet(root string, args []string) error {
 	}
 	fs := flag.NewFlagSet("fleet", flag.ContinueOnError)
 	days := fs.Int("days", 30, "how far back calls are read")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	v, err := buildFleet(root, *days, time.Now())

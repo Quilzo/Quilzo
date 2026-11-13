@@ -89,6 +89,12 @@ func loadBlocklist(root string) (*Blocklist, error) {
 
 // fediverseBlock refuses a host or an actor, and drops it if it was following.
 func fediverseBlock(root string, args []string) error {
+	// One at a time. `fediverse block a.example b.example` refused the first
+	// and said nothing of the second, which went on being served.
+	args, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	if len(args) == 0 {
 		return fmt.Errorf(
 			"usage: quilzo fediverse block HOST-OR-ACTOR\n" +
@@ -144,6 +150,10 @@ func fediverseBlock(root string, args []string) error {
 
 // fediverseUnblock takes one back off the list.
 func fediverseUnblock(root string, args []string) error {
+	args, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	if len(args) == 0 {
 		return fmt.Errorf("usage: quilzo fediverse unblock HOST-OR-ACTOR")
 	}

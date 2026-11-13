@@ -72,6 +72,9 @@ func cmdFeature(root string, args []string) error {
 	rest := args[1:]
 	switch args[0] {
 	case "example":
+		if err := noArguments(rest); err != nil {
+			return err
+		}
 		_, err := os.Stdout.Write(feature.Example())
 		return err
 	case "check":
@@ -83,10 +86,16 @@ func cmdFeature(root string, args []string) error {
 	case "decline":
 		return featureDecide(root, rest, false)
 	case "pending":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return featurePendingList(root)
 	case "proposals":
 		return featureProposalsCmd(root, rest)
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return featureList(root)
 	case "show":
 		return featureShow(root, rest)
@@ -341,7 +350,7 @@ func featureCheck(root string, args []string) error {
 	keys := fs.String("keys", "", "the publisher's head.pub.json, to check a signed package")
 	fs.StringVar(&featureDesignDir, "templates", featureDesignDir, "the site's templates directory, for a site package")
 	takeSite := fs.Bool("take-site", false, "as install would with --take-site")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -429,7 +438,7 @@ func featureInstall(root string, args []string) error {
 	rowsPath := fs.String("rows", "", "records to import into one of its collections, as quilzo feature from writes them")
 	fs.StringVar(&featureDesignDir, "templates", featureDesignDir, "where a site package writes its look and layouts: the site's templates directory")
 	takeSite := fs.Bool("take-site", false, "let a site package own a site whose name or look somebody set by hand; it is put back if the package is removed")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -1491,7 +1500,7 @@ func featureExport(root string, args []string) error {
 	fs := flag.NewFlagSet("feature export", flag.ContinueOnError)
 	outPath := fs.String("o", "", "write to this file instead of standard output")
 	sign := fs.Bool("sign", false, "sign it with this installation's log keys (Ed25519 and ML-DSA)")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -1568,7 +1577,7 @@ func featureCapture(root string, args []string) error {
 	fs.Var(&bots, "chatbot", "a chatbot")
 	fs.Var(&agents, "agent", "an agent declaration")
 	fs.Var(&hooks, "webhook", "a webhook, by URL; its secret is not included")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {

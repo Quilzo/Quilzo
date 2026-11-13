@@ -25,6 +25,9 @@ func cmdTemplate(root string, args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return templateList()
 	case "show":
 		return templateShow(args[1:])
@@ -247,7 +250,7 @@ func templateUse(root string, args []string) error {
 		"skip the theme, so the site keeps the palette it has")
 	allLayouts := fs.Bool("all-layouts", false,
 		"write every layout that ships, so any page can name any of them")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -405,7 +408,7 @@ func templateAdopt(root string, args []string) error {
 	force := fs.Bool("force", false, "overwrite a layout that already exists")
 	accept := fs.Bool("accept-unsupported", false,
 		"write the layout even where constructs could not be converted")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {

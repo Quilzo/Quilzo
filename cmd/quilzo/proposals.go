@@ -214,7 +214,7 @@ func dismissProposal(root, id string, caller *Caller) error {
 func featureProposalsCmd(root string, args []string) error {
 	fs := flag.NewFlagSet("feature proposals", flag.ContinueOnError)
 	dismiss := fs.String("dismiss", "", "set a proposal aside unread")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	caller := resolveCaller(root, flagToken)

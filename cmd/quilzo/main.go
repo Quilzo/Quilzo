@@ -470,7 +470,7 @@ access
   quilzo scim map GROUP auditor --until 2026-12-31   a job granted for a time, until a day
   quilzo geo status | help | network add PREFIX NAME --kind office|vpn ... | network remove PREFIX   where sign-ins come from
   quilzo auth deny WHO ROLE [--on PATH]    a deny wins wherever it sits
-  quilzo auth explain WHO [ACTION]         why someone can or cannot do a thing
+  quilzo auth explain WHO [ACTION] [--on PATH]   why someone can or cannot do a thing
   quilzo standing list                     what a situation can hand somebody, and what it cannot
   quilzo auth revoke WHO ROLE [--on PATH]  take a grant back
   quilzo auth enrol WHO [--for 24h]        a one-time link that adds their passkey (--revoke ends it)
@@ -726,7 +726,13 @@ func main() {
 	args := os.Args[1:]
 	jsonMode := false
 	filtered := args[:0]
-	for _, a := range args {
+	for i, a := range args {
+		// What follows "--" is a program's own command line, as it is for the
+		// --root and --token below.
+		if a == "--" {
+			filtered = append(filtered, args[i:]...)
+			break
+		}
 		if a == "--json" {
 			jsonMode = true
 			continue
@@ -768,8 +774,18 @@ func main() {
 	//
 	// Stripping it here makes the sentence true everywhere, and the seven
 	// local declarations are gone rather than left to shadow it.
+	//
+	// It stops at "--". What follows is the command line of a program the
+	// command runs, and was read as Quilzo's: `agent program bot -- tool
+	// --root /data` looked for the agent in /data, and the program's own
+	// `--token X` became the caller's credential and was gone from the
+	// program's line. helpAsked stops there too.
 	var rest []string
 	for i := 0; i < len(args); i++ {
+		if args[i] == "--" {
+			rest = append(rest, args[i:]...)
+			break
+		}
 		if args[i] == "--root" && i+1 < len(args) {
 			root = args[i+1]
 			i++
@@ -796,6 +812,7 @@ func main() {
 	}
 
 	cmd, cmdArgs := rest[0], rest[1:]
+	invoked.cmd, invoked.args = cmd, cmdArgs
 
 	// Help for a command is answered before anything is moved, opened or
 	// authorised, and without running it: commandhelp.go says what running it
@@ -818,6 +835,29 @@ func main() {
 		commandHelp(cmd, cmdArgs)
 		if !helpGoesToTheCommand(cmd, cmdArgs) {
 			return
+		}
+	}
+
+	// A --root that holds no store is refused here, once, for every command
+	// but init and the few that are not about a store (storeless), before
+	// anything below reads it or makes it.
+	//
+	// open refuses one, and that covered the commands that open a store. The
+	// rest read its files for themselves and answered of nothing: `token
+	// list` of a mistyped --root said "no tokens", `scan` of an unmounted
+	// volume "0 finding(s)" and `vault status` that the objects are stored in
+	// the clear, each exit 0; `member invite` made the directory and wrote
+	// an invitation into it, and `studio` started its server there. Asked
+	// here for the reason authorisation is: a command inherits it, including
+	// the one added next year. Help is answered wherever it is asked, and a
+	// command nobody has is said to be that, below.
+	if _, known := lookupNeed(cmd, cmdArgs); known && !asked && !runsWithoutAStore(cmd, cmdArgs) {
+		if err := needStore(root); err != nil {
+			w.Error(err)
+			if errors.Is(err, errNoStore) {
+				os.Exit(out.ExitNotFound)
+			}
+			os.Exit(out.ExitFailure)
 		}
 	}
 
@@ -888,7 +928,9 @@ func main() {
 	case "move":
 		err = cmdMove(root, cmdArgs)
 	case "diff":
-		err = cmdDiff(root)
+		if err = noArguments(cmdArgs); err == nil {
+			err = cmdDiff(root)
+		}
 	case "publish":
 		err = cmdPublish(root, cmdArgs)
 	case "rollback":
@@ -944,7 +986,9 @@ func main() {
 		err = cmdWebhook(root, cmdArgs)
 	case "logd":
 		if len(cmdArgs) > 0 && cmdArgs[0] == "status" {
-			err = cmdLogdStatus(root)
+			if err = noArguments(cmdArgs[1:]); err == nil {
+				err = cmdLogdStatus(root)
+			}
 		} else {
 			err = cmdLogd(root, cmdArgs)
 		}
@@ -1131,7 +1175,9 @@ func main() {
 	case "config":
 		err = cmdConfig(root, cmdArgs)
 	case "verify":
-		err = cmdVerify(root)
+		if err = noArguments(cmdArgs); err == nil {
+			err = cmdVerify(root)
+		}
 	case "approvals":
 		err = cmdApprovals(root, cmdArgs)
 	// --version and --help as well as the subcommands.
@@ -1141,6 +1187,10 @@ func main() {
 	// tries `--version` and nothing else. `quilzo version` printed the same
 	// string and was unreachable to everything that looks for it.
 	case "version", "--version", "-V":
+		// It takes nothing, as the commands that go through noArguments do.
+		if err = noArguments(cmdArgs); err != nil {
+			break
+		}
 		if w.JSON(map[string]any{"name": "quilzo", "version": version,
 			"go": runtime.Version(), "os": runtime.GOOS, "arch": runtime.GOARCH,
 			"license": "Apache-2.0"}) {
@@ -1184,6 +1234,13 @@ func main() {
 		if errors.As(err, &blocked) {
 			os.Exit(out.ExitBlocked)
 		}
+		var misused errMisused
+		if errors.As(err, &misused) {
+			os.Exit(out.ExitUsage)
+		}
+		if errors.Is(err, errNoStore) {
+			os.Exit(out.ExitNotFound)
+		}
 		os.Exit(out.ExitFailure)
 	}
 }
@@ -1192,12 +1249,142 @@ func main() {
 // wired here: every command inherits it, including the ones added next year by
 // somebody who has not read this file.
 //
-// It is also where a store is made, by whichever command comes first, so it
-// is where a store made in a container's own layer is said (ephemeral.go).
+// It refuses a root that holds no store. It made one wherever it was pointed,
+// by whichever command came first, so a nightly `backup create` of a volume
+// that was not mounted wrote a backup of nothing and said "backed up and
+// checked", and `verify` of a mistyped --root said "0 object(s) intact" of
+// the empty store it had just made there. A check that cannot fail on the
+// wrong directory is how an empty backup is found on the day it is needed.
+// Only init makes a store (makeStore).
+func open(root string) (*store.Store, error) {
+	if err := needStore(root); err != nil {
+		return nil, err
+	}
+	return makeStore(root)
+}
+
+// errNoStore is a --root that holds no store. It exits 4, "not found".
+var errNoStore = errors.New("no store")
+
+// needStore refuses a root that is not a store, saying how one is made.
+// main asks it of every command not listed as storeless. open asks again,
+// and so do the commands that read a store's files without opening it, as
+// `auth list` and `auditlog verify` do, for a caller that is not main.
+//
+// A root it cannot look into is said to be that. Asked only whether objects/
+// could be found, a store its caller may not read answered as an empty
+// directory does, and somebody who had left off `sudo -u quilzo` was told to
+// make a store where one already was.
+func needStore(root string) error {
+	fi, err := os.Stat(filepath.Join(root, "objects"))
+	if err == nil && fi.IsDir() {
+		return nil
+	}
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("the store at %s cannot be looked into: %w", root, err)
+	}
+	return fmt.Errorf("%w at %s; quilzo --root %s init makes one", errNoStore, root, root)
+}
+
+// storeless is the commands that are not about a store, by the command and
+// subcommand the help spells them with, or the command alone for its bare
+// form. They run where --root holds none; every other command is refused
+// there before it reads or makes anything (main).
+//
+// A list of what is let through, so a command added tomorrow is refused on
+// the wrong directory until somebody says it need not be. The other way
+// round was how it stood: only the commands that open a store refused, and
+// the hundred that read its files for themselves answered of a mistyped
+// --root that there were no tokens, no credentials kept and no findings.
+//
+// What is here says nothing of a store. It describes this build, which the
+// release asks of the binary in a checkout with no store in it; or it lists
+// what ships in every copy; or it works on a file its own line names, as a
+// restore does on the day the store is gone.
+var storeless = map[string]bool{
+	// The log's writer runs as an account that cannot reach the store, in a
+	// container the store is not mounted in. `logd status`, which compares
+	// the two, is the store owner's and is not here.
+	"logd": true,
+
+	// This build: its bill of materials, its algorithms and its controls.
+	"compliance": true, "compliance summary": true, "compliance sbom": true,
+	"compliance crypto": true, "compliance controls": true,
+	"compliance implementation": true, "compliance pledge": true,
+
+	// A file the line names: a backup read or restored, a key made, and a
+	// receipt or a transfer checked by somebody who was sent it.
+	"backup key": true, "backup verify": true, "backup restore": true,
+	"token keygen": true, "token proof": true,
+	"agent verify-receipt": true, "transfer verify": true,
+	// A declaration and its calls on standard input, and nothing of a store.
+	"agent probe": true,
+
+	// What ships in every copy: the roles, the rules, the formats, the
+	// layouts and the examples to start from.
+	"auth roles":    true,
+	"agent formats": true,
+	"config list":   true, "config explain": true,
+	"policy params": true,
+	"posture rules": true, "posture explain": true,
+	"framework relations": true,
+	"media":               true, "media formats": true,
+	"section kinds": true, "site kinds": true,
+	"template": true, "template list": true, "template show": true, "template layouts": true,
+	"type example": true, "feature example": true,
+	"blog example": true, "booking example": true, "events example": true,
+
+	// The design is the templates directory's, beside the store, and these
+	// read it and write nothing.
+	"theme": true, "theme show": true, "theme tokens": true, "theme check": true,
+	"theme fonts": true, "theme css": true, "theme export": true, "theme styles": true,
+}
+
+// storelessWhole is the commands that run without a store whatever follows
+// them, having no subcommand that is about one.
+//
+// init, which makes the store, and says of a word after it where a store
+// goes. The demonstrations and the calculators, which the dispatch hands no
+// root to, and `audit`, which reads a directory of templates. `auditlog`
+// asks for itself, since a log copied out stands without its store
+// (cmdAuditLog); its `dir` does not stand without one, and is not let
+// through (runsWithoutAStore).
+var storelessWhole = map[string]bool{
+	"init":  true,
+	"audit": true, "auditlog": true,
+	"annotate": true, "call": true, "errand": true, "flow": true, "huddle": true,
+	"screen": true, "scribe": true, "sframe": true, "standing": true,
+}
+
+// runsWithoutAStore reports whether a command runs where --root holds no
+// store: help and the version, the shims this program runs itself as, and
+// what the two lists above name.
+func runsWithoutAStore(cmd string, args []string) bool {
+	if helpOrVersion[cmd] || strings.HasPrefix(cmd, "__") {
+		return true
+	}
+	if primary, ok := helpAliases[cmd]; ok {
+		cmd = primary
+	}
+	// `auditlog dir` is the one of auditlog's that is the store's: it says
+	// and sets where the store's log is kept. Let through with the rest,
+	// `auditlog dir /srv/audit` of a mistyped --root made the directory,
+	// began a log and a key in it, and said the log had moved, of a store
+	// that was not there.
+	if cmd == "auditlog" && len(args) > 0 && args[0] == "dir" {
+		return false
+	}
+	return storelessWhole[cmd] || storeless[helpKey(cmd, args)]
+}
+
+// makeStore opens the store at root, making it if it is not there: init's,
+// and open's once it has found one.
+//
+// It is where a store made in a container's own layer is said (ephemeral.go).
 // init said so and nothing else did: `docker run --rm IMAGE demo` with no
 // volume said "Marginalia is installed" and exited 0 into the layer --rm
 // then deleted, the same store made and lost without a word.
-func open(root string) (*store.Store, error) {
+func makeStore(root string) (*store.Store, error) {
 	made := !isStore(root)
 	s, err := openEncrypted(root)
 	if err == nil && made {
@@ -1257,7 +1444,20 @@ func splitFlags(args []string, valued map[string]bool) (flags, positional []stri
 }
 
 // runInit is `quilzo init [--admin NAME]`.
+//
+// The line is read before anything is made. `quilzo init mysite`, as git
+// takes a directory, made ./.quilzo and said so, and the store was not where
+// the next command, `quilzo --root mysite serve`, looked for it.
 func runInit(root string, args []string) error {
+	fs, _ := initFlags()
+	var pos []string
+	if err := parseFlags(fs, args, &pos, 1); err != nil {
+		return err
+	}
+	if len(pos) > 0 {
+		return errMisused{fmt.Errorf("usage: quilzo init [--admin NAME]\n"+
+			"  the store goes where --root says, not where a word after init does: quilzo --root %s init", pos[0])}
+	}
 	created := !isStore(root)
 	if err := cmdInit(root); err != nil {
 		return err
@@ -1286,7 +1486,7 @@ func cmdInit(root string) error {
 		w = out.New(false)
 	}
 	existed := isStore(root)
-	s, err := open(root)
+	s, err := makeStore(root)
 	if err != nil {
 		return err
 	}
@@ -1650,10 +1850,14 @@ func cmdPublish(root string, args []string) error {
 	skip := fs.Bool("no-a11y-check", false, "skip the check entirely")
 	forceUnmarked := fs.Bool("force-unmarked", false,
 		"publish pages that declare no provenance (needs --reason)")
-	if err := fs.Parse(args); err != nil {
+	// One commit, and the flags on either side of it. Parsing stopped at the
+	// commit, so `publish COMMIT --no-a11y-check` ran the check it was told
+	// to skip, and a second word was dropped.
+	var pos []string
+	if err := parseFlags(fs, args, &pos, 1); err != nil {
 		return err
 	}
-	return publishAs(root, fs.Args(), resolveCaller(root, flagToken), publishFlags{
+	return publishAs(root, pos, resolveCaller(root, flagToken), publishFlags{
 		force: *force, reason: *reason, tplDir: *tplDir, skip: *skip, forceUnmarked: *forceUnmarked,
 	})
 }
@@ -2002,7 +2206,7 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 func cmdRollback(root string, args []string) error {
 	fs := flag.NewFlagSet("rollback", flag.ContinueOnError)
 	steps := fs.Int("steps", 1, "how many earlier publications to go back")
-	if err := fs.Parse(reorder(args, map[string]bool{"steps": true})); err != nil {
+	if err := parseFlags(fs, reorder(args, map[string]bool{"steps": true}), nil, 0); err != nil {
 		return err
 	}
 	s, err := open(root)
@@ -2042,8 +2246,7 @@ func cmdLog(root string, args []string) error {
 	fs := flag.NewFlagSet("log", flag.ContinueOnError)
 	ref := fs.String("ref", site.RefDraft, "which ref to walk")
 	limit := fs.Int("limit", 20, "how many commits")
-	if err := fs.Parse(reorder(args, map[string]bool{
-		"ref": true, "limit": true})); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	s, err := open(root)
@@ -2082,14 +2285,14 @@ func cmdRender(root string, args []string) error {
 	fs := flag.NewFlagSet("render", flag.ContinueOnError)
 	ref := fs.String("ref", site.RefLive, "which ref to read")
 	out := fs.String("o", "", "write here instead of stdout")
-	if err := fs.Parse(reorder(args, map[string]bool{
-		"ref": true, "o": true})); err != nil {
+	var pos []string
+	if err := parseFlags(fs, args, &pos, 2); err != nil {
 		return err
 	}
-	if fs.NArg() < 2 {
+	if len(pos) < 2 {
 		return fmt.Errorf("usage: quilzo render PAGE TEMPLATE")
 	}
-	pageName, templatePath := fs.Arg(0), fs.Arg(1)
+	pageName, templatePath := pos[0], pos[1]
 
 	s, err := open(root)
 	if err != nil {
@@ -2166,12 +2369,22 @@ func writeRendered(out *os.File, html string) {
 
 func cmdAudit(args []string) error {
 	dir := "templates"
-	if len(args) > 0 {
-		dir = args[0]
+	pos, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
+	if len(pos) > 0 {
+		dir = pos[0]
+		// A directory that was named and is not there is not one with
+		// nothing to report. `audit pages`, for the templates of some pages,
+		// walked nothing and said "no template opts out of escaping".
+		if fi, serr := os.Stat(dir); serr != nil || !fi.IsDir() {
+			return fmt.Errorf("%s is not a directory of templates: quilzo audit [DIR]", dir)
+		}
 	}
 	total := 0
 	raw := []map[string]any{}
-	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+	err = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() || filepath.Ext(path) != ".html" {
 			return nil
 		}
@@ -2233,7 +2446,7 @@ func cmdA11y(root string, args []string) error {
 	fs := flag.NewFlagSet("a11y", flag.ContinueOnError)
 	ref := fs.String("ref", site.RefDraft, "which ref to check")
 	tplDir := fs.String("templates", "templates", "where page.html lives")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	s, err := open(root)

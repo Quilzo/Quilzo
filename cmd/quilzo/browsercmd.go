@@ -61,6 +61,9 @@ func cmdBrowser(root string, args []string) error {
 	}
 	switch args[0] {
 	case "status":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		path, from, err := browserPath(root)
 		if w.Mode == out.JSON {
 			doc := map[string]any{"browser": nil, "from": nil}
@@ -102,6 +105,9 @@ func cmdBrowser(root string, args []string) error {
 		}
 		return nil
 	case "install":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 		defer cancel()
 		d, err := browser.Pinned.ForThisMachine()
@@ -130,6 +136,9 @@ func cmdBrowser(root string, args []string) error {
 	case "grant", "grants":
 		return cmdBrowserGrant(root, args[1:])
 	case "find":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return cmdBrowserFind(root)
 	}
 	return fmt.Errorf("unknown browser command %q; try status, install, find or grant", args[0])
@@ -191,7 +200,7 @@ func cmdBrowserGrant(root string, args []string) error {
 	pictures := fs.Bool("pictures", false, "allow browser_look, which carries a picture of the page")
 	daily := fs.Int("daily", 0, "calls one caller may make a day")
 	off := fs.Bool("off", false, "withdraw the grant")
-	if err := fs.Parse(args[1:]); err != nil {
+	if err := parseFlags(fs, args[1:], nil, 0); err != nil {
 		return err
 	}
 	caller := resolveCaller(root, "")

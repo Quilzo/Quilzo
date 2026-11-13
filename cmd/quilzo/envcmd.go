@@ -61,6 +61,9 @@ func cmdEnv(root string, args []string) error {
 	}
 	switch args[0] {
 	case "list", "status":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return envStatus(root)
 	case "add":
 		return envAdd(root, args[1:])

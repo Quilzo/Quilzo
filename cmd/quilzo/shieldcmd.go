@@ -34,6 +34,9 @@ func cmdShield(root string, args []string) error {
 	}
 	switch args[0] {
 	case "status":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return shieldStatus(root)
 	case "list":
 		return shieldList(root, args[1:])
@@ -56,6 +59,9 @@ func cmdShield(root string, args []string) error {
 	case "dry-run":
 		return shieldDryRun(root, args[1:])
 	case "repair":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return shieldRepair(root)
 	default:
 		return fmt.Errorf("unknown shield command %q; try status, list, block, slow, feature, cut, suspend, quarantine, "+
@@ -186,7 +192,7 @@ func shieldLine(p shield.Protection, now time.Time) {
 func shieldList(root string, args []string) error {
 	fs := flag.NewFlagSet("shield list", flag.ContinueOnError)
 	all := fs.Bool("all", false, "include what has ended")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	st, err := shield.Load(root)
@@ -234,6 +240,15 @@ func shieldApply(root, kind string, args []string) error {
 	pos, err := parseAnywhere(fs, args)
 	if err != nil {
 		return err
+	}
+	// The two that are about no one thing take no word, and the words were
+	// gathered for a target and not looked at: `shield freeze 6h --reason
+	// "…"`, the --for forgotten, froze publishing for the hour that is the
+	// default, and the protection ended five hours before it was meant to.
+	if kind == "lockdown" || kind == "freeze" {
+		if err := noArguments(pos); err != nil {
+			return err
+		}
 	}
 	c, by := shieldBy(root)
 	now := time.Now()
@@ -352,6 +367,12 @@ func shieldJudge(root string, args []string) error {
 
 func shieldTrust(root string, args []string) error {
 	if len(args) == 0 || args[0] == "list" {
+		// Nothing after list: `shield trust list office` listed them all.
+		if len(args) > 0 {
+			if err := noArguments(args[1:]); err != nil {
+				return err
+			}
+		}
 		st, err := shield.Load(root)
 		if err != nil {
 			return err
@@ -387,6 +408,9 @@ func shieldDecoy(root string, args []string) error {
 	now := time.Now()
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		st, err := shield.Load(root)
 		if err != nil {
 			return err
@@ -404,7 +428,7 @@ func shieldDecoy(root string, args []string) error {
 	case "add":
 		fs := flag.NewFlagSet("shield decoy add", flag.ContinueOnError)
 		note := fs.String("where", "", "where it will be planted (required)")
-		if err := fs.Parse(args[1:]); err != nil {
+		if err := parseFlags(fs, args[1:], nil, 0); err != nil {
 			return err
 		}
 		secret, d, err := shield.AddDecoy(root, *note, by, now)
@@ -453,6 +477,9 @@ func shieldPlaybook(root string, args []string) error {
 	now := time.Now()
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		pbs := bk.InForce()
 		if w.JSON(pbs) {
 			return nil
@@ -494,7 +521,7 @@ func shieldPlaybook(root string, args []string) error {
 		file := fs.String("file", "", "the playbook as it will be, as JSON")
 		remove := fs.String("remove", "", "a playbook added here, to remove")
 		why := fs.String("why", "", "why (required)")
-		if err := fs.Parse(args[1:]); err != nil {
+		if err := parseFlags(fs, args[1:], nil, 0); err != nil {
 			return err
 		}
 		var pb shield.Playbook
@@ -642,7 +669,7 @@ func refuseAlone(root string, c *Caller, rm *dual.Removal, about map[string]stri
 func shieldHold(root string, args []string) error {
 	fs := flag.NewFlagSet("shield hold", flag.ContinueOnError)
 	why := fs.String("why", "", "why (required)")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	c, by := shieldBy(root)
@@ -658,7 +685,7 @@ func shieldHold(root string, args []string) error {
 func shieldRelease(root string, args []string) error {
 	fs := flag.NewFlagSet("shield release", flag.ContinueOnError)
 	why := fs.String("why", "", "why (required)")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	c, by := shieldBy(root)
@@ -774,8 +801,8 @@ func shieldDryRun(root string, args []string) error {
 	fs := flag.NewFlagSet("shield dry-run", flag.ContinueOnError)
 	days := fs.Int("days", 30, "how far back to look")
 	file := fs.String("file", "", "a playbook to try, as JSON, instead of one in force")
-	pos, err := parseAnywhere(fs, args)
-	if err != nil {
+	var pos []string
+	if err := parseFlags(fs, args, &pos, 1); err != nil {
 		return err
 	}
 	if *days < 1 || *days > 400 {
@@ -833,17 +860,11 @@ func shieldDryRun(root string, args []string) error {
 
 // parseAnywhere parses flags wherever they are among the arguments, so
 // `shield lift ID --mistake` reads as it is written, and returns the rest.
+//
+// What follows "--" is returned as it is. The loop parsed it as flags, so a
+// program's own --verbose after the "--" was "flag provided but not
+// defined" (cliargs.go has the loop now).
 func parseAnywhere(fs *flag.FlagSet, args []string) ([]string, error) {
-	var pos []string
-	for {
-		if err := fs.Parse(args); err != nil {
-			return nil, err
-		}
-		args = fs.Args()
-		if len(args) == 0 {
-			return pos, nil
-		}
-		pos = append(pos, args[0])
-		args = args[1:]
-	}
+	pos, _, err := parseInterspersed(fs, args)
+	return pos, err
 }

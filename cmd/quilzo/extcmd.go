@@ -177,6 +177,9 @@ func cmdExt(root string, args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return extList(root)
 	case "add":
 		return extAdd(root, args[1:])

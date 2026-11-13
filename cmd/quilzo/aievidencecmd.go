@@ -86,7 +86,13 @@ func aiEvidenceInputs(root string, days int, now time.Time) (aievidence.Inputs, 
 func complianceAI(root, which string, args []string) error {
 	fs := flag.NewFlagSet("compliance "+which, flag.ContinueOnError)
 	days := fs.Int("days", 90, "the period the evidence is counted over")
-	if err := fs.Parse(args); err != nil {
+	// The file is aibom's; the other two take flags and nothing else.
+	var pos []string
+	takes := 0
+	if which == "aibom" {
+		takes = 1
+	}
+	if err := parseFlags(fs, args, &pos, takes); err != nil {
 		return err
 	}
 	if *days < 1 || *days > 3660 {
@@ -101,11 +107,11 @@ func complianceAI(root, which string, args []string) error {
 		if err != nil {
 			return err
 		}
-		if fs.NArg() == 1 {
-			if err := os.WriteFile(fs.Arg(0), append(body, '\n'), 0o644); err != nil {
+		if len(pos) == 1 {
+			if err := os.WriteFile(pos[0], append(body, '\n'), 0o644); err != nil {
 				return err
 			}
-			w.Human("wrote %s%s%s\n", bold, fs.Arg(0), reset)
+			w.Human("wrote %s%s%s\n", bold, pos[0], reset)
 			return nil
 		}
 		_, err = os.Stdout.Write(append(body, '\n'))

@@ -133,6 +133,9 @@ func cmdSecret(root string, args []string) error {
 		}
 		return secretRemove(root, args[1], caller)
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return secretList(root)
 	}
 	return fmt.Errorf("unknown secret command %q; try set, list or remove", args[0])

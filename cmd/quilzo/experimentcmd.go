@@ -28,6 +28,9 @@ func cmdExperiment(root string, args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return experimentList(root)
 	case "add":
 		return experimentAdd(root, args[1:])
@@ -116,7 +119,7 @@ func experimentAdd(root string, args []string) error {
 	goal := fs.String("goal", "", "form:NAME, chatbot:NAME or page:/path")
 	var variants multi
 	fs.Var(&variants, "variant", "NAME=PAGE[:WEIGHT], once per variant beyond the control")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 || *page == "" || len(variants) == 0 {
@@ -175,7 +178,7 @@ func experimentReport(root string, args []string) error {
 	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("report", flag.ContinueOnError)
 	days := fs.Int("days", 90, "how many days back to count")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {

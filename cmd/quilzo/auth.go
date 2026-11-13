@@ -129,6 +129,15 @@ func cmdAuth(root string, args []string) error {
 	if len(args) == 0 {
 		return authUsage()
 	}
+	// Access is a store's. `auth list` of a mistyped --root listed nobody,
+	// and `auth grant` there wrote a policy into a directory nothing serves.
+	// The roles are the same for every store, and help is answered wherever
+	// it is asked.
+	if args[0] != "roles" && !helpAsked(args[1:]) {
+		if err := needStore(root); err != nil {
+			return err
+		}
+	}
 	switch args[0] {
 	case "grant":
 		return authGrant(root, args[1:])
@@ -139,18 +148,21 @@ func cmdAuth(root string, args []string) error {
 	// the whole time — so the one surface that spelled it out was the one
 	// somebody acting on a finding was not looking at.
 	//
-	// The same function, with the flag already set. `grant --deny` still
-	// works: it is in scripts, and both spellings producing the same binding
-	// is the point.
+	// The same function, denying. `grant --deny` still works: it is in
+	// scripts, and both spellings producing the same binding is the point.
 	case "deny":
-		// At the end, not the front. authGrant reads its positional arguments
-		// with leadingArgs, which stops at the first thing beginning with a
-		// dash — so a flag in front of the principal makes the principal
-		// invisible and the command answers with its own usage line.
-		return authGrant(root, append(append([]string{}, args[1:]...), "--deny"))
+		// A parameter, not a word on the line. It was "--deny" appended to
+		// the end, and the flag parser stopped at the first word that was not
+		// a flag, so `auth deny dana publisher --note contract ended` never
+		// reached it and made dana a publisher; `auth deny erin admin
+		// everywhere` made erin an administrator.
+		return authGrantAs(root, args[1:], true)
 	case "revoke":
 		return authRevoke(root, args[1:])
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return authList(root)
 	case "recover":
 		return cmdRecover(root, args[1:])
@@ -161,10 +173,16 @@ func cmdAuth(root string, args []string) error {
 	case "explain":
 		return authExplain(root, args[1:])
 	case "roles":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return authRoles(root)
 	default:
-		fmt.Fprintf(os.Stderr, "unknown auth command %q\n\n", args[0])
-		return authUsage()
+		// Refused, with the commands there are. It printed them and exited
+		// 0, so a script that wrote `auth dny dana publisher` was told its
+		// deny had been made.
+		_ = authUsage()
+		return errMisused{fmt.Errorf("unknown auth command %q", args[0])}
 	}
 }
 
@@ -260,7 +278,11 @@ func authRoles(root string) error {
 	return nil
 }
 
-func authGrant(root string, args []string) error {
+func authGrant(root string, args []string) error { return authGrantAs(root, args, false) }
+
+// authGrantAs is `auth grant`, and `auth deny` when denying is set: then the
+// binding denies whatever the line says, --deny=false included.
+func authGrantAs(root string, args []string, denying bool) error {
 	fs := flag.NewFlagSet("grant", flag.ContinueOnError)
 	on := fs.String("on", "/", "resource path the binding covers")
 	deny := fs.Bool("deny", false, "deny instead of grant; a deny always wins")
@@ -281,9 +303,10 @@ func authGrant(root string, args []string) error {
 	until := fs.String("until", "", "the grant ends at the start of this day (YYYY-MM-DD)")
 	forDur := fs.String("for", "", "the grant ends after this long: 30d, 72h")
 	rest, flags := leadingArgs(args, 2)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &rest, 2); err != nil {
 		return err
 	}
+	*deny = *deny || denying
 	if *ownOnly {
 		// Offered on both surfaces, confirmed in writing by both, enforced by
 		// neither: EvaluateOwned — the function that resolves an own-only
@@ -476,7 +499,7 @@ func authRevoke(root string, args []string) error {
 	fs := flag.NewFlagSet("revoke", flag.ContinueOnError)
 	on := fs.String("on", "/", "resource path the binding covered")
 	rest, flags := leadingArgs(args, 2)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &rest, 2); err != nil {
 		return err
 	}
 	if len(rest) != 2 {
@@ -687,7 +710,7 @@ func authExplain(root string, args []string) error {
 	fs := flag.NewFlagSet("explain", flag.ContinueOnError)
 	on := fs.String("on", "/", "resource path")
 	rest, flags := leadingArgs(args, 2)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &rest, 2); err != nil {
 		return err
 	}
 	if len(rest) < 1 {
@@ -794,6 +817,9 @@ recovered from this machine.
 	case "issue":
 		return tokenIssue(root, args[1:])
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return tokenList(root)
 	case "revoke":
 		return tokenRevoke(root, args[1:])
@@ -853,7 +879,7 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 	keyFile := fs.String("key", "", "bind it to this public key (a JWK file, from quilzo token keygen): "+
 		"accepted only with a DPoP proof made by the key")
 	rest, flags := leadingArgs(args, 1)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &rest, 1); err != nil {
 		return err
 	}
 	if len(rest) != 1 {
@@ -1062,7 +1088,7 @@ func tokenExchange(root string, args []string) error {
 	role := fs.String("role", "", "narrow to this role (default: the parent's)")
 	on := fs.String("on", "", "narrow to this path (default: the parent's)")
 	ttl := fs.Duration("ttl", auth.DefaultSessionTTL, "how long the session lasts")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 
@@ -1213,7 +1239,7 @@ func tokenRevoke(root string, args []string) error {
 func tokenStale(root string, args []string) error {
 	fs := flag.NewFlagSet("stale", flag.ContinueOnError)
 	idle := fs.Duration("idle", 720*time.Hour, "unused for at least this long")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	ts, err := loadTokens(root)

@@ -110,7 +110,7 @@ func evolveRun(root string, args []string, caller *Caller) (err error) {
 	fs.Var(&testEvalInputs, "test-eval-input",
 		"a file the evaluator receives for the test set, never used to choose (repeatable)")
 	fs.Var(&weights, "weight", "NAME=NUMBER, how a metric counts; negative counts against (repeatable; default: the mean)")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	// Both: a search runs programs in the box, as a research run does, and

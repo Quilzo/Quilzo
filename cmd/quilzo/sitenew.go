@@ -253,7 +253,7 @@ func siteNewCmd(root string, args []string) error {
 	install := fs.Bool("install", false, "install it as well, as `quilzo feature install` does")
 	takeSite := fs.Bool("take-site", false, "with --install: let it take over a site somebody set up by hand")
 	fs.StringVar(&featureDesignDir, "templates", featureDesignDir, "the site's templates directory, for --install")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 && *name == "" {
@@ -522,7 +522,7 @@ func markFilled(root string, s *store.Store, pages []string, caller *Caller) err
 func siteFillCmd(root string, args []string) error {
 	pos, flags := leadingArgs(args, 999)
 	fs := flag.NewFlagSet("site fill", flag.ContinueOnError)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 999); err != nil {
 		return err
 	}
 	caller := resolveCaller(root, flagToken)

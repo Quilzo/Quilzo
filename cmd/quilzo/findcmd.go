@@ -36,7 +36,7 @@ func cmdFind(root string, args []string) error {
 	ref := fs.String("ref", site.RefDraft,
 		"which pages to search: draft or live")
 	rest, flags := leadingArgs(args, len(args))
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, nil, 0); err != nil {
 		return err
 	}
 	query := strings.TrimSpace(strings.Join(rest, " "))

@@ -116,12 +116,18 @@ func cmdBooking(root string, args []string) error {
 	case "setup":
 		return bookingSetupCmd(root, args[1:], caller)
 	case "example":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		body, _ := json.MarshalIndent(bookingExample(), "", "  ")
 		_, err := os.Stdout.Write(append(body, '\n'))
 		return err
 	case "cancel":
 		return bookingCancelCmd(root, args[1:], caller)
 	case "pause", "resume":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return bookingPause(root, args[0] == "pause", caller)
 	case "feed":
 		return bookingFeedCmd(root, args[1:], caller)
@@ -151,7 +157,7 @@ func bookingList(root string, args []string, caller *Caller) error {
 	fs := flag.NewFlagSet("booking list", flag.ContinueOnError)
 	days := fs.Int("days", 14, "how many days ahead")
 	past := fs.Int("past", 0, "how many days back as well")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	if err := authorise(root, caller, auth.ActEditDraft, "/"); err != nil {
@@ -210,6 +216,11 @@ func phoneSuffix(p string) string {
 }
 
 func bookingSetupCmd(root string, args []string, caller *Caller) error {
+	// One file, read as args[0]; a word after it was not looked at.
+	args, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	if len(args) == 0 {
 		if err := authorise(root, caller, auth.ActView, "/"); err != nil {
 			return err
@@ -265,7 +276,7 @@ func bookingCancelCmd(root string, args []string, caller *Caller) error {
 	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("booking cancel", flag.ContinueOnError)
 	erase := fs.Bool("erase", false, "forget who booked as well, as somebody asking to be forgotten is owed")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -336,7 +347,7 @@ func bookingPause(root string, pause bool, caller *Caller) error {
 func bookingFeedCmd(root string, args []string, caller *Caller) error {
 	fs := flag.NewFlagSet("booking feed", flag.ContinueOnError)
 	off := fs.Bool("off", false, "turn the feed off")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	s, err := loadBookingSetup(root)

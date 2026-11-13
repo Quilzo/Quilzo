@@ -32,6 +32,9 @@ func cmdCell(root string, args []string) error {
 	}
 	switch args[0] {
 	case "status":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return cellStatus(root)
 	case "warm":
 		return cellWarm(root, args[1:])

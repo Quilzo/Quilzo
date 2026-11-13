@@ -8,6 +8,7 @@ import (
 	"fmt"
 	stdpath "path"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -1087,13 +1088,81 @@ func commandResources(cmd string, args []string) []string {
 	if !ok {
 		return []string{"/"}
 	}
-	pos, _ := leadingArgs(rest, idx+1)
+	pos, more := leadingArgs(rest, idx+1)
 	if len(pos) <= idx {
 		// The argument is not there. The command will say so in its own words;
 		// until then the strict answer is the whole store rather than a guess.
-		return []string{"/"}
+		//
+		// Or it is there, after a flag. Then "/" alone is not the strict
+		// answer, because a deny below the root does not cover "/": `lock
+		// --note x legal/terms` was asked about the whole store, passed a
+		// deny on /legal, and locked the page. So every word the command may
+		// yet read as its page is asked about as well.
+		pages := []string{"/"}
+		for _, w := range wordsPastFlags(more) {
+			if r := pageResource(w); !slices.Contains(pages, r) {
+				pages = append(pages, r)
+			}
+		}
+		return pages
 	}
 	return resourcesFor([]string{pos[idx]})
+}
+
+// wordsPastFlags is every word of args a command may read as a name once
+// its flags are parsed: each one that is not a flag, and all of them after
+// "--".
+//
+// The gate finds the page, the collection or the agent a command is about by
+// where it stands before the flags. It has no flag set, so past a flag it
+// cannot tell `--note x`, a flag and its value, from `--off about`, a flag
+// and the page, and a second table of which flags take a value is the copy
+// that drifts (splitFlags). It does not guess: all of them are asked about.
+// A value that is not the name costs somebody with a deny a refusal they can
+// avoid by naming the page first, and that is the direction to be wrong in.
+func wordsPastFlags(args []string) []string {
+	var words []string
+	for i, a := range args {
+		if a == "--" {
+			return append(words, args[i+1:]...)
+		}
+		// A flag, as the flag package has it: a dash and something after.
+		if len(a) > 1 && a[0] == '-' {
+			continue
+		}
+		words = append(words, a)
+	}
+	return words
+}
+
+// namedPastFlags is the collections or the agents a command may be about
+// when a flag stands where commandArea looks for the name: every word after
+// it that could be one.
+//
+// `records add --id ID secret name=x` was asked about the records as a
+// whole and wrote to a collection its caller was denied, and `agent run --
+// bot` ran an agent its caller was denied, since the area is all a deny on
+// one of its members does not cover.
+func namedPastFlags(cmd string, args []string) []string {
+	if len(args) < 2 || !strings.HasPrefix(args[1], "-") {
+		return nil
+	}
+	var named []string
+	switch {
+	case cmd == "agent" && args[0] == "run":
+		for _, w := range wordsPastFlags(args[1:]) {
+			if reAgentArg.MatchString(w) {
+				named = append(named, auth.AgentResource(w))
+			}
+		}
+	case (cmd == "records" || cmd == "record") && recordVerbs[args[0]]:
+		for _, w := range wordsPastFlags(args[1:]) {
+			if collection.ValidName(w) == nil {
+				named = append(named, auth.DataResource(w))
+			}
+		}
+	}
+	return named
 }
 
 // pageArgOf finds the row for a command, resolved the way lookupNeed resolves
@@ -1311,8 +1380,14 @@ func authoriseCommand(root, cmd string, args []string) error {
 		sub = cmd + " " + args[0]
 	}
 	resources := commandResources(cmd, args)
+	// Whether the name was looked for past a flag (wordsPastFlags), which a
+	// refusal then says: the whole site and every word were asked about, and
+	// somebody with a role on part of it reads "no role on /" of a command
+	// about their own page.
+	past := len(resources) > 1 && resources[0] == "/"
 	if area, ok := commandArea(cmd, args); ok {
-		resources = []string{area}
+		named := namedPastFlags(cmd, args)
+		resources, past = append([]string{area}, named...), len(named) > 0
 	}
 	// Every resource, not the first one. A command that writes two pages needs
 	// the authority for both, and stopping at the first would let a deny on
@@ -1337,6 +1412,10 @@ func authoriseCommand(root, cmd string, args []string) error {
 			}
 			if n.hint != "" {
 				return fmt.Errorf("%w\n%s", err, n.hint)
+			}
+			if past {
+				return fmt.Errorf("%w\nwith a flag before the name, every word after it is asked about; "+
+					"write the name first and the flags after it", err)
 			}
 			return err
 		}

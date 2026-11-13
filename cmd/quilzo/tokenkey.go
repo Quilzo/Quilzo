@@ -123,7 +123,7 @@ func tokenProof(args []string) error {
 	url := fs.String("url", "", "the address the request goes to, such as https://admin.example/mcp")
 	method := fs.String("method", "POST", "the request's method")
 	token := fs.String("presenting", "", "the token the request presents; empty for an exchange")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	if *keyFile == "" || *url == "" {

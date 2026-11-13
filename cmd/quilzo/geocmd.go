@@ -168,6 +168,9 @@ func cmdGeo(root string, args []string) error {
 	}
 	switch args[0] {
 	case "status":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		l, desc, err := loadGeo(root)
 		if err != nil {
 			return err
@@ -190,6 +193,9 @@ func cmdGeo(root string, args []string) error {
 		}
 		return nil
 	case "help":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		w.Human("  Sign-ins are placed from networks you name first, then a city database.\n"+
 			"  The database: download DB-IP's free IP to City Lite in MMDB form from\n"+
 			"  https://db-ip.com/db/download/ip-to-city-lite (CC BY 4.0), unpack it, and put it at\n"+
@@ -206,6 +212,14 @@ func cmdGeo(root string, args []string) error {
 		}
 		switch args[1] {
 		case "remove":
+			// One prefix. These words are read by hand, and a second prefix
+			// was not read at all: `geo network remove 10.0.0.0/8
+			// 192.168.0.0/16` took the first away, said nothing of the other
+			// and exited 0, with an office still trusted that was to stop
+			// being.
+			if len(args) != 3 {
+				return errMisused{geoUsage()}
+			}
 			kept := c.Networks[:0]
 			for _, n := range c.Networks {
 				if n.Prefix != args[2] {
@@ -217,6 +231,13 @@ func cmdGeo(root string, args []string) error {
 		case "add":
 			if len(args) < 4 {
 				return geoUsage()
+			}
+			// The flags come in pairs, and the loop below reads pairs. A
+			// word left over was dropped: `--kind` with its value forgotten
+			// added a network of no kind, which is not stepped up as an
+			// office or a VPN is.
+			if len(args)%2 != 0 {
+				return errMisused{geoUsage()}
 			}
 			n := geo.Network{Prefix: args[2]}
 			n.Network = args[3]

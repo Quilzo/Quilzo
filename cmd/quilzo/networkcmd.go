@@ -21,6 +21,12 @@ func cmdNetwork(root string, args []string) error {
 	if len(args) > 0 && args[0] != "show" {
 		return fmt.Errorf("usage: quilzo network [show]")
 	}
+	// And nothing after show, which was not looked at.
+	if len(args) > 0 {
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
+	}
 
 	// The mode as configured, so this reports the deployment rather than the
 	// state this particular process happens to be in.

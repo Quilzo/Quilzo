@@ -61,6 +61,9 @@ func cmdIntegrations(root string, args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return integrationsList(root)
 	case "tools":
 		return integrationsTools(root, args[1:])
@@ -71,6 +74,9 @@ func cmdIntegrations(root string, args []string) error {
 	case "gateway":
 		return integrationsGateway(root, args[1:])
 	case "held":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return integrationsHeld(root)
 	case "import":
 		return integrationsImport(root, args[1:])
@@ -467,7 +473,7 @@ func integrationsGateway(root string, args []string) error {
 	daily := fs.Int("daily", 0, "calls one caller may make a day")
 	ask := fs.String("ask", "", "tools a person approves call by call, separated by commas")
 	off := fs.Bool("off", false, "offer it no longer")
-	if err := fs.Parse(rest); err != nil {
+	if err := parseFlags(fs, rest, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 || (*off == (*role != "")) {

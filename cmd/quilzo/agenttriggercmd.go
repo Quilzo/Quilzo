@@ -28,10 +28,19 @@ func agentTriggerCmd(root string, args []string) error {
 		return fmt.Errorf("usage: quilzo agent trigger NAME [add|remove N], or quilzo agent trigger events")
 	}
 	if args[0] == "events" {
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return agentTriggerEvents()
 	}
 	name, rest := args[0], args[1:]
 	if len(rest) == 0 || rest[0] == "list" {
+		// Nothing after list: a word there was not read.
+		if len(rest) > 0 {
+			if err := noArguments(rest[1:]); err != nil {
+				return err
+			}
+		}
 		return agentTriggerList(root, name)
 	}
 	switch rest[0] {
@@ -64,7 +73,7 @@ func agentTriggerAdd(root, name string, args []string) error {
 	zone := fs.String("zone", "", "the time zone of --at, Europe/London (UTC when not given)")
 	goal := fs.String("goal", "", "what each run is to do")
 	perDay := fs.Int("per-day", 0, fmt.Sprintf("the most runs it starts in a day (%d when not given)", agent.DefaultPerDay))
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	t := agent.Trigger{On: *on, Where: *where, Every: agent.Duration(*every), At: *at, Zone: *zone,

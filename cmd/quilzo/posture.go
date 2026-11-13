@@ -476,6 +476,9 @@ func cmdPosture(root string, args []string) error {
 	case "explain":
 		return postureExplain(args[1:])
 	case "rules":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return postureRules()
 	case "suppress":
 		return postureSuppress(root, args[1:])
@@ -499,7 +502,11 @@ func postureScan(root string, args []string) error {
 	proxy := fs.Bool("behind-proxy", false, "a reverse proxy terminates TLS")
 	asOSCAL := fs.Bool("oscal", false,
 		"emit OSCAL assessment results instead of a report")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 0); err != nil {
+		return err
+	}
+	// Observing made the store it was looking for, and the scan was of that.
+	if err := needStore(root); err != nil {
 		return err
 	}
 
@@ -699,7 +706,7 @@ func postureSuppress(root string, args []string) error {
 	reason := fs.String("reason", "", "why this is being accepted")
 	by := fs.String("by", "", "who is accepting it")
 	daysFor := fs.Int("days", 30, "how long, at most 90")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -1054,7 +1061,7 @@ func postureFrameworks(root string, args []string) error {
 	fs := flag.NewFlagSet("posture frameworks", flag.ContinueOnError)
 	tplDir := fs.String("templates", "templates", "template directory")
 	pos, flags := leadingArgs(args, 1)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	sup, _ := loadSuppressions(root)
