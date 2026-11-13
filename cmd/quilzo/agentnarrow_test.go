@@ -537,3 +537,111 @@ func TestAReadOnlyCallerDoesNotWorkTheDesktop(t *testing.T) {
 		t.Errorf("a caller who may write was narrowed on the desktop: %v %+v", wide.Capabilities, wide.Cell)
 	}
 }
+
+// A run confined by whoever started it stays confined when a wider person
+// takes it on. A run that waited goes on as whoever answered it and was
+// bounded by them alone: dana, an author confined to /about, started a
+// run that asked before reading, sam, who holds the whole site, let the read
+// go ahead, and the run went on to write the returns page, which dana may
+// not touch. Letting one step go ahead decides that step and lends the run
+// nothing more, as with a run whoever started could only read for.
+func TestAConfinedRunTakenOnStaysConfined(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := demoStore(t)
+	declaredAutonomy(t, root)
+	m := asker("tidy")
+	m.AskFirst = []string{"list_pages"}
+	m.Budget.Tools = 4
+	if err := declareAgent(root, m, true, true, asAdmin("sam")); err != nil {
+		t.Fatal(err)
+	}
+	// Reads the pages first, then writes the returns page and the about
+	// page, then is done.
+	var mu sync.Mutex
+	after := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		choice := `{"op":"list_pages"}`
+		if !strings.Contains(string(b), "Nothing has been done yet") {
+			mu.Lock()
+			after++
+			switch after {
+			case 1:
+				choice = `{"op":"write_page","input":{"page":"returns","fields":` +
+					`{"title":"Not hers","body":"Returns are not hers to change.","updated":"2026-11-01"}}}`
+			case 2:
+				choice = `{"op":"write_page","input":{"page":"about","fields":{"title":"Hers"}}}`
+			default:
+				choice = `{"op":"done","say":"written"}`
+			}
+			mu.Unlock()
+		}
+		out, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{
+			"message": map[string]any{"role": "assistant", "content": choice}}}})
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(out)
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("QUILZO_MODEL_URL", srv.URL+"/v1")
+	t.Setenv("QUILZO_MODEL", "stand-in")
+	t.Setenv("QUILZO_MODEL_KEY", "")
+
+	dana := human("dana")
+	dana.Role, dana.Scope = auth.RoleAuthor, "/about"
+	id, out, err := runAgentKept(context.Background(), root, "tidy", "tidy the pages", true, dana)
+	w := out.Trace.Waiting
+	if err != nil || w == nil || w.Action.Op != "list_pages" {
+		t.Fatalf("the run did not wait to read: %v\n%s", err, describeRun(out.Trace))
+	}
+	rec, err := loadAgentRun(root, id)
+	if err != nil || rec.Bound == nil || rec.Bound.Scope != "/about" || rec.Bound.Role != string(auth.RoleAuthor) {
+		t.Fatalf("the run does not keep its starter's bound: %v %+v", err, rec.Bound)
+	}
+	done, err := continueAgentRun(context.Background(), root, id, &agent.Verdict{N: w.N, Approve: true}, asAdmin("sam"))
+	if err != nil {
+		t.Fatalf("%v\n%s", err, describeRun(done.Trace))
+	}
+	wrote := map[string]bool{}
+	for _, st := range done.Trace.Steps {
+		if st.Action.Op == "write_page" {
+			page, _ := st.Action.Input["page"].(string)
+			wrote[page] = st.Allowed && st.Err == ""
+		}
+	}
+	if wrote["returns"] {
+		t.Errorf("a run dana started wrote outside /about once sam took it on:\n%s", describeRun(done.Trace))
+	}
+	if !wrote["about"] {
+		t.Errorf("a run dana started could not write inside /about once sam took it on:\n%s", describeRun(done.Trace))
+	}
+}
+
+// Whoever takes a run on reaches no further than whoever started it: the
+// lower role, the deeper part of the site, the types both hold; two
+// reaches with nothing in common are refused, saying who may take it on;
+// and a run kept before its starter's reach was is taken on as before.
+func TestTakingARunOnIsBoundedByItsStarter(t *testing.T) {
+	sam := asAdmin("sam")
+	dana := &agent.Bound{Role: string(auth.RoleAuthor), Scope: "/docs", Types: []string{"Article", "faq"}}
+	c, err := sam.within(dana)
+	if err != nil || c.Role != auth.RoleAuthor || c.Scope != "/docs" || len(c.Limits.Types) != 2 || c.Name != "sam" {
+		t.Fatalf("%v %+v", err, c)
+	}
+	deeper := asAdmin("sam")
+	deeper.Scope, deeper.Limits.Types = "/docs/setup", []string{"article"}
+	if c, err := deeper.within(dana); err != nil || c.Scope != "/docs/setup" || len(c.Limits.Types) != 1 {
+		t.Fatalf("a narrower caller was widened: %v %+v", err, c)
+	}
+	blog := asAdmin("sam")
+	blog.Scope = "/blog"
+	if _, err := blog.within(dana); err == nil || !strings.Contains(err.Error(), "who holds /docs") {
+		t.Errorf("a caller holding none of the run's part of the site took it on: %v", err)
+	}
+	blog.Scope, blog.Limits.Types = "", []string{"product"}
+	if _, err := blog.within(dana); err == nil {
+		t.Error("a caller holding none of the run's types took it on")
+	}
+	if c, err := sam.within(nil); err != nil || c != sam {
+		t.Errorf("a run kept with no bound was narrowed: %v %+v", err, c)
+	}
+}

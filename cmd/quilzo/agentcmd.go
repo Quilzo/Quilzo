@@ -1172,6 +1172,16 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 		c.Limits.ReadOnly = true
 		caller = &c
 	}
+	// And it goes on no further than whoever started it reached, for the
+	// same reason (agent.Record's Bound): the role, the part of the site,
+	// the content types and the locales both of them hold.
+	if from.Prior != nil && caller != nil {
+		c, err := caller.within(from.Prior.Bound)
+		if err != nil {
+			return out, err
+		}
+		caller = c
+	}
 	set, err := loadAgents(root)
 	if err != nil {
 		return out, err
