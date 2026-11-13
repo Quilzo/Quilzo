@@ -4,6 +4,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -202,4 +204,57 @@ func TestADryRunMoveChangesNothing(t *testing.T) {
 
 func contains(haystack, needle string) bool {
 	return strings.Contains(haystack, needle)
+}
+
+// Moving a reusable block carries the pages that reuse it. A reuse names the
+// block, so it is a reference like any other; the move used to leave it
+// naming the old place, where it showed nothing, and neither the dry run nor
+// the move said so, while deleting the same block was refused for them.
+func TestMovingABlockCarriesThePagesThatReuseIt(t *testing.T) {
+	root, _ := movable(t)
+	s, _ := open(root)
+	pages, err := site.PagesAt(s, site.RefDraft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages["promo"] = map[string]any{"title": "Promo", "block": true}
+	pages["index"] = map[string]any{"title": "Home", "sections": []any{
+		map[string]any{"id": "r1", "block": map[string]any{"page": "promo"}}}}
+	pages["returns"] = map[string]any{"title": "Returns", "sections": []any{
+		map[string]any{"id": "r2", "block": map[string]any{"page": "promo"}}}}
+	if _, err := site.SaveDraft(s, pages, "blocks", "test"); err != nil {
+		t.Fatal(err)
+	}
+
+	old := w
+	t.Cleanup(func() { w = old })
+	var buf bytes.Buffer
+	w = out.New(true)
+	w.Out = &buf
+	if err := cmdMove(root, []string{"promo", "promo-2", "--dry-run"}); err != nil {
+		t.Fatal(err)
+	}
+	var dry struct {
+		Reuses []string `json:"reuses"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &dry); err != nil {
+		t.Fatalf("%v: %s", err, buf.String())
+	}
+	if strings.Join(dry.Reuses, ",") != "index,returns" {
+		t.Errorf("the dry run does not name the pages reusing the block: %s", buf.String())
+	}
+	w = old
+
+	if err := cmdMove(root, []string{"promo", "promo-2"}); err != nil {
+		t.Fatal(err)
+	}
+	s, _ = open(root)
+	pages, _ = site.PagesAt(s, site.RefDraft)
+	uses := site.BlockUses(pages)
+	if got := strings.Join(uses["promo-2"], ","); got != "index,returns" {
+		t.Errorf("the block is reused on %q after the move, want index,returns", got)
+	}
+	if len(uses["promo"]) > 0 {
+		t.Errorf("pages still reuse the old name: %v", uses["promo"])
+	}
 }
