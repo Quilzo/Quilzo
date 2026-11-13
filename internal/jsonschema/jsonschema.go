@@ -23,6 +23,8 @@ import (
 	"sort"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // maxDepth bounds how far into a value, or a schema, a check goes.
@@ -184,7 +186,7 @@ func checkObject(s map[string]any, x map[string]any, at string, depth int) error
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		where := at + "." + k
+		where := at + "." + named(k)
 		if p, ok := props[k]; ok {
 			if err := check(p, x[k], where, depth+1); err != nil {
 				return err
@@ -202,6 +204,16 @@ func checkObject(s map[string]any, x map[string]any, at string, depth int) error
 	}
 	return nil
 }
+
+// named is a property's name as an answer says it: enough to say which,
+// and no more.
+//
+// The name is the value's own. For a tool's arguments that is whatever a
+// caller of the agent interface sent, up to the whole body of the request,
+// and an answer that named it whole was as long: a megabyte sent back for
+// one argument nobody takes, where a tool or an operation nobody has is
+// quoted in eighty bytes (internal/mcp's quoteName).
+func named(k string) string { return plaintext.Clip(k, 80, "…") }
 
 func checkType(t any, v any, at string) error {
 	var types []string

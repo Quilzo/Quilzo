@@ -159,6 +159,37 @@ func TestARefusalQuotesAPageNameItCouldNotFindShort(t *testing.T) {
 	}
 }
 
+// An argument write_page does not take is named by a short form of its
+// name, as a page it could not find is.
+//
+// The names are the caller's: an argument beside page and fields, and a
+// field given as null. Each was said whole, so one name just under the
+// 2 MiB body limit was two megabytes back to the caller.
+func TestARefusalNamesAnArgumentItDoesNotTakeShort(t *testing.T) {
+	root, _ := concurrentRig(t)
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := buildMCP(root, s, asAdmin("rae"), t.TempDir())
+	huge := "p" + strings.Repeat("x", 2<<20)
+	for what, args := range map[string]map[string]any{
+		"an argument it does not take": {"page": "about", "fields": map[string]any{"title": "About"}, huge: "v"},
+		"a field that is null":         {"page": "about", "fields": map[string]any{huge: nil}},
+	} {
+		_, refused := callTool(t, srv, "quilzo_write", "write_page", args)
+		if refused == nil || refused.Code != mcp.CodeInvalidParams {
+			t.Fatalf("%s: answered %+v", what, refused)
+		}
+		if len(refused.Message) > 512 || !strings.Contains(refused.Message, "pxxx") {
+			t.Errorf("%s: answered %d bytes, not a short form of the name: %.120s", what, len(refused.Message), refused.Message)
+		}
+	}
+	if names := draftNames(t, root); len(names) != 1 {
+		t.Fatalf("a call refused for its arguments wrote: %v", names)
+	}
+}
+
 // The agent interface holds a token to the same budget the content API
 // does: a burst of api.rate.burst, then api.rate.per_minute, then 429 with
 // how long to wait.

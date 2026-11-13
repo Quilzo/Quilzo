@@ -429,8 +429,10 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 				return nil, &mcp.ArgumentError{Reason: "write_page: a field in arguments.fields has no name"}
 			}
 			if v == nil {
+				// By a short form of its name, which is the caller's, as
+				// every name a refusal quotes is (quoteInput).
 				return nil, &mcp.ArgumentError{Reason: fmt.Sprintf(
-					"write_page: arguments.fields.%s is null; give it as \"\" to empty it", k)}
+					"write_page: arguments.fields.%s is null; give it as \"\" to empty it", clip(k, 80))}
 			}
 		}
 

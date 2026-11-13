@@ -427,6 +427,43 @@ func TestAnUnknownNameIsQuotedShort(t *testing.T) {
 	}
 }
 
+// An argument nobody takes is named back by a short form of its name, as a
+// tool or an operation nobody has is.
+//
+// An argument's name is the caller's as well, up to the whole body, and the
+// answer that it is not one the tool takes named it whole: a megabyte back
+// to the caller for one argument, from the tool's own schema, from what an
+// operation takes, and from the schema a gateway's tool is offered with.
+func TestAnArgumentNobodyTakesIsNamedShort(t *testing.T) {
+	huge := "x" + strings.Repeat("y", 1<<20)
+	short := func(what string, r *Response) {
+		t.Helper()
+		if r.Error == nil || r.Error.Code != CodeInvalidParams {
+			t.Fatalf("%s: an argument nobody takes was answered %+v", what, r.Error)
+		}
+		if len(r.Error.Message) > 512 || !strings.Contains(r.Error.Message, "xyyy") {
+			t.Errorf("%s: answered %d bytes, not a short form of the name: %.120s", what, len(r.Error.Message), r.Error.Message)
+		}
+	}
+	s := testServer()
+	for what, args := range map[string]map[string]any{
+		"a tool's argument":       {"operation": "list_pages", huge: 1},
+		"an operation's argument": {"operation": "write_page", "arguments": map[string]any{huge: "v"}},
+	} {
+		short(what, call(t, s, "tools/call", map[string]any{"name": "quilzo_write", "arguments": args}))
+	}
+	gw := NewServer("gw", "1")
+	sent := 0
+	gw.Direct = &Direct{Tools: []Tool{{Name: "lookup", InputSchema: map[string]any{
+		"type": "object", "properties": map[string]any{"q": map[string]any{"type": "string"}}}}},
+		Call: func(string, map[string]any) (string, error) { sent++; return "found", nil }}
+	short("a gateway tool's argument", call(t, gw, "tools/call", callParams{Name: "lookup",
+		Arguments: map[string]any{"q": "rye", huge: 1}}))
+	if sent != 0 {
+		t.Fatalf("sent on %d times", sent)
+	}
+}
+
 // An argument that is not what a tool or an operation takes is invalid
 // params, naming it, before anything runs.
 //
