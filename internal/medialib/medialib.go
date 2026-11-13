@@ -406,6 +406,47 @@ func (l *Library) Open(id string) (media.File, *os.File, error) {
 	return f, h, nil
 }
 
+// Arriving settles an upload against what the library already holds.
+//
+// The library is content-addressed, so a second upload of the same picture
+// is the same file, and storing the upload's record over it replaced the
+// first person's description on every page that used it (or, ticked
+// decorative, erased it), took its rights, origin and focus with it, and
+// said only "stored". So a file already here keeps its record: arriving is
+// what to store, was the record already here, and here whether there was
+// one. replaceAlt is the uploader asking, explicitly, for their description
+// to replace the one it has, which is the only change an upload of the same
+// bytes makes.
+func (l *Library) Arriving(f media.File, replaceAlt bool) (arriving, was media.File, here bool) {
+	was, err := l.Stat(f.ID)
+	if err != nil {
+		return f, media.File{}, false
+	}
+	arriving = was
+	if replaceAlt {
+		arriving.Alt = f.Alt
+	}
+	return arriving, was, true
+}
+
+// AlreadyHere says that an upload named name was a file the library holds,
+// and what it is now described as, for every surface that uploads to say
+// the same.
+func AlreadyHere(name string, was, now media.File) string {
+	described := func(f media.File) string {
+		if f.Alt == "" {
+			return "no description"
+		}
+		return fmt.Sprintf("the description %q", f.Alt)
+	}
+	if was.Alt == now.Alt {
+		return fmt.Sprintf("%s is already in the library as %s, with %s, and is kept as it was",
+			name, displayOf(was), described(was))
+	}
+	return fmt.Sprintf("%s is already in the library as %s; it now has %s instead of %s, wherever it is used",
+		name, displayOf(was), described(now), described(was))
+}
+
 // Stat returns what a file is, without reading it.
 func (l *Library) Stat(id string) (media.File, error) {
 	if err := ValidID(id); err != nil {

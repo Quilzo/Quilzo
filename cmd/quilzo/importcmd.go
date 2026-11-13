@@ -18,6 +18,7 @@ import (
 	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/importer"
 	"github.com/quilzo/quilzo/internal/media"
+	"github.com/quilzo/quilzo/internal/medialib"
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/seo"
 	"github.com/quilzo/quilzo/internal/site"
@@ -604,6 +605,13 @@ func mediaFormats() error {
 func mediaAdd(root string, args []string) error {
 	fs := flag.NewFlagSet("add", flag.ContinueOnError)
 	alt := fs.String("alt", "", "description, required for images (WCAG 1.1.1)")
+	// The browser's "Decorative, and needs no description", which the
+	// command line told people to wait for.
+	decorative := fs.Bool("decorative", false,
+		"the image is decorative and needs no description")
+	replaceAlt := fs.Bool("replace-alt", false,
+		"if the file is already in the library, give it this description "+
+			"instead of the one it has, wherever it is used")
 	// The flags on either side of what it acts on, as `media captions` takes
 	// them. Read from the front only, `quilzo media add --alt "…" FILE` was
 	// answered with the usage line.
@@ -612,7 +620,11 @@ func mediaAdd(root string, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: quilzo media add <file> [--alt \"...\"]")
+		return fmt.Errorf("usage: quilzo media add <file> [--alt \"...\" | --decorative] [--replace-alt]")
+	}
+	if *decorative && strings.TrimSpace(*alt) != "" {
+		return fmt.Errorf("--decorative says the image needs no description, " +
+			"and --alt gives it one; say which")
 	}
 
 	body, err := os.ReadFile(pos[0])
@@ -669,13 +681,24 @@ func mediaAdd(root string, args []string) error {
 	// Alt text is required at the point an image enters, not checked later. A
 	// library full of undescribed images is a library somebody has to go back
 	// through, and nobody ever does.
-	if f.Kind == media.Image && strings.TrimSpace(*alt) == "" {
+	lib, err := openMedia(root)
+	if err != nil {
+		return fmt.Errorf("the media library could not be opened: %w", err)
+	}
+	// A file already here keeps its description unless --replace-alt asks
+	// for this one instead (medialib.Arriving), so a description is needed
+	// only of a new file, or of one whose description is being replaced.
+	_, _, here := lib.Arriving(f, false)
+	if f.Kind == media.Image && strings.TrimSpace(*alt) == "" && !*decorative && (!here || *replaceAlt) {
 		return errBlocked{fmt.Errorf(
 			"this image needs a description: --alt \"what it shows\"\n" +
 				"  Say what the image conveys, not that it is an image. If it is " +
-				"purely decorative, pass --alt \"\" explicitly once that is supported")}
+				"purely decorative, pass --decorative, which is a claim you are " +
+				"making rather than a step being skipped")}
 	}
 	f.Alt = strings.TrimSpace(*alt)
+	upload := f
+	f, was, here := lib.Arriving(upload, *replaceAlt)
 
 	// Stored, which it was not.
 	//
@@ -688,12 +711,10 @@ func mediaAdd(root string, args []string) error {
 	// says so: "stores accepted uploads, which nothing did". It was written and
 	// the command was never wired to it. Found by adding three images for a
 	// demonstration and finding an empty picker.
-	lib, err := openMedia(root)
-	if err != nil {
-		return fmt.Errorf("the media library could not be opened: %w", err)
-	}
-	if err := lib.Put(f, body); err != nil {
-		return fmt.Errorf("%s was accepted and could not be stored: %w", f.Name, err)
+	if !here || f.Alt != was.Alt {
+		if err := lib.Put(f, body); err != nil {
+			return fmt.Errorf("%s was accepted and could not be stored: %w", f.Name, err)
+		}
 	}
 	// What the probe found when it was stored: whether a recording has sound,
 	// which decides whether a page showing it owes captions or a description.
@@ -715,7 +736,14 @@ func mediaAdd(root string, args []string) error {
 		return nil
 	}
 	record(root, resolveCaller(root, "").auditRecord("media.add", "/", audit.Success, detail))
-	w.Human("stored %s%s%s\n", bold, f.Name, reset)
+	if here {
+		w.Human("%s\n", medialib.AlreadyHere(upload.Name, was, f))
+		if f.Alt == was.Alt && upload.Alt != was.Alt {
+			w.Human("  %sto give it your description instead: --replace-alt%s\n", dim, reset)
+		}
+	} else {
+		w.Human("stored %s%s%s\n", bold, f.Name, reset)
+	}
 	w.Human("  %s%s · %s · %d bytes", dim, f.Format, f.Kind, f.Size)
 	if f.Width > 0 {
 		w.Human(" · %dx%d", f.Width, f.Height)
@@ -780,6 +808,10 @@ func mediaGet(root string, args []string) error {
 		audit.Success, map[string]string{"file": f.Name, "id": short(f.ID),
 			"format": string(f.Format), "source": f.Source}))
 	w.Human("fetched and stored %s%s%s\n", bold, f.Name, reset)
+	if f.Alt != strings.TrimSpace(*alt) {
+		w.Human("  %sit was already in the library, and keeps the description %q%s\n",
+			dim, f.Alt, reset)
+	}
 	w.Human("  %sfrom %s%s\n", dim, res.FinalURL, reset)
 	w.Human("  %s%s · %d bytes%s\n", dim, f.Format, f.Size, reset)
 	w.Human("  %sid %s%s\n", dim, f.ID, reset)
@@ -932,6 +964,14 @@ func keepFetched(root string, res *fetch.Result, alt string) (media.File, error)
 	lib, err := openMedia(root)
 	if err != nil {
 		return media.File{}, fmt.Errorf("the media library could not be opened: %w", err)
+	}
+	// A file already here keeps its record, description, rights and all, as
+	// an upload of it does (medialib.Arriving): fetched again by an import,
+	// it replaced the description a person had written with the one the old
+	// site gave it.
+	f, _, here := lib.Arriving(f, false)
+	if here {
+		return f, nil
 	}
 	if err := lib.Put(f, body); err != nil {
 		return media.File{}, fmt.Errorf("fetched and could not be stored: %w", err)

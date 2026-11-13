@@ -117,6 +117,7 @@ leaving (there is no lock-in here, and this is how it is proved)
 importing
   quilzo import FILE [--from wordpress]    bring in another CMS's export
   quilzo media add FILE --alt "..."        check and store an upload
+  quilzo media add FILE --decorative       one that needs no description
   quilzo media get https://... --alt "..." fetch one, checked at connect time
   quilzo media list                        what is stored, and its path
   quilzo media remove ID                   take one out; refused if in use
