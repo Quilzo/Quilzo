@@ -367,7 +367,7 @@ func scimSync(root, name string, grants []string, suspended bool) error {
 	// app's role is not read for a suspension, and does not count here.
 	var granted, revoked []auth.Binding
 	last := false
-	p, err = updatePolicy(root, func(p *auth.Policy) error {
+	p, err = provisionPolicy(root, func(p *auth.Policy) error {
 		granted, revoked, last = nil, nil, false
 		want := want
 		if suspended && slices.ContainsFunc(p.Principals(), func(who string) bool {
