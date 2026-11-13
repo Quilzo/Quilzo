@@ -441,3 +441,55 @@ func TestARequestHeldForAPersonReachesOne(t *testing.T) {
 		t.Error("staff are not told a visitor is waiting")
 	}
 }
+
+// The dispatcher says it is taking requests, and a request made long
+// before it started is answered as not done, rather than run then.
+//
+// With the admin server stopped, a visitor's confirmed request waited, and
+// ran with their words whenever an admin next started, up to a day later,
+// long after the visitor had left.
+func TestARequestLongBeforeAnythingTookItIsNotRun(t *testing.T) {
+	root := chatActStore(t)
+	runs := 0
+	old := chatActRun
+	chatActRun = func(context.Context, string, string, string, *Caller, string) (string, agentOutcome, error) {
+		runs++
+		return "run-1", agentOutcome{Trace: agent.Trace{Answer: "Friday at 7pm.", Complete: true}}, nil
+	}
+	t.Cleanup(func() { chatActRun = old })
+	q := chatActQueue(root)
+	if q.Taking(time.Now()) {
+		t.Fatal("taking requests with no dispatcher")
+	}
+	act, answer := chatActSite(root)
+	stale, _ := chatact.NewID()
+	fresh, _ := chatact.NewID()
+	if err := act(chatact.Request{ID: stale, Chatbot: "help", Action: "booking",
+		Args: map[string]string{"booking_ref": "HB-1"}, At: time.Now().Add(-2 * chatact.MaxWait)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := act(chatact.Request{ID: fresh, Chatbot: "help", Action: "booking",
+		Args: map[string]string{"booking_ref": "HB-2"}, At: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); runChatActions(ctx, root, func(string) {}) }()
+	t.Cleanup(func() { cancel(); <-done })
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		a, okA, _ := answer(stale)
+		b, okB, _ := answer(fresh)
+		if okA && okB && a.State != chatact.Working && b.State != chatact.Working {
+			if a.State != chatact.Failed || b.State != chatact.Done || runs != 1 {
+				t.Fatalf("stale %+v, fresh %+v, %d runs", a, b, runs)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("not answered")
+		}
+	}
+	if !q.Taking(time.Now()) {
+		t.Error("the dispatcher does not say it is taking requests")
+	}
+}

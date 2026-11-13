@@ -788,3 +788,71 @@ func TestAVisitorHeldForAPersonIsToldWhereTheyAreAnswered(t *testing.T) {
 		t.Errorf("the page links to a conversation that is not one:\n%s", body)
 	}
 }
+
+// With nothing taking requests, a visitor is not offered an agent action,
+// cannot make one, and one already made does not say "Working on it" for
+// good.
+//
+// Only the admin server runs a chatbot's agents. With it stopped (a site
+// served on its own, or the admin down for maintenance) the site still
+// offered the action and took the confirmation, and the page said "Working
+// on it" until the visitor gave up; the request then ran, with their words,
+// whenever an admin next started, up to a day later.
+func TestNoAgentActionIsOfferedWhenNothingTakesRequests(t *testing.T) {
+	bot := shopBot
+	bot.UseModel = true
+	bot.Actions = []assistant.Action{
+		{Name: "booking", Kind: assistant.Agent, Target: "bookings", Description: "Look up your booking", Fields: []string{"booking_ref"}},
+	}
+	st, _ := askSite(t, bot)
+	var asked []chatact.Request
+	st.Assistants.Act = func(r chatact.Request) error { asked = append(asked, r); return nil }
+	st.Assistants.Answer = func(id string) (chatact.Result, bool, bool) {
+		for _, r := range asked {
+			if r.ID == id {
+				return chatact.Result{}, false, true
+			}
+		}
+		return chatact.Result{}, false, false
+	}
+	taking := true
+	st.Assistants.Taking = func() bool { return taking }
+	n := 0
+	st.Assistants.Model = func(assistant.Assistant) assistant.Model { return counting{"booking", &n} }
+	if body := askPost(st, "help", "Please look up HB-2201").Body.String(); !strings.Contains(body, `action="/ask/help/act"`) {
+		t.Fatalf("the action is not offered while requests are taken:\n%s", body)
+	}
+	post := func() *httptest.ResponseRecorder {
+		form := url.Values{"action": {"booking"}, "a_booking_ref": {"HB-1"}}
+		req := httptest.NewRequest(http.MethodPost, "/ask/help/act", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.RemoteAddr = "198.51.100.9:1234"
+		w := httptest.NewRecorder()
+		st.Handler().ServeHTTP(w, req)
+		return w
+	}
+	made := post()
+	if made.Code != http.StatusSeeOther {
+		t.Fatalf("asking: %d", made.Code)
+	}
+
+	taking = false
+	if body := askPost(st, "help", "Please look up HB-2201").Body.String(); strings.Contains(body, `action="/ask/help/act"`) {
+		t.Errorf("the action is offered with nothing to take it:\n%s", body)
+	}
+	if w := post(); w.Code != http.StatusServiceUnavailable || len(asked) != 1 {
+		t.Errorf("a request was taken with nothing to run it: %d, %d asked", w.Code, len(asked))
+	}
+	body := get(st, made.Header().Get("Location"), nil).Body.String()
+	if strings.Contains(body, "Working on it") || !strings.Contains(body, "cannot be done just now") {
+		t.Errorf("a request nothing will run says it is being worked on:\n%s", body)
+	}
+	// One taken when the dispatcher stopped will not finish.
+	st.Assistants.Answer = func(id string) (chatact.Result, bool, bool) {
+		return chatact.Result{ID: id, State: chatact.Working}, true, true
+	}
+	w := get(st, made.Header().Get("Location"), nil)
+	if strings.Contains(w.Body.String(), "Working on it") || w.Header().Get("Refresh") != "" {
+		t.Errorf("a request whose run stopped says it is being worked on:\n%s", w.Body.String())
+	}
+}

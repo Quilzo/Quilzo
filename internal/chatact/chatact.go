@@ -32,6 +32,21 @@ import (
 // Keep is how long a request and its answer are kept.
 const Keep = 24 * time.Hour
 
+// Only the admin server runs a chatbot's agents. With it stopped, the site
+// offered the action, took the visitor's confirmation and said "Working on
+// it" for good, and the request ran with the visitor's words whenever an
+// admin next started, up to a day later. So the dispatcher beats, the site
+// offers and takes requests only while it has beaten in the last Stale,
+// and a request nothing took within MaxWait is answered as not done.
+const (
+	// Beat is how often the dispatcher says it is taking requests.
+	Beat = 15 * time.Second
+	// Stale is how long after its last beat it is taken to have stopped.
+	Stale = 2 * time.Minute
+	// MaxWait is how old a request may be when it is taken and still run.
+	MaxWait = 5 * time.Minute
+)
+
 // Request is what a visitor asked.
 type Request struct {
 	ID      string `json:"id"`
@@ -212,6 +227,36 @@ func (q Queue) Request(id string) (Request, bool) {
 		return Request{}, false
 	}
 	return r, true
+}
+
+func (q Queue) beat() string { return filepath.Join(q.Dir, "dispatcher.beat") }
+
+// Beat says the dispatcher is taking requests, as of now. The file is not
+// a request or an answer, so Pending and Prune pass it by.
+func (q Queue) Beat(now time.Time) error {
+	if err := os.MkdirAll(q.Dir, 0o700); err != nil {
+		return err
+	}
+	b, err := now.UTC().MarshalText()
+	if err != nil {
+		return err
+	}
+	return atomicfile.Write(q.beat(), b, 0o600)
+}
+
+// Taking reports whether the dispatcher has beaten within Stale of now.
+// The site writes this folder too, so a beat it forged would only make it
+// offer what then waits; it cannot make anything run.
+func (q Queue) Taking(now time.Time) bool {
+	b, err := os.ReadFile(q.beat())
+	if err != nil || len(b) > 64 {
+		return false
+	}
+	var at time.Time
+	if at.UnmarshalText(b) != nil {
+		return false
+	}
+	return now.Sub(at) <= Stale
 }
 
 // Exists reports whether a request was made.

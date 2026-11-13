@@ -116,15 +116,28 @@ func runChatActions(ctx context.Context, root string, say func(string)) {
 	defer wg.Wait()
 	t := time.NewTicker(time.Second)
 	defer t.Stop()
-	pruned := time.Time{}
+	pruned, beaten := time.Time{}, time.Time{}
 	for {
 		if time.Since(pruned) > time.Hour {
 			q.Prune(time.Now())
 			pruned = time.Now()
 		}
+		// The site offers agent actions only while this beats (chatact.Stale).
+		if time.Since(beaten) >= chatact.Beat {
+			if err := q.Beat(time.Now()); err == nil {
+				beaten = time.Now()
+			}
+		}
 		pending, _ := q.Pending()
 		for _, r := range pending {
 			if mine, err := q.Claim(r.ID, time.Now()); err != nil || !mine {
+				continue
+			}
+			// Made while nothing took requests, and the visitor told so
+			// once the beat went stale: it is not run now, long after they
+			// left, with their words.
+			if age := time.Since(r.At); age > chatact.MaxWait {
+				_ = q.Answer(chatActTooLate(root, r, age))
 				continue
 			}
 			wg.Add(1)
@@ -147,6 +160,15 @@ func runChatActions(ctx context.Context, root string, say func(string)) {
 		case <-t.C:
 		}
 	}
+}
+
+// chatActTooLate is the answer to a request nothing took in time.
+func chatActTooLate(root string, r chatact.Request, age time.Duration) chatact.Result {
+	recordE(root, audit.Record{Action: "assistant.act.failed", Resource: "/ask/" + r.Chatbot, Outcome: audit.Failure,
+		Principal: "quilzo", Kind: audit.KindService, Verified: true,
+		Detail: map[string]string{"assistant": r.Chatbot, "action": r.Action, "request": r.ID,
+			"why": "asked " + age.Round(time.Minute).String() + " before anything took it, so it was not run"}})
+	return chatact.Result{ID: r.ID, State: chatact.Failed, At: time.Now().UTC()}
 }
 
 // chatActRun runs an agent for a request: a variable so a test can stand

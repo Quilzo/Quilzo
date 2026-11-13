@@ -45,7 +45,7 @@ func (st *Site) visitor(a assistant.Assistant, token string) (map[string]string,
 // agentOffer is an agent action offered to the visitor: what it asks, with
 // what the conversation filled in, for them to check and confirm.
 func (st *Site) agentOffer(p assistant.Proposal, token string, a assistant.Assistant) *askOffer {
-	if st.Assistants.Act == nil {
+	if st.Assistants.Act == nil || !st.actTaking() {
 		return nil
 	}
 	if p.Action.Identity {
@@ -59,6 +59,11 @@ func (st *Site) agentOffer(p assistant.Proposal, token string, a assistant.Assis
 		o.Fields = append(o.Fields, askField{Name: f, Label: fieldLabel(f), Kind: "line", Value: p.Args[f], Required: true})
 	}
 	return o
+}
+
+// actTaking reports whether anything takes agent requests now.
+func (st *Site) actTaking() bool {
+	return st.Assistants.Taking == nil || st.Assistants.Taking()
 }
 
 // fieldLabel is a field's name as a person reads it: booking_ref is
@@ -93,6 +98,10 @@ func (st *Site) actAsk(w http.ResponseWriter, r *http.Request, a assistant.Assis
 	}
 	if st.Assistants.Act == nil {
 		st.notFound(w, r)
+		return
+	}
+	if !st.actTaking() {
+		http.Error(w, "This cannot be done just now. You could try again later, or ask a person.", http.StatusServiceUnavailable)
 		return
 	}
 	if ok, wait := st.questionAllowed(r); !ok {
@@ -169,8 +178,19 @@ func (st *Site) actWait(w http.ResponseWriter, r *http.Request, a assistant.Assi
 	h.Set("Cache-Control", "no-store")
 	h.Set("X-Content-Type-Options", "nosniff")
 	allowFraming(h, a.Embed, panel)
+	working := !answered || res.State == chatact.Working
+	// Not taken yet and nothing taking requests: it is not "Working on it".
+	// It is still run if something takes it within chatact.MaxWait of the
+	// asking, so the page goes on asking, slowly, and says so.
+	// One taken and being worked on when the dispatcher stopped is not
+	// taken again: it will not finish, and the page says so and stops.
+	stalled := !answered && !st.actTaking()
+	stopped := answered && res.State == chatact.Working && !st.actTaking()
 	switch {
-	case !answered || res.State == chatact.Working:
+	case stopped:
+	case stalled:
+		h.Set("Refresh", "30")
+	case working:
 		// The page asks again in a few seconds, without script.
 		h.Set("Refresh", "3")
 	case res.State == chatact.Waiting:
@@ -200,7 +220,7 @@ func (st *Site) actWait(w http.ResponseWriter, r *http.Request, a assistant.Assi
 	_ = actTemplate.Execute(w, map[string]any{"A": a, "R": res, "Answered": answered && res.State != chatact.Working,
 		"Embedded": embedded, "Person": res.State == chatact.Person, "Failed": res.State == chatact.Failed,
 		"Waiting": res.State == chatact.Waiting, "Again": again, "Lang": st.siteLang(),
-		"Conversation": conversation, "Days": a.Keep()})
+		"Conversation": conversation, "Days": a.Keep(), "Stalled": stalled, "Stopped": stopped})
 }
 
 var actTemplate = template.Must(template.New("act").Parse(`<!doctype html>
@@ -213,7 +233,9 @@ var actTemplate = template.Must(template.New("act").Parse(`<!doctype html>
 </head>
 <body class="qz-ask{{if .Embedded}} qz-embed{{end}}"><main>
 {{if .Embedded}}<p class="qz-embed-title">{{.A.Title}}</p>{{else}}<h1>{{.A.Title}}</h1>{{end}}
-{{if not .Answered}}<p class="qz-waiting" role="status" aria-live="polite">Working on it. This page shows the answer when it is ready.</p>
+{{if .Stalled}}<p class="qz-problem" role="alert">This cannot be done just now: nothing is taking requests at the moment. If that changes in the next few minutes, the answer is shown on this page; if not, it will not be done, and you could try again later, or ask a person.</p>
+{{else if .Stopped}}<p class="qz-problem" role="alert">This could not be finished: what was doing it stopped. You could try again later, or ask a person.</p>
+{{else if not .Answered}}<p class="qz-waiting" role="status" aria-live="polite">Working on it. This page shows the answer when it is ready.</p>
 {{else if .Waiting}}<p class="qz-greeting" role="status" aria-live="polite">A person needs to look at this, and will. You do not need to ask again: once they have, the answer is shown on this page.</p>
 <p class="qz-actions"><a class="qz-button-quiet" href="{{.Again}}">Check again</a></p>
 {{else if .Person}}{{if .Conversation}}<p class="qz-greeting" role="status">A person needs to look at this, and will. You do not need to ask again: they answer you in a conversation of your own.</p>

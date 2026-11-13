@@ -79,7 +79,12 @@ type Assistants struct {
 	Records     func(tree string, collections []string) []assistant.Passage
 	Act         func(chatact.Request) error
 	Answer      func(id string) (res chatact.Result, answered, made bool)
-	VisitorKey  func(assistant.Assistant) []byte
+	// Taking reports whether anything takes those requests now (the admin
+	// server's dispatcher beats, chatact.Stale). With it stopped, the site
+	// offered the action, took the confirmation and said "Working on it"
+	// for good. Nil is taken as yes.
+	Taking     func() bool
+	VisitorKey func(assistant.Assistant) []byte
 	// Meaning is a chatbot's ranker by meaning (assistant.Meaning), or
 	// nil when it ranks by words alone; MeaningKey is what that ranker
 	// depends on, which keys the index too.
