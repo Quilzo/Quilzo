@@ -10,8 +10,10 @@ import (
 	"maps"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/admin"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collab"
@@ -32,8 +34,18 @@ func dualStore(root string) *dual.Store {
 // is the only administrator, whose request is approved as it is made;
 // false when it waits, and the person has been told how it is approved.
 func proposeSecond(root string, c *Caller, kind, what string, payload any, why string) (bool, error) {
+	return proposeSecondFor(root, c, "", kind, what, payload, why)
+}
+
+// proposeSecondFor is proposeSecond for a way in for subject (a token or
+// an enrolment link), which is approved alone also when subject is an
+// administrator with no way in yet and the caller the only other one
+// (firstWayIn).
+func proposeSecondFor(root string, c *Caller, subject, kind, what string, payload any, why string) (bool, error) {
 	now := time.Now()
 	alone := onlyAdministrator(root, c.Name)
+	first := !alone && subject != "" && firstWayIn(root, c.Name, subject, now)
+	alone = alone || first
 	r, err := dualStore(root).Propose(kind, what, payload, why, c.Name, alone, now)
 	if err != nil {
 		return false, err
@@ -42,11 +54,13 @@ func proposeSecond(root string, c *Caller, kind, what string, payload any, why s
 	maps.Copy(detail, r.About())
 	if alone {
 		detail["alone"] = "true"
+		if first {
+			detail["first_way_in"] = "true"
+		}
 		if err := recordE(root, c.auditRecord("dual.approved", "/", audit.Success, detail)); err != nil {
 			return false, err
 		}
-		w.Human("%syou are the only administrator, so this is approved as you make it; the record says so%s\n",
-			yellow, reset)
+		w.Human("%s%s%s\n", yellow, aloneWords(root, subject, first), reset)
 		return true, nil
 	}
 	if err := recordE(root, c.auditRecord("dual.proposed", "/", audit.Success, detail)); err != nil {
@@ -63,6 +77,69 @@ func proposeSecond(root string, c *Caller, kind, what string, payload any, why s
 	w.Human("%swaiting for a second administrator%s: %s (request %s)\n", yellow, reset, what, r.ID)
 	w.Human("  %sanother administrator approves it with quilzo pending approve %s%s\n", dim, r.ID, reset)
 	return false, nil
+}
+
+// aloneWords is why a request was approved as it was made. "You are the
+// only administrator" was said before anybody administered the store at
+// all, by the commands a new store's setup runs before `init --admin`.
+func aloneWords(root, subject string, first bool) string {
+	if first {
+		return subject + " has no way to sign in yet, so you are the only administrator who could approve this; " +
+			"it is approved as you make it, and the record says so"
+	}
+	if pol, err := loadPolicy(root); err == nil && len(dual.Administrators(pol)) == 0 {
+		return "nobody administers this store yet, so this is applied as you make it; the record says so"
+	}
+	return "you are the only administrator, so this is approved as you make it; the record says so"
+}
+
+// firstWayIn is dual.FirstWayIn for this store at now: subject holds no
+// token and no passkey, and no administrator stopped being one in the
+// last day (dual.Store.Settling), when nobody approves alone.
+func firstWayIn(root, asker, subject string, now time.Time) bool {
+	if rm, err := dualStore(root).Settling(now); err != nil || rm != nil {
+		return false
+	}
+	pol, err := loadPolicy(root)
+	if err != nil || !dual.FirstWayIn(pol, asker, subject, holdsWayIn(root, subject, now)) {
+		return false
+	}
+	open, err := dualStore(root).OpenBy(asker, now)
+	if err != nil {
+		return false
+	}
+	// Said, so the wait is not a dead end: subject is who these wait for,
+	// and they cannot sign in to decide them.
+	for _, r := range open {
+		w.Human("%s%s has no way to sign in yet and is who your request %s waits for; withdraw it "+
+			"(quilzo pending withdraw %s) and ask again, and %s's first way in is yours to give%s\n",
+			dim, subject, r.ID, r.ID, subject, reset)
+	}
+	return len(open) == 0
+}
+
+// holdsWayIn reports whether who holds a token or a passkey that works.
+// Unreadable is taken as yes, which keeps the request waiting.
+func holdsWayIn(root, who string, now time.Time) bool {
+	ts, err := loadTokens(root)
+	if err != nil {
+		return true
+	}
+	for _, t := range ts.Snapshot() {
+		if ok, _ := t.Usable(now); ok && strings.EqualFold(t.Principal, who) {
+			return true
+		}
+	}
+	pk := &admin.Passkeys{}
+	if err := loadJSON(passkeysPath(root), pk); err != nil {
+		return true
+	}
+	for _, c := range pk.Credentials {
+		if strings.EqualFold(c.Principal, who) {
+			return true
+		}
+	}
+	return false
 }
 
 // applyDual makes an approved change, as by. A token, an enrolment link or

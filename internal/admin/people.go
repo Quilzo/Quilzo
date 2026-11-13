@@ -399,7 +399,7 @@ func (s *Server) handlePeopleEnrol(w http.ResponseWriter, r *http.Request) {
 	// themselves a link for the other administrator, opened it with their
 	// own authenticator and approved their request as her.
 	if dual.Privileged(held) {
-		apply, msg, err := s.proposeSecond(p, dual.Enrol, "a passkey enrolment link for "+who,
+		apply, msg, err := s.proposeSecondFor(p, who, dual.Enrol, "a passkey enrolment link for "+who,
 			dual.EnrolChange{Principal: who}, "")
 		if err != nil {
 			s.peopleProblem(w, r, err.Error())

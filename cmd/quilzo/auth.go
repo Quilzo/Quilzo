@@ -958,7 +958,7 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 				return err
 			}
 		} else {
-			apply, err := proposeSecond(root, resolveCaller(root, ""), dual.Token,
+			apply, err := proposeSecondFor(root, resolveCaller(root, ""), *principal, dual.Token,
 				fmt.Sprintf("an administrator's token %q acting as %s on %s", rest[0], *principal, *on),
 				dual.TokenChange{Args: args}, "")
 			if err != nil || !apply {

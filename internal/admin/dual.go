@@ -99,11 +99,21 @@ func (s *Server) noteAdministrators(before map[string]bool) error {
 // whether to make it now, because the proposer is the only administrator,
 // and otherwise what to tell them.
 func (s *Server) proposeSecond(p principal, kind, what string, payload any, why string) (bool, string, error) {
+	return s.proposeSecondFor(p, "", kind, what, payload, why)
+}
+
+// proposeSecondFor is proposeSecond for a way in for subject, approved
+// alone also when subject is an administrator with no way in yet and the
+// proposer the only other one (dual.FirstWayIn), as `quilzo auth enrol`
+// approves it.
+func (s *Server) proposeSecondFor(p principal, subject, kind, what string, payload any, why string) (bool, string, error) {
 	if s.Dual == nil || s.Dual.Store == nil {
 		return false, "", errors.New("this server keeps no requests for a second administrator, so this change cannot be made here")
 	}
 	now := time.Now()
 	alone := s.onlyAdministrator(p.Name)
+	first := !alone && subject != "" && s.firstWayIn(p.Name, subject, now)
+	alone = alone || first
 	r, err := s.Dual.Store.Propose(kind, what, payload, why, p.Name, alone, now)
 	if err != nil {
 		return false, "", err
@@ -112,6 +122,9 @@ func (s *Server) proposeSecond(p principal, kind, what string, payload any, why 
 	maps.Copy(detail, r.About())
 	if alone {
 		detail["alone"] = "true"
+		if first {
+			detail["first_way_in"] = "true"
+		}
 		s.audit("dual.approved", "/", detail)
 		return true, "", nil
 	}
@@ -123,6 +136,35 @@ func (s *Server) proposeSecond(p principal, kind, what string, payload any, why 
 		msg += " " + s.refuseAlone(p, rm, map[string]string{"request": r.ID, "kind": kind})
 	}
 	return false, msg, nil
+}
+
+// firstWayIn is dual.FirstWayIn for this server at now: subject holds no
+// token or session that works and no passkey, and no administrator stopped
+// being one in the last day.
+func (s *Server) firstWayIn(asker, subject string, now time.Time) bool {
+	if rm, err := s.Dual.Store.Settling(now); err != nil || rm != nil {
+		return false
+	}
+	held := false
+	if s.Tokens != nil {
+		for _, t := range s.Tokens.Snapshot() {
+			if ok, _ := t.Usable(now); ok && strings.EqualFold(t.Principal, subject) {
+				held = true
+			}
+		}
+	}
+	if s.Passkeys != nil {
+		for _, c := range s.Passkeys.list() {
+			if strings.EqualFold(c.Principal, subject) {
+				held = true
+			}
+		}
+	}
+	if !dual.FirstWayIn(s.Policy, asker, subject, held) {
+		return false
+	}
+	open, err := s.Dual.Store.OpenBy(asker, now)
+	return err == nil && len(open) == 0
 }
 
 // applyDual makes an approved change, as by, and says what Dual.Apply

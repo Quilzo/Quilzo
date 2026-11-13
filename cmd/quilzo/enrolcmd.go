@@ -97,7 +97,7 @@ func authEnrol(root string, args []string) error {
 		return fmt.Errorf("an enrolment link lasts more than nothing and at most %s", enrol.MaxLife)
 	}
 	if dual.Privileged(heldBy(pol, name)) {
-		apply, err := proposeSecond(root, caller, dual.Enrol, "a passkey enrolment link for "+name,
+		apply, err := proposeSecondFor(root, caller, name, dual.Enrol, "a passkey enrolment link for "+name,
 			dual.EnrolChange{Principal: name, For: *life}, "")
 		if err != nil || !apply {
 			return err

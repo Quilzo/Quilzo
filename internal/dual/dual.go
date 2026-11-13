@@ -432,6 +432,36 @@ func KeepsAnAdministrator(was bool, after *auth.Policy) error {
 	return nil
 }
 
+// FirstWayIn reports whether a credential for subject, an administrator
+// who holds none (held is false), asked for by asker, is one asker is the
+// only administrator able to decide: nobody but the two of them
+// administers the whole site.
+//
+// An administrator granted before their passkey could never be given one.
+// Every way in for them waited for a second administrator, and the only
+// other administrator was them, with no way to sign in and approve it;
+// the other order, a passkey as an author and then admin, worked. Until
+// they hold a credential there is one administrator who can act, and her
+// request is hers alone, as it would be in the other order. Once they hold
+// one there are two, and this is false: one administrator does not give
+// herself another's sign-in.
+//
+// Nor while asker has a request waiting (OpenBy), which subject would be
+// the one to decide: given their sign-in alone, asker would approve her
+// own request as them. She withdraws it first, and asks again once there
+// are two administrators who can sign in.
+func FirstWayIn(pol *auth.Policy, asker, subject string, held bool) bool {
+	if held || pol == nil || strings.EqualFold(asker, subject) {
+		return false
+	}
+	admins := Administrators(pol)
+	if !admins[strings.ToLower(subject)] {
+		return false
+	}
+	delete(admins, strings.ToLower(subject))
+	return len(admins) == 1 && admins[strings.ToLower(asker)]
+}
+
 // NoteAdministrators records a change to who administers the whole site,
 // from before to after, at now. Somebody who stopped being one while
 // another still was starts a day in which the administrator left does not
@@ -609,6 +639,18 @@ func (s Store) Get(id string) (Request, error) {
 
 // Pending are the requests still waiting, and the approved tokens still
 // waiting to be issued, oldest first.
+// OpenBy is the requests by asker still waiting for a decision at now.
+func (s Store) OpenBy(asker string, now time.Time) ([]Request, error) {
+	pend, err := s.Pending(now)
+	var out []Request
+	for _, r := range pend {
+		if r.Open(now) && auth.SamePerson(r.By, asker) {
+			out = append(out, r)
+		}
+	}
+	return out, err
+}
+
 func (s Store) Pending(now time.Time) ([]Request, error) {
 	var out []Request
 	err := atomicfile.Update(s.Path, func(f *file) error {
