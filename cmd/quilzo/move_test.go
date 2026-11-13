@@ -258,3 +258,77 @@ func TestMovingABlockCarriesThePagesThatReuseIt(t *testing.T) {
 		t.Errorf("pages still reuse the old name: %v", uses["promo"])
 	}
 }
+
+// Removing a page from the command line keeps the browser's rule: a page a
+// menu links to, another page names, or a type is bound to is refused with
+// what still uses it, before anything is removed. `add --remove` used to
+// check only for blocks, so the browser refused to delete Delivery and the
+// terminal deleted it, leaving the foot menu pointing at nothing and the next
+// publish of anything refused until somebody re-created the page by hand.
+func TestRemovingAPageInUseIsRefusedFromTheCommandLine(t *testing.T) {
+	root, _ := movable(t)
+	s, _ := open(root)
+	before := s.GetRef(site.RefDraft)
+
+	for page, want := range map[string]string{
+		"returns":     `"Returns" in the "main" menu`,
+		"blog/second": `a binding to the type "article"`,
+	} {
+		err := cmdAdd(root, []string{"--remove", page})
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("removing %s: %v, want a refusal naming %s", page, err, want)
+		}
+	}
+	if after, _ := open(root); after.GetRef(site.RefDraft) != before {
+		t.Fatal("a refused removal wrote a commit")
+	}
+	// What names a page that is going too does not stop it: blog/second
+	// names returns, and both go together once the menu entry is gone.
+	set, _ := loadMenus(root)
+	set.Menus = nil
+	if err := saveJSON(menuPath(root), set); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdTypes(root, []string{"unbind", "blog/second"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdAdd(root, []string{"--remove", "returns,blog/second"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A binding to a page that is not in the draft is no page that passes its
+// type. `quilzo type check` listed it as ok, which is how a page removed
+// from the terminal left its binding behind with nothing to say so.
+func TestTypeCheckShowsABindingWithNoPage(t *testing.T) {
+	root, st := movable(t)
+	st.Bound["gone"] = "article"
+	if err := saveJSON(filepath.Join(root, "types.json"), st); err != nil {
+		t.Fatal(err)
+	}
+	old := w
+	t.Cleanup(func() { w = old })
+	var buf bytes.Buffer
+	w = out.New(false)
+	w.Out = &buf
+	if err := cmdTypes(root, []string{"check"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(buf.String(), "\n") {
+		if strings.Contains(line, "gone") && !strings.Contains(line, "missing") {
+			t.Errorf("a binding to no page reads %q", line)
+		}
+	}
+	buf.Reset()
+	w = out.New(true)
+	w.Out = &buf
+	if err := cmdTypes(root, []string{"check"}); err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Missing []string `json:"missing"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil || strings.Join(got.Missing, ",") != "gone" {
+		t.Errorf("missing %v (%v): %s", got.Missing, err, buf.String())
+	}
+}

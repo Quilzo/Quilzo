@@ -34,6 +34,8 @@ func cmdTypes(root string, args []string) error {
 		return typesShow(root, rest)
 	case "bind":
 		return typesBind(root, rest)
+	case "unbind":
+		return typesUnbind(root, rest)
 	case "bind-collection":
 		return typesBindCollection(root, rest)
 	case "example":
@@ -43,7 +45,7 @@ func cmdTypes(root string, args []string) error {
 	case "check":
 		return typesCheck(root)
 	default:
-		return fmt.Errorf("unknown type command %q; try list, add, show, bind, bind-collection or check",
+		return fmt.Errorf("unknown type command %q; try list, add, show, bind, unbind, bind-collection or check",
 			args[0])
 	}
 }
@@ -291,6 +293,37 @@ func typesBind(root string, args []string) error {
 	return nil
 }
 
+// typesUnbind is the browser's Unbind on Types, from the command line. A page
+// bound to a type is refused removal until the binding is cleared (so a later
+// page of the same name is not silently bound to something nobody chose), and
+// without this the terminal had no way to clear it.
+func typesUnbind(root string, args []string) error {
+	pos, flags := leadingArgs(args, 1)
+	fs := flag.NewFlagSet("unbind", flag.ContinueOnError)
+	if err := fs.Parse(flags); err != nil {
+		return err
+	}
+	if len(pos) != 1 {
+		return fmt.Errorf("usage: quilzo type unbind <page>")
+	}
+	page := pos[0]
+	st, err := schema.Load(root)
+	if err != nil {
+		return err
+	}
+	if _, bound := st.Bound[page]; !bound {
+		return fmt.Errorf("%s was not bound to anything", page)
+	}
+	delete(st.Bound, page)
+	if err := st.Save(); err != nil {
+		return err
+	}
+	caller := resolveCaller(root, flagToken)
+	record(root, caller.auditRecord("type.unbind", page, audit.Success, nil))
+	w.Human("%s no longer has to satisfy a type\n", page)
+	return nil
+}
+
 func typesCheck(root string) error {
 	st, err := schema.Load(root)
 	if err != nil {
@@ -301,11 +334,24 @@ func typesCheck(root string) error {
 		return err
 	}
 	failures := st.Gate(pages)
+	// Bindings to a page the draft does not have. Nothing fails against
+	// them, so they used to be listed as ok, which is how a page removed from
+	// the terminal left its binding behind with nothing to say so. Not a
+	// failure: a binding on its own breaks nothing, but a later page of the
+	// same name is bound to something nobody chose.
+	missing := []string{}
+	for page := range st.Bound {
+		if _, there := pages[page]; !there {
+			missing = append(missing, page)
+		}
+	}
+	sort.Strings(missing)
 
 	if w.Mode == out.JSON {
 		w.JSON(map[string]any{
 			"bound":    len(st.Bound),
 			"failures": failures,
+			"missing":  missing,
 			"valid":    len(failures) == 0,
 		})
 		if len(failures) > 0 {
@@ -331,6 +377,11 @@ func typesCheck(root string) error {
 		failed[f.Page] = f
 	}
 	for _, page := range names {
+		if _, there := pages[page]; !there {
+			w.Human("  %smissing%s %-18s %s%s, and there is no such page (quilzo type unbind %s)%s\n",
+				yellow, reset, page, dim, st.Bound[page], page, reset)
+			continue
+		}
 		f, bad := failed[page]
 		if !bad {
 			w.Human("  %sok%s     %-18s %s%s%s\n",
