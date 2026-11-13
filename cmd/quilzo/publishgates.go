@@ -224,6 +224,20 @@ func contentGates(root string, s *store.Store, ref string) gate.Set {
 				}
 				for _, name := range sortedNames(pages) {
 					bad, advice := section.Validate(pages[name])
+					// A reuse is passed by Validate, which sees one page; what
+					// it names is checked here against the rest of the draft,
+					// because a reuse of a page that is not a block, or is
+					// not there, shows nothing where it stands.
+					body, _ := pages[name].(map[string]any)
+					list, _ := body["sections"].([]any)
+					for i, sec := range list {
+						if block, ok := site.BlockRef(sec); ok {
+							if err := site.CanReuse(name, block, pages); err != nil {
+								bad = append(bad, section.Problem{At: i, Detail: err.Error() +
+									", so this shows nothing there"})
+							}
+						}
+					}
 					for _, p := range bad {
 						blocking = append(blocking,
 							gate.Finding{Page: name, Detail: p.String()})

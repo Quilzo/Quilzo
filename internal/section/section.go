@@ -530,6 +530,18 @@ func reused(m map[string]any) (string, bool) {
 	return name, name != ""
 }
 
+// onlyReuse is whether a section is nothing but a reuse and its id, which is
+// the only form a renderer replaces with the block (site.BlockRef); a reuse
+// with anything else beside it is checked as the section it otherwise is.
+func onlyReuse(m map[string]any) bool {
+	for k := range m {
+		if k != BlockKind && k != IDField {
+			return false
+		}
+	}
+	return true
+}
+
 // InsertBlock puts a section reusing the block named at a position.
 func InsertBlock(body any, block string, at int) (map[string]any, error) {
 	if block == "" {
@@ -767,6 +779,16 @@ func Validate(body any) (blocking []Problem, advisory []Problem) {
 		}
 		if len(m) == 0 {
 			blocking = append(blocking, Problem{i, "is empty, so it names no kind"})
+			continue
+		}
+		// A reuse of a block is no kind of the catalogue, and is not one to
+		// check here: the block's own sections are put in its place before a
+		// page is rendered, and they are checked where the block is. Read as
+		// an unknown kind, every page that reused a block was refused at
+		// publish as rendering nothing. Whether the page it names is a block
+		// a page may show is a question about the whole draft, so the publish
+		// gate asks it (site.CanReuse), not this.
+		if _, ok := reused(m); ok && onlyReuse(m) {
 			continue
 		}
 		name, inner := discriminator(m)

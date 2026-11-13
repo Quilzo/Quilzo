@@ -209,8 +209,16 @@ func BlockChange(name string, pages map[string]any, on bool) error {
 
 // CanReuse refuses a block reused where it would show nothing.
 func CanReuse(page, block string, pages map[string]any) error {
+	if _, ok := pages[block]; !ok {
+		return fmt.Errorf("there is no page %s", block)
+	}
 	if !IsBlock(pages[block]) {
 		return fmt.Errorf("%s is not a block", block)
+	}
+	if _, ok := blockSections(pages[block]); !ok {
+		// Members only: blockSections never puts it on a page, and saying so
+		// is better than a reuse that quietly shows nothing.
+		return fmt.Errorf("%s is for members only, and a block is shown on public pages", block)
 	}
 	if IsBlock(pages[page]) {
 		return fmt.Errorf("%s is a block itself, and a block in a block shows nothing", page)
