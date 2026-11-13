@@ -160,6 +160,23 @@ func enteredBefore(root string) bool {
 	return len(pk.Credentials) > 0
 }
 
+// initFlags reads `quilzo init`'s flags, before anything is made: a flag
+// mistyped was refused only after the store's folders had been, and the
+// store was then taken for one already in use.
+func initFlags(args []string) (*string, error) {
+	fs := flag.NewFlagSet("init", flag.ContinueOnError)
+	admin := fs.String("admin", "", "make this person the first administrator and print the link that adds their passkey")
+	return admin, fs.Parse(args)
+}
+
+// nobodyHasBeenHere reports whether a store has never had a person: no
+// binding in its policy and no credential ever held (enteredBefore).
+// Unreadable is taken as somebody, which keeps whatever grace was given.
+func nobodyHasBeenHere(root string) bool {
+	pol, err := loadPolicy(root)
+	return err == nil && len(pol.Bindings) == 0 && !enteredBefore(root)
+}
+
 // holdsAny reports whether name holds anything that is not a deny.
 func holdsAny(pol *auth.Policy, name string) bool {
 	for _, b := range pol.Bindings {
@@ -201,15 +218,21 @@ func issueEnrolment(root, name, by string, life time.Duration, caller *Caller) e
 // first day; the grace an upgraded installation gets is for people who were
 // already signing in with a token.
 func initAdmin(root string, args []string, created bool) error {
-	fs := flag.NewFlagSet("init", flag.ContinueOnError)
-	admin := fs.String("admin", "", "make this person the first administrator and print the link that adds their passkey")
-	if err := fs.Parse(args); err != nil {
+	admin, err := initFlags(args)
+	if err != nil {
 		return err
 	}
-	if created {
+	// New is a store nobody has had access to, not only one this run made
+	// the folders of. `quilzo demo`, `quilzo log`, or `init --admni` with a
+	// typo, make the folders, and the `init --admin` after them took the
+	// store for an upgraded installation: the first `quilzo serve` then
+	// wrote the grace, and for two weeks a token alone opened the admin of
+	// a store a day old. Nobody here yet means nobody signing in with a
+	// token to be locked out, so a grace already written is ended too.
+	if created || nobodyHasBeenHere(root) {
 		now := time.Now()
 		if err := atomicfile.Update(mfaPath(root), func(st *mfaState) error {
-			if !st.EnforcedFrom.IsZero() {
+			if !st.EnforcedFrom.IsZero() && !st.EnforcedFrom.After(now) {
 				return atomicfile.ErrUnchanged
 			}
 			st.EnforcedFrom = now.UTC()

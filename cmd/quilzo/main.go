@@ -1258,6 +1258,9 @@ func splitFlags(args []string, valued map[string]bool) (flags, positional []stri
 
 // runInit is `quilzo init [--admin NAME]`.
 func runInit(root string, args []string) error {
+	if _, err := initFlags(args); err != nil {
+		return err
+	}
 	created := !isStore(root)
 	if err := cmdInit(root); err != nil {
 		return err

@@ -7,8 +7,10 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/out"
 )
 
 func onlyOwner(t *testing.T) string {
@@ -90,5 +92,46 @@ func TestARecoveryIsNotRefusedOverATokenThatCanNoLongerAdminister(t *testing.T) 
 	}
 	if !administers(t, root, "owner") {
 		t.Fatalf("the recovery did not give the store an administrator back: %v", err)
+	}
+}
+
+func TestAStoreNobodyHasEnteredGetsTwoFactorsFromInit(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("QUILZO_TOKEN", "")
+	old := w
+	t.Cleanup(func() { w = old })
+	w = out.New(false)
+	w.Out = &bytes.Buffer{}
+
+	root := demoStore(t)
+	w.Out = &bytes.Buffer{}
+	if err := runInit(root, []string{"--admin", "owner"}); err != nil {
+		t.Fatal(err)
+	}
+	if from, ok := mfaFromIfSet(root); !ok || time.Until(from) > time.Minute {
+		t.Errorf("a store made by demo gets two factors from %v (%v), not now", from, ok)
+	}
+
+	typo := t.TempDir() + "/st"
+	if err := runInit(typo, []string{"--admni", "owner"}); err == nil {
+		t.Fatal("a mistyped flag was accepted")
+	}
+	if isStore(typo) {
+		t.Error("a mistyped flag made a store before it was refused")
+	}
+	if err := runInit(typo, []string{"--admin", "owner"}); err != nil {
+		t.Fatal(err)
+	}
+	if from, ok := mfaFromIfSet(typo); !ok || time.Until(from) > time.Minute {
+		t.Errorf("after a mistyped init, two factors start at %v (%v), not now", from, ok)
+	}
+
+	// A store somebody already signs in to keeps whatever it was given.
+	used := onlyOwner(t)
+	if err := runInit(used, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := mfaFromIfSet(used); ok {
+		t.Error("init wrote a date for a store people already sign in to")
 	}
 }
