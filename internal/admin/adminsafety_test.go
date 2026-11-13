@@ -58,3 +58,18 @@ func TestPeopleGivesAnAdministratorWithNoWayInTheirFirstLink(t *testing.T) {
 		t.Fatalf("a link for an administrator who can sign in did not wait: %+v", pend)
 	}
 }
+
+// A token is shown on People and on a person's profile as it can be used,
+// which is no more than its holder's role, as `quilzo token list` shows it.
+func TestATokenIsShownWithNoMoreThanItsHoldersRole(t *testing.T) {
+	srv, _ := setup(t)
+	if err := srv.Policy.Grant(auth.Binding{Principal: "jun", Role: auth.RoleAuthor, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := srv.carries(auth.Token{Principal: "jun", Role: auth.RolePublisher, Resource: "/"}); got != auth.RoleAuthor {
+		t.Errorf("jun the author's publisher token is shown as %s", got)
+	}
+	if got := srv.carries(auth.Token{Principal: "jun", Role: auth.RoleReader, Resource: "/"}); got != auth.RoleReader {
+		t.Errorf("a narrower token is shown as %s", got)
+	}
+}

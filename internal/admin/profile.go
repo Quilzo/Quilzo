@@ -139,7 +139,7 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			mine = append(mine, session{
-				ID: t.ID, Role: string(t.Role), Resource: t.Resource,
+				ID: t.ID, Role: string(s.carries(t)), Resource: t.Resource,
 				Issued: t.CreatedAt, Expires: t.ExpiresAt,
 				// Marked, so ending a session is a decision rather than a
 				// surprise. Signing yourself out of a list of eight identical

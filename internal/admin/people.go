@@ -137,7 +137,7 @@ func (s *Server) handlePeople(w http.ResponseWriter, r *http.Request) {
 			byName[t.Principal] = who
 		}
 		sess := session{
-			ID: t.ID, Name: t.Name, Role: t.Role,
+			ID: t.ID, Name: t.Name, Role: s.carries(t),
 			Scope:     t.Scope.String(),
 			Created:   time.Unix(t.CreatedAt, 0),
 			Expires:   time.Unix(t.ExpiresAt, 0),
@@ -597,6 +597,16 @@ func (s *Server) peopleBack(w http.ResponseWriter, r *http.Request, msg string) 
 // screen reader heard neither as an alert.
 func (s *Server) peopleProblem(w http.ResponseWriter, r *http.Request, msg string) {
 	http.Redirect(w, r, "/people?e="+urlQueryEscape(msg), http.StatusSeeOther)
+}
+
+// carries is the role a token is shown with: as it can be used, which is no
+// more than its holder's role (auth.Policy.Carries), as `quilzo token list`
+// shows it.
+func (s *Server) carries(t auth.Token) auth.Role {
+	if s.Policy == nil {
+		return t.Role
+	}
+	return s.Policy.Carries(t.Principal, t.Role, t.Resource)
 }
 
 // lastAdmin reports whether this principal is the only one who can grant.

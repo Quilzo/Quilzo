@@ -1678,6 +1678,40 @@ func (ts *TokenStore) Stale(now time.Time, idle time.Duration) []Token {
 	return out
 }
 
+// StrongestRole is the highest role a principal holds on a path, ignoring
+// denials — which Evaluate applies at decision time and which do not change
+// what a credential should be able to attempt.
+func (p *Policy) StrongestRole(principal, resource string) Role {
+	best := RoleNone
+	for _, b := range p.Snapshot() {
+		if b.Principal != principal || b.Deny {
+			continue
+		}
+		if b.Resource != "/" && b.Resource != resource &&
+			!strings.HasPrefix(resource, strings.TrimSuffix(b.Resource, "/")+"/") {
+			continue
+		}
+		if b.Role.AtLeast(best) {
+			best = b.Role
+		}
+	}
+	return best
+}
+
+// Carries is the role a token naming role, for principal on resource, can
+// be used at: its own, or what its holder holds there when that is less.
+// A token is a ceiling and never a grant, so one listed as publisher for an
+// author was shown carrying a role every request it made was refused. One
+// for somebody who holds no role at all keeps its own, which is shown with
+// a line of its own where it is issued.
+func (p *Policy) Carries(principal string, role Role, resource string) Role {
+	held := p.StrongestRole(principal, resource)
+	if held != RoleNone && !held.AtLeast(role) {
+		return held
+	}
+	return role
+}
+
 // Snapshot returns a copy of the bindings.
 //
 // A copy, because both of these types are now mutex-guarded and handing out

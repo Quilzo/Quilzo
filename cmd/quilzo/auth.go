@@ -819,20 +819,7 @@ recovered from this machine.
 // denials — which Evaluate applies at decision time and which do not change
 // what the credential should be able to attempt.
 func strongestRole(pol *auth.Policy, principal, resource string) auth.Role {
-	best := auth.RoleNone
-	for _, b := range pol.Snapshot() {
-		if b.Principal != principal || b.Deny {
-			continue
-		}
-		if b.Resource != "/" && b.Resource != resource &&
-			!strings.HasPrefix(resource, strings.TrimSuffix(b.Resource, "/")+"/") {
-			continue
-		}
-		if b.Role.AtLeast(best) {
-			best = b.Role
-		}
-	}
-	return best
+	return pol.StrongestRole(principal, resource)
 }
 
 func tokenIssue(root string, args []string) error { return tokenIssueAs(root, args, false) }
@@ -886,6 +873,19 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 			explicitRole = true
 		}
 	})
+	// A role named wider than the principal holds is refused, as a token
+	// carries at most its holder's: one for jun the author, issued and
+	// listed as publisher, was refused at everything it was for ("jun is
+	// author on /; publish needs publisher"). Somebody who holds no role yet
+	// is told so below, where the grant they need is named.
+	if explicitRole {
+		if pol, perr := loadPolicy(root); perr == nil {
+			if held := strongestRole(pol, *principal, *on); held != auth.RoleNone && !held.AtLeast(auth.Role(*role)) {
+				return fmt.Errorf("%s holds %s on %s, and a token carries at most that: "+
+					"issue it with --role %s, or grant %s %s first", *principal, held, *on, held, *principal, *role)
+			}
+		}
+	}
 	fromPolicy := false
 	if !explicitRole {
 		if pol, perr := loadPolicy(root); perr == nil {
@@ -1131,7 +1131,16 @@ func tokenList(root string) error {
 	if !everybody {
 		tokens = slices.DeleteFunc(tokens, func(t auth.Token) bool { return !mine(t.Principal, who) })
 	}
-	// What each token is, and never the hash it is checked against.
+	// What each token is, and never the hash it is checked against. Its
+	// role as it can be used, which is no more than its holder's
+	// (auth.Policy.Carries).
+	pol, err := loadPolicy(root)
+	if err != nil {
+		return err
+	}
+	for i := range tokens {
+		tokens[i].Role = pol.Carries(tokens[i].Principal, tokens[i].Role, tokens[i].Resource)
+	}
 	rows := make([]map[string]any, 0, len(tokens))
 	for _, t := range tokens {
 		row := map[string]any{"id": t.ID, "name": t.Name, "principal": t.Principal,

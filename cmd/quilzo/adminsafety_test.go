@@ -333,6 +333,38 @@ func TestASecondAdministratorIsSetUpInEitherOrder(t *testing.T) {
 	}
 }
 
+func TestATokenCarriesNoMoreThanItsHoldersRole(t *testing.T) {
+	root := onlyOwner(t)
+	_, printed := captureStdout(t)
+	err := tokenIssue(root, []string{"dana-pub", "--principal", "dana", "--role", "publisher", "--ttl", "1h"})
+	_ = printed()
+	if err == nil || !strings.Contains(err.Error(), "author") {
+		t.Errorf("a publisher's token was issued for an author: %v", err)
+	}
+
+	// One issued before this was refused is listed as what it can use.
+	adminSafetyToken(t, root, "dana", auth.RolePublisher)
+	old := w
+	t.Cleanup(func() { w = old })
+	var buf bytes.Buffer
+	w = out.New(true)
+	w.Out = &buf
+	if err := tokenList(root); err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Tokens []map[string]any `json:"tokens"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range got.Tokens {
+		if row["principal"] == "dana" && row["role"] != string(auth.RoleAuthor) {
+			t.Errorf("dana's token is listed as %v", row["role"])
+		}
+	}
+}
+
 func TestTheBootstrapDoesNotNameAnAdministratorNobodyIs(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("QUILZO_TOKEN", "")
