@@ -42,8 +42,9 @@ func registerDecideOps(srv *mcp.Server, root string, caller *Caller) {
 		Summary: "answer a decider's typed questions about some state",
 		Detail: "Each answer comes with a confidence and escalate. Where " +
 			"escalate is true a person decides — do not act on that answer. " +
-			"Confidence is agreement across several asks, not the model's own " +
-			"estimate.",
+			"Confidence is the lower of the model's stated confidence and the " +
+			"agreement across several asks, so a model that changes its answer " +
+			"between asks is never reported as sure.",
 		Args: map[string]string{
 			"name":  "the decider",
 			"state": "any JSON value: the ticket, the comment, the alert",
