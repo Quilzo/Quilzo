@@ -453,7 +453,8 @@ above its sections, with "Put a backdrop behind the hero", which opens the same
 picker; the hero's words have no screen of their own. A hero's backdrop is also
 set with that command, in the page's JSON (`quilzo add`, or an agent's
 `write_page`), or by a site package. Under `--json` every `section` edit answers
-with the page, what was done, the draft commit and the sections as they stand.
+with the page, what was done, the draft commit, the sections as they stand, and
+any claim somebody else holds on the page (`claimed`).
 
 **Silent recordings.** Whether a recording has sound is recorded when it is
 added, from the same probe that reads its size. One with sound still needs a
@@ -2538,7 +2539,11 @@ audits a merge that says it succeeded.
 Locks exist too, and they are advisory on purpose. They stop two people each
 spending an afternoon on the same page. They are not the safety property, they
 expire on their own, and there is no break-lock button because there is nothing
-to break.
+to break. Whoever writes a page somebody else has claimed is told who holds it
+and why: in the editor, which leaves the claim with its holder; from `quilzo
+add`, `section` and `move`; and at the agent interface, where `write_page` says
+so, an agent's own run is told the same, and `list_locks` lists the claims
+before anything is written.
 
 There is no live cursor in a shared document, and there will not be. That
 feature is JavaScript by construction — an editor, a transport, and a CRDT in

@@ -211,22 +211,30 @@ func (s *Server) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
 	// library full of undescribed images is a library somebody has to go back
 	// through, and nobody ever does.
 	alt := strings.TrimSpace(r.FormValue("alt"))
-	if f.Kind == media.Image && alt == "" && r.FormValue("decorative") == "" {
+	lib, err := s.Media.Library()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// A file already here keeps its description unless the uploader asks
+	// for theirs to replace it (medialib.Arriving), so a description is only
+	// needed of a new one, or of one whose description is being replaced.
+	replaceAlt := r.FormValue("replace_alt") != ""
+	_, _, here := lib.Arriving(f, false)
+	if f.Kind == media.Image && alt == "" && r.FormValue("decorative") == "" && (!here || replaceAlt) {
 		s.mediaRedirect(w, r, "", "this image needs a description. Say what it "+
 			"conveys, not that it is an image — or mark it decorative, which "+
 			"is a claim somebody is making rather than a box being skipped.")
 		return
 	}
 	f.Alt, f.UploadedBy = alt, p.Name
-
-	lib, err := s.Media.Library()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if err := lib.Put(f, body); err != nil {
-		s.mediaRedirect(w, r, "", err.Error())
-		return
+	upload := f
+	f, was, here := lib.Arriving(upload, replaceAlt)
+	if !here || f.Alt != was.Alt {
+		if err := lib.Put(f, body); err != nil {
+			s.mediaRedirect(w, r, "", err.Error())
+			return
+		}
 	}
 
 	detail := map[string]string{"file": f.Name, "id": shortHash(f.ID),
@@ -250,6 +258,13 @@ func (s *Server) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
 	s.auditPub(p, "media.add", "/", detail)
 
 	msg := "stored " + f.Name
+	if here {
+		msg = medialib.AlreadyHere(upload.Name, was, f)
+		if f.Alt == was.Alt && upload.Alt != was.Alt {
+			msg += ". To give it your description instead, upload it again with " +
+				"\"Replace the description it has\" ticked"
+		}
+	}
 	if len(did) > 0 {
 		msg += " — " + strings.Join(did, ", ")
 	}

@@ -417,9 +417,12 @@ var coverage = map[string]surfaces{
 	"secret": {Why: "a credential is given on standard input, where no browser history, " +
 		"screen or form field holds it on the way",
 		NoMCP: "keeps credentials; an agent that could set one could set the one it is about to be handed"},
-	"siem":   {GUI: "/integrations", NoMCP: "exports the audit log and can be asked to reveal identifiers"},
-	"csp":    {GUI: "/security/policy", NoMCP: "is derived from published content and read on a screen; there is nothing an agent does with it"},
-	"lock":   {GUI: "/publishing", NoMCP: "is a courtesy between people about who is mid-edit, and an agent is not one of them"},
+	"siem": {GUI: "/integrations", NoMCP: "exports the audit log and can be asked to reveal identifiers"},
+	"csp":  {GUI: "/security/policy", NoMCP: "is derived from published content and read on a screen; there is nothing an agent does with it"},
+	// Read only over MCP: a claim is a courtesy between people about who is
+	// mid-edit, so an agent takes none, but it is told of one before it
+	// writes over somebody's afternoon (write_page says so too).
+	"lock":   {GUI: "/publishing", MCP: []string{"list_locks"}},
 	"import": {GUI: "/transfer", NoMCP: "reads a file from disk this process was handed; there is no path by which an agent supplies one"},
 	"demo": {GUI: "/transfer",
 		NoMCP: "installs a whole application over an empty store, including " +

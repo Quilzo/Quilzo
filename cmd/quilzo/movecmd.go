@@ -35,11 +35,14 @@ import (
 // breaking them and letting the publish gate complain afterwards about pages
 // somebody changed for unrelated reasons.
 //
-// Three things are moved together, because a move that does two of them is a
+// Four things are moved together, because a move that does some of them is a
 // worse state than one that does none:
 //
 //   - the page, and every page beneath it
 //   - every reference field naming any of them
+//   - every reuse of any of them as a block (site.RetargetBlocks), which was
+//     left naming the old place, so the pages reusing a renamed block showed
+//     nothing there and the move did not say so
 //   - every menu entry pointing at any of them, which menu.Retarget was
 //     written for and had one caller
 //
@@ -117,8 +120,23 @@ func cmdMove(root string, args []string) error {
 		}
 	}
 
+	// The pages reusing anything being moved as a block. A reuse is a
+	// reference, and one left naming the old place shows nothing there.
+	reuses := []string{}
+	reusing := map[string]bool{}
+	uses := site.BlockUses(pages)
+	for _, name := range moving {
+		for _, u := range uses[name] {
+			if !reusing[u] {
+				reusing[u] = true
+				reuses = append(reuses, u)
+			}
+		}
+	}
+	sort.Strings(reuses)
+
 	if *dry {
-		return sayWhatWouldMove(moving, renames, incoming, root, from)
+		return sayWhatWouldMove(moving, renames, incoming, reuses, root, from)
 	}
 
 	// The pages themselves.
@@ -134,8 +152,15 @@ func cmdMove(root string, args []string) error {
 	// the counterpart of. Over the renamed set, because a page that names
 	// something being moved may itself be moving.
 	changedRefs := 0
+	// Every page this writes: the ones moving, under the names they had, and
+	// the ones a reference or a reuse was rewritten in. For telling whoever
+	// has claimed one of them (claimsByOthers), below.
+	written := append([]string(nil), moving...)
 	for was, now := range renames {
-		changedRefs += len(st.Retarget(next, was, now))
+		pointing := st.Retarget(next, was, now)
+		changedRefs += len(pointing)
+		written = append(written, pointing...)
+		written = append(written, site.RetargetBlocks(next, was, now)...)
 	}
 
 	// The same gate every other write passes. A move does not change what a
@@ -199,13 +224,19 @@ func cmdMove(root string, args []string) error {
 			"to": to, "pages": fmt.Sprint(len(moving)),
 			"references": fmt.Sprint(changedRefs),
 			"menus":      fmt.Sprint(changedMenus),
+			"reuses":     fmt.Sprint(len(reuses)),
 			"commit":     short(commit),
 		}))
 
+	// Somebody else's claim on a page this wrote. A move renamed the page
+	// pat was half way through rewriting, or rewrote a reference in it, and
+	// said nothing, where `quilzo add` and the browser's editor say who holds
+	// it: his next save was refused and he had not been told why.
+	claims := claimsByOthers(root, caller.Name, written)
 	if w.JSON(map[string]any{
 		"from": from, "to": to, "pages": len(moving),
 		"references": changedRefs, "menus": changedMenus,
-		"commit": commit,
+		"reuses": reuses, "commit": commit, "claimed": claims,
 	}) {
 		return nil
 	}
@@ -219,16 +250,21 @@ func cmdMove(root string, args []string) error {
 		w.Human("  %s%s retargeted%s\n",
 			dim, count(changedMenus, "menu entry"), reset)
 	}
+	if len(reuses) > 0 {
+		w.Human("  %sthe block now shows on %s under its new name%s\n",
+			dim, strings.Join(reuses, ", "), reset)
+	}
 	// The one thing a move leaves behind. Said here rather than left to be
 	// discovered by a reader following a link somebody sent them last month.
 	w.Human("  %sthe old addresses now answer 404. `quilzo site "+
 		"--redirects redirects.json` keeps them working%s\n", dim, reset)
+	sayClaims(claims)
 	return nil
 }
 
 // sayWhatWouldMove is the dry run.
 func sayWhatWouldMove(moving []string, renames map[string]string,
-	incoming map[string][]schema.Link, root, from string) error {
+	incoming map[string][]schema.Link, reuses []string, root, from string) error {
 
 	refs := 0
 	for _, links := range incoming {
@@ -243,7 +279,7 @@ func sayWhatWouldMove(moving []string, renames map[string]string,
 
 	if w.JSON(map[string]any{
 		"pages": moving, "renames": renames,
-		"references": refs, "menus": menus, "dry_run": true,
+		"references": refs, "menus": menus, "reuses": reuses, "dry_run": true,
 	}) {
 		return nil
 	}
@@ -258,6 +294,10 @@ func sayWhatWouldMove(moving []string, renames map[string]string,
 	if menus > 0 {
 		w.Human("  %s%s would be retargeted%s\n",
 			dim, count(menus, "menu entry"), reset)
+	}
+	if len(reuses) > 0 {
+		w.Human("  %sthe block's reuses on %s would follow it%s\n",
+			dim, strings.Join(reuses, ", "), reset)
 	}
 	return nil
 }

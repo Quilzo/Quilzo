@@ -97,3 +97,21 @@ func TestWhereABlockIsUsed(t *testing.T) {
 		t.Error("a block reused inside a block")
 	}
 }
+
+// A reuse that would show nothing is refused before it is made: a page that
+// is not there, and a block for members only, which no public page shows.
+func TestNoReuseOfWhatShowsNothing(t *testing.T) {
+	pages := map[string]any{
+		"index":   map[string]any{"title": "Home"},
+		"members": map[string]any{"block": true, "members_only": true},
+		"promo":   map[string]any{"block": true},
+	}
+	if err := CanReuse("index", "promo", pages); err != nil {
+		t.Fatal(err)
+	}
+	for _, block := range []string{"gone", "members"} {
+		if err := CanReuse("index", block, pages); err == nil {
+			t.Errorf("reused %s", block)
+		}
+	}
+}
