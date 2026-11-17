@@ -560,6 +560,42 @@ func TestTheSitesAgentInterfaceTakesPOSTAndSaysSo(t *testing.T) {
 	}
 }
 
+// A client that asks the site's agent interface for nothing in particular
+// is not heard as hunting for the admin either. The two branches' rules
+// meet here: one answers 405 to a GET that accepts anything, a HEAD or a
+// DELETE, by asking the page handler first, and the other has the page
+// handler answer for the site's own address without counting it. The test
+// above has every method ask for a stream, and a GET or a HEAD that names
+// one is answered by the transport before any page is looked for, so
+// nothing held the page handler to its half for a plain probe: answered
+// 405 either way, and counted as hunting if the page handler let it by.
+func TestAPlainRequestToTheSitesAgentInterfaceIsNotHuntingForTheAdmin(t *testing.T) {
+	st := nlwebSite(t)
+	clock := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
+	heard := watching(st, &clock)
+	for _, tc := range []struct{ method, accept string }{
+		{http.MethodGet, ""}, {http.MethodGet, "*/*"}, {http.MethodGet, "application/json"},
+		{http.MethodHead, ""}, {http.MethodDelete, ""}, {http.MethodPut, "*/*"}, {http.MethodOptions, ""},
+	} {
+		req := httptest.NewRequest(tc.method, "/mcp", nil)
+		if tc.accept != "" {
+			req.Header.Set("Accept", tc.accept)
+		}
+		req.RemoteAddr = "203.0.113.9:4000"
+		w := httptest.NewRecorder()
+		st.Handler().ServeHTTP(w, req)
+		if w.Code != http.StatusMethodNotAllowed || w.Header().Get("Allow") != "POST" {
+			t.Errorf("%s /mcp accepting %q answered %d, Allow %q", tc.method, tc.accept, w.Code, w.Header().Get("Allow"))
+		}
+	}
+	// Two of the admin's addresses besides, under the threshold of three.
+	from(st, http.MethodGet, "/signin", "203.0.113.9", nil)
+	from(st, http.MethodGet, "/tokens", "203.0.113.9", nil)
+	if len(*heard) != 0 {
+		t.Fatalf("heard %v; the site's own agent interface is no admin address", *heard)
+	}
+}
+
 // A browser asking the site's agent interface for a page is told by the
 // site's own page that there is none, and is not heard as hunting for the
 // admin: the two rules above, held together. While the site has the tool,
