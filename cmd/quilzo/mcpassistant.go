@@ -96,7 +96,9 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 		Summary: "ask a chatbot a question and see its answer, sources and removals",
 		Detail: "Works on private chatbots too, so you can test one before a " +
 			"person makes it public. The answer is from published pages only; " +
-			"removed sentences are ones the pages did not support.",
+			"removed sentences are ones the pages did not support. offers is " +
+			"what it would offer the visitor to do, which they confirm; nothing " +
+			"is done by asking here.",
 		Args: map[string]string{
 			"name":     "the chatbot",
 			"question": "what a visitor would ask",
@@ -132,6 +134,14 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 		}
 		out := map[string]any{"answer": ans.Text, "refused": ans.Refused,
 			"mode": ans.Mode, "note": ans.Note, "removed": ans.Dropped}
+		// What it offers the visitor to do, which they would confirm. Left
+		// out, an answer that is only an offer read "This is something I
+		// can help with." and nothing to say what, and whoever was testing
+		// the chatbot here could not see that it offers anything.
+		if p := ans.Proposed; p != nil {
+			out["offers"] = map[string]any{"name": p.Action.Name, "kind": p.Action.Kind,
+				"description": p.Action.Description, "args": p.Args}
+		}
 		var srcs []src
 		for i, h := range ans.Sources {
 			srcs = append(srcs, src{i + 1, h.Page, h.Header()})

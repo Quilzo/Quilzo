@@ -68,6 +68,13 @@ func Evaluate(ctx context.Context, a Assistant, idx *Index, m Model,
 			return r, fmt.Errorf("%q: %w", c.Question, err)
 		}
 		r.Dropped += len(ans.Dropped)
+		// Marked on what it says from the site. An answer that is only an
+		// offer of something to do says nothing from it, and is the refusal
+		// here: counted as an answer, a case no page covers that the chatbot
+		// has an action for ("please look up my order") went under
+		// hallucinated, with "This is something I can help with" as what it
+		// had made up.
+		ans = a.Unoffered(ans)
 		if c.Page == "" {
 			r.Unanswerable++
 			if ans.Refused {

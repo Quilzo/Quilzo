@@ -25,7 +25,6 @@ import (
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/site"
-	"github.com/quilzo/quilzo/internal/store"
 )
 
 // Events (internal/public/events.go): records whose listing site.events
@@ -209,7 +208,7 @@ func upcomingEvents(root string) ([]listing.Row, string, error) {
 	if !ok {
 		return nil, name, fmt.Errorf("site.events names %q and no listing has that name", name)
 	}
-	s, err := store.Open(root)
+	s, err := openEncrypted(root)
 	if err != nil {
 		return nil, name, err
 	}

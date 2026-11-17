@@ -395,3 +395,41 @@ func TestTheBoxesTakeAsManyCharactersAsTheySay(t *testing.T) {
 		t.Fatalf("a %d-character reply answered %d: %s", handoff.MaxText, w.Code, w.Body.String())
 	}
 }
+
+// Withdrawing the offer of a person stops new conversations, not the ones
+// already open.
+//
+// A visitor is told their conversation is kept for the days the chatbot
+// says, and that its address is the only way back. Unticking "Let a
+// visitor ask for a person", or declaring the chatbot again without
+// --handoff, made that address answer 404 while the Inbox still listed the
+// conversation as waiting and a reply was reported sent, to nobody.
+func TestAConversationOutlivesTheOfferThatStartedIt(t *testing.T) {
+	st, store, _ := handoffSite(t)
+	loc := start(t, st, "I'd like to return order 1182")
+	set, _ := st.Assistants.Set()
+	off := handingBot
+	off.Handoff = false
+	if err := set.Put(off); err != nil {
+		t.Fatal(err)
+	}
+	id := handoff.IDFor(strings.TrimPrefix(loc, "/ask/help/c/"))
+	if _, err := store.Say("help", id, handoff.Person, "Ada", "We will call you", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	w := send(st, http.MethodGet, loc, nil)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "We will call you") {
+		t.Fatalf("the visitor's conversation answered %d once the offer was withdrawn", w.Code)
+	}
+	if w := send(st, http.MethodPost, loc, url.Values{"message": {"thank you"}}); w.Code != http.StatusSeeOther {
+		t.Fatalf("the visitor could not answer back: %d", w.Code)
+	}
+	// No new conversation is started.
+	if w := send(st, http.MethodPost, "/ask/help/handoff",
+		url.Values{"q": {"x"}, "message": {"another"}}); w.Code != http.StatusNotFound {
+		t.Fatalf("a conversation was started with the offer withdrawn: %d", w.Code)
+	}
+	if strings.Contains(askPost(st, "help", "can I return an opened bottle?").Body.String(), "Talk to a person") {
+		t.Fatal("the withdrawn offer is still made")
+	}
+}

@@ -23,7 +23,6 @@ import (
 	"github.com/quilzo/quilzo/internal/newsletter"
 	"github.com/quilzo/quilzo/internal/public"
 	"github.com/quilzo/quilzo/internal/site"
-	"github.com/quilzo/quilzo/internal/store"
 	"github.com/quilzo/quilzo/internal/throttle"
 )
 
@@ -113,7 +112,7 @@ func publicNewsletter(root string) *public.Newsletter {
 // issuePage is a published page an issue can be made from: public now, and
 // not for members only. It answers the page and where it is served.
 func issuePage(root, name string) (map[string]any, string, error) {
-	s, err := store.Open(root)
+	s, err := openEncrypted(root)
 	if err != nil {
 		return nil, "", err
 	}
@@ -870,7 +869,7 @@ func newsletterHooks(root string, signedIn func(admin.Actor) *Caller) *admin.New
 			return all, err
 		},
 		Pages: func() ([]string, error) {
-			s, err := store.Open(root)
+			s, err := openEncrypted(root)
 			if err != nil {
 				return nil, err
 			}
