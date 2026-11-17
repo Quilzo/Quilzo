@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/collection"
+	"github.com/quilzo/quilzo/internal/media"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/store"
 )
@@ -432,5 +433,58 @@ func TestASheetBroughtBackUnchangedChangesNothing(t *testing.T) {
 	b, err := bringFile(ctx, root, "things", "things.csv", []byte(changed), bringOptions{}, asAdmin("dana"))
 	if err != nil || b.New != 0 || b.Updated != 1 || b.Unchanged != 1 {
 		t.Fatalf("one row changed was brought as %+v: %v", b, err)
+	}
+}
+
+// A sheet that names its pictures by where they are fetched from, as an
+// export does for a site with an address of its own, changes nothing brought
+// back as it went out either.
+//
+// A row was weighed against its record before its picture's address was
+// read back as the file in the library it names, so every record with a
+// picture was "changed", written again and its updated time moved: the
+// products of a shop with an address, each with a picture, were all changed
+// by a sheet that changed none.
+func TestASheetNamingItsPicturesByAddressChangesNothingBroughtBack(t *testing.T) {
+	root, _ := siteStore(t)
+	if err := eventsCmd(root, []string{"setup"}, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	setConfigs(t, root, map[string]string{"site.base_url": "https://crumb.example"})
+	lib, err := openMedia(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := testPNG("loaf")
+	pic, err := media.Accept("loaf.png", body, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pic.Alt = "A loaf"
+	if err := lib.Put(pic, body); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	first := "title,date,image,alt\nRye night,2099-11-14," + pic.ID + ",A loaf\nOpen day,2099-12-25,,\n"
+	if b, err := bringFile(ctx, root, "events", "events.csv", []byte(first), bringOptions{pictures: true},
+		asAdmin("dana")); err != nil || b.New != 2 {
+		t.Fatalf("%+v %v", b, err)
+	}
+	before := draftRecords(t, root, "events")
+	out, _, err := sheetOf(root, "events", "csv", false)
+	if err != nil || !strings.Contains(string(out), "https://crumb.example/media/"+pic.ID) {
+		t.Fatalf("the sheet does not say where the picture is fetched from: %v\n%s", err, out)
+	}
+	for _, opts := range []bringOptions{{pictures: true, dryRun: true}, {pictures: true}, {}} {
+		b, err := bringFile(ctx, root, "events", "events.csv", out, opts, asAdmin("dana"))
+		if err != nil || b.New != 0 || b.Updated != 0 || b.Unchanged != 2 {
+			t.Fatalf("%+v: brought back as %+v: %v", opts, b, err)
+		}
+	}
+	after := draftRecords(t, root, "events")
+	for i := range before {
+		if after[i].Updated != before[i].Updated || after[i].Fields["image"] != before[i].Fields["image"] {
+			t.Errorf("%s was written again: %v, was %v", after[i].ID, after[i], before[i])
+		}
 	}
 }

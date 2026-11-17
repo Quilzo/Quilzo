@@ -19,6 +19,7 @@ import (
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/event"
 	"github.com/quilzo/quilzo/internal/fetch"
+	"github.com/quilzo/quilzo/internal/medialib"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/sheet"
 )
@@ -252,6 +253,7 @@ func bringFile(ctx context.Context, root, coll, name string, body []byte, opts b
 			return nil, err
 		}
 	}
+	ownPictures(root, t, rows)
 	s, err := open(root)
 	if err != nil {
 		return nil, err
@@ -324,6 +326,53 @@ func bringFile(ctx context.Context, root, coll, name string, body []byte, opts b
 	return out, nil
 }
 
+// ownPictures reads a picture a row names by the address the library serves
+// it at as the file it is, before the rows are weighed against the records
+// they are.
+//
+// An export names a picture by where it can be fetched from, when the site
+// has an address of its own, and that was read back as the file only when
+// pictures were fetched, after the rows had been weighed: every record with
+// a picture was "changed" by a sheet that changed none of them, written
+// again and its updated time moved. Brought in without fetching pictures,
+// as the Data screen does unless asked, the address was "left out, as
+// asked", and the record lost the picture it had.
+func ownPictures(root string, t *schema.Type, rows []sheet.Row) {
+	pictures := sheet.Pictures(t)
+	if len(pictures) == 0 {
+		return
+	}
+	lib, err := openMedia(root)
+	if err != nil {
+		return
+	}
+	for _, row := range rows {
+		for field := range pictures {
+			if raw, _ := row.Fields[field].(string); raw != "" {
+				if id := libraryPicture(lib, raw); id != "" {
+					row.Fields[field] = id
+				}
+			}
+		}
+	}
+}
+
+// libraryPicture is the file in the library that raw names by the address
+// it is served at (…/media/<its id>), or "" when raw is no such address or
+// the library has no such file.
+func libraryPicture(lib *medialib.Library, raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || lib == nil {
+		return ""
+	}
+	if dir, id := path.Split(u.Path); strings.HasSuffix(dir, "/media/") && sheet.IsMediaID(id) {
+		if _, err := lib.Stat(id); err == nil {
+			return id
+		}
+	}
+	return ""
+}
+
 // pictureFetcher keeps a picture a row names: one already in the library,
 // by its id or the address it is served at, as it is; one on the web,
 // fetched into the library as `media get` would.
@@ -335,10 +384,8 @@ func pictureFetcher(ctx context.Context, root string) func(raw, alt string) (str
 		if err != nil {
 			return "", fmt.Errorf("%q is not an address", raw)
 		}
-		if dir, id := path.Split(u.Path); strings.HasSuffix(dir, "/media/") && sheet.IsMediaID(id) && lib != nil {
-			if _, err := lib.Stat(id); err == nil {
-				return id, nil
-			}
+		if id := libraryPicture(lib, raw); id != "" {
+			return id, nil
 		}
 		if u.Scheme != "http" && u.Scheme != "https" || u.Host == "" {
 			return "", fmt.Errorf("%q is not an address on the web", raw)
