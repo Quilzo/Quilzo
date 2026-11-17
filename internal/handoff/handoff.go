@@ -25,6 +25,9 @@
 // line written in one call to a file opened for appending, which the
 // operating system does not interleave, so neither process needs a lock the
 // other might hold. The state of a conversation is the replay of its lines.
+// A message is the one thing written under a lock, held for the length of
+// the write, so that the file's size can be kept under what is read back
+// (appendWithin).
 package handoff
 
 import (
@@ -43,6 +46,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/atomicfile"
 )
 
 // Who said something.
@@ -231,11 +236,8 @@ func (s Store) Say(assistant, id, from, by, text string, now time.Time) (Message
 		return Message{}, fmt.Errorf("this conversation has reached %d "+
 			"messages; start another", MaxMessages)
 	}
-	e := event{Kind: "say", At: now.UTC(), From: from, By: by, Text: text}
-	if err := s.fits(assistant, id, e); err != nil {
-		return Message{}, err
-	}
-	if err := s.append(assistant, id, e); err != nil {
+	if err := s.appendWithin(assistant, id, event{Kind: "say", At: now.UTC(),
+		From: from, By: by, Text: text}); err != nil {
 		return Message{}, err
 	}
 	return Message{N: len(c.Messages) + 1, At: now.UTC(), From: from, By: by,
@@ -259,14 +261,25 @@ func (s Store) Close(assistant, id, by string, now time.Time) error {
 // so that it can always be ended, by the visitor or by whoever answered.
 const closeRoom = 4 << 10
 
-// fits refuses a message that would take a conversation's file past
-// MaxFile. MaxText and MaxMessages alone did not keep it under: a message
-// of '<' is stored six bytes to the character, so at about 88 such
-// messages the file passed the limit Get reads to, and from then on the
-// visitor's page answered 503, the Inbox left the conversation out and
-// nobody could answer it. The visitor is told to start another, as at
-// MaxMessages.
-func (s Store) fits(assistant, id string, e event) error {
+// appendWithin adds a message to a conversation's file, and refuses one
+// that would take the file past MaxFile. MaxText and MaxMessages alone did
+// not keep it under: a message of '<' is stored six bytes to the character,
+// so at about 88 such messages the file passed the limit Get reads to, and
+// from then on the visitor's page answered 503, the Inbox left the
+// conversation out and nobody could answer it. The visitor is told to start
+// another, as at MaxMessages.
+//
+// The size is read and the line written under a lock. Read first and
+// written after with nothing held between, two messages sent together near
+// the limit were each told there was room, and the second took the file
+// past it all the same. It is the one place a lock is taken here: by
+// writers of messages only, for the length of one write, and the kernel
+// lets go of it when its holder dies, so neither process waits on a lock
+// the other left behind. The lock is a file beside the conversations and
+// not the conversation itself, which a reader must be able to read while
+// a message is written (a lock on Windows keeps other handles out of the
+// bytes it covers).
+func (s Store) appendWithin(assistant, id string, e event) (err error) {
 	p, err := s.path(assistant, id)
 	if err != nil {
 		return err
@@ -275,10 +288,27 @@ func (s Store) fits(assistant, id string, e event) error {
 	if err != nil {
 		return err
 	}
-	fi, err := os.Stat(p)
+	// O_CREATE is not given, as in append.
+	f, err := os.OpenFile(p, os.O_WRONLY|os.O_APPEND, 0o600)
 	if os.IsNotExist(err) {
 		return ErrNotFound
 	}
+	if err != nil {
+		return err
+	}
+	// A message whose file did not close is not reported as said, as in
+	// append.
+	defer func() {
+		if cerr := f.Close(); err == nil {
+			err = cerr
+		}
+	}()
+	unlock, err := atomicfile.Lock(filepath.Join(filepath.Dir(p), sayLock))
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	fi, err := f.Stat()
 	if err != nil {
 		return err
 	}
@@ -287,8 +317,12 @@ func (s Store) fits(assistant, id string, e event) error {
 	if fi.Size()+int64(len(line))+2+closeRoom > MaxFile {
 		return fmt.Errorf("this conversation is as long as one can be; start another")
 	}
-	return nil
+	return writeEvents(f, e)
 }
+
+// sayLock is the file, in an assistant's folder, that writers of messages
+// lock. Not a conversation's name, so List and Expire pass it by.
+const sayLock = "say.lock"
 
 func (s Store) append(assistant, id string, e event) error {
 	p, err := s.path(assistant, id)

@@ -5,6 +5,7 @@ package handoff
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -375,5 +376,91 @@ func TestAConversationThatCannotBeReadIsStillDeletedOnTime(t *testing.T) {
 	}
 	if _, err := os.Stat(p); !os.IsNotExist(err) {
 		t.Fatal("the file is still there")
+	}
+}
+
+// Messages sent at the same moment do not take a conversation past what
+// can be read either.
+//
+// Whether a message fits was asked of the file's size, and the message
+// written after, with nothing holding the file between the two. Two sent
+// together near the limit (a visitor's page posting twice, or a visitor
+// and the person answering them) were each told there was room, and the
+// file passed MaxFile by the second: the visitor's page answered 503 and
+// the conversation left the Inbox, as before any limit was kept on
+// writing. A visitor could do it to a conversation staff had just been
+// told was waiting. The size is read and the line written under a lock, so
+// of any number sent together only what fits is kept.
+func TestMessagesSentTogetherDoNotPassWhatCanBeRead(t *testing.T) {
+	long := strings.Repeat("<", MaxText)
+	line, err := json.Marshal(event{Kind: "say", At: day0, From: Visitor, Text: long})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Room for one more long message and not for two.
+	target := int64(MaxFile - closeRoom - len(line) - 2 - 16)
+	for round := 0; round < 30; round++ {
+		s, _, id := opened(t)
+		p := filepath.Join(s.Dir, "help", id+".jsonl")
+		fi, err := os.Stat(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Filled to that size with blank lines, which a conversation's file
+		// may hold and which cost nothing to read back, so that the messages
+		// reach the size check as nearly together as they were sent.
+		blank := bytes.Repeat([]byte(" "), int(target-fi.Size()))
+		for i := 4095; i < len(blank); i += 4096 {
+			blank[i] = '\n'
+		}
+		blank[len(blank)-1] = '\n'
+		f, err := os.OpenFile(p, os.O_WRONLY|os.O_APPEND, 0o600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.Write(blank); err != nil {
+			t.Fatal(err)
+		}
+		f.Close()
+
+		const together = 24
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		kept := make(chan bool, together)
+		for i := 0; i < together; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				_, err := s.Say("help", id, Visitor, "", long, day0)
+				kept <- err == nil
+			}()
+		}
+		close(start)
+		wg.Wait()
+		close(kept)
+		n := 0
+		for ok := range kept {
+			if ok {
+				n++
+			}
+		}
+		if _, err := s.Get("help", id); err != nil {
+			t.Fatalf("round %d: %d messages sent together were kept, and the conversation cannot be read: %v",
+				round, n, err)
+		}
+		if n != 1 {
+			t.Fatalf("round %d: %d messages were kept where one fits", round, n)
+		}
+		if err := s.Close("help", id, "Ada", day0); err != nil {
+			t.Fatal(err)
+		}
+		if c, err := s.Get("help", id); err != nil || !c.Closed {
+			t.Fatalf("round %d: ending it left it unreadable or open: %v", round, err)
+		}
+		// What the writers locked is not taken for a conversation.
+		if all, err := s.List(); err != nil || len(all) != 1 {
+			t.Fatalf("round %d: the list has %d conversations: %v", round, len(all), err)
+		}
 	}
 }
