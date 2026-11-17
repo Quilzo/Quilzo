@@ -357,27 +357,17 @@ func dateOf(v string) string {
 	return ""
 }
 
-// truthy is a front matter flag.
-func truthy(m map[string]any, key string) bool {
-	switch v := m[key].(type) {
-	case bool:
-		return v
-	case string:
-		return strings.EqualFold(v, "true") || v == "yes"
-	}
-	return false
-}
-
 // heldStatuses are the statuses a file's front matter gives what is not
 // published, by the names WordPress and Ghost give them, which exporters to
 // Markdown carry across.
 var heldStatuses = map[string]bool{"draft": true, "auto-draft": true, "private": true, "pending": true,
-	"future": true, "scheduled": true, "trash": true}
+	"future": true, "scheduled": true, "trash": true, "unpublished": true}
 
 // HeldBack says what in a file's front matter keeps it from the public, as
 // the line reads ("draft: true"), or "" when nothing does: a draft or private
 // flag, published: false, a status that is not published, a visibility that
-// is not public, or a password.
+// is not public, a password, a day to publish it on that has not come or a
+// day to take it down that has.
 //
 // Both readers of Markdown ask it, a folder's (FromFiles) and `quilzo
 // import` of one file. The folder's knew three of these marks and the other
@@ -385,39 +375,128 @@ var heldStatuses = map[string]bool{"draft": true, "auto-draft": true, "private":
 // with a field, draft, that nothing reads, and the next publish put "not for
 // the public yet" on the site. The password itself is never part of the
 // answer.
+//
+// A mark is read as the generators that honour it read it, and not in one
+// spelling. Hugo reads a key in any case, so Draft: true is a draft; YAML as
+// Jekyll reads it takes yes, on, no and off for a flag in any case, so
+// published: off is unpublished; and a comment after a value is not the
+// value, which matters where a file is read a line at a time. Each of those
+// was read as no mark at all, and the file was brought.
 func HeldBack(fm map[string]any) string {
-	word := func(key string) string {
-		s, _ := fm[key].(string)
-		return strings.ToLower(strings.TrimSpace(s))
+	// at is the key as the file wrote it, and its value, for a key in any
+	// case; the lower-case one first, so the answer does not turn on the
+	// order a map is walked in.
+	at := func(key string) (string, any) {
+		if v, ok := fm[key]; ok {
+			return key, v
+		}
+		var found string
+		for k := range fm {
+			if strings.EqualFold(k, key) && (found == "" || k < found) {
+				found = k
+			}
+		}
+		if found == "" {
+			return "", nil
+		}
+		return found, fm[found]
+	}
+	word := func(key string) (string, string) {
+		k, v := at(key)
+		s, _ := v.(string)
+		return k, strings.ToLower(uncommented(s))
 	}
 	for _, flag := range []string{"draft", "private"} {
-		if truthy(fm, flag) {
-			return flag + ": true"
+		if k, v := at(flag); k != "" {
+			if set, _ := flagOf(v); set {
+				return k + ": true"
+			}
 		}
 	}
-	if v, ok := fm["published"].(bool); (ok && !v) || word("published") == "false" || word("published") == "no" {
-		return "published: false"
-	}
-	if s := word("status"); heldStatuses[s] {
-		return "status: " + s
-	}
-	if v := word("visibility"); v != "" && v != "public" {
-		return "visibility: " + clip(v, 40)
-	}
-	switch v := fm["password"].(type) {
-	case nil:
-	case string:
-		if strings.TrimSpace(v) != "" {
-			return "password"
+	for _, flag := range []string{"published", "publish"} {
+		if k, v := at(flag); k != "" {
+			if set, known := flagOf(v); known && !set {
+				return k + ": false"
+			}
 		}
-	case bool:
-		if v {
-			return "password"
+	}
+	if k, s := word("status"); heldStatuses[s] {
+		return k + ": " + s
+	}
+	if k, v := word("visibility"); v != "" && v != "public" {
+		return k + ": " + clip(v, 40)
+	}
+	for _, key := range []string{"password", "post_password"} {
+		k, v := at(key)
+		switch v := v.(type) {
+		case nil:
+		case string:
+			if strings.TrimSpace(v) != "" {
+				return k
+			}
+		case bool:
+			if v {
+				return k
+			}
+		default:
+			return k
 		}
-	default:
-		return "password"
+	}
+	// Hugo's own two: a page is not built before its publishDate or after
+	// its expiryDate. An import happens once, on one day, and what it brings
+	// is published then, so a page for next month would be out today.
+	today := time.Now().UTC().Format("2006-01-02")
+	for _, key := range []string{"publishdate", "pubdate"} {
+		if k, v := at(key); k != "" {
+			if day := dateOf(uncommented(asText(v))); day > today {
+				return k + ": " + day
+			}
+		}
+	}
+	for _, key := range []string{"expirydate", "unpublishdate"} {
+		if k, v := at(key); k != "" {
+			if day := dateOf(uncommented(asText(v))); day != "" && day <= today {
+				return k + ": " + day
+			}
+		}
 	}
 	return ""
+}
+
+// flagOf reads a front matter flag: whether it is set, and whether it is a
+// flag at all. True, yes and on set one and false, no and off clear it, in
+// any case, as YAML 1.1 and so Jekyll read them; a comment after the word
+// is not part of it.
+func flagOf(v any) (set, known bool) {
+	switch v := v.(type) {
+	case bool:
+		return v, true
+	case string:
+		switch strings.ToLower(uncommented(v)) {
+		case "true", "yes", "on", "y":
+			return true, true
+		case "false", "no", "off", "n":
+			return false, true
+		}
+	}
+	return false, false
+}
+
+// uncommented is a front matter value without the comment after it: "true
+// # not yet" is true. A reader of whole YAML has taken it off already; one
+// that reads a line at a time has not.
+func uncommented(s string) string {
+	if i := strings.Index(s, " #"); i >= 0 {
+		s = s[:i]
+	}
+	return strings.TrimSpace(s)
+}
+
+// asText is a front matter value as the words it was written in, "" for
+// one that was not words.
+func asText(v any) string {
+	s, _ := v.(string)
+	return s
 }
 
 // markdown reads a folder of Markdown.

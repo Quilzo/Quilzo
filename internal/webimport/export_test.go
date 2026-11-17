@@ -980,3 +980,56 @@ func TestTwoLongWordPressSlugsAreTwoPagesThePackageHolds(t *testing.T) {
 		t.Errorf("the two pages were brought as %v", names)
 	}
 }
+
+// A file is held back however its generator lets the mark be spelled.
+//
+// The mark was read in one spelling: the key in lower case, and true or
+// yes. Hugo reads a key in any case, so Draft: true is a draft there; YAML
+// as Jekyll reads it takes on, Yes and off for a flag, so published: off is
+// unpublished; a comment after the value is not the value; and Hugo holds a
+// page until its publishDate and takes it down at its expiryDate. Each of
+// those was brought as a page and published with the site.
+func TestAFileHeldBackInAnotherSpellingIsLeftOut(t *testing.T) {
+	fsys := fstest.MapFS{
+		"index.md": {Data: []byte("---\ntitle: Welcome\n---\nBread notes.\n")},
+	}
+	marks := []string{"Draft: true", "DRAFT: True", "draft: on", "draft: YES", "Private: true", "published: off",
+		"Published: No", "publish: false", "Status: Draft", "status: unpublished", "Visibility: Members",
+		"publishDate: 2099-01-01", "PublishDate: 2099-01-01T09:00:00Z", "expiryDate: 2001-01-01",
+		"post_password: s3cret"}
+	for i, mark := range marks {
+		fsys[fmt.Sprintf("held-%d.md", i)] = &fstest.MapFile{Data: []byte(
+			"---\ntitle: Held " + strings.ReplaceAll(mark, ":", "") + "\n" + mark + "\n---\nHELD-MARKER not for the public.\n")}
+	}
+	// TOML front matter, with a comment after the value.
+	fsys["held-toml.md"] = &fstest.MapFile{Data: []byte(
+		"+++\ntitle = \"Held in TOML\"\ndraft = true # not yet\n+++\nHELD-MARKER not for the public.\n")}
+	// What holds nothing back is brought.
+	open := []string{"draft: off", "Draft: False", "published: yes", "publish: true", "publishDate: 2001-01-01",
+		"expiryDate: 2099-01-01", "status: open"}
+	for i, mark := range open {
+		fsys[fmt.Sprintf("open-%d.md", i)] = &fstest.MapFile{Data: []byte(
+			"---\ntitle: Open " + strings.ReplaceAll(mark, ":", "") + "\n" + mark + "\n---\nOpen words.\n")}
+	}
+	s, err := FromFiles(fsys, "notes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pg := range s.Pages {
+		for _, b := range pg.Blocks {
+			if strings.Contains(b.Text, "HELD-MARKER") {
+				t.Errorf("page %q was brought, with its words", pg.Title)
+			}
+		}
+	}
+	if len(s.Pages) != 1+len(open) {
+		t.Errorf("%d pages were brought, not the home page and the %d that hold nothing back", len(s.Pages), len(open))
+	}
+	// The reason names the line as it is written, for whoever takes it out.
+	if why := HeldBack(map[string]any{"Draft": true}); why != "Draft: true" {
+		t.Errorf("a file marked Draft: true is held back for %q", why)
+	}
+	if why := HeldBack(map[string]any{"post_password": "s3cret"}); why == "" || strings.Contains(why, "s3cret") {
+		t.Errorf("a file with a post password is held back for %q", why)
+	}
+}

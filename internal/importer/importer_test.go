@@ -962,3 +962,87 @@ func TestALongWordPressSlugIsANameTheStoreHolds(t *testing.T) {
 		t.Errorf("the redirects from the two old addresses: %+v", rep.Redirects)
 	}
 }
+
+// A Markdown file is held back however its mark is spelled, as a folder's
+// files are.
+//
+// One file is read a line at a time, so a comment after a value was part of
+// the value: draft: true # not yet was "true # not yet", which is not true,
+// and the file was imported. So was Draft: true, which Hugo reads as a
+// draft, and published: off, which Jekyll reads as unpublished.
+func TestAMarkdownFileHeldBackInAnotherSpellingIsNotImported(t *testing.T) {
+	for _, mark := range []string{
+		"Draft: true", "draft: true # not yet", "draft: on", "draft: YES", "published: off",
+		"Published: No", "publish: false", "Status: Draft", "publishDate: 2099-01-01",
+		"expiryDate: 2001-01-01",
+	} {
+		doc := "---\ntitle: \"Secret launch plan\"\n" + mark + "\n---\n# Secret launch plan\n\nDRAFT-MD-MARKER not for the public yet.\n"
+		rep, err := Import(Markdown, strings.NewReader(doc), now)
+		if err == nil {
+			t.Errorf("%s: imported as %d page(s)", mark, len(rep.Pages))
+			continue
+		}
+		key, _, _ := strings.Cut(mark, ":")
+		if !strings.Contains(err.Error(), key) {
+			t.Errorf("%s: the refusal does not name the line that held it back: %v", mark, err)
+		}
+	}
+	for _, mark := range []string{"draft: false # it is out", "Draft: off", "publishDate: 2001-01-01",
+		"expiryDate: 2099-01-01", "status: open"} {
+		doc := "---\ntitle: A post\n" + mark + "\n---\nWords.\n"
+		if _, err := Import(Markdown, strings.NewReader(doc), now); err != nil {
+			t.Errorf("%s: refused: %v", mark, err)
+		}
+	}
+}
+
+// A list of pages from a headless system leaves out the ones it marks as
+// not published, as every other import does.
+//
+// A JSON list is what such a system writes, each page with its own state
+// beside its words: "status": "draft", "draft": true. Those were fields
+// like any other, which nothing reads, and the draft was published with
+// the rest. A file this program exported, a map of names to pages, is read
+// back as it was written: its pages are held by the fields this program
+// honours, and a round trip must not lose one.
+func TestAJSONListLeavesOutThePagesItMarksAsHeld(t *testing.T) {
+	doc := `[
+	  {"title": "About", "body": "We bake."},
+	  {"title": "Launch plan", "body": "HELD-JSON-MARKER one", "status": "draft"},
+	  {"title": "Next season", "body": "HELD-JSON-MARKER two", "draft": true},
+	  {"title": "Staff only", "body": "HELD-JSON-MARKER three", "visibility": "private"},
+	  {"title": "Taken down", "body": "HELD-JSON-MARKER four", "published": false}
+	]`
+	rep, err := Import(JSON, strings.NewReader(doc), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Pages) != 1 || rep.Pages[0].Name != "about" {
+		t.Errorf("the import brought %d page(s): %+v", len(rep.Pages), rep.Pages)
+	}
+	for _, p := range rep.Pages {
+		if body, _ := p.Fields["body"].(string); strings.Contains(body, "HELD-JSON-MARKER") {
+			t.Errorf("page %s holds the words of a page its source held back", p.Name)
+		}
+	}
+	// Each is named with why, so a loss is not found months later.
+	said := strings.Join(rep.Skipped, " | ")
+	for _, title := range []string{"Launch plan", "Next season", "Staff only", "Taken down"} {
+		if !strings.Contains(said, title) {
+			t.Errorf("nothing says %q was left out: %s", title, said)
+		}
+	}
+	// A list of nothing but held pages is refused, saying why.
+	if _, err := Import(JSON, strings.NewReader(`[{"title": "Launch plan", "body": "x", "draft": true}]`), now); err == nil ||
+		!strings.Contains(err.Error(), "draft") {
+		t.Errorf("a list holding only a draft: %v", err)
+	}
+
+	// This program's own export keeps every page it wrote, whatever its
+	// fields are called.
+	own := `{"launch": {"title": "Launch plan", "body": "Words.", "status": "draft", "draft": true}}`
+	rep, err = Import(JSON, strings.NewReader(own), now)
+	if err != nil || len(rep.Pages) != 1 || rep.Pages[0].Fields["status"] != "draft" || rep.Pages[0].Fields["draft"] != true {
+		t.Errorf("an export read back lost a page or its fields: %+v %v", rep, err)
+	}
+}

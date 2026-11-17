@@ -523,7 +523,61 @@ func importJSON(body []byte, now time.Time) (*Report, error) {
 	if err != nil {
 		return nil, err
 	}
-	return jsonReport(c), nil
+	rep := jsonReport(c)
+	if strings.HasPrefix(strings.TrimSpace(string(body)), "[") {
+		if err := leaveOutHeld(rep); err != nil {
+			return nil, err
+		}
+	}
+	return rep, nil
+}
+
+// leaveOutHeld takes out of a list of pages the ones their source marks as
+// not published, and says which.
+//
+// A list is what a headless system writes, each page with its own state
+// beside its words: "status": "draft", "draft": true, "published": false.
+// Those were fields like any other, which nothing reads, so a draft was
+// imported as a page and published with the rest, as a WordPress draft and
+// a Markdown one were. They are the marks a Markdown file's front matter is
+// read for (webimport.HeldBack).
+//
+// A map of names to pages is not asked: it is what this program exports,
+// its pages are held by the fields this program honours (starts,
+// members_only), and reading one back must not lose a page for what a
+// field of its own happens to be called.
+func leaveOutHeld(rep *Report) error {
+	kept := rep.Pages[:0]
+	held, why := 0, ""
+	for _, p := range rep.Pages {
+		mark := webimport.HeldBack(p.Fields)
+		if mark == "" {
+			kept = append(kept, p)
+			continue
+		}
+		title := str(p.Fields["title"])
+		if title == "" {
+			title = p.Name
+		}
+		rep.Skipped = append(rep.Skipped, fmt.Sprintf(
+			"%q — held back by its source (%s), and an import does not make it public",
+			title, mark))
+		held, why = held+1, mark
+	}
+	rep.Pages = kept
+	if held == 0 {
+		return nil
+	}
+	if len(rep.Pages) == 0 {
+		return fmt.Errorf("no importable pages found: all %d are held back by "+
+			"their source (the last by %s), and an import does not make public "+
+			"what its source did not", held, why)
+	}
+	rep.Notes = append(rep.Notes, fmt.Sprintf(
+		"%d page(s) their source held back were not imported (listed above): "+
+			"what an import brings is published with the rest of the site. To "+
+			"bring one, take the mark that holds it back out of the file.", held))
+	return nil
 }
 
 // ghostWithoutDB says whether body is a Ghost export written with no "db"
