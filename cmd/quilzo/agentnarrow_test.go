@@ -645,3 +645,126 @@ func TestTakingARunOnIsBoundedByItsStarter(t *testing.T) {
 		t.Errorf("a run kept with no bound was narrowed: %v %+v", err, c)
 	}
 }
+
+// A run made by running another again keeps what bounded it, in its own
+// record, so whoever takes the new run on is held to it as well.
+//
+// Running a run again makes a new record, and that record kept neither
+// its starter's reach nor that they could only read. So dana, an author
+// confined to /about, ran her waiting run again, sam let the new run's
+// read go ahead, and it wrote the returns page; and a run a read-only
+// token ran again wrote a page once sam answered it. The run taken on was
+// held to its starter; the same run run again and then taken on was held
+// to nobody.
+func TestARunRunAgainKeepsWhatBoundIt(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := demoStore(t)
+	declaredAutonomy(t, root)
+	m := asker("tidy")
+	m.AskFirst = []string{"list_pages"}
+	m.Budget.Tools = 4
+	if err := declareAgent(root, m, true, true, asAdmin("sam")); err != nil {
+		t.Fatal(err)
+	}
+	// Reads the pages first, then writes the returns page and the about
+	// page, then is done.
+	var mu sync.Mutex
+	after := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		choice := `{"op":"list_pages"}`
+		if !strings.Contains(string(b), "Nothing has been done yet") {
+			mu.Lock()
+			after++
+			switch after {
+			case 1:
+				choice = `{"op":"write_page","input":{"page":"returns","fields":` +
+					`{"title":"Not hers","body":"Returns are not hers to change.","updated":"2026-11-01"}}}`
+			case 2:
+				choice = `{"op":"write_page","input":{"page":"about","fields":{"title":"Hers"}}}`
+			default:
+				choice = `{"op":"done","say":"written"}`
+			}
+			mu.Unlock()
+		}
+		out, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{
+			"message": map[string]any{"role": "assistant", "content": choice}}}})
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(out)
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("QUILZO_MODEL_URL", srv.URL+"/v1")
+	t.Setenv("QUILZO_MODEL", "stand-in")
+	t.Setenv("QUILZO_MODEL_KEY", "")
+
+	// again starts a run as its starter, runs it again as them from its
+	// beginning, and has sam take the new run on: the new run's record,
+	// and the pages it then wrote.
+	again := func(starter *Caller) (agent.Record, map[string]bool) {
+		t.Helper()
+		mu.Lock()
+		after = 0
+		mu.Unlock()
+		ctx := context.Background()
+		id, out, err := runAgentKept(ctx, root, "tidy", "tidy the pages", true, starter)
+		if w := out.Trace.Waiting; err != nil || w == nil || w.Action.Op != "list_pages" {
+			t.Fatalf("the run did not wait to read: %v\n%s", err, describeRun(out.Trace))
+		}
+		newID, err := replayAgentRun(ctx, root, id, 0, starter)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rec, err := loadAgentRun(root, newID)
+		if err != nil || rec.Trace.Waiting == nil {
+			t.Fatalf("the run made again did not wait to read: %v\n%s", err, describeRun(rec.Trace))
+		}
+		done, _ := continueAgentRun(ctx, root, newID, &agent.Verdict{N: rec.Trace.Waiting.N, Approve: true}, asAdmin("sam"))
+		wrote := map[string]bool{}
+		for _, st := range done.Trace.Steps {
+			if st.Action.Op == "write_page" && st.Allowed && st.Err == "" {
+				page, _ := st.Action.Input["page"].(string)
+				wrote[page] = true
+			}
+		}
+		return rec, wrote
+	}
+
+	dana := human("dana")
+	dana.Role, dana.Scope = auth.RoleAuthor, "/about"
+	rec, wrote := again(dana)
+	if rec.Bound == nil || rec.Bound.Scope != "/about" || rec.Bound.Role != string(auth.RoleAuthor) {
+		t.Errorf("a run dana ran again does not keep her reach: %+v", rec.Bound)
+	}
+	if wrote["returns"] || !wrote["about"] {
+		t.Errorf("a run dana ran again, taken on by sam, wrote %v: only /about is hers", wrote)
+	}
+
+	reads := asAdmin("rae")
+	reads.Limits.ReadOnly = true
+	rec, wrote = again(reads)
+	if !rec.ReadOnly {
+		t.Error("a run a read-only caller ran again does not keep that they could only read")
+	}
+	if len(wrote) != 0 {
+		t.Errorf("a run a read-only caller ran again, taken on by sam, wrote %v", wrote)
+	}
+
+	// Somebody wider running a confined run again is held to it too, and
+	// the new record says so: sam cannot widen dana's run by running it
+	// again and having it taken on.
+	mu.Lock()
+	after = 0
+	mu.Unlock()
+	id, _, err := runAgentKept(context.Background(), root, "tidy", "tidy the pages", true, dana)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newID, err := replayAgentRun(context.Background(), root, id, 0, asAdmin("sam"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec, err := loadAgentRun(root, newID); err != nil || rec.Bound == nil || rec.Bound.Scope != "/about" ||
+		rec.Bound.Role != string(auth.RoleAuthor) || rec.By != "sam" {
+		t.Errorf("dana's run, run again by sam, is kept as %+v by %s: %v", rec.Bound, rec.By, err)
+	}
+}

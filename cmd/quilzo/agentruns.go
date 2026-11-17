@@ -506,9 +506,20 @@ func prepareReplay(root, id string, n int, caller *Caller) (*keptRun, agent.Reco
 	// record says: what it sends is decided as in a run a person starts,
 	// and not held as in one nobody started (agentsends.go).
 	from.Trigger = ""
+	// It goes on reading only, and no further than whoever started the
+	// run it is made from reached, as that run taken on does
+	// (executeAgentFrom), and its own record keeps both. The new record
+	// kept neither, so a run dana started confined to /about and ran
+	// again, or one a read-only token ran again, was bounded by nobody
+	// once it waited: sam answered it, and it wrote wherever sam may.
+	within, err := caller.within(prior.Bound)
+	if err != nil {
+		return nil, prior, err
+	}
 	k := &keptRun{root: root, rec: agent.Record{ID: newID, Agent: prior.Agent,
 		Goal: prior.Goal, By: caller.Name, Model: prior.Model, Started: started,
-		From: fmt.Sprintf("%s@%d", id, n)}}
+		From:     fmt.Sprintf("%s@%d", id, n),
+		ReadOnly: prior.ReadOnly || caller.Limits.ReadOnly, Bound: within.bound()}}
 	return k, from, nil
 }
 
