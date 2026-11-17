@@ -235,3 +235,35 @@ func TestLLMsTxtListsWhatTheSitemapLists(t *testing.T) {
 		}
 	}
 }
+
+// A Markdown copy is never read as a page.
+//
+// The copy carries a page's words as they were written, markup included,
+// and that is safe for one reason: it is sent as text/markdown and the
+// browser is told not to guess otherwise, so nothing in it runs. It is also
+// one document for every reader, drawn with no request arguments, so
+// nothing a request carries is written into it. The code scanner cannot see
+// a header that a helper sets, and is told this in
+// .github/codeql/extensions; this test is what holds that claim true.
+func TestAMarkdownCopyIsNeverReadAsAPage(t *testing.T) {
+	st := published(t, map[string]any{
+		"index": map[string]any{"title": "Home", "body": "Welcome."},
+		"about": map[string]any{"title": "About", "body": "An example: <script>alert(1)</script>."},
+	})
+	for _, path := range []string{"/about.md", "/about.md?q=%3Cimg+src%3Dx+onerror%3Dzqone%3E&page=zqtwo"} {
+		w := get(st, path, nil)
+		h := w.Header()
+		if w.Code != 200 || h.Get("Content-Type") != "text/markdown; charset=utf-8" ||
+			h.Get("X-Content-Type-Options") != "nosniff" {
+			t.Fatalf("%s: %d, sent as %q with X-Content-Type-Options %q", path, w.Code,
+				h.Get("Content-Type"), h.Get("X-Content-Type-Options"))
+		}
+		md := w.Body.String()
+		if !strings.Contains(md, "alert(1)") {
+			t.Fatalf("%s: the copy does not carry the page's words:\n%s", path, md)
+		}
+		if strings.Contains(md, "zqone") || strings.Contains(md, "zqtwo") {
+			t.Fatalf("%s: the copy carries what the request asked with:\n%s", path, md)
+		}
+	}
+}
