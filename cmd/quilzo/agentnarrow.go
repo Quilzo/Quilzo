@@ -145,11 +145,17 @@ func boundOf(m agent.Manifest, c *Caller) agent.Manifest {
 		if m.Shell != nil || holdsShell(m) {
 			b.Shell = m.Shell.ReadOnlyCopy()
 		}
-		// And its desktop the same: the screen read and looked at, and
-		// nothing typed, pressed or keyed into an app. The cell has no
-		// host to read only from, as the browser does, so the acts are
-		// what is taken away; without this, a read-only token's run typed
-		// into the desktop and pressed its buttons as any other run did.
+	}
+	// And its desktop the same, for any caller who cannot write: the
+	// screen read and looked at, and nothing typed, pressed or keyed into
+	// an app. The cell has no host to read only from, as the browser does,
+	// so the acts are what is taken away; without this, a read-only
+	// token's run typed into the desktop and pressed its buttons as any
+	// other run did. By what the caller may do and not by read-only alone:
+	// a token issued as a reader is one that only reads too, and its run
+	// lost its writes here and its browser's sends (boundManifest) while
+	// it went on typing and pressing.
+	if autonomy == agent.AutonomyPropose {
 		b.Capabilities = slices.DeleteFunc(slices.Clone(b.Capabilities), desktopActs)
 	}
 	// A caller confined to part of the site confines the agent to it: a

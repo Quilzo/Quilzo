@@ -768,3 +768,42 @@ func TestARunRunAgainKeepsWhatBoundIt(t *testing.T) {
 		t.Errorf("dana's run, run again by sam, is kept as %+v by %s: %v", rec.Bound, rec.By, err)
 	}
 }
+
+// A caller who may only read by their role, a reader, does not work the
+// desktop either, and nor does an agent whose own standing is a reader's.
+//
+// Read-only was read from the credential's limit alone. A token issued as
+// a reader, which no declaration turns into a draft, ran an agent whose
+// browser and workspace only read (boundManifest) and whose desktop was
+// still typed into and pressed.
+func TestACallerWhoOnlyReadsByRoleDoesNotWorkTheDesktop(t *testing.T) {
+	m := wideAgent()
+	m.Capabilities = append(m.Capabilities, agent.CellCapabilities[:]...)
+	m.Cell = &agent.Cell{Pictures: true}
+	got := narrowedBy(m, asToken(auth.RoleReader, auth.Scope{}))
+	held := map[string]bool{}
+	for _, c := range got.Capabilities {
+		held[c] = true
+	}
+	for _, op := range []string{"desktop_type", "desktop_press", "desktop_key"} {
+		if held[op] {
+			t.Errorf("a reader's run holds %s", op)
+		}
+	}
+	for _, op := range []string{"desktop_read", "desktop_look"} {
+		if !held[op] {
+			t.Errorf("a reader's run lost %s, which only reads", op)
+		}
+	}
+	// An author may write, and their run keeps the desktop as declared.
+	got = narrowedBy(m, asToken(auth.RoleAuthor, auth.Scope{}))
+	acts := 0
+	for _, c := range got.Capabilities {
+		if agent.IsDesktop(c) {
+			acts++
+		}
+	}
+	if acts != len(agent.CellCapabilities) {
+		t.Errorf("an author's run holds %d of the desktop's %d actions: %v", acts, len(agent.CellCapabilities), got.Capabilities)
+	}
+}
