@@ -417,9 +417,18 @@ func (l *Library) Open(id string) (media.File, *os.File, error) {
 // one. replaceAlt is the uploader asking, explicitly, for their description
 // to replace the one it has, which is the only change an upload of the same
 // bytes makes.
+//
+// Here means the bytes as well as the record. A record whose bytes are gone
+// (a folder copied without them, a file removed by hand) was taken for a
+// file already here, so the upload that used to put a broken picture back
+// stored nothing and said it was kept as it was. Such an upload is stored as
+// a new file is, which is what puts the bytes back.
 func (l *Library) Arriving(f media.File, replaceAlt bool) (arriving, was media.File, here bool) {
 	was, err := l.Stat(f.ID)
 	if err != nil {
+		return f, media.File{}, false
+	}
+	if _, err := os.Stat(l.path(f.ID)); err != nil {
 		return f, media.File{}, false
 	}
 	arriving = was
