@@ -228,6 +228,13 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		Keywords: []string{"read", "get", "page", "content", "fields"},
 	}, func(a map[string]any) (any, error) {
 		name, _ := a["page"].(string)
+		// No page is the call's mistake, not a page that is missing. Left
+		// out, or given as "" or null, it was read as the empty name, and an
+		// agent was told there is no page "" and concluded the content was
+		// missing, as it had been told for a page given as a number.
+		if strings.TrimSpace(name) == "" {
+			return nil, &mcp.ArgumentError{Reason: "read_page needs arguments.page, the name of the page to read"}
+		}
 		if err := authorise(root, caller, auth.ActView, pageResource(name)); err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
