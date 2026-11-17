@@ -12,7 +12,9 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/experiment"
 	"github.com/quilzo/quilzo/internal/i18n"
 	"github.com/quilzo/quilzo/internal/personalise"
@@ -256,5 +258,88 @@ func TestSearchEnginesAreToldOfATranslationARuleServes(t *testing.T) {
 	indexNowAfterPublish(ctx, root)
 	if !slices.Equal(got, []string{"https://shop.example/fr/returns", "https://shop.example/returns"}) {
 		t.Fatalf("told %v; the translation is a page of its own, and returns-phone is a variant of /returns", got)
+	}
+}
+
+// Records live in the store beside the pages, under data, which is not a
+// page. A record change was sent as https://SITE/data, which the site
+// answers 404, and the pages that did change were not sent at all: the
+// product's own page and every page listing its collection kept the old
+// price in the engines. A changed record is sent as its detail page, if a
+// listing keeps it, and as each page showing a listing over its collection;
+// a part of the store that is not a page is never an address.
+func TestSearchEnginesAreToldOfTheProductPageARecordChanged(t *testing.T) {
+	root := demoStore(t)
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var m struct {
+			URLs []string `json:"urlList"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&m)
+		got = append(got, m.URLs...)
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer srv.Close()
+	was := indexNowEndpoint
+	indexNowEndpoint = srv.URL
+	defer func() { indexNowEndpoint = was }()
+
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Publish(s, ""); err != nil {
+		t.Fatal(err)
+	}
+	setConfigs(t, root, map[string]string{"site.indexnow": "true", "site.base_url": "https://shop.example"})
+	ctx := context.Background()
+	if said := indexNowAfterPublish(ctx, root); said != "" {
+		t.Fatalf("the first publish told: %q", said)
+	}
+
+	tree, err := draftTree(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recs, _, err := collection.List(s, tree, "products", collection.Query{Limit: collection.MaxLimit})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var walnut *collection.Record
+	for i := range recs {
+		if recs[i].Fields["slug"] == "walnut-ink" {
+			walnut = &recs[i]
+		}
+	}
+	if walnut == nil {
+		t.Fatal("the demonstration has no walnut ink")
+	}
+	walnut.Fields["price"] = 1350.0
+	walnut.Fields["price_display"] = "£13.50"
+	if err := commitTree(s, "test", func(base string) (string, string, error) {
+		next, _, err := collection.Put(s, base, "products", *walnut, time.Now(), nil)
+		return next, "a new price", err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Publish(s, ""); err != nil {
+		t.Fatal(err)
+	}
+	indexNowAfterPublish(ctx, root)
+
+	for _, want := range []string{
+		"https://shop.example/product/walnut-ink",
+		"https://shop.example/shop",
+		"https://shop.example/available",
+	} {
+		if !slices.Contains(got, want) {
+			t.Errorf("not told of %s: %v", want, got)
+		}
+	}
+	for _, u := range got {
+		if u == "https://shop.example/data" || u == "https://shop.example/stockists" ||
+			strings.HasPrefix(u, "https://shop.example/product/") && u != "https://shop.example/product/walnut-ink" {
+			t.Errorf("told of %s, which did not change or is not a page: %v", u, got)
+		}
 	}
 }

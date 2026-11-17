@@ -15,16 +15,20 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/egress"
 	"github.com/quilzo/quilzo/internal/experiment"
 	"github.com/quilzo/quilzo/internal/i18n"
+	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/personalise"
 	"github.com/quilzo/quilzo/internal/public"
+	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/seo"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
@@ -93,8 +97,10 @@ type indexNowState struct {
 // (public.Listed), so not a variant that the running tests in exps or the
 // enabled rules in rules serve at another page's address (either may be
 // nil); the home page, named index, is never one, nor is a translation in
-// one of the site's languages (locales, nil for a site in one).
-func indexNowChanged(s *store.Store, base, index, from, to string, exps *experiment.Set, rules *personalise.Set, locales *i18n.Config) ([]string, error) {
+// one of the site's languages (locales, nil for a site in one). A changed
+// record is sent as its own page and as the pages showing a listing over its
+// collection, by the listings in listings (nil for none).
+func indexNowChanged(s *store.Store, base, index, from, to string, exps *experiment.Set, rules *personalise.Set, locales *i18n.Config, listings *listing.Set) ([]string, error) {
 	changes, err := site.Diff(s, from, to)
 	if err != nil {
 		return nil, err
@@ -105,17 +111,42 @@ func indexNowChanged(s *store.Store, base, index, from, to string, exps *experim
 	}
 	changed := map[string]bool{}
 	uses := site.BlockUses(pages)
+	var data site.Change
 	for _, c := range changes {
+		// Records live under data, beside the pages, and a tree there is not
+		// a page: data was sent as https://SITE/data, which the site answers
+		// 404, while the pages its records appear on were never sent.
+		if (c.Before != "" && s.IsTree(c.Before)) || (c.After != "" && s.IsTree(c.After)) {
+			if c.Path == "data" {
+				data = c
+			}
+			continue
+		}
 		changed[c.Path] = true
 		for _, u := range uses[c.Path] {
 			changed[u] = true
 		}
 	}
 	visible := site.Visible(pages, time.Now())
-	variants := public.Variants(exps, rules, visible, index, locales)
 	var out []string
+	if data.Path != "" && listings != nil {
+		pagesOf, records, err := indexNowRecords(s, base, from, to, data, visible, listings)
+		if err != nil {
+			return nil, err
+		}
+		for _, name := range pagesOf {
+			changed[name] = true
+		}
+		out = append(out, records...)
+	}
+	variants := public.Variants(exps, rules, visible, index, locales)
 	for name := range changed {
 		body, live := visible[name]
+		if _, stands := render.DetailOf(pages[name]); stands {
+			// A page that stands for records is no address of its own, as
+			// the sitemap says: each record's page is.
+			continue
+		}
 		if live && !public.Listed(base, name, index, body, variants) {
 			continue
 		}
@@ -128,6 +159,129 @@ func indexNowChanged(s *store.Store, base, index, from, to string, exps *experim
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+// indexNowRecords is what a change to the records between two commits
+// changed on the site: the pages showing a listing over a changed
+// collection, and the address of each changed record a detail page's
+// listing keeps, as the sitemap lists it. data is the change to the store's
+// data tree.
+func indexNowRecords(s *store.Store, base, from, to string, data site.Change, visible map[string]any, listings *listing.Set) (pages, urls []string, err error) {
+	collections := func(oid string) (map[string]string, error) {
+		if oid == "" {
+			return map[string]string{}, nil
+		}
+		return s.GetTree(oid)
+	}
+	before, err := collections(data.Before)
+	if err != nil {
+		return nil, nil, err
+	}
+	after, err := collections(data.After)
+	if err != nil {
+		return nil, nil, err
+	}
+	touched := map[string]bool{}
+	for name, oid := range after {
+		if before[name] != oid {
+			touched[name] = true
+		}
+	}
+	for name := range before {
+		if _, kept := after[name]; !kept {
+			touched[name] = true
+		}
+	}
+	if len(touched) == 0 {
+		return nil, nil, nil
+	}
+	treeOf := func(commit string) (string, error) {
+		c, err := s.GetCommit(commit)
+		if err != nil {
+			return "", err
+		}
+		return c.Tree, nil
+	}
+	fromTree, err := treeOf(from)
+	if err != nil {
+		return nil, nil, err
+	}
+	toTree, err := treeOf(to)
+	if err != nil {
+		return nil, nil, err
+	}
+	// The records each touched collection changed, by id, read once.
+	type changes struct {
+		now *collection.Index
+		ids map[string]bool
+	}
+	read := map[string]*changes{}
+	changedIn := func(name string) (*changes, error) {
+		if c, ok := read[name]; ok {
+			return c, nil
+		}
+		was, err := collection.Build(s, fromTree, name, nil)
+		if err != nil {
+			return nil, err
+		}
+		now, err := collection.Build(s, toTree, name, was)
+		if err != nil {
+			return nil, err
+		}
+		old := map[string]collection.Record{}
+		for _, r := range was.Records {
+			old[r.ID] = r
+		}
+		c := &changes{now: now, ids: map[string]bool{}}
+		for _, r := range now.Records {
+			// By what the record says: an identical re-import restamps it,
+			// and no page reads differently for that.
+			if o, ok := old[r.ID]; !ok || !reflect.DeepEqual(o.Fields, r.Fields) {
+				c.ids[r.ID] = true
+			}
+		}
+		read[name] = c
+		return c, nil
+	}
+
+	names := make([]string, 0, len(visible))
+	for name := range visible {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		body := visible[name]
+		if d, ok := render.DetailOf(body); ok {
+			l, known := listings.Get(d.Listing)
+			if !d.Declared() || !known || !touched[l.Collection] {
+				continue
+			}
+			c, err := changedIn(l.Collection)
+			if err != nil {
+				return nil, nil, err
+			}
+			rows, _, err := listing.Every(l, c.now, nil, MaxIndexNow)
+			if err != nil {
+				continue
+			}
+			for _, row := range rows {
+				id, _ := row["id"].(string)
+				key, _ := row[d.Key].(string)
+				if !c.ids[id] || key == "" || strings.ContainsAny(key, "/?#") {
+					continue
+				}
+				urls = append(urls, base+"/"+name+"/"+url.PathEscape(key))
+			}
+			continue
+		}
+		for _, ln := range listing.On(body) {
+			if l, known := listings.Get(ln); known && touched[l.Collection] {
+				pages = append(pages, name)
+				break
+			}
+		}
+	}
+	return pages, urls, nil
 }
 
 // indexNowAfterPublish tells IndexNow what changed since it was last told,
@@ -171,7 +325,8 @@ func indexNowAfterPublish(ctx context.Context, root string) string {
 	exps, _ := experiment.Load(experimentsPath(root))
 	rules, _ := personalise.Load(personalisePath(root))
 	locales, _ := loadLocales(root)
-	urls, err := indexNowChanged(s, base, "index", st.Commit, live, exps, rules, locales)
+	listings, _ := loadListings(root)
+	urls, err := indexNowChanged(s, base, "index", st.Commit, live, exps, rules, locales, listings)
 	if err != nil || len(urls) == 0 {
 		save()
 		return ""
