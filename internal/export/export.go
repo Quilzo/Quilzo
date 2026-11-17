@@ -625,6 +625,7 @@ func exportWXR(s Site, now time.Time) ([]File, error) {
 	b.WriteString("  <link>" + xmlEscape(s.BaseURL) + "</link>\n")
 	b.WriteString("  <wp:wxr_version>1.2</wp:wxr_version>\n")
 
+	at := wxrPlaces(s)
 	for i, name := range names(s) {
 		fields, _ := s.Pages[name].(map[string]any)
 		title, _ := fields["title"].(string)
@@ -651,9 +652,12 @@ func exportWXR(s Site, now time.Time) ([]File, error) {
 		b.WriteString(fmt.Sprintf("    <wp:post_id>%d</wp:post_id>\n", i+1))
 		b.WriteString("    <wp:post_date>" +
 			when.UTC().Format("2006-01-02 15:04:05") + "</wp:post_date>\n")
-		b.WriteString("    <wp:post_name>" + xmlEscape(name) + "</wp:post_name>\n")
+		b.WriteString("    <wp:post_name>" + xmlEscape(at[name].slug) + "</wp:post_name>\n")
 		b.WriteString("    <wp:status>publish</wp:status>\n")
-		b.WriteString("    <wp:post_type>post</wp:post_type>\n")
+		if at[name].parent > 0 {
+			b.WriteString(fmt.Sprintf("    <wp:post_parent>%d</wp:post_parent>\n", at[name].parent))
+		}
+		b.WriteString("    <wp:post_type>page</wp:post_type>\n")
 
 		// Everything the WXR shape has no field for goes into postmeta rather
 		// than being dropped. A lossy export is the thing this package exists
@@ -694,6 +698,18 @@ func exportWXR(s Site, now time.Time) ([]File, error) {
 	}
 
 	b.WriteString("</channel>\n</rss>\n")
+
+	// A page WordPress puts at another address is redirected to it, beside
+	// the redirects the site already had: one at docs/v1, with no page at
+	// docs, is the page docs-v1 there. The home page is never redirected.
+	s.Redirects = append([]Redirect(nil), s.Redirects...)
+	for _, name := range names(s) {
+		if name == "index" || strings.TrimSuffix(at[name].path, "/") == "/"+name {
+			continue
+		}
+		s.Redirects = append(s.Redirects, Redirect{From: "/" + name, To: at[name].path, Permanent: true,
+			Note: "where WordPress puts this page"})
+	}
 
 	out := []File{{Path: "content/wordpress-export.xml", Body: []byte(b.String())}}
 	out = append(out, readme(WXR, s))
@@ -763,6 +779,15 @@ func readme(f Format, s Site) File {
 	case WXR:
 		b.WriteString("`content/wordpress-export.xml` is a WordPress WXR file.\n\n")
 		b.WriteString("In WordPress: Tools → Import → WordPress, then upload it.\n\n")
+		b.WriteString("Pages are WordPress pages, a page under another a child page\n")
+		b.WriteString("of it, and the blog's posts are posts. With Settings →\n")
+		b.WriteString("Permalinks set to \"Post name\", a page keeps its address,\n")
+		b.WriteString("and one WordPress cannot keep is in `redirects.json`.\n\n")
+		b.WriteString("Every other collection is a custom post type named after it\n")
+		b.WriteString("(products, for one). WordPress skips an item of a type it\n")
+		b.WriteString("does not know, so register those types first, with a plugin\n")
+		b.WriteString("or your theme, then import. Their addresses are WordPress's\n")
+		b.WriteString("to give, and are not redirected here.\n\n")
 		b.WriteString("Fields with no WXR equivalent are carried as postmeta\n")
 		b.WriteString("rather than dropped.\n")
 	}
@@ -775,8 +800,9 @@ func readme(f Format, s Site) File {
 	}
 
 	b.WriteString("\n## Media\n\n")
-	b.WriteString("Files referenced by content are not included here; they are\n")
-	b.WriteString("exported separately so this file stays small enough to read.\n")
+	b.WriteString("Files referenced by content are not included here, so this\n")
+	b.WriteString("stays small enough to read: a picture is named by its id in\n")
+	b.WriteString("the media library. `quilzo backup create` carries the library.\n")
 
 	b.WriteString("\n---\n\nEverything in this export is a plain file. There is no\n")
 	b.WriteString("archive to unpack and no manifest to parse: `ls` and `cat` are\n")
@@ -867,7 +893,75 @@ func exportROCrate(s Site, now time.Time) ([]File, error) {
 		Path: rocrate.MetadataFile, Body: append(body, '\n')}), nil
 }
 
-// wxrRecord writes one collection record as a WordPress custom-post-type item.
+// wxrPlace is where a page goes in WordPress: its slug, the item number of
+// the page it is under (0 for none), and the address that makes.
+type wxrPlace struct {
+	slug   string
+	parent int
+	path   string
+}
+
+// wxrPlaces is where each page goes in WordPress, by its name.
+//
+// Every page went out as a blog post with its name as its slug, and a slug
+// WordPress holds has no slash or dot and no capital: tr/about came in at
+// another address, with no redirect. A page under another that is in the
+// export is a child page of it, which WordPress puts at the same address
+// (/tr/about/, with permalinks set to the post's name); any other has its
+// name as one slug (docs/v1 is docs-v1). Item numbers are the order of
+// names, as the items are written.
+func wxrPlaces(s Site) map[string]wxrPlace {
+	all := names(s)
+	id := map[string]int{}
+	for i, name := range all {
+		id[name] = i + 1
+	}
+	out := map[string]wxrPlace{}
+	taken := map[string]bool{}
+	var place func(name string) wxrPlace
+	place = func(name string) wxrPlace {
+		if p, ok := out[name]; ok {
+			return p
+		}
+		var p wxrPlace
+		under := ""
+		if i := strings.LastIndex(name, "/"); i > 0 && id[name[:i]] > 0 {
+			under = name[:i]
+			p.slug, p.parent = Slug(name[i+1:]), id[under]
+		} else {
+			p.slug = Slug(name)
+		}
+		if p.slug == "" {
+			p.slug = fmt.Sprintf("page-%d", id[name])
+		}
+		// WordPress numbers a slug taken beside it, so this does too, and
+		// the redirect says where it really went.
+		base := p.slug
+		for k := 2; taken[under+"\x00"+p.slug]; k++ {
+			p.slug = fmt.Sprintf("%s-%d", base, k)
+		}
+		taken[under+"\x00"+p.slug] = true
+		p.path = "/" + p.slug + "/"
+		if under != "" {
+			p.path = place(under).path + p.slug + "/"
+		}
+		out[name] = p
+		return p
+	}
+	for _, name := range all {
+		place(name)
+	}
+	return out
+}
+
+// wxrRecord writes one collection record as a WordPress item.
+//
+// A blog's posts are WordPress posts, which is what they are there; it
+// had them as a post type named posts, which WordPress does not have. Any
+// other collection is a custom post type named after it, which has to be
+// registered before WordPress imports it (the README says so). A record
+// with a page link of its own (its slug) keeps it, rather than going out
+// named by its id.
 func wxrRecord(coll string, r Record, id int, now time.Time) string {
 	fields := r.Fields
 	title := str(fields["title"])
@@ -890,9 +984,17 @@ func wxrRecord(coll string, r Record, id int, now time.Time) string {
 	b.WriteString(fmt.Sprintf("    <wp:post_id>%d</wp:post_id>\n", id))
 	b.WriteString("    <wp:post_date>" +
 		when.UTC().Format("2006-01-02 15:04:05") + "</wp:post_date>\n")
-	b.WriteString("    <wp:post_name>" + xmlEscape(r.ID) + "</wp:post_name>\n")
+	slug := Slug(str(fields["slug"]))
+	if slug == "" {
+		slug = r.ID
+	}
+	kind := coll
+	if coll == "posts" {
+		kind = "post"
+	}
+	b.WriteString("    <wp:post_name>" + xmlEscape(slug) + "</wp:post_name>\n")
 	b.WriteString("    <wp:status>publish</wp:status>\n")
-	b.WriteString("    <wp:post_type>" + xmlEscape(coll) + "</wp:post_type>\n")
+	b.WriteString("    <wp:post_type>" + xmlEscape(kind) + "</wp:post_type>\n")
 
 	keys := make([]string, 0, len(fields))
 	for k := range fields {
