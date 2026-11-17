@@ -14,6 +14,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/backup"
 	"github.com/quilzo/quilzo/internal/out"
+	"github.com/quilzo/quilzo/internal/posture"
 )
 
 // A command that has left Quilzo is answered with why, as a usage error,
@@ -215,6 +216,68 @@ func TestAStoreTheRoomsWroteStillOpensChecksBacksUpAndRestores(t *testing.T) {
 		if code != 0 {
 			t.Errorf("`quilzo %s` on the restored store exited %d: %s",
 				strings.Join(line, " "), code, firstLines(o+e, 6))
+		}
+	}
+}
+
+// A store still holding what rooms kept says so in the posture scan, the
+// check an operator already runs to see what a store holds.
+//
+// Nothing reads rooms/ now, so a room's retention period is no longer
+// applied and its messages can no longer be erased through Quilzo; a store
+// that kept them was silent about it, and somebody relying on the period
+// they set would go on believing it ran. The scan counts the rooms, says
+// Quilzo no longer manages them, and that the directory is theirs to move
+// or delete by hand. It removes nothing itself.
+func TestRoomsLeftInAStoreAreReported(t *testing.T) {
+	isolateToken(t)
+	root := t.TempDir()
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	if f := scanFinding(Observe(root, t.TempDir(), posture.ServerFacts{}), "upkeep.rooms-left"); f != nil {
+		t.Errorf("a store rooms never wrote to is reported: %+v", f)
+	}
+
+	fixture := filepath.Join("testdata", "oldrooms", "rooms")
+	kept := map[string][]byte{}
+	err := filepath.WalkDir(fixture, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, _ := filepath.Rel(fixture, path)
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		to := filepath.Join(root, "rooms", rel)
+		if err := os.MkdirAll(filepath.Dir(to), 0o700); err != nil {
+			return err
+		}
+		kept[to] = body
+		return os.WriteFile(to, body, 0o600)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	f := scanFinding(Observe(root, t.TempDir(), posture.ServerFacts{}), "upkeep.rooms-left")
+	if f == nil {
+		t.Fatal("the scan says nothing of the rooms the store still holds")
+	}
+	said := f.Title + " " + f.Detail + " " + f.Fix
+	for _, want := range []string{"1 room", "no longer manages", "retention", "by hand"} {
+		if !strings.Contains(said, want) {
+			t.Errorf("the finding does not say %q: %s", want, said)
+		}
+	}
+	got, _ := humanOutput(t, func() error { return postureScan(root, []string{"--templates", t.TempDir()}) })
+	if !strings.Contains(got, f.Title) {
+		t.Errorf("`posture scan` does not show it:\n%s", got)
+	}
+	for path, body := range kept {
+		if now, err := os.ReadFile(path); err != nil || !bytes.Equal(now, body) {
+			t.Errorf("the scan changed or removed %s", path)
 		}
 	}
 }

@@ -90,7 +90,7 @@ func checkedSet(root string, args []string) error {
 		"how long until this page is wanted again, e.g. 168h; "+
 			"omit for the site's own answer")
 	note := fs.String("note", "", "what the next person should know")
-	by := fs.String("by", "", "who checked it")
+	by := fs.String("by", "", "who checked it, at a console nobody signs in to")
 	rest, flags := leadingArgs(args, 1)
 	if err := parseFlags(fs, flags, &rest, 1); err != nil {
 		return err
@@ -102,8 +102,25 @@ func checkedSet(root string, args []string) error {
 	page := rest[0]
 
 	who := strings.TrimSpace(*by)
-	if who == "" {
-		who = resolveCaller(root, "").Name
+	caller := resolveCaller(root, "")
+	switch {
+	case caller.Verified:
+		// The signed-in caller, whatever the flag says, as a note is its
+		// signed-in writer's (noteAdd). The flag was taken as who checked
+		// the page whenever it was given, so an author confirmed a page in
+		// the publisher's name with "Legal has signed this off" for its
+		// note, and `checked list` and the admin showed both as hers; the
+		// admin's own button records whoever is signed in. Refused rather
+		// than overridden, so the person who typed another name is told it
+		// was not used.
+		if who != "" && !strings.EqualFold(who, caller.Name) {
+			return fmt.Errorf("you are signed in as %s, so a check you record is %s's; "+
+				"--by names who checked it only at a console nobody signs in to",
+				onOneLine(caller.Name), onOneLine(caller.Name))
+		}
+		who = caller.Name
+	case who == "":
+		who = caller.Name
 	}
 	if who == "" {
 		return fmt.Errorf("who checked it? Pass --by, or sign in")
@@ -127,7 +144,7 @@ func checkedSet(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	record(root, resolveCaller(root, "").auditRecord("checked.set", "/"+page,
+	record(root, caller.auditRecord("checked.set", "/"+page,
 		audit.Success, map[string]string{"by": who, "every": r.Every}))
 
 	if w.JSON(r) {
@@ -229,20 +246,27 @@ func checkedList(root string, args []string, dueOnly bool) error {
 		if checked.NeedsAttention(r.State) {
 			colour = yellow
 		}
-		w.Human("  %s%-9s%s %-28s", colour, r.State, reset, r.Page)
+		// Who checked it, whose job it is and the note are whatever
+		// somebody typed, as a note's author and text are (noteList).
+		// Printed raw, a note or an owner carrying a line break and this
+		// layout printed a second page confirmed fresh in somebody else's
+		// name, and ESC and CR rewrote what the terminal showed. The names
+		// stay on the row, and every line of the note at the note's depth.
+		w.Human("  %s%-9s%s %-28s", colour, r.State, reset, onOneLine(r.Page))
 		switch {
 		case r.At == 0:
 			w.Human("  %s—%s", dim, reset)
 		default:
 			w.Human("  %s%s by %s%s", dim,
-				time.Unix(r.At, 0).UTC().Format("2006-01-02"), r.By, reset)
+				time.Unix(r.At, 0).UTC().Format("2006-01-02"), onOneLine(r.By), reset)
 		}
 		if r.Owner != "" {
-			w.Human("  %s(%s)%s", dim, r.Owner, reset)
+			w.Human("  %s(%s)%s", dim, onOneLine(r.Owner), reset)
 		}
 		w.Human("\n")
 		if r.Note != "" {
-			w.Human("            %s%s%s\n", dim, r.Note, reset)
+			w.Human("            %s%s%s\n", dim,
+				indentedForTerminal(r.Note, "            "), reset)
 		}
 	}
 	return nil

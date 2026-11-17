@@ -708,6 +708,26 @@ func Accept(name string, body []byte, now time.Time) (File, error) {
 	return f, nil
 }
 
+// Identify says which accepted format a file would be taken as, from its
+// name and its first bytes, without reading the rest.
+//
+// Every format is recognised by a prefix (or by its extension alone), so the
+// first few hundred bytes give the answer Accept would give from the whole
+// file; Accept still has the last word, because only it verifies. This is
+// for a door that can refuse early: the studio read every upload whole into
+// memory to learn that it was not a recording, and a few large posts took
+// the process to over a gigabyte.
+func Identify(name string, head []byte) (string, Format, error) {
+	if len(head) == 0 {
+		return "", Format{}, fmt.Errorf("the file is empty")
+	}
+	ext := extensionOf(name)
+	if why := WhyRefused(ext); why != "" {
+		return "", Format{}, fmt.Errorf("%s files are not accepted. %s", ext, why)
+	}
+	return identify(ext, head)
+}
+
 // identify picks a format from the bytes, using the extension only to choose
 // which candidate to check first.
 func identify(ext string, body []byte) (string, Format, error) {

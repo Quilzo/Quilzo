@@ -179,8 +179,12 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 			if who == "" {
 				who = "-"
 			}
+			// Each name kept to its column. Who confirmed a page and
+			// whose job it is are free text, and an owner carrying tabs
+			// and a line break answered a row of its own: another page
+			// confirmed, by a name its writer chose.
 			fmt.Fprintf(&b, "%s\t%s\t%s\t%s\t%s\n",
-				r.Page, r.State, when, r.By, who)
+				oneLine(r.Page), r.State, when, oneLine(r.By), oneLine(who))
 		}
 		if b.Len() == 0 {
 			if owner != "" {
@@ -256,8 +260,14 @@ func registerContentOps(srv *mcp.Server, root string, s *store.Store, caller *Ca
 				if n.Stale(now) {
 					state += ",stale"
 				}
+				// Every column kept to its row, not the text alone. The
+				// page, the field and the author are whatever somebody
+				// typed, and a field or a page name carrying tabs and a
+				// line break printed a row of its own: a note in a
+				// colleague's name, to an agent that reads who said what
+				// from these columns.
 				fmt.Fprintf(&b, "%s\t%s\t%s\t%s\t%s\n",
-					page, n.Field, n.Author, state, oneLine(n.Text))
+					oneLine(page), oneLine(n.Field), oneLine(n.Author), state, oneLine(n.Text))
 			}
 		}
 		if b.Len() == 0 {

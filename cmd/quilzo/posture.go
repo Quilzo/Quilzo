@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"github.com/quilzo/quilzo/internal/logd"
 	"github.com/quilzo/quilzo/internal/oscal"
+	"io/fs"
 	"net"
 	"net/url"
 	"os"
@@ -344,7 +345,26 @@ func observeUpkeep(root string, st *store.Store) posture.UpkeepFacts {
 			}
 		}
 	}
+	u.LeftRooms, u.LeftRoomFiles = leftRooms(root)
 	return u
+}
+
+// leftRooms counts what a store still holds under rooms/ from before rooms
+// left Quilzo: the rooms, by the record each kept at its top level, and the
+// files in all. Read only; deciding what happens to them is the operator's.
+func leftRooms(root string) (rooms, files int) {
+	dir := filepath.Join(root, "rooms")
+	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		files++
+		if filepath.Dir(path) == dir && strings.HasSuffix(d.Name(), ".json") {
+			rooms++
+		}
+		return nil
+	})
+	return rooms, files
 }
 
 func observeContent(root, tplDir string, st *store.Store) posture.ContentFacts {

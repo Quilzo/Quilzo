@@ -5,12 +5,14 @@ package studio
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -491,5 +493,142 @@ func TestASignInSessionIsNotTakenHere(t *testing.T) {
 	}
 	if rec := post(token); rec.Code != http.StatusSeeOther {
 		t.Errorf("a token was refused: %d %s", rec.Code, rec.Body)
+	}
+}
+
+// A refused upload is refused from its first bytes, not after it has been
+// read whole into memory.
+//
+// The form spills a recording to a temporary file so that a quarter of a
+// gigabyte is not held in the heap to find out whether it parses, and the
+// handler then read the spilled file whole with io.ReadAll anyway: one
+// 200 MB upload that was not a recording took the studio from 45 MB to
+// 461 MB, and three at once to 1.28 GB.
+func TestARefusedUploadIsNotReadIntoMemory(t *testing.T) {
+	srv, secret := wired(t)
+	const size = 96 << 20
+	payload := append([]byte("not any format at all"), make([]byte, size)...)
+	body, ct := oneRecording(t, "clip.webm", payload)
+	payload = nil
+
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	rec := signedIn(t, srv, secret, "/upload", body, ct)
+	runtime.ReadMemStats(&after)
+	if rec.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("the upload answered %d: %s", rec.Code, rec.Body.String())
+	}
+	// The multipart parse keeps up to eight megabytes in memory before it
+	// spills, and growing that buffer allocates a few times over (more under
+	// the race detector); that is bounded whatever the file's size. Reading
+	// the file whole allocates more than the file, so three quarters of it
+	// is the line between the two.
+	if got := after.TotalAlloc - before.TotalAlloc; got > size*3/4 {
+		t.Errorf("refusing a %d MB upload allocated %d MB", size>>20, got>>20)
+	}
+}
+
+// Only so many recordings are held in memory at once. A recording that
+// parses is read whole to be filed, so without a bound a handful of
+// concurrent uploads could take the host's memory between them; a request
+// that cannot get a turn before it gives up is told so, and nothing is stored.
+func TestOnlySoManyRecordingsAreReadAtOnce(t *testing.T) {
+	srv, secret := wired(t)
+	for i := 0; i < cap(recordingsInMemory); i++ {
+		recordingsInMemory <- struct{}{}
+	}
+	defer func() {
+		for i := 0; i < cap(recordingsInMemory); i++ {
+			<-recordingsInMemory
+		}
+	}()
+	body, ct := oneRecording(t, "clip.webm", webmBytes())
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	req := httptest.NewRequest(http.MethodPost, "/upload", body).WithContext(ctx)
+	req.Header.Set("Content-Type", ct)
+	req.AddCookie(&http.Cookie{Name: CookieName, Value: secret})
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("an upload with no turn answered %d: %s", rec.Code, rec.Body.String())
+	}
+	lib, _ := srv.Library()
+	if files, _ := lib.List(); len(files) != 0 {
+		t.Errorf("%d file(s) were stored without a turn", len(files))
+	}
+}
+
+// A recording that is taken is read into memory once, into a buffer of its
+// own size.
+//
+// Two recordings may be in memory at once (recordingsInMemory), so what one
+// costs is what that bound is worth. Read with io.ReadAll, which grows its
+// buffer as it goes and copies into each next one, a 64 MB recording
+// allocated 190 MB on its way in and for a moment held its buffer and the
+// next together: the bound of two held well over twice two recordings. A
+// file named .mp4 or opening with a recording's first bytes gets this far
+// whatever else it holds, so the cost is one anybody signed in can ask for.
+func TestARecordingIsReadIntoMemoryOnce(t *testing.T) {
+	srv, secret := wired(t)
+	const size = 64 << 20
+	payload := append(webmBytes()[:8], make([]byte, size)...)
+	body, ct := oneRecording(t, "clip.webm", payload)
+	payload = nil
+
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	rec := signedIn(t, srv, secret, "/upload", body, ct)
+	runtime.ReadMemStats(&after)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("the upload answered %d: %s", rec.Code, rec.Body.String())
+	}
+	// Once for the recording, and what the multipart parse allocates
+	// growing the eight megabytes it keeps before it spills: half the
+	// recording here, and as much as the recording under the race detector
+	// (see TestARefusedUploadIsNotReadIntoMemory). Read with io.ReadAll it
+	// was three times the recording, so two and a half is the line between.
+	if got := after.TotalAlloc - before.TotalAlloc; got > size*5/2 {
+		t.Errorf("taking a %d MB recording allocated %d MB", size>>20, got>>20)
+	}
+}
+
+// An upload leaves nothing behind in the temporary directory, taken or
+// refused.
+//
+// The form spills a recording to a temporary file, and the handler left
+// removing it to whatever served the request. net/http's server does, once
+// the request is finished; anything else that calls the handler did not,
+// these tests among them, and each run of the test above that posts a 96 MB
+// file left 96 MB in the temporary directory until a shared disk was full.
+// The handler removes what its own parse wrote.
+func TestAnUploadLeavesNoTemporaryFile(t *testing.T) {
+	spill := t.TempDir()
+	t.Setenv("TMPDIR", spill)
+	srv, secret := wired(t)
+	// Over the eight megabytes the parse keeps in memory, so it spills.
+	const size = 9 << 20
+	for _, upload := range []struct {
+		name  string
+		head  []byte
+		taken bool
+	}{
+		{"clip.webm", webmBytes()[:8], true},
+		{"notes.webm", []byte("not any format at all"), false},
+	} {
+		body, ct := oneRecording(t, upload.name, append(upload.head, make([]byte, size)...))
+		rec := signedIn(t, srv, secret, "/upload", body, ct)
+		if upload.taken != (rec.Code == http.StatusOK) {
+			t.Fatalf("%s answered %d: %s", upload.name, rec.Code, rec.Body.String())
+		}
+		left, err := filepath.Glob(filepath.Join(spill, "multipart-*"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(left) != 0 {
+			t.Errorf("uploading %s left %d file(s) in the temporary directory", upload.name, len(left))
+		}
 	}
 }

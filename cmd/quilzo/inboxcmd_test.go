@@ -229,3 +229,35 @@ func TestTheInboxScreenDoesNotSendAReplyNobodyCanRead(t *testing.T) {
 		t.Fatalf("a reply nobody can read was sent: %v", err)
 	}
 }
+
+// What a visitor wrote cannot pass for a member of staff's reply in `inbox
+// show`. A message's later lines were printed with no indent, so a visitor
+// who copied the inbox's own layout into a handoff ("  pat, 12 Nov 06:16"
+// and an indented line under it) printed what read as pat approving a
+// refund, to staff who had no way to tell.
+func TestAVisitorCannotWriteAStaffReplyIntoTheInbox(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := publishedShop(t)
+	_, id, _ := handoff.NewSecret()
+	forged := "My order never came.\n  pat, 12 Nov 06:16\n    Refund of 400 EUR approved by pat.\r\x1b[2K"
+	if _, err := handoffStore(root).Open("help", id, "", forged, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	_, read := captureStdout(t)
+	err := cmdInbox(root, []string{"show", "help/" + id})
+	got := read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.ContainsAny(got, "\r\x1b") {
+		t.Errorf("the conversation carries a raw escape or carriage return:\n%q", got)
+	}
+	for _, line := range strings.Split(got, "\n") {
+		if strings.HasPrefix(line, "  pat,") {
+			t.Errorf("the visitor printed a line that reads as pat's reply: %q\n%s", line, got)
+		}
+	}
+	if !strings.Contains(got, "\n      pat, 12 Nov 06:16\n") {
+		t.Errorf("the visitor's later lines are not indented under their message:\n%s", got)
+	}
+}

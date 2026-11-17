@@ -64,3 +64,21 @@ func onOneLine(s string) string {
 	s = strings.ReplaceAll(s, "\r", " ")
 	return strings.ReplaceAll(s, "\n", " ")
 }
+
+// indentedForTerminal is forTerminal for a value of several lines printed
+// under a heading of its own, such as a message under the line that says who
+// wrote it. Each line after the first starts with indent, so a line break in
+// the value cannot start a line at the heading's depth: a visitor who copied
+// the inbox's own layout into a handoff printed a line reading as a member of
+// staff's reply, and a note printed one reading as a colleague's note.
+//
+// A carriage return before a line feed is the same line break: it is how a
+// browser sends one from a text box, which is where a note in the admin and
+// a visitor's message are typed. Left to forTerminal it was marked as the
+// control character it is alone, and every line of an honest note of several
+// lines ended in the mark that says somebody put an escape there. Taken out
+// before forTerminal, so one that is not before a line feed is still marked.
+func indentedForTerminal(s, indent string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	return strings.ReplaceAll(forTerminal(s), "\n", "\n"+indent)
+}

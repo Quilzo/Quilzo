@@ -246,8 +246,12 @@ func cmdInbox(root string, args []string) error {
 			if m.From == handoff.Person {
 				who = m.By
 			}
+			// Every line of the message at the message's depth. Its later
+			// lines were printed flush, so a visitor who copied this
+			// layout into a handoff printed a line reading as a member of
+			// staff's reply, approving whatever the visitor liked.
 			fmt.Printf("  %s%s, %s%s\n    %s\n", dim, onOneLine(who),
-				m.At.Format("2 Jan 15:04"), reset, forTerminal(m.Text))
+				m.At.Format("2 Jan 15:04"), reset, indentedForTerminal(m.Text, "    "))
 		}
 		if c.Closed {
 			fmt.Printf("  %sended%s\n", dim, reset)
