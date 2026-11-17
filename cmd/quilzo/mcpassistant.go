@@ -164,7 +164,8 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 		Detail: "Never public from here. A person makes a chatbot public, " +
 			"decides whether static copies of the site carry it, and decides " +
 			"what it may offer to do, on the Chatbots screen. A chatbot that " +
-			"is already public cannot be changed from here.",
+			"is already public cannot be changed from here. Changing one, an " +
+			"argument left out keeps what it has; given empty, it is cleared.",
 		Args: map[string]string{
 			"name": "lower-case, digits and hyphens", "title": "what visitors see",
 			"greeting": "optional", "instructions": "optional tone and focus",
@@ -189,10 +190,24 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 			return nil, &mcp.Refusal{Reason: name + " is public; a person " +
 				"changes a public chatbot on the Chatbots screen"}
 		}
-		bot.Name, bot.Title = name, str("title")
-		bot.Greeting, bot.Instructions = str("greeting"), str("instructions")
-		bot.Pages, bot.Exclude = splitList(str("pages")), splitList(str("exclude"))
-		bot.Refusal = str("refusal")
+		// What it is given changes, and what it is not given is kept, as
+		// on the command line and the Chatbots screen. Every argument left
+		// out was cleared: an agent renaming a chatbot wiped the pages it
+		// must never read, and its instructions, and it then answered from
+		// the pages it had been kept from. Given empty, a setting is
+		// cleared, as asked.
+		given := func(k string, into func(string)) {
+			if _, ok := a[k]; ok {
+				into(str(k))
+			}
+		}
+		bot.Name = name
+		given("title", func(v string) { bot.Title = v })
+		given("greeting", func(v string) { bot.Greeting = v })
+		given("instructions", func(v string) { bot.Instructions = v })
+		given("pages", func(v string) { bot.Pages = splitList(v) })
+		given("exclude", func(v string) { bot.Exclude = splitList(v) })
+		given("refusal", func(v string) { bot.Refusal = v })
 		bot.Public = false
 		if err := set.Put(bot); err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}

@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/quilzo/quilzo/internal/assistant"
+	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/mcp"
 )
 
 // A site with no chatbots lists none over the agent interface as it does
@@ -135,5 +137,45 @@ func TestRedeclaringAChatbotKeepsWhatItDoesNotName(t *testing.T) {
 	}
 	if a, _ = loadAssistant(root, "help"); a.KeepInstructions {
 		t.Error("--keep-instructions=false kept passages that address an AI")
+	}
+}
+
+// chatbotMCPAs is the chatbot operations over the agent interface, as who, on a
+// store whose policy says what each person may do.
+func chatbotMCPAs(root, who string) *mcp.Server {
+	srv := mcp.NewServer("quilzo", "test")
+	srv.Authorise = func(mcp.Operation) error { return nil }
+	registerAssistantOps(srv, root, &Caller{Name: who, Kind: audit.KindHuman, Verified: true})
+	return srv
+}
+
+// Changing a private chatbot over the agent interface changes what it is
+// given and keeps the rest, as the command line and the Chatbots screen
+// do. Every setting it was not given was cleared: an agent renaming a
+// chatbot wiped the pages it must never read and its instructions, and
+// it then answered from the pages it had been kept from.
+func TestDeclaringAChatbotOverTheInterfaceKeepsWhatItIsNotGiven(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := publishedShop(t)
+	if err := cmdAssistant(root, []string{"add", "help", "--title", "Help", "--exclude", "returns",
+		"--instructions", "Be brief.", "--greeting", "Hello", "--refusal", "Ask us"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, merr := callTool(t, assistantMCP(t, root), "quilzo_write", "declare_assistant",
+		map[string]any{"name": "help", "title": "Help, renamed"}); merr != nil {
+		t.Fatal(merr.Message)
+	}
+	a, _ := loadAssistant(root, "help")
+	if a.Title != "Help, renamed" {
+		t.Errorf("the title given did not change: %q", a.Title)
+	}
+	if strings.Join(a.Exclude, ",") != "returns" || a.Instructions != "Be brief." || a.Greeting != "Hello" ||
+		a.Refusal != "Ask us" {
+		t.Errorf("what it was not given was cleared: %+v", a)
+	}
+	// A new one still needs its title, as everywhere.
+	if _, merr := callTool(t, assistantMCP(t, root), "quilzo_write", "declare_assistant",
+		map[string]any{"name": "other"}); merr == nil {
+		t.Error("a chatbot was declared with no title")
 	}
 }
