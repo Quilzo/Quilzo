@@ -2969,6 +2969,20 @@ func typedFields(t schema.Type, body any, pages []string) []field {
 			e.Checkbox = true
 		case schema.Choice:
 			e.Choices = f.Choices
+		case schema.List:
+			// Lists are edited as one value per line. A repeated-input widget
+			// needs script to add and remove rows, and the admin has none: the
+			// CSP forbids it and the absence is the security argument.
+			//
+			// Always a box of lines, and never a maxlength. Drawn from the
+			// value, a list with no items yet was a one-line input, where
+			// nothing typed became a second item; and a list's max_len,
+			// copied to the box, was counted by the browser in characters
+			// across every item, so a dish with five allergens could not be
+			// saved once touched. What a list may hold is checked where the
+			// CLI's, the API's and MCP's writes are.
+			e.Long, e.MaxLen = true, 0
+			e.Help = strings.TrimSpace(e.Help + " One per line.")
 		case schema.Reference:
 			e.Suggest = pages
 			e.SuggestID = "pages-" + f.Name
@@ -2986,9 +3000,9 @@ func typedFields(t schema.Type, body any, pages []string) []field {
 			e.Checked = v
 			e.Value = fmt.Sprintf("%v", v)
 		case []any:
-			// Lists are edited as one value per line. A repeated-input widget
-			// needs script to add and remove rows, and the admin has none: the
-			// CSP forbids it and the absence is the security argument.
+			// One item per line, as the list kind above is drawn. A value of
+			// a list held by a field of another kind is shown the same way, so
+			// the refusal its type gives on saving names something visible.
 			parts := make([]string, 0, len(v))
 			for _, item := range v {
 				if str, ok := item.(string); ok {
@@ -2996,7 +3010,9 @@ func typedFields(t schema.Type, body any, pages []string) []field {
 				}
 			}
 			e.Value, e.Long = strings.Join(parts, "\n"), true
-			e.Help = strings.TrimSpace(e.Help + " One per line.")
+			if f.Kind != schema.List {
+				e.Help = strings.TrimSpace(e.Help + " One per line.")
+			}
 		}
 		if len(e.Choices) > 0 {
 			e.Selected = map[string]bool{e.Value: true}
@@ -3117,7 +3133,7 @@ func coerceForm(t schema.Type, form url.Values, body map[string]any) {
 		if !present || len(values) == 0 {
 			continue
 		}
-		raw := values[0]
+		raw := formText(values[0])
 
 		switch f.Kind {
 		case schema.Number:
@@ -3158,7 +3174,7 @@ func coerceForm(t schema.Type, form url.Values, body map[string]any) {
 			delete(body, key)
 			continue
 		}
-		body[key] = values[0]
+		body[key] = formText(values[0])
 	}
 }
 
@@ -4522,7 +4538,7 @@ func (s *Server) pageFromForm(pages map[string]any, name string, form url.Values
 			if strings.HasPrefix(key, "__") || len(values) == 0 {
 				continue
 			}
-			body[key] = values[0]
+			body[key] = keepType(body[key], formText(values[0]))
 		}
 	}
 	// What it tells search engines, from the editor's own fieldset: an
@@ -4552,6 +4568,51 @@ func (s *Server) pageFromForm(pages map[string]any, name string, form url.Values
 		}
 	}
 	return body
+}
+
+// formText is a submitted value with the line endings a page stores.
+//
+// A browser submits a textarea with CRLF line endings, as the HTML spec says
+// it must. Stored as sent, every multi-line field of a page saved from the
+// editor changed bytes though nobody had touched it: a title-only edit
+// counted as a body change, history and approvals recorded one, and a
+// colleague's --merge of a real body edit was refused as "you both changed
+// this field". The CLI, the API and MCP all store \n, so the browser does too.
+func formText(s string) string {
+	if !strings.Contains(s, "\r") {
+		return s
+	}
+	return strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n")
+}
+
+// keepType is a value submitted for a page with no type, in the type the
+// value it replaces had.
+//
+// Such a page may carry numbers and booleans, written by `quilzo add`, the
+// content API or an import, and the editor offers them as text boxes. Saving
+// stored the strings the boxes submitted, so an edit of the title turned
+// featured false into "false", which a layout reads as true: a page
+// explicitly not featured was shown as featured. A value that still reads as
+// what it was is stored as that; anything else is stored as typed, because
+// somebody who wrote words over a number meant the words.
+func keepType(old any, raw string) any {
+	switch old.(type) {
+	case float64:
+		n, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+		// NaN and the infinities parse but have no JSON form, and a page
+		// holding one could not be saved at all.
+		if err == nil && !math.IsNaN(n) && !math.IsInf(n, 0) {
+			return n
+		}
+	case bool:
+		switch strings.TrimSpace(raw) {
+		case "true":
+			return true
+		case "false":
+			return false
+		}
+	}
+	return raw
 }
 
 // previewRecord resolves a detail address in the draft.
