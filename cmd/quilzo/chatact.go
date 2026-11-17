@@ -336,7 +336,14 @@ func chatActForPerson(root string, a assistant.Assistant, action assistant.Actio
 				"why": clip("no conversation could be opened for a person: "+err.Error(), 300)}})
 		return res
 	}
-	recordHandoff(root, "handoff.open", a.Name, id, "quilzo", audit.KindService)
+	// Verified, as every record this server writes of itself is. Written
+	// as a visitor's is (recordHandoff), a service's record with nothing to
+	// say a credential proved it was refused by the log: no handoff.open
+	// was kept for the conversation, and the refusal stood as the log's
+	// last write having failed, on which agents' actions are refused.
+	recordE(root, audit.Record{Action: "handoff.open", Resource: "/ask/" + a.Name, Outcome: audit.Success,
+		Principal: "quilzo", Kind: audit.KindService, Verified: true,
+		Detail: map[string]string{"conversation": id, "request": request, "action": action.Name}})
 	emitEvent(root, event.Event{Type: event.HandoffRequested, Subject: a.Name}, nil)
 	res.Conversation = secret
 	return res

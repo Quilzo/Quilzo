@@ -445,6 +445,41 @@ func TestARequestHeldForAPersonReachesOne(t *testing.T) {
 	}
 }
 
+// That a conversation was opened for a held request is in the audit log,
+// and the log is not left refusing what agents do next.
+//
+// The record was written as a service's with nothing to say a credential
+// had proved it, which the log refuses: no handoff.open was kept for a
+// conversation the server opened itself, and the refusal was remembered as
+// the log's last write having failed. From then until some other record
+// went in, every agent's action was refused for want of a log that could
+// take its record, in the server that had just held a request for a person.
+func TestAHeldRequestsConversationIsRecorded(t *testing.T) {
+	root := chatActStore(t)
+	old := chatActRun
+	chatActRun = func(context.Context, string, string, string, *Caller, string) (string, agentOutcome, error) {
+		return "run-1", agentOutcome{Trace: agent.Trace{Answer: "It belongs to somebody at 12 Hill Street.", Complete: true},
+			Receipt: agent.Receipt{Private: []string{"personal data (address) returned by crm"}}}, nil
+	}
+	t.Cleanup(func() { chatActRun = old })
+	id := strings.Repeat("d", 32)
+	res := runChatAction(context.Background(), root, chatact.Request{ID: id, Chatbot: "help",
+		Action: "booking", Args: map[string]string{"booking_ref": "HB-2201"}})
+	if res.State != chatact.Person || res.Conversation == "" {
+		t.Fatalf("%+v", res)
+	}
+	if err := auditReady(root); err != nil {
+		t.Errorf("after a request was held for a person: %v", err)
+	}
+	found := false
+	for _, r := range auditFor(t, root, "handoff.open") {
+		found = found || (r.Detail["conversation"] == handoff.IDFor(res.Conversation) && r.Detail["request"] == id)
+	}
+	if !found {
+		t.Error("nothing records that a conversation was opened for the request")
+	}
+}
+
 // The dispatcher says it is taking requests, and a request made long
 // before it started is answered as not done, rather than run then.
 //
