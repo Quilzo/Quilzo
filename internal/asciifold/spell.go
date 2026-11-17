@@ -22,10 +22,11 @@ import "unicode"
 // a Turkish shop's Ürünler was /r-nler, Café was /caf, and a Greek or Russian
 // title left no address and was refused as if none had been given. The
 // spellings are the plain ones a reader of the language recognises: Latin
-// letters lose their marks, Greek follows ELOT 743 and Cyrillic the
-// passport romanisation, without the marks either adds. A script with no
-// such spelling here (Arabic, Hebrew, the scripts of India and East Asia)
-// has none, and a caller names the page another way.
+// letters lose their marks (those of Vietnamese and pinyin among them),
+// Greek follows ELOT 743 and Cyrillic the passport romanisation, without
+// the marks either adds. A script with no such spelling here (Arabic,
+// Hebrew, the scripts of India and East Asia) has none, and a caller names
+// the page another way.
 func Spell(r rune) (spelled string, ok bool) {
 	if r < 0x80 {
 		return "", false
@@ -68,14 +69,20 @@ var spellings = func() map[rune]string {
 		'ђ': "dj", 'ј': "j", 'љ': "lj", 'њ': "nj", 'ћ': "c", 'џ': "dz",
 		'ѓ': "g", 'ќ': "k", 'ѕ': "dz",
 	}
-	// Latin letters that lose a mark: Latin-1 and Latin Extended-A, and the
-	// comma-below letters of Romanian.
+	// Latin letters that lose a mark: Latin-1 and Latin Extended-A, the
+	// comma-below letters of Romanian, and then the letters of Vietnamese
+	// and the tone marks of pinyin, which are in blocks of their own. The
+	// list ended before those, so Giới thiệu, Vietnamese for "about us",
+	// was a page at /gi-i-thi-u, as Ürünler had been at /r-nler.
 	for spelled, letters := range map[string]string{
-		"a": "àáâãäåāăą", "c": "çćĉċč", "d": "ďđð", "e": "èéêëēĕėęě",
-		"g": "ĝğġģ", "h": "ĥħ", "i": "ìíîïĩīĭįı", "j": "ĵ", "k": "ķĸ",
-		"l": "ĺļľŀł", "n": "ñńņňŉ", "o": "òóôõöøōŏő", "r": "ŕŗř",
-		"s": "śŝşšșſ", "t": "ţťŧț", "u": "ùúûüũūŭůűų", "w": "ŵ",
-		"y": "ýÿŷ", "z": "źżž",
+		"a": "àáâãäåāăą" + "ạảấầẩẫậắằẳẵặ" + "ǎ", "c": "çćĉċč", "d": "ďđð",
+		"e": "èéêëēĕėęě" + "ẹẻẽếềểễệ", "g": "ĝğġģ", "h": "ĥħ",
+		"i": "ìíîïĩīĭįı" + "ỉị" + "ǐ", "j": "ĵ", "k": "ķĸ",
+		"l": "ĺļľŀł", "n": "ñńņňŉ" + "ǹ",
+		"o": "òóôõöøōŏő" + "ọỏốồổỗộơớờởỡợ" + "ǒ", "r": "ŕŗř",
+		"s": "śŝşšșſ", "t": "ţťŧț",
+		"u": "ùúûüũūŭůűų" + "ụủưứừửữự" + "ǔǖǘǚǜ", "w": "ŵ",
+		"y": "ýÿŷ" + "ỳỵỷỹ", "z": "źżž",
 	} {
 		for _, r := range letters {
 			m[r] = spelled
