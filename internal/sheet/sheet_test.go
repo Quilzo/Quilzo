@@ -242,7 +242,8 @@ func TestBroughtInTwiceIsTheSameRecords(t *testing.T) {
 	m.Key = ""
 	m.Existing = again.Records
 	back := m.Plan(read(t, csv, Options{Type: product()}).Rows)
-	if back.Updated != 2 || back.New != 0 {
+	// The same records, and as they are: nothing to write again.
+	if back.Unchanged != 2 || back.Updated != 0 || back.New != 0 || len(back.Records) != 0 {
 		t.Errorf("a sheet written here did not come back as the same records: %+v\n%s", back, csv)
 	}
 }
@@ -394,14 +395,19 @@ func TestACalendarBecomesEvents(t *testing.T) {
 	if plan.Records[0].Fields["slug"] != "rye-night" || plan.Records[3].Fields["slug"] != "yoga-2026-11-09" {
 		t.Errorf("slugs %v %v", plan.Records[0].Fields["slug"], plan.Records[3].Fields["slug"])
 	}
-	// Brought again, after someone gave the first a picture and changed
-	// its page link: the same records, with those kept.
+	// Brought again, after someone gave the first a picture, changed its
+	// page link and its title: the same records, the title as the
+	// calendar has it, and the picture and the link kept. The three nobody
+	// touched are as they were, and not written again.
 	m.Existing = plan.Records
+	title := m.Existing[0].Fields["title"]
 	m.Existing[0].Fields["slug"], m.Existing[0].Fields["image"] = "rye", "pic"
+	m.Existing[0].Fields["title"] = "Renamed"
 	again := m.Plan(rows)
-	if again.New != 0 || again.Updated != 4 || again.Records[0].Fields["slug"] != "rye" ||
-		again.Records[0].Fields["image"] != "pic" {
-		t.Errorf("%+v %v", again, again.Records[0].Fields)
+	if again.New != 0 || again.Updated != 1 || again.Unchanged != 3 || len(again.Records) != 1 ||
+		again.Records[0].Fields["slug"] != "rye" || again.Records[0].Fields["image"] != "pic" ||
+		again.Records[0].Fields["title"] != title {
+		t.Fatalf("%+v", again)
 	}
 }
 

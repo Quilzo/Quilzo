@@ -56,6 +56,9 @@ type BringOptions struct {
 // BringResult is what bringing a file in did, or would do.
 type BringResult struct {
 	New, Updated int
+	// Unchanged counts the rows that matched a record and changed none of
+	// its fields, which were not written again.
+	Unchanged int
 	// Columns says which column became which field, and which were left
 	// out and why.
 	Columns  []string
@@ -615,6 +618,9 @@ func broughtSentence(res *BringResult, dry bool) string {
 		noun = "record"
 	}
 	parts := []string{fmt.Sprintf("%s %d %s: %d new, %d changed.", verb, n, noun, res.New, res.Updated)}
+	if res.Unchanged > 0 {
+		parts = append(parts, fmt.Sprintf("%d were as the file has them already, and are left as they are.", res.Unchanged))
+	}
 	var left []string
 	for _, c := range res.Columns {
 		if strings.Contains(c, "left out") {

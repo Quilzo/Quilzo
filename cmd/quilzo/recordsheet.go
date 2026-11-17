@@ -43,15 +43,18 @@ type bringOptions struct {
 
 // broughtRows is what bringing a file in did, or would do.
 type broughtRows struct {
-	Collection string          `json:"collection"`
-	From       string          `json:"from"`
-	Rows       int             `json:"rows"`
-	New        int             `json:"new"`
-	Updated    int             `json:"updated"`
-	Columns    []sheet.Column  `json:"columns,omitempty"`
-	Problems   []sheet.Problem `json:"problems,omitempty"`
-	Notes      []string        `json:"notes,omitempty"`
-	DryRun     bool            `json:"dry_run,omitempty"`
+	Collection string `json:"collection"`
+	From       string `json:"from"`
+	Rows       int    `json:"rows"`
+	New        int    `json:"new"`
+	Updated    int    `json:"updated"`
+	// Unchanged counts the rows that matched a record and would change none
+	// of its fields, which are not written again.
+	Unchanged int             `json:"unchanged"`
+	Columns   []sheet.Column  `json:"columns,omitempty"`
+	Problems  []sheet.Problem `json:"problems,omitempty"`
+	Notes     []string        `json:"notes,omitempty"`
+	DryRun    bool            `json:"dry_run,omitempty"`
 }
 
 // Kinds of file a collection takes.
@@ -270,7 +273,7 @@ func bringFile(ctx context.Context, root, coll, name string, body []byte, opts b
 			return nil
 		}}.Plan(rows)
 	out := &broughtRows{Collection: coll, From: kind, Rows: len(rows), New: plan.New, Updated: plan.Updated,
-		Columns: cols, Problems: plan.Problems, Notes: notes, DryRun: opts.dryRun}
+		Unchanged: plan.Unchanged, Columns: cols, Problems: plan.Problems, Notes: notes, DryRun: opts.dryRun}
 	if plan.Refused() {
 		what := "nothing was brought in"
 		if opts.dryRun {
@@ -425,7 +428,7 @@ func broughtForAdmin(b *broughtRows) *admin.BringResult {
 	if b == nil {
 		return nil
 	}
-	out := &admin.BringResult{New: b.New, Updated: b.Updated, Notes: b.Notes}
+	out := &admin.BringResult{New: b.New, Updated: b.Updated, Unchanged: b.Unchanged, Notes: b.Notes}
 	for _, c := range b.Columns {
 		if c.Field == "" && !c.ID {
 			out.Columns = append(out.Columns, fmt.Sprintf("%q %s", c.Header, c.Note))
@@ -462,8 +465,14 @@ func sayBrought(b *broughtRows, name string) {
 		verb = "would bring"
 	}
 	if b.New+b.Updated > 0 {
-		w.Human("%s %d record(s) into %s from %s: %d new, %d changed\n", verb, b.New+b.Updated, b.Collection, name,
+		w.Human("%s %d record(s) into %s from %s: %d new, %d changed", verb, b.New+b.Updated, b.Collection, name,
 			b.New, b.Updated)
+		if b.Unchanged > 0 {
+			w.Human(", %d as they were", b.Unchanged)
+		}
+		w.Human("\n")
+	} else if b.Unchanged > 0 {
+		w.Human("%d record(s) in %s are as %s has them already: nothing to bring in\n", b.Unchanged, b.Collection, name)
 	}
 	for i, p := range b.Problems {
 		if i == 20 {

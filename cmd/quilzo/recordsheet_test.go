@@ -116,8 +116,9 @@ func TestASpreadsheetComesInAndGoesOutAsTheSameRecords(t *testing.T) {
 	if err := json.Unmarshal(js, &list); err != nil || len(list) != 3 || list[0]["id"] == nil {
 		t.Fatalf("%s %v", js, err)
 	}
+	// The same three, as they are: nothing to write again.
 	if b, err := bringFile(ctx, root, "events", "x.json", js, bringOptions{}, asAdmin("dana")); err != nil ||
-		b.Updated != 3 || b.New != 0 {
+		b.Unchanged != 3 || b.Updated != 0 || b.New != 0 {
 		t.Fatalf("%+v %v", b, err)
 	}
 }
@@ -268,7 +269,7 @@ func TestARecordWithNoIdOfItsOwnComesBackAsItself(t *testing.T) {
 			t.Fatalf("%s: %d records: %v", format, n, err)
 		}
 		b, err := bringFile(ctx, root, "parts", "parts."+format, out, bringOptions{}, asAdmin("dana"))
-		if err != nil || b.New != 0 || b.Updated != len(before) {
+		if err != nil || b.New != 0 || b.Updated != 0 || b.Unchanged != len(before) {
 			t.Fatalf("%s: brought as %+v: %v\n%s", format, b, err, out)
 		}
 		after := draftRecords(t, root, "parts")
@@ -370,5 +371,66 @@ func TestARecordsOwnFieldCalledFieldsComesBackAsItself(t *testing.T) {
 		if after[id] != was {
 			t.Errorf("%s came back as %s\n%s", was, after[id], out)
 		}
+	}
+}
+
+// A spreadsheet brought back as it went out changes nothing, and says so.
+//
+// Every row that matched a record was counted as changed and written
+// again: an export brought straight back reported "0 new, 4 changed",
+// wrote a commit each time and moved every record's updated time, so the
+// count could not tell an owner which rows they had changed.
+func TestASheetBroughtBackUnchangedChangesNothing(t *testing.T) {
+	root, _ := siteStore(t)
+	ctx := context.Background()
+	for _, title := range []string{"A thing", "Another"} {
+		if err := recordsAdd(root, []string{"things", "title=" + title, "price=12.5"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before := draftRecords(t, root, "things")
+	draftAt := func() string {
+		s, err := store.Open(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tree, err := draftTree(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tree
+	}
+	was := draftAt()
+	for _, format := range []string{"csv", "json"} {
+		out, n, err := sheetOf(root, "things", format, false)
+		if err != nil || n != 2 {
+			t.Fatalf("%s: %d records: %v", format, n, err)
+		}
+		for _, dry := range []bool{true, false} {
+			b, err := bringFile(ctx, root, "things", "things."+format, out, bringOptions{dryRun: dry}, asAdmin("dana"))
+			if err != nil || b.New != 0 || b.Updated != 0 || b.Unchanged != 2 {
+				t.Fatalf("%s (dry run %v): brought as %+v: %v", format, dry, b, err)
+			}
+		}
+		if now := draftAt(); now != was {
+			t.Fatalf("%s: bringing back an unchanged sheet changed the draft", format)
+		}
+	}
+	after := draftRecords(t, root, "things")
+	for i := range before {
+		if after[i].Updated != before[i].Updated {
+			t.Errorf("%s: its updated time moved from %d to %d", after[i].ID, before[i].Updated, after[i].Updated)
+		}
+	}
+
+	// One row changed is one record changed.
+	out, _, err := sheetOf(root, "things", "csv", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := strings.Replace(string(out), "Another", "Another one", 1)
+	b, err := bringFile(ctx, root, "things", "things.csv", []byte(changed), bringOptions{}, asAdmin("dana"))
+	if err != nil || b.New != 0 || b.Updated != 1 || b.Unchanged != 1 {
+		t.Fatalf("one row changed was brought as %+v: %v", b, err)
 	}
 }

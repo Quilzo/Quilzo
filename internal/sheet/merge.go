@@ -4,8 +4,10 @@
 package sheet
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"strings"
@@ -64,15 +66,20 @@ func (p Problem) String() string {
 type Plan struct {
 	Records []collection.Record `json:"-"`
 	// Lines is the line each record came from.
-	Lines    []int     `json:"-"`
-	New      int       `json:"new"`
-	Updated  int       `json:"updated"`
-	Problems []Problem `json:"problems,omitempty"`
+	Lines   []int `json:"-"`
+	New     int   `json:"new"`
+	Updated int   `json:"updated"`
+	// Unchanged counts the rows that matched a record and change none of
+	// its fields. They are not among Records, so they are not written.
+	Unchanged int       `json:"unchanged"`
+	Problems  []Problem `json:"problems,omitempty"`
 }
 
 // Refused says whether nothing should be brought: a row could not be, and
 // the rest were not asked for without it.
-func (p *Plan) Refused() bool { return len(p.Problems) > 0 && len(p.Records) == 0 }
+func (p *Plan) Refused() bool {
+	return len(p.Problems) > 0 && len(p.Records) == 0 && p.Unchanged == 0
+}
 
 // Summary is the problems as a sentence or two, the first few of them.
 func (p *Plan) Summary() string {
@@ -265,6 +272,15 @@ func (m Merge) Plan(rows []Row) *Plan {
 				byKey[k] = id
 			}
 		}
+		// A row that changes nothing of its record is not written again.
+		// Every matched row was: a sheet exported and brought straight back
+		// said "0 new, 4 changed", wrote a commit each time and moved every
+		// record's updated time, so the count could not tell an owner which
+		// rows they had changed.
+		if existing != nil && sameFields(existing.Fields, fields) {
+			plan.Unchanged++
+			continue
+		}
 		plan.Records = append(plan.Records, collection.Record{ID: id, Fields: fields})
 		plan.Lines = append(plan.Lines, row.Line)
 		if existing != nil {
@@ -275,9 +291,21 @@ func (m Merge) Plan(rows []Row) *Plan {
 	}
 	plan.Problems = bad
 	if len(bad) > 0 && !m.SkipBad {
-		plan.Records, plan.Lines, plan.New, plan.Updated = nil, nil, 0, 0
+		plan.Records, plan.Lines, plan.New, plan.Updated, plan.Unchanged = nil, nil, 0, 0, 0
 	}
 	return plan
+}
+
+// sameFields says whether two records' fields are the same, as the store
+// keeps them: compared as JSON, so a number a sheet read is the number the
+// store gave back, and a list is a list whatever Go type holds it.
+func sameFields(a, b map[string]any) bool {
+	ja, err := json.Marshal(a)
+	if err != nil {
+		return false
+	}
+	jb, err := json.Marshal(b)
+	return err == nil && bytes.Equal(ja, jb)
 }
 
 // problemText is a type's refusal on one line.
