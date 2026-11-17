@@ -15,6 +15,7 @@ import (
 	"github.com/quilzo/quilzo/internal/feature"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/section"
+	"github.com/quilzo/quilzo/internal/seo"
 )
 
 const wxr = `<?xml version="1.0" encoding="UTF-8"?>
@@ -845,5 +846,47 @@ func TestAPasswordProtectedWordPressPostIsNotBrought(t *testing.T) {
 	}
 	if !strings.Contains(notes, "1 draft, private, pending or scheduled") {
 		t.Errorf("the draft is no longer counted on its own: %s", notes)
+	}
+}
+
+// The redirect a site import writes for a page at a non-Latin address is one
+// a request for that address finds.
+//
+// WordPress links /ürünlerimiz/ percent-encoded, and the redirect was
+// written from the link as it stood: /%c3%bcr%c3%bcnlerimiz/. The site hands
+// the map a request's path decoded, so neither spelling of the old address
+// matched and both answered 404, behind "keeps 3 old addresses working".
+func TestARedirectFromANonLatinAddressMatchesARequestForIt(t *testing.T) {
+	doc := strings.Replace(wxr, "<item><title>Not yet</title>",
+		`<item><title>Ürünlerimiz</title><link>https://oldbakery.example/shop/%c3%bcr%c3%bcnlerimiz/</link>`+
+			`<wp:post_id>50</wp:post_id><wp:post_name>%c3%bcr%c3%bcnlerimiz</wp:post_name><wp:post_type>page</wp:post_type>`+
+			`<wp:status>publish</wp:status><content:encoded><![CDATA[<p>Ekmek ve kek.</p>]]></content:encoded></item>`+
+			`<item><title>Not yet</title>`, 1)
+	s, err := FromWordPress([]byte(doc), "bakery.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := Package(s, "", "dana", nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := seo.NewMap(b.Redirects)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// As the server gives it: decoded once, whichever case the escapes had.
+	for _, request := range []string{"/shop/%C3%BCr%C3%BCnlerimiz/", "/shop/%c3%bcr%c3%bcnlerimiz"} {
+		u, err := url.ParseRequestURI(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r, ok := m.Lookup(u.Path)
+		if !ok {
+			t.Errorf("a request for %s finds no redirect among %v", request, b.Redirects)
+			continue
+		}
+		if !hasPage(b.Package, strings.TrimPrefix(r.To, "/")) {
+			t.Errorf("%s is redirected to %s, which is no page of the package", request, r.To)
+		}
 	}
 }

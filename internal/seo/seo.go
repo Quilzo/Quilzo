@@ -196,7 +196,7 @@ func NewMap(in []Redirect) (*Map, error) {
 	// nobody can see by reading it.
 	byFrom := map[string]Redirect{}
 	for _, r := range in {
-		from, err := normalisePath(r.From)
+		from, err := sourcePath(r.From)
 		if err != nil {
 			return nil, fmt.Errorf("redirect from %q: %w", r.From, err)
 		}
@@ -275,12 +275,34 @@ func (m *Map) Len() int {
 	return len(m.index)
 }
 
-// normalisePath makes a source path comparable.
 // Path is a redirect's old address as the map knows it, so two spellings of
 // one address can be told to be one.
-func Path(p string) (string, error) { return normalisePath(p) }
+func Path(p string) (string, error) { return sourcePath(p) }
 
-func normalisePath(p string) (string, error) {
+// normalisePath makes a path comparable: the path of a request, which the
+// server has already decoded, or of a target.
+func normalisePath(p string) (string, error) { return pathOf(p, false) }
+
+// sourcePath makes a redirect's old address, as somebody wrote it, the key a
+// request for it is looked up by.
+//
+// It is normalisePath, and percent-decoding as well. A request's path
+// arrives decoded (net/http's URL.Path) and a source was compared as it was
+// written: `quilzo site import` writes a page's old address as its link has
+// it, /%c3%bcr%c3%bcnlerimiz/, and `quilzo redirect add /%C3%BCr%C3%BCnler2
+// /shop` stored what was typed and said the address now went to /shop.
+// Neither ever matched, so the old link stayed a 404. A source written as a
+// full URL was always decoded, when its host was taken off, which is why
+// `quilzo import` of the same site redirected and site import did not.
+//
+// Lookup does not come through here: decoding a request's path a second
+// time would answer /a%2541, which asks for "/a%41", with the rule for /aA.
+func sourcePath(p string) (string, error) { return pathOf(p, true) }
+
+// pathOf is the path p names, comparable. written says p is an address as
+// somebody wrote it, which may be percent-encoded, and not a path already
+// decoded.
+func pathOf(p string, written bool) (string, error) {
 	p = strings.TrimSpace(p)
 	if p == "" {
 		return "", fmt.Errorf("empty")
@@ -306,7 +328,26 @@ func normalisePath(p string) (string, error) {
 			return "", err
 		}
 		p = u.Path
+	} else if written && strings.Contains(p, "%") {
+		// Decoded only where what it decodes to is still a path this keeps.
+		// One that decodes to a query mark, a control character or a
+		// traversal (/what%3F, /a%00b) stays as it was written, as every
+		// encoded source used to: it matches nothing, and refusing it now
+		// would refuse the whole map of a site that has served with it. A
+		// backslash it decodes to is a slash, as one written is.
+		if dec, err := url.PathUnescape(p); err == nil {
+			if key, err := pathKey(strings.ReplaceAll(dec, "\\", "/")); err == nil {
+				return key, nil
+			}
+		}
 	}
+	return pathKey(p)
+}
+
+// pathKey is the rest of pathOf, for a path with no host and nothing left to
+// decode: one leading slash, no query, no repeated or trailing slash, no
+// traversal and no control character.
+func pathKey(p string) (string, error) {
 	if !strings.HasPrefix(p, "/") {
 		p = "/" + p
 	}
@@ -450,4 +491,4 @@ func schemeOf(s string) string {
 // Exported because the importer needs exactly this comparison: most pages keep
 // their path across a migration, and emitting self-redirects for them produces
 // a map that NewMap refuses in full.
-func SourcePath(p string) (string, error) { return normalisePath(p) }
+func SourcePath(p string) (string, error) { return sourcePath(p) }
