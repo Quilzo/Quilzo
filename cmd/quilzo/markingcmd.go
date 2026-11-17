@@ -279,7 +279,7 @@ func transferRecord(root string, args []string) error {
 	from := fs.String("from", "", "the network it leaves")
 	to := fs.String("to", "", "the network it arrives on")
 	rest, flags := leadingArgs(args, 1)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &rest, 1); err != nil {
 		return err
 	}
 	if len(rest) != 1 {

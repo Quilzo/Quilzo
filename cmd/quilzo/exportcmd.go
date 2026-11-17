@@ -30,7 +30,7 @@ func cmdExport(root string, args []string) error {
 	licence := fs.String("licence", "",
 		"SPDX URI the deposit is under (ro-crate requires one)")
 	publisher := fs.String("publisher", "", "who is depositing (ro-crate)")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	format := export.Format("markdown")
@@ -125,7 +125,7 @@ func cmdSiem(root string, args []string) error {
 		"do not withhold identifiers (cannot undo pseudonymisation)")
 	envelopePath := fs.String("envelope", "",
 		"write the integrity envelope here, so the export stays verifiable")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	format := siem.Format("ocsf")
@@ -236,7 +236,7 @@ func cmdSiemVerify(root string, args []string) error {
 	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
 	envelopePath := fs.String("envelope", "", "the envelope written at export time")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 || *envelopePath == "" {

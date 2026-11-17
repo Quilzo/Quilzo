@@ -446,6 +446,9 @@ func cmdConnect(root string, args []string) error {
 	caller := resolveCaller(root, flagToken)
 	switch args[0] {
 	case "providers":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		set, err := loadConnectProviders(root)
 		if err != nil {
 			return err
@@ -478,6 +481,9 @@ func cmdConnect(root string, args []string) error {
 		w.Human("Open this in the browser where you are signed in to the admin as %s, within ten minutes:\n\n  %s\n", caller.Name, to)
 		return nil
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		mine, err := myConnections(root, caller.Name)
 		if err != nil {
 			return err
@@ -508,7 +514,7 @@ func cmdConnect(root string, args []string) error {
 		fs := flag.NewFlagSet("revoke", flag.ContinueOnError)
 		person := fs.String("person", "", "another person's account: an administrator's to disconnect")
 		rest, flags := leadingArgs(args[1:], 1)
-		if err := fs.Parse(flags); err != nil {
+		if err := parseFlags(fs, flags, &rest, 1); err != nil {
 			return err
 		}
 		if len(rest) != 1 {
@@ -563,7 +569,7 @@ func connectProvider(root string, caller *Caller, args []string) error {
 	var scopes, hosts multiFlag
 	fs.Var(&scopes, "scope", "a scope to ask for; repeat for more")
 	fs.Var(&hosts, "host", "an API host its tokens may go to; repeat for more")
-	if err := fs.Parse(args[2:]); err != nil {
+	if err := parseFlags(fs, args[2:], nil, 0); err != nil {
 		return err
 	}
 	unlock, err := atomicfile.Lock(connectProvidersPath(root) + ".lock")

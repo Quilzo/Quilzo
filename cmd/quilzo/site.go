@@ -51,9 +51,18 @@ func cmdSite(root string, args []string) error {
 		case "fill":
 			return siteFillCmd(root, args[1:])
 		case "kinds":
+			if err := noArguments(args[1:]); err != nil {
+				return err
+			}
 			return siteKindsCmd()
 		case "import":
 			return siteImportCmd(root, args[1:])
+		}
+		// A word that is none of them is a mistyped one, and not the flags
+		// to serve: `site fil` started the public server and hung the
+		// terminal on it.
+		if !strings.HasPrefix(args[0], "-") {
+			return errMisused{fmt.Errorf("unknown site command %q; try new, fill, kinds, import, or flags to serve the site", args[0])}
 		}
 	}
 	fs := flag.NewFlagSet("site", flag.ContinueOnError)
@@ -77,7 +86,7 @@ func cmdSite(root string, args []string) error {
 		"run confined: read the store, write only the site's own state (Linux, Landlock)")
 	prepare := fs.Bool("prepare", false,
 		"make what the confined site writes, list it, and exit: for a service manager that makes the store read-only")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	if *prepare {

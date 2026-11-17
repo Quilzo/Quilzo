@@ -91,7 +91,7 @@ func cmdServe(root string, args []string) error {
 		"a reverse proxy terminates TLS in front of this")
 	publicAddr := fs.String("public-addr", "",
 		"where the public site is served, for the posture scan")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 

@@ -62,6 +62,9 @@ func cmdSchedule(root string, args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return scheduleList(root)
 	case "add":
 		return scheduleAdd(root, args[1:])
@@ -79,7 +82,7 @@ func scheduleAdd(root string, args []string) error {
 	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("add", flag.ContinueOnError)
 	note := fs.String("note", "", "why, for whoever finds this next week")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -210,7 +213,7 @@ func scheduleRun(root string, args []string) error {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	dry := fs.Bool("dry-run", false, "report what would publish and change nothing")
 	tplDir := fs.String("templates", "templates", "where page.html lives, as for publish")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	fired, err := fireDue(root, resolveCaller(root, flagToken), time.Now,

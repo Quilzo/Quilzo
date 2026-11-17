@@ -302,12 +302,21 @@ func cmdSelf(root string, args []string) error {
 	}
 	switch args[0] {
 	case "check":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return selfCheck(root)
 	case "verify":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return selfVerify(root)
 	case "update":
 		return selfUpdate(root, args[1:])
 	case "vex":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return selfVEX(root)
 	case "kev":
 		return selfKEV(root, args[1:])

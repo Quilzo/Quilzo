@@ -61,7 +61,7 @@ func authEnrol(root string, args []string) error {
 	fs := flag.NewFlagSet("auth enrol", flag.ContinueOnError)
 	life := fs.Duration("for", enrol.MaxLife, "how long the link waits to be used, at most a day")
 	revoke := fs.Bool("revoke", false, "end the link waiting for this person")
-	if err := fs.Parse(args[1:]); err != nil {
+	if err := parseFlags(fs, args[1:], nil, 0); err != nil {
 		return err
 	}
 	caller := resolveCaller(root, "")
@@ -196,14 +196,21 @@ func issueEnrolment(root, name, by string, life time.Duration, caller *Caller) e
 	return nil
 }
 
+// initFlags is init's flag set, one declaration for runInit, which reads the
+// line before it makes anything, and initAdmin, which acts on it.
+func initFlags() (*flag.FlagSet, *string) {
+	fs := flag.NewFlagSet("init", flag.ContinueOnError)
+	admin := fs.String("admin", "", "make this person the first administrator and print the link that adds their passkey")
+	return fs, admin
+}
+
 // initAdmin is `quilzo init --admin NAME`: the first administrator, and the
 // link that gives them their passkey. A new store has two factors from its
 // first day; the grace an upgraded installation gets is for people who were
 // already signing in with a token.
 func initAdmin(root string, args []string, created bool) error {
-	fs := flag.NewFlagSet("init", flag.ContinueOnError)
-	admin := fs.String("admin", "", "make this person the first administrator and print the link that adds their passkey")
-	if err := fs.Parse(args); err != nil {
+	fs, admin := initFlags()
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	if created {

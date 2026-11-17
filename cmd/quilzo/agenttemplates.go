@@ -150,6 +150,9 @@ func cmdAgentTemplate(root string, args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		set, err := loadCustomTemplates(root)
 		if err != nil {
 			return err

@@ -39,7 +39,7 @@ func cmdMCP(root string, args []string) error {
 	fs := flag.NewFlagSet("mcp", flag.ContinueOnError)
 	tplDir := fs.String("templates", "templates", "where page.html lives")
 	list := fs.Bool("list", false, "print the operations and exit")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 

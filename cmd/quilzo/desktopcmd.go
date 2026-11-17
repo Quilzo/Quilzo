@@ -30,8 +30,14 @@ func cmdDesktop(root string, args []string) error {
 	}
 	switch args[0] {
 	case "status":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return desktopStatus(root)
 	case "consent":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return desktopConsent(root)
 	}
 	return fmt.Errorf("unknown desktop command %q; try status or consent", args[0])

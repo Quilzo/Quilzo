@@ -41,6 +41,9 @@ func cmdAssistant(root string, args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return assistantList(root)
 	case "add":
 		return assistantAdd(root, args[1:])
@@ -152,7 +155,7 @@ func assistantAdd(root string, args []string) error {
 	nudgePages := fs.String("nudge-pages", "", "comma-separated page prefixes the nudge may show on")
 	route := fs.String("route", "", "the gateway route, or the model a route serves, that answers first")
 	routeOnly := fs.Bool("route-only", false, "keep it to that route alone: no other route answers for it")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -225,7 +228,7 @@ func assistantAction(root string, args []string) error {
 	identity := fs.Bool("identity", false, "an agent action only for a visitor the site vouches for")
 	signer := fs.String("identity-secret", "", "the sealed credential the site signs visitors with (the assistant's)")
 	remove := fs.Bool("remove", false, "remove this action instead")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 2); err != nil {
 		return err
 	}
 	if len(pos) != 2 {
@@ -260,7 +263,10 @@ func assistantAction(root string, args []string) error {
 }
 
 func assistantRemove(root string, args []string) error {
-	pos, _ := leadingArgs(args, 1)
+	pos, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	if len(pos) != 1 {
 		return fmt.Errorf("usage: quilzo assistant remove NAME")
 	}
@@ -487,7 +493,10 @@ func loadAssistant(root, name string) (assistant.Assistant, error) {
 }
 
 func assistantAsk(root string, args []string) error {
-	pos, _ := leadingArgs(args, 2)
+	pos, err := positionals(args, 2)
+	if err != nil {
+		return err
+	}
 	if len(pos) != 2 {
 		return fmt.Errorf("usage: quilzo assistant ask NAME \"question\"")
 	}
@@ -535,7 +544,10 @@ func assistantAsk(root string, args []string) error {
 }
 
 func assistantEval(root string, args []string) error {
-	pos, _ := leadingArgs(args, 2)
+	pos, err := positionals(args, 2)
+	if err != nil {
+		return err
+	}
 	if len(pos) != 2 {
 		return fmt.Errorf("usage: quilzo assistant eval NAME CASES.jsonl\n" +
 			"  one case per line: {\"question\": \"...\", \"page\": \"returns\"}\n" +

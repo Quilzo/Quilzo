@@ -979,6 +979,18 @@ func TestEveryRemovalFlagIsReachableFromTheInterface(t *testing.T) {
 				"nobody has permission for — the same line drawn for access " +
 				"and keys",
 		},
+		"scim token.revoke": {
+			// Takes the identity provider's token back. `scim token
+			// --revoke` was read as the first word after token and no flag
+			// set declared it, so this table never saw it; it is a flag of
+			// the set now, and the Provisioning screen has had the button
+			// for it all along.
+			GUI: "/provisioning",
+			MCP: nil,
+			NoMCP: "as scim: the provisioning token is a credential, and " +
+				"whether the identity provider keeps it or loses it is an " +
+				"administrator's to decide",
+		},
 	}
 
 	verbs := regexp.MustCompile(

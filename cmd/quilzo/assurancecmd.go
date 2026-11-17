@@ -52,6 +52,9 @@ func cmdAssurance(root string, args []string) error {
 	case "record":
 		return assuranceRecord(root, args[1:])
 	case "controls":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return assuranceControls(root)
 	default:
 		return fmt.Errorf("unknown assurance command %q; try report, show, "+
@@ -190,7 +193,7 @@ func assuranceReport(root string, args []string) error {
 	from := fs.String("from", "", "start of the period, as 2026-04-01")
 	to := fs.String("to", "", "end of it; today by default")
 	top := fs.Int("top", 20, "how many controls to list")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	period, err := window(*from, *to)
@@ -261,7 +264,7 @@ func assuranceShow(root string, args []string) error {
 	fs := flag.NewFlagSet("show", flag.ContinueOnError)
 	from := fs.String("from", "", "start of the period")
 	to := fs.String("to", "", "end of it")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -338,7 +341,7 @@ func assuranceRecord(root string, args []string) error {
 	ref := fs.String("ref", "", "where the artefact is")
 	entity := fs.String("entity", "",
 		"the company this speaks for; the group otherwise")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 2); err != nil {
 		return err
 	}
 	if len(pos) != 2 {

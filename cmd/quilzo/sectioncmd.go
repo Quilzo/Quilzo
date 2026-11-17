@@ -78,7 +78,7 @@ func sectionBackdrop(root string, args []string) error {
 	pos, flags := leadingArgs(args, 3)
 	fs := flag.NewFlagSet("backdrop", flag.ContinueOnError)
 	off := fs.Bool("off", false, "take the backdrop away")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 3); err != nil {
 		return err
 	}
 	if len(pos) < 2 || len(pos) > 3 || (*off && len(pos) == 3) || (!*off && len(pos) != 3) {
@@ -156,7 +156,7 @@ func backdropFile(root, addr string) error {
 // sectionKinds is the catalogue: what a page can be built out of.
 func sectionKinds(args []string) error {
 	fs := flag.NewFlagSet("kinds", flag.ContinueOnError)
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	kinds := section.Kinds()
@@ -181,7 +181,7 @@ func sectionList(root string, args []string) error {
 	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
 	live := fs.Bool("live", false, "read the published pages instead of the draft")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	s, err := open(root)
@@ -262,7 +262,7 @@ func sectionAdd(root string, args []string) error {
 	pos, flags := leadingArgs(args, 2)
 	fs := flag.NewFlagSet("add", flag.ContinueOnError)
 	at := fs.Int("at", -1, "position to insert at; the end by default")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 2); err != nil {
 		return err
 	}
 	if len(pos) != 2 {
@@ -280,7 +280,10 @@ func sectionAdd(root string, args []string) error {
 }
 
 func sectionRemove(root string, args []string) error {
-	pos, _ := leadingArgs(args, 2)
+	pos, err := positionals(args, 2)
+	if err != nil {
+		return err
+	}
 	if len(pos) != 2 {
 		return fmt.Errorf("usage: quilzo section remove <page> <index-or-id>\n" +
 			"  quilzo section list <page>  shows both")
@@ -324,7 +327,7 @@ func sectionAt(body any, which string) (int, error) {
 func sectionMove(root string, args []string) error {
 	pos, flags := leadingArgs(args, 3)
 	fs := flag.NewFlagSet("move", flag.ContinueOnError)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 3); err != nil {
 		return err
 	}
 	if len(pos) != 3 {
@@ -428,7 +431,7 @@ func editSections(root, page string,
 func sectionFields(root string, args []string) error {
 	pos, flags := leadingArgs(args, 2)
 	fs := flag.NewFlagSet("fields", flag.ContinueOnError)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 2); err != nil {
 		return err
 	}
 	if len(pos) != 2 {
@@ -479,7 +482,10 @@ func sectionFields(root string, args []string) error {
 
 // sectionSet writes values into one section, by path.
 func sectionSet(root string, args []string) error {
-	pos, _ := leadingArgs(args, 99)
+	pos, err := positionals(args, 99)
+	if err != nil {
+		return err
+	}
 	if len(pos) < 3 {
 		return fmt.Errorf("usage: quilzo section set <page> <index> path=value [path=value …]\n" +
 			"  quilzo section fields <page> <index>  lists the paths")
@@ -538,7 +544,10 @@ func sectionItem(root string, args []string) error {
 		return fmt.Errorf("usage: quilzo section item add|remove <page> <index> <list> [entry]")
 	}
 	verb := args[0]
-	pos, _ := leadingArgs(args[1:], 4)
+	pos, err := positionals(args[1:], 4)
+	if err != nil {
+		return err
+	}
 	if len(pos) < 3 {
 		return fmt.Errorf("usage: quilzo section item %s <page> <index> <list> [entry]", verb)
 	}
@@ -582,7 +591,7 @@ func sectionReuse(root string, args []string) error {
 	pos, flags := leadingArgs(args, 2)
 	fs := flag.NewFlagSet("reuse", flag.ContinueOnError)
 	at := fs.Int("at", -1, "position to insert at; the end by default")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 2); err != nil {
 		return err
 	}
 	if len(pos) != 2 {
@@ -612,7 +621,7 @@ func sectionBlock(root string, args []string) error {
 	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("block", flag.ContinueOnError)
 	off := fs.Bool("off", false, "make it a page of its own again")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -659,7 +668,7 @@ func sectionBlock(root string, args []string) error {
 func sectionBlocks(root string, args []string) error {
 	fs := flag.NewFlagSet("blocks", flag.ContinueOnError)
 	live := fs.Bool("live", false, "read the published pages instead of the draft")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	s, err := open(root)

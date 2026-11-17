@@ -284,8 +284,14 @@ func cmdSignals(root string, args []string) error {
 	case "connect":
 		return signalsConnect(root, args[1:])
 	case "status":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return signalsStatus(root)
 	case "off":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return signalsOff(root)
 	}
 	return signalsUsage()

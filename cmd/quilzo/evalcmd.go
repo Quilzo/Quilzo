@@ -464,7 +464,7 @@ func cmdEval(root string, args []string) error {
 		fs := flag.NewFlagSet("eval "+args[0], flag.ContinueOnError)
 		goal := fs.String("goal", "", "what the agent is asked")
 		expect := expectFlags(fs)
-		if err := fs.Parse(args[2:]); err != nil {
+		if err := parseFlags(fs, args[2:], nil, 0); err != nil {
 			return err
 		}
 		var c evals.Case
@@ -527,7 +527,7 @@ func cmdEval(root string, args []string) error {
 		k := fs.Int("k", 3, "how many times each case is run")
 		model := fs.Bool("model", false, "let the configured model choose, and plant instructions")
 		attempts := fs.Int("attempts", 1, "how many times each planted instruction is tried; a plant that works once in several tries works")
-		if err := fs.Parse(args[2:]); err != nil {
+		if err := parseFlags(fs, args[2:], nil, 0); err != nil {
 			return err
 		}
 		if err := known(args[1]); err != nil {

@@ -41,6 +41,9 @@ func cmdEntity(root string, args []string) error {
 	}
 	switch args[0] {
 	case "tree":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return entityTree(root)
 	case "report":
 		return entityReport(root, args[1:])
@@ -128,7 +131,7 @@ func entityReport(root string, args []string) error {
 	fs := flag.NewFlagSet("report", flag.ContinueOnError)
 	from := fs.String("from", "", "start of the period, as 2026-04-01")
 	to := fs.String("to", "", "end of it; today by default")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	t, err := loadTree(root)
@@ -220,7 +223,7 @@ func entityRelies(root string, args []string) error {
 	fs := flag.NewFlagSet("relies", flag.ContinueOnError)
 	because := fs.String("because", "",
 		"why the ancestor's control counts for this company's audit")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 3); err != nil {
 		return err
 	}
 	if len(pos) != 3 {

@@ -56,7 +56,7 @@ func connectDiscover(root string, caller *Caller, args []string) error {
 	clientID := fs.String("client-id", "", "the client id the server's authorization server issued; registered there when empty and it takes registrations")
 	title := fs.String("title", "", "what people connecting see; the server's host when empty")
 	scope := fs.String("scope", "", "the scopes a connection asks for, separated by spaces; what the server lists when empty")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 2); err != nil {
 		return err
 	}
 	if len(pos) != 2 {

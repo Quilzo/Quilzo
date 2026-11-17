@@ -73,7 +73,7 @@ func cmdDemo(root string, args []string) (err error) {
 		"publish the draft, so the site serves immediately")
 	exDir := fs.String("examples", "",
 		"where to write the example files features are tried with (default: examples, beside the templates)")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 

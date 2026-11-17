@@ -34,12 +34,18 @@ func cmdLang(root string, args []string) error {
 	}
 	switch args[0] {
 	case "status":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return langStatus(root)
 	case "init":
 		return langInit(root, args[1:])
 	case "add":
 		return langAdd(root, args[1:])
 	case "check":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return langCheck(root)
 	case "translated":
 		return langTranslated(root, args[1:])
@@ -193,7 +199,7 @@ func langTranslated(root string, args []string) error {
 	pos, flags := leadingArgs(args, 2)
 	fs := flag.NewFlagSet("translated", flag.ContinueOnError)
 	by := fs.String("by", "", "who made the translation")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 2); err != nil {
 		return err
 	}
 	if len(pos) != 2 {

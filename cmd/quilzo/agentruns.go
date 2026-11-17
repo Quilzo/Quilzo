@@ -979,6 +979,10 @@ func finishLive(k *keptRun, out agentOutcome, err error) {
 }
 
 func agentRuns(root string, args []string) error {
+	args, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	name := ""
 	if len(args) > 0 {
 		name = args[0]

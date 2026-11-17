@@ -22,16 +22,28 @@ func cmdFediverse(root string, args []string) error {
 	}
 	switch args[0] {
 	case "init":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return fediverseInit(root)
 	case "status":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return fediverseStatus(root)
 	case "followers":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return fediverseFollowers(root)
 	case "block":
 		return fediverseBlock(root, args[1:])
 	case "unblock":
 		return fediverseUnblock(root, args[1:])
 	case "blocked":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return fediverseBlocked(root)
 	default:
 		return fmt.Errorf(

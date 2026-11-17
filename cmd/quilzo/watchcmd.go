@@ -13,6 +13,9 @@ import (
 
 // cmdAgents reports on what models have been doing.
 func cmdAgents(root string, args []string) error {
+	if err := noArguments(args); err != nil {
+		return err
+	}
 	events, err := auditEntries(root)
 	if err != nil {
 		return err

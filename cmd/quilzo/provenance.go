@@ -68,7 +68,7 @@ func provSet(root string, args []string) error {
 	reviewer := fs.String("reviewed-by", "", "who checked the output, if anyone")
 	ref := fs.String("ref", site.RefDraft, "which ref the page is in")
 	pos, flags := leadingArgs(args, 1)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -130,7 +130,7 @@ func provSet(root string, args []string) error {
 func provStatus(root string, args []string) error {
 	fs := flag.NewFlagSet("check", flag.ContinueOnError)
 	ref := fs.String("ref", site.RefDraft, "which ref to check")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 
@@ -303,7 +303,7 @@ func provBackfill(root string, args []string) error {
 	ref := fs.String("ref", site.RefDraft, "which ref to mark")
 	dryRun := fs.Bool("dry-run", false, "report what would happen, write nothing")
 	limit := fs.Int("history", 5000, "how many commits back to read for evidence")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	// Writing the records is editing, as setting one is (privilege.go). The

@@ -283,7 +283,7 @@ func integrationsTemplate(root string, args []string) error {
 	fields := fs.String("fields", "", "its names for the parts of a post: text=NAME,media=NAME,platforms=NAME")
 	secret := fs.String("secret", "", "the credential it authenticates with, as quilzo secret set keeps it; NAME-key by default")
 	authAs := fs.String("auth", "", "how the key is sent: bearer, the default, or header:NAME")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) == 0 {

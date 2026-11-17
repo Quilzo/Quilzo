@@ -188,7 +188,7 @@ func TestEveryPrivilegedCommandWritesAnAuditRecord(t *testing.T) {
 	// records carry the specific action strings a SIEM rule will match on.
 	// Renaming "token.issue" would still break somebody's alerting.
 	required := map[string]string{
-		"authGrant":     "auth.",
+		"authGrantAs":   "auth.",
 		"authRevoke":    "auth.revoke",
 		"tokenIssueAs":  "token.issue",
 		"tokenExchange": "token.exchange",

@@ -40,6 +40,9 @@ func cmdTimestamp(root string, args []string) error {
 	case "stamp":
 		return stampNow(root, args[1:])
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return stampList(root)
 	case "export":
 		return stampExport(root, args[1:])
@@ -134,7 +137,7 @@ var stampRequest = timestamp.Request
 func stampNow(root string, args []string) error {
 	fs := flag.NewFlagSet("stamp", flag.ContinueOnError)
 	tsa := fs.String("tsa", timestamp.DefaultTSA, "the timestamp authority")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 
@@ -248,7 +251,7 @@ func stampList(root string) error {
 func stampExport(root string, args []string) error {
 	fs := flag.NewFlagSet("export", flag.ContinueOnError)
 	dir := fs.String("dir", ".", "where to write the token and its data")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	store, err := loadStamps(root)

@@ -35,12 +35,21 @@ func cmdCompliance(root string, args []string) error {
 	case "sbom":
 		return complianceSBOM(args[1:])
 	case "crypto":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return complianceCrypto()
 	case "controls":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return complianceControls()
 	case "accessibility", "acr":
 		return complianceACR(root, args[1:])
 	case "summary":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return complianceSummary(root)
 	case "site":
 		return complianceSite(root, args[1:])
@@ -49,6 +58,9 @@ func cmdCompliance(root string, args []string) error {
 	case "component":
 		return complianceComponent(root, args[1:])
 	case "pledge":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return compliancePledge()
 	case "ssp":
 		return complianceSSP(root, args[1:])
@@ -63,6 +75,10 @@ func cmdCompliance(root string, args []string) error {
 }
 
 func complianceSBOM(args []string) error {
+	args, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	s, err := compliance.Generate(time.Now())
 	if err != nil {
 		return err
@@ -278,10 +294,15 @@ func complianceSummary(root string) error {
 func complianceACR(root string, args []string) error {
 	fs := flag.NewFlagSet("accessibility", flag.ContinueOnError)
 	tplDir := fs.String("templates", "templates", "where the layouts live")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 
+	// Opened here rather than with open, and so refused here too when
+	// --root holds no store, rather than made.
+	if err := needStore(root); err != nil {
+		return err
+	}
 	s, err := store.Open(root)
 	if err != nil {
 		return err
@@ -333,6 +354,10 @@ func complianceACR(root string, args []string) error {
 // complianceImplementation prints how Quilzo implements each control, or
 // one control in full (internal/controls).
 func complianceImplementation(args []string) error {
+	args, err := positionals(args, 1)
+	if err != nil {
+		return err
+	}
 	all := controls.All()
 	if len(args) == 1 {
 		im, ok := controls.Lookup(args[0])
@@ -384,7 +409,7 @@ func responsibilityWords(r controls.Responsibility) string {
 func complianceComponent(root string, args []string) error {
 	fs := flag.NewFlagSet("compliance component", flag.ContinueOnError)
 	out := fs.String("o", "", "write to this file instead of standard output")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	pol, err := odp.Load(paramsPath(root))
@@ -464,7 +489,7 @@ func complianceSSP(root string, args []string) error {
 	impact := fs.String("impact", "", "the system's FIPS 199 level: low, moderate or high (required)")
 	out := fs.String("o", "", "write to this file instead of standard output")
 	tplDir := fs.String("templates", "templates", "where the layouts live")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	if *impact == "" {
@@ -529,7 +554,7 @@ func complianceKSI(root string, args []string) error {
 	fs := flag.NewFlagSet("compliance ksi", flag.ContinueOnError)
 	out := fs.String("o", "", "write the JSON to this file")
 	tplDir := fs.String("templates", "templates", "where the layouts live")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	rep, err := buildKSI(root, *tplDir)

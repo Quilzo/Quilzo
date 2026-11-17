@@ -594,6 +594,9 @@ func cmdSCIM(root string, args []string) error {
 	store := scimStore(root)
 	switch args[0] {
 	case "status":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		var users, active, groups int
 		var mapping map[string]string
 		if err := store.Read(func(st *scim.State) {
@@ -649,17 +652,22 @@ func cmdSCIM(root string, args []string) error {
 		}
 		return nil
 	case "token":
-		if len(args) > 1 && args[1] == "--revoke" {
+		// --revoke is a flag like the other, read wherever it stands. It was
+		// looked for as the first word alone, and parsing stopped at a word
+		// that was no flag, so `scim token now --revoke` made a new token
+		// for the identity provider when it was asked to take the token away.
+		fs := flag.NewFlagSet("scim token", flag.ContinueOnError)
+		days := fs.Int("days", scimTokenDays, fmt.Sprintf("how many days it works, at most %d", scimTokenMaxDays))
+		revoke := fs.Bool("revoke", false, "take the token back, so the identity provider can change nothing")
+		if err := parseFlags(fs, args[1:], nil, 0); err != nil {
+			return err
+		}
+		if *revoke {
 			if err := os.Remove(scimTokenPath(root)); err != nil && !errors.Is(err, os.ErrNotExist) {
 				return err
 			}
 			w.Human("the provisioning token is revoked; the identity provider can change nothing\n")
 			return note("scim.token-revoked", "")
-		}
-		fs := flag.NewFlagSet("scim token", flag.ContinueOnError)
-		days := fs.Int("days", scimTokenDays, fmt.Sprintf("how many days it works, at most %d", scimTokenMaxDays))
-		if err := fs.Parse(args[1:]); err != nil {
-			return err
 		}
 		if *days <= 0 || *days > scimTokenMaxDays {
 			return fmt.Errorf("a provisioning token lasts from 1 to %d days", scimTokenMaxDays)

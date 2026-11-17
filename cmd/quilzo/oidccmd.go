@@ -128,6 +128,9 @@ func cmdOIDC(root string, args []string) error {
 	}
 	switch args[0] {
 	case "status":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return oidcStatus(root)
 	case "configure":
 		return oidcConfigure(root, args[1:])
@@ -154,7 +157,7 @@ func oidcConfigure(root string, args []string) error {
 	tenant := fs.String("tenant", "", "the Microsoft Entra tenant ID")
 	mfaACR := fs.String("mfa-acr", "", "acr values that mean a second factor was used, comma-separated "+
 		"(urn:okta:loa:2fa:any, or a Keycloak level)")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	var doms []string
@@ -331,7 +334,7 @@ const secretWhere = "the environment of this command; quilzo serve reads its own
 func oidcCheck(root string, args []string) error {
 	fs := flag.NewFlagSet("check", flag.ContinueOnError)
 	issuer := fs.String("issuer", "", "check this issuer instead of the configured one")
-	if err := fs.Parse(args); err != nil {
+	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 

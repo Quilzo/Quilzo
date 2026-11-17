@@ -49,6 +49,9 @@ func cmdFramework(root string, args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return frameworkList(root)
 	case "status":
 		return frameworkStatus(root, args[1:])
@@ -57,6 +60,9 @@ func cmdFramework(root string, args []string) error {
 	case "map":
 		return frameworkMap(root, args[1:])
 	case "relations":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return frameworkRelations()
 	default:
 		return fmt.Errorf("unknown framework command %q; try list, status, "+
@@ -171,7 +177,7 @@ func frameworkStatus(root string, args []string) error {
 	from := fs.String("from", "", "start of the period, as 2026-04-01")
 	to := fs.String("to", "", "end of it; today by default")
 	top := fs.Int("top", 20, "how many requirements to list")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -237,7 +243,7 @@ func frameworkAdopt(root string, args []string) error {
 	fs := flag.NewFlagSet("adopt", flag.ContinueOnError)
 	from := fs.String("from", "", "start of the period")
 	to := fs.String("to", "", "end of it")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -298,7 +304,7 @@ func frameworkMap(root string, args []string) error {
 	why := fs.String("why", "", "the rationale, which IR 8477 requires")
 	remainder := fs.String("remainder", "",
 		"for a partial relation: what the control does not cover")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 3); err != nil {
 		return err
 	}
 	if len(pos) != 3 {

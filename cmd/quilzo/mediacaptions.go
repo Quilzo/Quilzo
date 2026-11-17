@@ -62,7 +62,10 @@ func mediaCaptions(root string, args []string) error {
 	}
 
 	if id := strings.TrimSpace(*remove); id != "" {
-		if len(rest) < 1 {
+		// One video. A second word was not looked at, so `media captions
+		// VIDEO OTHER --remove TRACK` took the track off the first and said
+		// nothing of the other.
+		if len(rest) != 1 {
 			return fmt.Errorf("usage: quilzo media captions VIDEO --remove TRACK")
 		}
 		return removeTrack(root, rest[0], id)

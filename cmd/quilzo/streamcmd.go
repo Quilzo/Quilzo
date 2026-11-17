@@ -105,6 +105,15 @@ func cmdSiemStream(root string, args []string) error {
 	if len(args) == 0 {
 		args = []string{"status"}
 	}
+	// None of the three takes anything after it, and nothing looked:
+	// `siem stream send now` sent, and `siem stream key siem2` printed the
+	// one key there is as though it were that receiver's.
+	switch args[0] {
+	case "key", "status", "send":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
+	}
 	switch args[0] {
 	case "key":
 		key, err := streamKey(root)

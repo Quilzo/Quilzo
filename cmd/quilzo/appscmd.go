@@ -58,6 +58,9 @@ func cmdApps(root string, args []string) error {
 	oa := appsServer(root, by)
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return appsList(root, oa)
 	case "receipt":
 		return appReceipt(root, args[1:])
@@ -103,7 +106,7 @@ func cmdApps(root string, args []string) error {
 		if len(args) < 2 {
 			return errors.New(`quilzo apps register NAME --redirect URI [--redirect URI]`)
 		}
-		if err := fs.Parse(args[2:]); err != nil {
+		if err := parseFlags(fs, args[2:], nil, 0); err != nil {
 			return err
 		}
 		c, err := oauthas.NewRegistered(args[1], redirects, by.Name, time.Now())

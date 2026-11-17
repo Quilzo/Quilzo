@@ -35,6 +35,9 @@ func cmdLock(root string, args []string) error {
 	}
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return lockList(root)
 	case "release":
 		return lockRelease(root, args[1:])
@@ -48,7 +51,7 @@ func lockClaim(root string, args []string) error {
 	fs := flag.NewFlagSet("lock", flag.ContinueOnError)
 	note := fs.String("note", "", "what you are doing, so somebody can decide "+
 		"whether to interrupt")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
@@ -380,6 +383,9 @@ func cmdReview(root string, args []string) error {
 	}
 	switch args[0] {
 	case "status":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return reviewStatus(root)
 	case "approve":
 		return reviewApprove(root, args[1:])
@@ -457,7 +463,7 @@ func reviewApprove(root string, args []string) error {
 	_ = pos
 	fs := flag.NewFlagSet("approve", flag.ContinueOnError)
 	note := fs.String("note", "", "why you agree, which is what an auditor reads")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 0); err != nil {
 		return err
 	}
 
@@ -574,7 +580,7 @@ func reviewRequire(root string, args []string) error {
 			"who can publish")
 	people := fs.Int("humans", 0,
 		"how many of the approvals must come from people, not machines")
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {

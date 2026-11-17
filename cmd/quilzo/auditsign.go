@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io/fs"
 	"os"
@@ -356,16 +357,25 @@ func writePublishedKeys(root string, s *audit.HeadSigner) error {
 // whatever this machine currently holds — which would be checking a claim
 // against itself.
 func auditVerifyHead(root string, args []string) error {
-	if len(args) < 1 {
+	// The keys come after --keys and nowhere else. The words were walked by
+	// hand for "--keys" and the rest passed over, so `verify-head head.json
+	// keys.json`, the flag forgotten, checked the head against the keys this
+	// machine holds, which is the check the flag is there to avoid, and said
+	// "verified".
+	flags := flag.NewFlagSet("auditlog verify-head", flag.ContinueOnError)
+	keys := flags.String("keys", "", "the public keys to check against (default: the ones beside this store's log)")
+	var pos []string
+	if err := parseFlags(flags, args, &pos, 1); err != nil {
+		return err
+	}
+	if len(pos) < 1 {
 		return fmt.Errorf(
 			"usage: quilzo auditlog verify-head <head.json> [--keys head.pub.json]")
 	}
-	headPath := args[0]
+	headPath := pos[0]
 	keysPath := headKeysPath(root)
-	for i := 1; i < len(args)-1; i++ {
-		if args[i] == "--keys" {
-			keysPath = args[i+1]
-		}
+	if *keys != "" {
+		keysPath = *keys
 	}
 	sh, err := loadSignedHead(headPath, keysPath)
 	if err != nil {

@@ -50,7 +50,7 @@ func cmdMove(root string, args []string) error {
 	fs := flag.NewFlagSet("move", flag.ContinueOnError)
 	dry := fs.Bool("dry-run", false, "say what would move and change nothing")
 	pos, flags := leadingArgs(args, 2)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &pos, 2); err != nil {
 		return err
 	}
 	if len(pos) != 2 {

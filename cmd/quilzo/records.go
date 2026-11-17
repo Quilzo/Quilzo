@@ -35,6 +35,9 @@ func cmdRecords(root string, args []string) error {
 	}
 	switch args[0] {
 	case "collections":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		return recordsCollections(root)
 	case "list":
 		return recordsList(root, args[1:])
@@ -145,7 +148,7 @@ func recordsList(root string, args []string) error {
 	limit := fs.Int("limit", collection.DefaultLimit, "how many")
 	offset := fs.Int("offset", 0, "where to start")
 	rest, flags := leadingArgs(args, 1)
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, &rest, 1); err != nil {
 		return err
 	}
 	if len(rest) != 1 {
@@ -238,7 +241,7 @@ func recordsAdd(root string, args []string) error {
 		}
 		rest = append(rest, a)
 	}
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, nil, 0); err != nil {
 		return err
 	}
 	if len(rest) < 1 {
@@ -334,7 +337,7 @@ func recordsImport(root string, args []string) error {
 	dryRun := fs.Bool("dry-run", false, "say what would be brought, and write nothing")
 	noPictures := fs.Bool("no-pictures", false, "leave out pictures named by address rather than fetch them")
 	flags, rest := splitFlags(args, map[string]bool{"key": true, "map": true, "dates": true})
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, nil, 0); err != nil {
 		return err
 	}
 	if len(rest) != 2 {
@@ -372,7 +375,7 @@ func recordsExport(root string, args []string) error {
 	outPath := fs.String("o", "", "write to this file rather than the terminal")
 	excel := fs.Bool("excel", false, "begin the file with the mark Excel needs to read accents")
 	flags, rest := splitFlags(args, map[string]bool{"format": true, "o": true})
-	if err := fs.Parse(flags); err != nil {
+	if err := parseFlags(fs, flags, nil, 0); err != nil {
 		return err
 	}
 	if len(rest) != 1 {

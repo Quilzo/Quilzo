@@ -112,6 +112,9 @@ func cmdSAML(root string, args []string) error {
 	caller := resolveCaller(root, "")
 	switch args[0] {
 	case "list":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		all, err := loadSAML(root)
 		if err != nil {
 			return err
@@ -128,6 +131,9 @@ func cmdSAML(root string, args []string) error {
 		}
 		return nil
 	case "presets":
+		if err := noArguments(args[1:]); err != nil {
+			return err
+		}
 		keys := make([]string, 0, len(saml.Presets))
 		for k := range saml.Presets {
 			keys = append(keys, k)
@@ -163,6 +169,9 @@ func cmdSAML(root string, args []string) error {
 		if len(args) < 2 {
 			return samlUsage()
 		}
+		if _, err := positionals(args[1:], 1); err != nil {
+			return err
+		}
 		c, err := findSAML(root, args[1])
 		if err != nil {
 			return err
@@ -188,6 +197,11 @@ func cmdSAML(root string, args []string) error {
 	case "remove":
 		if len(args) < 2 {
 			return samlUsage()
+		}
+		// One provider. `saml remove okta azure` took okta away and said
+		// nothing of azure, which people went on signing in through.
+		if _, err := positionals(args[1:], 1); err != nil {
+			return err
 		}
 		if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
 			return fmt.Errorf("removing single sign-on is for an administrator of the whole site: %w", err)
@@ -271,7 +285,7 @@ func samlAdd(root string, args []string) (*saml.Config, error) {
 		"take the address as the provider sends it, verified or not")
 	fingerprint := fs.String("fingerprint", "", "the SHA-256 fingerprint you checked at the provider")
 	replace := fs.Bool("replace", false, "replace a provider with this name")
-	if err := fs.Parse(args[1:]); err != nil {
+	if err := parseFlags(fs, args[1:], nil, 0); err != nil {
 		return nil, err
 	}
 	if *meta == "" || *adminURL == "" {
