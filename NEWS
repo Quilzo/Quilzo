@@ -7,6 +7,48 @@ has the rest.
 Unreleased
 ==========
 
+** Rooms, calls and the AI note-taker are no longer in Quilzo
+
+*** Rooms, calls, the AI note-taker and the frame encryption under calls
+    have left Quilzo for a separate product.  The commands room, call,
+    huddle, scribe, errand and sframe are gone.  Typing one of them, with
+    or without a subcommand, or asking for its help (`quilzo help room`,
+    `quilzo room --help`), is answered in one line saying that it has
+    moved out of Quilzo, with exit status 2, the status of a usage error.
+    A slip of one (`quilzo calls`) is still an unknown command, exit 1,
+    and is told the same.  Scripts that run any of the six need changing:
+    the demonstrations (call, huddle, scribe, errand, sframe) used to
+    exit 0.  Everything else is as it was: notes and review, claims on a
+    page, the handoff inbox, boards, share links, `quilzo annotate` and
+    the rest.
+
+*** What rooms kept in a store is left where it is, and nothing reads it.
+    The store's rooms/ directory is not deleted, changed or migrated; the
+    store opens, verifies, backs up and restores with it in place, and the
+    room.* entries in the audit log still verify, show and export.  But
+    Quilzo no longer lists or reads a room, the server no longer takes the
+    words of messages past their room's retention period, and a message
+    can no longer be removed or erased.  If you kept rooms, decide what
+    happens to rooms/ before you upgrade: a build from before this change
+    is the last that can read, expire or erase what is in it, and after
+    that the files stay as they are until somebody deletes them.  Calls,
+    the note-taker and errands were demonstrations and kept nothing.
+
+*** `quilzo screen cost` gives the codec's figures alone.  It used to add
+    18 bytes a frame for frame encryption, which left with calls: at the
+    default thirty frames a second, typing is 8130 bytes a second where it
+    was 8670, and a still screen 2670 where it was 3210.  The key frame, a
+    keystroke and a still frame are unchanged.  --suite is still accepted,
+    changes nothing and says so on standard error, and a number that is
+    not a cipher suite is no longer refused; --json reports cipher "none"
+    and cipher_overhead 0.
+
+*** `quilzo standing list` shows four situational roles where it showed
+    nine: a call's host and cohost, an errand's owner, a room's moderator
+    and a call's participant went with their features.  The cryptography
+    inventory (`quilzo compliance crypto`, and wherever else it is shown)
+    no longer lists ML-KEM-768 with X25519, and lists HKDF as HKDF-SHA256.
+
 ** Security
 
 *** A model's change needs a person's approval however many people
@@ -356,12 +398,6 @@ Unreleased
     upgrade, timestamp stamp) takes grant and is on the record.  The
     classification marking gate refuses what it cannot read, instead of
     letting it through.
-
-*** Rooms keep their word: erasing a message rewrites the room so no
-    byte of it is left on disk (copies already in backups age out with
-    them), a room's retention is applied by the admin's sweep, a closed or
-    direct room is read only by its members, reactions are kept (quilzo
-    room react), and the room list shows what is unread.
 
 *** The studio follows a revoked token without a restart, records what it
     uploads as the token's holder, and records sound only when somebody
