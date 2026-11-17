@@ -1297,6 +1297,7 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 	}
 
 	html = st.injectHead(html, name, tree[served], body)
+	html = st.inLanguage(w.Header(), html, served, true)
 	if live {
 		html = insertBeforeHead(html, liveScript())
 	}
