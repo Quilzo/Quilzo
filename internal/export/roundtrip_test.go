@@ -663,3 +663,86 @@ func TestAnEarlierRecordFileStillReads(t *testing.T) {
 		t.Fatalf("an earlier record file came back as %q %#v", c.Collection, c.Records)
 	}
 }
+
+// Every name the store holds comes back from a JSON export as it went out,
+// and so does a page's hero.
+//
+// Every key of pages.json went through Slug, which folds a slash, a dot and
+// capitals: tr/about, the Turkish translation of about, came back as an
+// ordinary page tr-about at another address, and dot.page, UPPER and docs/v1
+// were renamed with no redirect. A nested object was dropped as one a flat
+// type cannot hold, and the hero every page built from sections opens with is
+// one, so the round trip lost the top of every such page, from the export
+// that calls itself lossless.
+func TestAJSONExportKeepsEveryNameTheStoreHoldsAndTheHero(t *testing.T) {
+	hero := map[string]any{"title": "Ink and paper", "image": "/media/a.jpg"}
+	original := map[string]any{
+		"tr/about": map[string]any{"title": "Hakkımızda"},
+		"ar/about": map[string]any{"title": "About, in Arabic"},
+		"docs/v1":  map[string]any{"title": "Version one"},
+		"dot.page": map[string]any{"title": "Dot"},
+		"UPPER":    map[string]any{"title": "Upper"},
+		"About_Us": map[string]any{"title": "About us"},
+		"landing": map[string]any{"title": "Landing", "hero": hero,
+			"terms": map[string]any{"topics": []any{"ink"}}},
+	}
+	files, err := export.Export(export.JSON, export.Site{Pages: original}, when)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep, err := export.Read(export.JSON, fileNamed(t, files, "content/pages.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]any{}
+	for _, p := range rep.Pages {
+		got[p.Name] = p.Fields
+		if len(p.Dropped) > 0 {
+			t.Errorf("page %q lost %v", p.Name, p.Dropped)
+		}
+	}
+	if !reflect.DeepEqual(got, original) {
+		t.Errorf("the round trip changed the site:\n%v\nbecame\n%v", original, got)
+	}
+
+	// The same names, read back from a whole export directory: a Markdown
+	// page is named by where its file is, and when a page changed by its
+	// name in last-changed.json.
+	for _, f := range []export.Format{export.JSON, export.Markdown} {
+		site := export.Site{Pages: original}
+		if f == export.JSON {
+			site.Changed = map[string]time.Time{"tr/about": when.UTC(), "UPPER": when.UTC()}
+		}
+		files, err := export.Export(f, site, when)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fsys := fstest.MapFS{}
+		for _, file := range files {
+			fsys[file.Path] = &fstest.MapFile{Data: file.Body}
+		}
+		back, _, err := export.ReadDir(fsys)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for name := range original {
+			if _, ok := back.Pages[name]; !ok {
+				t.Errorf("%s: page %q did not come back from the directory", f, name)
+			}
+		}
+		if !reflect.DeepEqual(back.Changed, site.Changed) {
+			t.Errorf("%s: when the pages changed, %v, came back as %v", f, site.Changed, back.Changed)
+		}
+	}
+
+	// A key the store could not hold is still made one, as before, and a
+	// nested object no page field reserves is still reported, not kept.
+	rep, err = export.Read(export.JSON, []byte(`{"About Us": {"title": "A", "extra": {"x": 1}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Pages) != 1 || rep.Pages[0].Name != "about-us" ||
+		len(rep.Pages[0].Dropped) != 1 {
+		t.Errorf("a key the store cannot hold: %+v", rep.Pages)
+	}
+}

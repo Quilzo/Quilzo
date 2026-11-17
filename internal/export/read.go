@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/schema"
+	"github.com/quilzo/quilzo/internal/store"
 	"github.com/quilzo/quilzo/internal/yamlite"
 )
 
@@ -182,7 +184,7 @@ func readJSON(body []byte) (*Content, error) {
 	// goes in the order the file has it.
 	sort.SliceStable(members, func(i, j int) bool {
 		ki, kj := members[i].name, members[j].name
-		if a, b := Slug(ki) == ki, Slug(kj) == kj; a != b {
+		if a, b := Name(ki) == ki, Name(kj) == kj; a != b {
 			return a
 		}
 		return ki < kj
@@ -269,15 +271,25 @@ func ReadPage(item map[string]any, given string, authoritative bool) (Page, erro
 		case []any:
 			fields[k] = v
 		default:
-			// A nested object has nowhere to go: content types are flat, which
-			// is what keeps validation bounded. Reported rather than flattened
-			// into keys nobody declared.
+			// A field every page may carry keeps its object: a hero, the
+			// terms a page is filed under. They are not content a type
+			// declares, so being flat does not apply to them, and the export
+			// writes them as objects; dropping them lost the top of every
+			// page built from sections in a round trip of the export that
+			// calls itself lossless.
+			if schema.Reserved(k) {
+				fields[k] = v
+				continue
+			}
+			// Any other nested object has nowhere to go: content types are
+			// flat, which is what keeps validation bounded. Reported rather
+			// than flattened into keys nobody declared.
 			dropped = append(dropped, k+" (nested object)")
 		}
 	}
 	name := ""
 	if authoritative {
-		name = Slug(given)
+		name = Name(given)
 	}
 	if name == "" {
 		name = Slug(str(fields["slug"]))
@@ -428,7 +440,7 @@ func ReadDir(fsys fs.FS) (Site, []string, error) {
 			// A Markdown page's name is where its file is, as a map key is
 			// in JSON: its own slug field can say something else.
 			if f == Markdown {
-				if n := Slug(strings.TrimSuffix(strings.TrimPrefix(p, "content/"), ".md")); n != "" {
+				if n := Name(strings.TrimSuffix(strings.TrimPrefix(p, "content/"), ".md")); n != "" {
 					pg.Name = n
 				}
 			}
@@ -469,7 +481,7 @@ func ReadDir(fsys fs.FS) (Site, []string, error) {
 					"last-changed.json: %s: %q is not a time", name, at))
 				continue
 			}
-			s.Changed[Slug(name)] = t
+			s.Changed[Name(name)] = t
 		}
 	}
 	if body, err := fs.ReadFile(fsys, "redirects.json"); err == nil {
@@ -490,6 +502,22 @@ func ReadDir(fsys fs.FS) (Site, []string, error) {
 			"content/, so this is not an export this program wrote")
 	}
 	return s, skipped, nil
+}
+
+// Name is the page name an identity an export wrote stands for: a key of
+// pages.json, or where a page's file is. A name the store holds is kept as
+// it is, and anything else is made one by Slug.
+//
+// Every such name went through Slug, which folds a slash, a dot and
+// capitals, so a round trip renamed pages the store held: tr/about, a
+// translation, came back as an ordinary page tr-about at another address,
+// and dot.page, UPPER and docs/v1 moved with no redirect. A title or a slug
+// field is still only a suggestion, and is made a name by Slug.
+func Name(s string) string {
+	if store.ValidPath(s) {
+		return s
+	}
+	return Slug(s)
 }
 
 // Slug is the name an import gives a page from a name it was handed: safe as a
