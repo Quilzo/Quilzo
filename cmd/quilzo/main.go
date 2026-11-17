@@ -1708,7 +1708,7 @@ func cmdDiff(root string) error {
 	if w.Mode == out.JSON {
 		doc := map[string]any{"live": live, "draft": draft, "changes": []any{}}
 		if draft != "" && live != draft {
-			changes, err := site.Diff(s, live, draft)
+			changes, err := readableDiff(root, s, live, draft)
 			if err != nil {
 				return err
 			}
@@ -1733,7 +1733,7 @@ func cmdDiff(root string) error {
 		fmt.Println("draft matches live")
 		return nil
 	}
-	changes, err := site.Diff(s, live, draft)
+	changes, err := readableDiff(root, s, live, draft)
 	if err != nil {
 		return err
 	}
@@ -1754,6 +1754,38 @@ func cmdDiff(root string) error {
 	}
 	fmt.Printf("\n  %d change(s) between live and draft\n", len(changes))
 	return nil
+}
+
+// readableDiff is what differs between two commits, of what the caller may
+// read: the pages theirs to view, as the agent interface's diff answers.
+//
+// A reader may run `quilzo diff` (privilege.go), and it named every changed
+// page. Once it showed what changed inside each, a reader denied a page was
+// shown that page's words, before and after, by the command the deny was
+// meant to hold against. A page out of reach is left out, as every list of
+// pages they are shown leaves it out. What is not a page, the records under
+// data, has no fields shown and is the whole site's, which the command
+// itself asks about.
+func readableDiff(root string, s *store.Store, from, to string) ([]site.Change, error) {
+	changes, err := site.Diff(s, from, to)
+	if err != nil {
+		return nil, err
+	}
+	may, err := pageCheck(root, resolveCaller(root, ""), auth.ActView)
+	if err != nil {
+		return nil, err
+	}
+	kept := changes[:0]
+	for _, c := range changes {
+		id := c.After
+		if id == "" {
+			id = c.Before
+		}
+		if s.IsTree(id) || may(c.Path) {
+			kept = append(kept, c)
+		}
+	}
+	return kept, nil
 }
 
 // fieldChangesText is a page's changed fields as lines of text, each

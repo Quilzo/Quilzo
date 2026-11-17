@@ -4,9 +4,12 @@
 package main
 
 import (
+	"io"
 	"strings"
 	"testing"
 
+	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 )
@@ -56,5 +59,68 @@ func TestDiffShowsWhatChangedInsideAPage(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Errorf("the agent interface's diff does not say %q:\n%s", want, text)
 		}
+	}
+}
+
+// quilzo diff shows the pages its caller may read, as the agent interface's
+// diff does. A reader may run it, and it named every changed page; now that
+// it shows what changed inside each, a reader denied redundancy-plan was
+// shown the words of that page, before and after, by the command its deny
+// was meant to hold against.
+func TestDiffShowsOnlyThePagesItsCallerMayRead(t *testing.T) {
+	root, secrets := storeWithTokenFor(t, auth.Binding{Principal: "rae", Role: auth.RoleReader, Resource: "/"})
+	if _, err := updatePolicy(root, func(p *auth.Policy) error {
+		return p.Grant(auth.Binding{Principal: "rae", Role: auth.RoleReader, Resource: "/redundancy-plan", Deny: true})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.SaveDraft(s, map[string]any{
+		"index":           map[string]any{"title": "Home"},
+		"redundancy-plan": map[string]any{"title": "Who goes", "body": "Nobody yet."},
+	}, "test", "dana"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Publish(s, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.SaveDraft(s, map[string]any{
+		"index":           map[string]any{"title": "Home, again"},
+		"redundancy-plan": map[string]any{"title": "Who goes", "body": "Tell the night shift last."},
+	}, "test", "dana"); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("QUILZO_TOKEN", secrets["rae"])
+	if err := authoriseCommand(root, "diff", nil); err != nil {
+		t.Fatalf("a reader may not run diff: %v", err)
+	}
+
+	_, done := captureStdout(t)
+	err = cmdDiff(root)
+	human := done()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var asJSON strings.Builder
+	old := w
+	w = &out.Writer{Mode: out.JSON, Out: &asJSON, Err: io.Discard}
+	err = cmdDiff(root)
+	w = old
+	if err != nil {
+		t.Fatal(err)
+	}
+	for how, got := range map[string]string{"quilzo diff": human, "quilzo --json diff": asJSON.String()} {
+		if strings.Contains(got, "redundancy") || strings.Contains(got, "night shift") || strings.Contains(got, "Nobody yet") {
+			t.Errorf("%s showed the page out of reach:\n%s", how, got)
+		}
+		if !strings.Contains(got, "index") || !strings.Contains(got, "Home, again") {
+			t.Errorf("%s left out the page the reader may read:\n%s", how, got)
+		}
+	}
+	if !strings.Contains(human, "1 change(s)") {
+		t.Errorf("quilzo diff counts a change it does not show:\n%s", human)
 	}
 }
