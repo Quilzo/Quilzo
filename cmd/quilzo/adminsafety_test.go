@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/quilzo/quilzo/internal/dual"
 	"github.com/quilzo/quilzo/internal/gateway"
 	"github.com/quilzo/quilzo/internal/out"
+	"github.com/quilzo/quilzo/internal/saml"
 )
 
 // onlyOwner is a store whose one administrator is owner, acting with a
@@ -464,5 +466,148 @@ func TestARevokeSaysWhatIsLeftOnce(t *testing.T) {
 	}
 	if !strings.Contains(said, "granted at /") {
 		t.Errorf("an inherited grant left does not say where it comes from:\n%s", said)
+	}
+}
+
+// usedToken gives who a token they have used, as one is once its holder
+// has run a command with it, made at and ending at the times given.
+func usedToken(t *testing.T, root, who string, role auth.Role, made, ends time.Time) string {
+	t.Helper()
+	ts, _ := loadTokens(root)
+	_, tok, err := ts.Issue(who+"-cli", who, role, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range ts.Tokens {
+		if ts.Tokens[i].ID == tok.ID {
+			ts.Tokens[i].CreatedAt, ts.Tokens[i].ExpiresAt = made.Unix(), ends.Unix()
+			ts.Tokens[i].LastUsed = made.Unix()
+		}
+	}
+	if err := saveJSON(tokensPath(root), ts); err != nil {
+		t.Fatal(err)
+	}
+	return tok.ID
+}
+
+// An administrator who has signed in is the second of two from then on.
+// Their sign-in is not the other's to give alone again because nothing of
+// theirs works at the moment it is asked for.
+//
+// The first way in was approved alone whenever the administrator it was
+// for held no token that worked and no passkey. So one administrator
+// revoked the other's token, which is one administrator's to do, was told
+// "lee has no way to sign in yet", issued herself a token as lee and
+// approved her own request with it. A token of his that had run out did
+// as well, and so did his signing in through the identity provider and
+// holding no session that night.
+func TestAnAdministratorWhoHasSignedInIsNotGivenAWayInAlone(t *testing.T) {
+	now := time.Now()
+	for name, second := range map[string]func(t *testing.T, root string) string{
+		"whose token the other revoked": func(t *testing.T, root string) string {
+			seedPolicy(t, root, [2]string{"lee", "admin"})
+			id := usedToken(t, root, "lee", auth.RoleAdmin, now, now.Add(time.Hour))
+			_, printed := captureStdout(t)
+			err := cmdToken(root, []string{"revoke", id})
+			_ = printed()
+			if err != nil {
+				t.Fatal(err)
+			}
+			return "lee"
+		},
+		"whose token ran out": func(t *testing.T, root string) string {
+			// An administrator since yesterday, whose token was for an hour.
+			if _, err := updatePolicy(root, func(p *auth.Policy) error {
+				return p.Grant(auth.Binding{Principal: "lee", Role: auth.RoleAdmin, Resource: "/",
+					GrantedAt: now.Add(-24 * time.Hour).Unix()})
+			}); err != nil {
+				t.Fatal(err)
+			}
+			usedToken(t, root, "lee", auth.RoleAdmin, now.Add(-2*time.Hour), now.Add(-time.Hour))
+			return "lee"
+		},
+		"who signs in through OpenID Connect": func(t *testing.T, root string) string {
+			seedPolicy(t, root, [2]string{"lee@northwind.example", "admin"})
+			if err := saveJSON(oidcPath(root), oidcConfig{Issuer: "https://id.northwind.example", ClientID: "quilzo"}); err != nil {
+				t.Fatal(err)
+			}
+			return "lee@northwind.example"
+		},
+		"who signs in through SAML": func(t *testing.T, root string) string {
+			seedPolicy(t, root, [2]string{"lee@northwind.example", "admin"})
+			if err := os.MkdirAll(samlDir(root), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			c := saml.Config{Name: "corp", Domains: []string{"northwind.example"}}
+			if err := saveJSON(samlFile(root, c.Name), c); err != nil {
+				t.Fatal(err)
+			}
+			return "lee@northwind.example"
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := onlyOwner(t)
+			who := second(t, root)
+			if err := cmdAuth(root, []string{"enrol", who, "--for", "1h"}); err != nil {
+				t.Fatal(err)
+			}
+			if links, _ := enrolStore(root).Waiting(time.Now()); len(links) != 0 {
+				t.Errorf("a link that signs in as %s was given on one administrator's word: %+v", who, links)
+			}
+
+			// And a token as them, asked for with nothing else waiting.
+			root = onlyOwner(t)
+			who = second(t, root)
+			_, printed := captureStdout(t)
+			err := tokenIssue(root, []string{"again", "--principal", who, "--role", "admin", "--ttl", "1h"})
+			_ = printed()
+			if err != nil {
+				t.Fatal(err)
+			}
+			ts, _ := loadTokens(root)
+			for _, tok := range ts.Snapshot() {
+				if tok.Name == "again" {
+					t.Errorf("a token acting as %s was issued on one administrator's word", who)
+				}
+			}
+		})
+	}
+
+	// What never made them a second administrator does not count: a first
+	// token that ran out before anybody used it, and one from before they
+	// were made an administrator, are no way in, and waiting on them would
+	// be the dead end again.
+	for name, second := range map[string]func(t *testing.T, root string){
+		"a first token that ran out unused": func(t *testing.T, root string) {
+			seedPolicy(t, root, [2]string{"theo", "admin"})
+			ts, _ := loadTokens(root)
+			_, tok, err := ts.Issue("theo-cli", "theo", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i := range ts.Tokens {
+				if ts.Tokens[i].ID == tok.ID {
+					ts.Tokens[i].ExpiresAt = now.Add(-time.Second).Unix()
+				}
+			}
+			if err := saveJSON(tokensPath(root), ts); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"a token from before they were an administrator": func(t *testing.T, root string) {
+			usedToken(t, root, "theo", auth.RoleAuthor, now.Add(-2*time.Hour), now.Add(-time.Hour))
+			seedPolicy(t, root, [2]string{"theo", "admin"})
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := onlyOwner(t)
+			second(t, root)
+			if err := cmdAuth(root, []string{"enrol", "theo", "--for", "1h"}); err != nil {
+				t.Fatal(err)
+			}
+			if links, _ := enrolStore(root).Waiting(time.Now()); len(links) != 1 {
+				t.Errorf("theo, who has never been able to act as an administrator, was given no link: %+v", links)
+			}
+		})
 	}
 }

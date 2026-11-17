@@ -138,21 +138,15 @@ func (s *Server) proposeSecondFor(p principal, subject, kind, what string, paylo
 	return false, msg, nil
 }
 
-// firstWayIn is dual.FirstWayIn for this server at now: subject holds no
-// token or session that works and no passkey, and no administrator stopped
+// firstWayIn is dual.FirstWayIn for this server at now: subject has never
+// been an administrator who could sign in, by a token or session
+// (dual.WayIn), a passkey or single sign-on, and no administrator stopped
 // being one in the last day.
 func (s *Server) firstWayIn(asker, subject string, now time.Time) bool {
 	if rm, err := s.Dual.Store.Settling(now); err != nil || rm != nil {
 		return false
 	}
-	held := false
-	if s.Tokens != nil {
-		for _, t := range s.Tokens.Snapshot() {
-			if ok, _ := t.Usable(now); ok && strings.EqualFold(t.Principal, subject) {
-				held = true
-			}
-		}
-	}
+	held := s.Tokens != nil && dual.WayIn(s.Policy, s.Tokens.Snapshot(), subject, now)
 	if s.Passkeys != nil {
 		for _, c := range s.Passkeys.list() {
 			if strings.EqualFold(c.Principal, subject) {
@@ -160,11 +154,29 @@ func (s *Server) firstWayIn(asker, subject string, now time.Time) bool {
 			}
 		}
 	}
-	if !dual.FirstWayIn(s.Policy, asker, subject, held) {
+	if !dual.FirstWayIn(s.Policy, asker, subject, held || s.signsInBySSO(subject)) {
 		return false
 	}
 	open, err := s.Dual.Store.OpenBy(asker, now)
 	return err == nil && len(open) == 0
+}
+
+// signsInBySSO reports whether an identity provider this server signs
+// people in through could sign who in (dual.SingleSignOn). Providers that
+// cannot be read are taken to.
+func (s *Server) signsInBySSO(who string) bool {
+	if s.SAML != nil && s.SAML.Providers != nil {
+		all, err := s.SAML.Providers()
+		if err != nil {
+			return true
+		}
+		for _, c := range all {
+			if dual.SAML(c.Domains).Covers(who) {
+				return true
+			}
+		}
+	}
+	return s.OIDC != nil && dual.OpenIDConnect(s.OIDC.Claim, s.OIDC.Domains).Covers(who)
 }
 
 // applyDual makes an approved change, as by, and says what Dual.Apply

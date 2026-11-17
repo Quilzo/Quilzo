@@ -450,6 +450,10 @@ func KeepsAnAdministrator(was bool, after *auth.Policy) error {
 // the one to decide: given their sign-in alone, asker would approve her
 // own request as them. She withdraws it first, and asks again once there
 // are two administrators who can sign in.
+//
+// Held is whether subject is, or has been, an administrator who could act:
+// a token or session (WayIn), a passkey, or single sign-on that could sign
+// them in (SingleSignOn).
 func FirstWayIn(pol *auth.Policy, asker, subject string, held bool) bool {
 	if held || pol == nil || strings.EqualFold(asker, subject) {
 		return false
@@ -460,6 +464,113 @@ func FirstWayIn(pol *auth.Policy, asker, subject string, held bool) bool {
 	}
 	delete(admins, strings.ToLower(subject))
 	return len(admins) == 1 && admins[strings.ToLower(asker)]
+}
+
+// WayIn reports whether tokens show subject, an administrator under pol,
+// to be one who could act as it: a token or session of theirs works at
+// now, or one made since they became an administrator was a sign-in (a
+// session) or has been used.
+//
+// FirstWayIn was told only what worked at the moment it was asked, so the
+// first way in came back whenever nothing of the other administrator's
+// did. One administrator revoked the other's token, which is one
+// administrator's to do, was told he had no way to sign in yet, issued
+// herself a token as him and approved her own request with it. A token of
+// his that had run out did as well.
+//
+// What never made them a second administrator does not count, or the dead
+// end FirstWayIn ends would come back: a token that stopped working before
+// anybody used it, as a first one issued for an hour and not passed on in
+// time is, and anything from before they were made an administrator, so
+// somebody made one again a day after being removed (Settle) starts as
+// they did the first time.
+func WayIn(pol *auth.Policy, tokens []auth.Token, subject string, now time.Time) bool {
+	since := administratorSince(pol, subject, now)
+	for _, t := range tokens {
+		if !strings.EqualFold(t.Principal, subject) {
+			continue
+		}
+		if ok, _ := t.Usable(now); ok {
+			return true
+		}
+		if t.CreatedAt >= since && (t.IsSession() || t.LastUsed != 0) {
+			return true
+		}
+	}
+	return false
+}
+
+// administratorSince is when subject became an administrator of the whole
+// site under pol: the earliest of the grants that make them one now. Zero
+// when none says, which counts everything they ever held.
+func administratorSince(pol *auth.Policy, subject string, now time.Time) int64 {
+	var since int64
+	found := false
+	if pol == nil {
+		return 0
+	}
+	for _, b := range pol.Snapshot() {
+		if b.Deny || b.Role != auth.RoleAdmin || !b.Live(now) || !strings.EqualFold(b.Principal, subject) ||
+			strings.Trim(strings.TrimSpace(b.Resource), "/") != "" {
+			continue
+		}
+		if !found || b.GrantedAt < since {
+			since, found = b.GrantedAt, true
+		}
+	}
+	return since
+}
+
+// SingleSignOn is an identity provider set up for signing in, as far as
+// who it could sign in: the domains its people's addresses are in, none
+// meaning any, and Opaque when it names people by something that is not an
+// address.
+//
+// Somebody it could sign in holds a way in whatever else they hold
+// (FirstWayIn). An administrator who signs in through the identity
+// provider has no passkey and no token, and a day after their last session
+// ended has nothing on record at all: taken for somebody with no way in
+// yet, their sign-in was the other administrator's to give herself.
+type SingleSignOn struct {
+	Domains []string
+	Opaque  bool
+}
+
+// OpenIDConnect is the SingleSignOn an OpenID Connect provider is, by the
+// claim that names the person: a sub is any name, a preferred_username an
+// address in the provider's domains, and an email any address, which the
+// domains set for it do not narrow everywhere.
+func OpenIDConnect(claim string, domains []string) SingleSignOn {
+	switch claim {
+	case "sub":
+		return SingleSignOn{Opaque: true}
+	case "preferred_username":
+		return SingleSignOn{Domains: domains}
+	}
+	return SingleSignOn{}
+}
+
+// SAML is the SingleSignOn a SAML provider is: an address in its domains,
+// or with none set whoever it names.
+func SAML(domains []string) SingleSignOn {
+	return SingleSignOn{Domains: domains, Opaque: len(domains) == 0}
+}
+
+// Covers reports whether the provider could sign name in.
+func (s SingleSignOn) Covers(name string) bool {
+	_, domain, ok := strings.Cut(strings.ToLower(strings.TrimSpace(name)), "@")
+	if !ok || domain == "" {
+		return s.Opaque
+	}
+	if len(s.Domains) == 0 {
+		return true
+	}
+	for _, d := range s.Domains {
+		if strings.EqualFold(d, domain) {
+			return true
+		}
+	}
+	return false
 }
 
 // NoteAdministrators records a change to who administers the whole site,

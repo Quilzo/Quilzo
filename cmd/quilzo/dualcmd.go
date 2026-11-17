@@ -93,15 +93,16 @@ func aloneWords(root, subject string, first bool) string {
 	return "you are the only administrator, so this is approved as you make it; the record says so"
 }
 
-// firstWayIn is dual.FirstWayIn for this store at now: subject holds no
-// token and no passkey, and no administrator stopped being one in the
-// last day (dual.Store.Settling), when nobody approves alone.
+// firstWayIn is dual.FirstWayIn for this store at now: subject has never
+// been an administrator who could sign in (holdsWayIn), and no
+// administrator stopped being one in the last day (dual.Store.Settling),
+// when nobody approves alone.
 func firstWayIn(root, asker, subject string, now time.Time) bool {
 	if rm, err := dualStore(root).Settling(now); err != nil || rm != nil {
 		return false
 	}
 	pol, err := loadPolicy(root)
-	if err != nil || !dual.FirstWayIn(pol, asker, subject, holdsWayIn(root, subject, now)) {
+	if err != nil || !dual.FirstWayIn(pol, asker, subject, holdsWayIn(root, pol, subject, now)) {
 		return false
 	}
 	open, err := dualStore(root).OpenBy(asker, now)
@@ -118,17 +119,15 @@ func firstWayIn(root, asker, subject string, now time.Time) bool {
 	return len(open) == 0
 }
 
-// holdsWayIn reports whether who holds a token or a passkey that works.
-// Unreadable is taken as yes, which keeps the request waiting.
-func holdsWayIn(root, who string, now time.Time) bool {
+// holdsWayIn reports whether who, an administrator under pol, is or has
+// been one who could sign in: a token or session that works or was theirs
+// to use since they were made one (dual.WayIn), a passkey, or single
+// sign-on that could sign them in. Unreadable is taken as yes, which keeps
+// the request waiting.
+func holdsWayIn(root string, pol *auth.Policy, who string, now time.Time) bool {
 	ts, err := loadTokens(root)
-	if err != nil {
+	if err != nil || dual.WayIn(pol, ts.Snapshot(), who, now) {
 		return true
-	}
-	for _, t := range ts.Snapshot() {
-		if ok, _ := t.Usable(now); ok && strings.EqualFold(t.Principal, who) {
-			return true
-		}
 	}
 	pk := &admin.Passkeys{}
 	if err := loadJSON(passkeysPath(root), pk); err != nil {
@@ -139,7 +138,26 @@ func holdsWayIn(root, who string, now time.Time) bool {
 			return true
 		}
 	}
-	return false
+	return signsInBySSO(root, who)
+}
+
+// signsInBySSO reports whether an identity provider set up here could sign
+// who in (dual.SingleSignOn). Unreadable is taken as yes.
+func signsInBySSO(root, who string) bool {
+	samls, err := loadSAML(root)
+	if err != nil {
+		return true
+	}
+	for _, c := range samls {
+		if dual.SAML(c.Domains).Covers(who) {
+			return true
+		}
+	}
+	oidc, err := loadOIDC(root)
+	if err != nil {
+		return true
+	}
+	return oidc != nil && dual.OpenIDConnect(oidc.Claim, oidc.Domains).Covers(who)
 }
 
 // applyDual makes an approved change, as by. A token, an enrolment link or

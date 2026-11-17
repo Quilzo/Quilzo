@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/auth"
 )
 
 // One administrator proposes and another approves; nobody approves their
@@ -200,5 +202,84 @@ func TestTheProposerIsNotTheirOwnSecondAdministratorWhateverTheSpelling(t *testi
 	got, err := s.Decide(r.ID, "mailto:dana", true, true, now)
 	if err != nil || !got.Alone {
 		t.Fatalf("the only administrator approving their own request: %+v %v", got, err)
+	}
+}
+
+// An administrator holds a way in when a token of theirs works, or when
+// one made since they became an administrator was used or was a sign-in:
+// revoking it, or its running out, does not make their next one their
+// first. One that stopped working unused, or from before they were an
+// administrator, was never an administrator's way in.
+func TestAWayInIsOneThatWorksOrWasAnAdministratorsToUse(t *testing.T) {
+	now := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
+	granted := now.Add(-24 * time.Hour)
+	pol := &auth.Policy{}
+	for _, who := range []string{"ada", "theo"} {
+		if err := pol.Grant(auth.Binding{Principal: who, Role: auth.RoleAdmin, Resource: "/", GrantedAt: granted.Unix()}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tok := func(made, ends, used time.Time, change func(*auth.Token)) []auth.Token {
+		t := auth.Token{Principal: "Theo", CreatedAt: made.Unix(), ExpiresAt: ends.Unix()}
+		if !used.IsZero() {
+			t.LastUsed = used.Unix()
+		}
+		if change != nil {
+			change(&t)
+		}
+		return []auth.Token{t}
+	}
+	hour := time.Hour
+	for name, c := range map[string]struct {
+		tokens []auth.Token
+		want   bool
+	}{
+		"nothing":                        {nil, false},
+		"somebody else's":                {[]auth.Token{{Principal: "ada", CreatedAt: now.Unix(), ExpiresAt: now.Add(hour).Unix()}}, false},
+		"one that works, unused":         {tok(now.Add(-hour), now.Add(hour), time.Time{}, nil), true},
+		"used, then revoked":             {tok(now.Add(-hour), now.Add(hour), now, func(t *auth.Token) { t.Revoked = true }), true},
+		"used, then run out":             {tok(now.Add(-2*hour), now.Add(-hour), now.Add(-90*time.Minute), nil), true},
+		"a sign-in that ended":           {tok(now.Add(-2*hour), now.Add(-hour), time.Time{}, func(t *auth.Token) { t.Session = true }), true},
+		"run out unused":                 {tok(now.Add(-2*hour), now.Add(-hour), time.Time{}, nil), false},
+		"revoked unused":                 {tok(now.Add(-hour), now.Add(hour), time.Time{}, func(t *auth.Token) { t.Revoked = true }), false},
+		"used before they were made one": {tok(granted.Add(-2*hour), granted.Add(-hour), granted.Add(-90*time.Minute), nil), false},
+	} {
+		if got := WayIn(pol, c.tokens, "theo", now); got != c.want {
+			t.Errorf("%s: a way in is %v, want %v", name, got, c.want)
+		}
+	}
+	// With no day on the grant, everything they ever used counts.
+	undated := &auth.Policy{Bindings: []auth.Binding{{Principal: "theo", Role: auth.RoleAdmin, Resource: "/"}}}
+	if !WayIn(undated, tok(granted.Add(-2*hour), granted.Add(-hour), granted.Add(-90*time.Minute), nil), "theo", now) {
+		t.Error("a grant with no day on it let an old token go uncounted")
+	}
+}
+
+// Single sign-on could sign somebody in when their name is one it takes:
+// an address in its domains, any address when it has none, and any name at
+// all when it names people by something that is not an address.
+func TestWhoSingleSignOnCouldSignIn(t *testing.T) {
+	for _, c := range []struct {
+		sso  SingleSignOn
+		name string
+		want bool
+	}{
+		{SAML([]string{"northwind.example"}), "lee@northwind.example", true},
+		{SAML([]string{"northwind.example"}), "Lee@Northwind.Example", true},
+		{SAML([]string{"northwind.example"}), "lee@elsewhere.example", false},
+		{SAML([]string{"northwind.example"}), "lee", false},
+		{SAML(nil), "lee", true},
+		{SAML(nil), "lee@anywhere.example", true},
+		{OpenIDConnect("email", []string{"northwind.example"}), "lee@elsewhere.example", true},
+		{OpenIDConnect("email", nil), "lee", false},
+		{OpenIDConnect("", nil), "lee@northwind.example", true},
+		{OpenIDConnect("preferred_username", []string{"northwind.example"}), "lee@northwind.example", true},
+		{OpenIDConnect("preferred_username", []string{"northwind.example"}), "lee@elsewhere.example", false},
+		{OpenIDConnect("sub", []string{"northwind.example"}), "248289761001", true},
+		{OpenIDConnect("sub", nil), "lee@elsewhere.example", true},
+	} {
+		if got := c.sso.Covers(c.name); got != c.want {
+			t.Errorf("%+v could sign %q in: %v, want %v", c.sso, c.name, got, c.want)
+		}
 	}
 }

@@ -11,6 +11,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/enrol"
+	"github.com/quilzo/quilzo/internal/saml"
 )
 
 // The last administrator is not denied from People either. The screen
@@ -71,5 +72,56 @@ func TestATokenIsShownWithNoMoreThanItsHoldersRole(t *testing.T) {
 	}
 	if got := srv.carries(auth.Token{Principal: "jun", Role: auth.RoleReader, Resource: "/"}); got != auth.RoleReader {
 		t.Errorf("a narrower token is shown as %s", got)
+	}
+}
+
+// People gives no link alone for an administrator who has signed in, as
+// the command line gives none: whose token the other administrator
+// revoked, or who signs in through the identity provider and holds nothing
+// here. Taken for somebody with no way in yet, their sign-in was the other
+// administrator's to give herself, and with it she approved her own
+// requests as them.
+func TestPeopleGivesNoLinkAloneForAnAdministratorWhoHasSignedIn(t *testing.T) {
+	for name, second := range map[string]func(t *testing.T, srv *Server) string{
+		"whose token the other revoked": func(t *testing.T, srv *Server) string {
+			secret, tok, err := srv.Tokens.Issue("lee-cli", "lee", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := srv.Tokens.Authenticate(secret, time.Now()); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := srv.Tokens.Revoke(tok.ID); err != nil {
+				t.Fatal(err)
+			}
+			return "lee"
+		},
+		"who signs in through SAML": func(t *testing.T, srv *Server) string {
+			srv.SAML = &SAMLAdmin{Providers: func() ([]saml.Config, error) {
+				return []saml.Config{{Name: "corp", Domains: []string{"northwind.example"}}}, nil
+			}}
+			return "lee@northwind.example"
+		},
+		"who signs in through OpenID Connect": func(t *testing.T, srv *Server) string {
+			srv.OIDC = &OIDC{Claim: "email"}
+			return "lee@northwind.example"
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv, editor := setup(t)
+			srv.Enrol = &enrol.Store{Path: filepath.Join(t.TempDir(), "enrolments.json")}
+			who := second(t, srv)
+			if err := srv.Policy.Grant(auth.Binding{Principal: who, Role: auth.RoleAdmin, Resource: "/",
+				GrantedAt: time.Now().Add(-time.Hour).Unix()}); err != nil {
+				t.Fatal(err)
+			}
+			postForm(t, srv, "/people/enrol", editor, url.Values{"principal": {who}}.Encode())
+			if links, _ := srv.Enrol.Waiting(time.Now()); len(links) != 0 {
+				t.Fatalf("a link that signs in as %s was given on one administrator's word: %+v", who, links)
+			}
+			if pend, _ := srv.Dual.Store.Pending(time.Now()); len(pend) != 1 {
+				t.Fatalf("the link for %s does not wait for them: %+v", who, pend)
+			}
+		})
 	}
 }
