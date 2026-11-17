@@ -110,15 +110,20 @@ func TestOnlyItsAuthorOrAPublisherRemovesANote(t *testing.T) {
 	bobs := noteBy(t, root, "about", "bob", "Fixed the heading")
 	alices := noteBy(t, root, "about", "alice", "Looks fine to me")
 
+	// Each by its whole id. The twelve characters the list prints are the
+	// clock to 65 microseconds, and notes left one after another, as these
+	// are, can share them: the command then refused each as ambiguous, the
+	// refusal this test expects among them, and it failed one run in four
+	// for a reason that was not the one it is about.
 	t.Setenv("QUILZO_TOKEN", secrets["bob"])
-	if err := cmdNote(root, []string{"remove", "about", pats.ID[:12]}); err == nil {
+	if err := cmdNote(root, []string{"remove", "about", pats.ID}); err == nil {
 		t.Error("bob removed pat's note")
 	}
-	if err := cmdNote(root, []string{"remove", "about", bobs.ID[:12]}); err != nil {
+	if err := cmdNote(root, []string{"remove", "about", bobs.ID}); err != nil {
 		t.Errorf("bob may not remove his own note: %v", err)
 	}
 	t.Setenv("QUILZO_TOKEN", secrets["pat"])
-	if err := cmdNote(root, []string{"remove", "about", alices.ID[:12]}); err != nil {
+	if err := cmdNote(root, []string{"remove", "about", alices.ID}); err != nil {
 		t.Errorf("a publisher may not take down a note: %v", err)
 	}
 	got := notesOn(t, root, "about")
@@ -246,11 +251,13 @@ func TestANameInOtherCapitalsIsNotTheNotesAuthor(t *testing.T) {
 	pats := noteBy(t, root, "about", "pat", "Heading is wrong")
 	hers := noteBy(t, root, "about", "Pat", "Fixed the heading")
 
+	// Each by its whole id, as in TestOnlyItsAuthorOrAPublisherRemovesANote:
+	// two notes left together can share the twelve characters the list prints.
 	t.Setenv("QUILZO_TOKEN", secrets["Pat"])
-	if err := cmdNote(root, []string{"remove", "about", pats.ID[:12]}); err == nil {
+	if err := cmdNote(root, []string{"remove", "about", pats.ID}); err == nil {
 		t.Error("Pat, an author, removed the note of pat, a publisher")
 	}
-	if err := cmdNote(root, []string{"remove", "about", hers.ID[:12]}); err != nil {
+	if err := cmdNote(root, []string{"remove", "about", hers.ID}); err != nil {
 		t.Errorf("Pat may not remove her own note: %v", err)
 	}
 	if got := notesOn(t, root, "about"); len(got) != 1 || got[0].ID != pats.ID {
