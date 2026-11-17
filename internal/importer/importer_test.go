@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/feature"
+	"github.com/quilzo/quilzo/internal/store"
 	"github.com/quilzo/quilzo/internal/webimport"
 )
 
@@ -922,5 +923,42 @@ func TestAPasswordProtectedWordPressPostIsNotImported(t *testing.T) {
 	}
 	if strings.Contains(said+strings.Join(rep.Notes, " "), "s3cret") {
 		t.Error("the report carries the password")
+	}
+}
+
+// A WordPress slug longer than a page name may be is brought under a name
+// the store holds.
+//
+// WordPress keeps a slug of up to 200 characters and the store a name of 64.
+// The slug was cut at 80, so one long post gave a name the store refused,
+// and that refusal failed the whole import (after the report had listed
+// every page as brought): no site with one long headline could be moved. Two
+// that differ only past where they are cut are still two pages.
+func TestALongWordPressSlugIsANameTheStoreHolds(t *testing.T) {
+	long := "ten-things-you-should-know-before-you-visit-istanbul-in-the-winter-of-2024-or-later"
+	item := func(slug string) string {
+		return `<item><title>Ten things</title><link>https://kafe.example.com/` + slug + `/</link>` +
+			`<wp:post_name>` + slug + `</wp:post_name><wp:post_type>post</wp:post_type>` +
+			`<wp:status>publish</wp:status>` +
+			`<content:encoded><![CDATA[<p>Words.</p>]]></content:encoded></item>`
+	}
+	rep, err := Import(WordPress, strings.NewReader(wxrDoc(item(long)+item(long+"-part-two"))), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Pages) != 2 || rep.Pages[0].Name == rep.Pages[1].Name {
+		t.Fatalf("two posts were brought as %d page(s): %+v", len(rep.Pages), rep.Pages)
+	}
+	for _, p := range rep.Pages {
+		if !store.ValidPath(p.Name) {
+			t.Errorf("a page was named %q (%d characters), which the store does not hold", p.Name, len(p.Name))
+		}
+		if !strings.HasPrefix(p.Name, "ten-things-you-should-know") {
+			t.Errorf("the page's name, %q, is not its slug's words", p.Name)
+		}
+	}
+	// Each old address still goes to its own page.
+	if len(rep.Redirects) != 2 || rep.Redirects[0].To == rep.Redirects[1].To {
+		t.Errorf("the redirects from the two old addresses: %+v", rep.Redirects)
 	}
 }

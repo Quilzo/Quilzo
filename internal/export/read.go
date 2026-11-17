@@ -521,9 +521,19 @@ func Name(s string) string {
 	return Slug(s)
 }
 
+// maxNamePart is how long one part of a page name may be: what the store
+// holds between two slashes (store.CheckPath).
+const maxNamePart = 64
+
 // Slug is the name an import gives a page from a name it was handed: safe as a
 // page name and readable as a URL. A page name becomes part of a URL and a key
 // in the store, so it is constrained whatever the file said.
+//
+// To what the store holds, in length too. It was cut at 80 characters, and
+// the store refuses a name longer than 64: one WordPress post with a long
+// slug (WordPress keeps 200 characters) came in under a name the store
+// refused, and that one refusal failed the whole import, after the report
+// had listed every page as brought.
 func Slug(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	var b strings.Builder
@@ -549,8 +559,8 @@ func Slug(s string) string {
 		}
 	}
 	out := strings.Trim(b.String(), "-")
-	if len(out) > 80 {
-		out = strings.Trim(out[:80], "-")
+	if len(out) > maxNamePart {
+		out = strings.Trim(out[:maxNamePart], "-")
 	}
 	return out
 }
@@ -577,11 +587,26 @@ func NewNames() *Names {
 func (n *Names) Claim(base string) string {
 	name := base
 	for k := max(2, n.next[base]); n.taken[name]; k++ {
-		name = fmt.Sprintf("%s-%d", base, k)
+		name = numbered(base, k)
 		n.next[base] = k + 1
 	}
 	n.taken[name] = true
 	return name
+}
+
+// numbered is base with a number after it: same-2. The number is part of
+// the name's last part, and that part is cut to make room for it where the
+// two together are longer than the store holds: two long titles that differ
+// only past where a name is cut are one name, and the second was numbered to
+// a name the store refused, which failed the import both were in.
+func numbered(base string, k int) string {
+	number := fmt.Sprintf("-%d", k)
+	at := strings.LastIndex(base, "/") + 1
+	last := base[at:]
+	if over := len(last) + len(number) - maxNamePart; over > 0 && over < len(last) {
+		last = strings.TrimRight(last[:len(last)-over], "-._")
+	}
+	return base[:at] + last + number
 }
 
 // page claims p's name, and when it had to be numbered its own slug field

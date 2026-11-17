@@ -940,3 +940,43 @@ func TestAWordPressNameInAnotherAlphabetIsReadable(t *testing.T) {
 		}
 	}
 }
+
+// Two WordPress pages whose slugs are longer than a page name may be, and
+// differ only past where a name is cut, are two pages of a package that
+// installs.
+//
+// A name was cut at 80 characters, 16 past what the store holds, so one page
+// with a long slug made a package that was refused whole, "page name … is
+// not usable". Cut to what the store holds, two such pages were one name,
+// and the second was numbered past it again.
+func TestTwoLongWordPressSlugsAreTwoPagesThePackageHolds(t *testing.T) {
+	long := "ten-things-you-should-know-before-you-visit-istanbul-in-the-winter-of-2024-or-later"
+	page := func(id, slug string) string {
+		return `<item><title>Ten things</title><link>https://oldbakery.example/` + slug + `/</link>` +
+			`<wp:post_id>` + id + `</wp:post_id><wp:post_name>` + slug + `</wp:post_name>` +
+			`<wp:post_type>page</wp:post_type><wp:status>publish</wp:status>` +
+			`<content:encoded><![CDATA[<p>Words about ` + slug + `.</p>]]></content:encoded></item>`
+	}
+	doc := strings.Replace(wxr, "<item><title>Not yet</title>",
+		page("31", long)+page("32", long+"-part-two")+`<item><title>Not yet</title>`, 1)
+	s, err := FromWordPress([]byte(doc), "bakery.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := Package(s, "", "dana", nil, time.Now())
+	if err != nil {
+		t.Fatalf("the package does not install: %v", err)
+	}
+	var names []string
+	for _, pg := range b.Package.Pages {
+		if strings.HasPrefix(pg.Name, "ten-things") {
+			names = append(names, pg.Name)
+			if len(pg.Name) > 64 {
+				t.Errorf("page %q is %d characters, more than the store holds", pg.Name, len(pg.Name))
+			}
+		}
+	}
+	if len(names) != 2 || names[0] == names[1] {
+		t.Errorf("the two pages were brought as %v", names)
+	}
+}
