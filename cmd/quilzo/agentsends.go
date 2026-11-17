@@ -161,13 +161,20 @@ func desktopCommits(a agent.Action) bool {
 // earned by being approved often enough in runs a person started, and then
 // went ahead from a run a trigger started, sending the form with nobody
 // asked.
+//
+// Only a press: what the workspace weighs (a file written, a command that
+// changes it) is said as it was. It reaches nothing outside, and a command
+// that does is held by outwardAsks. Every hand's reason was read here at
+// first, so a triggered run's `git commit` was shown as going out from a
+// run nobody started, and as a send was never earned as it is elsewhere.
 func unattendedWeighs(unattended bool, weigh func(agent.Action) string) func(agent.Action) string {
 	if !unattended {
 		return weigh
 	}
 	return func(a agent.Action) string {
 		why := weigh(a)
-		if why == "" || !agent.Earnable(a, why, agent.WaitAsk, false) {
+		press := agent.IsBrowser(a.Op) || agent.IsDesktop(a.Op)
+		if why == "" || !press || !agent.Earnable(a, why, agent.WaitAsk, false) {
 			return why
 		}
 		return fmt.Sprintf("%s: %s, which in a run nobody started a person decides each time",

@@ -764,3 +764,47 @@ func TestARunNobodyStartedDoesNotEarnAPressThatSends(t *testing.T) {
 		t.Errorf("Tab on the desktop waits: %q", why)
 	}
 }
+
+// What a run nobody started does in its own workspace is weighed as it is
+// in any run: a file written, a command that changes the workspace, a file
+// moved to the bin. None of it goes out, so none of it is a send.
+//
+// The hold on presses was put round everything a run's hands weigh, the
+// workspace's with the browser's and the desktop's. So a triggered run's
+// `git commit` was shown to the person deciding it as going out from a run
+// nobody started, and as a send it could not be earned as it is in a run
+// a person starts; a file it wrote was said to go out as well. A command
+// that does reach the network is held by outwardAsks, as it was.
+func TestARunNobodyStartedWeighsItsWorkspaceAsAnyRunDoes(t *testing.T) {
+	// What the workspace's driver says of these (shell.Driver.Weighs).
+	weighed := map[string]string{
+		"shell_run":   "it runs git commit -m tidy: it changes the workspace",
+		"file_write":  "it writes notes.md in the workspace",
+		"file_edit":   "it edits notes.md in the workspace",
+		"file_move":   "it moves notes.md to old.md in the workspace",
+		"file_delete": "it moves notes.md to the workspace's bin, where it is kept a week",
+	}
+	weigh := func(a agent.Action) string { return weighed[a.Op] }
+	for _, unattended := range []bool{true, false} {
+		w := unattendedWeighs(unattended, weigh)
+		for op, said := range weighed {
+			a := agent.Action{Op: op, Input: map[string]any{"path": "notes.md"}}
+			why := w(a)
+			if why != said {
+				t.Errorf("%s, unattended %v, is weighed %q, not %q", op, unattended, why, said)
+			}
+			if c := agent.CommitOf(a, why, agent.WaitAsk, false); c != "writes" || !agent.Earnable(a, why, agent.WaitAsk, false) {
+				t.Errorf("%s, unattended %v, is shown as %q, earnable %v", op, unattended, c,
+					agent.Earnable(a, why, agent.WaitAsk, false))
+			}
+		}
+	}
+	// A press is still a send there.
+	press := agent.Action{Op: "browser_click", Input: map[string]any{"ref": "e2"}}
+	why := unattendedWeighs(true, func(agent.Action) string {
+		return `it presses button "Continue" on shop.example, and it submits a form`
+	})(press)
+	if agent.CommitOf(press, why, agent.WaitAsk, false) != "sends" {
+		t.Errorf("a press that submits, from a run nobody started, is weighed %q", why)
+	}
+}
