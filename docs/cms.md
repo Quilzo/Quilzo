@@ -1545,12 +1545,12 @@ reach.** A power that acts inside its own situation needs nothing standing:
 ending a handoff conversation closes that one conversation, and the worst case
 is a visitor who leaves. A power that survives the situation is a standing act
 wearing a situational costume and needs the standing authority for what it
-actually does, which lands on **publish**: the ladder already defines it as the
-only action with an outside observer. One situational role here reaches outside
-today: an enrolment link, whose passkey outlives it and rests on the grant of
-whoever made the link. Others that reached outside (an incident's commander, a
-detection's promoter) left with a security team's tools, and the rule is what
-keeps the next one honest.
+actually does. One situational role here reaches outside today: an enrolment
+link, whose passkey outlives it and signs in as the person it names. What it
+does is hand somebody access, so it rests on **grant**: the authority of whoever
+made the link, checked when they made it. Others that reached outside (an
+incident's commander, a detection's promoter) left with a security team's tools,
+and the rule is what keeps the next one honest.
 
 So every situational role declares its powers and, for each, whether the effect
 survives — with the reason, because that classification is a judgement and an
