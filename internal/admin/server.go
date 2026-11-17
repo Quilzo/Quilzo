@@ -1893,6 +1893,23 @@ func (s *Server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		cookie, cookieTok = secret, sess
+	} else if !tok.SignedIn() {
+		// A session pasted here is signed in with as well, and marked as
+		// the one exchanged above is. Used as it is and left unmarked, it
+		// sat in the browser's cookie, was signed out here once nobody
+		// used it, and went on being taken by a server that keeps no idle
+		// clock. The mark is stored before anybody is signed in: unstored,
+		// that server would not read it.
+		if merr := s.Tokens.MarkSignIn(tok.ID); merr == nil {
+			cookieTok.SignIn = true
+		}
+		if s.SaveTokens != nil {
+			if serr := s.SaveTokens(s.Tokens); serr != nil {
+				http.Error(w, "the session could not be stored: "+serr.Error(),
+					http.StatusInternalServerError)
+				return
+			}
+		}
 	}
 	maxAge := int(time.Until(time.Unix(cookieTok.ExpiresAt, 0)).Seconds())
 	if maxAge < 1 {

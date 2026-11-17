@@ -790,6 +790,42 @@ func TestMergingTokenStoresNeverUndoesAStepUp(t *testing.T) {
 	}
 }
 
+// A session marked as one somebody signed in to the admin with stays
+// marked when a copy of the store read before the mark is written.
+//
+// The copy being written says what was meant for everything the merge
+// does not name, so a command line that read the store, and saved it
+// after the admin marked a pasted session, wrote the session back
+// unmarked: a server that keeps no idle clock took it again. A mark is
+// only ever set, as a revocation is.
+func TestMergingTokenStoresNeverUnmarksASignIn(t *testing.T) {
+	now := time.Now()
+	stored := &TokenStore{}
+	parent, _, err := stored.Issue("ci", "dana", RoleAdmin, "/", time.Hour, RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret, sess, err := stored.Exchange(parent, RoleNone, "", time.Hour, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := &TokenStore{Tokens: append([]Token(nil), stored.Tokens...)}
+	if err := stored.MarkSignIn(sess.ID); err != nil {
+		t.Fatal(err)
+	}
+	stale.MergeInto(stored, now)
+	if tok, err := stored.Authenticate(secret, now); err != nil || !tok.SignedIn() {
+		t.Fatalf("a stale copy written back unmarked the session: %v", err)
+	}
+	// And a copy that holds the mark gives it to a store that does not.
+	marked := &TokenStore{Tokens: append([]Token(nil), stored.Tokens...)}
+	fresh := &TokenStore{Tokens: append([]Token(nil), stale.Tokens...)}
+	marked.MergeInto(fresh, now)
+	if tok, err := fresh.Authenticate(secret, now); err != nil || !tok.SignedIn() {
+		t.Fatalf("the mark was not written: %v", err)
+	}
+}
+
 // Authorization schemes are case-insensitive (RFC 9110 section 11.1), and
 // every reader of the header reads it here.
 func TestPresentedReadsTheSchemeInAnyCase(t *testing.T) {

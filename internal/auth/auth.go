@@ -739,10 +739,12 @@ type Token struct {
 	Session bool `json:"session,omitempty"`
 
 	// SignIn marks a session the admin exchanged from a token somebody
-	// signed in to it with: the admin's own door, as a passkey's or an
-	// identity provider's session is, and kept to its idle clock there
-	// (SignedIn). A session a program exchanged for itself with `quilzo
-	// token exchange` is not one, and is bounded by its own few minutes.
+	// signed in to it with, or a session somebody pasted there to sign in
+	// with: the admin's own door, as a passkey's or an identity provider's
+	// session is, and kept to its idle clock there (SignedIn). A session
+	// a program exchanged for itself with `quilzo token exchange`, and
+	// never signed in with, is not one, and is bounded by its own few
+	// minutes.
 	SignIn bool `json:"sign_in,omitempty"`
 
 	// StepUp, when set, says why this session must prove its person before
@@ -898,7 +900,8 @@ func (t *Token) IsSession() bool { return t.Parent != "" || t.Session }
 func (t *Token) SignedIn() bool { return t.Session || t.SignIn }
 
 // MarkSignIn marks a session as one somebody signed in to the admin with
-// (Token's SignIn).
+// (Token's SignIn): the one the admin exchanges from a pasted token, and a
+// session pasted there, which it uses as it is.
 func (ts *TokenStore) MarkSignIn(id string) error {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
@@ -1789,10 +1792,13 @@ func mergeStepUp(m *Token, s Token) {
 // The store's own rules make a union safe. A token is only ever added, a
 // revocation only ever sets a flag, and only sessions that ended long ago
 // are removed, by a sweep that runs again here. So a token either copy has
-// is kept, a token revoked in either stays revoked, a key bound in either
-// stays bound, the last use is the later one, and a step-up is the later of
-// being asked for and being passed (mergeStepUp); for everything else ts,
-// the copy being written, says what was meant.
+// is kept, a token revoked in either stays revoked, a session marked in
+// either as signed in to the admin with stays marked (a copy read before
+// the admin marked a pasted session wrote it back unmarked, and a server
+// with no idle clock took it again), a key bound in either stays bound,
+// the last use is the later one, and a step-up is the later of being asked
+// for and being passed (mergeStepUp); for everything else ts, the copy
+// being written, says what was meant.
 func (ts *TokenStore) MergeInto(stored *TokenStore, now time.Time) {
 	ts.mu.Lock()
 	mine := append([]Token(nil), ts.Tokens...)
@@ -1813,6 +1819,7 @@ func (ts *TokenStore) MergeInto(stored *TokenStore, now time.Time) {
 		}
 		s := stored.Tokens[i]
 		m.Revoked = m.Revoked || s.Revoked
+		m.SignIn = m.SignIn || s.SignIn
 		if m.Bound == "" {
 			m.Bound = s.Bound
 		}
