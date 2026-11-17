@@ -345,12 +345,18 @@ func (c *Caller) bound() *agent.Bound {
 // reaches with nothing in common are refused, saying so, rather than
 // going on as either: a run kept before its starter's reach was is taken
 // on as before.
+//
+// A starter who held no role is the lowest there is, and not a starter
+// who restricts nothing: somebody nobody verified, in a store with no
+// access rules, runs an agent that proposes and writes nothing
+// (autonomyFor). Their empty role was read as no limit, so their run,
+// answered by an administrator, went on to write.
 func (c *Caller) within(b *agent.Bound) (*Caller, error) {
 	if c == nil || b == nil {
 		return c, nil
 	}
 	out := *c
-	if r := auth.Role(b.Role); r != "" && !r.AtLeast(c.Role) {
+	if r := auth.Role(b.Role); !r.AtLeast(c.Role) {
 		out.Role = r
 	}
 	mine, theirs := strings.Trim(c.Scope, "/"), strings.Trim(b.Scope, "/")

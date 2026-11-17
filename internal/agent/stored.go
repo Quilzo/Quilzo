@@ -82,7 +82,9 @@ type Record struct {
 
 // Bound is the reach of whoever started a run: the role they held, the
 // part of the site they were confined to, and the content types and
-// locales their credential was narrowed to. Empty parts restrict nothing.
+// locales their credential was narrowed to. An empty part of the site, and
+// an empty list of types or locales, restrict nothing; an empty role is no
+// role at all, the least there is, as somebody nobody verified holds.
 type Bound struct {
 	Role    string   `json:"role,omitempty"`
 	Scope   string   `json:"scope,omitempty"`

@@ -16,6 +16,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/assistant"
+	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/chatact"
 	"github.com/quilzo/quilzo/internal/site"
@@ -888,5 +889,81 @@ func TestAModelHeldToProposingDoesNotWorkTheDesktop(t *testing.T) {
 	if works, _ := acts(got); works != 3 || got.Autonomy != agent.AutonomyDraft {
 		t.Errorf("a model at its declared autonomy, %q, holds %d of the desktop's three acts: %v",
 			got.Autonomy, works, got.Capabilities)
+	}
+}
+
+// A run somebody with no role started goes on reading only when somebody
+// who may write takes it on, as it did before it waited.
+//
+// What its starter reached is kept as the role they held, and an empty
+// role was read as no limit, where it is the least there is: somebody
+// nobody verified, running an agent in a store with no access rules,
+// holds no role, so their run proposes and writes nothing. It asked
+// before reading, an administrator let the read go ahead, and the run
+// went on as the administrator's and wrote the page. A run kept before
+// its starter's reach was has no reach to hold it to, and is taken on as
+// before.
+func TestARunSomebodyWithNoRoleStartedGoesOnReadingOnly(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := demoStore(t)
+	declaredAutonomy(t, root)
+	m := asker("tidy")
+	m.AskFirst = []string{"list_pages"}
+	m.Budget.Tools = 4
+	if err := declareAgent(root, m, true, true, asAdmin("sam")); err != nil {
+		t.Fatal(err)
+	}
+	// Reads the pages first, then writes the about page, then is done.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		choice := `{"op":"list_pages"}`
+		switch body := string(b); {
+		case strings.Contains(body, "wrote about"), strings.Contains(body, "not one of this agent's"):
+			choice = `{"op":"done","say":"written"}`
+		case !strings.Contains(body, "Nothing has been done yet"):
+			choice = `{"op":"write_page","input":{"page":"about","fields":{"title":"Not theirs to write"}}}`
+		}
+		out, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{
+			"message": map[string]any{"role": "assistant", "content": choice}}}})
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(out)
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("QUILZO_MODEL_URL", srv.URL+"/v1")
+	t.Setenv("QUILZO_MODEL", "stand-in")
+	t.Setenv("QUILZO_MODEL_KEY", "")
+
+	wrote := func(tr agent.Trace) bool {
+		for _, st := range tr.Steps {
+			if st.Action.Op == "write_page" && st.Allowed && st.Err == "" {
+				return true
+			}
+		}
+		return false
+	}
+	// Nobody verified, as the command line resolves a caller with no token.
+	kit := &Caller{Name: "kit", Kind: audit.KindHuman, Why: "no token was presented"}
+	id, out, err := runAgentKept(context.Background(), root, "tidy", "tidy the pages", true, kit)
+	w := out.Trace.Waiting
+	if err != nil || w == nil || w.Action.Op != "list_pages" {
+		t.Fatalf("the run did not wait to read: %v\n%s", err, describeRun(out.Trace))
+	}
+	if rec, err := loadAgentRun(root, id); err != nil || rec.Bound == nil || rec.Bound.Role != "" {
+		t.Fatalf("the run does not keep that its starter held no role: %v %+v", err, rec.Bound)
+	}
+	done, _ := continueAgentRun(context.Background(), root, id, &agent.Verdict{N: w.N, Approve: true}, asAdmin("sam"))
+	if wrote(done.Trace) {
+		t.Errorf("a run somebody with no role started wrote once sam took it on:\n%s", describeRun(done.Trace))
+	}
+	if len(done.Trace.Steps) == 0 || done.Trace.Steps[0].Action.Op != "list_pages" || !done.Trace.Steps[0].Allowed {
+		t.Errorf("the read sam let go ahead was not made:\n%s", describeRun(done.Trace))
+	}
+	// The narrowing itself: no role is the least, and a run with no bound
+	// kept is not narrowed.
+	if c, err := asAdmin("sam").within(&agent.Bound{}); err != nil || c.Role != auth.RoleNone {
+		t.Errorf("sam taking on a run its starter held no role for holds %q: %v", c.Role, err)
+	}
+	if c, err := asAdmin("sam").within(nil); err != nil || c.Role != auth.RoleAdmin {
+		t.Errorf("sam taking on a run kept with no bound holds %q: %v", c.Role, err)
 	}
 }
