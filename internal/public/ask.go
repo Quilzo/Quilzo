@@ -326,14 +326,22 @@ func (st *Site) answer(w http.ResponseWriter, r *http.Request,
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
-	// Asked without its agent actions while nothing takes their requests:
-	// there is no offer the page could make of one. With them, a question
-	// no page covers was put to the model only to see whether it offers
-	// one (assistant.RespondTo) and the offer taken off again below, so a
-	// site served on its own paid for a call to the model on every such
-	// question, to give the refusal it gives without one.
+	// Asked without the actions this page could not offer. With them, a
+	// question no page covers was put to the model only to see whether it
+	// offers one (assistant.RespondTo), and the offer taken off again.
 	asking := a
-	if st.Assistants.Act == nil || !st.actTaking() {
+	switch {
+	case st.askDesigned():
+		// The owner's own page has no place for an offer, and the offer
+		// was taken off where that page is drawn, after the answer had
+		// been counted: the visitor read the refusal while the audit
+		// record and the conversion said the chatbot had answered, and the
+		// question was not kept among those the site should answer.
+		asking.Actions = nil
+	case st.Assistants.Act == nil || !st.actTaking():
+		// Nothing takes an agent action's request just now, so a site
+		// served on its own paid for a call to the model on every such
+		// question, to give the refusal it gives without one.
 		asking.Actions = nil
 		for _, ac := range a.Actions {
 			if ac.Kind != assistant.Agent {
@@ -383,6 +391,17 @@ func (st *Site) answer(w http.ResponseWriter, r *http.Request,
 	view.Cards = st.cardsFor(view.Sources, ans)
 	view.FollowUps = followUps(a, view.Question, &ans, view.Sources)
 	return true
+}
+
+// askDesigned reports whether the conversation is shown on a page the owner
+// designed (askPageName), which is given the answer and no offer.
+func (st *Site) askDesigned() bool {
+	pages, _, err := st.pages()
+	if err != nil {
+		return false
+	}
+	_, ok := pages[askPageName]
+	return ok
 }
 
 // assistantIndex is the assistant's knowledge at the published commit,

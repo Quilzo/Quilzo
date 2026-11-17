@@ -660,6 +660,58 @@ func TestNoModelIsAskedForAnOfferNothingTakes(t *testing.T) {
 	}
 }
 
+// On a page the owner designed, which has no place for an offer, a request
+// no page covers is the refusal it reads as: no model is asked for an
+// offer, and the question is counted and kept as one the site did not
+// answer.
+//
+// The model was asked, its offer taken off again where the page is drawn,
+// and the page said "I could not find that on this site" while the answer
+// had already been counted as given: the audit record and the conversion
+// said the chatbot had answered, and the question was not kept among those
+// the site should answer, although the visitor had been told it could not.
+func TestAnOwnersPageCountsAnOfferItCannotShowAsUnanswered(t *testing.T) {
+	const layout = `<!doctype html><html lang="en"><head><title>{{ page.title }}</title>
+</head><body><h1>{{ ask.title }}</h1><p id="q">{{ ask.question }}</p><div id="a">{{ ask.answer }}</div></body></html>`
+	bot := shopBot
+	bot.UseModel = true
+	bot.Actions = []assistant.Action{
+		{Name: "booking", Kind: assistant.Agent, Target: "bookings", Description: "Look up your booking", Fields: []string{"booking_ref"}},
+	}
+	st, audited := askSite(t, bot)
+	st.Assistants.Act = func(chatact.Request) error { return nil }
+	asked := 0
+	st.Assistants.Model = func(assistant.Assistant) assistant.Model { return counting{"booking", &asked} }
+	var unanswered []string
+	st.Assistants.Unanswered = func(_, q string) { unanswered = append(unanswered, q) }
+	pages, err := site.PagesAt(st.Store, site.RefLive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages["ask"] = map[string]any{"title": "Ask us"}
+	if _, err := site.SaveDraft(st.Store, pages, "an ask page", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Publish(st.Store, ""); err != nil {
+		t.Fatal(err)
+	}
+	st.Layouts = render.OneLayout(layout)
+
+	body := askPost(st, "help", "Please look up HB-2201").Body.String()
+	if !strings.Contains(body, `<p id="q">`) {
+		t.Fatalf("the owner's ask page was not used:\n%s", body)
+	}
+	if !strings.Contains(body, "I could not find that on this site.") || strings.Contains(body, assistant.OfferText) {
+		t.Errorf("the owner's page:\n%s", body)
+	}
+	if asked != 0 {
+		t.Errorf("the model was asked %d times for an offer the page has no place for", asked)
+	}
+	if len(*audited) != 1 || (*audited)[0] || len(unanswered) != 1 {
+		t.Errorf("a refusal counted as answered: audited %v, kept as unanswered %v", *audited, unanswered)
+	}
+}
+
 // A chatbot that reads records answers from them on the site, naming the
 // record it answered from without a link, and reads them again when they
 // change.
