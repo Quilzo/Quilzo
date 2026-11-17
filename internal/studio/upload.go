@@ -84,18 +84,64 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	body, err := io.ReadAll(file)
-	if err != nil || len(body) == 0 {
-		http.Error(w, "the recording could not be read", http.StatusBadRequest)
-		return
-	}
-
 	// The name is used for display and for nothing else — the address is the
 	// hash — but it still arrives from a browser, so the extension is the
 	// only part read and media.Accept is what reads it.
 	name := strings.TrimSpace(header.Filename)
 	if name == "" {
 		name = "screen-recording.webm"
+	}
+
+	// What it is, from its first bytes, before any of it is read into
+	// memory. The form spilled the file to disk so that a quarter of a
+	// gigabyte is not held in the heap to find out whether it parses, and
+	// this then read it whole anyway: one 200 MB upload that was not a
+	// recording took the studio from 45 MB to 461 MB, and three at once to
+	// 1.28 GB. A file that is not a recording, or is over its format's
+	// limit, is refused here; media.Accept still decides the rest.
+	head := make([]byte, 512)
+	n, err := io.ReadFull(file, head)
+	if err != nil && err != io.ErrUnexpectedEOF {
+		http.Error(w, "the recording could not be read", http.StatusBadRequest)
+		return
+	}
+	key, fm, err := media.Identify(name, head[:n])
+	if err != nil {
+		http.Error(w, "that is not a recording this library accepts: "+
+			err.Error(), http.StatusUnsupportedMediaType)
+		return
+	}
+	if fm.Kind != media.Video && fm.Kind != media.Audio {
+		http.Error(w, notARecording(fm.Kind), http.StatusUnsupportedMediaType)
+		return
+	}
+	if header.Size > fm.MaxBytes {
+		http.Error(w, fmt.Sprintf("that is over the %d MB limit for %s files",
+			fm.MaxBytes>>20, key), http.StatusRequestEntityTooLarge)
+		return
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		http.Error(w, "the recording could not be read", http.StatusBadRequest)
+		return
+	}
+
+	// A recording that may be one is read whole, because that is what
+	// media.Accept verifies and medialib.Put files. Only so many at once,
+	// so a handful of concurrent uploads cannot take the host's memory
+	// between them; a request that cannot get a turn before its client
+	// gives up is told so.
+	select {
+	case recordingsInMemory <- struct{}{}:
+		defer func() { <-recordingsInMemory }()
+	case <-r.Context().Done():
+		http.Error(w, "too many recordings are arriving at once; try again",
+			http.StatusServiceUnavailable)
+		return
+	}
+	body, err := io.ReadAll(file)
+	if err != nil || len(body) == 0 {
+		http.Error(w, "the recording could not be read", http.StatusBadRequest)
+		return
 	}
 	f, err := media.Accept(name, body, s.now())
 	if err != nil {
@@ -107,10 +153,7 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	// general-purpose upload on an origin that runs script is a larger thing
 	// than anybody asked for — the admin's form is where a photograph goes.
 	if f.Kind != media.Video && f.Kind != media.Audio {
-		http.Error(w, fmt.Sprintf(
-			"this takes recordings, and that is not one — the bytes parse as "+
-				"%s. A photograph goes in through the admin's own upload form",
-			f.Kind), http.StatusUnsupportedMediaType)
+		http.Error(w, notARecording(f.Kind), http.StatusUnsupportedMediaType)
 		return
 	}
 
@@ -143,6 +186,17 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	fmt.Fprint(w, describeStored(stored))
+}
+
+// recordingsInMemory bounds how many recordings are read whole at once.
+// Two, because a recording can be a quarter of a gigabyte and the studio is
+// one person's capture surface, not a bulk upload service.
+var recordingsInMemory = make(chan struct{}, 2)
+
+// notARecording is the refusal for a file that parses as something else.
+func notARecording(kind media.Kind) string {
+	return fmt.Sprintf("this takes recordings, and that is not one — the bytes "+
+		"parse as %s. A photograph goes in through the admin's own upload form", kind)
 }
 
 // describeStored is what the page shows when a recording lands.

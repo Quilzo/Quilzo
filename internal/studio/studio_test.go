@@ -5,12 +5,14 @@ package studio
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -457,5 +459,69 @@ func TestATokensUseIsToldToTheHost(t *testing.T) {
 	signedIn(t, srv, "qz_not-a-token", "/", nil, "")
 	if len(told) != 2 {
 		t.Fatalf("a token that did not authenticate was told: %v", told)
+	}
+}
+
+// A refused upload is refused from its first bytes, not after it has been
+// read whole into memory.
+//
+// The form spills a recording to a temporary file so that a quarter of a
+// gigabyte is not held in the heap to find out whether it parses, and the
+// handler then read the spilled file whole with io.ReadAll anyway: one
+// 200 MB upload that was not a recording took the studio from 45 MB to
+// 461 MB, and three at once to 1.28 GB.
+func TestARefusedUploadIsNotReadIntoMemory(t *testing.T) {
+	srv, secret := wired(t)
+	const size = 96 << 20
+	payload := append([]byte("not any format at all"), make([]byte, size)...)
+	body, ct := oneRecording(t, "clip.webm", payload)
+	payload = nil
+
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	rec := signedIn(t, srv, secret, "/upload", body, ct)
+	runtime.ReadMemStats(&after)
+	if rec.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("the upload answered %d: %s", rec.Code, rec.Body.String())
+	}
+	// The multipart parse keeps up to eight megabytes in memory before it
+	// spills, and growing that buffer allocates a few times over (more under
+	// the race detector); that is bounded whatever the file's size. Reading
+	// the file whole allocates more than the file, so three quarters of it
+	// is the line between the two.
+	if got := after.TotalAlloc - before.TotalAlloc; got > size*3/4 {
+		t.Errorf("refusing a %d MB upload allocated %d MB", size>>20, got>>20)
+	}
+}
+
+// Only so many recordings are held in memory at once. A recording that
+// parses is read whole to be filed, so without a bound a handful of
+// concurrent uploads could take the host's memory between them; a request
+// that cannot get a turn before it gives up is told so, and nothing is stored.
+func TestOnlySoManyRecordingsAreReadAtOnce(t *testing.T) {
+	srv, secret := wired(t)
+	for i := 0; i < cap(recordingsInMemory); i++ {
+		recordingsInMemory <- struct{}{}
+	}
+	defer func() {
+		for i := 0; i < cap(recordingsInMemory); i++ {
+			<-recordingsInMemory
+		}
+	}()
+	body, ct := oneRecording(t, "clip.webm", webmBytes())
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	req := httptest.NewRequest(http.MethodPost, "/upload", body).WithContext(ctx)
+	req.Header.Set("Content-Type", ct)
+	req.AddCookie(&http.Cookie{Name: CookieName, Value: secret})
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("an upload with no turn answered %d: %s", rec.Code, rec.Body.String())
+	}
+	lib, _ := srv.Library()
+	if files, _ := lib.List(); len(files) != 0 {
+		t.Errorf("%d file(s) were stored without a turn", len(files))
 	}
 }
