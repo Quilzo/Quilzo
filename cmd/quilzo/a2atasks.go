@@ -74,6 +74,7 @@ func a2aHost(root string, c *mcp.Caller) a2a.Host {
 		if tok.Grant != "" {
 			d["grant"] = tok.Grant
 		}
+		noteCredential(d, tok)
 		// Denied is for what this program refused: a sender who may not
 		// run the agent, an agent that may not run (mayNotRun), or a
 		// decision a run was refused. Everything else that went wrong is a
@@ -92,12 +93,9 @@ func a2aHost(root string, c *mcp.Caller) a2a.Host {
 				outcome = audit.Denied
 			}
 		}
-		who, kind := tok.Principal, audit.KindHuman
-		if tok.Client != "" {
-			who, kind = "app:"+tok.Client, audit.KindAI
-		}
+		who, model := interfaceClient(tok.Principal, tok.Client)
 		record(root, audit.Record{Action: "a2a.task", Resource: "/a2a", Outcome: outcome,
-			Principal: who, Kind: kind, Model: tok.Client, Verified: true, Detail: d})
+			Principal: who, Kind: audit.KindAI, Model: model, Verified: true, Detail: d})
 	}
 	// refused is a refusal by the access policy or the credential, for the
 	// record (note): typed, as the gateway types its own, because what

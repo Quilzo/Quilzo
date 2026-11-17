@@ -1166,7 +1166,12 @@ in the editor) in its head, its headers and the sitemap. And every page has a
 Markdown copy of its words at `/NAME.md`, made from the content rather than
 scraped from the markup, linked from the page and from `llms.txt`, for a
 language model or a reader's agent; the copy is never indexed and names the
-page as canonical.
+page as canonical. It has what a visitor is shown: a listing's rows, a blog's
+posts and the events still to come, each as a list item with its link, its
+date and its price, and under a blog's posts the link to the older ones. A
+product, a post or an event with a page of its own has its copy at that page's
+address with `.md` added (`/post/rye.md`). `llms.txt` lists what the sitemap
+lists, so not the page records are drawn with nor one left out of results.
 
 **What people looked for and did not find.** The cookieless count of views
 also counts addresses people asked for that are not on the site, and searches
@@ -1419,10 +1424,13 @@ covering the same ground. An agent interface over MCP covering everything that
 reads or authors content — and deliberately not covering anything that changes
 who may do what, what code runs, or what the keys are.
 
-**On a device.** The published site is an installable app with an offline page
-and a network-first service worker, and it can register as a share target so the
-operating system offers it in the share sheet — a share arriving as an ordinary
-form POST with no script in the path.
+**On a device.** The published site is an installable app, and it can register
+as a share target so the operating system offers it in the share sheet — a share
+arriving as an ordinary form POST with no script in the path. It serves a
+network-first service worker at `/sw.js` and an offline page, but no page
+registers the worker: registering one takes a script, and the site's policy
+allows none that does (`script-src 'none'`), so a visitor who loses the network
+sees the browser's own error rather than a page they have read.
 
 **Decentralised publication.** Content-addressed storage maps onto IPFS
 naturally: `quilzo ipfs` computes CIDv1 identifiers and produces a bundle that
@@ -1731,6 +1739,10 @@ description starts with the site's own sentence — `site.description`, or
 `quilzo site --description` for one run — and then says how its skills are
 governed, so an agent choosing between two sites reads what each is for before
 how it is run; a site with no description keeps the governance sentence alone.
+The extension is declared by its address in the card's `capabilities.extensions`,
+where A2A lists extensions. The card is read, not sent to: a site that takes no
+tasks from other agents says so on it, and its address answers anything but a
+read with 405; one that takes them names the address they are taken at.
 
 The device side is deliberately the boring version. A published site is an
 installable app with a share target: the operating system offers it in the share
@@ -2153,7 +2165,11 @@ with S256 is required, and a server that does not say it supports it is
 refused. This installation registers there as a public client (RFC 7591) when
 the server takes registrations, or uses `--client-id`; a server that answers a
 registration with a secret is refused, so a secret is never kept that nobody
-chose to keep. The metadata has to be for the server asked about, and the
+chose to keep. A server that takes no registrations and takes Client ID
+Metadata Documents, as another Quilzo's does, knows this installation by its
+own document, which the admin serves at `/connections/client.json` for the
+server to read. A connection asks for the scopes the server lists, or those
+`--scope` names. The metadata has to be for the server asked about, and the
 authorization server's for itself: one server cannot speak for another. Every
 request carries the resource indicator (RFC 8707), so a token is for that server
 and is sent to it alone. Then an MCP integration naming the connection reaches
@@ -2557,10 +2573,16 @@ editing the page takes. Both are in the audit log.
 
 ## On a phone
 
-A published site is a progressive web app: a manifest, a display mode, an
-offline page, and a service worker that is network-first because publishing has
-to take effect at once and a cache that serves yesterday's page is a rollback
-nobody asked for.
+A published site is installable: a manifest and a display mode. It also serves
+an offline page and a service worker that is network-first, because publishing
+has to take effect at once and a cache that serves yesterday's page is a
+rollback nobody asked for — but no page registers that worker, so the site does
+not work offline. A worker runs only once a page's script registers it, and the
+site's policy allows no script that does (`script-src 'none'`, which
+`worker-src` falls back to). A layout that registers `/sw.js` needs a policy
+that allows that script and `worker-src 'self'`; the worker keeps no answer
+marked `no-store` or `private` and no address with a query, so a booking, a
+conversation or a members' page is not left on the device.
 
 Point `share.form` at one of your forms and it registers as a share target, so
 the operating system offers your site in the share sheet. A share arrives as an ordinary form POST and becomes a submission —

@@ -57,6 +57,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/fetch"
+	"github.com/quilzo/quilzo/internal/jsonschema"
 )
 
 // MaxResult bounds what one tool call returns.
@@ -308,8 +309,20 @@ func (c *Client) CallStrict(ctx context.Context, in agent.Integration, tool stri
 		return "", err
 	}
 	if pin := in.Pins[tool]; pin != "" {
-		if err := c.checkPin(ctx, in, tool, pin); err != nil {
+		approved, err := c.checkPin(ctx, in, tool, pin)
+		if err != nil {
 			return "", err
+		}
+		// And what it is sent fits the input schema that was approved with
+		// it. The schema was pinned and never read, so a model's arguments,
+		// which are what something it read may have steered, went out as
+		// given: a string for a number, an id the tool does not name, a
+		// destructive tool's required confirm left out. The REST path holds
+		// a body to its declaration for the same reason (rest.go).
+		if in.Kind == agent.IntegrationMCP {
+			if err := approved.takes(args); err != nil {
+				return "", refuse(fmt.Errorf("%s on %s: %w", tool, in.Name, err))
+			}
 		}
 	}
 	if in.Kind == agent.IntegrationHTTP {
@@ -317,6 +330,10 @@ func (c *Client) CallStrict(ctx context.Context, in agent.Integration, tool stri
 	}
 	if in.Kind == agent.IntegrationA2A {
 		return c.a2aCall(ctx, in, tool, args)
+	}
+	if args == nil {
+		// An object, as tools/call has it, and not null.
+		args = map[string]any{}
 	}
 	raw, err := c.send(ctx, in, "tools/call", map[string]any{
 		"name": tool, "arguments": args,
@@ -382,28 +399,85 @@ func guarded(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "refusing to")
 }
 
-// checkPin refuses a tool whose definition is not the one approved.
-func (c *Client) checkPin(ctx context.Context, in agent.Integration, tool, pin string) error {
+// checkPin refuses a tool whose definition is not the one approved, and
+// returns the one that is.
+func (c *Client) checkPin(ctx context.Context, in agent.Integration, tool, pin string) (Tool, error) {
 	tools, err := c.Definitions(ctx, in)
 	if err != nil {
-		return err
+		return Tool{}, err
 	}
 	for _, t := range tools {
 		if t.Name != tool {
 			continue
 		}
 		if t.Definition == pin {
-			return nil
+			return t, nil
 		}
 		if c.Changed != nil {
 			c.Changed(in, tool, pin, t.Definition)
 		}
-		return &Refused{Reason: fmt.Sprintf("%s has changed what %q is since a person approved it "+
+		return Tool{}, &Refused{Reason: fmt.Sprintf("%s has changed what %q is since a person approved it "+
 			"(approved %s, now %s). Nothing is called until somebody looks: "+
 			"quilzo integrations tools %s, then quilzo integrations pin %s",
 			in.Name, tool, pin[:12], t.Definition[:12], in.Name, in.Name)}
 	}
-	return refuse(fmt.Errorf("%s no longer offers %q, which was approved", in.Name, tool))
+	return Tool{}, refuse(fmt.Errorf("%s no longer offers %q, which was approved", in.Name, tool))
+}
+
+// takes checks arguments against the tool's input schema, by
+// internal/jsonschema's rules: a schema that lists its properties takes
+// only those unless it says otherwise.
+func (t Tool) takes(args map[string]any) error {
+	if args == nil {
+		args = map[string]any{}
+	}
+	return jsonschema.CheckNamed(t.InputSchema, args, "arguments")
+}
+
+// Approved is a pinned tool as its server defines it, when this install
+// may call it and it is still what a person approved; CallStrict holds the
+// tool's arguments to its input schema. For a caller that has an argument
+// as text and needs to know what the tool takes it as (Tool.Typed). It
+// asks the server nothing CallStrict would not ask, and says nothing of a
+// tool that changed: the call that follows refuses that, and reports it.
+func (c *Client) Approved(ctx context.Context, in agent.Integration, tool string) (Tool, bool) {
+	pin := in.Pins[tool]
+	if in.Kind != agent.IntegrationMCP || pin == "" || c.permits(in, tool) != nil {
+		return Tool{}, false
+	}
+	tools, err := c.Definitions(ctx, in)
+	if err != nil {
+		return Tool{}, false
+	}
+	for _, t := range tools {
+		if t.Name == tool && t.Definition == pin {
+			return t, true
+		}
+	}
+	return Tool{}, false
+}
+
+// Typed is an argument a person gave as text, as the tool's input schema
+// takes it: guessed, which is the type the text looks like, where the
+// schema takes that or says nothing of the argument, and the text itself
+// where it takes text and not the guess.
+//
+// A command line has only text, and reads order_id=42 as a number. Sent as
+// one it went out as it was until arguments were held to the schema; then
+// an order id, a postcode or a version that the tool takes as text was
+// refused as a number, and nothing a person could type made it text.
+func (t Tool) Typed(name, text string, guessed any) any {
+	var schema struct {
+		Properties map[string]json.RawMessage `json:"properties"`
+	}
+	if json.Unmarshal(t.InputSchema, &schema) != nil {
+		return guessed
+	}
+	p, ok := schema.Properties[name]
+	if !ok || jsonschema.Check(p, guessed) == nil || jsonschema.Check(p, text) != nil {
+		return guessed
+	}
+	return text
 }
 
 // Definitions are a server's tools with their definitions' digests and

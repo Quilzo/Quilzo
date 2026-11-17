@@ -4,7 +4,9 @@
 package public
 
 import (
+	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/analytics"
 	"github.com/quilzo/quilzo/internal/chatact"
+	"github.com/quilzo/quilzo/internal/experiment"
 	"github.com/quilzo/quilzo/internal/handoff"
 )
 
@@ -150,5 +153,85 @@ func TestAViolationOnAConversationsPageDoesNotNameItsSecret(t *testing.T) {
 	got := parseViolations([]byte(body), "shop.example")
 	if len(got) != 1 || got[0].Page != "/ask/help/c/" {
 		t.Fatalf("kept %+v", got)
+	}
+}
+
+// A browser's report of a policy violation on this site names its page by
+// the address analytics counts the page under, which is one for one page.
+//
+// A report named its page by the path analytics counts it under, and
+// analytics came to count /about/ and /about as the one page they are, and
+// the home page reached by its name as /: the two rules were written apart
+// and a report kept the address as asked. A violation is counted by how
+// many networks report the same thing on the same page, so one page's was
+// two things, each reported by some of them.
+func TestAViolationIsOnThePageAnalyticsCountsItUnder(t *testing.T) {
+	st := published(t, map[string]any{"index": map[string]any{"title": "Home"},
+		"about": map[string]any{"title": "About"}})
+	var got []string
+	st.OnViolation = func(v Violation, r *http.Request) { got = append(got, v.Group()) }
+	secret, _, _ := handoff.NewSecret()
+	for _, at := range []string{"/about", "/about/", "/", "/index", "/index/", "/ask/help/c/" + secret} {
+		req := httptest.NewRequest(http.MethodPost, "http://shop.example"+ReportsPath, strings.NewReader(
+			`{"csp-report":{"document-uri":"https://shop.example`+at+
+				`","blocked-uri":"inline","violated-directive":"script-src 'none'"}}`))
+		req.Header.Set("Content-Type", "application/csp-report")
+		st.Handler().ServeHTTP(httptest.NewRecorder(), req)
+	}
+	want := []string{"script-src inline /about", "script-src inline /about", "script-src inline /",
+		"script-src inline /", "script-src inline /", "script-src inline /ask/help/c/"}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("reported on %q, want %q", got, want)
+	}
+}
+
+// TestOnePageIsCountedUnderOneAddress — found by driving the site: /about,
+// /about/ and /about%2f are one page with one canonical link, and analytics
+// kept them as three, so the page's views were split and a link brought in
+// from WordPress, which ends in a slash, counted somewhere nobody looked. The
+// home page reached by its own name is the home page too.
+func TestOnePageIsCountedUnderOneAddress(t *testing.T) {
+	st, c := experimentSite(t)
+	for i, path := range []string{"/thanks", "/thanks/", "/thanks%2f", "/", "/index", "/index/"} {
+		if w := visitAs(st, path, fmt.Sprintf("203.0.113.%d", i)); w.Code != 200 {
+			t.Fatalf("%s answered %d", path, w.Code)
+		}
+	}
+	d := c.Today()
+	if d.Pages["/thanks"].Views != 3 || d.Pages["/"].Views != 3 {
+		t.Fatalf("one page counted under several addresses: %+v", d.Pages)
+	}
+	for p := range d.Pages {
+		if p != "/thanks" && p != "/" {
+			t.Errorf("counted under %q", p)
+		}
+	}
+}
+
+// TestAPageGoalIsReachedWithATrailingSlash — found by driving the site: an
+// experiment whose goal was page:/delivery reported nobody converting when
+// every visitor reached /delivery/, the same page; and a goal written with
+// the slash missed every visitor who came without it.
+func TestAPageGoalIsReachedWithATrailingSlash(t *testing.T) {
+	for _, tc := range []struct{ goal, reached string }{
+		{"page:/thanks", "/thanks/"},
+		{"page:/thanks", "/thanks%2f"},
+		{"page:/thanks/", "/thanks"},
+		{"page:/", "/index"},
+		{"page:/index", "/"},
+	} {
+		st, c := experimentSite(t)
+		set, _ := st.Experiments()
+		set.Experiments[0].Goal = tc.goal
+		for i := 0; i < 10; i++ {
+			ip := fmt.Sprintf("198.51.100.%d", i)
+			visitAs(st, "/pricing", ip)
+			visitAs(st, tc.reached, ip)
+		}
+		d := c.Today()
+		won := d.Goals[experiment.WonKey("price", "a")] + d.Goals[experiment.WonKey("price", "b")]
+		if won != 10 {
+			t.Errorf("goal %s reached at %s: %d of 10 converted", tc.goal, tc.reached, won)
+		}
 	}
 }

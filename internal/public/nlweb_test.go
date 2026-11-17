@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/mcp"
 	"github.com/quilzo/quilzo/internal/search"
@@ -288,5 +289,333 @@ func TestTheToolKnowsTheSitesOwnOriginWithItsPortWritten(t *testing.T) {
 		if (w.Code != http.StatusForbidden) != allowed {
 			t.Errorf("Origin %s: %d", origin, w.Code)
 		}
+	}
+}
+
+// The site's /mcp takes a request by the transport's rules, as the admin's
+// does, and answers one it does not take in JSON-RPC.
+//
+// # What this found
+//
+// Only the revision was decided by the admin's rules. A GET looking for a
+// stream was given the site's 404 page, which a client reads as no server
+// here, where the transport answers 405; text/plain, jsonrpc 1.0 or none,
+// an object for an id and data after the message were all answered as if
+// they were right; and a batch, a body over the bound or one that was not
+// JSON was a text/plain 400 a client cannot read as an answer. A page the
+// site has at /mcp is still that page for a browser.
+func TestTheSitesMCPTakesARequestByTheTransportsRules(t *testing.T) {
+	st := nlwebSite(t)
+	type answer struct {
+		Error *struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+		Result map[string]any `json:"result"`
+	}
+	send := func(method, ctype, body string, headers map[string]string) (*httptest.ResponseRecorder, answer) {
+		t.Helper()
+		r := httptest.NewRequest(method, "/mcp", strings.NewReader(body))
+		if ctype != "" {
+			r.Header.Set("Content-Type", ctype)
+		}
+		for k, v := range headers {
+			r.Header.Set(k, v)
+		}
+		w := httptest.NewRecorder()
+		st.Handler().ServeHTTP(w, r)
+		var a answer
+		_ = json.Unmarshal(w.Body.Bytes(), &a)
+		return w, a
+	}
+	list := `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`
+
+	w, _ := send(http.MethodGet, "", "", map[string]string{"Accept": "text/event-stream"})
+	if w.Code != http.StatusMethodNotAllowed || w.Header().Get("Allow") != "POST" {
+		t.Errorf("a GET for a stream: %d %q", w.Code, w.Header().Get("Allow"))
+	}
+	if w, _ := send(http.MethodPost, "text/plain", list, nil); w.Code != http.StatusUnsupportedMediaType {
+		t.Errorf("text/plain: %d", w.Code)
+	}
+	for name, tc := range map[string]struct {
+		body   string
+		status int
+		code   int
+	}{
+		"jsonrpc 1.0":   {strings.Replace(list, `"2.0"`, `"1.0"`, 1), http.StatusBadRequest, mcp.CodeInvalidRequest},
+		"no jsonrpc":    {`{"id":1,"method":"tools/list"}`, http.StatusBadRequest, mcp.CodeInvalidRequest},
+		"object id":     {strings.Replace(list, `"id":1`, `"id":{"x":1}`, 1), http.StatusBadRequest, mcp.CodeInvalidRequest},
+		"trailing data": {list + `{"more":true}`, http.StatusBadRequest, mcp.CodeParse},
+		"batch":         {"[" + list + "]", http.StatusBadRequest, mcp.CodeInvalidRequest},
+		"not JSON":      {"{", http.StatusBadRequest, mcp.CodeParse},
+		"40 KB":         {`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"pad":"` + strings.Repeat("a", 40<<10) + `"}}`, http.StatusRequestEntityTooLarge, mcp.CodeInvalidRequest},
+	} {
+		w, a := send(http.MethodPost, "application/json", tc.body, nil)
+		if w.Code != tc.status || w.Header().Get("Content-Type") != "application/json" || a.Error == nil || a.Error.Code != tc.code {
+			t.Errorf("%s: %d %q %s", name, w.Code, w.Header().Get("Content-Type"), w.Body.String())
+		}
+		if name == "40 KB" && (a.Error == nil || !strings.Contains(a.Error.Message, "at most 32768 bytes")) {
+			t.Errorf("%s does not say the limit: %s", name, w.Body.String())
+		}
+	}
+	// And a request as it should be is still answered.
+	if w, a := send(http.MethodPost, "application/json", list, nil); w.Code != 200 || a.Result["tools"] == nil {
+		t.Errorf("a right request: %d %s", w.Code, w.Body.String())
+	}
+
+	// A page called mcp is the site's, for anybody reading it.
+	pages := map[string]any{"mcp": map[string]any{"title": "What MCP is"}}
+	st = published(t, pages)
+	st.Search = search.Build(st.Store.GetRef(site.RefLive), pages)
+	if w, _ := send(http.MethodGet, "", "", map[string]string{"Accept": "text/html"}); w.Code != 200 || !strings.Contains(w.Body.String(), "What MCP is") {
+		t.Errorf("the page at /mcp: %d %s", w.Code, w.Body.String())
+	}
+}
+
+// A request to the site's /mcp that is not a POST is told the transport
+// takes POST, whatever it says it accepts, unless the site has something of
+// its own at that address or a browser is asking for a page.
+//
+// Only a GET that named text/event-stream was told so. A client that
+// probed with a plain GET, accepting anything or nothing in particular, as
+// a fetch does by default, was still given the site's 404 page and read it
+// as no server here; so was one ending a session with DELETE.
+func TestARequestToTheSitesMCPThatIsNotAPostIsToldItTakesPost(t *testing.T) {
+	send := func(st *Site, method, accept string) *httptest.ResponseRecorder {
+		t.Helper()
+		r := httptest.NewRequest(method, "/mcp", nil)
+		if accept != "" {
+			r.Header.Set("Accept", accept)
+		}
+		w := httptest.NewRecorder()
+		st.Handler().ServeHTTP(w, r)
+		return w
+	}
+	st := nlwebSite(t)
+	for _, tc := range []struct{ method, accept string }{
+		{http.MethodGet, ""},
+		{http.MethodGet, "*/*"},
+		{http.MethodGet, "application/json"},
+		{http.MethodHead, ""},
+		{http.MethodDelete, ""},
+		{http.MethodPut, "*/*"},
+	} {
+		w := send(st, tc.method, tc.accept)
+		if w.Code != http.StatusMethodNotAllowed || w.Header().Get("Allow") != "POST" || strings.Contains(w.Body.String(), "<html") {
+			t.Errorf("%s accepting %q: %d, Allow %q, %s", tc.method, tc.accept, w.Code, w.Header().Get("Allow"),
+				w.Header().Get("Content-Type"))
+		}
+	}
+	// A browser reading the site is told what it always was: there is no
+	// such page, by the site's own page.
+	if w := send(st, http.MethodGet, "text/html,application/xhtml+xml,*/*;q=0.8"); w.Code != http.StatusNotFound ||
+		!strings.Contains(w.Body.String(), "Page not found") {
+		t.Errorf("a browser at /mcp: %d %s", w.Code, w.Header().Get("Content-Type"))
+	}
+
+	// What the site has at /mcp is the site's, for whoever asks for it and
+	// however; only a client asking for a stream is told there is none.
+	pages := map[string]any{"mcp": map[string]any{"title": "What MCP is"}}
+	st = published(t, pages)
+	st.Search = search.Build(st.Store.GetRef(site.RefLive), pages)
+	for _, accept := range []string{"", "*/*", "text/html"} {
+		if w := send(st, http.MethodGet, accept); w.Code != 200 || !strings.Contains(w.Body.String(), "What MCP is") {
+			t.Errorf("the page at /mcp, accepting %q: %d", accept, w.Code)
+		}
+	}
+	if w := send(st, http.MethodGet, "text/event-stream"); w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("a GET for a stream where there is a page: %d", w.Code)
+	}
+
+	// A site with no tool has no server at /mcp to speak for.
+	st = published(t, map[string]any{"index": map[string]any{"title": "Home"}})
+	if w := send(st, http.MethodGet, "*/*"); w.Code != http.StatusNotFound {
+		t.Errorf("a site with no tool: %d", w.Code)
+	}
+}
+
+// The site's one tool takes what its schema says, and a call that does not
+// fit is invalid params naming the argument, as at the admin's /mcp.
+//
+// The arguments were read as they came. A query that was a number, or sent
+// under another name, was no query, and the agent that had given one was
+// told "a query is required"; a mode that was not text was no mode, and
+// was answered as a list without a word; and arguments that were not an
+// object were answered "the one tool here is ask" by a call to ask.
+func TestTheSitesToolTakesWhatItsSchemaSays(t *testing.T) {
+	st := nlwebSite(t)
+	call := func(params string) (int, string, string) {
+		t.Helper()
+		r := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(
+			`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":`+params+`}`))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		st.Handler().ServeHTTP(w, r)
+		var a struct {
+			Error *struct {
+				Code    int    `json:"code"`
+				Message string `json:"message"`
+			} `json:"error"`
+			Result json.RawMessage `json:"result"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &a); err != nil {
+			t.Fatalf("%s: %s", params, w.Body.String())
+		}
+		if a.Error == nil {
+			return 0, "", string(a.Result)
+		}
+		return a.Error.Code, a.Error.Message, ""
+	}
+	for name, tc := range map[string]struct {
+		params string
+		says   []string
+	}{
+		"a query that is a number":    {`{"name":"ask","arguments":{"query":12}}`, []string{"query", "string"}},
+		"no query":                    {`{"name":"ask","arguments":{}}`, []string{"query"}},
+		"no arguments":                {`{"name":"ask"}`, []string{"query"}},
+		"the query under another":     {`{"name":"ask","arguments":{"question":"bread"}}`, []string{"needs query"}},
+		"a mode that is a number":     {`{"name":"ask","arguments":{"query":"bread","mode":5}}`, []string{"mode", "string"}},
+		"arguments that are text":     {`{"name":"ask","arguments":"query=bread"}`, []string{"arguments", "object"}},
+		"arguments that are a list":   {`{"name":"ask","arguments":["bread"]}`, []string{"arguments", "object"}},
+		"an argument it does not":     {`{"name":"ask","arguments":{"query":"bread","site":"elsewhere"}}`, []string{"site"}},
+		"a name that is not a string": {`{"name":5,"arguments":{"query":"bread"}}`, []string{"name"}},
+	} {
+		code, message, result := call(tc.params)
+		if code != mcp.CodeInvalidParams {
+			t.Errorf("%s: %d %q %s", name, code, message, result)
+			continue
+		}
+		for _, w := range tc.says {
+			if !strings.Contains(message, w) {
+				t.Errorf("%s: %q does not say %q", name, message, w)
+			}
+		}
+	}
+	// Which modes there are is still said in the tool's own words, which
+	// name them.
+	if code, message, result := call(`{"name":"ask","arguments":{"query":"bread","mode":"everything"}}`); !strings.Contains(message+result, "list, summarize or generate") {
+		t.Errorf("a mode it does not have: %d %q %s", code, message, result)
+	}
+	// A tool it does not have is still told which it has.
+	if code, message, _ := call(`{"name":"search","arguments":{"query":"bread"}}`); code == 0 || !strings.Contains(message, "ask") {
+		t.Errorf("another tool: %d %q", code, message)
+	}
+	// And a call that fits is answered, a null standing for an argument
+	// left out, as clients that fill every optional field send it.
+	for _, params := range []string{
+		`{"name":"ask","arguments":{"query":"bread"}}`,
+		`{"name":"ask","arguments":{"query":"bread","mode":"list"}}`,
+		`{"name":"ask","arguments":{"query":"bread","mode":null}}`,
+	} {
+		if code, message, result := call(params); code != 0 || !strings.Contains(result, "Hart") {
+			t.Errorf("%s: %d %q %s", params, code, message, result)
+		}
+	}
+}
+
+// The site's agent interface is POST /mcp, and the transport it speaks has a
+// client open GET /mcp for messages from the server and requires a server
+// with none to send to answer 405. Every method but POST fell through to the
+// page handler, which answered the site's HTML 404 (a client takes that for
+// a server that is gone) and counted /mcp as somebody hunting for the admin,
+// so a visitor's agent following the transport was one address from being
+// slowed down. A page published at /mcp is still served there.
+func TestTheSitesAgentInterfaceTakesPOSTAndSaysSo(t *testing.T) {
+	st := nlwebSite(t)
+	clock := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
+	heard := watching(st, &clock)
+	for _, m := range []string{http.MethodGet, http.MethodHead, http.MethodDelete, http.MethodOptions, http.MethodPut} {
+		req := httptest.NewRequest(m, "/mcp", nil)
+		req.Header.Set("Accept", "text/event-stream")
+		req.RemoteAddr = "203.0.113.9:4000"
+		w := httptest.NewRecorder()
+		st.Handler().ServeHTTP(w, req)
+		if w.Code != http.StatusMethodNotAllowed || w.Header().Get("Allow") != "POST" ||
+			strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") {
+			t.Errorf("%s /mcp answered %d, Allow %q, %s", m, w.Code, w.Header().Get("Allow"), w.Header().Get("Content-Type"))
+		}
+	}
+	// Two of the admin's addresses besides, under the threshold of three.
+	from(st, http.MethodGet, "/signin", "203.0.113.9", nil)
+	from(st, http.MethodGet, "/tokens", "203.0.113.9", nil)
+	if len(*heard) != 0 {
+		t.Fatalf("heard %v; the site's own agent interface is no admin address", *heard)
+	}
+	// The interface itself still answers.
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	st.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"result"`) {
+		t.Fatalf("POST /mcp: %d %s", w.Code, w.Body.String())
+	}
+
+	pages := map[string]any{"index": map[string]any{"title": "Home"},
+		"mcp": map[string]any{"title": "Our MCP guide"}}
+	withPage := published(t, pages)
+	withPage.Search = search.Build(withPage.Store.GetRef(site.RefLive), pages)
+	if w := get(withPage, "/mcp", nil); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "Our MCP guide") {
+		t.Fatalf("the page published at /mcp answered %d", w.Code)
+	}
+}
+
+// A client that asks the site's agent interface for nothing in particular
+// is not heard as hunting for the admin either. The two branches' rules
+// meet here: one answers 405 to a GET that accepts anything, a HEAD or a
+// DELETE, by asking the page handler first, and the other has the page
+// handler answer for the site's own address without counting it. The test
+// above has every method ask for a stream, and a GET or a HEAD that names
+// one is answered by the transport before any page is looked for, so
+// nothing held the page handler to its half for a plain probe: answered
+// 405 either way, and counted as hunting if the page handler let it by.
+func TestAPlainRequestToTheSitesAgentInterfaceIsNotHuntingForTheAdmin(t *testing.T) {
+	st := nlwebSite(t)
+	clock := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
+	heard := watching(st, &clock)
+	for _, tc := range []struct{ method, accept string }{
+		{http.MethodGet, ""}, {http.MethodGet, "*/*"}, {http.MethodGet, "application/json"},
+		{http.MethodHead, ""}, {http.MethodDelete, ""}, {http.MethodPut, "*/*"}, {http.MethodOptions, ""},
+	} {
+		req := httptest.NewRequest(tc.method, "/mcp", nil)
+		if tc.accept != "" {
+			req.Header.Set("Accept", tc.accept)
+		}
+		req.RemoteAddr = "203.0.113.9:4000"
+		w := httptest.NewRecorder()
+		st.Handler().ServeHTTP(w, req)
+		if w.Code != http.StatusMethodNotAllowed || w.Header().Get("Allow") != "POST" {
+			t.Errorf("%s /mcp accepting %q answered %d, Allow %q", tc.method, tc.accept, w.Code, w.Header().Get("Allow"))
+		}
+	}
+	// Two of the admin's addresses besides, under the threshold of three.
+	from(st, http.MethodGet, "/signin", "203.0.113.9", nil)
+	from(st, http.MethodGet, "/tokens", "203.0.113.9", nil)
+	if len(*heard) != 0 {
+		t.Fatalf("heard %v; the site's own agent interface is no admin address", *heard)
+	}
+}
+
+// A browser asking the site's agent interface for a page is told by the
+// site's own page that there is none, and is not heard as hunting for the
+// admin: the two rules above, held together. While the site has the tool,
+// /mcp is its own address, whoever asks for it and however.
+func TestABrowserAtTheSitesAgentInterfaceIsNotHuntingForTheAdmin(t *testing.T) {
+	st := nlwebSite(t)
+	clock := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
+	heard := watching(st, &clock)
+	req := httptest.NewRequest(http.MethodGet, "/mcp", nil)
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,*/*;q=0.8")
+	req.RemoteAddr = "203.0.113.9:4000"
+	w := httptest.NewRecorder()
+	st.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound || !strings.Contains(w.Body.String(), "Page not found") {
+		t.Fatalf("a browser at /mcp: %d %s", w.Code, w.Header().Get("Content-Type"))
+	}
+	// Two of the admin's addresses besides, under the threshold of three.
+	from(st, http.MethodGet, "/signin", "203.0.113.9", nil)
+	from(st, http.MethodGet, "/tokens", "203.0.113.9", nil)
+	if len(*heard) != 0 {
+		t.Fatalf("heard %v; the site's own agent interface is no admin address", *heard)
 	}
 }

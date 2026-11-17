@@ -59,3 +59,40 @@ func TestABodyFitsItsSchemaOrSaysWhereNot(t *testing.T) {
 		t.Errorf("an open object refused a field: %v", err)
 	}
 }
+
+// A property a schema does not take is named by a short form of its name.
+//
+// The name is the value's own, and a value checked here is whatever came
+// in: a tool's arguments from the agent interface, where a name may be as
+// long as the request. Named whole, the answer that one argument is not
+// taken was as long as the argument's name, a megabyte sent back to the
+// caller, where a tool or an operation nobody has is quoted in eighty bytes.
+func TestAPropertyNobodyTakesIsNamedShort(t *testing.T) {
+	huge := "x" + strings.Repeat("y", 1<<20)
+	for name, tc := range map[string]struct {
+		schema string
+		value  map[string]any
+	}{
+		"among the properties listed": {`{"type":"object","properties":{"page":{"type":"string"}}}`,
+			map[string]any{huge: 1}},
+		"inside a property": {`{"type":"object","properties":{"fields":{"type":"object","properties":{"title":{"type":"string"}}}}}`,
+			map[string]any{"fields": map[string]any{huge: 1}}},
+		"where any other is held to a schema": {`{"type":"object","additionalProperties":{"type":"string"}}`,
+			map[string]any{huge: 1}},
+	} {
+		err := CheckNamed(json.RawMessage(tc.schema), tc.value, "arguments")
+		if err == nil {
+			t.Fatalf("%s: a property nobody takes was taken", name)
+		}
+		if len(err.Error()) > 512 || !strings.Contains(err.Error(), "arguments.") ||
+			!strings.Contains(err.Error(), "xyyy") || !strings.Contains(err.Error(), "not a property it takes") {
+			t.Errorf("%s: answered %d bytes, not a short form of the name: %.120s", name, len(err.Error()), err.Error())
+		}
+	}
+	// A name of ordinary length is said whole, as it was.
+	err := CheckNamed(json.RawMessage(`{"type":"object","properties":{"page":{"type":"string"}}}`),
+		map[string]any{"pagename": "about"}, "arguments")
+	if err == nil || err.Error() != "arguments.pagename is not a property it takes; it takes page" {
+		t.Errorf("an ordinary name: %v", err)
+	}
+}

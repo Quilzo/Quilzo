@@ -128,3 +128,21 @@ func TestYourAccountsSaysWhenAConnectionExpires(t *testing.T) {
 		t.Error("a connection that does not end within the week is said to")
 	}
 }
+
+// This installation's Client ID Metadata Document is served at its
+// address to anybody, since the authorization server that reads it signs
+// nobody in here; and not at all where nothing makes one.
+func TestTheClientMetadataDocumentIsServed(t *testing.T) {
+	srv, _ := setup(t)
+	if w := get(t, srv, ConnectionsDocumentPath, ""); w.Code != http.StatusNotFound {
+		t.Fatalf("with no document: %d", w.Code)
+	}
+	srv.Connections = &Connections{Document: func() ([]byte, error) {
+		return []byte(`{"client_id":"https://cms.example/connections/client.json"}`), nil
+	}}
+	w := get(t, srv, ConnectionsDocumentPath, "")
+	if w.Code != 200 || w.Header().Get("Content-Type") != "application/json" ||
+		!strings.Contains(w.Body.String(), `"client_id":"https://cms.example/connections/client.json"`) {
+		t.Fatalf("%d %v %s", w.Code, w.Header(), w.Body.String())
+	}
+}

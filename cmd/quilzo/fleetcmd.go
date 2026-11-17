@@ -330,8 +330,11 @@ func buildFleet(root string, days int, now time.Time) (fleet.View, error) {
 				touch(to, "host", e.Detail["host"], at)
 				edges.Add("agent:"+e.Detail["agent"], to, at)
 			case "mcp.call", "mcp.gateway", "model.door":
-				from := "app:" + e.Model
-				if e.Model == "" {
+				// From the app, for the person who connected it, or from the
+				// person when their own token made the call (appOf).
+				app := appOf(e.Model)
+				from := "app:" + app
+				if app == "" {
 					from = "person:" + person
 				}
 				to, label := "quilzo", "Quilzo's interface"
@@ -341,18 +344,22 @@ func buildFleet(root string, days int, now time.Time) (fleet.View, error) {
 				case "model.door":
 					to, label = "models", "Quilzo's model gateway"
 				}
-				touch(from, fleet.KindApp, e.Model, at)
+				if app != "" {
+					touch(from, fleet.KindApp, app, at)
+				} else {
+					touch(from, fleet.KindPerson, person, at)
+				}
 				touch(to, fleet.KindQuilzo, label, at)
 				edges.Add(from, to, at)
-				if person != "" && e.Model != "" {
+				if person != "" && app != "" {
 					touch("person:"+person, fleet.KindPerson, person, at)
 					edges.Add("person:"+person, from, at)
 				}
 			case "a2a.task":
 				a := "agent:" + e.Detail["agent"]
 				from := "person:" + person
-				if e.Model != "" {
-					from = "app:" + e.Model
+				if app := appOf(e.Model); app != "" {
+					from = "app:" + app
 				}
 				edges.Add(from, a, at)
 			}

@@ -444,9 +444,20 @@ func fillSite(root string, values map[string]string, caller *Caller) (int, []str
 		return 0, nil, nil
 	}
 	// Each page by its own path, as writing it would be: a deny on /legal
-	// holds against a fill as it does against an edit.
+	// holds against a fill as it does against an edit. A page the caller
+	// may not read is not named, nor is the refusal quoted, which names it:
+	// site_blanks leaves such a page out, as list_pages does, and naming it
+	// here told them what a deny was there to keep from them.
+	mayRead, err := pageCheck(root, caller, auth.ActView)
+	if err != nil {
+		return 0, nil, err
+	}
 	for _, name := range changed {
 		if err := authorise(root, caller, auth.ActEditDraft, pageResource(name)); err != nil {
+			if !mayRead(name) {
+				return 0, nil, errors.New("a page you may not read has this blank, and is not yours to change; " +
+					"an administrator can say which")
+			}
 			return 0, nil, fmt.Errorf("the page %s has this blank, and is not yours to change: %w", name, err)
 		}
 	}

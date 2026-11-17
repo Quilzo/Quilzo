@@ -511,6 +511,13 @@ var commandNeeds = map[string]need{
 	"checked": {action: auth.ActEditDraft},
 	"note":    {action: auth.ActEditDraft},
 	"notes":   {action: auth.ActEditDraft},
+	// Reading them is reading about the draft, which a reader may: the
+	// machine interface's list_checked and list_notes answer a reader, and
+	// these refused the same token on the command line.
+	"checked list": {action: auth.ActView},
+	"checked due":  {action: auth.ActView},
+	"note list":    {action: auth.ActView},
+	"notes list":   {action: auth.ActView},
 
 	// -- content types gate every write, so changing one is a change to what
 	// every author may store. Publisher, not author.
@@ -802,7 +809,12 @@ var commandNeeds = map[string]need{
 	// script on a writable origin. Deciding to open that at all is the
 	// operator act, so it is held to the same bar as opening the admin.
 	"studio": {action: auth.ActPublish},
-	"mcp":    {action: auth.ActEditDraft},
+	// Starting the machine interface, or listing what it offers, is a
+	// reader's, as the same token at /mcp is: every operation is authorised
+	// when it is called (buildMCP), and that is the control. Asked for
+	// edit-draft here, a reviewer's token could search and read the site
+	// over HTTP and not through `quilzo mcp`, nor list the operations.
+	"mcp": {action: auth.ActView},
 
 	// -- deliberately unauthenticated, each with the reason.
 	"__sandbox": {why: "is the sandbox shim this program re-executes itself as: " +
@@ -1549,9 +1561,13 @@ func commandArea(cmd string, args []string) (string, bool) {
 // `integration` was view as a whole, and its bare form a reader's; strict
 // now, like `integrations`, it keeps that by listing, as `integrations` now
 // does too, since the list is what `integrations list` gives a reader.
+//
+// `checked`, `note` and `notes` list when run bare. Their lists were opened
+// to a reader and the bare commands still asked for authoring, so the same
+// list was refused a reader under its shortest spelling.
 var bareRuns = map[string]string{"anchor": "status", "timestamp": "list", "stamp": "list",
 	"provenance": "check", "prov": "check", "integrations": "list", "integration": "list",
-	"theme": "show", "review": "status"}
+	"theme": "show", "review": "status", "checked": "list", "note": "list", "notes": "list"}
 
 func lookupNeed(cmd string, args []string) (need, bool) {
 	if sub, ok := bareRuns[cmd]; ok && len(args) == 0 {

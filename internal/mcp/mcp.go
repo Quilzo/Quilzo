@@ -68,6 +68,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/quilzo/quilzo/internal/jsonschema"
 	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
@@ -128,7 +129,14 @@ type Operation struct {
 	Summary string
 	Detail  string
 	Args    map[string]string
-	Writes  bool
+	// Types are the JSON types of the arguments in Args that a handler
+	// takes as something other than text: "number", "boolean", "object",
+	// "array", or "any" for a value it takes as it comes. Every other
+	// argument Args names is a string. An operation that names its
+	// arguments takes those and no others, of those types, and anything
+	// else is invalid params before its handler runs (checkArguments).
+	Types  map[string]string
+	Writes bool
 	// Publishes marks a write that reaches readers. It is called through
 	// quilzo_publish and no other tool, so the tool a host lets an agent
 	// draft with is not the one that makes the draft live.
@@ -170,6 +178,14 @@ type Refusal struct {
 
 func (r *Refusal) Error() string { return r.Reason }
 
+// ArgumentError is an argument that is not one its operation can take, as
+// its handler found it: invalid params, as an argument of the wrong type
+// is before any handler runs, so an agent changes the call rather than
+// reading the answer as the content being missing or the action refused.
+type ArgumentError struct{ Reason string }
+
+func (e *ArgumentError) Error() string { return e.Reason }
+
 // Server routes MCP traffic.
 type Server struct {
 	Name    string
@@ -200,6 +216,18 @@ type Server struct {
 	// host's to authorise and forward. Nothing runs without Call.
 	Direct *Direct
 
+	// ArgumentsAsGiven hands every operation its arguments as they came,
+	// held only to the tool's own schema and not to what the operation
+	// says it takes (checkArguments). It is for a server whose handlers are
+	// not the operations' own and read arguments by other rules. A run's
+	// interface is one: it lists the store's operations and hands each
+	// call to the run as a step, and the run's executor reads a page from
+	// "page" or "name" and a search from "query", "q" or "text". Held to
+	// the store's names, a program that sent name was answered invalid
+	// params, and the step, with its place in the budget and the record,
+	// never happened.
+	ArgumentsAsGiven bool
+
 	operations map[string]Operation
 	handlers   map[string]Handler
 }
@@ -209,9 +237,21 @@ type Direct struct {
 	Instructions string
 	Tools        []Tool
 	// Call authorises and performs one tool. A *Refusal or a *ScopeError
-	// is a decision, answered as one.
+	// is a decision, answered as one; a *ToolFailed is the tool saying it
+	// failed, answered as a result marked isError.
 	Call func(name string, args map[string]any) (string, error)
 }
+
+// ToolFailed is another server's tool that ran and said it failed, with
+// what it said: answered as a result marked isError, as that server
+// answered it, so the agent reading it can tell a failure from what the
+// tool did. A gateway could only answer text or an error, and gave the
+// failure's text as a plain result: an agent read "the partner system
+// answered 503" as the tool's work and carried on as though it had
+// happened.
+type ToolFailed struct{ Text string }
+
+func (e *ToolFailed) Error() string { return e.Text }
 
 func NewServer(name, version string) *Server {
 	return &Server{
@@ -466,10 +506,33 @@ type callParams struct {
 func (s *Server) call(raw json.RawMessage) (any, *Error) {
 	var p callParams
 	if err := json.Unmarshal(raw, &p); err != nil {
-		return nil, &Error{Code: CodeInvalidParams, Message: err.Error()}
+		return nil, &Error{Code: CodeInvalidParams,
+			Message: "a tool is called with its name, a string, and its arguments, an object"}
 	}
 	if s.Direct != nil {
 		return s.callDirect(p)
+	}
+
+	var tool *Tool
+	names := make([]string, 0, 5)
+	for _, t := range s.tools() {
+		names = append(names, t.Name)
+		if t.Name == p.Name {
+			tool = &t
+		}
+	}
+	if tool == nil {
+		return nil, &Error{Code: CodeMethodNotFound,
+			Message: fmt.Sprintf("no tool %s; the tools are %s", quoteName(p.Name),
+				strings.Join(names, ", "))}
+	}
+	// The arguments as the tool's own schema says, before anything reads
+	// them. Read as they came, a query that was a number or missing was no
+	// query, and quilzo_find answered with every operation; an operation's
+	// arguments sent as a string were none, and read_page looked for the
+	// page "".
+	if err := fits(tool.InputSchema, p.Arguments); err != nil {
+		return nil, &Error{Code: CodeInvalidParams, Message: err.Error()}
 	}
 
 	if p.Name == "quilzo_find" {
@@ -481,18 +544,6 @@ func (s *Server) call(raw json.RawMessage) (any, *Error) {
 		"quilzo_read": "read", "quilzo_write": "write", "quilzo_check": "check",
 		"quilzo_publish": "publish",
 	}[p.Name]
-	if kind == "publish" && !s.publishes() {
-		kind = ""
-	}
-	if kind == "" {
-		names := make([]string, 0, 5)
-		for _, t := range s.tools() {
-			names = append(names, t.Name)
-		}
-		return nil, &Error{Code: CodeMethodNotFound,
-			Message: fmt.Sprintf("no tool %s; the tools are %s", quoteName(p.Name),
-				strings.Join(names, ", "))}
-	}
 
 	opName, _ := p.Arguments["operation"].(string)
 	if opName == "" {
@@ -554,10 +605,19 @@ func (s *Server) call(raw json.RawMessage) (any, *Error) {
 	if args == nil {
 		args = map[string]any{}
 	}
+	if !s.ArgumentsAsGiven {
+		if err := op.checkArguments(args); err != nil {
+			return nil, &Error{Code: CodeInvalidParams, Message: fmt.Sprintf("%s: %v", opName, err)}
+		}
+	}
 
 	result, err := s.handlers[opName](args)
 	if err != nil {
 		var ref *Refusal
+		var bad *ArgumentError
+		if errors.As(err, &bad) {
+			return nil, &Error{Code: CodeInvalidParams, Message: bad.Reason}
+		}
 		if asRefusal(err, &ref) {
 			// A refusal carries its own code so an agent does not retry a
 			// decision. Retrying a refusal turns one blocked action into many.
@@ -571,6 +631,67 @@ func (s *Server) call(raw json.RawMessage) (any, *Error) {
 		return nil, &Error{Code: CodeInternal, Message: err.Error()}
 	}
 	return textResult(text), nil
+}
+
+// checkArguments holds an operation's arguments to what it says it takes:
+// the names in Args and no others, each of the type Types gives it, text
+// when Types says nothing.
+//
+// Every handler read an argument as name, _ := a["page"].(string), which
+// makes anything that is not a string an empty one: read_page given the
+// page as a number, or under another name, told an agent there is no page
+// "", and it concluded the page was missing. An operation that names no
+// arguments reads none, and is held to nothing.
+func (op Operation) checkArguments(args map[string]any) error {
+	if len(op.Args) == 0 {
+		return nil
+	}
+	props := make(map[string]any, len(op.Args))
+	for name := range op.Args {
+		switch t := op.Types[name]; t {
+		case "any":
+			props[name] = map[string]any{}
+		case "":
+			props[name] = map[string]any{"type": "string"}
+		default:
+			props[name] = map[string]any{"type": t}
+		}
+	}
+	return fits(map[string]any{"type": "object", "properties": props}, args)
+}
+
+// fits checks arguments against a schema, by internal/jsonschema's rules:
+// an object schema that lists its properties takes only those. A null is
+// an argument left out, which is how clients that fill every optional
+// field send one they are not giving.
+func fits(schema map[string]any, args map[string]any) error {
+	if schema == nil {
+		return nil
+	}
+	b, err := json.Marshal(schema)
+	if err != nil {
+		return err
+	}
+	given := make(map[string]any, len(args))
+	for k, v := range args {
+		if v != nil {
+			given[k] = v
+		}
+	}
+	return jsonschema.CheckNamed(b, given, "arguments")
+}
+
+// Fits is how a tool call's arguments do not fit the tool's input schema,
+// as invalid params, or nil: the check this server makes of its own tools,
+// exported for a server that answers tools/call without it, the public
+// site's /mcp. That one read its arguments as they came, as the handlers
+// here did, so a query that was a number was no query and its agent was
+// told a query is required.
+func Fits(schema map[string]any, args map[string]any) *Error {
+	if err := fits(schema, args); err != nil {
+		return &Error{Code: CodeInvalidParams, Message: err.Error()}
+	}
+	return nil
 }
 
 // answerText is an operation's answer as the text an agent reads: a string
@@ -599,13 +720,13 @@ func answerText(v any) (string, error) {
 
 // callDirect performs one of another server's tools, through the host.
 func (s *Server) callDirect(p callParams) (any, *Error) {
-	known := false
+	var tool *Tool
 	for _, t := range s.Direct.Tools {
 		if t.Name == p.Name {
-			known = true
+			tool = &t
 		}
 	}
-	if !known {
+	if tool == nil {
 		return nil, &Error{Code: CodeMethodNotFound, Message: fmt.Sprintf("no tool %s here", quoteName(p.Name))}
 	}
 	if s.Direct.Call == nil {
@@ -616,11 +737,25 @@ func (s *Server) callDirect(p callParams) (any, *Error) {
 	if args == nil {
 		args = map[string]any{}
 	}
+	// As the schema the tool is offered with says, nulls and all, since
+	// they are sent on as they came. A gateway forwarded whatever it was
+	// given: a field the tool does not name was held for a person as an
+	// ordinary call, and once approved went out with it.
+	if b, err := json.Marshal(tool.InputSchema); err == nil && tool.InputSchema != nil {
+		if err := jsonschema.CheckNamed(b, args, "arguments"); err != nil {
+			return nil, &Error{Code: CodeInvalidParams, Message: err.Error()}
+		}
+	}
 	out, err := s.Direct.Call(p.Name, args)
 	if err != nil {
 		var se *ScopeError
 		var ref *Refusal
+		var failed *ToolFailed
 		switch {
+		case errors.As(err, &failed):
+			res := textResult(failed.Text)
+			res["isError"] = true
+			return res, nil
 		case errors.As(err, &se):
 			return nil, &Error{Code: CodeRefused, Message: se.Reason,
 				Data: map[string]any{"refused": true, "retryable": false}, cause: err}
@@ -726,10 +861,20 @@ func (s *Server) describe(ops []Operation) string {
 			}
 			sort.Strings(keys)
 			for _, k := range keys {
-				fmt.Fprintf(&b, "    %s: %s\n", k, op.Args[k])
+				switch t := op.Types[k]; t {
+				case "", "any":
+					fmt.Fprintf(&b, "    %s: %s\n", k, op.Args[k])
+				default:
+					fmt.Fprintf(&b, "    %s (%s): %s\n", k, t, op.Args[k])
+				}
 			}
 		}
-		if op.NeedsRole != "" {
+		// The area too, when it is one of the admin's: "reader" alone told
+		// an agent that any reader may, where the role is asked of the
+		// security or compliance area, which a reader of the site is not.
+		if op.NeedsRole != "" && strings.HasPrefix(op.Area, "/@") {
+			fmt.Fprintf(&b, "    needs role: %s on %s\n", op.NeedsRole, op.Area)
+		} else if op.NeedsRole != "" {
 			fmt.Fprintf(&b, "    needs role: %s\n", op.NeedsRole)
 		}
 		if op.Detail != "" {

@@ -1284,6 +1284,13 @@ const exportUploadPath = "/make/import-file"
 // collection.
 const recordUploadPath = "/records/import"
 
+// ConnectionsDocumentPath is where this installation's Client ID Metadata
+// Document is served (connections.go), and so its client id at a server
+// that takes those: another Quilzo's authorization server registers apps
+// no other way. Exported because the connect command gives that address
+// as the client id, and one spelling of it cannot drift from the route.
+const ConnectionsDocumentPath = "/connections/client.json"
+
 // SignalsPath is where the identity provider's transmitter pushes security
 // events (signals.go). Exported because the command that connects a stream
 // tells the transmitter this address, and one spelling of it cannot drift
@@ -1477,6 +1484,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/connections", s.handleConnections)
 	mux.HandleFunc("/connections/change", s.handleConnectionsChange)
 	mux.HandleFunc("/connections/callback", s.handleConnectionsCallback)
+	mux.HandleFunc(ConnectionsDocumentPath, s.handleConnectionsDocument)
 	mux.HandleFunc("/analytics", s.handleAnalytics)
 	mux.HandleFunc("/analytics/redirect", s.handleAnalyticsRedirect)
 	mux.HandleFunc("/experiments", s.handleExperiments)
@@ -1701,6 +1709,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/models", s.handleModelDoor)
 	mux.HandleFunc("/.well-known/oauth-protected-resource", s.handleResourceMetadata)
 	mux.HandleFunc("/.well-known/oauth-protected-resource/mcp", s.handleResourceMetadata)
+	// A gateway's and a browser grant's, each at its own address.
+	mux.HandleFunc("/.well-known/oauth-protected-resource/mcp/", s.handleResourceMetadata)
 	mux.HandleFunc("/.well-known/oauth-authorization-server", s.handleServerMetadata)
 	mux.HandleFunc("/oauth/authorize", s.handleAuthorize)
 	mux.HandleFunc("/oauth/token", s.handleOAuthToken)
@@ -3600,7 +3610,9 @@ func (s *Server) checkAll(commitID string) ([]*a11y.Report, error) {
 }
 
 // deniedChanges are the pages a publish of draft would change that this
-// session may not publish, at most a few of them, named.
+// session may not publish, at most a few of them, named, and those it may
+// not read counted: the page list leaves those out, so a refusal naming
+// one told the reader what a deny was there to keep from them.
 func (s *Server) deniedChanges(p principal, draft string) []string {
 	if s.Policy == nil || draft == "" {
 		return nil
@@ -3610,6 +3622,7 @@ func (s *Server) deniedChanges(p principal, draft string) []string {
 		return []string{"(the changes could not be read: " + err.Error() + ")"}
 	}
 	var out []string
+	hidden := 0
 	for _, c := range changes {
 		id := c.After
 		if id == "" {
@@ -3618,9 +3631,16 @@ func (s *Server) deniedChanges(p principal, draft string) []string {
 		if s.Store.IsTree(id) || s.allows(p, auth.ActPublish, pageResource(c.Path)) {
 			continue
 		}
-		if out = append(out, c.Path); len(out) == 5 {
-			break
+		if !s.allows(p, auth.ActView, pageResource(c.Path)) {
+			hidden++
+			continue
 		}
+		if len(out) < 5 {
+			out = append(out, c.Path)
+		}
+	}
+	if hidden > 0 {
+		out = append(out, plural2(hidden, "one page", fmt.Sprintf("%d pages", hidden))+" you may not read")
 	}
 	return out
 }

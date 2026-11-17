@@ -150,6 +150,22 @@ func TestFindDescribesOnlyWhatWasAskedFor(t *testing.T) {
 	}
 }
 
+// An operation asked in an area of the admin says so: "needs role:
+// reader" alone told an agent that any reader may, where the role is asked
+// of the compliance area, which a reader of the site is not.
+func TestFindNamesTheAreaARoleIsAskedIn(t *testing.T) {
+	s := testServer()
+	s.Register(Operation{
+		Name: "site_report", Summary: "what the law asks of the site", NeedsRole: "reader",
+		Area: "/@compliance", Keywords: []string{"compliance"},
+	}, func(a map[string]any) (any, error) { return "clear", nil })
+	out := text(t, call(t, s, "tools/call", callParams{
+		Name: "quilzo_find", Arguments: map[string]any{"query": "compliance"}}))
+	if !strings.Contains(out, "needs role: reader on /@compliance") {
+		t.Errorf("the area is not named: %q", out)
+	}
+}
+
 func TestFindWithNoMatchReturnsTheMenu(t *testing.T) {
 	s := testServer()
 	out := text(t, call(t, s, "tools/call", callParams{
@@ -408,5 +424,204 @@ func TestAnUnknownNameIsQuotedShort(t *testing.T) {
 		if len(r.Error.Message) > 512 || !strings.Contains(r.Error.Message, "xyyy") {
 			t.Errorf("answered %d bytes, not a short form of the name: %.120s", len(r.Error.Message), r.Error.Message)
 		}
+	}
+}
+
+// An argument nobody takes is named back by a short form of its name, as a
+// tool or an operation nobody has is.
+//
+// An argument's name is the caller's as well, up to the whole body, and the
+// answer that it is not one the tool takes named it whole: a megabyte back
+// to the caller for one argument, from the tool's own schema, from what an
+// operation takes, and from the schema a gateway's tool is offered with.
+func TestAnArgumentNobodyTakesIsNamedShort(t *testing.T) {
+	huge := "x" + strings.Repeat("y", 1<<20)
+	short := func(what string, r *Response) {
+		t.Helper()
+		if r.Error == nil || r.Error.Code != CodeInvalidParams {
+			t.Fatalf("%s: an argument nobody takes was answered %+v", what, r.Error)
+		}
+		if len(r.Error.Message) > 512 || !strings.Contains(r.Error.Message, "xyyy") {
+			t.Errorf("%s: answered %d bytes, not a short form of the name: %.120s", what, len(r.Error.Message), r.Error.Message)
+		}
+	}
+	s := testServer()
+	for what, args := range map[string]map[string]any{
+		"a tool's argument":       {"operation": "list_pages", huge: 1},
+		"an operation's argument": {"operation": "write_page", "arguments": map[string]any{huge: "v"}},
+	} {
+		short(what, call(t, s, "tools/call", map[string]any{"name": "quilzo_write", "arguments": args}))
+	}
+	gw := NewServer("gw", "1")
+	sent := 0
+	gw.Direct = &Direct{Tools: []Tool{{Name: "lookup", InputSchema: map[string]any{
+		"type": "object", "properties": map[string]any{"q": map[string]any{"type": "string"}}}}},
+		Call: func(string, map[string]any) (string, error) { sent++; return "found", nil }}
+	short("a gateway tool's argument", call(t, gw, "tools/call", callParams{Name: "lookup",
+		Arguments: map[string]any{"q": "rye", huge: 1}}))
+	if sent != 0 {
+		t.Fatalf("sent on %d times", sent)
+	}
+}
+
+// An argument that is not what a tool or an operation takes is invalid
+// params, naming it, before anything runs.
+//
+// # What this found
+//
+// Every handler read an argument as name, _ := a["page"].(string), so a
+// number for a page name, the operation's arguments sent as a string, or
+// the page under another name all became an empty name: the agent was told
+// there is no page "" and concluded the content was missing. quilzo_find,
+// whose schema requires a query, answered a call with none, or with a
+// number, with every operation there is.
+func TestArgumentsThatAreNotWhatIsTakenAreInvalidParams(t *testing.T) {
+	s := NewServer("t", "1")
+	s.Authorise = allowAll
+	ran := 0
+	s.Register(Operation{Name: "read_page", Summary: "read a page",
+		Args: map[string]string{"page": "the page name"}},
+		func(a map[string]any) (any, error) { ran++; p, _ := a["page"].(string); return "read " + p, nil })
+	s.Register(Operation{Name: "search", Summary: "search",
+		Args:  map[string]string{"query": "the words", "limit": "optional, at most 20", "near": "anything"},
+		Types: map[string]string{"limit": "number", "near": "any"}},
+		func(map[string]any) (any, error) { ran++; return "found", nil })
+	s.Register(Operation{Name: "list_pages", Summary: "list"},
+		func(map[string]any) (any, error) { ran++; return "listed", nil })
+
+	invalid := func(name string, p callParams, says ...string) {
+		t.Helper()
+		before := ran
+		r := call(t, s, "tools/call", p)
+		if r.Error == nil || r.Error.Code != CodeInvalidParams {
+			t.Errorf("%s: %+v %+v", name, r.Error, r.Result)
+			return
+		}
+		for _, w := range says {
+			if !strings.Contains(r.Error.Message, w) {
+				t.Errorf("%s: %q does not say %q", name, r.Error.Message, w)
+			}
+		}
+		if ran != before {
+			t.Errorf("%s: the handler ran", name)
+		}
+	}
+	read := func(args any) callParams {
+		return callParams{Name: "quilzo_read", Arguments: map[string]any{"operation": "read_page", "arguments": args}}
+	}
+	invalid("find with no query", callParams{Name: "quilzo_find", Arguments: map[string]any{}}, "query")
+	invalid("find with no arguments", callParams{Name: "quilzo_find"}, "query")
+	invalid("find by a number", callParams{Name: "quilzo_find", Arguments: map[string]any{"query": 5}}, "query", "string")
+	invalid("arguments as a string", read("page=about"), "arguments", "object")
+	invalid("arguments as a list", read([]any{"about"}), "arguments", "object")
+	invalid("operation as a number", callParams{Name: "quilzo_read", Arguments: map[string]any{"operation": 5}}, "operation")
+	invalid("a page by a number", read(map[string]any{"page": 12}), "page", "string")
+	invalid("the page under another name", read(map[string]any{"name": "about"}), "name", "page")
+	invalid("a limit as text", callParams{Name: "quilzo_read", Arguments: map[string]any{"operation": "search",
+		"arguments": map[string]any{"query": "x", "limit": "5"}}}, "limit", "number")
+
+	ok := func(name string, p callParams) {
+		t.Helper()
+		if r := call(t, s, "tools/call", p); r.Error != nil {
+			t.Errorf("%s: %+v", name, r.Error)
+		}
+	}
+	ok("a page by its name", read(map[string]any{"page": "about"}))
+	ok("a limit as a number, and anything where anything is taken", callParams{Name: "quilzo_read",
+		Arguments: map[string]any{"operation": "search", "arguments": map[string]any{"query": "x", "limit": 5, "near": []any{1}}}})
+	// Null is an argument left out, as clients that fill every optional
+	// field with null send it.
+	ok("null for a limit", callParams{Name: "quilzo_read",
+		Arguments: map[string]any{"operation": "search", "arguments": map[string]any{"query": "x", "limit": nil}}})
+	// An operation that names no arguments reads none, and is not held to any.
+	ok("an operation that takes none", callParams{Name: "quilzo_read",
+		Arguments: map[string]any{"operation": "list_pages", "arguments": map[string]any{"anything": 1}}})
+	ok("find with a query", callParams{Name: "quilzo_find", Arguments: map[string]any{"query": "pages"}})
+}
+
+// Another server's tool, offered as it is, takes what its input schema
+// says, and anything else is invalid params here and never sent on.
+//
+// A gateway listed the schema a person pinned and forwarded whatever came:
+// a field the tool does not name was held for a person's approval as an
+// ordinary call, and once approved went out with it.
+func TestADirectToolTakesWhatItsSchemaSays(t *testing.T) {
+	s := NewServer("gw", "1")
+	var sent []map[string]any
+	s.Direct = &Direct{Tools: []Tool{{Name: "delete_everything", InputSchema: map[string]any{
+		"type": "object", "properties": map[string]any{"confirm": map[string]any{"type": "boolean"}},
+		"required": []any{"confirm"}}}},
+		Call: func(tool string, args map[string]any) (string, error) {
+			sent = append(sent, args)
+			return "deleted", nil
+		}}
+	for name, args := range map[string]map[string]any{
+		"without confirm":         {},
+		"confirm as text":         {"confirm": "yes"},
+		"with a field it has not": {"confirm": true, "note": "x"},
+	} {
+		r := call(t, s, "tools/call", callParams{Name: "delete_everything", Arguments: args})
+		if r.Error == nil || r.Error.Code != CodeInvalidParams {
+			t.Errorf("%s: %+v", name, r.Error)
+		}
+	}
+	if len(sent) != 0 {
+		t.Fatalf("sent on: %v", sent)
+	}
+	if got := text(t, call(t, s, "tools/call", callParams{Name: "delete_everything",
+		Arguments: map[string]any{"confirm": true}})); got != "deleted" {
+		t.Fatalf("%q", got)
+	}
+}
+
+// A tool of another server that ran and said it failed is answered as a
+// result marked isError, as that server answered it.
+//
+// Direct's Call could only answer text or an error, so a gateway gave the
+// failure's text as a plain result: the calling agent read "the partner
+// system answered 503" as what the tool did, and carried on as though the
+// action had happened, while the record said failure and the command line
+// exited 1.
+func TestADirectToolThatFailedIsAnsweredAsAnError(t *testing.T) {
+	s := NewServer("gw", "1")
+	s.Direct = &Direct{Tools: []Tool{{Name: "fail", InputSchema: map[string]any{"type": "object"}}},
+		Call: func(string, map[string]any) (string, error) {
+			return "", &ToolFailed{Text: "the partner system answered 503"}
+		}}
+	r := call(t, s, "tools/call", callParams{Name: "fail"})
+	if r.Error != nil {
+		t.Fatalf("a failure the tool reported is a result, not a protocol error: %+v", r.Error)
+	}
+	m, _ := r.Result.(map[string]any)
+	if m["isError"] != true || !strings.Contains(text(t, r), "the partner system answered 503") {
+		t.Fatalf("%#v", r.Result)
+	}
+}
+
+// A server whose handlers read their arguments by their own rules hands
+// each operation what it was sent, and still holds a call to the tool's own
+// schema.
+//
+// A run's interface lists the store's operations and hands every call to
+// the run, whose executor reads a page from "page" or "name". Held to the
+// store's names, a program that sent name was answered invalid params
+// before its call was a step of the run.
+func TestAServerThatReadsItsOwnArgumentsIsHandedThemAsGiven(t *testing.T) {
+	s := NewServer("run", "1")
+	s.Authorise = allowAll
+	s.ArgumentsAsGiven = true
+	var got map[string]any
+	s.Register(Operation{Name: "read_page", Summary: "read a page", Args: map[string]string{"page": "the page name"}},
+		func(a map[string]any) (any, error) { got = a; return "read", nil })
+	r := call(t, s, "tools/call", callParams{Name: "quilzo_read", Arguments: map[string]any{
+		"operation": "read_page", "arguments": map[string]any{"name": "about", "depth": 2}}})
+	if r.Error != nil || got["name"] != "about" {
+		t.Fatalf("%+v, handed %v", r.Error, got)
+	}
+	// The tool's schema is the same four tools' everywhere.
+	r = call(t, s, "tools/call", callParams{Name: "quilzo_read", Arguments: map[string]any{
+		"operation": "read_page", "arguments": "name=about"}})
+	if r.Error == nil || r.Error.Code != CodeInvalidParams {
+		t.Fatalf("arguments as a string: %+v", r.Error)
 	}
 }

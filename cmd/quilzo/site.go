@@ -427,7 +427,11 @@ func cmdSite(root string, args []string) error {
 		fmt.Printf("  %s%s%s\n", dim, line, reset)
 	}
 	fmt.Printf("  %sserving the %s environment; drafts are not public%s\n", dim, serving.Name, reset)
-	fmt.Printf("  %sinstallable: /manifest.webmanifest · offline: /sw.js%s\n", dim, reset)
+	// This offered /sw.js as the site's offline mode, and no page registers
+	// the worker, because the site's policy allows no script that does
+	// (serviceWorker in internal/public): a visitor who loses the network
+	// keeps nothing.
+	fmt.Printf("  %sinstallable: /manifest.webmanifest · not offline: no page registers /sw.js%s\n", dim, reset)
 	if fp := reloader.Site().Fingerprint(); fp != "" {
 		fmt.Printf("  %spublished fingerprint %s%s\n", dim, fp, reset)
 	} else {
