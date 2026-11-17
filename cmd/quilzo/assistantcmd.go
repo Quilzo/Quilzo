@@ -241,6 +241,15 @@ func assistantAction(root string, args []string) error {
 		return fmt.Errorf("usage: quilzo assistant action ASSISTANT ACTION --kind link|form|agent --target T --description D " +
 			"[--fields a,b] [--writes] [--identity --identity-secret NAME]")
 	}
+	// The credential named is one there is. Named before it was sealed,
+	// or mistyped, it was saved, and the identity action was then never
+	// offered to anybody (visitorKey), with nothing to say why. Only
+	// whether it can be read is asked; its value goes nowhere.
+	if *signer != "" {
+		if _, err := readSecret(root, *signer); err != nil {
+			return fmt.Errorf("--identity-secret %s: %w", *signer, err)
+		}
+	}
 	caller := resolveCaller(root, flagToken)
 	return saveAssistant(root, caller, "action", pos[0], func(s *assistant.Set) error {
 		a, ok := s.Get(pos[0])
@@ -572,7 +581,7 @@ func assistantEval(root string, args []string) error {
 		return err
 	}
 	var cases []assistant.Case
-	if err := loadJSONL(pos[1], func(b []byte) error {
+	if err := loadGivenJSONL(pos[1], func(b []byte) error {
 		var c assistant.Case
 		if err := json.Unmarshal(b, &c); err != nil {
 			return err
