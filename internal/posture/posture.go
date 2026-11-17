@@ -222,6 +222,15 @@ type UpkeepFacts struct {
 	OverdueEntries int `json:"overdue_entries"`
 	// OldestOverdue is how long the oldest of them has been waiting.
 	OldestOverdue time.Duration `json:"oldest_overdue,omitempty"`
+	// LeftRooms is how many rooms a store still holds under rooms/ from
+	// before rooms left Quilzo, and LeftRoomFiles how many files that
+	// directory holds in all. Nothing reads it now, so a room's retention
+	// period is no longer applied and its messages can no longer be erased;
+	// a store that kept them said nothing, and whoever set the period went
+	// on believing it ran. Counted whether or not Checked is set: the
+	// directory is there or it is not.
+	LeftRooms     int `json:"left_rooms,omitempty"`
+	LeftRoomFiles int `json:"left_room_files,omitempty"`
 	// Checked distinguishes "nothing waiting" from "nobody looked", the same
 	// distinction ExtFacts.Checked draws and for the same reason.
 	Checked bool `json:"checked"`

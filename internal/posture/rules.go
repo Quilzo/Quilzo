@@ -1296,6 +1296,36 @@ var rules = []Rule{
 		},
 	},
 	{
+		ID:       "upkeep.rooms-left",
+		Title:    "The store holds rooms Quilzo no longer manages",
+		Severity: Medium,
+		Controls: []string{"SI-12"},
+		OWASP:    "",
+		Why: "Rooms have left Quilzo, and nothing reads rooms/ any more. " +
+			"A room's retention period is no longer applied, so its messages " +
+			"are kept past the period somebody set for them, and they can no " +
+			"longer be erased through Quilzo when a person asks. Quilzo " +
+			"deletes nothing on its own, so the directory stays until " +
+			"somebody decides what happens to it.",
+		Check: func(s State) []Finding {
+			if s.Upkeep.LeftRoomFiles == 0 {
+				return nil
+			}
+			n := s.Upkeep.LeftRooms
+			return []Finding{{
+				Detail: fmt.Sprintf("rooms/ holds %d %s (%d %s) from before rooms "+
+					"left Quilzo. Quilzo no longer manages %s: no retention period "+
+					"runs on %s, and %s messages cannot be erased through Quilzo",
+					n, plural(n, "room", "rooms"), s.Upkeep.LeftRoomFiles,
+					plural(s.Upkeep.LeftRoomFiles, "file", "files"),
+					plural(n, "it", "them"), plural(n, "it", "them"),
+					plural(n, "its", "their")),
+				Fix: "move rooms/ out of the store, or delete it, by hand; " +
+					"Quilzo reads nothing in it",
+			}}
+		},
+	},
+	{
 		ID:       "privacy.form-basis-missing",
 		Title:    "A form does not say what its answers are for, or on what basis",
 		Severity: Medium,
