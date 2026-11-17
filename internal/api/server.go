@@ -734,6 +734,18 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request, name string) {
 			Detail: err.Error()})
 		return
 	}
+	// A name the store cannot hold is asked about here, by the store's own
+	// rule, before the lock is taken. It was met only at the commit, and
+	// answered 500 "the write failed" for Ürün, "a b" and -dash: a client
+	// retries a 5xx, and this refusal is the same however often it is sent.
+	if err := store.CheckPath(name); err != nil {
+		writeError(w, http.StatusBadRequest, Error{
+			Error: "that is not a page name the store can hold", Detail: err.Error(),
+			Fix: "name the page with ASCII letters, digits, dot, dash and " +
+				"underscore, such as about-us or tr/hakkimizda",
+		})
+		return
+	}
 
 	body, err := io.ReadAll(io.LimitReader(r.Body, int64(s.bodyMax())+1))
 	if err != nil {

@@ -2638,6 +2638,14 @@ func (s *Server) handleNewPage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/?e="+urlQueryEscape("Give the new page an address, such as about-us"), http.StatusSeeOther)
 		return
 	}
+	// Asked by the store's own rule, so the editor is never opened on an
+	// address it cannot save: 200 x's made a page name of 80, which the
+	// store refuses, and the editor's Save ended on a bare 500.
+	if store.CheckPath(name) != nil {
+		http.Redirect(w, r, "/?e="+urlQueryEscape("That address is too long or has a part no page "+
+			"name can hold. Give the new page a shorter one, such as about-us"), http.StatusSeeOther)
+		return
+	}
 	http.Redirect(w, r, "/page/"+name, http.StatusSeeOther)
 }
 
@@ -3402,6 +3410,20 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.can(w, r, p, auth.ActEditDraft, "/"+name) {
+		return
+	}
+	// A name the store cannot hold is the person's to change, and is said
+	// so here, on a page of this screen, before anything is read or written.
+	// It was met only at the commit, and the save of an editor opened on such
+	// an address ended on a plain-text 500 with no way back.
+	if err := store.CheckPath(name); err != nil {
+		s.render(w, r, "message.html", map[string]any{"Status": http.StatusBadRequest,
+			"Nav": "pages", "Title": "Not saved", "Principal": p,
+			"Heading": "This address cannot be a page",
+			"Body": "Nothing was saved. " + err.Error() + ". Start the page again " +
+				"from Pages with a shorter address, such as about-us.",
+			"Back": crumb{Label: "Pages", Path: "/"},
+		})
 		return
 	}
 

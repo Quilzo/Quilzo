@@ -94,3 +94,36 @@ func TestAnEmptyPageOffersATitleAndABody(t *testing.T) {
 		t.Errorf("about's editor has %d body fields", n)
 	}
 }
+
+// An address the store cannot hold is refused when it is typed, and a save
+// to one is refused as the person's to fix, on a page of this screen.
+//
+// New page made 200 x's into a page name and opened an editor on it, and
+// Save to draft ended on a plain-text 500 with the store's sentence and no
+// way back: the name was met only at the commit, by the store's rule.
+func TestANewPageAtAnAddressTheStoreCannotHoldIsRefusedFirst(t *testing.T) {
+	srv, token := setup(t)
+
+	long := strings.Repeat("x", 200)
+	w := get(t, srv, "/pages/new?name="+long, token)
+	if loc := w.Header().Get("Location"); w.Code != http.StatusSeeOther || !strings.HasPrefix(loc, "/?e=") {
+		t.Fatalf("New page at a 200-character address went to %d %q", w.Code, loc)
+	}
+
+	before, _ := site.PagesAt(srv.Store, site.RefDraft)
+	for _, name := range []string{long, "a b", "-dash", "Ürün"} {
+		w = save(t, srv, token, url.Values{"__name": {name}, "title": {"T"}})
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("saving %.20q answered %d, not 400", name, w.Code)
+			continue
+		}
+		if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+			t.Errorf("saving %.20q answered %s, not a page of this screen", name, ct)
+		}
+		whole(t, w.Body.String())
+	}
+	after, _ := site.PagesAt(srv.Store, site.RefDraft)
+	if len(after) != len(before) {
+		t.Errorf("a refused save wrote a page: %d pages, then %d", len(before), len(after))
+	}
+}
