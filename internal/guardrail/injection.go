@@ -38,7 +38,13 @@ const (
 	Knowledge View = 1 << iota
 	// Question is what a visitor asked a public chatbot.
 	Question
-	// Speech is what somebody said in a call the scribe minutes.
+	// Speech is what somebody said aloud, as a transcript of it reads.
+	//
+	// The meeting note-taker that read this view has left Quilzo with
+	// calls, and nothing here reads it now. It is kept, with the test that
+	// holds its rules, because removing it was not part of that decision,
+	// and a transcript screened here later should be screened as speech
+	// was rather than by rules written for pages.
 	Speech
 )
 

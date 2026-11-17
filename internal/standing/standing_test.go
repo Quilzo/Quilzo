@@ -20,12 +20,11 @@ func TestTheRegisterIsWellFormed(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := Look()
-	if s.Roles < 5 || s.Powers < 12 {
+	if s.Roles < 4 || s.Powers < 7 {
 		t.Fatalf("%+v", s)
 	}
-	// Most roles here act inside their own situation. Two reach outside:
-	// the room's moderator, whose removals need publish on the whole site,
-	// and an enrolment link, whose passkey outlives it.
+	// Most roles here act inside their own situation. One reaches outside:
+	// an enrolment link, whose passkey outlives it.
 	// TestAPowerThatOutlivesItsSituationIsAStandingAct keeps the rule.
 	if s.Contained == 0 {
 		t.Fatal("everything reaches outside, which would mean the " +
@@ -54,28 +53,23 @@ func TestAPowerThatReachesOutsideMustNameWhatItNeeds(t *testing.T) {
 	}
 }
 
-// TestACallHostNeedsNoStandingAuthority.
+// A visitor handed to a person needs no standing authority.
 //
-// The rule that is not obvious. Requiring one would mean meetings are run
-// by whoever has the most access, which is a permission model shaping the
-// organisation.
-func TestACallHostNeedsNoStandingAuthority(t *testing.T) {
-	host, ok := Find("huddle", "host")
+// The rule that is not obvious. Requiring one would mean only the people
+// with the most access could be helped, which is a permission model shaping
+// the organisation.
+func TestAHandoffVisitorNeedsNoStandingAuthority(t *testing.T) {
+	v, ok := Find("handoff", "visitor")
 	if !ok {
-		t.Fatal("no host role")
+		t.Fatal("no handoff visitor")
 	}
-	if !host.Contained() {
-		t.Fatalf("a call host reaches outside: %+v", host.Reaches())
+	if !v.Contained() {
+		t.Fatalf("a handoff visitor reaches outside: %+v", v.Reaches())
 	}
-	for _, p := range []string{"admit", "eject", "mute", "lock"} {
-		if err := Allows(host, p, "ada", nil, "/"); err != nil {
+	for _, p := range []string{"read", "say", "end"} {
+		if err := Allows(v, p, "anybody", nil, "/"); err != nil {
 			t.Errorf("%s needed standing authority: %v", p, err)
 		}
-	}
-	// Even ejecting, which is cryptographic and irreversible for that
-	// call, is contained: they can be invited to the next one.
-	if err := Allows(host, "eject", "anybody", nil, "/"); err != nil {
-		t.Fatal(err)
 	}
 }
 
@@ -122,31 +116,13 @@ func TestAPowerThatOutlivesItsSituationIsAStandingAct(t *testing.T) {
 	}
 }
 
-// TestWithdrawingConsentHasNoFloorAtAll, deliberately.
-func TestWithdrawingConsentHasNoFloorAtAll(t *testing.T) {
-	sc, ok := Find("scribe", "participant")
-	if !ok {
-		t.Fatal("no participant role")
-	}
-	if !sc.Contained() {
-		t.Fatal("a participant's powers reach outside the call")
-	}
-	if err := Allows(sc, "withdraw-consent", "anybody", nil, "/"); err != nil {
-		t.Fatalf("withdrawing consent required authority: %v", err)
-	}
-	p, _ := sc.Power("withdraw-consent")
-	if !strings.Contains(p.Why, "nobody's to refuse") {
-		t.Fatalf("why = %q", p.Why)
-	}
-}
-
 func TestAnUnknownPowerSaysWhatExists(t *testing.T) {
-	host, _ := Find("huddle", "host")
-	err := Allows(host, "delete-everything", "ada", nil, "/")
+	v, _ := Find("handoff", "visitor")
+	err := Allows(v, "delete-everything", "ada", nil, "/")
 	if err == nil {
 		t.Fatal("an invented power was allowed")
 	}
-	for _, want := range []string{"admit", "eject", "lock", "mute"} {
+	for _, want := range []string{"end", "read", "say"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("the refusal does not list %q: %v", want, err)
 		}
@@ -214,8 +190,8 @@ func TestEveryPackageWithASituationalRoleIsRegistered(t *testing.T) {
 
 // defines reports whether a package declares a type called Role.
 //
-// The common shape and not the only one: internal/errand's owner and a
-// share link's holder are situational roles with no type called Role, and
+// The common shape and not the only one: a share link's holder and a
+// handoff's visitor are situational roles with no type called Role, and
 // both are registered anyway. So the register is deliberately
 // wider than this catches, and what this catches is the case where
 // somebody reaches for the obvious name — which is the case most likely to
@@ -246,36 +222,6 @@ func defines(t *testing.T, dir string) bool {
 		}
 	}
 	return false
-}
-
-// The room moderator was registered as "granted for that room", ending
-// "with the grant", and contained. There is no per-room grant: taking down
-// somebody else's words needs the authority to publish on the whole site
-// (cmd/quilzo/roomcmd.go), because the tombstone stays and a room does not
-// end. The register says what the command enforces.
-func TestTheRoomModeratorIsWhatTheRoomCommandEnforces(t *testing.T) {
-	mod, ok := Find("room", "moderator")
-	if !ok {
-		t.Fatal("no room moderator")
-	}
-	if strings.Contains(mod.Held, "granted for that room") {
-		t.Errorf("the moderator is held %q, and no grant names a room", mod.Held)
-	}
-	p, ok := mod.Power("remove")
-	if !ok {
-		t.Fatal("the moderator confers no remove")
-	}
-	if !p.Outside || p.Needs != auth.ActPublish {
-		t.Fatalf("remove is outside=%v needing %q; the command asks for %s on the whole site",
-			p.Outside, p.Needs, auth.ActPublish)
-	}
-	reader := &auth.Policy{}
-	if err := reader.Grant(auth.Binding{Principal: "grace", Role: auth.RoleReader, Resource: "/"}); err != nil {
-		t.Fatal(err)
-	}
-	if err := Allows(mod, "remove", "grace", reader, "/"); err == nil {
-		t.Error("a reader may take down somebody else's words by the register, and not by the command")
-	}
 }
 
 // The register called itself every situational role in this program and

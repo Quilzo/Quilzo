@@ -66,9 +66,6 @@
    "*",
    "chatbots"
   ],
-  "crypto/hpke": [
-   "*"
-  ],
   "crypto/mldsa": [
    "*"
   ],
@@ -278,9 +275,6 @@
    "chatbots"
   ],
   "math/big": [
-   "*"
-  ],
-  "math/bits": [
    "*"
   ],
   "math/rand": [

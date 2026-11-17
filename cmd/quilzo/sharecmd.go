@@ -77,10 +77,9 @@ var reShareID = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
 // shareIDFor is the id a link's secret is kept and named by.
 //
-// A digest, as handoffs and huddle invitations keep theirs. The secret was
-// kept in clear and was the id: anybody who read shares.json, or a backup
-// of it, could open every draft shared from the store, and the audit log
-// carried each one. The prefix keeps the digest from standing for a secret
+// A digest, as handoffs keep theirs. The secret was kept in clear and was
+// the id: anybody who read shares.json, or a backup of it, could open every
+// draft shared from the store, and the audit log carried each one. The prefix keeps the digest from standing for a secret
 // of any other kind.
 func shareIDFor(secret string) string {
 	sum := sha256.Sum256([]byte("quilzo share\x00" + secret))

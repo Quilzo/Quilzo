@@ -198,8 +198,7 @@ func shareSaid(t *testing.T, root string, args ...string) []byte {
 // shares.json held each link's address in clear, and the public site found
 // a link by comparing the address with ==: anybody who read the store, or
 // a backup of it, could open every draft shared from it, and the audit log
-// carried each one under "share". Huddle invitations and handoffs keep a
-// digest of theirs. The id a link is listed, logged and revoked by is now a
+// carried each one under "share". Handoffs keep a digest of theirs. The id a link is listed, logged and revoked by is now a
 // digest, which opens nothing.
 func TestALinksSecretIsKeptNowhere(t *testing.T) {
 	root := demoStore(t)

@@ -418,34 +418,11 @@ var commandNeeds = map[string]need{
 	"personalise list": {action: auth.ActView},
 	"personalise test": {action: auth.ActView},
 
-	// Saying something is an ordinary write. Taking down somebody else's
-	// words, or erasing under Article 17, is checked as a publish inside
-	// the command because the answer depends on whose message it is.
-	"room":         {action: auth.ActEditDraft},
-	"room list":    {action: auth.ActView},
-	"room read":    {action: auth.ActView},
-	"room history": {action: auth.ActView},
-
 	// Arithmetic over a synthetic frame. Reads nothing and writes nothing.
 	"screen": {action: auth.ActView},
 
 	// The same, with marks drawn on it. No store, so a view.
 	"annotate": {action: auth.ActView},
-
-	// Group key agreement, run against keys generated for the run and
-	// thrown away with it. Nothing reaches a store.
-	"call": {action: auth.ActView},
-
-	// The control plane of a call, demonstrated against those same
-	// throwaway keys.
-	"huddle": {action: auth.ActView},
-
-	// The note-taker's rules and a demonstration of them. Reads nothing.
-	"scribe": {action: auth.ActView},
-
-	// The assistant carrying out what a call agreed, against a manifest
-	// built for the run. Performs nothing outside itself.
-	"errand": {action: auth.ActView},
 
 	// A flow and a week of runs, both built for the run. Executes nothing.
 	"flow": {action: auth.ActView},
@@ -453,10 +430,6 @@ var commandNeeds = map[string]need{
 	// The register of situational authority. A table about this program's
 	// own design, which changes nothing.
 	"standing": {action: auth.ActView},
-
-	// Arithmetic and a self-check. It reads nothing, writes nothing and
-	// touches no store, so it is a view.
-	"sframe": {action: auth.ActView},
 
 	// Granting an outside firm access to this organisation's evidence is a
 	// commercial decision with a contract behind it, and issuing a package
@@ -1334,6 +1307,9 @@ func authoriseCommand(root, cmd string, args []string) error {
 		// absent from the table is the developer's; anything else is a typo,
 		// and a test walks the source to guarantee the first case never
 		// reaches a user.
+		if movedOut[cmd] {
+			return errMovedOut(cmd)
+		}
 		return unknownCommand(cmd)
 	}
 	if n.action == "" {

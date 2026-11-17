@@ -143,8 +143,7 @@ func TestAuthDenyNeverGrants(t *testing.T) {
 // commands never looked at what was left, so `--note covering for Bea --for
 // 30d --on /news` kept the note "covering" and dropped the expiry and the
 // scope with it: a permanent grant on the whole site, exit 0. The same
-// silence kept the first word of a note, a lock's reason and a room's
-// purpose, rolled the site back one step for `rollback 2`, made ./.quilzo
+// silence kept the first word of a note and a lock's reason, rolled the site back one step for `rollback 2`, made ./.quilzo
 // for `init mysite` and checked the whole store for `verify everything`.
 func TestAWordACommandDoesNotTakeIsRefused(t *testing.T) {
 	root, token := accessStore(t)
@@ -157,7 +156,6 @@ func TestAWordACommandDoesNotTakeIsRefused(t *testing.T) {
 		{"note", "add", "index", "the", "price", "is", "wrong"},
 		{"lock", "about", "--note", "editing", "hero", "image"},
 		{"checked", "set", "index", "--note", "looks", "right", "to", "me"},
-		{"room", "open", "r1", "--purpose", "plan", "the", "launch"},
 		{"verify", "everything"},
 		{"diff", "about"},
 		{"config", "show", "site.name"},
@@ -1178,7 +1176,7 @@ func TestWhatIsNotAboutAStoreRunsWithoutOne(t *testing.T) {
 		{"posture", "rules"},
 		{"template", "list"},
 		{"templates", "layouts"},
-		{"sframe", "suites"},
+		{"screen", "cost"},
 		{"theme", "styles"},
 	} {
 		root := filepath.Join(t.TempDir(), "qulizo")
