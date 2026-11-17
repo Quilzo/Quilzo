@@ -325,6 +325,13 @@ func noteRemove(root string, args []string) error {
 	theirs := caller.Name != n.Author
 	if theirs {
 		if err := authorise(root, caller, auth.ActPublish, pageResource(args[0])); err != nil {
+			// On the record, as a refused publish is. The check in front of
+			// the command records whoever it turns away; an author passes
+			// it, and this refusal recorded nothing, so somebody trying to
+			// take a publisher's question off their page was seen by nobody
+			// reading the log for refusals.
+			record(root, caller.auditRecord("note.remove", "/"+args[0], audit.Denied,
+				map[string]string{"id": full, "reason": "authorisation"}))
 			return fmt.Errorf("this note is %s's; taking down somebody else's note "+
 				"takes a publisher: %w\n  to finish with it and keep the "+
 				"conversation readable, resolve it instead",

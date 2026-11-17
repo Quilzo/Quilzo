@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/handoff"
 	"github.com/quilzo/quilzo/internal/note"
@@ -295,5 +296,30 @@ func TestALineBreakTypedInABrowserIsALineBreak(t *testing.T) {
 	}
 	if !strings.Contains(got, "    My order never came.\n    It was number 4471.\n") {
 		t.Errorf("the visitor's lines are not their two lines:\n%q", got)
+	}
+}
+
+// A refused take-down is on the record, as a refused publish is.
+//
+// The check in front of the command records whoever it turns away, so a
+// reader who tried to remove a note was in the log. An author passes that
+// check, and the command's own refusal recorded nothing: somebody trying,
+// and trying again, to take a publisher's question off the page they had
+// written was seen by nobody who reads the log for refusals.
+func TestARefusedTakeDownIsRecorded(t *testing.T) {
+	root, secrets := notedStore(t)
+	pats := noteBy(t, root, "about", "pat", "Heading is wrong")
+	t.Setenv("QUILZO_TOKEN", secrets["bob"])
+	if err := cmdNote(root, []string{"remove", "about", pats.ID[:12]}); err == nil {
+		t.Fatal("bob removed pat's note")
+	}
+	refused := 0
+	for _, e := range auditFor(t, root, "note.remove") {
+		if e.Outcome == audit.Denied && e.Resource == "/about" && e.Detail["id"] == pats.ID {
+			refused++
+		}
+	}
+	if refused != 1 {
+		t.Errorf("the refusal is in the log %d times", refused)
 	}
 }

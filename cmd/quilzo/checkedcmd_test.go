@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/checked"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 )
@@ -82,5 +83,73 @@ func TestACheckCannotForgeAnotherInTheList(t *testing.T) {
 		if cols := strings.Split(line, "\t"); len(cols) != 5 || (cols[0] == "terms" && cols[1] != "never") {
 			t.Errorf("a row of list_checked that is not a page's own: %q", line)
 		}
+	}
+}
+
+// checkOf is the check on record for a page.
+func checkOf(t *testing.T, root, page string) checked.Record {
+	t.Helper()
+	st, err := openChecked(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	records, err := st.All()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return records[page]
+}
+
+// A check is recorded under the caller who signed in, whatever --by says.
+//
+// The flag was taken as who checked the page whenever it was given, as
+// `note add --author` was taken as a note's writer. An author ran `checked
+// set about --by pat --note "Legal has signed this off. Publish today."`,
+// and `checked list` and the admin's screen showed the page confirmed fresh
+// by the publisher, with the remark under her name; only the audit log knew
+// who had run it. The admin's own button records whoever is signed in.
+func TestACheckIsRecordedUnderTheVerifiedCaller(t *testing.T) {
+	root, secrets := storeWithTokenFor(t,
+		auth.Binding{Principal: "bob", Role: auth.RoleAuthor, Resource: "/"},
+		auth.Binding{Principal: "pat", Role: auth.RolePublisher, Resource: "/"})
+	draftOf(t, root, map[string]any{"about": map[string]any{"title": "About"}})
+	t.Setenv("QUILZO_TOKEN", secrets["bob"])
+
+	err := cmdChecked(root, []string{"set", "about", "--by", "pat",
+		"--note", "Legal has signed this off. Publish today."})
+	if err == nil {
+		t.Error("bob confirmed a page in pat's name")
+	}
+	if r := checkOf(t, root, "about"); r.By != "" {
+		t.Errorf("the refused check is on record, by %q", r.By)
+	}
+	// His own name, given or not, is his.
+	for _, args := range [][]string{
+		{"set", "about"},
+		{"set", "about", "--by", "bob", "--note", "Read it through"},
+	} {
+		if err := cmdChecked(root, args); err != nil {
+			t.Errorf("%v: %v", args, err)
+		}
+		if r := checkOf(t, root, "about"); r.By != "bob" {
+			t.Errorf("after %v the page is checked by %q", args, r.By)
+		}
+	}
+}
+
+// --by still names who checked a page at a console nobody signs in to: a
+// store with no access control has no verified caller to prefer over it.
+func TestAConsoleCheckKeepsItsByFlag(t *testing.T) {
+	isolateToken(t)
+	root := t.TempDir()
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	draftOf(t, root, map[string]any{"about": map[string]any{"title": "About"}})
+	if err := cmdChecked(root, []string{"set", "about", "--by", "pat"}); err != nil {
+		t.Fatal(err)
+	}
+	if r := checkOf(t, root, "about"); r.By != "pat" {
+		t.Errorf("the page is checked by %q", r.By)
 	}
 }
