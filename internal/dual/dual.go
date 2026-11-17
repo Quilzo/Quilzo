@@ -637,8 +637,6 @@ func (s Store) Get(id string) (Request, error) {
 	return out, err
 }
 
-// Pending are the requests still waiting, and the approved tokens still
-// waiting to be issued, oldest first.
 // OpenBy is the requests by asker still waiting for a decision at now.
 func (s Store) OpenBy(asker string, now time.Time) ([]Request, error) {
 	pend, err := s.Pending(now)
@@ -651,6 +649,8 @@ func (s Store) OpenBy(asker string, now time.Time) ([]Request, error) {
 	return out, err
 }
 
+// Pending are the requests still waiting, and the approved tokens still
+// waiting to be issued, oldest first.
 func (s Store) Pending(now time.Time) ([]Request, error) {
 	var out []Request
 	err := atomicfile.Update(s.Path, func(f *file) error {
