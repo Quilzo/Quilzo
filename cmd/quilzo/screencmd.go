@@ -105,8 +105,11 @@ func screenCost(args []string) error {
 	w.Human("  still        %8d bytes\n\n", still.Bytes)
 	w.Human("  %sthe codec's figures alone, with no encryption added to them%s\n",
 		dim, reset)
+	// To the nearest kilobyte. The rates were cut off rather than rounded,
+	// which went unseen while the figures sat just above a whole number;
+	// 8130 bytes a second is 7.9 KB, and "about 7" is not about it.
 	w.Human("  %styping: about %d KB/s.  idle: about %d KB/s%s\n",
-		bold, typing/1024, idle/1024, reset)
+		bold, (typing+512)/1024, (idle+512)/1024, reset)
 	w.Human("\n  %sthis is a codec for screens and not for cameras: a "+
 		"photograph or a video playing in a window has no palette and no "+
 		"unchanged tiles, and the encoder reports that rather than "+
