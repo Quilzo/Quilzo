@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -122,6 +123,81 @@ func TestAnotherQuilzoIsConnectedByItsMetadataDocument(t *testing.T) {
 	}
 	if err := cmdConnect(root, []string{"provider", "discover", "hub", "https://hub.example/mcp", "--scope", "mcp:read bad\"scope"}); err == nil {
 		t.Fatal("a scope that is not one was asked for")
+	}
+}
+
+// The scopes a discovery asks for are read wherever --scope stands on the
+// line, and a scope left outside the quotes is refused, not dropped.
+//
+// Two branches met at this command. One gave it --scope, whose value is
+// several scopes separated by spaces; the other has every command refuse a
+// word it does not take, because the flag package stops at the first one
+// and what followed was thrown away. Parsed the old way, `--scope mcp:read
+// mcp:write` set up a connection that asked for mcp:read alone and said it
+// had worked, which is the connection every write is refused on, and the
+// flag written before the names found no names at all.
+func TestDiscoverReadsItsScopesWhereverTheyStandAndDropsNone(t *testing.T) {
+	root := keyedDemo(t)
+	setConfigs(t, root, map[string]string{"admin.base_url": "https://cms.example"})
+	pages := map[string]string{
+		"https://hub.example/.well-known/oauth-protected-resource/mcp": `{"resource":"https://hub.example/mcp",
+			"authorization_servers":["https://hub.example"],"scopes_supported":["mcp:read","mcp:write","mcp:publish","mcp:admin"]}`,
+		"https://hub.example/.well-known/oauth-authorization-server": `{"issuer":"https://hub.example",
+			"authorization_endpoint":"https://hub.example/oauth/authorize","token_endpoint":"https://hub.example/oauth/token",
+			"client_id_metadata_document_supported":true,"code_challenge_methods_supported":["S256"],
+			"scopes_supported":["mcp:read","mcp:write","mcp:publish","mcp:admin"]}`,
+	}
+	wasGet, wasPost := discoverGet, discoverPost
+	defer func() { discoverGet, discoverPost = wasGet, wasPost }()
+	discoverGet = func(_ context.Context, u string) (int, http.Header, []byte, error) {
+		if b, ok := pages[u]; ok {
+			return 200, http.Header{}, []byte(b), nil
+		}
+		return 404, http.Header{}, nil, nil
+	}
+	discoverPost = func(context.Context, string, []byte) (int, []byte, error) { return 500, nil, nil }
+
+	// Left unquoted, the second scope is a word the command does not take:
+	// one word more than the two names, whichever of them is the third.
+	// Nothing is set up, and the refusal says how the line was meant.
+	for _, line := range [][]string{
+		{"provider", "discover", "hub", "https://hub.example/mcp", "--scope", "mcp:read", "mcp:write"},
+		{"provider", "discover", "--scope", "mcp:read", "mcp:write", "hub", "https://hub.example/mcp"},
+		{"provider", "discover", "hub", "https://hub.example/mcp", "mcp:write"},
+	} {
+		err := cmdConnect(root, line)
+		var misused errMisused
+		if !errors.As(err, &misused) || !strings.Contains(err.Error(), "does not take") {
+			t.Errorf("%v: %v", line, err)
+		}
+		if set, _ := loadConnectProviders(root); len(set.Providers) != 0 {
+			t.Fatalf("%v set up %+v", line, set.Providers)
+		}
+	}
+	err := cmdConnect(root, []string{"provider", "discover", "hub", "https://hub.example/mcp", "--scope", "mcp:read", "mcp:write"})
+	if err == nil || !strings.Contains(err.Error(), `--scope "mcp:read mcp:write"`) {
+		t.Errorf("the refusal does not say how the scopes are written: %v", err)
+	}
+
+	// Before the names or after them, the scopes asked for are the ones kept.
+	for _, line := range [][]string{
+		{"provider", "discover", "--scope", "mcp:read mcp:write", "hub", "https://hub.example/mcp"},
+		{"provider", "discover", "hub", "--scope=mcp:read mcp:write", "https://hub.example/mcp"},
+		{"provider", "discover", "hub", "https://hub.example/mcp", "--scope", "mcp:read mcp:write"},
+	} {
+		if err := cmdConnect(root, line); err != nil {
+			t.Fatalf("%v: %v", line, err)
+		}
+		set, err := loadConnectProviders(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if p, _ := set.get("hub"); strings.Join(p.Scopes, " ") != "mcp:read mcp:write" {
+			t.Errorf("%v asks for %v", line, p.Scopes)
+		}
+		if err := cmdConnect(root, []string{"provider", "remove", "hub"}); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
