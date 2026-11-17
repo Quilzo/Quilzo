@@ -1445,8 +1445,9 @@ between a colon and a semicolon. So this is lossless — not high quality, not
 visually lossless — and the damage model is the compression: at 1920x1080,
 a key frame is 90x smaller than raw, a keystroke costs 271 bytes and a still
 screen costs 89, which is just under 8 KB/s of typing. Those are the codec's
-figures alone: no encryption is added to them. Pointed at a photograph it compresses barely at all, and it says so
-rather than quietly sending fifty megabytes a second.
+figures alone: no encryption is added to them. Pointed at a photograph it
+compresses barely at all, and it says so rather than quietly sending fifty
+megabytes a second.
 
 **Marks on a shared screen that follow the content, not the glass.** Everyone
 has sat through this: somebody circles line 40, the presenter scrolls, and the
@@ -1533,10 +1534,11 @@ a grant first would mean only those with the most access are helped, which is a
 permission model shaping the organisation. **The rule that holds is about
 reach.** A power that acts inside its own situation needs nothing standing:
 ending a handoff conversation closes that one conversation, and the worst case
-is a visitor who leaves. A power that survives the situation is a standing act wearing a
-situational costume and needs the standing authority for what it actually does,
-which lands on **publish**: the ladder already defines it as the only action with
-an outside observer. One situational role here reaches outside today: an
+is a visitor who leaves. A power that survives the situation is a standing act
+wearing a situational costume and needs the standing authority for what it
+actually does, which lands on **publish**: the ladder already defines it as the
+only action with an outside observer. One situational role here reaches outside
+today: an
 enrolment link, whose passkey outlives it and rests on the grant of whoever made
 the link. Others that reached outside (an incident's commander, a detection's
 promoter) left with a security team's tools, and the rule is what keeps the next

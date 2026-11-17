@@ -21,10 +21,10 @@ import (
 //
 // That is not wrong. A handoff's visitor is genuinely not a rung on a
 // site-wide ladder, and making them one would produce exactly the
-// over-granting internal/auth exists to avoid. What was missing is the relationship, and
-// the rule is about reach: a power that acts inside its situation needs
-// nothing standing, and one that survives it is a standing act wearing a
-// situational costume.
+// over-granting internal/auth exists to avoid. What was missing is the
+// relationship, and the rule is about reach: a power that acts inside its
+// situation needs nothing standing, and one that survives it is a standing
+// act wearing a situational costume.
 
 func cmdStanding(args []string) error {
 	if len(args) == 0 {

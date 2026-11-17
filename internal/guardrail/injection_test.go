@@ -8,8 +8,9 @@ import (
 	"testing"
 )
 
-// One table, and every surface reads it: the commonest wordings of an
-// attempt are noticed in a page, a visitor's question and a call alike.
+// One table, and every view of it has them: the commonest wordings of an
+// attempt are noticed in a page, in a visitor's question and in what
+// somebody said aloud alike.
 //
 // The knowledge screen, the public chatbot and the meeting scribe kept a
 // list each, and the chatbot's missed "Ignore your previous instructions",

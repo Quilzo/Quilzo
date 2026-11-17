@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -26,7 +27,10 @@ func TestAMovedOutCommandIsSaidToHaveMoved(t *testing.T) {
 			{cmd},
 			{cmd, "list"},
 			{"help", cmd},
+			{"--help", cmd},
+			{"-h", cmd, "list"},
 			{cmd, "--help"},
+			{cmd, "help"},
 			{"--json", cmd, "demo"},
 		} {
 			_, e, code := cliRun(t, root, token, line...)
@@ -40,6 +44,31 @@ func TestAMovedOutCommandIsSaidToHaveMoved(t *testing.T) {
 			}
 			if strings.Contains(e, "there is no") || strings.Contains(e, "Did you mean") {
 				t.Errorf("`quilzo %s` was answered as a typo: %s", said, firstLines(e, 3))
+			}
+		}
+	}
+}
+
+// The authorisation check, which every command passes through, gives the
+// same answer by itself. main answers a name that has left before the check
+// is reached, so nothing run from the command line gets this far, and the
+// check is asked directly: its answer must not depend on main having been
+// there first, or the day the two are reordered a name that has left is
+// "there is no such command" again.
+func TestTheAuthorisationCheckSaysAMovedOutCommandMoved(t *testing.T) {
+	for cmd := range movedOut {
+		for _, args := range [][]string{nil, {"list"}, {"demo", "--help"}} {
+			err := authoriseCommand(t.TempDir(), cmd, args)
+			if err == nil {
+				t.Fatalf("`quilzo %s %s` is authorised, and the command has left", cmd, strings.Join(args, " "))
+			}
+			var misused errMisused
+			if !errors.As(err, &misused) {
+				t.Errorf("`quilzo %s` is refused as %T, and a command that has left is a usage error", cmd, err)
+			}
+			if !strings.Contains(err.Error(), "moved out of Quilzo into a separate product") ||
+				strings.Contains(err.Error(), "Did you mean") {
+				t.Errorf("`quilzo %s` is answered %q", cmd, err)
 			}
 		}
 	}
