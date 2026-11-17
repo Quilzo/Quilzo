@@ -264,3 +264,34 @@ func TestEveryExemptionNamesAPackageThatIsHere(t *testing.T) {
 		}
 	}
 }
+
+// The sentence about the register agrees with its numbers.
+//
+// It was written when two roles reached outside their situation, and read
+// "7 are contained and 2 confer something". With the call demonstrations
+// and the room gone one role does, and `quilzo standing list` printed "3 are
+// contained and 1 confer something": a sentence that is wrong about its own
+// count reads as a count nobody checked.
+func TestTheRegistersSentenceAgreesWithItsNumbers(t *testing.T) {
+	for _, c := range []struct {
+		shape Shape
+		want  string
+	}{
+		{Shape{Roles: 4, Packages: 4, Powers: 7, Contained: 3, Reaching: 1},
+			"3 are contained and 1 confers something"},
+		{Shape{Roles: 3, Packages: 3, Powers: 5, Contained: 1, Reaching: 2},
+			"1 is contained and 2 confer something"},
+		{Shape{Roles: 9, Packages: 8, Powers: 19, Contained: 7, Reaching: 2},
+			"7 are contained and 2 confer something"},
+		{Shape{Roles: 2, Packages: 2, Powers: 3, Contained: 2, Reaching: 0},
+			"2 are contained and 0 confer something"},
+	} {
+		if got := c.shape.Why(); !strings.Contains(got, c.want) {
+			t.Errorf("%+v is described as %q, which does not say %q", c.shape, got, c.want)
+		}
+	}
+	// And the register as it stands is described in a sentence that agrees.
+	if s := Look(); s.Reaching == 1 && !strings.Contains(s.Why(), "1 confers something") {
+		t.Errorf("the register is described as %q", s.Why())
+	}
+}

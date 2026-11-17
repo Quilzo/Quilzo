@@ -162,13 +162,25 @@ func Look() Shape {
 }
 
 // Why describes the register in a sentence.
+//
+// The verbs agree with the counts. They were written for a register where
+// several roles were contained and several reached outside, and once a
+// single role reached outside the sentence read "1 confer something",
+// which is how a figure nobody looked at reads.
 func (s Shape) Why() string {
+	are, confer := "are", "confer"
+	if s.Contained == 1 {
+		are = "is"
+	}
+	if s.Reaching == 1 {
+		confer = "confers"
+	}
 	return fmt.Sprintf(
 		"%d situational role(s) across %d package(s), conferring %d "+
-			"power(s). %d are contained and %d confer something that "+
+			"power(s). %d %s contained and %d %s something that "+
 			"survives the situation and therefore rests on a standing "+
-			"grant", s.Roles, s.Packages, s.Powers, s.Contained,
-		s.Reaching)
+			"grant", s.Roles, s.Packages, s.Powers, s.Contained, are,
+		s.Reaching, confer)
 }
 
 // Check validates the whole register.
