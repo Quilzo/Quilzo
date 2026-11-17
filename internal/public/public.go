@@ -610,7 +610,7 @@ func (st *Site) sitemap(w http.ResponseWriter, r *http.Request) {
 		// sends a reader to a page that is not there.
 		if st.Locales != nil {
 			_, page := st.Locales.Split(name)
-			for _, a := range st.Locales.Alternates(page, base, present) {
+			for _, a := range st.alternates(page, present) {
 				e.Alternates = append(e.Alternates, seo.Alternate{
 					Locale: string(a.Locale), Href: a.Href})
 			}
@@ -1200,6 +1200,13 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 	if of, ok := st.variants(pages)[name]; ok {
 		tag = strings.TrimSuffix(tag, `"`) + "-v" + variantsTag(map[string]string{name: of}) + `"`
 	}
+	// The language it is served in and the languages it links, which a
+	// translation published or taken down changes with this page untouched.
+	lang := st.languageOf(name, served, pages)
+	if lt := lang.tag(); lt != "" {
+		tag = strings.TrimSuffix(tag, `"`) + "-l" + lt + `"`
+	}
+	lang.announce(w.Header())
 	w.Header().Set("ETag", tag)
 	// Left out of search results when it asks to be, on the response a
 	// crawler reads as well as in the page.
@@ -1297,7 +1304,7 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 	}
 
 	html = st.injectHead(html, name, tree[served], body)
-	html = st.inLanguage(w.Header(), html, served, true)
+	html = lang.in(html)
 	if live {
 		html = insertBeforeHead(html, liveScript())
 	}
@@ -1325,6 +1332,7 @@ func (st *Site) page(w http.ResponseWriter, r *http.Request) {
 func unassembled(w http.ResponseWriter, err error, problem string) {
 	h := w.Header()
 	h.Del("ETag")
+	h.Del("Content-Language")
 	h.Set("Cache-Control", "no-store")
 	var bad *listing.BadArg
 	if errors.As(err, &bad) {

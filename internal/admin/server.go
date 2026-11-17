@@ -4564,6 +4564,15 @@ func (s *Server) handlePreview(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "template: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// In the page's own language and direction, as the site serves it. The
+	// site sets them on the page it has rendered, whatever the layout says,
+	// and the preview did not: the Arabic page was previewed as English,
+	// left to right, which is not the page a reader gets.
+	if s.Languages != nil && s.Languages.Load != nil {
+		if locales, lerr := s.Languages.Load(); lerr == nil {
+			out = public.InLanguage(out, locales, name)
+		}
+	}
 
 	// The ways back into what you are looking at. See previewbar.go: the page
 	// itself is untouched and the panel is injected after rendering, so this

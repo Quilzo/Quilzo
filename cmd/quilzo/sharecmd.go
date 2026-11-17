@@ -24,6 +24,7 @@ import (
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/public"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 	"github.com/quilzo/quilzo/internal/tmpl"
@@ -284,6 +285,12 @@ func renderShared(root string, design *Design, secret string, now time.Time) (st
 	out, err := tmpl.Render(layout, ctx)
 	if err != nil {
 		return "", false
+	}
+	// In the page's own language and direction, which the site sets on what
+	// it serves whatever the layout says: a shared Arabic draft was shown as
+	// English, left to right.
+	if locales, lerr := loadLocales(root); lerr == nil {
+		out = public.InLanguage(out, locales, sh.Page)
 	}
 	return out, true
 }

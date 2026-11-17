@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/quilzo/quilzo/internal/i18n"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/section"
 	"github.com/quilzo/quilzo/internal/site"
@@ -385,5 +386,39 @@ func TestTheEditorDrawsTextSoABrowserSendsItBackUnchanged(t *testing.T) {
 	html := get(t, srv, "/page/about", token).Body.String()
 	if !strings.Contains(html, ">\n\nBegins with a blank line.</textarea>") {
 		t.Error("the body's box does not begin with a line break for the browser to take, so the body loses its own")
+	}
+}
+
+// The preview is the page as a reader gets it, and a reader gets a
+// translated page in its own language and direction. The preview showed the
+// Arabic page as its layout wrote it, English and left to right, so what an
+// editor checked was not what was published.
+func TestThePreviewShowsATranslatedPageInItsLanguage(t *testing.T) {
+	srv, token := setup(t)
+	locales := i18n.NewConfig("en")
+	if err := locales.Add("ar"); err != nil {
+		t.Fatal(err)
+	}
+	srv.Languages = &Languages{Load: func() (*i18n.Config, error) { return locales, nil }}
+	pages, err := site.PagesAt(srv.Store, site.RefDraft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages["ar/about"] = map[string]any{"title": "من نحن", "body": "مرحبا"}
+	if _, err := site.SaveDraft(srv.Store, pages, "in Arabic", "test"); err != nil {
+		t.Fatal(err)
+	}
+	for path, want := range map[string]string{
+		"/preview/ar/about?plain=1": `<html lang="ar" dir="rtl">`,
+		"/preview/about?plain=1":    `<html lang="en" dir="ltr">`,
+	} {
+		if html := get(t, srv, path, token).Body.String(); !strings.Contains(html, want) {
+			t.Errorf("%s does not open %s: %.80s", path, want, html)
+		}
+	}
+	// A site in one language is previewed as its layout wrote it.
+	srv.Languages = nil
+	if html := get(t, srv, "/preview/about?plain=1", token).Body.String(); !strings.Contains(html, `<html lang="en">`) {
+		t.Errorf("a site in one language had its preview changed: %.80s", html)
 	}
 }
