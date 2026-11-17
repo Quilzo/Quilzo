@@ -343,3 +343,77 @@ func TestSearchEnginesAreToldOfTheProductPageARecordChanged(t *testing.T) {
 		}
 	}
 }
+
+// A record taken out of its collection has a page that is now gone, and a
+// removed page is sent so the engine finds it gone. Only the records still
+// there were looked at, so a product withdrawn from the shop was sent as
+// the pages listing it and never as its own, and stayed in results with its
+// price for as long as the engine took to come back by itself.
+func TestSearchEnginesAreToldOfTheProductPageOfARecordTakenAway(t *testing.T) {
+	root := demoStore(t)
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var m struct {
+			URLs []string `json:"urlList"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&m)
+		got = append(got, m.URLs...)
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer srv.Close()
+	was := indexNowEndpoint
+	indexNowEndpoint = srv.URL
+	defer func() { indexNowEndpoint = was }()
+
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Publish(s, ""); err != nil {
+		t.Fatal(err)
+	}
+	setConfigs(t, root, map[string]string{"site.indexnow": "true", "site.base_url": "https://shop.example"})
+	ctx := context.Background()
+	if said := indexNowAfterPublish(ctx, root); said != "" {
+		t.Fatalf("the first publish told: %q", said)
+	}
+
+	tree, err := draftTree(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recs, _, err := collection.List(s, tree, "products", collection.Query{Limit: collection.MaxLimit})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := ""
+	for _, r := range recs {
+		if r.Fields["slug"] == "walnut-ink" {
+			id = r.ID
+		}
+	}
+	if id == "" {
+		t.Fatal("the demonstration has no walnut ink")
+	}
+	if err := commitTree(s, "test", func(base string) (string, string, error) {
+		next, err := collection.Delete(s, base, "products", id)
+		return next, "withdrawn", err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Publish(s, ""); err != nil {
+		t.Fatal(err)
+	}
+	indexNowAfterPublish(ctx, root)
+
+	for _, want := range []string{"https://shop.example/product/walnut-ink", "https://shop.example/shop"} {
+		if !slices.Contains(got, want) {
+			t.Errorf("not told of %s: %v", want, got)
+		}
+	}
+	for _, u := range got {
+		if strings.HasPrefix(u, "https://shop.example/product/") && u != "https://shop.example/product/walnut-ink" {
+			t.Errorf("told of %s, which did not change: %v", u, got)
+		}
+	}
+}

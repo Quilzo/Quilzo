@@ -164,8 +164,10 @@ func indexNowChanged(s *store.Store, base, index, from, to string, exps *experim
 // indexNowRecords is what a change to the records between two commits
 // changed on the site: the pages showing a listing over a changed
 // collection, and the address of each changed record a detail page's
-// listing keeps, as the sitemap lists it. data is the change to the store's
-// data tree.
+// listing keeps, as the sitemap lists it, or kept before the change: a
+// record taken away, or one its listing no longer keeps, has a page that is
+// gone, and a removed page is sent so the engine finds it gone. data is the
+// change to the store's data tree.
 func indexNowRecords(s *store.Store, base, from, to string, data site.Change, visible map[string]any, listings *listing.Set) (pages, urls []string, err error) {
 	collections := func(oid string) (map[string]string, error) {
 		if oid == "" {
@@ -212,8 +214,8 @@ func indexNowRecords(s *store.Store, base, from, to string, data site.Change, vi
 	}
 	// The records each touched collection changed, by id, read once.
 	type changes struct {
-		now *collection.Index
-		ids map[string]bool
+		was, now *collection.Index
+		ids      map[string]bool
 	}
 	read := map[string]*changes{}
 	changedIn := func(name string) (*changes, error) {
@@ -232,13 +234,20 @@ func indexNowRecords(s *store.Store, base, from, to string, data site.Change, vi
 		for _, r := range was.Records {
 			old[r.ID] = r
 		}
-		c := &changes{now: now, ids: map[string]bool{}}
+		c := &changes{was: was, now: now, ids: map[string]bool{}}
 		for _, r := range now.Records {
 			// By what the record says: an identical re-import restamps it,
 			// and no page reads differently for that.
 			if o, ok := old[r.ID]; !ok || !reflect.DeepEqual(o.Fields, r.Fields) {
 				c.ids[r.ID] = true
 			}
+			delete(old, r.ID)
+		}
+		// And the ones no longer there. Only the records still in the
+		// collection were looked at, so a product withdrawn from a shop was
+		// sent as the pages listing it and never as its own page.
+		for id := range old {
+			c.ids[id] = true
 		}
 		read[name] = c
 		return c, nil
@@ -260,17 +269,27 @@ func indexNowRecords(s *store.Store, base, from, to string, data site.Change, vi
 			if err != nil {
 				return nil, nil, err
 			}
-			rows, _, err := listing.Every(l, c.now, nil, MaxIndexNow)
-			if err != nil {
-				continue
-			}
-			for _, row := range rows {
-				id, _ := row["id"].(string)
-				key, _ := row[d.Key].(string)
-				if !c.ids[id] || key == "" || strings.ContainsAny(key, "/?#") {
+			// As the listing keeps them now, and as it kept them before: a
+			// changed record's page is at one address, at two if the change
+			// was to the key it is addressed by, and only at the old one if
+			// it is gone.
+			sent := map[string]bool{}
+			for _, idx := range []*collection.Index{c.now, c.was} {
+				rows, _, err := listing.Every(l, idx, nil, MaxIndexNow)
+				if err != nil {
 					continue
 				}
-				urls = append(urls, base+"/"+name+"/"+url.PathEscape(key))
+				for _, row := range rows {
+					id, _ := row["id"].(string)
+					key, _ := row[d.Key].(string)
+					if !c.ids[id] || key == "" || strings.ContainsAny(key, "/?#") {
+						continue
+					}
+					if u := base + "/" + name + "/" + url.PathEscape(key); !sent[u] {
+						sent[u] = true
+						urls = append(urls, u)
+					}
+				}
 			}
 			continue
 		}
