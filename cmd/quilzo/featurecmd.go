@@ -152,11 +152,16 @@ func readFeatureBytes(root string, body []byte, keys string) (*feature.Package, 
 			return nil, nil, err
 		}
 	} else if p.Signature != nil {
-		return nil, nil, fmt.Errorf("this package is signed; give the publisher's keys with --keys head.pub.json " +
-			"so the signature is checked rather than ignored")
+		return nil, nil, fmt.Errorf("%w; give the publisher's keys with --keys head.pub.json "+
+			"so the signature is checked rather than ignored", errSignedPackage)
 	}
 	return p, body, nil
 }
+
+// errSignedPackage is a signed package read with no keys to check it by.
+// What can be done about that is the command line's to say with its flag,
+// and another door's to say in its own words (propose_feature).
+var errSignedPackage = errors.New("this package is signed")
 
 func verifyFeature(p *feature.Package, keysPath string) error {
 	if p.Signature == nil {

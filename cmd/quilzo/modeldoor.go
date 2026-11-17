@@ -252,7 +252,10 @@ func doorChat(ctx context.Context, root string, caller *Caller, client, shape, m
 			}
 		}
 		detail["in"], detail["out"] = strconv.Itoa(total.In), strconv.Itoa(total.Out)
-		who, by := "model-client", "model-client"
+		// The person's client, for the person, as at the agent interface
+		// (interfaceClient): recorded as one principal, model-client, every
+		// person's client was one agent to the agent watch.
+		who, by := caller.Name, "model-client"
 		if client != "" {
 			who, by = "app:"+client, client
 		}

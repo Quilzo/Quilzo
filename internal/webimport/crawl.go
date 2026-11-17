@@ -160,7 +160,18 @@ func Crawl(ctx context.Context, start string, opt Options) (*Site, error) {
 		}
 	}
 	if len(site.Pages) == 0 {
-		return site, fmt.Errorf("no page of %s could be read", home.Host)
+		// With why, as the fetcher or the site said it. Without it, a
+		// refusal by policy (a private address, the server itself, plain
+		// http) read like a site that was down, and an agent kept trying
+		// or reported the site broken.
+		why := append([]string(nil), first(site.Failed, 3)...)
+		if len(site.Refused) > 0 {
+			why = append(why, "the site's robots.txt asks readers not to read "+strings.Join(first(site.Refused, 3), ", "))
+		}
+		if len(why) == 0 {
+			return site, fmt.Errorf("no page of %s could be read", home.Host)
+		}
+		return site, fmt.Errorf("no page of %s could be read: %s", home.Host, strings.Join(why, "; "))
 	}
 	return site, nil
 }

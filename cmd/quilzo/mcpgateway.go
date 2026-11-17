@@ -242,6 +242,7 @@ func gatewayCall(ctx context.Context, root string, in agent.Integration, mc *mcp
 		if tok.Grant != "" {
 			d["grant"] = tok.Grant
 		}
+		noteCredential(d, tok)
 		if held != "" {
 			d["held"] = held
 		}
@@ -258,12 +259,11 @@ func gatewayCall(ctx context.Context, root string, in agent.Integration, mc *mcp
 		if reported {
 			outcome, d["error"] = audit.Failure, "the tool reported that it failed"
 		}
-		who, kind := tok.Principal, audit.KindHuman
-		if tok.Client != "" {
-			who, kind = "app:"+tok.Client, audit.KindAI
-		}
+		// The client, for the person, as a call at the interface is: a
+		// person's own token here is held by another vendor's agent.
+		who, model := interfaceClient(tok.Principal, tok.Client)
 		record(root, audit.Record{Action: "mcp.gateway", Resource: "/integrations/" + in.Name, Outcome: outcome,
-			Principal: who, Kind: kind, Model: tok.Client, Verified: true, Detail: d})
+			Principal: who, Kind: audit.KindAI, Model: model, Verified: true, Detail: d})
 	}()
 	refuse := func(why string) (string, error) { return "", &mcp.Refusal{Reason: why} }
 
@@ -349,10 +349,11 @@ func gatewayCall(ctx context.Context, root string, in agent.Integration, mc *mcp
 	out, err = mc.CallStrict(ctx, in, tool, args)
 	var failed *mcpclient.ToolError
 	if errors.As(err, &failed) {
-		// Answered as the server answered, so the caller reads what the
-		// tool said; recorded as the failure it was, not as a success.
+		// Answered as the server answered, what the tool said marked as
+		// its failure, so the caller does not read it as the tool's work;
+		// recorded as the failure it was, not as a success.
 		reported = true
-		return out, nil
+		return out, &mcp.ToolFailed{Text: out}
 	}
 	return out, err
 }

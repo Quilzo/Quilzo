@@ -106,8 +106,14 @@ func assistantMCP(t *testing.T, root string) *mcp.Server {
 func TestAnAgentBuildsAChatbotAndCannotLaunchIt(t *testing.T) {
 	root := publishedShop(t)
 	srv := assistantMCP(t, root)
+	// Asking for it public is asking for an argument it does not take.
 	if _, err := callTool(t, srv, "quilzo_write", "declare_assistant", map[string]any{
-		"name": "help", "title": "Help", "public": true}); err != nil {
+		"name": "help", "title": "Help", "public": true}); err == nil || err.Code != mcp.CodeInvalidParams ||
+		!strings.Contains(err.Message, "public") {
+		t.Fatalf("declared with public: %+v", err)
+	}
+	if _, err := callTool(t, srv, "quilzo_write", "declare_assistant", map[string]any{
+		"name": "help", "title": "Help"}); err != nil {
 		t.Fatal(err.Message)
 	}
 	a, err := loadAssistant(root, "help")

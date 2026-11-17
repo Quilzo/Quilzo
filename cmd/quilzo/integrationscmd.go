@@ -221,19 +221,33 @@ func integrationsCall(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	argv := map[string]any{}
+	given := map[string]string{}
 	for _, kv := range rest[2:] {
 		k, v, ok := strings.Cut(kv, "=")
 		if !ok {
 			return fmt.Errorf("%q is not key=value", kv)
 		}
-		argv[k] = typed(v)
+		given[k] = v
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	out, cerr := newMCPClientFor(root, actingFor(caller)).CallStrict(ctx, in, tool, argv)
+	// A value is given the type it looks like, and where the tool was
+	// pinned, the type its schema takes: the call is held to that schema,
+	// and an order id written 42, which the tool takes as text, was
+	// refused as a number with no way to write it as anything else.
+	mc := newMCPClientFor(root, actingFor(caller))
+	approved, pinned := mc.Approved(ctx, in, tool)
+	argv := map[string]any{}
+	for k, v := range given {
+		argv[k] = typed(v)
+		if pinned {
+			argv[k] = approved.Typed(k, v, argv[k])
+		}
+	}
+
+	out, cerr := mc.CallStrict(ctx, in, tool, argv)
 	if cerr != nil {
 		// Denied is for what this install refused. A call the far side
 		// failed — the tool said so, the server answered with an error, or

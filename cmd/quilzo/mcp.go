@@ -107,6 +107,14 @@ func cmdMCP(root string, args []string) error {
 			continue
 		}
 		resp := srv.Handle(req)
+		// Every call recorded, reads and refusals included, as over HTTP
+		// (wireInterface's Called): on standard input only a write left a
+		// record, so what a local agent read, and a publish it was refused,
+		// were invisible to the shield and to whoever reads the log.
+		if req.Method == "tools/call" {
+			tool, op := mcp.CallNames(req.Params)
+			record(root, stdioCallRecord(caller, tool, op, resp.Error))
+		}
 		// A notification has no id and expects no reply.
 		if len(req.ID) == 0 {
 			continue
@@ -220,6 +228,13 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		Keywords: []string{"read", "get", "page", "content", "fields"},
 	}, func(a map[string]any) (any, error) {
 		name, _ := a["page"].(string)
+		// No page is the call's mistake, not a page that is missing. Left
+		// out, or given as "" or null, it was read as the empty name, and an
+		// agent was told there is no page "" and concluded the content was
+		// missing, as it had been told for a page given as a number.
+		if strings.TrimSpace(name) == "" {
+			return nil, &mcp.ArgumentError{Reason: "read_page needs arguments.page, the name of the page to read"}
+		}
 		if err := authorise(root, caller, auth.ActView, pageResource(name)); err != nil {
 			return nil, &mcp.Refusal{Reason: err.Error()}
 		}
@@ -263,6 +278,7 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 			"query": "the words to look for",
 			"limit": "optional, default and maximum 20",
 		},
+		Types:    map[string]string{"limit": "number"},
 		Area:     "/",
 		Keywords: []string{"search", "content", "pages", "words", "which page"},
 	}, func(a map[string]any) (any, error) {
@@ -309,6 +325,7 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 			"page":  "the page to compare against",
 			"limit": "optional, default and maximum 20",
 		},
+		Types:    map[string]string{"limit": "number"},
 		Area:     "/",
 		Keywords: []string{"similar", "related", "like", "nearest", "duplicate"},
 	}, func(a map[string]any) (any, error) {
@@ -388,9 +405,11 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		Detail: "Writes to the draft only. The page is recorded as AI-generated, " +
 			"which the EU AI Act requires and which you cannot opt out of.",
 		Args: map[string]string{
-			"page":   "page name: letters, digits, dot, dash, underscore",
-			"fields": "object of field names to string values",
+			"page": "page name: letters, digits, dot, dash, underscore",
+			"fields": "object of field names to values: text, or a number, true or false or a list " +
+				"where the page's content type takes one",
 		},
+		Types:  map[string]string{"fields": "object"},
 		Writes: true, NeedsRole: "author", Area: "/",
 		Keywords: []string{"write", "edit", "create", "update", "page", "change"},
 	}, func(a map[string]any) (any, error) {
@@ -406,6 +425,22 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		fields, _ := a["fields"].(map[string]any)
 		if len(fields) == 0 {
 			return nil, &mcp.Refusal{Reason: "no fields given; nothing to write"}
+		}
+		// A field with no name, or a null for a value, is in no page any
+		// other door writes and in no content type, and was kept in the
+		// draft as it came. A number, true or false, a list or an object
+		// stays a value: content types declare number, boolean and list
+		// fields, and some pages hold structured ones.
+		for k, v := range fields {
+			if strings.TrimSpace(k) == "" {
+				return nil, &mcp.ArgumentError{Reason: "write_page: a field in arguments.fields has no name"}
+			}
+			if v == nil {
+				// By a short form of its name, which is the caller's, as
+				// every name a refusal quotes is (quoteInput).
+				return nil, &mcp.ArgumentError{Reason: fmt.Sprintf(
+					"write_page: arguments.fields.%s is null; give it as \"\" to empty it", clip(k, 80))}
+			}
 		}
 
 		// The page set and the commit it is read from, which is what this
@@ -449,8 +484,15 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		// a page is exactly what Article 50 is about — leaving this to the
 		// caller would mean the one interface built for agents is the one that
 		// forgets.
+		//
+		// By the client that wrote it (interfaceClient): the app, when an app
+		// was given the token. Every page was marked as written by
+		// mcp-client, so with two apps connected for one person the mark
+		// could not say which wrote it, and only the call's own record named
+		// the app.
+		who, model := interfaceClient(caller.Name, caller.Client)
 		if err := markAssisted(root, s, cid, []string{name},
-			map[string]bool{name: isNew}, "mcp-client", "written over MCP",
+			map[string]bool{name: isNew}, model, "written over MCP",
 			caller.Name); err != nil {
 			return nil, fmt.Errorf("the page was written but not marked: %w", err)
 		}
@@ -466,7 +508,7 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		// second as an act nobody verified was behind.
 		record(root, audit.Record{
 			Action: "mcp.write_page", Resource: "/" + name, Outcome: audit.Success,
-			Principal: "mcp-client", Kind: audit.KindAI, Model: "mcp-client",
+			Principal: who, Kind: audit.KindAI, Model: model,
 			Verified: caller.Verified, Detail: map[string]string{"on_behalf_of": caller.Name},
 		})
 		return fmt.Sprintf("wrote %s to the draft as %s; it is marked AI-generated "+
@@ -571,9 +613,10 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 			return nil, err
 		}
 		// Verified as the caller was, as mcp.write_page is.
+		who, model := interfaceClient(caller.Name, caller.Client)
 		record(root, audit.Record{
 			Action: "mcp.publish", Resource: "/", Outcome: audit.Success,
-			Principal: "mcp-client", Kind: audit.KindAI, Model: "mcp-client",
+			Principal: who, Kind: audit.KindAI, Model: model,
 			Verified: caller.Verified, Detail: map[string]string{"on_behalf_of": caller.Name},
 		})
 		var changed []string
@@ -628,15 +671,20 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 			len(unmarked), strings.Join(unmarked, ", ")), nil
 	})
 
-	// What the law asks of the published site, read-only. Admin, as the
-	// inventory is: it names the forms and where personal data sits.
+	// What the law asks of the published site, read-only. Asked in the
+	// compliance area, as `quilzo compliance site` is: it names the forms
+	// and where personal data sits, so a role over the site reaches it only
+	// as administrator (auth's guarded areas), and the compliance officer
+	// and the auditor, whose jobs are granted there, reach it too. Asked of
+	// the whole site, it refused them the report their command gives them.
 	srv.Register(mcp.Operation{
-		Name: "site_report", NeedsRole: "admin",
+		Name: "site_report", NeedsRole: "reader", Area: auth.AreaCompliance,
 		Summary: "what the law asks of the published site and where it stands: " +
 			"accessibility, the statement, forms, personal data, AI disclosure and marking, browser protections",
 		Detail: "Read-only. A duty marked clear means the checks found nothing, not that the duty is met. " +
 			"Pass statement=true for the draft accessibility statement as Markdown.",
 		Args:     map[string]string{"statement": "true for only the draft accessibility statement"},
+		Types:    map[string]string{"statement": "boolean"},
 		Keywords: []string{"compliance", "accessibility", "statement", "gdpr", "ai act", "eaa", "headers", "privacy", "site"},
 	}, func(a map[string]any) (any, error) {
 		rep, err := buildSiteReport(root, tplDir, time.Now())
@@ -734,11 +782,14 @@ func actionForRole(role string) (auth.Action, error) {
 	case "publisher":
 		return auth.ActPublish, nil
 	case "admin":
-		// The posture, inventory, integrity and agent-activity reports. The
-		// admin restricts these screens to an administrator on the grounds
-		// that a detailed list of where this system's defences are thin is a
-		// target list, and this surface handed the same list to anybody who
-		// could start the process.
+		// The agent-activity, evaluation and scanning reports. The admin
+		// restricts these screens to an administrator on the grounds that a
+		// detailed list of where this system's defences are thin is a target
+		// list, and this surface handed the same list to anybody who could
+		// start the process. The posture, the inventory, the shield and the
+		// site report are asked in their own areas instead (Operation.Area),
+		// which a role over the site reaches only as administrator, as
+		// their commands are.
 		return auth.ActGrant, nil
 	}
 	return "", fmt.Errorf("%q is not a role this program has", role)

@@ -242,7 +242,42 @@ func (st *Site) nlwebAsk(w http.ResponseWriter, r *http.Request) {
 // marked final, and any other with a 400 that names those it speaks. Not
 // that endpoint itself, because it is for credentials and this is for
 // anybody; the tool and its answers are as they were.
+//
+// # A request is taken by the transport's rules too
+//
+// Only the revision was the admin's rules here. A GET looking for a stream
+// was given the site's 404 page, which a client reads as no server here;
+// text/plain, jsonrpc 1.0 or none, an object for an id and data after the
+// message were answered as if they were right; and a batch, a body over
+// the bound or one that was not JSON was a text/plain 400 that no client
+// can read as an answer. So the request is read by mcp.Accepts and
+// mcp.ReadMessage, as the admin's /mcp reads it, and refused in JSON-RPC.
+// What the site has at /mcp is still the site's: a page there is served to
+// whoever asks for it, and a browser asking for a page is told by the
+// site's own page that there is none. Anything else that is not a POST is
+// told the transport takes POST. That was said only to a GET naming
+// text/event-stream, as the transport has a client ask for a stream, so a
+// client probing with a plain GET that accepts anything, or ending a
+// session with DELETE, was still given the 404 page it reads as no server
+// here.
 func (st *Site) nlwebMCP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		if st.searchIndex() == nil {
+			st.page(w, r)
+			return
+		}
+		if !asksFor(r, "text/event-stream") {
+			if asksFor(r, "text/html") {
+				st.page(w, r)
+				return
+			}
+			held := &notFoundHeld{ResponseWriter: w}
+			st.page(held, r)
+			if !held.held {
+				return
+			}
+		}
+	}
 	if st.searchIndex() == nil {
 		http.NotFound(w, r)
 		return
@@ -256,9 +291,11 @@ func (st *Site) nlwebMCP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "this origin may not call the tool", http.StatusForbidden)
 		return
 	}
-	var req mcp.Request
-	if err := json.NewDecoder(io.LimitReader(r.Body, 32<<10)).Decode(&req); err != nil {
-		http.Error(w, "not JSON-RPC", http.StatusBadRequest)
+	if !mcp.Accepts(w, r) {
+		return
+	}
+	req, ok := mcp.ReadMessage(w, r, nlwebMCPBody)
+	if !ok {
 		return
 	}
 	reply := func(status int, result any, rpcErr *mcp.Error) {
@@ -336,7 +373,7 @@ func (st *Site) nlwebMCP(w http.ResponseWriter, r *http.Request) {
 			"name": "ask",
 			"description": "Ask " + name + " in plain words. Answers with the published pages that match, " +
 				"as schema.org objects, and in summarize or generate mode the site's own answer with its sources.",
-			"inputSchema": map[string]any{"type": "object", "required": []string{"query"},
+			"inputSchema": map[string]any{"type": "object", "required": askTakes["required"],
 				"properties": map[string]any{
 					"query": map[string]any{"type": "string", "description": "The question or the words to look for."},
 					"mode": map[string]any{"type": "string", "enum": []string{"list", "summarize", "generate"},
@@ -349,8 +386,22 @@ func (st *Site) nlwebMCP(w http.ResponseWriter, r *http.Request) {
 			Name      string         `json:"name"`
 			Arguments map[string]any `json:"arguments"`
 		}
-		if err := json.Unmarshal(req.Params, &p); err != nil || p.Name != "ask" {
+		if err := json.Unmarshal(req.Params, &p); err != nil {
+			reply(http.StatusOK, nil, &mcp.Error{Code: mcp.CodeInvalidParams,
+				Message: "a tool is called with its name, a string, and its arguments, an object"})
+			return
+		}
+		if p.Name != "ask" {
 			reply(http.StatusOK, nil, &mcp.Error{Code: mcp.CodeInvalidParams, Message: "the one tool here is ask"})
+			return
+		}
+		// The arguments as the tool's schema says, before they are read, by
+		// the check the admin's /mcp makes of its own. Read as they came, a
+		// query that was a number or under another name was no query, and
+		// the agent that had given one was told a query is required; a mode
+		// that was not text was no mode, and was answered as a list.
+		if bad := mcp.Fits(askTakes, p.Arguments); bad != nil {
+			reply(http.StatusOK, nil, bad)
 			return
 		}
 		v := url.Values{}
@@ -373,3 +424,61 @@ func (st *Site) nlwebMCP(w http.ResponseWriter, r *http.Request) {
 		notFound()
 	}
 }
+
+// askTakes is what the ask tool's arguments are held to: their names and
+// types, and that there is a query. Which mode it is stays the tool's own
+// to say, in words that name the three (readNLWebQuery).
+var askTakes = map[string]any{"type": "object", "required": []string{"query"},
+	"properties": map[string]any{
+		"query": map[string]any{"type": "string"},
+		"mode":  map[string]any{"type": "string"},
+	}}
+
+// nlwebMCPBody bounds a request to the site's /mcp: a question and its
+// mode, which is a few hundred bytes, with room for a client's _meta.
+const nlwebMCPBody = 32 << 10
+
+// asksFor reports a GET that names a media type among those it accepts:
+// text/event-stream, as a client of the Streamable HTTP transport must when
+// it looks for a stream, or text/html, as a browser opening an address does.
+func asksFor(r *http.Request, want string) bool {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return false
+	}
+	for _, v := range r.Header.Values("Accept") {
+		for _, part := range strings.Split(v, ",") {
+			media, _, _ := strings.Cut(part, ";")
+			if strings.EqualFold(strings.TrimSpace(media), want) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// notFoundHeld passes on everything a handler answers except a 404, which
+// it keeps back with its body, so that what is written in its place is the
+// caller's to choose: the site's /mcp answers the transport's 405 where the
+// site itself has nothing at that address.
+type notFoundHeld struct {
+	http.ResponseWriter
+	held bool
+}
+
+func (h *notFoundHeld) WriteHeader(code int) {
+	if code == http.StatusNotFound {
+		h.held = true
+		return
+	}
+	h.ResponseWriter.WriteHeader(code)
+}
+
+func (h *notFoundHeld) Write(b []byte) (int, error) {
+	if h.held {
+		return len(b), nil
+	}
+	return h.ResponseWriter.Write(b)
+}
+
+// Unwrap gives http.ResponseController the writer underneath.
+func (h *notFoundHeld) Unwrap() http.ResponseWriter { return h.ResponseWriter }

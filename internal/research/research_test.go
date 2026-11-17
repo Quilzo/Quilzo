@@ -410,6 +410,22 @@ func TestANameThatIsNotAProjectsIsQuotedShort(t *testing.T) {
 	}
 }
 
+// A search asked for more works than it gives gives the most it does, as
+// the agent interface and the command line say, at most 25. Asked for a
+// thousand, it gave ten, the default, and said nothing.
+func TestASearchForMoreThanItGivesGivesTheMost(t *testing.T) {
+	ix, asked := indexes(t)
+	for n, want := range map[int]string{1000: "per-page=25", 26: "per-page=25", 25: "per-page=25", 0: "per-page=10", 3: "per-page=3"} {
+		*asked = nil
+		if _, err := ix.Search(context.Background(), "aspirin fever", n); err != nil {
+			t.Fatal(err)
+		}
+		if len(*asked) == 0 || !strings.Contains((*asked)[len(*asked)-1], want) {
+			t.Errorf("asked for %d: %v", n, *asked)
+		}
+	}
+}
+
 // A project's question is bounded in characters, as the refusal says: a
 // question of 400 characters in Japanese, 1200 bytes, was refused as over
 // 1000 characters.
