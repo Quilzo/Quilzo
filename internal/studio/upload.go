@@ -77,6 +77,12 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 			MaxRecording>>20), http.StatusRequestEntityTooLarge)
 		return
 	}
+	// What the parse spilled is removed here, when this is done with it,
+	// and not left to whatever serves the request. net/http's server
+	// removes it once the request is finished; anything else that calls
+	// this handler did not, and each upload left a file the size of the
+	// recording in the temporary directory.
+	defer r.MultipartForm.RemoveAll()
 	file, header, err := r.FormFile("file")
 	if err != nil {
 		http.Error(w, "no recording in the request", http.StatusBadRequest)
@@ -138,8 +144,13 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 			http.StatusServiceUnavailable)
 		return
 	}
-	body, err := io.ReadAll(file)
-	if err != nil || len(body) == 0 {
+	// Into a buffer of the file's own size, which the form counted as it
+	// spilled it. io.ReadAll grows its buffer as it reads and copies into
+	// each next one: a 64 MB recording allocated 190 MB on its way in, and
+	// for a moment held its buffer and the next together, so the two turns
+	// above held well over twice two recordings between them.
+	body := make([]byte, header.Size)
+	if _, err := io.ReadFull(file, body); err != nil || len(body) == 0 {
 		http.Error(w, "the recording could not be read", http.StatusBadRequest)
 		return
 	}

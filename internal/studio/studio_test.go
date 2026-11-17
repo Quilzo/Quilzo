@@ -525,3 +525,76 @@ func TestOnlySoManyRecordingsAreReadAtOnce(t *testing.T) {
 		t.Errorf("%d file(s) were stored without a turn", len(files))
 	}
 }
+
+// A recording that is taken is read into memory once, into a buffer of its
+// own size.
+//
+// Two recordings may be in memory at once (recordingsInMemory), so what one
+// costs is what that bound is worth. Read with io.ReadAll, which grows its
+// buffer as it goes and copies into each next one, a 64 MB recording
+// allocated 190 MB on its way in and for a moment held its buffer and the
+// next together: the bound of two held well over twice two recordings. A
+// file named .mp4 or opening with a recording's first bytes gets this far
+// whatever else it holds, so the cost is one anybody signed in can ask for.
+func TestARecordingIsReadIntoMemoryOnce(t *testing.T) {
+	srv, secret := wired(t)
+	const size = 64 << 20
+	payload := append(webmBytes()[:8], make([]byte, size)...)
+	body, ct := oneRecording(t, "clip.webm", payload)
+	payload = nil
+
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	rec := signedIn(t, srv, secret, "/upload", body, ct)
+	runtime.ReadMemStats(&after)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("the upload answered %d: %s", rec.Code, rec.Body.String())
+	}
+	// Once for the recording, and what the multipart parse allocates
+	// growing the eight megabytes it keeps before it spills: half the
+	// recording here, and as much as the recording under the race detector
+	// (see TestARefusedUploadIsNotReadIntoMemory). Read with io.ReadAll it
+	// was three times the recording, so two and a half is the line between.
+	if got := after.TotalAlloc - before.TotalAlloc; got > size*5/2 {
+		t.Errorf("taking a %d MB recording allocated %d MB", size>>20, got>>20)
+	}
+}
+
+// An upload leaves nothing behind in the temporary directory, taken or
+// refused.
+//
+// The form spills a recording to a temporary file, and the handler left
+// removing it to whatever served the request. net/http's server does, once
+// the request is finished; anything else that calls the handler did not,
+// these tests among them, and each run of the test above that posts a 96 MB
+// file left 96 MB in the temporary directory until a shared disk was full.
+// The handler removes what its own parse wrote.
+func TestAnUploadLeavesNoTemporaryFile(t *testing.T) {
+	spill := t.TempDir()
+	t.Setenv("TMPDIR", spill)
+	srv, secret := wired(t)
+	// Over the eight megabytes the parse keeps in memory, so it spills.
+	const size = 9 << 20
+	for _, upload := range []struct {
+		name  string
+		head  []byte
+		taken bool
+	}{
+		{"clip.webm", webmBytes()[:8], true},
+		{"notes.webm", []byte("not any format at all"), false},
+	} {
+		body, ct := oneRecording(t, upload.name, append(upload.head, make([]byte, size)...))
+		rec := signedIn(t, srv, secret, "/upload", body, ct)
+		if upload.taken != (rec.Code == http.StatusOK) {
+			t.Fatalf("%s answered %d: %s", upload.name, rec.Code, rec.Body.String())
+		}
+		left, err := filepath.Glob(filepath.Join(spill, "multipart-*"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(left) != 0 {
+			t.Errorf("uploading %s left %d file(s) in the temporary directory", upload.name, len(left))
+		}
+	}
+}
