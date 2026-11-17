@@ -71,7 +71,7 @@ func pageHash(root, page string) string {
 func noteAdd(root string, args []string) error {
 	fs := flag.NewFlagSet("add", flag.ContinueOnError)
 	field := fs.String("field", "", "which field this is about")
-	author := fs.String("author", "", "who is saying it")
+	author := fs.String("author", "", "who is saying it, at a console nobody signs in to")
 	rest, flags := leadingArgs(args, 2)
 	if err := parseFlags(fs, flags, &rest, 2); err != nil {
 		return err
@@ -84,11 +84,26 @@ func noteAdd(root string, args []string) error {
 	page, text := rest[0], rest[1]
 
 	who := strings.TrimSpace(*author)
-	if who == "" {
+	caller := resolveCaller(root, "")
+	switch {
+	case caller.Verified:
+		// The signed-in caller, whatever the flag says. The flag was taken
+		// as the author whenever it was given, so an author could leave
+		// "approved for publication, go ahead" in the publisher's name, and
+		// /notes and `note list` showed it as the publisher's; only the
+		// audit log knew otherwise. Refused rather than overridden, so the
+		// person who typed another name is told it was not used.
+		if who != "" && !strings.EqualFold(who, caller.Name) {
+			return fmt.Errorf("you are signed in as %s, so a note you leave is %s's; "+
+				"--author names the writer only at a console nobody signs in to",
+				onOneLine(caller.Name), onOneLine(caller.Name))
+		}
+		who = caller.Name
+	case who == "":
 		// The caller this command already resolved, rather than a flag
 		// somebody has to remember. An anonymous note is refused by the
 		// package, so guessing wrongly here would be worse than asking.
-		who = resolveCaller(root, "").Name
+		who = caller.Name
 	}
 	if who == "" {
 		return fmt.Errorf("who is saying this? Pass --author, or sign in")
@@ -108,7 +123,7 @@ func noteAdd(root string, args []string) error {
 	// AU-3: who did what. A note names a colleague and can be removed, so
 	// "somebody left this and somebody took it away" has to be answerable from
 	// the log rather than from the directory, which is the thing that changed.
-	record(root, resolveCaller(root, "").auditRecord("note.add", "/"+page,
+	record(root, caller.auditRecord("note.add", "/"+page,
 		audit.Success, map[string]string{"id": n.ID, "field": n.Field}))
 
 	if w.JSON(n) {
@@ -202,7 +217,7 @@ func noteList(root string, args []string) error {
 	}
 	for _, r := range out {
 		now := pageHash(root, r.Page)
-		w.Human("\n%s%s%s\n", bold, r.Page, reset)
+		w.Human("\n%s%s%s\n", bold, onOneLine(r.Page), reset)
 		for _, n := range r.Notes {
 			mark := " "
 			if n.Resolved {
@@ -212,8 +227,14 @@ func noteList(root string, args []string) error {
 			if n.Field != "" {
 				where = " (" + n.Field + ")"
 			}
-			w.Human("  %s %s%s%s%s\n", mark, n.Author, dim, where, reset)
-			w.Human("    %s\n", n.Text)
+			// The author, the field and the text are whatever somebody
+			// typed. Printed raw, a newline let one note print a second
+			// shaped exactly as a note of the publisher's, and ESC and CR
+			// rewrote what the terminal showed. The name and field stay on
+			// their line, and the text's own lines sit deeper than any line
+			// this list prints about a note, so none can pass for one.
+			w.Human("  %s %s%s%s%s\n", mark, onOneLine(n.Author), dim, onOneLine(where), reset)
+			w.Human("    %s\n", indentedForTerminal(n.Text, "      "))
 			if n.Stale(now) {
 				// Said, not hidden. The tool cannot know whether a remark
 				// about a paragraph still applies after the paragraph was
@@ -222,7 +243,7 @@ func noteList(root string, args []string) error {
 					yellow, reset)
 			}
 			if n.Resolved {
-				w.Human("    %sresolved by %s%s\n", dim, n.ResolvedBy, reset)
+				w.Human("    %sresolved by %s%s\n", dim, onOneLine(n.ResolvedBy), reset)
 			}
 			w.Human("    %s%s%s\n", dim, n.ID[:12], reset)
 		}
@@ -257,6 +278,12 @@ func noteResolve(root string, args []string) error {
 	}
 	record(root, resolveCaller(root, "").auditRecord("note.resolve",
 		"/"+args[0], audit.Success, map[string]string{"id": full}))
+	// The note as it now stands under --json. This answered only through
+	// Human, so a script was given nothing, exit 0, and took that for the
+	// answer.
+	if n, gerr := st.Get(args[0], full); gerr == nil && w.JSON(n) {
+		return nil
+	}
 	w.Human("  %sresolved%s\n", dim, reset)
 	return nil
 }
@@ -279,11 +306,38 @@ func noteRemove(root string, args []string) error {
 	if err != nil {
 		return err
 	}
+	n, err := st.Get(args[0], full)
+	if err != nil {
+		return err
+	}
+	// A note's author may take it back; taking down somebody else's is a
+	// publisher's act, as taking down somebody else's message in a room
+	// was. Any author could remove anyone's note, so the author whose
+	// heading a publisher had questioned could make the question vanish,
+	// leaving no trace outside the audit log. On a store with no access
+	// control authorise lets everyone through, as the rest of it does.
+	caller := resolveCaller(root, "")
+	theirs := !strings.EqualFold(strings.TrimSpace(caller.Name), strings.TrimSpace(n.Author))
+	if theirs {
+		if err := authorise(root, caller, auth.ActPublish, pageResource(args[0])); err != nil {
+			return fmt.Errorf("this note is %s's; taking down somebody else's note "+
+				"takes a publisher: %w\n  to finish with it and keep the "+
+				"conversation readable, resolve it instead",
+				onOneLine(n.Author), err)
+		}
+	}
 	if err := st.Remove(args[0], full); err != nil {
 		return err
 	}
-	record(root, resolveCaller(root, "").auditRecord("note.remove",
-		"/"+args[0], audit.Success, map[string]string{"id": full}))
+	detail := map[string]string{"id": full}
+	if theirs {
+		detail["taken_down"] = "true"
+	}
+	record(root, caller.auditRecord("note.remove", "/"+args[0], audit.Success, detail))
+	// Something under --json, as resolve answers; see there.
+	if w.JSON(map[string]any{"page": args[0], "id": full, "removed": true}) {
+		return nil
+	}
 	w.Human("  %sremoved%s\n", dim, reset)
 	return nil
 }

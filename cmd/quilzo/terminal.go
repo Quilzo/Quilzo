@@ -64,3 +64,13 @@ func onOneLine(s string) string {
 	s = strings.ReplaceAll(s, "\r", " ")
 	return strings.ReplaceAll(s, "\n", " ")
 }
+
+// indentedForTerminal is forTerminal for a value of several lines printed
+// under a heading of its own, such as a message under the line that says who
+// wrote it. Each line after the first starts with indent, so a line break in
+// the value cannot start a line at the heading's depth: a visitor who copied
+// the inbox's own layout into a handoff printed a line reading as a member of
+// staff's reply, and a note printed one reading as a colleague's note.
+func indentedForTerminal(s, indent string) string {
+	return strings.ReplaceAll(forTerminal(s), "\n", "\n"+indent)
+}
