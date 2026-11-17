@@ -104,6 +104,22 @@
   </tbody>
 </table>
 </div>
+{{range .Changes}}{{if .Fields}}
+<h3>What changed in {{.Path}}</h3>
+<div class="table-wrap">
+<table>
+  <caption>{{plural (len .Fields) "field" "fields"}} changed in {{.Path}}</caption>
+  <thead><tr><th scope="col">Field</th><th scope="col">Was</th><th scope="col">Is now</th></tr></thead>
+  <tbody>
+  {{range .Fields}}<tr><th scope="row">{{.Field}}</th>
+    {{if .Lines}}<td colspan="2"><pre>{{range .Lines}}{{if eq .Op "-"}}<del>- {{.Text}}</del>{{else if eq .Op "+"}}<ins>+ {{.Text}}</ins>{{else}}  {{.Text}}{{end}}
+{{end}}</pre></td>
+    {{else}}<td>{{if .Before}}<del>{{.Before}}</del>{{else}}<em>not set</em>{{end}}</td><td>{{if .After}}<ins>{{.After}}</ins>{{else}}<em>removed</em>{{end}}</td>{{end}}</tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}{{end}}
 {{else}}<p>No content differences.</p>{{end}}
 
 <h2>Accessibility</h2>

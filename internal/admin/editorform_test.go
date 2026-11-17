@@ -199,3 +199,30 @@ func TestTheEditorDrawsEveryListAsOnePerLine(t *testing.T) {
 		}
 	}
 }
+
+// Review told whoever approves a change to read it first, and showed the
+// page's name and the word "modified": nothing of what the page now says.
+// Each modified page shows the fields that changed, before and after.
+func TestReviewShowsWhatChangedInsideAPage(t *testing.T) {
+	srv, token := setup(t)
+	if _, err := site.Publish(srv.Store, ""); err != nil {
+		t.Fatal(err)
+	}
+	pages, err := site.PagesAt(srv.Store, site.RefDraft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages["about"] = map[string]any{"title": "About", "body": "Who we are, and since when."}
+	if _, err := site.SaveDraft(srv.Store, pages, "an edit", "test"); err != nil {
+		t.Fatal(err)
+	}
+	html := get(t, srv, "/review", token).Body.String()
+	for _, want := range []string{"Who we are.", "Who we are, and since when."} {
+		if !strings.Contains(html, want) {
+			t.Errorf("review does not show %q", want)
+		}
+	}
+	if strings.Contains(html, "Welcome.") {
+		t.Error("review shows a page nobody changed")
+	}
+}

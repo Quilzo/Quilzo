@@ -1714,7 +1714,11 @@ func cmdDiff(root string) error {
 			}
 			rows := make([]map[string]any, 0, len(changes))
 			for _, c := range changes {
-				rows = append(rows, map[string]any{"kind": c.Kind, "path": c.Path})
+				row := map[string]any{"kind": c.Kind, "path": c.Path}
+				if fields, ferr := site.FieldChanges(s, c); ferr == nil && fields != nil {
+					row["fields"] = fields
+				}
+				rows = append(rows, row)
 			}
 			doc["changes"] = rows
 		}
@@ -1739,10 +1743,48 @@ func cmdDiff(root string) error {
 	}
 	colour := map[string]string{"added": green, "removed": red, "modified": yellow}
 	for _, c := range changes {
-		fmt.Printf("  %s%-9s%s %s\n", colour[c.Kind], c.Kind, reset, c.Path)
+		fmt.Printf("  %s%-9s%s %s\n", colour[c.Kind], c.Kind, reset, onOneLine(c.Path))
+		// What changed inside it, which is what somebody approving it has
+		// to read: the name alone was all this said.
+		if c.Kind == "modified" {
+			if fields, ferr := site.FieldChanges(s, c); ferr == nil {
+				fmt.Print(fieldChangesText(fields, "      "))
+			}
+		}
 	}
 	fmt.Printf("\n  %d change(s) between live and draft\n", len(changes))
 	return nil
+}
+
+// fieldChangesText is a page's changed fields as lines of text, each
+// indented by indent: the field's name, then what it said ("- ") and says
+// now ("+ "), or for text of many lines, only the lines that differ. For a
+// terminal, so the page's words go through forTerminal.
+func fieldChangesText(fields []site.FieldChange, indent string) string {
+	var b strings.Builder
+	line := func(op, text string) {
+		for _, l := range strings.Split(text, "\n") {
+			b.WriteString(indent + "  " + op + " " + forTerminal(l) + "\n")
+		}
+	}
+	for _, f := range fields {
+		b.WriteString(indent + onOneLine(f.Field) + "\n")
+		if f.Lines != nil {
+			for _, l := range f.Lines {
+				if l.Op != " " {
+					line(l.Op, l.Text)
+				}
+			}
+			continue
+		}
+		if f.Before != "" {
+			line("-", f.Before)
+		}
+		if f.After != "" {
+			line("+", f.After)
+		}
+	}
+	return b.String()
 }
 
 // checkAccessibility renders every page in a commit and reports what fails.

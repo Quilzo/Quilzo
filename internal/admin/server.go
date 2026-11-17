@@ -3487,6 +3487,13 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/review?saved="+name, http.StatusSeeOther)
 }
 
+// reviewChange is a row of Review's changes: the page, and the fields that
+// changed in it when the reader may see them.
+type reviewChange struct {
+	site.Change
+	Fields []site.FieldChange
+}
+
 func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
 	p, ok := s.requireAuth(w, r)
 	if !ok {
@@ -3498,9 +3505,20 @@ func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
 
 	draft := s.Store.GetRef(site.RefDraft)
 	live := s.Store.GetRef(site.RefLive)
-	var changes []site.Change
+	var diff []site.Change
 	if draft != "" {
-		changes, _ = site.Diff(s.Store, live, draft)
+		diff, _ = site.Diff(s.Store, live, draft)
+	}
+	// What changed inside each page, for the pages this person may read.
+	// The screen tells whoever approves a change to read it first, and it
+	// showed the page's name and "modified": nothing it said.
+	changes := make([]reviewChange, 0, len(diff))
+	for _, c := range diff {
+		rc := reviewChange{Change: c}
+		if c.Kind == "modified" && s.allows(p, auth.ActView, pageResource(c.Path)) {
+			rc.Fields, _ = site.FieldChanges(s.Store, c)
+		}
+		changes = append(changes, rc)
 	}
 
 	reports, a11yErr := s.checkAll(draft)
