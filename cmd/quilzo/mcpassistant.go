@@ -87,7 +87,14 @@ func registerAssistantOps(srv *mcp.Server, root string, caller *Caller) {
 		if err != nil {
 			return nil, err
 		}
-		b, err := json.Marshal(set.Assistants)
+		// None is an empty list. A nil slice marshalled to null, which a
+		// client expecting a list had to special-case and which told the
+		// model nothing, where the command line says there are none.
+		list := set.Assistants
+		if list == nil {
+			list = []assistant.Assistant{}
+		}
+		b, err := json.Marshal(list)
 		return string(b), err
 	})
 
