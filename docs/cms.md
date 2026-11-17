@@ -922,7 +922,9 @@ called `id` has it in a column headed `field:id` (in JSON, as
 `id` inside `fields`), since the `id` column is the store's, and import
 reads it back into that field. A type that declares a field `id` has that
 column in every export, empty (in JSON, `null`) for a record with none, so
-its `id` column is never read as the field. Each picture is written as the
+its `id` column is never read as the field. In JSON, a record with a field
+of its own called `fields` says its own `id` as `field:id` beside it, `null`
+for none, so that field is never read as the id. Each picture is written as the
 address the site serves it at, so another site can bring it in too. A cell
 beginning `=`, `+`, `-` or `@` that is not a number is written after an
 apostrophe, so a spreadsheet opening it does not run it as a formula.

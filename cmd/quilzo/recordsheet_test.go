@@ -314,3 +314,61 @@ func TestARecordWithNoIdOfItsOwnComesBackAsItself(t *testing.T) {
 		t.Error("an older file's id did not fill the type's field")
 	}
 }
+
+// A record with a field of its own called fields goes out as JSON and
+// comes back as itself, whatever that field holds and whether or not the
+// record has an id of its own.
+//
+// The record's own id is written as id inside fields, and bringing a file
+// in reads a fields that holds id alone as that. A record whose own field
+// called fields was an object holding id alone, and which had no id of its
+// own, went out with nothing to tell the two apart: an export brought
+// straight back gave it the id inside its field for its own. Such a
+// record now says its own id beside the field, null for none, as a record
+// with both always did.
+func TestARecordsOwnFieldCalledFieldsComesBackAsItself(t *testing.T) {
+	root, _ := siteStore(t)
+	ctx := context.Background()
+	add := func(fields string) {
+		t.Helper()
+		from := filepath.Join(t.TempDir(), "record.json")
+		if err := os.WriteFile(from, []byte(fields), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := recordsAdd(root, []string{"forms", "--from", from}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add(`{"title": "No id of its own", "fields": {"id": "x"}}`)
+	add(`{"title": "Both", "id": "mine", "fields": {"id": "y"}}`)
+	add(`{"title": "Words", "fields": "name, email"}`)
+	said := func(recs []collection.Record) map[string]string {
+		out := map[string]string{}
+		for _, r := range recs {
+			b, err := json.Marshal(r.Fields)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out[r.ID] = string(b)
+		}
+		return out
+	}
+	before := said(draftRecords(t, root, "forms"))
+	out, n, err := sheetOf(root, "forms", "json", false)
+	if err != nil || n != 3 {
+		t.Fatalf("%d records: %v", n, err)
+	}
+	b, err := bringFile(ctx, root, "forms", "forms.json", out, bringOptions{}, asAdmin("dana"))
+	if err != nil || b.New != 0 {
+		t.Fatalf("brought as %+v: %v\n%s", b, err, out)
+	}
+	after := said(draftRecords(t, root, "forms"))
+	if len(after) != len(before) {
+		t.Fatalf("%d records came back as %d", len(before), len(after))
+	}
+	for id, was := range before {
+		if after[id] != was {
+			t.Errorf("%s came back as %s\n%s", was, after[id], out)
+		}
+	}
+}

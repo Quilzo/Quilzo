@@ -395,13 +395,17 @@ func sheetOf(root, coll, format string, bom bool) ([]byte, int, error) {
 			// for every record of a type that declares id, as null for
 			// one that has none: an id with nothing beside it is read as
 			// that type's field, so such a record came back in as a new
-			// one with the store's id for its own.
-			if own, ok := r.Fields["id"]; ok || declaresID {
-				if _, taken := row["fields"]; taken {
-					row[sheet.OwnID] = own
-				} else {
-					row["fields"] = map[string]any{"id": own}
-				}
+			// one with the store's id for its own. And said, beside it, for
+			// every record with a field of its own called fields: one that
+			// was an object holding id alone, in a record with no id of
+			// its own, was read coming back as the record's own id.
+			own, has := r.Fields["id"]
+			_, taken := row["fields"]
+			switch {
+			case taken:
+				row[sheet.OwnID] = own
+			case has || declaresID:
+				row["fields"] = map[string]any{"id": own}
 			}
 			list = append(list, row)
 		}
