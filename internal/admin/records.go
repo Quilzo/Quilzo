@@ -17,6 +17,7 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/schema"
+	"github.com/quilzo/quilzo/internal/search"
 )
 
 // Records in the admin.
@@ -344,12 +345,17 @@ const recordsPageSize = 100
 // runs over the whole collection, as decoded by the index, and never over
 // the page on the screen: filtering the hundred already shown is what made
 // Find miss everything after them.
+//
+// Whatever case the text was typed in and with or without its marks, by the
+// fold Find and the site search use (search.FoldLetters). Lowered with
+// strings.ToLower, the capital I of Turkish was never its own small letter
+// ı, so ÇILBIR did not find the record named Çılbır, nor did cilbir.
 func filterAnyField(in []collection.Record, find string) []collection.Record {
-	want := strings.ToLower(find)
+	want := search.FoldLetters(find)
 	var out []collection.Record
 	for _, r := range in {
 		for _, v := range r.Fields {
-			if strings.Contains(strings.ToLower(fmt.Sprint(v)), want) {
+			if strings.Contains(search.FoldLetters(fmt.Sprint(v)), want) {
 				out = append(out, r)
 				break
 			}

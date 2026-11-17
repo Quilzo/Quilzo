@@ -12,6 +12,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/media"
+	"github.com/quilzo/quilzo/internal/search"
 	"github.com/quilzo/quilzo/internal/section"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
@@ -151,7 +152,10 @@ func (s *Server) handleMediaPick(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	search := strings.ToLower(strings.TrimSpace(q.Get("q")))
+	// Folded as Find folds a word (search.FoldLetters), on both sides: by
+	// strings.ToLower a picture described in Turkish was not found by the
+	// same word in capitals, or typed without its marks.
+	find := search.FoldLetters(strings.TrimSpace(q.Get("q")))
 
 	rows := make([]pickable, 0, len(files))
 	heldBack := 0
@@ -176,8 +180,8 @@ func (s *Server) handleMediaPick(w http.ResponseWriter, r *http.Request) {
 		if f.RenditionOf != "" {
 			continue
 		}
-		if search != "" && !strings.Contains(strings.ToLower(f.Name), search) &&
-			!strings.Contains(strings.ToLower(f.Alt), search) {
+		if find != "" && !strings.Contains(search.FoldLetters(f.Name), find) &&
+			!strings.Contains(search.FoldLetters(f.Alt), find) {
 			continue
 		}
 		rows = append(rows, pickable{

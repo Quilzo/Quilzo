@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/i18n"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/section"
@@ -420,5 +421,53 @@ func TestThePreviewShowsATranslatedPageInItsLanguage(t *testing.T) {
 	srv.Languages = nil
 	if html := get(t, srv, "/preview/about?plain=1", token).Body.String(); !strings.Contains(html, `<html lang="en">`) {
 		t.Errorf("a site in one language had its preview changed: %.80s", html)
+	}
+}
+
+// The boxes that filter what a screen lists find a word as Find does:
+// whatever case it was typed in and with or without its marks. Records and
+// the picture picker lowered both sides with strings.ToLower, under which
+// the capital I of Turkish is never its own small letter ı, so an editor
+// typing ÇILBIR, or cilbir on a keyboard without the letters, was shown no
+// record and no picture of the dish.
+func TestTheFiltersFindAWordInCapitalsAndWithoutItsMarks(t *testing.T) {
+	records := []collection.Record{
+		{ID: "a", Fields: map[string]any{"name": "Çılbır", "price": 120.0}},
+		{ID: "b", Fields: map[string]any{"name": "Baklava", "price": 90.0}},
+	}
+	for _, q := range []string{"ÇILBIR", "cilbir", "çılbır", "120"} {
+		if got := filterAnyField(records, q); len(got) != 1 || got[0].ID != "a" {
+			t.Errorf("records: %q finds %v", q, got)
+		}
+	}
+	if got := filterAnyField(records, "kahve"); len(got) != 0 {
+		t.Errorf("records: a word no record has finds %v", got)
+	}
+
+	srv, token := setup(t)
+	id := withLibrary(t, srv)
+	lib, err := srv.Media.Library()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, body, err := lib.Get(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Alt = "Bir tabak çılbır"
+	if err := lib.Put(f, body); err != nil {
+		t.Fatal(err)
+	}
+	pick := func(q string) bool {
+		html := get(t, srv, "/media/pick?page=index&at=0&path=poster&q="+url.QueryEscape(q), token).Body.String()
+		return strings.Contains(html, `value="/media/`+id+`"`)
+	}
+	for _, q := range []string{"ÇILBIR", "cilbir", "çılbır", "TABAK"} {
+		if !pick(q) {
+			t.Errorf("the picker: %q does not find the picture of it", q)
+		}
+	}
+	if pick("kahve") {
+		t.Error("the picker: a word the picture does not have finds it")
 	}
 }
