@@ -22,6 +22,7 @@ import (
 	"github.com/quilzo/quilzo/internal/chatact"
 	"github.com/quilzo/quilzo/internal/event"
 	"github.com/quilzo/quilzo/internal/handoff"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // A chatbot's agent actions (internal/chatact): the public site writes a
@@ -317,10 +318,15 @@ func chatActForPerson(root string, a assistant.Assistant, action assistant.Actio
 			said = append(said, f+": "+v)
 		}
 	}
+	// Cut to what a message may be with the mark of the cut counted in it.
+	// Cut to the whole of it, a long request came out three bytes over with
+	// its mark and the conversation was refused: the visitor who had filled
+	// in the most was told nobody had been asked, and nobody had.
+	most := handoff.MaxText - len("…")
 	secret, id, err := handoff.NewSecret()
 	if err == nil {
-		_, err = handoffStore(root).Open(a.Name, id, clip(question, handoff.MaxText),
-			clip(strings.Join(said, "\n"), handoff.MaxText), at)
+		_, err = handoffStore(root).Open(a.Name, id, clip(question, most),
+			clip(strings.Join(said, "\n"), most), at)
 	}
 	if err != nil {
 		// Said to the visitor: they are not told a person will answer.
@@ -458,13 +464,16 @@ func chatActSettledForPerson(root string, q chatact.Queue, wt chatActWait, held 
 
 // chatActArgs are what the visitor gave, by the action's own fields only,
 // on one line each and bounded.
+//
+// Bounded at the start of a character. Cut at the 300th byte wherever it
+// fell, a field in a script of several bytes to the character ended in part
+// of one: the agent was given "\xef" at the end of the visitor's words, and
+// a request held for a person, whose text is made valid when it is kept and
+// grows by that, could pass what a message may be and reach nobody.
 func chatActArgs(action assistant.Action, given map[string]string) map[string]string {
 	args := map[string]string{}
 	for _, f := range action.Fields {
-		v := strings.Join(strings.Fields(given[f]), " ")
-		if len(v) > 300 {
-			v = v[:300]
-		}
+		v := plaintext.Clip(strings.Join(strings.Fields(given[f]), " "), 300, "")
 		if v != "" {
 			args[f] = v
 		}

@@ -12,6 +12,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/chatact"
+	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
 // A chatbot's agent actions, on the public site: what the visitor is asked
@@ -138,10 +139,11 @@ func (st *Site) actAsk(w http.ResponseWriter, r *http.Request, a assistant.Assis
 			http.Error(w, fieldLabel(f)+" is needed", http.StatusBadRequest)
 			return
 		}
-		if len(v) > MaxActArg {
-			v = v[:MaxActArg]
-		}
-		args[f] = v
+		// Cut at the start of a character: cut at the byte, a field in a
+		// script of several bytes to the character was handed on ending in
+		// part of one, which the request's file keeps as a character
+		// nobody typed.
+		args[f] = plaintext.Clip(v, MaxActArg, "")
 	}
 	id, err := chatact.NewID()
 	if err != nil {

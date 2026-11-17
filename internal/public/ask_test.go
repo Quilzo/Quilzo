@@ -515,6 +515,37 @@ func TestAVisitorAsksAChatbotsAgent(t *testing.T) {
 	}
 }
 
+// What a visitor gives an agent action is bounded at the start of a
+// character, so the request carries nothing they did not write.
+//
+// A field was cut at its 300th byte wherever that fell. One written in a
+// script of several bytes to the character was handed on with part of a
+// character at its end, which the request's file keeps as U+FFFD: the agent
+// was asked about, and a person holding the request read, a character
+// nobody typed.
+func TestAVisitorsFieldIsCutBetweenCharacters(t *testing.T) {
+	bot := shopBot
+	bot.Actions = []assistant.Action{
+		{Name: "booking", Kind: assistant.Agent, Target: "bookings", Description: "Look up your booking", Fields: []string{"booking_ref"}},
+	}
+	st, _ := askSite(t, bot)
+	var asked []chatact.Request
+	st.Assistants.Act = func(r chatact.Request) error { asked = append(asked, r); return nil }
+	whole := strings.Repeat("a", MaxActArg-1)
+	form := url.Values{"action": {"booking"}, "a_booking_ref": {whole + "é and more"}}
+	req := httptest.NewRequest(http.MethodPost, "/ask/help/act", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.RemoteAddr = "198.51.100.9:1234"
+	w := httptest.NewRecorder()
+	st.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusSeeOther || len(asked) != 1 {
+		t.Fatalf("%d, %d asked", w.Code, len(asked))
+	}
+	if got := asked[0].Args["booking_ref"]; got != whole {
+		t.Errorf("the field was cut inside a character: %q", got[len(got)-4:])
+	}
+}
+
 // counting scripts a model that writes no answer and offers one action, and
 // counts how often it was asked.
 type counting struct {

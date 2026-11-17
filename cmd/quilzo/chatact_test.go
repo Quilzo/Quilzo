@@ -6,12 +6,14 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/agent"
 	"github.com/quilzo/quilzo/internal/assistant"
@@ -19,6 +21,7 @@ import (
 	"github.com/quilzo/quilzo/internal/chatact"
 	"github.com/quilzo/quilzo/internal/event"
 	"github.com/quilzo/quilzo/internal/handoff"
+	"github.com/quilzo/quilzo/internal/public"
 )
 
 // chatActStore has a public chatbot whose actions ask an agent, a key the
@@ -491,5 +494,134 @@ func TestARequestLongBeforeAnythingTookItIsNotRun(t *testing.T) {
 	}
 	if !q.Taking(time.Now()) {
 		t.Error("the dispatcher does not say it is taking requests")
+	}
+}
+
+// A request held for a person reaches one however much the visitor wrote.
+//
+// What goes into the conversation was cut to the most a message may be and
+// then marked as cut, which made it three bytes more than a message may be:
+// the conversation was refused, and a visitor who had filled in six or more
+// of an action's fields at length was told nobody had been asked, with
+// nothing in the Inbox and no notice to staff. The request with the most to
+// read was the one that reached nobody.
+func TestARequestWithMuchInItStillReachesAPerson(t *testing.T) {
+	root := chatActStore(t)
+	set, _ := assistant.Load(assistantsPath(root))
+	a, _ := set.Get("help")
+	fields := []string{"what", "when", "where", "who", "why", "how", "then", "more"}
+	a.Actions = append(a.Actions, assistant.Action{Name: "claim", Kind: assistant.Agent, Target: "bookings",
+		Description: "Make a claim about your booking", Fields: fields})
+	if err := set.Put(a); err != nil {
+		t.Fatal(err)
+	}
+	if err := assistant.Save(assistantsPath(root), set); err != nil {
+		t.Fatal(err)
+	}
+	old := chatActRun
+	chatActRun = func(context.Context, string, string, string, *Caller, string) (string, agentOutcome, error) {
+		return "run-1", agentOutcome{Trace: agent.Trace{Answer: "It belongs to somebody at 12 Hill Street.", Complete: true},
+			Receipt: agent.Receipt{Private: []string{"personal data (address) returned by crm"}}}, nil
+	}
+	t.Cleanup(func() { chatActRun = old })
+
+	args := map[string]string{}
+	for _, f := range fields {
+		// As long as a field may be, and ending in a character of several
+		// bytes, so that a cut inside one would show.
+		args[f] = "HB-2201 " + strings.Repeat("é", (public.MaxActArg-8)/2)
+	}
+	res := runChatAction(context.Background(), root, chatact.Request{ID: strings.Repeat("c", 32), Chatbot: "help",
+		Action: "claim", Args: args})
+	if res.State != chatact.Person {
+		t.Fatalf("%+v", res)
+	}
+	if res.Conversation == "" {
+		t.Fatal("a long request held for a person reached nobody")
+	}
+	c, err := handoffStore(root).Get("help", handoff.IDFor(res.Conversation))
+	if err != nil {
+		t.Fatalf("the held request is not in the Inbox: %v", err)
+	}
+	if !c.Waiting() || !strings.Contains(c.Messages[0].Text, "what: HB-2201") {
+		t.Errorf("the Inbox does not say what was asked: %+v", c)
+	}
+	if !utf8.ValidString(c.Messages[0].Text) || !utf8.ValidString(c.Question) {
+		t.Error("what was asked was cut inside a character")
+	}
+}
+
+// A request held for a person reaches one when a field was cut inside a
+// character, and neither the agent nor the person is given half of one.
+//
+// A field was cut at its 300th byte wherever that fell, on the site and
+// again here. One written in a script of several bytes to the character
+// came through with part of a character at its end: the request's file
+// keeps that as U+FFFD, three bytes, and the cut here left one byte of it.
+// A conversation's text is made valid when it is kept, each such byte
+// becoming three again, so a request just under what a message may be went
+// over it: the conversation was refused and the visitor told nobody had
+// been asked. The agent was given the stray byte too, as "\xef" at the end
+// of what the visitor gave.
+func TestARequestCutInsideACharacterStillReachesAPerson(t *testing.T) {
+	root := chatActStore(t)
+	set, _ := assistant.Load(assistantsPath(root))
+	a, _ := set.Get("help")
+	fields := []string{"what", "when", "where", "who", "why", "how", "more"}
+	a.Actions = append(a.Actions, assistant.Action{Name: "claim", Kind: assistant.Agent, Target: "bookings",
+		Description: "Make a claim about your booking", Fields: fields})
+	if err := set.Put(a); err != nil {
+		t.Fatal(err)
+	}
+	if err := assistant.Save(assistantsPath(root), set); err != nil {
+		t.Fatal(err)
+	}
+	goal := ""
+	old := chatActRun
+	chatActRun = func(_ context.Context, _, _, g string, _ *Caller, _ string) (string, agentOutcome, error) {
+		goal = g
+		return "run-1", agentOutcome{Trace: agent.Trace{Answer: "It belongs to somebody at 12 Hill Street.", Complete: true},
+			Receipt: agent.Receipt{Private: []string{"personal data (address) returned by crm"}}}, nil
+	}
+	t.Cleanup(func() { chatActRun = old })
+
+	// As a site that cut at the byte wrote it: 299 letters and the first
+	// byte of an é.
+	cut := (strings.Repeat("a", public.MaxActArg-1) + "é")[:public.MaxActArg]
+	q := chatActQueue(root)
+	// The last field at every length around the one that takes the whole
+	// request to what a message may be.
+	for n := 80; n <= 120; n++ {
+		id := fmt.Sprintf("%032x", n)
+		args := map[string]string{}
+		for _, f := range fields[:len(fields)-1] {
+			args[f] = cut
+		}
+		args["more"] = strings.Repeat("b", n)
+		if err := q.Put(chatact.Request{ID: id, Chatbot: "help", Action: "claim", Args: args, At: time.Now()}); err != nil {
+			t.Fatal(err)
+		}
+		r, ok := q.Request(id)
+		if !ok {
+			t.Fatal("the request was not kept")
+		}
+		res := runChatAction(context.Background(), root, r)
+		if res.State != chatact.Person {
+			t.Fatalf("%+v", res)
+		}
+		if res.Conversation == "" {
+			t.Fatalf("with %d bytes in the last field, the request held for a person reached nobody", n)
+		}
+		c, err := handoffStore(root).Get("help", handoff.IDFor(res.Conversation))
+		if err != nil {
+			t.Fatalf("the held request is not in the Inbox: %v", err)
+		}
+		if said := c.Messages[0].Text; !strings.Contains(said, "what: "+strings.Repeat("a", public.MaxActArg-1)+"\n") ||
+			strings.ContainsRune(said, utf8.RuneError) {
+			t.Fatalf("the person is given part of a character: %q", said)
+		}
+		if strings.Contains(goal, `\x`) || strings.ContainsRune(goal, utf8.RuneError) {
+			t.Fatalf("the agent is given part of a character:\n%s", goal)
+		}
 	}
 }
