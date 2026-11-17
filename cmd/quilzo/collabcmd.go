@@ -29,6 +29,68 @@ func loadLocks(root string) (*collab.Locks, error) {
 	return l, loadJSON(locksPath(root), l)
 }
 
+// claimsByOthers are the live claims somebody other than who holds on any
+// of pages, for a writer to be told about. The browser's editor said "pat
+// opened this page for editing" and every other surface that writes a page
+// said nothing, so a claim stopped two people spending an afternoon on the
+// same page only if both of them used the browser. Advisory, like the claim:
+// an unreadable locks file is no claim, and the write goes ahead either way.
+//
+// The names are taken as a command was given them, so a caller hands over
+// what it wrote without tidying it first: `add --remove "old, stockists"`
+// asked about " stockists", which nobody holds, and removed pat's page
+// without a word. Never nil, so a --json document lists no claims as [].
+func claimsByOthers(root, who string, pages []string) []collab.Lock {
+	out := []collab.Lock{}
+	locks, err := loadLocks(root)
+	if err != nil {
+		return out
+	}
+	now := time.Now()
+	asked := map[string]bool{}
+	for _, page := range pages {
+		page = strings.TrimSpace(page)
+		if page == "" || asked[page] {
+			continue
+		}
+		asked[page] = true
+		if l, held := locks.Holder(page, now); held && l.Holder != who {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+// sayClaims tells whoever just wrote pages, in words, of the claims other
+// people hold on them. One function, so the next command that writes a page
+// has one line to add rather than a sentence to get the same.
+func sayClaims(claims []collab.Lock) {
+	for _, l := range claims {
+		w.Human("  %s%s%s\n", yellow, claimNotice(l), reset)
+	}
+}
+
+// claimSaid is what a machine that just wrote page for who is told of
+// somebody else's claim on it, and nothing when there is none: the agent
+// interface's write_page and an agent's own run say the same sentence.
+func claimSaid(root, who, page string) string {
+	var said []string
+	for _, l := range claimsByOthers(root, who, []string{page}) {
+		said = append(said, claimNotice(l))
+	}
+	return strings.Join(said, ". ")
+}
+
+// claimNotice is one sentence saying who holds a page that was just written.
+func claimNotice(l collab.Lock) string {
+	msg := fmt.Sprintf("%s has claimed %s until %s", l.Holder, l.Page,
+		time.Unix(l.Until, 0).Format("15:04"))
+	if l.Note != "" {
+		msg += " (" + l.Note + ")"
+	}
+	return msg + "; the write went ahead, so talk to them before either of you loses work"
+}
+
 func cmdLock(root string, args []string) error {
 	if len(args) == 0 {
 		return lockList(root)

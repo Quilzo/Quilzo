@@ -132,6 +132,10 @@ func (d delegation) Run(ctx context.Context, name string, child *agent.Session,
 					markAgentWrite(d.root, d.store, page, m.Name, modelName(d.model),
 						instruction, caller, false)
 				},
+				// Told of somebody else's claim, as its supervisor is.
+				Claimed: func(page string) string {
+					return claimSaid(d.root, d.startedBy, page)
+				},
 			},
 			agentexec.Tools{
 				Installed: func() (agent.Integrations, error) {

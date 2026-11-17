@@ -38,6 +38,7 @@ import (
 	"github.com/quilzo/quilzo/internal/collab"
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/render"
+	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 	"github.com/quilzo/quilzo/internal/theme"
@@ -116,6 +117,7 @@ leaving (there is no lock-in here, and this is how it is proved)
 importing
   quilzo import FILE [--from wordpress]    bring in another CMS's export
   quilzo media add FILE --alt "..."        check and store an upload
+  quilzo media add FILE --decorative       one that needs no description
   quilzo media get https://... --alt "..." fetch one, checked at connect time
   quilzo media list                        what is stored, and its path
   quilzo media remove ID                   take one out; refused if in use
@@ -373,6 +375,7 @@ content types
   quilzo type list | show NAME             what exists, and its address
   quilzo type stub NAME > FILE.json        a blank record of that shape
   quilzo type bind PAGE TYPE               the page must satisfy the type
+  quilzo type unbind PAGE                  it no longer has to
   quilzo type bind-collection NAME TYPE    every record in a collection must satisfy it
   quilzo type check                        validate every bound page
 
@@ -1512,6 +1515,53 @@ var addValued = map[string]bool{
 	"m": true, "author": true, "remove": true, "based-on": true,
 }
 
+// removePages takes the comma-separated names out of pages, unless
+// anything left still uses one of them: a menu entry, a page reusing it as a
+// block, a reference field or a type binding. The browser's rule, from the
+// same function (site.PointingAt); this checked only for blocks, so a page
+// the browser refused to delete was deleted from the terminal, leaving its
+// menu entry pointing at nothing and every later publish refused. What names
+// a page that is going too does not stop it, so two pages that name each
+// other can go together.
+func removePages(root string, pages map[string]any, list string) error {
+	var names []string
+	going := map[string]bool{}
+	for _, name := range strings.Split(list, ",") {
+		if name = strings.TrimSpace(name); name != "" && !going[name] {
+			going[name] = true
+			names = append(names, name)
+		}
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	remaining := make(map[string]any, len(pages))
+	for k, v := range pages {
+		if !going[k] {
+			remaining[k] = v
+		}
+	}
+	menus, err := loadMenus(root)
+	if err != nil {
+		return err
+	}
+	types, err := schema.Load(root)
+	if err != nil {
+		return err
+	}
+	for _, name := range names {
+		if blockers := site.PointingAt(name, remaining, menus, types); len(blockers) > 0 {
+			return fmt.Errorf("%s is still used by %s. Remove those first, or "+
+				"they become links to a page that is not there",
+				name, strings.Join(blockers, ", "))
+		}
+	}
+	for _, name := range names {
+		delete(pages, name)
+	}
+	return nil
+}
+
 func cmdAdd(root string, args []string) error {
 	fs := flag.NewFlagSet("add", flag.ContinueOnError)
 	msg := fs.String("m", "edit", "commit message")
@@ -1576,15 +1626,8 @@ func cmdAdd(root string, args []string) error {
 		}
 		pages[name] = v
 	}
-	uses := site.BlockUses(pages)
-	for _, name := range strings.Split(*remove, ",") {
-		if name = strings.TrimSpace(name); name != "" {
-			if u := uses[name]; len(u) > 0 {
-				return fmt.Errorf("%s is reused as a block on %s; take it off them first (quilzo section remove)",
-					name, strings.Join(u, ", "))
-			}
-			delete(pages, name)
-		}
+	if err := removePages(root, pages, *remove); err != nil {
+		return err
 	}
 
 	// Content types are checked before anything is stored. Refusing the write
@@ -1679,6 +1722,7 @@ func cmdAdd(root string, args []string) error {
 		written = len(merged.Pages)
 	}
 	w.Human("draft %s  %d page(s)\n", short(cid), written)
+	sayClaims(claimsByOthers(root, caller.Name, append(changed, strings.Split(*remove, ",")...)))
 	if message != *msg {
 		w.Human("  %srecorded as yours, %s; %s is credited in its message%s\n",
 			dim, who, strings.TrimSpace(*author), reset)

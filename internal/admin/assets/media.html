@@ -34,6 +34,12 @@ publication. Open Details on a picture's card to record them.</p>{{end}}
     <span class="hint">Required for images, so people who cannot see them
       know what they show.</span></p>
   <p><input id="m-dec" type="checkbox" name="decorative" value="1"> <label for="m-dec">Decorative, and needs no description</label></p>
+  {{/*
+    A file already in the library keeps its description: it is one file
+    wherever it is used, and a second upload of it silently replaced the first
+    person's words on every page. Replacing them is asked for here.
+  */}}
+  <p><input id="m-rep" type="checkbox" name="replace_alt" value="1"> <label for="m-rep">Replace the description it has, if it is already in the library</label></p>
   <button type="submit">Upload</button>
 </form>
 <p class="hint">

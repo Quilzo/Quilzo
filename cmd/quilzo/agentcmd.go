@@ -1420,6 +1420,12 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 					markAgentWrite(root, s, page, m.Name, out.Model, goal,
 						caller, approvedWrite(from, page))
 				},
+				// Somebody else's claim on the page, as the agent interface
+				// says it. Not a claim of whoever the run is for: their own
+				// agent writing their page is what they asked for.
+				Claimed: func(page string) string {
+					return claimSaid(root, from.startedBy(caller), page)
+				},
 			},
 			// The tool surface, which had no executor at all.
 			//

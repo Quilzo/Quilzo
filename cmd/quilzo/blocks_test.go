@@ -61,3 +61,63 @@ func TestABlockIsReusedFromTheCommandLine(t *testing.T) {
 		t.Fatal("the page does not read as the block")
 	}
 }
+
+// A page that reuses a block can be published. The arrangement gate used to
+// read the reuse section as a section of the kind "block", which there is not,
+// and refused every page that reused one with "renders as nothing at all":
+// the documented way to reuse a block was the one way never to publish it.
+// What is still refused is a reuse that does show nothing: one naming a page
+// that is not a block, or that is not there.
+func TestAPageReusingABlockPassesTheArrangementGate(t *testing.T) {
+	root := t.TempDir()
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	s, err := open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := func(page string) any {
+		return map[string]any{"id": "r-" + page, "block": map[string]any{"page": page}}
+	}
+	pages := map[string]any{
+		"index": map[string]any{"title": "Home", "sections": []any{ref("promo")}},
+		"promo": map[string]any{"title": "Promo", "block": true, "sections": []any{
+			map[string]any{"prose": map[string]any{"title": "Ten per cent off",
+				"paragraphs": []any{"On everything, this week."}}}}},
+	}
+	if _, err := site.SaveDraft(s, pages, "first", "test"); err != nil {
+		t.Fatal(err)
+	}
+	arrangement := func() []string {
+		t.Helper()
+		for _, c := range contentGates(root, s, "") {
+			if c.Name != "arrangement" {
+				continue
+			}
+			bad, _, err := c.Run()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var out []string
+			for _, f := range bad {
+				out = append(out, f.Page+": "+f.Detail)
+			}
+			return out
+		}
+		t.Fatal("no arrangement gate")
+		return nil
+	}
+	if bad := arrangement(); len(bad) != 0 {
+		t.Fatalf("a page reusing a block was refused: %v", bad)
+	}
+
+	pages["about"] = map[string]any{"title": "About", "sections": []any{ref("index"), ref("gone")}}
+	if _, err := site.SaveDraft(s, pages, "second", "test"); err != nil {
+		t.Fatal(err)
+	}
+	bad := arrangement()
+	if len(bad) != 2 || !strings.Contains(bad[0], "index") || !strings.Contains(bad[1], "gone") {
+		t.Fatalf("a reuse of what is not a block was not refused: %v", bad)
+	}
+}

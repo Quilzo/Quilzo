@@ -278,3 +278,22 @@ func TestEveryPictureBearingKindHasItsField(t *testing.T) {
 		}
 	}
 }
+
+// A reuse of a block is no unknown kind. Read as one, every page that reused
+// a block was refused at publish as rendering nothing; what it names is the
+// publish gate's to check, against the whole draft.
+func TestAReuseOfABlockIsNoUnknownKind(t *testing.T) {
+	body := map[string]any{"sections": []any{
+		map[string]any{IDField: "a1", BlockKind: map[string]any{"page": "promo"}},
+	}}
+	if bad, _ := Validate(body); len(bad) != 0 {
+		t.Fatalf("a reuse was refused: %v", bad)
+	}
+	// Without a page it names nothing, and is not passed as a reuse.
+	empty := map[string]any{"sections": []any{
+		map[string]any{BlockKind: map[string]any{}},
+	}}
+	if bad, _ := Validate(empty); len(bad) == 0 {
+		t.Fatal("a reuse naming no block was passed")
+	}
+}

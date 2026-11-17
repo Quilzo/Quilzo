@@ -48,7 +48,7 @@ var Bridged = map[string]bool{
 	"ask_assistant": false, "booking_times": false, "check_accessibility": false, "check_provenance": false,
 	"check_translations": false, "content_id": false, "control_implementation": false,
 	"experiment_report": false, "find": false, "list_assistants": false, "list_chatbot_gaps": false,
-	"list_checked": false, "list_collections": false, "list_media": false, "list_menus": false,
+	"list_checked": false, "list_collections": false, "list_locks": false, "list_media": false, "list_menus": false,
 	"list_notes": false, "list_records": false, "list_terms": false, "list_types": false,
 	"newsletter_status": false, "pipeline_status": false, "research_ideas": false, "research_project": false,
 	"research_projects": false, "research_search": false, "run_listing": false, "site_analytics": false,

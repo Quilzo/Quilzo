@@ -13,6 +13,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collab"
+	"github.com/quilzo/quilzo/internal/menu"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/site"
 )
@@ -167,59 +168,22 @@ func (s *Server) handlePageDelete(w http.ResponseWriter, r *http.Request) {
 			"publishing takes it off the live site.", name), "")
 }
 
-// pointingAt names the things that would break if a page went away.
+// pointingAt names the things that would break if a page went away, by the
+// rule every surface shares (site.PointingAt).
 func (s *Server) pointingAt(name string, pages map[string]any) []string {
-	var out []string
-
-	// Menus, which are the case that produces a 404 for a reader.
-	//
-	// menu.Set.Mentioning was written for this and had no caller: its comment
-	// says "called before a page is deleted" and there was no deletion to call
-	// it. The check existed before the feature it guards.
+	var menus *menu.Set
 	if s.Structure != nil && s.Structure.Menus != nil {
-		if set, err := s.Structure.Menus(); err == nil && set != nil {
-			for _, m := range set.Mentioning(name) {
-				out = append(out, fmt.Sprintf("%q in the %q menu", m.Item, m.Menu))
-			}
+		if set, err := s.Structure.Menus(); err == nil {
+			menus = set
 		}
 	}
-
-	// Pages that reuse it as a block, which would lose those sections
-	// without a word.
-	for _, u := range site.BlockUses(pages)[name] {
-		out = append(out, fmt.Sprintf("%q, which reuses it as a block", u))
-	}
-
-	// Content references, which are the other way a reader meets a 404.
-	//
-	// The menus were checked here from the start and the references were not,
-	// although the reason is the same sentence and schema.Unresolved has been
-	// refusing publishes over it all along. Deleting a page that two others
-	// name left the store publishable-until-you-try: the refusal arrived at
-	// the gate, naming pages somebody had changed for unrelated reasons, and
-	// the page that caused it was already gone.
-	if s.Types != nil && s.Types.Load != nil {
-		if st, err := s.Types.Load(); err == nil && st != nil {
-			for _, l := range st.LinksTo(pages, name) {
-				out = append(out, fmt.Sprintf(
-					"the %q field of %q", l.Field, l.From))
-			}
-		}
-	}
-
-	// A page whose own body names it as a listing source is not a thing this
-	// model has, so the remaining pointer is a type binding — harmless on its
-	// own, and worth clearing so a later page of the same name is not silently
-	// bound to something nobody chose.
+	var types *schema.Store
 	if s.Types != nil && s.Types.Load != nil {
 		if st, err := s.Types.Load(); err == nil {
-			if bound, is := st.Bound[name]; is {
-				out = append(out, fmt.Sprintf(
-					"a binding to the type %q (unbind it on Types)", bound))
-			}
+			types = st
 		}
 	}
-	return out
+	return site.PointingAt(name, pages, menus, types)
 }
 
 // pagesBack returns to the page list with something to say.

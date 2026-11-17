@@ -118,10 +118,16 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	f.Source = "studio"
 	f.UploadedBy = tok.Principal
 
-	if err := lib.Put(f, body); err != nil {
-		http.Error(w, "the recording could not be stored: "+err.Error(),
-			http.StatusInternalServerError)
-		return
+	// A recording already here keeps its record, as an upload in the admin
+	// does (medialib.Arriving): the same bytes are the same file, and their
+	// description is the one somebody already gave them.
+	f, _, here := lib.Arriving(f, false)
+	if !here {
+		if err := lib.Put(f, body); err != nil {
+			http.Error(w, "the recording could not be stored: "+err.Error(),
+				http.StatusInternalServerError)
+			return
+		}
 	}
 	stored, err := lib.Stat(f.ID)
 	if err != nil {
