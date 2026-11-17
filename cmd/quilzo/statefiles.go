@@ -37,7 +37,8 @@ func updatePolicy(root string, change func(*auth.Policy) error) (*auth.Policy, e
 // new in two changes, taking it from the old first, and refusing the
 // first refused renaming the last administrator. Provisioning keeps its
 // own rule instead, under the same lock: a suspension never denies the
-// last person who can grant (scimSync, lastGranter).
+// last person who can grant (scimSync, lastGranter), and nothing but a
+// rename takes from them what makes them able to.
 func provisionPolicy(root string, change func(*auth.Policy) error) (*auth.Policy, error) {
 	return updatePolicyKeeping(root, change, false)
 }
