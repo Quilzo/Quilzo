@@ -256,3 +256,31 @@ func sampleSite(b *testing.B) *Site {
 	st.Name, st.Index, st.BaseURL = "Example", "index", "https://example.org"
 	return st
 }
+
+// A result the search finds by a word typed in capitals or without its
+// marks has a snippet too. The search folds case and marks at both ends, so
+// "HAKKINDA" and "cilbir" find the Turkish page, and the snippet was still
+// looked for by lowering alone, under which neither is in the text: the
+// result came with no line of context, as though it had matched nothing a
+// reader could be shown.
+func TestASnippetIsFoundAsTheSearchFoundThePage(t *testing.T) {
+	body := map[string]any{"body": "Marginalia Hakkında: sabahları çılbır ve kahve, Straße boyunca."}
+	for query, want := range map[string]string{
+		"HAKKINDA": "Hakkında", "hakkinda": "Hakkında", "hakkında": "Hakkında",
+		"ÇILBIR": "çılbır", "cilbir": "çılbır", "strasse": "Straße", "STRAS": "Straße",
+	} {
+		noPanic(t, query+": snippetFor", func() {
+			got := snippetFor(body, []string{"body"}, query)
+			if !strings.Contains(got, want) || !utf8.ValidString(got) {
+				t.Errorf("the snippet for %q is %q", query, got)
+			}
+		})
+	}
+	// A mark written as its own character is part of the letter before it.
+	if at, end := indexFolded("une école", "ecole"); at != 4 || end != len("une école") {
+		t.Errorf("a word with a separate mark is found at %d to %d", at, end)
+	}
+	if at, _ := indexFolded("kahve", "cay"); at != -1 {
+		t.Errorf("a word that is not there is found at %d", at)
+	}
+}
