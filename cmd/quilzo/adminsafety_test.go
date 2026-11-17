@@ -165,6 +165,89 @@ func TestAStoreNobodyHasEnteredGetsTwoFactorsFromInit(t *testing.T) {
 	}
 }
 
+// The first person a store is given makes it one with two factors from
+// then, whichever command gives it them: `quilzo auth grant` on a store
+// nobody has entered is the same moment as `init --admin` on one.
+//
+// A store made by `quilzo demo`, or by any command but init, and given its
+// administrator with `quilzo auth grant owner admin` and a token, never ran
+// init at all. The first `quilzo serve` took it for an upgraded
+// installation and wrote the grace, and for two weeks the token alone
+// opened the admin of a store a day old.
+func TestAStoreNobodyHasEnteredGetsTwoFactorsFromItsFirstGrant(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("QUILZO_TOKEN", "")
+	old := w
+	t.Cleanup(func() { w = old })
+	w = out.New(false)
+	w.Out = &bytes.Buffer{}
+	grant := func(root, who, role string) {
+		t.Helper()
+		_, printed := captureStdout(t)
+		err := cmdAuth(root, []string{"grant", who, role})
+		_ = printed()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	root := demoStore(t)
+	w.Out = &bytes.Buffer{}
+	grant(root, "owner", "admin")
+	if from, ok := mfaFromIfSet(root); !ok || time.Until(from) > time.Minute {
+		t.Errorf("a store given its first administrator by auth grant gets two factors from %v (%v), not now", from, ok)
+	}
+	// Which is the date the admin then starts with, and not a grace.
+	if from := mfaFrom(root, time.Now()); time.Until(from) > time.Minute {
+		t.Errorf("quilzo serve starts with two factors from %v", from)
+	}
+
+	// A grace written by an admin started before anybody had access is
+	// ended: nobody was signing in with a token to need it.
+	early := demoStore(t)
+	w.Out = &bytes.Buffer{}
+	if from := mfaFrom(early, time.Now()); time.Until(from) < 24*time.Hour {
+		t.Fatalf("a store with no date was given no grace: %v", from)
+	}
+	grant(early, "owner", "admin")
+	if from, _ := mfaFromIfSet(early); time.Until(from) > time.Minute {
+		t.Errorf("the grace of a store nobody had entered was kept: %v", from)
+	}
+
+	// A token issued before anybody was granted anything signs in to
+	// nothing, so it is nobody already signing in with one. `quilzo token
+	// issue` on such a store says "grant one: quilzo auth grant owner
+	// admin", and the store that did as it was told got the grace.
+	for name, first := range map[string]func(root string) error{
+		"auth grant":   func(root string) error { return cmdAuth(root, []string{"grant", "owner", "admin"}) },
+		"init --admin": func(root string) error { return runInit(root, []string{"--admin", "owner"}) },
+	} {
+		tokenFirst := demoStore(t)
+		w.Out = &bytes.Buffer{}
+		_, printed := captureStdout(t)
+		err := tokenIssue(tokenFirst, []string{"t", "--principal", "owner", "--role", "admin", "--ttl", "1h"})
+		if err == nil {
+			err = first(tokenFirst)
+		}
+		_ = printed()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if from, ok := mfaFromIfSet(tokenFirst); !ok || time.Until(from) > time.Minute {
+			t.Errorf("%s after a token nobody could use: two factors from %v (%v), not now", name, from, ok)
+		}
+	}
+
+	// A store people already sign in to keeps the grace it was given, and
+	// the grants that follow the first change nothing.
+	used := onlyOwner(t)
+	grace := mfaFrom(used, time.Now())
+	grant(used, "kim", "author")
+	if from, _ := mfaFromIfSet(used); !from.Equal(grace) {
+		t.Errorf("a grant on a store in use moved two factors from %v to %v", grace, from)
+	}
+}
+
 // A name typed after --by is credited and never recorded in place of the
 // verified caller who acted.
 //

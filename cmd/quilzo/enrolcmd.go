@@ -170,11 +170,31 @@ func initFlags(args []string) (*string, error) {
 }
 
 // nobodyHasBeenHere reports whether a store has never had a person: no
-// binding in its policy and no credential ever held (enteredBefore).
-// Unreadable is taken as somebody, which keeps whatever grace was given.
+// binding in its policy, so nobody the admin would let in. Unreadable is
+// taken as somebody, which keeps whatever grace was given.
+//
+// A credential does not make somebody a person here. It also asked that
+// none had ever been held (enteredBefore), and a token issued before any
+// grant, which signs in to nothing and is answered with "grant one: quilzo
+// auth grant owner admin", made the store it was issued on one already in
+// use: the grant, or `init --admin`, that followed left it the grace.
 func nobodyHasBeenHere(root string) bool {
 	pol, err := loadPolicy(root)
-	return err == nil && len(pol.Bindings) == 0 && !enteredBefore(root)
+	return err == nil && len(pol.Bindings) == 0
+}
+
+// twoFactorsFromNow makes two factors compulsory at root from now, for a
+// store nobody has had access to. A date that has passed is kept; a grace
+// still running is ended, since nobody is there to need it.
+func twoFactorsFromNow(root string) error {
+	now := time.Now()
+	return atomicfile.Update(mfaPath(root), func(st *mfaState) error {
+		if !st.EnforcedFrom.IsZero() && !st.EnforcedFrom.After(now) {
+			return atomicfile.ErrUnchanged
+		}
+		st.EnforcedFrom = now.UTC()
+		return nil
+	})
 }
 
 // holdsAny reports whether name holds anything that is not a deny.
@@ -230,14 +250,7 @@ func initAdmin(root string, args []string, created bool) error {
 	// a store a day old. Nobody here yet means nobody signing in with a
 	// token to be locked out, so a grace already written is ended too.
 	if created || nobodyHasBeenHere(root) {
-		now := time.Now()
-		if err := atomicfile.Update(mfaPath(root), func(st *mfaState) error {
-			if !st.EnforcedFrom.IsZero() && !st.EnforcedFrom.After(now) {
-				return atomicfile.ErrUnchanged
-			}
-			st.EnforcedFrom = now.UTC()
-			return nil
-		}); err != nil {
+		if err := twoFactorsFromNow(root); err != nil {
 			return err
 		}
 	}

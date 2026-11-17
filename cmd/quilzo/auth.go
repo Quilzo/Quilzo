@@ -260,7 +260,25 @@ func authRoles(root string) error {
 	return nil
 }
 
-func authGrant(root string, args []string) error {
+// authGrant is `quilzo auth grant` and `quilzo auth deny`.
+//
+// The first binding a store nobody has entered is given makes it a store
+// with people, and one with two factors from then (twoFactorsFromNow), as
+// `quilzo init --admin` makes it. Only init asked. A store whose folders
+// another command made, `quilzo demo` or `quilzo log`, and whose first
+// administrator came from `quilzo auth grant owner admin` and a token,
+// never ran init: the first `quilzo serve` took it for an upgraded
+// installation and wrote the grace, and for two weeks a token alone opened
+// the admin of a store a day old. A store that already has people keeps
+// whatever it was given.
+func authGrant(root string, args []string) (err error) {
+	if nobodyHasBeenHere(root) {
+		defer func() {
+			if err == nil && !nobodyHasBeenHere(root) {
+				err = twoFactorsFromNow(root)
+			}
+		}()
+	}
 	fs := flag.NewFlagSet("grant", flag.ContinueOnError)
 	on := fs.String("on", "/", "resource path the binding covers")
 	deny := fs.Bool("deny", false, "deny instead of grant; a deny always wins")
