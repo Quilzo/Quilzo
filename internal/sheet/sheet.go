@@ -500,6 +500,12 @@ func match(header []string, opts Options) []Column {
 	for k, v := range opts.Map {
 		mapped[norm(k)] = strings.TrimSpace(v)
 	}
+	// A sheet that has a record's own id under OwnID, as Write writes one,
+	// has the store's id under id whatever the type declares.
+	ownID := false
+	for _, h := range header {
+		ownID = ownID || strings.EqualFold(strings.TrimSpace(strings.TrimPrefix(h, "\ufeff")), OwnID)
+	}
 	idTaken := false
 	for i, h := range header {
 		if i == 0 {
@@ -516,7 +522,9 @@ func match(header []string, opts Options) []Column {
 				cols[i] = c
 				continue
 			}
-		} else if n == "id" && !declared["id"] && !idTaken {
+		} else if strings.EqualFold(h, OwnID) {
+			field, how = "id", "the record's own id"
+		} else if n == "id" && (!declared["id"] || ownID) && !idTaken {
 			c.ID, idTaken = true, true
 			c.Note = "names each record"
 			cols[i] = c

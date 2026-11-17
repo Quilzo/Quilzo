@@ -314,6 +314,19 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 			// stopped.
 			s.Throttle.Succeed(throttle.Subject{Principal: tok.Principal})
 		}
+		// A sign-in session is the admin's, which keeps its idle clock and
+		// mounts this server with it; anywhere else, `quilzo site --api`,
+		// there is no clock, and such a session copied into a header
+		// lasted the whole of session.max with nobody using it. A token,
+		// and a session a program exchanged from one, are taken as before.
+		if tok.SignedIn() && s.Idle == nil && !s.SessionAuth {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="quilzo"`)
+			writeError(w, http.StatusUnauthorized, Error{
+				Error: "a sign-in session is not taken here",
+				Fix:   auth.SignInElsewhere,
+			})
+			return
+		}
 		if s.Idle != nil && s.Idle(r, tok) {
 			writeError(w, http.StatusUnauthorized, Error{
 				Error: "signed out after a while unused",

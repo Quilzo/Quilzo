@@ -1126,6 +1126,15 @@ func boundManifest(root string, set *agentSet, name string, withModel, eval bool
 			before = m
 			m.Autonomy = earned
 			m.Capabilities = mayCall(m.Capabilities, earned)
+			// And it reads the desktop without working it, as a run its
+			// caller holds to proposing does (boundOf). The desktop's acts
+			// are no writes to this store, so they were left, and a model
+			// nobody had evaluated, its writes withheld and its browser
+			// only reading, went on typing into the desktop's apps and
+			// pressing what they showed.
+			if earned.AtMost(agent.AutonomyPropose) {
+				m.Capabilities = readsDesktop(m.Capabilities)
+			}
 			note("evaluations", earnedWhy, before)
 		}
 	}
@@ -1194,6 +1203,16 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 		c := *caller
 		c.Limits.ReadOnly = true
 		caller = &c
+	}
+	// And it goes on no further than whoever started it reached, for the
+	// same reason (agent.Record's Bound): the role, the part of the site,
+	// the content types and the locales both of them hold.
+	if from.Prior != nil && caller != nil {
+		c, err := caller.within(from.Prior.Bound)
+		if err != nil {
+			return out, err
+		}
+		caller = c
 	}
 	set, err := loadAgents(root)
 	if err != nil {
@@ -1640,14 +1659,14 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 	}
 
 	if len(weighs) > 0 {
-		runner.Weighs = func(a agent.Action) string {
+		runner.Weighs = unattendedWeighs(unattendedRun(caller, from), func(a agent.Action) string {
 			for _, w := range weighs {
 				if why := w(a); why != "" {
 					return why
 				}
 			}
 			return ""
-		}
+		})
 	}
 	// What its browser, its commands or its desktop ask a person waits in
 	// this process, where the page, the workspace and the cell are, as a

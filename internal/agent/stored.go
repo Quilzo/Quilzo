@@ -67,6 +67,10 @@ type Record struct {
 	// administrator let read went on offered, and making, a post to
 	// another system.
 	ReadOnly bool `json:"read_only,omitempty"`
+	// Bound is how far whoever started it reached, kept for the same
+	// reason: a run dana started, confined to /docs, that sam answered
+	// went on bounded by sam alone, and wrote wherever sam may.
+	Bound *Bound `json:"bound,omitempty"`
 	// Answers are what people decided about the actions it stopped at.
 	Answers []Answer `json:"answers,omitempty"`
 	// Eval names the evaluation this run was made for, and Plant the
@@ -74,6 +78,18 @@ type Record struct {
 	// nothing, call no tool and start no other agent; see internal/evals.
 	Eval  string `json:"eval,omitempty"`
 	Plant string `json:"plant,omitempty"`
+}
+
+// Bound is the reach of whoever started a run: the role they held, the
+// part of the site they were confined to, and the content types and
+// locales their credential was narrowed to. An empty part of the site, and
+// an empty list of types or locales, restrict nothing; an empty role is no
+// role at all, the least there is, as somebody nobody verified holds.
+type Bound struct {
+	Role    string   `json:"role,omitempty"`
+	Scope   string   `json:"scope,omitempty"`
+	Types   []string `json:"types,omitempty"`
+	Locales []string `json:"locales,omitempty"`
 }
 
 // Answer is one person's decision on one pending action, kept.

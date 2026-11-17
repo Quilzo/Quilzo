@@ -738,6 +738,15 @@ type Token struct {
 	// that set a parent.
 	Session bool `json:"session,omitempty"`
 
+	// SignIn marks a session the admin exchanged from a token somebody
+	// signed in to it with, or a session somebody pasted there to sign in
+	// with: the admin's own door, as a passkey's or an identity provider's
+	// session is, and kept to its idle clock there (SignedIn). A session
+	// a program exchanged for itself with `quilzo token exchange`, and
+	// never signed in with, is not one, and is bounded by its own few
+	// minutes.
+	SignIn bool `json:"sign_in,omitempty"`
+
 	// StepUp, when set, says why this session must prove its person before
 	// it may do anything else: an automation judged a sign-in, or something
 	// seen elsewhere, unlike them (internal/automate). Cleared when they do.
@@ -880,6 +889,36 @@ func (ts *TokenStore) BindSession(id, bound string) error {
 // than somebody's own long-lived token: exchanged from one, or minted for a
 // sign-in an identity provider or passkey vouched for.
 func (t *Token) IsSession() bool { return t.Parent != "" || t.Session }
+
+// SignedIn reports whether this is a session somebody signed in to the
+// admin with, by passkey, identity provider or token: what the admin
+// signs out once nobody has used it for session.idle. That clock is kept
+// in the admin's process, so a server elsewhere that keeps none refuses
+// these, and takes tokens: a sign-in session copied into a header worked
+// at the public site's content API, and pasted into the studio, for the
+// whole of session.max after the admin would have signed it out.
+func (t *Token) SignedIn() bool { return t.Session || t.SignIn }
+
+// MarkSignIn marks a session as one somebody signed in to the admin with
+// (Token's SignIn): the one the admin exchanges from a pasted token, and a
+// session pasted there, which it uses as it is.
+func (ts *TokenStore) MarkSignIn(id string) error {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	for i := range ts.Tokens {
+		if ts.Tokens[i].ID == id {
+			ts.Tokens[i].SignIn = true
+			return nil
+		}
+	}
+	return fmt.Errorf("no token %s", id)
+}
+
+// SignInElsewhere is what a server that keeps no idle clock says to a
+// sign-in session it refuses, and what to send instead.
+const SignInElsewhere = "a session somebody signed in to the admin with is taken by the admin alone, " +
+	"which signs it out once it is left unused; send a token: quilzo token issue, or a session " +
+	"exchanged from one with quilzo token exchange"
 
 // MaxSessionTTL caps an exchanged credential. A session that can outlive a
 // working day is not doing the job a session exists for.
@@ -1753,10 +1792,13 @@ func mergeStepUp(m *Token, s Token) {
 // The store's own rules make a union safe. A token is only ever added, a
 // revocation only ever sets a flag, and only sessions that ended long ago
 // are removed, by a sweep that runs again here. So a token either copy has
-// is kept, a token revoked in either stays revoked, a key bound in either
-// stays bound, the last use is the later one, and a step-up is the later of
-// being asked for and being passed (mergeStepUp); for everything else ts,
-// the copy being written, says what was meant.
+// is kept, a token revoked in either stays revoked, a session marked in
+// either as signed in to the admin with stays marked (a copy read before
+// the admin marked a pasted session wrote it back unmarked, and a server
+// with no idle clock took it again), a key bound in either stays bound,
+// the last use is the later one, and a step-up is the later of being asked
+// for and being passed (mergeStepUp); for everything else ts, the copy
+// being written, says what was meant.
 func (ts *TokenStore) MergeInto(stored *TokenStore, now time.Time) {
 	ts.mu.Lock()
 	mine := append([]Token(nil), ts.Tokens...)
@@ -1777,6 +1819,7 @@ func (ts *TokenStore) MergeInto(stored *TokenStore, now time.Time) {
 		}
 		s := stored.Tokens[i]
 		m.Revoked = m.Revoked || s.Revoked
+		m.SignIn = m.SignIn || s.SignIn
 		if m.Bound == "" {
 			m.Bound = s.Bound
 		}

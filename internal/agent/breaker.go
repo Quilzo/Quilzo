@@ -108,7 +108,9 @@ func (s *Session) Breaks(a Action) (string, bool) {
 // HandSends says where an action of the agent's hands would carry words
 // the model chose out to another system: an address its browser opens or
 // it reads on the web, text it types into a page or an app, a file it puts
-// into a page, a query it asks a search provider (browserSends, webSends).
+// into a page, a query it asks a search provider (browserSends, webSends),
+// a search or a citation it looks up at the open research indexes
+// (ResearchSends).
 // The breaker's own reading, said once for whatever else holds such an
 // action: a run nobody started holds it for a person as it holds a tool's
 // write (cmd/quilzo agentsends.go), and a second list there would be one
@@ -121,8 +123,24 @@ func HandSends(a Action) (string, bool) {
 	if to, sends := browserSends(a); sends {
 		return to, true
 	}
+	if ResearchSends[a.Op] {
+		return ResearchIndexes, true
+	}
 	return webSends(a)
 }
+
+// ResearchSends are the actions the agent interface performs for a run
+// (agentexec.Bridged) that carry the model's words to the open research
+// indexes: a search's query, and the identifier a citation is looked up
+// by. They are no hand's, and at first only the hold on runs nobody
+// started had them: a run that held something private and had read
+// somebody else's words was stopped at its web_search, and its
+// research_search with the same words in the query went to the index.
+var ResearchSends = map[string]bool{"research_search": true, "research_cite": true}
+
+// ResearchIndexes is where ResearchSends go (research.Index), as the
+// breaker and a grant for one name it.
+const ResearchIndexes = "the open research indexes"
 
 // BreaksTo is Breaks for a connection to a host, as a program's proxy asks.
 func (s *Session) BreaksTo(host string) (string, bool) { return s.breaksTo(host, "") }

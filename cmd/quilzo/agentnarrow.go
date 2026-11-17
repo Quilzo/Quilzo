@@ -5,6 +5,7 @@ package main
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/quilzo/quilzo/internal/agent"
@@ -119,6 +120,12 @@ func boundOf(m agent.Manifest, c *Caller) agent.Manifest {
 		// And what it may read on the web: a token says nothing of hosts.
 		Web: m.Web,
 
+		// And its desktop cell, whose one setting is pictures, of which a
+		// token says nothing either. Left out, every run's cell narrowed
+		// to none, and desktop_look was refused for an agent declared to
+		// see the screen whoever ran it.
+		Cell: m.Cell,
+
 		// Memory is the agent's, and a token says nothing about it.
 		Memory: agent.Memory{
 			Episodic: true, Semantic: true, Procedural: true,
@@ -139,12 +146,37 @@ func boundOf(m agent.Manifest, c *Caller) agent.Manifest {
 			b.Shell = m.Shell.ReadOnlyCopy()
 		}
 	}
+	// And its desktop the same, for any caller who cannot write: the
+	// screen read and looked at, and nothing typed, pressed or keyed into
+	// an app. The cell has no host to read only from, as the browser does,
+	// so the acts are what is taken away; without this, a read-only
+	// token's run typed into the desktop and pressed its buttons as any
+	// other run did. By what the caller may do and not by read-only alone:
+	// a token issued as a reader is one that only reads too, and its run
+	// lost its writes here and its browser's sends (boundManifest) while
+	// it went on typing and pressing.
+	if autonomy == agent.AutonomyPropose {
+		b.Capabilities = readsDesktop(b.Capabilities)
+	}
 	// A caller confined to part of the site confines the agent to it: a
 	// token issued --on /docs, or an agent granted a role on /docs only.
 	if sc := strings.Trim(c.Scope, "/"); sc != "" {
 		b.Retrieval.Path = "/" + sc
 	}
 	return b
+}
+
+// desktopActs says whether a capability works the desktop rather than
+// reading it: what a read-only caller's run does not hold.
+func desktopActs(c string) bool {
+	return agent.IsDesktop(c) && c != "desktop_read" && c != "desktop_look"
+}
+
+// readsDesktop is a run's capabilities without the desktop's acts, for a
+// run that proposes and does not write: by its caller or the agent's own
+// standing (boundOf), or by what its evaluations earned (boundManifest).
+func readsDesktop(caps []string) []string {
+	return slices.DeleteFunc(slices.Clone(caps), desktopActs)
 }
 
 // withholdWrites takes out of a run's manifest the tools that write to
@@ -290,4 +322,88 @@ func refOf(m agent.Manifest) string {
 		return site.RefLive
 	}
 	return m.Retrieval.Ref
+}
+
+// bound is how far this caller reaches, as a run they start keeps it
+// (agent.Record's Bound).
+func (c *Caller) bound() *agent.Bound {
+	if c == nil {
+		return nil
+	}
+	return &agent.Bound{Role: string(c.Role), Scope: c.Scope,
+		Types: c.Limits.Types, Locales: c.Limits.Locales}
+}
+
+// within is this caller narrowed to what whoever started the run they
+// take on reached as well: the lower role, the deeper part of the site,
+// and the content types and locales both hold.
+//
+// A run that waited goes on as whoever answered it, and was bounded by
+// them alone, so a run an author confined to /docs started, answered by
+// an administrator, went on to write anywhere on the site. Read-only was
+// carried over already (agent.Record's ReadOnly); the rest was not. Two
+// reaches with nothing in common are refused, saying so, rather than
+// going on as either: a run kept before its starter's reach was is taken
+// on as before.
+//
+// A starter who held no role is the lowest there is, and not a starter
+// who restricts nothing: somebody nobody verified, in a store with no
+// access rules, runs an agent that proposes and writes nothing
+// (autonomyFor). Their empty role was read as no limit, so their run,
+// answered by an administrator, went on to write.
+func (c *Caller) within(b *agent.Bound) (*Caller, error) {
+	if c == nil || b == nil {
+		return c, nil
+	}
+	out := *c
+	if r := auth.Role(b.Role); !r.AtLeast(c.Role) {
+		out.Role = r
+	}
+	mine, theirs := strings.Trim(c.Scope, "/"), strings.Trim(b.Scope, "/")
+	switch {
+	case inSubtreeOf(mine, theirs):
+		// Already as deep as theirs, or deeper.
+	case inSubtreeOf(theirs, mine):
+		out.Scope = b.Scope
+	default:
+		return nil, fmt.Errorf("this run was started by somebody confined to /%s, and %s holds /%s: "+
+			"nobody holds both, so it cannot go on as %s. Somebody who holds /%s can take it on",
+			theirs, c.Name, mine, c.Name, theirs)
+	}
+	var ok bool
+	if out.Limits.Types, ok = bothHold(c.Limits.Types, b.Types); !ok {
+		return nil, fmt.Errorf("this run was started by somebody limited to the content types %s, and %s "+
+			"holds none of them, so it cannot go on as %s", strings.Join(b.Types, ", "), c.Name, c.Name)
+	}
+	if out.Limits.Locales, ok = bothHold(c.Limits.Locales, b.Locales); !ok {
+		return nil, fmt.Errorf("this run was started by somebody limited to the locales %s, and %s "+
+			"holds none of them, so it cannot go on as %s", strings.Join(b.Locales, ", "), c.Name, c.Name)
+	}
+	return &out, nil
+}
+
+// inSubtreeOf reports whether path p is in the subtree at root, by whole
+// segments, both without their slashes: an empty root is the whole site.
+func inSubtreeOf(p, root string) bool {
+	p, root = strings.ToLower(p), strings.ToLower(root)
+	return root == "" || p == root || strings.HasPrefix(p, root+"/")
+}
+
+// bothHold is what two lists that each restrict to their entries both
+// allow, where an empty list restricts nothing, and false when both
+// restrict and share nothing.
+func bothHold(a, b []string) ([]string, bool) {
+	switch {
+	case len(b) == 0:
+		return a, true
+	case len(a) == 0:
+		return b, true
+	}
+	var out []string
+	for _, v := range a {
+		if slices.ContainsFunc(b, func(w string) bool { return strings.EqualFold(v, w) }) {
+			out = append(out, v)
+		}
+	}
+	return out, len(out) > 0
 }

@@ -918,12 +918,20 @@ alt column says it shows. One row the type refuses refuses the sheet, unless
 commit, in the draft until it is published.
 
 `records export` writes the id first and the type's fields in order, so the
-sheet comes back in as the same records, and each picture as the address the
-site serves it at, so another site can bring it in too. A cell beginning
-`=`, `+`, `-` or `@` that is not a number is written after an apostrophe, so
-a spreadsheet opening it does not run it as a formula. `--format json`
-writes JSON instead, which import reads the same way. The Data screen does
-both: Download as a spreadsheet, and Bring rows in, with the same choices.
+sheet comes back in as the same records. A record with a field of its own
+called `id` has it in a column headed `field:id` (in JSON, as
+`id` inside `fields`), since the `id` column is the store's, and import
+reads it back into that field. A type that declares a field `id` has that
+column in every export, empty (in JSON, `null`) for a record with none, so
+its `id` column is never read as the field. In JSON, a record with a field
+of its own called `fields` says its own `id` as `field:id` beside it, `null`
+for none, so that field is never read as the id. Each picture is written as the
+address the site serves it at, so another site can bring it in too. A cell
+beginning `=`, `+`, `-` or `@` that is not a number is written after an
+apostrophe, so a spreadsheet opening it does not run it as a formula.
+`--format json` writes JSON instead, which import reads the same way. The
+Data screen does both: Download as a spreadsheet, and Bring rows in, with
+the same choices.
 
 ## Bringing a template you already have
 

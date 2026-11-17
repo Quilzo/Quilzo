@@ -118,37 +118,75 @@ func outwardAsks(root string, m agent.Manifest, unattended bool, then func(agent
 
 // handReachesOut says whether an action of an agent's hands carries the
 // model's words out to another system, and where: what the exfiltration
-// breaker reads as sending (agent.HandSends), a command that reaches the
-// network (shell.ReachesOut), and a search or citation looked up at the
-// open research indexes (researchReach). Reading this store and working in
-// the workspace reach nothing outside, and are not held.
+// breaker reads as sending (agent.HandSends), which has a search or
+// citation looked up at the open research indexes, and a command that
+// reaches the network (shell.ReachesOut). Reading this store and working
+// in the workspace reach nothing outside, and are not held.
+//
+// The research operations were once a list of this file's own, which held
+// a triggered run's search while the breaker let the same search through
+// from a run holding something private: one list, the breaker's.
 func handReachesOut(m agent.Manifest, a agent.Action) (string, bool) {
 	if shell.ReachesOut(a, m.Shell) {
 		return "the network (" + hostList(m.Shell.Hosts) + ")", true
 	}
-	if researchReach[a.Op] && a.Tool == "" && a.Delegate == "" {
-		return researchIndexes, true
+	if desktopCommits(a) {
+		return "an app in its desktop cell", true
 	}
 	return agent.HandSends(a)
 }
 
-// researchReach are the actions the agent interface performs for a run
-// (agentexec.Bridged) that carry the model's words to the open research
-// indexes: a search's query, and the identifier a citation is looked up
-// by. They are no hand's, so neither the breaker's list nor the
-// workspace's had them, and a triggered run's search with the draft in its
-// query went to the index with nobody asked while its web_search waited.
-var researchReach = map[string]bool{"research_search": true, "research_cite": true}
+// desktopCommits says whether a press on the desktop may commit to
+// something the outline cannot name: any press, and Enter. The cell reads
+// what a control is called and not what it does, so a button called
+// "Continue" that sends the form it is in was weighed as nothing, and in a
+// run nobody started it went ahead, or was earned away, with nobody asked.
+// Tab, Escape and Backspace move or take back, and send nothing.
+func desktopCommits(a agent.Action) bool {
+	if a.Tool != "" || a.Delegate != "" {
+		return false
+	}
+	key, _ := a.Input["key"].(string)
+	return a.Op == "desktop_press" || (a.Op == "desktop_key" && strings.TrimSpace(key) == "Enter")
+}
 
-// researchIndexes is where researchReach goes (research.Index), as a grant
-// for it names it.
-const researchIndexes = "the open research indexes"
+// unattendedWeighs is what the browser and the desktop weigh of a press,
+// for a run nobody started: a press that commits to something, which as
+// weighed reads as merely acting, is a send there, so it is decided by a
+// person each time, never in a batch and never earned away. What already
+// reads as paying, deleting or sending is said as it was.
+//
+// The browser weighs a button in a form as "it submits a form", which is
+// what a click on "Continue" says. Read as acting, that kind of press was
+// earned by being approved often enough in runs a person started, and then
+// went ahead from a run a trigger started, sending the form with nobody
+// asked.
+//
+// Only a press: what the workspace weighs (a file written, a command that
+// changes it) is said as it was. It reaches nothing outside, and a command
+// that does is held by outwardAsks. Every hand's reason was read here at
+// first, so a triggered run's `git commit` was shown as going out from a
+// run nobody started, and as a send was never earned as it is elsewhere.
+func unattendedWeighs(unattended bool, weigh func(agent.Action) string) func(agent.Action) string {
+	if !unattended {
+		return weigh
+	}
+	return func(a agent.Action) string {
+		why := weigh(a)
+		press := agent.IsBrowser(a.Op) || agent.IsDesktop(a.Op)
+		if why == "" || !press || !agent.Earnable(a, why, agent.WaitAsk, false) {
+			return why
+		}
+		return fmt.Sprintf("%s: %s, which in a run nobody started a person decides each time",
+			agent.UnattendedPrefix, why)
+	}
+}
 
 // handSends reports whether an action of the hands is one that may reach
 // out of a run nobody started, and so one a grant may name.
 func handSends(op string) bool {
 	_, sends := agent.HandSends(agent.Action{Op: op})
-	return sends || op == "shell_run" || researchReach[op]
+	return sends || op == "shell_run" || op == "desktop_press" || op == "desktop_key"
 }
 
 // handReach is what one of an agent's hands' actions may reach, as its
@@ -187,8 +225,8 @@ func handReach(root string, m agent.Manifest, op string) string {
 			return ""
 		}
 		return "its desktop cell"
-	case researchReach[op]:
-		return researchIndexes
+	case agent.ResearchSends[op]:
+		return agent.ResearchIndexes
 	}
 	return ""
 }

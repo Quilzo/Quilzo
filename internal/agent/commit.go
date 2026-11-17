@@ -65,9 +65,13 @@ func CommitOf(a Action, why, kind string, writes bool) string {
 	case strings.HasPrefix(op, "publish"):
 		return "publishes"
 	case op == "browser_open" || op == "browser_type" || op == "desktop_type" || op == "browser_sign_in" ||
-		op == "web_fetch" || op == "web_search":
+		op == "web_fetch" || op == "web_search" || ResearchSends[op]:
 		// What waits of these carries the model's words to a host: an
-		// address, typing, a query.
+		// address, typing, a query. A search of the research indexes, and
+		// a citation looked up there, with the web's: left to the words
+		// they wait for, one the breaker held was shown as a payment when
+		// the run held the draft of an order form, and one asked about
+		// first was merely acting, and so earned away as no send is.
 		return "sends"
 	case op == "file_delete":
 		// Into the bin is a write a person can take back; out of the bin

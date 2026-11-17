@@ -459,3 +459,37 @@ func TestATokensUseIsToldToTheHost(t *testing.T) {
 		t.Fatalf("a token that did not authenticate was told: %v", told)
 	}
 }
+
+// A sign-in session is not taken here, pasted or in the cookie, and the
+// refusal says what to paste instead; a token is taken as before.
+//
+// The admin signs a session out once nobody has used it for session.idle,
+// and keeps that clock in its own process. The studio is another process
+// with no such clock, so a sign-in session pasted here put a recording in
+// the library for the whole of session.max after the admin would have
+// signed it out.
+func TestASignInSessionIsNotTakenHere(t *testing.T) {
+	srv, token := wired(t)
+	session, _, err := srv.Tokens.IssueSession("passkey:ada", "ada", auth.RoleAuthor, "/", time.Hour,
+		auth.RoleAdmin, auth.MethodPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	post := func(secret string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/signin", bytes.NewBufferString("token="+secret))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, req)
+		return rec
+	}
+	if rec := post(session); rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Body.String(), "quilzo token") {
+		t.Errorf("a sign-in session was let in: %d %s", rec.Code, rec.Body)
+	}
+	body, ct := oneRecording(t, "clip.webm", webmBytes())
+	if rec := signedIn(t, srv, session, "/upload", body, ct); rec.Code != http.StatusUnauthorized {
+		t.Errorf("a sign-in session in the cookie uploaded a recording, answering %d", rec.Code)
+	}
+	if rec := post(token); rec.Code != http.StatusSeeOther {
+		t.Errorf("a token was refused: %d %s", rec.Code, rec.Body)
+	}
+}
