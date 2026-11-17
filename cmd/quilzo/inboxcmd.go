@@ -78,6 +78,12 @@ func suggestReply(root, name, question string) (string, []string, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
+	// Asked without its actions: a draft is words for a person to send, and
+	// an offer has no place in one. With them, a message no page covers
+	// would come back as an offer and no words (assistant.RespondTo), and
+	// the draft would be empty where it used to say the site does not
+	// answer that.
+	a.Actions = nil
 	ans, err := assistant.RespondTo(ctx, a, idx, m, question, "")
 	if err != nil {
 		return "", nil, err
@@ -120,6 +126,9 @@ func inboxHooks(root string) *admin.Inbox {
 		List: st.List,
 		Get:  st.Get,
 		Reply: func(name, id, by, text string) error {
+			if err := visitorCanRead(root, name); err != nil {
+				return err
+			}
 			_, err := st.Say(name, id, handoff.Person, by, text, time.Now())
 			return err
 		},
@@ -271,6 +280,30 @@ func cmdInbox(root string, args []string) error {
 	return inboxUsage()
 }
 
+// visitorCanRead refuses a reply the visitor has no way to read. A
+// conversation is read at its chatbot's public address, which answers 404
+// once the chatbot is no longer public or no longer declared; a reply was
+// still reported sent, and staff went on answering into a conversation
+// nobody could read. Ending it is still allowed.
+func visitorCanRead(root, name string) error {
+	set, err := assistant.Load(assistantsPath(root))
+	if err != nil {
+		return err
+	}
+	a, ok := set.Get(name)
+	if !ok {
+		return fmt.Errorf("the visitor cannot read a reply: chatbot %s is no longer declared, "+
+			"so its conversations' addresses answer nothing. Declare it again, public, "+
+			"for them to see one, or end the conversation", name)
+	}
+	if !a.Public {
+		return fmt.Errorf("the visitor cannot read a reply: chatbot %s is not public, "+
+			"so its conversations' addresses answer nothing. Make it public again "+
+			"for them to see one, or end the conversation", name)
+	}
+	return nil
+}
+
 // inboxAnswer replies to or ends a conversation, as caller, and records it.
 func inboxAnswer(root, act, ref, text string, caller *Caller) error {
 	name, id, err := splitConversation(ref)
@@ -285,6 +318,9 @@ func inboxAnswer(root, act, ref, text string, caller *Caller) error {
 	st := handoffStore(root)
 	switch act {
 	case "reply":
+		if err := visitorCanRead(root, name); err != nil {
+			return err
+		}
 		_, err = st.Say(name, id, handoff.Person, caller.Name, text, time.Now())
 	case "close":
 		err = st.Close(name, id, caller.Name, time.Now())

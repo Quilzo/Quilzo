@@ -17,7 +17,6 @@ import (
 	"github.com/quilzo/quilzo/internal/feature"
 	"github.com/quilzo/quilzo/internal/listing"
 	"github.com/quilzo/quilzo/internal/site"
-	"github.com/quilzo/quilzo/internal/store"
 )
 
 // A blog (internal/public/posts.go): records whose listing site.blog names.
@@ -121,7 +120,7 @@ func latestPosts(root string, max int) ([]listing.Row, int, string, error) {
 	if !ok {
 		return nil, 0, name, fmt.Errorf("site.blog names %q and no listing has that name", name)
 	}
-	s, err := store.Open(root)
+	s, err := openEncrypted(root)
 	if err != nil {
 		return nil, 0, name, err
 	}

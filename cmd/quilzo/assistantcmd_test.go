@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/audit"
@@ -16,6 +17,7 @@ import (
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
+	"github.com/quilzo/quilzo/internal/vault"
 )
 
 // publishedShop is a store with a small shop published, and a draft that is
@@ -219,5 +221,65 @@ func TestTheOwnersChatbotReadsWhatVisitorsDo(t *testing.T) {
 	}
 	if !read["returns"] {
 		t.Fatalf("the owner's chatbot reads %v", read)
+	}
+}
+
+// A chatbot is built, tried and measured on an encrypted store as on any
+// other, and so is everything else that reads what is published.
+//
+// After `quilzo vault enable` and a publish, every owner-side chatbot path
+// (ask, eval, gaps --check, the MCP tool and the admin's test console)
+// said "nothing is published yet ... encrypted and no key was supplied"
+// although the key was supplied, because the chatbot's knowledge opened the
+// store without the keyring every other command opens it with. The public
+// site kept answering, which made it look like the content's fault. Making
+// an issue from a page, and the other readers that opened the store the
+// same way, failed alike.
+func TestTheChatbotToolsReadAnEncryptedStore(t *testing.T) {
+	if w == nil {
+		w = out.New(false)
+	}
+	root := storeFolder(t)
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	kr, err := vault.NewKeyring("k1", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(keyEnv, vault.EncodeKey(kr.Keys["k1"].Key))
+	if err := saveJSON(keyringPath(root), kr); err != nil {
+		t.Fatal(err)
+	}
+	s, err := openEncrypted(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages := map[string]any{
+		"index":    map[string]any{"title": "Marginalia", "intro": "Paper, made in small runs."},
+		"delivery": map[string]any{"title": "Delivery", "body": "UK delivery costs £4.50. We ship to the EU for £12."},
+	}
+	if _, err := site.SaveDraft(s, pages, "shop", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Publish(s, ""); err != nil {
+		t.Fatal(err)
+	}
+	// What was published is sealed: read without the key, it cannot be.
+	if plain, err := store.Open(root); err == nil {
+		if _, err := site.PagesAt(plain, site.RefLive); err == nil {
+			t.Fatal("the published commit was written in the clear, so this test proves nothing")
+		}
+	}
+
+	idx, err := assistantIndex(root, assistant.Assistant{Name: "help", Title: "Help", Pages: []string{"delivery"}})
+	if err != nil {
+		t.Fatalf("the chatbot's knowledge, on an encrypted store with its key: %v", err)
+	}
+	if hits := idx.Retrieve("how much is UK delivery", 3); len(hits) == 0 {
+		t.Error("the chatbot found nothing about delivery on an encrypted store")
+	}
+	if _, _, err := issuePage(root, "delivery"); err != nil {
+		t.Errorf("an issue made from a page, on an encrypted store with its key: %v", err)
 	}
 }

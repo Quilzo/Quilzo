@@ -195,6 +195,7 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 	chatAct, chatAnswer := chatActSite(root)
 	st.Assistants = &public.Assistants{
 		Act: chatAct, Answer: chatAnswer,
+		Taking:    func() bool { return chatActQueue(root).Taking(time.Now()) },
 		Guardrail: guard, GuardrailEvent: guardEvent,
 		Set:     func() (*assistant.Set, error) { return assistant.Load(assistantsPath(root)) },
 		Handoff: handoffStore(root),

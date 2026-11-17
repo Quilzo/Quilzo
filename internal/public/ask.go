@@ -79,7 +79,12 @@ type Assistants struct {
 	Records     func(tree string, collections []string) []assistant.Passage
 	Act         func(chatact.Request) error
 	Answer      func(id string) (res chatact.Result, answered, made bool)
-	VisitorKey  func(assistant.Assistant) []byte
+	// Taking reports whether anything takes those requests now (the admin
+	// server's dispatcher beats, chatact.Stale). With it stopped, the site
+	// offered the action, took the confirmation and said "Working on it"
+	// for good. Nil is taken as yes.
+	Taking     func() bool
+	VisitorKey func(assistant.Assistant) []byte
 	// Meaning is a chatbot's ranker by meaning (assistant.Meaning), or
 	// nil when it ranks by words alone; MeaningKey is what that ranker
 	// depends on, which keys the index too.
@@ -351,11 +356,48 @@ func (st *Site) answer(w http.ResponseWriter, r *http.Request,
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
-	ans, aerr := assistant.RespondTo(ctx, a, idx, m, view.Question, view.Previous)
+	// Asked without the actions this page could not offer. With them, a
+	// question no page covers was put to the model only to see whether it
+	// offers one (assistant.RespondTo), and the offer taken off again.
+	asking := a
+	switch {
+	case st.askDesigned():
+		// The owner's own page has no place for an offer, and the offer
+		// was taken off where that page is drawn, after the answer had
+		// been counted: the visitor read the refusal while the audit
+		// record and the conversion said the chatbot had answered, and the
+		// question was not kept among those the site should answer.
+		asking.Actions = nil
+	case st.Assistants.Act == nil || !st.actTaking():
+		// Nothing takes an agent action's request just now, so a site
+		// served on its own paid for a call to the model on every such
+		// question, to give the refusal it gives without one.
+		asking.Actions = nil
+		for _, ac := range a.Actions {
+			if ac.Kind != assistant.Agent {
+				asking.Actions = append(asking.Actions, ac)
+			}
+		}
+	}
+	ans, aerr := assistant.RespondTo(ctx, asking, idx, m, view.Question, view.Previous)
 	if aerr != nil {
 		view.Problem = aerr.Error()
 		st.renderAsk(w, r, *view, http.StatusUnprocessableEntity)
 		return false
+	}
+	// What it offers, before anything is counted: an offer this page cannot
+	// make to this visitor (a form closed since, an action only for somebody
+	// the host site vouches for) is taken off the answer, and an answer
+	// that was only the offer is then the refusal, counted as one.
+	if ans.Proposed != nil {
+		if ans.Proposed.Action.Kind == assistant.Agent {
+			view.Offer = st.agentOffer(*ans.Proposed, view.Visitor, a)
+		} else {
+			view.Offer = st.offerFor(*ans.Proposed)
+		}
+		if view.Offer == nil {
+			ans = a.Unoffered(ans)
+		}
 	}
 	if st.Assistants.Audit != nil {
 		st.Assistants.Audit(a.Name, sourceOf(r), !ans.Refused)
@@ -378,14 +420,18 @@ func (st *Site) answer(w http.ResponseWriter, r *http.Request,
 	}
 	view.Cards = st.cardsFor(view.Sources, ans)
 	view.FollowUps = followUps(a, view.Question, &ans, view.Sources)
-	if ans.Proposed != nil {
-		if ans.Proposed.Action.Kind == assistant.Agent {
-			view.Offer = st.agentOffer(*ans.Proposed, view.Visitor, a)
-		} else {
-			view.Offer = st.offerFor(*ans.Proposed)
-		}
-	}
 	return true
+}
+
+// askDesigned reports whether the conversation is shown on a page the owner
+// designed (askPageName), which is given the answer and no offer.
+func (st *Site) askDesigned() bool {
+	pages, _, err := st.pages()
+	if err != nil {
+		return false
+	}
+	_, ok := pages[askPageName]
+	return ok
 }
 
 // assistantIndex is the assistant's knowledge at the published commit,
@@ -762,8 +808,12 @@ func (st *Site) askThroughLayout(body any, hash string, r *http.Request, v askVi
 		"disclosure": Disclosure,
 	}
 	if v.Answer != nil {
-		data["answer"] = v.Answer.Text
-		data["refused"] = v.Answer.Refused
+		// The owner's page is given no offer to show, so an answer that is
+		// only an offer is the refusal here: its words alone would promise
+		// something to press that this page does not have.
+		shown := v.Assistant.Unoffered(*v.Answer)
+		data["answer"] = shown.Text
+		data["refused"] = shown.Refused
 		var srcs []any
 		for _, s := range v.Sources {
 			srcs = append(srcs, map[string]any{"n": float64(s.N),
@@ -824,7 +874,7 @@ var askTemplate = template.Must(template.New("ask").Parse(`<!doctype html>
 </section>
 <section class="qz-turn qz-a{{if .V.Answer.Refused}} qz-refused{{end}}" aria-live="polite" aria-label="Answer">
   {{if .V.Answer.Refused}}<p>{{.V.Answer.Text}}</p>
-  {{else}}{{range .V.Answer.Kept}}<p>{{.Text}}{{range .Cites}} <sup><a href="#src-{{.}}">[{{.}}]</a></sup>{{end}}</p>{{end}}{{end}}
+  {{else}}{{range .V.Answer.Kept}}<p>{{.Text}}{{range .Cites}} <sup><a href="#src-{{.}}">[{{.}}]</a></sup>{{end}}</p>{{else}}<p>{{.V.Answer.Text}}</p>{{end}}{{end}}
   {{if .V.Cards}}
   <ul class="qz-cards" aria-label="Pages this answer draws on">{{range .V.Cards}}<li class="qz-card">
     {{if .Image}}<img src="{{.Image}}" alt="" loading="lazy" decoding="async">{{end}}

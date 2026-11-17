@@ -309,7 +309,11 @@ func assistantKnowledge(root string, a assistant.Assistant, c *Caller) (*assista
 // false: embedding reads them all, so a page whose window opens later is
 // found by meaning from the moment it does.
 func assistantKnowledgeOf(root string, a assistant.Assistant, c *Caller, visible bool) (*assistant.Index, []string, error) {
-	s, err := store.Open(root)
+	// With the keyring, as every command opens the store. Opened without
+	// it, an encrypted store's live commit could not be read, and every
+	// owner-side chatbot path said nothing was published while the public
+	// site went on answering from it.
+	s, err := openEncrypted(root)
 	if err != nil {
 		return nil, nil, err
 	}

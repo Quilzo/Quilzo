@@ -116,6 +116,28 @@ func RespondTo(ctx context.Context, a Assistant, idx *Index, m Model,
 	}
 	ans.Sources = hits
 	if len(hits) == 0 {
+		// A request to do something is still put to the model when the
+		// chatbot has something it can do. "Please look up my order
+		// ZQ-5521" shares too few words with any page to retrieve one, and
+		// was refused before the model was asked anything, so the requests
+		// an action exists for could never be offered it. The model is given
+		// no passage, and so nothing it writes can be kept: only the action
+		// it names is looked at, and Propose decides that as it always does.
+		// A chatbot with no action, or no model, refuses as it did, and asks
+		// nobody.
+		if m != nil && len(a.Actions) > 0 {
+			if got, err := askModel(ctx, a, m, asked, nil); err == nil {
+				ans.Dropped = got.dropped
+				if got.action != nil {
+					p, perr := a.Propose(*got.action)
+					if perr == nil {
+						return a.offer(ans, p, "nothing on this site is about that; the model offered "+p.Action.Name), nil
+					}
+					ans.Note = "nothing on this site is about that, and the model " +
+						"proposed an action that was refused: " + perr.Error()
+				}
+			}
+		}
 		return a.refuse(ans, "nothing on this site is about that"), nil
 	}
 
@@ -136,8 +158,33 @@ func RespondTo(ctx context.Context, a Assistant, idx *Index, m Model,
 				}
 				return ans, nil
 			}
-			ans.Note = "every sentence the model wrote failed verification, " +
-				"so this is the extractive answer instead"
+			if len(ans.Dropped) > 0 {
+				// An action on an answer that failed verification is not
+				// offered: a model that wrote what its passages do not say
+				// is not taken at its word about what to do next either.
+				ans.Note = "every sentence the model wrote failed verification, " +
+					"so this is the extractive answer instead"
+			} else {
+				// It wrote nothing, as the prompt tells it to when the
+				// passages do not answer; and a request to do something
+				// seldom is answered by a page. The action it offered was
+				// looked at only when a sentence had been kept, so the reply
+				// the prompt asks for had its action thrown away, and this
+				// note said every sentence it wrote had failed when it wrote
+				// none.
+				ans.Note = "the model wrote no answer from these passages, " +
+					"so this is the extractive answer instead"
+				if got.action != nil {
+					if p, perr := a.Propose(*got.action); perr == nil {
+						ans.Proposed = &p
+						ans.Note = "the model wrote no answer and offered " + p.Action.Name +
+							", so the offer is shown with the extractive answer"
+					} else {
+						ans.Note = "the model wrote no answer and proposed an action " +
+							"that was refused: " + perr.Error()
+					}
+				}
+			}
 		} else {
 			ans.Note = "the model could not be used (" + err.Error() +
 				"), so this is the extractive answer"
@@ -147,10 +194,46 @@ func RespondTo(ctx context.Context, a Assistant, idx *Index, m Model,
 
 	ans.Kept = extract(asked, hits)
 	if len(ans.Kept) == 0 {
+		if ans.Proposed != nil {
+			return a.offer(ans, *ans.Proposed, ans.Note), nil
+		}
 		return a.refuse(ans, "the passages found do not contain an answer"), nil
 	}
 	ans.Text = render(ans.Kept)
 	return ans, nil
+}
+
+// OfferText is what an answer says when it has something to offer and no
+// sentence from the site to go with it.
+const OfferText = "This is something I can help with."
+
+// offer is the answer that is only an offer: nothing on the site answers
+// the question, and the chatbot has an action for it. Not a refusal, so it
+// is not kept as a question the site should answer; the visitor still
+// confirms the action before anything happens.
+func (a Assistant) offer(ans Answer, p Proposal, note string) Answer {
+	ans.Mode = "model"
+	ans.Kept = nil
+	ans.Text = OfferText
+	ans.Proposed = &p
+	ans.Note = note
+	return ans
+}
+
+// Unoffered is ans without the action it offers, for a page that cannot
+// show the offer to this visitor: a form closed since, an action only for
+// somebody the host site vouches for, a page with no place for one. An
+// answer that was only the offer has nothing left to say and becomes the
+// refusal: "This is something I can help with" over nothing to press would
+// be the chatbot promising what the page does not give.
+func (a Assistant) Unoffered(ans Answer) Answer {
+	offered := ans.Proposed
+	ans.Proposed = nil
+	if offered == nil || len(ans.Kept) > 0 {
+		return ans
+	}
+	ans.Note = ""
+	return a.refuse(ans, "it offered "+offered.Action.Name+", which could not be shown to this visitor")
 }
 
 func (a Assistant) refuse(ans Answer, why string) Answer {
@@ -344,6 +427,12 @@ func systemPrompt(a Assistant) string {
 
 func userPrompt(question string, hits []Hit) string {
 	var b strings.Builder
+	if len(hits) == 0 {
+		// Asked with nothing retrieved, only to see whether the visitor
+		// wants one of the chatbot's actions: said, so the model does not
+		// answer from what it knows for want of being told there is nothing.
+		b.WriteString("No passage on this site matches the question, so answer must be an empty string.\n\n")
+	}
 	for i, h := range hits {
 		fmt.Fprintf(&b, "[%d] %s\n%s\n%s\n%s\n\n", i+1, defuse(h.Header()),
 			fence, defuse(h.Text), fence)

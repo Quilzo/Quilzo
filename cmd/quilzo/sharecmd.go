@@ -248,7 +248,7 @@ func renderShared(root string, design *Design, secret string, now time.Time) (st
 	if sh == nil || !sh.live(now) {
 		return "", false
 	}
-	s, err := store.Open(root)
+	s, err := openEncrypted(root)
 	if err != nil {
 		return "", false
 	}
@@ -296,7 +296,7 @@ func sharesCapability(root string) *admin.Shares {
 	}
 	return &admin.Shares{
 		Create: func(page, by string, days int) (admin.ShareLink, error) {
-			s, err := store.Open(root)
+			s, err := openEncrypted(root)
 			if err != nil {
 				return admin.ShareLink{}, err
 			}
@@ -425,7 +425,7 @@ func cmdShare(root string, args []string) error {
 	if err := needStore(root); err != nil {
 		return err
 	}
-	s, err := store.Open(root)
+	s, err := openEncrypted(root)
 	if err != nil {
 		return err
 	}

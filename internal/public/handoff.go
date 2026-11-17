@@ -54,8 +54,23 @@ func (st *Site) handoffRoute(w http.ResponseWriter, r *http.Request,
 	return false
 }
 
+// handoffStore is where a new conversation with a is kept, for a chatbot
+// that offers a person.
 func (st *Site) handoffStore(a assistant.Assistant) (handoff.Store, bool) {
-	if !a.Handoff || st.Assistants == nil || st.Assistants.Handoff == nil {
+	if !a.Handoff {
+		return handoff.Store{}, false
+	}
+	return st.conversationStore()
+}
+
+// conversationStore is where conversations already started are, whether or
+// not their chatbot still offers a person. Withdrawing the offer stops new
+// conversations; it does not end the open ones. It did: their address
+// answered 404 while the Inbox still listed them as waiting and a reply
+// was reported sent, although the visitor had been told the conversation
+// is kept for the chatbot's days and that the address is the way back.
+func (st *Site) conversationStore() (handoff.Store, bool) {
+	if st.Assistants == nil || st.Assistants.Handoff == nil {
 		return handoff.Store{}, false
 	}
 	return *st.Assistants.Handoff, true
@@ -113,6 +128,13 @@ func (st *Site) handoffOpen(w http.ResponseWriter, r *http.Request, a assistant.
 	http.Redirect(w, r, to, http.StatusSeeOther)
 }
 
+// validSecret reports whether s can be a conversation's secret: URL-safe
+// base64 of 24 bytes.
+func validSecret(s string) bool {
+	return len(s) == 32 && strings.Trim(s,
+		"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_") == ""
+}
+
 // conversationView is what the visitor's page shows.
 type conversationView struct {
 	Assistant assistant.Assistant
@@ -132,11 +154,9 @@ type conversationView struct {
 func (st *Site) handoffConversation(w http.ResponseWriter, r *http.Request,
 	a assistant.Assistant, secret string) {
 
-	store, ok := st.handoffStore(a)
-	// A secret is URL-safe base64 of 24 bytes; anything else is not one, and
-	// is answered exactly as a wrong secret is.
-	if !ok || len(secret) != 32 || strings.Trim(secret,
-		"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_") != "" {
+	store, ok := st.conversationStore()
+	// Anything that is not a secret is answered exactly as a wrong secret is.
+	if !ok || !validSecret(secret) {
 		st.notFound(w, r)
 		return
 	}

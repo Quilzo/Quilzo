@@ -142,7 +142,7 @@ func indexNowAfterPublish(ctx context.Context, root string) string {
 	if err != nil || u.Hostname() == "" || (u.Scheme != "https" && u.Scheme != "http") {
 		return "IndexNow is on and site.base_url is not set, so nothing was sent"
 	}
-	s, err := store.Open(root)
+	s, err := openEncrypted(root)
 	if err != nil {
 		return ""
 	}

@@ -32,6 +32,21 @@ import (
 // Keep is how long a request and its answer are kept.
 const Keep = 24 * time.Hour
 
+// Only the admin server runs a chatbot's agents. With it stopped, the site
+// offered the action, took the visitor's confirmation and said "Working on
+// it" for good, and the request ran with the visitor's words whenever an
+// admin next started, up to a day later. So the dispatcher beats, the site
+// offers and takes requests only while it has beaten in the last Stale,
+// and a request nothing took within MaxWait is answered as not done.
+const (
+	// Beat is how often the dispatcher says it is taking requests.
+	Beat = 15 * time.Second
+	// Stale is how long after its last beat it is taken to have stopped.
+	Stale = 2 * time.Minute
+	// MaxWait is how old a request may be when it is taken and still run.
+	MaxWait = 5 * time.Minute
+)
+
 // Request is what a visitor asked.
 type Request struct {
 	ID      string `json:"id"`
@@ -67,10 +82,15 @@ const (
 
 // Result is the answer to a request.
 type Result struct {
-	ID     string    `json:"id"`
-	State  string    `json:"state"`
-	Answer string    `json:"answer,omitempty"`
-	At     time.Time `json:"at"`
+	ID     string `json:"id"`
+	State  string `json:"state"`
+	Answer string `json:"answer,omitempty"`
+	// Conversation is, for Person, the secret of the conversation in the
+	// Inbox where a person answers the request (internal/handoff): the
+	// visitor's way to that answer. A request held for a person used to
+	// reach nobody, while the visitor was told a person would look.
+	Conversation string    `json:"conversation,omitempty"`
+	At           time.Time `json:"at"`
 }
 
 // Queue is the folder requests and answers are kept in.
@@ -191,6 +211,81 @@ func (q Queue) Result(id string) (Result, bool) {
 		return Result{}, false
 	}
 	return r, true
+}
+
+// Request is a request as it was kept, answered or not.
+func (q Queue) Request(id string) (Request, bool) {
+	if !ValidID(id) {
+		return Request{}, false
+	}
+	b, err := os.ReadFile(q.req(id))
+	if err != nil {
+		return Request{}, false
+	}
+	var r Request
+	if json.Unmarshal(b, &r) != nil || r.ID != id {
+		return Request{}, false
+	}
+	return r, true
+}
+
+// Unfinished are the requests somebody took and never answered: their
+// answer still says Working.
+//
+// Pending leaves these out, since a request is run once, so nothing looked
+// at them again. One whose dispatcher stopped while it worked (a restart, a
+// crash) said Working for as long as it was kept, and its visitor's page
+// reloaded every few seconds for a day. A dispatcher starting asks for
+// them, and answers them itself.
+func (q Queue) Unfinished() []Request {
+	ents, err := os.ReadDir(q.Dir)
+	if err != nil {
+		return nil
+	}
+	var out []Request
+	for _, e := range ents {
+		id, ok := strings.CutSuffix(e.Name(), ".request.json")
+		if !ok || !ValidID(id) {
+			continue
+		}
+		if res, answered := q.Result(id); !answered || res.State != Working {
+			continue
+		}
+		if r, ok := q.Request(id); ok {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+func (q Queue) beat() string { return filepath.Join(q.Dir, "dispatcher.beat") }
+
+// Beat says the dispatcher is taking requests, as of now. The file is not
+// a request or an answer, so Pending and Prune pass it by.
+func (q Queue) Beat(now time.Time) error {
+	if err := os.MkdirAll(q.Dir, 0o700); err != nil {
+		return err
+	}
+	b, err := now.UTC().MarshalText()
+	if err != nil {
+		return err
+	}
+	return atomicfile.Write(q.beat(), b, 0o600)
+}
+
+// Taking reports whether the dispatcher has beaten within Stale of now.
+// The site writes this folder too, so a beat it forged would only make it
+// offer what then waits; it cannot make anything run.
+func (q Queue) Taking(now time.Time) bool {
+	b, err := os.ReadFile(q.beat())
+	if err != nil || len(b) > 64 {
+		return false
+	}
+	var at time.Time
+	if at.UnmarshalText(b) != nil {
+		return false
+	}
+	return now.Sub(at) <= Stale
 }
 
 // Exists reports whether a request was made.

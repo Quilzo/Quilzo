@@ -172,3 +172,60 @@ func TestAModelDoesNotAnswerAVisitor(t *testing.T) {
 		t.Errorf("the conversation changed: %+v", c)
 	}
 }
+
+// A reply the visitor cannot read is not reported sent.
+//
+// A conversation is read at the chatbot's public address. Once the chatbot
+// is no longer public, or no longer declared, that address answers 404,
+// and `inbox reply` still printed "sent", so staff went on answering into a
+// conversation nobody could read. The reply is refused with the reason;
+// ending the conversation still works.
+func TestAReplyNobodyCanReadIsNotReportedSent(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := publishedShop(t)
+	if err := cmdAssistant(root, []string{"add", "help", "--title", "Ask the shop",
+		"--public", "--handoff"}); err != nil {
+		t.Fatal(err)
+	}
+	_, id, _ := handoff.NewSecret()
+	if _, err := handoffStore(root).Open("help", id, "q", "hello", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	// Declared again, not public now.
+	if err := cmdAssistant(root, []string{"add", "help", "--title", "Ask the shop"}); err != nil {
+		t.Fatal(err)
+	}
+	err := cmdInbox(root, []string{"reply", "help/" + id, "We will call"})
+	if err == nil || !strings.Contains(err.Error(), "cannot read") {
+		t.Fatalf("a reply nobody can read was sent: %v", err)
+	}
+	if c, _ := handoffStore(root).Get("help", id); len(c.Messages) != 1 {
+		t.Fatalf("the reply was stored: %+v", c.Messages)
+	}
+	if err := cmdInbox(root, []string{"close", "help/" + id}); err != nil {
+		t.Fatalf("the conversation could not be ended: %v", err)
+	}
+}
+
+// The admin's Inbox refuses the same reply, for the same reason.
+func TestTheInboxScreenDoesNotSendAReplyNobodyCanRead(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := publishedShop(t)
+	if err := cmdAssistant(root, []string{"add", "help", "--title", "Ask the shop", "--public"}); err != nil {
+		t.Fatal(err)
+	}
+	_, id, _ := handoff.NewSecret()
+	if _, err := handoffStore(root).Open("help", id, "q", "hello", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	hooks := inboxHooks(root)
+	if err := hooks.Reply("help", id, "Ada", "We will call"); err != nil {
+		t.Fatalf("a reply to a public chatbot's conversation was refused: %v", err)
+	}
+	if err := cmdAssistant(root, []string{"remove", "help"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := hooks.Reply("help", id, "Ada", "Hello?"); err == nil || !strings.Contains(err.Error(), "cannot read") {
+		t.Fatalf("a reply nobody can read was sent: %v", err)
+	}
+}
