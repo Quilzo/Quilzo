@@ -746,3 +746,27 @@ func TestAJSONExportKeepsEveryNameTheStoreHoldsAndTheHero(t *testing.T) {
 		t.Errorf("a key the store cannot hold: %+v", rep.Pages)
 	}
 }
+
+// An export says what of the site it does not hold, and what does.
+//
+// The JSON export's own page called it the lossless format, "nothing was
+// flattened or dropped", and an owner who moved a site with it found the
+// new one with no menus, no content types and one language: an export holds
+// the content, and those are kept beside it. Nothing said so, in any format,
+// nor that a backup carries them.
+func TestAnExportSaysWhatItDoesNotHold(t *testing.T) {
+	site := export.Site{Pages: map[string]any{"index": map[string]any{"title": "Home", "body": "Words."}}}
+	for _, format := range []export.Format{export.JSON, export.Markdown, export.WXR} {
+		files, err := export.Export(format, site, when)
+		if err != nil {
+			t.Fatal(err)
+		}
+		readme := strings.Join(strings.Fields(string(fileNamed(t, files, "README.md"))), " ")
+		for _, want := range []string{"menus", "content types", "languages", "settings", "media library",
+			"quilzo backup create"} {
+			if !strings.Contains(readme, want) {
+				t.Errorf("%s: the export's own page does not say %q:\n%s", format, want, readme)
+			}
+		}
+	}
+}

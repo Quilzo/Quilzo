@@ -771,8 +771,9 @@ func readme(f Format, s Site) File {
 		b.WriteString("  the `wxr` export instead, which WordPress reads natively.\n")
 	case JSON:
 		b.WriteString("`content/pages.json` maps each page name to its fields.\n\n")
-		b.WriteString("This is the lossless format: nothing was flattened or\n")
-		b.WriteString("dropped to produce it. `last-changed.json` records\n")
+		b.WriteString("This is the lossless format for content: no page or record\n")
+		b.WriteString("was flattened or dropped to produce it, and `quilzo import`\n")
+		b.WriteString("reads it back under the same names. `last-changed.json` records\n")
 		b.WriteString("when each page's content actually last changed, which is\n")
 		b.WriteString("worth carrying across so the new system's sitemap is not\n")
 		b.WriteString("wrong from its first day.\n")
@@ -798,6 +799,17 @@ func readme(f Format, s Site) File {
 			"published before the\nmove will break. Google asks for at least a "+
 			"year.\n", len(s.Redirects))
 	}
+
+	// Said in every format, because none of them holds it. The JSON export
+	// called itself lossless and stopped there, and a site moved with it
+	// arrived with no menus, no content types and one language: an export
+	// is the content, and those are kept beside the content.
+	b.WriteString("\n## What is not here\n\n")
+	b.WriteString("This is the site's content: its pages, the records of its\n")
+	b.WriteString("collections and its redirects. The site's menus, content types,\n")
+	b.WriteString("languages, settings and media library are kept beside the\n")
+	b.WriteString("content and are not in an export. `quilzo backup create`\n")
+	b.WriteString("carries the whole store, those included, to another Quilzo.\n")
 
 	b.WriteString("\n## Media\n\n")
 	b.WriteString("Files referenced by content are not included here, so this\n")
