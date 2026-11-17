@@ -7,9 +7,9 @@ import (
 	"flag"
 	"fmt"
 	"math/rand/v2"
+	"os"
 
 	"github.com/quilzo/quilzo/internal/screen"
-	"github.com/quilzo/quilzo/internal/sframe"
 )
 
 // What sharing a screen costs, measured rather than claimed.
@@ -22,9 +22,10 @@ import (
 // of five hundred.
 //
 // `screen cost` runs the encoder over a synthetic editor at a given size and
-// prints what a session would actually use, including the frame encryption
-// from internal/sframe, because the overhead of the second is only
-// interesting next to the first.
+// prints what a session would actually use. The figures are the codec's
+// alone. They once added the bytes frame encryption puts on every frame, and
+// that encryption has left Quilzo with calls; a figure that still counted it
+// would be the cost of something this program no longer does.
 
 func cmdScreen(args []string) error {
 	if len(args) == 0 {
@@ -43,14 +44,19 @@ func screenCost(args []string) error {
 	width := fs.Int("width", 1920, "the shared screen's width")
 	height := fs.Int("height", 1080, "its height")
 	fps := fs.Int("fps", 30, "frames a second")
-	suite := fs.Int("suite", int(sframe.AES128GCMSHA256128),
-		"which SFrame cipher suite the frames go out under")
+	// Accepted still, so a script that passes it goes on working, and said
+	// to change nothing when it is given: it chose the frame encryption
+	// whose overhead the figures used to include.
+	suite := fs.Int("suite", 0, "no longer used: the figures are the codec's alone")
 	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
-	cipher := sframe.Suite(*suite)
-	if !cipher.Known() {
-		return fmt.Errorf("%d is not a registered cipher suite", *suite)
+	suiteGiven := false
+	fs.Visit(func(f *flag.Flag) { suiteGiven = suiteGiven || f.Name == "suite" })
+	if suiteGiven {
+		fmt.Fprintf(os.Stderr, "%s--suite %d changes nothing: frame encryption has "+
+			"moved out of Quilzo with calls, and these figures are the codec's alone%s\n",
+			yellow, *suite, reset)
 	}
 
 	f := synthetic(*width, *height)
@@ -73,15 +79,16 @@ func screenCost(args []string) error {
 		return err
 	}
 
-	// The encryption on top. Two bytes of header plus the tag, per frame.
-	perFrame := cipher.Overhead(2)
-	typing := (edit.Bytes + perFrame) * *fps
-	idle := (still.Bytes + perFrame) * *fps
+	typing := edit.Bytes * *fps
+	idle := still.Bytes * *fps
 
+	// cipher and cipher_overhead stay in the answer, saying that nothing is
+	// added, so a reader of the old fields is told the truth rather than
+	// finding them gone.
 	if w.JSON(map[string]any{
 		"raw_frame": key.Source, "key_frame": key.Bytes,
 		"keystroke": edit.Bytes, "still": still.Bytes,
-		"cipher": cipher.String(), "cipher_overhead": perFrame,
+		"cipher": "none", "cipher_overhead": 0,
 		"typing_bytes_per_second": typing,
 		"idle_bytes_per_second":   idle,
 	}) {
@@ -96,8 +103,8 @@ func screenCost(args []string) error {
 	w.Human("  a keystroke  %8d bytes  %s(%d of %d tile(s))%s\n",
 		edit.Bytes, dim, edit.Changed, edit.Tiles, reset)
 	w.Human("  still        %8d bytes\n\n", still.Bytes)
-	w.Human("  %s+%d bytes a frame for %s%s\n", dim, perFrame, cipher,
-		reset)
+	w.Human("  %sthe codec's figures alone, with no encryption added to them%s\n",
+		dim, reset)
 	w.Human("  %styping: about %d KB/s.  idle: about %d KB/s%s\n",
 		bold, typing/1024, idle/1024, reset)
 	w.Human("\n  %sthis is a codec for screens and not for cameras: a "+
