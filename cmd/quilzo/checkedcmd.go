@@ -229,20 +229,27 @@ func checkedList(root string, args []string, dueOnly bool) error {
 		if checked.NeedsAttention(r.State) {
 			colour = yellow
 		}
-		w.Human("  %s%-9s%s %-28s", colour, r.State, reset, r.Page)
+		// Who checked it, whose job it is and the note are whatever
+		// somebody typed, as a note's author and text are (noteList).
+		// Printed raw, a note or an owner carrying a line break and this
+		// layout printed a second page confirmed fresh in somebody else's
+		// name, and ESC and CR rewrote what the terminal showed. The names
+		// stay on the row, and every line of the note at the note's depth.
+		w.Human("  %s%-9s%s %-28s", colour, r.State, reset, onOneLine(r.Page))
 		switch {
 		case r.At == 0:
 			w.Human("  %s—%s", dim, reset)
 		default:
 			w.Human("  %s%s by %s%s", dim,
-				time.Unix(r.At, 0).UTC().Format("2006-01-02"), r.By, reset)
+				time.Unix(r.At, 0).UTC().Format("2006-01-02"), onOneLine(r.By), reset)
 		}
 		if r.Owner != "" {
-			w.Human("  %s(%s)%s", dim, r.Owner, reset)
+			w.Human("  %s(%s)%s", dim, onOneLine(r.Owner), reset)
 		}
 		w.Human("\n")
 		if r.Note != "" {
-			w.Human("            %s%s%s\n", dim, r.Note, reset)
+			w.Human("            %s%s%s\n", dim,
+				indentedForTerminal(r.Note, "            "), reset)
 		}
 	}
 	return nil

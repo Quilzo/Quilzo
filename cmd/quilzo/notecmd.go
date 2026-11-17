@@ -316,8 +316,13 @@ func noteRemove(root string, args []string) error {
 	// heading a publisher had questioned could make the question vanish,
 	// leaving no trace outside the audit log. On a store with no access
 	// control authorise lets everyone through, as the rest of it does.
+	//
+	// Whose it is, by the name to the letter. The policy holds "Pat" and
+	// "pat" apart as two people (auth.Policy.Evaluate), and compared without
+	// regard to capitals Pat the author took down a remark of pat the
+	// publisher's as her own.
 	caller := resolveCaller(root, "")
-	theirs := !strings.EqualFold(strings.TrimSpace(caller.Name), strings.TrimSpace(n.Author))
+	theirs := caller.Name != n.Author
 	if theirs {
 		if err := authorise(root, caller, auth.ActPublish, pageResource(args[0])); err != nil {
 			return fmt.Errorf("this note is %s's; taking down somebody else's note "+
