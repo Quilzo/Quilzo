@@ -1680,15 +1680,29 @@ func (ts *TokenStore) Stale(now time.Time, idle time.Duration) []Token {
 
 // StrongestRole is the highest role a principal holds on a path, ignoring
 // denials — which Evaluate applies at decision time and which do not change
-// what a credential should be able to attempt.
+// what a credential should be able to attempt. A grant that has ended is
+// no longer held: it counted, so a token was issued at, and by default
+// took, a role its holder had only until yesterday.
 func (p *Policy) StrongestRole(principal, resource string) Role {
+	return p.strongest(principal, resource, false)
+}
+
+// StrongestWithin is the highest role a principal holds on a path or on
+// anything inside it: what a credential over the path could be used as
+// somewhere it reaches. Over the whole site that is the highest they hold
+// anywhere, an area included, as Highest is for a session.
+func (p *Policy) StrongestWithin(principal, resource string) Role {
+	return p.strongest(principal, resource, true)
+}
+
+func (p *Policy) strongest(principal, resource string, inside bool) Role {
 	best := RoleNone
+	now := time.Now()
 	for _, b := range p.Snapshot() {
-		if b.Principal != principal || b.Deny {
+		if b.Principal != principal || b.Deny || !b.Live(now) {
 			continue
 		}
-		if b.Resource != "/" && b.Resource != resource &&
-			!strings.HasPrefix(resource, strings.TrimSuffix(b.Resource, "/")+"/") {
+		if !covers(b.Resource, resource) && !(inside && covers(resource, b.Resource)) {
 			continue
 		}
 		if b.Role.AtLeast(best) {
@@ -1699,13 +1713,19 @@ func (p *Policy) StrongestRole(principal, resource string) Role {
 }
 
 // Carries is the role a token naming role, for principal on resource, can
-// be used at: its own, or what its holder holds there when that is less.
-// A token is a ceiling and never a grant, so one listed as publisher for an
-// author was shown carrying a role every request it made was refused. One
-// for somebody who holds no role at all keeps its own, which is shown with
-// a line of its own where it is issued.
+// be used at: its own, or what its holder holds within it when that is
+// less (StrongestWithin). A token is a ceiling and never a grant, so one
+// listed as publisher for an author was shown carrying a role every
+// request it made was refused. One for somebody who holds no role at all
+// keeps its own, which is shown with a line of its own where it is issued.
+//
+// Within it, and not only on the path it names. Held to the role on its
+// own path, a publisher's token over the whole site was shown as an
+// author's for somebody who publishes /blog, and an analyst's session as
+// a reader's though it administers /@security: a list of credentials that
+// said less than they could do.
 func (p *Policy) Carries(principal string, role Role, resource string) Role {
-	held := p.StrongestRole(principal, resource)
+	held := p.StrongestWithin(principal, resource)
 	if held != RoleNone && !held.AtLeast(role) {
 		return held
 	}

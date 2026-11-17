@@ -125,3 +125,40 @@ func TestPeopleGivesNoLinkAloneForAnAdministratorWhoHasSignedIn(t *testing.T) {
 		})
 	}
 }
+
+// What a token or a session is shown with is what it can be used as
+// somewhere it reaches, not only on the path it names: an analyst's
+// session, which administers /@security, was shown as a reader's because
+// they read the rest of the site, and a token is not shown with a grant
+// that has ended.
+func TestATokenIsShownWithWhatItsHolderHoldsWithinIt(t *testing.T) {
+	srv, _ := setup(t)
+	for _, b := range []auth.Binding{
+		{Principal: "ana", Role: auth.RoleReader, Resource: "/"},
+		{Principal: "ana", Role: auth.RoleAdmin, Resource: auth.AreaSecurity},
+		{Principal: "kim", Role: auth.RoleAuthor, Resource: "/"},
+		{Principal: "kim", Role: auth.RolePublisher, Resource: "/blog"},
+		{Principal: "tam", Role: auth.RoleReader, Resource: "/"},
+		{Principal: "tam", Role: auth.RolePublisher, Resource: "/blog", Expires: time.Now().Add(-time.Hour).Unix()},
+	} {
+		if err := srv.Policy.Grant(b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, c := range []struct {
+		who      string
+		role     auth.Role
+		resource string
+		want     auth.Role
+	}{
+		{"ana", auth.RoleAdmin, "/", auth.RoleAdmin},
+		{"kim", auth.RolePublisher, "/", auth.RolePublisher},
+		{"kim", auth.RoleAdmin, "/", auth.RolePublisher},
+		{"kim", auth.RolePublisher, "/news", auth.RoleAuthor},
+		{"tam", auth.RolePublisher, "/", auth.RoleReader},
+	} {
+		if got := srv.carries(auth.Token{Principal: c.who, Role: c.role, Resource: c.resource}); got != c.want {
+			t.Errorf("%s's %s token on %s is shown as %s, not %s", c.who, c.role, c.resource, got, c.want)
+		}
+	}
+}

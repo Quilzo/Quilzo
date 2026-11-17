@@ -611,3 +611,87 @@ func TestAnAdministratorWhoHasSignedInIsNotGivenAWayInAlone(t *testing.T) {
 		})
 	}
 }
+
+// A token's ceiling is what its holder holds on its path or anywhere
+// inside it, for as long as the grant lasts.
+//
+// The ceiling was the role held on the token's own path. A token over the
+// whole site for kim, an author there and a publisher on /blog, was refused
+// as publisher with "grant kim publisher first", and one for an analyst,
+// who administers /@security and reads the rest, was refused as admin. One
+// they did hold was listed as the lesser role, though it publishes /blog
+// or administers the area: a list of credentials that says less than they
+// can do. And a grant that had ended still counted, so a publisher's token
+// was issued, and listed as one, for somebody whose publisher grant ran
+// out yesterday.
+func TestATokensCeilingIsWhatItsHolderHoldsWithinIt(t *testing.T) {
+	root := onlyOwner(t)
+	seedPolicy(t, root, [2]string{"kim", "author"}, [2]string{"ana", "reader"}, [2]string{"tam", "reader"})
+	if _, err := updatePolicy(root, func(p *auth.Policy) error {
+		for _, b := range []auth.Binding{
+			{Principal: "kim", Role: auth.RolePublisher, Resource: "/blog"},
+			{Principal: "ana", Role: auth.RoleAdmin, Resource: auth.AreaSecurity},
+			{Principal: "tam", Role: auth.RolePublisher, Resource: "/", Note: "cover for a week",
+				Expires: time.Now().Add(-time.Hour).Unix()},
+		} {
+			if err := p.Grant(b); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	issue := func(name, who, role string) error {
+		t.Helper()
+		_, printed := captureStdout(t)
+		err := tokenIssue(root, []string{name, "--principal", who, "--role", role, "--ttl", "1h"})
+		_ = printed()
+		return err
+	}
+	if err := issue("kim-site", "kim", "publisher"); err != nil {
+		t.Errorf("a publisher's token for somebody who publishes /blog: %v", err)
+	}
+	if err := issue("kim-admin", "kim", "admin"); err == nil || !strings.Contains(err.Error(), "publisher") {
+		t.Errorf("an administrator's token for somebody who holds publisher at most: %v", err)
+	}
+	if err := issue("ana-cli", "ana", "admin"); err != nil {
+		t.Errorf("an administrator's token for somebody who administers /@security: %v", err)
+	}
+	if err := issue("tam-pub", "tam", "publisher"); err == nil || !strings.Contains(err.Error(), "reader") {
+		t.Errorf("a publisher's token for somebody whose publisher grant has ended: %v", err)
+	}
+
+	// One issued before this was refused, for the grant that has ended.
+	ts, _ := loadTokens(root)
+	if _, _, err := ts.Issue("tam-old", "tam", auth.RolePublisher, "/", time.Hour, auth.RoleAdmin); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveJSON(tokensPath(root), ts); err != nil {
+		t.Fatal(err)
+	}
+	old := w
+	t.Cleanup(func() { w = old })
+	var buf bytes.Buffer
+	w = out.New(true)
+	w.Out = &buf
+	if err := tokenList(root); err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Tokens []map[string]any `json:"tokens"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	listed := map[string]any{}
+	for _, row := range got.Tokens {
+		listed[row["name"].(string)] = row["role"]
+	}
+	for name, want := range map[string]auth.Role{"kim-site": auth.RolePublisher, "ana-cli": auth.RoleAdmin,
+		"tam-old": auth.RoleReader} {
+		if listed[name] != string(want) {
+			t.Errorf("%s is listed as %v, and can be used as %s", name, listed[name], want)
+		}
+	}
+}

@@ -811,3 +811,52 @@ func TestPresentedReadsTheSchemeInAnyCase(t *testing.T) {
 		}
 	}
 }
+
+// The role somebody holds on a path leaves out a grant that has ended, and
+// within a path counts what they hold on anything inside it; a token is
+// shown as the lesser of its own role and that.
+//
+// A grant that had ended still counted, so a token took by default, and
+// was allowed to name, a role its holder had only until yesterday. And a
+// token was held to the role on the path it names, so one over the whole
+// site was shown as an author's for somebody who publishes /blog.
+func TestTheStrongestRoleIsOneStillHeldAndWithinAPathCountsInsideIt(t *testing.T) {
+	p := &Policy{}
+	ended := time.Now().Add(-time.Hour).Unix()
+	for _, b := range []Binding{
+		{Principal: "kim", Role: RoleAuthor, Resource: "/"},
+		{Principal: "kim", Role: RolePublisher, Resource: "/blog"},
+		{Principal: "kim", Role: RoleAdmin, Resource: "/", Deny: true},
+		{Principal: "ana", Role: RoleAdmin, Resource: AreaSecurity},
+		{Principal: "tam", Role: RoleReader, Resource: "/"},
+		{Principal: "tam", Role: RolePublisher, Resource: "/", Expires: ended, Note: "cover"},
+	} {
+		// Appended, as an ended grant beside a live one is in a policy.
+		p.Bindings = append(p.Bindings, b)
+	}
+	for _, c := range []struct {
+		who, on        string
+		held, within   Role
+		token, carries Role
+	}{
+		{"kim", "/", RoleAuthor, RolePublisher, RolePublisher, RolePublisher},
+		{"kim", "/", RoleAuthor, RolePublisher, RoleAdmin, RolePublisher},
+		{"kim", "/blog", RolePublisher, RolePublisher, RoleReader, RoleReader},
+		{"kim", "/blog/2026", RolePublisher, RolePublisher, RolePublisher, RolePublisher},
+		{"kim", "/blogroll", RoleAuthor, RoleAuthor, RolePublisher, RoleAuthor},
+		{"ana", "/", RoleNone, RoleAdmin, RoleAdmin, RoleAdmin},
+		{"ana", "/blog", RoleNone, RoleNone, RoleAuthor, RoleAuthor},
+		{"tam", "/", RoleReader, RoleReader, RolePublisher, RoleReader},
+		{"nobody", "/", RoleNone, RoleNone, RoleAdmin, RoleAdmin},
+	} {
+		if got := p.StrongestRole(c.who, c.on); got != c.held {
+			t.Errorf("%s holds %q on %s, want %q", c.who, got, c.on, c.held)
+		}
+		if got := p.StrongestWithin(c.who, c.on); got != c.within {
+			t.Errorf("%s holds %q within %s, want %q", c.who, got, c.on, c.within)
+		}
+		if got := p.Carries(c.who, c.token, c.on); got != c.carries {
+			t.Errorf("%s's %s token on %s carries %q, want %q", c.who, c.token, c.on, got, c.carries)
+		}
+	}
+}

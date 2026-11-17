@@ -886,11 +886,18 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 	// listed as publisher, was refused at everything it was for ("jun is
 	// author on /; publish needs publisher"). Somebody who holds no role yet
 	// is told so below, where the grant they need is named.
+	//
+	// What they hold on the token's path or anywhere inside it
+	// (auth.Policy.StrongestWithin): a token over the whole site for
+	// somebody who is an author there and a publisher on /blog is how they
+	// publish /blog with it, and one for an analyst is how they administer
+	// /@security.
 	if explicitRole {
 		if pol, perr := loadPolicy(root); perr == nil {
-			if held := strongestRole(pol, *principal, *on); held != auth.RoleNone && !held.AtLeast(auth.Role(*role)) {
-				return fmt.Errorf("%s holds %s on %s, and a token carries at most that: "+
-					"issue it with --role %s, or grant %s %s first", *principal, held, *on, held, *principal, *role)
+			if held := pol.StrongestWithin(*principal, *on); held != auth.RoleNone && !held.AtLeast(auth.Role(*role)) {
+				return fmt.Errorf("%s holds %s at most on %s and what is inside it, and a token carries no more "+
+					"than its holder: issue it with --role %s, or grant %s %s first",
+					*principal, held, *on, held, *principal, *role)
 			}
 		}
 	}
