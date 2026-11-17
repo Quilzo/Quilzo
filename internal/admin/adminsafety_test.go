@@ -60,6 +60,32 @@ func TestPeopleGivesAnAdministratorWithNoWayInTheirFirstLink(t *testing.T) {
 	}
 }
 
+// People gives the link alone for an administrator whose only token could
+// not approve it, as the command line does: an author with a token, made
+// an administrator, held nothing that decides a request, and the link that
+// would add their passkey waited for them.
+func TestPeopleGivesAnAdministratorWhoseTokenCannotApproveTheirFirstLink(t *testing.T) {
+	srv, editor := setup(t)
+	srv.Enrol = &enrol.Store{Path: filepath.Join(t.TempDir(), "enrolments.json")}
+	secret, _, err := srv.Tokens.Issue("theo-cli", "theo", auth.RoleAuthor, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.Tokens.Authenticate(secret, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.Policy.Grant(auth.Binding{Principal: "theo", Role: auth.RoleAdmin, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	postForm(t, srv, "/people/enrol", editor, url.Values{"principal": {"theo"}}.Encode())
+	if pend, _ := srv.Dual.Store.Pending(time.Now()); len(pend) != 0 {
+		t.Fatalf("theo's passkey waits for theo, whose token cannot approve it: %+v", pend)
+	}
+	if links, _ := srv.Enrol.Waiting(time.Now()); len(links) != 1 || links[0].Principal != "theo" {
+		t.Fatalf("no link for theo: %+v", links)
+	}
+}
+
 // A token is shown on People and on a person's profile as it can be used,
 // which is no more than its holder's role, as `quilzo token list` shows it.
 func TestATokenIsShownWithNoMoreThanItsHoldersRole(t *testing.T) {

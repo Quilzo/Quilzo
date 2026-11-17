@@ -5,6 +5,7 @@ package dual
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -220,7 +221,7 @@ func TestAWayInIsOneThatWorksOrWasAnAdministratorsToUse(t *testing.T) {
 		}
 	}
 	tok := func(made, ends, used time.Time, change func(*auth.Token)) []auth.Token {
-		t := auth.Token{Principal: "Theo", CreatedAt: made.Unix(), ExpiresAt: ends.Unix()}
+		t := auth.Token{Principal: "Theo", Role: auth.RoleAdmin, Resource: "/", CreatedAt: made.Unix(), ExpiresAt: ends.Unix()}
 		if !used.IsZero() {
 			t.LastUsed = used.Unix()
 		}
@@ -243,6 +244,12 @@ func TestAWayInIsOneThatWorksOrWasAnAdministratorsToUse(t *testing.T) {
 		"run out unused":                 {tok(now.Add(-2*hour), now.Add(-hour), time.Time{}, nil), false},
 		"revoked unused":                 {tok(now.Add(-hour), now.Add(hour), time.Time{}, func(t *auth.Token) { t.Revoked = true }), false},
 		"used before they were made one": {tok(granted.Add(-2*hour), granted.Add(-hour), granted.Add(-90*time.Minute), nil), false},
+		// An analyst's, who administered an area and was then made an
+		// administrator of the site: it is the one they have acted with
+		// since, and revoking it did not make their next one their first.
+		"from before, used since, then revoked": {tok(granted.Add(-2*hour), now.Add(hour), now.Add(-hour), func(t *auth.Token) { t.Revoked = true }), true},
+		"from before, used since, then run out": {tok(granted.Add(-2*hour), now.Add(-time.Minute), now.Add(-hour), nil), true},
+		"a sign-in from before, ended":          {tok(granted.Add(-2*hour), granted.Add(-hour), time.Time{}, func(t *auth.Token) { t.Session = true }), false},
 	} {
 		if got := WayIn(pol, c.tokens, "theo", now); got != c.want {
 			t.Errorf("%s: a way in is %v, want %v", name, got, c.want)
@@ -252,6 +259,91 @@ func TestAWayInIsOneThatWorksOrWasAnAdministratorsToUse(t *testing.T) {
 	undated := &auth.Policy{Bindings: []auth.Binding{{Principal: "theo", Role: auth.RoleAdmin, Resource: "/"}}}
 	if !WayIn(undated, tok(granted.Add(-2*hour), granted.Add(-hour), granted.Add(-90*time.Minute), nil), "theo", now) {
 		t.Error("a grant with no day on it let an old token go uncounted")
+	}
+}
+
+// A way in is a credential its holder could approve a request with. A
+// token is a ceiling, so one that carries less than an administrator's
+// role, reaches only part of the site or refuses every write never made
+// its holder a second administrator, however alive it is and however much
+// it has been used.
+//
+// Any token of theirs counted. Theo, an author with a token for the command
+// line, was made an administrator, and the link that would add his passkey
+// then waited for a second administrator: the only other one was Theo,
+// whose token is refused "this credential carries author and grant needs
+// admin". So did a token narrower than his role, issued after the grant.
+func TestAWayInIsOneAnAdministratorCouldApproveWith(t *testing.T) {
+	now := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
+	pol := &auth.Policy{}
+	for _, who := range []string{"ada", "theo"} {
+		if err := pol.Grant(auth.Binding{Principal: who, Role: auth.RoleAdmin, Resource: "/",
+			GrantedAt: now.Add(-24 * time.Hour).Unix()}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	held := func(change func(*auth.Token)) []auth.Token {
+		// Made since the grant, used, and still working.
+		t := auth.Token{Principal: "theo", Role: auth.RoleAdmin, Resource: "/", CreatedAt: now.Add(-time.Hour).Unix(),
+			ExpiresAt: now.Add(time.Hour).Unix(), LastUsed: now.Add(-time.Minute).Unix()}
+		change(&t)
+		return []auth.Token{t}
+	}
+	for name, c := range map[string]struct {
+		change func(*auth.Token)
+		want   bool
+	}{
+		"an administrator's over the whole site": {func(*auth.Token) {}, true},
+		"an administrator's with no path on it":  {func(t *auth.Token) { t.Resource = "" }, true},
+		"an author's":                            {func(t *auth.Token) { t.Role = auth.RoleAuthor }, false},
+		"a publisher's sign-in exchanged from it": {func(t *auth.Token) {
+			t.Role, t.Parent = auth.RolePublisher, "parent"
+		}, false},
+		"an administrator's over /blog alone":    {func(t *auth.Token) { t.Resource = "/blog" }, false},
+		"an administrator's that refuses writes": {func(t *auth.Token) { t.Scope = auth.Scope{ReadOnly: true} }, false},
+	} {
+		if got := WayIn(pol, held(c.change), "theo", now); got != c.want {
+			t.Errorf("%s: a way in is %v, want %v", name, got, c.want)
+		}
+	}
+}
+
+// What stands in the way of somebody's first way in is the asker's
+// requests they would decide, and not a way in for them: an enrolment link
+// for them or a token as them, which gives the asker nothing the first way
+// in does not. Counted, each ask refused alone was left waiting in the way
+// of the next.
+func TestAWayInForTheSubjectIsNotARequestTheyWouldDecide(t *testing.T) {
+	s := Store{Path: filepath.Join(t.TempDir(), "dual.json")}
+	now := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
+	for _, r := range []struct {
+		kind    string
+		payload any
+		by      string
+	}{
+		{Enrol, EnrolChange{Principal: "Theo"}, "ada"},
+		{Token, TokenChange{Args: []string{"theo-cli", "--principal", "theo", "--role", "admin"}}, "ada"},
+		{Token, TokenChange{Args: []string{"lee-cli", "--principal=lee", "--role", "admin"}}, "ada"},
+		{Grant, GrantChange{Bindings: []auth.Binding{{Principal: "theo", Role: auth.RoleAdmin, Resource: "/blog"}}}, "ada"},
+		{Setting, nil, "theo"},
+	} {
+		if _, err := s.Propose(r.kind, "x", r.payload, "", r.by, false, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	open, err := s.OpenBy("Ada", "theo", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var kinds []string
+	for _, r := range open {
+		kinds = append(kinds, r.Kind+" "+r.About()["for"]+r.About()["subject"])
+	}
+	if want := []string{Token + " lee", Grant + " theo"}; !slices.Equal(kinds, want) {
+		t.Errorf("ada's requests theo would decide are %v, want %v", kinds, want)
+	}
+	if late, _ := s.OpenBy("ada", "theo", now.Add(Wait+time.Minute)); len(late) != 0 {
+		t.Errorf("requests that are over still stand in the way: %+v", late)
 	}
 }
 

@@ -467,9 +467,9 @@ func FirstWayIn(pol *auth.Policy, asker, subject string, held bool) bool {
 }
 
 // WayIn reports whether tokens show subject, an administrator under pol,
-// to be one who could act as it: a token or session of theirs works at
-// now, or one made since they became an administrator was a sign-in (a
-// session) or has been used.
+// to be one who could act as it: a token or session of theirs that could
+// approve a request (approves) works at now, was a sign-in (a session)
+// made since they became an administrator, or has been used since then.
 //
 // FirstWayIn was told only what worked at the moment it was asked, so the
 // first way in came back whenever nothing of the other administrator's
@@ -481,23 +481,49 @@ func FirstWayIn(pol *auth.Policy, asker, subject string, held bool) bool {
 // What never made them a second administrator does not count, or the dead
 // end FirstWayIn ends would come back: a token that stopped working before
 // anybody used it, as a first one issued for an hour and not passed on in
-// time is, and anything from before they were made an administrator, so
-// somebody made one again a day after being removed (Settle) starts as
+// time is, and anything not used since they were made an administrator,
+// so somebody made one again a day after being removed (Settle) starts as
 // they did the first time.
+//
+// Used since, whenever it was made. Only a token made since the grant
+// counted, so an analyst with an administrator's token, who administered
+// an area and was then made an administrator of the site, went on acting
+// with it and was still taken for somebody with no way in the moment the
+// other administrator revoked it.
 func WayIn(pol *auth.Policy, tokens []auth.Token, subject string, now time.Time) bool {
 	since := administratorSince(pol, subject, now)
 	for _, t := range tokens {
-		if !strings.EqualFold(t.Principal, subject) {
+		if !strings.EqualFold(t.Principal, subject) || !approves(t) {
 			continue
 		}
 		if ok, _ := t.Usable(now); ok {
 			return true
 		}
-		if t.CreatedAt >= since && (t.IsSession() || t.LastUsed != 0) {
+		if t.IsSession() && t.CreatedAt >= since {
+			return true
+		}
+		if t.LastUsed != 0 && t.LastUsed >= since {
 			return true
 		}
 	}
 	return false
+}
+
+// approves reports whether a token could decide a request for a second
+// administrator, whoever holds it: it carries an administrator's role over
+// the whole site and refuses no write (auth.CheckCredential), which is
+// what `quilzo pending approve` and the People screen ask of a credential.
+//
+// A token is a ceiling. Any token of the subject's counted as their way
+// in, so an author with a token for the command line, made an
+// administrator, could not then be given a passkey: the link waited for a
+// second administrator, the only other one was them, and their token was
+// refused with "this credential carries author and grant needs admin". One
+// issued narrower than their role after the grant did the same, for good
+// once it had been used. Neither made them an administrator who could act,
+// and waiting on them was the dead end FirstWayIn ends.
+func approves(t auth.Token) bool {
+	return auth.CheckCredential(t.Role, t.Resource, t.Scope, auth.ActGrant, "/") == nil
 }
 
 // administratorSince is when subject became an administrator of the whole
@@ -748,16 +774,33 @@ func (s Store) Get(id string) (Request, error) {
 	return out, err
 }
 
-// OpenBy is the requests by asker still waiting for a decision at now.
-func (s Store) OpenBy(asker string, now time.Time) ([]Request, error) {
+// OpenBy is the requests by asker still waiting for a decision at now,
+// which subject would decide were they given a way in (FirstWayIn): every
+// one but a way in for subject themselves, an enrolment link for them or
+// a token as them.
+//
+// Those were counted too, and each ask stood in the way of the next. An
+// ask refused alone because a request waited was left waiting itself, so
+// once the first was withdrawn the ask after it was refused for the one
+// before, and a store that reached the dead end before FirstWayIn ended
+// it, with a link and a token for subject both waiting, stayed in it.
+// Approving one as subject gives asker their sign-in, which the first way
+// in is; it is the other requests she would be deciding for herself.
+func (s Store) OpenBy(asker, subject string, now time.Time) ([]Request, error) {
 	pend, err := s.Pending(now)
 	var out []Request
 	for _, r := range pend {
-		if r.Open(now) && auth.SamePerson(r.By, asker) {
+		if r.Open(now) && auth.SamePerson(r.By, asker) && !r.wayInFor(subject) {
 			out = append(out, r)
 		}
 	}
 	return out, err
+}
+
+// wayInFor reports whether a request is for a credential subject would
+// sign in with: an enrolment link for them, or a token as them.
+func (r Request) wayInFor(subject string) bool {
+	return (r.Kind == Enrol || r.Kind == Token) && subject != "" && strings.EqualFold(r.About()["for"], subject)
 }
 
 // Pending are the requests still waiting, and the approved tokens still

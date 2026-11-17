@@ -84,8 +84,8 @@ func proposeSecondFor(root string, c *Caller, subject, kind, what string, payloa
 // all, by the commands a new store's setup runs before `init --admin`.
 func aloneWords(root, subject string, first bool) string {
 	if first {
-		return subject + " has no way to sign in yet, so you are the only administrator who could approve this; " +
-			"it is approved as you make it, and the record says so"
+		return subject + " has no way to sign in as an administrator yet, so you are the only one who could " +
+			"approve this; it is approved as you make it, and the record says so"
 	}
 	if pol, err := loadPolicy(root); err == nil && len(dual.Administrators(pol)) == 0 {
 		return "nobody administers this store yet, so this is applied as you make it; the record says so"
@@ -105,14 +105,14 @@ func firstWayIn(root, asker, subject string, now time.Time) bool {
 	if err != nil || !dual.FirstWayIn(pol, asker, subject, holdsWayIn(root, pol, subject, now)) {
 		return false
 	}
-	open, err := dualStore(root).OpenBy(asker, now)
+	open, err := dualStore(root).OpenBy(asker, subject, now)
 	if err != nil {
 		return false
 	}
 	// Said, so the wait is not a dead end: subject is who these wait for,
 	// and they cannot sign in to decide them.
 	for _, r := range open {
-		w.Human("%s%s has no way to sign in yet and is who your request %s waits for; withdraw it "+
+		w.Human("%s%s has no way to sign in as an administrator yet and is who your request %s waits for; withdraw it "+
 			"(quilzo pending withdraw %s) and ask again, and %s's first way in is yours to give%s\n",
 			dim, subject, r.ID, r.ID, subject, reset)
 	}
@@ -120,10 +120,10 @@ func firstWayIn(root, asker, subject string, now time.Time) bool {
 }
 
 // holdsWayIn reports whether who, an administrator under pol, is or has
-// been one who could sign in: a token or session that works or was theirs
-// to use since they were made one (dual.WayIn), a passkey, or single
-// sign-on that could sign them in. Unreadable is taken as yes, which keeps
-// the request waiting.
+// been one who could sign in: a token or session that could approve a
+// request, and works or was theirs to use since they were made one
+// (dual.WayIn), a passkey, or single sign-on that could sign them in.
+// Unreadable is taken as yes, which keeps the request waiting.
 func holdsWayIn(root string, pol *auth.Policy, who string, now time.Time) bool {
 	ts, err := loadTokens(root)
 	if err != nil || dual.WayIn(pol, ts.Snapshot(), who, now) {

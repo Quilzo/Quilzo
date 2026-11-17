@@ -157,7 +157,7 @@ func (s *Server) firstWayIn(asker, subject string, now time.Time) bool {
 	if !dual.FirstWayIn(s.Policy, asker, subject, held || s.signsInBySSO(subject)) {
 		return false
 	}
-	open, err := s.Dual.Store.OpenBy(asker, now)
+	open, err := s.Dual.Store.OpenBy(asker, subject, now)
 	return err == nil && len(open) == 0
 }
 

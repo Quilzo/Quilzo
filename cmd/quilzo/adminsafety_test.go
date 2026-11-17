@@ -507,7 +507,11 @@ func TestAnAdministratorWhoHasSignedInIsNotGivenAWayInAlone(t *testing.T) {
 	for name, second := range map[string]func(t *testing.T, root string) string{
 		"whose token the other revoked": func(t *testing.T, root string) string {
 			seedPolicy(t, root, [2]string{"lee", "admin"})
-			id := usedToken(t, root, "lee", auth.RoleAdmin, now, now.Add(time.Hour))
+			// Made after the grant, by the clock as it is then: the time
+			// the test began can be a second before the grant's, and a
+			// token from before the grant is no administrator's.
+			made := time.Now()
+			id := usedToken(t, root, "lee", auth.RoleAdmin, made, made.Add(time.Hour))
 			_, printed := captureStdout(t)
 			err := cmdToken(root, []string{"revoke", id})
 			_ = printed()
@@ -610,6 +614,144 @@ func TestAnAdministratorWhoHasSignedInIsNotGivenAWayInAlone(t *testing.T) {
 				t.Errorf("theo, who has never been able to act as an administrator, was given no link: %+v", links)
 			}
 		})
+	}
+}
+
+// An administrator whose only token could not approve anything is still
+// given their first way in by the one administrator who can act.
+//
+// Theo, an author with a token for the command line, was made an
+// administrator, as anybody promoted is. `quilzo auth enrol theo` then
+// waited for a second administrator, and so did a token as him with
+// --role admin: the only other administrator was Theo, and his token
+// answered `quilzo pending approve` with "this credential carries author
+// and grant needs admin". A token is a ceiling, so his made him nobody who
+// could decide a request, and neither did one issued narrower than his
+// role after the grant.
+func TestAnAdministratorWhoseTokenCannotApproveIsGivenTheirFirstWayIn(t *testing.T) {
+	for name, second := range map[string]func(t *testing.T, root string){
+		"an author's, from before they were made one": func(t *testing.T, root string) {
+			if err := cmdAuth(root, []string{"grant", "theo", "author"}); err != nil {
+				t.Fatal(err)
+			}
+			_, printed := captureStdout(t)
+			err := tokenIssue(root, []string{"theo-cli", "--principal", "theo", "--ttl", "1h"})
+			_ = printed()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := cmdAuth(root, []string{"grant", "theo", "admin"}); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"a publisher's, issued after and used": func(t *testing.T, root string) {
+			seedPolicy(t, root, [2]string{"theo", "admin"})
+			usedToken(t, root, "theo", auth.RolePublisher, time.Now(), time.Now().Add(time.Hour))
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := onlyOwner(t)
+			second(t, root)
+			if !administers(t, root, "theo") {
+				t.Fatal("theo was not made an administrator")
+			}
+			w.Out = &bytes.Buffer{}
+			if err := cmdAuth(root, []string{"enrol", "theo", "--for", "1h"}); err != nil {
+				t.Fatal(err)
+			}
+			if pend, _ := dualStore(root).Pending(time.Now()); len(pend) != 0 {
+				t.Errorf("theo's passkey waits for theo, whose token cannot approve it: %+v", pend)
+			}
+			if links, _ := enrolStore(root).Waiting(time.Now()); len(links) != 1 || links[0].Principal != "theo" {
+				t.Errorf("theo, who cannot act as an administrator yet, was given no link: %+v", links)
+			}
+		})
+	}
+
+	// A token of his that could approve makes him the second of two, as
+	// before: one over the whole site carrying an administrator's role.
+	root := onlyOwner(t)
+	seedPolicy(t, root, [2]string{"theo", "admin"})
+	adminSafetyToken(t, root, "theo", auth.RoleAdmin)
+	w.Out = &bytes.Buffer{}
+	if err := cmdAuth(root, []string{"enrol", "theo", "--for", "1h"}); err != nil {
+		t.Fatal(err)
+	}
+	if links, _ := enrolStore(root).Waiting(time.Now()); len(links) != 0 {
+		t.Errorf("a link for an administrator whose token approves was given alone: %+v", links)
+	}
+}
+
+// Once the request that waited is withdrawn, the next ask is given: a way
+// in for the same administrator, asked for while it waited, does not wait
+// in the way of the one asked for after.
+//
+// `quilzo auth enrol theo`, refused alone because a request of hers
+// waited for him, said "withdraw it and ask again" and left a request of
+// its own waiting. She withdrew the first and asked again, and was told to
+// withdraw that one, by an ask that left another: each ask stood in the
+// way of the next, and the store that reached the dead end before it was
+// ended, with a link and a token for him both waiting, stayed in it.
+func TestAWayInAskedForWhileARequestWaitedDoesNotBlockTheNext(t *testing.T) {
+	root := onlyOwner(t)
+	seedPolicy(t, root, [2]string{"theo", "admin"})
+	if err := cmdAuth(root, []string{"grant", "pat", "admin"}); err != nil {
+		t.Fatal(err)
+	}
+	w.Out = &bytes.Buffer{}
+	if err := cmdAuth(root, []string{"enrol", "theo", "--for", "1h"}); err != nil {
+		t.Fatal(err)
+	}
+	_, printed := captureStdout(t)
+	err := tokenIssue(root, []string{"theo-cli", "--principal", "theo", "--role", "admin", "--ttl", "1h"})
+	_ = printed()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pend, _ := dualStore(root).Pending(time.Now())
+	if len(pend) != 3 {
+		t.Fatalf("the grant, the link and the token do not all wait: %+v", pend)
+	}
+	if links, _ := enrolStore(root).Waiting(time.Now()); len(links) != 0 {
+		t.Fatalf("a link was given alone while a grant waited for theo: %+v", links)
+	}
+	for _, r := range pend {
+		if r.Kind == dual.Grant {
+			if err := cmdPending(root, []string{"withdraw", r.ID}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	w.Out = &bytes.Buffer{}
+	if err := cmdAuth(root, []string{"enrol", "theo", "--for", "1h"}); err != nil {
+		t.Fatal(err)
+	}
+	if links, _ := enrolStore(root).Waiting(time.Now()); len(links) != 1 || links[0].Principal != "theo" {
+		t.Errorf("with nothing but ways in for theo waiting, theo was given no link: %+v", links)
+	}
+
+	// A way in that waits for somebody else is still hers to withdraw
+	// first: given theo's sign-in, she would approve it as him.
+	other := onlyOwner(t)
+	seedPolicy(t, other, [2]string{"theo", "admin"}, [2]string{"lee", "author"})
+	adminSafetyToken(t, other, "lee", auth.RoleAuthor)
+	if _, err := updatePolicy(other, func(p *auth.Policy) error {
+		return p.Grant(auth.Binding{Principal: "lee", Role: auth.RoleAdmin, Resource: auth.AreaSecurity})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	w.Out = &bytes.Buffer{}
+	if err := cmdAuth(other, []string{"enrol", "lee", "--for", "1h"}); err != nil {
+		t.Fatal(err)
+	}
+	if pend, _ := dualStore(other).Pending(time.Now()); len(pend) != 1 {
+		t.Fatalf("a link for lee, who administers an area, does not wait: %+v", pend)
+	}
+	if err := cmdAuth(other, []string{"enrol", "theo", "--for", "1h"}); err != nil {
+		t.Fatal(err)
+	}
+	if links, _ := enrolStore(other).Waiting(time.Now()); len(links) != 0 {
+		t.Errorf("a link for theo was given alone while a link for lee waited for him: %+v", links)
 	}
 }
 
