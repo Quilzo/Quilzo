@@ -161,6 +161,7 @@ func assistantAdd(root string, args []string) error {
 	nudgePages := fs.String("nudge-pages", "", "comma-separated page prefixes the nudge may show on")
 	route := fs.String("route", "", "the gateway route, or the model a route serves, that answers first")
 	routeOnly := fs.Bool("route-only", false, "keep it to that route alone: no other route answers for it")
+	keepInstr := fs.Bool("keep-instructions", false, "read passages that address an AI reading them, as other passages")
 	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
@@ -175,29 +176,80 @@ func assistantAdd(root string, args []string) error {
 		}
 		instr = string(b)
 	}
-	a := assistant.Assistant{
-		Name: pos[0], Title: *title, Greeting: *greeting, Instructions: instr,
-		Pages: splitList(*pages), Exclude: splitList(*exclude), Collections: splitList(*collections),
-		Refusal: *refusal, Public: *public, Static: *static, UseModel: *model, Passages: *passages,
-		Route: strings.TrimSpace(*route), RouteOnly: *routeOnly,
-		Handoff: *handoffOn, HandoffDays: *handoffDays, Voice: *voice, Translate: *translate,
-		Documents: splitList(*documents), Embed: splitList(*embed),
+	// What the command names is what changes; a chatbot already declared
+	// keeps the rest. It was built again from the flags alone, with its
+	// actions carried over: what this command has no flag for (the
+	// credential an identity action is signed with, set by assistant
+	// action) went, so a chatbot with an identity action was refused the
+	// moment its title changed, and so did whatever was not typed again,
+	// an exclusion or the instructions among them. A setting is turned off
+	// by naming it, --public=false, as it is turned on.
+	named := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { named[f.Name] = true })
+	var qs []string
+	for _, q := range strings.Split(*suggest, "|") {
+		if q = strings.TrimSpace(q); q != "" {
+			qs = append(qs, q)
+		}
 	}
-	if *launcher {
-		var qs []string
-		for _, q := range strings.Split(*suggest, "|") {
-			if q = strings.TrimSpace(q); q != "" {
-				qs = append(qs, q)
+	declare := func(a *assistant.Assistant, all bool) {
+		set := func(name string, apply func()) {
+			if all || named[name] {
+				apply()
 			}
 		}
-		a.Launcher = &assistant.Launcher{Style: *lStyle, Side: *lSide, Label: *lLabel, Panel: *lPanel,
-			Pages: splitList(*lPages), Suggestions: qs, Nudge: *nudge, NudgeAfter: *nudgeAfter,
-			NudgePages: splitList(*nudgePages)}
+		set("title", func() { a.Title = *title })
+		set("greeting", func() { a.Greeting = *greeting })
+		set("instructions", func() { a.Instructions = instr })
+		set("pages", func() { a.Pages = splitList(*pages) })
+		set("exclude", func() { a.Exclude = splitList(*exclude) })
+		set("collections", func() { a.Collections = splitList(*collections) })
+		set("refusal", func() { a.Refusal = *refusal })
+		set("public", func() { a.Public = *public })
+		set("static", func() { a.Static = *static })
+		set("model", func() { a.UseModel = *model })
+		set("passages", func() { a.Passages = *passages })
+		set("route", func() { a.Route = strings.TrimSpace(*route) })
+		set("route-only", func() { a.RouteOnly = *routeOnly })
+		set("handoff", func() { a.Handoff = *handoffOn })
+		set("handoff-days", func() { a.HandoffDays = *handoffDays })
+		set("voice", func() { a.Voice = *voice })
+		set("translate", func() { a.Translate = *translate })
+		set("documents", func() { a.Documents = splitList(*documents) })
+		set("embed", func() { a.Embed = splitList(*embed) })
+		set("keep-instructions", func() { a.KeepInstructions = *keepInstr })
+		set("launcher", func() {
+			if !*launcher {
+				a.Launcher = nil
+			} else if a.Launcher == nil || all {
+				a.Launcher = &assistant.Launcher{}
+			}
+		})
+		// The launcher's own settings, on a chatbot that has it.
+		if l := a.Launcher; l != nil {
+			set("launcher-style", func() { l.Style = *lStyle })
+			set("launcher-side", func() { l.Side = *lSide })
+			set("launcher-label", func() { l.Label = *lLabel })
+			set("panel", func() { l.Panel = *lPanel })
+			set("launcher-pages", func() { l.Pages = splitList(*lPages) })
+			set("suggest", func() { l.Suggestions = qs })
+			set("nudge", func() { l.Nudge = *nudge })
+			set("nudge-after", func() { l.NudgeAfter = *nudgeAfter })
+			set("nudge-pages", func() { l.NudgePages = splitList(*nudgePages) })
+		}
 	}
+	a := assistant.Assistant{Name: pos[0]}
 	caller := resolveCaller(root, flagToken)
 	err := saveAssistant(root, caller, "declare", a.Name, func(s *assistant.Set) error {
 		if old, ok := s.Get(a.Name); ok {
-			a.Actions = old.Actions
+			a = old
+			if a.Launcher != nil {
+				l := *a.Launcher
+				a.Launcher = &l
+			}
+			declare(&a, false)
+		} else {
+			declare(&a, true)
 		}
 		return s.Put(a)
 	})

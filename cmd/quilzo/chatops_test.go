@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/quilzo/quilzo/internal/assistant"
 )
 
 // A site with no chatbots lists none over the agent interface as it does
@@ -74,5 +76,64 @@ func TestAnIdentityActionNamesASealedCredential(t *testing.T) {
 	if err := cmdAssistant(root, []string{"action", "help", "mine", "--kind", "agent", "--target", "bookings",
 		"--description", "Your bookings", "--identity", "--identity-secret", "shop-visitors"}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Declaring a chatbot that is already declared changes what the command
+// names and keeps the rest. It was built again from the flags alone, with
+// only its actions carried over: a chatbot with an identity action was
+// refused ("names no credential the site signs with") the moment its title
+// was changed, and what the command has no flag for, and what it was not
+// given, went without a word.
+func TestRedeclaringAChatbotKeepsWhatItDoesNotName(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := publishedShop(t)
+	t.Setenv(secretEnvName("shop-visitors"), "a-visitor-signing-key")
+	if err := cmdAssistant(root, []string{"add", "help", "--title", "Help", "--public", "--model",
+		"--exclude", "secret", "--instructions", "Be brief.", "--launcher", "--nudge", "Delivery?",
+		"--nudge-pages", "/delivery"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdAssistant(root, []string{"action", "help", "mine", "--kind", "agent", "--target", "bookings",
+		"--description", "Your bookings", "--identity", "--identity-secret", "shop-visitors"}); err != nil {
+		t.Fatal(err)
+	}
+	set, _ := assistant.Load(assistantsPath(root))
+	a, _ := set.Get("help")
+	a.KeepInstructions = true // the Chatbots screen's checkbox
+	if err := set.Put(a); err != nil {
+		t.Fatal(err)
+	}
+	if err := assistant.Save(assistantsPath(root), set); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := cmdAssistant(root, []string{"add", "help", "--title", "Ask the shop", "--handoff"}); err != nil {
+		t.Fatalf("a chatbot with an identity action retitled: %v", err)
+	}
+	a, _ = loadAssistant(root, "help")
+	if a.Title != "Ask the shop" || !a.Handoff {
+		t.Errorf("what was named did not change: %+v", a)
+	}
+	if a.IdentitySecret != "shop-visitors" || !a.KeepInstructions || len(a.Actions) != 1 {
+		t.Errorf("what the command has no flag for went: %+v", a)
+	}
+	if !a.Public || !a.UseModel || strings.Join(a.Exclude, ",") != "secret" || a.Instructions != "Be brief." ||
+		a.Launcher == nil || a.Launcher.Nudge != "Delivery?" {
+		t.Errorf("what was not named went: %+v", a)
+	}
+
+	// Named, a setting is turned off as it is turned on.
+	if err := cmdAssistant(root, []string{"add", "help", "--launcher=false", "--model=false", "--exclude", ""}); err != nil {
+		t.Fatal(err)
+	}
+	if a, _ = loadAssistant(root, "help"); a.Launcher != nil || a.UseModel || len(a.Exclude) != 0 || !a.Public {
+		t.Errorf("turned off: %+v", a)
+	}
+	if err := cmdAssistant(root, []string{"add", "help", "--keep-instructions=false"}); err != nil {
+		t.Fatal(err)
+	}
+	if a, _ = loadAssistant(root, "help"); a.KeepInstructions {
+		t.Error("--keep-instructions=false kept passages that address an AI")
 	}
 }

@@ -192,7 +192,7 @@ func TestAReplyNobodyCanReadIsNotReportedSent(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Declared again, not public now.
-	if err := cmdAssistant(root, []string{"add", "help", "--title", "Ask the shop"}); err != nil {
+	if err := cmdAssistant(root, []string{"add", "help", "--public=false"}); err != nil {
 		t.Fatal(err)
 	}
 	err := cmdInbox(root, []string{"reply", "help/" + id, "We will call"})
