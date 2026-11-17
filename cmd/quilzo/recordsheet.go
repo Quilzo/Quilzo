@@ -169,7 +169,8 @@ func declares(t *schema.Type, field string) bool {
 // jsonRows reads a JSON list of records. An "id" the type does not declare
 // is the record's id, as a JSON export writes it; and so is any "id" of a
 // record that gives its own id as well, under "fields" (an object holding
-// id alone) or under sheet.OwnID, as an export writes that.
+// id alone) or under sheet.OwnID, as an export writes that. Its own id
+// given as null is a record that has none.
 func jsonRows(body []byte, t *schema.Type) ([]sheet.Row, error) {
 	var list []map[string]any
 	if err := json.Unmarshal(body, &list); err != nil {
@@ -187,7 +188,12 @@ func jsonRows(body []byte, t *schema.Type) ([]sheet.Row, error) {
 			row.ID = id
 			delete(f, "id")
 		}
-		if hasOwn {
+		switch {
+		case hasOwn && own == nil:
+			// It says it has none: the id beside it is the store's, and
+			// the record's own is cleared, as an emptied cell clears one.
+			row.Clear = append(row.Clear, "id")
+		case hasOwn:
 			f["id"] = own
 		}
 		if f == nil {
@@ -375,6 +381,7 @@ func sheetOf(root, coll, format string, bom bool) ([]byte, int, error) {
 		return nil, 0, fmt.Errorf("there is no collection %s: quilzo records collections lists them", coll)
 	}
 	if format == "json" {
+		declaresID := t != nil && declares(t, "id")
 		list := make([]map[string]any, 0, len(idx.Records))
 		for _, r := range idx.Records {
 			row := map[string]any{"id": r.ID}
@@ -384,8 +391,12 @@ func sheetOf(root, coll, format string, bom bool) ([]byte, int, error) {
 				}
 			}
 			// The record's own id, which the store's took the place of:
-			// it was left out, and an export brought back lost it.
-			if own, ok := r.Fields["id"]; ok {
+			// it was left out, and an export brought back lost it. Said
+			// for every record of a type that declares id, as null for
+			// one that has none: an id with nothing beside it is read as
+			// that type's field, so such a record came back in as a new
+			// one with the store's id for its own.
+			if own, ok := r.Fields["id"]; ok || declaresID {
 				if _, taken := row["fields"]; taken {
 					row[sheet.OwnID] = own
 				} else {

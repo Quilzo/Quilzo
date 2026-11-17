@@ -38,14 +38,15 @@ const OwnID = "field:id"
 // fields in the order it declares them, then any other field a record
 // has. Headings are field names, which is what reading matches first, so a
 // sheet written here comes back in as it went out. A record's own field
-// named id goes under OwnID, after the ids.
+// named id goes under OwnID, after the ids: when a record has one, and
+// whenever the type declares one. A type that declares id reads an id
+// column with no OwnID beside it as its field, so a sheet of records that
+// had no id of their own came back in as new records, each with the
+// store's id for its own.
 func Write(t *schema.Type, recs []collection.Record, opts WriteOptions) []byte {
 	cols := columns(t, recs)
-	for _, r := range recs {
-		if _, ok := r.Fields["id"]; ok {
-			cols = append([]string{OwnID}, cols...)
-			break
-		}
+	if ownIDs(t, recs) {
+		cols = append([]string{OwnID}, cols...)
 	}
 	pictures := Pictures(t)
 	var buf bytes.Buffer
@@ -91,6 +92,24 @@ func Write(t *schema.Type, recs []collection.Record, opts WriteOptions) []byte {
 	}
 	w.Flush()
 	return buf.Bytes()
+}
+
+// ownIDs reports whether a sheet of these records has a column for a
+// record's own id: the type declares a field id, or a record has one.
+func ownIDs(t *schema.Type, recs []collection.Record) bool {
+	if t != nil {
+		for _, f := range t.Fields {
+			if f.Name == "id" {
+				return true
+			}
+		}
+	}
+	for _, r := range recs {
+		if _, ok := r.Fields["id"]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // columns are the fields a sheet of these records has.

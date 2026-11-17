@@ -540,3 +540,33 @@ func TestARecordsOwnIdGoesOutBesideTheStoresAndComesBack(t *testing.T) {
 		t.Errorf("read by a type without id as %+v %+v", r, sh.Columns)
 	}
 }
+
+// A type that declares a field id has the field:id column in every sheet
+// written for it, whether or not a record has an id of its own, so the id
+// column is read back as the store's.
+//
+// The column was written only when some record had an id of its own. A
+// sheet of records that had none was headed id alone, and a type that
+// declares id reads that column as its field: each record came back in as
+// a new one, with the store's id for its own.
+func TestATypeThatDeclaresIdAlwaysHasTheOwnIdColumn(t *testing.T) {
+	coded := product()
+	coded.Fields = append(coded.Fields, schema.Field{Name: "id", Kind: schema.Text})
+	recs := []collection.Record{{ID: "s1", Created: 1, Fields: map[string]any{"name": "Rye"}}}
+	out := string(Write(coded, recs, WriteOptions{}))
+	if !strings.HasPrefix(out, "id,field:id,") || !strings.Contains(out, "s1,,Rye") {
+		t.Fatalf("written as %q", out)
+	}
+	sh := read(t, out, Options{Type: coded})
+	if r := sh.Rows[0]; r.ID != "s1" || r.Fields["id"] != nil || r.Fields["name"] != "Rye" {
+		t.Errorf("read back as %+v", r)
+	}
+	// With no records at all, the headings still say which id is which.
+	if out := string(Write(coded, nil, WriteOptions{})); !strings.HasPrefix(out, "id,field:id,") {
+		t.Errorf("an empty sheet is headed %q", out)
+	}
+	// A type without the field, and records without it, have no such column.
+	if out := string(Write(product(), recs, WriteOptions{})); strings.Contains(out, "field:id") {
+		t.Errorf("written with a column nobody has: %q", out)
+	}
+}
