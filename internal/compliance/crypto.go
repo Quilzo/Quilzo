@@ -53,14 +53,15 @@ const (
 	// Verified means this program only checks material somebody else made, so
 	// the choice of algorithm is theirs and the migration is theirs to lead.
 	Verified Use = "verified"
-	// Demonstration means only the terminal demonstrations of a call reach it
-	// (quilzo call, huddle, scribe and their kind), against identities made
-	// for the run: the program carries the code and nothing a deployment does
-	// runs it.
+	// Demonstration means only a terminal demonstration reaches it, against
+	// material made for the run: the program carries the code and nothing a
+	// deployment does runs it.
 	//
-	// Named because the call cryptography was listed as generated, for "the
-	// per-epoch secret of a call", in the inventory an agency hands a client
-	// as what the product does, and no product path makes a call.
+	// Named because the cryptography of the call demonstrations was listed
+	// as generated, in the inventory an agency hands a client as what the
+	// product does, when no product path ran it. Those demonstrations have
+	// left Quilzo, and no algorithm here is in that position now; the use
+	// stays defined so that the next one is marked for what it is.
 	Demonstration Use = "demonstration"
 )
 
@@ -153,8 +154,7 @@ func Inventory() []Algorithm {
 				"Listed as generated anyway, because a signing implementation " +
 				"is part of this program's cryptographic surface and a " +
 				"document about that surface should overstate it rather than " +
-				"understate it. internal/groupkey signs with it too, and " +
-				"only the terminal demonstrations of a call reach that.",
+				"understate it.",
 		},
 		{
 			Name: "ML-DSA-65 (FIPS 204)", Package: "crypto/mldsa",
@@ -168,47 +168,15 @@ func Inventory() []Algorithm {
 				"looked at years later, so a signature only has to be " +
 				"forgeable by the time somebody checks it. Both ends of this " +
 				"one are this program, which is why it could be done here and " +
-				"not yet for federation. internal/groupkey uses it as well, " +
-				"and only the terminal demonstrations of a call reach that.",
+				"not yet for federation.",
 		},
 		{
-			Name: "HKDF-SHA256 / HKDF-SHA512", Package: "crypto/hkdf",
+			Name: "HKDF-SHA256", Package: "crypto/hkdf",
 			Purpose: "deriving the key a backup is sealed under from the " +
 				"backup key and a salt",
 			Where: "backup", Use: Generated, Quantum: Reduced,
 			Note: "A key derivation function is only as strong as the " +
-				"secret it expands, which for a backup is a 256-bit key. " +
-				"internal/sframe and internal/groupkey use it as well, for " +
-				"the per-sender media keys of RFC 9605 and the epoch " +
-				"schedule that produces their base key, and only the " +
-				"terminal demonstrations of a call reach those.",
-		},
-		{
-			Name:    "ML-KEM-768 with X25519 (FIPS 203, RFC 9180)",
-			Package: "crypto/hpke",
-			Purpose: "in the demonstrations of a call only: encapsulating " +
-				"the per-epoch secret to each participant, which is what " +
-				"gives SFrame its base key",
-			Where: "groupkey, reached by quilzo call, huddle and scribe",
-			Use:   Demonstration, Quantum: Safe,
-			Note: "Nothing a deployment runs makes a call, so nothing it " +
-				"ships encrypts with this; the demonstrations run it against " +
-				"identities made for the run.\n\n" +
-				"Hybrid, and the hybrid is the point: the shared secret " +
-				"holds if either ML-KEM or X25519 holds, so neither a " +
-				"lattice break nor a quantum computer is enough on its own. " +
-				"One is three years standardised and the other thirty, and " +
-				"nobody sensible bets a call on the younger one alone. " +
-				"Harvest-now-decrypt-later is why it would matter: a " +
-				"recorded call is a ciphertext somebody can keep, and the " +
-				"key that opens it is negotiated once.\n\nReached through " +
-				"crypto/hpke rather than " +
-				"crypto/mlkem and crypto/ecdh directly, which is why those " +
-				"two are not listed: this program does not touch either " +
-				"primitive, it asks the standard library's RFC 9180 " +
-				"implementation for a KEM and hands it a public key. The " +
-				"combination of the two shared secrets is the part that is " +
-				"easy to get wrong, and it is not done here.",
+				"secret it expands, which for a backup is a 256-bit key.",
 		},
 		{
 			Name: "TLS 1.2+", Package: "crypto/tls",

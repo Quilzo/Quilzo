@@ -76,76 +76,23 @@ var coverage = map[string]surfaces{
 	// A decision goes in the audit chain and is replayed from it. The screen
 	// comes with the stored register; the agent surface deliberately does
 	// not come at all.
-	// Conversation, built so that what was said stays said.
-	"room": {
-		Why: "the reading surface is the thing this is for and it arrives " +
-			"with the client; the terminal commands are how it is driven " +
-			"and tested in the meantime",
-		NoMCP: "a model with a tool here could post as a person, edit what " +
-			"somebody is recorded as having said, or take words down; the " +
-			"author field would stop meaning anything",
-	},
-
 	// A codec for screen content, and what sharing one costs.
 	"screen": {
-		Why: "it is arithmetic over a synthetic frame; the screen arrives " +
-			"with the sharing this is for, and there is nothing here for " +
-			"one to show in the meantime",
+		Why: "it is arithmetic over a synthetic frame, and its answer is " +
+			"a short table of figures; there is nothing here for a screen " +
+			"to show that the terminal does not",
 		NoMCP: "it takes no input and holds no state, so a tool would be a " +
 			"way to ask a model to read a table that is already printed",
 	},
 
 	// Marks on a shared screen, anchored to content rather than pixels.
 	"annotate": {
-		Why: "it draws on a frame this build has no way to capture yet; " +
-			"the screen arrives with the sharing, and until then the " +
-			"demonstration is the terminal one",
+		Why: "it draws on a frame this build has no way to capture; " +
+			"the demonstration is the terminal one, and a screen would " +
+			"show a synthetic frame nobody shared",
 		NoMCP: "a tool here would let a model draw on somebody else's " +
 			"screen and sign it with their name, which is the one thing a " +
 			"mark has to be trusted about",
-	},
-
-	// Group key agreement for a call, demonstrated end to end.
-	"call": {
-		Why: "it runs the protocol against identities generated for the " +
-			"run; a real call's keys arrive with the calling, and until " +
-			"then the demonstration is the terminal one",
-		NoMCP: "the keys here are the ones that decide who can hear a " +
-			"call, and a tool would put a model on the inside of that " +
-			"decision",
-	},
-
-	// Who is in a call, who may speak, and which controls are real.
-	"huddle": {
-		Why: "it runs a call against identities generated for the run; " +
-			"the screen for this arrives with the calling, and the point " +
-			"it makes — which controls hold and which are requests — is " +
-			"one a table can make in a terminal",
-		NoMCP: "admitting, ejecting and muting are the decisions that " +
-			"settle who can hear a private conversation, and a tool would " +
-			"put a model on the inside of them",
-	},
-
-	// The AI note-taker, which is a participant rather than plumbing.
-	"scribe": {
-		Why: "it runs a call against identities generated for the run; " +
-			"what it has to say — which faculties are lawful, and who has " +
-			"to agree before anybody is recorded — is a table, and a " +
-			"table reads in a terminal",
-		NoMCP: "this decides whether a conversation may be recorded and " +
-			"what may be inferred from it, and a tool would let a model " +
-			"answer that question about itself",
-	},
-
-	// What the assistant does after a call, and what stops it.
-	"errand": {
-		Why: "it carries errands against a manifest and a performer built " +
-			"for the run; the screen for this is the one that shows " +
-			"somebody a task with their name on it, and that arrives with " +
-			"the tasks",
-		NoMCP: "this is the layer that decides whether an agent may act " +
-			"on what it heard and who it may tell, and a tool would let a " +
-			"model answer that about itself",
 	},
 
 	// Automation whose books have to add up.
@@ -191,28 +138,18 @@ var coverage = map[string]surfaces{
 
 	// What a situation can hand somebody that a grant did not.
 	// The note said the authority is exercised in "the call, the incident
-	// or the board, each of which has its own screen": the call has none,
-	// there is no incident here, and the board was not in the register.
+	// or the board, each of which has its own screen": there is no call or
+	// incident here, and the board was not in the register.
 	"standing": {
 		Why: "it prints this program's own register of situational " +
 			"authority, a table that reads in a terminal; the authority is " +
 			"exercised where each situation is — a shared draft and a " +
 			"handoff conversation on the public site, an enrolment link " +
-			"and a page's share links in the admin, an agent run wherever " +
-			"it was started, a room and the call demonstrations on the " +
-			"command line",
+			"and a page's share links in the admin, and an agent run " +
+			"wherever it was started",
 		NoMCP: "this is the table that says which powers survive their " +
 			"situation, and a model editing it would be reclassifying an " +
 			"escalation as contained",
-	},
-
-	// End-to-end media encryption, and what it costs on the wire.
-	"sframe": {
-		Why: "it is arithmetic and a self-check over a library; the screen " +
-			"arrives with the calls the library is for, and there is " +
-			"nothing here for one to show in the meantime",
-		NoMCP: "it takes no input and holds no state, so a tool would be a " +
-			"way to ask a model to read a table that is already printed",
 	},
 
 	// What an auditor is given, and what they can check without us.

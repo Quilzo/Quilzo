@@ -18,8 +18,8 @@
 // so an outage is a number somebody sees rather than an outage of the site.
 //
 // Quilzo's own first look is here too (injection.go): the one table of
-// text addressed to a machine that the knowledge screen, the public chatbot
-// and the meeting scribe each read their part of.
+// text addressed to a machine that the knowledge screen and the public
+// chatbot each read their part of.
 package guardrail
 
 import (

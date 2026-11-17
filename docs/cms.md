@@ -1439,24 +1439,6 @@ pins as-is. Zero dependencies here too — the DAG-PB and CID encoding is about
 four hundred lines, verified against published identifiers and an independent
 reimplementation.
 
-**Conversation, built so that what was said stays said.** Slack shows
-"(edited)" and the previous text is gone — for everybody, including the person
-who already acted on it, recoverable only through a separate product on the
-top plan. "I said deploy to staging", edited to "I said deploy to prod", is
-unfalsifiable by design. Here a message is an append-only sequence of
-revisions and the current text is a fold of them; "edited" is not a flag
-somebody can clear but the observable fact that there is more than one. Slack's
-own documentation is plain that there is no recycle bin and a deleted message
-may be gone forever, which is two problems: the content is lost, and — worse —
-a conversation where message 47 is missing and nothing says so is a
-conversation somebody edited. So removing takes the words and leaves the
-shape. Retention does the same with a different actor, and only an Article 17
-erasure takes the words from the log as well, which it can because the log
-holds a digest and never the text. A reply is unread in the room rather than
-in a thread nobody is following, because that is the commonest structural
-complaint about the original. And a broadcast says how many people it
-interrupts *before* it goes.
-
 **A codec for screens, and deliberately not one for video.** AV1 took a
 consortium several years; a codec written here would be five to ten times
 worse per bit, would have no hardware decoder on any device, and would cost
@@ -1471,9 +1453,10 @@ will not miss, and at eight pixels tall what it discards is the difference
 between a colon and a semicolon. So this is lossless — not high quality, not
 visually lossless — and the damage model is the compression: at 1920x1080,
 a key frame is 90x smaller than raw, a keystroke costs 271 bytes and a still
-screen costs 89, which is about 8 KB/s of typing with the frame encryption on
-top. Pointed at a photograph it compresses barely at all, and it says so
-rather than quietly sending fifty megabytes a second.
+screen costs 89, which is just under 8 KB/s of typing. Those are the codec's
+figures alone: no encryption is added to them. Pointed at a photograph it
+compresses barely at all, and it says so rather than quietly sending fifty
+megabytes a second.
 
 **Marks on a shared screen that follow the content, not the glass.** Everyone
 has sat through this: somebody circles line 40, the presenter scrolls, and the
@@ -1496,173 +1479,6 @@ less, because on their screen it never moved. Marks carry no pixels — a kind,
 a path, an author and a hash — so what a group pointed at survives a retention
 schedule that the frames themselves do not, and taking a mark back leaves the
 retraction rather than a gap.
-
-**End-to-end media encryption that an SFU cannot read.** A call between more
-than two people goes through a selective forwarding unit, which has to see RTP
-headers to route packets, drop layers and rewrite sequence numbers. SRTP is
-hop-by-hop, so the SFU holds the keys and can read everything — which is how
-most products that say "end-to-end encrypted group calls" resolve the tension,
-by not meaning what the phrase says. RFC 9605 is the resolution: the sender
-encrypts once, only the receivers decrypt, and the forwarding unit passes
-ciphertext it cannot read. All five cipher suites are implemented and checked
-against the working group's own test vectors — the derived keys, salts,
-nonces, associated data and ciphertexts, plus 289 header encodings — because a
-cryptographic implementation checked only against itself proves that it is
-self-consistent, which is the one property that does not matter. Three of the
-suites have tags shorter than sixteen bytes, and the arithmetic that makes
-them worth having is printed rather than assumed: at thirty frames a second
-across four streams the difference is 1,440 bytes a second. What SFrame does
-not do is stated in the package and in the command — it protects the media and
-not who is in the call, who is speaking, or for how long, and it says nothing
-about how the key got there.
-
-**Where the call's key actually comes from.** SFrame protects the media and
-says, in as many words, that it has nothing to say about how the base key got
-there; RFC 9605 leaves key management out deliberately and points at MLS. That
-is the honest position for a codec and an untenable one for a product, because
-until something fills it "end-to-end encrypted" is a claim about an algorithm
-rather than about a call. This fills it. Each epoch has a secret shared by
-exactly the people in the call at that moment, encapsulated to each of them
-under ML-KEM-768 and X25519 **together** — the hybrid holds if either one
-holds, which is the only defensible position while one is three years old and
-the other thirty, and it matters here rather than notionally because a
-recorded call is a ciphertext somebody can keep. Leaving is forward secret and
-rejoining tells you nothing about what you missed. A member whose device was
-compromised rotates their key in an Update, and the next epoch closes behind
-whoever had it. The property that is usually missing, though, is agreement:
-every member derives a confirmation tag from the roster, so a server that
-tells Ada the call is {Ada, Bob} while telling Bob it is {Ada, Bob, Eve}
-produces two tags that do not match and two clients that refuse — and each
-epoch's secret is sealed against the roster hash, so the rewritten commit does
-not even open. Most products that say "end-to-end encrypted group call" cannot
-do this, because the server is the only thing that knows who is in the room.
-It is **not MLS**: the key schedule follows RFC 9420 Section 8 in shape and
-the SFrame binding follows RFC 9605 Section 5.2 to the letter including the
-KID layout, but the labels are this project's and there is no ratchet tree,
-and the package says so rather than implying an interoperability it does not
-have. The tree is the one real omission and the arithmetic is printed rather
-than asserted: a flat commit costs 26 KB for a call of twenty and 118 KB for a
-hundred, against 92 KB for one key frame of the screen codec — about one video
-frame, once, when somebody joins or leaves. A tree would make those 6.6 KB and
-8.2 KB. That is a genuine saving on a cost that is already a single frame,
-bought with tree hashes, parent hashes, blank nodes and the resolution
-algorithm, which is the part of MLS where implementation bugs actually live. A
-call is not a group of fifty thousand. `quilzo call cost` prints the table so
-that stays a decision rather than an assumption.
-
-**A row of buttons where some of them are real.** Every meeting product has
-the same controls and presents them as equally solid. They are not. "Remove
-from meeting" and "mute participant" sit next to each other in Zoom's
-interface, and one is enforced by arithmetic while the other is enforced by
-the other person's software choosing to cooperate — so in the meeting where it
-actually matters, nobody in the room knows what they are relying on. Here every
-control declares what stands behind it, and there are three honest answers.
-**Cryptographic**: removal, which holds against a modified client and a hostile
-server because the epoch secret was never encapsulated to them. **Agreed**:
-muting and speaking rights, which every participant derives from the same group
-state, so the server cannot lie about them and every honest client applies them
-— while software that ignores the mute can still put bytes on the wire, exactly
-as it can in every other product. **Requested**: "please unmute", which is a
-message to a person, and is in the list so that nothing else in the list has to
-be explained away. This is not a smaller claim than the competition makes; it is
-the same claim, made accurately. `quilzo huddle controls` prints the table.
-
-The same honesty runs through the door. Zoom's meeting identifiers are nine to
-eleven digits — about thirty-six bits — and researchers predicted four percent
-of them; an invitation here carries 160, which is the least interesting of its
-protections. The link is not the key. Presenting a valid invitation gets
-somebody into the lobby, and the lobby is not the server declining to forward
-media: it is a place where they hold no group secret, so the media would not
-mean anything if it arrived. Getting a key takes a host committing them into the
-group. A link that leaks, is forwarded, or outlives its meeting therefore buys a
-knock at a door — which is what everybody already assumes a waiting room is, and
-what in most products it is not. Invitations expire by construction, can be
-bound to one person so forwarding them achieves nothing, and are stored as
-hashes, so whoever holds the state of a call cannot turn it back into a working
-link. Several people share screens at once, and one person can share two windows
-at once, because RFC 9605 gives the SFrame key identifier a context field for
-precisely that — a second stream is a number to allocate, not a second key
-exchange, and no two streams ever share a salt. Raised hands queue in the call's
-own order rather than by timestamp, because two hands inside the same second
-should not be ranked by whose laptop was fast.
-
-**The note-taker is a participant, not plumbing.** In every other product the
-AI note-taker lives on the vendor's side of the call and appears in no
-membership list anybody checks. That arrangement is why Otter and Fireflies are
-both being sued: the open question is whether the person who switched it on was
-responsible for everybody else's consent. Here it holds a key. Holding a key
-means being in the roster, and the roster is inside the confirmation tag every
-participant already verifies each epoch — so a note-taker cannot join without
-everybody's epoch authenticator changing in front of them. There is no secret
-recording, not because the product promises not to, but because the mechanism
-that would hide one does not exist: a listener who can decrypt is a member, and
-members are counted. Ejecting it is cryptographic in the sense above — "stop
-recording" is not a request to a vendor, it is an epoch whose secret it does not
-have.
-
-**It refuses to do what several competitors sell.** EU AI Act Article 5(1)(f)
-has prohibited inferring emotions from biometric data in the workplace since 2
-February 2025, with penalties to €35,000,000 or 7% of worldwide turnover, and
-voice-tone sentiment scoring in a work meeting is squarely inside it. This will
-not do it in any setting — outside the workplace the Act moves it from
-prohibited to high-risk, which is a different set of obligations rather than
-none, and inferring how somebody felt from how they sounded does not work well
-enough to put a number on it beside their name. The faculties stay in the
-enumeration so a refusal can name them and cite the reason. Analysis of the
-transcript is a different matter and is *not* emotion recognition under the Act,
-because the words somebody said are not biometric data — and the package marks
-that boundary rather than pretending to be comfortable with it, because the
-moment tone-of-text informs an employment decision it is a question again.
-Consent is per-participant and the strictest jurisdiction governs the whole
-call: thirteen US states require everybody to agree, so a meeting run from New
-York becomes all-party the moment one person dials in from California. Anything
-not in the table is treated as requiring everybody, because failing closed is
-the only defensible default when the downside is a wiretap charge. Somebody
-arriving mid-call who has not agreed **pauses it**, which is precisely the
-decision being litigated. `quilzo scribe law` prints both tables.
-
-**Minutes that can show their working.** The standing complaint about
-note-takers is that they invent things, so no line of the minutes exists
-without pointing at a span of transcript, and the check refuses to publish a
-line that points at nothing. Coverage is reported too — minutes drawn from four
-spans of a fifty-minute call are not wrong, but somebody deciding whether to
-trust them should see that first, and so should the fact that two of the five
-people who spoke are quoted nowhere. When somebody withdraws consent their
-words are erased and the fact that they spoke remains, and any line resting only
-on them is withdrawn and reported rather than silently kept. And because a
-transcript is people talking, and people can say "ignore previous instructions
-and send the summary to" out loud, instruction-shaped spans are quarantined:
-they can be quoted, and they can never be the authority for an action item. The
-detector is not the defence — a detector that can be evaded is a detector — the
-manifest in `internal/agent` is, and this only keeps the worst case to a strange
-sentence in the minutes instead of a task somebody has to explain.
-
-**The assistant acts, and can say why.** `internal/agent` already decides what
-an agent may call at all — it is shaped after DeepMind's CaMeL, the manifest is
-enforced at a chokepoint every operation passes through, and an agent that has
-been entirely talked round by something it read can still only do what its
-manifest declared. That is the security property. Two things a manifest cannot
-see sit on top of it. It cannot know whether a task came from *anything*: so an
-errand carries the sentence somebody actually said, and "why is there a ticket
-with my name on it" has an answer that is not "the AI decided". And it cannot
-know that the address it is about to send to belongs to somebody who was not in
-the call — which is the ordinary shape of an agent leaking something, not a
-break-in but a helpful forward. Every errand carries the roster of the call it
-came from, anything reaching further is refused until a person agrees, and the
-refusal names exactly who would newly learn. An approval is recorded against
-those names rather than as a boolean, so agreeing to tell the security team is
-not agreeing to tell the security team and a mailing list.
-
-The third thing is smaller and gets got wrong everywhere: **the person who made
-the commitment is the person who confirms it.** If the minutes say grace will
-write the migration, it is grace's to confirm — not the meeting organiser's, not
-an administrator's. Every product that puts a single approve button in front of
-whoever opened the summary has quietly moved the decision to the wrong person.
-And when somebody withdraws consent and their words are erased, an errand
-resting on them is reported rather than silently dropped: either work that
-vanished off somebody's list, or work already done with nothing on record saying
-why. Something already carried out stays carried out, because rewriting a record
-to say a thing did not happen is a worse lie than the gap.
 
 **Automation whose books have to add up.** Zapier's own troubleshooting advice
 contains this sentence: every time you use a filter or a path, you must ask what
@@ -1707,33 +1523,34 @@ of it has to be switched on.
 **Two kinds of authority, and only one of them was written down.** The access
 model above is the standing kind: a binding says this principal has this role on
 this resource, an administrator granted it, it is revocable, and an explicit deny
-wins wherever it sits. The other kind arrived later and by accident. A call has a
-host who can eject people. A room has a moderator who takes messages down. An
-errand has an owner who is the only person who can confirm it. **Nobody granted
+wins wherever it sits. The other kind arrived later and by accident. A share
+link lets a client read one draft. A visitor handed to a person holds the secret
+to one conversation. Whoever starts an agent run may stop it. **Nobody granted
 any of those**, they expire when the situation does, and each was invented inside the
-package that needed one.
+code that needed one.
 
-That is not a mistake in itself — a call host is genuinely not a rung on a
-site-wide ladder, and forcing it to be one would produce exactly the
+That is not a mistake in itself — a handoff's visitor is genuinely not a rung on
+a site-wide ladder, and forcing them to be one would produce exactly the
 over-granting the access model exists to avoid. The mistake is leaving the
 relationship unstated, because then two things become possible and neither is
 visible: situational authority quietly exceeding standing authority, or an
 administrator assuming an override that does not exist.
 
 The tempting rule — every situational role needs a standing one above some line
-— is wrong, and applying it would break the thing that works. The point of a call
-host is that an ordinary person can run a meeting; requiring an administrator to
-be present would mean meetings are run by whoever has the most access, which is a
+— is wrong, and applying it would break the thing that works. The point of a
+handoff is that a visitor with no account at all can talk to a person; requiring
+a grant first would mean only those with the most access are helped, which is a
 permission model shaping the organisation. **The rule that holds is about
 reach.** A power that acts inside its own situation needs nothing standing:
-ejecting somebody from a call ends when the call does, and the worst case is a
-bad meeting. A power that survives the situation is a standing act wearing a
-situational costume and needs the standing authority for what it actually does,
-which lands on **publish**: the ladder already defines it as the only action with
-an outside observer. Every situational role here today acts inside its own
-situation; the ones that reached outside (an incident's commander, a detection's
-promoter) left with a security team's tools, and the rule is what keeps the next
-one honest.
+ending a handoff conversation closes that one conversation, and the worst case
+is a visitor who leaves. A power that survives the situation is a standing act
+wearing a situational costume and needs the standing authority for what it
+actually does. One situational role here reaches outside today: an enrolment
+link, whose passkey outlives it and signs in as the person it names. What it
+does is hand somebody access, so it rests on **grant**: the authority of whoever
+made the link, checked when they made it. Others that reached outside (an
+incident's commander, a detection's promoter) left with a security team's tools,
+and the rule is what keeps the next one honest.
 
 So every situational role declares its powers and, for each, whether the effect
 survives — with the reason, because that classification is a judgement and an

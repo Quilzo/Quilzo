@@ -185,26 +185,9 @@ templates and design
   quilzo section reuse PAGE BLOCK [--at N] show a block's sections on a page
   quilzo section blocks                    every block, and the pages that reuse it
 
-conversation
-  quilzo room list                         the rooms you can read, and what is unread
-  quilzo room open ID --purpose W          start one, with a stated purpose
-  quilzo room say ROOM "..." [--reply ID]  post; a broadcast says who it interrupts
-  quilzo room read ROOM [--thread ID]      the conversation, tombstones and all
-  quilzo room edit ROOM MSG "..."          append a revision; the old words stay
-  quilzo room remove ROOM MSG              take the words and leave the shape
-  quilzo room history ROOM MSG             what it said, and when
-  quilzo room react ROOM MSG EMOJI [--off] a reaction, kept beside the message
-
 sharing a screen
-  quilzo screen cost --width 1920          what a shared screen actually costs, losslessly
+  quilzo screen cost --width 1920          what a shared screen costs, losslessly; the codec's figures alone
   quilzo annotate follow --scroll 128      marks that follow the content when the view scrolls
-  quilzo call demo                         where the media encryption key comes from
-  quilzo call cost --members 100           what a membership change costs on the wire
-  quilzo huddle controls                   which call controls are real and which are requests
-  quilzo huddle demo                       a whole call: link, lobby, shares, hands, mute, eject
-  quilzo scribe law                        what a note-taker may lawfully do, and who must agree
-  quilzo scribe demo                       a call with an AI note-taker sitting in it as a member
-  quilzo errand demo                       the assistant acting, and why it was allowed to
   quilzo flow demo                         automation whose books have to add up
   quilzo apps list                         apps connected to the agent interface, and what may connect
   quilzo apps allow|disallow HOST          let apps published from HOST ask people to connect; disallow ends theirs
@@ -227,10 +210,6 @@ sharing a screen
   quilzo shield hold --why "…" | release --why "…"   every playbook to watching, and back
   quilzo shield decoy add --where "CI variable"   plant a token that opens nothing and tells on its holder
   quilzo shield trust add CIDR | judge ID mistake|right | repair
-
-media encryption
-  quilzo sframe suites --fps 30            the five RFC 9605 suites, and what each costs
-  quilzo sframe check --suite 4            prove this build seals and opens correctly
 
 auditors
   quilzo engagement open ID --firm ...     engage a firm, scoped and with an end date
@@ -817,6 +796,13 @@ func main() {
 	cmd, cmdArgs := rest[0], rest[1:]
 	invoked.cmd, invoked.args = cmd, cmdArgs
 
+	// A command that has left Quilzo is said to have left, before help, the
+	// store or authorisation is asked anything about it (movedout.go).
+	if movedOut[cmd] {
+		w.Error(errMovedOut(cmd))
+		os.Exit(out.ExitUsage)
+	}
+
 	// Help for a command is answered before anything is moved, opened or
 	// authorised, and without running it: commandhelp.go says what running it
 	// did. A command that parses its flags first is let through after the
@@ -1095,20 +1081,10 @@ func main() {
 		err = cmdEntity(root, cmdArgs)
 	case "engagement":
 		err = cmdEngagement(root, cmdArgs)
-	case "sframe":
-		err = cmdSframe(cmdArgs)
 	case "screen":
 		err = cmdScreen(cmdArgs)
 	case "annotate":
 		err = cmdAnnotate(cmdArgs)
-	case "call":
-		err = cmdCall(cmdArgs)
-	case "huddle":
-		err = cmdHuddle(cmdArgs)
-	case "scribe":
-		err = cmdScribe(cmdArgs)
-	case "errand":
-		err = cmdErrand(cmdArgs)
 	case "flow":
 		err = cmdFlow(cmdArgs)
 	case "shield":
@@ -1123,8 +1099,6 @@ func main() {
 		err = cmdPending(root, cmdArgs)
 	case "standing":
 		err = cmdStanding(cmdArgs)
-	case "room":
-		err = cmdRoom(root, cmdArgs)
 	case "posture":
 		err = cmdPosture(root, cmdArgs)
 	case "type", "types":
@@ -1208,6 +1182,10 @@ func main() {
 		// `quilzo help oidc` is the lines about oidc, as `quilzo oidc --help`
 		// is; it printed the whole help, which has the answer somewhere in
 		// six hundred lines.
+		if len(cmdArgs) > 0 && movedOut[cmdArgs[0]] {
+			w.Error(errMovedOut(cmdArgs[0]))
+			os.Exit(out.ExitUsage)
+		}
 		if len(cmdArgs) > 0 {
 			commandHelp(cmdArgs[0], cmdArgs[1:])
 		} else {
@@ -1355,8 +1333,7 @@ var storeless = map[string]bool{
 var storelessWhole = map[string]bool{
 	"init":  true,
 	"audit": true, "auditlog": true,
-	"annotate": true, "call": true, "errand": true, "flow": true, "huddle": true,
-	"screen": true, "scribe": true, "sframe": true, "standing": true,
+	"annotate": true, "flow": true, "screen": true, "standing": true,
 }
 
 // runsWithoutAStore reports whether a command runs where --root holds no
