@@ -126,3 +126,39 @@ func TestTheBreakerWatchesWhatTheResearchIndexesAreSent(t *testing.T) {
 		t.Errorf("a tool's call was read as the research hand's, to %q", to)
 	}
 }
+
+// A search of the research indexes that waits for a person is shown to
+// them as what it is, a send, whatever the run read and whatever it is
+// asked about.
+//
+// What an action commits to is read from the action first and from the
+// reason it waits only when the action does not say. A search of the web
+// was named there and a search of the research indexes was not, so once
+// the breaker held one its class was read from the breaker's words, which
+// name what the run holds and what it read: a run holding the draft of the
+// order form had its search shown to the person deciding it as a payment,
+// and one that had read the page on how to cancel, as a deletion.
+func TestAHeldResearchSearchIsShownAsASend(t *testing.T) {
+	s := NewSession(webbed([]string{"web_search"}, nil), nil)
+	s.ReadWeb("hartsbakery.co.uk", "https://hartsbakery.co.uk/cancel")
+	s.HoldsPrivate("the draft of the order form")
+	for _, a := range []Action{
+		{Op: "research_search", Input: map[string]any{"query": "balance 4210"}},
+		{Op: "research_cite", Input: map[string]any{"id": "10.1000/balance-4210"}},
+	} {
+		why, breaks := s.Breaks(a)
+		if !breaks {
+			t.Fatalf("%s after holding something private was not held", a.Op)
+		}
+		if c := CommitOf(a, why, WaitAsk, false); c != "sends" {
+			t.Errorf("a held %s commits to %q: %q", a.Op, c, why)
+		}
+		if Earnable(a, why, WaitAsk, false) {
+			t.Errorf("a held %s may be earned away", a.Op)
+		}
+		// And asked about for any other reason, it is still what it is.
+		if c := CommitOf(a, "", WaitAsk, false); c != "sends" {
+			t.Errorf("%s asked about first commits to %q", a.Op, c)
+		}
+	}
+}
