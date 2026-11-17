@@ -133,19 +133,23 @@ func TestAClaimIsShownHoweverTheCommandLineWritesThePage(t *testing.T) {
 	}
 
 	patHolds(t, root, "store")
-	for name, run := range map[string]func() error{
-		"section add": func() error { return cmdSection(root, []string{"add", "store", "faq"}) },
-		"move":        func() error { return cmdMove(root, []string{"store", "shop"}) },
+	// In this order: the move takes the page the section is added to away.
+	for _, c := range []struct {
+		name string
+		run  func() error
+	}{
+		{"section add", func() error { return cmdSection(root, []string{"add", "store", "faq"}) }},
+		{"move", func() error { return cmdMove(root, []string{"store", "shop"}) }},
 	} {
 		var doc struct {
 			Claimed []collab.Lock `json:"claimed"`
 		}
-		got := printedBy(t, true, run)
+		got := printedBy(t, true, c.run)
 		if err := json.Unmarshal([]byte(got), &doc); err != nil {
-			t.Fatalf("%s: %v: %s", name, err, got)
+			t.Fatalf("%s: %v: %s", c.name, err, got)
 		}
 		if len(doc.Claimed) != 1 || doc.Claimed[0].Holder != "pat" || doc.Claimed[0].Page != "store" {
-			t.Errorf("%s --json does not say pat holds the page: %s", name, got)
+			t.Errorf("%s --json does not say pat holds the page: %s", c.name, got)
 		}
 	}
 }
