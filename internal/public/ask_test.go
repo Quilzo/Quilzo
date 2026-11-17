@@ -617,6 +617,49 @@ func TestAVisitorIsOfferedAnActionNoPageIsAbout(t *testing.T) {
 	}
 }
 
+// With nothing taking requests, no model is asked whether a visitor wants
+// an agent action: there is no offer the page could make of one.
+//
+// A request no page covers is put to the model only to see whether it
+// offers something to do. With the admin server stopped the offer is taken
+// off again, so on a site served on its own every question no page answers
+// cost a call to the model and came back as the refusal it would have been
+// without one; and a model told of the action could write "I can look that
+// up" about something that cannot be done just now.
+func TestNoModelIsAskedForAnOfferNothingTakes(t *testing.T) {
+	bot := shopBot
+	bot.UseModel = true
+	bot.Actions = []assistant.Action{
+		{Name: "booking", Kind: assistant.Agent, Target: "bookings", Description: "Look up your booking", Fields: []string{"booking_ref"}},
+	}
+	st, _ := askSite(t, bot)
+	st.Assistants.Act = func(chatact.Request) error { return nil }
+	taking := false
+	st.Assistants.Taking = func() bool { return taking }
+	asked := 0
+	st.Assistants.Model = func(assistant.Assistant) assistant.Model { return counting{"booking", &asked} }
+	var unanswered []string
+	st.Assistants.Unanswered = func(_, q string) { unanswered = append(unanswered, q) }
+
+	body := askPost(st, "help", "Please look up HB-2201").Body.String()
+	if !strings.Contains(body, "I could not find that on this site.") || strings.Contains(body, `action="/ask/help/act"`) {
+		t.Errorf("with nothing taking requests:\n%s", body)
+	}
+	if asked != 0 {
+		t.Errorf("the model was asked %d times for an offer nothing could take", asked)
+	}
+	if len(unanswered) != 1 {
+		t.Errorf("kept as unanswered: %v", unanswered)
+	}
+
+	// Once something takes requests again, it is asked, and the offer made.
+	taking = true
+	body = askPost(st, "help", "Please look up HB-2201").Body.String()
+	if asked != 1 || !strings.Contains(body, `action="/ask/help/act"`) {
+		t.Errorf("asked %d times once requests are taken:\n%s", asked, body)
+	}
+}
+
 // A chatbot that reads records answers from them on the site, naming the
 // record it answered from without a link, and reads them again when they
 // change.

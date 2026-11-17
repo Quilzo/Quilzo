@@ -326,7 +326,22 @@ func (st *Site) answer(w http.ResponseWriter, r *http.Request,
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
-	ans, aerr := assistant.RespondTo(ctx, a, idx, m, view.Question, view.Previous)
+	// Asked without its agent actions while nothing takes their requests:
+	// there is no offer the page could make of one. With them, a question
+	// no page covers was put to the model only to see whether it offers
+	// one (assistant.RespondTo) and the offer taken off again below, so a
+	// site served on its own paid for a call to the model on every such
+	// question, to give the refusal it gives without one.
+	asking := a
+	if st.Assistants.Act == nil || !st.actTaking() {
+		asking.Actions = nil
+		for _, ac := range a.Actions {
+			if ac.Kind != assistant.Agent {
+				asking.Actions = append(asking.Actions, ac)
+			}
+		}
+	}
+	ans, aerr := assistant.RespondTo(ctx, asking, idx, m, view.Question, view.Previous)
 	if aerr != nil {
 		view.Problem = aerr.Error()
 		st.renderAsk(w, r, *view, http.StatusUnprocessableEntity)
