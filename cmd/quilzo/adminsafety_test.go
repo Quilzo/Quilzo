@@ -695,3 +695,59 @@ func TestATokensCeilingIsWhatItsHolderHoldsWithinIt(t *testing.T) {
 		}
 	}
 }
+
+// A caller with no budget of its own is shown the one that applies to it,
+// which is the one for everybody else, and a change to a budget is
+// recorded with what it was and what it became.
+//
+// Asked about a caller with none, it said "the one for * applies, if there
+// is one" and showed no limit; and the record of a change was the caller's
+// name alone, the same for a cap raised to unlimited as for one lowered.
+func TestABudgetShownIsTheOneThatAppliesAndAChangeIsRecordedWithWhatChanged(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := connectStore(t)
+	var buf bytes.Buffer
+	w = out.New(false)
+	w.Out = &buf
+	said := func(args ...string) string {
+		t.Helper()
+		buf.Reset()
+		if err := cmdGateway(root, append([]string{"budget"}, args...)); err != nil {
+			t.Fatal(err)
+		}
+		return buf.String()
+	}
+	if got := said("chatbot:help"); !strings.Contains(got, "nothing limits") {
+		t.Errorf("with no budget anywhere it says: %s", got)
+	}
+	said("*", "--per-minute", "30", "--chars-per-day", "100000")
+	if got := said("chatbot:help"); !strings.Contains(got, "30 calls a minute") || !strings.Contains(got, "*") {
+		t.Errorf("a caller the budget for * applies to is shown: %s", got)
+	}
+	said("chatbot:help", "--per-minute", "5", "--chars-per-day", "20000")
+	if got := said("chatbot:help"); !strings.Contains(got, "5 calls a minute") || strings.Contains(got, "30 calls") {
+		t.Errorf("a caller with a budget of its own is shown: %s", got)
+	}
+	said("chatbot:help", "--per-minute", "10")
+	said("chatbot:help", "--remove")
+
+	var changes []map[string]string
+	for _, e := range auditFor(t, root, "gateway.budget") {
+		if e.Detail["name"] == "chatbot:help" {
+			changes = append(changes, e.Detail)
+		}
+	}
+	if len(changes) != 3 {
+		t.Fatalf("recorded %+v", changes)
+	}
+	for i, want := range [][2]string{
+		{"none", "5 calls a minute, 20000 characters a day"},
+		{"5 calls a minute, 20000 characters a day", "10 calls a minute, 20000 characters a day"},
+		{"10 calls a minute, 20000 characters a day", "none"},
+	} {
+		if !strings.HasPrefix(changes[i]["from"], want[0]) || !strings.HasPrefix(changes[i]["to"], want[1]) {
+			t.Errorf("change %d is recorded from %q to %q, want from %q to %q", i+1,
+				changes[i]["from"], changes[i]["to"], want[0], want[1])
+		}
+	}
+}

@@ -11,6 +11,7 @@ import (
 	"github.com/quilzo/quilzo/internal/codescan"
 	"github.com/quilzo/quilzo/internal/fetch"
 	"github.com/quilzo/quilzo/internal/provider"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -263,7 +264,10 @@ func gatewayStatus(root string) error {
 // Grant, not publish: a route decides where prompts go — what visitors typed
 // and what the site holds — and pointing it somewhere new is a decision about
 // who receives that, of the same weight as deciding who may sign in.
-func changeGateway(root, change, name string, edit func(*gateway.Config) error) error {
+//
+// What the edit says of the change (said) goes in the record beside the
+// name, when it says anything.
+func changeGateway(root, change, name string, edit func(*gateway.Config) error, said ...map[string]string) error {
 	caller := resolveCaller(root, flagToken)
 	if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
 		return err
@@ -281,9 +285,13 @@ func changeGateway(root, change, name string, edit func(*gateway.Config) error) 
 	if err := gateway.Save(gatewayPath(root), cfg); err != nil {
 		return err
 	}
+	detail := map[string]string{"name": name}
+	for _, more := range said {
+		maps.Copy(detail, more)
+	}
 	record(root, audit.Record{Action: "gateway." + change, Resource: "/gateway/" + name,
 		Outcome: audit.Success, Principal: caller.Name, Kind: caller.Kind, Model: caller.Model,
-		Verified: caller.Verified, Detail: map[string]string{"name": name}})
+		Verified: caller.Verified, Detail: detail})
 	return nil
 }
 
@@ -462,12 +470,17 @@ func gatewayBudget(root string, args []string) error {
 	if !*drop && len(set) == 0 {
 		return showBudget(root, who)
 	}
+	// What it was and what it became, for the record: "gateway.budget
+	// chatbot:help" was all it said, the same for a cap raised to unlimited
+	// as for one lowered.
+	changed := map[string]string{"from": "none", "to": "none"}
 	return changeGateway(root, "budget", who, func(c *gateway.Config) error {
 		var kept []gateway.Budget
 		b := gateway.Budget{Consumer: who}
 		for _, old := range c.Budgets {
 			if old.Consumer == who {
 				b = old
+				changed["from"] = budgetWords(old)
 				continue
 			}
 			kept = append(kept, old)
@@ -489,15 +502,21 @@ func gatewayBudget(root string, args []string) error {
 				b.MoneyPerMonth = *moneyMonth
 			}
 			kept = append(kept, b)
+			changed["to"] = budgetWords(b)
 		}
 		c.Budgets = kept
 		return c.Validate()
-	})
+	}, changed)
 }
 
 // showBudget is `quilzo gateway budget CALLER` with nothing to change: the
-// caller's own budget, or that it has none, under the same authority that
-// changes one, since a budget says what a caller is allowed to spend.
+// budget that applies to the caller, its own or the one for everybody
+// else, under the same authority that changes one, since a budget says
+// what a caller is allowed to spend.
+//
+// A caller with none of its own was told "the one for * applies, if there
+// is one", which showed no limit and left whether there was one to be
+// looked up.
 func showBudget(root, who string) error {
 	caller := resolveCaller(root, flagToken)
 	if err := authorise(root, caller, auth.ActGrant, "/"); err != nil {
@@ -509,19 +528,32 @@ func showBudget(root, who string) error {
 	}
 	b, found := gateway.Budget{Consumer: who}, false
 	if cfg != nil {
-		for _, x := range cfg.Budgets {
-			if x.Consumer == who {
-				b, found = x, true
-			}
+		if applies, ok := cfg.BudgetFor(who); ok {
+			b, found = applies, true
 		}
 	}
 	if w.JSON(b) {
 		return nil
 	}
-	if !found {
-		w.Human("%s has no budget of its own; the one for * applies, if there is one\n", who)
+	switch {
+	case !found && who == "*":
+		w.Human("there is no budget for *: nothing limits a caller with no budget of its own\n")
 		return nil
+	case !found:
+		w.Human("%s has no budget of its own and there is none for *: nothing limits it\n", who)
+		return nil
+	case b.Consumer != who:
+		w.Human("%s has no budget of its own; the one for %s applies\n", who, b.Consumer)
+	default:
+		w.Human("%s%s%s\n", bold, who, reset)
 	}
+	w.Human("  %s\n", budgetWords(b))
+	return nil
+}
+
+// budgetWords is a budget's limits on one line, as it is shown and as a
+// change to it is recorded.
+func budgetWords(b gateway.Budget) string {
 	limit := func(n int, what string) string {
 		if n == 0 {
 			return "unlimited " + what
@@ -534,11 +566,9 @@ func showBudget(root, who string) error {
 		}
 		return m
 	}
-	w.Human("%s%s%s\n", bold, who, reset)
-	w.Human("  %s, %s, %s\n", limit(b.PerMinute, "calls a minute"), limit(b.CharsPerDay, "characters a day"),
-		limit(b.TokensPerDay, "tokens a day"))
-	w.Human("  money %s a day, %s a month\n", money(b.MoneyPerDay), money(b.MoneyPerMonth))
-	return nil
+	return fmt.Sprintf("%s, %s, %s, money %s a day and %s a month", limit(b.PerMinute, "calls a minute"),
+		limit(b.CharsPerDay, "characters a day"), limit(b.TokensPerDay, "tokens a day"),
+		money(b.MoneyPerDay), money(b.MoneyPerMonth))
 }
 
 // gatewayCapability is the gateway for the admin's Models screen.
