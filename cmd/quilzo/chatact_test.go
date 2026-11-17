@@ -715,3 +715,46 @@ func TestARequestCutOffByARestartIsAnswered(t *testing.T) {
 		t.Error("nothing records that the request was not finished")
 	}
 }
+
+// What a chatbot offers is told to whoever asks it over the agent
+// interface, as it is on the command line and the Chatbots screen.
+//
+// ask_assistant gave the answer's words and left out what it offered. An
+// answer that is only an offer came back as "This is something I can help
+// with." and nothing to say what, and an offer beside a page's words was
+// not told at all, so an owner or an agent testing a chatbot there could
+// not see that it offers an action, which is what they were asking to see.
+func TestAnOfferIsToldOverTheAgentInterface(t *testing.T) {
+	root := chatActStore(t)
+	set, _ := assistant.Load(assistantsPath(root))
+	a, _ := set.Get("help")
+	a.UseModel = true
+	if err := set.Put(a); err != nil {
+		t.Fatal(err)
+	}
+	if err := assistant.Save(assistantsPath(root), set); err != nil {
+		t.Fatal(err)
+	}
+	bookingOfferModel(t)
+	srv := assistantMCP(t, root)
+	text, merr := callTool(t, srv, "quilzo_read", "ask_assistant", map[string]any{
+		"name": "help", "question": "Please look up HB-2201"})
+	if merr != nil {
+		t.Fatal(merr.Message)
+	}
+	var ans struct {
+		Answer  string
+		Refused bool
+		Offers  *struct {
+			Name, Description string
+			Args              map[string]string
+		}
+	}
+	if err := json.Unmarshal([]byte(text), &ans); err != nil {
+		t.Fatalf("%v: %s", err, text)
+	}
+	if ans.Refused || ans.Offers == nil || ans.Offers.Name != "booking" ||
+		ans.Offers.Description != "Look up your booking" || ans.Offers.Args["booking_ref"] != "HB-2201" {
+		t.Fatalf("what it offers is not told: %s", text)
+	}
+}

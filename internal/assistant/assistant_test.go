@@ -850,6 +850,36 @@ func TestALyingModelNeverReachesAVisitor(t *testing.T) {
 	}
 }
 
+// An answer that is only an offer says nothing the site does not say, and is
+// not counted as an answer to a question the site does not answer.
+//
+// Since a request no page covers is put to the model for the sake of the
+// chatbot's actions, a case with no page ("Please look up ZQ-5521") came
+// back as an offer and no sentence, and the evaluation counted it under
+// hallucinated, the number an owner watches most: "answered ..., which the
+// site does not answer: This is something I can help with." A set of cases
+// that scored clean before lost marks for the chatbot doing the right thing.
+func TestAnOfferIsNotCountedAsAnAnswerTheSiteDoesNotGive(t *testing.T) {
+	a := helper
+	a.Actions = []Action{{Name: "lookup", Kind: Agent, Target: "orders",
+		Description: "Look up an order", Fields: []string{"order_ref"}}}
+	m := &scripted{reply: `{"answer": "", "action": {"name": "lookup", "args": {"order_ref": "ZQ-5521"}}}`}
+	r, err := Evaluate(context.Background(), a, shopIndex(t, a), m, []Case{
+		{Question: "Please look up ZQ-5521"},
+		{Question: "how much is delivery to France", Page: "delivery", Contains: []string{"£12"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Hallucinated != 0 || r.Refused != 1 {
+		t.Errorf("an offer with no sentence was counted as an answer: %+v", r)
+	}
+	// A page's own words with the offer beside them are still an answer.
+	if r.Answered != 1 || r.WrongRefusal != 0 || r.Missing != 0 {
+		t.Errorf("the case a page answers: %+v", r)
+	}
+}
+
 // TestEvenAShortSentenceMustCite. "Yes." has no word a support check can
 // test, so only the citation rule stops a model answering yes to a question
 // the passage says no to.
