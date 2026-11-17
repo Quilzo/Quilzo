@@ -125,18 +125,31 @@ func putSiteRedirects(root string, prior *sitePrior, want []seo.Redirect, pages 
 
 // siteRedirects is the site's own redirect map with the files given laid
 // over it: a redirect a file names for the same old address wins.
+//
+// Except over a rule that writes the address as it is, where the one laid
+// over it only decodes to it (seo.Encoded). An encoded rule matched no
+// request before sources were decoded, so where a site holds both, the one
+// written as the address is the one it has been serving: an owner's own
+// /ürünlerimiz, added after an import's /%c3%bcr%c3%bcnlerimiz/ left the old
+// link a 404. Kept by which came first, the import's took its place, and
+// the old link moved without anybody changing a rule.
 func siteRedirects(root string, files ...string) ([]seo.Redirect, error) {
 	var out []seo.Redirect
-	seen := map[string]bool{}
+	// at is where in out the rule for an address is.
+	at := map[string]int{}
 	add := func(rs []seo.Redirect) {
 		for _, r := range rs {
 			from, err := seo.Path(r.From)
 			if err != nil {
 				from = r.From // left for the map to refuse, by name
 			}
-			if !seen[from] {
-				seen[from] = true
+			i, seen := at[from]
+			switch {
+			case !seen:
+				at[from] = len(out)
 				out = append(out, r)
+			case seo.Encoded(out[i].From) && !seo.Encoded(r.From):
+				out[i] = r
 			}
 		}
 	}

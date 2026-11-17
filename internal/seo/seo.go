@@ -195,6 +195,9 @@ func NewMap(in []Redirect) (*Map, error) {
 	// destinations — which is how a redirect map develops a contradiction
 	// nobody can see by reading it.
 	byFrom := map[string]Redirect{}
+	// decoded says which of those sources were only ever written
+	// percent-encoded.
+	decoded := map[string]bool{}
 	for _, r := range in {
 		from, err := sourcePath(r.From)
 		if err != nil {
@@ -204,33 +207,54 @@ func NewMap(in []Redirect) (*Map, error) {
 		if err != nil {
 			return nil, fmt.Errorf("redirect to %q: %w", r.To, err)
 		}
-		if from == to {
+		if from == targetKey(to) {
 			return nil, fmt.Errorf("%s redirects to itself", from)
 		}
-		if existing, dup := byFrom[from]; dup && existing.To != to {
-			return nil, fmt.Errorf(
-				"%s is redirected to both %s and %s; which one applies would "+
-					"depend on ordering", from, existing.To, to)
+		encoded := Encoded(r.From)
+		existing, dup := byFrom[from]
+		if dup && existing.To != to {
+			// One address written both as it is and percent-encoded, with two
+			// targets, is not a contradiction to refuse: the encoded rule
+			// never matched a request, so the one written as it is has been
+			// the rule, and stays it. Such a map is what an owner had who
+			// added /ürünlerimiz by hand after the import's
+			// /%c3%bcr%c3%bcnlerimiz/ left the old link a 404, and refusing
+			// it would stop a site that had started with it.
+			switch {
+			case decoded[from] && !encoded:
+			case !decoded[from] && encoded:
+				continue
+			default:
+				return nil, fmt.Errorf(
+					"%s is redirected to both %s and %s; which one applies would "+
+						"depend on ordering", from, existing.To, to)
+			}
 		}
+		decoded[from] = encoded && (!dup || decoded[from])
 		r.From, r.To = from, to
 		byFrom[from] = r
 	}
 
-	// Resolve each destination to its final target, refusing cycles.
+	// Resolve each destination to its final target, refusing cycles. A
+	// target is looked for among the sources by the address a request for
+	// it would have (targetKey): compared as it was written, a target
+	// spelled /%C3%BC was not the source that stands for /ü, and a loop
+	// through the two was accepted and served.
 	for from, r := range byFrom {
 		seen := map[string]bool{from: true}
 		target := r.To
 		hops := 0
 		for {
-			next, chained := byFrom[target]
+			key := targetKey(target)
+			next, chained := byFrom[key]
 			if !chained {
 				break
 			}
-			if seen[target] {
+			if seen[key] {
 				return nil, fmt.Errorf(
 					"redirect loop: %s eventually points back at itself", from)
 			}
-			seen[target] = true
+			seen[key] = true
 			target = next.To
 			if hops++; hops > 64 {
 				return nil, fmt.Errorf("redirect chain from %s is longer than "+
@@ -298,6 +322,36 @@ func normalisePath(p string) (string, error) { return pathOf(p, false) }
 // Lookup does not come through here: decoding a request's path a second
 // time would answer /a%2541, which asks for "/a%41", with the rule for /aA.
 func sourcePath(p string) (string, error) { return pathOf(p, true) }
+
+// targetKey is the key a request for a target would be looked up by, when
+// the target is a path on this site: its address, percent-decoded as the
+// server decodes a request's. A target on another site, or one with a query,
+// is itself, which is no source's key.
+func targetKey(to string) string {
+	if schemeOf(to) != "" {
+		return to
+	}
+	if key, err := sourcePath(to); err == nil {
+		return key
+	}
+	return to
+}
+
+// Encoded says whether a source reaches its address only by being
+// percent-decoded: /%C3%BCr, which stands for /ür. One written as its
+// address is not, and neither is a full URL, whose path was always decoded.
+//
+// It is what tells the rule a site has been serving from one that never
+// matched a request, where a map written before sources were decoded holds
+// both for one address.
+func Encoded(from string) bool {
+	plain, err := normalisePath(from)
+	if err != nil {
+		return false
+	}
+	key, err := sourcePath(from)
+	return err == nil && key != plain
+}
 
 // pathOf is the path p names, comparable. written says p is an address as
 // somebody wrote it, which may be percent-encoded, and not a path already

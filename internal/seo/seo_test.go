@@ -557,3 +557,76 @@ func TestASourceThatDecodesToNoPathIsKeptAsWritten(t *testing.T) {
 		}
 	}
 }
+
+// A map holds no loop and no chain through an address spelled
+// percent-encoded, as it holds none through one spelled as it is.
+//
+// A source is known by the address it decodes to, and a target was still
+// compared as it was written. /%C3%BC sent to /b and /b sent to /%C3%BC was
+// a loop NewMap refused while neither spelling matched a request; once the
+// source matched, the target was no longer found among the sources, the map
+// was accepted, and a browser asking for either went round until it gave
+// up. A rule sent to its own address the same way was accepted too.
+func TestALoopThroughAPercentEncodedAddressIsRefused(t *testing.T) {
+	for _, loop := range [][]Redirect{
+		{{From: "/%C3%BC", To: "/b"}, {From: "/b", To: "/%C3%BC"}},
+		{{From: "/ü", To: "/b"}, {From: "/b", To: "/%c3%bc/"}},
+		{{From: "/%C3%BC", To: "/%C3%BC"}},
+		{{From: "/ü", To: "/%C3%BC"}},
+	} {
+		if _, err := NewMap(loop); err == nil {
+			t.Errorf("a map that sends a browser round in circles was accepted: %+v", loop)
+		}
+	}
+
+	// And a chain through one is flattened, as any chain is.
+	m, err := NewMap([]Redirect{{From: "/a", To: "/%C3%BC"}, {From: "/%C3%BC", To: "/c"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r, _ := m.Lookup("/a"); r.To != "/c" {
+		t.Errorf("/a goes to %q, a second redirect away from /c", r.To)
+	}
+
+	// A target on another site is never one of this site's addresses.
+	if _, err := NewMap([]Redirect{{From: "/ü", To: "https://elsewhere.example/%C3%BC"}}); err != nil {
+		t.Errorf("a redirect to the same path on another site was refused: %v", err)
+	}
+}
+
+// Where one address is written both as it is and percent-encoded, with two
+// targets, the rule written as it is stays the one that applies.
+//
+// It is the one the site has been serving: the encoded rule never matched a
+// request. `quilzo site import` wrote /%c3%bcr%c3%bcnlerimiz/, the old link
+// stayed a 404, and an owner who then added /ürünlerimiz by hand, to a page
+// they had renamed, had a map with both. Read with both as one address, that
+// map contradicted itself, and a site that had started with it would no
+// longer start. Two rules that contradict each other in one spelling are
+// refused as they always were.
+func TestTheAddressAsWrittenWinsOverOneThatDecodesToIt(t *testing.T) {
+	encoded := Redirect{From: "/%c3%bcr%c3%bcnlerimiz/", To: "/r-nlerimiz"}
+	written := Redirect{From: "/ürünlerimiz", To: "/urunler"}
+	for _, in := range [][]Redirect{{encoded, written}, {written, encoded},
+		{encoded, written, {From: "/%C3%BCr%C3%BCnlerimiz", To: "/r-nlerimiz"}}} {
+		m, err := NewMap(in)
+		if err != nil {
+			t.Fatalf("a map a site was serving no longer loads: %v", err)
+		}
+		if r, ok := m.Lookup("/ürünlerimiz"); !ok || r.To != "/urunler" || m.Len() != 1 {
+			t.Errorf("/ürünlerimiz goes to %q (%d rule(s)), and it was going to /urunler", r.To, m.Len())
+		}
+	}
+	for _, in := range [][]Redirect{
+		{written, {From: "/ürünlerimiz/", To: "/elsewhere"}},
+		{encoded, {From: "/%C3%BCr%C3%BCnlerimiz", To: "/elsewhere"}},
+	} {
+		if _, err := NewMap(in); err == nil {
+			t.Errorf("two rules for one address, spelled alike, were accepted: %+v", in)
+		}
+	}
+	if Encoded("/ürünlerimiz") || Encoded("/100%-rye") || Encoded("https://old.example/%C3%BC") ||
+		!Encoded("/%C3%BCr") {
+		t.Error("Encoded does not tell an address spelled percent-encoded from one written as it is")
+	}
+}

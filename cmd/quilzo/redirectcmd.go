@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
@@ -36,7 +37,14 @@ func addSiteRedirect(root string, r seo.Redirect) error {
 	if err != nil {
 		return err
 	}
-	r.From = from
+	// Kept as its address, which is what the site matches, unless that is
+	// not text: /caf%E9, from a site older than UTF-8 addresses, decodes to
+	// bytes a file of text does not hold, and the rule read back was for
+	// another address. Such a one is kept as it was typed, and stands for
+	// the same address each time it is read.
+	if utf8.ValidString(from) {
+		r.From = from
+	}
 	var f redirectFile
 	if err := loadRedirectFile(storeRedirectsPath(root), &f); err != nil {
 		return err
