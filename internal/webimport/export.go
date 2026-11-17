@@ -201,10 +201,16 @@ func (it WordPressItem) Protected() bool { return strings.TrimSpace(it.Password)
 //
 // Unifying that rule with sheet.Slug, which a sheet's rows and a crawled
 // page's address are named by, changes names `quilzo import` gives today
-// ("Naïve café" is nave-caf by one and na-ve-caf by the other), and is the
-// owner's to decide.
+// (an apostrophe is a break in one and not the other), and is the owner's
+// to decide. Both spell a letter outside ASCII the same way
+// (asciifold.Spell), so "Naïve café" is naive-cafe by either.
+//
+// An item none of the three can name, one in a script with no spelling in
+// ASCII (Arabic, Hebrew, Chinese), is page-<its number>, as a post with no
+// title is post-<its number>: it was not brought at all, "an item with no
+// title or slug", for want of letters.
 func (it WordPressItem) PageName() string {
-	if n := export.Slug(it.Name); n != "" {
+	if n := export.Slug(it.Slug()); n != "" {
 		return n
 	}
 	if u, err := url.Parse(strings.TrimSpace(it.Link)); err == nil && strings.Trim(u.Path, "/") != "" {
@@ -212,7 +218,26 @@ func (it WordPressItem) PageName() string {
 			return n
 		}
 	}
-	return export.Slug(html.UnescapeString(it.Title))
+	if n := export.Slug(html.UnescapeString(it.Title)); n != "" {
+		return n
+	}
+	if id := export.Slug(it.ID); id != "" {
+		return "page-" + id
+	}
+	return ""
+}
+
+// Slug is WordPress's own slug for the item (post_name), as its letters.
+//
+// WordPress stores a slug in another alphabet percent-encoded, and the
+// escapes were read as the slug: ürünlerimiz is %c3%bcr%c3%bcnlerimiz in
+// an export, and came in as the page c3bcrc3bcnlerimiz and the post
+// c3-bc-r-c3-bc-nlerimiz. A slug that does not decode is as it was written.
+func (it WordPressItem) Slug() string {
+	if dec, err := url.PathUnescape(it.Name); err == nil {
+		return dec
+	}
+	return it.Name
 }
 
 // ReadWordPress reads a WordPress export, and refuses one that does not
@@ -351,7 +376,7 @@ func FromWordPress(body []byte, origin string) (*Site, error) {
 		comments += len(it.Comments)
 		link, err := url.Parse(strings.TrimSpace(it.Link))
 		if err != nil || link.Host == "" {
-			link = home.ResolveReference(&url.URL{Path: "/" + it.Name + "/"})
+			link = home.ResolveReference(&url.URL{Path: "/" + it.Slug() + "/"})
 		}
 		content, n := wpContent(it.Content())
 		shortcodes += n
@@ -371,7 +396,7 @@ func FromWordPress(body []byte, origin string) (*Site, error) {
 			}
 			continue
 		}
-		pst := Post{URL: link, Title: title, Slug: it.Name, Published: day(it.Date), Blocks: read.Blocks,
+		pst := Post{URL: link, Title: title, Slug: it.Slug(), Published: day(it.Date), Blocks: read.Blocks,
 			Byline: authors[it.Creator]}
 		if pst.Title == "" {
 			// WordPress shows a post with no title; so does this.
@@ -379,6 +404,12 @@ func FromWordPress(body []byte, origin string) (*Site, error) {
 			if pst.Slug == "" {
 				pst.Slug = "post-" + it.ID
 			}
+		}
+		// A post neither its slug nor its title can link, in a script with
+		// no spelling in ASCII, is linked by its number, as one with no
+		// title is. It was not brought: a post needs a link.
+		if slugOf(pst.Slug) == "" && slugOf(pst.Title) == "" && it.ID != "" {
+			pst.Slug = "post-" + it.ID
 		}
 		if pst.Byline == "" {
 			pst.Byline = it.Creator

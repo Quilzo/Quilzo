@@ -570,3 +570,31 @@ func TestATypeThatDeclaresIdAlwaysHasTheOwnIdColumn(t *testing.T) {
 		t.Errorf("written with a column nobody has: %q", out)
 	}
 }
+
+// A link made from words in another language is the words, spelled in the
+// letters a page link may hold.
+//
+// Every letter outside ASCII was a break between words: Ürünler was r-nler,
+// Café Menu caf-menu, and a Greek or Russian title had nothing left and was
+// refused, as if nobody had given an address. These are the public URLs.
+func TestASlugSpellsLettersFromOtherAlphabets(t *testing.T) {
+	for in, want := range map[string]string{
+		"Ürünler":            "urunler",
+		"Café Menu":          "cafe-menu",
+		"İstanbul Gezi":      "istanbul-gezi",
+		"Naïve café":         "naive-cafe",
+		"Straße":             "strasse",
+		"Łódź":               "lodz",
+		"Ærøskøbing":         "aeroskobing",
+		"Σχετικά με εμάς":    "schetika-me-emas",
+		"Привет, мир":        "privet-mir",
+		"Объявление":         "obiavlenie",
+		"🎉 Party":            "party",
+		"مرحبا":              "",
+		"Ürünler 2026/İzmir": "urunler-2026-izmir",
+	} {
+		if got := Slug(in); got != want {
+			t.Errorf("Slug(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

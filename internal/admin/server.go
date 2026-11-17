@@ -2634,6 +2634,15 @@ func (s *Server) handleNewPage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	name := strings.Join(parts, "/")
+	// An address typed in a script with no spelling in Latin letters
+	// (Arabic, Hebrew, Chinese) leaves no name, and is told that: it was
+	// told to give an address, which it had.
+	if name == "" && strings.Trim(raw, "/ ") != "" {
+		http.Redirect(w, r, "/?e="+urlQueryEscape("A page address is written in Latin letters and "+
+			"digits, and that one has none. Give the new page one, such as about-us; "+
+			"its title can be in any language"), http.StatusSeeOther)
+		return
+	}
 	if name == "" || len(parts) > 8 {
 		http.Redirect(w, r, "/?e="+urlQueryEscape("Give the new page an address, such as about-us"), http.StatusSeeOther)
 		return

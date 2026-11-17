@@ -466,11 +466,13 @@ func TestSameNamesAreNumberedInTimeInProportionToThem(t *testing.T) {
 		t.Errorf("the posts are named %s ... %s", got, slugs[len(slugs)-1])
 	}
 
-	// Letters a page's name leaves out tell the pages' addresses apart.
+	// Letters a page's name leaves out tell the pages' addresses apart:
+	// Arabic, which has no spelling in ASCII here. Accented Latin letters
+	// were left out too until they were spelled (asciifold.Spell).
 	odd := func(i int) string {
 		var b strings.Builder
 		for _, d := range fmt.Sprint(i) {
-			b.WriteRune([]rune("àáâãäåæçèé")[d-'0'])
+			b.WriteRune([]rune("ابتثجحخدذر")[d-'0'])
 		}
 		return b.String()
 	}
@@ -887,6 +889,54 @@ func TestARedirectFromANonLatinAddressMatchesARequestForIt(t *testing.T) {
 		}
 		if !hasPage(b.Package, strings.TrimPrefix(r.To, "/")) {
 			t.Errorf("%s is redirected to %s, which is no page of the package", request, r.To)
+		}
+	}
+}
+
+// A page or post WordPress named in another alphabet keeps a name readable
+// in it, and one in a script with no spelling here is still brought.
+//
+// WordPress stores such a post_name percent-encoded, and the escapes were
+// read as the name: `quilzo import` made c3bcrc3bcnlerimiz of ürünlerimiz,
+// site import made a Greek post post/cf-83-cf-87-..., and an Arabic page,
+// with nothing left of its name or title, was not brought at all.
+func TestAWordPressNameInAnotherAlphabetIsReadable(t *testing.T) {
+	for _, c := range []struct {
+		it   WordPressItem
+		want string
+	}{
+		{WordPressItem{ID: "11", Name: "%c3%bcr%c3%bcnlerimiz", Title: "Ürünlerimiz"}, "urunlerimiz"},
+		{WordPressItem{ID: "12", Name: "%cf%83%cf%87%ce%b5%cf%84%ce%b9%ce%ba%ce%ac", Title: "Σχετικά"}, "schetika"},
+		{WordPressItem{ID: "13", Name: "%d9%85%d8%b1%d8%ad%d8%a8%d8%a7", Title: "مرحبا"}, "page-13"},
+		{WordPressItem{ID: "14", Name: "100%-rye", Title: "Rye"}, "100-rye"},
+	} {
+		if got := c.it.PageName(); got != c.want {
+			t.Errorf("%s is named %q, want %q", c.it.Name, got, c.want)
+		}
+	}
+
+	doc := strings.Replace(wxr, "<item><title>Not yet</title>",
+		`<item><title>Σχετικά</title><link>https://oldbakery.example/?p=60</link>`+
+			`<wp:post_id>60</wp:post_id><wp:post_name>%cf%83%cf%87%ce%b5%cf%84%ce%b9%ce%ba%ce%ac</wp:post_name><wp:post_type>post</wp:post_type>`+
+			`<wp:post_date>2026-10-01 09:00:00</wp:post_date>`+
+			`<wp:status>publish</wp:status><content:encoded><![CDATA[<p>Ψωμί.</p>]]></content:encoded></item>`+
+			`<item><title>مرحبا</title><link>https://oldbakery.example/?p=61</link>`+
+			`<wp:post_id>61</wp:post_id><wp:post_name>%d9%85%d8%b1%d8%ad%d8%a8%d8%a7</wp:post_name><wp:post_type>post</wp:post_type>`+
+			`<wp:post_date>2026-10-02 09:00:00</wp:post_date>`+
+			`<wp:status>publish</wp:status><content:encoded><![CDATA[<p>خبز.</p>]]></content:encoded></item>`+
+			`<item><title>Not yet</title>`, 1)
+	s, err := FromWordPress([]byte(doc), "bakery.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	slugs := postSlugs(s.Posts)
+	got := map[string]bool{}
+	for _, sl := range slugs {
+		got[sl] = true
+	}
+	for _, want := range []string{"schetika", "post-61"} {
+		if !got[want] {
+			t.Errorf("no post is at %s: %v", want, slugs)
 		}
 	}
 }

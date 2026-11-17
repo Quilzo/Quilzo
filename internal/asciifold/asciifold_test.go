@@ -146,3 +146,18 @@ func FuzzIndexFoldReturnsOnlyRealMatches(f *testing.F) {
 		}
 	})
 }
+
+// A letter is spelled in lower-case ASCII, a mark joins the letters beside
+// it, and a letter of a script with no spelling here has none.
+func TestSpell(t *testing.T) {
+	for r, want := range map[rune]string{'Ü': "u", 'İ': "i", 'ß': "ss", 'Ж': "zh", 'Χ': "ch", '̇': "", 'ь': ""} {
+		if got, ok := Spell(r); !ok || got != want {
+			t.Errorf("Spell(%q) = %q, %v; want %q", r, got, ok, want)
+		}
+	}
+	for _, r := range []rune{'a', '-', 'م', '中', '🎉'} {
+		if got, ok := Spell(r); ok {
+			t.Errorf("Spell(%q) = %q, has a spelling", r, got)
+		}
+	}
+}

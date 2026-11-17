@@ -127,3 +127,31 @@ func TestANewPageAtAnAddressTheStoreCannotHoldIsRefusedFirst(t *testing.T) {
 		t.Errorf("a refused save wrote a page: %d pages, then %d", len(before), len(after))
 	}
 }
+
+// New page at an address in another language opens the page at that
+// address, spelled in the letters a page address holds, and one in a script
+// with no such spelling is told so.
+//
+// Ürünler opened /page/r-nler and Café Menu /page/caf-menu, and a Greek or
+// Arabic address was refused with "Give the new page an address", which
+// blamed the person for an address they had given.
+func TestANewPageAtAnAddressInAnotherLanguage(t *testing.T) {
+	srv, token := setup(t)
+	for typed, want := range map[string]string{
+		"Ürünler":         "/page/urunler",
+		"Café Menu":       "/page/cafe-menu",
+		"Σχετικά με εμάς": "/page/schetika-me-emas",
+		"tr/Hakkımızda":   "/page/tr/hakkimizda",
+	} {
+		w := get(t, srv, "/pages/new?name="+url.QueryEscape(typed), token)
+		if loc := w.Header().Get("Location"); loc != want {
+			t.Errorf("New page at %q went to %q, want %q", typed, loc, want)
+		}
+	}
+	w := get(t, srv, "/pages/new?name="+url.QueryEscape("مرحبا"), token)
+	loc, _ := url.QueryUnescape(w.Header().Get("Location"))
+	if !strings.HasPrefix(loc, "/?e=") || strings.Contains(loc, "Give the new page an address") ||
+		!strings.Contains(loc, "Latin") {
+		t.Errorf("an Arabic address went to %q", loc)
+	}
+}

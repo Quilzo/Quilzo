@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/asciifold"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/store"
 	"github.com/quilzo/quilzo/internal/yamlite"
@@ -536,6 +537,14 @@ func Slug(s string) string {
 			if !lastDash && b.Len() > 0 {
 				b.WriteByte('-')
 				lastDash = true
+			}
+		default:
+			// A letter outside ASCII, spelled in ASCII: ürünlerimiz is
+			// urunlerimiz, where it was rnlerimiz, and a Greek or Russian
+			// title is a name rather than none.
+			if spelled, ok := asciifold.Spell(r); ok && spelled != "" {
+				b.WriteString(spelled)
+				lastDash = false
 			}
 		}
 	}

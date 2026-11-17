@@ -64,3 +64,23 @@ func TestAPageWithNestedFieldsCanBeExportedToMarkdown(t *testing.T) {
 			"reads back")
 	}
 }
+
+// The name an import makes from words in another language is the words,
+// spelled in the letters a page name may hold, as a sheet's links are.
+//
+// Every letter outside ASCII was left out: ürünlerimiz came in as rnlerimiz
+// and a Greek title had nothing left.
+func TestASlugSpellsLettersFromOtherAlphabets(t *testing.T) {
+	for in, want := range map[string]string{
+		"ürünlerimiz": "urunlerimiz",
+		"Naïve café":  "naive-cafe",
+		"İstanbul":    "istanbul",
+		"σχετικά":     "schetika",
+		"Объявление":  "obiavlenie",
+		"مرحبا":       "",
+	} {
+		if got := Slug(in); got != want {
+			t.Errorf("Slug(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
