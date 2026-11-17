@@ -264,9 +264,9 @@ func (c *Caller) recordedAs(named, message string) (author, msg string) {
 // The name typed was the record. `posture suppress --by 'Dana (CISO)'`
 // wrote the risk acceptance to the audit log under Dana and left out the
 // administrator who ran it, `auth grant --by` set "granted by" to whatever
-// was typed, and `checked set --by` let an author record a confirmation as
-// somebody else's: the evidence an auditor reads named whoever the person
-// at the keyboard chose.
+// was typed, `checked set --by` let an author record a confirmation as
+// somebody else's, and `lang translated --by` a translation: the evidence
+// an auditor reads named whoever the person at the keyboard chose.
 func (c *Caller) namedBy(typed string) (who, credited string) {
 	typed = strings.TrimSpace(typed)
 	if c != nil && c.Verified && strings.TrimSpace(c.Name) != "" {

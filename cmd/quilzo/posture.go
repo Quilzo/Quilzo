@@ -756,8 +756,12 @@ func postureSuppress(root string, args []string) error {
 		"reason": truncate(*reason, 120),
 		"until":  now.AddDate(0, 0, *daysFor).UTC().Format("2006-01-02"),
 	}
-	if credited != "" {
-		detail["credited"] = credited
+	// The name typed is kept in the record wherever it is not the one the
+	// entry is under. On a store with no access control the entry is the
+	// account at the keyboard's, unverified, and the name typed is who the
+	// suppression is by: left out, the log named nobody who accepted it.
+	if typed := strings.TrimSpace(*by); typed != "" && typed != caller.Name {
+		detail["credited"] = typed
 	}
 	record(root, caller.auditRecord("posture.suppress", pos[0], audit.Success, detail))
 

@@ -16,6 +16,7 @@ import (
 	"github.com/quilzo/quilzo/internal/gateway"
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/saml"
+	"github.com/quilzo/quilzo/internal/site"
 )
 
 // onlyOwner is a store whose one administrator is owner, acting with a
@@ -749,5 +750,60 @@ func TestABudgetShownIsTheOneThatAppliesAndAChangeIsRecordedWithWhatChanged(t *t
 			t.Errorf("change %d is recorded from %q to %q, want from %q to %q", i+1,
 				changes[i]["from"], changes[i]["to"], want[0], want[1])
 		}
+	}
+}
+
+// A translation is recorded as the verified caller's too, with the name
+// typed after --by credited beside them: `quilzo lang translated about fr
+// --by 'Priya (Agency)'` recorded the translation as Priya's and left out
+// whoever recorded it.
+func TestATranslationIsRecordedAsTheCallersWithTheNameTypedCredited(t *testing.T) {
+	root := onlyOwner(t)
+	s, err := open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.SaveDraft(s, map[string]any{
+		"about":    map[string]any{"title": "About", "body": "Who we are."},
+		"fr/about": map[string]any{"title": "À propos", "body": "Qui nous sommes."},
+	}, "two pages", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"init", "en"}, {"add", "fr"},
+		{"translated", "about", "fr", "--by", "Priya (Agency)"}} {
+		if err := cmdLang(root, args); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c, err := loadLocales(root)
+	if err != nil || c == nil || len(c.Translations) != 1 {
+		t.Fatalf("%+v %v", c, err)
+	}
+	if by := c.Translations[0].TranslatedBy; !strings.HasPrefix(by, "owner") || !strings.Contains(by, "Priya (Agency)") {
+		t.Errorf("the translation is recorded as by %q", by)
+	}
+}
+
+// On a store with no access control the name typed after --by is the one a
+// suppression is by, and the record of it still carries that name: the
+// entry is the account at the keyboard's, unverified, and left the name
+// out altogether once it stopped being recorded as the principal.
+func TestASuppressionOnAStoreWithNoAccessControlStillRecordsTheNameTyped(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("QUILZO_TOKEN", "")
+	root := connectStore(t)
+	w.Out = &bytes.Buffer{}
+	if err := postureSuppress(root, []string{"mfa.no-second-factor", "--reason", "accepted by the board",
+		"--by", "Dana (CISO)"}); err != nil {
+		t.Fatal(err)
+	}
+	got := auditFor(t, root, "posture.suppress")
+	if len(got) != 1 || got[0].Verified || got[0].Detail["credited"] == "" {
+		t.Errorf("the suppression is recorded as %+v", got)
+	}
+	f := &suppressionFile{}
+	_ = loadJSON(suppressPath(root), f)
+	if len(f.Suppressions) != 1 || f.Suppressions[0].By != "Dana (CISO)" {
+		t.Errorf("the suppression is by %+v", f.Suppressions)
 	}
 }
