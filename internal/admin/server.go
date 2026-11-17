@@ -55,6 +55,7 @@ import (
 	"bytes"
 	"embed"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/audit"
@@ -2994,6 +2995,11 @@ func typedFields(t schema.Type, body any, pages []string) []field {
 		switch v := m[f.Name].(type) {
 		case string:
 			e.Value = v
+			// Text of more than one line is drawn in a box that keeps its
+			// lines: see multiLine.
+			if f.Kind == schema.Text && multiLine(v) {
+				e.Long = true
+			}
 		case float64:
 			e.Value = fmt.Sprintf("%v", v)
 		case bool:
@@ -3024,6 +3030,14 @@ func typedFields(t schema.Type, body any, pages []string) []field {
 	// and marked. Hiding it would let a value the type rejects sit in the page
 	// invisibly, blocking every save with an error about a field the editor
 	// never displayed.
+	//
+	// Shown holding what it holds. Only text was: a number, a boolean, a
+	// list or an object was drawn as an empty box, and an empty box is how
+	// a field is removed, so every save from the browser took them off the
+	// page. Those are the fields every page may carry whatever its type
+	// (schema.Reserved): a typed page lost its sections, its hero, its terms
+	// and its members-only mark to an edit of its title, and a page for
+	// members was public on the next publish.
 	extra := make([]string, 0)
 	for k := range m {
 		if !declared[k] {
@@ -3032,14 +3046,59 @@ func typedFields(t schema.Type, body any, pages []string) []field {
 	}
 	sort.Strings(extra)
 	for _, k := range extra {
-		v, _ := m[k].(string)
+		// Edited in the editor's own "Search engines" fieldset, as flatten
+		// leaves it to.
+		if k == seo.NoIndexField {
+			continue
+		}
+		v, shown := undeclaredText(m[k], schema.Reserved(k))
+		if !shown {
+			continue
+		}
 		out = append(out, field{
-			Key: k, Label: k, Value: v, Input: "text",
+			Key: k, Label: k, Value: v, Input: "text", Long: multiLine(v),
 			Help: "Not declared by " + t.Name + ". Clear this field to remove it.",
 		})
 	}
 	return out
 }
+
+// undeclaredText is what the editor's box holds for a value the page's type
+// does not declare, and whether it is given a box at all.
+//
+// Text, a number and a boolean are shown as a page with no type shows them
+// (flatten), and keepType reads them back as what they were. A list or an
+// object has no box to be edited in, so it is shown as its JSON where the
+// type refuses the field, for the refusal to name something visible and the
+// box to be cleared; under a name every page may carry (reserved) it is not
+// shown at all, because the type allows it, it is edited on its own screen,
+// and a page with no type does not show it either.
+func undeclaredText(v any, reserved bool) (string, bool) {
+	switch t := v.(type) {
+	case string:
+		return t, true
+	case float64, bool:
+		return fmt.Sprintf("%v", t), true
+	}
+	if reserved {
+		return "", false
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "", false
+	}
+	return string(b), true
+}
+
+// multiLine reports whether text has a line break in it, and so has to be
+// drawn in a multi-line box.
+//
+// A browser takes the line breaks out of what a one-line box holds before it
+// submits it. Short text was drawn in one whatever it held, so an address or
+// opening hours written on two lines by `quilzo add`, the API or an import
+// was joined into one by the next save from the browser, though nobody had
+// touched it.
+func multiLine(text string) bool { return strings.ContainsAny(text, "\r\n") }
 
 // canonicalRaw is what a page's canonical field says, usable or not, for
 // the editor to show back.
@@ -3086,8 +3145,9 @@ func flatten(body any) []field {
 			// A body is a box to write in however short it is so far: a new
 			// page's editor offers it as one, and "Nine to five." saved into
 			// it came back as a single line.
-			out = append(out, field{Key: k, Label: keyLabel(k), Value: v, Long: len(v) > 80 || k == "body",
-				Input: "text"})
+			// And text of more than one line, however short: see multiLine.
+			out = append(out, field{Key: k, Label: keyLabel(k), Value: v,
+				Long: len(v) > 80 || k == "body" || multiLine(v), Input: "text"})
 		case float64:
 			out = append(out, field{Key: k, Label: keyLabel(k), Value: fmt.Sprintf("%v", v),
 				Input: "text"})
@@ -3174,7 +3234,9 @@ func coerceForm(t schema.Type, form url.Values, body map[string]any) {
 			delete(body, key)
 			continue
 		}
-		body[key] = formText(values[0])
+		// As what it was, when the box still says what it was drawn holding:
+		// a number, a boolean, a list. See typedFields and keepType.
+		body[key] = keepType(body[key], formText(values[0]))
 	}
 }
 
@@ -4603,8 +4665,9 @@ func formText(s string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n")
 }
 
-// keepType is a value submitted for a page with no type, in the type the
-// value it replaces had.
+// keepType is a value submitted for a field no type describes, in the type
+// the value it replaces had: every field of a page with no type, and the
+// fields of a typed page that its type does not declare.
 //
 // Such a page may carry numbers and booleans, written by `quilzo add`, the
 // content API or an import, and the editor offers them as text boxes. Saving
@@ -4613,8 +4676,12 @@ func formText(s string) string {
 // explicitly not featured was shown as featured. A value that still reads as
 // what it was is stored as that; anything else is stored as typed, because
 // somebody who wrote words over a number meant the words.
+//
+// A list or an object is shown as its JSON (undeclaredText), and is what it
+// was while its box still says so.
 func keepType(old any, raw string) any {
 	switch old.(type) {
+	case string:
 	case float64:
 		n, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
 		// NaN and the infinities parse but have no JSON form, and a page
@@ -4628,6 +4695,10 @@ func keepType(old any, raw string) any {
 			return true
 		case "false":
 			return false
+		}
+	default:
+		if b, err := json.Marshal(old); err == nil && strings.TrimSpace(raw) == string(b) {
+			return old
 		}
 	}
 	return raw

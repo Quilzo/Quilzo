@@ -61,8 +61,9 @@ func TestANewPageOpensAnEditorToWriteItIn(t *testing.T) {
 	}
 
 	// Opened again, it holds what was saved, and Sections is a link away.
+	// The box begins with the line break a browser drops from one.
 	body = get(t, srv, "/page/opening-hours", token).Body.String()
-	for _, want := range []string{`value="Opening hours"`, `>Nine to five.</textarea>`,
+	for _, want := range []string{`value="Opening hours"`, ">\nNine to five.</textarea>",
 		`href="/sections?page=opening-hours"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the saved page's editor has no %s", want)

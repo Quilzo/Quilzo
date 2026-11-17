@@ -6,6 +6,7 @@ package admin
 import (
 	"net/http"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -224,5 +225,165 @@ func TestReviewShowsWhatChangedInsideAPage(t *testing.T) {
 	}
 	if strings.Contains(html, "Welcome.") {
 		t.Error("review shows a page nobody changed")
+	}
+}
+
+// browserForm is what a browser submits for the editor's fields: each box
+// with what it was drawn holding, and a checkbox only when it is ticked.
+func browserForm(name string, fields []field) url.Values {
+	form := url.Values{"__name": {name}}
+	for _, f := range fields {
+		if f.Checkbox {
+			if f.Checked {
+				form.Set(f.Key, "true")
+			}
+			continue
+		}
+		form.Set(f.Key, f.Value)
+	}
+	return form
+}
+
+// A page with a type may carry what its type does not declare: the fields
+// every page may have (its sections, its hero, its terms, whether it is for
+// members only), and values a type would refuse. The editor drew each as an
+// empty text box unless it was text, and an empty box is how a field is
+// removed, so saving a typed page from the browser took its sections, its
+// terms and its members-only mark off it: a page for members became public
+// on the next publish, by an edit of its title. A value that is not text is
+// kept unless somebody changes it.
+func TestSavingATypedPageKeepsWhatItsTypeDoesNotDeclare(t *testing.T) {
+	srv, token := setup(t)
+	withTypes(t, srv)
+	sections := []any{map[string]any{"prose": map[string]any{"title": "Our story"}}}
+	terms := map[string]any{"topic": []any{"history"}}
+	pages, err := site.PagesAt(srv.Store, site.RefDraft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages["index"] = map[string]any{
+		"title": "Home", "body": "Welcome.",
+		"sections": sections, "terms": terms, "hero": map[string]any{"title": "Hello"},
+		"members_only": true, "noindex": true, "starts": "2026-01-01",
+	}
+	if _, err := site.SaveDraft(srv.Store, pages, "a typed page", "test"); err != nil {
+		t.Fatal(err)
+	}
+
+	typ, _ := srv.TypeFor("index")
+	form := browserForm("index", typedFields(typ, pages["index"], nil))
+	form.Set("title", "Home, edited")
+	// The editor's own Search engines fieldset, as it is drawn for this page.
+	form.Set("__seo", "1")
+	form.Set("__noindex", "1")
+	if w := save(t, srv, token, form); w.Code != http.StatusSeeOther {
+		t.Fatalf("the save answered %d: %s", w.Code, w.Body.String())
+	}
+	pages, err = site.PagesAt(srv.Store, site.RefDraft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := pages["index"].(map[string]any)
+	if body["title"] != "Home, edited" {
+		t.Errorf("the title is %#v", body["title"])
+	}
+	for key, want := range map[string]any{
+		"sections": sections, "terms": terms, "hero": map[string]any{"title": "Hello"},
+		"members_only": true, "noindex": true, "starts": "2026-01-01",
+	} {
+		if !reflect.DeepEqual(body[key], want) {
+			t.Errorf("%s is %#v after a title-only save, want %#v", key, body[key], want)
+		}
+	}
+
+	// A value the type refuses is still shown, so the refusal names
+	// something visible, and is still removed by clearing its box; left
+	// alone it is what it was.
+	held := map[string]any{
+		"title": "Home", "body": "Welcome.",
+		"rows": 10.0, "gallery": []any{"a", "b"}, "note": "first\nsecond",
+	}
+	fields := typedFields(typ, held, nil)
+	shown := map[string]field{}
+	for _, f := range fields {
+		shown[f.Key] = f
+	}
+	for _, key := range []string{"rows", "gallery", "note"} {
+		if shown[key].Value == "" {
+			t.Errorf("%s, which the type refuses, is drawn as an empty box", key)
+		}
+	}
+	if !shown["note"].Long {
+		t.Error("text of two lines is drawn in a one-line box, which joins them")
+	}
+	kept := srv.pageFromForm(map[string]any{"index": held}, "index", browserForm("index", fields))
+	for _, key := range []string{"rows", "gallery", "note"} {
+		if !reflect.DeepEqual(kept[key], held[key]) {
+			t.Errorf("%s is %#v when nobody touched it, want %#v", key, kept[key], held[key])
+		}
+	}
+	cleared := browserForm("index", fields)
+	cleared.Set("rows", "")
+	cleared.Set("gallery", "")
+	gone := srv.pageFromForm(map[string]any{"index": held}, "index", cleared)
+	for _, key := range []string{"rows", "gallery"} {
+		if _, still := gone[key]; still {
+			t.Errorf("%s is still there after its box was cleared: %#v", key, gone[key])
+		}
+	}
+}
+
+// A browser takes the line breaks out of what a one-line box holds, and the
+// first line break out of a multi-line box that starts with one. So text of
+// two short lines, an address or opening hours, drawn in a one-line box was
+// joined into one line by a save that never touched it, and a body that
+// began with a blank line lost it. Text with a line break is drawn in a
+// multi-line box, and every such box begins with a line break of its own
+// for the browser to take.
+func TestTheEditorDrawsTextSoABrowserSendsItBackUnchanged(t *testing.T) {
+	const hours = "Mon to Fri\nSat"
+	for _, f := range flatten(map[string]any{"title": "Visit", "hours": hours}) {
+		if f.Key == "hours" && !f.Long {
+			t.Error("a page with no type: two short lines are drawn in a one-line box")
+		}
+	}
+	typ := schema.Type{Name: "place", Fields: []schema.Field{
+		{Name: "title", Kind: schema.Text}, {Name: "hours", Kind: schema.Text},
+	}}
+	for _, f := range typedFields(typ, map[string]any{"title": "Visit", "hours": hours}, nil) {
+		switch {
+		case f.Key == "hours" && !f.Long:
+			t.Error("a page with a type: two short lines are drawn in a one-line box")
+		case f.Key == "title" && f.Long:
+			t.Error("a title of one line is drawn in a multi-line box")
+		}
+	}
+	fields, err := section.Fields(map[string]any{section.Field: []any{
+		map[string]any{"prose": map[string]any{"title": hours, "items": []any{hours}}},
+	}}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fields) != 2 {
+		t.Fatalf("the section has %d fields to edit, want its title and its one item", len(fields))
+	}
+	for _, f := range fields {
+		if f.Value == hours && !f.Long {
+			t.Errorf("a section's %s: two short lines are drawn in a one-line box", f.Path)
+		}
+	}
+
+	srv, token := setup(t)
+	pages, err := site.PagesAt(srv.Store, site.RefDraft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages["about"] = map[string]any{"title": "About", "body": "\nBegins with a blank line."}
+	if _, err := site.SaveDraft(srv.Store, pages, "a blank first line", "test"); err != nil {
+		t.Fatal(err)
+	}
+	html := get(t, srv, "/page/about", token).Body.String()
+	if !strings.Contains(html, ">\n\nBegins with a blank line.</textarea>") {
+		t.Error("the body's box does not begin with a line break for the browser to take, so the body loses its own")
 	}
 }

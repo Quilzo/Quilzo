@@ -397,9 +397,15 @@
           {{$sel := .Selected}}{{range .Choices}}<option value="{{.}}"{{if index $sel .}} selected{{end}}>{{.}}</option>{{end}}
         </select>
       {{else if .Long}}
+        {{/*
+          The line break after the start tag is for the browser to take: it
+          drops one that begins a textarea, so without it a value beginning
+          with a blank line came back from a save without it.
+        */}}
         <textarea id="f-{{.Key}}" name="{{.Key}}" rows="8"{{if .Required}} required{{end}}
                   {{if .MaxLen}}maxlength="{{.MaxLen}}"{{end}}
-                  {{if .Help}}aria-describedby="h-{{.Key}}"{{end}}{{if .Invalid}} aria-invalid="true"{{end}}>{{.Value}}</textarea>
+                  {{if .Help}}aria-describedby="h-{{.Key}}"{{end}}{{if .Invalid}} aria-invalid="true"{{end}}>
+{{.Value}}</textarea>
       {{else}}
         {{/*
           A reference gets the browser's own completion over the pages in the
