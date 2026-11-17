@@ -410,7 +410,12 @@ func editSections(root, page string,
 	if placed == nil {
 		placed = []section.Placed{}
 	}
-	if w.JSON(map[string]any{"page": page, "did": msg, "commit": cid, "sections": placed}) {
+	// Somebody else's claim on the page, in the document as in the words: a
+	// script, or an agent driving this command, was told nothing of one,
+	// because the sentence below is not printed under --json.
+	claims := claimsByOthers(root, caller.Name, []string{page})
+	if w.JSON(map[string]any{"page": page, "did": msg, "commit": cid, "sections": placed,
+		"claimed": claims}) {
 		return nil
 	}
 	w.Human("%s\n", msg)
@@ -418,9 +423,7 @@ func editSections(root, page string,
 		w.Human("  %2d  %s\n", pl.Index, pl.Kind)
 	}
 	w.Human("\n  %sthe draft moved; `quilzo publish` puts it live%s\n", dim, reset)
-	for _, l := range claimsByOthers(root, caller.Name, []string{page}) {
-		w.Human("  %s%s%s\n", yellow, claimNotice(l), reset)
-	}
+	sayClaims(claims)
 	return nil
 }
 

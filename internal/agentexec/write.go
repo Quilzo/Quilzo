@@ -107,6 +107,13 @@ type Writer struct {
 	// page's provenance can say a model wrote it. Nil means nobody records
 	// it, and the publish gate then refuses the page as unmarked.
 	Written func(page string)
+	// Claimed is what to say of a claim somebody else holds on a page this
+	// run just wrote, and "" when nobody does. An outside agent's write_page
+	// was told "pat has claimed pricing"; a run here writes through this
+	// instead, and its model read "wrote pricing" and went on over the
+	// afternoon's rewrite. Advisory, like the claim: asked after the write,
+	// and never a reason to refuse it. Nil says nothing.
+	Claimed func(page string) string
 }
 
 // Perform is the agent.Perform for a session's write operations.
@@ -226,7 +233,13 @@ func (wr Writer) writePage(s *agent.Session, base string, a agent.Action) (strin
 	if wr.Written != nil {
 		wr.Written(name)
 	}
-	return fmt.Sprintf("wrote %s in %s", name, shortID(cid)), cid, nil
+	said := fmt.Sprintf("wrote %s in %s", name, shortID(cid))
+	if wr.Claimed != nil {
+		if claim := wr.Claimed(name); claim != "" {
+			said += ". " + claim
+		}
+	}
+	return said, cid, nil
 }
 
 // publish records a proposal for the draft, and does not move the live ref.

@@ -152,9 +152,15 @@ func cmdMove(root string, args []string) error {
 	// the counterpart of. Over the renamed set, because a page that names
 	// something being moved may itself be moving.
 	changedRefs := 0
+	// Every page this writes: the ones moving, under the names they had, and
+	// the ones a reference or a reuse was rewritten in. For telling whoever
+	// has claimed one of them (claimsByOthers), below.
+	written := append([]string(nil), moving...)
 	for was, now := range renames {
-		changedRefs += len(st.Retarget(next, was, now))
-		site.RetargetBlocks(next, was, now)
+		pointing := st.Retarget(next, was, now)
+		changedRefs += len(pointing)
+		written = append(written, pointing...)
+		written = append(written, site.RetargetBlocks(next, was, now)...)
 	}
 
 	// The same gate every other write passes. A move does not change what a
@@ -222,10 +228,15 @@ func cmdMove(root string, args []string) error {
 			"commit":     short(commit),
 		}))
 
+	// Somebody else's claim on a page this wrote. A move renamed the page
+	// pat was half way through rewriting, or rewrote a reference in it, and
+	// said nothing, where `quilzo add` and the browser's editor say who holds
+	// it: his next save was refused and he had not been told why.
+	claims := claimsByOthers(root, caller.Name, written)
 	if w.JSON(map[string]any{
 		"from": from, "to": to, "pages": len(moving),
 		"references": changedRefs, "menus": changedMenus,
-		"reuses": reuses, "commit": commit,
+		"reuses": reuses, "commit": commit, "claimed": claims,
 	}) {
 		return nil
 	}
@@ -247,6 +258,7 @@ func cmdMove(root string, args []string) error {
 	// discovered by a reader following a link somebody sent them last month.
 	w.Human("  %sthe old addresses now answer 404. `quilzo site "+
 		"--redirects redirects.json` keeps them working%s\n", dim, reset)
+	sayClaims(claims)
 	return nil
 }
 

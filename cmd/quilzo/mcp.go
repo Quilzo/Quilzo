@@ -473,8 +473,8 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 			"and is not public until someone publishes", name, short(cid))
 		// Somebody's claim on the page, as the browser's editor shows it: an
 		// agent writing over an afternoon's rewrite was told nothing.
-		for _, l := range claimsByOthers(root, caller.Name, []string{name}) {
-			said += ". " + claimNotice(l)
+		if claim := claimSaid(root, caller.Name, name); claim != "" {
+			said += ". " + claim
 		}
 		return said, nil
 	})
