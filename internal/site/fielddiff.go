@@ -43,7 +43,8 @@ type LineChange struct {
 
 // maxLineDiff bounds the lines a comparison is worked out for, since the
 // work grows with the product of the two counts. Past it a field is shown
-// before and after, whole.
+// before and after, whole. The lines both versions begin with and end with
+// are not counted: they are not part of the work.
 const maxLineDiff = 2000
 
 // FieldChanges is what differs, field by field, in the page a change is to.
@@ -101,6 +102,14 @@ func FieldChanges(s *store.Store, c Change) ([]FieldChange, error) {
 		if has {
 			fc.After = asText(now)
 		}
+		// The same characters and still a change: a value that changed
+		// kind, the number 10 into the text "10" or false into the text
+		// "false", which a layout reads as true. Shown as written, both
+		// sides said the same and the change read as none, so both are
+		// shown as JSON, where text has its quotes.
+		if had && has && fc.Before == fc.After {
+			fc.Before, fc.After = asJSON(was), asJSON(now)
+		}
 		if strings.Contains(fc.Before, "\n") || strings.Contains(fc.After, "\n") {
 			fc.Lines = lineDiff(fc.Before, fc.After)
 		}
@@ -115,6 +124,11 @@ func asText(v any) string {
 	if s, ok := v.(string); ok {
 		return s
 	}
+	return asJSON(v)
+}
+
+// asJSON is a value as JSON writes it.
+func asJSON(v any) string {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return ""
@@ -123,7 +137,14 @@ func asText(v any) string {
 }
 
 // lineDiff compares two texts line by line, by their longest common
-// subsequence; nil when either is longer than maxLineDiff lines.
+// subsequence; nil when what differs between them is longer than
+// maxLineDiff lines on either side.
+//
+// What they begin with and end with in common is set aside first. An edit
+// is most often a few lines somewhere in a text, and counted whole, a long
+// text with one line changed was past the bound: it was shown before and
+// after in full, and the one changed line among thousands was for the
+// reader to find.
 func lineDiff(before, after string) []LineChange {
 	split := func(s string) []string {
 		if s == "" {
@@ -132,6 +153,18 @@ func lineDiff(before, after string) []LineChange {
 		return strings.Split(s, "\n")
 	}
 	a, b := split(before), split(after)
+	head := 0
+	for head < len(a) && head < len(b) && a[head] == b[head] {
+		head++
+	}
+	same := a[:head]
+	a, b = a[head:], b[head:]
+	tail := 0
+	for tail < len(a) && tail < len(b) && a[len(a)-1-tail] == b[len(b)-1-tail] {
+		tail++
+	}
+	rest := a[len(a)-tail:]
+	a, b = a[:len(a)-tail], b[:len(b)-tail]
 	if len(a) > maxLineDiff || len(b) > maxLineDiff {
 		return nil
 	}
@@ -150,7 +183,10 @@ func lineDiff(before, after string) []LineChange {
 			}
 		}
 	}
-	var out []LineChange
+	out := make([]LineChange, 0, len(same)+len(a)+len(b)+len(rest))
+	for _, l := range same {
+		out = append(out, LineChange{" ", l})
+	}
 	i, j := 0, 0
 	for i < len(a) && j < len(b) {
 		switch {
@@ -170,6 +206,9 @@ func lineDiff(before, after string) []LineChange {
 	}
 	for ; j < len(b); j++ {
 		out = append(out, LineChange{"+", b[j]})
+	}
+	for _, l := range rest {
+		out = append(out, LineChange{" ", l})
 	}
 	return out
 }
