@@ -156,7 +156,7 @@ func boundOf(m agent.Manifest, c *Caller) agent.Manifest {
 	// lost its writes here and its browser's sends (boundManifest) while
 	// it went on typing and pressing.
 	if autonomy == agent.AutonomyPropose {
-		b.Capabilities = slices.DeleteFunc(slices.Clone(b.Capabilities), desktopActs)
+		b.Capabilities = readsDesktop(b.Capabilities)
 	}
 	// A caller confined to part of the site confines the agent to it: a
 	// token issued --on /docs, or an agent granted a role on /docs only.
@@ -170,6 +170,13 @@ func boundOf(m agent.Manifest, c *Caller) agent.Manifest {
 // reading it: what a read-only caller's run does not hold.
 func desktopActs(c string) bool {
 	return agent.IsDesktop(c) && c != "desktop_read" && c != "desktop_look"
+}
+
+// readsDesktop is a run's capabilities without the desktop's acts, for a
+// run that proposes and does not write: by its caller or the agent's own
+// standing (boundOf), or by what its evaluations earned (boundManifest).
+func readsDesktop(caps []string) []string {
+	return slices.DeleteFunc(slices.Clone(caps), desktopActs)
 }
 
 // withholdWrites takes out of a run's manifest the tools that write to

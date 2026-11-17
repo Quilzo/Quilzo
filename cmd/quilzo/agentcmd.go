@@ -1103,6 +1103,15 @@ func boundManifest(root string, set *agentSet, name string, withModel, eval bool
 			before = m
 			m.Autonomy = earned
 			m.Capabilities = mayCall(m.Capabilities, earned)
+			// And it reads the desktop without working it, as a run its
+			// caller holds to proposing does (boundOf). The desktop's acts
+			// are no writes to this store, so they were left, and a model
+			// nobody had evaluated, its writes withheld and its browser
+			// only reading, went on typing into the desktop's apps and
+			// pressing what they showed.
+			if earned.AtMost(agent.AutonomyPropose) {
+				m.Capabilities = readsDesktop(m.Capabilities)
+			}
 			note("evaluations", earnedWhy, before)
 		}
 	}

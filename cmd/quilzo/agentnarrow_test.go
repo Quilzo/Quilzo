@@ -807,3 +807,86 @@ func TestACallerWhoOnlyReadsByRoleDoesNotWorkTheDesktop(t *testing.T) {
 		t.Errorf("an author's run holds %d of the desktop's %d actions: %v", acts, len(agent.CellCapabilities), got.Capabilities)
 	}
 }
+
+// A model held to proposing by its evaluations does not work the desktop
+// either: it reads the screen and looks at it, as it reads pages in its
+// browser and sends nothing through them.
+//
+// The desktop's acts were taken from a run by what its caller, or the
+// agent's own standing, may do, and not by what its evaluations earned. A
+// model nobody had evaluated was held to proposing whoever ran it: its
+// writes were withheld and its browser only read, and it went on typing
+// into the desktop's apps and pressing what they showed. An evaluation
+// itself keeps the declaration, which is what it measures, and plays the
+// desktop's acts against nothing; so does a walk, which no model decides.
+func TestAModelHeldToProposingDoesNotWorkTheDesktop(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root := demoStore(t)
+	m := asker("tidy")
+	m.Capabilities = append(m.Capabilities, agent.CellCapabilities[:]...)
+	m.Cell = &agent.Cell{Pictures: true}
+	if err := declareAgent(root, m, true, true, asAdmin("sam")); err != nil {
+		t.Fatal(err)
+	}
+	set, err := loadAgents(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	acts := func(m agent.Manifest) (works, reads int) {
+		for _, c := range m.Capabilities {
+			switch {
+			case desktopActs(c):
+				works++
+			case agent.IsDesktop(c):
+				reads++
+			}
+		}
+		return works, reads
+	}
+	// Never evaluated with a model, so a model drives it proposing only.
+	got, trail, err := boundManifest(root, set, "tidy", true, false, asAdmin("sam"))
+	if err != nil || got.Autonomy != agent.AutonomyPropose {
+		t.Fatalf("an unevaluated model drives it at %q: %v", got.Autonomy, err)
+	}
+	if works, reads := acts(got); works != 0 || reads != 2 {
+		t.Errorf("a model held to proposing holds %d of the desktop's acts and %d of its two reads: %v",
+			works, reads, got.Capabilities)
+	}
+	if got.Cell == nil || !got.Cell.Pictures {
+		t.Errorf("it lost the cell's declaration: %+v", got.Cell)
+	}
+	// And the run says what it lost to its evaluations, as it says of a write.
+	said := ""
+	for _, n := range trail {
+		if n.By == "evaluations" {
+			said = strings.Join(n.Lost, ",")
+		}
+	}
+	for _, op := range []string{"write_page", "desktop_type", "desktop_press", "desktop_key"} {
+		if !strings.Contains(said, op) {
+			t.Errorf("what its evaluations took away does not name %s: %q", op, said)
+		}
+	}
+	// A walk of the manifest, an evaluation, and a model whose autonomy is
+	// not earned but declared all keep the desktop as declared.
+	if got, _, err = boundManifest(root, set, "tidy", false, false, asAdmin("sam")); err != nil {
+		t.Fatal(err)
+	}
+	if works, _ := acts(got); works != 3 {
+		t.Errorf("a walk holds %d of the desktop's three acts: %v", works, got.Capabilities)
+	}
+	if got, _, err = boundManifest(root, set, "tidy", true, true, asAdmin("sam")); err != nil {
+		t.Fatal(err)
+	}
+	if works, _ := acts(got); works != 3 {
+		t.Errorf("an evaluation holds %d of the desktop's three acts: %v", works, got.Capabilities)
+	}
+	declaredAutonomy(t, root)
+	if got, _, err = boundManifest(root, set, "tidy", true, false, asAdmin("sam")); err != nil {
+		t.Fatal(err)
+	}
+	if works, _ := acts(got); works != 3 || got.Autonomy != agent.AutonomyDraft {
+		t.Errorf("a model at its declared autonomy, %q, holds %d of the desktop's three acts: %v",
+			got.Autonomy, works, got.Capabilities)
+	}
+}
