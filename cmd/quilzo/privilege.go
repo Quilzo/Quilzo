@@ -1223,17 +1223,19 @@ func unknownCommand(cmd string) error {
 	// "aprove". Requiring the distance to be under half the shorter word keeps
 	// short aliases from matching everything and still catches a transposition
 	// in a five-letter name.
-	var near []string
-	for known := range commandNeeds {
+	isNear := func(known string) bool {
 		if strings.HasPrefix(known, cmd) || strings.HasPrefix(cmd, known) {
-			near = append(near, known)
-			continue
+			return true
 		}
 		shorter := len(cmd)
 		if len(known) < shorter {
 			shorter = len(known)
 		}
-		if d := editDistance(cmd, known); d*2 < shorter {
+		return editDistance(cmd, known)*2 < shorter
+	}
+	var near []string
+	for known := range commandNeeds {
+		if isNear(known) {
 			near = append(near, known)
 		}
 	}
@@ -1241,12 +1243,29 @@ func unknownCommand(cmd string) error {
 	if len(near) > 4 {
 		near = near[:4]
 	}
-	if len(near) > 0 {
-		return fmt.Errorf("there is no %q command. Did you mean %s?\n"+
-			"  quilzo help — every command", cmd, strings.Join(near, ", "))
+	// A slip of a command that has left Quilzo is told that it left
+	// (movedout.go). Those names are not in the table the suggestions come
+	// from, so `quilzo calls`, which used to be answered "Did you mean
+	// call?", was answered with nothing, and `quilzo rooms` was steered to
+	// forms. The nearest one is named, on a line of its own, under whatever
+	// is suggested from the commands that are here.
+	var left []string
+	for gone := range movedOut {
+		if isNear(gone) {
+			left = append(left, gone)
+		}
 	}
-	return fmt.Errorf("there is no %q command.\n  quilzo help — every command",
-		cmd)
+	sort.Strings(left)
+	moved := ""
+	if len(left) > 0 {
+		moved = "\n  " + errMovedOut(left[0]).Error()
+	}
+	if len(near) > 0 {
+		return fmt.Errorf("there is no %q command. Did you mean %s?%s\n"+
+			"  quilzo help — every command", cmd, strings.Join(near, ", "), moved)
+	}
+	return fmt.Errorf("there is no %q command.%s\n  quilzo help — every command",
+		cmd, moved)
 }
 
 // editDistance is Levenshtein, bounded by the length of the shorter word.

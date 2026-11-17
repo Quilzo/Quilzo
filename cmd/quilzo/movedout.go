@@ -14,7 +14,10 @@ import "fmt"
 // what they mistyped: they typed it correctly, and it is the program that
 // changed. So each of these names is answered by one sentence saying so,
 // wherever the name arrives: as the command, after `help`, or at the
-// authorisation check that every command passes through.
+// authorisation check that every command passes through. A slip of one,
+// `quilzo calls` for `quilzo call`, is still a command that never was, and
+// is told so with the same sentence about the name it is nearest to
+// (unknownCommand).
 //
 // The answer is a usage error, exit status 2, because nothing failed and
 // nothing was refused: the command line asked for something this program

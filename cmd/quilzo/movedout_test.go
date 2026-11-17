@@ -74,6 +74,44 @@ func TestTheAuthorisationCheckSaysAMovedOutCommandMoved(t *testing.T) {
 	}
 }
 
+// A slip of a name that has left is told the same thing.
+//
+// `quilzo calls` was answered "Did you mean call?", and typing that gave the
+// reason. With the names out of the table the suggestions come from, a slip
+// was answered "there is no such command" and nothing more, or steered
+// somewhere else: `quilzo rooms` came back as "Did you mean forms?". The
+// word typed was never a command, so it stays an unknown one; what is added
+// is the line about the command it is nearest to.
+func TestASlipOfAMovedOutNameIsToldItMoved(t *testing.T) {
+	root, token := accessStore(t)
+	for slip, of := range map[string]string{
+		"rooms": "room", "rom": "room", "calls": "call", "huddles": "huddle",
+		"scribes": "scribe", "errands": "errand", "sfame": "sframe",
+	} {
+		_, e, code := cliRun(t, root, token, slip)
+		if code == 0 {
+			t.Errorf("`quilzo %s` exited 0", slip)
+		}
+		if !strings.Contains(e, "there is no \""+slip+"\" command") {
+			t.Errorf("`quilzo %s` is not said to be no command: %s", slip, firstLines(e, 4))
+		}
+		if !strings.Contains(e, "`quilzo "+of+"` is no longer part of Quilzo") ||
+			!strings.Contains(e, "moved out of Quilzo into a separate product") {
+			t.Errorf("`quilzo %s` does not say `quilzo %s` moved out: %s", slip, of, firstLines(e, 4))
+		}
+	}
+	// A slip of a command that is here is answered as it was, and a word
+	// near nothing is not told about commands it is not near.
+	for _, word := range []string{"pubish", "wibble", "forms"} {
+		if msg := unknownCommand(word).Error(); strings.Contains(msg, "moved out") {
+			t.Errorf("%q, which is near no command that left, is told one moved: %s", word, msg)
+		}
+	}
+	if msg := unknownCommand("rooms").Error(); !strings.Contains(msg, "forms") {
+		t.Errorf("`rooms` is no longer offered the command that is here and near it: %s", msg)
+	}
+}
+
 // A name that has left is not a command any more anywhere the command layer
 // looks one up, so nothing grants, documents or dispatches it by accident.
 func TestAMovedOutCommandIsInNoTable(t *testing.T) {
