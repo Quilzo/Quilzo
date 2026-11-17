@@ -229,6 +229,35 @@ func (q Queue) Request(id string) (Request, bool) {
 	return r, true
 }
 
+// Unfinished are the requests somebody took and never answered: their
+// answer still says Working.
+//
+// Pending leaves these out, since a request is run once, so nothing looked
+// at them again. One whose dispatcher stopped while it worked (a restart, a
+// crash) said Working for as long as it was kept, and its visitor's page
+// reloaded every few seconds for a day. A dispatcher starting asks for
+// them, and answers them itself.
+func (q Queue) Unfinished() []Request {
+	ents, err := os.ReadDir(q.Dir)
+	if err != nil {
+		return nil
+	}
+	var out []Request
+	for _, e := range ents {
+		id, ok := strings.CutSuffix(e.Name(), ".request.json")
+		if !ok || !ValidID(id) {
+			continue
+		}
+		if res, answered := q.Result(id); !answered || res.State != Working {
+			continue
+		}
+		if r, ok := q.Request(id); ok {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
 func (q Queue) beat() string { return filepath.Join(q.Dir, "dispatcher.beat") }
 
 // Beat says the dispatcher is taking requests, as of now. The file is not

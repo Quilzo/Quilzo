@@ -660,3 +660,58 @@ func TestARequestCutInsideACharacterStillReachesAPerson(t *testing.T) {
 		}
 	}
 }
+
+// A request that was being done when the admin server stopped is answered
+// when one starts again.
+//
+// The dispatcher that took it wrote that it was working on it, and stopped
+// before it wrote anything else: a restart for an upgrade, a crash, or a
+// shutdown with the request still queued behind others. Nothing takes a
+// request twice, and the site saw a dispatcher beating again, so the
+// visitor's page said "Working on it" and reloaded every three seconds
+// until the request was deleted a day later.
+func TestARequestCutOffByARestartIsAnswered(t *testing.T) {
+	root := chatActStore(t)
+	runs := 0
+	old := chatActRun
+	chatActRun = func(context.Context, string, string, string, *Caller, string) (string, agentOutcome, error) {
+		runs++
+		return "run-1", agentOutcome{Trace: agent.Trace{Answer: "Friday at 7pm.", Complete: true}}, nil
+	}
+	t.Cleanup(func() { chatActRun = old })
+	q := chatActQueue(root)
+	act, answer := chatActSite(root)
+	id, _ := chatact.NewID()
+	if err := act(chatact.Request{ID: id, Chatbot: "help", Action: "booking",
+		Args: map[string]string{"booking_ref": "HB-1"}, At: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	// The dispatcher that took it stopped there.
+	if mine, err := q.Claim(id, time.Now()); err != nil || !mine {
+		t.Fatal(mine, err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); runChatActions(ctx, root, func(string) {}) }()
+	t.Cleanup(func() { cancel(); <-done })
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		if res, ok, _ := answer(id); ok && res.State != chatact.Working {
+			// Not run again: it may have changed something the first time.
+			if res.State != chatact.Failed || runs != 0 {
+				t.Fatalf("%+v, %d runs", res, runs)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the visitor is still told it is being worked on")
+		}
+	}
+	found := false
+	for _, r := range auditFor(t, root, "assistant.act.failed") {
+		found = found || r.Detail["request"] == id
+	}
+	if !found {
+		t.Error("nothing records that the request was not finished")
+	}
+}

@@ -112,6 +112,7 @@ func runChatActions(ctx context.Context, root string, say func(string)) {
 	}
 	defer unlock()
 	q := chatActQueue(root)
+	chatActCutOff(root, q)
 	sem := make(chan struct{}, 2)
 	var wg sync.WaitGroup
 	defer wg.Wait()
@@ -170,6 +171,26 @@ func chatActTooLate(root string, r chatact.Request, age time.Duration) chatact.R
 		Detail: map[string]string{"assistant": r.Chatbot, "action": r.Action, "request": r.ID,
 			"why": "asked " + age.Round(time.Minute).String() + " before anything took it, so it was not run"}})
 	return chatact.Result{ID: r.ID, State: chatact.Failed, At: time.Now().UTC()}
+}
+
+// chatActCutOff answers the requests an earlier dispatcher took and never
+// answered, as not done.
+//
+// This one holds the lock that one held, so nothing is working on them any
+// more, and a request is run once: one that changes something may have
+// changed it already. Nothing looked at them again, and the site saw a
+// dispatcher beating, so after a restart for an upgrade, a crash, or a
+// shutdown with requests still queued, each visitor's page said "Working
+// on it" and reloaded every three seconds until the request was deleted a
+// day later.
+func chatActCutOff(root string, q chatact.Queue) {
+	for _, r := range q.Unfinished() {
+		recordE(root, audit.Record{Action: "assistant.act.failed", Resource: "/ask/" + r.Chatbot, Outcome: audit.Failure,
+			Principal: "quilzo", Kind: audit.KindService, Verified: true,
+			Detail: map[string]string{"assistant": r.Chatbot, "action": r.Action, "request": r.ID,
+				"why": "the server stopped while it was being done, and it is not done a second time"}})
+		_ = q.Answer(chatact.Result{ID: r.ID, State: chatact.Failed, At: time.Now().UTC()})
+	}
 }
 
 // chatActRun runs an agent for a request: a variable so a test can stand
