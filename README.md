@@ -362,16 +362,14 @@ reference.
 | **Checks** | XSS, injection and leaked secrets in content; the content security policy your content implies; claims that need substantiating; image licences. | `quilzo scan\|csp\|brand\|rights` |
 | **Extensions** | Your own code that observes or transforms content, run in a sandbox outside the process, pinned by digest. | `quilzo ext list\|add\|pin\|test` |
 
-### Experimental: conversation and calls
+### Experimental: screens
 
-The building blocks of working together in real time, shown from the command
-line and not yet a product of their own.
+Building blocks for working with a screen, shown from the command line and
+not yet a product of their own.
 
 | Feature | What it does | How |
 |---|---|---|
-| **Rooms** | Conversations with a stated purpose; an edit appends a revision, and removing words leaves the shape of the message. | `quilzo room open\|say\|read\|history` |
-| **Calls and screen sharing** | Lobby, shares, raised hands, mute and eject, with media encrypted end to end by SFrame (RFC 9605) under a key every member computes without trusting the server; what a shared screen and a membership change cost. | `quilzo huddle demo`, `call demo`, `sframe check`, `screen cost` |
-| **An AI note-taker** | A note-taker that sits in a call as a member, and what it may lawfully do and who must agree. | `quilzo scribe law\|demo` |
+| **What sharing a screen costs** | A lossless codec for screen content, measured over a synthetic editor: a key frame, a keystroke and a still frame, in bytes and per second. The figures are the codec's alone. | `quilzo screen cost` |
 | **Screen recording** | Record the screen into the media library. | `quilzo studio` |
 
 ### Running it
