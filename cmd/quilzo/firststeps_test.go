@@ -1179,6 +1179,57 @@ func TestServeOpensTheAdminWhereAPasskeyWorks(t *testing.T) {
 	}
 }
 
+// Where admin.base_url says the admin is, `serve` says to open it there and
+// `--open` opens it there, as the links that add a passkey go there.
+//
+// The compose stack's admin listens on 0.0.0.0:8080 inside its container
+// and is reached through its proxy at https://localhost:8443, its
+// admin.base_url; once an admin on every interface was opened by name, its
+// log said to open http://localhost:8080, which nothing publishes.
+func TestServeOpensTheAdminWhereItsBaseURLSays(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the browser this stands in is a shell script")
+	}
+	f := newWalk(t)
+	f.run("quilzo init")
+	f.run("quilzo config set admin.base_url https://localhost:8443")
+	port := freePort(t)
+	cmd := exec.Command(os.Args[0], "quilzo-main", "serve", "--addr", "0.0.0.0:"+port, "--behind-proxy", "--open")
+	cmd.Dir, cmd.Env = f.dir, f.environ()
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+	var said strings.Builder
+	lines := bufio.NewScanner(out)
+	for lines.Scan() {
+		said.WriteString(lines.Text() + "\n")
+		if strings.Contains(lines.Text(), "quilzo auth enrol NAME") {
+			break
+		}
+	}
+	if strings.Contains(said.String(), "http://localhost:"+port) {
+		t.Errorf("serve says to open the admin at http://localhost:%s, and its admin.base_url is https://localhost:8443:\n%s", port, said.String())
+	}
+	if !strings.Contains(said.String(), "https://localhost:8443") {
+		t.Errorf("serve does not say the admin is at its admin.base_url:\n%s", said.String())
+	}
+	if runtime.GOOS == "linux" || runtime.GOOS == "darwin" {
+		var opened []string
+		for try := 0; try < 100 && len(opened) == 0; try++ {
+			time.Sleep(20 * time.Millisecond)
+			opened = f.browsed()
+		}
+		if len(opened) == 0 || opened[0] != "https://localhost:8443" {
+			t.Errorf("serve --open opened %q, and the admin's admin.base_url is https://localhost:8443", opened)
+		}
+	}
+}
+
 // What `serve --open` opens is where the admin answers, for an admin on
 // any address of this machine it can listen on: the name a passkey needs
 // is no use at an address nothing is listening on.

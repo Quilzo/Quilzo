@@ -1240,7 +1240,18 @@ func cmdServe(root string, args []string) error {
 	}
 	// A passkey belongs to a name, and a browser refuses an address as one,
 	// so the loopback default is opened as localhost (adminAddress).
+	//
+	// Where admin.base_url says the admin is, it is opened there, as the
+	// links that add a passkey are (enrolURL). The compose stack's admin
+	// listens on 0.0.0.0:8080 inside its container and is reached through
+	// its proxy at its admin.base_url, https://localhost:8443, and once an
+	// admin on every interface was opened by name its log said to open
+	// http://localhost:8080, which nothing publishes.
 	browse, renamed := adminAddress(*addr)
+	if base := strings.TrimSuffix(cfg.Raw("admin.base_url"), "/"); base != "" {
+		browse, renamed = base, false
+		fmt.Printf("  %sopen it as %s, its admin.base_url%s\n", dim, browse, reset)
+	}
 	if renamed {
 		fmt.Printf("  %sopen it as %s: passkeys need a name, not an address%s\n", dim, browse, reset)
 	}
