@@ -40,9 +40,13 @@ func (e errMisused) Unwrap() error { return e.error }
 // invoked is the command and the arguments main dispatched, so that a
 // refusal can quote the lines of the help about the command rather than a
 // flag set's bare name. Empty in a test that calls a command directly.
+//
+// root is the store the line was given (--root), so that a refusal that
+// prints the line to type next names the same store.
 var invoked struct {
 	cmd  string
 	args []string
+	root string
 }
 
 // parseFlags parses fs's flags wherever they stand among args, adds the
@@ -366,13 +370,36 @@ func erasureHeld(yes bool, would string) bool {
 	if yes || !stdinIsTerminal() {
 		return false
 	}
+	// The line as it was typed, against the store it was typed against: it
+	// left --root out, so the line printed for `quilzo --root /srv/site
+	// memory forget` made the agents of whatever store was in the working
+	// directory forget. Each word as a shell reads it back, so a value with
+	// a space is one word when pasted. Never --token, which is a secret.
 	again := "the same command with --yes"
 	if invoked.cmd != "" {
-		again = onOneLine("quilzo " + strings.Join(append([]string{invoked.cmd}, invoked.args...), " ") + " --yes")
+		line := []string{"quilzo"}
+		if invoked.root != "" && invoked.root != defaultRoot {
+			line = append(line, "--root", invoked.root)
+		}
+		line = append(append(append(line, invoked.cmd), invoked.args...), "--yes")
+		for i := range line {
+			line[i] = shellWord(line[i])
+		}
+		again = onOneLine(strings.Join(line, " "))
 	}
 	if w.JSON(map[string]any{"erased": false, "would": would, "to_erase": again}) {
 		return true
 	}
 	w.Human("%s\n\n  nothing has been erased, and it cannot be undone. To erase it:\n    %s\n", would, again)
 	return true
+}
+
+// shellWord is s as a shell reads it back as one word: bare when it is made
+// of letters, digits and the punctuation a shell leaves alone, and in
+// single quotes otherwise.
+func shellWord(s string) string {
+	if s != "" && strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@%+=:,./_-") == "" {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

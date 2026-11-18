@@ -17,6 +17,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/memory"
+	"github.com/quilzo/quilzo/internal/out"
 )
 
 // count added a bare s to every noun, and two of its callers handed it a
@@ -443,5 +444,33 @@ func TestAnErasureAtATerminalWaitsForYes(t *testing.T) {
 	stdinIsTerminal = func() bool { return false }
 	if err := cmdFediverse(root, []string{"block", "worse.example"}); err != nil || blocked() != 2 {
 		t.Errorf("a script's `fediverse block` did not go ahead: %v, %d blocked", err, blocked())
+	}
+}
+
+// The way on that a held erasure prints is the command as it was typed,
+// against the store it was typed against. It left --root out, so `quilzo
+// --root /srv/site memory forget` said to run `quilzo memory forget --yes`,
+// which made the agents of whatever store was in the working directory
+// forget. And a word with a space in it was printed bare, so the line
+// was refused when it was pasted back.
+func TestAHeldErasureSaysHowToGoOnAgainstTheSameStore(t *testing.T) {
+	wasTerminal, wasW, wasInvoked := stdinIsTerminal, w, invoked
+	t.Cleanup(func() { stdinIsTerminal, w, invoked = wasTerminal, wasW, wasInvoked })
+	stdinIsTerminal = func() bool { return true }
+	var buf bytes.Buffer
+	w = out.New(false)
+	w.Out = &buf
+	invoked.cmd, invoked.args, invoked.root = "form", []string{"erase", "Ann Lee"}, "/srv/my site"
+	if !erasureHeld(false, "1 submission would be erased") {
+		t.Fatal("an erasure at a terminal without --yes went ahead")
+	}
+	if want := `quilzo --root '/srv/my site' form erase 'Ann Lee' --yes`; !strings.Contains(buf.String(), want) {
+		t.Errorf("a held erasure does not say %s:\n%s", want, buf.String())
+	}
+	buf.Reset()
+	invoked.cmd, invoked.args, invoked.root = "memory", []string{"forget"}, defaultRoot
+	erasureHeld(false, "every agent would forget")
+	if want := "quilzo memory forget --yes"; !strings.Contains(buf.String(), want) {
+		t.Errorf("a held erasure on the default store does not say %s:\n%s", want, buf.String())
 	}
 }

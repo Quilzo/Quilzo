@@ -848,7 +848,7 @@ func main() {
 	if isHelpFlag(cmd) {
 		cmd = "--help"
 	}
-	invoked.cmd, invoked.args = cmd, cmdArgs
+	invoked.cmd, invoked.args, invoked.root = cmd, cmdArgs, root
 
 	// A command waiting for a lock another process holds says so, and gives
 	// up after QUILZO_LOCK_WAIT (atomicfile.WaitPolicy). Not a server: its
