@@ -632,3 +632,22 @@ func TestAnUploadLeavesNoTemporaryFile(t *testing.T) {
 		}
 	}
 }
+
+// The recording is named to the listener as the one body that carries a
+// file, with the limit the upload applies; the sign-in form is not, so it
+// has what a form has on the public site rather than the hours a
+// recording may take.
+func TestTheRecordingIsTheOneBodyNamedAsAFile(t *testing.T) {
+	if got := FileBody(httptest.NewRequest(http.MethodPost, "/upload", nil)); got != MaxRecording {
+		t.Errorf("POST /upload: %d, and the upload reads %d", got, MaxRecording)
+	}
+	for _, r := range []*http.Request{
+		httptest.NewRequest(http.MethodPost, "/signin", nil),
+		httptest.NewRequest(http.MethodGet, "/upload", nil),
+		httptest.NewRequest(http.MethodPost, "/", nil),
+	} {
+		if got := FileBody(r); got != 0 {
+			t.Errorf("%s %s was given %d as a file", r.Method, r.URL.Path, got)
+		}
+	}
+}

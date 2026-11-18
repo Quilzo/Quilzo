@@ -256,3 +256,22 @@ func TestEveryListenerSaysWhoIsManyVisitors(t *testing.T) {
 		}
 	}
 }
+
+// Both servers that take files name the routes that do. A source check,
+// because the wiring is what could go missing: under listen.Uploads without
+// it every body is a form, and an upload on a slow link is cut off at
+// thirty seconds.
+func TestEveryServerThatTakesFilesNamesTheRoutesThatDo(t *testing.T) {
+	for file, want := range map[string]string{
+		"serve.go":     "lim.Files = admin.FileBody",
+		"studiocmd.go": "lim.Files = studio.FileBody",
+	} {
+		body, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(body), "listen.Uploads()") || !strings.Contains(string(body), want) {
+			t.Errorf("%s serves under listen.Uploads without %s", file, want)
+		}
+	}
+}

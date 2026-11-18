@@ -73,6 +73,22 @@
 // stalls, within its size-derived deadline. The connection limit is what
 // bounds that, and it is the reason the limit exists rather than being a
 // second opinion about the timeouts.
+//
+// # Why a server that receives files still bounds a form
+//
+// The same reasoning runs the other way for a server that receives files:
+// the admin takes a recording through its media screen, and a deadline on
+// the whole request would refuse it on the slow link that needs longest. So
+// Uploads has no Request deadline, and for a while that meant the whole
+// admin had none: a POST to /signin that sent its body a byte every few
+// seconds was held for as long as its sender liked, the hole this package
+// was written to close, reopened for the admin alone.
+//
+// So a server under Uploads gives each body a deadline of its own, as the
+// media routes give each response one. A route that receives a file, named
+// by Limits.Files, gets the time its size takes at the slowest rate worth
+// serving; every other body gets Body, what the public site gives a whole
+// request.
 package listen
 
 import (
@@ -97,6 +113,15 @@ type Limits struct {
 	// included. Zero means unbounded, which is only right for a server whose
 	// job is receiving a large file.
 	Request time.Duration
+	// Body is how long a request's body may take to arrive, once its
+	// headers have, on a server whose Request is zero: set per request, so
+	// that the routes Files names can be given longer. Zero leaves bodies
+	// to Request.
+	Body time.Duration
+	// Files reports the most a request may send when its route is one that
+	// receives a file, and zero for any other. Such a body is given the
+	// time its size takes rather than Body. Nil means no route does.
+	Files func(*http.Request) int64
 	// Response is how long the whole response may take. Zero means the
 	// handler decides, which is right for a server that sends media.
 	Response time.Duration
@@ -149,8 +174,12 @@ func Media() Limits {
 }
 
 // Uploads is for a server whose job is receiving a large file.
+//
+// Every other body on it still has what a request has on the public site,
+// Body; the routes that receive files are named by setting Files.
 func Uploads() Limits {
 	l := Media()
+	l.Body = l.Request
 	l.Request = 0
 	// A stalled upload still ends, because the idle deadline applies between
 	// requests and the connection limit bounds how many can be in progress.
@@ -187,6 +216,56 @@ func (l Limits) Apply(srv *http.Server) {
 	srv.WriteTimeout = l.Response
 	srv.IdleTimeout = l.Idle
 	srv.MaxHeaderBytes = l.MaxHeaderBytes
+	if l.Request == 0 && l.Body > 0 {
+		next := srv.Handler
+		if next == nil {
+			next = http.DefaultServeMux
+		}
+		srv.Handler = l.bodies(next)
+	}
+}
+
+// bodies gives each request's body a deadline of its own.
+//
+// From when the handler is reached, so a body has Body after the headers'
+// own deadline rather than sharing it. Before anything else sees the
+// request, because a handler that refuses without reading still has the
+// body read for it: net/http reads up to 256 KB of what is left before it
+// answers, so as to keep the connection, and with no deadline a sender that
+// dribbles is waited on there instead.
+//
+// The deadline ends with the body. Once a body is finished net/http reads
+// the connection in the background, to notice the client leaving, and it
+// lifts the read deadline when it starts; a read stopped by a deadline
+// would cancel the request as though the client had gone, and a long answer
+// (a model's reply, an agent's run, an export) with it. A request with no
+// body has that read started before the handler is reached, so it is given
+// no deadline at all: one set now would end that read, and the request.
+func (l Limits) bodies(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ContentLength == 0 {
+			next.ServeHTTP(w, r)
+			return
+		}
+		within := l.Body
+		if l.Files != nil {
+			if most := l.Files(r); most > 0 {
+				// Sized as a response to a file is (ResponseFor): the same
+				// grace and the same slowest rate, in the other direction.
+				// The declared length, or the most the route takes when the
+				// length is not declared or is more than it would read.
+				size := r.ContentLength
+				if size < 0 || size > most {
+					size = most
+				}
+				within = ResponseFor(size)
+			}
+		}
+		// A writer that cannot take one is not a connection (a test's
+		// recorder), and there is nothing to hold open.
+		_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(within))
+		next.ServeHTTP(w, r)
+	})
 }
 
 // Serve runs a server under these limits until the process is asked to stop,

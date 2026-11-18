@@ -63,11 +63,13 @@ func cmdStudio(root string, args []string) error {
 	// A recording is large and the upload is the whole point, so neither the
 	// request nor the response is given a fixed deadline; what bounds this
 	// server is the idle deadline and the connection limit. The headers still
-	// have ten seconds. See internal/listen.
+	// have ten seconds, a recording the time its size takes, and the sign-in
+	// form what a form has on the public site. See internal/listen.
 	//
 	// It believes no proxy, so this machine is the one peer that is many
 	// visitors: the browser recording on it, and anything in front.
 	lim := listen.Uploads()
+	lim.Files = studio.FileBody
 	lim.Shared = clientip.ThisMachine
 	return lim.Serve(server)
 }

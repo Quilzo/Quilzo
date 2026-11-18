@@ -1264,11 +1264,14 @@ func cmdServe(root string, args []string) error {
 	// Uploads, because this is the interface a file arrives through: a
 	// recording added from the media screen is a request that takes as long
 	// as the connection takes, and a deadline on it would refuse the
-	// operation on exactly the slow link that needs longest.
+	// operation on exactly the slow link that needs longest. Only the routes
+	// that take a file are given that: every other body, a sign-in's among
+	// them, has what one has on the public site.
 	//
 	// A proxy in front, and this machine, are many visitors on one address,
 	// so the share of connections one source may hold is not theirs.
 	lim := listen.Uploads()
+	lim.Files = admin.FileBody
 	lim.Shared = sharedPeers(root, "admin.trusted_proxy")
 	return lim.Serve(httpSrv)
 }

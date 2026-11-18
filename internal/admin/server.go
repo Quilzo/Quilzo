@@ -1275,13 +1275,39 @@ func limitBody(next http.Handler) http.Handler {
 		// photograph larger than a paragraph of text would be refused with an
 		// error about the request body. The limit is not removed, it is moved
 		// to the handler that knows what is being sent.
-		if r.URL.Path == uploadPath || r.URL.Path == exportUploadPath || r.URL.Path == recordUploadPath {
+		if FileBody(r) > 0 {
 			next.ServeHTTP(w, r)
 			return
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, MaxRequestBody)
 		next.ServeHTTP(w, r)
 	})
+}
+
+// FileBody is the most a request may send when its route is one that
+// carries a file rather than a form, the limit its own handler applies, and
+// zero for every other request.
+//
+// The one list of them, for limitBody, which leaves these to their handlers,
+// and for the listener (internal/listen), which gives one of these bodies the
+// time its size takes at the slowest rate worth serving and any other body
+// what the public site gives a request. The admin runs with no deadline on
+// the whole request so that a recording can take as long as the link takes,
+// and while that was so for every route, a POST to /signin that sent a byte
+// every few seconds was held for as long as its sender liked.
+func FileBody(r *http.Request) int64 {
+	if r.Method != http.MethodPost && r.Method != http.MethodPut {
+		return 0
+	}
+	switch r.URL.Path {
+	case uploadPath:
+		return MaxUpload
+	case exportUploadPath:
+		return MaxExportUpload + 1<<20
+	case recordUploadPath:
+		return MaxRecordUpload + 1<<20
+	}
+	return 0
 }
 
 // uploadPath is the one route that carries a file rather than a form.
