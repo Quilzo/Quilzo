@@ -145,6 +145,8 @@ leaving (there is no lock-in here, and this is how it is proved)
   quilzo export ro-crate --licence URI     a deposit: markdown plus checksums
   quilzo siem ocsf|cef|jsonl --envelope F  the audit log, still verifiable
   quilzo siem verify FILE --envelope F     check a JSON Lines export was not altered
+  quilzo siem stream status|key|send       the audit log as it is written, in signed batches to siem.stream.url:
+                                           how far it has gone (status, the default), the keys to check it, or send now
 
 importing
   quilzo import FILE [--from wordpress]    bring in another CMS's export
