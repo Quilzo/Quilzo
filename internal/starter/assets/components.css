@@ -339,7 +339,13 @@ pre {
   container-type: inline-size;
   padding-block: var(--space-7);
 }
-.section + .section { padding-top: 0; }
+/* Two plain sections in a row share one gap, the first one's. Neither may
+   be a tinted band or a media surface, whose padding is inside its colour:
+   this outranked the bands' own padding, so a closing band after another
+   section lost its top padding and its heading sat on the band's top edge,
+   and a plain section after a band had nothing between its words and the
+   band's bottom edge. */
+.section:not([class*="tone-"], .surface-media) + .section:not([class*="tone-"], .surface-media) { padding-top: 0; }
 .section-head { display: flex; flex-direction: column; gap: var(--space-3); max-width: 60ch; margin-bottom: var(--space-5); }
 .section-head.center { align-items: center; text-align: center; }
 .tone-quiet { background: var(--surface); }
@@ -386,6 +392,10 @@ pre {
    hero, and it beat the hero's own align-items, so a centred heading sat
    under a chip pinned to the left edge. */
 .hero.hero-center > .chip { align-self: center; }
+/* And its buttons, when there are more than fit on one line: at phone
+   width they wrapped against the left edge under a centred heading. A
+   centred section heading's buttons likewise. */
+.hero.hero-center .actions, .section-head.center .actions { justify-content: center; }
 .hero.hero-plain { background: transparent; color: inherit; padding-inline: 0; border-radius: 0;
   /* A plain hero is text on the page: no style draws a card around it. */
   box-shadow: none; border: 0; }

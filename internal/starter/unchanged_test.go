@@ -130,6 +130,28 @@ const centredEyebrow = `/* The eyebrow of a centred hero is centred too. The rul
 .hero.hero-center > .chip { align-self: center; }
 `
 
+// bandPaddingNow and bandPaddingBefore are the shared gap between two
+// sections, which took the top padding off a tinted band, and
+// centredActions is the rule that centres a centred hero's buttons when they
+// wrap: see TestATintedBandKeepsItsPadding and
+// TestCentredButtonsStayCentredWhenTheyWrap.
+const (
+	bandPaddingBefore = ".section + .section { padding-top: 0; }\n"
+	bandPaddingNow    = `/* Two plain sections in a row share one gap, the first one's. Neither may
+   be a tinted band or a media surface, whose padding is inside its colour:
+   this outranked the bands' own padding, so a closing band after another
+   section lost its top padding and its heading sat on the band's top edge,
+   and a plain section after a band had nothing between its words and the
+   band's bottom edge. */
+.section:not([class*="tone-"], .surface-media) + .section:not([class*="tone-"], .surface-media) { padding-top: 0; }
+`
+	centredActions = `/* And its buttons, when there are more than fit on one line: at phone
+   width they wrapped against the left edge under a centred heading. A
+   centred section heading's buttons likewise. */
+.hero.hero-center .actions, .section-head.center .actions { justify-content: center; }
+`
+)
+
 func TestExistingPagesRenderAsTheyDid(t *testing.T) {
 	got := map[string]string{}
 	for _, st := range All() {
@@ -393,8 +415,9 @@ var readableNow, readableBefore = []string{
 }
 
 // The components are what they were, with the opt-in rules after them and
-// the centred eyebrow, the page transitions, the meter and the rules that
-// drew words below their ratio as the changes.
+// the centred eyebrow, the page transitions, the meter, the rules that drew
+// words below their ratio, the shared gap and the centred buttons as the
+// changes.
 func TestTheComponentsOnlyGrew(t *testing.T) {
 	c := Components()
 	added := Backdrops()
@@ -403,12 +426,15 @@ func TestTheComponentsOnlyGrew(t *testing.T) {
 	}
 	before := strings.TrimSuffix(c, added)
 	for name, now := range map[string]string{"the centred eyebrow's rule": centredEyebrow,
-		"the page transition": transitionsNow, "the meter's note": meterNote, "the meter's fill": meterFillNow} {
+		"the page transition": transitionsNow, "the meter's note": meterNote, "the meter's fill": meterFillNow,
+		"the shared gap": bandPaddingNow, "the centred buttons": centredActions} {
 		if strings.Count(before, now) != 1 {
 			t.Fatalf("%s is not where this test expects it", name)
 		}
 	}
+	before = strings.Replace(before, centredActions, "", 1)
 	before = strings.Replace(before, centredEyebrow, "", 1)
+	before = strings.Replace(before, bandPaddingNow, bandPaddingBefore, 1)
 	before = strings.Replace(before, transitionsNow, transitionsBefore, 1)
 	before = strings.Replace(before, answerAnchor, transitionsMoved+answerAnchor, 1)
 	before = strings.Replace(before, meterNote, "", 1)
@@ -420,7 +446,7 @@ func TestTheComponentsOnlyGrew(t *testing.T) {
 		before = strings.Replace(before, now, readableBefore[i], 1)
 	}
 	if got := sum(before); got != componentsBefore {
-		t.Errorf("the shared components changed beyond the centred eyebrow, the page transitions, the meter and the readable rules: %s", got)
+		t.Errorf("the shared components changed beyond the centred eyebrow, the page transitions, the meter, the readable rules, the shared gap and the centred buttons: %s", got)
 	}
 }
 
@@ -465,5 +491,41 @@ func TestACentredHerosEyebrowIsCentred(t *testing.T) {
 	}
 	if at < 0 || pinned < 0 || at < pinned {
 		t.Fatalf("the centred hero's chip is not centred after the rule that pins chips: %d, %d", at, pinned)
+	}
+}
+
+// A tinted band keeps the padding it is drawn with. Two sections in a row
+// share one gap, the first one's, and the rule that did it outranked the
+// bands' own padding: every closing band that followed another section lost
+// its top padding, so its heading sat on the band's top edge with fifty
+// pixels of colour under its button. Neither side of the shared gap may be a
+// band, because a band's padding is inside its colour: as the first of two,
+// it left the plain section after it nothing between its words and the
+// band's edge.
+func TestATintedBandKeepsItsPadding(t *testing.T) {
+	collapse := regexp.MustCompile(`(?m)^([^{}\n]*\.section\b[^{}\n]*\+[^{}\n]*\.section\b[^{}\n]*)\{\s*padding-top:\s*0;?\s*\}`)
+	found := collapse.FindAllStringSubmatch(Components(), -1)
+	if len(found) != 1 {
+		t.Fatalf("%d rules take the top padding off a section that follows another", len(found))
+	}
+	for _, side := range strings.Split(found[0][1], "+") {
+		if !strings.Contains(side, `:not([class*="tone-"], .surface-media)`) {
+			t.Errorf("%q takes the padding off a tinted band or a media surface: %q",
+				strings.TrimSpace(found[0][1]), strings.TrimSpace(side))
+		}
+	}
+}
+
+// The buttons of anything centred are centred when they wrap. At phone width
+// a centred hero's two buttons go onto two lines, and they sat against the
+// left edge under a centred eyebrow, heading and standfirst; a closing
+// band's did the same under its centred heading.
+func TestCentredButtonsStayCentredWhenTheyWrap(t *testing.T) {
+	c := Components()
+	for _, sel := range []string{".hero.hero-center .actions", ".section-head.center .actions"} {
+		rule := regexp.MustCompile(`(?m)^[^{}\n]*` + regexp.QuoteMeta(sel) + `\b[^{}\n]*\{[^{}]*justify-content:\s*center`)
+		if !rule.MatchString(c) {
+			t.Errorf("%s is not centred", sel)
+		}
 	}
 }
