@@ -1239,9 +1239,10 @@ func cmdServe(root string, args []string) error {
 		fmt.Printf("  %s%s%s\n", dim, line, reset)
 	}
 	// A passkey belongs to a name, and a browser refuses an address as one,
-	// so the loopback default is opened as localhost.
-	if host, port, err := net.SplitHostPort(*addr); err == nil && (host == "127.0.0.1" || host == "::1") {
-		fmt.Printf("  %sopen it as http://localhost:%s: passkeys need a name, not an address%s\n", dim, port, reset)
+	// so the loopback default is opened as localhost (adminAddress).
+	browse, renamed := adminAddress(*addr)
+	if renamed {
+		fmt.Printf("  %sopen it as %s: passkeys need a name, not an address%s\n", dim, browse, reset)
 	}
 	// People sign in with a passkey, two factors at once; somebody without
 	// one is given a link that adds it. A token alone is one factor and
@@ -1256,7 +1257,7 @@ func cmdServe(root string, args []string) error {
 		// Not an error if it fails. Refusing to serve because a desktop could
 		// not be found would break exactly the deployments that matter most —
 		// a container, a machine over SSH, CI — none of which has one.
-		if !admin.Open("http://" + *addr) {
+		if !admin.Open(browse) {
 			fmt.Printf("  %snothing here knows how to open a browser; the "+
 				"address is above%s\n", dim, reset)
 		}
@@ -1266,6 +1267,28 @@ func cmdServe(root string, args []string) error {
 	// as the connection takes, and a deadline on it would refuse the
 	// operation on exactly the slow link that needs longest.
 	return listen.Uploads().Serve(httpSrv)
+}
+
+// adminAddress is the address to open the admin at when it listens on addr,
+// and whether that is not addr itself.
+//
+// A passkey belongs to a name, and a browser refuses an address as one: at
+// http://127.0.0.1:8080 the admin answers every passkey ceremony with
+// "passkeys need a domain name", and people sign in to it with a passkey.
+// `serve --open` opened http://127.0.0.1:8080 all the same, on the line
+// after the one that said to open it as localhost, and the README's
+// Quickstart ended there. The same holds for any loopback address, and for
+// an admin on every interface, seen from this machine, where the browser
+// --open starts is.
+func adminAddress(addr string) (string, bool) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "http://" + addr, false
+	}
+	if ip := net.ParseIP(host); host == "" || (ip != nil && (ip.IsLoopback() || ip.IsUnspecified())) {
+		return "http://localhost:" + port, true
+	}
+	return "http://" + addr, false
 }
 
 // sessionCaller is a person signed in to the admin, verified, with the

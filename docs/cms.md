@@ -10,7 +10,7 @@ store, a publish that moves a pointer, and gates that refuse.
 quilzo init          # a store in the current directory
 quilzo demo          # install Marginalia, a complete shop
 quilzo site          # serve it on 127.0.0.1:8081
-quilzo serve --open  # the admin on 127.0.0.1:8080, opened in a browser
+quilzo serve --open  # the admin, opened in a browser at localhost:8080
 ```
 
 Linux, macOS and Windows, amd64 and arm64.
