@@ -450,6 +450,29 @@ func TestAnErasureAtATerminalWaitsForYes(t *testing.T) {
 	if err := cmdFediverse(root, []string{"block", "bad.example", "--yes"}); err != nil || blocked() != 1 {
 		t.Errorf("`fediverse block --yes`: %v, %d blocked", err, blocked())
 	}
+	// The others are held the same way, before they look for what they
+	// would erase: asked of nothing, each says so and erases nothing, and
+	// was before refused for the nothing it found. Only the help named
+	// --yes for these, so a command that went on erasing at a terminal
+	// would have passed.
+	wasW := w
+	t.Cleanup(func() { w = wasW })
+	for _, c := range []struct {
+		name string
+		run  func() error
+	}{
+		{"member remove", func() error { return cmdMember(root, []string{"remove", "nobody"}) }},
+		{"newsletter remove", func() error { return cmdNewsletter(root, []string{"remove", "ann@example.com"}) }},
+		{"booking cancel --erase", func() error { return cmdBooking(root, []string{"cancel", "b1", "--erase"}) }},
+	} {
+		var buf bytes.Buffer
+		w = out.New(false)
+		w.Out = &buf
+		if err := c.run(); err != nil || !strings.Contains(buf.String(), "nothing has been erased") {
+			t.Errorf("`%s` at a terminal without --yes was not held: %v\n%s", c.name, err, buf.String())
+		}
+	}
+	w = wasW
 	// Each erasure the help names takes --yes, and says it waits for one.
 	for _, line := range []string{"memory forget", "member disable | enable | remove", "form list | expire | erase",
 		"newsletter remove", "booking cancel", "fediverse block", "agent workspace"} {
