@@ -1152,3 +1152,43 @@ func TestTheAdminTokenFixClearsItAndLeavesTheCommandLineAdministrable(t *testing
 		t.Errorf("an administrator's token whose kind nobody recorded: %+v", f)
 	}
 }
+
+// token.admin-role's fix, for the only administrator's token its holder
+// has, first gives them one of their own, so following it leaves them able
+// to administer from the command line.
+//
+// The fix revoked the token it was about. For somebody whose one
+// administrator's token was issued without --person, a program's by its
+// record, following it left them no token that could issue another or run
+// an administrator's command, and `auth recover` the only way back.
+func TestTheAdminTokenFixGivesAnyoneLeftWithoutOneATokenOfTheirOwn(t *testing.T) {
+	s := clean(t)
+	only := tokenWith(t, s, "laptop", "dana", auth.RoleAdmin, auth.KindProgram)
+	f := findingAbout(s, "token.admin-role", only)
+	if f == nil {
+		t.Fatal("control: a program's administrator's token was not reported")
+	}
+	issue := strings.Index(f.Fix, "--principal HOLDER --role admin --person")
+	revoke := strings.Index(f.Fix, "token revoke "+only)
+	if issue < 0 || revoke < 0 || issue > revoke {
+		t.Fatalf("the fix does not give dana a token of her own before it revokes her only one: %q", f.Fix)
+	}
+
+	// Following it: her own, the program's publisher token, and this one
+	// revoked. Nothing is reported, and she still holds an administrator's
+	// token of her own.
+	tokenWith(t, s, "dana-cli", "dana", auth.RoleAdmin, auth.KindPerson)
+	tokenWith(t, s, "laptop-publisher", "dana", auth.RolePublisher, auth.KindProgram)
+	if _, err := s.Tokens.Revoke(only); err != nil {
+		t.Fatal(err)
+	}
+	if f := has(Scan(s, nil), "token.admin-role"); f != nil {
+		t.Errorf("following the fix did not clear it: %s", f.Detail)
+	}
+
+	// With one of her own already, the fix gives her no second.
+	ci := tokenWith(t, s, "deploy", "dana", auth.RoleAdmin, auth.KindProgram)
+	if f := findingAbout(s, "token.admin-role", ci); f == nil || strings.Contains(f.Fix, "--role admin") {
+		t.Errorf("the fix for a program's token gives its holder another administrator's token: %+v", f)
+	}
+}

@@ -962,6 +962,15 @@ var rules = []Rule{
 			if s.Tokens == nil {
 				return nil
 			}
+			// Who holds an administrator's token of their own over the
+			// whole site, to administer from the command line with.
+			own := map[string]bool{}
+			for _, t := range s.Tokens.Tokens {
+				if !t.Revoked && !t.Expired(s.Now) && !t.IsSession() && t.Role == auth.RoleAdmin &&
+					t.Resource == "/" && t.Kind == auth.KindPerson {
+					own[strings.ToLower(t.Principal)] = true
+				}
+			}
 			var out []Finding
 			for _, t := range s.Tokens.Tokens {
 				if t.Revoked || t.Expired(s.Now) || t.Role != auth.RoleAdmin {
@@ -991,9 +1000,20 @@ var rules = []Rule{
 				// Under a name of its own, and with this one revoked: the
 				// fix issued a second token under the same name and left
 				// this one working, so the finding stayed.
+				//
+				// And, for a holder with no administrator's token of their
+				// own, one first: revoking this one, a program's by its
+				// record or never recorded, left somebody whose only one it
+				// was no token that could issue another or run an
+				// administrator's command, and `auth recover` the only way
+				// back to the command line.
 				fix := "quilzo token issue " + t.Name + "-publisher --principal HOLDER --role publisher; " +
 					"quilzo token revoke " + t.ID + "  # a program drafts and publishes with less"
-				if t.Kind == "" {
+				switch {
+				case !own[strings.ToLower(t.Principal)]:
+					fix = "quilzo token issue HOLDER-cli --principal HOLDER --role admin --person; " + fix +
+						", and the first is HOLDER's own, to administer from the command line with once this one is revoked"
+				case t.Kind == "":
 					fix += "; if it is HOLDER's own, issue it again with --person, and revoke this one"
 				}
 				out = append(out, Finding{
