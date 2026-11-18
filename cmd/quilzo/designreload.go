@@ -164,9 +164,19 @@ func publishedDesign(root string) string {
 // recorded. undo puts the record back as it was, for a publish whose pages
 // then fail to go live. A design that does not read is not recorded: it is
 // not one the site could take either.
-func markDesignPublished(root, dir string) (changed bool, undo func(), err error) {
+//
+// checked, when a gate judged the design, is the design it judged, and is
+// what is recorded. The record was of templates/ read again once every gate
+// had run, so a palette forced past the gate in between was recorded as the
+// one it passed and went to readers with the publish, the window the record
+// exists to close. A design in dir that is no longer the one checked is
+// refused (errDesignMoved), and nothing is recorded.
+func markDesignPublished(root, dir string, checked *Design) (changed bool, undo func(), err error) {
 	undo = func() {}
 	d, lerr := loadDesign(dir)
+	if checked != nil && (lerr != nil || designDigest(d) != designDigest(checked)) {
+		return false, undo, errDesignMoved{dir}
+	}
 	if lerr != nil {
 		return false, undo, nil
 	}
@@ -186,6 +196,15 @@ func markDesignPublished(root, dir string) (changed bool, undo func(), err error
 		}
 		_ = atomicfile.Write(path, []byte(prev+"\n"), 0o600)
 	}, nil
+}
+
+// errDesignMoved is a design that changed after a publish's gate judged it.
+type errDesignMoved struct{ dir string }
+
+func (e errDesignMoved) Error() string {
+	return fmt.Sprintf("the design in %s changed after the accessibility check judged it, so "+
+		"what would go live is not what was checked; nothing was published. Publish again "+
+		"to check the design as it is now", e.dir)
 }
 
 // filesState is dirState for named files.

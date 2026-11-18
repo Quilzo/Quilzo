@@ -745,7 +745,7 @@ func cmdServe(root string, args []string) error {
 	// so a face added from this screen, or by hand, is on it at once.
 	dw := newDesignWatch(*tplDir, design, func(d *Design) { srv.SetDesign(d.Layouts, d.Stylesheet) })
 	srv.DesignSet = adminDesignHooks(*tplDir, dw)
-	srv.DesignSet.Published = func() (bool, func(), error) { return markDesignPublished(root, *tplDir) }
+	srv.DesignSet.Published = func() (bool, func(), error) { return markDesignPublished(root, *tplDir, nil) }
 	srv.Decentralised = decentralisedFor(root, *tplDir, s, dw.Current)
 	srv.Transfer = transferHooks(root, s, cfg, signedIn)
 	srv.Assist = &admin.Assist{

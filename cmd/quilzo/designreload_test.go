@@ -697,7 +697,7 @@ func commitLive(t *testing.T, root string, design ...string) {
 		t.Fatal(err)
 	}
 	for _, dir := range design {
-		if _, _, err := markDesignPublished(root, dir); err != nil {
+		if _, _, err := markDesignPublished(root, dir, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -839,5 +839,79 @@ func TestAChangeToTheDesignAloneCanBePublished(t *testing.T) {
 	}
 	if got := served(rl, "/site.css").Body.String(); !strings.Contains(got, "style: soft") {
 		t.Error("a design published over the machine interface is not the one served")
+	}
+}
+
+// A publish takes the design its gate checked, and not one saved while it
+// ran.
+//
+// The design a publish recorded as passed was read from templates/ again
+// after every gate had run, so a palette forced past the gate in that gap
+// was recorded as the one the gate passed and went to readers with the
+// publish, from the command line and the machine interface alike: the one
+// window the record was there to close. A design that moved after the gate
+// read it is refused now, and nothing goes live with it.
+func TestAPublishTakesTheDesignItsGateChecked(t *testing.T) {
+	root, tpl := fontSite(t)
+	rl := servedSite(t, root, tpl)
+	forced := false
+	beforeLiveMoves = func() {
+		if !forced {
+			return
+		}
+		if err := cmdTheme(root, []string{"set", "on-surface", "#777777", "surface", "#808080",
+			"--dir", tpl, "--force"}); err != nil {
+			t.Error(err)
+		}
+	}
+	t.Cleanup(func() { beforeLiveMoves = nil })
+	unforce := func() {
+		t.Helper()
+		if err := cmdTheme(root, []string{"unset", "on-surface", "surface", "--dir", tpl}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := cmdTheme(root, []string{"set", "radius", "3px", "--dir", tpl}); err != nil {
+		t.Fatal(err)
+	}
+	editDraft(t, root, "index", "Checked with a radius of 3px.")
+	forced = true
+	err := runPublish(t, root, "-templates", tpl)
+	if css := served(rl, "/site.css").Body.String(); strings.Contains(css, "#808080") {
+		t.Fatal("a palette saved after the gate read the design reached readers with the publish")
+	}
+	if err == nil || !strings.Contains(err.Error(), "changed") {
+		t.Errorf("a publish whose design moved under its gate: %v", err)
+	}
+	if w := served(rl, "/"); strings.Contains(w.Body.String(), "Checked with a radius of 3px.") {
+		t.Error("the pages went live with a design nobody checked")
+	}
+
+	// From the machine interface as well, which a site-building agent uses.
+	forced = false
+	unforce()
+	forced = true
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := callOp(t, buildMCP(root, s, &Caller{Name: "dana", Kind: audit.KindHuman, Verified: true}, tpl),
+		"quilzo_publish", "publish")
+	if css := served(rl, "/site.css").Body.String(); strings.Contains(css, "#808080") {
+		t.Fatal("a palette saved after the gate read the design reached readers over the machine interface")
+	}
+	if resp.Error == nil {
+		t.Error("the machine interface published a design that moved under its gate")
+	}
+
+	// And a design nobody touches in the gap goes live as it did.
+	forced = false
+	unforce()
+	if err := runPublish(t, root, "-templates", tpl); err != nil {
+		t.Fatal(err)
+	}
+	if css := served(rl, "/site.css").Body.String(); !strings.Contains(css, "--radius: 3px") {
+		t.Error("the checked design was not taken with the publish")
 	}
 }

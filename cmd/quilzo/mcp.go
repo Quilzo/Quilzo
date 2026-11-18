@@ -589,7 +589,7 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		// error since the day somebody noticed the same shape there, and the
 		// comment it carries says why at length: a gate that cannot run must
 		// not exit like a gate that passed.
-		reports, err := checkAccessibility(root, s, draft, tplDir)
+		checked, reports, err := checkAccessibilityOf(root, s, draft, tplDir)
 		if err != nil {
 			return nil, &mcp.Refusal{Reason: fmt.Sprintf(
 				"the accessibility check could not run, so publishing would "+
@@ -652,7 +652,11 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		}
 		// The design the gate above rendered through goes with it, a
 		// change to it alone included, as it does from the command line.
-		designChanged, undoDesign, derr := markDesignPublished(root, tplDir)
+		designChanged, undoDesign, derr := markDesignPublished(root, tplDir, checked)
+		var moved errDesignMoved
+		if errors.As(derr, &moved) {
+			return nil, &mcp.Refusal{Reason: derr.Error()}
+		}
 		if derr != nil {
 			return nil, derr
 		}
