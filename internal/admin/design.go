@@ -93,11 +93,12 @@ type Design struct {
 	AddFont func(filename string, body []byte, name string, replace bool) (FontAdded, error)
 	// Published records the design as it stands as the one a publish has
 	// passed, so the public site takes it with that publish, and says
-	// whether it differs from the one the last publish took. A change to
-	// the design alone moved no page, so publishing it moved nothing and the
-	// site kept the old design: the screen said a design change is served
-	// from the next publish, and there was no publish that served it.
-	Published func() (bool, error)
+	// whether it differs from the one the last publish took; undo puts the
+	// record back, for a publish whose pages then fail to go live. A change
+	// to the design alone moved no page, so publishing it moved nothing and
+	// the site kept the old design: the screen said a design change is
+	// served from the next publish, and there was no publish that served it.
+	Published func() (changed bool, undo func(), err error)
 }
 
 // FontAdded is what AddFont wrote.

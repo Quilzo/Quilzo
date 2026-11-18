@@ -222,8 +222,19 @@ func (s *Server) promoteByPublishing(w http.ResponseWriter, r *http.Request, p p
 		s.showRefusal(w, r, refusal, map[string]any{"From": plan.From, "To": plan.To.Name, "Skip": skip})
 		return
 	}
+	// The design the checks rendered through goes live with the pages, as
+	// it does with the Publish button: the public site takes only the
+	// design a publish recorded.
+	designChanged, undoDesign, derr := s.publishDesign()
+	if derr != nil {
+		s.auditPub(p, "env.promote", "/", map[string]string{
+			"from": plan.From, "to": plan.To.Name, "outcome": "denied", "reason": derr.Error()})
+		s.pubRedirect(w, r, "", derr.Error())
+		return
+	}
 	pub, err := site.Publish(s.Store, plan.Commit)
 	if err != nil {
+		undoDesign()
 		s.auditPub(p, "env.promote", "/", map[string]string{
 			"from": plan.From, "to": plan.To.Name, "outcome": "denied", "reason": err.Error()})
 		s.pubRedirect(w, r, "", err.Error())
@@ -235,7 +246,7 @@ func (s *Server) promoteByPublishing(w http.ResponseWriter, r *http.Request, p p
 			plan.To.Name, shortHash(plan.Commit)), "")
 		return
 	}
-	s.recordPublished(p, pub, waived, reason)
+	s.recordPublishedDesign(p, pub, waived, reason, designChanged)
 	s.pubRedirect(w, r, fmt.Sprintf(
 		"%s → %s, %s, published. The same objects, not a copy.",
 		plan.From, plan.To.Name, countOf(len(pub.Changes), "change", "changes")), "")

@@ -3847,25 +3847,20 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 
 	// The commit that was checked, and not whatever the draft is by now: a
 	// save landing between the checks and this would go live unchecked.
+	designChanged, undoDesign, derr := s.publishDesign()
+	if derr != nil {
+		s.audit("publish", "/", map[string]string{
+			"by": p.Name, "outcome": "failed", "detail": derr.Error()})
+		http.Error(w, derr.Error(), http.StatusInternalServerError)
+		return
+	}
 	pub, err := site.Publish(s.Store, draft)
 	if err != nil {
+		undoDesign()
 		s.audit("publish", "/", map[string]string{
 			"by": p.Name, "outcome": "failed", "detail": err.Error()})
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
-	}
-	// The design the checks above rendered through goes with the publish,
-	// a change to it alone included, as it does from the command line.
-	designChanged := false
-	if s.DesignSet != nil && s.DesignSet.Published != nil {
-		changed, derr := s.DesignSet.Published()
-		if derr != nil {
-			s.audit("publish", "/", map[string]string{
-				"by": p.Name, "outcome": "failed", "detail": derr.Error()})
-			http.Error(w, derr.Error(), http.StatusInternalServerError)
-			return
-		}
-		designChanged = changed
 	}
 	s.recordPublishedDesign(p, pub, waived, reason, designChanged)
 	body := fmt.Sprintf("%d change%s are now live. The previous version is "+
@@ -4207,6 +4202,16 @@ func (s *Server) publishChecks(p principal, draft, reason string) (waived []stri
 // failures, expired pages and broken menu links — so what it waived is
 // recorded next to it rather than left to be inferred from what happened
 // to be failing at the time.
+// publishDesign records the design the checks rendered through as the one a
+// publish passed, a change to it alone included, as the command line does,
+// just before the pages move: the public site takes the two together.
+func (s *Server) publishDesign() (bool, func(), error) {
+	if s.DesignSet == nil || s.DesignSet.Published == nil {
+		return false, func() {}, nil
+	}
+	return s.DesignSet.Published()
+}
+
 func (s *Server) recordPublished(p principal, pub site.Publication, waived []string, reason string) {
 	s.recordPublishedDesign(p, pub, waived, reason, false)
 }

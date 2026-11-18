@@ -2257,15 +2257,17 @@ func publishAs(root string, args []string, caller *Caller, opts publishFlags) er
 	if beforeLiveMoves != nil {
 		beforeLiveMoves()
 	}
-	pub, err := site.Publish(s, target)
-	if err != nil {
-		return err
-	}
 	// The design the gates above passed is what the site takes with this
-	// publish, a change to it alone included (designreload.go).
-	designChanged, derr := markDesignPublished(root, *tplDir)
+	// publish, a change to it alone included, recorded before the pages
+	// move so the site reads the two together (designreload.go).
+	designChanged, undoDesign, derr := markDesignPublished(root, *tplDir)
 	if derr != nil {
 		w.Human("  %s%v%s\n", yellow, derr, reset)
+	}
+	pub, err := site.Publish(s, target)
+	if err != nil {
+		undoDesign()
+		return err
 	}
 	pagesMoved := len(pub.Changes) > 0 || pub.Previous != pub.Published
 	if !pagesMoved && !designChanged {

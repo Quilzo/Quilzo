@@ -134,9 +134,18 @@ func dirState(dirs ...string) string {
 // that publish answered "already live" and left readers on the old design
 // until somebody edited a page, restarted the site or sent it SIGHUP, none
 // of which any design command mentions. So each publish records the digest
-// of the design it passed beside the store (publishedDesignPath), says when
-// that is all it changed, and the site serving live takes the design when
-// the record moves, as it does when the ref moves.
+// of the design it passed beside the store (publishedDesignPath), before the
+// ref moves, and says when that is all it changed; the site serving live
+// takes the design when the record moves, as it does when the ref moves.
+//
+// And takes only that design. A site that read templates/ whenever it saw a
+// publish took whatever was there by then: one reload for the ref and one
+// for the record were a second chance for a palette forced past the gate
+// after the publish to ride in with it. So a publish's reload takes the
+// design on disk only when its digest is the one recorded, and otherwise
+// keeps the design it has, which is the one the last publish passed. A site
+// started with a template directory other than the one publishing checks
+// therefore takes a new design when started again or sent SIGHUP.
 
 // publishedDesignPath is the digest of the design the last publish passed.
 func publishedDesignPath(root string) string { return filepath.Join(root, "design-published") }
@@ -152,22 +161,31 @@ func publishedDesign(root string) string {
 
 // markDesignPublished records the design in dir as the one a publish has
 // passed, and says whether it differs from the one the last publish
-// recorded. A design that does not read is not recorded: it is not one the
-// site could take either.
-func markDesignPublished(root, dir string) (bool, error) {
-	d, err := loadDesign(dir)
-	if err != nil {
-		return false, nil
+// recorded. undo puts the record back as it was, for a publish whose pages
+// then fail to go live. A design that does not read is not recorded: it is
+// not one the site could take either.
+func markDesignPublished(root, dir string) (changed bool, undo func(), err error) {
+	undo = func() {}
+	d, lerr := loadDesign(dir)
+	if lerr != nil {
+		return false, undo, nil
 	}
-	sum := designDigest(d)
-	if sum == publishedDesign(root) {
-		return false, nil
+	prev, sum := publishedDesign(root), designDigest(d)
+	if sum == prev {
+		return false, undo, nil
 	}
-	if err := atomicfile.Write(publishedDesignPath(root), []byte(sum+"\n"), 0o600); err != nil {
-		return false, fmt.Errorf("the design was checked and could not be recorded as published, "+
+	path := publishedDesignPath(root)
+	if err := atomicfile.Write(path, []byte(sum+"\n"), 0o600); err != nil {
+		return false, undo, fmt.Errorf("the design was checked and could not be recorded as published, "+
 			"so the site has not been told to take it: %w", err)
 	}
-	return true, nil
+	return true, func() {
+		if prev == "" {
+			_ = os.Remove(path)
+			return
+		}
+		_ = atomicfile.Write(path, []byte(prev+"\n"), 0o600)
+	}, nil
 }
 
 // filesState is dirState for named files.
@@ -575,6 +593,10 @@ func (rl *siteReloader) reload(trigger string) error {
 	if withDesign {
 		if d, err := loadDesign(rl.dir); err != nil {
 			designErr = err
+		} else if want := rl.publishedDesign(); want != "" && trigger != reloadSignal && designDigest(d) != want {
+			// Not the design the last publish passed: one saved since, which
+			// waits for the next publish, or SIGHUP. The design kept is the
+			// one that publish passed.
 		} else {
 			design = d
 		}

@@ -650,15 +650,16 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		if beforeLiveMoves != nil {
 			beforeLiveMoves()
 		}
-		pub, err := site.Publish(s, draft)
-		if err != nil {
-			return nil, err
-		}
 		// The design the gate above rendered through goes with it, a
 		// change to it alone included, as it does from the command line.
-		designChanged, derr := markDesignPublished(root, tplDir)
+		designChanged, undoDesign, derr := markDesignPublished(root, tplDir)
 		if derr != nil {
 			return nil, derr
+		}
+		pub, err := site.Publish(s, draft)
+		if err != nil {
+			undoDesign()
+			return nil, err
 		}
 		// Verified as the caller was, as mcp.write_page is.
 		who, model := interfaceClient(caller.Name, caller.Client)
