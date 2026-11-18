@@ -17,7 +17,6 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/schedule"
 	"github.com/quilzo/quilzo/internal/site"
-	"github.com/quilzo/quilzo/internal/store"
 )
 
 func schedulePath(root string) string { return filepath.Join(root, "schedule.json") }
@@ -144,9 +143,20 @@ func scheduleAdd(root string, args []string) error {
 	})
 	fireWebhooks(root, "scheduled", draft, nil)
 
+	// The pages the provenance gate will find with no record when it fires,
+	// said in the answer as in the prose: under --json the answer was all
+	// a script read, and it named neither them nor the reason they go out
+	// on. Left out of the answer when the check could not run, rather than
+	// answered as none.
+	unmarked, uerr := unmarkedAt(root, s, draft)
 	// The commit and when, under --json, which `schedule cancel` names; it
 	// answered nothing, exit 0.
-	if w.JSON(map[string]any{"commit": draft, "at": when.UTC(), "note": *note}) {
+	answer := map[string]any{"commit": draft, "at": when.UTC(), "note": *note,
+		"unmarked_reason": waiver}
+	if uerr == nil {
+		answer["unmarked"] = unmarked
+	}
+	if w.JSON(answer) {
 		return nil
 	}
 	w.Human("%s will publish at %s%s%s\n", short(draft), bold,
@@ -155,7 +165,7 @@ func scheduleAdd(root string, args []string) error {
 		"  not change what is scheduled — it makes the entry stale, and a stale\n"+
 		"  entry is reported rather than fired%s\n", dim, reset)
 	w.Human("  %severy gate runs at publication, not now%s\n", dim, reset)
-	sayUnmarkedScheduled(root, s, draft, waiver)
+	sayUnmarkedScheduled(unmarked, waiver)
 	return nil
 }
 
@@ -163,9 +173,8 @@ func scheduleAdd(root string, args []string) error {
 // provenance gate will make of it then: the one gate every hand-written
 // page fails, since a page saved in the browser or here has no record. It
 // was found out at nine, from a refusal on the Publishing screen.
-func sayUnmarkedScheduled(root string, s *store.Store, draft, waiver string) {
-	unmarked, err := unmarkedAt(root, s, draft)
-	if err != nil || len(unmarked) == 0 {
+func sayUnmarkedScheduled(unmarked []string, waiver string) {
+	if len(unmarked) == 0 {
 		return
 	}
 	if waiver != "" {
