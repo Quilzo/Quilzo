@@ -309,6 +309,17 @@ Unreleased
 *** Pull requests run the race detector and fuzzing, a nightly run shuffles
     the whole suite under -race, and a test fails when a request leaves a
     goroutine behind.
+*** The first run reaches an admin you are signed in to: the README's
+    Quickstart, INSTALL's first site, CONTRIBUTING and the reference each
+    end with a passkey and a signed-in admin, and a test walks the
+    Quickstart.  The sign-in page, Get started and `quilzo help` say what
+    Quilzo is, the self-hosted AI agent platform, and Get started's steps
+    reach declaring an agent.  `serve` opens the admin where
+    admin.base_url says it is.
+*** What Quilzo says of itself is true: the security plan and the OSCAL
+    component definition describe the program as it is and name no
+    security console, the controls the rules check are counted as they
+    are (57), and `quilzo siem stream status|key|send` is in the help.
 
 ** The admin and the command line
 
