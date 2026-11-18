@@ -444,6 +444,22 @@ func TestAnAuthorReadsAndClosesAChatbotsGapsOnTheCommandLine(t *testing.T) {
 	}
 }
 
+// `quilzo assistant` run bare lists the chatbots, and is asked as the list
+// it runs. Its gate took the row for declaring a chatbot, a publisher's, so
+// a reader and an author were refused under the shortest spelling the list
+// that `assistant list`, list_assistants and the Chatbots screen give them.
+func TestABareAssistantCommandIsAskedAsTheListItRuns(t *testing.T) {
+	root, tokens := chatbotPeople(t)
+	for _, who := range []string{"rita", "ed"} {
+		if err := chatbotAs(t, root, tokens, who, "list"); err != nil {
+			t.Fatalf("%s was refused assistant list: %v", who, err)
+		}
+		if err := chatbotAs(t, root, tokens, who); err != nil {
+			t.Errorf("%s was refused the list run bare: %v", who, err)
+		}
+	}
+}
+
 // Building a private chatbot, what it is called and says and which pages
 // it reads, is an author's on every surface, as it was over the agent
 // interface; the rest of it is a publisher's everywhere. declare_assistant

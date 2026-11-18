@@ -39,7 +39,7 @@ func assistantsPath(root string) string { return filepath.Join(root, "assistants
 
 func cmdAssistant(root string, args []string) error {
 	if len(args) == 0 {
-		args = []string{"list"}
+		args = []string{bareRuns["assistant"]}
 	}
 	switch args[0] {
 	case "list":

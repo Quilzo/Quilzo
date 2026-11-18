@@ -1593,9 +1593,15 @@ func commandArea(cmd string, args []string) (string, bool) {
 // `checked`, `note` and `notes` list when run bare. Their lists were opened
 // to a reader and the bare commands still asked for authoring, so the same
 // list was refused a reader under its shortest spelling.
+//
+// `assistant` lists the chatbots when run bare, and took the row for
+// declaring one, a publisher's: a reader and an author were refused the
+// list that `assistant list`, list_assistants and the Chatbots screen give
+// them.
 var bareRuns = map[string]string{"anchor": "status", "timestamp": "list", "stamp": "list",
 	"provenance": "check", "prov": "check", "integrations": "list", "integration": "list",
-	"theme": "show", "review": "status", "checked": "list", "note": "list", "notes": "list"}
+	"theme": "show", "review": "status", "checked": "list", "note": "list", "notes": "list",
+	"assistant": "list"}
 
 func lookupNeed(cmd string, args []string) (need, bool) {
 	if sub, ok := bareRuns[cmd]; ok && len(args) == 0 {
