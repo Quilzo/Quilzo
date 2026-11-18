@@ -94,3 +94,64 @@ func TestAnEmptyPageOffersATitleAndABody(t *testing.T) {
 		t.Errorf("about's editor has %d body fields", n)
 	}
 }
+
+// An address the store cannot hold is refused when it is typed, and a save
+// to one is refused as the person's to fix, on a page of this screen.
+//
+// New page made 200 x's into a page name and opened an editor on it, and
+// Save to draft ended on a plain-text 500 with the store's sentence and no
+// way back: the name was met only at the commit, by the store's rule.
+func TestANewPageAtAnAddressTheStoreCannotHoldIsRefusedFirst(t *testing.T) {
+	srv, token := setup(t)
+
+	long := strings.Repeat("x", 200)
+	w := get(t, srv, "/pages/new?name="+long, token)
+	if loc := w.Header().Get("Location"); w.Code != http.StatusSeeOther || !strings.HasPrefix(loc, "/?e=") {
+		t.Fatalf("New page at a 200-character address went to %d %q", w.Code, loc)
+	}
+
+	before, _ := site.PagesAt(srv.Store, site.RefDraft)
+	for _, name := range []string{long, "a b", "-dash", "Ürün"} {
+		w = save(t, srv, token, url.Values{"__name": {name}, "title": {"T"}})
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("saving %.20q answered %d, not 400", name, w.Code)
+			continue
+		}
+		if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+			t.Errorf("saving %.20q answered %s, not a page of this screen", name, ct)
+		}
+		whole(t, w.Body.String())
+	}
+	after, _ := site.PagesAt(srv.Store, site.RefDraft)
+	if len(after) != len(before) {
+		t.Errorf("a refused save wrote a page: %d pages, then %d", len(before), len(after))
+	}
+}
+
+// New page at an address in another language opens the page at that
+// address, spelled in the letters a page address holds, and one in a script
+// with no such spelling is told so.
+//
+// Ürünler opened /page/r-nler and Café Menu /page/caf-menu, and a Greek or
+// Arabic address was refused with "Give the new page an address", which
+// blamed the person for an address they had given.
+func TestANewPageAtAnAddressInAnotherLanguage(t *testing.T) {
+	srv, token := setup(t)
+	for typed, want := range map[string]string{
+		"Ürünler":         "/page/urunler",
+		"Café Menu":       "/page/cafe-menu",
+		"Σχετικά με εμάς": "/page/schetika-me-emas",
+		"tr/Hakkımızda":   "/page/tr/hakkimizda",
+	} {
+		w := get(t, srv, "/pages/new?name="+url.QueryEscape(typed), token)
+		if loc := w.Header().Get("Location"); loc != want {
+			t.Errorf("New page at %q went to %q, want %q", typed, loc, want)
+		}
+	}
+	w := get(t, srv, "/pages/new?name="+url.QueryEscape("مرحبا"), token)
+	loc, _ := url.QueryUnescape(w.Header().Get("Location"))
+	if !strings.HasPrefix(loc, "/?e=") || strings.Contains(loc, "Give the new page an address") ||
+		!strings.Contains(loc, "Latin") {
+		t.Errorf("an Arabic address went to %q", loc)
+	}
+}

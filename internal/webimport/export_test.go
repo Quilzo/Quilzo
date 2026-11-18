@@ -15,6 +15,7 @@ import (
 	"github.com/quilzo/quilzo/internal/feature"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/section"
+	"github.com/quilzo/quilzo/internal/seo"
 )
 
 const wxr = `<?xml version="1.0" encoding="UTF-8"?>
@@ -465,11 +466,13 @@ func TestSameNamesAreNumberedInTimeInProportionToThem(t *testing.T) {
 		t.Errorf("the posts are named %s ... %s", got, slugs[len(slugs)-1])
 	}
 
-	// Letters a page's name leaves out tell the pages' addresses apart.
+	// Letters a page's name leaves out tell the pages' addresses apart:
+	// Arabic, which has no spelling in ASCII here. Accented Latin letters
+	// were left out too until they were spelled (asciifold.Spell).
 	odd := func(i int) string {
 		var b strings.Builder
 		for _, d := range fmt.Sprint(i) {
-			b.WriteRune([]rune("àáâãäåæçèé")[d-'0'])
+			b.WriteRune([]rune("ابتثجحخدذر")[d-'0'])
 		}
 		return b.String()
 	}
@@ -716,5 +719,317 @@ func TestAWordPressSiteOnPlainLinksBecomesAPackage(t *testing.T) {
 	}
 	if !strings.Contains(body, "(/naive-cafe)") {
 		t.Errorf("the link to ?page_id=12 does not go to its page: %s", body)
+	}
+}
+
+// A folder's file is left out by every mark that holds one back, not three
+// of them.
+//
+// The folder's reader left out draft: true, private: true and published:
+// false. A file an exporter marked by its status (status: draft, as
+// WordPress and Ghost name what is not published), by who may read it, or
+// with a password was brought as a page and published with the site.
+func TestAFolderLeavesOutEveryFileItsFrontMatterHoldsBack(t *testing.T) {
+	fsys := fstest.MapFS{
+		"index.md": {Data: []byte("---\ntitle: Welcome\n---\nBread notes.\n")},
+		"about.md": {Data: []byte("---\ntitle: About\nstatus: published\nvisibility: public\ndraft: false\n---\nWe bake.\n")},
+	}
+	marks := []string{"draft: true", "private: yes", "published: false", `published: "false"`, "status: draft",
+		"status: private", "status: pending", "status: future", "status: trash", "visibility: members",
+		"visibility: private", "password: s3cret"}
+	for i, mark := range marks {
+		fsys[fmt.Sprintf("held-%d.md", i)] = &fstest.MapFile{Data: []byte(
+			"---\ntitle: Held " + mark + "\n" + mark + "\n---\nHELD-MARKER not for the public.\n")}
+	}
+	s, err := FromFiles(fsys, "notes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pg := range s.Pages {
+		for _, b := range pg.Blocks {
+			if strings.Contains(b.Text, "HELD-MARKER") {
+				t.Errorf("page %q was brought, with its words", pg.Title)
+			}
+		}
+	}
+	if len(s.Pages) != 2 {
+		t.Errorf("%d pages were brought, not the home page and the one published", len(s.Pages))
+	}
+	if want := fmt.Sprintf("%d draft(s) were not brought", len(marks)); !strings.Contains(strings.Join(s.Notes, " "), want) {
+		t.Errorf("the notes do not say %q: %v", want, s.Notes)
+	}
+	// The password is not what the reason says.
+	if why := HeldBack(map[string]any{"password": "s3cret"}); why == "" || strings.Contains(why, "s3cret") {
+		t.Errorf("a file with a password is held back for %q", why)
+	}
+}
+
+// A page or post linked by a number is not an address the home moved from.
+//
+// On plain links every page and post is at the home's path with a query
+// (/?page_id=11, /?p=20). The redirect from where each was is made from its
+// path alone, which for a site at the top of its host is / and was left
+// alone, but for one in a folder (https://old.example.org/hall/) is the
+// home's own address: every page and post gave a redirect from /hall to
+// itself, so the old home went to whichever came last and not to the new
+// home.
+func TestAnItemLinkedByANumberDoesNotRedirectTheOldHome(t *testing.T) {
+	doc := strings.ReplaceAll(plainLinks, "https://old.example.org", "https://old.example.org/hall")
+	doc = strings.Replace(doc, "</channel>", `<item><title>First night</title><link>https://old.example.org/hall/?p=20</link>`+
+		`<wp:post_id>20</wp:post_id><wp:post_name>first-night</wp:post_name><wp:post_type>post</wp:post_type>`+
+		`<wp:status>publish</wp:status><wp:post_date>2026-10-27 09:00:00</wp:post_date>`+
+		`<content:encoded><![CDATA[<p>It went well.</p>]]></content:encoded></item></channel>`, 1)
+	s, err := FromWordPress([]byte(doc), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := Package(s, "", "dana", nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Package.Validate(feature.Checks{}); err != nil {
+		t.Fatalf("the package: %v", err)
+	}
+	for _, r := range b.Redirects {
+		if from := strings.TrimSuffix(r.From, "/"); (from == "/hall" || from == "") && r.To != "/" {
+			t.Errorf("the old home %s is redirected to %s", r.From, r.To)
+		}
+	}
+}
+
+// A post WordPress showed only to somebody with its password is not brought.
+//
+// Its status is publish, which is all either reader asked, so a members-only
+// recipe came in as a public post: its words in the page, its description,
+// its structured data, the blog's listing and the feed. A post password is
+// the same kind of keeping back as a private status, and the Ghost reader
+// already leaves a members' post behind.
+func TestAPasswordProtectedWordPressPostIsNotBrought(t *testing.T) {
+	doc := strings.Replace(wxr, "<item><title>Not yet</title>",
+		`<item><title>Members only recipe</title><link>https://oldbakery.example/members-only-recipe/</link>`+
+			`<wp:post_id>22</wp:post_id><wp:post_name>members-only-recipe</wp:post_name><wp:post_type>post</wp:post_type>`+
+			`<wp:status>publish</wp:status><wp:post_password><![CDATA[s3cret]]></wp:post_password>`+
+			`<wp:post_date>2026-10-20 09:00:00</wp:post_date>`+
+			`<content:encoded><![CDATA[<p>PROTECTED-MARKER The secret recipe.</p>]]></content:encoded></item>`+
+			`<item><title>Members page</title><link>https://oldbakery.example/members/</link>`+
+			`<wp:post_id>23</wp:post_id><wp:post_name>members</wp:post_name><wp:post_type>page</wp:post_type>`+
+			`<wp:status>publish</wp:status><wp:post_password>s3cret</wp:post_password>`+
+			`<content:encoded><![CDATA[<p>PROTECTED-MARKER The members' page.</p>]]></content:encoded></item>`+
+			`<item><title>Not yet</title>`, 1)
+	s, err := FromWordPress([]byte(doc), "bakery.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pst := range s.Posts {
+		if pst.Slug == "members-only-recipe" {
+			t.Errorf("the post behind a password was brought: %q", pst.Title)
+		}
+	}
+	for _, pg := range s.Pages {
+		if pg.Name == "members" {
+			t.Errorf("the page behind a password was brought: %q", pg.Title)
+		}
+	}
+	b, err := Package(s, "", "dana", nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body := fmt.Sprint(b.Package.Pages, b.Posts, b.Redirects); strings.Contains(body, "PROTECTED-MARKER") ||
+		strings.Contains(body, "members-only-recipe") {
+		t.Error("the package holds the words or the address of what was behind a password")
+	}
+	// Said, and apart from the drafts: the owner decides about these.
+	notes := strings.Join(s.Notes, " | ")
+	if !strings.Contains(notes, "2 password-protected") {
+		t.Errorf("nothing says two items behind a password were left out: %s", notes)
+	}
+	if strings.Contains(notes, "s3cret") {
+		t.Errorf("the notes carry the password: %s", notes)
+	}
+	if !strings.Contains(notes, "1 draft, private, pending or scheduled") {
+		t.Errorf("the draft is no longer counted on its own: %s", notes)
+	}
+}
+
+// The redirect a site import writes for a page at a non-Latin address is one
+// a request for that address finds.
+//
+// WordPress links /ürünlerimiz/ percent-encoded, and the redirect was
+// written from the link as it stood: /%c3%bcr%c3%bcnlerimiz/. The site hands
+// the map a request's path decoded, so neither spelling of the old address
+// matched and both answered 404, behind "keeps 3 old addresses working".
+func TestARedirectFromANonLatinAddressMatchesARequestForIt(t *testing.T) {
+	doc := strings.Replace(wxr, "<item><title>Not yet</title>",
+		`<item><title>Ürünlerimiz</title><link>https://oldbakery.example/shop/%c3%bcr%c3%bcnlerimiz/</link>`+
+			`<wp:post_id>50</wp:post_id><wp:post_name>%c3%bcr%c3%bcnlerimiz</wp:post_name><wp:post_type>page</wp:post_type>`+
+			`<wp:status>publish</wp:status><content:encoded><![CDATA[<p>Ekmek ve kek.</p>]]></content:encoded></item>`+
+			`<item><title>Not yet</title>`, 1)
+	s, err := FromWordPress([]byte(doc), "bakery.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := Package(s, "", "dana", nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := seo.NewMap(b.Redirects)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// As the server gives it: decoded once, whichever case the escapes had.
+	for _, request := range []string{"/shop/%C3%BCr%C3%BCnlerimiz/", "/shop/%c3%bcr%c3%bcnlerimiz"} {
+		u, err := url.ParseRequestURI(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r, ok := m.Lookup(u.Path)
+		if !ok {
+			t.Errorf("a request for %s finds no redirect among %v", request, b.Redirects)
+			continue
+		}
+		if !hasPage(b.Package, strings.TrimPrefix(r.To, "/")) {
+			t.Errorf("%s is redirected to %s, which is no page of the package", request, r.To)
+		}
+	}
+}
+
+// A page or post WordPress named in another alphabet keeps a name readable
+// in it, and one in a script with no spelling here is still brought.
+//
+// WordPress stores such a post_name percent-encoded, and the escapes were
+// read as the name: `quilzo import` made c3bcrc3bcnlerimiz of ürünlerimiz,
+// site import made a Greek post post/cf-83-cf-87-..., and an Arabic page,
+// with nothing left of its name or title, was not brought at all.
+func TestAWordPressNameInAnotherAlphabetIsReadable(t *testing.T) {
+	for _, c := range []struct {
+		it   WordPressItem
+		want string
+	}{
+		{WordPressItem{ID: "11", Name: "%c3%bcr%c3%bcnlerimiz", Title: "Ürünlerimiz"}, "urunlerimiz"},
+		{WordPressItem{ID: "12", Name: "%cf%83%cf%87%ce%b5%cf%84%ce%b9%ce%ba%ce%ac", Title: "Σχετικά"}, "schetika"},
+		{WordPressItem{ID: "13", Name: "%d9%85%d8%b1%d8%ad%d8%a8%d8%a7", Title: "مرحبا"}, "page-13"},
+		{WordPressItem{ID: "14", Name: "100%-rye", Title: "Rye"}, "100-rye"},
+	} {
+		if got := c.it.PageName(); got != c.want {
+			t.Errorf("%s is named %q, want %q", c.it.Name, got, c.want)
+		}
+	}
+
+	doc := strings.Replace(wxr, "<item><title>Not yet</title>",
+		`<item><title>Σχετικά</title><link>https://oldbakery.example/?p=60</link>`+
+			`<wp:post_id>60</wp:post_id><wp:post_name>%cf%83%cf%87%ce%b5%cf%84%ce%b9%ce%ba%ce%ac</wp:post_name><wp:post_type>post</wp:post_type>`+
+			`<wp:post_date>2026-10-01 09:00:00</wp:post_date>`+
+			`<wp:status>publish</wp:status><content:encoded><![CDATA[<p>Ψωμί.</p>]]></content:encoded></item>`+
+			`<item><title>مرحبا</title><link>https://oldbakery.example/?p=61</link>`+
+			`<wp:post_id>61</wp:post_id><wp:post_name>%d9%85%d8%b1%d8%ad%d8%a8%d8%a7</wp:post_name><wp:post_type>post</wp:post_type>`+
+			`<wp:post_date>2026-10-02 09:00:00</wp:post_date>`+
+			`<wp:status>publish</wp:status><content:encoded><![CDATA[<p>خبز.</p>]]></content:encoded></item>`+
+			`<item><title>Not yet</title>`, 1)
+	s, err := FromWordPress([]byte(doc), "bakery.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	slugs := postSlugs(s.Posts)
+	got := map[string]bool{}
+	for _, sl := range slugs {
+		got[sl] = true
+	}
+	for _, want := range []string{"schetika", "post-61"} {
+		if !got[want] {
+			t.Errorf("no post is at %s: %v", want, slugs)
+		}
+	}
+}
+
+// Two WordPress pages whose slugs are longer than a page name may be, and
+// differ only past where a name is cut, are two pages of a package that
+// installs.
+//
+// A name was cut at 80 characters, 16 past what the store holds, so one page
+// with a long slug made a package that was refused whole, "page name … is
+// not usable". Cut to what the store holds, two such pages were one name,
+// and the second was numbered past it again.
+func TestTwoLongWordPressSlugsAreTwoPagesThePackageHolds(t *testing.T) {
+	long := "ten-things-you-should-know-before-you-visit-istanbul-in-the-winter-of-2024-or-later"
+	page := func(id, slug string) string {
+		return `<item><title>Ten things</title><link>https://oldbakery.example/` + slug + `/</link>` +
+			`<wp:post_id>` + id + `</wp:post_id><wp:post_name>` + slug + `</wp:post_name>` +
+			`<wp:post_type>page</wp:post_type><wp:status>publish</wp:status>` +
+			`<content:encoded><![CDATA[<p>Words about ` + slug + `.</p>]]></content:encoded></item>`
+	}
+	doc := strings.Replace(wxr, "<item><title>Not yet</title>",
+		page("31", long)+page("32", long+"-part-two")+`<item><title>Not yet</title>`, 1)
+	s, err := FromWordPress([]byte(doc), "bakery.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := Package(s, "", "dana", nil, time.Now())
+	if err != nil {
+		t.Fatalf("the package does not install: %v", err)
+	}
+	var names []string
+	for _, pg := range b.Package.Pages {
+		if strings.HasPrefix(pg.Name, "ten-things") {
+			names = append(names, pg.Name)
+			if len(pg.Name) > 64 {
+				t.Errorf("page %q is %d characters, more than the store holds", pg.Name, len(pg.Name))
+			}
+		}
+	}
+	if len(names) != 2 || names[0] == names[1] {
+		t.Errorf("the two pages were brought as %v", names)
+	}
+}
+
+// A file is held back however its generator lets the mark be spelled.
+//
+// The mark was read in one spelling: the key in lower case, and true or
+// yes. Hugo reads a key in any case, so Draft: true is a draft there; YAML
+// as Jekyll reads it takes on, Yes and off for a flag, so published: off is
+// unpublished; a comment after the value is not the value; and Hugo holds a
+// page until its publishDate and takes it down at its expiryDate. Each of
+// those was brought as a page and published with the site.
+func TestAFileHeldBackInAnotherSpellingIsLeftOut(t *testing.T) {
+	fsys := fstest.MapFS{
+		"index.md": {Data: []byte("---\ntitle: Welcome\n---\nBread notes.\n")},
+	}
+	marks := []string{"Draft: true", "DRAFT: True", "draft: on", "draft: YES", "Private: true", "published: off",
+		"Published: No", "publish: false", "Status: Draft", "status: unpublished", "Visibility: Members",
+		"publishDate: 2099-01-01", "PublishDate: 2099-01-01T09:00:00Z", "expiryDate: 2001-01-01",
+		"post_password: s3cret"}
+	for i, mark := range marks {
+		fsys[fmt.Sprintf("held-%d.md", i)] = &fstest.MapFile{Data: []byte(
+			"---\ntitle: Held " + strings.ReplaceAll(mark, ":", "") + "\n" + mark + "\n---\nHELD-MARKER not for the public.\n")}
+	}
+	// TOML front matter, with a comment after the value.
+	fsys["held-toml.md"] = &fstest.MapFile{Data: []byte(
+		"+++\ntitle = \"Held in TOML\"\ndraft = true # not yet\n+++\nHELD-MARKER not for the public.\n")}
+	// What holds nothing back is brought.
+	open := []string{"draft: off", "Draft: False", "published: yes", "publish: true", "publishDate: 2001-01-01",
+		"expiryDate: 2099-01-01", "status: open"}
+	for i, mark := range open {
+		fsys[fmt.Sprintf("open-%d.md", i)] = &fstest.MapFile{Data: []byte(
+			"---\ntitle: Open " + strings.ReplaceAll(mark, ":", "") + "\n" + mark + "\n---\nOpen words.\n")}
+	}
+	s, err := FromFiles(fsys, "notes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pg := range s.Pages {
+		for _, b := range pg.Blocks {
+			if strings.Contains(b.Text, "HELD-MARKER") {
+				t.Errorf("page %q was brought, with its words", pg.Title)
+			}
+		}
+	}
+	if len(s.Pages) != 1+len(open) {
+		t.Errorf("%d pages were brought, not the home page and the %d that hold nothing back", len(s.Pages), len(open))
+	}
+	// The reason names the line as it is written, for whoever takes it out.
+	if why := HeldBack(map[string]any{"Draft": true}); why != "Draft: true" {
+		t.Errorf("a file marked Draft: true is held back for %q", why)
+	}
+	if why := HeldBack(map[string]any{"post_password": "s3cret"}); why == "" || strings.Contains(why, "s3cret") {
+		t.Errorf("a file with a post password is held back for %q", why)
 	}
 }

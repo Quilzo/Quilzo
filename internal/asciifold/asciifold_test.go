@@ -146,3 +146,51 @@ func FuzzIndexFoldReturnsOnlyRealMatches(f *testing.F) {
 		}
 	})
 }
+
+// A letter is spelled in lower-case ASCII, a mark joins the letters beside
+// it, and a letter of a script with no spelling here has none.
+func TestSpell(t *testing.T) {
+	for r, want := range map[rune]string{'Ü': "u", 'İ': "i", 'ß': "ss", 'Ж': "zh", 'Χ': "ch", '̇': "", 'ь': ""} {
+		if got, ok := Spell(r); !ok || got != want {
+			t.Errorf("Spell(%q) = %q, %v; want %q", r, got, ok, want)
+		}
+	}
+	for _, r := range []rune{'a', '-', 'م', '中', '🎉'} {
+		if got, ok := Spell(r); ok {
+			t.Errorf("Spell(%q) = %q, has a spelling", r, got)
+		}
+	}
+}
+
+// A Latin letter loses its mark whichever block of Unicode it is in.
+//
+// The letters Spell knew ended with Latin Extended-A, so Vietnamese, which
+// is written in Latin letters with two marks on many of them, was not
+// spelled: Giới thiệu, "about us", was a page at /gi-i-thi-u, as Ürünler
+// had been at /r-nler. Pinyin's tone marks were the same.
+func TestSpellKnowsTheLatinLettersOfVietnameseAndPinyin(t *testing.T) {
+	for in, want := range map[string]string{
+		"Giới thiệu":   "gioi thieu",
+		"Sản phẩm":     "san pham",
+		"Liên hệ":      "lien he",
+		"Đường Nguyễn": "duong nguyen",
+		"Trường Sa":    "truong sa",
+		"Ưu đãi":       "uu dai",
+		"Nǐ hǎo lǜ":    "ni hao lu",
+	} {
+		got := ""
+		for _, r := range in {
+			switch spelled, ok := Spell(r); {
+			case ok:
+				got += spelled
+			case r < 0x80:
+				got += string(rune(lower(byte(r))))
+			default:
+				got += "?"
+			}
+		}
+		if got != want {
+			t.Errorf("%q is spelled %q, want %q", in, got, want)
+		}
+	}
+}

@@ -15,6 +15,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/asciifold"
+	"github.com/quilzo/quilzo/internal/schema"
+	"github.com/quilzo/quilzo/internal/store"
 	"github.com/quilzo/quilzo/internal/yamlite"
 )
 
@@ -182,7 +185,7 @@ func readJSON(body []byte) (*Content, error) {
 	// goes in the order the file has it.
 	sort.SliceStable(members, func(i, j int) bool {
 		ki, kj := members[i].name, members[j].name
-		if a, b := Slug(ki) == ki, Slug(kj) == kj; a != b {
+		if a, b := Name(ki) == ki, Name(kj) == kj; a != b {
 			return a
 		}
 		return ki < kj
@@ -269,15 +272,25 @@ func ReadPage(item map[string]any, given string, authoritative bool) (Page, erro
 		case []any:
 			fields[k] = v
 		default:
-			// A nested object has nowhere to go: content types are flat, which
-			// is what keeps validation bounded. Reported rather than flattened
-			// into keys nobody declared.
+			// A field every page may carry keeps its object: a hero, the
+			// terms a page is filed under. They are not content a type
+			// declares, so being flat does not apply to them, and the export
+			// writes them as objects; dropping them lost the top of every
+			// page built from sections in a round trip of the export that
+			// calls itself lossless.
+			if schema.Reserved(k) {
+				fields[k] = v
+				continue
+			}
+			// Any other nested object has nowhere to go: content types are
+			// flat, which is what keeps validation bounded. Reported rather
+			// than flattened into keys nobody declared.
 			dropped = append(dropped, k+" (nested object)")
 		}
 	}
 	name := ""
 	if authoritative {
-		name = Slug(given)
+		name = Name(given)
 	}
 	if name == "" {
 		name = Slug(str(fields["slug"]))
@@ -428,7 +441,7 @@ func ReadDir(fsys fs.FS) (Site, []string, error) {
 			// A Markdown page's name is where its file is, as a map key is
 			// in JSON: its own slug field can say something else.
 			if f == Markdown {
-				if n := Slug(strings.TrimSuffix(strings.TrimPrefix(p, "content/"), ".md")); n != "" {
+				if n := Name(strings.TrimSuffix(strings.TrimPrefix(p, "content/"), ".md")); n != "" {
 					pg.Name = n
 				}
 			}
@@ -469,7 +482,7 @@ func ReadDir(fsys fs.FS) (Site, []string, error) {
 					"last-changed.json: %s: %q is not a time", name, at))
 				continue
 			}
-			s.Changed[Slug(name)] = t
+			s.Changed[Name(name)] = t
 		}
 	}
 	if body, err := fs.ReadFile(fsys, "redirects.json"); err == nil {
@@ -492,9 +505,35 @@ func ReadDir(fsys fs.FS) (Site, []string, error) {
 	return s, skipped, nil
 }
 
+// Name is the page name an identity an export wrote stands for: a key of
+// pages.json, or where a page's file is. A name the store holds is kept as
+// it is, and anything else is made one by Slug.
+//
+// Every such name went through Slug, which folds a slash, a dot and
+// capitals, so a round trip renamed pages the store held: tr/about, a
+// translation, came back as an ordinary page tr-about at another address,
+// and dot.page, UPPER and docs/v1 moved with no redirect. A title or a slug
+// field is still only a suggestion, and is made a name by Slug.
+func Name(s string) string {
+	if store.ValidPath(s) {
+		return s
+	}
+	return Slug(s)
+}
+
+// maxNamePart is how long one part of a page name may be: what the store
+// holds between two slashes (store.CheckPath).
+const maxNamePart = 64
+
 // Slug is the name an import gives a page from a name it was handed: safe as a
 // page name and readable as a URL. A page name becomes part of a URL and a key
 // in the store, so it is constrained whatever the file said.
+//
+// To what the store holds, in length too. It was cut at 80 characters, and
+// the store refuses a name longer than 64: one WordPress post with a long
+// slug (WordPress keeps 200 characters) came in under a name the store
+// refused, and that one refusal failed the whole import, after the report
+// had listed every page as brought.
 func Slug(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	var b strings.Builder
@@ -509,11 +548,19 @@ func Slug(s string) string {
 				b.WriteByte('-')
 				lastDash = true
 			}
+		default:
+			// A letter outside ASCII, spelled in ASCII: ürünlerimiz is
+			// urunlerimiz, where it was rnlerimiz, and a Greek or Russian
+			// title is a name rather than none.
+			if spelled, ok := asciifold.Spell(r); ok && spelled != "" {
+				b.WriteString(spelled)
+				lastDash = false
+			}
 		}
 	}
 	out := strings.Trim(b.String(), "-")
-	if len(out) > 80 {
-		out = strings.Trim(out[:80], "-")
+	if len(out) > maxNamePart {
+		out = strings.Trim(out[:maxNamePart], "-")
 	}
 	return out
 }
@@ -540,11 +587,26 @@ func NewNames() *Names {
 func (n *Names) Claim(base string) string {
 	name := base
 	for k := max(2, n.next[base]); n.taken[name]; k++ {
-		name = fmt.Sprintf("%s-%d", base, k)
+		name = numbered(base, k)
 		n.next[base] = k + 1
 	}
 	n.taken[name] = true
 	return name
+}
+
+// numbered is base with a number after it: same-2. The number is part of
+// the name's last part, and that part is cut to make room for it where the
+// two together are longer than the store holds: two long titles that differ
+// only past where a name is cut are one name, and the second was numbered to
+// a name the store refused, which failed the import both were in.
+func numbered(base string, k int) string {
+	number := fmt.Sprintf("-%d", k)
+	at := strings.LastIndex(base, "/") + 1
+	last := base[at:]
+	if over := len(last) + len(number) - maxNamePart; over > 0 && over < len(last) {
+		last = strings.TrimRight(last[:len(last)-over], "-._")
+	}
+	return base[:at] + last + number
 }
 
 // page claims p's name, and when it had to be numbered its own slug field

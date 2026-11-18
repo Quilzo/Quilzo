@@ -261,6 +261,18 @@ func (s *Server) writeRecord(w http.ResponseWriter, r *http.Request, name, id st
 			Detail: err.Error()})
 		return
 	}
+	// An id that can address no record is the caller's to fix, as a page
+	// name the store cannot hold is: it was met only by the write, and
+	// answered 500 "the write failed", which a client retries.
+	if id != "" {
+		if err := collection.ValidID(id); err != nil {
+			writeError(w, http.StatusBadRequest, Error{
+				Error: "that is not a record id", Detail: err.Error(),
+				Fix: "POST to the collection to create a record, and use the id it is given",
+			})
+			return
+		}
+	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, int64(s.bodyMax())+1))
 	if err != nil || len(body) > s.bodyMax() {
 		writeError(w, http.StatusRequestEntityTooLarge, Error{

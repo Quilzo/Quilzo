@@ -96,3 +96,34 @@ func TestARecordsGrantIsOnTheCollection(t *testing.T) {
 		t.Errorf("tech was listed %s", w.Body)
 	}
 }
+
+// A record id that can address no record is refused as the caller's to fix,
+// as a page name the store cannot hold is, and not answered 500 as a write
+// that failed.
+func TestARecordIDThatAddressesNothingIsRefusedAs400(t *testing.T) {
+	srv, _ := recordsServer(t)
+	srv.Types = func() (*schema.Store, error) { return &schema.Store{}, nil }
+	srv.Records.Writable = true
+	srv.Records.Commit = func(string, string, string) error { return nil }
+	if err := srv.Policy.Grant(auth.Binding{Principal: "writer", Role: auth.RoleAuthor,
+		Resource: auth.DataResource("samples")}); err != nil {
+		t.Fatal(err)
+	}
+	tok, _, err := srv.Tokens.Issue("w2", "writer", auth.RoleAuthor, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"not-an-id", "%C3%9Cr%C3%BCn", strings.Repeat("a", 31)} {
+		w := req(t, srv, "PUT", "/api/v1/records/samples/"+id, tok,
+			map[string]any{"name": "x"}, map[string]string{"If-Match": "*"})
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("PUT a record %s answered %d, not 400: %s", id, w.Code, w.Body)
+		}
+	}
+	// A record id that can address one is still written.
+	w := req(t, srv, "PUT", "/api/v1/records/samples/"+strings.Repeat("b", 32), tok,
+		map[string]any{"name": "x"}, map[string]string{"If-Match": "*"})
+	if w.Code != http.StatusOK {
+		t.Errorf("a usable record id answered %d: %s", w.Code, w.Body)
+	}
+}

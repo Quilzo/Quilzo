@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/collection"
+	"github.com/quilzo/quilzo/internal/media"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/store"
 )
@@ -116,8 +117,9 @@ func TestASpreadsheetComesInAndGoesOutAsTheSameRecords(t *testing.T) {
 	if err := json.Unmarshal(js, &list); err != nil || len(list) != 3 || list[0]["id"] == nil {
 		t.Fatalf("%s %v", js, err)
 	}
+	// The same three, as they are: nothing to write again.
 	if b, err := bringFile(ctx, root, "events", "x.json", js, bringOptions{}, asAdmin("dana")); err != nil ||
-		b.Updated != 3 || b.New != 0 {
+		b.Unchanged != 3 || b.Updated != 0 || b.New != 0 {
 		t.Fatalf("%+v %v", b, err)
 	}
 }
@@ -268,7 +270,7 @@ func TestARecordWithNoIdOfItsOwnComesBackAsItself(t *testing.T) {
 			t.Fatalf("%s: %d records: %v", format, n, err)
 		}
 		b, err := bringFile(ctx, root, "parts", "parts."+format, out, bringOptions{}, asAdmin("dana"))
-		if err != nil || b.New != 0 || b.Updated != len(before) {
+		if err != nil || b.New != 0 || b.Updated != 0 || b.Unchanged != len(before) {
 			t.Fatalf("%s: brought as %+v: %v\n%s", format, b, err, out)
 		}
 		after := draftRecords(t, root, "parts")
@@ -369,6 +371,120 @@ func TestARecordsOwnFieldCalledFieldsComesBackAsItself(t *testing.T) {
 	for id, was := range before {
 		if after[id] != was {
 			t.Errorf("%s came back as %s\n%s", was, after[id], out)
+		}
+	}
+}
+
+// A spreadsheet brought back as it went out changes nothing, and says so.
+//
+// Every row that matched a record was counted as changed and written
+// again: an export brought straight back reported "0 new, 4 changed",
+// wrote a commit each time and moved every record's updated time, so the
+// count could not tell an owner which rows they had changed.
+func TestASheetBroughtBackUnchangedChangesNothing(t *testing.T) {
+	root, _ := siteStore(t)
+	ctx := context.Background()
+	for _, title := range []string{"A thing", "Another"} {
+		if err := recordsAdd(root, []string{"things", "title=" + title, "price=12.5"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before := draftRecords(t, root, "things")
+	draftAt := func() string {
+		s, err := store.Open(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tree, err := draftTree(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tree
+	}
+	was := draftAt()
+	for _, format := range []string{"csv", "json"} {
+		out, n, err := sheetOf(root, "things", format, false)
+		if err != nil || n != 2 {
+			t.Fatalf("%s: %d records: %v", format, n, err)
+		}
+		for _, dry := range []bool{true, false} {
+			b, err := bringFile(ctx, root, "things", "things."+format, out, bringOptions{dryRun: dry}, asAdmin("dana"))
+			if err != nil || b.New != 0 || b.Updated != 0 || b.Unchanged != 2 {
+				t.Fatalf("%s (dry run %v): brought as %+v: %v", format, dry, b, err)
+			}
+		}
+		if now := draftAt(); now != was {
+			t.Fatalf("%s: bringing back an unchanged sheet changed the draft", format)
+		}
+	}
+	after := draftRecords(t, root, "things")
+	for i := range before {
+		if after[i].Updated != before[i].Updated {
+			t.Errorf("%s: its updated time moved from %d to %d", after[i].ID, before[i].Updated, after[i].Updated)
+		}
+	}
+
+	// One row changed is one record changed.
+	out, _, err := sheetOf(root, "things", "csv", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := strings.Replace(string(out), "Another", "Another one", 1)
+	b, err := bringFile(ctx, root, "things", "things.csv", []byte(changed), bringOptions{}, asAdmin("dana"))
+	if err != nil || b.New != 0 || b.Updated != 1 || b.Unchanged != 1 {
+		t.Fatalf("one row changed was brought as %+v: %v", b, err)
+	}
+}
+
+// A sheet that names its pictures by where they are fetched from, as an
+// export does for a site with an address of its own, changes nothing brought
+// back as it went out either.
+//
+// A row was weighed against its record before its picture's address was
+// read back as the file in the library it names, so every record with a
+// picture was "changed", written again and its updated time moved: the
+// products of a shop with an address, each with a picture, were all changed
+// by a sheet that changed none.
+func TestASheetNamingItsPicturesByAddressChangesNothingBroughtBack(t *testing.T) {
+	root, _ := siteStore(t)
+	if err := eventsCmd(root, []string{"setup"}, asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	setConfigs(t, root, map[string]string{"site.base_url": "https://crumb.example"})
+	lib, err := openMedia(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := testPNG("loaf")
+	pic, err := media.Accept("loaf.png", body, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pic.Alt = "A loaf"
+	if err := lib.Put(pic, body); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	first := "title,date,image,alt\nRye night,2099-11-14," + pic.ID + ",A loaf\nOpen day,2099-12-25,,\n"
+	if b, err := bringFile(ctx, root, "events", "events.csv", []byte(first), bringOptions{pictures: true},
+		asAdmin("dana")); err != nil || b.New != 2 {
+		t.Fatalf("%+v %v", b, err)
+	}
+	before := draftRecords(t, root, "events")
+	out, _, err := sheetOf(root, "events", "csv", false)
+	if err != nil || !strings.Contains(string(out), "https://crumb.example/media/"+pic.ID) {
+		t.Fatalf("the sheet does not say where the picture is fetched from: %v\n%s", err, out)
+	}
+	for _, opts := range []bringOptions{{pictures: true, dryRun: true}, {pictures: true}, {}} {
+		b, err := bringFile(ctx, root, "events", "events.csv", out, opts, asAdmin("dana"))
+		if err != nil || b.New != 0 || b.Updated != 0 || b.Unchanged != 2 {
+			t.Fatalf("%+v: brought back as %+v: %v", opts, b, err)
+		}
+	}
+	after := draftRecords(t, root, "events")
+	for i := range before {
+		if after[i].Updated != before[i].Updated || after[i].Fields["image"] != before[i].Fields["image"] {
+			t.Errorf("%s was written again: %v, was %v", after[i].ID, after[i], before[i])
 		}
 	}
 }

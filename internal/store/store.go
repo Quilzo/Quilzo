@@ -320,31 +320,16 @@ func CheckTreeEntries(entries map[string]string) error {
 // that needs less than every path (no folders, a shorter name) asks this
 // and then its own question, so no surface can accept what the store
 // refuses or refuse what it holds for want of a character.
-func ValidPath(name string) bool {
-	segs := strings.Split(name, "/")
-	if len(segs) > MaxPathSegments {
-		return false
-	}
-	for _, seg := range segs {
-		if !reSegment.MatchString(seg) {
-			return false
-		}
-	}
-	return true
-}
+func ValidPath(name string) bool { return CheckPath(name) == nil }
 
-// checkTreeEntry validates one name and the id it points at.
+// CheckPath is ValidPath with the reason: the sentence the store refuses a
+// path with when it is written, for a surface to say before anything is.
 //
-// A key may be a path of segments, each of which must still be a usable
-// segment.
-//
-// Nesting is what makes a write proportional to the edit rather than to the
-// store: a record at data/users/ab/cd/id is addressable without every page
-// beside it being re-hashed to reach it. Every segment is validated
-// individually, so allowing the separator has not allowed a traversal —
-// "a/../b" fails on the ".." segment exactly as "a/.." did when it was one
-// name.
-func checkTreeEntry(name, oid string) error {
+// The rule was only met at the commit, so a surface that had not asked
+// first passed the refusal on as its own failure: the content API answered
+// 500 "the write failed" for Ürün and "a b", which a client retries, and the
+// editor's Save a bare 500 page for an address it had offered to edit.
+func CheckPath(name string) error {
 	segs := strings.Split(name, "/")
 	// Bounded, not unbounded. The old rule allowed at most one slash, which
 	// was a real limit and not an accident; nesting needs five levels
@@ -360,8 +345,26 @@ func checkTreeEntry(name, oid string) error {
 			return fmt.Errorf(
 				"%q is not a usable path: %q is not a segment of letters, "+
 					"digits, dot, dash and underscore, starting with a "+
-					"letter or digit", name, seg)
+					"letter or digit, at most 64 characters", name, seg)
 		}
+	}
+	return nil
+}
+
+// checkTreeEntry validates one name and the id it points at.
+//
+// A key may be a path of segments, each of which must still be a usable
+// segment.
+//
+// Nesting is what makes a write proportional to the edit rather than to the
+// store: a record at data/users/ab/cd/id is addressable without every page
+// beside it being re-hashed to reach it. Every segment is validated
+// individually, so allowing the separator has not allowed a traversal —
+// "a/../b" fails on the ".." segment exactly as "a/.." did when it was one
+// name.
+func checkTreeEntry(name, oid string) error {
+	if err := CheckPath(name); err != nil {
+		return err
 	}
 	if !reID.MatchString(oid) {
 		return fmt.Errorf("%q points at %q, which is not an object id", name, oid)

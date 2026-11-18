@@ -1035,3 +1035,36 @@ func TestASignInSessionIsRefusedWhereNoIdleClockIsKept(t *testing.T) {
 		t.Fatalf("a sign-in session at the admin: %d %s", w.Code, w.Body)
 	}
 }
+
+// A page name the store cannot hold is the caller's to fix, and is refused
+// as one, before the lock is taken and before anything is written.
+//
+// It was checked only deep in the store, at the commit, and that error
+// answered 500 "the write failed" for Ürün, "a b", -dash and a name of 300
+// characters. A client treats a 5xx as the server's fault and retries, and
+// this refusal is permanent.
+func TestAPageNameTheStoreCannotHoldIsRefusedAs400(t *testing.T) {
+	s, _, tok := setup(t)
+	s.Writable = true
+	for _, path := range []string{
+		"/api/v1/pages/%C3%9Cr%C3%BCn", "/api/v1/pages/a%20b", "/api/v1/pages/-dash",
+		"/api/v1/pages/about%2520us", "/api/v1/pages/" + strings.Repeat("x", 300),
+	} {
+		w := req(t, s, "PUT", path, tok, map[string]any{"title": "T", "body": "API body"},
+			map[string]string{"If-Match": "*"})
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("PUT %s answered %d, not 400: %s", path, w.Code, w.Body)
+			continue
+		}
+		var e Error
+		if err := json.Unmarshal(w.Body.Bytes(), &e); err != nil || e.Fix == "" {
+			t.Errorf("PUT %s: the refusal says no fix: %s", path, w.Body)
+		}
+	}
+	// A name the store holds is still written.
+	w := req(t, s, "PUT", "/api/v1/pages/docs/About_Us.v1", tok, map[string]any{"title": "T"},
+		map[string]string{"If-Match": "*"})
+	if w.Code != http.StatusOK {
+		t.Errorf("a name the store holds answered %d: %s", w.Code, w.Body)
+	}
+}

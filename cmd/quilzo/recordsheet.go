@@ -19,6 +19,7 @@ import (
 	"github.com/quilzo/quilzo/internal/collection"
 	"github.com/quilzo/quilzo/internal/event"
 	"github.com/quilzo/quilzo/internal/fetch"
+	"github.com/quilzo/quilzo/internal/medialib"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/sheet"
 )
@@ -43,15 +44,18 @@ type bringOptions struct {
 
 // broughtRows is what bringing a file in did, or would do.
 type broughtRows struct {
-	Collection string          `json:"collection"`
-	From       string          `json:"from"`
-	Rows       int             `json:"rows"`
-	New        int             `json:"new"`
-	Updated    int             `json:"updated"`
-	Columns    []sheet.Column  `json:"columns,omitempty"`
-	Problems   []sheet.Problem `json:"problems,omitempty"`
-	Notes      []string        `json:"notes,omitempty"`
-	DryRun     bool            `json:"dry_run,omitempty"`
+	Collection string `json:"collection"`
+	From       string `json:"from"`
+	Rows       int    `json:"rows"`
+	New        int    `json:"new"`
+	Updated    int    `json:"updated"`
+	// Unchanged counts the rows that matched a record and would change none
+	// of its fields, which are not written again.
+	Unchanged int             `json:"unchanged"`
+	Columns   []sheet.Column  `json:"columns,omitempty"`
+	Problems  []sheet.Problem `json:"problems,omitempty"`
+	Notes     []string        `json:"notes,omitempty"`
+	DryRun    bool            `json:"dry_run,omitempty"`
 }
 
 // Kinds of file a collection takes.
@@ -249,6 +253,7 @@ func bringFile(ctx context.Context, root, coll, name string, body []byte, opts b
 			return nil, err
 		}
 	}
+	ownPictures(root, t, rows)
 	s, err := open(root)
 	if err != nil {
 		return nil, err
@@ -270,7 +275,7 @@ func bringFile(ctx context.Context, root, coll, name string, body []byte, opts b
 			return nil
 		}}.Plan(rows)
 	out := &broughtRows{Collection: coll, From: kind, Rows: len(rows), New: plan.New, Updated: plan.Updated,
-		Columns: cols, Problems: plan.Problems, Notes: notes, DryRun: opts.dryRun}
+		Unchanged: plan.Unchanged, Columns: cols, Problems: plan.Problems, Notes: notes, DryRun: opts.dryRun}
 	if plan.Refused() {
 		what := "nothing was brought in"
 		if opts.dryRun {
@@ -321,6 +326,53 @@ func bringFile(ctx context.Context, root, coll, name string, body []byte, opts b
 	return out, nil
 }
 
+// ownPictures reads a picture a row names by the address the library serves
+// it at as the file it is, before the rows are weighed against the records
+// they are.
+//
+// An export names a picture by where it can be fetched from, when the site
+// has an address of its own, and that was read back as the file only when
+// pictures were fetched, after the rows had been weighed: every record with
+// a picture was "changed" by a sheet that changed none of them, written
+// again and its updated time moved. Brought in without fetching pictures,
+// as the Data screen does unless asked, the address was "left out, as
+// asked", and the record lost the picture it had.
+func ownPictures(root string, t *schema.Type, rows []sheet.Row) {
+	pictures := sheet.Pictures(t)
+	if len(pictures) == 0 {
+		return
+	}
+	lib, err := openMedia(root)
+	if err != nil {
+		return
+	}
+	for _, row := range rows {
+		for field := range pictures {
+			if raw, _ := row.Fields[field].(string); raw != "" {
+				if id := libraryPicture(lib, raw); id != "" {
+					row.Fields[field] = id
+				}
+			}
+		}
+	}
+}
+
+// libraryPicture is the file in the library that raw names by the address
+// it is served at (…/media/<its id>), or "" when raw is no such address or
+// the library has no such file.
+func libraryPicture(lib *medialib.Library, raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || lib == nil {
+		return ""
+	}
+	if dir, id := path.Split(u.Path); strings.HasSuffix(dir, "/media/") && sheet.IsMediaID(id) {
+		if _, err := lib.Stat(id); err == nil {
+			return id
+		}
+	}
+	return ""
+}
+
 // pictureFetcher keeps a picture a row names: one already in the library,
 // by its id or the address it is served at, as it is; one on the web,
 // fetched into the library as `media get` would.
@@ -332,10 +384,8 @@ func pictureFetcher(ctx context.Context, root string) func(raw, alt string) (str
 		if err != nil {
 			return "", fmt.Errorf("%q is not an address", raw)
 		}
-		if dir, id := path.Split(u.Path); strings.HasSuffix(dir, "/media/") && sheet.IsMediaID(id) && lib != nil {
-			if _, err := lib.Stat(id); err == nil {
-				return id, nil
-			}
+		if id := libraryPicture(lib, raw); id != "" {
+			return id, nil
 		}
 		if u.Scheme != "http" && u.Scheme != "https" || u.Host == "" {
 			return "", fmt.Errorf("%q is not an address on the web", raw)
@@ -425,7 +475,7 @@ func broughtForAdmin(b *broughtRows) *admin.BringResult {
 	if b == nil {
 		return nil
 	}
-	out := &admin.BringResult{New: b.New, Updated: b.Updated, Notes: b.Notes}
+	out := &admin.BringResult{New: b.New, Updated: b.Updated, Unchanged: b.Unchanged, Notes: b.Notes}
 	for _, c := range b.Columns {
 		if c.Field == "" && !c.ID {
 			out.Columns = append(out.Columns, fmt.Sprintf("%q %s", c.Header, c.Note))
@@ -462,8 +512,14 @@ func sayBrought(b *broughtRows, name string) {
 		verb = "would bring"
 	}
 	if b.New+b.Updated > 0 {
-		w.Human("%s %d record(s) into %s from %s: %d new, %d changed\n", verb, b.New+b.Updated, b.Collection, name,
+		w.Human("%s %d record(s) into %s from %s: %d new, %d changed", verb, b.New+b.Updated, b.Collection, name,
 			b.New, b.Updated)
+		if b.Unchanged > 0 {
+			w.Human(", %d as they were", b.Unchanged)
+		}
+		w.Human("\n")
+	} else if b.Unchanged > 0 {
+		w.Human("%d record(s) in %s are as %s has them already: nothing to bring in\n", b.Unchanged, b.Collection, name)
 	}
 	for i, p := range b.Problems {
 		if i == 20 {

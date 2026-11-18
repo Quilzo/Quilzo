@@ -133,8 +133,10 @@ func postRows(s *Site, picture func(*url.URL, string) string, link func(string) 
 		}
 		rows = append(rows, Row{ID: rowID(key), Fields: f})
 		now := feature.PagePath(postPage) + "/" + slug
+		// Where it was, when that is a path: a post known by a query (/?p=20)
+		// is at the home's path, and would redirect the old home to itself.
 		olds := pst.Aliases
-		if pst.URL != nil {
+		if pst.URL != nil && pst.URL.RawQuery == "" {
 			olds = append([]string{pst.URL.EscapedPath()}, olds...)
 		}
 		for _, old := range olds {

@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/assistant"
+	"github.com/quilzo/quilzo/internal/export"
 	"github.com/quilzo/quilzo/internal/feature"
 	"github.com/quilzo/quilzo/internal/menu"
 	"github.com/quilzo/quilzo/internal/section"
@@ -126,10 +127,15 @@ func Package(s *Site, name, by string, picture Picture, now time.Time) (*Brought
 	// was refused, "page index-3 is declared twice".
 	names := addresses{}
 	given := make([]string, len(s.Pages))
-	// Each post's page is the blog's, by this name.
-	taken := map[string]bool{postPage: len(s.Posts) > 0}
-	// next is, for a name taken, the number to try first, as in postSlugs.
-	next := map[string]int{}
+	// A name taken is numbered as every import numbers one (export.Names),
+	// within what the store holds: numbered here by putting -2 after it, a
+	// name already as long as the store holds became one it refuses, and
+	// the whole package was refused for two pages with long slugs.
+	named := export.NewNames()
+	if len(s.Posts) > 0 {
+		// Each post's page is the blog's, by this name.
+		named.Claim(postPage)
+	}
 	for i, pg := range s.Pages {
 		n := pg.Name
 		if n == "" {
@@ -138,12 +144,7 @@ func Package(s *Site, name, by string, picture Picture, now time.Time) (*Brought
 		if i == 0 {
 			n = "index"
 		}
-		base := n
-		for k := max(2, next[base]); taken[n]; k++ {
-			n = fmt.Sprintf("%s-%d", base, k)
-			next[base] = k + 1
-		}
-		taken[n] = true
+		n = named.Claim(n)
 		given[i] = n
 		names[addressOf(pg.URL)] = n
 	}
@@ -228,9 +229,14 @@ func Package(s *Site, name, by string, picture Picture, now time.Time) (*Brought
 		}
 		p.Pages = append(p.Pages, feature.Page{Name: n, Body: body})
 		// Only where the address changed: /about-us/ is /about-us already.
+		// And only from an address that is a path. A page known by a query
+		// (/hall/?page_id=11, as WordPress's plain links have every page) has
+		// the home's path, and a redirect matches a path alone: each such
+		// page redirected the old home to itself, and the package was
+		// refused, "/hall is redirected to both / and /qa-night".
 		old, now := pg.URL.EscapedPath(), feature.PagePath(n)
 		if trimmed := strings.TrimSuffix(old, "/"); trimmed != "" && trimmed != now && old != "" &&
-			len(out.Redirects) < feature.MaxSiteRedirects {
+			pg.URL.RawQuery == "" && len(out.Redirects) < feature.MaxSiteRedirects {
 			out.Redirects = append(out.Redirects, seo.Redirect{From: old, To: now, Permanent: true})
 		}
 	}
