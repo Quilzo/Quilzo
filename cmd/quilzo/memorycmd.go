@@ -291,6 +291,7 @@ func cmdMemory(root string, args []string) error {
 	case "forget":
 		fs := flag.NewFlagSet("memory forget", flag.ContinueOnError)
 		about := fs.String("about", "", "the person; yourself unless you administer")
+		yes := fs.Bool("yes", false, "forget; at a terminal, without this, only say what would go")
 		if err := parseFlags(fs, args[1:], nil, 0); err != nil {
 			return err
 		}
@@ -302,6 +303,9 @@ func cmdMemory(root string, args []string) error {
 		}
 		if *about != caller.Name && !admin {
 			return errors.New("you can have agents forget you; forgetting somebody else is an administrator's")
+		}
+		if erasureHeld(*yes, fmt.Sprintf("every agent would forget everything it remembers about %s", onOneLine(*about))) {
+			return nil
 		}
 		n, err := forgetPerson(root, *about, caller.Name)
 		if err != nil {

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/atomicfile"
+	"github.com/quilzo/quilzo/internal/memory"
 )
 
 // count added a bare s to every noun, and two of its callers handed it a
@@ -380,5 +381,67 @@ func TestAWriteWaitingOnALockSaysSoAndGivesUp(t *testing.T) {
 		case !strings.Contains(e.String(), "waiting") || !strings.Contains(e.String(), c.lock):
 			t.Errorf("`quilzo %s` did not say what it waited for, or why it stopped:\n%s", line, firstLines(e.String(), 4))
 		}
+	}
+}
+
+// An erasure that cannot be undone, asked at a terminal without --yes, says
+// what it would erase and erases nothing, as `demo remove` does. `memory
+// forget` run bare to see what it does made every agent forget the
+// operator at once, and `fediverse block` dropped the instance's follows.
+// A script, whose standard input is not a terminal, goes ahead as it always
+// has, as the help says; --yes goes ahead anywhere.
+func TestAnErasureAtATerminalWaitsForYes(t *testing.T) {
+	root := t.TempDir()
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	me := resolveCaller(root, "").Name
+	if _, err := memoryStore(root).Remember(memory.Entry{Agent: "helper", About: me, Kind: memory.Semantic,
+		Text: "prefers mornings", Run: "r", By: me}, time.Hour, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	remembered := func() int {
+		t.Helper()
+		got, err := memoryStore(root).List(memory.Filter{About: me})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(got)
+	}
+	blocked := func() int {
+		t.Helper()
+		list, err := loadBlocklist(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(list.Hosts)
+	}
+	was := stdinIsTerminal
+	t.Cleanup(func() { stdinIsTerminal = was })
+	stdinIsTerminal = func() bool { return true }
+
+	if err := cmdMemory(root, []string{"forget"}); err != nil || remembered() != 1 {
+		t.Errorf("`memory forget` at a terminal without --yes: %v, %d left of 1", err, remembered())
+	}
+	if err := cmdFediverse(root, []string{"block", "bad.example"}); err != nil || blocked() != 0 {
+		t.Errorf("`fediverse block` at a terminal without --yes: %v, %d blocked", err, blocked())
+	}
+	if err := cmdMemory(root, []string{"forget", "--yes"}); err != nil || remembered() != 0 {
+		t.Errorf("`memory forget --yes`: %v, %d left", err, remembered())
+	}
+	if err := cmdFediverse(root, []string{"block", "bad.example", "--yes"}); err != nil || blocked() != 1 {
+		t.Errorf("`fediverse block --yes`: %v, %d blocked", err, blocked())
+	}
+	// Each erasure the help names takes --yes, and says it waits for one.
+	for _, line := range []string{"memory forget", "member disable | enable | remove", "form list | expire | erase",
+		"newsletter remove", "booking cancel", "fediverse block", "agent workspace"} {
+		help := helpFor(strings.Fields(line)[0], strings.Fields(line)[1:2])
+		if !strings.Contains(help, "quilzo "+line) || !strings.Contains(help, "--yes") {
+			t.Errorf("the help for `quilzo %s` does not name --yes:\n%s", line, help)
+		}
+	}
+	stdinIsTerminal = func() bool { return false }
+	if err := cmdFediverse(root, []string{"block", "worse.example"}); err != nil || blocked() != 2 {
+		t.Errorf("a script's `fediverse block` did not go ahead: %v, %d blocked", err, blocked())
 	}
 }

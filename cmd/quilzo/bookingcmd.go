@@ -276,11 +276,17 @@ func bookingCancelCmd(root string, args []string, caller *Caller) error {
 	pos, flags := leadingArgs(args, 1)
 	fs := flag.NewFlagSet("booking cancel", flag.ContinueOnError)
 	erase := fs.Bool("erase", false, "forget who booked as well, as somebody asking to be forgotten is owed")
+	yes := fs.Bool("yes", false, "with --erase, forget them; at a terminal, without this, only say what would go")
 	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
 	if len(pos) != 1 {
-		return errors.New("usage: quilzo booking cancel ID [--erase]")
+		return errors.New("usage: quilzo booking cancel ID [--erase] [--yes]")
+	}
+	// Cancelling is the site's to undo, by booking again; forgetting who
+	// booked is not.
+	if *erase && erasureHeld(*yes, fmt.Sprintf("this would cancel %s and forget who booked it", onOneLine(pos[0]))) {
+		return nil
 	}
 	return cancelBooking(root, pos[0], *erase, caller)
 }

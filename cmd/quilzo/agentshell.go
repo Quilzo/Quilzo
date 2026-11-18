@@ -397,12 +397,13 @@ func runOutputText(root, id string, n int) ([]byte, error) {
 func agentWorkspace(root string, args []string) error {
 	fs := flag.NewFlagSet("agent workspace", flag.ContinueOnError)
 	clear := fs.Bool("clear", false, "empty it: everything in it is removed")
+	yes := fs.Bool("yes", false, "with --clear, empty it; at a terminal, without this, only say what would go")
 	pos, err := parseAnywhere(fs, args)
 	if err != nil {
 		return err
 	}
 	if len(pos) != 1 {
-		return errors.New("usage: quilzo agent workspace NAME [--clear]")
+		return errors.New("usage: quilzo agent workspace NAME [--clear] [--yes]")
 	}
 	set, err := loadAgents(root)
 	if err != nil {
@@ -418,6 +419,10 @@ func agentWorkspace(root string, args []string) error {
 	ws, err := workspaceDir(root, m)
 	if err != nil {
 		return err
+	}
+	if *clear && erasureHeld(*yes, fmt.Sprintf("this would empty %s's workspace, %s, and what its runs kept beside it",
+		m.Name, onOneLine(ws))) {
+		return nil
 	}
 	if *clear {
 		claim, err := shell.ClaimWorkspace(claimPath(root, ws), fmt.Sprintf("clear-%d", os.Getpid()))

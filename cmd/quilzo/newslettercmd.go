@@ -526,8 +526,18 @@ func newsletterCmd(root string, args []string, caller *Caller) error {
 		w.Human("asked: it joins when it says yes from the link mailed to it\n")
 		return nil
 	case "remove":
-		if len(args) != 2 {
-			return errors.New("usage: quilzo newsletter remove ADDRESS|ID")
+		fs := flag.NewFlagSet("newsletter remove", flag.ContinueOnError)
+		yes := fs.Bool("yes", false, "delete it; at a terminal, without this, only say what would go")
+		var pos []string
+		if err := parseFlags(fs, args[1:], &pos, 1); err != nil {
+			return err
+		}
+		if len(pos) != 1 {
+			return errors.New("usage: quilzo newsletter remove ADDRESS|ID [--yes]")
+		}
+		args = []string{args[0], pos[0]}
+		if erasureHeld(*yes, fmt.Sprintf("this would take %s off the list and delete it", onOneLine(args[1]))) {
+			return nil
 		}
 		was, err := removeSubscriber(root, args[1], caller)
 		if err != nil {

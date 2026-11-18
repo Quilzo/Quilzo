@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -331,4 +332,47 @@ func flagDuration(fs *flag.FlagSet, name string, value time.Duration, usage stri
 	d := value
 	fs.Var(durationFlag{&d}, name, usage)
 	return &d
+}
+
+// stdinIsTerminal reports whether a person is at the keyboard: standard
+// input is a terminal. A variable, so a test can be the person.
+//
+// Not /dev/null, which is a character device as a terminal is, and what
+// cron and a service manager give a job for its input: read as a terminal,
+// every unattended erasure would have waited for a --yes nobody can type.
+var stdinIsTerminal = func() bool {
+	fi, err := os.Stdin.Stat()
+	if err != nil || fi.Mode()&os.ModeCharDevice == 0 {
+		return false
+	}
+	if null, err := os.Stat(os.DevNull); err == nil && os.SameFile(fi, null) {
+		return false
+	}
+	return true
+}
+
+// erasureHeld holds back an erasure that cannot be undone, asked at a
+// terminal without --yes: it says what would be erased and how to go
+// ahead, erases nothing, and reports that it held it.
+//
+// `quilzo demo remove` run bare says what taking the demonstration out
+// would remove, and somebody who learnt the program that way ran `quilzo
+// memory forget` the same way and every agent forgot them at once, and
+// `fediverse block` dropped the instance's follows. A person at a
+// terminal is asked for --yes. A script, whose standard input is not a
+// terminal, goes ahead as it always has, which the help says, so nothing
+// that runs these unattended stops working.
+func erasureHeld(yes bool, would string) bool {
+	if yes || !stdinIsTerminal() {
+		return false
+	}
+	again := "the same command with --yes"
+	if invoked.cmd != "" {
+		again = onOneLine("quilzo " + strings.Join(append([]string{invoked.cmd}, invoked.args...), " ") + " --yes")
+	}
+	if w.JSON(map[string]any{"erased": false, "would": would, "to_erase": again}) {
+		return true
+	}
+	w.Human("%s\n\n  nothing has been erased, and it cannot be undone. To erase it:\n    %s\n", would, again)
+	return true
 }

@@ -4,7 +4,9 @@
 package main
 
 import (
+	"flag"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -91,16 +93,19 @@ func loadBlocklist(root string) (*Blocklist, error) {
 func fediverseBlock(root string, args []string) error {
 	// One at a time. `fediverse block a.example b.example` refused the first
 	// and said nothing of the second, which went on being served.
-	args, err := positionals(args, 1)
-	if err != nil {
+	fs := flag.NewFlagSet("fediverse block", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	yes := fs.Bool("yes", false, "refuse it, and drop its follows; at a terminal, without this, only say what would go")
+	var pos []string
+	if err := parseFlags(fs, args, &pos, 1); err != nil {
 		return err
 	}
-	if len(args) == 0 {
+	if len(pos) == 0 {
 		return fmt.Errorf(
-			"usage: quilzo fediverse block HOST-OR-ACTOR\n" +
+			"usage: quilzo fediverse block HOST-OR-ACTOR [--yes]\n" +
 				"  a host — example.social — covers every account on it")
 	}
-	target := strings.TrimSpace(args[0])
+	target := strings.TrimSpace(pos[0])
 	list, err := loadBlocklist(root)
 	if err != nil {
 		return err
@@ -122,6 +127,11 @@ func fediverseBlock(root string, args []string) error {
 		}
 		list.Hosts = append(list.Hosts, host)
 		sort.Strings(list.Hosts)
+	}
+	// Unblocking lets them in again; the follows it drops are gone.
+	if erasureHeld(*yes, fmt.Sprintf("this would refuse %s and drop whoever follows the site from there",
+		onOneLine(target))) {
+		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(blockPath(root)), 0o700); err != nil {
 		return err
