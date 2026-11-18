@@ -129,12 +129,12 @@ func runExtensions(root string, hook ext.Hook, page string,
 					m.Name, page, res.Err, m.Name)}
 			}
 			fmt.Fprintf(os.Stderr, "  %s%s did not run: %v%s\n",
-				yellow, m.Name, res.Err, reset)
+				noteYellow, m.Name, res.Err, noteReset)
 			continue
 		}
 		if len(res.Dropped) > 0 {
 			fmt.Fprintf(os.Stderr, "  %s%s returned undeclared field(s): %s%s\n",
-				yellow, m.Name, strings.Join(res.Dropped, ", "), reset)
+				noteYellow, m.Name, strings.Join(res.Dropped, ", "), noteReset)
 		}
 		if res.Response.Refuse {
 			record(root, audit.Record{

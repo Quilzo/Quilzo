@@ -97,7 +97,7 @@ func keyMaterial() (string, error) {
 			fmt.Fprintf(os.Stderr,
 				"%swarning: %s is mode %04o — the key is readable by other "+
 					"local accounts%s\n",
-				yellow, path, info.Mode().Perm(), reset)
+				noteYellow, path, info.Mode().Perm(), noteReset)
 		}
 		return strings.TrimSpace(string(b)), nil
 	}

@@ -277,7 +277,7 @@ func openAudit(root string) (*audit.Log, error) {
 // is the gap nobody can explain afterwards.
 func record(root string, r audit.Record) {
 	if err := recordE(root, r); err != nil {
-		fmt.Fprintf(os.Stderr, "%s%v%s\n", red, err, reset)
+		fmt.Fprintf(os.Stderr, "%s%v%s\n", noteRed, err, noteReset)
 	}
 }
 

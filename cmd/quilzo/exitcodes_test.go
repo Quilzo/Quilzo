@@ -160,3 +160,43 @@ func TestEveryCommandRefusesAFlagItDoesNotTakeWithTwo(t *testing.T) {
 		})
 	}
 }
+
+// What goes to stderr is coloured as stderr is.
+//
+// The colour was decided by stdout alone, and /dev/null, a character device,
+// passed for a terminal: `quilzo agent show nope >/dev/null 2>err.txt`, how a
+// cron job keeps its errors, wrote the error into err.txt in escape codes.
+func TestStderrIsNotColouredForStdout(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "st")
+	if _, e, code := cliRun(t, root, "", "init"); code != 0 {
+		t.Fatalf("init: %s", e)
+	}
+	null, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if err != nil {
+		t.Skip(err)
+	}
+	defer null.Close()
+	for _, line := range [][]string{
+		{"agent", "show", "nope"},
+		{"publish", "--zzflag"},
+	} {
+		cmd := exec.Command(os.Args[0], append([]string{"quilzo-main", "--root", root}, line...)...)
+		cmd.Dir = t.TempDir()
+		var env []string
+		for _, kv := range os.Environ() {
+			if !strings.HasPrefix(kv, "NO_COLOR=") {
+				env = append(env, kv)
+			}
+		}
+		cmd.Env = append(env, "HOME="+t.TempDir(), "QUILZO_TOKEN=")
+		var stderr bytes.Buffer
+		cmd.Stdout, cmd.Stderr = null, &stderr
+		if err := cmd.Run(); err == nil {
+			t.Fatalf("`quilzo %s` exited 0", strings.Join(line, " "))
+		}
+		if strings.Contains(stderr.String(), "\033") {
+			t.Errorf("`quilzo %s >/dev/null 2>FILE` wrote escape codes into the file: %q",
+				strings.Join(line, " "), firstLines(stderr.String(), 2))
+		}
+	}
+}

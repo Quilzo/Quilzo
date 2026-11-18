@@ -572,10 +572,10 @@ func cmdTypeStub(root string, args []string) error {
 	}
 	if len(required) > 0 {
 		fmt.Fprintf(os.Stderr, "\n%smust be filled in: %s%s\n",
-			dim, strings.Join(required, ", "), reset)
+			noteDim, strings.Join(required, ", "), noteReset)
 	}
 	fmt.Fprintf(os.Stderr, "%squilzo type stub %s > new.json && quilzo "+
-		"records add COLLECTION --from new.json%s\n", dim, args[0], reset)
+		"records add COLLECTION --from new.json%s\n", noteDim, args[0], noteReset)
 	return nil
 }
 
@@ -624,11 +624,11 @@ func cmdTypeExample(args []string) error {
 	// article.json` produces a file that `quilzo type add` accepts. The
 	// guidance goes to stderr for the same reason.
 	fmt.Println(string(body))
-	fmt.Fprintf(os.Stderr, "\n%severy kind: %s%s\n", dim,
-		strings.Join(schema.Kinds(), ", "), reset)
+	fmt.Fprintf(os.Stderr, "\n%severy kind: %s%s\n", noteDim,
+		strings.Join(schema.Kinds(), ", "), noteReset)
 	fmt.Fprintf(os.Stderr, "%sno pattern, $ref, oneOf or nesting, deliberately%s\n",
-		dim, reset)
+		noteDim, noteReset)
 	fmt.Fprintf(os.Stderr, "%squilzo type example > %s.json && quilzo type "+
-		"add %s.json%s\n", dim, name, name, reset)
+		"add %s.json%s\n", noteDim, name, name, noteReset)
 	return nil
 }

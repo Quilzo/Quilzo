@@ -56,6 +56,12 @@ var (
 	bold, dim, green, yellow, red, reset string
 	w                                    *out.Writer
 
+	// The colours for what is written to stderr, which are stderr's: a
+	// warning or a progress line written with stdout's colours put escape
+	// codes into a log file whenever stdout was a terminal and stderr was
+	// not, as in `quilzo serve 2>>serve.log` (out.Writer.Notes).
+	noteBold, noteDim, noteGreen, noteYellow, noteRed, noteReset string
+
 	// flagToken holds a --token given anywhere on the command line.
 	//
 	// Set by the global pass in main, which also removes it, so every
@@ -738,6 +744,9 @@ func main() {
 	}()
 	bold, dim = w.Bold(), w.Dim()
 	green, yellow, red, reset = w.Green(), w.Yellow(), w.Red(), w.Reset()
+	n := w.Notes()
+	noteBold, noteDim, noteGreen = n.Bold(), n.Dim(), n.Green()
+	noteYellow, noteRed, noteReset = n.Yellow(), n.Red(), n.Reset()
 
 	root := defaultRoot
 	// A tiny hand-rolled global flag pass, so `--root` and `--token` work
@@ -853,7 +862,7 @@ func main() {
 	// (sitestate.go). Moved by whichever command runs first; a move that
 	// fails is said, and the commands go on with what is where.
 	if err := moveSiteState(root); err != nil {
-		fmt.Fprintf(os.Stderr, "%s%v%s\n", yellow, err, reset)
+		fmt.Fprintf(os.Stderr, "%s%v%s\n", noteYellow, err, noteReset)
 	}
 
 	// The network boundary, applied once for every command before any of them
@@ -890,7 +899,7 @@ func main() {
 			if !asked {
 				usage()
 			}
-			fmt.Fprintf(os.Stderr, "\n%s%v%s\n", yellow, err, reset)
+			fmt.Fprintf(os.Stderr, "\n%s%v%s\n", noteYellow, err, noteReset)
 			return
 		} else if err != nil {
 			// A refusal by the access policy is a gate refusing, 3, and a

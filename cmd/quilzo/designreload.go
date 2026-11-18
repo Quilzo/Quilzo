@@ -689,7 +689,7 @@ func onHangup(ctx context.Context, name string, reload func() error) {
 				return
 			case <-ch:
 				if err := reload(); err == nil {
-					fmt.Fprintf(os.Stderr, "  %s%s: read again on SIGHUP%s\n", dim, name, reset)
+					fmt.Fprintf(os.Stderr, "  %s%s: read again on SIGHUP%s\n", noteDim, name, noteReset)
 				}
 			}
 		}

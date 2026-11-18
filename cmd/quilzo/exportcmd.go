@@ -183,19 +183,19 @@ func cmdSiem(root string, args []string) error {
 	// Everything below goes to stderr, so piping the export into a SIEM does
 	// not also pipe the summary into it.
 	fmt.Fprintf(os.Stderr, "\n%s%d event(s)%s as %s, sequences %d-%d\n",
-		bold, res.Count, reset, format, res.Chain.FirstSeq, res.Chain.LastSeq)
+		noteBold, res.Count, noteReset, format, res.Chain.FirstSeq, res.Chain.LastSeq)
 	if res.Redacted {
 		fmt.Fprintf(os.Stderr, "  %sidentifiers are as the log stored them%s\n",
-			dim, reset)
+			noteDim, noteReset)
 	}
 	if *envelopePath == "" {
 		fmt.Fprintf(os.Stderr,
 			"  %sno envelope written: without one the receiving system cannot\n"+
 				"  tell whether events were removed. Pass --envelope FILE.%s\n",
-			yellow, reset)
+			noteYellow, noteReset)
 	} else if format == siem.Format("jsonl") {
 		fmt.Fprintf(os.Stderr, "  %senvelope in %s — verify with "+
-			"`quilzo siem verify`%s\n", dim, *envelopePath, reset)
+			"`quilzo siem verify`%s\n", noteDim, *envelopePath, noteReset)
 	} else {
 		// An OCSF or CEF record carries its event's hash and not the event,
 		// so it cannot be recomputed; saying "verify with" here sent people
@@ -203,7 +203,7 @@ func cmdSiem(root string, args []string) error {
 		fmt.Fprintf(os.Stderr, "  %senvelope in %s — it lists every event's hash in order, as the export\n"+
 			"  carries them (%s); a JSON Lines export (quilzo siem jsonl) carries each event\n"+
 			"  whole, and is the one `quilzo siem verify` can check%s\n",
-			dim, *envelopePath, hashWhere(format), reset)
+			noteDim, *envelopePath, hashWhere(format), noteReset)
 	}
 	return nil
 }

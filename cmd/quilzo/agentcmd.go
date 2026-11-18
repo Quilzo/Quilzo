@@ -1563,7 +1563,7 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 		runner.Decide, runner.Pause = prog.bridge.Decide, false
 		if from.Eval == nil {
 			runner.Hold = programHold(root, runID, prog.done, func(line string) {
-				fmt.Fprintf(os.Stderr, "  %s%s%s\n", yellow, onOneLine(line), reset)
+				fmt.Fprintf(os.Stderr, "  %s%s%s\n", noteYellow, onOneLine(line), noteReset)
 			}, from.Answered, nil)
 		}
 	}
@@ -1681,7 +1681,7 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 			hands = rb.personInput(root, m, from.RunID)
 		}
 		runner.Hold = programHold(root, from.RunID, nil, func(line string) {
-			fmt.Fprintf(os.Stderr, "  %s%s%s\n", yellow, onOneLine(line), reset)
+			fmt.Fprintf(os.Stderr, "  %s%s%s\n", noteYellow, onOneLine(line), noteReset)
 		}, from.Answered, hands)
 	}
 	// What it remembers between runs, when it keeps any. Not for an
@@ -1718,7 +1718,7 @@ func executeAgentFrom(ctx context.Context, root, name, goal string,
 				r.Detail[k] = v
 			}
 			if err := recordE(root, r); err != nil {
-				fmt.Fprintf(os.Stderr, "%s%v%s\n", red, err, reset)
+				fmt.Fprintf(os.Stderr, "%s%v%s\n", noteRed, err, noteReset)
 				if unrecorded == nil {
 					unrecorded = fmt.Errorf("step %d's record was not written (%v), so this run does nothing more", st.N, err)
 				}

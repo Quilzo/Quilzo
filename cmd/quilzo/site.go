@@ -130,7 +130,7 @@ func cmdSite(root string, args []string) error {
 		}
 	default:
 		fmt.Fprintf(os.Stderr, "  %snot confined (--confine=false): the site can write anything "+
-			"the account running it can, the store's policy and tokens included%s\n", yellow, reset)
+			"the account running it can, the store's policy and tokens included%s\n", noteYellow, noteReset)
 	}
 
 	s, err := open(root)
@@ -168,7 +168,7 @@ func cmdSite(root string, args []string) error {
 		// address is content somebody believed was not published yet, and the
 		// mistake is silent otherwise.
 		fmt.Fprintf(os.Stderr, "  %sserving the %s environment, which is not "+
-			"production%s\n", yellow, serving.Name, reset)
+			"production%s\n", noteYellow, serving.Name, noteReset)
 	}
 
 	redirects, err := servedRedirects(root, *redirectFile)
@@ -222,8 +222,8 @@ func cmdSite(root string, args []string) error {
 	live := s.GetRef(serving.Ref)
 	if live == "" {
 		fmt.Fprintf(os.Stderr, "  %s%snothing is published, so every page will "+
-			"404%s\n", yellow, "", reset)
-		fmt.Fprintf(os.Stderr, "  %squilzo publish%s\n", dim, reset)
+			"404%s\n", noteYellow, "", noteReset)
+		fmt.Fprintf(os.Stderr, "  %squilzo publish%s\n", noteDim, noteReset)
 	}
 	if live != "" {
 		if raw, perr := site.PagesAt(s, live); perr == nil {
@@ -231,12 +231,12 @@ func cmdSite(root string, args []string) error {
 			pages := site.WithBlocks(raw)
 			st.Search = search.Build(live, pages)
 			fmt.Fprintf(os.Stderr, "  %ssearch: %d terms over %d pages%s\n",
-				dim, st.Search.Size(), len(pages), reset)
+				noteDim, st.Search.Size(), len(pages), noteReset)
 
 			vecIndex = vector.Build(live, pages, search.Tokenise)
 			vp, vt := vecIndex.Size()
 			fmt.Fprintf(os.Stderr, "  %svectors: %d page(s), %d term(s), "+
-				"model %s%s\n", dim, vp, vt, vecIndex.Model, reset)
+				"model %s%s\n", noteDim, vp, vt, vecIndex.Model, noteReset)
 
 			// The home page is the one URL every visitor tries and the one
 			// this server cannot infer. It serves whatever page is named
@@ -251,11 +251,11 @@ func cmdSite(root string, args []string) error {
 			if st.BaseURL == "" {
 				fmt.Fprintf(os.Stderr, "  %sno --base-url, so there is no "+
 					"sitemap and robots.txt does not advertise one%s\n",
-					yellow, reset)
+					noteYellow, noteReset)
 			}
 			if _, ok := pages[st.Index]; !ok {
 				fmt.Fprintf(os.Stderr, "  %sno page named %q, so / will 404%s\n",
-					yellow, st.Index, reset)
+					noteYellow, st.Index, noteReset)
 				names := make([]string, 0, len(pages))
 				for n := range pages {
 					names = append(names, n)
@@ -265,9 +265,9 @@ func cmdSite(root string, args []string) error {
 					names = names[:6]
 				}
 				fmt.Fprintf(os.Stderr, "  %spublished: %s%s\n",
-					dim, strings.Join(names, ", "), reset)
+					noteDim, strings.Join(names, ", "), noteReset)
 				fmt.Fprintf(os.Stderr, "  %srename one to index, or pass "+
-					"--index NAME%s\n", dim, reset)
+					"--index NAME%s\n", noteDim, noteReset)
 			}
 		}
 	}
@@ -375,10 +375,10 @@ func cmdSite(root string, args []string) error {
 		if *apiWritable {
 			mode = "writable"
 		}
-		fmt.Fprintf(os.Stderr, "  %sapi: /api/v1, %s%s\n", dim, mode, reset)
+		fmt.Fprintf(os.Stderr, "  %sapi: /api/v1, %s%s\n", noteDim, mode, noteReset)
 		if *apiWritable {
 			fmt.Fprintf(os.Stderr, "  %severy write needs If-Match, and goes "+
-				"through the same content-type gate as the CLI%s\n", dim, reset)
+				"through the same content-type gate as the CLI%s\n", noteDim, noteReset)
 		}
 	}
 
@@ -399,7 +399,7 @@ func cmdSite(root string, args []string) error {
 		fedCtx, stopFed := context.WithCancel(context.Background())
 		defer stopFed()
 		go st.Federate(fedCtx, st.Federation.Sender, func(err error) {
-			fmt.Fprintf(os.Stderr, "  %sfederation: %v%s\n", dim, err, reset)
+			fmt.Fprintf(os.Stderr, "  %sfederation: %v%s\n", noteDim, err, noteReset)
 		})
 		fmt.Printf("  %sfederating as @%s; publishes are announced to followers%s\n",
 			dim, st.Federation.Actor.Handle, reset)
@@ -414,7 +414,7 @@ func cmdSite(root string, args []string) error {
 		defer stopUpkeep()
 		go upkeep.Run(upkeepCtx, upkeep.Every, func(j upkeep.Job, n int, err error) {
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "  %s%s: %v%s\n", dim, j.Name, err, reset)
+				fmt.Fprintf(os.Stderr, "  %s%s: %v%s\n", noteDim, j.Name, err, noteReset)
 				return
 			}
 			fmt.Printf("  %sretention: removed %s past the period their form "+

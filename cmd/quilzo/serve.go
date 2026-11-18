@@ -124,10 +124,10 @@ func cmdServe(root string, args []string) error {
 	if derr != nil {
 		design = &Design{}
 		fmt.Fprintf(os.Stderr, "  %s%s; preview and the accessibility check "+
-			"are unavailable%s\n", dim, derr, reset)
+			"are unavailable%s\n", noteDim, derr, noteReset)
 	}
 	for _, note := range design.Notes {
-		fmt.Fprintf(os.Stderr, "  %s%s%s\n", dim, note, reset)
+		fmt.Fprintf(os.Stderr, "  %s%s%s\n", noteDim, note, noteReset)
 	}
 
 	cfg, err := loadConfig(root)
@@ -135,7 +135,7 @@ func cmdServe(root string, args []string) error {
 		return err
 	}
 	for _, why := range cfg.Dropped() {
-		fmt.Fprintf(os.Stderr, "  %sconfiguration: %s%s\n", dim, why, reset)
+		fmt.Fprintf(os.Stderr, "  %sconfiguration: %s%s\n", noteDim, why, noteReset)
 	}
 	srv, err := admin.New(s, pol, toks, design.Layouts)
 	if err != nil {
@@ -215,7 +215,7 @@ func cmdServe(root string, args []string) error {
 	// a mapping had to carry the day it ends left them holding auditor with
 	// no end (scim.Handler.SyncRefused).
 	if err := scimHandler(root).SyncRefused(time.Now()); err != nil {
-		fmt.Fprintf(os.Stderr, "  %sprovisioning: %v%s\n", yellow, err, reset)
+		fmt.Fprintf(os.Stderr, "  %sprovisioning: %v%s\n", noteYellow, err, noteReset)
 	}
 	srv.Memory = memoryAdmin(root)
 	srv.Features = featureHooks(root, signedIn)
@@ -549,7 +549,7 @@ func cmdServe(root string, args []string) error {
 	// A link made before the store kept digests holds its secret in the
 	// file until something rewrites it; the admin does as it starts.
 	if err := migrateShares(root); err != nil {
-		fmt.Fprintf(os.Stderr, "  %sshare links: %v%s\n", yellow, err, reset)
+		fmt.Fprintf(os.Stderr, "  %sshare links: %v%s\n", noteYellow, err, noteReset)
 	}
 	srv.Research = researchScreens(root)
 	srv.Deciders = decidersCapability(root)
@@ -631,7 +631,7 @@ func cmdServe(root string, args []string) error {
 	go upkeep.Run(upkeepCtx, StreamEvery, func(upkeep.Job, int, error) {}, streamJob(root))
 	go upkeep.Run(upkeepCtx, upkeep.Every, func(j upkeep.Job, n int, err error) {
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "  %s%s: %v%s\n", dim, j.Name, err, reset)
+			fmt.Fprintf(os.Stderr, "  %s%s: %v%s\n", noteDim, j.Name, err, noteReset)
 			return
 		}
 		switch j.Name {
@@ -650,7 +650,7 @@ func cmdServe(root string, args []string) error {
 		runner:    func() *Caller { return resolveCaller(root, flagToken) },
 		report: func(f firing, err error) {
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "  %sscheduled publishing: %v%s\n", dim, err, reset)
+				fmt.Fprintf(os.Stderr, "  %sscheduled publishing: %v%s\n", noteDim, err, noteReset)
 				return
 			}
 			sayFiring(f)
@@ -1109,7 +1109,7 @@ func cmdServe(root string, args []string) error {
 				},
 			})
 		}
-		fmt.Fprintf(os.Stderr, "  %ssign-in via %s%s\n", dim, cfg.Issuer, reset)
+		fmt.Fprintf(os.Stderr, "  %ssign-in via %s%s\n", noteDim, cfg.Issuer, noteReset)
 	}
 
 	// Evaluations. An evaluation can take minutes with a model choosing, so

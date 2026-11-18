@@ -376,7 +376,7 @@ func sendWebhookEvent(root string, ev webhook.Event) {
 		sent = append(sent, last)
 		if !last.Succeeded {
 			fmt.Fprintf(os.Stderr, "%swebhook to %s failed after %d attempt(s)%s\n",
-				yellow, e.URL, len(deliveries), reset)
+				noteYellow, e.URL, len(deliveries), noteReset)
 		}
 	}
 	recordDeliveries(root, sent)

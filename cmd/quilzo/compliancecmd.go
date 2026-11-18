@@ -97,13 +97,13 @@ func complianceSBOM(args []string) error {
 
 	third := compliance.ThirdParty(s)
 	fmt.Fprintf(os.Stderr, "\n%s%d third-party component(s)%s\n",
-		bold, len(third), reset)
+		noteBold, len(third), noteReset)
 	if len(third) == 0 {
 		fmt.Fprintf(os.Stderr,
 			"  %sno transitive tree to track, nothing that can reach end of "+
 				"life\n  unnoticed, and no advisory feed to reconcile against. "+
 				"That is the\n  single largest reason the Cyber Resilience Act "+
-				"obligations here are cheap.%s\n", dim, reset)
+				"obligations here are cheap.%s\n", noteDim, noteReset)
 	}
 	return nil
 }

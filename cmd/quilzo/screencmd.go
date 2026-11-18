@@ -56,7 +56,7 @@ func screenCost(args []string) error {
 	if suiteGiven {
 		fmt.Fprintf(os.Stderr, "%s--suite %d changes nothing: frame encryption has "+
 			"moved out of Quilzo with calls, and these figures are the codec's alone%s\n",
-			yellow, *suite, reset)
+			noteYellow, *suite, noteReset)
 	}
 
 	f := synthetic(*width, *height)
