@@ -856,7 +856,7 @@ func cmdToken(root string, args []string) error {
 	if len(args) == 0 {
 		fmt.Print(`quilzo token — credentials for API access
 
-  issue <name> --principal <who> --role <role> [--on /path] [--ttl 720h]
+  issue <name> --principal <who> --role <role> [--on /path] [--ttl 720h] [--person]
   exchange [--role R] [--on /path] [--ttl 15m]   short-lived session from a token
   list
   revoke <id>                                    cascades to its sessions
@@ -920,6 +920,8 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 		"short-lived and read-only: the shape an integration should hold")
 	keyFile := fs.String("key", "", "bind it to this public key (a JWK file, from quilzo token keygen): "+
 		"accepted only with a DPoP proof made by the key")
+	person := fs.Bool("person", false, "the token is its holder's own, to use themselves; "+
+		"without it, it is a program's (the store's first token, for its only administrator, is theirs)")
 	rest, flags := leadingArgs(args, 1)
 	if err := parseFlags(fs, flags, &rest, 1); err != nil {
 		return err
@@ -943,12 +945,26 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 	// "who the token acts as" is the flag's own description, so acting as that
 	// principal is the answer that matches it. Narrowing is still explicit:
 	// --role reader, --read-only and --api all still do what they say.
-	explicitRole := false
+	explicitRole, explicitPerson := false, false
 	fs.Visit(func(f *flag.Flag) {
-		if f.Name == "role" {
+		switch f.Name {
+		case "role":
 			explicitRole = true
+		case "person":
+			explicitPerson = true
 		}
 	})
+	// Whose hands the token is for is said here, and recorded, rather than
+	// guessed later from its name (auth.Token's Kind). The store's first
+	// token, for the one administrator its policy names, is that person's
+	// own: it is what the install guide has them issue for the commands
+	// they run next, and a program's could not start the access review
+	// those commands include. --person=false says otherwise.
+	first := bootstrapIssue(root, "token", append([]string{"issue"}, args...)) && onlyAdministrator(root, *principal)
+	kind := auth.KindProgram
+	if *person || (first && !explicitPerson) {
+		kind = auth.KindPerson
+	}
 	// A role named wider than the principal holds is refused, as a token
 	// carries at most its holder's: one for jun the author, issued and
 	// listed as publisher, was refused at everything it was for ("jun is
@@ -1033,7 +1049,7 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 	// exist. It is the only administrator's change, made alone, and the
 	// record says how it came about.
 	if auth.Role(*role) == auth.RoleAdmin && !approved {
-		if bootstrapIssue(root, "token", append([]string{"issue"}, args...)) && onlyAdministrator(root, *principal) {
+		if first {
 			c := resolveCaller(root, "")
 			if err := recordE(root, c.auditRecord("dual.approved", "/", audit.Success, map[string]string{
 				"kind": string(dual.Token), "alone": "true", "bootstrap": "true", "for": *principal,
@@ -1064,6 +1080,10 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 		}
 		tok.Key = thumb
 	}
+	if err := ts.RecordKind(tok.ID, kind); err != nil {
+		return err
+	}
+	tok.Kind = kind
 	if err := saveTokens(root, ts); err != nil {
 		return err
 	}
@@ -1076,7 +1096,7 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 			// The id, never the secret. The audit package refuses Detail keys
 			// containing "token" or "secret" for exactly this reason, and the
 			// keys here are named so that check keeps working.
-			"issued_id": tok.ID, "for": tok.Principal, "role": string(tok.Role),
+			"issued_id": tok.ID, "for": tok.Principal, "role": string(tok.Role), "kind": tok.Kind,
 			"expires": time.Unix(tok.ExpiresAt, 0).UTC().Format(time.RFC3339),
 		},
 	})
@@ -1086,7 +1106,7 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 	if w.JSON(map[string]any{"token": secret, "id": tok.ID, "principal": tok.Principal,
 		"role": tok.Role, "resource": tok.Resource,
 		"expires": time.Unix(tok.ExpiresAt, 0).UTC().Format(time.RFC3339),
-		"key":     tok.Key, "scope": tok.Scope.String()}) {
+		"key":     tok.Key, "scope": tok.Scope.String(), "kind": tok.Kind}) {
 		return nil
 	}
 	// The token alone on stdout, and what is said of it on stderr, so
@@ -1098,6 +1118,12 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 	dim, yellow, reset := n.Dim(), n.Yellow(), n.Reset()
 	n.Human("\n  %sid %s · %s on %s · expires %s%s\n", dim, tok.ID, tok.Role,
 		tok.Resource, time.Unix(tok.ExpiresAt, 0).UTC().Format("2006-01-02"), reset)
+	if tok.Kind == auth.KindPerson {
+		fmt.Printf("  %s%s's own, for them to use themselves%s\n", dim, tok.Principal, reset)
+	} else {
+		fmt.Printf("  %sa program's; issue it with --person if it is %s's own, to use themselves%s\n",
+			dim, tok.Principal, reset)
+	}
 	if tok.Key != "" {
 		n.Human("  %sbound to key %s: send it as Authorization: DPoP, with a proof the key makes for "+
 			"each request, to /mcp, /v1 or /a2a; it is refused everywhere else%s\n", dim, tok.Key, reset)

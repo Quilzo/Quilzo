@@ -288,6 +288,7 @@ func cmdPending(root string, args []string) error {
 		}
 		if len(pend) == 0 {
 			w.Human("nothing is waiting for a second administrator\n")
+			sayInstallsWaiting(root)
 			return nil
 		}
 		for _, r := range pend {
@@ -304,6 +305,7 @@ func cmdPending(root string, args []string) error {
 					dim, r.ID, reset)
 			}
 		}
+		sayInstallsWaiting(root)
 		return nil
 	}
 	if len(args) != 2 {
@@ -408,6 +410,36 @@ func cmdPending(root string, args []string) error {
 		return tokenIssueAs(root, ch.Args, true)
 	}
 	return errMisused{errors.New("usage: quilzo pending [list] | show ID | approve ID | decline ID | withdraw ID | redeem ID")}
+}
+
+// sayInstallsWaiting says, below the requests `pending list` lists, how
+// many feature installs wait for a second person too, and where they are
+// listed: `quilzo feature` keeps them, apart from these. With one waiting,
+// the list said "nothing is waiting for a second administrator" and no
+// more, while `feature pending` and the admin's Approvals listed it.
+//
+// Counted as the requests are listed: all of them to whoever may install
+// a feature, and their own to anybody else.
+func sayInstallsWaiting(root string) {
+	feats, err := pendingFeatures(root)
+	if err != nil || len(feats) == 0 {
+		return
+	}
+	who, everybody := listedFor(root, auth.ActInstall)
+	n := 0
+	for _, p := range feats {
+		if everybody || mine(p.RequestedBy, who) {
+			n++
+		}
+	}
+	switch {
+	case n == 1:
+		w.Human("%s1 feature install waits for a second person too: quilzo feature pending lists it,\n"+
+			"  and quilzo approvals everything waiting for you%s\n", dim, reset)
+	case n > 1:
+		w.Human("%s%d feature installs wait for a second person too: quilzo feature pending lists them,\n"+
+			"  and quilzo approvals everything waiting for you%s\n", dim, n, reset)
+	}
 }
 
 // showPending is `quilzo pending show ID`: one request, as a person

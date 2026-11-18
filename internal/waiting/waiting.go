@@ -204,9 +204,12 @@ func List(src Sources, now time.Time) ([]Item, error) {
 					if p.Rollback {
 						what = "Roll " + title + " back to " + p.Version
 					}
+					// Linked to Make's "Waiting for a second person",
+					// where it is decided: the top of Make is the site
+					// builder, and the install was listed far below it.
 					out = append(out, Item{Source: "feature", ID: p.ID, Agent: "feature " + p.Name, What: what,
 						Why:     "risk " + p.Card.Risk + ": " + strings.Join(p.Card.Because, "; ") + "; asked by " + p.RequestedBy,
-						Commits: "installs", Since: p.At, Href: "/make", Decide: "quilzo feature approve " + p.ID})
+						Commits: "installs", Since: p.At, Href: "/make#make-waiting", Decide: "quilzo feature approve " + p.ID})
 				}
 			}
 		}

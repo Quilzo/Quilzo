@@ -5,6 +5,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -578,5 +580,90 @@ func TestShowSeqChecksTheSavedHeads(t *testing.T) {
 	}
 	if !strings.Contains(got, "entry 2") || !strings.Contains(got, "chain is broken") || !strings.Contains(got, "shrunk") {
 		t.Errorf("show 2 of a log cut back behind its head:\n%s", got)
+	}
+}
+
+// rechain rewrites the log at root as whoever can write the file can: the
+// entry seq given another action, and every entry from it on hashed and
+// linked again, so the chain holds as it did.
+func rechain(t *testing.T, root string, seq int64, action string) {
+	t.Helper()
+	events, err := audit.Read(auditPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var b strings.Builder
+	prev := ""
+	for _, e := range events {
+		if e.Seq == seq {
+			e.Action = action
+		}
+		e.Prev, e.Hash = prev, ""
+		content, err := json.Marshal(e)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sum := sha256.Sum256(content)
+		e.Hash = hex.EncodeToString(sum[:])
+		line, err := json.Marshal(e)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b.Write(append(line, '\n'))
+		prev = e.Hash
+	}
+	if err := os.WriteFile(auditPath(root), []byte(b.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// verify says what a chain that re-hashes proves, and that an account
+// able to write the log itself could have rewritten all of it.
+//
+// It said "every entry re-hashes and links to the one before it, so
+// nothing was altered, inserted or removed — including by an
+// administrator", and then "nothing between entries was altered", of a
+// store whose own process writes its log, where `logd status` said that
+// anything running as this account can rewrite the record. An entry
+// changed and the chain after it hashed again verifies the same, and was
+// called unaltered.
+func TestVerifySaysARewriteOfTheWholeChainWouldVerifyToo(t *testing.T) {
+	root := auditedStore(t, 4)
+	rechain(t, root, 2, "rollback")
+	human, err := humanOutput(t, func() error { return cmdAuditLog(root, []string{"verify"}) })
+	said := strings.Join(strings.Fields(human), " ")
+	if err != nil || !strings.Contains(said, "chain intact") {
+		t.Fatalf("control: a log rewritten and hashed again should verify: %v\n%s", err, human)
+	}
+	if strings.Contains(said, "nothing between entries was altered") || strings.Contains(said, "including by an administrator") {
+		t.Errorf("verify says nothing was altered of a log altered and hashed again:\n%s", human)
+	}
+	if !strings.Contains(said, "a rewrite of the whole chain would verify") {
+		t.Errorf("verify does not say this account could rewrite the whole chain:\n%s", human)
+	}
+}
+
+// verify of a store whose log is not made yet says this account would
+// write it, not that it is another account's.
+//
+// It asked whether this account could append to the log, which it cannot
+// to a file that is not there, so verify straight after `quilzo init`
+// said "the log is another account's, which this one cannot rewrite" of
+// the log this process makes and writes itself on its first record.
+func TestVerifyOfALogNotMadeYetDoesNotCallItAnotherAccounts(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "objects"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if fileExists(auditPath(root)) {
+		t.Fatal("control: the store already has a log")
+	}
+	human, err := humanOutput(t, func() error { return cmdAuditLog(root, []string{"verify"}) })
+	said := strings.Join(strings.Fields(human), " ")
+	if err != nil {
+		t.Fatalf("verify: %v\n%s", err, human)
+	}
+	if strings.Contains(said, "another account's") || !strings.Contains(said, "this account can write the log itself") {
+		t.Errorf("verify of a log this account would make:\n%s", human)
 	}
 }

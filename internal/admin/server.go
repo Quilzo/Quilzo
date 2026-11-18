@@ -383,10 +383,11 @@ type Server struct {
 	// ReloadTokens re-reads the credential store when it has changed on disk.
 	// Nil means never, which is only right for a test.
 	ReloadTokens func()
-	// OnTokenUsed is told every token that authenticated at /mcp, and the
-	// doors that share its check, so the host can write down when it was
-	// last used: the store this server reads is a copy refresh replaces, and
-	// the use noted in it was lost with it. Nil tells nobody.
+	// OnTokenUsed is told every token that authenticated at the admin's
+	// screens, at /mcp and at the doors that share its check, so the host
+	// can write down when it was last used: the store this server reads is
+	// a copy refresh replaces, and the use noted in it was lost with it.
+	// Nil tells nobody.
 	OnTokenUsed func(tok auth.Token)
 	// Throttle slows repeated authentication failures. Nil means no
 	// throttling, which is only right in tests: the host wires one in from
@@ -620,6 +621,9 @@ func New(s *store.Store, p *auth.Policy, ts *auth.TokenStore, layouts render.Lay
 		// fixparts splits a fix into the command to run and the words
 		// after its shell comment, so the words are read as words.
 		"fixparts": fixParts,
+		// fixfor is a finding's fix with the holder of its token, shown
+		// beside it, in place of HOLDER (posture.FixFor).
+		"fixfor": posture.FixFor,
 		// deref reads a yes or no a tool may not have given; the template
 		// checks for nil before calling it.
 		"deref": func(b *bool) bool { return b != nil && *b },
@@ -830,6 +834,13 @@ func (s *Server) authenticate(r *http.Request) (principal, error) {
 			s.OnBadToken(r, raw, err)
 		}
 		return principal{}, err
+	}
+	// Written down where `quilzo token list` reads it, as /mcp's use is.
+	// The screens told nobody, so every session somebody signed in to with
+	// a passkey or an identity provider was listed as used "never", the
+	// one in use that minute among them.
+	if s.OnTokenUsed != nil {
+		s.OnTokenUsed(*tok)
 	}
 	p := principal{
 		Name: tok.Principal, Role: tok.Role, Scope: tok.Resource,

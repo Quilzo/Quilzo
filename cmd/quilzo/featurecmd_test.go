@@ -423,3 +423,52 @@ func TestAPackagesProgramIsPinnedWhenItIsInstalled(t *testing.T) {
 		t.Error("the install's record does not say which file was approved")
 	}
 }
+
+// quilzo pending, the list of what waits for a second administrator, says
+// that a feature install waits for a second person too, and where.
+//
+// With an install of a feature that holds personal data waiting, it said
+// "nothing is waiting for a second administrator" and stopped: `quilzo
+// feature pending` and the admin's Approvals listed the install, and an
+// administrator looking for what waited on the command line was not told
+// to look there.
+func TestPendingSaysAFeatureInstallWaitsToo(t *testing.T) {
+	root := featureSite(t)
+	if err := installFeatureFile(root, writePackage(t, nil), "", "", asAdmin("dana")); err != nil {
+		t.Fatal(err)
+	}
+	if pend, err := pendingFeatures(root); err != nil || len(pend) != 1 {
+		t.Fatalf("control: the install is not waiting: %v %v", pend, err)
+	}
+	ts, err := loadTokens(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sam, _, err := ts.Issue("sam-laptop", "sam", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveJSON(tokensPath(root), ts); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func(old string) func() { return func() { flagToken = old } }(flagToken))
+	flagToken = ""
+	t.Setenv("QUILZO_TOKEN", sam)
+	text, err := humanOutput(t, func() error { return cmdPending(root, nil) })
+	if err != nil || !strings.Contains(text, "1 feature install") || !strings.Contains(text, "quilzo feature pending") {
+		t.Errorf("pending does not say a feature install waits, or where: %v\n%s", err, text)
+	}
+	// A reader who asked for none of it is told of none of it, as the
+	// requests above are listed to them.
+	rae, _, err := ts.Issue("rae-laptop", "rae", auth.RoleReader, "/", time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveJSON(tokensPath(root), ts); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("QUILZO_TOKEN", rae)
+	if text, _ := humanOutput(t, func() error { return cmdPending(root, nil) }); strings.Contains(text, "feature install") {
+		t.Errorf("a reader is told of an install somebody else asked for:\n%s", text)
+	}
+}

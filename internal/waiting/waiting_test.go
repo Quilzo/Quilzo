@@ -208,3 +208,19 @@ func TestWhatWaitsIsNotOfferedToItsOwnPersonUnderAnotherSpelling(t *testing.T) {
 		t.Errorf("somebody else is offered %v", sourcesOf(items))
 	}
 }
+
+// An install waiting for a second person links to where Make lists it, its
+// "Waiting for a second person", not to the top of a page that lists it far
+// below what it is for.
+func TestAWaitingInstallLinksToWhereMakeListsIt(t *testing.T) {
+	now := time.Now()
+	items, err := List(everything(now, map[auth.Action]bool{auth.ActInstall: true}), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range items {
+		if it.Source == "feature" && it.Href != "/make#make-waiting" {
+			t.Errorf("the install waiting for a second person links to %q", it.Href)
+		}
+	}
+}

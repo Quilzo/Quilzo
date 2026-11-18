@@ -182,6 +182,12 @@ func cmdRecover(root string, args []string) error {
 	if err != nil {
 		return err
 	}
+	// The person at the keyboard getting back in, so their own: a
+	// program's would not let them decide the access review a recovery is
+	// often followed by.
+	if err := toks.RecordKind(tok.ID, auth.KindPerson); err != nil {
+		return err
+	}
 	if err := saveTokens(root, toks); err != nil {
 		return err
 	}

@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/a11y"
+	"github.com/quilzo/quilzo/internal/admin"
 	"github.com/quilzo/quilzo/internal/agentwatch"
 	"github.com/quilzo/quilzo/internal/assistant"
 	"github.com/quilzo/quilzo/internal/audit"
@@ -175,6 +176,14 @@ func Observe(root, tplDir string, srv posture.ServerFacts) posture.State {
 	}
 	if toks, err := loadTokens(root); err == nil {
 		s.Tokens = toks
+	}
+	// Who signs in as a person, for the rule that a program's token is not
+	// to act as one (agent.shared-human-credential).
+	pk := &admin.Passkeys{}
+	if err := loadJSON(passkeysPath(root), pk); err == nil {
+		for _, c := range pk.Credentials {
+			s.Passkeys = append(s.Passkeys, c.Principal)
+		}
 	}
 	if types, err := schema.Load(root); err == nil {
 		s.Types = types
@@ -589,11 +598,21 @@ func postureScan(root string, args []string) error {
 	for _, f := range shown {
 		w.Human("  %s%-8s%s %s\n", colourFor(f.Severity), f.Severity, reset, f.Title)
 		w.Human("           %s\n", f.Detail)
-		if who := holders[f.Resource]; who != "" && f.Resource != "" {
+		who := ""
+		if f.Resource != "" {
+			who = holders[f.Resource]
+		}
+		if who != "" {
 			w.Human("           %sheld by %s%s\n", dim, onOneLine(who), reset)
 		}
 		if f.Fix != "" {
-			w.Human("           %sfix:%s %s\n", dim, reset, f.Fix)
+			// The holder as "held by" shows them: a name is the operator's
+			// own words, and is marked where it holds a control character.
+			holder := ""
+			if who != "" {
+				holder = onOneLine(who)
+			}
+			w.Human("           %sfix:%s %s\n", dim, reset, posture.FixFor(f.Fix, holder))
 		}
 		meta := f.Rule
 		if len(f.Controls) > 0 {

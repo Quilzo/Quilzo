@@ -54,6 +54,11 @@ type Caller struct {
 	Verified bool
 	// Why explains an unverified caller, for the message a refusal prints.
 	Why string
+	// Credential is the name of the token the caller was proved by, for a
+	// refusal about the token rather than the person it acts as: "ada is a
+	// program's credential" said of ada's token that the person ada was
+	// refused for.
+	Credential string
 	// Remote marks a caller at the agent interface over HTTP, and Grant the
 	// app consent its token came from, when it came from one. See
 	// agentinterface.go.
@@ -179,17 +184,20 @@ func resolveCaller(root, explicitToken string) *Caller {
 	// able to find credentials nobody needs any more.
 	_ = saveTokens(root, toks)
 
+	// A person's own token, or a session exchanged from one, as its issue
+	// recorded (auth.Token's Person); every other token is a program's. It
+	// was a guess from the name, "cli" or an address, so the first
+	// administrator's token, named "first" as the install guide names it,
+	// was a program's, and an administrator's token for a CI job named cli
+	// was a person's. A service label is still the default, because
+	// over-attributing to a human is the direction that misleads.
 	kind := audit.KindService
-	if strings.EqualFold(tok.Name, "cli") || strings.Contains(tok.Name, "@") {
-		// A weak heuristic, and named as one. Distinguishing a person's own
-		// token from a CI credential properly needs the token to say which it
-		// is at issue time; until then a service label is the safer default,
-		// because over-attributing to a human is the direction that misleads.
+	if tok.Person() {
 		kind = audit.KindHuman
 	}
 	return &Caller{
 		Name: tok.Principal, Role: tok.Role, Scope: tok.Resource,
-		Limits: tok.Scope, Kind: kind, Verified: true,
+		Limits: tok.Scope, Kind: kind, Verified: true, Credential: tok.Name,
 	}
 }
 

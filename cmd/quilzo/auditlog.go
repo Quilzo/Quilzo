@@ -513,9 +513,31 @@ func auditVerify(root string) error {
 		// What the chain proves, and no more: it says nothing of entries
 		// removed from the end, and its hashes are not keyed, so whoever
 		// can rewrite the file can re-chain what is left.
+		//
+		// It said "nothing between entries was altered, inserted or
+		// removed", and before that "including by an administrator", of a
+		// log this account writes itself, where `logd status` says
+		// anything running as it can rewrite the record. An entry changed
+		// and every one after it hashed again verified, and was called
+		// unaltered. So the line says what a re-hash shows, and whether
+		// this account could have rewritten the lot, as the audit log
+		// screen says it beside its own "chain intact".
+		//
+		// Whether it could write the log as `logd status` asks it
+		// (mayWriteLog), and not whether it can append to the file: there
+		// is no file to append to before the first record, and verify
+		// straight after `quilzo init` called the log this process makes
+		// another account's.
 		w.Human("  %schain intact%s\n", green, reset)
-		w.Human("  %severy entry re-hashes and links to the one before it, so nothing\n"+
-			"  between entries was altered, inserted or removed%s\n", dim, reset)
+		w.Human("  %severy entry re-hashes and links to the one before it, so none was\n"+
+			"  altered, inserted or removed without every entry after it rewritten too%s\n", dim, reset)
+		if mayWriteLog(auditPath(root)) {
+			w.Human("  %sthis account can write the log itself, so a rewrite of the whole chain\n"+
+				"  would verify as well: a head kept off this machine is what shows otherwise%s\n", yellow, reset)
+		} else {
+			w.Human("  %sthe log is another account's, which this one cannot rewrite; root still\n"+
+				"  can, and a head kept off this machine is what shows it did not%s\n", dim, reset)
+		}
 		if head == nil {
 			w.Human("  %sno head is saved, so entries removed from the end would not show here:\n"+
 				"  quilzo auditlog head --save, and keep a copy off this machine%s\n", yellow, reset)
