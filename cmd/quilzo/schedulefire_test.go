@@ -405,3 +405,22 @@ func TestTheServerWakesForTheNextEntry(t *testing.T) {
 		t.Fatal("never fired")
 	}
 }
+
+// The Publishing screen is told why the server's scheduler may not publish,
+// from the identity the server was started with: none, on a store with
+// access control, is a reason; an administrator's token is none.
+func TestTheServerSaysWhenItsSchedulerCannotPublish(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("QUILZO_TOKEN", "")
+	root, dana, _ := twoAdmins(t)
+	old := flagToken
+	t.Cleanup(func() { flagToken = old })
+	flagToken = ""
+	if why := schedulerCannotPublish(root); !strings.Contains(why, "verified identity") {
+		t.Errorf("a server with no token says its scheduler can publish: %q", why)
+	}
+	flagToken = dana
+	if why := schedulerCannotPublish(root); why != "" {
+		t.Errorf("a server with an administrator's token says it cannot publish: %q", why)
+	}
+}

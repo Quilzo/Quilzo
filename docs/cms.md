@@ -1369,7 +1369,9 @@ fell due while the server was down goes out when it starts, and the record
 says how late. Each publish is on the authority of the person who scheduled
 it, checked again when it fires — somebody who has lost the publisher role
 since does not have their launch published for them — and of the identity the
-server runs as, and it carries the publisher role and nothing more. Every gate
+server runs as, and it carries the publisher role and nothing more. A server
+started with no token that may publish fires nothing, and the Publishing screen
+says so where the entry is added and beside each one past its time. Every gate
 runs then, against the content as it stands. A deployment that would rather
 publish from a timer of its own turns off `schedule.in_server` and runs
 `quilzo schedule run`; the two take the same lock, so an entry is never

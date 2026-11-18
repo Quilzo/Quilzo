@@ -445,6 +445,7 @@ func cmdServe(root string, args []string) error {
 		Schedule:       func() (*schedule.Schedule, error) { return loadSchedule(root) },
 		UpdateSchedule: func(fn func(*schedule.Schedule) error) error { return updateSchedule(root, fn) },
 		InServer:       func() bool { return mustConfig(root).Bool("schedule.in_server") },
+		CannotPublish:  func() string { return schedulerCannotPublish(root) },
 	}
 	srv.Media = &admin.Media{
 		Library: func() (*medialib.Library, error) { return openMedia(root) },

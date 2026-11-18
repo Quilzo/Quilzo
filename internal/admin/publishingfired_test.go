@@ -86,3 +86,42 @@ func TestScheduledFromTheBrowserTheNoteIsClippedAsOnTheCommandLine(t *testing.T)
 		t.Errorf("the record does not say what was scheduled and by whom: %v", detail)
 	}
 }
+
+// A server whose scheduler may not publish says so on the Publishing
+// screen, beside every entry it will not publish and when one is added. It
+// said "This server publishes it at that time" and showed an entry past its
+// time as pending, while the scheduler, started without a token that may
+// publish, refused every entry and said why only on the server's own
+// error output.
+func TestTheScheduleSaysWhenThisServerCannotPublishIt(t *testing.T) {
+	srv, tok := scoped(t, auth.Binding{Principal: "editor", Role: auth.RoleAdmin, Resource: "/"})
+	now := time.Now()
+	sch := &schedule.Schedule{Entries: []schedule.Entry{
+		{Commit: srv.Store.GetRef("draft"), At: now.Add(-10 * time.Minute).Unix(), By: "editor"},
+	}}
+	why := "this store has access control configured, so publish needs a verified identity"
+	srv.Publishing.Schedule = func() (*schedule.Schedule, error) { return sch, nil }
+	srv.Publishing.UpdateSchedule = func(fn func(*schedule.Schedule) error) error { return fn(sch) }
+	srv.Publishing.InServer = func() bool { return true }
+	srv.Publishing.CannotPublish = func() string { return why }
+
+	body := getPage(t, srv, "/publishing", tok["editor"])
+	if strings.Contains(body, "This server publishes it at that time") {
+		t.Error("the screen promises a publish this server cannot make")
+	}
+	if !strings.Contains(body, why) || !strings.Contains(body, "overdue") {
+		t.Errorf("the screen does not say the entry past its time was not published, and why:\n%s", body)
+	}
+	if strings.Contains(body, `<span class="ok">pending</span>`) {
+		t.Error("an entry past its time that nothing will publish reads as pending")
+	}
+
+	sch.Entries = nil
+	w := postForm(t, srv, "/publishing/schedule", tok["editor"], url.Values{"when": {"1h"}}.Encode())
+	if len(sch.Entries) != 1 {
+		t.Fatalf("not scheduled: %d %s", w.Code, w.Header().Get("Location"))
+	}
+	if loc, _ := url.QueryUnescape(w.Header().Get("Location")); !strings.Contains(loc, why) {
+		t.Errorf("scheduling on a server that cannot publish it says %q", loc)
+	}
+}

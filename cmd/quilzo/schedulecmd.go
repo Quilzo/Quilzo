@@ -283,6 +283,19 @@ func lateBy(d time.Duration) string {
 	}
 }
 
+// schedulerCannotPublish is why this server's scheduler may not publish, or
+// the empty string when it may. It fires as the identity quilzo serve was
+// started with (runScheduler's runner), so a server started with no token,
+// as the compose admin is, fired nothing and said why only on its own error
+// output, while the Publishing screen promised the launch and showed it
+// pending after its time.
+func schedulerCannotPublish(root string) string {
+	if err := authorise(root, resolveCaller(root, flagToken), auth.ActPublish, "/"); err != nil {
+		return err.Error()
+	}
+	return ""
+}
+
 // errRunnerMayNotPublish is fireDue refusing to fire anything, and leaving
 // every entry as it was, because whatever is running it may not publish.
 var errRunnerMayNotPublish = errors.New("may not publish")
