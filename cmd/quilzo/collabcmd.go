@@ -562,6 +562,18 @@ func reviewApprove(root string, args []string) error {
 	if err := saveJSON(proposalsPath(root), file); err != nil {
 		return err
 	}
+	// A person's approval is the review a model's page is marked with
+	// (provenance.Index.Reviewed). A person, as the human-approver rule
+	// judges one: an approval that does not count as a person's for the
+	// gate is not a person's review for the mark either.
+	var marked []string
+	if kindOfPrincipal(root)(caller.Name) == "human" {
+		var merr error
+		if marked, merr = markReviewed(root, s, prop.Content, caller.Name); merr != nil {
+			w.Human("  %sthe approval is recorded, and the provenance of the pages "+
+				"it covers could not be marked as reviewed: %v%s\n", yellow, merr, reset)
+		}
+	}
 
 	// An approval is a privileged action: it is what lets content reach the
 	// public, and under AC-3(2) the whole point of dual authorization is that
@@ -579,7 +591,8 @@ func reviewApprove(root string, args []string) error {
 			// eventually carries the thing it was named after.
 			"approved": prop.Content, "author": prop.Author,
 			"author_kind": prop.AuthorKind, "note": truncate(*note, 200),
-			"alone": strconv.FormatBool(alone),
+			"alone":    strconv.FormatBool(alone),
+			"reviewed": strconv.Itoa(len(marked)),
 		},
 	})
 
@@ -591,12 +604,40 @@ func reviewApprove(root string, args []string) error {
 		return nil
 	}
 	w.Human("%s approved %s\n", caller.Name, short(prop.Content))
+	if len(marked) > 0 {
+		w.Human("  %smarked as reviewed by %s: %s%s\n", dim, caller.Name,
+			strings.Join(marked, ", "), reset)
+	}
 	w.Human("  %s%s%s\n", map[bool]string{true: green, false: dim}[d.Allowed],
 		d.Reason, reset)
 	if d.Allowed {
 		w.Human("  %squilzo publish%s\n", dim, reset)
 	}
 	return nil
+}
+
+// markReviewed records by as the reviewer of each model-written page the
+// approved commit puts live, and returns those pages.
+func markReviewed(root string, s *store.Store, commit, by string) ([]string, error) {
+	proposed, err := site.PageIDsAt(s, commit)
+	if err != nil {
+		return nil, err
+	}
+	live := map[string]string{}
+	if l := s.GetRef(site.RefLive); l != "" {
+		if live, err = site.PageIDsAt(s, l); err != nil {
+			return nil, err
+		}
+	}
+	idx, err := loadProvenance(root)
+	if err != nil {
+		return nil, err
+	}
+	marked := idx.Reviewed(proposed, live, by)
+	if len(marked) == 0 {
+		return nil, nil
+	}
+	return marked, saveJSON(provPath(root), idx)
 }
 
 // kindOfPrincipal answers whether an approver is a person.

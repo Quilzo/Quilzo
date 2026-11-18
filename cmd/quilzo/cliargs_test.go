@@ -229,7 +229,7 @@ func TestNoCommandRunsOnWordsItDoesNotTake(t *testing.T) {
 	addPage(t, template, "", "index", "v1")
 	for _, line := range [][]string{
 		{"provenance", "set", "index", "--source", "humanEdits", "--author", "owner"},
-		{"publish", "--no-a11y-check"},
+		{"publish", "--no-a11y-check", "--reason", "no templates here"},
 	} {
 		if _, e, code := cliRun(t, template, "", line...); code != 0 {
 			t.Fatalf("`quilzo %s`: %s", strings.Join(line, " "), firstLines(e, 3))
@@ -394,7 +394,7 @@ func TestAWordAfterANameIsRefused(t *testing.T) {
 	}
 
 	// The flag after the commit is read, and --revoke wherever it stands.
-	if _, e, code := cliRun(t, root, token, "publish", commit, "--no-a11y-check"); code != 0 {
+	if _, e, code := cliRun(t, root, token, "publish", commit, "--no-a11y-check", "--reason", "no templates here"); code != 0 {
 		t.Errorf("`quilzo publish COMMIT --no-a11y-check`: %s", firstLines(e, 4))
 	}
 	if _, e, code := cliRun(t, root, token, "scim", "token", "--days", "3", "--revoke"); code != 0 {
@@ -707,7 +707,7 @@ func TestRollbackRefusesANumberAsAWord(t *testing.T) {
 		if _, e, code := cliRun(t, root, token, "provenance", "set", "index", "--source", "humanEdits", "--author", "owner"); code != 0 {
 			t.Fatalf("provenance: %s", e)
 		}
-		if _, e, code := cliRun(t, root, token, "publish", "--no-a11y-check"); code != 0 {
+		if _, e, code := cliRun(t, root, token, "publish", "--no-a11y-check", "--reason", "no templates here"); code != 0 {
 			t.Fatalf("publish %s: %s", v, e)
 		}
 	}

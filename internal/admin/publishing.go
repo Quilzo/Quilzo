@@ -41,6 +41,10 @@ type Publishing struct {
 	// InServer says whether this server publishes scheduled entries itself
 	// (schedule.in_server), so the screen can say who will.
 	InServer func() bool
+	// CannotPublish says why this server's scheduler may not publish, and
+	// is empty when it may: it fires as the identity the server was started
+	// with, and one started without a token that may publish fires nothing.
+	CannotPublish func() string
 }
 
 // envView is one environment as the screen shows it.
@@ -98,6 +102,10 @@ func (s *Server) handlePublishing(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	inServer := s.Publishing.InServer != nil && s.Publishing.InServer()
+	cannot := ""
+	if inServer {
+		cannot = s.scheduleCannotPublish()
+	}
 
 	var held []collab.Lock
 	if s.Locks != nil {
@@ -110,7 +118,7 @@ func (s *Server) handlePublishing(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "publishing.html", map[string]any{
 		"Nav": "publishing", "Title": "Publishing", "Principal": p,
 		"Envs": views, "Draft": shortHash(draft), "Pending": pending,
-		"Fired": fired, "InServer": inServer,
+		"Fired": fired, "InServer": inServer, "CannotPublish": cannot,
 		"Locks": held, "Now": time.Now().Unix(),
 		"Message": r.URL.Query().Get("m"), "Error": r.URL.Query().Get("e"),
 		"CanPromote": s.Policy.Evaluate(p.Name, auth.ActPublish, "/").Allowed,
@@ -404,10 +412,13 @@ func (s *Server) handleScheduleAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	note := strings.TrimSpace(r.FormValue("note"))
+	// The reason to publish pages with no provenance, as Review → Publish
+	// takes one, applied as that waiver when it fires (Entry.UnmarkedReason).
+	reason := strings.TrimSpace(r.FormValue("reason"))
 	// Signed in, so verified: the publish goes out on this person's
 	// authority when it fires, checked again then.
 	who := schedule.Who{Name: p.Name, Kind: "human", Verified: true}
-	if err := schedule.Queue(s.Publishing.UpdateSchedule, draft, when, who, note, time.Now()); err != nil {
+	if err := schedule.QueueWaiving(s.Publishing.UpdateSchedule, draft, when, who, note, reason, time.Now()); err != nil {
 		var refused *schedule.Refused
 		if errors.As(err, &refused) {
 			s.pubRedirect(w, r, "", refused.Error())
@@ -416,14 +427,48 @@ func (s *Server) handleScheduleAdd(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.auditPub(p, "schedule.add", "/", schedule.Detail(draft, when, note, p.Name))
+	s.auditPub(p, "schedule.add", "/", schedule.DetailWaiving(draft, when, note, p.Name, reason))
 	if s.Told != nil {
 		go s.Told("scheduled", draft, nil)
+	}
+	// Scheduled, and said plainly what will stop it, rather than promised:
+	// the person who scheduled a launch found out it had not happened from
+	// the page saying "pending" after its time, or from a refusal there.
+	at := when.UTC().Format("15:04 on 2 Jan 2006")
+	if s.Publishing.InServer != nil && s.Publishing.InServer() {
+		if why := s.scheduleCannotPublish(); why != "" {
+			s.pubRedirect(w, r, "", fmt.Sprintf(
+				"%s is scheduled for %s, and this server cannot publish it then: %s. "+
+					"Start quilzo serve with a token that may publish, or run quilzo "+
+					"schedule run with one.",
+				shortHash(draft), at, why))
+			return
+		}
+	}
+	// The one gate every page saved here fails, since a page saved in the
+	// browser has no provenance record, asked now as it will be then.
+	if unmarked, uerr := s.unmarkedPages(draft); uerr == nil && len(unmarked) > 0 && reason == "" {
+		s.pubRedirect(w, r, "", fmt.Sprintf(
+			"%s is scheduled for %s, and %s no provenance, so at that time it "+
+				"is refused: %s. Say who or what wrote each on Provenance, or "+
+				"cancel this and schedule it with a reason to publish them anyway.",
+			shortHash(draft), at, countOf(len(unmarked), "page has", "pages have"),
+			strings.Join(unmarked, ", ")))
+		return
 	}
 	s.pubRedirect(w, r, fmt.Sprintf(
 		"%s will publish at %s. Every gate runs then, against the content as it "+
 			"stands, not now.",
 		shortHash(draft), when.UTC().Format("15:04 on 2 Jan 2006")), "")
+}
+
+// scheduleCannotPublish is why this server's scheduler may not publish, or
+// the empty string when it may or nobody wired the question.
+func (s *Server) scheduleCannotPublish() string {
+	if s.Publishing == nil || s.Publishing.CannotPublish == nil {
+		return ""
+	}
+	return s.Publishing.CannotPublish()
 }
 
 func (s *Server) handleScheduleCancel(w http.ResponseWriter, r *http.Request) {

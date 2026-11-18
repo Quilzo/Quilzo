@@ -267,3 +267,36 @@ func TestWhenIsATimeOrADuration(t *testing.T) {
 		}
 	}
 }
+
+// An entry scheduled with a reason to publish pages with no provenance keeps
+// it, from the one change to the schedule that adds it, and the record of
+// scheduling names the waiver; one scheduled without keeps none.
+func TestAScheduledWaiverIsKeptWithItsEntry(t *testing.T) {
+	now := time.Now()
+	s := &Schedule{}
+	writes := 0
+	update := func(fn func(*Schedule) error) error { writes++; return fn(s) }
+	a, b := strings.Repeat("a", 64), strings.Repeat("b", 64)
+	if err := QueueWaiving(update, a, now.Add(time.Hour), Who{Name: "pat"}, "", "  written by hand  ", now); err != nil {
+		t.Fatal(err)
+	}
+	if err := Queue(update, b, now.Add(time.Hour), Who{Name: "pat"}, "", now); err != nil {
+		t.Fatal(err)
+	}
+	if writes != 2 {
+		t.Errorf("%d changes to the schedule for two entries", writes)
+	}
+	got := map[string]string{}
+	for _, e := range s.Entries {
+		got[e.Commit] = e.UnmarkedReason
+	}
+	if got[a] != "written by hand" || got[b] != "" {
+		t.Errorf("the entries keep %q", got)
+	}
+	if d := DetailWaiving(a, now, "", "pat", "written by hand"); d["waives"] != "unmarked-ai" || d["reason"] != "written by hand" {
+		t.Errorf("the record does not name the waiver: %v", d)
+	}
+	if d := DetailWaiving(b, now, "", "pat", ""); d["waives"] != "" || d["reason"] != "" {
+		t.Errorf("a record with no waiver names one: %v", d)
+	}
+}

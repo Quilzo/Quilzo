@@ -68,7 +68,7 @@ func TestADemonstrationCanBePublishedMoreThanOnce(t *testing.T) {
 	}
 
 	// And it publishes, which is the thing somebody actually tries.
-	if err := runPublish(t, root, "--no-a11y-check"); err != nil {
+	if err := runPublish(t, root, "--no-a11y-check", "--reason", "no templates here"); err != nil {
 		t.Fatalf("a fresh demonstration refused to publish: %v", err)
 	}
 }

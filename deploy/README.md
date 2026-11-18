@@ -140,6 +140,22 @@ admin has no page for it. The first lasts a week (`token.ttl.default`), so
 make the next before it ends, and one for each person or program that needs
 one: `docker compose run --rm -e QUILZO_TOKEN admin token issue NAME --principal WHO`.
 
+### Scheduled publishing
+
+The admin publishes what is scheduled itself, as the identity it was started
+with, and this file starts it with none: once the store has an administrator,
+nothing scheduled goes out from it, and the Publishing screen says so where an
+entry is added and beside each one past its time. Fire them instead from a
+timer on this machine, every minute, with a publisher's token:
+
+```bash
+docker compose run --rm -e QUILZO_TOKEN admin schedule run
+```
+
+and turn the admin's own off (`config set schedule.in_server false`), so the
+screen names that timer as what publishes. Each entry still goes out on the
+authority of whoever scheduled it, checked when it fires.
+
 ### Heads, receipts and the key that signs them
 
 `logd` holds the key that signs the audit log's heads, in the `audit` volume:

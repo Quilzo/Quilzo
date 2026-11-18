@@ -340,7 +340,7 @@ reference.
 |---|---|---|
 | **Pages and publishing** | Content-addressed drafts, review approvals, environments promoted by pointer, scheduled publishing, rollback, an accessibility gate. | `quilzo add\|diff\|publish\|rollback\|env\|schedule\|review` |
 | **Working together** | Advisory locks, notes on what is wrong with a page, owners and a schedule for confirming a page is still right. | `quilzo lock\|note\|checked` |
-| **Structure** | Move a page and everything under it, see what links where and what is broken, keep old URLs working. | `quilzo move\|links`, `site --redirects` |
+| **Structure** | Move a page and everything under it, see what links where and what is broken, keep old URLs working. | `quilzo move\|links\|redirect`, `site --redirects` |
 | **Provenance** | Who or what wrote each page; what an agent or assistant writes is marked as AI-generated. | `quilzo provenance check` |
 | **Typed data** | Types, records and collections; listings, menus and vocabularies that are checked. | `quilzo type\|records\|listing\|menu\|terms` |
 | **Design** | Starters, sections, themes from one colour with contrast checked, design tokens in and out. | `quilzo template\|section\|theme`; Design screen |

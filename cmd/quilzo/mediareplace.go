@@ -149,9 +149,20 @@ func mediaReplace(root string, args []string) error {
 	}
 	// The half the field was declared for. A live site still pointing at the
 	// retired file is not an error and is exactly what somebody needs to know.
+	//
+	// Except a caption file, which no page names: the live site reads it
+	// off the video that carries it, so publishing changes nothing, and the
+	// new file reaches the site when it is attached to that video.
 	if used, uerr := mediaInUse(root, old.ID); uerr == nil && used {
-		w.Human("  %sthe live site still uses %s; publish to change that%s\n",
-			yellow, old.Name, reset)
+		if old.Kind == media.Caption {
+			w.Human("  %sa video the live site shows carries %s as captions, and "+
+				"publishing does not change that: attach %s to it with `quilzo "+
+				"media captions VIDEO %s --lang TAG`%s\n",
+				yellow, old.Name, next.Name, shortID(next.ID), reset)
+		} else {
+			w.Human("  %sthe live site still uses %s; publish to change that%s\n",
+				yellow, old.Name, reset)
+		}
 	}
 	return nil
 }
