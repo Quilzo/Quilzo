@@ -1066,7 +1066,7 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 	}
 	fmt.Printf("%s%s%s\n", bold, secret, reset)
 	fmt.Printf("\n  %sid %s · %s on %s · expires %s%s\n", dim, tok.ID, tok.Role,
-		tok.Resource, time.Unix(tok.ExpiresAt, 0).UTC().Format("2006-01-02"), reset)
+		tok.Resource, tokenExpiry(tok), reset)
 	if tok.Key != "" {
 		fmt.Printf("  %sbound to key %s: send it as Authorization: DPoP, with a proof the key makes for "+
 			"each request, to /mcp, /v1 or /a2a; it is refused everywhere else%s\n", dim, tok.Key, reset)
@@ -1223,11 +1223,12 @@ func tokenList(root string) error {
 	// As wide as the longest name, as `auth list` is as wide as its longest
 	// principal: a name is the operator's own words, "ci-deploy-production"
 	// is twenty characters, and a fixed sixteen pushed its row out of line.
-	nw := 16
+	nw, ew := 16, 12
 	for _, t := range tokens {
 		nw = max(nw, utf8.RuneCountInString(t.Name))
+		ew = max(ew, len(tokenExpiry(t))+2)
 	}
-	fmt.Printf("  %-14s %-*s %-10s %-12s %s\n", "id", nw, "name", "role", "expires", "last used")
+	fmt.Printf("  %-14s %-*s %-10s %-*s %s\n", "id", nw, "name", "role", ew, "expires", "last used")
 	for _, t := range tokens {
 		state := ""
 		switch {
@@ -1240,10 +1241,22 @@ func tokenList(root string) error {
 		if t.LastUsed > 0 {
 			last = time.Unix(t.LastUsed, 0).UTC().Format("2006-01-02")
 		}
-		fmt.Printf("  %-14s %-*s %-10s %-12s %-10s %s\n", t.ID, nw, t.Name, t.Role,
-			time.Unix(t.ExpiresAt, 0).UTC().Format("2006-01-02"), last, state)
+		fmt.Printf("  %-14s %-*s %-10s %-*s %-10s %s\n", t.ID, nw, t.Name, t.Role,
+			ew, tokenExpiry(t), last, state)
 	}
 	return nil
+}
+
+// tokenExpiry is when a token ends, as a person reads it: the day, and for
+// a token issued for less than a day the hour and the zone as well
+// (auth.Token.LastsUnderADay). An hour's token said "expires 2026-11-12",
+// the same as a month's.
+func tokenExpiry(t auth.Token) string {
+	at := time.Unix(t.ExpiresAt, 0).UTC()
+	if t.LastsUnderADay() {
+		return at.Format("2006-01-02 15:04 UTC")
+	}
+	return at.Format("2006-01-02")
 }
 
 func tokenRevoke(root string, args []string) error {

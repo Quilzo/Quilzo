@@ -872,6 +872,19 @@ func (t Token) Assurance() (life time.Duration, bound bool) {
 	return time.Unix(t.ExpiresAt, 0).Sub(time.Unix(t.CreatedAt, 0)), t.Key != ""
 }
 
+// LastsUnderADay reports whether the token was issued to last less than a
+// day, so that the day it ends on says too little and the hour it ends at
+// has to be shown as well.
+//
+// Every surface showed the day alone: a token issued for an hour read
+// "expires 2026-11-12" on the command line and "12 Nov 2026" on the People
+// screen, the same as one that lasts the month, and whoever issued it could
+// not tell it would end before lunch. The rule is here so that the two
+// surfaces cannot draw the line in different places.
+func (t Token) LastsUnderADay() bool {
+	return t.ExpiresAt-t.CreatedAt < int64(24*time.Hour/time.Second)
+}
+
 // BindSession records where a session was issued to.
 func (ts *TokenStore) BindSession(id, bound string) error {
 	ts.mu.Lock()

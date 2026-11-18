@@ -5,8 +5,10 @@ package main
 
 import (
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 // count added a bare s to every noun, and two of its callers handed it a
@@ -72,6 +74,34 @@ func TestARecordIsListedByAnIDItsSiblingsTake(t *testing.T) {
 	for _, verb := range []string{"get", "delete"} {
 		if _, e, code := cliRun(t, root, "", "records", verb, "products", shown); code != 0 {
 			t.Errorf("`records %s products %s`, the id the list showed, exited %d: %s", verb, shown, code, e)
+		}
+	}
+}
+
+// A token issued for an hour said "expires 2026-11-12", and `token list`
+// showed the same day alone, so it could not be told from one that lasts
+// the month. Under a day, the hour and the zone are shown as well.
+func TestAShortTokenSaysTheHourItEnds(t *testing.T) {
+	root, token := accessStore(t)
+	o, e, code := cliRun(t, root, token, "token", "issue", "ci-hour", "--principal", "owner", "--role", "reader", "--ttl", "1h")
+	if code != 0 {
+		t.Fatalf("token issue: %s", e)
+	}
+	ends := time.Now().UTC().Add(time.Hour)
+	at := regexp.MustCompile(`expires (\S+ \d\d:\d\d UTC)`).FindStringSubmatch(o)
+	if at == nil || !strings.HasPrefix(at[1], ends.Format("2006-01-02")) {
+		t.Errorf("an hour's token does not say the hour it ends:\n%s", o)
+	}
+	o, e, code = cliRun(t, root, token, "token", "list")
+	if code != 0 {
+		t.Fatalf("token list: %s", e)
+	}
+	for _, line := range strings.Split(o, "\n") {
+		switch {
+		case strings.Contains(line, "ci-hour") && !regexp.MustCompile(`\d\d:\d\d UTC`).MatchString(line):
+			t.Errorf("token list shows an hour's token by its day alone:\n%s", line)
+		case strings.Contains(line, " boot ") && strings.Contains(line, "UTC"):
+			t.Errorf("token list shows a week's token by the hour:\n%s", line)
 		}
 	}
 }
