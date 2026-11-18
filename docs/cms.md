@@ -1403,7 +1403,7 @@ licence and the commit the bytes came from, for a deposit somebody has to
 verify later.
 
 **Evidence for an assessor.** A posture scan over the real deployment mapped to
-35 NIST SP 800-53 controls, OSCAL 1.2.3 assessment results generated from it, a
+57 NIST SP 800-53 controls, OSCAL 1.2.3 assessment results generated from it, a
 CycloneDX SBOM from the build, an audit-log export as OCSF or CEF with an
 integrity envelope, and a crypto inventory with post-quantum positions.
 
@@ -2632,7 +2632,7 @@ than for one that has to be described.
 
 - **`quilzo posture scan`** reads your actual deployment rather than a
   checklist, and every rule already names the NIST SP 800-53 controls it bears
-  on and the OWASP category it belongs to. **35 controls have an automated
+  on and the OWASP category it belongs to. **57 controls have an automated
   check.** `quilzo compliance controls` prints the map.
 - **OSCAL 1.2.3 assessment results**, generated from that scan. Not a claim of
   compliance — the output of an assessment, which is what the format is for and

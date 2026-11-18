@@ -122,14 +122,15 @@ func lockPatience(v string) (time.Duration, error) {
 // A constant rather than a literal inside usage(), so that `quilzo CMD
 // --help` can answer with the lines about CMD (commandhelp.go).
 //
-// It opens with what Quilzo is, in the README's words. It opened with the
-// content store alone, from before Quilzo was an agent platform, as the
-// admin's sign-in page and Get started did.
-const usageText = `quilzo — the self-hosted AI agent platform: a control plane, an agent
-          studio, a CMS and chatbots in one Go binary. Content is immutable,
-          publishing moves a pointer, and templates cannot execute anything.
+// It opens with the README's sentence about what Quilzo is, and a test
+// holds it there: it went on opening with the content store's tagline
+// after the product had become an agent platform with a CMS in it, as the
+// admin's sign-in page and Get started did. What is true of the content
+// store is said under its own heading.
+const usageText = `quilzo — the self-hosted AI agent platform: a control plane, an agent studio,
+          a CMS and chatbots in one Go binary.
 
-content
+content (immutable, and publishing moves a pointer; templates cannot execute anything)
   quilzo init [--admin NAME]               create a content store, and its first administrator
   quilzo add NAME=FILE.json [...]          stage pages into a draft
   quilzo add ... --based-on ID --merge     keep both edits unless you collided
@@ -146,6 +147,8 @@ leaving (there is no lock-in here, and this is how it is proved)
   quilzo export ro-crate --licence URI     a deposit: markdown plus checksums
   quilzo siem ocsf|cef|jsonl --envelope F  the audit log, still verifiable
   quilzo siem verify FILE --envelope F     check a JSON Lines export was not altered
+  quilzo siem stream status|key|send       the audit log as it is written, in signed batches to siem.stream.url:
+                                           how far it has gone (status, the default), the keys to check it, or send now
 
 importing
   quilzo import FILE [--from wordpress]    bring in another CMS's export

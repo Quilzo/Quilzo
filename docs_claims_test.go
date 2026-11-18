@@ -8,10 +8,15 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/posture"
 )
 
 // The README described a container this project does not build.
@@ -240,6 +245,295 @@ func TestBothCopiesOfTheProposalAgreeOnTheBenchmark(t *testing.T) {
 			t.Errorf("%s still says the benchmark was never run, and the "+
 				"README publishes a measured figure", f.name)
 		}
+	}
+}
+
+// The proposal says what Quilzo is, in the README's words.
+//
+// Its Abstract opened "Quilzo is a content management system", the
+// description from when that was all it was, while the README called it
+// the self-hosted AI agent platform: a proposal that describes a different
+// product from the repository it links to is wrong in its first paragraph.
+func TestTheProposalSaysWhatQuilzoIs(t *testing.T) {
+	m := regexp.MustCompile(`<strong>([^<]+)</strong>`).FindStringSubmatch(read(t, "README.md"))
+	if m == nil {
+		t.Fatal("README.md has no line in bold saying what Quilzo is")
+	}
+	want := flatText(strings.TrimSuffix(strings.TrimSpace(m[1]), "."))
+	for _, name := range []string{"docs/apache-incubator-proposal.md", "docs/apache-incubator-proposal.txt"} {
+		if !strings.Contains(flatText(read(t, name)), want) {
+			t.Errorf("%s does not say what the README says Quilzo is: %q", name, m[1])
+		}
+	}
+}
+
+// The proposal's figures are true of the tree, and not far behind it.
+//
+// It said "roughly 65,600 lines of program with 34,500 lines of test across
+// 1,229 test functions" and "65 packages" when the tree held some 320,000,
+// 231,000, 5,800 and 176: an early tree's figures, left in a document
+// offered as the project's case. So each figure the proposal gives is
+// measured here, and must be no more than the tree holds, since the
+// proposal says "more than", and at least half of it, so that it cannot
+// fall four or five times behind again without failing.
+func TestTheProposalsFiguresAreTrueOfTheTree(t *testing.T) {
+	out, err := exec.Command("git", "ls-files", "*.go").Output()
+	if err != nil {
+		t.Skipf("git ls-files: %v", err)
+	}
+	var program, tests, funcs int
+	for _, name := range strings.Fields(string(out)) {
+		body, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Count(string(body), "\n")
+		if !strings.HasSuffix(name, "_test.go") {
+			program += lines
+			continue
+		}
+		tests += lines
+		funcs += len(regexp.MustCompile(`(?m)^func Test`).FindAllIndex(body, -1))
+	}
+	pkgs, err := exec.Command("go", "list", "./...").Output()
+	if err != nil {
+		t.Skipf("go list: %v", err)
+	}
+	measured := []struct {
+		what string
+		n    int
+	}{
+		{"lines of program", program},
+		{"lines of test", tests},
+		{"test functions", funcs},
+		{"packages", len(strings.Fields(string(pkgs)))},
+	}
+	if program < 10000 || tests < 10000 || funcs < 100 {
+		t.Fatalf("measured %v; this is counting the wrong tree", measured)
+	}
+
+	found := 0
+	for _, name := range []string{"docs/apache-incubator-proposal.md", "docs/apache-incubator-proposal.txt"} {
+		text := flatText(read(t, name))
+		for _, figure := range measured {
+			what, n := figure.what, figure.n
+			// A figure is digits grouped in threes, so that the year in "June
+			// 2026, packages carry evidence" is not read as a count.
+			re := regexp.MustCompile(`\b([0-9]{1,3}(?:,[0-9]{3})+|[0-9]+) ` + regexp.QuoteMeta(what) + `\b`)
+			for _, m := range re.FindAllStringSubmatch(text, -1) {
+				found++
+				said, err := strconv.Atoi(strings.ReplaceAll(m[1], ",", ""))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if said > n || 2*said < n {
+					t.Errorf("%s says %s %s, and the tree has %d. Give a figure no more "+
+						"than that and at least half of it", name, m[1], what, n)
+				}
+			}
+		}
+	}
+	if found == 0 {
+		t.Fatal("the proposal gives no figure this test recognises; it has stopped looking")
+	}
+}
+
+// AUTHORS lists every address the history has a commit authored by.
+//
+// It said every commit was by the maintainer or by Dependabot, "checkable
+// rather than asserted" with `git log --format='%ae' | sort -u`, and the
+// proposal said the same check "returns two addresses, one of which is a
+// bot". On the branch a release is cut from, most commits had a third
+// author: the AI coding assistant the maintainer works with, committing
+// under its own address. The statement failed the check it named, so the
+// check is made here.
+//
+// Merges are left out; writtenCommits says why.
+func TestAUTHORSListsEveryAuthorInTheHistory(t *testing.T) {
+	written, err := writtenCommits(".", "%ae")
+	if err != nil {
+		t.Skipf("git log: %v", err)
+	}
+	authors := read(t, "AUTHORS")
+	seen := map[string]bool{}
+	for _, addr := range written {
+		if seen[addr] {
+			continue
+		}
+		seen[addr] = true
+		if !strings.Contains(authors, "<"+addr+">") {
+			t.Errorf("%s authored commits here, and AUTHORS, which says every commit is "+
+				"by somebody it lists, does not list it", addr)
+		}
+	}
+	if len(seen) == 0 {
+		t.Skip("this checkout has no commit that is not a merge, or that git can tell is not one")
+	}
+}
+
+// writtenCommits is the commits in dir's history that somebody wrote, one
+// line each, as format gives it: every commit but a merge.
+//
+// A merge is authored by whoever merged it, and the one a pull request's CI
+// checks out is made by GitHub for the test; the commits under it are the
+// ones somebody wrote.
+//
+// --no-merges alone does not leave that one out. CI checks it out one commit
+// deep, and git cannot see the parents of a commit at the edge of a shallow
+// history, so a merge there is a commit with none, which --no-merges keeps.
+// A commit at that edge cannot be told from a merge, and is left out too:
+// git lists those commits in the repository's shallow file.
+func writtenCommits(dir, format string) ([]string, error) {
+	out, err := exec.Command("git", "-C", dir, "log", "--no-merges", "--format=%H "+format).Output()
+	if err != nil {
+		return nil, err
+	}
+	edge := map[string]bool{}
+	if p, err := exec.Command("git", "-C", dir, "rev-parse", "--git-path", "shallow").Output(); err == nil {
+		path := strings.TrimSpace(string(p))
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(dir, path)
+		}
+		// No file is a history that is not shallow, with no edge.
+		if b, err := os.ReadFile(path); err == nil {
+			for _, hash := range strings.Fields(string(b)) {
+				edge[hash] = true
+			}
+		}
+	}
+	var lines []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		hash, rest, _ := strings.Cut(line, " ")
+		if hash == "" || edge[hash] {
+			continue
+		}
+		lines = append(lines, rest)
+	}
+	return lines, nil
+}
+
+// The history checks leave out a merge that a shallow checkout has cut from
+// its parents.
+//
+// They read the history with --no-merges, to leave out the merge GitHub
+// makes for a pull request's CI. CI checks that merge out one commit deep,
+// and git cannot see the parents of a commit at the edge of a shallow
+// history: a merge whose parents were not fetched is a commit with none,
+// which --no-merges keeps. So on a pull request the AUTHORS check read the
+// one commit it meant to leave out, and nothing else, and held the address
+// GitHub wrote it under to AUTHORS.
+func TestTheHistoryChecksLeaveOutAMergeAShallowCheckoutCutOff(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git here")
+	}
+	dir := t.TempDir()
+	src, clone := filepath.Join(dir, "src"), filepath.Join(dir, "clone")
+	git := func(by string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1",
+			"GIT_AUTHOR_NAME=x", "GIT_AUTHOR_EMAIL="+by, "GIT_COMMITTER_NAME=x", "GIT_COMMITTER_EMAIL="+by)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+	}
+	const wrote, merged = "wrote@example.com", "merged@example.com"
+	git(wrote, "init", "-q", src)
+	git(wrote, "-C", src, "commit", "-q", "--allow-empty", "-m", "one")
+	git(wrote, "-C", src, "checkout", "-q", "-b", "side")
+	git(wrote, "-C", src, "commit", "-q", "--allow-empty", "-m", "two")
+	git(wrote, "-C", src, "checkout", "-q", "-")
+	git(wrote, "-C", src, "commit", "-q", "--allow-empty", "-m", "three")
+	git(merged, "-C", src, "merge", "-q", "--no-ff", "-m", "merge", "side")
+	git(wrote, "clone", "-q", "--depth", "1", "file://"+filepath.ToSlash(src), clone)
+
+	full, err := writtenCommits(src, "%ae")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(full) != 3 || slices.Contains(full, merged) {
+		t.Fatalf("the whole history's written commits are by %v; want three by %s", full, wrote)
+	}
+	shallow, err := writtenCommits(clone, "%ae")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(shallow, merged) {
+		t.Errorf("a checkout one commit deep of a merge reads as a commit %s wrote: %v", merged, shallow)
+	}
+}
+
+// The proposal says the history is signed off throughout only if it is.
+//
+// Its Initial Source said "Single copyright holder; DCO sign-off
+// throughout", of a history in which one commit in more than a thousand
+// carried a Signed-off-by line. The sign-off is what CONTRIBUTING.md asks of
+// a contribution; it is not what the history so far has.
+func TestTheProposalSaysTheHistoryIsSignedOffOnlyIfItIs(t *testing.T) {
+	written, err := writtenCommits(".", "%(trailers:key=Signed-off-by,valueonly,separator=;)")
+	if err != nil {
+		t.Skipf("git log: %v", err)
+	}
+	unsigned := 0
+	for _, signers := range written {
+		if strings.TrimSpace(signers) == "" {
+			unsigned++
+		}
+	}
+	if unsigned == 0 {
+		return
+	}
+	for _, name := range []string{"docs/apache-incubator-proposal.md", "docs/apache-incubator-proposal.txt"} {
+		if strings.Contains(flatText(read(t, name)), "sign-off throughout") {
+			t.Errorf("%s says the history carries a DCO sign-off throughout, and %d of "+
+				"its commits carry no Signed-off-by line", name, unsigned)
+		}
+	}
+}
+
+// The documents count the controls the posture rules check as the rules
+// do.
+//
+// The manual and the proposal said "35 controls have an automated check",
+// and the manual's summary that the scan is "mapped to 35 NIST SP 800-53
+// controls", beside the command they send a reader to for the map, `quilzo
+// compliance controls`, which said 57: the figure was taken once, and the
+// rules went on naming more controls. So the count is made here as that
+// command makes it, from the rules, and every figure the documents give for
+// it must be the count.
+func TestTheDocumentsCountTheControlsTheRulesCheck(t *testing.T) {
+	checked := map[string]bool{}
+	for _, r := range posture.Rules() {
+		for _, c := range r.Controls {
+			checked[c] = true
+		}
+	}
+	want := strconv.Itoa(len(checked))
+	figures := []*regexp.Regexp{
+		regexp.MustCompile(`\b([0-9]+) (?:nist sp 800-53 )?controls have an automated check`),
+		regexp.MustCompile(`\bmapped to ([0-9]+) (?:nist sp 800-53 )?controls`),
+	}
+	docs, err := filepath.Glob(filepath.Join("docs", "*.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	docs = append(docs, "README.md", "INSTALL", "docs/apache-incubator-proposal.txt")
+	found := 0
+	for _, name := range docs {
+		// Bold is markup, not words: "**35 controls have an automated check.**"
+		text := strings.ReplaceAll(flatText(read(t, name)), "**", "")
+		for _, re := range figures {
+			for _, m := range re.FindAllStringSubmatch(text, -1) {
+				found++
+				if m[1] != want {
+					t.Errorf("%s gives %s as the number of controls the posture scan checks, "+
+						"and its rules check %s, as quilzo compliance controls prints", name, m[1], want)
+				}
+			}
+		}
+	}
+	if found == 0 {
+		t.Fatal("no document gives a count of the controls checked; this test has stopped looking")
 	}
 }
 
