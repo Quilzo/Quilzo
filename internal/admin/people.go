@@ -67,10 +67,22 @@ type person struct {
 	Roles []string
 	// Sessions are their usable credentials.
 	Sessions []session
-	// LastSeen is the most recent use of any of their tokens. Zero means
-	// never, which is different from long ago and worth showing as such.
+	// Passkeys are the passkeys they sign in with: credentials they hold
+	// as much as a token is.
+	Passkeys []passkeyView
+	// LastSeen is the most recent use of any of their credentials: a
+	// token, a session or a passkey. Zero means never, which is different
+	// from long ago and worth showing as such.
 	LastSeen time.Time
 	IsSelf   bool
+}
+
+// passkeyView is one passkey somebody signs in with, as People lists it.
+type passkeyView struct {
+	Label    string
+	Added    time.Time
+	LastUsed time.Time
+	Never    bool
 }
 
 // session is one usable credential.
@@ -153,6 +165,39 @@ func (s *Server) handlePeople(w http.ResponseWriter, r *http.Request) {
 			sess.Never = true
 		}
 		who.Sessions = append(who.Sessions, sess)
+	}
+
+	// Their passkeys, and when they last signed in with one, from the
+	// passkey store. People listed tokens alone: under somebody who had
+	// added a passkey and signed in with it, it said "has never used a
+	// credential", and before their first sign-in "Holds no usable
+	// credential, so they cannot act right now", of a person holding a
+	// passkey that signed them in. Somebody holding one appears whatever
+	// else they hold, as a token's holder does.
+	if s.Passkeys != nil {
+		for _, c := range s.Passkeys.list() {
+			who := byName[c.Principal]
+			if who == nil {
+				who = &person{Name: c.Principal, IsSelf: c.Principal == p.Name}
+				byName[c.Principal] = who
+			}
+			v := passkeyView{Label: c.Label, Added: time.Unix(c.CreatedAt, 0), Never: c.LastUsed == 0}
+			if !v.Never {
+				v.LastUsed = time.Unix(c.LastUsed, 0)
+				if v.LastUsed.After(who.LastSeen) {
+					who.LastSeen = v.LastUsed
+				}
+			}
+			who.Passkeys = append(who.Passkeys, v)
+		}
+	}
+	// Last seen is when they last used anything, a session that has ended
+	// or a token since revoked among it: "has never used a credential"
+	// was said of somebody whose session from the morning had expired.
+	for _, t := range s.Tokens.Snapshot() {
+		if who := byName[t.Principal]; who != nil && t.LastUsed > 0 && time.Unix(t.LastUsed, 0).After(who.LastSeen) {
+			who.LastSeen = time.Unix(t.LastUsed, 0)
+		}
 	}
 
 	people := make([]*person, 0, len(byName))

@@ -1884,9 +1884,25 @@ func (ts *TokenStore) Snapshot() []Token {
 // once at startup means a credential revoked in one process keeps working in
 // every other one until it restarts, which makes "revoked" a claim about a
 // file rather than a fact about a credential.
+//
+// Everything is taken from tokens but a token's last use, which is the later
+// of the two, as MergeInto keeps it. Authenticate notes a use in this copy
+// alone, so taking the file whole lost every use since the copy was last
+// saved: the admin replaced its copy whenever the file changed, and People
+// said of somebody signed in with a passkey and working that minute that
+// they had never used a credential.
 func (ts *TokenStore) Replace(tokens []Token) {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
+	used := make(map[string]int64, len(ts.Tokens))
+	for _, t := range ts.Tokens {
+		used[t.ID] = t.LastUsed
+	}
+	for i := range tokens {
+		if at := used[tokens[i].ID]; at > tokens[i].LastUsed {
+			tokens[i].LastUsed = at
+		}
+	}
 	ts.Tokens = tokens
 }
 

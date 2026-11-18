@@ -278,3 +278,79 @@ func TestTheSignInPageAfterEnrollingSaysThePasskeyWasAdded(t *testing.T) {
 		t.Error("the sign-in page says a passkey was added when nobody has just added one")
 	}
 }
+
+// personOn is the People screen's section about who.
+func personOn(t *testing.T, page, who string) string {
+	t.Helper()
+	at := strings.Index(page, "<h3>"+who)
+	if at < 0 {
+		t.Fatalf("People does not list %s", who)
+	}
+	if end := strings.Index(page[at:], "</section>"); end >= 0 {
+		return page[at : at+end]
+	}
+	return page[at:]
+}
+
+// People lists the passkeys somebody holds among the credentials they
+// hold, counts signing in with one as using a credential, and keeps the
+// use of the session it made when the store is read again from disk; and
+// that use is handed to the host to write down, where `quilzo token list`
+// reads it.
+//
+// People listed tokens alone. Before somebody's first sign-in it said
+// "Holds no usable credential, so they cannot act right now" of a person
+// holding a passkey that signed them in; once they had signed in and
+// worked, "has never used a credential", their session "never used". The
+// use was noted only in the server's copy of the store, which it replaces
+// whenever the file changes, and the admin's own screens never told the
+// host, so `token list` said "never" of every passkey session, the one in
+// use that minute among them.
+func TestPeopleListsPasskeysAndTheirUse(t *testing.T) {
+	srv, admin := fullyWired(t)
+	srv.Enrol = &enrol.Store{Path: filepath.Join(t.TempDir(), "enrolments.json")}
+	if err := srv.Policy.Grant(auth.Binding{Principal: "dana", Role: auth.RoleAuthor, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	written := map[string]bool{}
+	srv.OnTokenUsed = func(tok auth.Token) { written[tok.ID] = true }
+	secret, _, err := srv.Enrol.Issue("dana", "editor", time.Hour, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := newFake(t, "dana-key")
+	if w := f.enrol(t, srv, secret); w.Code != http.StatusOK {
+		t.Fatalf("enrolling: %d %s", w.Code, w.Body)
+	}
+	dana := personOn(t, get(t, srv, "/people", admin).Body.String(), "dana")
+	if !strings.Contains(dana, "my laptop") || strings.Contains(dana, "Holds no usable credential") {
+		t.Errorf("before her first sign-in, People does not list dana's passkey, or says she holds none:\n%s", dana)
+	}
+
+	f.count++
+	w := f.signIn(t, srv)
+	session := cookieFrom(w)
+	if w.Code != http.StatusOK || session == "" {
+		t.Fatalf("signing in: %d %s", w.Code, w.Body)
+	}
+	// The store as the file holds it, with her session and none of its use.
+	onDisk := srv.Tokens.Snapshot()
+	if g := get(t, srv, "/", session); g.Code != http.StatusOK {
+		t.Fatalf("her session does not reach the admin: %d", g.Code)
+	}
+	id := ""
+	for _, tok := range srv.Tokens.Snapshot() {
+		if tok.Principal == "dana" && tok.IsSession() {
+			id = tok.ID
+		}
+	}
+	if !written[id] {
+		t.Errorf("the admin's screens did not hand the use of dana's session %q to the host to write down", id)
+	}
+	// Read again from disk, as the host does whenever the file changes.
+	srv.Tokens.Replace(onDisk)
+	dana = personOn(t, get(t, srv, "/people", admin).Body.String(), "dana")
+	if strings.Contains(dana, "never used") || !strings.Contains(dana, "last seen") {
+		t.Errorf("People says dana, signed in with her passkey and working, never used a credential:\n%s", dana)
+	}
+}

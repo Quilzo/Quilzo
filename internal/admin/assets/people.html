@@ -153,7 +153,7 @@
   nothing, which usually means a binding was removed and the token was not.</p>
   {{end}}
 
-  {{if .Sessions}}
+  {{if or .Sessions .Passkeys}}
   <div class="table-wrap">
   <table>
     <caption>Credentials they hold</caption>
@@ -180,6 +180,19 @@
           <button type="submit" class="danger">Revoke</button>
         </form>
       </td>
+    </tr>
+    {{end}}
+    {{range .Passkeys}}
+    <tr>
+      <th scope="row">
+        {{.Label}} <span class="tag">passkey</span>
+        <div class="hint">added {{.Added.Format "2 Jan 2006"}}</div>
+      </th>
+      <td><span class="hint">what their grants give</span></td>
+      <td>{{if .Never}}<span class="hint">never used</span>
+          {{else}}{{.LastUsed.Format "2 Jan, 15:04"}}{{end}}</td>
+      <td><span class="hint">does not expire</span></td>
+      <td class="right"><span class="hint">removed by its holder, on their Passkeys page</span></td>
     </tr>
     {{end}}
     </tbody>
