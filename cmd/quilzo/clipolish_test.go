@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/atomicfile"
 )
 
 // count added a bare s to every noun, and two of its callers handed it a
@@ -331,6 +334,51 @@ func TestADashIsStandardInputOrOutput(t *testing.T) {
 	} {
 		if o, e, code, _ := run("", line...); code == 0 {
 			t.Errorf("`quilzo %s` was not refused:\n%s%s", strings.Join(line, " "), firstLines(o, 3), firstLines(e, 3))
+		}
+	}
+}
+
+// A write that has to wait for a lock another process holds says so, and
+// gives up after a while rather than waiting for ever without a word.
+// `quilzo add` and `auth grant` behind a quilzo stopped with Ctrl-Z, or
+// stuck on a hung disk, printed nothing at all until they were killed, so a
+// cron job queued up invisibly and a person could not tell a hang from a
+// slow command. QUILZO_LOCK_WAIT is how long to wait.
+func TestAWriteWaitingOnALockSaysSoAndGivesUp(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "st")
+	if _, e, code := cliRun(t, root, "", "init"); code != 0 {
+		t.Fatalf("init: %s", e)
+	}
+	page := fileOf(t, "p.json", `{"title":"Locked"}`)
+	for _, c := range []struct {
+		lock string
+		line []string
+	}{
+		{"refs.lock", []string{"add", "newp=" + page, "-m", "locked"}},
+		{"policy.json.lock", []string{"auth", "grant", "lk", "author"}},
+	} {
+		unlock, err := atomicfile.Lock(filepath.Join(root, c.lock))
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		cmd := exec.CommandContext(ctx, os.Args[0], append([]string{"quilzo-main", "--root", root}, c.line...)...)
+		cmd.Dir = t.TempDir()
+		cmd.Env = append(os.Environ(), "HOME="+t.TempDir(), "QUILZO_TOKEN=", "NO_COLOR=1", "QUILZO_LOCK_WAIT=3s")
+		var o, e bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &o, &e
+		err = cmd.Run()
+		hung := ctx.Err() != nil
+		cancel()
+		unlock()
+		line := strings.Join(c.line, " ")
+		switch {
+		case hung:
+			t.Errorf("`quilzo %s` behind a held %s was still waiting after 20s, and said:\n%s", line, c.lock, firstLines(e.String(), 4))
+		case err == nil:
+			t.Errorf("`quilzo %s` behind a held %s succeeded", line, c.lock)
+		case !strings.Contains(e.String(), "waiting") || !strings.Contains(e.String(), c.lock):
+			t.Errorf("`quilzo %s` did not say what it waited for, or why it stopped:\n%s", line, firstLines(e.String(), 4))
 		}
 	}
 }

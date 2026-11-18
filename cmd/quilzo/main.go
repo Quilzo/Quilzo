@@ -34,9 +34,11 @@ import (
 	"github.com/quilzo/quilzo/internal/listing"
 
 	"github.com/quilzo/quilzo/internal/a11y"
+	"github.com/quilzo/quilzo/internal/atomicfile"
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collab"
+	"github.com/quilzo/quilzo/internal/config"
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/schema"
@@ -86,6 +88,25 @@ var version = "dev"
 func init() { version = moduleVersion(version, debug.ReadBuildInfo) }
 
 func usage() { fmt.Print(usageText) }
+
+// lockPatience is how long a command waits for a lock another process
+// holds: QUILZO_LOCK_WAIT when it is set, a length of time as every other
+// is written (config.ParseDuration), and half a minute when it is not.
+// Zero waits for as long as it takes, as every command did before.
+func lockPatience(v string) (time.Duration, error) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return 30 * time.Second, nil
+	}
+	if v == "0" {
+		return 0, nil
+	}
+	d, err := config.ParseDuration(v)
+	if err != nil || d < 0 {
+		return 0, errMisused{fmt.Errorf("QUILZO_LOCK_WAIT is %q; it is a length of time, like 30s or 5m, or 0 to wait for as long as it takes", v)}
+	}
+	return d, nil
+}
 
 // usageText is the whole surface, because `--help` is how an agent discovers
 // a CLI. The measured advantage of a CLI over a tool-schema protocol is that
@@ -691,6 +712,8 @@ global
   --token TOKEN who you are, for this command; else ~/.quilzo/token (kept
                 0600), else QUILZO_TOKEN, read in that order
   NO_COLOR      suppress colour (also off automatically when not a terminal)
+  QUILZO_LOCK_WAIT  how long a command waits for a store another quilzo is
+                writing, saying so after a second (default 30s; 0 waits on)
   -             as a FILE: standard input where one is read, standard output
                 where one is written
 
@@ -823,6 +846,22 @@ func main() {
 		cmd = "--help"
 	}
 	invoked.cmd, invoked.args = cmd, cmdArgs
+
+	// A command waiting for a lock another process holds says so, and gives
+	// up after QUILZO_LOCK_WAIT (atomicfile.WaitPolicy). Not a server: its
+	// dispatchers hold their locks for as long as they run, and a second
+	// server on the store waiting its turn is how they take turns.
+	if n, _ := lookupNeed(cmd, cmdArgs); !n.server {
+		patience, err := lockPatience(os.Getenv("QUILZO_LOCK_WAIT"))
+		if err != nil {
+			w.Error(err)
+			os.Exit(out.ExitUsage)
+		}
+		atomicfile.SetWaitPolicy(atomicfile.WaitPolicy{Patience: patience, Notice: func(path string) {
+			fmt.Fprintf(os.Stderr, "waiting for %s, which another process using this store holds "+
+				"(a quilzo still running, stopped with Ctrl-Z, or stuck)...\n", path)
+		}})
+	}
 
 	// A command that has left Quilzo is said to have left, before help, the
 	// store or authorisation is asked anything about it (movedout.go).
