@@ -314,7 +314,7 @@ automated, with OSCAL required from 30 September 2026. That suits a system
 that knows its own configuration better than one that must be described.
 
   - posture scan reads the actual deployment, and every rule names the NIST
-    SP 800-53 controls it bears on and its OWASP category. 35 controls have
+    SP 800-53 controls it bears on and its OWASP category. 57 controls have
     an automated check.
   - OSCAL 1.2.3 assessment results are generated from that scan -- the
     output of an assessment, which is what the format is for.

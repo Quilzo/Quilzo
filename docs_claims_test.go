@@ -8,11 +8,14 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/quilzo/quilzo/internal/posture"
 )
 
 // The README described a container this project does not build.
@@ -395,6 +398,52 @@ func TestTheProposalSaysTheHistoryIsSignedOffOnlyIfItIs(t *testing.T) {
 			t.Errorf("%s says the history carries a DCO sign-off throughout, and %d of "+
 				"its commits carry no Signed-off-by line", name, unsigned)
 		}
+	}
+}
+
+// The documents count the controls the posture rules check as the rules
+// do.
+//
+// The manual and the proposal said "35 controls have an automated check",
+// and the manual's summary that the scan is "mapped to 35 NIST SP 800-53
+// controls", beside the command they send a reader to for the map, `quilzo
+// compliance controls`, which said 57: the figure was taken once, and the
+// rules went on naming more controls. So the count is made here as that
+// command makes it, from the rules, and every figure the documents give for
+// it must be the count.
+func TestTheDocumentsCountTheControlsTheRulesCheck(t *testing.T) {
+	checked := map[string]bool{}
+	for _, r := range posture.Rules() {
+		for _, c := range r.Controls {
+			checked[c] = true
+		}
+	}
+	want := strconv.Itoa(len(checked))
+	figures := []*regexp.Regexp{
+		regexp.MustCompile(`\b([0-9]+) (?:nist sp 800-53 )?controls have an automated check`),
+		regexp.MustCompile(`\bmapped to ([0-9]+) (?:nist sp 800-53 )?controls`),
+	}
+	docs, err := filepath.Glob(filepath.Join("docs", "*.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	docs = append(docs, "README.md", "INSTALL", "docs/apache-incubator-proposal.txt")
+	found := 0
+	for _, name := range docs {
+		// Bold is markup, not words: "**35 controls have an automated check.**"
+		text := strings.ReplaceAll(flatText(read(t, name)), "**", "")
+		for _, re := range figures {
+			for _, m := range re.FindAllStringSubmatch(text, -1) {
+				found++
+				if m[1] != want {
+					t.Errorf("%s gives %s as the number of controls the posture scan checks, "+
+						"and its rules check %s, as quilzo compliance controls prints", name, m[1], want)
+				}
+			}
+		}
+	}
+	if found == 0 {
+		t.Fatal("no document gives a count of the controls checked; this test has stopped looking")
 	}
 }
 
