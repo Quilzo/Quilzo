@@ -165,16 +165,16 @@ func publishedDesign(root string) string {
 // then fail to go live. A design that does not read is not recorded: it is
 // not one the site could take either.
 //
-// checked, when a gate judged the design, is the design it judged, and is
-// what is recorded. The record was of templates/ read again once every gate
-// had run, so a palette forced past the gate in between was recorded as the
-// one it passed and went to readers with the publish, the window the record
-// exists to close. A design in dir that is no longer the one checked is
-// refused (errDesignMoved), and nothing is recorded.
-func markDesignPublished(root, dir string, checked *Design) (changed bool, undo func(), err error) {
+// checked, when a gate judged the design, is the digest of the design it
+// judged ("" when none did). The record was of templates/ read again once
+// every gate had run, so a palette forced past the gate in between was
+// recorded as the one it passed and went to readers with the publish, the
+// window the record exists to close. A design in dir that is no longer the
+// one checked is refused (errDesignMoved), and nothing is recorded.
+func markDesignPublished(root, dir, checked string) (changed bool, undo func(), err error) {
 	undo = func() {}
 	d, lerr := loadDesign(dir)
-	if checked != nil && (lerr != nil || designDigest(d) != designDigest(checked)) {
+	if checked != "" && (lerr != nil || designDigest(d) != checked) {
 		return false, undo, errDesignMoved{dir}
 	}
 	if lerr != nil {
@@ -196,6 +196,26 @@ func markDesignPublished(root, dir string, checked *Design) (changed bool, undo 
 		}
 		_ = atomicfile.Write(path, []byte(prev+"\n"), 0o600)
 	}, nil
+}
+
+// designNow is the digest of the design in dir as it stands, "" when it does
+// not read: what the browser's publish takes before its checks run, to hand
+// to markDesignPublished once they have passed.
+func designNow(dir string) string {
+	d, err := loadDesign(dir)
+	if err != nil {
+		return ""
+	}
+	return designDigest(d)
+}
+
+// designPublishHooks are how a publish from the browser records the design
+// its checks judged, as the command line's does.
+func designPublishHooks(root, dir string, d *admin.Design) {
+	d.Digest = func() string { return designNow(dir) }
+	d.Published = func(checked string) (bool, func(), error) {
+		return markDesignPublished(root, dir, checked)
+	}
 }
 
 // errDesignMoved is a design that changed after a publish's gate judged it.

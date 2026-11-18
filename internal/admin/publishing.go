@@ -214,6 +214,8 @@ func (s *Server) promoteByPublishing(w http.ResponseWriter, r *http.Request, p p
 		return
 	}
 	reason := strings.TrimSpace(r.FormValue("reason"))
+	// The design as the checks find it, so the promotion records that one.
+	checked := s.designDigest()
 	waived, refusal := s.publishChecks(p, plan.Commit, reason)
 	if refusal != nil {
 		s.auditPub(p, "env.promote", "/", map[string]string{
@@ -225,7 +227,7 @@ func (s *Server) promoteByPublishing(w http.ResponseWriter, r *http.Request, p p
 	// The design the checks rendered through goes live with the pages, as
 	// it does with the Publish button: the public site takes only the
 	// design a publish recorded.
-	designChanged, undoDesign, derr := s.publishDesign()
+	designChanged, undoDesign, derr := s.publishDesign(checked)
 	if derr != nil {
 		s.auditPub(p, "env.promote", "/", map[string]string{
 			"from": plan.From, "to": plan.To.Name, "outcome": "denied", "reason": derr.Error()})

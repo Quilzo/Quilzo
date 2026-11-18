@@ -98,7 +98,15 @@ type Design struct {
 	// to the design alone moved no page, so publishing it moved nothing and
 	// the site kept the old design: the screen said a design change is
 	// served from the next publish, and there was no publish that served it.
-	Published func() (changed bool, undo func(), err error)
+	//
+	// checked is what Digest said before the publish's checks ran. A design
+	// that is no longer that one is refused rather than recorded: read again
+	// once the checks had passed, a palette saved past the gate while they
+	// ran was recorded as the one they passed, and went to readers.
+	Published func(checked string) (changed bool, undo func(), err error)
+	// Digest is the design as it stands, as a digest, taken before a
+	// publish's checks run and handed to Published once they pass.
+	Digest func() string
 }
 
 // FontAdded is what AddFont wrote.

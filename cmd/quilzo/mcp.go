@@ -652,7 +652,7 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		}
 		// The design the gate above rendered through goes with it, a
 		// change to it alone included, as it does from the command line.
-		designChanged, undoDesign, derr := markDesignPublished(root, tplDir, checked)
+		designChanged, undoDesign, derr := markDesignPublished(root, tplDir, designDigest(checked))
 		var moved errDesignMoved
 		if errors.As(derr, &moved) {
 			return nil, &mcp.Refusal{Reason: derr.Error()}

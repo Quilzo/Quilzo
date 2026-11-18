@@ -419,7 +419,7 @@ func TestPublishingFromTheBrowserTakesTheDesign(t *testing.T) {
 		t.Fatalf("the first publish (%d):\n%s", w.Code, w.Body)
 	}
 	marked := 0
-	srv.DesignSet = &Design{Published: func() (bool, func(), error) { marked++; return true, func() {}, nil }}
+	srv.DesignSet = &Design{Published: func(string) (bool, func(), error) { marked++; return true, func() {}, nil }}
 	w := postForm(t, srv, "/publish", token, "reason=go")
 	if w.Code != http.StatusOK || marked != 1 {
 		t.Fatalf("publishing a changed design (%d, recorded %d times):\n%s", w.Code, marked, w.Body)

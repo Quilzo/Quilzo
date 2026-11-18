@@ -3839,6 +3839,8 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 
 	draft := s.Store.GetRef(site.RefDraft)
 	reason := strings.TrimSpace(r.FormValue("reason"))
+	// The design as the checks find it, so the publish records that one.
+	checked := s.designDigest()
 	waived, refusal := s.publishChecks(p, draft, reason)
 	if refusal != nil {
 		s.showRefusal(w, r, refusal, nil)
@@ -3847,7 +3849,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 
 	// The commit that was checked, and not whatever the draft is by now: a
 	// save landing between the checks and this would go live unchecked.
-	designChanged, undoDesign, derr := s.publishDesign()
+	designChanged, undoDesign, derr := s.publishDesign(checked)
 	if derr != nil {
 		s.audit("publish", "/", map[string]string{
 			"by": p.Name, "outcome": "failed", "detail": derr.Error()})
@@ -4184,6 +4186,27 @@ func (s *Server) publishChecks(p principal, draft, reason string) (waived []stri
 	return waived, nil
 }
 
+// designDigest is the design as it stands, taken before a publish's checks
+// run so that what the publish records is what they judged.
+func (s *Server) designDigest() string {
+	if s.DesignSet == nil || s.DesignSet.Digest == nil {
+		return ""
+	}
+	return s.DesignSet.Digest()
+}
+
+// publishDesign records the design the checks rendered through as the one a
+// publish passed, a change to it alone included, as the command line does,
+// just before the pages move: the public site takes the two together.
+// checked is designDigest from before the checks, and a design that has
+// moved since is refused.
+func (s *Server) publishDesign(checked string) (bool, func(), error) {
+	if s.DesignSet == nil || s.DesignSet.Published == nil {
+		return false, func() {}, nil
+	}
+	return s.DesignSet.Published(checked)
+}
+
 // recordPublished records a publish and tells whoever listens: Review →
 // Publish, and a promotion into production, which is the same act.
 //
@@ -4202,16 +4225,6 @@ func (s *Server) publishChecks(p principal, draft, reason string) (waived []stri
 // failures, expired pages and broken menu links — so what it waived is
 // recorded next to it rather than left to be inferred from what happened
 // to be failing at the time.
-// publishDesign records the design the checks rendered through as the one a
-// publish passed, a change to it alone included, as the command line does,
-// just before the pages move: the public site takes the two together.
-func (s *Server) publishDesign() (bool, func(), error) {
-	if s.DesignSet == nil || s.DesignSet.Published == nil {
-		return false, func() {}, nil
-	}
-	return s.DesignSet.Published()
-}
-
 func (s *Server) recordPublished(p principal, pub site.Publication, waived []string, reason string) {
 	s.recordPublishedDesign(p, pub, waived, reason, false)
 }
