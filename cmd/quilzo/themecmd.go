@@ -112,13 +112,21 @@ func dirFlag(name string, args []string) (*flag.FlagSet, *string) {
 
 func themeShow(args []string) error {
 	fs, dir := dirFlag("show", args)
-	dark := fs.Bool("dark", false, "show the dark scheme's values")
+	dark := fs.Bool("dark", false, "show the dark scheme's values; =false the light's (default: the scheme the site is drawn in)")
 	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
 	d, err := loadDesign(*dir)
 	if err != nil {
 		return err
+	}
+	// The scheme the site is drawn in, unless --dark says which. A site drawn
+	// dark for every reader was shown its light values under "light scheme",
+	// which no reader is ever served.
+	given := false
+	fs.Visit(func(f *flag.Flag) { given = given || f.Name == "dark" })
+	if !given {
+		*dark = d.Theme.Scheme() == "dark"
 	}
 
 	type row struct {

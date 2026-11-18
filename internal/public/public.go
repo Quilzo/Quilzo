@@ -283,6 +283,9 @@ type Site struct {
 	ToolsTrial string
 	// IconStyle is how the icons a page names are drawn, from the theme.
 	IconStyle string
+	// Scheme is the colour scheme the theme draws the site in: both, dark
+	// or light. Empty is both.
+	Scheme string
 	// Share is where the operating system's share sheet delivers, or nil.
 	//
 	// The one deep OS integration this product can offer without client
@@ -2025,7 +2028,7 @@ func (st *Site) sourcesFor(r *http.Request) render.Sources {
 // drew neither the form nor the icon a visitor gets, and no gate ever judged
 // the form markup a visitor is served.
 func (st *Site) Sources(pages map[string]any) render.Sources {
-	src := render.Sources{Name: st.Name, IconStyle: st.IconStyle, Listings: st.Listings, Pages: pages,
+	src := render.Sources{Name: st.Name, IconStyle: st.IconStyle, Scheme: st.Scheme, Listings: st.Listings, Pages: pages,
 		SrcSet: st.srcSet, Tracks: st.tracks, Poster: st.poster, Media: st.mediaInfo,
 		Form: st.formData, Thread: st.threadData, Buy: st.Buy, Booking: st.bookingData,
 		Newsletter: st.newsletterData, Events: st.eventsData, Posts: st.postsData}

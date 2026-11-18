@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/feature"
 	"github.com/quilzo/quilzo/internal/media"
+	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
 	"github.com/quilzo/quilzo/internal/theme"
@@ -367,6 +369,86 @@ func TestNeonADarkSchemeAndAChamferAreSettings(t *testing.T) {
 	}
 	if err := cmdTheme(root, []string{"set", "scheme", "dusk", "--dir", tpl}); err == nil {
 		t.Error("an unknown scheme was saved")
+	}
+}
+
+// A site drawn in one scheme says which to everything that reads it before
+// its stylesheet. On a dark-only site the installed app's splash and bar
+// were the light palette's surface and accent, which no reader is served;
+// every page declared it could be drawn light or dark, so a reader whose
+// system asked for light had a light canvas until the stylesheet arrived;
+// and theme show headed its table "light scheme" over values nobody sees.
+func TestASiteDrawnInOneSchemeSaysWhichEverywhere(t *testing.T) {
+	root, tpl := designStore(t)
+	if err := cmdTheme(root, []string{"set", "scheme", "dark", "--dir", tpl}); err != nil {
+		t.Fatal(err)
+	}
+	s, _ := draftOf(t, root, map[string]any{"index": map[string]any{"title": "Home"}})
+	if _, err := site.Publish(s, ""); err != nil {
+		t.Fatal(err)
+	}
+	design, err := loadDesign(tpl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := siteFor(root, design, siteOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(served(st.Handler(), "/manifest.webmanifest").Body.Bytes(), &doc); err != nil {
+		t.Fatal(err)
+	}
+	for field, token := range map[string]string{"background_color": "surface", "theme_color": "primary"} {
+		darkV, _ := design.Theme.Value(token, true)
+		lightV, _ := design.Theme.Value(token, false)
+		if darkV == lightV {
+			t.Fatalf("%s is the same in both schemes, so this tells nothing", token)
+		}
+		if doc[field] != darkV {
+			t.Errorf("the manifest's %s is %v on a dark site; its %s is %s", field, doc[field], token, darkV)
+		}
+	}
+	page := served(st.Handler(), "/").Body.String()
+	if !strings.Contains(page, `<meta name="color-scheme" content="dark">`) {
+		t.Errorf("a dark site's page does not say it is dark: %s",
+			regexp.MustCompile(`<meta name="color-scheme"[^>]*>`).FindString(page))
+	}
+
+	old := w
+	t.Cleanup(func() { w = old })
+	var buf bytes.Buffer
+	w = out.New(true)
+	w.Out = &buf
+	if err := cmdTheme(root, []string{"show", "--dir", tpl}); err != nil {
+		t.Fatal(err)
+	}
+	var shown struct {
+		Scheme string `json:"scheme"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &shown); err != nil || shown.Scheme != "dark" {
+		t.Errorf("theme show on a dark site shows the %q scheme (%v)", shown.Scheme, err)
+	}
+	buf.Reset()
+	if err := cmdTheme(root, []string{"show", "--dark=false", "--dir", tpl}); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(buf.Bytes(), &shown); err != nil || shown.Scheme != "light" {
+		t.Errorf("theme show --dark=false shows the %q scheme (%v)", shown.Scheme, err)
+	}
+
+	// And a site drawn in both still says both.
+	if err := cmdTheme(root, []string{"set", "scheme", "both", "--dir", tpl}); err != nil {
+		t.Fatal(err)
+	}
+	if design, err = loadDesign(tpl); err != nil {
+		t.Fatal(err)
+	}
+	if st, err = siteFor(root, design, siteOpts{}); err != nil {
+		t.Fatal(err)
+	}
+	if page := served(st.Handler(), "/").Body.String(); !strings.Contains(page, `<meta name="color-scheme" content="light dark">`) {
+		t.Error("a site drawn in both schemes no longer says so")
 	}
 }
 

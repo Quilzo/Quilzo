@@ -80,6 +80,7 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 	st.Fonts = design.Fonts
 	st.Stylesheet = design.Stylesheet
 	st.IconStyle = design.Theme.IconStyle()
+	st.Scheme = design.Theme.Scheme()
 	// Where each picture is cropped from, appended to the stylesheet the site
 	// already serves.
 	//
@@ -99,11 +100,18 @@ func siteFor(root string, design *Design, opt siteOpts) (*public.Site, error) {
 	// The installed app's splash and chrome, from the same tokens the
 	// stylesheet is generated from — so a themed site does not open on a white
 	// screen under somebody else's accent colour.
+	//
+	// In the scheme the site is drawn in. A dark-only site's app opened on
+	// the light palette's surface under its light accent, colours no reader
+	// is ever served; and a colour the site had not set was skipped, because
+	// Value's second answer is whether it was set and not whether there is
+	// one, so the same site with the shipped dark palette opened on white.
 	if design.Theme != nil {
-		if v, ok := design.Theme.Value("surface", false); ok {
+		dark := design.Theme.Scheme() == "dark"
+		if v, _ := design.Theme.Value("surface", dark); v != "" {
 			st.Background = v
 		}
-		if v, ok := design.Theme.Value("primary", false); ok {
+		if v, _ := design.Theme.Value("primary", dark); v != "" {
 			st.ThemeColour = v
 		}
 	}

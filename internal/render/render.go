@@ -49,6 +49,9 @@ type Sources struct {
 	// IconStyle is how the icons a page names are drawn: one of
 	// internal/icons' styles, from the theme.
 	IconStyle string
+	// Scheme is the colour scheme the theme draws the site in: both, dark
+	// or light, from the theme. Empty is both.
+	Scheme string
 	// Icon is the address of the site's icon, for a layout that shows it
 	// beside the name. Empty when the site has none.
 	Icon string
@@ -308,9 +311,22 @@ func Href(r menu.Rendered) string {
 	return "/" + r.Target
 }
 
+// colorScheme is what a page's color-scheme declaration says for a scheme.
+//
+// A layout said "light dark" whatever the theme drew, so a site drawn dark
+// for every reader told a browser it could be drawn light, and a reader whose
+// system asked for light had a light canvas until the stylesheet arrived.
+func colorScheme(scheme string) string {
+	switch scheme {
+	case "dark", "light":
+		return scheme
+	}
+	return "light dark"
+}
+
 // site is what a template knows about the site as a whole.
 func (s Sources) site(page string) map[string]any {
-	out := map[string]any{"name": s.Name, "page": page}
+	out := map[string]any{"name": s.Name, "page": page, "color_scheme": colorScheme(s.Scheme)}
 	if s.Members {
 		out["members"] = true
 	}

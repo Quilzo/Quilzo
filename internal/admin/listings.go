@@ -423,11 +423,12 @@ func (s *Server) resolverAt(commit string) *listing.Resolver {
 func (s *Server) sources(commit string, pages map[string]any) render.Sources {
 	if s.Sources != nil {
 		src := s.Sources(commit, pages)
-		src.IconStyle = s.iconStyle()
+		src.IconStyle, src.Scheme = s.iconStyle(), s.scheme()
 		return src
 	}
 	st := public.New(s.Store, s.layouts())
 	st.Name, st.IconStyle, st.Listings = s.SiteName, s.iconStyle(), s.resolverAt(commit)
+	st.Scheme = s.scheme()
 	if s.Structure != nil && s.Structure.Menus != nil {
 		st.Menus = s.Structure.Menus
 	}
@@ -480,4 +481,18 @@ func (s *Server) iconStyle() string {
 	}
 	th, _ := theme.New(tokens, s.siteFamilies())
 	return th.IconStyle()
+}
+
+// scheme is the colour scheme the site's theme draws it in, so the preview
+// and the gate declare it as the site does.
+func (s *Server) scheme() string {
+	if s.DesignSet == nil || s.DesignSet.Tokens == nil {
+		return ""
+	}
+	tokens, err := s.DesignSet.Tokens()
+	if err != nil {
+		return ""
+	}
+	th, _ := theme.New(tokens, s.siteFamilies())
+	return th.Scheme()
 }

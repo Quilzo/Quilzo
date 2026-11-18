@@ -1876,6 +1876,7 @@ func checkAccessibilityOf(root string, s *store.Store, commitID, tplDir string) 
 	// menu is never seen.
 	src := sourcesFor(root, s, commitID, siteName(root), pages)
 	src.IconStyle = design.Theme.IconStyle()
+	src.Scheme = design.Theme.Scheme()
 	rendered := map[string]string{}
 	var extra []*a11y.Report
 
