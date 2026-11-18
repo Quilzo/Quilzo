@@ -195,3 +195,55 @@ func TestALinkToNoPageIsSaidAtPublish(t *testing.T) {
 	}
 	t.Fatal("there is no navigation gate")
 }
+
+// A link in a page's words is a link written in the page too. A page's body
+// and a prose section's are drawn with [words](address) as links, so
+// "[our story](/story)" sent a reader to a page that was not there as
+// surely as a button did, and the publish said nothing of it while it named
+// every button that did the same.
+func TestALinkInAPagesWordsToNoPageIsSaidAtPublish(t *testing.T) {
+	root := t.TempDir()
+	if err := cmdInit(root); err != nil {
+		t.Fatal(err)
+	}
+	s, err := open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages := map[string]any{
+		"index": map[string]any{"title": "Home",
+			"body": "Read [our story](/story) or [about us](/about), and [elsewhere](https://example.org/x).",
+			"sections": []any{map[string]any{"prose": map[string]any{"title": "More",
+				"body": "See [the prices](/prices#now) and [the feed](/feed.xml)."}}}},
+		"about": map[string]any{"title": "About"},
+	}
+	if _, err := site.SaveDraft(s, pages, "first", "test"); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range contentGates(root, s, "") {
+		if c.Name != "navigation" {
+			continue
+		}
+		_, advice, err := c.Run()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var said []string
+		for _, f := range advice {
+			said = append(said, f.Page+": "+f.Detail)
+		}
+		all := strings.Join(said, "\n")
+		for _, want := range []string{"/story", "/prices#now"} {
+			if !strings.Contains(all, want) {
+				t.Errorf("a link in the words to %s, which is no page, is not said: %q", want, all)
+			}
+		}
+		for _, fine := range []string{"/about", "example.org", "/feed.xml"} {
+			if strings.Contains(all, fine) {
+				t.Errorf("a link that goes somewhere is said to go nowhere (%s): %q", fine, all)
+			}
+		}
+		return
+	}
+	t.Fatal("there is no navigation gate")
+}

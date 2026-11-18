@@ -5,7 +5,9 @@ package main
 
 import (
 	"fmt"
+	"html"
 	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -18,6 +20,7 @@ import (
 	"github.com/quilzo/quilzo/internal/seo"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
+	"github.com/quilzo/quilzo/internal/tmpl"
 )
 
 // The checks about the content, built once and handed to every surface.
@@ -408,33 +411,65 @@ func linksToNoPage(root string, pages map[string]any) ([]gate.Finding, error) {
 	var out []gate.Finding
 	for _, name := range sortedNames(pages) {
 		for _, f := range contentStrings(pages[name]) {
-			if !strings.HasSuffix(f.key, "href") {
-				continue
+			for _, href := range linksIn(f) {
+				if finding, ok := linkToNoPage(name, f.path, href, pages, moved); ok {
+					out = append(out, finding)
+				}
 			}
-			href := strings.TrimSpace(f.text)
-			if !strings.HasPrefix(href, "/") || strings.HasPrefix(href, "//") {
-				continue
-			}
-			path, _, _ := strings.Cut(href, "#")
-			path, _, _ = strings.Cut(path, "?")
-			path = strings.TrimSuffix(path, "/")
-			first, _, _ := strings.Cut(strings.TrimPrefix(path, "/"), "/")
-			switch {
-			case path == "", moved[path], strings.Contains(first, "."), siteRoutes[first]:
-				continue
-			}
-			if _, ok := pages[first]; ok {
-				continue
-			}
-			if _, ok := pages[strings.TrimPrefix(path, "/")]; ok {
-				continue
-			}
-			out = append(out, gate.Finding{Page: name, Detail: fmt.Sprintf(
-				"%s links to %s, which is no page of this site, so a reader who "+
-					"follows it is told it is not there", f.path, href)})
 		}
 	}
 	return out, nil
+}
+
+// reProseLink is a link as the prose filter draws it.
+var reProseLink = regexp.MustCompile(`<a href="([^"]*)"`)
+
+// linksIn is the links a field of a page holds: the address a field named
+// for one gives, and every link in the words of a field the layouts draw as
+// prose, a page's body and a prose section's.
+//
+// The words too, because [our story](/story) in a page's body sent a reader
+// to a page that was not there as surely as a button did, and the publish
+// named every button and none of those. Read by the filter that draws them,
+// so what is checked is what a reader is given.
+func linksIn(f contentField) []string {
+	if strings.HasSuffix(f.key, "href") {
+		return []string{f.text}
+	}
+	if f.path != "body" && !strings.HasSuffix(f.path, ".prose.body") {
+		return nil
+	}
+	var out []string
+	for _, m := range reProseLink.FindAllStringSubmatch(string(tmpl.Prose(f.text)), -1) {
+		out = append(out, html.UnescapeString(m[1]))
+	}
+	return out
+}
+
+// linkToNoPage is what is said of one link in a page, when it goes to an
+// address on this site that is certainly nowhere.
+func linkToNoPage(name, field, href string, pages map[string]any, moved map[string]bool) (gate.Finding, bool) {
+	href = strings.TrimSpace(href)
+	if !strings.HasPrefix(href, "/") || strings.HasPrefix(href, "//") {
+		return gate.Finding{}, false
+	}
+	path, _, _ := strings.Cut(href, "#")
+	path, _, _ = strings.Cut(path, "?")
+	path = strings.TrimSuffix(path, "/")
+	first, _, _ := strings.Cut(strings.TrimPrefix(path, "/"), "/")
+	switch {
+	case path == "", moved[path], strings.Contains(first, "."), siteRoutes[first]:
+		return gate.Finding{}, false
+	}
+	if _, ok := pages[first]; ok {
+		return gate.Finding{}, false
+	}
+	if _, ok := pages[strings.TrimPrefix(path, "/")]; ok {
+		return gate.Finding{}, false
+	}
+	return gate.Finding{Page: name, Detail: fmt.Sprintf(
+		"%s links to %s, which is no page of this site, so a reader who "+
+			"follows it is told it is not there", field, href)}, true
 }
 
 // siteRoutes are the first parts of the addresses the site serves besides
