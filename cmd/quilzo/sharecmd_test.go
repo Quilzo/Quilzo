@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/i18n"
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
@@ -289,5 +290,37 @@ func TestALinkMadeBeforeDigestsStillOpens(t *testing.T) {
 	shareSaid(t, root, "revoke", given)
 	if _, ok := renderShared(root, d, given, now); ok {
 		t.Error("revoking an old link by the id it was given out with did nothing")
+	}
+}
+
+// A shared page is the page a reader would have got, and a reader gets a
+// translated page in its own language and direction, which the site sets on
+// what it serves whatever the layout says. A shared Arabic draft was shown
+// as the layout wrote it: English, left to right.
+func TestASharedPageIsShownInItsLanguage(t *testing.T) {
+	root := demoStore(t)
+	s, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveJSON(localesPath(root), &i18n.Config{Default: "en", Locales: []i18n.Locale{"en", "ar"}}); err != nil {
+		t.Fatal(err)
+	}
+	pages, err := site.PagesAt(s, site.RefDraft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages["ar/offer"] = map[string]any{"title": "عرض"}
+	if _, err := site.SaveDraft(s, pages, "an offer in Arabic", "test"); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	_, secret, err := newShare(root, s, "ar/offer", "editor", 7, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := renderShared(root, shareDesign(t), secret, now)
+	if !ok || !strings.Contains(got, `<html lang="ar" dir="rtl">`) {
+		t.Fatalf("the shared Arabic page opens: %v %.80s", ok, got)
 	}
 }

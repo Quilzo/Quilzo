@@ -601,8 +601,11 @@ func cmdTypeExample(args []string) error {
 			{Name: "section", Kind: schema.Choice,
 				Choices: []string{"news", "opinion", "review"}},
 			{Name: "tags", Kind: schema.List, MaxLen: 8},
-			{Name: "hero", Kind: schema.URL},
-			{Name: "hero_alt", Kind: schema.Text, AltFor: "hero",
+			// image, not hero: hero is reserved for the arrangement every
+			// page may carry, and an example declaring it stopped compiling
+			// the day it became reserved.
+			{Name: "image", Kind: schema.URL},
+			{Name: "image_alt", Kind: schema.Text, AltFor: "image",
 				Help: "What the image conveys, for a reader who cannot see it."},
 			{Name: "featured", Kind: schema.Boolean},
 			{Name: "reading_minutes", Kind: schema.Number},

@@ -55,6 +55,7 @@ import (
 	"bytes"
 	"embed"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/quilzo/quilzo/internal/audit"
@@ -3025,6 +3026,20 @@ func typedFields(t schema.Type, body any, pages []string) []field {
 			e.Checkbox = true
 		case schema.Choice:
 			e.Choices = f.Choices
+		case schema.List:
+			// Lists are edited as one value per line. A repeated-input widget
+			// needs script to add and remove rows, and the admin has none: the
+			// CSP forbids it and the absence is the security argument.
+			//
+			// Always a box of lines, and never a maxlength. Drawn from the
+			// value, a list with no items yet was a one-line input, where
+			// nothing typed became a second item; and a list's max_len,
+			// copied to the box, was counted by the browser in characters
+			// across every item, so a dish with five allergens could not be
+			// saved once touched. What a list may hold is checked where the
+			// CLI's, the API's and MCP's writes are.
+			e.Long, e.MaxLen = true, 0
+			e.Help = strings.TrimSpace(e.Help + " One per line.")
 		case schema.Reference:
 			e.Suggest = pages
 			e.SuggestID = "pages-" + f.Name
@@ -3036,15 +3051,20 @@ func typedFields(t schema.Type, body any, pages []string) []field {
 		switch v := m[f.Name].(type) {
 		case string:
 			e.Value = v
+			// Text of more than one line is drawn in a box that keeps its
+			// lines: see multiLine.
+			if f.Kind == schema.Text && multiLine(v) {
+				e.Long = true
+			}
 		case float64:
 			e.Value = fmt.Sprintf("%v", v)
 		case bool:
 			e.Checked = v
 			e.Value = fmt.Sprintf("%v", v)
 		case []any:
-			// Lists are edited as one value per line. A repeated-input widget
-			// needs script to add and remove rows, and the admin has none: the
-			// CSP forbids it and the absence is the security argument.
+			// One item per line, as the list kind above is drawn. A value of
+			// a list held by a field of another kind is shown the same way, so
+			// the refusal its type gives on saving names something visible.
 			parts := make([]string, 0, len(v))
 			for _, item := range v {
 				if str, ok := item.(string); ok {
@@ -3052,7 +3072,9 @@ func typedFields(t schema.Type, body any, pages []string) []field {
 				}
 			}
 			e.Value, e.Long = strings.Join(parts, "\n"), true
-			e.Help = strings.TrimSpace(e.Help + " One per line.")
+			if f.Kind != schema.List {
+				e.Help = strings.TrimSpace(e.Help + " One per line.")
+			}
 		}
 		if len(e.Choices) > 0 {
 			e.Selected = map[string]bool{e.Value: true}
@@ -3064,6 +3086,14 @@ func typedFields(t schema.Type, body any, pages []string) []field {
 	// and marked. Hiding it would let a value the type rejects sit in the page
 	// invisibly, blocking every save with an error about a field the editor
 	// never displayed.
+	//
+	// Shown holding what it holds. Only text was: a number, a boolean, a
+	// list or an object was drawn as an empty box, and an empty box is how
+	// a field is removed, so every save from the browser took them off the
+	// page. Those are the fields every page may carry whatever its type
+	// (schema.Reserved): a typed page lost its sections, its hero, its terms
+	// and its members-only mark to an edit of its title, and a page for
+	// members was public on the next publish.
 	extra := make([]string, 0)
 	for k := range m {
 		if !declared[k] {
@@ -3072,14 +3102,59 @@ func typedFields(t schema.Type, body any, pages []string) []field {
 	}
 	sort.Strings(extra)
 	for _, k := range extra {
-		v, _ := m[k].(string)
+		// Edited in the editor's own "Search engines" fieldset, as flatten
+		// leaves it to.
+		if k == seo.NoIndexField {
+			continue
+		}
+		v, shown := undeclaredText(m[k], schema.Reserved(k))
+		if !shown {
+			continue
+		}
 		out = append(out, field{
-			Key: k, Label: k, Value: v, Input: "text",
+			Key: k, Label: k, Value: v, Input: "text", Long: multiLine(v),
 			Help: "Not declared by " + t.Name + ". Clear this field to remove it.",
 		})
 	}
 	return out
 }
+
+// undeclaredText is what the editor's box holds for a value the page's type
+// does not declare, and whether it is given a box at all.
+//
+// Text, a number and a boolean are shown as a page with no type shows them
+// (flatten), and keepType reads them back as what they were. A list or an
+// object has no box to be edited in, so it is shown as its JSON where the
+// type refuses the field, for the refusal to name something visible and the
+// box to be cleared; under a name every page may carry (reserved) it is not
+// shown at all, because the type allows it, it is edited on its own screen,
+// and a page with no type does not show it either.
+func undeclaredText(v any, reserved bool) (string, bool) {
+	switch t := v.(type) {
+	case string:
+		return t, true
+	case float64, bool:
+		return fmt.Sprintf("%v", t), true
+	}
+	if reserved {
+		return "", false
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "", false
+	}
+	return string(b), true
+}
+
+// multiLine reports whether text has a line break in it, and so has to be
+// drawn in a multi-line box.
+//
+// A browser takes the line breaks out of what a one-line box holds before it
+// submits it. Short text was drawn in one whatever it held, so an address or
+// opening hours written on two lines by `quilzo add`, the API or an import
+// was joined into one by the next save from the browser, though nobody had
+// touched it.
+func multiLine(text string) bool { return strings.ContainsAny(text, "\r\n") }
 
 // canonicalRaw is what a page's canonical field says, usable or not, for
 // the editor to show back.
@@ -3126,8 +3201,9 @@ func flatten(body any) []field {
 			// A body is a box to write in however short it is so far: a new
 			// page's editor offers it as one, and "Nine to five." saved into
 			// it came back as a single line.
-			out = append(out, field{Key: k, Label: keyLabel(k), Value: v, Long: len(v) > 80 || k == "body",
-				Input: "text"})
+			// And text of more than one line, however short: see multiLine.
+			out = append(out, field{Key: k, Label: keyLabel(k), Value: v,
+				Long: len(v) > 80 || k == "body" || multiLine(v), Input: "text"})
 		case float64:
 			out = append(out, field{Key: k, Label: keyLabel(k), Value: fmt.Sprintf("%v", v),
 				Input: "text"})
@@ -3173,7 +3249,7 @@ func coerceForm(t schema.Type, form url.Values, body map[string]any) {
 		if !present || len(values) == 0 {
 			continue
 		}
-		raw := values[0]
+		raw := formText(values[0])
 
 		switch f.Kind {
 		case schema.Number:
@@ -3214,7 +3290,9 @@ func coerceForm(t schema.Type, form url.Values, body map[string]any) {
 			delete(body, key)
 			continue
 		}
-		body[key] = values[0]
+		// As what it was, when the box still says what it was drawn holding:
+		// a number, a boolean, a list. See typedFields and keepType.
+		body[key] = keepType(body[key], formText(values[0]))
 	}
 }
 
@@ -3541,6 +3619,13 @@ func (s *Server) handleSave(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/review?saved="+name, http.StatusSeeOther)
 }
 
+// reviewChange is a row of Review's changes: the page, and the fields that
+// changed in it when the reader may see them.
+type reviewChange struct {
+	site.Change
+	Fields []site.FieldChange
+}
+
 func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
 	p, ok := s.requireAuth(w, r)
 	if !ok {
@@ -3552,9 +3637,20 @@ func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
 
 	draft := s.Store.GetRef(site.RefDraft)
 	live := s.Store.GetRef(site.RefLive)
-	var changes []site.Change
+	var diff []site.Change
 	if draft != "" {
-		changes, _ = site.Diff(s.Store, live, draft)
+		diff, _ = site.Diff(s.Store, live, draft)
+	}
+	// What changed inside each page, for the pages this person may read.
+	// The screen tells whoever approves a change to read it first, and it
+	// showed the page's name and "modified": nothing it said.
+	changes := make([]reviewChange, 0, len(diff))
+	for _, c := range diff {
+		rc := reviewChange{Change: c}
+		if c.Kind == "modified" && s.allows(p, auth.ActView, pageResource(c.Path)) {
+			rc.Fields, _ = site.FieldChanges(s.Store, c)
+		}
+		changes = append(changes, rc)
 	}
 
 	reports, a11yErr := s.checkAll(draft)
@@ -4538,6 +4634,15 @@ func (s *Server) handlePreview(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "template: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// In the page's own language and direction, as the site serves it. The
+	// site sets them on the page it has rendered, whatever the layout says,
+	// and the preview did not: the Arabic page was previewed as English,
+	// left to right, which is not the page a reader gets.
+	if s.Languages != nil && s.Languages.Load != nil {
+		if locales, lerr := s.Languages.Load(); lerr == nil {
+			out = public.InLanguage(out, locales, name)
+		}
+	}
 
 	// The ways back into what you are looking at. See previewbar.go: the page
 	// itself is untouched and the panel is injected after rendering, so this
@@ -4592,7 +4697,7 @@ func (s *Server) pageFromForm(pages map[string]any, name string, form url.Values
 			if strings.HasPrefix(key, "__") || len(values) == 0 {
 				continue
 			}
-			body[key] = values[0]
+			body[key] = keepType(body[key], formText(values[0]))
 		}
 	}
 	// What it tells search engines, from the editor's own fieldset: an
@@ -4622,6 +4727,60 @@ func (s *Server) pageFromForm(pages map[string]any, name string, form url.Values
 		}
 	}
 	return body
+}
+
+// formText is a submitted value with the line endings a page stores.
+//
+// A browser submits a textarea with CRLF line endings, as the HTML spec says
+// it must. Stored as sent, every multi-line field of a page saved from the
+// editor changed bytes though nobody had touched it: a title-only edit
+// counted as a body change, history and approvals recorded one, and a
+// colleague's --merge of a real body edit was refused as "you both changed
+// this field". The CLI, the API and MCP all store \n, so the browser does too.
+func formText(s string) string {
+	if !strings.Contains(s, "\r") {
+		return s
+	}
+	return strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n")
+}
+
+// keepType is a value submitted for a field no type describes, in the type
+// the value it replaces had: every field of a page with no type, and the
+// fields of a typed page that its type does not declare.
+//
+// Such a page may carry numbers and booleans, written by `quilzo add`, the
+// content API or an import, and the editor offers them as text boxes. Saving
+// stored the strings the boxes submitted, so an edit of the title turned
+// featured false into "false", which a layout reads as true: a page
+// explicitly not featured was shown as featured. A value that still reads as
+// what it was is stored as that; anything else is stored as typed, because
+// somebody who wrote words over a number meant the words.
+//
+// A list or an object is shown as its JSON (undeclaredText), and is what it
+// was while its box still says so.
+func keepType(old any, raw string) any {
+	switch old.(type) {
+	case string:
+	case float64:
+		n, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+		// NaN and the infinities parse but have no JSON form, and a page
+		// holding one could not be saved at all.
+		if err == nil && !math.IsNaN(n) && !math.IsInf(n, 0) {
+			return n
+		}
+	case bool:
+		switch strings.TrimSpace(raw) {
+		case "true":
+			return true
+		case "false":
+			return false
+		}
+	default:
+		if b, err := json.Marshal(old); err == nil && strings.TrimSpace(raw) == string(b) {
+			return old
+		}
+	}
+	return raw
 }
 
 // previewRecord resolves a detail address in the draft.

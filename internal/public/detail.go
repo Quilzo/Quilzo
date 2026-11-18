@@ -209,6 +209,11 @@ func (st *Site) renderDetail(w http.ResponseWriter, r *http.Request,
 	// /post, and the copy offered an agent was /post.md, which is empty.
 	key, _ := row[d.Key].(string)
 	out = st.injectHeadAt(out, name, key, "", body)
+	// In the language of the page it is drawn with. Without links to other
+	// languages: those name the page, not this record.
+	lang := st.languageOf(name, name, nil)
+	lang.announce(w.Header())
+	out = lang.in(out)
 	// The structured data, injected like the rest of the head so it cannot be
 	// missing from the one template nobody checked.
 	ld := productLD(row, st.Name)

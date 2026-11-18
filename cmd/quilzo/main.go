@@ -1729,13 +1729,17 @@ func cmdDiff(root string) error {
 	if w.Mode == out.JSON {
 		doc := map[string]any{"live": live, "draft": draft, "changes": []any{}}
 		if draft != "" && live != draft {
-			changes, err := site.Diff(s, live, draft)
+			changes, err := readableDiff(root, s, live, draft)
 			if err != nil {
 				return err
 			}
 			rows := make([]map[string]any, 0, len(changes))
 			for _, c := range changes {
-				rows = append(rows, map[string]any{"kind": c.Kind, "path": c.Path})
+				row := map[string]any{"kind": c.Kind, "path": c.Path}
+				if fields, ferr := site.FieldChanges(s, c); ferr == nil && fields != nil {
+					row["fields"] = fields
+				}
+				rows = append(rows, row)
 			}
 			doc["changes"] = rows
 		}
@@ -1750,7 +1754,7 @@ func cmdDiff(root string) error {
 		fmt.Println("draft matches live")
 		return nil
 	}
-	changes, err := site.Diff(s, live, draft)
+	changes, err := readableDiff(root, s, live, draft)
 	if err != nil {
 		return err
 	}
@@ -1760,10 +1764,80 @@ func cmdDiff(root string) error {
 	}
 	colour := map[string]string{"added": green, "removed": red, "modified": yellow}
 	for _, c := range changes {
-		fmt.Printf("  %s%-9s%s %s\n", colour[c.Kind], c.Kind, reset, c.Path)
+		fmt.Printf("  %s%-9s%s %s\n", colour[c.Kind], c.Kind, reset, onOneLine(c.Path))
+		// What changed inside it, which is what somebody approving it has
+		// to read: the name alone was all this said.
+		if c.Kind == "modified" {
+			if fields, ferr := site.FieldChanges(s, c); ferr == nil {
+				fmt.Print(fieldChangesText(fields, "      "))
+			}
+		}
 	}
 	fmt.Printf("\n  %d change(s) between live and draft\n", len(changes))
 	return nil
+}
+
+// readableDiff is what differs between two commits, of what the caller may
+// read: the pages theirs to view, as the agent interface's diff answers.
+//
+// A reader may run `quilzo diff` (privilege.go), and it named every changed
+// page. Once it showed what changed inside each, a reader denied a page was
+// shown that page's words, before and after, by the command the deny was
+// meant to hold against. A page out of reach is left out, as every list of
+// pages they are shown leaves it out. What is not a page, the records under
+// data, has no fields shown and is the whole site's, which the command
+// itself asks about.
+func readableDiff(root string, s *store.Store, from, to string) ([]site.Change, error) {
+	changes, err := site.Diff(s, from, to)
+	if err != nil {
+		return nil, err
+	}
+	may, err := pageCheck(root, resolveCaller(root, ""), auth.ActView)
+	if err != nil {
+		return nil, err
+	}
+	kept := changes[:0]
+	for _, c := range changes {
+		id := c.After
+		if id == "" {
+			id = c.Before
+		}
+		if s.IsTree(id) || may(c.Path) {
+			kept = append(kept, c)
+		}
+	}
+	return kept, nil
+}
+
+// fieldChangesText is a page's changed fields as lines of text, each
+// indented by indent: the field's name, then what it said ("- ") and says
+// now ("+ "), or for text of many lines, only the lines that differ. For a
+// terminal, so the page's words go through forTerminal.
+func fieldChangesText(fields []site.FieldChange, indent string) string {
+	var b strings.Builder
+	line := func(op, text string) {
+		for _, l := range strings.Split(text, "\n") {
+			b.WriteString(indent + "  " + op + " " + forTerminal(l) + "\n")
+		}
+	}
+	for _, f := range fields {
+		b.WriteString(indent + onOneLine(f.Field) + "\n")
+		if f.Lines != nil {
+			for _, l := range f.Lines {
+				if l.Op != " " {
+					line(l.Op, l.Text)
+				}
+			}
+			continue
+		}
+		if f.Before != "" {
+			line("-", f.Before)
+		}
+		if f.After != "" {
+			line("+", f.After)
+		}
+	}
+	return b.String()
 }
 
 // checkAccessibility renders every page in a commit and reports what fails.

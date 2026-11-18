@@ -394,6 +394,12 @@ func buildMCP(root string, s *store.Store, caller *Caller, tplDir string) *mcp.S
 		var b strings.Builder
 		for _, c := range changes {
 			fmt.Fprintf(&b, "%s %s\n", c.Kind, c.Path)
+			// And what changed inside it, for whoever approves it to read.
+			if c.Kind == "modified" {
+				if fields, ferr := site.FieldChanges(s, c); ferr == nil {
+					b.WriteString(fieldChangesText(fields, "  "))
+				}
+			}
 		}
 		return strings.TrimSpace(b.String()), nil
 	})

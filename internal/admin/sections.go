@@ -563,7 +563,9 @@ func (s *Server) saveSectionFields(w http.ResponseWriter, r *http.Request,
 			if !isValue || len(submitted) == 0 {
 				continue
 			}
-			values[path] = submitted[0]
+			// With the line endings a page stores, not the browser's CRLF:
+			// see formText.
+			values[path] = formText(submitted[0])
 		}
 		next, err = section.Apply(body, at, values)
 		msg = fmt.Sprintf("edit the %s section on %s", kind, name)
