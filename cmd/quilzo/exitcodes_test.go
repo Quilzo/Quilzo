@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/backup"
 	"github.com/quilzo/quilzo/internal/out"
 )
 
@@ -159,6 +160,113 @@ func TestEveryCommandRefusesAFlagItDoesNotTakeWithTwo(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A secret shown once is alone on stdout, and what is said about it is on
+// stderr.
+//
+// `token issue ci ... > ci.tok` and `export QUILZO_TOKEN=$(quilzo token
+// issue ...)` are how a token is captured, and it is shown only once. Its
+// stdout held a notice before it, that the only administrator approved it
+// alone, and three lines of prose after it, so the file and the variable
+// held something no command would take: `$(head -1 ci.tok)` was the notice.
+// `backup key > bk.key` wrote the key and two paragraphs, and the backup the
+// file was then named for was refused, "a backup key is 32 bytes, base64".
+// `auth recover` already wrote its token alone; every command that shows a
+// secret once does now, and `vault rotate`, which wrote its new key only for
+// a person, answers it under --json as `vault enable` does.
+func TestASecretShownOnceIsAloneOnStdout(t *testing.T) {
+	root, owner := accessStore(t)
+	addPage(t, root, owner, "index", "v1")
+	example, _, code := cliRun(t, root, owner, "booking", "example")
+	setup := filepath.Join(t.TempDir(), "booking.json")
+	if code != 0 || os.WriteFile(setup, []byte(example), 0o600) != nil {
+		t.Fatal("booking example")
+	}
+	if _, e, code := cliRun(t, root, owner, "booking", "setup", setup); code != 0 {
+		t.Fatalf("booking setup: %s", firstLines(e, 3))
+	}
+	alone := func(t *testing.T, line ...string) string {
+		t.Helper()
+		o, e, code := cliRun(t, root, owner, line...)
+		if code != 0 {
+			t.Fatalf("`quilzo %s` exited %d: %s", strings.Join(line, " "), code, firstLines(e, 3))
+		}
+		secret := strings.TrimSuffix(o, "\n")
+		if secret == "" || strings.ContainsAny(secret, "\n ") {
+			t.Errorf("`quilzo %s` wrote %d line(s) to stdout, not the secret alone", strings.Join(line, " "),
+				strings.Count(o, "\n"))
+		}
+		if strings.TrimSpace(e) == "" {
+			t.Errorf("`quilzo %s` said nothing on stderr of what it showed", strings.Join(line, " "))
+		}
+		return secret
+	}
+
+	// The token works as it was captured.
+	tok := alone(t, "token", "issue", "sub", "--principal", "owner", "--ttl", "1h")
+	if _, e, code := cliRun(t, root, tok, "log"); code != 0 {
+		t.Errorf("the token captured from stdout was refused: %s", firstLines(e, 2))
+	}
+	session := alone(t, "token", "exchange")
+	if _, e, code := cliRun(t, root, session, "log"); code != 0 {
+		t.Errorf("the session captured from stdout was refused: %s", firstLines(e, 2))
+	}
+	// The key reads back as a key.
+	if k, err := backup.DecodeKey(alone(t, "backup", "key")); err != nil || len(k) == 0 {
+		t.Errorf("the backup key captured from stdout does not read back: %v", err)
+	}
+	for _, line := range [][]string{
+		{"scim", "token"},
+		{"webhook", "add", "https://receiver.example/hook"},
+		{"share", "index"},
+		{"member", "invite"},
+		{"auth", "enrol", "owner"},
+		{"booking", "feed"},
+	} {
+		alone(t, line...)
+	}
+
+	// The vault's keys, last, since the store needs them from here on: the
+	// key captured is the key the store opens with.
+	first := alone(t, "vault", "enable", "--id", "k1")
+	key := "QUILZO_KEY=k1=" + first
+	if _, e, code := cliRunWith(t, []string{key}, root, owner, "log"); code != 0 {
+		t.Errorf("the vault key captured from stdout does not open the store: %s", firstLines(e, 2))
+	}
+	o, e, code := cliRunWith(t, []string{key}, root, owner, "vault", "rotate", "--id", "k2")
+	if second := strings.TrimSuffix(o, "\n"); code != 0 || second == "" || strings.ContainsAny(second, "\n ") {
+		t.Errorf("`quilzo vault rotate` exited %d and wrote %d line(s) to stdout, not the key alone: %s",
+			code, strings.Count(o, "\n"), firstLines(e, 2))
+	} else {
+		key += ",k2=" + second
+	}
+	o, e, code = cliRunWith(t, []string{key}, root, owner, "--json", "vault", "rotate", "--id", "k3")
+	var doc struct{ ID, Key string }
+	if code != 0 || json.Unmarshal([]byte(o), &doc) != nil || doc.ID != "k3" || doc.Key == "" {
+		t.Errorf("`quilzo --json vault rotate` did not answer its new key in one document: exit %d, %d bytes: %s",
+			code, len(o), firstLines(e, 2))
+	}
+}
+
+// cliRunWith is cliRun with more of the environment.
+func cliRunWith(t *testing.T, env []string, root, token string, args ...string) (stdout, stderr string, code int) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, os.Args[0], append([]string{"quilzo-main", "--root", root}, args...)...)
+	cmd.Dir = t.TempDir()
+	cmd.Env = append(append(os.Environ(), "HOME="+t.TempDir(), "QUILZO_TOKEN="+token, "NO_COLOR=1"), env...)
+	var o, e bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &o, &e
+	err := cmd.Run()
+	if ctx.Err() != nil {
+		t.Fatalf("`quilzo %s` did not finish", strings.Join(args, " "))
+	}
+	if err != nil && cmd.ProcessState == nil {
+		t.Fatal(err)
+	}
+	return o.String(), e.String(), cmd.ProcessState.ExitCode()
 }
 
 // What goes to stderr is coloured as stderr is.

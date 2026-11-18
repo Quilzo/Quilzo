@@ -368,8 +368,13 @@ func bookingFeedCmd(root string, args []string, caller *Caller) error {
 	if w.JSON(map[string]string{"url": url}) {
 		return nil
 	}
-	w.Human("subscribe to this in your calendar; it is shown once, and making another ends it:\n  %s\n", url)
-	w.Human("  %sit shows when each booking is and for what, never who: that is here and in the admin%s\n", dim, reset)
+	// The address alone on stdout, since it holds the token and is shown
+	// once, and what is said of it on stderr. It was between two lines of
+	// prose, indented, so it could not be captured to be subscribed to.
+	n := w.Notes()
+	n.Human("subscribe to this in your calendar; it is shown once, and making another ends it:\n")
+	w.Human("%s\n", url)
+	n.Human("  %sit shows when each booking is and for what, never who: that is here and in the admin%s\n", n.Dim(), n.Reset())
 	return nil
 }
 

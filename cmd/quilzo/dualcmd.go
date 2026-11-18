@@ -60,7 +60,12 @@ func proposeSecondFor(root string, c *Caller, subject, kind, what string, payloa
 		if err := recordE(root, c.auditRecord("dual.approved", "/", audit.Success, detail)); err != nil {
 			return false, err
 		}
-		w.Human("%s%s%s\n", yellow, aloneWords(root, subject, first), reset)
+		// On stderr: it is said of the change, and the change may be a
+		// token or a link shown once, whose stdout is the secret alone.
+		// Printed before the token, it was the first line `$(quilzo token
+		// issue ...)` captured.
+		n := w.Notes()
+		n.Human("%s%s%s\n", n.Yellow(), aloneWords(root, subject, first), n.Reset())
 		return true, nil
 	}
 	if err := recordE(root, c.auditRecord("dual.proposed", "/", audit.Success, detail)); err != nil {

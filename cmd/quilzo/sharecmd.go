@@ -444,8 +444,12 @@ func cmdShare(root string, args []string) error {
 	if w.JSON(map[string]any{"id": sh.ID, "url": shareURL(root, secret), "expires": sh.Expires}) {
 		return nil
 	}
-	w.Human("%s%s%s\n  %sthe page as the draft is now, until %s; this address is shown once, so copy it now; "+
+	// The address alone on stdout, since it holds the secret and is shown
+	// once, and what is said of it on stderr.
+	w.Human("%s%s%s\n", bold, shareURL(root, secret), reset)
+	n := w.Notes()
+	n.Human("  %sthe page as the draft is now, until %s; this address is shown once, so copy it now; "+
 		"quilzo share revoke %s ends it%s\n",
-		bold, shareURL(root, secret), reset, dim, sh.Expires.Local().Format("2 Jan 15:04"), sh.ID, reset)
+		n.Dim(), sh.Expires.Local().Format("2 Jan 15:04"), sh.ID, n.Reset())
 	return nil
 }

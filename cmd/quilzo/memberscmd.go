@@ -128,9 +128,11 @@ func cmdMember(root string, args []string) error {
 			return err
 		}
 		if !w.JSON(map[string]any{"code": code, "hash": inv.Hash, "expires": inv.Expires}) {
+			// The code alone on stdout, shown once, and its note on stderr.
 			w.Human("%s\n", code)
-			w.Human("  %sone account, until %s; shown once, kept only as a hash%s\n",
-				dim, inv.Expires.Format("2 Jan 2006"), reset)
+			n := w.Notes()
+			n.Human("  %sone account, until %s; shown once, kept only as a hash%s\n",
+				n.Dim(), inv.Expires.Format("2 Jan 2006"), n.Reset())
 		}
 		return done("member.invited", inv.Hash[:12])
 	case "invites":

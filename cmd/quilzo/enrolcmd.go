@@ -232,13 +232,16 @@ func issueEnrolment(root, name, by string, life time.Duration, caller *Caller) e
 	if w.JSON(map[string]any{"for": name, "link": enrolURL(root, secret), "expires": l.Expires}) {
 		return nil
 	}
+	// The link alone on stdout, since it is shown once, and what is said
+	// of it on stderr.
 	w.Human("%s\n", enrolURL(root, secret))
-	w.Human("  %sopened once, by %s, before %s: it adds their passkey and does nothing else.\n"+
+	n := w.Notes()
+	n.Human("  %sopened once, by %s, before %s: it adds their passkey and does nothing else.\n"+
 		"  Give it to them the way you would give a key; anybody who opens it first adds theirs instead%s\n",
-		dim, name, l.Expires.UTC().Format("15:04 UTC on 2 January"), reset)
+		n.Dim(), name, l.Expires.UTC().Format("15:04 UTC on 2 January"), n.Reset())
 	if c, err := loadConfig(root); err != nil || c.Raw("admin.base_url") == "" {
-		w.Human("  %sthat is quilzo serve's own address; an admin anywhere else is set with "+
-			"quilzo config set admin.base_url https://...%s\n", dim, reset)
+		n.Human("  %sthat is quilzo serve's own address; an admin anywhere else is set with "+
+			"quilzo config set admin.base_url https://...%s\n", n.Dim(), n.Reset())
 	}
 	return nil
 }

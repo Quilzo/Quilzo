@@ -1064,18 +1064,24 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 		"key":     tok.Key, "scope": tok.Scope.String()}) {
 		return nil
 	}
+	// The token alone on stdout, and what is said of it on stderr, so
+	// `> ci.tok` and `$(quilzo token issue ...)` capture a token that
+	// works. They captured a notice, the token and three lines of prose,
+	// and the token is not shown again.
 	fmt.Printf("%s%s%s\n", bold, secret, reset)
-	fmt.Printf("\n  %sid %s · %s on %s · expires %s%s\n", dim, tok.ID, tok.Role,
+	n := w.Notes()
+	dim, yellow, reset := n.Dim(), n.Yellow(), n.Reset()
+	n.Human("\n  %sid %s · %s on %s · expires %s%s\n", dim, tok.ID, tok.Role,
 		tok.Resource, time.Unix(tok.ExpiresAt, 0).UTC().Format("2006-01-02"), reset)
 	if tok.Key != "" {
-		fmt.Printf("  %sbound to key %s: send it as Authorization: DPoP, with a proof the key makes for "+
+		n.Human("  %sbound to key %s: send it as Authorization: DPoP, with a proof the key makes for "+
 			"each request, to /mcp, /v1 or /a2a; it is refused everywhere else%s\n", dim, tok.Key, reset)
 	} else if tok.Role.AtLeast(auth.RolePublisher) && !tok.Scope.ReadOnly && life > shortLived {
-		fmt.Printf("  %sfrom another machine, publishing and administering with it need it bound to a key "+
+		n.Human("  %sfrom another machine, publishing and administering with it need it bound to a key "+
 			"(--key), and a session exchanged from it counts as it does; reading and drafting work as it is%s\n", dim, reset)
 	}
 	if fromPolicy {
-		fmt.Printf("  %sthe role is what %s holds in the policy; --role narrows "+
+		n.Human("  %sthe role is what %s holds in the policy; --role narrows "+
 			"it%s\n", dim, tok.Principal, reset)
 	}
 	// A token names a role; a binding is what grants one. Somebody who has
@@ -1089,28 +1095,28 @@ func tokenIssueAs(root string, args []string, approved bool) error {
 	// answer is to name the missing step rather than to take it.
 	pol, perr := loadPolicy(root)
 	if perr == nil && strongestRole(pol, tok.Principal, tok.Resource) == auth.RoleNone {
-		fmt.Printf("\n  %s%s holds no role yet, so this token can sign in "+
+		n.Human("\n  %s%s holds no role yet, so this token can sign in "+
 			"and do nothing%s\n", yellow, tok.Principal, reset)
-		fmt.Printf("  %sgrant one:%s\n", dim, reset)
-		fmt.Printf("    quilzo auth grant %s %s\n", tok.Principal, tok.Role)
+		n.Human("  %sgrant one:%s\n", dim, reset)
+		n.Human("    quilzo auth grant %s %s\n", tok.Principal, tok.Role)
 	}
 
 	// The bootstrap closes the moment a token exists, so a first token that
 	// cannot manage tokens is the last one anybody can issue from here. Said
 	// out loud, because the recovery is editing JSON by hand.
 	if len(ts.Tokens) == 1 && !tok.Role.AtLeast(auth.RoleAdmin) {
-		fmt.Printf("\n  %sthis is the only token, and %s cannot issue "+
+		n.Human("\n  %sthis is the only token, and %s cannot issue "+
 			"another%s\n", yellow, tok.Role, reset)
-		fmt.Printf("  %sissue one with --role admin first if you still need "+
+		n.Human("  %sissue one with --role admin first if you still need "+
 			"to administer this store%s\n", dim, reset)
 	}
 	if !tok.Scope.Empty() {
 		// Shown at issue time because this is the only moment anybody looks.
 		// A scope nobody can see is a scope nobody trusts, and an operator who
 		// cannot confirm the token is narrow will issue a wide one.
-		fmt.Printf("  %sscope: %s%s\n", dim, tok.Scope, reset)
+		n.Human("  %sscope: %s%s\n", dim, tok.Scope, reset)
 	}
-	fmt.Printf("  %sthis is the only time it is shown; only a hash is stored%s\n",
+	n.Human("  %sthis is the only time it is shown; only a hash is stored%s\n",
 		yellow, reset)
 	return nil
 }
@@ -1170,11 +1176,13 @@ func tokenExchange(root string, args []string) error {
 		return nil
 	}
 
+	// The session alone on stdout, as a token issued is (tokenIssueAs).
 	fmt.Printf("%s%s%s\n", bold, secret, reset)
-	fmt.Printf("\n  %s%s on %s · expires in %s · from %s (%s)%s\n", dim,
+	n := w.Notes()
+	n.Human("\n  %s%s on %s · expires in %s · from %s (%s)%s\n", n.Dim(),
 		t.Role, t.Resource, time.Until(time.Unix(t.ExpiresAt, 0)).Round(time.Second),
-		t.Parent, from, reset)
-	fmt.Printf("  %srevoking the parent revokes this too%s\n", dim, reset)
+		t.Parent, from, n.Reset())
+	n.Human("  %srevoking the parent revokes this too%s\n", n.Dim(), n.Reset())
 	return nil
 }
 

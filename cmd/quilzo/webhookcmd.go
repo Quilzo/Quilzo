@@ -126,14 +126,17 @@ func hookAdd(root string, args []string) error {
 	if w.JSON(map[string]any{"url": e.URL, "secret": secret}) {
 		return nil
 	}
+	// The key alone on stdout, and what is said of it on stderr, so it
+	// can be handed straight to the receiver.
 	w.Human("%s%s%s\n", bold, secret, reset)
-	w.Human("\n  %sthis is the signing key, shown once. The receiver needs the\n"+
+	n := w.Notes()
+	n.Human("\n  %sthis is the signing key, shown once. The receiver needs the\n"+
 		"  same bytes to verify a delivery, so it is a shared value rather\n"+
-		"  than something that can be hashed%s\n", yellow, reset)
-	w.Human("\n  %severy delivery is signed over a timestamp and the body\n"+
+		"  than something that can be hashed%s\n", n.Yellow(), n.Reset())
+	n.Human("\n  %severy delivery is signed over a timestamp and the body\n"+
 		"  together. The timestamp is what stops a captured request being\n"+
 		"  replayed a year later with a signature that still verifies%s\n",
-		dim, reset)
+		n.Dim(), n.Reset())
 	return nil
 }
 

@@ -155,9 +155,14 @@ func cmdBackup(root string, args []string) error {
 		if w.JSON(map[string]string{"key": backup.EncodeKey(k)}) {
 			return nil
 		}
-		fmt.Printf("%s\n\nThis is the backup key. It is shown once and kept nowhere here: keep it where the backups are not,\n"+
+		// The key alone on stdout and its paragraph on stderr, so `backup
+		// key > bk.key` writes a file QUILZO_BACKUP_KEY_FILE can name. The
+		// file held the paragraph too, and the backup was refused: "a
+		// backup key is 32 bytes, base64".
+		fmt.Println(backup.EncodeKey(k))
+		w.Notes().Human("\nThis is the backup key. It is shown once and kept nowhere here: keep it where the backups are not,\n"+
 			"and give it to Quilzo as %s or in the file %s names. Without it no backup can be read.\n",
-			backup.EncodeKey(k), backupKeyEnv, backupKeyFileEnv)
+			backupKeyEnv, backupKeyFileEnv)
 		return nil
 	case "create":
 		fs := flag.NewFlagSet("backup create", flag.ContinueOnError)
