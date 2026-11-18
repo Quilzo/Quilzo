@@ -145,7 +145,13 @@ func (s *Store) walk(oid, prefix string, out map[string]string, depth int) error
 		// decrypt answered no and was listed as a leaf, so a collection whose
 		// subtree had gone read as no collection, and a gate that checks
 		// every record looked at none and reported clean.
-		kind, _, err := s.GetRaw(child)
+		//
+		// What it says it is, though, is all the walk asks: a subtree's hash
+		// is checked as it is walked, and a leaf's by whoever reads it. Asked
+		// for its hash here too, one record whose bytes had rotted stopped
+		// the walk, and every listing of every collection with it, where
+		// that record's reader refuses it and a listing goes on without it.
+		kind, _, err := s.open(child)
 		if err != nil {
 			return err
 		}
