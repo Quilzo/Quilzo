@@ -99,7 +99,7 @@ func evolveRun(root string, args []string, caller *Caller) (err error) {
 		"how many generations, at most %d", evolve.MaxGenerations))
 	population := fs.Int("population", 8, fmt.Sprintf(
 		"how many programs to keep, between 2 and %d", evolve.MaxPopulation))
-	timeout := fs.Duration("timeout", 2*time.Minute, "each run's time limit, at most 30m")
+	timeout := flagDuration(fs, "timeout", 2*time.Minute, "each run's time limit, at most 30m")
 	memory := fs.Int("memory", 2048, "each process's memory limit in MB")
 	disk := fs.Int("disk", 512, "each run's disk in MB, its workspace and home together")
 	var inputs, evalInputs, testInputs, testEvalInputs, weights multiFlag

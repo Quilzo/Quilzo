@@ -86,7 +86,7 @@ func complianceSBOM(args []string) error {
 	if err != nil {
 		return err
 	}
-	if len(args) == 1 {
+	if len(args) == 1 && !toStdout(args[0]) {
 		if err := os.WriteFile(args[0], body, 0o644); err != nil {
 			return err
 		}
@@ -428,7 +428,7 @@ func complianceComponent(root string, args []string) error {
 		return err
 	}
 	body = append(body, '\n')
-	if *out != "" {
+	if !toStdout(*out) {
 		return atomicfile.Write(*out, body, 0o644)
 	}
 	_, err = os.Stdout.Write(body)
@@ -518,7 +518,7 @@ func complianceSSP(root string, args []string) error {
 		return err
 	}
 	body = append(body, '\n')
-	if *out != "" {
+	if !toStdout(*out) {
 		return atomicfile.Write(*out, body, 0o644)
 	}
 	_, err = os.Stdout.Write(body)
@@ -560,7 +560,7 @@ func complianceKSI(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	if *out != "" {
+	if !toStdout(*out) {
 		body, err := json.MarshalIndent(rep, "", "  ")
 		if err != nil {
 			return err

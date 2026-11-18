@@ -4,9 +4,11 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -152,11 +154,24 @@ func helpAfter(cmd string, args []string) bool {
 // operator, `quilzo fediverse init help` wrote a signing key, and `quilzo
 // review approve help` approved the draft for anybody but its author.
 //
+// Or where SUB takes a file or an id first (helpNeverNamed), since no id is
+// called help and a file called help is reached as ./help: `quilzo backup
+// create help` wrote a backup called help, and `token revoke help` said "no
+// token help". And a level further down, where SUB has subcommands of its
+// own: `quilzo shield decoy add help` was a usage error.
+//
 // Where SUB takes a name, "help" is left to be one: `quilzo decide ask
 // help` asks the decider called help.
 func helpAfterSub(cmd string, args []string) bool {
-	if len(args) < 2 || args[1] != "help" || !helpSubcommand.MatchString(args[0]) {
+	last := len(args) - 1
+	if last < 1 || args[last] != "help" {
 		return false
+	}
+	subs := args[:last]
+	for _, sub := range subs {
+		if !helpSubcommand.MatchString(sub) {
+			return false
+		}
 	}
 	if primary, ok := helpAliases[cmd]; ok {
 		cmd = primary
@@ -171,13 +186,20 @@ func helpAfterSub(cmd string, args []string) bool {
 		if i := helpDescription.FindStringIndex(synopsis); i != nil {
 			synopsis = synopsis[:i[0]]
 		}
+		// A quoted value is one word, however many it holds: the "CI
+		// variable" of `shield decoy add --where "CI variable"`.
+		synopsis = helpQuoted.ReplaceAllString(synopsis, `"…"`)
 		for _, alt := range strings.Split(synopsis, " | ") {
 			fields := strings.Fields(alt)
-			if len(fields) == 0 || !slices.Contains(strings.Split(fields[0], "|"), args[0]) {
+			if !helpLeads(fields, subs) {
 				continue
 			}
 			named = true
-			after := strings.Join(fields[1:], " ")
+			fields = fields[len(subs):]
+			if len(fields) > 0 && helpNeverNamed(fields[0]) {
+				continue
+			}
+			after := strings.Join(fields, " ")
 			for _, b := range helpBracketed.FindAllString(after, -1) {
 				if !strings.HasPrefix(b, "[-") {
 					return false
@@ -196,6 +218,194 @@ func helpAfterSub(cmd string, args []string) bool {
 	}
 	return named
 }
+
+// helpLeads reports whether a synopsis's words begin with the subcommands
+// given, each where the help offers it ("confirm|delete ID" offers both).
+func helpLeads(fields, subs []string) bool {
+	if len(fields) < len(subs) {
+		return false
+	}
+	for i, sub := range subs {
+		if !slices.Contains(strings.Split(fields[i], "|"), sub) {
+			return false
+		}
+	}
+	return true
+}
+
+// helpNeverNamed reports whether the help's word for what a command takes
+// is one "help" cannot be meant as: a file or a directory, which a person
+// who does mean one called help writes ./help, or an identifier the program
+// made, which is never a word. A name, a page or a person may be called
+// help, and is left to be.
+//
+// The same where it may be left out, written [FILE] or [ID]: read only
+// bare, `compliance sbom [FILE]`, `compliance aibom [FILE]` and `newsletter
+// export [FILE]` each wrote a file called help when asked for their help.
+func helpNeverNamed(w string) bool {
+	if inner, ok := strings.CutPrefix(w, "["); ok {
+		w, ok = strings.CutSuffix(inner, "]")
+		if !ok {
+			return false
+		}
+	}
+	for _, alt := range strings.Split(w, "|") {
+		alt, _, _ = strings.Cut(alt, ".")
+		switch alt {
+		case "FILE", "DIR", "ID", "RUN", "RUN-ID", "SEQ", "CID", "N":
+			return true
+		}
+	}
+	return false
+}
+
+// helpSubcommandsOf is the subcommands the help offers after path, a
+// command and the subcommands under it: "list", "issue", "revoke" and the
+// rest after "token".
+func helpSubcommandsOf(path []string) []string {
+	if len(path) == 0 {
+		return nil
+	}
+	cmd, subs := path[0], path[1:]
+	if primary, ok := helpAliases[cmd]; ok {
+		cmd = primary
+	}
+	seen := map[string]bool{}
+	var words []string
+	for _, line := range strings.Split(usageText, "\n") {
+		rest, ok := strings.CutPrefix(line, "  quilzo "+cmd)
+		if !ok || rest == "" || rest[0] != ' ' {
+			continue
+		}
+		synopsis := rest[1:]
+		if i := helpDescription.FindStringIndex(synopsis); i != nil {
+			synopsis = synopsis[:i[0]]
+		}
+		synopsis = helpQuoted.ReplaceAllString(synopsis, `"…"`)
+		for _, alt := range strings.Split(synopsis, " | ") {
+			fields := strings.Fields(alt)
+			if len(fields) <= len(subs) || !helpLeads(fields, subs) {
+				continue
+			}
+			offered := strings.Split(fields[len(subs)], "|")
+			// Offered in brackets, each with what it takes: the "[list|save
+			// FILE|remove KIND]" of `agent template`.
+			if after := strings.Join(fields[len(subs):], " "); strings.HasPrefix(after, "[") {
+				inner, _, _ := strings.Cut(after[1:], "]")
+				offered = nil
+				for _, piece := range strings.Split(inner, "|") {
+					if f := strings.Fields(piece); len(f) > 0 {
+						offered = append(offered, f[0])
+					}
+				}
+			}
+			for _, w := range offered {
+				if helpSubcommand.MatchString(w) && !seen[w] {
+					seen[w] = true
+					words = append(words, w)
+				}
+			}
+		}
+	}
+	return words
+}
+
+// unknownSubcommand is how every command's switch refuses a word it has no
+// case for: "unknown token command "lsit"", in eighty-odd places.
+var unknownSubcommand = regexp.MustCompile(`^unknown [a-z][a-z -]* command "([^"]*)"`)
+
+// nearestSubcommand adds to a refusal of a subcommand the one most likely
+// meant, from the help, as unknownCommand does for a command. `quilzo token
+// lsit` was "unknown token command "lsit"" and nothing else, and `records
+// lsit` a list of seven to pick from; a person who typed one transposition
+// had to find it. Where the refusal named no subcommands, those the help
+// offers are named too.
+//
+// Read from the refusal the command made, in one place, rather than in each
+// command's switch: there are eighty of them, each with its own list, and a
+// suggestion added to each would be eighty to keep right. The word is found
+// on the command line to know whose subcommand it was meant to be, so
+// `agent template lsit`, refused as "unknown template command", is offered
+// `agent template list`. A refusal of a misused command line is one still,
+// exit 2.
+func nearestSubcommand(err error) error {
+	m := unknownSubcommand.FindStringSubmatch(err.Error())
+	if m == nil {
+		return nearestInUsage(err)
+	}
+	if invoked.cmd == "" {
+		return err
+	}
+	at := slices.Index(invoked.args, m[1])
+	if at < 0 {
+		return err
+	}
+	path := append([]string{invoked.cmd}, invoked.args[:at]...)
+	subs := helpSubcommandsOf(path)
+	if len(subs) == 0 {
+		return err
+	}
+	msg := err.Error()
+	if near := nearestWords(m[1], subs); len(near) > 0 {
+		for i := range near {
+			near[i] = "quilzo " + strings.Join(append(path[:len(path):len(path)], near[i]), " ")
+		}
+		msg += "\n  did you mean " + strings.Join(near, ", or ") + "?"
+	}
+	if !strings.Contains(err.Error(), "try ") && !strings.Contains(err.Error(), "\n") {
+		msg += "\n  quilzo " + strings.Join(path, " ") + " takes " + strings.Join(subs, ", ")
+	}
+	return errMisused{errors.New(msg)}
+}
+
+// nearestInUsage is nearestSubcommand for a command that refuses a word
+// it has no subcommand for with its usage, not as "unknown X command":
+// `member idsable`, `agent naswer`, `inbox ilst`, `board ehld` and `demo
+// ermove` were each their usage and nothing nearer, while `token lsit` was
+// offered list. Only for the word after the command, and only where it is
+// no subcommand the help offers: `member show` given no id is not offered
+// another. A usage that names some other word as the one it does not take
+// is about that word.
+//
+// The refusal is the command's still, under the nearest: its exit is the
+// one the command gave it.
+func nearestInUsage(err error) error {
+	if invoked.cmd == "" || len(invoked.args) == 0 ||
+		!strings.HasPrefix(err.Error(), "usage: quilzo "+invoked.cmd+" ") {
+		return err
+	}
+	word := invoked.args[0]
+	if strings.HasPrefix(word, "-") {
+		return err
+	}
+	if _, stray, ok := strings.Cut(err.Error(), " does not take "); ok &&
+		!strings.HasPrefix(stray, strconv.Quote(word)) {
+		return err
+	}
+	subs := helpSubcommandsOf([]string{invoked.cmd})
+	if slices.Contains(subs, word) {
+		return err
+	}
+	near := nearestWords(word, subs)
+	if len(near) == 0 {
+		return err
+	}
+	for i := range near {
+		near[i] = "quilzo " + invoked.cmd + " " + near[i]
+	}
+	return withNearest{err, err.Error() + "\n  did you mean " + strings.Join(near, ", or ") + "?"}
+}
+
+// withNearest is a refusal with the nearest word added to what it says,
+// and otherwise the refusal it was.
+type withNearest struct {
+	error
+	said string
+}
+
+func (e withNearest) Error() string { return e.said }
+
+func (e withNearest) Unwrap() error { return e.error }
 
 // helpSubcommand is how a subcommand is written in the help, a lowercase
 // word, and helpName how a name a command takes is: in capitals, or quoted.
@@ -349,6 +559,7 @@ func helpFor(cmd string, args []string) string {
 var (
 	helpDescription = regexp.MustCompile(`\s{2,}`)
 	helpBracketed   = regexp.MustCompile(`\[[^\]]*\]`)
+	helpQuoted      = regexp.MustCompile(`"[^"]*"`)
 )
 
 // helpNames reports whether an entry's synopsis offers sub where a

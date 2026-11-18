@@ -257,7 +257,7 @@ func engagementIssue(root string, args []string) error {
 		By: caller.Name,
 	}.Record())
 
-	if *out == "" {
+	if toStdout(*out) {
 		fmt.Println(string(body))
 		return nil
 	}

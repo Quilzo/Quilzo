@@ -141,8 +141,11 @@ func hookAdd(root string, args []string) error {
 }
 
 func hookRemove(root string, args []string) error {
+	// Named by the address it was added with: an endpoint has no id, and
+	// the help that said `remove ID` sent somebody looking for one in a
+	// list that shows none.
 	if len(args) != 1 {
-		return errMisused{fmt.Errorf("usage: quilzo webhook remove <url>")}
+		return errMisused{fmt.Errorf("usage: quilzo webhook remove URL, the address `quilzo webhook list` shows")}
 	}
 	var removed webhook.Endpoint
 	if err := updateHooks(root, func(f *hookFile) error {

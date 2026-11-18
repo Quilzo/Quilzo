@@ -77,6 +77,10 @@ func TestTheIntervalIsPerPageOrTheSiteDefault(t *testing.T) {
 		{"", year},
 		{"   ", year},
 		{"168h", 168 * time.Hour},
+		// Days and weeks, as `checked set --every` takes them: the interval
+		// read them as unparseable and the page fell back to the site's.
+		{"1w", 168 * time.Hour},
+		{"30d", 30 * 24 * time.Hour},
 		// Unparseable and nonsensical values fall back. A record written by
 		// hand with "6 months" in it should not make a page overdue forever
 		// with nothing saying why — Set refuses those, and this is what

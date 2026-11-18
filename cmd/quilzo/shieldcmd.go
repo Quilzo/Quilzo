@@ -235,7 +235,7 @@ func shieldApply(root, kind string, args []string) error {
 	fs := flag.NewFlagSet("shield "+kind, flag.ContinueOnError)
 	where := fs.String("where", shield.All, "admin, site or all (block)")
 	level := fs.String("level", shield.Off, "off, or limited for a chatbot (feature)")
-	dur := fs.Duration("for", time.Hour, "how long, at most a week")
+	dur := flagDuration(fs, "for", time.Hour, "how long, at most a week")
 	reason := fs.String("reason", "", "why (required)")
 	pos, err := parseAnywhere(fs, args)
 	if err != nil {

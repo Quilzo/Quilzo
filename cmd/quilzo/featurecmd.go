@@ -1549,7 +1549,7 @@ func writeFeature(root string, p *feature.Package, outPath string, sign bool) er
 		return err
 	}
 	b = append(b, '\n')
-	if outPath == "" {
+	if toStdout(outPath) {
 		_, err = os.Stdout.Write(b)
 		return err
 	}

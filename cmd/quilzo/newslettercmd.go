@@ -526,8 +526,18 @@ func newsletterCmd(root string, args []string, caller *Caller) error {
 		w.Human("asked: it joins when it says yes from the link mailed to it\n")
 		return nil
 	case "remove":
-		if len(args) != 2 {
-			return errMisused{errors.New("usage: quilzo newsletter remove ADDRESS|ID")}
+		fs := flag.NewFlagSet("newsletter remove", flag.ContinueOnError)
+		yes := fs.Bool("yes", false, "delete it; at a terminal, without this, only say what would go")
+		var pos []string
+		if err := parseFlags(fs, args[1:], &pos, 1); err != nil {
+			return err
+		}
+		if len(pos) != 1 {
+			return errMisused{errors.New("usage: quilzo newsletter remove ADDRESS|ID [--yes]")}
+		}
+		args = []string{args[0], pos[0]}
+		if erasureHeld(*yes, fmt.Sprintf("this would take %s off the list and delete it", onOneLine(args[1]))) {
+			return nil
 		}
 		was, err := removeSubscriber(root, args[1], caller)
 		if err != nil {
@@ -639,12 +649,16 @@ func newsletterImport(root string, args []string, caller *Caller) error {
 	if len(pos) != 1 {
 		return errMisused{errors.New("usage: quilzo newsletter import FILE.csv --agreed \"where they signed up\"")}
 	}
-	f, err := os.Open(pos[0])
-	if err != nil {
-		return err
+	var list io.Reader = os.Stdin
+	if pos[0] != stdio {
+		f, err := os.Open(pos[0])
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		list = f
 	}
-	defer f.Close()
-	got, err := importSubscribers(root, f, *agreed, caller)
+	got, err := importSubscribers(root, list, *agreed, caller)
 	if err != nil {
 		return err
 	}
@@ -673,7 +687,7 @@ func newsletterExport(root string, args []string, caller *Caller) error {
 	// no file the CSV itself, as a field. The CSV went to stdout as it is,
 	// which is not the one document the help promises, and with a file the
 	// answer was nothing, exit 0.
-	if len(args) == 0 {
+	if len(args) == 0 || toStdout(args[0]) {
 		if w.JSON(map[string]any{"addresses": n, "csv": buf.String()}) {
 			return nil
 		}

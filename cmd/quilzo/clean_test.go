@@ -76,6 +76,10 @@ func TestMain(m *testing.M) {
 			os.Exit(0)
 		}
 	}
+	// A test that calls a command is a script, whatever terminal the tests
+	// were started from: an erasure it asks for goes ahead (erasureHeld).
+	// One that is about the terminal says so itself.
+	stdinIsTerminal = func() bool { return false }
 	before := looseEntries()
 	code := m.Run()
 

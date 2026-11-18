@@ -109,7 +109,7 @@ func agentIdentityCmd(root, verb string, args []string) error {
 // agentIdentityCmdAs is agentIdentityCmd for a caller already known.
 func agentIdentityCmdAs(root, verb string, args []string, caller *Caller) error {
 	fs := flag.NewFlagSet("agent "+verb, flag.ContinueOnError)
-	lifetime := fs.Duration("for", agent.DefaultLifetime, "how long until somebody has to renew it again")
+	lifetime := flagDuration(fs, "for", agent.DefaultLifetime, "how long until somebody has to renew it again")
 	want := 1
 	if verb == "sponsor" {
 		want = 2

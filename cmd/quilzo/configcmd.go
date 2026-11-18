@@ -225,8 +225,7 @@ func configExplain(args []string) error {
 	}
 	s, ok := config.Lookup(args[0])
 	if !ok {
-		return fmt.Errorf("%q is not a setting; `quilzo config list` shows "+
-			"every one", args[0])
+		return notASetting(args[0])
 	}
 	if w.JSON(s) {
 		return nil
@@ -248,6 +247,22 @@ func configExplain(args []string) error {
 	return nil
 }
 
+// notASetting refuses a key no setting has, with the nearest that one
+// does (nearestWords). `config set site.nmae Hello` was told to look
+// through `config list`, which is a hundred and twenty-nine settings, for
+// the one transposition.
+func notASetting(key string) error {
+	var keys []string
+	for _, s := range config.All() {
+		keys = append(keys, s.Key)
+	}
+	if near := nearestWords(key, keys); len(near) > 0 {
+		return fmt.Errorf("%q is not a setting; did you mean %s? `quilzo config list` "+
+			"shows every one", key, strings.Join(near, ", or "))
+	}
+	return fmt.Errorf("%q is not a setting; `quilzo config list` shows every one", key)
+}
+
 func configSet(root string, args []string) error {
 	var key, value, reason string
 	var rest []string
@@ -267,6 +282,9 @@ func configSet(root string, args []string) error {
 			"[--accept-risk \"reason\"]")}
 	}
 	key, value = rest[0], rest[1]
+	if _, ok := config.Lookup(key); !ok {
+		return notASetting(key)
+	}
 
 	c, err := loadConfig(root)
 	if err != nil {
@@ -329,6 +347,9 @@ func configSet(root string, args []string) error {
 func configUnset(root string, args []string) error {
 	if len(args) != 1 {
 		return errMisused{fmt.Errorf("usage: quilzo config unset <key>")}
+	}
+	if _, ok := config.Lookup(args[0]); !ok {
+		return notASetting(args[0])
 	}
 	c, err := loadConfig(root)
 	if err != nil {

@@ -87,12 +87,17 @@ type passkeyView struct {
 
 // session is one usable credential.
 type session struct {
-	ID        string
-	Name      string
-	Role      auth.Role
-	Scope     string
-	Created   time.Time
-	Expires   time.Time
+	ID      string
+	Name    string
+	Role    auth.Role
+	Scope   string
+	Created time.Time
+	Expires time.Time
+	// Ends is Expires as the screen shows it: the day, and for a token
+	// issued for less than a day the hour and the zone too. An hour's
+	// token read "12 Nov 2026", the same as a month's
+	// (auth.Token.LastsUnderADay).
+	Ends      string
 	LastUsed  time.Time
 	Never     bool
 	IsSession bool // exchanged from another token
@@ -154,6 +159,10 @@ func (s *Server) handlePeople(w http.ResponseWriter, r *http.Request) {
 			Created:   time.Unix(t.CreatedAt, 0),
 			Expires:   time.Unix(t.ExpiresAt, 0),
 			IsSession: t.IsSession(),
+		}
+		sess.Ends = sess.Expires.Format("2 Jan 2006")
+		if t.LastsUnderADay() {
+			sess.Ends = sess.Expires.Format("2 Jan 2006, 15:04 MST")
 		}
 		if t.LastUsed > 0 {
 			sess.LastUsed = time.Unix(t.LastUsed, 0)

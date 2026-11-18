@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/config"
 	"github.com/quilzo/quilzo/internal/plaintext"
 )
 
@@ -42,14 +43,17 @@ func ParseWhen(s string, now time.Time) (time.Time, error) {
 	if t, err := time.Parse(time.RFC3339, s); err == nil {
 		return t, nil
 	}
-	if d, err := time.ParseDuration(s); err == nil {
+	// Days and weeks as well as Go's hours, read as every other length of
+	// time is (config.ParseDuration): the command line takes --for 30d, and
+	// `schedule add 2d` was "neither a time nor a duration".
+	if d, err := config.ParseDuration(s); err == nil {
 		if d <= 0 {
 			return time.Time{}, fmt.Errorf("%q is not in the future", s)
 		}
 		return now.Add(d), nil
 	}
 	return time.Time{}, fmt.Errorf(
-		"%q is neither a time (2026-09-01T09:00:00Z) nor a duration (48h)", s)
+		"%q is neither a time (2026-09-01T09:00:00Z) nor a duration (48h, 2d)", s)
 }
 
 // Refused is the schedule declining an entry: a time in the past or more

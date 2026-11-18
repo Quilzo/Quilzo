@@ -127,7 +127,7 @@ func receiptCmd(root, name, what string, args []string,
 	if err != nil {
 		return err
 	}
-	if *outPath == "" {
+	if toStdout(*outPath) {
 		_, err = os.Stdout.Write(append(body, '\n'))
 		return err
 	}

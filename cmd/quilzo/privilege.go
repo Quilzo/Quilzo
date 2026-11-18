@@ -1242,46 +1242,27 @@ func pageResource(page string) string {
 // Suggestions come from the same table that decides privileges, so a command
 // that exists is always offered — there is no second list to fall behind.
 func unknownCommand(cmd string) error {
-	// The threshold is relative to the shorter word, not to a constant.
-	//
-	// A fixed two edits is most of a four-letter word and a rounding error in
-	// a twelve-letter one, which is how "prov" came back as the suggestion for
-	// "aprove". Requiring the distance to be under half the shorter word keeps
-	// short aliases from matching everything and still catches a transposition
-	// in a five-letter name.
-	isNear := func(known string) bool {
-		if strings.HasPrefix(known, cmd) || strings.HasPrefix(cmd, known) {
-			return true
-		}
-		shorter := len(cmd)
-		if len(known) < shorter {
-			shorter = len(known)
-		}
-		return editDistance(cmd, known)*2 < shorter
-	}
-	var near []string
-	for known := range commandNeeds {
-		if isNear(known) {
-			near = append(near, known)
+	// Commands, not the table's rows for a command and a subcommand, which
+	// were offered as though they were commands: `quilzo schedul` was "Did
+	// you mean schedule, schedule list?".
+	var known []string
+	for k := range commandNeeds {
+		if !strings.Contains(k, " ") {
+			known = append(known, k)
 		}
 	}
-	sort.Strings(near)
-	if len(near) > 4 {
-		near = near[:4]
-	}
+	near := nearestWords(cmd, known)
 	// A slip of a command that has left Quilzo is told that it left
 	// (movedout.go). Those names are not in the table the suggestions come
 	// from, so `quilzo calls`, which used to be answered "Did you mean
 	// call?", was answered with nothing, and `quilzo rooms` was steered to
 	// forms. The nearest one is named, on a line of its own, under whatever
 	// is suggested from the commands that are here.
-	var left []string
-	for gone := range movedOut {
-		if isNear(gone) {
-			left = append(left, gone)
-		}
+	var gone []string
+	for name := range movedOut {
+		gone = append(gone, name)
 	}
-	sort.Strings(left)
+	left := nearestWords(cmd, gone)
 	moved := ""
 	if len(left) > 0 {
 		moved = "\n  " + errMovedOut(left[0]).Error()
@@ -1294,14 +1275,73 @@ func unknownCommand(cmd string) error {
 		cmd, moved)}
 }
 
-// editDistance is Levenshtein, bounded by the length of the shorter word.
+// nearestWords is what word was most likely meant, of the words known: the
+// nearest, at most four of them, in the alphabet's order. The one test of
+// nearness for every word on the command line, so a command, a subcommand,
+// a flag and a setting are all offered the same way (unknownCommand,
+// nearestSubcommand, flagRefusal, notASetting).
 //
-// Two rows rather than a full matrix: the words are command names, so this is
-// never the expensive part, and the small version is easier to be sure of.
+// The threshold is relative to the shorter word, not to a constant. A fixed
+// two edits is most of a four-letter word and a rounding error in a
+// twelve-letter one, which is how "prov" came back as the suggestion for
+// "aprove". Requiring the distance to be under half the shorter word keeps
+// short aliases from matching everything and still catches a transposition
+// in a five-letter name.
+func nearestWords(word string, known []string) []string {
+	var near []string
+	distance := map[string]int{}
+	for _, k := range known {
+		if k == word || k == "" {
+			continue
+		}
+		d := editDistance(word, k)
+		if strings.HasPrefix(k, word) || strings.HasPrefix(word, k) || d*2 < min(len(word), len(k)) {
+			near = append(near, k)
+			distance[k] = d
+		}
+	}
+	// Only those as near as the nearest. In the alphabet's order alone,
+	// cut at four, `site.nmae` was offered site.blog, site.feed, site.hsts
+	// and site.icon, each four letters away, and not site.name, one swap
+	// away.
+	sort.Slice(near, func(i, j int) bool {
+		if distance[near[i]] != distance[near[j]] {
+			return distance[near[i]] < distance[near[j]]
+		}
+		return near[i] < near[j]
+	})
+	for i := range near {
+		if distance[near[i]] > distance[near[0]] {
+			near = near[:i]
+			break
+		}
+	}
+	if len(near) > 4 {
+		near = near[:4]
+	}
+	return near
+}
+
+// editDistance is Levenshtein with a swap of two letters side by side
+// counted as one edit, bounded by the length of the shorter word.
+//
+// The swap, because it is the commonest slip there is and plain Levenshtein
+// counts it as two: `quilzo token lsit` was two edits from list, which is
+// not under half of four letters, and was offered nothing.
+//
+// Three rows rather than a full matrix: the words are command names, so
+// this is never the expensive part, and the small version is easier to be
+// sure of.
+//
+// Words up to sixty-four letters, which a setting's key is too: the bound
+// was twenty-four, for command names, so a mistyped
+// review.required_approvals, twenty-five, was near nothing and offered
+// nothing. Sixty-four squared is still nothing to compute.
 func editDistance(a, b string) int {
-	if len(a) > 24 || len(b) > 24 {
+	if len(a) > 64 || len(b) > 64 {
 		return 99
 	}
+	before := make([]int, len(b)+1)
 	prev := make([]int, len(b)+1)
 	curr := make([]int, len(b)+1)
 	for j := range prev {
@@ -1315,8 +1355,11 @@ func editDistance(a, b string) int {
 				cost = 0
 			}
 			curr[j] = min3(curr[j-1]+1, prev[j]+1, prev[j-1]+cost)
+			if i > 1 && j > 1 && a[i-1] == b[j-2] && a[i-2] == b[j-1] {
+				curr[j] = min(curr[j], before[j-2]+1)
+			}
 		}
-		prev, curr = curr, prev
+		before, prev, curr = prev, curr, before
 	}
 	return prev[len(b)]
 }

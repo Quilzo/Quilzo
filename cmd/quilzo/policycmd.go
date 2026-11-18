@@ -413,7 +413,7 @@ func policyExport(root string, args []string) error {
 		return err
 	}
 	body = append(body, '\n')
-	if *out != "" {
+	if !toStdout(*out) {
 		return atomicfile.Write(*out, body, 0o644)
 	}
 	_, err = os.Stdout.Write(body)

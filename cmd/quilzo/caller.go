@@ -9,8 +9,10 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/quilzo/quilzo/internal/agent"
@@ -125,6 +127,7 @@ func findToken(explicit string) (string, string) {
 	if p := tokenFile(); p != "" {
 		if b, err := os.ReadFile(p); err == nil {
 			if t := strings.TrimSpace(string(b)); t != "" {
+				warnOpenTokenFile(p)
 				return t, p
 			}
 		}
@@ -133,6 +136,32 @@ func findToken(explicit string) (string, string) {
 		return t, "QUILZO_TOKEN"
 	}
 	return "", ""
+}
+
+// openTokenFileWarned keeps warnOpenTokenFile to one line a command,
+// however many times the command asks who is running it.
+var openTokenFileWarned sync.Once
+
+// warnOpenTokenFile says, once, that the token file can be read by
+// accounts other than its owner's. The file is preferred to QUILZO_TOKEN
+// for being 0600 (tokenFile), and one written at 0644 by hand, or copied
+// with the mode of wherever it came from, was used without a word: any
+// account on the machine could act as its holder. Still used, since a
+// command that stopped working would be a worse way to find out, and said
+// the way ssh says it of a key, with what closes it.
+func warnOpenTokenFile(path string) {
+	if runtime.GOOS == "windows" {
+		// A Windows file's mode bits do not say who may read it.
+		return
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm()&0o077 == 0 {
+		return
+	}
+	openTokenFileWarned.Do(func() {
+		fmt.Fprintf(os.Stderr, "warning: %s can be read by other accounts (mode %04o), "+
+			"so they can act as you; chmod 600 %s\n", path, info.Mode().Perm(), path)
+	})
 }
 
 // resolveCaller identifies whoever is running the command.
