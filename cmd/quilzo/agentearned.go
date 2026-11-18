@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/quilzo/quilzo/internal/assist"
 	"os"
 	"path/filepath"
 	"sort"
@@ -85,9 +86,21 @@ func servedBy(m interface{ Name() string }) evals.Served {
 }
 
 // drivingModel is the model an agent's run is driven by now.
+//
+// Without a gateway the run is driven by the one model the install
+// configures, and that is named from its configuration, not asked of the
+// model: the model holds its key as well, and every reason that names the
+// driving model is printed, by agent run and by agent earned.
 func drivingModel(root, name string) evals.Served {
 	m, _ := agentRunModel(root, name)
-	return servedBy(m)
+	if m == nil {
+		return evals.Served{}
+	}
+	if s, ok := m.(interface{ Serves() (string, string) }); ok {
+		route, model := s.Serves()
+		return evals.Served{Model: model, Route: route}
+	}
+	return evals.Served{Model: assist.ConfiguredModel()}
 }
 
 // evalsEarn is the autonomy an agent's evaluations earn it now, and why:

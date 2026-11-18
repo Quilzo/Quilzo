@@ -509,9 +509,14 @@ keep than a list of the ones that did not need it.
 
 ## `go/clear-text-logging` — `cmd/quilzo/agentcmd.go:651` (628 when first reported) and `cmd/quilzo/agentearned.go:282`
 
-**To be dismissed** as a *false positive*. The request is filed with the pull
-request that added the two lines (Quilzo/Quilzo#430); the alert numbers are
-the two `go/clear-text-logging` results at those lines.
+**Resolved in code, 18 November 2026.** Dismissing these did not last: each
+merge moved the lines the path runs through, and the scanner raised the same
+finding again as a new alert. The driving model is now named from its
+configuration (`assist.ConfiguredModel`, which reads `QUILZO_MODEL`), not
+asked of the model that also holds the key, so no path from the key reaches
+either line. `TestTheDrivingModelIsNamedFromItsConfiguration` holds that.
+What follows is the analysis that showed the finding was false, kept as the
+record of why.
 
 ### The flow, from the SARIF
 

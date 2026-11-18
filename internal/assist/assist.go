@@ -563,11 +563,20 @@ func NewHTTPModel() (*HTTPModel, error) {
 	if key == "" {
 		key = os.Getenv("OLLAMA_API_KEY")
 	}
-	model := os.Getenv("QUILZO_MODEL")
-	if model == "" {
-		model = "gpt-oss:20b"
+	return NewHTTPModelAt(base, key, ConfiguredModel())
+}
+
+// ConfiguredModel is the name of the model the environment configures,
+// QUILZO_MODEL, or gpt-oss:20b when it is unset, read from the environment
+// alone. Whatever names the configured model in a message reads it here
+// rather than asking the model: the model also holds its key, and a name
+// read from the object that carries a credential is one nobody reviewing
+// the code, a scanner included, can tell from the credential at a glance.
+func ConfiguredModel() string {
+	if model := os.Getenv("QUILZO_MODEL"); model != "" {
+		return model
 	}
-	return NewHTTPModelAt(base, key, model)
+	return "gpt-oss:20b"
 }
 
 // NewHTTPModelAt is a model at a given endpoint, under the same rule as the
