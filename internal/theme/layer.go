@@ -51,8 +51,8 @@ import (
 //     at under 3:1 against the page or a card, thinner than 2px, or moved
 //     more than 8px from what it marks.
 //   - No text in a colour the words show through (transparent, or a mix
-//     with it), unless the same rule clips a background to the text, which
-//     is how a gradient title is drawn.
+//     with it), unless the same rule clips a gradient background to the
+//     text, which is how a gradient title is drawn.
 //   - No backslash escapes, which can spell any word in a way no pattern
 //     sees, and no "<", which a stylesheet has no use for.
 //   - No string that runs over a line break, no { } block in a custom
@@ -182,10 +182,11 @@ type layerCheck struct {
 // textUse is one rule's text colour, kept to be judged at the end.
 type textUse struct {
 	value, where, decl string
-	// clipped is that the same rule clips its background to the text, so
-	// the words are drawn in the background and the colour is not what
-	// anybody reads.
-	clipped bool
+	// clipTo and background are what the same rule gives background-clip
+	// and its background: a rule that clips a gradient to the text draws the
+	// words in the gradient, and the colour is not what anybody reads
+	// (clipped).
+	clipTo, background string
 }
 
 // outlineUse is one outline declaration, kept to be judged at the end.
@@ -610,7 +611,7 @@ func (c *layerCheck) judgeOutlines() {
 		switch o.prop {
 		case "outline", "outline-width":
 			for _, w := range words {
-				if px, ok := lengthPx(w); w == "thin" || ok && px < 2 {
+				if least, _, ok := lengthPx(w); w == "thin" || ok && least < 2 {
 					c.refuse("%s { %s } draws the focus ring thinner than 2px, a line "+
 						"nobody looking for it finds (WCAG 2.4.11). The shipped styles draw it "+
 						"at 3px", o.where, o.decl)
@@ -619,7 +620,7 @@ func (c *layerCheck) judgeOutlines() {
 			}
 		case "outline-offset":
 			for _, w := range words {
-				if px, ok := lengthPx(w); ok && (px < 0 || px > 8) {
+				if least, most, ok := lengthPx(w); ok && (least < 0 || most > 8) {
 					c.refuse("%s { %s } moves the focus ring away from what it marks, so it "+
 						"no longer shows where somebody is (WCAG 2.4.7). An offset from 0 to "+
 						"8px keeps it round the thing that has focus", o.where, o.decl)
@@ -666,18 +667,42 @@ func (c *layerCheck) judgeRing(o outlineUse) {
 
 // textColours keeps a rule's text colour to be judged once the layer is read.
 func (c *layerCheck) textColours(decls map[string]string, selectors []string) {
-	clipped := false
-	for _, p := range []string{"background-clip", "-webkit-background-clip"} {
-		if strings.Contains(strings.ToLower(decls[p]), "text") {
-			clipped = true
-		}
-	}
+	clipTo := decls["background-clip"] + " " + decls["-webkit-background-clip"]
+	drawn := decls["background"] + " " + decls["background-image"]
 	for _, p := range []string{"color", "-webkit-text-fill-color"} {
 		if v, ok := decls[p]; ok {
-			c.texts = append(c.texts, textUse{value: v, clipped: clipped,
+			c.texts = append(c.texts, textUse{value: v, clipTo: clipTo, background: drawn,
 				where: clip(strings.Join(selectors, " "), 40), decl: clip(p+": "+v, 60)})
 		}
 	}
+}
+
+// clipped is that a rule draws its words in a background of its own: it
+// clips its background to the text, and that background is a gradient,
+// which is what a gradient title is. Each is read as words, custom
+// properties opened out, once the layer is read.
+//
+// It was any background-clip with "text" anywhere in it, so a rule that
+// named a property called --text-clip, or clipped to the text a background
+// it never drew, could put its words in transparent and nothing behind them:
+// `.lead { color: transparent; background-clip: text }` was accepted, and
+// the standfirst was there for nobody.
+func (c *layerCheck) clipped(t textUse) bool {
+	toText := false
+	for _, w := range c.outlineWords(t.clipTo, 0, map[string]bool{}) {
+		if w == "text" {
+			toText = true
+		}
+	}
+	if !toText {
+		return false
+	}
+	for _, w := range c.outlineWords(t.background, 0, map[string]bool{}) {
+		if strings.HasSuffix(w, "-gradient") {
+			return true
+		}
+	}
+	return false
 }
 
 // judgeTexts refuses text in a colour the words show through.
@@ -687,19 +712,19 @@ func (c *layerCheck) textColours(decls map[string]string, selectors []string) {
 // transparent }` passed, and the standfirst was there for nobody. A colour
 // that is partly transparent fades the words into whatever is behind them,
 // which no pair the contrast check holds is. The one use that draws words
-// anybody can read is a gradient title, whose rule clips a background to the
-// text, and that is allowed.
+// anybody can read is a gradient title, whose rule clips a gradient
+// background to the text, and that is allowed.
 func (c *layerCheck) judgeTexts() {
 	for _, t := range c.texts {
-		if t.clipped {
+		if c.clipped(t) {
 			continue
 		}
 		for _, w := range c.outlineWords(t.value, 0, map[string]bool{}) {
 			if w == "transparent" {
 				c.refuse("%s { %s } lets the words show through, so nobody can read them, "+
 					"and the contrast check never sees what they are drawn in. Text takes a "+
-					"token, as var(--on-surface); a gradient title clips a background to the "+
-					"text in the same rule (background-clip: text)", t.where, t.decl)
+					"token, as var(--on-surface); a gradient title clips a gradient background "+
+					"to the text in the same rule (background-clip: text)", t.where, t.decl)
 				break
 			}
 		}
@@ -839,25 +864,57 @@ func topLevel(v string, sep byte) []string {
 	return out
 }
 
-// lengthPx is a length in CSS pixels, for a unit that is the same size on
-// every screen or near enough: the font-relative ones at the 16px a browser
-// starts from. A percentage, a viewport unit or a bare number is not one.
-func lengthPx(word string) (float64, bool) {
+// lengthPx is the least and the most a length can be in CSS pixels: the
+// font-relative units at the 16px a browser starts from, and the units of
+// the window or of a container anywhere from a 320px phone to a 2560px
+// screen. A percentage or a bare number is not one.
+//
+// Only the units the same size on every screen were read, so a ring drawn
+// at 0.1vw, under half a pixel on a phone, or moved -100vw, a screen's width
+// from what it marks, was not judged at all; nor was a number written with
+// an exponent, 1e-1px, which a browser reads as a tenth of a pixel.
+func lengthPx(word string) (least, most float64, ok bool) {
 	m := reLengthWord.FindStringSubmatch(word)
 	if m == nil {
-		return 0, false
+		return 0, 0, false
 	}
 	n, err := strconv.ParseFloat(m[1], 64)
 	if err != nil {
-		return 0, false
+		return 0, 0, false
 	}
-	per, ok := map[string]float64{"px": 1, "em": 16, "rem": 16, "ch": 8, "ex": 8, "pt": 96.0 / 72,
-		"pc": 16, "in": 96, "cm": 96 / 2.54, "mm": 96 / 25.4, "q": 96 / 101.6}[m[2]]
-	return n * per, ok
+	per, known := lengthUnits[m[2]]
+	if !known {
+		return 0, 0, false
+	}
+	least, most = n*per[0], n*per[1]
+	if least > most {
+		least, most = most, least
+	}
+	return least, most, true
 }
 
-// reLengthWord is a number and its unit.
-var reLengthWord = regexp.MustCompile(`^([+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+))([a-z]+)$`)
+// lengthUnits is the least and the most one of each unit is in CSS pixels.
+var lengthUnits = func() map[string][2]float64 {
+	u := map[string][2]float64{"px": {1, 1}, "em": {16, 16}, "rem": {16, 16}, "ic": {16, 16},
+		"ric": {16, 16}, "ch": {8, 8}, "rch": {8, 8}, "ex": {8, 8}, "rex": {8, 8},
+		"cap": {11.2, 11.2}, "rcap": {11.2, 11.2}, "lh": {20.8, 48}, "rlh": {20.8, 48},
+		"pt": {96.0 / 72, 96.0 / 72}, "pc": {16, 16}, "in": {96, 96},
+		"cm": {96 / 2.54, 96 / 2.54}, "mm": {96 / 25.4, 96 / 25.4}, "q": {96 / 101.6, 96 / 101.6}}
+	// The window's units, in its small, large and dynamic sizes, and a
+	// container's, which is no wider than the window.
+	for _, base := range []string{"vw", "vh", "vi", "vb", "vmin", "vmax"} {
+		for _, size := range []string{"", "s", "l", "d"} {
+			u[size+base] = [2]float64{3.2, 25.6}
+		}
+	}
+	for _, unit := range []string{"cqw", "cqh", "cqi", "cqb", "cqmin", "cqmax"} {
+		u[unit] = [2]float64{3.2, 25.6}
+	}
+	return u
+}()
+
+// reLengthWord is a number, with an exponent if it has one, and its unit.
+var reLengthWord = regexp.MustCompile(`^([+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:e[+-]?[0-9]+)?)([a-z]+)$`)
 
 // outlineWords are the words of a value, its functions opened out, and the
 // words of what each custom property it names may hold.

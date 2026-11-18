@@ -320,3 +320,49 @@ func TestARingOrTextNobodyCanSeeIsRefused(t *testing.T) {
 		}
 	}
 }
+
+// A ring nobody can see, or words nobody can read, written another way is
+// refused as surely as the spelling above.
+//
+// The ring's width and offset were measured only in units the same size on
+// every screen, so `outline: 0.1vw solid var(--focus-ring)`, a ring under
+// half a pixel on a phone, and `outline-offset: -100vw`, a ring a screen's
+// width from what it marks, passed; and so did `outline-width: 1e-1px`, a
+// tenth of a pixel written as a browser also reads it. A rule that set
+// background-clip to anything with "text" in it, or clipped a background it
+// never drew, could put its words in transparent: `.lead { color:
+// transparent; background-clip: text }` has no background to show, so the
+// standfirst was there for nobody.
+func TestARingOrTextNobodyCanSeeIsRefusedWrittenAnotherWay(t *testing.T) {
+	th, _ := New(nil, nil)
+	for _, css := range []string{
+		"a:focus-visible { outline: 0.1vw solid var(--focus-ring); }",
+		"a:focus-visible { outline-width: 0.2vmin; }",
+		"a:focus-visible { outline-width: 0.05cqi; }",
+		"a:focus-visible { outline-width: 0.01lh; }",
+		"a:focus-visible { outline-offset: -100vw; }",
+		"a:focus-visible { outline-offset: 2dvh; }",
+		"a:focus-visible { outline-width: 1e-1px; }",
+		"a:focus-visible { outline-width: 1E-1PX; }",
+		"a:focus-visible { outline-offset: 1e3px; }",
+		".lead { color: transparent; background-clip: text; }",
+		".lead { color: transparent; -webkit-background-clip: text; background: var(--surface); }",
+		".lead { color: transparent; background: linear-gradient(90deg, var(--on-surface), var(--primary)); " +
+			"background-clip: var(--text-clip); }",
+	} {
+		if !Blocks(CheckLayer(css, th)) {
+			t.Errorf("%q was accepted", css)
+		}
+	}
+	for _, css := range []string{
+		"a:focus-visible { outline: 0.2em solid var(--focus-ring); outline-offset: 1e0px; }",
+		"a:focus-visible { outline: 1vw solid var(--focus-ring); }",
+		"a:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 0.1vw; }",
+		":root { --clip: text; } .section-head h2 { background-image: linear-gradient(90deg, var(--on-surface), var(--primary)); " +
+			"background-clip: var(--clip); color: transparent; }",
+	} {
+		if f := CheckLayer(css, th); Blocks(f) {
+			t.Errorf("%q was refused: %v", css, f)
+		}
+	}
+}
