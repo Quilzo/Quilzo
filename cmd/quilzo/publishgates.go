@@ -5,7 +5,9 @@ package main
 
 import (
 	"fmt"
+	"html"
 	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -15,8 +17,10 @@ import (
 	"github.com/quilzo/quilzo/internal/pii"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/section"
+	"github.com/quilzo/quilzo/internal/seo"
 	"github.com/quilzo/quilzo/internal/site"
 	"github.com/quilzo/quilzo/internal/store"
+	"github.com/quilzo/quilzo/internal/tmpl"
 )
 
 // The checks about the content, built once and handed to every surface.
@@ -367,20 +371,114 @@ func contentGates(root string, s *store.Store, ref string) gate.Set {
 				if merr != nil {
 					return nil, nil, merr
 				}
-				if set == nil {
-					return nil, nil, nil
-				}
 				pages, perr := pagesAt()
 				if perr != nil {
 					return nil, nil, perr
 				}
-				for _, p := range set.Broken(pages) {
-					blocking = append(blocking, gate.Finding{Detail: p.String()})
+				if set != nil {
+					for _, p := range set.Broken(pages) {
+						blocking = append(blocking, gate.Finding{Detail: p.String()})
+					}
 				}
-				return blocking, nil, nil
+				advisory, err = linksToNoPage(root, pages)
+				return blocking, advisory, err
 			},
 		},
 	}
+}
+
+// linksToNoPage lists the links written in pages to an address on this site
+// that is no page, redirect or address the site serves.
+//
+// Every starter's sample linked to pages it never made — /about, /contact,
+// /guide, /start, /shop, /work/reading — and they were published as 404s
+// with nothing said: a menu entry pointing at nothing is refused, and a link
+// in the words was never looked at. Advice rather than a refusal, because a
+// page may go out before the one it links to. And only what is certainly
+// nowhere: an address under a page is the page's records or posts, one with
+// a dot in its first part is a file, and the site's own routes are its own.
+func linksToNoPage(root string, pages map[string]any) ([]gate.Finding, error) {
+	redirects, err := siteRedirects(root)
+	if err != nil {
+		return nil, err
+	}
+	moved := map[string]bool{}
+	for _, r := range redirects {
+		if from, perr := seo.Path(r.From); perr == nil {
+			moved[strings.TrimSuffix(from, "/")] = true
+		}
+	}
+	var out []gate.Finding
+	for _, name := range sortedNames(pages) {
+		for _, f := range contentStrings(pages[name]) {
+			for _, href := range linksIn(f) {
+				if finding, ok := linkToNoPage(name, f.path, href, pages, moved); ok {
+					out = append(out, finding)
+				}
+			}
+		}
+	}
+	return out, nil
+}
+
+// reProseLink is a link as the prose filter draws it.
+var reProseLink = regexp.MustCompile(`<a href="([^"]*)"`)
+
+// linksIn is the links a field of a page holds: the address a field named
+// for one gives, and every link in the words of a field the layouts draw as
+// prose, a page's body and a prose section's.
+//
+// The words too, because [our story](/story) in a page's body sent a reader
+// to a page that was not there as surely as a button did, and the publish
+// named every button and none of those. Read by the filter that draws them,
+// so what is checked is what a reader is given.
+func linksIn(f contentField) []string {
+	if strings.HasSuffix(f.key, "href") {
+		return []string{f.text}
+	}
+	if f.path != "body" && !strings.HasSuffix(f.path, ".prose.body") {
+		return nil
+	}
+	var out []string
+	for _, m := range reProseLink.FindAllStringSubmatch(string(tmpl.Prose(f.text)), -1) {
+		out = append(out, html.UnescapeString(m[1]))
+	}
+	return out
+}
+
+// linkToNoPage is what is said of one link in a page, when it goes to an
+// address on this site that is certainly nowhere.
+func linkToNoPage(name, field, href string, pages map[string]any, moved map[string]bool) (gate.Finding, bool) {
+	href = strings.TrimSpace(href)
+	if !strings.HasPrefix(href, "/") || strings.HasPrefix(href, "//") {
+		return gate.Finding{}, false
+	}
+	path, _, _ := strings.Cut(href, "#")
+	path, _, _ = strings.Cut(path, "?")
+	path = strings.TrimSuffix(path, "/")
+	first, _, _ := strings.Cut(strings.TrimPrefix(path, "/"), "/")
+	switch {
+	case path == "", moved[path], strings.Contains(first, "."), siteRoutes[first]:
+		return gate.Finding{}, false
+	}
+	if _, ok := pages[first]; ok {
+		return gate.Finding{}, false
+	}
+	if _, ok := pages[strings.TrimPrefix(path, "/")]; ok {
+		return gate.Finding{}, false
+	}
+	return gate.Finding{Page: name, Detail: fmt.Sprintf(
+		"%s links to %s, which is no page of this site, so a reader who "+
+			"follows it is told it is not there", field, href)}, true
+}
+
+// siteRoutes are the first parts of the addresses the site serves besides
+// its pages (internal/public), so a link to one is not a link to nothing.
+var siteRoutes = map[string]bool{
+	"@": true, "account": true, "api": true, "ask": true, "board": true, "book": true,
+	"fonts": true, "form": true, "live": true, "mcp": true, "media": true,
+	"newsletter": true, "offline": true, "search": true, "share": true, "shared": true,
+	"ucp": true,
 }
 
 func sortedNames(pages map[string]any) []string {

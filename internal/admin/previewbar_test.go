@@ -4,6 +4,7 @@
 package admin
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -242,5 +243,32 @@ func TestAPreviewWithATurkishTitleKeepsBothHalvesInPlace(t *testing.T) {
 				t.Errorf("%q: the halves are not just inside their tags:\n  %s", x, out)
 			}
 		}()
+	}
+}
+
+// What a section still waits for is said to the person previewing the page,
+// not to its readers. The layout told every reader of a page with a video
+// section and no video "No video chosen yet. Send one to the bot and pick it
+// here"; the panel says it now, beside the section, and the page does not.
+func TestThePanelSaysWhatASectionStillWaitsFor(t *testing.T) {
+	body := map[string]any{"title": "Home", "sections": []any{
+		map[string]any{"prose": map[string]any{"title": "About", "paragraphs": []any{"Words."}}},
+		map[string]any{"video": map[string]any{"title": "Watch this", "src": ""}},
+	}}
+	bar := previewBar("index", body, schema.Type{}, false)
+	items := regexp.MustCompile(`(?s)<li>.*?</li>`).FindAllString(bar, -1)
+	var video string
+	for _, it := range items {
+		if strings.Contains(it, "at=1") {
+			video = it
+		}
+	}
+	if !strings.Contains(video, "no video chosen yet") {
+		t.Errorf("the panel does not say the video section has no video: %s", video)
+	}
+	for _, it := range items {
+		if strings.Contains(it, "at=0") && strings.Contains(it, "chosen") {
+			t.Errorf("the prose section is said to wait for something: %s", it)
+		}
 	}
 }

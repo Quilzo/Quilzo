@@ -34,6 +34,7 @@ import (
 	"github.com/quilzo/quilzo/internal/menu"
 	"github.com/quilzo/quilzo/internal/site"
 	"strconv"
+	"strings"
 	"time"
 	"unicode/utf8"
 )
@@ -49,6 +50,9 @@ type Sources struct {
 	// IconStyle is how the icons a page names are drawn: one of
 	// internal/icons' styles, from the theme.
 	IconStyle string
+	// Scheme is the colour scheme the theme draws the site in: both, dark
+	// or light, from the theme. Empty is both.
+	Scheme string
 	// Icon is the address of the site's icon, for a layout that shows it
 	// beside the name. Empty when the site has none.
 	Icon string
@@ -153,7 +157,7 @@ func (s Sources) For(name string, body any, args map[string]string) (map[string]
 		// Decorated, not raw. The derived companions — the negations a language
 		// with no else cannot express — are added here so that every renderer
 		// sees the same page. See derive.go for what they are and why.
-		"page":  decoratePage(body, s.asks()),
+		"page":  s.titled(decoratePage(body, s.asks())),
 		"site":  s.site(name),
 		"menus": s.menus(name),
 		// When this page was rendered, for a form's timing check.
@@ -308,9 +312,42 @@ func Href(r menu.Rendered) string {
 	return "/" + r.Target
 }
 
+// titled says whether a page's title goes before the site's name in a
+// <title>, as title_before_name: when it has one, and it is not the name.
+//
+// Every layout wrote the page's title and then the site's name, and every
+// site the builder makes titles its home page with the site's name, so each
+// one read "Crumb & Co — Crumb & Co" in a tab and a search result. The
+// template language cannot compare two values, so the comparison is made
+// here, ignoring case and the spaces around either.
+func (s Sources) titled(page any) any {
+	m, ok := page.(map[string]any)
+	if !ok {
+		return page
+	}
+	title, _ := m["title"].(string)
+	if t := strings.TrimSpace(title); t != "" && !strings.EqualFold(t, strings.TrimSpace(s.Name)) {
+		setIfAbsent(m, "title_before_name", true)
+	}
+	return m
+}
+
+// colorScheme is what a page's color-scheme declaration says for a scheme.
+//
+// A layout said "light dark" whatever the theme drew, so a site drawn dark
+// for every reader told a browser it could be drawn light, and a reader whose
+// system asked for light had a light canvas until the stylesheet arrived.
+func colorScheme(scheme string) string {
+	switch scheme {
+	case "dark", "light":
+		return scheme
+	}
+	return "light dark"
+}
+
 // site is what a template knows about the site as a whole.
 func (s Sources) site(page string) map[string]any {
-	out := map[string]any{"name": s.Name, "page": page}
+	out := map[string]any{"name": s.Name, "page": page, "color_scheme": colorScheme(s.Scheme)}
 	if s.Members {
 		out["members"] = true
 	}

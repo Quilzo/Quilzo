@@ -13,10 +13,12 @@ import (
 	"fmt"
 	"go/format"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -52,6 +54,109 @@ var styles = []struct{ key, dir, suffix string }{
 
 var rePath = regexp.MustCompile(`<path d="([^"]+)"`)
 var reSafe = regexp.MustCompile(`^[0-9MmLlHhVvCcSsQqTtAaZz .,-]+$`)
+
+var (
+	reViewBox = regexp.MustCompile(`<svg[^>]*\sviewBox="([^"]+)"`)
+	reWidth   = regexp.MustCompile(`<svg[^>]*\swidth="([^"]+)"`)
+	reHeight  = regexp.MustCompile(`<svg[^>]*\sheight="([^"]+)"`)
+	reToken   = regexp.MustCompile(`[A-Za-z]|[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?`)
+)
+
+// box is the set's viewBox, which internal/icons serves every icon in.
+const box = "0 -960 960 960"
+
+// inTheBox is an icon's path drawn in the set's box.
+//
+// Most of the source is drawn in the 960-unit box. A few icons are only
+// there in its older drawing, 24 units square with no viewBox: insights and
+// auto_awesome were, and were kept as they came, so they drew a speck in a
+// corner off the box the page shows and every product site's third card had
+// an empty tile. Those are scaled into the box here, and anything drawn in a
+// box of some other shape is refused rather than kept wrong.
+func inTheBox(svg []byte, d string) (string, error) {
+	vb := ""
+	if m := reViewBox.FindSubmatch(svg); m != nil {
+		vb = strings.Join(strings.Fields(string(m[1])), " ")
+	} else if w, h := reWidth.FindSubmatch(svg), reHeight.FindSubmatch(svg); w != nil && h != nil {
+		vb = "0 0 " + string(w[1]) + " " + string(h[1])
+	}
+	switch vb {
+	case box:
+		return d, nil
+	case "0 0 24 24":
+		return rescale(d, 40, -960)
+	}
+	return "", fmt.Errorf("drawn in the box %q, which is not %q or 24 units square", vb, box)
+}
+
+// rescale draws a path k times larger and dy lower: every absolute point is
+// scaled and moved, every relative one only scaled. Only the commands the
+// source uses are read; an arc, whose flags are not coordinates, is refused.
+func rescale(d string, k, dy float64) (string, error) {
+	arity := map[byte]int{'M': 2, 'L': 2, 'T': 2, 'H': 1, 'V': 1, 'C': 6, 'S': 4, 'Q': 4}
+	tokens := reToken.FindAllString(d, -1)
+	num := func(v float64) string {
+		return strconv.FormatFloat(math.Round(v*1000)/1000, 'f', -1, 64)
+	}
+	var b strings.Builder
+	var cmd byte
+	lettered, written := false, false
+	for i := 0; i < len(tokens); {
+		if isCommand(tokens[i]) {
+			cmd = tokens[i][0]
+			written = cmd >= 'a'
+			// The first move of a path is from the origin, so its point is
+			// a point in the box however it is written.
+			if i == 0 && cmd == 'm' {
+				cmd = 'M'
+			}
+			b.WriteByte(cmd)
+			lettered = true
+			i++
+			if cmd == 'Z' || cmd == 'z' {
+				continue
+			}
+		}
+		upper := cmd &^ 0x20
+		n, known := arity[upper]
+		if !known || i+n > len(tokens) {
+			return "", fmt.Errorf("cannot rescale %q", string(cmd))
+		}
+		relative := cmd != upper
+		for a := 0; a < n; a++ {
+			v, err := strconv.ParseFloat(tokens[i+a], 64)
+			if err != nil {
+				return "", err
+			}
+			v *= k
+			if !relative && (upper == 'V' || (upper != 'H' && a%2 == 1)) {
+				v += dy
+			}
+			if !lettered || (a > 0 && v >= 0) {
+				b.WriteByte(' ')
+			}
+			lettered = false
+			b.WriteString(num(v))
+		}
+		i += n
+		// Pairs after a move are lines, relative after a relative move. Said
+		// with a letter, because the first move may have changed case.
+		if upper == 'M' && i < len(tokens) && !isCommand(tokens[i]) {
+			cmd = 'L'
+			if written {
+				cmd = 'l'
+			}
+			b.WriteByte(cmd)
+			lettered = true
+		}
+	}
+	return b.String(), nil
+}
+
+func isCommand(t string) bool {
+	c := t[0]
+	return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+}
 
 func main() {
 	type job struct{ name, style, url string }
@@ -98,11 +203,19 @@ func main() {
 				mu.Unlock()
 				return
 			}
+			d, err := inTheBox(b, string(m[1]))
+			if err != nil {
+				mu.Lock()
+				fmt.Fprintf(os.Stderr, "%s %s: %v\n", j.name, j.style, err)
+				failed = true
+				mu.Unlock()
+				return
+			}
 			mu.Lock()
 			if out[j.name] == nil {
 				out[j.name] = map[string]string{}
 			}
-			out[j.name][j.style] = string(m[1])
+			out[j.name][j.style] = d
 			mu.Unlock()
 		}(j)
 	}

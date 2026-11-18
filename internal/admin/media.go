@@ -85,6 +85,51 @@ func (s *Server) handleMedia(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// A picture's narrower copies are listed with it rather than as cards of
+	// their own, unless asked for, as `quilzo media list` hides them unless
+	// --all. Every copy was a card with its own "rights: undeclared", so
+	// three uploads read as twelve files. A recording's still says whose it
+	// is, because its name could be the name of a poster somebody uploaded.
+	//
+	// Only under a picture that is there. Removing a picture leaves the
+	// copies made from it, and folded under a picture that was gone they
+	// were on no card at all: the screen counted no files while it held
+	// some, and nothing showed them to remove.
+	all := r.URL.Query().Get("all") == "1"
+	names := make(map[string]string, len(files))
+	for _, f := range files {
+		names[f.ID] = f.Name
+		if strings.TrimSpace(f.Name) == "" {
+			names[f.ID] = shortHash(f.ID)
+		}
+	}
+	folded := func(f media.File) bool {
+		_, there := names[f.RenditionOf]
+		return f.RenditionOf != "" && there
+	}
+	copies := map[string]int{}
+	hidden := 0
+	for _, f := range files {
+		if folded(f) {
+			copies[f.RenditionOf]++
+			hidden++
+		}
+	}
+	stillOf := map[string]string{}
+	for _, f := range files {
+		if f.PosterOf != "" {
+			stillOf[f.ID] = names[f.PosterOf]
+		}
+	}
+	shown := files
+	if !all {
+		shown = make([]media.File, 0, len(files)-hidden)
+		for _, f := range files {
+			if !folded(f) {
+				shown = append(shown, f)
+			}
+		}
+	}
 	var total int64
 	now := time.Now().UTC()
 	rights := make(map[string]rightsRow, len(files))
@@ -96,7 +141,7 @@ func (s *Server) handleMedia(w http.ResponseWriter, r *http.Request) {
 		}
 		row := rightsOf(f, now)
 		rights[f.ID] = row
-		if row.State == "undeclared" {
+		if row.State == "undeclared" && !folded(f) {
 			undeclared++
 		}
 	}
@@ -118,7 +163,8 @@ func (s *Server) handleMedia(w http.ResponseWriter, r *http.Request) {
 		"Replacements": replacementsFor(files),
 		"ReplacedBy":   supersededBy(files),
 		"Nav":          "media", "Title": "Media", "Principal": p,
-		"Files": files, "Total": total, "Accepted": media.Accepted(),
+		"Files": shown, "Total": total, "Accepted": media.Accepted(),
+		"All": all, "Copies": copies, "Hidden": hidden, "StillOf": stillOf, "Names": names,
 		"Rights": rights, "Undeclared": undeclared,
 		"WebP": webp, "HaveWebP": haveWebP,
 		"FFmpeg": ffmpeg, "HaveFFmpeg": haveFFmpeg,

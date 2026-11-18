@@ -252,13 +252,15 @@ func (l *Library) describe(f *media.File, body []byte) {
 }
 
 // posterName gives the still a name somebody can recognise beside its
-// recording.
+// recording: RECORDING-still.png. It was RECORDING-poster.png, which is what
+// somebody names the poster they upload for a recording, so the library
+// listed two pictures of one name at two sizes.
 func posterName(f media.File) string {
 	base := displayOf(f)
 	if i := strings.LastIndex(base, "."); i > 0 {
 		base = base[:i]
 	}
-	return base + "-poster.png"
+	return base + "-still.png"
 }
 
 // displayOf is a file's name, or its short id when it has none.

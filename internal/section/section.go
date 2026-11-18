@@ -375,10 +375,22 @@ var kinds = []Kind{
 	},
 }
 
-// Kinds returns the catalogue, in reading order.
+// Kinds returns the catalogue, in reading order, a group at a time.
+//
+// A group at a time because every list of them is read under its group's
+// heading, and kinds added later were added at the end: events and posts
+// after booking, so `quilzo section kinds` printed "data" and "closing"
+// twice. Grouped here rather than by moving them in the slice, whose order
+// also decides which kind an entry naming two of them is read as.
 func Kinds() []Kind {
-	out := make([]Kind, len(kinds))
-	copy(out, kinds)
+	out := make([]Kind, 0, len(kinds))
+	for _, g := range Groups() {
+		for _, k := range kinds {
+			if k.Group == g {
+				out = append(out, k)
+			}
+		}
+	}
 	return out
 }
 
@@ -844,6 +856,7 @@ func mediaAdvice(at int, kind string, inner map[string]any) []Problem {
 				"names no backdrop_url, so it is drawn plain", kind)})
 		}
 	}
+	out = append(out, waiting(at, kind, inner)...)
 	if kind != "features" {
 		return out
 	}
@@ -859,6 +872,52 @@ func mediaAdvice(at int, kind string, inner map[string]any) []Problem {
 			out = append(out, Problem{at, fmt.Sprintf("card %d has a picture and no alt, "+
 				"so it is read as decoration. Say what it shows if the card's title "+
 				"does not", i+1)})
+		}
+	}
+	return out
+}
+
+// Waiting lists what a page's sections still wait for: a video section's
+// video, a gallery's pictures. The publish lists these as advice, and the
+// admin's preview says them beside the section they belong to.
+func Waiting(body any) []Problem {
+	list, _ := sectionsOf(body)
+	var out []Problem
+	for i, entry := range list {
+		m, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		if name, inner := discriminator(m); inner != nil {
+			out = append(out, waiting(i, name, inner)...)
+		}
+	}
+	return out
+}
+
+// waiting is what one section still waits for. Not refused: a page may go
+// out before its video is chosen, as a split section may leave its picture
+// out. But it is said, because the layout told every reader "No video
+// chosen yet. Send one to the bot and pick it here", an instruction for
+// whoever was editing the page, and a publish said nothing at all.
+func waiting(at int, kind string, inner map[string]any) []Problem {
+	var out []Problem
+	switch kind {
+	case "video":
+		if src, _ := inner["src"].(string); strings.TrimSpace(src) == "" {
+			out = append(out, Problem{at, "video has no video chosen yet, so readers see " +
+				"its heading and nothing to play. Choose one on Arrange sections, or " +
+				"with quilzo section set"})
+		}
+	case "gallery":
+		items, _ := inner["items"].([]any)
+		for i, it := range items {
+			if m, ok := it.(map[string]any); ok {
+				if img, _ := m["image"].(string); strings.TrimSpace(img) == "" {
+					out = append(out, Problem{at, fmt.Sprintf("gallery picture %d has no "+
+						"image yet, so readers see only its caption", i+1)})
+				}
+			}
 		}
 	}
 	return out

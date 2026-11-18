@@ -12,6 +12,10 @@ publication. Open Details on a picture's card to record them.</p>{{end}}
   Pictures, recordings and documents for your pages:
   {{plural (len .Files) "file" "files"}}, {{bytes .Total}} in all.
 </p>
+{{if .Hidden}}<p class="hint">{{if .All}}With the {{plural .Hidden "narrower copy" "narrower copies"}}
+  made for phones, each a file of its own. <a href="/media">List each picture once</a>{{else}}And
+  {{plural .Hidden "narrower copy" "narrower copies"}} made for phones, listed with the
+  picture each was made from. <a href="/media?all=1">Show them as files too</a>{{end}}</p>{{end}}
 
 {{if .CanWrite}}
 <h2>Upload</h2>
@@ -103,6 +107,9 @@ publication. Open Details on a picture's card to record them.</p>{{end}}
       <p class="media-tags">
         {{if $r.State}}<span class="tag state-{{$r.State}}">rights: {{$r.State}}{{if $r.Ends}} until {{$r.Ends}}{{end}}</span>{{end}}
         {{if .Width}}{{if .Focus}}<span class="tag">crops from {{.Focus.Position}}</span>{{end}}{{end}}
+        {{with index $.Copies .ID}}<span class="tag">{{plural . "narrower copy" "narrower copies"}} for phones</span>{{end}}
+        {{with index $.StillOf .ID}}<span class="tag">still from {{.}}</span>{{end}}
+        {{if .RenditionOf}}<span class="tag">a narrower copy of {{with index $.Names .RenditionOf}}{{.}}{{else}}a picture no longer here{{end}}</span>{{end}}
         {{/* Both directions. Supersedes points backwards, so a reader looking
              at a retired picture has no way to know it was retired without
              the map the handler builds. */}}

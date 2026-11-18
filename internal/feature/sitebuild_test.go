@@ -5,6 +5,7 @@ package feature
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -49,6 +50,14 @@ func TestEveryKindOfSiteBuildsIntoAPackageThatInstalls(t *testing.T) {
 			}
 			for name, body := range pages {
 				bad, advice := section.Validate(body)
+				// Except the pictures a portfolio's gallery waits for, which
+				// only the person whose work it is can add, and which the
+				// publish lists until they do.
+				waits := map[section.Problem]bool{}
+				for _, p := range section.Waiting(body) {
+					waits[p] = true
+				}
+				advice = slices.DeleteFunc(advice, func(p section.Problem) bool { return waits[p] })
 				if len(bad)+len(advice) > 0 {
 					t.Errorf("page %s: %v %v", name, bad, advice)
 				}
@@ -293,5 +302,57 @@ func TestABuiltSitesWiringIsNotKnowledge(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// Every page a built site has says what it is to a search engine and a link
+// preview. None did: the layouts write a page's description as its meta
+// description and og:description, and no built page had one, although each
+// opens with a sentence saying what it is. That sentence is its description,
+// the home page's the blank somebody fills in with what the site is for, so
+// filling it in once fills both.
+func TestEveryBuiltPageSaysWhatItIs(t *testing.T) {
+	brief := SiteBrief{Description: "A bakery in Leeds", Name: "Hart's Bakery"}
+	start, err := BuildSite(brief, "dana", buildTime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range SiteKinds() {
+		p, err := BuildSite(SiteBrief{Description: "Something for " + k.Name, Name: "Hart & Daughters", Kind: k.Name}, "dana", buildTime)
+		if err != nil {
+			t.Fatal(err)
+		}
+		drafted, _ := json.Marshal(p)
+		repaired, _, err := ReadSiteDraft(string(drafted), brief, start, "dana", "", buildTime)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, built := range []*Package{p, repaired} {
+			for name, page := range pageBodies(built) {
+				body, _ := page.(map[string]any)
+				d, _ := body["description"].(string)
+				hero, _ := body["hero"].(map[string]any)
+				lead, _ := hero["lead"].(string)
+				if strings.TrimSpace(d) == "" {
+					t.Errorf("%s: the %s page has no description", k.Name, name)
+				} else if lead != "" && d != lead {
+					t.Errorf("%s: the %s page is described as %q and opens with %q", k.Name, name, d, lead)
+				}
+			}
+		}
+	}
+	// A description somebody wrote is theirs.
+	p, err := BuildSite(brief, "dana", buildTime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range p.Pages {
+		if p.Pages[i].Name == "index" {
+			p.Pages[i].Body["description"] = "Bread before dawn."
+		}
+	}
+	finishSite(p)
+	if d := pageBodies(p)["index"].(map[string]any)["description"]; d != "Bread before dawn." {
+		t.Errorf("a written description became %q", d)
 	}
 }

@@ -46,6 +46,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/quilzo/quilzo/internal/a2a"
 	"github.com/quilzo/quilzo/internal/asciifold"
@@ -58,6 +60,7 @@ import (
 	"github.com/quilzo/quilzo/internal/marking"
 	"github.com/quilzo/quilzo/internal/media"
 	"github.com/quilzo/quilzo/internal/menu"
+	"github.com/quilzo/quilzo/internal/plaintext"
 	"github.com/quilzo/quilzo/internal/provenance"
 	"github.com/quilzo/quilzo/internal/render"
 	"github.com/quilzo/quilzo/internal/search"
@@ -280,6 +283,9 @@ type Site struct {
 	ToolsTrial string
 	// IconStyle is how the icons a page names are drawn, from the theme.
 	IconStyle string
+	// Scheme is the colour scheme the theme draws the site in: both, dark
+	// or light. Empty is both.
+	Scheme string
 	// Share is where the operating system's share sheet delivers, or nil.
 	//
 	// The one deep OS integration this product can offer without client
@@ -1767,11 +1773,43 @@ func (st *Site) llms(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// shorten is the manifest's short name: what an installed site is labelled
+// under its icon, where about twelve characters fit.
+//
+// Whole words of the name, as many as fit, and the first twelve bytes only
+// when its first word alone is longer, cut where a character ends. It was
+// the first twelve bytes whatever was there: "Brasserie Léon" was labelled
+// "Brasserie L" and half an é, which every platform draws as U+FFFD, and
+// "Sample restaurant" was labelled "Sample resta". A word with no letter or
+// digit in it is not left at the end, so "Smith & Jones Ltd" is "Smith"
+// rather than "Smith &".
 func shorten(name string) string {
-	if len(name) <= 12 {
+	const fits = 12
+	if utf8.RuneCountInString(name) <= fits {
 		return name
 	}
-	return name[:12]
+	words := strings.Fields(name)
+	kept, n := 0, 0
+	for i, w := range words {
+		size := utf8.RuneCountInString(w)
+		if i > 0 {
+			size++
+		}
+		if n+size > fits {
+			break
+		}
+		n += size
+		kept = i + 1
+	}
+	for kept > 0 && !strings.ContainsFunc(words[kept-1], func(r rune) bool {
+		return unicode.IsLetter(r) || unicode.IsDigit(r)
+	}) {
+		kept--
+	}
+	if kept == 0 {
+		return plaintext.Clip(strings.TrimSpace(name), fits, "")
+	}
+	return strings.Join(words[:kept], " ")
 }
 
 func escapeText(s string) string { return textReplacer.Replace(s) }
@@ -1990,7 +2028,7 @@ func (st *Site) sourcesFor(r *http.Request) render.Sources {
 // drew neither the form nor the icon a visitor gets, and no gate ever judged
 // the form markup a visitor is served.
 func (st *Site) Sources(pages map[string]any) render.Sources {
-	src := render.Sources{Name: st.Name, IconStyle: st.IconStyle, Listings: st.Listings, Pages: pages,
+	src := render.Sources{Name: st.Name, IconStyle: st.IconStyle, Scheme: st.Scheme, Listings: st.Listings, Pages: pages,
 		SrcSet: st.srcSet, Tracks: st.tracks, Poster: st.poster, Media: st.mediaInfo,
 		Form: st.formData, Thread: st.threadData, Buy: st.Buy, Booking: st.bookingData,
 		Newsletter: st.newsletterData, Events: st.eventsData, Posts: st.postsData}

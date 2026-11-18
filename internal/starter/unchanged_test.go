@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -130,15 +131,92 @@ const centredEyebrow = `/* The eyebrow of a centred hero is centred too. The rul
 .hero.hero-center > .chip { align-self: center; }
 `
 
+// bandPaddingNow and bandPaddingBefore are the shared gap between two
+// sections, which took the top padding off a tinted band, and
+// centredActions is the rule that centres a centred hero's buttons when they
+// wrap: see TestATintedBandKeepsItsPadding and
+// TestCentredButtonsStayCentredWhenTheyWrap.
+const (
+	bandPaddingBefore = ".section + .section { padding-top: 0; }\n"
+	bandPaddingNow    = `/* Two plain sections in a row share one gap, the first one's. Neither may
+   be a tinted band, a gradient or a media surface, whose padding is inside
+   its colour: this outranked the bands' own padding, so a closing band after
+   another section lost its top padding and its heading sat on the band's top
+   edge, and a plain section after a band had nothing between its words and
+   the band's bottom edge. The exclusions are inside :where() so the rule
+   weighs what ".section + .section" did: as :not() alone they outweighed the
+   gradient's own padding below, which had won by coming later. */
+.section:where(:not([class*="tone-"], .surface-gradient, .surface-media)) + .section:where(:not([class*="tone-"], .surface-gradient, .surface-media)) { padding-top: 0; }
+`
+	centredActions = `/* And its buttons, when there are more than fit on one line: at phone
+   width they wrapped against the left edge under a centred heading. A
+   centred section heading's buttons likewise. */
+.hero.hero-center .actions, .section-head.center .actions { justify-content: center; }
+`
+)
+
+// titleNow and titleBefore, and videoWaitNow and videoWaitBefore, are the
+// deliberate changes to the layouts' markup: a page's title goes before the
+// site's name only when it is not the name
+// (TestAHomePageTitledWithTheSiteNameSaysItOnce), and a video section with
+// no video says nothing to its readers about choosing one
+// (TestAReaderIsNotGivenTheEditorsInstructions). Each is put back as it was
+// before the hash is compared.
+const (
+	titleNow        = "{% if page.title_before_name %}{{ page.title }} — {% end %}{{ site.name }}</title>"
+	titleBefore     = "{% if page.title %}{{ page.title }} — {% end %}{{ site.name }}</title>"
+	videoWaitNow    = "      {% if s.video.caption %}"
+	videoWaitBefore = "      {% if s.video.no_src %}<p class=\"muted\">No video chosen yet. Send one to the bot and pick it here.</p>{% end %}\n" + videoWaitNow
+)
+
+// shareBefore is the sections sample's share image as it was, a picture on
+// example.com (TestNoSampleSharesAPictureFromElsewhere), put back in the
+// sample before its hash is compared.
+const shareBefore = "https://example.com/share.png"
+
+// sampleAsItWas is a starter's sample with the deliberate changes put back.
+func sampleAsItWas(st Template) map[string]any {
+	if st.Name != "sections" {
+		return st.Sample
+	}
+	out := map[string]any{}
+	for k, v := range st.Sample {
+		out[k] = v
+	}
+	out["share_image"] = shareBefore
+	return out
+}
+
+// asTheyWere is a layout with the deliberate changes put back.
+func asTheyWere(t *testing.T, name, src string) string {
+	t.Helper()
+	if strings.Count(src, titleNow) != 1 {
+		t.Fatalf("%s's title is not where this test expects it", name)
+	}
+	src = strings.Replace(src, titleNow, titleBefore, 1)
+	if strings.Contains(src, "{% if s.video %}") {
+		if strings.Count(src, videoWaitNow) != 1 {
+			t.Fatalf("%s's video caption is not where this test expects it", name)
+		}
+		src = strings.Replace(src, videoWaitNow, videoWaitBefore, 1)
+	}
+	return src
+}
+
 func TestExistingPagesRenderAsTheyDid(t *testing.T) {
 	got := map[string]string{}
 	for _, st := range All() {
-		got["starter "+st.Name] = sum(render(t, st))
 		src, err := st.HTML()
 		if err != nil {
 			t.Fatal(err)
 		}
-		out, err := tmpl.Render(src, map[string]any{"page": decorated(st.Sample), "site": siteContext()})
+		src = asTheyWere(t, st.Name, src)
+		raw, err := tmpl.Render(src, map[string]any{"page": sampleAsItWas(st)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got["starter "+st.Name] = sum(raw)
+		out, err := tmpl.Render(src, map[string]any{"page": decorated(sampleAsItWas(st)), "site": siteContext()})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -146,6 +224,7 @@ func TestExistingPagesRenderAsTheyDid(t *testing.T) {
 	}
 	st, _ := Get("sections")
 	layout, _ := st.HTML()
+	layout = asTheyWere(t, "sections", layout)
 	for _, k := range section.Kinds() {
 		body, err := section.Insert(map[string]any{"title": "A page"}, k.Name, 0)
 		if err != nil {
@@ -393,8 +472,9 @@ var readableNow, readableBefore = []string{
 }
 
 // The components are what they were, with the opt-in rules after them and
-// the centred eyebrow, the page transitions, the meter and the rules that
-// drew words below their ratio as the changes.
+// the centred eyebrow, the page transitions, the meter, the rules that drew
+// words below their ratio, the shared gap and the centred buttons as the
+// changes.
 func TestTheComponentsOnlyGrew(t *testing.T) {
 	c := Components()
 	added := Backdrops()
@@ -403,12 +483,15 @@ func TestTheComponentsOnlyGrew(t *testing.T) {
 	}
 	before := strings.TrimSuffix(c, added)
 	for name, now := range map[string]string{"the centred eyebrow's rule": centredEyebrow,
-		"the page transition": transitionsNow, "the meter's note": meterNote, "the meter's fill": meterFillNow} {
+		"the page transition": transitionsNow, "the meter's note": meterNote, "the meter's fill": meterFillNow,
+		"the shared gap": bandPaddingNow, "the centred buttons": centredActions} {
 		if strings.Count(before, now) != 1 {
 			t.Fatalf("%s is not where this test expects it", name)
 		}
 	}
+	before = strings.Replace(before, centredActions, "", 1)
 	before = strings.Replace(before, centredEyebrow, "", 1)
+	before = strings.Replace(before, bandPaddingNow, bandPaddingBefore, 1)
 	before = strings.Replace(before, transitionsNow, transitionsBefore, 1)
 	before = strings.Replace(before, answerAnchor, transitionsMoved+answerAnchor, 1)
 	before = strings.Replace(before, meterNote, "", 1)
@@ -420,7 +503,7 @@ func TestTheComponentsOnlyGrew(t *testing.T) {
 		before = strings.Replace(before, now, readableBefore[i], 1)
 	}
 	if got := sum(before); got != componentsBefore {
-		t.Errorf("the shared components changed beyond the centred eyebrow, the page transitions, the meter and the readable rules: %s", got)
+		t.Errorf("the shared components changed beyond the centred eyebrow, the page transitions, the meter, the readable rules, the shared gap and the centred buttons: %s", got)
 	}
 }
 
@@ -465,5 +548,117 @@ func TestACentredHerosEyebrowIsCentred(t *testing.T) {
 	}
 	if at < 0 || pinned < 0 || at < pinned {
 		t.Fatalf("the centred hero's chip is not centred after the rule that pins chips: %d, %d", at, pinned)
+	}
+}
+
+// A tinted band keeps the padding it is drawn with. Two sections in a row
+// share one gap, the first one's, and the rule that did it outranked the
+// bands' own padding: every closing band that followed another section lost
+// its top padding, so its heading sat on the band's top edge with fifty
+// pixels of colour under its button. Neither side of the shared gap may be a
+// band, because a band's padding is inside its colour: as the first of two,
+// it left the plain section after it nothing between its words and the
+// band's edge.
+//
+// Every band, read from the rules that pad one, and not only the tones. The
+// gradient pads as a tone does but its class is surface-gradient, and the
+// first form of this rule left it out: a gradient band after a plain section
+// lost the top padding it had kept until then, and so did the plain section
+// after one. And the rule weighs what ".section + .section" weighed. Its
+// exclusions made it outweigh ".section.surface-gradient" and
+// ".section.surface-gradient + .section", which had won by coming later, and
+// would outweigh whatever a site's style layer said of the gap the same way.
+func TestATintedBandKeepsItsPadding(t *testing.T) {
+	css := Components()
+	collapse := regexp.MustCompile(`(?m)^([^{}\n]*\.section\b[^{}\n]*\+[^{}\n]*\.section\b[^{}\n]*)\{\s*padding-top:\s*0;?\s*\}`)
+	found := collapse.FindAllStringSubmatch(css, -1)
+	if len(found) != 1 {
+		t.Fatalf("%d rules take the top padding off a section that follows another", len(found))
+	}
+	rule := strings.TrimSpace(found[0][1])
+	if got, was := weight(rule), weight(".section + .section"); got != was {
+		t.Errorf("%q weighs %d where the shared gap weighed %d, so it outranks rules "+
+			"that came after it to pad a band", rule, got, was)
+	}
+	var bands []string
+	padded := regexp.MustCompile(`(?m)^([^{}\n]+)\{\s*padding-block:\s*var\(--space-7\);?\s*\}`)
+	for _, m := range padded.FindAllStringSubmatch(css, -1) {
+		for _, c := range regexp.MustCompile(`\.([a-z][a-z0-9-]*)`).FindAllStringSubmatch(m[1], -1) {
+			if c[1] != "section" && !slices.Contains(bands, c[1]) {
+				bands = append(bands, c[1])
+			}
+		}
+	}
+	for _, want := range []string{"tone-primary", "surface-gradient", "surface-media"} {
+		if !slices.Contains(bands, want) {
+			t.Fatalf("no rule pads %s as a band, so this tests nothing of it: %v", want, bands)
+		}
+	}
+	for _, side := range strings.Split(rule, "+") {
+		var spared []string
+		for _, m := range regexp.MustCompile(`:not\(([^()]*)\)`).FindAllStringSubmatch(side, -1) {
+			for _, a := range strings.Split(m[1], ",") {
+				spared = append(spared, strings.TrimSpace(a))
+			}
+		}
+		for _, band := range bands {
+			if !slices.ContainsFunc(spared, func(a string) bool {
+				return a == "."+band || (strings.HasPrefix(band, "tone-") && a == `[class*="tone-"]`)
+			}) {
+				t.Errorf("%q takes the padding off a %s band: %q", rule, band, strings.TrimSpace(side))
+			}
+		}
+	}
+}
+
+// weight is a selector's specificity in classes, attributes and
+// pseudo-classes, which is all the stylesheet's section rules are made of:
+// :where adds nothing, and :not and :is add their weightiest argument.
+func weight(sel string) int {
+	w := 0
+	for i := 0; i < len(sel); i++ {
+		rest := sel[i:]
+		switch {
+		case strings.HasPrefix(rest, ":where("), strings.HasPrefix(rest, ":not("), strings.HasPrefix(rest, ":is("):
+			open := i + strings.IndexByte(rest, '(')
+			end, depth := open, 0
+			for ; end < len(sel); end++ {
+				if sel[end] == '(' {
+					depth++
+				} else if sel[end] == ')' {
+					if depth--; depth == 0 {
+						break
+					}
+				}
+			}
+			if !strings.HasPrefix(rest, ":where(") {
+				most := 0
+				for _, arg := range strings.Split(sel[open+1:end], ",") {
+					most = max(most, weight(arg))
+				}
+				w += most
+			}
+			i = end
+		case sel[i] == '[':
+			w++
+			i += strings.IndexByte(rest, ']')
+		case sel[i] == '.', sel[i] == ':' && !strings.HasPrefix(rest, "::"):
+			w++
+		}
+	}
+	return w
+}
+
+// The buttons of anything centred are centred when they wrap. At phone width
+// a centred hero's two buttons go onto two lines, and they sat against the
+// left edge under a centred eyebrow, heading and standfirst; a closing
+// band's did the same under its centred heading.
+func TestCentredButtonsStayCentredWhenTheyWrap(t *testing.T) {
+	c := Components()
+	for _, sel := range []string{".hero.hero-center .actions", ".section-head.center .actions"} {
+		rule := regexp.MustCompile(`(?m)^[^{}\n]*` + regexp.QuoteMeta(sel) + `\b[^{}\n]*\{[^{}]*justify-content:\s*center`)
+		if !rule.MatchString(c) {
+			t.Errorf("%s is not centred", sel)
+		}
 	}
 }
