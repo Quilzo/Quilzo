@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/config"
+	"github.com/quilzo/quilzo/internal/out"
 )
 
 // One rule for the words on a command line: a word a command does not take
@@ -362,16 +363,14 @@ func flagDuration(fs *flag.FlagSet, name string, value time.Duration, usage stri
 // Not /dev/null, which is a character device as a terminal is, and what
 // cron and a service manager give a job for its input: read as a terminal,
 // every unattended erasure would have waited for a --yes nobody can type.
-var stdinIsTerminal = func() bool {
-	fi, err := os.Stdin.Stat()
-	if err != nil || fi.Mode()&os.ModeCharDevice == 0 {
-		return false
-	}
-	if null, err := os.Stat(os.DevNull); err == nil && os.SameFile(fi, null) {
-		return false
-	}
-	return true
-}
+//
+// Asked of the terminal itself, as whether stdout and stderr are read at
+// one is (out.IsTerminal). It was a question of its own, a character
+// device other than the null device's file: so a script reading from any
+// other device that is not a terminal was held, and on Windows, where a
+// console and NUL read as the same file, an erasure typed at the console
+// never was.
+var stdinIsTerminal = func() bool { return out.IsTerminal(os.Stdin) }
 
 // erasureHeld holds back an erasure that cannot be undone, asked at a
 // terminal without --yes: it says what would be erased and how to go

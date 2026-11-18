@@ -96,6 +96,11 @@ func isTerminal(f *os.File) bool {
 	return isTTY(f)
 }
 
+// IsTerminal is isTerminal for a command that asks whether a person is at
+// the keyboard, standard input being a terminal: the one question, asked
+// one way, so the answer for input is the answer for output.
+func IsTerminal(f *os.File) bool { return isTerminal(f) }
+
 // Notes is a Writer for what is said about an answer rather than the answer
 // itself: prose to stderr, coloured only when stderr is a terminal, and
 // nothing under --json, as Human writes nothing there.

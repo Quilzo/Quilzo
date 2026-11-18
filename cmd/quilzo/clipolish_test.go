@@ -518,6 +518,65 @@ func TestAHeldErasureSaysHowToGoOnAgainstTheSameStore(t *testing.T) {
 	}
 }
 
+// Whether a person is at the keyboard is asked of the terminal itself, as
+// whether stdout and stderr are read at one is (out.IsTerminal).
+//
+// The erasure hold asked a question of its own: whether standard input
+// was a character device other than the null device's file. A terminal is
+// not the only other character device, so a script reading from one that
+// is not a terminal, /dev/zero here, was held for a --yes nobody was there
+// to type. And on Windows, where a console and NUL read as the same file,
+// an erasure typed at the console was never held at all.
+func TestOnlyATerminalIsAPersonAtTheKeyboard(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "st")
+	if _, e, code := cliRun(t, root, "", "init"); code != 0 {
+		t.Fatalf("init: %s", e)
+	}
+	run := func(stdin *os.File, line ...string) (string, string, error) {
+		t.Helper()
+		cmd := exec.Command(os.Args[0], append([]string{"quilzo-main", "--root", root}, line...)...)
+		cmd.Dir = t.TempDir()
+		cmd.Env = append(os.Environ(), "HOME="+t.TempDir(), "QUILZO_TOKEN=", "NO_COLOR=1")
+		cmd.Stdin = stdin
+		var o, e bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &o, &e
+		err := cmd.Run()
+		return o.String(), e.String(), err
+	}
+	zero, err := os.Open("/dev/zero")
+	if err != nil {
+		t.Skipf("no character device that is not a terminal here: %v", err)
+	}
+	defer zero.Close()
+	for _, line := range [][]string{{"memory", "forget"}, {"fediverse", "block", "bad.example"}} {
+		o, e, err := run(zero, line...)
+		if err != nil || strings.Contains(o, "nothing has been erased") {
+			t.Errorf("`quilzo %s` from /dev/zero, which is no terminal, was held or failed (%v):\n%s%s",
+				strings.Join(line, " "), err, firstLines(o, 4), firstLines(e, 3))
+		}
+	}
+	if list, err := loadBlocklist(root); err != nil || len(list.Hosts) != 1 {
+		t.Errorf("the block from /dev/zero did not go ahead: %v, %v", err, list)
+	}
+	// And a terminal is one: the controlling side of a new pseudo-terminal,
+	// as the test of out.IsTerminal has it, where the system has them.
+	if runtime.GOOS != "linux" {
+		return
+	}
+	pty, err := os.OpenFile("/dev/ptmx", os.O_RDWR, 0)
+	if err != nil {
+		t.Skip(err)
+	}
+	defer pty.Close()
+	o, e, err := run(pty, "fediverse", "block", "worse.example")
+	if err != nil || !strings.Contains(o, "nothing has been erased") {
+		t.Errorf("`quilzo fediverse block` at a terminal was not held (%v):\n%s%s", err, firstLines(o, 4), firstLines(e, 3))
+	}
+	if list, err := loadBlocklist(root); err != nil || len(list.Hosts) != 1 {
+		t.Errorf("the block at a terminal without --yes went ahead: %v, %v", err, list)
+	}
+}
+
 // The nearest subcommand was offered only where a command refused the word
 // as "unknown X command". Others answer a word they have no case for with
 // their usage, and offered nothing: `member idsable`, `agent naswer`,
