@@ -325,13 +325,58 @@ func refOf(m agent.Manifest) string {
 }
 
 // bound is how far this caller reaches, as a run they start keeps it
-// (agent.Record's Bound).
-func (c *Caller) bound() *agent.Bound {
+// (agent.Record's Bound): as far as the access policy lets them now
+// (carried), and not only as far as their token says.
+func (c *Caller) bound(root string) *agent.Bound {
 	if c == nil {
 		return nil
 	}
+	c = c.carried(root)
 	return &agent.Bound{Role: string(c.Role), Scope: c.Scope,
 		Types: c.Limits.Types, Locales: c.Limits.Locales}
+}
+
+// carried is this caller held to what the access policy lets them do now:
+// their token's role no higher than the policy carries for them
+// (auth.Policy.Carries), and its part of the site no wider than the part
+// their roles are granted on (auth.Policy.PartWithin). A run is narrowed
+// by it, and keeps it for whoever takes the run on (bound).
+//
+// A token is a ceiling, and what its holder holds is what they may do
+// under it. A run read its reach from the token alone: dana, an
+// administrator when her token was issued and an author of /about since,
+// ran an agent with it that wrote the returns page, and a run she started
+// was kept as an administrator's over the whole site, so sam, taking it
+// on, wrote the returns page too. A token over the whole site for
+// somebody whose grants are all on /about did the same.
+//
+// Somebody granted roles only outside the token's part of the site holds
+// nothing in it, which is the lowest reach there is (within). Somebody
+// granted no role at all keeps the token's, as Carries does: in a store
+// nobody has been granted anything in, that is everybody, and the token is
+// all there is to go by. A caller nobody verified is not shown to be the
+// person the policy names, and is left as resolved.
+func (c *Caller) carried(root string) *Caller {
+	if c == nil || !c.Verified {
+		return c
+	}
+	pol, err := loadPolicy(root)
+	if err != nil || pol == nil {
+		// Unreadable is refused at every gate (policyInUse), and an absent
+		// policy holds nothing to narrow by.
+		return c
+	}
+	out := *c
+	part := pol.PartWithin(c.Name, c.Scope)
+	if part == "" {
+		out.Role = auth.RoleNone
+		return &out
+	}
+	if strings.Trim(part, "/") != strings.Trim(c.Scope, "/") {
+		out.Scope = part
+	}
+	out.Role = pol.Carries(c.Name, c.Role, part)
+	return &out
 }
 
 // within is this caller narrowed to what whoever started the run they

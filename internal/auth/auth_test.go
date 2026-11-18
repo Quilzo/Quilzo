@@ -896,3 +896,45 @@ func TestTheStrongestRoleIsOneStillHeldAndWithinAPathCountsInsideIt(t *testing.T
 		}
 	}
 }
+
+// The part of the site a credential reaches is no wider than its holder's
+// roles there: the path it names when a role covers it, the narrowest path
+// holding the roles inside it, and nothing when they hold roles only
+// elsewhere. Somebody granted no role keeps the credential's path.
+//
+// A run was bounded at the token's path alone, so a token over the whole
+// site for an author of /about ran an agent that wrote the returns page.
+func TestThePartOfTheSiteHeldIsNoWiderThanTheRolesGranted(t *testing.T) {
+	ended := time.Now().Add(-time.Hour).Unix()
+	p := &Policy{Bindings: []Binding{
+		{Principal: "dana", Role: RoleAuthor, Resource: "/about"},
+		{Principal: "dana", Permission: ActRunAgents, Resource: AreaAgents},
+		{Principal: "dana", Role: RoleAdmin, Resource: "/", Deny: true},
+		{Principal: "dana", Role: RolePublisher, Resource: "/returns", Expires: ended},
+		{Principal: "kim", Role: RoleAuthor, Resource: "/docs/setup"},
+		{Principal: "kim", Role: RoleAuthor, Resource: "/docs/api/v2"},
+		{Principal: "lee", Role: RoleAuthor, Resource: "/about"},
+		{Principal: "lee", Role: RoleAuthor, Resource: "/blog"},
+		{Principal: "ana", Role: RoleAdmin, Resource: AreaSecurity},
+		{Principal: "sam", Role: RoleAdmin, Resource: "/"},
+		{Principal: "pat", Permission: ActRunAgents, Resource: AreaAgents},
+	}}
+	for _, c := range []struct{ who, on, part string }{
+		{"dana", "/", "/about"},
+		{"dana", "", "/about"},
+		{"dana", "/about/team", "/about/team"},
+		{"dana", "/returns", ""},
+		{"kim", "/", "/docs"},
+		{"kim", "/docs/api", "/docs/api/v2"},
+		{"lee", "/", "/"},
+		{"ana", "/", AreaSecurity},
+		{"ana", "/blog", ""},
+		{"sam", "/blog", "/blog"},
+		{"pat", "/blog", "/blog"},
+		{"nobody", "/blog", "/blog"},
+	} {
+		if got := p.PartWithin(c.who, c.on); got != c.part {
+			t.Errorf("%s within %q holds %q, want %q", c.who, c.on, got, c.part)
+		}
+	}
+}

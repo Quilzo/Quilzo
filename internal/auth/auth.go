@@ -1771,6 +1771,60 @@ func (p *Policy) Carries(principal string, role Role, resource string) Role {
 	return role
 }
 
+// PartWithin is the part of resource a principal's roles there are granted
+// on: resource itself when a role is granted on it or above it, and
+// otherwise the narrowest path holding every role granted inside it. It is
+// empty when they are granted roles only outside resource, so hold nothing
+// in it, and resource when they are granted no role at all, which keeps a
+// credential over it as it is, as Carries keeps a token's role for them.
+//
+// What a run is bounded to is one part of the site (agent.Bound), and a
+// token's path is no more than a ceiling over it. A run read its part from
+// the token alone, so a token over the whole site, for an author whose
+// grants were all on /about, ran an agent that wrote the returns page.
+//
+// Roles and not permissions, as an agent's own standing is read: a
+// permission is something its holder may do besides their role, and not
+// where it reaches. Counted, an author of /about who may run agents by the
+// permission on /@agents was bounded at the whole site, the narrowest path
+// holding both. Denials and grants that have ended count as they do in
+// StrongestWithin.
+func (p *Policy) PartWithin(principal, resource string) string {
+	resource = normalise(resource)
+	now := time.Now()
+	granted := false
+	var inside []string
+	for _, b := range p.Snapshot() {
+		if b.Principal != principal || b.Deny || b.Role == RoleNone || !b.Live(now) {
+			continue
+		}
+		granted = true
+		switch {
+		case covers(b.Resource, resource):
+			return resource
+		case covers(resource, b.Resource):
+			inside = append(inside, normalise(b.Resource))
+		}
+	}
+	switch {
+	case !granted:
+		return resource
+	case len(inside) == 0:
+		return ""
+	}
+	part := inside[0]
+	for _, r := range inside[1:] {
+		for !covers(part, r) {
+			if i := strings.LastIndex(part, "/"); i > 0 {
+				part = part[:i]
+			} else {
+				part = "/"
+			}
+		}
+	}
+	return part
+}
+
 // Snapshot returns a copy of the bindings.
 //
 // A copy, because both of these types are now mutex-guarded and handing out
