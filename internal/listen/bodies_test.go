@@ -18,7 +18,8 @@ import (
 // not wait thirty seconds, one route that receives files, and a handler
 // that reads a POST's body, leaves anything else's alone as most handlers
 // of a GET do, and then takes as long as it is told to, saying whether its
-// request was cancelled meanwhile.
+// request was cancelled meanwhile. The route that receives files refuses a
+// sender who is not signed in without reading a byte, as the admin's do.
 func uploading(t *testing.T, body, think time.Duration) string {
 	t.Helper()
 	l := Uploads()
@@ -35,7 +36,14 @@ func uploading(t *testing.T, body, think time.Duration) string {
 	}
 	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var got []byte
+		if r.URL.Path == "/upload" && r.Header.Get("Signed-In") != "yes" {
+			http.Error(w, "sign in first", http.StatusUnauthorized)
+			return
+		}
 		if r.Method == http.MethodPost {
+			// As a handler that takes a file does once it knows who is
+			// sending; on any other route it does nothing.
+			Receive(r)
 			var err error
 			if got, err = io.ReadAll(r.Body); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
@@ -140,12 +148,49 @@ func TestAFileIsGivenTheTimeItsSizeTakes(t *testing.T) {
 	}
 	// Eight pauses of 150ms: four times the form deadline, and well inside
 	// the thirty seconds' grace a file of 800 bytes is given.
-	got, err := send(t, addr, post("/upload", 800), pieces, 150*time.Millisecond)
+	head := strings.Replace(post("/upload", 800), "\r\n\r\n", "\r\nSigned-In: yes\r\n\r\n", 1)
+	got, err := send(t, addr, head, pieces, 150*time.Millisecond)
 	if err != nil {
 		t.Fatalf("a slow upload was cut off: %v", err)
 	}
 	if got != "read 800" {
 		t.Errorf("the upload's handler said %q", got)
+	}
+}
+
+// Somebody the route that receives files has refused is given a form's
+// time, not a file's, whatever the route.
+//
+// The listener gave a file's time to every body on such a route as it
+// arrived, before anybody knew who was sending. The admin's upload answers
+// somebody signed out without reading what they send, and net/http then
+// reads up to 256 KB of what is left, to keep the connection, under the
+// deadline the listener had set: a sender who was not signed in, declaring
+// no length, was waited on for the hours a quarter-gigabyte file is given,
+// and one declaring a few hundred bytes for half a minute.
+func TestARouteThatTakesFilesDoesNotWaitOnASenderItRefused(t *testing.T) {
+	addr := uploading(t, 300*time.Millisecond, 0)
+	for name, head := range map[string]string{
+		"no length": "POST /upload HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n",
+		"a length":  post("/upload", 1000),
+	} {
+		c, err := net.Dial("tcp", addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := io.WriteString(c, head); err != nil {
+			t.Fatal(err)
+		}
+		start := time.Now()
+		_ = c.SetReadDeadline(start.Add(5 * time.Second))
+		_, err = io.Copy(io.Discard, c)
+		c.Close()
+		if ne, ok := err.(net.Error); ok && ne.Timeout() {
+			t.Errorf("%s: a sender the upload refused, sending nothing, was still held "+
+				"after five seconds against a form's 300ms", name)
+		} else if took := time.Since(start); took > 3*time.Second {
+			t.Errorf("%s: a refused sender was held %v against a form's 300ms", name, took)
+		}
 	}
 }
 

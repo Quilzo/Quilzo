@@ -18,6 +18,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/feature"
+	"github.com/quilzo/quilzo/internal/listen"
 	"github.com/quilzo/quilzo/internal/theme"
 )
 
@@ -267,6 +268,9 @@ func (s *Server) handleMakeImportFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
+	// And its own time, as the media library's upload has, given now that
+	// the sender is known to be somebody who may install (internal/listen).
+	listen.Receive(r)
 	// A file, not a form: its own limit, as an upload to the media library
 	// has (the middleware leaves this path to it).
 	r.Body = http.MaxBytesReader(w, r.Body, MaxExportUpload+1<<20)

@@ -16,6 +16,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/collection"
+	"github.com/quilzo/quilzo/internal/listen"
 	"github.com/quilzo/quilzo/internal/schema"
 	"github.com/quilzo/quilzo/internal/search"
 )
@@ -567,6 +568,10 @@ func (s *Server) handleRecordImport(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// And its own time, as the media library's upload has, given once the
+	// sender is known to be signed in (internal/listen). Which collection,
+	// and so whether they may write to it, is in the form, read below.
+	listen.Receive(r)
 	// A file, not a form: its own limit, as an upload to the media library
 	// has (the middleware leaves this path to it).
 	r.Body = http.MaxBytesReader(w, r.Body, MaxRecordUpload+1<<20)

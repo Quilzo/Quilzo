@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quilzo/quilzo/internal/listen"
 	"github.com/quilzo/quilzo/internal/media"
 	"github.com/quilzo/quilzo/internal/medialib"
 )
@@ -64,6 +65,11 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The time a recording this size takes to arrive, now that the sender is
+	// known to be somebody who may write. Not before: until here the body has
+	// a form's thirty seconds, so somebody signed out is not waited on for
+	// the hours a recording is given (internal/listen).
+	listen.Receive(r)
 	// The body limit before the parse, not after. A limit applied to a
 	// request already read into memory is a limit that did nothing.
 	r.Body = http.MaxBytesReader(w, r.Body, MaxRecording)

@@ -151,7 +151,8 @@ const uploadPath = "/upload"
 // FileBody is the most a request may send when it is a recording arriving,
 // and zero for anything else: for the listener (internal/listen), which
 // gives a recording the time its size takes at the slowest rate worth
-// serving and the sign-in form what the public site gives a request. This
+// serving, once the upload knows who is sending and calls listen.Receive,
+// and the sign-in form what the public site gives a request. This
 // server has no deadline on the whole request so that a recording can take
 // as long as the link takes, and while that was so for every route, a
 // sign-in that sent a byte every few seconds was held for as long as its

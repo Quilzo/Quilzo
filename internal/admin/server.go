@@ -1290,11 +1290,12 @@ func limitBody(next http.Handler) http.Handler {
 //
 // The one list of them, for limitBody, which leaves these to their handlers,
 // and for the listener (internal/listen), which gives one of these bodies the
-// time its size takes at the slowest rate worth serving and any other body
-// what the public site gives a request. The admin runs with no deadline on
-// the whole request so that a recording can take as long as the link takes,
-// and while that was so for every route, a POST to /signin that sent a byte
-// every few seconds was held for as long as its sender liked.
+// time its size takes at the slowest rate worth serving, once its handler
+// knows who is sending and calls listen.Receive, and any other body what the
+// public site gives a request. The admin runs with no deadline on the whole
+// request so that a recording can take as long as the link takes, and while
+// that was so for every route, a POST to /signin that sent a byte every few
+// seconds was held for as long as its sender liked.
 func FileBody(r *http.Request) int64 {
 	if r.Method != http.MethodPost && r.Method != http.MethodPut {
 		return 0

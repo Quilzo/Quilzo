@@ -85,10 +85,17 @@
 // was written to close, reopened for the admin alone.
 //
 // So a server under Uploads gives each body a deadline of its own, as the
-// media routes give each response one. A route that receives a file, named
-// by Limits.Files, gets the time its size takes at the slowest rate worth
-// serving; every other body gets Body, what the public site gives a whole
-// request.
+// media routes give each response one. Every body starts with Body, what the
+// public site gives a whole request. A route that receives a file, named by
+// Limits.Files, has the time its size takes at the slowest rate worth
+// serving, from when its handler knows the sender may send it (Receive).
+//
+// Not before. The listener gave a file's time to every body on such a route
+// as it arrived, and the upload routes answer somebody signed out without
+// reading what they send; net/http then reads up to 256 KB of the rest, to
+// keep the connection, under whatever deadline is set. A sender with no
+// credential, declaring no length, was waited on for the eighteen hours a
+// quarter of a gigabyte is given.
 package listen
 
 import (
@@ -120,7 +127,8 @@ type Limits struct {
 	Body time.Duration
 	// Files reports the most a request may send when its route is one that
 	// receives a file, and zero for any other. Such a body is given the
-	// time its size takes rather than Body. Nil means no route does.
+	// time its size takes rather than Body, once its handler calls Receive.
+	// Nil means no route does.
 	Files func(*http.Request) int64
 	// Response is how long the whole response may take. Zero means the
 	// handler decides, which is right for a server that sends media.
@@ -247,7 +255,10 @@ func (l Limits) bodies(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		within := l.Body
+		// A writer that cannot take one is not a connection (a test's
+		// recorder), and there is nothing to hold open.
+		rc := http.NewResponseController(w)
+		_ = rc.SetReadDeadline(time.Now().Add(l.Body))
 		if l.Files != nil {
 			if most := l.Files(r); most > 0 {
 				// Sized as a response to a file is (ResponseFor): the same
@@ -258,14 +269,41 @@ func (l Limits) bodies(next http.Handler) http.Handler {
 				if size < 0 || size > most {
 					size = most
 				}
-				within = ResponseFor(size)
+				// Kept for the handler to give, with the controller of the
+				// connection itself: the writer a handler is handed has been
+				// wrapped by everything in between, and not every wrapper
+				// lets a controller through.
+				r = r.WithContext(context.WithValue(r.Context(), fileKey{},
+					fileBody{rc: rc, within: ResponseFor(size)}))
 			}
 		}
-		// A writer that cannot take one is not a connection (a test's
-		// recorder), and there is nothing to hold open.
-		_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(within))
 		next.ServeHTTP(w, r)
 	})
+}
+
+// fileKey is where a file's time waits for its handler (Receive).
+type fileKey struct{}
+
+// fileBody is the time a file's body is to have, and the connection to
+// give it to.
+type fileBody struct {
+	rc     *http.ResponseController
+	within time.Duration
+}
+
+// Receive gives a request's body the time a file of its size takes, from
+// now, when its route is one Limits.Files names; on any other it does
+// nothing. A handler calls it once it knows the sender may send the file,
+// signed in and allowed, and before it reads.
+//
+// Until then the body has a form's time, Body. That is what somebody
+// refused is held to while net/http reads what they sent: given the file's
+// time as the request arrived, a sender with no credential was waited on
+// for as long as the largest file the route takes would need.
+func Receive(r *http.Request) {
+	if f, ok := r.Context().Value(fileKey{}).(fileBody); ok {
+		_ = f.rc.SetReadDeadline(time.Now().Add(f.within))
+	}
 }
 
 // Serve runs a server under these limits until the process is asked to stop,

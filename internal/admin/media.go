@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/listen"
 	"github.com/quilzo/quilzo/internal/media"
 	"github.com/quilzo/quilzo/internal/medialib"
 )
@@ -149,6 +150,11 @@ func (s *Server) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The time a file this size takes to arrive, now that the sender is
+	// known to be somebody who may add one. Not before: until here the body
+	// has a form's thirty seconds, so somebody signed out is not waited on
+	// for the hours a large file is given (internal/listen).
+	listen.Receive(r)
 	// The body limit applied by the middleware is for forms. A file upload
 	// needs its own, larger, and it is still a limit: without one a single
 	// request makes the process allocate until it dies, which needs no
