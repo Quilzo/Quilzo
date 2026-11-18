@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -46,7 +47,12 @@ import (
 //     are !important on purpose, cannot be outvoted.
 //   - No redefining a token. --on-surface set to the background colour in a
 //     layer would be invisible text the check had passed.
-//   - No removing the focus outline.
+//   - No removing the focus outline, and no ring nobody can see: one drawn
+//     at under 3:1 against the page or a card, thinner than 2px, or moved
+//     more than 8px from what it marks.
+//   - No text in a colour the words show through (transparent, or a mix
+//     with it), unless the same rule clips a background to the text, which
+//     is how a gradient title is drawn.
 //   - No backslash escapes, which can spell any word in a way no pattern
 //     sees, and no "<", which a stylesheet has no use for.
 //   - No string that runs over a line break, no { } block in a custom
@@ -168,6 +174,18 @@ type layerCheck struct {
 	// and --off may be declared after the rule that reads it.
 	custom   map[string][]string
 	outlines []outlineUse
+	// texts are the rules that set a text colour, judged once the custom
+	// properties they may read are all known, as the outlines are.
+	texts []textUse
+}
+
+// textUse is one rule's text colour, kept to be judged at the end.
+type textUse struct {
+	value, where, decl string
+	// clipped is that the same rule clips its background to the text, so
+	// the words are drawn in the background and the colour is not what
+	// anybody reads.
+	clipped bool
 }
 
 // outlineUse is one outline declaration, kept to be judged at the end.
@@ -225,6 +243,7 @@ func CheckLayer(css string, t *Theme) []Finding {
 	}
 	c.rules(body, nil, false, 0)
 	c.judgeOutlines()
+	c.judgeTexts()
 
 	var unread []string
 	for name := range c.read {
@@ -399,7 +418,10 @@ func (c *layerCheck) rules(s string, selectors []string, forced bool, depth int)
 		return
 	}
 	decls := map[string]string{}
-	defer func() { c.pair(decls, selectors) }()
+	defer func() {
+		c.pair(decls, selectors)
+		c.textColours(decls, selectors)
+	}()
 	for strings.TrimSpace(s) != "" {
 		head, stop, rest := next(s)
 		head = strings.TrimSpace(head)
@@ -552,7 +574,7 @@ func (c *layerCheck) declaration(d string, selectors []string, forced bool) {
 		c.custom[name] = append(c.custom[name], value)
 	}
 	switch lower {
-	case "outline", "outline-style", "outline-width", "outline-color", "all":
+	case "outline", "outline-style", "outline-width", "outline-color", "outline-offset", "all":
 		c.outlines = append(c.outlines, outlineUse{prop: lower, value: value,
 			where: clip(where, 40), decl: clip(d, 60)})
 	}
@@ -568,14 +590,274 @@ func (c *layerCheck) declaration(d string, selectors []string, forced bool) {
 // as words — every word of it, and every word of every value each custom
 // property it names is given here or in the theme — and one that leaves
 // nothing to see is enough.
+//
+// And a ring that is there and cannot be found: `outline: 3px solid
+// var(--surface)` is a ring the colour of the page, a tenth of a pixel is a
+// ring nobody sees, and an offset of -999px takes it a thousand pixels from
+// what it marks. Each passed, because only the ring's absence was looked for.
+// So its colour is measured where it is drawn, over the page and over a card,
+// at the 3:1 the theme's own focus-ring is held to; its width is held to the
+// 2px a ring needs to be seen; and its offset to the 8px inside which it is
+// still round what has focus.
 func (c *layerCheck) judgeOutlines() {
 	for _, o := range c.outlines {
-		if removesOutline(o.prop, c.outlineWords(o.value, 0, map[string]bool{})) {
+		words := c.outlineWords(o.value, 0, map[string]bool{})
+		if removesOutline(o.prop, words) {
 			c.refuse("%s { %s } takes away the focus outline, which is how anybody not "+
 				"using a mouse knows where they are (WCAG 2.4.7)", o.where, o.decl)
+			continue
+		}
+		switch o.prop {
+		case "outline", "outline-width":
+			for _, w := range words {
+				if px, ok := lengthPx(w); w == "thin" || ok && px < 2 {
+					c.refuse("%s { %s } draws the focus ring thinner than 2px, a line "+
+						"nobody looking for it finds (WCAG 2.4.11). The shipped styles draw it "+
+						"at 3px", o.where, o.decl)
+					break
+				}
+			}
+		case "outline-offset":
+			for _, w := range words {
+				if px, ok := lengthPx(w); ok && (px < 0 || px > 8) {
+					c.refuse("%s { %s } moves the focus ring away from what it marks, so it "+
+						"no longer shows where somebody is (WCAG 2.4.7). An offset from 0 to "+
+						"8px keeps it round the thing that has focus", o.where, o.decl)
+					break
+				}
+			}
+		}
+		if o.prop == "outline" || o.prop == "outline-color" {
+			c.judgeRing(o)
 		}
 	}
 }
+
+// judgeRing measures a ring's colour, in every scheme the site is served in,
+// against the page and a card, where a focused control's ring is drawn.
+// A colour that cannot be known from the layer and the theme alone —
+// currentColor, inherit, a property nothing defines — is not judged.
+func (c *layerCheck) judgeRing(o outlineUse) {
+	if c.theme == nil {
+		return
+	}
+	for _, scheme := range c.theme.checkedSchemes() {
+		for _, part := range topLevel(o.value, ' ') {
+			for _, ring := range c.colourOf(part, scheme.dark, 0) {
+				for _, under := range []string{"surface", "surface-container"} {
+					tok, _ := Lookup(under)
+					bg := c.theme.value(tok, scheme.dark)
+					shown := ring.over(bg)
+					if ratio := Contrast(shown, bg); ratio < 3 {
+						c.findings = append(c.findings, Finding{Token: LayerFile, Blocking: true,
+							Scheme: scheme.name, Ratio: ratio, Needs: 3, Criterion: "WCAG 2.4.11",
+							Detail: fmt.Sprintf("%s { %s } draws the focus ring %.2f:1 against "+
+								"--%s in the %s scheme, and a ring needs 3:1 to be found: it is "+
+								"how anybody not using a mouse knows where they are. "+
+								"var(--focus-ring) is the colour the theme checks for it",
+								o.where, o.decl, ratio, under, scheme.name)})
+						return
+					}
+				}
+			}
+		}
+	}
+}
+
+// textColours keeps a rule's text colour to be judged once the layer is read.
+func (c *layerCheck) textColours(decls map[string]string, selectors []string) {
+	clipped := false
+	for _, p := range []string{"background-clip", "-webkit-background-clip"} {
+		if strings.Contains(strings.ToLower(decls[p]), "text") {
+			clipped = true
+		}
+	}
+	for _, p := range []string{"color", "-webkit-text-fill-color"} {
+		if v, ok := decls[p]; ok {
+			c.texts = append(c.texts, textUse{value: v, clipped: clipped,
+				where: clip(strings.Join(selectors, " "), 40), decl: clip(p+": "+v, 60)})
+		}
+	}
+}
+
+// judgeTexts refuses text in a colour the words show through.
+//
+// transparent was taken as harmless wherever it was written, which it is for
+// a border or a background and is not for words: `.hero .lead { color:
+// transparent }` passed, and the standfirst was there for nobody. A colour
+// that is partly transparent fades the words into whatever is behind them,
+// which no pair the contrast check holds is. The one use that draws words
+// anybody can read is a gradient title, whose rule clips a background to the
+// text, and that is allowed.
+func (c *layerCheck) judgeTexts() {
+	for _, t := range c.texts {
+		if t.clipped {
+			continue
+		}
+		for _, w := range c.outlineWords(t.value, 0, map[string]bool{}) {
+			if w == "transparent" {
+				c.refuse("%s { %s } lets the words show through, so nobody can read them, "+
+					"and the contrast check never sees what they are drawn in. Text takes a "+
+					"token, as var(--on-surface); a gradient title clips a background to the "+
+					"text in the same rule (background-clip: text)", t.where, t.decl)
+				break
+			}
+		}
+	}
+}
+
+// rgba is a colour as it is drawn, with how much of it covers what is
+// under it.
+type rgba struct{ r, g, b, a float64 }
+
+// over is the colour seen where c is laid over the hex colour bg.
+func (c rgba) over(bg string) string {
+	br, bgG, bb, _ := rgb(bg)
+	mix := func(f, b float64) int { return int(255*(f*c.a+b*(1-c.a)) + 0.5) }
+	return fmt.Sprintf("#%02x%02x%02x", mix(c.r, br), mix(c.g, bgG), mix(c.b, bb))
+}
+
+// colourOf is every colour a value can be in one scheme: a token, a custom
+// property of the layer's own (each value it is given), transparent, or a
+// color-mix() of those, mixed as a browser mixes them in sRGB. None for a
+// value that is not a colour or cannot be known from here.
+func (c *layerCheck) colourOf(v string, dark bool, depth int) []rgba {
+	v = strings.TrimSpace(v)
+	lv := strings.ToLower(v)
+	if depth > 8 {
+		return nil
+	}
+	switch {
+	case lv == "transparent":
+		return []rgba{{}}
+	case strings.HasPrefix(lv, "var(") && strings.HasSuffix(lv, ")"):
+		args := topLevel(v[4:len(v)-1], ',')
+		name, ok := strings.CutPrefix(strings.TrimSpace(args[0]), "--")
+		if !ok {
+			return nil
+		}
+		if tok, known := Lookup(name); known {
+			if tok.Kind != Colour {
+				return nil
+			}
+			r, g, b, ok := rgb(c.theme.value(tok, dark))
+			if !ok {
+				return nil
+			}
+			return []rgba{{r, g, b, 1}}
+		}
+		var out []rgba
+		for _, given := range c.custom[name] {
+			out = append(out, c.colourOf(given, dark, depth+1)...)
+		}
+		return out
+	case strings.HasPrefix(lv, "color-mix(") && strings.HasSuffix(lv, ")"):
+		args := topLevel(v[len("color-mix("):len(v)-1], ',')
+		if len(args) != 3 {
+			return nil
+		}
+		type stop struct {
+			colours []rgba
+			pct     float64
+			given   bool
+		}
+		var stops [2]stop
+		for i, arg := range args[1:] {
+			parts := topLevel(strings.TrimSpace(arg), ' ')
+			colour := strings.Join(parts, " ")
+			if n := len(parts); n > 1 && strings.HasSuffix(parts[n-1], "%") {
+				if f, err := strconv.ParseFloat(strings.TrimSuffix(parts[n-1], "%"), 64); err == nil {
+					stops[i].pct, stops[i].given = f, true
+					colour = strings.Join(parts[:n-1], " ")
+				}
+			}
+			stops[i].colours = c.colourOf(colour, dark, depth+1)
+			if len(stops[i].colours) == 0 {
+				return nil
+			}
+		}
+		p1, p2 := stops[0].pct, stops[1].pct
+		switch {
+		case !stops[0].given && !stops[1].given:
+			p1, p2 = 50, 50
+		case !stops[1].given:
+			p2 = 100 - p1
+		case !stops[0].given:
+			p1 = 100 - p2
+		}
+		sum := p1 + p2
+		if sum <= 0 {
+			return nil
+		}
+		scale := 1.0
+		if sum < 100 {
+			scale = sum / 100
+		}
+		p1, p2 = p1/sum, p2/sum
+		var out []rgba
+		for _, x := range stops[0].colours {
+			for _, y := range stops[1].colours {
+				a := x.a*p1 + y.a*p2
+				m := rgba{a: a * scale}
+				if a > 0 {
+					m.r = (x.r*x.a*p1 + y.r*y.a*p2) / a
+					m.g = (x.g*x.a*p1 + y.g*y.a*p2) / a
+					m.b = (x.b*x.a*p1 + y.b*y.a*p2) / a
+				}
+				out = append(out, m)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// topLevel splits a value at sep where it is outside every bracket, so the
+// commas inside a color-mix() stay with it.
+func topLevel(v string, sep byte) []string {
+	var out []string
+	depth, start := 0, 0
+	for i := 0; i < len(v); i++ {
+		switch ch := v[i]; {
+		case ch == '(':
+			depth++
+		case ch == ')':
+			depth--
+		case depth == 0 && (ch == sep || sep == ' ' && (ch == '\t' || ch == '\n' || ch == '\r' || ch == '\f')):
+			if part := strings.TrimSpace(v[start:i]); part != "" {
+				out = append(out, part)
+			}
+			start = i + 1
+		}
+	}
+	if part := strings.TrimSpace(v[start:]); part != "" {
+		out = append(out, part)
+	}
+	if len(out) == 0 {
+		out = []string{""}
+	}
+	return out
+}
+
+// lengthPx is a length in CSS pixels, for a unit that is the same size on
+// every screen or near enough: the font-relative ones at the 16px a browser
+// starts from. A percentage, a viewport unit or a bare number is not one.
+func lengthPx(word string) (float64, bool) {
+	m := reLengthWord.FindStringSubmatch(word)
+	if m == nil {
+		return 0, false
+	}
+	n, err := strconv.ParseFloat(m[1], 64)
+	if err != nil {
+		return 0, false
+	}
+	per, ok := map[string]float64{"px": 1, "em": 16, "rem": 16, "ch": 8, "ex": 8, "pt": 96.0 / 72,
+		"pc": 16, "in": 96, "cm": 96 / 2.54, "mm": 96 / 25.4, "q": 96 / 101.6}[m[2]]
+	return n * per, ok
+}
+
+// reLengthWord is a number and its unit.
+var reLengthWord = regexp.MustCompile(`^([+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+))([a-z]+)$`)
 
 // outlineWords are the words of a value, its functions opened out, and the
 // words of what each custom property it names may hold.
