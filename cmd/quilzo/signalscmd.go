@@ -456,7 +456,7 @@ func signalsConnect(root string, args []string) error {
 	if verr != nil {
 		doc["verification_error"] = cfg.AskFailed
 		fmt.Fprintf(w.Err, "  %sverification was not asked for: %s; the server asks again within a day, with the "+
-			"client secret in %s in its own environment%s\n", yellow, cfg.AskFailed, signalsSecretEnv, reset)
+			"client secret in %s in its own environment%s\n", noteYellow, cfg.AskFailed, signalsSecretEnv, noteReset)
 	}
 	if w.JSON(doc) {
 		return nil
@@ -653,7 +653,7 @@ func signalsOff(root string) error {
 	// that turned the stream off read nothing at all, not even whether the
 	// provider still had it.
 	if warn != "" {
-		fmt.Fprintf(w.Err, "  %s%s%s\n", yellow, warn, reset)
+		fmt.Fprintf(w.Err, "  %s%s%s\n", noteYellow, warn, noteReset)
 	}
 	doc := map[string]any{"connected": false, "was_connected": true, "issuer": issuer,
 		"deleted_at_provider": deleted}

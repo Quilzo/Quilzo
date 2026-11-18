@@ -2626,7 +2626,10 @@ func cmdVerify(root string) error {
 	}
 	n, err := s.Verify()
 	if err != nil {
-		return fmt.Errorf("%s%v%s", red, err, reset)
+		// Bare: main writes it to stderr in red when stderr is a terminal.
+		// It carried stdout's red, so `quilzo verify 2>err.log` at a
+		// terminal wrote escape codes into the log.
+		return err
 	}
 	// The count under --json, as `auditlog verify` gives its entries. This
 	// printed its prose whatever was asked for, so a script checking that

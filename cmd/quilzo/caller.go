@@ -476,8 +476,9 @@ func conflictError(err error, changed []string) error {
 		fmt.Fprintf(&b, "\n  nothing you changed was touched, so re-running "+
 			"this against the current draft is safe")
 	} else if len(both) > 0 {
+		// In stderr's colours, since an error is written there.
 		fmt.Fprintf(&b, "\n  %syou both changed: %s%s — look before retrying",
-			red, strings.Join(both, ", "), reset)
+			noteRed, strings.Join(both, ", "), noteReset)
 	}
 	fmt.Fprintf(&b, "\n  current draft: %s", short(c.Actual))
 	return errBlocked{fmt.Errorf("%s", b.String())}

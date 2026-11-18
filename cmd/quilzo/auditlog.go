@@ -213,8 +213,11 @@ func exportedEntries(root string) ([]audit.Event, error) {
 	events, err := audit.Read(auditPath(root))
 	var bad *audit.Unreadable
 	if errors.As(err, &bad) {
+		// Coloured as stderr is, where it goes: in stdout's colour, `quilzo
+		// siem jsonl -o FILE 2>err.log` at a terminal wrote escape codes
+		// into the log.
 		fmt.Fprintf(w.Err, "%s%v: not in this export, which holds every entry and only entries;\n"+
-			"  quilzo auditlog verify says what is there%s\n", yellow, bad, reset)
+			"  quilzo auditlog verify says what is there%s\n", noteYellow, bad, noteReset)
 	}
 	return audit.Entries(events, err)
 }

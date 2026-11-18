@@ -7,10 +7,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -514,3 +518,127 @@ func TestEveryRuleOfTwoAndEveryMissingThingHasItsCode(t *testing.T) {
 	want(out.ExitBlocked, "policy", "approve", id("policy", "propose", "ac-12_odp=4 hours", "--reason", "shorter still"))
 }
 
+// A colour decided by stdout is written only to stdout.
+//
+// What is written to stderr is coloured as stderr is (noteRed and the
+// rest), and the colours were changed at seventy-odd places that wrote to
+// os.Stderr. Seven more wrote stdout's colours to stderr another way:
+// through w.Err (an unreadable line in the audit log, as `quilzo siem`
+// warns of it, and two warnings of `quilzo signals`), through a writer
+// named for it (the warning that the store is in a container's own
+// filesystem, and the one of a proxy not believed, which `quilzo serve
+// 2>>serve.log` logged), or inside an error main then writes there (a
+// conflict between two drafts, and `quilzo verify` finding the store
+// altered). Each put escape codes into a log whenever stdout was a
+// terminal and stderr was not.
+func TestAStdoutColourIsWrittenOnlyToStdout(t *testing.T) {
+	stdoutColours := map[string]bool{"bold": true, "dim": true, "green": true, "yellow": true, "red": true, "reset": true}
+	paths, err := filepath.Glob("*.go")
+	if err != nil || len(paths) < 100 {
+		t.Fatalf("the package's sources were not found: %d, %v", len(paths), err)
+	}
+	fset := token.NewFileSet()
+	for _, path := range paths {
+		if strings.HasSuffix(path, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, path, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(file, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			fn, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || len(call.Args) == 0 {
+				return true
+			}
+			if pkg, ok := fn.X.(*ast.Ident); !ok || pkg.Name != "fmt" {
+				return true
+			}
+			// What an error says goes to stderr; what Fprint writes goes
+			// where its first argument is.
+			var args []ast.Expr
+			switch {
+			case fn.Sel.Name == "Errorf":
+				args = call.Args
+			case strings.HasPrefix(fn.Sel.Name, "Fprint"):
+				if toStdout(call.Args[0]) {
+					return true
+				}
+				args = call.Args[1:]
+			default:
+				return true
+			}
+			for _, a := range args {
+				if id, ok := a.(*ast.Ident); ok && stdoutColours[id.Name] {
+					t.Errorf("%s: %s is stdout's colour, written by fmt.%s somewhere else: use note%s",
+						fset.Position(call.Pos()), id.Name, fn.Sel.Name,
+						strings.ToUpper(id.Name[:1])+id.Name[1:])
+				}
+			}
+			return true
+		})
+	}
+}
+
+// toStdout is whether a writer is the process's stdout, os.Stdout or w.Out.
+func toStdout(e ast.Expr) bool {
+	sel, ok := e.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	x, ok := sel.X.(*ast.Ident)
+	return ok && ((x.Name == "os" && sel.Sel.Name == "Stdout") || (x.Name == "w" && sel.Sel.Name == "Out"))
+}
+
+// With stdout a terminal and stderr a file, what is written to the file
+// has no escape codes in it: `quilzo siem jsonl -o export.jsonl 2>err.log`,
+// at a terminal, of a log with a line in it that is not an entry.
+func TestAWarningToAFileIsNotColouredForATerminal(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("a pseudo-terminal is opened here as Linux opens one")
+	}
+	tty, err := os.OpenFile("/dev/ptmx", os.O_RDWR, 0)
+	if err != nil {
+		t.Skip(err)
+	}
+	defer tty.Close()
+	root := filepath.Join(t.TempDir(), "st")
+	if _, e, code := cliRun(t, root, "", "init"); code != 0 {
+		t.Fatalf("init: %s", e)
+	}
+	addPage(t, root, "", "index", "v1")
+	f, err := os.OpenFile(auditPath(root), os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("not an entry\n"); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	cmd := exec.Command(os.Args[0], "quilzo-main", "--root", root, "siem", "jsonl",
+		"-o", filepath.Join(t.TempDir(), "export.jsonl"))
+	cmd.Dir = t.TempDir()
+	var env []string
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, "NO_COLOR=") {
+			env = append(env, kv)
+		}
+	}
+	cmd.Env = append(env, "HOME="+t.TempDir(), "QUILZO_TOKEN=")
+	var stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = tty, &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("siem jsonl: %v: %s", err, firstLines(stderr.String(), 3))
+	}
+	if !strings.Contains(stderr.String(), "not an entry") && !strings.Contains(stderr.String(), "not in this export") {
+		t.Fatalf("the line that is not an entry was not warned of: %q", firstLines(stderr.String(), 3))
+	}
+	if strings.Contains(stderr.String(), "\033") {
+		t.Errorf("the warning written to a file carried escape codes: %q", firstLines(stderr.String(), 2))
+	}
+}
