@@ -4,6 +4,7 @@
 package main
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -48,5 +49,29 @@ func TestWebhookRemoveIsHelpedByTheAddressItTakes(t *testing.T) {
 	err := hookRemove(t.TempDir(), nil)
 	if err == nil || !strings.Contains(err.Error(), "webhook remove URL") {
 		t.Errorf("webhook remove's own usage does not agree with the help: %v", err)
+	}
+}
+
+// `records list` showed each record by the first twelve characters of its
+// id, which `records get` and `records delete` then refused as "not a
+// record id: 32 hexadecimal characters". The help's own journey (list,
+// then get or delete what it showed) could not be followed without --json.
+func TestARecordIsListedByAnIDItsSiblingsTake(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "st")
+	if _, e, code := cliRun(t, root, "", "init"); code != 0 {
+		t.Fatalf("init: %s", e)
+	}
+	if _, e, code := cliRun(t, root, "", "records", "add", "products", "name=pen"); code != 0 {
+		t.Fatalf("records add: %s", e)
+	}
+	o, e, code := cliRun(t, root, "", "records", "list", "products")
+	if code != 0 {
+		t.Fatalf("records list: %s", e)
+	}
+	shown := strings.Fields(o)[0]
+	for _, verb := range []string{"get", "delete"} {
+		if _, e, code := cliRun(t, root, "", "records", verb, "products", shown); code != 0 {
+			t.Errorf("`records %s products %s`, the id the list showed, exited %d: %s", verb, shown, code, e)
+		}
 	}
 }

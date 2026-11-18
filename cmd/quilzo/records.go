@@ -177,8 +177,12 @@ func recordsList(root string, args []string) error {
 		w.Human("no records match\n")
 		return nil
 	}
+	// The whole id, which is what `records get` and `records delete` take.
+	// The first twelve characters were shown, and both refused them as not
+	// a record id, so the list could not be followed by either without
+	// --json.
 	for _, r := range recs {
-		w.Human("  %s%s%s\n", bold, r.ID[:12], reset)
+		w.Human("  %s%s%s\n", bold, r.ID, reset)
 		for _, k := range sortedKeys(r.Fields) {
 			w.Human("    %-16s %v\n", k, r.Fields[k])
 		}
