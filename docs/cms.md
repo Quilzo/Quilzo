@@ -2883,6 +2883,11 @@ refuses every write whatever the role, `--on /blog` scopes it to a path, and
 `--ttl 24h` expires it. `quilzo token revoke ID` takes effect on the next use,
 not at the next restart.
 
+Whose hands a token is for is recorded when it is issued, never guessed from
+its name. The store's first token, for its only administrator, is theirs; after
+that, `--person` issues a token as its holder's own, and without it a token is
+a program's, which an access review refuses to take a decision from.
+
 ### Then either
 
 ```bash
