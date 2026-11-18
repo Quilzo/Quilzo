@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -240,6 +241,96 @@ func TestBothCopiesOfTheProposalAgreeOnTheBenchmark(t *testing.T) {
 			t.Errorf("%s still says the benchmark was never run, and the "+
 				"README publishes a measured figure", f.name)
 		}
+	}
+}
+
+// The proposal says what Quilzo is, in the README's words.
+//
+// Its Abstract opened "Quilzo is a content management system", the
+// description from when that was all it was, while the README called it
+// the self-hosted AI agent platform: a proposal that describes a different
+// product from the repository it links to is wrong in its first paragraph.
+func TestTheProposalSaysWhatQuilzoIs(t *testing.T) {
+	m := regexp.MustCompile(`<strong>([^<]+)</strong>`).FindStringSubmatch(read(t, "README.md"))
+	if m == nil {
+		t.Fatal("README.md has no line in bold saying what Quilzo is")
+	}
+	want := flatText(strings.TrimSuffix(strings.TrimSpace(m[1]), "."))
+	for _, name := range []string{"docs/apache-incubator-proposal.md", "docs/apache-incubator-proposal.txt"} {
+		if !strings.Contains(flatText(read(t, name)), want) {
+			t.Errorf("%s does not say what the README says Quilzo is: %q", name, m[1])
+		}
+	}
+}
+
+// The proposal's figures are true of the tree, and not far behind it.
+//
+// It said "roughly 65,600 lines of program with 34,500 lines of test across
+// 1,229 test functions" and "65 packages" when the tree held some 320,000,
+// 231,000, 5,800 and 176: an early tree's figures, left in a document
+// offered as the project's case. So each figure the proposal gives is
+// measured here, and must be no more than the tree holds, since the
+// proposal says "more than", and at least half of it, so that it cannot
+// fall four or five times behind again without failing.
+func TestTheProposalsFiguresAreTrueOfTheTree(t *testing.T) {
+	out, err := exec.Command("git", "ls-files", "*.go").Output()
+	if err != nil {
+		t.Skipf("git ls-files: %v", err)
+	}
+	var program, tests, funcs int
+	for _, name := range strings.Fields(string(out)) {
+		body, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Count(string(body), "\n")
+		if !strings.HasSuffix(name, "_test.go") {
+			program += lines
+			continue
+		}
+		tests += lines
+		funcs += len(regexp.MustCompile(`(?m)^func Test`).FindAllIndex(body, -1))
+	}
+	pkgs, err := exec.Command("go", "list", "./...").Output()
+	if err != nil {
+		t.Skipf("go list: %v", err)
+	}
+	measured := []struct {
+		what string
+		n    int
+	}{
+		{"lines of program", program},
+		{"lines of test", tests},
+		{"test functions", funcs},
+		{"packages", len(strings.Fields(string(pkgs)))},
+	}
+	if program < 10000 || tests < 10000 || funcs < 100 {
+		t.Fatalf("measured %v; this is counting the wrong tree", measured)
+	}
+
+	found := 0
+	for _, name := range []string{"docs/apache-incubator-proposal.md", "docs/apache-incubator-proposal.txt"} {
+		text := flatText(read(t, name))
+		for _, figure := range measured {
+			what, n := figure.what, figure.n
+			// A figure is digits grouped in threes, so that the year in "June
+			// 2026, packages carry evidence" is not read as a count.
+			re := regexp.MustCompile(`\b([0-9]{1,3}(?:,[0-9]{3})+|[0-9]+) ` + regexp.QuoteMeta(what) + `\b`)
+			for _, m := range re.FindAllStringSubmatch(text, -1) {
+				found++
+				said, err := strconv.Atoi(strings.ReplaceAll(m[1], ",", ""))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if said > n || 2*said < n {
+					t.Errorf("%s says %s %s, and the tree has %d. Give a figure no more "+
+						"than that and at least half of it", name, m[1], what, n)
+				}
+			}
+		}
+	}
+	if found == 0 {
+		t.Fatal("the proposal gives no figure this test recognises; it has stopped looking")
 	}
 }
 

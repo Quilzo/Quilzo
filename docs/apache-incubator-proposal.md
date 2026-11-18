@@ -32,22 +32,29 @@ An SGA can be filed as soon as a Champion asks for one.
 
 ## Abstract
 
-Quilzo is a content management system with no query language over content, no
-executable template language, and no plugin runtime — three capabilities
-removed so that the vulnerability classes that depend on them cannot exist.
-Content is immutable and addressed by the hash of its own bytes; publishing
-moves a pointer.
+Quilzo is the self-hosted AI agent platform: a control plane, an agent studio,
+a CMS and chatbots in one Go binary. Every agent has an identity, a policy, a
+budget and a signed record, and a person approves the actions that matter.
+
+The CMS underneath has no query language over content, no executable template
+language, and no plugin runtime — three capabilities removed so that the
+vulnerability classes that depend on them cannot exist. Extensions run out of
+process, sandboxed and pinned by digest. Content is immutable and addressed by
+the hash of its own bytes; publishing moves a pointer.
 
 ## Proposal
 
-Quilzo manages structured content and publishes a website from it, with the
-capabilities a CMS is expected to have: content types, media, taxonomies,
-menus, declared queries over structured data, forms, workflow, multiple
-languages, staged environments, scheduled publication, and an audit trail.
+Quilzo runs AI agents with a person in charge, has a studio to build them in,
+and publishes the website and the chatbots they work on. The website comes
+from a CMS with the capabilities a CMS is expected to have: content types,
+media, taxonomies, menus, declared queries over structured data, forms,
+workflow, multiple languages, staged environments, scheduled publication, and
+an audit trail.
 
-It does them on a storage model borrowed from version control rather than from
-a relational database, and that choice is the product rather than an
-implementation detail. It is written in Go against the standard library only.
+It keeps that content on a storage model borrowed from version control rather
+than from a relational database, and that choice is what the rest is built on
+rather than an implementation detail. It is written in Go against the standard
+library only.
 
 We propose to enter the Apache Incubator to build a governance structure and a
 contributor community around it.
@@ -76,8 +83,9 @@ Three reasons, in descending order of how unusual they are.
 `go.mod` has no `require` block. Not vendored, not pinned — none, with CI
 failing the build if one appears. That cost a content-addressed merkle store, a
 template language with a real parser, a CIDv1 encoder, an OIDC client with
-PKCE, and Windows file locking via `LockFileEx`. Roughly 65,600 lines of
-program with 34,500 lines of test across 1,229 test functions.
+PKCE, and Windows file locking via `LockFileEx`. More than 300,000 lines of
+program, with more than 200,000 lines of test across more than 5,000 test
+functions.
 
 For the ASF specifically this is not an aesthetic claim. Third-party licence
 review — Category A, B and X classification, LICENSE and NOTICE assembly,
@@ -317,9 +325,9 @@ with a deliberate refusal to ever hold a payment credential.
 ## Current Status
 
 Working, tested, and used to build its own demonstration site. Not yet 1.0, and
-no backports to earlier tags. 65 packages; 1,229 test functions; CI runs tests,
-`govulncheck`, gofmt and CodeQL on every pull request, with CodeQL a required
-check on `main`.
+no backports to earlier tags. More than 170 packages and 5,000 test functions;
+CI runs tests, `govulncheck`, gofmt and CodeQL on every pull request, with
+CodeQL a required check on `main`.
 
 ### Meritocracy
 
@@ -470,8 +478,9 @@ vendored or bundled.
 
 Quilzo has been developed with substantial LLM assistance, and the git history
 says so: 71 of 174 commits carry a `Co-Authored-By:` trailer naming the model.
-Anyone reading the log will see it, and anyone dividing 100,000 lines by eight
-days will ask, so it is stated here rather than left to be discovered.
+Anyone reading the log will see it, and anyone setting the size of the code
+against its age will ask, so it is stated here rather than left to be
+discovered.
 
 The relevant facts, against the ASF's
 [generative tooling guidance](https://www.apache.org/legal/generative-tooling.html):
