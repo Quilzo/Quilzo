@@ -248,6 +248,33 @@ func TestAStoreNobodyHasEnteredGetsTwoFactorsFromItsFirstGrant(t *testing.T) {
 	}
 }
 
+// `quilzo auth deny` is the same moment when it makes a store's first
+// binding: it is `auth grant` denying (authGrantAs), and a deny is a
+// binding, so the store has people from then and two factors with them.
+func TestAStoreNobodyHasEnteredGetsTwoFactorsFromItsFirstDeny(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("QUILZO_TOKEN", "")
+	old := w
+	t.Cleanup(func() { w = old })
+	w = out.New(false)
+	w.Out = &bytes.Buffer{}
+
+	root := demoStore(t)
+	w.Out = &bytes.Buffer{}
+	_, printed := captureStdout(t)
+	err := cmdAuth(root, []string{"deny", "mallory", "author"})
+	_ = printed()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pol, _ := loadPolicy(root); len(pol.Bindings) != 1 || !pol.Bindings[0].Deny {
+		t.Fatalf("auth deny made %+v", pol.Bindings)
+	}
+	if from, ok := mfaFromIfSet(root); !ok || time.Until(from) > time.Minute {
+		t.Errorf("a store given its first binding by auth deny gets two factors from %v (%v), not now", from, ok)
+	}
+}
+
 // A name typed after --by is credited and never recorded in place of the
 // verified caller who acted.
 //
