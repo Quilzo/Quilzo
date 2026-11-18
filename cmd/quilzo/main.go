@@ -714,8 +714,10 @@ global
   NO_COLOR      suppress colour (also off automatically when not a terminal)
   QUILZO_LOCK_WAIT  how long a command waits for a store another command is
                 writing, saying so after a second (default 30s; 0 waits on)
-  -             as a FILE: standard input where one is read, standard output
-                where one is written
+  -             standard output, as the FILE or -o FILE of a command that
+                prints when given none; standard input, as the page of add
+                NAME=- and the FILE of records import, records add --from
+                and newsletter import
   --yes         go ahead with an erasure that cannot be undone; at a terminal,
                 one asked without it only says what it would erase, and from
                 a script (standard input not a terminal) it goes ahead

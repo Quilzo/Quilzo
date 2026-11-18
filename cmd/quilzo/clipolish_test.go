@@ -323,11 +323,28 @@ func TestADashIsStandardInputOrOutput(t *testing.T) {
 		{[]string{"compliance", "sbom", "-"}, "CycloneDX"},
 		{[]string{"compliance", "aibom", "-"}, "CycloneDX"},
 		{[]string{"newsletter", "export", "-"}, "email"},
+		// Printed without --out, and written to a file called - with it.
+		{[]string{"theme", "export", "--out", "-"}, `"$description"`},
 	} {
 		o, e, code, _ := run("", c.line...)
 		if code != 0 || !strings.Contains(o, c.want) {
 			t.Errorf("`quilzo %s` exited %d without %s on standard output:\n%s%s", strings.Join(c.line, " "), code, c.want, firstLines(o, 3), firstLines(e, 3))
 		}
+	}
+	// The help says where - is read from, and does not say it is read
+	// wherever a file is: `agent declare -`, `type add -` and `import -`
+	// open a file called -, and the global section said "standard input
+	// where one is read".
+	o, _, _ := cliRun(t, "", "", "help")
+	_, global, _ := strings.Cut(o, "\nglobal\n")
+	global, _, _ = strings.Cut(global, "\nexit codes\n")
+	for _, want := range []string{"add NAME=-", "records import", "records add --from", "newsletter import"} {
+		if !strings.Contains(strings.Join(strings.Fields(global), " "), want) {
+			t.Errorf("the global section does not say %s reads - as standard input:\n%s", want, global)
+		}
+	}
+	if strings.Contains(global, "where one is read") {
+		t.Errorf("the global section says - is standard input wherever a file is read:\n%s", global)
 	}
 	for _, line := range [][]string{
 		{"export", "json", "--to", "-"},

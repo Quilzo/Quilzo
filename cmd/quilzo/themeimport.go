@@ -512,7 +512,8 @@ func themeExport(args []string) error {
 	if *tailwind {
 		b = []byte(theme.Tailwind(th))
 	}
-	if *out == "" {
+	// "-" is standard output, as no --out is: it wrote a file called -.
+	if toStdout(*out) {
 		_, werr := os.Stdout.Write(b)
 		return werr
 	}
