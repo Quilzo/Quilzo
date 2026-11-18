@@ -188,6 +188,40 @@ func (i *Index) Get(page string) (Record, bool) {
 	return r, ok
 }
 
+// Reviewed records by, a person, as having reviewed each model-written page
+// a change puts live, and returns the pages it marked.
+//
+// A person's approval of a change is a review of what the change puts live:
+// the publish gate refuses a model's change until a person approves it,
+// precisely so that somebody reads it. The approval was recorded and the
+// mark said nobody had, so the page went out with ai-human-reviewed false.
+//
+// proposed and live map each page to its content at the approved commit and
+// at what is live. Only a page the change adds or alters is marked, since an
+// approver is shown the changes and not the pages they leave alone; only a
+// record bound to exactly the approved bytes, since a stale one describes
+// words nobody approved; and only one nobody is recorded as reviewing yet.
+func (i *Index) Reviewed(proposed, live map[string]string, by string) []string {
+	if strings.TrimSpace(by) == "" {
+		return nil
+	}
+	var out []string
+	for page, hash := range proposed {
+		if live[page] == hash {
+			continue
+		}
+		r, ok := i.Records[page]
+		if !ok || r.ContentHash != hash || !r.SourceType.RequiresDisclosure() || r.ReviewedBy != "" {
+			continue
+		}
+		r.ReviewedBy = by
+		i.Records[page] = r
+		out = append(out, page)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // Status is what Check found for one page.
 type Status struct {
 	Page       string

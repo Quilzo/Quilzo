@@ -1011,3 +1011,52 @@ func TestNobodyAModelWroteForApprovesTheDraftWhenACountIsSet(t *testing.T) {
 		})
 	}
 }
+
+// A person's approval of a change a model wrote is the review its mark
+// says happened. The publish gate refuses a model's change until a person
+// approves it, and `review approve` recorded exactly that, while the page
+// was served with ai-human-reviewed false: the machine-readable disclosure
+// denied the review the program had required and recorded.
+func TestApprovingAModelsPageMarksItReviewed(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	root, dana, lee := twoAdmins(t)
+	t.Setenv("QUILZO_TOKEN", dana)
+	page := t.TempDir() + "/p.json"
+	if err := os.WriteFile(page, []byte(`{"title":"AI note","body":"Written by a model."}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"add", "index=" + page, "-m", "first"},
+		{"provenance", "set", "index", "--source", "humanEdits"},
+	} {
+		if err := runCmd(t, root, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := runPublish(t, root, "--no-a11y-check", "--reason", "no templates here"); err != nil {
+		t.Fatal(err)
+	}
+	if err := runCmd(t, root, "add", "ai-note="+page, "-m", "a model's page"); err != nil {
+		t.Fatal(err)
+	}
+	if err := runCmd(t, root, "provenance", "set", "ai-note", "--source", "trainedAlgorithmicMedia"); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("QUILZO_TOKEN", lee)
+	if err := cmdReview(root, []string{"approve", "--note", "read it"}); err != nil {
+		t.Fatal(err)
+	}
+	idx, err := loadProvenance(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec, _ := idx.Get("ai-note")
+	if rec.ReviewedBy != "lee" || !strings.Contains(rec.MetaTags(), `name="ai-human-reviewed" content="true"`) {
+		t.Errorf("approved by lee, the model's page is marked %+v:\n%s", rec, rec.MetaTags())
+	}
+	// A page the change does not touch was not read for it.
+	if home, _ := idx.Get("index"); home.ReviewedBy != "" {
+		t.Errorf("a page the approval did not cover is marked reviewed: %+v", home)
+	}
+}

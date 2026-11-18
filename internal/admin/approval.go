@@ -443,12 +443,49 @@ func (s *Server) handleApprove(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	marked := s.markReviewed(prop.Content, p.Name)
 	// review.approve, as `quilzo review approve` writes it. This wrote
 	// approval.approve, so whatever looked for an approval under the
 	// command line's name missed every one given in the browser.
 	s.auditPub(p, "review.approve", "/", map[string]string{
-		"commit": shortHash(prop.Content), "alone": strconv.FormatBool(alone)})
+		"commit": shortHash(prop.Content), "alone": strconv.FormatBool(alone),
+		"reviewed": strconv.Itoa(len(marked))})
 	s.approvalRedirect(w, r, "recorded", "")
+}
+
+// markReviewed records name as the reviewer of each model-written page the
+// approved commit puts live (provenance.Index.Reviewed), as `quilzo review
+// approve` does, and returns those pages. The publish gate asked for a
+// person to approve the change, and the page was served with
+// ai-human-reviewed false after one had. Only for an approver the
+// human-approver rule counts as a person. Nothing is marked when the
+// provenance cannot be read or written; the approval stands either way.
+func (s *Server) markReviewed(commit, name string) []string {
+	if s.LoadProvenance == nil || s.SaveProvenance == nil {
+		return nil
+	}
+	if s.Approvals.KindOf != nil && s.Approvals.KindOf(name) != "human" {
+		return nil
+	}
+	proposed, err := site.PageIDsAt(s.Store, commit)
+	if err != nil {
+		return nil
+	}
+	live := map[string]string{}
+	if l := s.Store.GetRef(site.RefLive); l != "" {
+		if live, err = site.PageIDsAt(s.Store, l); err != nil {
+			return nil
+		}
+	}
+	idx, err := s.LoadProvenance()
+	if err != nil {
+		return nil
+	}
+	marked := idx.Reviewed(proposed, live, name)
+	if len(marked) == 0 || s.SaveProvenance(idx) != nil {
+		return nil
+	}
+	return marked
 }
 
 // blockedByApproval is the publish gate.
