@@ -814,15 +814,38 @@ func entrySuffix(n int) string {
 	return "ies"
 }
 
-// count renders "1 submission" and "4 submissions".
+// count renders "1 submission" and "4 submissions", "1 memory" and "3
+// memories", "1 address" and "2 addresses".
 //
-// The plain case, for words that take an s. A word that does not is a word
-// this should not be used for.
+// It added an s to every word, and said in this comment that a word which
+// takes no s was one it should not be used for. Two callers used it for one
+// all the same: moving a page that two menus link to said "2 menu entrys
+// would be retargeted", and `memory forget` said "0 memorys removed". A
+// warning in a comment is not read by the next caller, so the regular
+// endings are spelled here: a consonant and y take ies, and a word ending
+// in s, x, z, ch or sh takes es. A word with no regular plural (person) is
+// for countWord, which is given both forms.
 func count(n int, noun string) string {
 	if n == 1 {
 		return fmt.Sprintf("%d %s", n, noun)
 	}
-	return fmt.Sprintf("%d %ss", n, noun)
+	return fmt.Sprintf("%d %s", n, pluralOf(noun))
+}
+
+// pluralOf is the regular English plural of a noun, the last word of it
+// for a phrase ("menu entry", "menu entries").
+func pluralOf(noun string) string {
+	vowel := func(b byte) bool { return strings.IndexByte("aeiou", b) >= 0 }
+	n := len(noun)
+	switch {
+	case n >= 2 && noun[n-1] == 'y' && !vowel(noun[n-2]):
+		return noun[:n-1] + "ies"
+	case strings.HasSuffix(noun, "s"), strings.HasSuffix(noun, "x"),
+		strings.HasSuffix(noun, "z"), strings.HasSuffix(noun, "ch"),
+		strings.HasSuffix(noun, "sh"):
+		return noun + "es"
+	}
+	return noun + "s"
 }
 
 // -- transparency ------------------------------------------------------------
