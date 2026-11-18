@@ -318,7 +318,7 @@ func typesUnbind(root string, args []string) error {
 		return err
 	}
 	if _, bound := st.Bound[page]; !bound {
-		return fmt.Errorf("%s was not bound to anything", page)
+		return errNotFound{fmt.Errorf("%s was not bound to anything", page)}
 	}
 	delete(st.Bound, page)
 	if err := st.Save(); err != nil {

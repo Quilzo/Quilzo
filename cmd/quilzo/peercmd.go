@@ -336,7 +336,7 @@ func peerAdopt(root string, args []string) error {
 	}
 	head := s.GetRef(replica.QuarantineRef(name))
 	if head == "" {
-		return fmt.Errorf("nothing has been pulled from %q", name)
+		return errNotFound{fmt.Errorf("nothing has been pulled from %q", name)}
 	}
 	current := s.GetRef(site.RefDraft)
 	if current == head {

@@ -797,10 +797,15 @@ func (s *Server) Revoke(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// ErrNoConnection is an id that names no connection in force, for
+// errors.Is: the command line exits 4 for it, "not found", as the help
+// documents, where `quilzo apps disconnect` of an id nobody has exited 1.
+var ErrNoConnection = errors.New("no connection")
+
 // End ends a grant: a person disconnecting an app, or an administrator.
 func (s *Server) End(id, by, why string) error {
 	if !s.end(id, by, why) {
-		return fmt.Errorf("no connection %s is in force", id)
+		return fmt.Errorf("%w %s is in force", ErrNoConnection, id)
 	}
 	return nil
 }

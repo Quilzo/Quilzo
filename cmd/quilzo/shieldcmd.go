@@ -663,7 +663,9 @@ func refuseAlone(root string, c *Caller, rm *dual.Removal, about map[string]stri
 	detail := rm.Detail()
 	maps.Copy(detail, about)
 	record(root, c.auditRecord("dual.alone-refused", "/", audit.Denied, detail))
-	return errors.New(rm.Refusal())
+	// A gate's refusal, 3, as the help documents one; the rule of two
+	// people refusing an approval alone exited 1, as a command that broke.
+	return errBlocked{errors.New(rm.Refusal())}
 }
 
 func shieldHold(root string, args []string) error {

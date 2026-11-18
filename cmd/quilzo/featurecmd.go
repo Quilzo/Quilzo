@@ -746,7 +746,8 @@ func decideFeature(root, id string, approve bool, caller *Caller) error {
 		return nil
 	}
 	if auth.SamePerson(caller.Name, pend.RequestedBy) {
-		return fmt.Errorf("%s asked for this install, so somebody else approves it", pend.RequestedBy)
+		// Refused by the rule of two people, a gate, 3; it exited 1.
+		return errBlocked{fmt.Errorf("%s asked for this install, so somebody else approves it", pend.RequestedBy)}
 	}
 	p, _, err := loadFeaturePackage(root, pend.Name, pend.Digest)
 	if err != nil {

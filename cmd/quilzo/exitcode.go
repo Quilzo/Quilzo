@@ -6,16 +6,22 @@ package main
 import (
 	"errors"
 
+	"github.com/quilzo/quilzo/internal/audit"
+	"github.com/quilzo/quilzo/internal/auth"
 	"github.com/quilzo/quilzo/internal/board"
 	"github.com/quilzo/quilzo/internal/booking"
 	"github.com/quilzo/quilzo/internal/dual"
 	"github.com/quilzo/quilzo/internal/handoff"
 	"github.com/quilzo/quilzo/internal/member"
 	"github.com/quilzo/quilzo/internal/memory"
+	"github.com/quilzo/quilzo/internal/newsletter"
 	"github.com/quilzo/quilzo/internal/note"
+	"github.com/quilzo/quilzo/internal/oauthas"
+	"github.com/quilzo/quilzo/internal/odp"
 	"github.com/quilzo/quilzo/internal/out"
 	"github.com/quilzo/quilzo/internal/research"
 	"github.com/quilzo/quilzo/internal/schedule"
+	"github.com/quilzo/quilzo/internal/shield"
 )
 
 // errNotFound marks a refusal because the thing the command was asked about
@@ -46,7 +52,8 @@ func exitCode(err error) int {
 	case err == nil:
 		return out.OK
 	case errors.As(err, &blocked), errors.Is(err, dual.ErrRefused),
-		errors.Is(err, dual.ErrLastAdministrator):
+		errors.Is(err, dual.ErrLastAdministrator), errors.Is(err, odp.ErrSameAdministrator),
+		errors.Is(err, shield.ErrSameProposer):
 		return out.ExitBlocked
 	case errors.As(err, &misused):
 		return out.ExitUsage
@@ -55,7 +62,11 @@ func exitCode(err error) int {
 		errors.Is(err, board.ErrNotFound), errors.Is(err, booking.ErrNotFound),
 		errors.Is(err, note.ErrNotFound), errors.Is(err, handoff.ErrNotFound),
 		errors.Is(err, memory.ErrNoEntry), errors.Is(err, schedule.ErrNothingPending),
-		errors.Is(err, research.ErrNotFound):
+		errors.Is(err, research.ErrNotFound), errors.Is(err, research.ErrNoProject),
+		errors.Is(err, auth.ErrNoToken), errors.Is(err, shield.ErrNoProtection),
+		errors.Is(err, shield.ErrNoChange), errors.Is(err, oauthas.ErrNoConnection),
+		errors.Is(err, odp.ErrNoProposal), errors.Is(err, newsletter.ErrNoIssue),
+		errors.Is(err, audit.ErrNoEntry):
 		return out.ExitNotFound
 	}
 	return out.ExitFailure

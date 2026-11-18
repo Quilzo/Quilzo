@@ -50,6 +50,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -154,6 +155,13 @@ var ErrUnknownFormat = errors.New("unknown format")
 
 // Export renders events.
 func Export(f Format, events []audit.Event, opt Options, now time.Time) (*Result, error) {
+	// The format first, before anything is asked of the events. It was
+	// looked at last, so on a new store's empty log `quilzo siem zzbogus`
+	// said "no events in that range" and exited 3, a gate refusing, and a
+	// chain that did not verify was said instead of the format nobody has.
+	if !slices.Contains(Formats(), f) {
+		return nil, fmt.Errorf("%w %q; try ocsf, cef or jsonl", ErrUnknownFormat, f)
+	}
 	opt = opt.withDefaults()
 	if opt.AsStored {
 		return exportAsStored(f, events, opt, now)

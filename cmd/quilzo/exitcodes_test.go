@@ -434,3 +434,83 @@ func TestAWriteAnswersOneDocument(t *testing.T) {
 		}
 	}
 }
+
+// A refusal by the rule of two people exits 3 by whichever command it is
+// reached, and a thing that is not there exits 4 whichever package said so.
+//
+// The codes were set where the errors were made in this program, so the
+// rule of two people refusing `pending approve` of one's own request was 3
+// while the same rule refusing `policy approve`, `feature approve` and
+// `shield playbook approve` of one's own change was 1, as was approving
+// alone in the day after another administrator was removed. And what was
+// not there was 4 when this program said so and 1 when a package did:
+// `token revoke`, `shield lift`, `apps disconnect`, `policy approve`,
+// `newsletter dismiss`, `research show` and `auditlog prove` of an id
+// nobody has. `siem zzbogus` on a new store, whose log is empty, said
+// there were no events and exited 3 rather than refuse a format nobody
+// has, 2.
+func TestEveryRuleOfTwoAndEveryMissingThingHasItsCode(t *testing.T) {
+	fresh := filepath.Join(t.TempDir(), "st")
+	if _, e, code := cliRun(t, fresh, "", "init"); code != 0 {
+		t.Fatalf("init: %s", e)
+	}
+	if _, e, code := cliRun(t, fresh, "", "siem", "zzbogus"); code != out.ExitUsage {
+		t.Errorf("`quilzo siem zzbogus` on a store with an empty log exited %d, want %d: %s",
+			code, out.ExitUsage, firstLines(e, 2))
+	}
+
+	root, owner := accessStore(t)
+	want := func(code int, line ...string) string {
+		t.Helper()
+		o, e, got := cliRun(t, root, owner, line...)
+		if got != code {
+			t.Errorf("`quilzo %s` exited %d, want %d (%s): %s", strings.Join(line, " "),
+				got, code, out.Describe(code), firstLines(e, 2))
+		}
+		return o
+	}
+	id := func(line ...string) string {
+		t.Helper()
+		o := want(0, append([]string{"--json"}, line...)...)
+		var doc struct{ ID string }
+		if json.Unmarshal([]byte(o), &doc) != nil || doc.ID == "" {
+			t.Fatalf("`quilzo --json %s` answered no id: %s", strings.Join(line, " "), firstLines(o, 3))
+		}
+		return doc.ID
+	}
+
+	for _, line := range [][]string{
+		{"token", "revoke", "nope"},
+		{"shield", "lift", "nope"},
+		{"shield", "playbook", "approve", "nope"},
+		{"apps", "disconnect", "gr_nope"},
+		{"policy", "approve", "nope"},
+		{"policy", "withdraw", "nope"},
+		{"newsletter", "dismiss", "nope"},
+		{"research", "show", "nope"},
+		{"auditlog", "prove", "99999"},
+		{"type", "unbind", "index"},
+		{"peer", "adopt", "nope"},
+	} {
+		want(out.ExitNotFound, line...)
+	}
+
+	// A second administrator, so that each change below waits for one, and
+	// the owner approving their own is refused.
+	want(0, "auth", "grant", "bob", "admin")
+	want(out.ExitBlocked, "policy", "approve", id("policy", "propose", "ac-12_odp=8 hours", "--reason", "shorter"))
+	example := want(0, "feature", "example")
+	pkg := filepath.Join(t.TempDir(), "feature.json")
+	if err := os.WriteFile(pkg, []byte(example), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	want(out.ExitBlocked, "feature", "approve", id("feature", "install", pkg))
+	want(out.ExitBlocked, "shield", "playbook", "approve",
+		id("shield", "playbook", "mode", "signin-attack", "watch", "--why", "quieter"))
+
+	// The owner alone again, a moment after bob stopped being one, when
+	// nobody approves alone for a day.
+	want(0, "auth", "revoke", "bob", "admin")
+	want(out.ExitBlocked, "policy", "approve", id("policy", "propose", "ac-12_odp=4 hours", "--reason", "shorter still"))
+}
+

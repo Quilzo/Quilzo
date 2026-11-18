@@ -240,6 +240,10 @@ func TestExpiredAndRevokedTokensStopWorking(t *testing.T) {
 	if _, err := ts.Revoke(tok.ID); err != nil {
 		t.Errorf("revoking an expired token should still work: %v", err)
 	}
+	// One nobody issued is named as not there, for the command line's 4.
+	if _, err := ts.Revoke("nope"); !errors.Is(err, ErrNoToken) || err.Error() != "no token nope" {
+		t.Errorf("revoking a token nobody issued: %v", err)
+	}
 }
 
 func TestLastUsedIsRecorded(t *testing.T) {
