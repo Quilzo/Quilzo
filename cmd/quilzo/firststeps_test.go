@@ -740,6 +740,26 @@ func TestTheReadmeQuickstartReachesASignedInAdmin(t *testing.T) {
 	f.run("./quilzo agent runs")
 }
 
+// `quilzo help` says what Quilzo is, in the README's words.
+//
+// It is the first thing anybody at the command line reads of it, and an
+// agent finding its way around the command line reads it whole, and it
+// introduced a content store: "content is immutable, publishing moves a
+// pointer, and templates cannot execute anything", of what is an agent
+// platform first, as the sign-in page and Get started did.
+func TestHelpSaysWhatQuilzoIs(t *testing.T) {
+	m := regexp.MustCompile(`<strong>(The self-hosted [^<]+)</strong>`).FindStringSubmatch(readDoc(t, "README.md"))
+	if m == nil {
+		t.Fatal("the README no longer says what Quilzo is where this looks for it")
+	}
+	f := newWalk(t)
+	f.run("quilzo help")
+	said := strings.ToLower(strings.Join(strings.Fields(f.log.String()), " "))
+	if !strings.Contains(said, strings.ToLower(m[1])) {
+		t.Errorf("quilzo help does not say %q:\n%s", m[1], firstLines(f.log.String(), 4))
+	}
+}
+
 // The reference's first lines end at an admin its reader is signed in to,
 // and a site.
 //
