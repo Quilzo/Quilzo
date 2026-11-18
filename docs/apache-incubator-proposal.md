@@ -482,10 +482,9 @@ vendored or bundled.
 
 Quilzo has been developed with substantial LLM assistance, and the git history
 says so: a commit written with the assistant names it, as the commit's author
-or in a `Co-Authored-By:` trailer.
-Anyone reading the log will see it, and anyone setting the size of the code
-against its age will ask, so it is stated here rather than left to be
-discovered.
+or in a `Co-Authored-By:` trailer. Anyone reading the log will see it, and
+anyone setting the size of the code against its age will ask, so it is stated
+here rather than left to be discovered.
 
 The relevant facts, against the ASF's
 [generative tooling guidance](https://www.apache.org/legal/generative-tooling.html):
