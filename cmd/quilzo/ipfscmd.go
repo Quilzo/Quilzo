@@ -91,6 +91,9 @@ func ipfsWrite(root string, args []string) error {
 	if err := parseFlags(fs, args, nil, 0); err != nil {
 		return err
 	}
+	if err := notStdio(*dir, "-o"); err != nil {
+		return err
+	}
 	files, err := renderBundle(root, *tplDir)
 	if err != nil {
 		return err

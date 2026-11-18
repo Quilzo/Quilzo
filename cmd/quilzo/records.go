@@ -257,7 +257,7 @@ func recordsAdd(root string, args []string) error {
 
 	fields := map[string]any{}
 	if *fromFile != "" {
-		body, err := os.ReadFile(*fromFile)
+		body, err := readInput(*fromFile, 16<<20)
 		if err != nil {
 			return err
 		}
@@ -351,7 +351,7 @@ func recordsImport(root string, args []string) error {
 	if *dates != "" && *dates != "dmy" && *dates != "mdy" {
 		return fmt.Errorf("--dates is dmy (day first) or mdy (month first), not %q", *dates)
 	}
-	body, err := readBounded(rest[1], sheet.MaxBytes)
+	body, err := readInput(rest[1], sheet.MaxBytes)
 	if err != nil {
 		return err
 	}
@@ -395,7 +395,7 @@ func recordsExport(root string, args []string) error {
 	caller := resolveCaller(root, flagToken)
 	record(root, caller.auditRecord("records.export", "/"+rest[0], audit.Success,
 		map[string]string{"collection": rest[0], "records": fmt.Sprint(n), "format": *format}))
-	if *outPath == "" {
+	if toStdout(*outPath) {
 		_, err := os.Stdout.Write(body)
 		return err
 	}

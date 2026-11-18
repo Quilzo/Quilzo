@@ -277,7 +277,7 @@ func cmdMemory(root string, args []string) error {
 		if err != nil {
 			return err
 		}
-		if *out == "" {
+		if toStdout(*out) {
 			_, err = os.Stdout.Write(append(body, '\n'))
 			return err
 		}

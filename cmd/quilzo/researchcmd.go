@@ -380,7 +380,7 @@ func cmdResearch(root string, args []string) error {
 		if err != nil {
 			return err
 		}
-		if *outPath == "" {
+		if toStdout(*outPath) {
 			_, err = io.WriteString(os.Stdout, md)
 			return err
 		}

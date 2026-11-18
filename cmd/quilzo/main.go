@@ -691,6 +691,8 @@ global
   --token TOKEN who you are, for this command; else ~/.quilzo/token (kept
                 0600), else QUILZO_TOKEN, read in that order
   NO_COLOR      suppress colour (also off automatically when not a terminal)
+  -             as a FILE: standard input where one is read, standard output
+                where one is written
 
 exit codes
   0 success · 1 failed · 2 misused · 3 refused by a gate · 4 not found
@@ -1621,12 +1623,21 @@ func cmdAdd(root string, args []string) error {
 		}
 	}
 
+	piped := false
 	for _, spec := range fs.Args() {
 		name, path, ok := strings.Cut(spec, "=")
 		if !ok {
 			return fmt.Errorf("expected NAME=FILE.json, got %q", spec)
 		}
-		body, err := os.ReadFile(path)
+		// NAME=- is the page piped in. Standard input is read once, so a
+		// second would be an empty page.
+		if path == stdio {
+			if piped {
+				return errMisused{fmt.Errorf("only one page can be read from standard input (%s)", spec)}
+			}
+			piped = true
+		}
+		body, err := readInput(path, 64<<20)
 		if err != nil {
 			return fmt.Errorf("cannot read %s: %w", path, err)
 		}
@@ -2468,7 +2479,7 @@ func cmdRender(root string, args []string) error {
 	if err != nil {
 		return fmt.Errorf("template: %w", err)
 	}
-	if *out != "" {
+	if !toStdout(*out) {
 		if err := os.WriteFile(*out, []byte(html), 0o644); err != nil {
 			return err
 		}

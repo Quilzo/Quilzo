@@ -786,7 +786,7 @@ func auditExport(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	if *to == "" {
+	if toStdout(*to) {
 		_, err := os.Stdout.WriteString(res.Body)
 		return err
 	}

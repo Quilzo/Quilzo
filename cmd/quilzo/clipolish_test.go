@@ -268,3 +268,69 @@ func TestAMistypedWordIsOfferedTheNearestOne(t *testing.T) {
 		t.Errorf("`quilzo schedul` was not offered schedule, or was offered a row of the privilege table:\n%s", e)
 	}
 }
+
+// "-" is standard input where a command reads a file and standard output
+// where it writes one, as on every other command line. It was a file name:
+// `add fromstdin=-` was "open -: no such file", and `records export -o -`,
+// `auditlog export -o -`, `siem jsonl --envelope -` and `compliance sbom -`
+// each wrote a file called "-", nothing on standard output, while `export
+// json --to -` made a directory of that name. Where a directory goes, "-"
+// is refused.
+func TestADashIsStandardInputOrOutput(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "st")
+	if _, e, code := cliRun(t, root, "", "init"); code != 0 {
+		t.Fatalf("init: %s", e)
+	}
+	run := func(stdin string, args ...string) (string, string, int, string) {
+		t.Helper()
+		dir := t.TempDir()
+		cmd := exec.Command(os.Args[0], append([]string{"quilzo-main", "--root", root}, args...)...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(), "HOME="+t.TempDir(), "QUILZO_TOKEN=", "NO_COLOR=1")
+		cmd.Stdin = strings.NewReader(stdin)
+		var o, e bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &o, &e
+		code := 0
+		if err := cmd.Run(); err != nil {
+			code = -1
+			if exit, ok := err.(*exec.ExitError); ok {
+				code = exit.ExitCode()
+			}
+		}
+		if _, err := os.Lstat(filepath.Join(dir, "-")); err == nil {
+			t.Errorf("`quilzo %s` made a file or directory called -", strings.Join(args, " "))
+		}
+		return o.String(), e.String(), code, dir
+	}
+	if _, e, code, _ := run(`{"title":"From stdin","blocks":[]}`, "add", "fromstdin=-", "-m", "piped in"); code != 0 {
+		t.Fatalf("`add fromstdin=-` exited %d: %s", code, firstLines(e, 3))
+	}
+	if o, e, code, _ := run("name,price\npen,2\n", "records", "import", "products", "-"); code != 0 {
+		t.Errorf("`records import products -` exited %d: %s%s", code, firstLines(o, 3), firstLines(e, 3))
+	}
+	for _, c := range []struct {
+		line []string
+		want string
+	}{
+		{[]string{"records", "export", "products", "-o", "-"}, "name"},
+		{[]string{"auditlog", "export", "-o", "-"}, `"seq":`},
+		{[]string{"siem", "jsonl", "-o", filepath.Join(t.TempDir(), "log.jsonl"), "--envelope", "-"}, `"first_seq"`},
+		{[]string{"compliance", "sbom", "-"}, "CycloneDX"},
+		{[]string{"compliance", "aibom", "-"}, "CycloneDX"},
+		{[]string{"newsletter", "export", "-"}, "email"},
+	} {
+		o, e, code, _ := run("", c.line...)
+		if code != 0 || !strings.Contains(o, c.want) {
+			t.Errorf("`quilzo %s` exited %d without %s on standard output:\n%s%s", strings.Join(c.line, " "), code, c.want, firstLines(o, 3), firstLines(e, 3))
+		}
+	}
+	for _, line := range [][]string{
+		{"export", "json", "--to", "-"},
+		// The export and its envelope cannot both be the one stream.
+		{"siem", "jsonl", "--envelope", "-"},
+	} {
+		if o, e, code, _ := run("", line...); code == 0 {
+			t.Errorf("`quilzo %s` was not refused:\n%s%s", strings.Join(line, " "), firstLines(o, 3), firstLines(e, 3))
+		}
+	}
+}

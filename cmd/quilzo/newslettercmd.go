@@ -639,12 +639,16 @@ func newsletterImport(root string, args []string, caller *Caller) error {
 	if len(pos) != 1 {
 		return errors.New("usage: quilzo newsletter import FILE.csv --agreed \"where they signed up\"")
 	}
-	f, err := os.Open(pos[0])
-	if err != nil {
-		return err
+	var list io.Reader = os.Stdin
+	if pos[0] != stdio {
+		f, err := os.Open(pos[0])
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		list = f
 	}
-	defer f.Close()
-	got, err := importSubscribers(root, f, *agreed, caller)
+	got, err := importSubscribers(root, list, *agreed, caller)
 	if err != nil {
 		return err
 	}
@@ -669,7 +673,7 @@ func newsletterExport(root string, args []string, caller *Caller) error {
 	if err != nil {
 		return err
 	}
-	if len(args) == 0 {
+	if len(args) == 0 || toStdout(args[0]) {
 		_, err := os.Stdout.Write(buf.Bytes())
 		return err
 	}

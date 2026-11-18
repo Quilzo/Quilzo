@@ -33,6 +33,9 @@ func cmdExport(root string, args []string) error {
 	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
+	if err := notStdio(*dir, "--to"); err != nil {
+		return err
+	}
 	format := export.Format("markdown")
 	if len(pos) == 1 {
 		format = export.Format(pos[0])
@@ -128,6 +131,13 @@ func cmdSiem(root string, args []string) error {
 	if err := parseFlags(fs, flags, &pos, 1); err != nil {
 		return err
 	}
+	// The envelope on standard output is for an export written to a file;
+	// with the export there too, or the answer under --json, the two would
+	// be one stream nothing could tell apart.
+	if *envelopePath == stdio && (toStdout(*outPath) || w.Mode == out.JSON) {
+		return errMisused{fmt.Errorf("%s", "--envelope - writes the envelope to standard output, "+
+			"where the export goes too; write one of them to a file with -o FILE or --envelope FILE")}
+	}
 	format := siem.Format("ocsf")
 	if len(pos) == 1 {
 		format = siem.Format(pos[0])
@@ -155,12 +165,17 @@ func cmdSiem(root string, args []string) error {
 		if err != nil {
 			return err
 		}
-		if err := os.WriteFile(*envelopePath, append(body, '\n'), 0o600); err != nil {
+		if *envelopePath != stdio {
+			err = os.WriteFile(*envelopePath, append(body, '\n'), 0o600)
+		} else {
+			_, err = os.Stdout.Write(append(body, '\n'))
+		}
+		if err != nil {
 			return err
 		}
 	}
 
-	if *outPath != "" {
+	if !toStdout(*outPath) {
 		if err := os.WriteFile(*outPath, []byte(res.Body), 0o600); err != nil {
 			return err
 		}
