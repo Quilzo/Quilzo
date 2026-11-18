@@ -962,15 +962,6 @@ var rules = []Rule{
 			if s.Tokens == nil {
 				return nil
 			}
-			// Who holds an administrator's token of their own over the
-			// whole site, to administer from the command line with.
-			own := map[string]bool{}
-			for _, t := range s.Tokens.Tokens {
-				if !t.Revoked && !t.Expired(s.Now) && !t.IsSession() && t.Role == auth.RoleAdmin &&
-					t.Resource == "/" && t.Kind == auth.KindPerson {
-					own[strings.ToLower(t.Principal)] = true
-				}
-			}
 			var out []Finding
 			for _, t := range s.Tokens.Tokens {
 				if t.Revoked || t.Expired(s.Now) || t.Role != auth.RoleAdmin {
@@ -1007,11 +998,12 @@ var rules = []Rule{
 				// was no token that could issue another or run an
 				// administrator's command, and `auth recover` the only way
 				// back to the command line.
-				fix := "quilzo token issue " + t.Name + "-publisher --principal HOLDER --role publisher; " +
+				on := onFlag(t.Resource)
+				fix := "quilzo token issue " + t.Name + "-publisher --principal HOLDER --role publisher" + on + "; " +
 					"quilzo token revoke " + t.ID + "  # a program drafts and publishes with less"
 				switch {
-				case !own[strings.ToLower(t.Principal)]:
-					fix = "quilzo token issue HOLDER-cli --principal HOLDER --role admin --person; " + fix +
+				case !ownAdminToken(s, t.Principal, t.Resource):
+					fix = "quilzo token issue HOLDER-cli --principal HOLDER --role admin" + on + " --person; " + fix +
 						", and the first is HOLDER's own, to administer from the command line with once this one is revoked"
 				case t.Kind == "":
 					fix += "; if it is HOLDER's own, issue it again with --person, and revoke this one"
@@ -1793,13 +1785,31 @@ var rules = []Rule{
 				// The program's own principal first, which the token
 				// needs a grant to act as, and this one revoked: issuing
 				// another and leaving this working cleared nothing.
+				//
+				// With no more than a publisher's role, and on the path
+				// the token reached. It was the token's own role over the
+				// whole site, so for an administrator's token the fix made
+				// a second administrator of everything, holding a
+				// program's administrator's token that token.admin-role
+				// reported at once.
+				role, on := t.Role, onFlag(t.Resource)
+				if role == auth.RoleAdmin {
+					role = auth.RolePublisher
+				}
+				fix := "quilzo auth grant svc-HOLDER " + string(role) + on + "; quilzo token issue " + t.Name +
+					" --principal svc-HOLDER --role " + string(role) + on + "; quilzo token revoke " + t.ID +
+					"  # a principal of its own, which no person signs in as; if it is HOLDER's own, " +
+					"issue it again with --person, and revoke this one"
+				// And, as token.admin-role's fix does, an administrator's
+				// token of the holder's own first, when this was the one
+				// they administered with: revoking it left them none.
+				if t.Role == auth.RoleAdmin && !ownAdminToken(s, t.Principal, t.Resource) {
+					fix = "quilzo token issue HOLDER-cli --principal HOLDER --role admin" + on + " --person; " + fix
+				}
 				out = append(out, Finding{
 					Resource: t.ID,
 					Detail:   fmt.Sprintf("%s is a program's token and authenticates as its holder, who signs in here as a person", t.Name),
-					Fix: "quilzo auth grant svc-HOLDER " + string(t.Role) + "; quilzo token issue " + t.Name +
-						" --principal svc-HOLDER --role " + string(t.Role) + "; quilzo token revoke " + t.ID +
-						"  # a principal of its own, which no person signs in as; if it is HOLDER's own, " +
-						"issue it again with --person, and revoke this one",
+					Fix:      fix,
 				})
 			}
 			return out
@@ -2001,4 +2011,32 @@ func short(digest string) string {
 		return digest[:12]
 	}
 	return digest
+}
+
+// ownAdminToken reports whether who holds an administrator's token
+// recorded as their own (auth.Token's Kind) that reaches resource: one to
+// administer it from the command line with, once a program's is revoked.
+//
+// Over the same path, not the whole site alone: for an administrator's
+// token over /blog, one of their own over /blog was not counted, and the
+// fix gave them another over everything.
+func ownAdminToken(s State, who, resource string) bool {
+	for _, t := range s.Tokens.Tokens {
+		if !t.Revoked && !t.Expired(s.Now) && !t.IsSession() && t.Role == auth.RoleAdmin &&
+			t.Kind == auth.KindPerson && strings.EqualFold(t.Principal, who) && auth.Covers(t.Resource, resource) {
+			return true
+		}
+	}
+	return false
+}
+
+// onFlag is the --on a command in a token's fix carries, so that what it
+// grants and issues reaches what the token it replaces reached and no
+// more. Without it a program's token over /blog was replaced by a grant and
+// a token over the whole site.
+func onFlag(resource string) string {
+	if resource == "" || resource == "/" {
+		return ""
+	}
+	return " --on " + resource
 }

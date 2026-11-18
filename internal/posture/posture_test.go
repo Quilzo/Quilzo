@@ -1192,3 +1192,127 @@ func TestTheAdminTokenFixGivesAnyoneLeftWithoutOneATokenOfTheirOwn(t *testing.T)
 		t.Errorf("the fix for a program's token gives its holder another administrator's token: %+v", f)
 	}
 }
+
+// scopeTo narrows the token id in s to resource, as --on does.
+func scopeTo(s State, id, resource string) {
+	for i := range s.Tokens.Tokens {
+		if s.Tokens.Tokens[i].ID == id {
+			s.Tokens.Tokens[i].Resource = resource
+		}
+	}
+}
+
+// fixedRole is the role a fix issues the token it is about again with,
+// under the principal named.
+func fixedRole(t *testing.T, fix, principal string) auth.Role {
+	t.Helper()
+	_, after, ok := strings.Cut(fix, "token issue ")
+	for ok {
+		var cmd string
+		cmd, after, _ = strings.Cut(after, ";")
+		if f := strings.Fields(cmd); slices.Contains(f, principal) {
+			if i := slices.Index(f, "--role"); i >= 0 && i+1 < len(f) {
+				return auth.Role(f[i+1])
+			}
+		}
+		_, after, ok = strings.Cut(after, "token issue ")
+	}
+	t.Fatalf("the fix issues nothing to %s: %q", principal, fix)
+	return ""
+}
+
+// agent.shared-human-credential's fix for an administrator's token gives
+// the program's own principal no more than token.admin-role says a program
+// needs, and leaves its holder an administrator's token of their own.
+//
+// It gave the program's principal the token's own role. For an
+// administrator's token that was "quilzo auth grant svc-HOLDER admin": a
+// second administrator of the whole site, made to clear a finding, holding
+// a program's administrator's token that token.admin-role reported at
+// once, whose own fix then had a person's token issued to the program.
+// And it revoked the token without asking whether its holder had another
+// to administer from the command line with.
+func TestTheAgentCredentialFixMakesNoAdministratorAndLocksNobodyOut(t *testing.T) {
+	s := clean(t)
+	s.Agents.Enabled = true
+	s.Passkeys = []string{"dana"}
+	tokenWith(t, s, "first", "dana", auth.RoleAdmin, auth.KindPerson)
+	deploy := tokenWith(t, s, "deploy", "dana", auth.RoleAdmin, auth.KindProgram)
+	f := findingAbout(s, "agent.shared-human-credential", deploy)
+	if f == nil {
+		t.Fatal("control: a program's administrator's token in a person's name was not reported")
+	}
+	role := fixedRole(t, f.Fix, "svc-HOLDER")
+	if role == auth.RoleAdmin || strings.Contains(f.Fix, "grant svc-HOLDER admin") {
+		t.Errorf("the fix makes the program's principal an administrator: %q", f.Fix)
+	}
+
+	// Following it, with the role it names, clears it and leaves no
+	// program holding the whole site.
+	if err := s.Policy.Grant(auth.Binding{Principal: "svc-dana", Role: role, Resource: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	tokenWith(t, s, "deploy", "svc-dana", role, auth.KindProgram)
+	if _, err := s.Tokens.Revoke(deploy); err != nil {
+		t.Fatal(err)
+	}
+	for _, rule := range []string{"agent.shared-human-credential", "token.admin-role"} {
+		if f := has(Scan(s, nil), rule); f != nil {
+			t.Errorf("following the fix left %s: %s, fix %s", rule, f.Detail, f.Fix)
+		}
+	}
+
+	// For somebody whose only administrator's token it is, a token of
+	// their own first.
+	s = clean(t)
+	s.Agents.Enabled = true
+	s.Passkeys = []string{"dana"}
+	only := tokenWith(t, s, "laptop-mcp", "dana", auth.RoleAdmin, auth.KindProgram)
+	f = findingAbout(s, "agent.shared-human-credential", only)
+	if f == nil {
+		t.Fatal("control: a program's administrator's token in a person's name was not reported")
+	}
+	issue := strings.Index(f.Fix, "--principal HOLDER --role admin --person")
+	revoke := strings.Index(f.Fix, "token revoke "+only)
+	if issue < 0 || revoke < 0 || issue > revoke {
+		t.Errorf("the fix revokes dana's only administrator's token without giving her one of her own: %q", f.Fix)
+	}
+}
+
+// A token fix keeps the token's reach: what it issues, and the grant it
+// makes, are on the path the token it replaces was scoped to.
+//
+// Neither said --on, so a program's token over /blog was replaced by a
+// grant and a token over the whole site, and an administrator's token
+// over /blog by one of the holder's own over everything.
+func TestATokenFixReachesNoFurtherThanTheTokenItReplaces(t *testing.T) {
+	s := clean(t)
+	s.Agents.Enabled = true
+	s.Passkeys = []string{"kit"}
+	ws := tokenWith(t, s, "workstation-mcp", "kit", auth.RoleAuthor, auth.KindProgram)
+	scopeTo(s, ws, "/blog")
+	f := findingAbout(s, "agent.shared-human-credential", ws)
+	if f == nil {
+		t.Fatal("control: a program's token in a person's name was not reported")
+	}
+	if !strings.Contains(f.Fix, "grant svc-HOLDER author --on /blog") ||
+		!strings.Contains(f.Fix, "--principal svc-HOLDER --role author --on /blog") {
+		t.Errorf("the fix reaches past /blog: %q", f.Fix)
+	}
+
+	bot := tokenWith(t, s, "blogbot", "dana", auth.RoleAdmin, auth.KindProgram)
+	scopeTo(s, bot, "/blog")
+	f = findingAbout(s, "token.admin-role", bot)
+	if f == nil {
+		t.Fatal("control: a program's administrator's token was not reported")
+	}
+	if !strings.Contains(f.Fix, "--role admin --on /blog --person") || !strings.Contains(f.Fix, "--role publisher --on /blog") {
+		t.Errorf("the fix reaches past /blog: %q", f.Fix)
+	}
+	// One of her own over /blog is enough to administer it with.
+	own := tokenWith(t, s, "dana-cli", "dana", auth.RoleAdmin, auth.KindPerson)
+	scopeTo(s, own, "/blog")
+	if f := findingAbout(s, "token.admin-role", bot); f == nil || strings.Contains(f.Fix, "--role admin") {
+		t.Errorf("the fix gives dana a second administrator's token over what hers reaches: %+v", f)
+	}
+}
