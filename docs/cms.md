@@ -2917,9 +2917,15 @@ quilzo publish
 ### And run it
 
 ```bash
+quilzo auth enrol you                                                 # the link that adds your passkey, once
 quilzo serve --addr 127.0.0.1:8080                                    # admin
 quilzo site  --addr 127.0.0.1:8081 --base-url http://127.0.0.1:8081   # site
 ```
+
+Open the link `auth enrol` printed, add your passkey, and sign in with it. The
+admin is at `http://localhost:8080`, by name, because a browser will not use a
+passkey at an address. The token is for the command line: at the admin it is
+one factor, and signs in to "Confirm it's you" and no further.
 
 `quilzo help` lists every command, and `quilzo --version` prints the version,
 copyright and licence.

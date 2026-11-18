@@ -347,6 +347,9 @@ func (f *walk) one(line string, words []string) {
 		if err := os.WriteFile(f.path(to), []byte(text), 0o666&^f.umask); err != nil {
 			f.t.Fatal(err)
 		}
+	case name == "export" && strings.HasPrefix(words[1], "PATH="):
+		// So that `quilzo` runs what was built, and the quilzo this runs
+		// is this test's own.
 	case name == "export":
 		k, v, _ := strings.Cut(words[1], "=")
 		f.env[k] = f.fill(v)
@@ -754,6 +757,38 @@ func TestTheReferencesFirstLinesReachASignedInAdmin(t *testing.T) {
 	}
 	if len(f.links) == 0 {
 		t.Fatalf("nothing in the reference's first lines gives its reader a passkey\n%s", f.log.String())
+	}
+	f.enrolAndSignIn(f.links[len(f.links)-1])
+	f.siteHome()
+}
+
+// The reference's Getting started ends at an admin its reader is signed in
+// to, and a site.
+//
+// It granted a role and issued a token, as CONTRIBUTING did, and the token
+// signs in to "Confirm it's you" and nothing further. Of its "Then either",
+// the first way is taken, as a reader takes one.
+func TestTheReferencesGettingStartedReachesASignedInAdmin(t *testing.T) {
+	f := newWalk(t)
+	doc := readDoc(t, "docs/cms.md")
+	f.runAll(mdBlocks(t, doc, "From source"))
+	f.runAll(mdBlocks(t, doc, "Getting a token"))
+	either := mdBlocks(t, doc, "Then either")
+	if len(either) == 0 {
+		t.Fatal("the reference's Then either has no code")
+	}
+	for _, l := range either[0] {
+		if strings.HasPrefix(strings.TrimSpace(l), "# or") {
+			break
+		}
+		f.run(l)
+	}
+	f.runAll(mdBlocks(t, doc, "And run it"))
+	if _, ok := f.serving["admin"]; !ok {
+		t.Fatalf("the reference's Getting started never starts the admin\n%s", f.log.String())
+	}
+	if len(f.links) == 0 {
+		t.Fatalf("nothing in the reference's Getting started gives its reader a passkey\n%s", f.log.String())
 	}
 	f.enrolAndSignIn(f.links[len(f.links)-1])
 	f.siteHome()
