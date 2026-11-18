@@ -397,6 +397,11 @@ func TestHelpAfterASubcommandThatTakesOnlyFlagsIsItsHelp(t *testing.T) {
 // further down was not asked at all: `shield decoy add help` was a usage
 // error, exit 2.
 //
+// Where the file or the id may be left out, written [FILE] or [ID], the
+// same: `compliance sbom help`, `compliance aibom help` and `newsletter
+// export help` each wrote a file called help, and `media verify help`
+// looked for a file in the library called help.
+//
 // Asked in a process of its own, in a store with a backup key to hand:
 // nothing may be written, the exit is 0, and the help shown is about the
 // subcommand asked.
@@ -412,6 +417,8 @@ func TestHelpWhereAFileOrAnIDGoesIsItsHelp(t *testing.T) {
 	for _, c := range [][]string{
 		{"backup", "create"}, {"token", "revoke"}, {"agent", "receipt"}, {"agent", "declare"},
 		{"media", "remove"}, {"review", "require"}, {"shield", "decoy", "add"},
+		{"compliance", "sbom"}, {"compliance", "aibom"}, {"newsletter", "export"},
+		{"media", "verify"}, {"booking", "setup"},
 	} {
 		t.Run(strings.Join(c, " "), func(t *testing.T) {
 			t.Parallel()

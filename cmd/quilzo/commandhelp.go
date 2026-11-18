@@ -237,7 +237,17 @@ func helpLeads(fields, subs []string) bool {
 // who does mean one called help writes ./help, or an identifier the program
 // made, which is never a word. A name, a page or a person may be called
 // help, and is left to be.
+//
+// The same where it may be left out, written [FILE] or [ID]: read only
+// bare, `compliance sbom [FILE]`, `compliance aibom [FILE]` and `newsletter
+// export [FILE]` each wrote a file called help when asked for their help.
 func helpNeverNamed(w string) bool {
+	if inner, ok := strings.CutPrefix(w, "["); ok {
+		w, ok = strings.CutSuffix(inner, "]")
+		if !ok {
+			return false
+		}
+	}
 	for _, alt := range strings.Split(w, "|") {
 		alt, _, _ = strings.Cut(alt, ".")
 		switch alt {
