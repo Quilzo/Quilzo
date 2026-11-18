@@ -865,9 +865,10 @@ func topLevel(v string, sep byte) []string {
 }
 
 // lengthPx is the least and the most a length can be in CSS pixels: the
-// font-relative units at the 16px a browser starts from, and the units of
-// the window or of a container anywhere from a 320px phone to a 2560px
-// screen. A percentage or a bare number is not one.
+// font-relative units at the 16px a browser starts from (a line at the
+// shipped 1.65), and the units of the window or of a container anywhere
+// from a 320px phone to a 2560px screen. A percentage or a bare number is
+// not one.
 //
 // Only the units the same size on every screen were read, so a ring drawn
 // at 0.1vw, under half a pixel on a phone, or moved -100vw, a screen's width
@@ -897,7 +898,7 @@ func lengthPx(word string) (least, most float64, ok bool) {
 var lengthUnits = func() map[string][2]float64 {
 	u := map[string][2]float64{"px": {1, 1}, "em": {16, 16}, "rem": {16, 16}, "ic": {16, 16},
 		"ric": {16, 16}, "ch": {8, 8}, "rch": {8, 8}, "ex": {8, 8}, "rex": {8, 8},
-		"cap": {11.2, 11.2}, "rcap": {11.2, 11.2}, "lh": {20.8, 48}, "rlh": {20.8, 48},
+		"cap": {11.2, 11.2}, "rcap": {11.2, 11.2}, "lh": {26.4, 26.4}, "rlh": {26.4, 26.4},
 		"pt": {96.0 / 72, 96.0 / 72}, "pc": {16, 16}, "in": {96, 96},
 		"cm": {96 / 2.54, 96 / 2.54}, "mm": {96 / 25.4, 96 / 25.4}, "q": {96 / 101.6, 96 / 101.6}}
 	// The window's units, in its small, large and dynamic sizes, and a
