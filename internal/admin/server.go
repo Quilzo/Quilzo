@@ -620,6 +620,9 @@ func New(s *store.Store, p *auth.Policy, ts *auth.TokenStore, layouts render.Lay
 		// fixparts splits a fix into the command to run and the words
 		// after its shell comment, so the words are read as words.
 		"fixparts": fixParts,
+		// fixfor is a finding's fix with the holder of its token, shown
+		// beside it, in place of HOLDER (posture.FixFor).
+		"fixfor": posture.FixFor,
 		// deref reads a yes or no a tool may not have given; the template
 		// checks for nil before calling it.
 		"deref": func(b *bool) bool { return b != nil && *b },

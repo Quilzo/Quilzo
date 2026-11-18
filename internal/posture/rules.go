@@ -972,15 +972,34 @@ var rules = []Rule{
 				if t.IsSession() {
 					continue
 				}
+				// Nor is a token recorded as its holder's own: it is how an
+				// administrator administers from the command line, and the
+				// finding is a program holding the whole site. Its fix,
+				// followed for a person's token, left them none that could
+				// issue another or run an administrator's command. How
+				// long it lasts is token.long-lived's. One whose kind was
+				// never recorded may be either, and is reported.
+				if t.Kind == auth.KindPerson {
+					continue
+				}
 				// The token by its name and id, not its holder: a finding
 				// goes into exports, OSCAL and the audit stream, and the
 				// person's name went with it in clear. The Security screen
-				// and quilzo posture show the holder from the id.
+				// and quilzo posture show the holder from the id, and put
+				// them in place of HOLDER.
+				//
+				// Under a name of its own, and with this one revoked: the
+				// fix issued a second token under the same name and left
+				// this one working, so the finding stayed.
+				fix := "quilzo token issue " + t.Name + "-publisher --principal HOLDER --role publisher; " +
+					"quilzo token revoke " + t.ID + "  # a program drafts and publishes with less"
+				if t.Kind == "" {
+					fix += "; if it is HOLDER's own, issue it again with --person, and revoke this one"
+				}
 				out = append(out, Finding{
 					Resource: t.ID,
 					Detail:   fmt.Sprintf("the token %s can change the access policy itself", t.Name),
-					Fix: "quilzo token issue " + t.Name +
-						" --principal HOLDER --role publisher",
+					Fix:      fix,
 				})
 			}
 			return out
@@ -1705,36 +1724,62 @@ var rules = []Rule{
 			"human doing things a human did not do. Attribution is the thing " +
 			"the log exists for, and this destroys it silently.",
 		Check: func(s State) []Finding {
-			if !s.Agents.Enabled || s.Tokens == nil || s.Policy == nil {
+			if !s.Agents.Enabled || s.Tokens == nil {
 				return nil
 			}
-			// A service principal has no admin binding and exists only in the
-			// token store. A token whose principal also holds a policy binding
-			// is a person's credential.
+			// A person is somebody who signs in as themselves: who holds a
+			// passkey here, or a token or session recorded as their own
+			// (auth.Token's Person). Not whoever holds a binding, which
+			// every principal does, a program's own included: the svc-
+			// principal this finding's fix recommended was a person too,
+			// and following the fix did not clear it.
 			people := map[string]bool{}
-			for _, b := range s.Policy.Bindings {
-				people[b.Principal] = true
+			for _, who := range s.Passkeys {
+				people[strings.ToLower(who)] = true
+			}
+			for _, t := range s.Tokens.Tokens {
+				if t.Person() {
+					people[strings.ToLower(t.Principal)] = true
+				}
 			}
 			var out []Finding
 			for _, t := range s.Tokens.Tokens {
 				if t.Revoked || t.Expired(s.Now) || t.IsSession() {
 					continue
 				}
-				if !people[t.Principal] {
+				if !people[strings.ToLower(t.Principal)] {
 					continue
 				}
-				if !strings.Contains(strings.ToLower(t.Name), "mcp") &&
-					!strings.Contains(strings.ToLower(t.Name), "agent") {
+				// A program's token by its record, whatever it is called:
+				// the name was all this looked at, so a token with "mcp"
+				// in it was an agent's and the same program's named
+				// "nightly" was nobody's. A token whose kind was never
+				// recorded is still judged by a name that says it is an
+				// agent's, as it was, since there is nothing else to judge
+				// it by.
+				switch t.Kind {
+				case auth.KindPerson:
 					continue
+				case "":
+					if t.Person() || (!strings.Contains(strings.ToLower(t.Name), "mcp") &&
+						!strings.Contains(strings.ToLower(t.Name), "agent")) {
+						continue
+					}
 				}
 				// The person by the token's id, as token.admin-role names
 				// them: the finding is that a person's name is on an
 				// agent's credential, and it put the name in clear.
+				//
+				// The program's own principal first, which the token
+				// needs a grant to act as, and this one revoked: issuing
+				// another and leaving this working cleared nothing.
 				out = append(out, Finding{
 					Resource: t.ID,
-					Detail:   fmt.Sprintf("%s authenticates as its holder, who is also a person in the access policy", t.Name),
-					Fix: "quilzo token issue " + t.Name +
-						" --principal svc-HOLDER --role author",
+					Detail:   fmt.Sprintf("%s is a program's token and authenticates as its holder, who signs in here as a person", t.Name),
+					Fix: "quilzo auth grant svc-HOLDER " + string(t.Role) + "; quilzo token issue " + t.Name +
+						" --principal svc-HOLDER --role " + string(t.Role) + "; quilzo token revoke " + t.ID +
+						"  # a principal of its own, which no person signs in as; if it is HOLDER's own, " +
+						"issue it again with --person, and revoke this one",
 				})
 			}
 			return out

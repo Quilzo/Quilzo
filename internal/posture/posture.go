@@ -115,6 +115,20 @@ type Finding struct {
 	Refs []frameworks.Ref `json:"refs,omitempty"`
 }
 
+// FixFor is a fix as the person acting on it reads it: with the holder of
+// the token it is about in place of HOLDER, which a fix says so that the
+// finding, exported and streamed, does not carry their name. Shown with no
+// holder, it is the fix as it is.
+//
+// "fix: quilzo token issue ... --principal HOLDER" was printed a line below
+// "held by ada", and left whoever read both to put one into the other.
+func FixFor(fix, holder string) string {
+	if holder == "" {
+		return fix
+	}
+	return strings.ReplaceAll(fix, "HOLDER", holder)
+}
+
 // ID is the stable identity of a finding: the same problem in the same place
 // keeps the same id across scans, so "first seen" means something.
 func (f Finding) ID() string {
@@ -496,8 +510,11 @@ type AgentIdentityFact struct {
 type State struct {
 	Policy *auth.Policy     `json:"-"`
 	Tokens *auth.TokenStore `json:"-"`
-	Types  *schema.Store    `json:"-"`
-	Audit  []audit.Event    `json:"-"`
+	// Passkeys are the principals who hold a passkey here: people, who
+	// sign in as themselves, whatever tokens are also issued in their name.
+	Passkeys []string      `json:"-"`
+	Types    *schema.Store `json:"-"`
+	Audit    []audit.Event `json:"-"`
 	// AuditRead says the log was read, which a nil Audit cannot.
 	//
 	// audit.Read answers (nil, nil) for a log that is not there and a nil

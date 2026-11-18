@@ -926,6 +926,39 @@ func TestEveryPageListingATokenFindingSaysWhoseItIs(t *testing.T) {
 	}
 }
 
+// Every page listing a token's finding gives its fix with the holder it
+// names in place of HOLDER, as quilzo posture scan does.
+//
+// "Held by lee" was shown above "Fix: quilzo token issue ... --principal
+// HOLDER", which left the administrator to put one into the other.
+func TestEveryPageListingATokenFindingPutsTheHolderInItsFix(t *testing.T) {
+	srv, token := setup(t)
+	if _, _, err := srv.Tokens.Issue("deploy-bot", "lee", auth.RoleAdmin, "/", 30*24*time.Hour, auth.RoleAdmin); err != nil {
+		t.Fatal(err)
+	}
+	rep := posture.Scan(posture.State{Policy: &auth.Policy{}, Tokens: srv.Tokens, Now: time.Now()}, nil)
+	withPosture(srv, rep)
+	pages := []string{"/security", "/security/rule/token.admin-role"}
+	for _, f := range frameworks.Catalogue {
+		for _, st := range posture.ByFramework(rep, f.ID) {
+			for _, about := range st.Findings {
+				if about.Rule == "token.admin-role" && len(pages) == 2 {
+					pages = append(pages, "/security/frameworks/"+f.ID)
+				}
+			}
+		}
+	}
+	for _, page := range pages {
+		body := get(t, srv, page, token).Body.String()
+		if !strings.Contains(body, "Held by <strong>lee</strong>") {
+			t.Fatalf("control: %s does not say whose token it is", page)
+		}
+		if strings.Contains(body, "--principal HOLDER") || !strings.Contains(body, "--principal lee") {
+			t.Errorf("%s gives the fix without the holder it names", page)
+		}
+	}
+}
+
 // The dogfooding rule applies here too, and a table of severities is the
 // easiest place to signal meaning with colour alone.
 func TestTheSecurityPagesPassOurOwnAccessibilityChecks(t *testing.T) {

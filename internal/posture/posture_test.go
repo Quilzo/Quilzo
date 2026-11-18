@@ -236,6 +236,9 @@ func TestAnAdminAPITokenIsCritical(t *testing.T) {
 func TestATokenFindingNamesTheTokenNotItsHolder(t *testing.T) {
 	s := clean(t)
 	s.Agents.Enabled = true
+	// dana signs in as a person, with a passkey: a binding alone makes
+	// nobody one (TestAnAgentsTokenIsJudgedByItsRecordNotItsName).
+	s.Passkeys = []string{"dana"}
 	if _, _, err := s.Tokens.Issue("mcp-helper", "dana", auth.RoleAdmin, "/", time.Hour, auth.RoleAdmin); err != nil {
 		t.Fatal(err)
 	}
@@ -1011,5 +1014,141 @@ func TestTheRulesCanBeWrittenAsJSON(t *testing.T) {
 		if _, ok := rules[0][k]; !ok {
 			t.Errorf("a rule as JSON has no %q, as posture explain gives it: %.200s", k, b)
 		}
+	}
+}
+
+// tokenWith issues a token in s and records its kind, unless kind is empty
+// for one issued before the kind was recorded, and returns its id.
+func tokenWith(t *testing.T, s State, name, who string, role auth.Role, kind string) string {
+	t.Helper()
+	_, tok, err := s.Tokens.Issue(name, who, role, "/", 8*time.Hour, auth.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kind != "" {
+		if err := s.Tokens.RecordKind(tok.ID, kind); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := range s.Tokens.Tokens {
+		if s.Tokens.Tokens[i].ID == tok.ID {
+			s.Tokens.Tokens[i].CreatedAt, s.Tokens.Tokens[i].ExpiresAt = ago(time.Hour), in(7*time.Hour)
+			s.Tokens.Tokens[i].LastUsed = ago(time.Minute)
+		}
+	}
+	return tok.ID
+}
+
+// findingAbout is rule's finding about the token id, or nil.
+func findingAbout(s State, rule, id string) *Finding {
+	rep := Scan(s, nil)
+	for i := range rep.Findings {
+		if rep.Findings[i].Rule == rule && rep.Findings[i].Resource == id {
+			return &rep.Findings[i]
+		}
+	}
+	return nil
+}
+
+// Whether an agent authenticates as a person is judged by whose the token
+// was recorded as, and by whether a person signs in as its holder, never by
+// names.
+//
+// The rule fired on a token with "mcp" or "agent" in its name, held by
+// anybody with a binding. So the svc- principal its own fix recommended
+// was a person too, the fix (issue it again as svc-HOLDER) did not clear
+// it, the same program's token named "nightly" was never looked at, and a
+// person's own token named for what they use it with was.
+func TestAnAgentsTokenIsJudgedByItsRecordNotItsName(t *testing.T) {
+	s := clean(t)
+	s.Agents.Enabled = true
+	for _, who := range []string{"jun", "svc-jun"} {
+		if err := s.Policy.Grant(auth.Binding{Principal: who, Role: auth.RoleAuthor, Resource: "/"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// jun signs in with a passkey; the workstation's MCP client is given a
+	// program's token in jun's name.
+	s.Passkeys = []string{"jun"}
+	ws := tokenWith(t, s, "workstation-mcp", "jun", auth.RoleAuthor, auth.KindProgram)
+	f := findingAbout(s, "agent.shared-human-credential", ws)
+	if f == nil {
+		t.Fatal("a program's token in the name of somebody who signs in with a passkey was not reported")
+	}
+	if !strings.Contains(f.Fix, "svc-HOLDER") || !strings.Contains(f.Fix, "token revoke "+ws) {
+		t.Errorf("the fix does not move the token to a principal of its own and revoke this one: %q", f.Fix)
+	}
+
+	// Following the fix clears it: the program's own principal, which no
+	// person signs in as, holding the program's token, and jun's revoked.
+	tokenWith(t, s, "workstation-mcp", "svc-jun", auth.RoleAuthor, auth.KindProgram)
+	if _, err := s.Tokens.Revoke(ws); err != nil {
+		t.Fatal(err)
+	}
+	if f := has(Scan(s, nil), "agent.shared-human-credential"); f != nil {
+		t.Errorf("following the fix did not clear it: %s, fix %s", f.Detail, f.Fix)
+	}
+
+	// A program's token is a program's whatever it is called, and a
+	// person's own is theirs whatever it is called.
+	if f := findingAbout(s, "agent.shared-human-credential", tokenWith(t, s, "nightly", "jun", auth.RoleAuthor, auth.KindProgram)); f == nil {
+		t.Error("a program's token in a person's name was let through for not saying mcp or agent")
+	}
+	if f := findingAbout(s, "agent.shared-human-credential", tokenWith(t, s, "agent-notes", "jun", auth.RoleAuthor, auth.KindPerson)); f != nil {
+		t.Errorf("a person's own token was called an agent's for its name: %s", f.Detail)
+	}
+}
+
+// token.admin-role's fix clears it, and following it leaves the command
+// line administrable.
+//
+// The fix said `quilzo token issue first --principal HOLDER --role
+// publisher`: it added a second token named first and left the
+// administrator's in place, so the finding stayed; and an administrator
+// who revoked theirs too, as the finding meant, held no token that could
+// issue another or run any administrator's command. A person's own token
+// is how they administer from the command line; the rule is about a
+// program holding the whole site in a header.
+func TestTheAdminTokenFixClearsItAndLeavesTheCommandLineAdministrable(t *testing.T) {
+	s := clean(t)
+	own := tokenWith(t, s, "first", "dana", auth.RoleAdmin, auth.KindPerson)
+	ci := tokenWith(t, s, "deploy", "dana", auth.RoleAdmin, auth.KindProgram)
+	if f := findingAbout(s, "token.admin-role", own); f != nil {
+		t.Errorf("an administrator's own token, how they administer from the command line, is the finding: %s", f.Detail)
+	}
+	f := findingAbout(s, "token.admin-role", ci)
+	if f == nil {
+		t.Fatal("a program's administrator's token was not reported")
+	}
+	if !strings.Contains(f.Fix, "--role publisher") || !strings.Contains(f.Fix, "token revoke "+ci) ||
+		strings.Contains(f.Fix, "token issue deploy ") {
+		t.Fatalf("the fix does not replace the token under a name of its own and revoke this one: %q", f.Fix)
+	}
+
+	// Following it: the program's publisher token, and its administrator's
+	// token revoked. Nothing is reported, and an administrator's token is
+	// still there to administer with.
+	tokenWith(t, s, "deploy-publisher", "dana", auth.RolePublisher, auth.KindProgram)
+	if _, err := s.Tokens.Revoke(ci); err != nil {
+		t.Fatal(err)
+	}
+	if f := has(Scan(s, nil), "token.admin-role"); f != nil {
+		t.Errorf("following the fix did not clear it: %s", f.Detail)
+	}
+	left := false
+	for _, tok := range s.Tokens.Tokens {
+		if ok, _ := tok.Usable(now.Add(time.Minute)); ok && tok.Role == auth.RoleAdmin {
+			left = true
+		}
+	}
+	if !left {
+		t.Error("following the fix left no administrator's token to administer with")
+	}
+
+	// A token issued before its kind was recorded is still reported, and
+	// told how to say it is its holder's own.
+	old := tokenWith(t, s, "laptop", "dana", auth.RoleAdmin, "")
+	if f := findingAbout(s, "token.admin-role", old); f == nil || !strings.Contains(f.Fix, "--person") {
+		t.Errorf("an administrator's token whose kind nobody recorded: %+v", f)
 	}
 }
