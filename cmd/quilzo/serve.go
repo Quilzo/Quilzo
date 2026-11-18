@@ -1265,7 +1265,12 @@ func cmdServe(root string, args []string) error {
 	// recording added from the media screen is a request that takes as long
 	// as the connection takes, and a deadline on it would refuse the
 	// operation on exactly the slow link that needs longest.
-	return listen.Uploads().Serve(httpSrv)
+	//
+	// A proxy in front, and this machine, are many visitors on one address,
+	// so the share of connections one source may hold is not theirs.
+	lim := listen.Uploads()
+	lim.Shared = sharedPeers(root, "admin.trusted_proxy")
+	return lim.Serve(httpSrv)
 }
 
 // sessionCaller is a person signed in to the admin, verified, with the

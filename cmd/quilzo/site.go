@@ -441,7 +441,12 @@ func cmdSite(root string, args []string) error {
 	// deadline on the whole response would cut off the reader it exists for.
 	// The media route sets its own, derived from the size it is about to
 	// send. See internal/listen.
-	return listen.Media().Serve(srv)
+	//
+	// A proxy in front, and this machine, are many visitors on one address,
+	// so the share of connections one source may hold is not theirs.
+	lim := listen.Media()
+	lim.Shared = sharedPeers(root, "site.trusted_proxy")
+	return lim.Serve(srv)
 }
 
 // licenceFrom builds the crawl terms from configuration, or nil for none.

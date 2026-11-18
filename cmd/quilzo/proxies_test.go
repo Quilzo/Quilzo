@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -200,6 +201,58 @@ func TestBothListenersAreBuiltOnTheEdgeAndSaySo(t *testing.T) {
 		}
 		if strings.Contains(src, "clientip.Middleware(") {
 			t.Errorf("%s: a listener built on clientip.Middleware directly never says which machine was not believed", file)
+		}
+	}
+}
+
+// The share of connections one source may hold (internal/listen) is not
+// the proxy's, nor this machine's: each is many visitors on one address,
+// and held to one visitor's share it is everybody behind it shut out by
+// the limit that exists to stop one client doing that. Every other peer,
+// a private network's included, is one source like any.
+func TestAProxyIsNotHeldToOneVisitorsShareOfConnections(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.New()
+	if err := cfg.Set("network.trusted_proxies", "10.0.0.5", "", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveConfig(root, cfg); err != nil {
+		t.Fatal(err)
+	}
+	shared := sharedPeers(root, "site.trusted_proxy")
+	for addr, want := range map[string]bool{
+		"127.0.0.1":    true,
+		"::1":          true,
+		"10.0.0.5":     true,
+		"10.0.0.6":     false,
+		"172.17.0.1":   false,
+		"203.0.113.9":  false,
+		"2001:db8::17": false,
+	} {
+		if got := shared(netip.MustParseAddr(addr)); got != want {
+			t.Errorf("%s shared: %v, expected %v", addr, got, want)
+		}
+	}
+}
+
+// Every listener says who is shared. A source check, because the wiring is
+// what could go missing: without it the proxy in front of a site is one
+// source, and every visitor behind it shares sixty-four connections.
+func TestEveryListenerSaysWhoIsManyVisitors(t *testing.T) {
+	for file, want := range map[string]string{
+		"serve.go":     `lim.Shared = sharedPeers(root, "admin.trusted_proxy")`,
+		"site.go":      `lim.Shared = sharedPeers(root, "site.trusted_proxy")`,
+		"studiocmd.go": `lim.Shared = clientip.ThisMachine`,
+	} {
+		body, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(body), want) {
+			t.Errorf("%s does not say who is shared: %s", file, want)
+		}
+		if strings.Contains(string(body), "().Serve(") {
+			t.Errorf("%s serves a profile straight, with nobody shared", file)
 		}
 	}
 }

@@ -11,6 +11,7 @@ import (
 
 	"github.com/quilzo/quilzo/internal/audit"
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/clientip"
 	"github.com/quilzo/quilzo/internal/listen"
 	"github.com/quilzo/quilzo/internal/media"
 	"github.com/quilzo/quilzo/internal/medialib"
@@ -63,7 +64,12 @@ func cmdStudio(root string, args []string) error {
 	// request nor the response is given a fixed deadline; what bounds this
 	// server is the idle deadline and the connection limit. The headers still
 	// have ten seconds. See internal/listen.
-	return listen.Uploads().Serve(server)
+	//
+	// It believes no proxy, so this machine is the one peer that is many
+	// visitors: the browser recording on it, and anything in front.
+	lim := listen.Uploads()
+	lim.Shared = clientip.ThisMachine
+	return lim.Serve(server)
 }
 
 // studioServer is the capture surface over a store.
