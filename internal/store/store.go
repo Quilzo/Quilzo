@@ -405,39 +405,10 @@ func (s *Store) PutCommit(c Commit) (string, error) {
 }
 
 func (s *Store) read(oid, expect string) ([]byte, error) {
-	path, err := s.pathFor(oid)
+	kind, payload, err := s.open(oid)
 	if err != nil {
 		return nil, err
 	}
-	body, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("no object %s", oid)
-	}
-
-	// A store can be half converted: turning encryption on does not rewrite
-	// what is already there, so both forms have to be readable and the reader
-	// cannot be told which to expect.
-	if vault.IsSealed(body) {
-		if s.keys == nil {
-			return nil, fmt.Errorf(
-				"object %s is encrypted and no key was supplied. The content is "+
-					"intact; without the key encryption key it cannot be read, "+
-					"which is the point", oid)
-		}
-		sealed, err := vault.Unmarshal(body)
-		if err != nil {
-			return nil, fmt.Errorf("object %s is malformed: %w", oid, err)
-		}
-		if body, err = s.keys.Open(sealed, []byte(oid)); err != nil {
-			return nil, fmt.Errorf("object %s: %w", oid, err)
-		}
-	}
-
-	i := strings.IndexByte(string(body), 0)
-	if i < 0 {
-		return nil, fmt.Errorf("object %s is malformed", oid)
-	}
-	kind, payload := string(body[:i]), body[i+1:]
 	if kind != expect {
 		return nil, fmt.Errorf("object %s is a %s, not a %s", oid, kind, expect)
 	}
@@ -450,6 +421,51 @@ func (s *Store) read(oid, expect string) ([]byte, error) {
 				"or altered", oid)
 	}
 	return payload, nil
+}
+
+// open is an object's kind and payload as its file holds them, unsealed,
+// and not yet checked against its name: read does that, for whoever wants
+// what the object says.
+//
+// Separate from read for the walk under GetNested, which needs to know only
+// what each object is. Asking read, it checked the hash of every page and
+// record in the store to learn that each was not a tree, and a record whose
+// bytes had rotted stopped every listing of every collection, where it had
+// been one row that its own reader refused.
+func (s *Store) open(oid string) (string, []byte, error) {
+	path, err := s.pathFor(oid)
+	if err != nil {
+		return "", nil, err
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return "", nil, fmt.Errorf("no object %s", oid)
+	}
+
+	// A store can be half converted: turning encryption on does not rewrite
+	// what is already there, so both forms have to be readable and the reader
+	// cannot be told which to expect.
+	if vault.IsSealed(body) {
+		if s.keys == nil {
+			return "", nil, fmt.Errorf(
+				"object %s is encrypted and no key was supplied. The content is "+
+					"intact; without the key encryption key it cannot be read, "+
+					"which is the point", oid)
+		}
+		sealed, err := vault.Unmarshal(body)
+		if err != nil {
+			return "", nil, fmt.Errorf("object %s is malformed: %w", oid, err)
+		}
+		if body, err = s.keys.Open(sealed, []byte(oid)); err != nil {
+			return "", nil, fmt.Errorf("object %s: %w", oid, err)
+		}
+	}
+
+	i := strings.IndexByte(string(body), 0)
+	if i < 0 {
+		return "", nil, fmt.Errorf("object %s is malformed", oid)
+	}
+	return string(body[:i]), body[i+1:], nil
 }
 
 // GetBlob reads content back into v.

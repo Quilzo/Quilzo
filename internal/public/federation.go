@@ -238,11 +238,7 @@ func (st *Site) notes() ([]activitypub.Note, error) {
 	// The commit, so a reader can ask for exactly this version rather than
 	// "the current one", which is a different thing the moment anybody edits.
 	ref := st.Store.GetRef(st.ref())
-
-	var changed map[string]time.Time
-	if st.LastChanged != nil {
-		changed, _ = st.LastChanged()
-	}
+	changed := st.lastChanged(ref)
 
 	names := make([]string, 0, len(pages))
 	for name := range pages {

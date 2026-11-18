@@ -441,7 +441,12 @@ func cmdSite(root string, args []string) error {
 	// deadline on the whole response would cut off the reader it exists for.
 	// The media route sets its own, derived from the size it is about to
 	// send. See internal/listen.
-	return listen.Media().Serve(srv)
+	//
+	// A proxy in front, and this machine, are many visitors on one address,
+	// so the share of connections one source may hold is not theirs.
+	lim := listen.Media()
+	lim.Shared = sharedPeers(root, "site.trusted_proxy")
+	return lim.Serve(srv)
 }
 
 // licenceFrom builds the crawl terms from configuration, or nil for none.
@@ -664,11 +669,13 @@ func (run siteRun) dress(st *public.Site) {
 	if run.ref != "" {
 		st.Ref = run.ref
 	}
-	// lastmod is computed per request rather than cached, because it is
-	// derived from history and history only grows. A cached value would go
-	// stale exactly when a page changed, which is the one moment it matters.
-	st.LastChanged = func() (map[string]time.Time, error) {
-		return seo.LastChanged(s, s.GetRef(site.RefLive), 5000)
+	// lastmod is derived from history, and is asked for the commit the site
+	// serves: once per commit, since a commit's history never changes and a
+	// publish is a different commit (public.Site.lastChanged). It walked the
+	// live ref's history whatever the site served, so a site serving another
+	// environment listed its pages with live's dates.
+	st.LastChanged = func(head string) (map[string]time.Time, error) {
+		return seo.LastChanged(s, head, 5000)
 	}
 	st.Redirects = run.redirects
 	st.RedirectsAt = reloadingRedirects(root, run.redirectFile, run.redirects)

@@ -4,10 +4,14 @@
 package studio
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -18,6 +22,7 @@ import (
 	"time"
 
 	"github.com/quilzo/quilzo/internal/auth"
+	"github.com/quilzo/quilzo/internal/listen"
 	"github.com/quilzo/quilzo/internal/media"
 	"github.com/quilzo/quilzo/internal/medialib"
 	"github.com/quilzo/quilzo/internal/throttle"
@@ -630,5 +635,107 @@ func TestAnUploadLeavesNoTemporaryFile(t *testing.T) {
 		if len(left) != 0 {
 			t.Errorf("uploading %s left %d file(s) in the temporary directory", upload.name, len(left))
 		}
+	}
+}
+
+// The recording is named to the listener as the one body that carries a
+// file, with the limit the upload applies; the sign-in form is not, so it
+// has what a form has on the public site rather than the hours a
+// recording may take.
+func TestTheRecordingIsTheOneBodyNamedAsAFile(t *testing.T) {
+	if got := FileBody(httptest.NewRequest(http.MethodPost, "/upload", nil)); got != MaxRecording {
+		t.Errorf("POST /upload: %d, and the upload reads %d", got, MaxRecording)
+	}
+	for _, r := range []*http.Request{
+		httptest.NewRequest(http.MethodPost, "/signin", nil),
+		httptest.NewRequest(http.MethodGet, "/upload", nil),
+		httptest.NewRequest(http.MethodPost, "/", nil),
+	} {
+		if got := FileBody(r); got != 0 {
+			t.Errorf("%s %s was given %d as a file", r.Method, r.URL.Path, got)
+		}
+	}
+}
+
+// studioBehindTheListener is the studio served as cmd/quilzo serves it,
+// under listen.Uploads with the recording named, and a body's deadline
+// short enough for a test to wait out.
+func studioBehindTheListener(t *testing.T, srv *Server, body time.Duration) string {
+	t.Helper()
+	l := listen.Uploads()
+	l.Body = body
+	l.Files = FileBody
+	hs := &http.Server{Handler: srv.Handler()}
+	l.Apply(hs)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = hs.Serve(ln) }()
+	t.Cleanup(func() { _ = hs.Close() })
+	return ln.Addr().String()
+}
+
+// Somebody signed out who posts a recording is waited on for a form's
+// time, not a recording's. The listener gave every body on /upload the time
+// a quarter of a gigabyte takes, eighteen hours, before anybody knew who was
+// sending; the upload refuses somebody signed out without reading, and
+// net/http then read what was left under that deadline.
+func TestSomebodySignedOutIsNotWaitedOnForARecordingsTime(t *testing.T) {
+	srv, _ := wired(t)
+	addr := studioBehindTheListener(t, srv, 300*time.Millisecond)
+	c, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if _, err := io.WriteString(c, "POST /upload HTTP/1.1\r\nHost: x\r\n"+
+		"Content-Type: multipart/form-data; boundary=x\r\nTransfer-Encoding: chunked\r\n\r\n"); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	_ = c.SetReadDeadline(start.Add(5 * time.Second))
+	_, err = io.Copy(io.Discard, c)
+	if ne, ok := err.(net.Error); ok && ne.Timeout() {
+		t.Fatal("a recording posted signed out, sending nothing, was still held after " +
+			"five seconds against a form's 300ms")
+	}
+	if took := time.Since(start); took > 3*time.Second {
+		t.Errorf("a recording posted signed out was held %v against a form's 300ms", took)
+	}
+}
+
+// Somebody signed in still has the time their recording takes.
+func TestARecordingIsGivenTheTimeItTakes(t *testing.T) {
+	srv, secret := wired(t)
+	addr := studioBehindTheListener(t, srv, 300*time.Millisecond)
+	body, ct := oneRecording(t, "screen.webm", webmBytes())
+	c, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	_ = c.SetDeadline(time.Now().Add(20 * time.Second))
+	_, _ = fmt.Fprintf(c, "POST /upload HTTP/1.1\r\nHost: x\r\nCookie: %s=%s\r\n"+
+		"Content-Type: %s\r\nContent-Length: %d\r\n\r\n", CookieName, secret, ct, body.Len())
+	// Six pieces with 200ms between them: four times a form's deadline.
+	b := body.Bytes()
+	step := len(b)/6 + 1
+	for len(b) > 0 {
+		n := min(step, len(b))
+		if _, err := c.Write(b[:n]); err != nil {
+			t.Fatalf("the recording was cut off: %v", err)
+		}
+		b = b[n:]
+		time.Sleep(200 * time.Millisecond)
+	}
+	res, err := http.ReadResponse(bufio.NewReader(c), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	said, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Errorf("a recording sent slowly answered %d: %s", res.StatusCode, said)
 	}
 }
